@@ -67,6 +67,39 @@ pub(crate) fn vendor_color(v: Vendor) -> Color {
     }
 }
 
+/// An agent's own colour in conversations, fixed by its id so a speaker
+/// keeps it for the whole run. 256-colour indexes, none of them a status
+/// colour.
+pub(crate) fn speaker_color(id: AgentId) -> Color {
+    const SPEAKERS: [u8; 12] = [75, 179, 114, 176, 216, 79, 147, 186, 211, 110, 151, 223];
+    Color::Indexed(SPEAKERS[id % SPEAKERS.len()])
+}
+
+fn party_span(lang: Lang, w: &World, p: Party) -> Span<'static> {
+    match p {
+        Party::Agent(id) => Span::styled(clean(&w.agents[id].name), bold(speaker_color(id))),
+        Party::Person => Span::styled(lang.text().you, bold(Color::White)),
+    }
+}
+
+/// A conversation line: `from → to [kind]: text`, each speaker in its own
+/// colour.
+pub(crate) fn said_spans(lang: Lang, w: &World, s: &words::Said) -> Vec<Span<'static>> {
+    let mut spans = vec![
+        party_span(lang, w, s.from),
+        Span::styled(" → ", dim()),
+        party_span(lang, w, s.to),
+    ];
+    if let Some(k) = s.kind {
+        spans.push(Span::styled(
+            format!(" [{}]", lang.text().kinds[k as usize]),
+            dim(),
+        ));
+    }
+    spans.push(Span::raw(format!(": {}", clean(s.text))));
+    spans
+}
+
 pub(crate) fn glyph(a: &Agent) -> (&'static str, Color) {
     if a.role == Role::Leader {
         return ("◆", Color::Magenta);
@@ -119,7 +152,10 @@ pub(crate) fn entry_line(app: &App, e: &Entry) -> Line<'static> {
         let p = w.agents[e.event.agent()].project;
         spans.push(Span::styled(format!("{} ", w.projects[p].name), dim()));
     }
-    spans.push(Span::raw(words::event(app.lang, w, &e.event)));
+    match words::said(&e.event) {
+        Some(said) => spans.extend(said_spans(app.lang, w, &said)),
+        None => spans.push(Span::raw(words::event(app.lang, w, &e.event))),
+    }
     Line::from(spans)
 }
 
@@ -425,6 +461,55 @@ mod tests {
         assert!(!s.contains('\u{1b}'));
         assert!(!s.contains("sk-secret123"), "{s}");
         assert!(s.contains("hello"));
+    }
+
+    #[test]
+    fn a_conversation_shows_its_speakers_in_their_colours_and_folds() {
+        let mut app = app_after(1, 4, 50, Lang::En);
+        let lead = app.world.projects[0].leader;
+        let worker = app
+            .world
+            .agents
+            .iter()
+            .find(|a| a.role == Role::Worker)
+            .unwrap()
+            .id;
+        for (from, to, text) in [
+            (lead, worker, "take the parser"),
+            (worker, lead, "on it"),
+            (lead, worker, "newest-line"),
+        ] {
+            app.world.note(Event::Sent {
+                from,
+                to,
+                kind: MsgKind::Inform,
+                text: text.into(),
+            });
+        }
+        let mut t = Terminal::new(TestBackend::new(140, 40)).unwrap();
+        t.draw(|f| draw(f, &app)).unwrap();
+        let buf = t.backend().buffer();
+        let row = (0..buf.area.height)
+            .find(|&y| {
+                (0..buf.area.width)
+                    .map(|x| buf[(x, y)].symbol())
+                    .collect::<String>()
+                    .contains("newest-line")
+            })
+            .expect("the newest line is in the journal");
+        let text: String = (0..buf.area.width)
+            .map(|x| buf[(x, row)].symbol())
+            .collect();
+        assert!(
+            text.contains("+2"),
+            "the older two lines fold under it: {text}"
+        );
+        let full = render(&app, 140, 40);
+        assert!(!full.contains("on it"), "folded lines stay folded:\n{full}");
+        let name = &app.world.agents[lead].name;
+        let at = text.find(name.as_str()).unwrap();
+        let x = u16::try_from(text[..at].chars().count()).unwrap();
+        assert_eq!(buf[(x, row)].fg, speaker_color(lead), "{text}");
     }
 
     #[test]

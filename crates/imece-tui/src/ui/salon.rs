@@ -426,13 +426,79 @@ fn side(f: &mut Frame, area: Rect, app: &App) {
     f.render_widget(block, bottom);
     // The journal keeps every event; the screen shows the meaningful ones.
     // Routine assignments are visible on the board and in the leader's trace.
-    let lines: Vec<Line> = w
+    let shown = w
         .journal
         .iter()
         .rev()
-        .filter(|e| e.event.kind() != EntryKind::Assign)
+        .filter(|e| e.event.kind() != EntryKind::Assign);
+    let lines: Vec<Line> = fold_threads(shown)
         .take(usize::from(inner.height))
-        .map(|e| entry_line(app, e))
+        .map(|(e, more)| {
+            let mut line = entry_line(app, e);
+            if more > 0 {
+                line.spans.push(Span::styled(format!("  +{more}"), dim()));
+            }
+            line
+        })
         .collect();
     f.render_widget(Paragraph::new(lines), inner);
+}
+
+/// Each entry with how many older lines of the same conversation directly
+/// follow it and are folded under it. Display only: the agents' stories
+/// keep every line.
+fn fold_threads<'a>(
+    entries: impl Iterator<Item = &'a Entry>,
+) -> impl Iterator<Item = (&'a Entry, usize)> {
+    let mut entries = entries.peekable();
+    std::iter::from_fn(move || {
+        let e = entries.next()?;
+        let mut more = 0;
+        if let Some(pair) = words::said(&e.event).map(|s| s.pair()) {
+            while entries
+                .next_if(|n| words::said(&n.event).is_some_and(|s| s.pair() == pair))
+                .is_some()
+            {
+                more += 1;
+            }
+        }
+        Some((e, more))
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn sent(from: AgentId, to: AgentId) -> Entry {
+        Entry {
+            tick: 0,
+            event: Event::Sent {
+                from,
+                to,
+                kind: MsgKind::Ask,
+                text: String::new(),
+            },
+        }
+    }
+
+    #[test]
+    fn only_neighbouring_lines_of_one_conversation_fold() {
+        let journal = [
+            sent(0, 1),
+            sent(1, 0),
+            sent(0, 1),
+            sent(0, 2),
+            Entry {
+                tick: 0,
+                event: Event::Failed { agent: 0 },
+            },
+            sent(2, 0),
+            sent(0, 2),
+        ];
+        let folded: Vec<usize> = fold_threads(journal.iter()).map(|(_, n)| n).collect();
+        // Both directions are one conversation; another pair or any other
+        // event ends the fold.
+        assert_eq!(folded, [2, 0, 0, 1]);
+    }
 }
