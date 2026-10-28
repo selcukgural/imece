@@ -32,14 +32,28 @@ fn window(f: &mut Frame, title: String, lines: Vec<Line<'static>>, width: u16) {
 
 pub fn help(f: &mut Frame, lang: Lang) {
     let t = lang.text();
-    let mut lines: Vec<Line> = t
-        .help_keys
-        .iter()
-        .map(|(k, what)| {
-            Line::from(vec![
-                Span::styled(format!(" {}", fit(k, 12)), bold(Color::White)),
-                Span::raw(*what),
-            ])
+    let key = |(k, what): &(&str, &str)| {
+        vec![
+            Span::styled(format!(" {}", fit(k, 13)), bold(Color::White)),
+            Span::raw(fit(what, 44)),
+        ]
+    };
+    // Two columns where the screen is wide enough, so the help fits a
+    // short screen too.
+    let wide = f.area().width >= 120;
+    let keys = &t.help_keys;
+    let rows = if wide {
+        keys.len().div_ceil(2)
+    } else {
+        keys.len()
+    };
+    let mut lines: Vec<Line> = (0..rows)
+        .map(|r| {
+            let mut spans = key(&keys[r]);
+            if wide && let Some(k) = keys.get(r + rows) {
+                spans.extend(key(k));
+            }
+            Line::from(spans)
         })
         .collect();
     lines.push(Line::raw(""));
@@ -50,7 +64,7 @@ pub fn help(f: &mut Frame, lang: Lang) {
     );
     lines.push(Line::raw(""));
     lines.push(Line::from(Span::styled(t.close, dim())));
-    window(f, t.help_title.into(), lines, 74);
+    window(f, t.help_title.into(), lines, if wide { 118 } else { 60 });
 }
 
 pub fn digest(f: &mut Frame, app: &App, d: &Digest) {

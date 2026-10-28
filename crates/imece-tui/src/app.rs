@@ -133,6 +133,8 @@ pub struct App {
     /// Text the person asked to copy; the main loop hands it to the
     /// clipboard.
     pub copy: Option<String>,
+    /// The first key of a two-key chord (`g`, `z`), waiting for the second.
+    pub pending: Option<char>,
     pub typing: bool,
     pub input: String,
     pub paused: bool,
@@ -175,6 +177,7 @@ impl App {
             thread: None,
             side: SIDE_DEFAULT,
             copy: None,
+            pending: None,
             typing: false,
             input: String::new(),
             paused: false,
@@ -256,13 +259,44 @@ impl App {
             self.type_key(k);
             return;
         }
+        if let Some(first) = self.pending.take() {
+            self.chord(first, k);
+            return;
+        }
+        if k.modifiers.contains(KeyModifiers::CONTROL) {
+            match k.code {
+                KeyCode::Char('d') => self.page(true, true),
+                KeyCode::Char('u') => self.page(false, true),
+                KeyCode::Char('f') => self.page(true, false),
+                KeyCode::Char('b') => self.page(false, false),
+                _ => {}
+            }
+            return;
+        }
         if self.thread.is_some() && self.thread_key(k) {
             return;
         }
 
         match k.code {
             KeyCode::Char('q') => self.quit = true,
-            KeyCode::Char('/') => self.typing = true,
+            // `i` as in vim: start writing.
+            KeyCode::Char('/') | KeyCode::Char('i') => self.typing = true,
+            KeyCode::Char('g') | KeyCode::Char('z') => {
+                if let KeyCode::Char(c) = k.code {
+                    self.pending = Some(c);
+                }
+            }
+            KeyCode::Char('G') => self.jump(false),
+            KeyCode::Char('t') => {
+                if let Some(id) = self.agent_at_hand() {
+                    self.zoom = Zoom::Trace(id);
+                }
+            }
+            KeyCode::Char('v') => {
+                if let Some(id) = self.agent_at_hand() {
+                    self.open_talk_with(id);
+                }
+            }
             KeyCode::Char('@') => {
                 self.typing = true;
                 self.input = match self.zoom {
@@ -289,20 +323,15 @@ impl App {
             }
             KeyCode::Char('-') if !self.live() => self.speed = (self.speed / 2).max(1),
             KeyCode::Char('?') => self.help = true,
-            KeyCode::Tab if self.view == View::Salon && self.zoom == Zoom::None => {
-                self.pane = match self.pane {
-                    Pane::Salon => Pane::Inbox,
-                    Pane::Inbox => Pane::Journal,
-                    Pane::Journal => Pane::Salon,
-                };
-                if self.pane == Pane::Journal {
-                    self.select_journal(None);
-                }
-            }
+            KeyCode::Tab | KeyCode::Char(']') if self.pane_keys() => self.cycle_pane(true),
+            KeyCode::BackTab | KeyCode::Char('[') if self.pane_keys() => self.cycle_pane(false),
+            KeyCode::Char('!') if self.pane_keys() => self.pane = Pane::Inbox,
             // `,` and `.` are the same keys without shift.
             KeyCode::Char('<') | KeyCode::Char(',') => self.resize(true),
             KeyCode::Char('>') | KeyCode::Char('.') => self.resize(false),
-            KeyCode::Char('c') if self.pane == Pane::Journal && self.zoom == Zoom::None => {
+            KeyCode::Char('c') | KeyCode::Char('y')
+                if self.pane == Pane::Journal && self.zoom == Zoom::None =>
+            {
                 if let Some(i) = self.journal_sel {
                     self.copy = Some(ui::copy_text(self.lang, &self.world, &[i]));
                 }
@@ -321,6 +350,139 @@ impl App {
             KeyCode::Char('a') if self.pane == Pane::Inbox => self.answer(true),
             KeyCode::Char('r') if self.pane == Pane::Inbox => self.answer(false),
             _ => {}
+        }
+    }
+
+    /// The second key of a chord that began with `first`.
+    fn chord(&mut self, first: char, k: KeyEvent) {
+        match (first, k.code) {
+            ('g', KeyCode::Char('g')) => self.jump(true),
+            ('z', KeyCode::Char('a')) if self.salon_keys() => {
+                let p = self.current_project();
+                self.fold(!self.collapsed[p]);
+            }
+            ('z', KeyCode::Char('M')) if self.salon_keys() => self.fold_all(true),
+            ('z', KeyCode::Char('R')) if self.salon_keys() => self.fold_all(false),
+            _ => {}
+        }
+    }
+
+    /// Folds or unfolds every project.
+    fn fold_all(&mut self, fold: bool) {
+        self.collapsed.iter_mut().for_each(|c| *c = fold);
+        if fold {
+            self.selected = Sel::Project(self.current_project());
+        }
+    }
+
+    /// Panels cycle only on the salon, outside a focus.
+    fn pane_keys(&self) -> bool {
+        self.view == View::Salon && self.zoom == Zoom::None
+    }
+
+    fn cycle_pane(&mut self, forward: bool) {
+        const ORDER: [Pane; 3] = [Pane::Salon, Pane::Inbox, Pane::Journal];
+        let at = ORDER.iter().position(|&p| p == self.pane).unwrap_or(0);
+        let next = if forward {
+            at + 1
+        } else {
+            at + ORDER.len() - 1
+        } % ORDER.len();
+        self.pane = ORDER[next];
+        if self.pane == Pane::Journal {
+            self.select_journal(None);
+        }
+    }
+
+    /// The agent the person is looking at: focused, selected in the salon,
+    /// or the one behind the selected inbox item.
+    fn agent_at_hand(&self) -> Option<AgentId> {
+        match self.zoom {
+            Zoom::Focus(id) | Zoom::Trace(id) => return Some(id),
+            Zoom::None => {}
+        }
+        match self.pane {
+            Pane::Salon => match self.selected {
+                Sel::Agent(id) => Some(id),
+                Sel::Project(p) => Some(self.world.projects[p].leader),
+            },
+            Pane::Inbox => self
+                .world
+                .open_inbox()
+                .get(self.inbox_sel)
+                .map(|&i| self.world.inbox[i].agent),
+            Pane::Journal => self
+                .journal_sel
+                .map(|i| self.world.journal[i].event.agent()),
+        }
+    }
+
+    /// Opens the conversation between the person and agent `id`, if they
+    /// have one.
+    fn open_talk_with(&mut self, id: AgentId) {
+        let me = Party::Agent(id);
+        let pair = (me.min(Party::Person), me.max(Party::Person));
+        let mine = |e: &Entry| ui::words::said(&e.event).is_some_and(|s| s.pair() == pair);
+        match self.world.journal.iter().rposition(mine) {
+            Some(i) => self.open_thread(i),
+            None => {
+                let name = self.world.agents[id].name.clone();
+                let t = self.lang.text();
+                self.flash(fill(t.no_talk_yet, &[&name]));
+            }
+        }
+    }
+
+    /// To the first or last line of what the person is looking at.
+    fn jump(&mut self, first: bool) {
+        if let Some(th) = &mut self.thread {
+            th.sel = if first {
+                0
+            } else {
+                th.entries.len().saturating_sub(1)
+            };
+            th.follow.set(true);
+            return;
+        }
+        match self.pane {
+            Pane::Salon => {
+                let shown = self.shown.borrow();
+                if let Some(&s) = if first { shown.first() } else { shown.last() } {
+                    self.selected = s;
+                }
+            }
+            Pane::Inbox => {
+                let n = self.world.open_inbox().len();
+                self.inbox_sel = if first { 0 } else { n.saturating_sub(1) };
+            }
+            Pane::Journal => {
+                let rows = ui::journal_rows(&self.world);
+                let row = if first { rows.first() } else { rows.last() };
+                self.journal_sel = row.map(|&(i, _)| i);
+            }
+        }
+    }
+
+    /// A page (or half of one) down or up: the open conversation scrolls,
+    /// a list moves its selection.
+    fn page(&mut self, down: bool, half: bool) {
+        if let Some(th) = &self.thread {
+            let step = if half {
+                th.page.get() / 2
+            } else {
+                th.page.get()
+            }
+            .max(1);
+            let at = th.scroll.get();
+            th.scroll.set(if down {
+                at.saturating_add(step)
+            } else {
+                at.saturating_sub(step)
+            });
+            return;
+        }
+        for _ in 0..if half { 5 } else { 10 } {
+            self.move_selection(down);
         }
     }
 
@@ -356,7 +518,7 @@ impl App {
             KeyCode::PageDown | KeyCode::Char(' ') => {
                 th.scroll.set(th.scroll.get().saturating_add(th.page.get()))
             }
-            KeyCode::Home | KeyCode::Char('g') => {
+            KeyCode::Home => {
                 th.sel = 0;
                 th.follow.set(true);
             }
@@ -364,11 +526,11 @@ impl App {
                 th.sel = last;
                 th.follow.set(true);
             }
-            KeyCode::Char('c') => {
+            KeyCode::Char('c') | KeyCode::Char('y') => {
                 let one = th.entries[th.sel];
                 self.copy = Some(ui::copy_text(self.lang, &self.world, &[one]));
             }
-            KeyCode::Char('C') => {
+            KeyCode::Char('C') | KeyCode::Char('Y') => {
                 self.copy = Some(ui::copy_text(self.lang, &self.world, &th.entries));
             }
             // Writing, views, language, help and quitting work as anywhere.
