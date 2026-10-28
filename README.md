@@ -48,6 +48,10 @@ is one line, and that line still shows what waits for you.
 5. **Coming back is cheap:** after a pause, the first key shows what happened
    while you were away.
 
+## Security
+
+Please report security problems privately; see [SECURITY.md](SECURITY.md).
+
 ## License
 
-Apache-2.0.
+Licensed under the [Apache License 2.0](LICENSE).
