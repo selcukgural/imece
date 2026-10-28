@@ -301,4 +301,12 @@ mod tests {
         assert!(!path.exists());
         let _ = std::fs::remove_dir_all(&dir);
     }
+
+    #[test]
+    fn a_ping_is_answered_with_nothing_in_it() {
+        let got = run(&[r#"{"jsonrpc":"2.0","id":5,"method":"ping"}"#]);
+        assert_eq!(got.len(), 1);
+        assert_eq!(got[0]["id"], 5);
+        assert_eq!(got[0]["result"], serde_json::json!({}));
+    }
 }

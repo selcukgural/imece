@@ -1206,6 +1206,7 @@ mod tests {
         assert_eq!(a.cost, 50 + 1234);
         assert_eq!(a.activity, None);
         assert_eq!(a.talk.as_ref().unwrap().text, "Fixed both.");
+        assert_eq!(a.talk.as_ref().unwrap().until, w.tick + 12);
         let touched = w.cards[c]
             .story
             .iter()
@@ -1741,6 +1742,246 @@ mod tests {
         let names = |r: Role| -> Vec<String> { tools_of(r).into_iter().map(|t| t.name).collect() };
         assert_eq!(names(Role::Leader), ["send", "post", "board"]);
         assert_eq!(names(Role::Worker), ["send", "post", "board", "claim"]);
+    }
+
+    /// A tool call as the bus delivers it, answered by the next step.
+    fn call(live: &mut Live, w: &mut World, from: AgentId, tool: &str, args: Value) -> Answer {
+        let (tx, rx) = std::sync::mpsc::channel();
+        live.calls_tx.send((from, tool.into(), args, tx)).unwrap();
+        live.step(w);
+        rx.recv_timeout(std::time::Duration::from_secs(5)).unwrap()
+    }
+
+    #[test]
+    fn every_tool_reaches_the_bus_through_the_call_channel() {
+        let mut w = team(2);
+        let mut live = idle_live(3);
+        assert_eq!(
+            call(&mut live, &mut w, 1, "board", json!({})),
+            Ok("the board is empty".into())
+        );
+        call(
+            &mut live,
+            &mut w,
+            0,
+            "post",
+            card("Add a test", "for the parser"),
+        )
+        .expect("posted");
+        let open = call(&mut live, &mut w, 1, "board", json!({})).unwrap();
+        assert!(open.contains("Open:") && !open.contains("Taken:"), "{open}");
+        // Off the board, no panic: 0, and one past the last card.
+        for bad in [0, w.cards.len() as u64 + 1] {
+            assert!(call(&mut live, &mut w, 1, "claim", json!({ "card": bad })).is_err());
+        }
+        call(&mut live, &mut w, 1, "claim", json!({ "card": 1 })).expect("claimed");
+        let taken = call(&mut live, &mut w, 2, "board", json!({})).unwrap();
+        assert!(
+            taken.contains("Taken:") && !taken.contains("Open:"),
+            "{taken}"
+        );
+        let unknown = call(&mut live, &mut w, 1, "nothing", json!({}));
+        assert!(
+            matches!(&unknown, Err(e) if e.contains("no tool")),
+            "{unknown:?}"
+        );
+    }
+
+    #[test]
+    fn the_caps_allow_exactly_the_cap_and_not_one_more() {
+        let mut w = team(1);
+        let mut live = idle_live(2);
+        let body = "x".repeat(MAX_BODY);
+        assert!(live.send(&mut w, 1, &msg("lead", "inform", &body)).is_ok());
+        let over = format!("{body}x");
+        assert!(live.send(&mut w, 1, &msg("lead", "inform", &over)).is_err());
+        let title = "t".repeat(MAX_TITLE);
+        assert!(live.post(&mut w, 0, &card(&title, &body)).is_ok());
+        assert!(
+            live.post(&mut w, 0, &card(&format!("{title}t"), "b"))
+                .is_err()
+        );
+        assert!(live.post(&mut w, 0, &card("t", &over)).is_err());
+    }
+
+    #[test]
+    fn a_message_to_oneself_is_refused_and_the_team_listed_leaves_oneself_out() {
+        let mut w = team(2);
+        let mut live = idle_live(3);
+        let got = live.send(&mut w, 1, &msg("claude-1", "inform", "hello me"));
+        let Err(why) = got else {
+            panic!("sent to itself: {got:?}");
+        };
+        let (_, team) = why.split_once("the team is ").expect("lists the team");
+        assert_eq!(team, "lead, claude-2", "{why}");
+    }
+
+    #[test]
+    fn the_board_shows_open_and_taken_cards_apart() {
+        let mut w = team(2);
+        let mut live = idle_live(3);
+        live.post(&mut w, 0, &card("First", "one")).unwrap();
+        live.step(&mut w);
+        live.claim(&mut w, 1, &json!({ "card": 1 })).unwrap();
+        live.post(&mut w, 0, &card("Second", "two")).unwrap();
+        let both = live.board(&w, 2);
+        assert!(
+            both.starts_with(
+                "Open:
+"
+            ),
+            "{both}"
+        );
+        assert!(both.contains("Second"));
+        assert!(
+            both.contains(
+                "
+
+Taken:
+"
+            ),
+            "{both}"
+        );
+        assert!(both.contains("First"));
+    }
+
+    #[test]
+    fn a_delivery_takes_its_title_from_the_assignment_not_the_first_mail() {
+        let mut w = team(1);
+        w.agents[1].status = Status::Idle;
+        let mut live = idle_live(2);
+        live.send(&mut w, 0, &msg("claude-1", "inform", "a note first"))
+            .unwrap();
+        live.send(
+            &mut w,
+            0,
+            &msg(
+                "claude-1",
+                "assign",
+                "Fix the parser
+in p.rs",
+            ),
+        )
+        .unwrap();
+        live.step(&mut w);
+        let card = w.agents[1].card.expect("a card");
+        assert_eq!(w.cards[card].title, "Fix the parser");
+    }
+
+    #[test]
+    fn the_tick_is_the_time_since_the_start_in_whole_ticks() {
+        let mut w = team(1);
+        let mut live = idle_live(2);
+        live.started = Instant::now() - std::time::Duration::from_secs(13);
+        live.step(&mut w);
+        assert_eq!(w.tick, 13 / SECONDS_PER_TICK);
+    }
+
+    #[test]
+    fn a_message_lands_in_the_other_card_and_lifts_both_talk_lines() {
+        let mut w = team(1);
+        let c = with_card(&mut w, 1);
+        let mut live = idle_live(2);
+        // The leader has no card; the worker's card keeps the line.
+        live.send(&mut w, 0, &msg("claude-1", "inform", "first line\nmore"))
+            .unwrap();
+        let last = &w.cards[c].story.last().unwrap().event;
+        let said = crate::ui::words::said_in_story(1, last).expect("a conversation line");
+        assert_eq!((said.from, said.to), (Party::Agent(0), Party::Agent(1)));
+        for id in [0, 1] {
+            let talk = w.agents[id].talk.as_ref().expect("a talk line");
+            assert_eq!(talk.text, "first line");
+            assert_eq!(talk.until, w.tick + 8);
+            assert_eq!(talk.with, Party::Agent(1 - id));
+        }
+    }
+
+    #[test]
+    fn turns_still_queued_keep_the_agent_working() {
+        let mut w = team(1);
+        let mut live = idle_live(2);
+        live.turns[1] = 2;
+        finish(&mut live, &mut w, 1, "one down");
+        assert_eq!(live.turns[1], 1);
+        assert_eq!(w.agents[1].status, Status::Working);
+    }
+
+    #[test]
+    fn an_expired_talk_line_goes_and_a_fresh_one_stays() {
+        let mut w = team(2);
+        let mut live = idle_live(3);
+        let talk = |until| Talk {
+            with: Party::Person,
+            text: "hi".into(),
+            until,
+        };
+        w.agents[1].talk = Some(talk(0));
+        w.agents[2].talk = Some(talk(1_000_000));
+        live.step(&mut w);
+        assert!(w.agents[1].talk.is_none());
+        assert!(w.agents[2].talk.is_some());
+    }
+
+    #[test]
+    fn a_busy_or_worn_out_worker_is_not_offered_a_card() {
+        for (turns, woken) in [(1, 0), (0, MAX_WOKEN)] {
+            let mut w = team(2);
+            let mut live = idle_live(3);
+            live.turns[1] = turns;
+            live.woken[1] = woken;
+            live.post(&mut w, 0, &card("Add a test", "body")).unwrap();
+            live.step(&mut w);
+            assert!(queued(&live, 1).is_empty(), "turns {turns} woken {woken}");
+            assert!(!queued(&live, 2).is_empty(), "turns {turns} woken {woken}");
+        }
+    }
+
+    #[test]
+    fn each_delivery_counts_one_turn_on_messages() {
+        let mut w = team(1);
+        w.agents[1].status = Status::Idle;
+        let mut live = idle_live(2);
+        live.send(&mut w, 0, &msg("claude-1", "assign", "do it"))
+            .unwrap();
+        live.step(&mut w);
+        assert_eq!(live.woken[1], 1);
+    }
+
+    #[test]
+    fn the_prompts_name_the_team() {
+        let w = team(2);
+        let lead = system_prompt(&w, 0);
+        assert!(lead.starts_with("You are lead, the leader"), "{lead}");
+        assert!(lead.contains("claude-1, claude-2"));
+        let worker = system_prompt(&w, 2);
+        assert!(
+            worker.starts_with("You are claude-2, a coding agent"),
+            "{worker}"
+        );
+        assert!(worker.contains("led by lead"));
+    }
+
+    #[test]
+    fn fnv_is_fnv_1a() {
+        assert_eq!(fnv(b""), 0x811c_9dc5);
+        assert_eq!(fnv(b"a"), 0xe40c_292c);
+        assert_ne!(fnv(b"a"), fnv(b"b"));
+    }
+
+    #[test]
+    fn the_clock_starts_at_the_local_time() {
+        let out = std::process::Command::new("date")
+            .arg("+%H %M %S")
+            .output()
+            .unwrap();
+        let p: Vec<u64> = String::from_utf8_lossy(&out.stdout)
+            .split_whitespace()
+            .map(|n| n.parse().unwrap())
+            .collect();
+        let expect = p[0] * 3600 + p[1] * 60 + p[2];
+        let got = local_seconds_after_midnight();
+        let apart = got.abs_diff(expect).min(86_400 - got.abs_diff(expect));
+        assert!(apart <= 2, "{got} vs {expect}");
     }
 
     #[test]

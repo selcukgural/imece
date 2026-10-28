@@ -693,4 +693,48 @@ sleep 5"#
         );
         let _ = std::fs::remove_dir_all(&dir);
     }
+
+    #[test]
+    fn a_result_is_ok_only_when_successful_and_not_flagged_and_cost_is_never_negative() {
+        use serde_json::json;
+        let ok = result(&json!({"subtype":"success","result":" fine ","total_cost_usd":0.25}));
+        assert_eq!(
+            ok,
+            Event::TurnDone {
+                ok: true,
+                text: "fine".into(),
+                cost: 250_000,
+                denied: 0
+            }
+        );
+        let flagged = result(&json!({"subtype":"success","is_error":true,"result":"text"}));
+        assert!(
+            matches!(&flagged, Event::TurnDone { ok: false, text, .. } if text == "success"),
+            "{flagged:?}"
+        );
+        let failed = result(&json!({"subtype":"error_max_turns","result":"ignored"}));
+        assert!(
+            matches!(&failed, Event::TurnDone { ok: false, text, .. } if text == "error_max_turns"),
+            "{failed:?}"
+        );
+        for cost in [json!(0.0), json!(-1.0), json!("x"), json!(null)] {
+            let e = result(&json!({"subtype":"success","result":"r","total_cost_usd":cost}));
+            assert!(
+                matches!(e, Event::TurnDone { cost: 0, .. }),
+                "{cost}: {e:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn harmless_events_pass_before_the_settings_and_real_ones_pass_after() {
+        let mut p = Parser::new(&spec(EDIT_TOOLS));
+        assert_eq!(p.line(r#"{"type":"rate_limit_event"}"#).unwrap(), []);
+        p.line(&init(GOOD_INIT, "acceptEdits", "[]")).unwrap();
+        let done = r#"{"type":"result","subtype":"success","result":"ok"}"#;
+        assert!(matches!(
+            p.line(done).unwrap()[..],
+            [Event::TurnDone { .. }]
+        ));
+    }
 }

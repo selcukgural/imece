@@ -333,4 +333,64 @@ mod tests {
         assert!(!marker.exists(), "a grandchild outlived the drop");
         let _ = std::fs::remove_dir_all(&dir);
     }
+
+    #[test]
+    fn a_callback_that_says_stop_kills_the_whole_group_at_once() {
+        let mut cmd = command("sh", Path::new("/"), &[]);
+        cmd.args(["-c", "echo one; sleep 30; echo never"]);
+        let (tx, rx) = mpsc::channel();
+        let started = Instant::now();
+        let _child = Child::spawn(cmd, move |o| {
+            let _ = tx.send(match o {
+                Out::Line(l) => Ok(l.to_string()),
+                Out::End(why) => Err(why),
+            });
+            // Enough after the first line.
+            false
+        })
+        .unwrap();
+        assert_eq!(
+            rx.recv_timeout(Duration::from_secs(10)).unwrap(),
+            Ok("one".into())
+        );
+        let end = rx.recv_timeout(Duration::from_secs(10)).unwrap();
+        assert!(
+            matches!(&end, Err(why) if why.contains("killed by signal 9")),
+            "{end:?}"
+        );
+        assert!(
+            started.elapsed() < Duration::from_secs(10),
+            "did not wait for sleep"
+        );
+    }
+
+    #[test]
+    fn terminate_closes_stdin_and_asks_the_group_to_stop() {
+        let mut cmd = command("sh", Path::new("/"), &[]);
+        cmd.args(["-c", "echo ready; cat; echo after"]);
+        let (tx, rx) = mpsc::channel();
+        let mut child = Child::spawn(cmd, move |o| {
+            let _ = tx.send(match o {
+                Out::Line(l) => Ok(l.to_string()),
+                Out::End(why) => Err(why),
+            });
+            true
+        })
+        .unwrap();
+        assert_eq!(
+            rx.recv_timeout(Duration::from_secs(10)).unwrap(),
+            Ok("ready".into())
+        );
+        child.terminate();
+        let end = rx.recv_timeout(Duration::from_secs(10)).unwrap();
+        assert!(
+            matches!(&end, Err(why) if why.contains("signal 15")),
+            "{end:?}"
+        );
+    }
+
+    #[test]
+    fn a_last_line_exactly_at_the_cap_without_newline_is_a_line() {
+        assert_eq!(lines(b"0123456789", 10), [Some("0123456789".into())]);
+    }
 }

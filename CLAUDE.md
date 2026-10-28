@@ -20,7 +20,14 @@
 cargo fmt --all
 cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
+cargo mutants --in-diff <(git diff main...HEAD)   # what the change touched; CI does this on every PR
+cargo mutants                                      # everything (slow); CI does this nightly
 ```
+
+- Mutation tests: a mutant that survives is a test that is missing, so a
+  change comes with the tests that kill its mutants (`cargo-mutants` 27.1.0,
+  pinned in `.github/workflows/mutants.yml`; exclusions with their reasons
+  in `.cargo/mutants.toml`).
 
 - Keyboard first (user, 2026-10-29): everything is done with keys, vim
   style (hjkl, g/G, PgUp/PgDn, Esc back, / to type) next to the arrows; a

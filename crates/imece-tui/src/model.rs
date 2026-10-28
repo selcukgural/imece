@@ -837,4 +837,290 @@ mod tests {
         assert_eq!(dollars(100), "$0.01");
         assert_eq!(dollars(123_456), "$12.34");
     }
+
+    fn agent(id: AgentId, role: Role, status: Status) -> Agent {
+        Agent::new(id, 0, format!("a{id}"), Vendor::Claude, role, status, 0)
+    }
+
+    fn world(agents: Vec<Agent>) -> World {
+        World {
+            tick: 0,
+            projects: vec![Project {
+                id: 0,
+                name: "p".into(),
+                leader: 0,
+                trunk: None,
+                repo: &[],
+            }],
+            agents,
+            cards: Vec::new(),
+            journal: Vec::new(),
+            inbox: Vec::new(),
+            daily_budget: 10_000,
+            max_researchers: 0,
+            research_queue: Default::default(),
+            plans: Vec::new(),
+        }
+    }
+
+    fn item(kind: InboxKind, agent: AgentId, open: bool) -> InboxItem {
+        InboxItem {
+            kind,
+            agent,
+            detail: String::new(),
+            researcher: None,
+            open,
+            tick: 0,
+        }
+    }
+
+    #[test]
+    fn phases_follow_progress() {
+        assert_eq!(Phase::of(0), Phase::Plan);
+        assert_eq!(Phase::of(19), Phase::Plan);
+        assert_eq!(Phase::of(20), Phase::Impl);
+        assert_eq!(Phase::of(69), Phase::Impl);
+        assert_eq!(Phase::of(70), Phase::Test);
+        assert_eq!(Phase::of(100), Phase::Test);
+        assert_eq!(Phase::Plan.label(), "plan");
+        assert_eq!(Phase::Impl.label(), "impl");
+        assert_eq!(Phase::Test.label(), "test");
+    }
+
+    #[test]
+    fn statuses_know_whether_they_spend_and_whether_they_need_the_person() {
+        let spends = [
+            Status::Planning { until: 1 },
+            Status::Working,
+            Status::Researching {
+                for_agent: 1,
+                until: 1,
+            },
+        ];
+        let waits = [Status::Blocked, Status::WaitingHuman, Status::Stopped];
+        let rest = [
+            Status::Idle,
+            Status::Asking { to: 1, until: 1 },
+            Status::Verifying { until: 1 },
+        ];
+        for s in spends {
+            assert!(s.busy() && !s.needs_attention(), "{s:?}");
+        }
+        for s in waits {
+            assert!(!s.busy() && s.needs_attention(), "{s:?}");
+        }
+        for s in rest {
+            assert!(!s.busy() && !s.needs_attention(), "{s:?}");
+        }
+    }
+
+    #[test]
+    fn the_trace_keeps_the_newest_lines_only() {
+        let mut a = agent(1, Role::Worker, Status::Working);
+        for i in 0..=TRACE_KEEP {
+            a.trace(0, format!("line {i}"));
+        }
+        assert_eq!(a.trace.len(), TRACE_KEEP);
+        assert!(a.trace.front().unwrap().ends_with("line 1"));
+        assert!(
+            a.trace
+                .back()
+                .unwrap()
+                .ends_with(&format!("line {TRACE_KEEP}"))
+        );
+    }
+
+    #[test]
+    fn leases_are_held_while_the_change_is_not_merged() {
+        let mut c = Card {
+            id: 0,
+            project: 0,
+            title: "t".into(),
+            owner: Some(1),
+            column: Column::Waiting,
+            story: Vec::new(),
+            symbols: Vec::new(),
+            started: 0,
+            finished: 0,
+        };
+        for (column, held) in [
+            (Column::Waiting, false),
+            (Column::Working, true),
+            (Column::Verifying, true),
+            (Column::Done, false),
+        ] {
+            c.column = column;
+            assert_eq!(c.holds_leases(), held, "{column:?}");
+        }
+    }
+
+    #[test]
+    fn an_event_names_its_agent() {
+        assert_eq!(Event::Failed { agent: 3 }.agent(), 3);
+        assert_eq!(Event::Rejected { agent: 4 }.agent(), 4);
+        assert_eq!(
+            Event::Replied {
+                agent: 5,
+                text: String::new()
+            }
+            .agent(),
+            5
+        );
+    }
+
+    #[test]
+    fn the_counters_count_what_they_say() {
+        let mut gone = agent(3, Role::Worker, Status::Working);
+        gone.gone = true;
+        let mut gone_researcher = agent(5, Role::Researcher, Status::Working);
+        gone_researcher.gone = true;
+        let mut w = world(vec![
+            agent(0, Role::Leader, Status::Idle),
+            agent(1, Role::Worker, Status::Working),
+            agent(2, Role::Worker, Status::Idle),
+            gone,
+            agent(4, Role::Researcher, Status::Working),
+            gone_researcher,
+            agent(6, Role::Worker, Status::Working),
+            agent(7, Role::Researcher, Status::Working),
+        ]);
+        // Two working workers and two researchers: not the two idle ones,
+        // not the two that are gone.
+        assert_eq!(w.active_agents(), 4);
+        assert_eq!(w.active_researchers(), 2);
+        w.inbox = vec![
+            item(InboxKind::Sensitive, 1, true),
+            item(InboxKind::Sensitive, 1, false),
+            item(InboxKind::Reply, 2, true),
+        ];
+        assert_eq!(w.open_inbox(), [0, 2]);
+        let card = |column| Card {
+            id: 0,
+            project: 0,
+            title: "t".into(),
+            owner: None,
+            column,
+            story: Vec::new(),
+            symbols: Vec::new(),
+            started: 0,
+            finished: 0,
+        };
+        w.cards = vec![
+            card(Column::Done),
+            card(Column::Working),
+            card(Column::Done),
+        ];
+        assert_eq!(w.cards_done(), 2);
+    }
+
+    #[test]
+    fn the_rate_is_what_was_spent_per_hour() {
+        let mut w = world(vec![
+            agent(0, Role::Leader, Status::Idle),
+            agent(1, Role::Worker, Status::Working),
+        ]);
+        w.agents[0].cost = 100;
+        w.agents[1].cost = 100;
+        assert_eq!(w.rate_per_hour(), 0, "no time, no rate");
+        w.tick = 3600 / SECONDS_PER_TICK;
+        assert_eq!(w.rate_per_hour(), 200);
+        w.tick = 1800 / SECONDS_PER_TICK;
+        assert_eq!(w.rate_per_hour(), 400);
+    }
+
+    #[test]
+    fn approving_and_rejecting_close_the_item_and_tell_the_agent() {
+        let mut w = world(vec![
+            agent(0, Role::Leader, Status::Idle),
+            agent(1, Role::Worker, Status::WaitingHuman),
+        ]);
+        w.agents[1].progress = 50;
+        w.inbox = vec![
+            item(InboxKind::Research, 1, true),
+            item(InboxKind::Sensitive, 1, true),
+            item(InboxKind::Research, 1, true),
+        ];
+        w.approve(0);
+        assert!(!w.inbox[0].open);
+        assert!(matches!(
+            w.journal.last().unwrap().event,
+            Event::Approved {
+                agent: 1,
+                research: true
+            }
+        ));
+        assert_eq!(w.agents[1].status, Status::Working);
+        w.agents[1].status = Status::WaitingHuman;
+        w.reject(1);
+        assert!(!w.inbox[1].open);
+        assert_eq!(w.agents[1].progress, 40, "a rejected change loses ground");
+        assert!(matches!(
+            w.journal.last().unwrap().event,
+            Event::Rejected { agent: 1 }
+        ));
+        assert_eq!(w.agents[1].status, Status::Working);
+        w.reject(2);
+        assert_eq!(
+            w.agents[1].progress, 40,
+            "a rejected report costs no ground"
+        );
+        // Closed is closed: nothing more happens.
+        let before = w.journal.len();
+        w.approve(0);
+        w.reject(1);
+        assert_eq!(w.journal.len(), before);
+    }
+
+    #[test]
+    fn vendors_cost_what_they_cost() {
+        let costs: Vec<u64> = [
+            Vendor::Claude,
+            Vendor::Codex,
+            Vendor::Gemini,
+            Vendor::Qwen,
+            Vendor::Local,
+        ]
+        .map(Vendor::cost_per_tick)
+        .to_vec();
+        assert_eq!(costs, [8, 7, 5, 3, 0]);
+    }
+
+    #[test]
+    fn what_the_person_says_shows_for_a_moment() {
+        let mut w = world(vec![agent(0, Role::Leader, Status::Idle)]);
+        w.tick = 3;
+        w.said(0, "hello");
+        let talk = w.agents[0].talk.as_ref().unwrap();
+        assert_eq!(talk.until, 3 + 6);
+        assert_eq!(talk.with, Party::Person);
+    }
+
+    #[test]
+    fn closing_replies_touches_only_that_agents_replies() {
+        let mut w = world(vec![
+            agent(0, Role::Leader, Status::Idle),
+            agent(1, Role::Worker, Status::Idle),
+        ]);
+        w.inbox = vec![
+            item(InboxKind::Reply, 1, true),
+            item(InboxKind::Reply, 0, true),
+            item(InboxKind::Sensitive, 1, true),
+        ];
+        w.close_replies(1);
+        let open: Vec<bool> = w.inbox.iter().map(|i| i.open).collect();
+        assert_eq!(open, [false, true, true]);
+    }
+
+    #[test]
+    fn the_clock_reads_from_the_start_of_the_day() {
+        // One test for every clock reading: the start is shared state.
+        assert_eq!(clock(0), "14:00");
+        assert_eq!(clock(13), "14:01");
+        assert_eq!(clock_seconds(13), "14:01:05");
+        start_clock_at(86_400 + 60);
+        assert_eq!(clock(0), "00:01", "wraps at midnight");
+        assert_eq!(clock_seconds(1), "00:01:05");
+        start_clock_at(14 * 3600);
+        assert_eq!(clock(0), "14:00");
+    }
 }
