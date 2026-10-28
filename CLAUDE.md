@@ -22,6 +22,12 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
 ```
 
+- Keyboard first (user, 2026-10-29): everything is done with keys, vim
+  style (hjkl, g/G, PgUp/PgDn, Esc back, / to type) next to the arrows; a
+  mouse is never needed and never captured, so the terminal's own
+  selection keeps working. Add a shortcut wherever it makes something
+  easier; every key is listed in the `?` help in both languages.
+
 ## Code from Lonca and Kule
 
 imece never changes Lonca or Kule (they move together and must stay in
