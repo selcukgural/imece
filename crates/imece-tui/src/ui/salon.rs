@@ -409,6 +409,7 @@ fn side(f: &mut Frame, area: Rect, app: &App) {
         let (icon, style) = match item.kind {
             InboxKind::Sensitive => ("!", bold(Color::Yellow)),
             InboxKind::Research => ("?", bold(Color::Blue)),
+            InboxKind::Reply => ("»", bold(Color::Cyan)),
         };
         let mut spans = vec![
             Span::styled(format!("{icon} "), style),
@@ -422,7 +423,11 @@ fn side(f: &mut Frame, area: Rect, app: &App) {
         let line = Line::from(spans);
         if focused && n == app.inbox_sel {
             lines.push(line.style(Style::new().add_modifier(Modifier::REVERSED)));
-            lines.push(Line::from(Span::styled(t.item_keys, dim())));
+            let keys = match item.kind {
+                InboxKind::Reply => t.reply_keys,
+                _ => t.item_keys,
+            };
+            lines.push(Line::from(Span::styled(keys, dim())));
         } else {
             lines.push(line);
         }

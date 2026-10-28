@@ -400,11 +400,19 @@ impl App {
     fn deeper(&mut self) {
         let zoom = match self.zoom {
             Zoom::None => match (self.pane, self.selected) {
-                (Pane::Inbox, _) => self
-                    .world
-                    .open_inbox()
-                    .get(self.inbox_sel)
-                    .map(|&i| Zoom::Focus(self.world.inbox[i].agent)),
+                (Pane::Inbox, _) => {
+                    let open = self.world.open_inbox();
+                    open.get(self.inbox_sel).map(|&i| {
+                        let item = &self.world.inbox[i];
+                        let agent = item.agent;
+                        if item.kind == InboxKind::Reply {
+                            // Read now: the focus shows the whole answer.
+                            self.world.close_replies(agent);
+                            self.inbox_sel = self.inbox_sel.min(open.len().saturating_sub(2));
+                        }
+                        Zoom::Focus(agent)
+                    })
+                }
                 (Pane::Salon, Sel::Project(p)) => {
                     self.collapsed[p] = !self.collapsed[p];
                     None
@@ -424,7 +432,9 @@ impl App {
             return;
         };
         let t = self.lang.text();
-        if approve {
+        if self.world.inbox[item].kind == InboxKind::Reply {
+            self.world.close_replies(self.world.inbox[item].agent);
+        } else if approve {
             self.world.approve(item);
             self.flash(t.approved);
         } else {

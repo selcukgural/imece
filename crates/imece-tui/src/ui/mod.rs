@@ -189,7 +189,24 @@ pub(crate) fn bar(progress: u8) -> String {
 pub(crate) fn status_spans(lang: Lang, w: &World, a: &Agent) -> Vec<Span<'static>> {
     let t = lang.text();
     match a.status {
-        Status::Idle if a.role == Role::Leader => vec![Span::styled(t.coordinating, dim())],
+        Status::Idle
+            if w.open_inbox()
+                .iter()
+                .any(|&i| w.inbox[i].kind == InboxKind::Reply && w.inbox[i].agent == a.id) =>
+        {
+            vec![Span::styled(t.answered, fg(Color::Yellow))]
+        }
+        Status::Idle
+            if a.role == Role::Leader
+                && w.agents.iter().any(|o| {
+                    o.project == a.project
+                        && o.role == Role::Worker
+                        && !o.gone
+                        && o.status != Status::Idle
+                }) =>
+        {
+            vec![Span::styled(t.coordinating, dim())]
+        }
         Status::Idle => vec![Span::styled(t.idle, dim())],
         Status::Planning { .. } => vec![Span::styled(t.planning, fg(Color::Magenta))],
         Status::Working => match a.activity.as_deref() {
@@ -598,6 +615,33 @@ mod tests {
         assert!(render(&app, 140, 40).contains("CODE MAP"));
         app.zoom = Zoom::Focus(3);
         assert!(render(&app, 140, 40).contains("FOCUS"));
+    }
+
+    #[test]
+    fn an_answer_is_in_the_inbox_and_enter_reads_it_whole() {
+        let mut app = app_after(1, 4, 50, Lang::En);
+        app.world.replied(0, "Short first line.\nTHE-REST");
+        let screen = render(&app, 140, 40);
+        assert!(
+            screen.contains("answered you: Short first line."),
+            "{screen}"
+        );
+        app.pane = Pane::Inbox;
+        app.inbox_sel = app.world.open_inbox().len() - 1;
+        app.world.story(
+            app.world.agents[0].card,
+            StoryEvent::Replied("Short first line.\nTHE-REST".into()),
+        );
+        app.on_key(ratatui::crossterm::event::KeyEvent::from(
+            ratatui::crossterm::event::KeyCode::Enter,
+        ));
+        assert_eq!(app.zoom, Zoom::Focus(0));
+        assert!(
+            app.world
+                .open_inbox()
+                .iter()
+                .all(|&i| app.world.inbox[i].kind != InboxKind::Reply)
+        );
     }
 
     #[test]
