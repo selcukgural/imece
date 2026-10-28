@@ -764,7 +764,25 @@ fn clock_seconds(tick: u64) -> String {
     format!("{:02}:{:02}:{:02}", s / 3600 % 24, s / 60 % 60, s % 60)
 }
 
-/// Ten-thousandths of a dollar as `$D.CC`.
+/// Ten-thousandths of a dollar as `$D.CC`; a cost under a cent that is not
+/// zero reads `<$0.01`, so cheap work never looks free.
 pub fn dollars(cost: u64) -> String {
+    if (1..100).contains(&cost) {
+        return "<$0.01".to_string();
+    }
     format!("${}.{:02}", cost / 10_000, cost / 100 % 100)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_cost_under_a_cent_is_not_shown_as_free() {
+        assert_eq!(dollars(0), "$0.00");
+        assert_eq!(dollars(3), "<$0.01");
+        assert_eq!(dollars(99), "<$0.01");
+        assert_eq!(dollars(100), "$0.01");
+        assert_eq!(dollars(123_456), "$12.34");
+    }
 }

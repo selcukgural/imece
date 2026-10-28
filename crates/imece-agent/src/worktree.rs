@@ -76,7 +76,19 @@ pub fn ensure(repo: &Path, root: &Path, name: &str) -> io::Result<PathBuf> {
 mod tests {
     use super::*;
 
-    fn repo(name: &str) -> PathBuf {
+    /// A throwaway repo whose directory goes away when the test ends, also
+    /// when it fails.
+    struct Scratch {
+        dir: PathBuf,
+        repo: PathBuf,
+    }
+    impl Drop for Scratch {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.dir);
+        }
+    }
+
+    fn repo(name: &str) -> Scratch {
         let dir = std::env::temp_dir()
             .join(format!("imece-wt-{name}-{}", std::process::id()))
             .canonicalize_or_self();
@@ -102,7 +114,7 @@ mod tests {
             ],
         )
         .unwrap();
-        r
+        Scratch { dir, repo: r }
     }
 
     trait OrSelf {
@@ -121,30 +133,31 @@ mod tests {
             assert!(!valid_name(bad), "{bad:?}");
         }
         assert!(valid_name("claude-1"));
-        let r = repo("names");
-        assert!(ensure(&r, &r.parent().unwrap().join("wt"), "../escape").is_err());
+        let s = repo("names");
+        let r = &s.repo;
+        assert!(ensure(r, &s.dir.join("wt"), "../escape").is_err());
     }
 
     #[test]
     fn a_worktree_is_made_once_and_reused() {
-        let r = repo("reuse");
-        let root = r.parent().unwrap().join("wt");
-        let w = ensure(&r, &root, "claude-1").unwrap();
+        let s = repo("reuse");
+        let r = &s.repo;
+        let root = s.dir.join("wt");
+        let w = ensure(r, &root, "claude-1").unwrap();
         assert_eq!(std::fs::read_to_string(w.join("a.txt")).unwrap(), "a");
         std::fs::write(w.join("work.txt"), "kept").unwrap();
-        assert_eq!(ensure(&r, &root, "claude-1").unwrap(), w);
+        assert_eq!(ensure(r, &root, "claude-1").unwrap(), w);
         assert!(w.join("work.txt").exists(), "a reuse threw work away");
-        let _ = std::fs::remove_dir_all(r.parent().unwrap());
     }
 
     #[test]
     fn a_stranger_directory_is_refused() {
-        let r = repo("stranger");
-        let root = r.parent().unwrap().join("wt");
+        let s = repo("stranger");
+        let r = &s.repo;
+        let root = s.dir.join("wt");
         std::fs::create_dir_all(root.join("claude-1")).unwrap();
         std::fs::write(root.join("claude-1/mine.txt"), "x").unwrap();
-        assert!(ensure(&r, &root, "claude-1").is_err());
+        assert!(ensure(r, &root, "claude-1").is_err());
         assert!(root.join("claude-1/mine.txt").exists());
-        let _ = std::fs::remove_dir_all(r.parent().unwrap());
     }
 }
