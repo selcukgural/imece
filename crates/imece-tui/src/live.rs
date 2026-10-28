@@ -171,7 +171,7 @@ pub fn world(o: Options) -> Result<(World, Live), String> {
             id: 0,
             name,
             leader: 0,
-            trunk: 0,
+            trunk: None,
             repo: &[],
         }],
         agents: vec![Agent::new(
@@ -1108,7 +1108,7 @@ mod tests {
                 id: 0,
                 name: "repo".into(),
                 leader: 0,
-                trunk: 0,
+                trunk: None,
                 repo: &[],
             }],
             agents: Vec::new(),

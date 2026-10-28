@@ -276,14 +276,16 @@ fn project_line(app: &App, p: ProjectId) -> Line<'static> {
             bold(Color::White),
         ),
         Span::styled(fit(&project.name, 12), bold(Color::White)),
-        Span::styled(format!(" trunk #{} ", project.trunk), dim()),
-        Span::styled("✓", fg(Color::Green)),
-        Span::styled(
-            format!("  {}", fill(t.group_working, &[&working.to_string()])),
-            dim(),
-        ),
-        Span::styled(format!("  {}", dollars(cost)), dim()),
     ];
+    if let Some(trunk) = project.trunk {
+        spans.push(Span::styled(format!(" trunk #{trunk} "), dim()));
+        spans.push(Span::styled("✓", fg(Color::Green)));
+    }
+    spans.push(Span::styled(
+        format!("  {}", fill(t.group_working, &[&working.to_string()])),
+        dim(),
+    ));
+    spans.push(Span::styled(format!("  {}", dollars(cost)), dim()));
     if blocked > 0 {
         spans.push(Span::styled(format!("  ✕{blocked}"), fg(Color::Red)));
     }

@@ -6,7 +6,7 @@ use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::Color;
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Paragraph};
+use ratatui::widgets::{Block, Paragraph, Wrap};
 
 use super::*;
 use crate::app::App;
@@ -20,6 +20,13 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App) {
         .border_style(dim());
     let inner = block.inner(area);
     f.render_widget(block, area);
+    if project.repo.is_empty() {
+        f.render_widget(
+            Paragraph::new(Span::styled(t.no_code_map, dim())).wrap(Wrap { trim: true }),
+            inner,
+        );
+        return;
+    }
     let [list, foot] = Layout::vertical([Constraint::Min(0), Constraint::Length(1)]).areas(inner);
 
     // (file, symbol, holder) for every lease held now in this project.
