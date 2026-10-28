@@ -513,6 +513,34 @@ mod tests {
     }
 
     #[test]
+    fn a_salon_row_carries_its_speaker_colour_before_the_name() {
+        let app = app_after(1, 4, 50, Lang::En);
+        let mut t = Terminal::new(TestBackend::new(140, 40)).unwrap();
+        t.draw(|f| draw(f, &app)).unwrap();
+        let buf = t.backend().buffer();
+        for a in app.world.agents.iter().filter(|a| !a.gone) {
+            let Some((x, y)) = (0..buf.area.height).find_map(|y| {
+                let text: String = (0..buf.area.width).map(|x| buf[(x, y)].symbol()).collect();
+                let at = text.find(&format!("{}{}", salon::SPEAKER_MARK, a.name))?;
+                Some((u16::try_from(text[..at].chars().count()).unwrap(), y))
+            }) else {
+                continue; // folded away
+            };
+            assert_eq!(buf[(x, y)].fg, speaker_color(a.id), "{}", a.name);
+            assert_eq!(buf[(x + 1, y)].fg, vendor_color(a.vendor), "{}", a.name);
+        }
+        let render = render(&app, 140, 40);
+        assert!(
+            render.contains(&format!(
+                "{}{}",
+                salon::SPEAKER_MARK,
+                app.world.agents[0].name
+            )),
+            "{render}"
+        );
+    }
+
+    #[test]
     fn a_long_answer_wraps_and_its_end_stays_in_view() {
         let mut app = app_after(1, 4, 50, Lang::En);
         let id = app

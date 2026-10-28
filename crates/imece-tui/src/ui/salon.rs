@@ -11,6 +11,9 @@ use ratatui::widgets::{Block, Paragraph};
 use super::*;
 use crate::app::{App, Pane, Sel};
 
+/// Drawn before an agent's name in its speaker colour.
+pub(crate) const SPEAKER_MARK: &str = "▎";
+
 pub enum Row {
     Project(ProjectId),
     Agent {
@@ -216,17 +219,17 @@ fn salon(f: &mut Frame, area: Rect, app: &App) {
                     (_, true) => "      ",
                     (_, false) => "  │   ",
                 };
-                let with = match a.talk.as_ref().map(|k| &k.with) {
-                    Some(Party::Agent(o)) => w.agents[*o].name.clone(),
-                    _ => app.lang.text().you.to_string(),
+                let (with, color) = match a.talk.as_ref().map(|k| &k.with) {
+                    Some(Party::Agent(o)) => (clean(&w.agents[*o].name), speaker_color(*o)),
+                    _ => (app.lang.text().you.to_string(), Color::White),
                 };
                 let text = a.talk.as_ref().map(|k| k.text.as_str()).unwrap_or_default();
+                let talk = Style::new().fg(Color::Cyan).add_modifier(Modifier::ITALIC);
                 Line::from(vec![
                     Span::styled(prefix, dim()),
-                    Span::styled(
-                        fill("⇄ {} \"{}\"", &[&with, text]),
-                        Style::new().fg(Color::Cyan).add_modifier(Modifier::ITALIC),
-                    ),
+                    Span::styled("⇄ ", talk),
+                    Span::styled(with, talk.fg(color)),
+                    Span::styled(format!(" \"{}\"", clean(text)), talk),
                 ])
             }
             Row::Folded(n) => Line::from(vec![
@@ -309,6 +312,9 @@ fn agent_line(app: &App, a: &Agent, prefix: &'static str) -> Line<'static> {
     let mut spans = vec![
         Span::styled(prefix, dim()),
         Span::styled(format!("{g} "), fg(color)),
+        // The speaker's colour, so this row and its conversations are seen
+        // as one agent; the name keeps its vendor's colour.
+        Span::styled(SPEAKER_MARK, fg(speaker_color(a.id))),
         Span::styled(fit(&a.name, 16), bold(vendor_color(a.vendor))),
         taint_span(a),
     ];
