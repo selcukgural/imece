@@ -77,6 +77,14 @@ pub fn event(lang: Lang, w: &World, e: &Event) -> String {
             t.ev_sent,
             &[name(w, *from), name(w, *to), t.kinds[*kind as usize], text],
         ),
+        Event::Posted { agent, card } => fill(
+            t.ev_posted,
+            &[name(w, *agent), &card_ref(*card), &w.cards[*card].title],
+        ),
+        Event::Claimed { agent, card } => fill(
+            t.ev_claimed,
+            &[name(w, *agent), &card_ref(*card), &w.cards[*card].title],
+        ),
     }
 }
 
@@ -124,6 +132,7 @@ pub fn story(lang: Lang, w: &World, card: &Card, e: &StoryEvent) -> String {
             t.st_sent,
             &[name(w, *from), name(w, *to), t.kinds[*kind as usize], text],
         ),
+        StoryEvent::Posted { by, text } => fill(t.st_posted, &[name(w, *by), text]),
     }
 }
 

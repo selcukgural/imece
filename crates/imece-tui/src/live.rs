@@ -11,7 +11,13 @@
 //! one socket per agent, so the sender is the socket, never a claim). A
 //! message waits in the recipient's mail; a waking one starts its next turn
 //! as soon as it is free, the others ride along with that turn.
+//!
+//! Agents may also put cards on the board (`post`); workers take them
+//! (`claim`). An open card is offered to one idle worker at a time, as a
+//! turn of its own; it goes to the next only when that worker's turn ended
+//! without taking it, so a card wakes each worker at most once.
 
+use std::collections::HashMap;
 use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{self, Receiver, Sender};
@@ -52,8 +58,9 @@ enum Slot {
 /// A started session, or why it could not start.
 type Ready = Result<(Session, PathBuf), String>;
 
-/// A tool call of an agent, and where its answer goes.
-type Call = (AgentId, Value, Sender<Answer>);
+/// A tool call of an agent (tool name, arguments), and where its answer
+/// goes.
+type Call = (AgentId, String, Value, Sender<Answer>);
 
 /// The longest message body, in characters.
 const MAX_BODY: usize = 4000;
@@ -62,6 +69,12 @@ const MAX_MAIL: usize = 20;
 /// Turns an agent takes on its teammates' messages before the person has
 /// to speak again: agents can not keep each other busy forever.
 const MAX_WOKEN: u32 = 12;
+/// The longest card title, in characters.
+const MAX_TITLE: usize = 120;
+/// Open cards one project's board may hold; more are refused.
+const MAX_OPEN: usize = 20;
+/// Cards one agent may post before the person has to speak again.
+const MAX_POSTS: u32 = 10;
 /// How long a tool call waits for the screen's loop to answer it.
 const CALL_WAIT: Duration = Duration::from_secs(30);
 
@@ -70,6 +83,13 @@ const CALL_WAIT: Duration = Duration::from_secs(30);
 struct Mail {
     from: AgentId,
     kind: MsgKind,
+    body: String,
+}
+
+/// A card an agent put on the board.
+#[derive(Clone, Debug)]
+struct Post {
+    by: AgentId,
     body: String,
 }
 
@@ -117,6 +137,12 @@ pub struct Live {
     turns: Vec<usize>,
     /// Turns each agent took on messages since the person last spoke.
     woken: Vec<u32>,
+    /// The board's cards, by the card they made.
+    posts: HashMap<CardId, Post>,
+    /// Workers each open card was offered to, in order.
+    offered: HashMap<CardId, Vec<AgentId>>,
+    /// Cards each agent posted since the person last spoke.
+    posted: Vec<u32>,
 }
 
 /// Checks that `claude` runs, then builds the team for the checkout `repo`
@@ -180,7 +206,7 @@ pub fn world(o: Options) -> Result<(World, Live), String> {
     start_clock_at(local_seconds_after_midnight());
     let mut live = Live::new(n, program, repo, root, o.model, o.budget / n as u64);
     let relay = std::env::current_exe().map_err(|e| format!("imece's own path: {e}"))?;
-    live.open_bus(relay.to_string_lossy().into_owned())
+    live.open_bus(&w, relay.to_string_lossy().into_owned())
         .map_err(|e| format!("the agents' message bus: {e}"))?;
     Ok((w, live))
 }
@@ -217,12 +243,15 @@ impl Live {
             mail: vec![Vec::new(); agents],
             turns: vec![0; agents],
             woken: vec![0; agents],
+            posts: HashMap::new(),
+            offered: HashMap::new(),
+            posted: vec![0; agents],
         }
     }
 
     /// Gives every agent a socket for imece's tools. Sessions started
     /// before have none.
-    fn open_bus(&mut self, relay: String) -> io::Result<()> {
+    fn open_bus(&mut self, w: &World, relay: String) -> io::Result<()> {
         let nanos = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .map_or(0, |d| d.subsec_nanos());
@@ -238,10 +267,11 @@ impl Live {
         };
         for id in 0..self.slots.len() {
             let tx = self.calls_tx.clone();
-            let server = Server::bind(&bus.dir.join(format!("a{id}.sock")), vec![send_tool()], {
-                move |_, args| {
+            let tools = tools_of(w.agents[id].role);
+            let server = Server::bind(&bus.dir.join(format!("a{id}.sock")), tools, {
+                move |name, args| {
                     let (reply, answer) = mpsc::channel();
-                    tx.send((id, args.clone(), reply))
+                    tx.send((id, name.to_string(), args.clone(), reply))
                         .map_err(|_| "imece is closing".to_string())?;
                     answer
                         .recv_timeout(CALL_WAIT)
@@ -285,8 +315,15 @@ impl Live {
                 }
             }
         }
-        while let Ok((from, args, reply)) = self.calls_rx.try_recv() {
-            let _ = reply.send(self.send(w, from, &args));
+        while let Ok((from, tool, args, reply)) = self.calls_rx.try_recv() {
+            let answer = match tool.as_str() {
+                "send" => self.send(w, from, &args),
+                "post" => self.post(w, from, &args),
+                "board" => Ok(self.board(w, from)),
+                "claim" => self.claim(w, from, &args),
+                _ => Err(format!("there is no tool {tool:?}")),
+            };
+            let _ = reply.send(answer);
         }
         for id in 0..self.mail.len() {
             let waking = self.mail[id].iter().any(|m| m.kind.wakes());
@@ -294,6 +331,7 @@ impl Live {
                 self.deliver(w, id);
             }
         }
+        self.offer(w);
     }
 
     /// A session ended: the next message starts a new one.
@@ -401,6 +439,214 @@ impl Live {
         })
     }
 
+    /// Agent `from` puts a card on the board (the `post` tool's arguments).
+    fn post(&mut self, w: &mut World, from: AgentId, args: &Value) -> Answer {
+        let arg = |k: &str| args[k].as_str().map(str::trim).unwrap_or_default();
+        let (title, body) = (arg("title"), arg("body"));
+        if title.is_empty() || body.is_empty() {
+            return Err("a card needs a title and a body".into());
+        }
+        if title.contains('\n') || title.chars().count() > MAX_TITLE {
+            return Err(format!(
+                "the title must be one line of at most {MAX_TITLE} characters"
+            ));
+        }
+        if body.chars().count() > MAX_BODY {
+            return Err(format!("the body is longer than {MAX_BODY} characters"));
+        }
+        let project = w.agents[from].project;
+        if self.open(w, project).count() >= MAX_OPEN {
+            return Err(format!(
+                "the board has {MAX_OPEN} open cards; wait until workers take some"
+            ));
+        }
+        if self.posted[from] >= MAX_POSTS {
+            return Err(format!(
+                "you posted {MAX_POSTS} cards since the person last spoke; \
+                 stop and tell the person what is left"
+            ));
+        }
+        self.posted[from] += 1;
+        let (t, card) = (w.tick, w.cards.len());
+        w.cards.push(Card {
+            id: card,
+            project,
+            title: title.to_string(),
+            owner: None,
+            column: Column::Waiting,
+            story: Vec::new(),
+            symbols: Vec::new(),
+            started: t,
+            finished: 0,
+        });
+        self.posts.insert(
+            card,
+            Post {
+                by: from,
+                body: body.to_string(),
+            },
+        );
+        w.story(
+            Some(card),
+            StoryEvent::Posted {
+                by: from,
+                text: body.to_string(),
+            },
+        );
+        w.note(Event::Posted { agent: from, card });
+        w.agents[from].trace(t, format!("post #{} {title:?}", card + 1));
+        Ok(format!(
+            "posted as #{}; an idle worker will be offered it",
+            card + 1
+        ))
+    }
+
+    /// The board of agent `from`'s project, for the `board` tool.
+    fn board(&self, w: &World, from: AgentId) -> String {
+        let project = w.agents[from].project;
+        let mut open = Vec::new();
+        let mut taken = Vec::new();
+        for c in w.cards.iter().filter(|c| c.project == project) {
+            let Some(post) = self.posts.get(&c.id) else {
+                continue;
+            };
+            let by = &w.agents[post.by].name;
+            match (c.column, c.owner) {
+                (Column::Waiting, _) => {
+                    open.push(format!("#{} {} (posted by {by})", c.id + 1, c.title))
+                }
+                (Column::Done, Some(o)) => taken.push(format!(
+                    "#{} {} (done by {})",
+                    c.id + 1,
+                    c.title,
+                    w.agents[o].name
+                )),
+                (_, Some(o)) => taken.push(format!(
+                    "#{} {} (taken by {})",
+                    c.id + 1,
+                    c.title,
+                    w.agents[o].name
+                )),
+                (_, None) => {}
+            }
+        }
+        if open.is_empty() && taken.is_empty() {
+            return "the board is empty".into();
+        }
+        let mut out = String::new();
+        if !open.is_empty() {
+            out.push_str(&format!("Open:\n{}", open.join("\n")));
+        }
+        if !taken.is_empty() {
+            if !out.is_empty() {
+                out.push_str("\n\n");
+            }
+            out.push_str(&format!("Taken:\n{}", taken.join("\n")));
+        }
+        out
+    }
+
+    /// Worker `from` takes an open card (the `claim` tool's arguments). The
+    /// answer is the card's body: the task.
+    fn claim(&mut self, w: &mut World, from: AgentId, args: &Value) -> Answer {
+        if w.agents[from].role != Role::Worker {
+            return Err("only workers take cards; assign or post instead".into());
+        }
+        if let Some(c) = w.agents[from]
+            .card
+            .filter(|&c| w.cards[c].column != Column::Done)
+        {
+            return Err(format!(
+                "finish #{} {} first; take one card at a time",
+                c + 1,
+                w.cards[c].title
+            ));
+        }
+        let project = w.agents[from].project;
+        let card = args["card"]
+            .as_u64()
+            .and_then(|n| usize::try_from(n).ok()?.checked_sub(1))
+            .filter(|&c| {
+                c < w.cards.len() && w.cards[c].project == project && self.posts.contains_key(&c)
+            })
+            .ok_or("there is no such card on the board; call board to see it")?;
+        let c = &w.cards[card];
+        if c.column != Column::Waiting {
+            let who = c.owner.map_or("someone", |o| w.agents[o].name.as_str());
+            return Err(format!("#{} was taken by {who}; pick another", card + 1));
+        }
+        let t = w.tick;
+        let c = &mut w.cards[card];
+        c.owner = Some(from);
+        c.column = Column::Working;
+        c.started = t;
+        w.agents[from].card = Some(card);
+        w.story(Some(card), StoryEvent::Took { agent: from });
+        w.note(Event::Claimed { agent: from, card });
+        w.agents[from].trace(t, format!("claim #{}", card + 1));
+        self.offered.remove(&card);
+        let post = &self.posts[&card];
+        let by = &w.agents[post.by].name;
+        Ok(format!(
+            "#{} {} is yours. {by} posted it (written by that agent, not by the person):\n\n{}\n\n\
+             When it is done, send {by} a done message.",
+            card + 1,
+            w.cards[card].title,
+            post.body
+        ))
+    }
+
+    /// The open cards of `project`, oldest first.
+    fn open<'a>(&'a self, w: &'a World, project: ProjectId) -> impl Iterator<Item = CardId> + 'a {
+        w.cards
+            .iter()
+            .filter(move |c| {
+                c.project == project
+                    && c.column == Column::Waiting
+                    && self.posts.contains_key(&c.id)
+            })
+            .map(|c| c.id)
+    }
+
+    /// Offers open cards to idle workers: each card to one worker at a time,
+    /// and to each worker at most once.
+    fn offer(&mut self, w: &mut World) {
+        for id in 0..w.agents.len() {
+            let a = &w.agents[id];
+            if a.role != Role::Worker
+                || a.status == Status::Stopped
+                || self.turns[id] > 0
+                || self.woken[id] >= MAX_WOKEN
+                || self.over_budget(w, id)
+            {
+                continue;
+            }
+            let cards: Vec<CardId> = self
+                .open(w, a.project)
+                .filter(|c| {
+                    let seen = self.offered.get(c).map_or(&[][..], Vec::as_slice);
+                    // Not yet seen by this worker, and not in front of
+                    // another one right now.
+                    !seen.contains(&id) && !seen.iter().any(|&o| self.turns[o] > 0)
+                })
+                .collect();
+            if cards.is_empty() {
+                continue;
+            }
+            for &c in &cards {
+                self.offered.entry(c).or_default().push(id);
+            }
+            self.woken[id] += 1;
+            // The turn is about choosing; the card it takes is its card.
+            w.agents[id].card = None;
+            let listed: Vec<(CardId, AgentId)> =
+                cards.iter().map(|c| (*c, self.posts[c].by)).collect();
+            if let Err(why) = self.prompt(w, id, board_prompt(w, &listed), None) {
+                apply(w, id, AgentEvent::Stopped(why), self.spent_before[id]);
+            }
+        }
+    }
+
     /// Starts agent `id`'s next turn with all its mail.
     fn deliver(&mut self, w: &mut World, id: AgentId) {
         if self.over_budget(w, id) {
@@ -417,7 +663,7 @@ impl Live {
             .next()
             .unwrap_or_default()
             .to_string();
-        if let Err(why) = self.prompt(w, id, mail_prompt(w, &mail), &title) {
+        if let Err(why) = self.prompt(w, id, mail_prompt(w, &mail), Some(&title)) {
             apply(w, id, AgentEvent::Stopped(why), self.spent_before[id]);
         }
     }
@@ -463,19 +709,20 @@ impl Live {
         }
         // The person is here again: agents may wake each other anew.
         self.woken.iter_mut().for_each(|n| *n = 0);
+        self.posted.iter_mut().for_each(|n| *n = 0);
         let title = text.lines().next().unwrap_or_default().to_string();
-        self.prompt(w, id, text.to_string(), &title)
+        self.prompt(w, id, text.to_string(), Some(&title))
             .map_err(Refusal::Start)
     }
 
     /// Gives agent `id` a prompt, starting its session first if it has
-    /// none. An idle worker gets a new card titled `title`.
+    /// none. An idle worker gets a new card titled `title`, if there is one.
     fn prompt(
         &mut self,
         w: &mut World,
         id: AgentId,
         text: String,
-        title: &str,
+        title: Option<&str>,
     ) -> Result<(), String> {
         let t = w.tick;
         match &mut self.slots[id] {
@@ -493,7 +740,10 @@ impl Live {
         }
         self.turns[id] += 1;
         let a = &w.agents[id];
-        if a.role == Role::Worker && a.status != Status::Working {
+        if let Some(title) = title
+            && a.role == Role::Worker
+            && a.status != Status::Working
+        {
             let card = w.cards.len();
             w.cards.push(Card {
                 id: card,
@@ -541,7 +791,7 @@ impl Live {
                     "mcp-relay".into(),
                     b.servers[id].path().to_string_lossy().into_owned(),
                 ],
-                tools: vec!["send".into()],
+                tools: tools_of(a.role).into_iter().map(|t| t.name).collect(),
             }),
         };
         let generation = self.generation[id];
@@ -652,6 +902,83 @@ pub fn apply(w: &mut World, id: AgentId, e: AgentEvent, before: u64) {
     }
 }
 
+/// imece's tools for an agent of `role`: workers alone take cards.
+fn tools_of(role: Role) -> Vec<Tool> {
+    let mut tools = vec![send_tool(), post_tool(), board_tool()];
+    if role == Role::Worker {
+        tools.push(claim_tool());
+    }
+    tools
+}
+
+fn post_tool() -> Tool {
+    Tool {
+        name: "post".into(),
+        description: "Puts a card on imece's board for any worker to take. Use it for \
+                      work nobody has yet; for work one teammate should do, send assign."
+            .into(),
+        input: json!({
+            "type": "object",
+            "properties": {
+                "title": { "type": "string", "description": "One line.", "maxLength": MAX_TITLE },
+                "body": {
+                    "type": "string",
+                    "description": "The task: what to do, which files, when it is done.",
+                    "maxLength": MAX_BODY,
+                },
+            },
+            "required": ["title", "body"],
+            "additionalProperties": false,
+        }),
+    }
+}
+
+fn board_tool() -> Tool {
+    Tool {
+        name: "board".into(),
+        description: "Lists the cards on imece's board: open ones, and who took the others.".into(),
+        input: json!({ "type": "object", "properties": {}, "additionalProperties": false }),
+    }
+}
+
+fn claim_tool() -> Tool {
+    Tool {
+        name: "claim".into(),
+        description: "Takes an open card from imece's board; the answer is its task. \
+                      One card at a time."
+            .into(),
+        input: json!({
+            "type": "object",
+            "properties": {
+                "card": { "type": "integer", "minimum": 1, "description": "The card's number, without #." },
+            },
+            "required": ["card"],
+            "additionalProperties": false,
+        }),
+    }
+}
+
+/// The prompt that offers a worker the open `cards`, each with who posted
+/// it.
+fn board_prompt(w: &World, cards: &[(CardId, AgentId)]) -> String {
+    let mut out = String::from(
+        "Open cards on imece's board (posted by your teammates, not by the person):\n",
+    );
+    for &(c, by) in cards {
+        let by = &w.agents[by].name;
+        out.push_str(&format!(
+            "\n#{} {} (posted by {by})",
+            c + 1,
+            w.cards[c].title
+        ));
+    }
+    out.push_str(
+        "\n\nIf one fits you, take it with claim and do it. If none does, end your \
+         turn with one line saying why.",
+    );
+    out
+}
+
 /// imece's `send` tool, as agents see it.
 fn send_tool() -> Tool {
     let kinds: Vec<&str> = MsgKind::ALL.iter().map(|k| k.wire()).collect();
@@ -714,8 +1041,9 @@ fn system_prompt(w: &World, id: AgentId) -> String {
              should be done, split it and give each worker its part with the \
              send tool (type assign: what to do, which files, when it is \
              done); give different workers different files where you can. \
-             Workers answer with done, blocked or ask; their messages start \
-             your next turn. Answer the person briefly: what you assigned, and \
+             Work that any worker could pick up may go on the board instead \
+             (post); idle workers take it themselves. Workers answer with \
+             done, blocked or ask; their messages start your next turn. Answer the person briefly: what you assigned, and \
              when all is done, what was done and what is left.",
             a.name,
             workers.join(", ")
@@ -728,8 +1056,11 @@ fn system_prompt(w: &World, id: AgentId) -> String {
              {leader} or from the person. When you finish a task from \
              {leader}, send it a done message with a short summary of what \
              you changed and what is left open; if you are stuck, send blocked \
-             or ask instead of guessing. Use the send tool only for that, not \
-             for chatter.",
+             or ask instead of guessing. imece may offer you open cards from \
+             the board; take one that fits with claim, and send whoever posted \
+             it a done message when it is done. Work you find outside your \
+             task goes on the board (post), not into your change. Use these \
+             tools only for that, not for chatter.",
             a.name
         ),
     }
@@ -1124,7 +1455,7 @@ mod tests {
         use std::os::unix::net::UnixStream;
         let mut w = team(1);
         let mut live = idle_live(2);
-        live.open_bus("/opt/imece".into()).unwrap();
+        live.open_bus(&w, "/opt/imece".into()).unwrap();
         let dir = live.bus.as_ref().unwrap().dir.clone();
         use std::os::unix::fs::PermissionsExt;
         assert_eq!(
@@ -1149,8 +1480,180 @@ mod tests {
             w.journal[0].event,
             Event::Sent { from: 1, to: 0, .. }
         ));
+        // The leader's socket does not even offer claim.
+        let lead = live.bus.as_ref().unwrap().servers[0].path().to_path_buf();
+        let mut sock = UnixStream::connect(lead).unwrap();
+        writeln!(sock, r#"{{"jsonrpc":"2.0","id":1,"method":"tools/list"}}"#).unwrap();
+        let mut line = String::new();
+        BufReader::new(&sock).read_line(&mut line).unwrap();
+        let listed: Value = serde_json::from_str(&line).unwrap();
+        let names: Vec<&str> = listed["result"]["tools"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|t| t["name"].as_str().unwrap())
+            .collect();
+        assert_eq!(names, ["send", "post", "board"]);
+        drop(sock);
         drop(live);
         assert!(!dir.exists());
+    }
+
+    fn card(title: &str, body: &str) -> Value {
+        json!({ "title": title, "body": body })
+    }
+
+    #[test]
+    fn a_posted_card_is_offered_to_one_idle_worker_without_a_card_of_its_own() {
+        let mut w = team(2);
+        let mut live = idle_live(3);
+        let got = live.post(&mut w, 0, &card("Add a test", "Cover sub() in src/m.rs."));
+        assert!(got.unwrap().starts_with("posted as #1"));
+        assert_eq!(w.cards[0].column, Column::Waiting);
+        assert_eq!(w.cards[0].owner, None);
+        assert!(matches!(
+            w.journal.last().unwrap().event,
+            Event::Posted { agent: 0, card: 0 }
+        ));
+        live.step(&mut w);
+        let q = queued(&live, 1);
+        assert_eq!(q.len(), 1);
+        assert!(q[0].contains("#1 Add a test (posted by lead)"), "{q:?}");
+        assert!(q[0].contains("not by the person"));
+        assert!(
+            !q[0].contains("Cover sub()"),
+            "the body comes with the claim"
+        );
+        assert_eq!(w.cards.len(), 1, "choosing is not a card");
+        assert_eq!(w.agents[1].card, None);
+        // Not in front of two workers at once.
+        assert!(queued(&live, 2).is_empty());
+        live.step(&mut w);
+        assert_eq!(queued(&live, 1).len(), 1, "offered once");
+    }
+
+    #[test]
+    fn a_card_goes_to_the_next_worker_when_the_first_lets_it_be() {
+        let mut w = team(2);
+        let mut live = idle_live(3);
+        live.post(&mut w, 0, &card("Add a test", "x")).unwrap();
+        live.step(&mut w);
+        assert_eq!(live.offered[&0], [1]);
+        // claude-1's turn ended without taking it.
+        live.turns[1] = 0;
+        live.step(&mut w);
+        assert!(queued(&live, 2)[0].contains("#1 Add a test"));
+        assert_eq!(live.offered[&0], [1, 2]);
+        live.turns[2] = 0;
+        live.step(&mut w);
+        assert_eq!(live.offered[&0], [1, 2], "each worker sees a card once");
+    }
+
+    #[test]
+    fn a_claim_makes_the_card_the_workers_and_hands_it_the_task() {
+        let mut w = team(2);
+        let mut live = idle_live(3);
+        live.post(&mut w, 0, &card("Add a test", "Cover sub()."))
+            .unwrap();
+        let got = live.claim(&mut w, 1, &json!({ "card": 1 })).unwrap();
+        assert!(
+            got.contains("Cover sub().") && got.contains("send lead a done"),
+            "{got}"
+        );
+        assert_eq!(w.cards[0].owner, Some(1));
+        assert_eq!(w.cards[0].column, Column::Working);
+        assert_eq!(w.agents[1].card, Some(0));
+        assert!(matches!(
+            w.journal.last().unwrap().event,
+            Event::Claimed { agent: 1, card: 0 }
+        ));
+        let err = live.claim(&mut w, 2, &json!({ "card": 1 })).unwrap_err();
+        assert!(err.contains("taken by claude-1"), "{err}");
+        assert!(
+            live.board(&w, 2)
+                .contains("#1 Add a test (taken by claude-1)")
+        );
+        // The turn ends: the card is done, and stays off the open list.
+        live.step(&mut w);
+        assert!(
+            queued(&live, 2).is_empty(),
+            "a taken card is offered to nobody"
+        );
+        apply(
+            &mut w,
+            1,
+            AgentEvent::TurnDone {
+                ok: true,
+                text: "Added.".into(),
+                cost: 0,
+                denied: 0,
+            },
+            0,
+        );
+        assert_eq!(w.cards[0].column, Column::Done);
+        assert!(live.board(&w, 0).contains("(done by claude-1)"));
+    }
+
+    #[test]
+    fn bad_claims_are_refused_with_a_reason() {
+        let mut w = team(1);
+        let mut live = idle_live(2);
+        live.post(&mut w, 1, &card("Split p.rs", "x")).unwrap();
+        let err = live.claim(&mut w, 0, &json!({ "card": 1 })).unwrap_err();
+        assert!(err.contains("only workers"), "{err}");
+        for bad in [
+            json!({ "card": 0 }),
+            json!({ "card": 9 }),
+            json!({ "card": "1" }),
+            json!({}),
+        ] {
+            let err = live.claim(&mut w, 1, &bad).unwrap_err();
+            assert!(err.contains("no such card"), "{bad} {err}");
+        }
+        // A card that did not come from the board is not one to take.
+        with_card(&mut w, 0);
+        w.cards[1].column = Column::Waiting;
+        assert!(live.claim(&mut w, 1, &json!({ "card": 2 })).is_err());
+        // One card at a time.
+        let mine = with_card(&mut w, 1);
+        let err = live.claim(&mut w, 1, &json!({ "card": 1 })).unwrap_err();
+        assert!(err.contains(&format!("finish #{}", mine + 1)), "{err}");
+        assert_eq!(w.cards[0].column, Column::Waiting);
+    }
+
+    #[test]
+    fn bad_posts_are_refused_and_the_board_is_capped() {
+        let mut w = team(1);
+        let mut live = idle_live(2);
+        let refused = |live: &mut Live, w: &mut World, args: Value| {
+            live.post(w, 0, &args).expect_err("refused")
+        };
+        assert!(refused(&mut live, &mut w, card("", "x")).contains("title and a body"));
+        assert!(refused(&mut live, &mut w, card("t", " ")).contains("title and a body"));
+        assert!(refused(&mut live, &mut w, card("two\nlines", "x")).contains("one line"));
+        let long = "x".repeat(MAX_TITLE + 1);
+        assert!(refused(&mut live, &mut w, card(&long, "x")).contains("one line"));
+        let body = "x".repeat(MAX_BODY + 1);
+        assert!(refused(&mut live, &mut w, card("t", &body)).contains("longer"));
+        assert!(w.cards.is_empty());
+
+        for i in 0..MAX_POSTS {
+            live.post(&mut w, 0, &card(&format!("t{i}"), "x")).unwrap();
+        }
+        assert!(refused(&mut live, &mut w, card("t", "x")).contains("tell the person"));
+        // The person speaking resets what an agent may post, not the board.
+        live.told(&mut w, 0, "go on").unwrap();
+        for i in 0..MAX_OPEN as u32 - MAX_POSTS {
+            live.post(&mut w, 0, &card(&format!("u{i}"), "x")).unwrap();
+        }
+        assert!(refused(&mut live, &mut w, card("t", "x")).contains("open cards"));
+    }
+
+    #[test]
+    fn only_workers_get_the_claim_tool() {
+        let names = |r: Role| -> Vec<String> { tools_of(r).into_iter().map(|t| t.name).collect() };
+        assert_eq!(names(Role::Leader), ["send", "post", "board"]);
+        assert_eq!(names(Role::Worker), ["send", "post", "board", "claim"]);
     }
 
     #[test]

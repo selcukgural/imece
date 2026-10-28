@@ -374,6 +374,11 @@ pub enum StoryEvent {
         kind: MsgKind,
         text: String,
     },
+    /// A live agent put this card on the board; `text` is what it asks for.
+    Posted {
+        by: AgentId,
+        text: String,
+    },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -390,9 +395,10 @@ pub enum StoryKind {
 impl StoryEvent {
     pub fn kind(&self) -> StoryKind {
         match self {
-            StoryEvent::Took { .. } | StoryEvent::WritingTests | StoryEvent::BlockedOn(_) => {
-                StoryKind::Intent
-            }
+            StoryEvent::Took { .. }
+            | StoryEvent::WritingTests
+            | StoryEvent::BlockedOn(_)
+            | StoryEvent::Posted { .. } => StoryKind::Intent,
             StoryEvent::Decision(_) => StoryKind::Decision,
             StoryEvent::Asked { .. }
             | StoryEvent::Answered { .. }
@@ -522,6 +528,16 @@ pub enum Event {
         kind: MsgKind,
         text: String,
     },
+    /// A live agent put a card on the board.
+    Posted {
+        agent: AgentId,
+        card: CardId,
+    },
+    /// A live worker took a card from the board.
+    Claimed {
+        agent: AgentId,
+        card: CardId,
+    },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -541,8 +557,8 @@ pub enum EntryKind {
 impl Event {
     pub fn kind(&self) -> EntryKind {
         match self {
-            Event::Plan { .. } => EntryKind::Plan,
-            Event::Assign { .. } => EntryKind::Assign,
+            Event::Plan { .. } | Event::Posted { .. } => EntryKind::Plan,
+            Event::Assign { .. } | Event::Claimed { .. } => EntryKind::Assign,
             Event::Talk { .. } | Event::Replied { .. } | Event::Sent { .. } => EntryKind::Talk,
             Event::Assumption { .. } => EntryKind::Assumption,
             Event::Blocked { .. } => EntryKind::Blocked,
@@ -572,7 +588,9 @@ impl Event {
             | Event::Approved { agent, .. }
             | Event::Rejected { agent }
             | Event::Replied { agent, .. }
-            | Event::Stopped { agent, .. } => agent,
+            | Event::Stopped { agent, .. }
+            | Event::Posted { agent, .. }
+            | Event::Claimed { agent, .. } => agent,
             Event::Talk { from, .. } | Event::Sent { from, .. } => from,
             Event::ResearchOpened { researcher, .. }
             | Event::ResearchDelivered { researcher, .. }

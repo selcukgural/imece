@@ -169,6 +169,8 @@ pub struct Text {
     pub ev_replied: &'static str,
     pub ev_stopped: &'static str,
     pub ev_sent: &'static str,
+    pub ev_posted: &'static str,
+    pub ev_claimed: &'static str,
     /// Message types, in `MsgKind::ALL` order.
     pub kinds: [&'static str; 10],
     // Card stories
@@ -193,6 +195,7 @@ pub struct Text {
     pub st_touched: &'static str,
     pub st_stopped: &'static str,
     pub st_sent: &'static str,
+    pub st_posted: &'static str,
     // Inbox
     pub in_research: &'static str,
     // Overlays
@@ -302,6 +305,8 @@ pub const EN: Text = Text {
     ev_replied: "{} → you: {}",
     ev_stopped: "{} stopped: {}",
     ev_sent: "{} → {} [{}]: {}",
+    ev_posted: "{} posted {} {}",
+    ev_claimed: "{} took {} {} from the board",
     kinds: [
         "assign", "ask", "answer", "inform", "handoff", "done", "blocked", "progress", "notice",
         "cancel",
@@ -327,6 +332,7 @@ pub const EN: Text = Text {
     st_touched: "changed {}",
     st_stopped: "stopped: {}",
     st_sent: "{} → {} [{}]: {}",
+    st_posted: "{} posted it: {}",
     in_research: "{} report \"{}\" proposes a new package → {}",
     help_title: " HELP ",
     help_keys: [
@@ -458,6 +464,8 @@ pub const TR: Text = Text {
     ev_replied: "{} → sen: {}",
     ev_stopped: "{} durdu: {}",
     ev_sent: "{} → {} [{}]: {}",
+    ev_posted: "{} panoya astı: {} {}",
+    ev_claimed: "{} panodan aldı: {} {}",
     kinds: [
         "görev",
         "soru",
@@ -491,6 +499,7 @@ pub const TR: Text = Text {
     st_touched: "değiştirdi: {}",
     st_stopped: "durdu: {}",
     st_sent: "{} → {} [{}]: {}",
+    st_posted: "{} panoya astı: {}",
     in_research: "{} raporu \"{}\" yeni paket öneriyor → {}",
     help_title: " YARDIM ",
     help_keys: [
@@ -568,6 +577,9 @@ mod tests {
             (EN.st_touched, TR.st_touched),
             (EN.ev_sent, TR.ev_sent),
             (EN.st_sent, TR.st_sent),
+            (EN.ev_posted, TR.ev_posted),
+            (EN.ev_claimed, TR.ev_claimed),
+            (EN.st_posted, TR.st_posted),
         ];
         for (en, tr) in pairs {
             assert_eq!(count(en), count(tr), "{en} / {tr}");
