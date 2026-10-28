@@ -17,5 +17,7 @@ path = "src/main.rs"
 # Line counts of wrapped text, to keep the newest lines of a long story in view.
 ratatui = { version = "=0.30.2", features = ["unstable-rendered-line-info"] }
 imece-agent = { path = "../imece-agent" }
+# The arguments of agents' tool calls.
+serde_json = "=1.0.154"
 # The local clock for live agents (`localtime_r`).
 libc = "=0.2.191"

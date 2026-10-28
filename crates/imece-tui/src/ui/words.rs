@@ -68,6 +68,15 @@ pub fn event(lang: Lang, w: &World, e: &Event) -> String {
         Event::YouSaid { to, text } => fill(t.ev_you_said, &[name(w, *to), text]),
         Event::Replied { agent, text } => fill(t.ev_replied, &[name(w, *agent), text]),
         Event::Stopped { agent, why } => fill(t.ev_stopped, &[name(w, *agent), why]),
+        Event::Sent {
+            from,
+            to,
+            kind,
+            text,
+        } => fill(
+            t.ev_sent,
+            &[name(w, *from), name(w, *to), t.kinds[*kind as usize], text],
+        ),
     }
 }
 
@@ -106,6 +115,15 @@ pub fn story(lang: Lang, w: &World, card: &Card, e: &StoryEvent) -> String {
         StoryEvent::Replied(text) => fill(t.st_replied, &[text]),
         StoryEvent::Touched(file) => fill(t.st_touched, &[file]),
         StoryEvent::Stopped(why) => fill(t.st_stopped, &[why]),
+        StoryEvent::Sent {
+            from,
+            to,
+            kind,
+            text,
+        } => fill(
+            t.st_sent,
+            &[name(w, *from), name(w, *to), t.kinds[*kind as usize], text],
+        ),
     }
 }
 

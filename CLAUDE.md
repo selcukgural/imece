@@ -52,13 +52,23 @@ and owned here from then on:
   package-registry docs only for packages in the lockfile.
 
 - Live v0 (2026-10-28): one long-lived `claude -p` stream-json session per
-  agent (never a process per turn), `--restricted`, exact `--tools`, no MCP,
-  `--permission-prompts none`; the `init` event is checked every turn and a
-  mismatch stops the session (fail closed). Leader: read tools, the
+  agent (never a process per turn), `--restricted`, exact `--tools`, no MCP
+  server but imece's own, `--permission-prompts none`; the `init` event is
+  checked every turn and a mismatch stops the session (fail closed). Leader: read tools, the
   checkout itself. Workers: edit tools, one detached worktree each under
   `$XDG_STATE_HOME/imece/worktrees`, kept between runs. Budget split evenly
   up front as each session's `--max-budget-usd`. Sessions start off the UI
   thread; events carry a session generation so late ones are dropped.
+- Message bus v0 (2026-10-28): one tool, `send(to, type, body)`, served by
+  imece itself over MCP: one Unix socket per agent in a fresh 0700 temp
+  directory; the session starts `imece mcp-relay <socket>`, which only
+  copies bytes. The sender is the socket, never an argument. Allowed by
+  exact name (`--allowedTools mcp__imece__send`); `init` must report
+  exactly imece's server, connected, and exactly its tools. Mail waits per
+  agent; waking types start the next turn when the agent has no prompt
+  left, inform/progress/notice ride along. Caps: body 4000 chars, 20
+  unread, 12 message-driven turns per agent until the person speaks again;
+  a stopped agent or one over its share gets no waking mail.
 - Projects: the salon groups agents by project, each with its own leader;
   groups fold to one line that still shows what waits for the person. The
   researcher cap is shared by all projects.

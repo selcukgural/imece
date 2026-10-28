@@ -4,8 +4,8 @@
 //!
 //! The session runs `--restricted` (no code-running tools, no user or
 //! project settings, so no hooks; file tools confined to the agent's
-//! directory), without MCP servers, with exactly the tools asked for and a
-//! spending cap. What the vendor reports back in its `init` event is checked
+//! directory), with no MCP server but imece's own, exactly the tools asked
+//! for and a spending cap. What the vendor reports back in its `init` event is checked
 //! against that on every turn; anything else stops the session.
 
 use std::collections::{BTreeSet, HashMap};
@@ -38,6 +38,15 @@ pub const ENV: &[&str] = &[
 /// that would ask is denied (`--permission-prompts none`).
 const PERMISSION_MODE: &str = "acceptEdits";
 
+/// The name imece's MCP server has in a session; its tools are
+/// `mcp__imece__<tool>`.
+pub const MCP_SERVER: &str = "imece";
+
+/// The name a session gives a tool of imece's MCP server.
+pub fn mcp_tool(tool: &str) -> String {
+    format!("mcp__{MCP_SERVER}__{tool}")
+}
+
 /// Tools that read files.
 pub const READ_TOOLS: &[&str] = &["Glob", "Grep", "Read"];
 /// Tools that read and change files.
@@ -56,6 +65,18 @@ pub struct Spec {
     pub budget: u64,
     /// Appended to Claude Code's own system prompt.
     pub system: String,
+    /// imece's MCP server, if the agent gets its tools.
+    pub mcp: Option<Mcp>,
+}
+
+/// How the session starts imece's MCP server, and which of its tools it
+/// may call without asking.
+#[derive(Clone, Debug)]
+pub struct Mcp {
+    pub command: String,
+    pub args: Vec<String>,
+    /// Tool names as the server offers them (`send`).
+    pub tools: Vec<String>,
 }
 
 /// The command line for `spec`. Prompts never go here; they go to stdin.
@@ -95,6 +116,26 @@ pub fn args(spec: &Spec) -> Vec<String> {
         a.push("--model".into());
         a.push(m.clone());
     }
+    if let Some(mcp) = &spec.mcp {
+        let config = serde_json::json!({ "mcpServers": { MCP_SERVER: {
+            "type": "stdio",
+            "command": mcp.command,
+            "args": mcp.args,
+        }}});
+        a.push("--mcp-config".into());
+        a.push(config.to_string());
+        if !mcp.tools.is_empty() {
+            // Exact names only: never a pattern, never a built-in tool.
+            a.push("--allowedTools".into());
+            a.push(
+                mcp.tools
+                    .iter()
+                    .map(|t| mcp_tool(t))
+                    .collect::<Vec<_>>()
+                    .join(","),
+            );
+        }
+    }
     a
 }
 
@@ -111,7 +152,9 @@ pub fn prompt_line(text: &str) -> String {
 /// reports.
 pub struct Parser {
     cwd: PathBuf,
+    /// Built-in tools and imece's MCP tools, as the session names them.
     tools: BTreeSet<String>,
+    mcp: bool,
     started: bool,
     /// Tool names by tool-use id, to name a failed result.
     calls: HashMap<String, String>,
@@ -121,7 +164,17 @@ impl Parser {
     pub fn new(spec: &Spec) -> Parser {
         Parser {
             cwd: spec.cwd.clone(),
-            tools: spec.tools.iter().cloned().collect(),
+            tools: spec
+                .tools
+                .iter()
+                .cloned()
+                .chain(
+                    spec.mcp
+                        .iter()
+                        .flat_map(|m| m.tools.iter().map(|t| mcp_tool(t))),
+                )
+                .collect(),
+            mcp: spec.mcp.is_some(),
             started: false,
             calls: HashMap::new(),
         }
@@ -168,8 +221,17 @@ impl Parser {
                 "tools differ: extra {extra:?}, missing {missing:?}"
             ));
         }
-        if v["mcp_servers"].as_array().is_none_or(|s| !s.is_empty()) {
-            return Err("has MCP servers".into());
+        let servers = v["mcp_servers"]
+            .as_array()
+            .ok_or("reports no MCP server list")?;
+        match (self.mcp, servers.as_slice()) {
+            (false, []) => {}
+            (true, [s]) if s["name"] == MCP_SERVER => {
+                if s["status"] != "connected" {
+                    return Err(format!("has imece's MCP server {}", s["status"]));
+                }
+            }
+            _ => return Err("has other MCP servers".into()),
         }
         if self.started {
             return Ok(Vec::new());
@@ -323,7 +385,83 @@ mod tests {
             model: None,
             budget: 1_250_000,
             system: "You are claude-1.".into(),
+            mcp: None,
         }
+    }
+
+    fn with_bus(tools: &[&str]) -> Spec {
+        let mut s = spec(tools);
+        s.mcp = Some(Mcp {
+            command: "/opt/imece".into(),
+            args: vec!["mcp-relay".into(), "/tmp/i/a1.sock".into()],
+            tools: vec!["send".into()],
+        });
+        s
+    }
+
+    const BUS: &str = r#"[{"name":"imece","status":"connected","source":"dynamic"}]"#;
+    const BUS_INIT: &str = r#"["Edit","Glob","Grep","Read","Write","mcp__imece__send"]"#;
+
+    #[test]
+    fn imece_s_tools_are_allowed_by_exact_name_and_nothing_else_is() {
+        let a = args(&with_bus(EDIT_TOOLS));
+        let after = |f: &str| a[a.iter().position(|x| x == f).unwrap() + 1].clone();
+        assert_eq!(after("--tools"), "Edit,Glob,Grep,Read,Write");
+        assert_eq!(after("--allowedTools"), "mcp__imece__send");
+        assert!(a.iter().any(|x| x == "--strict-mcp-config"));
+        let config: Value = serde_json::from_str(&after("--mcp-config")).unwrap();
+        let servers = config["mcpServers"].as_object().unwrap();
+        assert_eq!(servers.len(), 1);
+        assert_eq!(servers["imece"]["command"], "/opt/imece");
+        assert_eq!(servers["imece"]["args"][1], "/tmp/i/a1.sock");
+        let plain = args(&spec(EDIT_TOOLS));
+        assert!(
+            !plain
+                .iter()
+                .any(|x| x == "--mcp-config" || x == "--allowedTools")
+        );
+    }
+
+    #[test]
+    fn a_session_with_the_bus_must_report_exactly_imece_s_server_and_tools() {
+        let mut p = Parser::new(&with_bus(EDIT_TOOLS));
+        assert!(p.line(&init(BUS_INIT, "acceptEdits", BUS)).is_ok());
+        let use_ = r#"{"type":"assistant","message":{"content":[{"type":"tool_use","id":"t","name":"mcp__imece__send","input":{"to":"lead"}}]}}"#;
+        assert!(p.line(use_).is_ok());
+
+        let bad = [
+            // The server did not come up, or is not ours, or not alone.
+            init(BUS_INIT, "acceptEdits", "[]"),
+            init(
+                BUS_INIT,
+                "acceptEdits",
+                r#"[{"name":"imece","status":"failed"}]"#,
+            ),
+            init(
+                BUS_INIT,
+                "acceptEdits",
+                r#"[{"name":"other","status":"connected"}]"#,
+            ),
+            init(
+                BUS_INIT,
+                "acceptEdits",
+                r#"[{"name":"imece","status":"connected"},{"name":"x","status":"connected"}]"#,
+            ),
+            // A tool imece's server does not offer.
+            init(
+                r#"["Edit","Glob","Grep","Read","Write","mcp__imece__send","mcp__imece__exec"]"#,
+                "acceptEdits",
+                BUS,
+            ),
+            init(GOOD_INIT, "acceptEdits", BUS),
+        ];
+        for line in bad {
+            let mut p = Parser::new(&with_bus(EDIT_TOOLS));
+            assert!(p.line(&line).is_err(), "accepted {line}");
+        }
+        // Without the bus, imece's server is as unwelcome as any.
+        let mut p = Parser::new(&spec(EDIT_TOOLS));
+        assert!(p.line(&init(BUS_INIT, "acceptEdits", BUS)).is_err());
     }
 
     fn init(tools: &str, mode: &str, mcp: &str) -> String {

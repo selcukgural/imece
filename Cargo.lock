@@ -493,6 +493,7 @@ dependencies = [
  "imece-agent",
  "libc",
  "ratatui",
+ "serde_json",
 ]
 
 [[package]]

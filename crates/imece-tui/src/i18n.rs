@@ -168,6 +168,9 @@ pub struct Text {
     pub ev_you_said: &'static str,
     pub ev_replied: &'static str,
     pub ev_stopped: &'static str,
+    pub ev_sent: &'static str,
+    /// Message types, in `MsgKind::ALL` order.
+    pub kinds: [&'static str; 10],
     // Card stories
     pub st_took: &'static str,
     pub st_writing_tests: &'static str,
@@ -189,6 +192,7 @@ pub struct Text {
     pub st_replied: &'static str,
     pub st_touched: &'static str,
     pub st_stopped: &'static str,
+    pub st_sent: &'static str,
     // Inbox
     pub in_research: &'static str,
     // Overlays
@@ -297,6 +301,11 @@ pub const EN: Text = Text {
     ev_you_said: "you → {}: {}",
     ev_replied: "{} → you: {}",
     ev_stopped: "{} stopped: {}",
+    ev_sent: "{} → {} [{}]: {}",
+    kinds: [
+        "assign", "ask", "answer", "inform", "handoff", "done", "blocked", "progress", "notice",
+        "cancel",
+    ],
     st_took: "{}: {}",
     st_writing_tests: "writing tests",
     st_asked: "{} → {}: \"{}\"",
@@ -317,6 +326,7 @@ pub const EN: Text = Text {
     st_replied: "answer: {}",
     st_touched: "changed {}",
     st_stopped: "stopped: {}",
+    st_sent: "{} → {} [{}]: {}",
     in_research: "{} report \"{}\" proposes a new package → {}",
     help_title: " HELP ",
     help_keys: [
@@ -447,6 +457,19 @@ pub const TR: Text = Text {
     ev_you_said: "sen → {}: {}",
     ev_replied: "{} → sen: {}",
     ev_stopped: "{} durdu: {}",
+    ev_sent: "{} → {} [{}]: {}",
+    kinds: [
+        "görev",
+        "soru",
+        "cevap",
+        "bilgi",
+        "devir",
+        "bitti",
+        "takıldı",
+        "ilerleme",
+        "duyuru",
+        "iptal",
+    ],
     st_took: "{}: {}",
     st_writing_tests: "testleri yazıyor",
     st_asked: "{} → {}: \"{}\"",
@@ -467,6 +490,7 @@ pub const TR: Text = Text {
     st_replied: "cevap: {}",
     st_touched: "değiştirdi: {}",
     st_stopped: "durdu: {}",
+    st_sent: "{} → {} [{}]: {}",
     in_research: "{} raporu \"{}\" yeni paket öneriyor → {}",
     help_title: " YARDIM ",
     help_keys: [
@@ -542,6 +566,8 @@ mod tests {
             (EN.ev_replied, TR.ev_replied),
             (EN.ev_stopped, TR.ev_stopped),
             (EN.st_touched, TR.st_touched),
+            (EN.ev_sent, TR.ev_sent),
+            (EN.st_sent, TR.st_sent),
         ];
         for (en, tr) in pairs {
             assert_eq!(count(en), count(tr), "{en} / {tr}");

@@ -148,6 +148,63 @@ impl Status {
     }
 }
 
+/// The envelope type of a message between agents. Only the type drives
+/// routing and waking; the body is never interpreted.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MsgKind {
+    Assign,
+    Ask,
+    Answer,
+    Inform,
+    Handoff,
+    Done,
+    Blocked,
+    Progress,
+    Notice,
+    Cancel,
+}
+
+impl MsgKind {
+    pub const ALL: [MsgKind; 10] = [
+        MsgKind::Assign,
+        MsgKind::Ask,
+        MsgKind::Answer,
+        MsgKind::Inform,
+        MsgKind::Handoff,
+        MsgKind::Done,
+        MsgKind::Blocked,
+        MsgKind::Progress,
+        MsgKind::Notice,
+        MsgKind::Cancel,
+    ];
+
+    /// The name agents use for it.
+    pub fn wire(self) -> &'static str {
+        match self {
+            MsgKind::Assign => "assign",
+            MsgKind::Ask => "ask",
+            MsgKind::Answer => "answer",
+            MsgKind::Inform => "inform",
+            MsgKind::Handoff => "handoff",
+            MsgKind::Done => "done",
+            MsgKind::Blocked => "blocked",
+            MsgKind::Progress => "progress",
+            MsgKind::Notice => "notice",
+            MsgKind::Cancel => "cancel",
+        }
+    }
+
+    pub fn from_wire(s: &str) -> Option<MsgKind> {
+        MsgKind::ALL.into_iter().find(|k| k.wire() == s)
+    }
+
+    /// Whether it starts a turn of the agent it goes to. The others wait
+    /// for that agent's next turn.
+    pub fn wakes(self) -> bool {
+        !matches!(self, MsgKind::Inform | MsgKind::Progress | MsgKind::Notice)
+    }
+}
+
 /// Who an agent is talking with right now, for the salon's `⇄` line.
 #[derive(Clone, Debug)]
 pub enum Party {
@@ -310,6 +367,13 @@ pub enum StoryEvent {
     Touched(String),
     /// A live agent's turn or session ended without an answer.
     Stopped(String),
+    /// A live agent sent a teammate a message.
+    Sent {
+        from: AgentId,
+        to: AgentId,
+        kind: MsgKind,
+        text: String,
+    },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -330,9 +394,10 @@ impl StoryEvent {
                 StoryKind::Intent
             }
             StoryEvent::Decision(_) => StoryKind::Decision,
-            StoryEvent::Asked { .. } | StoryEvent::Answered { .. } | StoryEvent::Replied(_) => {
-                StoryKind::Talk
-            }
+            StoryEvent::Asked { .. }
+            | StoryEvent::Answered { .. }
+            | StoryEvent::Replied(_)
+            | StoryEvent::Sent { .. } => StoryKind::Talk,
             StoryEvent::Assumption(_) => StoryKind::Assumption,
             StoryEvent::ResearchArrived { .. }
             | StoryEvent::ResearchNeedsYou { .. }
@@ -450,6 +515,13 @@ pub enum Event {
         agent: AgentId,
         why: String,
     },
+    /// A live agent sent a teammate a message.
+    Sent {
+        from: AgentId,
+        to: AgentId,
+        kind: MsgKind,
+        text: String,
+    },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -471,7 +543,7 @@ impl Event {
         match self {
             Event::Plan { .. } => EntryKind::Plan,
             Event::Assign { .. } => EntryKind::Assign,
-            Event::Talk { .. } | Event::Replied { .. } => EntryKind::Talk,
+            Event::Talk { .. } | Event::Replied { .. } | Event::Sent { .. } => EntryKind::Talk,
             Event::Assumption { .. } => EntryKind::Assumption,
             Event::Blocked { .. } => EntryKind::Blocked,
             Event::ResearchOpened { .. }
@@ -501,7 +573,7 @@ impl Event {
             | Event::Rejected { agent }
             | Event::Replied { agent, .. }
             | Event::Stopped { agent, .. } => agent,
-            Event::Talk { from, .. } => from,
+            Event::Talk { from, .. } | Event::Sent { from, .. } => from,
             Event::ResearchOpened { researcher, .. }
             | Event::ResearchDelivered { researcher, .. }
             | Event::ResearchNeedsYou { researcher, .. } => researcher,

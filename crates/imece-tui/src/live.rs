@@ -6,14 +6,22 @@
 //! budget as its session's hard cap (`--max-budget-usd`), so all of them
 //! together can never spend more than the budget. An agent that spent its
 //! share is not prompted again.
+//!
+//! Agents message each other through imece's `send` tool (an MCP server,
+//! one socket per agent, so the sender is the socket, never a claim). A
+//! message waits in the recipient's mail; a waking one starts its next turn
+//! as soon as it is free, the others ride along with that turn.
 
+use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread;
-use std::time::{Instant, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-use imece_agent::claude::{self, Session, Spec};
+use imece_agent::claude::{self, Mcp, Session, Spec};
+use imece_agent::mcp::{Answer, Server, Tool};
 use imece_agent::{Event as AgentEvent, child, worktree};
+use serde_json::{Value, json};
 
 use crate::model::*;
 
@@ -44,6 +52,42 @@ enum Slot {
 /// A started session, or why it could not start.
 type Ready = Result<(Session, PathBuf), String>;
 
+/// A tool call of an agent, and where its answer goes.
+type Call = (AgentId, Value, Sender<Answer>);
+
+/// The longest message body, in characters.
+const MAX_BODY: usize = 4000;
+/// Messages that may wait for one agent; more are refused until it reads.
+const MAX_MAIL: usize = 20;
+/// Turns an agent takes on its teammates' messages before the person has
+/// to speak again: agents can not keep each other busy forever.
+const MAX_WOKEN: u32 = 12;
+/// How long a tool call waits for the screen's loop to answer it.
+const CALL_WAIT: Duration = Duration::from_secs(30);
+
+/// A message waiting for an agent's next turn.
+#[derive(Clone, Debug)]
+struct Mail {
+    from: AgentId,
+    kind: MsgKind,
+    body: String,
+}
+
+/// imece's MCP servers, one socket per agent in a private directory.
+struct Bus {
+    dir: PathBuf,
+    /// imece's own binary; sessions start it as `mcp-relay <socket>`.
+    relay: String,
+    servers: Vec<Server>,
+}
+
+impl Drop for Bus {
+    fn drop(&mut self) {
+        self.servers.clear();
+        let _ = std::fs::remove_dir_all(&self.dir);
+    }
+}
+
 pub struct Live {
     started: Instant,
     /// Events tagged with the agent and the session's generation, so a late
@@ -64,6 +108,15 @@ pub struct Live {
     model: Option<String>,
     /// Each agent's share of the budget, in ten-thousandths of a dollar.
     share: u64,
+    bus: Option<Bus>,
+    calls_tx: Sender<Call>,
+    calls_rx: Receiver<Call>,
+    /// Messages waiting for each agent's next turn.
+    mail: Vec<Vec<Mail>>,
+    /// Prompts each session was given and has not finished.
+    turns: Vec<usize>,
+    /// Turns each agent took on messages since the person last spoke.
+    woken: Vec<u32>,
 }
 
 /// Checks that `claude` runs, then builds the team for the checkout `repo`
@@ -125,7 +178,10 @@ pub fn world(o: Options) -> Result<(World, Live), String> {
     }
     let n = w.agents.len();
     start_clock_at(local_seconds_after_midnight());
-    let live = Live::new(n, program, repo, root, o.model, o.budget / n as u64);
+    let mut live = Live::new(n, program, repo, root, o.model, o.budget / n as u64);
+    let relay = std::env::current_exe().map_err(|e| format!("imece's own path: {e}"))?;
+    live.open_bus(relay.to_string_lossy().into_owned())
+        .map_err(|e| format!("the agents' message bus: {e}"))?;
     Ok((w, live))
 }
 
@@ -140,6 +196,7 @@ impl Live {
     ) -> Live {
         let (tx, rx) = mpsc::channel();
         let (ready_tx, ready_rx) = mpsc::channel();
+        let (calls_tx, calls_rx) = mpsc::channel();
         Live {
             started: Instant::now(),
             tx,
@@ -154,7 +211,47 @@ impl Live {
             root,
             model,
             share,
+            bus: None,
+            calls_tx,
+            calls_rx,
+            mail: vec![Vec::new(); agents],
+            turns: vec![0; agents],
+            woken: vec![0; agents],
         }
+    }
+
+    /// Gives every agent a socket for imece's tools. Sessions started
+    /// before have none.
+    fn open_bus(&mut self, relay: String) -> io::Result<()> {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_or(0, |d| d.subsec_nanos());
+        // Short (socket paths are limited to about 100 bytes), private, and
+        // new: an existing directory is refused, not reused.
+        let dir = std::env::temp_dir().join(format!("imece-{}-{nanos:x}", std::process::id()));
+        std::os::unix::fs::DirBuilderExt::mode(&mut std::fs::DirBuilder::new(), 0o700)
+            .create(&dir)?;
+        let mut bus = Bus {
+            dir,
+            relay,
+            servers: Vec::new(),
+        };
+        for id in 0..self.slots.len() {
+            let tx = self.calls_tx.clone();
+            let server = Server::bind(&bus.dir.join(format!("a{id}.sock")), vec![send_tool()], {
+                move |_, args| {
+                    let (reply, answer) = mpsc::channel();
+                    tx.send((id, args.clone(), reply))
+                        .map_err(|_| "imece is closing".to_string())?;
+                    answer
+                        .recv_timeout(CALL_WAIT)
+                        .map_err(|_| "imece did not answer in time; try again".to_string())?
+                }
+            })?;
+            bus.servers.push(server);
+        }
+        self.bus = Some(bus);
+        Ok(())
     }
 
     /// Moves the clock and applies what the sessions reported.
@@ -175,10 +272,27 @@ impl Live {
             if generation != self.generation[id] {
                 continue;
             }
+            let turn_done = matches!(e, AgentEvent::TurnDone { .. });
             if let AgentEvent::Stopped(_) = e {
                 self.end(w, id);
             }
             apply(w, id, e, self.spent_before[id]);
+            if turn_done {
+                self.turns[id] = self.turns[id].saturating_sub(1);
+                if self.turns[id] > 0 {
+                    // The session goes on with a prompt it already has.
+                    w.agents[id].set_status(Status::Working, w.tick);
+                }
+            }
+        }
+        while let Ok((from, args, reply)) = self.calls_rx.try_recv() {
+            let _ = reply.send(self.send(w, from, &args));
+        }
+        for id in 0..self.mail.len() {
+            let waking = self.mail[id].iter().any(|m| m.kind.wakes());
+            if waking && self.turns[id] == 0 && w.agents[id].status != Status::Stopped {
+                self.deliver(w, id);
+            }
         }
     }
 
@@ -187,6 +301,129 @@ impl Live {
         self.spent_before[id] = w.agents[id].cost;
         self.slots[id] = Slot::None;
         self.generation[id] += 1;
+        self.turns[id] = 0;
+    }
+
+    /// Agent `from` sends a message (the `send` tool's arguments). The
+    /// answer tells the sender what became of it.
+    fn send(&mut self, w: &mut World, from: AgentId, args: &Value) -> Answer {
+        let arg = |k: &str| args[k].as_str().map(str::trim).unwrap_or_default();
+        let kind = MsgKind::from_wire(arg("type")).ok_or_else(|| {
+            let kinds: Vec<&str> = MsgKind::ALL.iter().map(|k| k.wire()).collect();
+            format!("type must be one of {}", kinds.join(", "))
+        })?;
+        let body = arg("body");
+        if body.is_empty() {
+            return Err("the body is empty".into());
+        }
+        if body.chars().count() > MAX_BODY {
+            return Err(format!("the body is longer than {MAX_BODY} characters"));
+        }
+        let project = w.agents[from].project;
+        let to = w
+            .agent_by_name(arg("to"))
+            .filter(|&t| t != from && w.agents[t].project == project)
+            .ok_or_else(|| {
+                let team: Vec<&str> = w
+                    .agents
+                    .iter()
+                    .filter(|a| a.id != from && a.project == project)
+                    .map(|a| a.name.as_str())
+                    .collect();
+                format!(
+                    "no teammate is called {:?}; the team is {}",
+                    arg("to"),
+                    team.join(", ")
+                )
+            })?;
+        let name = w.agents[to].name.clone();
+        if w.agents[to].status == Status::Stopped {
+            return Err(format!(
+                "{name} has stopped; it runs again when the person talks to it"
+            ));
+        }
+        if kind.wakes() && self.over_budget(w, to) {
+            return Err(format!("{name} has spent its share of the budget"));
+        }
+        if kind.wakes() && self.woken[to] >= MAX_WOKEN {
+            return Err(format!(
+                "{name} took {MAX_WOKEN} turns on messages since the person last spoke; \
+                 stop and tell the person what you need"
+            ));
+        }
+        if self.mail[to].len() >= MAX_MAIL {
+            return Err(format!(
+                "{name} has {MAX_MAIL} unread messages; wait for it"
+            ));
+        }
+        self.mail[to].push(Mail {
+            from,
+            kind,
+            body: body.to_string(),
+        });
+
+        let t = w.tick;
+        let first = body.lines().next().unwrap_or_default().to_string();
+        let story = StoryEvent::Sent {
+            from,
+            to,
+            kind,
+            text: body.to_string(),
+        };
+        let (mine, theirs) = (w.agents[from].card, w.agents[to].card);
+        w.story(mine, story.clone());
+        if theirs != mine {
+            w.story(theirs, story);
+        }
+        w.note(Event::Sent {
+            from,
+            to,
+            kind,
+            text: first.clone(),
+        });
+        let sender = w.agents[from].name.clone();
+        w.agents[from].trace(t, format!("send to={name} type={}", kind.wire()));
+        w.agents[to].trace(t, format!("mail from={sender} type={}", kind.wire()));
+        for (a, other) in [(from, to), (to, from)] {
+            w.agents[a].talk = Some(Talk {
+                with: Party::Agent(other),
+                text: first.clone(),
+                until: t + 8,
+            });
+        }
+        Ok(match (kind.wakes(), self.turns[to] > 0) {
+            (true, false) => format!("delivered; {name} starts on it now"),
+            (true, true) => format!("queued; {name} is busy and gets it when its turn ends"),
+            (false, _) => format!(
+                "queued for {name}'s next turn ({} does not wake it)",
+                kind.wire()
+            ),
+        })
+    }
+
+    /// Starts agent `id`'s next turn with all its mail.
+    fn deliver(&mut self, w: &mut World, id: AgentId) {
+        if self.over_budget(w, id) {
+            return;
+        }
+        let mail = std::mem::take(&mut self.mail[id]);
+        self.woken[id] += 1;
+        let title = mail
+            .iter()
+            .find(|m| m.kind == MsgKind::Assign)
+            .unwrap_or(&mail[0])
+            .body
+            .lines()
+            .next()
+            .unwrap_or_default()
+            .to_string();
+        if let Err(why) = self.prompt(w, id, mail_prompt(w, &mail), &title) {
+            apply(w, id, AgentEvent::Stopped(why), self.spent_before[id]);
+        }
+    }
+
+    fn over_budget(&self, w: &World, id: AgentId) -> bool {
+        w.agents[id].cost >= self.share || w.spent() >= w.daily_budget
     }
 
     fn ready(&mut self, w: &mut World, id: AgentId, ready: Ready) {
@@ -221,30 +458,47 @@ impl Live {
     /// Gives agent `id` the person's message, starting its session first
     /// if it has none. An idle worker gets a new card for it.
     pub fn told(&mut self, w: &mut World, id: AgentId, text: &str) -> Result<(), Refusal> {
-        if w.agents[id].cost >= self.share || w.spent() >= w.daily_budget {
+        if self.over_budget(w, id) {
             return Err(Refusal::Budget);
         }
+        // The person is here again: agents may wake each other anew.
+        self.woken.iter_mut().for_each(|n| *n = 0);
+        let title = text.lines().next().unwrap_or_default().to_string();
+        self.prompt(w, id, text.to_string(), &title)
+            .map_err(Refusal::Start)
+    }
+
+    /// Gives agent `id` a prompt, starting its session first if it has
+    /// none. An idle worker gets a new card titled `title`.
+    fn prompt(
+        &mut self,
+        w: &mut World,
+        id: AgentId,
+        text: String,
+        title: &str,
+    ) -> Result<(), String> {
         let t = w.tick;
         match &mut self.slots[id] {
             Slot::None => {
                 self.start(w, id);
-                self.slots[id] = Slot::Starting(vec![text.to_string()]);
+                self.slots[id] = Slot::Starting(vec![text]);
             }
-            Slot::Starting(q) => q.push(text.to_string()),
+            Slot::Starting(q) => q.push(text),
             Slot::Running(s) => {
-                if let Err(e) = s.prompt(text) {
+                if let Err(e) = s.prompt(&text) {
                     self.end(w, id);
-                    return Err(Refusal::Start(e.to_string()));
+                    return Err(e.to_string());
                 }
             }
         }
+        self.turns[id] += 1;
         let a = &w.agents[id];
         if a.role == Role::Worker && a.status != Status::Working {
             let card = w.cards.len();
             w.cards.push(Card {
                 id: card,
                 project: a.project,
-                title: text.lines().next().unwrap_or_default().to_string(),
+                title: title.to_string(),
                 owner: Some(id),
                 column: Column::Working,
                 story: Vec::new(),
@@ -281,6 +535,14 @@ impl Live {
             // In millionths of a dollar: what is left of the agent's share.
             budget: self.share.saturating_sub(a.cost) * 100,
             system: system_prompt(w, id),
+            mcp: self.bus.as_ref().map(|b| Mcp {
+                command: b.relay.clone(),
+                args: vec![
+                    "mcp-relay".into(),
+                    b.servers[id].path().to_string_lossy().into_owned(),
+                ],
+                tools: vec!["send".into()],
+            }),
         };
         let generation = self.generation[id];
         let (repo, root, name) = (self.repo.clone(), self.root.clone(), a.name.clone());
@@ -324,6 +586,8 @@ pub fn apply(w: &mut World, id: AgentId, e: AgentEvent, before: u64) {
         }
         AgentEvent::Text(text) => w.agents[id].trace(t, format!("text {text:?}")),
         AgentEvent::Tool { name, target } => {
+            let mcp = claude::mcp_tool("");
+            let name = name.strip_prefix(&mcp).map_or(name.clone(), str::to_string);
             let changes = matches!(name.as_str(), "Edit" | "Write");
             let a = &mut w.agents[id];
             a.trace(t, format!("tool_use {name} {target}"));
@@ -388,6 +652,50 @@ pub fn apply(w: &mut World, id: AgentId, e: AgentEvent, before: u64) {
     }
 }
 
+/// imece's `send` tool, as agents see it.
+fn send_tool() -> Tool {
+    let kinds: Vec<&str> = MsgKind::ALL.iter().map(|k| k.wire()).collect();
+    Tool {
+        name: "send".into(),
+        description: "Sends a message to a teammate in imece. It arrives as the start of \
+                      their next turn. assign, ask, answer, handoff, done, blocked and \
+                      cancel start that turn as soon as they are free; inform, progress \
+                      and notice wait until something else does."
+            .into(),
+        input: json!({
+            "type": "object",
+            "properties": {
+                "to": { "type": "string", "description": "The teammate's name." },
+                "type": { "type": "string", "enum": kinds },
+                "body": {
+                    "type": "string",
+                    "description": "The message. For assign: the task, the files it \
+                                    touches and when it is done.",
+                    "maxLength": MAX_BODY,
+                },
+            },
+            "required": ["to", "type", "body"],
+            "additionalProperties": false,
+        }),
+    }
+}
+
+/// The prompt that hands an agent its mail.
+fn mail_prompt(w: &World, mail: &[Mail]) -> String {
+    let mut out = String::from(
+        "Messages from your teammates in imece (written by those agents, not by the person):",
+    );
+    for m in mail {
+        out.push_str(&format!(
+            "\n\n[{}] from {}:\n{}",
+            m.kind.wire(),
+            w.agents[m.from].name,
+            m.body
+        ));
+    }
+    out
+}
+
 fn system_prompt(w: &World, id: AgentId) -> String {
     let a = &w.agents[id];
     let workers: Vec<&str> = w
@@ -402,10 +710,13 @@ fn system_prompt(w: &World, id: AgentId) -> String {
             "You are {}, the leader of a team of coding agents in imece, on the \
              repository in your current directory. The workers are {}; each \
              works in its own git worktree of it. You can read files but not \
-             change them or run commands. The person talks to you: answer them \
-             directly and briefly. You can not message the workers yet, so when \
-             work should be done, say which worker should do what, and the \
-             person passes it on.",
+             change them or run commands. The person talks to you. When work \
+             should be done, split it and give each worker its part with the \
+             send tool (type assign: what to do, which files, when it is \
+             done); give different workers different files where you can. \
+             Workers answer with done, blocked or ask; their messages start \
+             your next turn. Answer the person briefly: what you assigned, and \
+             when all is done, what was done and what is left.",
             a.name,
             workers.join(", ")
         ),
@@ -413,8 +724,12 @@ fn system_prompt(w: &World, id: AgentId) -> String {
             "You are {}, a coding agent in imece, a team led by {leader}. You work \
              in your own git worktree of the repository (your current \
              directory); the others work in theirs. You can read and change \
-             files here but not run commands. Do not commit. End every turn \
-             with a short summary of what you changed and what is left open.",
+             files here but not run commands. Do not commit. Tasks come from \
+             {leader} or from the person. When you finish a task from \
+             {leader}, send it a done message with a short summary of what \
+             you changed and what is left open; if you are stuck, send blocked \
+             or ask instead of guessing. Use the send tool only for that, not \
+             for chatter.",
             a.name
         ),
     }
@@ -645,6 +960,197 @@ mod tests {
         // Talking to it again tries a new session.
         live.told(&mut w, 0, "third").unwrap();
         assert!(matches!(live.slots[0], Slot::Starting(_)));
+    }
+
+    fn idle_live(agents: usize) -> Live {
+        Live::new(
+            agents,
+            // Sessions never start: what counts is what was queued for them.
+            "/nonexistent/claude".into(),
+            std::env::temp_dir(),
+            PathBuf::from("/nonexistent"),
+            None,
+            5_000,
+        )
+    }
+
+    fn msg(to: &str, kind: &str, body: &str) -> Value {
+        json!({ "to": to, "type": kind, "body": body })
+    }
+
+    fn queued(live: &Live, id: AgentId) -> Vec<String> {
+        match &live.slots[id] {
+            Slot::Starting(q) => q.clone(),
+            _ => Vec::new(),
+        }
+    }
+
+    #[test]
+    fn an_assign_to_an_idle_worker_starts_its_turn_with_a_card() {
+        let mut w = team(2);
+        w.agents[1].status = Status::Idle;
+        let mut live = idle_live(3);
+        let got = live.send(
+            &mut w,
+            0,
+            &msg("claude-1", "assign", "Fix the parser\nin src/p.rs"),
+        );
+        assert!(got.unwrap().starts_with("delivered"));
+        live.step(&mut w);
+        let q = queued(&live, 1);
+        assert_eq!(q.len(), 1);
+        assert!(
+            q[0].contains("[assign] from lead:\nFix the parser\nin src/p.rs"),
+            "{q:?}"
+        );
+        assert!(q[0].contains("not by the person"));
+        let card = w.agents[1].card.expect("a card");
+        assert_eq!(w.cards[card].title, "Fix the parser");
+        assert!(live.mail[1].is_empty());
+        assert!(matches!(
+            w.journal.last().unwrap().event,
+            Event::Sent {
+                from: 0,
+                to: 1,
+                kind: MsgKind::Assign,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn a_busy_agent_gets_its_mail_when_its_turn_ends() {
+        let mut w = team(1);
+        let mut live = idle_live(2);
+        live.turns[0] = 1;
+        let got = live.send(&mut w, 1, &msg("lead", "done", "Parser fixed."));
+        assert!(got.unwrap().contains("busy"));
+        live.step(&mut w);
+        assert!(queued(&live, 0).is_empty(), "not while it works");
+        live.tx
+            .send((
+                0,
+                0,
+                AgentEvent::TurnDone {
+                    ok: true,
+                    text: "ok".into(),
+                    cost: 0,
+                    denied: 0,
+                },
+            ))
+            .unwrap();
+        live.step(&mut w);
+        assert_eq!(live.turns[0], 1);
+        assert!(queued(&live, 0)[0].contains("[done] from claude-1:\nParser fixed."));
+    }
+
+    #[test]
+    fn an_inform_waits_for_a_turn_something_else_starts() {
+        let mut w = team(2);
+        let mut live = idle_live(3);
+        live.send(&mut w, 2, &msg("lead", "progress", "Half done."))
+            .unwrap();
+        live.step(&mut w);
+        assert!(queued(&live, 0).is_empty());
+        live.send(&mut w, 1, &msg("lead", "ask", "Which file?"))
+            .unwrap();
+        live.step(&mut w);
+        let q = queued(&live, 0);
+        assert_eq!(q.len(), 1, "both in one turn");
+        assert!(q[0].contains("[progress] from claude-2") && q[0].contains("[ask] from claude-1"));
+    }
+
+    #[test]
+    fn bad_messages_are_refused_with_a_reason() {
+        let mut w = team(1);
+        let mut live = idle_live(2);
+        let refused = |live: &mut Live, w: &mut World, args: Value| {
+            live.send(w, 1, &args).expect_err("refused")
+        };
+        assert!(refused(&mut live, &mut w, msg("ghost", "ask", "hi")).contains("the team is lead"));
+        assert!(refused(&mut live, &mut w, msg("claude-1", "ask", "me")).contains("no teammate"));
+        assert!(refused(&mut live, &mut w, msg("lead", "shout", "hi")).contains("one of assign"));
+        assert!(refused(&mut live, &mut w, msg("lead", "ask", "  ")).contains("empty"));
+        let long = "x".repeat(MAX_BODY + 1);
+        assert!(refused(&mut live, &mut w, msg("lead", "ask", &long)).contains("longer"));
+        assert!(refused(&mut live, &mut w, json!({ "to": "lead" })).contains("type"));
+        w.agents[0].status = Status::Stopped;
+        assert!(refused(&mut live, &mut w, msg("lead", "ask", "hi")).contains("stopped"));
+        assert!(live.mail[0].is_empty());
+        assert!(w.journal.is_empty());
+    }
+
+    #[test]
+    fn agents_can_not_keep_each_other_busy_without_the_person() {
+        let mut w = team(1);
+        let mut live = idle_live(2);
+        live.woken[0] = MAX_WOKEN;
+        let err = live
+            .send(&mut w, 1, &msg("lead", "ask", "again?"))
+            .unwrap_err();
+        assert!(err.contains("tell the person"), "{err}");
+        // What does not wake still goes through.
+        live.send(&mut w, 1, &msg("lead", "inform", "fyi")).unwrap();
+        // The person speaking resets the count.
+        live.told(&mut w, 1, "carry on").unwrap();
+        assert_eq!(live.woken[0], 0);
+        live.send(&mut w, 1, &msg("lead", "ask", "again?")).unwrap();
+        live.mail[0].clear();
+        for _ in 0..MAX_MAIL {
+            live.send(&mut w, 1, &msg("lead", "inform", "x")).unwrap();
+        }
+        assert!(
+            live.send(&mut w, 1, &msg("lead", "inform", "x"))
+                .unwrap_err()
+                .contains("unread")
+        );
+    }
+
+    #[test]
+    fn an_agent_over_its_share_gets_no_waking_mail() {
+        let mut w = team(1);
+        let mut live = idle_live(2);
+        w.agents[0].cost = 5_000;
+        assert!(
+            live.send(&mut w, 1, &msg("lead", "done", "x"))
+                .unwrap_err()
+                .contains("budget")
+        );
+    }
+
+    #[test]
+    fn the_bus_answers_through_the_socket_of_the_caller() {
+        use std::io::{BufRead, BufReader, Write};
+        use std::os::unix::net::UnixStream;
+        let mut w = team(1);
+        let mut live = idle_live(2);
+        live.open_bus("/opt/imece".into()).unwrap();
+        let dir = live.bus.as_ref().unwrap().dir.clone();
+        use std::os::unix::fs::PermissionsExt;
+        assert_eq!(
+            std::fs::metadata(&dir).unwrap().permissions().mode() & 0o777,
+            0o700
+        );
+        let path = live.bus.as_ref().unwrap().servers[1].path().to_path_buf();
+        let caller = thread::spawn(move || {
+            let mut sock = UnixStream::connect(path).unwrap();
+            let call = json!({"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"send",
+                "arguments":{"to":"lead","type":"inform","body":"from the socket"}}});
+            writeln!(sock, "{call}").unwrap();
+            let mut line = String::new();
+            BufReader::new(&sock).read_line(&mut line).unwrap();
+            line
+        });
+        wait_for(&mut live, &mut w, |w| !w.journal.is_empty());
+        let reply: Value = serde_json::from_str(&caller.join().unwrap()).unwrap();
+        assert_eq!(reply["result"]["isError"], false, "{reply}");
+        // The sender is whose socket it was.
+        assert!(matches!(
+            w.journal[0].event,
+            Event::Sent { from: 1, to: 0, .. }
+        ));
+        drop(live);
+        assert!(!dir.exists());
     }
 
     #[test]

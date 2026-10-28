@@ -4,6 +4,7 @@
 
 pub mod child;
 pub mod claude;
+pub mod mcp;
 pub mod worktree;
 
 /// What a session reports, whatever the vendor.

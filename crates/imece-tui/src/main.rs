@@ -132,6 +132,17 @@ fn parse_args() -> Result<Args, String> {
 }
 
 fn main() -> std::io::Result<()> {
+    // A live agent's CLI starts imece this way as its MCP server: it only
+    // carries bytes between the CLI and imece's socket for that agent.
+    let mut argv = std::env::args_os().skip(1);
+    if argv.next().is_some_and(|a| a == "mcp-relay") {
+        let path = argv.next().map(PathBuf::from).unwrap_or_default();
+        if let Err(e) = imece_agent::mcp::relay(&path) {
+            eprintln!("imece mcp-relay: {e}");
+            std::process::exit(1);
+        }
+        return Ok(());
+    }
     let args = match parse_args() {
         Ok(a) => a,
         Err(msg) => {
