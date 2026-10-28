@@ -72,7 +72,7 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App, id: AgentId) {
         Taint::Full => Span::styled(t.full, fg(Color::Red)),
     };
     head.push(Line::from(vec![Span::styled(t.origin, dim()), taint]));
-    if let Some(c) = card {
+    if let Some(c) = card.filter(|c| !c.symbols.is_empty()) {
         let leases = c
             .symbols
             .iter()

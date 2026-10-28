@@ -134,6 +134,7 @@ pub struct Text {
     pub shared_files: &'static str,
     pub code_legend: &'static str,
     pub same_file: &'static str,
+    pub no_code_map: &'static str,
     // Focus
     pub focus_title: &'static str,
     pub minutes: &'static str,
@@ -255,6 +256,7 @@ pub const EN: Text = Text {
     shared_files: " · {} files with several agents at once",
     code_legend: "   ██ working  ◌◌ verifying  ✕✕ blocked  !! waiting for you",
     same_file: "⇆ {} agents in one file",
+    no_code_map: "no shared trunk yet: each agent works in its own worktree, so there are no leases to show",
     focus_title: " FOCUS · {} ",
     minutes: " · {} min",
     no_card: "no card right now",
@@ -405,6 +407,7 @@ pub const TR: Text = Text {
     shared_files: " · {} dosyada birden çok agent aynı anda çalışıyor",
     code_legend: "   ██ çalışıyor  ◌◌ doğrulanıyor  ✕✕ bloke  !! onay bekliyor",
     same_file: "⇆ aynı dosyada {} agent",
+    no_code_map: "henüz ortak trunk yok: her agent kendi worktree'sinde çalışıyor, gösterilecek lease yok",
     focus_title: " ODAK · {} ",
     minutes: " · {} dk",
     no_card: "şu an bir kartı yok",

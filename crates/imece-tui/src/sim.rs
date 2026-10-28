@@ -357,7 +357,7 @@ pub fn world(
             id: p,
             name: name.into(),
             leader,
-            trunk: 140 + 37 * p as u32,
+            trunk: Some(140 + 37 * p as u32),
             repo,
         });
     }
@@ -944,8 +944,8 @@ impl Sim {
             return;
         }
         let project = w.agents[id].project;
-        w.projects[project].trunk += 1;
-        let trunk = w.projects[project].trunk;
+        let trunk = w.projects[project].trunk.map_or(1, |n| n + 1);
+        w.projects[project].trunk = Some(trunk);
         let tests = self.rng.range(3, 40);
         w.story(card, StoryEvent::Verified { tests, trunk });
         if let Some(c) = card {
@@ -1055,10 +1055,11 @@ mod tests {
     #[test]
     fn work_reaches_every_trunk() {
         let (mut w, mut s) = world(2, 12, 4, 5, Lang::En);
-        let before: Vec<u32> = w.projects.iter().map(|p| p.trunk).collect();
+        let before: Vec<u32> = w.projects.iter().map(|p| p.trunk.unwrap()).collect();
         run(&mut w, &mut s, 1500, true);
         for (p, b) in w.projects.iter().zip(before) {
-            assert!(p.trunk >= b + 5, "{} only reached #{}", p.name, p.trunk);
+            let trunk = p.trunk.unwrap();
+            assert!(trunk >= b + 5, "{} only reached #{trunk}", p.name);
         }
     }
 

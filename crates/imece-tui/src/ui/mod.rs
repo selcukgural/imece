@@ -599,4 +599,21 @@ mod tests {
         app.zoom = Zoom::Focus(3);
         assert!(render(&app, 140, 40).contains("FOCUS"));
     }
+
+    #[test]
+    fn without_a_merge_queue_there_is_no_trunk_or_lease() {
+        let mut app = app_after(1, 4, 300, Lang::En);
+        app.world.projects[0].trunk = None;
+        app.world.projects[0].repo = &[];
+        for c in &mut app.world.cards {
+            c.symbols.clear();
+        }
+        let salon = render(&app, 140, 40);
+        assert!(!salon.contains("trunk #"), "{salon}");
+        app.zoom = Zoom::Focus(1);
+        assert!(!render(&app, 140, 40).contains("lease"));
+        app.zoom = Zoom::None;
+        app.view = View::Code;
+        assert!(render(&app, 140, 40).contains("no shared trunk yet"));
+    }
 }

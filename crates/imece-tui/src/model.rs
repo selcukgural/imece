@@ -224,7 +224,9 @@ pub struct Project {
     pub id: ProjectId,
     pub name: String,
     pub leader: AgentId,
-    pub trunk: u32,
+    /// The last change the merge queue landed; `None` without a merge queue
+    /// (live agents keep their work in their own worktrees).
+    pub trunk: Option<u32>,
     /// The project's files and the symbols agents lease in them.
     pub repo: &'static [(&'static str, &'static [&'static str])],
 }
