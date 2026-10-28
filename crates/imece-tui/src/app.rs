@@ -1,7 +1,7 @@
 //! Screen state and keys: which view, how deep, what is selected, which
 //! projects are folded, the language, and what the person is typing.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::time::{Duration, Instant};
 
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
@@ -9,7 +9,9 @@ use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use crate::i18n::{Lang, fill};
 use crate::live::{Live, Refusal};
 use crate::model::*;
+use crate::prefs::{SIDE_DEFAULT, SIDE_MAX, SIDE_MIN};
 use crate::sim::{self, Sim};
+use crate::ui;
 
 /// What drives the agents.
 pub enum Engine {
@@ -42,6 +44,22 @@ pub enum Zoom {
 pub enum Pane {
     Salon,
     Inbox,
+    Journal,
+}
+
+/// A conversation opened from the journal: every line between its two
+/// parties, oldest first, whole.
+pub struct Thread {
+    /// Journal indexes.
+    pub entries: Vec<usize>,
+    /// The selected line, which `c` copies.
+    pub sel: usize,
+    /// First visible row; the drawing keeps the selected line in view.
+    pub scroll: Cell<u16>,
+    /// The selection moved: the next drawing scrolls to it.
+    pub follow: Cell<bool>,
+    /// Rows the last drawing had room for, for paging.
+    pub page: Cell<u16>,
 }
 
 /// A selectable salon line: a project's header or an agent.
@@ -107,6 +125,14 @@ pub struct App {
     pub collapsed: Vec<bool>,
     /// Position in the open inbox items.
     pub inbox_sel: usize,
+    /// The selected journal line (a journal index).
+    pub journal_sel: Option<usize>,
+    pub thread: Option<Thread>,
+    /// The side panel's width, in percent.
+    pub side: u16,
+    /// Text the person asked to copy; the main loop hands it to the
+    /// clipboard.
+    pub copy: Option<String>,
     pub typing: bool,
     pub input: String,
     pub paused: bool,
@@ -145,6 +171,10 @@ impl App {
             selected,
             collapsed,
             inbox_sel: 0,
+            journal_sel: None,
+            thread: None,
+            side: SIDE_DEFAULT,
+            copy: None,
             typing: false,
             input: String::new(),
             paused: false,
@@ -193,6 +223,11 @@ impl App {
         {
             return self.world.agents[self.world.inbox[i].agent].project;
         }
+        if self.pane == Pane::Journal
+            && let Some(e) = self.journal_sel.and_then(|i| self.world.journal.get(i))
+        {
+            return self.world.agents[e.event.agent()].project;
+        }
         match self.selected {
             Sel::Project(p) => p,
             Sel::Agent(a) => self.world.agents[a].project,
@@ -219,6 +254,9 @@ impl App {
         }
         if self.typing {
             self.type_key(k);
+            return;
+        }
+        if self.thread.is_some() && self.thread_key(k) {
             return;
         }
 
@@ -254,8 +292,19 @@ impl App {
             KeyCode::Tab if self.view == View::Salon && self.zoom == Zoom::None => {
                 self.pane = match self.pane {
                     Pane::Salon => Pane::Inbox,
-                    Pane::Inbox => Pane::Salon,
+                    Pane::Inbox => Pane::Journal,
+                    Pane::Journal => Pane::Salon,
                 };
+                if self.pane == Pane::Journal {
+                    self.select_journal(None);
+                }
+            }
+            KeyCode::Char('<') => self.side = (self.side + 4).min(SIDE_MAX),
+            KeyCode::Char('>') => self.side = self.side.saturating_sub(4).max(SIDE_MIN),
+            KeyCode::Char('c') if self.pane == Pane::Journal && self.zoom == Zoom::None => {
+                if let Some(i) = self.journal_sel {
+                    self.copy = Some(ui::copy_text(self.lang, &self.world, &[i]));
+                }
             }
             KeyCode::Up | KeyCode::Char('k') => self.move_selection(false),
             KeyCode::Down | KeyCode::Char('j') => self.move_selection(true),
@@ -272,6 +321,92 @@ impl App {
             KeyCode::Char('r') if self.pane == Pane::Inbox => self.answer(false),
             _ => {}
         }
+    }
+
+    /// A key for the open conversation; `false` leaves it to the rest of
+    /// the screen (typing, switching views, quitting).
+    fn thread_key(&mut self, k: KeyEvent) -> bool {
+        let Some(th) = &mut self.thread else {
+            return false;
+        };
+        let last = th.entries.len().saturating_sub(1);
+        match k.code {
+            KeyCode::Esc => self.thread = None,
+            KeyCode::Up | KeyCode::Char('k') => {
+                th.sel = th.sel.saturating_sub(1);
+                th.follow.set(true);
+            }
+            KeyCode::Down | KeyCode::Char('j') => {
+                th.sel = (th.sel + 1).min(last);
+                th.follow.set(true);
+            }
+            KeyCode::PageUp => th.scroll.set(th.scroll.get().saturating_sub(th.page.get())),
+            KeyCode::PageDown | KeyCode::Char(' ') => {
+                th.scroll.set(th.scroll.get().saturating_add(th.page.get()))
+            }
+            KeyCode::Home | KeyCode::Char('g') => {
+                th.sel = 0;
+                th.follow.set(true);
+            }
+            KeyCode::End | KeyCode::Char('G') => {
+                th.sel = last;
+                th.follow.set(true);
+            }
+            KeyCode::Char('c') => {
+                let one = th.entries[th.sel];
+                self.copy = Some(ui::copy_text(self.lang, &self.world, &[one]));
+            }
+            KeyCode::Char('C') => {
+                self.copy = Some(ui::copy_text(self.lang, &self.world, &th.entries));
+            }
+            // Writing, views, language, help and quitting work as anywhere.
+            _ => return false,
+        }
+        true
+    }
+
+    /// Opens the conversation that journal line `i` belongs to, with that
+    /// line selected.
+    pub fn open_thread(&mut self, i: usize) {
+        let entries = ui::thread_of(&self.world, i);
+        let sel = entries.iter().position(|&e| e == i).unwrap_or(0);
+        self.thread = Some(Thread {
+            entries,
+            sel,
+            scroll: Cell::new(0),
+            follow: Cell::new(true),
+            page: Cell::new(10),
+        });
+    }
+
+    /// The person's copy request went through, or did not.
+    pub fn copied(&mut self, how: Result<&str, String>) {
+        let t = self.lang.text();
+        let msg = match how {
+            Ok(how) => fill(t.copied, &[how]),
+            Err(why) => fill(t.copy_failed, &[&why]),
+        };
+        self.flash(msg);
+    }
+
+    /// Keeps the journal selection on a line that is still shown, moving by
+    /// `step` lines (newest first) when given.
+    fn select_journal(&mut self, step: Option<bool>) {
+        let rows = ui::journal_rows(&self.world);
+        if rows.is_empty() {
+            self.journal_sel = None;
+            return;
+        }
+        let pos = self
+            .journal_sel
+            .and_then(|i| rows.iter().position(|&(r, _)| r == i));
+        let pos = match (pos, step) {
+            (None, _) => 0,
+            (Some(p), None) => p,
+            (Some(p), Some(down)) if down => (p + 1).min(rows.len() - 1),
+            (Some(p), Some(_)) => p.saturating_sub(1),
+        };
+        self.journal_sel = Some(rows[pos].0);
     }
 
     fn salon_keys(&self) -> bool {
@@ -368,6 +503,7 @@ impl App {
 
     fn move_selection(&mut self, down: bool) {
         match self.pane {
+            Pane::Journal => self.select_journal(Some(down)),
             Pane::Inbox => {
                 let n = self.world.open_inbox().len();
                 if n > 0 {
@@ -402,16 +538,30 @@ impl App {
             Zoom::None => match (self.pane, self.selected) {
                 (Pane::Inbox, _) => {
                     let open = self.world.open_inbox();
-                    open.get(self.inbox_sel).map(|&i| {
-                        let item = &self.world.inbox[i];
-                        let agent = item.agent;
-                        if item.kind == InboxKind::Reply {
-                            // Read now: the focus shows the whole answer.
+                    let item = open.get(self.inbox_sel).map(|&i| &self.world.inbox[i]);
+                    match item {
+                        Some(item) if item.kind == InboxKind::Reply => {
+                            // Read now: the conversation shows the whole answer.
+                            let agent = item.agent;
                             self.world.close_replies(agent);
                             self.inbox_sel = self.inbox_sel.min(open.len().saturating_sub(2));
+                            if let Some(i) = self.world.journal.iter().rposition(|e| {
+                                matches!(e.event, Event::Replied { agent: a, .. } if a == agent)
+                            }) {
+                                self.open_thread(i);
+                                return;
+                            }
+                            Some(Zoom::Focus(agent))
                         }
-                        Zoom::Focus(agent)
-                    })
+                        Some(item) => Some(Zoom::Focus(item.agent)),
+                        None => None,
+                    }
+                }
+                (Pane::Journal, _) => {
+                    if let Some(i) = self.journal_sel {
+                        self.open_thread(i);
+                    }
+                    None
                 }
                 (Pane::Salon, Sel::Project(p)) => {
                     self.collapsed[p] = !self.collapsed[p];

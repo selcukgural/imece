@@ -18,6 +18,7 @@ use ratatui::widgets::{Paragraph, Wrap};
 use crate::app::{App, FLASH, View, Zoom};
 use crate::i18n::{Lang, clean, fill};
 use crate::model::*;
+pub(crate) use salon::{journal_rows, thread_of};
 
 pub fn draw(f: &mut Frame, app: &App) {
     let [head, body, foot] = Layout::vertical([
@@ -37,6 +38,9 @@ pub fn draw(f: &mut Frame, app: &App) {
         },
     }
     footer(f, foot, app);
+    if let Some(th) = &app.thread {
+        overlay::thread(f, app, th);
+    }
     if app.help {
         overlay::help(f, app.lang);
     } else if let Some(d) = &app.digest {
@@ -157,6 +161,103 @@ pub(crate) fn entry_line(app: &App, e: &Entry) -> Line<'static> {
         None => spans.push(Span::raw(words::event(app.lang, w, &e.event))),
     }
     Line::from(spans)
+}
+
+/// Journal lines `entries` as text to paste elsewhere: who said what, when,
+/// whole. Cleaned like everything drawn, so what is copied is what the
+/// screen shows (no control characters, secrets hidden).
+pub(crate) fn copy_text(lang: Lang, w: &World, entries: &[usize]) -> String {
+    let party = |p: Party| match p {
+        Party::Agent(id) => clean(&w.agents[id].name),
+        Party::Person => lang.text().you.to_string(),
+    };
+    let one = |i: usize| {
+        let e = &w.journal[i];
+        match words::said(&e.event) {
+            Some(s) if entries.len() == 1 => body_lines(s.text).join("\n"),
+            Some(s) => {
+                let kind = s
+                    .kind
+                    .map(|k| format!(" [{}]", lang.text().kinds[k as usize]))
+                    .unwrap_or_default();
+                format!(
+                    "{} {} → {}{kind}\n{}",
+                    clock(e.tick),
+                    party(s.from),
+                    party(s.to),
+                    body_lines(s.text).join("\n")
+                )
+            }
+            None => format!("{} {}", clock(e.tick), words::event(lang, w, &e.event)),
+        }
+    };
+    entries
+        .iter()
+        .map(|&i| one(i))
+        .collect::<Vec<_>>()
+        .join("\n\n")
+}
+
+/// An agent's text as cleaned lines, trailing blank lines dropped.
+pub(crate) fn body_lines(text: &str) -> Vec<String> {
+    let mut lines: Vec<String> = text
+        .lines()
+        .map(|l| clean(l).trim_end().to_string())
+        .collect();
+    while lines.last().is_some_and(|l| l.is_empty()) {
+        lines.pop();
+    }
+    lines
+}
+
+/// An agent's text drawn lightly as the Markdown it usually is: headings,
+/// lists, `code` and fenced blocks. Every line is cleaned first.
+pub(crate) fn markdown(text: &str, indent: &str) -> Vec<Line<'static>> {
+    let code = fg(Color::Indexed(180));
+    let mut fenced = false;
+    let mut out = Vec::new();
+    for line in body_lines(text) {
+        if line.trim_start().starts_with("```") {
+            fenced = !fenced;
+            continue;
+        }
+        let mut spans = vec![Span::raw(indent.to_string())];
+        if fenced {
+            spans.push(Span::styled("│ ", dim()));
+            spans.push(Span::styled(line, code));
+        } else if let Some(h) = line.strip_prefix('#') {
+            spans.push(Span::styled(
+                h.trim_start_matches('#').trim().to_string(),
+                bold(Color::White),
+            ));
+        } else {
+            let lead = line.len() - line.trim_start().len();
+            let rest = &line[lead..];
+            let rest = match rest.strip_prefix("- ").or_else(|| rest.strip_prefix("* ")) {
+                Some(item) => {
+                    spans.push(Span::raw(format!("{}• ", &line[..lead])));
+                    item
+                }
+                None => {
+                    spans.push(Span::raw(line[..lead].to_string()));
+                    rest
+                }
+            };
+            // Backticks alternate between prose and code.
+            for (n, part) in rest.split('`').enumerate() {
+                if part.is_empty() {
+                    continue;
+                }
+                spans.push(if n % 2 == 1 {
+                    Span::styled(part.to_string(), code)
+                } else {
+                    Span::raw(part.to_string())
+                });
+            }
+        }
+        out.push(Line::from(spans));
+    }
+    out
 }
 
 /// `s` cleaned, then cut or padded to exactly `n` characters.
@@ -370,6 +471,8 @@ fn footer(f: &mut Frame, area: Rect, app: &App) {
 mod tests {
     use ratatui::Terminal;
     use ratatui::backend::TestBackend;
+
+    use ratatui::crossterm::event::{KeyCode, KeyEvent};
 
     use super::*;
     use crate::app::{App, Pane, Sel};
@@ -624,10 +727,19 @@ mod tests {
         assert!(render(&app, 140, 40).contains("FOCUS"));
     }
 
+    fn key(app: &mut App, code: KeyCode) {
+        app.on_key(KeyEvent::from(code));
+    }
+
     #[test]
     fn an_answer_is_in_the_inbox_and_enter_reads_it_whole() {
         let mut app = app_after(1, 4, 50, Lang::En);
-        app.world.replied(0, "Short first line.\nTHE-REST");
+        let answer = "Short first line.\nTHE-REST";
+        app.world.note(Event::Replied {
+            agent: 0,
+            text: answer.into(),
+        });
+        app.world.replied(0, answer);
         let screen = render(&app, 140, 40);
         assert!(
             screen.contains("answered you: Short first line."),
@@ -635,20 +747,124 @@ mod tests {
         );
         app.pane = Pane::Inbox;
         app.inbox_sel = app.world.open_inbox().len() - 1;
-        app.world.story(
-            app.world.agents[0].card,
-            StoryEvent::Replied("Short first line.\nTHE-REST".into()),
-        );
-        app.on_key(ratatui::crossterm::event::KeyEvent::from(
-            ratatui::crossterm::event::KeyCode::Enter,
-        ));
-        assert_eq!(app.zoom, Zoom::Focus(0));
+        key(&mut app, KeyCode::Enter);
+        assert!(app.thread.is_some(), "the conversation opens");
+        assert!(render(&app, 140, 40).contains("THE-REST"));
         assert!(
             app.world
                 .open_inbox()
                 .iter()
                 .all(|&i| app.world.inbox[i].kind != InboxKind::Reply)
         );
+    }
+
+    /// A world whose journal is only a conversation of the person and the
+    /// leader, with another pair talking in between.
+    fn talking() -> App {
+        let mut app = app_after(1, 4, 0, Lang::En);
+        app.world.journal.clear();
+        let you = |text: &str| Event::YouSaid {
+            to: 0,
+            text: text.into(),
+        };
+        let lead = |text: &str| Event::Replied {
+            agent: 0,
+            text: text.into(),
+        };
+        app.world.note(you("check the readme"));
+        app.world.note(lead(
+            "# Readme\nIt is one line: `# demo`.\n- no usage\n```\ncargo run\n```",
+        ));
+        app.world.note(Event::Talk {
+            from: 1,
+            to: 2,
+            text: "between workers".into(),
+        });
+        app.world.note(you("assign it"));
+        app.world
+            .note(lead(&format!("{} THE-END", "long ".repeat(300))));
+        app
+    }
+
+    #[test]
+    fn tab_reaches_the_journal_and_enter_opens_the_whole_conversation() {
+        let mut app = talking();
+        key(&mut app, KeyCode::Tab);
+        key(&mut app, KeyCode::Tab);
+        assert_eq!(app.pane, Pane::Journal);
+        // The newest line is selected; its conversation folds the older one.
+        assert_eq!(app.journal_sel, Some(4));
+        assert!(render(&app, 140, 40).contains("enter open the conversation"));
+        key(&mut app, KeyCode::Enter);
+        let th = app.thread.as_ref().unwrap();
+        // Every line of the pair, not only the neighbouring ones; not the
+        // workers' talk.
+        assert_eq!(th.entries, [0, 1, 3, 4]);
+        assert_eq!(th.sel, 3);
+        let screen = render(&app, 120, 30);
+        assert!(screen.contains("CONVERSATION"), "{screen}");
+        assert!(screen.contains("THE-END"), "the selected line is in view");
+        key(&mut app, KeyCode::Home);
+        let screen = render(&app, 120, 30);
+        assert!(screen.contains("check the readme"), "{screen}");
+        assert!(!screen.contains("# Readme"), "headings drop their marks");
+        assert!(screen.contains("• no usage") && screen.contains("│ cargo run"));
+        key(&mut app, KeyCode::Esc);
+        assert!(app.thread.is_none());
+        assert_eq!(app.pane, Pane::Journal, "esc only closes the window");
+    }
+
+    #[test]
+    fn c_copies_a_line_and_capital_c_the_conversation_as_shown() {
+        let mut app = talking();
+        app.world.note(Event::Replied {
+            agent: 0,
+            text: "token sk-abc123 \u{1b}[31mred".into(),
+        });
+        app.pane = Pane::Journal;
+        app.journal_sel = Some(5);
+        key(&mut app, KeyCode::Char('c'));
+        let one = app.copy.take().unwrap();
+        assert!(
+            !one.contains("sk-abc123") && !one.contains('\u{1b}'),
+            "{one}"
+        );
+        key(&mut app, KeyCode::Enter);
+        key(&mut app, KeyCode::Char('C'));
+        let all = app.copy.take().unwrap();
+        assert!(all.contains("you → lead\ncheck the readme"), "{all}");
+        assert!(all.contains("lead → you\n# Readme"), "copied as written");
+        assert!(!all.contains("between workers"));
+    }
+
+    #[test]
+    fn typing_works_with_the_conversation_open() {
+        let mut app = talking();
+        app.open_thread(1);
+        key(&mut app, KeyCode::Char('/'));
+        assert!(app.typing);
+        key(&mut app, KeyCode::Char('x'));
+        assert_eq!(app.input, "x");
+        assert!(app.thread.is_some());
+    }
+
+    #[test]
+    fn the_side_panel_resizes_within_bounds() {
+        let mut app = app_after(1, 4, 50, Lang::En);
+        let start = app.side;
+        key(&mut app, KeyCode::Char('<'));
+        assert_eq!(app.side, start + 4);
+        for _ in 0..30 {
+            key(&mut app, KeyCode::Char('<'));
+        }
+        assert_eq!(app.side, crate::prefs::SIDE_MAX);
+        render(&app, 140, 40);
+        for _ in 0..30 {
+            key(&mut app, KeyCode::Char('>'));
+        }
+        assert_eq!(app.side, crate::prefs::SIDE_MIN);
+        render(&app, 140, 40);
+        render(&app, 60, 20);
     }
 
     #[test]

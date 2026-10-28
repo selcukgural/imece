@@ -19,7 +19,7 @@
 
 use std::collections::HashMap;
 use std::io;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -162,7 +162,7 @@ pub fn world(o: Options) -> Result<(World, Live), String> {
     let name = repo
         .file_name()
         .map_or("repo".into(), |n| n.to_string_lossy().into_owned());
-    let root = state_dir().join("worktrees").join(format!(
+    let root = crate::prefs::state_dir().join("worktrees").join(format!(
         "{name}-{:08x}",
         fnv(repo.as_os_str().as_encoded_bytes())
     ));
@@ -1092,16 +1092,6 @@ fn system_prompt(w: &World, id: AgentId) -> String {
             a.name
         ),
     }
-}
-
-/// `$XDG_STATE_HOME/imece`, or `~/.local/state/imece`.
-fn state_dir() -> PathBuf {
-    std::env::var_os("XDG_STATE_HOME")
-        .map(PathBuf::from)
-        .filter(|p| p.is_absolute())
-        .or_else(|| std::env::var_os("HOME").map(|h| Path::new(&h).join(".local/state")))
-        .unwrap_or_else(std::env::temp_dir)
-        .join("imece")
 }
 
 /// FNV-1a: tells checkouts with the same name apart. Not for security.

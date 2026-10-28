@@ -139,11 +139,18 @@ pub fn rows(w: &World, collapsed: &[bool], selected: Sel, capacity: usize) -> Ve
 
 pub fn draw(f: &mut Frame, area: Rect, app: &App) {
     let (left, right) = if area.width >= 100 {
-        let [l, r] = Layout::horizontal([Constraint::Percentage(62), Constraint::Percentage(38)])
-            .areas(area);
+        let [l, r] = Layout::horizontal([
+            Constraint::Percentage(100 - app.side),
+            Constraint::Percentage(app.side),
+        ])
+        .areas(area);
         (l, r)
     } else {
-        let [l, r] = Layout::vertical([Constraint::Min(6), Constraint::Length(12)]).areas(area);
+        let [l, r] = Layout::vertical([
+            Constraint::Percentage(100 - app.side),
+            Constraint::Percentage(app.side),
+        ])
+        .areas(area);
         (l, r)
     };
     salon(f, left, app);
@@ -434,48 +441,89 @@ fn side(f: &mut Frame, area: Rect, app: &App) {
     }
     f.render_widget(Paragraph::new(lines), inner);
 
-    let block = pane_block(t.journal.into(), false);
+    let focused = app.pane == Pane::Journal;
+    let block = pane_block(t.journal.into(), focused);
     let inner = block.inner(bottom);
     f.render_widget(block, bottom);
-    // The journal keeps every event; the screen shows the meaningful ones.
-    // Routine assignments are visible on the board and in the leader's trace.
+    let rows = journal_rows(w);
+    let sel = app
+        .journal_sel
+        .filter(|_| focused)
+        .and_then(|i| rows.iter().position(|&(r, _)| r == i));
+    // The selected line and its keys stay in view.
+    let height = usize::from(inner.height);
+    let skip = sel.map_or(0, |p| (p + 2).saturating_sub(height));
+    let mut lines = Vec::new();
+    for (n, &(i, more)) in rows.iter().enumerate().skip(skip) {
+        if lines.len() >= height {
+            break;
+        }
+        let mut line = entry_line(app, &w.journal[i]);
+        if more > 0 {
+            line.spans.push(Span::styled(format!("  +{more}"), dim()));
+        }
+        if sel == Some(n) {
+            lines.push(line.style(Style::new().add_modifier(Modifier::REVERSED)));
+            lines.push(Line::from(Span::styled(t.journal_keys, dim())));
+        } else {
+            lines.push(line);
+        }
+    }
+    f.render_widget(Paragraph::new(lines), inner);
+}
+
+/// The journal as the screen shows it, newest first: (journal index, how
+/// many older lines of the same conversation fold under it). The journal
+/// keeps every event; the screen shows the meaningful ones. Routine
+/// assignments are visible on the board and in the leader's trace.
+pub(crate) fn journal_rows(w: &World) -> Vec<(usize, usize)> {
     let shown = w
         .journal
         .iter()
+        .enumerate()
         .rev()
-        .filter(|e| e.event.kind() != EntryKind::Assign);
-    let lines: Vec<Line> = fold_threads(shown)
-        .take(usize::from(inner.height))
-        .map(|(e, more)| {
-            let mut line = entry_line(app, e);
-            if more > 0 {
-                line.spans.push(Span::styled(format!("  +{more}"), dim()));
-            }
-            line
-        })
-        .collect();
-    f.render_widget(Paragraph::new(lines), inner);
+        .filter(|(_, e)| e.event.kind() != EntryKind::Assign);
+    fold_threads(shown).collect()
+}
+
+/// The whole conversation journal line `i` belongs to, oldest first: every
+/// line between the same two parties. Any other event stands alone.
+pub(crate) fn thread_of(w: &World, i: usize) -> Vec<usize> {
+    let Some(pair) = w
+        .journal
+        .get(i)
+        .and_then(|e| words::said(&e.event))
+        .map(|s| s.pair())
+    else {
+        return vec![i];
+    };
+    w.journal
+        .iter()
+        .enumerate()
+        .filter(|(_, e)| words::said(&e.event).is_some_and(|s| s.pair() == pair))
+        .map(|(n, _)| n)
+        .collect()
 }
 
 /// Each entry with how many older lines of the same conversation directly
 /// follow it and are folded under it. Display only: the agents' stories
 /// keep every line.
 fn fold_threads<'a>(
-    entries: impl Iterator<Item = &'a Entry>,
-) -> impl Iterator<Item = (&'a Entry, usize)> {
+    entries: impl Iterator<Item = (usize, &'a Entry)>,
+) -> impl Iterator<Item = (usize, usize)> {
     let mut entries = entries.peekable();
     std::iter::from_fn(move || {
-        let e = entries.next()?;
+        let (i, e) = entries.next()?;
         let mut more = 0;
         if let Some(pair) = words::said(&e.event).map(|s| s.pair()) {
             while entries
-                .next_if(|n| words::said(&n.event).is_some_and(|s| s.pair() == pair))
+                .next_if(|(_, n)| words::said(&n.event).is_some_and(|s| s.pair() == pair))
                 .is_some()
             {
                 more += 1;
             }
         }
-        Some((e, more))
+        Some((i, more))
     })
 }
 
@@ -509,7 +557,9 @@ mod tests {
             sent(2, 0),
             sent(0, 2),
         ];
-        let folded: Vec<usize> = fold_threads(journal.iter()).map(|(_, n)| n).collect();
+        let folded: Vec<usize> = fold_threads(journal.iter().enumerate())
+            .map(|(_, n)| n)
+            .collect();
         // Both directions are one conversation; another pair or any other
         // event ends the fold.
         assert_eq!(folded, [2, 0, 0, 1]);

@@ -2,9 +2,11 @@
 //! are fake (`sim`) unless `--live` runs real Claude Code sessions (`live`).
 
 mod app;
+mod clip;
 mod i18n;
 mod live;
 mod model;
+mod prefs;
 mod rng;
 mod sim;
 mod ui;
@@ -178,8 +180,12 @@ fn main() -> std::io::Result<()> {
             args.lang,
         )
     };
+    let state = prefs::state_dir();
+    if let Some(side) = prefs::side(&state) {
+        app.side = side;
+    }
     let mut terminal = ratatui::init();
-    let result = run(&mut terminal, &mut app);
+    let result = run(&mut terminal, &mut app, &state);
     ratatui::restore();
     result
 }
@@ -202,7 +208,11 @@ fn catch_signals() {
     }
 }
 
-fn run(terminal: &mut DefaultTerminal, app: &mut app::App) -> std::io::Result<()> {
+fn run(
+    terminal: &mut DefaultTerminal,
+    app: &mut app::App,
+    state: &std::path::Path,
+) -> std::io::Result<()> {
     let mut last = Instant::now();
     while !app.quit && !SIGNALLED.load(Ordering::SeqCst) {
         terminal.draw(|f| ui::draw(f, app))?;
@@ -216,7 +226,15 @@ fn run(terminal: &mut DefaultTerminal, app: &mut app::App) -> std::io::Result<()
             && let Event::Key(k) = event::read()?
             && k.kind == KeyEventKind::Press
         {
+            let side = app.side;
             app.on_key(k);
+            if app.side != side {
+                // Remembered for the next run; a failure only costs that.
+                let _ = prefs::save_side(state, app.side);
+            }
+            if let Some(text) = app.copy.take() {
+                app.copied(clip::copy(&text));
+            }
         }
         if last.elapsed() >= app.tick_interval() {
             if !app.paused {
