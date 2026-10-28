@@ -262,24 +262,31 @@ fn header(f: &mut Frame, area: Rect, app: &App) {
                 .add_modifier(Modifier::BOLD),
         ),
         Span::raw(" "),
-        Span::raw(fill(
+    ];
+    // Live work starts without cards and without researchers: no "0/0".
+    if !w.cards.is_empty() {
+        spans.push(Span::raw(fill(
             t.cards,
             &[&w.cards_done().to_string(), &w.cards.len().to_string()],
-        )),
-        sep(),
+        )));
+        spans.push(sep());
+    }
+    spans.extend([
         Span::raw(fill(t.agents_working, &[&w.active_agents().to_string()])),
         sep(),
         Span::raw(fill(t.per_hour, &[&dollars(w.rate_per_hour())])),
         Span::styled(fill(t.budget, &[&budget.to_string()]), dim()),
-        sep(),
-        Span::raw(fill(
+    ]);
+    if w.max_researchers > 0 {
+        spans.push(sep());
+        spans.push(Span::raw(fill(
             t.researchers,
             &[
                 &w.active_researchers().to_string(),
                 &w.max_researchers.to_string(),
             ],
-        )),
-    ];
+        )));
+    }
     if open > 0 {
         spans.push(sep());
         spans.push(Span::styled(
@@ -652,12 +659,25 @@ mod tests {
         for c in &mut app.world.cards {
             c.symbols.clear();
         }
+        app.world.max_researchers = 0;
         let salon = render(&app, 140, 40);
         assert!(!salon.contains("trunk #"), "{salon}");
+        assert!(!salon.contains("researchers"), "{salon}");
         app.zoom = Zoom::Focus(1);
         assert!(!render(&app, 140, 40).contains("lease"));
         app.zoom = Zoom::None;
         app.view = View::Code;
         assert!(render(&app, 140, 40).contains("no shared trunk yet"));
+        // Before any card exists there is no "0/0 cards" either.
+        app.view = View::Salon;
+        app.world.cards.clear();
+        app.world.journal.clear();
+        app.world.inbox.clear();
+        app.world.plans.clear();
+        for a in &mut app.world.agents {
+            a.card = None;
+        }
+        let screen = render(&app, 140, 40);
+        assert!(!screen.contains("cards"), "{screen}");
     }
 }
