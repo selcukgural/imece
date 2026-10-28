@@ -299,8 +299,9 @@ impl App {
                     self.select_journal(None);
                 }
             }
-            KeyCode::Char('<') => self.side = (self.side + 4).min(SIDE_MAX),
-            KeyCode::Char('>') => self.side = self.side.saturating_sub(4).max(SIDE_MIN),
+            // `,` and `.` are the same keys without shift.
+            KeyCode::Char('<') | KeyCode::Char(',') => self.resize(true),
+            KeyCode::Char('>') | KeyCode::Char('.') => self.resize(false),
             KeyCode::Char('c') if self.pane == Pane::Journal && self.zoom == Zoom::None => {
                 if let Some(i) = self.journal_sel {
                     self.copy = Some(ui::copy_text(self.lang, &self.world, &[i]));
@@ -321,6 +322,17 @@ impl App {
             KeyCode::Char('r') if self.pane == Pane::Inbox => self.answer(false),
             _ => {}
         }
+    }
+
+    /// Makes the side panel wider or narrower, and says how wide it is.
+    fn resize(&mut self, wider: bool) {
+        self.side = if wider {
+            (self.side + 4).min(SIDE_MAX)
+        } else {
+            self.side.saturating_sub(4).max(SIDE_MIN)
+        };
+        let t = self.lang.text();
+        self.flash(fill(t.side_width, &[&self.side.to_string()]));
     }
 
     /// A key for the open conversation; `false` leaves it to the rest of
