@@ -7,8 +7,15 @@ use std::time::{Duration, Instant};
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use crate::i18n::{Lang, fill};
+use crate::live::{Live, Refusal};
 use crate::model::*;
 use crate::sim::{self, Sim};
+
+/// What drives the agents.
+pub enum Engine {
+    Sim(Sim),
+    Live(Box<Live>),
+}
 
 /// After this long without a key, the next key first shows what happened.
 const AWAY: Duration = Duration::from_secs(20);
@@ -90,7 +97,7 @@ impl Digest {
 
 pub struct App {
     pub world: World,
-    sim: Sim,
+    engine: Engine,
     pub lang: Lang,
     pub view: View,
     pub zoom: Zoom,
@@ -118,15 +125,24 @@ pub struct App {
 impl App {
     pub fn new(projects: usize, workers: usize, researchers: usize, seed: u64, lang: Lang) -> App {
         let (world, sim) = sim::world(projects, workers, researchers, seed, lang);
+        App::with(world, Engine::Sim(sim), lang)
+    }
+
+    pub fn with(world: World, engine: Engine, lang: Lang) -> App {
         let collapsed = vec![false; world.projects.len()];
+        let selected = match engine {
+            // A live team starts with the leader selected: it is who to talk to.
+            Engine::Live(_) => Sel::Agent(world.projects[0].leader),
+            Engine::Sim(_) => Sel::Project(0),
+        };
         App {
             world,
-            sim,
+            engine,
             lang,
             view: View::Salon,
             zoom: Zoom::None,
             pane: Pane::Salon,
-            selected: Sel::Project(0),
+            selected,
             collapsed,
             inbox_sel: 0,
             typing: false,
@@ -144,10 +160,21 @@ impl App {
     }
 
     pub fn step(&mut self) {
-        self.sim.step(&mut self.world);
+        match &mut self.engine {
+            Engine::Sim(s) => s.step(&mut self.world),
+            Engine::Live(l) => l.step(&mut self.world),
+        }
+    }
+
+    pub fn live(&self) -> bool {
+        matches!(self.engine, Engine::Live(_))
     }
 
     pub fn tick_interval(&self) -> Duration {
+        if self.live() {
+            // Real time: often enough that events show up at once.
+            return Duration::from_millis(100);
+        }
         Duration::from_millis(500) / self.speed
     }
 
@@ -212,12 +239,17 @@ impl App {
             KeyCode::Char('3') => self.show(View::Code),
             KeyCode::Char('L') => {
                 self.lang = self.lang.other();
-                self.sim.set_lang(self.lang);
+                if let Engine::Sim(s) = &mut self.engine {
+                    s.set_lang(self.lang);
+                }
                 self.flash(self.lang.text().language);
             }
-            KeyCode::Char(' ') => self.paused = !self.paused,
-            KeyCode::Char('+') | KeyCode::Char('=') => self.speed = (self.speed * 2).min(8),
-            KeyCode::Char('-') => self.speed = (self.speed / 2).max(1),
+            // Live agents run in real time: nothing to pause or speed up.
+            KeyCode::Char(' ') if !self.live() => self.paused = !self.paused,
+            KeyCode::Char('+') | KeyCode::Char('=') if !self.live() => {
+                self.speed = (self.speed * 2).min(8)
+            }
+            KeyCode::Char('-') if !self.live() => self.speed = (self.speed / 2).max(1),
             KeyCode::Char('?') => self.help = true,
             KeyCode::Tab if self.view == View::Salon && self.zoom == Zoom::None => {
                 self.pane = match self.pane {
@@ -301,18 +333,36 @@ impl App {
         }
         let t = self.lang.text();
         let Some(rest) = text.strip_prefix('@') else {
-            let p = self.current_project();
-            self.world.tell_leader(p, &text);
-            return self.flash(fill(t.sent, &[&target]));
+            let leader = self.world.projects[self.current_project()].leader;
+            return self.tell(leader, &text);
         };
         let msg = rest.split_once(' ').map_or("", |(_, m)| m).trim();
         match self.world.agent_by_name(&target) {
             Some(_) if msg.is_empty() => self.flash(t.empty_message),
-            Some(id) => {
-                self.world.tell_agent(id, msg);
-                self.flash(fill(t.sent, &[&target]));
-            }
+            Some(id) => self.tell(id, msg),
             None => self.flash(fill(t.no_agent, &[&target])),
+        }
+    }
+
+    /// The person's message to agent `id`: the engine gets it first, and only
+    /// a message that reached the agent is recorded as said.
+    fn tell(&mut self, id: AgentId, text: &str) {
+        let t = self.lang.text();
+        let name = self.world.agents[id].name.clone();
+        let refused = match &mut self.engine {
+            Engine::Sim(s) => {
+                s.told(&mut self.world, id, text);
+                None
+            }
+            Engine::Live(l) => l.told(&mut self.world, id, text).err(),
+        };
+        match refused {
+            None => {
+                self.world.said(id, text);
+                self.flash(fill(t.sent, &[&name]));
+            }
+            Some(Refusal::Budget) => self.flash(fill(t.budget_spent, &[&name])),
+            Some(Refusal::Start(why)) => self.flash(fill(t.cannot_start, &[&name, &why])),
         }
     }
 
