@@ -9,6 +9,7 @@ mod model;
 mod prefs;
 mod rng;
 mod sim;
+mod theme;
 mod ui;
 
 use std::io::ErrorKind;
@@ -30,6 +31,8 @@ const USAGE: &str =
   --researchers N   researchers that may run at once (1-32, default 4)
   --seed N          replays the same fake scenario (default 7)
   --lang en|tr      the screen's language (default en, or IMECE_LANG)
+  --theme NAME      dark (default), light or mono; or IMECE_THEME; the last
+                    choice made with T is remembered
 
   --live            real Claude Code agents on the checkout DIR is in: a leader
                     that reads it, workers that each change their own worktree
@@ -43,6 +46,7 @@ struct Args {
     researchers: usize,
     seed: u64,
     lang: Lang,
+    theme: Option<String>,
     live: bool,
     repo: PathBuf,
     model: Option<String>,
@@ -85,6 +89,11 @@ fn parse_args() -> Result<Args, String> {
         researchers: 4,
         seed: 7,
         lang,
+        theme: match std::env::var("IMECE_THEME") {
+            Ok(v) if theme::set(&v) => Some(v),
+            Ok(v) => return Err(format!("IMECE_THEME: {v:?} is not {}", theme::names())),
+            Err(_) => None,
+        },
         live: false,
         repo: PathBuf::from("."),
         model: None,
@@ -114,6 +123,10 @@ fn parse_args() -> Result<Args, String> {
             "--agents" => args.agents = Some(number(1, 200)? as usize),
             "--researchers" => args.researchers = number(1, 32)? as usize,
             "--seed" => args.seed = number(0, u64::MAX)?,
+            "--theme" if theme::set(&value) => args.theme = Some(value),
+            "--theme" => {
+                return Err(format!("--theme: {value:?} is not {}", theme::names()));
+            }
             "--lang" => {
                 args.lang = Lang::parse(&value)
                     .ok_or_else(|| format!("--lang: {value:?} is not en or tr"))?
@@ -181,8 +194,15 @@ fn main() -> std::io::Result<()> {
         )
     };
     let state = prefs::state_dir();
-    if let Some(side) = prefs::side(&state) {
+    let saved = prefs::load(&state);
+    if let Some(side) = saved.side {
         app.side = side;
+    }
+    // A flag or the environment wins over the saved theme.
+    if args.theme.is_none()
+        && let Some(name) = &saved.theme
+    {
+        theme::set(name);
     }
     let mut terminal = ratatui::init();
     let result = run(&mut terminal, &mut app, &state);
@@ -226,11 +246,11 @@ fn run(
             && let Event::Key(k) = event::read()?
             && k.kind == KeyEventKind::Press
         {
-            let side = app.side;
+            let (side, theme) = (app.side, theme::pal().name);
             app.on_key(k);
-            if app.side != side {
+            if app.side != side || theme::pal().name != theme {
                 // Remembered for the next run; a failure only costs that.
-                let _ = prefs::save_side(state, app.side);
+                let _ = prefs::save(state, app.side, theme::pal().name);
             }
             if let Some(text) = app.copy.take() {
                 app.copied(clip::copy(&text));

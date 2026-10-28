@@ -3,7 +3,6 @@
 
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout, Rect};
-use ratatui::style::Color;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Paragraph};
 
@@ -12,13 +11,13 @@ use crate::app::App;
 
 fn story_icon(k: StoryKind) -> (&'static str, usize, Color) {
     match k {
-        StoryKind::Intent => ("◎", 0, Color::Cyan),
-        StoryKind::Assumption => ("⚑", 1, Color::Yellow),
-        StoryKind::Decision => ("⚖", 2, Color::Magenta),
-        StoryKind::Talk => ("⇄", 3, Color::Cyan),
-        StoryKind::Evidence => ("◌", 4, Color::Green),
-        StoryKind::Change => ("Δ", 5, Color::White),
-        StoryKind::Person => ("›", 6, Color::White),
+        StoryKind::Intent => ("◎", 0, pal().info),
+        StoryKind::Assumption => ("⚑", 1, pal().warn),
+        StoryKind::Decision => ("⚖", 2, pal().plan),
+        StoryKind::Talk => ("⇄", 3, pal().info),
+        StoryKind::Evidence => ("◌", 4, pal().ok),
+        StoryKind::Change => ("Δ", 5, pal().strong),
+        StoryKind::Person => ("›", 6, pal().strong),
     }
 }
 
@@ -42,7 +41,7 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App, id: AgentId) {
         let minutes = w.tick.saturating_sub(c.started) * SECONDS_PER_TICK / 60;
         title.push(Span::styled(
             format!("#{} {}", c.id + 1, clean(&c.title)),
-            bold(Color::White),
+            bold(pal().strong),
         ));
         title.push(Span::styled(
             fill(t.minutes, &[&minutes.to_string()]),
@@ -51,7 +50,7 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App, id: AgentId) {
     } else if a.role == Role::Researcher {
         title.push(Span::styled(
             fill(t.research, &[&a.topic]),
-            bold(Color::White),
+            bold(pal().strong),
         ));
     } else {
         title.push(Span::styled(t.no_card, dim()));
@@ -67,9 +66,9 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App, id: AgentId) {
     status.extend(status_spans(app.lang, w, a));
     head.push(Line::from(status));
     let taint = match a.taint {
-        Taint::Clean => Span::styled(t.clean, fg(Color::Green)),
-        Taint::Soft => Span::styled(t.soft, fg(Color::Yellow)),
-        Taint::Full => Span::styled(t.full, fg(Color::Red)),
+        Taint::Clean => Span::styled(t.clean, fg(pal().ok)),
+        Taint::Soft => Span::styled(t.soft, fg(pal().warn)),
+        Taint::Full => Span::styled(t.full, fg(pal().bad)),
     };
     head.push(Line::from(vec![Span::styled(t.origin, dim()), taint]));
     if let Some(c) = card.filter(|c| !c.symbols.is_empty()) {

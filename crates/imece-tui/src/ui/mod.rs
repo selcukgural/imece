@@ -18,6 +18,7 @@ use ratatui::widgets::{Paragraph, Wrap};
 use crate::app::{App, FLASH, View, Zoom};
 use crate::i18n::{Lang, clean, fill};
 use crate::model::*;
+pub(crate) use crate::theme::pal;
 pub(crate) use salon::{journal_rows, thread_of};
 
 pub fn draw(f: &mut Frame, app: &App) {
@@ -49,7 +50,53 @@ pub fn draw(f: &mut Frame, app: &App) {
 }
 
 pub(crate) fn dim() -> Style {
-    Style::new().fg(Color::Indexed(244))
+    let p = pal();
+    if p.mono {
+        Style::new().add_modifier(Modifier::DIM)
+    } else {
+        Style::new().fg(p.dim)
+    }
+}
+
+/// Bold text on a coloured badge: the brand, or what waits for the person.
+fn badge(bg: Color) -> Style {
+    let p = pal();
+    if p.mono {
+        Style::new().add_modifier(Modifier::REVERSED | Modifier::BOLD)
+    } else {
+        Style::new()
+            .fg(p.on_badge)
+            .bg(bg)
+            .add_modifier(Modifier::BOLD)
+    }
+}
+
+pub(crate) fn brand() -> Style {
+    badge(pal().accent)
+}
+
+pub(crate) fn attention() -> Style {
+    badge(pal().warn)
+}
+
+/// A key in a hint line.
+pub(crate) fn key_style() -> Style {
+    let p = pal();
+    if p.mono {
+        Style::new().add_modifier(Modifier::REVERSED)
+    } else {
+        Style::new().fg(p.on_key).bg(p.key)
+    }
+}
+
+/// The row that just changed.
+pub(crate) fn changed() -> Style {
+    let p = pal();
+    if p.mono {
+        Style::new().add_modifier(Modifier::BOLD)
+    } else {
+        Style::new().bg(p.selection)
+    }
 }
 
 pub(crate) fn fg(c: Color) -> Style {
@@ -62,27 +109,20 @@ pub(crate) fn bold(c: Color) -> Style {
 
 /// 256-colour indexes, so terminals without true colour show them too.
 pub(crate) fn vendor_color(v: Vendor) -> Color {
-    match v {
-        Vendor::Claude => Color::Indexed(173),
-        Vendor::Codex => Color::Indexed(36),
-        Vendor::Gemini => Color::Indexed(69),
-        Vendor::Qwen => Color::Indexed(99),
-        Vendor::Local => Color::Indexed(250),
-    }
+    pal().vendors[v as usize]
 }
 
 /// An agent's own colour in conversations, fixed by its id so a speaker
-/// keeps it for the whole run. 256-colour indexes, none of them a status
-/// colour.
+/// keeps it for the whole run; none of them a status colour.
 pub(crate) fn speaker_color(id: AgentId) -> Color {
-    const SPEAKERS: [u8; 12] = [75, 179, 114, 176, 216, 79, 147, 186, 211, 110, 151, 223];
-    Color::Indexed(SPEAKERS[id % SPEAKERS.len()])
+    let s = &pal().speakers;
+    s[id % s.len()]
 }
 
 fn party_span(lang: Lang, w: &World, p: Party) -> Span<'static> {
     match p {
         Party::Agent(id) => Span::styled(clean(&w.agents[id].name), bold(speaker_color(id))),
-        Party::Person => Span::styled(lang.text().you, bold(Color::White)),
+        Party::Person => Span::styled(lang.text().you, bold(pal().strong)),
     }
 }
 
@@ -106,41 +146,41 @@ pub(crate) fn said_spans(lang: Lang, w: &World, s: &words::Said) -> Vec<Span<'st
 
 pub(crate) fn glyph(a: &Agent) -> (&'static str, Color) {
     if a.role == Role::Leader {
-        return ("◆", Color::Magenta);
+        return ("◆", pal().plan);
     }
     match a.status {
-        Status::Idle => ("○", Color::Indexed(244)),
-        Status::Planning { .. } => ("◆", Color::Magenta),
-        Status::Working => ("●", Color::Green),
-        Status::Asking { .. } => ("◐", Color::Yellow),
-        Status::Blocked => ("✕", Color::Red),
-        Status::WaitingHuman => ("!", Color::Yellow),
-        Status::Verifying { .. } => ("◌", Color::Cyan),
-        Status::Researching { .. } => ("◇", Color::Blue),
-        Status::Stopped => ("■", Color::LightRed),
+        Status::Idle => ("○", pal().dim),
+        Status::Planning { .. } => ("◆", pal().plan),
+        Status::Working => ("●", pal().ok),
+        Status::Asking { .. } => ("◐", pal().warn),
+        Status::Blocked => ("✕", pal().bad),
+        Status::WaitingHuman => ("!", pal().warn),
+        Status::Verifying { .. } => ("◌", pal().info),
+        Status::Researching { .. } => ("◇", pal().research),
+        Status::Stopped => ("■", pal().stopped),
     }
 }
 
 pub(crate) fn taint_span(a: &Agent) -> Span<'static> {
     match a.taint {
         Taint::Clean => Span::raw(" "),
-        Taint::Soft => Span::styled("~", fg(Color::Yellow)),
-        Taint::Full => Span::styled("≈", fg(Color::Red)),
+        Taint::Soft => Span::styled("~", fg(pal().warn)),
+        Taint::Full => Span::styled("≈", fg(pal().bad)),
     }
 }
 
 pub(crate) fn entry_icon(k: EntryKind) -> (&'static str, Style) {
     match k {
         EntryKind::Assign => ("→", dim()),
-        EntryKind::Plan => ("◆", fg(Color::Magenta)),
-        EntryKind::Talk => ("⇄", fg(Color::Cyan)),
-        EntryKind::Assumption => ("⚑", fg(Color::Yellow)),
-        EntryKind::Blocked => ("✕", fg(Color::Red)),
-        EntryKind::Research => ("◇", fg(Color::Blue)),
-        EntryKind::Sensitive => ("!", bold(Color::Yellow)),
-        EntryKind::Merged => ("✓", fg(Color::Green)),
-        EntryKind::Failed => ("✕", fg(Color::LightRed)),
-        EntryKind::Person => ("›", bold(Color::White)),
+        EntryKind::Plan => ("◆", fg(pal().plan)),
+        EntryKind::Talk => ("⇄", fg(pal().info)),
+        EntryKind::Assumption => ("⚑", fg(pal().warn)),
+        EntryKind::Blocked => ("✕", fg(pal().bad)),
+        EntryKind::Research => ("◇", fg(pal().research)),
+        EntryKind::Sensitive => ("!", bold(pal().warn)),
+        EntryKind::Merged => ("✓", fg(pal().ok)),
+        EntryKind::Failed => ("✕", fg(pal().stopped)),
+        EntryKind::Person => ("›", bold(pal().strong)),
     }
 }
 
@@ -213,7 +253,7 @@ pub(crate) fn body_lines(text: &str) -> Vec<String> {
 /// An agent's text drawn lightly as the Markdown it usually is: headings,
 /// lists, `code` and fenced blocks. Every line is cleaned first.
 pub(crate) fn markdown(text: &str, indent: &str) -> Vec<Line<'static>> {
-    let code = fg(Color::Indexed(180));
+    let code = fg(pal().code);
     let mut fenced = false;
     let mut out = Vec::new();
     for line in body_lines(text) {
@@ -228,7 +268,7 @@ pub(crate) fn markdown(text: &str, indent: &str) -> Vec<Line<'static>> {
         } else if let Some(h) = line.strip_prefix('#') {
             spans.push(Span::styled(
                 h.trim_start_matches('#').trim().to_string(),
-                bold(Color::White),
+                bold(pal().strong),
             ));
         } else {
             let lead = line.len() - line.trim_start().len();
@@ -295,7 +335,7 @@ pub(crate) fn status_spans(lang: Lang, w: &World, a: &Agent) -> Vec<Span<'static
                 .iter()
                 .any(|&i| w.inbox[i].kind == InboxKind::Reply && w.inbox[i].agent == a.id) =>
         {
-            vec![Span::styled(t.answered, fg(Color::Yellow))]
+            vec![Span::styled(t.answered, fg(pal().warn))]
         }
         Status::Idle
             if a.role == Role::Leader
@@ -309,15 +349,15 @@ pub(crate) fn status_spans(lang: Lang, w: &World, a: &Agent) -> Vec<Span<'static
             vec![Span::styled(t.coordinating, dim())]
         }
         Status::Idle => vec![Span::styled(t.idle, dim())],
-        Status::Planning { .. } => vec![Span::styled(t.planning, fg(Color::Magenta))],
+        Status::Planning { .. } => vec![Span::styled(t.planning, fg(pal().plan))],
         Status::Working => match a.activity.as_deref() {
-            Some("") => vec![Span::styled(t.thinking, fg(Color::Green))],
+            Some("") => vec![Span::styled(t.thinking, fg(pal().ok))],
             Some(doing) => vec![Span::styled(
                 fit(doing, 40).trim_end().to_string(),
-                fg(Color::Green),
+                fg(pal().ok),
             )],
             None => vec![
-                Span::styled(bar(a.progress), fg(Color::Green)),
+                Span::styled(bar(a.progress), fg(pal().ok)),
                 Span::raw(format!(" {}", Phase::of(a.progress).label())),
             ],
         },
@@ -325,7 +365,7 @@ pub(crate) fn status_spans(lang: Lang, w: &World, a: &Agent) -> Vec<Span<'static
             Span::styled(bar(a.progress), dim()),
             Span::styled(
                 format!(" ? → {}", clean(&w.agents[to].name)),
-                fg(Color::Yellow),
+                fg(pal().warn),
             ),
         ],
         Status::Blocked => {
@@ -334,17 +374,17 @@ pub(crate) fn status_spans(lang: Lang, w: &World, a: &Agent) -> Vec<Span<'static
                 None => t.research_queue.into(),
             };
             vec![
-                Span::styled(t.blocked, bold(Color::Red)),
+                Span::styled(t.blocked, bold(pal().bad)),
                 Span::styled(wait, dim()),
             ]
         }
-        Status::WaitingHuman => vec![Span::styled(t.waiting_human, bold(Color::Yellow))],
-        Status::Verifying { .. } => vec![Span::styled(t.verifying, fg(Color::Cyan))],
+        Status::WaitingHuman => vec![Span::styled(t.waiting_human, bold(pal().warn))],
+        Status::Verifying { .. } => vec![Span::styled(t.verifying, fg(pal().info))],
         Status::Researching { .. } => vec![Span::styled(
             fill(t.researching, &[&a.topic]),
-            fg(Color::Blue),
+            fg(pal().research),
         )],
-        Status::Stopped => vec![Span::styled(t.stopped, bold(Color::LightRed))],
+        Status::Stopped => vec![Span::styled(t.stopped, bold(pal().stopped))],
     }
 }
 
@@ -354,16 +394,7 @@ fn header(f: &mut Frame, area: Rect, app: &App) {
     let sep = || Span::styled(" │ ", dim());
     let open = w.open_inbox().len();
     let budget = w.spent() * 100 / w.daily_budget.max(1);
-    let mut spans = vec![
-        Span::styled(
-            " imece ",
-            Style::new()
-                .fg(Color::Black)
-                .bg(Color::Indexed(173))
-                .add_modifier(Modifier::BOLD),
-        ),
-        Span::raw(" "),
-    ];
+    let mut spans = vec![Span::styled(" imece ", brand()), Span::raw(" ")];
     // Live work starts without cards and without researchers: no "0/0".
     if !w.cards.is_empty() {
         spans.push(Span::raw(fill(
@@ -392,10 +423,7 @@ fn header(f: &mut Frame, area: Rect, app: &App) {
         spans.push(sep());
         spans.push(Span::styled(
             fill(t.waiting_for_you, &[&open.to_string()]),
-            Style::new()
-                .fg(Color::Black)
-                .bg(Color::Yellow)
-                .add_modifier(Modifier::BOLD),
+            attention(),
         ));
     }
     spans.push(Span::styled(format!("  {}", clock(w.tick)), dim()));
@@ -412,12 +440,12 @@ fn header(f: &mut Frame, area: Rect, app: &App) {
 
 fn footer(f: &mut Frame, area: Rect, app: &App) {
     let t = app.lang.text();
-    let key = || Style::new().fg(Color::Black).bg(Color::Indexed(250));
+    let key = key_style;
     let line = if app.typing {
         Line::from(vec![
             Span::styled(
                 fill(t.typing_to, &[&app.typing_target()]),
-                bold(Color::White),
+                bold(pal().strong),
             ),
             Span::raw(clean(&app.input)),
             Span::styled("█", dim()),
@@ -426,7 +454,7 @@ fn footer(f: &mut Frame, area: Rect, app: &App) {
     } else if let Some((msg, at)) = &app.flash
         && at.elapsed() < FLASH
     {
-        Line::from(Span::styled(format!(" {msg}"), fg(Color::Yellow)))
+        Line::from(Span::styled(format!(" {msg}"), fg(pal().warn)))
     } else {
         let hints: Vec<(&str, &str)> = match app.zoom {
             Zoom::None => vec![
@@ -459,7 +487,7 @@ fn footer(f: &mut Frame, area: Rect, app: &App) {
             .enumerate()
         {
             let style = if app.view == view {
-                bold(Color::White)
+                bold(pal().strong)
             } else {
                 dim()
             };
@@ -467,7 +495,7 @@ fn footer(f: &mut Frame, area: Rect, app: &App) {
         }
         if let Some(c) = app.pending {
             // The first key of a chord, as vim shows it.
-            spans.push(Span::styled(format!("   {c}…"), bold(Color::Yellow)));
+            spans.push(Span::styled(format!("   {c}…"), bold(pal().warn)));
         }
         Line::from(spans)
     };
@@ -698,8 +726,12 @@ mod tests {
     }
 
     #[test]
-    fn every_view_draws_at_every_size() {
-        for lang in [Lang::En, Lang::Tr] {
+    fn every_view_draws_at_every_size_in_every_theme() {
+        for (theme, lang) in crate::theme::ALL
+            .iter()
+            .zip([Lang::En, Lang::Tr].into_iter().cycle())
+        {
+            crate::theme::set(theme.name);
             let mut app = app_after(3, 30, 400, lang);
             let views = [
                 (View::Salon, Zoom::None),
@@ -721,6 +753,18 @@ mod tests {
             app.help = true;
             render(&app, 30, 10);
         }
+        crate::theme::set("dark");
+    }
+
+    #[test]
+    fn capital_t_cycles_the_theme_and_says_which() {
+        let mut app = app_after(1, 4, 50, Lang::En);
+        key(&mut app, KeyCode::Char('T'));
+        assert_eq!(crate::theme::pal().name, "light");
+        assert!(render(&app, 140, 40).contains("theme: light"));
+        key(&mut app, KeyCode::Char('T'));
+        key(&mut app, KeyCode::Char('T'));
+        assert_eq!(crate::theme::pal().name, "dark");
     }
 
     #[test]
@@ -996,14 +1040,12 @@ mod tests {
             wide.contains("gg  G") && wide.contains("za  zM  zR"),
             "{wide}"
         );
-        let line_with_gg = wide.lines().find(|l| l.contains("gg  G")).unwrap();
-        assert!(
-            line_with_gg.contains("!") || line_with_gg.contains("c C"),
-            "two columns: {line_with_gg}"
-        );
+        // Two columns: a line of the first half carries one of the second.
+        let line = wide.lines().find(|l| l.contains("gg  G")).unwrap();
+        assert!(line.contains("side panel"), "two columns: {line}");
         let narrow = render(&app, 80, 40);
         let line = narrow.lines().find(|l| l.contains("gg  G")).unwrap();
-        assert!(!line.contains("c C"), "one column: {line}");
+        assert!(!line.contains("side panel"), "one column: {line}");
     }
 
     #[test]

@@ -3,7 +3,6 @@
 
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout, Rect};
-use ratatui::style::Color;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Clear, Paragraph, Wrap};
 
@@ -26,7 +25,7 @@ fn window(f: &mut Frame, title: String, lines: Vec<Line<'static>>, width: u16) {
     f.render_widget(Clear, area);
     let block = Block::bordered()
         .title(title)
-        .border_style(fg(Color::Indexed(173)));
+        .border_style(fg(pal().accent));
     f.render_widget(Paragraph::new(lines).block(block), area);
 }
 
@@ -34,7 +33,7 @@ pub fn help(f: &mut Frame, lang: Lang) {
     let t = lang.text();
     let key = |(k, what): &(&str, &str)| {
         vec![
-            Span::styled(format!(" {}", fit(k, 13)), bold(Color::White)),
+            Span::styled(format!(" {}", fit(k, 13)), bold(pal().strong)),
             Span::raw(fit(what, 44)),
         ]
     };
@@ -70,11 +69,11 @@ pub fn help(f: &mut Frame, lang: Lang) {
 pub fn digest(f: &mut Frame, app: &App, d: &Digest) {
     let t = app.lang.text();
     let counts = [
-        ("✓", Color::Green, d.merged),
-        ("!", Color::Yellow, d.waiting),
-        ("✕", Color::Red, d.blocked),
-        ("⚑", Color::Yellow, d.assumptions),
-        ("⇄", Color::Cyan, d.talks),
+        ("✓", pal().ok, d.merged),
+        ("!", pal().warn, d.waiting),
+        ("✕", pal().bad, d.blocked),
+        ("⚑", pal().warn, d.assumptions),
+        ("⇄", pal().info, d.talks),
     ];
     let mut lines: Vec<Line> = counts
         .iter()
@@ -131,7 +130,7 @@ pub fn thread(f: &mut Frame, app: &App, th: &Thread) {
     };
     let block = Block::bordered()
         .title(title)
-        .border_style(fg(Color::Indexed(173)));
+        .border_style(fg(pal().accent));
     let inner = block.inner(area);
     f.render_widget(block, area);
     let [body, keys] = Layout::vertical([Constraint::Min(0), Constraint::Length(1)]).areas(inner);
@@ -144,7 +143,7 @@ pub fn thread(f: &mut Frame, app: &App, th: &Thread) {
         let e = &w.journal[i];
         let selected = n == th.sel;
         let mark = if selected {
-            Span::styled("▌", fg(Color::Indexed(173)))
+            Span::styled("▌", fg(pal().accent))
         } else {
             Span::raw(" ")
         };
