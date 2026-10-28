@@ -9,7 +9,9 @@ mod rng;
 mod sim;
 mod ui;
 
+use std::io::ErrorKind;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Instant;
 
 use ratatui::DefaultTerminal;
@@ -143,6 +145,7 @@ fn main() -> std::io::Result<()> {
         }
         return Ok(());
     }
+    catch_signals();
     let args = match parse_args() {
         Ok(a) => a,
         Err(msg) => {
@@ -181,12 +184,35 @@ fn main() -> std::io::Result<()> {
     result
 }
 
+/// Set by SIGTERM, SIGHUP (the terminal went away) and SIGINT from outside.
+static SIGNALLED: AtomicBool = AtomicBool::new(false);
+
+extern "C" fn on_signal(_: libc::c_int) {
+    SIGNALLED.store(true, Ordering::SeqCst);
+}
+
+/// Turns the signals that would end imece on the spot into a normal quit,
+/// so the sessions are stopped and the bus's sockets removed on the way
+/// out.
+fn catch_signals() {
+    for sig in [libc::SIGTERM, libc::SIGHUP, libc::SIGINT] {
+        // SAFETY: the handler only stores to an atomic, which is
+        // async-signal-safe.
+        unsafe { libc::signal(sig, on_signal as *const () as libc::sighandler_t) };
+    }
+}
+
 fn run(terminal: &mut DefaultTerminal, app: &mut app::App) -> std::io::Result<()> {
     let mut last = Instant::now();
-    while !app.quit {
+    while !app.quit && !SIGNALLED.load(Ordering::SeqCst) {
         terminal.draw(|f| ui::draw(f, app))?;
         let timeout = app.tick_interval().saturating_sub(last.elapsed());
-        if event::poll(timeout)?
+        let ready = match event::poll(timeout) {
+            Ok(ready) => ready,
+            Err(e) if e.kind() == ErrorKind::Interrupted => continue,
+            Err(e) => return Err(e),
+        };
+        if ready
             && let Event::Key(k) = event::read()?
             && k.kind == KeyEventKind::Press
         {
@@ -205,6 +231,14 @@ fn run(terminal: &mut DefaultTerminal, app: &mut app::App) -> std::io::Result<()
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_signal_becomes_a_quit() {
+        catch_signals();
+        // SAFETY: raising a signal whose handler was just installed.
+        unsafe { libc::raise(libc::SIGHUP) };
+        assert!(SIGNALLED.load(Ordering::SeqCst));
+    }
 
     #[test]
     fn dollars_are_read_exactly() {

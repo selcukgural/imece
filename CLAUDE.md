@@ -63,7 +63,7 @@ and owned here from then on:
   imece itself over MCP: one Unix socket per agent in a fresh 0700 temp
   directory; the session starts `imece mcp-relay <socket>`, which only
   copies bytes. The sender is the socket, never an argument. Allowed by
-  exact name (`--allowedTools mcp__imece__send`); `init` must report
+  exact name (`--allowedTools mcp__imece__<tool>`, each tool); `init` must report
   exactly imece's server, connected, and exactly its tools. Mail waits per
   agent; waking types start the next turn when the agent has no prompt
   left, inform/progress/notice ride along. Caps: body 4000 chars, 20

@@ -1528,8 +1528,11 @@ mod tests {
         assert_eq!(w.agents[1].card, None);
         // Not in front of two workers at once.
         assert!(queued(&live, 2).is_empty());
+        // The session never starts here and may be gone by the next step,
+        // so what counts is the bookkeeping, not the queue.
         live.step(&mut w);
-        assert_eq!(queued(&live, 1).len(), 1, "offered once");
+        assert_eq!(live.offered[&0], [1], "offered once");
+        assert_eq!(live.woken[1], 1);
     }
 
     #[test]
