@@ -1,0 +1,17 @@
+[package]
+name = "imece-tui"
+description = "imece's screen: many agents from many vendors in one terminal (prototype on fake events)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish = false
+
+[[bin]]
+name = "imece"
+path = "src/main.rs"
+
+[dependencies]
+# crossterm comes through ratatui (`ratatui::crossterm`), so the two can not
+# drift apart.
+ratatui = "=0.30.2"
