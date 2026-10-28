@@ -205,8 +205,9 @@ impl MsgKind {
     }
 }
 
-/// Who an agent is talking with right now, for the salon's `⇄` line.
-#[derive(Clone, Debug)]
+/// Who an agent is talking with right now, for the salon's `⇄` line; also
+/// the two ends of a conversation line.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Party {
     Agent(AgentId),
     Person,

@@ -28,7 +28,6 @@ pub fn event(lang: Lang, w: &World, e: &Event) -> String {
                 ],
             )
         }
-        Event::Talk { from, to, text } => fill(t.ev_talk, &[name(w, *from), name(w, *to), text]),
         Event::Assumption { agent, text } => fill(t.ev_assumption, &[name(w, *agent), text]),
         Event::Blocked {
             agent,
@@ -65,18 +64,7 @@ pub fn event(lang: Lang, w: &World, e: &Event) -> String {
             research: true,
         } => fill(t.ev_approved_research, &[name(w, *agent)]),
         Event::Rejected { agent } => fill(t.ev_rejected, &[name(w, *agent)]),
-        Event::YouSaid { to, text } => fill(t.ev_you_said, &[name(w, *to), text]),
-        Event::Replied { agent, text } => fill(t.ev_replied, &[name(w, *agent), text]),
         Event::Stopped { agent, why } => fill(t.ev_stopped, &[name(w, *agent), why]),
-        Event::Sent {
-            from,
-            to,
-            kind,
-            text,
-        } => fill(
-            t.ev_sent,
-            &[name(w, *from), name(w, *to), t.kinds[*kind as usize], text],
-        ),
         Event::Posted { agent, card } => fill(
             t.ev_posted,
             &[name(w, *agent), &card_ref(*card), &w.cards[*card].title],
@@ -85,6 +73,10 @@ pub fn event(lang: Lang, w: &World, e: &Event) -> String {
             t.ev_claimed,
             &[name(w, *agent), &card_ref(*card), &w.cards[*card].title],
         ),
+        // Conversations are drawn from `said`, with their speakers coloured.
+        Event::Talk { .. } | Event::YouSaid { .. } | Event::Replied { .. } | Event::Sent { .. } => {
+            String::new()
+        }
     }
 }
 
@@ -94,10 +86,6 @@ pub fn story(lang: Lang, w: &World, card: &Card, e: &StoryEvent) -> String {
         StoryEvent::Took { agent } => fill(t.st_took, &[name(w, *agent), &card.title]),
         StoryEvent::Decision(s) | StoryEvent::Assumption(s) => fill("{}", &[s]),
         StoryEvent::WritingTests => t.st_writing_tests.to_string(),
-        StoryEvent::Asked { from, to, text } => {
-            fill(t.st_asked, &[name(w, *from), name(w, *to), text])
-        }
-        StoryEvent::Answered { from, text } => fill(t.st_answered, &[name(w, *from), text]),
         StoryEvent::BlockedOn(topic) => fill(t.st_blocked_on, &[topic]),
         StoryEvent::ResearchArrived { researcher, topic } => {
             fill(t.st_research_arrived, &[name(w, *researcher), topic])
@@ -119,20 +107,81 @@ pub fn story(lang: Lang, w: &World, card: &Card, e: &StoryEvent) -> String {
         StoryEvent::YouApproved { research: true } => t.st_you_approved_research.to_string(),
         StoryEvent::YouRejected { research: false } => t.st_you_rejected.to_string(),
         StoryEvent::YouRejected { research: true } => t.st_you_rejected_research.to_string(),
-        StoryEvent::YouSaid(text) => fill(t.st_you_said, &[text]),
-        StoryEvent::Replied(text) => fill(t.st_replied, &[text]),
         StoryEvent::Touched(file) => fill(t.st_touched, &[file]),
         StoryEvent::Stopped(why) => fill(t.st_stopped, &[why]),
+        StoryEvent::Posted { by, text } => fill(t.st_posted, &[name(w, *by), text]),
+        StoryEvent::Asked { .. }
+        | StoryEvent::Answered { .. }
+        | StoryEvent::YouSaid(_)
+        | StoryEvent::Replied(_)
+        | StoryEvent::Sent { .. } => String::new(),
+    }
+}
+
+/// One line of a conversation, uncleaned: the drawing cleans it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Said<'a> {
+    pub from: Party,
+    pub to: Party,
+    pub kind: Option<MsgKind>,
+    pub text: &'a str,
+}
+
+impl Said<'_> {
+    /// The two parties in a fixed order, so A → B and B → A are one thread.
+    pub fn pair(&self) -> (Party, Party) {
+        (self.from.min(self.to), self.from.max(self.to))
+    }
+}
+
+/// The conversation line in a journal event, if it is one.
+pub fn said(e: &Event) -> Option<Said<'_>> {
+    use Party::{Agent, Person};
+    let s = |from, to, kind, text| {
+        Some(Said {
+            from,
+            to,
+            kind,
+            text,
+        })
+    };
+    match e {
+        Event::Talk { from, to, text } => s(Agent(*from), Agent(*to), None, text),
+        Event::YouSaid { to, text } => s(Person, Agent(*to), None, text),
+        Event::Replied { agent, text } => s(Agent(*agent), Person, None, text),
+        Event::Sent {
+            from,
+            to,
+            kind,
+            text,
+        } => s(Agent(*from), Agent(*to), Some(*kind), text),
+        _ => None,
+    }
+}
+
+/// The conversation line in agent `me`'s card story, if it is one.
+pub fn said_in_story(me: AgentId, e: &StoryEvent) -> Option<Said<'_>> {
+    use Party::{Agent, Person};
+    let s = |from, to, kind, text| {
+        Some(Said {
+            from,
+            to,
+            kind,
+            text,
+        })
+    };
+    match e {
+        StoryEvent::Asked { from, to, text } => s(Agent(*from), Agent(*to), None, text),
+        StoryEvent::Answered { from, text } => s(Agent(*from), Agent(me), None, text),
+        StoryEvent::YouSaid(text) => s(Person, Agent(me), None, text),
+        StoryEvent::Replied(text) => s(Agent(me), Person, None, text),
         StoryEvent::Sent {
             from,
             to,
             kind,
             text,
-        } => fill(
-            t.st_sent,
-            &[name(w, *from), name(w, *to), t.kinds[*kind as usize], text],
-        ),
-        StoryEvent::Posted { by, text } => fill(t.st_posted, &[name(w, *by), text]),
+        } => s(Agent(*from), Agent(*to), Some(*kind), text),
+        _ => None,
     }
 }
 

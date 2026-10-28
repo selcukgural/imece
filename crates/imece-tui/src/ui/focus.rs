@@ -98,14 +98,18 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App, id: AgentId) {
             .iter()
             .map(|s| {
                 let (icon, label, color) = story_icon(s.event.kind());
-                Line::from(vec![
+                let mut spans = vec![
                     Span::styled(format!("{} ", clock(s.tick)), dim()),
                     Span::styled(
                         format!("{icon} {} ", fit(t.story_labels[label], 10)),
                         fg(color),
                     ),
-                    Span::raw(words::story(app.lang, w, c, &s.event)),
-                ])
+                ];
+                match words::said_in_story(id, &s.event) {
+                    Some(said) => spans.extend(said_spans(app.lang, w, &said)),
+                    None => spans.push(Span::raw(words::story(app.lang, w, c, &s.event))),
+                }
+                Line::from(spans)
             })
             .collect(),
         None => vec![Line::from(Span::styled(t.no_story, dim()))],
