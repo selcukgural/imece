@@ -1,20 +1,29 @@
 //! What the screen shows: projects, agents, cards, the journal, the inbox and
-//! the merge queue. The prototype fills it with fake events (`sim`); real
-//! agents will feed the same model later.
+//! the merge queue. Fake events (`sim`) or live agents (`live`) fill it.
 //!
 //! Events are stored as data, not sentences: the screen words them in the
 //! person's language when it draws them.
 
 use std::collections::VecDeque;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 pub type AgentId = usize;
 pub type CardId = usize;
 pub type ProjectId = usize;
 
-/// Simulated seconds per tick.
+/// Seconds per tick.
 pub const SECONDS_PER_TICK: u64 = 5;
-/// The clock at tick 0: 14:00.
-const START_SECONDS: u64 = 14 * 3600;
+/// The clock at tick 0, in seconds after midnight: 14:00 for the
+/// simulation, the local time at start for live agents.
+static START_SECONDS: AtomicU64 = AtomicU64::new(14 * 3600);
+
+pub fn start_clock_at(seconds_after_midnight: u64) {
+    START_SECONDS.store(seconds_after_midnight % 86_400, Ordering::Relaxed);
+}
+
+fn start_seconds() -> u64 {
+    START_SECONDS.load(Ordering::Relaxed)
+}
 /// Trace lines kept per agent.
 const TRACE_KEEP: usize = 200;
 
@@ -117,6 +126,8 @@ pub enum Status {
         for_agent: AgentId,
         until: u64,
     },
+    /// A live agent's session ended; telling it something starts a new one.
+    Stopped,
 }
 
 impl Status {
@@ -130,7 +141,67 @@ impl Status {
 
     /// Statuses the person should see first.
     pub fn needs_attention(self) -> bool {
-        matches!(self, Status::Blocked | Status::WaitingHuman)
+        matches!(
+            self,
+            Status::Blocked | Status::WaitingHuman | Status::Stopped
+        )
+    }
+}
+
+/// The envelope type of a message between agents. Only the type drives
+/// routing and waking; the body is never interpreted.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MsgKind {
+    Assign,
+    Ask,
+    Answer,
+    Inform,
+    Handoff,
+    Done,
+    Blocked,
+    Progress,
+    Notice,
+    Cancel,
+}
+
+impl MsgKind {
+    pub const ALL: [MsgKind; 10] = [
+        MsgKind::Assign,
+        MsgKind::Ask,
+        MsgKind::Answer,
+        MsgKind::Inform,
+        MsgKind::Handoff,
+        MsgKind::Done,
+        MsgKind::Blocked,
+        MsgKind::Progress,
+        MsgKind::Notice,
+        MsgKind::Cancel,
+    ];
+
+    /// The name agents use for it.
+    pub fn wire(self) -> &'static str {
+        match self {
+            MsgKind::Assign => "assign",
+            MsgKind::Ask => "ask",
+            MsgKind::Answer => "answer",
+            MsgKind::Inform => "inform",
+            MsgKind::Handoff => "handoff",
+            MsgKind::Done => "done",
+            MsgKind::Blocked => "blocked",
+            MsgKind::Progress => "progress",
+            MsgKind::Notice => "notice",
+            MsgKind::Cancel => "cancel",
+        }
+    }
+
+    pub fn from_wire(s: &str) -> Option<MsgKind> {
+        MsgKind::ALL.into_iter().find(|k| k.wire() == s)
+    }
+
+    /// Whether it starts a turn of the agent it goes to. The others wait
+    /// for that agent's next turn.
+    pub fn wakes(self) -> bool {
+        !matches!(self, MsgKind::Inform | MsgKind::Progress | MsgKind::Notice)
     }
 }
 
@@ -177,6 +248,9 @@ pub struct Agent {
     /// Tick of the last status change; the screen marks recent changes.
     pub changed_at: u64,
     pub trace: VecDeque<String>,
+    /// What a live agent is doing right now (`Edit src/main.rs`), drawn
+    /// instead of the progress bar; empty while it thinks.
+    pub activity: Option<String>,
     /// A researcher that finished; kept so ids stay stable.
     pub gone: bool,
 }
@@ -207,6 +281,7 @@ impl Agent {
             topic: String::new(),
             changed_at: tick,
             trace: VecDeque::new(),
+            activity: None,
             gone: false,
         }
     }
@@ -286,6 +361,24 @@ pub enum StoryEvent {
         research: bool,
     },
     YouSaid(String),
+    /// A live agent's answer at the end of its turn.
+    Replied(String),
+    /// A live agent changed this file.
+    Touched(String),
+    /// A live agent's turn or session ended without an answer.
+    Stopped(String),
+    /// A live agent sent a teammate a message.
+    Sent {
+        from: AgentId,
+        to: AgentId,
+        kind: MsgKind,
+        text: String,
+    },
+    /// A live agent put this card on the board; `text` is what it asks for.
+    Posted {
+        by: AgentId,
+        text: String,
+    },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -302,18 +395,25 @@ pub enum StoryKind {
 impl StoryEvent {
     pub fn kind(&self) -> StoryKind {
         match self {
-            StoryEvent::Took { .. } | StoryEvent::WritingTests | StoryEvent::BlockedOn(_) => {
-                StoryKind::Intent
-            }
+            StoryEvent::Took { .. }
+            | StoryEvent::WritingTests
+            | StoryEvent::BlockedOn(_)
+            | StoryEvent::Posted { .. } => StoryKind::Intent,
             StoryEvent::Decision(_) => StoryKind::Decision,
-            StoryEvent::Asked { .. } | StoryEvent::Answered { .. } => StoryKind::Talk,
+            StoryEvent::Asked { .. }
+            | StoryEvent::Answered { .. }
+            | StoryEvent::Replied(_)
+            | StoryEvent::Sent { .. } => StoryKind::Talk,
             StoryEvent::Assumption(_) => StoryKind::Assumption,
             StoryEvent::ResearchArrived { .. }
             | StoryEvent::ResearchNeedsYou { .. }
             | StoryEvent::FromCache(_)
             | StoryEvent::Verified { .. }
-            | StoryEvent::QueueFailed => StoryKind::Evidence,
-            StoryEvent::Change { .. } | StoryEvent::Sensitive(_) => StoryKind::Change,
+            | StoryEvent::QueueFailed
+            | StoryEvent::Stopped(_) => StoryKind::Evidence,
+            StoryEvent::Change { .. } | StoryEvent::Sensitive(_) | StoryEvent::Touched(_) => {
+                StoryKind::Change
+            }
             StoryEvent::YouApproved { .. }
             | StoryEvent::YouRejected { .. }
             | StoryEvent::YouSaid(_) => StoryKind::Person,
@@ -411,6 +511,33 @@ pub enum Event {
         to: AgentId,
         text: String,
     },
+    /// A live agent answered the person.
+    Replied {
+        agent: AgentId,
+        text: String,
+    },
+    /// A live agent's turn or session ended without an answer.
+    Stopped {
+        agent: AgentId,
+        why: String,
+    },
+    /// A live agent sent a teammate a message.
+    Sent {
+        from: AgentId,
+        to: AgentId,
+        kind: MsgKind,
+        text: String,
+    },
+    /// A live agent put a card on the board.
+    Posted {
+        agent: AgentId,
+        card: CardId,
+    },
+    /// A live worker took a card from the board.
+    Claimed {
+        agent: AgentId,
+        card: CardId,
+    },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -430,9 +557,9 @@ pub enum EntryKind {
 impl Event {
     pub fn kind(&self) -> EntryKind {
         match self {
-            Event::Plan { .. } => EntryKind::Plan,
-            Event::Assign { .. } => EntryKind::Assign,
-            Event::Talk { .. } => EntryKind::Talk,
+            Event::Plan { .. } | Event::Posted { .. } => EntryKind::Plan,
+            Event::Assign { .. } | Event::Claimed { .. } => EntryKind::Assign,
+            Event::Talk { .. } | Event::Replied { .. } | Event::Sent { .. } => EntryKind::Talk,
             Event::Assumption { .. } => EntryKind::Assumption,
             Event::Blocked { .. } => EntryKind::Blocked,
             Event::ResearchOpened { .. }
@@ -440,7 +567,7 @@ impl Event {
             | Event::FromCache { .. } => EntryKind::Research,
             Event::ResearchNeedsYou { .. } | Event::Sensitive { .. } => EntryKind::Sensitive,
             Event::Merged { .. } => EntryKind::Merged,
-            Event::Failed { .. } => EntryKind::Failed,
+            Event::Failed { .. } | Event::Stopped { .. } => EntryKind::Failed,
             Event::Approved { .. } | Event::Rejected { .. } | Event::YouSaid { .. } => {
                 EntryKind::Person
             }
@@ -459,8 +586,12 @@ impl Event {
             | Event::Merged { agent, .. }
             | Event::Failed { agent }
             | Event::Approved { agent, .. }
-            | Event::Rejected { agent } => agent,
-            Event::Talk { from, .. } => from,
+            | Event::Rejected { agent }
+            | Event::Replied { agent, .. }
+            | Event::Stopped { agent, .. }
+            | Event::Posted { agent, .. }
+            | Event::Claimed { agent, .. } => agent,
+            Event::Talk { from, .. } | Event::Sent { from, .. } => from,
             Event::ResearchOpened { researcher, .. }
             | Event::ResearchDelivered { researcher, .. }
             | Event::ResearchNeedsYou { researcher, .. } => researcher,
@@ -619,35 +750,10 @@ impl World {
         Some((it.kind, it.agent))
     }
 
-    /// The person talks to a project's leader, who breaks the request into
-    /// cards.
-    pub fn tell_leader(&mut self, project: ProjectId, text: &str) {
-        let t = self.tick;
-        let leader = self.projects[project].leader;
-        self.note(Event::YouSaid {
-            to: leader,
-            text: text.into(),
-        });
-        self.plans.push(Plan {
-            project,
-            text: text.into(),
-            ready: t + 4,
-        });
-        let l = &mut self.agents[leader];
-        l.set_status(Status::Planning { until: t + 4 }, t);
-        l.talk = Some(Talk {
-            with: Party::Person,
-            text: text.into(),
-            until: t + 6,
-        });
-        l.trace(t, format!("session/prompt (person) {text:?}"));
-    }
-
-    pub fn tell_agent(&mut self, id: AgentId, text: &str) {
-        if self.agents[id].role == Role::Leader {
-            let project = self.agents[id].project;
-            return self.tell_leader(project, text);
-        }
+    /// The person says something to an agent: the journal, the card's story,
+    /// the salon's talk line and the trace record it. Whoever drives the
+    /// agent (the simulation or a live session) acts on it.
+    pub fn said(&mut self, id: AgentId, text: &str) {
         let t = self.tick;
         self.note(Event::YouSaid {
             to: id,
@@ -665,18 +771,36 @@ impl World {
     }
 }
 
-/// The simulated wall clock of a tick, `HH:MM`.
+/// The wall clock of a tick, `HH:MM`.
 pub fn clock(tick: u64) -> String {
-    let s = START_SECONDS + tick * SECONDS_PER_TICK;
+    let s = start_seconds() + tick * SECONDS_PER_TICK;
     format!("{:02}:{:02}", s / 3600 % 24, s / 60 % 60)
 }
 
 fn clock_seconds(tick: u64) -> String {
-    let s = START_SECONDS + tick * SECONDS_PER_TICK;
+    let s = start_seconds() + tick * SECONDS_PER_TICK;
     format!("{:02}:{:02}:{:02}", s / 3600 % 24, s / 60 % 60, s % 60)
 }
 
-/// Ten-thousandths of a dollar as `$D.CC`.
+/// Ten-thousandths of a dollar as `$D.CC`; a cost under a cent that is not
+/// zero reads `<$0.01`, so cheap work never looks free.
 pub fn dollars(cost: u64) -> String {
+    if (1..100).contains(&cost) {
+        return "<$0.01".to_string();
+    }
     format!("${}.{:02}", cost / 10_000, cost / 100 % 100)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_cost_under_a_cent_is_not_shown_as_free() {
+        assert_eq!(dollars(0), "$0.00");
+        assert_eq!(dollars(3), "<$0.01");
+        assert_eq!(dollars(99), "<$0.01");
+        assert_eq!(dollars(100), "$0.01");
+        assert_eq!(dollars(123_456), "$12.34");
+    }
 }

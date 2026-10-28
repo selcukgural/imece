@@ -2,8 +2,11 @@
 
 - One terminal for many coding agents from many vendors (ACP), led by a
   leader agent, talking to each other, sharing files through symbol leases.
-- Stage: screen prototype on fake events (`crates/imece-tui`, `sim.rs`). The
-  model in `model.rs` is what real agents will feed later.
+- Stage: the screen (`crates/imece-tui`) runs on fake events (`sim.rs`) or
+  on live Claude Code sessions (`--live`, `live.rs`); both feed the same
+  model (`model.rs`). `crates/imece-agent` drives vendor CLIs as child
+  processes and turns their output into vendor-neutral events; the screen
+  never sees a wire format.
 - Chat with the user in Turkish; code, comments and repo docs in English.
 - The screen speaks English (default) and Turkish. Every word on screen
   lives in `i18n.rs` (both languages, same `{}` placeholders); the model
@@ -48,6 +51,33 @@ and owned here from then on:
 - Trusted sources: official docs by default; user-content sites never;
   package-registry docs only for packages in the lockfile.
 
+- Live v0 (2026-10-28): one long-lived `claude -p` stream-json session per
+  agent (never a process per turn), `--restricted`, exact `--tools`, no MCP
+  server but imece's own, `--permission-prompts none`; the `init` event is
+  checked every turn and a mismatch stops the session (fail closed). Leader: read tools, the
+  checkout itself. Workers: edit tools, one detached worktree each under
+  `$XDG_STATE_HOME/imece/worktrees`, kept between runs. Budget split evenly
+  up front as each session's `--max-budget-usd`. Sessions start off the UI
+  thread; events carry a session generation so late ones are dropped.
+- Message bus v0 (2026-10-28): one tool, `send(to, type, body)`, served by
+  imece itself over MCP: one Unix socket per agent in a fresh 0700 temp
+  directory; the session starts `imece mcp-relay <socket>`, which only
+  copies bytes. The sender is the socket, never an argument. Allowed by
+  exact name (`--allowedTools mcp__imece__<tool>`, each tool); `init` must report
+  exactly imece's server, connected, and exactly its tools. Mail waits per
+  agent; waking types start the next turn when the agent has no prompt
+  left, inform/progress/notice ride along. Caps: body 4000 chars, 20
+  unread, 12 message-driven turns per agent until the person speaks again;
+  a stopped agent or one over its share gets no waking mail.
+- Board v0 (2026-10-28): `post(title, body)` and `board()` for everyone,
+  `claim(card)` for workers only (the leader's socket does not offer it).
+  An open card is offered to one idle worker at a time as a turn of its
+  own (titles only; the body comes with the claim); it goes to the next
+  worker only after that one's turn ended without taking it, so a card
+  wakes each worker at most once, never a broadcast. One card at a time
+  per worker; the worker sends `done` to whoever posted it. Caps: title one
+  line of 120 chars, 20 open cards per project, 10 posts per agent until
+  the person speaks again; offers count as message-driven turns.
 - Projects: the salon groups agents by project, each with its own leader;
   groups fold to one line that still shows what waits for the person. The
   researcher cap is shared by all projects.

@@ -420,6 +420,21 @@ impl Sim {
         self.content = content(lang);
     }
 
+    /// A leader the person talked to breaks the request into cards; what
+    /// the person tells a worker only lands in its story.
+    pub fn told(&mut self, w: &mut World, id: AgentId, text: &str) {
+        if w.agents[id].role != Role::Leader {
+            return;
+        }
+        let t = w.tick;
+        w.plans.push(Plan {
+            project: w.agents[id].project,
+            text: text.into(),
+            ready: t + 4,
+        });
+        w.agents[id].set_status(Status::Planning { until: t + 4 }, t);
+    }
+
     pub fn step(&mut self, w: &mut World) {
         w.tick += 1;
         let t = w.tick;
@@ -1069,7 +1084,9 @@ mod tests {
     #[test]
     fn a_leader_breaks_a_request_into_cards_of_its_project() {
         let (mut w, mut s) = world(2, 4, 2, 1, Lang::Tr);
-        w.tell_leader(1, "Kargo takibi");
+        let leader = w.projects[1].leader;
+        s.told(&mut w, leader, "Kargo takibi");
+        w.said(leader, "Kargo takibi");
         run(&mut w, &mut s, 10, false);
         let card = w
             .cards

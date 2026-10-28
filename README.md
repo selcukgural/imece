@@ -9,10 +9,36 @@ leader agent splits the work into cards and hands them out; the agents talk
 to each other, ask a capped pool of researchers, and lease the symbols they
 change so several of them can work in the same file.
 
-> Status: screen prototype. The agents are fake (a seeded simulation); the
-> screen is real. Nothing talks to a model yet.
+> Status: early. The screen runs on a seeded simulation, or on real Claude
+> Code agents with `--live` (one project, a leader and workers you talk to
+> yourself; agents do not message each other yet).
 
-## Run the prototype
+## Live agents
+
+```sh
+cd your/checkout
+cargo run -p imece-tui -- --live --agents 3 --model sonnet --budget 5
+```
+
+- `lead` reads the checkout (it can not change anything); `claude-1`,
+  `claude-2`, … each work in their own git worktree under
+  `~/.local/state/imece/worktrees/`, detached at your HEAD. Your checkout
+  is never touched; review an agent's work with `git -C <worktree> diff`.
+  The trace (`enter` twice) shows where each worktree is.
+- Plain text goes to the lead, `@claude-2 text` to one agent. A message to
+  an idle worker opens a card; its answer closes it.
+- Each session is a long-lived `claude -p` in `--restricted` mode: file
+  tools only (no shell, no web), no MCP servers, no user or project
+  settings (so no hooks), file access confined to the agent's directory,
+  nothing that would ask for permission is allowed. What Claude Code
+  reports it runs with is checked on every turn; anything else stops the
+  session.
+- The budget is split evenly and each share is the session's hard cap, so
+  all agents together never spend more than `--budget` dollars.
+- Child processes get a cleared environment (plus what Claude Code needs to
+  log in), their own process group (killed on exit), and capped pipes.
+
+## Run the simulation
 
 ```sh
 cargo run -p imece-tui -- --projects 3 --agents 30   # --researchers N, --seed N
@@ -33,7 +59,7 @@ is one line, and that line still shows what waits for you.
 | `enter` / `esc` | look deeper (focus, then the raw stream) / go back |
 | `tab` | salon ↔ the items waiting for you |
 | `a` / `r` | approve / reject the selected item |
-| `space`, `+` `-` | pause, simulation speed |
+| `space`, `+` `-` | pause, simulation speed (not in `--live`) |
 | `?`, `q` | help, quit |
 
 ## Screen principles

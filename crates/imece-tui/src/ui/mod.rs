@@ -13,7 +13,7 @@ use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::Paragraph;
+use ratatui::widgets::{Paragraph, Wrap};
 
 use crate::app::{App, FLASH, View, Zoom};
 use crate::i18n::{Lang, clean, fill};
@@ -80,6 +80,7 @@ pub(crate) fn glyph(a: &Agent) -> (&'static str, Color) {
         Status::WaitingHuman => ("!", Color::Yellow),
         Status::Verifying { .. } => ("◌", Color::Cyan),
         Status::Researching { .. } => ("◇", Color::Blue),
+        Status::Stopped => ("■", Color::LightRed),
     }
 }
 
@@ -134,6 +135,15 @@ pub(crate) fn fit(s: &str, n: usize) -> String {
     }
 }
 
+/// `lines` wrapped to `area`, scrolled so the newest lines are in view.
+pub(crate) fn tail(f: &mut Frame, area: Rect, lines: Vec<Line<'static>>) {
+    let p = Paragraph::new(lines).wrap(Wrap { trim: false });
+    let rows = p.line_count(area.width);
+    let skip = rows.saturating_sub(usize::from(area.height));
+    let skip = u16::try_from(skip).unwrap_or(u16::MAX);
+    f.render_widget(p.scroll((skip, 0)), area);
+}
+
 pub(crate) fn bar(progress: u8) -> String {
     let full = ((usize::from(progress) * 5 + 50) / 100).min(5);
     format!("{}{}", "▓".repeat(full), "░".repeat(5 - full))
@@ -146,10 +156,17 @@ pub(crate) fn status_spans(lang: Lang, w: &World, a: &Agent) -> Vec<Span<'static
         Status::Idle if a.role == Role::Leader => vec![Span::styled(t.coordinating, dim())],
         Status::Idle => vec![Span::styled(t.idle, dim())],
         Status::Planning { .. } => vec![Span::styled(t.planning, fg(Color::Magenta))],
-        Status::Working => vec![
-            Span::styled(bar(a.progress), fg(Color::Green)),
-            Span::raw(format!(" {}", Phase::of(a.progress).label())),
-        ],
+        Status::Working => match a.activity.as_deref() {
+            Some("") => vec![Span::styled(t.thinking, fg(Color::Green))],
+            Some(doing) => vec![Span::styled(
+                fit(doing, 40).trim_end().to_string(),
+                fg(Color::Green),
+            )],
+            None => vec![
+                Span::styled(bar(a.progress), fg(Color::Green)),
+                Span::raw(format!(" {}", Phase::of(a.progress).label())),
+            ],
+        },
         Status::Asking { to, .. } => vec![
             Span::styled(bar(a.progress), dim()),
             Span::styled(
@@ -173,6 +190,7 @@ pub(crate) fn status_spans(lang: Lang, w: &World, a: &Agent) -> Vec<Span<'static
             fill(t.researching, &[&a.topic]),
             fg(Color::Blue),
         )],
+        Status::Stopped => vec![Span::styled(t.stopped, bold(Color::LightRed))],
     }
 }
 
@@ -402,11 +420,34 @@ mod tests {
             .find(|a| a.role == Role::Worker)
             .unwrap()
             .id;
-        app.world.tell_agent(id, "\u{1b}[2Jhello sk-secret123");
+        app.world.said(id, "\u{1b}[2Jhello sk-secret123");
         let s = render(&app, 140, 40);
         assert!(!s.contains('\u{1b}'));
         assert!(!s.contains("sk-secret123"), "{s}");
         assert!(s.contains("hello"));
+    }
+
+    #[test]
+    fn a_long_answer_wraps_and_its_end_stays_in_view() {
+        let mut app = app_after(1, 4, 50, Lang::En);
+        let id = app
+            .world
+            .agents
+            .iter()
+            .find(|a| a.card.is_some())
+            .unwrap()
+            .id;
+        let card = app.world.agents[id].card;
+        let long = format!("{} THE-END", "word ".repeat(400));
+        for _ in 0..30 {
+            app.world.story(card, StoryEvent::Decision("filler".into()));
+        }
+        app.world.story(card, StoryEvent::Replied(long.clone()));
+        app.zoom = Zoom::Focus(id);
+        assert!(render(&app, 100, 30).contains("THE-END"));
+        app.world.agents[id].trace(0, long);
+        app.zoom = Zoom::Trace(id);
+        assert!(render(&app, 100, 30).contains("THE-END"));
     }
 
     #[test]

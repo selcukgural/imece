@@ -110,11 +110,7 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App, id: AgentId) {
             .collect(),
         None => vec![Line::from(Span::styled(t.no_story, dim()))],
     };
-    let skip = story.len().saturating_sub(usize::from(body.height));
-    f.render_widget(
-        Paragraph::new(story.into_iter().skip(skip).collect::<Vec<_>>()),
-        body,
-    );
+    tail(f, body, story);
 }
 
 pub fn trace(f: &mut Frame, area: Rect, app: &App, id: AgentId) {
@@ -124,12 +120,10 @@ pub fn trace(f: &mut Frame, area: Rect, app: &App, id: AgentId) {
         .border_style(dim());
     let inner = block.inner(area);
     f.render_widget(block, area);
-    let skip = a.trace.len().saturating_sub(usize::from(inner.height));
     let lines: Vec<Line> = a
         .trace
         .iter()
-        .skip(skip)
         .map(|l| Line::from(Span::raw(clean(l))))
         .collect();
-    f.render_widget(Paragraph::new(lines), inner);
+    tail(f, inner, lines);
 }
