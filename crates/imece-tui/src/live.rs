@@ -19,7 +19,7 @@
 
 use std::collections::HashMap;
 use std::io;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -135,6 +135,8 @@ pub struct Live {
     mail: Vec<Vec<Mail>>,
     /// Prompts each session was given and has not finished.
     turns: Vec<usize>,
+    /// Agents the person spoke to whose answer has not come yet.
+    asked: Vec<bool>,
     /// Turns each agent took on messages since the person last spoke.
     woken: Vec<u32>,
     /// The board's cards, by the card they made.
@@ -160,7 +162,7 @@ pub fn world(o: Options) -> Result<(World, Live), String> {
     let name = repo
         .file_name()
         .map_or("repo".into(), |n| n.to_string_lossy().into_owned());
-    let root = state_dir().join("worktrees").join(format!(
+    let root = crate::prefs::state_dir().join("worktrees").join(format!(
         "{name}-{:08x}",
         fnv(repo.as_os_str().as_encoded_bytes())
     ));
@@ -242,6 +244,7 @@ impl Live {
             calls_rx,
             mail: vec![Vec::new(); agents],
             turns: vec![0; agents],
+            asked: vec![false; agents],
             woken: vec![0; agents],
             posts: HashMap::new(),
             offered: HashMap::new(),
@@ -303,6 +306,10 @@ impl Live {
                 continue;
             }
             let turn_done = matches!(e, AgentEvent::TurnDone { .. });
+            let answer = match &e {
+                AgentEvent::TurnDone { ok: true, text, .. } => Some(text.clone()),
+                _ => None,
+            };
             if let AgentEvent::Stopped(_) = e {
                 self.end(w, id);
             }
@@ -312,6 +319,12 @@ impl Live {
                 if self.turns[id] > 0 {
                     // The session goes on with a prompt it already has.
                     w.agents[id].set_status(Status::Working, w.tick);
+                } else if let Some(text) = answer.filter(|_| self.asked[id] || self.reports(w, id))
+                {
+                    // The person waits for this: it goes to them, not
+                    // only into the journal.
+                    self.asked[id] = false;
+                    w.replied(id, &text);
                 }
             }
         }
@@ -332,6 +345,16 @@ impl Live {
             }
         }
         self.offer(w);
+    }
+
+    /// Whether a leader's finished turn is its report to the person: the
+    /// team's work it led has come back and nobody works or has mail.
+    fn reports(&self, w: &World, id: AgentId) -> bool {
+        let a = &w.agents[id];
+        a.role == Role::Leader
+            && w.agents.iter().all(|o| {
+                o.project != a.project || (self.turns[o.id] == 0 && self.mail[o.id].is_empty())
+            })
     }
 
     /// A session ended: the next message starts a new one.
@@ -712,7 +735,9 @@ impl Live {
         self.posted.iter_mut().for_each(|n| *n = 0);
         let title = text.lines().next().unwrap_or_default().to_string();
         self.prompt(w, id, text.to_string(), Some(&title))
-            .map_err(Refusal::Start)
+            .map_err(Refusal::Start)?;
+        self.asked[id] = true;
+        Ok(())
     }
 
     /// Gives agent `id` a prompt, starting its session first if it has
@@ -1043,8 +1068,11 @@ fn system_prompt(w: &World, id: AgentId) -> String {
              done); give different workers different files where you can. \
              Work that any worker could pick up may go on the board instead \
              (post); idle workers take it themselves. Workers answer with \
-             done, blocked or ask; their messages start your next turn. Answer the person briefly: what you assigned, and \
-             when all is done, what was done and what is left.",
+             done, blocked or ask; their messages start your next turn. You \
+             never change files yourself, so do not offer to; offer only work \
+             a worker will do. Answer the person briefly: what you found or \
+             assigned, and when all is done, what was done and what is left. \
+             When you need the person to decide, end with one clear question.",
             a.name,
             workers.join(", ")
         ),
@@ -1064,16 +1092,6 @@ fn system_prompt(w: &World, id: AgentId) -> String {
             a.name
         ),
     }
-}
-
-/// `$XDG_STATE_HOME/imece`, or `~/.local/state/imece`.
-fn state_dir() -> PathBuf {
-    std::env::var_os("XDG_STATE_HOME")
-        .map(PathBuf::from)
-        .filter(|p| p.is_absolute())
-        .or_else(|| std::env::var_os("HOME").map(|h| Path::new(&h).join(".local/state")))
-        .unwrap_or_else(std::env::temp_dir)
-        .join("imece")
 }
 
 /// FNV-1a: tells checkouts with the same name apart. Not for security.
@@ -1347,6 +1365,72 @@ mod tests {
                 ..
             }
         ));
+    }
+
+    fn finish(live: &mut Live, w: &mut World, id: AgentId, text: &str) {
+        live.tx
+            .send((
+                id,
+                0,
+                AgentEvent::TurnDone {
+                    ok: true,
+                    text: text.into(),
+                    cost: 0,
+                    denied: 0,
+                },
+            ))
+            .unwrap();
+        live.step(w);
+    }
+
+    fn answers(w: &World) -> Vec<(AgentId, String)> {
+        w.open_inbox()
+            .iter()
+            .map(|&i| &w.inbox[i])
+            .filter(|i| i.kind == InboxKind::Reply)
+            .map(|i| (i.agent, i.detail.clone()))
+            .collect()
+    }
+
+    #[test]
+    fn an_answer_to_the_person_waits_for_them_until_they_speak() {
+        let mut w = team(1);
+        let mut live = idle_live(2);
+        w.said(0, "check the readme");
+        live.asked[0] = true;
+        live.turns[0] = 1;
+        finish(
+            &mut live,
+            &mut w,
+            0,
+            "\nThe readme is one line.\nShall I assign more?",
+        );
+        assert_eq!(answers(&w), [(0, "The readme is one line.".to_string())]);
+        // Speaking to the agent answers it.
+        w.said(0, "yes");
+        assert!(answers(&w).is_empty());
+    }
+
+    #[test]
+    fn a_leader_reports_once_the_team_is_quiet() {
+        let mut w = team(1);
+        let mut live = idle_live(2);
+        // The worker still works: the leader's turn on its mail is no report.
+        live.turns[1] = 1;
+        live.turns[0] = 1;
+        finish(&mut live, &mut w, 0, "claude-1 is on it.");
+        assert!(answers(&w).is_empty());
+        // A worker's own turn is not an answer to the person either.
+        finish(&mut live, &mut w, 1, "Done.");
+        assert!(answers(&w).is_empty());
+        live.turns[0] = 1;
+        finish(
+            &mut live,
+            &mut w,
+            0,
+            "All done: README has a Usage section.",
+        );
+        assert_eq!(answers(&w).len(), 1);
     }
 
     #[test]

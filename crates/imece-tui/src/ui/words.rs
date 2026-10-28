@@ -192,6 +192,7 @@ pub fn inbox(lang: Lang, w: &World, item: &InboxItem) -> String {
             t.in_research,
             &[name(w, r), &item.detail, name(w, item.agent)],
         ),
+        (InboxKind::Reply, _) => fill(t.in_reply, &[name(w, item.agent), &item.detail]),
         _ => fill("{} {}", &[name(w, item.agent), &item.detail]),
     }
 }

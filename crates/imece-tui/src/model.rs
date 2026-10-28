@@ -615,6 +615,9 @@ pub enum InboxKind {
     Sensitive,
     /// A research report that proposes something sensitive.
     Research,
+    /// An agent answered the person and waits for them; the detail is the
+    /// answer's first line.
+    Reply,
 }
 
 #[derive(Clone, Debug)]
@@ -747,6 +750,33 @@ impl World {
         self.agents[agent].set_status(Status::Working, tick);
     }
 
+    /// Agent `id` answered the person: its newest answer waits for them,
+    /// an older unread one goes.
+    pub fn replied(&mut self, id: AgentId, text: &str) {
+        self.close_replies(id);
+        self.inbox.push(InboxItem {
+            kind: InboxKind::Reply,
+            agent: id,
+            detail: text
+                .lines()
+                .find(|l| !l.trim().is_empty())
+                .unwrap_or_default()
+                .to_string(),
+            researcher: None,
+            open: true,
+            tick: self.tick,
+        });
+    }
+
+    /// The person read or answered agent `id`'s answers.
+    pub fn close_replies(&mut self, id: AgentId) {
+        for i in &mut self.inbox {
+            if i.kind == InboxKind::Reply && i.agent == id {
+                i.open = false;
+            }
+        }
+    }
+
     fn close(&mut self, item: usize) -> Option<(InboxKind, AgentId)> {
         let it = self.inbox.get_mut(item).filter(|i| i.open)?;
         it.open = false;
@@ -758,6 +788,7 @@ impl World {
     /// agent (the simulation or a live session) acts on it.
     pub fn said(&mut self, id: AgentId, text: &str) {
         let t = self.tick;
+        self.close_replies(id);
         self.note(Event::YouSaid {
             to: id,
             text: text.into(),
