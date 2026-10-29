@@ -3,11 +3,12 @@
 # every pull request). A mutant that survives is a test that is missing.
 
 # Code no test can reach without a terminal, a clipboard or a child
-# process of its own: the main loop, signal handlers, the clipboard tools.
+# process of its own: the main loop, the who-leads question loop, signal
+# handlers, the clipboard tools.
 # A pattern matches the mutant's full name, `path:line:col: replace fn ...`.
 exclude_re = [
-    "src/main.rs:.*: replace (main|run|catch_signals|on_signal) ",
-    "src/main.rs:.*: replace .* in (main|run|catch_signals|on_signal)$",
+    "src/main.rs:.*: replace (main|run|ask|catch_signals|on_signal) ",
+    "src/main.rs:.*: (replace|delete) .* in (main|run|ask|catch_signals|on_signal)$",
     "src/clip.rs:.*: replace (copy|tools|pipe|osc52) ",
     "src/clip.rs:.*: replace .* in (copy|tools|pipe|osc52)$",
 ]

@@ -43,6 +43,8 @@ pub struct Options {
     pub repo: PathBuf,
     /// Workers the leader may hire, at most.
     pub max_workers: usize,
+    /// Helpers a worker may have at once, at most.
+    pub max_helpers: usize,
     /// The leader's vendor.
     pub lead: Vendor,
     /// The model every agent runs on unless a tier says otherwise; none
@@ -54,9 +56,12 @@ pub struct Options {
     pub budget: u64,
 }
 
-/// The coding agents imece knows: their program on PATH, and whether imece
-/// can drive them yet.
-const KNOWN: &[(Vendor, &str, bool)] = &[
+/// A coding agent imece knows: its program on PATH, and whether imece can
+/// drive it yet.
+pub type Known = (Vendor, &'static str, bool);
+
+/// The coding agents imece knows.
+pub const KNOWN: &[Known] = &[
     (Vendor::Claude, claude::PROGRAM, true),
     (Vendor::Codex, "codex", false),
     (Vendor::Gemini, "gemini", false),
@@ -250,6 +255,8 @@ pub struct Live {
     vendors: Vec<Hireable>,
     /// Workers the leader may hire, at most.
     max_workers: usize,
+    /// Helpers a worker may have at once, at most.
+    max_helpers: usize,
     repo: PathBuf,
     /// Where the workers' worktrees live, outside the checkout.
     root: PathBuf,
@@ -267,6 +274,9 @@ pub struct Live {
     /// Whether the agent's session was renewed after hitting its cap and
     /// has not finished a turn since: a second cap in a row is final.
     renewed: Vec<bool>,
+    /// Helpers that sent done to their worker: each leaves when its turn
+    /// ends, so the turn's cost is still reported.
+    leaving: Vec<bool>,
     bus: Option<Bus>,
     calls_tx: Sender<Call>,
     calls_rx: Receiver<Call>,
@@ -286,16 +296,31 @@ pub struct Live {
     posted: Vec<u32>,
 }
 
-/// Finds the coding agents on PATH, then builds the team for the checkout
-/// `repo` is in: the leader alone, who hires the rest.
-pub fn world(o: Options) -> Result<(World, Live), String> {
-    let repo = worktree::top(&o.repo).map_err(|e| format!("{}: {e}", o.repo.display()))?;
-    let present: Vec<(Vendor, bool)> = KNOWN
+/// The coding agents among `known` (see [`KNOWN`]) on PATH, run from the
+/// checkout `repo` is in, with whether imece drives them.
+pub fn probe(repo: &Path, known: &[Known]) -> Result<Vec<(Vendor, bool)>, String> {
+    let repo = worktree::top(repo).map_err(|e| format!("{}: {e}", repo.display()))?;
+    Ok(known
         .iter()
         .filter(|(_, program, _)| on_path(program, &repo))
         .map(|&(vendor, _, drives)| (vendor, drives))
-        .collect();
-    let vendors: Vec<Hireable> = hireable(&present, o.lead)?
+        .collect())
+}
+
+/// The vendors among `present` that could lead: the ones imece drives.
+pub fn leaders(present: &[(Vendor, bool)]) -> Vec<Vendor> {
+    present
+        .iter()
+        .filter(|(_, drives)| *drives)
+        .map(|(v, _)| *v)
+        .collect()
+}
+
+/// Builds the team for the checkout `repo` is in, from the coding agents
+/// `present` on PATH (see [`probe`]): the leader alone, who hires the rest.
+pub fn world(o: Options, present: &[(Vendor, bool)]) -> Result<(World, Live), String> {
+    let repo = worktree::top(&o.repo).map_err(|e| format!("{}: {e}", o.repo.display()))?;
+    let vendors: Vec<Hireable> = hireable(present, o.lead)?
         .into_iter()
         // Claude Code is the only vendor imece drives so far (see `KNOWN`).
         .map(|_| Hireable::claude(claude::PROGRAM, o.model.clone(), &o.tiers))
@@ -337,6 +362,7 @@ pub fn world(o: Options) -> Result<(World, Live), String> {
     start_clock_at(local_seconds_after_midnight());
     let mut live = Live::new(1, vendors, repo, root);
     live.max_workers = o.max_workers;
+    live.max_helpers = o.max_helpers;
     live.models[0] = live.of(o.lead).ladder.standard.clone();
     let relay = std::env::current_exe().map_err(|e| format!("imece's own path: {e}"))?;
     live.open_bus(&w, relay.to_string_lossy().into_owned())
@@ -362,6 +388,7 @@ impl Live {
             spent_before: Vec::new(),
             vendors,
             max_workers: usize::MAX,
+            max_helpers: usize::MAX,
             repo,
             root,
             models: Vec::new(),
@@ -369,6 +396,7 @@ impl Live {
             turned: Vec::new(),
             inflight: Vec::new(),
             renewed: Vec::new(),
+            leaving: Vec::new(),
             bus: None,
             calls_tx,
             calls_rx,
@@ -397,6 +425,7 @@ impl Live {
         self.turned.push(false);
         self.inflight.push(Vec::new());
         self.renewed.push(false);
+        self.leaving.push(false);
         self.mail.push(Vec::new());
         self.turns.push(0);
         self.asked.push(false);
@@ -526,12 +555,24 @@ impl Live {
                 AgentEvent::TurnDone { ok: true, text, .. } => Some(text.clone()),
                 _ => None,
             };
-            if let AgentEvent::Stopped(_) = e {
+            let stopped = matches!(e, AgentEvent::Stopped(_));
+            if stopped {
                 self.end(w, id);
             }
             apply(w, id, e, self.spent_before[id]);
+            if stopped {
+                // Helpers work for their worker alone: none without it.
+                let helpers: Vec<AgentId> = w.helpers_of(id).map(|h| h.id).collect();
+                for h in helpers {
+                    self.release(w, h);
+                }
+            }
             if turn_done {
                 self.turns[id] = self.turns[id].saturating_sub(1);
+                if self.turns[id] == 0 && self.leaving[id] {
+                    self.release(w, id);
+                    continue;
+                }
                 if self.turns[id] > 0 {
                     // The session goes on with a prompt it already has.
                     w.agents[id].set_status(Status::Working, w.tick);
@@ -557,7 +598,8 @@ impl Live {
         }
         for id in 0..self.mail.len() {
             let waking = self.mail[id].iter().any(|m| m.kind.wakes());
-            if waking && self.turns[id] == 0 && w.agents[id].status != Status::Stopped {
+            let a = &w.agents[id];
+            if waking && self.turns[id] == 0 && a.status != Status::Stopped && !a.gone {
                 self.deliver(w, id);
             }
         }
@@ -582,6 +624,22 @@ impl Live {
         self.turns[id] = 0;
         self.turned[id] = false;
         self.inflight[id].clear();
+    }
+
+    /// Helper `id` leaves: its session ends, its mail is dropped, and it is
+    /// gone from the screen; its name may be taken again.
+    fn release(&mut self, w: &mut World, id: AgentId) {
+        self.end(w, id);
+        self.leaving[id] = false;
+        self.mail[id].clear();
+        let t = w.tick;
+        let a = &mut w.agents[id];
+        a.activity = None;
+        a.talk = None;
+        a.set_status(Status::Idle, t);
+        a.gone = true;
+        a.trace(t, "left");
+        w.note(Event::Left { agent: id });
     }
 
     /// Agent `id`'s tier model is not available here: its session ends and
@@ -623,32 +681,53 @@ impl Live {
         }
     }
 
-    /// The leader `from` adds a worker (the `hire` tool's arguments). The
-    /// answer names it.
+    /// The leader `from` adds a worker, or the worker `from` adds a helper
+    /// (the `hire` tool's arguments). The answer names it.
     fn hire(&mut self, w: &mut World, from: AgentId, args: &Value) -> Answer {
-        let leader = &w.agents[from];
-        if leader.role != Role::Leader {
-            return Err("only the leader hires; ask it with send (type ask)".into());
-        }
-        let (project, own) = (leader.project, leader.vendor);
-        let workers = w
-            .agents
-            .iter()
-            .filter(|o| o.project == project && o.role == Role::Worker && !o.gone)
-            .count();
-        if self.max_workers == 0 {
-            return Err(
-                "the person runs you without workers (--agents 0); answer from what you read"
-                    .into(),
-            );
-        }
-        if workers >= self.max_workers {
-            return Err(format!(
-                "the team is full: {workers} workers, the most the person allowed \
-                 (--agents {}); give the work to one of them",
-                self.max_workers
-            ));
-        }
+        let hirer = &w.agents[from];
+        let (project, own) = (hirer.project, hirer.vendor);
+        let role = match hirer.role {
+            Role::Leader => Role::Worker,
+            Role::Worker => Role::Helper,
+            _ => return Err("only the leader and workers hire; ask yours with send".into()),
+        };
+        // How many there are and how many there may be.
+        let (so_far, cap) = if role == Role::Worker {
+            let workers = w
+                .agents
+                .iter()
+                .filter(|o| o.project == project && o.role == Role::Worker && !o.gone)
+                .count();
+            if self.max_workers == 0 {
+                return Err(
+                    "the person runs you without workers (--agents 0); answer from what you read"
+                        .into(),
+                );
+            }
+            if workers >= self.max_workers {
+                return Err(format!(
+                    "the team is full: {workers} workers, the most the person allowed \
+                     (--agents {}); give the work to one of them",
+                    self.max_workers
+                ));
+            }
+            (workers, self.max_workers)
+        } else {
+            let helpers = w.helpers_of(from).count();
+            if self.max_helpers == 0 {
+                return Err(
+                    "the person runs you without helpers (--helpers 0); do it yourself".into(),
+                );
+            }
+            if helpers >= self.max_helpers {
+                return Err(format!(
+                    "you have {helpers} helpers, the most the person allowed (--helpers {}); \
+                     wait for one to send done",
+                    self.max_helpers
+                ));
+            }
+            (helpers, self.max_helpers)
+        };
         let arg = |k: &str| args[k].as_str().map(str::trim).unwrap_or_default();
         let vendor = match arg("vendor") {
             "" => self.of(own).clone(),
@@ -672,32 +751,45 @@ impl Live {
         // Only a model other than the standard one has something to fall
         // back to.
         let tiered = model != vendor.ladder.standard;
-        // The vendor's next number, skipping names already taken.
-        let next = w
-            .agents
-            .iter()
-            .filter(|o| o.vendor == vendor.vendor && o.role == Role::Worker)
-            .count()
-            + 1;
+        // The next number, skipping names already taken: a worker's after
+        // its vendor (`claude-2`), a helper's after its worker
+        // (`claude-2.1`), counting the ones that left.
+        let (stem, next) = if role == Role::Worker {
+            let n = w
+                .agents
+                .iter()
+                .filter(|o| o.vendor == vendor.vendor && o.role == Role::Worker)
+                .count();
+            (format!("{}-", vendor.vendor.label()), n + 1)
+        } else {
+            let n = w
+                .agents
+                .iter()
+                .filter(|o| o.role == Role::Helper && o.parent == Some(from))
+                .count();
+            (format!("{}.", w.agents[from].name), n + 1)
+        };
         let name = (next..)
-            .map(|n| format!("{}-{n}", vendor.vendor.label()))
+            .map(|n| format!("{stem}{n}"))
             .find(|name| w.agent_by_name(name).is_none())
             .expect("some number is free");
         let id = w.agents.len();
         // The socket first: an agent without one could never start.
-        self.bind(id, Role::Worker)
+        self.bind(id, role)
             .map_err(|e| format!("{name} could not get a socket: {e}"))?;
         self.grow(model.clone(), tiered);
         let t = w.tick;
-        w.agents.push(Agent::new(
+        let mut agent = Agent::new(
             id,
             project,
             name.clone(),
             vendor.vendor,
-            Role::Worker,
+            role,
             Status::Idle,
             t,
-        ));
+        );
+        agent.parent = (role == Role::Helper).then_some(from);
+        w.agents.push(agent);
         let shown = model.clone().unwrap_or_else(|| "the default model".into());
         let by = w.agents[from].name.clone();
         w.agents[from].trace(t, format!("hire {name} {} {shown}", tier.wire()));
@@ -711,7 +803,7 @@ impl Live {
             "{name} joined ({}, {shown}). Give it work with send (type assign). \
              {} more may be hired.",
             vendor.vendor.label(),
-            self.max_workers - workers - 1
+            cap - so_far - 1
         ))
     }
 
@@ -772,6 +864,11 @@ impl Live {
             kind,
             body: body.to_string(),
         });
+        if kind == MsgKind::Done && w.agents[from].parent == Some(to) {
+            // A helper's work is its worker's: done to it, and it leaves
+            // when this turn ends.
+            self.leaving[from] = true;
+        }
 
         let t = w.tick;
         let first = body.lines().next().unwrap_or_default().to_string();
@@ -1162,7 +1259,7 @@ impl Live {
             model: self.models[id].clone(),
             // In millionths of a dollar: what is left of the budget.
             budget: w.daily_budget.saturating_sub(w.spent()) * 100,
-            system: system_prompt(w, id, self.max_workers),
+            system: system_prompt(w, id, self.max_workers, self.max_helpers),
             mcp: self.bus.as_ref().map(|b| Mcp {
                 command: b.relay.clone(),
                 args: vec![
@@ -1176,12 +1273,14 @@ impl Live {
             }),
         };
         let generation = self.generation[id];
-        let (repo, root, name) = (self.repo.clone(), self.root.clone(), a.name.clone());
+        // A helper changes the same files as its worker: its worktree.
+        let tree = a.parent.map_or(&a.name, |p| &w.agents[p].name).clone();
+        let (repo, root) = (self.repo.clone(), self.root.clone());
         let (tx, ready) = (self.tx.clone(), self.ready_tx.clone());
         thread::spawn(move || {
             let started = (|| {
                 if !leader {
-                    spec.cwd = worktree::ensure(&repo, &root, &name).map_err(|e| e.to_string())?;
+                    spec.cwd = worktree::ensure(&repo, &root, &tree).map_err(|e| e.to_string())?;
                 }
                 let session = Session::start(&spec, move |e| {
                     let _ = tx.send((id, generation, e));
@@ -1284,26 +1383,38 @@ pub fn apply(w: &mut World, id: AgentId, e: AgentEvent, before: u64) {
 }
 
 /// imece's tools for an agent of `role`: workers alone take cards, the
-/// leader alone hires (from `vendors`).
+/// leader hires workers and a worker hires helpers (from `vendors`);
+/// helpers and researchers hire nobody.
 fn tools_of(role: Role, vendors: &[&str]) -> Vec<Tool> {
     let mut tools = vec![send_tool(), post_tool(), board_tool()];
     match role {
-        Role::Worker => tools.push(claim_tool()),
-        Role::Leader => tools.push(hire_tool(vendors)),
-        _ => {}
+        Role::Worker => {
+            tools.push(claim_tool());
+            tools.push(hire_tool(vendors, HIRE_HELPER));
+        }
+        Role::Leader => tools.push(hire_tool(vendors, HIRE_WORKER)),
+        Role::Helper | Role::Researcher => {}
     }
     tools
 }
 
-fn hire_tool(vendors: &[&str]) -> Tool {
+/// The hire tool as the leader sees it.
+const HIRE_WORKER: &str = "Adds a worker to your team in imece: a coding agent in its own git \
+                           worktree of the repository. The answer names it; then give it work \
+                           with send (type assign). Hire for work that can run at once, not in \
+                           advance: one worker takes several tasks in turn.";
+/// The hire tool as a worker sees it.
+const HIRE_HELPER: &str = "Adds a helper of your own in imece: a coding agent in your worktree, \
+                           changing the same files as you. The answer names it; then give it a \
+                           part of your task with send (type assign): what to do, which files, \
+                           when it is done. It sends you done and leaves. Hire for a part that \
+                           can run beside your own work, in files you are not changing.";
+
+fn hire_tool(vendors: &[&str], description: &str) -> Tool {
     let tiers: Vec<&str> = Tier::ALL.iter().map(|t| t.wire()).collect();
     Tool {
         name: "hire".into(),
-        description: "Adds a worker to your team in imece: a coding agent in its own git \
-                      worktree of the repository. The answer names it; then give it work \
-                      with send (type assign). Hire for work that can run at once, not in \
-                      advance: one worker takes several tasks in turn."
-            .into(),
+        description: description.into(),
         input: json!({
             "type": "object",
             "properties": {
@@ -1438,8 +1549,9 @@ fn mail_prompt(w: &World, mail: &[Mail]) -> String {
     out
 }
 
-/// The system prompt of agent `id`; a leader may hire up to `max_workers`.
-fn system_prompt(w: &World, id: AgentId, max_workers: usize) -> String {
+/// The system prompt of agent `id`; a leader may hire up to `max_workers`,
+/// a worker may have up to `max_helpers` at once.
+fn system_prompt(w: &World, id: AgentId, max_workers: usize, max_helpers: usize) -> String {
     let a = &w.agents[id];
     let workers: Vec<&str> = w
         .agents
@@ -1488,21 +1600,50 @@ fn system_prompt(w: &World, id: AgentId, max_workers: usize) -> String {
                 a.name
             )
         }
-        _ => format!(
-            "You are {}, a coding agent in imece, a team led by {leader}. You work \
-             in your own git worktree of the repository (your current \
-             directory); the others work in theirs. You can read and change \
-             files here but not run commands. Do not commit. Tasks come from \
-             {leader} or from the person. When you finish a task from \
-             {leader}, send it a done message with a short summary of what \
-             you changed and what is left open; if you are stuck, send blocked \
-             or ask instead of guessing. imece may offer you open cards from \
-             the board; take one that fits with claim, and send whoever posted \
-             it a done message when it is done. Work you find outside your \
-             task goes on the board (post), not into your change. Use these \
-             tools only for that, not for chatter.",
-            a.name
-        ),
+        Role::Helper => {
+            let parent = &w.agents[a.parent.expect("a helper has a worker")].name;
+            format!(
+                "You are {}, a helper of {parent}, a coding agent in imece, a team led by \
+                 {leader}. You work in {parent}'s git worktree of the repository (your \
+                 current directory), on the files {parent} gave you; it changes others \
+                 at the same time, so stay in yours. You can read and change files here \
+                 but not run commands. Do not commit. Your task comes from {parent}. \
+                 When it is done, send {parent} a done message with a short summary of \
+                 what you changed and what is left open; you leave then. If you are \
+                 stuck, send {parent} blocked or ask instead of guessing. Use these \
+                 tools only for that, not for chatter.",
+                a.name
+            )
+        }
+        _ => {
+            let helpers = if max_helpers == 0 {
+                String::new()
+            } else {
+                format!(
+                    " You may hire helpers with the hire tool, up to {max_helpers} at once: \
+                     each is a coding agent in your worktree, changing the same files as \
+                     you. Give one a part of your task with send (type assign: what to do, \
+                     which files, when it is done), in files you are not changing yourself; \
+                     it sends you done and leaves. Hire for a part that can run beside your \
+                     own work, not for the whole task and not in advance."
+                )
+            };
+            format!(
+                "You are {}, a coding agent in imece, a team led by {leader}. You work \
+                 in your own git worktree of the repository (your current \
+                 directory); the others work in theirs. You can read and change \
+                 files here but not run commands. Do not commit. Tasks come from \
+                 {leader} or from the person. When you finish a task from \
+                 {leader}, send it a done message with a short summary of what \
+                 you changed and what is left open; if you are stuck, send blocked \
+                 or ask instead of guessing. imece may offer you open cards from \
+                 the board; take one that fits with claim, and send whoever posted \
+                 it a done message when it is done. Work you find outside your \
+                 task goes on the board (post), not into your change.{helpers} Use \
+                 these tools only for that, not for chatter.",
+                a.name
+            )
+        }
     }
 }
 
@@ -2250,7 +2391,7 @@ mod tests {
     }
 
     #[test]
-    fn only_workers_get_the_claim_tool_and_only_the_leader_hires() {
+    fn only_workers_get_the_claim_tool_and_only_the_leader_and_workers_hire() {
         let names = |r: Role| -> Vec<String> {
             tools_of(r, &["claude"])
                 .into_iter()
@@ -2258,9 +2399,17 @@ mod tests {
                 .collect()
         };
         assert_eq!(names(Role::Leader), ["send", "post", "board", "hire"]);
-        assert_eq!(names(Role::Worker), ["send", "post", "board", "claim"]);
+        assert_eq!(
+            names(Role::Worker),
+            ["send", "post", "board", "claim", "hire"]
+        );
+        assert_eq!(names(Role::Helper), ["send", "post", "board"]);
         assert_eq!(names(Role::Researcher), ["send", "post", "board"]);
+        // The same tool, told differently: a worker hires helpers.
+        let worker_hire = &tools_of(Role::Worker, &["claude"])[4];
+        assert!(worker_hire.description.starts_with("Adds a helper"));
         let hire = &tools_of(Role::Leader, &["claude", "codex"])[3];
+        assert!(hire.description.starts_with("Adds a worker"));
         assert_eq!(
             hire.input["properties"]["vendor"]["enum"],
             json!(["claude", "codex"])
@@ -2476,24 +2625,37 @@ in p.rs",
 
     #[test]
     fn the_prompts_name_the_team() {
-        let w = team(2);
-        let lead = system_prompt(&w, 0, 4);
+        let mut w = team(2);
+        let lead = system_prompt(&w, 0, 4, 2);
         assert!(lead.starts_with("You are lead, the leader"), "{lead}");
         assert!(
             lead.contains("The workers so far are claude-1, claude-2."),
             "{lead}"
         );
         assert!(lead.contains("hire tool, up to 4;"), "{lead}");
-        let worker = system_prompt(&w, 2, 4);
+        let worker = system_prompt(&w, 2, 4, 2);
         assert!(
             worker.starts_with("You are claude-2, a coding agent"),
             "{worker}"
         );
         assert!(worker.contains("led by lead"));
-        assert!(!worker.contains("hire"), "{worker}");
-        let alone = system_prompt(&team(0), 0, 4);
+        assert!(
+            worker.contains("hire helpers with the hire tool, up to 2 at once"),
+            "{worker}"
+        );
+        let no_helpers = system_prompt(&w, 2, 4, 0);
+        assert!(!no_helpers.contains("hire"), "{no_helpers}");
+        let helper = with_helper(&mut w, 1);
+        let helper = system_prompt(&w, helper, 4, 2);
+        assert!(
+            helper.starts_with("You are claude-1.1, a helper of claude-1"),
+            "{helper}"
+        );
+        assert!(helper.contains("led by lead") && helper.contains("claude-1's git worktree"));
+        assert!(!helper.contains("hire"), "{helper}");
+        let alone = system_prompt(&team(0), 0, 4, 2);
         assert!(alone.contains("You have no workers yet."), "{alone}");
-        let none = system_prompt(&team(0), 0, 0);
+        let none = system_prompt(&team(0), 0, 0, 2);
         assert!(none.contains("without workers"), "{none}");
         assert!(!none.contains("hire"), "{none}");
     }
@@ -2568,9 +2730,14 @@ in p.rs",
     #[test]
     fn bad_hires_are_refused_with_a_reason() {
         let mut w = team(1);
-        let mut live = idle_live(2);
+        let helper = with_helper(&mut w, 1);
+        let mut live = idle_live(3);
+        let err = live.hire(&mut w, helper, &json!({})).unwrap_err();
+        assert!(err.contains("only the leader and workers"), "{err}");
+        live.max_helpers = 0;
         let err = live.hire(&mut w, 1, &json!({})).unwrap_err();
-        assert!(err.contains("only the leader"), "{err}");
+        assert!(err.contains("without helpers"), "{err}");
+        live.max_helpers = usize::MAX;
         let err = live
             .hire(&mut w, 0, &json!({ "tier": "huge" }))
             .unwrap_err();
@@ -2585,8 +2752,144 @@ in p.rs",
         live.max_workers = 0;
         let err = live.hire(&mut w, 0, &json!({})).unwrap_err();
         assert!(err.contains("without workers"), "{err}");
-        assert_eq!(w.agents.len(), 2);
+        assert_eq!(w.agents.len(), 3);
         assert!(w.journal.is_empty());
+    }
+
+    /// A helper of worker `parent`, as `hire` would add it; its id.
+    fn with_helper(w: &mut World, parent: AgentId) -> AgentId {
+        let id = w.agents.len();
+        let name = format!(
+            "{}.{}",
+            w.agents[parent].name,
+            w.helpers_of(parent).count() + 1
+        );
+        let mut a = Agent::new(id, 0, name, Vendor::Claude, Role::Helper, Status::Idle, 0);
+        a.parent = Some(parent);
+        w.agents.push(a);
+        id
+    }
+
+    #[test]
+    fn a_worker_hires_helpers_named_after_it_up_to_its_cap_and_they_hire_nobody() {
+        let mut w = team(2);
+        let mut live = idle_live(3);
+        live.max_workers = 2;
+        live.max_helpers = 2;
+        let got = live.hire(&mut w, 1, &json!({ "tier": "cheap" })).unwrap();
+        assert!(
+            got.starts_with("claude-1.1 joined (claude, haiku)")
+                && got.contains("1 more may be hired"),
+            "{got}"
+        );
+        let h = &w.agents[3];
+        assert_eq!(
+            (h.name.as_str(), h.role, h.parent, h.project, h.card),
+            ("claude-1.1", Role::Helper, Some(1), 0, None)
+        );
+        assert_eq!(live.models[3].as_deref(), Some("haiku"));
+        assert!(matches!(
+            w.journal.last().map(|e| &e.event),
+            Some(Event::Hired { by: 1, agent: 3, model: Some(m) }) if m == "haiku"
+        ));
+        let got = live.hire(&mut w, 1, &json!({})).unwrap();
+        assert!(
+            got.starts_with("claude-1.2 joined") && got.contains("0 more"),
+            "{got}"
+        );
+        // Exactly the cap, per worker: the other worker still may.
+        let err = live.hire(&mut w, 1, &json!({})).unwrap_err();
+        assert!(
+            err.contains("you have 2 helpers") && err.contains("--helpers 2"),
+            "{err}"
+        );
+        let got = live.hire(&mut w, 2, &json!({})).unwrap();
+        assert!(got.starts_with("claude-2.1 joined"), "{got}");
+        // Helpers are not workers: the leader's cap is untouched by them,
+        // and they are not offered cards.
+        let err = live.hire(&mut w, 0, &json!({})).unwrap_err();
+        assert!(err.contains("the team is full: 2 workers"), "{err}");
+        assert_eq!(w.helpers_of(1).count(), 2);
+        assert_eq!(w.helpers_of(2).count(), 1);
+        assert_eq!(w.helpers_of(0).count(), 0);
+        let err = live.hire(&mut w, 3, &json!({})).unwrap_err();
+        assert!(err.contains("only the leader and workers"), "{err}");
+    }
+
+    #[test]
+    fn a_helper_that_sent_done_to_its_worker_leaves_when_its_turn_ends() {
+        let mut w = team(1);
+        let mut live = idle_live(2);
+        live.hire(&mut w, 1, &json!({})).unwrap();
+        // The worker is busy, so the mail waits and nothing starts.
+        live.turns[1] = 1;
+        live.turns[2] = 1;
+        // done to someone else is a message like any other.
+        live.send(&mut w, 2, &msg("lead", "done", "fyi")).unwrap();
+        assert!(!live.leaving[2]);
+        let got = live
+            .send(&mut w, 2, &msg("claude-1", "done", "Tests written."))
+            .unwrap();
+        assert!(got.starts_with("queued; claude-1 is busy"), "{got}");
+        assert!(live.leaving[2], "leaves when the turn ends, not now");
+        assert!(!w.agents[2].gone);
+        // Mail that came for it meanwhile goes nowhere.
+        live.mail[2].push(Mail {
+            from: 1,
+            kind: MsgKind::Inform,
+            body: "x".into(),
+        });
+        finish(&mut live, &mut w, 2, "done");
+        let h = &w.agents[2];
+        assert!(h.gone && h.status == Status::Idle && h.talk.is_none());
+        assert!(!live.leaving[2]);
+        assert!(live.mail[2].is_empty());
+        assert_eq!(live.generation[2], 1, "its session ended");
+        assert!(
+            w.journal
+                .iter()
+                .any(|e| matches!(e.event, Event::Left { agent: 2 }))
+        );
+        assert!(
+            h.trace.iter().any(|l| l.ends_with(" left")),
+            "{:?}",
+            h.trace
+        );
+        assert_eq!(w.agent_by_name("claude-1.1"), None);
+        // A gone helper takes no mail and no turn.
+        live.mail[2].push(Mail {
+            from: 1,
+            kind: MsgKind::Assign,
+            body: "more".into(),
+        });
+        live.step(&mut w);
+        assert_eq!(live.turns[2], 0);
+        assert!(matches!(live.slots[2], Slot::None));
+        // The worker still got the done, and the next helper is numbered on.
+        assert_eq!(live.mail[1].len(), 1);
+        assert_eq!(live.mail[1][0].kind, MsgKind::Done);
+        let got = live.hire(&mut w, 1, &json!({})).unwrap();
+        assert!(got.starts_with("claude-1.2 joined"), "{got}");
+    }
+
+    #[test]
+    fn a_worker_that_stops_takes_its_helpers_with_it() {
+        let mut w = team(2);
+        let mut live = idle_live(3);
+        live.hire(&mut w, 1, &json!({})).unwrap();
+        live.hire(&mut w, 2, &json!({})).unwrap();
+        live.tx
+            .send((1, 0, AgentEvent::Stopped("gone".into())))
+            .unwrap();
+        live.step(&mut w);
+        assert_eq!(w.agents[1].status, Status::Stopped);
+        assert!(w.agents[3].gone, "claude-1's helper");
+        assert!(!w.agents[4].gone, "claude-2's helper stays");
+        assert!(
+            w.journal
+                .iter()
+                .any(|e| matches!(e.event, Event::Left { agent: 3 }))
+        );
     }
 
     #[test]
@@ -2610,7 +2913,7 @@ in p.rs",
             .iter()
             .map(|t| t["name"].as_str().unwrap())
             .collect();
-        assert_eq!(names, ["send", "post", "board", "claim"]);
+        assert_eq!(names, ["send", "post", "board", "claim", "hire"]);
     }
 
     #[test]
@@ -2726,6 +3029,20 @@ in p.rs",
         assert_eq!(h.ladder.model(Tier::Strong), Some("opus[1m]"));
         let h = Hireable::claude("claude", None, &[(Tier::Standard, "opus".into())]);
         assert_eq!(h.ladder.model(Tier::Standard), Some("opus"));
+    }
+
+    #[test]
+    fn only_vendors_imece_drives_could_lead() {
+        assert_eq!(
+            leaders(&[
+                (Vendor::Codex, false),
+                (Vendor::Claude, true),
+                (Vendor::Gemini, true)
+            ]),
+            [Vendor::Claude, Vendor::Gemini]
+        );
+        assert!(leaders(&[]).is_empty());
+        assert!(leaders(&[(Vendor::Codex, false)]).is_empty());
     }
 
     #[test]
@@ -2851,11 +3168,114 @@ in p.rs",
     }
 
     #[test]
+    fn a_helper_s_session_runs_in_its_worker_s_worktree_with_edit_tools() {
+        let dir = std::env::temp_dir().join(format!("imece-helper-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let repo = dir.join("repo");
+        std::fs::create_dir_all(&repo).unwrap();
+        let git = |args: &[&str]| {
+            let out = std::process::Command::new("git")
+                .args(args)
+                .current_dir(&repo)
+                .output()
+                .unwrap();
+            assert!(out.status.success(), "git {args:?}");
+        };
+        git(&["init", "--quiet"]);
+        std::fs::write(repo.join("a.txt"), "a").unwrap();
+        git(&["add", "."]);
+        git(&[
+            "-c",
+            "user.name=t",
+            "-c",
+            "user.email=t@t",
+            "-c",
+            "commit.gpgsign=false",
+            "commit",
+            "--quiet",
+            "-m",
+            "init",
+        ]);
+        let mut w = team(1);
+        let mut live = Live::new(
+            2,
+            claude_at(&fake_claude(&dir)),
+            repo.clone(),
+            dir.join("worktrees"),
+        );
+        live.hire(&mut w, 1, &json!({})).unwrap();
+        live.told(&mut w, 2, "hello").unwrap();
+        wait_for(&mut live, &mut w, |w| w.agents[2].status == Status::Stopped);
+        // The stand-in wrote its arguments where it ran: the worker's tree.
+        let tree = dir.join("worktrees").join("claude-1");
+        let args = std::fs::read_to_string(tree.join("args.txt")).unwrap();
+        let args: Vec<&str> = args.lines().collect();
+        let after = |f: &str| args[args.iter().position(|a| *a == f).unwrap() + 1];
+        assert_eq!(after("--tools"), "Edit,Glob,Grep,Read,Write");
+        assert_eq!(after("--name"), "imece claude-1.1");
+        assert!(after("--append-system-prompt").starts_with("You are claude-1.1, a helper"));
+        assert!(
+            !dir.join("worktrees").join("claude-1.1").exists(),
+            "no tree of its own"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn a_program_is_on_path_when_its_version_runs() {
         let here = std::env::temp_dir();
         assert!(on_path("true", &here));
         assert!(!on_path("false", &here));
         assert!(!on_path("/nonexistent/claude", &here));
+    }
+
+    /// A fresh git checkout with one commit, under the temp directory.
+    fn checkout(name: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!("imece-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let git = |args: &[&str]| {
+            let out = std::process::Command::new("git")
+                .args(args)
+                .current_dir(&dir)
+                .output()
+                .unwrap();
+            assert!(out.status.success(), "git {args:?}");
+        };
+        git(&["init", "--quiet"]);
+        std::fs::write(dir.join("a.txt"), "a").unwrap();
+        git(&["add", "."]);
+        git(&[
+            "-c",
+            "user.name=t",
+            "-c",
+            "user.email=t@t",
+            "-c",
+            "commit.gpgsign=false",
+            "commit",
+            "--quiet",
+            "-m",
+            "init",
+        ]);
+        dir
+    }
+
+    #[test]
+    fn probing_finds_the_known_programs_that_run_from_the_checkout() {
+        let repo = checkout("probe");
+        let known: &[Known] = &[
+            (Vendor::Claude, "true", true),
+            (Vendor::Codex, "false", false),
+            (Vendor::Gemini, "/nonexistent/gemini", false),
+        ];
+        assert_eq!(probe(&repo, known), Ok(vec![(Vendor::Claude, true)]));
+        assert_eq!(probe(&repo, &[]), Ok(vec![]));
+        // Outside a checkout there is nothing to run from: the error names it.
+        let outside = std::env::temp_dir().join("imece-probe-nowhere");
+        let err = probe(&outside, known).unwrap_err();
+        assert!(err.contains("imece-probe-nowhere"), "{err}");
+        let _ = std::fs::remove_dir_all(&repo);
     }
 
     #[test]

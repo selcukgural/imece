@@ -81,6 +81,7 @@ pub fn event(lang: Lang, w: &World, e: &Event) -> String {
                 model.as_deref().unwrap_or(t.default_model),
             ],
         ),
+        Event::Left { agent } => fill(t.ev_left, &[name(w, *agent)]),
         Event::Fallback { agent, model } => fill(t.ev_fallback, &[name(w, *agent), model]),
         Event::Budget { from, to, .. } => fill(t.ev_budget, &[&dollars(*to), &dollars(*from)]),
         // Conversations are drawn from `said`, with their speakers coloured.

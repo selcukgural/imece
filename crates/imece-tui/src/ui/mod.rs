@@ -6,6 +6,7 @@ mod board;
 mod code;
 mod focus;
 mod overlay;
+pub mod pick;
 mod salon;
 pub(crate) mod words;
 
@@ -576,10 +577,18 @@ mod tests {
     fn a_folded_project_shows_only_its_header() {
         let mut app = app_after(2, 12, 300, Lang::En);
         let shown = |app: &App, p: ProjectId| {
-            salon::rows(&app.world, &app.collapsed, app.selected, 100)
-                .iter()
-                .filter(|r| matches!(r, salon::Row::Agent { id, .. } if app.world.agents[*id].project == p))
-                .count()
+            salon::rows(
+                &app.world,
+                &app.collapsed,
+                &app.folded_workers,
+                app.selected,
+                100,
+            )
+            .iter()
+            .filter(
+                |r| matches!(r, salon::Row::Agent { id, .. } if app.world.agents[*id].project == p),
+            )
+            .count()
         };
         assert!(shown(&app, 1) > 1);
         app.collapsed[1] = true;
@@ -612,6 +621,222 @@ mod tests {
             .find(|l| l.contains("▸ mobile-app"))
             .expect("no folded header");
         assert!(header.contains("waiting"), "{header}");
+    }
+
+    /// Two helpers of the first worker of `app`'s first project; the worker
+    /// and the helpers' ids.
+    fn with_helpers(app: &mut App) -> (AgentId, [AgentId; 2]) {
+        let worker = app
+            .world
+            .agents
+            .iter()
+            .find(|a| a.project == 0 && a.role == Role::Worker)
+            .unwrap()
+            .id;
+        let name = app.world.agents[worker].name.clone();
+        let mut ids = [0; 2];
+        for (n, id) in ids.iter_mut().enumerate() {
+            *id = app.world.agents.len();
+            let mut h = Agent::new(
+                *id,
+                0,
+                format!("{name}.{}", n + 1),
+                Vendor::Claude,
+                Role::Helper,
+                Status::Working,
+                app.world.tick,
+            );
+            h.parent = Some(worker);
+            h.activity = Some("Edit src/x.rs".into());
+            app.world.agents.push(h);
+        }
+        (worker, ids)
+    }
+
+    fn salon_rows(app: &App) -> Vec<(AgentId, u8)> {
+        salon::rows(
+            &app.world,
+            &app.collapsed,
+            &app.folded_workers,
+            app.selected,
+            100,
+        )
+        .iter()
+        .filter_map(|r| match r {
+            salon::Row::Agent { id, depth } => Some((*id, *depth)),
+            _ => None,
+        })
+        .collect()
+    }
+
+    /// One project whose agents are all calm and working for a long time:
+    /// the leader, the workers in `w`, the researchers in `r`.
+    fn calm_team() -> (App, Vec<AgentId>, Vec<AgentId>) {
+        let mut app = app_after(1, 4, 0, Lang::En);
+        let id = app.world.agents.len();
+        app.world.agents.push(Agent::new(
+            id,
+            0,
+            "res-1".into(),
+            Vendor::Claude,
+            Role::Researcher,
+            Status::Working,
+            0,
+        ));
+        app.world.tick = 100;
+        app.selected = Sel::Project(0);
+        for a in &mut app.world.agents {
+            a.status = Status::Working;
+            a.talk = None;
+            a.changed_at = 0;
+            a.gone = false;
+        }
+        let of = |app: &App, role: Role| -> Vec<AgentId> {
+            app.world
+                .agents
+                .iter()
+                .filter(|a| a.role == role)
+                .map(|a| a.id)
+                .collect()
+        };
+        let w = of(&app, Role::Worker);
+        let r = of(&app, Role::Researcher);
+        assert!(w.len() == 4 && !r.is_empty());
+        (app, w, r)
+    }
+
+    #[test]
+    fn a_worker_s_researcher_and_talk_count_as_lines_when_the_salon_fills() {
+        let (mut app, w, r) = calm_team();
+        app.world.agents[r[0]].status = Status::Researching {
+            for_agent: w[0],
+            until: 0,
+        };
+        app.world.agents[w[1]].talk = Some(Talk {
+            with: Party::Person,
+            text: "on it".into(),
+            until: 0,
+        });
+        let rows = |app: &App, capacity: usize| {
+            salon::rows(
+                &app.world,
+                &app.collapsed,
+                &app.folded_workers,
+                app.selected,
+                capacity,
+            )
+        };
+        // Project, leader, w0 and its researcher, w1 and its talk, w2, w3.
+        let all = rows(&app, 8);
+        assert_eq!(all.len(), 8, "{all:?}");
+        assert!(!all.iter().any(|r| matches!(r, salon::Row::Folded(_))));
+        // One line short: the calm workers at the end fold into one line.
+        let tight = rows(&app, 7);
+        assert_eq!(tight.len(), 7, "{tight:?}");
+        assert_eq!(tight.last(), Some(&salon::Row::Folded(2)), "{tight:?}");
+        assert!(
+            tight.contains(&salon::Row::Agent { id: r[0], depth: 3 }),
+            "{tight:?}"
+        );
+    }
+
+    #[test]
+    fn the_project_header_counts_the_workers_and_helpers_that_are_not_idle() {
+        let (mut app, w, _) = calm_team();
+        with_helpers(&mut app);
+        app.world.agents[w[1]].status = Status::Idle;
+        app.world.agents[w[2]].status = Status::Blocked;
+        // w0, w2, w3 and the two helpers; not the idle worker, the leader
+        // or the researchers.
+        let s = render(&app, 140, 45);
+        let header = s.lines().find(|l| l.contains("▾ ")).expect("no header");
+        assert!(header.contains(" 5 working"), "{header}");
+    }
+
+    #[test]
+    fn a_worker_s_helpers_sit_under_it_and_fold_with_the_project_keys() {
+        let mut app = app_after(1, 4, 50, Lang::En);
+        let (worker, [h1, h2]) = with_helpers(&mut app);
+        let rows = salon_rows(&app);
+        let at = rows.iter().position(|&r| r == (worker, 2)).unwrap();
+        assert_eq!(&rows[at..at + 3], [(worker, 2), (h1, 3), (h2, 3)]);
+        let s = render(&app, 140, 45);
+        let name = app.world.agents[worker].name.clone();
+        let line = |s: &str, name: &str| {
+            s.lines()
+                .find(|l| l.contains(&format!("▎{name} ")))
+                .map(str::to_string)
+                .unwrap_or_default()
+        };
+        assert!(line(&s, &name).contains("▾ 2 helpers"), "{s}");
+        assert!(line(&s, &format!("{name}.1")).contains("├ "), "{s}");
+        assert!(line(&s, &format!("{name}.2")).contains("└ "), "{s}");
+        assert!(
+            line(&s, &format!("{name}.2")).contains("Edit src/x.rs"),
+            "{s}"
+        );
+
+        // h on a helper folds its worker and lands on it; h again folds the project.
+        app.selected = Sel::Agent(h2);
+        key(&mut app, KeyCode::Char('h'));
+        assert!(app.folded_workers.contains(&worker));
+        assert_eq!(app.selected, Sel::Agent(worker));
+        assert_eq!(app.collapsed, [false]);
+        let rows = salon_rows(&app);
+        assert!(rows.contains(&(worker, 2)) && !rows.iter().any(|r| r.1 == 3));
+        let s = render(&app, 140, 45);
+        assert!(line(&s, &name).contains("▸ 2 helpers"), "{s}");
+        assert!(!s.contains(&format!("{name}.1")), "{s}");
+        key(&mut app, KeyCode::Char('h'));
+        assert_eq!(app.collapsed, [true]);
+        assert_eq!(app.selected, Sel::Project(0));
+        // l opens the project, then the helpers; a worker without helpers
+        // leaves the keys to the project.
+        key(&mut app, KeyCode::Char('l'));
+        assert_eq!(app.collapsed, [false]);
+        app.selected = Sel::Agent(worker);
+        key(&mut app, KeyCode::Char('l'));
+        assert!(app.folded_workers.is_empty());
+        assert_eq!(salon_rows(&app).iter().filter(|r| r.1 == 3).count(), 2);
+        key(&mut app, KeyCode::Char('z'));
+        key(&mut app, KeyCode::Char('a'));
+        assert!(
+            app.folded_workers.contains(&worker),
+            "za toggles the worker"
+        );
+        key(&mut app, KeyCode::Char('z'));
+        key(&mut app, KeyCode::Char('a'));
+        assert!(app.folded_workers.is_empty());
+        key(&mut app, KeyCode::Char('z'));
+        key(&mut app, KeyCode::Char('M'));
+        assert_eq!(app.collapsed, [true]);
+        assert_eq!(
+            app.folded_workers.iter().copied().collect::<Vec<_>>(),
+            [worker]
+        );
+        key(&mut app, KeyCode::Char('z'));
+        key(&mut app, KeyCode::Char('R'));
+        assert!(app.collapsed == [false] && app.folded_workers.is_empty());
+        // Gone helpers are not shown and not counted.
+        app.world.agents[h1].gone = true;
+        app.world.agents[h2].gone = true;
+        assert!(!salon_rows(&app).iter().any(|r| r.1 == 3));
+        assert!(!render(&app, 140, 45).contains("helpers"));
+        key(&mut app, KeyCode::Char('h'));
+        assert_eq!(app.collapsed, [true], "no helpers: h folds the project");
+    }
+
+    #[test]
+    fn the_focus_of_a_helper_names_its_worker_and_a_helper_that_left_is_journaled() {
+        let mut app = app_after(1, 4, 50, Lang::En);
+        let (worker, [h1, _]) = with_helpers(&mut app);
+        app.world.note(Event::Left { agent: h1 });
+        let name = app.world.agents[worker].name.clone();
+        let s = render(&app, 140, 45);
+        assert!(s.contains(&format!("{name}.1 finished and left")), "{s}");
+        app.zoom = Zoom::Focus(h1);
+        let s = render(&app, 140, 45);
+        assert!(s.contains(&format!("helper of {name}")), "{s}");
     }
 
     #[test]
@@ -1103,10 +1328,38 @@ mod tests {
         );
         // Two columns: a line of the first half carries one of the second.
         let line = wide.lines().find(|l| l.contains("gg  G")).unwrap();
-        assert!(line.contains("side panel"), "two columns: {line}");
+        assert!(line.contains("approve · reject"), "two columns: {line}");
         let narrow = render(&app, 80, 40);
         let line = narrow.lines().find(|l| l.contains("gg  G")).unwrap();
-        assert!(!line.contains("side panel"), "one column: {line}");
+        assert!(!line.contains("approve · reject"), "one column: {line}");
+    }
+
+    #[test]
+    fn a_colon_lead_command_sets_the_primary_vendor_and_ask_forgets_it() {
+        let mut app = app_after(1, 2, 0, Lang::En);
+        let typed = |app: &mut App, line: &str| {
+            for c in line.chars() {
+                key(app, KeyCode::Char(c));
+            }
+            key(app, KeyCode::Enter);
+        };
+        typed(&mut app, ":lead codex");
+        assert_eq!(app.primary.as_deref(), Some("codex"));
+        let s = render(&app, 140, 40);
+        assert!(s.contains("codex leads from the next start on"), "{s}");
+        typed(&mut app, ":lead qwen");
+        assert_eq!(app.primary.as_deref(), Some("codex"), "unchanged");
+        assert!(render(&app, 140, 40).contains("qwen is not claude, codex, gemini or ask"));
+        typed(&mut app, ":lead ask");
+        assert_eq!(app.primary, None);
+        assert!(render(&app, 140, 40).contains("the next start asks who leads"));
+        assert!(
+            !app.world
+                .journal
+                .iter()
+                .any(|e| matches!(&e.event, Event::YouSaid { .. })),
+            "a command is not a message to the lead"
+        );
     }
 
     fn buffer(app: &App, width: u16, height: u16) -> ratatui::buffer::Buffer {

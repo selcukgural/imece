@@ -52,6 +52,11 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App, id: AgentId) {
             fill(t.research, &[&a.topic]),
             bold(pal().strong),
         ));
+    } else if let Some(p) = a.parent {
+        title.push(Span::styled(
+            fill(t.helper_of, &[&w.agents[p].name]),
+            bold(pal().strong),
+        ));
     } else {
         title.push(Span::styled(t.no_card, dim()));
     }

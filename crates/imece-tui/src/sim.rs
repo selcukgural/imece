@@ -457,7 +457,7 @@ impl Sim {
             match w.agents[id].role {
                 Role::Worker => self.worker(w, id),
                 Role::Researcher => self.researcher(w, id),
-                Role::Leader => {}
+                Role::Leader | Role::Helper => {}
             }
         }
     }
