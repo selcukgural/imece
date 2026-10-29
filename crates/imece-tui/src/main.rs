@@ -12,6 +12,7 @@ mod prefs;
 mod probe;
 mod rng;
 mod schemes;
+mod screen;
 mod shell;
 mod sim;
 mod theme;
@@ -23,7 +24,6 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 use imece_agent::Tier;
-use ratatui::DefaultTerminal;
 use ratatui::crossterm::event::{self, Event, KeyEventKind};
 
 use crate::i18n::Lang;
@@ -335,7 +335,7 @@ fn main() -> std::io::Result<()> {
         probe::terminal(),
         theme::truecolor(std::env::var("COLORTERM").ok().as_deref()),
     );
-    let mut terminal = ratatui::init();
+    let mut terminal = screen::init().inspect_err(|_| screen::restore())?;
     let mut app = if args.demo {
         app::App::new(
             args.projects,
@@ -346,7 +346,7 @@ fn main() -> std::io::Result<()> {
         )
     } else {
         let fail = |msg: String| -> ! {
-            ratatui::restore();
+            screen::restore();
             eprintln!("imece: {msg}");
             std::process::exit(1);
         };
@@ -375,7 +375,7 @@ fn main() -> std::io::Result<()> {
                         vendor
                     }
                     Ok(_) => {
-                        ratatui::restore();
+                        screen::restore();
                         return Ok(());
                     }
                     Err(e) => fail(e.to_string()),
@@ -404,13 +404,13 @@ fn main() -> std::io::Result<()> {
     }
     app.primary = saved.lead;
     let result = run(&mut terminal, &mut app, &state);
-    ratatui::restore();
+    screen::restore();
     result
 }
 
 /// Asks who leads, until the person answers or quits (also by signal).
 fn ask(
-    terminal: &mut DefaultTerminal,
+    terminal: &mut screen::Screen,
     pick: &mut ui::pick::Pick,
 ) -> std::io::Result<Option<ui::pick::Picked>> {
     loop {
@@ -452,7 +452,7 @@ fn catch_signals() {
 }
 
 fn run(
-    terminal: &mut DefaultTerminal,
+    terminal: &mut screen::Screen,
     app: &mut app::App,
     state: &std::path::Path,
 ) -> std::io::Result<()> {

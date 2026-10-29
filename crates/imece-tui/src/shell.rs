@@ -10,15 +10,13 @@ use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitStatus};
 
-use ratatui::backend::CrosstermBackend;
+use ratatui::Terminal;
 use ratatui::crossterm::event::{self, Event, KeyEventKind};
-use ratatui::crossterm::terminal::{
-    Clear, ClearType, EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode,
-};
+use ratatui::crossterm::terminal::{self, disable_raw_mode, enable_raw_mode};
 use ratatui::crossterm::{cursor, execute};
-use ratatui::{DefaultTerminal, Terminal};
 
 use crate::model::Ended;
+use crate::screen::{self, Quiet, Screen};
 
 /// The shell that runs the command: the person's own (`$SHELL`), else
 /// `/bin/sh`.
@@ -71,7 +69,7 @@ pub fn run_in(shell: &Path, cwd: &Path, command: &str) -> io::Result<Ended> {
 /// printed stays on the terminal's main screen, where it is seen again
 /// when imece quits.
 pub fn run(
-    terminal: &mut DefaultTerminal,
+    terminal: &mut Screen,
     cwd: &Path,
     command: &str,
     back: impl FnOnce(Ended) -> String,
@@ -101,10 +99,12 @@ pub fn run(
     Ok(ended)
 }
 
-/// Leaves the alternate screen and raw mode: the terminal is the shell's.
+/// Leaves the alternate screen (auto-wrap on again) and raw mode: the
+/// terminal is the shell's.
 fn step_aside() -> io::Result<()> {
     disable_raw_mode()?;
-    execute!(io::stdout(), LeaveAlternateScreen, cursor::Show)
+    screen::give_back(&mut io::stdout())?;
+    execute!(io::stdout(), cursor::Show)
 }
 
 /// Raw mode for one key press (so no newline is echoed and ctrl-c is a
@@ -125,16 +125,15 @@ fn wait_for_key() -> io::Result<()> {
 /// Back to the alternate screen and raw mode, with a fresh terminal so
 /// the next draw paints everything. (`Terminal::clear` would do, but it
 /// asks the terminal where the cursor is and waits up to two seconds for
-/// an answer that a plain pty never gives.)
-fn come_back(terminal: &mut DefaultTerminal) -> io::Result<()> {
+/// an answer that a plain pty never gives.) The screen is wiped row by
+/// row, never with a whole-screen erase: see `screen`.
+fn come_back(terminal: &mut Screen) -> io::Result<()> {
     enable_raw_mode()?;
-    execute!(
-        io::stdout(),
-        EnterAlternateScreen,
-        Clear(ClearType::All),
-        cursor::Hide
-    )?;
-    *terminal = Terminal::new(CrosstermBackend::new(io::stdout()))?;
+    screen::take_over(&mut io::stdout())?;
+    execute!(io::stdout(), cursor::Hide)?;
+    let (_, rows) = terminal::size()?;
+    screen::wipe(&mut io::stdout(), rows)?;
+    *terminal = Terminal::new(Quiet::new(io::stdout()))?;
     Ok(())
 }
 

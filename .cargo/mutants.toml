@@ -6,7 +6,9 @@
 # process of its own: the main loop, the who-leads question loop, signal
 # handlers, the clipboard tools, the screen stepping aside for a `!`
 # command (`run_in`, which runs the command, is tested), the question to
-# the terminal about its colours (`probe`; the parsing is tested).
+# the terminal about its colours (`probe`; the parsing is tested), the
+# screen's take-over and what asks the terminal its size or cursor
+# (`screen`; the row-by-row erase is tested).
 # A pattern matches the mutant's full name, `path:line:col: replace fn ...`.
 exclude_re = [
     "src/main.rs:.*: replace (main|run|ask|catch_signals|on_signal) ",
@@ -17,6 +19,8 @@ exclude_re = [
     "src/shell.rs:.*: (replace|delete) .* in (run|step_aside|wait_for_key|come_back)$",
     "src/probe.rs:.*: replace (terminal|ask|readable) ",
     "src/probe.rs:.*: (replace|delete) .* in (terminal|ask|readable)$",
+    "src/screen.rs:.*: replace (init|restore|terminal_rows|<impl Backend for Quiet<W>>::(size|window_size|get_cursor_position)) ",
+    "src/screen.rs:.*: (replace|delete) .* in (init|restore|terminal_rows|<impl Backend for Quiet<W>>::(size|window_size|get_cursor_position))$",
 ]
 
 # Builds and tests as CI does, from the lockfile.
