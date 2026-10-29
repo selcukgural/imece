@@ -27,7 +27,11 @@ cargo mutants                                      # everything (slow); CI does 
 - Mutation tests: a mutant that survives is a test that is missing, so a
   change comes with the tests that kill its mutants (`cargo-mutants` 27.1.0,
   pinned in `.github/workflows/mutants.yml`; exclusions with their reasons
-  in `.cargo/mutants.toml`).
+  in `.cargo/mutants.toml`). They are CI's job (user, 2026-10-29): before
+  a push run fmt, clippy and the tests, not mutants; run `cargo mutants`
+  locally only when the PR job reports a missed mutant and closing it
+  takes several tries. The PR job also fails on a timeout, so never write
+  a loop a mutated operator could make endless (search a range instead).
 
 - Keyboard first (user, 2026-10-29): everything is done with keys, vim
   style (hjkl, g/G, PgUp/PgDn, Esc back, / to type) next to the arrows; a
