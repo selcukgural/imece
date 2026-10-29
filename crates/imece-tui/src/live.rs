@@ -1,6 +1,7 @@
 //! Live agents: real Claude Code sessions feed the model the simulation
-//! feeds. One project (the checkout imece runs in), a leader that reads it,
-//! and workers that each change their own git worktree of it.
+//! feeds. Projects, each a checkout with a leader that reads it and
+//! workers that each change their own git worktree of it: the one imece
+//! runs in to begin with, more as the person opens them (`:open`).
 //!
 //! The team starts as the leader alone. The leader hires workers as the
 //! work needs them (`hire`), up to the cap the person set, choosing a tier
@@ -242,6 +243,87 @@ pub enum Refusal {
     Command(String),
 }
 
+/// A project's checkout and where its workers' worktrees live.
+struct Place {
+    repo: PathBuf,
+    root: PathBuf,
+}
+
+/// Why a project could not be opened, closed or renamed.
+#[derive(Debug, PartialEq)]
+pub enum ProjectRefusal {
+    /// The path is not inside a git checkout: the path and git's words.
+    NotCheckout(String),
+    /// An open project has that name.
+    NameTaken(String),
+    /// The checkout is open already, as the project named.
+    PathOpen(String),
+    /// The name is not one a project may have.
+    BadName(String),
+    /// The leader could not get a socket.
+    Bus(String),
+    /// The last open project stays open.
+    Last,
+}
+
+impl ProjectRefusal {
+    /// The refusal in words, for the command line.
+    pub fn describe(&self) -> String {
+        match self {
+            ProjectRefusal::NotCheckout(why) => why.clone(),
+            ProjectRefusal::NameTaken(name) => format!("a project named {name} is open already"),
+            ProjectRefusal::PathOpen(name) => format!("that checkout is open already, as {name}"),
+            ProjectRefusal::BadName(name) => {
+                format!("{name:?} can not name a project: 1-24 of letters, digits, . _ -")
+            }
+            ProjectRefusal::Bus(why) => format!("the leader could not get a socket: {why}"),
+            ProjectRefusal::Last => "the last open project stays open".into(),
+        }
+    }
+}
+
+/// Whether `name` may name a project: 1-24 ASCII letters, digits, `.`,
+/// `_` or `-`, so `lead-NAME` is one word the composer can address.
+pub fn valid_project_name(name: &str) -> bool {
+    (1..=24).contains(&name.chars().count())
+        && name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
+}
+
+/// The checkout's directory name, `repo` for the root.
+fn dir_name(repo: &Path) -> String {
+    repo.file_name()
+        .map_or("repo".into(), |n| n.to_string_lossy().into_owned())
+}
+
+/// The name a project takes from its checkout's directory: the name with
+/// every character a project name may not have replaced by `-`, cut to 24.
+fn project_name_of(repo: &Path) -> String {
+    dir_name(repo)
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-') {
+                c
+            } else {
+                '-'
+            }
+        })
+        .take(24)
+        .collect()
+}
+
+/// Where the worktrees of the checkout `repo` live: under `state`, named
+/// after the checkout and a hash of its path, so two checkouts with one
+/// name do not share.
+fn root_for(state: &Path, repo: &Path) -> PathBuf {
+    state.join("worktrees").join(format!(
+        "{}-{:08x}",
+        dir_name(repo),
+        fnv(repo.as_os_str().as_encoded_bytes())
+    ))
+}
+
 /// An agent's session, if it has one.
 enum Slot {
     None,
@@ -359,9 +441,10 @@ pub struct Live {
     max_workers: usize,
     /// Helpers a worker may have at once, at most.
     max_helpers: usize,
-    repo: PathBuf,
-    /// Where the workers' worktrees live, outside the checkout.
-    root: PathBuf,
+    /// The vendor every leader runs on.
+    lead: Vendor,
+    /// Each project's checkout and worktrees root, by project id.
+    places: Vec<Place>,
     /// The model each agent runs on; none for its vendor's default.
     models: Vec<Option<String>>,
     /// Whether the agent's model came from a tier, so a first turn that
@@ -404,8 +487,8 @@ pub struct Live {
     posted: Vec<u32>,
     /// The directory each agent's running session is in: where its runs go.
     cwds: Vec<Option<PathBuf>>,
-    /// Runs under way, killed with imece.
-    running: run::Running,
+    /// Each agent's runs under way, killed with its project or with imece.
+    running: Vec<run::Running>,
     /// Programs workers and helpers may run, next to cargo and git.
     run_programs: Vec<String>,
     run_timeout: Duration,
@@ -445,34 +528,12 @@ pub fn leaders(present: &[(Vendor, bool)]) -> Vec<Vendor> {
 /// Builds the team for the checkout `repo` is in, from the coding agents
 /// `present` on PATH (see [`probe`]): the leader alone, who hires the rest.
 pub fn world(o: Options, present: &[(Vendor, bool)]) -> Result<(World, Live), String> {
-    let repo = worktree::top(&o.repo).map_err(|e| format!("{}: {e}", o.repo.display()))?;
+    worktree::top(&o.repo).map_err(|e| format!("{}: {e}", o.repo.display()))?;
     let vendors = team_vendors(hireable(present, o.lead)?, o.lead, &o.tiers);
-    let name = repo
-        .file_name()
-        .map_or("repo".into(), |n| n.to_string_lossy().into_owned());
-    let root = crate::prefs::state_dir().join("worktrees").join(format!(
-        "{name}-{:08x}",
-        fnv(repo.as_os_str().as_encoded_bytes())
-    ));
-
-    let w = World {
+    let mut w = World {
         tick: 0,
-        projects: vec![Project {
-            id: 0,
-            name,
-            leader: 0,
-            trunk: None,
-            repo: &[],
-        }],
-        agents: vec![Agent::new(
-            0,
-            0,
-            "lead".into(),
-            o.lead,
-            Role::Leader,
-            Status::Idle,
-            0,
-        )],
+        projects: Vec::new(),
+        agents: Vec::new(),
         cards: Vec::new(),
         journal: Vec::new(),
         inbox: Vec::new(),
@@ -483,12 +544,13 @@ pub fn world(o: Options, present: &[(Vendor, bool)]) -> Result<(World, Live), St
         changes: Vec::new(),
     };
     start_clock_at(local_seconds_after_midnight());
-    let mut live = Live::new(1, vendors, repo, root);
+    let mut live = Live::bare(vendors, o.lead);
     live.max_workers = o.max_workers;
     live.max_helpers = o.max_helpers;
     live.run_programs = o.run_programs;
     live.run_timeout = o.run_timeout;
-    live.models[0] = live.of(o.lead).ladder.standard.clone();
+    live.open_project(&mut w, &o.repo, None)
+        .map_err(|e| e.describe())?;
     let relay = std::env::current_exe().map_err(|e| format!("imece's own path: {e}"))?;
     live.open_bus(&w, relay.to_string_lossy().into_owned())
         .map_err(|e| format!("the agents' message bus: {e}"))?;
@@ -496,18 +558,17 @@ pub fn world(o: Options, present: &[(Vendor, bool)]) -> Result<(World, Live), St
 }
 
 impl Live {
-    /// `agents` places to begin with, all on their vendor's default model.
-    /// `vendors` must hold every vendor an agent has.
-    /// The checkout the team works on.
-    pub fn repo(&self) -> &Path {
-        &self.repo
+    /// The checkout of project `p`.
+    pub fn repo_of(&self, p: ProjectId) -> &Path {
+        &self.places[p].repo
     }
 
-    fn new(agents: usize, vendors: Vec<Hireable>, repo: PathBuf, root: PathBuf) -> Live {
+    /// No projects and no agents yet; every leader will run on `lead`.
+    fn bare(vendors: Vec<Hireable>, lead: Vendor) -> Live {
         let (tx, rx) = mpsc::channel();
         let (ready_tx, ready_rx) = mpsc::channel();
         let (calls_tx, calls_rx) = mpsc::channel();
-        let mut live = Live {
+        Live {
             started: Instant::now(),
             tx,
             rx,
@@ -519,8 +580,8 @@ impl Live {
             vendors,
             max_workers: usize::MAX,
             max_helpers: usize::MAX,
-            repo,
-            root,
+            lead,
+            places: Vec::new(),
             models: Vec::new(),
             tiered: Vec::new(),
             turned: Vec::new(),
@@ -540,14 +601,10 @@ impl Live {
             offered: HashMap::new(),
             posted: Vec::new(),
             cwds: Vec::new(),
-            running: run::Running::default(),
+            running: Vec::new(),
             run_programs: Vec::new(),
             run_timeout: DEFAULT_RUN_TIMEOUT,
-        };
-        for _ in 0..agents {
-            live.grow(None, false);
         }
-        live
     }
 
     /// Makes room for one more agent, on `model` (`tiered`: picked by
@@ -569,6 +626,7 @@ impl Live {
         self.woken.push(0);
         self.posted.push(0);
         self.cwds.push(None);
+        self.running.push(run::Running::default());
     }
 
     /// The vendor `v` as imece drives it. Every agent's vendor is one.
@@ -584,10 +642,11 @@ impl Live {
         self.vendors.iter().map(|h| h.vendor.label()).collect()
     }
 
-    /// The private directory a Gemini session of agent `name` runs in: a
-    /// sibling of the worktrees, kept between runs like them.
-    fn gemini_home(&self, name: &str) -> PathBuf {
-        let mut dir = self.root.clone().into_os_string();
+    /// The private directory a Gemini session of agent `name` of project
+    /// `project` runs in: a sibling of the worktrees, kept between runs
+    /// like them.
+    fn gemini_home(&self, project: ProjectId, name: &str) -> PathBuf {
+        let mut dir = self.places[project].root.clone().into_os_string();
         dir.push("-gemini");
         PathBuf::from(dir).join(name)
     }
@@ -815,7 +874,7 @@ impl Live {
         let line = line.to_string();
         w.agents[from].trace(w.tick, format!("run: {line}"));
         let (tx, generation) = (self.tx.clone(), self.generation[from]);
-        let (running, timeout) = (self.running.clone(), self.run_timeout);
+        let (running, timeout) = (self.running[from].clone(), self.run_timeout);
         thread::spawn(move || {
             let mut pgid = None;
             let outcome = run::run(&argv, &cwd, timeout, MAX_RUN_OUTPUT, |p| {
@@ -854,17 +913,115 @@ impl Live {
     /// Helper `id` leaves: its session ends, its mail is dropped, and it is
     /// gone from the screen; its name may be taken again.
     fn release(&mut self, w: &mut World, id: AgentId) {
+        self.dismiss(w, id);
+        w.leave(id);
+        w.note(Event::Left { agent: id });
+    }
+
+    /// Agent `id`'s session and runs end, and what waited on it goes: its
+    /// mail, imece's notes to it, its change and the person's question.
+    /// Its slot stays, for the screen's ids.
+    fn dismiss(&mut self, w: &World, id: AgentId) {
+        self.running[id].kill_all();
+        if let Slot::Running(s) = &mut self.slots[id] {
+            s.terminate();
+        }
         self.end(w, id);
         self.leaving[id] = false;
         self.mail[id].clear();
-        let t = w.tick;
-        let a = &mut w.agents[id];
-        a.activity = None;
-        a.talk = None;
-        a.set_status(Status::Idle, t);
-        a.gone = true;
-        a.trace(t, "left");
-        w.note(Event::Left { agent: id });
+        self.notes[id].clear();
+        self.asked[id] = false;
+        self.changes.remove(&id);
+    }
+
+    /// Opens the checkout `path` is in as a project named `name` (else
+    /// after its directory), led by a new agent on the lead vendor. A
+    /// closed project with the same checkout opens again in its place.
+    pub fn open_project(
+        &mut self,
+        w: &mut World,
+        path: &Path,
+        name: Option<&str>,
+    ) -> Result<ProjectId, ProjectRefusal> {
+        let repo = worktree::top(path)
+            .map_err(|e| ProjectRefusal::NotCheckout(format!("{}: {e}", path.display())))?;
+        let name = match name {
+            Some(n) if !valid_project_name(n) => {
+                return Err(ProjectRefusal::BadName(n.to_string()));
+            }
+            Some(n) => n.to_string(),
+            None => project_name_of(&repo),
+        };
+        let at = |q: &Project| self.places.get(q.id).is_some_and(|pl| pl.repo == repo);
+        if let Some(q) = w.open_projects().find(|q| at(q)) {
+            return Err(ProjectRefusal::PathOpen(q.name.clone()));
+        }
+        if w.project_by_name(&name).is_some() {
+            return Err(ProjectRefusal::NameTaken(name));
+        }
+        let reuse = w.projects.iter().find(|q| q.closed && at(q)).map(|q| q.id);
+        let id = w.agents.len();
+        // The socket first: an agent without one could never start.
+        self.bind(id, Role::Leader)
+            .map_err(|e| ProjectRefusal::Bus(e.to_string()))?;
+        let model = self.of(self.lead).ladder.standard.clone();
+        self.grow(model, false);
+        if reuse.is_none() {
+            let root = root_for(&crate::prefs::state_dir(), &repo);
+            self.places.push(Place {
+                repo: repo.clone(),
+                root,
+            });
+        }
+        Ok(w.open_project(reuse, name, repo.display().to_string(), self.lead))
+    }
+
+    /// Closes project `p`: its agents' sessions and runs end, their mail,
+    /// offers and changes go; their worktrees stay on disk. The last open
+    /// project stays.
+    pub fn close_project(&mut self, w: &mut World, p: ProjectId) -> Result<(), ProjectRefusal> {
+        if w.open_projects().count() <= 1 {
+            return Err(ProjectRefusal::Last);
+        }
+        let ids: Vec<AgentId> = w
+            .agents
+            .iter()
+            .filter(|a| a.project == p && !a.gone)
+            .map(|a| a.id)
+            .collect();
+        for id in ids {
+            self.dismiss(w, id);
+        }
+        self.posts.retain(|c, _| w.cards[*c].project != p);
+        self.offered.retain(|c, _| w.cards[*c].project != p);
+        w.close_project(p);
+        Ok(())
+    }
+
+    /// Project `p` is called `name` from now on, its leader `lead-NAME`;
+    /// its agents hear of it at their next turn, their sessions go on.
+    pub fn rename_project(
+        &mut self,
+        w: &mut World,
+        p: ProjectId,
+        name: &str,
+    ) -> Result<(), ProjectRefusal> {
+        if !valid_project_name(name) {
+            return Err(ProjectRefusal::BadName(name.to_string()));
+        }
+        if w.project_by_name(name).is_some_and(|q| q != p) {
+            return Err(ProjectRefusal::NameTaken(name.to_string()));
+        }
+        let was = w.agents[w.projects[p].leader].name.clone();
+        w.rename_project(p, name.to_string());
+        let lead = w.agents[w.projects[p].leader].name.clone();
+        for a in w.agents.iter().filter(|a| a.project == p && !a.gone) {
+            self.notes[a.id].push(format!(
+                "The person renamed the project: it is called {name} now, and its leader, \
+                 {was} until now, is {lead}. Address it by that name."
+            ));
+        }
+        Ok(())
     }
 
     /// Agent `id`'s tier model is not available here: its session ends and
@@ -1195,7 +1352,7 @@ impl Live {
             return Err("no change of theirs waits".into());
         };
         let title = w.change_of(id).map(|c| c.title.clone()).unwrap_or_default();
-        if let Err(e) = worktree::apply(&self.repo, &c.patch) {
+        if let Err(e) = worktree::apply(&self.places[w.agents[id].project].repo, &c.patch) {
             let why = e.to_string();
             w.change_failed(id, why.clone());
             return Err(why);
@@ -1407,6 +1564,7 @@ impl Live {
         for id in 0..w.agents.len() {
             let a = &w.agents[id];
             if a.role != Role::Worker
+                || a.gone
                 || a.status == Status::Stopped
                 || self.turns[id] > 0
                 || self.woken[id] >= MAX_WOKEN
@@ -1652,7 +1810,7 @@ impl Live {
         let Some(cwd) = self.cwds[id].clone() else {
             return;
         };
-        match worktree::place(&self.repo, &cwd) {
+        match worktree::place(&self.places[a.project].repo, &cwd) {
             Ok(worktree::Placed::Moved { from, to }) => {
                 w.note(Event::WorktreeMoved {
                     agent: id,
@@ -1686,8 +1844,9 @@ impl Live {
             .map(|t| t.name)
             .collect(),
         });
+        let place = &self.places[a.project];
         let mut system = system_prompt(w, id, self.max_workers, self.max_helpers);
-        if let Some(notes) = repo_notes(&self.repo, a.vendor) {
+        if let Some(notes) = repo_notes(&place.repo, a.vendor) {
             system.push_str(&notes);
         }
         let (program, model) = (vendor.program.clone(), self.models[id].clone());
@@ -1698,8 +1857,8 @@ impl Live {
         let generation = self.generation[id];
         // A helper changes the same files as its worker: its worktree.
         let tree = a.parent.map_or(&a.name, |p| &w.agents[p].name).clone();
-        let (repo, root) = (self.repo.clone(), self.root.clone());
-        let home = self.gemini_home(&a.name);
+        let (repo, root) = (place.repo.clone(), place.root.clone());
+        let home = self.gemini_home(a.project, &a.name);
         let (tx, ready) = (self.tx.clone(), self.ready_tx.clone());
         thread::spawn(move || {
             let started = (|| {
@@ -1776,7 +1935,9 @@ impl Live {
 
 impl Drop for Live {
     fn drop(&mut self) {
-        self.running.kill_all();
+        for running in &self.running {
+            running.kill_all();
+        }
         // Ask every session to stop first, so they wind down together.
         for s in &mut self.slots {
             if let Slot::Running(s) = s {
@@ -2186,7 +2347,7 @@ fn system_prompt(w: &World, id: AgentId, max_workers: usize, max_helpers: usize)
     let workers: Vec<&str> = w
         .agents
         .iter()
-        .filter(|o| o.role == Role::Worker && !o.gone)
+        .filter(|o| o.role == Role::Worker && !o.gone && o.project == a.project)
         .map(|o| o.name.as_str())
         .collect();
     let leader = &w.agents[w.projects[a.project].leader].name;
@@ -2377,6 +2538,7 @@ pub(crate) mod testing {
                 leader: 0,
                 trunk: None,
                 repo: &[],
+                closed: false,
             }],
             agents: Vec::new(),
             cards: Vec::new(),
@@ -2421,15 +2583,72 @@ pub(crate) mod testing {
     /// here, or it would race the events a test sends in the session's
     /// name and end the session under them.
     pub(crate) fn idle_live(agents: usize) -> Live {
+        idle_live_in(&std::env::temp_dir(), agents)
+    }
+
+    /// [`idle_live`] with `repo` as the first project's checkout.
+    pub(crate) fn idle_live_in(repo: &Path, agents: usize) -> Live {
         let mut live = Live::new(
             agents,
             claude_at("/nonexistent/claude"),
-            std::env::temp_dir(),
+            repo.to_path_buf(),
             PathBuf::from("/nonexistent"),
         );
         let (cut, _) = mpsc::channel();
         live.ready_tx = cut;
         live
+    }
+
+    /// A fresh git checkout with one commit, under the temp dir.
+    pub(crate) fn checkout(name: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!("imece-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let git = |args: &[&str]| {
+            let out = std::process::Command::new("git")
+                .args(args)
+                .current_dir(&dir)
+                .output()
+                .unwrap();
+            assert!(out.status.success(), "git {args:?}");
+        };
+        git(&["init", "--quiet"]);
+        std::fs::write(dir.join("a.txt"), "a").unwrap();
+        git(&["add", "."]);
+        git(&[
+            "-c",
+            "user.name=t",
+            "-c",
+            "user.email=t@t",
+            "-c",
+            "commit.gpgsign=false",
+            "commit",
+            "--quiet",
+            "-m",
+            "init",
+        ]);
+        dir
+    }
+
+    impl Live {
+        /// `agents` places to begin with, all on their vendor's default model,
+        /// in one project whose checkout is `repo` and whose worktrees go
+        /// under `root`. `vendors` must hold every vendor an agent has; the
+        /// first leads.
+        pub(super) fn new(
+            agents: usize,
+            vendors: Vec<Hireable>,
+            repo: PathBuf,
+            root: PathBuf,
+        ) -> Live {
+            let lead = vendors.first().map_or(Vendor::Claude, |h| h.vendor);
+            let mut live = Live::bare(vendors, lead);
+            live.places.push(Place { repo, root });
+            for _ in 0..agents {
+                live.grow(None, false);
+            }
+            live
+        }
     }
 }
 
@@ -2946,11 +3165,19 @@ mod tests {
             .process_group(0)
             .spawn()
             .unwrap();
-        live.running.add(sleeper.id() as i32);
+        live.running[0].add(sleeper.id() as i32);
+        let mut other = std::process::Command::new("sleep")
+            .arg("30")
+            .process_group(0)
+            .spawn()
+            .unwrap();
+        live.running[1].add(other.id() as i32);
         drop(live);
         assert!(ended.load(Ordering::SeqCst), "the session was not ended");
-        let status = sleeper.wait().unwrap();
-        assert_eq!(status.signal(), Some(libc::SIGKILL), "{status:?}");
+        for s in [&mut sleeper, &mut other] {
+            let status = s.wait().unwrap();
+            assert_eq!(status.signal(), Some(libc::SIGKILL), "{status:?}");
+        }
     }
 
     #[test]
@@ -3078,7 +3305,7 @@ mod tests {
         assert!(trace.contains("run: sh -c 'exit 0'\n"), "{trace}");
         assert!(trace.contains("run: sh -c 'exit 0': exit 0, "), "{trace}");
         assert!(trace.contains(" s, 0 bytes"), "{trace}");
-        assert!(live.running.is_empty());
+        assert!(live.running.iter().all(run::Running::is_empty));
         // A program that can not start is an error, not an exit code.
         live.run_programs.push("imece-no-such-program".into());
         let e = call(
@@ -5105,36 +5332,6 @@ in p.rs",
         let _ = std::fs::remove_dir_all(&repo);
     }
 
-    fn checkout(name: &str) -> std::path::PathBuf {
-        let dir = std::env::temp_dir().join(format!("imece-{name}-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
-        let git = |args: &[&str]| {
-            let out = std::process::Command::new("git")
-                .args(args)
-                .current_dir(&dir)
-                .output()
-                .unwrap();
-            assert!(out.status.success(), "git {args:?}");
-        };
-        git(&["init", "--quiet"]);
-        std::fs::write(dir.join("a.txt"), "a").unwrap();
-        git(&["add", "."]);
-        git(&[
-            "-c",
-            "user.name=t",
-            "-c",
-            "user.email=t@t",
-            "-c",
-            "commit.gpgsign=false",
-            "commit",
-            "--quiet",
-            "-m",
-            "init",
-        ]);
-        dir
-    }
-
     #[test]
     fn probing_finds_the_known_programs_that_run_from_the_checkout() {
         let repo = checkout("probe");
@@ -5234,5 +5431,540 @@ in p.rs",
         live.step(&mut w);
         assert_eq!(w.journal.len(), journal);
         assert_eq!(w.agents[1].cost, 0);
+    }
+
+    #[test]
+    fn opening_a_checkout_adds_a_project_with_its_own_leader_and_place() {
+        let repo = checkout("open-repo");
+        let top = worktree::top(&repo).unwrap();
+        let mut w = team(0);
+        let mut live = Live::new(
+            1,
+            two_vendors(&std::env::temp_dir()),
+            std::env::temp_dir(),
+            PathBuf::from("/nonexistent"),
+        );
+        live.vendors[0].ladder.standard = Some("sonnet".into());
+        assert_eq!(live.open_project(&mut w, &repo, None), Ok(1));
+        assert_eq!(w.projects.len(), 2);
+        let p = &w.projects[1];
+        let name = project_name_of(&top);
+        assert_eq!(
+            (p.id, p.name.as_str(), p.leader, p.trunk, p.closed),
+            (1, name.as_str(), 1, None, false)
+        );
+        let a = &w.agents[1];
+        assert_eq!(
+            (a.name.as_str(), a.project, a.role, a.vendor, a.status),
+            (
+                format!("lead-{name}").as_str(),
+                1,
+                Role::Leader,
+                Vendor::Claude,
+                Status::Idle
+            )
+        );
+        assert_eq!(
+            live.models[1].as_deref(),
+            Some("sonnet"),
+            "the lead vendor's standard model"
+        );
+        assert!(!live.tiered[1]);
+        assert_eq!(live.places.len(), 2);
+        assert_eq!(live.places[1].repo, top);
+        assert_eq!(
+            live.places[1].root,
+            root_for(&crate::prefs::state_dir(), &top)
+        );
+        assert_eq!(live.repo_of(1), top);
+        assert_eq!(
+            (live.slots.len(), live.running.len(), live.mail.len()),
+            (2, 2, 2)
+        );
+        assert!(matches!(
+            &w.journal.last().unwrap().event,
+            Event::Opened { leader: 1, path } if *path == top.display().to_string()
+        ));
+        // A name given, another checkout, another lead vendor.
+        let other = checkout("open-other");
+        live.lead = Vendor::Codex;
+        assert_eq!(live.open_project(&mut w, &other, Some("api")), Ok(2));
+        assert_eq!(w.projects[2].name, "api");
+        assert_eq!(w.agents[2].name, "lead-api");
+        assert_eq!(w.agents[2].vendor, Vendor::Codex);
+        assert_eq!(live.places.len(), 3);
+        assert_eq!(
+            live.gemini_home(2, "lead-api"),
+            PathBuf::from(format!("{}-gemini/lead-api", live.places[2].root.display()))
+        );
+        assert_ne!(live.gemini_home(1, "x"), live.gemini_home(2, "x"));
+        let _ = std::fs::remove_dir_all(&repo);
+        let _ = std::fs::remove_dir_all(&other);
+    }
+
+    #[test]
+    fn a_project_is_refused_when_its_name_or_checkout_is_open_already_or_is_no_checkout() {
+        let repo = checkout("refuse-repo");
+        let other = checkout("refuse-other");
+        let mut w = team(0);
+        let mut live = idle_live(1);
+        let counts = |w: &World, live: &Live| {
+            (
+                w.projects.len(),
+                w.agents.len(),
+                live.slots.len(),
+                live.places.len(),
+                live.running.len(),
+                w.journal.len(),
+            )
+        };
+        let before = counts(&w, &live);
+        let nowhere = std::env::temp_dir().join("imece-refuse-nowhere");
+        std::fs::create_dir_all(&nowhere).unwrap();
+        let err = live.open_project(&mut w, &nowhere, None).unwrap_err();
+        assert!(
+            matches!(&err, ProjectRefusal::NotCheckout(why) if why.contains("imece-refuse-nowhere")),
+            "{err:?}"
+        );
+        assert_eq!(
+            live.open_project(&mut w, &repo, Some("a b")),
+            Err(ProjectRefusal::BadName("a b".into()))
+        );
+        assert_eq!(counts(&w, &live), before, "a refusal adds nothing");
+        assert_eq!(live.open_project(&mut w, &repo, Some("api")), Ok(1));
+        let after = counts(&w, &live);
+        assert_eq!(
+            live.open_project(&mut w, &repo, Some("other")),
+            Err(ProjectRefusal::PathOpen("api".into()))
+        );
+        let sub = repo.join("sub");
+        std::fs::create_dir_all(&sub).unwrap();
+        assert_eq!(
+            live.open_project(&mut w, &sub, None),
+            Err(ProjectRefusal::PathOpen("api".into())),
+            "a directory inside is the same checkout"
+        );
+        assert_eq!(
+            live.open_project(&mut w, &other, Some("api")),
+            Err(ProjectRefusal::NameTaken("api".into()))
+        );
+        assert_eq!(
+            live.open_project(&mut w, &other, Some("repo")),
+            Err(ProjectRefusal::NameTaken("repo".into())),
+            "the first project's name too"
+        );
+        assert_eq!(counts(&w, &live), after);
+        for r in [
+            ProjectRefusal::NotCheckout("/x: not a repo".into()),
+            ProjectRefusal::NameTaken("api".into()),
+            ProjectRefusal::PathOpen("api".into()),
+            ProjectRefusal::BadName("a b".into()),
+            ProjectRefusal::Bus("no socket".into()),
+        ] {
+            let said = r.describe();
+            let arg = match &r {
+                ProjectRefusal::NotCheckout(s)
+                | ProjectRefusal::NameTaken(s)
+                | ProjectRefusal::PathOpen(s)
+                | ProjectRefusal::BadName(s)
+                | ProjectRefusal::Bus(s) => s.clone(),
+                ProjectRefusal::Last => unreachable!(),
+            };
+            assert!(said.contains(&arg), "{said}");
+        }
+        assert_eq!(
+            ProjectRefusal::NameTaken("api".into()).describe(),
+            "a project named api is open already"
+        );
+        assert_eq!(
+            ProjectRefusal::PathOpen("api".into()).describe(),
+            "that checkout is open already, as api"
+        );
+        assert_eq!(
+            ProjectRefusal::Bus("x".into()).describe(),
+            "the leader could not get a socket: x"
+        );
+        assert_eq!(
+            ProjectRefusal::Last.describe(),
+            "the last open project stays open"
+        );
+        let _ = std::fs::remove_dir_all(&repo);
+        let _ = std::fs::remove_dir_all(&other);
+        let _ = std::fs::remove_dir_all(&nowhere);
+    }
+
+    #[test]
+    fn closing_a_project_ends_its_agents_and_reopening_it_keeps_its_id_with_a_new_leader() {
+        use std::os::unix::process::{CommandExt, ExitStatusExt};
+        let repo = checkout("close-repo");
+        let mut w = team(0);
+        let mut live = idle_live(1);
+        live.open_bus(&w, "/opt/imece".into()).unwrap();
+        assert_eq!(live.open_project(&mut w, &repo, Some("api")), Ok(1));
+        live.hire(&mut w, 1, &json!({})).unwrap();
+        assert_eq!(
+            (w.agents[2].project, w.agents[2].name.as_str()),
+            (1, "claude-1")
+        );
+        let lead_ended = Arc::new(AtomicBool::new(false));
+        live.ready(
+            &mut w,
+            1,
+            Ok((Box::new(Ends(lead_ended.clone())), repo.clone(), None)),
+        );
+        let ended = Arc::new(AtomicBool::new(false));
+        live.ready(
+            &mut w,
+            2,
+            Ok((Box::new(Ends(ended.clone())), PathBuf::from("/w"), None)),
+        );
+        live.mail[2].push(Mail {
+            from: 1,
+            kind: MsgKind::Assign,
+            body: "x".into(),
+        });
+        live.notes[2].push("x".into());
+        live.asked[2] = true;
+        live.leaving[2] = true;
+        live.changes.insert(
+            2,
+            worktree::Change {
+                path: PathBuf::from("/w"),
+                tree: String::new(),
+                files: Vec::new(),
+                patch: String::new(),
+            },
+        );
+        w.replied(2, "done");
+        live.post(&mut w, 2, &json!({ "title": "t", "body": "b" }))
+            .unwrap();
+        live.offered.insert(0, vec![2]);
+        live.post(&mut w, 0, &json!({ "title": "mine", "body": "b" }))
+            .unwrap();
+        live.offered.insert(1, Vec::new());
+        let mut sleeper = std::process::Command::new("sleep")
+            .arg("30")
+            .process_group(0)
+            .spawn()
+            .unwrap();
+        live.running[2].add(sleeper.id() as i32);
+        let generation = live.generation[2];
+        assert_eq!(live.close_project(&mut w, 1), Ok(()));
+        assert!(lead_ended.load(Ordering::SeqCst) && ended.load(Ordering::SeqCst));
+        assert_eq!(live.generation[2], generation + 1);
+        assert!(matches!(live.slots[2], Slot::None));
+        assert!(live.mail[2].is_empty() && live.notes[2].is_empty());
+        assert!(!live.asked[2] && !live.leaving[2]);
+        assert!(!live.changes.contains_key(&2));
+        assert_eq!(
+            live.posts.keys().collect::<Vec<_>>(),
+            [&1],
+            "the other project's card stays"
+        );
+        assert_eq!(live.offered.keys().collect::<Vec<_>>(), [&1]);
+        let status = sleeper.wait().unwrap();
+        assert_eq!(status.signal(), Some(libc::SIGKILL), "{status:?}");
+        assert!(w.agents[1].gone && w.agents[2].gone);
+        assert!(
+            !w.agents[0].gone && live.generation[0] == 0,
+            "the other project"
+        );
+        assert!(w.projects[1].closed);
+        assert!(w.open_inbox().is_empty());
+        // Opened again in place, with a new leader on the next socket.
+        assert_eq!(live.open_project(&mut w, &repo, None), Ok(1));
+        assert_eq!((w.projects.len(), live.places.len()), (2, 2));
+        assert_eq!(w.projects[1].leader, 3);
+        assert!(!w.projects[1].closed);
+        assert!(w.agents[1].gone, "the old leader stays gone");
+        let bus = live.bus.as_ref().unwrap();
+        assert_eq!(bus.servers.len(), 4);
+        assert!(bus.servers[3].path().ends_with("a3.sock"));
+        // A closed project is reused only for its own checkout: another
+        // checkout, with one closed, is a new project.
+        let other = checkout("close-other");
+        w.open_project(None, "third".into(), "/t".into(), Vendor::Claude);
+        live.bind(4, Role::Leader).unwrap();
+        live.grow(None, false);
+        live.places.push(Place {
+            repo: PathBuf::from("/t"),
+            root: PathBuf::from("/t-trees"),
+        });
+        assert_eq!(live.close_project(&mut w, 1), Ok(()));
+        assert_eq!(live.open_project(&mut w, &other, Some("other")), Ok(3));
+        assert!(w.projects[1].closed, "not reused for another checkout");
+        assert_eq!(live.places.len(), 4);
+        let _ = std::fs::remove_dir_all(&other);
+        let _ = std::fs::remove_dir_all(&repo);
+    }
+
+    #[test]
+    fn the_last_open_project_can_not_be_closed() {
+        let repo = checkout("last-repo");
+        let mut w = team(0);
+        let mut live = idle_live(1);
+        assert_eq!(live.close_project(&mut w, 0), Err(ProjectRefusal::Last));
+        assert!(!w.projects[0].closed && !w.agents[0].gone);
+        live.open_project(&mut w, &repo, Some("api")).unwrap();
+        assert_eq!(
+            live.close_project(&mut w, 0),
+            Ok(()),
+            "the first project can go too"
+        );
+        assert_eq!(live.close_project(&mut w, 1), Err(ProjectRefusal::Last));
+        assert!(!w.projects[1].closed && !w.agents[1].gone);
+        let _ = std::fs::remove_dir_all(&repo);
+    }
+
+    #[test]
+    fn a_gone_worker_is_not_offered_a_card() {
+        let mut w = team(1);
+        let mut live = idle_live(2);
+        live.post(
+            &mut w,
+            0,
+            &json!({ "title": "Add a test", "body": "Cover it" }),
+        )
+        .unwrap();
+        w.agents[1].gone = true;
+        live.step(&mut w);
+        assert!(queued(&live, 1).is_empty());
+        assert_eq!(live.offered.get(&0), None);
+        assert_eq!(live.woken[1], 0);
+        // Back among the living (a test's licence): offered.
+        w.agents[1].gone = false;
+        live.step(&mut w);
+        assert_eq!(live.offered[&0], [1]);
+    }
+
+    #[test]
+    fn each_project_s_leader_runs_in_its_own_checkout_with_its_own_notes() {
+        let one = checkout("notes-one");
+        let two = checkout("notes-two");
+        std::fs::write(one.join("CLAUDE.md"), "Notes one.").unwrap();
+        std::fs::write(two.join("CLAUDE.md"), "Notes two.").unwrap();
+        let mut w = team(0);
+        let mut live = Live::new(
+            1,
+            claude_at(&fake_claude(&one)),
+            one.clone(),
+            one.join("trees"),
+        );
+        live.open_project(&mut w, &two, Some("two")).unwrap();
+        live.told(&mut w, 1, "hello").unwrap();
+        wait_for(&mut live, &mut w, |w| w.agents[1].status == Status::Stopped);
+        let raw = std::fs::read_to_string(two.join("args.txt")).unwrap();
+        assert!(raw.contains("Notes two."), "{raw}");
+        assert!(!raw.contains("Notes one."), "{raw}");
+        assert!(raw.contains("--name\nimece lead-two\n"), "{raw}");
+        assert!(!one.join("args.txt").exists(), "ran in its own checkout");
+        let _ = std::fs::remove_dir_all(&one);
+        let _ = std::fs::remove_dir_all(&two);
+    }
+
+    #[test]
+    fn a_worker_s_change_goes_to_its_own_project_s_checkout() {
+        let one = checkout("own-one");
+        let two = checkout("own-two");
+        let root = trees("own");
+        let mut w = team(0);
+        let mut live = Live::new(1, claude_at("/nonexistent/claude"), one.clone(), root);
+        live.open_project(&mut w, &two, Some("two")).unwrap();
+        live.hire(&mut w, 1, &json!({})).unwrap();
+        let (repo, root) = (live.places[1].repo.clone(), live.places[1].root.clone());
+        let tree = worker_in(&mut live, &mut w, 2, &repo, &root);
+        assert!(tree.starts_with(&root), "{}", tree.display());
+        std::fs::write(tree.join("a.txt"), "changed\n").unwrap();
+        live.send(&mut w, 2, &msg("lead-two", "done", "Changed a"))
+            .unwrap();
+        live.apply_change(&mut w, 2).unwrap();
+        assert_eq!(git_in(&two, &["diff", "--cached", "--name-only"]), "a.txt");
+        assert_eq!(git_in(&one, &["status", "--porcelain"]), "");
+        let _ = std::fs::remove_dir_all(&one);
+        let _ = std::fs::remove_dir_all(&two);
+    }
+
+    #[test]
+    fn a_worker_s_worktree_follows_its_own_project_s_checkout() {
+        let one = checkout("ownfollow-one");
+        let two = checkout("ownfollow-two");
+        let root = trees("ownfollow");
+        let mut w = team(0);
+        let mut live = Live::new(1, claude_at("/nonexistent/claude"), one.clone(), root);
+        live.open_project(&mut w, &two, Some("two")).unwrap();
+        live.hire(&mut w, 1, &json!({})).unwrap();
+        let (repo, root) = (live.places[1].repo.clone(), live.places[1].root.clone());
+        worker_in(&mut live, &mut w, 2, &repo, &root);
+        let commit = |dir: &Path| {
+            std::fs::write(dir.join("b.txt"), "b").unwrap();
+            git_in(dir, &["add", "."]);
+            git_in(
+                dir,
+                &[
+                    "-c",
+                    "user.name=t",
+                    "-c",
+                    "user.email=t@t",
+                    "-c",
+                    "commit.gpgsign=false",
+                    "commit",
+                    "-q",
+                    "-m",
+                    "second",
+                ],
+            );
+        };
+        let moved = |w: &World| {
+            w.journal
+                .iter()
+                .filter(|e| matches!(e.event, Event::WorktreeMoved { agent: 2, .. }))
+                .count()
+        };
+        commit(&one);
+        live.follow(&mut w, 2);
+        assert_eq!(
+            moved(&w),
+            0,
+            "the other project's checkout moved, not its own"
+        );
+        commit(&two);
+        live.follow(&mut w, 2);
+        assert_eq!(moved(&w), 1);
+        let _ = std::fs::remove_dir_all(&one);
+        let _ = std::fs::remove_dir_all(&two);
+    }
+
+    #[test]
+    fn a_leader_s_prompt_names_only_its_own_project_s_workers() {
+        let mut w = team(1);
+        w.open_project(None, "api".into(), "/a".into(), Vendor::Claude);
+        let p1 = system_prompt(&w, 2, 4, 2);
+        assert!(p1.contains("You have no workers yet."), "{p1}");
+        assert!(!p1.contains("claude-1"), "{p1}");
+        w.agents.push(Agent::new(
+            3,
+            1,
+            "claude-2".into(),
+            Vendor::Claude,
+            Role::Worker,
+            Status::Idle,
+            0,
+        ));
+        let p0 = system_prompt(&w, 0, 4, 2);
+        assert!(p0.contains("The workers so far are claude-1."), "{p0}");
+        let p1 = system_prompt(&w, 2, 4, 2);
+        assert!(p1.contains("The workers so far are claude-2."), "{p1}");
+    }
+
+    #[test]
+    fn an_opened_project_s_leader_gets_a_socket_in_agent_order_with_the_leader_s_tools() {
+        use std::io::{BufRead, BufReader, Write};
+        use std::os::unix::net::UnixStream;
+        let repo = checkout("socket-repo");
+        let mut w = team(0);
+        let mut live = idle_live(1);
+        live.open_bus(&w, "/opt/imece".into()).unwrap();
+        live.open_project(&mut w, &repo, Some("api")).unwrap();
+        let path = live.bus.as_ref().unwrap().servers[1].path().to_path_buf();
+        assert!(path.ends_with("a1.sock"), "{}", path.display());
+        let mut sock = UnixStream::connect(path).unwrap();
+        writeln!(sock, r#"{{"jsonrpc":"2.0","id":1,"method":"tools/list"}}"#).unwrap();
+        let mut line = String::new();
+        BufReader::new(&sock).read_line(&mut line).unwrap();
+        let listed: Value = serde_json::from_str(&line).unwrap();
+        let names: Vec<&str> = listed["result"]["tools"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|t| t["name"].as_str().unwrap())
+            .collect();
+        assert_eq!(names, ["send", "post", "board", "run", "hire"]);
+        let _ = std::fs::remove_dir_all(&repo);
+    }
+
+    #[test]
+    fn a_project_s_name_and_worktrees_root_come_from_its_checkout() {
+        assert_eq!(dir_name(Path::new("/x/imece")), "imece");
+        assert_eq!(dir_name(Path::new("/")), "repo");
+        assert_eq!(project_name_of(Path::new("/x/imece")), "imece");
+        assert_eq!(
+            project_name_of(Path::new("/x/my project (v2)")),
+            "my-project--v2-"
+        );
+        assert_eq!(project_name_of(Path::new("/x/şirket")), "-irket");
+        assert_eq!(
+            project_name_of(Path::new("/x/abcdefghijklmnopqrstuvwxyz")),
+            "abcdefghijklmnopqrstuvwx",
+            "cut to 24"
+        );
+        assert_eq!(
+            root_for(Path::new("/state"), Path::new("/x/imece")),
+            PathBuf::from("/state/worktrees/imece-549e0114")
+        );
+        assert!(
+            root_for(Path::new("/state"), Path::new("/"))
+                .to_string_lossy()
+                .starts_with("/state/worktrees/repo-")
+        );
+        assert_ne!(
+            root_for(Path::new("/state"), Path::new("/x/imece")),
+            root_for(Path::new("/state"), Path::new("/y/imece")),
+            "one name, two checkouts"
+        );
+        for ok in ["a", "a.b_C-9", &"x".repeat(24)] {
+            assert!(valid_project_name(ok), "{ok}");
+        }
+        for bad in ["", &"x".repeat(25), "a b", "a/b", "é", "a\tb"] {
+            assert!(!valid_project_name(bad), "{bad:?}");
+        }
+    }
+
+    #[test]
+    fn renaming_a_project_renames_its_leader_and_tells_its_agents() {
+        let mut w = team(1);
+        let mut live = idle_live(2);
+        w.open_project(None, "api".into(), "/a".into(), Vendor::Claude);
+        live.grow(None, false);
+        assert_eq!(
+            live.rename_project(&mut w, 0, "a b"),
+            Err(ProjectRefusal::BadName("a b".into()))
+        );
+        assert_eq!(
+            live.rename_project(&mut w, 0, "api"),
+            Err(ProjectRefusal::NameTaken("api".into()))
+        );
+        assert_eq!(w.projects[0].name, "repo", "refused: unchanged");
+        assert!(live.notes.iter().all(Vec::is_empty));
+        assert_eq!(
+            live.rename_project(&mut w, 1, "api"),
+            Ok(()),
+            "its own name is no clash"
+        );
+        assert_eq!(live.notes[2].len(), 1);
+        assert_eq!(live.rename_project(&mut w, 0, "shop"), Ok(()));
+        assert_eq!(w.projects[0].name, "shop");
+        assert_eq!(w.agents[0].name, "lead-shop");
+        assert_eq!(
+            (
+                live.notes[0].len(),
+                live.notes[1].len(),
+                live.notes[2].len()
+            ),
+            (1, 1, 1),
+            "its own agents, not the other project's"
+        );
+        assert_eq!(
+            live.notes[1][0],
+            "The person renamed the project: it is called shop now, and its leader, lead \
+             until now, is lead-shop. Address it by that name."
+        );
+        assert!(matches!(
+            &w.journal.last().unwrap().event,
+            Event::Renamed { leader: 0, from, to } if from == "repo" && to == "shop"
+        ));
+        w.agents[1].gone = true;
+        live.rename_project(&mut w, 0, "store").unwrap();
+        assert_eq!(live.notes[1].len(), 1, "a gone agent hears nothing");
+        assert_eq!(live.notes[0].len(), 2);
     }
 }

@@ -37,6 +37,9 @@ const USAGE: &str = "usage: imece [--repo DIR] [--agents N] [--helpers N] [--lea
 imece runs coding agents on the checkout DIR is in: a leader that reads it
 and talks to you, and workers it hires as the work needs them, each changing
 its own git worktree; a worker may hire helpers for parts of its task.
+While it runs, :open PATH [NAME] opens another checkout as a project of its
+own, with its own leader; :close NAME closes one, :rename NAME renames the
+one at hand; ? lists every key and command.
 
   --repo DIR        the checkout (default: the current directory)
   --agents N        workers the leader may hire, at most (0-16, default 4)
@@ -631,6 +634,9 @@ mod tests {
         assert!(args(&["--run-timeout", "9"], &[]).is_err());
         assert!(args(&["--run-timeout", "3601"], &[]).is_err());
         assert!(USAGE.contains("--run PROG") && USAGE.contains("--run-timeout S"));
+        for cmd in [":open PATH [NAME]", ":close NAME", ":rename NAME"] {
+            assert!(USAGE.contains(cmd), "{cmd}");
+        }
     }
 
     #[test]

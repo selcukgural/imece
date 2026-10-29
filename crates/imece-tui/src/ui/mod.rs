@@ -1812,7 +1812,7 @@ mod tests {
         key(&mut app, KeyCode::Char(':'));
         assert_eq!(
             app.menu.as_ref().unwrap().items,
-            ["budget", "lead", "theme"]
+            ["budget", "close", "lead", "open", "rename", "theme"]
         );
         let row = menu_row(&app, 140);
         assert!(row.contains("budget") && row.contains("lead"), "{row}");
@@ -3192,5 +3192,265 @@ after | not a table";
         assert_eq!(list_marker("3.a"), None);
         assert_eq!(list_marker("-a"), None);
         assert_eq!(list_marker(". a"), None);
+    }
+
+    #[test]
+    fn a_closed_project_is_not_in_the_salon_rows() {
+        use super::salon::{Row, rows};
+        let mut app = app_after(2, 12, 300, Lang::En);
+        app.world.tick = 300;
+        for a in &mut app.world.agents {
+            if a.role == Role::Worker {
+                a.status = Status::Idle;
+                a.talk = None;
+                a.changed_at = 0;
+            }
+        }
+        let of = |app: &App, capacity: usize| {
+            rows(
+                &app.world,
+                &app.collapsed,
+                &app.folded_workers,
+                app.selected,
+                capacity,
+            )
+        };
+        assert!(of(&app, 100).contains(&Row::Project(1)));
+        app.world.projects[1].closed = true;
+        let open = of(&app, 100);
+        assert!(!open.contains(&Row::Project(1)));
+        assert!(open.contains(&Row::Project(0)));
+        assert!(
+            open.iter()
+                .all(|r| !matches!(r, Row::Agent { id, .. } if app.world.agents[*id].project == 1)),
+            "{open:?}"
+        );
+        // The closed project takes no lines: with room for the open one
+        // alone nothing folds; one line less, something does.
+        let n = open.len();
+        let tight = of(&app, n);
+        assert!(
+            !tight.iter().any(|r| matches!(r, Row::Folded(_))),
+            "{tight:?}"
+        );
+        let tighter = of(&app, n - 1);
+        assert!(
+            tighter.iter().any(|r| matches!(r, Row::Folded(_))),
+            "{tighter:?}"
+        );
+    }
+
+    #[test]
+    fn the_help_lists_the_project_commands_in_both_languages() {
+        let mut app = app_after(1, 2, 0, Lang::En);
+        app.help = true;
+        for (lang, keys) in [
+            (
+                Lang::En,
+                [":open PATH", ":close NAME", ":rename NAME", "NAME after it"],
+            ),
+            (
+                Lang::Tr,
+                [":open YOL", ":close AD", ":rename AD", "ardına AD"],
+            ),
+        ] {
+            app.lang = lang;
+            let s = render(&app, 140, 40);
+            for k in keys {
+                assert!(s.contains(k), "{lang:?} {k}: {s}");
+            }
+        }
+    }
+
+    #[test]
+    fn colon_open_close_and_rename_manage_projects_from_the_screen() {
+        use super::salon::{Row, rows};
+        use crate::app::Zoom;
+        use crate::live::testing::{checkout, idle_live_in, team};
+        let one = checkout("ui-one");
+        let two = checkout("ui-two");
+        let three = checkout("ui-three");
+        let four = checkout("ui-four");
+        let three_name = three.file_name().unwrap().to_str().unwrap().to_string();
+        let mut app = App::with(
+            team(1),
+            crate::app::Engine::Live(Box::new(idle_live_in(&one, 2))),
+            Lang::En,
+        );
+        app.home = Some(three.parent().unwrap().to_path_buf());
+        let typed = |app: &mut App, line: &str| {
+            for c in line.chars() {
+                key(app, KeyCode::Char(c));
+            }
+            key(app, KeyCode::Enter);
+        };
+        let flashed = |app: &App| app.flash.as_ref().map(|f| f.0.clone()).unwrap_or_default();
+        let project_rows = |app: &App| -> Vec<Row> {
+            rows(
+                &app.world,
+                &app.collapsed,
+                &app.folded_workers,
+                app.selected,
+                100,
+            )
+            .into_iter()
+            .filter(|r| matches!(r, Row::Project(_)))
+            .collect()
+        };
+
+        typed(&mut app, ":open");
+        assert!(
+            flashed(&app).starts_with(":open PATH [NAME] opens"),
+            "{}",
+            flashed(&app)
+        );
+        typed(&mut app, &format!(":open {} api", two.display()));
+        assert_eq!(app.world.projects.len(), 2);
+        assert_eq!(app.collapsed, [false, false]);
+        let lead_api = app.world.projects[1].leader;
+        assert_eq!(app.selected, Sel::Agent(lead_api));
+        assert_eq!(app.zoom, Zoom::None);
+        let said = flashed(&app);
+        assert!(
+            said.starts_with("opened api at ") && said.ends_with("; write to lead-api"),
+            "{said}"
+        );
+        let s = render(&app, 140, 40);
+        assert!(s.contains("lead-api"), "{s}");
+        assert!(s.contains("you opened api at"), "{s}");
+        assert_eq!(project_rows(&app), [Row::Project(0), Row::Project(1)]);
+
+        // The short form, `~`, the name from the directory.
+        typed(&mut app, &format!(":o ~/{three_name}"));
+        assert_eq!(app.world.projects.len(), 3);
+        assert_eq!(app.world.projects[2].name, three_name);
+        assert_eq!(
+            app.world.agents[app.world.projects[2].leader].name,
+            format!("lead-{three_name}")
+        );
+        assert_eq!(app.collapsed.len(), 3);
+
+        // Refusals, each in its own words; nothing opened.
+        typed(&mut app, ":open /nonexistent-dir");
+        assert!(
+            flashed(&app).starts_with("could not open: /nonexistent-dir"),
+            "{}",
+            flashed(&app)
+        );
+        typed(&mut app, &format!(":open {} other", two.display()));
+        assert!(
+            flashed(&app).ends_with(" is open already, as api"),
+            "{}",
+            flashed(&app)
+        );
+        typed(&mut app, &format!(":open {} api", four.display()));
+        assert_eq!(flashed(&app), "a project named api is open already");
+        typed(&mut app, &format!(":open {} a/b", four.display()));
+        assert!(
+            flashed(&app).starts_with("\"a/b\" can not name a project"),
+            "{}",
+            flashed(&app)
+        );
+        assert_eq!(app.world.projects.len(), 3);
+
+        // Rename the one at hand.
+        app.selected = Sel::Project(1);
+        typed(&mut app, ":rename shop");
+        assert_eq!(app.world.projects[1].name, "shop");
+        assert_eq!(app.world.agents[lead_api].name, "lead-shop");
+        assert_eq!(flashed(&app), "api is now shop; write to lead-shop");
+        assert!(render(&app, 140, 40).contains("you renamed api to shop"));
+        typed(&mut app, &format!(":rename {three_name}"));
+        assert_eq!(
+            flashed(&app),
+            format!("a project named {three_name} is open already")
+        );
+        typed(&mut app, ":rename a b");
+        assert!(
+            flashed(&app).starts_with("\"a b\" can not name a project"),
+            "{}",
+            flashed(&app)
+        );
+        assert_eq!(app.world.projects[1].name, "shop", "refused: unchanged");
+
+        // Close by name: gone from the salon; a zoom on it ends, a
+        // selection elsewhere stays, the inbox selection fits what is left.
+        let lead3 = app.world.projects[2].leader;
+        app.zoom = Zoom::Focus(lead_api);
+        app.selected = Sel::Agent(lead3);
+        app.inbox_sel = 5;
+        typed(&mut app, ":close shop");
+        assert!(app.world.projects[1].closed);
+        assert_eq!(app.zoom, Zoom::None);
+        assert_eq!(app.selected, Sel::Agent(lead3), "not in the closed project");
+        assert_eq!(app.inbox_sel, 0);
+        assert_eq!(
+            flashed(&app),
+            "closed shop: its agents left; their worktrees stay on disk"
+        );
+        assert_eq!(project_rows(&app), [Row::Project(0), Row::Project(2)]);
+        assert!(render(&app, 140, 40).contains("you closed shop"));
+        typed(&mut app, ":close nope");
+        assert_eq!(flashed(&app), "no open project named nope");
+        // Opened again in place: same id, the fold undone, its new lead selected.
+        app.collapsed[1] = true;
+        typed(&mut app, &format!(":open {}", two.display()));
+        assert_eq!(app.world.projects.len(), 3);
+        assert_eq!(app.collapsed, [false, false, false]);
+        assert!(!app.world.projects[1].closed);
+        assert_ne!(app.world.projects[1].leader, lead_api);
+        assert_eq!(app.selected, Sel::Agent(app.world.projects[1].leader));
+        typed(&mut app, ":close");
+        assert!(
+            app.world.projects[1].closed,
+            "the one at hand, by the selection: {} {:?}",
+            flashed(&app),
+            app.selected
+        );
+        // A selection (and a zoom) in the closed project moves to the first open one.
+        app.selected = Sel::Project(0);
+        app.zoom = Zoom::Trace(lead3);
+        typed(&mut app, ":close repo");
+        assert!(app.world.projects[0].closed);
+        assert_eq!(app.selected, Sel::Agent(lead3));
+        assert_eq!(app.zoom, Zoom::Trace(lead3), "a zoom elsewhere stays");
+        // The one at hand (`:c` alone would take the menu's `close`), the last one.
+        typed(&mut app, ":c ");
+        assert_eq!(
+            flashed(&app),
+            format!("{three_name} is the last open project; q q quits")
+        );
+        assert!(!app.world.projects[2].closed);
+        assert_eq!(app.current_project(), 2);
+
+        // Turkish wording of the journal, by the projects' current names.
+        app.lang = Lang::Tr;
+        let said: Vec<String> = app
+            .world
+            .journal
+            .iter()
+            .map(|e| words::event(Lang::Tr, &app.world, &e.event))
+            .collect();
+        let two_name = two.file_name().unwrap().to_str().unwrap();
+        assert!(
+            said.iter()
+                .any(|s| s.starts_with(&format!("{two_name} projesini açtın ("))),
+            "{said:?}"
+        );
+        assert!(
+            said.contains(&"api projesine shop adını verdin".to_string()),
+            "{said:?}"
+        );
+        assert!(
+            said.contains(&format!("{two_name} projesini kapattın")),
+            "{said:?}"
+        );
+        assert!(
+            said.contains(&"repo projesini kapattın".to_string()),
+            "{said:?}"
+        );
+        for dir in [&one, &two, &three, &four] {
+            let _ = std::fs::remove_dir_all(dir);
+        }
     }
 }

@@ -72,7 +72,7 @@ pub fn rows(
         .projects
         .iter()
         .map(|p| {
-            if collapsed[p.id] {
+            if p.closed || collapsed[p.id] {
                 return Vec::new();
             }
             let workers: Vec<&Agent> = w
@@ -99,6 +99,9 @@ pub fn rows(
         .projects
         .iter()
         .map(|p| {
+            if p.closed {
+                return 0;
+            }
             if collapsed[p.id] {
                 return 1;
             }
@@ -128,7 +131,7 @@ pub fn rows(
     }
 
     let mut out = Vec::new();
-    for p in &w.projects {
+    for p in w.open_projects() {
         out.push(Row::Project(p.id));
         if collapsed[p.id] {
             continue;
