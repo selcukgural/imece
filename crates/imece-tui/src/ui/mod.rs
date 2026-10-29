@@ -1195,6 +1195,20 @@ mod tests {
         assert!(screen.contains("(budget 50%)"), "{screen}");
         let footer = screen.lines().last().unwrap().to_string();
         assert!(footer.contains("space"), "{footer}");
+        // The current view's name is the bold one.
+        let buf = buffer(&app, 140, 40);
+        let bold_runs: String = (0..140)
+            .map(|x| {
+                let c = &buf[(x, 39)];
+                if c.style().add_modifier.contains(Modifier::BOLD) {
+                    c.symbol().to_string()
+                } else {
+                    " ".into()
+                }
+            })
+            .collect();
+        assert!(bold_runs.contains("salon"), "{bold_runs:?}");
+        assert!(!bold_runs.contains("board"), "{bold_runs:?}");
         app.zoom = Zoom::Focus(1);
         let footer = render(&app, 140, 40).lines().last().unwrap().to_string();
         assert!(!footer.contains("space"), "{footer}");
@@ -1221,6 +1235,30 @@ mod tests {
         app.world.agents[worker].status = Status::Blocked;
         let screen = render(&app, 140, 40);
         assert!(screen.contains("✕1"), "{screen}");
+    }
+
+    #[test]
+    fn a_talk_row_names_the_partner_agent() {
+        let mut app = app_after(1, 4, 50, Lang::En);
+        for a in &mut app.world.agents {
+            a.talk = None;
+        }
+        let (me, other) = (1, 2);
+        let partner = app.world.agents[other].name.clone();
+        app.world.agents[me].talk = Some(Talk {
+            with: Party::Agent(other),
+            text: "shall we split it".into(),
+            until: 1_000_000,
+        });
+        let screen = render(&app, 140, 40);
+        let row = screen
+            .lines()
+            .find(|l| l.contains("shall we split it"))
+            .expect("the talk row");
+        // The salon's part of the row, before the side panel.
+        let salon = row.split("││").next().unwrap();
+        assert!(salon.contains(&partner), "{salon}");
+        assert!(!salon.contains("you"), "{salon}");
     }
 
     #[test]
@@ -1289,7 +1327,9 @@ mod tests {
         key(&mut app, KeyCode::Tab);
         assert_eq!(app.pane, Pane::Salon, "tab in a focus");
         app.zoom = Zoom::None;
-        // Copying is the journal's; chords that fold are the salon's.
+        // Copying is the journal's; chords that fold are the salon's. A
+        // stale journal selection must not make c copy elsewhere.
+        app.journal_sel = Some(0);
         key(&mut app, KeyCode::Char('c'));
         assert!(app.copy.is_none(), "c in the salon copies nothing");
         app.pane = Pane::Journal;
@@ -1304,11 +1344,12 @@ mod tests {
             assert_eq!(app.collapsed, [false, false], "z{second} outside the salon");
         }
         app.view = View::Board;
+        app.collapsed = vec![true, true];
         key(&mut app, KeyCode::Char('z'));
         key(&mut app, KeyCode::Char('R'));
+        assert_eq!(app.collapsed, [true, true], "zR on the board");
         app.view = View::Salon;
         app.pane = Pane::Salon;
-        app.collapsed = vec![true, true];
         key(&mut app, KeyCode::Char('z'));
         key(&mut app, KeyCode::Char('R'));
         assert_eq!(app.collapsed, [false, false], "zR in the salon");
@@ -1346,10 +1387,10 @@ mod tests {
         assert_eq!(app.thread.as_ref().unwrap().scroll.get(), page);
         key(&mut app, KeyCode::PageDown);
         assert_eq!(app.thread.as_ref().unwrap().scroll.get(), 2 * page);
-        key(&mut app, KeyCode::End);
-        assert_eq!(app.thread.as_ref().unwrap().sel, 3);
         key(&mut app, KeyCode::Home);
         assert_eq!(app.thread.as_ref().unwrap().sel, 0);
+        key(&mut app, KeyCode::End);
+        assert_eq!(app.thread.as_ref().unwrap().sel, 3);
         key(&mut app, KeyCode::Char('c'));
         assert!(
             app.copy.take().is_some(),
