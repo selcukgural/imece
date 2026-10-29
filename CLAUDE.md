@@ -383,8 +383,11 @@ and owned here from then on:
   names, `T` cycles them. Preferences, flags and `IMECE_THEME` take
   names or paths. Tests: every scheme's roles stand off its background
   by luma; speakers that repeat (Rose Pine's orange is its purple) fade
-  apart. Known gaps: a terminal that answers the probe after 200 ms
-  leaks the answer into the key stream once; no Alacritty (TOML) or
+  apart. The probe is followed by a cursor position report (`CSI 6 n`)
+  and reads until its answer (deadline 1 s), so a late colour answer
+  never leaks into the key stream (2026-10-29: Terminal.app answered
+  after the first probe's 200 ms, and the `rgb:…` opened the code map
+  and the composer at start). Known gaps: no Alacritty (TOML) or
   `.itermcolors` (plist) reader, convert with mbadolato's tools.
 - Quiet erase (2026-10-29, found by the user in iTerm2): `screen.rs`
   wraps the crossterm backend so the whole screen is only ever erased
