@@ -2,6 +2,7 @@
 //! projects are folded, the language, and what the person is typing.
 
 use std::cell::{Cell, RefCell};
+use std::collections::BTreeSet;
 use std::time::{Duration, Instant};
 
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
@@ -124,6 +125,8 @@ pub struct App {
     pub selected: Sel,
     /// Folded projects show only their header line.
     pub collapsed: Vec<bool>,
+    /// Workers whose helpers are folded away.
+    pub folded_workers: BTreeSet<AgentId>,
     /// Position in the open inbox items.
     pub inbox_sel: usize,
     /// The selected journal line (a journal index).
@@ -141,6 +144,10 @@ pub struct App {
     pub paused: bool,
     pub speed: u32,
     pub help: bool,
+    /// The vendor that leads from the next start on without being asked
+    /// (`claude`), as the preferences keep it; none asks when there is a
+    /// choice.
+    pub primary: Option<String>,
     pub digest: Option<Digest>,
     pub flash: Option<(String, Instant)>,
     pub quit: bool,
@@ -173,6 +180,7 @@ impl App {
             pane: Pane::Salon,
             selected,
             collapsed,
+            folded_workers: BTreeSet::new(),
             inbox_sel: 0,
             journal_sel: None,
             thread: None,
@@ -184,6 +192,7 @@ impl App {
             paused: false,
             speed: 1,
             help: false,
+            primary: None,
             digest: None,
             flash: None,
             quit: false,
@@ -367,8 +376,11 @@ impl App {
         match (first, k.code) {
             ('g', KeyCode::Char('g')) => self.jump(true),
             ('z', KeyCode::Char('a')) if self.salon_keys() => {
-                let p = self.current_project();
-                self.fold(!self.collapsed[p]);
+                let folded = match self.worker_at_hand() {
+                    Some(id) => self.folded_workers.contains(&id),
+                    None => self.collapsed[self.current_project()],
+                };
+                self.fold(!folded);
             }
             ('z', KeyCode::Char('M')) if self.salon_keys() => self.fold_all(true),
             ('z', KeyCode::Char('R')) if self.salon_keys() => self.fold_all(false),
@@ -376,12 +388,35 @@ impl App {
         }
     }
 
-    /// Folds or unfolds every project.
+    /// Folds or unfolds every project and every worker's helpers.
     fn fold_all(&mut self, fold: bool) {
         self.collapsed.iter_mut().for_each(|c| *c = fold);
+        self.folded_workers.clear();
         if fold {
+            let workers = self
+                .world
+                .agents
+                .iter()
+                .filter(|a| a.role == Role::Worker && self.world.helpers_of(a.id).next().is_some())
+                .map(|a| a.id);
+            self.folded_workers.extend(workers);
             self.selected = Sel::Project(self.current_project());
         }
+    }
+
+    /// The worker whose helpers the fold keys act on: the selected worker
+    /// if it has helpers, or the selected helper's worker.
+    fn worker_at_hand(&self) -> Option<AgentId> {
+        let Sel::Agent(id) = self.selected else {
+            return None;
+        };
+        let a = &self.world.agents[id];
+        let worker = match a.role {
+            Role::Worker => id,
+            Role::Helper => a.parent?,
+            _ => return None,
+        };
+        self.world.helpers_of(worker).next().map(|_| worker)
     }
 
     /// Panels cycle only on the salon, outside a focus.
@@ -604,9 +639,21 @@ impl App {
         }
     }
 
-    /// Folds or unfolds the selected project; folding moves the selection to
-    /// its header so it does not vanish.
+    /// Folds or unfolds the selected worker's helpers, when that changes
+    /// something, else the selected project; folding moves the selection to
+    /// the worker or the project's header so it does not vanish.
     fn fold(&mut self, fold: bool) {
+        if let Some(id) = self.worker_at_hand()
+            && fold != self.folded_workers.contains(&id)
+        {
+            if fold {
+                self.folded_workers.insert(id);
+                self.selected = Sel::Agent(id);
+            } else {
+                self.folded_workers.remove(&id);
+            }
+            return;
+        }
         let p = self.current_project();
         self.collapsed[p] = fold;
         if fold {
@@ -673,7 +720,9 @@ impl App {
 
     /// A command to imece itself, typed after `:`. `budget USD` (or `b`)
     /// sets what all agents together may spend; a running turn finishes
-    /// on its old cap, the next one starts on the new remainder.
+    /// on its old cap, the next one starts on the new remainder. `lead
+    /// VENDOR` makes that vendor the primary one, leading from the next
+    /// start on without asking; `lead ask` forgets it.
     fn command(&mut self, line: &str) {
         let t = self.lang.text();
         let (name, arg) = line
@@ -689,6 +738,17 @@ impl App {
                     self.flash(fill(t.budget_is, &[&dollars(to)]));
                 }
                 None => self.flash(fill(t.bad_budget, &[arg])),
+            },
+            "lead" => match (arg, Vendor::parse(arg)) {
+                ("ask", _) => {
+                    self.primary = None;
+                    self.flash(t.lead_asks);
+                }
+                (_, Some(v)) => {
+                    self.primary = Some(v.label().to_string());
+                    self.flash(fill(t.lead_is, &[v.label()]));
+                }
+                (_, None) => self.flash(fill(t.bad_lead, &[arg])),
             },
             _ => self.flash(fill(t.no_command, &[name])),
         }

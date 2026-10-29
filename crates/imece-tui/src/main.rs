@@ -25,17 +25,22 @@ use ratatui::crossterm::event::{self, Event, KeyEventKind};
 use crate::i18n::Lang;
 use crate::model::{Vendor, parse_dollars};
 
-const USAGE: &str = "usage: imece [--repo DIR] [--agents N] [--lead VENDOR] [--model NAME]
-             [--tier T=NAME]... [--budget USD] [--lang en|tr] [--theme NAME]
+const USAGE: &str = "usage: imece [--repo DIR] [--agents N] [--helpers N] [--lead VENDOR]
+             [--model NAME] [--tier T=NAME]... [--budget USD] [--lang en|tr]
+             [--theme NAME]
        imece --demo [--projects N] [--agents N] [--researchers N] [--seed N]
 
 imece runs coding agents on the checkout DIR is in: a leader that reads it
 and talks to you, and workers it hires as the work needs them, each changing
-its own git worktree.
+its own git worktree; a worker may hire helpers for parts of its task.
 
   --repo DIR        the checkout (default: the current directory)
   --agents N        workers the leader may hire, at most (0-16, default 4)
-  --lead VENDOR     the leader's coding agent: claude (default), codex, gemini
+  --helpers N       helpers a worker may have at once, at most (0-8, default 2)
+  --lead VENDOR     the leader's coding agent: claude, codex or gemini; ask
+                    asks at the start. Without it: your primary vendor (set
+                    with p in that question, or with :lead VENDOR), else the
+                    only one on PATH, else the question
   --model NAME      the model every agent runs on (default: the vendor's own)
   --tier T=NAME     the model a tier stands for, T being cheap, standard or
                     strong (claude: haiku, the vendor's own, opus)
@@ -55,23 +60,63 @@ its own git worktree.
 struct Args {
     projects: usize,
     agents: Option<usize>,
+    helpers: usize,
     researchers: usize,
     seed: u64,
     lang: Lang,
     theme: Option<String>,
     demo: bool,
     repo: PathBuf,
-    lead: Vendor,
+    lead: Option<Lead>,
     model: Option<String>,
     tiers: Vec<(Tier, String)>,
     /// Ten-thousandths of a dollar.
     budget: u64,
 }
 
+/// What `--lead` asks for.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Lead {
+    Vendor(Vendor),
+    /// Ask at the start, whatever the primary vendor is.
+    Ask,
+}
+
+/// Who leads, from the flag, the primary vendor `primary` and the vendors
+/// on PATH that imece drives, `candidates`: `None` is a question for the
+/// person. A flag names a vendor even when it is not here (the honest error
+/// comes when the team is built); a primary vendor that is not here is
+/// skipped, and the chooser says so.
+fn choose_lead(
+    flag: Option<Lead>,
+    primary: Option<Vendor>,
+    candidates: &[Vendor],
+) -> Option<Vendor> {
+    match flag {
+        Some(Lead::Vendor(v)) => return Some(v),
+        Some(Lead::Ask) => {}
+        None => {
+            if let Some(p) = primary.filter(|p| candidates.contains(p)) {
+                return Some(p);
+            }
+        }
+    }
+    match candidates {
+        // Nothing to choose from: the team's own error says what is missing.
+        [] => Some(primary.unwrap_or(Vendor::Claude)),
+        [only] => Some(*only),
+        _ => None,
+    }
+}
+
 /// Workers a leader may hire, at most.
 const LIVE_AGENTS: u64 = 16;
 /// Workers a leader may hire unless the person says otherwise.
 const DEFAULT_WORKERS: usize = 4;
+/// Helpers a worker may have at once, at most, and unless the person says
+/// otherwise.
+const MAX_HELPERS: u64 = 8;
+const DEFAULT_HELPERS: usize = 2;
 
 /// Dollars with at most two decimals, as ten-thousandths of a dollar.
 /// Model names as Claude Code takes them: `sonnet`, `claude-opus-5-5`,
@@ -99,6 +144,7 @@ fn parse(
     let mut args = Args {
         projects: 2,
         agents: None,
+        helpers: DEFAULT_HELPERS,
         researchers: 4,
         seed: 7,
         lang,
@@ -109,7 +155,7 @@ fn parse(
         },
         demo: false,
         repo: PathBuf::from("."),
-        lead: Vendor::Claude,
+        lead: None,
         model: None,
         tiers: Vec::new(),
         budget: 50 * 10_000,
@@ -145,11 +191,14 @@ fn parse(
         match flag.as_str() {
             "--projects" => args.projects = number(1, sim::MAX_PROJECTS as u64)? as usize,
             "--agents" => args.agents = Some(number(0, 200)? as usize),
+            "--helpers" => args.helpers = number(0, MAX_HELPERS)? as usize,
             "--researchers" => args.researchers = number(1, 32)? as usize,
             "--seed" => args.seed = number(0, u64::MAX)?,
+            "--lead" if value == "ask" => args.lead = Some(Lead::Ask),
             "--lead" => {
-                args.lead = Vendor::parse(&value)
-                    .ok_or_else(|| format!("--lead: {value:?} is not claude, codex or gemini"))?
+                args.lead = Some(Lead::Vendor(Vendor::parse(&value).ok_or_else(|| {
+                    format!("--lead: {value:?} is not claude, codex, gemini or ask")
+                })?))
             }
             "--tier" => args.tiers.push(parse_tier(&value)?),
             "--theme" if theme::set(&value) => args.theme = Some(value),
@@ -219,6 +268,15 @@ fn main() -> std::io::Result<()> {
             std::process::exit(2);
         }
     };
+    let state = prefs::state_dir();
+    let mut saved = prefs::load(&state);
+    // A flag or the environment wins over the saved theme.
+    if args.theme.is_none()
+        && let Some(name) = &saved.theme
+    {
+        theme::set(name);
+    }
+    let mut terminal = ratatui::init();
     let mut app = if args.demo {
         app::App::new(
             args.projects,
@@ -228,39 +286,92 @@ fn main() -> std::io::Result<()> {
             args.lang,
         )
     } else {
+        let fail = |msg: String| -> ! {
+            ratatui::restore();
+            eprintln!("imece: {msg}");
+            std::process::exit(1);
+        };
+        // Running every vendor's --version takes a moment: say so.
+        terminal
+            .draw(|f| ui::pick::probing(f, args.lang))
+            .unwrap_or_else(|e| fail(e.to_string()));
+        let present = live::probe(&args.repo).unwrap_or_else(|e| fail(e));
+        let candidates = live::leaders(&present);
+        let primary = saved.lead.as_deref().and_then(Vendor::parse);
+        let lead = match choose_lead(args.lead, primary, &candidates) {
+            Some(v) => v,
+            None => {
+                let missing = primary.filter(|p| !candidates.contains(p));
+                let mut pick = ui::pick::Pick::new(candidates, missing, args.lang);
+                match ask(&mut terminal, &mut pick) {
+                    Ok(Some(ui::pick::Picked::Lead { vendor, remember })) => {
+                        if remember {
+                            saved.lead = Some(vendor.label().to_string());
+                            let _ = prefs::save(
+                                &state,
+                                saved.side.unwrap_or(prefs::SIDE_DEFAULT),
+                                theme::pal().name,
+                                saved.lead.as_deref(),
+                            );
+                        }
+                        vendor
+                    }
+                    Ok(_) => {
+                        ratatui::restore();
+                        return Ok(());
+                    }
+                    Err(e) => fail(e.to_string()),
+                }
+            }
+        };
         let options = live::Options {
             repo: args.repo,
             max_workers: args.agents.unwrap_or(DEFAULT_WORKERS),
-            lead: args.lead,
+            max_helpers: args.helpers,
+            lead,
             model: args.model,
             tiers: args.tiers,
             budget: args.budget,
         };
-        match live::world(options) {
+        match live::world(options, &present) {
             Ok((world, live)) => {
                 app::App::with(world, app::Engine::Live(Box::new(live)), args.lang)
             }
-            Err(msg) => {
-                eprintln!("imece: {msg}");
-                std::process::exit(1);
-            }
+            Err(msg) => fail(msg),
         }
     };
-    let state = prefs::state_dir();
-    let saved = prefs::load(&state);
     if let Some(side) = saved.side {
         app.side = side;
     }
-    // A flag or the environment wins over the saved theme.
-    if args.theme.is_none()
-        && let Some(name) = &saved.theme
-    {
-        theme::set(name);
-    }
-    let mut terminal = ratatui::init();
+    app.primary = saved.lead;
     let result = run(&mut terminal, &mut app, &state);
     ratatui::restore();
     result
+}
+
+/// Asks who leads, until the person answers or quits (also by signal).
+fn ask(
+    terminal: &mut DefaultTerminal,
+    pick: &mut ui::pick::Pick,
+) -> std::io::Result<Option<ui::pick::Picked>> {
+    loop {
+        if SIGNALLED.load(Ordering::SeqCst) {
+            return Ok(None);
+        }
+        terminal.draw(|f| ui::pick::draw(f, pick))?;
+        let ready = match event::poll(std::time::Duration::from_millis(200)) {
+            Ok(ready) => ready,
+            Err(e) if e.kind() == ErrorKind::Interrupted => continue,
+            Err(e) => return Err(e),
+        };
+        if ready
+            && let Event::Key(k) = event::read()?
+            && k.kind == KeyEventKind::Press
+            && let Some(picked) = pick.on_key(k.code)
+        {
+            return Ok(Some(picked));
+        }
+    }
 }
 
 /// Set by SIGTERM, SIGHUP (the terminal went away) and SIGINT from outside.
@@ -299,11 +410,11 @@ fn run(
             && let Event::Key(k) = event::read()?
             && k.kind == KeyEventKind::Press
         {
-            let (side, theme) = (app.side, theme::pal().name);
+            let (side, theme, primary) = (app.side, theme::pal().name, app.primary.clone());
             app.on_key(k);
-            if app.side != side || theme::pal().name != theme {
+            if app.side != side || theme::pal().name != theme || app.primary != primary {
                 // Remembered for the next run; a failure only costs that.
-                let _ = prefs::save(state, app.side, theme::pal().name);
+                let _ = prefs::save(state, app.side, theme::pal().name, app.primary.as_deref());
             }
             if let Some(text) = app.copy.take() {
                 app.copied(clip::copy(&text));
@@ -379,7 +490,7 @@ mod tests {
             a.agents, None,
             "the leader's cap comes from DEFAULT_WORKERS"
         );
-        assert_eq!(a.lead, Vendor::Claude);
+        assert_eq!(a.lead, None, "who leads is decided at the start");
         assert_eq!(a.model, None);
         assert!(a.tiers.is_empty());
         assert_eq!(a.budget, 500_000);
@@ -390,6 +501,45 @@ mod tests {
         assert!(a.demo);
         assert_eq!((a.seed, a.agents), (3, Some(30)));
         assert_eq!(DEFAULT_WORKERS, 4);
+    }
+
+    #[test]
+    fn who_leads_is_the_flag_else_the_primary_else_the_only_one_else_a_question() {
+        use Vendor::{Claude, Codex, Gemini};
+        let both = [Claude, Codex];
+        // The flag wins, even over a primary vendor, even when not here.
+        assert_eq!(
+            choose_lead(Some(Lead::Vendor(Gemini)), Some(Claude), &both),
+            Some(Gemini)
+        );
+        // The primary vendor answers when it is here.
+        assert_eq!(choose_lead(None, Some(Codex), &both), Some(Codex));
+        // Not here: a question, like no primary at all.
+        assert_eq!(choose_lead(None, Some(Gemini), &both), None);
+        assert_eq!(choose_lead(None, None, &both), None);
+        // One candidate is no question, whatever the primary.
+        assert_eq!(choose_lead(None, Some(Gemini), &[Codex]), Some(Codex));
+        assert_eq!(
+            choose_lead(Some(Lead::Ask), Some(Claude), &[Codex]),
+            Some(Codex)
+        );
+        // ask asks even with a primary vendor here.
+        assert_eq!(choose_lead(Some(Lead::Ask), Some(Claude), &both), None);
+        // Nobody here: no question; the team's error names what is missing.
+        assert_eq!(choose_lead(None, None, &[]), Some(Claude));
+        assert_eq!(choose_lead(None, Some(Codex), &[]), Some(Codex));
+        assert_eq!(choose_lead(Some(Lead::Ask), None, &[]), Some(Claude));
+    }
+
+    #[test]
+    fn the_cap_on_helpers_is_zero_to_eight_with_two_unless_said() {
+        assert_eq!(args(&[], &[]).unwrap().helpers, DEFAULT_HELPERS);
+        assert_eq!(DEFAULT_HELPERS, 2);
+        assert_eq!(args(&["--helpers", "0"], &[]).unwrap().helpers, 0);
+        assert_eq!(args(&["--helpers", "8"], &[]).unwrap().helpers, 8);
+        let e = args(&["--helpers", "9"], &[]).unwrap_err();
+        assert!(e.contains("0-8"), "{e}");
+        assert!(USAGE.contains("--helpers N"));
     }
 
     #[test]
@@ -423,14 +573,18 @@ mod tests {
 
     #[test]
     fn the_leader_s_vendor_is_one_imece_knows() {
-        assert_eq!(args(&["--lead", "codex"], &[]).unwrap().lead, Vendor::Codex);
+        assert_eq!(
+            args(&["--lead", "codex"], &[]).unwrap().lead,
+            Some(Lead::Vendor(Vendor::Codex))
+        );
         assert_eq!(
             args(&["--lead", "gemini"], &[]).unwrap().lead,
-            Vendor::Gemini
+            Some(Lead::Vendor(Vendor::Gemini))
         );
+        assert_eq!(args(&["--lead", "ask"], &[]).unwrap().lead, Some(Lead::Ask));
         let e = args(&["--lead", "qwen"], &[]).unwrap_err();
         assert!(
-            e.contains("--lead") && e.contains("claude, codex or gemini"),
+            e.contains("--lead") && e.contains("claude, codex, gemini or ask"),
             "{e}"
         );
     }

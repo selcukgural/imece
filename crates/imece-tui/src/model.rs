@@ -70,6 +70,9 @@ impl Vendor {
 pub enum Role {
     Leader,
     Worker,
+    /// A worker's own helper: hired by the worker for a part of its task,
+    /// working in the worker's worktree, gone when it sends done.
+    Helper,
     Researcher,
 }
 
@@ -247,6 +250,8 @@ pub struct Agent {
     pub role: Role,
     pub status: Status,
     pub card: Option<CardId>,
+    /// The worker a helper works for.
+    pub parent: Option<AgentId>,
     pub progress: u8,
     pub cost: u64,
     pub taint: Taint,
@@ -283,6 +288,7 @@ impl Agent {
             role,
             status,
             card: None,
+            parent: None,
             progress: 0,
             cost: 0,
             taint: Taint::Clean,
@@ -555,6 +561,10 @@ pub enum Event {
         agent: AgentId,
         model: Option<String>,
     },
+    /// A helper sent done to its worker and left.
+    Left {
+        agent: AgentId,
+    },
     /// A live agent's model was not available here; it runs on the
     /// vendor's default from now on.
     Fallback {
@@ -587,7 +597,10 @@ pub enum EntryKind {
 impl Event {
     pub fn kind(&self) -> EntryKind {
         match self {
-            Event::Plan { .. } | Event::Posted { .. } | Event::Hired { .. } => EntryKind::Plan,
+            Event::Plan { .. }
+            | Event::Posted { .. }
+            | Event::Hired { .. }
+            | Event::Left { .. } => EntryKind::Plan,
             Event::Assign { .. } | Event::Claimed { .. } => EntryKind::Assign,
             Event::Talk { .. } | Event::Replied { .. } | Event::Sent { .. } => EntryKind::Talk,
             Event::Assumption { .. } | Event::Fallback { .. } => EntryKind::Assumption,
@@ -623,6 +636,7 @@ impl Event {
             | Event::Posted { agent, .. }
             | Event::Claimed { agent, .. }
             | Event::Hired { agent, .. }
+            | Event::Left { agent }
             | Event::Fallback { agent, .. } => agent,
             Event::Talk { from, .. } | Event::Sent { from, .. } => from,
             Event::ResearchOpened { researcher, .. }
@@ -711,6 +725,13 @@ impl World {
             .iter()
             .filter(|a| !a.gone && a.status != Status::Idle)
             .count()
+    }
+
+    /// The helpers worker `id` has right now.
+    pub fn helpers_of(&self, id: AgentId) -> impl Iterator<Item = &Agent> {
+        self.agents
+            .iter()
+            .filter(move |a| a.role == Role::Helper && a.parent == Some(id) && !a.gone)
     }
 
     pub fn active_researchers(&self) -> usize {

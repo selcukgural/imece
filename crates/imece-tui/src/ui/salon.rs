@@ -1,6 +1,9 @@
 //! The default view: every project as a group that folds (its leader,
-//! workers and their researchers), who talks to whom right now, what waits
-//! for the person, and the journal of meaningful events.
+//! workers and their helpers and researchers; a worker's helpers fold
+//! too), who talks to whom right now, what waits for the person, and the
+//! journal of meaningful events.
+
+use std::collections::BTreeSet;
 
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout, Rect};
@@ -25,12 +28,18 @@ pub enum Row {
     Folded(usize),
 }
 
-/// The salon's rows for `capacity` lines. A folded project is one line. In
-/// an open project, workers that need the person come first; the rest keep
-/// their order so the screen does not jump. When the rows do not fit, calm
-/// workers (working or idle, not talking, nothing new) fold into one line per
-/// project.
-pub fn rows(w: &World, collapsed: &[bool], selected: Sel, capacity: usize) -> Vec<Row> {
+/// The salon's rows for `capacity` lines. A folded project is one line; a
+/// worker in `folded_workers` shows no helpers. In an open project, workers
+/// that need the person come first; the rest keep their order so the screen
+/// does not jump. When the rows do not fit, calm workers (working or idle,
+/// not talking, nothing new) fold into one line per project.
+pub fn rows(
+    w: &World,
+    collapsed: &[bool],
+    folded_workers: &BTreeSet<AgentId>,
+    selected: Sel,
+    capacity: usize,
+) -> Vec<Row> {
     let t = w.tick;
     let researcher_of = |a: &Agent| {
         w.agents.iter().find(|r| {
@@ -39,8 +48,17 @@ pub fn rows(w: &World, collapsed: &[bool], selected: Sel, capacity: usize) -> Ve
                 && matches!(r.status, Status::Researching { for_agent, .. } if for_agent == a.id)
         })
     };
-    let lines =
-        |a: &Agent| 1 + usize::from(a.talk.is_some()) + usize::from(researcher_of(a).is_some());
+    let helpers_of = |a: &Agent| -> Vec<AgentId> {
+        if folded_workers.contains(&a.id) {
+            return Vec::new();
+        }
+        w.helpers_of(a.id).map(|h| h.id).collect()
+    };
+    let lines = |a: &Agent| {
+        1 + usize::from(a.talk.is_some())
+            + usize::from(researcher_of(a).is_some())
+            + helpers_of(a).len()
+    };
     let calm = |a: &Agent| {
         matches!(a.status, Status::Working | Status::Idle)
             && a.talk.is_none()
@@ -123,6 +141,9 @@ pub fn rows(w: &World, collapsed: &[bool], selected: Sel, capacity: usize) -> Ve
         }
         for a in order[p.id].iter().filter(|a| !folded[a.id]) {
             out.push(Row::Agent { id: a.id, depth: 2 });
+            for h in helpers_of(a) {
+                out.push(Row::Agent { id: h, depth: 3 });
+            }
             if let Some(r) = researcher_of(a) {
                 out.push(Row::Agent { id: r.id, depth: 3 });
             }
@@ -169,7 +190,13 @@ fn salon(f: &mut Frame, area: Rect, app: &App) {
     f.render_widget(block, area);
     let [list, queue] = Layout::vertical([Constraint::Min(0), Constraint::Length(1)]).areas(inner);
 
-    let rows = rows(w, &app.collapsed, app.selected, usize::from(list.height));
+    let rows = rows(
+        w,
+        &app.collapsed,
+        &app.folded_workers,
+        app.selected,
+        usize::from(list.height),
+    );
     *app.shown.borrow_mut() = rows
         .iter()
         .filter_map(|r| match r {
@@ -206,10 +233,15 @@ fn salon(f: &mut Frame, area: Rect, app: &App) {
                         if last[i] { "  └ " } else { "  ├ " }
                     }
                     _ => {
-                        if under_last {
-                            "    └ "
-                        } else {
-                            "  │ └ "
+                        // The last branch under its worker closes it.
+                        let last3 = rows
+                            .get(i + 1)
+                            .is_none_or(|r| !matches!(r, Row::Agent { depth: 3, .. }));
+                        match (under_last, last3) {
+                            (true, true) => "    └ ",
+                            (true, false) => "    ├ ",
+                            (false, true) => "  │ └ ",
+                            (false, false) => "  │ ├ ",
                         }
                     }
                 };
@@ -258,7 +290,7 @@ fn project_line(app: &App, p: ProjectId) -> Line<'static> {
         .agents
         .iter()
         .filter(in_project)
-        .filter(|a| a.role == Role::Worker && a.status != Status::Idle)
+        .filter(|a| matches!(a.role, Role::Worker | Role::Helper) && a.status != Status::Idle)
         .count();
     let cost: u64 = w.agents.iter().filter(in_project).map(|a| a.cost).sum();
     let waiting = w
@@ -326,6 +358,7 @@ fn agent_line(app: &App, a: &Agent, prefix: &'static str) -> Line<'static> {
             dim(),
         )),
         Role::Researcher => {}
+        Role::Helper => spans.push(Span::raw(" ".repeat(27))),
         Role::Worker => {
             let card = match a.card {
                 Some(c) => format!(" #{:<3} {}", c + 1, fit(&w.cards[c].title, 21)),
@@ -338,6 +371,22 @@ fn agent_line(app: &App, a: &Agent, prefix: &'static str) -> Line<'static> {
     spans.extend(status_spans(app.lang, w, a));
     if a.cost > 0 {
         spans.push(Span::styled(format!("  {}", dollars(a.cost)), dim()));
+    }
+    let helpers = w.helpers_of(a.id).count();
+    if helpers > 0 {
+        // Its helpers are under it, or folded away: the mark says which.
+        let mark = if app.folded_workers.contains(&a.id) {
+            "▸"
+        } else {
+            "▾"
+        };
+        spans.push(Span::styled(
+            format!(
+                "  {mark} {}",
+                fill(app.lang.text().helpers, &[&helpers.to_string()])
+            ),
+            dim(),
+        ));
     }
 
     let line = Line::from(spans);

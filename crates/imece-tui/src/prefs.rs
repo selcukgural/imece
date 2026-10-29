@@ -1,5 +1,6 @@
-//! What imece remembers between runs: where it keeps its state, and the
-//! screen choices the person made (for now the side panel's width).
+//! What imece remembers between runs: where it keeps its state, the
+//! screen choices the person made (the side panel's width, the theme) and
+//! their primary vendor, the one that leads without asking.
 
 use std::fs;
 use std::io;
@@ -25,6 +26,8 @@ pub const SIDE_MAX: u16 = 70;
 pub struct Prefs {
     pub side: Option<u16>,
     pub theme: Option<String>,
+    /// The vendor that leads without being asked for (`claude`).
+    pub lead: Option<String>,
 }
 
 fn file(dir: &Path) -> PathBuf {
@@ -44,14 +47,19 @@ pub fn load(dir: &Path) -> Prefs {
             .and_then(|v| v.parse().ok())
             .filter(|v| (SIDE_MIN..=SIDE_MAX).contains(v)),
         theme: value("theme=").filter(|t| t.chars().all(|c| c.is_ascii_lowercase())),
+        lead: value("lead=").filter(|t| !t.is_empty() && t.chars().all(|c| c.is_ascii_lowercase())),
     }
 }
 
 /// Saves the choices in `dir`; a reader never sees half a file.
-pub fn save(dir: &Path, side: u16, theme: &str) -> io::Result<()> {
+pub fn save(dir: &Path, side: u16, theme: &str, lead: Option<&str>) -> io::Result<()> {
     fs::create_dir_all(dir)?;
     let tmp = dir.join("screen.tmp");
-    fs::write(&tmp, format!("side={side}\ntheme={theme}\n"))?;
+    let mut text = format!("side={side}\ntheme={theme}\n");
+    if let Some(lead) = lead {
+        text.push_str(&format!("lead={lead}\n"));
+    }
+    fs::write(&tmp, text)?;
     fs::rename(tmp, file(dir))
 }
 
@@ -64,15 +72,20 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("imece-prefs-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         assert_eq!(load(&dir), Prefs::default());
-        save(&dir, 46, "light").unwrap();
+        save(&dir, 46, "light", None).unwrap();
         assert_eq!(
             load(&dir),
             Prefs {
                 side: Some(46),
-                theme: Some("light".into())
+                theme: Some("light".into()),
+                lead: None,
             }
         );
-        fs::write(file(&dir), "side=99\ntheme=Neon 1\n").unwrap();
+        save(&dir, 46, "light", Some("claude")).unwrap();
+        assert_eq!(load(&dir).lead.as_deref(), Some("claude"));
+        save(&dir, 46, "light", None).unwrap();
+        assert_eq!(load(&dir).lead, None, "forgotten when saved without");
+        fs::write(file(&dir), "side=99\ntheme=Neon 1\nlead=Claude Code\n").unwrap();
         assert_eq!(load(&dir), Prefs::default(), "out of range, not a name");
         fs::write(file(&dir), "side=x\n").unwrap();
         assert_eq!(load(&dir), Prefs::default());
