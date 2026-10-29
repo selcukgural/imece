@@ -4,6 +4,7 @@
 //! scenario.
 
 use std::collections::VecDeque;
+use std::path::Path;
 
 use crate::i18n::Lang;
 use crate::model::*;
@@ -363,7 +364,6 @@ pub fn world(
             closed: false,
         });
     }
-    let mut counts = [0usize; 5];
     for i in 0..workers {
         // Every project gets a worker first; the rest are spread at random.
         let project = if i < projects {
@@ -371,27 +371,7 @@ pub fn world(
         } else {
             sim.rng.below(projects as u64) as usize
         };
-        let v = *sim.rng.pick(&[
-            Vendor::Claude,
-            Vendor::Claude,
-            Vendor::Codex,
-            Vendor::Codex,
-            Vendor::Gemini,
-            Vendor::Qwen,
-            Vendor::Local,
-        ]);
-        counts[v as usize] += 1;
-        let id = w.agents.len();
-        let name = format!("{}-{}", v.label(), counts[v as usize]);
-        w.agents.push(Agent::new(
-            id,
-            project,
-            name,
-            v,
-            Role::Worker,
-            Status::Idle,
-            0,
-        ));
+        sim.hire(&mut w, project);
     }
     for p in 0..projects {
         let n = w
@@ -449,7 +429,9 @@ impl Sim {
             }
         }
         for p in 0..w.projects.len() {
-            self.leader(w, p);
+            if !w.projects[p].closed {
+                self.leader(w, p);
+            }
         }
         // Researchers spawned during this tick start on the next one.
         for id in 0..w.agents.len() {
@@ -462,6 +444,109 @@ impl Sim {
                 Role::Leader | Role::Helper => {}
             }
         }
+    }
+
+    /// A worker of a random vendor joins `project`, named `<vendor>-N`
+    /// with the next free N, idle.
+    fn hire(&mut self, w: &mut World, project: ProjectId) -> AgentId {
+        let v = *self.rng.pick(&[
+            Vendor::Claude,
+            Vendor::Claude,
+            Vendor::Codex,
+            Vendor::Codex,
+            Vendor::Gemini,
+            Vendor::Qwen,
+            Vendor::Local,
+        ]);
+        let so_far = w
+            .agents
+            .iter()
+            .filter(|a| a.vendor == v && a.role == Role::Worker && !a.gone)
+            .count();
+        let name = (so_far + 1..)
+            .map(|n| format!("{}-{n}", v.label()))
+            .find(|name| w.agent_by_name(name).is_none())
+            .expect("some number is free");
+        let id = w.agents.len();
+        w.agents.push(Agent::new(
+            id,
+            project,
+            name,
+            v,
+            Role::Worker,
+            Status::Idle,
+            w.tick,
+        ));
+        id
+    }
+
+    /// `:open PATH [NAME]` in the demo: a fake project named `name` (else
+    /// after the last part of `path`), with a leader, two workers and
+    /// three cards; a closed project of that name opens again in place.
+    pub fn open_project(
+        &mut self,
+        w: &mut World,
+        path: &str,
+        name: Option<&str>,
+    ) -> Result<ProjectId, ProjectRefusal> {
+        let name = match name {
+            Some(n) if !valid_project_name(n) => {
+                return Err(ProjectRefusal::BadName(n.to_string()));
+            }
+            Some(n) => n.to_string(),
+            None => project_name_of(Path::new(path)),
+        };
+        if w.project_by_name(&name).is_some() {
+            return Err(ProjectRefusal::NameTaken(name));
+        }
+        let reuse = w
+            .projects
+            .iter()
+            .find(|q| q.closed && q.name == name)
+            .map(|q| q.id);
+        let p = w.open_project(reuse, name, path.to_string(), Vendor::Claude);
+        if reuse.is_none() {
+            w.projects[p].repo = PROJECTS[p % PROJECTS.len()].1;
+            w.projects[p].trunk = Some(140 + 37 * p as u32);
+        }
+        for _ in 0..2 {
+            self.hire(w, p);
+        }
+        for _ in 0..3 {
+            let title = (*self.rng.pick(self.content.titles)).to_string();
+            self.new_card(w, p, title);
+        }
+        Ok(p)
+    }
+
+    /// `:close` in the demo: the project's agents leave and its plans and
+    /// research requests go; the last open project stays.
+    pub fn close_project(&mut self, w: &mut World, p: ProjectId) -> Result<(), ProjectRefusal> {
+        if w.open_projects().count() <= 1 {
+            return Err(ProjectRefusal::Last);
+        }
+        w.plans.retain(|plan| plan.project != p);
+        let agents = &w.agents;
+        w.research_queue.retain(|&id| agents[id].project != p);
+        w.close_project(p);
+        Ok(())
+    }
+
+    /// `:rename` in the demo.
+    pub fn rename_project(
+        &mut self,
+        w: &mut World,
+        p: ProjectId,
+        name: &str,
+    ) -> Result<(), ProjectRefusal> {
+        if !valid_project_name(name) {
+            return Err(ProjectRefusal::BadName(name.to_string()));
+        }
+        if w.project_by_name(name).is_some_and(|q| q != p) {
+            return Err(ProjectRefusal::NameTaken(name.to_string()));
+        }
+        w.rename_project(p, name.to_string());
+        Ok(())
     }
 
     fn new_card(&mut self, w: &mut World, project: ProjectId, title: String) -> CardId {
@@ -1097,5 +1182,184 @@ mod tests {
             .find(|c| c.title == "Kargo takibi: testler")
             .expect("no card");
         assert_eq!(card.project, 1);
+    }
+
+    #[test]
+    fn the_demo_opens_a_project_with_a_lead_two_workers_and_cards_and_reopens_it_by_name() {
+        let (mut w, mut s) = world(1, 2, 4, 7, Lang::En);
+        assert_eq!(s.open_project(&mut w, "~/work/shop", None), Ok(1));
+        let p = &w.projects[1];
+        assert_eq!(
+            (p.name.as_str(), p.trunk, p.closed),
+            ("shop", Some(177), false)
+        );
+        assert_eq!(p.repo, PROJECTS[1].1, "a code map of its own");
+        assert_eq!(w.agents[p.leader].name, "lead-shop");
+        let workers: Vec<&Agent> = w
+            .agents
+            .iter()
+            .filter(|a| a.project == 1 && a.role == Role::Worker)
+            .collect();
+        assert_eq!(workers.len(), 2);
+        assert!(workers.iter().all(|a| a.status == Status::Idle && !a.gone));
+        let mut names: Vec<&str> = w.agents.iter().map(|a| a.name.as_str()).collect();
+        let n = names.len();
+        names.sort_unstable();
+        names.dedup();
+        assert_eq!(names.len(), n, "names are unique");
+        assert_eq!(w.cards.iter().filter(|c| c.project == 1).count(), 3);
+        assert!(matches!(
+            &w.journal.last().unwrap().event,
+            Event::Opened { leader, path } if *leader == w.projects[1].leader && path == "~/work/shop"
+        ));
+        assert_eq!(s.open_project(&mut w, "/x", Some("api")), Ok(2));
+        assert_eq!(w.projects[2].repo, PROJECTS[2].1);
+        assert_eq!(w.projects[2].trunk, Some(214));
+        assert_eq!(
+            s.open_project(&mut w, "/y", Some("a b")),
+            Err(ProjectRefusal::BadName("a b".into()))
+        );
+        assert_eq!(
+            s.open_project(&mut w, "/y", Some("shop")),
+            Err(ProjectRefusal::NameTaken("shop".into()))
+        );
+        assert_eq!(
+            s.open_project(&mut w, "/y/shop", None),
+            Err(ProjectRefusal::NameTaken("shop".into())),
+            "named after the path's last part"
+        );
+        assert_eq!(w.projects.len(), 3);
+
+        // Work goes on in it.
+        run(&mut w, &mut s, 100, true);
+        assert!(
+            w.agents
+                .iter()
+                .any(|a| a.project == 1 && a.role == Role::Worker && a.cost > 0)
+        );
+        // Closed: its people leave, its plans and research requests go,
+        // nothing of it moves while the rest goes on.
+        let lead = w.projects[1].leader;
+        s.told(&mut w, lead, "add a thing");
+        let worker = workers_of(&w, 1)[0];
+        let other = workers_of(&w, 0)[0];
+        w.research_queue.push_back(worker);
+        w.research_queue.push_back(other);
+        assert_eq!(s.close_project(&mut w, 1), Ok(()));
+        assert!(w.projects[1].closed);
+        assert!(w.agents.iter().filter(|a| a.project == 1).all(|a| a.gone));
+        assert!(w.plans.iter().all(|p| p.project != 1));
+        assert_eq!(w.research_queue, [other]);
+        let costs: Vec<u64> = w
+            .agents
+            .iter()
+            .filter(|a| a.project == 1)
+            .map(|a| a.cost)
+            .collect();
+        let cards = w.cards.iter().filter(|c| c.project == 1).count();
+        run(&mut w, &mut s, 100, true);
+        let after: Vec<u64> = w
+            .agents
+            .iter()
+            .filter(|a| a.project == 1)
+            .map(|a| a.cost)
+            .collect();
+        assert_eq!(after, costs, "nobody of a closed project works");
+        assert_eq!(
+            w.cards.iter().filter(|c| c.project == 1).count(),
+            cards,
+            "no new cards for a closed project"
+        );
+        assert!(w.projects[0].closed || w.agents.iter().any(|a| a.project == 0 && a.cost > 0));
+
+        // Opened again by name, in place: a new lead, new workers, same code map.
+        assert_eq!(s.open_project(&mut w, "/z", Some("shop")), Ok(1));
+        assert_eq!(w.projects.len(), 3);
+        assert_ne!(w.projects[1].leader, lead);
+        assert!(w.agents[lead].gone, "the old lead stays gone");
+        assert_eq!(w.projects[1].repo, PROJECTS[1].1);
+        assert_eq!(workers_of(&w, 1).len(), 2);
+    }
+
+    fn workers_of(w: &World, p: ProjectId) -> Vec<AgentId> {
+        w.agents
+            .iter()
+            .filter(|a| a.project == p && a.role == Role::Worker && !a.gone)
+            .map(|a| a.id)
+            .collect()
+    }
+
+    #[test]
+    fn the_demo_keeps_its_last_project_and_renames_one() {
+        let (mut w, mut s) = world(1, 2, 4, 7, Lang::En);
+        assert_eq!(s.close_project(&mut w, 0), Err(ProjectRefusal::Last));
+        assert!(!w.projects[0].closed);
+        s.open_project(&mut w, "/x", Some("api")).unwrap();
+        assert_eq!(
+            s.rename_project(&mut w, 1, "a b"),
+            Err(ProjectRefusal::BadName("a b".into()))
+        );
+        assert_eq!(
+            s.rename_project(&mut w, 1, "shop-api"),
+            Err(ProjectRefusal::NameTaken("shop-api".into()))
+        );
+        assert_eq!(w.projects[1].name, "api", "refused: unchanged");
+        assert_eq!(s.rename_project(&mut w, 1, "api"), Ok(()), "its own name");
+        assert_eq!(s.rename_project(&mut w, 1, "store"), Ok(()));
+        assert_eq!(w.projects[1].name, "store");
+        assert_eq!(w.agents[w.projects[1].leader].name, "lead-store");
+        assert_eq!(s.close_project(&mut w, 0), Ok(()));
+        assert_eq!(s.close_project(&mut w, 1), Err(ProjectRefusal::Last));
+        assert!(!w.projects[1].closed);
+        // A closed project is reused for its own name only: another name
+        // is a new project.
+        assert_eq!(s.open_project(&mut w, "/n", Some("new")), Ok(2));
+        assert_eq!(w.projects.len(), 3);
+        assert!(w.projects[0].closed, "not reused for another name");
+    }
+
+    #[test]
+    fn a_hired_worker_takes_the_next_free_number_of_its_vendor() {
+        let (mut w, mut s) = world(1, 0, 4, 7, Lang::En);
+        // Only workers count: the lead is a Claude too, and the first
+        // Claude worker is still claude-1.
+        assert_eq!(w.agents[0].vendor, Vendor::Claude);
+        let mut claude = None;
+        for _ in 0..64 {
+            let id = s.hire(&mut w, 0);
+            if w.agents[id].vendor == Vendor::Claude {
+                claude = Some(id);
+                break;
+            }
+        }
+        assert_eq!(w.agents[claude.expect("a claude")].name, "claude-1");
+        let (mut w, mut s) = world(1, 0, 4, 7, Lang::En);
+        let first = s.hire(&mut w, 0);
+        let v = w.agents[first].vendor;
+        assert_eq!(w.agents[first].name, format!("{}-1", v.label()));
+        assert_eq!(w.agents[first].project, 0);
+        w.agents[first].gone = true;
+        // The number of one that left is free again; a bounded search for
+        // the same vendor (the pick is random).
+        let mut same = None;
+        for _ in 0..64 {
+            let id = s.hire(&mut w, 0);
+            if w.agents[id].vendor == v {
+                same = Some(id);
+                break;
+            }
+        }
+        let same = same.expect("the vendor comes up again");
+        assert_eq!(w.agents[same].name, format!("{}-1", v.label()));
+        let mut again = None;
+        for _ in 0..64 {
+            let id = s.hire(&mut w, 0);
+            if w.agents[id].vendor == v {
+                again = Some(id);
+                break;
+            }
+        }
+        let again = again.expect("and again");
+        assert_eq!(w.agents[again].name, format!("{}-2", v.label()));
     }
 }

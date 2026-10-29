@@ -449,7 +449,15 @@ and owned here from then on:
   agent so a closed project's runs die alone; a leader's prompt lists only
   its own project's workers (was every worker); `offer` skips gone
   workers; `App::current_project` falls back to the first open project
-  when a journal line leads to a closed one; the demo refuses all three.
+  when a journal line leads to a closed one. The demo has the same three
+  commands (user, 2026-10-30): `:open PATH [NAME]` adds a fake project
+  named NAME (else the path's last part), with a leader, two workers of
+  random vendors and three cards, on one of the sim's four code maps; a
+  closed project of that name opens again in place; `:close` sends its
+  agents away and drops its plans and research requests (the sim's step
+  skips closed projects); `:rename` as in live. `ProjectRefusal`,
+  `valid_project_name` and `project_name_of` live in model.rs for both
+  engines.
   Completion: `:close ` offers open project names, `:open ` completes
   DIRECTORIES from the filesystem (`complete::dirs`, hidden ones only
   after a `.`, `~` = `App.home`, tail `/`); `:close` + enter with a
