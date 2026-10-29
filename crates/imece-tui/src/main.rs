@@ -39,7 +39,7 @@ its own git worktree.
   --model NAME      the model every agent runs on (default: the vendor's own)
   --tier T=NAME     the model a tier stands for, T being cheap, standard or
                     strong (claude: haiku, the vendor's own, opus)
-  --budget USD      the most all agents together may spend (default 5)
+  --budget USD      the most all agents together may spend (default 50)
   --lang en|tr      the screen's language (default en, or IMECE_LANG)
   --theme NAME      dark (default), light or mono; or IMECE_THEME; the last
                     choice made with T is remembered
@@ -123,7 +123,7 @@ fn parse(
         lead: Vendor::Claude,
         model: None,
         tiers: Vec::new(),
-        budget: 5 * 10_000,
+        budget: 50 * 10_000,
     };
     // Options of the demo alone, to refuse them without it.
     let mut demo_only: Vec<String> = Vec::new();
@@ -393,7 +393,7 @@ mod tests {
         assert_eq!(a.lead, Vendor::Claude);
         assert_eq!(a.model, None);
         assert!(a.tiers.is_empty());
-        assert_eq!(a.budget, 50_000);
+        assert_eq!(a.budget, 500_000);
         assert_eq!(a.repo, PathBuf::from("."));
         // The old way of asking for live agents still works.
         assert!(!args(&["--live"], &[]).unwrap().demo);

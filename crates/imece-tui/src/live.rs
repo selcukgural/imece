@@ -8,11 +8,10 @@
 //! tiers to its models. A worker whose tier model turns out not to be
 //! available here is restarted once on the vendor's default.
 //!
-//! Money is reserved up front: the budget is split into equal shares, one
-//! per place in the team (the leader and every worker that may be hired),
-//! and a share is the session's hard cap (`--max-budget-usd`), so all of
-//! them together can never spend more than the budget. An agent that spent
-//! its share is not prompted again.
+//! Money is one pot for the whole team: once what all agents spent reaches
+//! the budget, nobody is prompted again. Each session also gets what was
+//! left of the budget when it started as its hard cap (`--max-budget-usd`),
+//! so a session that runs away on its own can never pass the budget either.
 //!
 //! Agents message each other through imece's `send` tool (an MCP server,
 //! one socket per agent, so the sender is the socket, never a claim). A
@@ -114,12 +113,6 @@ impl Hireable {
             ladder,
         }
     }
-}
-
-/// Each agent's share of `budget`: one share per place in the team, the
-/// leader and every one of the `max_workers` that may be hired.
-fn share(budget: u64, max_workers: usize) -> u64 {
-    budget / (max_workers as u64 + 1)
 }
 
 /// Whether `program` runs from `repo` with a cleared environment.
@@ -266,8 +259,6 @@ pub struct Live {
     /// The prompts each agent was given and has not finished, to give
     /// again after a fallback.
     inflight: Vec<Vec<String>>,
-    /// Each agent's share of the budget, in ten-thousandths of a dollar.
-    share: u64,
     bus: Option<Bus>,
     calls_tx: Sender<Call>,
     calls_rx: Receiver<Call>,
@@ -336,7 +327,7 @@ pub fn world(o: Options) -> Result<(World, Live), String> {
         plans: Vec::new(),
     };
     start_clock_at(local_seconds_after_midnight());
-    let mut live = Live::new(1, vendors, repo, root, share(o.budget, o.max_workers));
+    let mut live = Live::new(1, vendors, repo, root);
     live.max_workers = o.max_workers;
     live.models[0] = live.of(o.lead).ladder.standard.clone();
     let relay = std::env::current_exe().map_err(|e| format!("imece's own path: {e}"))?;
@@ -348,13 +339,7 @@ pub fn world(o: Options) -> Result<(World, Live), String> {
 impl Live {
     /// `agents` places to begin with, all on their vendor's default model.
     /// `vendors` must hold every vendor an agent has.
-    fn new(
-        agents: usize,
-        vendors: Vec<Hireable>,
-        repo: PathBuf,
-        root: PathBuf,
-        share: u64,
-    ) -> Live {
+    fn new(agents: usize, vendors: Vec<Hireable>, repo: PathBuf, root: PathBuf) -> Live {
         let (tx, rx) = mpsc::channel();
         let (ready_tx, ready_rx) = mpsc::channel();
         let (calls_tx, calls_rx) = mpsc::channel();
@@ -375,7 +360,6 @@ impl Live {
             tiered: Vec::new(),
             turned: Vec::new(),
             inflight: Vec::new(),
-            share,
             bus: None,
             calls_tx,
             calls_rx,
@@ -722,8 +706,8 @@ impl Live {
                 "{name} has stopped; it runs again when the person talks to it"
             ));
         }
-        if kind.wakes() && self.over_budget(w, to) {
-            return Err(format!("{name} has spent its share of the budget"));
+        if kind.wakes() && self.over_budget(w) {
+            return Err("the budget is spent; nobody takes new turns".into());
         }
         if kind.wakes() && self.woken[to] >= MAX_WOKEN {
             return Err(format!(
@@ -959,7 +943,7 @@ impl Live {
                 || a.status == Status::Stopped
                 || self.turns[id] > 0
                 || self.woken[id] >= MAX_WOKEN
-                || self.over_budget(w, id)
+                || self.over_budget(w)
             {
                 continue;
             }
@@ -991,7 +975,7 @@ impl Live {
 
     /// Starts agent `id`'s next turn with all its mail.
     fn deliver(&mut self, w: &mut World, id: AgentId) {
-        if self.over_budget(w, id) {
+        if self.over_budget(w) {
             return;
         }
         let mail = std::mem::take(&mut self.mail[id]);
@@ -1010,8 +994,9 @@ impl Live {
         }
     }
 
-    fn over_budget(&self, w: &World, id: AgentId) -> bool {
-        w.agents[id].cost >= self.share || w.spent() >= w.daily_budget
+    /// Whether the team as a whole has spent the budget.
+    fn over_budget(&self, w: &World) -> bool {
+        w.spent() >= w.daily_budget
     }
 
     fn ready(&mut self, w: &mut World, id: AgentId, ready: Ready) {
@@ -1046,7 +1031,7 @@ impl Live {
     /// Gives agent `id` the person's message, starting its session first
     /// if it has none. An idle worker gets a new card for it.
     pub fn told(&mut self, w: &mut World, id: AgentId, text: &str) -> Result<(), Refusal> {
-        if self.over_budget(w, id) {
+        if self.over_budget(w) {
             return Err(Refusal::Budget);
         }
         // The person is here again: agents may wake each other anew.
@@ -1128,8 +1113,8 @@ impl Live {
             name: format!("imece {}", a.name),
             tools: tools.iter().map(|t| t.to_string()).collect(),
             model: self.models[id].clone(),
-            // In millionths of a dollar: what is left of the agent's share.
-            budget: self.share.saturating_sub(a.cost) * 100,
+            // In millionths of a dollar: what is left of the budget.
+            budget: w.daily_budget.saturating_sub(w.spent()) * 100,
             system: system_prompt(w, id, self.max_workers),
             mcp: self.bus.as_ref().map(|b| Mcp {
                 command: b.relay.clone(),
@@ -1652,22 +1637,27 @@ mod tests {
     }
 
     #[test]
-    fn an_agent_over_its_share_is_not_prompted() {
+    fn nobody_is_prompted_once_the_team_has_spent_the_budget() {
         let mut w = team(1);
         let mut live = Live::new(
             2,
-            // Never runs: the budget check comes first.
+            // Never runs while the budget check refuses first.
             claude_at("/nonexistent/claude"),
             PathBuf::from("/nonexistent"),
             PathBuf::from("/nonexistent"),
-            100,
         );
-        w.agents[1].cost = 100;
-        assert_eq!(live.told(&mut w, 1, "go"), Err(Refusal::Budget));
-        w.agents[1].cost = 0;
+        // The pot is shared: what the leader spent counts against the worker.
         w.agents[0].cost = w.daily_budget;
         assert_eq!(live.told(&mut w, 1, "go"), Err(Refusal::Budget));
+        w.agents[0].cost = 6_000;
+        w.agents[1].cost = w.daily_budget - 6_000;
+        assert_eq!(live.told(&mut w, 1, "go"), Err(Refusal::Budget));
         assert!(w.cards.is_empty());
+        // One ten-thousandth under, and the worker is prompted: its turn
+        // is counted and its session is started (off this thread).
+        w.agents[1].cost -= 1;
+        assert_eq!(live.told(&mut w, 1, "go"), Ok(()));
+        assert_eq!(live.turns[1], 1);
     }
 
     #[test]
@@ -1678,7 +1668,6 @@ mod tests {
             claude_at("/nonexistent/claude"),
             std::env::temp_dir(),
             PathBuf::from("/nonexistent"),
-            5_000,
         );
         live.told(&mut w, 0, "first").unwrap();
         // The message waits while the session starts on its own thread.
@@ -1702,7 +1691,6 @@ mod tests {
             claude_at("/nonexistent/claude"),
             std::env::temp_dir(),
             PathBuf::from("/nonexistent"),
-            5_000,
         )
     }
 
@@ -1905,10 +1893,10 @@ mod tests {
     }
 
     #[test]
-    fn an_agent_over_its_share_gets_no_waking_mail() {
+    fn nobody_gets_waking_mail_once_the_budget_is_spent() {
         let mut w = team(1);
         let mut live = idle_live(2);
-        w.agents[0].cost = 5_000;
+        w.agents[0].cost = w.daily_budget;
         assert!(
             live.send(&mut w, 1, &msg("lead", "done", "x"))
                 .unwrap_err()
@@ -2632,13 +2620,6 @@ in p.rs",
     }
 
     #[test]
-    fn the_budget_has_one_share_per_place_in_the_team() {
-        assert_eq!(share(50_000, 4), 10_000);
-        assert_eq!(share(50_000, 0), 50_000);
-        assert_eq!(share(10_000, 2), 3_333);
-    }
-
-    #[test]
     fn hire_reaches_the_bus_through_the_call_channel() {
         let mut w = team(0);
         let mut live = idle_live(1);
@@ -2697,7 +2678,7 @@ in p.rs",
     }
 
     #[test]
-    fn a_session_starts_with_the_agent_s_model_share_and_prompt() {
+    fn a_session_starts_with_the_agent_s_model_what_is_left_of_the_budget_and_prompt() {
         let dir = std::env::temp_dir().join(format!("imece-start-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
@@ -2707,7 +2688,6 @@ in p.rs",
             claude_at(&fake_claude(&dir)),
             dir.clone(),
             dir.join("worktrees"),
-            5_000,
         );
         live.max_workers = 3;
         live.models[0] = Some("sonnet".into());
@@ -2719,8 +2699,8 @@ in p.rs",
         let args: Vec<&str> = args.lines().collect();
         let after = |f: &str| args[args.iter().position(|a| *a == f).unwrap() + 1];
         assert_eq!(after("--model"), "sonnet");
-        // What is left of the share, in dollars: (5000 - 1000) ten-thousandths.
-        assert_eq!(after("--max-budget-usd"), "0.400000");
+        // What is left of the budget, in dollars: (10000 - 1000) ten-thousandths.
+        assert_eq!(after("--max-budget-usd"), "0.900000");
         assert_eq!(after("--tools"), "Glob,Grep,Read");
         assert_eq!(after("--name"), "imece lead");
         assert!(after("--append-system-prompt").contains("hire tool, up to 3;"));
@@ -2776,7 +2756,7 @@ in p.rs",
     #[test]
     fn a_late_event_of_an_ended_session_is_ignored() {
         let mut w = team(1);
-        let mut live = Live::new(2, claude_at("x"), PathBuf::new(), PathBuf::new(), 5_000);
+        let mut live = Live::new(2, claude_at("x"), PathBuf::new(), PathBuf::new());
         live.tx
             .send((1, 0, AgentEvent::Stopped("gone".into())))
             .unwrap();

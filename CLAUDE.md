@@ -73,8 +73,10 @@ and owned here from then on:
   server but imece's own, `--permission-prompts none`; the `init` event is
   checked every turn and a mismatch stops the session (fail closed). Leader: read tools, the
   checkout itself. Workers: edit tools, one detached worktree each under
-  `$XDG_STATE_HOME/imece/worktrees`, kept between runs. Budget split evenly
-  up front as each session's `--max-budget-usd`. Sessions start off the UI
+  `$XDG_STATE_HOME/imece/worktrees`, kept between runs. Budget (default
+  $50, user 2026-10-29) is one pot for the team: no turn once it is spent;
+  each session's `--max-budget-usd` is what was left when it started, a
+  last stop against a runaway session, not a share. Sessions start off the UI
   thread; events carry a session generation so late ones are dropped.
 - Message bus v0 (2026-10-28): one tool, `send(to, type, body)`, served by
   imece itself over MCP: one Unix socket per agent in a fresh 0700 temp
@@ -85,7 +87,7 @@ and owned here from then on:
   agent; waking types start the next turn when the agent has no prompt
   left, inform/progress/notice ride along. Caps: body 4000 chars, 20
   unread, 12 message-driven turns per agent until the person speaks again;
-  a stopped agent or one over its share gets no waking mail.
+  a stopped agent gets no waking mail, nobody does once the budget is spent.
 - Board v0 (2026-10-28): `post(title, body)` and `board()` for everyone,
   `claim(card)` for workers only (the leader's socket does not offer it).
   An open card is offered to one idle worker at a time as a turn of its
@@ -100,8 +102,9 @@ and owned here from then on:
   tool (leader's socket only) as the work needs them, `--agents` is the
   cap (0-16, default 4), the sim sits behind `--demo`. The person never
   picks a team size. Workers are named `<vendor>-N`; a socket is bound per
-  agent at hire time, before the agent exists. Budget share = budget /
-  (cap + 1). Models: the leader runs on its vendor's default (or
+  agent at hire time, before the agent exists. No budget share per agent
+  (dropped 2026-10-29: $5 / 5 places gave an Opus leader $1, less than one
+  task). Models: the leader runs on its vendor's default (or
   `--model`); the leader picks a TIER for a worker (cheap / standard /
   strong), never a model name; each vendor maps tiers to its models
   (Claude: haiku / default / opus), `--tier T=NAME` overrides. A tier model
