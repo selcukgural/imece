@@ -10,7 +10,7 @@ to each other, ask a capped pool of researchers, and lease the symbols they
 change so several of them can work in the same file.
 
 > Status: early. imece runs real Claude Code and Codex agents on one project
-> (a leader that hires workers and talks to you; a Gemini adapter is next),
+> (a leader that hires workers and talks to you),
 > or a seeded simulation with `--demo`.
 
 ## Run it
@@ -20,6 +20,7 @@ cd your/checkout
 cargo run -p imece-tui                       # or, once installed: imece
 cargo run -p imece-tui -- --agents 8 --budget 10 --model sonnet
 cargo run -p imece-tui -- --lead codex                   # Codex leads; it may still hire claude workers
+cargo run -p imece-tui -- --lead gemini --tier gemini:strong=gemini-2.5-pro
 ```
 
 You do not pick a team size. `lead` starts alone, reads the checkout (it
@@ -40,15 +41,16 @@ worktree is.
   tier, not a model: `cheap` for small mechanical work, `standard` (the
   default) for ordinary fixes, `strong` for cross-cutting design. Claude's
   tiers are haiku, its default, opus; Codex's are reasoning efforts on its
-  default model, `@low`, its default, `@high`. Change what a tier means
+  default model, `@low`, its default, `@high`; Gemini's are its own aliases
+  `flash`, its default (`auto`), `pro`. Change what a tier means
   with `--tier strong=opus[1m]` or `--tier codex:strong=gpt-5.6-terra@xhigh`
   (`MODEL@EFFORT`); without a vendor prefix, `--model` and `--tier` speak
   of the leader's vendor. A tier model your account does not have fails
   its first turn; imece then restarts that worker on the standard model
   and says so in the journal.
-- Vendors: imece looks for `claude`, `codex` and `gemini` on PATH. It
-  drives Claude Code and Codex today; `--lead` names the leader's vendor,
-  and the lead may hire workers from either (`hire` takes a vendor).
+- Vendors: imece looks for `claude`, `codex` and `gemini` on PATH and
+  drives all three; `--lead` names the leader's vendor, and the lead may
+  hire workers from any of them (`hire` takes a vendor).
 - A Claude Code session is a long-lived `claude -p` in `--restricted`
   mode: file tools only (no shell, no web), no MCP servers but imece's own,
   no user or project settings (so no hooks), file access confined to the
@@ -69,6 +71,29 @@ worktree is.
   Codex reports tokens, not dollars: on a ChatGPT plan its turns cost the
   budget nothing (the trace says so, and shows the tokens); an API-key
   login is refused, since imece can not count its cost yet.
+- A Gemini session is a long-lived `gemini --acp` (the Agent Client
+  Protocol, JSON-RPC on stdio). Gemini CLI has nothing like `--restricted`
+  and takes its settings from your own `~/.gemini` and from the `.gemini`
+  directory of the folder it runs in, so imece runs it in a private
+  directory of its own (under the worktrees, next to them) and gives it the
+  agent's files as an included directory: a repository's `.gemini`
+  settings, hooks and `.env` never reach the session. A policy file imece
+  writes there denies every tool and allows exactly the file tools of the
+  role (read tools for the lead, read and edit tools for workers and
+  helpers; never a shell, the web, memory, skills, sub-agents or plan
+  mode; a denied tool is not even shown to the model) and imece's own
+  tools; extensions are off, no MCP server but imece's is allowed, and
+  every permission request is refused. The agent's instructions go in a
+  `GEMINI.md` in that private directory, the only way ACP has to give
+  them. What Gemini reports (the session's mode and model, and its
+  `/about`, `/extensions list` and `/memory list`, which cost no tokens)
+  is checked before the first turn; anything else stops the session.
+  Gemini reports tokens, not dollars: with an API key its turns are booked
+  from the list prices imece carries (prompts up to 200K tokens, thought
+  tokens as output; a model imece can not price stops the session, so name
+  one it knows with `--model` or `--tier`); with a Google login they cost
+  the budget nothing, and the trace says so. Gemini keeps its chat files
+  under `~/.gemini/tmp` as it always does.
 - The budget (`--budget`, default $50) is one pot for the whole team: once
   all agents together have spent it, nobody takes another turn. Each
   Claude Code session also gets what was left of the pot when it started

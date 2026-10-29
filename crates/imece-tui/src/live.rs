@@ -34,7 +34,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use imece_agent::mcp::{Answer, Server, Tool};
 use imece_agent::{
-    Agent as Session, Event as AgentEvent, Mcp, Tier, child, claude, codex, worktree,
+    Agent as Session, Event as AgentEvent, Mcp, Tier, child, claude, codex, gemini, worktree,
 };
 use serde_json::{Value, json};
 
@@ -63,7 +63,7 @@ pub type Known = (Vendor, &'static str, bool);
 pub const KNOWN: &[Known] = &[
     (Vendor::Claude, claude::PROGRAM, true),
     (Vendor::Codex, codex::PROGRAM, true),
-    (Vendor::Gemini, "gemini", false),
+    (Vendor::Gemini, gemini::PROGRAM, true),
 ];
 
 /// The models a vendor's tiers stand for; none is the vendor's own default.
@@ -108,6 +108,7 @@ impl Hireable {
         let own = |tier| {
             match vendor {
                 Vendor::Codex => codex::model(tier),
+                Vendor::Gemini => gemini::model(tier),
                 _ => claude::model(tier),
             }
             .map(String::from)
@@ -137,6 +138,12 @@ impl Hireable {
     #[cfg(test)]
     fn codex(program: &str, tiers: &[(Tier, String)]) -> Hireable {
         Hireable::new(Vendor::Codex, program, tiers)
+    }
+
+    /// Gemini CLI at `program`, with `tiers` on top of its own ladder.
+    #[cfg(test)]
+    fn gemini(program: &str, tiers: &[(Tier, String)]) -> Hireable {
+        Hireable::new(Vendor::Gemini, program, tiers)
     }
 }
 
@@ -492,6 +499,14 @@ impl Live {
     /// The vendors' names, for the hire tool.
     fn vendor_names(&self) -> Vec<&str> {
         self.vendors.iter().map(|h| h.vendor.label()).collect()
+    }
+
+    /// The private directory a Gemini session of agent `name` runs in: a
+    /// sibling of the worktrees, kept between runs like them.
+    fn gemini_home(&self, name: &str) -> PathBuf {
+        let mut dir = self.root.clone().into_os_string();
+        dir.push("-gemini");
+        PathBuf::from(dir).join(name)
     }
 
     /// Gives every agent a socket for imece's tools. Sessions started
@@ -1315,6 +1330,7 @@ impl Live {
         // A helper changes the same files as its worker: its worktree.
         let tree = a.parent.map_or(&a.name, |p| &w.agents[p].name).clone();
         let (repo, root) = (self.repo.clone(), self.root.clone());
+        let home = self.gemini_home(&a.name);
         let (tx, ready) = (self.tx.clone(), self.ready_tx.clone());
         thread::spawn(move || {
             let started = (|| {
@@ -1327,6 +1343,21 @@ impl Live {
                     let _ = tx.send((id, generation, e));
                 };
                 let session: Box<dyn Session> = match kind {
+                    Vendor::Gemini => Box::new(
+                        gemini::Session::start(
+                            &gemini::Spec {
+                                program: program.clone(),
+                                cwd: cwd.clone(),
+                                home,
+                                model,
+                                write: !leader,
+                                system,
+                                mcp,
+                            },
+                            on,
+                        )
+                        .map_err(|e| format!("{program}: {e}"))?,
+                    ),
                     Vendor::Codex => Box::new(
                         codex::Session::start(
                             &codex::Spec {
@@ -3135,6 +3166,12 @@ in p.rs",
         assert_eq!(h.ladder.model(Tier::Standard), None);
         assert_eq!(h.ladder.model(Tier::Strong), Some("@high"));
         assert_eq!((h.program.as_str(), h.vendor), ("codex", Vendor::Codex));
+        // Gemini's ladder is its own model aliases.
+        let h = Hireable::gemini("gemini", &[(Tier::Strong, "gemini-2.5-pro".into())]);
+        assert_eq!(h.ladder.model(Tier::Cheap), Some("flash"));
+        assert_eq!(h.ladder.model(Tier::Standard), None);
+        assert_eq!(h.ladder.model(Tier::Strong), Some("gemini-2.5-pro"));
+        assert_eq!((h.program.as_str(), h.vendor), ("gemini", Vendor::Gemini));
     }
 
     #[test]
@@ -3335,6 +3372,88 @@ in p.rs",
         assert!(
             args.contains("sandbox_workspace_write.network_access=false"),
             "{args}"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+        let _ = std::fs::remove_dir_all(&repo);
+    }
+
+    fn fake_gemini(dir: &Path) -> String {
+        use std::os::unix::fs::PermissionsExt;
+        let path = dir.join("fake-gemini");
+        std::fs::write(&path, "#!/bin/sh\nprintf '%s\\n' \"$@\" > args.txt\n").unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o700)).unwrap();
+        path.to_string_lossy().into_owned()
+    }
+
+    #[test]
+    fn a_gemini_session_runs_in_a_private_directory_with_the_agent_s_files_included() {
+        let dir = std::env::temp_dir().join(format!("imece-gemini-lead-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let repo = checkout("gemini-repo");
+        let mut w = team(0);
+        w.agents[0].vendor = Vendor::Gemini;
+        let vendors = vec![
+            Hireable::claude(&fake_claude(&dir), &[]),
+            Hireable::gemini(&fake_gemini(&dir), &[]),
+        ];
+        let mut live = Live::new(1, vendors, repo.clone(), dir.join("worktrees"));
+        live.open_bus(&w, "/opt/imece".into()).unwrap();
+        live.models[0] = Some("pro".into());
+        live.told(&mut w, 0, "hello").unwrap();
+        wait_for(&mut live, &mut w, |w| w.agents[0].status == Status::Stopped);
+        // Gemini ran in the private directory, not in the checkout.
+        assert!(!repo.join("args.txt").exists());
+        let home = dir.join("worktrees-gemini").join("lead");
+        let args = std::fs::read_to_string(home.join("args.txt")).unwrap();
+        assert!(args.starts_with("--acp\n"), "{args}");
+        assert!(
+            args.contains(&format!("--include-directories\n{}\n", repo.display())),
+            "{args}"
+        );
+        assert!(
+            args.contains(&format!("--policy\n{}\n", home.join("policy").display())),
+            "{args}"
+        );
+        assert!(args.contains("-m\npro\n"), "{args}");
+        assert!(
+            !args.contains("hello") && !args.contains("You are"),
+            "no prompt in argv"
+        );
+        let policy = std::fs::read_to_string(home.join("policy/imece.toml")).unwrap();
+        assert!(
+            policy.contains("\"read_file\"") && !policy.contains("write_file"),
+            "{policy}"
+        );
+        assert!(
+            policy.contains("\"mcp_imece_hire\"") && !policy.contains("claim"),
+            "{policy}"
+        );
+        let instructions = std::fs::read_to_string(home.join("GEMINI.md")).unwrap();
+        assert!(
+            instructions.contains("You are lead")
+                && instructions.contains(&repo.display().to_string()),
+            "{instructions}"
+        );
+
+        live.hire(&mut w, 0, &json!({ "vendor": "gemini" }))
+            .unwrap();
+        live.told(&mut w, 1, "hello").unwrap();
+        wait_for(&mut live, &mut w, |w| w.agents[1].status == Status::Stopped);
+        let tree = dir.join("worktrees").join("gemini-1");
+        let home = dir.join("worktrees-gemini").join("gemini-1");
+        let args = std::fs::read_to_string(home.join("args.txt")).unwrap();
+        assert!(
+            args.contains(&format!(
+                "--include-directories\n{}\n",
+                tree.canonicalize().unwrap().display()
+            )),
+            "{args}"
+        );
+        let policy = std::fs::read_to_string(home.join("policy/imece.toml")).unwrap();
+        assert!(
+            policy.contains("\"write_file\"") && policy.contains("\"mcp_imece_claim\""),
+            "{policy}"
         );
         let _ = std::fs::remove_dir_all(&dir);
         let _ = std::fs::remove_dir_all(&repo);
@@ -3549,7 +3668,7 @@ in p.rs",
         assert_eq!(Vendor::parse("qwen"), None);
         let drives = |vendor| KNOWN.iter().any(|(v, _, d)| *v == vendor && *d);
         assert!(drives(Vendor::Claude) && drives(Vendor::Codex));
-        assert!(!drives(Vendor::Gemini), "no adapter yet");
+        assert!(drives(Vendor::Gemini));
     }
 
     #[test]
