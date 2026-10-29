@@ -11,7 +11,7 @@ use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use crate::complete::{self, Menu};
 use crate::i18n::{Lang, fill};
-use crate::live::{Live, ProjectRefusal, Refusal};
+use crate::live::{Live, Refusal};
 use crate::model::*;
 use crate::prefs::{SIDE_DEFAULT, SIDE_MAX, SIDE_MIN};
 use crate::sim::{self, Sim};
@@ -1034,11 +1034,12 @@ impl App {
         if path.is_empty() {
             return self.flash(t.open_usage);
         }
-        let Engine::Live(live) = &mut self.engine else {
-            return self.flash(t.demo_no_projects);
-        };
         let full = expand_tilde(path, self.home.as_deref());
-        match live.open_project(&mut self.world, &full, name) {
+        let opened = match &mut self.engine {
+            Engine::Live(live) => live.open_project(&mut self.world, &full, name),
+            Engine::Sim(sim) => sim.open_project(&mut self.world, path, name),
+        };
+        match opened {
             Ok(p) => {
                 if p == self.collapsed.len() {
                     self.collapsed.push(false);
@@ -1078,11 +1079,12 @@ impl App {
                 None => return self.flash(fill(t.no_project, &[arg])),
             }
         };
-        let Engine::Live(live) = &mut self.engine else {
-            return self.flash(t.demo_no_projects);
-        };
         let name = self.world.projects[p].name.clone();
-        if live.close_project(&mut self.world, p).is_err() {
+        let closed = match &mut self.engine {
+            Engine::Live(live) => live.close_project(&mut self.world, p),
+            Engine::Sim(sim) => sim.close_project(&mut self.world, p),
+        };
+        if closed.is_err() {
             return self.flash(fill(t.last_project, &[&name]));
         }
         if let Zoom::Focus(a) | Zoom::Trace(a) | Zoom::Diff(a) = self.zoom
@@ -1107,11 +1109,12 @@ impl App {
     fn rename_project(&mut self, arg: &str) {
         let t = self.lang.text();
         let p = self.current_project();
-        let Engine::Live(live) = &mut self.engine else {
-            return self.flash(t.demo_no_projects);
-        };
         let was = self.world.projects[p].name.clone();
-        match live.rename_project(&mut self.world, p, arg) {
+        let renamed = match &mut self.engine {
+            Engine::Live(live) => live.rename_project(&mut self.world, p, arg),
+            Engine::Sim(sim) => sim.rename_project(&mut self.world, p, arg),
+        };
+        match renamed {
             Ok(()) => {
                 let leader = &self.world.agents[self.world.projects[p].leader].name;
                 let said = fill(t.renamed, &[&was, arg, leader]);
@@ -1418,16 +1421,41 @@ mod tests {
     }
 
     #[test]
-    fn open_close_and_rename_are_refused_in_the_demo() {
+    fn the_demo_opens_closes_and_renames_projects_too() {
         let mut app = App::new(1, 1, 0, 1, Lang::En);
-        let before = app.world.projects.len();
-        for line in ["open /tmp", "close", "rename x"] {
-            app.command(line);
-            let said = app.flash.take().map(|f| f.0).unwrap_or_default();
-            assert_eq!(said, Lang::En.text().demo_no_projects, "{line}");
-        }
-        assert_eq!(app.world.projects.len(), before);
-        assert_eq!(app.world.projects[0].name, "shop-api");
+        app.home = None;
+        let said = |app: &mut App| app.flash.take().map(|f| f.0).unwrap_or_default();
+        app.command("open ~/work/shop");
+        assert_eq!(app.world.projects.len(), 2);
+        let leader = app.world.projects[1].leader;
+        assert_eq!(app.world.agents[leader].name, "lead-shop");
+        assert_eq!(app.selected, Sel::Agent(leader));
+        assert_eq!(app.collapsed, [false, false]);
+        assert_eq!(
+            said(&mut app),
+            "opened shop at ~/work/shop; write to lead-shop"
+        );
+        assert_eq!(
+            app.cwd(),
+            PathBuf::from("."),
+            "the demo runs where it started"
+        );
+        app.command("rename store");
+        assert_eq!(app.world.projects[1].name, "store");
+        assert_eq!(said(&mut app), "shop is now store; write to lead-store");
+        app.command("close store");
+        assert!(app.world.projects[1].closed);
+        assert_eq!(app.selected, Sel::Agent(0));
+        assert_eq!(
+            said(&mut app),
+            "closed store: its agents left; their worktrees stay on disk"
+        );
+        app.command("close");
+        assert_eq!(
+            said(&mut app),
+            "shop-api is the last open project; q q quits"
+        );
+        assert!(!app.world.projects[0].closed);
     }
 
     #[test]
