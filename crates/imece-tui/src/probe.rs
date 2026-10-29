@@ -2,8 +2,18 @@
 //! foreground are (xterm's OSC 11 and OSC 10 queries, which iTerm2,
 //! Ghostty, Kitty, WezTerm, Alacritty, foot and tmux answer), so the
 //! `terminal` theme knows whether it is dark and what to shade a
-//! selection with. A terminal that does not answer in time is taken as
-//! dark, or as `COLORFGBG` says.
+//! selection with. A terminal that does not answer is taken as dark, or
+//! as `COLORFGBG` says.
+//!
+//! The queries are followed by a cursor position report (`CSI 6 n`),
+//! which every terminal answers, and the reading goes on until that
+//! answer arrives: a terminal answers in order, so whatever it has to
+//! say about its colours comes first, and nothing of it is left behind
+//! to be read as key presses once the screen is up (Terminal.app answers
+//! after the 200 ms the first probe waited, and its `rgb:…` leaked as
+//! keys: `3` opened the code map, `/` the composer). A terminal that
+//! answers nothing at all (a pty with no terminal behind it) costs the
+//! deadline once.
 
 use std::io::{self, Write};
 use std::time::{Duration, Instant};
@@ -12,8 +22,9 @@ use ratatui::crossterm::terminal::{disable_raw_mode, enable_raw_mode};
 
 use crate::theme::{Back, Rgb};
 
-/// How long the terminal has to answer, all in all.
-const WAIT: Duration = Duration::from_millis(200);
+/// How long the terminal has to answer, all in all; only a terminal that
+/// never answers the cursor position report waits this long.
+const WAIT: Duration = Duration::from_millis(1000);
 
 /// What the terminal on stdin and stdout says about itself.
 pub fn terminal() -> Back {
@@ -35,16 +46,17 @@ pub fn terminal() -> Back {
     back
 }
 
-/// Sends the two queries and collects what comes back within `WAIT`.
+/// Sends the two queries and the position report, and collects what
+/// comes back until the report's answer, or `WAIT` is over.
 fn ask() -> io::Result<Vec<u8>> {
     enable_raw_mode()?;
     let result = (|| {
         let mut out = io::stdout();
-        out.write_all(b"\x1b]11;?\x1b\\\x1b]10;?\x1b\\")?;
+        out.write_all(b"\x1b]11;?\x1b\\\x1b]10;?\x1b\\\x1b[6n")?;
         out.flush()?;
         let mut reply = Vec::new();
         let deadline = Instant::now() + WAIT;
-        while answers(&reply) < 2 {
+        while !done(&reply) {
             let left = deadline.saturating_duration_since(Instant::now());
             if left.is_zero() || !readable(left) {
                 break;
@@ -75,12 +87,26 @@ fn readable(wait: Duration) -> bool {
     unsafe { libc::poll(&mut fd, 1, ms) > 0 }
 }
 
-/// How many complete OSC replies `reply` holds (each ends with ESC \ or
-/// BEL).
-fn answers(reply: &[u8]) -> usize {
-    let bells = reply.iter().filter(|&&b| b == 7).count();
-    let sts = reply.windows(2).filter(|w| w == b"\x1b\\").count();
-    bells + sts
+/// Whether the cursor position report's answer (`ESC [ row ; col R`,
+/// with a `?` after the bracket on some terminals) is in `reply`: then
+/// the terminal has said all it will.
+fn done(reply: &[u8]) -> bool {
+    // A range, not a search that moves on: a loop an operator could make
+    // endless fails the mutants job on a timeout.
+    (0..reply.len()).any(|at| {
+        let Some(rest) = reply[at..].strip_prefix(b"\x1b[") else {
+            return false;
+        };
+        let rest = rest.strip_prefix(b"?").unwrap_or(rest);
+        let n = rest
+            .iter()
+            .take_while(|b| b.is_ascii_digit() || **b == b';')
+            .count();
+        // Digits, one semicolon, digits, then R.
+        let semicolons = rest[..n].iter().filter(|b| **b == b';').count();
+        let semi = rest[..n].iter().position(|b| *b == b';');
+        semicolons == 1 && semi.is_some_and(|p| p > 0 && p + 1 < n) && rest.get(n) == Some(&b'R')
+    })
 }
 
 /// The background and foreground in the replies, which look like
@@ -123,14 +149,45 @@ mod tests {
     use super::*;
 
     #[test]
+    fn the_reading_ends_with_the_cursor_position_report_and_not_before() {
+        let whole = b"\x1b]11;rgb:2828/2a2a/3636\x1b\\\x1b]10;rgb:f8f8/f8f8/f2f2\x1b\\\x1b[4;1R";
+        assert!(done(whole));
+        assert_eq!(
+            parse(whole),
+            (Some(Rgb(0x28, 0x2a, 0x36)), Some(Rgb(0xf8, 0xf8, 0xf2))),
+            "the colours come out of the whole reply"
+        );
+        assert!(done(b"\x1b[12;57R"), "a terminal with no colours to tell");
+        assert!(done(b"\x1b[?12;57R"), "the form with a question mark");
+        assert!(
+            done(b"\x1b]11;?\x1b\\\x1b[1;1R"),
+            "after an unanswered query"
+        );
+        for not_yet in [
+            &b""[..],
+            b"\x1b]11;rgb:2828/2a2a/3636\x1b\\",
+            b"\x1b]11;rgb:28/2a/36",
+            b"\x1b[12;57",
+            b"\x1b[12R",
+            b"\x1b[R",
+            b"\x1b[;R",
+            b"\x1b[12;R",
+            b"\x1b[;57R",
+            b"\x1b[1;2;3R",
+            b"12;57R",
+            b"\x1b]12;57R\x1b\\",
+        ] {
+            assert!(!done(not_yet), "{:?}", String::from_utf8_lossy(not_yet));
+        }
+    }
+
+    #[test]
     fn the_replies_give_both_colours_in_any_order_and_width() {
         let reply = b"\x1b]10;rgb:f8f8/f8f8/f2f2\x1b\\\x1b]11;rgb:2828/2a2a/3636\x07";
         assert_eq!(
             parse(reply),
             (Some(Rgb(0x28, 0x2a, 0x36)), Some(Rgb(0xf8, 0xf8, 0xf2)))
         );
-        assert_eq!(answers(reply), 2);
-        assert_eq!(answers(b"\x1b]11;rgb:28/2a/36"), 0, "not ended yet");
         assert_eq!(
             parse(b"\x1b]11;rgb:28/2a/36\x1b\\"),
             (Some(Rgb(0x28, 0x2a, 0x36)), None)
