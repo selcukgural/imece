@@ -4,7 +4,7 @@
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Clear, Paragraph};
+use ratatui::widgets::{Block, Paragraph};
 
 use super::*;
 use crate::app::{App, Digest, Thread};
@@ -22,7 +22,7 @@ fn centered(area: Rect, width: u16, height: u16) -> Rect {
 
 fn window(f: &mut Frame, title: String, lines: Vec<Line<'static>>, width: u16) {
     let area = centered(f.area(), width, lines.len() as u16 + 2);
-    f.render_widget(Clear, area);
+    clear(f, area);
     let block = Block::bordered()
         .title(title)
         .border_style(fg(pal().accent));
@@ -171,7 +171,7 @@ pub fn thread(f: &mut Frame, app: &App, th: &Thread) {
         screen.width.saturating_sub(4).min(120),
         screen.height.saturating_sub(2),
     );
-    f.render_widget(Clear, area);
+    clear(f, area);
     let first = th.entries.first().map(|&i| &w.journal[i].event);
     let title = match first.and_then(words::said) {
         Some(s) => {

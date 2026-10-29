@@ -30,6 +30,13 @@ pub struct Prefs {
     pub lead: Option<String>,
 }
 
+/// A built-in theme's name (`gruvbox-dark-medium`) or a colour file's
+/// absolute path.
+fn is_theme(t: &str) -> bool {
+    let name = |c: char| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-';
+    (!t.is_empty() && t.chars().all(name)) || t.starts_with('/')
+}
+
 fn file(dir: &Path) -> PathBuf {
     dir.join("screen")
 }
@@ -46,7 +53,7 @@ pub fn load(dir: &Path) -> Prefs {
         side: value("side=")
             .and_then(|v| v.parse().ok())
             .filter(|v| (SIDE_MIN..=SIDE_MAX).contains(v)),
-        theme: value("theme=").filter(|t| t.chars().all(|c| c.is_ascii_lowercase())),
+        theme: value("theme=").filter(|t| is_theme(t)),
         lead: value("lead=").filter(|t| !t.is_empty() && t.chars().all(|c| c.is_ascii_lowercase())),
     }
 }
@@ -87,6 +94,12 @@ mod tests {
         assert_eq!(load(&dir).lead, None, "forgotten when saved without");
         fs::write(file(&dir), "side=99\ntheme=Neon 1\nlead=Claude Code\n").unwrap();
         assert_eq!(load(&dir), Prefs::default(), "out of range, not a name");
+        fs::write(file(&dir), "theme=gruvbox-dark-medium\n").unwrap();
+        assert_eq!(load(&dir).theme.as_deref(), Some("gruvbox-dark-medium"));
+        fs::write(file(&dir), "theme=/home/me/Dracula.conf\n").unwrap();
+        assert_eq!(load(&dir).theme.as_deref(), Some("/home/me/Dracula.conf"));
+        fs::write(file(&dir), "theme=\n").unwrap();
+        assert_eq!(load(&dir).theme, None);
         fs::write(file(&dir), "side=x\n").unwrap();
         assert_eq!(load(&dir), Prefs::default());
         fs::remove_dir_all(&dir).unwrap();

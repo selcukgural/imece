@@ -27,10 +27,20 @@ cargo mutants                                      # everything (slow); CI does 
 - Mutation tests: a mutant that survives is a test that is missing, so a
   change comes with the tests that kill its mutants (`cargo-mutants` 27.1.0,
   pinned in `.github/workflows/mutants.yml`; exclusions with their reasons
-  in `.cargo/mutants.toml`). They are CI's job (user, 2026-10-29): before
-  a push run fmt, clippy and the tests, not mutants; run `cargo mutants`
-  locally only when the PR job reports a missed mutant and closing it
-  takes several tries. The PR job also fails on a timeout, so never write
+  in `.cargo/mutants.toml`). Running them is CI's job, never local (user,
+  2026-10-29: too slow on a laptop too); before a push run fmt, clippy
+  and the tests. BUT before opening a PR, make sure the tests that kill
+  the change's mutants are written (user, 2026-10-29: each push that
+  comes back with missed mutants costs a CI round of 10+ minutes, and a
+  big change came back twice). So write the tests with the mutants in
+  mind from the start, and before the PR go over the diff once more for
+  what a mutant would change: the equal case of every comparison, each
+  operand of an arithmetic expression (with the number in the test, not
+  the constant), every field a constructor sets, every arm of a match,
+  every function with the same shape in a sibling file (a test written
+  for Gemini's copy was not written for Codex's), with values that tell
+  the variants apart. The full run is nightly only.
+  The PR job also fails on a timeout, so never write
   a loop a mutated operator could make endless (search a range instead).
 
 - Keyboard first (user, 2026-10-29): everything is done with keys, vim
@@ -349,6 +359,33 @@ and owned here from then on:
   journal has as `Sent`, so it stays in the card's story and the trace.
   Before this every turn end was a journal line and conversations read
   as repeating themselves.
+- Themes v1 (2026-10-29, user's ask: the first themes changed too little,
+  and a terminal's own theme should count; no icons or images, no cost
+  per draw): `theme.rs` builds one `Theme` (roles, now with `bg`, `fg`
+  and `border`) from three sources, once when chosen. `terminal` (the
+  default) names the 16 ANSI colours, so the terminal's theme (iTerm2,
+  Ghostty, Kitty, …) colours imece and a change there shows at once;
+  `probe.rs` asks the terminal for its background and foreground (OSC
+  11 / OSC 10, 200 ms, before the screen starts, `COLORFGBG` as a hint)
+  to say dark or light and to shade the selection and key hints;
+  `dark` / `light` assume instead of asking; `mono` is unchanged.
+  Built-in schemes (`schemes.rs`: 15 base16 palettes copied from
+  tinted-theming/schemes, MIT, commit noted in the file header) map the
+  base16 slots to roles (base09 orange = accent, as imece's own colour;
+  base0F left out) and paint the whole screen (`ui::paint`, also under
+  every window after `Clear`), so they look the same everywhere. A
+  colour file in Ghostty's (`palette = 4=#rrggbb`) or Kitty's (`color4
+  #rrggbb`) format, from `--theme FILE` or `:theme FILE` (64 KiB cap,
+  the stem is the name, remembered by absolute path): the slots give
+  the roles (blue = accent), background and foreground the rest.
+  Without `COLORTERM=truecolor|24bit` RGB is rounded to the 256-colour
+  cube. `:theme NAME|FILE` (`:t`) with completion of the built-in
+  names, `T` cycles them. Preferences, flags and `IMECE_THEME` take
+  names or paths. Tests: every scheme's roles stand off its background
+  by luma; speakers that repeat (Rose Pine's orange is its purple) fade
+  apart. Known gaps: a terminal that answers the probe after 200 ms
+  leaks the answer into the key stream once; no Alacritty (TOML) or
+  `.itermcolors` (plist) reader, convert with mbadolato's tools.
 - Projects: the salon groups agents by project, each with its own leader;
   groups fold to one line that still shows what waits for the person. The
   researcher cap is shared by all projects.

@@ -9,7 +9,9 @@ mod i18n;
 mod live;
 mod model;
 mod prefs;
+mod probe;
 mod rng;
+mod schemes;
 mod shell;
 mod sim;
 mod theme;
@@ -29,7 +31,7 @@ use crate::model::{Vendor, parse_dollars};
 
 const USAGE: &str = "usage: imece [--repo DIR] [--agents N] [--helpers N] [--lead VENDOR]
              [--model [V:]NAME]... [--tier [V:]T=NAME]... [--budget USD] [--lang en|tr]
-             [--theme NAME]
+             [--theme NAME|FILE]
        imece --demo [--projects N] [--agents N] [--researchers N] [--seed N]
 
 imece runs coding agents on the checkout DIR is in: a leader that reads it
@@ -55,8 +57,11 @@ its own git worktree; a worker may hire helpers for parts of its task.
                     cargo and git's reading commands (repeatable)
   --run-timeout S   seconds one run may take (10-3600, default 600)
   --lang en|tr      the screen's language (default en, or IMECE_LANG)
-  --theme NAME      dark (default), light or mono; or IMECE_THEME; the last
-                    choice made with T is remembered
+  --theme NAME|FILE terminal (default: your terminal's own colours), dark,
+                    light, mono, a scheme (dracula, nord, gruvbox-dark-medium,
+                    catppuccin-mocha, tokyo-night-dark, solarized-dark, …) or
+                    a colour file in Ghostty's or Kitty's format; or
+                    IMECE_THEME; the last choice (T, :theme) is remembered
 
   --demo            fake agents instead, to see the screen at work
   --projects N      projects worked on at once (1-4, default 2)
@@ -160,8 +165,10 @@ fn parse(
         seed: 7,
         lang,
         theme: match env("IMECE_THEME") {
-            Some(v) if theme::set(&v) => Some(v),
-            Some(v) => return Err(format!("IMECE_THEME: {v:?} is not {}", theme::names())),
+            Some(v) => match theme::choose(&v) {
+                Ok(_) => Some(v),
+                Err(why) => return Err(format!("IMECE_THEME: {v:?}: {why}")),
+            },
             None => None,
         },
         demo: false,
@@ -213,10 +220,10 @@ fn parse(
                 })?))
             }
             "--tier" => args.tiers.push(parse_tier(&value)?),
-            "--theme" if theme::set(&value) => args.theme = Some(value),
-            "--theme" => {
-                return Err(format!("--theme: {value:?} is not {}", theme::names()));
-            }
+            "--theme" => match theme::choose(&value) {
+                Ok(_) => args.theme = Some(value),
+                Err(why) => return Err(format!("--theme: {value:?}: {why}")),
+            },
             "--lang" => {
                 args.lang = Lang::parse(&value)
                     .ok_or_else(|| format!("--lang: {value:?} is not en or tr"))?
@@ -320,8 +327,14 @@ fn main() -> std::io::Result<()> {
     if args.theme.is_none()
         && let Some(name) = &saved.theme
     {
-        theme::set(name);
+        // A file that is gone since leaves the default; nothing to say.
+        let _ = theme::choose(name);
     }
+    // Before the screen takes the terminal: what colours it has.
+    theme::probed(
+        probe::terminal(),
+        theme::truecolor(std::env::var("COLORTERM").ok().as_deref()),
+    );
     let mut terminal = ratatui::init();
     let mut app = if args.demo {
         app::App::new(
@@ -355,7 +368,7 @@ fn main() -> std::io::Result<()> {
                             let _ = prefs::save(
                                 &state,
                                 saved.side.unwrap_or(prefs::SIDE_DEFAULT),
-                                theme::pal().name,
+                                &theme::chosen(),
                                 saved.lead.as_deref(),
                             );
                         }
@@ -456,11 +469,11 @@ fn run(
             && let Event::Key(k) = event::read()?
             && k.kind == KeyEventKind::Press
         {
-            let (side, theme, primary) = (app.side, theme::pal().name, app.primary.clone());
+            let (side, theme, primary) = (app.side, theme::chosen(), app.primary.clone());
             app.on_key(k);
-            if app.side != side || theme::pal().name != theme || app.primary != primary {
+            if app.side != side || theme::chosen() != theme || app.primary != primary {
                 // Remembered for the next run; a failure only costs that.
-                let _ = prefs::save(state, app.side, theme::pal().name, app.primary.as_deref());
+                let _ = prefs::save(state, app.side, &theme::chosen(), app.primary.as_deref());
             }
             if let Some(text) = app.copy.take() {
                 app.copied(clip::copy(&text));
@@ -505,27 +518,32 @@ mod tests {
 
     #[test]
     fn the_theme_comes_from_the_flag_or_the_environment_and_a_wrong_name_is_refused() {
-        crate::theme::set("dark");
+        crate::theme::set("terminal");
         let a = args(&["--theme", "light"], &[]).unwrap();
         assert_eq!(a.theme.as_deref(), Some("light"));
         assert_eq!(crate::theme::pal().name, "light");
         let a = args(&[], &[("IMECE_THEME", "mono")]).unwrap();
         assert_eq!(a.theme.as_deref(), Some("mono"));
         assert_eq!(crate::theme::pal().name, "mono");
-        crate::theme::set("dark");
+        let a = args(&["--theme", "dracula"], &[]).unwrap();
+        assert_eq!(a.theme.as_deref(), Some("dracula"));
+        assert_eq!(crate::theme::pal().name, "dracula");
+        crate::theme::set("terminal");
         let e = args(&["--theme", "neon"], &[]).unwrap_err();
         assert!(
-            e.contains("--theme") && e.contains("dark|light|mono"),
+            e.contains("--theme") && e.contains("terminal|dark|light|mono|dracula"),
             "{e}"
         );
         let e = args(&[], &[("IMECE_THEME", "neon")]).unwrap_err();
         assert!(
-            e.contains("IMECE_THEME") && e.contains("dark|light|mono"),
+            e.contains("IMECE_THEME") && e.contains("no such file"),
             "{e}"
         );
+        let e = args(&["--theme", "/no/such/dir/x.conf"], &[]).unwrap_err();
+        assert!(e.contains("--theme") && e.contains("x.conf"), "{e}");
         assert_eq!(
             crate::theme::pal().name,
-            "dark",
+            "terminal",
             "a refused name changes nothing"
         );
         assert_eq!(args(&[], &[]).unwrap().theme, None);

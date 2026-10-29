@@ -16,7 +16,7 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App) {
     let project = &w.projects[app.current_project()];
     let block = Block::bordered()
         .title(fill(t.code_title, &[&project.name]))
-        .border_style(dim());
+        .border_style(border());
     let inner = block.inner(area);
     f.render_widget(block, area);
     if project.repo.is_empty() {

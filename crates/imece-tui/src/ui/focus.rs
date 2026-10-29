@@ -125,7 +125,7 @@ pub fn trace(f: &mut Frame, area: Rect, app: &App, id: AgentId) {
     let a = &app.world.agents[id];
     let block = Block::bordered()
         .title(fill(app.lang.text().trace_title, &[&a.name]))
-        .border_style(dim());
+        .border_style(border());
     let inner = block.inner(area);
     f.render_widget(block, area);
     let lines: Vec<Line> = a
