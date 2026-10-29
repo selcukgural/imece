@@ -941,6 +941,12 @@ mod tests {
         }
         key(&mut app, KeyCode::Enter);
         assert!(render(&app, 140, 40).contains("no command nope"));
+
+        // Plain writing is to the lead, not a command.
+        key(&mut app, KeyCode::Char('i'));
+        let s = render(&app, 140, 40);
+        assert!(s.contains("› to lead"), "{s}");
+        assert!(!s.contains("› command:"), "{s}");
     }
 
     #[test]

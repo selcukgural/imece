@@ -472,6 +472,8 @@ mod tests {
         assert_eq!(parse_dollars("5"), Some(50_000));
         assert_eq!(parse_dollars("2.5"), Some(25_000));
         assert_eq!(parse_dollars("0.07"), Some(700));
+        assert_eq!(parse_dollars("1.23"), Some(12_300));
+        assert_eq!(parse_dollars("9999"), Some(99_990_000), "four digits is the most");
         for bad in ["", ".5", "1.234", "-1", "1e3", "12345", "nan", "1,5"] {
             assert_eq!(parse_dollars(bad), None, "{bad}");
         }
