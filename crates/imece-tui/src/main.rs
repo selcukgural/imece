@@ -23,7 +23,7 @@ use ratatui::DefaultTerminal;
 use ratatui::crossterm::event::{self, Event, KeyEventKind};
 
 use crate::i18n::Lang;
-use crate::model::Vendor;
+use crate::model::{Vendor, parse_dollars};
 
 const USAGE: &str = "usage: imece [--repo DIR] [--agents N] [--lead VENDOR] [--model NAME]
              [--tier T=NAME]... [--budget USD] [--lang en|tr] [--theme NAME]
@@ -39,7 +39,8 @@ its own git worktree.
   --model NAME      the model every agent runs on (default: the vendor's own)
   --tier T=NAME     the model a tier stands for, T being cheap, standard or
                     strong (claude: haiku, the vendor's own, opus)
-  --budget USD      the most all agents together may spend (default 50)
+  --budget USD      the most all agents together may spend (default 50;
+                    :budget USD changes it while agents run)
   --lang en|tr      the screen's language (default en, or IMECE_LANG)
   --theme NAME      dark (default), light or mono; or IMECE_THEME; the last
                     choice made with T is remembered
@@ -73,18 +74,6 @@ const LIVE_AGENTS: u64 = 16;
 const DEFAULT_WORKERS: usize = 4;
 
 /// Dollars with at most two decimals, as ten-thousandths of a dollar.
-fn parse_dollars(s: &str) -> Option<u64> {
-    let (whole, cents) = s.split_once('.').unwrap_or((s, ""));
-    if whole.is_empty() || whole.len() > 4 || cents.len() > 2 {
-        return None;
-    }
-    if !(whole.bytes().chain(cents.bytes())).all(|b| b.is_ascii_digit()) {
-        return None;
-    }
-    let cents: u64 = format!("{cents:0<2}").parse().ok()?;
-    Some(whole.parse::<u64>().ok()? * 10_000 + cents * 100)
-}
-
 /// Model names as Claude Code takes them: `sonnet`, `claude-opus-5-5`,
 /// `opus[1m]`.
 fn valid_model(s: &str) -> bool {

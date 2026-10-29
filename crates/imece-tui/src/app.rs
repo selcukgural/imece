@@ -282,6 +282,10 @@ impl App {
             KeyCode::Char('q') => self.quit = true,
             // `i` as in vim: start writing.
             KeyCode::Char('/') | KeyCode::Char('i') => self.typing = true,
+            KeyCode::Char(':') => {
+                self.typing = true;
+                self.input = ":".into();
+            }
             KeyCode::Char('g') | KeyCode::Char('z') => {
                 if let KeyCode::Char(c) = k.code {
                     self.pending = Some(c);
@@ -627,6 +631,12 @@ impl App {
 
     /// Who a message being typed goes to: the named agent, or the leader of
     /// the current project.
+    /// Whether what is being typed is a command to imece (`:budget 80`),
+    /// not a message to an agent.
+    pub fn typing_command(&self) -> bool {
+        self.input.starts_with(':')
+    }
+
     pub fn typing_target(&self) -> String {
         match self.input.strip_prefix('@') {
             Some(rest) => rest.split(' ').next().unwrap_or_default().to_string(),
@@ -646,6 +656,9 @@ impl App {
             return;
         }
         let t = self.lang.text();
+        if let Some(line) = text.strip_prefix(':') {
+            return self.command(line.trim());
+        }
         let Some(rest) = text.strip_prefix('@') else {
             let leader = self.world.projects[self.current_project()].leader;
             return self.tell(leader, &text);
@@ -655,6 +668,29 @@ impl App {
             Some(_) if msg.is_empty() => self.flash(t.empty_message),
             Some(id) => self.tell(id, msg),
             None => self.flash(fill(t.no_agent, &[&target])),
+        }
+    }
+
+    /// A command to imece itself, typed after `:`. `budget USD` (or `b`)
+    /// sets what all agents together may spend; a running turn finishes
+    /// on its old cap, the next one starts on the new remainder.
+    fn command(&mut self, line: &str) {
+        let t = self.lang.text();
+        let (name, arg) = line
+            .split_once(char::is_whitespace)
+            .map_or((line, ""), |(n, a)| (n, a.trim()));
+        match name {
+            "budget" | "b" => match parse_dollars(arg) {
+                Some(to) => {
+                    let from = self.world.daily_budget;
+                    self.world.daily_budget = to;
+                    let leader = self.world.projects[self.current_project()].leader;
+                    self.world.note(Event::Budget { leader, from, to });
+                    self.flash(fill(t.budget_is, &[&dollars(to)]));
+                }
+                None => self.flash(fill(t.bad_budget, &[arg])),
+            },
+            _ => self.flash(fill(t.no_command, &[name])),
         }
     }
 

@@ -82,6 +82,7 @@ pub fn event(lang: Lang, w: &World, e: &Event) -> String {
             ],
         ),
         Event::Fallback { agent, model } => fill(t.ev_fallback, &[name(w, *agent), model]),
+        Event::Budget { from, to, .. } => fill(t.ev_budget, &[&dollars(*to), &dollars(*from)]),
         // Conversations are drawn from `said`, with their speakers coloured.
         Event::Talk { .. } | Event::YouSaid { .. } | Event::Replied { .. } | Event::Sent { .. } => {
             String::new()
