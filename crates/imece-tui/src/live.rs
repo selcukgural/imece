@@ -641,17 +641,17 @@ impl Live {
         // Only a model other than the standard one has something to fall
         // back to.
         let tiered = model != vendor.ladder.standard;
-        let mut n = w
+        // The vendor's next number, skipping names already taken.
+        let from = w
             .agents
             .iter()
             .filter(|o| o.vendor == vendor.vendor && o.role == Role::Worker)
             .count()
             + 1;
-        let mut name = format!("{}-{n}", vendor.vendor.label());
-        while w.agent_by_name(&name).is_some() {
-            n += 1;
-            name = format!("{}-{n}", vendor.vendor.label());
-        }
+        let name = (from..)
+            .map(|n| format!("{}-{n}", vendor.vendor.label()))
+            .find(|name| w.agent_by_name(name).is_none())
+            .expect("some number is free");
         let id = w.agents.len();
         // The socket first: an agent without one could never start.
         self.bind(id, Role::Worker)
