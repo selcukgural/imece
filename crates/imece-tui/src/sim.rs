@@ -1311,10 +1311,28 @@ mod tests {
         assert_eq!(s.close_project(&mut w, 0), Ok(()));
         assert_eq!(s.close_project(&mut w, 1), Err(ProjectRefusal::Last));
         assert!(!w.projects[1].closed);
+        // A closed project is reused for its own name only: another name
+        // is a new project.
+        assert_eq!(s.open_project(&mut w, "/n", Some("new")), Ok(2));
+        assert_eq!(w.projects.len(), 3);
+        assert!(w.projects[0].closed, "not reused for another name");
     }
 
     #[test]
     fn a_hired_worker_takes_the_next_free_number_of_its_vendor() {
+        let (mut w, mut s) = world(1, 0, 4, 7, Lang::En);
+        // Only workers count: the lead is a Claude too, and the first
+        // Claude worker is still claude-1.
+        assert_eq!(w.agents[0].vendor, Vendor::Claude);
+        let mut claude = None;
+        for _ in 0..64 {
+            let id = s.hire(&mut w, 0);
+            if w.agents[id].vendor == Vendor::Claude {
+                claude = Some(id);
+                break;
+            }
+        }
+        assert_eq!(w.agents[claude.expect("a claude")].name, "claude-1");
         let (mut w, mut s) = world(1, 0, 4, 7, Lang::En);
         let first = s.hire(&mut w, 0);
         let v = w.agents[first].vendor;
