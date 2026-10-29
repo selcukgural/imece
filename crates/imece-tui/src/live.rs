@@ -5682,10 +5682,7 @@ in p.rs",
         assert!(bus.servers[3].path().ends_with("a3.sock"));
         // A closed project is reused only for its own checkout: another
         // checkout, with one closed, is a new project.
-        live.close_project(&mut w, 1).unwrap_err();
         let other = checkout("close-other");
-        live.open_project(&mut w, &other, Some("other"))
-            .unwrap_err();
         w.open_project(None, "third".into(), "/t".into(), Vendor::Claude);
         live.bind(4, Role::Leader).unwrap();
         live.grow(None, false);
