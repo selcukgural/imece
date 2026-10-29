@@ -290,9 +290,9 @@ pub(crate) fn inline(text: &str, base: Style) -> Vec<Span<'static>> {
             }),
             '*' => {
                 let inner = &rest[1..];
+                // `n` is never 0: a `**` start takes the arm above.
                 let closes = |n: usize| {
-                    n > 0
-                        && !inner[..n].starts_with(' ')
+                    !inner[..n].starts_with(' ')
                         && !inner[..n].ends_with(' ')
                         && !inner[n..].starts_with("**")
                 };
@@ -562,16 +562,12 @@ pub(crate) fn wrap(line: Line<'static>, width: usize) -> Vec<Line<'static>> {
     for span in rest {
         for chunk in span.content.split_inclusive(' ') {
             let word = chunk.trim_end();
-            let parts = if word.width() > room {
-                let mut parts = pieces(word, room);
-                parts
-                    .last_mut()
-                    .expect("one piece at least")
-                    .push_str(&chunk[word.len()..]);
-                parts
-            } else {
-                vec![chunk.to_string()]
-            };
+            // A word that fits is one piece; the space goes with the last.
+            let mut parts = pieces(word, room);
+            parts
+                .last_mut()
+                .expect("one piece at least")
+                .push_str(&chunk[word.len()..]);
             for part in parts {
                 if used > 0 && used + part.trim_end().width() > room {
                     rows.push(Line::from(std::mem::replace(&mut row, hang.clone())));
@@ -2336,6 +2332,20 @@ mod tests {
         assert_eq!(rows[1].spans[2].style, code, "the code too");
         let short = Line::from(vec![Span::raw("  "), Span::raw("fits")]);
         assert_eq!(text(&wrap(short, 10)), ["  fits"]);
+        let numbered = Line::from(vec![Span::raw("3. "), Span::raw("alpha beta")]);
+        assert_eq!(
+            text(&wrap(numbered, 8)),
+            ["3. alpha ", "   beta"],
+            "a number with a dot leads"
+        );
+        let lettered = Line::from(vec![Span::raw("x. "), Span::raw("alpha beta")]);
+        assert_eq!(
+            text(&wrap(lettered, 8)),
+            ["x. alpha ", "beta"],
+            "letters with a dot do not, and a word that just fills the row stays on it"
+        );
+        let dot = Line::from(vec![Span::raw(". "), Span::raw("alpha beta")]);
+        assert_eq!(text(&wrap(dot, 8)), [". alpha ", "beta"], "nor a dot alone");
         let exact = Line::from(Span::raw("abcde fghij"));
         assert_eq!(
             text(&wrap(exact, 5)),
@@ -2542,6 +2552,15 @@ mod tests {
             "a base style carries into the marks"
         );
         assert!(inline("", base).is_empty());
+        assert_eq!(
+            parts(&inline("[the docs](http://x/y) tail", base)),
+            [
+                ("the docs".into(), under),
+                (" (http://x/y)".into(), dim()),
+                (" tail".into(), base),
+            ],
+            "a label longer than one character"
+        );
     }
 
     #[test]
@@ -2579,6 +2598,11 @@ after | not a table";
             .map(|s| s.to_string())
             .collect();
         assert_eq!(table_len(&rows, 0), 3, "a blank line ends the table");
+        let rows: Vec<String> = ["a|b", "-|-", "c|d", "prose", "e|f"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        assert_eq!(table_len(&rows, 0), 3, "a line without a column too");
         assert_eq!(table_len(&rows, 4), 0, "no separator, no table");
         assert_eq!(table_len(&rows, 2), 0);
         assert!(is_separator("| :---: | --- |"));

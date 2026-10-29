@@ -105,13 +105,8 @@ pub fn digest(f: &mut Frame, app: &App, d: &Digest) {
 /// moving as little as it can; a part longer than the screen shows from
 /// its start.
 fn in_view(start: usize, end: usize, scroll: usize, height: usize) -> usize {
-    if start < scroll {
-        start
-    } else if end > scroll + height {
-        (end - height).min(start)
-    } else {
-        scroll
-    }
+    // No further down than `start`, no further up than what shows `end`.
+    scroll.clamp(end.saturating_sub(height).min(start), start)
 }
 
 /// The rows of a conversation `width` cells wide, oldest first: each
@@ -221,12 +216,7 @@ pub fn thread(f: &mut Frame, app: &App, th: &Thread) {
         .set(th.scroll.get().min(u16::try_from(max).unwrap_or(u16::MAX)));
     th.page.set(body.height.saturating_sub(1).max(1));
     let skip = usize::from(th.scroll.get());
-    for (n, row) in rows.iter().skip(skip).take(height).enumerate() {
-        let at = Rect {
-            y: body.y + n as u16,
-            height: 1,
-            ..body
-        };
+    for (row, at) in rows.iter().skip(skip).zip(body.rows()) {
         f.render_widget(row, at);
     }
 }
