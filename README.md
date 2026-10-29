@@ -47,9 +47,10 @@ worktree is.
   nothing that would ask for permission is allowed. What Claude Code
   reports it runs with is checked on every turn; anything else stops the
   session.
-- The budget is split into equal shares, one per place in the team (the
-  lead and every worker it may hire), and a share is the session's hard
-  cap, so all agents together never spend more than `--budget` dollars.
+- The budget (`--budget`, default $50) is one pot for the whole team: once
+  all agents together have spent it, nobody takes another turn. Each
+  session also gets what was left of the pot when it started as its own
+  hard cap, so a session running away on its own cannot pass it either.
 - Child processes get a cleared environment (plus what Claude Code needs to
   log in), their own process group (killed on exit), and capped pipes.
 

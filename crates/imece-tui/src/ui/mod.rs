@@ -397,7 +397,6 @@ fn header(f: &mut Frame, area: Rect, app: &App) {
     let t = app.lang.text();
     let sep = || Span::styled(" │ ", dim());
     let open = w.open_inbox().len();
-    let budget = w.spent() * 100 / w.daily_budget.max(1);
     let mut spans = vec![Span::styled(" imece ", brand()), Span::raw(" ")];
     // Live work starts without cards and without researchers: no "0/0".
     if !w.cards.is_empty() {
@@ -410,8 +409,14 @@ fn header(f: &mut Frame, area: Rect, app: &App) {
     spans.extend([
         Span::raw(fill(t.agents_working, &[&w.active_agents().to_string()])),
         sep(),
-        Span::raw(fill(t.per_hour, &[&dollars(w.rate_per_hour())])),
-        Span::styled(fill(t.budget, &[&budget.to_string()]), dim()),
+        Span::raw(fill(
+            t.budget,
+            &[&dollars(w.spent()), &dollars(w.daily_budget)],
+        )),
+        Span::styled(
+            format!(" ({})", fill(t.per_hour, &[&dollars(w.rate_per_hour())])),
+            dim(),
+        ),
     ]);
     if w.max_researchers > 0 {
         spans.push(sep());
@@ -1186,7 +1191,8 @@ mod tests {
     }
 
     #[test]
-    fn the_header_shows_the_budget_share_and_the_footer_hides_pause_where_it_means_nothing() {
+    fn the_header_shows_what_is_spent_of_the_budget_and_the_footer_hides_pause_where_it_means_nothing()
+     {
         let mut app = app_after(1, 2, 0, Lang::En);
         app.world.daily_budget = 10_000;
         for a in &mut app.world.agents {
@@ -1196,7 +1202,7 @@ mod tests {
         app.world.agents[1].cost = 2_500;
         let screen = render(&app, 140, 40);
         assert!(screen.contains("imece"));
-        assert!(screen.contains("(budget 50%)"), "{screen}");
+        assert!(screen.contains("spent $0.50 of $1.00"), "{screen}");
         let footer = screen.lines().last().unwrap().to_string();
         assert!(footer.contains("space"), "{footer}");
         // The current view's name is the bold one.
