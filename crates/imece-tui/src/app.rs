@@ -718,6 +718,41 @@ impl App {
         }
     }
 
+    /// The person's message to agent `id`: the engine gets it first, and only
+    /// a message that reached the agent is recorded as said. A line that
+    /// starts with `/` is a command of the agent's own command line
+    /// (`/clear`, `/compact`, `/cost`), not a message.
+    fn tell(&mut self, id: AgentId, text: &str) {
+        let command = text.starts_with('/');
+        let refused = match &mut self.engine {
+            Engine::Sim(_) if command => Some(Refusal::Command(
+                self.lang.text().demo_no_command_line.to_string(),
+            )),
+            Engine::Sim(s) => {
+                s.told(&mut self.world, id, text);
+                None
+            }
+            Engine::Live(l) if command => l.command(&mut self.world, id, text).err(),
+            Engine::Live(l) => l.told(&mut self.world, id, text).err(),
+        };
+        self.report(id, text, refused);
+    }
+
+    /// Flashes how the person's `text` to agent `id` fared.
+    fn report(&mut self, id: AgentId, text: &str, refused: Option<Refusal>) {
+        let t = self.lang.text();
+        let name = self.world.agents[id].name.clone();
+        match refused {
+            None => {
+                self.world.said(id, text);
+                self.flash(fill(t.sent, &[&name]));
+            }
+            Some(Refusal::Budget) => self.flash(fill(t.budget_spent, &[&name])),
+            Some(Refusal::Start(why)) => self.flash(fill(t.cannot_start, &[&name, &why])),
+            Some(Refusal::Command(why)) => self.flash(fill(t.command_refused, &[&name, &why])),
+        }
+    }
+
     /// A command to imece itself, typed after `:`. `budget USD` (or `b`)
     /// sets what all agents together may spend; a running turn finishes
     /// on its old cap, the next one starts on the new remainder. `lead
@@ -751,28 +786,6 @@ impl App {
                 (_, None) => self.flash(fill(t.bad_lead, &[arg])),
             },
             _ => self.flash(fill(t.no_command, &[name])),
-        }
-    }
-
-    /// The person's message to agent `id`: the engine gets it first, and only
-    /// a message that reached the agent is recorded as said.
-    fn tell(&mut self, id: AgentId, text: &str) {
-        let t = self.lang.text();
-        let name = self.world.agents[id].name.clone();
-        let refused = match &mut self.engine {
-            Engine::Sim(s) => {
-                s.told(&mut self.world, id, text);
-                None
-            }
-            Engine::Live(l) => l.told(&mut self.world, id, text).err(),
-        };
-        match refused {
-            None => {
-                self.world.said(id, text);
-                self.flash(fill(t.sent, &[&name]));
-            }
-            Some(Refusal::Budget) => self.flash(fill(t.budget_spent, &[&name])),
-            Some(Refusal::Start(why)) => self.flash(fill(t.cannot_start, &[&name, &why])),
         }
     }
 

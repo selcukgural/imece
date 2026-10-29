@@ -36,6 +36,13 @@ pub trait Agent: Send {
     /// Gives the agent a prompt. A busy session takes it after the running
     /// turn.
     fn prompt(&mut self, text: &str) -> io::Result<()>;
+    /// Gives the session one line of its vendor's own command line
+    /// (`/clear`, `/compact`, `/cost`, whatever the CLI knows), which runs
+    /// as a turn of its own and ends in a [`Event::TurnDone`] like a
+    /// prompt. A vendor without such a line, or one that does not know
+    /// the command, answers [`io::ErrorKind::Unsupported`] and nothing
+    /// runs.
+    fn command(&mut self, line: &str) -> io::Result<()>;
     /// Asks the session to stop without waiting.
     fn terminate(&mut self);
 }

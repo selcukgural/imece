@@ -238,6 +238,8 @@ const CAPPED: &str = "error_max_budget_usd";
 pub enum Refusal {
     Budget,
     Start(String),
+    /// The agent's session took no such command: why.
+    Command(String),
 }
 
 /// An agent's session, if it has one.
@@ -703,9 +705,14 @@ impl Live {
                 } else if let Some(text) = answer.filter(|_| self.asked[id] || self.reports(w, id))
                 {
                     // The person waits for this: it goes to them, not
-                    // only into the journal.
+                    // only into the journal. A command may have nothing
+                    // to say (`/clear`).
                     self.asked[id] = false;
-                    w.replied(id, &text);
+                    if text.is_empty() {
+                        w.agents[id].trace(w.tick, "nothing to say");
+                    } else {
+                        w.replied(id, &text);
+                    }
                 }
             }
         }
@@ -1391,6 +1398,45 @@ impl Live {
             .map_err(Refusal::Start)?;
         self.asked[id] = true;
         Ok(())
+    }
+
+    /// Gives agent `id` one line of its vendor's own command line (`/clear`,
+    /// `/compact`, `/cost` ...), typed by the person. It runs as a turn and
+    /// its answer reaches the person. A vendor without `/clear` of its own
+    /// gets imece's: the session ends, and the next message starts a new
+    /// one.
+    pub fn command(&mut self, w: &mut World, id: AgentId, line: &str) -> Result<(), Refusal> {
+        if self.over_budget(w) {
+            return Err(Refusal::Budget);
+        }
+        let line = line.trim();
+        let Slot::Running(s) = &mut self.slots[id] else {
+            return Err(Refusal::Command(
+                "it has no session yet; say something to it first".into(),
+            ));
+        };
+        match s.command(line) {
+            Ok(()) => {
+                self.inflight[id].push(line.to_string());
+                self.turns[id] += 1;
+                self.asked[id] = true;
+                let t = w.tick;
+                let a = &mut w.agents[id];
+                a.set_status(Status::Working, t);
+                a.trace(t, format!("command: {line}"));
+                Ok(())
+            }
+            Err(e) if e.kind() == io::ErrorKind::Unsupported && line == "/clear" => {
+                s.terminate();
+                self.end(w, id);
+                w.agents[id].trace(
+                    w.tick,
+                    "session ended on /clear; the next message starts a new one",
+                );
+                Ok(())
+            }
+            Err(e) => Err(Refusal::Command(e.to_string())),
+        }
     }
 
     /// Gives agent `id` a prompt, starting its session first if it has
@@ -2434,7 +2480,85 @@ mod tests {
         fn prompt(&mut self, _: &str) -> io::Result<()> {
             Ok(())
         }
+        fn command(&mut self, line: &str) -> io::Result<()> {
+            if line == "/known" {
+                Ok(())
+            } else {
+                Err(io::Error::new(
+                    io::ErrorKind::Unsupported,
+                    "no such command",
+                ))
+            }
+        }
         fn terminate(&mut self) {}
+    }
+
+    #[test]
+    fn a_command_runs_as_a_turn_and_clear_ends_a_session_without_one_of_its_own() {
+        let mut w = team(1);
+        let mut live = idle_live(2);
+        let e = live.command(&mut w, 1, "/known").unwrap_err();
+        assert!(
+            matches!(&e, Refusal::Command(why) if why.contains("no session yet")),
+            "{e:?}"
+        );
+        let cwd = PathBuf::from("/work/claude-1");
+        live.ready(&mut w, 1, Ok((Box::new(Stub), cwd.clone(), None)));
+        live.command(&mut w, 1, " /known ").unwrap();
+        assert_eq!(live.turns[1], 1);
+        assert!(live.asked[1]);
+        assert_eq!(live.inflight[1], ["/known"]);
+        assert_eq!(w.agents[1].status, Status::Working);
+        assert!(
+            w.agents[1]
+                .trace
+                .iter()
+                .any(|l| l.ends_with("command: /known"))
+        );
+        let e = live.command(&mut w, 1, "/other").unwrap_err();
+        assert!(
+            matches!(&e, Refusal::Command(why) if why.contains("no such command")),
+            "{e:?}"
+        );
+        assert!(
+            matches!(live.slots[1], Slot::Running(_)),
+            "a refused command ends nothing"
+        );
+        // A command's empty answer is not a reply to the person.
+        live.step(&mut w);
+        let _ = live.tx.send((
+            1,
+            live.generation[1],
+            AgentEvent::TurnDone {
+                ok: true,
+                text: String::new(),
+                cost: 0,
+                denied: 0,
+            },
+        ));
+        live.step(&mut w);
+        assert!(w.inbox.is_empty(), "{:?}", w.inbox);
+        assert!(
+            w.agents[1]
+                .trace
+                .iter()
+                .any(|l| l.ends_with("nothing to say"))
+        );
+        assert_eq!(live.turns[1], 0);
+        // /clear without one of the vendor's own: the session ends.
+        live.command(&mut w, 1, "/clear").unwrap();
+        assert!(matches!(live.slots[1], Slot::None));
+        assert!(
+            w.agents[1]
+                .trace
+                .iter()
+                .any(|l| l.contains("session ended on /clear"))
+        );
+        assert_eq!(live.cwds[1], None);
+        // Over budget nothing runs, a clear included.
+        live.ready(&mut w, 1, Ok((Box::new(Stub), cwd, None)));
+        w.agents[1].cost = w.daily_budget;
+        assert_eq!(live.command(&mut w, 1, "/clear"), Err(Refusal::Budget));
     }
 
     fn argv(line: &str) -> Vec<String> {
