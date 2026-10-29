@@ -38,14 +38,9 @@ pub const ENV: &[&str] = &[
 /// that would ask is denied (`--permission-prompts none`).
 const PERMISSION_MODE: &str = "acceptEdits";
 
-/// The name imece's MCP server has in a session; its tools are
-/// `mcp__imece__<tool>`.
-pub const MCP_SERVER: &str = "imece";
-
-/// The name a session gives a tool of imece's MCP server.
-pub fn mcp_tool(tool: &str) -> String {
-    format!("mcp__{MCP_SERVER}__{tool}")
-}
+/// Claude Code names a tool of an MCP server `mcp__<server>__<tool>`, which
+/// is the name the screen uses for every vendor.
+pub use crate::{MCP_SERVER, Mcp, mcp_tool};
 
 /// The program on PATH.
 pub const PROGRAM: &str = "claude";
@@ -80,16 +75,6 @@ pub struct Spec {
     pub system: String,
     /// imece's MCP server, if the agent gets its tools.
     pub mcp: Option<Mcp>,
-}
-
-/// How the session starts imece's MCP server, and which of its tools it
-/// may call without asking.
-#[derive(Clone, Debug)]
-pub struct Mcp {
-    pub command: String,
-    pub args: Vec<String>,
-    /// Tool names as the server offers them (`send`).
-    pub tools: Vec<String>,
 }
 
 /// The command line for `spec`. Prompts never go here; they go to stdin.
@@ -380,6 +365,16 @@ impl Session {
     /// job.
     pub fn terminate(&mut self) {
         self.child.terminate();
+    }
+}
+
+impl crate::Agent for Session {
+    fn prompt(&mut self, text: &str) -> io::Result<()> {
+        Session::prompt(self, text)
+    }
+
+    fn terminate(&mut self) {
+        Session::terminate(self)
     }
 }
 

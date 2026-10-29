@@ -26,7 +26,7 @@ use crate::i18n::Lang;
 use crate::model::{Vendor, parse_dollars};
 
 const USAGE: &str = "usage: imece [--repo DIR] [--agents N] [--helpers N] [--lead VENDOR]
-             [--model NAME] [--tier T=NAME]... [--budget USD] [--lang en|tr]
+             [--model [V:]NAME]... [--tier [V:]T=NAME]... [--budget USD] [--lang en|tr]
              [--theme NAME]
        imece --demo [--projects N] [--agents N] [--researchers N] [--seed N]
 
@@ -41,9 +41,12 @@ its own git worktree; a worker may hire helpers for parts of its task.
                     asks at the start. Without it: your primary vendor (set
                     with p in that question, or with :lead VENDOR), else the
                     only one on PATH, else the question
-  --model NAME      the model every agent runs on (default: the vendor's own)
-  --tier T=NAME     the model a tier stands for, T being cheap, standard or
-                    strong (claude: haiku, the vendor's own, opus)
+  --model [V:]NAME  the model agents of vendor V run on (default: the
+                    vendor's own); without V, the leader's vendor
+  --tier [V:]T=NAME the model a tier stands for, T being cheap, standard or
+                    strong (claude: haiku, the vendor's own, opus; codex:
+                    an effort on its default model, @low, the default,
+                    @high, or MODEL@EFFORT); without V, the leader's vendor
   --budget USD      the most all agents together may spend (default 50;
                     :budget USD changes it while agents run)
   --lang en|tr      the screen's language (default en, or IMECE_LANG)
@@ -68,8 +71,9 @@ struct Args {
     demo: bool,
     repo: PathBuf,
     lead: Option<Lead>,
-    model: Option<String>,
-    tiers: Vec<(Tier, String)>,
+    /// Stand-ins for the vendors' own models, by vendor (none: the
+    /// leader's) and tier; `--model` is the standard tier.
+    tiers: Vec<(Option<Vendor>, Tier, String)>,
     /// Ten-thousandths of a dollar.
     budget: u64,
 }
@@ -125,7 +129,7 @@ fn valid_model(s: &str) -> bool {
     (1..=64).contains(&s.len())
         && !s.starts_with('-')
         && s.bytes()
-            .all(|b| b.is_ascii_alphanumeric() || b"-._[]".contains(&b))
+            .all(|b| b.is_ascii_alphanumeric() || b"-._[]@".contains(&b))
 }
 
 fn parse_args() -> Result<Args, String> {
@@ -156,7 +160,6 @@ fn parse(
         demo: false,
         repo: PathBuf::from("."),
         lead: None,
-        model: None,
         tiers: Vec::new(),
         budget: 50 * 10_000,
     };
@@ -210,8 +213,7 @@ fn parse(
                     .ok_or_else(|| format!("--lang: {value:?} is not en or tr"))?
             }
             "--repo" => args.repo = PathBuf::from(&value),
-            "--model" if valid_model(&value) => args.model = Some(value),
-            "--model" => return Err(format!("--model: {value:?} is not a model name")),
+            "--model" => args.tiers.push(parse_model(&value)?),
             "--budget" => {
                 args.budget = parse_dollars(&value)
                     .filter(|&b| b >= 100)
@@ -235,8 +237,21 @@ fn parse(
     Ok(args)
 }
 
-/// `TIER=MODEL`, as `--tier` takes it.
-fn parse_tier(s: &str) -> Result<(Tier, String), String> {
+/// `[VENDOR:]REST`: the vendor a `--model` or `--tier` value names, if
+/// any, and the rest. A model name holds no colon, so a colon is a vendor.
+fn split_vendor<'a>(flag: &str, s: &'a str) -> Result<(Option<Vendor>, &'a str), String> {
+    match s.split_once(':') {
+        None => Ok((None, s)),
+        Some((v, rest)) => Vendor::parse(v)
+            .filter(|v| live::KNOWN.iter().any(|k| k.0 == *v && k.2))
+            .map(|v| (Some(v), rest))
+            .ok_or_else(|| format!("{flag}: {v:?} is not a vendor imece drives (claude, codex)")),
+    }
+}
+
+/// `[VENDOR:]TIER=MODEL`, as `--tier` takes it.
+fn parse_tier(s: &str) -> Result<(Option<Vendor>, Tier, String), String> {
+    let (vendor, s) = split_vendor("--tier", s)?;
     let (tier, model) = s
         .split_once('=')
         .ok_or_else(|| format!("--tier: {s:?} is not TIER=MODEL, like strong=opus"))?;
@@ -245,7 +260,16 @@ fn parse_tier(s: &str) -> Result<(Tier, String), String> {
     if !valid_model(model) {
         return Err(format!("--tier: {model:?} is not a model name"));
     }
-    Ok((tier, model.to_string()))
+    Ok((vendor, tier, model.to_string()))
+}
+
+/// `[VENDOR:]MODEL`, as `--model` takes it: the standard tier.
+fn parse_model(s: &str) -> Result<(Option<Vendor>, Tier, String), String> {
+    let (vendor, model) = split_vendor("--model", s)?;
+    if !valid_model(model) {
+        return Err(format!("--model: {model:?} is not a model name"));
+    }
+    Ok((vendor, Tier::Standard, model.to_string()))
 }
 
 fn main() -> std::io::Result<()> {
@@ -328,7 +352,6 @@ fn main() -> std::io::Result<()> {
             max_workers: args.agents.unwrap_or(DEFAULT_WORKERS),
             max_helpers: args.helpers,
             lead,
-            model: args.model,
             tiers: args.tiers,
             budget: args.budget,
         };
@@ -490,7 +513,6 @@ mod tests {
             "the leader's cap comes from DEFAULT_WORKERS"
         );
         assert_eq!(a.lead, None, "who leads is decided at the start");
-        assert_eq!(a.model, None);
         assert!(a.tiers.is_empty());
         assert_eq!(a.budget, 500_000);
         assert_eq!(a.repo, PathBuf::from("."));
@@ -591,20 +613,43 @@ mod tests {
     #[test]
     fn tiers_are_tier_equals_model_and_repeat() {
         let a = args(
-            &["--tier", "strong=opus[1m]", "--tier", "cheap=sonnet"],
+            &[
+                "--tier",
+                "strong=opus[1m]",
+                "--tier",
+                "codex:cheap=gpt-5.6-luna@low",
+                "--model",
+                "sonnet",
+                "--model",
+                "codex:gpt-5.6-terra",
+            ],
             &[],
         )
         .unwrap();
         assert_eq!(
             a.tiers,
             [
-                (Tier::Strong, "opus[1m]".to_string()),
-                (Tier::Cheap, "sonnet".to_string())
+                (None, Tier::Strong, "opus[1m]".to_string()),
+                (
+                    Some(Vendor::Codex),
+                    Tier::Cheap,
+                    "gpt-5.6-luna@low".to_string()
+                ),
+                (None, Tier::Standard, "sonnet".to_string()),
+                (
+                    Some(Vendor::Codex),
+                    Tier::Standard,
+                    "gpt-5.6-terra".to_string()
+                ),
             ]
         );
         assert_eq!(
             parse_tier("standard=sonnet"),
-            Ok((Tier::Standard, "sonnet".to_string()))
+            Ok((None, Tier::Standard, "sonnet".to_string()))
+        );
+        assert_eq!(
+            parse_tier("claude:strong=opus"),
+            Ok((Some(Vendor::Claude), Tier::Strong, "opus".to_string()))
         );
         for (bad, why) in [
             ("opus", "TIER=MODEL"),
@@ -612,12 +657,23 @@ mod tests {
             ("strong=", "not a model name"),
             ("strong=--dangerously-skip-permissions", "not a model name"),
             ("=opus", "cheap, standard or strong"),
+            ("gemini:strong=pro", "not a vendor imece drives"),
+            ("qwen:strong=big", "not a vendor imece drives"),
         ] {
             let e = parse_tier(bad).unwrap_err();
             assert!(e.starts_with("--tier") && e.contains(why), "{bad}: {e}");
         }
         let e = args(&["--tier", "opus"], &[]).unwrap_err();
         assert!(e.contains("TIER=MODEL"), "{e}");
+        for (bad, why) in [
+            ("", "not a model name"),
+            ("--x", "not a model name"),
+            ("gemini:pro", "not a vendor imece drives"),
+            ("codex:", "not a model name"),
+        ] {
+            let e = parse_model(bad).unwrap_err();
+            assert!(e.starts_with("--model") && e.contains(why), "{bad}: {e}");
+        }
     }
 
     #[test]
@@ -639,7 +695,15 @@ mod tests {
     #[test]
     fn a_model_name_can_not_pass_as_a_flag() {
         assert!(valid_model("sonnet") && valid_model("opus[1m]") && valid_model("claude-opus-5-5"));
-        for bad in ["", "--dangerously-skip-permissions", "a b", "x;y", "m/../n"] {
+        assert!(valid_model("@low") && valid_model("gpt-5.6-terra@xhigh"));
+        for bad in [
+            "",
+            "--dangerously-skip-permissions",
+            "a b",
+            "x;y",
+            "m/../n",
+            "codex:x",
+        ] {
             assert!(!valid_model(bad), "{bad}");
         }
     }
