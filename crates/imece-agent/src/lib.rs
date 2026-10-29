@@ -7,6 +7,7 @@ pub mod claude;
 pub mod codex;
 pub mod gemini;
 pub mod mcp;
+pub mod run;
 pub mod worktree;
 
 use std::io;

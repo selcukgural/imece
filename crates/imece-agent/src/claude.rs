@@ -317,7 +317,11 @@ fn target(input: &Value, cwd: &Path) -> String {
             .to_string_lossy()
             .into_owned();
     }
-    input["pattern"].as_str().unwrap_or_default().to_string()
+    input["pattern"]
+        .as_str()
+        .or(input["command"].as_str())
+        .unwrap_or_default()
+        .to_string()
 }
 
 /// A running Claude Code session.

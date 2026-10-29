@@ -16,7 +16,7 @@ mod ui;
 use std::io::ErrorKind;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use imece_agent::Tier;
 use ratatui::DefaultTerminal;
@@ -49,6 +49,9 @@ its own git worktree; a worker may hire helpers for parts of its task.
                     @high, or MODEL@EFFORT); without V, the leader's vendor
   --budget USD      the most all agents together may spend (default 50;
                     :budget USD changes it while agents run)
+  --run PROG[,..]   programs workers may run with their run tool, next to
+                    cargo and git's reading commands (repeatable)
+  --run-timeout S   seconds one run may take (10-3600, default 600)
   --lang en|tr      the screen's language (default en, or IMECE_LANG)
   --theme NAME      dark (default), light or mono; or IMECE_THEME; the last
                     choice made with T is remembered
@@ -76,6 +79,8 @@ struct Args {
     tiers: Vec<(Option<Vendor>, Tier, String)>,
     /// Ten-thousandths of a dollar.
     budget: u64,
+    run_programs: Vec<String>,
+    run_timeout: Duration,
 }
 
 /// What `--lead` asks for.
@@ -162,6 +167,8 @@ fn parse(
         lead: None,
         tiers: Vec::new(),
         budget: 50 * 10_000,
+        run_programs: Vec::new(),
+        run_timeout: live::DEFAULT_RUN_TIMEOUT,
     };
     // Options of the demo alone, to refuse them without it.
     let mut demo_only: Vec<String> = Vec::new();
@@ -219,6 +226,17 @@ fn parse(
                     .filter(|&b| b >= 100)
                     .ok_or_else(|| format!("--budget: {value} is not dollars like 5 or 2.50"))?
             }
+            "--run" => {
+                for p in value.split(',').map(str::trim).filter(|p| !p.is_empty()) {
+                    if p.contains('/') {
+                        return Err(format!("--run: {p:?} is a path; name a program on PATH"));
+                    }
+                    if !args.run_programs.iter().any(|q| q == p) {
+                        args.run_programs.push(p.to_string());
+                    }
+                }
+            }
+            "--run-timeout" => args.run_timeout = Duration::from_secs(number(10, 3600)?),
             _ => return Err(format!("unknown option {flag}\n\n{USAGE}")),
         }
     }
@@ -356,6 +374,8 @@ fn main() -> std::io::Result<()> {
             lead,
             tiers: args.tiers,
             budget: args.budget,
+            run_programs: args.run_programs,
+            run_timeout: args.run_timeout,
         };
         match live::world(options, &present) {
             Ok((world, live)) => {
@@ -567,6 +587,25 @@ mod tests {
         let e = args(&["--helpers", "9"], &[]).unwrap_err();
         assert!(e.contains("0-8"), "{e}");
         assert!(USAGE.contains("--helpers N"));
+    }
+
+    #[test]
+    fn programs_to_run_are_named_without_paths_and_the_deadline_is_bounded() {
+        let a = args(&[], &[]).unwrap();
+        assert!(a.run_programs.is_empty());
+        assert_eq!(a.run_timeout, live::DEFAULT_RUN_TIMEOUT);
+        let a = args(
+            &["--run", "npm, make", "--run", "npm", "--run-timeout", "90"],
+            &[],
+        )
+        .unwrap();
+        assert_eq!(a.run_programs, ["npm", "make"]);
+        assert_eq!(a.run_timeout, Duration::from_secs(90));
+        let e = args(&["--run", "/usr/bin/sh"], &[]).unwrap_err();
+        assert!(e.contains("is a path"), "{e}");
+        assert!(args(&["--run-timeout", "9"], &[]).is_err());
+        assert!(args(&["--run-timeout", "3601"], &[]).is_err());
+        assert!(USAGE.contains("--run PROG") && USAGE.contains("--run-timeout S"));
     }
 
     #[test]

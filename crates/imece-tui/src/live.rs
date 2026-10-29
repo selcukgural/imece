@@ -34,7 +34,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use imece_agent::mcp::{Answer, Server, Tool};
 use imece_agent::{
-    Agent as Session, Event as AgentEvent, Mcp, Tier, child, claude, codex, gemini, worktree,
+    Agent as Session, Event as AgentEvent, Mcp, Tier, child, claude, codex, gemini, run, worktree,
 };
 use serde_json::{Value, json};
 
@@ -53,6 +53,11 @@ pub struct Options {
     pub tiers: Vec<(Option<Vendor>, Tier, String)>,
     /// Ten-thousandths of a dollar, for all agents together.
     pub budget: u64,
+    /// Programs workers and helpers may run with the run tool, next to
+    /// the built-in cargo and git commands.
+    pub run_programs: Vec<String>,
+    /// How long one run may take.
+    pub run_timeout: Duration,
 }
 
 /// A coding agent imece knows: its program on PATH, and whether imece can
@@ -267,6 +272,39 @@ const MAX_OPEN: usize = 20;
 const MAX_POSTS: u32 = 10;
 /// How long a tool call waits for the screen's loop to answer it.
 const CALL_WAIT: Duration = Duration::from_secs(30);
+/// How long one run may take unless `--run-timeout` says otherwise.
+pub const DEFAULT_RUN_TIMEOUT: Duration = Duration::from_secs(600);
+/// The longest command line the run tool takes, in characters.
+const MAX_COMMAND: usize = 1000;
+/// The most output of one run that goes back to the agent, in bytes.
+const MAX_RUN_OUTPUT: usize = 48 << 10;
+/// Cargo commands nobody runs through imece: they change what the project
+/// depends on or reach outside it, which is the person's call.
+const CARGO_DENIED: &[&str] = &[
+    "add",
+    "install",
+    "login",
+    "logout",
+    "owner",
+    "publish",
+    "remove",
+    "rm",
+    "uninstall",
+    "yank",
+];
+/// Cargo commands a leader may not run either: they change files.
+const CARGO_WRITES: &[&str] = &["clean", "fix", "fmt", "init", "new"];
+/// Git commands that only read.
+const GIT_READ: &[&str] = &[
+    "blame",
+    "diff",
+    "grep",
+    "log",
+    "ls-files",
+    "rev-parse",
+    "show",
+    "status",
+];
 
 /// A message waiting for an agent's next turn.
 #[derive(Clone, Debug)]
@@ -354,6 +392,13 @@ pub struct Live {
     offered: HashMap<CardId, Vec<AgentId>>,
     /// Cards each agent posted since the person last spoke.
     posted: Vec<u32>,
+    /// The directory each agent's running session is in: where its runs go.
+    cwds: Vec<Option<PathBuf>>,
+    /// Runs under way, killed with imece.
+    running: run::Running,
+    /// Programs workers and helpers may run, next to cargo and git.
+    run_programs: Vec<String>,
+    run_timeout: Duration,
 }
 
 /// The coding agents among `known` (see [`KNOWN`]) on PATH, run from the
@@ -419,6 +464,8 @@ pub fn world(o: Options, present: &[(Vendor, bool)]) -> Result<(World, Live), St
     let mut live = Live::new(1, vendors, repo, root);
     live.max_workers = o.max_workers;
     live.max_helpers = o.max_helpers;
+    live.run_programs = o.run_programs;
+    live.run_timeout = o.run_timeout;
     live.models[0] = live.of(o.lead).ladder.standard.clone();
     let relay = std::env::current_exe().map_err(|e| format!("imece's own path: {e}"))?;
     live.open_bus(&w, relay.to_string_lossy().into_owned())
@@ -463,6 +510,10 @@ impl Live {
             posts: HashMap::new(),
             offered: HashMap::new(),
             posted: Vec::new(),
+            cwds: Vec::new(),
+            running: run::Running::default(),
+            run_programs: Vec::new(),
+            run_timeout: DEFAULT_RUN_TIMEOUT,
         };
         for _ in 0..agents {
             live.grow(None, false);
@@ -487,6 +538,7 @@ impl Live {
         self.asked.push(false);
         self.woken.push(0);
         self.posted.push(0);
+        self.cwds.push(None);
     }
 
     /// The vendor `v` as imece drives it. Every agent's vendor is one.
@@ -536,19 +588,27 @@ impl Live {
     /// the tools of `role`. Without a bus (before it opens) there is
     /// nothing to bind.
     fn bind(&mut self, id: AgentId, role: Role) -> io::Result<()> {
-        let tools = tools_of(role, &self.vendor_names());
+        let tools = tools_of(
+            role,
+            &self.vendor_names(),
+            &self.run_programs,
+            self.run_timeout,
+        );
         let Some(bus) = &mut self.bus else {
             return Ok(());
         };
         assert_eq!(bus.servers.len(), id, "sockets are bound in agent order");
         let tx = self.calls_tx.clone();
+        // A run is answered when the program ends, not by the screen's loop.
+        let run_wait = self.run_timeout + CALL_WAIT;
         let server = Server::bind(&bus.dir.join(format!("a{id}.sock")), tools, {
             move |name, args| {
                 let (reply, answer) = mpsc::channel();
                 tx.send((id, name.to_string(), args.clone(), reply))
                     .map_err(|_| "imece is closing".to_string())?;
+                let wait = if name == "run" { run_wait } else { CALL_WAIT };
                 answer
-                    .recv_timeout(CALL_WAIT)
+                    .recv_timeout(wait)
                     .map_err(|_| "imece did not answer in time; try again".to_string())?
             }
         })?;
@@ -650,6 +710,10 @@ impl Live {
             }
         }
         while let Ok((from, tool, args, reply)) = self.calls_rx.try_recv() {
+            if tool == "run" {
+                self.run(w, from, &args, reply);
+                continue;
+            }
             let answer = match tool.as_str() {
                 "send" => self.send(w, from, &args),
                 "post" => self.post(w, from, &args),
@@ -680,10 +744,68 @@ impl Live {
             })
     }
 
+    /// Agent `from` asked to run a command: checked here, run on a thread
+    /// of its own in the agent's directory, answered when it ends. The
+    /// trace gets the command and how it ended.
+    fn run(&mut self, w: &mut World, from: AgentId, args: &Value, reply: Sender<Answer>) {
+        let line = args["command"].as_str().unwrap_or_default().trim();
+        let checked = (|| {
+            if line.is_empty() {
+                return Err("command: what to run, a program and its arguments".to_string());
+            }
+            if line.chars().count() > MAX_COMMAND {
+                return Err(format!(
+                    "the command is longer than {MAX_COMMAND} characters"
+                ));
+            }
+            let argv = run::split(line)?;
+            allowed(w.agents[from].role, &argv, &self.run_programs)?;
+            let cwd = self.cwds[from]
+                .clone()
+                .ok_or_else(|| "the session has no directory yet".to_string())?;
+            Ok((argv, cwd))
+        })();
+        let (argv, cwd) = match checked {
+            Ok(c) => c,
+            Err(e) => {
+                w.agents[from].trace(w.tick, format!("run refused: {e}"));
+                let _ = reply.send(Err(e));
+                return;
+            }
+        };
+        let line = line.to_string();
+        w.agents[from].trace(w.tick, format!("run: {line}"));
+        let (tx, generation) = (self.tx.clone(), self.generation[from]);
+        let (running, timeout) = (self.running.clone(), self.run_timeout);
+        thread::spawn(move || {
+            let mut pgid = None;
+            let outcome = run::run(&argv, &cwd, timeout, MAX_RUN_OUTPUT, |p| {
+                running.add(p);
+                pgid = Some(p);
+            });
+            if let Some(p) = pgid {
+                running.remove(p);
+            }
+            let (note, answer) = match outcome {
+                Ok(o) => (
+                    format!("run: {line}: {}", run_ended(&o)),
+                    Ok(run_answer(&o)),
+                ),
+                Err(e) => (
+                    format!("run: {line}: could not start: {e}"),
+                    Err(format!("could not start {}: {e}", argv[0])),
+                ),
+            };
+            let _ = tx.send((from, generation, AgentEvent::Note(note)));
+            let _ = reply.send(answer);
+        });
+    }
+
     /// A session ended: the next message starts a new one.
     fn end(&mut self, w: &World, id: AgentId) {
         self.spent_before[id] = w.agents[id].cost;
         self.slots[id] = Slot::None;
+        self.cwds[id] = None;
         self.generation[id] += 1;
         self.turns[id] = 0;
         self.turned[id] = false;
@@ -1215,6 +1337,7 @@ impl Live {
         let mut session = match ready {
             Ok((session, cwd, placed)) => {
                 w.agents[id].trace(w.tick, format!("session in {}", cwd.display()));
+                self.cwds[id] = Some(cwd);
                 match placed {
                     Some(worktree::Placed::Moved { from, to }) => {
                         w.note(Event::WorktreeMoved {
@@ -1334,10 +1457,15 @@ impl Live {
                 "mcp-relay".into(),
                 b.servers[id].path().to_string_lossy().into_owned(),
             ],
-            tools: tools_of(a.role, &self.vendor_names())
-                .into_iter()
-                .map(|t| t.name)
-                .collect(),
+            tools: tools_of(
+                a.role,
+                &self.vendor_names(),
+                &self.run_programs,
+                self.run_timeout,
+            )
+            .into_iter()
+            .map(|t| t.name)
+            .collect(),
         });
         let mut system = system_prompt(w, id, self.max_workers, self.max_helpers);
         if let Some(notes) = repo_notes(&self.repo, a.vendor) {
@@ -1429,6 +1557,7 @@ impl Live {
 
 impl Drop for Live {
     fn drop(&mut self) {
+        self.running.kill_all();
         // Ask every session to stop first, so they wind down together.
         for s in &mut self.slots {
             if let Slot::Running(s) = s {
@@ -1519,8 +1648,13 @@ pub fn apply(w: &mut World, id: AgentId, e: AgentEvent, before: u64) {
 /// imece's tools for an agent of `role`: workers alone take cards, the
 /// leader hires workers and a worker hires helpers (from `vendors`);
 /// helpers and researchers hire nobody.
-fn tools_of(role: Role, vendors: &[&str]) -> Vec<Tool> {
-    let mut tools = vec![send_tool(), post_tool(), board_tool()];
+fn tools_of(role: Role, vendors: &[&str], programs: &[String], timeout: Duration) -> Vec<Tool> {
+    let mut tools = vec![
+        send_tool(),
+        post_tool(),
+        board_tool(),
+        run_tool(role, programs, timeout),
+    ];
     match role {
         Role::Worker => {
             tools.push(claim_tool());
@@ -1530,6 +1664,140 @@ fn tools_of(role: Role, vendors: &[&str]) -> Vec<Tool> {
         Role::Helper | Role::Researcher => {}
     }
     tools
+}
+
+/// How one run ended, for the trace.
+fn run_ended(o: &run::Outcome) -> String {
+    let how = if o.timed_out {
+        "killed at the deadline".to_string()
+    } else {
+        match o.code {
+            Some(c) => format!("exit {c}"),
+            None => "killed".to_string(),
+        }
+    };
+    format!("{how}, {:.1} s, {} bytes", o.took.as_secs_f64(), o.bytes)
+}
+
+/// What the agent reads back from a run.
+fn run_answer(o: &run::Outcome) -> String {
+    let first = if o.timed_out {
+        format!(
+            "killed after {} s: it did not finish in time",
+            o.took.as_secs()
+        )
+    } else {
+        match o.code {
+            Some(0) => "exit code 0".to_string(),
+            Some(c) => format!("exit code {c} (failed)"),
+            None => "killed by a signal".to_string(),
+        }
+    };
+    if o.output.is_empty() {
+        format!("{first}, no output")
+    } else {
+        format!("{first}\n{}", o.output)
+    }
+}
+
+/// Whether an agent in `role` may run `argv`: cargo without the commands
+/// that change dependencies (a leader: without the ones that change
+/// files), git's reading commands, and for workers and helpers the
+/// programs the person named. Nothing else.
+fn allowed(role: Role, argv: &[String], programs: &[String]) -> Result<(), String> {
+    let program = Path::new(&argv[0])
+        .file_name()
+        .map(|f| f.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    if argv[0] != program {
+        return Err(format!(
+            "{}: name the program alone, on PATH; not a path",
+            argv[0]
+        ));
+    }
+    // The first word that is not an option (or a toolchain, `+nightly`).
+    let sub = argv[1..]
+        .iter()
+        .find(|a| !a.starts_with('-') && !a.starts_with('+'))
+        .map_or("", String::as_str);
+    let leader = role == Role::Leader;
+    match program.as_str() {
+        "cargo" => {
+            if CARGO_DENIED.contains(&sub) {
+                return Err(format!(
+                    "cargo {sub} is for the person: dependencies and what is outside the \
+                     project are not changed through imece"
+                ));
+            }
+            if leader && CARGO_WRITES.contains(&sub) && !argv.iter().any(|a| a == "--check") {
+                return Err(format!(
+                    "cargo {sub} changes files, and a leader changes none; a worker can"
+                ));
+            }
+            Ok(())
+        }
+        "git" => {
+            if GIT_READ.contains(&sub) {
+                Ok(())
+            } else {
+                Err(format!(
+                    "git {sub} is not run through imece; git only reads here: {}",
+                    GIT_READ.join(", ")
+                ))
+            }
+        }
+        _ if !leader && programs.contains(&program) => Ok(()),
+        _ => {
+            let mut can = vec!["cargo".to_string(), "git".to_string()];
+            if !leader {
+                can.extend(programs.iter().cloned());
+            }
+            Err(format!(
+                "{program} is not a program imece runs; these are: {} (the person adds \
+                 one with --run NAME)",
+                can.join(", ")
+            ))
+        }
+    }
+}
+
+fn run_tool(role: Role, programs: &[String], timeout: Duration) -> Tool {
+    let mut can = vec![
+        "cargo (not add, remove, install or publish)".to_string(),
+        format!("git ({} only)", GIT_READ.join(", ")),
+    ];
+    if role == Role::Leader {
+        can[0] = "cargo (check, clippy, test, build, fmt --check; not the commands that \
+                  change files)"
+            .to_string();
+    } else {
+        can.extend(programs.iter().cloned());
+    }
+    Tool {
+        name: "run".into(),
+        description: format!(
+            "Runs one program in your directory and gives back its exit code and \
+             output (stdout and stderr together; lines of passing tests are left \
+             out, very long output is cut in the middle). No shell: one program and \
+             its arguments, no pipes, redirections or variables; quote an argument \
+             with spaces. Programs: {}. A run is killed after {} s. Use it to check \
+             your work (build, lint, test) before you say it is done.",
+            can.join("; "),
+            timeout.as_secs()
+        ),
+        input: json!({
+            "type": "object",
+            "properties": {
+                "command": {
+                    "type": "string",
+                    "description": "The program and its arguments, as one line: \
+                                    cargo test --workspace",
+                },
+            },
+            "required": ["command"],
+            "additionalProperties": false,
+        }),
+    }
 }
 
 /// The hire tool as the leader sees it.
@@ -1829,8 +2097,14 @@ fn abilities(vendor: Vendor, role: Role) -> &'static str {
             "You can read and change files here and run commands; the sandbox keeps \
              writes inside this directory and refuses the network."
         }
-        (_, Role::Leader) => "You can read files but not change them or run commands.",
-        _ => "You can read and change files here but not run commands.",
+        (_, Role::Leader) => {
+            "You can read files but not change them; the run tool runs checks (cargo \
+             check, clippy, test; git diff, log) in the checkout."
+        }
+        _ => {
+            "You can read and change files here; the run tool runs the build, the \
+             tests and git's reading commands, nothing else."
+        }
     }
 }
 
@@ -2161,6 +2435,237 @@ mod tests {
             Ok(())
         }
         fn terminate(&mut self) {}
+    }
+
+    fn argv(line: &str) -> Vec<String> {
+        run::split(line).unwrap()
+    }
+
+    #[test]
+    fn what_may_run_is_cargo_git_s_reads_and_the_person_s_programs_nothing_else() {
+        let extra = vec!["npm".to_string(), "make".to_string()];
+        for role in [Role::Leader, Role::Worker, Role::Helper] {
+            let ok = |line: &str| allowed(role, &argv(line), &extra).unwrap();
+            let no = |line: &str| allowed(role, &argv(line), &extra).unwrap_err();
+            ok("cargo test --workspace");
+            ok("cargo +nightly clippy -- -D warnings");
+            ok("cargo fmt --all --check");
+            ok("cargo --locked check");
+            ok("git status --short");
+            ok("git diff HEAD~1");
+            ok("git log --oneline -5");
+            for denied in [
+                "add serde",
+                "remove serde",
+                "rm serde",
+                "install x",
+                "publish",
+                "yank",
+                "login",
+                "logout",
+                "owner --add x",
+                "uninstall x",
+            ] {
+                let e = no(&format!("cargo {denied}"));
+                assert!(e.contains("for the person"), "{e}");
+            }
+            for denied in [
+                "push",
+                "commit -m x",
+                "checkout main",
+                "reset --hard",
+                "branch x",
+                "stash",
+                "fetch",
+                "pull",
+                "clean -fd",
+            ] {
+                let e = no(&format!("git {denied}"));
+                assert!(e.contains("only reads"), "{e}");
+            }
+            assert!(no("git").contains("only reads"));
+            assert!(no("/usr/bin/git status").contains("not a path"));
+            assert!(no("./cargo test").contains("not a path"));
+            for other in [
+                "sh -c ls",
+                "bash",
+                "python3 x.py",
+                "rm -rf x",
+                "curl http://x",
+                "ls",
+            ] {
+                let e = no(other);
+                assert!(
+                    e.contains("not a program imece runs") && e.contains("--run"),
+                    "{e}"
+                );
+            }
+        }
+        // Leaders change nothing: cargo's writing commands and the person's
+        // programs are for workers and helpers.
+        for writes in ["fmt", "fmt --all", "fix", "clean", "new x", "init"] {
+            let e = allowed(Role::Leader, &argv(&format!("cargo {writes}")), &extra).unwrap_err();
+            assert!(e.contains("changes files"), "{e}");
+            allowed(Role::Worker, &argv(&format!("cargo {writes}")), &extra).unwrap();
+            allowed(Role::Helper, &argv(&format!("cargo {writes}")), &[]).unwrap();
+        }
+        for program in ["npm test", "make check"] {
+            let e = allowed(Role::Leader, &argv(program), &extra).unwrap_err();
+            assert!(e.contains("these are: cargo, git ("), "{e}");
+            allowed(Role::Worker, &argv(program), &extra).unwrap();
+            let e = allowed(Role::Worker, &argv(program), &[]).unwrap_err();
+            assert!(e.contains("these are: cargo, git ("), "{e}");
+        }
+        let e = allowed(Role::Worker, &argv("yarn"), &extra).unwrap_err();
+        assert!(e.contains("cargo, git, npm, make"), "{e}");
+    }
+
+    #[test]
+    fn the_run_tool_names_what_each_role_may_run_and_the_deadline() {
+        let extra = vec!["npm".to_string()];
+        let t = Duration::from_secs(120);
+        let lead = run_tool(Role::Leader, &extra, t);
+        assert_eq!(lead.name, "run");
+        assert!(
+            lead.description.contains("fmt --check"),
+            "{}",
+            lead.description
+        );
+        assert!(!lead.description.contains("npm"));
+        assert!(lead.description.contains("killed after 120 s"));
+        assert_eq!(lead.input["required"], json!(["command"]));
+        let worker = run_tool(Role::Worker, &extra, t);
+        assert!(
+            worker.description.contains("; npm."),
+            "{}",
+            worker.description
+        );
+        assert!(
+            worker
+                .description
+                .contains("not add, remove, install or publish")
+        );
+        assert!(
+            worker
+                .description
+                .contains("git (blame, diff, grep, log, ls-files, rev-parse, show, status only)")
+        );
+    }
+
+    #[test]
+    fn a_run_is_checked_on_the_screen_s_loop_and_answered_from_its_own_thread() {
+        let mut w = team(2);
+        let mut live = idle_live(3);
+        live.run_programs = vec!["sh".into()];
+        live.run_timeout = Duration::from_secs(5);
+        // No session, no directory.
+        let e = call(
+            &mut live,
+            &mut w,
+            1,
+            "run",
+            json!({ "command": "git status" }),
+        )
+        .unwrap_err();
+        assert!(e.contains("no directory"), "{e}");
+        let dir = std::env::temp_dir().join(format!("imece-run-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        live.cwds[1] = Some(dir.clone());
+        live.cwds[0] = Some(dir.clone());
+        for (args, says) in [
+            (json!({}), "what to run"),
+            (json!({ "command": "   " }), "what to run"),
+            (json!({ "command": "a".repeat(1001) }), "longer than 1000"),
+            (json!({ "command": "sh -c 'ls' | head" }), "no shell"),
+            (json!({ "command": "git push" }), "only reads"),
+            (json!({ "command": "ls" }), "not a program imece runs"),
+        ] {
+            let e = call(&mut live, &mut w, 1, "run", args).unwrap_err();
+            assert!(e.contains(says), "{e}");
+        }
+        assert!(
+            w.agents[1]
+                .trace
+                .iter()
+                .any(|l| l.contains("run refused: git push")),
+            "{:?}",
+            w.agents[1].trace
+        );
+        // The leader may not run the person's programs.
+        let e = call(
+            &mut live,
+            &mut w,
+            0,
+            "run",
+            json!({ "command": "sh -c 'pwd'" }),
+        )
+        .unwrap_err();
+        assert!(e.contains("not a program imece runs"), "{e}");
+        // A worker's run happens in its directory, and the answer carries
+        // the exit code and the output.
+        let got = call(
+            &mut live,
+            &mut w,
+            1,
+            "run",
+            json!({ "command": "sh -c 'pwd; echo err >&2; exit 2'" }),
+        )
+        .unwrap();
+        assert_eq!(
+            got,
+            format!(
+                "exit code 2 (failed)\n{}\nerr",
+                dir.canonicalize().unwrap().display()
+            )
+        );
+        let got = call(
+            &mut live,
+            &mut w,
+            1,
+            "run",
+            json!({ "command": "sh -c 'exit 0'" }),
+        )
+        .unwrap();
+        assert_eq!(got, "exit code 0, no output");
+        // The trace says what ran and how it ended, once the loop ran again.
+        live.step(&mut w);
+        let trace = w.agents[1]
+            .trace
+            .iter()
+            .cloned()
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(trace.contains("run: sh -c 'exit 0'\n"), "{trace}");
+        assert!(trace.contains("run: sh -c 'exit 0': exit 0, "), "{trace}");
+        assert!(trace.contains(" s, 0 bytes"), "{trace}");
+        assert!(live.running.is_empty());
+        // A program that can not start is an error, not an exit code.
+        live.run_programs.push("imece-no-such-program".into());
+        let e = call(
+            &mut live,
+            &mut w,
+            1,
+            "run",
+            json!({ "command": "imece-no-such-program" }),
+        )
+        .unwrap_err();
+        assert!(e.contains("could not start imece-no-such-program"), "{e}");
+        // Past the deadline the run is killed and says so.
+        live.run_timeout = Duration::from_millis(200);
+        let got = call(
+            &mut live,
+            &mut w,
+            1,
+            "run",
+            json!({ "command": "sh -c 'echo a; sleep 20'" }),
+        )
+        .unwrap();
+        assert!(
+            got.starts_with("killed after 0 s: it did not finish in time\na"),
+            "{got}"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
@@ -2518,7 +3023,7 @@ mod tests {
             .iter()
             .map(|t| t["name"].as_str().unwrap())
             .collect();
-        assert_eq!(names, ["send", "post", "board", "hire"]);
+        assert_eq!(names, ["send", "post", "board", "run", "hire"]);
         drop(sock);
         drop(live);
         assert!(!dir.exists());
@@ -2680,22 +3185,25 @@ mod tests {
     #[test]
     fn only_workers_get_the_claim_tool_and_only_the_leader_and_workers_hire() {
         let names = |r: Role| -> Vec<String> {
-            tools_of(r, &["claude"])
+            tools_of(r, &["claude"], &[], DEFAULT_RUN_TIMEOUT)
                 .into_iter()
                 .map(|t| t.name)
                 .collect()
         };
-        assert_eq!(names(Role::Leader), ["send", "post", "board", "hire"]);
+        assert_eq!(
+            names(Role::Leader),
+            ["send", "post", "board", "run", "hire"]
+        );
         assert_eq!(
             names(Role::Worker),
-            ["send", "post", "board", "claim", "hire"]
+            ["send", "post", "board", "run", "claim", "hire"]
         );
-        assert_eq!(names(Role::Helper), ["send", "post", "board"]);
-        assert_eq!(names(Role::Researcher), ["send", "post", "board"]);
+        assert_eq!(names(Role::Helper), ["send", "post", "board", "run"]);
+        assert_eq!(names(Role::Researcher), ["send", "post", "board", "run"]);
         // The same tool, told differently: a worker hires helpers.
-        let worker_hire = &tools_of(Role::Worker, &["claude"])[4];
+        let worker_hire = &tools_of(Role::Worker, &["claude"], &[], DEFAULT_RUN_TIMEOUT)[5];
         assert!(worker_hire.description.starts_with("Adds a helper"));
-        let hire = &tools_of(Role::Leader, &["claude", "codex"])[3];
+        let hire = &tools_of(Role::Leader, &["claude", "codex"], &[], DEFAULT_RUN_TIMEOUT)[4];
         assert!(hire.description.starts_with("Adds a worker"));
         assert_eq!(
             hire.input["properties"]["vendor"]["enum"],
@@ -3200,7 +3708,7 @@ in p.rs",
             .iter()
             .map(|t| t["name"].as_str().unwrap())
             .collect();
-        assert_eq!(names, ["send", "post", "board", "claim", "hire"]);
+        assert_eq!(names, ["send", "post", "board", "run", "claim", "hire"]);
     }
 
     #[test]
@@ -3468,7 +3976,7 @@ in p.rs",
         let got = live.hire(&mut w, 0, &json!({})).unwrap();
         assert!(got.starts_with("claude-1 joined"), "{got}");
         // The hire tool offers both.
-        let hire = &tools_of(Role::Leader, &live.vendor_names())[3];
+        let hire = &tools_of(Role::Leader, &live.vendor_names(), &[], DEFAULT_RUN_TIMEOUT)[4];
         assert_eq!(
             hire.input["properties"]["vendor"]["enum"],
             json!(["claude", "codex"])
@@ -3480,7 +3988,10 @@ in p.rs",
             "{worker}"
         );
         let claude = system_prompt(&w, 3, 4, 2);
-        assert!(claude.contains("but not run commands"), "{claude}");
+        assert!(
+            claude.contains("the run tool runs the build, the tests"),
+            "{claude}"
+        );
     }
 
     /// A stand-in for `codex` that writes its arguments where it runs and
@@ -3837,10 +4348,12 @@ in p.rs",
     #[test]
     fn what_an_agent_can_do_depends_on_its_vendor_and_role() {
         assert!(
-            abilities(Vendor::Claude, Role::Leader).contains("not change them or run commands")
+            abilities(Vendor::Claude, Role::Leader)
+                .contains("not change them; the run tool runs checks")
         );
-        assert!(abilities(Vendor::Claude, Role::Worker).contains("but not run commands"));
-        assert!(abilities(Vendor::Claude, Role::Helper).contains("but not run commands"));
+        assert!(abilities(Vendor::Claude, Role::Worker).contains("the run tool runs the build"));
+        assert!(abilities(Vendor::Claude, Role::Helper).contains("the run tool runs the build"));
+        assert!(abilities(Vendor::Gemini, Role::Worker).contains("the run tool runs the build"));
         assert!(abilities(Vendor::Codex, Role::Leader).contains("refuses writes and the network"));
         assert!(
             abilities(Vendor::Codex, Role::Worker).contains("keeps writes inside this directory")
