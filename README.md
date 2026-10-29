@@ -29,10 +29,36 @@ can not change anything), and hires workers as the work needs them, up to
 their own git worktree under `~/.local/state/imece/worktrees/`, detached at
 your HEAD. Your checkout is never touched; review an agent's work with
 `git -C <worktree> diff`. The trace (`enter` twice) shows where each
-worktree is.
+worktree is. A worktree is kept between runs: one found clean at an older
+commit is moved to your HEAD when its agent next starts; one with
+uncommitted changes or commits of its own stays where it is, and the
+journal says so either way.
 
 - Plain text goes to the lead, `@claude-2 text` to one agent. A message to
   an idle worker opens a card; its answer closes it.
+- A line that starts with `/` is a command of the agent's own CLI, not a
+  message: `/clear`, `@claude-2 /compact`, `/cost`, `/context`, whatever
+  the vendor's command line knows. It runs as a turn and its answer comes
+  back like a reply. Claude Code and Gemini CLI take their commands as
+  they are; Codex's app server has no command line, so only `/compact`
+  works there, and `/clear` on a vendor without one of its own ends the
+  session (the next message starts a fresh one).
+- Every agent gets the repository's notes for coding agents, its
+  `AGENTS.md` or `CLAUDE.md` (at most 16 KiB), with its instructions: the
+  vendors' CLIs are started so that nothing of the repository loads, which
+  would drop them too. Codex reads `AGENTS.md` on its own.
+- Every agent has a `run` tool: one program and its arguments, no shell
+  (pipes, redirections and variables are refused), in the agent's own
+  directory, killed after `--run-timeout` seconds (default 600) and with
+  imece. Allowed: `cargo` without the commands that change dependencies
+  (`add`, `remove`, `install`, `publish`, …; a leader also without the
+  ones that change files, so `fmt --check` but not `fmt`), git's reading
+  commands (`status`, `diff`, `log`, `show`, `blame`, `grep`, `ls-files`,
+  `rev-parse`), and for workers and helpers the programs you name with
+  `--run npm,make`. Output comes back tidied: colours stripped, lines of
+  passing tests dropped, repeats collapsed, the middle cut past 48 KiB.
+  Each worktree builds in its own `target/` (a shared one would make the
+  workers rebuild each other's changes in turn).
 - `:budget 80` raises (or lowers) the budget while agents run. A turn that
   is under way finishes on its old cap; the next one starts on the new
   remainder, in a new session if the old one had hit its cap.
@@ -52,7 +78,8 @@ worktree is.
   drives all three; `--lead` names the leader's vendor, and the lead may
   hire workers from any of them (`hire` takes a vendor).
 - A Claude Code session is a long-lived `claude -p` in `--restricted`
-  mode: file tools only (no shell, no web), no MCP servers but imece's own,
+  mode: file tools only (no shell, no web; commands go through imece's
+  `run` tool), no MCP servers but imece's own,
   no user or project settings (so no hooks), file access confined to the
   agent's directory, nothing that would ask for permission is allowed.
   What Claude Code reports it runs with is checked on every turn; anything
@@ -116,6 +143,7 @@ is one line, and that line still shows what waits for you.
 | --- | --- |
 | `/` | write to the selected project's leader; it splits the request into cards |
 | `@name text` | write to one agent |
+| `/cmd`, `@name /cmd` | the agent's own command line (`/clear`, `/compact`, `/cost` …) |
 | `:budget USD` | raise or lower the budget while agents run (`:b 80`) |
 | `1` `2` `3` | salon · board · code map |
 | `↑` `↓` / `j` `k` | select |
