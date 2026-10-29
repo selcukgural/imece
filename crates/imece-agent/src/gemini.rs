@@ -762,8 +762,19 @@ impl Protocol {
                 Ok(vec![Act::Event(Event::ToolFailed { name })])
             }
             "current_mode_update" => Err(format!("changed its mode to {}", u["currentModeId"])),
-            // Thoughts, plans, usage meters, the command list: nothing
-            // the screen needs.
+            // Gemini lists its own command line (and again when it
+            // changes); the screen completes with it.
+            "available_commands_update" => {
+                let commands = u["availableCommands"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .filter_map(|c| c["name"].as_str())
+                    .map(|n| format!("/{}", n.trim_start_matches('/')))
+                    .collect();
+                Ok(vec![Act::Event(Event::Commands(commands))])
+            }
+            // Thoughts, plans, usage meters: nothing the screen needs.
             _ => Ok(Vec::new()),
         }
     }
@@ -1574,6 +1585,22 @@ mod tests {
         p.line(&chunk("ng")).unwrap();
         // Thoughts and meters are not the screen's business.
         assert!(p.line(&update(json!({ "sessionUpdate": "agent_thought_chunk", "content": { "type": "text", "text": "hm" } }))).unwrap().is_empty());
+        // The command list is: the screen completes with it.
+        let acts = p
+            .line(&update(json!({ "sessionUpdate": "available_commands_update", "availableCommands": [
+                { "name": "clear", "description": "x" }, { "name": "/stats", "description": "y", "input": { "hint": "z" } }
+            ] })))
+            .unwrap();
+        assert_eq!(
+            events(&acts),
+            [Event::Commands(vec!["/clear".into(), "/stats".into()])]
+        );
+        let acts = p
+            .line(&update(
+                json!({ "sessionUpdate": "available_commands_update", "availableCommands": [] }),
+            ))
+            .unwrap();
+        assert_eq!(events(&acts), [Event::Commands(vec![])]);
         assert!(
             p.line(&update(
                 json!({ "sessionUpdate": "usage_update", "used": 5, "size": 9 })

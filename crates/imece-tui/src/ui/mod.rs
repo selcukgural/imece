@@ -26,9 +26,12 @@ pub(crate) use diff::file_starts;
 pub(crate) use salon::{journal_rows, thread_of};
 
 pub fn draw(f: &mut Frame, app: &App) {
-    let [head, body, foot] = Layout::vertical([
+    // The completion menu takes a row above the footer while it is shown.
+    let menu_rows = u16::from(app.typing && app.menu.is_some());
+    let [head, body, menu, foot] = Layout::vertical([
         Constraint::Length(1),
         Constraint::Min(0),
+        Constraint::Length(menu_rows),
         Constraint::Length(1),
     ])
     .areas(f.area());
@@ -42,6 +45,11 @@ pub fn draw(f: &mut Frame, app: &App) {
             View::Board => board::draw(f, body, app),
             View::Code => code::draw(f, body, app),
         },
+    }
+    if let Some(m) = &app.menu
+        && app.typing
+    {
+        completions(f, menu, m);
     }
     footer(f, foot, app);
     if let Some(th) = &app.thread {
@@ -725,13 +733,45 @@ fn header(f: &mut Frame, area: Rect, app: &App) {
     f.render_widget(Paragraph::new(Line::from(spans)), area);
 }
 
+/// The matches for the word being typed, the highlighted one standing
+/// out, in a window that always holds it when they do not all fit.
+fn completions(f: &mut Frame, area: Rect, m: &crate::complete::Menu) {
+    let width = area.width as usize;
+    let cell = |s: &str| s.chars().count() + 2;
+    // Start the window at the highlighted item and pull it back while
+    // earlier items still fit.
+    let mut first = m.chosen;
+    let mut used = cell(&m.items[m.chosen]);
+    while first > 0 && used + cell(&m.items[first - 1]) <= width {
+        first -= 1;
+        used += cell(&m.items[first]);
+    }
+    let mut spans = Vec::new();
+    let mut taken = 0;
+    for (i, item) in m.items.iter().enumerate().skip(first) {
+        if taken + cell(item) > width {
+            break;
+        }
+        taken += cell(item);
+        let style = if i == m.chosen {
+            Style::new().add_modifier(Modifier::REVERSED)
+        } else {
+            dim()
+        };
+        spans.push(Span::styled(format!(" {} ", clean(item)), style));
+    }
+    f.render_widget(Paragraph::new(Line::from(spans)), area);
+}
+
 fn footer(f: &mut Frame, area: Rect, app: &App) {
     let t = app.lang.text();
     let key = key_style;
     let line = if app.typing {
         Line::from(vec![
             Span::styled(
-                if app.typing_command() {
+                if app.typing_shell() {
+                    t.typing_shell.to_string()
+                } else if app.typing_command() {
                     t.typing_command.to_string()
                 } else {
                     fill(t.typing_to, &[&app.typing_target()])
@@ -740,7 +780,14 @@ fn footer(f: &mut Frame, area: Rect, app: &App) {
             ),
             Span::raw(clean(&app.input)),
             Span::styled("█", dim()),
-            Span::styled(t.send_cancel, dim()),
+            Span::styled(
+                if app.menu.is_some() {
+                    t.pick_cancel
+                } else {
+                    t.send_cancel
+                },
+                dim(),
+            ),
         ])
     } else if let Some((msg, at)) = &app.flash
         && at.elapsed() < FLASH
@@ -1573,6 +1620,250 @@ mod tests {
         assert!(!all.contains("between workers"));
     }
 
+    /// The row above the footer, where the completions are.
+    fn menu_row(app: &App, width: u16) -> String {
+        let s = render(app, width, 40);
+        let mut rows = s.lines().rev();
+        rows.next();
+        rows.next().unwrap_or_default().to_string()
+    }
+
+    #[test]
+    fn an_at_offers_the_agents_and_tab_steps_through_them_with_the_text_following() {
+        let mut app = app_after(1, 3, 0, Lang::En);
+        let names: Vec<String> = app.world.agents.iter().map(|a| a.name.clone()).collect();
+        key(&mut app, KeyCode::Char('@'));
+        let m = app.menu.clone().expect("@ alone offers everyone");
+        assert_eq!(m.items, names);
+        let row = menu_row(&app, 140);
+        for n in &names {
+            assert!(row.contains(n.as_str()), "{row}");
+        }
+        let s = render(&app, 140, 40);
+        assert!(s.contains("tab next · enter take · esc hide"), "{s}");
+        // tab puts the first one in, and again steps on; ⇧tab steps back.
+        key(&mut app, KeyCode::Tab);
+        assert_eq!(app.input, format!("@{} ", names[0]));
+        key(&mut app, KeyCode::Tab);
+        assert_eq!(app.input, format!("@{} ", names[1]));
+        key(&mut app, KeyCode::BackTab);
+        assert_eq!(app.input, format!("@{} ", names[0]));
+        key(&mut app, KeyCode::Down);
+        assert_eq!(app.input, format!("@{} ", names[1]));
+        key(&mut app, KeyCode::Up);
+        assert_eq!(app.input, format!("@{} ", names[0]));
+        ctrl(&mut app, 'n');
+        assert_eq!(app.input, format!("@{} ", names[1]));
+        ctrl(&mut app, 'p');
+        assert_eq!(app.input, format!("@{} ", names[0]));
+        ctrl(&mut app, 'x');
+        assert_eq!(
+            app.input,
+            format!("@{} ", names[0]),
+            "other ctrl keys do nothing"
+        );
+        // Typing on continues from the inserted name, menu gone.
+        for c in "hi".chars() {
+            key(&mut app, KeyCode::Char(c));
+        }
+        assert_eq!(app.menu, None);
+        assert!(render(&app, 140, 40).contains("enter send · esc cancel"));
+        key(&mut app, KeyCode::Enter);
+        assert!(!app.typing);
+        assert!(
+            app.world.journal.iter().any(
+                |e| matches!(&e.event, Event::YouSaid { to, text } if *to == 0 && text == "hi")
+            )
+        );
+    }
+
+    #[test]
+    fn a_prefix_narrows_the_offers_and_enter_takes_one_before_it_sends() {
+        let mut app = app_after(1, 3, 0, Lang::En);
+        let names: Vec<String> = app.world.agents.iter().map(|a| a.name.clone()).collect();
+        let (head, _) = names[2].split_at(2);
+        key(&mut app, KeyCode::Char('@'));
+        for c in head.chars() {
+            key(&mut app, KeyCode::Char(c));
+        }
+        let m = app.menu.clone().unwrap();
+        assert!(m.items.iter().all(|n| n.starts_with(head)), "{:?}", m.items);
+        assert!(m.items.contains(&names[2]));
+        // enter takes the highlighted name instead of sending.
+        key(&mut app, KeyCode::Enter);
+        assert!(app.typing);
+        assert_eq!(app.input, format!("@{} ", m.items[0]));
+        assert!(
+            !app.world
+                .journal
+                .iter()
+                .any(|e| matches!(&e.event, Event::YouSaid { .. }))
+        );
+        // Backspace brings the menu back for the shorter word.
+        key(&mut app, KeyCode::Backspace);
+        key(&mut app, KeyCode::Backspace);
+        assert!(app.menu.is_some(), "{}", app.input);
+        // esc hides the menu first, then cancels the writing.
+        key(&mut app, KeyCode::Esc);
+        assert!(app.typing);
+        assert_eq!(app.menu, None);
+        key(&mut app, KeyCode::Esc);
+        assert!(!app.typing);
+        assert_eq!(app.input, "");
+        // A line nothing completes has no menu and tab does nothing to it.
+        key(&mut app, KeyCode::Char('i'));
+        for c in "hello".chars() {
+            key(&mut app, KeyCode::Char(c));
+        }
+        key(&mut app, KeyCode::Tab);
+        assert_eq!(app.input, "hello");
+        assert_eq!(app.menu, None);
+        key(&mut app, KeyCode::Esc);
+        // An agent offers the command line its session listed; the
+        // demo's listed none.
+        key(&mut app, KeyCode::Char('/'));
+        key(&mut app, KeyCode::Char('/'));
+        assert_eq!(app.menu, None);
+        key(&mut app, KeyCode::Esc);
+        app.world.agents[0].commands = vec!["/clear".into(), "/compact".into()];
+        key(&mut app, KeyCode::Char('/'));
+        key(&mut app, KeyCode::Char('/'));
+        key(&mut app, KeyCode::Char('c'));
+        assert_eq!(app.menu.as_ref().unwrap().items, ["/clear", "/compact"]);
+        key(&mut app, KeyCode::Tab);
+        key(&mut app, KeyCode::Tab);
+        assert_eq!(app.input, "/compact ");
+        key(&mut app, KeyCode::Esc);
+        key(&mut app, KeyCode::Esc);
+        key(&mut app, KeyCode::Char('!'));
+        assert_eq!(app.menu, None);
+    }
+
+    #[test]
+    fn a_colon_offers_the_commands_and_lead_its_vendors_to_the_end() {
+        let mut app = app_after(1, 2, 0, Lang::En);
+        key(&mut app, KeyCode::Char(':'));
+        assert_eq!(app.menu.as_ref().unwrap().items, ["budget", "lead"]);
+        let row = menu_row(&app, 140);
+        assert!(row.contains("budget") && row.contains("lead"), "{row}");
+        key(&mut app, KeyCode::Char('l'));
+        key(&mut app, KeyCode::Tab);
+        assert_eq!(app.input, ":lead ");
+        key(&mut app, KeyCode::Char('c'));
+        assert_eq!(app.menu.as_ref().unwrap().items, ["claude", "codex"]);
+        key(&mut app, KeyCode::Tab);
+        key(&mut app, KeyCode::Tab);
+        assert_eq!(app.input, ":lead codex");
+        key(&mut app, KeyCode::Enter);
+        assert!(!app.typing);
+        assert_eq!(app.primary.as_deref(), Some("codex"));
+        // Turkish hint too.
+        app.lang = Lang::Tr;
+        key(&mut app, KeyCode::Char(':'));
+        assert!(render(&app, 140, 40).contains("tab sonraki · enter al · esc gizle"));
+    }
+
+    #[test]
+    fn the_menu_row_keeps_the_highlighted_item_in_view_when_they_do_not_all_fit() {
+        let mut app = app_after(2, 8, 0, Lang::En);
+        key(&mut app, KeyCode::Char('@'));
+        let items = app.menu.as_ref().unwrap().items.clone();
+        assert!(items.len() >= 10, "{}", items.len());
+        let last = items.last().unwrap().clone();
+        let row = menu_row(&app, 40);
+        assert!(row.contains(&items[0]), "{row}");
+        assert!(!row.contains(&last), "{row}");
+        key(&mut app, KeyCode::BackTab);
+        assert_eq!(app.input, format!("@{last} "));
+        let row = menu_row(&app, 40);
+        assert!(row.contains(&last), "{row}");
+        assert!(!row.contains(&items[0]), "{row}");
+        // A wide screen shows them all.
+        let row = menu_row(&app, 400);
+        for n in &items {
+            assert!(row.contains(n.as_str()), "{row}");
+        }
+    }
+
+    #[test]
+    fn backspace_takes_a_letter_back_and_the_offers_widen_again() {
+        let mut app = app_after(1, 3, 0, Lang::En);
+        let everyone = app.world.agents.len();
+        key(&mut app, KeyCode::Char('@'));
+        key(&mut app, KeyCode::Char('z'));
+        assert_eq!(app.input, "@z");
+        assert_eq!(app.menu, None, "nobody is called z…");
+        key(&mut app, KeyCode::Backspace);
+        assert_eq!(app.input, "@");
+        assert_eq!(app.menu.as_ref().map(|m| m.items.len()), Some(everyone));
+    }
+
+    #[test]
+    fn writing_without_offers_takes_no_row_from_the_body() {
+        // A short screen, so the body is full and a row less would show.
+        let mut app = app_after(1, 3, 30, Lang::En);
+        let before = render(&app, 140, 12);
+        key(&mut app, KeyCode::Char('/'));
+        for c in "hello".chars() {
+            key(&mut app, KeyCode::Char(c));
+        }
+        assert!(app.typing);
+        assert_eq!(app.menu, None);
+        let after = render(&app, 140, 12);
+        let body = |s: &str| s.lines().take(11).map(str::to_string).collect::<Vec<_>>();
+        assert_eq!(body(&before), body(&after), "only the footer changed");
+        assert_ne!(before, after);
+    }
+
+    /// `completions` alone: a row of `width` cells with `m` drawn in it,
+    /// and whether the cell at `x` stands out.
+    fn completion_row(m: &crate::complete::Menu, width: u16) -> (String, Vec<bool>) {
+        let mut t = Terminal::new(TestBackend::new(width, 1)).unwrap();
+        t.draw(|f| completions(f, f.area(), m)).unwrap();
+        let buf = t.backend().buffer();
+        let row = (0..width)
+            .map(|x| buf[(x, 0)].symbol().to_string())
+            .collect::<String>();
+        let out = (0..width)
+            .map(|x| buf[(x, 0)].modifier.contains(Modifier::REVERSED))
+            .collect();
+        (row, out)
+    }
+
+    fn menu_of(items: &[&str], chosen: usize) -> crate::complete::Menu {
+        crate::complete::Menu {
+            start: 1,
+            items: items.iter().map(|s| s.to_string()).collect(),
+            chosen,
+            tail: " ",
+            inserted: false,
+        }
+    }
+
+    #[test]
+    fn the_completion_row_fits_what_it_can_around_the_highlighted_item() {
+        // Each item takes its letters and a space either side: 4 5 6 4 3.
+        let items = ["aa", "bbb", "cccc", "dd", "e"];
+        let (row, out) = completion_row(&menu_of(&items, 0), 22);
+        assert_eq!(row, " aa  bbb  cccc  dd  e ", "an exact fit shows all");
+        assert!(out[1] && out[2], "the highlighted one stands out");
+        assert!(out[..4].iter().all(|&o| o));
+        assert!(out[4..].iter().all(|&o| !o), "{out:?}");
+        // One cell short: the last item is left out, nothing is cut.
+        let (row, _) = completion_row(&menu_of(&items, 0), 21);
+        assert_eq!(row, " aa  bbb  cccc  dd   ");
+        // The last one highlighted: the window starts where the earlier
+        // ones still fit before it.
+        let (row, out) = completion_row(&menu_of(&items, 4), 21);
+        assert_eq!(row, " bbb  cccc  dd  e    ");
+        assert!(out[15] && out[16] && out[17] && !out[14] && !out[18]);
+        // Pulling the window back looks at the item before, not the one
+        // counted already: a big one before a small highlighted one.
+        let (row, out) = completion_row(&menu_of(&["xxxxxxxx", "a"], 1), 12);
+        assert_eq!(row, " a          ");
+        assert!(out[0] && out[1] && out[2] && !out[3]);
+    }
+
     #[test]
     fn a_colon_command_sets_the_budget_and_the_journal_says_so() {
         let mut app = app_after(1, 2, 0, Lang::En);
@@ -1773,7 +2064,7 @@ mod tests {
     }
 
     #[test]
-    fn panels_cycle_both_ways_and_bang_goes_to_the_inbox() {
+    fn panels_cycle_both_ways_and_w_goes_to_the_inbox() {
         let mut app = app_after(1, 4, 50, Lang::En);
         key(&mut app, KeyCode::BackTab);
         assert_eq!(app.pane, Pane::Journal);
@@ -1784,10 +2075,127 @@ mod tests {
         assert_eq!(app.pane, Pane::Journal);
         key(&mut app, KeyCode::Tab);
         assert_eq!(app.pane, Pane::Salon);
-        key(&mut app, KeyCode::Char('!'));
+        key(&mut app, KeyCode::Char('w'));
         assert_eq!(app.pane, Pane::Inbox);
         key(&mut app, KeyCode::Char('i'));
         assert!(app.typing, "i writes, as in vim");
+    }
+
+    #[test]
+    fn a_bang_opens_the_shell_line_and_enter_hands_the_command_to_the_main_loop() {
+        let mut app = app_after(1, 2, 0, Lang::En);
+        key(&mut app, KeyCode::Char('!'));
+        assert!(app.typing);
+        assert_eq!(app.input, "!");
+        assert!(app.typing_shell());
+        assert!(!app.typing_command());
+        let s = render(&app, 140, 40);
+        assert!(s.contains("› shell:"), "{s}");
+        assert!(!s.contains("› command:"), "{s}");
+        for c in "  cargo test -- --nocapture  ".chars() {
+            key(&mut app, KeyCode::Char(c));
+        }
+        key(&mut app, KeyCode::Enter);
+        assert_eq!(app.shell.as_deref(), Some("cargo test -- --nocapture"));
+        assert!(!app.typing);
+        assert_eq!(app.input, "");
+        assert!(
+            !app.world
+                .journal
+                .iter()
+                .any(|e| matches!(&e.event, Event::YouSaid { .. })),
+            "a shell command is not a message to the lead"
+        );
+        // A bare `!` runs nothing and says so.
+        key(&mut app, KeyCode::Char('!'));
+        key(&mut app, KeyCode::Enter);
+        assert_eq!(app.shell.as_deref(), Some("cargo test -- --nocapture"));
+        let s = render(&app, 140, 40);
+        assert!(s.contains("the command is empty"), "{s}");
+        key(&mut app, KeyCode::Char('!'));
+        for c in "   ".chars() {
+            key(&mut app, KeyCode::Char(c));
+        }
+        key(&mut app, KeyCode::Enter);
+        assert_eq!(app.shell.as_deref(), Some("cargo test -- --nocapture"));
+        // The demo runs commands where it was started; the shell line
+        // is the same in Turkish.
+        assert_eq!(app.cwd(), std::path::PathBuf::from("."));
+        app.lang = Lang::Tr;
+        key(&mut app, KeyCode::Char('!'));
+        assert!(render(&app, 140, 40).contains("› kabuk:"));
+        key(&mut app, KeyCode::Esc);
+        // Both keys are in the help, whole, in both languages.
+        for (lang, bang, w) in [
+            (
+                Lang::En,
+                "run cmd in your own shell, screen aside",
+                "straight to waiting for you",
+            ),
+            (
+                Lang::Tr,
+                "kmt kendi kabuğunda; ekran kenara çekilir",
+                "doğrudan seni bekleyenlere",
+            ),
+        ] {
+            app.lang = lang;
+            app.help = true;
+            let s = render(&app, 140, 40);
+            assert!(s.contains(bang), "{s}");
+            let row = s.lines().find(|l| l.contains(w)).unwrap_or_default();
+            assert!(row.contains(" w "), "{row}");
+        }
+    }
+
+    #[test]
+    fn a_command_that_ran_is_journaled_under_the_project_and_flashed() {
+        let mut app = app_after(2, 2, 0, Lang::En);
+        app.selected = Sel::Project(1);
+        app.ran("cargo test", Ok(Ended::Exit(0)));
+        let e = app.world.journal.last().unwrap();
+        let leader = app.world.projects[1].leader;
+        assert!(
+            matches!(&e.event, Event::Shell { leader: l, command, ended: Ended::Exit(0) }
+                if *l == leader && command == "cargo test"),
+            "{:?}",
+            e.event
+        );
+        assert_eq!(e.event.agent(), leader);
+        assert_eq!(e.event.kind(), EntryKind::Person);
+        let s = render(&app, 140, 40);
+        assert!(s.contains("you ran `cargo test` → exit 0"), "{s}");
+        app.ran("sleep 9", Ok(Ended::Signal(2)));
+        let s = render(&app, 140, 40);
+        assert!(s.contains("you ran `sleep 9` → stopped by signal 2"), "{s}");
+        app.ran("make", Ok(Ended::Exit(2)));
+        assert!(render(&app, 140, 40).contains("you ran `make` → exit 2"));
+        // A shell that could not start is said, not journaled.
+        let n = app.world.journal.len();
+        app.ran("x", Err(std::io::Error::other("no shell")));
+        assert_eq!(app.world.journal.len(), n);
+        let s = render(&app, 140, 40);
+        assert!(s.contains("could not run `x`: no shell"), "{s}");
+        // Turkish words it the same way, and the line under the output.
+        app.lang = Lang::Tr;
+        app.ran("make", Ok(Ended::Exit(1)));
+        assert!(render(&app, 140, 40).contains("`make` çalıştırdın → çıkış 1"));
+        assert_eq!(
+            app.shell_back(Ended::Exit(3)),
+            "[imece] çıkış 3 · herhangi bir tuş: ekrana dön\n"
+        );
+        app.lang = Lang::En;
+        assert_eq!(
+            app.shell_back(Ended::Exit(0)),
+            "[imece] exit 0 · any key: back to the screen\n"
+        );
+        assert_eq!(
+            app.shell_back(Ended::Signal(15)),
+            "[imece] stopped by signal 15 · any key: back to the screen\n"
+        );
+        // What the person typed is cleaned like everything else drawn.
+        app.ran("echo \x1b[31mred TOKEN=abc123", Ok(Ended::Exit(0)));
+        let s = render(&app, 140, 40);
+        assert!(!s.contains("abc123") && !s.contains('\x1b'), "{s}");
     }
 
     #[test]
@@ -2134,7 +2542,7 @@ mod tests {
             KeyCode::BackTab,
             KeyCode::Char('['),
             KeyCode::Char(']'),
-            KeyCode::Char('!'),
+            KeyCode::Char('w'),
         ] {
             key(&mut app, code);
             assert_eq!(app.pane, Pane::Salon, "{code:?} on the board");

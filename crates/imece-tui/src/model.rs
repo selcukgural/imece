@@ -266,6 +266,10 @@ pub struct Agent {
     /// What a live agent is doing right now (`Edit src/main.rs`), drawn
     /// instead of the progress bar; empty while it thinks.
     pub activity: Option<String>,
+    /// The agent's own command line as its session reported it (`/clear`,
+    /// `/compact` ...), imece's `/clear` added where the vendor has none;
+    /// empty until a session says. The composer completes with it.
+    pub commands: Vec<String>,
     /// A researcher that finished; kept so ids stay stable.
     pub gone: bool,
 }
@@ -298,6 +302,7 @@ impl Agent {
             changed_at: tick,
             trace: VecDeque::new(),
             activity: None,
+            commands: Vec::new(),
             gone: false,
         }
     }
@@ -578,6 +583,13 @@ pub enum Event {
         from: u64,
         to: u64,
     },
+    /// The person ran a command in their own shell (`!command`), in the
+    /// checkout; `leader` is the one of the project they were looking at.
+    Shell {
+        leader: AgentId,
+        command: String,
+        ended: Ended,
+    },
     /// A live agent's worktree was clean at an older commit and was moved
     /// to the checkout's HEAD when its session started.
     WorktreeMoved {
@@ -658,14 +670,17 @@ impl Event {
             Event::Approved { .. }
             | Event::Rejected { .. }
             | Event::YouSaid { .. }
-            | Event::Budget { .. } => EntryKind::Person,
+            | Event::Budget { .. }
+            | Event::Shell { .. } => EntryKind::Person,
         }
     }
 
     /// The agent the event is about, for its project.
     pub fn agent(&self) -> AgentId {
         match *self {
-            Event::Plan { leader, .. } | Event::Budget { leader, .. } => leader,
+            Event::Plan { leader, .. }
+            | Event::Budget { leader, .. }
+            | Event::Shell { leader, .. } => leader,
             Event::Assign { agent, .. }
             | Event::Assumption { agent, .. }
             | Event::Blocked { agent, .. }
@@ -694,6 +709,14 @@ impl Event {
             Event::YouSaid { to, .. } => to,
         }
     }
+}
+
+/// How a command of the person's own ended: its exit code, or the signal
+/// that stopped it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Ended {
+    Exit(i32),
+    Signal(i32),
 }
 
 #[derive(Clone, Debug)]

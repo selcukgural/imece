@@ -3,10 +3,13 @@
 
 use std::cell::{Cell, RefCell};
 use std::collections::BTreeSet;
+use std::io;
+use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
+use crate::complete::{self, Menu};
 use crate::i18n::{Lang, fill};
 use crate::live::{Live, Refusal};
 use crate::model::*;
@@ -142,10 +145,15 @@ pub struct App {
     /// Text the person asked to copy; the main loop hands it to the
     /// clipboard.
     pub copy: Option<String>,
+    /// A command the person typed after `!`; the main loop steps the
+    /// screen aside and runs it in their shell, then calls `ran`.
+    pub shell: Option<String>,
     /// The first key of a two-key chord (`g`, `z`), waiting for the second.
     pub pending: Option<char>,
     pub typing: bool,
     pub input: String,
+    /// What the composer offers for the word being typed, if anything.
+    pub menu: Option<Menu>,
     pub paused: bool,
     pub speed: u32,
     pub help: bool,
@@ -193,9 +201,11 @@ impl App {
             thread: None,
             side: SIDE_DEFAULT,
             copy: None,
+            shell: None,
             pending: None,
             typing: false,
             input: String::new(),
+            menu: None,
             paused: false,
             speed: 1,
             help: false,
@@ -310,6 +320,12 @@ impl App {
             KeyCode::Char(':') => {
                 self.typing = true;
                 self.input = ":".into();
+                self.menu = self.suggest();
+            }
+            KeyCode::Char('!') => {
+                self.typing = true;
+                self.input = "!".into();
+                self.menu = None;
             }
             KeyCode::Char('g') | KeyCode::Char('z') => {
                 if let KeyCode::Char(c) = k.code {
@@ -335,6 +351,7 @@ impl App {
                     }
                     Zoom::None => "@".into(),
                 };
+                self.menu = self.suggest();
             }
             KeyCode::Char('1') => self.show(View::Salon),
             KeyCode::Char('2') => self.show(View::Board),
@@ -359,7 +376,7 @@ impl App {
             KeyCode::Char('?') => self.help = true,
             KeyCode::Tab | KeyCode::Char(']') if self.pane_keys() => self.cycle_pane(true),
             KeyCode::BackTab | KeyCode::Char('[') if self.pane_keys() => self.cycle_pane(false),
-            KeyCode::Char('!') if self.pane_keys() => self.pane = Pane::Inbox,
+            KeyCode::Char('w') if self.pane_keys() => self.pane = Pane::Inbox,
             // `,` and `.` are the same keys without shift.
             KeyCode::Char('<') | KeyCode::Char(',') => self.resize(true),
             KeyCode::Char('>') | KeyCode::Char('.') => self.resize(false),
@@ -690,6 +707,41 @@ impl App {
         });
     }
 
+    /// Where a command of the person's own runs: the checkout, or where
+    /// the demo was started.
+    pub fn cwd(&self) -> PathBuf {
+        match &self.engine {
+            Engine::Live(l) => l.repo().to_path_buf(),
+            Engine::Sim(_) => PathBuf::from("."),
+        }
+    }
+
+    /// The line under a `!` command's output, before the screen comes
+    /// back.
+    pub fn shell_back(&self, ended: Ended) -> String {
+        ui::words::shell_back(self.lang, ended)
+    }
+
+    /// A `!` command ran (or could not be started): the journal keeps it
+    /// under the project at hand, and the footer says how it went.
+    pub fn ran(&mut self, command: &str, how: io::Result<Ended>) {
+        match how {
+            Ok(ended) => {
+                let leader = self.world.projects[self.current_project()].leader;
+                self.world.note(Event::Shell {
+                    leader,
+                    command: command.to_string(),
+                    ended,
+                });
+                self.flash(ui::words::shell(self.lang, command, ended));
+            }
+            Err(e) => {
+                let t = self.lang.text();
+                self.flash(fill(t.shell_failed, &[command, &e.to_string()]));
+            }
+        }
+    }
+
     /// The person's copy request went through, or did not.
     pub fn copied(&mut self, how: Result<&str, String>) {
         let t = self.lang.text();
@@ -754,29 +806,82 @@ impl App {
         }
     }
 
+    /// A key while writing. The menu of completions works as a shell's:
+    /// it shows what matches as the text changes, `tab` puts the first
+    /// match in and then steps on, `⇧tab` steps back, the arrows (and
+    /// ctrl-n / ctrl-p) step too, `enter` takes the highlighted match
+    /// when the word is not in yet, else sends, and `esc` hides the menu
+    /// before it cancels the writing.
     fn type_key(&mut self, k: KeyEvent) {
+        if k.modifiers.contains(KeyModifiers::CONTROL) {
+            match k.code {
+                KeyCode::Char('n') => self.pick(true),
+                KeyCode::Char('p') => self.pick(false),
+                _ => {}
+            }
+            return;
+        }
         match k.code {
-            KeyCode::Enter => self.submit(),
+            KeyCode::Enter => match &mut self.menu {
+                Some(m) if !m.inserted => m.insert(&mut self.input),
+                _ => self.submit(),
+            },
+            KeyCode::Esc if self.menu.is_some() => self.menu = None,
             KeyCode::Esc => {
                 self.typing = false;
                 self.input.clear();
             }
             KeyCode::Backspace => {
                 self.input.pop();
+                self.menu = self.suggest();
             }
-            KeyCode::Char(c) => self.input.push(c),
+            KeyCode::Tab => match &mut self.menu {
+                None => {
+                    self.menu = self.suggest();
+                    if let Some(m) = &mut self.menu {
+                        m.insert(&mut self.input);
+                    }
+                }
+                Some(m) if !m.inserted => m.insert(&mut self.input),
+                Some(_) => self.pick(true),
+            },
+            KeyCode::BackTab | KeyCode::Up => self.pick(false),
+            KeyCode::Down => self.pick(true),
+            KeyCode::Char(c) => {
+                self.input.push(c);
+                self.menu = self.suggest();
+            }
             _ => {}
         }
     }
 
-    /// Who a message being typed goes to: the named agent, or the leader of
-    /// the current project.
+    /// Highlights the next (or previous) match and puts it in.
+    fn pick(&mut self, forward: bool) {
+        if let Some(m) = &mut self.menu {
+            m.step(forward);
+            m.insert(&mut self.input);
+        }
+    }
+
+    /// What the composer could complete the input with, now.
+    fn suggest(&self) -> Option<Menu> {
+        complete::suggest(&self.input, &self.world, self.current_project())
+    }
+
     /// Whether what is being typed is a command to imece (`:budget 80`),
     /// not a message to an agent.
     pub fn typing_command(&self) -> bool {
         self.input.starts_with(':')
     }
 
+    /// Whether what is being typed is a command for the person's own shell
+    /// (`!cargo test`), not a message to an agent.
+    pub fn typing_shell(&self) -> bool {
+        self.input.starts_with('!')
+    }
+
+    /// Who a message being typed goes to: the named agent, or the leader of
+    /// the current project.
     pub fn typing_target(&self) -> String {
         match self.input.strip_prefix('@') {
             Some(rest) => rest.split(' ').next().unwrap_or_default().to_string(),
@@ -792,12 +897,21 @@ impl App {
         let target = self.typing_target();
         self.input.clear();
         self.typing = false;
+        self.menu = None;
         if text.is_empty() {
             return;
         }
         let t = self.lang.text();
         if let Some(line) = text.strip_prefix(':') {
             return self.command(line.trim());
+        }
+        if let Some(command) = text.strip_prefix('!') {
+            let command = command.trim();
+            if command.is_empty() {
+                return self.flash(t.shell_empty);
+            }
+            self.shell = Some(command.to_string());
+            return;
         }
         let Some(rest) = text.strip_prefix('@') else {
             let leader = self.world.projects[self.current_project()].leader;

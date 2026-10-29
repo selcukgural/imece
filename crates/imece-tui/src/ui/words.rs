@@ -84,6 +84,7 @@ pub fn event(lang: Lang, w: &World, e: &Event) -> String {
         Event::Left { agent } => fill(t.ev_left, &[name(w, *agent)]),
         Event::Fallback { agent, model } => fill(t.ev_fallback, &[name(w, *agent), model]),
         Event::Budget { from, to, .. } => fill(t.ev_budget, &[&dollars(*to), &dollars(*from)]),
+        Event::Shell { command, ended, .. } => shell(lang, command, *ended),
         Event::WorktreeMoved { agent, from, to } => {
             fill(t.ev_worktree_moved, &[name(w, *agent), from, to])
         }
@@ -122,6 +123,25 @@ pub fn event(lang: Lang, w: &World, e: &Event) -> String {
         Event::Talk { .. } | Event::YouSaid { .. } | Event::Replied { .. } | Event::Sent { .. } => {
             String::new()
         }
+    }
+}
+
+/// How a command of the person's own went: the journal line, and the
+/// flash after it.
+pub fn shell(lang: Lang, command: &str, ended: Ended) -> String {
+    let t = lang.text();
+    match ended {
+        Ended::Exit(code) => fill(t.ev_shell, &[command, &code.to_string()]),
+        Ended::Signal(sig) => fill(t.ev_shell_signal, &[command, &sig.to_string()]),
+    }
+}
+
+/// The line under a command's output, before the screen comes back.
+pub fn shell_back(lang: Lang, ended: Ended) -> String {
+    let t = lang.text();
+    match ended {
+        Ended::Exit(code) => fill(t.shell_back, &[&code.to_string()]),
+        Ended::Signal(sig) => fill(t.shell_back_signal, &[&sig.to_string()]),
     }
 }
 

@@ -4,13 +4,16 @@
 
 # Code no test can reach without a terminal, a clipboard or a child
 # process of its own: the main loop, the who-leads question loop, signal
-# handlers, the clipboard tools.
+# handlers, the clipboard tools, the screen stepping aside for a `!`
+# command (`run_in`, which runs the command, is tested).
 # A pattern matches the mutant's full name, `path:line:col: replace fn ...`.
 exclude_re = [
     "src/main.rs:.*: replace (main|run|ask|catch_signals|on_signal) ",
     "src/main.rs:.*: (replace|delete) .* in (main|run|ask|catch_signals|on_signal)$",
     "src/clip.rs:.*: replace (copy|tools|pipe|osc52) ",
     "src/clip.rs:.*: replace .* in (copy|tools|pipe|osc52)$",
+    "src/shell.rs:.*: replace (run|step_aside|wait_for_key|come_back) ",
+    "src/shell.rs:.*: (replace|delete) .* in (run|step_aside|wait_for_key|come_back)$",
 ]
 
 # Builds and tests as CI does, from the lockfile.

@@ -498,6 +498,11 @@ pub fn world(o: Options, present: &[(Vendor, bool)]) -> Result<(World, Live), St
 impl Live {
     /// `agents` places to begin with, all on their vendor's default model.
     /// `vendors` must hold every vendor an agent has.
+    /// The checkout the team works on.
+    pub fn repo(&self) -> &Path {
+        &self.repo
+    }
+
     fn new(agents: usize, vendors: Vec<Hireable>, repo: PathBuf, root: PathBuf) -> Live {
         let (tx, rx) = mpsc::channel();
         let (ready_tx, ready_rx) = mpsc::channel();
@@ -1790,6 +1795,14 @@ pub fn apply(w: &mut World, id: AgentId, e: AgentEvent, before: u64) {
         AgentEvent::Started { session, model } => {
             w.agents[id].trace(t, format!("session {session} · {model}"));
         }
+        AgentEvent::Commands(mut commands) => {
+            // imece's own /clear ends a session whose vendor has none.
+            if !commands.iter().any(|c| c == "/clear") {
+                commands.push("/clear".into());
+            }
+            w.agents[id].trace(t, format!("commands {}", commands.join(" ")));
+            w.agents[id].commands = commands;
+        }
         AgentEvent::Text(text) => w.agents[id].trace(t, format!("text {text:?}")),
         AgentEvent::Note(text) => w.agents[id].trace(t, text),
         AgentEvent::Tool { name, target } => {
@@ -2403,14 +2416,20 @@ pub(crate) mod testing {
     }
 
     /// A live team whose sessions never start: what counts is what was
-    /// queued for them.
+    /// queued for them. A start still runs on its own thread and fails at
+    /// once (there is no `/nonexistent/claude`); its report is cut off
+    /// here, or it would race the events a test sends in the session's
+    /// name and end the session under them.
     pub(crate) fn idle_live(agents: usize) -> Live {
-        Live::new(
+        let mut live = Live::new(
             agents,
             claude_at("/nonexistent/claude"),
             std::env::temp_dir(),
             PathBuf::from("/nonexistent"),
-        )
+        );
+        let (cut, _) = mpsc::channel();
+        live.ready_tx = cut;
+        live
     }
 }
 
@@ -2437,6 +2456,38 @@ mod tests {
         });
         w.agents[id].card = Some(c);
         c
+    }
+
+    #[test]
+    fn the_command_line_a_session_lists_is_kept_with_imeces_clear_added() {
+        let mut w = team(1);
+        assert!(w.agents[1].commands.is_empty());
+        apply(
+            &mut w,
+            1,
+            AgentEvent::Commands(vec!["/compact".into(), "/cost".into()]),
+            0,
+        );
+        assert_eq!(w.agents[1].commands, ["/compact", "/cost", "/clear"]);
+        assert!(
+            w.agents[1]
+                .trace
+                .iter()
+                .any(|l| l.contains("commands /compact /cost /clear")),
+            "{:?}",
+            w.agents[1].trace
+        );
+        // A list with /clear of its own keeps it where it is; a new list
+        // replaces the old one.
+        apply(
+            &mut w,
+            1,
+            AgentEvent::Commands(vec!["/clear".into(), "/stats".into()]),
+            0,
+        );
+        assert_eq!(w.agents[1].commands, ["/clear", "/stats"]);
+        apply(&mut w, 1, AgentEvent::Commands(vec![]), 0);
+        assert_eq!(w.agents[1].commands, ["/clear"]);
     }
 
     #[test]
