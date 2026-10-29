@@ -8,7 +8,7 @@ use ratatui::crossterm::event::KeyCode;
 use ratatui::layout::Rect;
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Clear, Paragraph};
+use ratatui::widgets::{Block, Paragraph};
 
 use super::*;
 
@@ -87,6 +87,7 @@ pub fn probing(f: &mut Frame, lang: Lang) {
 }
 
 pub fn draw(f: &mut Frame, pick: &Pick) {
+    paint(f, f.area());
     let t = pick.lang.text();
     let mut lines = vec![Line::from(Span::raw(t.pick_text)), Line::raw("")];
     for (n, v) in pick.candidates.iter().enumerate() {
@@ -116,7 +117,7 @@ pub fn draw(f: &mut Frame, pick: &Pick) {
         width,
         height,
     };
-    f.render_widget(Clear, area);
+    clear(f, area);
     let block = Block::bordered()
         .title(t.pick_title)
         .border_style(fg(pal().accent));

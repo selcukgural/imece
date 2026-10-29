@@ -15,7 +15,7 @@ use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Paragraph, Wrap};
+use ratatui::widgets::{Block, Clear, Paragraph, Wrap};
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 use crate::app::{App, FLASH, View, Zoom};
@@ -26,6 +26,7 @@ pub(crate) use diff::file_starts;
 pub(crate) use salon::{journal_rows, thread_of};
 
 pub fn draw(f: &mut Frame, app: &App) {
+    paint(f, f.area());
     // The completion menu takes a row above the footer while it is shown.
     let menu_rows = u16::from(app.typing && app.menu.is_some());
     let [head, body, menu, foot] = Layout::vertical([
@@ -62,12 +63,37 @@ pub fn draw(f: &mut Frame, app: &App) {
     }
 }
 
+/// The theme's own background and text over `area`, when it has them;
+/// the terminal's stay otherwise.
+pub(crate) fn paint(f: &mut Frame, area: Rect) {
+    let p = pal();
+    if p.bg != Color::Reset || p.fg != Color::Reset {
+        f.render_widget(Block::new().style(Style::new().bg(p.bg).fg(p.fg)), area);
+    }
+}
+
+/// Empties `area` for a window over the screen, in the theme's colours.
+pub(crate) fn clear(f: &mut Frame, area: Rect) {
+    f.render_widget(Clear, area);
+    paint(f, area);
+}
+
 pub(crate) fn dim() -> Style {
     let p = pal();
     if p.mono {
         Style::new().add_modifier(Modifier::DIM)
     } else {
         Style::new().fg(p.dim)
+    }
+}
+
+/// A panel's border when it is not the focused one.
+pub(crate) fn border() -> Style {
+    let p = pal();
+    if p.mono {
+        dim()
+    } else {
+        Style::new().fg(p.border)
     }
 }
 
@@ -1294,11 +1320,9 @@ mod tests {
 
     #[test]
     fn every_view_draws_at_every_size_in_every_theme() {
-        for (theme, lang) in crate::theme::ALL
-            .iter()
-            .zip([Lang::En, Lang::Tr].into_iter().cycle())
+        for (theme, lang) in crate::theme::builtins().zip([Lang::En, Lang::Tr].into_iter().cycle())
         {
-            crate::theme::set(theme.name);
+            assert!(crate::theme::set(theme));
             let mut app = app_after(3, 30, 400, lang);
             let views = [
                 (View::Salon, Zoom::None),
@@ -1321,18 +1345,55 @@ mod tests {
             app.help = true;
             render(&app, 30, 10);
         }
-        crate::theme::set("dark");
+        crate::theme::set("terminal");
+    }
+
+    #[test]
+    fn a_scheme_paints_the_whole_screen_and_the_terminal_theme_leaves_it() {
+        let app = app_after(2, 6, 60, Lang::En);
+        assert!(crate::theme::set("dracula"));
+        let p = pal();
+        let buf = buffer(&app, 80, 24);
+        assert!(
+            buf.content().iter().all(|c| c.bg == p.bg
+                || c.bg == p.selection
+                || c.bg == p.key
+                || c.bg == p.accent
+                || c.bg == p.warn),
+            "every cell has the scheme's background or a badge's"
+        );
+        assert!(
+            buf.content().iter().all(|c| c.fg != Color::Reset),
+            "and its text colour"
+        );
+        let mut app = app;
+        app.help = true;
+        let buf = buffer(&app, 80, 24);
+        assert!(
+            buf.content().iter().all(|c| c.bg != Color::Reset),
+            "a window over the screen keeps it"
+        );
+        crate::theme::set("terminal");
+        let buf = buffer(&app, 80, 24);
+        assert!(buf.content().iter().any(|c| c.bg == Color::Reset));
     }
 
     #[test]
     fn capital_t_cycles_the_theme_and_says_which() {
         let mut app = app_after(1, 4, 50, Lang::En);
         key(&mut app, KeyCode::Char('T'));
-        assert_eq!(crate::theme::pal().name, "light");
-        assert!(render(&app, 140, 40).contains("theme: light"));
-        key(&mut app, KeyCode::Char('T'));
-        key(&mut app, KeyCode::Char('T'));
         assert_eq!(crate::theme::pal().name, "dark");
+        assert!(render(&app, 140, 40).contains("theme: dark"));
+        key(&mut app, KeyCode::Char('T'));
+        assert_eq!(crate::theme::pal().name, "light");
+        key(&mut app, KeyCode::Char('T'));
+        assert_eq!(crate::theme::pal().name, "mono");
+        key(&mut app, KeyCode::Char('T'));
+        assert_eq!(crate::theme::pal().name, "dracula");
+        for _ in 0..crate::theme::builtins().count() - 4 {
+            key(&mut app, KeyCode::Char('T'));
+        }
+        assert_eq!(crate::theme::pal().name, "terminal", "around the end");
     }
 
     #[test]
@@ -1743,7 +1804,10 @@ mod tests {
     fn a_colon_offers_the_commands_and_lead_its_vendors_to_the_end() {
         let mut app = app_after(1, 2, 0, Lang::En);
         key(&mut app, KeyCode::Char(':'));
-        assert_eq!(app.menu.as_ref().unwrap().items, ["budget", "lead"]);
+        assert_eq!(
+            app.menu.as_ref().unwrap().items,
+            ["budget", "lead", "theme"]
+        );
         let row = menu_row(&app, 140);
         assert!(row.contains("budget") && row.contains("lead"), "{row}");
         key(&mut app, KeyCode::Char('l'));
@@ -2281,8 +2345,9 @@ mod tests {
     #[test]
     fn styles_follow_the_theme_and_mono_keeps_the_signal_without_colour() {
         let p = pal();
-        assert_eq!(p.name, "dark");
+        assert_eq!(p.name, "terminal");
         assert_eq!(dim(), Style::new().fg(p.dim));
+        assert_eq!(border(), Style::new().fg(p.border));
         assert_eq!(
             brand(),
             Style::new()
@@ -2312,7 +2377,8 @@ mod tests {
         assert_eq!(attention(), brand());
         assert_eq!(key_style(), Style::new().add_modifier(Modifier::REVERSED));
         assert_eq!(changed(), Style::new().add_modifier(Modifier::BOLD));
-        crate::theme::set("dark");
+        assert_eq!(border(), dim());
+        crate::theme::set("terminal");
     }
 
     #[test]

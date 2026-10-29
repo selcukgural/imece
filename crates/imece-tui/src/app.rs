@@ -357,8 +357,8 @@ impl App {
             KeyCode::Char('2') => self.show(View::Board),
             KeyCode::Char('3') => self.show(View::Code),
             KeyCode::Char('T') => {
-                let name = theme::next().name;
-                self.flash(fill(self.lang.text().theme_is, &[name]));
+                let name = theme::next().name.clone();
+                self.flash(fill(self.lang.text().theme_is, &[&name]));
             }
             KeyCode::Char('L') => {
                 self.lang = self.lang.other();
@@ -964,7 +964,8 @@ impl App {
     /// sets what all agents together may spend; a running turn finishes
     /// on its old cap, the next one starts on the new remainder. `lead
     /// VENDOR` makes that vendor the primary one, leading from the next
-    /// start on without asking; `lead ask` forgets it.
+    /// start on without asking; `lead ask` forgets it. `theme NAME` (or
+    /// `t`) switches to a built-in theme or a colour file.
     fn command(&mut self, line: &str) {
         let t = self.lang.text();
         let (name, arg) = line
@@ -991,6 +992,10 @@ impl App {
                     self.flash(fill(t.lead_is, &[v.label()]));
                 }
                 (_, None) => self.flash(fill(t.bad_lead, &[arg])),
+            },
+            "theme" | "t" => match theme::choose(arg) {
+                Ok(theme) => self.flash(fill(t.theme_is, &[&theme.name])),
+                Err(why) => self.flash(fill(t.bad_theme, &[arg, &why])),
             },
             _ => self.flash(fill(t.no_command, &[name])),
         }

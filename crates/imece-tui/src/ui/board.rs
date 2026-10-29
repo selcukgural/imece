@@ -27,7 +27,7 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App) {
         }
         let block = Block::bordered()
             .title(format!(" {title} ({}) ", cards.len()))
-            .border_style(dim());
+            .border_style(border());
         let inner = block.inner(rect);
         f.render_widget(block, rect);
 

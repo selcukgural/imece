@@ -8,7 +8,7 @@
 use crate::model::{Agent, ProjectId, World};
 
 /// The commands imece itself takes after `:`.
-pub const COMMANDS: [&str; 2] = ["budget", "lead"];
+pub const COMMANDS: [&str; 3] = ["budget", "lead", "theme"];
 
 /// What `:lead` takes.
 pub const LEADS: [&str; 4] = ["claude", "codex", "gemini", "ask"];
@@ -110,6 +110,11 @@ pub fn suggest(input: &str, w: &World, project: ProjectId) -> Option<Menu> {
             Some(("lead", arg)) => {
                 let start = input.len() - arg.len();
                 menu(start, arg, matching(arg, LEADS.into_iter()), "")
+            }
+            // Built-in names only: a file is typed as a path.
+            Some(("theme", arg)) if !arg.contains('/') => {
+                let start = input.len() - arg.len();
+                menu(start, arg, matching(arg, crate::theme::builtins()), "")
             }
             Some(_) => None,
         };
@@ -267,6 +272,17 @@ mod tests {
         assert_eq!(suggest(":lead codex ", &w, 0), None);
         assert_eq!(suggest(":lead codex x", &w, 0), None);
         assert_eq!(suggest(":b 80", &w, 0), None);
+        let m = suggest(":theme ", &w, 0).unwrap();
+        assert_eq!(m.items, crate::theme::builtins().collect::<Vec<_>>());
+        assert_eq!((m.start, m.tail), (7, ""));
+        assert_eq!(names(&suggest(":theme D", &w, 0)), ["dark", "dracula"]);
+        assert_eq!(suggest(":theme dark", &w, 0), None);
+        assert_eq!(
+            suggest(":theme ./dark", &w, 0),
+            None,
+            "a path is not completed"
+        );
+        assert_eq!(suggest(":theme dark x", &w, 0), None);
         // Plain text, and a shell command, get no offers.
         assert_eq!(suggest("hello", &w, 0), None);
         assert_eq!(suggest("!cargo", &w, 0), None);

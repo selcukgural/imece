@@ -180,7 +180,7 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App) {
 }
 
 fn pane_block(title: String, focused: bool) -> Block<'static> {
-    let border = if focused { fg(pal().accent) } else { dim() };
+    let border = if focused { fg(pal().accent) } else { border() };
     Block::bordered().title(title).border_style(border)
 }
 
