@@ -1689,6 +1689,14 @@ mod tests {
                 },
             ]
         );
+        // A patch that went in is no event and no refusal.
+        let acts = p
+            .line(&notify(
+                "item/completed",
+                json!({ "item": { "type": "fileChange", "status": "completed", "changes": [] } }),
+            ))
+            .unwrap();
+        assert_eq!(events(&acts), []);
         // A patch the sandbox refused counts as a refusal too.
         let acts = p
             .line(&notify(

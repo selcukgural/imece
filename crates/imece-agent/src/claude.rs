@@ -692,6 +692,28 @@ echo '{{"type":"result","subtype":"success","result":"hi","total_cost_usd":0.5}}
     }
 
     #[test]
+    fn terminating_through_the_trait_stops_the_process() {
+        let dir = std::env::temp_dir().join(format!("imece-fake-term-{}", std::process::id()));
+        let mut s = spec(EDIT_TOOLS);
+        s.program = fake(&dir, "read line\nsleep 30");
+        s.cwd = dir.clone();
+        let (tx, rx) = mpsc::channel();
+        let mut agent: Box<dyn crate::Agent> = Box::new(
+            Session::start(&s, move |e| {
+                let _ = tx.send(e);
+            })
+            .unwrap(),
+        );
+        agent.terminate();
+        let e = rx.recv_timeout(Duration::from_secs(10)).expect("in time");
+        assert!(
+            matches!(&e, Event::Stopped(w) if w.contains("signal 15")),
+            "{e:?}"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn a_session_with_other_settings_is_stopped_before_its_events_count() {
         let dir = std::env::temp_dir().join(format!("imece-fake-bad-{}", std::process::id()));
         let init = init(r#"["Bash","Read"]"#, "acceptEdits", "[]");
