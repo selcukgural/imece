@@ -23,3 +23,8 @@ unicode-width = "=0.2.3"
 serde_json = "=1.0.154"
 # The local clock for live agents (`localtime_r`).
 libc = "=0.2.191"
+# What imece remembers between runs (projects, agents, cards, the journal,
+# mail), one SQLite file; bundled, so the build needs no system library.
+rusqlite = { version = "=0.41.1", default-features = false, features = ["bundled"] }
+# Journal and story events as JSON in that file.
+serde = { version = "=1.0.229", features = ["derive"] }

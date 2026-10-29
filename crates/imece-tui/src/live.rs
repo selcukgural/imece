@@ -31,7 +31,7 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread;
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use imece_agent::mcp::{Answer, Server, Tool};
 use imece_agent::{
@@ -39,10 +39,16 @@ use imece_agent::{
 };
 use serde_json::{Value, json};
 
+use crate::i18n::{Lang, clean};
 use crate::model::*;
+use crate::store::{self, Found, Kept, Store};
+use crate::ui::words;
 
 pub struct Options {
     pub repo: PathBuf,
+    /// Where imece keeps what it remembers between runs: the worktrees
+    /// and the store.
+    pub state: PathBuf,
     /// Workers the leader may hire, at most.
     pub max_workers: usize,
     /// Helpers a worker may have at once, at most.
@@ -52,8 +58,9 @@ pub struct Options {
     /// Models that stand in for the vendors' own, by vendor and tier; no
     /// vendor means the leader's. `--model NAME` is the standard tier.
     pub tiers: Vec<(Option<Vendor>, Tier, String)>,
-    /// Ten-thousandths of a dollar, for all agents together.
-    pub budget: u64,
+    /// Ten-thousandths of a dollar, for all agents together; none keeps
+    /// the pot as it was left, or [`DEFAULT_BUDGET`] the first time.
+    pub budget: Option<u64>,
     /// Programs workers and helpers may run with the run tool, next to
     /// the built-in cargo and git commands.
     pub run_programs: Vec<String>,
@@ -277,6 +284,15 @@ type Ready = Result<(Box<dyn Session>, PathBuf, Option<worktree::Placed>), Strin
 /// goes.
 type Call = (AgentId, String, Value, Sender<Answer>);
 
+/// What all agents together may spend until the person says otherwise,
+/// in ten-thousandths of a dollar.
+pub const DEFAULT_BUDGET: u64 = 50 * 10_000;
+/// Journal lines loaded from the store at the start.
+const JOURNAL_KEEP: usize = 5000;
+/// The longest a woken agent's briefing gets, in characters, and the
+/// longest one line of it.
+const MAX_BRIEFING: usize = 6000;
+const MAX_BRIEFING_LINE: usize = 300;
 /// The longest message body, in characters.
 const MAX_BODY: usize = 4000;
 /// Messages that may wait for one agent; more are refused until it reads.
@@ -328,21 +344,6 @@ const GIT_READ: &[&str] = &[
     "status",
 ];
 
-/// A message waiting for an agent's next turn.
-#[derive(Clone, Debug)]
-struct Mail {
-    from: AgentId,
-    kind: MsgKind,
-    body: String,
-}
-
-/// A card an agent put on the board.
-#[derive(Clone, Debug)]
-struct Post {
-    by: AgentId,
-    body: String,
-}
-
 /// imece's MCP servers, one socket per agent in a private directory.
 struct Bus {
     dir: PathBuf,
@@ -359,7 +360,20 @@ impl Drop for Bus {
 }
 
 pub struct Live {
-    started: Instant,
+    /// Where the worktrees and the store live.
+    state: PathBuf,
+    /// What is remembered between runs; none in tests without a file.
+    store: Option<Store>,
+    /// The project of the checkout imece was started in.
+    home: ProjectId,
+    /// Cards there were when the world was loaded: older ones are not
+    /// offered to a sleeping worker, newer ones wake it.
+    loaded_cards: usize,
+    /// Agents remembered from an earlier run that have not started this
+    /// run: the first prompt tells them where they left off.
+    remembered: Vec<bool>,
+    /// The prompts an earlier run's turn did not finish, for that briefing.
+    interrupted: Vec<Vec<String>>,
     /// Events tagged with the agent and the session's generation, so a late
     /// event of an ended session never touches the next one.
     tx: Sender<(AgentId, u64, AgentEvent)>,
@@ -462,35 +476,74 @@ pub fn leaders(present: &[(Vendor, bool)]) -> Vec<Vendor> {
 }
 
 /// Builds the team for the checkout `repo` is in, from the coding agents
-/// `present` on PATH (see [`probe`]): the leader alone, who hires the rest.
+/// `present` on PATH (see [`probe`]): what the store remembers of earlier
+/// runs (every agent asleep), and the checkout at hand as a project if it
+/// is not one yet, led by its leader alone, who hires the rest.
 pub fn world(o: Options, present: &[(Vendor, bool)]) -> Result<(World, Live), String> {
-    worktree::top(&o.repo).map_err(|e| format!("{}: {e}", o.repo.display()))?;
+    let repo = worktree::top(&o.repo).map_err(|e| format!("{}: {e}", o.repo.display()))?;
     let vendors = team_vendors(hireable(present, o.lead)?, o.lead, &o.tiers);
-    let mut w = World {
-        tick: 0,
-        projects: Vec::new(),
-        agents: Vec::new(),
-        cards: Vec::new(),
-        journal: Vec::new(),
-        inbox: Vec::new(),
-        daily_budget: o.budget,
-        max_researchers: 0,
-        research_queue: Default::default(),
-        plans: Vec::new(),
-        changes: Vec::new(),
+    let mut store = Store::open(&o.state.join(store::FILE))?;
+    let loaded = store
+        .load(JOURNAL_KEEP)
+        .map_err(|e| format!("{}: {e}", o.state.join(store::FILE).display()))?;
+    let now = now();
+    let (mut w, found) = match loaded {
+        Some(l) => (l.world, Some((l.found, l.skipped))),
+        None => (
+            World {
+                tick: 0,
+                started_at: now,
+                run_tick: 0,
+                run_spent: 0,
+                projects: Vec::new(),
+                agents: Vec::new(),
+                cards: Vec::new(),
+                journal: Vec::new(),
+                inbox: Vec::new(),
+                budget: DEFAULT_BUDGET,
+                max_researchers: 0,
+                research_queue: Default::default(),
+                plans: Vec::new(),
+                changes: Vec::new(),
+            },
+            None,
+        ),
     };
-    start_clock_at(local_seconds_after_midnight());
+    if let Some(b) = o.budget {
+        w.budget = b;
+    }
+    w.tick = now.saturating_sub(w.started_at) / SECONDS_PER_TICK;
+    w.run_tick = w.tick;
+    w.run_spent = w.spent();
     let mut live = Live::bare(vendors, o.lead);
+    live.state = o.state;
     live.max_workers = o.max_workers;
     live.max_helpers = o.max_helpers;
     live.run_programs = o.run_programs;
     live.run_timeout = o.run_timeout;
-    live.open_project(&mut w, &o.repo, None)
-        .map_err(|e| e.describe())?;
+    if let Some((found, skipped)) = found {
+        live.adopt(&mut w, found, skipped);
+    }
+    let at = |q: &Project| live.places.get(q.id).is_some_and(|pl| pl.repo == repo);
+    let home = w.open_projects().find(|q| at(q)).map(|q| q.id);
+    live.home = match home {
+        Some(p) => p,
+        None => live
+            .open_project(&mut w, &repo, None)
+            .map_err(|e| e.describe())?,
+    };
     let relay = std::env::current_exe().map_err(|e| format!("imece's own path: {e}"))?;
     live.open_bus(&w, relay.to_string_lossy().into_owned())
         .map_err(|e| format!("the agents' message bus: {e}"))?;
+    live.store = Some(store);
     Ok((w, live))
+}
+
+/// Seconds since the Unix epoch.
+fn now() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs())
 }
 
 impl Live {
@@ -499,13 +552,266 @@ impl Live {
         &self.places[p].repo
     }
 
+    /// The project of the checkout imece was started in.
+    pub fn home(&self) -> ProjectId {
+        self.home
+    }
+
+    #[cfg(test)]
+    pub(crate) fn set_home(&mut self, p: ProjectId) {
+        self.home = p;
+    }
+
+    /// A store in memory, for tests of what saving does on the screen.
+    #[cfg(test)]
+    pub(crate) fn store_in_memory(&mut self) {
+        self.store = Some(Store::in_memory());
+    }
+
+    /// Breaks the store so the next save fails, for tests.
+    #[cfg(test)]
+    pub(crate) fn break_store(&mut self) {
+        if let Some(s) = &self.store {
+            s.raw().execute_batch("DROP TABLE agents").unwrap();
+        }
+    }
+
+    /// Takes in what the store remembers of earlier runs, beside the world
+    /// it loaded: every agent sleeps (no session, nothing spent until
+    /// something wakes it), its mail, notes and offers wait, a turn that
+    /// was cut short is marked on its card and told at its wake. A project
+    /// whose checkout is gone closes. `skipped` lines of the journal or a
+    /// story could not be read.
+    fn adopt(&mut self, w: &mut World, found: Found, skipped: usize) {
+        for repo in &found.repos {
+            let root = root_for(&self.state, repo);
+            self.places.push(Place {
+                repo: repo.clone(),
+                root,
+            });
+        }
+        for id in 0..w.agents.len() {
+            self.grow(
+                found.models.get(id).cloned().flatten(),
+                found.tiered.get(id).copied().unwrap_or(false),
+            );
+            self.spent_before[id] = w.agents[id].cost;
+            self.mail[id] = found.mail.get(id).cloned().unwrap_or_default();
+            self.notes[id] = found.notes.get(id).cloned().unwrap_or_default();
+            self.woken[id] = found.woken.get(id).copied().unwrap_or(0);
+            self.posted[id] = found.posted.get(id).copied().unwrap_or(0);
+            if w.agents[id].gone {
+                continue;
+            }
+            let t = w.tick;
+            w.agents[id].set_status(Status::Asleep, t);
+            self.remembered[id] = true;
+            let cut = found.inflight.get(id).cloned().unwrap_or_default();
+            if !cut.is_empty() {
+                self.interrupted[id] = cut;
+                let card = w.agents[id].card;
+                w.agents[id].trace(w.tick, "turn cut short when imece closed");
+                w.story(card, StoryEvent::Interrupted);
+                w.note(Event::Interrupted { agent: id });
+            }
+        }
+        self.posts = found.posts;
+        self.offered = found.offered;
+        for (&id, c) in &found.changes {
+            let title = w
+                .inbox
+                .iter()
+                .rev()
+                .find(|i| i.kind == InboxKind::Change && i.agent == id && i.open)
+                .map(|i| i.detail.clone())
+                .unwrap_or_default();
+            w.changes.push(Change {
+                agent: id,
+                title,
+                files: c
+                    .files
+                    .iter()
+                    .map(|f| ChangedFile {
+                        path: f.path.clone(),
+                        added: f.added,
+                        removed: f.removed,
+                        binary: f.binary,
+                    })
+                    .collect(),
+                patch: c.patch.clone(),
+            });
+        }
+        self.changes = found.changes;
+        self.loaded_cards = w.cards.len();
+        let gone: Vec<ProjectId> = w
+            .open_projects()
+            .filter(|q| {
+                self.places
+                    .get(q.id)
+                    .is_none_or(|pl| worktree::top(&pl.repo).is_err())
+            })
+            .map(|q| q.id)
+            .collect();
+        for p in gone {
+            self.posts.retain(|c, _| w.cards[*c].project != p);
+            self.offered.retain(|c, _| w.cards[*c].project != p);
+            self.changes.retain(|a, _| w.agents[*a].project != p);
+            w.close_project(p);
+        }
+        if skipped > 0 {
+            let lead = w.projects.first().map(|p| p.leader);
+            if let Some(lead) = lead {
+                w.agents[lead].trace(
+                    w.tick,
+                    format!("store: {skipped} lines were written by another imece and skipped"),
+                );
+            }
+        }
+    }
+
+    /// Saves what moved since the last save. Says whether anything was
+    /// written; a failure is the store's words.
+    pub fn persist(&mut self, w: &World) -> Result<bool, String> {
+        let Some(store) = &mut self.store else {
+            return Ok(false);
+        };
+        let kept = Kept {
+            repos: self.places.iter().map(|pl| pl.repo.as_path()).collect(),
+            models: &self.models,
+            tiered: &self.tiered,
+            woken: &self.woken,
+            posted: &self.posted,
+            mail: &self.mail,
+            notes: &self.notes,
+            inflight: &self.inflight,
+            posts: &self.posts,
+            offered: &self.offered,
+            changes: &self.changes,
+        };
+        store.save(w, &kept).map_err(|e| e.to_string())
+    }
+
+    /// Tells a remembered agent where it left off, ahead of its first
+    /// prompt this run: its session is new and knows nothing of the old
+    /// one. Built from what the world kept (its card's story, a turn that
+    /// was cut short, mail that waits, its worktree's changes, the board),
+    /// every line cleaned and the whole capped.
+    fn brief(&mut self, w: &World, id: AgentId) -> String {
+        let a = &w.agents[id];
+        let mut lines = vec![
+            "imece started again since your last turn, so this is a new session that \
+             remembers nothing of the old one. Where you left off:"
+                .to_string(),
+        ];
+        let mut line = |text: String| {
+            let text = clean(text.lines().next().unwrap_or_default());
+            lines.push(format!("- {}", cut(&text, MAX_BRIEFING_LINE)));
+        };
+        if let Some(c) = a.card {
+            let card = &w.cards[c];
+            let state = match card.column {
+                Column::Done => "done",
+                _ => "not finished",
+            };
+            line(format!(
+                "Your task: #{} {} ({state}). Its story, latest last:",
+                c + 1,
+                card.title
+            ));
+            let skip = card.story.len().saturating_sub(12);
+            for s in card.story.iter().skip(skip) {
+                let text = match &s.event {
+                    StoryEvent::Sent {
+                        from,
+                        to,
+                        kind,
+                        text,
+                        ..
+                    } => format!(
+                        "{} → {} ({}): {text}",
+                        w.agents[*from].name,
+                        w.agents[*to].name,
+                        kind.wire()
+                    ),
+                    StoryEvent::Asked { from, to, text } => {
+                        format!(
+                            "{} asked {}: {text}",
+                            w.agents[*from].name, w.agents[*to].name
+                        )
+                    }
+                    StoryEvent::Answered { from, text } => {
+                        format!("{} answered: {text}", w.agents[*from].name)
+                    }
+                    StoryEvent::YouSaid(text) => format!("the person → you: {text}"),
+                    StoryEvent::Replied(text) => format!("you answered: {text}"),
+                    e => words::story(Lang::En, w, card, e),
+                };
+                if !text.is_empty() {
+                    line(format!("  {} {text}", clock(s.tick)));
+                }
+            }
+        } else {
+            line("You had no task in hand.".to_string());
+        }
+        for text in std::mem::take(&mut self.interrupted[id]) {
+            line(format!(
+                "A turn of yours was cut short when imece closed, before it ended; it is \
+                 not run again. Its prompt was: {text}"
+            ));
+        }
+        if !self.mail[id].is_empty() {
+            line(format!(
+                "{} messages wait for you; they come with a turn of their own.",
+                self.mail[id].len()
+            ));
+        }
+        if a.role != Role::Leader {
+            let tree = a.parent.map_or(&a.name, |p| &w.agents[p].name);
+            let path = self.places[a.project].root.join(tree);
+            if path.is_dir()
+                && let Ok(Some(c)) = worktree::change(&path, MAX_PATCH)
+            {
+                let (added, removed) = c.counts();
+                line(format!(
+                    "Your worktree holds changes the person has not applied: {} files, \
+                     +{added} −{removed}: {}",
+                    c.files.len(),
+                    c.files
+                        .iter()
+                        .take(20)
+                        .map(|f| f.path.as_str())
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                ));
+            }
+        }
+        let open: Vec<CardId> = self.open(w, a.project).collect();
+        if !open.is_empty() {
+            line(format!("The board has {} open cards:", open.len()));
+            for c in open.iter().take(10) {
+                line(format!(
+                    "  #{} {} (posted by {})",
+                    c + 1,
+                    w.cards[*c].title,
+                    w.agents[self.posts[c].by].name
+                ));
+            }
+        }
+        cut(&lines.join("\n"), MAX_BRIEFING).to_string()
+    }
+
     /// No projects and no agents yet; every leader will run on `lead`.
     fn bare(vendors: Vec<Hireable>, lead: Vendor) -> Live {
         let (tx, rx) = mpsc::channel();
         let (ready_tx, ready_rx) = mpsc::channel();
         let (calls_tx, calls_rx) = mpsc::channel();
         Live {
-            started: Instant::now(),
+            state: std::env::temp_dir(),
+            store: None,
+            home: 0,
+            loaded_cards: 0,
+            remembered: Vec::new(),
+            interrupted: Vec::new(),
             tx,
             rx,
             ready_tx,
@@ -546,6 +852,8 @@ impl Live {
     /// Makes room for one more agent, on `model` (`tiered`: picked by
     /// tier, so it may fall back).
     fn grow(&mut self, model: Option<String>, tiered: bool) {
+        self.remembered.push(false);
+        self.interrupted.push(Vec::new());
         self.slots.push(Slot::None);
         self.generation.push(0);
         self.spent_before.push(0);
@@ -641,7 +949,7 @@ impl Live {
 
     /// Moves the clock and applies what the sessions reported.
     pub fn step(&mut self, w: &mut World) {
-        w.tick = self.started.elapsed().as_secs() / SECONDS_PER_TICK;
+        w.tick = now().saturating_sub(w.started_at) / SECONDS_PER_TICK;
         let t = w.tick;
         for a in &mut w.agents {
             if a.talk.as_ref().is_some_and(|k| k.until <= t) {
@@ -761,7 +1069,11 @@ impl Live {
         for id in 0..self.mail.len() {
             let waking = self.mail[id].iter().any(|m| m.kind.wakes());
             let a = &w.agents[id];
-            if waking && self.turns[id] == 0 && a.status != Status::Stopped && !a.gone {
+            if waking
+                && self.turns[id] == 0
+                && !matches!(a.status, Status::Stopped | Status::Asleep)
+                && !a.gone
+            {
                 self.deliver(w, id);
             }
         }
@@ -903,7 +1215,7 @@ impl Live {
         let model = self.of(self.lead).ladder.standard.clone();
         self.grow(model, false);
         if reuse.is_none() {
-            let root = root_for(&crate::prefs::state_dir(), &repo);
+            let root = root_for(&self.state, &repo);
             self.places.push(Place {
                 repo: repo.clone(),
                 root,
@@ -1182,6 +1494,13 @@ impl Live {
             kind,
             body: body.to_string(),
         });
+        if kind.wakes() && w.agents[to].status == Status::Asleep {
+            // Something new since the start: a sleeper takes it like any
+            // idle agent (its older mail rides along).
+            let t = w.tick;
+            w.agents[to].set_status(Status::Idle, t);
+            w.agents[to].trace(t, "woken by mail");
+        }
         if kind == MsgKind::Done && w.agents[from].parent == Some(to) {
             // A helper's work is its worker's: done to it, and it leaves
             // when this turn ends.
@@ -1508,8 +1827,12 @@ impl Live {
             {
                 continue;
             }
+            // A sleeper is woken by a card posted since the start, not by
+            // one that waited through it.
+            let asleep = a.status == Status::Asleep;
             let cards: Vec<CardId> = self
                 .open(w, a.project)
+                .filter(|&c| !asleep || c >= self.loaded_cards)
                 .filter(|c| {
                     let seen = self.offered.get(c).map_or(&[][..], Vec::as_slice);
                     // Not yet seen by this worker, and not in front of
@@ -1557,7 +1880,7 @@ impl Live {
 
     /// Whether the team as a whole has spent the budget.
     fn over_budget(&self, w: &World) -> bool {
-        w.spent() >= w.daily_budget
+        w.spent() >= w.budget
     }
 
     fn ready(&mut self, w: &mut World, id: AgentId, ready: Ready) {
@@ -1674,6 +1997,10 @@ impl Live {
     ) -> Result<(), String> {
         let t = w.tick;
         self.follow(w, id);
+        if std::mem::take(&mut self.remembered[id]) {
+            let briefing = self.brief(w, id);
+            self.notes[id].insert(0, briefing);
+        }
         let text = self.with_notes(id, text);
         match &mut self.slots[id] {
             Slot::None => {
@@ -1691,9 +2018,13 @@ impl Live {
         self.inflight[id].push(text);
         self.turns[id] += 1;
         let a = &w.agents[id];
+        // A worker between tasks gets a card for this one; a task it has
+        // not finished (its session stopped or slept under it) goes on.
+        let unfinished = a.card.is_some_and(|c| w.cards[c].column != Column::Done);
         if let Some(title) = title
             && a.role == Role::Worker
             && a.status != Status::Working
+            && !unfinished
         {
             let card = w.cards.len();
             w.cards.push(Card {
@@ -1788,7 +2119,7 @@ impl Live {
         let (program, model) = (vendor.program.clone(), self.models[id].clone());
         let name = format!("imece {}", a.name);
         // In millionths of a dollar: what is left of the budget.
-        let budget = w.daily_budget.saturating_sub(w.spent()) * 100;
+        let budget = w.budget.saturating_sub(w.spent()) * 100;
         let kind = a.vendor;
         let generation = self.generation[id];
         // A helper changes the same files as its worker: its worktree.
@@ -2446,10 +2777,19 @@ fn fnv(bytes: &[u8]) -> u32 {
     })
 }
 
-fn local_seconds_after_midnight() -> u64 {
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_or(0, |d| d.as_secs());
+/// The longest prefix of `s` within `max` characters, at a character
+/// boundary, with a mark when something was cut.
+fn cut(s: &str, max: usize) -> &str {
+    match s.char_indices().nth(max) {
+        Some((i, _)) => &s[..i],
+        None => s,
+    }
+}
+
+/// The local time of day at `at` (seconds since the Unix epoch): what the
+/// screen's clock starts at (`start_clock_at`) for a world begun then.
+pub fn local_seconds_after_midnight(at: u64) -> u64 {
+    let now = at;
     let secs = now as libc::time_t;
     // SAFETY: `tm` is plain data that localtime_r fills; it keeps no pointer.
     let mut tm: libc::tm = unsafe { std::mem::zeroed() };
@@ -2468,6 +2808,10 @@ pub(crate) mod testing {
     pub(crate) fn team(workers: usize) -> World {
         let mut w = World {
             tick: 3,
+            // Begun just now: a step puts the tick at 0.
+            started_at: now(),
+            run_tick: 0,
+            run_spent: 0,
             projects: vec![Project {
                 id: 0,
                 name: "repo".into(),
@@ -2480,7 +2824,7 @@ pub(crate) mod testing {
             cards: Vec::new(),
             journal: Vec::new(),
             inbox: Vec::new(),
-            daily_budget: 10_000,
+            budget: 10_000,
             max_researchers: 0,
             research_queue: Default::default(),
             plans: Vec::new(),
@@ -2753,7 +3097,7 @@ mod tests {
         let mut live = idle_live(2);
         // The leader is mid-prompt in its first session when the cap hits;
         // the person had raised the budget to $100 meanwhile.
-        w.daily_budget = 100 * 10_000;
+        w.budget = 100 * 10_000;
         live.inflight[0] = vec!["hello".into()];
         live.turns[0] = 1;
         capped(&live, 0, 20);
@@ -2814,7 +3158,7 @@ mod tests {
     fn a_session_that_hit_its_cap_with_the_budget_spent_is_not_renewed() {
         let mut w = team(1);
         let mut live = idle_live(2);
-        w.daily_budget = 20 * 10_000;
+        w.budget = 20 * 10_000;
         live.inflight[0] = vec!["hello".into()];
         live.turns[0] = 1;
         capped(&live, 0, 20);
@@ -2826,7 +3170,7 @@ mod tests {
     }
 
     fn wait_for(live: &mut Live, w: &mut World, done: impl Fn(&World) -> bool) {
-        let start = Instant::now();
+        let start = std::time::Instant::now();
         while !done(w) {
             assert!(start.elapsed().as_secs() < 10, "timed out");
             live.step(w);
@@ -2846,10 +3190,10 @@ mod tests {
             PathBuf::from("/nonexistent"),
         );
         // The pot is shared: what the leader spent counts against the worker.
-        w.agents[0].cost = w.daily_budget;
+        w.agents[0].cost = w.budget;
         assert_eq!(live.told(&mut w, 1, "go"), Err(Refusal::Budget));
         w.agents[0].cost = 6_000;
-        w.agents[1].cost = w.daily_budget - 6_000;
+        w.agents[1].cost = w.budget - 6_000;
         assert_eq!(live.told(&mut w, 1, "go"), Err(Refusal::Budget));
         assert!(w.cards.is_empty());
         // One ten-thousandth under, and the worker is prompted: its turn
@@ -2966,7 +3310,7 @@ mod tests {
         assert_eq!(live.cwds[1], None);
         // Over budget nothing runs, a clear included.
         live.ready(&mut w, 1, Ok((Box::new(Stub), cwd, None)));
-        w.agents[1].cost = w.daily_budget;
+        w.agents[1].cost = w.budget;
         assert_eq!(live.command(&mut w, 1, "/clear"), Err(Refusal::Budget));
     }
 
@@ -3607,7 +3951,7 @@ mod tests {
     fn nobody_gets_waking_mail_once_the_budget_is_spent() {
         let mut w = team(1);
         let mut live = idle_live(2);
-        w.agents[0].cost = w.daily_budget;
+        w.agents[0].cost = w.budget;
         assert!(
             live.send(&mut w, 1, &msg("lead", "done", "x"))
                 .unwrap_err()
@@ -3976,12 +4320,19 @@ in p.rs",
     }
 
     #[test]
-    fn the_tick_is_the_time_since_the_start_in_whole_ticks() {
+    fn the_tick_is_the_time_since_the_world_began_in_whole_ticks() {
         let mut w = team(1);
         let mut live = idle_live(2);
-        live.started = Instant::now() - std::time::Duration::from_secs(13);
+        // The world began 13 seconds ago (in an earlier run, maybe).
+        w.started_at = now() - 13;
         live.step(&mut w);
         assert_eq!(w.tick, 13 / SECONDS_PER_TICK);
+        w.started_at = now() - 7 * 86_400;
+        live.step(&mut w);
+        assert_eq!(w.tick, 7 * 86_400 / SECONDS_PER_TICK);
+        w.started_at = now() + 60;
+        live.step(&mut w);
+        assert_eq!(w.tick, 0, "a clock set back does not underflow");
     }
 
     #[test]
@@ -5336,7 +5687,7 @@ in p.rs",
             .map(|n| n.parse().unwrap())
             .collect();
         let expect = p[0] * 3600 + p[1] * 60 + p[2];
-        let got = local_seconds_after_midnight();
+        let got = local_seconds_after_midnight(now());
         let apart = got.abs_diff(expect).min(86_400 - got.abs_diff(expect));
         assert!(apart <= 2, "{got} vs {expect}");
     }
@@ -5408,10 +5759,7 @@ in p.rs",
         assert!(!live.tiered[1]);
         assert_eq!(live.places.len(), 2);
         assert_eq!(live.places[1].repo, top);
-        assert_eq!(
-            live.places[1].root,
-            root_for(&crate::prefs::state_dir(), &top)
-        );
+        assert_eq!(live.places[1].root, root_for(&live.state, &top));
         assert_eq!(live.repo_of(1), top);
         assert_eq!(
             (live.slots.len(), live.running.len(), live.mail.len()),
@@ -5704,10 +6052,20 @@ in p.rs",
         let two = checkout("own-two");
         let root = trees("own");
         let mut w = team(0);
-        let mut live = Live::new(1, claude_at("/nonexistent/claude"), one.clone(), root);
+        let mut live = Live::new(
+            1,
+            claude_at("/nonexistent/claude"),
+            one.clone(),
+            root.clone(),
+        );
+        // Worktrees of projects opened from the screen go under the state
+        // directory imece was given, not the person's real one.
+        std::fs::create_dir_all(&root).unwrap();
+        live.state = root.canonicalize().unwrap();
         live.open_project(&mut w, &two, Some("two")).unwrap();
         live.hire(&mut w, 1, &json!({})).unwrap();
         let (repo, root) = (live.places[1].repo.clone(), live.places[1].root.clone());
+        assert!(root.starts_with(&live.state), "{}", root.display());
         let tree = worker_in(&mut live, &mut w, 2, &repo, &root);
         assert!(tree.starts_with(&root), "{}", tree.display());
         std::fs::write(tree.join("a.txt"), "changed\n").unwrap();
@@ -5902,5 +6260,505 @@ in p.rs",
         live.rename_project(&mut w, 0, "store").unwrap();
         assert_eq!(live.notes[1].len(), 1, "a gone agent hears nothing");
         assert_eq!(live.notes[0].len(), 2);
+    }
+
+    fn item(kind: InboxKind, agent: AgentId, detail: &str) -> InboxItem {
+        InboxItem {
+            kind,
+            agent,
+            detail: detail.into(),
+            researcher: None,
+            open: true,
+            tick: 1,
+        }
+    }
+
+    #[test]
+    fn what_the_store_remembers_comes_back_asleep_with_its_mail_offers_and_cut_turns() {
+        let repo = checkout("adopt");
+        let state = trees("adopt-state");
+        let mut w = team(2);
+        w.agents[1].cost = 1_500;
+        w.agents[2].gone = true;
+        w.agents[2].status = Status::Idle;
+        let c = with_card(&mut w, 1);
+        // A second project whose checkout is gone since, with a card on
+        // its board and a change of its own.
+        w.open_project(
+            None,
+            "gone".into(),
+            "/nonexistent/gone".into(),
+            Vendor::Claude,
+        );
+        let lead_gone = 3;
+        let other = w.cards.len();
+        w.cards.push(Card {
+            id: other,
+            project: 1,
+            title: "elsewhere".into(),
+            owner: None,
+            column: Column::Waiting,
+            story: Vec::new(),
+            symbols: Vec::new(),
+            started: 0,
+            finished: 0,
+        });
+        w.inbox.push(item(InboxKind::Reply, 1, "an old answer"));
+        w.inbox.push(item(InboxKind::Change, 1, "an older change"));
+        w.inbox.push(item(InboxKind::Change, 1, "Changed a"));
+        w.inbox
+            .push(item(InboxKind::Change, 1, "a later one, closed"));
+        w.inbox[0].open = false;
+        w.inbox[3].open = false;
+        let change = |tree: &str| worktree::Change {
+            path: "/trees/claude-1".into(),
+            tree: tree.into(),
+            files: vec![worktree::FileChange {
+                path: "a.txt".into(),
+                added: 2,
+                removed: 1,
+                binary: false,
+            }],
+            patch: "diff".into(),
+        };
+        let found = Found {
+            repos: vec![repo.clone(), "/nonexistent/gone".into()],
+            models: vec![None, Some("haiku".into()), None, None],
+            tiered: vec![false, true, false, false],
+            woken: vec![0, 2, 0, 0],
+            posted: vec![1, 0, 0, 0],
+            mail: vec![
+                Vec::new(),
+                vec![Mail {
+                    from: 0,
+                    kind: MsgKind::Assign,
+                    body: "old mail".into(),
+                }],
+                Vec::new(),
+                Vec::new(),
+            ],
+            notes: vec![vec!["a note".into()], Vec::new(), Vec::new(), Vec::new()],
+            inflight: vec![
+                Vec::new(),
+                vec!["go on".into()],
+                vec!["gone's".into()],
+                Vec::new(),
+            ],
+            posts: HashMap::from([
+                (
+                    c,
+                    Post {
+                        by: 0,
+                        body: "the body".into(),
+                    },
+                ),
+                (
+                    other,
+                    Post {
+                        by: lead_gone,
+                        body: "elsewhere".into(),
+                    },
+                ),
+            ]),
+            offered: HashMap::from([(c, vec![2]), (other, vec![lead_gone])]),
+            changes: HashMap::from([(1, change("abc")), (lead_gone, change("def"))]),
+        };
+        let mut live = Live::bare(claude_at("x"), Vendor::Claude);
+        live.state = state.clone();
+        let journal = w.journal.len();
+        live.adopt(&mut w, found, 3);
+        assert_eq!(live.places.len(), 2);
+        assert_eq!(live.places[0].repo, repo);
+        assert_eq!(live.places[0].root, root_for(&state, &repo));
+        assert_eq!(
+            w.agents.iter().map(|a| a.status).collect::<Vec<_>>(),
+            [Status::Asleep, Status::Asleep, Status::Idle, Status::Idle],
+            "asleep; gone stays idle; the gone project's leader left"
+        );
+        assert_eq!(live.remembered, [true, true, false, true]);
+        assert_eq!(live.spent_before, [0, 1_500, 0, 0]);
+        assert_eq!(live.models[1].as_deref(), Some("haiku"));
+        assert_eq!(live.tiered, [false, true, false, false]);
+        assert_eq!(live.woken, [0, 2, 0, 0]);
+        assert_eq!(live.posted, [1, 0, 0, 0]);
+        assert_eq!(live.mail[1].len(), 1);
+        assert_eq!(live.notes[0], ["a note"]);
+        assert!(live.inflight.iter().all(Vec::is_empty), "not run again");
+        assert_eq!(live.interrupted[1], ["go on"]);
+        assert!(
+            live.interrupted[2].is_empty(),
+            "a gone agent's turn is nobody's"
+        );
+        assert!(matches!(
+            w.cards[c].story.last().map(|s| &s.event),
+            Some(StoryEvent::Interrupted)
+        ));
+        assert!(
+            w.journal[journal..]
+                .iter()
+                .any(|e| e.event == Event::Interrupted { agent: 1 })
+        );
+        assert!(
+            w.agents[1]
+                .trace
+                .iter()
+                .any(|l| l.contains("turn cut short")),
+            "{:?}",
+            w.agents[1].trace
+        );
+        assert_eq!(live.loaded_cards, 2);
+        // The project whose checkout is gone closed, with what was its.
+        assert!(!w.projects[0].closed);
+        assert!(w.projects[1].closed);
+        assert!(
+            w.journal
+                .iter()
+                .any(|e| e.event == Event::Closed { leader: lead_gone })
+        );
+        assert_eq!(live.posts.keys().copied().collect::<Vec<_>>(), [c]);
+        assert_eq!(live.offered.keys().copied().collect::<Vec<_>>(), [c]);
+        assert_eq!(live.changes.keys().copied().collect::<Vec<_>>(), [1]);
+        assert_eq!(live.changes[&1].tree, "abc");
+        // The screen's copy of the change, titled by its inbox item.
+        assert_eq!(w.changes.len(), 1);
+        assert_eq!(
+            (
+                w.changes[0].agent,
+                w.changes[0].title.as_str(),
+                w.changes[0].files[0].added
+            ),
+            (1, "Changed a", 2)
+        );
+        assert!(
+            w.agents[0].trace.iter().any(|l| l.contains("3 lines")),
+            "{:?}",
+            w.agents[0].trace
+        );
+        let _ = std::fs::remove_dir_all(&repo);
+    }
+
+    #[test]
+    fn a_remembered_agent_hears_where_it_left_off_once_and_keeps_its_card() {
+        let mut w = team(2);
+        let c = with_card(&mut w, 1);
+        for e in [
+            StoryEvent::Sent {
+                from: 0,
+                to: 1,
+                kind: MsgKind::Assign,
+                text: "do it\nproperly".into(),
+            },
+            StoryEvent::YouSaid("hi there".into()),
+            StoryEvent::Touched("src/a.rs".into()),
+            StoryEvent::Replied("ok done".into()),
+            StoryEvent::Asked {
+                from: 1,
+                to: 0,
+                text: "which".into(),
+            },
+            StoryEvent::Answered {
+                from: 0,
+                text: "that".into(),
+            },
+        ] {
+            w.story(Some(c), e);
+        }
+        let mut live = idle_live(3);
+        live.post(
+            &mut w,
+            0,
+            &json!({"title": "write docs", "body": "the README"}),
+        )
+        .unwrap();
+        live.remembered[1] = true;
+        live.interrupted[1] = vec!["finish TOKEN=abc the tests".into()];
+        for body in ["one", "two"] {
+            live.mail[1].push(Mail {
+                from: 0,
+                kind: MsgKind::Inform,
+                body: body.into(),
+            });
+        }
+        w.agents[1].status = Status::Asleep;
+        let cards = w.cards.len();
+        live.told(&mut w, 1, "go on").unwrap();
+        let q = queued(&live, 1);
+        let text = &q[0];
+        assert!(
+            text.starts_with("From imece (not from the person or a teammate):"),
+            "{text}"
+        );
+        for part in [
+            "Where you left off",
+            "Your task: #1 fix it (not finished)",
+            "lead → claude-1 (assign): do it",
+            "the person → you: hi there",
+            "changed src/a.rs",
+            "you answered: ok done",
+            "claude-1 asked lead: which",
+            "lead answered: that",
+            "cut short when imece closed",
+            "Its prompt was: finish [***] the tests",
+            "2 messages wait for you",
+            "The board has 1 open cards:",
+            "#2 write docs (posted by lead)",
+        ] {
+            assert!(text.contains(part), "{part:?} in {text}");
+        }
+        assert!(!text.contains("TOKEN=abc"));
+        assert!(!text.contains("properly"), "first lines only");
+        assert!(text.ends_with("\n\ngo on"), "{text}");
+        assert!(!live.remembered[1]);
+        assert!(live.interrupted[1].is_empty());
+        assert_eq!(w.cards.len(), cards, "the unfinished card goes on");
+        assert_eq!(w.agents[1].card, Some(c));
+        assert_eq!(w.agents[1].status, Status::Working);
+        // Told again: no second briefing. The mail still waits (it comes
+        // as a turn of its own once this one ends).
+        live.told(&mut w, 1, "more").unwrap();
+        assert_eq!(queued(&live, 1)[1], "more");
+        assert_eq!(live.mail[1].len(), 2);
+        // No card, no board, no mail: said so, briefly.
+        live.remembered[2] = true;
+        w.agents[2].status = Status::Asleep;
+        w.agents[2].card = None;
+        live.told(&mut w, 2, "x").unwrap();
+        let text = &queued(&live, 2)[0];
+        assert!(text.contains("You had no task in hand."), "{text}");
+        assert!(!text.contains("messages wait") && text.contains("The board has 1 open"));
+        // A finished card is said to be, and a new task gets a new card.
+        let mut w = team(1);
+        let c = with_card(&mut w, 1);
+        w.cards[c].column = Column::Done;
+        let mut live = idle_live(2);
+        live.remembered[1] = true;
+        w.agents[1].status = Status::Asleep;
+        live.told(&mut w, 1, "next").unwrap();
+        assert!(queued(&live, 1)[0].contains("#1 fix it (done)"));
+        assert_eq!(w.agents[1].card, Some(1));
+    }
+
+    #[test]
+    fn a_remembered_worker_is_told_what_its_worktree_holds() {
+        let repo = checkout("brief-tree");
+        let root = trees("brief-tree");
+        let mut w = team(1);
+        let mut live = Live::new(
+            2,
+            claude_at("/nonexistent/claude"),
+            repo.clone(),
+            root.clone(),
+        );
+        let tree = worktree::ensure(&repo, &root, "claude-1").unwrap().path;
+        std::fs::write(tree.join("a.txt"), "changed\n").unwrap();
+        std::fs::write(tree.join("b.txt"), "new\n").unwrap();
+        live.remembered[1] = true;
+        w.agents[1].status = Status::Asleep;
+        live.told(&mut w, 1, "go on").unwrap();
+        let text = &queued(&live, 1)[0];
+        assert!(
+            text.contains("Your worktree holds changes the person has not applied: 2 files, +2 −1: a.txt, b.txt"),
+            "{text}"
+        );
+        // The leader has no worktree: nothing said of one.
+        live.remembered[0] = true;
+        w.agents[0].status = Status::Asleep;
+        live.told(&mut w, 0, "go on").unwrap();
+        assert!(!queued(&live, 0)[0].contains("worktree"));
+        let _ = std::fs::remove_dir_all(&repo);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_briefing_is_capped_line_by_line_and_as_a_whole() {
+        let mut w = team(1);
+        let mut live = idle_live(2);
+        live.remembered[1] = true;
+        live.interrupted[1] = (0..40)
+            .map(|i| format!("{i} {}", "x".repeat(500)))
+            .collect();
+        w.agents[1].status = Status::Asleep;
+        live.told(&mut w, 1, "go on").unwrap();
+        let text = &queued(&live, 1)[0];
+        let longest = text.lines().map(|l| l.chars().count()).max().unwrap();
+        assert!(longest <= MAX_BRIEFING_LINE + 2, "{longest}");
+        assert!(
+            text.chars().count() <= MAX_BRIEFING + 80,
+            "{}",
+            text.chars().count()
+        );
+        assert!(text.contains("- A turn of yours was cut short"));
+        assert_eq!(cut("héllo", 2), "hé");
+        assert_eq!(cut("ab", 5), "ab");
+        assert_eq!(cut("", 0), "");
+    }
+
+    #[test]
+    fn a_worker_told_again_goes_on_with_an_unfinished_card_and_gets_a_new_one_after_a_done_one() {
+        let mut w = team(1);
+        let mut live = idle_live(2);
+        let c = with_card(&mut w, 1);
+        w.agents[1].status = Status::Stopped;
+        live.told(&mut w, 1, "try again").unwrap();
+        assert_eq!(w.agents[1].card, Some(c));
+        assert_eq!(w.cards.len(), 1, "the stopped task goes on");
+        w.cards[c].column = Column::Done;
+        w.agents[1].status = Status::Idle;
+        live.turns[1] = 0;
+        live.told(&mut w, 1, "next").unwrap();
+        assert_eq!(w.agents[1].card, Some(1));
+        assert_eq!(w.cards[1].title, "next");
+    }
+
+    #[test]
+    fn a_sleeper_wakes_to_new_mail_and_new_cards_but_not_to_what_waited() {
+        let mut w = team(2);
+        let mut live = idle_live(3);
+        for id in [1, 2] {
+            w.agents[id].status = Status::Asleep;
+        }
+        live.mail[1].push(Mail {
+            from: 0,
+            kind: MsgKind::Assign,
+            body: "old".into(),
+        });
+        live.step(&mut w);
+        assert_eq!(live.turns[1], 0, "mail that waited through does not wake");
+        assert_eq!(w.agents[1].status, Status::Asleep);
+        // Mail that does not wake an idle agent does not wake a sleeper.
+        live.send(&mut w, 0, &msg("claude-2", "inform", "fyi"))
+            .unwrap();
+        assert_eq!(w.agents[2].status, Status::Asleep);
+        live.step(&mut w);
+        assert_eq!(live.turns[2], 0);
+        // New mail wakes, and the old rides along.
+        let answer = live
+            .send(&mut w, 0, &msg("claude-1", "assign", "new"))
+            .unwrap();
+        assert!(answer.contains("starts on it now"), "{answer}");
+        assert_eq!(w.agents[1].status, Status::Idle);
+        assert!(
+            w.agents[1]
+                .trace
+                .iter()
+                .any(|l| l.contains("woken by mail"))
+        );
+        live.step(&mut w);
+        assert_eq!(live.turns[1], 1);
+        let text = &queued(&live, 1)[0];
+        assert!(text.contains("old") && text.contains("new"), "{text}");
+        // A card that waited through is not offered; one posted since is.
+        live.post(&mut w, 0, &json!({"title": "old card", "body": "b"}))
+            .unwrap();
+        live.loaded_cards = w.cards.len();
+        live.step(&mut w);
+        assert_eq!(live.turns[2], 0);
+        assert!(live.offered.is_empty());
+        live.post(&mut w, 0, &json!({"title": "new card", "body": "b"}))
+            .unwrap();
+        live.step(&mut w);
+        assert_eq!(live.turns[2], 1);
+        assert_eq!(
+            live.offered
+                .iter()
+                .map(|(c, a)| (*c, a.clone()))
+                .collect::<Vec<_>>(),
+            [(2, vec![2])],
+            "the new card alone (card 1 is claude-1's task)"
+        );
+        let text = &queued(&live, 2)[0];
+        assert!(
+            text.contains("new card") && !text.contains("old card"),
+            "{text}"
+        );
+    }
+
+    #[test]
+    fn persist_writes_what_moved_when_there_is_a_store() {
+        let mut w = team(1);
+        let mut live = idle_live(2);
+        assert_eq!(live.persist(&w), Ok(false), "nothing to write to");
+        live.store_in_memory();
+        assert_eq!(live.persist(&w), Ok(true));
+        assert_eq!(live.persist(&w), Ok(false));
+        w.agents[1].cost = 5;
+        assert_eq!(live.persist(&w), Ok(true));
+        live.break_store();
+        w.agents[1].cost = 6;
+        let e = live.persist(&w).unwrap_err();
+        assert!(e.contains("no such table"), "{e}");
+    }
+
+    #[test]
+    fn the_world_is_remembered_between_runs_and_the_checkout_at_hand_leads() {
+        let repo = checkout("remember");
+        let other = checkout("remember-other");
+        let state = trees("remember-state");
+        let options = |repo: &Path, budget| Options {
+            repo: repo.to_path_buf(),
+            state: state.clone(),
+            max_workers: 2,
+            max_helpers: 1,
+            lead: Vendor::Claude,
+            tiers: Vec::new(),
+            budget,
+            run_programs: Vec::new(),
+            run_timeout: DEFAULT_RUN_TIMEOUT,
+        };
+        let present = [(Vendor::Claude, true)];
+        let (mut w, mut live) = world(options(&repo, None), &present).unwrap();
+        assert_eq!(w.projects.len(), 1);
+        assert_eq!(w.agents[0].status, Status::Idle, "new, not remembered");
+        assert_eq!(w.budget, DEFAULT_BUDGET);
+        assert!(w.started_at.abs_diff(now()) <= 2);
+        assert_eq!((w.tick, live.home()), (0, 0));
+        assert!(live.store.is_some());
+        let began = w.started_at;
+        w.budget = 70_000;
+        w.agents[0].cost = 1_234;
+        live.inflight[0].push("hello".into());
+        assert_eq!(live.persist(&w), Ok(true));
+        drop(live);
+
+        // The next run: asleep, the pot as the flag says, the turn cut.
+        let (w, mut live) = world(options(&repo, Some(20_000)), &present).unwrap();
+        assert_eq!(w.projects.len(), 1);
+        assert_eq!(w.agents[0].status, Status::Asleep);
+        assert_eq!((w.agents[0].cost, live.spent_before[0]), (1_234, 1_234));
+        assert_eq!(w.budget, 20_000);
+        assert_eq!((w.started_at, w.run_spent), (began, 1_234));
+        assert!(live.remembered[0]);
+        assert_eq!(live.interrupted[0], ["hello"]);
+        assert!(
+            w.journal
+                .iter()
+                .any(|e| e.event == Event::Interrupted { agent: 0 })
+        );
+        assert_eq!(live.home(), 0);
+        assert_eq!(live.persist(&w), Ok(true));
+        drop(live);
+
+        // Without the flag, the pot is as it was left; from another
+        // checkout, that one is a project of its own and leads.
+        let (w, live) = world(options(&other, None), &present).unwrap();
+        assert_eq!(w.budget, 20_000);
+        assert_eq!(w.projects.len(), 2);
+        assert_eq!(live.home(), 1);
+        assert_eq!(
+            w.agents[1].name,
+            format!("lead-{}", project_name_of(&other))
+        );
+        assert_eq!(w.agents[0].status, Status::Asleep);
+        assert_eq!(w.agents[1].status, Status::Idle);
+        drop(live);
+        // While one runs, a second is refused.
+        let (_w, _live) = world(options(&repo, None), &present).unwrap();
+        let e = world(options(&repo, None), &present)
+            .err()
+            .expect("refused");
+        assert!(e.contains("another imece is running"), "{e}");
+        let _ = std::fs::remove_dir_all(&repo);
+        let _ = std::fs::remove_dir_all(&other);
+        let _ = std::fs::remove_dir_all(&state);
     }
 }

@@ -166,6 +166,8 @@ pub struct App {
     pub digest: Option<Digest>,
     pub flash: Option<(String, Instant)>,
     pub quit: bool,
+    /// The store's last failure, flashed once.
+    store_error: Option<String>,
     /// Salon lines in the order they were shown last, for moving the
     /// selection.
     pub shown: RefCell<Vec<Sel>>,
@@ -181,9 +183,10 @@ impl App {
 
     pub fn with(world: World, engine: Engine, lang: Lang) -> App {
         let collapsed = vec![false; world.projects.len()];
-        let selected = match engine {
-            // A live team starts with the leader selected: it is who to talk to.
-            Engine::Live(_) => Sel::Agent(world.projects[0].leader),
+        let selected = match &engine {
+            // A live team starts with the leader of the checkout at hand
+            // selected: it is who to talk to.
+            Engine::Live(l) => Sel::Agent(world.projects[l.home()].leader),
             Engine::Sim(_) => Sel::Project(0),
         };
         App {
@@ -216,6 +219,7 @@ impl App {
             digest: None,
             flash: None,
             quit: false,
+            store_error: None,
             shown: RefCell::new(Vec::new()),
             last_key: Instant::now(),
             last_key_tick: 0,
@@ -226,6 +230,25 @@ impl App {
         match &mut self.engine {
             Engine::Sim(s) => s.step(&mut self.world),
             Engine::Live(l) => l.step(&mut self.world),
+        }
+        self.persist();
+    }
+
+    /// Saves what moved, for the next run. A store that fails is said
+    /// once per failure, not on every step.
+    pub fn persist(&mut self) {
+        let Engine::Live(l) = &mut self.engine else {
+            return;
+        };
+        match l.persist(&self.world) {
+            Ok(_) => self.store_error = None,
+            Err(e) => {
+                if self.store_error.as_ref() != Some(&e) {
+                    let t = self.lang.text();
+                    self.flash(fill(t.store_failed, &[&e]));
+                    self.store_error = Some(e);
+                }
+            }
         }
     }
 
@@ -280,6 +303,11 @@ impl App {
     }
 
     pub fn on_key(&mut self, k: KeyEvent) {
+        self.key(k);
+        self.persist();
+    }
+
+    fn key(&mut self, k: KeyEvent) {
         let away = self.last_key.elapsed() >= AWAY;
         let since = self.last_key_tick;
         self.last_key = Instant::now();
@@ -994,8 +1022,8 @@ impl App {
         match name {
             "budget" | "b" => match parse_dollars(arg) {
                 Some(to) => {
-                    let from = self.world.daily_budget;
-                    self.world.daily_budget = to;
+                    let from = self.world.budget;
+                    self.world.budget = to;
                     let leader = self.world.projects[self.current_project()].leader;
                     self.world.note(Event::Budget { leader, from, to });
                     self.flash(fill(t.budget_is, &[&dollars(to)]));
@@ -1490,6 +1518,75 @@ mod tests {
         assert_eq!(app.cwd(), one);
         let _ = std::fs::remove_dir_all(&one);
         let _ = std::fs::remove_dir_all(&two);
+    }
+
+    #[test]
+    fn a_live_app_starts_on_the_leader_of_the_checkout_at_hand() {
+        let one = crate::live::testing::checkout("home-one");
+        let two = crate::live::testing::checkout("home-two");
+        let mut w = crate::live::testing::team(0);
+        let mut live = crate::live::testing::idle_live_in(&one, 1);
+        live.open_project(&mut w, &two, Some("two")).unwrap();
+        live.set_home(1);
+        let app = App::with(w, Engine::Live(Box::new(live)), Lang::En);
+        assert_eq!(app.selected, Sel::Agent(1), "the second project's leader");
+        let _ = std::fs::remove_dir_all(&one);
+        let _ = std::fs::remove_dir_all(&two);
+    }
+
+    #[test]
+    fn a_store_that_fails_is_said_once_and_a_save_that_works_clears_it() {
+        let w = crate::live::testing::team(1);
+        let mut live = crate::live::testing::idle_live(2);
+        live.store_in_memory();
+        let mut app = App::with(w, Engine::Live(Box::new(live)), Lang::En);
+        app.persist();
+        assert!(app.flash.is_none(), "a save that works says nothing");
+        assert!(app.store_error.is_none());
+        let Engine::Live(l) = &mut app.engine else {
+            unreachable!()
+        };
+        l.break_store();
+        app.world.agents[1].cost = 5;
+        app.persist();
+        let said = app.flash.take().map(|f| f.0).unwrap_or_default();
+        assert!(
+            said.starts_with("not saved for the next run: ") && said.contains("no such table"),
+            "{said}"
+        );
+        assert!(app.store_error.is_some());
+        app.world.agents[1].cost = 6;
+        app.on_key(key(KeyCode::Char('j')));
+        assert!(app.flash.is_none(), "the same failure is not said again");
+        app.step();
+        assert!(app.flash.is_none());
+        // A store that works again clears it. Every key and every step
+        // saves: after either, nothing is left to write.
+        let mut live = crate::live::testing::idle_live(2);
+        live.store_in_memory();
+        let mut app = App::with(
+            crate::live::testing::team(1),
+            Engine::Live(Box::new(live)),
+            Lang::En,
+        );
+        app.store_error = Some("was broken".into());
+        app.world.agents[1].cost = 7;
+        app.on_key(key(KeyCode::Char('j')));
+        assert!(app.store_error.is_none());
+        let Engine::Live(l) = &mut app.engine else {
+            unreachable!()
+        };
+        assert_eq!(l.persist(&app.world), Ok(false), "the key saved it");
+        app.world.agents[1].cost = 8;
+        app.step();
+        let Engine::Live(l) = &mut app.engine else {
+            unreachable!()
+        };
+        assert_eq!(l.persist(&app.world), Ok(false), "the step saved it");
+        // The demo has no store: nothing to say, ever.
+        let mut demo = App::new(1, 1, 0, 1, Lang::En);
+        demo.persist();
+        assert!(demo.flash.is_none() && demo.store_error.is_none());
     }
 
     #[test]

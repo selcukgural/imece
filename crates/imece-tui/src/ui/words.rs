@@ -70,6 +70,7 @@ pub fn event(lang: Lang, w: &World, e: &Event) -> String {
         } => fill(t.ev_approved_research, &[name(w, *agent)]),
         Event::Rejected { agent } => fill(t.ev_rejected, &[name(w, *agent)]),
         Event::Stopped { agent, why } => fill(t.ev_stopped, &[name(w, *agent), why]),
+        Event::Interrupted { agent } => fill(t.ev_interrupted, &[name(w, *agent)]),
         Event::Posted { agent, card } => fill(
             t.ev_posted,
             &[name(w, *agent), &card_ref(*card), &w.cards[*card].title],
@@ -182,6 +183,7 @@ pub fn story(lang: Lang, w: &World, card: &Card, e: &StoryEvent) -> String {
         StoryEvent::YouRejected { research: true } => t.st_you_rejected_research.to_string(),
         StoryEvent::Touched(file) => fill(t.st_touched, &[file]),
         StoryEvent::Stopped(why) => fill(t.st_stopped, &[why]),
+        StoryEvent::Interrupted => t.st_interrupted.to_string(),
         StoryEvent::Posted { by, text } => fill(t.st_posted, &[name(w, *by), text]),
         StoryEvent::Asked { .. }
         | StoryEvent::Answered { .. }

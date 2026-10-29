@@ -8,6 +8,8 @@ use std::collections::VecDeque;
 use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
 
+use serde::{Deserialize, Serialize};
+
 pub type AgentId = usize;
 pub type CardId = usize;
 pub type ProjectId = usize;
@@ -28,7 +30,7 @@ fn start_seconds() -> u64 {
 /// Trace lines kept per agent.
 const TRACE_KEEP: usize = 200;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Vendor {
     Claude,
     Codex,
@@ -67,7 +69,7 @@ impl Vendor {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Role {
     Leader,
     Worker,
@@ -80,7 +82,7 @@ pub enum Role {
 /// How much outside content an agent has read: `Soft` after a researcher's
 /// report (only sensitive changes need the person), `Full` after reading the
 /// outside world itself (every change needs the person).
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub enum Taint {
     Clean,
     Soft,
@@ -139,6 +141,9 @@ pub enum Status {
     },
     /// A live agent's session ended; telling it something starts a new one.
     Stopped,
+    /// Remembered from an earlier run of imece, without a session: it costs
+    /// nothing until the person speaks to it or a teammate writes to it.
+    Asleep,
 }
 
 impl Status {
@@ -161,7 +166,7 @@ impl Status {
 
 /// The envelope type of a message between agents. Only the type drives
 /// routing and waking; the body is never interpreted.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum MsgKind {
     Assign,
     Ask,
@@ -229,6 +234,21 @@ pub struct Talk {
     pub with: Party,
     pub text: String,
     pub until: u64,
+}
+
+/// A message waiting for an agent's next turn.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct Mail {
+    pub from: AgentId,
+    pub kind: MsgKind,
+    pub body: String,
+}
+
+/// A card an agent put on the board: who, and what it asks for.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Post {
+    pub by: AgentId,
+    pub body: String,
 }
 
 /// Why a project could not be opened, closed or renamed.
@@ -331,6 +351,9 @@ pub struct Agent {
     /// Tick of the last status change; the screen marks recent changes.
     pub changed_at: u64,
     pub trace: VecDeque<String>,
+    /// Trace lines ever written, the kept ones being the last of them; the
+    /// store numbers lines by it.
+    pub traced: u64,
     /// What a live agent is doing right now (`Edit src/main.rs`), drawn
     /// instead of the progress bar; empty while it thinks.
     pub activity: Option<String>,
@@ -369,6 +392,7 @@ impl Agent {
             topic: String::new(),
             changed_at: tick,
             trace: VecDeque::new(),
+            traced: 0,
             activity: None,
             commands: Vec::new(),
             gone: false,
@@ -388,10 +412,11 @@ impl Agent {
         }
         self.trace
             .push_back(format!("{} {}", clock_seconds(tick), line.into()));
+        self.traced += 1;
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Column {
     Waiting,
     Working,
@@ -406,7 +431,7 @@ pub struct Symbol {
 }
 
 /// What happened on a card, in the order it happened.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum StoryEvent {
     Took {
         agent: AgentId,
@@ -456,6 +481,9 @@ pub enum StoryEvent {
     Touched(String),
     /// A live agent's turn or session ended without an answer.
     Stopped(String),
+    /// imece was closed while the agent's turn ran; the turn is not run
+    /// again, the agent hears of it when it wakes.
+    Interrupted,
     /// A live agent sent a teammate a message.
     Sent {
         from: AgentId,
@@ -499,7 +527,8 @@ impl StoryEvent {
             | StoryEvent::FromCache(_)
             | StoryEvent::Verified { .. }
             | StoryEvent::QueueFailed
-            | StoryEvent::Stopped(_) => StoryKind::Evidence,
+            | StoryEvent::Stopped(_)
+            | StoryEvent::Interrupted => StoryKind::Evidence,
             StoryEvent::Change { .. } | StoryEvent::Sensitive(_) | StoryEvent::Touched(_) => {
                 StoryKind::Change
             }
@@ -538,7 +567,7 @@ impl Card {
 }
 
 /// An event of the whole guild, for the journal.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Event {
     Plan {
         leader: AgentId,
@@ -609,6 +638,11 @@ pub enum Event {
     Stopped {
         agent: AgentId,
         why: String,
+    },
+    /// imece was closed while the agent's turn ran (or it died); the turn
+    /// is not run again, the agent hears of it when it wakes.
+    Interrupted {
+        agent: AgentId,
     },
     /// A live agent sent a teammate a message.
     Sent {
@@ -748,9 +782,10 @@ impl Event {
             | Event::Sensitive { .. }
             | Event::ChangeReady { .. } => EntryKind::Sensitive,
             Event::Merged { .. } | Event::Applied { .. } => EntryKind::Merged,
-            Event::Failed { .. } | Event::Stopped { .. } | Event::ApplyFailed { .. } => {
-                EntryKind::Failed
-            }
+            Event::Failed { .. }
+            | Event::Stopped { .. }
+            | Event::Interrupted { .. }
+            | Event::ApplyFailed { .. } => EntryKind::Failed,
             Event::Approved { .. }
             | Event::Rejected { .. }
             | Event::YouSaid { .. }
@@ -782,6 +817,7 @@ impl Event {
             | Event::Rejected { agent }
             | Event::Replied { agent, .. }
             | Event::Stopped { agent, .. }
+            | Event::Interrupted { agent }
             | Event::Posted { agent, .. }
             | Event::Claimed { agent, .. }
             | Event::Hired { agent, .. }
@@ -803,7 +839,7 @@ impl Event {
 
 /// How a command of the person's own ended: its exit code, or the signal
 /// that stopped it.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Ended {
     Exit(i32),
     Signal(i32),
@@ -815,7 +851,7 @@ pub struct Entry {
     pub event: Event,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum InboxKind {
     /// A change to dependencies, CI, build scripts or network settings.
     Sensitive,
@@ -883,13 +919,22 @@ pub struct Plan {
 
 pub struct World {
     pub tick: u64,
+    /// When the world began, in seconds since the Unix epoch: tick 0. A
+    /// world remembered from an earlier run keeps its first start, so ticks
+    /// stay monotonic across runs; the simulation has none (0).
+    pub started_at: u64,
+    /// The tick this run of imece began at, and what was spent by then,
+    /// for the rate of this run alone.
+    pub run_tick: u64,
+    pub run_spent: u64,
     pub projects: Vec<Project>,
     pub agents: Vec<Agent>,
     pub cards: Vec<Card>,
     pub journal: Vec<Entry>,
     pub inbox: Vec<InboxItem>,
-    /// Ten-thousandths of a dollar.
-    pub daily_budget: u64,
+    /// What all agents together may spend, in ten-thousandths of a dollar;
+    /// one pot, kept between runs.
+    pub budget: u64,
     /// Researchers that may run at once, across all projects.
     pub max_researchers: usize,
     /// Blocked workers waiting for a free researcher slot.
@@ -1020,18 +1065,20 @@ impl World {
         });
     }
 
+    /// What this run spends per hour, from its start.
     pub fn rate_per_hour(&self) -> u64 {
-        if self.tick == 0 {
+        let ticks = self.tick.saturating_sub(self.run_tick);
+        if ticks == 0 {
             0
         } else {
-            self.spent() * 3600 / (self.tick * SECONDS_PER_TICK)
+            self.spent().saturating_sub(self.run_spent) * 3600 / (ticks * SECONDS_PER_TICK)
         }
     }
 
     pub fn active_agents(&self) -> usize {
         self.agents
             .iter()
-            .filter(|a| !a.gone && a.status != Status::Idle)
+            .filter(|a| !a.gone && !matches!(a.status, Status::Idle | Status::Asleep))
             .count()
     }
 
@@ -1279,6 +1326,9 @@ mod tests {
     fn world(agents: Vec<Agent>) -> World {
         World {
             tick: 0,
+            started_at: 0,
+            run_tick: 0,
+            run_spent: 0,
             projects: vec![Project {
                 id: 0,
                 name: "p".into(),
@@ -1291,7 +1341,7 @@ mod tests {
             cards: Vec::new(),
             journal: Vec::new(),
             inbox: Vec::new(),
-            daily_budget: 10_000,
+            budget: 10_000,
             max_researchers: 0,
             research_queue: Default::default(),
             changes: Vec::new(),
@@ -1569,6 +1619,11 @@ mod tests {
         // not the two that are gone.
         assert_eq!(w.active_agents(), 4);
         assert_eq!(w.active_researchers(), 2);
+        w.agents[6].status = Status::Asleep;
+        assert_eq!(w.active_agents(), 3, "a sleeper is not at work");
+        w.agents[6].status = Status::Stopped;
+        assert_eq!(w.active_agents(), 4, "a stopped one still counts");
+        assert!(!Status::Asleep.busy() && !Status::Asleep.needs_attention());
         w.inbox = vec![
             item(InboxKind::Sensitive, 1, true),
             item(InboxKind::Sensitive, 1, false),
@@ -1607,6 +1662,35 @@ mod tests {
         assert_eq!(w.rate_per_hour(), 200);
         w.tick = 1800 / SECONDS_PER_TICK;
         assert_eq!(w.rate_per_hour(), 400);
+        // This run alone: what earlier runs spent, over the ticks they took,
+        // is not its rate.
+        w.run_tick = 900 / SECONDS_PER_TICK;
+        w.run_spent = 150;
+        assert_eq!(w.rate_per_hour(), 50 * 4, "$50 in a quarter hour");
+        w.run_tick = w.tick;
+        assert_eq!(w.rate_per_hour(), 0, "a run that just began");
+        w.run_tick = w.tick + 1;
+        w.run_spent = 1_000;
+        assert_eq!(w.rate_per_hour(), 0, "never underflows");
+    }
+
+    #[test]
+    fn the_trace_keeps_its_tail_and_counts_every_line() {
+        let mut a = agent(1, Role::Worker, Status::Working);
+        for i in 0..(TRACE_KEEP as u64 + 5) {
+            a.trace(0, format!("line {i}"));
+        }
+        assert_eq!(a.trace.len(), TRACE_KEEP);
+        assert_eq!(a.traced, TRACE_KEEP as u64 + 5);
+        assert!(a.trace[0].ends_with("line 5"), "{}", a.trace[0]);
+    }
+
+    #[test]
+    fn an_interrupted_turn_is_evidence_on_the_card_and_a_failure_in_the_journal() {
+        assert_eq!(StoryEvent::Interrupted.kind(), StoryKind::Evidence);
+        let e = Event::Interrupted { agent: 3 };
+        assert_eq!(e.kind(), EntryKind::Failed);
+        assert_eq!(e.agent(), 3);
     }
 
     #[test]

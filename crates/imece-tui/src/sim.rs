@@ -328,12 +328,15 @@ pub fn world(
     };
     let mut w = World {
         tick: 0,
+        started_at: 0,
+        run_tick: 0,
+        run_spent: 0,
         projects: Vec::new(),
         agents: Vec::new(),
         cards: Vec::new(),
         journal: Vec::new(),
         inbox: Vec::new(),
-        daily_budget: 200 * 10_000,
+        budget: 200 * 10_000,
         max_researchers,
         research_queue: VecDeque::new(),
         changes: Vec::new(),
