@@ -7,6 +7,51 @@ pub mod claude;
 pub mod mcp;
 pub mod worktree;
 
+/// How strong a model an agent gets. Agents choose a tier, never a model
+/// name: names change with every vendor release, tiers do not. Each vendor
+/// maps the tiers to its own models; `Standard` is the vendor's own default
+/// unless the person named a model.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Tier {
+    Cheap,
+    Standard,
+    Strong,
+}
+
+impl Tier {
+    pub const ALL: [Tier; 3] = [Tier::Cheap, Tier::Standard, Tier::Strong];
+
+    /// The tier's name on the wire and the command line.
+    pub fn wire(self) -> &'static str {
+        match self {
+            Tier::Cheap => "cheap",
+            Tier::Standard => "standard",
+            Tier::Strong => "strong",
+        }
+    }
+
+    pub fn from_wire(s: &str) -> Option<Tier> {
+        Tier::ALL.into_iter().find(|t| t.wire() == s)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn tiers_go_over_the_wire_by_name_and_back() {
+        assert_eq!(Tier::Cheap.wire(), "cheap");
+        assert_eq!(Tier::Standard.wire(), "standard");
+        assert_eq!(Tier::Strong.wire(), "strong");
+        for t in Tier::ALL {
+            assert_eq!(Tier::from_wire(t.wire()), Some(t));
+        }
+        assert_eq!(Tier::from_wire("huge"), None);
+        assert_eq!(Tier::from_wire(""), None);
+    }
+}
+
 /// What a session reports, whatever the vendor.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Event {

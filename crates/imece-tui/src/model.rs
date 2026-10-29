@@ -37,6 +37,13 @@ pub enum Vendor {
 }
 
 impl Vendor {
+    /// The vendors imece can be asked to lead with, by label.
+    pub fn parse(s: &str) -> Option<Vendor> {
+        [Vendor::Claude, Vendor::Codex, Vendor::Gemini]
+            .into_iter()
+            .find(|v| v.label() == s)
+    }
+
     pub fn label(self) -> &'static str {
         match self {
             Vendor::Claude => "claude",
@@ -541,6 +548,19 @@ pub enum Event {
         agent: AgentId,
         card: CardId,
     },
+    /// A live leader hired a worker; `model` is the one it was given, or
+    /// none for the vendor's own default.
+    Hired {
+        by: AgentId,
+        agent: AgentId,
+        model: Option<String>,
+    },
+    /// A live agent's model was not available here; it runs on the
+    /// vendor's default from now on.
+    Fallback {
+        agent: AgentId,
+        model: String,
+    },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -560,10 +580,10 @@ pub enum EntryKind {
 impl Event {
     pub fn kind(&self) -> EntryKind {
         match self {
-            Event::Plan { .. } | Event::Posted { .. } => EntryKind::Plan,
+            Event::Plan { .. } | Event::Posted { .. } | Event::Hired { .. } => EntryKind::Plan,
             Event::Assign { .. } | Event::Claimed { .. } => EntryKind::Assign,
             Event::Talk { .. } | Event::Replied { .. } | Event::Sent { .. } => EntryKind::Talk,
-            Event::Assumption { .. } => EntryKind::Assumption,
+            Event::Assumption { .. } | Event::Fallback { .. } => EntryKind::Assumption,
             Event::Blocked { .. } => EntryKind::Blocked,
             Event::ResearchOpened { .. }
             | Event::ResearchDelivered { .. }
@@ -593,7 +613,9 @@ impl Event {
             | Event::Replied { agent, .. }
             | Event::Stopped { agent, .. }
             | Event::Posted { agent, .. }
-            | Event::Claimed { agent, .. } => agent,
+            | Event::Claimed { agent, .. }
+            | Event::Hired { agent, .. }
+            | Event::Fallback { agent, .. } => agent,
             Event::Talk { from, .. } | Event::Sent { from, .. } => from,
             Event::ResearchOpened { researcher, .. }
             | Event::ResearchDelivered { researcher, .. }

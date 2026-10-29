@@ -73,6 +73,15 @@ pub fn event(lang: Lang, w: &World, e: &Event) -> String {
             t.ev_claimed,
             &[name(w, *agent), &card_ref(*card), &w.cards[*card].title],
         ),
+        Event::Hired { by, agent, model } => fill(
+            t.ev_hired,
+            &[
+                name(w, *by),
+                name(w, *agent),
+                model.as_deref().unwrap_or(t.default_model),
+            ],
+        ),
+        Event::Fallback { agent, model } => fill(t.ev_fallback, &[name(w, *agent), model]),
         // Conversations are drawn from `said`, with their speakers coloured.
         Event::Talk { .. } | Event::YouSaid { .. } | Event::Replied { .. } | Event::Sent { .. } => {
             String::new()

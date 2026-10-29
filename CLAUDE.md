@@ -2,9 +2,9 @@
 
 - One terminal for many coding agents from many vendors (ACP), led by a
   leader agent, talking to each other, sharing files through symbol leases.
-- Stage: the screen (`crates/imece-tui`) runs on fake events (`sim.rs`) or
-  on live Claude Code sessions (`--live`, `live.rs`); both feed the same
-  model (`model.rs`). `crates/imece-agent` drives vendor CLIs as child
+- Stage: the screen (`crates/imece-tui`) runs on live Claude Code sessions
+  (`live.rs`, the default) or on fake events (`--demo`, `sim.rs`); both
+  feed the same model (`model.rs`). `crates/imece-agent` drives vendor CLIs as child
   processes and turns their output into vendor-neutral events; the screen
   never sees a wire format.
 - Chat with the user in Turkish; code, comments and repo docs in English.
@@ -27,7 +27,11 @@ cargo mutants                                      # everything (slow); CI does 
 - Mutation tests: a mutant that survives is a test that is missing, so a
   change comes with the tests that kill its mutants (`cargo-mutants` 27.1.0,
   pinned in `.github/workflows/mutants.yml`; exclusions with their reasons
-  in `.cargo/mutants.toml`).
+  in `.cargo/mutants.toml`). They are CI's job (user, 2026-10-29): before
+  a push run fmt, clippy and the tests, not mutants; run `cargo mutants`
+  locally only when the PR job reports a missed mutant and closing it
+  takes several tries. The PR job also fails on a timeout, so never write
+  a loop a mutated operator could make endless (search a range instead).
 
 - Keyboard first (user, 2026-10-29): everything is done with keys, vim
   style (hjkl, g/G, PgUp/PgDn, Esc back, / to type) next to the arrows; a
@@ -91,6 +95,22 @@ and owned here from then on:
   per worker; the worker sends `done` to whoever posted it. Caps: title one
   line of 120 chars, 20 open cards per project, 10 posts per agent until
   the person speaks again; offers count as message-driven turns.
+- Hiring (2026-10-29, user's decisions): bare `imece` is live and the team
+  starts as the leader alone; the leader hires workers with the `hire`
+  tool (leader's socket only) as the work needs them, `--agents` is the
+  cap (0-16, default 4), the sim sits behind `--demo`. The person never
+  picks a team size. Workers are named `<vendor>-N`; a socket is bound per
+  agent at hire time, before the agent exists. Budget share = budget /
+  (cap + 1). Models: the leader runs on its vendor's default (or
+  `--model`); the leader picks a TIER for a worker (cheap / standard /
+  strong), never a model name; each vendor maps tiers to its models
+  (Claude: haiku / default / opus), `--tier T=NAME` overrides. A tier model
+  that fails its first turn at zero cost (that is how Claude Code reports
+  a model the account lacks: init still succeeds, the first result is an
+  `api_error`) is replaced once by the standard model with the same
+  prompts, journaled as `Fallback`. Vendors are probed on PATH at start
+  (`claude`, `codex`, `gemini`); `--lead` picks the leader's; only vendors
+  imece has an adapter for are hireable, others give an honest error.
 - Projects: the salon groups agents by project, each with its own leader;
   groups fold to one line that still shows what waits for the person. The
   researcher cap is shared by all projects.

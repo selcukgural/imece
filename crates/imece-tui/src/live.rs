@@ -2,10 +2,17 @@
 //! feeds. One project (the checkout imece runs in), a leader that reads it,
 //! and workers that each change their own git worktree of it.
 //!
-//! Money is reserved up front: every agent gets an equal share of the
-//! budget as its session's hard cap (`--max-budget-usd`), so all of them
-//! together can never spend more than the budget. An agent that spent its
-//! share is not prompted again.
+//! The team starts as the leader alone. The leader hires workers as the
+//! work needs them (`hire`), up to the cap the person set, choosing a tier
+//! (cheap, standard, strong) rather than a model name; each vendor maps the
+//! tiers to its models. A worker whose tier model turns out not to be
+//! available here is restarted once on the vendor's default.
+//!
+//! Money is reserved up front: the budget is split into equal shares, one
+//! per place in the team (the leader and every worker that may be hired),
+//! and a share is the session's hard cap (`--max-budget-usd`), so all of
+//! them together can never spend more than the budget. An agent that spent
+//! its share is not prompted again.
 //!
 //! Agents message each other through imece's `send` tool (an MCP server,
 //! one socket per agent, so the sender is the socket, never a claim). A
@@ -19,24 +26,144 @@
 
 use std::collections::HashMap;
 use std::io;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use imece_agent::claude::{self, Mcp, Session, Spec};
 use imece_agent::mcp::{Answer, Server, Tool};
-use imece_agent::{Event as AgentEvent, child, worktree};
+use imece_agent::{Event as AgentEvent, Tier, child, worktree};
 use serde_json::{Value, json};
 
 use crate::model::*;
 
 pub struct Options {
     pub repo: PathBuf,
-    pub workers: usize,
+    /// Workers the leader may hire, at most.
+    pub max_workers: usize,
+    /// The leader's vendor.
+    pub lead: Vendor,
+    /// The model every agent runs on unless a tier says otherwise; none
+    /// for each vendor's own default.
     pub model: Option<String>,
+    /// Models that stand in for the vendors' own, by tier.
+    pub tiers: Vec<(Tier, String)>,
     /// Ten-thousandths of a dollar, for all agents together.
     pub budget: u64,
+}
+
+/// The coding agents imece knows: their program on PATH, and whether imece
+/// can drive them yet.
+const KNOWN: &[(Vendor, &str, bool)] = &[
+    (Vendor::Claude, claude::PROGRAM, true),
+    (Vendor::Codex, "codex", false),
+    (Vendor::Gemini, "gemini", false),
+];
+
+/// The models a vendor's tiers stand for; none is the vendor's own default.
+#[derive(Clone, Debug, PartialEq)]
+struct Ladder {
+    cheap: Option<String>,
+    standard: Option<String>,
+    strong: Option<String>,
+}
+
+impl Ladder {
+    fn model(&self, tier: Tier) -> Option<&str> {
+        match tier {
+            Tier::Cheap => &self.cheap,
+            Tier::Standard => &self.standard,
+            Tier::Strong => &self.strong,
+        }
+        .as_deref()
+    }
+
+    fn set(&mut self, tier: Tier, model: String) {
+        *match tier {
+            Tier::Cheap => &mut self.cheap,
+            Tier::Standard => &mut self.standard,
+            Tier::Strong => &mut self.strong,
+        } = Some(model);
+    }
+}
+
+/// A vendor imece can drive, found on PATH.
+#[derive(Clone, Debug)]
+struct Hireable {
+    vendor: Vendor,
+    program: String,
+    ladder: Ladder,
+}
+
+impl Hireable {
+    /// Claude Code at `program`; `standard` is the model the person named,
+    /// if any, and `tiers` their stand-ins for the other tiers.
+    fn claude(program: &str, standard: Option<String>, tiers: &[(Tier, String)]) -> Hireable {
+        let mut ladder = Ladder {
+            cheap: claude::model(Tier::Cheap).map(String::from),
+            standard,
+            strong: claude::model(Tier::Strong).map(String::from),
+        };
+        for (tier, model) in tiers {
+            ladder.set(*tier, model.clone());
+        }
+        Hireable {
+            vendor: Vendor::Claude,
+            program: program.to_string(),
+            ladder,
+        }
+    }
+}
+
+/// Each agent's share of `budget`: one share per place in the team, the
+/// leader and every one of the `max_workers` that may be hired.
+fn share(budget: u64, max_workers: usize) -> u64 {
+    budget / (max_workers as u64 + 1)
+}
+
+/// Whether `program` runs from `repo` with a cleared environment.
+fn on_path(program: &str, repo: &Path) -> bool {
+    child::command(program, repo, &[])
+        .arg("--version")
+        .output()
+        .is_ok_and(|o| o.status.success())
+}
+
+/// Which of the vendors `present` on PATH (with whether imece drives them)
+/// may be hired, given the leader must be `lead`; or why the team can not
+/// start.
+fn hireable(present: &[(Vendor, bool)], lead: Vendor) -> Result<Vec<Vendor>, String> {
+    let names = |v: &[(Vendor, bool)]| {
+        v.iter()
+            .map(|(v, _)| v.label())
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
+    if present.is_empty() {
+        let known: Vec<&str> = KNOWN.iter().map(|k| k.1).collect();
+        return Err(format!(
+            "no coding agent on PATH (looked for {}); install Claude Code \
+             (https://claude.com/claude-code) and log in",
+            known.join(", ")
+        ));
+    }
+    match present.iter().find(|(v, _)| *v == lead) {
+        None => Err(format!(
+            "{} is not on PATH (found {}); install it, or pick the leader with --lead",
+            lead.label(),
+            names(present)
+        )),
+        Some((_, false)) => Err(format!(
+            "{} is on PATH, but imece can not drive it yet; start with --lead claude",
+            lead.label()
+        )),
+        Some((_, true)) => Ok(present
+            .iter()
+            .filter(|(_, drives)| *drives)
+            .map(|(v, _)| *v)
+            .collect()),
+    }
 }
 
 /// Why a message could not reach an agent.
@@ -121,11 +248,24 @@ pub struct Live {
     /// What each agent's earlier sessions cost; a session reports only its
     /// own total.
     spent_before: Vec<u64>,
-    program: String,
+    /// The vendors the leader may hire from.
+    vendors: Vec<Hireable>,
+    /// Workers the leader may hire, at most.
+    max_workers: usize,
     repo: PathBuf,
     /// Where the workers' worktrees live, outside the checkout.
     root: PathBuf,
-    model: Option<String>,
+    /// The model each agent runs on; none for its vendor's default.
+    models: Vec<Option<String>>,
+    /// Whether the agent's model came from a tier, so a first turn that
+    /// fails means the model is not available here and the vendor's
+    /// standard model is tried instead.
+    tiered: Vec<bool>,
+    /// Whether the agent's current session has finished a turn.
+    turned: Vec<bool>,
+    /// The prompts each agent was given and has not finished, to give
+    /// again after a fallback.
+    inflight: Vec<Vec<String>>,
     /// Each agent's share of the budget, in ten-thousandths of a dollar.
     share: u64,
     bus: Option<Bus>,
@@ -147,18 +287,20 @@ pub struct Live {
     posted: Vec<u32>,
 }
 
-/// Checks that `claude` runs, then builds the team for the checkout `repo`
-/// is in.
+/// Finds the coding agents on PATH, then builds the team for the checkout
+/// `repo` is in: the leader alone, who hires the rest.
 pub fn world(o: Options) -> Result<(World, Live), String> {
     let repo = worktree::top(&o.repo).map_err(|e| format!("{}: {e}", o.repo.display()))?;
-    let program = "claude".to_string();
-    let version = child::command(&program, &repo, claude::ENV)
-        .arg("--version")
-        .output()
-        .map_err(|e| format!("{program}: {e} (is Claude Code installed and on PATH?)"))?;
-    if !version.status.success() {
-        return Err(format!("{program} --version failed"));
-    }
+    let present: Vec<(Vendor, bool)> = KNOWN
+        .iter()
+        .filter(|(_, program, _)| on_path(program, &repo))
+        .map(|&(vendor, _, drives)| (vendor, drives))
+        .collect();
+    let vendors: Vec<Hireable> = hireable(&present, o.lead)?
+        .into_iter()
+        // Claude Code is the only vendor imece drives so far (see `KNOWN`).
+        .map(|_| Hireable::claude(claude::PROGRAM, o.model.clone(), &o.tiers))
+        .collect();
     let name = repo
         .file_name()
         .map_or("repo".into(), |n| n.to_string_lossy().into_owned());
@@ -167,7 +309,7 @@ pub fn world(o: Options) -> Result<(World, Live), String> {
         fnv(repo.as_os_str().as_encoded_bytes())
     ));
 
-    let mut w = World {
+    let w = World {
         tick: 0,
         projects: vec![Project {
             id: 0,
@@ -180,7 +322,7 @@ pub fn world(o: Options) -> Result<(World, Live), String> {
             0,
             0,
             "lead".into(),
-            Vendor::Claude,
+            o.lead,
             Role::Leader,
             Status::Idle,
             0,
@@ -193,20 +335,10 @@ pub fn world(o: Options) -> Result<(World, Live), String> {
         research_queue: Default::default(),
         plans: Vec::new(),
     };
-    for i in 1..=o.workers {
-        w.agents.push(Agent::new(
-            i,
-            0,
-            format!("claude-{i}"),
-            Vendor::Claude,
-            Role::Worker,
-            Status::Idle,
-            0,
-        ));
-    }
-    let n = w.agents.len();
     start_clock_at(local_seconds_after_midnight());
-    let mut live = Live::new(n, program, repo, root, o.model, o.budget / n as u64);
+    let mut live = Live::new(1, vendors, repo, root, share(o.budget, o.max_workers));
+    live.max_workers = o.max_workers;
+    live.models[0] = live.of(o.lead).ladder.standard.clone();
     let relay = std::env::current_exe().map_err(|e| format!("imece's own path: {e}"))?;
     live.open_bus(&w, relay.to_string_lossy().into_owned())
         .map_err(|e| format!("the agents' message bus: {e}"))?;
@@ -214,42 +346,81 @@ pub fn world(o: Options) -> Result<(World, Live), String> {
 }
 
 impl Live {
+    /// `agents` places to begin with, all on their vendor's default model.
+    /// `vendors` must hold every vendor an agent has.
     fn new(
         agents: usize,
-        program: String,
+        vendors: Vec<Hireable>,
         repo: PathBuf,
         root: PathBuf,
-        model: Option<String>,
         share: u64,
     ) -> Live {
         let (tx, rx) = mpsc::channel();
         let (ready_tx, ready_rx) = mpsc::channel();
         let (calls_tx, calls_rx) = mpsc::channel();
-        Live {
+        let mut live = Live {
             started: Instant::now(),
             tx,
             rx,
             ready_tx,
             ready_rx,
-            slots: (0..agents).map(|_| Slot::None).collect(),
-            generation: vec![0; agents],
-            spent_before: vec![0; agents],
-            program,
+            slots: Vec::new(),
+            generation: Vec::new(),
+            spent_before: Vec::new(),
+            vendors,
+            max_workers: usize::MAX,
             repo,
             root,
-            model,
+            models: Vec::new(),
+            tiered: Vec::new(),
+            turned: Vec::new(),
+            inflight: Vec::new(),
             share,
             bus: None,
             calls_tx,
             calls_rx,
-            mail: vec![Vec::new(); agents],
-            turns: vec![0; agents],
-            asked: vec![false; agents],
-            woken: vec![0; agents],
+            mail: Vec::new(),
+            turns: Vec::new(),
+            asked: Vec::new(),
+            woken: Vec::new(),
             posts: HashMap::new(),
             offered: HashMap::new(),
-            posted: vec![0; agents],
+            posted: Vec::new(),
+        };
+        for _ in 0..agents {
+            live.grow(None, false);
         }
+        live
+    }
+
+    /// Makes room for one more agent, on `model` (`tiered`: picked by
+    /// tier, so it may fall back).
+    fn grow(&mut self, model: Option<String>, tiered: bool) {
+        self.slots.push(Slot::None);
+        self.generation.push(0);
+        self.spent_before.push(0);
+        self.models.push(model);
+        self.tiered.push(tiered);
+        self.turned.push(false);
+        self.inflight.push(Vec::new());
+        self.mail.push(Vec::new());
+        self.turns.push(0);
+        self.asked.push(false);
+        self.woken.push(0);
+        self.posted.push(0);
+    }
+
+    /// The vendor `v` as imece drives it. Every agent's vendor is one.
+    fn of(&self, v: Vendor) -> &Hireable {
+        self.vendors
+            .iter()
+            .find(|h| h.vendor == v)
+            .unwrap_or_else(|| panic!("{} is not a vendor imece drives", v.label()))
+    }
+
+    /// The vendors' names, for the hire tool.
+    fn vendor_names(&self) -> Vec<&str> {
+        self.vendors.iter().map(|h| h.vendor.label()).collect()
     }
 
     /// Gives every agent a socket for imece's tools. Sessions started
@@ -263,27 +434,38 @@ impl Live {
         let dir = std::env::temp_dir().join(format!("imece-{}-{nanos:x}", std::process::id()));
         std::os::unix::fs::DirBuilderExt::mode(&mut std::fs::DirBuilder::new(), 0o700)
             .create(&dir)?;
-        let mut bus = Bus {
+        self.bus = Some(Bus {
             dir,
             relay,
             servers: Vec::new(),
-        };
+        });
         for id in 0..self.slots.len() {
-            let tx = self.calls_tx.clone();
-            let tools = tools_of(w.agents[id].role);
-            let server = Server::bind(&bus.dir.join(format!("a{id}.sock")), tools, {
-                move |name, args| {
-                    let (reply, answer) = mpsc::channel();
-                    tx.send((id, name.to_string(), args.clone(), reply))
-                        .map_err(|_| "imece is closing".to_string())?;
-                    answer
-                        .recv_timeout(CALL_WAIT)
-                        .map_err(|_| "imece did not answer in time; try again".to_string())?
-                }
-            })?;
-            bus.servers.push(server);
+            self.bind(id, w.agents[id].role)?;
         }
-        self.bus = Some(bus);
+        Ok(())
+    }
+
+    /// Binds the socket of agent `id`, the next one to get a socket, with
+    /// the tools of `role`. Without a bus (before it opens) there is
+    /// nothing to bind.
+    fn bind(&mut self, id: AgentId, role: Role) -> io::Result<()> {
+        let tools = tools_of(role, &self.vendor_names());
+        let Some(bus) = &mut self.bus else {
+            return Ok(());
+        };
+        assert_eq!(bus.servers.len(), id, "sockets are bound in agent order");
+        let tx = self.calls_tx.clone();
+        let server = Server::bind(&bus.dir.join(format!("a{id}.sock")), tools, {
+            move |name, args| {
+                let (reply, answer) = mpsc::channel();
+                tx.send((id, name.to_string(), args.clone(), reply))
+                    .map_err(|_| "imece is closing".to_string())?;
+                answer
+                    .recv_timeout(CALL_WAIT)
+                    .map_err(|_| "imece did not answer in time; try again".to_string())?
+            }
+        })?;
+        bus.servers.push(server);
         Ok(())
     }
 
@@ -306,6 +488,27 @@ impl Live {
                 continue;
             }
             let turn_done = matches!(e, AgentEvent::TurnDone { .. });
+            if turn_done {
+                // A tier model that is not available here fails the first
+                // turn before anything is spent: the standard model gets
+                // the same prompts.
+                let failed = matches!(
+                    e,
+                    AgentEvent::TurnDone {
+                        ok: false,
+                        cost: 0,
+                        ..
+                    }
+                );
+                if failed && !self.turned[id] && self.tiered[id] {
+                    self.fall_back(w, id);
+                    continue;
+                }
+                self.turned[id] = true;
+                if !self.inflight[id].is_empty() {
+                    self.inflight[id].remove(0);
+                }
+            }
             let answer = match &e {
                 AgentEvent::TurnDone { ok: true, text, .. } => Some(text.clone()),
                 _ => None,
@@ -334,6 +537,7 @@ impl Live {
                 "post" => self.post(w, from, &args),
                 "board" => Ok(self.board(w, from)),
                 "claim" => self.claim(w, from, &args),
+                "hire" => self.hire(w, from, &args),
                 _ => Err(format!("there is no tool {tool:?}")),
             };
             let _ = reply.send(answer);
@@ -363,6 +567,121 @@ impl Live {
         self.slots[id] = Slot::None;
         self.generation[id] += 1;
         self.turns[id] = 0;
+        self.turned[id] = false;
+        self.inflight[id].clear();
+    }
+
+    /// Agent `id`'s tier model is not available here: its session ends and
+    /// a new one on its vendor's standard model gets the prompts the old
+    /// one had.
+    fn fall_back(&mut self, w: &mut World, id: AgentId) {
+        let model = self.models[id].take().unwrap_or_default();
+        self.models[id] = self.of(w.agents[id].vendor).ladder.standard.clone();
+        self.tiered[id] = false;
+        let texts = std::mem::take(&mut self.inflight[id]);
+        self.end(w, id);
+        w.agents[id].trace(
+            w.tick,
+            format!("model {model} not available here; falling back to the default"),
+        );
+        w.note(Event::Fallback { agent: id, model });
+        for text in texts {
+            if let Err(why) = self.prompt(w, id, text, None) {
+                return apply(w, id, AgentEvent::Stopped(why), self.spent_before[id]);
+            }
+        }
+    }
+
+    /// The leader `from` adds a worker (the `hire` tool's arguments). The
+    /// answer names it.
+    fn hire(&mut self, w: &mut World, from: AgentId, args: &Value) -> Answer {
+        let leader = &w.agents[from];
+        if leader.role != Role::Leader {
+            return Err("only the leader hires; ask it with send (type ask)".into());
+        }
+        let (project, own) = (leader.project, leader.vendor);
+        let workers = w
+            .agents
+            .iter()
+            .filter(|o| o.project == project && o.role == Role::Worker && !o.gone)
+            .count();
+        if self.max_workers == 0 {
+            return Err(
+                "the person runs you without workers (--agents 0); answer from what you read"
+                    .into(),
+            );
+        }
+        if workers >= self.max_workers {
+            return Err(format!(
+                "the team is full: {workers} workers, the most the person allowed \
+                 (--agents {}); give the work to one of them",
+                self.max_workers
+            ));
+        }
+        let arg = |k: &str| args[k].as_str().map(str::trim).unwrap_or_default();
+        let vendor = match arg("vendor") {
+            "" => self.of(own).clone(),
+            v => self
+                .vendors
+                .iter()
+                .find(|h| h.vendor.label() == v)
+                .cloned()
+                .ok_or_else(|| {
+                    format!(
+                        "there is no vendor {v:?} here; you can hire {}",
+                        self.vendor_names().join(", ")
+                    )
+                })?,
+        };
+        let tier = match arg("tier") {
+            "" => Tier::Standard,
+            t => Tier::from_wire(t).ok_or("tier must be cheap, standard or strong")?,
+        };
+        let model = vendor.ladder.model(tier).map(str::to_string);
+        // Only a model other than the standard one has something to fall
+        // back to.
+        let tiered = model != vendor.ladder.standard;
+        // The vendor's next number, skipping names already taken.
+        let next = w
+            .agents
+            .iter()
+            .filter(|o| o.vendor == vendor.vendor && o.role == Role::Worker)
+            .count()
+            + 1;
+        let name = (next..)
+            .map(|n| format!("{}-{n}", vendor.vendor.label()))
+            .find(|name| w.agent_by_name(name).is_none())
+            .expect("some number is free");
+        let id = w.agents.len();
+        // The socket first: an agent without one could never start.
+        self.bind(id, Role::Worker)
+            .map_err(|e| format!("{name} could not get a socket: {e}"))?;
+        self.grow(model.clone(), tiered);
+        let t = w.tick;
+        w.agents.push(Agent::new(
+            id,
+            project,
+            name.clone(),
+            vendor.vendor,
+            Role::Worker,
+            Status::Idle,
+            t,
+        ));
+        let shown = model.clone().unwrap_or_else(|| "the default model".into());
+        let by = w.agents[from].name.clone();
+        w.agents[from].trace(t, format!("hire {name} {} {shown}", tier.wire()));
+        w.agents[id].trace(t, format!("hired by {by} · {shown}"));
+        w.note(Event::Hired {
+            by: from,
+            agent: id,
+            model,
+        });
+        Ok(format!(
+            "{name} joined ({}, {shown}). Give it work with send (type assign). \
+             {} more may be hired.",
+            vendor.vendor.label(),
+            self.max_workers - workers - 1
+        ))
     }
 
     /// Agent `from` sends a message (the `send` tool's arguments). The
@@ -753,9 +1072,9 @@ impl Live {
         match &mut self.slots[id] {
             Slot::None => {
                 self.start(w, id);
-                self.slots[id] = Slot::Starting(vec![text]);
+                self.slots[id] = Slot::Starting(vec![text.clone()]);
             }
-            Slot::Starting(q) => q.push(text),
+            Slot::Starting(q) => q.push(text.clone()),
             Slot::Running(s) => {
                 if let Err(e) = s.prompt(&text) {
                     self.end(w, id);
@@ -763,6 +1082,7 @@ impl Live {
                 }
             }
         }
+        self.inflight[id].push(text);
         self.turns[id] += 1;
         let a = &w.agents[id];
         if let Some(title) = title
@@ -801,22 +1121,26 @@ impl Live {
         } else {
             claude::EDIT_TOOLS
         };
+        let vendor = self.of(a.vendor);
         let mut spec = Spec {
-            program: self.program.clone(),
+            program: vendor.program.clone(),
             cwd: self.repo.clone(),
             name: format!("imece {}", a.name),
             tools: tools.iter().map(|t| t.to_string()).collect(),
-            model: self.model.clone(),
+            model: self.models[id].clone(),
             // In millionths of a dollar: what is left of the agent's share.
             budget: self.share.saturating_sub(a.cost) * 100,
-            system: system_prompt(w, id),
+            system: system_prompt(w, id, self.max_workers),
             mcp: self.bus.as_ref().map(|b| Mcp {
                 command: b.relay.clone(),
                 args: vec![
                     "mcp-relay".into(),
                     b.servers[id].path().to_string_lossy().into_owned(),
                 ],
-                tools: tools_of(a.role).into_iter().map(|t| t.name).collect(),
+                tools: tools_of(a.role, &self.vendor_names())
+                    .into_iter()
+                    .map(|t| t.name)
+                    .collect(),
             }),
         };
         let generation = self.generation[id];
@@ -927,13 +1251,47 @@ pub fn apply(w: &mut World, id: AgentId, e: AgentEvent, before: u64) {
     }
 }
 
-/// imece's tools for an agent of `role`: workers alone take cards.
-fn tools_of(role: Role) -> Vec<Tool> {
+/// imece's tools for an agent of `role`: workers alone take cards, the
+/// leader alone hires (from `vendors`).
+fn tools_of(role: Role, vendors: &[&str]) -> Vec<Tool> {
     let mut tools = vec![send_tool(), post_tool(), board_tool()];
-    if role == Role::Worker {
-        tools.push(claim_tool());
+    match role {
+        Role::Worker => tools.push(claim_tool()),
+        Role::Leader => tools.push(hire_tool(vendors)),
+        _ => {}
     }
     tools
+}
+
+fn hire_tool(vendors: &[&str]) -> Tool {
+    let tiers: Vec<&str> = Tier::ALL.iter().map(|t| t.wire()).collect();
+    Tool {
+        name: "hire".into(),
+        description: "Adds a worker to your team in imece: a coding agent in its own git \
+                      worktree of the repository. The answer names it; then give it work \
+                      with send (type assign). Hire for work that can run at once, not in \
+                      advance: one worker takes several tasks in turn."
+            .into(),
+        input: json!({
+            "type": "object",
+            "properties": {
+                "tier": {
+                    "type": "string",
+                    "enum": tiers,
+                    "description": "cheap: small, well-specified mechanical work (renames, \
+                                    tests of known behaviour, docs). standard (default): \
+                                    ordinary fixes and features. strong: design that cuts \
+                                    across the code, hard debugging, review.",
+                },
+                "vendor": {
+                    "type": "string",
+                    "enum": vendors,
+                    "description": "Which coding agent (default: your own).",
+                },
+            },
+            "additionalProperties": false,
+        }),
+    }
 }
 
 fn post_tool() -> Tool {
@@ -1048,34 +1406,56 @@ fn mail_prompt(w: &World, mail: &[Mail]) -> String {
     out
 }
 
-fn system_prompt(w: &World, id: AgentId) -> String {
+/// The system prompt of agent `id`; a leader may hire up to `max_workers`.
+fn system_prompt(w: &World, id: AgentId, max_workers: usize) -> String {
     let a = &w.agents[id];
     let workers: Vec<&str> = w
         .agents
         .iter()
-        .filter(|o| o.role == Role::Worker)
+        .filter(|o| o.role == Role::Worker && !o.gone)
         .map(|o| o.name.as_str())
         .collect();
     let leader = &w.agents[w.projects[a.project].leader].name;
     match a.role {
-        Role::Leader => format!(
-            "You are {}, the leader of a team of coding agents in imece, on the \
-             repository in your current directory. The workers are {}; each \
-             works in its own git worktree of it. You can read files but not \
-             change them or run commands. The person talks to you. When work \
-             should be done, split it and give each worker its part with the \
-             send tool (type assign: what to do, which files, when it is \
-             done); give different workers different files where you can. \
-             Work that any worker could pick up may go on the board instead \
-             (post); idle workers take it themselves. Workers answer with \
-             done, blocked or ask; their messages start your next turn. You \
-             never change files yourself, so do not offer to; offer only work \
-             a worker will do. Answer the person briefly: what you found or \
-             assigned, and when all is done, what was done and what is left. \
-             When you need the person to decide, end with one clear question.",
-            a.name,
-            workers.join(", ")
-        ),
+        Role::Leader => {
+            let team = if max_workers == 0 {
+                "The person runs you without workers: answer from what you read, and \
+                 say so when the work would need one."
+                    .to_string()
+            } else {
+                let so_far = if workers.is_empty() {
+                    "You have no workers yet.".to_string()
+                } else {
+                    format!("The workers so far are {}.", workers.join(", "))
+                };
+                format!(
+                    "Workers are hired by you with the hire tool, up to {max_workers}; \
+                     each is a coding agent in its own git worktree of the repository. \
+                     {so_far} Hire for the work at hand, not in advance: one worker \
+                     takes several tasks in turn, so hire a second only when two tasks \
+                     can run at once. Pick a tier, not a model: cheap for small, \
+                     well-specified mechanical work (renames, tests of known behaviour, \
+                     docs), standard (the default) for ordinary fixes and features, \
+                     strong for design that cuts across the code, hard debugging and \
+                     review. Give each worker its part with the send tool (type \
+                     assign: what to do, which files, when it is done); give different \
+                     workers different files where you can. Work that any worker could \
+                     pick up may go on the board instead (post); idle workers take it \
+                     themselves. Workers answer with done, blocked or ask; their \
+                     messages start your next turn."
+                )
+            };
+            format!(
+                "You are {}, the leader of a team of coding agents in imece, on the \
+                 repository in your current directory. You can read files but not \
+                 change them or run commands. The person talks to you. {team} You \
+                 never change files yourself, so do not offer to; offer only work a \
+                 worker will do. Answer the person briefly: what you found or \
+                 assigned, and when all is done, what was done and what is left. \
+                 When you need the person to decide, end with one clear question.",
+                a.name
+            )
+        }
         _ => format!(
             "You are {}, a coding agent in imece, a team led by {leader}. You work \
              in your own git worktree of the repository (your current \
@@ -1266,16 +1646,20 @@ mod tests {
         }
     }
 
+    /// Claude Code as `program`, on its default models.
+    fn claude_at(program: &str) -> Vec<Hireable> {
+        vec![Hireable::claude(program, None, &[])]
+    }
+
     #[test]
     fn an_agent_over_its_share_is_not_prompted() {
         let mut w = team(1);
         let mut live = Live::new(
             2,
             // Never runs: the budget check comes first.
-            "/nonexistent/claude".into(),
+            claude_at("/nonexistent/claude"),
             PathBuf::from("/nonexistent"),
             PathBuf::from("/nonexistent"),
-            None,
             100,
         );
         w.agents[1].cost = 100;
@@ -1291,10 +1675,9 @@ mod tests {
         let mut w = team(1);
         let mut live = Live::new(
             2,
-            "/nonexistent/claude".into(),
+            claude_at("/nonexistent/claude"),
             std::env::temp_dir(),
             PathBuf::from("/nonexistent"),
-            None,
             5_000,
         );
         live.told(&mut w, 0, "first").unwrap();
@@ -1316,10 +1699,9 @@ mod tests {
         Live::new(
             agents,
             // Sessions never start: what counts is what was queued for them.
-            "/nonexistent/claude".into(),
+            claude_at("/nonexistent/claude"),
             std::env::temp_dir(),
             PathBuf::from("/nonexistent"),
-            None,
             5_000,
         )
     }
@@ -1565,7 +1947,7 @@ mod tests {
             w.journal[0].event,
             Event::Sent { from: 1, to: 0, .. }
         ));
-        // The leader's socket does not even offer claim.
+        // The leader's socket does not even offer claim; it alone offers hire.
         let lead = live.bus.as_ref().unwrap().servers[0].path().to_path_buf();
         let mut sock = UnixStream::connect(lead).unwrap();
         writeln!(sock, r#"{{"jsonrpc":"2.0","id":1,"method":"tools/list"}}"#).unwrap();
@@ -1578,7 +1960,7 @@ mod tests {
             .iter()
             .map(|t| t["name"].as_str().unwrap())
             .collect();
-        assert_eq!(names, ["send", "post", "board"]);
+        assert_eq!(names, ["send", "post", "board", "hire"]);
         drop(sock);
         drop(live);
         assert!(!dir.exists());
@@ -1738,10 +2120,25 @@ mod tests {
     }
 
     #[test]
-    fn only_workers_get_the_claim_tool() {
-        let names = |r: Role| -> Vec<String> { tools_of(r).into_iter().map(|t| t.name).collect() };
-        assert_eq!(names(Role::Leader), ["send", "post", "board"]);
+    fn only_workers_get_the_claim_tool_and_only_the_leader_hires() {
+        let names = |r: Role| -> Vec<String> {
+            tools_of(r, &["claude"])
+                .into_iter()
+                .map(|t| t.name)
+                .collect()
+        };
+        assert_eq!(names(Role::Leader), ["send", "post", "board", "hire"]);
         assert_eq!(names(Role::Worker), ["send", "post", "board", "claim"]);
+        assert_eq!(names(Role::Researcher), ["send", "post", "board"]);
+        let hire = &tools_of(Role::Leader, &["claude", "codex"])[3];
+        assert_eq!(
+            hire.input["properties"]["vendor"]["enum"],
+            json!(["claude", "codex"])
+        );
+        assert_eq!(
+            hire.input["properties"]["tier"]["enum"],
+            json!(["cheap", "standard", "strong"])
+        );
     }
 
     /// A tool call as the bus delivers it, answered by the next step.
@@ -1950,15 +2347,407 @@ in p.rs",
     #[test]
     fn the_prompts_name_the_team() {
         let w = team(2);
-        let lead = system_prompt(&w, 0);
+        let lead = system_prompt(&w, 0, 4);
         assert!(lead.starts_with("You are lead, the leader"), "{lead}");
-        assert!(lead.contains("claude-1, claude-2"));
-        let worker = system_prompt(&w, 2);
+        assert!(
+            lead.contains("The workers so far are claude-1, claude-2."),
+            "{lead}"
+        );
+        assert!(lead.contains("hire tool, up to 4;"), "{lead}");
+        let worker = system_prompt(&w, 2, 4);
         assert!(
             worker.starts_with("You are claude-2, a coding agent"),
             "{worker}"
         );
         assert!(worker.contains("led by lead"));
+        assert!(!worker.contains("hire"), "{worker}");
+        let alone = system_prompt(&team(0), 0, 4);
+        assert!(alone.contains("You have no workers yet."), "{alone}");
+        let none = system_prompt(&team(0), 0, 0);
+        assert!(none.contains("without workers"), "{none}");
+        assert!(!none.contains("hire"), "{none}");
+    }
+
+    #[test]
+    fn the_leader_hires_a_worker_named_after_its_vendor_with_the_tier_s_model() {
+        let mut w = team(0);
+        let mut live = idle_live(1);
+        live.max_workers = 2;
+        let got = live.hire(&mut w, 0, &json!({ "tier": "cheap" })).unwrap();
+        assert!(
+            got.starts_with("claude-1 joined (claude, haiku).")
+                && got.contains("1 more may be hired"),
+            "{got}"
+        );
+        let a = &w.agents[1];
+        assert_eq!(
+            (a.name.as_str(), a.vendor, a.role),
+            ("claude-1", Vendor::Claude, Role::Worker)
+        );
+        assert_eq!(a.status, Status::Idle);
+        assert_eq!(a.project, 0);
+        assert_eq!(live.models[1].as_deref(), Some("haiku"));
+        assert!(live.tiered[1]);
+        assert_eq!(live.slots.len(), 2, "every per-agent list grew");
+        assert_eq!(live.mail.len(), 2);
+        assert!(matches!(
+            &w.journal.last().unwrap().event,
+            Event::Hired { by: 0, agent: 1, model: Some(m) } if m == "haiku"
+        ));
+        assert!(
+            w.agents[0]
+                .trace
+                .iter()
+                .any(|l| l.contains("hire claude-1 cheap haiku"))
+        );
+        // The default tier is the vendor's own model, which has nothing to
+        // fall back to.
+        let got = live.hire(&mut w, 0, &json!({})).unwrap();
+        assert!(
+            got.starts_with("claude-2 joined (claude, the default model)."),
+            "{got}"
+        );
+        assert!(got.contains("0 more may be hired"), "{got}");
+        assert_eq!(live.models[2], None);
+        assert!(!live.tiered[2]);
+        // Exactly the cap, not one more.
+        let err = live.hire(&mut w, 0, &json!({})).unwrap_err();
+        assert!(
+            err.contains("full: 2 workers") && err.contains("--agents 2"),
+            "{err}"
+        );
+        assert_eq!(w.agents.len(), 3);
+        // A worker is given to the leader by send; it is told so.
+        live.send(&mut w, 0, &msg("claude-2", "assign", "Add a test"))
+            .unwrap();
+    }
+
+    #[test]
+    fn a_new_worker_s_name_skips_the_ones_taken() {
+        let mut w = team(2);
+        let mut live = idle_live(3);
+        let got = live.hire(&mut w, 0, &json!({ "tier": "strong" })).unwrap();
+        assert!(got.starts_with("claude-3 joined (claude, opus)."), "{got}");
+        // A name that is not the count: the count is skipped over it.
+        w.agents[3].name = "claude-4".into();
+        let got = live.hire(&mut w, 0, &json!({})).unwrap();
+        assert!(got.starts_with("claude-5 joined"), "{got}");
+        assert_eq!(w.agent_by_name("claude-5"), Some(4));
+    }
+
+    #[test]
+    fn bad_hires_are_refused_with_a_reason() {
+        let mut w = team(1);
+        let mut live = idle_live(2);
+        let err = live.hire(&mut w, 1, &json!({})).unwrap_err();
+        assert!(err.contains("only the leader"), "{err}");
+        let err = live
+            .hire(&mut w, 0, &json!({ "tier": "huge" }))
+            .unwrap_err();
+        assert!(err.contains("cheap, standard or strong"), "{err}");
+        let err = live
+            .hire(&mut w, 0, &json!({ "vendor": "codex" }))
+            .unwrap_err();
+        assert!(
+            err.contains("no vendor \"codex\"") && err.contains("hire claude"),
+            "{err}"
+        );
+        live.max_workers = 0;
+        let err = live.hire(&mut w, 0, &json!({})).unwrap_err();
+        assert!(err.contains("without workers"), "{err}");
+        assert_eq!(w.agents.len(), 2);
+        assert!(w.journal.is_empty());
+    }
+
+    #[test]
+    fn a_hired_worker_gets_a_socket_with_the_worker_s_tools() {
+        use std::io::{BufRead, BufReader, Write};
+        use std::os::unix::net::UnixStream;
+        let mut w = team(0);
+        let mut live = idle_live(1);
+        live.open_bus(&w, "/opt/imece".into()).unwrap();
+        live.hire(&mut w, 0, &json!({})).unwrap();
+        let path = live.bus.as_ref().unwrap().servers[1].path().to_path_buf();
+        assert!(path.ends_with("a1.sock"), "{}", path.display());
+        let mut sock = UnixStream::connect(path).unwrap();
+        writeln!(sock, r#"{{"jsonrpc":"2.0","id":1,"method":"tools/list"}}"#).unwrap();
+        let mut line = String::new();
+        BufReader::new(&sock).read_line(&mut line).unwrap();
+        let listed: Value = serde_json::from_str(&line).unwrap();
+        let names: Vec<&str> = listed["result"]["tools"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|t| t["name"].as_str().unwrap())
+            .collect();
+        assert_eq!(names, ["send", "post", "board", "claim"]);
+    }
+
+    #[test]
+    fn a_tier_model_that_fails_its_first_turn_gives_way_to_the_standard_one() {
+        let mut w = team(0);
+        let mut live = idle_live(1);
+        live.vendors[0].ladder.standard = Some("sonnet".into());
+        live.hire(&mut w, 0, &json!({ "tier": "strong" })).unwrap();
+        assert_eq!(live.models[1].as_deref(), Some("opus"));
+        live.send(&mut w, 0, &msg("claude-1", "assign", "Fix it"))
+            .unwrap();
+        live.step(&mut w);
+        assert_eq!(live.inflight[1].len(), 1);
+        let card = w.agents[1].card.expect("a card");
+        let failed = |cost| AgentEvent::TurnDone {
+            ok: false,
+            text: "error_api".into(),
+            cost,
+            denied: 0,
+        };
+        live.tx.send((1, 0, failed(0))).unwrap();
+        live.step(&mut w);
+        assert_eq!(live.models[1].as_deref(), Some("sonnet"));
+        assert!(!live.tiered[1]);
+        assert_eq!(live.generation[1], 1, "a new session");
+        assert_eq!(w.agents[1].status, Status::Working, "still on it");
+        assert_eq!(w.agents[1].card, Some(card), "the same card");
+        assert!(
+            matches!(&live.slots[1], Slot::Starting(q) if q.len() == 1 && q[0].contains("Fix it"))
+        );
+        assert_eq!(live.turns[1], 1);
+        assert!(matches!(
+            &w.journal.last().unwrap().event,
+            Event::Fallback { agent: 1, model } if model == "opus"
+        ));
+        assert!(
+            !w.journal
+                .iter()
+                .any(|j| matches!(j.event, Event::Stopped { .. }))
+        );
+        // Once is enough: the standard model failing is a failure.
+        live.tx.send((1, 1, failed(0))).unwrap();
+        live.step(&mut w);
+        assert_eq!(live.generation[1], 1);
+        assert_eq!(w.agents[1].status, Status::Idle);
+        assert!(matches!(
+            &w.journal.last().unwrap().event,
+            Event::Stopped { agent: 1, .. }
+        ));
+    }
+
+    #[test]
+    fn only_a_first_turn_that_cost_nothing_falls_back() {
+        for (turned, cost) in [(true, 0), (false, 5)] {
+            let mut w = team(0);
+            let mut live = idle_live(1);
+            live.hire(&mut w, 0, &json!({ "tier": "cheap" })).unwrap();
+            live.turns[1] = 1;
+            live.turned[1] = turned;
+            live.tx
+                .send((
+                    1,
+                    0,
+                    AgentEvent::TurnDone {
+                        ok: false,
+                        text: "error".into(),
+                        cost,
+                        denied: 0,
+                    },
+                ))
+                .unwrap();
+            live.step(&mut w);
+            assert_eq!(
+                live.models[1].as_deref(),
+                Some("haiku"),
+                "turned {turned} cost {cost}"
+            );
+            assert!(live.tiered[1]);
+            assert!(live.turned[1]);
+            assert!(matches!(
+                &w.journal.last().unwrap().event,
+                Event::Stopped { agent: 1, .. }
+            ));
+        }
+        // A turn that went well is a turn too: nothing to fall back from later.
+        let mut w = team(0);
+        let mut live = idle_live(1);
+        live.hire(&mut w, 0, &json!({ "tier": "cheap" })).unwrap();
+        live.turns[1] = 1;
+        finish(&mut live, &mut w, 1, "done");
+        assert!(live.turned[1]);
+        assert!(live.inflight[1].is_empty());
+    }
+
+    #[test]
+    fn the_ladder_is_the_vendor_s_unless_the_person_says_otherwise() {
+        let h = Hireable::claude("claude", None, &[]);
+        assert_eq!(h.ladder.model(Tier::Cheap), Some("haiku"));
+        assert_eq!(h.ladder.model(Tier::Standard), None);
+        assert_eq!(h.ladder.model(Tier::Strong), Some("opus"));
+        assert_eq!(h.program, "claude");
+        assert_eq!(h.vendor, Vendor::Claude);
+        let h = Hireable::claude(
+            "claude",
+            Some("sonnet".into()),
+            &[
+                (Tier::Strong, "opus[1m]".into()),
+                (Tier::Cheap, "sonnet".into()),
+            ],
+        );
+        assert_eq!(h.ladder.model(Tier::Cheap), Some("sonnet"));
+        assert_eq!(h.ladder.model(Tier::Standard), Some("sonnet"));
+        assert_eq!(h.ladder.model(Tier::Strong), Some("opus[1m]"));
+        let h = Hireable::claude("claude", None, &[(Tier::Standard, "opus".into())]);
+        assert_eq!(h.ladder.model(Tier::Standard), Some("opus"));
+    }
+
+    #[test]
+    fn the_team_needs_a_leader_imece_can_drive() {
+        let err = hireable(&[], Vendor::Claude).unwrap_err();
+        assert!(
+            err.contains("no coding agent") && err.contains("claude, codex, gemini"),
+            "{err}"
+        );
+        let err = hireable(&[(Vendor::Codex, false)], Vendor::Claude).unwrap_err();
+        assert!(
+            err.contains("claude is not on PATH (found codex)") && err.contains("--lead"),
+            "{err}"
+        );
+        let err = hireable(
+            &[(Vendor::Claude, true), (Vendor::Codex, false)],
+            Vendor::Codex,
+        )
+        .unwrap_err();
+        assert!(
+            err.contains("codex is on PATH, but") && err.contains("--lead claude"),
+            "{err}"
+        );
+        let ok = hireable(
+            &[(Vendor::Claude, true), (Vendor::Codex, false)],
+            Vendor::Claude,
+        )
+        .unwrap();
+        assert_eq!(
+            ok,
+            [Vendor::Claude],
+            "only vendors imece drives are hireable"
+        );
+    }
+
+    #[test]
+    fn the_budget_has_one_share_per_place_in_the_team() {
+        assert_eq!(share(50_000, 4), 10_000);
+        assert_eq!(share(50_000, 0), 50_000);
+        assert_eq!(share(10_000, 2), 3_333);
+    }
+
+    #[test]
+    fn hire_reaches_the_bus_through_the_call_channel() {
+        let mut w = team(0);
+        let mut live = idle_live(1);
+        let got = call(&mut live, &mut w, 0, "hire", json!({ "tier": "strong" })).unwrap();
+        assert!(got.starts_with("claude-1 joined (claude, opus)"), "{got}");
+        assert_eq!(w.agents.len(), 2);
+    }
+
+    #[test]
+    fn hiring_and_falling_back_are_worded_in_both_languages() {
+        use crate::i18n::Lang;
+        use crate::ui::words::event;
+        let mut w = team(0);
+        let mut live = idle_live(1);
+        live.hire(&mut w, 0, &json!({ "tier": "cheap" })).unwrap();
+        live.hire(&mut w, 0, &json!({})).unwrap();
+        let hired: Vec<&Event> = w.journal.iter().map(|j| &j.event).collect();
+        assert_eq!(event(Lang::En, &w, hired[0]), "lead hired claude-1 (haiku)");
+        assert_eq!(
+            event(Lang::Tr, &w, hired[0]),
+            "lead işe aldı: claude-1 (haiku)"
+        );
+        assert_eq!(
+            event(Lang::En, &w, hired[1]),
+            "lead hired claude-2 (default model)"
+        );
+        assert_eq!(
+            event(Lang::Tr, &w, hired[1]),
+            "lead işe aldı: claude-2 (varsayılan model)"
+        );
+        let fell = Event::Fallback {
+            agent: 1,
+            model: "haiku".into(),
+        };
+        assert_eq!(
+            event(Lang::En, &w, &fell),
+            "claude-1: model haiku is not available here, using the default"
+        );
+        assert_eq!(
+            event(Lang::Tr, &w, &fell),
+            "claude-1: haiku modeli burada yok, varsayılanla devam"
+        );
+        assert_eq!(hired[0].kind(), EntryKind::Plan);
+        assert_eq!(fell.kind(), EntryKind::Assumption);
+        assert_eq!((hired[0].agent(), fell.agent()), (1, 1));
+    }
+
+    /// A stand-in for `claude` that writes its arguments, one per line, to
+    /// `args.txt` in its directory and exits.
+    fn fake_claude(dir: &Path) -> String {
+        use std::os::unix::fs::PermissionsExt;
+        let path = dir.join("fake-claude");
+        std::fs::write(&path, "#!/bin/sh\nprintf '%s\\n' \"$@\" > args.txt\n").unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o700)).unwrap();
+        path.to_string_lossy().into_owned()
+    }
+
+    #[test]
+    fn a_session_starts_with_the_agent_s_model_share_and_prompt() {
+        let dir = std::env::temp_dir().join(format!("imece-start-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut w = team(0);
+        let mut live = Live::new(
+            1,
+            claude_at(&fake_claude(&dir)),
+            dir.clone(),
+            dir.join("worktrees"),
+            5_000,
+        );
+        live.max_workers = 3;
+        live.models[0] = Some("sonnet".into());
+        w.agents[0].cost = 1_000;
+        live.told(&mut w, 0, "hello").unwrap();
+        // The stand-in exits at once, which ends the session.
+        wait_for(&mut live, &mut w, |w| w.agents[0].status == Status::Stopped);
+        let args = std::fs::read_to_string(dir.join("args.txt")).unwrap();
+        let args: Vec<&str> = args.lines().collect();
+        let after = |f: &str| args[args.iter().position(|a| *a == f).unwrap() + 1];
+        assert_eq!(after("--model"), "sonnet");
+        // What is left of the share, in dollars: (5000 - 1000) ten-thousandths.
+        assert_eq!(after("--max-budget-usd"), "0.400000");
+        assert_eq!(after("--tools"), "Glob,Grep,Read");
+        assert_eq!(after("--name"), "imece lead");
+        assert!(after("--append-system-prompt").contains("hire tool, up to 3;"));
+        assert!(!args.contains(&"--mcp-config"), "no bus, no MCP server");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_program_is_on_path_when_its_version_runs() {
+        let here = std::env::temp_dir();
+        assert!(on_path("true", &here));
+        assert!(!on_path("false", &here));
+        assert!(!on_path("/nonexistent/claude", &here));
+    }
+
+    #[test]
+    fn the_known_vendors_are_the_ones_the_leader_may_be() {
+        for (vendor, program, _) in KNOWN {
+            assert_eq!(Vendor::parse(program), Some(*vendor));
+            assert_eq!(vendor.label(), *program);
+        }
+        assert_eq!(Vendor::parse("qwen"), None);
+        assert!(
+            KNOWN
+                .iter()
+                .any(|(v, _, drives)| *v == Vendor::Claude && *drives)
+        );
     }
 
     #[test]
@@ -1987,7 +2776,7 @@ in p.rs",
     #[test]
     fn a_late_event_of_an_ended_session_is_ignored() {
         let mut w = team(1);
-        let mut live = Live::new(2, "x".into(), PathBuf::new(), PathBuf::new(), None, 5_000);
+        let mut live = Live::new(2, claude_at("x"), PathBuf::new(), PathBuf::new(), 5_000);
         live.tx
             .send((1, 0, AgentEvent::Stopped("gone".into())))
             .unwrap();

@@ -9,40 +9,55 @@ leader agent splits the work into cards and hands them out; the agents talk
 to each other, ask a capped pool of researchers, and lease the symbols they
 change so several of them can work in the same file.
 
-> Status: early. The screen runs on a seeded simulation, or on real Claude
-> Code agents with `--live` (one project, a leader and workers you talk to
-> yourself; agents do not message each other yet).
+> Status: early. imece runs real Claude Code agents on one project (a leader
+> that hires workers and talks to you; Codex and Gemini adapters are next),
+> or a seeded simulation with `--demo`.
 
-## Live agents
+## Run it
 
 ```sh
 cd your/checkout
-cargo run -p imece-tui -- --live --agents 3 --model sonnet --budget 5
+cargo run -p imece-tui                       # or, once installed: imece
+cargo run -p imece-tui -- --agents 8 --budget 10 --model sonnet
 ```
 
-- `lead` reads the checkout (it can not change anything); `claude-1`,
-  `claude-2`, … each work in their own git worktree under
-  `~/.local/state/imece/worktrees/`, detached at your HEAD. Your checkout
-  is never touched; review an agent's work with `git -C <worktree> diff`.
-  The trace (`enter` twice) shows where each worktree is.
+You do not pick a team size. `lead` starts alone, reads the checkout (it
+can not change anything), and hires workers as the work needs them, up to
+`--agents` (default 4). The workers, `claude-1`, `claude-2`, … each work in
+their own git worktree under `~/.local/state/imece/worktrees/`, detached at
+your HEAD. Your checkout is never touched; review an agent's work with
+`git -C <worktree> diff`. The trace (`enter` twice) shows where each
+worktree is.
+
 - Plain text goes to the lead, `@claude-2 text` to one agent. A message to
   an idle worker opens a card; its answer closes it.
+- Models: every agent runs on its vendor's own default (what you set up in
+  Claude Code), or on `--model`. When the lead hires, it picks a tier, not a
+  model: `cheap` (haiku) for small mechanical work, `standard` (the default)
+  for ordinary fixes, `strong` (opus) for cross-cutting design. Change what
+  a tier means with `--tier strong=opus[1m]`. A tier model your account
+  does not have fails its first turn; imece then restarts that worker on
+  the standard model and says so in the journal.
+- Vendors: imece looks for `claude`, `codex` and `gemini` on PATH. It can
+  drive Claude Code today; the leader's vendor is `--lead` (default
+  `claude`). Workers may be hired from any vendor imece drives.
 - Each session is a long-lived `claude -p` in `--restricted` mode: file
   tools only (no shell, no web), no MCP servers, no user or project
   settings (so no hooks), file access confined to the agent's directory,
   nothing that would ask for permission is allowed. What Claude Code
   reports it runs with is checked on every turn; anything else stops the
   session.
-- The budget is split evenly and each share is the session's hard cap, so
-  all agents together never spend more than `--budget` dollars.
+- The budget is split into equal shares, one per place in the team (the
+  lead and every worker it may hire), and a share is the session's hard
+  cap, so all agents together never spend more than `--budget` dollars.
 - Child processes get a cleared environment (plus what Claude Code needs to
   log in), their own process group (killed on exit), and capped pipes.
 
 ## Run the simulation
 
 ```sh
-cargo run -p imece-tui -- --projects 3 --agents 30   # --researchers N, --seed N
-cargo run -p imece-tui -- --lang tr                  # or IMECE_LANG=tr; English by default
+cargo run -p imece-tui -- --demo --projects 3 --agents 30   # --researchers N, --seed N
+cargo run -p imece-tui -- --demo --lang tr                  # or IMECE_LANG=tr; English by default
 ```
 
 Each project is a group in the salon with its own leader. A folded project
@@ -59,7 +74,7 @@ is one line, and that line still shows what waits for you.
 | `enter` / `esc` | look deeper (focus, then the raw stream) / go back |
 | `tab` | salon ↔ the items waiting for you |
 | `a` / `r` | approve / reject the selected item |
-| `space`, `+` `-` | pause, simulation speed (not in `--live`) |
+| `space`, `+` `-` | pause, simulation speed (`--demo` only) |
 | `?`, `q` | help, quit |
 
 ## Screen principles
