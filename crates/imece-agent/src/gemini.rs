@@ -714,7 +714,8 @@ impl Protocol {
                     return Err(format!("used a {kind} tool it was not given"));
                 }
                 let title = u["title"].as_str().unwrap_or_default();
-                let name = self.tool_name(kind, title)?;
+                let id = u["toolCallId"].as_str().unwrap_or_default();
+                let name = self.tool_name(id, kind, title)?;
                 let target = u["locations"][0]["path"]
                     .as_str()
                     .map(|p| relative(p, &self.cwd))
@@ -725,7 +726,7 @@ impl Protocol {
                             one_line(title)
                         }
                     });
-                if let Some(id) = u["toolCallId"].as_str() {
+                if !id.is_empty() {
                     self.calls.insert(id.to_string(), name.clone());
                 }
                 Ok(vec![Act::Event(Event::Tool { name, target })])
@@ -737,11 +738,12 @@ impl Protocol {
                 let id = u["toolCallId"].as_str().unwrap_or_default();
                 let name = match self.calls.remove(id) {
                     Some(n) => n,
-                    // Denied before it started: the policy's doing.
+                    // Refused before it started: by the policy, or by a
+                    // path outside the workspace.
                     None => {
                         self.denied += 1;
                         let kind = u["kind"].as_str().unwrap_or("other");
-                        self.tool_name(kind, u["title"].as_str().unwrap_or_default())
+                        self.tool_name(id, kind, u["title"].as_str().unwrap_or_default())
                             .unwrap_or_else(|_| kind.to_string())
                     }
                 };
@@ -755,16 +757,40 @@ impl Protocol {
     }
 
     /// The name a tool call gets on the screen: imece's own tools by their
-    /// name, Gemini's file tools by what they do.
-    fn tool_name(&self, kind: &str, title: &str) -> Result<String, String> {
-        if kind == "other" {
-            let name = gemini_name(title.split('(').next().unwrap_or_default().trim());
-            if self.tools.contains(&name) {
-                return Ok(mcp_tool(name.trim_start_matches(&prefix())));
-            }
-            return Err(format!("used tool {} it was not given", one_line(title)));
+    /// name, Gemini's tools by theirs. Gemini's call ids carry the tool's
+    /// name (`write_file__call_7`); without one, the title and the kind
+    /// have to do. A tool the role was not given stops the session.
+    fn tool_name(&self, id: &str, kind: &str, title: &str) -> Result<String, String> {
+        let called = id
+            .split_once("__call_")
+            .map(|(name, _)| name)
+            .filter(|n| !n.is_empty())
+            .map(str::to_string)
+            .unwrap_or_else(|| {
+                if kind == "other" {
+                    gemini_name(title.split('(').next().unwrap_or_default().trim())
+                } else {
+                    String::new()
+                }
+            });
+        if called.is_empty() {
+            return Ok(kind.to_string());
         }
-        Ok(kind.to_string())
+        if self.tools.contains(&called) {
+            return Ok(mcp_tool(called.trim_start_matches(&prefix())));
+        }
+        let own = if self.write { EDIT_TOOLS } else { READ_TOOLS };
+        if own.contains(&called.as_str()) {
+            return Ok(called);
+        }
+        Err(format!(
+            "used tool {} it was not given",
+            one_line(if called.starts_with(&prefix()) {
+                title
+            } else {
+                &called
+            })
+        ))
     }
 }
 
@@ -1751,6 +1777,89 @@ mod tests {
             }),
             "{acts:?}"
         );
+    }
+
+    #[test]
+    fn gemini_s_call_ids_name_the_tools() {
+        let s = with_bus(true);
+        let mut p = started(&s);
+        p.prompt("go");
+        let acts = p
+            .line(&tool_call(
+                "write_file__call_1",
+                "edit",
+                "note.txt",
+                Some("/work/w1/note.txt"),
+            ))
+            .unwrap();
+        assert_eq!(
+            events(&acts),
+            [Event::Tool {
+                name: "write_file".into(),
+                target: "note.txt".into()
+            }]
+        );
+        let acts = p
+            .line(&tool_call(
+                "read_file__call_2",
+                "read",
+                "../.../w1/a.rs",
+                Some("/work/w1/a.rs"),
+            ))
+            .unwrap();
+        assert_eq!(
+            events(&acts),
+            [Event::Tool {
+                name: "read_file".into(),
+                target: "a.rs".into()
+            }]
+        );
+        let acts = p
+            .line(&tool_call(
+                "mcp_imece_send__call_3",
+                "other",
+                "send(to: lead, type: inform, body: pong)",
+                None,
+            ))
+            .unwrap();
+        assert_eq!(
+            events(&acts),
+            [Event::Tool {
+                name: "mcp__imece__send".into(),
+                target: "lead".into()
+            }]
+        );
+        // A write refused for its path fails before anyone saw it start.
+        let acts = p.line(&update(json!({ "sessionUpdate": "tool_call_update", "toolCallId": "write_file__call_9", "status": "failed",
+            "content": [{ "type": "content", "content": { "type": "text", "text": "Path not in workspace" } }] }))).unwrap();
+        assert_eq!(
+            events(&acts),
+            [Event::ToolFailed {
+                name: "write_file".into()
+            }]
+        );
+        let e = p
+            .line(&tool_call(
+                "save_memory__call_5",
+                "other",
+                "save_memory(fact: x)",
+                None,
+            ))
+            .unwrap_err();
+        assert!(e.contains("used tool save_memory it was not given"), "{e}");
+        let mut p = started(&with_bus(false));
+        p.prompt("go");
+        let e = p
+            .line(&tool_call("write_file__call_1", "other", "note.txt", None))
+            .unwrap_err();
+        assert!(
+            e.contains("used tool write_file it was not given"),
+            "a leader: {e}"
+        );
+        let acts = p
+            .line(&reply(6, turn_result("gemini-2.5-pro", 10, 0, 1, 0)))
+            .unwrap_or_default();
+        let _ = acts;
     }
 
     #[test]

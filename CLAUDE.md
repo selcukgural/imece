@@ -205,6 +205,15 @@ and owned here from then on:
   tier, thoughts as output, cached at the cached rate, a turn on several
   models booked at the dearest), unknown model → session stops; Google
   login (`oauth-personal`) → 0 with a Note; vertex-ai/gateway refused.
+  Tool calls: a `tool_call`'s id carries the tool's name
+  (`write_file__call_7`, `mcp_imece_send__call_3`), its `title` is the
+  path (file tools) or `send(to: lead, …)` (MCP), `locations` the paths;
+  a write outside the workspace fails before it starts
+  (`tool_call_update` failed, "Path not in workspace"), which counts as
+  denied. Confirmed live on 2026-10-29 (API key, free tier): the checks,
+  hidden tools (a lead's model sees no shell or write tool, a worker's
+  no shell), `send` reaching imece's server, the outside write refused,
+  a repo hook in `.gemini/settings.json` not running.
   Tiers: cheap=`flash`, standard=default (`auto`), strong=`pro`. Known
   gaps: Gemini writes chat files under `~/.gemini/tmp`; the person's own
   `~/.gemini/GEMINI.md` and user-level hooks still apply (hooks only turn
