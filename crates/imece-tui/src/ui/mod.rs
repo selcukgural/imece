@@ -62,7 +62,11 @@ pub(crate) fn dim() -> Style {
 fn badge(bg: Color) -> Style {
     let p = pal();
     if p.mono {
-        Style::new().add_modifier(Modifier::REVERSED | Modifier::BOLD)
+        // Two calls, not `REVERSED | BOLD`: an operator there has an
+        // equivalent mutant (`^` on disjoint flags) no test can tell apart.
+        Style::new()
+            .add_modifier(Modifier::REVERSED)
+            .add_modifier(Modifier::BOLD)
     } else {
         Style::new()
             .fg(p.on_badge)
