@@ -283,6 +283,15 @@ enum Wait {
     /// The MCP servers, before a turn.
     Recheck,
     Turn,
+    /// `thread/compact/start`, the one command of its own Codex has.
+    Compact,
+}
+
+/// What waits for the thread's next free moment.
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum Queued {
+    Prompt(String),
+    Compact,
 }
 
 /// Turns stdout lines into [`Act`]s and checks the settings Codex reports.
@@ -303,7 +312,7 @@ pub struct Protocol {
     awaiting: Option<(u64, Wait)>,
     thread: Option<String>,
     started: bool,
-    queue: VecDeque<String>,
+    queue: VecDeque<Queued>,
     busy: bool,
     /// The turn so far: the agent's last message, the last error, refused
     /// tool calls, and the session's tokens (input, cached, output).
@@ -376,17 +385,35 @@ impl Protocol {
 
     /// Queues a prompt; it starts a turn as soon as the thread is free.
     pub fn prompt(&mut self, text: &str) -> Vec<Act> {
-        self.queue.push_back(text.to_string());
+        self.queue.push_back(Queued::Prompt(text.to_string()));
+        self.next_turn()
+    }
+
+    /// Queues a compaction of the thread (`/compact`); it runs as a turn
+    /// of its own when the thread is free.
+    pub fn compact(&mut self) -> Vec<Act> {
+        self.queue.push_back(Queued::Compact);
         self.next_turn()
     }
 
     /// Starts the next queued turn, if the thread is free: the MCP servers
-    /// are checked first.
+    /// are checked first (a compaction uses no tools and goes at once).
     fn next_turn(&mut self) -> Vec<Act> {
-        if !self.started || self.busy || self.awaiting.is_some() || self.queue.is_empty() {
+        if !self.started || self.busy || self.awaiting.is_some() {
             return Vec::new();
         }
-        vec![self.request("mcpServerStatus/list", json!({}), Wait::Recheck)]
+        match self.queue.front() {
+            None => Vec::new(),
+            Some(Queued::Compact) => {
+                self.queue.pop_front();
+                self.busy = true;
+                let params = json!({ "threadId": self.thread });
+                vec![self.request("thread/compact/start", params, Wait::Compact)]
+            }
+            Some(Queued::Prompt(_)) => {
+                vec![self.request("mcpServerStatus/list", json!({}), Wait::Recheck)]
+            }
+        }
     }
 
     /// The acts for one stdout line, or why the session must stop.
@@ -513,7 +540,10 @@ impl Protocol {
             }
             Wait::Recheck => {
                 self.check_servers(r)?;
-                let text = self.queue.pop_front().unwrap_or_default();
+                let text = match self.queue.pop_front() {
+                    Some(Queued::Prompt(t)) => t,
+                    _ => String::new(),
+                };
                 self.busy = true;
                 self.text.clear();
                 self.error = None;
@@ -528,6 +558,17 @@ impl Protocol {
                 vec![self.request("turn/start", params, Wait::Turn)]
             }
             Wait::Turn => Vec::new(),
+            Wait::Compact => {
+                self.busy = false;
+                let mut acts = vec![Act::Event(Event::TurnDone {
+                    ok: true,
+                    text: "compacted".into(),
+                    cost: 0,
+                    denied: 0,
+                })];
+                acts.extend(self.next_turn());
+                acts
+            }
         })
     }
 
@@ -868,6 +909,7 @@ enum Msg {
     /// The Codex process of this generation is gone.
     End(u64, String),
     Prompt(String),
+    Compact,
     Terminate,
 }
 
@@ -908,6 +950,21 @@ impl Session {
             .map_err(|_| io::Error::new(io::ErrorKind::BrokenPipe, "the session is over"))
     }
 
+    /// Codex's app server has no command line; `/compact` is the one
+    /// command it has a method for. (`/clear` is imece's: a new session.)
+    pub fn command(&mut self, line: &str) -> io::Result<()> {
+        if line.trim() != "/compact" {
+            return Err(io::Error::new(
+                io::ErrorKind::Unsupported,
+                "codex has no command line of its own; it knows /compact, and /clear \
+                 starts a new session",
+            ));
+        }
+        self.tx
+            .send(Msg::Compact)
+            .map_err(|_| io::Error::new(io::ErrorKind::BrokenPipe, "the session is over"))
+    }
+
     /// Asks the session to stop without waiting.
     pub fn terminate(&mut self) {
         let _ = self.tx.send(Msg::Terminate);
@@ -923,6 +980,10 @@ impl Drop for Session {
 impl crate::Agent for Session {
     fn prompt(&mut self, text: &str) -> io::Result<()> {
         Session::prompt(self, text)
+    }
+
+    fn command(&mut self, line: &str) -> io::Result<()> {
+        Session::command(self, line)
     }
 
     fn terminate(&mut self) {
@@ -1001,6 +1062,7 @@ fn drive(spec: Spec, child: Child, rx: Receiver<Msg>, tx: Sender<Msg>, mut on: i
             }
             Ok(Msg::Line(..) | Msg::End(..)) => {}
             Ok(Msg::Prompt(text)) => acts = protocol.prompt(&text),
+            Ok(Msg::Compact) => acts = protocol.compact(),
             Ok(Msg::Terminate) | Err(RecvTimeoutError::Disconnected) => return,
             Err(RecvTimeoutError::Timeout) => {
                 if deadline.is_some_and(|d| Instant::now() >= d) {
@@ -1607,6 +1669,69 @@ mod tests {
         assert_eq!(q[0]["method"], "mcpServerStatus/list");
         let acts = p.line(&reply(11, servers(true, &[]))).unwrap();
         assert_eq!(sent(&acts)[0]["params"]["input"][0]["text"], "and this");
+    }
+
+    #[test]
+    fn compact_is_the_one_command_and_runs_as_a_turn_without_the_servers_check() {
+        let s = with_bus(true);
+        let mut p = started(&s);
+        let acts = p.compact();
+        let q = sent(&acts);
+        assert_eq!(q.len(), 1);
+        assert_eq!(q[0]["method"], "thread/compact/start");
+        assert_eq!(q[0]["params"], json!({ "threadId": "t1" }));
+        assert_eq!(q[0]["id"], 9);
+        assert!(p.prompt("next").is_empty(), "the thread is busy");
+        assert!(p.compact().is_empty());
+        let acts = p.line(&reply(9, json!({}))).unwrap();
+        assert_eq!(
+            events(&acts),
+            [Event::TurnDone {
+                ok: true,
+                text: "compacted".into(),
+                cost: 0,
+                denied: 0
+            }]
+        );
+        // The prompt that waited goes next, through the servers check; the
+        // second compaction after it.
+        let q = sent(&acts);
+        assert_eq!(q.len(), 1);
+        assert_eq!(q[0]["method"], "mcpServerStatus/list");
+        let acts = p.line(&reply(10, servers(true, &[]))).unwrap();
+        assert_eq!(sent(&acts)[0]["params"]["input"][0]["text"], "next");
+        p.line(&reply(11, json!({ "turn": { "id": "u1" } })))
+            .unwrap();
+        let acts = p
+            .line(&notify(
+                "turn/completed",
+                json!({ "turn": { "id": "u1", "status": "completed" } }),
+            ))
+            .unwrap();
+        assert_eq!(sent(&acts)[0]["method"], "thread/compact/start");
+        // A compaction Codex refuses stops the session, like any refusal.
+        let e = p
+            .line(&json!({ "jsonrpc": "2.0", "id": 12, "error": { "message": "no" } }).to_string())
+            .unwrap_err();
+        assert!(e.contains("refused Compact"), "{e}");
+    }
+
+    #[test]
+    fn compact_is_the_one_command_a_session_takes_and_the_rest_is_refused() {
+        let (tx, rx) = mpsc::channel();
+        // Through the trait, as the screen drives every vendor.
+        let mut s: Box<dyn crate::Agent> = Box::new(Session { tx });
+        s.command(" /compact ").unwrap();
+        assert!(matches!(rx.try_recv(), Ok(Msg::Compact)));
+        for line in ["/clear", "/cost", "compact", ""] {
+            let e = s.command(line).unwrap_err();
+            assert_eq!(e.kind(), io::ErrorKind::Unsupported, "{line:?}");
+            assert!(e.to_string().contains("/compact"), "{e}");
+        }
+        assert!(rx.try_recv().is_err(), "a refused command sends nothing");
+        drop(rx);
+        let e = s.command("/compact").unwrap_err();
+        assert_eq!(e.kind(), io::ErrorKind::BrokenPipe);
     }
 
     #[test]

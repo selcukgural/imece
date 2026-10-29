@@ -139,7 +139,7 @@ impl Drop for Child {
     }
 }
 
-fn kill_group(pgid: i32, signal: i32) {
+pub(crate) fn kill_group(pgid: i32, signal: i32) {
     // SAFETY: killpg only sends a signal; a group that is gone gives ESRCH.
     unsafe {
         libc::killpg(pgid, signal);

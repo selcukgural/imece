@@ -88,7 +88,6 @@ pub fn args(spec: &Spec) -> Vec<String> {
         "--verbose",
         "--restricted",
         "--strict-mcp-config",
-        "--disable-slash-commands",
         "--no-chrome",
         "--permission-mode",
         PERMISSION_MODE,
@@ -137,6 +136,18 @@ pub fn args(spec: &Spec) -> Vec<String> {
     a
 }
 
+/// A prompt Claude Code would run as a slash command of its own (`/clear`,
+/// `/compact`, a skill) is said to be text: only [`Session::command`]
+/// sends one on purpose. It takes the command from a content block too,
+/// so the prefix is the one guard there is.
+fn plain(text: &str) -> String {
+    if text.trim_start().starts_with('/') {
+        format!("Text:\n{text}")
+    } else {
+        text.to_string()
+    }
+}
+
 /// The stdin line that gives the agent a prompt.
 pub fn prompt_line(text: &str) -> String {
     serde_json::json!({
@@ -156,6 +167,11 @@ pub struct Parser {
     started: bool,
     /// Tool names by tool-use id, to name a failed result.
     calls: HashMap<String, String>,
+    /// The session's cost counter starts again after `/clear`; the screen
+    /// gets one that never goes down: what the earlier conversations
+    /// cost, and the last total seen.
+    cost_base: u64,
+    cost_last: u64,
 }
 
 impl Parser {
@@ -175,6 +191,8 @@ impl Parser {
             mcp: spec.mcp.is_some(),
             started: false,
             calls: HashMap::new(),
+            cost_base: 0,
+            cost_last: 0,
         }
     }
 
@@ -194,11 +212,24 @@ impl Parser {
         match kind {
             "assistant" => self.assistant(&v),
             "user" => Ok(self.results(&v)),
-            "result" => Ok(vec![result(&v)]),
-            // Rate limits, retries, partial chunks, hook events: nothing the
-            // screen needs yet.
+            "result" => Ok(vec![self.result(&v)]),
+            // Rate limits, retries, partial chunks, hook events, the reset
+            // `/clear` announces (its new `init` is checked like the first):
+            // nothing the screen needs yet.
             _ => Ok(Vec::new()),
         }
+    }
+
+    fn result(&mut self, v: &Value) -> Event {
+        let mut e = result(v);
+        if let Event::TurnDone { cost, .. } = &mut e {
+            if *cost < self.cost_last {
+                self.cost_base += self.cost_last;
+            }
+            self.cost_last = *cost;
+            *cost += self.cost_base;
+        }
+        e
     }
 
     fn init(&mut self, v: &Value) -> Result<Vec<Event>, String> {
@@ -317,7 +348,11 @@ fn target(input: &Value, cwd: &Path) -> String {
             .to_string_lossy()
             .into_owned();
     }
-    input["pattern"].as_str().unwrap_or_default().to_string()
+    input["pattern"]
+        .as_str()
+        .or(input["command"].as_str())
+        .unwrap_or_default()
+        .to_string()
 }
 
 /// A running Claude Code session.
@@ -358,7 +393,22 @@ impl Session {
     /// Gives the agent a prompt. A busy session queues it for after the
     /// running turn.
     pub fn prompt(&mut self, text: &str) -> io::Result<()> {
-        self.child.write_line(&prompt_line(text))
+        self.child.write_line(&prompt_line(&plain(text)))
+    }
+
+    /// Gives the session one of Claude Code's own slash commands, as the
+    /// person typed it. It runs as a turn: `/clear` answers with an empty
+    /// result and starts the cost counter again (the parser keeps the
+    /// screen's total going up).
+    pub fn command(&mut self, line: &str) -> io::Result<()> {
+        let line = line.trim();
+        if !line.starts_with('/') {
+            return Err(io::Error::new(
+                io::ErrorKind::Unsupported,
+                "a command of claude's starts with /",
+            ));
+        }
+        self.child.write_line(&prompt_line(line))
     }
 
     /// Asks the session to stop without waiting; dropping it finishes the
@@ -371,6 +421,10 @@ impl Session {
 impl crate::Agent for Session {
     fn prompt(&mut self, text: &str) -> io::Result<()> {
         Session::prompt(self, text)
+    }
+
+    fn command(&mut self, line: &str) -> io::Result<()> {
+        Session::command(self, line)
     }
 
     fn terminate(&mut self) {
@@ -491,14 +545,12 @@ mod tests {
     #[test]
     fn the_command_line_is_locked_down_and_carries_no_prompt() {
         let a = args(&spec(EDIT_TOOLS));
-        for flag in [
-            "--restricted",
-            "--strict-mcp-config",
-            "--disable-slash-commands",
-            "--no-chrome",
-        ] {
+        for flag in ["--restricted", "--strict-mcp-config", "--no-chrome"] {
             assert!(a.iter().any(|x| x == flag), "missing {flag}");
         }
+        // The person's own commands reach the session; a prompt that
+        // looks like one is guarded in `plain`.
+        assert!(!a.iter().any(|x| x == "--disable-slash-commands"));
         let after = |f: &str| a[a.iter().position(|x| x == f).unwrap() + 1].clone();
         assert_eq!(after("--tools"), "Edit,Glob,Grep,Read,Write");
         assert_eq!(after("--permission-mode"), "acceptEdits");
@@ -765,6 +817,82 @@ sleep 5"#
                 "{cost}: {e:?}"
             );
         }
+    }
+
+    #[test]
+    fn a_prompt_that_looks_like_a_slash_command_is_said_to_be_text() {
+        assert_eq!(plain("/clear"), "Text:\n/clear");
+        assert_eq!(plain("  /compact now"), "Text:\n  /compact now");
+        assert_eq!(plain("fix a/b"), "fix a/b");
+        assert_eq!(plain(""), "");
+        assert_eq!(
+            prompt_line(&plain("/clear")),
+            r#"{"message":{"content":"Text:\n/clear","role":"user"},"type":"user"}"#
+        );
+    }
+
+    #[test]
+    fn a_command_of_claude_s_own_goes_as_it_is_and_the_rest_is_refused() {
+        let dir = std::env::temp_dir().join(format!("imece-claude-cmd-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let out = dir.join("first-line.txt");
+        let mut s = spec(EDIT_TOOLS);
+        s.cwd = dir.clone();
+        // Reads one line, keeps it, ends.
+        s.program = fake(
+            &dir,
+            &format!("IFS= read -r l; printf '%s\\n' \"$l\" > {}", out.display()),
+        );
+        let (tx, rx) = mpsc::channel();
+        let mut session: Box<dyn crate::Agent> = Box::new(
+            Session::start(&s, move |e| {
+                let _ = tx.send(e);
+            })
+            .unwrap(),
+        );
+        for not_a_command in ["cost", "", "clear please"] {
+            let e = session.command(not_a_command).unwrap_err();
+            assert_eq!(e.kind(), io::ErrorKind::Unsupported, "{not_a_command:?}");
+        }
+        session.command(" /cost ").unwrap();
+        let e = rx.recv_timeout(Duration::from_secs(10)).expect("in time");
+        assert!(matches!(e, Event::Stopped(_)), "{e:?}");
+        assert_eq!(
+            std::fs::read_to_string(&out).unwrap(),
+            format!("{}\n", prompt_line("/cost")),
+            "the command goes as typed, not as text"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn the_cost_keeps_going_up_across_a_clear() {
+        use serde_json::json;
+        let mut p = Parser::new(&spec(EDIT_TOOLS));
+        p.line(&init(GOOD_INIT, "acceptEdits", "[]")).unwrap();
+        let done = |usd: f64| {
+            json!({"type":"result","subtype":"success","result":"","total_cost_usd":usd})
+                .to_string()
+        };
+        let cost = |p: &mut Parser, line: &str| match p.line(line).unwrap().as_slice() {
+            [Event::TurnDone { cost, .. }] => *cost,
+            other => panic!("{other:?}"),
+        };
+        assert_eq!(cost(&mut p, &done(0.0007)), 700);
+        assert_eq!(cost(&mut p, &done(0.0012)), 1200);
+        // `/clear`: a reset is announced, the settings come again, the
+        // counter starts from nothing.
+        assert_eq!(
+            p.line(r#"{"type":"conversation_reset","trigger":"clear"}"#)
+                .unwrap(),
+            []
+        );
+        assert_eq!(p.line(&init(GOOD_INIT, "acceptEdits", "[]")).unwrap(), []);
+        assert_eq!(cost(&mut p, &done(0.0)), 1200);
+        assert_eq!(cost(&mut p, &done(0.0003)), 1500);
+        assert_eq!(cost(&mut p, &done(0.0003)), 1500);
+        // The settings after a reset are checked like the first.
+        assert!(p.line(&init(r#"["Bash"]"#, "acceptEdits", "[]")).is_err());
     }
 
     #[test]

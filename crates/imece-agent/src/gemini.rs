@@ -333,7 +333,7 @@ pub struct Protocol {
     session: Option<String>,
     started: bool,
     pay: Option<Pay>,
-    queue: VecDeque<String>,
+    queue: VecDeque<Queued>,
     busy: bool,
     /// The agent's text since the last turn or command started.
     text: String,
@@ -421,7 +421,15 @@ impl Protocol {
 
     /// Queues a prompt; it starts a turn as soon as the session is free.
     pub fn prompt(&mut self, text: &str) -> Vec<Act> {
-        self.queue.push_back(text.to_string());
+        self.queue.push_back(Queued::Prompt(text.to_string()));
+        self.next_turn()
+    }
+
+    /// Queues one of Gemini's own commands (`/clear`, `/compact`, `/stats`),
+    /// sent as it is: a turn like any other.
+    pub fn command(&mut self, line: &str) -> Vec<Act> {
+        self.queue
+            .push_back(Queued::Command(line.trim().to_string()));
         self.next_turn()
     }
 
@@ -437,7 +445,10 @@ impl Protocol {
         self.busy = true;
         self.denied = 0;
         self.calls.clear();
-        let text = plain(&text);
+        let text = match text {
+            Queued::Prompt(t) => plain(&t),
+            Queued::Command(line) => line,
+        };
         vec![self.say(&text, Wait::Turn)]
     }
 
@@ -869,7 +880,17 @@ enum Msg {
     Line(String),
     End(String),
     Prompt(String),
+    Command(String),
     Terminate,
+}
+
+/// What waits for the session's next free moment.
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum Queued {
+    /// Text for the model, said to be text (see [`plain`]).
+    Prompt(String),
+    /// A line of Gemini's own command line, sent as it is.
+    Command(String),
 }
 
 /// A running Gemini session.
@@ -912,6 +933,20 @@ impl Session {
             .map_err(|_| io::Error::new(io::ErrorKind::BrokenPipe, "the session is over"))
     }
 
+    /// Gives the session one of Gemini CLI's own commands, as the person
+    /// typed it.
+    pub fn command(&mut self, line: &str) -> io::Result<()> {
+        if !line.trim().starts_with('/') {
+            return Err(io::Error::new(
+                io::ErrorKind::Unsupported,
+                "a command of gemini's starts with /",
+            ));
+        }
+        self.tx
+            .send(Msg::Command(line.to_string()))
+            .map_err(|_| io::Error::new(io::ErrorKind::BrokenPipe, "the session is over"))
+    }
+
     /// Asks the session to stop without waiting.
     pub fn terminate(&mut self) {
         let _ = self.tx.send(Msg::Terminate);
@@ -927,6 +962,10 @@ impl Drop for Session {
 impl crate::Agent for Session {
     fn prompt(&mut self, text: &str) -> io::Result<()> {
         Session::prompt(self, text)
+    }
+
+    fn command(&mut self, line: &str) -> io::Result<()> {
+        Session::command(self, line)
     }
 
     fn terminate(&mut self) {
@@ -972,6 +1011,7 @@ fn drive(spec: Spec, mut child: Child, rx: Receiver<Msg>, mut on: impl FnMut(Eve
                 return;
             }
             Ok(Msg::Prompt(text)) => acts = protocol.prompt(&text),
+            Ok(Msg::Command(line)) => acts = protocol.command(&line),
             Ok(Msg::Terminate) | Err(RecvTimeoutError::Disconnected) => return,
             Err(RecvTimeoutError::Timeout) => {
                 if deadline.is_some_and(|d| Instant::now() >= d) {
@@ -1660,6 +1700,48 @@ mod tests {
             }),
             "{acts:?}"
         );
+    }
+
+    #[test]
+    fn a_command_of_gemini_s_own_goes_as_it_is_and_runs_as_a_turn() {
+        let s = with_bus(true);
+        let mut p = started(&s);
+        let acts = p.command(" /clear ");
+        let q = &sent(&acts)[0];
+        assert_eq!(q["method"], "session/prompt");
+        assert_eq!(q["params"]["prompt"][0]["text"], "/clear");
+        assert!(p.prompt("/stats").is_empty(), "the session is busy");
+        let acts = p
+            .line(&reply(6, turn_result("gemini-2.5-pro", 10, 0, 1, 0)))
+            .unwrap();
+        assert!(
+            events(&acts)
+                .iter()
+                .any(|e| matches!(e, Event::TurnDone { ok: true, .. })),
+            "{acts:?}"
+        );
+        // The prompt that waited is text, not a command.
+        assert_eq!(
+            sent(&acts)[0]["params"]["prompt"][0]["text"],
+            "Text:\n/stats"
+        );
+    }
+
+    #[test]
+    fn a_session_takes_a_command_as_typed_and_refuses_what_is_not_one() {
+        let (tx, rx) = mpsc::channel();
+        // Through the trait, as the screen drives every vendor.
+        let mut s: Box<dyn crate::Agent> = Box::new(Session { tx });
+        s.command(" /clear ").unwrap();
+        assert!(matches!(rx.try_recv(), Ok(Msg::Command(l)) if l == " /clear "));
+        for line in ["clear", "", "fix a/b"] {
+            let e = s.command(line).unwrap_err();
+            assert_eq!(e.kind(), io::ErrorKind::Unsupported, "{line:?}");
+        }
+        assert!(rx.try_recv().is_err(), "a refused command sends nothing");
+        drop(rx);
+        let e = s.command("/stats").unwrap_err();
+        assert_eq!(e.kind(), io::ErrorKind::BrokenPipe);
     }
 
     #[test]

@@ -84,6 +84,22 @@ pub fn event(lang: Lang, w: &World, e: &Event) -> String {
         Event::Left { agent } => fill(t.ev_left, &[name(w, *agent)]),
         Event::Fallback { agent, model } => fill(t.ev_fallback, &[name(w, *agent), model]),
         Event::Budget { from, to, .. } => fill(t.ev_budget, &[&dollars(*to), &dollars(*from)]),
+        Event::WorktreeMoved { agent, from, to } => {
+            fill(t.ev_worktree_moved, &[name(w, *agent), from, to])
+        }
+        Event::WorktreeKept {
+            agent,
+            at,
+            head,
+            commits,
+        } => {
+            let how = if *commits {
+                t.ev_worktree_commits
+            } else {
+                t.ev_worktree_changes
+            };
+            fill(how, &[name(w, *agent), at, head])
+        }
         // Conversations are drawn from `said`, with their speakers coloured.
         Event::Talk { .. } | Event::YouSaid { .. } | Event::Replied { .. } | Event::Sent { .. } => {
             String::new()

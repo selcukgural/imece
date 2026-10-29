@@ -98,6 +98,8 @@ pub struct Text {
     pub sent: &'static str,
     pub no_agent: &'static str,
     pub empty_message: &'static str,
+    pub command_refused: &'static str,
+    pub demo_no_command_line: &'static str,
     pub budget_spent: &'static str,
     pub budget_is: &'static str,
     pub bad_budget: &'static str,
@@ -199,6 +201,9 @@ pub struct Text {
     pub ev_left: &'static str,
     pub ev_fallback: &'static str,
     pub ev_budget: &'static str,
+    pub ev_worktree_moved: &'static str,
+    pub ev_worktree_changes: &'static str,
+    pub ev_worktree_commits: &'static str,
     /// What stands for a model when the vendor's own default is used.
     pub default_model: &'static str,
     /// Message types, in `MsgKind::ALL` order.
@@ -226,7 +231,7 @@ pub struct Text {
     pub in_reply: &'static str,
     // Overlays
     pub help_title: &'static str,
-    pub help_keys: [(&'static str, &'static str); 25],
+    pub help_keys: [(&'static str, &'static str); 26],
     pub help_legend: [&'static str; 3],
     pub close: &'static str,
     pub away_title: &'static str,
@@ -258,6 +263,8 @@ pub const EN: Text = Text {
     sent: "sent to {}",
     no_agent: "no agent named \"{}\"",
     empty_message: "the message is empty",
+    command_refused: "{} took no command: {}",
+    demo_no_command_line: "the demo's agents have no command line",
     budget_spent: "{} has spent its budget",
     budget_is: "the budget is {} now",
     bad_budget: "{} is not dollars like 80 or 2.50",
@@ -359,6 +366,9 @@ pub const EN: Text = Text {
     ev_left: "{} finished and left",
     ev_fallback: "{}: model {} is not available here, using the default",
     ev_budget: "you set the budget to {} (was {})",
+    ev_worktree_moved: "{}: worktree moved from {} to HEAD {}",
+    ev_worktree_changes: "{}: worktree kept at {}, it has uncommitted changes (HEAD is {})",
+    ev_worktree_commits: "{}: worktree kept at {}, it has commits of its own (HEAD is {})",
     default_model: "default model",
     kinds: [
         "assign", "ask", "answer", "inform", "handoff", "done", "blocked", "progress", "notice",
@@ -387,6 +397,10 @@ pub const EN: Text = Text {
     help_keys: [
         ("/  i", "write to the lead of the selected project"),
         ("@name text", "write to one agent"),
+        (
+            "/cmd  @name /cmd",
+            "the agent's own command line (/clear, /compact, /cost ...)",
+        ),
         (":budget USD", "raise or lower the budget while agents run"),
         (
             ":lead VENDOR",
@@ -455,6 +469,8 @@ pub const TR: Text = Text {
     sent: "iletildi → {}",
     no_agent: "\"{}\" adında bir agent yok",
     empty_message: "mesaj boş",
+    command_refused: "{} komutu almadı: {}",
+    demo_no_command_line: "demodaki agent'ların komut satırı yok",
     budget_spent: "{} bütçesini bitirdi",
     budget_is: "bütçe artık {}",
     bad_budget: "{} dolar değil; 80 ya da 2.50 gibi yaz",
@@ -556,6 +572,9 @@ pub const TR: Text = Text {
     ev_left: "{} işini bitirdi, ayrıldı",
     ev_fallback: "{}: {} modeli burada yok, varsayılanla devam",
     ev_budget: "bütçeyi {} yaptın (önce {})",
+    ev_worktree_moved: "{}: çalışma ağacı {} yerine HEAD {} oldu",
+    ev_worktree_changes: "{}: çalışma ağacı {} noktasında kaldı, commit edilmemiş değişiklikleri var (HEAD {})",
+    ev_worktree_commits: "{}: çalışma ağacı {} noktasında kaldı, kendi commit'leri var (HEAD {})",
     default_model: "varsayılan model",
     kinds: [
         "görev",
@@ -592,6 +611,10 @@ pub const TR: Text = Text {
     help_keys: [
         ("/  i", "seçili projenin liderine yaz"),
         ("@ad mesaj", "tek bir agent'a yaz"),
+        (
+            "/kmt  @ad /kmt",
+            "agent'ın kendi komut satırı (/clear, /compact, /cost ...)",
+        ),
         (":budget USD", "agent'lar çalışırken bütçeyi artır / azalt"),
         (":lead VENDOR", "sonraki açılışta lider; ask = o zaman sor"),
         ("1 2 3", "salon · pano · kod haritası"),
@@ -692,9 +715,14 @@ mod tests {
             (EN.helper_of, TR.helper_of),
             (EN.ev_fallback, TR.ev_fallback),
             (EN.ev_budget, TR.ev_budget),
+            (EN.ev_worktree_moved, TR.ev_worktree_moved),
+            (EN.ev_worktree_changes, TR.ev_worktree_changes),
+            (EN.ev_worktree_commits, TR.ev_worktree_commits),
             (EN.budget_is, TR.budget_is),
             (EN.bad_budget, TR.bad_budget),
             (EN.no_command, TR.no_command),
+            (EN.command_refused, TR.command_refused),
+            (EN.demo_no_command_line, TR.demo_no_command_line),
             (EN.lead_is, TR.lead_is),
             (EN.lead_asks, TR.lead_asks),
             (EN.bad_lead, TR.bad_lead),
