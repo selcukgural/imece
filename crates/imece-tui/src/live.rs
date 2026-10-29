@@ -2416,14 +2416,20 @@ pub(crate) mod testing {
     }
 
     /// A live team whose sessions never start: what counts is what was
-    /// queued for them.
+    /// queued for them. A start still runs on its own thread and fails at
+    /// once (there is no `/nonexistent/claude`); its report is cut off
+    /// here, or it would race the events a test sends in the session's
+    /// name and end the session under them.
     pub(crate) fn idle_live(agents: usize) -> Live {
-        Live::new(
+        let mut live = Live::new(
             agents,
             claude_at("/nonexistent/claude"),
             std::env::temp_dir(),
             PathBuf::from("/nonexistent"),
-        )
+        );
+        let (cut, _) = mpsc::channel();
+        live.ready_tx = cut;
+        live
     }
 }
 
