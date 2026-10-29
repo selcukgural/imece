@@ -67,9 +67,15 @@ pub fn draw(f: &mut Frame, app: &App) {
 /// the terminal's stay otherwise.
 pub(crate) fn paint(f: &mut Frame, area: Rect) {
     let p = pal();
-    if p.bg != Color::Reset || p.fg != Color::Reset {
-        f.render_widget(Block::new().style(Style::new().bg(p.bg).fg(p.fg)), area);
+    if let Some(style) = backdrop(p.bg, p.fg) {
+        f.render_widget(Block::new().style(style), area);
     }
+}
+
+/// The style to lay under the screen for a theme with a background or
+/// text colour of its own; none when it leaves both to the terminal.
+fn backdrop(bg: Color, fg: Color) -> Option<Style> {
+    (bg != Color::Reset || fg != Color::Reset).then(|| Style::new().bg(bg).fg(fg))
 }
 
 /// Empties `area` for a window over the screen, in the theme's colours.
@@ -2340,6 +2346,65 @@ mod tests {
         let mut t = Terminal::new(TestBackend::new(width, height)).unwrap();
         t.draw(|f| draw(f, app)).unwrap();
         t.backend().buffer().clone()
+    }
+
+    #[test]
+    fn the_backdrop_is_laid_when_the_theme_has_a_background_or_a_text_colour() {
+        assert_eq!(backdrop(Color::Reset, Color::Reset), None);
+        let (bg, fg) = (Color::Rgb(1, 2, 3), Color::Indexed(7));
+        assert_eq!(backdrop(bg, fg), Some(Style::new().bg(bg).fg(fg)));
+        assert_eq!(
+            backdrop(bg, Color::Reset),
+            Some(Style::new().bg(bg).fg(Color::Reset)),
+            "a background alone"
+        );
+        assert_eq!(
+            backdrop(Color::Reset, fg),
+            Some(Style::new().bg(Color::Reset).fg(fg)),
+            "a text colour alone"
+        );
+    }
+
+    #[test]
+    fn the_help_window_is_as_tall_as_its_lines_and_their_frame() {
+        let mut app = app_after(1, 4, 50, Lang::En);
+        app.help = true;
+        let t = Lang::En.text();
+        let buf = buffer(&app, 140, 40);
+        let row = |y: u16| -> String { (0..140).map(|x| buf[(x, y)].symbol()).collect() };
+        let top = (0..40).find(|&y| row(y).contains(t.help_title)).unwrap();
+        // Two columns of keys, a blank line, the legend, a blank line, close.
+        let lines = u16::try_from(t.help_keys.len().div_ceil(2) + t.help_legend.len() + 3).unwrap();
+        let x = (140 - 118) / 2;
+        assert_eq!(buf[(x, top)].symbol(), "┌");
+        assert!(row(top + lines).contains(t.close), "{}", row(top + lines));
+        assert_eq!(
+            buf[(x, top + lines + 1)].symbol(),
+            "└",
+            "the frame closes under the last line"
+        );
+        assert_ne!(buf[(x, top + lines + 2)].symbol(), "│", "and no further");
+    }
+
+    #[test]
+    fn a_colon_theme_command_switches_the_theme_and_t_is_short_for_it() {
+        let mut app = app_after(1, 2, 0, Lang::En);
+        let typed = |app: &mut App, line: &str| {
+            for c in line.chars() {
+                key(app, KeyCode::Char(c));
+            }
+            key(app, KeyCode::Enter);
+        };
+        typed(&mut app, ":theme dracula");
+        assert_eq!(crate::theme::pal().name, "dracula");
+        assert!(render(&app, 140, 40).contains("theme: dracula"));
+        typed(&mut app, ":t mono");
+        assert_eq!(crate::theme::pal().name, "mono");
+        typed(&mut app, ":theme nope");
+        assert_eq!(crate::theme::pal().name, "mono", "unchanged");
+        let s = render(&app, 140, 40);
+        assert!(s.contains("theme nope: not one of"), "{s}");
+        crate::theme::set("terminal");
     }
 
     #[test]

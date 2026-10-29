@@ -804,6 +804,15 @@ selection-foreground = #ffffff
         assert_eq!(Rgb(250, 250, 250).indexed(), 231, "nearer the cube's white");
         assert_eq!(Rgb(0x28, 0x2a, 0x36).indexed(), 236);
         assert_eq!(Rgb(0xff, 0x55, 0x55).indexed(), 203);
+        // Halfway between two cube levels (95 and 135) the lower one wins.
+        assert_eq!(Rgb(115, 0, 0).indexed(), 52);
+        // Each channel counts in the distance: a pure colour is its cube
+        // cell, not the grey its average lands on.
+        assert_eq!(Rgb(0, 115, 0).indexed(), 22);
+        assert_eq!(Rgb(0, 0, 115).indexed(), 17);
+        assert_eq!(Rgb(0, 0, 15).indexed(), 232, "nearer the first grey");
+        // As far from black as from the first grey: the cube wins the tie.
+        assert_eq!(Rgb(0, 0, 12).indexed(), 16);
     }
 
     #[test]
@@ -864,6 +873,12 @@ selection-foreground = #ffffff
         let no_selection =
             GHOSTTY.replace("selection-background = #44475a\n", "palette = 16=#000000\n");
         assert_eq!(parse_palette(&no_selection).unwrap().selection, None);
+        let spaced = format!("\n# a comment\n{}\n\n", GHOSTTY.replace("\n", "\n\n"));
+        assert_eq!(
+            parse_palette(&spaced).unwrap(),
+            p,
+            "blank lines and comments pass"
+        );
         let errors = [
             (
                 GHOSTTY.replace("palette = 3=#f1fa8c\n", ""),
@@ -878,8 +893,19 @@ selection-foreground = #ffffff
                 "missing foreground",
             ),
             (
+                GHOSTTY.replace("palette = 1=#ff5555", "palette = 1=#ff555"),
+                "line 2: \"#ff555\" is not #rrggbb",
+            ),
+            (
                 GHOSTTY.replace("#282a36", "#282a3"),
                 "line 17: \"#282a3\" is not #rrggbb",
+            ),
+            (
+                GHOSTTY.replace(
+                    "selection-background = #44475a",
+                    "selection-background = 44475",
+                ),
+                "line 21: \"44475\" is not #rrggbb",
             ),
             (
                 GHOSTTY.replace("foreground = #f8f8f2", "foreground = #f8f8fg"),
@@ -920,8 +946,18 @@ selection-foreground = #ffffff
         assert_eq!(t.selection, Color::Rgb(0x44, 0x47, 0x5a), "the file's own");
         assert_eq!(t.accent, Color::Rgb(0xbd, 0x93, 0xf9), "blue");
         assert_eq!(t.bad, Color::Rgb(0xff, 0x55, 0x55));
-        assert_ne!(t.dim, t.fg);
-        assert_ne!(t.border, t.dim);
+        let (bg, fg) = (Rgb::hex(0x282a36), Rgb::hex(0xf8f8f2));
+        let rgb = |c: Rgb| Color::Rgb(c.0, c.1, c.2);
+        assert_eq!(t.strong, rgb(fg));
+        assert_eq!(t.on_key, rgb(fg));
+        assert_eq!(t.border, rgb(fg.blend(bg, 60)));
+        assert_eq!(t.dim, rgb(fg.blend(bg, 40)));
+        assert_eq!(t.key, rgb(bg.blend(fg, 30)));
+        assert_eq!(
+            t.code,
+            rgb(Rgb::hex(0xf1fa8c).blend(fg, 40)),
+            "yellow, softened"
+        );
         assert_eq!(next().name, "terminal", "T after a file starts over");
         // Said as a path, a missing file is an error, not a name.
         let gone = dir.join("gone.conf");
@@ -931,6 +967,16 @@ selection-foreground = #ffffff
         fs::write(&gone, "x".repeat(FILE_CAP as usize + 1)).unwrap();
         let e = choose(gone.to_str().unwrap()).unwrap_err();
         assert!(e.contains("a colour file is under"), "{e}");
+        let mut full = format!("{GHOSTTY}#");
+        full.push_str(&"x".repeat(FILE_CAP as usize - full.len() - 1));
+        full.push('\n');
+        assert_eq!(full.len() as u64, FILE_CAP);
+        fs::write(&gone, &full).unwrap();
+        assert_eq!(
+            choose(gone.to_str().unwrap()).unwrap().name,
+            "gone",
+            "a file exactly at the cap is read"
+        );
         fs::write(&gone, "font_size 12\n").unwrap();
         assert_eq!(
             choose(gone.to_str().unwrap()).unwrap_err(),

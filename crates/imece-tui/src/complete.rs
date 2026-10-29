@@ -111,8 +111,8 @@ pub fn suggest(input: &str, w: &World, project: ProjectId) -> Option<Menu> {
                 let start = input.len() - arg.len();
                 menu(start, arg, matching(arg, LEADS.into_iter()), "")
             }
-            // Built-in names only: a file is typed as a path.
-            Some(("theme", arg)) if !arg.contains('/') => {
+            // Built-in names only; a path matches none of them.
+            Some(("theme", arg)) => {
                 let start = input.len() - arg.len();
                 menu(start, arg, matching(arg, crate::theme::builtins()), "")
             }
@@ -275,7 +275,9 @@ mod tests {
         let m = suggest(":theme ", &w, 0).unwrap();
         assert_eq!(m.items, crate::theme::builtins().collect::<Vec<_>>());
         assert_eq!((m.start, m.tail), (7, ""));
-        assert_eq!(names(&suggest(":theme D", &w, 0)), ["dark", "dracula"]);
+        let m = suggest(":theme D", &w, 0).unwrap();
+        assert_eq!(names(&Some(m.clone())), ["dark", "dracula"]);
+        assert_eq!(m.start, 7, "the word starts after the command");
         assert_eq!(suggest(":theme dark", &w, 0), None);
         assert_eq!(
             suggest(":theme ./dark", &w, 0),
