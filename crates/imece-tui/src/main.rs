@@ -1,5 +1,6 @@
 //! imece: one terminal for many coding agents from many vendors. The agents
-//! are fake (`sim`) unless `--live` runs real Claude Code sessions (`live`).
+//! are real coding-agent sessions (`live`), or fake ones with `--demo`
+//! (`sim`).
 
 mod app;
 mod clip;
@@ -17,28 +18,37 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Instant;
 
+use imece_agent::Tier;
 use ratatui::DefaultTerminal;
 use ratatui::crossterm::event::{self, Event, KeyEventKind};
 
 use crate::i18n::Lang;
+use crate::model::Vendor;
 
-const USAGE: &str =
-    "usage: imece [--projects N] [--agents N] [--researchers N] [--seed N] [--lang en|tr]
-       imece --live [--repo DIR] [--agents N] [--model NAME] [--budget USD] [--lang en|tr]
+const USAGE: &str = "usage: imece [--repo DIR] [--agents N] [--lead VENDOR] [--model NAME]
+             [--tier T=NAME]... [--budget USD] [--lang en|tr] [--theme NAME]
+       imece --demo [--projects N] [--agents N] [--researchers N] [--seed N]
 
-  --projects N      projects worked on at once (1-4, default 2)
-  --agents N        workers next to the leaders (1-200, default 24; live 1-16, default 2)
-  --researchers N   researchers that may run at once (1-32, default 4)
-  --seed N          replays the same fake scenario (default 7)
+imece runs coding agents on the checkout DIR is in: a leader that reads it
+and talks to you, and workers it hires as the work needs them, each changing
+its own git worktree.
+
+  --repo DIR        the checkout (default: the current directory)
+  --agents N        workers the leader may hire, at most (0-16, default 4)
+  --lead VENDOR     the leader's coding agent: claude (default), codex, gemini
+  --model NAME      the model every agent runs on (default: the vendor's own)
+  --tier T=NAME     the model a tier stands for, T being cheap, standard or
+                    strong (claude: haiku, the vendor's own, opus)
+  --budget USD      the most all agents together may spend (default 5)
   --lang en|tr      the screen's language (default en, or IMECE_LANG)
   --theme NAME      dark (default), light or mono; or IMECE_THEME; the last
                     choice made with T is remembered
 
-  --live            real Claude Code agents on the checkout DIR is in: a leader
-                    that reads it, workers that each change their own worktree
-  --repo DIR        the checkout (default: the current directory)
-  --model NAME      the model every agent uses (default: Claude Code's own)
-  --budget USD      the most all agents together may spend (default 5)";
+  --demo            fake agents instead, to see the screen at work
+  --projects N      projects worked on at once (1-4, default 2)
+  --agents N        workers next to the leaders (1-200, default 24)
+  --researchers N   researchers that may run at once (1-32, default 4)
+  --seed N          replays the same fake scenario (default 7)";
 
 #[derive(Debug)]
 struct Args {
@@ -48,14 +58,19 @@ struct Args {
     seed: u64,
     lang: Lang,
     theme: Option<String>,
-    live: bool,
+    demo: bool,
     repo: PathBuf,
+    lead: Vendor,
     model: Option<String>,
+    tiers: Vec<(Tier, String)>,
     /// Ten-thousandths of a dollar.
     budget: u64,
 }
 
+/// Workers a leader may hire, at most.
 const LIVE_AGENTS: u64 = 16;
+/// Workers a leader may hire unless the person says otherwise.
+const DEFAULT_WORKERS: usize = 4;
 
 /// Dollars with at most two decimals, as ten-thousandths of a dollar.
 fn parse_dollars(s: &str) -> Option<u64> {
@@ -103,18 +118,26 @@ fn parse(
             Some(v) => return Err(format!("IMECE_THEME: {v:?} is not {}", theme::names())),
             None => None,
         },
-        live: false,
+        demo: false,
         repo: PathBuf::from("."),
+        lead: Vendor::Claude,
         model: None,
+        tiers: Vec::new(),
         budget: 5 * 10_000,
     };
+    // Options of the demo alone, to refuse them without it.
+    let mut demo_only: Vec<String> = Vec::new();
     let mut it = argv.into_iter();
     while let Some(flag) = it.next() {
         if flag == "-h" || flag == "--help" {
             return Err(USAGE.into());
         }
+        if flag == "--demo" {
+            args.demo = true;
+            continue;
+        }
         if flag == "--live" {
-            args.live = true;
+            // What live agents were asked for with before they were the default.
             continue;
         }
         let value = it
@@ -127,11 +150,19 @@ fn parse(
                 .filter(|n| (lo..=hi).contains(n))
                 .ok_or_else(|| format!("{flag}: {value} is not in {lo}-{hi}"))
         };
+        if matches!(flag.as_str(), "--projects" | "--researchers" | "--seed") {
+            demo_only.push(flag.clone());
+        }
         match flag.as_str() {
             "--projects" => args.projects = number(1, sim::MAX_PROJECTS as u64)? as usize,
-            "--agents" => args.agents = Some(number(1, 200)? as usize),
+            "--agents" => args.agents = Some(number(0, 200)? as usize),
             "--researchers" => args.researchers = number(1, 32)? as usize,
             "--seed" => args.seed = number(0, u64::MAX)?,
+            "--lead" => {
+                args.lead = Vendor::parse(&value)
+                    .ok_or_else(|| format!("--lead: {value:?} is not claude, codex or gemini"))?
+            }
+            "--tier" => args.tiers.push(parse_tier(&value)?),
             "--theme" if theme::set(&value) => args.theme = Some(value),
             "--theme" => {
                 return Err(format!("--theme: {value:?} is not {}", theme::names()));
@@ -151,10 +182,32 @@ fn parse(
             _ => return Err(format!("unknown option {flag}\n\n{USAGE}")),
         }
     }
-    if args.live && args.agents.is_some_and(|n| n as u64 > LIVE_AGENTS) {
-        return Err(format!("--agents: live runs at most {LIVE_AGENTS}"));
+    if args.demo {
+        if args.agents == Some(0) {
+            return Err("--agents: the demo needs at least 1".into());
+        }
+    } else {
+        if let Some(flag) = demo_only.first() {
+            return Err(format!("{flag} is for --demo\n\n{USAGE}"));
+        }
+        if args.agents.is_some_and(|n| n as u64 > LIVE_AGENTS) {
+            return Err(format!("--agents: a leader hires at most {LIVE_AGENTS}"));
+        }
     }
     Ok(args)
+}
+
+/// `TIER=MODEL`, as `--tier` takes it.
+fn parse_tier(s: &str) -> Result<(Tier, String), String> {
+    let (tier, model) = s
+        .split_once('=')
+        .ok_or_else(|| format!("--tier: {s:?} is not TIER=MODEL, like strong=opus"))?;
+    let tier = Tier::from_wire(tier)
+        .ok_or_else(|| format!("--tier: {tier:?} is not cheap, standard or strong"))?;
+    if !valid_model(model) {
+        return Err(format!("--tier: {model:?} is not a model name"));
+    }
+    Ok((tier, model.to_string()))
 }
 
 fn main() -> std::io::Result<()> {
@@ -177,11 +230,21 @@ fn main() -> std::io::Result<()> {
             std::process::exit(2);
         }
     };
-    let mut app = if args.live {
+    let mut app = if args.demo {
+        app::App::new(
+            args.projects,
+            args.agents.unwrap_or(24),
+            args.researchers,
+            args.seed,
+            args.lang,
+        )
+    } else {
         let options = live::Options {
             repo: args.repo,
-            workers: args.agents.unwrap_or(2),
+            max_workers: args.agents.unwrap_or(DEFAULT_WORKERS),
+            lead: args.lead,
             model: args.model,
+            tiers: args.tiers,
             budget: args.budget,
         };
         match live::world(options) {
@@ -193,14 +256,6 @@ fn main() -> std::io::Result<()> {
                 std::process::exit(1);
             }
         }
-    } else {
-        app::App::new(
-            args.projects,
-            args.agents.unwrap_or(24),
-            args.researchers,
-            args.seed,
-            args.lang,
-        )
     };
     let state = prefs::state_dir();
     let saved = prefs::load(&state);
@@ -325,6 +380,102 @@ mod tests {
         assert_eq!(args(&[], &[]).unwrap().theme, None);
         let e = args(&["--tehme", "dark"], &[]).unwrap_err();
         assert!(e.starts_with("unknown option --tehme"), "{e}");
+    }
+
+    #[test]
+    fn live_agents_are_the_default_and_the_demo_is_asked_for() {
+        let a = args(&[], &[]).unwrap();
+        assert!(!a.demo);
+        assert_eq!(
+            a.agents, None,
+            "the leader's cap comes from DEFAULT_WORKERS"
+        );
+        assert_eq!(a.lead, Vendor::Claude);
+        assert_eq!(a.model, None);
+        assert!(a.tiers.is_empty());
+        assert_eq!(a.budget, 50_000);
+        assert_eq!(a.repo, PathBuf::from("."));
+        // The old way of asking for live agents still works.
+        assert!(!args(&["--live"], &[]).unwrap().demo);
+        let a = args(&["--demo", "--seed", "3", "--agents", "30"], &[]).unwrap();
+        assert!(a.demo);
+        assert_eq!((a.seed, a.agents), (3, Some(30)));
+        assert_eq!(DEFAULT_WORKERS, 4);
+    }
+
+    #[test]
+    fn the_cap_on_workers_is_zero_to_sixteen_live_and_one_up_in_the_demo() {
+        assert_eq!(args(&["--agents", "0"], &[]).unwrap().agents, Some(0));
+        assert_eq!(args(&["--agents", "16"], &[]).unwrap().agents, Some(16));
+        let e = args(&["--agents", "17"], &[]).unwrap_err();
+        assert!(e.contains("at most 16"), "{e}");
+        let e = args(&["--agents", "201"], &[]).unwrap_err();
+        assert!(e.contains("0-200"), "{e}");
+        let e = args(&["--demo", "--agents", "0"], &[]).unwrap_err();
+        assert!(e.contains("at least 1"), "{e}");
+        assert_eq!(
+            args(&["--demo", "--agents", "200"], &[]).unwrap().agents,
+            Some(200)
+        );
+    }
+
+    #[test]
+    fn the_demo_s_options_need_the_demo() {
+        for flag in ["--projects", "--researchers", "--seed"] {
+            let e = args(&[flag, "2"], &[]).unwrap_err();
+            assert!(e.starts_with(&format!("{flag} is for --demo")), "{e}");
+            assert!(args(&["--demo", flag, "2"], &[]).is_ok(), "{flag}");
+            assert!(
+                args(&[flag, "2", "--demo"], &[]).is_ok(),
+                "{flag} before --demo"
+            );
+        }
+    }
+
+    #[test]
+    fn the_leader_s_vendor_is_one_imece_knows() {
+        assert_eq!(args(&["--lead", "codex"], &[]).unwrap().lead, Vendor::Codex);
+        assert_eq!(
+            args(&["--lead", "gemini"], &[]).unwrap().lead,
+            Vendor::Gemini
+        );
+        let e = args(&["--lead", "qwen"], &[]).unwrap_err();
+        assert!(
+            e.contains("--lead") && e.contains("claude, codex or gemini"),
+            "{e}"
+        );
+    }
+
+    #[test]
+    fn tiers_are_tier_equals_model_and_repeat() {
+        let a = args(
+            &["--tier", "strong=opus[1m]", "--tier", "cheap=sonnet"],
+            &[],
+        )
+        .unwrap();
+        assert_eq!(
+            a.tiers,
+            [
+                (Tier::Strong, "opus[1m]".to_string()),
+                (Tier::Cheap, "sonnet".to_string())
+            ]
+        );
+        assert_eq!(
+            parse_tier("standard=sonnet"),
+            Ok((Tier::Standard, "sonnet".to_string()))
+        );
+        for (bad, why) in [
+            ("opus", "TIER=MODEL"),
+            ("huge=opus", "cheap, standard or strong"),
+            ("strong=", "not a model name"),
+            ("strong=--dangerously-skip-permissions", "not a model name"),
+            ("=opus", "cheap, standard or strong"),
+        ] {
+            let e = parse_tier(bad).unwrap_err();
+            assert!(e.starts_with("--tier") && e.contains(why), "{bad}: {e}");
+        }
+        let e = args(&["--tier", "opus"], &[]).unwrap_err();
+        assert!(e.contains("TIER=MODEL"), "{e}");
     }
 
     #[test]

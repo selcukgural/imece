@@ -47,6 +47,19 @@ pub fn mcp_tool(tool: &str) -> String {
     format!("mcp__{MCP_SERVER}__{tool}")
 }
 
+/// The program on PATH.
+pub const PROGRAM: &str = "claude";
+
+/// Claude Code's model for a tier: its own aliases, which follow the
+/// newest model of each size. `Standard` is Claude Code's own default.
+pub fn model(tier: crate::Tier) -> Option<&'static str> {
+    match tier {
+        crate::Tier::Cheap => Some("haiku"),
+        crate::Tier::Standard => None,
+        crate::Tier::Strong => Some("opus"),
+    }
+}
+
 /// Tools that read files.
 pub const READ_TOOLS: &[&str] = &["Glob", "Grep", "Read"];
 /// Tools that read and change files.
@@ -401,6 +414,14 @@ mod tests {
 
     const BUS: &str = r#"[{"name":"imece","status":"connected","source":"dynamic"}]"#;
     const BUS_INIT: &str = r#"["Edit","Glob","Grep","Read","Write","mcp__imece__send"]"#;
+
+    #[test]
+    fn the_tiers_are_claude_code_s_aliases_and_its_own_default() {
+        assert_eq!(model(crate::Tier::Cheap), Some("haiku"));
+        assert_eq!(model(crate::Tier::Standard), None);
+        assert_eq!(model(crate::Tier::Strong), Some("opus"));
+        assert_eq!(PROGRAM, "claude");
+    }
 
     #[test]
     fn imece_s_tools_are_allowed_by_exact_name_and_nothing_else_is() {

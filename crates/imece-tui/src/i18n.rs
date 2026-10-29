@@ -179,6 +179,10 @@ pub struct Text {
     pub ev_stopped: &'static str,
     pub ev_posted: &'static str,
     pub ev_claimed: &'static str,
+    pub ev_hired: &'static str,
+    pub ev_fallback: &'static str,
+    /// What stands for a model when the vendor's own default is used.
+    pub default_model: &'static str,
     /// Message types, in `MsgKind::ALL` order.
     pub kinds: [&'static str; 10],
     // Card stories
@@ -319,6 +323,9 @@ pub const EN: Text = Text {
     ev_stopped: "{} stopped: {}",
     ev_posted: "{} posted {} {}",
     ev_claimed: "{} took {} {} from the board",
+    ev_hired: "{} hired {} ({})",
+    ev_fallback: "{}: model {} is not available here, using the default",
+    default_model: "default model",
     kinds: [
         "assign", "ask", "answer", "inform", "handoff", "done", "blocked", "progress", "notice",
         "cancel",
@@ -492,6 +499,9 @@ pub const TR: Text = Text {
     ev_stopped: "{} durdu: {}",
     ev_posted: "{} panoya astı: {} {}",
     ev_claimed: "{} panodan aldı: {} {}",
+    ev_hired: "{} işe aldı: {} ({})",
+    ev_fallback: "{}: {} modeli burada yok, varsayılanla devam",
+    default_model: "varsayılan model",
     kinds: [
         "görev",
         "soru",
@@ -616,6 +626,8 @@ mod tests {
             (EN.ev_posted, TR.ev_posted),
             (EN.ev_claimed, TR.ev_claimed),
             (EN.st_posted, TR.st_posted),
+            (EN.ev_hired, TR.ev_hired),
+            (EN.ev_fallback, TR.ev_fallback),
         ];
         for (en, tr) in pairs {
             assert_eq!(count(en), count(tr), "{en} / {tr}");
