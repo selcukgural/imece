@@ -594,6 +594,27 @@ pub enum Event {
         head: String,
         commits: bool,
     },
+    /// A live worker finished with a change in its worktree; it waits for
+    /// the person.
+    ChangeReady {
+        agent: AgentId,
+        files: usize,
+        added: u32,
+        removed: u32,
+    },
+    /// The person applied a live worker's change to their checkout, where
+    /// it is staged; `mark` is the commit that stands for it in the
+    /// worktree.
+    Applied {
+        agent: AgentId,
+        files: usize,
+        mark: String,
+    },
+    /// A live worker's change did not fit the checkout; it still waits.
+    ApplyFailed {
+        agent: AgentId,
+        why: String,
+    },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -627,9 +648,13 @@ impl Event {
             Event::ResearchOpened { .. }
             | Event::ResearchDelivered { .. }
             | Event::FromCache { .. } => EntryKind::Research,
-            Event::ResearchNeedsYou { .. } | Event::Sensitive { .. } => EntryKind::Sensitive,
-            Event::Merged { .. } => EntryKind::Merged,
-            Event::Failed { .. } | Event::Stopped { .. } => EntryKind::Failed,
+            Event::ResearchNeedsYou { .. }
+            | Event::Sensitive { .. }
+            | Event::ChangeReady { .. } => EntryKind::Sensitive,
+            Event::Merged { .. } | Event::Applied { .. } => EntryKind::Merged,
+            Event::Failed { .. } | Event::Stopped { .. } | Event::ApplyFailed { .. } => {
+                EntryKind::Failed
+            }
             Event::Approved { .. }
             | Event::Rejected { .. }
             | Event::YouSaid { .. }
@@ -658,7 +683,10 @@ impl Event {
             | Event::Left { agent }
             | Event::Fallback { agent, .. }
             | Event::WorktreeMoved { agent, .. }
-            | Event::WorktreeKept { agent, .. } => agent,
+            | Event::WorktreeKept { agent, .. }
+            | Event::ChangeReady { agent, .. }
+            | Event::Applied { agent, .. }
+            | Event::ApplyFailed { agent, .. } => agent,
             Event::Talk { from, .. } | Event::Sent { from, .. } => from,
             Event::ResearchOpened { researcher, .. }
             | Event::ResearchDelivered { researcher, .. }
@@ -683,6 +711,10 @@ pub enum InboxKind {
     /// An agent answered the person and waits for them; the detail is the
     /// answer's first line.
     Reply,
+    /// A live worker finished and its worktree holds a change: the person
+    /// looks at the diff, applies it to their checkout or rejects it. The
+    /// detail is the done message's first line.
+    Change,
 }
 
 #[derive(Clone, Debug)]
@@ -695,6 +727,37 @@ pub struct InboxItem {
     pub researcher: Option<AgentId>,
     pub open: bool,
     pub tick: u64,
+}
+
+/// One file of a [`Change`].
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ChangedFile {
+    pub path: String,
+    /// Lines added and removed; none for a binary file.
+    pub added: u32,
+    pub removed: u32,
+    pub binary: bool,
+}
+
+/// What a worker changed in its worktree, as the person sees it: the
+/// patch, file by file, with what the worker said it did.
+#[derive(Clone, Debug)]
+pub struct Change {
+    pub agent: AgentId,
+    /// The done message's first line.
+    pub title: String,
+    pub files: Vec<ChangedFile>,
+    /// The unified diff, as `git diff` wrote it.
+    pub patch: String,
+}
+
+impl Change {
+    /// Lines added and removed over all files.
+    pub fn counts(&self) -> (u32, u32) {
+        self.files
+            .iter()
+            .fold((0, 0), |(a, r), f| (a + f.added, r + f.removed))
+    }
 }
 
 /// A request from the person that a leader is breaking into cards.
@@ -719,6 +782,8 @@ pub struct World {
     /// Blocked workers waiting for a free researcher slot.
     pub research_queue: VecDeque<AgentId>,
     pub plans: Vec<Plan>,
+    /// Workers' changes waiting for the person, one per worker at most.
+    pub changes: Vec<Change>,
 }
 
 impl World {
@@ -840,6 +905,68 @@ impl World {
         });
     }
 
+    /// The change of worker `id` that waits for the person.
+    pub fn change_of(&self, id: AgentId) -> Option<&Change> {
+        self.changes.iter().find(|c| c.agent == id)
+    }
+
+    /// Worker `change.agent` finished with a change in its worktree: it
+    /// waits for the person. An older change of the same worker is part
+    /// of it and goes.
+    pub fn change_ready(&mut self, change: Change) {
+        let agent = change.agent;
+        self.forget_change(agent);
+        let (added, removed) = change.counts();
+        let files = change.files.len();
+        self.inbox.push(InboxItem {
+            kind: InboxKind::Change,
+            agent,
+            detail: change.title.clone(),
+            researcher: None,
+            open: true,
+            tick: self.tick,
+        });
+        self.changes.push(change);
+        self.note(Event::ChangeReady {
+            agent,
+            files,
+            added,
+            removed,
+        });
+    }
+
+    /// The person applied worker `id`'s change to their checkout; `mark`
+    /// is the commit that stands for it in the worktree.
+    pub fn change_applied(&mut self, id: AgentId, mark: String) {
+        let files = self.change_of(id).map_or(0, |c| c.files.len());
+        self.forget_change(id);
+        self.note(Event::Applied {
+            agent: id,
+            files,
+            mark,
+        });
+    }
+
+    /// The person rejected worker `id`'s change; it stays in the worktree.
+    pub fn change_rejected(&mut self, id: AgentId) {
+        self.forget_change(id);
+        self.note(Event::Rejected { agent: id });
+    }
+
+    /// Worker `id`'s change did not apply; it still waits.
+    pub fn change_failed(&mut self, id: AgentId, why: String) {
+        self.note(Event::ApplyFailed { agent: id, why });
+    }
+
+    fn forget_change(&mut self, id: AgentId) {
+        self.changes.retain(|c| c.agent != id);
+        for i in &mut self.inbox {
+            if i.kind == InboxKind::Change && i.agent == id {
+                i.open = false;
+            }
+        }
+    }
+
     /// The person read or answered agent `id`'s answers.
     pub fn close_replies(&mut self, id: AgentId) {
         for i in &mut self.inbox {
@@ -944,6 +1071,7 @@ mod tests {
             daily_budget: 10_000,
             max_researchers: 0,
             research_queue: Default::default(),
+            changes: Vec::new(),
             plans: Vec::new(),
         }
     }
@@ -1194,6 +1322,93 @@ mod tests {
         w.close_replies(1);
         let open: Vec<bool> = w.inbox.iter().map(|i| i.open).collect();
         assert_eq!(open, [false, true, true]);
+    }
+
+    fn change(agent: AgentId, title: &str, files: &[(&str, u32, u32)]) -> Change {
+        Change {
+            agent,
+            title: title.into(),
+            files: files
+                .iter()
+                .map(|&(path, added, removed)| ChangedFile {
+                    path: path.into(),
+                    added,
+                    removed,
+                    binary: false,
+                })
+                .collect(),
+            patch: "diff --git a/x b/x\n".into(),
+        }
+    }
+
+    #[test]
+    fn a_worker_s_change_waits_once_and_the_newer_one_takes_the_older_s_place() {
+        let mut w = world(vec![
+            agent(0, Role::Leader, Status::Idle),
+            agent(1, Role::Worker, Status::Working),
+            agent(2, Role::Worker, Status::Working),
+        ]);
+        w.change_ready(change(
+            1,
+            "Fix the parser",
+            &[("a.rs", 3, 1), ("b.rs", 2, 0)],
+        ));
+        w.change_ready(change(2, "Docs", &[("README.md", 1, 0)]));
+        assert_eq!(w.open_inbox().len(), 2);
+        assert_eq!(w.inbox[0].kind, InboxKind::Change);
+        assert_eq!(w.inbox[0].detail, "Fix the parser");
+        assert_eq!(w.change_of(1).unwrap().counts(), (5, 1));
+        assert!(matches!(
+            w.journal[0].event,
+            Event::ChangeReady {
+                agent: 1,
+                files: 2,
+                added: 5,
+                removed: 1
+            }
+        ));
+        assert_eq!(w.journal[0].event.kind(), EntryKind::Sensitive);
+        assert_eq!(w.journal[0].event.agent(), 1);
+        // The worker finishes again: one change of its waits, the newest.
+        w.change_ready(change(1, "Fix the parser, again", &[("a.rs", 4, 1)]));
+        let open: Vec<(AgentId, &str)> = w
+            .open_inbox()
+            .iter()
+            .map(|&i| (w.inbox[i].agent, w.inbox[i].detail.as_str()))
+            .collect();
+        assert_eq!(open, [(2, "Docs"), (1, "Fix the parser, again")]);
+        assert_eq!(w.changes.len(), 2);
+        assert_eq!(w.change_of(1).unwrap().title, "Fix the parser, again");
+        assert_eq!(w.change_of(2).unwrap().title, "Docs");
+        assert!(w.change_of(0).is_none());
+
+        // Applied: the item closes, the change goes, the journal says so.
+        w.change_applied(1, "abc1234".into());
+        assert_eq!(w.open_inbox().len(), 1);
+        assert!(w.change_of(1).is_none());
+        assert!(matches!(
+            &w.journal.last().unwrap().event,
+            Event::Applied { agent: 1, files: 1, mark } if mark == "abc1234"
+        ));
+        assert_eq!(w.journal.last().unwrap().event.kind(), EntryKind::Merged);
+        // Failed: it still waits.
+        w.change_failed(2, "does not apply".into());
+        assert_eq!(w.open_inbox().len(), 1);
+        assert!(w.change_of(2).is_some());
+        assert!(matches!(
+            &w.journal.last().unwrap().event,
+            Event::ApplyFailed { agent: 2, why } if why == "does not apply"
+        ));
+        assert_eq!(w.journal.last().unwrap().event.kind(), EntryKind::Failed);
+        assert_eq!(w.journal.last().unwrap().event.agent(), 2);
+        // Rejected: gone from the inbox and the world.
+        w.change_rejected(2);
+        assert!(w.open_inbox().is_empty());
+        assert!(w.changes.is_empty());
+        assert!(matches!(
+            w.journal.last().unwrap().event,
+            Event::Rejected { agent: 2 }
+        ));
     }
 
     #[test]

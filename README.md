@@ -27,12 +27,20 @@ You do not pick a team size. `lead` starts alone, reads the checkout (it
 can not change anything), and hires workers as the work needs them, up to
 `--agents` (default 4). The workers, `claude-1`, `claude-2`, … each work in
 their own git worktree under `~/.local/state/imece/worktrees/`, detached at
-your HEAD. Your checkout is never touched; review an agent's work with
-`git -C <worktree> diff`. The trace (`enter` twice) shows where each
-worktree is. A worktree is kept between runs: one found clean at an older
-commit is moved to your HEAD when its agent next starts; one with
-uncommitted changes or commits of its own stays where it is, and the
-journal says so either way.
+your HEAD. Your checkout is never touched by an agent. When a worker sends
+its `done`, what its worktree holds shows up in WAITING FOR YOU as a
+change (`Δ`): `enter` opens the whole diff (`j k` scroll, `[ ]` file to
+file), `a` applies it to your checkout, staged, for you to look over and
+commit, `r` rejects it and opens the composer so you say why. A change
+that does not fit (you edited the same file, or the same lines moved on)
+is refused with git's words and nothing is half applied. An applied
+change is committed in the worktree as a mark (author `imece`), so the
+worker's next `done` shows only what came after, and the worktree still
+follows your HEAD once you commit. The trace (`enter` twice) shows where
+each worktree is. A worktree is kept between runs: one found clean at an
+older commit is moved to your HEAD when its agent next starts and between
+turns; one with uncommitted changes or commits of its own stays where it
+is, and the journal says so either way.
 
 - Plain text goes to the lead, `@claude-2 text` to one agent. A message to
   an idle worker opens a card; its answer closes it.

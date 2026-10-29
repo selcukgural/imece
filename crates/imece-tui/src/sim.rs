@@ -335,6 +335,7 @@ pub fn world(
         daily_budget: 200 * 10_000,
         max_researchers,
         research_queue: VecDeque::new(),
+        changes: Vec::new(),
         plans: Vec::new(),
     };
     for (p, &(name, repo)) in PROJECTS.iter().take(projects).enumerate() {

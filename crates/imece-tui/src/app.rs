@@ -33,13 +33,14 @@ pub enum View {
     Code,
 }
 
-/// How deep the person looks: the whole guild, one agent's card, or the
-/// agent's raw stream.
+/// How deep the person looks: the whole guild, one agent's card, the
+/// agent's raw stream, or a worker's change waiting for them.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Zoom {
     None,
     Focus(AgentId),
     Trace(AgentId),
+    Diff(AgentId),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -129,6 +130,10 @@ pub struct App {
     pub folded_workers: BTreeSet<AgentId>,
     /// Position in the open inbox items.
     pub inbox_sel: usize,
+    /// The first patch line the open change shows.
+    pub diff_scroll: usize,
+    /// Rows the last drawing of a change had, for paging.
+    pub diff_page: Cell<u16>,
     /// The selected journal line (a journal index).
     pub journal_sel: Option<usize>,
     pub thread: Option<Thread>,
@@ -182,6 +187,8 @@ impl App {
             collapsed,
             folded_workers: BTreeSet::new(),
             inbox_sel: 0,
+            diff_scroll: 0,
+            diff_page: Cell::new(10),
             journal_sel: None,
             thread: None,
             side: SIDE_DEFAULT,
@@ -228,7 +235,7 @@ impl App {
     /// The project the person is looking at: of the selected line, the
     /// focused agent or the selected inbox item.
     pub fn current_project(&self) -> ProjectId {
-        if let Zoom::Focus(id) | Zoom::Trace(id) = self.zoom {
+        if let Zoom::Focus(id) | Zoom::Trace(id) | Zoom::Diff(id) = self.zoom {
             return self.world.agents[id].project;
         }
         if self.pane == Pane::Inbox
@@ -286,6 +293,11 @@ impl App {
         if self.thread.is_some() && self.thread_key(k) {
             return;
         }
+        if let Zoom::Diff(id) = self.zoom
+            && self.diff_key(id, k)
+        {
+            return;
+        }
 
         match k.code {
             KeyCode::Char('q') => self.quit = true,
@@ -314,7 +326,7 @@ impl App {
             KeyCode::Char('@') => {
                 self.typing = true;
                 self.input = match self.zoom {
-                    Zoom::Focus(id) | Zoom::Trace(id) => {
+                    Zoom::Focus(id) | Zoom::Trace(id) | Zoom::Diff(id) => {
                         format!("@{} ", self.world.agents[id].name)
                     }
                     Zoom::None => "@".into(),
@@ -442,7 +454,7 @@ impl App {
     /// or the one behind the selected inbox item.
     fn agent_at_hand(&self) -> Option<AgentId> {
         match self.zoom {
-            Zoom::Focus(id) | Zoom::Trace(id) => return Some(id),
+            Zoom::Focus(id) | Zoom::Trace(id) | Zoom::Diff(id) => return Some(id),
             Zoom::None => {}
         }
         match self.pane {
@@ -479,6 +491,14 @@ impl App {
 
     /// To the first or last line of what the person is looking at.
     fn jump(&mut self, first: bool) {
+        if let Zoom::Diff(id) = self.zoom {
+            let lines = self
+                .world
+                .change_of(id)
+                .map_or(0, |c| c.patch.lines().count());
+            self.diff_scroll = if first { 0 } else { lines.saturating_sub(1) };
+            return;
+        }
         if let Some(th) = &mut self.thread {
             th.sel = if first {
                 0
@@ -510,6 +530,20 @@ impl App {
     /// A page (or half of one) down or up: the open conversation scrolls,
     /// a list moves its selection.
     fn page(&mut self, down: bool, half: bool) {
+        if let Zoom::Diff(id) = self.zoom {
+            let page = usize::from(self.diff_page.get()).max(1);
+            let step = if half { page / 2 } else { page }.max(1);
+            let lines = self
+                .world
+                .change_of(id)
+                .map_or(0, |c| c.patch.lines().count());
+            self.diff_scroll = if down {
+                (self.diff_scroll + step).min(lines.saturating_sub(1))
+            } else {
+                self.diff_scroll.saturating_sub(step)
+            };
+            return;
+        }
         if let Some(th) = &self.thread {
             let step = if half {
                 th.page.get() / 2
@@ -539,6 +573,56 @@ impl App {
         };
         let t = self.lang.text();
         self.flash(fill(t.side_width, &[&self.side.to_string()]));
+    }
+
+    /// A key for the open change of worker `id`; `false` leaves it to the
+    /// rest of the screen (typing, switching views, quitting).
+    fn diff_key(&mut self, id: AgentId, k: KeyEvent) -> bool {
+        let lines = self
+            .world
+            .change_of(id)
+            .map_or(0, |c| c.patch.lines().count());
+        let last = lines.saturating_sub(1);
+        let page = usize::from(self.diff_page.get()).max(1);
+        match k.code {
+            KeyCode::Esc => {
+                self.zoom = Zoom::None;
+                self.pane = Pane::Inbox;
+            }
+            KeyCode::Up | KeyCode::Char('k') => {
+                self.diff_scroll = self.diff_scroll.saturating_sub(1)
+            }
+            KeyCode::Down | KeyCode::Char('j') => {
+                self.diff_scroll = (self.diff_scroll + 1).min(last)
+            }
+            KeyCode::PageUp => self.diff_scroll = self.diff_scroll.saturating_sub(page),
+            KeyCode::PageDown | KeyCode::Char(' ') => {
+                self.diff_scroll = (self.diff_scroll + page).min(last)
+            }
+            KeyCode::Home => self.diff_scroll = 0,
+            KeyCode::End | KeyCode::Char('G') => self.diff_scroll = last,
+            KeyCode::Char('[') | KeyCode::Char(']') => {
+                let starts = self
+                    .world
+                    .change_of(id)
+                    .map(|c| ui::file_starts(&c.patch))
+                    .unwrap_or_default();
+                let at = self.diff_scroll;
+                let to = if k.code == KeyCode::Char(']') {
+                    starts.iter().find(|&&s| s > at).copied()
+                } else {
+                    starts.iter().rev().find(|&&s| s < at).copied()
+                };
+                if let Some(to) = to {
+                    self.diff_scroll = to;
+                }
+            }
+            KeyCode::Char('a') => self.decide_change(id, true),
+            KeyCode::Char('r') => self.decide_change(id, false),
+            // Writing, views, language, help and quitting work as anywhere.
+            _ => return false,
+        }
+        true
     }
 
     /// A key for the open conversation; `false` leaves it to the rest of
@@ -828,6 +912,10 @@ impl App {
                     let open = self.world.open_inbox();
                     let item = open.get(self.inbox_sel).map(|&i| &self.world.inbox[i]);
                     match item {
+                        Some(item) if item.kind == InboxKind::Change => {
+                            self.diff_scroll = 0;
+                            Some(Zoom::Diff(item.agent))
+                        }
                         Some(item) if item.kind == InboxKind::Reply => {
                             // Read now: the conversation shows the whole answer.
                             let agent = item.agent;
@@ -858,6 +946,7 @@ impl App {
                 (Pane::Salon, Sel::Agent(id)) => Some(Zoom::Focus(id)),
             },
             Zoom::Focus(id) | Zoom::Trace(id) => Some(Zoom::Trace(id)),
+            Zoom::Diff(_) => None,
         };
         if let Some(z) = zoom {
             self.zoom = z;
@@ -870,6 +959,9 @@ impl App {
             return;
         };
         let t = self.lang.text();
+        if self.world.inbox[item].kind == InboxKind::Change {
+            return self.decide_change(self.world.inbox[item].agent, approve);
+        }
         if self.world.inbox[item].kind == InboxKind::Reply {
             self.world.close_replies(self.world.inbox[item].agent);
         } else if approve {
@@ -880,5 +972,32 @@ impl App {
             self.flash(t.rejected);
         }
         self.inbox_sel = self.inbox_sel.min(open.len().saturating_sub(2));
+    }
+
+    /// The person applies worker `id`'s change to their checkout, or
+    /// rejects it; a rejection opens the composer to that worker, so they
+    /// say why. The change's view closes either way.
+    fn decide_change(&mut self, id: AgentId, apply: bool) {
+        let t = self.lang.text();
+        let name = self.world.agents[id].name.clone();
+        let open = self.world.open_inbox().len();
+        match &mut self.engine {
+            Engine::Sim(_) => self.flash(t.demo_no_change),
+            Engine::Live(l) if apply => match l.apply_change(&mut self.world, id) {
+                Ok(()) => self.flash(fill(t.applied, &[&name])),
+                Err(why) => self.flash(fill(t.apply_failed, &[&name, &why])),
+            },
+            Engine::Live(l) => {
+                l.reject_change(&mut self.world, id);
+                self.flash(fill(t.rejected_change, &[&name]));
+                self.typing = true;
+                self.input = format!("@{name} ");
+            }
+        }
+        if self.zoom == Zoom::Diff(id) {
+            self.zoom = Zoom::None;
+            self.pane = Pane::Inbox;
+        }
+        self.inbox_sel = self.inbox_sel.min(open.saturating_sub(2));
     }
 }

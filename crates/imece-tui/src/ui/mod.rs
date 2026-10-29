@@ -4,6 +4,7 @@
 
 mod board;
 mod code;
+mod diff;
 mod focus;
 mod overlay;
 pub mod pick;
@@ -20,6 +21,7 @@ use crate::app::{App, FLASH, View, Zoom};
 use crate::i18n::{Lang, clean, fill};
 use crate::model::*;
 pub(crate) use crate::theme::pal;
+pub(crate) use diff::file_starts;
 pub(crate) use salon::{journal_rows, thread_of};
 
 pub fn draw(f: &mut Frame, app: &App) {
@@ -33,6 +35,7 @@ pub fn draw(f: &mut Frame, app: &App) {
     match app.zoom {
         Zoom::Focus(id) => focus::draw(f, body, app, id),
         Zoom::Trace(id) => focus::trace(f, body, app, id),
+        Zoom::Diff(id) => diff::draw(f, body, app, id),
         Zoom::None => match app.view {
             View::Salon => salon::draw(f, body, app),
             View::Board => board::draw(f, body, app),
@@ -486,6 +489,14 @@ fn footer(f: &mut Frame, area: Rect, app: &App) {
                 ("?", t.help),
             ],
             Zoom::Trace(_) => vec![("esc", t.back), ("@", t.write_this), ("?", t.help)],
+            Zoom::Diff(_) => vec![
+                ("j k", t.scroll),
+                ("[ ]", t.file),
+                ("a", t.apply),
+                ("r", t.reject),
+                ("esc", t.back),
+                ("?", t.help),
+            ],
         };
         let mut spans = vec![Span::raw(" ")];
         for (k, label) in hints {
@@ -978,6 +989,7 @@ mod tests {
                 (View::Salon, Zoom::Focus(5)),
                 (View::Salon, Zoom::Trace(5)),
                 (View::Salon, Zoom::Focus(0)),
+                (View::Salon, Zoom::Diff(5)),
             ];
             for (view, zoom) in views {
                 app.view = view;
@@ -1045,6 +1057,170 @@ mod tests {
                 .iter()
                 .all(|&i| app.world.inbox[i].kind != InboxKind::Reply)
         );
+    }
+
+    fn a_change(agent: AgentId) -> Change {
+        Change {
+            agent,
+            title: "Fix the parser".into(),
+            files: vec![
+                ChangedFile {
+                    path: "src/p.rs".into(),
+                    added: 2,
+                    removed: 1,
+                    binary: false,
+                },
+                ChangedFile {
+                    path: "src/q.rs".into(),
+                    added: 1,
+                    removed: 0,
+                    binary: false,
+                },
+            ],
+            patch: "diff --git a/src/p.rs b/src/p.rs\n--- a/src/p.rs\n+++ b/src/p.rs\n\
+                    @@ -1,2 +1,3 @@\n context\n-OLD-LINE\n+NEW-LINE\n+ANOTHER\n\
+                    diff --git a/src/q.rs b/src/q.rs\n--- a/src/q.rs\n+++ b/src/q.rs\n\
+                    @@ -1 +1,2 @@\n q\n+Q-LINE\x07\n"
+                .into(),
+        }
+    }
+
+    #[test]
+    fn a_change_waits_in_the_inbox_and_enter_shows_its_diff() {
+        let mut app = app_after(1, 4, 50, Lang::En);
+        app.world.inbox.clear();
+        app.world.change_ready(a_change(1));
+        let name = app.world.agents[1].name.clone();
+        let s = render(&app, 220, 40);
+        assert!(
+            s.contains("Δ ")
+                && s.contains(&format!("{name} finished: Fix the parser (2 files, +3 −1)")),
+            "{s}"
+        );
+        app.pane = Pane::Inbox;
+        app.inbox_sel = 0;
+        let s = render(&app, 220, 40);
+        assert!(
+            s.contains("enter see the diff · a apply to the checkout · r reject"),
+            "{s}"
+        );
+        key(&mut app, KeyCode::Enter);
+        assert_eq!(app.zoom, Zoom::Diff(1));
+        let s = render(&app, 140, 40);
+        assert!(
+            s.contains(&format!("CHANGE · {name} · 2 files +3 −1 · Fix the parser")),
+            "{s}"
+        );
+        assert!(s.contains("-OLD-LINE") && s.contains("+NEW-LINE"), "{s}");
+        assert!(
+            s.contains("+Q-LINE \n") || s.contains("+Q-LINE "),
+            "control characters go: {s}"
+        );
+        assert!(
+            s.contains(" j k ") && s.contains("apply to the checkout"),
+            "{s}"
+        );
+        // The agent at hand is the change's: `@` writes to it.
+        key(&mut app, KeyCode::Char('@'));
+        assert_eq!(app.input, format!("@{name} "));
+        key(&mut app, KeyCode::Esc);
+        // Scrolling: lines, pages, ends, files.
+        key(&mut app, KeyCode::Char('j'));
+        key(&mut app, KeyCode::Char('j'));
+        assert_eq!(app.diff_scroll, 2);
+        key(&mut app, KeyCode::Char('k'));
+        assert_eq!(app.diff_scroll, 1);
+        key(&mut app, KeyCode::Char(']'));
+        assert_eq!(app.diff_scroll, 8, "the next file's header");
+        key(&mut app, KeyCode::Char(']'));
+        assert_eq!(app.diff_scroll, 8, "no file after the last");
+        key(&mut app, KeyCode::Char('['));
+        assert_eq!(app.diff_scroll, 0);
+        key(&mut app, KeyCode::Char('['));
+        assert_eq!(app.diff_scroll, 0);
+        key(&mut app, KeyCode::Char('G'));
+        assert_eq!(app.diff_scroll, 13, "the last of 14 lines");
+        key(&mut app, KeyCode::Char('g'));
+        key(&mut app, KeyCode::Char('g'));
+        assert_eq!(app.diff_scroll, 0);
+        key(&mut app, KeyCode::PageDown);
+        assert!(
+            app.diff_scroll > 0 && app.diff_scroll <= 13,
+            "{}",
+            app.diff_scroll
+        );
+        key(&mut app, KeyCode::PageUp);
+        assert_eq!(app.diff_scroll, 0);
+        ctrl(&mut app, 'd');
+        let half = app.diff_scroll;
+        assert!(half > 0, "{half}");
+        ctrl(&mut app, 'u');
+        assert_eq!(app.diff_scroll, 0);
+        ctrl(&mut app, 'f');
+        assert!(app.diff_scroll >= half, "{}", app.diff_scroll);
+        ctrl(&mut app, 'b');
+        assert_eq!(app.diff_scroll, 0);
+        key(&mut app, KeyCode::End);
+        assert_eq!(app.diff_scroll, 13);
+        key(&mut app, KeyCode::Home);
+        assert_eq!(app.diff_scroll, 0);
+        key(&mut app, KeyCode::Char(' '));
+        assert!(app.diff_scroll > 0);
+        // Esc: back to the inbox.
+        app.pane = Pane::Salon;
+        key(&mut app, KeyCode::Esc);
+        assert_eq!(app.zoom, Zoom::None);
+        assert_eq!(app.pane, Pane::Inbox);
+        // The demo has nothing to apply; the item stays.
+        key(&mut app, KeyCode::Enter);
+        key(&mut app, KeyCode::Char('a'));
+        assert_eq!(app.zoom, Zoom::None);
+        assert!(render(&app, 140, 40).contains("the demo has no changes to apply"));
+        assert_eq!(app.world.open_inbox().len(), 1);
+        // A change that went away leaves an empty view, not a crash.
+        app.zoom = Zoom::Diff(1);
+        app.world.change_rejected(1);
+        let s = render(&app, 140, 40);
+        assert!(
+            s.contains(&format!("nothing of {name}'s waits any more")),
+            "{s}"
+        );
+        key(&mut app, KeyCode::Char('j'));
+        key(&mut app, KeyCode::Char(']'));
+        key(&mut app, KeyCode::Char('G'));
+        assert_eq!(app.diff_scroll, 0);
+    }
+
+    #[test]
+    fn a_live_change_is_applied_or_rejected_from_the_inbox_and_the_change_view() {
+        let w = crate::live::testing::team(1);
+        let live = crate::live::testing::idle_live(2);
+        let mut app = App::with(w, crate::app::Engine::Live(Box::new(live)), Lang::En);
+        app.world.change_ready(a_change(1));
+        app.pane = Pane::Inbox;
+        // Nothing of claude-1's is known to the engine: applying fails and
+        // says so; the item stays.
+        key(&mut app, KeyCode::Char('a'));
+        let s = render(&app, 140, 40);
+        assert!(
+            s.contains("claude-1's change did not apply: no change of theirs waits"),
+            "{s}"
+        );
+        assert_eq!(app.world.open_inbox().len(), 1);
+        // Rejecting closes it and opens the composer to the worker.
+        key(&mut app, KeyCode::Enter);
+        assert_eq!(app.zoom, Zoom::Diff(1));
+        key(&mut app, KeyCode::Char('r'));
+        assert_eq!(app.zoom, Zoom::None);
+        assert!(app.typing);
+        assert_eq!(app.input, "@claude-1 ");
+        assert!(app.world.open_inbox().is_empty());
+        let s = render(&app, 140, 40);
+        assert!(s.contains("› to claude-1"), "{s}");
+        assert!(matches!(
+            app.world.journal.last().unwrap().event,
+            Event::Rejected { agent: 1 }
+        ));
     }
 
     /// A world whose journal is only a conversation of the person and the
@@ -1379,11 +1555,14 @@ mod tests {
             "{wide}"
         );
         // Two columns: a line of the first half carries one of the second.
+        let keys = &Lang::En.text().help_keys;
+        let row = keys.iter().position(|k| k.0 == "gg  G").unwrap();
+        let other = keys[row + keys.len().div_ceil(2)].1;
         let line = wide.lines().find(|l| l.contains("gg  G")).unwrap();
-        assert!(line.contains("approve · reject"), "two columns: {line}");
+        assert!(line.contains(other), "two columns: {line}");
         let narrow = render(&app, 80, 40);
         let line = narrow.lines().find(|l| l.contains("gg  G")).unwrap();
-        assert!(!line.contains("approve · reject"), "one column: {line}");
+        assert!(!line.contains(other), "one column: {line}");
     }
 
     #[test]
