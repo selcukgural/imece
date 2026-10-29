@@ -1,0 +1,20 @@
+# cargo-mutants: run with `cargo mutants` (everything, slow) or
+# `cargo mutants --in-diff <patch>` (what a change touched, as CI does on
+# every pull request). A mutant that survives is a test that is missing.
+
+# Code no test can reach without a terminal, a clipboard or a child
+# process of its own: the main loop, signal handlers, the clipboard tools.
+# A pattern matches the mutant's full name, `path:line:col: replace fn ...`.
+exclude_re = [
+    "src/main.rs:.*: replace (main|run|catch_signals|on_signal) ",
+    "src/main.rs:.*: replace .* in (main|run|catch_signals|on_signal)$",
+    "src/clip.rs:.*: replace (copy|tools|pipe|osc52) ",
+    "src/clip.rs:.*: replace .* in (copy|tools|pipe|osc52)$",
+]
+
+# Builds and tests as CI does, from the lockfile.
+additional_cargo_args = ["--locked"]
+
+# The suite is quick; a mutant that makes it three times slower hangs.
+timeout_multiplier = 3.0
+minimum_test_timeout = 20.0

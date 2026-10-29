@@ -160,4 +160,15 @@ mod tests {
         assert!(ensure(r, &root, "claude-1").is_err());
         assert!(root.join("claude-1/mine.txt").exists());
     }
+
+    #[test]
+    fn a_worktree_of_another_repository_is_refused() {
+        let ours = repo("foreign");
+        let theirs = repo("foreign-other");
+        let root = ours.dir.join("wt");
+        // A real worktree under our name, but of another repository.
+        let w = ensure(&theirs.repo, &root, "claude-1").unwrap();
+        assert!(ensure(&ours.repo, &root, "claude-1").is_err());
+        assert!(w.join("a.txt").exists(), "nothing of theirs was touched");
+    }
 }

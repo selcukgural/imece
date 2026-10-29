@@ -130,3 +130,40 @@ pub fn trace(f: &mut Frame, area: Rect, app: &App, id: AgentId) {
         .collect();
     tail(f, inner, lines);
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn story_kinds_have_their_own_icon_and_order() {
+        let all = [
+            StoryKind::Intent,
+            StoryKind::Assumption,
+            StoryKind::Decision,
+            StoryKind::Talk,
+            StoryKind::Evidence,
+            StoryKind::Change,
+            StoryKind::Person,
+        ];
+        let icons: Vec<(&str, usize)> = all
+            .iter()
+            .map(|&k| {
+                let (i, n, _) = story_icon(k);
+                (i, n)
+            })
+            .collect();
+        assert_eq!(
+            icons,
+            [
+                ("◎", 0),
+                ("⚑", 1),
+                ("⚖", 2),
+                ("⇄", 3),
+                ("◌", 4),
+                ("Δ", 5),
+                ("›", 6)
+            ]
+        );
+    }
+}

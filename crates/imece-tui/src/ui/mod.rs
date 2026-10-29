@@ -62,7 +62,11 @@ pub(crate) fn dim() -> Style {
 fn badge(bg: Color) -> Style {
     let p = pal();
     if p.mono {
-        Style::new().add_modifier(Modifier::REVERSED | Modifier::BOLD)
+        // Two calls, not `REVERSED | BOLD`: an operator there has an
+        // equivalent mutant (`^` on disjoint flags) no test can tell apart.
+        Style::new()
+            .add_modifier(Modifier::REVERSED)
+            .add_modifier(Modifier::BOLD)
     } else {
         Style::new()
             .fg(p.on_badge)
@@ -1046,6 +1050,356 @@ mod tests {
         let narrow = render(&app, 80, 40);
         let line = narrow.lines().find(|l| l.contains("gg  G")).unwrap();
         assert!(!line.contains("side panel"), "one column: {line}");
+    }
+
+    fn buffer(app: &App, width: u16, height: u16) -> ratatui::buffer::Buffer {
+        let mut t = Terminal::new(TestBackend::new(width, height)).unwrap();
+        t.draw(|f| draw(f, app)).unwrap();
+        t.backend().buffer().clone()
+    }
+
+    #[test]
+    fn styles_follow_the_theme_and_mono_keeps_the_signal_without_colour() {
+        let p = pal();
+        assert_eq!(p.name, "dark");
+        assert_eq!(dim(), Style::new().fg(p.dim));
+        assert_eq!(
+            brand(),
+            Style::new()
+                .fg(p.on_badge)
+                .bg(p.accent)
+                .add_modifier(Modifier::BOLD)
+        );
+        assert_eq!(
+            attention(),
+            Style::new()
+                .fg(p.on_badge)
+                .bg(p.warn)
+                .add_modifier(Modifier::BOLD)
+        );
+        assert_eq!(key_style(), Style::new().fg(p.on_key).bg(p.key));
+        assert_eq!(changed(), Style::new().bg(p.selection));
+        assert_eq!(vendor_color(Vendor::Claude), p.vendors[0]);
+        assert_eq!(vendor_color(Vendor::Codex), p.vendors[1]);
+        assert_eq!(speaker_color(0), p.speakers[0]);
+        assert_eq!(speaker_color(13), speaker_color(1), "colours wrap by id");
+        crate::theme::set("mono");
+        assert_eq!(dim(), Style::new().add_modifier(Modifier::DIM));
+        assert_eq!(
+            brand(),
+            Style::new().add_modifier(Modifier::REVERSED | Modifier::BOLD)
+        );
+        assert_eq!(attention(), brand());
+        assert_eq!(key_style(), Style::new().add_modifier(Modifier::REVERSED));
+        assert_eq!(changed(), Style::new().add_modifier(Modifier::BOLD));
+        crate::theme::set("dark");
+    }
+
+    #[test]
+    fn every_glyph_icon_and_status_has_its_own_mark() {
+        let mut a = Agent::new(
+            1,
+            0,
+            "w".into(),
+            Vendor::Claude,
+            Role::Worker,
+            Status::Working,
+            0,
+        );
+        assert_eq!(glyph(&a).0, "●");
+        a.role = Role::Leader;
+        assert_eq!(glyph(&a), ("◆", pal().plan), "a leader is always a leader");
+        a.role = Role::Worker;
+        let marks: Vec<&str> = [
+            Status::Idle,
+            Status::Planning { until: 1 },
+            Status::Working,
+            Status::Asking { to: 0, until: 1 },
+            Status::Blocked,
+            Status::WaitingHuman,
+            Status::Verifying { until: 1 },
+            Status::Researching {
+                for_agent: 0,
+                until: 1,
+            },
+            Status::Stopped,
+        ]
+        .into_iter()
+        .map(|s| {
+            a.status = s;
+            glyph(&a).0
+        })
+        .collect();
+        assert_eq!(marks, ["○", "◆", "●", "◐", "✕", "!", "◌", "◇", "■"]);
+        a.taint = Taint::Clean;
+        assert_eq!(taint_span(&a).content, " ");
+        a.taint = Taint::Soft;
+        assert_eq!(taint_span(&a).content, "~");
+        a.taint = Taint::Full;
+        assert_eq!(taint_span(&a).content, "≈");
+        for k in [
+            EntryKind::Assign,
+            EntryKind::Plan,
+            EntryKind::Talk,
+            EntryKind::Assumption,
+            EntryKind::Blocked,
+            EntryKind::Research,
+            EntryKind::Sensitive,
+            EntryKind::Merged,
+            EntryKind::Failed,
+            EntryKind::Person,
+        ] {
+            assert!(!entry_icon(k).0.is_empty(), "{k:?}");
+        }
+        assert_eq!(entry_icon(EntryKind::Merged).0, "✓");
+        assert_eq!(entry_icon(EntryKind::Person).0, "›");
+        // Every status says something, in words.
+        let w = app_after(1, 4, 50, Lang::En).world;
+        let mut idle = Agent::new(
+            9,
+            0,
+            "w".into(),
+            Vendor::Claude,
+            Role::Worker,
+            Status::Idle,
+            0,
+        );
+        let words = |a: &Agent| {
+            status_spans(Lang::En, &w, a)
+                .iter()
+                .map(|s| s.content.to_string())
+                .collect::<String>()
+        };
+        assert_eq!(words(&idle), "idle");
+        let mut seen = vec!["idle".to_string()];
+        for status in [
+            Status::Blocked,
+            Status::Stopped,
+            Status::WaitingHuman,
+            Status::Working,
+        ] {
+            idle.status = status;
+            let w = words(&idle);
+            assert!(!w.is_empty() && !seen.contains(&w), "{status:?}: {w:?}");
+            seen.push(w);
+        }
+    }
+
+    #[test]
+    fn the_header_shows_the_budget_share_and_the_footer_hides_pause_where_it_means_nothing() {
+        let mut app = app_after(1, 2, 0, Lang::En);
+        app.world.daily_budget = 10_000;
+        for a in &mut app.world.agents {
+            a.cost = 0;
+        }
+        app.world.agents[0].cost = 2_500;
+        app.world.agents[1].cost = 2_500;
+        let screen = render(&app, 140, 40);
+        assert!(screen.contains("imece"));
+        assert!(screen.contains("(budget 50%)"), "{screen}");
+        let footer = screen.lines().last().unwrap().to_string();
+        assert!(footer.contains("space"), "{footer}");
+        // The current view's name is the bold one.
+        let buf = buffer(&app, 140, 40);
+        let bold_runs: String = (0..140)
+            .map(|x| {
+                let c = &buf[(x, 39)];
+                if c.style().add_modifier.contains(Modifier::BOLD) {
+                    c.symbol().to_string()
+                } else {
+                    " ".into()
+                }
+            })
+            .collect();
+        assert!(bold_runs.contains("salon"), "{bold_runs:?}");
+        assert!(!bold_runs.contains("board"), "{bold_runs:?}");
+        app.zoom = Zoom::Focus(1);
+        let footer = render(&app, 140, 40).lines().last().unwrap().to_string();
+        assert!(!footer.contains("space"), "{footer}");
+    }
+
+    #[test]
+    fn a_project_line_counts_its_blocked_workers_only_when_there_are_some() {
+        let mut app = app_after(1, 4, 50, Lang::En);
+        for a in &mut app.world.agents {
+            if a.role == Role::Worker {
+                a.status = Status::Working;
+            }
+        }
+        app.world.inbox.clear();
+        let screen = render(&app, 140, 40);
+        assert!(!screen.contains("✕0"), "{screen}");
+        let worker = app
+            .world
+            .agents
+            .iter()
+            .find(|a| a.role == Role::Worker)
+            .unwrap()
+            .id;
+        app.world.agents[worker].status = Status::Blocked;
+        let screen = render(&app, 140, 40);
+        assert!(screen.contains("✕1"), "{screen}");
+    }
+
+    #[test]
+    fn a_talk_row_names_the_partner_agent() {
+        let mut app = app_after(1, 4, 50, Lang::En);
+        for a in &mut app.world.agents {
+            a.talk = None;
+        }
+        let (me, other) = (1, 2);
+        let partner = app.world.agents[other].name.clone();
+        app.world.agents[me].talk = Some(Talk {
+            with: Party::Agent(other),
+            text: "shall we split it".into(),
+            until: 1_000_000,
+        });
+        let screen = render(&app, 140, 40);
+        let row = screen
+            .lines()
+            .find(|l| l.contains("shall we split it"))
+            .expect("the talk row");
+        // The salon's part of the row, before the side panel.
+        let salon = row.split("││").next().unwrap();
+        assert!(salon.contains(&partner), "{salon}");
+        assert!(!salon.contains("you"), "{salon}");
+    }
+
+    #[test]
+    fn the_inbox_border_warns_only_while_something_waits_and_it_is_not_focused() {
+        let mut app = app_after(1, 4, 50, Lang::En);
+        app.world.inbox.clear();
+        // The inbox block's top-left corner: the second `┌` of the top row.
+        let corner = |app: &App| {
+            let buf = buffer(app, 140, 40);
+            let x = (0..140)
+                .filter(|&x| buf[(x, 1)].symbol() == "┌")
+                .nth(1)
+                .expect("two panes");
+            buf[(x, 1)].style().fg
+        };
+        assert_eq!(corner(&app), Some(pal().dim), "nothing waits");
+        app.world.replied(0, "an answer");
+        assert_eq!(corner(&app), Some(pal().warn), "something waits");
+        app.pane = Pane::Inbox;
+        assert_eq!(
+            corner(&app),
+            Some(pal().accent),
+            "focused: the focus colour"
+        );
+    }
+
+    #[test]
+    fn the_digest_window_shows_what_happened() {
+        let mut app = app_after(1, 4, 50, Lang::En);
+        app.digest = Some(crate::app::Digest {
+            minutes: 7,
+            merged: 2,
+            blocked: 1,
+            assumptions: 0,
+            talks: 3,
+            waiting: 0,
+            highlights: Vec::new(),
+        });
+        let screen = render(&app, 140, 40);
+        assert!(screen.contains("WHILE YOU WERE AWAY"), "{screen}");
+        assert!(screen.contains("last 7 min"), "{screen}");
+    }
+
+    #[test]
+    fn keys_do_only_what_they_do_where_they_do_it() {
+        let mut app = app_after(2, 8, 100, Lang::En);
+        render(&app, 140, 40);
+        key(&mut app, KeyCode::Char('?'));
+        assert!(app.help);
+        key(&mut app, KeyCode::Esc);
+        assert!(!app.help, "any key closes the help");
+        // Panels cycle only on the salon, outside a focus.
+        app.view = View::Board;
+        for code in [
+            KeyCode::Tab,
+            KeyCode::BackTab,
+            KeyCode::Char('['),
+            KeyCode::Char(']'),
+            KeyCode::Char('!'),
+        ] {
+            key(&mut app, code);
+            assert_eq!(app.pane, Pane::Salon, "{code:?} on the board");
+        }
+        app.view = View::Salon;
+        app.zoom = Zoom::Focus(1);
+        key(&mut app, KeyCode::Tab);
+        assert_eq!(app.pane, Pane::Salon, "tab in a focus");
+        app.zoom = Zoom::None;
+        // Copying is the journal's; chords that fold are the salon's. A
+        // stale journal selection must not make c copy elsewhere.
+        app.journal_sel = Some(0);
+        key(&mut app, KeyCode::Char('c'));
+        assert!(app.copy.is_none(), "c in the salon copies nothing");
+        app.pane = Pane::Journal;
+        app.zoom = Zoom::Focus(1);
+        key(&mut app, KeyCode::Char('c'));
+        assert!(app.copy.is_none(), "c in a focus copies nothing");
+        app.zoom = Zoom::None;
+        app.pane = Pane::Inbox;
+        for second in ['a', 'M'] {
+            key(&mut app, KeyCode::Char('z'));
+            key(&mut app, KeyCode::Char(second));
+            assert_eq!(app.collapsed, [false, false], "z{second} outside the salon");
+        }
+        app.view = View::Board;
+        app.collapsed = vec![true, true];
+        key(&mut app, KeyCode::Char('z'));
+        key(&mut app, KeyCode::Char('R'));
+        assert_eq!(app.collapsed, [true, true], "zR on the board");
+        app.view = View::Salon;
+        app.pane = Pane::Salon;
+        key(&mut app, KeyCode::Char('z'));
+        key(&mut app, KeyCode::Char('R'));
+        assert_eq!(app.collapsed, [false, false], "zR in the salon");
+        key(&mut app, KeyCode::Char('q'));
+        assert!(app.quit);
+    }
+
+    #[test]
+    fn ctrl_f_and_b_page_whole_pages_and_the_conversation_takes_half_and_whole() {
+        let mut app = app_after(1, 20, 100, Lang::En);
+        render(&app, 140, 60);
+        app.selected = Sel::Project(0);
+        ctrl(&mut app, 'f');
+        let pos = |app: &App| {
+            app.shown
+                .borrow()
+                .iter()
+                .position(|&s| s == app.selected)
+                .unwrap()
+        };
+        assert_eq!(pos(&app), 10);
+        ctrl(&mut app, 'b');
+        assert_eq!(pos(&app), 0);
+        let mut app = talking();
+        app.open_thread(4);
+        render(&app, 100, 20);
+        let th = app.thread.as_ref().unwrap();
+        th.scroll.set(0);
+        let page = th.page.get();
+        assert!(page > 2, "{page}");
+        ctrl(&mut app, 'd');
+        assert_eq!(app.thread.as_ref().unwrap().scroll.get(), page / 2);
+        ctrl(&mut app, 'u');
+        ctrl(&mut app, 'f');
+        assert_eq!(app.thread.as_ref().unwrap().scroll.get(), page);
+        key(&mut app, KeyCode::PageDown);
+        assert_eq!(app.thread.as_ref().unwrap().scroll.get(), 2 * page);
+        key(&mut app, KeyCode::Home);
+        assert_eq!(app.thread.as_ref().unwrap().sel, 0);
+        key(&mut app, KeyCode::End);
+        assert_eq!(app.thread.as_ref().unwrap().sel, 3);
+        key(&mut app, KeyCode::Char('c'));
+        assert!(
+            app.copy.take().is_some(),
+            "c copies the line in a conversation"
+        );
     }
 
     #[test]
