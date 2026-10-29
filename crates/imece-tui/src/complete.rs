@@ -424,7 +424,9 @@ mod tests {
         let m = suggest(":close ", &w, 0, None).unwrap();
         assert_eq!(m.items, ["shop-api", "mobile-app"]);
         assert_eq!((m.start, m.tail), (7, ""));
-        assert_eq!(names(&suggest(":close M", &w, 0, None)), ["mobile-app"]);
+        let m = suggest(":close M", &w, 0, None).unwrap();
+        assert_eq!(m.items, ["mobile-app"]);
+        assert_eq!(m.start, 7, "the word starts after the command");
         assert_eq!(suggest(":close shop-api", &w, 0, None), None);
         let mut w = w;
         w.projects[1].closed = true;

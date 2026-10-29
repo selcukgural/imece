@@ -5680,6 +5680,24 @@ in p.rs",
         let bus = live.bus.as_ref().unwrap();
         assert_eq!(bus.servers.len(), 4);
         assert!(bus.servers[3].path().ends_with("a3.sock"));
+        // A closed project is reused only for its own checkout: another
+        // checkout, with one closed, is a new project.
+        live.close_project(&mut w, 1).unwrap_err();
+        let other = checkout("close-other");
+        live.open_project(&mut w, &other, Some("other"))
+            .unwrap_err();
+        w.open_project(None, "third".into(), "/t".into(), Vendor::Claude);
+        live.bind(4, Role::Leader).unwrap();
+        live.grow(None, false);
+        live.places.push(Place {
+            repo: PathBuf::from("/t"),
+            root: PathBuf::from("/t-trees"),
+        });
+        assert_eq!(live.close_project(&mut w, 1), Ok(()));
+        assert_eq!(live.open_project(&mut w, &other, Some("other")), Ok(3));
+        assert!(w.projects[1].closed, "not reused for another checkout");
+        assert_eq!(live.places.len(), 4);
+        let _ = std::fs::remove_dir_all(&other);
         let _ = std::fs::remove_dir_all(&repo);
     }
 
