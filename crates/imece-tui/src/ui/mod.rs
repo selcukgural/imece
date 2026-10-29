@@ -7,7 +7,7 @@ mod code;
 mod focus;
 mod overlay;
 mod salon;
-mod words;
+pub(crate) mod words;
 
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout, Rect};
@@ -435,7 +435,6 @@ fn footer(f: &mut Frame, area: Rect, app: &App) {
                 ("tab", t.panel),
                 ("← →", t.fold),
                 ("enter", t.focus),
-                ("space", t.pause),
                 ("?", t.help),
             ],
             Zoom::Focus(_) => vec![
@@ -451,6 +450,10 @@ fn footer(f: &mut Frame, area: Rect, app: &App) {
             spans.push(Span::styled(format!(" {k} "), key()));
             spans.push(Span::raw(format!(" {label}  ")));
         }
+        if app.zoom == Zoom::None && !app.live() {
+            spans.push(Span::styled(" space ", key()));
+            spans.push(Span::raw(format!(" {}  ", t.pause)));
+        }
         for (i, view) in [View::Salon, View::Board, View::Code]
             .into_iter()
             .enumerate()
@@ -461,6 +464,10 @@ fn footer(f: &mut Frame, area: Rect, app: &App) {
                 dim()
             };
             spans.push(Span::styled(format!(" {} {}", i + 1, t.views[i]), style));
+        }
+        if let Some(c) = app.pending {
+            // The first key of a chord, as vim shows it.
+            spans.push(Span::styled(format!("   {c}…"), bold(Color::Yellow)));
         }
         Line::from(spans)
     };
@@ -846,6 +853,157 @@ mod tests {
         key(&mut app, KeyCode::Char('x'));
         assert_eq!(app.input, "x");
         assert!(app.thread.is_some());
+    }
+
+    fn ctrl(app: &mut App, c: char) {
+        app.on_key(KeyEvent::new(
+            KeyCode::Char(c),
+            ratatui::crossterm::event::KeyModifiers::CONTROL,
+        ));
+    }
+
+    #[test]
+    fn gg_and_capital_g_jump_in_every_list_and_the_chord_shows() {
+        let mut app = app_after(2, 12, 300, Lang::En);
+        render(&app, 140, 40);
+        key(&mut app, KeyCode::Char('g'));
+        assert!(
+            render(&app, 140, 40).contains("g…"),
+            "the pending key shows"
+        );
+        key(&mut app, KeyCode::Char('g'));
+        assert_eq!(app.selected, Sel::Project(0));
+        key(&mut app, KeyCode::Char('G'));
+        let last = *app.shown.borrow().last().unwrap();
+        assert_eq!(app.selected, last);
+        app.pending = None;
+        // The journal, newest first: gg is the newest line.
+        app.pane = Pane::Journal;
+        key(&mut app, KeyCode::Char('G'));
+        let rows = journal_rows(&app.world);
+        assert_eq!(app.journal_sel, Some(rows.last().unwrap().0));
+        key(&mut app, KeyCode::Char('g'));
+        key(&mut app, KeyCode::Char('g'));
+        assert_eq!(app.journal_sel, Some(rows[0].0));
+        // Inside a conversation too.
+        let mut app = talking();
+        app.open_thread(4);
+        key(&mut app, KeyCode::Char('g'));
+        key(&mut app, KeyCode::Char('g'));
+        assert_eq!(app.thread.as_ref().unwrap().sel, 0);
+        key(&mut app, KeyCode::Char('G'));
+        assert_eq!(app.thread.as_ref().unwrap().sel, 3);
+    }
+
+    #[test]
+    fn z_chords_fold_one_project_all_or_none() {
+        let mut app = app_after(3, 12, 100, Lang::En);
+        render(&app, 140, 40);
+        app.selected = Sel::Agent(app.world.projects[1].leader);
+        key(&mut app, KeyCode::Char('z'));
+        key(&mut app, KeyCode::Char('a'));
+        assert_eq!(app.collapsed, [false, true, false]);
+        assert_eq!(app.selected, Sel::Project(1), "the selection stays visible");
+        key(&mut app, KeyCode::Char('z'));
+        key(&mut app, KeyCode::Char('a'));
+        assert_eq!(app.collapsed, [false, false, false]);
+        key(&mut app, KeyCode::Char('z'));
+        key(&mut app, KeyCode::Char('M'));
+        assert_eq!(app.collapsed, [true, true, true]);
+        key(&mut app, KeyCode::Char('z'));
+        key(&mut app, KeyCode::Char('R'));
+        assert_eq!(app.collapsed, [false, false, false]);
+        // A chord that means nothing is dropped, not kept pending.
+        key(&mut app, KeyCode::Char('z'));
+        key(&mut app, KeyCode::Char('x'));
+        assert_eq!(app.pending, None);
+        key(&mut app, KeyCode::Char('j'));
+        assert_ne!(app.selected, Sel::Project(0), "j moved as usual");
+    }
+
+    #[test]
+    fn t_opens_the_trace_and_v_the_conversation_of_the_agent_at_hand() {
+        let mut app = talking();
+        app.selected = Sel::Agent(0);
+        key(&mut app, KeyCode::Char('t'));
+        assert_eq!(app.zoom, Zoom::Trace(0));
+        key(&mut app, KeyCode::Char('v'));
+        let th = app.thread.as_ref().unwrap();
+        assert_eq!(th.entries, [0, 1, 3, 4], "you ⇄ lead, from the trace too");
+        app.thread = None;
+        app.zoom = Zoom::None;
+        app.selected = Sel::Agent(2);
+        key(&mut app, KeyCode::Char('v'));
+        assert!(app.thread.is_none());
+        let screen = render(&app, 140, 40);
+        assert!(screen.contains("no conversation with"), "{screen}");
+        // On a project line, the leader is at hand.
+        app.selected = Sel::Project(0);
+        key(&mut app, KeyCode::Char('v'));
+        assert!(app.thread.is_some());
+    }
+
+    #[test]
+    fn panels_cycle_both_ways_and_bang_goes_to_the_inbox() {
+        let mut app = app_after(1, 4, 50, Lang::En);
+        key(&mut app, KeyCode::BackTab);
+        assert_eq!(app.pane, Pane::Journal);
+        assert!(app.journal_sel.is_some());
+        key(&mut app, KeyCode::Char('['));
+        assert_eq!(app.pane, Pane::Inbox);
+        key(&mut app, KeyCode::Char(']'));
+        assert_eq!(app.pane, Pane::Journal);
+        key(&mut app, KeyCode::Tab);
+        assert_eq!(app.pane, Pane::Salon);
+        key(&mut app, KeyCode::Char('!'));
+        assert_eq!(app.pane, Pane::Inbox);
+        key(&mut app, KeyCode::Char('i'));
+        assert!(app.typing, "i writes, as in vim");
+    }
+
+    #[test]
+    fn ctrl_d_and_u_page_the_conversation_and_the_lists() {
+        let mut app = talking();
+        app.open_thread(4);
+        render(&app, 100, 20);
+        let th = app.thread.as_ref().unwrap();
+        th.scroll.set(0);
+        ctrl(&mut app, 'd');
+        let after = app.thread.as_ref().unwrap().scroll.get();
+        assert!(after > 0, "scrolled half a page");
+        ctrl(&mut app, 'u');
+        assert_eq!(app.thread.as_ref().unwrap().scroll.get(), 0);
+        app.thread = None;
+        let mut app = app_after(1, 20, 100, Lang::En);
+        render(&app, 140, 60);
+        app.selected = Sel::Project(0);
+        ctrl(&mut app, 'd');
+        let pos = app
+            .shown
+            .borrow()
+            .iter()
+            .position(|&s| s == app.selected)
+            .unwrap();
+        assert_eq!(pos, 5);
+    }
+
+    #[test]
+    fn the_help_lists_the_vim_keys_in_two_columns_when_wide() {
+        let mut app = app_after(1, 4, 50, Lang::En);
+        app.help = true;
+        let wide = render(&app, 140, 40);
+        assert!(
+            wide.contains("gg  G") && wide.contains("za  zM  zR"),
+            "{wide}"
+        );
+        let line_with_gg = wide.lines().find(|l| l.contains("gg  G")).unwrap();
+        assert!(
+            line_with_gg.contains("!") || line_with_gg.contains("c C"),
+            "two columns: {line_with_gg}"
+        );
+        let narrow = render(&app, 80, 40);
+        let line = narrow.lines().find(|l| l.contains("gg  G")).unwrap();
+        assert!(!line.contains("c C"), "one column: {line}");
     }
 
     #[test]
