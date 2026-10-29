@@ -305,6 +305,13 @@ and owned here from then on:
   Known gaps: git runs on the UI thread (a huge diff stalls a frame);
   no partial apply; the `done needs evidence` line (last run after the
   last change) is not yet shown on the item.
+- Journal (2026-10-29): a turn's closing text is journaled as `Replied`
+  (agent → you) only when it reaches the person (`asked`, or a leader's
+  report once the team is quiet); the closing text of a turn that mail
+  or a board offer started restates what the agent sent, which the
+  journal has as `Sent`, so it stays in the card's story and the trace.
+  Before this every turn end was a journal line and conversations read
+  as repeating themselves.
 - Projects: the salon groups agents by project, each with its own leader;
   groups fold to one line that still shows what waits for the person. The
   researcher cap is shared by all projects.

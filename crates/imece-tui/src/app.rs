@@ -300,7 +300,11 @@ impl App {
         }
 
         match k.code {
-            KeyCode::Char('q') => self.quit = true,
+            // `q` asks; `qq` quits (ctrl-c still quits at once).
+            KeyCode::Char('q') => {
+                self.pending = Some('q');
+                self.flash(self.lang.text().quit_ask);
+            }
             // `i` as in vim: start writing.
             KeyCode::Char('/') | KeyCode::Char('i') => self.typing = true,
             KeyCode::Char(':') => {
@@ -385,7 +389,12 @@ impl App {
 
     /// The second key of a chord that began with `first`.
     fn chord(&mut self, first: char, k: KeyEvent) {
+        if first == 'q' {
+            // The question is answered either way.
+            self.flash = None;
+        }
         match (first, k.code) {
+            ('q', KeyCode::Char('q')) => self.quit = true,
             ('g', KeyCode::Char('g')) => self.jump(true),
             ('z', KeyCode::Char('a')) if self.salon_keys() => {
                 let folded = match self.worker_at_hand() {

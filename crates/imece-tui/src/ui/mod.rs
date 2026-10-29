@@ -16,6 +16,7 @@ use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Paragraph, Wrap};
+use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 use crate::app::{App, FLASH, View, Zoom};
 use crate::i18n::{Lang, clean, fill};
@@ -258,13 +259,198 @@ pub(crate) fn body_lines(text: &str) -> Vec<String> {
     lines
 }
 
+/// `text` with its inline Markdown: `code`, **bold**, *italic* and
+/// [links](url) (the text underlined, the url dim after it). A marker
+/// without its closing twin is plain text, as is `*` next to a space (so
+/// `a * b` and snake_case names stay as written). Code is never styled
+/// further.
+pub(crate) fn inline(text: &str, base: Style) -> Vec<Span<'static>> {
+    let code = fg(pal().code);
+    let mut spans: Vec<Span<'static>> = Vec::new();
+    let mut plain = String::new();
+    let mut rest = text;
+    // Bounded by the text's length whatever a mutant does to the steps:
+    // every round consumes at least one byte.
+    for _ in 0..=text.len() {
+        let Some(c) = rest.chars().next() else {
+            break;
+        };
+        // What the marker at `rest`'s start means: its spans and the bytes
+        // they cover; none when it is just a character.
+        let marked: Option<(Vec<Span<'static>>, usize)> = match c {
+            '`' => rest[1..]
+                .find('`')
+                .map(|n| (vec![Span::styled(rest[1..1 + n].to_string(), code)], 2 + n)),
+            '*' if rest.starts_with("**") => rest[2..].find("**").filter(|&n| n > 0).map(|n| {
+                let bold = Span::styled(
+                    rest[2..2 + n].to_string(),
+                    base.add_modifier(Modifier::BOLD),
+                );
+                (vec![bold], 4 + n)
+            }),
+            '*' => {
+                let inner = &rest[1..];
+                // `n` is never 0: a `**` start takes the arm above.
+                let closes = |n: usize| {
+                    !inner[..n].starts_with(' ')
+                        && !inner[..n].ends_with(' ')
+                        && !inner[n..].starts_with("**")
+                };
+                inner.find('*').filter(|&n| closes(n)).map(|n| {
+                    let italic =
+                        Span::styled(inner[..n].to_string(), base.add_modifier(Modifier::ITALIC));
+                    (vec![italic], 2 + n)
+                })
+            }
+            '[' => rest.find("](").and_then(|t| {
+                let url_len = rest[t + 2..].find(')')?;
+                let (label, url) = (&rest[1..t], &rest[t + 2..t + 2 + url_len]);
+                if label.is_empty() || url.is_empty() {
+                    return None;
+                }
+                let label =
+                    Span::styled(label.to_string(), base.add_modifier(Modifier::UNDERLINED));
+                let url = Span::styled(format!(" ({url})"), dim());
+                Some((vec![label, url], t + 3 + url_len))
+            }),
+            _ => None,
+        };
+        match marked {
+            Some((styled, n)) => {
+                if !plain.is_empty() {
+                    spans.push(Span::styled(std::mem::take(&mut plain), base));
+                }
+                spans.extend(styled);
+                rest = &rest[n..];
+            }
+            None => {
+                plain.push(c);
+                rest = &rest[c.len_utf8()..];
+            }
+        }
+    }
+    if !plain.is_empty() {
+        spans.push(Span::styled(plain, base));
+    }
+    spans
+}
+
+/// The cells of a table row: `| a | b |` or `a | b`.
+fn cells(line: &str) -> Vec<&str> {
+    let t = line.trim();
+    let t = t.strip_prefix('|').unwrap_or(t);
+    let t = t.strip_suffix('|').unwrap_or(t);
+    t.split('|').map(str::trim).collect()
+}
+
+/// A table's header-body separator: `|---|:--:|`.
+fn is_separator(line: &str) -> bool {
+    let t = line.trim();
+    t.contains('|') && t.contains('-') && t.chars().all(|c| matches!(c, '|' | '-' | ':' | ' '))
+}
+
+/// How many of `lines` from `at` on are one table: a header row, the
+/// separator, then rows with a `|` in them; 0 when no table starts there.
+fn table_len(lines: &[String], at: usize) -> usize {
+    if !lines[at].contains('|') || !lines.get(at + 1).is_some_and(|l| is_separator(l)) {
+        return 0;
+    }
+    2 + lines[at + 2..]
+        .iter()
+        .take_while(|l| l.contains('|') && !l.trim().is_empty())
+        .count()
+}
+
+/// A table as aligned columns: the header bold, a rule under it, cells
+/// padded to their column's width.
+fn table(lines: &[String], indent: &str) -> Vec<Line<'static>> {
+    let rows: Vec<Vec<Vec<Span<'static>>>> = lines
+        .iter()
+        .enumerate()
+        .filter(|&(n, _)| n != 1)
+        .map(|(n, l)| {
+            let base = if n == 0 {
+                bold(pal().strong)
+            } else {
+                Style::new()
+            };
+            cells(l).into_iter().map(|c| inline(c, base)).collect()
+        })
+        .collect();
+    let columns = rows.iter().map(Vec::len).max().unwrap_or(0);
+    let cell_width = |cell: &[Span]| cell.iter().map(Span::width).sum::<usize>();
+    let widths: Vec<usize> = (0..columns)
+        .map(|c| {
+            rows.iter()
+                .filter_map(|r| r.get(c))
+                .map(|cell| cell_width(cell))
+                .max()
+                .unwrap_or(0)
+        })
+        .collect();
+    let mut out = Vec::new();
+    for (n, row) in rows.into_iter().enumerate() {
+        let mut spans = vec![Span::raw(indent.to_string())];
+        for (c, width) in widths.iter().enumerate() {
+            if c > 0 {
+                spans.push(Span::styled(" │ ", dim()));
+            }
+            let cell = row.get(c).cloned().unwrap_or_default();
+            let pad = width - cell_width(&cell);
+            spans.extend(cell);
+            if c + 1 < columns {
+                spans.push(Span::raw(" ".repeat(pad)));
+            }
+        }
+        out.push(Line::from(spans));
+        if n == 0 {
+            let rule = widths
+                .iter()
+                .map(|&w| "─".repeat(w))
+                .collect::<Vec<_>>()
+                .join("─┼─");
+            out.push(Line::from(vec![
+                Span::raw(indent.to_string()),
+                Span::styled(rule, dim()),
+            ]));
+        }
+    }
+    out
+}
+
+/// A list marker at the start of `rest`: `- `, `* `, `+ ` (a bullet) or
+/// `1. ` (kept), with what follows it.
+fn list_marker(rest: &str) -> Option<(String, &str)> {
+    if let Some(item) = rest
+        .strip_prefix("- ")
+        .or_else(|| rest.strip_prefix("* "))
+        .or_else(|| rest.strip_prefix("+ "))
+    {
+        return Some(("• ".to_string(), item));
+    }
+    let digits = rest.chars().take_while(char::is_ascii_digit).count();
+    if digits > 0
+        && let Some(item) = rest[digits..].strip_prefix(". ")
+    {
+        return Some((rest[..digits + 2].to_string(), item));
+    }
+    None
+}
+
 /// An agent's text drawn lightly as the Markdown it usually is: headings,
-/// lists, `code` and fenced blocks. Every line is cleaned first.
+/// bullet and numbered lists, quotes, rules, tables, fenced blocks and
+/// the inline marks of [`inline`]. Every line is cleaned first.
 pub(crate) fn markdown(text: &str, indent: &str) -> Vec<Line<'static>> {
+    let lines = body_lines(text);
     let code = fg(pal().code);
     let mut fenced = false;
+    let mut skip = 0;
     let mut out = Vec::new();
-    for line in body_lines(text) {
+    for (at, line) in lines.iter().enumerate() {
+        if skip > 0 {
+            skip -= 1;
+            continue;
+        }
         if line.trim_start().starts_with("```") {
             fenced = !fenced;
             continue;
@@ -272,40 +458,128 @@ pub(crate) fn markdown(text: &str, indent: &str) -> Vec<Line<'static>> {
         let mut spans = vec![Span::raw(indent.to_string())];
         if fenced {
             spans.push(Span::styled("│ ", dim()));
-            spans.push(Span::styled(line, code));
-        } else if let Some(h) = line.strip_prefix('#') {
+            spans.push(Span::styled(line.clone(), code));
+            out.push(Line::from(spans));
+            continue;
+        }
+        let n = table_len(&lines, at);
+        if n > 0 {
+            out.extend(table(&lines[at..at + n], indent));
+            skip = n - 1;
+            continue;
+        }
+        let lead = line.len() - line.trim_start().len();
+        let rest = &line[lead..];
+        if let Some(h) = rest.strip_prefix('#') {
             spans.push(Span::styled(
                 h.trim_start_matches('#').trim().to_string(),
                 bold(pal().strong),
             ));
+        } else if matches!(rest, "---" | "***" | "___") {
+            spans.push(Span::styled("─".repeat(24), dim()));
         } else {
-            let lead = line.len() - line.trim_start().len();
-            let rest = &line[lead..];
-            let rest = match rest.strip_prefix("- ").or_else(|| rest.strip_prefix("* ")) {
-                Some(item) => {
-                    spans.push(Span::raw(format!("{}• ", &line[..lead])));
-                    item
-                }
-                None => {
-                    spans.push(Span::raw(line[..lead].to_string()));
-                    rest
-                }
-            };
-            // Backticks alternate between prose and code.
-            for (n, part) in rest.split('`').enumerate() {
-                if part.is_empty() {
-                    continue;
-                }
-                spans.push(if n % 2 == 1 {
-                    Span::styled(part.to_string(), code)
-                } else {
-                    Span::raw(part.to_string())
-                });
+            let (mut lead, mut rest) = (line[..lead].to_string(), rest);
+            if let Some(quoted) = rest.strip_prefix("> ").or_else(|| rest.strip_prefix('>')) {
+                spans.push(Span::raw(std::mem::take(&mut lead)));
+                spans.push(Span::styled("▎ ", dim()));
+                rest = quoted;
             }
+            match list_marker(rest) {
+                Some((marker, item)) => {
+                    spans.push(Span::raw(format!("{lead}{marker}")));
+                    rest = item;
+                }
+                None => spans.push(Span::raw(lead)),
+            }
+            spans.extend(inline(rest, Style::new()));
         }
         out.push(Line::from(spans));
     }
     out
+}
+
+/// Key hints as the bottom bar shows them: each key on a badge, its
+/// meaning after it.
+pub(crate) fn hint_spans(hints: &[(&str, &str)]) -> Vec<Span<'static>> {
+    let mut spans = Vec::new();
+    for (k, label) in hints {
+        spans.push(Span::styled(format!(" {k} "), key_style()));
+        spans.push(Span::raw(format!(" {label}  ")));
+    }
+    spans
+}
+
+/// A span that only leads a line: indent, a list marker (`• `, `3. `), a
+/// code rule, a quote bar.
+fn is_lead(s: &Span) -> bool {
+    let t = s.content.trim_start_matches(' ');
+    matches!(t, "" | "• " | "│ " | "▎ ")
+        || t.strip_suffix(". ")
+            .is_some_and(|n| !n.is_empty() && n.chars().all(|c| c.is_ascii_digit()))
+}
+
+/// `word` (no wider than a row would hold) cut into pieces at most `room`
+/// cells wide; `room` is at least 1.
+fn pieces(word: &str, room: usize) -> Vec<String> {
+    let mut out = vec![String::new()];
+    let mut used = 0;
+    for ch in word.chars() {
+        let w = ch.width().unwrap_or(0);
+        if used > 0 && used + w > room {
+            out.push(String::new());
+            used = 0;
+        }
+        out.last_mut().expect("one piece at least").push(ch);
+        used += w;
+    }
+    out
+}
+
+/// `line` cut into rows at most `width` cells wide, at spaces where it
+/// can (a word wider than a row is cut). Rows after the first start with
+/// the line's lead (its indent, a code rule, the width of a bullet), so a
+/// wrapped list item or code line still reads as one. Widths are cell
+/// widths, so wide characters count double.
+pub(crate) fn wrap(line: Line<'static>, width: usize) -> Vec<Line<'static>> {
+    let leads = line.spans.iter().take_while(|s| is_lead(s)).count();
+    let (lead, rest) = line.spans.split_at(leads);
+    let hang: Vec<Span<'static>> = lead
+        .iter()
+        .map(|s| {
+            // Indent, a rule and a bar go on; a list marker does not.
+            if matches!(s.content.trim_start_matches(' '), "" | "│ " | "▎ ") {
+                s.clone()
+            } else {
+                Span::raw(" ".repeat(s.content.width()))
+            }
+        })
+        .collect();
+    let lead_width: usize = lead.iter().map(|s| s.content.width()).sum();
+    let room = width.saturating_sub(lead_width).max(1);
+    let mut rows = Vec::new();
+    let mut row: Vec<Span<'static>> = lead.to_vec();
+    let mut used = 0;
+    for span in rest {
+        for chunk in span.content.split_inclusive(' ') {
+            let word = chunk.trim_end();
+            // A word that fits is one piece; the space goes with the last.
+            let mut parts = pieces(word, room);
+            parts
+                .last_mut()
+                .expect("one piece at least")
+                .push_str(&chunk[word.len()..]);
+            for part in parts {
+                if used > 0 && used + part.trim_end().width() > room {
+                    rows.push(Line::from(std::mem::replace(&mut row, hang.clone())));
+                    used = 0;
+                }
+                used += part.width();
+                row.push(Span::styled(part, span.style));
+            }
+        }
+    }
+    rows.push(Line::from(row));
+    rows
 }
 
 /// `s` cleaned, then cut or padded to exactly `n` characters.
@@ -499,10 +773,7 @@ fn footer(f: &mut Frame, area: Rect, app: &App) {
             ],
         };
         let mut spans = vec![Span::raw(" ")];
-        for (k, label) in hints {
-            spans.push(Span::styled(format!(" {k} "), key()));
-            spans.push(Span::raw(format!(" {label}  ")));
-        }
+        spans.extend(hint_spans(&hints));
         if app.zoom == Zoom::None && !app.live() {
             spans.push(Span::styled(" space ", key()));
             spans.push(Span::raw(format!(" {}  ", t.pause)));
@@ -1900,6 +2171,44 @@ mod tests {
         key(&mut app, KeyCode::Char('R'));
         assert_eq!(app.collapsed, [false, false], "zR in the salon");
         key(&mut app, KeyCode::Char('q'));
+        key(&mut app, KeyCode::Char('q'));
+        assert!(app.quit);
+    }
+
+    #[test]
+    fn one_q_asks_and_only_a_second_q_quits() {
+        let mut app = app_after(1, 4, 50, Lang::En);
+        render(&app, 140, 40);
+        let before = app.selected;
+        key(&mut app, KeyCode::Char('q'));
+        assert!(!app.quit, "one q does not quit");
+        assert_eq!(app.pending, Some('q'));
+        let s = render(&app, 140, 40);
+        assert!(s.contains("quit imece? q again to quit"), "{s}");
+        // Any other key stays, and is spent on the answer.
+        key(&mut app, KeyCode::Char('j'));
+        assert!(!app.quit);
+        assert_eq!(app.pending, None);
+        assert_eq!(
+            app.selected, before,
+            "j answered the question, it did not move"
+        );
+        assert!(app.flash.is_none(), "the question is gone");
+        key(&mut app, KeyCode::Esc);
+        key(&mut app, KeyCode::Char('q'));
+        key(&mut app, KeyCode::Esc);
+        assert!(!app.quit && app.pending.is_none(), "esc stays too");
+        key(&mut app, KeyCode::Char('q'));
+        key(&mut app, KeyCode::Char('q'));
+        assert!(app.quit, "qq quits");
+        // In Turkish too, and with a conversation open.
+        let mut app = talking();
+        app.lang = Lang::Tr;
+        app.open_thread(1);
+        key(&mut app, KeyCode::Char('q'));
+        assert!(render(&app, 140, 40).contains("imece kapatılsın mı?"));
+        assert!(app.thread.is_some());
+        key(&mut app, KeyCode::Char('q'));
         assert!(app.quit);
     }
 
@@ -1991,5 +2300,358 @@ mod tests {
         }
         let screen = render(&app, 140, 40);
         assert!(!screen.contains("cards"), "{screen}");
+    }
+
+    fn text(rows: &[Line]) -> Vec<String> {
+        rows.iter()
+            .map(|l| l.spans.iter().map(|s| s.content.as_ref()).collect())
+            .collect()
+    }
+
+    #[test]
+    fn wrap_cuts_at_spaces_and_keeps_the_lead_on_every_row() {
+        let bullet = Line::from(vec![
+            Span::raw("  "),
+            Span::raw("• "),
+            Span::raw("alpha beta gamma"),
+        ]);
+        assert_eq!(
+            text(&wrap(bullet, 12)),
+            ["  • alpha ", "    beta ", "    gamma"],
+            "a bullet's width, not the bullet, leads the rows after it"
+        );
+        let code = fg(pal().code);
+        let rule = Line::from(vec![
+            Span::raw("  "),
+            Span::styled("│ ", dim()),
+            Span::styled("cargo test --workspace", code),
+        ]);
+        let rows = wrap(rule, 15);
+        assert_eq!(text(&rows), ["  │ cargo test ", "  │ --workspace"]);
+        assert_eq!(rows[1].spans[1].style, dim(), "the rule keeps its style");
+        assert_eq!(rows[1].spans[2].style, code, "the code too");
+        let short = Line::from(vec![Span::raw("  "), Span::raw("fits")]);
+        assert_eq!(text(&wrap(short, 10)), ["  fits"]);
+        let numbered = Line::from(vec![Span::raw("3. "), Span::raw("alpha beta")]);
+        assert_eq!(
+            text(&wrap(numbered, 8)),
+            ["3. alpha ", "   beta"],
+            "a number with a dot leads"
+        );
+        let lettered = Line::from(vec![Span::raw("x. "), Span::raw("alpha beta")]);
+        assert_eq!(
+            text(&wrap(lettered, 8)),
+            ["x. alpha ", "beta"],
+            "letters with a dot do not, and a word that just fills the row stays on it"
+        );
+        let dot = Line::from(vec![Span::raw(". "), Span::raw("alpha beta")]);
+        assert_eq!(text(&wrap(dot, 8)), [". alpha ", "beta"], "nor a dot alone");
+        let exact = Line::from(Span::raw("abcde fghij"));
+        assert_eq!(
+            text(&wrap(exact, 5)),
+            ["abcde ", "fghij"],
+            "a word that just fits stays whole; its space may hang over"
+        );
+    }
+
+    #[test]
+    fn wrap_cuts_a_word_wider_than_a_row_by_cell_width() {
+        let long = Line::from(vec![Span::raw("  "), Span::raw("abcdefghij end")]);
+        assert_eq!(text(&wrap(long, 6)), ["  abcd", "  efgh", "  ij ", "  end"]);
+        let wide = Line::from(Span::raw("日本語 çok"));
+        assert_eq!(
+            text(&wrap(wide, 4)),
+            ["日本", "語 ", "çok"],
+            "a wide character takes two cells"
+        );
+        let narrow = Line::from(vec![Span::raw("    "), Span::raw("ab")]);
+        assert_eq!(
+            text(&wrap(narrow, 2)),
+            ["    a", "    b"],
+            "a width under the lead still leaves one cell"
+        );
+        assert_eq!(text(&wrap(Line::raw(""), 10)), [""]);
+        assert_eq!(
+            text(&wrap(Line::from(Span::raw("日本")), 1)),
+            ["日", "本"],
+            "a character wider than the row is a row of its own, no empty row first"
+        );
+        assert_eq!(pieces("日本", 1), ["日", "本"]);
+        assert_eq!(pieces("abc", 1), ["a", "b", "c"]);
+        assert_eq!(pieces("abc", 2), ["ab", "c"]);
+        assert_eq!(pieces("", 3), [""]);
+    }
+
+    #[test]
+    fn hint_spans_put_each_key_on_a_badge() {
+        let spans = hint_spans(&[("c", "copy"), ("esc", "close")]);
+        let text: Vec<&str> = spans.iter().map(|s| s.content.as_ref()).collect();
+        assert_eq!(text, [" c ", " copy  ", " esc ", " close  "]);
+        assert_eq!(spans[0].style, key_style());
+        assert_eq!(spans[1].style, Style::new());
+        assert!(hint_spans(&[]).is_empty());
+    }
+
+    #[test]
+    fn the_conversation_marks_every_row_of_the_selected_message() {
+        let mut app = talking();
+        app.open_thread(4);
+        let th = app.thread.as_ref().unwrap();
+        let (rows, ranges) = overlay::thread_rows(app.lang, &app.world, th, 60);
+        assert_eq!(ranges.len(), 4);
+        let (start, end) = ranges[3];
+        assert!(end - start > 10, "the long message wraps into many rows");
+        assert_eq!(end, rows.len() - 1, "a blank row closes it");
+        let marked = |n: usize| rows[n].spans.first().is_some_and(|s| s.content == "▌ ");
+        assert!((start..end).all(marked), "every row of it carries the mark");
+        assert!(
+            (start..end).all(|n| rows[n].style == changed()),
+            "and the selection background"
+        );
+        assert!((0..start).all(|n| !marked(n) && rows[n].style == Style::new()));
+        assert!(
+            rows.iter().all(|r| r.width() <= 60),
+            "{:?}",
+            rows.iter().map(Line::width).max()
+        );
+        // The head: when, who to whom; the text under it, indented.
+        let lines = text(&rows);
+        assert!(
+            lines[start].starts_with("▌ 14:00 lead → you"),
+            "{}",
+            lines[start]
+        );
+        assert!(
+            lines[start + 1].starts_with("▌   long long"),
+            "{}",
+            lines[start + 1]
+        );
+        // The person's message, not selected: a plain gutter.
+        assert!(lines[0].starts_with("  14:00 you → lead"), "{}", lines[0]);
+        assert_eq!(lines[1], "    check the readme");
+        // Title and hints on the screen, in both languages.
+        let screen = render(&app, 120, 30);
+        assert!(
+            screen.contains("CONVERSATION · lead ⇄ you · 4/4"),
+            "{screen}"
+        );
+        assert!(
+            screen.contains(" c  copy message   C  copy conversation"),
+            "{screen}"
+        );
+        app.lang = Lang::Tr;
+        let screen = render(&app, 120, 30);
+        assert!(screen.contains("KONUŞMA · lead ⇄ sen · 4/4"), "{screen}");
+        assert!(screen.contains(" c  mesajı kopyala"), "{screen}");
+    }
+
+    #[test]
+    fn the_conversation_scrolls_only_as_far_as_the_selection_needs() {
+        let mut app = talking();
+        app.open_thread(4);
+        render(&app, 100, 20);
+        let th = app.thread.as_ref().unwrap();
+        let (rows, ranges) = overlay::thread_rows(app.lang, &app.world, th, 96);
+        let (start, end) = ranges[3];
+        assert_eq!(
+            usize::from(th.scroll.get()),
+            start,
+            "the long last message shows from its start"
+        );
+        let last_row = rows.len() - 1;
+        assert!(end > 17 && last_row < 2 * 17, "{end} {last_row}");
+        key(&mut app, KeyCode::Up);
+        render(&app, 100, 20);
+        assert_eq!(
+            usize::from(app.thread.as_ref().unwrap().scroll.get()),
+            ranges[2].0,
+            "the message above was out of view: scrolled up to it"
+        );
+        key(&mut app, KeyCode::Up);
+        render(&app, 100, 20);
+        assert_eq!(
+            usize::from(app.thread.as_ref().unwrap().scroll.get()),
+            ranges[1].0,
+            "the readme (6 rows) was above too"
+        );
+        key(&mut app, KeyCode::Down);
+        render(&app, 100, 20);
+        assert_eq!(
+            usize::from(app.thread.as_ref().unwrap().scroll.get()),
+            ranges[1].0,
+            "going back down: still in view, no scroll"
+        );
+        // Paging stops at the last row; a page is the body less one row of
+        // overlap (20 rows: 2 bars, 2 border, 1 hints: 15 of text).
+        let th = app.thread.as_ref().unwrap();
+        assert_eq!(th.page.get(), 14);
+        for _ in 0..9 {
+            key(&mut app, KeyCode::PageDown);
+        }
+        render(&app, 100, 20);
+        assert_eq!(
+            usize::from(app.thread.as_ref().unwrap().scroll.get()),
+            rows.len() - 15,
+            "{} rows, 15 shown",
+            rows.len()
+        );
+    }
+
+    fn parts(spans: &[Span]) -> Vec<(String, Style)> {
+        spans
+            .iter()
+            .map(|s| (s.content.to_string(), s.style))
+            .collect()
+    }
+
+    #[test]
+    fn inline_marks_code_bold_italic_and_links_and_leaves_lone_marks_alone() {
+        let base = Style::new();
+        let code = fg(pal().code);
+        let bold_ = base.add_modifier(Modifier::BOLD);
+        let italic = base.add_modifier(Modifier::ITALIC);
+        let under = base.add_modifier(Modifier::UNDERLINED);
+        assert_eq!(
+            parts(&inline("a **b** `c **d**` *e* [f](http://x) g", base)),
+            [
+                ("a ".into(), base),
+                ("b".into(), bold_),
+                (" ".into(), base),
+                ("c **d**".into(), code),
+                (" ".into(), base),
+                ("e".into(), italic),
+                (" ".into(), base),
+                ("f".into(), under),
+                (" (http://x)".into(), dim()),
+                (" g".into(), base),
+            ]
+        );
+        for plain in [
+            "**x",
+            "x**",
+            "****",
+            "a * b * c",
+            "snake_case_name",
+            "`open",
+            "[x](",
+            "[](http://x)",
+            "[x]()",
+            "*",
+            "* x",
+            "*x**",
+        ] {
+            assert_eq!(
+                parts(&inline(plain, base)),
+                [(plain.into(), base)],
+                "{plain}"
+            );
+        }
+        assert_eq!(
+            parts(&inline("çok **önemli**", bold_)),
+            [("çok ".into(), bold_), ("önemli".into(), bold_)],
+            "a base style carries into the marks"
+        );
+        assert!(inline("", base).is_empty());
+        assert_eq!(
+            parts(&inline("[the docs](http://x/y) tail", base)),
+            [
+                ("the docs".into(), under),
+                (" (http://x/y)".into(), dim()),
+                (" tail".into(), base),
+            ],
+            "a label longer than one character"
+        );
+    }
+
+    #[test]
+    fn a_table_becomes_aligned_columns_with_the_header_bold() {
+        let md = "before
+| Command | Result |
+|---|---|
+| `cargo test` | 171 passed |
+| short |
+
+after | not a table";
+        let lines = markdown(md, "  ");
+        let shown = text(&lines);
+        assert_eq!(
+            shown,
+            [
+                "  before",
+                "  Command    │ Result",
+                "  ───────────┼───────────",
+                "  cargo test │ 171 passed",
+                "  short      │ ",
+                "  ",
+                "  after | not a table",
+            ]
+        );
+        assert_eq!(lines[1].spans[1].style, bold(pal().strong));
+        assert_eq!(
+            lines[3].spans[1].style,
+            fg(pal().code),
+            "cells take inline marks"
+        );
+        assert_eq!(lines[2].spans[1].style, dim());
+        let rows: Vec<String> = ["a|b", "-|-", "c|d", "", "e|f"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        assert_eq!(table_len(&rows, 0), 3, "a blank line ends the table");
+        let rows: Vec<String> = ["a|b", "-|-", "c|d", "prose", "e|f"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        assert_eq!(table_len(&rows, 0), 3, "a line without a column too");
+        assert_eq!(table_len(&rows, 4), 0, "no separator, no table");
+        assert_eq!(table_len(&rows, 2), 0);
+        assert!(is_separator("| :---: | --- |"));
+        assert!(!is_separator("---"), "a rule has no column");
+        assert!(!is_separator("| | |"));
+        assert_eq!(cells("| a | b |"), ["a", "b"]);
+        assert_eq!(cells("a|b"), ["a", "b"]);
+        assert_eq!(cells("|"), [""]);
+    }
+
+    #[test]
+    fn lists_quotes_and_rules_draw_and_wrap_with_their_marks() {
+        let md = "1. one
+2. two
+> said
+>quoted
+---
++ plus
+  * nested
+10. ten";
+        assert_eq!(
+            text(&markdown(md, "  ")),
+            [
+                "  1. one",
+                "  2. two",
+                "  ▎ said",
+                "  ▎ quoted",
+                &format!("  {}", "─".repeat(24)),
+                "  • plus",
+                "    • nested",
+                "  10. ten",
+            ]
+        );
+        let numbered = markdown("1. alpha beta gamma", "  ").remove(0);
+        assert_eq!(
+            text(&wrap(numbered, 12)),
+            ["  1. alpha ", "     beta ", "     gamma"],
+            "the number's width leads the rows after it"
+        );
+        let quoted = markdown("> alpha beta gamma", "  ").remove(0);
+        assert_eq!(
+            text(&wrap(quoted, 12)),
+            ["  ▎ alpha ", "  ▎ beta ", "  ▎ gamma"],
+            "the quote bar goes on"
+        );
+        assert_eq!(list_marker("- a"), Some(("• ".into(), "a")));
+        assert_eq!(list_marker("3. a"), Some(("3. ".into(), "a")));
+        assert_eq!(list_marker("3.a"), None);
+        assert_eq!(list_marker("-a"), None);
+        assert_eq!(list_marker(". a"), None);
     }
 }
