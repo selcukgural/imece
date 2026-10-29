@@ -92,12 +92,16 @@ pub struct Text {
     pub write_this: &'static str,
     pub views: [&'static str; 3],
     pub typing_to: &'static str,
+    pub typing_command: &'static str,
     pub send_cancel: &'static str,
     // Notices
     pub sent: &'static str,
     pub no_agent: &'static str,
     pub empty_message: &'static str,
     pub budget_spent: &'static str,
+    pub budget_is: &'static str,
+    pub bad_budget: &'static str,
+    pub no_command: &'static str,
     pub cannot_start: &'static str,
     pub approved: &'static str,
     pub rejected: &'static str,
@@ -181,6 +185,7 @@ pub struct Text {
     pub ev_claimed: &'static str,
     pub ev_hired: &'static str,
     pub ev_fallback: &'static str,
+    pub ev_budget: &'static str,
     /// What stands for a model when the vendor's own default is used.
     pub default_model: &'static str,
     /// Message types, in `MsgKind::ALL` order.
@@ -208,7 +213,7 @@ pub struct Text {
     pub in_reply: &'static str,
     // Overlays
     pub help_title: &'static str,
-    pub help_keys: [(&'static str, &'static str); 23],
+    pub help_keys: [(&'static str, &'static str); 24],
     pub help_legend: [&'static str; 3],
     pub close: &'static str,
     pub away_title: &'static str,
@@ -235,11 +240,15 @@ pub const EN: Text = Text {
     write_this: "write to this agent",
     views: ["salon", "board", "code"],
     typing_to: " › to {}: ",
+    typing_command: " › command: ",
     send_cancel: "   enter send · esc cancel",
     sent: "sent to {}",
     no_agent: "no agent named \"{}\"",
     empty_message: "the message is empty",
     budget_spent: "{} has spent its budget",
+    budget_is: "the budget is {} now",
+    bad_budget: "{} is not dollars like 80 or 2.50",
+    no_command: "no command {}; try :budget USD",
     cannot_start: "{} could not start: {}",
     approved: "approved",
     rejected: "rejected",
@@ -325,6 +334,7 @@ pub const EN: Text = Text {
     ev_claimed: "{} took {} {} from the board",
     ev_hired: "{} hired {} ({})",
     ev_fallback: "{}: model {} is not available here, using the default",
+    ev_budget: "you set the budget to {} (was {})",
     default_model: "default model",
     kinds: [
         "assign", "ask", "answer", "inform", "handoff", "done", "blocked", "progress", "notice",
@@ -353,6 +363,7 @@ pub const EN: Text = Text {
     help_keys: [
         ("/  i", "write to the lead of the selected project"),
         ("@name text", "write to one agent"),
+        (":budget USD", "raise or lower the budget while agents run"),
         ("1 2 3", "salon · board · code map"),
         ("↑ ↓  j k", "select"),
         ("gg  G", "first / last line"),
@@ -411,11 +422,15 @@ pub const TR: Text = Text {
     write_this: "bu agent'a yaz",
     views: ["salon", "pano", "kod"],
     typing_to: " › {} için: ",
+    typing_command: " › komut: ",
     send_cancel: "   enter gönder · esc vazgeç",
     sent: "iletildi → {}",
     no_agent: "\"{}\" adında bir agent yok",
     empty_message: "mesaj boş",
     budget_spent: "{} bütçesini bitirdi",
+    budget_is: "bütçe artık {}",
+    bad_budget: "{} dolar değil; 80 ya da 2.50 gibi yaz",
+    no_command: "{} diye komut yok; :budget USD dene",
     cannot_start: "{} başlatılamadı: {}",
     approved: "onaylandı",
     rejected: "reddedildi",
@@ -501,6 +516,7 @@ pub const TR: Text = Text {
     ev_claimed: "{} panodan aldı: {} {}",
     ev_hired: "{} işe aldı: {} ({})",
     ev_fallback: "{}: {} modeli burada yok, varsayılanla devam",
+    ev_budget: "bütçeyi {} yaptın (önce {})",
     default_model: "varsayılan model",
     kinds: [
         "görev",
@@ -537,6 +553,7 @@ pub const TR: Text = Text {
     help_keys: [
         ("/  i", "seçili projenin liderine yaz"),
         ("@ad mesaj", "tek bir agent'a yaz"),
+        (":budget USD", "agent'lar çalışırken bütçeyi artır / azalt"),
         ("1 2 3", "salon · pano · kod haritası"),
         ("↑ ↓  j k", "seç"),
         ("gg  G", "ilk / son satır"),
@@ -628,6 +645,10 @@ mod tests {
             (EN.st_posted, TR.st_posted),
             (EN.ev_hired, TR.ev_hired),
             (EN.ev_fallback, TR.ev_fallback),
+            (EN.ev_budget, TR.ev_budget),
+            (EN.budget_is, TR.budget_is),
+            (EN.bad_budget, TR.bad_budget),
+            (EN.no_command, TR.no_command),
         ];
         for (en, tr) in pairs {
             assert_eq!(count(en), count(tr), "{en} / {tr}");

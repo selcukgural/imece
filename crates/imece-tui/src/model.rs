@@ -561,6 +561,13 @@ pub enum Event {
         agent: AgentId,
         model: String,
     },
+    /// The person changed the budget (`:budget`), in ten-thousandths of a
+    /// dollar; `leader` is the one of the project they were looking at.
+    Budget {
+        leader: AgentId,
+        from: u64,
+        to: u64,
+    },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -591,16 +598,17 @@ impl Event {
             Event::ResearchNeedsYou { .. } | Event::Sensitive { .. } => EntryKind::Sensitive,
             Event::Merged { .. } => EntryKind::Merged,
             Event::Failed { .. } | Event::Stopped { .. } => EntryKind::Failed,
-            Event::Approved { .. } | Event::Rejected { .. } | Event::YouSaid { .. } => {
-                EntryKind::Person
-            }
+            Event::Approved { .. }
+            | Event::Rejected { .. }
+            | Event::YouSaid { .. }
+            | Event::Budget { .. } => EntryKind::Person,
         }
     }
 
     /// The agent the event is about, for its project.
     pub fn agent(&self) -> AgentId {
         match *self {
-            Event::Plan { leader, .. } => leader,
+            Event::Plan { leader, .. } | Event::Budget { leader, .. } => leader,
             Event::Assign { agent, .. }
             | Event::Assumption { agent, .. }
             | Event::Blocked { agent, .. }
@@ -840,6 +848,19 @@ fn clock_seconds(tick: u64) -> String {
 
 /// Ten-thousandths of a dollar as `$D.CC`; a cost under a cent that is not
 /// zero reads `<$0.01`, so cheap work never looks free.
+/// Dollars as typed (`5`, `2.50`), in ten-thousandths of a dollar.
+pub fn parse_dollars(s: &str) -> Option<u64> {
+    let (whole, cents) = s.split_once('.').unwrap_or((s, ""));
+    if whole.is_empty() || whole.len() > 4 || cents.len() > 2 {
+        return None;
+    }
+    if !(whole.bytes().chain(cents.bytes())).all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    let cents: u64 = format!("{cents:0<2}").parse().ok()?;
+    Some(whole.parse::<u64>().ok()? * 10_000 + cents * 100)
+}
+
 pub fn dollars(cost: u64) -> String {
     if (1..100).contains(&cost) {
         return "<$0.01".to_string();

@@ -31,6 +31,9 @@ worktree is.
 
 - Plain text goes to the lead, `@claude-2 text` to one agent. A message to
   an idle worker opens a card; its answer closes it.
+- `:budget 80` raises (or lowers) the budget while agents run. A turn that
+  is under way finishes on its old cap; the next one starts on the new
+  remainder, in a new session if the old one had hit its cap.
 - Models: every agent runs on its vendor's own default (what you set up in
   Claude Code), or on `--model`. When the lead hires, it picks a tier, not a
   model: `cheap` (haiku) for small mechanical work, `standard` (the default)
@@ -68,6 +71,7 @@ is one line, and that line still shows what waits for you.
 | --- | --- |
 | `/` | write to the selected project's leader; it splits the request into cards |
 | `@name text` | write to one agent |
+| `:budget USD` | raise or lower the budget while agents run (`:b 80`) |
 | `1` `2` `3` | salon · board · code map |
 | `↑` `↓` / `j` `k` | select |
 | `←` `→` / `h` `l` | fold / unfold a project (`enter` on its header too) |

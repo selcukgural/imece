@@ -453,7 +453,11 @@ fn footer(f: &mut Frame, area: Rect, app: &App) {
     let line = if app.typing {
         Line::from(vec![
             Span::styled(
-                fill(t.typing_to, &[&app.typing_target()]),
+                if app.typing_command() {
+                    t.typing_command.to_string()
+                } else {
+                    fill(t.typing_to, &[&app.typing_target()])
+                },
                 bold(pal().strong),
             ),
             Span::raw(clean(&app.input)),
@@ -895,6 +899,54 @@ mod tests {
         assert!(all.contains("you → lead\ncheck the readme"), "{all}");
         assert!(all.contains("lead → you\n# Readme"), "copied as written");
         assert!(!all.contains("between workers"));
+    }
+
+    #[test]
+    fn a_colon_command_sets_the_budget_and_the_journal_says_so() {
+        let mut app = app_after(1, 2, 0, Lang::En);
+        let was = app.world.daily_budget;
+        key(&mut app, KeyCode::Char(':'));
+        assert!(app.typing);
+        assert_eq!(app.input, ":");
+        assert!(render(&app, 140, 40).contains("› command:"));
+        for c in "budget 80".chars() {
+            key(&mut app, KeyCode::Char(c));
+        }
+        key(&mut app, KeyCode::Enter);
+        assert_eq!(app.world.daily_budget, 80 * 10_000);
+        let s = render(&app, 140, 40);
+        assert!(s.contains("of $80.00"), "{s}");
+        assert!(s.contains("the budget is $80.00 now"), "{s}");
+        let said = format!("you set the budget to $80.00 (was {})", dollars(was));
+        assert!(s.contains(&said), "{s}");
+        assert!(
+            !app.world
+                .journal
+                .iter()
+                .any(|e| matches!(&e.event, Event::YouSaid { .. })),
+            "a command is not a message to the lead"
+        );
+
+        // Not dollars: nothing changes, the screen says why.
+        for c in ":b lots".chars() {
+            key(&mut app, KeyCode::Char(c));
+        }
+        key(&mut app, KeyCode::Enter);
+        assert_eq!(app.world.daily_budget, 80 * 10_000);
+        assert!(render(&app, 140, 40).contains("lots is not dollars"));
+
+        // An unknown command.
+        for c in ":nope".chars() {
+            key(&mut app, KeyCode::Char(c));
+        }
+        key(&mut app, KeyCode::Enter);
+        assert!(render(&app, 140, 40).contains("no command nope"));
+
+        // Plain writing is to the lead, not a command.
+        key(&mut app, KeyCode::Char('i'));
+        let s = render(&app, 140, 40);
+        assert!(s.contains("› to lead"), "{s}");
+        assert!(!s.contains("› command:"), "{s}");
     }
 
     #[test]

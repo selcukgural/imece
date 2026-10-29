@@ -12,6 +12,8 @@
 //! the budget, nobody is prompted again. Each session also gets what was
 //! left of the budget when it started as its hard cap (`--max-budget-usd`),
 //! so a session that runs away on its own can never pass the budget either.
+//! When the person raises the budget (`:budget`), a session that hit its
+//! old cap is started again with the new remainder.
 //!
 //! Agents message each other through imece's `send` tool (an MCP server,
 //! one socket per agent, so the sender is the socket, never a claim). A
@@ -160,6 +162,9 @@ fn hireable(present: &[(Vendor, bool)], lead: Vendor) -> Result<Vec<Vendor>, Str
 }
 
 /// Why a message could not reach an agent.
+/// Claude Code's result subtype when a session passed its `--max-budget-usd`.
+const CAPPED: &str = "error_max_budget_usd";
+
 #[derive(Debug, PartialEq)]
 pub enum Refusal {
     Budget,
@@ -259,6 +264,9 @@ pub struct Live {
     /// The prompts each agent was given and has not finished, to give
     /// again after a fallback.
     inflight: Vec<Vec<String>>,
+    /// Whether the agent's session was renewed after hitting its cap and
+    /// has not finished a turn since: a second cap in a row is final.
+    renewed: Vec<bool>,
     bus: Option<Bus>,
     calls_tx: Sender<Call>,
     calls_rx: Receiver<Call>,
@@ -360,6 +368,7 @@ impl Live {
             tiered: Vec::new(),
             turned: Vec::new(),
             inflight: Vec::new(),
+            renewed: Vec::new(),
             bus: None,
             calls_tx,
             calls_rx,
@@ -387,6 +396,7 @@ impl Live {
         self.tiered.push(tiered);
         self.turned.push(false);
         self.inflight.push(Vec::new());
+        self.renewed.push(false);
         self.mail.push(Vec::new());
         self.turns.push(0);
         self.asked.push(false);
@@ -488,6 +498,25 @@ impl Live {
                     self.fall_back(w, id);
                     continue;
                 }
+                if let AgentEvent::TurnDone {
+                    ok: false,
+                    text,
+                    cost,
+                    ..
+                } = &e
+                    && text == CAPPED
+                {
+                    // The cap was what was left of the budget when the
+                    // session started. Its last turn still counts.
+                    w.agents[id].cost = self.spent_before[id] + cost / 100;
+                    if !self.over_budget(w) && !self.renewed[id] {
+                        self.renew(w, id);
+                        continue;
+                    }
+                }
+                if let AgentEvent::TurnDone { ok: true, .. } = e {
+                    self.renewed[id] = false;
+                }
                 self.turned[id] = true;
                 if !self.inflight[id].is_empty() {
                     self.inflight[id].remove(0);
@@ -569,6 +598,24 @@ impl Live {
             format!("model {model} not available here; falling back to the default"),
         );
         w.note(Event::Fallback { agent: id, model });
+        for text in texts {
+            if let Err(why) = self.prompt(w, id, text, None) {
+                return apply(w, id, AgentEvent::Stopped(why), self.spent_before[id]);
+            }
+        }
+    }
+
+    /// Agent `id`'s session hit its cap, but the budget has grown since the
+    /// session started: a new session, capped at what is left now, gets the
+    /// prompts the old one had.
+    fn renew(&mut self, w: &mut World, id: AgentId) {
+        let texts = std::mem::take(&mut self.inflight[id]);
+        self.end(w, id);
+        self.renewed[id] = true;
+        w.agents[id].trace(
+            w.tick,
+            "session hit its cap; a new one takes what is left of the budget".to_string(),
+        );
         for text in texts {
             if let Err(why) = self.prompt(w, id, text, None) {
                 return apply(w, id, AgentEvent::Stopped(why), self.spent_before[id]);
@@ -1620,6 +1667,101 @@ mod tests {
         );
         assert_ne!(w.cards[c].column, Column::Done);
         assert!(w.agents[1].talk.is_none());
+    }
+
+    /// A turn of agent `id` ended at Claude Code's cap, `usd` dollars spent
+    /// in the session so far.
+    fn capped(live: &Live, id: AgentId, usd: u64) {
+        live.tx
+            .send((
+                id,
+                live.generation[id],
+                AgentEvent::TurnDone {
+                    ok: false,
+                    text: CAPPED.into(),
+                    cost: usd * 1_000_000,
+                    denied: 0,
+                },
+            ))
+            .unwrap();
+    }
+
+    #[test]
+    fn a_session_that_hit_its_cap_goes_on_in_a_new_one_when_the_budget_grew() {
+        let mut w = team(1);
+        let mut live = idle_live(2);
+        // The leader is mid-prompt in its first session when the cap hits;
+        // the person had raised the budget to $100 meanwhile.
+        w.daily_budget = 100 * 10_000;
+        live.inflight[0] = vec!["hello".into()];
+        live.turns[0] = 1;
+        capped(&live, 0, 20);
+        live.step(&mut w);
+        assert_eq!(
+            w.agents[0].cost,
+            20 * 10_000,
+            "the capped turn still counts"
+        );
+        assert_eq!(live.generation[0], 1, "a new session");
+        assert_eq!(live.spent_before[0], 20 * 10_000);
+        assert_eq!(
+            live.inflight[0],
+            vec!["hello".to_string()],
+            "same prompt again"
+        );
+        assert_eq!(live.turns[0], 1);
+        assert!(live.renewed[0]);
+        assert_ne!(w.agents[0].status, Status::Stopped);
+        assert!(
+            !w.journal
+                .iter()
+                .any(|e| matches!(&e.event, Event::Stopped { .. }))
+        );
+
+        // The new session hits its cap at once: that is final, the turn
+        // ends like any failed one.
+        capped(&live, 0, 20);
+        live.step(&mut w);
+        assert_eq!(live.generation[0], 1, "no third session");
+        assert_eq!(live.turns[0], 0);
+        assert!(
+            w.journal
+                .iter()
+                .any(|e| matches!(&e.event, Event::Stopped { .. }))
+        );
+
+        // A finished turn clears the mark, so a later raise renews again.
+        live.inflight[0] = vec!["more".into()];
+        live.turns[0] = 1;
+        live.tx
+            .send((
+                0,
+                live.generation[0],
+                AgentEvent::TurnDone {
+                    ok: true,
+                    text: "done".into(),
+                    cost: 25_000_000,
+                    denied: 0,
+                },
+            ))
+            .unwrap();
+        live.step(&mut w);
+        assert!(!live.renewed[0]);
+    }
+
+    #[test]
+    fn a_session_that_hit_its_cap_with_the_budget_spent_is_not_renewed() {
+        let mut w = team(1);
+        let mut live = idle_live(2);
+        w.daily_budget = 20 * 10_000;
+        live.inflight[0] = vec!["hello".into()];
+        live.turns[0] = 1;
+        capped(&live, 0, 20);
+        live.step(&mut w);
+        assert_eq!(live.generation[0], 0, "same session, nothing to renew into");
+        assert_eq!(w.agents[0].cost, 20 * 10_000);
+        assert!(!live.renewed[0]);
+        assert!(live.inflight[0].is_empty());
     }
 
     fn wait_for(live: &mut Live, w: &mut World, done: impl Fn(&World) -> bool) {
