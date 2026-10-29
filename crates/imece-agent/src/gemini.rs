@@ -145,6 +145,10 @@ pub fn cost(model: &str, input: u64, cached: u64, output: u64) -> Option<u64> {
 /// How long an answer to one of imece's requests may take, a turn apart.
 const REQUEST_WAIT: Duration = Duration::from_secs(60);
 const POLL: Duration = Duration::from_millis(500);
+/// How long a refused write waits for the process's own end to be
+/// reported, which says why (an exit code and its last words) where the
+/// write error only says "broken pipe".
+const END_WAIT: Duration = Duration::from_secs(2);
 
 #[derive(Clone, Debug)]
 pub struct Spec {
@@ -984,6 +988,20 @@ impl crate::Agent for Session {
     }
 }
 
+/// Why a session whose process refused a write is over: the process's
+/// own end when it is reported within `END_WAIT` (a process that has
+/// exited refuses input before its reader says so), else the write error.
+fn refused(rx: &Receiver<Msg>, e: &io::Error) -> String {
+    let deadline = Instant::now() + END_WAIT;
+    loop {
+        match rx.recv_timeout(deadline.saturating_duration_since(Instant::now())) {
+            Ok(Msg::End(why)) => return why,
+            Ok(_) => continue,
+            Err(_) => return format!("stopped: gemini took no input ({e})"),
+        }
+    }
+}
+
 /// Runs the protocol against the Gemini process.
 fn drive(spec: Spec, mut child: Child, rx: Receiver<Msg>, mut on: impl FnMut(Event)) {
     let mut protocol = Protocol::new(&spec);
@@ -995,9 +1013,7 @@ fn drive(spec: Spec, mut child: Child, rx: Receiver<Msg>, mut on: impl FnMut(Eve
                 Act::Event(e) => on(e),
                 Act::Send(line) => {
                     if let Err(e) = child.write_line(&line) {
-                        on(Event::Stopped(format!(
-                            "stopped: gemini took no input ({e})"
-                        )));
+                        on(Event::Stopped(refused(&rx, &e)));
                         return;
                     }
                 }
@@ -2283,6 +2299,21 @@ done"#;
         assert!(session.prompt("hi").is_err() || session.prompt("hi").is_err());
         session.terminate();
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_refused_write_reports_the_process_end_when_it_comes_in_time() {
+        let (tx, rx) = mpsc::channel();
+        let e = io::Error::from(io::ErrorKind::BrokenPipe);
+        tx.send(Msg::Line("late words".into())).unwrap();
+        tx.send(Msg::End("exited with code 3: no auth".into()))
+            .unwrap();
+        assert_eq!(refused(&rx, &e), "exited with code 3: no auth");
+        tx.send(Msg::Prompt("hi".into())).unwrap();
+        drop(tx);
+        let why = refused(&rx, &e);
+        assert!(why.starts_with("stopped: gemini took no input ("), "{why}");
+        assert!(why.contains("broken pipe"), "{why}");
     }
 
     /// A stand-in that answers nothing and never exits on its own.

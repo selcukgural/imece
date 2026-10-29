@@ -121,6 +121,10 @@ const QUIET: &[&str] = &[
 /// has no limit; its `turn/start` is answered at once.
 const REQUEST_WAIT: Duration = Duration::from_secs(60);
 const POLL: Duration = Duration::from_millis(500);
+/// How long a refused write waits for the process's own end to be
+/// reported, which says why (an exit code and its last words) where the
+/// write error only says "broken pipe".
+const END_WAIT: Duration = Duration::from_secs(2);
 
 /// The names the shell and the patch tool have on the screen.
 pub const SHELL: &str = "shell";
@@ -993,6 +997,21 @@ impl crate::Agent for Session {
     }
 }
 
+/// Why a session whose process refused a write is over: the process's
+/// own end (of this generation) when it is reported within `END_WAIT`
+/// (a process that has exited refuses input before its reader says
+/// so), else the write error.
+fn refused(rx: &Receiver<Msg>, generation: u64, e: &io::Error) -> String {
+    let deadline = Instant::now() + END_WAIT;
+    loop {
+        match rx.recv_timeout(deadline.saturating_duration_since(Instant::now())) {
+            Ok(Msg::End(g, why)) if g == generation => return why,
+            Ok(_) => continue,
+            Err(_) => return format!("stopped: codex took no input ({e})"),
+        }
+    }
+}
+
 /// Runs the protocol against the Codex process, starting it a second time
 /// when the first start found things to name off.
 fn drive(spec: Spec, child: Child, rx: Receiver<Msg>, tx: Sender<Msg>, mut on: impl FnMut(Event)) {
@@ -1008,9 +1027,7 @@ fn drive(spec: Spec, child: Child, rx: Receiver<Msg>, tx: Sender<Msg>, mut on: i
                 Act::Send(line) => {
                     let sent = child.as_mut().map_or(Ok(()), |c| c.write_line(&line));
                     if let Err(e) = sent {
-                        on(Event::Stopped(format!(
-                            "stopped: codex took no input ({e})"
-                        )));
+                        on(Event::Stopped(refused(&rx, generation, &e)));
                         return;
                     }
                 }
@@ -1035,9 +1052,7 @@ fn drive(spec: Spec, child: Child, rx: Receiver<Msg>, tx: Sender<Msg>, mut on: i
                         if let Act::Send(line) = a
                             && let Err(e) = child.as_mut().unwrap().write_line(&line)
                         {
-                            on(Event::Stopped(format!(
-                                "stopped: codex took no input ({e})"
-                            )));
+                            on(Event::Stopped(refused(&rx, generation, &e)));
                             return;
                         }
                     }
@@ -2277,6 +2292,21 @@ done"#
         });
         assert!(refused, "the session still took prompts after it was over");
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_refused_write_reports_the_process_end_of_its_generation_in_time() {
+        let (tx, rx) = mpsc::channel();
+        let e = io::Error::from(io::ErrorKind::BrokenPipe);
+        tx.send(Msg::End(0, "the first process".into())).unwrap();
+        tx.send(Msg::Line(1, "late words".into())).unwrap();
+        tx.send(Msg::End(1, "exited with code 3: no auth".into()))
+            .unwrap();
+        assert_eq!(refused(&rx, 1, &e), "exited with code 3: no auth");
+        drop(tx);
+        let why = refused(&rx, 1, &e);
+        assert!(why.starts_with("stopped: codex took no input ("), "{why}");
+        assert!(why.contains("broken pipe"), "{why}");
     }
 
     /// A stand-in that answers nothing and never exits on its own.
