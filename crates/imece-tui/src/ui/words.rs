@@ -100,6 +100,24 @@ pub fn event(lang: Lang, w: &World, e: &Event) -> String {
             };
             fill(how, &[name(w, *agent), at, head])
         }
+        Event::ChangeReady {
+            agent,
+            files,
+            added,
+            removed,
+        } => fill(
+            t.ev_change_ready,
+            &[
+                name(w, *agent),
+                &files.to_string(),
+                &added.to_string(),
+                &removed.to_string(),
+            ],
+        ),
+        Event::Applied { agent, files, mark } => {
+            fill(t.ev_applied, &[name(w, *agent), &files.to_string(), mark])
+        }
+        Event::ApplyFailed { agent, why } => fill(t.ev_apply_failed, &[name(w, *agent), why]),
         // Conversations are drawn from `said`, with their speakers coloured.
         Event::Talk { .. } | Event::YouSaid { .. } | Event::Replied { .. } | Event::Sent { .. } => {
             String::new()
@@ -220,6 +238,22 @@ pub fn inbox(lang: Lang, w: &World, item: &InboxItem) -> String {
             &[name(w, r), &item.detail, name(w, item.agent)],
         ),
         (InboxKind::Reply, _) => fill(t.in_reply, &[name(w, item.agent), &item.detail]),
+        (InboxKind::Change, _) => {
+            let (files, added, removed) = w.change_of(item.agent).map_or((0, 0, 0), |c| {
+                let (a, r) = c.counts();
+                (c.files.len(), a, r)
+            });
+            fill(
+                t.in_change,
+                &[
+                    name(w, item.agent),
+                    &item.detail,
+                    &files.to_string(),
+                    &added.to_string(),
+                    &removed.to_string(),
+                ],
+            )
+        }
         _ => fill("{} {}", &[name(w, item.agent), &item.detail]),
     }
 }

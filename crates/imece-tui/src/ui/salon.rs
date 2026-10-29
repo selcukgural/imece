@@ -460,6 +460,7 @@ fn side(f: &mut Frame, area: Rect, app: &App) {
             InboxKind::Sensitive => ("!", bold(pal().warn)),
             InboxKind::Research => ("?", bold(pal().research)),
             InboxKind::Reply => ("»", bold(pal().info)),
+            InboxKind::Change => ("Δ", bold(pal().strong)),
         };
         let mut spans = vec![
             Span::styled(format!("{icon} "), style),
@@ -475,6 +476,7 @@ fn side(f: &mut Frame, area: Rect, app: &App) {
             lines.push(line.style(Style::new().add_modifier(Modifier::REVERSED)));
             let keys = match item.kind {
                 InboxKind::Reply => t.reply_keys,
+                InboxKind::Change => t.change_keys,
                 _ => t.item_keys,
             };
             lines.push(Line::from(Span::styled(keys, dim())));
