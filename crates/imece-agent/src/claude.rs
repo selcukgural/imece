@@ -172,6 +172,8 @@ pub struct Parser {
     /// cost, and the last total seen.
     cost_base: u64,
     cost_last: u64,
+    /// The slash commands the last `init` listed, to report a change.
+    commands: Vec<String>,
 }
 
 impl Parser {
@@ -191,6 +193,7 @@ impl Parser {
             mcp: spec.mcp.is_some(),
             started: false,
             calls: HashMap::new(),
+            commands: Vec::new(),
             cost_base: 0,
             cost_last: 0,
         }
@@ -262,14 +265,28 @@ impl Parser {
             }
             _ => return Err("has other MCP servers".into()),
         }
-        if self.started {
-            return Ok(Vec::new());
+        // `init` lists the session's slash commands (without the slash);
+        // they are reported when first seen and when they change.
+        let commands: Vec<String> = v["slash_commands"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_str)
+            .map(|c| format!("/{}", c.trim_start_matches('/')))
+            .collect();
+        let mut out = Vec::new();
+        if !self.started {
+            self.started = true;
+            out.push(Event::Started {
+                session: v["session_id"].as_str().unwrap_or_default().to_string(),
+                model: v["model"].as_str().unwrap_or_default().to_string(),
+            });
         }
-        self.started = true;
-        Ok(vec![Event::Started {
-            session: v["session_id"].as_str().unwrap_or_default().to_string(),
-            model: v["model"].as_str().unwrap_or_default().to_string(),
-        }])
+        if commands != self.commands {
+            self.commands = commands.clone();
+            out.push(Event::Commands(commands));
+        }
+        Ok(out)
     }
 
     fn assistant(&mut self, v: &Value) -> Result<Vec<Event>, String> {
@@ -589,6 +606,42 @@ mod tests {
         );
         // Every later turn repeats init and is checked again, quietly.
         assert_eq!(p.line(&init(GOOD_INIT, "acceptEdits", "[]")).unwrap(), []);
+        // The slash commands it lists are reported once, and again only
+        // when they change, as `/name`.
+        let with = |cmds: &str| {
+            format!(
+                r#"{{"type":"system","subtype":"init","session_id":"s1","model":"m1","tools":{GOOD_INIT},"permissionMode":"acceptEdits","mcp_servers":[],"slash_commands":{cmds}}}"#
+            )
+        };
+        assert_eq!(
+            p.line(&with(r#"["compact","cost","/context"]"#)).unwrap(),
+            [Event::Commands(vec![
+                "/compact".into(),
+                "/cost".into(),
+                "/context".into()
+            ])]
+        );
+        assert_eq!(
+            p.line(&with(r#"["compact","cost","/context"]"#)).unwrap(),
+            []
+        );
+        assert_eq!(
+            p.line(&with(r#"["compact"]"#)).unwrap(),
+            [Event::Commands(vec!["/compact".into()])]
+        );
+        assert_eq!(p.line(&with(r#"[]"#)).unwrap(), [Event::Commands(vec![])]);
+        // A first init that lists them says so right after Started.
+        let mut p = Parser::new(&spec(EDIT_TOOLS));
+        assert_eq!(
+            p.line(&with(r#"["clear"]"#)).unwrap(),
+            [
+                Event::Started {
+                    session: "s1".into(),
+                    model: "m1".into()
+                },
+                Event::Commands(vec!["/clear".into()])
+            ]
+        );
 
         let bad = [
             init(

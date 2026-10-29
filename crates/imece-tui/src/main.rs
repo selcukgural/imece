@@ -4,11 +4,13 @@
 
 mod app;
 mod clip;
+mod complete;
 mod i18n;
 mod live;
 mod model;
 mod prefs;
 mod rng;
+mod shell;
 mod sim;
 mod theme;
 mod ui;
@@ -462,6 +464,11 @@ fn run(
             }
             if let Some(text) = app.copy.take() {
                 app.copied(clip::copy(&text));
+            }
+            if let Some(command) = app.shell.take() {
+                let cwd = app.cwd();
+                let how = shell::run(terminal, &cwd, &command, |ended| app.shell_back(ended));
+                app.ran(&command, how);
             }
         }
         if last.elapsed() >= app.tick_interval() {

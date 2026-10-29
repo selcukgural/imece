@@ -305,6 +305,43 @@ and owned here from then on:
   Known gaps: git runs on the UI thread (a huge diff stalls a frame);
   no partial apply; the `done needs evidence` line (last run after the
   last change) is not yet shown on the item.
+- Completion (2026-10-29, user's ask: terminal-like, names and commands,
+  several steppable): `complete.rs`, pure `suggest(input, world,
+  project, live) -> Option<Menu>` the app calls after every change of
+  the input (`App::menu`): `@word` → agent names (project at hand first,
+  gone ones out, prefix match case aside, tail space), `@name /c` and
+  `/c` → `Agent.commands`, the command line the agent's SESSION reported
+  (`imece_agent::Event::Commands`: Claude from `init`'s `slash_commands`,
+  first seen and on change; Gemini from ACP `available_commands_update`;
+  Codex the adapter's own `/compact` mapping; live.rs adds imece's
+  `/clear` where missing), never a static list (user, 2026-10-29: a
+  vendor's new command must not need a release), so empty until a
+  session says and in the demo,
+  `:w` → `budget`/`lead`, `:lead w` → claude/codex/gemini/ask (no tail);
+  nothing for `!` or plain text; one match equal to the word = no menu.
+  Keys (`type_key`): tab inserts the highlighted item then steps,
+  ⇧tab/↑/↓/ctrl-n/ctrl-p step with the text following (zsh menu style;
+  `Menu::inserted`), enter takes the item when not in yet else sends,
+  esc hides the menu then cancels. Drawn as one row above the footer
+  (`completions` in ui/mod.rs: window that keeps the chosen item in
+  view), footer hint `pick_cancel`. No path completion after `!`.
+- Own shell (2026-10-29, user's ask: `!` as in Claude Code): `!cmd` in
+  the composer (key `!` opens it prefilled, like `:`) runs `cmd` in the
+  person's own shell (`$SHELL`, else `/bin/sh`) in the checkout, vim's
+  `:!` way (`shell.rs`): the main loop steps the screen aside (raw mode
+  off, alternate screen left), the shell inherits the terminal, SIGINT
+  is ignored in imece and reset to default in the child (`pre_exec`) so
+  ctrl-c stops the command and not imece, a worded line says how it
+  ended and one key press (raw mode, so no newline) brings the screen
+  back (a fresh `Terminal`, not `Terminal::clear`, which asks the
+  terminal for the cursor and waits 2 s on a plain pty). `Event::Shell { leader,
+  command, ended }` journals it under the project at hand
+  (`EntryKind::Person`); a shell that could not start is only flashed.
+  The output is not captured (no pty) and never reaches an agent; it
+  stays on the terminal's main screen. `w` took over "straight to
+  waiting for you". The terminal dance is excluded from mutants;
+  `run_in` (the spawn, the cwd, exit code vs signal, the SIGINT swap)
+  is tested, with the tests that swap the handler taking turns.
 - Journal (2026-10-29): a turn's closing text is journaled as `Replied`
   (agent → you) only when it reaches the person (`asked`, or a leader's
   report once the team is quiet); the closing text of a turn that mail

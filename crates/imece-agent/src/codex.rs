@@ -534,6 +534,8 @@ impl Protocol {
                     Act::Event(Event::Note(
                         "codex runs on your ChatGPT plan: its turns cost the budget nothing".into(),
                     )),
+                    // Codex has no command line; `command` maps this one.
+                    Act::Event(Event::Commands(vec!["/compact".into()])),
                 ];
                 acts.extend(self.next_turn());
                 acts
@@ -1350,6 +1352,7 @@ mod tests {
                 Event::Note(
                     "codex runs on your ChatGPT plan: its turns cost the budget nothing".into()
                 ),
+                Event::Commands(vec!["/compact".into()]),
             ]
         );
         assert!(!p.waiting());
@@ -2148,6 +2151,7 @@ done"#
                 Event::Note(
                     "codex runs on your ChatGPT plan: its turns cost the budget nothing".into()
                 ),
+                Event::Commands(vec!["/compact".into()]),
                 Event::Text("pong".into()),
                 Event::TurnDone {
                     ok: true,
@@ -2224,7 +2228,7 @@ done"#
             "the second start succeeded: {got:?}"
         );
         assert!(
-            matches!(&got[2], Event::TurnDone { ok: true, .. }),
+            matches!(&got[3], Event::TurnDone { ok: true, .. }),
             "{got:?}"
         );
         let args = std::fs::read_to_string(dir.join("args.txt")).unwrap();

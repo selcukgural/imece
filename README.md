@@ -70,6 +70,21 @@ is, and the journal says so either way.
 - `:budget 80` raises (or lowers) the budget while agents run. A turn that
   is under way finishes on its old cap; the next one starts on the new
   remainder, in a new session if the old one had hit its cap.
+- Writing completes as a shell does: after `@` the agents' names (the
+  project at hand first), after `:` imece's commands and, after `:lead`,
+  the vendors, after `/` (or `@name /`) that agent's own command line.
+  The matches show above the footer as you type; `tab` puts the first in
+  and then steps on, `⇧tab` back, `↑` `↓` and ctrl-n / ctrl-p step too,
+  the text following; `enter` takes the highlighted one when it is not in
+  yet, else sends; `esc` hides the menu, and cancels the writing after.
+- `!cargo test` runs a command of your own in your own shell (`$SHELL`),
+  in the checkout, as `:!` does in vim: the screen steps aside, the
+  command has the terminal to itself (so `git log`, `less` and `vim`
+  work, and ctrl-c stops the command, not imece), a line says how it
+  ended, and any key brings the screen back. The journal keeps the
+  command and its exit code; the output stays on the terminal's main
+  screen, where you see it again when imece quits. Nothing of it reaches
+  an agent.
 - Models: every agent runs on its vendor's own default (what you set up in
   Claude Code or Codex), or on `--model`. When the lead hires, it picks a
   tier, not a model: `cheap` for small mechanical work, `standard` (the
@@ -153,12 +168,14 @@ is one line, and that line still shows what waits for you.
 | `@name text` | write to one agent |
 | `/cmd`, `@name /cmd` | the agent's own command line (`/clear`, `/compact`, `/cost` …) |
 | `:budget USD` | raise or lower the budget while agents run (`:b 80`) |
+| `!cmd` | run `cmd` in your own shell; the screen steps aside until a key |
+| `tab` `⇧tab` `↑` `↓` | while writing: complete an agent's name (`@`), a command (`:`, `/`) |
 | `1` `2` `3` | salon · board · code map |
 | `↑` `↓` / `j` `k` | select |
 | `←` `→` / `h` `l` | fold / unfold a project (`enter` on its header too) |
 | `L` | English / Türkçe |
 | `enter` / `esc` | look deeper (focus, then the raw stream) / go back |
-| `tab` | salon ↔ the items waiting for you |
+| `tab`, `w` | salon ↔ the items waiting for you · straight to them |
 | `a` / `r` | approve / reject the selected item |
 | `space`, `+` `-` | pause, simulation speed (`--demo` only) |
 | `?`, `q` | help, quit |

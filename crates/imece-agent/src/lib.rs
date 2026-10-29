@@ -98,6 +98,10 @@ pub enum Event {
     /// The vendor confirmed the settings it runs with, and they are the ones
     /// asked for.
     Started { session: String, model: String },
+    /// The vendor's own command line, as it reports it (`/name` each),
+    /// when the session starts and again whenever it changes; the screen
+    /// completes with it, so a vendor's new command needs no release.
+    Commands(Vec<String>),
     /// Text the agent wrote during a turn. Display only.
     Text(String),
     /// The agent used a tool: its name and what it touched (a path relative
