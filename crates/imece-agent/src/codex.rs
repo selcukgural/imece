@@ -2140,9 +2140,13 @@ done"#
             matches!(&e, Event::Stopped(w) if w.contains("code 3")),
             "{e:?}"
         );
-        // The driver is gone; the channel is closed.
-        thread::sleep(Duration::from_millis(100));
-        assert!(session.prompt("late").is_err());
+        // The driver goes away right after its last word; give it a moment
+        // (a bounded one), then nothing can be sent any more.
+        let refused = (0..100).any(|_| {
+            thread::sleep(Duration::from_millis(50));
+            session.prompt("late").is_err()
+        });
+        assert!(refused, "the session still took prompts after it was over");
         let _ = std::fs::remove_dir_all(&dir);
     }
 
