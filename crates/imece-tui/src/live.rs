@@ -725,13 +725,19 @@ impl Live {
                     w.agents[id].set_status(Status::Working, w.tick);
                 } else if let Some(text) = answer.filter(|_| self.asked[id] || self.reports(w, id))
                 {
-                    // The person waits for this: it goes to them, not
-                    // only into the journal. A command may have nothing
-                    // to say (`/clear`).
+                    // The person waits for this: it goes to them and into
+                    // the journal. The closing text of a turn that mail or
+                    // a board offer started restates what the agent sent
+                    // (which the journal has) and stays in its story. A
+                    // command may have nothing to say (`/clear`).
                     self.asked[id] = false;
                     if text.is_empty() {
                         w.agents[id].trace(w.tick, "nothing to say");
                     } else {
+                        w.note(Event::Replied {
+                            agent: id,
+                            text: text.clone(),
+                        });
                         w.replied(id, &text);
                     }
                 }
@@ -1828,8 +1834,9 @@ pub fn apply(w: &mut World, id: AgentId, e: AgentEvent, before: u64) {
                     text: text.lines().next().unwrap_or_default().to_string(),
                     until: t + 12,
                 });
-                w.story(card, StoryEvent::Replied(text.clone()));
-                w.note(Event::Replied { agent: id, text });
+                // The story keeps it; the journal gets it only when it
+                // goes to the person (`Live::step` decides).
+                w.story(card, StoryEvent::Replied(text));
                 if let Some(c) = card {
                     w.cards[c].column = Column::Done;
                     w.cards[c].finished = t;
@@ -2468,10 +2475,16 @@ mod tests {
             .count();
         assert_eq!(touched, 2, "a file is listed once per card");
         assert_eq!(w.cards[c].column, Column::Done);
-        assert!(matches!(
-            w.journal.last().unwrap().event,
-            Event::Replied { agent: 1, .. }
-        ));
+        assert!(
+            matches!(&w.cards[c].story.last().unwrap().event, StoryEvent::Replied(t) if t == "Fixed both.\nDetails."),
+            "the story keeps the closing text"
+        );
+        assert!(
+            !w.journal
+                .iter()
+                .any(|e| matches!(e.event, Event::Replied { .. })),
+            "the journal does not: only a text that reaches the person is a reply"
+        );
     }
 
     #[test]
@@ -3225,6 +3238,45 @@ mod tests {
         // Speaking to the agent answers it.
         w.said(0, "yes");
         assert!(answers(&w).is_empty());
+    }
+
+    fn journaled_replies(w: &World) -> Vec<(AgentId, String)> {
+        w.journal
+            .iter()
+            .filter_map(|e| match &e.event {
+                Event::Replied { agent, text } => Some((*agent, text.clone())),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn only_a_text_that_reaches_the_person_is_journaled_as_a_reply() {
+        let mut w = team(1);
+        let mut live = idle_live(2);
+        // The worker's turn on its mail: it sent done (journaled as such)
+        // and its closing text restates it.
+        live.turns[1] = 1;
+        live.send(&mut w, 1, &msg("lead", "done", "Parser fixed."))
+            .unwrap();
+        finish(&mut live, &mut w, 1, "Fixed the parser and told lead.");
+        assert_eq!(answers(&w), []);
+        assert_eq!(journaled_replies(&w), []);
+        assert!(
+            matches!(
+                &w.journal.last().unwrap().event,
+                Event::Sent { from: 1, to: 0, .. }
+            ),
+            "{:?}",
+            w.journal.last()
+        );
+        // The person asked the leader: its answer is a reply, once.
+        w.said(0, "how far?");
+        live.asked[0] = true;
+        live.turns[0] = 1;
+        finish(&mut live, &mut w, 0, "Nearly there.");
+        assert_eq!(answers(&w), [(0, "Nearly there.".to_string())]);
+        assert_eq!(journaled_replies(&w), [(0, "Nearly there.".to_string())]);
     }
 
     #[test]
