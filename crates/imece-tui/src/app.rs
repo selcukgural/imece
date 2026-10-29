@@ -11,6 +11,7 @@ use crate::live::{Live, Refusal};
 use crate::model::*;
 use crate::prefs::{SIDE_DEFAULT, SIDE_MAX, SIDE_MIN};
 use crate::sim::{self, Sim};
+use crate::theme;
 use crate::ui;
 
 /// What drives the agents.
@@ -309,6 +310,10 @@ impl App {
             KeyCode::Char('1') => self.show(View::Salon),
             KeyCode::Char('2') => self.show(View::Board),
             KeyCode::Char('3') => self.show(View::Code),
+            KeyCode::Char('T') => {
+                let name = theme::next().name;
+                self.flash(fill(self.lang.text().theme_is, &[name]));
+            }
             KeyCode::Char('L') => {
                 self.lang = self.lang.other();
                 if let Engine::Sim(s) = &mut self.engine {

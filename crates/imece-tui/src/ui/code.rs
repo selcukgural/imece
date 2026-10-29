@@ -4,7 +4,6 @@
 
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout, Rect};
-use ratatui::style::Color;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Paragraph, Wrap};
 
@@ -74,7 +73,7 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App) {
             shared += 1;
             spans.push(Span::styled(
                 fill(t.same_file, &[&owners.len().to_string()]),
-                fg(Color::Yellow),
+                fg(pal().warn),
             ));
         }
         lines.push(Line::from(spans));
@@ -84,7 +83,7 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App) {
         Paragraph::new(Line::from(vec![
             Span::styled(
                 fill(t.leases, &[&held.len().to_string()]),
-                bold(Color::White),
+                bold(pal().strong),
             ),
             Span::styled(fill(t.shared_files, &[&shared.to_string()]), dim()),
             Span::styled(t.code_legend, dim()),

@@ -4,7 +4,7 @@
 
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout, Rect};
-use ratatui::style::{Color, Modifier, Style};
+use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Paragraph};
 
@@ -158,11 +158,7 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App) {
 }
 
 fn pane_block(title: String, focused: bool) -> Block<'static> {
-    let border = if focused {
-        Style::new().fg(Color::Indexed(173))
-    } else {
-        dim()
-    };
+    let border = if focused { fg(pal().accent) } else { dim() };
     Block::bordered().title(title).border_style(border)
 }
 
@@ -228,10 +224,10 @@ fn salon(f: &mut Frame, area: Rect, app: &App) {
                 };
                 let (with, color) = match a.talk.as_ref().map(|k| &k.with) {
                     Some(Party::Agent(o)) => (clean(&w.agents[*o].name), speaker_color(*o)),
-                    _ => (app.lang.text().you.to_string(), Color::White),
+                    _ => (app.lang.text().you.to_string(), pal().strong),
                 };
                 let text = a.talk.as_ref().map(|k| k.text.as_str()).unwrap_or_default();
-                let talk = Style::new().fg(Color::Cyan).add_modifier(Modifier::ITALIC);
+                let talk = Style::new().fg(pal().info).add_modifier(Modifier::ITALIC);
                 Line::from(vec![
                     Span::styled(prefix, dim()),
                     Span::styled("⇄ ", talk),
@@ -280,13 +276,13 @@ fn project_line(app: &App, p: ProjectId) -> Line<'static> {
     let mut spans = vec![
         Span::styled(
             format!("{} ", if open { "▾" } else { "▸" }),
-            bold(Color::White),
+            bold(pal().strong),
         ),
-        Span::styled(fit(&project.name, 12), bold(Color::White)),
+        Span::styled(fit(&project.name, 12), bold(pal().strong)),
     ];
     if let Some(trunk) = project.trunk {
         spans.push(Span::styled(format!(" trunk #{trunk} "), dim()));
-        spans.push(Span::styled("✓", fg(Color::Green)));
+        spans.push(Span::styled("✓", fg(pal().ok)));
     }
     spans.push(Span::styled(
         format!("  {}", fill(t.group_working, &[&working.to_string()])),
@@ -294,17 +290,14 @@ fn project_line(app: &App, p: ProjectId) -> Line<'static> {
     ));
     spans.push(Span::styled(format!("  {}", dollars(cost)), dim()));
     if blocked > 0 {
-        spans.push(Span::styled(format!("  ✕{blocked}"), fg(Color::Red)));
+        spans.push(Span::styled(format!("  ✕{blocked}"), fg(pal().bad)));
     }
     if waiting > 0 {
         // A folded project is quiet, not deaf.
         spans.push(Span::raw("  "));
         spans.push(Span::styled(
             fill(t.group_waiting, &[&waiting.to_string()]),
-            Style::new()
-                .fg(Color::Black)
-                .bg(Color::Yellow)
-                .add_modifier(Modifier::BOLD),
+            attention(),
         ));
     }
     let line = Line::from(spans);
@@ -353,7 +346,7 @@ fn agent_line(app: &App, a: &Agent, prefix: &'static str) -> Line<'static> {
         line.style(Style::new().add_modifier(Modifier::REVERSED))
     } else if recent {
         // A change is a signal: it stands out for a moment, then calms down.
-        line.style(Style::new().bg(Color::Indexed(236)))
+        line.style(changed())
     } else {
         line
     }
@@ -362,7 +355,7 @@ fn agent_line(app: &App, a: &Agent, prefix: &'static str) -> Line<'static> {
 fn queue_line(app: &App) -> Line<'static> {
     let w = &app.world;
     let t = app.lang.text();
-    let mut spans = vec![Span::styled(t.queue, bold(Color::White))];
+    let mut spans = vec![Span::styled(t.queue, bold(pal().strong))];
     let verifying: Vec<&Card> = w
         .cards
         .iter()
@@ -372,7 +365,7 @@ fn queue_line(app: &App) -> Line<'static> {
         spans.push(Span::styled(t.queue_empty, dim()));
     }
     for c in verifying {
-        spans.push(Span::styled(format!(" #{} ◌", c.id + 1), fg(Color::Cyan)));
+        spans.push(Span::styled(format!(" #{} ◌", c.id + 1), fg(pal().info)));
     }
     let mut done: Vec<&Card> = w
         .cards
@@ -383,7 +376,7 @@ fn queue_line(app: &App) -> Line<'static> {
     if !done.is_empty() {
         spans.push(Span::styled(t.latest, dim()));
         for c in done.into_iter().take(4) {
-            spans.push(Span::styled(format!(" #{} ✓", c.id + 1), fg(Color::Green)));
+            spans.push(Span::styled(format!(" #{} ✓", c.id + 1), fg(pal().ok)));
         }
     }
     Line::from(spans)
@@ -403,7 +396,7 @@ fn side(f: &mut Frame, area: Rect, app: &App) {
     let focused = app.pane == Pane::Inbox;
     let mut block = pane_block(fill(t.inbox_title, &[&open.len().to_string()]), focused);
     if !open.is_empty() && !focused {
-        block = block.border_style(fg(Color::Yellow));
+        block = block.border_style(fg(pal().warn));
     }
     let inner = block.inner(top);
     f.render_widget(block, top);
@@ -414,9 +407,9 @@ fn side(f: &mut Frame, area: Rect, app: &App) {
     for (n, &i) in open.iter().enumerate() {
         let item = &w.inbox[i];
         let (icon, style) = match item.kind {
-            InboxKind::Sensitive => ("!", bold(Color::Yellow)),
-            InboxKind::Research => ("?", bold(Color::Blue)),
-            InboxKind::Reply => ("»", bold(Color::Cyan)),
+            InboxKind::Sensitive => ("!", bold(pal().warn)),
+            InboxKind::Research => ("?", bold(pal().research)),
+            InboxKind::Reply => ("»", bold(pal().info)),
         };
         let mut spans = vec![
             Span::styled(format!("{icon} "), style),
