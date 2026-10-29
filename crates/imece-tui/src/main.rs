@@ -245,7 +245,9 @@ fn split_vendor<'a>(flag: &str, s: &'a str) -> Result<(Option<Vendor>, &'a str),
         Some((v, rest)) => Vendor::parse(v)
             .filter(|v| live::KNOWN.iter().any(|k| k.0 == *v && k.2))
             .map(|v| (Some(v), rest))
-            .ok_or_else(|| format!("{flag}: {v:?} is not a vendor imece drives (claude, codex)")),
+            .ok_or_else(|| {
+                format!("{flag}: {v:?} is not a vendor imece drives (claude, codex, gemini)")
+            }),
     }
 }
 
@@ -661,7 +663,6 @@ mod tests {
             ("strong=", "not a model name"),
             ("strong=--dangerously-skip-permissions", "not a model name"),
             ("=opus", "cheap, standard or strong"),
-            ("gemini:strong=pro", "not a vendor imece drives"),
             ("qwen:strong=big", "not a vendor imece drives"),
         ] {
             let e = parse_tier(bad).unwrap_err();
@@ -672,7 +673,7 @@ mod tests {
         for (bad, why) in [
             ("", "not a model name"),
             ("--x", "not a model name"),
-            ("gemini:pro", "not a vendor imece drives"),
+            ("qwen:pro", "not a vendor imece drives"),
             ("codex:", "not a model name"),
         ] {
             let e = parse_model(bad).unwrap_err();
