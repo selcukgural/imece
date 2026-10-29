@@ -7,7 +7,9 @@
 # A pattern matches the mutant's full name, `path:line:col: replace fn ...`.
 exclude_re = [
     "src/main.rs:.*: replace (main|run|catch_signals|on_signal) ",
+    "src/main.rs:.*: replace .* in (main|run|catch_signals|on_signal)$",
     "src/clip.rs:.*: replace (copy|tools|pipe|osc52) ",
+    "src/clip.rs:.*: replace .* in (copy|tools|pipe|osc52)$",
 ]
 
 # Builds and tests as CI does, from the lockfile.

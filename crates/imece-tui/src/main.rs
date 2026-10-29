@@ -40,6 +40,7 @@ const USAGE: &str =
   --model NAME      the model every agent uses (default: Claude Code's own)
   --budget USD      the most all agents together may spend (default 5)";
 
+#[derive(Debug)]
 struct Args {
     projects: usize,
     agents: Option<usize>,
@@ -79,9 +80,17 @@ fn valid_model(s: &str) -> bool {
 }
 
 fn parse_args() -> Result<Args, String> {
-    let lang = match std::env::var("IMECE_LANG") {
-        Ok(v) => Lang::parse(&v).ok_or_else(|| format!("IMECE_LANG: {v:?} is not en or tr"))?,
-        Err(_) => Lang::En,
+    parse(std::env::args().skip(1), |k| std::env::var(k).ok())
+}
+
+/// The command line `argv` (without the program) and the environment.
+fn parse(
+    argv: impl IntoIterator<Item = String>,
+    env: impl Fn(&str) -> Option<String>,
+) -> Result<Args, String> {
+    let lang = match env("IMECE_LANG") {
+        Some(v) => Lang::parse(&v).ok_or_else(|| format!("IMECE_LANG: {v:?} is not en or tr"))?,
+        None => Lang::En,
     };
     let mut args = Args {
         projects: 2,
@@ -89,17 +98,17 @@ fn parse_args() -> Result<Args, String> {
         researchers: 4,
         seed: 7,
         lang,
-        theme: match std::env::var("IMECE_THEME") {
-            Ok(v) if theme::set(&v) => Some(v),
-            Ok(v) => return Err(format!("IMECE_THEME: {v:?} is not {}", theme::names())),
-            Err(_) => None,
+        theme: match env("IMECE_THEME") {
+            Some(v) if theme::set(&v) => Some(v),
+            Some(v) => return Err(format!("IMECE_THEME: {v:?} is not {}", theme::names())),
+            None => None,
         },
         live: false,
         repo: PathBuf::from("."),
         model: None,
         budget: 5 * 10_000,
     };
-    let mut it = std::env::args().skip(1);
+    let mut it = argv.into_iter();
     while let Some(flag) = it.next() {
         if flag == "-h" || flag == "--help" {
             return Err(USAGE.into());
@@ -276,6 +285,46 @@ mod tests {
         // SAFETY: raising a signal whose handler was just installed.
         unsafe { libc::raise(libc::SIGHUP) };
         assert!(SIGNALLED.load(Ordering::SeqCst));
+    }
+
+    fn args(argv: &[&str], env: &[(&str, &str)]) -> Result<Args, String> {
+        let env: Vec<(String, String)> = env
+            .iter()
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .collect();
+        parse(argv.iter().map(|a| a.to_string()), |k| {
+            env.iter().find(|(e, _)| e == k).map(|(_, v)| v.clone())
+        })
+    }
+
+    #[test]
+    fn the_theme_comes_from_the_flag_or_the_environment_and_a_wrong_name_is_refused() {
+        crate::theme::set("dark");
+        let a = args(&["--theme", "light"], &[]).unwrap();
+        assert_eq!(a.theme.as_deref(), Some("light"));
+        assert_eq!(crate::theme::pal().name, "light");
+        let a = args(&[], &[("IMECE_THEME", "mono")]).unwrap();
+        assert_eq!(a.theme.as_deref(), Some("mono"));
+        assert_eq!(crate::theme::pal().name, "mono");
+        crate::theme::set("dark");
+        let e = args(&["--theme", "neon"], &[]).unwrap_err();
+        assert!(
+            e.contains("--theme") && e.contains("dark|light|mono"),
+            "{e}"
+        );
+        let e = args(&[], &[("IMECE_THEME", "neon")]).unwrap_err();
+        assert!(
+            e.contains("IMECE_THEME") && e.contains("dark|light|mono"),
+            "{e}"
+        );
+        assert_eq!(
+            crate::theme::pal().name,
+            "dark",
+            "a refused name changes nothing"
+        );
+        assert_eq!(args(&[], &[]).unwrap().theme, None);
+        let e = args(&["--tehme", "dark"], &[]).unwrap_err();
+        assert!(e.starts_with("unknown option --tehme"), "{e}");
     }
 
     #[test]
