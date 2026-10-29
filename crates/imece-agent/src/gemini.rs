@@ -425,9 +425,10 @@ impl Protocol {
         self.next_turn()
     }
 
-    /// Starts the next queued turn, if the session is free.
+    /// Starts the next queued turn, if the session is free. Once started,
+    /// a session waits for nothing but its turns.
     fn next_turn(&mut self) -> Vec<Act> {
-        if !self.started || self.busy || self.awaiting.is_some() {
+        if !self.started || self.busy {
             return Vec::new();
         }
         let Some(text) = self.queue.pop_front() else {
@@ -1465,8 +1466,43 @@ mod tests {
             .line(&update(json!({ "sessionUpdate": "tool_call", "toolCallId": "c1", "title": "x", "kind": "read" })))
             .unwrap_err();
         assert!(e.contains("before its settings were checked"), "{e}");
-        // Prompts wait for the start.
+        // Prompts wait for the start, before and during it.
         assert!(p.prompt("hi").is_empty());
+        let mut p = Protocol::new(&s);
+        assert!(
+            p.prompt("hi").is_empty(),
+            "nothing is said before initialize"
+        );
+    }
+
+    #[test]
+    fn the_instructions_file_may_be_listed_by_its_real_path() {
+        // Gemini lists GEMINI.md files by their canonical path, which may
+        // differ from the one imece gave it (a symlinked state directory).
+        let dir = std::env::temp_dir().join(format!("imece-gemini-real-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("real")).unwrap();
+        std::os::unix::fs::symlink(dir.join("real"), dir.join("link")).unwrap();
+        let mut s = spec(false);
+        s.home = dir.join("link").join("gemini-1");
+        prepare(&s).unwrap();
+        let real = dir
+            .join("real")
+            .join("gemini-1")
+            .join("GEMINI.md")
+            .canonicalize()
+            .unwrap();
+        assert_ne!(real, s.home.join("GEMINI.md"));
+        let listing = format!(
+            "There are 1 GEMINI.md file(s) in use:\n\n{}",
+            real.display()
+        );
+        let acts = start_until(&s, "/memory list", &listing, command_done()).unwrap();
+        assert!(
+            matches!(&events(&acts)[0], Event::Started { .. }),
+            "{acts:?}"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     fn turn_result(model: &str, input: u64, cached: u64, output: u64, thought: u64) -> Value {
@@ -1577,12 +1613,14 @@ mod tests {
             .line(&reply(7, turn_result("gemini-9-ultra", 10, 0, 1, 0)))
             .unwrap_err();
         assert!(e.contains("gemini-9-ultra") && e.contains("--tier"), "{e}");
-        let mut p = started(&s);
-        p.prompt("hello");
-        let mut r = turn_result("x", 10, 0, 1, 0);
-        r["_meta"] = json!({});
-        let e = p.line(&reply(6, r)).unwrap_err();
-        assert!(e.contains("without saying on which model"), "{e}");
+        for (input, output) in [(10, 1), (1, 0), (0, 1)] {
+            let mut p = started(&s);
+            p.prompt("hello");
+            let mut r = turn_result("x", input, 0, output, 0);
+            r["_meta"] = json!({});
+            let e = p.line(&reply(6, r)).unwrap_err();
+            assert!(e.contains("without saying on which model"), "{e}");
+        }
         // No tokens, no model needed: a command-like turn.
         let mut p = started(&s);
         p.prompt("hello");
@@ -1920,6 +1958,8 @@ mod tests {
         assert_eq!(one_line("a\nb"), "a");
         let long = "x".repeat(130);
         assert_eq!(one_line(&long).chars().count(), 121);
+        let exact = "y".repeat(120);
+        assert_eq!(one_line(&exact), exact, "120 fit as they are");
         assert_eq!(relative("/work/w1/a/b.rs", Path::new("/work/w1")), "a/b.rs");
         assert_eq!(
             relative("/other/b.rs", Path::new("/work/w1")),
@@ -2133,6 +2173,73 @@ done"#;
         assert!(rx.recv_timeout(Duration::from_secs(5)).is_err());
         assert!(session.prompt("hi").is_err() || session.prompt("hi").is_err());
         session.terminate();
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A stand-in that answers nothing and never exits on its own.
+    fn sleeper(dir: &Path) -> Spec {
+        let mut s = spec(true);
+        s.cwd = dir.join("repo");
+        s.home = dir.join("home");
+        std::fs::create_dir_all(&s.cwd).unwrap();
+        s.program = fake(dir, "fake-gemini", "cat > /dev/null");
+        s
+    }
+
+    #[test]
+    fn terminating_a_session_ends_its_driver_and_its_process() {
+        let dir = std::env::temp_dir().join(format!("imece-gemini-term-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let (tx, rx) = mpsc::channel();
+        let mut session: Box<dyn crate::Agent> = Box::new(
+            Session::start(&sleeper(&dir), move |e| {
+                let _ = tx.send(e);
+            })
+            .unwrap(),
+        );
+        assert!(session.prompt("hello").is_ok(), "the driver is there");
+        session.terminate();
+        // The driver returns and lets go of the events channel.
+        assert_eq!(
+            rx.recv_timeout(Duration::from_secs(10)).unwrap_err(),
+            RecvTimeoutError::Disconnected
+        );
+        assert!(session.prompt("late").is_err());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn dropping_a_session_ends_its_driver_too() {
+        let dir = std::env::temp_dir().join(format!("imece-gemini-drop-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let (tx, rx) = mpsc::channel();
+        let session = Session::start(&sleeper(&dir), move |e| {
+            let _ = tx.send(e);
+        })
+        .unwrap();
+        drop(session);
+        assert_eq!(
+            rx.recv_timeout(Duration::from_secs(10)).unwrap_err(),
+            RecvTimeoutError::Disconnected
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn an_answer_that_takes_a_moment_is_waited_for() {
+        let dir = std::env::temp_dir().join(format!("imece-gemini-slow-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let mut s = spec(false);
+        s.cwd = dir.join("repo");
+        s.home = dir.join("home");
+        std::fs::create_dir_all(&s.cwd).unwrap();
+        // Slower than the driver's poll, well within its patience.
+        s.program = fake(&dir, "fake-gemini", &format!("sleep 1.5\n{FAKE}"));
+        let steps = clean_steps(&s);
+        let got = run(&s, &steps, &[]);
+        assert!(matches!(&got[0], Event::Started { .. }), "{got:?}");
         let _ = std::fs::remove_dir_all(&dir);
     }
 
