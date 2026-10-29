@@ -1339,7 +1339,10 @@ impl Live {
                 .map(|t| t.name)
                 .collect(),
         });
-        let system = system_prompt(w, id, self.max_workers, self.max_helpers);
+        let mut system = system_prompt(w, id, self.max_workers, self.max_helpers);
+        if let Some(notes) = repo_notes(&self.repo, a.vendor) {
+            system.push_str(&notes);
+        }
         let (program, model) = (vendor.program.clone(), self.models[id].clone());
         let name = format!("imece {}", a.name);
         // In millionths of a dollar: what is left of the budget.
@@ -1779,6 +1782,39 @@ fn system_prompt(w: &World, id: AgentId, max_workers: usize, max_helpers: usize)
     }
 }
 
+/// The files a repository keeps its notes for coding agents in, in the
+/// order they are looked for; the first one there is used.
+const NOTES_FILES: &[&str] = &["AGENTS.md", "CLAUDE.md"];
+/// The most of a notes file that goes into a prompt, in bytes.
+const MAX_NOTES: usize = 16 << 10;
+
+/// The repository's notes for coding agents (its `AGENTS.md` or
+/// `CLAUDE.md`), to append to an agent's instructions. The vendors' CLIs
+/// are started so that they load nothing from the repository (no hooks,
+/// no settings), which drops these notes too; imece passes them itself.
+/// Codex loads `AGENTS.md` from its directory on its own and gets it only
+/// when the notes are in another file.
+fn repo_notes(repo: &Path, vendor: Vendor) -> Option<String> {
+    let (file, text) = NOTES_FILES
+        .iter()
+        .find_map(|f| std::fs::read_to_string(repo.join(f)).ok().map(|t| (*f, t)))?;
+    if text.trim().is_empty() || (vendor == Vendor::Codex && file == "AGENTS.md") {
+        return None;
+    }
+    let mut body = text.trim().to_string();
+    if body.len() > MAX_NOTES {
+        let mut cut = MAX_NOTES;
+        while !body.is_char_boundary(cut) {
+            cut -= 1;
+        }
+        body.truncate(cut);
+        body.push_str("\n[cut: the file goes on]");
+    }
+    Some(format!(
+        "\n\nThe repository's notes for coding agents, from its {file}:\n\n{body}"
+    ))
+}
+
 /// What an agent of `vendor` in `role` can do to the files, as its
 /// session is set up: Claude Code gets file tools and no shell; Codex
 /// always has a shell, in a sandbox that is read-only for a leader and
@@ -2125,6 +2161,52 @@ mod tests {
             Ok(())
         }
         fn terminate(&mut self) {}
+    }
+
+    #[test]
+    fn the_repository_s_notes_for_agents_go_into_the_prompt() {
+        let dir = std::env::temp_dir().join(format!("imece-notes-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        assert_eq!(repo_notes(&dir, Vendor::Claude), None);
+        std::fs::write(dir.join("CLAUDE.md"), "  \n").unwrap();
+        assert_eq!(
+            repo_notes(&dir, Vendor::Claude),
+            None,
+            "an empty file is none"
+        );
+        std::fs::write(dir.join("CLAUDE.md"), "# notes\n\nRun cargo fmt.\n").unwrap();
+        let notes = repo_notes(&dir, Vendor::Claude).unwrap();
+        assert!(notes.starts_with("\n\nThe repository's notes"), "{notes}");
+        assert!(notes.contains("from its CLAUDE.md:\n\n# notes\n\nRun cargo fmt."));
+        assert!(notes.ends_with("cargo fmt."), "{notes:?}");
+        // Codex reads AGENTS.md on its own; the others get it from imece.
+        assert!(
+            repo_notes(&dir, Vendor::Codex)
+                .unwrap()
+                .contains("CLAUDE.md")
+        );
+        std::fs::write(dir.join("AGENTS.md"), "agents first").unwrap();
+        for v in [Vendor::Claude, Vendor::Gemini] {
+            let notes = repo_notes(&dir, v).unwrap();
+            assert!(
+                notes.contains("from its AGENTS.md:\n\nagents first"),
+                "{notes}"
+            );
+        }
+        assert_eq!(repo_notes(&dir, Vendor::Codex), None);
+        // A long file is cut at a character boundary, and says so.
+        let long = format!("{}é", "x".repeat(MAX_NOTES - 1));
+        std::fs::write(dir.join("AGENTS.md"), &long).unwrap();
+        let notes = repo_notes(&dir, Vendor::Claude).unwrap();
+        assert!(
+            notes.ends_with("x\n[cut: the file goes on]"),
+            "{}",
+            &notes[notes.len() - 40..]
+        );
+        assert!(!notes.contains('é'));
+        assert_eq!(notes.matches('x').count(), MAX_NOTES - 1);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
@@ -3596,6 +3678,7 @@ in p.rs",
         let dir = std::env::temp_dir().join(format!("imece-start-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("CLAUDE.md"), "Run cargo fmt before you finish.").unwrap();
         let mut w = team(0);
         let mut live = Live::new(
             1,
@@ -3618,6 +3701,12 @@ in p.rs",
         assert_eq!(after("--tools"), "Glob,Grep,Read");
         assert_eq!(after("--name"), "imece lead");
         assert!(after("--append-system-prompt").contains("hire tool, up to 3;"));
+        // The prompt spans lines; the stand-in wrote one argument per line.
+        let raw = std::fs::read_to_string(dir.join("args.txt")).unwrap();
+        assert!(
+            raw.contains("from its CLAUDE.md:\n\nRun cargo fmt before you finish.\n--model\n"),
+            "the repository's notes end the prompt: {raw}"
+        );
         assert!(!args.contains(&"--mcp-config"), "no bus, no MCP server");
         let _ = std::fs::remove_dir_all(&dir);
     }
