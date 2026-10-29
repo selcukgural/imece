@@ -2303,6 +2303,14 @@ done"#
         tx.send(Msg::End(1, "exited with code 3: no auth".into()))
             .unwrap();
         assert_eq!(refused(&rx, 1, &e), "exited with code 3: no auth");
+        // An end reported a moment after the refused write still counts.
+        let late = tx.clone();
+        thread::spawn(move || {
+            thread::sleep(Duration::from_millis(200));
+            late.send(Msg::End(1, "exited with code 1: late".into()))
+                .unwrap();
+        });
+        assert_eq!(refused(&rx, 1, &e), "exited with code 1: late");
         drop(tx);
         let why = refused(&rx, 1, &e);
         assert!(why.starts_with("stopped: codex took no input ("), "{why}");

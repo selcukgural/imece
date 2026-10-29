@@ -964,13 +964,14 @@ selection-foreground = #ffffff
         let e = choose(gone.to_str().unwrap()).unwrap_err();
         assert!(e.contains("No such file") || e.contains("not found"), "{e}");
         assert_eq!(pal().name, "terminal", "unchanged");
-        fs::write(&gone, "x".repeat(FILE_CAP as usize + 1)).unwrap();
+        // The cap is 64 KiB: one byte over is refused, exactly it is read.
+        fs::write(&gone, "x".repeat(65537)).unwrap();
         let e = choose(gone.to_str().unwrap()).unwrap_err();
-        assert!(e.contains("a colour file is under"), "{e}");
+        assert!(e.contains("a colour file is under 65536"), "{e}");
         let mut full = format!("{GHOSTTY}#");
-        full.push_str(&"x".repeat(FILE_CAP as usize - full.len() - 1));
+        full.push_str(&"x".repeat(65536 - full.len() - 1));
         full.push('\n');
-        assert_eq!(full.len() as u64, FILE_CAP);
+        assert_eq!(full.len(), 65536);
         fs::write(&gone, &full).unwrap();
         assert_eq!(
             choose(gone.to_str().unwrap()).unwrap().name,

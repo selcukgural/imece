@@ -27,10 +27,20 @@ cargo mutants                                      # everything (slow); CI does 
 - Mutation tests: a mutant that survives is a test that is missing, so a
   change comes with the tests that kill its mutants (`cargo-mutants` 27.1.0,
   pinned in `.github/workflows/mutants.yml`; exclusions with their reasons
-  in `.cargo/mutants.toml`). They are CI's job (user, 2026-10-29): before
-  a push run fmt, clippy and the tests, not mutants; run `cargo mutants`
-  locally only when the PR job reports a missed mutant and closing it
-  takes several tries. The PR job also fails on a timeout, so never write
+  in `.cargo/mutants.toml`). Running them is CI's job, never local (user,
+  2026-10-29: too slow on a laptop too); before a push run fmt, clippy
+  and the tests. BUT before opening a PR, make sure the tests that kill
+  the change's mutants are written (user, 2026-10-29: each push that
+  comes back with missed mutants costs a CI round of 10+ minutes, and a
+  big change came back twice). So write the tests with the mutants in
+  mind from the start, and before the PR go over the diff once more for
+  what a mutant would change: the equal case of every comparison, each
+  operand of an arithmetic expression (with the number in the test, not
+  the constant), every field a constructor sets, every arm of a match,
+  every function with the same shape in a sibling file (a test written
+  for Gemini's copy was not written for Codex's), with values that tell
+  the variants apart. The full run is nightly only.
+  The PR job also fails on a timeout, so never write
   a loop a mutated operator could make endless (search a range instead).
 
 - Keyboard first (user, 2026-10-29): everything is done with keys, vim
