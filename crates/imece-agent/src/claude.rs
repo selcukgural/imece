@@ -38,14 +38,9 @@ pub const ENV: &[&str] = &[
 /// that would ask is denied (`--permission-prompts none`).
 const PERMISSION_MODE: &str = "acceptEdits";
 
-/// The name imece's MCP server has in a session; its tools are
-/// `mcp__imece__<tool>`.
-pub const MCP_SERVER: &str = "imece";
-
-/// The name a session gives a tool of imece's MCP server.
-pub fn mcp_tool(tool: &str) -> String {
-    format!("mcp__{MCP_SERVER}__{tool}")
-}
+/// Claude Code names a tool of an MCP server `mcp__<server>__<tool>`, which
+/// is the name the screen uses for every vendor.
+pub use crate::{MCP_SERVER, Mcp, mcp_tool};
 
 /// The program on PATH.
 pub const PROGRAM: &str = "claude";
@@ -80,16 +75,6 @@ pub struct Spec {
     pub system: String,
     /// imece's MCP server, if the agent gets its tools.
     pub mcp: Option<Mcp>,
-}
-
-/// How the session starts imece's MCP server, and which of its tools it
-/// may call without asking.
-#[derive(Clone, Debug)]
-pub struct Mcp {
-    pub command: String,
-    pub args: Vec<String>,
-    /// Tool names as the server offers them (`send`).
-    pub tools: Vec<String>,
 }
 
 /// The command line for `spec`. Prompts never go here; they go to stdin.
@@ -383,6 +368,16 @@ impl Session {
     }
 }
 
+impl crate::Agent for Session {
+    fn prompt(&mut self, text: &str) -> io::Result<()> {
+        Session::prompt(self, text)
+    }
+
+    fn terminate(&mut self) {
+        Session::terminate(self)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -644,10 +639,13 @@ mod tests {
 
     fn events(spec: &Spec, prompt: &str) -> Vec<Event> {
         let (tx, rx) = mpsc::channel();
-        let mut s = Session::start(spec, move |e| {
-            let _ = tx.send(e);
-        })
-        .unwrap();
+        // Through the trait, as the screen drives every vendor.
+        let mut s: Box<dyn crate::Agent> = Box::new(
+            Session::start(spec, move |e| {
+                let _ = tx.send(e);
+            })
+            .unwrap(),
+        );
         s.prompt(prompt).unwrap();
         let mut out = Vec::new();
         loop {
@@ -689,6 +687,28 @@ echo '{{"type":"result","subtype":"success","result":"hi","total_cost_usd":0.5}}
                 },
                 Event::Stopped("exited with code 0".into()),
             ]
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn terminating_through_the_trait_stops_the_process() {
+        let dir = std::env::temp_dir().join(format!("imece-fake-term-{}", std::process::id()));
+        let mut s = spec(EDIT_TOOLS);
+        s.program = fake(&dir, "read line\nsleep 30");
+        s.cwd = dir.clone();
+        let (tx, rx) = mpsc::channel();
+        let mut agent: Box<dyn crate::Agent> = Box::new(
+            Session::start(&s, move |e| {
+                let _ = tx.send(e);
+            })
+            .unwrap(),
+        );
+        agent.terminate();
+        let e = rx.recv_timeout(Duration::from_secs(10)).expect("in time");
+        assert!(
+            matches!(&e, Event::Stopped(w) if w.contains("signal 15")),
+            "{e:?}"
         );
         let _ = std::fs::remove_dir_all(&dir);
     }

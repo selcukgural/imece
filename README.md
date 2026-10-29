@@ -9,8 +9,8 @@ leader agent splits the work into cards and hands them out; the agents talk
 to each other, ask a capped pool of researchers, and lease the symbols they
 change so several of them can work in the same file.
 
-> Status: early. imece runs real Claude Code agents on one project (a leader
-> that hires workers and talks to you; Codex and Gemini adapters are next),
+> Status: early. imece runs real Claude Code and Codex agents on one project
+> (a leader that hires workers and talks to you; a Gemini adapter is next),
 > or a seeded simulation with `--demo`.
 
 ## Run it
@@ -19,6 +19,7 @@ change so several of them can work in the same file.
 cd your/checkout
 cargo run -p imece-tui                       # or, once installed: imece
 cargo run -p imece-tui -- --agents 8 --budget 10 --model sonnet
+cargo run -p imece-tui -- --lead codex                   # Codex leads; it may still hire claude workers
 ```
 
 You do not pick a team size. `lead` starts alone, reads the checkout (it
@@ -35,26 +36,45 @@ worktree is.
   is under way finishes on its old cap; the next one starts on the new
   remainder, in a new session if the old one had hit its cap.
 - Models: every agent runs on its vendor's own default (what you set up in
-  Claude Code), or on `--model`. When the lead hires, it picks a tier, not a
-  model: `cheap` (haiku) for small mechanical work, `standard` (the default)
-  for ordinary fixes, `strong` (opus) for cross-cutting design. Change what
-  a tier means with `--tier strong=opus[1m]`. A tier model your account
-  does not have fails its first turn; imece then restarts that worker on
-  the standard model and says so in the journal.
-- Vendors: imece looks for `claude`, `codex` and `gemini` on PATH. It can
-  drive Claude Code today; the leader's vendor is `--lead` (default
-  `claude`). Workers may be hired from any vendor imece drives.
-- Each session is a long-lived `claude -p` in `--restricted` mode: file
-  tools only (no shell, no web), no MCP servers, no user or project
-  settings (so no hooks), file access confined to the agent's directory,
-  nothing that would ask for permission is allowed. What Claude Code
-  reports it runs with is checked on every turn; anything else stops the
-  session.
+  Claude Code or Codex), or on `--model`. When the lead hires, it picks a
+  tier, not a model: `cheap` for small mechanical work, `standard` (the
+  default) for ordinary fixes, `strong` for cross-cutting design. Claude's
+  tiers are haiku, its default, opus; Codex's are reasoning efforts on its
+  default model, `@low`, its default, `@high`. Change what a tier means
+  with `--tier strong=opus[1m]` or `--tier codex:strong=gpt-5.6-terra@xhigh`
+  (`MODEL@EFFORT`); without a vendor prefix, `--model` and `--tier` speak
+  of the leader's vendor. A tier model your account does not have fails
+  its first turn; imece then restarts that worker on the standard model
+  and says so in the journal.
+- Vendors: imece looks for `claude`, `codex` and `gemini` on PATH. It
+  drives Claude Code and Codex today; `--lead` names the leader's vendor,
+  and the lead may hire workers from either (`hire` takes a vendor).
+- A Claude Code session is a long-lived `claude -p` in `--restricted`
+  mode: file tools only (no shell, no web), no MCP servers but imece's own,
+  no user or project settings (so no hooks), file access confined to the
+  agent's directory, nothing that would ask for permission is allowed.
+  What Claude Code reports it runs with is checked on every turn; anything
+  else stops the session.
+- A Codex session is a long-lived `codex app-server` (JSON-RPC on stdio).
+  Codex always has a shell, so the sandbox does the confining: read-only
+  for the lead, workspace-write (the agent's directory, no network) for
+  workers and helpers; approvals are never asked, so what the sandbox
+  refuses simply fails. Web search, plugins, apps, hooks, sub-agents and
+  memories are turned off, no session files are written, and the MCP
+  servers and skills your own Codex config brings along are named off
+  (imece starts Codex a second time to do that when it has to). What Codex
+  reports it runs with, from the config to the connected MCP servers to
+  the thread's own sandbox, is checked before the thread starts and the
+  MCP servers again before every turn; anything else stops the session.
+  Codex reports tokens, not dollars: on a ChatGPT plan its turns cost the
+  budget nothing (the trace says so, and shows the tokens); an API-key
+  login is refused, since imece can not count its cost yet.
 - The budget (`--budget`, default $50) is one pot for the whole team: once
   all agents together have spent it, nobody takes another turn. Each
-  session also gets what was left of the pot when it started as its own
-  hard cap, so a session running away on its own cannot pass it either.
-- Child processes get a cleared environment (plus what Claude Code needs to
+  Claude Code session also gets what was left of the pot when it started
+  as its own hard cap, so a session running away on its own cannot pass
+  it either.
+- Child processes get a cleared environment (plus what the vendor needs to
   log in), their own process group (killed on exit), and capped pipes.
 
 ## Run the simulation

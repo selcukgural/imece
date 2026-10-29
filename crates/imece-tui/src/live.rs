@@ -32,9 +32,10 @@ use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-use imece_agent::claude::{self, Mcp, Session, Spec};
 use imece_agent::mcp::{Answer, Server, Tool};
-use imece_agent::{Event as AgentEvent, Tier, child, worktree};
+use imece_agent::{
+    Agent as Session, Event as AgentEvent, Mcp, Tier, child, claude, codex, worktree,
+};
 use serde_json::{Value, json};
 
 use crate::model::*;
@@ -47,11 +48,9 @@ pub struct Options {
     pub max_helpers: usize,
     /// The leader's vendor.
     pub lead: Vendor,
-    /// The model every agent runs on unless a tier says otherwise; none
-    /// for each vendor's own default.
-    pub model: Option<String>,
-    /// Models that stand in for the vendors' own, by tier.
-    pub tiers: Vec<(Tier, String)>,
+    /// Models that stand in for the vendors' own, by vendor and tier; no
+    /// vendor means the leader's. `--model NAME` is the standard tier.
+    pub tiers: Vec<(Option<Vendor>, Tier, String)>,
     /// Ten-thousandths of a dollar, for all agents together.
     pub budget: u64,
 }
@@ -63,7 +62,7 @@ pub type Known = (Vendor, &'static str, bool);
 /// The coding agents imece knows.
 pub const KNOWN: &[Known] = &[
     (Vendor::Claude, claude::PROGRAM, true),
-    (Vendor::Codex, "codex", false),
+    (Vendor::Codex, codex::PROGRAM, true),
     (Vendor::Gemini, "gemini", false),
 ];
 
@@ -103,23 +102,64 @@ struct Hireable {
 }
 
 impl Hireable {
-    /// Claude Code at `program`; `standard` is the model the person named,
-    /// if any, and `tiers` their stand-ins for the other tiers.
-    fn claude(program: &str, standard: Option<String>, tiers: &[(Tier, String)]) -> Hireable {
+    /// `vendor` at `program`, on its own ladder, with the person's
+    /// stand-ins `tiers` (for this vendor) on top.
+    fn new(vendor: Vendor, program: &str, tiers: &[(Tier, String)]) -> Hireable {
+        let own = |tier| {
+            match vendor {
+                Vendor::Codex => codex::model(tier),
+                _ => claude::model(tier),
+            }
+            .map(String::from)
+        };
         let mut ladder = Ladder {
-            cheap: claude::model(Tier::Cheap).map(String::from),
-            standard,
-            strong: claude::model(Tier::Strong).map(String::from),
+            cheap: own(Tier::Cheap),
+            standard: own(Tier::Standard),
+            strong: own(Tier::Strong),
         };
         for (tier, model) in tiers {
             ladder.set(*tier, model.clone());
         }
         Hireable {
-            vendor: Vendor::Claude,
+            vendor,
             program: program.to_string(),
             ladder,
         }
     }
+
+    /// Claude Code at `program`, with `tiers` on top of its own ladder.
+    #[cfg(test)]
+    fn claude(program: &str, tiers: &[(Tier, String)]) -> Hireable {
+        Hireable::new(Vendor::Claude, program, tiers)
+    }
+
+    /// Codex at `program`, with `tiers` on top of its own ladder.
+    #[cfg(test)]
+    fn codex(program: &str, tiers: &[(Tier, String)]) -> Hireable {
+        Hireable::new(Vendor::Codex, program, tiers)
+    }
+}
+
+/// The hireable `vendors`, each at its program from [`KNOWN`] on its own
+/// ladder, with the person's stand-ins `tiers` on top: the ones named for
+/// the vendor, and the bare ones for the leader's vendor `lead`.
+fn team_vendors(
+    vendors: Vec<Vendor>,
+    lead: Vendor,
+    tiers: &[(Option<Vendor>, Tier, String)],
+) -> Vec<Hireable> {
+    vendors
+        .into_iter()
+        .map(|v| {
+            let program = KNOWN.iter().find(|k| k.0 == v).map_or("", |k| k.1);
+            let own: Vec<(Tier, String)> = tiers
+                .iter()
+                .filter(|(for_, _, _)| for_.map_or(v == lead, |f| f == v))
+                .map(|(_, t, m)| (*t, m.clone()))
+                .collect();
+            Hireable::new(v, program, &own)
+        })
+        .collect()
 }
 
 /// Whether `program` runs from `repo` with a cleared environment.
@@ -154,10 +194,22 @@ fn hireable(present: &[(Vendor, bool)], lead: Vendor) -> Result<Vec<Vendor>, Str
             lead.label(),
             names(present)
         )),
-        Some((_, false)) => Err(format!(
-            "{} is on PATH, but imece can not drive it yet; start with --lead claude",
-            lead.label()
-        )),
+        Some((_, false)) => {
+            let could: Vec<&str> = present
+                .iter()
+                .filter(|(_, drives)| *drives)
+                .map(|(v, _)| v.label())
+                .collect();
+            Err(format!(
+                "{} is on PATH, but imece can not drive it yet; start with --lead {}",
+                lead.label(),
+                if could.is_empty() {
+                    "claude".to_string()
+                } else {
+                    could.join(" or --lead ")
+                }
+            ))
+        }
         Some((_, true)) => Ok(present
             .iter()
             .filter(|(_, drives)| *drives)
@@ -182,11 +234,11 @@ enum Slot {
     /// Being started on its own thread (a first worktree checks out the
     /// whole tree); the person's messages wait here.
     Starting(Vec<String>),
-    Running(Session),
+    Running(Box<dyn Session>),
 }
 
 /// A started session, or why it could not start.
-type Ready = Result<(Session, PathBuf), String>;
+type Ready = Result<(Box<dyn Session>, PathBuf), String>;
 
 /// A tool call of an agent (tool name, arguments), and where its answer
 /// goes.
@@ -320,11 +372,7 @@ pub fn leaders(present: &[(Vendor, bool)]) -> Vec<Vendor> {
 /// `present` on PATH (see [`probe`]): the leader alone, who hires the rest.
 pub fn world(o: Options, present: &[(Vendor, bool)]) -> Result<(World, Live), String> {
     let repo = worktree::top(&o.repo).map_err(|e| format!("{}: {e}", o.repo.display()))?;
-    let vendors: Vec<Hireable> = hireable(present, o.lead)?
-        .into_iter()
-        // Claude Code is the only vendor imece drives so far (see `KNOWN`).
-        .map(|_| Hireable::claude(claude::PROGRAM, o.model.clone(), &o.tiers))
-        .collect();
+    let vendors = team_vendors(hireable(present, o.lead)?, o.lead, &o.tiers);
     let name = repo
         .file_name()
         .map_or("repo".into(), |n| n.to_string_lossy().into_owned());
@@ -1245,33 +1293,24 @@ impl Live {
     fn start(&self, w: &World, id: AgentId) {
         let a = &w.agents[id];
         let leader = a.role == Role::Leader;
-        let tools = if leader {
-            claude::READ_TOOLS
-        } else {
-            claude::EDIT_TOOLS
-        };
         let vendor = self.of(a.vendor);
-        let mut spec = Spec {
-            program: vendor.program.clone(),
-            cwd: self.repo.clone(),
-            name: format!("imece {}", a.name),
-            tools: tools.iter().map(|t| t.to_string()).collect(),
-            model: self.models[id].clone(),
-            // In millionths of a dollar: what is left of the budget.
-            budget: w.daily_budget.saturating_sub(w.spent()) * 100,
-            system: system_prompt(w, id, self.max_workers, self.max_helpers),
-            mcp: self.bus.as_ref().map(|b| Mcp {
-                command: b.relay.clone(),
-                args: vec![
-                    "mcp-relay".into(),
-                    b.servers[id].path().to_string_lossy().into_owned(),
-                ],
-                tools: tools_of(a.role, &self.vendor_names())
-                    .into_iter()
-                    .map(|t| t.name)
-                    .collect(),
-            }),
-        };
+        let mcp = self.bus.as_ref().map(|b| Mcp {
+            command: b.relay.clone(),
+            args: vec![
+                "mcp-relay".into(),
+                b.servers[id].path().to_string_lossy().into_owned(),
+            ],
+            tools: tools_of(a.role, &self.vendor_names())
+                .into_iter()
+                .map(|t| t.name)
+                .collect(),
+        });
+        let system = system_prompt(w, id, self.max_workers, self.max_helpers);
+        let (program, model) = (vendor.program.clone(), self.models[id].clone());
+        let name = format!("imece {}", a.name);
+        // In millionths of a dollar: what is left of the budget.
+        let budget = w.daily_budget.saturating_sub(w.spent()) * 100;
+        let kind = a.vendor;
         let generation = self.generation[id];
         // A helper changes the same files as its worker: its worktree.
         let tree = a.parent.map_or(&a.name, |p| &w.agents[p].name).clone();
@@ -1279,14 +1318,54 @@ impl Live {
         let (tx, ready) = (self.tx.clone(), self.ready_tx.clone());
         thread::spawn(move || {
             let started = (|| {
-                if !leader {
-                    spec.cwd = worktree::ensure(&repo, &root, &tree).map_err(|e| e.to_string())?;
-                }
-                let session = Session::start(&spec, move |e| {
+                let cwd = if leader {
+                    repo
+                } else {
+                    worktree::ensure(&repo, &root, &tree).map_err(|e| e.to_string())?
+                };
+                let on = move |e| {
                     let _ = tx.send((id, generation, e));
-                })
-                .map_err(|e| format!("{}: {e}", spec.program))?;
-                Ok((session, spec.cwd.clone()))
+                };
+                let session: Box<dyn Session> = match kind {
+                    Vendor::Codex => Box::new(
+                        codex::Session::start(
+                            &codex::Spec {
+                                program: program.clone(),
+                                cwd: cwd.clone(),
+                                choice: model,
+                                write: !leader,
+                                system,
+                                mcp,
+                            },
+                            on,
+                        )
+                        .map_err(|e| format!("{program}: {e}"))?,
+                    ),
+                    _ => {
+                        let tools = if leader {
+                            claude::READ_TOOLS
+                        } else {
+                            claude::EDIT_TOOLS
+                        };
+                        Box::new(
+                            claude::Session::start(
+                                &claude::Spec {
+                                    program: program.clone(),
+                                    cwd: cwd.clone(),
+                                    name,
+                                    tools: tools.iter().map(|t| t.to_string()).collect(),
+                                    model,
+                                    budget,
+                                    system,
+                                    mcp,
+                                },
+                                on,
+                            )
+                            .map_err(|e| format!("{program}: {e}"))?,
+                        )
+                    }
+                };
+                Ok((session, cwd))
             })();
             // Nobody to take it (imece is closing): dropping it stops it.
             let _ = ready.send((id, generation, started));
@@ -1315,10 +1394,11 @@ pub fn apply(w: &mut World, id: AgentId, e: AgentEvent, before: u64) {
             w.agents[id].trace(t, format!("session {session} · {model}"));
         }
         AgentEvent::Text(text) => w.agents[id].trace(t, format!("text {text:?}")),
+        AgentEvent::Note(text) => w.agents[id].trace(t, text),
         AgentEvent::Tool { name, target } => {
-            let mcp = claude::mcp_tool("");
+            let mcp = imece_agent::mcp_tool("");
             let name = name.strip_prefix(&mcp).map_or(name.clone(), str::to_string);
-            let changes = matches!(name.as_str(), "Edit" | "Write");
+            let changes = matches!(name.as_str(), "Edit" | "Write" | codex::PATCH);
             let a = &mut w.agents[id];
             a.trace(t, format!("tool_use {name} {target}"));
             a.activity = Some(format!("{name} {target}").trim_end().to_string());
@@ -1591,13 +1671,14 @@ fn system_prompt(w: &World, id: AgentId, max_workers: usize, max_helpers: usize)
             };
             format!(
                 "You are {}, the leader of a team of coding agents in imece, on the \
-                 repository in your current directory. You can read files but not \
-                 change them or run commands. The person talks to you. {team} You \
-                 never change files yourself, so do not offer to; offer only work a \
-                 worker will do. Answer the person briefly: what you found or \
-                 assigned, and when all is done, what was done and what is left. \
-                 When you need the person to decide, end with one clear question.",
-                a.name
+                 repository in your current directory. {} The person talks to you. \
+                 {team} You never change files yourself, so do not offer to; offer \
+                 only work a worker will do. Answer the person briefly: what you \
+                 found or assigned, and when all is done, what was done and what is \
+                 left. When you need the person to decide, end with one clear \
+                 question.",
+                a.name,
+                abilities(a.vendor, Role::Leader)
             )
         }
         Role::Helper => {
@@ -1606,13 +1687,13 @@ fn system_prompt(w: &World, id: AgentId, max_workers: usize, max_helpers: usize)
                 "You are {}, a helper of {parent}, a coding agent in imece, a team led by \
                  {leader}. You work in {parent}'s git worktree of the repository (your \
                  current directory), on the files {parent} gave you; it changes others \
-                 at the same time, so stay in yours. You can read and change files here \
-                 but not run commands. Do not commit. Your task comes from {parent}. \
-                 When it is done, send {parent} a done message with a short summary of \
-                 what you changed and what is left open; you leave then. If you are \
-                 stuck, send {parent} blocked or ask instead of guessing. Use these \
-                 tools only for that, not for chatter.",
-                a.name
+                 at the same time, so stay in yours. {} Do not commit. Your task comes \
+                 from {parent}. When it is done, send {parent} a done message with a \
+                 short summary of what you changed and what is left open; you leave \
+                 then. If you are stuck, send {parent} blocked or ask instead of \
+                 guessing. Use these tools only for that, not for chatter.",
+                a.name,
+                abilities(a.vendor, Role::Helper)
             )
         }
         _ => {
@@ -1631,9 +1712,8 @@ fn system_prompt(w: &World, id: AgentId, max_workers: usize, max_helpers: usize)
             format!(
                 "You are {}, a coding agent in imece, a team led by {leader}. You work \
                  in your own git worktree of the repository (your current \
-                 directory); the others work in theirs. You can read and change \
-                 files here but not run commands. Do not commit. Tasks come from \
-                 {leader} or from the person. When you finish a task from \
+                 directory); the others work in theirs. {} Do not commit. Tasks come \
+                 from {leader} or from the person. When you finish a task from \
                  {leader}, send it a done message with a short summary of what \
                  you changed and what is left open; if you are stuck, send blocked \
                  or ask instead of guessing. imece may offer you open cards from \
@@ -1641,9 +1721,29 @@ fn system_prompt(w: &World, id: AgentId, max_workers: usize, max_helpers: usize)
                  it a done message when it is done. Work you find outside your \
                  task goes on the board (post), not into your change.{helpers} Use \
                  these tools only for that, not for chatter.",
-                a.name
+                a.name,
+                abilities(a.vendor, Role::Worker)
             )
         }
+    }
+}
+
+/// What an agent of `vendor` in `role` can do to the files, as its
+/// session is set up: Claude Code gets file tools and no shell; Codex
+/// always has a shell, in a sandbox that is read-only for a leader and
+/// confined to the agent's directory for the rest, never with the network.
+fn abilities(vendor: Vendor, role: Role) -> &'static str {
+    match (vendor, role) {
+        (Vendor::Codex, Role::Leader) => {
+            "You can read files and run commands that only read; the sandbox refuses \
+             writes and the network."
+        }
+        (Vendor::Codex, _) => {
+            "You can read and change files here and run commands; the sandbox keeps \
+             writes inside this directory and refuses the network."
+        }
+        (_, Role::Leader) => "You can read files but not change them or run commands.",
+        _ => "You can read and change files here but not run commands.",
     }
 }
 
@@ -1916,7 +2016,7 @@ mod tests {
 
     /// Claude Code as `program`, on its default models.
     fn claude_at(program: &str) -> Vec<Hireable> {
-        vec![Hireable::claude(program, None, &[])]
+        vec![Hireable::claude(program, &[])]
     }
 
     #[test]
@@ -3010,7 +3110,7 @@ in p.rs",
 
     #[test]
     fn the_ladder_is_the_vendor_s_unless_the_person_says_otherwise() {
-        let h = Hireable::claude("claude", None, &[]);
+        let h = Hireable::claude("claude", &[]);
         assert_eq!(h.ladder.model(Tier::Cheap), Some("haiku"));
         assert_eq!(h.ladder.model(Tier::Standard), None);
         assert_eq!(h.ladder.model(Tier::Strong), Some("opus"));
@@ -3018,17 +3118,65 @@ in p.rs",
         assert_eq!(h.vendor, Vendor::Claude);
         let h = Hireable::claude(
             "claude",
-            Some("sonnet".into()),
             &[
                 (Tier::Strong, "opus[1m]".into()),
+                (Tier::Standard, "sonnet".into()),
                 (Tier::Cheap, "sonnet".into()),
             ],
         );
         assert_eq!(h.ladder.model(Tier::Cheap), Some("sonnet"));
         assert_eq!(h.ladder.model(Tier::Standard), Some("sonnet"));
         assert_eq!(h.ladder.model(Tier::Strong), Some("opus[1m]"));
-        let h = Hireable::claude("claude", None, &[(Tier::Standard, "opus".into())]);
+        let h = Hireable::claude("claude", &[(Tier::Standard, "opus".into())]);
         assert_eq!(h.ladder.model(Tier::Standard), Some("opus"));
+        // Codex's ladder is efforts on its default model.
+        let h = Hireable::codex("codex", &[]);
+        assert_eq!(h.ladder.model(Tier::Cheap), Some("@low"));
+        assert_eq!(h.ladder.model(Tier::Standard), None);
+        assert_eq!(h.ladder.model(Tier::Strong), Some("@high"));
+        assert_eq!((h.program.as_str(), h.vendor), ("codex", Vendor::Codex));
+    }
+
+    #[test]
+    fn the_person_s_stand_ins_go_to_their_vendor_and_bare_ones_to_the_leader_s() {
+        let tiers = vec![
+            (None, Tier::Strong, "opus[1m]".to_string()),
+            (
+                Some(Vendor::Codex),
+                Tier::Cheap,
+                "gpt-5.6-luna@low".to_string(),
+            ),
+            (Some(Vendor::Claude), Tier::Standard, "sonnet".to_string()),
+        ];
+        let team = team_vendors(vec![Vendor::Claude, Vendor::Codex], Vendor::Claude, &tiers);
+        assert_eq!(team.len(), 2);
+        let (claude, codex) = (&team[0], &team[1]);
+        assert_eq!(
+            (claude.vendor, claude.program.as_str()),
+            (Vendor::Claude, "claude")
+        );
+        assert_eq!(
+            claude.ladder.model(Tier::Strong),
+            Some("opus[1m]"),
+            "bare: the leader's"
+        );
+        assert_eq!(claude.ladder.model(Tier::Standard), Some("sonnet"));
+        assert_eq!(claude.ladder.model(Tier::Cheap), Some("haiku"));
+        assert_eq!(
+            (codex.vendor, codex.program.as_str()),
+            (Vendor::Codex, "codex")
+        );
+        assert_eq!(codex.ladder.model(Tier::Cheap), Some("gpt-5.6-luna@low"));
+        assert_eq!(
+            codex.ladder.model(Tier::Strong),
+            Some("@high"),
+            "not the bare one"
+        );
+        // With codex leading, the bare stand-in is codex's.
+        let team = team_vendors(vec![Vendor::Claude, Vendor::Codex], Vendor::Codex, &tiers);
+        assert_eq!(team[1].ladder.model(Tier::Strong), Some("opus[1m]"));
+        assert_eq!(team[0].ladder.model(Tier::Strong), Some("opus"));
+        assert!(team_vendors(vec![], Vendor::Claude, &tiers).is_empty());
     }
 
     #[test]
@@ -3052,30 +3200,144 @@ in p.rs",
             err.contains("no coding agent") && err.contains("claude, codex, gemini"),
             "{err}"
         );
-        let err = hireable(&[(Vendor::Codex, false)], Vendor::Claude).unwrap_err();
+        let err = hireable(&[(Vendor::Gemini, false)], Vendor::Claude).unwrap_err();
         assert!(
-            err.contains("claude is not on PATH (found codex)") && err.contains("--lead"),
+            err.contains("claude is not on PATH (found gemini)") && err.contains("--lead"),
             "{err}"
         );
         let err = hireable(
-            &[(Vendor::Claude, true), (Vendor::Codex, false)],
-            Vendor::Codex,
+            &[(Vendor::Claude, true), (Vendor::Gemini, false)],
+            Vendor::Gemini,
         )
         .unwrap_err();
         assert!(
-            err.contains("codex is on PATH, but") && err.contains("--lead claude"),
+            err.contains("gemini is on PATH, but") && err.contains("--lead claude"),
             "{err}"
         );
+        let err = hireable(
+            &[
+                (Vendor::Claude, true),
+                (Vendor::Codex, true),
+                (Vendor::Gemini, false),
+            ],
+            Vendor::Gemini,
+        )
+        .unwrap_err();
+        assert!(err.contains("--lead claude or --lead codex"), "{err}");
+        let err = hireable(&[(Vendor::Gemini, false)], Vendor::Gemini).unwrap_err();
+        assert!(err.contains("--lead claude"), "{err}");
         let ok = hireable(
-            &[(Vendor::Claude, true), (Vendor::Codex, false)],
-            Vendor::Claude,
+            &[
+                (Vendor::Claude, true),
+                (Vendor::Codex, true),
+                (Vendor::Gemini, false),
+            ],
+            Vendor::Codex,
         )
         .unwrap();
         assert_eq!(
             ok,
-            [Vendor::Claude],
+            [Vendor::Claude, Vendor::Codex],
             "only vendors imece drives are hireable"
         );
+    }
+
+    fn two_vendors(dir: &Path) -> Vec<Hireable> {
+        vec![
+            Hireable::claude(&fake_claude(dir), &[]),
+            Hireable::codex(&fake_codex(dir), &[]),
+        ]
+    }
+
+    #[test]
+    fn the_leader_hires_a_codex_worker_named_after_codex_on_an_effort() {
+        let mut w = team(0);
+        let mut live = Live::new(
+            1,
+            two_vendors(&std::env::temp_dir()),
+            std::env::temp_dir(),
+            PathBuf::from("/nonexistent"),
+        );
+        let got = live
+            .hire(&mut w, 0, &json!({ "vendor": "codex", "tier": "cheap" }))
+            .unwrap();
+        assert!(got.starts_with("codex-1 joined (codex, @low)."), "{got}");
+        assert_eq!(w.agents[1].vendor, Vendor::Codex);
+        assert_eq!(live.models[1].as_deref(), Some("@low"));
+        assert!(live.tiered[1]);
+        let got = live.hire(&mut w, 0, &json!({ "vendor": "codex" })).unwrap();
+        assert!(
+            got.starts_with("codex-2 joined (codex, the default model)."),
+            "{got}"
+        );
+        assert!(!live.tiered[2]);
+        // A claude worker counts its own.
+        let got = live.hire(&mut w, 0, &json!({})).unwrap();
+        assert!(got.starts_with("claude-1 joined"), "{got}");
+        // The hire tool offers both.
+        let hire = &tools_of(Role::Leader, &live.vendor_names())[3];
+        assert_eq!(
+            hire.input["properties"]["vendor"]["enum"],
+            json!(["claude", "codex"])
+        );
+        // A codex worker's prompt says what it can do.
+        let worker = system_prompt(&w, 1, 4, 2);
+        assert!(
+            worker.contains("run commands; the sandbox keeps writes inside"),
+            "{worker}"
+        );
+        let claude = system_prompt(&w, 3, 4, 2);
+        assert!(claude.contains("but not run commands"), "{claude}");
+    }
+
+    /// A stand-in for `codex` that writes its arguments where it runs and
+    /// exits, which ends the session.
+    fn fake_codex(dir: &Path) -> String {
+        use std::os::unix::fs::PermissionsExt;
+        let path = dir.join("fake-codex");
+        std::fs::write(&path, "#!/bin/sh\nprintf '%s\\n' \"$@\" > args.txt\n").unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o700)).unwrap();
+        path.to_string_lossy().into_owned()
+    }
+
+    #[test]
+    fn a_codex_leader_s_session_reads_only_and_a_worker_s_writes_its_worktree() {
+        let dir = std::env::temp_dir().join(format!("imece-codex-lead-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let repo = checkout("codex-repo");
+        let mut w = team(0);
+        w.agents[0].vendor = Vendor::Codex;
+        let mut live = Live::new(1, two_vendors(&dir), repo.clone(), dir.join("worktrees"));
+        live.models[0] = Some("gpt-5.6-terra@high".into());
+        live.told(&mut w, 0, "hello").unwrap();
+        wait_for(&mut live, &mut w, |w| w.agents[0].status == Status::Stopped);
+        let args = std::fs::read_to_string(repo.join("args.txt")).unwrap();
+        assert!(args.starts_with("app-server\n"), "{args}");
+        assert!(args.contains("sandbox_mode=\"read-only\""), "{args}");
+        assert!(args.contains("approval_policy=\"never\""), "{args}");
+        assert!(
+            !args.contains("hello") && !args.contains("You are"),
+            "no prompt in argv"
+        );
+        assert!(
+            !args.contains("--model"),
+            "the model goes to the thread, not argv"
+        );
+        let _ = std::fs::remove_file(repo.join("args.txt"));
+
+        live.hire(&mut w, 0, &json!({ "vendor": "codex" })).unwrap();
+        live.told(&mut w, 1, "hello").unwrap();
+        wait_for(&mut live, &mut w, |w| w.agents[1].status == Status::Stopped);
+        let tree = dir.join("worktrees").join("codex-1");
+        let args = std::fs::read_to_string(tree.join("args.txt")).unwrap();
+        assert!(args.contains("sandbox_mode=\"workspace-write\""), "{args}");
+        assert!(
+            args.contains("sandbox_workspace_write.network_access=false"),
+            "{args}"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+        let _ = std::fs::remove_dir_all(&repo);
     }
 
     #[test]
@@ -3285,11 +3547,28 @@ in p.rs",
             assert_eq!(vendor.label(), *program);
         }
         assert_eq!(Vendor::parse("qwen"), None);
+        let drives = |vendor| KNOWN.iter().any(|(v, _, d)| *v == vendor && *d);
+        assert!(drives(Vendor::Claude) && drives(Vendor::Codex));
+        assert!(!drives(Vendor::Gemini), "no adapter yet");
+    }
+
+    #[test]
+    fn what_an_agent_can_do_depends_on_its_vendor_and_role() {
         assert!(
-            KNOWN
-                .iter()
-                .any(|(v, _, drives)| *v == Vendor::Claude && *drives)
+            abilities(Vendor::Claude, Role::Leader).contains("not change them or run commands")
         );
+        assert!(abilities(Vendor::Claude, Role::Worker).contains("but not run commands"));
+        assert!(abilities(Vendor::Claude, Role::Helper).contains("but not run commands"));
+        assert!(abilities(Vendor::Codex, Role::Leader).contains("refuses writes and the network"));
+        assert!(
+            abilities(Vendor::Codex, Role::Worker).contains("keeps writes inside this directory")
+        );
+        assert!(
+            abilities(Vendor::Codex, Role::Helper).contains("keeps writes inside this directory")
+        );
+        let mut w = team(0);
+        w.agents[0].vendor = Vendor::Codex;
+        assert!(system_prompt(&w, 0, 4, 2).contains("run commands that only read"));
     }
 
     #[test]

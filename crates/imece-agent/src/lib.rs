@@ -4,8 +4,39 @@
 
 pub mod child;
 pub mod claude;
+pub mod codex;
 pub mod mcp;
 pub mod worktree;
+
+use std::io;
+
+/// The name imece's MCP server has in every session; its tools are named
+/// `mcp__imece__<tool>` on the screen, whatever the vendor calls them.
+pub const MCP_SERVER: &str = "imece";
+
+/// The name a tool of imece's MCP server has on the screen.
+pub fn mcp_tool(tool: &str) -> String {
+    format!("mcp__{MCP_SERVER}__{tool}")
+}
+
+/// How a session starts imece's MCP server, and which of its tools the
+/// agent may call without asking.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Mcp {
+    pub command: String,
+    pub args: Vec<String>,
+    /// Tool names as the server offers them (`send`).
+    pub tools: Vec<String>,
+}
+
+/// A running session of any vendor, as the screen drives it.
+pub trait Agent: Send {
+    /// Gives the agent a prompt. A busy session takes it after the running
+    /// turn.
+    fn prompt(&mut self, text: &str) -> io::Result<()>;
+    /// Asks the session to stop without waiting.
+    fn terminate(&mut self);
+}
 
 /// How strong a model an agent gets. Agents choose a tier, never a model
 /// name: names change with every vendor release, tiers do not. Each vendor
@@ -65,6 +96,9 @@ pub enum Event {
     Tool { name: String, target: String },
     /// A tool call came back with an error.
     ToolFailed { name: String },
+    /// Something the vendor said about the session that the person may
+    /// want in the trace: what a turn cost in tokens, whose plan pays.
+    Note(String),
     /// A turn ended. `cost` is the session's total so far, in millionths of
     /// a dollar; `denied` counts tool calls the vendor refused.
     TurnDone {
