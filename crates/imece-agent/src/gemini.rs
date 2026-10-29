@@ -1728,6 +1728,23 @@ mod tests {
     }
 
     #[test]
+    fn a_session_takes_a_command_as_typed_and_refuses_what_is_not_one() {
+        let (tx, rx) = mpsc::channel();
+        // Through the trait, as the screen drives every vendor.
+        let mut s: Box<dyn crate::Agent> = Box::new(Session { tx });
+        s.command(" /clear ").unwrap();
+        assert!(matches!(rx.try_recv(), Ok(Msg::Command(l)) if l == " /clear "));
+        for line in ["clear", "", "fix a/b"] {
+            let e = s.command(line).unwrap_err();
+            assert_eq!(e.kind(), io::ErrorKind::Unsupported, "{line:?}");
+        }
+        assert!(rx.try_recv().is_err(), "a refused command sends nothing");
+        drop(rx);
+        let e = s.command("/stats").unwrap_err();
+        assert_eq!(e.kind(), io::ErrorKind::BrokenPipe);
+    }
+
+    #[test]
     fn a_prompt_gemini_would_run_as_a_command_is_said_to_be_text() {
         assert_eq!(plain("/about"), "Text:\n/about");
         assert_eq!(plain("  $x"), "Text:\n  $x");

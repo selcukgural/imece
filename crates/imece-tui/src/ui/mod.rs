@@ -1174,6 +1174,58 @@ mod tests {
         assert!(!s.contains("› command:"), "{s}");
     }
 
+    fn type_line(app: &mut App, line: &str) {
+        key(app, KeyCode::Char('/'));
+        for c in line.chars() {
+            key(app, KeyCode::Char(c));
+        }
+        key(app, KeyCode::Enter);
+    }
+
+    fn you_said(app: &App) -> Vec<String> {
+        app.world
+            .journal
+            .iter()
+            .filter_map(|e| match &e.event {
+                Event::YouSaid { text, .. } => Some(text.clone()),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn words_reach_the_agent_and_a_command_its_own_command_line_or_a_refusal() {
+        // The demo: words reach the lead; it has no command line.
+        let mut app = app_after(1, 2, 0, Lang::En);
+        app.world.journal.clear();
+        type_line(&mut app, "hello");
+        assert_eq!(you_said(&app), ["hello"]);
+        assert!(render(&app, 140, 40).contains("sent to lead"));
+        type_line(&mut app, "/clear");
+        assert_eq!(you_said(&app), ["hello"], "a command is not said");
+        let s = render(&app, 140, 40);
+        assert!(
+            s.contains("lead took no command: the demo's agents have no command line"),
+            "{s}"
+        );
+
+        // Live: a command needs a session, words start one.
+        let w = crate::live::testing::team(1);
+        let live = crate::live::testing::idle_live(2);
+        let mut app = App::with(w, crate::app::Engine::Live(Box::new(live)), Lang::En);
+        app.world.journal.clear();
+        type_line(&mut app, "/cost");
+        assert!(you_said(&app).is_empty(), "{:?}", you_said(&app));
+        let s = render(&app, 140, 40);
+        assert!(
+            s.contains("lead took no command: it has no session yet"),
+            "{s}"
+        );
+        type_line(&mut app, "hello");
+        assert_eq!(you_said(&app), ["hello"]);
+        assert!(render(&app, 140, 40).contains("sent to lead"));
+    }
+
     #[test]
     fn typing_works_with_the_conversation_open() {
         let mut app = talking();

@@ -1717,6 +1717,24 @@ mod tests {
     }
 
     #[test]
+    fn compact_is_the_one_command_a_session_takes_and_the_rest_is_refused() {
+        let (tx, rx) = mpsc::channel();
+        // Through the trait, as the screen drives every vendor.
+        let mut s: Box<dyn crate::Agent> = Box::new(Session { tx });
+        s.command(" /compact ").unwrap();
+        assert!(matches!(rx.try_recv(), Ok(Msg::Compact)));
+        for line in ["/clear", "/cost", "compact", ""] {
+            let e = s.command(line).unwrap_err();
+            assert_eq!(e.kind(), io::ErrorKind::Unsupported, "{line:?}");
+            assert!(e.to_string().contains("/compact"), "{e}");
+        }
+        assert!(rx.try_recv().is_err(), "a refused command sends nothing");
+        drop(rx);
+        let e = s.command("/compact").unwrap_err();
+        assert_eq!(e.kind(), io::ErrorKind::BrokenPipe);
+    }
+
+    #[test]
     fn a_turn_s_effort_and_model_come_from_the_choice() {
         let mut s = with_bus(true);
         s.choice = Some("gpt-5.6-terra@xhigh".into());

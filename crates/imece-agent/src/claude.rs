@@ -832,6 +832,40 @@ sleep 5"#
     }
 
     #[test]
+    fn a_command_of_claude_s_own_goes_as_it_is_and_the_rest_is_refused() {
+        let dir = std::env::temp_dir().join(format!("imece-claude-cmd-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let out = dir.join("first-line.txt");
+        let mut s = spec(EDIT_TOOLS);
+        s.cwd = dir.clone();
+        // Reads one line, keeps it, ends.
+        s.program = fake(
+            &dir,
+            &format!("IFS= read -r l; printf '%s\\n' \"$l\" > {}", out.display()),
+        );
+        let (tx, rx) = mpsc::channel();
+        let mut session: Box<dyn crate::Agent> = Box::new(
+            Session::start(&s, move |e| {
+                let _ = tx.send(e);
+            })
+            .unwrap(),
+        );
+        for not_a_command in ["cost", "", "clear please"] {
+            let e = session.command(not_a_command).unwrap_err();
+            assert_eq!(e.kind(), io::ErrorKind::Unsupported, "{not_a_command:?}");
+        }
+        session.command(" /cost ").unwrap();
+        let e = rx.recv_timeout(Duration::from_secs(10)).expect("in time");
+        assert!(matches!(e, Event::Stopped(_)), "{e:?}");
+        assert_eq!(
+            std::fs::read_to_string(&out).unwrap(),
+            format!("{}\n", prompt_line("/cost")),
+            "the command goes as typed, not as text"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn the_cost_keeps_going_up_across_a_clear() {
         use serde_json::json;
         let mut p = Parser::new(&spec(EDIT_TOOLS));

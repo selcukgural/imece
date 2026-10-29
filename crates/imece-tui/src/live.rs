@@ -403,6 +403,17 @@ pub struct Live {
     run_timeout: Duration,
 }
 
+/// How long a tool call waits for imece's answer: a run is answered when
+/// the program ends, not by the screen's loop, so it waits for the run's
+/// deadline and a little more; the rest are answered within a step.
+fn call_wait(tool: &str, run_timeout: Duration) -> Duration {
+    if tool == "run" {
+        run_timeout + CALL_WAIT
+    } else {
+        CALL_WAIT
+    }
+}
+
 /// The coding agents among `known` (see [`KNOWN`]) on PATH, run from the
 /// checkout `repo` is in, with whether imece drives them.
 pub fn probe(repo: &Path, known: &[Known]) -> Result<Vec<(Vendor, bool)>, String> {
@@ -601,16 +612,14 @@ impl Live {
         };
         assert_eq!(bus.servers.len(), id, "sockets are bound in agent order");
         let tx = self.calls_tx.clone();
-        // A run is answered when the program ends, not by the screen's loop.
-        let run_wait = self.run_timeout + CALL_WAIT;
+        let run_timeout = self.run_timeout;
         let server = Server::bind(&bus.dir.join(format!("a{id}.sock")), tools, {
             move |name, args| {
                 let (reply, answer) = mpsc::channel();
                 tx.send((id, name.to_string(), args.clone(), reply))
                     .map_err(|_| "imece is closing".to_string())?;
-                let wait = if name == "run" { run_wait } else { CALL_WAIT };
                 answer
-                    .recv_timeout(wait)
+                    .recv_timeout(call_wait(name, run_timeout))
                     .map_err(|_| "imece did not answer in time; try again".to_string())?
             }
         })?;
@@ -2117,10 +2126,11 @@ fn repo_notes(repo: &Path, vendor: Vendor) -> Option<String> {
     }
     let mut body = text.trim().to_string();
     if body.len() > MAX_NOTES {
-        let mut cut = MAX_NOTES;
-        while !body.is_char_boundary(cut) {
-            cut -= 1;
-        }
+        // The last character boundary at or before the cap.
+        let cut = (0..=MAX_NOTES)
+            .rev()
+            .find(|&i| body.is_char_boundary(i))
+            .unwrap_or(0);
         body.truncate(cut);
         body.push_str("\n[cut: the file goes on]");
     }
@@ -2174,12 +2184,13 @@ fn local_seconds_after_midnight() -> u64 {
     (tm.tm_hour as u64) * 3600 + (tm.tm_min as u64) * 60 + tm.tm_sec as u64
 }
 
+/// Teams for the tests of this module and of the screen.
 #[cfg(test)]
-mod tests {
+pub(crate) mod testing {
     use super::*;
 
     /// A team without sessions, to apply events to.
-    fn team(workers: usize) -> World {
+    pub(crate) fn team(workers: usize) -> World {
         let mut w = World {
             tick: 3,
             projects: vec![Project {
@@ -2220,6 +2231,30 @@ mod tests {
         }
         w
     }
+
+    pub(super) fn claude_at(program: &str) -> Vec<Hireable> {
+        vec![Hireable::claude(program, &[])]
+    }
+
+    /// A live team whose sessions never start: what counts is what was
+    /// queued for them.
+    pub(crate) fn idle_live(agents: usize) -> Live {
+        Live::new(
+            agents,
+            claude_at("/nonexistent/claude"),
+            std::env::temp_dir(),
+            PathBuf::from("/nonexistent"),
+        )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    use super::testing::*;
+    use super::*;
 
     fn with_card(w: &mut World, id: AgentId) -> CardId {
         let c = w.cards.len();
@@ -2422,10 +2457,6 @@ mod tests {
     }
 
     /// Claude Code as `program`, on its default models.
-    fn claude_at(program: &str) -> Vec<Hireable> {
-        vec![Hireable::claude(program, &[])]
-    }
-
     #[test]
     fn nobody_is_prompted_once_the_team_has_spent_the_budget() {
         let mut w = team(1);
@@ -2627,7 +2658,16 @@ mod tests {
         }
         // Leaders change nothing: cargo's writing commands and the person's
         // programs are for workers and helpers.
-        for writes in ["fmt", "fmt --all", "fix", "clean", "new x", "init"] {
+        for writes in [
+            "fmt",
+            "fmt --all",
+            "+nightly fmt",
+            "--locked +nightly fmt",
+            "fix",
+            "clean",
+            "new x",
+            "init",
+        ] {
             let e = allowed(Role::Leader, &argv(&format!("cargo {writes}")), &extra).unwrap_err();
             assert!(e.contains("changes files"), "{e}");
             allowed(Role::Worker, &argv(&format!("cargo {writes}")), &extra).unwrap();
@@ -2642,6 +2682,52 @@ mod tests {
         }
         let e = allowed(Role::Worker, &argv("yarn"), &extra).unwrap_err();
         assert!(e.contains("cargo, git, npm, make"), "{e}");
+    }
+
+    #[test]
+    fn a_run_s_call_waits_past_its_deadline_and_the_rest_a_short_while() {
+        let t = Duration::from_secs(600);
+        assert_eq!(call_wait("run", t), Duration::from_secs(630));
+        for tool in ["send", "post", "board", "claim", "hire"] {
+            assert_eq!(call_wait(tool, t), CALL_WAIT, "{tool}");
+        }
+    }
+
+    /// A session that says when it was ended.
+    struct Ends(Arc<AtomicBool>);
+    impl imece_agent::Agent for Ends {
+        fn prompt(&mut self, _: &str) -> io::Result<()> {
+            Ok(())
+        }
+        fn command(&mut self, _: &str) -> io::Result<()> {
+            Ok(())
+        }
+        fn terminate(&mut self) {
+            self.0.store(true, Ordering::SeqCst);
+        }
+    }
+
+    #[test]
+    fn dropping_imece_ends_every_session_and_kills_every_run() {
+        use std::os::unix::process::{CommandExt, ExitStatusExt};
+        let mut w = team(1);
+        let mut live = idle_live(2);
+        let ended = Arc::new(AtomicBool::new(false));
+        live.ready(
+            &mut w,
+            1,
+            Ok((Box::new(Ends(ended.clone())), PathBuf::from("/w"), None)),
+        );
+        let mut sleeper = std::process::Command::new("sleep")
+            .arg("30")
+            .process_group(0)
+            .spawn()
+            .unwrap();
+        live.running.add(sleeper.id() as i32);
+        drop(live);
+        assert!(ended.load(Ordering::SeqCst), "the session was not ended");
+        let status = sleeper.wait().unwrap();
+        assert_eq!(status.signal(), Some(libc::SIGKILL), "{status:?}");
     }
 
     #[test]
@@ -2692,6 +2778,12 @@ mod tests {
         )
         .unwrap_err();
         assert!(e.contains("no directory"), "{e}");
+        // A command may be MAX_COMMAND characters long, not one more.
+        let long = |n: usize| json!({ "command": format!("git log {}", "x".repeat(n - 8)) });
+        let e = call(&mut live, &mut w, 1, "run", long(MAX_COMMAND)).unwrap_err();
+        assert!(e.contains("no directory"), "{e}");
+        let e = call(&mut live, &mut w, 1, "run", long(MAX_COMMAND + 1)).unwrap_err();
+        assert!(e.contains("longer than 1000"), "{e}");
         let dir = std::env::temp_dir().join(format!("imece-run-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
@@ -2824,7 +2916,12 @@ mod tests {
             );
         }
         assert_eq!(repo_notes(&dir, Vendor::Codex), None);
-        // A long file is cut at a character boundary, and says so.
+        // A file of exactly the cap is whole; one byte more is cut at a
+        // character boundary, and says so.
+        std::fs::write(dir.join("AGENTS.md"), "x".repeat(MAX_NOTES)).unwrap();
+        let notes = repo_notes(&dir, Vendor::Claude).unwrap();
+        assert!(!notes.contains("[cut"), "{}", &notes[notes.len() - 40..]);
+        assert_eq!(notes.matches('x').count(), MAX_NOTES);
         let long = format!("{}é", "x".repeat(MAX_NOTES - 1));
         std::fs::write(dir.join("AGENTS.md"), &long).unwrap();
         let notes = repo_notes(&dir, Vendor::Claude).unwrap();
@@ -2881,16 +2978,6 @@ mod tests {
             ));
         }
         assert_eq!(w.journal.len(), 3);
-    }
-
-    fn idle_live(agents: usize) -> Live {
-        Live::new(
-            agents,
-            // Sessions never start: what counts is what was queued for them.
-            claude_at("/nonexistent/claude"),
-            std::env::temp_dir(),
-            PathBuf::from("/nonexistent"),
-        )
     }
 
     fn msg(to: &str, kind: &str, body: &str) -> Value {

@@ -205,16 +205,12 @@ fn collect(mut r: impl Read, max: usize) -> (String, usize) {
             Ok(n) => n,
         };
         total += n;
-        let mut chunk = &buf[..n];
-        if head.len() < half {
-            let take = chunk.len().min(half - head.len());
-            head.extend_from_slice(&chunk[..take]);
-            chunk = &chunk[take..];
-        }
-        tail.extend_from_slice(chunk);
-        if tail.len() > half {
-            tail.drain(..tail.len() - half);
-        }
+        // The head fills first; the tail keeps the last half.
+        let take = n.min(half.saturating_sub(head.len()));
+        head.extend_from_slice(&buf[..take]);
+        tail.extend_from_slice(&buf[take..n]);
+        let extra = tail.len().saturating_sub(half);
+        tail.drain(..extra);
     }
     let mut out = String::from_utf8_lossy(&head).into_owned();
     if !tail.is_empty() {
@@ -428,6 +424,17 @@ mod tests {
     }
 
     #[test]
+    fn control_characters_go_and_an_osc_ends_at_bel_or_esc_backslash() {
+        assert_eq!(strip_ansi("a\u{1}b\u{7}c\td\r\n"), "abc\td\r\n");
+        assert_eq!(strip_ansi("\u{1b}[1;31mred\u{1b}[0m"), "red");
+        assert_eq!(strip_ansi("\u{1b}]0;title\u{7}Z"), "Z");
+        // A backslash inside the OSC does not end it; ESC \ does.
+        assert_eq!(strip_ansi("\u{1b}]8;;http://x\\y\u{1b}\\Z"), "Z");
+        assert_eq!(strip_ansi("\u{1b}Xq"), "q");
+        assert_eq!(strip_ansi("\u{1b}"), "");
+    }
+
+    #[test]
     fn the_first_and_last_bytes_are_kept_and_the_middle_is_cut() {
         let (s, n) = collect(&b"0123456789"[..], 6);
         assert_eq!(n, 10);
@@ -438,6 +445,9 @@ mod tests {
         assert_eq!(s, "01234");
         let (s, n) = collect(&b""[..], 6);
         assert_eq!((s.as_str(), n), ("", 0));
+        // One byte over: the cut says so.
+        let (s, n) = collect(&b"0123456"[..], 6);
+        assert_eq!((s.as_str(), n), ("012\n[... 1 bytes cut ...]\n456", 7));
         // Many small reads land in the right halves too.
         let big: Vec<u8> = (0..20_000).map(|i| b'a' + (i % 26) as u8).collect();
         let (s, n) = collect(&big[..], 1000);
