@@ -639,10 +639,13 @@ mod tests {
 
     fn events(spec: &Spec, prompt: &str) -> Vec<Event> {
         let (tx, rx) = mpsc::channel();
-        let mut s = Session::start(spec, move |e| {
-            let _ = tx.send(e);
-        })
-        .unwrap();
+        // Through the trait, as the screen drives every vendor.
+        let mut s: Box<dyn crate::Agent> = Box::new(
+            Session::start(spec, move |e| {
+                let _ = tx.send(e);
+            })
+            .unwrap(),
+        );
         s.prompt(prompt).unwrap();
         let mut out = Vec::new();
         loop {

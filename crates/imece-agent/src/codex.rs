@@ -1689,6 +1689,19 @@ mod tests {
                 },
             ]
         );
+        // A patch the sandbox refused counts as a refusal too.
+        let acts = p
+            .line(&notify(
+                "item/completed",
+                json!({ "item": { "type": "fileChange", "status": "declined", "changes": [] } }),
+            ))
+            .unwrap();
+        assert_eq!(
+            events(&acts),
+            [Event::ToolFailed {
+                name: "apply_patch".into()
+            }]
+        );
         let acts = p
             .line(&notify(
                 "item/completed",
@@ -1761,7 +1774,7 @@ mod tests {
             json!({ "item": { "type": "reasoning", "summary": [] } }),
         );
         assert_eq!(p.line(&reasoning).unwrap(), []);
-        // The turn fails with the error's words and counts the refusal.
+        // The turn fails with the error's words and counts both refusals.
         p.line(&notify(
             "error",
             json!({ "error": { "message": "model overloaded" }, "willRetry": false }),
@@ -1779,7 +1792,7 @@ mod tests {
                 ok: false,
                 text: "model overloaded".into(),
                 cost: 0,
-                denied: 1
+                denied: 2
             }]
         );
     }
@@ -1932,10 +1945,13 @@ done"#
 
     fn run(spec: &Spec, prompts: &[&str]) -> Vec<Event> {
         let (tx, rx) = mpsc::channel();
-        let mut s = Session::start(spec, move |e| {
-            let _ = tx.send(e);
-        })
-        .unwrap();
+        // Through the trait, as the screen drives every vendor.
+        let mut s: Box<dyn crate::Agent> = Box::new(
+            Session::start(spec, move |e| {
+                let _ = tx.send(e);
+            })
+            .unwrap(),
+        );
         for p in prompts {
             s.prompt(p).unwrap();
         }
@@ -2048,11 +2064,18 @@ done"#
         let on = clean_answers(false, &cwd.to_string_lossy());
         let mut first = on.clone();
         first[2] = json!({ "config": good_config(false, &[("node_repl", true)], false) });
+        // After its last answer the first start also blurts out a line that
+        // would stop the session if the second start took it as its own.
         let body = format!(
             r#"case "$*" in *'mcp_servers.node_repl.enabled=false'*) exec "$0.second" "$@";; esac
 {}"#,
-            fake_body(&first, &[])
+            fake_body(&first, &[]).replace(
+                r#""$id" "$result""#,
+                r#""$id" "$result"
+  [ "$n" = 4 ] && echo '{"jsonrpc":"2.0","id":99,"result":{}}'"#
+            )
         );
+        assert!(body.contains(r#""id":99"#), "the blurt is in: {body}");
         let program = fake(&dir, "fake-codex", &body);
         let turn = [notify(
             "turn/completed",
@@ -2112,6 +2135,79 @@ done"#
         // The driver is gone; the channel is closed.
         thread::sleep(Duration::from_millis(100));
         assert!(session.prompt("late").is_err());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A stand-in that answers nothing and never exits on its own.
+    fn sleeper(dir: &Path) -> Spec {
+        let mut s = spec(true);
+        s.cwd = dir.to_path_buf();
+        s.program = fake(dir, "fake-codex", "cat > /dev/null");
+        s
+    }
+
+    #[test]
+    fn terminating_a_session_ends_its_driver_and_its_process() {
+        let dir = std::env::temp_dir().join(format!("imece-codex-term-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let (tx, rx) = mpsc::channel();
+        let mut session: Box<dyn crate::Agent> = Box::new(
+            Session::start(&sleeper(&dir), move |e| {
+                let _ = tx.send(e);
+            })
+            .unwrap(),
+        );
+        assert!(session.prompt("hello").is_ok(), "the driver is there");
+        session.terminate();
+        // The driver returns and lets go of the events channel.
+        assert_eq!(
+            rx.recv_timeout(Duration::from_secs(10)).unwrap_err(),
+            RecvTimeoutError::Disconnected
+        );
+        assert!(session.prompt("late").is_err());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn dropping_a_session_ends_its_driver_too() {
+        let dir = std::env::temp_dir().join(format!("imece-codex-drop-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let (tx, rx) = mpsc::channel();
+        let session = Session::start(&sleeper(&dir), move |e| {
+            let _ = tx.send(e);
+        })
+        .unwrap();
+        drop(session);
+        assert_eq!(
+            rx.recv_timeout(Duration::from_secs(10)).unwrap_err(),
+            RecvTimeoutError::Disconnected
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn an_answer_that_takes_a_moment_is_waited_for() {
+        let dir = std::env::temp_dir().join(format!("imece-codex-slow-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let cwd = dir.canonicalize().unwrap();
+        // Slower than the driver's poll, well within its patience.
+        let body = format!(
+            "sleep 1.5\n{}",
+            fake_body(&clean_answers(false, &cwd.to_string_lossy()), &[])
+        );
+        let mut s = spec(false);
+        s.cwd = cwd;
+        s.program = fake(&dir, "fake-codex", &body);
+        let (tx, rx) = mpsc::channel();
+        let _session = Session::start(&s, move |e| {
+            let _ = tx.send(e);
+        })
+        .unwrap();
+        let e = rx.recv_timeout(Duration::from_secs(20)).unwrap();
+        assert!(matches!(e, Event::Started { .. }), "{e:?}");
         let _ = std::fs::remove_dir_all(&dir);
     }
 

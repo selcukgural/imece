@@ -516,6 +516,10 @@ mod tests {
         assert!(a.tiers.is_empty());
         assert_eq!(a.budget, 500_000);
         assert_eq!(a.repo, PathBuf::from("."));
+        assert_eq!(
+            args(&["--repo", "/work/other"], &[]).unwrap().repo,
+            PathBuf::from("/work/other")
+        );
         // The old way of asking for live agents still works.
         assert!(!args(&["--live"], &[]).unwrap().demo);
         let a = args(&["--demo", "--seed", "3", "--agents", "30"], &[]).unwrap();
