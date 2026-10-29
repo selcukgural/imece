@@ -5,10 +5,12 @@
 //! through them with the text following. Pure: the screen asks `suggest`
 //! after every change and keeps the `Menu` it gets.
 
+use std::path::Path;
+
 use crate::model::{Agent, ProjectId, World};
 
 /// The commands imece itself takes after `:`.
-pub const COMMANDS: [&str; 3] = ["budget", "lead", "theme"];
+pub const COMMANDS: [&str; 6] = ["budget", "close", "lead", "open", "rename", "theme"];
 
 /// What `:lead` takes.
 pub const LEADS: [&str; 4] = ["claude", "codex", "gemini", "ask"];
@@ -80,8 +82,9 @@ fn menu(start: usize, word: &str, items: Vec<String>, tail: &'static str) -> Opt
 }
 
 /// What the composer could complete `input` with. `project` is the one
-/// at hand: its agents come first, and a `/` alone goes to its leader.
-pub fn suggest(input: &str, w: &World, project: ProjectId) -> Option<Menu> {
+/// at hand: its agents come first, and a `/` alone goes to its leader;
+/// `home` stands for `~` in a path.
+pub fn suggest(input: &str, w: &World, project: ProjectId, home: Option<&Path>) -> Option<Menu> {
     if let Some(rest) = input.strip_prefix('@') {
         return match rest.split_once(' ') {
             None => {
@@ -116,10 +119,54 @@ pub fn suggest(input: &str, w: &World, project: ProjectId) -> Option<Menu> {
                 let start = input.len() - arg.len();
                 menu(start, arg, matching(arg, crate::theme::builtins()), "")
             }
+            Some(("close", arg)) => {
+                let start = input.len() - arg.len();
+                let names = w.open_projects().map(|p| p.name.as_str());
+                menu(start, arg, matching(arg, names), "")
+            }
+            Some(("open", arg)) => dirs(input.len() - arg.len(), arg, home, &list_dirs),
             Some(_) => None,
         };
     }
     None
+}
+
+/// Directories for the path being typed after `:open`: the ones in its
+/// parent that start with its last segment, hidden ones only when that
+/// segment starts with `.`; `~` stands for `home`, as in a shell. The
+/// items are whole paths (the word is replaced), followed by `/` so `tab`
+/// steps into the chosen one. `list` names what a directory holds.
+pub fn dirs(
+    start: usize,
+    arg: &str,
+    home: Option<&Path>,
+    list: &dyn Fn(&Path) -> Vec<String>,
+) -> Option<Menu> {
+    let (dir, last) = match arg.rsplit_once('/') {
+        Some((d, l)) => (format!("{d}/"), l),
+        None => (String::new(), arg),
+    };
+    let real = crate::app::expand_tilde(if dir.is_empty() { "." } else { &dir }, home);
+    let items: Vec<String> = list(&real)
+        .iter()
+        .filter(|n| n.starts_with(last) && (last.starts_with('.') || !n.starts_with('.')))
+        .map(|n| format!("{dir}{n}"))
+        .collect();
+    menu(start, arg, items, "/")
+}
+
+/// The directories in `dir`, sorted; none when it can not be read.
+fn list_dirs(dir: &Path) -> Vec<String> {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return Vec::new();
+    };
+    let mut names: Vec<String> = entries
+        .flatten()
+        .filter(|e| e.path().is_dir())
+        .map(|e| e.file_name().to_string_lossy().into_owned())
+        .collect();
+    names.sort();
+    names
 }
 
 /// The agent's own commands for `after` (what follows its name, or the
@@ -153,7 +200,7 @@ mod tests {
     #[test]
     fn an_at_offers_the_agents_of_the_project_at_hand_first_then_the_others() {
         let w = world();
-        let all = suggest("@", &w, 0).unwrap();
+        let all = suggest("@", &w, 0, None).unwrap();
         assert_eq!(all.start, 1);
         assert_eq!(all.tail, " ");
         assert_eq!(all.chosen, 0);
@@ -178,7 +225,7 @@ mod tests {
                 .all(|n| w.agents[w.agent_by_name(n).unwrap()].project == 1)
         );
         // Looked at from the other project, its agents come first.
-        let flipped = suggest("@", &w, 1).unwrap();
+        let flipped = suggest("@", &w, 1, None).unwrap();
         assert_eq!(
             w.agents[w.agent_by_name(&flipped.items[0]).unwrap()].project,
             1
@@ -191,7 +238,7 @@ mod tests {
         let w = world();
         let lead = w.agents[w.projects[0].leader].name.clone();
         let (head, _) = lead.split_at(2);
-        let m = suggest(&format!("@{}", head.to_uppercase()), &w, 0).unwrap();
+        let m = suggest(&format!("@{}", head.to_uppercase()), &w, 0, None).unwrap();
         assert!(m.items.contains(&lead), "{:?}", m.items);
         assert!(m.items.iter().all(|n| n.starts_with(head)));
         assert_eq!(m.start, 1);
@@ -202,14 +249,14 @@ mod tests {
             .filter(|a| !a.gone && a.name.starts_with(&lead))
             .collect();
         if alone.len() == 1 {
-            assert_eq!(suggest(&format!("@{lead}"), &w, 0), None);
+            assert_eq!(suggest(&format!("@{lead}"), &w, 0, None), None);
         }
-        assert_eq!(suggest("@zzz", &w, 0), None);
+        assert_eq!(suggest("@zzz", &w, 0, None), None);
         // A gone agent is not offered.
         let mut w = world();
         let name = w.agents[1].name.clone();
         w.agents[1].gone = true;
-        assert!(!names(&suggest("@", &w, 0)).contains(&name.as_str()));
+        assert!(!names(&suggest("@", &w, 0, None)).contains(&name.as_str()));
     }
 
     #[test]
@@ -218,77 +265,77 @@ mod tests {
         let lead = w.projects[0].leader;
         let name = w.agents[lead].name.clone();
         assert_eq!(
-            suggest(&format!("@{name} /"), &w, 0),
+            suggest(&format!("@{name} /"), &w, 0, None),
             None,
             "none listed yet"
         );
-        assert_eq!(suggest("/", &w, 0), None);
+        assert_eq!(suggest("/", &w, 0, None), None);
         let cmds = ["/clear", "/compact", "/cost", "/context"];
         w.agents[lead].commands = cmds.iter().map(|c| c.to_string()).collect();
-        assert_eq!(suggest(&format!("@{name} hello"), &w, 0), None);
+        assert_eq!(suggest(&format!("@{name} hello"), &w, 0, None), None);
         assert_eq!(
-            suggest(&format!("@{name} "), &w, 0),
+            suggest(&format!("@{name} "), &w, 0, None),
             None,
             "a message is about to be written, not a command"
         );
-        let m = suggest(&format!("@{name} /"), &w, 0).unwrap();
+        let m = suggest(&format!("@{name} /"), &w, 0, None).unwrap();
         assert_eq!(m.items, cmds);
         assert_eq!(m.start, name.len() + 2);
         assert_eq!(m.tail, " ");
-        let m = suggest(&format!("@{name} /c"), &w, 0).unwrap();
+        let m = suggest(&format!("@{name} /c"), &w, 0, None).unwrap();
         assert_eq!(m.items, ["/clear", "/compact", "/cost", "/context"]);
-        let m = suggest(&format!("@{name} /CO"), &w, 0).unwrap();
+        let m = suggest(&format!("@{name} /CO"), &w, 0, None).unwrap();
         assert_eq!(m.items, ["/compact", "/cost", "/context"]);
-        assert_eq!(suggest(&format!("@{name} /clear x"), &w, 0), None);
-        assert_eq!(suggest("@nobody /c", &w, 0), None);
+        assert_eq!(suggest(&format!("@{name} /clear x"), &w, 0, None), None);
+        assert_eq!(suggest("@nobody /c", &w, 0, None), None);
         // A `/` alone is the leader's; another agent's list is its own.
-        let m = suggest("/", &w, 0).unwrap();
+        let m = suggest("/", &w, 0, None).unwrap();
         assert_eq!(m.items, cmds);
         assert_eq!(m.start, 0);
         let other = w.agents[w.projects[1].leader].name.clone();
-        assert_eq!(suggest(&format!("@{other} /c"), &w, 0), None);
-        assert_eq!(suggest("/", &w, 1), None);
-        assert_eq!(suggest("/clear", &w, 0), None, "whole already");
-        assert_eq!(suggest("/zzz", &w, 0), None);
+        assert_eq!(suggest(&format!("@{other} /c"), &w, 0, None), None);
+        assert_eq!(suggest("/", &w, 1, None), None);
+        assert_eq!(suggest("/clear", &w, 0, None), None, "whole already");
+        assert_eq!(suggest("/zzz", &w, 0, None), None);
     }
 
     #[test]
     fn a_colon_offers_imeces_commands_and_lead_its_vendors() {
         let w = world();
-        let m = suggest(":", &w, 0).unwrap();
+        let m = suggest(":", &w, 0, None).unwrap();
         assert_eq!(m.items, COMMANDS);
         assert_eq!((m.start, m.tail), (1, " "));
-        assert_eq!(names(&suggest(":B", &w, 0)), ["budget"]);
-        assert_eq!(suggest(":budget", &w, 0), None);
-        assert_eq!(suggest(":budget 8", &w, 0), None);
-        assert_eq!(suggest(":x", &w, 0), None);
-        let m = suggest(":lead ", &w, 0).unwrap();
+        assert_eq!(names(&suggest(":B", &w, 0, None)), ["budget"]);
+        assert_eq!(suggest(":budget", &w, 0, None), None);
+        assert_eq!(suggest(":budget 8", &w, 0, None), None);
+        assert_eq!(suggest(":x", &w, 0, None), None);
+        let m = suggest(":lead ", &w, 0, None).unwrap();
         assert_eq!(m.items, LEADS);
         assert_eq!((m.start, m.tail), (6, ""));
-        let m = suggest(":lead c", &w, 0).unwrap();
+        let m = suggest(":lead c", &w, 0, None).unwrap();
         assert_eq!(m.items, ["claude", "codex"]);
         assert_eq!(m.start, 6);
-        assert_eq!(suggest(":lead codex", &w, 0), None);
-        assert_eq!(suggest(":lead codex ", &w, 0), None);
-        assert_eq!(suggest(":lead codex x", &w, 0), None);
-        assert_eq!(suggest(":b 80", &w, 0), None);
-        let m = suggest(":theme ", &w, 0).unwrap();
+        assert_eq!(suggest(":lead codex", &w, 0, None), None);
+        assert_eq!(suggest(":lead codex ", &w, 0, None), None);
+        assert_eq!(suggest(":lead codex x", &w, 0, None), None);
+        assert_eq!(suggest(":b 80", &w, 0, None), None);
+        let m = suggest(":theme ", &w, 0, None).unwrap();
         assert_eq!(m.items, crate::theme::builtins().collect::<Vec<_>>());
         assert_eq!((m.start, m.tail), (7, ""));
-        let m = suggest(":theme D", &w, 0).unwrap();
+        let m = suggest(":theme D", &w, 0, None).unwrap();
         assert_eq!(names(&Some(m.clone())), ["dark", "dracula"]);
         assert_eq!(m.start, 7, "the word starts after the command");
-        assert_eq!(suggest(":theme dark", &w, 0), None);
+        assert_eq!(suggest(":theme dark", &w, 0, None), None);
         assert_eq!(
-            suggest(":theme ./dark", &w, 0),
+            suggest(":theme ./dark", &w, 0, None),
             None,
             "a path is not completed"
         );
-        assert_eq!(suggest(":theme dark x", &w, 0), None);
+        assert_eq!(suggest(":theme dark x", &w, 0, None), None);
         // Plain text, and a shell command, get no offers.
-        assert_eq!(suggest("hello", &w, 0), None);
-        assert_eq!(suggest("!cargo", &w, 0), None);
-        assert_eq!(suggest("", &w, 0), None);
+        assert_eq!(suggest("hello", &w, 0, None), None);
+        assert_eq!(suggest("!cargo", &w, 0, None), None);
+        assert_eq!(suggest("", &w, 0, None), None);
     }
 
     #[test]
@@ -313,5 +360,80 @@ mod tests {
         m.insert(&mut input);
         assert_eq!(input, ":lead ask");
         assert_eq!(Menu::new(0, vec![], " "), None);
+    }
+
+    #[test]
+    fn open_completes_directories_and_close_the_open_projects() {
+        let tree = |dir: &Path| -> Vec<String> {
+            match dir.to_str().unwrap() {
+                "/t" | "/t/" => vec![".hidden".into(), "alpha".into(), "beta".into()],
+                "/home/me" | "/home/me/" => vec!["src".into()],
+                "." => vec!["here".into()],
+                _ => Vec::new(),
+            }
+        };
+        let m = dirs(6, "/t/", None, &tree).unwrap();
+        assert_eq!(m.items, ["/t/alpha", "/t/beta"], "no hidden ones unasked");
+        assert_eq!((m.start, m.tail), (6, "/"));
+        assert_eq!(names(&dirs(6, "/t/.", None, &tree)), ["/t/.hidden"]);
+        assert_eq!(names(&dirs(6, "/t/al", None, &tree)), ["/t/alpha"]);
+        assert_eq!(dirs(6, "/t/alpha", None, &tree), None, "whole already");
+        assert_eq!(dirs(6, "/t/x", None, &tree), None);
+        assert_eq!(
+            names(&dirs(6, "", None, &tree)),
+            ["here"],
+            "nothing typed: here"
+        );
+        assert_eq!(names(&dirs(6, "h", None, &tree)), ["here"]);
+        let home = Some(Path::new("/home/me"));
+        assert_eq!(names(&dirs(6, "~/", home, &tree)), ["~/src"]);
+        assert_eq!(names(&dirs(6, "~/s", home, &tree)), ["~/src"]);
+        assert_eq!(dirs(6, "~/", None, &tree), None, "no home, no ~");
+
+        // Through `suggest`, on the real filesystem.
+        let dir = std::env::temp_dir().join(format!("imece-complete-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        for d in ["alpha", "beta", ".hidden"] {
+            std::fs::create_dir_all(dir.join(d)).unwrap();
+        }
+        std::fs::write(dir.join("file"), "").unwrap();
+        let w = world();
+        let at = |s: &str| format!("{}/{s}", dir.display());
+        let m = suggest(&format!(":open {}", at("")), &w, 0, None).unwrap();
+        assert_eq!(m.items, [at("alpha"), at("beta")], "directories only");
+        assert_eq!((m.start, m.tail), (6, "/"));
+        assert_eq!(
+            names(&suggest(&format!(":open {}", at("b")), &w, 0, None)),
+            [at("beta")]
+        );
+        let m = suggest(":open ~/", &w, 0, Some(&dir)).unwrap();
+        assert_eq!(m.items, ["~/alpha", "~/beta"]);
+        assert_eq!(suggest(":open /nonexistent-dir/", &w, 0, None), None);
+        assert_eq!(
+            suggest(":open", &w, 0, None),
+            None,
+            "the command itself, whole"
+        );
+        assert_eq!(
+            suggest(&format!(":o {}", at("")), &w, 0, None),
+            None,
+            "short forms are not completed"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+
+        let m = suggest(":close ", &w, 0, None).unwrap();
+        assert_eq!(m.items, ["shop-api", "mobile-app"]);
+        assert_eq!((m.start, m.tail), (7, ""));
+        assert_eq!(names(&suggest(":close M", &w, 0, None)), ["mobile-app"]);
+        assert_eq!(suggest(":close shop-api", &w, 0, None), None);
+        let mut w = w;
+        w.projects[1].closed = true;
+        assert_eq!(
+            names(&suggest(":close ", &w, 0, None)),
+            ["shop-api"],
+            "open ones"
+        );
+        assert_eq!(suggest(":c ", &w, 0, None), None);
+        assert_eq!(suggest(":rename ", &w, 0, None), None);
     }
 }

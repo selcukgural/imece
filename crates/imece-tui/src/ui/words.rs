@@ -4,6 +4,11 @@
 use crate::i18n::{Lang, fill};
 use crate::model::*;
 
+/// The name of the project agent `id` belongs to.
+fn project(w: &World, id: AgentId) -> &str {
+    &w.projects[w.agents[id].project].name
+}
+
 fn name(w: &World, id: AgentId) -> &str {
     &w.agents[id].name
 }
@@ -85,6 +90,9 @@ pub fn event(lang: Lang, w: &World, e: &Event) -> String {
         Event::Fallback { agent, model } => fill(t.ev_fallback, &[name(w, *agent), model]),
         Event::Budget { from, to, .. } => fill(t.ev_budget, &[&dollars(*to), &dollars(*from)]),
         Event::Shell { command, ended, .. } => shell(lang, command, *ended),
+        Event::Opened { leader, path } => fill(t.ev_opened, &[project(w, *leader), path]),
+        Event::Closed { leader } => fill(t.ev_closed, &[project(w, *leader)]),
+        Event::Renamed { from, to, .. } => fill(t.ev_renamed, &[from, to]),
         Event::WorktreeMoved { agent, from, to } => {
             fill(t.ev_worktree_moved, &[name(w, *agent), from, to])
         }

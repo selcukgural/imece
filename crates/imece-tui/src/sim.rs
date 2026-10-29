@@ -360,6 +360,7 @@ pub fn world(
             leader,
             trunk: Some(140 + 37 * p as u32),
             repo,
+            closed: false,
         });
     }
     let mut counts = [0usize; 5];

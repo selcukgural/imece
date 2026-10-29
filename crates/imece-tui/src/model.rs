@@ -239,6 +239,9 @@ pub struct Project {
     pub trunk: Option<u32>,
     /// The project's files and the symbols agents lease in them.
     pub repo: &'static [(&'static str, &'static [&'static str])],
+    /// Closed by the person (`:close`): its agents left and it is not
+    /// drawn; kept so ids stay stable, and opened again in place.
+    pub closed: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -590,6 +593,22 @@ pub enum Event {
         command: String,
         ended: Ended,
     },
+    /// The person opened the checkout at `path` as a project (`:open`);
+    /// `leader` is its new leader.
+    Opened {
+        leader: AgentId,
+        path: String,
+    },
+    /// The person closed a project (`:close`); its agents left.
+    Closed {
+        leader: AgentId,
+    },
+    /// The person renamed a project (`:rename`), `from` to `to`.
+    Renamed {
+        leader: AgentId,
+        from: String,
+        to: String,
+    },
     /// A live agent's worktree was clean at an older commit and was moved
     /// to the checkout's HEAD when its session started.
     WorktreeMoved {
@@ -671,7 +690,10 @@ impl Event {
             | Event::Rejected { .. }
             | Event::YouSaid { .. }
             | Event::Budget { .. }
-            | Event::Shell { .. } => EntryKind::Person,
+            | Event::Shell { .. }
+            | Event::Opened { .. }
+            | Event::Closed { .. }
+            | Event::Renamed { .. } => EntryKind::Person,
         }
     }
 
@@ -680,7 +702,10 @@ impl Event {
         match *self {
             Event::Plan { leader, .. }
             | Event::Budget { leader, .. }
-            | Event::Shell { leader, .. } => leader,
+            | Event::Shell { leader, .. }
+            | Event::Opened { leader, .. }
+            | Event::Closed { leader }
+            | Event::Renamed { leader, .. } => leader,
             Event::Assign { agent, .. }
             | Event::Assumption { agent, .. }
             | Event::Blocked { agent, .. }
@@ -819,6 +844,115 @@ impl World {
 
     pub fn spent(&self) -> u64 {
         self.agents.iter().map(|a| a.cost).sum()
+    }
+
+    /// The projects that are open, in id order.
+    pub fn open_projects(&self) -> impl Iterator<Item = &Project> {
+        self.projects.iter().filter(|p| !p.closed)
+    }
+
+    /// The open project called `name`, exactly.
+    pub fn project_by_name(&self, name: &str) -> Option<ProjectId> {
+        self.open_projects().find(|p| p.name == name).map(|p| p.id)
+    }
+
+    /// Agent `id` leaves the team: idle, nothing shown, gone; its name may
+    /// be taken again.
+    pub fn leave(&mut self, id: AgentId) {
+        let t = self.tick;
+        let a = &mut self.agents[id];
+        a.activity = None;
+        a.talk = None;
+        a.set_status(Status::Idle, t);
+        a.gone = true;
+        a.trace(t, "left");
+    }
+
+    /// What the leader of project `project`, named `name`, is called:
+    /// `lead` in the project imece started in, `lead-NAME` elsewhere.
+    pub fn leader_name(project: ProjectId, name: &str) -> String {
+        if project == 0 {
+            "lead".into()
+        } else {
+            format!("lead-{name}")
+        }
+    }
+
+    /// Project `reuse` opens again, else a new project is added, named
+    /// `name`, its checkout at `path`, led by a new agent on `vendor` with
+    /// the next id. Returns the project's id.
+    pub fn open_project(
+        &mut self,
+        reuse: Option<ProjectId>,
+        name: String,
+        path: String,
+        vendor: Vendor,
+    ) -> ProjectId {
+        let p = reuse.unwrap_or(self.projects.len());
+        let leader = self.agents.len();
+        let lead = World::leader_name(p, &name);
+        self.agents.push(Agent::new(
+            leader,
+            p,
+            lead,
+            vendor,
+            Role::Leader,
+            Status::Idle,
+            self.tick,
+        ));
+        match reuse {
+            Some(p) => {
+                let project = &mut self.projects[p];
+                project.name = name;
+                project.leader = leader;
+                project.closed = false;
+            }
+            None => self.projects.push(Project {
+                id: p,
+                name,
+                leader,
+                trunk: None,
+                repo: &[],
+                closed: false,
+            }),
+        }
+        self.note(Event::Opened { leader, path });
+        p
+    }
+
+    /// Project `p` closes: every agent of it leaves, what waited of theirs
+    /// is closed, and it is not drawn any more.
+    pub fn close_project(&mut self, p: ProjectId) {
+        let ids: Vec<AgentId> = self
+            .agents
+            .iter()
+            .filter(|a| a.project == p && !a.gone)
+            .map(|a| a.id)
+            .collect();
+        for id in ids {
+            self.leave(id);
+        }
+        for item in &mut self.inbox {
+            if self.agents[item.agent].project == p {
+                item.open = false;
+            }
+        }
+        self.changes.retain(|c| self.agents[c.agent].project != p);
+        self.projects[p].closed = true;
+        let leader = self.projects[p].leader;
+        self.note(Event::Closed { leader });
+    }
+
+    /// Project `p` is called `name` from now on, and its leader `lead-NAME`.
+    pub fn rename_project(&mut self, p: ProjectId, name: String) {
+        let leader = self.projects[p].leader;
+        let from = std::mem::replace(&mut self.projects[p].name, name.clone());
+        self.agents[leader].name = format!("lead-{name}");
+        self.note(Event::Renamed {
+            leader,
+            from,
+            to: name,
+        });
     }
 
     pub fn rate_per_hour(&self) -> u64 {
@@ -1086,6 +1220,7 @@ mod tests {
                 leader: 0,
                 trunk: None,
                 repo: &[],
+                closed: false,
             }],
             agents,
             cards: Vec::new(),
@@ -1202,6 +1337,151 @@ mod tests {
             .agent(),
             5
         );
+        let opened = Event::Opened {
+            leader: 6,
+            path: "/a".into(),
+        };
+        let closed = Event::Closed { leader: 7 };
+        let renamed = Event::Renamed {
+            leader: 8,
+            from: "a".into(),
+            to: "b".into(),
+        };
+        assert_eq!(
+            (opened.agent(), closed.agent(), renamed.agent()),
+            (6, 7, 8),
+            "the person's project events belong to the project's leader"
+        );
+        for e in [&opened, &closed, &renamed] {
+            assert_eq!(e.kind(), EntryKind::Person);
+        }
+    }
+
+    #[test]
+    fn opening_a_project_adds_it_with_a_leader_and_reopening_keeps_its_id() {
+        let mut w = world(vec![]);
+        w.projects.clear();
+        w.tick = 9;
+        assert_eq!(
+            w.open_project(None, "home".into(), "/h".into(), Vendor::Claude),
+            0
+        );
+        assert_eq!(w.agents[0].name, "lead", "the first project's leader");
+        assert_eq!(
+            w.open_project(None, "api".into(), "/a".into(), Vendor::Codex),
+            1
+        );
+        let a = &w.agents[1];
+        assert_eq!(
+            (
+                a.id,
+                a.project,
+                a.name.as_str(),
+                a.vendor,
+                a.role,
+                a.status,
+                a.changed_at
+            ),
+            (
+                1,
+                1,
+                "lead-api",
+                Vendor::Codex,
+                Role::Leader,
+                Status::Idle,
+                9
+            )
+        );
+        let p = &w.projects[1];
+        assert_eq!(
+            (
+                p.id,
+                p.name.as_str(),
+                p.leader,
+                p.trunk,
+                p.repo.len(),
+                p.closed
+            ),
+            (1, "api", 1, None, 0, false)
+        );
+        assert!(matches!(
+            &w.journal.last().unwrap().event,
+            Event::Opened { leader: 1, path } if path == "/a"
+        ));
+        w.close_project(1);
+        assert_eq!(
+            w.open_project(Some(1), "api2".into(), "/a".into(), Vendor::Claude),
+            1
+        );
+        assert_eq!(w.projects.len(), 2, "reopened in place");
+        let p = &w.projects[1];
+        assert_eq!((p.name.as_str(), p.leader, p.closed), ("api2", 2, false));
+        assert_eq!(w.agents[2].name, "lead-api2");
+        assert!(w.agents[1].gone, "the old leader stays gone");
+    }
+
+    #[test]
+    fn closing_a_project_sends_its_agents_away_and_closes_what_waited() {
+        let mut w = world(vec![
+            agent(0, Role::Leader, Status::Idle),
+            agent(1, Role::Worker, Status::Working),
+        ]);
+        w.open_project(None, "api".into(), "/a".into(), Vendor::Claude);
+        let mut worker = agent(3, Role::Worker, Status::Working);
+        worker.project = 1;
+        w.agents.push(worker);
+        w.tick = 4;
+        w.said(3, "hi");
+        w.agents[3].activity = Some("Edit x".into());
+        w.replied(1, "one");
+        w.replied(3, "two");
+        for agent in [1, 3] {
+            w.change_ready(Change {
+                agent,
+                title: "t".into(),
+                files: Vec::new(),
+                patch: String::new(),
+            });
+        }
+        w.close_project(1);
+        for id in [2, 3] {
+            let a = &w.agents[id];
+            assert!(a.gone, "{id} gone");
+            assert_eq!(a.status, Status::Idle, "{id}");
+            assert!(a.activity.is_none() && a.talk.is_none(), "{id}");
+            assert!(a.trace.back().unwrap().ends_with(" left"), "{id}");
+        }
+        assert_eq!(w.agents[3].changed_at, 4, "the worker changed now");
+        let other = &w.agents[1];
+        assert!(!other.gone && other.status == Status::Working);
+        let open = w.open_inbox();
+        assert_eq!(open.len(), 2, "the other project's items stay");
+        assert!(open.iter().all(|&i| w.inbox[i].agent == 1));
+        assert_eq!(w.changes.len(), 1);
+        assert_eq!(w.changes[0].agent, 1, "the other project's change stays");
+        assert!(w.projects[1].closed && !w.projects[0].closed);
+        assert!(matches!(
+            w.journal.last().unwrap().event,
+            Event::Closed { leader: 2 }
+        ));
+        assert_eq!(w.open_projects().map(|p| p.id).collect::<Vec<_>>(), [0]);
+        assert_eq!(w.project_by_name("p"), Some(0));
+        assert_eq!(w.project_by_name("api"), None, "closed");
+        assert_eq!(w.project_by_name("P"), None, "exact");
+    }
+
+    #[test]
+    fn renaming_a_project_renames_its_leader_and_says_so() {
+        let mut w = world(vec![agent(0, Role::Leader, Status::Idle)]);
+        w.rename_project(0, "shop".into());
+        assert_eq!(w.projects[0].name, "shop");
+        assert_eq!(w.agents[0].name, "lead-shop");
+        assert!(matches!(
+            &w.journal.last().unwrap().event,
+            Event::Renamed { leader: 0, from, to } if from == "p" && to == "shop"
+        ));
+        assert_eq!(World::leader_name(0, "x"), "lead");
+        assert_eq!(World::leader_name(1, "x"), "lead-x");
     }
 
     #[test]

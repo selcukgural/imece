@@ -4,14 +4,14 @@
 use std::cell::{Cell, RefCell};
 use std::collections::BTreeSet;
 use std::io;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use crate::complete::{self, Menu};
 use crate::i18n::{Lang, fill};
-use crate::live::{Live, Refusal};
+use crate::live::{Live, ProjectRefusal, Refusal};
 use crate::model::*;
 use crate::prefs::{SIDE_DEFAULT, SIDE_MAX, SIDE_MIN};
 use crate::sim::{self, Sim};
@@ -148,6 +148,8 @@ pub struct App {
     /// A command the person typed after `!`; the main loop steps the
     /// screen aside and runs it in their shell, then calls `ran`.
     pub shell: Option<String>,
+    /// The person's home directory, for `~` in a path they type.
+    pub home: Option<PathBuf>,
     /// The first key of a two-key chord (`g`, `z`), waiting for the second.
     pub pending: Option<char>,
     pub typing: bool,
@@ -202,6 +204,7 @@ impl App {
             side: SIDE_DEFAULT,
             copy: None,
             shell: None,
+            home: std::env::var_os("HOME").map(PathBuf::from),
             pending: None,
             typing: false,
             input: String::new(),
@@ -245,6 +248,18 @@ impl App {
     /// The project the person is looking at: of the selected line, the
     /// focused agent or the selected inbox item.
     pub fn current_project(&self) -> ProjectId {
+        let p = self.project_at_hand();
+        if self.world.projects[p].closed {
+            // A closed project's journal lines still lead to it.
+            self.world.open_projects().next().map_or(p, |q| q.id)
+        } else {
+            p
+        }
+    }
+
+    /// The project the zoom, the inbox or journal selection, or the salon
+    /// selection points at.
+    fn project_at_hand(&self) -> ProjectId {
         if let Zoom::Focus(id) | Zoom::Trace(id) | Zoom::Diff(id) = self.zoom {
             return self.world.agents[id].project;
         }
@@ -711,7 +726,7 @@ impl App {
     /// the demo was started.
     pub fn cwd(&self) -> PathBuf {
         match &self.engine {
-            Engine::Live(l) => l.repo().to_path_buf(),
+            Engine::Live(l) => l.repo_of(self.current_project()).to_path_buf(),
             Engine::Sim(_) => PathBuf::from("."),
         }
     }
@@ -865,7 +880,12 @@ impl App {
 
     /// What the composer could complete the input with, now.
     fn suggest(&self) -> Option<Menu> {
-        complete::suggest(&self.input, &self.world, self.current_project())
+        complete::suggest(
+            &self.input,
+            &self.world,
+            self.current_project(),
+            self.home.as_deref(),
+        )
     }
 
     /// Whether what is being typed is a command to imece (`:budget 80`),
@@ -997,7 +1017,108 @@ impl App {
                 Ok(theme) => self.flash(fill(t.theme_is, &[&theme.name])),
                 Err(why) => self.flash(fill(t.bad_theme, &[arg, &why])),
             },
+            "open" | "o" => self.open_project(arg),
+            "close" | "c" => self.close_project(arg),
+            "rename" => self.rename_project(arg),
             _ => self.flash(fill(t.no_command, &[name])),
+        }
+    }
+
+    /// `:open PATH [NAME]`: the checkout at PATH becomes a project of its
+    /// own, with its own leader, which is selected.
+    fn open_project(&mut self, arg: &str) {
+        let t = self.lang.text();
+        let (path, name) = arg
+            .split_once(char::is_whitespace)
+            .map_or((arg, None), |(p, n)| (p, Some(n.trim())));
+        if path.is_empty() {
+            return self.flash(t.open_usage);
+        }
+        let Engine::Live(live) = &mut self.engine else {
+            return self.flash(t.demo_no_projects);
+        };
+        let full = expand_tilde(path, self.home.as_deref());
+        match live.open_project(&mut self.world, &full, name) {
+            Ok(p) => {
+                if p == self.collapsed.len() {
+                    self.collapsed.push(false);
+                } else {
+                    self.collapsed[p] = false;
+                }
+                let project = &self.world.projects[p];
+                let leader = project.leader;
+                let said = fill(
+                    t.opened,
+                    &[
+                        &project.name,
+                        &full.display().to_string(),
+                        &self.world.agents[leader].name,
+                    ],
+                );
+                self.zoom = Zoom::None;
+                self.selected = Sel::Agent(leader);
+                self.flash(said);
+            }
+            Err(ProjectRefusal::NameTaken(n)) => self.flash(fill(t.project_exists, &[&n])),
+            Err(ProjectRefusal::PathOpen(n)) => self.flash(fill(t.project_open, &[path, &n])),
+            Err(ProjectRefusal::BadName(n)) => self.flash(fill(t.bad_project_name, &[&n])),
+            Err(e) => self.flash(fill(t.bad_open, &[&e.describe()])),
+        }
+    }
+
+    /// `:close [NAME]`: the named project (else the one at hand) closes:
+    /// its agents leave, their worktrees stay. The last one stays open.
+    fn close_project(&mut self, arg: &str) {
+        let t = self.lang.text();
+        let p = if arg.is_empty() {
+            self.current_project()
+        } else {
+            match self.world.project_by_name(arg) {
+                Some(p) => p,
+                None => return self.flash(fill(t.no_project, &[arg])),
+            }
+        };
+        let Engine::Live(live) = &mut self.engine else {
+            return self.flash(t.demo_no_projects);
+        };
+        let name = self.world.projects[p].name.clone();
+        if live.close_project(&mut self.world, p).is_err() {
+            return self.flash(fill(t.last_project, &[&name]));
+        }
+        if let Zoom::Focus(a) | Zoom::Trace(a) | Zoom::Diff(a) = self.zoom
+            && self.world.agents[a].project == p
+        {
+            self.zoom = Zoom::None;
+        }
+        let was_in = match self.selected {
+            Sel::Project(q) => q == p,
+            Sel::Agent(a) => self.world.agents[a].project == p,
+        };
+        if was_in && let Some(home) = self.world.open_projects().next() {
+            self.selected = Sel::Agent(home.leader);
+        }
+        let open = self.world.open_inbox().len();
+        self.inbox_sel = self.inbox_sel.min(open.saturating_sub(1));
+        self.flash(fill(t.closed, &[&name]));
+    }
+
+    /// `:rename NAME`: the project at hand is called NAME from now on, and
+    /// its leader `lead-NAME`.
+    fn rename_project(&mut self, arg: &str) {
+        let t = self.lang.text();
+        let p = self.current_project();
+        let Engine::Live(live) = &mut self.engine else {
+            return self.flash(t.demo_no_projects);
+        };
+        let was = self.world.projects[p].name.clone();
+        match live.rename_project(&mut self.world, p, arg) {
+            Ok(()) => {
+                let leader = &self.world.agents[self.world.projects[p].leader].name;
+                let said = fill(t.renamed, &[&was, arg, leader]);
+                self.flash(said);
+            }
+            Err(ProjectRefusal::NameTaken(n)) => self.flash(fill(t.project_exists, &[&n])),
+            Err(_) => self.flash(fill(t.bad_project_name, &[arg])),
         }
     }
 
@@ -1127,6 +1248,16 @@ impl App {
             self.pane = Pane::Inbox;
         }
         self.inbox_sel = self.inbox_sel.min(open.saturating_sub(2));
+    }
+}
+
+/// `path` with a leading `~` or `~/` replaced by `home`; anything else as
+/// it is, and so is `~` when there is no home.
+pub fn expand_tilde(path: &str, home: Option<&Path>) -> PathBuf {
+    match (path, home) {
+        ("~", Some(home)) => home.to_path_buf(),
+        (p, Some(home)) if p.starts_with("~/") => home.join(&p[2..]),
+        _ => PathBuf::from(path),
     }
 }
 
@@ -1284,5 +1415,63 @@ mod tests {
         assert_eq!(app.pane, Pane::Inbox);
         assert!(app.world.change_of(worker).is_some());
         assert!(app.flash.is_none());
+    }
+
+    #[test]
+    fn open_close_and_rename_are_refused_in_the_demo() {
+        let mut app = App::new(1, 1, 0, 1, Lang::En);
+        let before = app.world.projects.len();
+        for line in ["open /tmp", "close", "rename x"] {
+            app.command(line);
+            let said = app.flash.take().map(|f| f.0).unwrap_or_default();
+            assert_eq!(said, Lang::En.text().demo_no_projects, "{line}");
+        }
+        assert_eq!(app.world.projects.len(), before);
+        assert_eq!(app.world.projects[0].name, "shop-api");
+    }
+
+    #[test]
+    fn the_project_at_hand_falls_back_to_an_open_one_when_its_project_closed() {
+        let mut app = App::new(2, 2, 0, 1, Lang::En);
+        app.selected = Sel::Project(1);
+        assert_eq!(app.current_project(), 1);
+        app.world.projects[1].closed = true;
+        assert_eq!(app.current_project(), 0);
+        app.selected = Sel::Agent(app.world.projects[1].leader);
+        assert_eq!(app.current_project(), 0);
+        app.world.projects[1].closed = false;
+        app.world.projects[0].closed = true;
+        app.selected = Sel::Project(0);
+        assert_eq!(app.current_project(), 1, "the first open one");
+        app.selected = Sel::Project(1);
+        assert_eq!(app.current_project(), 1);
+    }
+
+    #[test]
+    fn cwd_is_the_checkout_of_the_project_at_hand() {
+        let one = crate::live::testing::checkout("cwd-one");
+        let two = crate::live::testing::checkout("cwd-two");
+        let w = crate::live::testing::team(0);
+        let live = crate::live::testing::idle_live_in(&one, 1);
+        let mut app = App::with(w, Engine::Live(Box::new(live)), Lang::En);
+        assert_eq!(app.cwd(), one);
+        app.command(&format!("open {} two", two.display()));
+        assert_eq!(app.selected, Sel::Agent(1));
+        assert_eq!(app.cwd(), imece_agent::worktree::top(&two).unwrap());
+        app.selected = Sel::Agent(0);
+        assert_eq!(app.cwd(), one);
+        let _ = std::fs::remove_dir_all(&one);
+        let _ = std::fs::remove_dir_all(&two);
+    }
+
+    #[test]
+    fn a_tilde_stands_for_home_in_a_typed_path() {
+        let home = Some(Path::new("/home/me"));
+        assert_eq!(expand_tilde("~", home), PathBuf::from("/home/me"));
+        assert_eq!(expand_tilde("~/x/y", home), PathBuf::from("/home/me/x/y"));
+        assert_eq!(expand_tilde("~x", home), PathBuf::from("~x"));
+        assert_eq!(expand_tilde("/a/~", home), PathBuf::from("/a/~"));
+        assert_eq!(expand_tilde("~", None), PathBuf::from("~"));
+        assert_eq!(expand_tilde("~/x", None), PathBuf::from("~/x"));
     }
 }
