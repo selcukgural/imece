@@ -295,14 +295,13 @@ fn main() -> std::io::Result<()> {
         terminal
             .draw(|f| ui::pick::probing(f, args.lang))
             .unwrap_or_else(|e| fail(e.to_string()));
-        let present = live::probe(&args.repo).unwrap_or_else(|e| fail(e));
+        let present = live::probe(&args.repo, live::KNOWN).unwrap_or_else(|e| fail(e));
         let candidates = live::leaders(&present);
         let primary = saved.lead.as_deref().and_then(Vendor::parse);
         let lead = match choose_lead(args.lead, primary, &candidates) {
             Some(v) => v,
             None => {
-                let missing = primary.filter(|p| !candidates.contains(p));
-                let mut pick = ui::pick::Pick::new(candidates, missing, args.lang);
+                let mut pick = ui::pick::Pick::new(candidates, primary, args.lang);
                 match ask(&mut terminal, &mut pick) {
                     Ok(Some(ui::pick::Picked::Lead { vendor, remember })) => {
                         if remember {

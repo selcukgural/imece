@@ -669,6 +669,90 @@ mod tests {
         .collect()
     }
 
+    /// One project whose agents are all calm and working for a long time:
+    /// the leader, the workers in `w`, the researchers in `r`.
+    fn calm_team() -> (App, Vec<AgentId>, Vec<AgentId>) {
+        let mut app = app_after(1, 4, 0, Lang::En);
+        let id = app.world.agents.len();
+        app.world.agents.push(Agent::new(
+            id,
+            0,
+            "res-1".into(),
+            Vendor::Claude,
+            Role::Researcher,
+            Status::Working,
+            0,
+        ));
+        app.world.tick = 100;
+        app.selected = Sel::Project(0);
+        for a in &mut app.world.agents {
+            a.status = Status::Working;
+            a.talk = None;
+            a.changed_at = 0;
+            a.gone = false;
+        }
+        let of = |app: &App, role: Role| -> Vec<AgentId> {
+            app.world
+                .agents
+                .iter()
+                .filter(|a| a.role == role)
+                .map(|a| a.id)
+                .collect()
+        };
+        let w = of(&app, Role::Worker);
+        let r = of(&app, Role::Researcher);
+        assert!(w.len() == 4 && !r.is_empty());
+        (app, w, r)
+    }
+
+    #[test]
+    fn a_worker_s_researcher_and_talk_count_as_lines_when_the_salon_fills() {
+        let (mut app, w, r) = calm_team();
+        app.world.agents[r[0]].status = Status::Researching {
+            for_agent: w[0],
+            until: 0,
+        };
+        app.world.agents[w[1]].talk = Some(Talk {
+            with: Party::Person,
+            text: "on it".into(),
+            until: 0,
+        });
+        let rows = |app: &App, capacity: usize| {
+            salon::rows(
+                &app.world,
+                &app.collapsed,
+                &app.folded_workers,
+                app.selected,
+                capacity,
+            )
+        };
+        // Project, leader, w0 and its researcher, w1 and its talk, w2, w3.
+        let all = rows(&app, 8);
+        assert_eq!(all.len(), 8, "{all:?}");
+        assert!(!all.iter().any(|r| matches!(r, salon::Row::Folded(_))));
+        // One line short: the calm workers at the end fold into one line.
+        let tight = rows(&app, 7);
+        assert_eq!(tight.len(), 7, "{tight:?}");
+        assert_eq!(tight.last(), Some(&salon::Row::Folded(2)), "{tight:?}");
+        assert!(
+            tight.contains(&salon::Row::Agent { id: r[0], depth: 3 }),
+            "{tight:?}"
+        );
+    }
+
+    #[test]
+    fn the_project_header_counts_the_workers_and_helpers_that_are_not_idle() {
+        let (mut app, w, _) = calm_team();
+        with_helpers(&mut app);
+        app.world.agents[w[1]].status = Status::Idle;
+        app.world.agents[w[2]].status = Status::Blocked;
+        // w0, w2, w3 and the two helpers; not the idle worker, the leader
+        // or the researchers.
+        let s = render(&app, 140, 45);
+        let header = s.lines().find(|l| l.contains("▾ ")).expect("no header");
+        assert!(header.contains(" 5 working"), "{header}");
+    }
+
     #[test]
     fn a_worker_s_helpers_sit_under_it_and_fold_with_the_project_keys() {
         let mut app = app_after(1, 4, 50, Lang::En);

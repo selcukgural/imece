@@ -32,8 +32,11 @@ pub struct Pick {
 }
 
 impl Pick {
-    pub fn new(candidates: Vec<Vendor>, missing: Option<Vendor>, lang: Lang) -> Pick {
+    /// The question over `candidates`; a `primary` vendor among them needs
+    /// no question, one that is not there is said to be missing.
+    pub fn new(candidates: Vec<Vendor>, primary: Option<Vendor>, lang: Lang) -> Pick {
         assert!(!candidates.is_empty(), "nothing to choose from");
+        let missing = primary.filter(|p| !candidates.contains(p));
         Pick {
             candidates,
             sel: 0,
@@ -79,11 +82,7 @@ impl Pick {
 pub fn probing(f: &mut Frame, lang: Lang) {
     let area = f.area();
     let line = Line::from(Span::styled(lang.text().probing, dim())).centered();
-    let row = Rect {
-        y: area.y + area.height / 2,
-        height: 1.min(area.height),
-        ..area
-    };
+    let row = Rect::new(area.x, area.y + area.height / 2, area.width, 1).intersection(area);
     f.render_widget(Paragraph::new(line), row);
 }
 
@@ -109,7 +108,7 @@ pub fn draw(f: &mut Frame, pick: &Pick) {
         )));
     }
     lines.push(Line::from(Span::styled(t.pick_keys, dim())));
-    let width = 64.min(f.area().width);
+    let width = 68.min(f.area().width);
     let height = (lines.len() as u16 + 2).min(f.area().height);
     let area = Rect {
         x: (f.area().width - width) / 2,
@@ -130,15 +129,55 @@ mod tests {
     use ratatui::Terminal;
     use ratatui::backend::TestBackend;
 
-    fn render(pick: &Pick, width: u16, height: u16) -> String {
+    fn drawn(pick: &Pick, width: u16, height: u16) -> ratatui::buffer::Buffer {
         let mut t = Terminal::new(TestBackend::new(width, height)).unwrap();
         t.draw(|f| draw(f, pick)).unwrap();
-        let buf = t.backend().buffer();
+        t.backend().buffer().clone()
+    }
+
+    fn render(pick: &Pick, width: u16, height: u16) -> String {
+        let buf = drawn(pick, width, height);
         buf.content
             .chunks(usize::from(width))
             .map(|row| row.iter().map(|c| c.symbol()).collect::<String>())
             .collect::<Vec<_>>()
             .join("\n")
+    }
+
+    #[test]
+    fn the_primary_is_missing_only_when_it_is_not_a_candidate() {
+        let both = vec![Vendor::Claude, Vendor::Codex];
+        assert_eq!(Pick::new(both.clone(), None, Lang::En).missing, None);
+        assert_eq!(
+            Pick::new(both.clone(), Some(Vendor::Codex), Lang::En).missing,
+            None
+        );
+        assert_eq!(
+            Pick::new(both, Some(Vendor::Gemini), Lang::En).missing,
+            Some(Vendor::Gemini)
+        );
+    }
+
+    #[test]
+    fn the_question_is_a_box_in_the_middle_with_the_chosen_row_reversed() {
+        let mut pick = Pick::new(vec![Vendor::Claude, Vendor::Codex], None, Lang::En);
+        pick.sel = 1;
+        let buf = drawn(&pick, 80, 24);
+        // 68 wide, and as tall as its 6 lines plus the border: centered.
+        assert_eq!(buf[(6, 8)].symbol(), "┌", "{buf:?}");
+        assert_eq!(buf[(73, 15)].symbol(), "┘", "{buf:?}");
+        assert_eq!(buf[(5, 8)].symbol(), " ");
+        assert_eq!(buf[(6, 7)].symbol(), " ");
+        let reversed = |y: u16| buf[(8, y)].modifier.contains(Modifier::REVERSED);
+        // Row 11 is " 1 claude", row 12 " 2 codex"; the key line fits whole.
+        assert_eq!(buf[(8, 12)].symbol(), "2", "{buf:?}");
+        assert!(reversed(12) && !reversed(11), "{buf:?}");
+        let keys: String = (7..73).map(|x| buf[(x, 14)].symbol()).collect();
+        assert!(keys.trim_end().ends_with("esc quit"), "{keys:?}");
+        pick.sel = 0;
+        let buf = drawn(&pick, 80, 24);
+        let reversed = |y: u16| buf[(8, y)].modifier.contains(Modifier::REVERSED);
+        assert!(reversed(11) && !reversed(12), "{buf:?}");
     }
 
     #[test]

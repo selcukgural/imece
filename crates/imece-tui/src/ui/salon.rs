@@ -17,6 +17,7 @@ use crate::app::{App, Pane, Sel};
 /// Drawn before an agent's name in its speaker colour.
 pub(crate) const SPEAKER_MARK: &str = "▎";
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Row {
     Project(ProjectId),
     Agent {

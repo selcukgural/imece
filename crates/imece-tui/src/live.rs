@@ -56,9 +56,12 @@ pub struct Options {
     pub budget: u64,
 }
 
-/// The coding agents imece knows: their program on PATH, and whether imece
-/// can drive them yet.
-const KNOWN: &[(Vendor, &str, bool)] = &[
+/// A coding agent imece knows: its program on PATH, and whether imece can
+/// drive it yet.
+pub type Known = (Vendor, &'static str, bool);
+
+/// The coding agents imece knows.
+pub const KNOWN: &[Known] = &[
     (Vendor::Claude, claude::PROGRAM, true),
     (Vendor::Codex, "codex", false),
     (Vendor::Gemini, "gemini", false),
@@ -293,11 +296,11 @@ pub struct Live {
     posted: Vec<u32>,
 }
 
-/// The coding agents on PATH, run from the checkout `repo` is in, with
-/// whether imece drives them.
-pub fn probe(repo: &Path) -> Result<Vec<(Vendor, bool)>, String> {
+/// The coding agents among `known` (see [`KNOWN`]) on PATH, run from the
+/// checkout `repo` is in, with whether imece drives them.
+pub fn probe(repo: &Path, known: &[Known]) -> Result<Vec<(Vendor, bool)>, String> {
     let repo = worktree::top(repo).map_err(|e| format!("{}: {e}", repo.display()))?;
-    Ok(KNOWN
+    Ok(known
         .iter()
         .filter(|(_, program, _)| on_path(program, &repo))
         .map(|&(vendor, _, drives)| (vendor, drives))
@@ -3225,6 +3228,54 @@ in p.rs",
         assert!(on_path("true", &here));
         assert!(!on_path("false", &here));
         assert!(!on_path("/nonexistent/claude", &here));
+    }
+
+    /// A fresh git checkout with one commit, under the temp directory.
+    fn checkout(name: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!("imece-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let git = |args: &[&str]| {
+            let out = std::process::Command::new("git")
+                .args(args)
+                .current_dir(&dir)
+                .output()
+                .unwrap();
+            assert!(out.status.success(), "git {args:?}");
+        };
+        git(&["init", "--quiet"]);
+        std::fs::write(dir.join("a.txt"), "a").unwrap();
+        git(&["add", "."]);
+        git(&[
+            "-c",
+            "user.name=t",
+            "-c",
+            "user.email=t@t",
+            "-c",
+            "commit.gpgsign=false",
+            "commit",
+            "--quiet",
+            "-m",
+            "init",
+        ]);
+        dir
+    }
+
+    #[test]
+    fn probing_finds_the_known_programs_that_run_from_the_checkout() {
+        let repo = checkout("probe");
+        let known: &[Known] = &[
+            (Vendor::Claude, "true", true),
+            (Vendor::Codex, "false", false),
+            (Vendor::Gemini, "/nonexistent/gemini", false),
+        ];
+        assert_eq!(probe(&repo, known), Ok(vec![(Vendor::Claude, true)]));
+        assert_eq!(probe(&repo, &[]), Ok(vec![]));
+        // Outside a checkout there is nothing to run from: the error names it.
+        let outside = std::env::temp_dir().join("imece-probe-nowhere");
+        let err = probe(&outside, known).unwrap_err();
+        assert!(err.contains("imece-probe-nowhere"), "{err}");
+        let _ = std::fs::remove_dir_all(&repo);
     }
 
     #[test]
