@@ -1001,3 +1001,160 @@ impl App {
         self.inbox_sel = self.inbox_sel.min(open.saturating_sub(2));
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn key(code: KeyCode) -> KeyEvent {
+        KeyEvent::new(code, KeyModifiers::NONE)
+    }
+
+    fn ctrl(c: char) -> KeyEvent {
+        KeyEvent::new(KeyCode::Char(c), KeyModifiers::CONTROL)
+    }
+
+    /// A demo team with one worker whose change, `patch`, waits for the
+    /// person and is open on the screen.
+    fn with_change(patch: &str) -> (App, AgentId) {
+        let mut app = App::new(1, 1, 0, 1, Lang::En);
+        let worker = app
+            .world
+            .agents
+            .iter()
+            .find(|a| a.role == Role::Worker)
+            .map(|a| a.id)
+            .expect("the demo team has a worker");
+        app.world.change_ready(Change {
+            agent: worker,
+            title: "did it".into(),
+            files: vec![ChangedFile {
+                path: "x".into(),
+                added: 1,
+                removed: 0,
+                binary: false,
+            }],
+            patch: patch.into(),
+        });
+        app.zoom = Zoom::Diff(worker);
+        app.pane = Pane::Inbox;
+        (app, worker)
+    }
+
+    fn two_files() -> String {
+        let mut p = String::from("diff --git a/x b/x\n--- a/x\n+++ b/x\n+one\n");
+        p.push_str("diff --git a/y b/y\n--- a/y\n+++ b/y\n+two\n+three\n");
+        p
+    }
+
+    #[test]
+    fn a_change_pages_by_whole_and_half_screens() {
+        let patch: String = (0..30).map(|i| format!("+line {i}\n")).collect();
+        let (mut app, _) = with_change(&patch);
+        app.diff_page.set(10);
+        app.on_key(ctrl('d'));
+        assert_eq!(app.diff_scroll, 5, "half a page down");
+        app.on_key(ctrl('f'));
+        assert_eq!(app.diff_scroll, 15, "a whole page down");
+        app.on_key(ctrl('u'));
+        assert_eq!(app.diff_scroll, 10, "half a page up");
+        app.on_key(ctrl('b'));
+        assert_eq!(app.diff_scroll, 0, "a whole page up stops at the top");
+        for _ in 0..5 {
+            app.on_key(ctrl('f'));
+        }
+        assert_eq!(app.diff_scroll, 29, "paging stops at the last line");
+    }
+
+    #[test]
+    fn bracket_keys_jump_between_file_headers() {
+        let (mut app, _) = with_change(&two_files());
+        assert_eq!(app.diff_scroll, 0);
+        app.on_key(key(KeyCode::Char(']')));
+        assert_eq!(
+            app.diff_scroll, 4,
+            "from a header, ] goes to the next file, not itself"
+        );
+        app.on_key(key(KeyCode::Char(']')));
+        assert_eq!(app.diff_scroll, 4, "no file after the last one");
+        app.on_key(key(KeyCode::Char('j')));
+        app.on_key(key(KeyCode::Char('[')));
+        assert_eq!(
+            app.diff_scroll, 4,
+            "[ goes back to the current file's header"
+        );
+        app.on_key(key(KeyCode::Char('[')));
+        assert_eq!(app.diff_scroll, 0, "and then to the one before");
+        app.on_key(key(KeyCode::Char('[')));
+        assert_eq!(app.diff_scroll, 0, "no file before the first one");
+    }
+
+    #[test]
+    fn a_and_r_decide_the_open_change_and_close_it() {
+        for c in ['a', 'r'] {
+            let (mut app, worker) = with_change(&two_files());
+            app.on_key(key(KeyCode::Char(c)));
+            assert_eq!(app.zoom, Zoom::None, "{c} closes the change");
+            assert_eq!(app.pane, Pane::Inbox, "{c} returns to the inbox");
+            let flash = app.flash.as_ref().map(|(m, _)| m.as_str());
+            assert_eq!(
+                flash,
+                Some(Lang::En.text().demo_no_change),
+                "{c} on the demo says there is nothing to apply"
+            );
+            assert!(
+                app.world.change_of(worker).is_some(),
+                "the demo keeps the change"
+            );
+        }
+    }
+
+    /// The inbox selection may have moved while the change was open (an
+    /// earlier item closed, a new one came): `a` and `r` decide the change
+    /// in view, not the item the selection landed on.
+    #[test]
+    fn a_and_r_decide_the_change_in_view_not_the_selected_inbox_item() {
+        for c in ['a', 'r'] {
+            let (mut app, worker) = with_change(&two_files());
+            let leader = app.world.projects[0].leader;
+            app.world.inbox.push(InboxItem {
+                kind: InboxKind::Sensitive,
+                agent: leader,
+                detail: "bump a dependency".into(),
+                researcher: None,
+                open: true,
+                tick: 0,
+            });
+            app.inbox_sel = 1;
+            app.on_key(key(KeyCode::Char(c)));
+            assert_eq!(app.zoom, Zoom::None, "{c} closes the change");
+            let flash = app.flash.as_ref().map(|(m, _)| m.as_str());
+            assert_eq!(flash, Some(Lang::En.text().demo_no_change));
+            assert!(
+                app.world.change_of(worker).is_some(),
+                "the demo keeps the change"
+            );
+            let other = app
+                .world
+                .inbox
+                .iter()
+                .find(|i| i.kind == InboxKind::Sensitive);
+            assert!(
+                other.is_some_and(|i| i.open),
+                "{c} must not decide the item the selection moved to"
+            );
+        }
+    }
+
+    #[test]
+    fn esc_leaves_the_change_open_in_the_inbox() {
+        let (mut app, worker) = with_change(&two_files());
+        app.on_key(key(KeyCode::Char('G')));
+        assert_eq!(app.diff_scroll, 8);
+        app.on_key(key(KeyCode::Esc));
+        assert_eq!(app.zoom, Zoom::None);
+        assert_eq!(app.pane, Pane::Inbox);
+        assert!(app.world.change_of(worker).is_some());
+        assert!(app.flash.is_none());
+    }
+}
