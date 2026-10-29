@@ -1041,19 +1041,20 @@ impl Plan {
 /// holds every descriptor for a moment) is given a short while.
 fn lock_file(f: &std::fs::File) -> std::io::Result<()> {
     use std::os::unix::io::AsRawFd;
+    // Exclusive and without waiting. Added, not or-ed: the flags share no
+    // bit, and a slip here (LOCK_UN, say) must fail, not lock.
+    let flags = libc::LOCK_EX + libc::LOCK_NB;
     let mut held = std::io::Error::from(std::io::ErrorKind::WouldBlock);
-    for n in 0..LOCK_TRIES {
-        if n > 0 {
-            std::thread::sleep(LOCK_WAIT);
-        }
+    for _ in 0..LOCK_TRIES {
         // SAFETY: flock on a descriptor this process owns.
-        if unsafe { libc::flock(f.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) } == 0 {
+        if unsafe { libc::flock(f.as_raw_fd(), flags) } == 0 {
             return Ok(());
         }
         held = std::io::Error::last_os_error();
         if held.kind() != std::io::ErrorKind::WouldBlock {
             break;
         }
+        std::thread::sleep(LOCK_WAIT);
     }
     Err(held)
 }
@@ -1462,6 +1463,19 @@ mod tests {
         assert_eq!(b.agents[1].trace.len(), 200, "the kept tail");
         assert_eq!(b.agents[1].trace[0], w.agents[1].trace[0]);
         assert_eq!(b.agents[1].traced, 250);
+        // Lines are numbered by `traced`: the kept 200 of 250 are 50..249.
+        let span = |agent: i64| -> (i64, i64) {
+            store
+                .raw()
+                .query_row(
+                    "SELECT min(seq), max(seq) FROM trace WHERE agent = ?1",
+                    params![agent],
+                    |r| Ok((r.get(0)?, r.get(1)?)),
+                )
+                .unwrap()
+        };
+        assert_eq!(span(1), (50, 249));
+        assert_eq!(span(0), (0, 0));
         assert_eq!((b.tick, b.run_tick, b.run_spent), (0, 0, 0), "this run's");
         assert_eq!(b.spent(), 4_421);
         // Loaded is saved: nothing to write until something moves.

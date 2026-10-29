@@ -1145,6 +1145,7 @@ mod tests {
     #[test]
     fn work_reaches_every_trunk() {
         let (mut w, mut s) = world(2, 12, 4, 5, Lang::En);
+        assert_eq!(w.budget, 2_000_000, "the demo's pot is $200");
         let before: Vec<u32> = w.projects.iter().map(|p| p.trunk.unwrap()).collect();
         run(&mut w, &mut s, 1500, true);
         for (p, b) in w.projects.iter().zip(before) {

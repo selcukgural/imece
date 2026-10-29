@@ -6709,10 +6709,12 @@ in p.rs",
         let (mut w, mut live) = world(options(&repo, None), &present).unwrap();
         assert_eq!(w.projects.len(), 1);
         assert_eq!(w.agents[0].status, Status::Idle, "new, not remembered");
-        assert_eq!(w.budget, DEFAULT_BUDGET);
+        assert_eq!(w.budget, 500_000, "$50 the first time");
         assert!(w.started_at.abs_diff(now()) <= 2);
         assert_eq!((w.tick, live.home()), (0, 0));
         assert!(live.store.is_some());
+        // As if the world had begun 100 seconds earlier.
+        w.started_at -= 100;
         let began = w.started_at;
         w.budget = 70_000;
         w.agents[0].cost = 1_234;
@@ -6735,6 +6737,17 @@ in p.rs",
                 .any(|e| e.event == Event::Interrupted { agent: 0 })
         );
         assert_eq!(live.home(), 0);
+        assert!(
+            (19..=21).contains(&w.tick),
+            "100 seconds in whole ticks, not {}",
+            w.tick
+        );
+        assert_eq!(w.run_tick, w.tick);
+        assert!(
+            !w.agents[0].trace.iter().any(|l| l.contains("skipped")),
+            "nothing skipped, nothing said: {:?}",
+            w.agents[0].trace
+        );
         assert_eq!(live.persist(&w), Ok(true));
         drop(live);
 
