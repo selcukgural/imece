@@ -107,7 +107,7 @@ pub fn suggest(input: &str, w: &World, project: ProjectId) -> Option<Menu> {
     if let Some(rest) = input.strip_prefix(':') {
         return match rest.split_once(' ') {
             None => menu(1, rest, matching(rest, COMMANDS.into_iter()), " "),
-            Some(("lead", arg)) if !arg.contains(' ') => {
+            Some(("lead", arg)) => {
                 let start = input.len() - arg.len();
                 menu(start, arg, matching(arg, LEADS.into_iter()), "")
             }
@@ -221,6 +221,11 @@ mod tests {
         let cmds = ["/clear", "/compact", "/cost", "/context"];
         w.agents[lead].commands = cmds.iter().map(|c| c.to_string()).collect();
         assert_eq!(suggest(&format!("@{name} hello"), &w, 0), None);
+        assert_eq!(
+            suggest(&format!("@{name} "), &w, 0),
+            None,
+            "a message is about to be written, not a command"
+        );
         let m = suggest(&format!("@{name} /"), &w, 0).unwrap();
         assert_eq!(m.items, cmds);
         assert_eq!(m.start, name.len() + 2);
@@ -260,6 +265,7 @@ mod tests {
         assert_eq!(m.start, 6);
         assert_eq!(suggest(":lead codex", &w, 0), None);
         assert_eq!(suggest(":lead codex ", &w, 0), None);
+        assert_eq!(suggest(":lead codex x", &w, 0), None);
         assert_eq!(suggest(":b 80", &w, 0), None);
         // Plain text, and a shell command, get no offers.
         assert_eq!(suggest("hello", &w, 0), None);

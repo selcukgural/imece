@@ -1786,6 +1786,85 @@ mod tests {
     }
 
     #[test]
+    fn backspace_takes_a_letter_back_and_the_offers_widen_again() {
+        let mut app = app_after(1, 3, 0, Lang::En);
+        let everyone = app.world.agents.len();
+        key(&mut app, KeyCode::Char('@'));
+        key(&mut app, KeyCode::Char('z'));
+        assert_eq!(app.input, "@z");
+        assert_eq!(app.menu, None, "nobody is called z…");
+        key(&mut app, KeyCode::Backspace);
+        assert_eq!(app.input, "@");
+        assert_eq!(app.menu.as_ref().map(|m| m.items.len()), Some(everyone));
+    }
+
+    #[test]
+    fn writing_without_offers_takes_no_row_from_the_body() {
+        // A short screen, so the body is full and a row less would show.
+        let mut app = app_after(1, 3, 30, Lang::En);
+        let before = render(&app, 140, 12);
+        key(&mut app, KeyCode::Char('/'));
+        for c in "hello".chars() {
+            key(&mut app, KeyCode::Char(c));
+        }
+        assert!(app.typing);
+        assert_eq!(app.menu, None);
+        let after = render(&app, 140, 12);
+        let body = |s: &str| s.lines().take(11).map(str::to_string).collect::<Vec<_>>();
+        assert_eq!(body(&before), body(&after), "only the footer changed");
+        assert_ne!(before, after);
+    }
+
+    /// `completions` alone: a row of `width` cells with `m` drawn in it,
+    /// and whether the cell at `x` stands out.
+    fn completion_row(m: &crate::complete::Menu, width: u16) -> (String, Vec<bool>) {
+        let mut t = Terminal::new(TestBackend::new(width, 1)).unwrap();
+        t.draw(|f| completions(f, f.area(), m)).unwrap();
+        let buf = t.backend().buffer();
+        let row = (0..width)
+            .map(|x| buf[(x, 0)].symbol().to_string())
+            .collect::<String>();
+        let out = (0..width)
+            .map(|x| buf[(x, 0)].modifier.contains(Modifier::REVERSED))
+            .collect();
+        (row, out)
+    }
+
+    fn menu_of(items: &[&str], chosen: usize) -> crate::complete::Menu {
+        crate::complete::Menu {
+            start: 1,
+            items: items.iter().map(|s| s.to_string()).collect(),
+            chosen,
+            tail: " ",
+            inserted: false,
+        }
+    }
+
+    #[test]
+    fn the_completion_row_fits_what_it_can_around_the_highlighted_item() {
+        // Each item takes its letters and a space either side: 4 5 6 4 3.
+        let items = ["aa", "bbb", "cccc", "dd", "e"];
+        let (row, out) = completion_row(&menu_of(&items, 0), 22);
+        assert_eq!(row, " aa  bbb  cccc  dd  e ", "an exact fit shows all");
+        assert!(out[1] && out[2], "the highlighted one stands out");
+        assert!(out[..4].iter().all(|&o| o));
+        assert!(out[4..].iter().all(|&o| !o), "{out:?}");
+        // One cell short: the last item is left out, nothing is cut.
+        let (row, _) = completion_row(&menu_of(&items, 0), 21);
+        assert_eq!(row, " aa  bbb  cccc  dd   ");
+        // The last one highlighted: the window starts where the earlier
+        // ones still fit before it.
+        let (row, out) = completion_row(&menu_of(&items, 4), 21);
+        assert_eq!(row, " bbb  cccc  dd  e    ");
+        assert!(out[15] && out[16] && out[17] && !out[14] && !out[18]);
+        // Pulling the window back looks at the item before, not the one
+        // counted already: a big one before a small highlighted one.
+        let (row, out) = completion_row(&menu_of(&["xxxxxxxx", "a"], 1), 12);
+        assert_eq!(row, " a          ");
+        assert!(out[0] && out[1] && out[2] && !out[3]);
+    }
+
+    #[test]
     fn a_colon_command_sets_the_budget_and_the_journal_says_so() {
         let mut app = app_after(1, 2, 0, Lang::En);
         let was = app.world.daily_budget;
