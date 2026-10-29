@@ -578,6 +578,22 @@ pub enum Event {
         from: u64,
         to: u64,
     },
+    /// A live agent's worktree was clean at an older commit and was moved
+    /// to the checkout's HEAD when its session started.
+    WorktreeMoved {
+        agent: AgentId,
+        from: String,
+        to: String,
+    },
+    /// A live agent's worktree has work of its own (`commits`: commits the
+    /// checkout does not have; else uncommitted changes) and stays at `at`
+    /// while the checkout's HEAD is `head`.
+    WorktreeKept {
+        agent: AgentId,
+        at: String,
+        head: String,
+        commits: bool,
+    },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -603,7 +619,10 @@ impl Event {
             | Event::Left { .. } => EntryKind::Plan,
             Event::Assign { .. } | Event::Claimed { .. } => EntryKind::Assign,
             Event::Talk { .. } | Event::Replied { .. } | Event::Sent { .. } => EntryKind::Talk,
-            Event::Assumption { .. } | Event::Fallback { .. } => EntryKind::Assumption,
+            Event::Assumption { .. }
+            | Event::Fallback { .. }
+            | Event::WorktreeMoved { .. }
+            | Event::WorktreeKept { .. } => EntryKind::Assumption,
             Event::Blocked { .. } => EntryKind::Blocked,
             Event::ResearchOpened { .. }
             | Event::ResearchDelivered { .. }
@@ -637,7 +656,9 @@ impl Event {
             | Event::Claimed { agent, .. }
             | Event::Hired { agent, .. }
             | Event::Left { agent }
-            | Event::Fallback { agent, .. } => agent,
+            | Event::Fallback { agent, .. }
+            | Event::WorktreeMoved { agent, .. }
+            | Event::WorktreeKept { agent, .. } => agent,
             Event::Talk { from, .. } | Event::Sent { from, .. } => from,
             Event::ResearchOpened { researcher, .. }
             | Event::ResearchDelivered { researcher, .. }

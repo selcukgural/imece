@@ -199,6 +199,9 @@ pub struct Text {
     pub ev_left: &'static str,
     pub ev_fallback: &'static str,
     pub ev_budget: &'static str,
+    pub ev_worktree_moved: &'static str,
+    pub ev_worktree_changes: &'static str,
+    pub ev_worktree_commits: &'static str,
     /// What stands for a model when the vendor's own default is used.
     pub default_model: &'static str,
     /// Message types, in `MsgKind::ALL` order.
@@ -359,6 +362,9 @@ pub const EN: Text = Text {
     ev_left: "{} finished and left",
     ev_fallback: "{}: model {} is not available here, using the default",
     ev_budget: "you set the budget to {} (was {})",
+    ev_worktree_moved: "{}: worktree moved from {} to HEAD {}",
+    ev_worktree_changes: "{}: worktree kept at {}, it has uncommitted changes (HEAD is {})",
+    ev_worktree_commits: "{}: worktree kept at {}, it has commits of its own (HEAD is {})",
     default_model: "default model",
     kinds: [
         "assign", "ask", "answer", "inform", "handoff", "done", "blocked", "progress", "notice",
@@ -556,6 +562,9 @@ pub const TR: Text = Text {
     ev_left: "{} işini bitirdi, ayrıldı",
     ev_fallback: "{}: {} modeli burada yok, varsayılanla devam",
     ev_budget: "bütçeyi {} yaptın (önce {})",
+    ev_worktree_moved: "{}: çalışma ağacı {} yerine HEAD {} oldu",
+    ev_worktree_changes: "{}: çalışma ağacı {} noktasında kaldı, commit edilmemiş değişiklikleri var (HEAD {})",
+    ev_worktree_commits: "{}: çalışma ağacı {} noktasında kaldı, kendi commit'leri var (HEAD {})",
     default_model: "varsayılan model",
     kinds: [
         "görev",
@@ -692,6 +701,9 @@ mod tests {
             (EN.helper_of, TR.helper_of),
             (EN.ev_fallback, TR.ev_fallback),
             (EN.ev_budget, TR.ev_budget),
+            (EN.ev_worktree_moved, TR.ev_worktree_moved),
+            (EN.ev_worktree_changes, TR.ev_worktree_changes),
+            (EN.ev_worktree_commits, TR.ev_worktree_commits),
             (EN.budget_is, TR.budget_is),
             (EN.bad_budget, TR.bad_budget),
             (EN.no_command, TR.no_command),

@@ -244,8 +244,9 @@ enum Slot {
     Running(Box<dyn Session>),
 }
 
-/// A started session, or why it could not start.
-type Ready = Result<(Box<dyn Session>, PathBuf), String>;
+/// A started session (and where its worktree stands, when it has one), or
+/// why it could not start.
+type Ready = Result<(Box<dyn Session>, PathBuf, Option<worktree::Placed>), String>;
 
 /// A tool call of an agent (tool name, arguments), and where its answer
 /// goes.
@@ -1212,8 +1213,26 @@ impl Live {
             _ => Vec::new(),
         };
         let mut session = match ready {
-            Ok((session, cwd)) => {
+            Ok((session, cwd, placed)) => {
                 w.agents[id].trace(w.tick, format!("session in {}", cwd.display()));
+                match placed {
+                    Some(worktree::Placed::Moved { from, to }) => {
+                        w.note(Event::WorktreeMoved {
+                            agent: id,
+                            from,
+                            to,
+                        });
+                    }
+                    Some(worktree::Placed::Kept { at, head, why }) => {
+                        w.note(Event::WorktreeKept {
+                            agent: id,
+                            at,
+                            head,
+                            commits: why == worktree::Why::Commits,
+                        });
+                    }
+                    Some(worktree::Placed::Fresh | worktree::Placed::AtHead) | None => {}
+                }
                 session
             }
             Err(why) => {
@@ -1334,10 +1353,11 @@ impl Live {
         let (tx, ready) = (self.tx.clone(), self.ready_tx.clone());
         thread::spawn(move || {
             let started = (|| {
-                let cwd = if leader {
-                    repo
+                let (cwd, placed) = if leader {
+                    (repo, None)
                 } else {
-                    worktree::ensure(&repo, &root, &tree).map_err(|e| e.to_string())?
+                    let w = worktree::ensure(&repo, &root, &tree).map_err(|e| e.to_string())?;
+                    (w.path, Some(w.placed))
                 };
                 let on = move |e| {
                     let _ = tx.send((id, generation, e));
@@ -1396,7 +1416,7 @@ impl Live {
                         )
                     }
                 };
-                Ok((session, cwd))
+                Ok((session, cwd, placed))
             })();
             // Nobody to take it (imece is closing): dropping it stops it.
             let _ = ready.send((id, generation, started));
@@ -2096,6 +2116,60 @@ mod tests {
         // Talking to it again tries a new session.
         live.told(&mut w, 0, "third").unwrap();
         assert!(matches!(live.slots[0], Slot::Starting(_)));
+    }
+
+    /// A session that takes prompts and does nothing with them.
+    struct Stub;
+    impl imece_agent::Agent for Stub {
+        fn prompt(&mut self, _: &str) -> io::Result<()> {
+            Ok(())
+        }
+        fn terminate(&mut self) {}
+    }
+
+    #[test]
+    fn where_a_worktree_stands_goes_into_the_journal() {
+        let mut w = team(2);
+        let mut live = idle_live(3);
+        let cwd = PathBuf::from("/work/claude-1");
+        let placed = |p| Ok((Box::new(Stub) as Box<dyn Session>, cwd.clone(), p));
+        live.ready(&mut w, 1, placed(Some(worktree::Placed::Fresh)));
+        live.ready(&mut w, 1, placed(Some(worktree::Placed::AtHead)));
+        live.ready(&mut w, 0, placed(None));
+        assert!(w.journal.is_empty(), "{:?}", w.journal);
+        assert!(matches!(live.slots[1], Slot::Running(_)));
+        live.ready(
+            &mut w,
+            1,
+            placed(Some(worktree::Placed::Moved {
+                from: "aaaaaaa".into(),
+                to: "bbbbbbb".into(),
+            })),
+        );
+        assert!(matches!(
+            &w.journal.last().unwrap().event,
+            Event::WorktreeMoved { agent: 1, from, to } if from == "aaaaaaa" && to == "bbbbbbb"
+        ));
+        for (why, commits) in [
+            (worktree::Why::Changes, false),
+            (worktree::Why::Commits, true),
+        ] {
+            live.ready(
+                &mut w,
+                2,
+                placed(Some(worktree::Placed::Kept {
+                    at: "aaaaaaa".into(),
+                    head: "bbbbbbb".into(),
+                    why,
+                })),
+            );
+            assert!(matches!(
+                &w.journal.last().unwrap().event,
+                Event::WorktreeKept { agent: 2, at, head, commits: c }
+                    if at == "aaaaaaa" && head == "bbbbbbb" && *c == commits
+            ));
+        }
+        assert_eq!(w.journal.len(), 3);
     }
 
     fn idle_live(agents: usize) -> Live {

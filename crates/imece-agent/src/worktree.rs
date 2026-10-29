@@ -1,5 +1,8 @@
 //! One git worktree per agent: outside the person's checkout, detached at
-//! its HEAD, kept between runs so an agent's work is never thrown away.
+//! its HEAD, kept between runs so an agent's work is never thrown away. A
+//! worktree found clean at an older commit is moved to the checkout's HEAD
+//! when the agent starts, so an agent never works on what was merged
+//! already; one with changes or commits of its own stays where it is.
 
 use std::io;
 use std::path::{Path, PathBuf};
@@ -39,10 +42,44 @@ pub fn valid_name(name: &str) -> bool {
             .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
 }
 
+/// Why a worktree was left at an older commit.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Why {
+    /// It has changes that are not committed.
+    Changes,
+    /// It has commits the checkout's HEAD does not.
+    Commits,
+}
+
+/// Where an ensured worktree stands next to the checkout's HEAD. Commits
+/// are named by their short ids.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Placed {
+    /// Made just now, at HEAD.
+    Fresh,
+    /// Found at HEAD already.
+    AtHead,
+    /// Found clean at an older commit and moved to HEAD.
+    Moved { from: String, to: String },
+    /// Found with work of its own at `at` and left there.
+    Kept { at: String, head: String, why: Why },
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Worktree {
+    pub path: PathBuf,
+    pub placed: Placed,
+}
+
+fn short(sha: &str) -> String {
+    sha.chars().take(7).collect()
+}
+
 /// The worktree of agent `name` under `root`, created from `repo`'s HEAD
-/// the first time. A directory that is there but is not a worktree of
-/// `repo` is refused, never reused or replaced.
-pub fn ensure(repo: &Path, root: &Path, name: &str) -> io::Result<PathBuf> {
+/// the first time and moved to it on a later start when it is clean. A
+/// directory that is there but is not a worktree of `repo` is refused,
+/// never reused or replaced.
+pub fn ensure(repo: &Path, root: &Path, name: &str) -> io::Result<Worktree> {
     if !valid_name(name) {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,
@@ -61,7 +98,8 @@ pub fn ensure(repo: &Path, root: &Path, name: &str) -> io::Result<PathBuf> {
                 repo.display()
             )));
         }
-        return Ok(path);
+        let placed = place(repo, &path)?;
+        return Ok(Worktree { path, placed });
     }
     std::fs::create_dir_all(root)?;
     let p = path.to_string_lossy();
@@ -69,7 +107,41 @@ pub fn ensure(repo: &Path, root: &Path, name: &str) -> io::Result<PathBuf> {
         repo,
         &["worktree", "add", "--quiet", "--detach", &p, "HEAD"],
     )?;
-    path.canonicalize()
+    Ok(Worktree {
+        path: path.canonicalize()?,
+        placed: Placed::Fresh,
+    })
+}
+
+/// Moves the worktree at `path` to `repo`'s HEAD if it is clean and behind
+/// it; says where it stands otherwise.
+fn place(repo: &Path, path: &Path) -> io::Result<Placed> {
+    let head = git(repo, &["rev-parse", "HEAD"])?;
+    let at = git(path, &["rev-parse", "HEAD"])?;
+    if at == head {
+        return Ok(Placed::AtHead);
+    }
+    if !git(path, &["status", "--porcelain"])?.is_empty() {
+        return Ok(Placed::Kept {
+            at: short(&at),
+            head: short(&head),
+            why: Why::Changes,
+        });
+    }
+    // Only a worktree whose commit is behind HEAD can move without losing
+    // commits of its own.
+    if git(path, &["merge-base", "--is-ancestor", &at, &head]).is_err() {
+        return Ok(Placed::Kept {
+            at: short(&at),
+            head: short(&head),
+            why: Why::Commits,
+        });
+    }
+    git(path, &["checkout", "--quiet", "--detach", &head])?;
+    Ok(Placed::Moved {
+        from: short(&at),
+        to: short(&head),
+    })
 }
 
 #[cfg(test)]
@@ -97,9 +169,15 @@ mod tests {
         std::fs::create_dir_all(&r).unwrap();
         git(&r, &["init", "--quiet"]).unwrap();
         std::fs::write(r.join("a.txt"), "a").unwrap();
-        git(&r, &["add", "."]).unwrap();
+        commit(&r, "init");
+        Scratch { dir, repo: r }
+    }
+
+    /// Commits everything in `dir` (a repository or a worktree).
+    fn commit(dir: &Path, message: &str) -> String {
+        git(dir, &["add", "."]).unwrap();
         git(
-            &r,
+            dir,
             &[
                 "-c",
                 "user.name=t",
@@ -109,12 +187,13 @@ mod tests {
                 "commit.gpgsign=false",
                 "commit",
                 "--quiet",
+                "--allow-empty",
                 "-m",
-                "init",
+                message,
             ],
         )
         .unwrap();
-        Scratch { dir, repo: r }
+        git(dir, &["rev-parse", "HEAD"]).unwrap()
     }
 
     trait OrSelf {
@@ -144,10 +223,90 @@ mod tests {
         let r = &s.repo;
         let root = s.dir.join("wt");
         let w = ensure(r, &root, "claude-1").unwrap();
+        assert_eq!(w.placed, Placed::Fresh);
+        let w = w.path;
         assert_eq!(std::fs::read_to_string(w.join("a.txt")).unwrap(), "a");
         std::fs::write(w.join("work.txt"), "kept").unwrap();
-        assert_eq!(ensure(r, &root, "claude-1").unwrap(), w);
+        let again = ensure(r, &root, "claude-1").unwrap();
+        assert_eq!(again.path, w);
+        assert_eq!(again.placed, Placed::AtHead);
         assert!(w.join("work.txt").exists(), "a reuse threw work away");
+    }
+
+    #[test]
+    fn a_clean_worktree_moves_to_the_checkout_s_head() {
+        let s = repo("move");
+        let r = &s.repo;
+        let root = s.dir.join("wt");
+        let w = ensure(r, &root, "claude-1").unwrap().path;
+        let old = git(&w, &["rev-parse", "HEAD"]).unwrap();
+        std::fs::write(r.join("b.txt"), "b").unwrap();
+        let new = commit(r, "second");
+        let again = ensure(r, &root, "claude-1").unwrap();
+        assert_eq!(
+            again.placed,
+            Placed::Moved {
+                from: short(&old),
+                to: short(&new)
+            }
+        );
+        assert_eq!(git(&w, &["rev-parse", "HEAD"]).unwrap(), new);
+        assert_eq!(std::fs::read_to_string(w.join("b.txt")).unwrap(), "b");
+        assert_eq!(short(&new).len(), 7);
+    }
+
+    #[test]
+    fn a_worktree_with_changes_stays_where_it_is() {
+        let s = repo("dirty");
+        let r = &s.repo;
+        let root = s.dir.join("wt");
+        let w = ensure(r, &root, "claude-1").unwrap().path;
+        let old = git(&w, &["rev-parse", "HEAD"]).unwrap();
+        std::fs::write(w.join("a.txt"), "changed").unwrap();
+        let new = commit(r, "second");
+        let again = ensure(r, &root, "claude-1").unwrap();
+        assert_eq!(
+            again.placed,
+            Placed::Kept {
+                at: short(&old),
+                head: short(&new),
+                why: Why::Changes
+            }
+        );
+        assert_eq!(git(&w, &["rev-parse", "HEAD"]).unwrap(), old);
+        assert_eq!(std::fs::read_to_string(w.join("a.txt")).unwrap(), "changed");
+        // An untracked file is work too.
+        std::fs::write(w.join("a.txt"), "a").unwrap();
+        std::fs::write(w.join("new.txt"), "n").unwrap();
+        assert!(matches!(
+            ensure(r, &root, "claude-1").unwrap().placed,
+            Placed::Kept {
+                why: Why::Changes,
+                ..
+            }
+        ));
+        assert_eq!(git(&w, &["rev-parse", "HEAD"]).unwrap(), old);
+    }
+
+    #[test]
+    fn a_worktree_with_commits_of_its_own_stays_where_it_is() {
+        let s = repo("commits");
+        let r = &s.repo;
+        let root = s.dir.join("wt");
+        let w = ensure(r, &root, "claude-1").unwrap().path;
+        std::fs::write(w.join("w.txt"), "w").unwrap();
+        let own = commit(&w, "own work");
+        let new = commit(r, "second");
+        let again = ensure(r, &root, "claude-1").unwrap();
+        assert_eq!(
+            again.placed,
+            Placed::Kept {
+                at: short(&own),
+                head: short(&new),
+                why: Why::Commits
+            }
+        );
+        assert_eq!(git(&w, &["rev-parse", "HEAD"]).unwrap(), own);
     }
 
     #[test]
@@ -167,7 +326,7 @@ mod tests {
         let theirs = repo("foreign-other");
         let root = ours.dir.join("wt");
         // A real worktree under our name, but of another repository.
-        let w = ensure(&theirs.repo, &root, "claude-1").unwrap();
+        let w = ensure(&theirs.repo, &root, "claude-1").unwrap().path;
         assert!(ensure(&ours.repo, &root, "claude-1").is_err());
         assert!(w.join("a.txt").exists(), "nothing of theirs was touched");
     }
