@@ -328,12 +328,15 @@ pub fn world(
     };
     let mut w = World {
         tick: 0,
+        started_at: 0,
+        run_tick: 0,
+        run_spent: 0,
         projects: Vec::new(),
         agents: Vec::new(),
         cards: Vec::new(),
         journal: Vec::new(),
         inbox: Vec::new(),
-        daily_budget: 200 * 10_000,
+        budget: 200 * 10_000,
         max_researchers,
         research_queue: VecDeque::new(),
         changes: Vec::new(),
@@ -1142,6 +1145,7 @@ mod tests {
     #[test]
     fn work_reaches_every_trunk() {
         let (mut w, mut s) = world(2, 12, 4, 5, Lang::En);
+        assert_eq!(w.budget, 2_000_000, "the demo's pot is $200");
         let before: Vec<u32> = w.projects.iter().map(|p| p.trunk.unwrap()).collect();
         run(&mut w, &mut s, 1500, true);
         for (p, b) in w.projects.iter().zip(before) {

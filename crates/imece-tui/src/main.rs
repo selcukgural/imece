@@ -15,6 +15,7 @@ mod schemes;
 mod screen;
 mod shell;
 mod sim;
+mod store;
 mod theme;
 mod ui;
 
@@ -54,8 +55,9 @@ one at hand; ? lists every key and command.
                     strong (claude: haiku, the vendor's own, opus; codex:
                     an effort on its default model, @low, the default,
                     @high, or MODEL@EFFORT); without V, the leader's vendor
-  --budget USD      the most all agents together may spend (default 50;
-                    :budget USD changes it while agents run)
+  --budget USD      the most all agents together may spend; one pot, kept
+                    between runs (50 the first time); :budget USD changes
+                    it while agents run
   --run PROG[,..]   programs workers may run with their run tool, next to
                     cargo and git's reading commands (repeatable)
   --run-timeout S   seconds one run may take (10-3600, default 600)
@@ -87,8 +89,8 @@ struct Args {
     /// Stand-ins for the vendors' own models, by vendor (none: the
     /// leader's) and tier; `--model` is the standard tier.
     tiers: Vec<(Option<Vendor>, Tier, String)>,
-    /// Ten-thousandths of a dollar.
-    budget: u64,
+    /// Ten-thousandths of a dollar; none keeps the pot as it was left.
+    budget: Option<u64>,
     run_programs: Vec<String>,
     run_timeout: Duration,
 }
@@ -178,7 +180,7 @@ fn parse(
         repo: PathBuf::from("."),
         lead: None,
         tiers: Vec::new(),
-        budget: 50 * 10_000,
+        budget: None,
         run_programs: Vec::new(),
         run_timeout: live::DEFAULT_RUN_TIMEOUT,
     };
@@ -234,9 +236,10 @@ fn parse(
             "--repo" => args.repo = PathBuf::from(&value),
             "--model" => args.tiers.push(parse_model(&value)?),
             "--budget" => {
-                args.budget = parse_dollars(&value)
-                    .filter(|&b| b >= 100)
-                    .ok_or_else(|| format!("--budget: {value} is not dollars like 5 or 2.50"))?
+                args.budget =
+                    Some(parse_dollars(&value).filter(|&b| b >= 100).ok_or_else(|| {
+                        format!("--budget: {value} is not dollars like 5 or 2.50")
+                    })?)
             }
             "--run" => {
                 for p in value.split(',').map(str::trim).filter(|p| !p.is_empty()) {
@@ -387,6 +390,7 @@ fn main() -> std::io::Result<()> {
         };
         let options = live::Options {
             repo: args.repo,
+            state: state.clone(),
             max_workers: args.agents.unwrap_or(DEFAULT_WORKERS),
             max_helpers: args.helpers,
             lead,
@@ -397,6 +401,9 @@ fn main() -> std::io::Result<()> {
         };
         match live::world(options, &present) {
             Ok((world, live)) => {
+                // The screen's clock counts from when the world began,
+                // which may be an earlier run.
+                model::start_clock_at(live::local_seconds_after_midnight(world.started_at));
                 app::App::with(world, app::Engine::Live(Box::new(live)), args.lang)
             }
             Err(msg) => fail(msg),
@@ -407,6 +414,8 @@ fn main() -> std::io::Result<()> {
     }
     app.primary = saved.lead;
     let result = run(&mut terminal, &mut app, &state);
+    // The last word before the sessions end: what every agent had in hand.
+    app.persist();
     screen::restore();
     result
 }
@@ -564,7 +573,16 @@ mod tests {
         );
         assert_eq!(a.lead, None, "who leads is decided at the start");
         assert!(a.tiers.is_empty());
-        assert_eq!(a.budget, 500_000);
+        assert_eq!(a.budget, None, "the pot is kept between runs");
+        assert_eq!(
+            args(&["--budget", "2.50"], &[]).unwrap().budget,
+            Some(25_000),
+            "a flag sets it"
+        );
+        assert!(
+            args(&["--budget", "0"], &[]).is_err(),
+            "nothing is not a pot"
+        );
         assert_eq!(a.repo, PathBuf::from("."));
         assert_eq!(
             args(&["--repo", "/work/other"], &[]).unwrap().repo,

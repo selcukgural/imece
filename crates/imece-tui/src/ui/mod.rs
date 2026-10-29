@@ -207,6 +207,7 @@ pub(crate) fn glyph(a: &Agent) -> (&'static str, Color) {
         Status::Verifying { .. } => ("◌", pal().info),
         Status::Researching { .. } => ("◇", pal().research),
         Status::Stopped => ("■", pal().stopped),
+        Status::Asleep => ("◦", pal().dim),
     }
 }
 
@@ -707,6 +708,7 @@ pub(crate) fn status_spans(lang: Lang, w: &World, a: &Agent) -> Vec<Span<'static
             fg(pal().research),
         )],
         Status::Stopped => vec![Span::styled(t.stopped, bold(pal().stopped))],
+        Status::Asleep => vec![Span::styled(t.asleep, dim())],
     }
 }
 
@@ -727,10 +729,7 @@ fn header(f: &mut Frame, area: Rect, app: &App) {
     spans.extend([
         Span::raw(fill(t.agents_working, &[&w.active_agents().to_string()])),
         sep(),
-        Span::raw(fill(
-            t.budget,
-            &[&dollars(w.spent()), &dollars(w.daily_budget)],
-        )),
+        Span::raw(fill(t.budget, &[&dollars(w.spent()), &dollars(w.budget)])),
         Span::styled(
             format!(" ({})", fill(t.per_hour, &[&dollars(w.rate_per_hour())])),
             dim(),
@@ -1937,7 +1936,7 @@ mod tests {
     #[test]
     fn a_colon_command_sets_the_budget_and_the_journal_says_so() {
         let mut app = app_after(1, 2, 0, Lang::En);
-        let was = app.world.daily_budget;
+        let was = app.world.budget;
         key(&mut app, KeyCode::Char(':'));
         assert!(app.typing);
         assert_eq!(app.input, ":");
@@ -1946,7 +1945,7 @@ mod tests {
             key(&mut app, KeyCode::Char(c));
         }
         key(&mut app, KeyCode::Enter);
-        assert_eq!(app.world.daily_budget, 80 * 10_000);
+        assert_eq!(app.world.budget, 80 * 10_000);
         let s = render(&app, 140, 40);
         assert!(s.contains("of $80.00"), "{s}");
         assert!(s.contains("the budget is $80.00 now"), "{s}");
@@ -1965,7 +1964,7 @@ mod tests {
             key(&mut app, KeyCode::Char(c));
         }
         key(&mut app, KeyCode::Enter);
-        assert_eq!(app.world.daily_budget, 80 * 10_000);
+        assert_eq!(app.world.budget, 80 * 10_000);
         assert!(render(&app, 140, 40).contains("lots is not dollars"));
 
         // An unknown command.
@@ -2474,6 +2473,7 @@ mod tests {
                 until: 1,
             },
             Status::Stopped,
+            Status::Asleep,
         ]
         .into_iter()
         .map(|s| {
@@ -2481,7 +2481,7 @@ mod tests {
             glyph(&a).0
         })
         .collect();
-        assert_eq!(marks, ["○", "◆", "●", "◐", "✕", "!", "◌", "◇", "■"]);
+        assert_eq!(marks, ["○", "◆", "●", "◐", "✕", "!", "◌", "◇", "■", "◦"]);
         a.taint = Taint::Clean;
         assert_eq!(taint_span(&a).content, " ");
         a.taint = Taint::Soft;
@@ -2526,6 +2526,7 @@ mod tests {
         for status in [
             Status::Blocked,
             Status::Stopped,
+            Status::Asleep,
             Status::WaitingHuman,
             Status::Working,
         ] {
@@ -2540,7 +2541,7 @@ mod tests {
     fn the_header_shows_what_is_spent_of_the_budget_and_the_footer_hides_pause_where_it_means_nothing()
      {
         let mut app = app_after(1, 2, 0, Lang::En);
-        app.world.daily_budget = 10_000;
+        app.world.budget = 10_000;
         for a in &mut app.world.agents {
             a.cost = 0;
         }

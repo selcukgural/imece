@@ -144,11 +144,20 @@ is, and the journal says so either way.
   one it knows with `--model` or `--tier`); with a Google login they cost
   the budget nothing, and the trace says so. Gemini keeps its chat files
   under `~/.gemini/tmp` as it always does.
-- The budget (`--budget`, default $50) is one pot for the whole team: once
-  all agents together have spent it, nobody takes another turn. Each
-  Claude Code session also gets what was left of the pot when it started
-  as its own hard cap, so a session running away on its own cannot pass
-  it either.
+- The budget (`--budget`, $50 the first time) is one pot for the whole
+  team, kept between runs: once all agents together have spent it, nobody
+  takes another turn. Each Claude Code session also gets what was left of
+  the pot when it started as its own hard cap, so a session running away
+  on its own cannot pass it either.
+- What imece knows is remembered between runs in one SQLite file
+  (`$XDG_STATE_HOME/imece/imece.sqlite`, yours alone): projects, agents,
+  cards and their stories, the journal, the inbox, mail that waits and the
+  board. The next `imece` shows the same screen, every agent asleep: no
+  process and no cost until you write to one, or a teammate's message or
+  a new card wakes it. A woken agent starts a fresh session and is told
+  where it left off (its card's story, a turn that was cut short, its
+  worktree's changes, the board). One imece at a time has the file; a
+  second one is told to use `:open` from the first.
 - Child processes get a cleared environment (plus what the vendor needs to
   log in), their own process group (killed on exit), and capped pipes.
 
