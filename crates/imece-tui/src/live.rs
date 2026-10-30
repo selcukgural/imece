@@ -1383,7 +1383,7 @@ impl Live {
             let (note, answer) = match outcome {
                 Ok(o) => (
                     format!("run: {line}: {}", run_ended(&o)),
-                    Ok(run_answer(&o)),
+                    Ok(run_answer(&o, timeout)),
                 ),
                 Err(e) => (
                     format!("run: {line}: could not start: {e}"),
@@ -2978,12 +2978,14 @@ fn run_ended(o: &run::Outcome) -> String {
     format!("{how}, {:.1} s, {} bytes", o.took.as_secs_f64(), o.bytes)
 }
 
-/// What the agent reads back from a run.
-fn run_answer(o: &run::Outcome) -> String {
+/// What the agent reads back from a run. A run killed at the deadline
+/// says the deadline, not the time it took: under load that is a second
+/// or more later, and the deadline is what the agent can plan with.
+fn run_answer(o: &run::Outcome, deadline: Duration) -> String {
     let first = if o.timed_out {
         format!(
             "killed after {} s: it did not finish in time",
-            o.took.as_secs()
+            deadline.as_secs()
         )
     } else {
         match o.code {
@@ -4802,8 +4804,9 @@ mod tests {
         )
         .unwrap_err();
         assert!(e.contains("could not start imece-no-such-program"), "{e}");
-        // Past the deadline the run is killed and says so.
-        live.run_timeout = Duration::from_millis(200);
+        // Past the deadline the run is killed and says so, with the
+        // deadline (the time it took may be a second more under load).
+        live.run_timeout = Duration::from_secs(1);
         let got = call(
             &mut live,
             &mut w,
@@ -4813,7 +4816,7 @@ mod tests {
         )
         .unwrap();
         assert!(
-            got.starts_with("killed after 0 s: it did not finish in time\na"),
+            got.starts_with("killed after 1 s: it did not finish in time\na"),
             "{got}"
         );
         let _ = std::fs::remove_dir_all(&dir);
@@ -6466,7 +6469,9 @@ in p.rs",
         // Gemini ran in the private directory, not in the checkout.
         assert!(!repo.join("args.txt").exists());
         let home = dir.join("worktrees-gemini").join("lead");
-        let args = std::fs::read_to_string(home.join("args.txt")).unwrap();
+        // Seen missing once under load; the trace says why it stopped.
+        let args = std::fs::read_to_string(home.join("args.txt"))
+            .unwrap_or_else(|e| panic!("{e}: {:?}", w.agents[0].trace));
         assert!(args.starts_with("--acp\n"), "{args}");
         assert!(
             args.contains(&format!("--include-directories\n{}\n", repo.display())),
@@ -6513,7 +6518,8 @@ in p.rs",
         wait_for(&mut live, &mut w, |w| w.agents[1].status == Status::Stopped);
         let tree = dir.join("worktrees").join("gemini-1");
         let home = dir.join("worktrees-gemini").join("gemini-1");
-        let args = std::fs::read_to_string(home.join("args.txt")).unwrap();
+        let args = std::fs::read_to_string(home.join("args.txt"))
+            .unwrap_or_else(|e| panic!("{e}: {:?}", w.agents[1].trace));
         assert!(
             args.contains(&format!(
                 "--include-directories\n{}\n",
