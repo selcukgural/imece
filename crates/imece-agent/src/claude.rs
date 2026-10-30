@@ -75,6 +75,57 @@ pub struct Spec {
     pub system: String,
     /// imece's MCP server, if the agent gets its tools.
     pub mcp: Option<Mcp>,
+    /// An earlier session of this agent to go on with, instead of a new one.
+    pub resume: Option<Resume>,
+}
+
+/// A session Claude Code saved (`~/.claude/projects/<cwd>/<id>.jsonl`),
+/// as imece remembers it: its id, and what it had reported as its total
+/// cost (in millionths of a dollar) when it was last seen. A resumed
+/// session reports the WHOLE session's cost, so the turns of the new
+/// process are what it reports above that.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Resume {
+    pub session: String,
+    pub spent: u64,
+}
+
+/// Whether `id` is a session id as Claude Code gives them (a UUID): the
+/// only form that goes on a command line or into a path.
+pub fn valid_session(id: &str) -> bool {
+    id.len() == 36
+        && id.bytes().enumerate().all(|(i, b)| match i {
+            8 | 13 | 18 | 23 => b == b'-',
+            _ => b.is_ascii_hexdigit(),
+        })
+}
+
+/// Claude Code's configuration directory: `CLAUDE_CONFIG_DIR`, else
+/// `~/.claude`.
+pub fn config_dir() -> PathBuf {
+    std::env::var_os("CLAUDE_CONFIG_DIR")
+        .filter(|d| !d.is_empty())
+        .map(PathBuf::from)
+        .unwrap_or_else(|| {
+            let home = std::env::var_os("HOME").unwrap_or_default();
+            Path::new(&home).join(".claude")
+        })
+}
+
+/// Where Claude Code keeps the transcript of session `id` run in `cwd`,
+/// under `config` (see [`config_dir`]): `projects/<cwd with every
+/// character that is not a letter or a digit as '-'>/<id>.jsonl`. A
+/// session is resumable while this file is there, from that same `cwd`.
+pub fn transcript(config: &Path, cwd: &Path, id: &str) -> PathBuf {
+    let slug: String = cwd
+        .to_string_lossy()
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
+        .collect();
+    config
+        .join("projects")
+        .join(slug)
+        .join(format!("{id}.jsonl"))
 }
 
 /// The command line for `spec`. Prompts never go here; they go to stdin.
@@ -112,6 +163,10 @@ pub fn args(spec: &Spec) -> Vec<String> {
     if let Some(m) = &spec.model {
         a.push("--model".into());
         a.push(m.clone());
+    }
+    if let Some(r) = &spec.resume {
+        a.push("--resume".into());
+        a.push(r.session.clone());
     }
     if let Some(mcp) = &spec.mcp {
         let config = serde_json::json!({ "mcpServers": { MCP_SERVER: {
@@ -174,6 +229,12 @@ pub struct Parser {
     cost_last: u64,
     /// The slash commands the last `init` listed, to report a change.
     commands: Vec<String>,
+    /// What the resumed session had reported before; see [`Resume`].
+    floor: u64,
+    /// The session asked for, until its first `init` confirms it.
+    resuming: Option<String>,
+    /// The session id the last `init` reported: `/clear` starts a new one.
+    session: String,
 }
 
 impl Parser {
@@ -195,7 +256,12 @@ impl Parser {
             calls: HashMap::new(),
             commands: Vec::new(),
             cost_base: 0,
-            cost_last: 0,
+            // A resumed session reports its whole cost: what it had
+            // reported before is the floor the new turns count from.
+            cost_last: spec.resume.as_ref().map_or(0, |r| r.spent),
+            floor: spec.resume.as_ref().map_or(0, |r| r.spent),
+            resuming: spec.resume.as_ref().map(|r| r.session.clone()),
+            session: String::new(),
         }
     }
 
@@ -210,6 +276,16 @@ impl Parser {
             return self.init(&v);
         }
         if !self.started && matches!(kind, "assistant" | "user" | "result") {
+            // A session that is not there to resume ends with a result
+            // before anything else ("No conversation found").
+            if let Some(id) = &self.resuming
+                && kind == "result"
+            {
+                return Err(format!(
+                    "could not resume session {id} ({})",
+                    v["subtype"].as_str().unwrap_or("error")
+                ));
+            }
             return Err(format!("{kind} event before the session's settings"));
         }
         match kind {
@@ -230,7 +306,10 @@ impl Parser {
                 self.cost_base += self.cost_last;
             }
             self.cost_last = *cost;
-            *cost += self.cost_base;
+            // Above the resumed session's floor, which `cost_base` holds
+            // once a reset or a process that counts only itself passed
+            // under it (then the reported cost is the new spending).
+            *cost = (*cost + self.cost_base).saturating_sub(self.floor);
         }
         e
     }
@@ -274,11 +353,20 @@ impl Parser {
             .filter_map(Value::as_str)
             .map(|c| format!("/{}", c.trim_start_matches('/')))
             .collect();
+        let session = v["session_id"].as_str().unwrap_or_default().to_string();
+        if let Some(asked) = self.resuming.take()
+            && session != asked
+        {
+            return Err(format!("resumed session {session:?}, not {asked:?}"));
+        }
         let mut out = Vec::new();
-        if !self.started {
+        // The first `init`, and the one `/clear` brings with a new
+        // session id: the screen keeps the id to resume later.
+        if !self.started || session != self.session {
             self.started = true;
+            self.session = session.clone();
             out.push(Event::Started {
-                session: v["session_id"].as_str().unwrap_or_default().to_string(),
+                session,
                 model: v["model"].as_str().unwrap_or_default().to_string(),
             });
         }
@@ -465,6 +553,7 @@ mod tests {
             budget: 1_250_000,
             system: "You are claude-1.".into(),
             mcp: None,
+            resume: None,
         }
     }
 
@@ -958,5 +1047,256 @@ sleep 5"#
             p.line(done).unwrap()[..],
             [Event::TurnDone { .. }]
         ));
+    }
+
+    /// The settings event of session `session`, otherwise good.
+    fn init_as(session: &str) -> String {
+        init(GOOD_INIT, "acceptEdits", "[]").replace("\"s1\"", &format!("{session:?}"))
+    }
+
+    fn resumed(session: &str, spent: u64) -> Spec {
+        let mut s = spec(EDIT_TOOLS);
+        s.resume = Some(Resume {
+            session: session.into(),
+            spent,
+        });
+        s
+    }
+
+    fn done(usd: f64) -> String {
+        serde_json::json!({"type":"result","subtype":"success","result":"","total_cost_usd":usd})
+            .to_string()
+    }
+
+    fn cost(p: &mut Parser, line: &str) -> u64 {
+        match p.line(line).unwrap().as_slice() {
+            [Event::TurnDone { cost, .. }] => *cost,
+            other => panic!("{other:?}"),
+        }
+    }
+
+    #[test]
+    fn a_resumed_session_is_asked_for_by_id_and_counts_above_what_it_had_cost() {
+        let a = args(&resumed("686c6d27-d50b-4ae2-ad6a-159bf2984671", 524));
+        let i = a.iter().position(|x| x == "--resume").unwrap();
+        assert_eq!(a[i + 1], "686c6d27-d50b-4ae2-ad6a-159bf2984671");
+        assert!(!args(&spec(EDIT_TOOLS)).iter().any(|x| x == "--resume"));
+        // Claude Code reports the whole session's cost (what the probe of
+        // 2026-10-30 saw: $0.000524 before, $0.000660 after one turn):
+        // the new turns are what lies above the floor.
+        let mut p = Parser::new(&resumed("s1", 524));
+        assert!(matches!(
+            p.line(&init_as("s1")).unwrap().as_slice(),
+            [Event::Started { session, .. }, ..] if session == "s1"
+        ));
+        assert_eq!(cost(&mut p, &done(0.000660)), 136);
+        assert_eq!(cost(&mut p, &done(0.000700)), 176);
+        // A reset inside the resumed session counts on from there.
+        p.line(&init_as("s2")).unwrap();
+        assert_eq!(cost(&mut p, &done(0.000010)), 186);
+        // A vendor that counted only the new process would report less
+        // than the floor on its first turn: that is then the new spending.
+        let mut p = Parser::new(&resumed("s1", 524));
+        p.line(&init_as("s1")).unwrap();
+        assert_eq!(cost(&mut p, &done(0.000100)), 100);
+        assert_eq!(cost(&mut p, &done(0.000300)), 300);
+        // Nothing resumed: no floor.
+        let mut p = Parser::new(&spec(EDIT_TOOLS));
+        p.line(&init_as("s1")).unwrap();
+        assert_eq!(cost(&mut p, &done(0.000300)), 300);
+    }
+
+    #[test]
+    fn a_resume_must_come_back_as_the_session_asked_for() {
+        let mut p = Parser::new(&resumed("s1", 0));
+        let e = p.line(&init_as("s2")).unwrap_err();
+        assert!(e.contains("\"s2\"") && e.contains("\"s1\""), "{e}");
+        // Not resuming: any id is the session's own.
+        let mut p = Parser::new(&spec(EDIT_TOOLS));
+        assert!(p.line(&init_as("s2")).is_ok());
+        // Confirmed once; a later reset to another id is not a mismatch.
+        let mut p = Parser::new(&resumed("s1", 0));
+        p.line(&init_as("s1")).unwrap();
+        assert!(matches!(
+            p.line(&init_as("s3")).unwrap().as_slice(),
+            [Event::Started { session, .. }] if session == "s3"
+        ));
+    }
+
+    #[test]
+    fn a_session_that_is_not_there_to_resume_stops_before_anything_counts() {
+        // What Claude Code 2.1.314 does for an unknown id: a result with
+        // no turn, before any settings event.
+        let gone = r#"{"type":"result","subtype":"error_during_execution","is_error":true,"num_turns":0,"session_id":"s9","total_cost_usd":0}"#;
+        let mut p = Parser::new(&resumed("s9", 0));
+        let e = p.line(gone).unwrap_err();
+        assert_eq!(e, "could not resume session s9 (error_during_execution)");
+        let mut p = Parser::new(&spec(EDIT_TOOLS));
+        assert_eq!(
+            p.line(gone).unwrap_err(),
+            "result event before the session's settings"
+        );
+        // Resuming, but something else came first: the plain refusal.
+        let mut p = Parser::new(&resumed("s9", 0));
+        assert_eq!(
+            p.line(r#"{"type":"assistant","message":{"content":[]}}"#)
+                .unwrap_err(),
+            "assistant event before the session's settings"
+        );
+    }
+
+    #[test]
+    fn a_new_session_id_is_reported_once_and_the_same_one_is_not() {
+        let mut p = Parser::new(&spec(EDIT_TOOLS));
+        assert!(matches!(
+            p.line(&init_as("s1")).unwrap().as_slice(),
+            [Event::Started { session, model }] if session == "s1" && model == "m1"
+        ));
+        assert_eq!(p.line(&init_as("s1")).unwrap(), []);
+        assert!(matches!(
+            p.line(&init_as("s2")).unwrap().as_slice(),
+            [Event::Started { session, .. }] if session == "s2"
+        ));
+        assert_eq!(p.line(&init_as("s2")).unwrap(), []);
+    }
+
+    #[test]
+    fn a_transcript_lives_under_the_directory_s_slug_and_only_a_uuid_is_a_session() {
+        assert_eq!(
+            transcript(
+                Path::new("/Users/a/.claude"),
+                Path::new("/private/tmp/x_y.z/imece worktrees/claude-1"),
+                "686c6d27-d50b-4ae2-ad6a-159bf2984671"
+            ),
+            Path::new(
+                "/Users/a/.claude/projects/-private-tmp-x-y-z-imece-worktrees-claude-1/\
+                 686c6d27-d50b-4ae2-ad6a-159bf2984671.jsonl"
+            )
+        );
+        assert!(valid_session("686c6d27-d50b-4ae2-ad6a-159bf2984671"));
+        assert!(valid_session("00000000-0000-4000-8000-000000000000"));
+        for bad in [
+            "",
+            "686c6d27-d50b-4ae2-ad6a-159bf298467",
+            "686c6d27-d50b-4ae2-ad6a-159bf29846711",
+            "686c6d27-d50b-4ae2-ad6a-159bf298467g",
+            "686c6d27_d50b-4ae2-ad6a-159bf2984671",
+            "686c6d27-d50b04ae2-ad6a-159bf2984671",
+            "686c6d27-d50b-4ae20ad6a-159bf2984671",
+            "686c6d27-d50b-4ae2-ad6a0159bf2984671",
+            "686c6d27-d50b-4ae2-ad6a/159bf2984671",
+            "686c6d27-d50b-4ae2-ad6a-159bf29846-1",
+            "../../etc/passwd; rm -rf x; 686c6d27",
+        ] {
+            assert!(!valid_session(bad), "{bad:?}");
+        }
+    }
+
+    #[test]
+    fn the_config_dir_is_the_env_s_when_set_else_under_home() {
+        // The one test that touches this variable.
+        let home = PathBuf::from(std::env::var_os("HOME").unwrap());
+        unsafe { std::env::remove_var("CLAUDE_CONFIG_DIR") };
+        assert_eq!(config_dir(), home.join(".claude"));
+        unsafe { std::env::set_var("CLAUDE_CONFIG_DIR", "") };
+        assert_eq!(config_dir(), home.join(".claude"));
+        unsafe { std::env::set_var("CLAUDE_CONFIG_DIR", "/opt/cc") };
+        assert_eq!(config_dir(), PathBuf::from("/opt/cc"));
+        unsafe { std::env::remove_var("CLAUDE_CONFIG_DIR") };
+    }
+
+    /// The real Claude Code: one turn in a throwaway directory, then a
+    /// second process that resumes the session and must remember the
+    /// first, with the cost of its turn counted above the first's. Costs
+    /// a fraction of a cent on haiku. Run by hand:
+    /// `IMECE_LIVE_CLAUDE=1 cargo test -p imece-agent -- --ignored live_claude --nocapture`
+    #[test]
+    #[ignore = "drives the real claude; set IMECE_LIVE_CLAUDE=1"]
+    fn live_claude_resumes_its_session_and_counts_above_what_it_had_cost() {
+        if std::env::var_os("IMECE_LIVE_CLAUDE").is_none() {
+            return;
+        }
+        let dir = std::env::temp_dir().join(format!("imece-live-claude-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let cwd = dir.canonicalize().unwrap();
+        let mut spec = Spec {
+            program: "claude".into(),
+            cwd: cwd.clone(),
+            name: "imece probe".into(),
+            tools: vec!["Read".into()],
+            model: Some("haiku".into()),
+            budget: 50_000,
+            system: "You are a probe. Answer in one short line.".into(),
+            mcp: None,
+            resume: None,
+        };
+        // One turn: what the session reports, until its result.
+        let turn = |spec: &Spec, prompt: &str| -> Vec<Event> {
+            let (tx, rx) = mpsc::channel();
+            let mut s = Session::start(spec, move |e| {
+                let _ = tx.send(e);
+            })
+            .unwrap();
+            s.prompt(prompt).unwrap();
+            let mut out = Vec::new();
+            loop {
+                let e = rx.recv_timeout(Duration::from_secs(60)).expect("in time");
+                let end = matches!(e, Event::TurnDone { .. } | Event::Stopped(_));
+                out.push(e);
+                if end {
+                    s.terminate();
+                    return out;
+                }
+            }
+        };
+        let first = turn(&spec, "Remember the word pelican. Say ok.");
+        let session = match &first[0] {
+            Event::Started { session, .. } => session.clone(),
+            e => panic!("{e:?}"),
+        };
+        assert!(valid_session(&session), "{session}");
+        let spent = match first.last() {
+            Some(Event::TurnDone { ok: true, cost, .. }) => *cost,
+            e => panic!("{e:?}"),
+        };
+        assert!(spent > 0);
+        assert!(transcript(&config_dir(), &cwd, &session).is_file());
+        spec.resume = Some(Resume {
+            session: session.clone(),
+            spent,
+        });
+        let second = turn(
+            &spec,
+            "What word did I ask you to remember? Answer with the word only.",
+        );
+        assert!(
+            matches!(&second[0], Event::Started { session: s, .. } if *s == session),
+            "{second:?}"
+        );
+        let answered = second
+            .iter()
+            .any(|e| matches!(e, Event::Text(t) if t.to_lowercase().contains("pelican")));
+        assert!(answered, "{second:?}");
+        match second.last() {
+            Some(Event::TurnDone { ok: true, cost, .. }) => {
+                assert!(
+                    *cost > 0 && *cost < spent,
+                    "the turn alone, not the session: {cost} vs {spent}"
+                );
+            }
+            e => panic!("{e:?}"),
+        }
+        // A session that is not there: refused before anything counts.
+        spec.resume = Some(Resume {
+            session: "00000000-0000-4000-8000-000000000000".into(),
+            spent: 0,
+        });
+        let third = turn(&spec, "hi");
+        assert!(
+            matches!(&third[0], Event::Stopped(why) if why.contains("could not resume session 00000000")),
+            "{third:?}"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

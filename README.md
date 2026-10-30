@@ -154,10 +154,13 @@ is, and the journal says so either way.
   cards and their stories, the journal, the inbox, mail that waits and the
   board. The next `imece` shows the same screen, every agent asleep: no
   process and no cost until you write to one, or a teammate's message or
-  a new card wakes it. A woken agent starts a fresh session and is told
-  where it left off (its card's story, a turn that was cut short, its
-  worktree's changes, the board). One imece at a time has the file; a
-  second one is told to use `:open` from the first.
+  a new card wakes it. A woken Claude agent goes on in the session it
+  had, with everything it knew, when Claude Code still has its transcript
+  for that directory; otherwise (and for the other vendors, for now) it
+  starts a fresh session and is told where it left off (its card's story,
+  a turn that was cut short, its worktree's changes, the board). The
+  journal says which. One imece at a time has the file; a second one is
+  told to use `:open` from the first.
 - Child processes get a cleared environment (plus what the vendor needs to
   log in), their own process group (killed on exit), and capped pipes.
 

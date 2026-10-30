@@ -244,6 +244,15 @@ pub struct Mail {
     pub body: String,
 }
 
+/// A vendor session an agent had, kept to go on with it after imece
+/// starts again: the vendor's id for it, and what the vendor had reported
+/// as the session's whole cost (millionths of a dollar) when last seen.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct Resumable {
+    pub session: String,
+    pub spent: u64,
+}
+
 /// A card an agent put on the board: who, and what it asks for.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Post {
@@ -678,6 +687,15 @@ pub enum Event {
         agent: AgentId,
         model: String,
     },
+    /// A remembered agent woke in the session it had when imece closed,
+    /// with everything it knew.
+    Resumed {
+        agent: AgentId,
+    },
+    /// A remembered agent woke in a new session, told where it left off.
+    Restarted {
+        agent: AgentId,
+    },
     /// The person changed the budget (`:budget`), in ten-thousandths of a
     /// dollar; `leader` is the one of the project they were looking at.
     Budget {
@@ -772,6 +790,8 @@ impl Event {
             Event::Talk { .. } | Event::Replied { .. } | Event::Sent { .. } => EntryKind::Talk,
             Event::Assumption { .. }
             | Event::Fallback { .. }
+            | Event::Resumed { .. }
+            | Event::Restarted { .. }
             | Event::WorktreeMoved { .. }
             | Event::WorktreeKept { .. } => EntryKind::Assumption,
             Event::Blocked { .. } => EntryKind::Blocked,
@@ -823,6 +843,8 @@ impl Event {
             | Event::Hired { agent, .. }
             | Event::Left { agent }
             | Event::Fallback { agent, .. }
+            | Event::Resumed { agent }
+            | Event::Restarted { agent }
             | Event::WorktreeMoved { agent, .. }
             | Event::WorktreeKept { agent, .. }
             | Event::ChangeReady { agent, .. }
