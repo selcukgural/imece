@@ -444,6 +444,7 @@ mod tests {
         };
         commit(&one);
         live.follow(&mut w, 2);
+        settle(&mut live, &mut w);
         assert_eq!(
             moved(&w),
             0,
@@ -451,6 +452,7 @@ mod tests {
         );
         commit(&two);
         live.follow(&mut w, 2);
+        settle(&mut live, &mut w);
         assert_eq!(moved(&w), 1);
         let _ = std::fs::remove_dir_all(&one);
         let _ = std::fs::remove_dir_all(&two);

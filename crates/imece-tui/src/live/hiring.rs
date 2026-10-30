@@ -175,6 +175,7 @@ impl Live {
         self.pending.push(Vec::new());
         self.reading.push(0);
         self.applying.push(false);
+        self.placing.push(None);
     }
 
     /// The vendor `v` as imece drives it. Every agent's vendor is one.
