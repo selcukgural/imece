@@ -91,8 +91,20 @@ impl Live {
         }
     }
 
-    /// What the git thread finished since the last step.
+    /// Runs that ended since the last look, kept with their trees; the
+    /// oldest past [`RAN_KEEP`] go.
+    fn take_ran(&mut self) {
+        while let Ok(r) = self.ran_back.try_recv() {
+            self.ran.push_back(r);
+        }
+        let extra = self.ran.len().saturating_sub(RAN_KEEP);
+        self.ran.drain(..extra);
+    }
+
+    /// What the git thread finished since the last step, and the runs that
+    /// ended.
     pub(super) fn take_git(&mut self, w: &mut World) {
+        self.take_ran();
         while let Ok(done) = self.git_back.try_recv() {
             match done {
                 GitDone::Read {
@@ -142,6 +154,7 @@ impl Live {
                 let (added, removed) = c.counts();
                 let files = c.files.len();
                 w.agents[id].trace(w.tick, format!("change: {files} files +{added} −{removed}"));
+                let runs = self.runs_on(&c.tree);
                 w.change_ready(Change {
                     agent: id,
                     title: title.to_string(),
@@ -156,6 +169,7 @@ impl Live {
                         })
                         .collect(),
                     patch: c.patch.clone(),
+                    runs,
                 });
                 self.changes.insert(id, c);
                 format!(
@@ -169,6 +183,19 @@ impl Live {
                 format!("; imece could not read your change: {e}")
             }
         }
+    }
+
+    /// The runs that ran on exactly `tree`, the last of each command,
+    /// oldest first. The runs' threads sent theirs before they answered,
+    /// so every run a done came after is in.
+    fn runs_on(&mut self, tree: &str) -> Vec<Ran> {
+        self.take_ran();
+        let mut runs: Vec<Ran> = Vec::new();
+        for (_, r) in self.ran.iter().filter(|(t, _)| t == tree) {
+            runs.retain(|o| o.line != r.line);
+            runs.push(r.clone());
+        }
+        runs
     }
 
     /// The person takes worker `id`'s change: git puts it into the
@@ -474,6 +501,92 @@ mod tests {
         assert!(e.contains("no change of theirs waits"), "{e}");
         let _ = std::fs::remove_dir_all(&root);
         let _ = std::fs::remove_dir_all(&repo);
+    }
+
+    #[test]
+    fn a_change_holds_the_runs_that_ran_on_exactly_its_tree() {
+        let repo = checkout("ran-repo");
+        let root = trees("ran");
+        let mut w = team(1);
+        let mut live = Live::new(
+            3,
+            claude_at("/nonexistent/claude"),
+            repo.clone(),
+            root.clone(),
+        );
+        let tree = worker_in(&mut live, &mut w, 1, &repo, &root);
+        let helper = with_helper(&mut w, 1);
+        live.ready(&mut w, helper, Ok((Box::new(Stub), tree.clone(), None)));
+        live.ready(&mut w, 0, Ok((Box::new(Stub), repo.clone(), None)));
+        live.run_programs.push("sh".into());
+        // A script outside the worktree, so changing it changes no tree.
+        let outside = std::env::temp_dir().join(format!("imece-ran-{}", std::process::id()));
+        std::fs::create_dir_all(&outside).unwrap();
+        let script = outside.join("check.sh");
+        let check = format!("sh {}", script.display());
+        let mut run = |w: &mut World, who: AgentId, line: &str| {
+            call(&mut live, w, who, "run", json!({ "command": line })).unwrap();
+        };
+        // Before the last edit: not on the tree the done hands in.
+        run(&mut w, 1, "sh -c 'exit 0'");
+        std::fs::write(tree.join("a.txt"), "a\nb\n").unwrap();
+        // A run that changed the tree ran on none of them.
+        run(&mut w, 1, "sh -c 'echo x > made.txt'");
+        std::fs::remove_file(tree.join("made.txt")).unwrap();
+        // The last of each command counts: failed first, clean after.
+        std::fs::write(&script, "exit 1").unwrap();
+        run(&mut w, 1, &check);
+        std::fs::write(&script, "exit 0").unwrap();
+        run(&mut w, 1, &check);
+        // A helper's run in the worker's worktree counts; the leader's in
+        // the checkout is not kept at all.
+        run(&mut w, helper, "sh -c 'exit 3'");
+        run(&mut w, 0, "git status");
+        live.step(&mut w);
+        assert_eq!(
+            live.ran.len(),
+            4,
+            "neither the one that changed the tree nor the leader's: {:?}",
+            live.ran
+        );
+        sent(&mut live, &mut w, 1, &msg("lead", "done", "b")).unwrap();
+        let ran = |line: &str, code| Ran {
+            line: line.into(),
+            code: Some(code),
+            timed_out: false,
+        };
+        assert_eq!(
+            w.change_of(1).unwrap().runs,
+            [ran(&check, 0), ran("sh -c 'exit 3'", 3)]
+        );
+        // Another edit: what ran before it does not count for what came.
+        std::fs::write(tree.join("a.txt"), "a\nc\n").unwrap();
+        sent(&mut live, &mut w, 1, &msg("lead", "done", "c")).unwrap();
+        assert_eq!(w.change_of(1).unwrap().runs, []);
+        let _ = std::fs::remove_dir_all(&outside);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn runs_past_the_cap_let_go_of_the_oldest() {
+        let mut live = idle_live(1);
+        let ran = |n: usize| Ran {
+            line: format!("run {n}"),
+            code: Some(0),
+            timed_out: false,
+        };
+        for n in 0..RAN_KEEP {
+            live.ran_tx.send(("t".into(), ran(n))).unwrap();
+        }
+        live.take_ran();
+        assert_eq!(live.ran.len(), RAN_KEEP);
+        live.ran_tx.send(("t".into(), ran(RAN_KEEP))).unwrap();
+        live.take_ran();
+        assert_eq!(live.ran.len(), RAN_KEEP);
+        assert_eq!(live.ran.front().unwrap().1, ran(1));
+        assert_eq!(live.ran.back().unwrap().1, ran(RAN_KEEP));
+        assert_eq!(live.runs_on("t").len(), RAN_KEEP);
+        assert_eq!(live.runs_on("other"), []);
     }
 
     #[test]

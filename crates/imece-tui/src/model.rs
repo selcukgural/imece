@@ -1042,6 +1042,28 @@ pub struct Change {
     pub files: Vec<ChangedFile>,
     /// The unified diff, as `git diff` wrote it.
     pub patch: String,
+    /// imece's `run`s on exactly the tree the change makes, the last of
+    /// each command, oldest first: what says it was built or tested as it
+    /// is. A vendor's own shell does not count; imece can not see what
+    /// that ran on, nor always how it ended.
+    pub runs: Vec<Ran>,
+}
+
+/// A command imece ran for an agent, and how it ended.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Ran {
+    /// The command line as the agent gave it.
+    pub line: String,
+    /// The exit code; none when a signal ended it.
+    pub code: Option<i32>,
+    /// Whether the deadline ended it.
+    pub timed_out: bool,
+}
+
+impl Ran {
+    pub fn ok(&self) -> bool {
+        self.code == Some(0)
+    }
 }
 
 impl Change {
@@ -1876,6 +1898,7 @@ mod tests {
                 title: "t".into(),
                 files: Vec::new(),
                 patch: String::new(),
+                runs: Vec::new(),
             });
         }
         w.close_project(1);
@@ -2230,6 +2253,7 @@ mod tests {
                 })
                 .collect(),
             patch: "diff --git a/x b/x\n".into(),
+            runs: Vec::new(),
         }
     }
 

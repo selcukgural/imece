@@ -144,7 +144,10 @@ pub(super) fn system_prompt(
                  {leader}, send it a done message with a short summary of what \
                  you changed and what is left open; your done also shows the person \
                  your worktree's diff, which they apply to their checkout or reject, \
-                 so finish (build, test) before you send it. If you are stuck, send blocked \
+                 so finish before you send it and check it with the run tool (build, \
+                 test) after your last edit: the person sees which runs passed on exactly \
+                 the diff you hand in, and a check in your own shell does not show there. \
+                 If you are stuck, send blocked \
                  or ask instead of guessing: {leader} first, it knows the plan; what only \
                  the person can decide goes to them (send to you, type ask), and their \
                  answer starts your next turn. imece may offer you open cards from \

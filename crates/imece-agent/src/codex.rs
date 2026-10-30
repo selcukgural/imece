@@ -3342,11 +3342,20 @@ done"#
             answer,
             json!({ "jsonrpc": "2.0", "id": 77, "result": { "decision": "decline" } })
         );
-        // A session that is over takes no answer.
+        // A session that is over takes no answer, once its driver ended:
+        // the stop is told just before that, so a decide in between still
+        // reaches the channel.
         drop(rx);
-        let e = session.decide("77", true);
+        let deadline = Instant::now() + Duration::from_secs(5);
+        let e = loop {
+            match session.decide("77", true) {
+                Ok(()) => assert!(Instant::now() < deadline, "the driver ended"),
+                Err(e) => break e,
+            }
+            thread::sleep(Duration::from_millis(20));
+        };
         let _ = std::fs::remove_dir_all(&dir);
-        assert_eq!(e.unwrap_err().kind(), io::ErrorKind::BrokenPipe);
+        assert_eq!(e.kind(), io::ErrorKind::BrokenPipe);
     }
 
     #[test]

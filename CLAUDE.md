@@ -106,7 +106,7 @@ record in the same PR.
 - 08 `who-leads`: `--lead`, the primary vendor, the question screen, `choose_lead`.
 - 09 `helpers`: workers hire helpers in their worktree, `--helpers`, salon folding.
 - 10 `dogfooding-prep`: worktrees follow HEAD, repo notes in instructions, the `run` tool, vendor commands.
-- 11 `change-review`: a worker's `done` → Δ in WAITING FOR YOU, diff view, apply (three-way when clean)/reject.
+- 11 `change-review`: a worker's `done` → Δ in WAITING FOR YOU, diff view, apply (three-way when clean)/reject, the runs on exactly its tree.
 - 12 `completion`: `complete.rs` menus for names, commands, `:` words and directories.
 - 13 `own-shell`: `!cmd` in the person's shell, the terminal dance.
 - 14 `journal`: when a closing text is journaled as `Replied`.

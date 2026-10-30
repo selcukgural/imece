@@ -10,7 +10,8 @@ again, resume must not depend on three vendor implementations):
 `schema_version` in `meta`). Tables: meta, projects (with the
 checkout), agents (with model, tiered, woken, posted, traced,
 commands), cards, story, journal, inbox, trace, mail, notes, inflight,
-posts, offers, changes; events (`Event`, `StoryEvent`) are JSON with
+posts, offers, changes (since schema 5 with the runs on each change's
+tree, record 11); events (`Event`, `StoryEvent`) are JSON with
 the variant name in a `kind` column (serde derives, pinned). A save
 runs after every step and every key (`App::persist`, failures flashed
 once) and once more at quit, and writes only what moved: new journal,

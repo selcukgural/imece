@@ -300,6 +300,18 @@ pub(crate) fn inbox_line(app: &App, i: usize) -> Line<'static> {
         spans.push(Span::styled(format!("{} ", w.projects[p].name), dim()));
     }
     spans.push(Span::raw(words::inbox(app.lang, w, item)));
+    if item.kind == InboxKind::Change
+        && let Some(c) = w.change_of(item.agent)
+    {
+        let colour = if c.runs.is_empty() {
+            pal().warn
+        } else if c.runs.iter().all(Ran::ok) {
+            pal().ok
+        } else {
+            pal().bad
+        };
+        spans.push(Span::styled(words::evidence(app.lang, &c.runs), fg(colour)));
+    }
     Line::from(spans)
 }
 
@@ -1652,7 +1664,66 @@ mod tests {
                     diff --git a/src/q.rs b/src/q.rs\n--- a/src/q.rs\n+++ b/src/q.rs\n\
                     @@ -1 +1,2 @@\n q\n+Q-LINE\x07\n"
                 .into(),
+            runs: Vec::new(),
         }
+    }
+
+    #[test]
+    fn a_change_s_line_says_what_ran_on_its_tree_in_the_colour_of_how_it_went() {
+        let mut app = app_after(1, 4, 50, Lang::En);
+        app.world.inbox.clear();
+        let ran = |line: &str, code| Ran {
+            line: line.into(),
+            code: Some(code),
+            timed_out: false,
+        };
+        for (runs, says, colour) in [
+            (vec![], " · no run on this tree", pal().warn),
+            (
+                vec![ran("cargo test", 0), ran("cargo build", 0)],
+                " · ✓ ran clean on this tree: cargo test, cargo build",
+                pal().ok,
+            ),
+            (
+                vec![
+                    ran("cargo test", 0),
+                    ran("cargo clippy", 101),
+                    ran("make", 2),
+                ],
+                " · ✗ failed on this tree: cargo clippy, make",
+                pal().bad,
+            ),
+        ] {
+            app.world.change_ready(Change {
+                runs,
+                ..a_change(1)
+            });
+            let open = app.world.open_inbox();
+            let line = inbox_line(&app, *open.last().unwrap());
+            let last = line.spans.last().unwrap();
+            assert_eq!((last.content.as_ref(), last.style), (says, fg(colour)));
+        }
+        // Only a change's line: the same worker's answer has none.
+        app.world.inbox.push(InboxItem {
+            kind: InboxKind::Reply,
+            agent: 1,
+            detail: "an answer".into(),
+            researcher: None,
+            open: true,
+            tick: 50,
+        });
+        let line = inbox_line(&app, app.world.inbox.len() - 1);
+        assert!(
+            line.spans.last().unwrap().content.ends_with("an answer"),
+            "{line:?}"
+        );
+        app.lang = Lang::Tr;
+        let open = app.world.open_inbox();
+        let line = inbox_line(&app, open[0]);
+        assert_eq!(
+            line.spans.last().unwrap().content,
+            " · ✗ bu ağaçta başarısız: cargo clippy, make"
+        );
     }
 
     #[test]
@@ -1682,6 +1753,13 @@ mod tests {
             "{s}"
         );
         assert!(s.contains("-OLD-LINE") && s.contains("+NEW-LINE"), "{s}");
+        // What ran on it heads the diff, the patch right under it.
+        let row = |needle: &str| s.lines().position(|l| l.contains(needle)).unwrap();
+        assert_eq!(
+            row("no imece run on exactly this change") + 1,
+            row("diff --git a/src/p.rs"),
+            "{s}"
+        );
         assert!(
             s.contains("+Q-LINE \n") || s.contains("+Q-LINE "),
             "control characters go: {s}"

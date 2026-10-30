@@ -13,6 +13,7 @@
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use crate::child;
 
@@ -219,21 +220,14 @@ impl Change {
 /// clean. It is read through an index file of imece's own, so the agent's
 /// index is never touched. A patch over `max_patch` bytes is refused.
 pub fn change(path: &Path, max_patch: usize) -> io::Result<Option<Change>> {
-    let git_dir = PathBuf::from(git(path, &["rev-parse", "--absolute-git-dir"])?);
-    let index = git_dir.join("imece-index");
-    let _ = std::fs::remove_file(&index);
-    let env = [("GIT_INDEX_FILE", index.to_str().unwrap_or_default())];
-    let staged = (|| {
-        git_env(path, &env, &["read-tree", "HEAD"])?;
-        git_env(path, &env, &["add", "-A", "--", "."])?;
-        let tree = git_env(path, &env, &["write-tree"])?;
+    staged(path, "imece-index", |env, tree| {
         if tree == git(path, &["rev-parse", "HEAD^{tree}"])? {
             return Ok(None);
         }
-        let stat = git_env(path, &env, &["diff", "--cached", "--numstat", "HEAD"])?;
+        let stat = git_env(path, env, &["diff", "--cached", "--numstat", "HEAD"])?;
         let patch = git_bytes(
             path,
-            &env,
+            env,
             &["diff", "--cached", "--binary", "--no-color", "HEAD"],
         )?;
         if patch.len() > max_patch {
@@ -250,9 +244,40 @@ pub fn change(path: &Path, max_patch: usize) -> io::Result<Option<Change>> {
             files,
             patch: String::from_utf8_lossy(&patch).into_owned(),
         }))
+    })
+}
+
+/// The tree the worktree at `path` makes as it is, untracked files
+/// included: what names its content, so a run can be tied to exactly
+/// what it ran on. Read like [`change`], through an index file of its own
+/// for each call (runs are read while git reads a change).
+pub fn tree(path: &Path) -> io::Result<String> {
+    static NEXT: AtomicU64 = AtomicU64::new(0);
+    let n = NEXT.fetch_add(1, Ordering::Relaxed);
+    let name = format!("imece-tree-{}-{n}", std::process::id());
+    staged(path, &name, |_, tree| Ok(tree))
+}
+
+/// Stages everything the worktree at `path` holds in an index file of
+/// imece's own (`name` in its git directory, gone afterwards) and hands
+/// `then` that index's environment and the tree it makes.
+fn staged<T>(
+    path: &Path,
+    name: &str,
+    then: impl FnOnce(&[(&str, &str)], String) -> io::Result<T>,
+) -> io::Result<T> {
+    let git_dir = PathBuf::from(git(path, &["rev-parse", "--absolute-git-dir"])?);
+    let index = git_dir.join(name);
+    let _ = std::fs::remove_file(&index);
+    let env = [("GIT_INDEX_FILE", index.to_str().unwrap_or_default())];
+    let out = (|| {
+        git_env(path, &env, &["read-tree", "HEAD"])?;
+        git_env(path, &env, &["add", "-A", "--", "."])?;
+        let tree = git_env(path, &env, &["write-tree"])?;
+        then(&env, tree)
     })();
     let _ = std::fs::remove_file(&index);
-    staged
+    out
 }
 
 /// One `--numstat` line: added, removed (`-` for a binary file), path.
@@ -613,6 +638,35 @@ mod tests {
                 binary: true
             })
         );
+    }
+
+    #[test]
+    fn a_tree_names_what_the_worktree_holds_and_touches_no_index() {
+        let s = repo("tree");
+        let w = ensure(&s.repo, &s.dir.join("wt"), "claude-1").unwrap().path;
+        let head = git(&w, &["rev-parse", "HEAD^{tree}"]).unwrap();
+        assert_eq!(tree(&w).unwrap(), head, "clean");
+        std::fs::write(w.join("new.txt"), "new\n").unwrap();
+        let t = tree(&w).unwrap();
+        assert_ne!(t, head);
+        assert_eq!(t, change(&w, 1 << 20).unwrap().unwrap().tree);
+        assert_eq!(tree(&w).unwrap(), t, "the same content, the same tree");
+        std::fs::write(w.join("new.txt"), "newer\n").unwrap();
+        assert_ne!(tree(&w).unwrap(), t);
+        // The agent's index is as it was, and imece's own index files go.
+        assert!(
+            git(&w, &["status", "--porcelain"])
+                .unwrap()
+                .contains("?? new.txt")
+        );
+        let git_dir = PathBuf::from(git(&w, &["rev-parse", "--absolute-git-dir"]).unwrap());
+        let left: Vec<_> = std::fs::read_dir(&git_dir)
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+            .filter(|n| n.starts_with("imece-"))
+            .collect();
+        assert!(left.is_empty(), "{left:?}");
+        assert!(tree(&s.dir.join("nowhere")).is_err());
     }
 
     #[test]

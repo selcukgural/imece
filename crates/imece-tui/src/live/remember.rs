@@ -132,6 +132,7 @@ impl Live {
                     })
                     .collect(),
                 patch: c.patch.clone(),
+                runs: found.runs.get(&id).cloned().unwrap_or_default(),
             });
         }
         self.changes = found.changes;
@@ -514,6 +515,11 @@ mod tests {
             }],
             patch: "diff".into(),
         };
+        let ran = Ran {
+            line: "cargo test".into(),
+            code: Some(0),
+            timed_out: false,
+        };
         let found = Found {
             repos: vec![repo.clone(), "/nonexistent/gone".into()],
             models: vec![None, Some("haiku".into()), None, None],
@@ -564,6 +570,7 @@ mod tests {
             ]),
             offered: HashMap::from([(c, vec![2]), (other, vec![lead_gone])]),
             changes: HashMap::from([(1, change("abc")), (lead_gone, change("def"))]),
+            runs: HashMap::from([(1, vec![ran.clone()])]),
         };
         let mut live = Live::bare(claude_at("x"), Vendor::Claude);
         live.state = state.clone();
@@ -634,6 +641,7 @@ mod tests {
             ),
             (1, "Changed a", 2)
         );
+        assert_eq!(w.changes[0].runs, [ran]);
         assert!(
             w.agents[0].trace.iter().any(|l| l.contains("3 lines")),
             "{:?}",
