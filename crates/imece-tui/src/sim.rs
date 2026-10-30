@@ -329,8 +329,8 @@ pub fn world(
     let mut w = World {
         tick: 0,
         started_at: 0,
-        run_tick: 0,
         run_spent: 0,
+        spending: Spending::default(),
         projects: Vec::new(),
         agents: Vec::new(),
         cards: Vec::new(),

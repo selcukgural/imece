@@ -314,6 +314,7 @@ impl App {
             Engine::Sim(s) => s.step(&mut self.world),
             Engine::Live(l) => l.step(&mut self.world),
         }
+        self.world.watch_spending();
         self.follow_thread();
         self.persist();
     }
@@ -1150,6 +1151,8 @@ impl App {
                 Some(to) => {
                     let from = self.world.budget;
                     self.world.budget = to;
+                    // A new pot is worth a new warning.
+                    self.world.spending.warned = false;
                     let leader = self.world.projects[self.current_project()].leader;
                     self.world.note(Event::Budget { leader, from, to });
                     self.flash(fill(t.budget_is, &[&dollars(to)]));
@@ -1790,6 +1793,11 @@ mod tests {
             unreachable!()
         };
         assert_eq!(l.persist(&app.world), Ok(false), "the step saved it");
+        assert_eq!(
+            app.world.spending.seen.back().map(|s| s.1),
+            Some(app.world.spent()),
+            "the step noted what was spent, for the rate"
+        );
         // The demo has no store: nothing to say, ever.
         let mut demo = App::new(1, 1, 0, 1, Lang::En);
         demo.persist();

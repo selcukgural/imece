@@ -842,12 +842,19 @@ fn header(f: &mut Frame, area: Rect, app: &App) {
     spans.extend([
         Span::raw(fill(t.agents_working, &[&w.active_agents().to_string()])),
         sep(),
-        Span::raw(fill(t.budget, &[&dollars(w.spent()), &dollars(w.budget)])),
-        Span::styled(
-            format!(" ({})", fill(t.per_hour, &[&dollars(w.rate_per_hour())])),
-            dim(),
-        ),
     ]);
+    let mut rate = fill(t.per_hour, &[&dollars(w.rate_per_hour())]);
+    if let Some(minutes) = w.pot_lasts() {
+        rate += ", ";
+        rate += &fill(t.pot_lasts, &[&words::ago(app.lang, minutes * 60)]);
+    }
+    let spent = fill(t.budget, &[&dollars(w.spent()), &dollars(w.budget)]);
+    if w.pot_low() {
+        spans.push(Span::styled(format!("{spent} ({rate})"), attention()));
+    } else {
+        spans.push(Span::raw(spent));
+        spans.push(Span::styled(format!(" ({rate})"), dim()));
+    }
     if w.max_researchers > 0 {
         spans.push(sep());
         spans.push(Span::raw(fill(
@@ -2356,6 +2363,7 @@ mod tests {
     fn a_colon_command_sets_the_budget_and_the_journal_says_so() {
         let mut app = app_after(1, 2, 0, Lang::En);
         let was = app.world.budget;
+        app.world.spending.warned = true;
         key(&mut app, KeyCode::Char(':'));
         assert!(app.typing);
         assert_eq!(app.input, ":");
@@ -2365,6 +2373,11 @@ mod tests {
         }
         key(&mut app, KeyCode::Enter);
         assert_eq!(app.world.budget, 80 * 10_000);
+        assert!(
+            !app.world.spending.warned,
+            "a new pot is worth a new warning"
+        );
+        app.world.spending.warned = true;
         let s = render(&app, 140, 40);
         assert!(s.contains("of $80.00"), "{s}");
         assert!(s.contains("the budget is $80.00 now"), "{s}");
@@ -2384,6 +2397,7 @@ mod tests {
         }
         key(&mut app, KeyCode::Enter);
         assert_eq!(app.world.budget, 80 * 10_000);
+        assert!(app.world.spending.warned, "the pot did not change");
         assert!(render(&app, 140, 40).contains("lots is not dollars"));
 
         // An unknown command.
@@ -2954,6 +2968,55 @@ mod tests {
             assert!(!w.is_empty() && !seen.contains(&w), "{status:?}: {w:?}");
             seen.push(w);
         }
+    }
+
+    #[test]
+    fn the_header_says_how_long_the_pot_lasts_and_warns_when_it_runs_low() {
+        let mut app = app_after(1, 2, 0, Lang::En);
+        for a in &mut app.world.agents {
+            a.cost = 0;
+        }
+        app.world.run_spent = 0;
+        app.world.budget = 10_000;
+        let head = |app: &App| render(app, 160, 40).lines().next().unwrap().to_string();
+        let at = |app: &App, word: &str| {
+            let row = head(app);
+            let x = row.chars().take(row.find(word).unwrap()).count() as u16;
+            let c = buffer(app, 160, 40)[(x, 0)].clone();
+            (c.fg, c.modifier)
+        };
+        let looks = |s: Style| (s.fg.unwrap_or(Color::Reset), s.add_modifier);
+        assert_ne!(looks(attention()), looks(Style::default()));
+        assert_ne!(looks(dim()), looks(Style::default()));
+        assert!(
+            head(&app).contains("spent $0.00 of $1.00 ($0.00/h)"),
+            "{}",
+            head(&app)
+        );
+        app.world.tick = 1;
+        app.world.agents[0].cost = 100;
+        app.world.watch_spending();
+        let row = head(&app);
+        assert!(
+            row.contains("spent $0.01 of $1.00 ($0.06/h, ~16 h 30 min left)"),
+            "{row}"
+        );
+        assert_eq!(at(&app, "spent"), looks(Style::default()));
+        assert_eq!(at(&app, "$0.06/h"), looks(dim()));
+        app.world.budget = 100 + 299;
+        let row = head(&app);
+        assert!(
+            row.contains("spent $0.01 of $0.03 ($0.06/h, ~29 min left)"),
+            "{row}"
+        );
+        assert_eq!(at(&app, "spent"), looks(attention()));
+        assert_eq!(at(&app, "$0.06/h"), looks(attention()));
+        app.lang = Lang::Tr;
+        let row = head(&app);
+        assert!(
+            row.contains("$0.01 / $0.03 harcandı ($0.06/sa, ~29 dk kaldı)"),
+            "{row}"
+        );
     }
 
     #[test]

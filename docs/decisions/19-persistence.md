@@ -24,7 +24,7 @@ teammate's waking message arrives (`send` sets it idle) or a card
 posted THIS run is offered (`loaded_cards`); mail and cards that
 waited through the restart do not wake anyone. Ticks count from
 `World.started_at` (the world's first start, so they stay monotonic
-across runs; `run_tick`/`run_spent` give this run's rate), the clock
+across runs; `run_spent` keeps earlier runs out of the rate), the clock
 starts at the local time of that first start. A turn that was mid-way
 (`inflight`) is journaled `Interrupted` and marked on the card; its
 prompt is not run again but told at the wake. The wake briefing

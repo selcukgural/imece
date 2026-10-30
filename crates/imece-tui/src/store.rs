@@ -819,8 +819,8 @@ impl Store {
         let mut w = World {
             tick: 0,
             started_at,
-            run_tick: 0,
             run_spent: 0,
+            spending: Spending::default(),
             projects: Vec::new(),
             agents: Vec::new(),
             cards: Vec::new(),
@@ -1302,8 +1302,8 @@ mod tests {
         let mut w = World {
             tick: 77,
             started_at: 1_700_000_000,
-            run_tick: 70,
             run_spent: 5,
+            spending: Spending::default(),
             projects: vec![
                 Project {
                     id: 0,
@@ -1731,7 +1731,7 @@ mod tests {
         };
         assert_eq!(span(1), (50, 249));
         assert_eq!(span(0), (0, 0));
-        assert_eq!((b.tick, b.run_tick, b.run_spent), (0, 0, 0), "this run's");
+        assert_eq!((b.tick, b.run_spent), (0, 0), "this run's");
         assert_eq!(b.spent(), 4_421);
         // Loaded is saved: nothing to write until something moves.
         assert!(!store.save(&back.world, &back.found().kept()).unwrap());

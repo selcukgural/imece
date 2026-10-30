@@ -16,6 +16,12 @@ pub type ProjectId = usize;
 
 /// Seconds per tick.
 pub const SECONDS_PER_TICK: u64 = 5;
+/// How far back the spending rate looks, in ticks: long enough for a few
+/// turns, short enough that an idle hour does not hide a busy team.
+pub const RATE_WINDOW: u64 = 10 * 60 / SECONDS_PER_TICK;
+/// Minutes left in the pot, at the rate, below which the header warns and
+/// the journal says so once.
+pub const POT_LOW_MINUTES: u64 = 30;
 /// The clock at tick 0: seconds after midnight (14:00 for the simulation,
 /// the local time of the world's first start for live agents) and the day
 /// (local, counted from 1970-01-01), so a tick has a date as well as a
@@ -766,6 +772,14 @@ pub enum Event {
         from: u64,
         to: u64,
     },
+    /// At the rate of the last [`RATE_WINDOW`] (ten-thousandths of a dollar
+    /// an hour), the pot lasts `minutes` more; `leader` is the first open
+    /// project's. Said once, until the person changes the budget.
+    PotLow {
+        leader: AgentId,
+        rate: u64,
+        minutes: u64,
+    },
     /// The person ran a command in their own shell (`!command`), in the
     /// checkout; `leader` is the one of the project they were looking at.
     Shell {
@@ -891,7 +905,8 @@ impl Event {
             | Event::FromCache { .. } => EntryKind::Research,
             Event::ResearchNeedsYou { .. }
             | Event::Sensitive { .. }
-            | Event::ChangeReady { .. } => EntryKind::Sensitive,
+            | Event::ChangeReady { .. }
+            | Event::PotLow { .. } => EntryKind::Sensitive,
             Event::Merged { .. } | Event::Applied { .. } => EntryKind::Merged,
             Event::Failed { .. }
             | Event::Stopped { .. }
@@ -915,6 +930,7 @@ impl Event {
         match *self {
             Event::Plan { leader, .. }
             | Event::Budget { leader, .. }
+            | Event::PotLow { leader, .. }
             | Event::Shell { leader, .. }
             | Event::Confine { leader, .. }
             | Event::Opened { leader, .. }
@@ -1045,16 +1061,25 @@ pub struct Plan {
     pub ready: u64,
 }
 
+/// What the team spent lately, for the rate: the total each time it
+/// changed, oldest first, back to the start of [`RATE_WINDOW`]; and
+/// whether the journal said the pot runs low.
+#[derive(Clone, Debug, Default)]
+pub struct Spending {
+    pub seen: VecDeque<(u64, u64)>,
+    pub warned: bool,
+}
+
 pub struct World {
     pub tick: u64,
     /// When the world began, in seconds since the Unix epoch: tick 0. A
     /// world remembered from an earlier run keeps its first start, so ticks
     /// stay monotonic across runs; the simulation has none (0).
     pub started_at: u64,
-    /// The tick this run of imece began at, and what was spent by then,
-    /// for the rate of this run alone.
-    pub run_tick: u64,
+    /// What was spent when this run of imece began, for the rate of this
+    /// run alone.
     pub run_spent: u64,
+    pub spending: Spending,
     pub projects: Vec<Project>,
     pub agents: Vec<Agent>,
     pub cards: Vec<Card>,
@@ -1193,14 +1218,55 @@ impl World {
         });
     }
 
-    /// What this run spends per hour, from its start.
+    /// What the last [`RATE_WINDOW`] cost, per hour; a run younger than
+    /// that spent nothing before it began.
     pub fn rate_per_hour(&self) -> u64 {
-        let ticks = self.tick.saturating_sub(self.run_tick);
-        if ticks == 0 {
-            0
-        } else {
-            self.spent().saturating_sub(self.run_spent) * 3600 / (ticks * SECONDS_PER_TICK)
+        let from = self.tick.saturating_sub(RATE_WINDOW);
+        let then = (self.spending.seen.iter().rev())
+            .find(|s| s.0 <= from)
+            .map_or(self.run_spent, |s| s.1);
+        self.spent().saturating_sub(then) * 3600 / (RATE_WINDOW * SECONDS_PER_TICK)
+    }
+
+    /// How many minutes the pot lasts at [`World::rate_per_hour`]; none
+    /// when nothing is being spent or the pot is already spent.
+    pub fn pot_lasts(&self) -> Option<u64> {
+        let rate = self.rate_per_hour();
+        let left = self.budget.saturating_sub(self.spent());
+        (rate > 0 && left > 0).then(|| left * 60 / rate)
+    }
+
+    pub fn pot_low(&self) -> bool {
+        self.pot_lasts().is_some_and(|m| m < POT_LOW_MINUTES)
+    }
+
+    /// Notes what was spent by now, for the rate, and says once in the
+    /// journal when the pot runs low. Called every step.
+    pub fn watch_spending(&mut self) {
+        let spent = self.spent();
+        let last = self.spending.seen.back().map_or(self.run_spent, |s| s.1);
+        if spent != last {
+            self.spending.seen.push_back((self.tick, spent));
         }
+        // The newest total from before the window stays: it is what the
+        // window starts from.
+        let from = self.tick.saturating_sub(RATE_WINDOW);
+        while self.spending.seen.get(1).is_some_and(|s| s.0 <= from) {
+            self.spending.seen.pop_front();
+        }
+        if self.spending.warned || !self.pot_low() {
+            return;
+        }
+        let Some(leader) = self.open_projects().next().map(|p| p.leader) else {
+            return;
+        };
+        self.spending.warned = true;
+        let (rate, minutes) = (self.rate_per_hour(), self.pot_lasts().unwrap_or(0));
+        self.note(Event::PotLow {
+            leader,
+            rate,
+            minutes,
+        });
     }
 
     pub fn active_agents(&self) -> usize {
@@ -1568,8 +1634,8 @@ mod tests {
         World {
             tick: 0,
             started_at: 0,
-            run_tick: 0,
             run_spent: 0,
+            spending: Spending::default(),
             projects: vec![Project {
                 id: 0,
                 name: "p".into(),
@@ -1904,28 +1970,148 @@ mod tests {
     }
 
     #[test]
-    fn the_rate_is_what_was_spent_per_hour() {
+    fn the_rate_is_what_the_last_ten_minutes_cost_per_hour() {
+        assert_eq!(RATE_WINDOW * SECONDS_PER_TICK, 600, "ten minutes");
         let mut w = world(vec![
             agent(0, Role::Leader, Status::Idle),
             agent(1, Role::Worker, Status::Working),
         ]);
-        w.agents[0].cost = 100;
-        w.agents[1].cost = 100;
-        assert_eq!(w.rate_per_hour(), 0, "no time, no rate");
-        w.tick = 3600 / SECONDS_PER_TICK;
-        assert_eq!(w.rate_per_hour(), 200);
-        w.tick = 1800 / SECONDS_PER_TICK;
-        assert_eq!(w.rate_per_hour(), 400);
-        // This run alone: what earlier runs spent, over the ticks they took,
-        // is not its rate.
-        w.run_tick = 900 / SECONDS_PER_TICK;
-        w.run_spent = 150;
-        assert_eq!(w.rate_per_hour(), 50 * 4, "$50 in a quarter hour");
-        w.run_tick = w.tick;
-        assert_eq!(w.rate_per_hour(), 0, "a run that just began");
-        w.run_tick = w.tick + 1;
+        w.watch_spending();
+        assert_eq!(w.rate_per_hour(), 0, "nothing spent, no rate");
+        assert!(w.spending.seen.is_empty(), "nothing changed, nothing noted");
+        w.tick = 10;
+        w.agents[0].cost = 60;
+        w.agents[1].cost = 40;
+        w.watch_spending();
+        assert_eq!(w.spending.seen, [(10, 100)]);
+        assert_eq!(
+            w.rate_per_hour(),
+            600,
+            "a cent in ten minutes is six an hour"
+        );
+        // The turn stays in the window until the window starts at it.
+        w.tick = RATE_WINDOW + 9;
+        assert_eq!(w.rate_per_hour(), 600);
+        w.tick = RATE_WINDOW + 10;
+        assert_eq!(w.rate_per_hour(), 0, "an idle ten minutes cost nothing");
+        w.tick = RATE_WINDOW + 50;
+        assert_eq!(
+            w.rate_per_hour(),
+            0,
+            "the window starts from what was spent before it"
+        );
+        w.watch_spending();
+        assert_eq!(
+            w.spending.seen,
+            [(10, 100)],
+            "the start of the window stays"
+        );
+
+        // What earlier runs spent is not this run's rate.
+        let mut w = world(vec![agent(0, Role::Leader, Status::Idle)]);
+        w.tick = 500;
         w.run_spent = 1_000;
+        w.agents[0].cost = 1_000;
+        w.watch_spending();
+        assert_eq!((w.rate_per_hour(), w.spending.seen.len()), (0, 0));
+        w.agents[0].cost = 1_300;
+        w.watch_spending();
+        assert_eq!(w.rate_per_hour(), 1_800);
+        w.run_spent = 2_000;
+        w.spending.seen.clear();
         assert_eq!(w.rate_per_hour(), 0, "never underflows");
+    }
+
+    #[test]
+    fn spending_keeps_only_what_the_window_starts_from() {
+        let mut w = world(vec![agent(0, Role::Leader, Status::Idle)]);
+        for tick in 1..=3 * RATE_WINDOW {
+            w.tick = tick;
+            w.agents[0].cost = 2 * tick;
+            w.watch_spending();
+        }
+        // Two a tick, 120 ticks in the window: 240 in ten minutes.
+        assert_eq!(w.rate_per_hour(), 240 * 6);
+        assert_eq!(w.spending.seen.len() as u64, RATE_WINDOW + 1);
+        assert_eq!(
+            w.spending.seen.front(),
+            Some(&(2 * RATE_WINDOW, 4 * RATE_WINDOW))
+        );
+    }
+
+    #[test]
+    fn the_pot_lasts_what_is_left_at_the_rate() {
+        let mut w = world(vec![agent(0, Role::Leader, Status::Idle)]);
+        w.budget = 10_000;
+        assert_eq!(w.pot_lasts(), None, "nothing spent, no end in sight");
+        w.tick = 1;
+        w.agents[0].cost = 100;
+        w.watch_spending();
+        // $0.06/h with $0.99 left: 990 minutes.
+        assert_eq!(w.pot_lasts(), Some(990));
+        assert!(!w.pot_low());
+        w.budget = 100 + 300;
+        assert_eq!(w.pot_lasts(), Some(30));
+        assert!(!w.pot_low(), "half an hour is not low yet");
+        w.budget = 100 + 299;
+        assert_eq!(w.pot_lasts(), Some(29));
+        assert!(w.pot_low());
+        w.budget = 100;
+        assert_eq!(w.pot_lasts(), None, "a spent pot has no time left to show");
+        assert!(!w.pot_low());
+        w.budget = 50;
+        assert_eq!(w.pot_lasts(), None);
+    }
+
+    #[test]
+    fn the_journal_says_once_that_the_pot_runs_low() {
+        let mut w = world(vec![
+            agent(0, Role::Leader, Status::Idle),
+            agent(1, Role::Leader, Status::Idle),
+        ]);
+        w.projects.push(Project {
+            id: 1,
+            name: "q".into(),
+            leader: 1,
+            trunk: None,
+            repo: &[],
+            closed: false,
+        });
+        w.projects[0].closed = true;
+        w.budget = 400;
+        w.tick = 1;
+        w.agents[0].cost = 100;
+        w.watch_spending();
+        assert!(w.journal.is_empty(), "thirty minutes left is not low");
+        w.budget = 399;
+        w.watch_spending();
+        w.watch_spending();
+        let low = |w: &World| {
+            (w.journal.iter())
+                .filter(|e| matches!(e.event, Event::PotLow { .. }))
+                .count()
+        };
+        assert_eq!(low(&w), 1, "once");
+        assert_eq!(
+            w.journal[0].event,
+            Event::PotLow {
+                leader: 1,
+                rate: 600,
+                minutes: 29,
+            },
+            "the first open project's leader"
+        );
+        assert_eq!(w.journal[0].event.kind(), EntryKind::Sensitive);
+        assert_eq!(w.journal[0].event.agent(), 1);
+        w.spending.warned = false;
+        w.watch_spending();
+        assert_eq!(low(&w), 2, "again after a new pot");
+        // No open project, nobody to say it to.
+        w.projects[1].closed = true;
+        w.spending.warned = false;
+        w.watch_spending();
+        assert_eq!(low(&w), 2);
+        assert!(!w.spending.warned);
     }
 
     #[test]

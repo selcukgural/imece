@@ -100,6 +100,9 @@ pub fn event(lang: Lang, w: &World, e: &Event) -> String {
         Event::Resumed { agent } => fill(t.ev_resumed, &[name(w, *agent)]),
         Event::Restarted { agent } => fill(t.ev_restarted, &[name(w, *agent)]),
         Event::Budget { from, to, .. } => fill(t.ev_budget, &[&dollars(*to), &dollars(*from)]),
+        Event::PotLow { rate, minutes, .. } => {
+            fill(t.ev_pot_low, &[&dollars(*rate), &ago(lang, minutes * 60)])
+        }
         Event::Shell { command, ended, .. } => shell(lang, command, *ended),
         Event::Opened { leader, path } => fill(t.ev_opened, &[project(w, *leader), path]),
         Event::Closed { leader } => fill(t.ev_closed, &[project(w, *leader)]),
@@ -359,6 +362,24 @@ pub fn inbox(lang: Lang, w: &World, item: &InboxItem) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_low_pot_is_said_with_its_rate_and_time_left() {
+        let w = crate::live::testing::team(1);
+        let low = Event::PotLow {
+            leader: 0,
+            rate: 150_000,
+            minutes: 75,
+        };
+        assert_eq!(
+            event(Lang::En, &w, &low),
+            "at $15.00/h the budget lasts about 1 h 15 min more; :budget USD raises it"
+        );
+        assert_eq!(
+            event(Lang::Tr, &w, &low),
+            "$15.00/sa hızla bütçe yaklaşık 1 sa 15 dk daha yeter; :budget USD ile artır"
+        );
+    }
 
     #[test]
     fn a_span_of_time_is_minutes_then_hours_then_days() {
