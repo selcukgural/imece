@@ -2572,6 +2572,47 @@ mod tests {
     }
 
     #[test]
+    fn a_helpers_number_counts_only_its_own_workers_helpers() {
+        let (mut w, mut s) = world(1, 2, 0, 4, Lang::En);
+        let ws = workers_of(&w, 0);
+        let card = s.new_card(&mut w, 0, "x".into());
+        let theirs = s.helper_for(&mut w, ws[1], card);
+        assert_eq!(w.agents[theirs].name, format!("{}.1", w.agents[ws[1]].name));
+        let mine = s.helper_for(&mut w, ws[0], card);
+        assert_eq!(
+            w.agents[mine].name,
+            format!("{}.1", w.agents[ws[0]].name),
+            "another worker's helper is not mine"
+        );
+    }
+
+    #[test]
+    fn a_card_taken_says_its_leases_and_one_without_says_none() {
+        let lease_lines = |w: &World, id: AgentId| {
+            (w.agents[id].trace.iter())
+                .filter(|l| l.contains("lonca.lease_acquire"))
+                .cloned()
+                .collect::<Vec<_>>()
+        };
+        let (w, _, worker, card) = one_at_work();
+        let lines = lease_lines(&w, worker);
+        assert_eq!(lines.len(), 1, "{lines:?}");
+        let s0 = w.cards[card].symbols[0];
+        assert!(
+            lines[0].contains(&format!("{}#{}", s0.file, s0.name)),
+            "{lines:?}"
+        );
+        // A project without a code map leases nothing, and says nothing.
+        let (mut w, mut s) = world(1, 1, 0, 3, Lang::En);
+        w.projects[0].repo = &[];
+        let worker = workers_of(&w, 0)[0];
+        let card = s.new_card(&mut w, 0, "x".into());
+        s.take(&mut w, worker, card, Taken::Claimed);
+        assert!(w.cards[card].symbols.is_empty());
+        assert!(lease_lines(&w, worker).is_empty());
+    }
+
+    #[test]
     fn free_names_skip_the_taken_and_stay_bounded() {
         let (w, _) = world(1, 0, 0, 1, Lang::En);
         assert_eq!(free_name(&w, "lea", 1), "lea1");
