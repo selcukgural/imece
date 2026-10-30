@@ -97,6 +97,15 @@ pub fn event(lang: Lang, w: &World, e: &Event) -> String {
         Event::Closed { leader } => fill(t.ev_closed, &[project(w, *leader)]),
         Event::Renamed { from, to, .. } => fill(t.ev_renamed, &[from, to]),
         Event::Forgotten { agent } => fill(t.ev_forgotten, &[name(w, *agent)]),
+        Event::NotesCut { agent, file, size } => fill(
+            t.ev_notes_cut,
+            &[
+                name(w, *agent),
+                file,
+                &size.div_ceil(1024).to_string(),
+                &crate::live::MAX_NOTES_KIB.to_string(),
+            ],
+        ),
         Event::WorktreeMoved { agent, from, to } => {
             fill(t.ev_worktree_moved, &[name(w, *agent), from, to])
         }
@@ -331,5 +340,34 @@ mod tests {
         assert_eq!(ago(Lang::Tr, 3 * 3600 + 5 * 60), "3 sa 5 dk");
         assert_eq!(ago(Lang::Tr, 60), "1 dk");
         assert_eq!(ago(Lang::Tr, 86_400), "1 g 0 sa");
+    }
+
+    #[test]
+    fn a_cut_notes_file_is_worded_in_kib_rounded_up() {
+        let w = crate::live::testing::team(1);
+        let e = Event::NotesCut {
+            agent: 1,
+            file: "CLAUDE.md".into(),
+            size: 50_649,
+        };
+        let who = &w.agents[1].name;
+        assert_eq!(
+            event(Lang::En, &w, &e),
+            format!(
+                "{who}: the repository's CLAUDE.md is 50 KiB; only its first 16 KiB went into the instructions"
+            )
+        );
+        assert_eq!(
+            event(Lang::Tr, &w, &e),
+            format!(
+                "{who}: deponun CLAUDE.md dosyası 50 KiB; talimatlara yalnızca ilk 16 KiB girdi"
+            )
+        );
+        let exact = Event::NotesCut {
+            agent: 1,
+            file: "AGENTS.md".into(),
+            size: 17 * 1024,
+        };
+        assert!(event(Lang::En, &w, &exact).contains("AGENTS.md is 17 KiB;"));
     }
 }

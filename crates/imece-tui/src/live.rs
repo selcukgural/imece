@@ -2465,7 +2465,7 @@ impl Live {
     }
 
     /// Starts agent `id`'s session on its own thread; `step` picks it up.
-    fn start(&self, w: &World, id: AgentId) {
+    fn start(&self, w: &mut World, id: AgentId) {
         let a = &w.agents[id];
         let leader = a.role == Role::Leader;
         let vendor = self.of(a.vendor);
@@ -2487,8 +2487,9 @@ impl Live {
         });
         let place = &self.places[a.project];
         let mut system = system_prompt(w, id, self.max_workers, self.max_helpers);
-        if let Some(notes) = repo_notes(&place.repo, a.vendor) {
-            system.push_str(&notes);
+        let notes = repo_notes(&place.repo, a.vendor);
+        if let Some(n) = &notes {
+            system.push_str(&n.text);
         }
         let (program, model) = (vendor.program.clone(), self.models[id].clone());
         let name = format!("imece {}", a.name);
@@ -2578,6 +2579,19 @@ impl Live {
             // Nobody to take it (imece is closing): dropping it stops it.
             let _ = ready.send((id, generation, started));
         });
+        if let Some(Notes {
+            file,
+            size,
+            cut: true,
+            ..
+        }) = notes
+        {
+            w.note(Event::NotesCut {
+                agent: id,
+                file: file.to_string(),
+                size,
+            });
+        }
     }
 }
 
@@ -3095,8 +3109,26 @@ fn system_prompt(w: &World, id: AgentId, max_workers: usize, max_helpers: usize)
 /// The files a repository keeps its notes for coding agents in, in the
 /// order they are looked for; the first one there is used.
 const NOTES_FILES: &[&str] = &["AGENTS.md", "CLAUDE.md"];
-/// The most of a notes file that goes into a prompt, in bytes.
-const MAX_NOTES: usize = 16 << 10;
+/// The most of a notes file that goes into a prompt, in KiB.
+pub(crate) const MAX_NOTES_KIB: usize = 16;
+/// [`MAX_NOTES_KIB`] in bytes.
+const MAX_NOTES: usize = MAX_NOTES_KIB << 10;
+
+/// A repository's notes for coding agents, as they go into an agent's
+/// instructions.
+#[derive(Debug, PartialEq)]
+struct Notes {
+    /// The text to append to the instructions.
+    text: String,
+    /// The file the notes came from (`AGENTS.md` or `CLAUDE.md`).
+    file: &'static str,
+    /// The file's size in bytes, trimmed.
+    size: usize,
+    /// Whether the file was longer than [`MAX_NOTES`] and only its head
+    /// went in; the journal says so, since the agent reads a file the
+    /// person believes it has whole.
+    cut: bool,
+}
 
 /// The repository's notes for coding agents (its `AGENTS.md` or
 /// `CLAUDE.md`), to append to an agent's instructions. The vendors' CLIs
@@ -3104,7 +3136,7 @@ const MAX_NOTES: usize = 16 << 10;
 /// no settings), which drops these notes too; imece passes them itself.
 /// Codex loads `AGENTS.md` from its directory on its own and gets it only
 /// when the notes are in another file.
-fn repo_notes(repo: &Path, vendor: Vendor) -> Option<String> {
+fn repo_notes(repo: &Path, vendor: Vendor) -> Option<Notes> {
     let (file, text) = NOTES_FILES
         .iter()
         .find_map(|f| std::fs::read_to_string(repo.join(f)).ok().map(|t| (*f, t)))?;
@@ -3112,18 +3144,23 @@ fn repo_notes(repo: &Path, vendor: Vendor) -> Option<String> {
         return None;
     }
     let mut body = text.trim().to_string();
-    if body.len() > MAX_NOTES {
+    let size = body.len();
+    let cut = size > MAX_NOTES;
+    if cut {
         // The last character boundary at or before the cap.
-        let cut = (0..=MAX_NOTES)
+        let at = (0..=MAX_NOTES)
             .rev()
             .find(|&i| body.is_char_boundary(i))
             .unwrap_or(0);
-        body.truncate(cut);
+        body.truncate(at);
         body.push_str("\n[cut: the file goes on]");
     }
-    Some(format!(
-        "\n\nThe repository's notes for coding agents, from its {file}:\n\n{body}"
-    ))
+    Some(Notes {
+        text: format!("\n\nThe repository's notes for coding agents, from its {file}:\n\n{body}"),
+        file,
+        size,
+        cut,
+    })
 }
 
 /// What an agent of `vendor` in `role` can do to the files, as its
@@ -4052,33 +4089,41 @@ mod tests {
         );
         std::fs::write(dir.join("CLAUDE.md"), "# notes\n\nRun cargo fmt.\n").unwrap();
         let notes = repo_notes(&dir, Vendor::Claude).unwrap();
+        assert_eq!(
+            (notes.file, notes.size, notes.cut),
+            ("CLAUDE.md", 23, false)
+        );
+        let notes = notes.text;
         assert!(notes.starts_with("\n\nThe repository's notes"), "{notes}");
         assert!(notes.contains("from its CLAUDE.md:\n\n# notes\n\nRun cargo fmt."));
         assert!(notes.ends_with("cargo fmt."), "{notes:?}");
         // Codex reads AGENTS.md on its own; the others get it from imece.
-        assert!(
-            repo_notes(&dir, Vendor::Codex)
-                .unwrap()
-                .contains("CLAUDE.md")
-        );
+        assert_eq!(repo_notes(&dir, Vendor::Codex).unwrap().file, "CLAUDE.md");
         std::fs::write(dir.join("AGENTS.md"), "agents first").unwrap();
         for v in [Vendor::Claude, Vendor::Gemini] {
             let notes = repo_notes(&dir, v).unwrap();
+            assert_eq!((notes.file, notes.size), ("AGENTS.md", 12));
             assert!(
-                notes.contains("from its AGENTS.md:\n\nagents first"),
-                "{notes}"
+                notes.text.contains("from its AGENTS.md:\n\nagents first"),
+                "{}",
+                notes.text
             );
         }
         assert_eq!(repo_notes(&dir, Vendor::Codex), None);
         // A file of exactly the cap is whole; one byte more is cut at a
-        // character boundary, and says so.
+        // character boundary, and says so (the size is the file's, not
+        // what went in).
         std::fs::write(dir.join("AGENTS.md"), "x".repeat(MAX_NOTES)).unwrap();
         let notes = repo_notes(&dir, Vendor::Claude).unwrap();
+        assert_eq!((notes.size, notes.cut), (MAX_NOTES, false));
+        let notes = notes.text;
         assert!(!notes.contains("[cut"), "{}", &notes[notes.len() - 40..]);
         assert_eq!(notes.matches('x').count(), MAX_NOTES);
         let long = format!("{}é", "x".repeat(MAX_NOTES - 1));
         std::fs::write(dir.join("AGENTS.md"), &long).unwrap();
         let notes = repo_notes(&dir, Vendor::Claude).unwrap();
+        assert_eq!((notes.size, notes.cut), (MAX_NOTES + 1, true));
+        let notes = notes.text;
         assert!(
             notes.ends_with("x\n[cut: the file goes on]"),
             "{}",
@@ -4086,6 +4131,38 @@ mod tests {
         );
         assert!(!notes.contains('é'));
         assert_eq!(notes.matches('x').count(), MAX_NOTES - 1);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_cut_notes_file_goes_into_the_journal_when_the_session_starts() {
+        let dir = std::env::temp_dir().join(format!("imece-notes-cut-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut w = team(1);
+        let mut live = idle_live_in(&dir, 2);
+        // A file within the cap: nothing in the journal about it.
+        std::fs::write(dir.join("CLAUDE.md"), "x".repeat(MAX_NOTES)).unwrap();
+        live.told(&mut w, 0, "go").unwrap();
+        assert!(
+            !w.journal
+                .iter()
+                .any(|e| matches!(e.event, Event::NotesCut { .. })),
+            "{:?}",
+            w.journal
+        );
+        // One over: the start journals the file and its whole size, for
+        // the agent that starts.
+        std::fs::write(dir.join("CLAUDE.md"), "x".repeat(MAX_NOTES + 1)).unwrap();
+        live.told(&mut w, 1, "go").unwrap();
+        assert!(matches!(
+            &w.journal.last().unwrap().event,
+            Event::NotesCut { agent: 1, file, size } if file == "CLAUDE.md" && *size == MAX_NOTES + 1
+        ));
+        assert_eq!(
+            w.journal.last().unwrap().event.kind(),
+            EntryKind::Assumption
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 
