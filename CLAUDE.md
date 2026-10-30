@@ -70,12 +70,27 @@ and owned here from then on:
   interpreted.
 - Organisation: a leader assigns by default; agents may also claim from the
   board.
-- Researchers: coders do not read the outside world; a capped pool of
-  short-lived researchers does. Identical questions in flight are merged and
-  answers cached.
-- Graded taint: reading a report makes a coder soft-tainted (only sensitive
-  changes need the person); researchers are fully tainted.
-- Trusted sources: official docs by default; user-content sites never;
+- Posture (user, 2026-10-30; this replaced "coders do not read the outside
+  world"): imece's worth is the team (a leader that hires, the bus, the
+  board, worktrees, one pot, the Δ review queue, persistence, many
+  projects), not a locked-down agent. Workers and helpers get their
+  vendor's full coding toolset (read, write, shell, web search and fetch);
+  the person is the last gate (the Δ review, WAITING FOR YOU), not a model
+  and not a tool list. imece sandboxes nothing: it switches on each
+  vendor's own restrictions and checks, fail closed, that the session runs
+  with what was asked; OS-level isolation is a container's or Kule's job
+  (imece does not depend on Kule). The leader stays non-writing (read, web,
+  read-only commands): a role, not security; it works in the person's
+  checkout, where a write would skip the Δ gate and collide with the
+  person's working copy; small jobs go to a cheap-tier worker. See
+  "Posture change" below for what of this runs and what is still to come.
+- Researchers (an optional layer on top, not built, no longer a
+  precondition): a capped pool of short-lived researchers answers
+  questions for coders that are told not to read the outside world
+  themselves; identical questions in flight are merged and answers cached.
+  Graded taint: reading a report makes a coder soft-tainted (only
+  sensitive changes need the person); researchers are fully tainted.
+  Trusted sources: official docs by default; user-content sites never;
   package-registry docs only for packages in the lockfile.
 
 - Live v0 (2026-10-28): one long-lived `claude -p` stream-json session per
@@ -265,7 +280,10 @@ and owned here from then on:
   agent's instructions end with the repo's `AGENTS.md` else `CLAUDE.md`
   (16 KiB cap; Codex gets only a CLAUDE.md, it reads AGENTS.md itself)
   because `--restricted` (Claude) and the private Gemini directory drop
-  them (probe: a restricted session knew nothing of CLAUDE.md); `run`
+  them (probe: a restricted session knew nothing of CLAUDE.md); a file
+  over the cap goes in cut and the journal says so (`Event::NotesCut`,
+  file and size in KiB, 2026-10-30: this CLAUDE.md is 50 KB and was being
+  cut silently); `run`
   tool on imece's MCP server for every agent (`crates/imece-agent/src/
   run.rs`: shell-less argv split that refuses `| & ; < > ( ) $ \` # * ? ~
   {`, one pipe for both streams, process group killed at `--run-timeout`
@@ -700,6 +718,31 @@ and owned here from then on:
   window; the demo never has one. `Live::left_off()` carries the journal
   count before `adopt` and the seconds since. `saved_at` is a world key
   (refused as a setting).
+- Posture change (2026-10-30, user's decisions after PR #32; the "Posture"
+  line at the top says why): the default posture moves from restricted
+  tools to full capability, in this order, each its own PR: (a) DONE in
+  PR #33: the principles above rewritten, the sandbox wording corrected
+  (imece sandboxes nothing), the instruction cut journaled. (b) Agents
+  may ASK THE PERSON: bus recipient `you`, `send(to: "you", type: "ask",
+  body)` → status "asking the person", inbox item `?` "X asks you: …",
+  answered by writing back (`/` on the item), the item closes when the
+  answer goes; inform/done to `you` = a note, no wake; workers may ask
+  too, the default guidance says ask the leader first. (c) The CONFINE
+  DIAL: `--confine open|standard|strict`, default `standard` = the
+  vendor's full coding toolset for workers and helpers (read, write,
+  shell, web search and fetch); the vendor's own sub-agent tool stays off
+  at every level (it would skip the worktree, the pot, the bus and the
+  screen); `strict` = the tool lists of the entries above; the fail-closed
+  checks verify the chosen level and nothing weakens silently; one
+  start-up line says isolation is not imece's when not strict. Until (c)
+  lands, the tool lists in the entries above are what runs. (d) Vendor
+  APPROVAL REQUESTS routed to WAITING FOR YOU instead of denied or
+  stopping the session: Claude `--permission-prompt-tool` served by
+  imece's MCP server, Codex approval requests, Gemini
+  `session/request_permission`; auto-approve rules for routine actions.
+  Then dogfooding (imece writes imece) in standard mode, with an
+  `AGENTS.md` under the 16 KiB cap and a known-good binary kept as
+  `imece-stable`.
 
 ## Neighbours
 
@@ -711,8 +754,10 @@ and owned here from then on:
   turn), splits work by disjoint paths (overlap means serial), and a model
   reviews every patch and command. imece differs on purpose: real agent
   sessions over ACP with a message bus between peers, symbol leases in the
-  same file, a sandbox instead of model review as the last gate, graded
-  taint, many projects at once, a calm screen.
+  same file, the person's review of each worker's diff as the last gate
+  (no model reviews patches or commands, and imece sandboxes nothing: the
+  vendor's own restrictions, checked fail closed, and a container when
+  isolation is wanted), many projects at once, a calm screen.
 - Taken from voff (deep review 2026-10-28, be322a2), to build when the
   matching part exists:
   - Done needs evidence: one entry per acceptance criterion citing what
@@ -752,4 +797,12 @@ and owned here from then on:
 ## Security
 
 Same standing rules as Kule: deny by default, nothing weakens silently, every
-boundary has a test that fails without it.
+boundary has a test that fails without it. What imece guards is its own
+boundaries: who may call which tool on the bus, what an agent's text may do
+on the screen, what a session reports it runs with against what was asked
+(a mismatch stops it), the pot, and the Δ gate between a worker's worktree
+and the person's checkout. imece is not a sandbox and never calls itself
+one: an agent with a shell can do what the person's account can, and the
+vendor's own restrictions (`--restricted`, Codex's sandbox, Gemini's policy
+file) are what imece switches on and verifies, not something it provides.
+Isolation beyond that is a container's or Kule's job.

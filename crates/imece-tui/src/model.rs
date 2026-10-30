@@ -775,6 +775,15 @@ pub enum Event {
     Forgotten {
         agent: AgentId,
     },
+    /// The repository's notes for coding agents (`AGENTS.md` or
+    /// `CLAUDE.md`, `size` bytes) were longer than what goes into an
+    /// agent's instructions, so the agent's session started with the
+    /// file's head only.
+    NotesCut {
+        agent: AgentId,
+        file: String,
+        size: usize,
+    },
     /// A live agent's worktree was clean at an older commit and was moved
     /// to the checkout's HEAD when its session started.
     WorktreeMoved {
@@ -841,6 +850,7 @@ impl Event {
             | Event::Fallback { .. }
             | Event::Resumed { .. }
             | Event::Restarted { .. }
+            | Event::NotesCut { .. }
             | Event::WorktreeMoved { .. }
             | Event::WorktreeKept { .. } => EntryKind::Assumption,
             Event::Blocked { .. } => EntryKind::Blocked,
@@ -896,6 +906,7 @@ impl Event {
             | Event::Fallback { agent, .. }
             | Event::Resumed { agent }
             | Event::Restarted { agent }
+            | Event::NotesCut { agent, .. }
             | Event::WorktreeMoved { agent, .. }
             | Event::WorktreeKept { agent, .. }
             | Event::ChangeReady { agent, .. }
@@ -1561,6 +1572,12 @@ mod tests {
         for e in [&opened, &closed, &renamed, &forgotten] {
             assert_eq!(e.kind(), EntryKind::Person);
         }
+        let cut = Event::NotesCut {
+            agent: 10,
+            file: "CLAUDE.md".into(),
+            size: 1,
+        };
+        assert_eq!((cut.agent(), cut.kind()), (10, EntryKind::Assumption));
     }
 
     #[test]
