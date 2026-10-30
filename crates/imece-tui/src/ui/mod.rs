@@ -60,6 +60,8 @@ pub fn draw(f: &mut Frame, app: &App) {
         overlay::help(f, app.lang);
     } else if let Some(d) = &app.digest {
         overlay::digest(f, app, d);
+    } else if let Some(l) = &app.left_off {
+        overlay::left_off(f, app, l);
     }
 }
 
@@ -257,6 +259,30 @@ pub(crate) fn entry_line(app: &App, e: &Entry) -> Line<'static> {
         Some(said) => spans.extend(said_spans(app.lang, w, &said)),
         None => spans.push(Span::raw(words::event(app.lang, w, &e.event))),
     }
+    Line::from(spans)
+}
+
+/// An open inbox item `i` as the salon lists it: its kind's glyph, when it
+/// came (its date too when that is not today), its project when there are
+/// several, and what it is, worded.
+pub(crate) fn inbox_line(app: &App, i: usize) -> Line<'static> {
+    let w = &app.world;
+    let item = &w.inbox[i];
+    let (icon, style) = match item.kind {
+        InboxKind::Sensitive => ("!", bold(pal().warn)),
+        InboxKind::Research => ("?", bold(pal().research)),
+        InboxKind::Reply => ("»", bold(pal().info)),
+        InboxKind::Change => ("Δ", bold(pal().strong)),
+    };
+    let mut spans = vec![
+        Span::styled(format!("{icon} "), style),
+        Span::styled(format!("{} ", when(item.tick, day(w.tick))), dim()),
+    ];
+    if w.projects.len() > 1 {
+        let p = w.agents[item.agent].project;
+        spans.push(Span::styled(format!("{} ", w.projects[p].name), dim()));
+    }
+    spans.push(Span::raw(words::inbox(app.lang, w, item)));
     Line::from(spans)
 }
 
@@ -2836,6 +2862,138 @@ mod tests {
         let screen = render(&app, 140, 40);
         assert!(screen.contains("WHILE YOU WERE AWAY"), "{screen}");
         assert!(screen.contains("last 7 min"), "{screen}");
+    }
+
+    /// The project's name stands on an inbox line only when there are
+    /// several projects to tell apart.
+    #[test]
+    fn an_inbox_line_names_the_project_only_among_several() {
+        for (projects, named) in [(1, false), (2, true)] {
+            let mut app = app_after(projects, 4, 0, Lang::En);
+            let leader = app.world.projects[0].leader;
+            app.world.inbox.push(InboxItem {
+                kind: InboxKind::Sensitive,
+                agent: leader,
+                detail: "bump a dependency".into(),
+                researcher: None,
+                open: true,
+                tick: 0,
+            });
+            let line = text(&[inbox_line(&app, app.world.inbox.len() - 1)]).remove(0);
+            let name = &app.world.projects[0].name;
+            assert_eq!(
+                line.contains(&format!(" {name} ")),
+                named,
+                "{projects} projects: {line}"
+            );
+            assert!(line.starts_with("! 14:00 "), "{line}");
+        }
+    }
+
+    #[test]
+    fn the_where_you_left_off_window_tells_what_was_left() {
+        let mut app = talking_over_two_days();
+        let leader = app.world.projects[0].leader;
+        let worker = app
+            .world
+            .agents
+            .iter()
+            .find(|a| a.role == Role::Worker)
+            .map(|a| a.id)
+            .unwrap();
+        app.world.inbox.push(InboxItem {
+            kind: InboxKind::Reply,
+            agent: leader,
+            detail: "the answer's first line".into(),
+            researcher: None,
+            open: true,
+            tick: 7300,
+        });
+        let item = app.world.inbox.len() - 1;
+        // The last lines: one of yesterday, then today's.
+        let last: Vec<Entry> = app.world.journal[2..5].to_vec();
+        assert_eq!((last[0].tick, last[1].tick), (0, 7200));
+        app.left_off = Some(crate::app::LeftOff {
+            ago: Some(3 * 3600 + 5 * 60),
+            spent: 1_234,
+            budget: 500_000,
+            projects: vec![("shop-api".into(), 3, 2), ("other".into(), 1, 0)],
+            waiting: vec![item],
+            waiting_total: 2,
+            interrupted: vec![leader, worker],
+            last,
+        });
+        let screen = render(&app, 140, 40);
+        for want in [
+            "WHERE YOU LEFT OFF · 3 h 5 min ago",
+            "$0.12 of $50.00 spent",
+            "shop-api: 3 agents, 2 open cards",
+            "other: 1 agents, 0 open cards",
+            "! 2 wait for you:",
+            "» 00:08 ",
+            "the answer's first line",
+            "… and 1 more",
+            &format!(
+                "turns cut short when imece closed: {}, {}",
+                app.world.agents[leader].name, app.world.agents[worker].name
+            ),
+            "the last lines before:",
+            "─ 1970-01-01",
+            "any key: close",
+        ] {
+            assert!(screen.contains(want), "{want} missing:\n{screen}");
+        }
+        // Oldest first, like a conversation: each day's lines under its
+        // date, the window's own rows (the journal pane has a day row too).
+        let lines: Vec<&str> = screen.lines().collect();
+        let top = lines
+            .iter()
+            .position(|l| l.contains("WHERE YOU LEFT OFF"))
+            .unwrap();
+        let window: Vec<&str> = lines[top..]
+            .iter()
+            .take_while(|l| !l.contains("any key: close"))
+            .copied()
+            .collect();
+        let at = |needle: &str| {
+            window
+                .iter()
+                .position(|l| l.contains(needle))
+                .unwrap_or_else(|| panic!("{needle} not in the window\n{screen}"))
+        };
+        assert_eq!(at("14:00 ⇄ codex-1"), at("─ 1970-01-01") + 1, "{screen}");
+        assert_eq!(at("00:00 › you"), at("─ 1970-01-02") + 1, "{screen}");
+        assert_eq!(
+            window.iter().filter(|l| l.contains("─ 1970-0")).count(),
+            2,
+            "two days, two rows; the second day's second line needs none\n{screen}"
+        );
+        // Every waiting item shown: no "more" line.
+        app.left_off.as_mut().unwrap().waiting_total = 1;
+        let screen = render(&app, 140, 40);
+        assert!(!screen.contains("… and"), "{screen}");
+        // Without a time, without waiting items, without cut turns.
+        let l = app.left_off.as_mut().unwrap();
+        l.ago = None;
+        l.waiting.clear();
+        l.waiting_total = 0;
+        l.interrupted.clear();
+        l.last.clear();
+        let screen = render(&app, 140, 40);
+        assert!(screen.contains("WHERE YOU LEFT OFF "), "{screen}");
+        assert!(!screen.contains(" ago "), "{screen}");
+        assert!(screen.contains("Nothing needs you right now."), "{screen}");
+        for gone in ["wait for you", "cut short", "the last lines"] {
+            assert!(!screen.contains(gone), "{gone} still on\n{screen}");
+        }
+        app.lang = Lang::Tr;
+        app.left_off.as_mut().unwrap().ago = Some(60);
+        let screen = render(&app, 140, 40);
+        assert!(screen.contains("NEREDE KALMIŞTIN · 1 dk önce"), "{screen}");
+        // The help wins over it, the key closes one at a time.
+        app.help = true;
+        let screen = render(&app, 140, 40);
+        assert!(!screen.contains("NEREDE KALMIŞTIN"), "{screen}");
     }
 
     #[test]

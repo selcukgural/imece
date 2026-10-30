@@ -918,7 +918,7 @@ pub enum Ended {
     Signal(i32),
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Entry {
     pub tick: u64,
     pub event: Event,

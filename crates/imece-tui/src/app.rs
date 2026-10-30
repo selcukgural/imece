@@ -86,6 +86,80 @@ pub struct Digest {
     pub highlights: Vec<Entry>,
 }
 
+/// Where the person left off: what an earlier run of imece left behind,
+/// told once at the start, before anything moves.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct LeftOff {
+    /// Seconds since the earlier run last wrote the store; none when the
+    /// file does not say.
+    pub ago: Option<u64>,
+    /// What all agents spent so far, and the pot.
+    pub spent: u64,
+    pub budget: u64,
+    /// Every open project: its name, its agents (the ones that are still
+    /// there, asleep) and its cards that are not done.
+    pub projects: Vec<(String, usize, usize)>,
+    /// The oldest open inbox items (indexes), at most [`LEFT_SHOWN`], and
+    /// how many there are in all.
+    pub waiting: Vec<usize>,
+    pub waiting_total: usize,
+    /// Agents whose turn the earlier run cut short.
+    pub interrupted: Vec<AgentId>,
+    /// The earlier runs' last journal lines, at most [`LEFT_SHOWN`].
+    pub last: Vec<Entry>,
+}
+
+/// Lines of one kind the "where you left off" window shows, at most.
+pub const LEFT_SHOWN: usize = 6;
+
+impl LeftOff {
+    /// From a world the store gave back, the first `journal` lines of
+    /// whose journal are the earlier runs' (the rest this start's), the
+    /// store last written `ago` seconds ago. None when there is nothing to
+    /// tell: no lines from before, nothing waiting.
+    pub fn of(w: &World, journal: usize, ago: Option<u64>) -> Option<LeftOff> {
+        let journal = journal.min(w.journal.len());
+        let open = w.open_inbox();
+        if journal == 0 && open.is_empty() {
+            return None;
+        }
+        let projects = w
+            .open_projects()
+            .map(|q| {
+                let agents = w
+                    .agents
+                    .iter()
+                    .filter(|a| a.project == q.id && !a.gone)
+                    .count();
+                let cards = w
+                    .cards
+                    .iter()
+                    .filter(|c| c.project == q.id && c.column != Column::Done)
+                    .count();
+                (q.name.clone(), agents, cards)
+            })
+            .collect();
+        let interrupted = w.journal[journal..]
+            .iter()
+            .filter_map(|e| match e.event {
+                Event::Interrupted { agent } => Some(agent),
+                _ => None,
+            })
+            .collect();
+        let last = w.journal[journal.saturating_sub(LEFT_SHOWN)..journal].to_vec();
+        Some(LeftOff {
+            ago,
+            spent: w.spent(),
+            budget: w.budget,
+            projects,
+            waiting_total: open.len(),
+            waiting: open.into_iter().take(LEFT_SHOWN).collect(),
+            interrupted,
+            last,
+        })
+    }
+}
+
 impl Digest {
     pub fn since(w: &World, tick: u64) -> Option<Digest> {
         let new: Vec<&Entry> = w.journal.iter().filter(|e| e.tick > tick).collect();
@@ -164,6 +238,8 @@ pub struct App {
     /// choice.
     pub primary: Option<String>,
     pub digest: Option<Digest>,
+    /// What an earlier run left behind, shown once at the start.
+    pub left_off: Option<LeftOff>,
     pub flash: Option<(String, Instant)>,
     pub quit: bool,
     /// The store's last failure, flashed once.
@@ -188,6 +264,12 @@ impl App {
             // selected: it is who to talk to.
             Engine::Live(l) => Sel::Agent(world.projects[l.home()].leader),
             Engine::Sim(_) => Sel::Project(0),
+        };
+        let left_off = match &engine {
+            Engine::Live(l) => l
+                .left_off()
+                .and_then(|left| LeftOff::of(&world, left.journal, left.ago)),
+            Engine::Sim(_) => None,
         };
         App {
             world,
@@ -217,6 +299,7 @@ impl App {
             help: false,
             primary: None,
             digest: None,
+            left_off,
             flash: None,
             quit: false,
             store_error: None,
@@ -249,6 +332,13 @@ impl App {
                     self.store_error = Some(e);
                 }
             }
+        }
+    }
+
+    /// The last word to the store on the way out, after the last save.
+    pub fn leave(&mut self) {
+        if let Engine::Live(l) = &mut self.engine {
+            l.leave();
         }
     }
 
@@ -318,7 +408,10 @@ impl App {
             return;
         }
         // An overlay takes the key that closes it.
-        if self.digest.take().is_some() || std::mem::take(&mut self.help) {
+        if self.digest.take().is_some()
+            || self.left_off.take().is_some()
+            || std::mem::take(&mut self.help)
+        {
             return;
         }
         if away && let Some(d) = Digest::since(&self.world, since) {
@@ -1647,5 +1740,144 @@ mod tests {
         assert_eq!(expand_tilde("/a/~", home), PathBuf::from("/a/~"));
         assert_eq!(expand_tilde("~", None), PathBuf::from("~"));
         assert_eq!(expand_tilde("~/x", None), PathBuf::from("~/x"));
+    }
+
+    fn item(agent: AgentId, open: bool) -> InboxItem {
+        InboxItem {
+            kind: InboxKind::Reply,
+            agent,
+            detail: "an answer".into(),
+            researcher: None,
+            open,
+            tick: 0,
+        }
+    }
+
+    #[test]
+    fn where_you_left_off_is_what_the_earlier_runs_left() {
+        let mut app = App::new(2, 4, 0, 1, Lang::En);
+        let w = &mut app.world;
+        w.budget = 500_000;
+        for (i, a) in w.agents.iter_mut().enumerate() {
+            a.cost = 100 * (i as u64 + 1);
+        }
+        let spent = w.spent();
+        // Eight lines of before, then this start's: two turns cut short
+        // and a forgotten session, which is no interruption.
+        w.journal.clear();
+        for tick in 0..8 {
+            w.journal.push(Entry {
+                tick,
+                event: Event::Failed { agent: 0 },
+            });
+        }
+        let before = w.journal.len();
+        w.note(Event::Interrupted { agent: 2 });
+        w.note(Event::Forgotten { agent: 1 });
+        w.note(Event::Interrupted { agent: 1 });
+        // Seven items wait, a closed one does not count.
+        w.inbox.clear();
+        w.inbox.push(item(0, false));
+        for i in 0..7 {
+            w.inbox.push(item(i % 3, true));
+        }
+        // Project 1 is closed; of project 0, one agent is gone and one card
+        // done.
+        w.projects[1].closed = true;
+        let of_zero: Vec<AgentId> = w
+            .agents
+            .iter()
+            .filter(|a| a.project == 0)
+            .map(|a| a.id)
+            .collect();
+        w.agents[*of_zero.last().unwrap()].gone = true;
+        let cards_of_zero = w.cards.iter().filter(|c| c.project == 0).count();
+        assert!(cards_of_zero >= 2, "the demo has cards");
+        let done = w.cards.iter().position(|c| c.project == 0).unwrap();
+        w.cards[done].column = Column::Done;
+        let name = w.projects[0].name.clone();
+
+        let l = LeftOff::of(w, before, Some(321)).expect("something to tell");
+        assert_eq!((l.ago, l.spent, l.budget), (Some(321), spent, 500_000));
+        assert_eq!(
+            l.projects,
+            [(name, of_zero.len() - 1, cards_of_zero - 1)],
+            "open projects only, agents that are still there, cards not done"
+        );
+        assert_eq!(l.waiting, [1, 2, 3, 4, 5, 6], "the oldest six open items");
+        assert_eq!(l.waiting_total, 7);
+        assert_eq!(l.interrupted, [2, 1], "in the order they were found");
+        assert_eq!(
+            l.last,
+            w.journal[2..8].to_vec(),
+            "the six before this start"
+        );
+
+        // More lines of before than the journal has: all of it is before.
+        let l = LeftOff::of(w, 100, None).unwrap();
+        assert_eq!(l.ago, None);
+        assert!(l.interrupted.is_empty());
+        assert_eq!(l.last, w.journal[5..11].to_vec());
+        // Nothing from before and nothing waiting: nothing to tell; either
+        // alone is.
+        for i in &mut w.inbox {
+            i.open = false;
+        }
+        assert!(LeftOff::of(w, 0, Some(5)).is_none());
+        assert!(LeftOff::of(w, 1, Some(5)).is_some(), "a line from before");
+        w.inbox[0].open = true;
+        let l = LeftOff::of(w, 0, Some(5)).unwrap();
+        assert_eq!((l.waiting.as_slice(), l.waiting_total), (&[0][..], 1));
+        assert!(l.last.is_empty());
+    }
+
+    #[test]
+    fn a_live_app_starts_with_where_you_left_off_and_any_key_closes_it() {
+        let mut w = crate::live::testing::team(1);
+        w.note(Event::Failed { agent: 1 });
+        let mut live = crate::live::testing::idle_live(2);
+        live.set_left_off(crate::live::LeftBehind {
+            journal: 1,
+            ago: Some(90),
+        });
+        let mut app = App::with(w, Engine::Live(Box::new(live)), Lang::En);
+        let l = app.left_off.as_ref().expect("told at the start");
+        assert_eq!((l.ago, l.last.len()), (Some(90), 1));
+        app.on_key(key(KeyCode::Char('?')));
+        assert!(app.left_off.is_none(), "the key closes it");
+        assert!(!app.help, "and does nothing else");
+        app.on_key(key(KeyCode::Char('?')));
+        assert!(app.help);
+        // A live team with nothing remembered, and the demo, start without it.
+        let w = crate::live::testing::team(1);
+        let live = crate::live::testing::idle_live(2);
+        let app = App::with(w, Engine::Live(Box::new(live)), Lang::En);
+        assert!(app.left_off.is_none());
+        assert!(App::new(1, 1, 0, 1, Lang::En).left_off.is_none());
+    }
+
+    /// Leaving tells the store when, so the next start can say how long
+    /// ago; the demo has no store to tell.
+    #[test]
+    fn leaving_marks_the_store_with_the_time() {
+        let w = crate::live::testing::team(1);
+        let mut live = crate::live::testing::idle_live(2);
+        live.store_in_memory();
+        let mut app = App::with(w, Engine::Live(Box::new(live)), Lang::En);
+        let Engine::Live(l) = &app.engine else {
+            unreachable!()
+        };
+        assert_eq!(l.saved_at(), None, "nothing written yet");
+        app.leave();
+        let Engine::Live(l) = &app.engine else {
+            unreachable!()
+        };
+        let at = l.saved_at().expect("written at the leave");
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        assert!(at.abs_diff(now) <= 2);
+        App::new(1, 1, 0, 1, Lang::En).leave();
     }
 }

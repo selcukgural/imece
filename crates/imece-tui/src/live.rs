@@ -368,6 +368,18 @@ impl Drop for Bus {
     }
 }
 
+/// What an earlier run left in the store, as the screen tells it at the
+/// start.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct LeftBehind {
+    /// Journal lines the earlier runs wrote; the lines after them are this
+    /// start's (turns found cut short, sessions forgotten).
+    pub journal: usize,
+    /// Seconds since the earlier run last wrote the file; none for a file
+    /// an older imece wrote.
+    pub ago: Option<u64>,
+}
+
 /// A wake that goes on with the agent's earlier session: what to start
 /// over with, briefed, if the vendor can not find it.
 struct Attempt {
@@ -383,6 +395,11 @@ pub struct Live {
     state: PathBuf,
     /// What is remembered between runs; none in tests without a file.
     store: Option<Store>,
+    /// What the store had of earlier runs, for the screen's "where you
+    /// left off": how many journal lines were theirs (the ones after
+    /// are this start's) and how many seconds ago the last of them wrote
+    /// the file; none when nothing was remembered.
+    left_off: Option<LeftBehind>,
     /// The project of the checkout imece was started in.
     home: ProjectId,
     /// Cards there were when the world was loaded: older ones are not
@@ -529,6 +546,10 @@ pub fn world(o: Options, present: &[(Vendor, bool)]) -> Result<(World, Live), St
     // packed when it is mostly air. Nothing is lost when this fails: the
     // next start tries again, and there is nobody to tell yet.
     let _ = store.tidy(now, JOURNAL_KEEP);
+    let left_off = loaded.as_ref().map(|l| LeftBehind {
+        journal: l.world.journal.len(),
+        ago: l.saved_at.map(|at| now.saturating_sub(at)),
+    });
     let (mut w, found) = match loaded {
         Some(l) => (l.world, Some((l.found, l.skipped))),
         None => (
@@ -564,6 +585,7 @@ pub fn world(o: Options, present: &[(Vendor, bool)]) -> Result<(World, Live), St
     live.run_programs = o.run_programs;
     live.run_timeout = o.run_timeout;
     live.fresh = o.fresh;
+    live.left_off = left_off;
     if let Some((found, skipped)) = found {
         live.adopt(&mut w, found, skipped);
     }
@@ -600,9 +622,41 @@ impl Live {
         self.home
     }
 
+    /// What earlier runs left in the store, if anything was remembered.
+    pub fn left_off(&self) -> Option<LeftBehind> {
+        self.left_off
+    }
+
+    /// The last word to the store when imece quits in order: when this run
+    /// ended, for the next start's "where you left off". A failure is
+    /// nobody's business now; the file then says when it last changed.
+    pub fn leave(&mut self) {
+        if let Some(store) = &mut self.store {
+            let _ = store.leave(now());
+        }
+    }
+
     #[cfg(test)]
     pub(crate) fn set_home(&mut self, p: ProjectId) {
         self.home = p;
+    }
+
+    #[cfg(test)]
+    pub(crate) fn set_left_off(&mut self, left: LeftBehind) {
+        self.left_off = Some(left);
+    }
+
+    /// When the store was last written, as it says, for tests.
+    #[cfg(test)]
+    pub(crate) fn saved_at(&self) -> Option<u64> {
+        self.store.as_ref().and_then(|s| {
+            s.raw()
+                .query_row("SELECT value FROM meta WHERE key = 'saved_at'", [], |r| {
+                    r.get::<_, String>(0)
+                })
+                .ok()
+                .and_then(|v| v.parse().ok())
+        })
     }
 
     /// A store in memory, for tests of what saving does on the screen.
@@ -896,6 +950,7 @@ impl Live {
         Live {
             state: std::env::temp_dir(),
             store: None,
+            left_off: None,
             home: 0,
             loaded_cards: 0,
             remembered: Vec::new(),
@@ -7160,6 +7215,7 @@ in p.rs",
         let (mut w, mut live) = world(options(&repo, None), &present).unwrap();
         assert_eq!(w.projects.len(), 1);
         assert_eq!(w.agents[0].status, Status::Idle, "new, not remembered");
+        assert_eq!(live.left_off(), None, "nothing was remembered");
         assert_eq!(w.budget, 500_000, "$50 the first time");
         assert!(w.started_at.abs_diff(now()) <= 2);
         assert_eq!((w.tick, live.home()), (0, 0));
@@ -7175,12 +7231,51 @@ in p.rs",
             spent: 524,
         });
         assert_eq!(live.persist(&w), Ok(true));
+        let journal_before = w.journal.len();
+        assert!(journal_before > 0, "the opening is journaled");
         drop(live);
+        // As if the first run had ended 100 seconds ago.
+        let file = state.join(store::FILE);
+        rusqlite::Connection::open(&file)
+            .unwrap()
+            .execute(
+                "UPDATE meta SET value = ?1 WHERE key = 'saved_at'",
+                [(now() - 100).to_string()],
+            )
+            .unwrap();
 
         // The next run: asleep, the pot as the flag says, the turn cut.
         let (w, mut live) = world(options(&repo, Some(20_000)), &present).unwrap();
         assert_eq!(w.projects.len(), 1);
         assert_eq!(w.agents[0].status, Status::Asleep);
+        let left = live.left_off().expect("remembered");
+        assert_eq!(left.journal, journal_before, "the earlier run's lines");
+        assert!(
+            (100..=102).contains(&left.ago.unwrap()),
+            "100 seconds ago, not {:?}",
+            left.ago
+        );
+        assert_eq!(
+            w.journal[journal_before].event,
+            Event::Interrupted { agent: 0 },
+            "this start's lines come after"
+        );
+        // Leaving writes the time, and nothing else.
+        rusqlite::Connection::open(&file)
+            .unwrap()
+            .execute("UPDATE meta SET value = '1' WHERE key = 'saved_at'", [])
+            .unwrap();
+        live.leave();
+        let saved_at: String = live
+            .store
+            .as_ref()
+            .unwrap()
+            .raw()
+            .query_row("SELECT value FROM meta WHERE key = 'saved_at'", [], |r| {
+                r.get(0)
+            })
+            .unwrap();
+        assert!(saved_at.parse::<u64>().unwrap().abs_diff(now()) <= 2);
         assert_eq!((w.agents[0].cost, live.spent_before[0]), (1_234, 1_234));
         assert_eq!(
             live.sessions[0],

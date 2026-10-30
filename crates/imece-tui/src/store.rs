@@ -44,7 +44,7 @@ pub const FILE: &str = "imece.sqlite";
 /// ones a load takes, which stay whatever their age.
 pub const JOURNAL_DAYS: u64 = 90;
 /// Keys of `meta` that are the world's, not the person's settings.
-const WORLD_KEYS: [&str; 3] = ["schema_version", "started_at", "budget"];
+const WORLD_KEYS: [&str; 4] = ["schema_version", "started_at", "budget", "saved_at"];
 
 const SCHEMA: &str = "
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL) WITHOUT ROWID;
@@ -152,6 +152,10 @@ pub struct Loaded {
     pub world: World,
     pub found: Found,
     pub skipped: usize,
+    /// When the file was last written (seconds since the Unix epoch): the
+    /// earlier run's last change, or its end when it quit in order. None
+    /// for a file an older imece wrote.
+    pub saved_at: Option<u64>,
 }
 
 /// What is in the file already, so a save writes only what moved.
@@ -184,6 +188,13 @@ pub struct Store {
     saved: Saved,
     /// The lock file, held open: its lease is imece's run.
     _lock: std::fs::File,
+}
+
+/// Seconds since the Unix epoch.
+fn unix_now() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs())
 }
 
 fn hash<T: Hash + ?Sized>(t: &T) -> u64 {
@@ -394,11 +405,21 @@ impl Store {
     /// Writes what moved since the last save, in one transaction. Says
     /// whether anything was written.
     pub fn save(&mut self, w: &World, k: &Kept) -> rusqlite::Result<bool> {
+        self.save_at(w, k, unix_now())
+    }
+
+    /// [`save`](Self::save) at `now` (seconds since the Unix epoch), which
+    /// the file remembers as its last writing when anything is written.
+    pub fn save_at(&mut self, w: &World, k: &Kept, now: u64) -> rusqlite::Result<bool> {
         let plan = self.plan(w, k);
         if plan.is_empty() {
             return Ok(false);
         }
         let tx = self.conn.transaction()?;
+        tx.execute(
+            "INSERT OR REPLACE INTO meta (key, value) VALUES ('saved_at', ?1)",
+            params![now.to_string()],
+        )?;
         if plan.meta {
             for (key, value) in [
                 ("started_at", w.started_at.to_string()),
@@ -621,6 +642,17 @@ impl Store {
         Ok(true)
     }
 
+    /// Marks the file as written at `now` without writing anything else:
+    /// the last word when imece quits in order, so the next start knows
+    /// when this run ended and not only when it last changed something.
+    pub fn leave(&mut self, now: u64) -> rusqlite::Result<()> {
+        self.conn.execute(
+            "INSERT OR REPLACE INTO meta (key, value) VALUES ('saved_at', ?1)",
+            params![now.to_string()],
+        )?;
+        Ok(())
+    }
+
     /// What a save has to write, and what is saved once it did.
     fn plan(&self, w: &World, k: &Kept) -> Plan {
         let s = &self.saved;
@@ -779,6 +811,7 @@ impl Store {
             return Ok(None);
         };
         let budget = meta("budget")?.and_then(|v| v.parse().ok()).unwrap_or(0);
+        let saved_at = meta("saved_at")?.and_then(|v| v.parse().ok());
         let mut w = World {
             tick: 0,
             started_at,
@@ -1051,6 +1084,7 @@ impl Store {
             world: w,
             found,
             skipped,
+            saved_at,
         }))
     }
 
@@ -2401,6 +2435,7 @@ mod tests {
         let back = store.load(100).unwrap().expect("a world");
         assert_eq!(back.world.agents[0].name, "lead");
         assert_eq!(back.found.sessions, [None]);
+        assert_eq!(back.saved_at, None, "an older file does not say when");
         // Saved with a session, read back with it.
         let (mut w, mut found) = (back.world, back.found);
         found.sessions[0] = Some(Resumable {
@@ -2429,5 +2464,43 @@ mod tests {
         let back = store.load(100).unwrap().unwrap();
         assert_eq!(back.found.sessions, found.sessions);
         let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// The file says when it was last written: with every save that writes
+    /// something (not one that has nothing to write), and at a leave,
+    /// which writes nothing else.
+    #[test]
+    fn the_file_remembers_when_it_was_last_written() {
+        let (mut w, k) = (world(), kept());
+        let mut store = Store::in_memory();
+        let saved_at = |store: &mut Store| store.load(100).unwrap().unwrap().saved_at;
+        assert!(store.save_at(&w, &k.kept(), 1_700_000_500).unwrap());
+        assert_eq!(saved_at(&mut store), Some(1_700_000_500));
+        assert!(!store.save_at(&w, &k.kept(), 1_700_000_600).unwrap());
+        assert_eq!(
+            saved_at(&mut store),
+            Some(1_700_000_500),
+            "nothing moved, nothing written"
+        );
+        w.budget += 1;
+        assert!(store.save_at(&w, &k.kept(), 1_700_000_600).unwrap());
+        assert_eq!(saved_at(&mut store), Some(1_700_000_600));
+        store.leave(1_700_000_700).unwrap();
+        assert_eq!(saved_at(&mut store), Some(1_700_000_700));
+        let rows: i64 = store
+            .raw()
+            .query_row("SELECT count(*) FROM meta", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(rows, 4, "schema_version, started_at, budget, saved_at");
+        // `save` takes the time from the clock (the clock itself, not what
+        // the store thinks it is).
+        w.budget += 1;
+        assert!(store.save(&w, &k.kept()).unwrap());
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        assert!(saved_at(&mut store).unwrap().abs_diff(now) <= 2);
+        assert!(unix_now().abs_diff(now) <= 2);
     }
 }

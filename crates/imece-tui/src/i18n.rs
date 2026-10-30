@@ -292,6 +292,18 @@ pub struct Text {
     pub close: &'static str,
     pub away_title: &'static str,
     pub away_counts: [&'static str; 5],
+    // Where you left off (the start of a run that remembers an earlier one)
+    pub left_title: &'static str,
+    pub left_title_ago: &'static str,
+    pub left_spent: &'static str,
+    pub left_project: &'static str,
+    pub left_waiting: &'static str,
+    pub left_more: &'static str,
+    pub left_interrupted: &'static str,
+    pub left_last: &'static str,
+    pub ago_minutes: &'static str,
+    pub ago_hours: &'static str,
+    pub ago_days: &'static str,
 }
 
 pub const EN: Text = Text {
@@ -577,6 +589,17 @@ pub const EN: Text = Text {
         "assumptions made",
         "conversations",
     ],
+    left_title: " WHERE YOU LEFT OFF ",
+    left_title_ago: " WHERE YOU LEFT OFF · {} ago ",
+    left_spent: "{} of {} spent; every agent sleeps until spoken to",
+    left_project: "{}: {} agents, {} open cards",
+    left_waiting: "{} wait for you:",
+    left_more: "… and {} more",
+    left_interrupted: "turns cut short when imece closed: {}",
+    left_last: "the last lines before:",
+    ago_minutes: "{} min",
+    ago_hours: "{} h {} min",
+    ago_days: "{} d {} h",
 };
 
 pub const TR: Text = Text {
@@ -867,6 +890,17 @@ pub const TR: Text = Text {
         "varsayım yapıldı",
         "konuşma",
     ],
+    left_title: " NEREDE KALMIŞTIN ",
+    left_title_ago: " NEREDE KALMIŞTIN · {} önce ",
+    left_spent: "{} harcandı, bütçe {}; her agent kendisiyle konuşulana dek uyur",
+    left_project: "{}: {} agent, {} açık kart",
+    left_waiting: "{} şey seni bekliyor:",
+    left_more: "… ve {} daha",
+    left_interrupted: "imece kapanırken kesilen turlar: {}",
+    left_last: "kapanmadan önceki son satırlar:",
+    ago_minutes: "{} dk",
+    ago_hours: "{} sa {} dk",
+    ago_days: "{} g {} sa",
 };
 
 #[cfg(test)]
@@ -975,6 +1009,15 @@ mod tests {
             (EN.ev_applied, TR.ev_applied),
             (EN.ev_apply_failed, TR.ev_apply_failed),
             (EN.in_change, TR.in_change),
+            (EN.left_title_ago, TR.left_title_ago),
+            (EN.left_spent, TR.left_spent),
+            (EN.left_project, TR.left_project),
+            (EN.left_waiting, TR.left_waiting),
+            (EN.left_more, TR.left_more),
+            (EN.left_interrupted, TR.left_interrupted),
+            (EN.ago_minutes, TR.ago_minutes),
+            (EN.ago_hours, TR.ago_hours),
+            (EN.ago_days, TR.ago_days),
         ];
         for (en, tr) in pairs {
             assert_eq!(count(en), count(tr), "{en} / {tr}");

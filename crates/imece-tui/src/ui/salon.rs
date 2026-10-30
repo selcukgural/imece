@@ -438,7 +438,6 @@ fn queue_line(app: &App) -> Line<'static> {
 fn side(f: &mut Frame, area: Rect, app: &App) {
     let w = &app.world;
     let t = app.lang.text();
-    let many = w.projects.len() > 1;
     let open = w.open_inbox();
     // One line per item, one more for the selected item's keys.
     let want = (open.len() as u16 + 3).max(3);
@@ -459,22 +458,7 @@ fn side(f: &mut Frame, area: Rect, app: &App) {
     }
     for (n, &i) in open.iter().enumerate() {
         let item = &w.inbox[i];
-        let (icon, style) = match item.kind {
-            InboxKind::Sensitive => ("!", bold(pal().warn)),
-            InboxKind::Research => ("?", bold(pal().research)),
-            InboxKind::Reply => ("»", bold(pal().info)),
-            InboxKind::Change => ("Δ", bold(pal().strong)),
-        };
-        let mut spans = vec![
-            Span::styled(format!("{icon} "), style),
-            Span::styled(format!("{} ", when(item.tick, day(w.tick))), dim()),
-        ];
-        if many {
-            let p = w.agents[item.agent].project;
-            spans.push(Span::styled(format!("{} ", w.projects[p].name), dim()));
-        }
-        spans.push(Span::raw(words::inbox(app.lang, w, item)));
-        let line = Line::from(spans);
+        let line = inbox_line(app, i);
         if focused && n == app.inbox_sel {
             lines.push(line.style(Style::new().add_modifier(Modifier::REVERSED)));
             let keys = match item.kind {

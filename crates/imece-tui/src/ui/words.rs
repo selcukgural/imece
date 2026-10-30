@@ -263,6 +263,27 @@ pub fn said_in_story(me: AgentId, e: &StoryEvent) -> Option<Said<'_>> {
     }
 }
 
+/// A span of `seconds` as the person reads it: minutes under an hour,
+/// hours and minutes under a day, days and hours from then on.
+pub fn ago(lang: Lang, seconds: u64) -> String {
+    let t = lang.text();
+    let minutes = seconds / 60;
+    let hours = minutes / 60;
+    if hours == 0 {
+        fill(t.ago_minutes, &[&minutes.to_string()])
+    } else if hours < 24 {
+        fill(
+            t.ago_hours,
+            &[&hours.to_string(), &(minutes % 60).to_string()],
+        )
+    } else {
+        fill(
+            t.ago_days,
+            &[&(hours / 24).to_string(), &(hours % 24).to_string()],
+        )
+    }
+}
+
 pub fn inbox(lang: Lang, w: &World, item: &InboxItem) -> String {
     let t = lang.text();
     match (item.kind, item.researcher) {
@@ -288,5 +309,27 @@ pub fn inbox(lang: Lang, w: &World, item: &InboxItem) -> String {
             )
         }
         _ => fill("{} {}", &[name(w, item.agent), &item.detail]),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_span_of_time_is_minutes_then_hours_then_days() {
+        let en = |s| ago(Lang::En, s);
+        assert_eq!(en(0), "0 min");
+        assert_eq!(en(59), "0 min");
+        assert_eq!(en(60), "1 min");
+        assert_eq!(en(3599), "59 min");
+        assert_eq!(en(3600), "1 h 0 min");
+        assert_eq!(en(3 * 3600 + 5 * 60 + 59), "3 h 5 min");
+        assert_eq!(en(86_399), "23 h 59 min");
+        assert_eq!(en(86_400), "1 d 0 h");
+        assert_eq!(en(2 * 86_400 + 5 * 3600 + 59 * 60), "2 d 5 h");
+        assert_eq!(ago(Lang::Tr, 3 * 3600 + 5 * 60), "3 sa 5 dk");
+        assert_eq!(ago(Lang::Tr, 60), "1 dk");
+        assert_eq!(ago(Lang::Tr, 86_400), "1 g 0 sa");
     }
 }
