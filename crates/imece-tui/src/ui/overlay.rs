@@ -22,6 +22,7 @@ fn centered(area: Rect, width: u16, height: u16) -> Rect {
 
 fn window(f: &mut Frame, title: String, lines: Vec<Line<'static>>, width: u16) {
     let area = centered(f.area(), width, lines.len() as u16 + 2);
+    shade(f, area);
     clear(f, area);
     let block = Block::bordered()
         .title(title)
@@ -272,6 +273,7 @@ pub fn thread(f: &mut Frame, app: &App, th: &Thread) {
         screen.width.saturating_sub(4).min(120),
         screen.height.saturating_sub(2),
     );
+    shade(f, area);
     clear(f, area);
     let first = th.entries.first().map(|&i| &w.journal[i].event);
     let title = match first.and_then(words::said) {

@@ -2969,7 +2969,14 @@ fn post_tool() -> Tool {
         input: json!({
             "type": "object",
             "properties": {
-                "title": { "type": "string", "description": "One line.", "maxLength": MAX_TITLE },
+                "title": {
+                    "type": "string",
+                    "description": "One line; the screen shows its first 20 characters \
+                                    next to the worker, so start with what tells this \
+                                    card from the others (an issue number, a file, a \
+                                    symbol), not with a verb every card shares.",
+                    "maxLength": MAX_TITLE,
+                },
                 "body": {
                     "type": "string",
                     "description": "The task: what to do, which files, when it is done.",
@@ -3048,8 +3055,12 @@ fn send_tool() -> Tool {
                 "type": { "type": "string", "enum": kinds },
                 "body": {
                     "type": "string",
-                    "description": "The message. For assign: the task, the files it \
-                                    touches and when it is done.",
+                    "description": "The message. For assign: the first line becomes \
+                                    the card's title (the screen shows its first 20 \
+                                    characters next to the worker, so start with what \
+                                    tells it from the other cards: an issue number, a \
+                                    file, a symbol, not a verb every task shares); then \
+                                    the task, the files it touches and when it is done.",
                     "maxLength": MAX_BODY,
                 },
             },

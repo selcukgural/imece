@@ -313,7 +313,10 @@ pub fn inbox(lang: Lang, w: &World, item: &InboxItem) -> String {
             &[name(w, r), &item.detail, name(w, item.agent)],
         ),
         (InboxKind::Reply, _) => fill(t.in_reply, &[name(w, item.agent), &item.detail]),
-        (InboxKind::Question, _) => fill(t.in_question, &[name(w, item.agent), &item.detail]),
+        (InboxKind::Question, _) => fill(
+            t.in_question,
+            &[name(w, item.agent), &super::plain(&item.detail)],
+        ),
         (InboxKind::Change, _) => {
             let (files, added, removed) = w.change_of(item.agent).map_or((0, 0, 0), |c| {
                 let (a, r) = c.counts();
@@ -431,6 +434,23 @@ mod tests {
         assert_eq!(
             inbox(Lang::Tr, &w, &item),
             format!("{who} sana soruyor: Which?")
+        );
+    }
+
+    #[test]
+    fn a_question_in_the_inbox_is_worded_without_its_markdown() {
+        let w = crate::live::testing::team(1);
+        let item = InboxItem {
+            kind: InboxKind::Question,
+            agent: 1,
+            detail: "**Which** `one`?".into(),
+            researcher: None,
+            open: true,
+            tick: 0,
+        };
+        assert_eq!(
+            inbox(Lang::En, &w, &item),
+            format!("{} asks you: Which one?", w.agents[1].name)
         );
     }
 }
