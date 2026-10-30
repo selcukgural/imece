@@ -384,9 +384,8 @@ pub struct Live {
     remembered: Vec<bool>,
     /// The prompts an earlier run's turn did not finish, for that briefing.
     interrupted: Vec<Vec<String>>,
-    /// The vendor session each agent had last, to go on with at its wake
-    /// (Claude and Codex so far); kept up to date from what the session
-    /// reports.
+    /// The vendor session each agent had last, to go on with at its wake;
+    /// kept up to date from what the session reports.
     sessions: Vec<Option<Resumable>>,
     /// What the agent's current session had cost before this run resumed
     /// it (millionths of a dollar); 0 for a new session.
@@ -1245,12 +1244,12 @@ impl Live {
     }
 
     /// Whether agent `id`, remembered from an earlier run, can go on in
-    /// the session it had: its vendor resumes (Claude and Codex so far)
-    /// and, for Claude, the session's transcript is still where Claude
-    /// keeps it for the directory the agent runs in (a Codex rollout's
-    /// place has the day in it, so Codex itself says when one is gone,
-    /// before any turn). Said once, at the wake; a session that is gone
-    /// is forgotten.
+    /// the session it had: its id is shaped like one and, for Claude, the
+    /// session's transcript is still where Claude keeps it for the
+    /// directory the agent runs in (a Codex rollout's place has the day
+    /// in it and a Gemini chat's a registry-given name, so those two say
+    /// themselves when one is gone, before any turn). Said once, at the
+    /// wake; a session that is gone is forgotten.
     fn resumable(&mut self, w: &World, id: AgentId) -> Option<Resumable> {
         let r = self.sessions[id].clone()?;
         let there = imece_agent::valid_uuid(&r.session)
@@ -1258,8 +1257,9 @@ impl Live {
                 Vendor::Claude => {
                     claude::transcript(&self.claude_home, &self.cwd_of(w, id), &r.session).is_file()
                 }
-                Vendor::Codex => true,
-                _ => false,
+                Vendor::Codex | Vendor::Gemini => true,
+                // Vendors imece does not drive yet remember no session.
+                Vendor::Qwen | Vendor::Local => false,
             };
         if !there {
             self.sessions[id] = None;
@@ -2320,6 +2320,7 @@ impl Live {
                                 write: !leader,
                                 system,
                                 mcp,
+                                resume: resume.map(|r| r.session),
                             },
                             on,
                         )
@@ -7238,10 +7239,21 @@ in p.rs",
     /// gone), the start's own report cut off so it never races the
     /// events a test sends.
     fn remembered_codex_worker(name: &str) -> (World, Live, PathBuf, PathBuf) {
+        remembered_vendor_worker(name, Vendor::Codex)
+    }
+
+    /// [`remembered_worker`] whose worker runs on `vendor`, a vendor that
+    /// says itself when a session is gone, the start's own report cut off
+    /// so it never races the events a test sends.
+    fn remembered_vendor_worker(name: &str, vendor: Vendor) -> (World, Live, PathBuf, PathBuf) {
         let (mut w, mut live, repo, root) = remembered_worker(name, false);
-        live.vendors
-            .push(Hireable::codex("/nonexistent/codex", &[]));
-        w.agents[1].vendor = Vendor::Codex;
+        live.vendors.push(match vendor {
+            Vendor::Codex => Hireable::codex("/nonexistent/codex", &[]),
+            Vendor::Gemini => Hireable::gemini("/nonexistent/gemini", &[]),
+            Vendor::Claude => Hireable::claude("/nonexistent/claude", &[]),
+            other => unreachable!("{other:?} is not driven"),
+        });
+        w.agents[1].vendor = vendor;
         let (cut, _) = mpsc::channel();
         live.ready_tx = cut;
         (w, live, repo, root)
@@ -7340,37 +7352,137 @@ in p.rs",
     }
 
     #[test]
-    fn only_a_thread_id_shaped_like_a_uuid_is_asked_for_and_gemini_is_not_resumed_yet() {
-        let (mut w, mut live, repo, root) = remembered_codex_worker("resume-codex-bad");
+    fn only_a_session_id_shaped_like_a_uuid_is_asked_for() {
+        for (name, vendor) in [
+            ("resume-codex-bad", Vendor::Codex),
+            ("resume-gemini-bad", Vendor::Gemini),
+        ] {
+            let (mut w, mut live, repo, root) = remembered_vendor_worker(name, vendor);
+            let home = live.claude_home.clone();
+            live.sessions[1] = Some(Resumable {
+                session: "t1; rm -rf /".into(),
+                spent: 0,
+            });
+            live.told(&mut w, 1, "go on").unwrap();
+            assert_eq!(live.sessions[1], None, "forgotten");
+            assert!(live.resuming[1].is_none());
+            assert_eq!(live.resume_of(1), None);
+            assert_eq!(journaled(&w, &Event::Restarted { agent: 1 }), 1);
+            assert!(queued(&live, 1)[0].contains("Where you left off"));
+            for d in [repo, root, home] {
+                let _ = std::fs::remove_dir_all(d);
+            }
+        }
+    }
+
+    #[test]
+    fn a_remembered_gemini_agent_goes_on_in_its_session_until_gemini_says_it_is_gone() {
+        let (mut w, mut live, repo, root) =
+            remembered_vendor_worker("resume-gemini", Vendor::Gemini);
         let home = live.claude_home.clone();
-        live.sessions[1] = Some(Resumable {
-            session: "t1; rm -rf /".into(),
-            spent: 0,
-        });
+        with_card(&mut w, 1);
+        // No transcript to look for: the session id is what is asked for.
         live.told(&mut w, 1, "go on").unwrap();
-        assert_eq!(live.sessions[1], None, "forgotten");
+        assert_eq!(
+            live.resume_of(1),
+            Some(Resumable {
+                session: UUID.into(),
+                spent: 524,
+            })
+        );
+        assert_eq!(live.floor[1], 524);
+        assert_eq!(
+            live.sessions[1].as_ref().map(|s| s.session.as_str()),
+            Some(UUID)
+        );
+        let text = &queued(&live, 1)[0];
+        assert!(text.contains("goes on where it was"), "{text}");
+        assert!(!text.contains("Where you left off"), "{text}");
+        assert_eq!(journaled(&w, &Event::Restarted { agent: 1 }), 0);
+        // Gemini loaded the session asked for; a Gemini process counts
+        // only its own cost, so the floor stays under it.
+        live.tx
+            .send((
+                1,
+                live.generation[1],
+                AgentEvent::Started {
+                    session: UUID.into(),
+                    model: "auto".into(),
+                },
+            ))
+            .unwrap();
+        live.tx
+            .send((
+                1,
+                live.generation[1],
+                AgentEvent::TurnDone {
+                    ok: true,
+                    text: "done".into(),
+                    cost: 7,
+                    denied: 0,
+                },
+            ))
+            .unwrap();
+        live.step(&mut w);
+        assert_eq!(journaled(&w, &Event::Resumed { agent: 1 }), 1);
+        assert_eq!(journaled(&w, &Event::Restarted { agent: 1 }), 0);
         assert!(live.resuming[1].is_none());
-        assert_eq!(live.resume_of(1), None);
-        assert_eq!(journaled(&w, &Event::Restarted { agent: 1 }), 1);
-        assert!(queued(&live, 1)[0].contains("Where you left off"));
+        assert!(live.interrupted[1].is_empty());
+        assert_eq!(live.generation[1], 0);
+        assert_eq!(
+            live.sessions[1],
+            Some(Resumable {
+                session: UUID.into(),
+                spent: 531,
+            })
+        );
         for d in [repo, root, home] {
             let _ = std::fs::remove_dir_all(d);
         }
 
-        // A Gemini session is remembered but not yet gone on with: a new
-        // one, briefed in full, and the old id forgotten.
-        let (mut w, mut live, repo, root) = remembered_worker("resume-gemini", true);
+        // Gemini found no chat of it: the session stops before any turn,
+        // and a new one is told where it left off, in full.
+        let (mut w, mut live, repo, root) =
+            remembered_vendor_worker("resume-gemini-gone", Vendor::Gemini);
         let home = live.claude_home.clone();
-        live.vendors
-            .push(Hireable::gemini("/nonexistent/gemini", &[]));
-        w.agents[1].vendor = Vendor::Gemini;
-        let (cut, _) = mpsc::channel();
-        live.ready_tx = cut;
+        with_card(&mut w, 1);
         live.told(&mut w, 1, "go on").unwrap();
+        live.tx
+            .send((
+                1,
+                live.generation[1],
+                AgentEvent::Stopped(
+                    "stopped: the session refused Session: Internal error (Invalid session \
+                     identifier \"86935e2a…\".)"
+                        .into(),
+                ),
+            ))
+            .unwrap();
+        live.step(&mut w);
+        assert_eq!(live.generation[1], 1);
         assert_eq!(live.sessions[1], None);
+        assert_eq!(live.floor[1], 0);
         assert!(live.resuming[1].is_none());
         assert_eq!(journaled(&w, &Event::Restarted { agent: 1 }), 1);
-        assert!(queued(&live, 1)[0].contains("Where you left off"));
+        assert_eq!(journaled(&w, &Event::Resumed { agent: 1 }), 0);
+        assert_eq!(w.agents[1].status, Status::Working);
+        let q = queued(&live, 1);
+        assert_eq!(q.len(), 1);
+        assert!(q[0].contains("Where you left off"), "{}", q[0]);
+        assert!(
+            q[0].contains("Your task: #1 fix it (not finished)"),
+            "{}",
+            q[0]
+        );
+        assert!(!q[0].contains("goes on where it was"), "{}", q[0]);
+        assert!(q[0].ends_with("\n\ngo on"), "{}", q[0]);
+        assert!(
+            w.agents[1].trace.iter().any(|l| {
+                l.contains("could not be resumed") && l.contains("Invalid session identifier")
+            }),
+            "{:?}",
+            w.agents[1].trace
+        );
         for d in [repo, root, home] {
             let _ = std::fs::remove_dir_all(d);
         }
@@ -7424,12 +7536,15 @@ in p.rs",
         });
         assert_eq!(live.resumable(&w, 1), ok);
         assert_eq!(live.sessions[1], ok, "still remembered");
-        // A Codex thread needs no file of its own found (Codex says when
-        // its rollout is gone); a Gemini session is not gone on with yet.
-        w.agents[1].vendor = Vendor::Codex;
-        assert_eq!(live.resumable(&w, 1), ok);
-        assert_eq!(live.sessions[1], ok, "still remembered");
-        w.agents[1].vendor = Vendor::Gemini;
+        // A Codex thread and a Gemini session need no file of their own
+        // found (those vendors say when one is gone); a vendor imece does
+        // not drive remembers none.
+        for v in [Vendor::Codex, Vendor::Gemini] {
+            w.agents[1].vendor = v;
+            assert_eq!(live.resumable(&w, 1), ok, "{v:?}");
+            assert_eq!(live.sessions[1], ok, "still remembered");
+        }
+        w.agents[1].vendor = Vendor::Qwen;
         assert_eq!(live.resumable(&w, 1), None);
         assert_eq!(live.sessions[1], None, "forgotten");
         live.sessions[1] = ok.clone();

@@ -27,6 +27,17 @@
 //! Gemini reports tokens, not dollars. An API-key login is booked from the
 //! list prices imece carries (a model it does not know stops the session);
 //! a Google login runs on the person's plan and books nothing, said once.
+//!
+//! Gemini records every session's chat under its own temp directory (keyed
+//! by the directory the session runs in: imece's private one), so an agent
+//! woken in a later run goes on in the session it had: `session/load`
+//! instead of `session/new`, answered with the same modes and model to
+//! check, and refused ("Invalid session identifier") when the chat is
+//! gone, which stops the session before any turn so the screen starts a
+//! new one. A loaded session streams its history back as `session/update`
+//! notifications, around the answer and ending with its command list;
+//! that history passes by unread (it is in Gemini, not on the screen),
+//! and the checks follow it.
 
 use std::collections::{BTreeSet, HashMap, VecDeque};
 use std::io;
@@ -168,6 +179,10 @@ pub struct Spec {
     pub system: String,
     /// imece's MCP server, if the agent gets its tools.
     pub mcp: Option<Mcp>,
+    /// The session to go on with instead of a new one: the id Gemini gave
+    /// an earlier process in the same private directory. Gemini refuses
+    /// one it has no chat of.
+    pub resume: Option<String>,
 }
 
 impl Spec {
@@ -310,6 +325,18 @@ enum Wait {
     Turn,
 }
 
+/// Where a loaded session's history stands: it is streamed back around the
+/// `session/load` answer and ends with the command list.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum Replay {
+    /// A new session: nothing comes back.
+    None,
+    /// Loading: what comes is history, read by nobody.
+    Streaming,
+    /// The command list came: what comes now is this run's.
+    Done,
+}
+
 /// How the session's turns are paid for.
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum Pay {
@@ -334,6 +361,9 @@ pub struct Protocol {
     tools: BTreeSet<String>,
     next_id: u64,
     awaiting: Option<(u64, Wait)>,
+    /// The session asked for instead of a new one; see [`Spec::resume`].
+    resume: Option<String>,
+    replay: Replay,
     session: Option<String>,
     started: bool,
     pay: Option<Pay>,
@@ -365,6 +395,8 @@ impl Protocol {
                 .collect(),
             next_id: 0,
             awaiting: None,
+            resume: spec.resume.clone(),
+            replay: Replay::None,
             session: None,
             started: false,
             pay: None,
@@ -379,9 +411,10 @@ impl Protocol {
     }
 
     /// Whether an answer from Gemini is due soon. A turn's answer comes
-    /// when the turn ends, which may take long.
+    /// when the turn ends, which may take long; a loaded session's history
+    /// and command list come at once.
     pub fn waiting(&self) -> bool {
-        self.awaiting.is_some_and(|(_, w)| w != Wait::Turn)
+        self.awaiting.is_some_and(|(_, w)| w != Wait::Turn) || self.replay == Replay::Streaming
     }
 
     /// The first request: `initialize`.
@@ -482,8 +515,13 @@ impl Protocol {
         self.awaiting = None;
         if let Some(e) = v.get("error") {
             let msg = e["message"].as_str().unwrap_or("unknown error");
+            // Gemini's "Internal error" says what went wrong in its data.
+            let msg = match e["data"]["details"].as_str() {
+                Some(d) if !d.trim().is_empty() => format!("{msg} ({})", one_line(d)),
+                _ => msg.to_string(),
+            };
             if wait == Wait::Turn {
-                return Ok(self.turn_failed(msg.to_string()));
+                return Ok(self.turn_failed(msg));
             }
             return Err(format!("refused {wait:?}: {msg}"));
         }
@@ -505,11 +543,19 @@ impl Protocol {
                     }]),
                     None => json!([]),
                 };
-                vec![self.request(
-                    "session/new",
-                    json!({ "cwd": self.home, "mcpServers": servers }),
-                    Wait::Session,
-                )]
+                let mut params = json!({ "cwd": self.home, "mcpServers": servers });
+                // The session asked for goes on; its history streams back
+                // around the answer, so from here until the command list
+                // comes, what Gemini tells is the past.
+                let method = match &self.resume {
+                    Some(id) => {
+                        params["sessionId"] = json!(id);
+                        self.replay = Replay::Streaming;
+                        "session/load"
+                    }
+                    None => "session/new",
+                };
+                vec![self.request(method, params, Wait::Session)]
             }
             Wait::Session => {
                 if r["modes"]["currentModeId"] != "default" {
@@ -526,10 +572,26 @@ impl Protocol {
                     ));
                 }
                 let id = r["sessionId"].as_str().unwrap_or_default();
-                if id.is_empty() {
-                    return Err("started a session without an id".into());
+                match &self.resume {
+                    // A loaded session is the one asked for; the answer
+                    // names none (or that one).
+                    Some(asked) => {
+                        if !id.is_empty() && id != asked {
+                            return Err(format!("loaded session {id:?}, not {asked:?}"));
+                        }
+                        self.session = Some(asked.clone());
+                    }
+                    None => {
+                        if id.is_empty() {
+                            return Err("started a session without an id".into());
+                        }
+                        self.session = Some(id.to_string());
+                    }
                 }
-                self.session = Some(id.to_string());
+                if self.replay == Replay::Streaming {
+                    // The checks wait for the history to pass.
+                    return Ok(Vec::new());
+                }
                 vec![self.say("/about", Wait::About)]
             }
             Wait::About => {
@@ -714,7 +776,26 @@ impl Protocol {
             return Ok(Vec::new());
         }
         let u = &p["update"];
-        match u["sessionUpdate"].as_str().unwrap_or_default() {
+        let kind = u["sessionUpdate"].as_str().unwrap_or_default();
+        if self.replay == Replay::Streaming {
+            match kind {
+                // The history ends with the command list; the checks
+                // start once the load is answered too.
+                "available_commands_update" => {
+                    self.replay = Replay::Done;
+                    let mut acts = self.commands(u);
+                    if self.awaiting.is_none() {
+                        acts.push(self.say("/about", Wait::About));
+                    }
+                    return Ok(acts);
+                }
+                "current_mode_update" => {}
+                // The past: its text, thoughts and tool calls were the
+                // screen's when they happened.
+                _ => return Ok(Vec::new()),
+            }
+        }
+        match kind {
             "agent_message_chunk" => {
                 if let Some(t) = u["content"]["text"].as_str() {
                     self.text.push_str(t);
@@ -766,21 +847,23 @@ impl Protocol {
                 Ok(vec![Act::Event(Event::ToolFailed { name })])
             }
             "current_mode_update" => Err(format!("changed its mode to {}", u["currentModeId"])),
-            // Gemini lists its own command line (and again when it
-            // changes); the screen completes with it.
-            "available_commands_update" => {
-                let commands = u["availableCommands"]
-                    .as_array()
-                    .into_iter()
-                    .flatten()
-                    .filter_map(|c| c["name"].as_str())
-                    .map(|n| format!("/{}", n.trim_start_matches('/')))
-                    .collect();
-                Ok(vec![Act::Event(Event::Commands(commands))])
-            }
+            "available_commands_update" => Ok(self.commands(u)),
             // Thoughts, plans, usage meters: nothing the screen needs.
             _ => Ok(Vec::new()),
         }
+    }
+
+    /// Gemini lists its own command line (at the start, and again when it
+    /// changes); the screen completes with it.
+    fn commands(&self, u: &Value) -> Vec<Act> {
+        let commands = u["availableCommands"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(|c| c["name"].as_str())
+            .map(|n| format!("/{}", n.trim_start_matches('/')))
+            .collect();
+        vec![Act::Event(Event::Commands(commands))]
     }
 
     /// The name a tool call gets on the screen: imece's own tools by their
@@ -1065,8 +1148,18 @@ mod tests {
             write,
             system: "You are gemini-1.".into(),
             mcp: None,
+            resume: None,
         }
     }
+
+    /// The session [`UUID`] remembered from an earlier run.
+    fn resumed() -> Spec {
+        let mut s = with_bus(true);
+        s.resume = Some(UUID.into());
+        s
+    }
+
+    const UUID: &str = "86935e2a-6731-4539-af54-7cf047f1c28d";
 
     fn with_bus(write: bool) -> Spec {
         let mut s = spec(write);
@@ -2391,6 +2484,358 @@ done"#;
         let _ = std::fs::remove_dir_all(&dir);
     }
 
+    /// A replayed line of history: what Gemini streams back after
+    /// `session/load`.
+    fn replayed(kind: &str, text: &str) -> String {
+        update(json!({ "sessionUpdate": kind, "content": { "type": "text", "text": text } }))
+    }
+
+    fn commands_update() -> String {
+        update(json!({ "sessionUpdate": "available_commands_update",
+            "availableCommands": [{ "name": "memory" }, { "name": "/about" }] }))
+    }
+
+    /// The `session/load` answer: modes and the model, no id of its own.
+    fn loaded(model: &str) -> Value {
+        json!({
+            "modes": { "currentModeId": "default" },
+            "models": { "currentModelId": model },
+        })
+    }
+
+    /// Opens a remembered session up to the `session/load` request, which
+    /// is checked.
+    fn loading(spec: &Spec) -> Protocol {
+        let mut p = Protocol::new(spec);
+        p.open();
+        let acts = p.line(&reply(1, init())).unwrap();
+        let load = &sent(&acts)[0];
+        assert_eq!(load["method"], "session/load");
+        assert_eq!(load["id"], 2);
+        assert_eq!(load["params"]["sessionId"], UUID);
+        assert_eq!(load["params"]["cwd"], json!(spec.home));
+        assert_eq!(load["params"]["mcpServers"][0]["name"], "imece");
+        assert_eq!(load["params"]["mcpServers"][0]["command"], "/opt/imece");
+        assert_eq!(load["params"]["mcpServers"].as_array().unwrap().len(), 1);
+        assert!(p.waiting(), "the load is answered soon");
+        assert_eq!(p.replay, Replay::Streaming);
+        p
+    }
+
+    #[test]
+    fn a_remembered_session_is_loaded_and_its_history_passes_by_unread() {
+        let mut p = loading(&resumed());
+        // Gemini streams the history around its answer: the first line
+        // came before it here, the rest after.
+        assert!(
+            p.line(&replayed("user_message_chunk", "<session_context>…"))
+                .unwrap()
+                .is_empty()
+        );
+        assert!(
+            p.line(&reply(2, loaded("auto"))).unwrap().is_empty(),
+            "the checks wait for the history"
+        );
+        assert_eq!(p.session.as_deref(), Some(UUID));
+        assert!(p.waiting(), "the history and the command list are due");
+        assert!(
+            p.line(&replayed("user_message_chunk", "The code word is ZEBRA."))
+                .unwrap()
+                .is_empty()
+        );
+        assert!(
+            p.line(&replayed("agent_thought_chunk", "**Acknowledging**"))
+                .unwrap()
+                .is_empty()
+        );
+        assert!(
+            p.line(&replayed("agent_message_chunk", "OK"))
+                .unwrap()
+                .is_empty()
+        );
+        // A tool call of the past is not checked again: a shell this
+        // worker never had, done before its settings were checked.
+        assert!(
+            p.line(&update(
+                json!({ "sessionUpdate": "tool_call", "toolCallId": "run_shell_command__call_1",
+                "title": "ls", "kind": "execute", "status": "completed", "content": [] })
+            ))
+            .unwrap()
+            .is_empty()
+        );
+        assert!(
+            p.line(&update(
+                json!({ "sessionUpdate": "tool_call_update", "toolCallId": "c9",
+                "status": "failed", "kind": "edit", "title": "x" })
+            ))
+            .unwrap()
+            .is_empty()
+        );
+        assert_eq!(p.denied, 0);
+        assert!(p.calls.is_empty());
+        assert_eq!(p.text, "", "the replayed text is nobody's");
+        // The command list ends the history: the checks start.
+        let acts = p.line(&commands_update()).unwrap();
+        assert_eq!(p.replay, Replay::Done);
+        assert_eq!(
+            events(&acts),
+            [Event::Commands(vec!["/memory".into(), "/about".into()])]
+        );
+        let q = &sent(&acts)[0];
+        assert_eq!(q["method"], "session/prompt");
+        assert_eq!(q["id"], 3);
+        assert_eq!(q["params"]["sessionId"], UUID);
+        assert_eq!(q["params"]["prompt"][0]["text"], "/about");
+        assert_eq!(sent(&acts).len(), 1);
+        // From here on what Gemini says is this run's: the checks as on a
+        // new session, and the session reported is the one asked for.
+        assert!(
+            p.line(&chunk(&about("auto", "oauth-personal")))
+                .unwrap()
+                .is_empty()
+        );
+        assert_eq!(p.text, about("auto", "oauth-personal"));
+        let acts = p.line(&reply(3, command_done())).unwrap();
+        assert_eq!(
+            sent(&acts)[0]["params"]["prompt"][0]["text"],
+            "/extensions list"
+        );
+        assert!(p.line(&chunk("[]")).unwrap().is_empty());
+        let acts = p.line(&reply(4, command_done())).unwrap();
+        assert_eq!(
+            sent(&acts)[0]["params"]["prompt"][0]["text"],
+            "/memory list"
+        );
+        assert!(p.line(&chunk(&memory(&resumed()))).unwrap().is_empty());
+        let acts = p.line(&reply(5, command_done())).unwrap();
+        assert_eq!(
+            events(&acts)[0],
+            Event::Started {
+                session: UUID.into(),
+                model: "auto".into()
+            }
+        );
+        assert!(!p.waiting());
+        assert!(p.started);
+        // A turn now runs as any: a live tool call is checked again.
+        let acts = p.prompt("go on");
+        assert_eq!(sent(&acts)[0]["params"]["prompt"][0]["text"], "go on");
+        let e = p
+            .line(&update(
+                json!({ "sessionUpdate": "tool_call", "toolCallId": "run_shell_command__call_2",
+                "title": "ls", "kind": "execute" }),
+            ))
+            .unwrap_err();
+        assert!(e.contains("execute tool"), "{e}");
+    }
+
+    #[test]
+    fn a_command_list_before_the_load_answer_lets_the_checks_start_with_the_answer() {
+        let mut p = loading(&resumed());
+        let acts = p.line(&commands_update()).unwrap();
+        assert_eq!(events(&acts).len(), 1);
+        assert!(sent(&acts).is_empty(), "nothing to check in yet");
+        assert_eq!(p.replay, Replay::Done);
+        assert!(p.waiting(), "the load answer is still due");
+        let acts = p.line(&reply(2, loaded("auto"))).unwrap();
+        assert_eq!(sent(&acts)[0]["params"]["prompt"][0]["text"], "/about");
+        assert!(events(&acts).is_empty());
+        // Text after the list is this run's, even before the checks.
+        assert!(p.line(&chunk("late")).unwrap().is_empty());
+        assert_eq!(p.text, "late");
+    }
+
+    #[test]
+    fn a_mode_change_during_the_replay_stops_the_session_like_any() {
+        let mut p = loading(&resumed());
+        let e = p
+            .line(&update(
+                json!({ "sessionUpdate": "current_mode_update", "currentModeId": "yolo" }),
+            ))
+            .unwrap_err();
+        assert!(e.contains("changed its mode to \"yolo\""), "{e}");
+    }
+
+    #[test]
+    fn a_loaded_session_is_checked_like_a_new_one_and_must_be_the_one_asked_for() {
+        let mut bad = loaded("auto");
+        bad["modes"]["currentModeId"] = json!("yolo");
+        let e = loading(&resumed()).line(&reply(2, bad)).unwrap_err();
+        assert!(e.contains("mode \"yolo\""), "{e}");
+        let e = loading(&resumed())
+            .line(&reply(2, loaded("gemini-2.5-pro")))
+            .unwrap_err();
+        assert!(e.contains("model \"gemini-2.5-pro\", not auto"), "{e}");
+        let mut other = loaded("auto");
+        other["sessionId"] = json!("1145e290-2fb4-4a89-b6ad-a065325dcc99");
+        let e = loading(&resumed()).line(&reply(2, other)).unwrap_err();
+        assert!(e.contains("loaded session \"1145e290"), "{e}");
+        assert!(e.contains(UUID), "{e}");
+        // The answer may name the session asked for.
+        let mut same = loaded("auto");
+        same["sessionId"] = json!(UUID);
+        let mut p = loading(&resumed());
+        assert!(p.line(&reply(2, same)).unwrap().is_empty());
+        assert_eq!(p.session.as_deref(), Some(UUID));
+        // A model asked for is asked of the loaded session too.
+        let mut s = resumed();
+        s.model = Some("pro".into());
+        let mut p = loading(&s);
+        assert!(p.line(&reply(2, loaded("pro"))).unwrap().is_empty());
+        assert!(loading(&s).line(&reply(2, loaded("auto"))).is_err());
+    }
+
+    #[test]
+    fn a_session_gemini_has_no_chat_of_is_refused_before_any_turn_with_gemini_s_reason() {
+        let mut p = loading(&resumed());
+        let e = p
+            .line(
+                &json!({ "jsonrpc": "2.0", "id": 2, "error": { "code": -32603, "message": "Internal error",
+                    "data": { "details": format!("Invalid session identifier \"{UUID}\".\n  Searched for sessions in /home/me/.gemini/tmp/home/chats.") } } })
+                .to_string(),
+            )
+            .unwrap_err();
+        assert_eq!(
+            e,
+            format!("refused Session: Internal error (Invalid session identifier \"{UUID}\".)")
+        );
+        // An error without details reads as before.
+        let e = loading(&resumed())
+            .line(&json!({ "jsonrpc": "2.0", "id": 2, "error": { "code": -32000, "message": "Authentication required." } }).to_string())
+            .unwrap_err();
+        assert_eq!(e, "refused Session: Authentication required.");
+        let e = loading(&resumed())
+            .line(&json!({ "jsonrpc": "2.0", "id": 2, "error": { "code": -32603, "message": "Internal error", "data": { "details": "  " } } }).to_string())
+            .unwrap_err();
+        assert_eq!(e, "refused Session: Internal error");
+    }
+
+    #[test]
+    fn a_new_session_streams_no_history_and_reads_every_line_as_its_own() {
+        let mut p = started(&with_bus(true));
+        assert_eq!(p.replay, Replay::None);
+        p.prompt("go");
+        // What only a replay sends is ignored in a live turn; text counts.
+        assert!(
+            p.line(&replayed("user_message_chunk", "x"))
+                .unwrap()
+                .is_empty()
+        );
+        assert!(p.line(&chunk("mine")).unwrap().is_empty());
+        assert_eq!(p.text, "mine");
+        // The command list of a new session is this run's too.
+        let acts = p.line(&commands_update()).unwrap();
+        assert_eq!(events(&acts).len(), 1);
+        assert!(sent(&acts).is_empty());
+        assert_eq!(p.text, "mine");
+    }
+
+    #[test]
+    fn a_turn_refused_with_details_says_them() {
+        let mut p = started(&spec(false));
+        p.prompt("go");
+        let acts = p
+            .line(
+                &json!({ "jsonrpc": "2.0", "id": 6, "error": { "code": 429,
+                    "message": "You have exhausted your daily quota on this model.",
+                    "data": { "details": "Try again tomorrow." } } })
+                .to_string(),
+            )
+            .unwrap();
+        assert_eq!(
+            events(&acts)[0],
+            Event::TurnDone {
+                ok: false,
+                text: "You have exhausted your daily quota on this model. (Try again tomorrow.)"
+                    .into(),
+                cost: 0,
+                denied: 0,
+            }
+        );
+    }
+
+    /// `IMECE_LIVE_GEMINI=1 cargo test -p imece-agent -- --ignored live_gemini_resumes --nocapture`
+    ///
+    /// Three processes: one that takes a turn in a new session, one that
+    /// loads that session and must remember the turn, one that asks for
+    /// a session there is no chat of and must stop before any turn. The
+    /// chats stay under `~/.gemini/tmp` (imece deletes none yet).
+    #[test]
+    #[ignore = "runs a real Gemini CLI session: IMECE_LIVE_GEMINI=1 cargo test -p imece-agent -- --ignored live_gemini_resumes"]
+    fn live_gemini_resumes_its_session_and_stops_on_one_that_is_gone() {
+        if std::env::var_os("IMECE_LIVE_GEMINI").is_none() {
+            return;
+        }
+        let dir = std::env::temp_dir().join(format!("imece-live-gemini-r-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let cwd = dir.join("repo");
+        std::fs::create_dir_all(&cwd).unwrap();
+        let mut spec = Spec {
+            program: PROGRAM.into(),
+            cwd: cwd.canonicalize().unwrap(),
+            home: dir.join("home"),
+            model: std::env::var("IMECE_LIVE_GEMINI_MODEL").ok(),
+            write: false,
+            system: "You are gemini-1, a coding agent in imece. Answer briefly.".into(),
+            mcp: None,
+            resume: None,
+        };
+        let run = |spec: &Spec, prompt: &str| -> Vec<Event> {
+            let (tx, rx) = mpsc::channel();
+            let mut session = Session::start(spec, move |e| {
+                let _ = tx.send(e);
+            })
+            .unwrap();
+            session.prompt(prompt).unwrap();
+            let mut got = Vec::new();
+            loop {
+                let e = rx
+                    .recv_timeout(Duration::from_secs(300))
+                    .expect("gemini answers within five minutes");
+                eprintln!("live gemini: {e:?}");
+                let end = matches!(e, Event::TurnDone { .. } | Event::Stopped(_));
+                got.push(e);
+                if end {
+                    break;
+                }
+            }
+            got
+        };
+        let first = run(&spec, "Reply with exactly the word: marigold");
+        let Some(Event::Started { session, .. }) = first.first().cloned() else {
+            panic!("the checks passed: {first:?}");
+        };
+        assert!(crate::valid_uuid(&session), "{session}");
+        assert!(
+            matches!(first.last(), Some(Event::TurnDone { ok: true, .. })),
+            "{first:?}"
+        );
+        spec.resume = Some(session.clone());
+        let again = run(
+            &spec,
+            "Which word did I ask you to reply with before? Answer with that word only.",
+        );
+        assert_eq!(
+            again
+                .first()
+                .map(|e| matches!(e, Event::Started { session: s, .. } if *s == session)),
+            Some(true),
+            "the same session: {again:?}"
+        );
+        assert!(
+            matches!(again.last(), Some(Event::TurnDone { ok: true, text, .. }) if text.to_lowercase().contains("marigold")),
+            "{again:?}"
+        );
+        spec.resume = Some("01a18b35-6d6d-70f2-94d1-5ac2cf796999".into());
+        let gone = run(&spec, "unused");
+        assert_eq!(gone.len(), 1, "{gone:?}");
+        assert!(
+            matches!(&gone[0], Event::Stopped(why) if why.contains("Invalid session identifier")),
+            "{gone:?}"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     #[test]
     #[ignore = "runs a real Gemini CLI session: IMECE_LIVE_GEMINI=1 cargo test -p imece-agent -- --ignored live_gemini"]
     fn live_gemini_runs_one_turn_with_imece_s_tool() {
@@ -2445,6 +2890,7 @@ done"#;
                 args: vec!["-U".into(), sock.to_string_lossy().into_owned()],
                 tools: vec!["send".into()],
             }),
+            resume: None,
         };
         let (tx, rx) = mpsc::channel();
         let mut session = Session::start(&s, move |e| {
