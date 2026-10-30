@@ -525,6 +525,10 @@ pub fn world(o: Options, present: &[(Vendor, bool)]) -> Result<(World, Live), St
         .load(JOURNAL_KEEP)
         .map_err(|e| format!("{}: {e}", o.state.join(store::FILE).display()))?;
     let now = now();
+    // Old journal lines past what was just loaded go, and the file is
+    // packed when it is mostly air. Nothing is lost when this fails: the
+    // next start tries again, and there is nobody to tell yet.
+    let _ = store.tidy(now, JOURNAL_KEEP);
     let (mut w, found) = match loaded {
         Some(l) => (l.world, Some((l.found, l.skipped))),
         None => (
@@ -3108,17 +3112,34 @@ fn cut(s: &str, max: usize) -> &str {
     }
 }
 
-/// The local time of day at `at` (seconds since the Unix epoch): what the
-/// screen's clock starts at (`start_clock_at`) for a world begun then.
-pub fn local_seconds_after_midnight(at: u64) -> u64 {
-    let now = at;
-    let secs = now as libc::time_t;
+/// The local time of day at `at` (seconds since the Unix epoch) and its
+/// local day counted from 1970-01-01: what the screen's clock starts at
+/// (`start_clock_at`) for a world begun then. Without a local time (no
+/// zone the C library knows) the clock is UTC.
+pub fn local_clock(at: u64) -> (u64, u64) {
+    let secs = at as libc::time_t;
     // SAFETY: `tm` is plain data that localtime_r fills; it keeps no pointer.
     let mut tm: libc::tm = unsafe { std::mem::zeroed() };
     if unsafe { libc::localtime_r(&secs, &mut tm) }.is_null() {
-        return now % 86_400;
+        return utc_clock(at);
     }
-    (tm.tm_hour as u64) * 3600 + (tm.tm_min as u64) * 60 + tm.tm_sec as u64
+    let seconds = (tm.tm_hour as u64) * 3600 + (tm.tm_min as u64) * 60 + tm.tm_sec as u64;
+    let day = days_from_civil(
+        i64::from(tm.tm_year) + 1900,
+        (tm.tm_mon + 1) as u32,
+        tm.tm_mday as u32,
+    );
+    (seconds, day.max(0) as u64)
+}
+
+/// `at` as a time of day and a day in UTC: the clock without a zone.
+fn utc_clock(at: u64) -> (u64, u64) {
+    (at % 86_400, at / 86_400)
+}
+
+/// The local day today, as [`local_clock`] counts it.
+pub fn today() -> u64 {
+    local_clock(now()).1
 }
 
 /// Teams for the tests of this module and of the screen.
@@ -6069,9 +6090,9 @@ in p.rs",
     }
 
     #[test]
-    fn the_clock_starts_at_the_local_time() {
+    fn the_clock_starts_at_the_local_time_and_day() {
         let out = std::process::Command::new("date")
-            .arg("+%H %M %S")
+            .arg("+%H %M %S %Y %m %d")
             .output()
             .unwrap();
         let p: Vec<u64> = String::from_utf8_lossy(&out.stdout)
@@ -6079,9 +6100,29 @@ in p.rs",
             .map(|n| n.parse().unwrap())
             .collect();
         let expect = p[0] * 3600 + p[1] * 60 + p[2];
-        let got = local_seconds_after_midnight(now());
+        let at = now();
+        let (got, day) = local_clock(at);
         let apart = got.abs_diff(expect).min(86_400 - got.abs_diff(expect));
         assert!(apart <= 2, "{got} vs {expect}");
+        let expect_day = days_from_civil(p[3] as i64, p[4] as u32, p[5] as u32) as u64;
+        // The second between `date` and `now()` may be midnight's.
+        assert!(
+            day == expect_day || (apart > 0 && day.abs_diff(expect_day) == 1),
+            "{day} vs {expect_day}"
+        );
+        assert_eq!(today().abs_diff(day), 0);
+        // A known instant: 2026-10-30 12:00 UTC is the 30th in every zone
+        // west of +12 and the 31st east of it (where the clock reads before
+        // 02:00); the day is the local clock's, not the epoch's.
+        let noon = 1_793_361_600;
+        let (seconds, day) = local_clock(noon);
+        assert_eq!(utc_clock(noon), (12 * 3600, 20_756), "without a zone");
+        assert_eq!(utc_clock(noon + 1), (12 * 3600 + 1, 20_756));
+        let utc_day = noon / 86_400;
+        assert!(
+            day == utc_day || (day == utc_day + 1 && seconds < 2 * 3600),
+            "{day} at {seconds}"
+        );
     }
 
     #[test]

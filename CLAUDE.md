@@ -233,8 +233,8 @@ and owned here from then on:
   (`IMECE_LIVE_GEMINI=1 cargo test -p imece-agent -- --ignored live_gemini`)
   runs one real turn with `send` over `nc -U`.
 - Who leads (2026-10-29, user's decision): no silent default. `--lead
-  VENDOR` wins; else the PRIMARY vendor from the preferences (`lead=` in
-  the screen file) if it is on PATH and driveable; else the only driveable
+  VENDOR` wins; else the PRIMARY vendor from the preferences (`lead` in
+  the store's `meta`, see Leftovers v0) if it is on PATH and driveable; else the only driveable
   vendor; else a question before the salon (`ui/pick.rs`: j/k, enter =
   this time, `p` = make it the primary, esc = quit). `--lead ask` forces
   the question; `:lead VENDOR` sets the primary from the next start on,
@@ -509,10 +509,8 @@ and owned here from then on:
   is `Option`: unset keeps the pot as it was left (`DEFAULT_BUDGET`
   $50 the first time); `World.daily_budget` is `budget`. `Options.state`
   carries the state dir (tests no longer leak worktrees into
-  `~/.local/state`). Known gaps, for the next PRs: Codex `thread/resume`
-  and Gemini `session/load` (a woken Codex or Gemini agent gets a fresh
-  session + the briefing), the journal shows HH:MM without the day, no
-  retention or VACUUM yet, prefs (`screen` file) not moved into the store.
+  `~/.local/state`). The gaps it left (Codex and Gemini resume, the day
+  in the journal, retention, the prefs file) closed in the entries below.
 - Claude resume (2026-10-30, persistence PR 2): the store keeps each
   agent's last vendor session (`agents.session`, `agents.session_spent`,
   schema 2, added to a schema-1 file with `ALTER TABLE` when the column
@@ -651,6 +649,37 @@ and owned here from then on:
   takes a process (~1 s) per thread, `--fresh` with many Codex agents
   starts them all at once; a session stopped for a mismatch is still
   the one remembered (and forgotten only by these paths).
+- Leftovers v0 (2026-10-30, persistence PR 6: what the earlier entries
+  left). DAYS: `model::start_clock_at(seconds, day)` takes the local day
+  of the world's first start as well (`live::local_clock`; the civil date
+  math `days_from_civil` / `civil_from_days` is pure, in model.rs);
+  `day(tick)`, `date(day)` = `YYYY-MM-DD`, `stamp(tick)` = both,
+  `when(tick, today)` = the clock alone on today's lines. The journal
+  pane and a conversation draw a dim `─ YYYY-MM-DD` row above the first
+  line of a day other than the line above it (today for the first line:
+  a journal whose newest line is yesterday starts with its date, one all
+  of today has none; `first_shown` in salon.rs counts the day rows so the
+  selection stays in view); a WAITING FOR YOU item of another day carries
+  its date; copied text is always stamped (it leaves the screen). The
+  clock follows the start, so a daylight-saving change inside a world's
+  life shifts it by an hour (accepted). The demo runs at 14:00 on today's
+  date. RETENTION: `Store::tidy(now, JOURNAL_KEEP)` at every live start
+  after the load deletes journal lines older than `JOURNAL_DAYS` (90)
+  that lie past the newest 5000 (`seq <= newest - keep AND tick <
+  cutoff`, a primary-key range, in the `plans` test), and runs `VACUUM`
+  when the free pages are a quarter of the file or more (`needs_vacuum`);
+  stories and inbox rows stay (numbered by position); a failure is
+  ignored and the next start tries again. PREFS: the `screen` file is
+  gone; side, theme and lead live in the store's `meta` table under
+  their own keys, through `store::settings` / `set_settings`: a
+  connection of their own without the world's lock (the theme is read
+  before the store is taken, a demo beside a live imece may change it,
+  SQLite serialises the writers), the file made 0600 before SQLite opens
+  it, the world's keys (schema_version, started_at, budget) refused; a
+  `screen` file found at load is moved in and removed. Known gaps: no
+  retention for stories of long-closed projects or closed inbox items; a
+  tidy's result is shown nowhere; the clock ignores daylight-saving
+  changes (above).
 
 ## Neighbours
 

@@ -467,7 +467,7 @@ fn side(f: &mut Frame, area: Rect, app: &App) {
         };
         let mut spans = vec![
             Span::styled(format!("{icon} "), style),
-            Span::styled(format!("{} ", clock(item.tick)), dim()),
+            Span::styled(format!("{} ", when(item.tick, day(w.tick))), dim()),
         ];
         if many {
             let p = w.agents[item.agent].project;
@@ -498,13 +498,24 @@ fn side(f: &mut Frame, area: Rect, app: &App) {
         .journal_sel
         .filter(|_| focused)
         .and_then(|i| rows.iter().position(|&(r, _)| r == i));
-    // The selected line and its keys stay in view.
     let height = usize::from(inner.height);
-    let skip = sel.map_or(0, |p| (p + 2).saturating_sub(height));
+    let today = day(w.tick);
+    let skip = first_shown(w, &rows, sel, height, today);
+    // Which day the line above the first shown is of: today when there
+    // is none, so a journal whose newest line is older says so first.
+    let mut above = match skip {
+        0 => today,
+        n => day(w.journal[rows[n - 1].0].tick),
+    };
     let mut lines = Vec::new();
     for (n, &(i, more)) in rows.iter().enumerate().skip(skip) {
         if lines.len() >= height {
             break;
+        }
+        let of = day(w.journal[i].tick);
+        if of != above {
+            lines.push(date_row(of));
+            above = of;
         }
         let mut line = entry_line(app, &w.journal[i]);
         if more > 0 {
@@ -518,6 +529,39 @@ fn side(f: &mut Frame, area: Rect, app: &App) {
         }
     }
     f.render_widget(Paragraph::new(lines), inner);
+}
+
+/// The first of `rows` the journal pane draws, so that the selected row
+/// (`sel`, an index into `rows`) and its key hints stay in view in `height`
+/// rows: as far down as the lines above the selection, the day rows among
+/// them included, make necessary, and no further.
+fn first_shown(
+    w: &World,
+    rows: &[(usize, usize)],
+    sel: Option<usize>,
+    height: usize,
+    today: u64,
+) -> usize {
+    let Some(p) = sel else {
+        return 0;
+    };
+    let skip = (p + 2).saturating_sub(height);
+    // Day rows between the first shown and the selection take rows too.
+    // Skipping further can only drop day rows from the window, never add
+    // one, so one count is enough.
+    let mut above = match skip {
+        0 => today,
+        n => day(w.journal[rows[n - 1].0].tick),
+    };
+    let mut days = 0;
+    for &(i, _) in &rows[skip..=p] {
+        let of = day(w.journal[i].tick);
+        if of != above {
+            days += 1;
+            above = of;
+        }
+    }
+    (p + 2 + days).saturating_sub(height)
 }
 
 /// The journal as the screen shows it, newest first: (journal index, how
@@ -589,6 +633,50 @@ mod tests {
                 text: String::new(),
             },
         }
+    }
+
+    #[test]
+    fn the_first_shown_row_leaves_room_for_the_day_rows_above_the_selection() {
+        let (mut w, _) = crate::sim::world(1, 2, 0, 1, crate::i18n::Lang::En);
+        w.journal.clear();
+        // Six events that stand alone, three a day: rows newest first are
+        // entries 5, 4, 3 (the second day) and 2, 1, 0 (the first).
+        for i in 0..6u64 {
+            w.journal.push(Entry {
+                tick: if i < 3 { 0 } else { 7200 },
+                event: Event::Failed { agent: 0 },
+            });
+        }
+        let rows = journal_rows(&w);
+        assert_eq!(
+            rows.iter().map(|r| r.0).collect::<Vec<_>>(),
+            [5, 4, 3, 2, 1, 0]
+        );
+        let today = day(7300);
+        assert_eq!(
+            first_shown(&w, &rows, None, 4, today),
+            0,
+            "nothing selected"
+        );
+        assert_eq!(first_shown(&w, &rows, Some(1), 4, today), 0, "fits");
+        // Row 4 selected in 4 rows: rows 2, 3, 4 and the keys would fit,
+        // but the day row above row 3 takes one more.
+        assert_eq!(first_shown(&w, &rows, Some(4), 4, today), 3);
+        assert_eq!(
+            first_shown(&w, &rows, Some(2), 4, today),
+            0,
+            "no day row before it"
+        );
+        // Row 3 is the first of the earlier day: rows 2, its day row, 3 and
+        // the keys.
+        assert_eq!(first_shown(&w, &rows, Some(3), 4, today), 2);
+        // Tall enough for everything but the day row.
+        assert_eq!(first_shown(&w, &rows, Some(5), 7, today), 1);
+        assert_eq!(first_shown(&w, &rows, Some(5), 8, today), 0);
+        // The newest line is not of today: a day row stands above it too.
+        let today = day(7300) + 1;
+        assert_eq!(first_shown(&w, &rows, Some(5), 8, today), 1);
+        assert_eq!(first_shown(&w, &rows, Some(5), 9, today), 0);
     }
 
     #[test]

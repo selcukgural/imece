@@ -16,16 +16,59 @@ pub type ProjectId = usize;
 
 /// Seconds per tick.
 pub const SECONDS_PER_TICK: u64 = 5;
-/// The clock at tick 0, in seconds after midnight: 14:00 for the
-/// simulation, the local time at start for live agents.
+/// The clock at tick 0: seconds after midnight (14:00 for the simulation,
+/// the local time of the world's first start for live agents) and the day
+/// (local, counted from 1970-01-01), so a tick has a date as well as a
+/// time. Both follow the start, not the terminal's clock: a tick is five
+/// seconds whatever the day, so a change of daylight-saving time inside a
+/// world's life shifts its clock by an hour.
 static START_SECONDS: AtomicU64 = AtomicU64::new(14 * 3600);
+static START_DAY: AtomicU64 = AtomicU64::new(0);
 
-pub fn start_clock_at(seconds_after_midnight: u64) {
+pub fn start_clock_at(seconds_after_midnight: u64, day: u64) {
     START_SECONDS.store(seconds_after_midnight % 86_400, Ordering::Relaxed);
+    START_DAY.store(day, Ordering::Relaxed);
 }
 
 fn start_seconds() -> u64 {
     START_SECONDS.load(Ordering::Relaxed)
+}
+
+/// The day of a tick, counted from 1970-01-01 in the clock's time zone.
+pub fn day(tick: u64) -> u64 {
+    START_DAY.load(Ordering::Relaxed) + (start_seconds() + tick * SECONDS_PER_TICK) / 86_400
+}
+
+/// A day (as [`day`] counts them) as `YYYY-MM-DD`.
+pub fn date(day: u64) -> String {
+    let (y, m, d) = civil_from_days(day as i64);
+    format!("{y:04}-{m:02}-{d:02}")
+}
+
+/// Days since 1970-01-01 of a date of the (proleptic) Gregorian calendar;
+/// `m` and `d` count from 1. Howard Hinnant's `days_from_civil`.
+pub fn days_from_civil(y: i64, m: u32, d: u32) -> i64 {
+    let y = if m <= 2 { y - 1 } else { y };
+    let era = if y >= 0 { y } else { y - 399 } / 400;
+    let yoe = y - era * 400;
+    let mp = i64::from(if m > 2 { m - 3 } else { m + 9 });
+    let doy = (153 * mp + 2) / 5 + i64::from(d) - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    era * 146_097 + doe - 719_468
+}
+
+/// The date of a day counted from 1970-01-01; the inverse of
+/// [`days_from_civil`] (Hinnant's `civil_from_days`).
+fn civil_from_days(z: i64) -> (i64, u32, u32) {
+    let z = z + 719_468;
+    let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
+    let doe = z - era * 146_097;
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = (doy - (153 * mp + 2) / 5 + 1) as u32;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 } as u32;
+    (yoe + era * 400 + i64::from(m <= 2), m, d)
 }
 /// Trace lines kept per agent.
 const TRACE_KEEP: usize = 200;
@@ -1309,6 +1352,22 @@ pub fn clock(tick: u64) -> String {
     format!("{:02}:{:02}", s / 3600 % 24, s / 60 % 60)
 }
 
+/// A tick's day and clock, `YYYY-MM-DD HH:MM`: for text that leaves the
+/// screen, where "today" means nothing.
+pub fn stamp(tick: u64) -> String {
+    format!("{} {}", date(day(tick)), clock(tick))
+}
+
+/// A tick's clock, with its date in front when it is not of `today` (a
+/// day as [`day`] counts them).
+pub fn when(tick: u64, today: u64) -> String {
+    if day(tick) == today {
+        clock(tick)
+    } else {
+        stamp(tick)
+    }
+}
+
 fn clock_seconds(tick: u64) -> String {
     let s = start_seconds() + tick * SECONDS_PER_TICK;
     format!("{:02}:{:02}:{:02}", s / 3600 % 24, s / 60 % 60, s % 60)
@@ -1901,10 +1960,60 @@ mod tests {
         assert_eq!(clock(0), "14:00");
         assert_eq!(clock(13), "14:01");
         assert_eq!(clock_seconds(13), "14:01:05");
-        start_clock_at(86_400 + 60);
+        assert_eq!(day(0), 0, "the simulation's day is the epoch's");
+        assert_eq!(date(day(0)), "1970-01-01");
+        start_clock_at(86_400 + 60, 20_756);
         assert_eq!(clock(0), "00:01", "wraps at midnight");
         assert_eq!(clock_seconds(1), "00:01:05");
-        start_clock_at(14 * 3600);
+        assert_eq!(day(0), 20_756, "the seconds wrap, the day does not move");
+        // 2026-10-30 at 23:59:00: a tick later it is the 31st.
+        start_clock_at(23 * 3600 + 59 * 60, 20_756);
+        assert_eq!(day(0), 20_756);
+        assert_eq!(day(11), 20_756, "23:59:55");
+        assert_eq!(day(12), 20_757, "00:00:00 of the next day");
+        assert_eq!(clock(12), "00:00");
+        assert_eq!(stamp(11), "2026-10-30 23:59");
+        assert_eq!(stamp(12), "2026-10-31 00:00");
+        assert_eq!(when(11, 20_756), "23:59", "today: the clock alone");
+        assert_eq!(when(12, 20_756), "2026-10-31 00:00", "another day: dated");
+        assert_eq!(when(12, 20_757), "00:00");
+        start_clock_at(14 * 3600, 0);
         assert_eq!(clock(0), "14:00");
+    }
+
+    #[test]
+    fn days_and_dates_agree_with_the_calendar() {
+        assert_eq!(days_from_civil(1970, 1, 1), 0);
+        assert_eq!(days_from_civil(1970, 1, 2), 1);
+        assert_eq!(days_from_civil(1969, 12, 31), -1);
+        assert_eq!(days_from_civil(2000, 3, 1), 11_017, "after a leap day");
+        assert_eq!(days_from_civil(2026, 10, 30), 20_756);
+        assert_eq!(days_from_civil(2024, 2, 29), 19_782, "a leap day");
+        assert_eq!(days_from_civil(2100, 3, 1), 47_541, "2100 is no leap year");
+        for (days, text) in [
+            (0, "1970-01-01"),
+            (59, "1970-03-01"),
+            (11_016, "2000-02-29"),
+            (11_017, "2000-03-01"),
+            (19_782, "2024-02-29"),
+            (20_756, "2026-10-30"),
+            (20_790, "2026-12-03"),
+            (20_818, "2026-12-31"),
+            (20_819, "2027-01-01"),
+            (47_540, "2100-02-28"),
+            (47_541, "2100-03-01"),
+        ] {
+            assert_eq!(date(days), text);
+            let (y, m, d) = civil_from_days(days as i64);
+            assert_eq!(days_from_civil(y, m, d), days as i64, "{text} round trip");
+        }
+        // Every day of forty years goes round and comes back, in order.
+        let mut last = (1969, 12, 31);
+        for z in 0..(365 * 40 + 10) {
+            let c = civil_from_days(z);
+            assert!(c > last, "{c:?} after {last:?}");
+            assert_eq!(days_from_civil(c.0, c.1, c.2), z);
+            last = c;
+        }
     }
 }

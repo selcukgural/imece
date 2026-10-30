@@ -234,6 +234,13 @@ pub(crate) fn entry_icon(k: EntryKind) -> (&'static str, Style) {
     }
 }
 
+/// A row that says which day the lines under it are of: drawn where the
+/// journal or a conversation passes from one day to another, and above
+/// its first line when that is not of today. The date needs no words.
+pub(crate) fn date_row(day: u64) -> Line<'static> {
+    Line::from(Span::styled(format!("─ {}", date(day)), dim()))
+}
+
 /// One journal line: time, icon, the event in words.
 pub(crate) fn entry_line(app: &App, e: &Entry) -> Line<'static> {
     let w = &app.world;
@@ -253,9 +260,10 @@ pub(crate) fn entry_line(app: &App, e: &Entry) -> Line<'static> {
     Line::from(spans)
 }
 
-/// Journal lines `entries` as text to paste elsewhere: who said what, when,
-/// whole. Cleaned like everything drawn, so what is copied is what the
-/// screen shows (no control characters, secrets hidden).
+/// Journal lines `entries` as text to paste elsewhere: who said what, when
+/// (day and time: the text leaves the screen, where "today" means
+/// nothing), whole. Cleaned like everything drawn, so what is copied is
+/// what the screen shows (no control characters, secrets hidden).
 pub(crate) fn copy_text(lang: Lang, w: &World, entries: &[usize]) -> String {
     let party = |p: Party| match p {
         Party::Agent(id) => clean(&w.agents[id].name),
@@ -272,13 +280,13 @@ pub(crate) fn copy_text(lang: Lang, w: &World, entries: &[usize]) -> String {
                     .unwrap_or_default();
                 format!(
                     "{} {} → {}{kind}\n{}",
-                    clock(e.tick),
+                    stamp(e.tick),
                     party(s.from),
                     party(s.to),
                     body_lines(s.text).join("\n")
                 )
             }
-            None => format!("{} {}", clock(e.tick), words::event(lang, w, &e.event)),
+            None => format!("{} {}", stamp(e.tick), words::event(lang, w, &e.event)),
         }
     };
     entries
@@ -1681,9 +1689,107 @@ mod tests {
         key(&mut app, KeyCode::Enter);
         key(&mut app, KeyCode::Char('C'));
         let all = app.copy.take().unwrap();
-        assert!(all.contains("you → lead\ncheck the readme"), "{all}");
+        assert!(
+            all.contains("1970-01-01 14:00 you → lead\ncheck the readme"),
+            "dated: the text leaves the screen\n{all}"
+        );
         assert!(all.contains("lead → you\n# Readme"), "copied as written");
         assert!(!all.contains("between workers"));
+    }
+
+    /// `talking()` with its first two messages on the simulation's first
+    /// day and the rest on the second (the sim's clock starts at 14:00, so
+    /// tick 7200 is the next midnight); the world is in the second day.
+    fn talking_over_two_days() -> App {
+        let mut app = talking();
+        for (i, e) in app.world.journal.iter_mut().enumerate() {
+            e.tick = if i < 3 { 0 } else { 7200 };
+        }
+        app.world.tick = 7300;
+        app
+    }
+
+    #[test]
+    fn the_journal_says_where_an_earlier_day_begins() {
+        let app = talking_over_two_days();
+        let screen = render(&app, 140, 40);
+        let lines: Vec<&str> = screen.lines().collect();
+        let at = |needle: &str| {
+            lines
+                .iter()
+                .position(|l| l.contains(needle))
+                .unwrap_or_else(|| panic!("{needle} not on\n{screen}"))
+        };
+        let day_row = at("─ 1970-01-01");
+        assert_eq!(
+            screen.matches("─ 1970-0").count(),
+            1,
+            "one day row: today's lines need none\n{screen}"
+        );
+        // Newest first: today's conversation, then yesterday under its date.
+        assert!(at("00:00 ") < day_row, "{screen}");
+        assert_eq!(at("14:00 ⇄"), day_row + 1, "the workers' talk\n{screen}");
+        assert!(lines[day_row + 2].contains("14:00 "), "{screen}");
+        // Nothing of today: the newest line stands under its own date.
+        let mut app = app;
+        for e in &mut app.world.journal {
+            e.tick = 0;
+        }
+        let screen = render(&app, 140, 40);
+        let lines: Vec<&str> = screen.lines().collect();
+        let day_row = lines
+            .iter()
+            .position(|l| l.contains("─ 1970-01-01"))
+            .unwrap();
+        assert!(lines[day_row - 1].contains("JOURNAL"), "{screen}");
+        assert!(lines[day_row + 1].contains("14:00 "), "{screen}");
+        // All of today: no date at all.
+        app.world.tick = 10;
+        assert!(!render(&app, 140, 40).contains("─ 1970"));
+    }
+
+    #[test]
+    fn the_conversation_dates_the_messages_of_other_days() {
+        let mut app = talking_over_two_days();
+        app.open_thread(4);
+        let th = app.thread.as_ref().unwrap();
+        let (rows, ranges) = overlay::thread_rows(app.lang, &app.world, th, 60);
+        let lines = text(&rows);
+        assert_eq!(
+            lines[0], "  ─ 1970-01-01",
+            "the first message is not of today"
+        );
+        assert_eq!(ranges[0].0, 1, "the date is no part of the message");
+        assert!(lines[1].starts_with("  14:00 you → lead"), "{}", lines[1]);
+        let (second_day, _) = ranges[2];
+        assert_eq!(lines[second_day - 1], "  ─ 1970-01-02");
+        assert!(
+            lines[second_day].starts_with("  00:00 you → lead"),
+            "{}",
+            lines[second_day]
+        );
+        assert_eq!(
+            lines.iter().filter(|l| l.starts_with("  ─ ")).count(),
+            2,
+            "two days, two rows"
+        );
+        let screen = render(&app, 120, 30);
+        assert!(screen.contains("─ 1970-01-02"), "{screen}");
+    }
+
+    #[test]
+    fn a_waiting_item_of_another_day_carries_its_date() {
+        let mut app = app_after(1, 4, 50, Lang::En);
+        app.world.replied(0, "Short.");
+        app.world.inbox.last_mut().unwrap().tick = 0;
+        let screen = render(&app, 140, 40);
+        assert!(
+            screen.contains("» 14:00 ") && !screen.contains("1970"),
+            "today: the clock alone\n{screen}"
+        );
+        app.world.tick = 7300;
+        let screen = render(&app, 140, 40);
+        assert!(screen.contains("» 1970-01-01 14:00 "), "{screen}");
     }
 
     /// The row above the footer, where the completions are.

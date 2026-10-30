@@ -11,10 +11,16 @@
 //! is the person's alone (0600) and one imece at a time has it (a lock
 //! next to it); a second one is refused, not silently shared.
 //!
-//! Growth: the journal and the stories are loaded whole for now (the
-//! screen holds them in memory anyway); the read paths are the primary
+//! Growth: the stories are loaded whole (the screen holds them in memory
+//! anyway) and the journal's newest lines; the read paths are the primary
 //! keys, so a per-project page or a cap per card comes without a new
-//! index. Closed projects and gone agents keep their rows.
+//! index. Closed projects and gone agents keep their rows. A tidy at the
+//! start (`tidy`) lets go of journal lines nobody loads any more and packs
+//! the file when a quarter of it is air.
+//!
+//! The person's screen choices (`prefs`) are in the same file's `meta`
+//! table, but go through a connection of their own without the world's
+//! lock (`settings`, `set_settings`).
 
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::fs::OpenOptions;
@@ -34,6 +40,11 @@ pub const SCHEMA_VERSION: i64 = 2;
 const TRACE_KEEP: usize = 200;
 /// The file's name under the state directory.
 pub const FILE: &str = "imece.sqlite";
+/// Journal lines older than this many days go at a tidy, except the newest
+/// ones a load takes, which stay whatever their age.
+pub const JOURNAL_DAYS: u64 = 90;
+/// Keys of `meta` that are the world's, not the person's settings.
+const WORLD_KEYS: [&str; 3] = ["schema_version", "started_at", "budget"];
 
 const SCHEMA: &str = "
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL) WITHOUT ROWID;
@@ -123,6 +134,15 @@ pub struct Found {
     pub posts: HashMap<CardId, Post>,
     pub offered: HashMap<CardId, Vec<AgentId>>,
     pub changes: HashMap<AgentId, worktree::Change>,
+}
+
+/// What a tidy let go of.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Tidied {
+    /// Journal lines deleted.
+    pub journal: usize,
+    /// Whether the file was written anew (`VACUUM`).
+    pub vacuumed: bool,
 }
 
 /// A world as it was saved, with what the engine kept, and how many
@@ -252,15 +272,7 @@ impl Store {
                 format!("{}: could not lock: {e}", lock_path.to_string_lossy())
             });
         }
-        // The file is made here, 0600, before SQLite opens it (SQLite would
-        // make it with the umask); the WAL files inherit its mode.
-        OpenOptions::new()
-            .create(true)
-            .truncate(false)
-            .write(true)
-            .mode(0o600)
-            .open(path)
-            .map_err(|e| format!("{}: {e}", path.display()))?;
+        make_private(path)?;
         let conn = Connection::open(path).map_err(|e| format!("{}: {e}", path.display()))?;
         let mut store = Store {
             conn,
@@ -324,6 +336,51 @@ impl Store {
             params![SCHEMA_VERSION.to_string()],
         )?;
         Ok(())
+    }
+
+    /// Lets go of what nobody reads any more, once at the start after the
+    /// load: journal lines older than [`JOURNAL_DAYS`] that lie past the
+    /// newest `journal_keep` (the ones a load takes, whatever their age),
+    /// and the file's free pages when they are a quarter of it or more
+    /// (`VACUUM` writes the file anew). Stories stay with their cards and
+    /// items in the inbox, both numbered by position. A file without a
+    /// world has nothing to tidy.
+    pub fn tidy(&mut self, now: u64, journal_keep: usize) -> rusqlite::Result<Tidied> {
+        let started_at: Option<u64> = self
+            .conn
+            .query_row("SELECT value FROM meta WHERE key = 'started_at'", [], |r| {
+                r.get::<_, String>(0)
+            })
+            .optional()?
+            .and_then(|v| v.parse().ok());
+        let Some(started_at) = started_at else {
+            return Ok(Tidied::default());
+        };
+        // The tick JOURNAL_DAYS ago; 0 while the world is younger than that.
+        let cutoff = now
+            .saturating_sub(JOURNAL_DAYS * 86_400)
+            .saturating_sub(started_at)
+            / SECONDS_PER_TICK;
+        let newest: i64 =
+            self.conn
+                .query_row("SELECT COALESCE(MAX(seq), 0) FROM journal", [], |r| {
+                    r.get(0)
+                })?;
+        // `seq <= ?1` walks the primary key up to there: the newer lines,
+        // the bulk of a file that is tidied every start, are not read.
+        let journal = self.conn.execute(
+            "DELETE FROM journal WHERE seq <= ?1 AND tick < ?2",
+            params![newest - n(journal_keep), big(cutoff)],
+        )?;
+        let free: i64 = self
+            .conn
+            .query_row("PRAGMA freelist_count", [], |r| r.get(0))?;
+        let pages: i64 = self.conn.query_row("PRAGMA page_count", [], |r| r.get(0))?;
+        let vacuumed = needs_vacuum(ubig(free), ubig(pages));
+        if vacuumed {
+            self.conn.execute_batch("VACUUM")?;
+        }
+        Ok(Tidied { journal, vacuumed })
     }
 
     fn has_column(&self, table: &str, column: &str) -> rusqlite::Result<bool> {
@@ -1007,6 +1064,7 @@ impl Store {
             "SELECT card, tick, data FROM story ORDER BY card, seq",
             "SELECT seq, tick, data FROM journal ORDER BY seq DESC LIMIT 5000",
             "SELECT id, kind, agent, detail, researcher, open, tick FROM inbox ORDER BY id",
+            "DELETE FROM journal WHERE seq <= 10 AND tick < 20",
         ]
         .iter()
         .map(|q| {
@@ -1069,6 +1127,90 @@ impl Plan {
             && self.changes.is_empty()
             && self.changes_gone.is_empty()
     }
+}
+
+/// Whether a file of `pages` pages with `free` of them unused is worth
+/// writing anew: a quarter or more of it is air.
+fn needs_vacuum(free: u64, pages: u64) -> bool {
+    free > 0 && free * 4 >= pages
+}
+
+/// Makes the file at `path` the person's alone (0600) before SQLite opens
+/// it, which would make it with the umask; the WAL files inherit its mode.
+fn make_private(path: &Path) -> Result<(), String> {
+    OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .write(true)
+        .mode(0o600)
+        .open(path)
+        .map(drop)
+        .map_err(|e| format!("{}: {e}", path.display()))
+}
+
+/// A connection of its own to the file at `path` for the person's
+/// settings, without the world's lock: the theme is read before the store
+/// is taken, and a demo beside a live imece changes it too (SQLite
+/// serialises the writers; a busy file is waited for a second).
+fn settings_conn(path: &Path) -> Result<Connection, String> {
+    let conn = Connection::open(path).map_err(|e| format!("{}: {e}", path.display()))?;
+    conn.busy_timeout(std::time::Duration::from_secs(1))
+        .map_err(|e| e.to_string())?;
+    Ok(conn)
+}
+
+/// The person's settings `keys` from the file's `meta` table, `None` for
+/// one the file does not have, all `None` for a file that is not there.
+pub fn settings(path: &Path, keys: &[&str]) -> Result<Vec<Option<String>>, String> {
+    if !path.exists() {
+        return Ok(vec![None; keys.len()]);
+    }
+    let conn = settings_conn(path)?;
+    keys.iter()
+        .map(|key| {
+            conn.query_row("SELECT value FROM meta WHERE key = ?1", params![key], |r| {
+                r.get(0)
+            })
+            .optional()
+            .map_err(|e| e.to_string())
+        })
+        .collect()
+}
+
+/// Writes the settings `set` and drops `unset` in the file's `meta` table,
+/// making the file if it is not there (the person's alone, like `open`).
+/// The world's own keys are refused.
+pub fn set_settings(path: &Path, set: &[(&str, &str)], unset: &[&str]) -> Result<(), String> {
+    if let Some(key) = set
+        .iter()
+        .map(|(k, _)| *k)
+        .chain(unset.iter().copied())
+        .find(|k| WORLD_KEYS.contains(k))
+    {
+        return Err(format!("{key} is the world's, not a setting"));
+    }
+    if let Some(dir) = path.parent() {
+        std::fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+    }
+    make_private(path)?;
+    let conn = settings_conn(path)?;
+    let write = || -> rusqlite::Result<()> {
+        conn.pragma_update(None, "journal_mode", "WAL")?;
+        conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)              WITHOUT ROWID;",
+        )?;
+        for (key, value) in set {
+            conn.execute(
+                "INSERT OR REPLACE INTO meta (key, value) VALUES (?1, ?2)",
+                params![key, value],
+            )?;
+        }
+        for key in unset {
+            conn.execute("DELETE FROM meta WHERE key = ?1", params![key])?;
+        }
+        Ok(())
+    };
+    write().map_err(|e| format!("{}: {e}", path.display()))
 }
 
 /// Takes the file's lock for this process: `WouldBlock` when another
@@ -1996,6 +2138,159 @@ mod tests {
             .unwrap();
         let e = store.load(100).err().expect("refused").to_string();
         assert!(e.contains("\"Clod\""), "{e}");
+    }
+
+    #[test]
+    fn a_tidy_lets_old_journal_lines_go_but_keeps_what_a_load_takes() {
+        let (w, k) = (world(), kept());
+        let mut store = Store::in_memory();
+        store.save(&w, &k.kept()).unwrap();
+        store.raw().execute("DELETE FROM journal", []).unwrap();
+        // One hundred days on: lines older than ninety days are the ones
+        // before tick 172_800 (ten days of five-second ticks).
+        let now = w.started_at + 100 * 86_400;
+        let cutoff = 10 * 86_400 / SECONDS_PER_TICK;
+        assert_eq!(cutoff, 172_800);
+        let rows = [
+            (1, 0),          // old, past the newest three: goes
+            (2, cutoff - 1), // old by one tick: goes
+            (3, cutoff),     // at the cutoff: stays
+            (4, 0),          // old: goes
+            (5, cutoff + 1), // young: stays
+            (6, cutoff * 2), // young: stays
+            (7, 0),          // old, the last one past the newest three: goes
+            (8, 0),          // old, but among the newest three: stays
+            (9, 0),
+            (10, 0),
+        ];
+        for (seq, tick) in rows {
+            store
+                .raw()
+                .execute(
+                    "INSERT INTO journal (seq, tick, project, agent, kind, data) \
+                     VALUES (?1, ?2, 0, 0, 'Failed', '{\"Failed\":{\"agent\":0}}')",
+                    params![seq, big(tick)],
+                )
+                .unwrap();
+        }
+        let tidied = store.tidy(now, 3).unwrap();
+        assert_eq!(tidied.journal, 4);
+        let left: Vec<i64> = store
+            .raw()
+            .prepare("SELECT seq FROM journal ORDER BY seq")
+            .unwrap()
+            .query_map([], |r| r.get(0))
+            .unwrap()
+            .map(Result::unwrap)
+            .collect();
+        assert_eq!(left, [3, 5, 6, 8, 9, 10]);
+        // Nothing more to let go of; a young world has nothing at all.
+        assert_eq!(store.tidy(now, 3).unwrap(), Tidied::default());
+        assert_eq!(
+            store.tidy(w.started_at + 89 * 86_400, 0).unwrap(),
+            Tidied::default(),
+            "nothing is ninety days old yet"
+        );
+        assert_eq!(
+            store.tidy(w.started_at + 90 * 86_400, 0).unwrap(),
+            Tidied::default(),
+            "the first tick is ninety days old to the second, not older"
+        );
+        assert_eq!(
+            store
+                .tidy(w.started_at + 90 * 86_400 + SECONDS_PER_TICK, 0)
+                .unwrap()
+                .journal,
+            3,
+            "one tick more: the lines of the first tick go"
+        );
+        // Lines 3, 5 and 6 are left. The load goes on from the last line
+        // kept, so the file's numbering stays one sequence.
+        let l = store.load(10).unwrap().unwrap();
+        assert_eq!(l.world.journal.len(), 3);
+        let mut w2 = l.world;
+        w2.journal.push(Entry {
+            tick: 5,
+            event: Event::Failed { agent: 0 },
+        });
+        let k2 = l.found;
+        store
+            .save(
+                &w2,
+                &Kept {
+                    repos: k2.repos.iter().map(PathBuf::as_path).collect(),
+                    models: &k2.models,
+                    tiered: &k2.tiered,
+                    woken: &k2.woken,
+                    posted: &k2.posted,
+                    mail: &k2.mail,
+                    notes: &k2.notes,
+                    inflight: &k2.inflight,
+                    sessions: &k2.sessions,
+                    posts: &k2.posts,
+                    offered: &k2.offered,
+                    changes: &k2.changes,
+                },
+            )
+            .unwrap();
+        let newest: i64 = store
+            .raw()
+            .query_row("SELECT MAX(seq) FROM journal", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(newest, 7);
+        // A file without a world is left alone.
+        let mut empty = Store::in_memory();
+        assert_eq!(empty.tidy(now, 3).unwrap(), Tidied::default());
+    }
+
+    #[test]
+    fn a_tidy_packs_a_file_that_is_mostly_air() {
+        let (w, k) = (world(), kept());
+        let mut store = Store::in_memory();
+        store.save(&w, &k.kept()).unwrap();
+        let page: i64 = store
+            .raw()
+            .query_row("PRAGMA page_size", [], |r| r.get(0))
+            .unwrap();
+        // Enough old lines to fill many pages, then let them all go.
+        let filler = "x".repeat(page as usize);
+        for seq in 100..400 {
+            store
+                .raw()
+                .execute(
+                    "INSERT INTO journal (seq, tick, project, agent, kind, data) \
+                     VALUES (?1, 0, 0, 0, 'Failed', ?2)",
+                    params![seq, filler],
+                )
+                .unwrap();
+        }
+        let before: i64 = store
+            .raw()
+            .query_row("PRAGMA page_count", [], |r| r.get(0))
+            .unwrap();
+        assert!(before > 300, "{before} pages");
+        let tidied = store.tidy(w.started_at + 100 * 86_400, 0).unwrap();
+        assert!(tidied.journal >= 300, "{tidied:?}");
+        assert!(tidied.vacuumed, "{tidied:?}");
+        let (free, after): (i64, i64) = store
+            .raw()
+            .query_row(
+                "SELECT * FROM pragma_freelist_count, pragma_page_count",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(free, 0, "packed");
+        assert!(after < before / 4, "{after} of {before} pages left");
+        assert!(!store.tidy(w.started_at + 100 * 86_400, 0).unwrap().vacuumed);
+        // The threshold: a quarter of the file, free pages or none.
+        assert!(!needs_vacuum(0, 0));
+        assert!(!needs_vacuum(0, 4));
+        assert!(needs_vacuum(1, 4), "exactly a quarter");
+        assert!(!needs_vacuum(1, 5));
+        assert!(needs_vacuum(3, 12));
+        assert!(!needs_vacuum(2, 9));
+        assert!(needs_vacuum(9, 9), "all air");
     }
 
     #[test]
