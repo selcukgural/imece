@@ -131,9 +131,96 @@ pub fn trace(f: &mut Frame, area: Rect, app: &App, id: AgentId) {
     let lines: Vec<Line> = a
         .trace
         .iter()
-        .map(|l| Line::from(Span::raw(clean(l))))
+        .flat_map(|l| trace_lines(l, vendor_color(a.vendor)))
         .collect();
     tail(f, inner, lines);
+}
+
+/// A trace line drawn so the kinds tell apart at a glance: the clock dim;
+/// the agent's own words (`text "…"`, the line the person must not miss)
+/// in its vendor's colour, unquoted, one row per line of them, with the
+/// inline marks of Markdown; `tool_use NAME TARGET` with the tool's name
+/// in the info colour; `run:` lines with their end coloured by the exit
+/// code; `stopped` in the colour of what is wrong; the bus (`send`,
+/// `mail`, `woken`, `hire`, `hired`, `post`, `claim`) with its first word
+/// in the accent. Anything else as written. The vocabulary is the trace
+/// producers' in live.rs, read back here by the first word; a line that
+/// matches none is still shown whole.
+pub(crate) fn trace_lines(raw: &str, vendor: Color) -> Vec<Line<'static>> {
+    let line = clean(raw);
+    let (clock, rest) = line.split_once(' ').unwrap_or((&line, ""));
+    let clock = Span::styled(format!("{clock} "), dim());
+    let (word, arg) = rest.split_once(' ').unwrap_or((rest, ""));
+    let mut spans = vec![clock];
+    match word {
+        "text" => {
+            let text = unquote(arg).unwrap_or_else(|| arg.to_string());
+            let base = fg(vendor);
+            let mut rows = text.lines();
+            spans.extend(inline(rows.next().unwrap_or_default(), base));
+            let mut out = vec![Line::from(spans)];
+            for row in rows {
+                let mut more = vec![Span::raw(" ".repeat(9))];
+                more.extend(inline(row, base));
+                out.push(Line::from(more));
+            }
+            return out;
+        }
+        "tool_use" => {
+            let (name, target) = arg.split_once(' ').unwrap_or((arg, ""));
+            spans.push(Span::styled("tool_use ", dim()));
+            spans.push(Span::styled(name.to_string(), fg(pal().info)));
+            spans.push(Span::raw(format!(" {target}")));
+        }
+        "run:" => {
+            spans.push(Span::styled("run: ", fg(pal().info)));
+            match arg.rsplit_once(": exit ") {
+                Some((cmd, end)) => {
+                    let ok = end.starts_with("0,") || end == "0";
+                    let colour = if ok { pal().ok } else { pal().bad };
+                    spans.push(Span::raw(cmd.to_string()));
+                    spans.push(Span::styled(format!(": exit {end}"), fg(colour)));
+                }
+                None => spans.push(Span::raw(arg.to_string())),
+            }
+        }
+        "stopped" | "run" => {
+            spans.push(Span::styled(rest.to_string(), fg(pal().bad)));
+        }
+        "send" | "mail" | "woken" | "hire" | "hired" | "post" | "claim" => {
+            spans.push(Span::styled(format!("{word} "), fg(pal().accent)));
+            spans.push(Span::raw(arg.to_string()));
+        }
+        _ => spans.push(Span::raw(rest.to_string())),
+    }
+    vec![Line::from(spans)]
+}
+
+/// The string a `{:?}` wrote, back: the quotes off and `\"`, `\\`, `\n`,
+/// `\t` unescaped (other escapes stay as written). None when `s` is not
+/// one quoted string.
+pub(crate) fn unquote(s: &str) -> Option<String> {
+    let inner = s.strip_prefix('"')?.strip_suffix('"')?;
+    let mut out = String::with_capacity(inner.len());
+    let mut chars = inner.chars();
+    while let Some(c) = chars.next() {
+        if c != '\\' {
+            out.push(c);
+            continue;
+        }
+        match chars.next() {
+            Some('n') => out.push('\n'),
+            Some('t') => out.push('\t'),
+            Some('"') => out.push('"'),
+            Some('\\') => out.push('\\'),
+            Some(other) => {
+                out.push('\\');
+                out.push(other);
+            }
+            None => out.push('\\'),
+        }
+    }
+    Some(out)
 }
 
 #[cfg(test)]
@@ -170,5 +257,103 @@ mod tests {
                 ("›", 6)
             ]
         );
+    }
+
+    fn texts(lines: &[Line<'static>]) -> Vec<String> {
+        lines
+            .iter()
+            .map(|l| l.spans.iter().map(|s| s.content.to_string()).collect())
+            .collect()
+    }
+
+    fn colour_of(line: &Line<'static>, text: &str) -> Option<Color> {
+        line.spans
+            .iter()
+            .find(|s| s.content == text)
+            .and_then(|s| s.style.fg)
+    }
+
+    #[test]
+    fn the_agents_own_words_in_the_trace_are_unquoted_and_in_its_colour() {
+        let v = Color::Indexed(9);
+        let lines = trace_lines(
+            "12:00:01 text \"Four pass.\\n**All** green \\\"now\\\"\"",
+            v,
+        );
+        assert_eq!(
+            texts(&lines),
+            ["12:00:01 Four pass.", "         All green \"now\""]
+        );
+        assert_eq!(lines[0].spans[0].style, dim());
+        assert_eq!(colour_of(&lines[0], "Four pass."), Some(v));
+        let all = lines[1].spans.iter().find(|s| s.content == "All").unwrap();
+        assert_eq!(all.style.fg, Some(v));
+        assert!(all.style.add_modifier.contains(Modifier::BOLD));
+        assert_eq!(
+            texts(&trace_lines("12:00:01 text not quoted", v)),
+            ["12:00:01 not quoted"],
+            "a text that is not one quoted string shows as written"
+        );
+    }
+
+    #[test]
+    fn tool_runs_and_the_bus_are_told_apart_in_the_trace() {
+        let v = Color::Indexed(9);
+        let p = pal();
+        let one = |raw: &str| trace_lines(raw, v).remove(0);
+        let l = one("12:00:02 tool_use Edit src/a.rs b");
+        assert_eq!(
+            texts(std::slice::from_ref(&l)),
+            ["12:00:02 tool_use Edit src/a.rs b"]
+        );
+        assert_eq!(colour_of(&l, "Edit"), Some(p.info));
+        assert_eq!(colour_of(&l, "tool_use "), Some(p.dim));
+        let l = one("12:00:03 run: cargo test: exit 0, 3.5 s, 10 bytes");
+        assert_eq!(colour_of(&l, ": exit 0, 3.5 s, 10 bytes"), Some(p.ok));
+        assert_eq!(colour_of(&l, "run: "), Some(p.info));
+        let l = one("12:00:03 run: cargo test: exit 101, 3.5 s, 10 bytes");
+        assert_eq!(colour_of(&l, ": exit 101, 3.5 s, 10 bytes"), Some(p.bad));
+        let l = one("12:00:03 run: cargo test");
+        assert_eq!(
+            texts(std::slice::from_ref(&l)),
+            ["12:00:03 run: cargo test"]
+        );
+        assert_eq!(colour_of(&l, "cargo test"), None, "a start line is plain");
+        let l = one("12:00:04 stopped \"tools differ\"");
+        assert_eq!(colour_of(&l, "stopped \"tools differ\""), Some(p.bad));
+        let l = one("12:00:04 run refused: rm");
+        assert_eq!(colour_of(&l, "run refused: rm"), Some(p.bad));
+        for word in ["send", "mail", "woken", "hire", "hired", "post", "claim"] {
+            let l = one(&format!("12:00:05 {word} to=lead"));
+            assert_eq!(colour_of(&l, &format!("{word} ")), Some(p.accent), "{word}");
+            assert_eq!(colour_of(&l, "to=lead"), None, "{word}");
+        }
+        let l = one("12:00:06 session hit its cap");
+        assert_eq!(
+            texts(std::slice::from_ref(&l)),
+            ["12:00:06 session hit its cap"]
+        );
+        assert_eq!(colour_of(&l, "session hit its cap"), None);
+        assert_eq!(texts(&[one("12:00:07")]), ["12:00:07 "]);
+        assert_eq!(
+            texts(&[one("12:00:08 text \"\u{1b}[2Jx\"")]),
+            ["12:00:08  [2Jx"],
+            "cleaned like everything drawn"
+        );
+    }
+
+    #[test]
+    fn unquote_undoes_what_debug_wrote() {
+        let text = "a\"b\\c\nd\te";
+        assert_eq!(unquote(&format!("{text:?}")).as_deref(), Some(text));
+        assert_eq!(
+            unquote("\"\\u{1}\\\"").as_deref(),
+            Some("\\u{1}\\"),
+            "other escapes stay, a last backslash too"
+        );
+        assert_eq!(unquote("\"\""), Some(String::new()));
+        assert_eq!(unquote("x"), None);
+        assert_eq!(unquote("\"x"), None);
+        assert_eq!(unquote("x\""), None);
     }
 }

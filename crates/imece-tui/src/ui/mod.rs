@@ -86,6 +86,21 @@ pub(crate) fn clear(f: &mut Frame, area: Rect) {
     paint(f, area);
 }
 
+/// Dims everything drawn so far but `keep`, so a window laid over the
+/// screen reads as the thing in front and what shows around it (the
+/// salon's tree, the journal's clipped line ends) as the background.
+pub(crate) fn shade(f: &mut Frame, keep: Rect) {
+    let area = f.area();
+    let buf = f.buffer_mut();
+    for y in area.top()..area.bottom() {
+        for x in area.left()..area.right() {
+            if !keep.contains(ratatui::layout::Position { x, y }) {
+                buf[(x, y)].modifier.insert(Modifier::DIM);
+            }
+        }
+    }
+}
+
 pub(crate) fn dim() -> Style {
     let p = pal();
     if p.mono {
@@ -191,7 +206,7 @@ pub(crate) fn said_spans(lang: Lang, w: &World, s: &words::Said) -> Vec<Span<'st
             dim(),
         ));
     }
-    spans.push(Span::raw(format!(": {}", clean(s.text))));
+    spans.push(Span::raw(format!(": {}", plain(s.text))));
     spans
 }
 
@@ -340,9 +355,21 @@ pub(crate) fn body_lines(text: &str) -> Vec<String> {
 /// without its closing twin is plain text, as is `*` next to a space (so
 /// `a * b` and snake_case names stay as written). Code is never styled
 /// further.
-pub(crate) fn inline(text: &str, base: Style) -> Vec<Span<'static>> {
-    let code = fg(pal().code);
-    let mut spans: Vec<Span<'static>> = Vec::new();
+/// One piece of a line's inline Markdown: text as written, or a mark
+/// with what it covers.
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) enum Mark {
+    Text(String),
+    Code(String),
+    Bold(String),
+    Italic(String),
+    Link { label: String, url: String },
+}
+
+/// `text` split into its inline marks. The rules of [`inline`]; a mark
+/// without its closing twin is text.
+pub(crate) fn marks(text: &str) -> Vec<Mark> {
+    let mut out: Vec<Mark> = Vec::new();
     let mut plain = String::new();
     let mut rest = text;
     // Bounded by the text's length whatever a mutant does to the steps:
@@ -351,19 +378,16 @@ pub(crate) fn inline(text: &str, base: Style) -> Vec<Span<'static>> {
         let Some(c) = rest.chars().next() else {
             break;
         };
-        // What the marker at `rest`'s start means: its spans and the bytes
-        // they cover; none when it is just a character.
-        let marked: Option<(Vec<Span<'static>>, usize)> = match c {
+        // What the marker at `rest`'s start means: its mark and the bytes
+        // it covers; none when it is just a character.
+        let marked: Option<(Mark, usize)> = match c {
             '`' => rest[1..]
                 .find('`')
-                .map(|n| (vec![Span::styled(rest[1..1 + n].to_string(), code)], 2 + n)),
-            '*' if rest.starts_with("**") => rest[2..].find("**").filter(|&n| n > 0).map(|n| {
-                let bold = Span::styled(
-                    rest[2..2 + n].to_string(),
-                    base.add_modifier(Modifier::BOLD),
-                );
-                (vec![bold], 4 + n)
-            }),
+                .map(|n| (Mark::Code(rest[1..1 + n].to_string()), 2 + n)),
+            '*' if rest.starts_with("**") => rest[2..]
+                .find("**")
+                .filter(|&n| n > 0)
+                .map(|n| (Mark::Bold(rest[2..2 + n].to_string()), 4 + n)),
             '*' => {
                 let inner = &rest[1..];
                 // `n` is never 0: a `**` start takes the arm above.
@@ -372,11 +396,10 @@ pub(crate) fn inline(text: &str, base: Style) -> Vec<Span<'static>> {
                         && !inner[..n].ends_with(' ')
                         && !inner[n..].starts_with("**")
                 };
-                inner.find('*').filter(|&n| closes(n)).map(|n| {
-                    let italic =
-                        Span::styled(inner[..n].to_string(), base.add_modifier(Modifier::ITALIC));
-                    (vec![italic], 2 + n)
-                })
+                inner
+                    .find('*')
+                    .filter(|&n| closes(n))
+                    .map(|n| (Mark::Italic(inner[..n].to_string()), 2 + n))
             }
             '[' => rest.find("](").and_then(|t| {
                 let url_len = rest[t + 2..].find(')')?;
@@ -384,19 +407,20 @@ pub(crate) fn inline(text: &str, base: Style) -> Vec<Span<'static>> {
                 if label.is_empty() || url.is_empty() {
                     return None;
                 }
-                let label =
-                    Span::styled(label.to_string(), base.add_modifier(Modifier::UNDERLINED));
-                let url = Span::styled(format!(" ({url})"), dim());
-                Some((vec![label, url], t + 3 + url_len))
+                let link = Mark::Link {
+                    label: label.to_string(),
+                    url: url.to_string(),
+                };
+                Some((link, t + 3 + url_len))
             }),
             _ => None,
         };
         match marked {
-            Some((styled, n)) => {
+            Some((mark, n)) => {
                 if !plain.is_empty() {
-                    spans.push(Span::styled(std::mem::take(&mut plain), base));
+                    out.push(Mark::Text(std::mem::take(&mut plain)));
                 }
-                spans.extend(styled);
+                out.push(mark);
                 rest = &rest[n..];
             }
             None => {
@@ -406,9 +430,55 @@ pub(crate) fn inline(text: &str, base: Style) -> Vec<Span<'static>> {
         }
     }
     if !plain.is_empty() {
-        spans.push(Span::styled(plain, base));
+        out.push(Mark::Text(plain));
+    }
+    out
+}
+
+pub(crate) fn inline(text: &str, base: Style) -> Vec<Span<'static>> {
+    let code = fg(pal().code);
+    let mut spans: Vec<Span<'static>> = Vec::new();
+    for mark in marks(text) {
+        match mark {
+            Mark::Text(t) => spans.push(Span::styled(t, base)),
+            Mark::Code(t) => spans.push(Span::styled(t, code)),
+            Mark::Bold(t) => spans.push(Span::styled(t, base.add_modifier(Modifier::BOLD))),
+            Mark::Italic(t) => {
+                spans.push(Span::styled(t, base.add_modifier(Modifier::ITALIC)));
+            }
+            Mark::Link { label, url } => {
+                spans.push(Span::styled(label, base.add_modifier(Modifier::UNDERLINED)));
+                spans.push(Span::styled(format!(" ({url})"), dim()));
+            }
+        }
     }
     spans
+}
+
+/// An agent's text as one row of words: cleaned, its lines joined with a
+/// space (blank ones dropped), heading and list markers off the front of
+/// each, inline marks replaced by what they cover (a link by its label).
+/// For the places that show a message in one line: the journal pane, an
+/// inbox item.
+pub(crate) fn plain(text: &str) -> String {
+    let words = |line: &str| {
+        marks(line)
+            .into_iter()
+            .map(|m| match m {
+                Mark::Text(t) | Mark::Code(t) | Mark::Bold(t) | Mark::Italic(t) => t,
+                Mark::Link { label, .. } => label,
+            })
+            .collect::<String>()
+    };
+    body_lines(text)
+        .iter()
+        .map(|l| {
+            let l = l.trim_start().trim_start_matches('#').trim_start();
+            words(list_marker(l).map_or(l, |(_, item)| item))
+        })
+        .filter(|l| !l.is_empty())
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 /// The cells of a table row: `| a | b |` or `a | b`.
@@ -3861,5 +3931,83 @@ after | not a table";
         for dir in [&one, &two, &three, &four] {
             let _ = std::fs::remove_dir_all(dir);
         }
+    }
+
+    #[test]
+    fn plain_makes_one_row_of_words_out_of_an_agents_markdown() {
+        assert_eq!(
+            plain("## Head\n\n- **bold** `code` *it* [the docs](http://u)\n2. two\n   \n"),
+            "Head bold code it the docs two"
+        );
+        assert_eq!(
+            plain("**x\n\u{1b}[2Jy"),
+            "**x [2Jy",
+            "a lone mark and a control code"
+        );
+        assert_eq!(plain("* bullet\n+ plus\n# \n"), "bullet plus");
+        assert_eq!(plain(""), "");
+        assert_eq!(plain("\n\n"), "");
+    }
+
+    #[test]
+    fn the_journal_row_shows_a_message_as_plain_words() {
+        let app = app_after(1, 2, 10, Lang::En);
+        let e = Event::Replied {
+            agent: 0,
+            text: "**Done**\n\n- `a.rs`\n- b".into(),
+        };
+        let said = words::said(&e).unwrap();
+        let text = said_spans(Lang::En, &app.world, &said)
+            .iter()
+            .map(|s| s.content.to_string())
+            .collect::<String>();
+        assert!(text.ends_with(": Done a.rs b"), "{text}");
+    }
+
+    #[test]
+    fn shade_dims_every_cell_but_the_kept_ones() {
+        let mut t = Terminal::new(TestBackend::new(3, 2)).unwrap();
+        t.draw(|f| {
+            f.render_widget(Paragraph::new("abc\ndef"), f.area());
+            shade(
+                f,
+                Rect {
+                    x: 1,
+                    y: 0,
+                    width: 1,
+                    height: 1,
+                },
+            );
+        })
+        .unwrap();
+        let buf = t.backend().buffer();
+        let dimmed = |x: u16, y: u16| buf[(x, y)].modifier.contains(Modifier::DIM);
+        assert!(!dimmed(1, 0), "the kept cell");
+        for (x, y) in [(0, 0), (2, 0), (0, 1), (1, 1), (2, 1)] {
+            assert!(dimmed(x, y), "({x}, {y})");
+        }
+        assert_eq!(buf[(1, 0)].symbol(), "b", "the text stays");
+    }
+
+    #[test]
+    fn a_window_over_the_salon_dims_what_shows_around_it() {
+        let mut app = app_after(1, 2, 200, Lang::En);
+        let before = buffer(&app, 200, 50);
+        assert!(
+            !before[(2, 3)].modifier.contains(Modifier::DIM),
+            "no window, nothing dim"
+        );
+        app.help = true;
+        let buf = buffer(&app, 200, 50);
+        // The salon's top-left corner lies outside every window.
+        assert!(
+            buf[(2, 3)].modifier.contains(Modifier::DIM),
+            "around the help"
+        );
+        let mid = buf[(100, 25)].modifier;
+        assert!(
+            !mid.contains(Modifier::DIM),
+            "inside the help window: {mid:?}"
+        );
     }
 }
