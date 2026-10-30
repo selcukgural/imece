@@ -788,6 +788,14 @@ pub enum Event {
     Forgotten {
         agent: AgentId,
     },
+    /// imece started with the confine dial at `level` (`standard` or
+    /// `open`, never strict: that has nothing to say): the agents' sessions
+    /// get their vendor's shell and web, and isolation is a container's
+    /// job, not imece's. Once per start, on the project imece runs in.
+    Confine {
+        leader: AgentId,
+        level: String,
+    },
     /// The repository's notes for coding agents (`AGENTS.md` or
     /// `CLAUDE.md`, `size` bytes) were longer than what goes into an
     /// agent's instructions, so the agent's session started with the
@@ -867,6 +875,7 @@ impl Event {
             | Event::Resumed { .. }
             | Event::Restarted { .. }
             | Event::NotesCut { .. }
+            | Event::Confine { .. }
             | Event::WorktreeMoved { .. }
             | Event::WorktreeKept { .. } => EntryKind::Assumption,
             Event::Blocked { .. } => EntryKind::Blocked,
@@ -899,6 +908,7 @@ impl Event {
             Event::Plan { leader, .. }
             | Event::Budget { leader, .. }
             | Event::Shell { leader, .. }
+            | Event::Confine { leader, .. }
             | Event::Opened { leader, .. }
             | Event::Closed { leader }
             | Event::Renamed { leader, .. } => leader,
@@ -1633,6 +1643,11 @@ mod tests {
             size: 1,
         };
         assert_eq!((cut.agent(), cut.kind()), (10, EntryKind::Assumption));
+        let level = Event::Confine {
+            leader: 3,
+            level: "open".into(),
+        };
+        assert_eq!((level.agent(), level.kind()), (3, EntryKind::Assumption));
     }
 
     #[test]

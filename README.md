@@ -100,24 +100,43 @@ is, and the journal says so either way.
 - Vendors: imece looks for `claude`, `codex` and `gemini` on PATH and
   drives all three; `--lead` names the leader's vendor, and the lead may
   hire workers from any of them (`hire` takes a vendor).
-- A Claude Code session is a long-lived `claude -p` in `--restricted`
-  mode: file tools only (no shell, no web; commands go through imece's
-  `run` tool), no MCP servers but imece's own,
-  no user or project settings (so no hooks), file access confined to the
-  agent's directory, nothing that would ask for permission is allowed.
-  What Claude Code reports it runs with is checked on every turn; anything
-  else stops the session.
+- `--confine standard|strict|open` says how much of its vendor each
+  agent gets. `standard` (the default) gives workers and helpers the
+  vendor's full coding toolset (read, write, shell, web search and fetch)
+  and the lead the web, with nothing of your own vendor setup loaded;
+  `strict` gives file tools only, with commands through imece's `run`
+  tool; `open` runs the vendor as you have it set up (your settings,
+  hooks, MCP servers, skills, extensions). At every level the lead never
+  writes (it works in your checkout, where a write would skip the review)
+  and the vendor's own sub-agent tool stays off (a sub-agent spawned
+  inside the CLI would skip the worktree, the budget, the bus and the
+  screen). imece sandboxes nothing: it switches on each vendor's own
+  restrictions for the level and checks, fail closed, that the session
+  runs with them; isolation is a container's job. The journal says so at
+  every start that is not strict.
+- A Claude Code session is a long-lived `claude -p`, under standard and
+  strict in `--restricted` mode: no user or project settings (so no
+  hooks), no MCP servers but imece's own, file access confined to the
+  agent's directory, nothing that would ask for permission allowed. Strict
+  names the file tools only; standard names the shell and the web tools
+  too and allows them outright; open drops `--restricted` and gives a
+  worker Claude Code's default toolset less the sub-agent tool, with your
+  own settings, hooks and MCP servers loaded. What Claude Code reports it
+  runs with is checked on every turn; anything else stops the session.
 - A Codex session is a long-lived `codex app-server` (JSON-RPC on stdio).
   Codex always has a shell, so the sandbox does the confining: read-only
-  for the lead, workspace-write (the agent's directory, no network) for
-  workers and helpers; approvals are never asked, so what the sandbox
-  refuses simply fails. Web search, plugins, apps, hooks, sub-agents and
-  memories are turned off, no session files are written, and the MCP
-  servers and skills your own Codex config brings along are named off
-  (imece starts Codex a second time to do that when it has to). What Codex
-  reports it runs with, from the config to the connected MCP servers to
-  the thread's own sandbox, is checked before the thread starts and the
-  MCP servers again before every turn; anything else stops the session.
+  for the lead, workspace-write (the agent's directory) for workers and
+  helpers; approvals are never asked, so what the sandbox refuses simply
+  fails. Under strict the sandbox has no network and web search is off;
+  under standard a worker's sandbox reaches the network and web search is
+  live; both turn plugins, apps, hooks, sub-agents and memories off, write
+  no session files, and name off the MCP servers and skills your own Codex
+  config brings along (imece starts Codex a second time to do that when it
+  has to); open keeps your config as it is, with only the sub-agent
+  feature off. What Codex reports it runs with, from the config to the
+  connected MCP servers to the thread's own sandbox, is checked before the
+  thread starts and the MCP servers again before every turn; anything else
+  stops the session.
   Codex reports tokens, not dollars: on a ChatGPT plan its turns cost the
   budget nothing (the trace says so, and shows the tokens); an API-key
   login is refused, since imece can not count its cost yet.
@@ -128,12 +147,16 @@ is, and the journal says so either way.
   directory of its own (under the worktrees, next to them) and gives it the
   agent's files as an included directory: a repository's `.gemini`
   settings, hooks and `.env` never reach the session. A policy file imece
-  writes there denies every tool and allows exactly the file tools of the
-  role (read tools for the lead, read and edit tools for workers and
-  helpers; never a shell, the web, memory, skills, sub-agents or plan
-  mode; a denied tool is not even shown to the model) and imece's own
-  tools; extensions are off, no MCP server but imece's is allowed, and
-  every permission request is refused. The agent's instructions go in a
+  writes there allows exactly the tools of the role and the level (read
+  tools for the lead, read and edit tools for workers and helpers; from
+  standard on the web for everyone and a shell for workers and helpers,
+  all without a prompt) and imece's own tools, and under strict and
+  standard denies every other tool (a denied tool is not even shown to
+  the model); extensions are off, no MCP server but imece's is allowed,
+  and every permission request is refused. Under open your extensions and
+  MCP servers load and run under your own policies (what would ask is
+  still refused); imece denies by name only Gemini's agent tools and, for
+  the lead, the writing tools. The agent's instructions go in a
   `GEMINI.md` in that private directory, the only way ACP has to give
   them. What Gemini reports (the session's mode and model, and its
   `/about`, `/extensions list` and `/memory list`, which cost no tokens)

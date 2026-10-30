@@ -2,11 +2,17 @@
 //! (never a fresh process per turn), prompts as stream-json on stdin, events
 //! as stream-json on stdout.
 //!
-//! The session runs `--restricted` (no code-running tools, no user or
-//! project settings, so no hooks; file tools confined to the agent's
-//! directory), with no MCP server but imece's own, exactly the tools asked
-//! for and a spending cap. What the vendor reports back in its `init` event is checked
-//! against that on every turn; anything else stops the session.
+//! Under the strict and standard levels of the confine dial the session
+//! runs `--restricted` (no user or project settings, so no hooks; file
+//! tools confined to the agent's directory; the code-running tools and
+//! WebFetch only when named), with no MCP server but imece's own, exactly
+//! the tools asked for and a spending cap. Standard names the shell and
+//! the web tools and allows them without a prompt. Open drops
+//! `--restricted` and `--strict-mcp-config`: the person's own settings,
+//! hooks and MCP servers load, and workers get Claude Code's default
+//! toolset less the sub-agent tool. What the vendor reports back in its
+//! `init` event is checked against that on every turn; anything else stops
+//! the session.
 
 use std::collections::{BTreeSet, HashMap};
 use std::io;
@@ -40,7 +46,7 @@ const PERMISSION_MODE: &str = "acceptEdits";
 
 /// Claude Code names a tool of an MCP server `mcp__<server>__<tool>`, which
 /// is the name the screen uses for every vendor.
-pub use crate::{MCP_SERVER, Mcp, mcp_tool};
+pub use crate::{Confine, MCP_SERVER, Mcp, mcp_tool};
 
 /// The program on PATH.
 pub const PROGRAM: &str = "claude";
@@ -59,6 +65,32 @@ pub fn model(tier: crate::Tier) -> Option<&'static str> {
 pub const READ_TOOLS: &[&str] = &["Glob", "Grep", "Read"];
 /// Tools that read and change files.
 pub const EDIT_TOOLS: &[&str] = &["Edit", "Glob", "Grep", "Read", "Write"];
+/// The shell.
+pub const SHELL_TOOL: &str = "Bash";
+/// The web: fetching a page and searching.
+pub const WEB_TOOLS: &[&str] = &["WebFetch", "WebSearch"];
+/// Claude Code's tools that start agents of its own: off at every level
+/// (`Task` is the older name).
+pub const SUBAGENT_TOOLS: &[&str] = &["Agent", "Task"];
+/// Built-in tools that would ask before running: allowed outright where
+/// the level gives them (the person's gate is the change review).
+const ALLOWED_OUTRIGHT: &[&str] = &["Bash", "WebFetch", "WebSearch"];
+
+/// The built-in tools an agent gets at `confine`: file tools; from
+/// standard on the web too, and a shell when it may write. Under open a
+/// writer's list is the least `init` must report (the session gets Claude
+/// Code's default set), a reader's still the whole of it.
+pub fn tools(write: bool, confine: Confine) -> Vec<String> {
+    let mut t: Vec<&str> = if write { EDIT_TOOLS } else { READ_TOOLS }.to_vec();
+    if confine.full() {
+        if write {
+            t.push(SHELL_TOOL);
+        }
+        t.extend(WEB_TOOLS);
+    }
+    t.sort_unstable();
+    t.iter().map(|t| t.to_string()).collect()
+}
 
 #[derive(Clone, Debug)]
 pub struct Spec {
@@ -67,7 +99,13 @@ pub struct Spec {
     /// The agent's directory; its file tools can not leave it.
     pub cwd: PathBuf,
     pub name: String,
+    /// The built-in tools, as [`tools`] gives them for the level.
     pub tools: Vec<String>,
+    /// How much of Claude Code the session gets; see [`Confine`].
+    pub confine: Confine,
+    /// Whether the agent changes files: under open, a writer gets the
+    /// default toolset and a reader its list.
+    pub write: bool,
     pub model: Option<String>,
     /// The session's spending cap, in millionths of a dollar.
     pub budget: u64,
@@ -150,8 +188,6 @@ pub fn args(spec: &Spec) -> Vec<String> {
         "--output-format",
         "stream-json",
         "--verbose",
-        "--restricted",
-        "--strict-mcp-config",
         "--no-chrome",
         "--permission-mode",
         PERMISSION_MODE,
@@ -160,9 +196,22 @@ pub fn args(spec: &Spec) -> Vec<String> {
     ]
     .map(String::from)
     .into();
+    let open = spec.confine == Confine::Open;
+    if !open {
+        // No settings of the person, no hooks, no MCP server but imece's.
+        a.push("--restricted".into());
+        a.push("--strict-mcp-config".into());
+    }
     a.push("--tools".into());
-    // An empty list is no tools at all, never the default set.
-    a.push(spec.tools.join(","));
+    if open && spec.write {
+        // Claude Code's own set, less the tools that start agents.
+        a.push("default".into());
+        a.push("--disallowedTools".into());
+        a.push(SUBAGENT_TOOLS.join(","));
+    } else {
+        // An empty list is no tools at all, never the default set.
+        a.push(spec.tools.join(","));
+    }
     a.push("--max-budget-usd".into());
     a.push(format!(
         "{}.{:06}",
@@ -181,6 +230,9 @@ pub fn args(spec: &Spec) -> Vec<String> {
         a.push("--resume".into());
         a.push(r.session.clone());
     }
+    // Allowed without a prompt: imece's own tools by exact name (never a
+    // pattern), and the built-in tools of the level that would ask.
+    let mut allowed: Vec<String> = Vec::new();
     if let Some(mcp) = &spec.mcp {
         let config = serde_json::json!({ "mcpServers": { MCP_SERVER: {
             "type": "stdio",
@@ -189,17 +241,21 @@ pub fn args(spec: &Spec) -> Vec<String> {
         }}});
         a.push("--mcp-config".into());
         a.push(config.to_string());
-        if !mcp.tools.is_empty() {
-            // Exact names only: never a pattern, never a built-in tool.
-            a.push("--allowedTools".into());
-            a.push(
-                mcp.tools
-                    .iter()
-                    .map(|t| mcp_tool(t))
-                    .collect::<Vec<_>>()
-                    .join(","),
-            );
-        }
+        allowed.extend(mcp.tools.iter().map(|t| mcp_tool(t)));
+    }
+    if open && spec.write {
+        allowed.extend(ALLOWED_OUTRIGHT.iter().map(|t| t.to_string()));
+    } else {
+        allowed.extend(
+            spec.tools
+                .iter()
+                .filter(|t| ALLOWED_OUTRIGHT.contains(&t.as_str()))
+                .cloned(),
+        );
+    }
+    if !allowed.is_empty() {
+        a.push("--allowedTools".into());
+        a.push(allowed.join(","));
     }
     a
 }
@@ -229,8 +285,12 @@ pub fn prompt_line(text: &str) -> String {
 /// reports.
 pub struct Parser {
     cwd: PathBuf,
-    /// Built-in tools and imece's MCP tools, as the session names them.
+    /// Built-in tools and imece's MCP tools, as the session names them:
+    /// exactly what `init` must report, or under open the least of it.
     tools: BTreeSet<String>,
+    /// Whether `init` may report more than [`Parser::tools`] and other
+    /// MCP servers (the person's): the open level.
+    open: bool,
     mcp: bool,
     started: bool,
     /// Tool names by tool-use id, to name a failed result.
@@ -264,6 +324,7 @@ impl Parser {
                         .flat_map(|m| m.tools.iter().map(|t| mcp_tool(t))),
                 )
                 .collect(),
+            open: spec.confine == Confine::Open,
             mcp: spec.mcp.is_some(),
             started: false,
             calls: HashMap::new(),
@@ -338,24 +399,34 @@ impl Parser {
             .iter()
             .map(|t| t.as_str().unwrap_or_default().to_string())
             .collect();
-        if tools != self.tools {
-            let extra: Vec<&String> = tools.difference(&self.tools).collect();
-            let missing: Vec<&String> = self.tools.difference(&tools).collect();
+        let extra: Vec<&String> = tools.difference(&self.tools).collect();
+        let missing: Vec<&String> = self.tools.difference(&tools).collect();
+        if !missing.is_empty() || (!self.open && !extra.is_empty()) {
             return Err(format!(
                 "tools differ: extra {extra:?}, missing {missing:?}"
             ));
         }
+        if let Some(t) = SUBAGENT_TOOLS.iter().find(|t| tools.contains(**t)) {
+            return Err(format!("has the {t} tool, which starts agents of its own"));
+        }
         let servers = v["mcp_servers"]
             .as_array()
             .ok_or("reports no MCP server list")?;
-        match (self.mcp, servers.as_slice()) {
+        let ours: Vec<&Value> = servers.iter().filter(|s| s["name"] == MCP_SERVER).collect();
+        match (self.mcp, ours.as_slice()) {
             (false, []) => {}
-            (true, [s]) if s["name"] == MCP_SERVER => {
+            (false, _) => return Err("has an imece MCP server it was not given".into()),
+            (true, [s]) => {
                 if s["status"] != "connected" {
                     return Err(format!("has imece's MCP server {}", s["status"]));
                 }
             }
-            _ => return Err("has other MCP servers".into()),
+            (true, []) => return Err("has no imece MCP server".into()),
+            (true, _) => return Err("has imece's MCP server more than once".into()),
+        }
+        // The person's own servers load only under open.
+        if !self.open && servers.len() != ours.len() {
+            return Err("has other MCP servers".into());
         }
         // `init` lists the session's slash commands (without the slash);
         // they are reported when first seen and when they change.
@@ -562,6 +633,8 @@ mod tests {
             cwd: PathBuf::from("/work/w1"),
             name: "claude-1".into(),
             tools: tools.iter().map(|t| t.to_string()).collect(),
+            confine: Confine::Strict,
+            write: true,
             model: None,
             budget: 1_250_000,
             system: "You are claude-1.".into(),
@@ -660,6 +733,169 @@ mod tests {
     }
 
     const GOOD_INIT: &str = r#"["Edit","Glob","Grep","Read","Write"]"#;
+
+    /// [`with_bus`] at `confine`, for a writer or a reader, with the
+    /// tools of that level.
+    fn at(confine: Confine, write: bool) -> Spec {
+        let tools = tools(write, confine);
+        let mut s = with_bus(&tools.iter().map(String::as_str).collect::<Vec<_>>());
+        s.confine = confine;
+        s.write = write;
+        s
+    }
+
+    fn after(a: &[String], f: &str) -> Option<String> {
+        a.iter().position(|x| x == f).map(|i| a[i + 1].clone())
+    }
+
+    #[test]
+    fn the_level_and_the_role_give_the_built_in_tools() {
+        let t = |write, c| tools(write, c).join(",");
+        assert_eq!(t(false, Confine::Strict), "Glob,Grep,Read");
+        assert_eq!(t(true, Confine::Strict), "Edit,Glob,Grep,Read,Write");
+        assert_eq!(
+            t(false, Confine::Standard),
+            "Glob,Grep,Read,WebFetch,WebSearch"
+        );
+        assert_eq!(
+            t(true, Confine::Standard),
+            "Bash,Edit,Glob,Grep,Read,WebFetch,WebSearch,Write"
+        );
+        assert_eq!(t(false, Confine::Open), t(false, Confine::Standard));
+        assert_eq!(t(true, Confine::Open), t(true, Confine::Standard));
+    }
+
+    #[test]
+    fn standard_names_the_shell_and_the_web_and_allows_them_still_restricted() {
+        let a = args(&at(Confine::Standard, true));
+        assert_eq!(
+            after(&a, "--tools").unwrap(),
+            "Bash,Edit,Glob,Grep,Read,WebFetch,WebSearch,Write"
+        );
+        assert_eq!(
+            after(&a, "--allowedTools").unwrap(),
+            "mcp__imece__send,Bash,WebFetch,WebSearch"
+        );
+        for flag in ["--restricted", "--strict-mcp-config"] {
+            assert!(a.iter().any(|x| x == flag), "missing {flag}");
+        }
+        assert!(after(&a, "--disallowedTools").is_none());
+        // A reader has the web, never the shell.
+        let a = args(&at(Confine::Standard, false));
+        assert_eq!(
+            after(&a, "--tools").unwrap(),
+            "Glob,Grep,Read,WebFetch,WebSearch"
+        );
+        assert_eq!(
+            after(&a, "--allowedTools").unwrap(),
+            "mcp__imece__send,WebFetch,WebSearch"
+        );
+        // Strict allows only imece's tools, as before.
+        let a = args(&at(Confine::Strict, true));
+        assert_eq!(after(&a, "--allowedTools").unwrap(), "mcp__imece__send");
+        // Without a bus the level's tools are still allowed.
+        let mut s = at(Confine::Standard, true);
+        s.mcp = None;
+        assert_eq!(
+            after(&args(&s), "--allowedTools").unwrap(),
+            "Bash,WebFetch,WebSearch"
+        );
+        let mut s = at(Confine::Strict, true);
+        s.mcp = None;
+        assert!(after(&args(&s), "--allowedTools").is_none());
+    }
+
+    #[test]
+    fn open_runs_the_person_s_own_setup_with_the_default_tools_less_the_agents() {
+        let a = args(&at(Confine::Open, true));
+        for flag in ["--restricted", "--strict-mcp-config"] {
+            assert!(!a.iter().any(|x| x == flag), "{flag} under open");
+        }
+        assert_eq!(after(&a, "--tools").unwrap(), "default");
+        assert_eq!(after(&a, "--disallowedTools").unwrap(), "Agent,Task");
+        assert_eq!(
+            after(&a, "--allowedTools").unwrap(),
+            "mcp__imece__send,Bash,WebFetch,WebSearch"
+        );
+        assert!(a.iter().any(|x| x == "--mcp-config"), "imece's bus still");
+        // A reader keeps its list: the leader never writes, a role.
+        let a = args(&at(Confine::Open, false));
+        assert!(!a.iter().any(|x| x == "--restricted"));
+        assert_eq!(
+            after(&a, "--tools").unwrap(),
+            "Glob,Grep,Read,WebFetch,WebSearch"
+        );
+        assert!(after(&a, "--disallowedTools").is_none());
+        assert_eq!(
+            after(&a, "--allowedTools").unwrap(),
+            "mcp__imece__send,WebFetch,WebSearch"
+        );
+    }
+
+    #[test]
+    fn under_open_init_may_report_more_tools_and_servers_but_never_an_agent_tool() {
+        let mine = r#"["Bash","Edit","Glob","Grep","Read","WebFetch","WebSearch","Write","mcp__imece__send"]"#;
+        let more = r#"["Bash","Edit","Glob","Grep","Read","WebFetch","WebSearch","Write","mcp__imece__send","Skill","NotebookEdit","mcp__github__issue"]"#;
+        let both = r#"[{"name":"imece","status":"connected"},{"name":"github","status":"connected"},{"name":"x","status":"failed"}]"#;
+        let mut p = Parser::new(&at(Confine::Open, true));
+        assert!(p.line(&init(more, "acceptEdits", both)).is_ok());
+        let mut p = Parser::new(&at(Confine::Open, true));
+        assert!(p.line(&init(mine, "acceptEdits", BUS)).is_ok());
+        // What the level asks for must still be there.
+        let mut p = Parser::new(&at(Confine::Open, true));
+        let less = r#"["Edit","Glob","Grep","Read","WebFetch","WebSearch","Write","mcp__imece__send","Skill"]"#;
+        let e = p.line(&init(less, "acceptEdits", BUS)).unwrap_err();
+        assert!(
+            e.contains("missing [\"Bash\"]") && e.contains("extra [\"Skill\"]"),
+            "{e}"
+        );
+        // The agent tools never, by either name.
+        for agent in ["Agent", "Task"] {
+            let mut p = Parser::new(&at(Confine::Open, true));
+            let with = more.replace("\"Skill\"", &format!("\"{agent}\""));
+            let e = p.line(&init(&with, "acceptEdits", both)).unwrap_err();
+            assert!(
+                e.contains(&format!("has the {agent} tool, which starts agents")),
+                "{e}"
+            );
+        }
+        // imece's own server must be there, connected, once.
+        let mut p = Parser::new(&at(Confine::Open, true));
+        let e = p
+            .line(&init(
+                more,
+                "acceptEdits",
+                r#"[{"name":"github","status":"connected"}]"#,
+            ))
+            .unwrap_err();
+        assert!(e.contains("has no imece MCP server"), "{e}");
+        let mut p = Parser::new(&at(Confine::Open, true));
+        let twice =
+            r#"[{"name":"imece","status":"connected"},{"name":"imece","status":"connected"}]"#;
+        let e = p.line(&init(more, "acceptEdits", twice)).unwrap_err();
+        assert!(e.contains("more than once"), "{e}");
+        let mut p = Parser::new(&at(Confine::Open, true));
+        let down = r#"[{"name":"imece","status":"failed"},{"name":"github","status":"connected"}]"#;
+        let e = p.line(&init(more, "acceptEdits", down)).unwrap_err();
+        assert!(e.contains("has imece's MCP server \"failed\""), "{e}");
+        // Standard is exact: nothing more than asked, no other server.
+        let mut p = Parser::new(&at(Confine::Standard, true));
+        let e = p.line(&init(more, "acceptEdits", BUS)).unwrap_err();
+        assert!(
+            e.contains("extra [\"NotebookEdit\", \"Skill\", \"mcp__github__issue\"]"),
+            "{e}"
+        );
+        let mut p = Parser::new(&at(Confine::Standard, true));
+        let e = p.line(&init(mine, "acceptEdits", both)).unwrap_err();
+        assert!(e.contains("has other MCP servers"), "{e}");
+        // No bus asked for, one reported: not ours.
+        let mut s = at(Confine::Open, true);
+        s.mcp = None;
+        let mut p = Parser::new(&s);
+        let own = r#"["Bash","Edit","Glob","Grep","Read","WebFetch","WebSearch","Write"]"#;
+        let e = p.line(&init(own, "acceptEdits", BUS)).unwrap_err();
+        assert!(e.contains("it was not given"), "{e}");
+    }
 
     #[test]
     fn the_command_line_is_locked_down_and_carries_no_prompt() {
@@ -1272,6 +1508,8 @@ sleep 5"#
             cwd: cwd.clone(),
             name: "imece probe".into(),
             tools: vec!["Read".into()],
+            confine: Confine::Strict,
+            write: false,
             model: Some("haiku".into()),
             budget: 50_000,
             system: "You are a probe. Answer in one short line.".into(),

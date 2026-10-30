@@ -35,7 +35,8 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use imece_agent::mcp::{Answer, Server, Tool};
 use imece_agent::{
-    Agent as Session, Event as AgentEvent, Mcp, Tier, child, claude, codex, gemini, run, worktree,
+    Agent as Session, Confine, Event as AgentEvent, Mcp, Tier, child, claude, codex, gemini, run,
+    worktree,
 };
 use serde_json::{Value, json};
 
@@ -70,6 +71,8 @@ pub struct Options {
     pub run_programs: Vec<String>,
     /// How long one run may take.
     pub run_timeout: Duration,
+    /// How much of its vendor each agent's session gets (`--confine`).
+    pub confine: Confine,
 }
 
 /// A coding agent imece knows: its program on PATH, and whether imece can
@@ -497,6 +500,8 @@ pub struct Live {
     /// Programs workers and helpers may run, next to cargo and git.
     run_programs: Vec<String>,
     run_timeout: Duration,
+    /// How much of its vendor each session gets; see [`Confine`].
+    confine: Confine,
 }
 
 /// How long a tool call waits for imece's answer: a run is answered when
@@ -584,6 +589,7 @@ pub fn world(o: Options, present: &[(Vendor, bool)]) -> Result<(World, Live), St
     live.max_helpers = o.max_helpers;
     live.run_programs = o.run_programs;
     live.run_timeout = o.run_timeout;
+    live.confine = o.confine;
     live.fresh = o.fresh;
     live.left_off = left_off;
     if let Some((found, skipped)) = found {
@@ -597,6 +603,14 @@ pub fn world(o: Options, present: &[(Vendor, bool)]) -> Result<(World, Live), St
             .open_project(&mut w, &repo, None)
             .map_err(|e| e.describe())?,
     };
+    // Said once per start: the sessions reach out of their directories
+    // (a shell, the web), and what keeps them in is not imece.
+    if live.confine != Confine::Strict {
+        w.note(Event::Confine {
+            leader: w.projects[live.home].leader,
+            level: live.confine.wire().to_string(),
+        });
+    }
     let relay = std::env::current_exe().map_err(|e| format!("imece's own path: {e}"))?;
     live.open_bus(&w, relay.to_string_lossy().into_owned())
         .map_err(|e| format!("the agents' message bus: {e}"))?;
@@ -996,6 +1010,7 @@ impl Live {
             running: Vec::new(),
             run_programs: Vec::new(),
             run_timeout: DEFAULT_RUN_TIMEOUT,
+            confine: Confine::default(),
         }
     }
 
@@ -2525,6 +2540,7 @@ impl Live {
     fn start(&self, w: &mut World, id: AgentId) {
         let a = &w.agents[id];
         let leader = a.role == Role::Leader;
+        let confine = self.confine;
         let vendor = self.of(a.vendor);
         let mcp = self.bus.as_ref().map(|b| Mcp {
             command: b.relay.clone(),
@@ -2543,7 +2559,7 @@ impl Live {
             .collect(),
         });
         let place = &self.places[a.project];
-        let mut system = system_prompt(w, id, self.max_workers, self.max_helpers);
+        let mut system = system_prompt(w, id, self.max_workers, self.max_helpers, confine);
         let notes = repo_notes(&place.repo, a.vendor);
         if let Some(n) = &notes {
             system.push_str(&n.text);
@@ -2580,6 +2596,7 @@ impl Live {
                                 home,
                                 model,
                                 write: !leader,
+                                confine,
                                 system,
                                 mcp,
                                 resume: resume.map(|r| r.session),
@@ -2595,6 +2612,7 @@ impl Live {
                                 cwd: cwd.clone(),
                                 choice: model,
                                 write: !leader,
+                                confine,
                                 system,
                                 mcp,
                                 resume: resume.map(|r| r.session),
@@ -2603,33 +2621,28 @@ impl Live {
                         )
                         .map_err(|e| format!("{program}: {e}"))?,
                     ),
-                    _ => {
-                        let tools = if leader {
-                            claude::READ_TOOLS
-                        } else {
-                            claude::EDIT_TOOLS
-                        };
-                        Box::new(
-                            claude::Session::start(
-                                &claude::Spec {
-                                    program: program.clone(),
-                                    cwd: cwd.clone(),
-                                    name,
-                                    tools: tools.iter().map(|t| t.to_string()).collect(),
-                                    model,
-                                    budget,
-                                    system,
-                                    mcp,
-                                    resume: resume.map(|r| claude::Resume {
-                                        session: r.session,
-                                        spent: r.spent,
-                                    }),
-                                },
-                                on,
-                            )
-                            .map_err(|e| format!("{program}: {e}"))?,
+                    _ => Box::new(
+                        claude::Session::start(
+                            &claude::Spec {
+                                program: program.clone(),
+                                cwd: cwd.clone(),
+                                name,
+                                tools: claude::tools(!leader, confine),
+                                confine,
+                                write: !leader,
+                                model,
+                                budget,
+                                system,
+                                mcp,
+                                resume: resume.map(|r| claude::Resume {
+                                    session: r.session,
+                                    spent: r.spent,
+                                }),
+                            },
+                            on,
                         )
-                    }
+                        .map_err(|e| format!("{program}: {e}"))?,
+                    ),
                 };
                 Ok((session, cwd, placed))
             })();
@@ -3063,8 +3076,15 @@ fn mail_prompt(w: &World, mail: &[Mail]) -> String {
 }
 
 /// The system prompt of agent `id`; a leader may hire up to `max_workers`,
-/// a worker may have up to `max_helpers` at once.
-fn system_prompt(w: &World, id: AgentId, max_workers: usize, max_helpers: usize) -> String {
+/// a worker may have up to `max_helpers` at once; `confine` says what
+/// the session can do to the files and the world outside.
+fn system_prompt(
+    w: &World,
+    id: AgentId,
+    max_workers: usize,
+    max_helpers: usize,
+    confine: Confine,
+) -> String {
     let a = &w.agents[id];
     let workers: Vec<&str> = w
         .agents
@@ -3115,7 +3135,7 @@ fn system_prompt(w: &World, id: AgentId, max_workers: usize, max_helpers: usize)
                  question; mid-task, send it to them (send to you, type ask) and \
                  their answer starts your next turn.",
                 a.name,
-                abilities(a.vendor, Role::Leader)
+                abilities(a.vendor, Role::Leader, confine)
             )
         }
         Role::Helper => {
@@ -3131,7 +3151,7 @@ fn system_prompt(w: &World, id: AgentId, max_workers: usize, max_helpers: usize)
                  guessing; only what no teammate can answer goes to the person (send \
                  to you, type ask). Use these tools only for that, not for chatter.",
                 a.name,
-                abilities(a.vendor, Role::Helper)
+                abilities(a.vendor, Role::Helper, confine)
             )
         }
         _ => {
@@ -3164,7 +3184,7 @@ fn system_prompt(w: &World, id: AgentId, max_workers: usize, max_helpers: usize)
                  task goes on the board (post), not into your change.{helpers} Use \
                  these tools only for that, not for chatter.",
                 a.name,
-                abilities(a.vendor, Role::Worker)
+                abilities(a.vendor, Role::Worker, confine)
             )
         }
     }
@@ -3230,27 +3250,47 @@ fn repo_notes(repo: &Path, vendor: Vendor) -> Option<Notes> {
     })
 }
 
-/// What an agent of `vendor` in `role` can do to the files, as its
-/// session is set up: Claude Code gets file tools and no shell; Codex
-/// always has a shell, in a sandbox that is read-only for a leader and
-/// confined to the agent's directory for the rest, never with the network.
-fn abilities(vendor: Vendor, role: Role) -> &'static str {
-    match (vendor, role) {
-        (Vendor::Codex, Role::Leader) => {
+/// What an agent of `vendor` in `role` can do to the files and the world
+/// outside, as its session is set up at `confine`. Under strict Claude
+/// Code and Gemini get file tools and no shell, and Codex (which always
+/// has a shell) a sandbox without the network; from standard on a worker
+/// has its vendor's shell and the web, a leader the web and reading
+/// commands. Codex's sandbox is read-only for a leader and confined to
+/// the agent's directory for the rest at every level.
+fn abilities(vendor: Vendor, role: Role, confine: Confine) -> &'static str {
+    match (vendor, role, confine.full()) {
+        (Vendor::Codex, Role::Leader, false) => {
             "You can read files and run commands that only read; the sandbox refuses \
              writes and the network."
         }
-        (Vendor::Codex, _) => {
+        (Vendor::Codex, Role::Leader, true) => {
+            "You can read files, search the web and run commands that only read; the \
+             sandbox refuses writes and the network."
+        }
+        (Vendor::Codex, _, false) => {
             "You can read and change files here and run commands; the sandbox keeps \
              writes inside this directory and refuses the network."
         }
-        (_, Role::Leader) => {
+        (Vendor::Codex, _, true) => {
+            "You can read and change files here, run commands and reach the web; the \
+             sandbox keeps writes inside this directory."
+        }
+        (_, Role::Leader, false) => {
             "You can read files but not change them; the run tool runs checks (cargo \
              check, clippy, test; git diff, log) in the checkout."
         }
-        _ => {
+        (_, Role::Leader, true) => {
+            "You can read files and the web but not change files; the run tool runs \
+             checks (cargo check, clippy, test; git diff, log) in the checkout."
+        }
+        (_, _, false) => {
             "You can read and change files here; the run tool runs the build, the \
              tests and git's reading commands, nothing else."
+        }
+        (_, _, true) => {
+            "You can read and change files here, run commands in your shell and reach \
+             the web; the run tool runs the build and the tests with their output \
+             tidied."
         }
     }
 }
@@ -5079,14 +5119,14 @@ in p.rs",
     #[test]
     fn the_prompts_name_the_team() {
         let mut w = team(2);
-        let lead = system_prompt(&w, 0, 4, 2);
+        let lead = system_prompt(&w, 0, 4, 2, Confine::Strict);
         assert!(lead.starts_with("You are lead, the leader"), "{lead}");
         assert!(
             lead.contains("The workers so far are claude-1, claude-2."),
             "{lead}"
         );
         assert!(lead.contains("hire tool, up to 4;"), "{lead}");
-        let worker = system_prompt(&w, 2, 4, 2);
+        let worker = system_prompt(&w, 2, 4, 2, Confine::Strict);
         assert!(
             worker.starts_with("You are claude-2, a coding agent"),
             "{worker}"
@@ -5096,19 +5136,19 @@ in p.rs",
             worker.contains("hire helpers with the hire tool, up to 2 at once"),
             "{worker}"
         );
-        let no_helpers = system_prompt(&w, 2, 4, 0);
+        let no_helpers = system_prompt(&w, 2, 4, 0, Confine::Strict);
         assert!(!no_helpers.contains("hire"), "{no_helpers}");
         let helper = with_helper(&mut w, 1);
-        let helper = system_prompt(&w, helper, 4, 2);
+        let helper = system_prompt(&w, helper, 4, 2, Confine::Strict);
         assert!(
             helper.starts_with("You are claude-1.1, a helper of claude-1"),
             "{helper}"
         );
         assert!(helper.contains("led by lead") && helper.contains("claude-1's git worktree"));
         assert!(!helper.contains("hire"), "{helper}");
-        let alone = system_prompt(&team(0), 0, 4, 2);
+        let alone = system_prompt(&team(0), 0, 4, 2, Confine::Strict);
         assert!(alone.contains("You have no workers yet."), "{alone}");
-        let none = system_prompt(&team(0), 0, 0, 2);
+        let none = system_prompt(&team(0), 0, 0, 2, Confine::Strict);
         assert!(none.contains("without workers"), "{none}");
         assert!(!none.contains("hire"), "{none}");
     }
@@ -5684,12 +5724,12 @@ in p.rs",
             json!(["claude", "codex"])
         );
         // A codex worker's prompt says what it can do.
-        let worker = system_prompt(&w, 1, 4, 2);
+        let worker = system_prompt(&w, 1, 4, 2, Confine::Strict);
         assert!(
             worker.contains("run commands; the sandbox keeps writes inside"),
             "{worker}"
         );
-        let claude = system_prompt(&w, 3, 4, 2);
+        let claude = system_prompt(&w, 3, 4, 2, Confine::Strict);
         assert!(
             claude.contains("the run tool runs the build, the tests"),
             "{claude}"
@@ -5738,10 +5778,13 @@ in p.rs",
         let tree = dir.join("worktrees").join("codex-1");
         let args = std::fs::read_to_string(tree.join("args.txt")).unwrap();
         assert!(args.contains("sandbox_mode=\"workspace-write\""), "{args}");
+        // The standard level: a worker's sandbox reaches the network and
+        // web search is live.
         assert!(
-            args.contains("sandbox_workspace_write.network_access=false"),
+            args.contains("sandbox_workspace_write.network_access=true"),
             "{args}"
         );
+        assert!(args.contains("web_search=\"live\""), "{args}");
         let _ = std::fs::remove_dir_all(&dir);
         let _ = std::fs::remove_dir_all(&repo);
     }
@@ -5794,6 +5837,16 @@ in p.rs",
             policy.contains("\"read_file\"") && !policy.contains("write_file"),
             "{policy}"
         );
+        // The standard level: the web for a leader, never a shell.
+        assert!(
+            policy.contains("\"google_web_search\", \"web_fetch\"")
+                && !policy.contains("run_shell_command"),
+            "{policy}"
+        );
+        assert!(
+            policy.contains("toolName = \"*\"\ndecision = \"deny\""),
+            "{policy}"
+        );
         assert!(
             policy.contains("\"mcp_imece_hire\"") && !policy.contains("claim"),
             "{policy}"
@@ -5823,6 +5876,10 @@ in p.rs",
         assert!(
             policy.contains("\"write_file\"") && policy.contains("\"mcp_imece_claim\""),
             "{policy}"
+        );
+        assert!(
+            policy.contains("\"run_shell_command\""),
+            "a worker's shell: {policy}"
         );
         let _ = std::fs::remove_dir_all(&dir);
         let _ = std::fs::remove_dir_all(&repo);
@@ -5911,7 +5968,9 @@ in p.rs",
         assert_eq!(after("--model"), "sonnet");
         // What is left of the budget, in dollars: (10000 - 1000) ten-thousandths.
         assert_eq!(after("--max-budget-usd"), "0.900000");
-        assert_eq!(after("--tools"), "Glob,Grep,Read");
+        assert_eq!(after("--tools"), "Glob,Grep,Read,WebFetch,WebSearch");
+        assert_eq!(after("--allowedTools"), "WebFetch,WebSearch");
+        assert!(args.contains(&"--restricted"), "standard still restricts");
         assert_eq!(after("--name"), "imece lead");
         assert!(after("--append-system-prompt").contains("hire tool, up to 3;"));
         // The prompt spans lines; the stand-in wrote one argument per line.
@@ -5921,6 +5980,66 @@ in p.rs",
             "the repository's notes end the prompt: {raw}"
         );
         assert!(!args.contains(&"--mcp-config"), "no bus, no MCP server");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn under_open_a_claude_worker_gets_the_default_tools_and_the_leader_its_list() {
+        let dir = std::env::temp_dir().join(format!("imece-open-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let repo = dir.join("repo");
+        std::fs::create_dir_all(&repo).unwrap();
+        let git = |args: &[&str]| {
+            let out = std::process::Command::new("git")
+                .args(args)
+                .current_dir(&repo)
+                .output()
+                .unwrap();
+            assert!(out.status.success(), "git {args:?}");
+        };
+        git(&["init", "--quiet"]);
+        std::fs::write(repo.join("a.txt"), "a").unwrap();
+        git(&["add", "."]);
+        git(&[
+            "-c",
+            "user.name=t",
+            "-c",
+            "user.email=t@t",
+            "-c",
+            "commit.gpgsign=false",
+            "commit",
+            "--quiet",
+            "-m",
+            "init",
+        ]);
+        let mut w = team(1);
+        let mut live = Live::new(
+            2,
+            claude_at(&fake_claude(&dir)),
+            repo.clone(),
+            dir.join("worktrees"),
+        );
+        live.confine = Confine::Open;
+        live.told(&mut w, 0, "hello").unwrap();
+        wait_for(&mut live, &mut w, |w| w.agents[0].status == Status::Stopped);
+        let args = std::fs::read_to_string(repo.join("args.txt")).unwrap();
+        let args: Vec<&str> = args.lines().collect();
+        let after = |f: &str| args[args.iter().position(|a| *a == f).unwrap() + 1];
+        // The leader never writes: its list, whatever the level.
+        assert_eq!(after("--tools"), "Glob,Grep,Read,WebFetch,WebSearch");
+        assert!(!args.contains(&"--restricted"), "{args:?}");
+        assert!(!args.contains(&"--disallowedTools"), "{args:?}");
+        live.told(&mut w, 1, "hello").unwrap();
+        wait_for(&mut live, &mut w, |w| w.agents[1].status == Status::Stopped);
+        let tree = dir.join("worktrees").join("claude-1");
+        let args = std::fs::read_to_string(tree.join("args.txt")).unwrap();
+        let args: Vec<&str> = args.lines().collect();
+        let after = |f: &str| args[args.iter().position(|a| *a == f).unwrap() + 1];
+        assert_eq!(after("--tools"), "default");
+        assert_eq!(after("--disallowedTools"), "Agent,Task");
+        assert!(!args.contains(&"--restricted"), "{args:?}");
+        assert!(!args.contains(&"--strict-mcp-config"), "{args:?}");
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -5969,7 +6088,10 @@ in p.rs",
         let args = std::fs::read_to_string(tree.join("args.txt")).unwrap();
         let args: Vec<&str> = args.lines().collect();
         let after = |f: &str| args[args.iter().position(|a| *a == f).unwrap() + 1];
-        assert_eq!(after("--tools"), "Edit,Glob,Grep,Read,Write");
+        assert_eq!(
+            after("--tools"),
+            "Bash,Edit,Glob,Grep,Read,WebFetch,WebSearch,Write"
+        );
         assert_eq!(after("--name"), "imece claude-1.1");
         assert!(after("--append-system-prompt").starts_with("You are claude-1.1, a helper"));
         assert!(
@@ -6364,24 +6486,68 @@ in p.rs",
     }
 
     #[test]
-    fn what_an_agent_can_do_depends_on_its_vendor_and_role() {
+    fn what_an_agent_can_do_depends_on_its_vendor_role_and_confine_level() {
+        use Confine::*;
+        let strict = |v, r| abilities(v, r, Strict);
         assert!(
-            abilities(Vendor::Claude, Role::Leader)
+            strict(Vendor::Claude, Role::Leader)
                 .contains("not change them; the run tool runs checks")
         );
-        assert!(abilities(Vendor::Claude, Role::Worker).contains("the run tool runs the build"));
-        assert!(abilities(Vendor::Claude, Role::Helper).contains("the run tool runs the build"));
-        assert!(abilities(Vendor::Gemini, Role::Worker).contains("the run tool runs the build"));
-        assert!(abilities(Vendor::Codex, Role::Leader).contains("refuses writes and the network"));
         assert!(
-            abilities(Vendor::Codex, Role::Worker).contains("keeps writes inside this directory")
+            strict(Vendor::Claude, Role::Worker).contains("the run tool runs the build, the tests")
         );
         assert!(
-            abilities(Vendor::Codex, Role::Helper).contains("keeps writes inside this directory")
+            strict(Vendor::Claude, Role::Helper).contains("the run tool runs the build, the tests")
         );
+        assert!(
+            strict(Vendor::Gemini, Role::Worker).contains("the run tool runs the build, the tests")
+        );
+        assert!(strict(Vendor::Codex, Role::Leader).contains("refuses writes and the network"));
+        assert!(!strict(Vendor::Codex, Role::Leader).contains("search the web"));
+        assert!(
+            strict(Vendor::Codex, Role::Worker)
+                .contains("inside this directory and refuses the network")
+        );
+        assert!(
+            strict(Vendor::Codex, Role::Helper)
+                .contains("inside this directory and refuses the network")
+        );
+        // Standard and open say the same: a shell and the web for workers
+        // and helpers, the web for a leader; Codex's sandbox stays.
+        for level in [Standard, Open] {
+            let full = |v, r| abilities(v, r, level);
+            assert!(
+                full(Vendor::Claude, Role::Leader)
+                    .contains("read files and the web but not change files")
+            );
+            assert!(
+                full(Vendor::Gemini, Role::Leader)
+                    .contains("read files and the web but not change files")
+            );
+            assert!(
+                full(Vendor::Claude, Role::Worker)
+                    .contains("run commands in your shell and reach the web")
+            );
+            assert!(
+                full(Vendor::Gemini, Role::Helper)
+                    .contains("run commands in your shell and reach the web")
+            );
+            assert!(!full(Vendor::Claude, Role::Worker).contains("nothing else"));
+            assert!(
+                full(Vendor::Codex, Role::Leader)
+                    .contains("search the web and run commands that only read")
+            );
+            assert!(full(Vendor::Codex, Role::Leader).contains("refuses writes and the network"));
+            assert!(full(Vendor::Codex, Role::Worker).contains("run commands and reach the web"));
+            assert!(
+                full(Vendor::Codex, Role::Worker).contains("keeps writes inside this directory.")
+            );
+            assert!(!full(Vendor::Codex, Role::Helper).contains("refuses the network"));
+        }
         let mut w = team(0);
         w.agents[0].vendor = Vendor::Codex;
-        assert!(system_prompt(&w, 0, 4, 2).contains("run commands that only read"));
+        assert!(system_prompt(&w, 0, 4, 2, Strict).contains("run commands that only read"));
+        assert!(system_prompt(&w, 0, 4, 2, Standard).contains("search the web and run commands"));
     }
 
     #[test]
@@ -6875,7 +7041,7 @@ in p.rs",
     fn a_leader_s_prompt_names_only_its_own_project_s_workers() {
         let mut w = team(1);
         w.open_project(None, "api".into(), "/a".into(), Vendor::Claude);
-        let p1 = system_prompt(&w, 2, 4, 2);
+        let p1 = system_prompt(&w, 2, 4, 2, Confine::Strict);
         assert!(p1.contains("You have no workers yet."), "{p1}");
         assert!(!p1.contains("claude-1"), "{p1}");
         w.agents.push(Agent::new(
@@ -6887,9 +7053,9 @@ in p.rs",
             Status::Idle,
             0,
         ));
-        let p0 = system_prompt(&w, 0, 4, 2);
+        let p0 = system_prompt(&w, 0, 4, 2, Confine::Strict);
         assert!(p0.contains("The workers so far are claude-1."), "{p0}");
-        let p1 = system_prompt(&w, 2, 4, 2);
+        let p1 = system_prompt(&w, 2, 4, 2, Confine::Strict);
         assert!(p1.contains("The workers so far are claude-2."), "{p1}");
     }
 
@@ -7457,11 +7623,36 @@ in p.rs",
             fresh: false,
             run_programs: Vec::new(),
             run_timeout: DEFAULT_RUN_TIMEOUT,
+            confine: Confine::Standard,
         };
         let present = [(Vendor::Claude, true)];
         let (mut w, mut live) = world(options(&repo, None), &present).unwrap();
         assert_eq!(w.projects.len(), 1);
         assert_eq!(w.agents[0].status, Status::Idle, "new, not remembered");
+        // The standard level says so once, on the project imece runs in.
+        let said = Event::Confine {
+            leader: 0,
+            level: "standard".into(),
+        };
+        assert_eq!(w.journal.iter().filter(|e| e.event == said).count(), 1);
+        assert_eq!(live.confine, Confine::Standard);
+        let line = words::event(Lang::En, &w, &said);
+        assert!(
+            line.starts_with("confine standard:") && line.contains("not imece's"),
+            "{line}"
+        );
+        let open = words::event(
+            Lang::Tr,
+            &w,
+            &Event::Confine {
+                leader: 0,
+                level: "open".into(),
+            },
+        );
+        assert!(
+            open.starts_with("confine open:") && open.contains("hook"),
+            "{open}"
+        );
         assert_eq!(live.left_off(), None, "nothing was remembered");
         assert_eq!(w.budget, 500_000, "$50 the first time");
         assert!(w.started_at.abs_diff(now()) <= 2);
@@ -8718,9 +8909,17 @@ in p.rs",
             fresh,
             run_programs: Vec::new(),
             run_timeout: DEFAULT_RUN_TIMEOUT,
+            confine: Confine::Strict,
         };
         let present = [(Vendor::Claude, true)];
         let (w, mut live) = world(options(false), &present).unwrap();
+        assert_eq!(live.confine, Confine::Strict);
+        assert!(
+            !w.journal
+                .iter()
+                .any(|e| matches!(e.event, Event::Confine { .. })),
+            "strict has nothing to say"
+        );
         live.sessions[0] = Some(Resumable {
             session: UUID.into(),
             spent: 1,

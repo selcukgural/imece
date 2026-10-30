@@ -8,17 +8,21 @@
 //! set, it sets with config overrides (`-c`) on the command line and again
 //! on the thread: approvals are never asked (what the sandbox refuses just
 //! fails), the sandbox is read-only for a leader and workspace-write for a
-//! worker (writes stay in its directory, no network), web search is off,
-//! and there are no plugins, apps, hooks, sub-agents or memories, and no
-//! MCP server but imece's own. Codex loads the
-//! person's own config as well, and some of what comes with it (MCP servers
-//! that plugins put there, the system skills) can only be turned off by
-//! name: a session that finds such things when it first starts is started
-//! a second time with them named off. What Codex then reports it runs
-//! with (`config/read`, `plugin/installed`, `skills/list`, `hooks/list`,
-//! `mcpServerStatus/list`, and the thread's own settings) is checked
-//! against all that before the thread starts, the MCP servers again before
-//! every turn; anything else stops the session.
+//! worker (writes stay in its directory). The confine dial sets the rest:
+//! under strict the sandbox has no network and web search is off; under
+//! standard a worker's sandbox reaches the network and web search is live;
+//! both have no plugins, apps, hooks, sub-agents or memories, and no MCP
+//! server but imece's own. Codex loads the person's own config as well,
+//! and some of what comes with it (MCP servers that plugins put there,
+//! the system skills) can only be turned off by name: a session that
+//! finds such things when it first starts is started a second time with
+//! them named off. Under open the person's config stands (their MCP
+//! servers, skills, plugins, hooks, features), with only the sub-agent
+//! feature off. What Codex then reports it runs with (`config/read`,
+//! `plugin/installed`, `skills/list`, `hooks/list`, `mcpServerStatus/list`,
+//! and the thread's own settings) is checked against all that before the
+//! thread starts, the MCP servers again before every turn; anything else
+//! stops the session.
 //!
 //! Codex reports tokens, not dollars. On a ChatGPT plan the tokens cost
 //! nothing beyond the plan, so a session books no cost and says so once; an
@@ -42,7 +46,7 @@ use std::time::{Duration, Instant};
 use serde_json::{Value, json};
 
 use crate::child::{self, Child, Out};
-use crate::{Event, MCP_SERVER, Mcp, mcp_tool};
+use crate::{Confine, Event, MCP_SERVER, Mcp, mcp_tool};
 
 /// Variables Codex may need besides [`child::BASE_ENV`]: its home (login,
 /// config), an API key, and proxy and CA settings of corporate networks.
@@ -83,16 +87,38 @@ pub fn choice(s: &str) -> (Option<String>, Option<String>) {
     (some(model), some(effort))
 }
 
-/// Config every session gets (`-c key=value`, TOML values) and that
-/// `config/read` must echo. Features and the sandbox come on top.
+/// Config every session gets at every level (`-c key=value`, TOML values)
+/// and that `config/read` must echo. Web search, the sandbox's network,
+/// the features and the sandbox come on top, by level.
 const OVERRIDES: &[(&str, &str)] = &[
     ("approval_policy", "\"never\""),
-    ("web_search", "\"disabled\""),
     ("notify", "[]"),
     ("history.persistence", "\"none\""),
     ("check_for_update_on_startup", "false"),
-    ("sandbox_workspace_write.network_access", "false"),
 ];
+
+/// Codex's web search at a level: off under strict, live under standard,
+/// the person's own under open (not set, not checked).
+fn web_search(confine: Confine) -> Option<&'static str> {
+    match confine {
+        Confine::Strict => Some("disabled"),
+        Confine::Standard => Some("live"),
+        Confine::Open => None,
+    }
+}
+
+/// The feature that runs agents of Codex's own: off at every level.
+const SUBAGENT_FEATURE: &str = "multi_agent";
+
+/// The features turned off at a level: under open only the sub-agents,
+/// else all of [`FEATURES_OFF`].
+fn features_off(confine: Confine) -> &'static [&'static str] {
+    if confine == Confine::Open {
+        &[SUBAGENT_FEATURE]
+    } else {
+        FEATURES_OFF
+    }
+}
 
 /// Features turned off: other tools and other agents, and what reaches
 /// out of the session.
@@ -154,6 +180,8 @@ pub struct Spec {
     /// Whether the agent changes files (workspace-write) or only reads them
     /// (read-only).
     pub write: bool,
+    /// How much of Codex the session gets; see [`Confine`].
+    pub confine: Confine,
     /// The thread's developer instructions: the agent's role in imece.
     pub system: String,
     /// imece's MCP server, if the agent gets its tools.
@@ -223,7 +251,14 @@ pub fn args(spec: &Spec, off: &Off) -> Vec<String> {
     for (k, v) in OVERRIDES {
         set(k.to_string(), v.to_string());
     }
-    for f in FEATURES_OFF {
+    if let Some(w) = web_search(spec.confine) {
+        set("web_search".into(), toml_str(w));
+    }
+    set(
+        "sandbox_workspace_write.network_access".into(),
+        spec.confine.full().to_string(),
+    );
+    for f in features_off(spec.confine) {
         set(format!("features.{f}"), "false".into());
     }
     set("sandbox_mode".into(), toml_str(sandbox(spec.write)));
@@ -312,6 +347,7 @@ enum Queued {
 pub struct Protocol {
     cwd: PathBuf,
     write: bool,
+    confine: Confine,
     model: Option<String>,
     effort: Option<String>,
     system: String,
@@ -345,6 +381,7 @@ impl Protocol {
         Protocol {
             cwd: spec.cwd.clone(),
             write: spec.write,
+            confine: spec.confine,
             model,
             effort,
             system: spec.system.clone(),
@@ -482,7 +519,10 @@ impl Protocol {
                 vec![self.request("skills/list", json!({}), Wait::Skills)]
             }
             Wait::Skills => {
-                self.found.skills = enabled_skills(r);
+                // Under open the person's skills stay, like their servers.
+                if self.confine != Confine::Open {
+                    self.found.skills = enabled_skills(r);
+                }
                 if !self.found.is_empty() {
                     if let Some(off) = &self.off {
                         return Err(format!(
@@ -504,7 +544,7 @@ impl Protocol {
                     .filter(|p| p["enabled"] == true)
                     .map(|p| p["id"].as_str().unwrap_or("?"))
                     .collect();
-                if !on.is_empty() {
+                if !on.is_empty() && self.confine != Confine::Open {
                     return Err(format!("has plugins on: {on:?}"));
                 }
                 vec![self.request("hooks/list", json!({}), Wait::Hooks)]
@@ -516,7 +556,7 @@ impl Protocol {
                     .flatten()
                     .flat_map(|d| d["hooks"].as_array().into_iter().flatten())
                     .count();
-                if hooks > 0 {
+                if hooks > 0 && self.confine != Confine::Open {
                     return Err(format!("has {hooks} hooks"));
                 }
                 vec![self.request("mcpServerStatus/list", json!({}), Wait::Servers)]
@@ -611,15 +651,18 @@ impl Protocol {
     }
 
     /// The `config/read` result must echo what was set; the MCP servers
-    /// still on besides imece's are returned, to be named off.
+    /// still on besides imece's are returned, to be named off (none under
+    /// open, where the person's stay).
     fn check_config(&self, c: &Value) -> Result<Vec<String>, String> {
-        let want = [
+        let mut want = vec![
             ("approval_policy", json!("never")),
-            ("web_search", json!("disabled")),
             ("notify", json!([])),
             ("check_for_update_on_startup", json!(false)),
             ("sandbox_mode", json!(sandbox(self.write))),
         ];
+        if let Some(w) = web_search(self.confine) {
+            want.push(("web_search", json!(w)));
+        }
         for (k, v) in &want {
             if &c[k] != v {
                 return Err(format!("runs with {k} = {}", c[k]));
@@ -631,10 +674,14 @@ impl Protocol {
                 c["history"]["persistence"]
             ));
         }
-        if self.write && c["sandbox_workspace_write"]["network_access"] != false {
-            return Err("runs with network access in the sandbox".into());
+        let network = self.confine.full();
+        if self.write && c["sandbox_workspace_write"]["network_access"] != network {
+            return Err(format!(
+                "runs {} network access in the sandbox",
+                if network { "without" } else { "with" }
+            ));
         }
-        for f in FEATURES_OFF {
+        for f in features_off(self.confine) {
             if c["features"][f] != false {
                 return Err(format!("runs with the {f} feature on"));
             }
@@ -650,7 +697,7 @@ impl Protocol {
                     Some(_) => return Err("has another imece MCP server".into()),
                     None => return Err("has an MCP server it was not given".into()),
                 }
-            } else if s["enabled"] != false {
+            } else if s["enabled"] != false && self.confine != Confine::Open {
                 on.push(name.clone());
             }
         }
@@ -665,7 +712,8 @@ impl Protocol {
     }
 
     /// `mcpServerStatus/list` must show imece's server with exactly its
-    /// tools (so it is connected), and no tools anywhere else.
+    /// tools (so it is connected), and no tools anywhere else (the
+    /// person's servers under open excepted).
     fn check_servers(&self, r: &Value) -> Result<(), String> {
         let mut ours = false;
         for s in r["data"].as_array().into_iter().flatten() {
@@ -684,7 +732,7 @@ impl Protocol {
                     ));
                 }
                 ours = true;
-            } else if !tools.is_empty() {
+            } else if !tools.is_empty() && self.confine != Confine::Open {
                 return Err(format!(
                     "has MCP server {name:?} with {} tools",
                     tools.len()
@@ -713,8 +761,14 @@ impl Protocol {
         if r["sandbox"]["type"] != kind {
             return Err(format!("started a thread in sandbox {}", r["sandbox"]));
         }
-        if r["sandbox"]["networkAccess"] == true {
-            return Err("started a thread with network access".into());
+        // A writer's sandbox reaches the network from standard on; a
+        // reader's never does.
+        let network = self.write && self.confine.full();
+        if (r["sandbox"]["networkAccess"] == true) != network {
+            return Err(format!(
+                "started a thread {} network access",
+                if network { "without" } else { "with" }
+            ));
         }
         if r["cwd"].as_str().map(Path::new) != Some(self.cwd.as_path()) {
             return Err(format!("started a thread in {}", r["cwd"]));
@@ -1217,6 +1271,7 @@ mod tests {
             cwd: PathBuf::from("/work/w1"),
             choice: None,
             write,
+            confine: Confine::Strict,
             system: "You are codex-1.".into(),
             mcp: None,
             resume: None,
@@ -1338,6 +1393,220 @@ mod tests {
         assert!(after(&args(&spec(true), &Off::default()), "skills.config").is_none());
     }
 
+    /// [`with_bus`] at `confine`.
+    fn at(confine: Confine, write: bool) -> Spec {
+        let mut s = with_bus(write);
+        s.confine = confine;
+        s
+    }
+
+    #[test]
+    fn standard_turns_web_search_on_and_lets_the_sandbox_reach_the_network() {
+        let a = args(&at(Confine::Standard, true), &Off::default());
+        let after = |k: &str| {
+            a.iter()
+                .find_map(|x| x.strip_prefix(&format!("{k}=")))
+                .map(str::to_string)
+        };
+        assert_eq!(after("web_search").as_deref(), Some("\"live\""));
+        assert_eq!(
+            after("sandbox_workspace_write.network_access").as_deref(),
+            Some("true")
+        );
+        assert_eq!(
+            after("sandbox_mode").as_deref(),
+            Some("\"workspace-write\"")
+        );
+        for f in FEATURES_OFF {
+            assert_eq!(
+                after(&format!("features.{f}")).as_deref(),
+                Some("false"),
+                "{f}"
+            );
+        }
+        assert_eq!(after("approval_policy").as_deref(), Some("\"never\""));
+        // Strict: no web, no network, as before.
+        let a = args(&at(Confine::Strict, true), &Off::default());
+        assert!(a.contains(&"web_search=\"disabled\"".to_string()));
+        assert!(a.contains(&"sandbox_workspace_write.network_access=false".to_string()));
+        // Open: the person's web search, the sub-agents off and nothing else.
+        let a = args(&at(Confine::Open, true), &Off::default());
+        assert!(!a.iter().any(|x| x.starts_with("web_search=")), "{a:?}");
+        assert!(a.contains(&"features.multi_agent=false".to_string()));
+        assert!(!a.iter().any(|x| x.starts_with("features.apps=")), "{a:?}");
+        assert!(!a.iter().any(|x| x.starts_with("features.hooks=")), "{a:?}");
+        assert!(a.contains(&"sandbox_workspace_write.network_access=true".to_string()));
+        assert!(a.contains(&"history.persistence=\"none\"".to_string()));
+        assert!(a.contains(&"approval_policy=\"never\"".to_string()));
+        assert_eq!(features_off(Confine::Open), ["multi_agent"]);
+        assert_eq!(features_off(Confine::Standard), FEATURES_OFF);
+        assert_eq!(features_off(Confine::Strict), FEATURES_OFF);
+    }
+
+    #[test]
+    fn the_config_echo_is_checked_against_the_level() {
+        // Standard: web search must be live, the sandbox must reach the network.
+        let mut c = config_at(true, &[], true, Confine::Standard);
+        assert!(
+            start_until(
+                &at(Confine::Standard, true),
+                "config/read",
+                json!({ "config": c.clone() })
+            )
+            .is_ok()
+        );
+        c["web_search"] = json!("disabled");
+        let e = start_until(
+            &at(Confine::Standard, true),
+            "config/read",
+            json!({ "config": c.clone() }),
+        )
+        .unwrap_err();
+        assert!(e.contains("web_search = \"disabled\""), "{e}");
+        c["web_search"] = json!("live");
+        c["sandbox_workspace_write"]["network_access"] = json!(false);
+        let e = start_until(
+            &at(Confine::Standard, true),
+            "config/read",
+            json!({ "config": c.clone() }),
+        )
+        .unwrap_err();
+        assert!(e.contains("runs without network access"), "{e}");
+        // A reader's config need not say anything about the write sandbox.
+        let mut r = config_at(false, &[], true, Confine::Standard);
+        r["sandbox_workspace_write"]["network_access"] = json!(false);
+        assert!(
+            start_until(
+                &at(Confine::Standard, false),
+                "config/read",
+                json!({ "config": r })
+            )
+            .is_ok()
+        );
+        // Strict: the network on is a weakening.
+        let mut c = config_at(true, &[], true, Confine::Strict);
+        c["sandbox_workspace_write"]["network_access"] = json!(true);
+        let e = start_until(
+            &at(Confine::Strict, true),
+            "config/read",
+            json!({ "config": c }),
+        )
+        .unwrap_err();
+        assert!(e.contains("runs with network access"), "{e}");
+        // Open: the person's features, servers and web search stand; only
+        // the sub-agents must be off.
+        let mut c = config_at(true, &[("github", true)], true, Confine::Open);
+        c["features"]["apps"] = json!(true);
+        c["features"]["hooks"] = json!(true);
+        c["web_search"] = json!("live");
+        let acts = start_until(
+            &at(Confine::Open, true),
+            "config/read",
+            json!({ "config": c.clone() }),
+        )
+        .unwrap();
+        assert_eq!(
+            sent(&acts)[0]["method"],
+            "skills/list",
+            "no restart for the person's server"
+        );
+        c["features"]["multi_agent"] = json!(true);
+        let e = start_until(
+            &at(Confine::Open, true),
+            "config/read",
+            json!({ "config": c }),
+        )
+        .unwrap_err();
+        assert!(e.contains("multi_agent feature on"), "{e}");
+        // Standard still names the person's servers off.
+        let c = config_at(true, &[("github", true)], true, Confine::Standard);
+        let mut p = Protocol::new(&at(Confine::Standard, true), None);
+        assert_eq!(p.check_config(&c).unwrap(), ["github"]);
+        p.confine = Confine::Open;
+        assert_eq!(p.check_config(&c).unwrap(), Vec::<String>::new());
+    }
+
+    #[test]
+    fn under_open_the_person_s_skills_plugins_hooks_and_servers_stay() {
+        let spec = at(Confine::Open, true);
+        let skills =
+            json!({ "data": [{ "skills": [{ "name": "x", "enabled": true, "path": "/x" }] }] });
+        let acts = start_until(&spec, "skills/list", skills.clone()).unwrap();
+        assert_eq!(
+            sent(&acts)[0]["method"],
+            "plugin/installed",
+            "no restart: {acts:?}"
+        );
+        assert!(matches!(
+            start_until(&at(Confine::Standard, true), "skills/list", skills).unwrap()[0],
+            Act::Restart(_)
+        ));
+        let plugins = json!({ "marketplaces": [{ "plugins": [{ "id": "p", "enabled": true }] }] });
+        let acts = start_until(&spec, "plugin/installed", plugins.clone()).unwrap();
+        assert_eq!(sent(&acts)[0]["method"], "hooks/list");
+        let e = start_until(&at(Confine::Standard, true), "plugin/installed", plugins).unwrap_err();
+        assert!(e.contains("plugins on"), "{e}");
+        let hooks = json!({ "data": [{ "hooks": [{ "event": "x" }] }] });
+        let acts = start_until(&spec, "hooks/list", hooks.clone()).unwrap();
+        assert_eq!(sent(&acts)[0]["method"], "mcpServerStatus/list");
+        let e = start_until(&at(Confine::Standard, true), "hooks/list", hooks).unwrap_err();
+        assert!(e.contains("has 1 hooks"), "{e}");
+        // Other servers may have tools; imece's must still have exactly its own.
+        let acts = start_until(
+            &spec,
+            "mcpServerStatus/list",
+            servers(true, &[("github", 3)]),
+        )
+        .unwrap();
+        assert_eq!(sent(&acts)[0]["method"], "thread/start");
+        let e = start_until(
+            &at(Confine::Standard, true),
+            "mcpServerStatus/list",
+            servers(true, &[("github", 3)]),
+        )
+        .unwrap_err();
+        assert!(e.contains("has MCP server \"github\" with 3 tools"), "{e}");
+        let mut bad = servers(true, &[("github", 3)]);
+        bad["data"][0]["tools"] = json!({ "send": {} });
+        let e = start_until(&spec, "mcpServerStatus/list", bad).unwrap_err();
+        assert!(e.contains("imece's MCP server offers"), "{e}");
+    }
+
+    #[test]
+    fn the_thread_s_network_access_must_be_the_level_s() {
+        let p = |c, write| {
+            let mut p = Protocol::new(&at(c, write), None);
+            p.started = true;
+            p
+        };
+        let net = |on| {
+            let mut t = thread_at(true, "/work/w1", Confine::Strict);
+            t["sandbox"]["networkAccess"] = json!(on);
+            t
+        };
+        assert!(p(Confine::Strict, true).check_thread(&net(false)).is_ok());
+        let e = p(Confine::Strict, true)
+            .check_thread(&net(true))
+            .unwrap_err();
+        assert!(e.contains("with network access"), "{e}");
+        assert!(p(Confine::Standard, true).check_thread(&net(true)).is_ok());
+        assert!(p(Confine::Open, true).check_thread(&net(true)).is_ok());
+        let e = p(Confine::Standard, true)
+            .check_thread(&net(false))
+            .unwrap_err();
+        assert!(e.contains("without network access"), "{e}");
+        // A reader never reaches the network, whatever the level.
+        let mut reader = thread_at(false, "/work/w1", Confine::Standard);
+        assert!(p(Confine::Standard, false).check_thread(&reader).is_ok());
+        reader["sandbox"]["networkAccess"] = json!(true);
+        let e = p(Confine::Open, false).check_thread(&reader).unwrap_err();
+        assert!(e.contains("with network access"), "{e}");
+        // The whole start at standard and open passes with their echoes.
+        started(&at(Confine::Standard, true));
+        started(&at(Confine::Open, true));
+        started(&at(Confine::Open, false));
+    }
+
     // --- The protocol, one answer at a time. ---
 
     fn sent(acts: &[Act]) -> Vec<Value> {
@@ -1369,6 +1638,11 @@ mod tests {
     /// The config Codex reports with every override in place; `servers`
     /// are extra MCP servers in the person's config.
     fn good_config(write: bool, servers: &[(&str, bool)], bus: bool) -> Value {
+        config_at(write, servers, bus, Confine::Strict)
+    }
+
+    /// [`good_config`] as a session at `confine` sets it.
+    fn config_at(write: bool, servers: &[(&str, bool)], bus: bool, confine: Confine) -> Value {
         let mut features = serde_json::Map::new();
         for f in FEATURES_OFF {
             features.insert(f.to_string(), json!(false));
@@ -1390,11 +1664,11 @@ mod tests {
         }
         json!({
             "approval_policy": "never",
-            "web_search": "disabled",
+            "web_search": web_search(confine).unwrap_or("cached"),
             "notify": [],
             "check_for_update_on_startup": false,
             "sandbox_mode": sandbox(write),
-            "sandbox_workspace_write": { "network_access": false },
+            "sandbox_workspace_write": { "network_access": confine.full() },
             "history": { "persistence": "none" },
             "features": features,
             "mcp_servers": mcp,
@@ -1415,13 +1689,18 @@ mod tests {
     }
 
     fn thread(write: bool, cwd: &str) -> Value {
+        thread_at(write, cwd, Confine::Strict)
+    }
+
+    /// The thread Codex reports for a session at `confine`.
+    fn thread_at(write: bool, cwd: &str, confine: Confine) -> Value {
         json!({
             "thread": { "id": "t1", "model": "gpt-6-luna", "ephemeral": false },
             "model": "gpt-6-luna",
             "approvalPolicy": "never",
             "cwd": cwd,
             "sandbox": if write {
-                json!({ "type": "workspaceWrite", "networkAccess": false, "writableRoots": [] })
+                json!({ "type": "workspaceWrite", "networkAccess": confine.full(), "writableRoots": [] })
             } else {
                 json!({ "type": "readOnly", "networkAccess": false })
             },
@@ -1447,7 +1726,7 @@ mod tests {
             ),
             (
                 "config/read",
-                json!({ "config": good_config(spec.write, &[], bus) }),
+                json!({ "config": config_at(spec.write, &[], bus, spec.confine) }),
             ),
             (
                 "skills/list",
@@ -1459,7 +1738,10 @@ mod tests {
             ),
             ("hooks/list", json!({ "data": [{ "hooks": [] }] })),
             ("mcpServerStatus/list", servers(bus, &[("node_repl", 0)])),
-            ("thread/start", thread(spec.write, "/work/w1")),
+            (
+                "thread/start",
+                thread_at(spec.write, "/work/w1", spec.confine),
+            ),
         ];
         let mut id = 0;
         let mut acts = Vec::new();
@@ -1520,7 +1802,7 @@ mod tests {
             ),
             (
                 "config/read",
-                json!({ "config": good_config(spec.write, &[], bus) }),
+                json!({ "config": config_at(spec.write, &[], bus, spec.confine) }),
             ),
             ("skills/list", json!({ "data": [] })),
             ("plugin/installed", json!({ "marketplaces": [] })),
@@ -1532,7 +1814,7 @@ mod tests {
                 } else {
                     "thread/start"
                 },
-                thread(spec.write, "/work/w1"),
+                thread_at(spec.write, "/work/w1", spec.confine),
             ),
         ];
         let mut id = 0;
@@ -2681,6 +2963,7 @@ done"#
             cwd: cwd.clone(),
             choice: Some("@low".into()),
             write: false,
+            confine: Confine::Strict,
             system: "You are codex-1, a coding agent in imece, a team led by lead. \
                      You can read files and run commands that only read."
                 .into(),
@@ -2759,6 +3042,7 @@ done"#
             cwd: cwd.clone(),
             choice: Some("@low".into()),
             write: false,
+            confine: Confine::Strict,
             system: "You are codex-1, a coding agent in imece. Answer briefly.".into(),
             mcp: None,
             resume: None,
