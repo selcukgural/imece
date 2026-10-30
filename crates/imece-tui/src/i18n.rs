@@ -287,6 +287,7 @@ pub struct Text {
     pub in_research: &'static str,
     pub in_reply: &'static str,
     pub in_change: &'static str,
+    pub in_question: &'static str,
     // Overlays
     pub help_title: &'static str,
     pub help_keys: [(&'static str, &'static str); 33],
@@ -530,6 +531,7 @@ pub const EN: Text = Text {
     in_research: "{} report \"{}\" proposes a new package → {}",
     in_reply: "{} answered you: {}",
     in_change: "{} finished: {} ({} files, +{} −{})",
+    in_question: "{} asks you: {}",
     help_title: " HELP ",
     help_keys: [
         ("/  i", "write to the lead of the selected project"),
@@ -835,6 +837,7 @@ pub const TR: Text = Text {
     in_research: "{} raporu \"{}\" yeni paket öneriyor → {}",
     in_reply: "{} yanıt verdi: {}",
     in_change: "{} bitirdi: {} ({} dosya, +{} −{})",
+    in_question: "{} sana soruyor: {}",
     help_title: " YARDIM ",
     help_keys: [
         ("/  i", "seçili projenin liderine yaz"),
@@ -977,6 +980,7 @@ mod tests {
             (EN.shell_back, TR.shell_back),
             (EN.shell_back_signal, TR.shell_back_signal),
             (EN.ev_notes_cut, TR.ev_notes_cut),
+            (EN.in_question, TR.in_question),
             (EN.ev_worktree_moved, TR.ev_worktree_moved),
             (EN.ev_worktree_changes, TR.ev_worktree_changes),
             (EN.ev_worktree_commits, TR.ev_worktree_commits),

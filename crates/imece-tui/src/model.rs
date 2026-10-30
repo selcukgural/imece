@@ -529,6 +529,11 @@ pub enum StoryEvent {
     YouSaid(String),
     /// A live agent's answer at the end of its turn.
     Replied(String),
+    /// A live agent sent the person a message over the bus (`to: you`).
+    ToYou {
+        kind: MsgKind,
+        text: String,
+    },
     /// A live agent changed this file.
     Touched(String),
     /// A live agent's turn or session ended without an answer.
@@ -572,7 +577,8 @@ impl StoryEvent {
             StoryEvent::Asked { .. }
             | StoryEvent::Answered { .. }
             | StoryEvent::Replied(_)
-            | StoryEvent::Sent { .. } => StoryKind::Talk,
+            | StoryEvent::Sent { .. }
+            | StoryEvent::ToYou { .. } => StoryKind::Talk,
             StoryEvent::Assumption(_) => StoryKind::Assumption,
             StoryEvent::ResearchArrived { .. }
             | StoryEvent::ResearchNeedsYou { .. }
@@ -679,6 +685,13 @@ pub enum Event {
     },
     YouSaid {
         to: AgentId,
+        text: String,
+    },
+    /// A live agent sent the person a message over the bus (`to: you`);
+    /// an `ask` waits in their inbox, the rest is for the journal.
+    ToYou {
+        from: AgentId,
+        kind: MsgKind,
         text: String,
     },
     /// A live agent answered the person.
@@ -845,7 +858,10 @@ impl Event {
             | Event::Hired { .. }
             | Event::Left { .. } => EntryKind::Plan,
             Event::Assign { .. } | Event::Claimed { .. } => EntryKind::Assign,
-            Event::Talk { .. } | Event::Replied { .. } | Event::Sent { .. } => EntryKind::Talk,
+            Event::Talk { .. }
+            | Event::Replied { .. }
+            | Event::Sent { .. }
+            | Event::ToYou { .. } => EntryKind::Talk,
             Event::Assumption { .. }
             | Event::Fallback { .. }
             | Event::Resumed { .. }
@@ -912,7 +928,7 @@ impl Event {
             | Event::ChangeReady { agent, .. }
             | Event::Applied { agent, .. }
             | Event::ApplyFailed { agent, .. } => agent,
-            Event::Talk { from, .. } | Event::Sent { from, .. } => from,
+            Event::Talk { from, .. } | Event::Sent { from, .. } | Event::ToYou { from, .. } => from,
             Event::ResearchOpened { researcher, .. }
             | Event::ResearchDelivered { researcher, .. }
             | Event::ResearchNeedsYou { researcher, .. } => researcher,
@@ -948,6 +964,10 @@ pub enum InboxKind {
     /// looks at the diff, applies it to their checkout or rejects it. The
     /// detail is the done message's first line.
     Change,
+    /// A live agent asked the person over the bus and waits for their
+    /// answer; the detail is the question's first line. Closes when the
+    /// person writes back to that agent.
+    Question,
 }
 
 #[derive(Clone, Debug)]
@@ -1329,6 +1349,40 @@ impl World {
         }
     }
 
+    /// Agent `id` asked the person over the bus: its question waits for
+    /// them, an older unanswered one goes (the conversation keeps it).
+    pub fn asked_you(&mut self, id: AgentId, text: &str) {
+        self.close_questions(id);
+        self.inbox.push(InboxItem {
+            kind: InboxKind::Question,
+            agent: id,
+            detail: text
+                .lines()
+                .find(|l| !l.trim().is_empty())
+                .unwrap_or_default()
+                .to_string(),
+            researcher: None,
+            open: true,
+            tick: self.tick,
+        });
+    }
+
+    /// The person answered agent `id` (or will not): its questions close.
+    pub fn close_questions(&mut self, id: AgentId) {
+        for i in &mut self.inbox {
+            if i.kind == InboxKind::Question && i.agent == id {
+                i.open = false;
+            }
+        }
+    }
+
+    /// Whether agent `id` waits for the person's answer to a question.
+    pub fn has_question(&self, id: AgentId) -> bool {
+        self.inbox
+            .iter()
+            .any(|i| i.open && i.kind == InboxKind::Question && i.agent == id)
+    }
+
     fn close(&mut self, item: usize) -> Option<(InboxKind, AgentId)> {
         let it = self.inbox.get_mut(item).filter(|i| i.open)?;
         it.open = false;
@@ -1341,6 +1395,7 @@ impl World {
     pub fn said(&mut self, id: AgentId, text: &str) {
         let t = self.tick;
         self.close_replies(id);
+        self.close_questions(id);
         self.note(Event::YouSaid {
             to: id,
             text: text.into(),
@@ -1899,6 +1954,59 @@ mod tests {
                 .collect(),
             patch: "diff --git a/x b/x\n".into(),
         }
+    }
+
+    #[test]
+    fn a_question_to_the_person_waits_once_and_the_answer_closes_it() {
+        let mut w = world(vec![
+            agent(0, Role::Leader, Status::Idle),
+            agent(1, Role::Worker, Status::Idle),
+            agent(2, Role::Worker, Status::Idle),
+        ]);
+        w.tick = 4;
+        assert!(!w.has_question(1));
+        w.asked_you(1, "\n  \nWhich one?\nmore");
+        w.asked_you(2, "Mine too");
+        let it = &w.inbox[0];
+        assert_eq!(
+            (
+                it.kind,
+                it.agent,
+                it.detail.as_str(),
+                it.open,
+                it.tick,
+                it.researcher
+            ),
+            (InboxKind::Question, 1, "Which one?", true, 4, None)
+        );
+        assert!(w.has_question(1) && w.has_question(2));
+        w.asked_you(1, "Or that?");
+        assert_eq!(
+            w.open_inbox(),
+            [1, 2],
+            "the newer question takes the older's place"
+        );
+        w.change_ready(change(1, "Docs", &[("README.md", 1, 0)]));
+        w.close_questions(1);
+        assert!(!w.has_question(1) && w.has_question(2), "only that agent's");
+        assert_eq!(w.open_inbox(), [1, 3], "and only its questions");
+        w.said(2, "The first.");
+        assert!(!w.has_question(2));
+        assert_eq!(w.open_inbox(), [3], "the change still waits");
+        let e = Event::ToYou {
+            from: 2,
+            kind: MsgKind::Ask,
+            text: "q".into(),
+        };
+        assert_eq!((e.kind(), e.agent()), (EntryKind::Talk, 2));
+        assert_eq!(
+            StoryEvent::ToYou {
+                kind: MsgKind::Inform,
+                text: "x".into()
+            }
+            .kind(),
+            StoryKind::Talk
+        );
     }
 
     #[test]

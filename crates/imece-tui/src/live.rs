@@ -1814,6 +1814,9 @@ impl Live {
         if body.chars().count() > MAX_BODY {
             return Err(format!("the body is longer than {MAX_BODY} characters"));
         }
+        if arg("to") == YOU {
+            return self.send_you(w, from, kind, body);
+        }
         let project = w.agents[from].project;
         let to = w
             .agent_by_name(arg("to"))
@@ -1913,6 +1916,60 @@ impl Live {
             ),
         };
         Ok(delivered + &change)
+    }
+
+    /// A message to the person (`to: you`). An `ask` waits in their inbox
+    /// until they write back to the agent (which starts its next turn);
+    /// the rest only goes into the journal and the conversation, and
+    /// wakes nobody. A worker's `done` shows its change as any done does.
+    /// Nothing here counts against the mail caps or the budget: the
+    /// person reads for free.
+    fn send_you(&mut self, w: &mut World, from: AgentId, kind: MsgKind, body: &str) -> Answer {
+        if matches!(kind, MsgKind::Assign | MsgKind::Handoff | MsgKind::Cancel) {
+            return Err(format!(
+                "{} is not for the person; ask them, or tell them (inform, done, blocked)",
+                kind.wire()
+            ));
+        }
+        let t = w.tick;
+        let first = body.lines().next().unwrap_or_default().to_string();
+        let change = if kind == MsgKind::Done && w.agents[from].role == Role::Worker {
+            self.snapshot(w, from, &first)
+        } else {
+            String::new()
+        };
+        let card = w.agents[from].card;
+        w.story(
+            card,
+            StoryEvent::ToYou {
+                kind,
+                text: body.to_string(),
+            },
+        );
+        w.note(Event::ToYou {
+            from,
+            kind,
+            text: body.to_string(),
+        });
+        if kind == MsgKind::Ask {
+            w.asked_you(from, body);
+        }
+        let a = &mut w.agents[from];
+        a.trace(t, format!("send to=you type={}", kind.wire()));
+        a.talk = Some(Talk {
+            with: Party::Person,
+            text: first,
+            until: t + 8,
+        });
+        let answer = if kind == MsgKind::Ask {
+            "delivered; the person sees it under WAITING FOR YOU and answers when they \
+             can, which starts your next turn. Until then, end your turn or go on with \
+             what does not depend on the answer."
+        } else {
+            "noted; the person sees it in the journal. Nothing wakes them: a question \
+             goes as type ask."
+        };
+        Ok(answer.to_string() + &change)
     }
 
     /// Reads what worker `id`'s worktree holds, for the person: it waits
@@ -2963,15 +3020,18 @@ fn send_tool() -> Tool {
     let kinds: Vec<&str> = MsgKind::ALL.iter().map(|k| k.wire()).collect();
     Tool {
         name: "send".into(),
-        description: "Sends a message to a teammate in imece. It arrives as the start of \
-                      their next turn. assign, ask, answer, handoff, done, blocked and \
-                      cancel start that turn as soon as they are free; inform, progress \
-                      and notice wait until something else does."
+        description: "Sends a message to a teammate in imece, or to the person (to: you). \
+                      To a teammate it arrives as the start of their next turn: assign, \
+                      ask, answer, handoff, done, blocked and cancel start that turn as \
+                      soon as they are free; inform, progress and notice wait until \
+                      something else does. To the person, an ask waits on their screen \
+                      until they answer (which starts your next turn); the rest only \
+                      informs them."
             .into(),
         input: json!({
             "type": "object",
             "properties": {
-                "to": { "type": "string", "description": "The teammate's name." },
+                "to": { "type": "string", "description": "The teammate's name, or you for the person." },
                 "type": { "type": "string", "enum": kinds },
                 "body": {
                     "type": "string",
@@ -3052,7 +3112,8 @@ fn system_prompt(w: &World, id: AgentId, max_workers: usize, max_helpers: usize)
                  only work a worker will do. Answer the person briefly: what you \
                  found or assigned, and when all is done, what was done and what is \
                  left. When you need the person to decide, end with one clear \
-                 question.",
+                 question; mid-task, send it to them (send to you, type ask) and \
+                 their answer starts your next turn.",
                 a.name,
                 abilities(a.vendor, Role::Leader)
             )
@@ -3067,7 +3128,8 @@ fn system_prompt(w: &World, id: AgentId, max_workers: usize, max_helpers: usize)
                  from {parent}. When it is done, send {parent} a done message with a \
                  short summary of what you changed and what is left open; you leave \
                  then. If you are stuck, send {parent} blocked or ask instead of \
-                 guessing. Use these tools only for that, not for chatter.",
+                 guessing; only what no teammate can answer goes to the person (send \
+                 to you, type ask). Use these tools only for that, not for chatter.",
                 a.name,
                 abilities(a.vendor, Role::Helper)
             )
@@ -3094,7 +3156,9 @@ fn system_prompt(w: &World, id: AgentId, max_workers: usize, max_helpers: usize)
                  you changed and what is left open; your done also shows the person \
                  your worktree's diff, which they apply to their checkout or reject, \
                  so finish (build, test) before you send it. If you are stuck, send blocked \
-                 or ask instead of guessing. imece may offer you open cards from \
+                 or ask instead of guessing: {leader} first, it knows the plan; what only \
+                 the person can decide goes to them (send to you, type ask), and their \
+                 answer starts your next turn. imece may offer you open cards from \
                  the board; take one that fits with claim, and send whoever posted \
                  it a done message when it is done. Work you find outside your \
                  task goes on the board (post), not into your change.{helpers} Use \
@@ -3105,6 +3169,9 @@ fn system_prompt(w: &World, id: AgentId, max_workers: usize, max_helpers: usize)
         }
     }
 }
+
+/// The name an agent writes to on the bus to reach the person.
+pub(crate) const YOU: &str = "you";
 
 /// The files a repository keeps its notes for coding agents in, in the
 /// order they are looked for; the first one there is used.
@@ -4420,6 +4487,109 @@ mod tests {
         assert!(refused(&mut live, &mut w, msg("lead", "ask", "hi")).contains("stopped"));
         assert!(live.mail[0].is_empty());
         assert!(w.journal.is_empty());
+    }
+
+    #[test]
+    fn a_question_to_the_person_waits_in_their_inbox_until_they_write_back() {
+        let mut w = team(2);
+        w.agents[1].status = Status::Idle;
+        let mut live = idle_live(3);
+        live.send(&mut w, 0, &msg("claude-1", "assign", "Fix the parser"))
+            .unwrap();
+        live.step(&mut w);
+        let card = w.agents[1].card.expect("a card");
+        let t = w.tick;
+        let ok = live
+            .send(&mut w, 1, &msg("you", "ask", "Which API?\nDetails."))
+            .unwrap();
+        assert!(ok.contains("WAITING FOR YOU"), "{ok}");
+        assert!(live.mail.iter().all(|m| m.is_empty()), "nobody's mail");
+        let open = w.open_inbox();
+        assert_eq!(open.len(), 1);
+        let it = &w.inbox[open[0]];
+        assert_eq!(
+            (it.kind, it.agent, it.detail.as_str(), it.open, it.tick),
+            (InboxKind::Question, 1, "Which API?", true, t)
+        );
+        assert!(w.has_question(1) && !w.has_question(2));
+        assert!(matches!(
+            &w.journal.last().unwrap().event,
+            Event::ToYou { from: 1, kind: MsgKind::Ask, text } if text == "Which API?\nDetails."
+        ));
+        assert!(matches!(
+            &w.cards[card].story.last().unwrap().event,
+            StoryEvent::ToYou { kind: MsgKind::Ask, text } if text == "Which API?\nDetails."
+        ));
+        let a = &w.agents[1];
+        let talk = a.talk.as_ref().unwrap();
+        assert_eq!(
+            (talk.with, talk.text.as_str(), talk.until),
+            (Party::Person, "Which API?", t + 8)
+        );
+        assert!(a.trace.back().unwrap().contains("send to=you type=ask"));
+        // A second question takes the first's place in the inbox.
+        live.send(&mut w, 1, &msg("you", "ask", "Or this?"))
+            .unwrap();
+        let open = w.open_inbox();
+        assert_eq!((open.len(), w.inbox.len()), (1, 2));
+        assert_eq!(w.inbox[open[0]].detail, "Or this?");
+        // The person's answer closes it (the screen records the answer).
+        w.said(1, "The first.");
+        assert!(!w.has_question(1) && w.open_inbox().is_empty());
+        // The person reads for free: a spent budget refuses nothing here.
+        w.agents[1].cost = w.budget;
+        assert!(live.send(&mut w, 1, &msg("you", "ask", "Still?")).is_ok());
+    }
+
+    #[test]
+    fn what_is_not_a_question_only_informs_the_person() {
+        let mut w = team(2);
+        let mut live = idle_live(3);
+        let ok = live
+            .send(&mut w, 1, &msg("you", "inform", "Halfway."))
+            .unwrap();
+        assert!(ok.starts_with("noted"), "{ok}");
+        assert!(w.open_inbox().is_empty() && !w.has_question(1));
+        assert!(matches!(
+            &w.journal.last().unwrap().event,
+            Event::ToYou { from: 1, kind: MsgKind::Inform, text } if text == "Halfway."
+        ));
+        assert_eq!(w.journal.last().unwrap().event.kind(), EntryKind::Talk);
+        // A worker's done to the person shows its change like any done:
+        // the worktree is read (here one that is not there, so the
+        // reading fails and says so); nothing else reads it.
+        live.cwds[1] = Some(PathBuf::from("/nonexistent/tree"));
+        let ok = live.send(&mut w, 1, &msg("you", "done", "Done.")).unwrap();
+        assert!(
+            ok.starts_with("noted") && ok.contains("could not read your change"),
+            "{ok}"
+        );
+        assert!(matches!(
+            &w.journal.last().unwrap().event,
+            Event::ToYou {
+                from: 1,
+                kind: MsgKind::Done,
+                ..
+            }
+        ));
+        let ok = live
+            .send(&mut w, 1, &msg("you", "blocked", "Stuck."))
+            .unwrap();
+        assert!(!ok.contains("change"), "{ok}");
+        w.agents[0].role = Role::Worker;
+        w.agents[1].role = Role::Leader;
+        let ok = live.send(&mut w, 1, &msg("you", "done", "Done.")).unwrap();
+        assert!(!ok.contains("change"), "a leader has no change: {ok}");
+        // Work is not handed to the person.
+        let before = w.journal.len();
+        for kind in ["assign", "handoff", "cancel"] {
+            let err = live.send(&mut w, 1, &msg("you", kind, "x")).unwrap_err();
+            assert!(err.contains("not for the person"), "{kind}: {err}");
+        }
+        assert_eq!(w.journal.len(), before);
+        // Only the exact name reaches the person.
+        let err = live.send(&mut w, 1, &msg("You", "ask", "x")).unwrap_err();
+        assert!(err.contains("no teammate is called"), "{err}");
     }
 
     #[test]
