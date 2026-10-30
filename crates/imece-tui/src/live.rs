@@ -590,8 +590,8 @@ pub fn world(o: Options, present: &[(Vendor, bool)]) -> Result<(World, Live), St
             World {
                 tick: 0,
                 started_at: now,
-                run_tick: 0,
                 run_spent: 0,
+                spending: Spending::default(),
                 projects: Vec::new(),
                 agents: Vec::new(),
                 cards: Vec::new(),
@@ -610,7 +610,6 @@ pub fn world(o: Options, present: &[(Vendor, bool)]) -> Result<(World, Live), St
         w.budget = b;
     }
     w.tick = now.saturating_sub(w.started_at) / SECONDS_PER_TICK;
-    w.run_tick = w.tick;
     w.run_spent = w.spent();
     let mut live = Live::bare(vendors, o.lead);
     live.state = o.state;
@@ -3588,8 +3587,8 @@ pub(crate) mod testing {
             tick: 3,
             // Begun just now: a step puts the tick at 0.
             started_at: now(),
-            run_tick: 0,
             run_spent: 0,
+            spending: Spending::default(),
             projects: vec![Project {
                 id: 0,
                 name: "repo".into(),
@@ -8421,7 +8420,11 @@ in p.rs",
             "100 seconds in whole ticks, not {}",
             w.tick
         );
-        assert_eq!(w.run_tick, w.tick);
+        assert_eq!(
+            w.rate_per_hour(),
+            0,
+            "what earlier runs spent is not this run's rate"
+        );
         assert!(
             !w.agents[0].trace.iter().any(|l| l.contains("skipped")),
             "nothing skipped, nothing said: {:?}",

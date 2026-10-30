@@ -184,6 +184,9 @@ is, and the journal says so either way.
   takes another turn. Each Claude Code session also gets what was left of
   the pot when it started as its own hard cap, so a session running away
   on its own cannot pass it either.
+  The header shows what the last ten minutes cost per hour and how long
+  the pot lasts at that rate; with under half an hour left it turns the
+  attention colour and the journal says so once.
 - What imece knows is remembered between runs in one SQLite file
   (`$XDG_STATE_HOME/imece/imece.sqlite`, yours alone): projects, agents,
   cards and their stories, the journal, the inbox, mail that waits and the
