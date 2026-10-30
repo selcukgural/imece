@@ -89,7 +89,7 @@ nobody. `serverRequest/resolved` for an ask still waiting, and the
 turn's end for every one still waiting, is `Event::Withdrawn {
 request }`: `Live::withdrawn` closes its item without a decision
 (`World::withdrew(agent, nth)`, no journal line) and traces "no longer
-asks". In live.rs a `Pending` now carries a `Reply`: `Socket { input,
+asks". In `live/` a `Pending` now carries a `Reply`: `Socket { input,
 to }` (Claude) or `Session(request)` (Codex, answered through the
 session; a session's end answers nobody). Codex's writer prompt says
 what waits for the person's yes and that a refusal is a decision.

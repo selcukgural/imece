@@ -8,7 +8,7 @@ gone ones out, prefix match case aside, tail space), `@name /c` and
 `/c` → `Agent.commands`, the command line the agent's SESSION reported
 (`imece_agent::Event::Commands`: Claude from `init`'s `slash_commands`,
 first seen and on change; Gemini from ACP `available_commands_update`;
-Codex the adapter's own `/compact` mapping; live.rs adds imece's
+Codex the adapter's own `/compact` mapping; `live/sessions.rs` adds imece's
 `/clear` where missing), never a static list (user, 2026-10-29: a
 vendor's new command must not need a release), so empty until a
 session says and in the demo,

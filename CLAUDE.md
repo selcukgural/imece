@@ -3,7 +3,7 @@
 - One terminal for many coding agents from many vendors (ACP), led by a
   leader agent, talking to each other, sharing files through symbol leases.
 - Stage: the screen (`crates/imece-tui`) runs on live Claude Code sessions
-  (`live.rs`, the default) or on fake events (`--demo`, `sim.rs`); both
+  (`live/`, the default) or on fake events (`--demo`, `sim.rs`); both
   feed the same model (`model.rs`). `crates/imece-agent` drives vendor CLIs as child
   processes and turns their output into vendor-neutral events; the screen
   never sees a wire format.

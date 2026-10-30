@@ -44,7 +44,7 @@ stop the session. Cost booked is 0 on the ChatGPT plan (a Note says so
 once, and token totals per turn). Tiers are EFFORTS on Codex's default
 model (`@low` / default / `@high`), a tier value is `[MODEL][@EFFORT]`;
 `--model [V:]NAME` and `--tier [V:]T=NAME` take a vendor prefix, bare
-ones mean the leader's vendor (`team_vendors` in live.rs). Known gaps:
+ones mean the leader's vendor (`team_vendors` in `live/hiring.rs`). Known gaps:
 git in a worktree writes to the main `.git` outside the sandbox (agents
 are told not to commit anyway); the read-only sandbox lets a leader read
 the whole disk, unlike Claude's `--restricted`; no per-session dollar cap
