@@ -6,9 +6,13 @@
 //! Codex has nothing like `--restricted` and no way to choose its built-in
 //! tools: it always has a sandboxed shell and `apply_patch`. What imece can
 //! set, it sets with config overrides (`-c`) on the command line and again
-//! on the thread: approvals are never asked (what the sandbox refuses just
-//! fails), the sandbox is read-only for a leader and workspace-write for a
-//! worker (writes stay in its directory). The confine dial sets the rest:
+//! on the thread: the sandbox is read-only for a leader and workspace-write
+//! for a worker (writes stay in its directory). A worker from standard on
+//! asks (`on-request`): what needs more than the sandbox gives (a write
+//! outside its directory, a command run outside the sandbox) comes as an
+//! [`Event::Asks`] and waits for [`Session::decide`]; a leader, and every
+//! session under strict, never asks (what the sandbox refuses just
+//! fails). The confine dial sets the rest:
 //! under strict the sandbox has no network and web search is off; under
 //! standard a worker's sandbox reaches the network and web search is live;
 //! both have no plugins, apps, hooks, sub-agents or memories, and no MCP
@@ -36,7 +40,7 @@
 //! screen starts a new one. A resumed thread keeps the developer
 //! instructions it was started with; the ones passed again are not taken.
 
-use std::collections::{BTreeSet, VecDeque};
+use std::collections::{BTreeSet, HashMap, VecDeque};
 use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
@@ -46,7 +50,7 @@ use std::time::{Duration, Instant};
 use serde_json::{Value, json};
 
 use crate::child::{self, Child, Out};
-use crate::{Confine, Event, MCP_SERVER, Mcp, mcp_tool};
+use crate::{Ask, Confine, Event, MCP_SERVER, Mcp, mcp_tool};
 
 /// Variables Codex may need besides [`child::BASE_ENV`]: its home (login,
 /// config), an API key, and proxy and CA settings of corporate networks.
@@ -88,14 +92,25 @@ pub fn choice(s: &str) -> (Option<String>, Option<String>) {
 }
 
 /// Config every session gets at every level (`-c key=value`, TOML values)
-/// and that `config/read` must echo. Web search, the sandbox's network,
-/// the features and the sandbox come on top, by level.
+/// and that `config/read` must echo. The approval policy, web search,
+/// the sandbox's network, the features and the sandbox come on top, by
+/// role and level.
 const OVERRIDES: &[(&str, &str)] = &[
-    ("approval_policy", "\"never\""),
     ("notify", "[]"),
     ("history.persistence", "\"none\""),
     ("check_for_update_on_startup", "false"),
 ];
+
+/// Codex's approval policy for a session: a writer from standard on asks
+/// (`on-request`: what needs more than the sandbox gives waits for the
+/// person's yes); a leader, and every session under strict, never asks.
+fn approval_policy(write: bool, confine: Confine) -> &'static str {
+    if write && confine.full() {
+        "on-request"
+    } else {
+        "never"
+    }
+}
 
 /// Codex's web search at a level: off under strict, live under standard,
 /// the person's own under open (not set, not checked).
@@ -251,6 +266,10 @@ pub fn args(spec: &Spec, off: &Off) -> Vec<String> {
     for (k, v) in OVERRIDES {
         set(k.to_string(), v.to_string());
     }
+    set(
+        "approval_policy".into(),
+        toml_str(approval_policy(spec.write, spec.confine)),
+    );
     if let Some(w) = web_search(spec.confine) {
         set("web_search".into(), toml_str(w));
     }
@@ -336,6 +355,18 @@ enum Wait {
     Compact,
 }
 
+/// How an approval Codex asked for is answered.
+#[derive(Clone, Debug, PartialEq)]
+enum Asked {
+    /// `accept` or `decline`: a command, or a file change.
+    Decision,
+    /// The permissions asked for, granted for the turn, or none.
+    Permissions(Value),
+}
+
+/// The longest permissions ask shown, in characters.
+const MAX_PERMISSIONS: usize = 200;
+
 /// What waits for the thread's next free moment.
 #[derive(Clone, Debug, PartialEq, Eq)]
 enum Queued {
@@ -348,6 +379,8 @@ pub struct Protocol {
     cwd: PathBuf,
     write: bool,
     confine: Confine,
+    /// See [`approval_policy`].
+    policy: &'static str,
     model: Option<String>,
     effort: Option<String>,
     system: String,
@@ -372,6 +405,13 @@ pub struct Protocol {
     error: Option<String>,
     denied: usize,
     tokens: Option<(u64, u64, u64)>,
+    /// What Codex asked and waits on the person's yes for, in the order
+    /// asked: the request (its JSON-RPC id as text), the id to answer,
+    /// and how.
+    asks: Vec<(String, Value, Asked)>,
+    /// The files each file change of the turn touches, by item id: what
+    /// its approval shows.
+    changes: HashMap<String, Vec<String>>,
 }
 
 impl Protocol {
@@ -382,6 +422,7 @@ impl Protocol {
             cwd: spec.cwd.clone(),
             write: spec.write,
             confine: spec.confine,
+            policy: approval_policy(spec.write, spec.confine),
             model,
             effort,
             system: spec.system.clone(),
@@ -404,6 +445,8 @@ impl Protocol {
             error: None,
             denied: 0,
             tokens: None,
+            asks: Vec::new(),
+            changes: HashMap::new(),
         }
     }
 
@@ -565,7 +608,7 @@ impl Protocol {
                 self.check_servers(r)?;
                 let mut params = json!({
                     "cwd": self.cwd,
-                    "approvalPolicy": "never",
+                    "approvalPolicy": self.policy,
                     "sandbox": sandbox(self.write),
                     "developerInstructions": self.system,
                 });
@@ -655,7 +698,7 @@ impl Protocol {
     /// open, where the person's stay).
     fn check_config(&self, c: &Value) -> Result<Vec<String>, String> {
         let mut want = vec![
-            ("approval_policy", json!("never")),
+            ("approval_policy", json!(self.policy)),
             ("notify", json!([])),
             ("check_for_update_on_startup", json!(false)),
             ("sandbox_mode", json!(sandbox(self.write))),
@@ -747,9 +790,9 @@ impl Protocol {
 
     /// The thread Codex started must be the one asked for.
     fn check_thread(&self, r: &Value) -> Result<(), String> {
-        if r["approvalPolicy"] != "never" {
+        if r["approvalPolicy"] != self.policy {
             return Err(format!(
-                "started a thread asking approvals ({})",
+                "started a thread with approval policy {}",
                 r["approvalPolicy"]
             ));
         }
@@ -800,10 +843,9 @@ impl Protocol {
             }
             "item/commandExecution/requestApproval"
             | "item/fileChange/requestApproval"
-            | "item/permissions/requestApproval"
-            | "applyPatchApproval"
-            | "execCommandApproval" => {
-                Err("asked for an approval although none may be asked".into())
+            | "item/permissions/requestApproval" => self.approval(id, method, params),
+            "applyPatchApproval" | "execCommandApproval" => {
+                Err(format!("asked for an approval the old way ({method})"))
             }
             "mcpServer/elicitation/request" => Err("had an MCP server ask something".into()),
             "item/tool/call" => Err("called a tool it was not given".into()),
@@ -813,6 +855,107 @@ impl Protocol {
                 .to_string(),
             )]),
         }
+    }
+
+    /// Codex asks the person's yes before a command, a file change or
+    /// more permissions: it waits, as an [`Event::Asks`], for
+    /// [`Protocol::decide`]. A session that may not ask, or asks before
+    /// its settings were checked, is stopped.
+    fn approval(&mut self, id: Value, method: &str, p: &Value) -> Result<Vec<Act>, String> {
+        if self.policy == "never" {
+            return Err("asked for an approval although none may be asked".into());
+        }
+        if !self.started {
+            return Err(format!("sent {method} before its settings were checked"));
+        }
+        let text = |k: &str| p[k].as_str().unwrap_or_default().to_string();
+        let (what, how) = match method {
+            "item/commandExecution/requestApproval" => {
+                let command = text("command");
+                let what = if p["kind"] == "writeStdin" {
+                    Ask::Other {
+                        tool: format!("{SHELL} stdin"),
+                        detail: command,
+                    }
+                } else if let Some(host) = p["networkApprovalContext"]["host"].as_str() {
+                    Ask::Other {
+                        tool: SHELL.into(),
+                        detail: format!("{command} (network: {host})"),
+                    }
+                } else {
+                    Ask::Command {
+                        tool: SHELL.into(),
+                        command: unwrapped(&command),
+                    }
+                };
+                (what, Asked::Decision)
+            }
+            "item/fileChange/requestApproval" => {
+                let mut detail = self
+                    .changes
+                    .get(&text("itemId"))
+                    .map(|c| c.join(", "))
+                    .unwrap_or_default();
+                if let Some(root) = p["grantRoot"].as_str() {
+                    if !detail.is_empty() {
+                        detail.push_str("; ");
+                    }
+                    detail.push_str(&format!("writes under {root}"));
+                }
+                let what = Ask::Other {
+                    tool: PATCH.into(),
+                    detail,
+                };
+                (what, Asked::Decision)
+            }
+            _ => {
+                let asked = p["permissions"].to_string();
+                let mut detail: String = asked.chars().take(MAX_PERMISSIONS).collect();
+                if asked.chars().count() > MAX_PERMISSIONS {
+                    detail.push('…');
+                }
+                let what = Ask::Other {
+                    tool: "permissions".into(),
+                    detail,
+                };
+                (what, Asked::Permissions(p["permissions"].clone()))
+            }
+        };
+        let request = id.to_string();
+        self.asks.push((request.clone(), id, how));
+        Ok(vec![Act::Event(Event::Asks { request, what })])
+    }
+
+    /// The person's answer to what Codex asked with `request`: a command
+    /// or a file change is accepted or declined (the turn goes on either
+    /// way), permissions are granted for the turn or none are. An ask
+    /// that is gone (settled, answered) is answered no more.
+    pub fn decide(&mut self, request: &str, allow: bool) -> Vec<Act> {
+        let Some(at) = self.asks.iter().position(|(r, ..)| r == request) else {
+            return Vec::new();
+        };
+        let (_, id, how) = self.asks.remove(at);
+        let result = match how {
+            Asked::Decision => json!({ "decision": if allow { "accept" } else { "decline" } }),
+            Asked::Permissions(asked) => json!({
+                "permissions": if allow { asked } else { json!({}) },
+                "scope": "turn",
+            }),
+        };
+        vec![Act::Send(
+            json!({ "jsonrpc": "2.0", "id": id, "result": result }).to_string(),
+        )]
+    }
+
+    /// What Codex asked with `request` waits no more.
+    fn withdraw(&mut self, request: &str) -> Vec<Act> {
+        let Some(at) = self.asks.iter().position(|(r, ..)| r == request) else {
+            return Vec::new();
+        };
+        self.asks.remove(at);
+        vec![Act::Event(Event::Withdrawn {
+            request: request.to_string(),
+        })]
     }
 
     /// Codex told something (a request without an id).
@@ -831,6 +974,9 @@ impl Protocol {
                 }
                 Ok(Vec::new())
             }
+            // An ask Codex settled itself (the turn was stopped); one
+            // imece answered is gone already.
+            "serverRequest/resolved" => Ok(self.withdraw(&p["requestId"].to_string())),
             "thread/tokenUsage/updated" => {
                 let t = &p["tokenUsage"]["total"];
                 let n = |k: &str| t[k].as_u64().unwrap_or(0);
@@ -850,12 +996,16 @@ impl Protocol {
                         .unwrap_or_else(|| status.to_string())
                 };
                 self.busy = false;
-                let mut acts = vec![Act::Event(Event::TurnDone {
+                // What the turn asked can not run after it.
+                let asked: Vec<String> = self.asks.iter().map(|(r, ..)| r.clone()).collect();
+                let mut acts: Vec<Act> = asked.iter().flat_map(|r| self.withdraw(r)).collect();
+                self.changes.clear();
+                acts.push(Act::Event(Event::TurnDone {
                     ok,
                     text,
                     cost: 0,
                     denied: self.denied,
-                })];
+                }));
                 if let Some((input, cached, output)) = self.tokens {
                     acts.push(Act::Event(Event::Note(format!(
                         "tokens so far: {input} in ({cached} cached) · {output} out"
@@ -901,18 +1051,24 @@ impl Protocol {
                 }
             }
             "fileChange" => {
+                let id = item["id"].as_str().unwrap_or_default().to_string();
                 if completed {
                     failed(PATCH, &mut out);
                     if status == "declined" {
                         self.denied += 1;
                     }
+                    self.changes.remove(&id);
                 } else {
+                    let mut paths = Vec::new();
                     for c in item["changes"].as_array().into_iter().flatten() {
+                        let target = relative(c["path"].as_str().unwrap_or_default(), &self.cwd);
+                        paths.push(target.clone());
                         out.push(Act::Event(Event::Tool {
                             name: PATCH.into(),
-                            target: relative(c["path"].as_str().unwrap_or_default(), &self.cwd),
+                            target,
                         }));
                     }
+                    self.changes.insert(id, paths);
                 }
             }
             "mcpToolCall" => {
@@ -979,6 +1135,35 @@ fn enabled_skills(r: &Value) -> Vec<String> {
         .collect()
 }
 
+/// The shells Codex wraps a command in, by name, at the places a system
+/// keeps them.
+const SHELLS: &[&str] = &[
+    "sh",
+    "bash",
+    "zsh",
+    "/bin/sh",
+    "/bin/bash",
+    "/bin/zsh",
+    "/usr/bin/sh",
+    "/usr/bin/bash",
+    "/usr/bin/zsh",
+];
+
+/// The command a shell runs when Codex wraps it in one (`/bin/zsh -lc
+/// '…'`): what the person reads and what is checked for routine, as the
+/// agent wrote it. Anything else (another program, a shell elsewhere,
+/// more words) stays as Codex sent it.
+fn unwrapped(command: &str) -> String {
+    match crate::run::split(command).as_deref() {
+        Ok([shell, flag, inner])
+            if SHELLS.contains(&shell.as_str()) && matches!(flag.as_str(), "-c" | "-lc") =>
+        {
+            inner.clone()
+        }
+        _ => command.to_string(),
+    }
+}
+
 /// A command in a few characters: its first line, cut short.
 fn one_line(command: &str) -> String {
     let line = command.lines().next().unwrap_or_default().trim();
@@ -1006,6 +1191,8 @@ enum Msg {
     End(u64, String),
     Prompt(String),
     Compact,
+    /// The person's answer to an ask: the request, and whether it runs.
+    Decide(String, bool),
     Terminate,
 }
 
@@ -1061,6 +1248,14 @@ impl Session {
             .map_err(|_| io::Error::new(io::ErrorKind::BrokenPipe, "the session is over"))
     }
 
+    /// Answers what the session asked with `request` (an
+    /// [`Event::Asks`]): `allow` lets it run, else it is refused.
+    pub fn decide(&mut self, request: &str, allow: bool) -> io::Result<()> {
+        self.tx
+            .send(Msg::Decide(request.to_string(), allow))
+            .map_err(|_| io::Error::new(io::ErrorKind::BrokenPipe, "the session is over"))
+    }
+
     /// Asks the session to stop without waiting.
     pub fn terminate(&mut self) {
         let _ = self.tx.send(Msg::Terminate);
@@ -1084,6 +1279,10 @@ impl crate::Agent for Session {
 
     fn terminate(&mut self) {
         Session::terminate(self)
+    }
+
+    fn decide(&mut self, request: &str, allow: bool) -> io::Result<()> {
+        Session::decide(self, request, allow)
     }
 }
 
@@ -1248,6 +1447,7 @@ fn drive(spec: Spec, child: Child, rx: Receiver<Msg>, tx: Sender<Msg>, mut on: i
             Ok(Msg::Line(..) | Msg::End(..)) => {}
             Ok(Msg::Prompt(text)) => acts = protocol.prompt(&text),
             Ok(Msg::Compact) => acts = protocol.compact(),
+            Ok(Msg::Decide(request, allow)) => acts = protocol.decide(&request, allow),
             Ok(Msg::Terminate) | Err(RecvTimeoutError::Disconnected) => return,
             Err(RecvTimeoutError::Timeout) => {
                 if deadline.is_some_and(|d| Instant::now() >= d) {
@@ -1424,9 +1624,13 @@ mod tests {
                 "{f}"
             );
         }
-        assert_eq!(after("approval_policy").as_deref(), Some("\"never\""));
-        // Strict: no web, no network, as before.
+        // A writer asks what needs more than the sandbox; a reader never.
+        assert_eq!(after("approval_policy").as_deref(), Some("\"on-request\""));
+        let reader = args(&at(Confine::Standard, false), &Off::default());
+        assert!(reader.contains(&"approval_policy=\"never\"".to_string()));
+        // Strict: no web, no network, no asking, as before.
         let a = args(&at(Confine::Strict, true), &Off::default());
+        assert!(a.contains(&"approval_policy=\"never\"".to_string()));
         assert!(a.contains(&"web_search=\"disabled\"".to_string()));
         assert!(a.contains(&"sandbox_workspace_write.network_access=false".to_string()));
         // Open: the person's web search, the sub-agents off and nothing else.
@@ -1437,10 +1641,37 @@ mod tests {
         assert!(!a.iter().any(|x| x.starts_with("features.hooks=")), "{a:?}");
         assert!(a.contains(&"sandbox_workspace_write.network_access=true".to_string()));
         assert!(a.contains(&"history.persistence=\"none\"".to_string()));
-        assert!(a.contains(&"approval_policy=\"never\"".to_string()));
+        assert!(a.contains(&"approval_policy=\"on-request\"".to_string()));
         assert_eq!(features_off(Confine::Open), ["multi_agent"]);
         assert_eq!(features_off(Confine::Standard), FEATURES_OFF);
         assert_eq!(features_off(Confine::Strict), FEATURES_OFF);
+    }
+
+    #[test]
+    fn a_writer_asks_from_standard_on_and_a_reader_never() {
+        assert_eq!(approval_policy(true, Confine::Open), "on-request");
+        assert_eq!(approval_policy(true, Confine::Standard), "on-request");
+        assert_eq!(approval_policy(true, Confine::Strict), "never");
+        assert_eq!(approval_policy(false, Confine::Open), "never");
+        assert_eq!(approval_policy(false, Confine::Standard), "never");
+        assert_eq!(approval_policy(false, Confine::Strict), "never");
+        // What config/read and the thread report is checked against it.
+        let mut c = config_at(true, &[], false, Confine::Standard);
+        c["approval_policy"] = json!("never");
+        let e = start_until(
+            &at(Confine::Standard, true),
+            "config/read",
+            json!({ "config": c }),
+        )
+        .unwrap_err();
+        assert!(e.contains("runs with approval_policy = \"never\""), "{e}");
+        let mut p = Protocol::new(&at(Confine::Standard, true), None);
+        p.started = true;
+        let mut t = thread_at(true, "/work/w1", Confine::Standard);
+        assert!(p.check_thread(&t).is_ok());
+        t["approvalPolicy"] = json!("never");
+        let e = p.check_thread(&t).unwrap_err();
+        assert!(e.contains("approval policy \"never\""), "{e}");
     }
 
     #[test]
@@ -1579,20 +1810,32 @@ mod tests {
             p.started = true;
             p
         };
-        let net = |on| {
-            let mut t = thread_at(true, "/work/w1", Confine::Strict);
+        let net = |c, on| {
+            let mut t = thread_at(true, "/work/w1", c);
             t["sandbox"]["networkAccess"] = json!(on);
             t
         };
-        assert!(p(Confine::Strict, true).check_thread(&net(false)).is_ok());
+        assert!(
+            p(Confine::Strict, true)
+                .check_thread(&net(Confine::Strict, false))
+                .is_ok()
+        );
         let e = p(Confine::Strict, true)
-            .check_thread(&net(true))
+            .check_thread(&net(Confine::Strict, true))
             .unwrap_err();
         assert!(e.contains("with network access"), "{e}");
-        assert!(p(Confine::Standard, true).check_thread(&net(true)).is_ok());
-        assert!(p(Confine::Open, true).check_thread(&net(true)).is_ok());
+        assert!(
+            p(Confine::Standard, true)
+                .check_thread(&net(Confine::Standard, true))
+                .is_ok()
+        );
+        assert!(
+            p(Confine::Open, true)
+                .check_thread(&net(Confine::Open, true))
+                .is_ok()
+        );
         let e = p(Confine::Standard, true)
-            .check_thread(&net(false))
+            .check_thread(&net(Confine::Standard, false))
             .unwrap_err();
         assert!(e.contains("without network access"), "{e}");
         // A reader never reaches the network, whatever the level.
@@ -1663,7 +1906,7 @@ mod tests {
             );
         }
         json!({
-            "approval_policy": "never",
+            "approval_policy": approval_policy(write, confine),
             "web_search": web_search(confine).unwrap_or("cached"),
             "notify": [],
             "check_for_update_on_startup": false,
@@ -1697,7 +1940,7 @@ mod tests {
         json!({
             "thread": { "id": "t1", "model": "gpt-6-luna", "ephemeral": false },
             "model": "gpt-6-luna",
-            "approvalPolicy": "never",
+            "approvalPolicy": approval_policy(write, confine),
             "cwd": cwd,
             "sandbox": if write {
                 json!({ "type": "workspaceWrite", "networkAccess": confine.full(), "writableRoots": [] })
@@ -1756,7 +1999,10 @@ mod tests {
             if method == "mcpServerStatus/list" {
                 let t = &asked[0];
                 assert_eq!(t["method"], "thread/start");
-                assert_eq!(t["params"]["approvalPolicy"], "never");
+                assert_eq!(
+                    t["params"]["approvalPolicy"],
+                    approval_policy(spec.write, spec.confine)
+                );
                 assert_eq!(t["params"]["sandbox"], sandbox(spec.write));
                 assert_eq!(t["params"]["cwd"], "/work/w1");
                 assert_eq!(t["params"]["ephemeral"], false, "kept, to resume");
@@ -2553,6 +2799,326 @@ mod tests {
         }
     }
 
+    fn ask(id: Value, method: &str, params: Value) -> String {
+        json!({ "jsonrpc": "2.0", "id": id, "method": method, "params": params }).to_string()
+    }
+
+    /// The one [`Event::Asks`] in `acts`.
+    fn asks(acts: &[Act]) -> (String, Ask) {
+        match events(acts).as_slice() {
+            [Event::Asks { request, what }] => (request.clone(), what.clone()),
+            e => panic!("not one ask: {e:?}"),
+        }
+    }
+
+    #[test]
+    fn a_writer_s_approvals_wait_for_the_person_and_are_answered_once() {
+        let mut p = in_turn(&at(Confine::Standard, true));
+        let cmd = |command: &str| json!({ "itemId": "c1", "command": command, "threadId": "t1", "turnId": "u1" });
+        let acts = p
+            .line(&ask(
+                json!(42),
+                "item/commandExecution/requestApproval",
+                cmd("cargo publish"),
+            ))
+            .unwrap();
+        assert!(
+            sent(&acts).is_empty(),
+            "nothing is answered before the person"
+        );
+        assert_eq!(
+            asks(&acts),
+            (
+                "42".to_string(),
+                Ask::Command {
+                    tool: "shell".into(),
+                    command: "cargo publish".into()
+                }
+            )
+        );
+        let acts = p
+            .line(&ask(
+                json!(43),
+                "item/commandExecution/requestApproval",
+                cmd("rm -rf target"),
+            ))
+            .unwrap();
+        assert_eq!(asks(&acts).0, "43");
+        // Answered by request, in any order, each once.
+        let r = &sent(&p.decide("43", false))[0];
+        assert_eq!(r["id"], 43);
+        assert_eq!(r["result"], json!({ "decision": "decline" }));
+        assert!(p.decide("43", true).is_empty());
+        let r = &sent(&p.decide("42", true))[0];
+        assert_eq!(r["id"], 42);
+        assert_eq!(r["result"], json!({ "decision": "accept" }));
+        assert!(p.decide("42", true).is_empty());
+        assert!(p.decide("7", true).is_empty(), "never asked");
+        // An id that is text goes back as the same text.
+        let acts = p
+            .line(&ask(
+                json!("a-1"),
+                "item/commandExecution/requestApproval",
+                cmd("ls"),
+            ))
+            .unwrap();
+        assert_eq!(asks(&acts).0, "\"a-1\"");
+        assert_eq!(sent(&p.decide("\"a-1\"", true))[0]["id"], "a-1");
+    }
+
+    #[test]
+    fn what_codex_asks_is_shown_as_what_it_would_run_or_touch() {
+        let mut p = in_turn(&at(Confine::Open, true));
+        let what = |p: &mut Protocol, method: &str, params: Value| {
+            asks(&p.line(&ask(json!(50), method, params)).unwrap()).1
+        };
+        let other = |tool: &str, detail: &str| Ask::Other {
+            tool: tool.into(),
+            detail: detail.into(),
+        };
+        let command = "item/commandExecution/requestApproval";
+        // Input to a running command is not a command to run.
+        assert_eq!(
+            what(
+                &mut p,
+                command,
+                json!({ "itemId": "c", "kind": "writeStdin", "command": "y" })
+            ),
+            other("shell stdin", "y")
+        );
+        assert_eq!(
+            what(
+                &mut p,
+                command,
+                json!({ "itemId": "c", "kind": "command", "command": "make" })
+            ),
+            Ask::Command {
+                tool: "shell".into(),
+                command: "make".into()
+            }
+        );
+        assert_eq!(
+            what(
+                &mut p,
+                command,
+                json!({ "itemId": "c", "command": "curl x", "networkApprovalContext": { "host": "example.com", "protocol": "https" } })
+            ),
+            other("shell", "curl x (network: example.com)")
+        );
+        assert_eq!(
+            what(&mut p, command, json!({ "itemId": "c" })),
+            Ask::Command {
+                tool: "shell".into(),
+                command: String::new()
+            }
+        );
+        // A file change shows the files its item touches.
+        let change = json!({ "item": { "type": "fileChange", "id": "f1", "status": "inProgress", "changes": [
+            { "path": "/work/w1/src/a.rs" }, { "path": "/etc/hosts" } ] } });
+        p.line(&notify("item/started", change)).unwrap();
+        let file = "item/fileChange/requestApproval";
+        assert_eq!(
+            what(&mut p, file, json!({ "itemId": "f1" })),
+            other("apply_patch", "src/a.rs, /etc/hosts")
+        );
+        assert_eq!(
+            what(&mut p, file, json!({ "itemId": "f1", "grantRoot": "/etc" })),
+            other("apply_patch", "src/a.rs, /etc/hosts; writes under /etc")
+        );
+        assert_eq!(
+            what(&mut p, file, json!({ "itemId": "f2", "grantRoot": "/etc" })),
+            other("apply_patch", "writes under /etc")
+        );
+        assert_eq!(
+            what(&mut p, file, json!({ "itemId": "f2" })),
+            other("apply_patch", "")
+        );
+        // A finished change is forgotten.
+        let done = json!({ "item": { "type": "fileChange", "id": "f1", "status": "completed", "changes": [] } });
+        p.line(&notify("item/completed", done)).unwrap();
+        assert_eq!(
+            what(&mut p, file, json!({ "itemId": "f1" })),
+            other("apply_patch", "")
+        );
+        // Permissions show what they would grant, cut short.
+        let perms = "item/permissions/requestApproval";
+        assert_eq!(
+            what(
+                &mut p,
+                perms,
+                json!({ "itemId": "p", "permissions": { "network": { "enabled": true } } })
+            ),
+            other("permissions", r#"{"network":{"enabled":true}}"#)
+        );
+        // `{"w":"…"}` is 8 characters around the text.
+        let long = |n: usize| json!({ "itemId": "p", "permissions": { "w": "x".repeat(n - 8) } });
+        let Ask::Other { detail, .. } = what(&mut p, perms, long(200)) else {
+            panic!()
+        };
+        assert_eq!(detail.chars().count(), 200);
+        assert!(!detail.ends_with('…'));
+        let Ask::Other { detail, .. } = what(&mut p, perms, long(201)) else {
+            panic!()
+        };
+        assert_eq!(detail.chars().count(), 201);
+        assert!(detail.ends_with("x\"…"), "{detail}");
+    }
+
+    #[test]
+    fn permissions_are_granted_for_the_turn_or_none_are() {
+        let mut p = in_turn(&at(Confine::Standard, true));
+        let perms = json!({ "network": { "enabled": true } });
+        let params = json!({ "itemId": "p", "cwd": "/work/w1", "permissions": perms });
+        p.line(&ask(
+            json!(60),
+            "item/permissions/requestApproval",
+            params.clone(),
+        ))
+        .unwrap();
+        p.line(&ask(json!(61), "item/permissions/requestApproval", params))
+            .unwrap();
+        let r = &sent(&p.decide("60", true))[0];
+        assert_eq!(
+            r["result"],
+            json!({ "permissions": perms, "scope": "turn" })
+        );
+        let r = &sent(&p.decide("61", false))[0];
+        assert_eq!(r["result"], json!({ "permissions": {}, "scope": "turn" }));
+    }
+
+    #[test]
+    fn an_ask_codex_settles_or_whose_turn_ends_is_withdrawn() {
+        let mut p = in_turn(&at(Confine::Standard, true));
+        let cmd = json!({ "itemId": "c1", "command": "make" });
+        for id in [70, 71, 72] {
+            p.line(&ask(
+                json!(id),
+                "item/commandExecution/requestApproval",
+                cmd.clone(),
+            ))
+            .unwrap();
+        }
+        let acts = p
+            .line(&notify(
+                "serverRequest/resolved",
+                json!({ "requestId": 71, "threadId": "t1" }),
+            ))
+            .unwrap();
+        assert_eq!(
+            events(&acts),
+            [Event::Withdrawn {
+                request: "71".into()
+            }]
+        );
+        assert!(p.decide("71", true).is_empty(), "gone");
+        // One that was answered, or never asked, is nothing to withdraw.
+        assert!(!p.decide("70", true).is_empty());
+        for id in [70, 99] {
+            let acts = p
+                .line(&notify(
+                    "serverRequest/resolved",
+                    json!({ "requestId": id }),
+                ))
+                .unwrap();
+            assert!(acts.is_empty(), "{id}");
+        }
+        p.line(&ask(
+            json!(73),
+            "item/commandExecution/requestApproval",
+            cmd,
+        ))
+        .unwrap();
+        let acts = p
+            .line(&notify(
+                "turn/completed",
+                json!({ "turn": { "id": "u1", "status": "interrupted" } }),
+            ))
+            .unwrap();
+        let e = events(&acts);
+        assert_eq!(
+            e[..2],
+            [
+                Event::Withdrawn {
+                    request: "72".into()
+                },
+                Event::Withdrawn {
+                    request: "73".into()
+                }
+            ]
+        );
+        assert!(matches!(e[2], Event::TurnDone { ok: false, .. }), "{e:?}");
+        assert!(p.decide("72", true).is_empty());
+        assert!(p.decide("73", true).is_empty());
+    }
+
+    #[test]
+    fn an_approval_that_may_not_be_asked_stops_the_session() {
+        let methods = [
+            "item/commandExecution/requestApproval",
+            "item/fileChange/requestApproval",
+            "item/permissions/requestApproval",
+        ];
+        // A leader, and every session under strict, never asks.
+        for spec in [at(Confine::Standard, false), at(Confine::Strict, true)] {
+            for m in methods {
+                let mut p = in_turn(&spec);
+                let e = p.line(&ask(json!(1), m, json!({}))).unwrap_err();
+                assert!(e.contains("although none may be asked"), "{m}: {e}");
+            }
+        }
+        // Nor before the settings are checked.
+        for m in methods {
+            let mut p = Protocol::new(&at(Confine::Standard, true), None);
+            p.open();
+            let e = p.line(&ask(json!(1), m, json!({}))).unwrap_err();
+            assert!(e.contains("before its settings were checked"), "{m}: {e}");
+        }
+        // The old protocol's approvals are not answered.
+        for m in ["applyPatchApproval", "execCommandApproval"] {
+            let mut p = in_turn(&at(Confine::Standard, true));
+            let e = p.line(&ask(json!(1), m, json!({}))).unwrap_err();
+            assert!(e.contains("the old way"), "{m}: {e}");
+        }
+    }
+
+    #[test]
+    fn a_command_codex_wraps_in_a_shell_is_asked_for_as_the_agent_wrote_it() {
+        assert_eq!(unwrapped("/bin/zsh -lc 'cargo test'"), "cargo test");
+        assert_eq!(unwrapped("bash -c 'git status'"), "git status");
+        assert_eq!(unwrapped("/usr/bin/sh -lc \"ls -la\""), "ls -la");
+        // What is inside stays whole, to be judged as it is.
+        assert_eq!(
+            unwrapped("/bin/bash -lc 'cargo test && rm -rf x'"),
+            "cargo test && rm -rf x"
+        );
+        for kept in [
+            "/tmp/zsh -lc 'cargo test'",
+            "/bin/zsh -i 'cargo test'",
+            "/bin/zsh -lc 'cargo test' extra",
+            "/bin/zsh -lc",
+            "cargo test",
+            "/bin/zsh -lc \"echo $HOME\"",
+            "",
+        ] {
+            assert_eq!(unwrapped(kept), kept);
+        }
+        let mut p = in_turn(&at(Confine::Standard, true));
+        let acts = p
+            .line(&ask(
+                json!(1),
+                "item/commandExecution/requestApproval",
+                json!({ "itemId": "c", "command": "/bin/zsh -lc 'cargo test'" }),
+            ))
+            .unwrap();
+        assert_eq!(
+            asks(&acts).1,
+            Ask::Command {
+                tool: "shell".into(),
+                command: "cargo test".into()
+            }
+        );
+    }
+
     #[test]
     fn a_command_is_shown_in_one_short_line() {
         assert_eq!(one_line("  ls -la \n rm x"), "ls -la");
@@ -2702,6 +3268,85 @@ done"#
         assert!(args.starts_with("app-server\n"));
         assert!(args.contains("sandbox_mode=\"read-only\""));
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn the_person_s_answer_reaches_codex_through_the_session() {
+        let dir = std::env::temp_dir().join(format!("imece-codex-ask-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let cwd = dir.canonicalize().unwrap();
+        let mut s = spec(true);
+        s.confine = Confine::Standard;
+        s.cwd = cwd.clone();
+        let cwd_text = cwd.to_string_lossy();
+        let mut answers = clean_answers(true, &cwd_text);
+        answers[2] = json!({ "config": config_at(true, &[], false, Confine::Standard) });
+        answers[7] = thread_at(true, &cwd_text, Confine::Standard);
+        let turn = [ask(
+            json!(77),
+            "item/commandExecution/requestApproval",
+            json!({ "itemId": "c1", "command": "cargo publish" }),
+        )];
+        // After the ask, the fake waits for the answer, keeps it, and ends
+        // the turn.
+        let body = fake_body(&answers, &turn).replace(
+            "\n    exit 0\n",
+            &format!(
+                "\n    read -r answer; printf '%s\\n' \"$answer\" > answer.txt\n    echo '{}'\n    exit 0\n",
+                notify(
+                    "turn/completed",
+                    json!({ "turn": { "id": "u1", "status": "completed" } })
+                )
+            ),
+        );
+        s.program = fake(&dir, "fake-codex", &body);
+        let (tx, rx) = mpsc::channel();
+        let mut session: Box<dyn crate::Agent> = Box::new(
+            Session::start(&s, move |e| {
+                let _ = tx.send(e);
+            })
+            .unwrap(),
+        );
+        session.prompt("publish").unwrap();
+        let mut got = Vec::new();
+        loop {
+            let e = rx.recv_timeout(Duration::from_secs(20)).expect("in time");
+            if let Event::Asks { request, .. } = &e {
+                session.decide(request, false).unwrap();
+            }
+            let end = matches!(e, Event::Stopped(_));
+            got.push(e);
+            if end {
+                break;
+            }
+        }
+        assert!(
+            got.contains(&Event::Asks {
+                request: "77".into(),
+                what: Ask::Command {
+                    tool: "shell".into(),
+                    command: "cargo publish".into()
+                }
+            }),
+            "{got:?}"
+        );
+        assert!(
+            got.iter()
+                .any(|e| matches!(e, Event::TurnDone { ok: true, .. }))
+        );
+        let answer: Value =
+            serde_json::from_str(&std::fs::read_to_string(cwd.join("answer.txt")).unwrap())
+                .unwrap();
+        assert_eq!(
+            answer,
+            json!({ "jsonrpc": "2.0", "id": 77, "result": { "decision": "decline" } })
+        );
+        // A session that is over takes no answer.
+        drop(rx);
+        let e = session.decide("77", true);
+        let _ = std::fs::remove_dir_all(&dir);
+        assert_eq!(e.unwrap_err().kind(), io::ErrorKind::BrokenPipe);
     }
 
     #[test]
@@ -3019,6 +3664,87 @@ done"#
             "{calls:?}"
         );
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// `IMECE_LIVE_CODEX=1 cargo test -p imece-agent -- --ignored live_codex_asks --nocapture`
+    ///
+    /// A worker under standard asks before it writes outside its
+    /// directory; refused, the file is not made, allowed, it is.
+    #[test]
+    #[ignore = "drives the real codex; set IMECE_LIVE_CODEX=1"]
+    fn live_codex_asks_before_a_write_outside_its_directory_and_does_what_it_hears() {
+        if std::env::var_os("IMECE_LIVE_CODEX").is_none() {
+            return;
+        }
+        let dir = std::env::temp_dir().join(format!("imece-live-codex-ask-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let cwd = dir.canonicalize().unwrap();
+        // Outside the directory and outside the temporary ones, which the
+        // sandbox lets a worker write.
+        let outside = std::env::home_dir()
+            .unwrap()
+            .join(format!(".imece-live-codex-{}", std::process::id()));
+        std::fs::create_dir_all(&outside).unwrap();
+        let s = Spec {
+            program: PROGRAM.into(),
+            cwd: cwd.clone(),
+            choice: Some("@low".into()),
+            write: true,
+            confine: Confine::Standard,
+            system: "You are codex-1, a coding agent in imece. You can read and change \
+                     files here and run commands; what needs more than the sandbox gives \
+                     waits for the person's yes. A refusal is the person's decision."
+                .into(),
+            mcp: None,
+            resume: None,
+        };
+        let (tx, rx) = mpsc::channel();
+        let mut session = Session::start(&s, move |e| {
+            let _ = tx.send(e);
+        })
+        .unwrap();
+        let turn = |session: &mut Session, file: &str, allow: bool| {
+            let target = outside.join(file);
+            session
+                .prompt(&format!(
+                    "Run the shell command `touch {}`. The file is outside your directory, \
+                     so ask to run it outside the sandbox (escalated permissions) right \
+                     away. If you are refused, reply with the single word: refused. \
+                     Else reply with the single word: done.",
+                    target.display()
+                ))
+                .unwrap();
+            let mut got = Vec::new();
+            loop {
+                let e = rx
+                    .recv_timeout(Duration::from_secs(300))
+                    .expect("codex answers within five minutes");
+                eprintln!("live codex: {e:?}");
+                if let Event::Asks { request, .. } = &e {
+                    session.decide(request, allow).unwrap();
+                }
+                let end = matches!(e, Event::TurnDone { .. } | Event::Stopped(_));
+                got.push(e);
+                if end {
+                    return (got, target.exists());
+                }
+            }
+        };
+        let (no, made) = turn(&mut session, "no.txt", false);
+        let (yes, made_too) = turn(&mut session, "yes.txt", true);
+        drop(session);
+        let _ = std::fs::remove_dir_all(&outside);
+        let _ = std::fs::remove_dir_all(&dir);
+        let asked = |got: &[Event]| got.iter().any(|e| matches!(e, Event::Asks { .. }));
+        assert!(asked(&no), "{no:?}");
+        assert!(!made, "a refused write was made: {no:?}");
+        assert!(
+            matches!(no.last(), Some(Event::TurnDone { ok: true, .. })),
+            "{no:?}"
+        );
+        assert!(asked(&yes), "{yes:?}");
+        assert!(made_too, "an allowed write was not made: {yes:?}");
     }
 
     /// `IMECE_LIVE_CODEX=1 cargo test -p imece-agent -- --ignored live_codex_resumes --nocapture`

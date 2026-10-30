@@ -18,7 +18,8 @@ APPROVAL REQUESTS routed to WAITING FOR YOU instead of denied or
 stopping the session: Claude `--permission-prompt-tool` served by
 imece's MCP server (DONE in the approvals PR, entry "Approval routing
 v0", with routine commands allowed on their own), Codex approval
-requests, Gemini `session/request_permission` (to come).
+requests (DONE in the Codex approvals PR, same record), Gemini
+`session/request_permission` (to come).
 Then dogfooding (imece writes imece) in standard mode, with an
 `AGENTS.md` under the 16 KiB cap and a known-good binary kept as
 `imece-stable`.

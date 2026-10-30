@@ -131,8 +131,12 @@ is, and the journal says so either way.
 - A Codex session is a long-lived `codex app-server` (JSON-RPC on stdio).
   Codex always has a shell, so the sandbox does the confining: read-only
   for the lead, workspace-write (the agent's directory) for workers and
-  helpers; approvals are never asked, so what the sandbox refuses simply
-  fails. Under strict the sandbox has no network and web search is off;
+  helpers. Under standard and open a worker asks (`on-request`) before
+  what needs more than the sandbox gives (a write outside its directory,
+  a command outside the sandbox): a routine command runs on its own, any
+  other waits in WAITING FOR YOU like Claude's; the lead, and everything
+  under strict, never asks, so what the sandbox refuses simply fails.
+  Under strict the sandbox has no network and web search is off;
   under standard a worker's sandbox reaches the network and web search is
   live; both turn plugins, apps, hooks, sub-agents and memories off, write
   no session files, and name off the MCP servers and skills your own Codex

@@ -8,7 +8,9 @@ whose plan pays) to the trace. Codex has no tool allowlist and always a
 shell, so the SANDBOX confines: `read-only` for a leader,
 `workspace-write` (cwd only, `network_access=false`) for workers and
 helpers, `approval_policy="never"` (a refused command just fails, never
-a prompt). Set with `-c` overrides AND on the thread: web search off,
+a prompt; since Approval routing v0 part 2 a writer under standard and
+open runs `on-request` and asks the person, see
+`30-approval-routing.md`). Set with `-c` overrides AND on the thread: web search off,
 features apps/plugins/browser_use/computer_use/hooks/image_generation/
 multi_agent/view_image/memories/goals/tool_suggest off, `notify=[]`,
 `history.persistence="none"` (Codex's global message log; the thread's
@@ -31,8 +33,9 @@ in the echo too): Codex asks approval for MCP tool calls, and under
 approval" (the live smoke test found this);
 `thread/start`'s answer echoes approvalPolicy/sandbox/cwd; the MCP
 servers are checked again before every `turn/start`. Server requests:
-any approval request or elicitation or dynamic tool call stops the
-session; `item/tool/requestUserInput` is answered empty (the person is
+an approval request of a session that may not ask (a leader, strict),
+the old protocol's approvals, an elicitation or a dynamic tool call
+stop the session; `item/tool/requestUserInput` is answered empty (the person is
 not there; the leader is, via send). Items: `commandExecution` →
 Tool `shell`, `fileChange` → Tool `apply_patch` per path (counts as a
 change), `mcpToolCall` must be imece's server and an offered tool,

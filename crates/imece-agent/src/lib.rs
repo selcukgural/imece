@@ -81,6 +81,18 @@ pub trait Agent: Send {
     fn command(&mut self, line: &str) -> io::Result<()>;
     /// Asks the session to stop without waiting.
     fn terminate(&mut self);
+    /// Answers what the session asked in an [`Event::Asks`] with
+    /// `request`: `allow` lets it run, else it is refused and the turn
+    /// goes on. An ask already gone is answered by nobody. A vendor that
+    /// asks over imece's socket instead (Claude Code) has nothing to
+    /// answer here: [`io::ErrorKind::Unsupported`].
+    fn decide(&mut self, request: &str, allow: bool) -> io::Result<()> {
+        let _ = (request, allow);
+        Err(io::Error::new(
+            io::ErrorKind::Unsupported,
+            "this session asks through imece's socket",
+        ))
+    }
 }
 
 /// How strong a model an agent gets. Agents choose a tier, never a model
@@ -207,6 +219,22 @@ mod tests {
         };
         assert_eq!(bare.line(), "Mystery");
     }
+
+    #[test]
+    fn a_session_that_asks_through_the_socket_has_nothing_to_decide() {
+        struct Plain;
+        impl Agent for Plain {
+            fn prompt(&mut self, _: &str) -> io::Result<()> {
+                Ok(())
+            }
+            fn command(&mut self, _: &str) -> io::Result<()> {
+                Ok(())
+            }
+            fn terminate(&mut self) {}
+        }
+        let e = Plain.decide("1", true).unwrap_err();
+        assert_eq!(e.kind(), io::ErrorKind::Unsupported);
+    }
 }
 
 /// What a session reports, whatever the vendor.
@@ -226,6 +254,12 @@ pub enum Event {
     Tool { name: String, target: String },
     /// A tool call came back with an error.
     ToolFailed { name: String },
+    /// The session waits for the person's yes before it does `what`;
+    /// [`Agent::decide`] with `request` answers it.
+    Asks { request: String, what: Ask },
+    /// What the session asked with `request` waits no more: its vendor
+    /// settled it (the turn ended or was stopped).
+    Withdrawn { request: String },
     /// Something the vendor said about the session that the person may
     /// want in the trace: what a turn cost in tokens, whose plan pays.
     Note(String),
