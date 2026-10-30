@@ -9,16 +9,18 @@
 //! could override them. What imece can set, it sets on the command line:
 //! its own POLICY file (the user tier's only policy once `--policy` names
 //! it; just root-owned system policies rank above it) allows exactly the
-//! tools of the role and the level (file tools; from standard on the web
-//! too, and a shell when the agent may write; an allow runs without a
-//! prompt) and imece's own MCP tools, and under strict and standard
-//! denies every other tool, so nothing is ever asked (what would ask is
-//! denied instead, and imece denies every permission request anyway);
-//! extensions are off, no MCP server but imece's is allowed; the approval
-//! mode is `default`. Under open the person's extensions and MCP servers
-//! load and their tools run under the person's own policies (what asks
-//! is still denied); imece denies by name only Gemini's agent tools, and
-//! a reader's writing tools.
+//! tools of the role and the level (file tools, and from standard on the
+//! web too; an allow runs without a prompt) and imece's own MCP tools, and
+//! under strict and standard denies every other tool; extensions are off,
+//! no MCP server but imece's is allowed; the approval mode is `default`.
+//! A writer's shell (standard) is `ask_user`: every command asks, and the
+//! ask (`session/request_permission`) waits for the person as an
+//! [`Event::Asks`] until [`Protocol::decide`] answers it. Under open the
+//! person's extensions and MCP servers load and their tools, the shell
+//! too, run under the person's own policies (what they ask waits for the
+//! person the same way); imece denies by name only Gemini's agent tools,
+//! and a reader's writing tools. Under strict nothing may ask: what would
+//! is refused.
 //! Gemini runs in a private directory imece owns (its working directory,
 //! holding the policy and a `GEMINI.md` with the agent's instructions, the
 //! only way ACP has to give instructions) and gets the agent's files as an
@@ -55,7 +57,7 @@ use std::time::{Duration, Instant};
 use serde_json::{Value, json};
 
 use crate::child::{self, Child, Out};
-use crate::{Confine, Event, MCP_SERVER, Mcp, mcp_tool};
+use crate::{Ask, Confine, Event, MCP_SERVER, Mcp, mcp_tool};
 
 /// Variables Gemini CLI may need besides [`child::BASE_ENV`]: an API key
 /// (a key entered in the CLI lives in the keychain), its config home, and
@@ -118,6 +120,8 @@ pub const EDIT_TOOLS: &[&str] = &[
 ];
 /// The shell.
 pub const SHELL_TOOL: &str = "run_shell_command";
+/// What the person reads for the shell in an ask.
+const SHELL: &str = "shell";
 /// The web: searching and fetching a page.
 pub const WEB_TOOLS: &[&str] = &["google_web_search", "web_fetch"];
 /// Gemini CLI's tools that run agents of its own (and the agents it
@@ -264,9 +268,27 @@ const PRICES: &[(&str, u64, u64, u64)] = &[
     ("gemini-2.5-flash", 300, 2500, 30),
 ];
 
+/// Gemini CLI's model aliases and the part of a model name each may stand
+/// for. Gemini names a turn's model by the alias it was asked for unless
+/// the model told it which one ran (a turn with a tool call may not), so
+/// an alias is booked at the dearest model it may mean: never too little.
+const ALIASES: &[(&str, &str)] = &[
+    ("auto", ""),
+    ("pro", "-pro"),
+    ("flash", "-flash"),
+    ("flash-lite", "-flash-lite"),
+];
+
 /// The list price of `model` (input, output, cached input), if imece knows
-/// it.
+/// it; for an alias, the dearest of the models it may mean.
 pub fn price(model: &str) -> Option<(u64, u64, u64)> {
+    if let Some((_, part)) = ALIASES.iter().find(|(alias, _)| *alias == model) {
+        return PRICES
+            .iter()
+            .filter(|(name, ..)| name.contains(part))
+            .map(|&(_, i, o, c)| (i, o, c))
+            .max_by_key(|&(i, o, c)| (o, i, c));
+    }
     PRICES
         .iter()
         .filter(|(prefix, ..)| model.starts_with(prefix))
@@ -345,13 +367,14 @@ fn toml_str(s: &str) -> String {
 }
 
 /// The policy for `spec`: the tools of the role and the level and imece's
-/// own tools allowed by exact name (an allow runs without a prompt), and
-/// every other tool denied (and so not even shown to the model); under
-/// open only Gemini's agent tools are denied, and a reader's writing
-/// tools, the rest run under the person's own policies. The highest
-/// priority wins in Gemini's policy engine, so the allows rank first, the
-/// denial right under them, and both above anything the person's settings
-/// add.
+/// own tools allowed by exact name (an allow runs without a prompt), a
+/// writer's shell asking before every command, and every other tool
+/// denied (and so not even shown to the model); under open only Gemini's
+/// agent tools are denied, and a reader's writing tools, the rest (the
+/// shell too) run under the person's own policies. The highest priority
+/// wins in Gemini's policy engine, so the allows and the ask rank first,
+/// the denial right under them, and all above anything the person's
+/// settings add.
 pub fn policy(spec: &Spec) -> String {
     let list = |names: &[String]| {
         format!(
@@ -363,7 +386,12 @@ pub fn policy(spec: &Spec) -> String {
                 .join(", ")
         )
     };
-    let tools: Vec<String> = spec.tools().iter().map(|t| t.to_string()).collect();
+    let tools: Vec<String> = spec
+        .tools()
+        .iter()
+        .filter(|&&t| t != SHELL_TOOL)
+        .map(|t| t.to_string())
+        .collect();
     let denied = if spec.confine == Confine::Open {
         let mut d: Vec<String> = SUBAGENT_TOOLS.iter().map(|t| t.to_string()).collect();
         if !spec.write {
@@ -393,6 +421,12 @@ pub fn policy(spec: &Spec) -> String {
          denyMessage = \"imece: this tool is not available in this session\"\n",
         list(&tools)
     );
+    if spec.confine == Confine::Standard && spec.tools().contains(&SHELL_TOOL) {
+        out.push_str(&format!(
+            "\n[[rule]]\ntoolName = {}\ndecision = \"ask_user\"\npriority = 999\n",
+            toml_str(SHELL_TOOL)
+        ));
+    }
     if let Some(m) = &spec.mcp
         && !m.tools.is_empty()
     {
@@ -512,6 +546,16 @@ fn allowed_kind(kind: &str, write: bool, confine: Confine) -> bool {
     }
 }
 
+/// A permission request waiting for the person: imece's name for it,
+/// the JSON-RPC id it came with, and the options that allow and refuse
+/// it once.
+struct Asking {
+    request: String,
+    id: Value,
+    allow: String,
+    refuse: String,
+}
+
 /// Turns stdout lines into [`Act`]s and checks what Gemini reports.
 pub struct Protocol {
     cwd: PathBuf,
@@ -536,6 +580,8 @@ pub struct Protocol {
     text: String,
     /// Names of the tool calls under way, by id.
     calls: HashMap<String, String>,
+    /// What waits for the person's yes, in the order it was asked.
+    asks: Vec<Asking>,
     denied: usize,
     /// What the session has cost so far, in millionths of a dollar.
     cost: u64,
@@ -568,6 +614,7 @@ impl Protocol {
             busy: false,
             text: String::new(),
             calls: HashMap::new(),
+            asks: Vec::new(),
             denied: 0,
             cost: 0,
             tokens: (0, 0, 0),
@@ -840,14 +887,24 @@ impl Protocol {
     /// A turn Gemini refused outright (a model it lacks, a rate limit).
     fn turn_failed(&mut self, why: String) -> Vec<Act> {
         self.busy = false;
-        let mut acts = vec![Act::Event(Event::TurnDone {
+        let mut acts = self.withdraw_all();
+        acts.push(Act::Event(Event::TurnDone {
             ok: false,
             text: why,
             cost: self.cost,
             denied: self.denied,
-        })];
+        }));
         acts.extend(self.next_turn());
         acts
+    }
+
+    /// What the ended turn asked can not run after it: every ask still
+    /// waiting is withdrawn.
+    fn withdraw_all(&mut self) -> Vec<Act> {
+        self.asks
+            .drain(..)
+            .map(|a| Act::Event(Event::Withdrawn { request: a.request }))
+            .collect()
     }
 
     /// A turn ended: its cost is booked from what it used.
@@ -886,7 +943,7 @@ impl Protocol {
             self.cost += dearest;
         }
         let text = self.text.trim().to_string();
-        let mut acts = Vec::new();
+        let mut acts = self.withdraw_all();
         if !text.is_empty() {
             acts.push(Act::Event(Event::Text(text.clone())));
         }
@@ -911,8 +968,33 @@ impl Protocol {
     /// Gemini asked something of imece (a request with an id).
     fn asked(&mut self, id: Value, method: &str, params: &Value) -> Result<Vec<Act>, String> {
         match method {
-            // Nothing may be asked: what would ask is denied.
+            // From standard on, a checked session's ask waits for the
+            // person; under strict, or one that can not be allowed once,
+            // is refused.
             "session/request_permission" => {
+                let option = |kind: &str| {
+                    params["options"]
+                        .as_array()
+                        .into_iter()
+                        .flatten()
+                        .find(|o| o["kind"] == kind)
+                        .and_then(|o| o["optionId"].as_str())
+                        .map(str::to_string)
+                };
+                if self.confine.full()
+                    && self.started
+                    && let Some(allow) = option("allow_once")
+                {
+                    let request = id.to_string();
+                    let what = self.ask(&params["toolCall"]);
+                    self.asks.push(Asking {
+                        request: request.clone(),
+                        id,
+                        allow,
+                        refuse: option("reject_once").unwrap_or_else(|| "cancel".into()),
+                    });
+                    return Ok(vec![Act::Event(Event::Asks { request, what })]);
+                }
                 self.denied += 1;
                 let title = params["toolCall"]["title"].as_str().unwrap_or_default();
                 Ok(vec![
@@ -937,6 +1019,89 @@ impl Protocol {
                 .to_string(),
             )]),
         }
+    }
+
+    /// The person's answer to what Gemini asked with `request`: the option
+    /// that allows it once, or the one that refuses it (the call fails,
+    /// the turn goes on). An ask that is gone is answered no more.
+    pub fn decide(&mut self, request: &str, allow: bool) -> Vec<Act> {
+        let Some(at) = self.asks.iter().position(|a| a.request == request) else {
+            return Vec::new();
+        };
+        let a = self.asks.remove(at);
+        if !allow {
+            self.denied += 1;
+        }
+        let option = if allow { a.allow } else { a.refuse };
+        vec![Act::Send(
+            json!({ "jsonrpc": "2.0", "id": a.id, "result": {
+                "outcome": { "outcome": "selected", "optionId": option } } })
+            .to_string(),
+        )]
+    }
+
+    /// What a permission request asks, for the person. A shell command is
+    /// shown whole, and judged as a command only when it runs in the
+    /// agent's directory; elsewhere it says where. Any other tool shows
+    /// the path it touches, or its title.
+    fn ask(&self, call: &Value) -> Ask {
+        let kind = call["kind"].as_str().unwrap_or("other");
+        let title = call["title"].as_str().unwrap_or_default();
+        if kind == "execute" {
+            let command = title.to_string();
+            return match self.shell_dir(call) {
+                Some(d) if d.starts_with(&self.cwd) => Ask::Command {
+                    tool: SHELL.into(),
+                    command,
+                },
+                Some(d) => Ask::Other {
+                    tool: SHELL.into(),
+                    detail: format!("{command} (in {})", d.display()),
+                },
+                None => Ask::Other {
+                    tool: SHELL.into(),
+                    detail: command,
+                },
+            };
+        }
+        let id = call["toolCallId"].as_str().unwrap_or_default();
+        let tool = id
+            .split_once("__call_")
+            .map(|(name, _)| name)
+            .filter(|n| !n.is_empty())
+            .unwrap_or(kind);
+        let detail = call["locations"][0]["path"]
+            .as_str()
+            .map(|p| relative(p, &self.cwd))
+            .unwrap_or_else(|| one_line(title));
+        Ask::Other {
+            tool: tool.to_string(),
+            detail,
+        }
+    }
+
+    /// The directory a shell command that asks would run in, as Gemini's
+    /// explanation of it says: `[in DIR]` when the model named one,
+    /// `[current working directory DIR]` when not, relative to the
+    /// directory Gemini runs in. An explanation with a second `]` (a
+    /// description that has one, a background command) could hide where
+    /// the directory's name ends: none.
+    fn shell_dir(&self, call: &Value) -> Option<PathBuf> {
+        call["content"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(|c| c["content"]["text"].as_str())
+            .find_map(|t| {
+                let rest = t
+                    .strip_prefix("[in ")
+                    .or_else(|| t.strip_prefix("[current working directory "))?;
+                if rest.matches(']').count() != 1 {
+                    return None;
+                }
+                let (dir, _) = rest.split_once(']')?;
+                Some(lexical(&self.home.join(dir)))
+            })
     }
 
     /// Gemini told something (a request without an id).
@@ -1140,6 +1305,21 @@ fn one_line(text: &str) -> String {
     out
 }
 
+/// `path` with its `..` worked out from the names alone, as Gemini
+/// resolves a directory it is given (`components` drops a `.` inside an
+/// absolute path already).
+fn lexical(path: &Path) -> PathBuf {
+    let mut out = PathBuf::new();
+    for c in path.components() {
+        if c == std::path::Component::ParentDir {
+            out.pop();
+        } else {
+            out.push(c);
+        }
+    }
+    out
+}
+
 /// `path` relative to the agent's directory, when it is inside.
 fn relative(path: &str, cwd: &Path) -> String {
     let p = Path::new(path);
@@ -1155,6 +1335,7 @@ enum Msg {
     End(String),
     Prompt(String),
     Command(String),
+    Decide(String, bool),
     Terminate,
 }
 
@@ -1221,6 +1402,14 @@ impl Session {
             .map_err(|_| io::Error::new(io::ErrorKind::BrokenPipe, "the session is over"))
     }
 
+    /// Answers what the session asked with `request`; see
+    /// [`Protocol::decide`].
+    pub fn decide(&mut self, request: &str, allow: bool) -> io::Result<()> {
+        self.tx
+            .send(Msg::Decide(request.to_string(), allow))
+            .map_err(|_| io::Error::new(io::ErrorKind::BrokenPipe, "the session is over"))
+    }
+
     /// Asks the session to stop without waiting.
     pub fn terminate(&mut self) {
         let _ = self.tx.send(Msg::Terminate);
@@ -1244,6 +1433,10 @@ impl crate::Agent for Session {
 
     fn terminate(&mut self) {
         Session::terminate(self)
+    }
+
+    fn decide(&mut self, request: &str, allow: bool) -> io::Result<()> {
+        Session::decide(self, request, allow)
     }
 }
 
@@ -1298,6 +1491,7 @@ fn drive(spec: Spec, mut child: Child, rx: Receiver<Msg>, mut on: impl FnMut(Eve
             }
             Ok(Msg::Prompt(text)) => acts = protocol.prompt(&text),
             Ok(Msg::Command(line)) => acts = protocol.command(&line),
+            Ok(Msg::Decide(request, allow)) => acts = protocol.decide(&request, allow),
             Ok(Msg::Terminate) | Err(RecvTimeoutError::Disconnected) => return,
             Err(RecvTimeoutError::Timeout) => {
                 if deadline.is_some_and(|d| Instant::now() >= d) {
@@ -1366,8 +1560,14 @@ mod tests {
         assert_eq!(price("gemini-2.5-flash-lite"), Some((100, 400, 10)));
         assert_eq!(price("gemini-2.5-flash"), Some((300, 2500, 30)));
         assert_eq!(price("gemini-3-pro-preview"), None);
-        assert_eq!(price("auto"), None);
         assert_eq!(price(""), None);
+        // An alias: the dearest model it may mean.
+        assert_eq!(price("auto"), Some((2000, 12000, 200)));
+        assert_eq!(price("pro"), Some((2000, 12000, 200)));
+        assert_eq!(price("flash"), Some((750, 3750, 75)));
+        assert_eq!(price("flash-lite"), Some((300, 2500, 30)));
+        assert_eq!(price("lite"), None);
+        assert_eq!(price("autopilot"), None);
         // 600 fresh input at 1.25, 400 cached at 0.125, 100 output at 10.
         assert_eq!(cost("gemini-2.5-pro", 1000, 400, 100), Some(1_800));
         assert_eq!(cost("gemini-2.5-flash-lite", 1, 0, 0), Some(1));
@@ -1706,9 +1906,17 @@ mod tests {
     fn the_policy_follows_the_level_and_open_denies_only_by_name() {
         let p = policy(&at(Confine::Standard, true));
         assert!(
-            p.contains("\"write_file\", \"replace\", \"google_web_search\", \"web_fetch\", \"run_shell_command\"]\ndecision = \"allow\"\npriority = 999"),
+            p.contains("\"write_file\", \"replace\", \"google_web_search\", \"web_fetch\"]\ndecision = \"allow\"\npriority = 999"),
             "{p}"
         );
+        // A writer's shell asks before every command.
+        assert!(
+            p.contains(
+                "toolName = \"run_shell_command\"\ndecision = \"ask_user\"\npriority = 999\n"
+            ),
+            "{p}"
+        );
+        assert_eq!(p.matches("run_shell_command").count(), 1, "{p}");
         assert!(
             p.contains("toolName = \"*\"\ndecision = \"deny\"\npriority = 998"),
             "{p}"
@@ -1732,8 +1940,12 @@ mod tests {
             p.contains("toolName = [\"invoke_agent\", \"codebase_investigator\", \"generalist\"]\ndecision = \"deny\"\npriority = 998"),
             "{p}"
         );
+        // The shell is the person's policies' to decide.
+        assert!(!p.contains("run_shell_command"), "{p}");
+        // Strict has no shell to ask about.
+        let p = policy(&at(Confine::Strict, true));
         assert!(
-            p.contains("\"run_shell_command\"]\ndecision = \"allow\""),
+            !p.contains("run_shell_command") && !p.contains("ask_user"),
             "{p}"
         );
         // A reader under open: its writing tools denied too, the role stays.
@@ -2212,9 +2424,24 @@ mod tests {
             }),
             "{acts:?}"
         );
+        // A turn Gemini names by the alias asked for: 1000 at 0.75 and
+        // 100 at 3.75, the dearest flash.
+        p.prompt("flash");
+        let acts = p
+            .line(&reply(7, turn_result("flash", 1000, 0, 100, 0)))
+            .unwrap();
+        assert!(
+            events(&acts).contains(&Event::TurnDone {
+                ok: true,
+                text: String::new(),
+                cost: 2_250 + 1_125,
+                denied: 0
+            }),
+            "{acts:?}"
+        );
         p.prompt("again");
         let e = p
-            .line(&reply(7, turn_result("gemini-9-ultra", 10, 0, 1, 0)))
+            .line(&reply(8, turn_result("gemini-9-ultra", 10, 0, 1, 0)))
             .unwrap_err();
         assert!(e.contains("gemini-9-ultra") && e.contains("--tier"), "{e}");
         for (input, output) in [(10, 1), (1, 0), (0, 1)] {
@@ -2461,6 +2688,345 @@ mod tests {
             }),
             "{acts:?}"
         );
+    }
+
+    /// Gemini asks with `id` before tool call `call`, offering `options`.
+    fn permission(id: Value, call: Value, options: Value) -> String {
+        json!({ "jsonrpc": "2.0", "id": id, "method": "session/request_permission", "params": {
+            "sessionId": "s1", "options": options, "toolCall": call } })
+        .to_string()
+    }
+
+    /// The options Gemini offers for a shell command: allowing for the
+    /// session first, then once, then refusing; named apart so the
+    /// answer shows which was picked.
+    fn shell_options() -> Value {
+        json!([
+            { "optionId": "always", "name": "Allow for this session", "kind": "allow_always" },
+            { "optionId": "once", "name": "Allow", "kind": "allow_once" },
+            { "optionId": "no", "name": "Reject", "kind": "reject_once" },
+        ])
+    }
+
+    /// A shell command's call as Gemini asks about it, with its
+    /// explanation.
+    fn shell_call(command: &str, explanation: &str) -> Value {
+        json!({ "toolCallId": "run_shell_command__call_1", "status": "pending", "title": command,
+            "kind": "execute", "locations": [],
+            "content": [{ "type": "content", "content": { "type": "text", "text": explanation } }] })
+    }
+
+    /// The one [`Event::Asks`] in `acts`.
+    fn asks(acts: &[Act]) -> (String, Ask) {
+        match events(acts).as_slice() {
+            [Event::Asks { request, what }] => (request.clone(), what.clone()),
+            e => panic!("not one ask: {e:?}"),
+        }
+    }
+
+    #[test]
+    fn a_writer_s_asks_wait_for_the_person_and_are_answered_once() {
+        let mut p = started(&at(Confine::Standard, true));
+        p.prompt("go");
+        // Gemini shows the call pending, then asks.
+        let acts = p
+            .line(&update(json!({ "sessionUpdate": "tool_call",
+                "toolCallId": "run_shell_command__call_1", "status": "pending",
+                "title": "cargo publish", "kind": "execute" })))
+            .unwrap();
+        assert_eq!(
+            events(&acts),
+            [Event::Tool {
+                name: "run_shell_command".into(),
+                target: "cargo publish".into()
+            }]
+        );
+        let acts = p
+            .line(&permission(
+                json!(42),
+                shell_call("cargo publish", "[in /work/w1] (Publish)"),
+                shell_options(),
+            ))
+            .unwrap();
+        assert!(
+            sent(&acts).is_empty(),
+            "nothing is answered before the person"
+        );
+        assert_eq!(
+            asks(&acts),
+            (
+                "42".to_string(),
+                Ask::Command {
+                    tool: "shell".into(),
+                    command: "cargo publish".into()
+                }
+            )
+        );
+        let acts = p
+            .line(&permission(
+                json!("r-2"),
+                shell_call("rm -rf target", "[in /work/w1]"),
+                shell_options(),
+            ))
+            .unwrap();
+        assert_eq!(asks(&acts).0, "\"r-2\"");
+        // Answered by request, in any order, each once: once, or no.
+        let r = &sent(&p.decide("\"r-2\"", false))[0];
+        assert_eq!(r["id"], "r-2");
+        assert_eq!(
+            r["result"]["outcome"],
+            json!({ "outcome": "selected", "optionId": "no" })
+        );
+        assert!(p.decide("\"r-2\"", true).is_empty());
+        let r = &sent(&p.decide("42", true))[0];
+        assert_eq!(r["id"], 42);
+        assert_eq!(
+            r["result"]["outcome"],
+            json!({ "outcome": "selected", "optionId": "once" })
+        );
+        assert!(p.decide("42", false).is_empty());
+        assert!(p.decide("7", true).is_empty(), "never asked");
+        // Without an option to refuse once, `cancel` refuses.
+        p.line(&permission(
+            json!(43),
+            shell_call("make", "[in /work/w1]"),
+            json!([{ "optionId": "once", "kind": "allow_once" }]),
+        ))
+        .unwrap();
+        let r = &sent(&p.decide("43", false))[0];
+        assert_eq!(r["result"]["outcome"]["optionId"], "cancel");
+        // The refusals count as denied; the yes does not.
+        let acts = p
+            .line(&reply(6, turn_result("gemini-2.5-pro", 10, 0, 1, 0)))
+            .unwrap();
+        assert!(
+            events(&acts).contains(&Event::TurnDone {
+                ok: true,
+                text: String::new(),
+                cost: 23,
+                denied: 2
+            }),
+            "{acts:?}"
+        );
+    }
+
+    #[test]
+    fn what_may_not_ask_is_refused_as_before() {
+        let refused = |p: &mut Protocol, options: Value| {
+            let acts = p
+                .line(&permission(
+                    json!(9),
+                    shell_call("make", "[in /work/w1]"),
+                    options,
+                ))
+                .unwrap();
+            assert_eq!(events(&acts), [Event::Note("refused: make".into())]);
+            assert_eq!(
+                sent(&acts)[0]["result"]["outcome"],
+                json!({ "outcome": "selected", "optionId": "cancel" })
+            );
+        };
+        // Strict: nothing may ask.
+        let mut p = started(&at(Confine::Strict, true));
+        p.prompt("go");
+        refused(&mut p, shell_options());
+        // An ask that can not be allowed once.
+        let mut p = started(&at(Confine::Standard, true));
+        p.prompt("go");
+        refused(
+            &mut p,
+            json!([{ "optionId": "always", "kind": "allow_always" }, { "optionId": "no", "kind": "reject_once" }]),
+        );
+        // Before the settings were checked.
+        let mut p = Protocol::new(&at(Confine::Standard, true));
+        p.open();
+        refused(&mut p, shell_options());
+        // Open asks like standard, and so does a reader's session (what
+        // the person's own policies ask).
+        for (confine, write) in [(Confine::Open, true), (Confine::Standard, false)] {
+            let mut p = started(&at(confine, write));
+            p.prompt("go");
+            let acts = p
+                .line(&permission(
+                    json!(9),
+                    shell_call("make", "[in /work/w1]"),
+                    shell_options(),
+                ))
+                .unwrap();
+            assert_eq!(asks(&acts).0, "9", "{confine:?} {write}");
+        }
+    }
+
+    #[test]
+    fn a_command_is_judged_as_one_only_when_it_runs_in_the_agent_s_directory() {
+        let mut p = started(&at(Confine::Standard, true));
+        p.prompt("go");
+        let mut n = 0;
+        let mut what = |call: Value| {
+            n += 1;
+            asks(
+                &p.line(&permission(json!(n), call, shell_options()))
+                    .unwrap(),
+            )
+            .1
+        };
+        let command = |c: &str| Ask::Command {
+            tool: "shell".into(),
+            command: c.into(),
+        };
+        let other = |d: &str| Ask::Other {
+            tool: "shell".into(),
+            detail: d.into(),
+        };
+        assert_eq!(
+            what(shell_call("cargo test", "[in /work/w1] (Run the tests)")),
+            command("cargo test")
+        );
+        assert_eq!(
+            what(shell_call("cargo test", "[in /work/w1/crates/../src/.]")),
+            command("cargo test")
+        );
+        // Shown whole, every line of it.
+        assert_eq!(
+            what(shell_call("echo a\necho b", "[in /work/w1/sub]")),
+            command("echo a\necho b")
+        );
+        // Elsewhere: where it runs is said, and it is never routine.
+        assert_eq!(
+            what(shell_call("cargo test", "[in /work/w1/../w2]")),
+            other("cargo test (in /work/w2)")
+        );
+        assert_eq!(
+            what(shell_call("cargo test", "[in /work/w10]")),
+            other("cargo test (in /work/w10)")
+        );
+        // A relative directory is the private directory's, as Gemini
+        // resolves it.
+        assert_eq!(
+            what(shell_call("git status", "[in sub]")),
+            other("git status (in /state/gemini/gemini-1/sub)")
+        );
+        assert_eq!(
+            what(shell_call(
+                "git status",
+                "[current working directory /state/gemini/gemini-1] (Look)"
+            )),
+            other("git status (in /state/gemini/gemini-1)")
+        );
+        assert_eq!(
+            what(shell_call(
+                "git status",
+                "[current working directory /work/w1]"
+            )),
+            command("git status")
+        );
+        // A second `]` hides where the name ends; no explanation says
+        // nothing.
+        assert_eq!(
+            what(shell_call("cargo test", "[in /work/w1] (a ] b)")),
+            other("cargo test")
+        );
+        assert_eq!(
+            what(shell_call("cargo test", "[in /work/w1] [background]")),
+            other("cargo test")
+        );
+        assert_eq!(
+            what(
+                json!({ "toolCallId": "run_shell_command__call_2", "title": "ls", "kind": "execute" })
+            ),
+            other("ls")
+        );
+        assert_eq!(what(shell_call("ls", "Lists [in /work/w1]")), other("ls"));
+        // Another tool: what it touches, or its title.
+        assert_eq!(
+            what(
+                json!({ "toolCallId": "write_file__call_3", "title": "a.rs", "kind": "edit",
+                "locations": [{ "path": "/work/w1/src/a.rs" }] })
+            ),
+            Ask::Other {
+                tool: "write_file".into(),
+                detail: "src/a.rs".into()
+            }
+        );
+        assert_eq!(
+            what(
+                json!({ "toolCallId": "web_fetch__call_4", "title": "https://example.com/x\nmore", "kind": "fetch" })
+            ),
+            Ask::Other {
+                tool: "web_fetch".into(),
+                detail: "https://example.com/x".into()
+            }
+        );
+        // A path attached to a prompt: no tool's call id.
+        assert_eq!(
+            what(
+                json!({ "toolCallId": "resolve-prompt-/etc/x-1", "title": "Allow access to absolute path: /etc/x",
+                "kind": "read", "locations": [] })
+            ),
+            Ask::Other {
+                tool: "read".into(),
+                detail: "Allow access to absolute path: /etc/x".into()
+            }
+        );
+        assert_eq!(
+            what(json!({ "toolCallId": "__call_5", "title": "t" })),
+            Ask::Other {
+                tool: "other".into(),
+                detail: "t".into()
+            }
+        );
+    }
+
+    #[test]
+    fn what_a_turn_asked_is_withdrawn_when_it_ends() {
+        let mut p = started(&at(Confine::Standard, true));
+        p.prompt("go");
+        p.prompt("then");
+        for id in [70, 71, 72] {
+            p.line(&permission(
+                json!(id),
+                shell_call("make", "[in /work/w1]"),
+                shell_options(),
+            ))
+            .unwrap();
+        }
+        assert!(!p.decide("71", true).is_empty());
+        let e = events(
+            &p.line(&reply(6, turn_result("gemini-2.5-pro", 10, 0, 1, 0)))
+                .unwrap(),
+        );
+        assert_eq!(
+            e[..2],
+            [
+                Event::Withdrawn {
+                    request: "70".into()
+                },
+                Event::Withdrawn {
+                    request: "72".into()
+                }
+            ]
+        );
+        assert!(matches!(e[2], Event::TurnDone { ok: true, .. }), "{e:?}");
+        assert!(p.decide("70", true).is_empty() && p.decide("72", false).is_empty());
+        // A turn Gemini refuses withdraws too.
+        p.line(&permission(
+            json!(73),
+            shell_call("make", "[in /work/w1]"),
+            shell_options(),
+        ))
+        .unwrap();
+        let e = events(
+            &p.line(&json!({ "jsonrpc": "2.0", "id": 7, "error": { "code": 429, "message": "slow down" } }).to_string())
+                .unwrap(),
+        );
+        assert_eq!(
+            e[0],
+            Event::Withdrawn {
+                request: "73".into()
+            }
+        );
+        assert!(matches!(e[1], Event::TurnDone { ok: false, .. }), "{e:?}");
+        assert!(p.decide("73", true).is_empty());
     }
 
     #[test]
@@ -2757,6 +3323,82 @@ done"#;
         assert!(env.contains("GEMINI_TELEMETRY_ENABLED=false"), "{env}");
         assert!(env.contains("NO_BROWSER=true"), "{env}");
         assert!(s.home.join("policy/imece.toml").exists() && s.home.join("GEMINI.md").exists());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn the_person_s_answer_reaches_the_process_and_the_turn_goes_on() {
+        let dir = std::env::temp_dir().join(format!("imece-gemini-ask-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let mut s = with_bus(true);
+        s.confine = Confine::Standard;
+        s.cwd = dir.join("repo");
+        s.home = dir.join("home");
+        std::fs::create_dir_all(&s.cwd).unwrap();
+        s.program = fake(&dir, "fake-gemini", FAKE);
+        let mut steps = clean_steps(&s);
+        // The prompt (request 6) is asked about; the answer ends the turn.
+        steps.push(permission(
+            json!(77),
+            shell_call("make", &format!("[in {}]", s.cwd.display())),
+            shell_options(),
+        ));
+        steps.push(reply(6, turn_result("gemini-2.5-flash", 1000, 0, 100, 0)));
+        std::fs::create_dir_all(&s.home).unwrap();
+        for (i, step) in steps.iter().enumerate() {
+            std::fs::write(
+                s.home.join(format!("step{}.txt", i + 1)),
+                format!("{step}\n"),
+            )
+            .unwrap();
+        }
+        let (tx, rx) = mpsc::channel();
+        let mut session: Box<dyn crate::Agent> = Box::new(
+            Session::start(&s, move |e| {
+                let _ = tx.send(e);
+            })
+            .unwrap(),
+        );
+        session.prompt("go").unwrap();
+        let mut got = Vec::new();
+        loop {
+            let e = rx.recv_timeout(Duration::from_secs(20)).expect("in time");
+            if let Event::Asks { request, .. } = &e {
+                session.decide(request, false).unwrap();
+            }
+            let end = matches!(e, Event::Stopped(_));
+            got.push(e);
+            if end {
+                break;
+            }
+        }
+        assert!(
+            got.contains(&Event::Asks {
+                request: "77".into(),
+                what: Ask::Command {
+                    tool: "shell".into(),
+                    command: "make".into()
+                }
+            }),
+            "{got:?}"
+        );
+        assert!(
+            got.contains(&Event::TurnDone {
+                ok: true,
+                text: String::new(),
+                cost: 550,
+                denied: 1
+            }),
+            "{got:?}"
+        );
+        // A session that is over takes no answer.
+        drop(rx);
+        session.terminate();
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while session.decide("77", true).is_ok() {
+            assert!(Instant::now() < deadline, "the driver ended");
+            thread::sleep(Duration::from_millis(20));
+        }
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -3264,6 +3906,88 @@ done"#;
             "{gone:?}"
         );
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// `IMECE_LIVE_GEMINI=1 cargo test -p imece-agent -- --ignored live_gemini_asks --nocapture`
+    ///
+    /// A worker under standard asks before every shell command: two
+    /// turns, one refused (no file) and one allowed (the file is made).
+    #[test]
+    #[ignore = "runs the real gemini CLI; needs a Gemini login and costs tokens"]
+    fn live_gemini_asks_before_a_command_and_does_what_it_hears() {
+        if std::env::var_os("IMECE_LIVE_GEMINI").is_none() {
+            return;
+        }
+        let dir =
+            std::env::temp_dir().join(format!("imece-live-gemini-ask-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("repo")).unwrap();
+        let cwd = dir.join("repo").canonicalize().unwrap();
+        let s = Spec {
+            program: PROGRAM.into(),
+            cwd: cwd.clone(),
+            home: dir.join("home"),
+            model: std::env::var("IMECE_LIVE_GEMINI_MODEL").ok(),
+            write: true,
+            confine: Confine::Standard,
+            system: "You are gemini-1, a coding agent in imece. You can read and change \
+                     files here and run commands; commands wait for the person's yes. A \
+                     refusal is the person's decision."
+                .into(),
+            mcp: None,
+            resume: None,
+        };
+        let (tx, rx) = mpsc::channel();
+        let mut session = Session::start(&s, move |e| {
+            let _ = tx.send(e);
+        })
+        .unwrap();
+        let mut turn = |file: &str, allow: bool| {
+            session
+                .prompt(&format!(
+                    "Run the shell command `touch {file}` with dir_path {}. If you are \
+                     refused, reply with the single word: refused. Else reply with the \
+                     single word: done.",
+                    cwd.display()
+                ))
+                .unwrap();
+            let mut got = Vec::new();
+            loop {
+                let e = rx
+                    .recv_timeout(Duration::from_secs(600))
+                    .expect("gemini answers within ten minutes");
+                eprintln!("live gemini: {e:?}");
+                if let Event::Asks { request, .. } = &e {
+                    session.decide(request, allow).unwrap();
+                }
+                let end = matches!(e, Event::TurnDone { .. } | Event::Stopped(_));
+                got.push(e);
+                if end {
+                    return (got, cwd.join(file).exists());
+                }
+            }
+        };
+        let (no, made) = turn("no.txt", false);
+        let (yes, made_too) = turn("yes.txt", true);
+        drop(turn);
+        drop(session);
+        let _ = std::fs::remove_dir_all(&dir);
+        let asked = |got: &[Event]| got.iter().any(|e| matches!(e, Event::Asks { .. }));
+        assert!(asked(&no), "{no:?}");
+        assert!(!made, "a refused command ran: {no:?}");
+        assert!(
+            matches!(
+                no.last(),
+                Some(Event::TurnDone {
+                    ok: true,
+                    denied: 1,
+                    ..
+                })
+            ),
+            "{no:?}"
+        );
+        assert!(asked(&yes), "{yes:?}");
+        assert!(made_too, "an allowed command did not run: {yes:?}");
     }
 
     #[test]

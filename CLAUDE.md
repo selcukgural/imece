@@ -125,7 +125,7 @@ record in the same PR.
 - 27 `ask-the-person`: `send(to: "you")`, questions in WAITING FOR YOU.
 - 28 `confine-dial`: `--confine open|standard|strict` per vendor.
 - 29 `legibility`: dimmed backdrop, plain rows, the coloured trace, a conversation that follows.
-- 30 `approval-routing`: Claude's permission prompts to `approve`, Codex's `on-request` asks, routine commands, `⚑` asks in WAITING FOR YOU.
+- 30 `approval-routing`: Claude's permission prompts to `approve`, Codex's `on-request` asks, Gemini's `ask_user` shell, routine commands, `⚑` asks in WAITING FOR YOU.
 
 `docs/neighbours.md`: voff, what was taken from it and the rules that come
 from what it lacks. Read it before building a part it names.
