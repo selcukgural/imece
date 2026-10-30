@@ -2492,9 +2492,15 @@ mod tests {
             .query_row("SELECT count(*) FROM meta", [], |r| r.get(0))
             .unwrap();
         assert_eq!(rows, 4, "schema_version, started_at, budget, saved_at");
-        // `save` takes the time from the clock.
+        // `save` takes the time from the clock (the clock itself, not what
+        // the store thinks it is).
         w.budget += 1;
         assert!(store.save(&w, &k.kept()).unwrap());
-        assert!(saved_at(&mut store).unwrap().abs_diff(unix_now()) <= 2);
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        assert!(saved_at(&mut store).unwrap().abs_diff(now) <= 2);
+        assert!(unix_now().abs_diff(now) <= 2);
     }
 }

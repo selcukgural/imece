@@ -2864,6 +2864,32 @@ mod tests {
         assert!(screen.contains("last 7 min"), "{screen}");
     }
 
+    /// The project's name stands on an inbox line only when there are
+    /// several projects to tell apart.
+    #[test]
+    fn an_inbox_line_names_the_project_only_among_several() {
+        for (projects, named) in [(1, false), (2, true)] {
+            let mut app = app_after(projects, 4, 0, Lang::En);
+            let leader = app.world.projects[0].leader;
+            app.world.inbox.push(InboxItem {
+                kind: InboxKind::Sensitive,
+                agent: leader,
+                detail: "bump a dependency".into(),
+                researcher: None,
+                open: true,
+                tick: 0,
+            });
+            let line = text(&[inbox_line(&app, app.world.inbox.len() - 1)]).remove(0);
+            let name = &app.world.projects[0].name;
+            assert_eq!(
+                line.contains(&format!(" {name} ")),
+                named,
+                "{projects} projects: {line}"
+            );
+            assert!(line.starts_with("! 14:00 "), "{line}");
+        }
+    }
+
     #[test]
     fn the_where_you_left_off_window_tells_what_was_left() {
         let mut app = talking_over_two_days();
