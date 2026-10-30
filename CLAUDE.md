@@ -85,6 +85,10 @@ and owned here from then on:
   person's working copy; small jobs go to a cheap-tier worker. See
   `docs/decisions/26-posture-change.md` for what of this runs and what is
   still to come.
+- Demo mirrors live (user, 2026-10-30): every fix, feature or change
+  to what live does is shown by the demo (`--demo`, `sim.rs`) in the
+  same PR, with its test; what cannot be faked is said in the PR. See
+  `docs/decisions/31-demo-mirrors-live.md`.
 - Projects: the salon groups agents by project, each with its own leader;
   groups fold to one line that still shows what waits for the person. The
   researcher cap is shared by all projects.
@@ -126,6 +130,7 @@ record in the same PR.
 - 28 `confine-dial`: `--confine open|standard|strict` per vendor.
 - 29 `legibility`: dimmed backdrop, plain rows, the coloured trace, a conversation that follows.
 - 30 `approval-routing`: Claude's permission prompts to `approve`, Codex's `on-request` asks, Gemini's `ask_user` shell, routine commands, `⚑` asks in WAITING FOR YOU.
+- 31 `demo-mirrors-live`: the demo shows what live does (Δ, `⚑`, questions, hiring, helpers, sessions); the merge queue left it.
 
 `docs/neighbours.md`: voff, what was taken from it and the rules that come
 from what it lacks. Read it before building a part it names.

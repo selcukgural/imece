@@ -166,10 +166,6 @@ impl Phase {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Status {
     Idle,
-    /// The leader breaks a request into cards.
-    Planning {
-        until: u64,
-    },
     Working,
     /// Sent an `ask` and waits for the answer.
     Asking {
@@ -180,10 +176,6 @@ pub enum Status {
     Blocked,
     /// A sensitive change or report waits in the person's inbox.
     WaitingHuman,
-    /// The card's change is in the merge queue.
-    Verifying {
-        until: u64,
-    },
     Researching {
         for_agent: AgentId,
         until: u64,
@@ -198,10 +190,7 @@ pub enum Status {
 impl Status {
     /// Statuses that spend tokens.
     pub fn busy(self) -> bool {
-        matches!(
-            self,
-            Status::Planning { .. } | Status::Working | Status::Researching { .. }
-        )
+        matches!(self, Status::Working | Status::Researching { .. })
     }
 
     /// Statuses the person should see first.
@@ -1705,7 +1694,6 @@ mod tests {
     #[test]
     fn statuses_know_whether_they_spend_and_whether_they_need_the_person() {
         let spends = [
-            Status::Planning { until: 1 },
             Status::Working,
             Status::Researching {
                 for_agent: 1,
@@ -1713,11 +1701,7 @@ mod tests {
             },
         ];
         let waits = [Status::Blocked, Status::WaitingHuman, Status::Stopped];
-        let rest = [
-            Status::Idle,
-            Status::Asking { to: 1, until: 1 },
-            Status::Verifying { until: 1 },
-        ];
+        let rest = [Status::Idle, Status::Asking { to: 1, until: 1 }];
         for s in spends {
             assert!(s.busy() && !s.needs_attention(), "{s:?}");
         }

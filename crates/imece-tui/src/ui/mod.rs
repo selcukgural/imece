@@ -216,12 +216,10 @@ pub(crate) fn glyph(a: &Agent) -> (&'static str, Color) {
     }
     match a.status {
         Status::Idle => ("○", pal().dim),
-        Status::Planning { .. } => ("◆", pal().plan),
         Status::Working => ("●", pal().ok),
         Status::Asking { .. } => ("◐", pal().warn),
         Status::Blocked => ("✕", pal().bad),
         Status::WaitingHuman => ("!", pal().warn),
-        Status::Verifying { .. } => ("◌", pal().info),
         Status::Researching { .. } => ("◇", pal().research),
         Status::Stopped => ("■", pal().stopped),
         Status::Asleep => ("◦", pal().dim),
@@ -794,7 +792,6 @@ pub(crate) fn status_spans(lang: Lang, w: &World, a: &Agent) -> Vec<Span<'static
             vec![Span::styled(t.coordinating, dim())]
         }
         Status::Idle => vec![Span::styled(t.idle, dim())],
-        Status::Planning { .. } => vec![Span::styled(t.planning, fg(pal().plan))],
         Status::Working if w.has_approval(a.id) => {
             vec![Span::styled(format!("⚑ {}", t.waiting_yes), fg(pal().warn))]
         }
@@ -827,7 +824,6 @@ pub(crate) fn status_spans(lang: Lang, w: &World, a: &Agent) -> Vec<Span<'static
             ]
         }
         Status::WaitingHuman => vec![Span::styled(t.waiting_human, bold(pal().warn))],
-        Status::Verifying { .. } => vec![Span::styled(t.verifying, fg(pal().info))],
         Status::Researching { .. } => vec![Span::styled(
             fill(t.researching, &[&a.topic]),
             fg(pal().research),
@@ -1819,11 +1815,12 @@ mod tests {
         key(&mut app, KeyCode::Esc);
         assert_eq!(app.zoom, Zoom::None);
         assert_eq!(app.pane, Pane::Inbox);
-        // The demo has nothing to apply; the item stays.
+        // The demo applies it as live does: said at once, done on the
+        // next step; the item stays until then.
         key(&mut app, KeyCode::Enter);
         key(&mut app, KeyCode::Char('a'));
         assert_eq!(app.zoom, Zoom::None);
-        assert!(render(&app, 140, 40).contains("the demo has no changes to apply"));
+        assert!(render(&app, 140, 40).contains(&format!("applying {name}'s change")));
         assert_eq!(app.world.open_inbox().len(), 1);
         // A change that went away leaves an empty view, not a crash.
         app.zoom = Zoom::Diff(1);
@@ -1923,21 +1920,29 @@ mod tests {
     }
 
     #[test]
-    fn the_demo_decides_no_ask() {
+    fn the_demo_decides_an_ask_as_live_does() {
         let mut app = app_after(1, 4, 0, Lang::En);
-        app.world.asks_you(1, "Bash: make");
-        let item = app.world.inbox.len() - 1;
-        app.pane = Pane::Inbox;
-        app.inbox_sel = app
-            .world
-            .open_inbox()
-            .iter()
-            .position(|&i| i == item)
-            .unwrap();
-        key(&mut app, KeyCode::Char('a'));
-        assert!(app.world.inbox[item].open);
-        key(&mut app, KeyCode::Char('r'));
-        assert!(app.world.inbox[item].open);
+        let name = app.world.agents[1].name.clone();
+        for (k, allowed) in [('a', true), ('r', false)] {
+            app.world.asks_you(1, "Bash: make");
+            let item = app.world.inbox.len() - 1;
+            app.pane = Pane::Inbox;
+            app.inbox_sel = app
+                .world
+                .open_inbox()
+                .iter()
+                .position(|&i| i == item)
+                .unwrap();
+            key(&mut app, KeyCode::Char(k));
+            assert!(!app.world.inbox[item].open, "{k}");
+            assert!(matches!(
+                &app.world.journal.last().unwrap().event,
+                Event::Decided { agent: 1, what, allowed: a } if what == "Bash: make" && *a == allowed
+            ));
+            let how = if allowed { "allowed" } else { "refused" };
+            let s = render(&app, 140, 40);
+            assert!(s.contains(&format!("{how}: {name}")), "{s}");
+        }
     }
 
     /// A world whose journal is only a conversation of the person and the
@@ -2513,17 +2518,26 @@ mod tests {
 
     #[test]
     fn words_reach_the_agent_and_a_command_its_own_command_line_or_a_refusal() {
-        // The demo: words reach the lead; it has no command line.
+        // The demo, as live: a command needs a session, words start one.
         let mut app = app_after(1, 2, 0, Lang::En);
         app.world.journal.clear();
+        type_line(&mut app, "/cost");
+        assert!(you_said(&app).is_empty(), "a command is not said");
+        let s = render(&app, 140, 40);
+        assert!(
+            s.contains("lead took no command: it has no session yet"),
+            "{s}"
+        );
         type_line(&mut app, "hello");
         assert_eq!(you_said(&app), ["hello"]);
         assert!(render(&app, 140, 40).contains("sent to lead"));
-        type_line(&mut app, "/clear");
-        assert_eq!(you_said(&app), ["hello"], "a command is not said");
+        type_line(&mut app, "/cost");
+        assert_eq!(you_said(&app), ["hello", "/cost"], "taken, as live's");
+        assert!(render(&app, 140, 40).contains("sent to lead"));
+        type_line(&mut app, "/nope");
         let s = render(&app, 140, 40);
         assert!(
-            s.contains("lead took no command: the demo's agents have no command line"),
+            s.contains("lead took no command: /nope: no such command"),
             "{s}"
         );
 
@@ -2973,12 +2987,10 @@ mod tests {
         a.role = Role::Worker;
         let marks: Vec<&str> = [
             Status::Idle,
-            Status::Planning { until: 1 },
             Status::Working,
             Status::Asking { to: 0, until: 1 },
             Status::Blocked,
             Status::WaitingHuman,
-            Status::Verifying { until: 1 },
             Status::Researching {
                 for_agent: 0,
                 until: 1,
@@ -2992,7 +3004,7 @@ mod tests {
             glyph(&a).0
         })
         .collect();
-        assert_eq!(marks, ["○", "◆", "●", "◐", "✕", "!", "◌", "◇", "■", "◦"]);
+        assert_eq!(marks, ["○", "●", "◐", "✕", "!", "◇", "■", "◦"]);
         a.taint = Taint::Clean;
         assert_eq!(taint_span(&a).content, " ");
         a.taint = Taint::Soft;
