@@ -141,9 +141,11 @@ pub fn event(lang: Lang, w: &World, e: &Event) -> String {
         }
         Event::ApplyFailed { agent, why } => fill(t.ev_apply_failed, &[name(w, *agent), why]),
         // Conversations are drawn from `said`, with their speakers coloured.
-        Event::Talk { .. } | Event::YouSaid { .. } | Event::Replied { .. } | Event::Sent { .. } => {
-            String::new()
-        }
+        Event::Talk { .. }
+        | Event::YouSaid { .. }
+        | Event::Replied { .. }
+        | Event::Sent { .. }
+        | Event::ToYou { .. } => String::new(),
     }
 }
 
@@ -201,7 +203,8 @@ pub fn story(lang: Lang, w: &World, card: &Card, e: &StoryEvent) -> String {
         | StoryEvent::Answered { .. }
         | StoryEvent::YouSaid(_)
         | StoryEvent::Replied(_)
-        | StoryEvent::Sent { .. } => String::new(),
+        | StoryEvent::Sent { .. }
+        | StoryEvent::ToYou { .. } => String::new(),
     }
 }
 
@@ -236,6 +239,7 @@ pub fn said(e: &Event) -> Option<Said<'_>> {
         Event::Talk { from, to, text } => s(Agent(*from), Agent(*to), None, text),
         Event::YouSaid { to, text } => s(Person, Agent(*to), None, text),
         Event::Replied { agent, text } => s(Agent(*agent), Person, None, text),
+        Event::ToYou { from, kind, text } => s(Agent(*from), Person, Some(*kind), text),
         Event::Sent {
             from,
             to,
@@ -262,6 +266,7 @@ pub fn said_in_story(me: AgentId, e: &StoryEvent) -> Option<Said<'_>> {
         StoryEvent::Answered { from, text } => s(Agent(*from), Agent(me), None, text),
         StoryEvent::YouSaid(text) => s(Person, Agent(me), None, text),
         StoryEvent::Replied(text) => s(Agent(me), Person, None, text),
+        StoryEvent::ToYou { kind, text } => s(Agent(me), Person, Some(*kind), text),
         StoryEvent::Sent {
             from,
             to,
@@ -301,6 +306,7 @@ pub fn inbox(lang: Lang, w: &World, item: &InboxItem) -> String {
             &[name(w, r), &item.detail, name(w, item.agent)],
         ),
         (InboxKind::Reply, _) => fill(t.in_reply, &[name(w, item.agent), &item.detail]),
+        (InboxKind::Question, _) => fill(t.in_question, &[name(w, item.agent), &item.detail]),
         (InboxKind::Change, _) => {
             let (files, added, removed) = w.change_of(item.agent).map_or((0, 0, 0), |c| {
                 let (a, r) = c.counts();
@@ -369,5 +375,55 @@ mod tests {
             size: 17 * 1024,
         };
         assert!(event(Lang::En, &w, &exact).contains("AGENTS.md is 17 KiB;"));
+    }
+
+    #[test]
+    fn a_message_to_the_person_is_a_conversation_line_and_a_question_an_inbox_line() {
+        let w = crate::live::testing::team(1);
+        let e = Event::ToYou {
+            from: 1,
+            kind: MsgKind::Ask,
+            text: "Which?\nmore".into(),
+        };
+        assert_eq!(
+            said(&e),
+            Some(Said {
+                from: Party::Agent(1),
+                to: Party::Person,
+                kind: Some(MsgKind::Ask),
+                text: "Which?\nmore",
+            })
+        );
+        assert_eq!(event(Lang::En, &w, &e), "", "drawn as a conversation line");
+        let s = StoryEvent::ToYou {
+            kind: MsgKind::Inform,
+            text: "fyi".into(),
+        };
+        assert_eq!(
+            said_in_story(1, &s),
+            Some(Said {
+                from: Party::Agent(1),
+                to: Party::Person,
+                kind: Some(MsgKind::Inform),
+                text: "fyi",
+            })
+        );
+        let item = InboxItem {
+            kind: InboxKind::Question,
+            agent: 1,
+            detail: "Which?".into(),
+            researcher: None,
+            open: true,
+            tick: 0,
+        };
+        let who = &w.agents[1].name;
+        assert_eq!(
+            inbox(Lang::En, &w, &item),
+            format!("{who} asks you: Which?")
+        );
+        assert_eq!(
+            inbox(Lang::Tr, &w, &item),
+            format!("{who} sana soruyor: Which?")
+        );
     }
 }

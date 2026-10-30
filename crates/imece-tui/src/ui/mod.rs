@@ -273,6 +273,7 @@ pub(crate) fn inbox_line(app: &App, i: usize) -> Line<'static> {
         InboxKind::Research => ("?", bold(pal().research)),
         InboxKind::Reply => ("»", bold(pal().info)),
         InboxKind::Change => ("Δ", bold(pal().strong)),
+        InboxKind::Question => ("?", bold(pal().warn)),
     };
     let mut spans = vec![
         Span::styled(format!("{icon} "), style),
@@ -694,6 +695,10 @@ pub(crate) fn status_spans(lang: Lang, w: &World, a: &Agent) -> Vec<Span<'static
         {
             vec![Span::styled(t.answered, fg(pal().warn))]
         }
+        Status::Idle if w.has_question(a.id) => vec![
+            Span::styled(bar(a.progress), dim()),
+            Span::styled(format!(" ? → {}", t.you), fg(pal().warn)),
+        ],
         Status::Idle
             if a.role == Role::Leader
                 && w.agents.iter().any(|o| {
@@ -1475,6 +1480,72 @@ mod tests {
                 .iter()
                 .all(|&i| app.world.inbox[i].kind != InboxKind::Reply)
         );
+    }
+
+    #[test]
+    fn a_question_in_the_inbox_opens_the_conversation_and_the_composer_to_its_agent() {
+        let mut app = app_after(1, 4, 50, Lang::En);
+        let worker = app
+            .world
+            .agents
+            .iter()
+            .find(|a| a.role == Role::Worker)
+            .unwrap()
+            .id;
+        let name = app.world.agents[worker].name.clone();
+        app.world.agents[worker].status = Status::Idle;
+        app.world.note(Event::ToYou {
+            from: worker,
+            kind: MsgKind::Ask,
+            text: "Which API?\nTHE-REST".into(),
+        });
+        app.world.asked_you(worker, "Which API?\nTHE-REST");
+        let screen = render(&app, 140, 40);
+        assert!(
+            screen.contains(&format!("{name} asks you: Which API?")),
+            "{screen}"
+        );
+        // The worker's line says it waits for the person.
+        let words = |app: &App, lang| {
+            status_spans(lang, &app.world, &app.world.agents[worker])
+                .iter()
+                .map(|s| s.content.to_string())
+                .collect::<String>()
+        };
+        assert!(
+            words(&app, Lang::En).ends_with(" ? → you"),
+            "{:?}",
+            words(&app, Lang::En)
+        );
+        assert!(
+            words(&app, Lang::Tr).ends_with(" ? → sen"),
+            "{:?}",
+            words(&app, Lang::Tr)
+        );
+        let i = *app.world.open_inbox().last().unwrap();
+        assert_eq!(inbox_line(&app, i).spans[0].content, "? ");
+        app.pane = Pane::Inbox;
+        app.inbox_sel = app.world.open_inbox().len() - 1;
+        key(&mut app, KeyCode::Enter);
+        assert!(app.thread.is_some(), "the conversation opens");
+        assert!(render(&app, 140, 40).contains("THE-REST"));
+        assert!(app.world.has_question(worker), "reading is not answering");
+        app.thread = None;
+        for k in ['a', 'r'] {
+            key(&mut app, KeyCode::Char(k));
+            assert!(
+                app.typing && app.input == format!("@{name} "),
+                "{k}: {:?}",
+                app.input
+            );
+            app.typing = false;
+            app.input.clear();
+        }
+        assert!(app.world.has_question(worker));
+        // Writing back closes it.
+        app.world.said(worker, "This one.");
+        assert!(!app.world.has_question(worker));
+        assert_eq!(words(&app, Lang::En), "idle");
     }
 
     fn a_change(agent: AgentId) -> Change {

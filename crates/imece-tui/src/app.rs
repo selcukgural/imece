@@ -1315,6 +1315,18 @@ impl App {
                             self.diff_scroll = 0;
                             Some(Zoom::Diff(item.agent))
                         }
+                        Some(item) if item.kind == InboxKind::Question => {
+                            // The conversation shows the whole question; it
+                            // waits until the person writes back.
+                            let agent = item.agent;
+                            if let Some(i) = self.world.journal.iter().rposition(|e| {
+                                matches!(e.event, Event::ToYou { from, kind: MsgKind::Ask, .. } if from == agent)
+                            }) {
+                                self.open_thread(i);
+                                return;
+                            }
+                            Some(Zoom::Focus(agent))
+                        }
                         Some(item) if item.kind == InboxKind::Reply => {
                             // Read now: the conversation shows the whole answer.
                             let agent = item.agent;
@@ -1360,6 +1372,15 @@ impl App {
         let t = self.lang.text();
         if self.world.inbox[item].kind == InboxKind::Change {
             return self.decide_change(self.world.inbox[item].agent, approve);
+        }
+        if self.world.inbox[item].kind == InboxKind::Question {
+            // A question is answered by writing back: the composer opens
+            // to the agent, and the item closes when the answer goes.
+            let name = self.world.agents[self.world.inbox[item].agent].name.clone();
+            self.typing = true;
+            self.input = format!("@{name} ");
+            self.menu = None;
+            return;
         }
         if self.world.inbox[item].kind == InboxKind::Reply {
             self.world.close_replies(self.world.inbox[item].agent);

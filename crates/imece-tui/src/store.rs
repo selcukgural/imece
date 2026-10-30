@@ -35,7 +35,9 @@ use serde::{Serialize, de::DeserializeOwned};
 use crate::model::*;
 
 /// The file's layout; a file from a newer imece is refused.
-pub const SCHEMA_VERSION: i64 = 2;
+/// 3 (2026-10-30): the `Question` inbox kind and the `ToYou` events (no
+/// table changed; an older imece would not know the tags).
+pub const SCHEMA_VERSION: i64 = 3;
 /// Trace lines kept per agent, as the world keeps them.
 const TRACE_KEEP: usize = 200;
 /// The file's name under the state directory.
@@ -1420,6 +1422,14 @@ mod tests {
                     tick: 5,
                     event: Event::Interrupted { agent: 1 },
                 },
+                Entry {
+                    tick: 6,
+                    event: Event::ToYou {
+                        from: 1,
+                        kind: MsgKind::Ask,
+                        text: "which?".into(),
+                    },
+                },
             ],
             inbox: vec![
                 InboxItem {
@@ -1435,6 +1445,14 @@ mod tests {
                     agent: 1,
                     detail: "Changed a".into(),
                     researcher: Some(2),
+                    open: true,
+                    tick: 6,
+                },
+                InboxItem {
+                    kind: InboxKind::Question,
+                    agent: 1,
+                    detail: "which?".into(),
+                    researcher: None,
                     open: true,
                     tick: 6,
                 },
@@ -2038,19 +2056,19 @@ mod tests {
                 .iter()
                 .map(|e| e.tick)
                 .collect::<Vec<_>>(),
-            [4, 5],
+            [5, 6],
             "the newest two, oldest first"
         );
         // Saved from the cut world: the new line follows the old ones.
         let mut cut = back.world;
         cut.journal.push(Entry {
-            tick: 6,
+            tick: 7,
             event: Event::Left { agent: 2 },
         });
         assert!(store.save(&cut, &k.kept()).unwrap());
         // And the next ones follow that, each save counting on from the
         // file's last line, not from the lines it has in memory.
-        for tick in [7, 8] {
+        for tick in [8, 9] {
             cut.journal.push(Entry {
                 tick,
                 event: Event::Left { agent: 2 },
@@ -2060,7 +2078,7 @@ mod tests {
         let all = store.load(100).unwrap().unwrap();
         assert_eq!(
             all.world.journal.iter().map(|e| e.tick).collect::<Vec<_>>(),
-            [1, 2, 3, 4, 5, 6, 7, 8]
+            [1, 2, 3, 4, 5, 6, 7, 8, 9]
         );
         // The kinds are columns too, for the file's other readers.
         let kinds: Vec<String> = store
@@ -2079,6 +2097,7 @@ mod tests {
                 "Sent",
                 "Shell",
                 "Interrupted",
+                "ToYou",
                 "Left",
                 "Left",
                 "Left"
@@ -2431,7 +2450,7 @@ mod tests {
                 |r| r.get(0),
             )
             .unwrap();
-        assert_eq!(version, "2");
+        assert_eq!(version, "3");
         let back = store.load(100).unwrap().expect("a world");
         assert_eq!(back.world.agents[0].name, "lead");
         assert_eq!(back.found.sessions, [None]);
