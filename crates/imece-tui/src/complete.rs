@@ -1,13 +1,14 @@
 //! Completion for the composer, the way a shell does it: what is being
 //! typed is matched against what imece knows (agent names after `@`,
-//! imece's own commands after `:`, a vendor's command line after `/`),
+//! imece's own commands after `:`, a vendor's command line after `/`,
+//! cards after `#`),
 //! the matches are shown while typing, and `tab` (or the arrows) steps
 //! through them with the text following. Pure: the screen asks `suggest`
 //! after every change and keeps the `Menu` it gets.
 
 use std::path::Path;
 
-use crate::model::{Agent, ProjectId, World};
+use crate::model::{Agent, CardId, ProjectId, World};
 
 /// The commands imece itself takes after `:`.
 pub const COMMANDS: [&str; 7] = [
@@ -83,6 +84,51 @@ fn menu(start: usize, word: &str, items: Vec<String>, tail: &'static str) -> Opt
     Menu::new(start, items, tail)
 }
 
+/// Cards offered after `#` at most.
+pub const CARDS_SHOWN: usize = 30;
+
+/// The cards of open projects for what follows `#`, each as `#N title`
+/// (the whole input is replaced): digits match the start of the number,
+/// by number (so that very number comes first); anything else matches inside the title, case aside, newest first;
+/// nothing typed offers every card, newest first.
+fn cards(rest: &str, w: &World) -> Option<Menu> {
+    let open: Vec<CardId> = w
+        .cards
+        .iter()
+        .filter(|c| !w.projects[c.project].closed)
+        .map(|c| c.id)
+        .collect();
+    let mut found: Vec<CardId> = if !rest.is_empty() && rest.bytes().all(|b| b.is_ascii_digit()) {
+        open.into_iter()
+            .filter(|c| (c + 1).to_string().starts_with(rest))
+            .collect()
+    } else {
+        let word = rest.to_lowercase();
+        open.into_iter()
+            .rev()
+            .filter(|&c| w.cards[c].title.to_lowercase().contains(&word))
+            .collect()
+    };
+    found.truncate(CARDS_SHOWN);
+    let items = found
+        .into_iter()
+        .map(|c| format!("#{} {}", c + 1, w.cards[c].title))
+        .collect();
+    Menu::new(0, items, "")
+}
+
+/// The card a line typed after `#` names: the number it starts with, if a
+/// card of an open project has it.
+pub fn card_named(input: &str, w: &World) -> Option<CardId> {
+    let rest = input.strip_prefix('#')?;
+    let digits = rest.split(|c: char| !c.is_ascii_digit()).next()?;
+    let c = digits.parse::<CardId>().ok()?.checked_sub(1)?;
+    w.cards
+        .get(c)
+        .filter(|card| !w.projects[card.project].closed)
+        .map(|card| card.id)
+}
+
 /// What the composer could complete `input` with. `project` is the one
 /// at hand: its agents come first, and a `/` alone goes to its leader;
 /// `home` stands for `~` in a path.
@@ -104,6 +150,9 @@ pub fn suggest(input: &str, w: &World, project: ProjectId, home: Option<&Path>) 
                 commands(input, start, after, &w.agents[id])
             }
         };
+    }
+    if let Some(rest) = input.strip_prefix('#') {
+        return cards(rest, w);
     }
     if input.starts_with('/') {
         let leader = w.projects[project].leader;
@@ -497,5 +546,87 @@ mod tests {
         );
         assert_eq!(suggest(":c ", &w, 0, None), None);
         assert_eq!(suggest(":rename ", &w, 0, None), None);
+    }
+
+    /// The demo's world with cards of the given titles, numbered from #1,
+    /// the ones at `closed` in the second project, which is closed.
+    fn with_cards(titles: &[&str], closed: &[usize]) -> World {
+        let mut w = world();
+        w.cards.clear();
+        for (id, title) in titles.iter().enumerate() {
+            w.cards.push(crate::model::Card {
+                id,
+                project: usize::from(closed.contains(&id)),
+                title: title.to_string(),
+                owner: None,
+                column: crate::model::Column::Waiting,
+                story: Vec::new(),
+                symbols: Vec::new(),
+                started: 0,
+                finished: 0,
+            });
+        }
+        w.projects[1].closed = true;
+        w
+    }
+
+    #[test]
+    fn a_hash_offers_the_cards_by_number_or_title() {
+        // #1 .. #13; #12 is in the closed project.
+        let titles: Vec<String> = (1..=13).map(|n| format!("Card {n}")).collect();
+        let mut titles: Vec<&str> = titles.iter().map(String::as_str).collect();
+        titles[0] = "Shipping cost";
+        titles[2] = "Ship it";
+        let w = with_cards(&titles, &[11]);
+        let m = suggest("#", &w, 0, None).unwrap();
+        assert_eq!((m.start, m.tail, m.chosen, m.inserted), (0, "", 0, false));
+        assert_eq!(m.items.len(), 12);
+        assert_eq!(m.items[..2], ["#13 Card 13", "#11 Card 11"], "newest first");
+        assert_eq!(m.items[11], "#1 Shipping cost");
+        // Digits: the start of the number, by number.
+        assert_eq!(
+            names(&suggest("#1", &w, 0, None)),
+            [
+                "#1 Shipping cost",
+                "#10 Card 10",
+                "#11 Card 11",
+                "#13 Card 13"
+            ]
+        );
+        assert_eq!(names(&suggest("#13", &w, 0, None)), ["#13 Card 13"]);
+        assert_eq!(names(&suggest("#12", &w, 0, None)), Vec::<&str>::new());
+        // Anything else: inside the title, case aside, newest first.
+        assert_eq!(
+            names(&suggest("#SHIP", &w, 0, None)),
+            ["#3 Ship it", "#1 Shipping cost"]
+        );
+        assert_eq!(
+            names(&suggest("#ping c", &w, 0, None)),
+            ["#1 Shipping cost"]
+        );
+        assert_eq!(suggest("#nothing", &w, 0, None), None);
+    }
+
+    #[test]
+    fn a_hash_offers_a_few_dozen_cards_at_most() {
+        let titles = vec!["x"; CARDS_SHOWN + 1];
+        let w = with_cards(&titles, &[]);
+        let m = suggest("#", &w, 0, None).unwrap();
+        assert_eq!(m.items.len(), 30);
+        assert_eq!(m.items[0], "#31 x");
+    }
+
+    #[test]
+    fn a_typed_line_names_a_card_by_the_number_it_starts_with() {
+        let w = with_cards(&["a", "b", "c"], &[1]);
+        assert_eq!(card_named("#1", &w), Some(0));
+        assert_eq!(card_named("#3 c, and more", &w), Some(2));
+        assert_eq!(card_named("#3x", &w), Some(2));
+        assert_eq!(card_named("#2", &w), None, "a closed project's");
+        assert_eq!(card_named("#4", &w), None, "no such card");
+        assert_eq!(card_named("#0", &w), None);
+        assert_eq!(card_named("#", &w), None);
+        assert_eq!(card_named("#c", &w), None);
+        assert_eq!(card_named("1", &w), None);
     }
 }

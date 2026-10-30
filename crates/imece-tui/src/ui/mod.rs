@@ -3,6 +3,7 @@
 //! never relies on colour alone (every one has its own glyph or word).
 
 mod board;
+mod card;
 mod code;
 mod diff;
 mod focus;
@@ -23,7 +24,7 @@ use crate::i18n::{Lang, clean, fill};
 use crate::model::*;
 pub(crate) use crate::theme::pal;
 pub(crate) use diff::file_starts;
-pub(crate) use salon::{journal_rows, thread_of};
+pub(crate) use salon::{card_rows, journal_rows, thread_of};
 
 pub fn draw(f: &mut Frame, app: &App) {
     paint(f, f.area());
@@ -466,6 +467,15 @@ pub(crate) fn inline(text: &str, base: Style) -> Vec<Span<'static>> {
     spans
 }
 
+/// A Markdown heading's text: `line` starts with one to six `#` and a
+/// space or nothing after them. `#323` names a card, it is no heading.
+fn heading(line: &str) -> Option<&str> {
+    let hashes = line.len() - line.trim_start_matches('#').len();
+    let rest = &line[hashes..];
+    ((1..=6).contains(&hashes) && (rest.is_empty() || rest.starts_with([' ', '\t'])))
+        .then(|| rest.trim_start())
+}
+
 /// An agent's text as one row of words: cleaned, its lines joined with a
 /// space (blank ones dropped), heading and list markers off the front of
 /// each, inline marks replaced by what they cover (a link by its label).
@@ -484,7 +494,8 @@ pub(crate) fn plain(text: &str) -> String {
     body_lines(text)
         .iter()
         .map(|l| {
-            let l = l.trim_start().trim_start_matches('#').trim_start();
+            let l = l.trim_start();
+            let l = heading(l).unwrap_or(l);
             words(list_marker(l).map_or(l, |(_, item)| item))
         })
         .filter(|l| !l.is_empty())
@@ -627,11 +638,8 @@ pub(crate) fn markdown(text: &str, indent: &str) -> Vec<Line<'static>> {
         }
         let lead = line.len() - line.trim_start().len();
         let rest = &line[lead..];
-        if let Some(h) = rest.strip_prefix('#') {
-            spans.push(Span::styled(
-                h.trim_start_matches('#').trim().to_string(),
-                bold(pal().strong),
-            ));
+        if let Some(h) = heading(rest) {
+            spans.push(Span::styled(h.trim().to_string(), bold(pal().strong)));
         } else if matches!(rest, "---" | "***" | "___") {
             spans.push(Span::styled("─".repeat(24), dim()));
         } else {
@@ -930,6 +938,8 @@ fn footer(f: &mut Frame, area: Rect, app: &App) {
             Span::styled(
                 if app.typing_shell() {
                     t.typing_shell.to_string()
+                } else if app.typing_card() {
+                    t.typing_card.to_string()
                 } else if app.typing_command() {
                     t.typing_command.to_string()
                 } else {
@@ -954,9 +964,18 @@ fn footer(f: &mut Frame, area: Rect, app: &App) {
         Line::from(Span::styled(format!(" {msg}"), fg(pal().warn)))
     } else {
         let hints: Vec<(&str, &str)> = match app.zoom {
+            Zoom::None if app.card.is_some() => vec![
+                ("tab", t.panel),
+                ("enter", t.focus),
+                ("n p", t.next_card),
+                ("#", t.other_card),
+                ("esc", t.back),
+                ("?", t.help),
+            ],
             Zoom::None => vec![
                 ("/", t.write_lead),
                 ("@", t.to_agent),
+                ("#", t.find_card),
                 ("tab", t.panel),
                 ("← →", t.fold),
                 ("enter", t.focus),
@@ -1049,6 +1068,109 @@ mod tests {
         ] {
             assert!(s.contains(want), "{want} missing:\n{s}");
         }
+    }
+
+    /// A demo team after a while, card #1's screen opened by typing it.
+    fn on_card_one(lang: Lang) -> App {
+        let mut app = app_after(1, 4, 140, lang);
+        for code in [KeyCode::Char('#'), KeyCode::Char('1'), KeyCode::Enter] {
+            app.on_key(KeyEvent::from(code));
+        }
+        assert_eq!(app.card, Some(0));
+        app
+    }
+
+    #[test]
+    fn a_card_s_screen_shows_where_it_stands_who_had_a_part_and_its_lines() {
+        let app = on_card_one(Lang::En);
+        let s = render(&app, 140, 36);
+        let card = &app.world.cards[0];
+        assert!(!card.symbols.is_empty() && card.column == Column::Done);
+        let owner = &app.world.agents[card.owner.unwrap()].name;
+        for want in [
+            &format!(" #1 {} ", card.title),
+            "shop-api · DONE · ",
+            " min",
+            "lease  ",
+            "WHO",
+            "posted    ◆ ▎lead ",
+            "owner     ",
+            "talked    ",
+            "STORY",
+            &format!("◎ intent     {owner}: {}", card.title),
+            "WAITING FOR YOU · #1 (1)",
+            &format!("Δ 14:06 {owner} finished: {}", card.title),
+            "JOURNAL · #1 (",
+            "n p  next / previous card",
+            "#  another card",
+        ] {
+            assert!(s.contains(want), "{want} missing:\n{s}");
+        }
+        assert!(
+            !s.contains("SALON"),
+            "the card takes the salon's place:\n{s}"
+        );
+        assert!(s.contains(&format!("owner     ● ▎{owner}")), "{s}");
+        // Who had a part are the lines to move among.
+        let shown = app.shown.borrow().clone();
+        let people: Vec<Sel> = app
+            .world
+            .card_people(0)
+            .iter()
+            .map(|&(id, _)| Sel::Agent(id))
+            .collect();
+        assert_eq!(shown, people);
+    }
+
+    #[test]
+    fn a_card_s_screen_speaks_turkish_and_says_when_there_is_no_story() {
+        let mut app = on_card_one(Lang::Tr);
+        app.world.cards[0].story.clear();
+        let s = render(&app, 140, 36);
+        for want in [
+            "KİM",
+            "HİKÂYE",
+            "Henüz hikâye yok.",
+            "SENİ BEKLEYEN · #1 (1)",
+            "DEFTER · #1 (",
+            "sahibi    ",
+            "sonraki / önceki iş",
+        ] {
+            assert!(s.contains(want), "{want} missing:\n{s}");
+        }
+    }
+
+    #[test]
+    fn the_salon_offers_cards_and_says_what_is_typed_after_a_hash() {
+        let mut app = app_after(1, 4, 140, Lang::En);
+        assert!(render(&app, 140, 36).contains("#  card"));
+        app.on_key(KeyEvent::from(KeyCode::Char('#')));
+        let s = render(&app, 140, 36);
+        assert!(s.contains(" › card: #"), "{s}");
+        assert!(s.contains("#10 "), "the menu offers the cards:\n{s}");
+    }
+
+    #[test]
+    fn a_card_s_number_is_no_markdown_heading() {
+        assert_eq!(heading("# Head"), Some("Head"));
+        assert_eq!(heading("###### six"), Some("six"));
+        assert_eq!(heading("##\t tab"), Some("tab"));
+        assert_eq!(heading("#"), Some(""));
+        assert_eq!(heading("####### seven"), None);
+        assert_eq!(heading("#323 Shipping"), None);
+        assert_eq!(heading("x # y"), None);
+        assert_eq!(
+            plain("#5 Money rounding\n## Done"),
+            "#5 Money rounding Done"
+        );
+        let md = |text: &str| -> Vec<String> {
+            markdown(text, "")
+                .iter()
+                .map(|l| l.spans.iter().map(|s| s.content.to_string()).collect())
+                .collect()
+        };
+        assert_eq!(md("#5 Money\n# Head "), ["#5 Money", "Head"]);
+        assert_eq!(markdown("# Head", "")[0].spans[1].style, bold(pal().strong));
     }
 
     #[test]
@@ -1707,6 +1829,7 @@ mod tests {
             researcher: None,
             open: true,
             tick: 50,
+            card: None,
         });
         let line = inbox_line(&app, app.world.inbox.len() - 1);
         assert!(
@@ -3245,6 +3368,7 @@ mod tests {
                 researcher: None,
                 open: true,
                 tick: 0,
+                card: None,
             });
             let line = text(&[inbox_line(&app, app.world.inbox.len() - 1)]).remove(0);
             let name = &app.world.projects[0].name;
@@ -3275,6 +3399,7 @@ mod tests {
             researcher: None,
             open: true,
             tick: 7300,
+            card: None,
         });
         let item = app.world.inbox.len() - 1;
         // The last lines: one of yesterday, then today's.

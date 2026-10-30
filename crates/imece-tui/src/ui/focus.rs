@@ -97,28 +97,34 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App, id: AgentId) {
     f.render_widget(Paragraph::new(head), top);
 
     let story: Vec<Line> = match card {
-        Some(c) => c
-            .story
-            .iter()
-            .map(|s| {
-                let (icon, label, color) = story_icon(s.event.kind());
-                let mut spans = vec![
-                    Span::styled(format!("{} ", clock(s.tick)), dim()),
-                    Span::styled(
-                        format!("{icon} {} ", fit(t.story_labels[label], 10)),
-                        fg(color),
-                    ),
-                ];
-                match words::said_in_story(id, &s.event) {
-                    Some(said) => spans.extend(said_spans(app.lang, w, &said)),
-                    None => spans.push(Span::raw(words::story(app.lang, w, c, &s.event))),
-                }
-                Line::from(spans)
-            })
-            .collect(),
+        Some(c) => story_lines(app, c, id),
         None => vec![Line::from(Span::styled(t.no_story, dim()))],
     };
     tail(f, body, story);
+}
+
+/// Card `c`'s story, a line per event, oldest first; conversation lines
+/// are told as agent `me` (the card's owner) had them.
+pub(super) fn story_lines(app: &App, c: &Card, me: AgentId) -> Vec<Line<'static>> {
+    let t = app.lang.text();
+    c.story
+        .iter()
+        .map(|s| {
+            let (icon, label, color) = story_icon(s.event.kind());
+            let mut spans = vec![
+                Span::styled(format!("{} ", clock(s.tick)), dim()),
+                Span::styled(
+                    format!("{icon} {} ", fit(t.story_labels[label], 10)),
+                    fg(color),
+                ),
+            ];
+            match words::said_in_story(me, &s.event) {
+                Some(said) => spans.extend(said_spans(app.lang, &app.world, &said)),
+                None => spans.push(Span::raw(words::story(app.lang, &app.world, c, &s.event))),
+            }
+            Line::from(spans)
+        })
+        .collect()
 }
 
 pub fn trace(f: &mut Frame, area: Rect, app: &App, id: AgentId) {

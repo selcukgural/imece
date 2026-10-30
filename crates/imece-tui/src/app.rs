@@ -214,6 +214,10 @@ pub struct App {
     /// The selected journal line (a journal index).
     pub journal_sel: Option<usize>,
     pub thread: Option<Thread>,
+    /// The card whose screen takes the salon's place (`#323`): its story
+    /// and who had a part in it, what waits for the person on it and its
+    /// journal lines.
+    pub card: Option<CardId>,
     /// The side panel's width, in percent.
     pub side: u16,
     /// Text the person asked to copy; the main loop hands it to the
@@ -286,6 +290,7 @@ impl App {
             diff_page: Cell::new(10),
             journal_sel: None,
             thread: None,
+            card: None,
             side: SIDE_DEFAULT,
             copy: None,
             shell: None,
@@ -379,7 +384,7 @@ impl App {
             return self.world.agents[id].project;
         }
         if self.pane == Pane::Inbox
-            && let Some(&i) = self.world.open_inbox().get(self.inbox_sel)
+            && let Some(&i) = self.inbox_rows().get(self.inbox_sel)
         {
             return self.world.agents[self.world.inbox[i].agent].project;
         }
@@ -497,6 +502,17 @@ impl App {
                 self.input = "!".into();
                 self.menu = None;
             }
+            KeyCode::Char('#') => {
+                self.typing = true;
+                self.input = match self.card_at_hand().filter(|&c| Some(c) != self.card) {
+                    Some(c) => format!("#{}", c + 1),
+                    None => "#".into(),
+                };
+                self.menu = self.suggest();
+            }
+            KeyCode::Char('n') | KeyCode::Char('p') if self.on_card() => {
+                self.step_card(k.code == KeyCode::Char('n'))
+            }
             KeyCode::Char('g') | KeyCode::Char('z') => {
                 if let KeyCode::Char(c) = k.code {
                     self.pending = Some(c);
@@ -562,6 +578,7 @@ impl App {
             KeyCode::Left | KeyCode::Char('h') if self.salon_keys() => self.fold(true),
             KeyCode::Right | KeyCode::Char('l') if self.salon_keys() => self.fold(false),
             KeyCode::Enter => self.deeper(),
+            KeyCode::Esc if self.on_card() => self.leave_card(),
             KeyCode::Esc => {
                 self.zoom = match self.zoom {
                     Zoom::Trace(id) => Zoom::Focus(id),
@@ -659,8 +676,7 @@ impl App {
                 Sel::Project(p) => Some(self.world.projects[p].leader),
             },
             Pane::Inbox => self
-                .world
-                .open_inbox()
+                .inbox_rows()
                 .get(self.inbox_sel)
                 .map(|&i| self.world.inbox[i].agent),
             Pane::Journal => self
@@ -712,11 +728,11 @@ impl App {
                 }
             }
             Pane::Inbox => {
-                let n = self.world.open_inbox().len();
+                let n = self.inbox_rows().len();
                 self.inbox_sel = if first { 0 } else { n.saturating_sub(1) };
             }
             Pane::Journal => {
-                let rows = ui::journal_rows(&self.world);
+                let rows = self.journal_rows();
                 let row = if first { rows.first() } else { rows.last() };
                 self.journal_sel = row.map(|&(i, _)| i);
             }
@@ -925,7 +941,7 @@ impl App {
     /// Keeps the journal selection on a line that is still shown, moving by
     /// `step` lines (newest first) when given.
     fn select_journal(&mut self, step: Option<bool>) {
-        let rows = ui::journal_rows(&self.world);
+        let rows = self.journal_rows();
         if rows.is_empty() {
             self.journal_sel = None;
             return;
@@ -943,12 +959,16 @@ impl App {
     }
 
     fn salon_keys(&self) -> bool {
-        self.view == View::Salon && self.zoom == Zoom::None && self.pane == Pane::Salon
+        self.view == View::Salon
+            && self.zoom == Zoom::None
+            && self.pane == Pane::Salon
+            && self.card.is_none()
     }
 
     fn show(&mut self, view: View) {
         self.view = view;
         self.zoom = Zoom::None;
+        self.leave_card();
         if view != View::Salon {
             self.pane = Pane::Salon;
         }
@@ -993,7 +1013,13 @@ impl App {
         }
         match k.code {
             KeyCode::Enter => match &mut self.menu {
-                Some(m) if !m.inserted => m.insert(&mut self.input),
+                Some(m) if !m.inserted => {
+                    m.insert(&mut self.input);
+                    // A card is all there is to take: it opens at once.
+                    if self.typing_card() {
+                        self.submit();
+                    }
+                }
                 _ => self.submit(),
             },
             KeyCode::Esc if self.menu.is_some() => self.menu = None,
@@ -1049,6 +1075,12 @@ impl App {
         self.input.starts_with(':')
     }
 
+    /// Whether what is being typed names a card to open (`#323`), not a
+    /// message to an agent.
+    pub fn typing_card(&self) -> bool {
+        self.input.starts_with('#')
+    }
+
     /// Whether what is being typed is a command for the person's own shell
     /// (`!cargo test`), not a message to an agent.
     pub fn typing_shell(&self) -> bool {
@@ -1079,6 +1111,12 @@ impl App {
         let t = self.lang.text();
         if let Some(line) = text.strip_prefix(':') {
             return self.command(line.trim());
+        }
+        if text.starts_with('#') {
+            return match complete::card_named(&text, &self.world) {
+                Some(c) => self.open_card(c),
+                None => self.flash(fill(t.no_card_found, &[&text])),
+            };
         }
         if let Some(command) = text.strip_prefix('!') {
             let command = command.trim();
@@ -1252,7 +1290,10 @@ impl App {
         if was_in && let Some(home) = self.world.open_projects().next() {
             self.selected = Sel::Agent(home.leader);
         }
-        let open = self.world.open_inbox().len();
+        if self.card.is_some_and(|c| self.world.cards[c].project == p) {
+            self.card = None;
+        }
+        let open = self.inbox_rows().len();
         self.inbox_sel = self.inbox_sel.min(open.saturating_sub(1));
         self.flash(fill(t.closed, &[&name]));
     }
@@ -1304,11 +1345,103 @@ impl App {
         }
     }
 
+    /// Whether a card's screen is what the person looks at (it is only
+    /// ever open in the salon view).
+    fn on_card(&self) -> bool {
+        self.card.is_some() && self.zoom == Zoom::None
+    }
+
+    /// The open inbox items the side panel lists: a card's, on its
+    /// screen, else all.
+    pub fn inbox_rows(&self) -> Vec<usize> {
+        match self.card {
+            Some(c) => self.world.card_inbox(c),
+            None => self.world.open_inbox(),
+        }
+    }
+
+    /// The journal rows the side panel lists: a card's, on its screen,
+    /// else the whole journal's.
+    pub fn journal_rows(&self) -> Vec<(usize, usize)> {
+        match self.card {
+            Some(c) => ui::card_rows(&self.world, c),
+            None => ui::journal_rows(&self.world),
+        }
+    }
+
+    /// Card `c`'s screen takes the salon's place, its journal selected.
+    pub fn open_card(&mut self, c: CardId) {
+        self.card = Some(c);
+        self.view = View::Salon;
+        self.zoom = Zoom::None;
+        self.thread = None;
+        self.pane = Pane::Journal;
+        self.inbox_sel = 0;
+        self.journal_sel = None;
+        self.select_journal(None);
+        if let Some(&(id, _)) = self.world.card_people(c).first() {
+            self.selected = Sel::Agent(self.world.cards[c].owner.unwrap_or(id));
+        }
+    }
+
+    /// Back from a card's screen to the salon.
+    fn leave_card(&mut self) {
+        if self.card.take().is_some() {
+            self.inbox_sel = 0;
+            self.select_journal(None);
+        }
+    }
+
+    /// The next card (or the previous one) of an open project, by number.
+    fn step_card(&mut self, next: bool) {
+        let Some(c) = self.card else {
+            return;
+        };
+        let w = &self.world;
+        let mut open = w.cards.iter().filter(|x| !w.projects[x.project].closed);
+        let to = if next {
+            open.find(|x| x.id > c)
+        } else {
+            open.rfind(|x| x.id < c)
+        };
+        if let Some(to) = to.map(|x| x.id) {
+            self.open_card(to);
+        }
+    }
+
+    /// The card the person is looking at: the zoomed agent's, the selected
+    /// agent's, the one the selected inbox item came on, or the one a
+    /// selected journal line names (or mentions, `#323`).
+    fn card_at_hand(&self) -> Option<CardId> {
+        let w = &self.world;
+        if let Zoom::Focus(id) | Zoom::Trace(id) | Zoom::Diff(id) = self.zoom {
+            return w.card_of(id);
+        }
+        match self.pane {
+            Pane::Salon => match self.selected {
+                Sel::Agent(id) => w.card_of(id),
+                Sel::Project(_) => None,
+            },
+            Pane::Inbox => self
+                .inbox_rows()
+                .get(self.inbox_sel)
+                .and_then(|&i| w.inbox[i].card),
+            Pane::Journal => {
+                let e = &w.journal[self.journal_sel?].event;
+                e.card().or_else(|| {
+                    let text = ui::words::said(e)?.text;
+                    text.match_indices('#')
+                        .find_map(|(at, _)| complete::card_named(&text[at..], w))
+                })
+            }
+        }
+    }
+
     fn move_selection(&mut self, down: bool) {
         match self.pane {
             Pane::Journal => self.select_journal(Some(down)),
             Pane::Inbox => {
-                let n = self.world.open_inbox().len();
+                let n = self.inbox_rows().len();
                 if n > 0 {
                     self.inbox_sel = if down {
                         (self.inbox_sel + 1).min(n - 1)
@@ -1340,7 +1473,7 @@ impl App {
         let zoom = match self.zoom {
             Zoom::None => match (self.pane, self.selected) {
                 (Pane::Inbox, _) => {
-                    let open = self.world.open_inbox();
+                    let open = self.inbox_rows();
                     let item = open.get(self.inbox_sel).map(|&i| &self.world.inbox[i]);
                     match item {
                         Some(item) if item.kind == InboxKind::Change => {
@@ -1382,11 +1515,12 @@ impl App {
                     }
                     None
                 }
-                (Pane::Salon, Sel::Project(p)) => {
+                (Pane::Salon, Sel::Project(p)) if self.card.is_none() => {
                     self.collapsed[p] = !self.collapsed[p];
                     None
                 }
                 (Pane::Salon, Sel::Agent(id)) => Some(Zoom::Focus(id)),
+                (Pane::Salon, Sel::Project(_)) => None,
             },
             Zoom::Focus(id) | Zoom::Trace(id) => Some(Zoom::Trace(id)),
             Zoom::Diff(_) => None,
@@ -1397,7 +1531,7 @@ impl App {
     }
 
     fn answer(&mut self, approve: bool) {
-        let open = self.world.open_inbox();
+        let open = self.inbox_rows();
         let Some(&item) = open.get(self.inbox_sel) else {
             return;
         };
@@ -1445,7 +1579,7 @@ impl App {
     fn decide_change(&mut self, id: AgentId, apply: bool) {
         let t = self.lang.text();
         let name = self.world.agents[id].name.clone();
-        let open = self.world.open_inbox().len();
+        let open = self.inbox_rows().len();
         let decided = match &mut self.engine {
             Engine::Live(l) if apply => l.apply_change(&self.world, id),
             Engine::Sim(s) if apply => s.apply_change(&self.world, id),
@@ -1679,6 +1813,7 @@ mod tests {
                 researcher: None,
                 open: true,
                 tick: 0,
+                card: None,
             });
             app.inbox_sel = 1;
             let name = app.world.agents[worker].name.clone();
@@ -1898,6 +2033,7 @@ mod tests {
             researcher: None,
             open,
             tick: 0,
+            card: None,
         }
     }
 
@@ -2153,5 +2289,307 @@ mod tests {
         app.thread = None;
         app.follow_thread();
         assert!(app.thread.is_none());
+    }
+
+    /// The demo after a while, its cards on the board.
+    fn with_cards(projects: usize) -> App {
+        let mut app = App::new(projects, 4, 4, 7, Lang::En);
+        for _ in 0..140 * projects {
+            app.step();
+        }
+        assert!(app.world.cards.len() >= 4, "{}", app.world.cards.len());
+        app
+    }
+
+    fn type_in(app: &mut App, text: &str) {
+        for c in text.chars() {
+            app.on_key(key(KeyCode::Char(c)));
+        }
+    }
+
+    /// What `#` writes for the composer, the composer closed again.
+    fn hash(app: &mut App) -> String {
+        app.on_key(key(KeyCode::Char('#')));
+        assert!(app.typing);
+        app.typing = false;
+        app.menu = None;
+        std::mem::take(&mut app.input)
+    }
+
+    #[test]
+    fn a_hash_writes_the_card_at_hand() {
+        let mut app = with_cards(1);
+        let w = &app.world;
+        let (worker, card) = w
+            .agents
+            .iter()
+            .find_map(|a| Some((a.id, a.card?)))
+            .expect("a worker on a card");
+        let mine = format!("#{}", card + 1);
+        app.selected = Sel::Project(0);
+        assert_eq!(hash(&mut app), "#");
+        app.selected = Sel::Agent(worker);
+        assert_eq!(hash(&mut app), mine);
+        app.zoom = Zoom::Focus(worker);
+        app.selected = Sel::Project(0);
+        assert_eq!(hash(&mut app), mine, "the zoomed agent's");
+        app.zoom = Zoom::None;
+        // The card an inbox item came on, not the agent's now.
+        app.pane = Pane::Inbox;
+        let open = app.world.open_inbox();
+        app.inbox_sel = 1;
+        app.world.inbox[open[1]].card = Some(2);
+        assert_eq!(hash(&mut app), "#3");
+        app.world.inbox[open[1]].card = None;
+        assert_eq!(hash(&mut app), "#");
+        // A journal line that names a card, one that mentions it, one
+        // that does neither.
+        app.pane = Pane::Journal;
+        app.world.note(Event::Posted { agent: 0, card: 3 });
+        app.journal_sel = Some(app.world.journal.len() - 1);
+        assert_eq!(hash(&mut app), "#4");
+        let said = |text: &str| Event::Sent {
+            from: 0,
+            to: worker,
+            kind: MsgKind::Inform,
+            text: text.into(),
+        };
+        app.world.note(said("about #, #x, #99 and #2 then #3"));
+        app.journal_sel = Some(app.world.journal.len() - 1);
+        assert_eq!(hash(&mut app), "#2", "the first card it names");
+        app.world.note(Event::Failed { agent: worker });
+        app.journal_sel = Some(app.world.journal.len() - 1);
+        assert_eq!(hash(&mut app), "#");
+        // On a card's screen its own card is no news.
+        app.open_card(3);
+        app.journal_sel = app
+            .world
+            .journal
+            .iter()
+            .rposition(|e| e.event.card() == Some(3));
+        assert_eq!(hash(&mut app), "#");
+        app.journal_sel = Some(app.world.journal.len() - 2);
+        assert_eq!(hash(&mut app), "#2");
+    }
+
+    #[test]
+    fn enter_opens_the_card_typed_or_offered_at_once() {
+        let mut app = with_cards(1);
+        app.thread = Some(Thread {
+            entries: vec![0],
+            sel: 0,
+            scroll: Cell::new(0),
+            follow: Cell::new(false),
+            page: Cell::new(10),
+        });
+        app.inbox_sel = 3;
+        app.selected = Sel::Project(0);
+        app.on_key(key(KeyCode::Char('#')));
+        type_in(&mut app, "2");
+        app.on_key(key(KeyCode::Enter));
+        assert_eq!(app.card, Some(1));
+        assert!(!app.typing && app.input.is_empty() && app.menu.is_none());
+        assert!(app.thread.is_none());
+        assert_eq!(
+            (app.view, app.zoom, app.pane),
+            (View::Salon, Zoom::None, Pane::Journal)
+        );
+        assert_eq!(app.inbox_sel, 0);
+        let first = ui::card_rows(&app.world, 1)[0].0;
+        assert_eq!(app.journal_sel, Some(first));
+        let owner = app.world.cards[1].owner.expect("taken");
+        assert_eq!(app.selected, Sel::Agent(owner));
+        // A word of the title: the newest card that has it.
+        let title = app.world.cards[0].title.clone();
+        let word = title.split(' ').next().unwrap().to_lowercase();
+        let newest = app
+            .world
+            .cards
+            .iter()
+            .rev()
+            .find(|c| c.title.to_lowercase().contains(&word))
+            .unwrap()
+            .id;
+        app.on_key(key(KeyCode::Char('#')));
+        type_in(&mut app, &word);
+        app.on_key(key(KeyCode::Enter));
+        assert_eq!(app.card, Some(newest));
+        // No such card: said, and the screen stays.
+        app.on_key(key(KeyCode::Char('#')));
+        type_in(&mut app, "x99");
+        app.on_key(key(KeyCode::Enter));
+        assert_eq!(app.card, Some(newest));
+        assert_eq!(app.flash.take().unwrap().0, "no card #x99");
+        // A name is put in by enter, not sent.
+        app.on_key(key(KeyCode::Char('@')));
+        app.on_key(key(KeyCode::Char('l')));
+        app.on_key(key(KeyCode::Enter));
+        assert!(app.typing, "{}", app.input);
+    }
+
+    #[test]
+    fn a_card_nobody_took_selects_who_posted_it() {
+        let mut app = with_cards(1);
+        let c = app.world.cards.len();
+        let mut card = app.world.cards[0].clone();
+        card.id = c;
+        card.owner = None;
+        card.story = vec![Story {
+            tick: 0,
+            event: StoryEvent::Posted {
+                by: 0,
+                text: String::new(),
+            },
+        }];
+        app.world.cards.push(card);
+        app.selected = Sel::Project(0);
+        app.open_card(c);
+        assert_eq!(app.selected, Sel::Agent(0));
+        // Nobody at all: the selection stays.
+        app.world.cards[c].story.clear();
+        app.selected = Sel::Project(0);
+        app.open_card(c);
+        assert_eq!(app.selected, Sel::Project(0));
+    }
+
+    #[test]
+    fn a_card_s_screen_lists_its_own_waiting_items_and_journal_lines() {
+        let mut app = with_cards(1);
+        let first = app.world.open_inbox()[0];
+        app.world.inbox[first].card = Some(0);
+        app.open_card(0);
+        assert_eq!(app.inbox_rows(), app.world.card_inbox(0));
+        assert_eq!(
+            app.inbox_rows().len(),
+            2,
+            "its change, and the one put on it"
+        );
+        assert_eq!(app.journal_rows(), ui::card_rows(&app.world, 0));
+        app.on_key(key(KeyCode::Esc));
+        assert_eq!(app.inbox_rows(), app.world.open_inbox());
+        assert_eq!(app.journal_rows(), ui::journal_rows(&app.world));
+    }
+
+    #[test]
+    fn esc_goes_back_to_the_card_then_to_the_salon() {
+        let mut app = with_cards(1);
+        let owner = app.world.cards[0].owner.unwrap();
+        app.open_card(0);
+        app.pane = Pane::Salon;
+        app.on_key(key(KeyCode::Enter));
+        assert_eq!(app.zoom, Zoom::Focus(owner));
+        app.on_key(key(KeyCode::Enter));
+        app.on_key(key(KeyCode::Esc));
+        assert_eq!(app.zoom, Zoom::Focus(owner), "the raw stream, then focus");
+        app.on_key(key(KeyCode::Esc));
+        assert_eq!((app.zoom, app.card), (Zoom::None, Some(0)));
+        app.pane = Pane::Inbox;
+        app.inbox_sel = 1;
+        app.on_key(key(KeyCode::Esc));
+        assert_eq!(app.card, None);
+        assert_eq!(app.inbox_sel, 0);
+        app.on_key(key(KeyCode::Esc));
+        assert_eq!((app.zoom, app.card), (Zoom::None, None), "nothing to leave");
+        // Another view leaves it too.
+        app.open_card(0);
+        app.on_key(key(KeyCode::Char('2')));
+        assert_eq!((app.view, app.card), (View::Board, None));
+    }
+
+    #[test]
+    fn leaving_a_card_s_screen_keeps_the_journal_selection_on_a_shown_line() {
+        let mut app = with_cards(1);
+        // A claim is the card's line, not the whole journal's.
+        app.world.note(Event::Claimed { agent: 1, card: 0 });
+        app.open_card(0);
+        let card_line = app.journal_sel.unwrap();
+        assert_eq!(card_line, app.world.journal.len() - 1);
+        app.on_key(key(KeyCode::Esc));
+        let rows = ui::journal_rows(&app.world);
+        let sel = app.journal_sel.expect("a line");
+        assert!(rows.iter().any(|&(r, _)| r == sel), "{card_line} → {sel}");
+    }
+
+    #[test]
+    fn n_and_p_step_through_the_open_projects_cards() {
+        let mut app = with_cards(2);
+        let of = |app: &App, p: usize| -> Vec<CardId> {
+            app.world
+                .cards
+                .iter()
+                .filter(|c| c.project == p)
+                .map(|c| c.id)
+                .collect()
+        };
+        assert!(of(&app, 1).len() >= 2);
+        let all: Vec<CardId> = (0..app.world.cards.len()).collect();
+        app.open_card(0);
+        app.on_key(key(KeyCode::Char('p')));
+        assert_eq!(app.card, Some(0), "no card before the first");
+        for &c in &all[1..] {
+            app.on_key(key(KeyCode::Char('n')));
+            assert_eq!(app.card, Some(c));
+        }
+        app.on_key(key(KeyCode::Char('n')));
+        assert_eq!(app.card, all.last().copied(), "none after the last");
+        app.on_key(key(KeyCode::Char('p')));
+        assert_eq!(app.card, Some(all[all.len() - 2]));
+        // A closed project's cards are skipped.
+        app.world.projects[1].closed = true;
+        let open = of(&app, 0);
+        app.open_card(open[0]);
+        for &c in &open[1..] {
+            app.on_key(key(KeyCode::Char('n')));
+            assert_eq!(app.card, Some(c));
+        }
+        for &c in open[..open.len() - 1].iter().rev() {
+            app.on_key(key(KeyCode::Char('p')));
+            assert_eq!(app.card, Some(c));
+        }
+        // Not on a card's screen: n and p do nothing.
+        app.zoom = Zoom::Focus(0);
+        app.on_key(key(KeyCode::Char('n')));
+        assert_eq!(app.card, Some(open[0]));
+    }
+
+    #[test]
+    fn a_card_s_screen_does_not_fold_the_salon() {
+        let mut app = with_cards(1);
+        app.open_card(0);
+        app.pane = Pane::Salon;
+        app.selected = Sel::Project(0);
+        for code in [KeyCode::Char('h'), KeyCode::Enter, KeyCode::Char('z')] {
+            app.on_key(key(code));
+        }
+        app.on_key(key(KeyCode::Char('M')));
+        assert_eq!(app.collapsed, [false]);
+        assert!(app.folded_workers.is_empty());
+        assert_eq!((app.zoom, app.card), (Zoom::None, Some(0)));
+        // Back in the salon the keys fold again, in its own pane only.
+        app.on_key(key(KeyCode::Esc));
+        app.pane = Pane::Journal;
+        app.on_key(key(KeyCode::Char('h')));
+        assert_eq!(app.collapsed, [false]);
+        app.pane = Pane::Salon;
+        app.selected = Sel::Project(0);
+        app.on_key(key(KeyCode::Enter));
+        assert_eq!(app.collapsed, [true]);
+    }
+
+    #[test]
+    fn closing_a_project_closes_its_card_s_screen() {
+        let mut app = with_cards(2);
+        let theirs = app.world.cards.iter().find(|c| c.project == 1).unwrap().id;
+        let ours = app.world.cards.iter().find(|c| c.project == 0).unwrap().id;
+        let other = app.world.projects[1].name.clone();
+        app.open_card(theirs);
+        app.command(&format!("close {other}"));
+        assert_eq!(app.card, None);
+        // Another project closing leaves it open.
+        app.home = None;
+        app.command("open ~/x more");
+        app.open_card(ours);
+        app.command("close more");
+        assert_eq!(app.card, Some(ours));
     }
 }

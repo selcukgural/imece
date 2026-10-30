@@ -496,6 +496,7 @@ mod tests {
             researcher: None,
             open: true,
             tick: 0,
+            card: None,
         };
         let who = &w.agents[1].name;
         assert_eq!(
@@ -519,6 +520,7 @@ mod tests {
             researcher: None,
             open: true,
             tick: 0,
+            card: None,
         };
         // Never as markdown: what runs is what the person reads.
         assert_eq!(
@@ -567,6 +569,7 @@ mod tests {
             researcher: None,
             open: true,
             tick: 0,
+            card: None,
         };
         assert_eq!(
             inbox(Lang::En, &w, &item),

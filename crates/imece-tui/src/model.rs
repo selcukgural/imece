@@ -612,6 +612,26 @@ pub struct Card {
     pub finished: u64,
 }
 
+/// The part an agent had in a card, for the card's screen.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Part {
+    Posted,
+    Owner,
+    Helper,
+    Talked,
+}
+
+/// Where `text` names card `c` as the person sees it (`#323`, `c` being
+/// 322): byte ranges of each `#` and its number, where no digit follows,
+/// so `#32` is not found in `#323`.
+pub fn mentions(text: &str, c: CardId) -> Vec<std::ops::Range<usize>> {
+    let tag = format!("#{}", c + 1);
+    text.match_indices(&tag)
+        .map(|(at, _)| at..at + tag.len())
+        .filter(|r| !text[r.end..].starts_with(|ch: char| ch.is_ascii_digit()))
+        .collect()
+}
+
 impl Card {
     /// Leases count while the change is not merged.
     pub fn holds_leases(&self) -> bool {
@@ -914,6 +934,17 @@ impl Event {
         }
     }
 
+    /// The card the event names, if it names one.
+    pub fn card(&self) -> Option<CardId> {
+        match *self {
+            Event::Assign { card, .. }
+            | Event::Merged { card, .. }
+            | Event::Posted { card, .. }
+            | Event::Claimed { card, .. } => Some(card),
+            _ => None,
+        }
+    }
+
     /// The agent the event is about, for its project.
     pub fn agent(&self) -> AgentId {
         match *self {
@@ -1009,6 +1040,10 @@ pub struct InboxItem {
     pub researcher: Option<AgentId>,
     pub open: bool,
     pub tick: u64,
+    /// The card the agent worked on when the item came, for the card's
+    /// screen: a worker's change stays tied to the card it finished even
+    /// after the worker took the next one.
+    pub card: Option<CardId>,
 }
 
 /// One file of a [`Change`].
@@ -1311,6 +1346,64 @@ impl World {
             .collect()
     }
 
+    /// The card agent `id` works on: its own, or for a helper its
+    /// worker's.
+    pub fn card_of(&self, id: AgentId) -> Option<CardId> {
+        let a = &self.agents[id];
+        match a.parent {
+            Some(p) if a.role == Role::Helper => self.agents[p].card,
+            _ => a.card,
+        }
+    }
+
+    /// The open inbox items of card `c`, oldest first: what came from the
+    /// agents working on it (its owner, the owner's helpers) while they
+    /// did.
+    pub fn card_inbox(&self, c: CardId) -> Vec<usize> {
+        self.open_inbox()
+            .into_iter()
+            .filter(|&i| self.inbox[i].card == Some(c))
+            .collect()
+    }
+
+    /// Who had a part in card `c`, each once, with the first part they
+    /// had: who posted it, its owner, the owner's helpers while it works
+    /// on it, then anyone its story says talked about it.
+    pub fn card_people(&self, c: CardId) -> Vec<(AgentId, Part)> {
+        let card = &self.cards[c];
+        let mut out: Vec<(AgentId, Part)> = Vec::new();
+        let mut add = |id: AgentId, part: Part| {
+            if !out.iter().any(|&(a, _)| a == id) {
+                out.push((id, part));
+            }
+        };
+        for s in &card.story {
+            if let StoryEvent::Posted { by, .. } = s.event {
+                add(by, Part::Posted);
+            }
+        }
+        if let Some(owner) = card.owner {
+            add(owner, Part::Owner);
+            if self.agents[owner].card == Some(c) {
+                for h in self.helpers_of(owner) {
+                    add(h.id, Part::Helper);
+                }
+            }
+        }
+        for s in &card.story {
+            match s.event {
+                StoryEvent::Asked { from, to, .. } | StoryEvent::Sent { from, to, .. } => {
+                    add(from, Part::Talked);
+                    add(to, Part::Talked);
+                }
+                StoryEvent::Answered { from, .. } => add(from, Part::Talked),
+                StoryEvent::ResearchArrived { researcher, .. } => add(researcher, Part::Talked),
+                _ => {}
+            }
+        }
+        out
+    }
+
     pub fn cards_done(&self) -> usize {
         self.cards
             .iter()
@@ -1376,6 +1469,7 @@ impl World {
             researcher: None,
             open: true,
             tick: self.tick,
+            card: self.card_of(id),
         });
     }
 
@@ -1399,6 +1493,7 @@ impl World {
             researcher: None,
             open: true,
             tick: self.tick,
+            card: self.card_of(agent),
         });
         self.changes.push(change);
         self.note(Event::ChangeReady {
@@ -1465,6 +1560,7 @@ impl World {
             researcher: None,
             open: true,
             tick: self.tick,
+            card: self.card_of(id),
         });
     }
 
@@ -1494,6 +1590,7 @@ impl World {
             researcher: None,
             open: true,
             tick: self.tick,
+            card: self.card_of(id),
         });
     }
 
@@ -1675,6 +1772,7 @@ mod tests {
             researcher: None,
             open,
             tick: 0,
+            card: None,
         }
     }
 
@@ -2551,5 +2649,169 @@ mod tests {
             assert_eq!(days_from_civil(c.0, c.1, c.2), z);
             last = c;
         }
+    }
+
+    fn card(id: CardId, owner: Option<AgentId>, story: Vec<StoryEvent>) -> Card {
+        Card {
+            id,
+            project: 0,
+            title: format!("c{id}"),
+            owner,
+            column: Column::Working,
+            story: story
+                .into_iter()
+                .map(|event| Story { tick: 0, event })
+                .collect(),
+            symbols: Vec::new(),
+            started: 0,
+            finished: 0,
+        }
+    }
+
+    #[test]
+    fn a_card_is_named_by_its_number_where_no_digit_follows() {
+        // Card 2 is #3 to the person.
+        let text = "#3 then #30, #3; x#3";
+        assert_eq!(mentions(text, 2), [0..2, 13..15, 18..20]);
+        let thirty = mentions("#30", 29);
+        assert_eq!((thirty.len(), thirty.first()), (1, Some(&(0..3))));
+        assert!(mentions("#30", 2).is_empty());
+        assert!(mentions("3 or # 3", 2).is_empty());
+        assert!(mentions("", 2).is_empty());
+    }
+
+    #[test]
+    fn the_events_that_name_a_card_say_which() {
+        let named = [
+            Event::Assign { agent: 1, card: 4 },
+            Event::Merged { agent: 1, card: 5 },
+            Event::Posted { agent: 1, card: 6 },
+            Event::Claimed { agent: 1, card: 7 },
+        ];
+        let cards: Vec<_> = named.iter().map(Event::card).collect();
+        assert_eq!(cards, [Some(4), Some(5), Some(6), Some(7)]);
+        assert_eq!(Event::Failed { agent: 1 }.card(), None);
+    }
+
+    #[test]
+    fn a_helper_works_on_its_worker_s_card() {
+        let mut w = world(vec![
+            agent(0, Role::Leader, Status::Idle),
+            agent(1, Role::Worker, Status::Working),
+            agent(2, Role::Helper, Status::Working),
+            agent(3, Role::Worker, Status::Working),
+        ]);
+        w.agents[1].card = Some(5);
+        w.agents[2].parent = Some(1);
+        w.agents[2].card = Some(9);
+        w.agents[3].card = Some(6);
+        // Not a helper: its own card, whatever its parent says.
+        w.agents[3].parent = Some(1);
+        assert_eq!(w.card_of(1), Some(5));
+        assert_eq!(w.card_of(2), Some(5));
+        assert_eq!(w.card_of(3), Some(6));
+        assert_eq!(w.card_of(0), None);
+    }
+
+    #[test]
+    fn an_inbox_item_keeps_the_card_it_came_on() {
+        let mut w = world(vec![
+            agent(0, Role::Leader, Status::Idle),
+            agent(1, Role::Worker, Status::Working),
+            agent(2, Role::Helper, Status::Working),
+        ]);
+        w.agents[1].card = Some(4);
+        w.agents[2].parent = Some(1);
+        w.replied(1, "done");
+        w.asked_you(2, "which?");
+        w.asks_you(2, "Bash: make");
+        w.change_ready(Change {
+            agent: 1,
+            title: "did it".into(),
+            files: Vec::new(),
+            patch: String::new(),
+            runs: Vec::new(),
+        });
+        // The worker took the next card: what came stays with the first.
+        w.agents[1].card = Some(5);
+        w.replied(0, "planned");
+        let cards: Vec<_> = w.inbox.iter().map(|i| i.card).collect();
+        assert_eq!(cards, [Some(4), Some(4), Some(4), Some(4), None]);
+        assert_eq!(w.card_inbox(4), [0, 1, 2, 3]);
+        assert!(w.card_inbox(5).is_empty());
+        // Only the open ones.
+        w.close_replies(1);
+        assert_eq!(w.card_inbox(4), [1, 2, 3]);
+    }
+
+    #[test]
+    fn a_card_s_people_come_once_each_with_the_first_part_they_had() {
+        let mut w = world(
+            (0..8)
+                .map(|i| agent(i, Role::Worker, Status::Working))
+                .collect(),
+        );
+        w.agents[3].role = Role::Helper;
+        w.agents[3].parent = Some(1);
+        w.agents[1].card = Some(0);
+        let said = |from, to| StoryEvent::Sent {
+            from,
+            to,
+            kind: MsgKind::Ask,
+            text: String::new(),
+        };
+        w.cards.push(card(
+            0,
+            Some(1),
+            vec![
+                StoryEvent::Took { agent: 1 },
+                StoryEvent::Asked {
+                    from: 1,
+                    to: 2,
+                    text: String::new(),
+                },
+                said(4, 1),
+                StoryEvent::Answered {
+                    from: 5,
+                    text: String::new(),
+                },
+                StoryEvent::ResearchArrived {
+                    researcher: 6,
+                    topic: String::new(),
+                },
+                said(0, 7),
+                // Posted after the rest, still first.
+                StoryEvent::Posted {
+                    by: 0,
+                    text: String::new(),
+                },
+            ],
+        ));
+        assert_eq!(
+            w.card_people(0),
+            [
+                (0, Part::Posted),
+                (1, Part::Owner),
+                (3, Part::Helper),
+                (2, Part::Talked),
+                (4, Part::Talked),
+                (5, Part::Talked),
+                (6, Part::Talked),
+                (7, Part::Talked),
+            ]
+        );
+        // The owner on another card now: its helpers are that card's.
+        w.agents[1].card = Some(1);
+        assert!(!w.card_people(0).contains(&(3, Part::Helper)));
+        // Nobody took it: who posted it.
+        w.cards.push(card(
+            1,
+            None,
+            vec![StoryEvent::Posted {
+                by: 0,
+                text: String::new(),
+            }],
+        ));
+        assert_eq!(w.card_people(1), [(0, Part::Posted)]);
     }
 }

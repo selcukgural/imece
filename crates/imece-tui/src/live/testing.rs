@@ -393,6 +393,7 @@ pub(super) fn item(kind: InboxKind, agent: AgentId, detail: &str) -> InboxItem {
         researcher: None,
         open: true,
         tick: 1,
+        card: None,
     }
 }
 

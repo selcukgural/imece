@@ -1690,6 +1690,7 @@ impl Sim {
                     researcher: Some(id),
                     open: true,
                     tick: t,
+                    card,
                 });
                 w.agents[a].set_status(Status::WaitingHuman, t);
                 w.story(card, StoryEvent::ResearchNeedsYou { researcher: id });
