@@ -1440,6 +1440,19 @@ impl World {
         });
     }
 
+    /// What the `nth` of agent `id`'s open approvals asks waits no more
+    /// (its session settled it): it closes, and nobody decided.
+    pub fn withdrew(&mut self, id: AgentId, nth: usize) {
+        if let Some(i) = self
+            .inbox
+            .iter_mut()
+            .filter(|i| i.open && i.kind == InboxKind::Approval && i.agent == id)
+            .nth(nth)
+        {
+            i.open = false;
+        }
+    }
+
     /// Agent `id`'s session is over: what it asked waits for nobody.
     pub fn close_approvals(&mut self, id: AgentId) {
         for i in &mut self.inbox {
@@ -2162,6 +2175,35 @@ mod tests {
             allowed: true,
         };
         assert_eq!((e.kind(), e.agent()), (EntryKind::Person, 2));
+    }
+
+    #[test]
+    fn a_withdrawn_ask_is_the_nth_open_one_of_its_agent_and_nobody_decided_it() {
+        let mut w = world(vec![
+            agent(0, Role::Leader, Status::Idle),
+            agent(1, Role::Worker, Status::Working),
+        ]);
+        w.asks_you(1, "shell: make a");
+        w.asked_you(1, "Which?");
+        w.asks_you(0, "Bash: make lead");
+        w.asks_you(1, "shell: make b");
+        w.asks_you(1, "shell: make c");
+        w.decided(0, true);
+        let journal = w.journal.len();
+        // The first open one of agent 1 is now `make b`: the decided one,
+        // the question and the leader's ask do not count.
+        w.withdrew(1, 0);
+        let open: Vec<_> = w
+            .open_inbox()
+            .iter()
+            .map(|&i| w.inbox[i].detail.as_str())
+            .collect();
+        assert_eq!(open, ["Which?", "Bash: make lead", "shell: make c"]);
+        assert_eq!(w.journal.len(), journal);
+        w.withdrew(1, 1);
+        assert!(w.has_approval(1), "there is no second one");
+        w.withdrew(1, 0);
+        assert!(!w.has_approval(1) && w.has_approval(0) && w.has_question(1));
     }
 
     #[test]

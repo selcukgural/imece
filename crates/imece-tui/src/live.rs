@@ -391,12 +391,21 @@ pub struct LeftBehind {
     pub ago: Option<u64>,
 }
 
-/// A tool call a session waits on the person's yes for: what it asks,
-/// the tool's input to give back with a yes, and where the answer goes.
+/// What a session waits on the person's yes for, and how the answer
+/// reaches it.
 struct Pending {
     what: Ask,
-    input: Value,
-    reply: Sender<Answer>,
+    reply: Reply,
+}
+
+/// How the person's answer reaches the session that asked.
+enum Reply {
+    /// A Claude Code session asked through imece's socket: the call
+    /// waits for its answer, with the tool's input to give back.
+    Socket { input: Value, to: Sender<Answer> },
+    /// The session asked on its vendor's own wire (Codex): answered
+    /// through it, by request.
+    Session(String),
 }
 
 /// A wake that goes on with the agent's earlier session: what to start
@@ -1164,6 +1173,17 @@ impl Live {
             if generation != self.generation[id] {
                 continue;
             }
+            let e = match e {
+                AgentEvent::Asks { request, what } => {
+                    self.ask(w, id, what, Reply::Session(request));
+                    continue;
+                }
+                AgentEvent::Withdrawn { request } => {
+                    self.withdrawn(w, id, &request);
+                    continue;
+                }
+                e => e,
+            };
             let turn_done = matches!(e, AgentEvent::TurnDone { .. });
             if turn_done {
                 // A tier model that is not available here fails the first
@@ -1381,16 +1401,53 @@ impl Live {
     /// allowed at once, anything else waits in the person's inbox and is
     /// answered when they decide. The trace says which.
     fn approve(&mut self, w: &mut World, from: AgentId, args: &Value, reply: Sender<Answer>) {
-        let what = claude::ask(args);
-        let input = args["input"].clone();
+        let reply = Reply::Socket {
+            input: args["input"].clone(),
+            to: reply,
+        };
+        self.ask(w, from, claude::ask(args), reply);
+    }
+
+    /// Agent `from`'s session asks before it does `what`: a routine
+    /// command is allowed at once, anything else waits in the person's
+    /// inbox and is answered when they decide. The trace says which.
+    fn ask(&mut self, w: &mut World, from: AgentId, what: Ask, reply: Reply) {
         if routine(w.agents[from].role, &what, &self.run_programs) {
             w.agents[from].trace(w.tick, format!("allowed on its own: {}", what.line()));
-            let _ = reply.send(Ok(claude::decision(true, &input)));
+            self.reply(from, reply, true);
             return;
         }
         w.agents[from].trace(w.tick, format!("asks the person: {}", what.line()));
         w.asks_you(from, &what.line());
-        self.pending[from].push(Pending { what, input, reply });
+        self.pending[from].push(Pending { what, reply });
+    }
+
+    /// Gives agent `id`'s session the answer to what it asked.
+    fn reply(&mut self, id: AgentId, reply: Reply, allow: bool) {
+        match reply {
+            Reply::Socket { input, to } => {
+                let _ = to.send(Ok(claude::decision(allow, &input)));
+            }
+            Reply::Session(request) => {
+                if let Slot::Running(s) = &mut self.slots[id] {
+                    let _ = s.decide(&request, allow);
+                }
+            }
+        }
+    }
+
+    /// What agent `id`'s session asked with `request` waits no more (its
+    /// vendor settled it): its item closes without a decision.
+    fn withdrawn(&mut self, w: &mut World, id: AgentId, request: &str) {
+        let Some(nth) = self.pending[id]
+            .iter()
+            .position(|p| matches!(&p.reply, Reply::Session(r) if r == request))
+        else {
+            return;
+        };
+        let p = self.pending[id].remove(nth);
+        w.agents[id].trace(w.tick, format!("no longer asks: {}", p.what.line()));
+        w.withdrew(id, nth);
     }
 
     /// The person allowed or refused what inbox item `item` asks: the
@@ -1417,7 +1474,7 @@ impl Live {
             let p = self.pending[id].remove(nth);
             let how = if allow { "allowed" } else { "refused" };
             w.agents[id].trace(w.tick, format!("the person {how}: {}", p.what.line()));
-            let _ = p.reply.send(Ok(claude::decision(allow, &p.input)));
+            self.reply(id, p.reply, allow);
         }
     }
 
@@ -1425,7 +1482,9 @@ impl Live {
     fn end(&mut self, w: &mut World, id: AgentId) {
         // What it asked waits for nobody now.
         for p in self.pending[id].drain(..) {
-            let _ = p.reply.send(Err("the session ended".into()));
+            if let Reply::Socket { to, .. } = p.reply {
+                let _ = to.send(Err("the session ended".into()));
+            }
         }
         w.close_approvals(id);
         self.spent_before[id] = w.agents[id].cost;
@@ -2799,6 +2858,8 @@ pub fn apply(w: &mut World, id: AgentId, e: AgentEvent, before: u64) {
             }
         }
         AgentEvent::ToolFailed { name } => w.agents[id].trace(t, format!("tool_result {name} ✕")),
+        // `Live::step` takes these to the person before anything is applied.
+        AgentEvent::Asks { .. } | AgentEvent::Withdrawn { .. } => {}
         AgentEvent::TurnDone {
             ok,
             text,
@@ -3425,7 +3486,11 @@ fn abilities(vendor: Vendor, role: Role, confine: Confine) -> &'static str {
         }
         (Vendor::Codex, _, true) => {
             "You can read and change files here, run commands and reach the web; the \
-             sandbox keeps writes inside this directory."
+             sandbox keeps writes inside this directory. What needs more than the \
+             sandbox gives waits for the person's yes, unless it is one program with its \
+             arguments (no pipes, redirections, && or $, one line) that runs the build, \
+             the tests or git's reading commands. A refusal is the person's decision, \
+             not an error: do not try the same another way."
         }
         (_, Role::Leader, false) => {
             "You can read files but not change them; the run tool runs checks (cargo \
@@ -3638,8 +3703,8 @@ pub(crate) mod testing {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
     use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::{Arc, Mutex};
 
     use super::testing::*;
     use super::*;
@@ -4384,6 +4449,166 @@ mod tests {
                 ..
             }
         ));
+    }
+
+    /// The answers a session was given: request, and whether it runs.
+    type Answers = Arc<Mutex<Vec<(String, bool)>>>;
+
+    /// A session that keeps the answers it was given.
+    struct Decides(Answers);
+    impl imece_agent::Agent for Decides {
+        fn prompt(&mut self, _: &str) -> io::Result<()> {
+            Ok(())
+        }
+        fn command(&mut self, _: &str) -> io::Result<()> {
+            Ok(())
+        }
+        fn terminate(&mut self) {}
+        fn decide(&mut self, request: &str, allow: bool) -> io::Result<()> {
+            self.0.lock().unwrap().push((request.to_string(), allow));
+            Ok(())
+        }
+    }
+
+    /// A live screen whose agent 1 runs a [`Decides`] session; what it
+    /// was answered.
+    fn deciding(w: &mut World) -> (Live, Answers) {
+        let mut live = idle_live(2);
+        let answers = Arc::new(Mutex::new(Vec::new()));
+        live.ready(
+            w,
+            1,
+            Ok((
+                Box::new(Decides(answers.clone())),
+                PathBuf::from("/w"),
+                None,
+            )),
+        );
+        (live, answers)
+    }
+
+    /// Agent `id`'s session asks on its own wire to run `command`.
+    fn codex_asks(live: &Live, id: AgentId, request: &str, command: &str) {
+        let what = Ask::Command {
+            tool: "shell".into(),
+            command: command.into(),
+        };
+        live.tx
+            .send((
+                id,
+                live.generation[id],
+                AgentEvent::Asks {
+                    request: request.into(),
+                    what,
+                },
+            ))
+            .unwrap();
+    }
+
+    #[test]
+    fn what_a_session_asks_on_its_own_wire_is_answered_through_it() {
+        let mut w = team(1);
+        let (mut live, answers) = deciding(&mut w);
+        codex_asks(&live, 1, "5", "cargo test");
+        codex_asks(&live, 1, "6", "make a");
+        codex_asks(&live, 1, "7", "make b");
+        live.step(&mut w);
+        // The routine one at once, the rest when the person says.
+        assert_eq!(*answers.lock().unwrap(), [("5".to_string(), true)]);
+        assert!(
+            w.agents[1]
+                .trace
+                .iter()
+                .any(|l| l.ends_with(" allowed on its own: shell: cargo test"))
+        );
+        let open = w.open_inbox();
+        let shown: Vec<_> = open.iter().map(|&i| w.inbox[i].detail.as_str()).collect();
+        assert_eq!(shown, ["shell: make a", "shell: make b"]);
+        live.decide(&mut w, open[1], false);
+        live.decide(&mut w, open[0], true);
+        assert_eq!(
+            *answers.lock().unwrap(),
+            [
+                ("5".to_string(), true),
+                ("7".to_string(), false),
+                ("6".to_string(), true)
+            ]
+        );
+        assert!(live.pending[1].is_empty() && !w.has_approval(1));
+        // The session's end answers nobody: the session is gone.
+        codex_asks(&live, 1, "8", "make c");
+        live.step(&mut w);
+        assert!(w.has_approval(1));
+        live.end(&mut w, 1);
+        assert!(!w.has_approval(1) && live.pending[1].is_empty());
+        assert_eq!(answers.lock().unwrap().len(), 3);
+        // An ask of an earlier session is dropped with its events.
+        live.tx
+            .send((
+                1,
+                live.generation[1] - 1,
+                AgentEvent::Asks {
+                    request: "9".into(),
+                    what: Ask::Command {
+                        tool: "shell".into(),
+                        command: "make d".into(),
+                    },
+                },
+            ))
+            .unwrap();
+        live.step(&mut w);
+        assert!(!w.has_approval(1));
+    }
+
+    #[test]
+    fn an_ask_its_session_settled_closes_without_a_decision() {
+        let mut w = team(1);
+        let (mut live, answers) = deciding(&mut w);
+        for (r, c) in [("1", "make a"), ("2", "make b"), ("3", "make c")] {
+            codex_asks(&live, 1, r, c);
+        }
+        // The leader's ask stays whatever the worker's session settles.
+        let lead = ask_to_run(&live, 0, "make lead");
+        live.step(&mut w);
+        let journal = w.journal.len();
+        let withdraw = |live: &Live, request: &str| {
+            live.tx
+                .send((
+                    1,
+                    live.generation[1],
+                    AgentEvent::Withdrawn {
+                        request: request.into(),
+                    },
+                ))
+                .unwrap();
+        };
+        withdraw(&live, "2");
+        withdraw(&live, "never asked");
+        live.step(&mut w);
+        let open: Vec<_> = w
+            .open_inbox()
+            .iter()
+            .map(|&i| w.inbox[i].detail.clone())
+            .collect();
+        assert_eq!(open, ["shell: make a", "shell: make c", "Bash: make lead"]);
+        assert_eq!(w.journal.len(), journal, "nobody decided");
+        assert!(
+            w.agents[1]
+                .trace
+                .iter()
+                .any(|l| l.ends_with(" no longer asks: shell: make b"))
+        );
+        assert_eq!(live.pending[1].len(), 2);
+        // The rest still pair up with their items.
+        let items = w.open_inbox();
+        live.decide(&mut w, items[1], false);
+        assert_eq!(*answers.lock().unwrap(), [("3".to_string(), false)]);
+        withdraw(&live, "1");
+        live.step(&mut w);
+        assert!(!w.has_approval(1) && w.has_approval(0));
+        assert!(live.pending[1].is_empty());
+        assert!(lead.try_recv().is_err());
+        assert!(answers.lock().unwrap().len() == 1);
     }
 
     /// A session that says when it was ended.
@@ -6920,6 +7145,7 @@ in p.rs",
         assert!(strict(Vendor::Codex, Role::Leader).contains("refuses writes and the network"));
         assert!(!strict(Vendor::Codex, Role::Leader).contains("search the web"));
         assert!(!strict(Vendor::Claude, Role::Worker).contains("the person's yes"));
+        assert!(!strict(Vendor::Codex, Role::Worker).contains("the person's yes"));
         assert!(
             strict(Vendor::Codex, Role::Worker)
                 .contains("inside this directory and refuses the network")
@@ -6956,8 +7182,16 @@ in p.rs",
                     "{r:?}"
                 );
             }
+            // So does what needs more than Codex's sandbox.
+            for r in [Role::Worker, Role::Helper] {
+                assert!(
+                    full(Vendor::Codex, r).contains("sandbox gives waits for the person's yes"),
+                    "{r:?}"
+                );
+            }
             assert!(!full(Vendor::Gemini, Role::Worker).contains("the person's yes"));
             assert!(!full(Vendor::Claude, Role::Leader).contains("the person's yes"));
+            assert!(!full(Vendor::Codex, Role::Leader).contains("the person's yes"));
             assert!(
                 full(Vendor::Codex, Role::Leader)
                     .contains("search the web and run commands that only read")
