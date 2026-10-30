@@ -26,7 +26,7 @@
 //! turn of its own; it goes to the next only when that worker's turn ended
 //! without taking it, so a card wakes each worker at most once.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{self, Receiver, Sender};
@@ -207,6 +207,9 @@ const MAX_PATCH: usize = 4 << 20;
 
 /// The most output of one run that goes back to the agent, in bytes.
 const MAX_RUN_OUTPUT: usize = 48 << 10;
+/// Runs remembered with the tree they ran on, for the changes read after
+/// them (see [`Change::runs`]); the oldest go first.
+const RAN_KEEP: usize = 64;
 
 /// imece's MCP servers, one socket per agent in a private directory.
 struct Bus {
@@ -413,6 +416,13 @@ pub struct Live {
     /// moves its worktree to HEAD (see [`Live::follow`]); none when it
     /// is not moving.
     placing: Vec<Option<Vec<String>>>,
+    /// Workers' and helpers' runs that ran on one tree from start to end,
+    /// with that tree, oldest first, at most [`RAN_KEEP`]. They come from
+    /// the runs' threads on `ran_back`, each before its run is answered,
+    /// so a change read after the answer finds it there.
+    ran: VecDeque<(String, Ran)>,
+    ran_tx: Sender<(String, Ran)>,
+    ran_back: Receiver<(String, Ran)>,
     bus: Option<Bus>,
     calls_tx: Sender<Call>,
     calls_rx: Receiver<Call>,
@@ -576,6 +586,7 @@ impl Live {
         let (calls_tx, calls_rx) = mpsc::channel();
         let (git, jobs) = mpsc::channel();
         let (done, git_back) = mpsc::channel();
+        let (ran_tx, ran_back) = mpsc::channel();
         thread::spawn(move || git_thread(jobs, done));
         Live {
             state: std::env::temp_dir(),
@@ -617,6 +628,9 @@ impl Live {
             reading: Vec::new(),
             applying: Vec::new(),
             placing: Vec::new(),
+            ran: VecDeque::new(),
+            ran_tx,
+            ran_back,
             bus: None,
             calls_tx,
             calls_rx,

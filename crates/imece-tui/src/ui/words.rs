@@ -359,6 +359,37 @@ pub fn inbox(lang: Lang, w: &World, item: &InboxItem) -> String {
     }
 }
 
+/// What the runs on a change's tree say, after its inbox line: that all
+/// ran clean (which), which failed, or that none ran on it.
+pub fn evidence(lang: Lang, runs: &[Ran]) -> String {
+    let t = lang.text();
+    let lines = |ok: bool| {
+        runs.iter()
+            .filter(|r| r.ok() == ok)
+            .map(|r| r.line.as_str())
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
+    if runs.is_empty() {
+        t.ran_none.to_string()
+    } else if runs.iter().all(Ran::ok) {
+        fill(t.ran_clean, &[&lines(true)])
+    } else {
+        fill(t.ran_failed, &[&lines(false)])
+    }
+}
+
+/// One run on a change's tree and how it ended.
+pub fn ran(lang: Lang, r: &Ran) -> String {
+    let t = lang.text();
+    match r.code {
+        Some(0) => fill(t.ran_ok, &[&r.line]),
+        Some(c) => fill(t.ran_exit, &[&r.line, &c.to_string()]),
+        None if r.timed_out => fill(t.ran_deadline, &[&r.line]),
+        None => fill(t.ran_killed, &[&r.line]),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -1,8 +1,9 @@
 //! A worker's change, whole: the patch as git wrote it, file by file,
-//! for the person to read before they apply it to their checkout.
+//! for the person to read before they apply it to their checkout, under
+//! the runs that ran on exactly it.
 
 use ratatui::Frame;
-use ratatui::layout::Rect;
+use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Paragraph};
 
@@ -70,6 +71,10 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App, id: AgentId) {
         .border_style(fg(vendor_color(a.vendor)));
     let inner = block.inner(area);
     f.render_widget(block, area);
+    let rows = u16::try_from(c.runs.len().max(1)).unwrap_or(u16::MAX);
+    let [runs, inner] =
+        Layout::vertical([Constraint::Length(rows), Constraint::Min(0)]).areas(inner);
+    f.render_widget(Paragraph::new(run_lines(app.lang, &c.runs)), runs);
     app.diff_page.set(inner.height);
     let height = usize::from(inner.height);
     let lines: Vec<Line> = c
@@ -82,9 +87,71 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App, id: AgentId) {
     f.render_widget(Paragraph::new(lines), inner);
 }
 
+/// The runs on a change's tree, one a line, coloured by how they ended;
+/// one line saying what it means when there is none.
+fn run_lines(lang: Lang, runs: &[Ran]) -> Vec<Line<'static>> {
+    if runs.is_empty() {
+        let none = lang.text().ran_none_long.to_string();
+        return vec![Line::from(Span::styled(none, fg(pal().warn)))];
+    }
+    runs.iter()
+        .map(|r| {
+            let colour = if r.ok() { pal().ok } else { pal().bad };
+            Line::from(Span::styled(words::ran(lang, r), fg(colour)))
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_runs_on_a_change_head_its_diff_coloured_by_how_they_ended() {
+        let ran = |code, timed_out| Ran {
+            line: "cargo test".into(),
+            code,
+            timed_out,
+        };
+        let shown = |lang, runs: &[Ran]| -> Vec<(String, Style)> {
+            run_lines(lang, runs)
+                .iter()
+                .map(|l| (l.spans[0].content.to_string(), l.spans[0].style))
+                .collect()
+        };
+        let runs = [
+            ran(Some(0), false),
+            ran(Some(101), false),
+            ran(None, true),
+            ran(None, false),
+        ];
+        let (ok, bad) = (fg(pal().ok), fg(pal().bad));
+        assert_eq!(
+            shown(Lang::En, &runs),
+            [
+                ("✓ cargo test".to_string(), ok),
+                ("✗ cargo test: exit 101".to_string(), bad),
+                ("✗ cargo test: killed at the deadline".to_string(), bad),
+                ("✗ cargo test: killed".to_string(), bad),
+            ]
+        );
+        assert_eq!(
+            shown(Lang::Tr, &runs[2..]),
+            [
+                ("✗ cargo test: süre dolunca durduruldu".to_string(), bad),
+                ("✗ cargo test: durduruldu".to_string(), bad),
+            ]
+        );
+        assert_eq!(
+            shown(Lang::En, &[]),
+            [(
+                "no imece run on exactly this change: whether it builds and passes its \
+                 tests is not known"
+                    .to_string(),
+                fg(pal().warn)
+            )]
+        );
+    }
 
     #[test]
     fn file_headers_are_where_the_files_start() {

@@ -396,7 +396,9 @@ pub(super) fn send_tool() -> Tool {
 impl Live {
     /// Agent `from` asked to run a command: checked here, run on a thread
     /// of its own in the agent's directory, answered when it ends. The
-    /// trace gets the command and how it ended.
+    /// trace gets the command and how it ended. A worker's or helper's run
+    /// is kept with the tree its worktree made before and after it (see
+    /// [`Change::runs`]); one the tree moved under counts for none.
     pub(super) fn run(
         &mut self,
         w: &mut World,
@@ -433,7 +435,14 @@ impl Live {
         w.agents[from].trace(w.tick, format!("run: {line}"));
         let (tx, generation) = (self.tx.clone(), self.generation[from]);
         let (running, timeout) = (self.running[from].clone(), self.run_timeout);
+        let stamped = matches!(w.agents[from].role, Role::Worker | Role::Helper);
+        let ran_tx = self.ran_tx.clone();
         thread::spawn(move || {
+            let before = if stamped {
+                worktree::tree(&cwd).ok()
+            } else {
+                None
+            };
             let mut pgid = None;
             let outcome = run::run(&argv, &cwd, timeout, MAX_RUN_OUTPUT, |p| {
                 running.add(p);
@@ -441,6 +450,16 @@ impl Live {
             });
             if let Some(p) = pgid {
                 running.remove(p);
+            }
+            if let (Some(tree), Ok(o)) = (before, &outcome)
+                && worktree::tree(&cwd).is_ok_and(|after| after == tree)
+            {
+                let ran = Ran {
+                    line: line.clone(),
+                    code: o.code,
+                    timed_out: o.timed_out,
+                };
+                let _ = ran_tx.send((tree, ran));
             }
             let (note, answer) = match outcome {
                 Ok(o) => (

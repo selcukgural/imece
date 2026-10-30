@@ -1515,6 +1515,7 @@ mod tests {
                 binary: false,
             }],
             patch: patch.into(),
+            runs: Vec::new(),
         });
         app.zoom = Zoom::Diff(worker);
         app.pane = Pane::Inbox;
@@ -1600,6 +1601,7 @@ mod tests {
                 title: "did it".into(),
                 files: Vec::new(),
                 patch: String::new(),
+                runs: Vec::new(),
             });
             let mut app = App::with(w, Engine::Live(Box::new(live)), Lang::En);
             app.zoom = Zoom::Diff(1);

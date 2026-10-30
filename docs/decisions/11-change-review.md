@@ -29,8 +29,7 @@ runs it before every prompt of a worker that is between turns (its
 helpers too), journaled `WorktreeMoved`. The sim has no changes.
 Known gaps: the wake briefing's `worktree::change` (once per
 remembered worker per run, at its first prompt) still runs on the UI
-thread; no partial apply; the `done needs evidence` line (last run after the
-last change) is not yet shown on the item.
+thread; no partial apply.
 
 Three-way apply (2026-10-30, the first Kule run: two workers both added
 to CHANGELOG, the second Δ did not apply): when the plain `git apply
@@ -82,3 +81,33 @@ nothing is journaled; a prompt the session refuses then stops it, as
 a refused prompt does anywhere. The bookkeeping (turn count, card,
 status Working) happens when the prompt is given, not when it is
 sent, so nothing offers or delivers to the worker twice meanwhile.
+
+Done needs evidence (2026-10-30, the user's decisions: only imece's own
+`run` counts, tied to the tree; shown, never a gate): a run of a
+worker or helper (their directory is the worker's worktree; the
+leader's runs are not kept) takes `worktree::tree` before and after
+it, on the run's own thread (`read-tree HEAD`, `add -A`, `write-tree`
+through an index file of its own per call, so untracked files count
+and the agent's index is untouched). Only when the two are the same
+is it kept (`Live::ran`, the newest 64), sent on `ran_back` before the
+agent gets its answer, so a done that came after it finds it. A run
+that changed the tree (a formatter, a test that writes a file git
+sees) counts for none. When git has read a done's change, the runs on
+exactly its tree, the last of each command line, go with it
+(`Change::runs`, saved in `changes.runs`, schema 5). The screen: the
+`Δ` line ends with `✓ ran clean on this tree: …` (green), `✗ failed on
+this tree: …` (the failed ones, red) or `no run on this tree` (warn);
+the diff starts with one line per run (`✓ line`, `✗ line: exit N`,
+`killed at the deadline`, `killed`) or says that whether it builds and
+passes its tests is not known. Nothing more: the done is not refused,
+the worker is not told after the fact, and `a` applies a change with
+no run as before; the person decides. A vendor's own shell does not
+count: imece does not see what tree it ran on, Claude's and Gemini's
+events carry no exit code, and "failed" means something else per
+vendor. So the worker's instructions say to check with the run tool
+after the last edit, and that a check in its own shell does not show.
+Known gaps: a run takes two tree reads more (each the `add -A` of
+reading a change, without its diff); a run that edits a
+file and puts it back between the reads counts; ignored files
+(`.env`, `target/`) are not part of the tree, so a run that depends on
+them is not told apart.
