@@ -673,6 +673,11 @@ mod tests {
         // Tall enough for everything but the day row.
         assert_eq!(first_shown(&w, &rows, Some(5), 7, today), 1);
         assert_eq!(first_shown(&w, &rows, Some(5), 8, today), 0);
+        // Four rows for the last one: rows 3, 4, 5 and the keys would be
+        // it, but the day row above row 3 (row 2 is of the other day)
+        // takes one more. The day above the first shown is row 2's, not
+        // row 3's own.
+        assert_eq!(first_shown(&w, &rows, Some(5), 4, today), 4);
         // The newest line is not of today: a day row stands above it too.
         let today = day(7300) + 1;
         assert_eq!(first_shown(&w, &rows, Some(5), 8, today), 1);

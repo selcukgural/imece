@@ -1749,6 +1749,77 @@ mod tests {
     }
 
     #[test]
+    fn the_journal_highlights_the_selected_line_and_not_the_first() {
+        let mut app = talking();
+        app.pane = Pane::Journal;
+        // Rows newest first: the conversation (4 over 3), the workers'
+        // talk (2), the older conversation (1 over 0).
+        app.journal_sel = Some(2);
+        let screen = render(&app, 140, 40);
+        let lines: Vec<&str> = screen.lines().collect();
+        let keys = lines
+            .iter()
+            .position(|l| l.contains("enter open the conversation"))
+            .unwrap_or_else(|| panic!("{screen}"));
+        assert!(
+            lines[keys - 1].contains("⇄") && lines[keys - 1].contains("codex-1"),
+            "the keys stand under the talk, the selected line\n{screen}"
+        );
+    }
+
+    #[test]
+    fn the_journal_scrolled_to_an_old_line_knows_the_day_above_its_first_row() {
+        // Forty events that never fold (the talk is between two pairs in
+        // turn), two a day, newest first: rows 2k and 2k+1 share a day. The
+        // first row shown gets a day row exactly when it is the first of
+        // its pair, whatever the window's height makes the first row.
+        let mut app = app_after(1, 4, 0, Lang::En);
+        app.world.journal.clear();
+        for i in 0..40u64 {
+            app.world.journal.push(Entry {
+                tick: (i / 2) * 17_280,
+                event: Event::Talk {
+                    from: 1 + (i % 2) as usize,
+                    to: 3,
+                    text: format!("m{i}"),
+                },
+            });
+        }
+        app.world.tick = 19 * 17_280 + 100;
+        app.pane = Pane::Journal;
+        app.journal_sel = Some(0);
+        let mut parities = std::collections::BTreeSet::new();
+        for height in [30u16, 31, 32, 33, 34, 35] {
+            let screen = render(&app, 140, height);
+            let lines: Vec<&str> = screen.lines().collect();
+            let head = lines
+                .iter()
+                .position(|l| l.contains("JOURNAL"))
+                .unwrap_or_else(|| panic!("{screen}"));
+            let dated = lines[head + 1].contains("─ 1970-");
+            let first = lines[head + 1 + usize::from(dated)];
+            let i: usize = first
+                .split("m")
+                .nth(1)
+                .and_then(|t| t.split(|c: char| !c.is_ascii_digit()).next())
+                .and_then(|n| n.parse().ok())
+                .unwrap_or_else(|| panic!("no entry on {first:?}\n{screen}"));
+            let row = 39 - i;
+            assert_eq!(
+                dated,
+                row.is_multiple_of(2),
+                "row {row} first at height {height}\n{screen}"
+            );
+            assert!(
+                lines.iter().any(|l| l.contains(": m0 ")),
+                "the selected, oldest line is in view\n{screen}"
+            );
+            parities.insert(row % 2);
+        }
+        assert_eq!(parities.len(), 2, "both cases were seen");
+    }
+
+    #[test]
     fn the_conversation_dates_the_messages_of_other_days() {
         let mut app = talking_over_two_days();
         app.open_thread(4);

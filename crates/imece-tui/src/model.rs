@@ -2015,5 +2015,25 @@ mod tests {
             assert_eq!(days_from_civil(c.0, c.1, c.2), z);
             last = c;
         }
+        // Before the year 0 too, where the eras are counted the other way
+        // (imece never gets there; the arithmetic must still be right):
+        // 0000-03-01 begins the era, the day before is the leap day of
+        // year 0, and January of year 0 belongs to the year -1's era.
+        assert_eq!(days_from_civil(0, 3, 1), -719_468);
+        assert_eq!(days_from_civil(0, 2, 29), -719_469);
+        assert_eq!(days_from_civil(0, 1, 1), -719_528);
+        assert_eq!(days_from_civil(-1, 12, 31), -719_529);
+        assert_eq!(days_from_civil(-1, 1, 1), -719_893, "year -1 has 365 days");
+        assert_eq!(civil_from_days(-719_468), (0, 3, 1));
+        assert_eq!(civil_from_days(-719_469), (0, 2, 29));
+        assert_eq!(civil_from_days(-719_528), (0, 1, 1));
+        assert_eq!(civil_from_days(-719_529), (-1, 12, 31));
+        let mut last = civil_from_days(-720_001);
+        for z in -720_000..-719_000 {
+            let c = civil_from_days(z);
+            assert!(c > last, "{c:?} after {last:?}");
+            assert_eq!(days_from_civil(c.0, c.1, c.2), z);
+            last = c;
+        }
     }
 }
