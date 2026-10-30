@@ -61,6 +61,10 @@ pub struct Options {
     /// Ten-thousandths of a dollar, for all agents together; none keeps
     /// the pot as it was left, or [`DEFAULT_BUDGET`] the first time.
     pub budget: Option<u64>,
+    /// Forget every agent's remembered session at the start (`--fresh`):
+    /// each wakes in a new one, told where it left off, and what the
+    /// vendors kept of the old ones goes.
+    pub fresh: bool,
     /// Programs workers and helpers may run with the run tool, next to
     /// the built-in cargo and git commands.
     pub run_programs: Vec<String>,
@@ -310,6 +314,11 @@ const MAX_POSTS: u32 = 10;
 const CALL_WAIT: Duration = Duration::from_secs(30);
 /// How long one run may take unless `--run-timeout` says otherwise.
 pub const DEFAULT_RUN_TIMEOUT: Duration = Duration::from_secs(600);
+
+/// How long a session's process is given to be gone after it was asked to
+/// stop, before what its vendor kept of the session is removed: a child
+/// gets two grace periods of 1.5 s before it is killed for good.
+const SETTLE: Duration = Duration::from_secs(4);
 /// The longest command line the run tool takes, in characters.
 const MAX_COMMAND: usize = 1000;
 /// The largest change (as a patch) the person is shown.
@@ -395,6 +404,14 @@ pub struct Live {
     resuming: Vec<Option<Attempt>>,
     /// Claude Code's configuration directory, where its transcripts are.
     claude_home: PathBuf,
+    /// Gemini CLI's configuration directory, where its chats are.
+    gemini_config: PathBuf,
+    /// How long a forgotten session's process, just asked to stop, is
+    /// given to be gone before what it kept is removed.
+    settle: Duration,
+    /// Whether the sessions the store remembers are forgotten at the
+    /// start (`--fresh`).
+    fresh: bool,
     /// Events tagged with the agent and the session's generation, so a late
     /// event of an ended session never touches the next one.
     tx: Sender<(AgentId, u64, AgentEvent)>,
@@ -542,6 +559,7 @@ pub fn world(o: Options, present: &[(Vendor, bool)]) -> Result<(World, Live), St
     live.max_helpers = o.max_helpers;
     live.run_programs = o.run_programs;
     live.run_timeout = o.run_timeout;
+    live.fresh = o.fresh;
     if let Some((found, skipped)) = found {
         live.adopt(&mut w, found, skipped);
     }
@@ -635,6 +653,22 @@ impl Live {
                 w.agents[id].trace(w.tick, "turn cut short when imece closed");
                 w.story(card, StoryEvent::Interrupted);
                 w.note(Event::Interrupted { agent: id });
+            }
+        }
+        if self.fresh {
+            for id in 0..w.agents.len() {
+                if self.sessions[id].is_none() {
+                    continue;
+                }
+                w.agents[id].trace(
+                    w.tick,
+                    "started with --fresh: the session is forgotten, a new one is told where \
+                     it left off",
+                );
+                self.forget(w, id, false, false);
+                if !w.agents[id].gone {
+                    w.note(Event::Forgotten { agent: id });
+                }
             }
         }
         self.posts = found.posts;
@@ -866,6 +900,9 @@ impl Live {
             floor: Vec::new(),
             resuming: Vec::new(),
             claude_home: claude::config_dir(),
+            gemini_config: gemini::config_dir(),
+            settle: SETTLE,
+            fresh: false,
             tx,
             rx,
             ready_tx,
@@ -945,10 +982,12 @@ impl Live {
 
     /// The private directory a Gemini session of agent `name` of project
     /// `project` runs in: a sibling of the worktrees, kept between runs
-    /// like them.
-    fn gemini_home(&self, project: ProjectId, name: &str) -> PathBuf {
+    /// like them. A leader's is `lead` whatever the project is called, so
+    /// a rename (`lead-NAME`) does not leave its session behind.
+    fn gemini_home(&self, project: ProjectId, role: Role, name: &str) -> PathBuf {
         let mut dir = self.places[project].root.clone().into_os_string();
         dir.push("-gemini");
+        let name = if role == Role::Leader { "lead" } else { name };
         PathBuf::from(dir).join(name)
     }
 
@@ -1243,6 +1282,109 @@ impl Live {
         self.resuming[id] = None;
     }
 
+    /// Agent `id`'s session is forgotten: its next prompt starts a new
+    /// one, and what the vendor kept of the old one goes (Claude's
+    /// transcript, Codex's thread, Gemini's chat), on a thread of its own
+    /// since a vendor may take a process of its own to do it; the trace
+    /// says how it went. `settle` first gives the session's process, just
+    /// asked to stop, time to be gone. `whole` takes everything the
+    /// vendor kept for the agent (Gemini's private directory too): the
+    /// agent is leaving.
+    fn forget(&mut self, w: &World, id: AgentId, whole: bool, settle: bool) {
+        let session = self.sessions[id].take().map(|r| r.session);
+        let a = &w.agents[id];
+        let vendor = a.vendor;
+        if session.is_none() && !(whole && vendor == Vendor::Gemini) {
+            return;
+        }
+        let program = self.of(vendor).program.clone();
+        let cwd = self.cwd_of(w, id);
+        let claude_home = self.claude_home.clone();
+        let gemini_config = self.gemini_config.clone();
+        let gemini_home = self.gemini_home(a.project, a.role, &a.name);
+        let wait = if settle { self.settle } else { Duration::ZERO };
+        let tx = self.tx.clone();
+        let generation = self.generation[id];
+        thread::spawn(move || {
+            thread::sleep(wait);
+            let kept = match vendor {
+                Vendor::Claude => "its transcript",
+                Vendor::Codex => "its thread",
+                _ => "its chat",
+            };
+            let done: io::Result<String> = match (vendor, &session) {
+                (Vendor::Claude, Some(s)) => claude::forget(&claude_home, &cwd, s).map(|was| {
+                    if was {
+                        "its transcript was removed".to_string()
+                    } else {
+                        "it had no transcript left".to_string()
+                    }
+                }),
+                (Vendor::Codex, Some(s)) => {
+                    codex::delete(&program, s).map(|()| "codex deleted its thread".to_string())
+                }
+                (Vendor::Gemini, Some(s)) if !whole => {
+                    gemini::forget(&gemini_config, &gemini_home, s)
+                        .map(|n| format!("{n} chat files were removed"))
+                }
+                (Vendor::Gemini, _) => gemini::forget_all(&gemini_config, &gemini_home)
+                    .and_then(|was| match std::fs::remove_dir_all(&gemini_home) {
+                        Ok(()) => Ok(was),
+                        Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(was),
+                        Err(e) => Err(e),
+                    })
+                    .map(|was| {
+                        if was {
+                            "its chats and private directory were removed".to_string()
+                        } else {
+                            "it had no chats left".to_string()
+                        }
+                    }),
+                _ => return,
+            };
+            let session = session.unwrap_or_default();
+            let note = match done {
+                Ok(what) if session.is_empty() => format!("forgotten: {what}"),
+                Ok(what) => format!("forgot session {session}: {what}"),
+                Err(e) => format!("could not remove {kept} of session {session}: {e}"),
+            };
+            let _ = tx.send((id, generation, AgentEvent::Note(note)));
+        });
+    }
+
+    /// The person made agent `id` forget its session (`:forget`): the one
+    /// running ends (its unfinished prompts are told at the wake, not run
+    /// again), the one remembered goes with what its vendor kept, and the
+    /// next message starts a new session, told where it left off. An
+    /// agent with no session to forget is refused.
+    pub fn forget_agent(&mut self, w: &mut World, id: AgentId) -> Result<(), Refusal> {
+        let running = matches!(self.slots[id], Slot::Running(_));
+        if w.agents[id].gone || (!running && self.sessions[id].is_none()) {
+            return Err(Refusal::Command("it has no session to forget".into()));
+        }
+        self.running[id].kill_all();
+        if let Slot::Running(s) = &mut self.slots[id] {
+            s.terminate();
+        }
+        let cut = std::mem::take(&mut self.inflight[id]);
+        self.end(w, id);
+        self.forget(w, id, false, running);
+        if !cut.is_empty() {
+            self.interrupted[id] = cut;
+        }
+        self.asked[id] = false;
+        self.remembered[id] = true;
+        let t = w.tick;
+        w.agents[id].set_status(Status::Asleep, t);
+        w.agents[id].trace(
+            t,
+            "the person made it forget its session; the next message starts a new one, told \
+             where it left off",
+        );
+        w.note(Event::Forgotten { agent: id });
+        Ok(())
+    }
+
     /// Whether agent `id`, remembered from an earlier run, can go on in
     /// the session it had: its id is shaped like one and, for Claude, the
     /// session's transcript is still where Claude keeps it for the
@@ -1333,6 +1475,7 @@ impl Live {
             s.terminate();
         }
         self.end(w, id);
+        self.forget(w, id, true, true);
         self.leaving[id] = false;
         self.mail[id].clear();
         self.notes[id].clear();
@@ -1439,6 +1582,7 @@ impl Live {
         self.tiered[id] = false;
         let texts = std::mem::take(&mut self.inflight[id]);
         self.end(w, id);
+        self.forget(w, id, false, true);
         w.agents[id].trace(
             w.tick,
             format!("model {model} not available here; falling back to the default"),
@@ -1457,6 +1601,7 @@ impl Live {
     fn renew(&mut self, w: &mut World, id: AgentId) {
         let texts = std::mem::take(&mut self.inflight[id]);
         self.end(w, id);
+        self.forget(w, id, false, true);
         self.renewed[id] = true;
         w.agents[id].trace(
             w.tick,
@@ -2134,7 +2279,7 @@ impl Live {
             Err(e) if e.kind() == io::ErrorKind::Unsupported && line == "/clear" => {
                 s.terminate();
                 self.end(w, id);
-                self.sessions[id] = None;
+                self.forget(w, id, false, true);
                 w.agents[id].trace(
                     w.tick,
                     "session ended on /clear; the next message starts a new one",
@@ -2296,7 +2441,7 @@ impl Live {
         // A helper changes the same files as its worker: its worktree.
         let tree = a.parent.map_or(&a.name, |p| &w.agents[p].name).clone();
         let (repo, root) = (place.repo.clone(), place.root.clone());
-        let home = self.gemini_home(a.project, &a.name);
+        let home = self.gemini_home(a.project, a.role, &a.name);
         let (tx, ready) = (self.tx.clone(), self.ready_tx.clone());
         thread::spawn(move || {
             let started = (|| {
@@ -3100,6 +3245,7 @@ pub(crate) mod testing {
         ) -> Live {
             let lead = vendors.first().map_or(Vendor::Claude, |h| h.vendor);
             let mut live = Live::bare(vendors, lead);
+            live.settle = Duration::ZERO;
             live.places.push(Place { repo, root });
             for _ in 0..agents {
                 live.grow(None, false);
@@ -3481,6 +3627,9 @@ mod tests {
             session: "686c6d27-d50b-4ae2-ad6a-159bf2984671".into(),
             spent: 5,
         });
+        live.claude_home = trees("clear-home");
+        live.settle = Duration::from_millis(400);
+        let file = transcript_of(&live, &w, 1, "686c6d27-d50b-4ae2-ad6a-159bf2984671");
         live.command(&mut w, 1, "/clear").unwrap();
         assert!(matches!(live.slots[1], Slot::None));
         assert_eq!(live.sessions[1], None);
@@ -3491,6 +3640,22 @@ mod tests {
                 .any(|l| l.contains("session ended on /clear"))
         );
         assert_eq!(live.cwds[1], None);
+        thread::sleep(Duration::from_millis(100));
+        assert!(
+            file.is_file(),
+            "the process is given time to be gone before its transcript is touched"
+        );
+        assert!(
+            gone_soon(&file),
+            "the transcript of the cleared session goes"
+        );
+        assert!(traced_soon(
+            &mut live,
+            &mut w,
+            1,
+            "forgot session 686c6d27-d50b-4ae2-ad6a-159bf2984671: its transcript was removed"
+        ));
+        let _ = std::fs::remove_dir_all(&live.claude_home);
         // Over budget nothing runs, a clear included.
         live.ready(&mut w, 1, Ok((Box::new(Stub), cwd, None)));
         w.agents[1].cost = w.budget;
@@ -4938,6 +5103,12 @@ in p.rs",
             live.hire(&mut w, 0, &json!({ "tier": "cheap" })).unwrap();
             live.turns[1] = 1;
             live.turned[1] = turned;
+            live.claude_home = trees(&format!("fallback-home-{turned}"));
+            live.sessions[1] = Some(Resumable {
+                session: UUID.into(),
+                spent: 0,
+            });
+            let file = transcript_of(&live, &w, 1, UUID);
             live.tx
                 .send((
                     1,
@@ -4962,7 +5133,45 @@ in p.rs",
                 &w.journal.last().unwrap().event,
                 Event::Stopped { agent: 1, .. }
             ));
+            assert!(file.is_file(), "no fallback, the session stays remembered");
+            assert_eq!(
+                live.sessions[1].as_ref().map(|s| s.session.as_str()),
+                Some(UUID)
+            );
+            let _ = std::fs::remove_dir_all(&live.claude_home);
         }
+        // A first turn that cost nothing: the model is not here, the
+        // session on it is forgotten, transcript and all.
+        let mut w = team(0);
+        let mut live = idle_live(1);
+        live.hire(&mut w, 0, &json!({ "tier": "cheap" })).unwrap();
+        live.turns[1] = 1;
+        live.claude_home = trees("fallback-home");
+        live.sessions[1] = Some(Resumable {
+            session: UUID.into(),
+            spent: 0,
+        });
+        let file = transcript_of(&live, &w, 1, UUID);
+        live.tx
+            .send((
+                1,
+                0,
+                AgentEvent::TurnDone {
+                    ok: false,
+                    text: "error".into(),
+                    cost: 0,
+                    denied: 0,
+                },
+            ))
+            .unwrap();
+        live.step(&mut w);
+        assert_eq!(live.models[1], None, "the standard model");
+        assert_eq!(live.sessions[1], None);
+        assert!(
+            gone_soon(&file),
+            "the transcript of the failed session goes"
+        );
+        let _ = std::fs::remove_dir_all(&live.claude_home);
         // A turn that went well is a turn too: nothing to fall back from later.
         let mut w = team(0);
         let mut live = idle_live(1);
@@ -5961,10 +6170,18 @@ in p.rs",
         assert_eq!(w.agents[2].vendor, Vendor::Codex);
         assert_eq!(live.places.len(), 3);
         assert_eq!(
-            live.gemini_home(2, "lead-api"),
-            PathBuf::from(format!("{}-gemini/lead-api", live.places[2].root.display()))
+            live.gemini_home(2, Role::Leader, "lead-api"),
+            PathBuf::from(format!("{}-gemini/lead", live.places[2].root.display()))
         );
-        assert_ne!(live.gemini_home(1, "x"), live.gemini_home(2, "x"));
+        assert_ne!(
+            live.gemini_home(1, Role::Worker, "x"),
+            live.gemini_home(2, Role::Worker, "x")
+        );
+        assert!(
+            live.gemini_home(1, Role::Worker, "x").ends_with("x"),
+            "a worker's is named after it"
+        );
+        assert!(live.gemini_home(1, Role::Helper, "x.1").ends_with("x.1"));
         let _ = std::fs::remove_dir_all(&repo);
         let _ = std::fs::remove_dir_all(&other);
     }
@@ -6894,6 +7111,7 @@ in p.rs",
             lead: Vendor::Claude,
             tiers: Vec::new(),
             budget,
+            fresh: false,
             run_programs: Vec::new(),
             run_timeout: DEFAULT_RUN_TIMEOUT,
         };
@@ -7584,5 +7802,452 @@ in p.rs",
         for d in [repo, root, home] {
             let _ = std::fs::remove_dir_all(d);
         }
+    }
+
+    /// Claude's transcript of session `id` for agent `id`'s directory,
+    /// written under the live's Claude home.
+    fn transcript_of(live: &Live, w: &World, agent: AgentId, id: &str) -> PathBuf {
+        let file = claude::transcript(&live.claude_home, &live.cwd_of(w, agent), id);
+        std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+        std::fs::write(&file, "{}\n").unwrap();
+        file
+    }
+
+    /// Whether `path` goes within a few seconds: removing is done on a
+    /// thread of its own.
+    fn gone_soon(path: &Path) -> bool {
+        for _ in 0..400 {
+            if !path.exists() {
+                return true;
+            }
+            thread::sleep(Duration::from_millis(25));
+        }
+        false
+    }
+
+    /// Whether agent `id`'s trace gets a line with `needle` within a few
+    /// seconds of stepping.
+    fn traced_soon(live: &mut Live, w: &mut World, id: AgentId, needle: &str) -> bool {
+        for _ in 0..400 {
+            live.step(w);
+            if w.agents[id].trace.iter().any(|l| l.contains(needle)) {
+                return true;
+            }
+            thread::sleep(Duration::from_millis(25));
+        }
+        eprintln!("{:?}", w.agents[id].trace);
+        false
+    }
+
+    /// Gemini's registry in `config` naming `cwd` `name`, with a chats
+    /// directory holding `files`; gives the kept directory.
+    fn gemini_kept(config: &Path, cwd: &Path, name: &str, files: &[(&str, &str)]) -> PathBuf {
+        std::fs::create_dir_all(config).unwrap();
+        std::fs::write(
+            config.join("projects.json"),
+            json!({ "projects": { cwd.to_string_lossy(): name } }).to_string(),
+        )
+        .unwrap();
+        let kept = config.join("tmp").join(name);
+        std::fs::create_dir_all(kept.join("chats")).unwrap();
+        for (file, text) in files {
+            std::fs::write(kept.join("chats").join(file), text).unwrap();
+        }
+        kept
+    }
+
+    #[test]
+    fn a_session_renewed_after_its_cap_forgets_the_capped_one() {
+        let mut w = team(1);
+        let mut live = idle_live(2);
+        live.ready(&mut w, 1, Ok((Box::new(Stub), PathBuf::from("/w"), None)));
+        live.told(&mut w, 1, "go").unwrap();
+        live.claude_home = trees("renew-home");
+        live.sessions[1] = Some(Resumable {
+            session: UUID.into(),
+            spent: 0,
+        });
+        let file = transcript_of(&live, &w, 1, UUID);
+        live.tx
+            .send((
+                1,
+                live.generation[1],
+                AgentEvent::TurnDone {
+                    ok: false,
+                    text: CAPPED.into(),
+                    cost: 0,
+                    denied: 0,
+                },
+            ))
+            .unwrap();
+        live.step(&mut w);
+        assert!(live.renewed[1]);
+        assert_eq!(live.sessions[1], None);
+        assert!(gone_soon(&file), "the capped session's transcript goes");
+        let _ = std::fs::remove_dir_all(&live.claude_home);
+    }
+
+    #[test]
+    fn closing_a_project_removes_what_the_vendors_kept_of_its_agents() {
+        let repo = checkout("forget-close-repo");
+        let dir = trees("forget-close");
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut w = team(0);
+        let mut live = Live::new(
+            1,
+            vec![
+                Hireable::claude("/nonexistent/claude", &[]),
+                Hireable::gemini("/nonexistent/gemini", &[]),
+            ],
+            std::env::temp_dir(),
+            dir.join("trees"),
+        );
+        let (cut, _) = mpsc::channel();
+        live.ready_tx = cut;
+        live.claude_home = dir.join("claude");
+        live.gemini_config = dir.join("gemini");
+        live.open_bus(&w, "/opt/imece".into()).unwrap();
+        assert_eq!(live.open_project(&mut w, &repo, Some("api")), Ok(1));
+        live.hire(&mut w, 1, &json!({ "vendor": "gemini" }))
+            .unwrap();
+        live.hire(&mut w, 1, &json!({})).unwrap();
+        assert_eq!(
+            (w.agents[2].name.as_str(), w.agents[3].name.as_str()),
+            ("gemini-1", "claude-1")
+        );
+        // The Claude worker's remembered session has a transcript; the
+        // Gemini worker never had a session this run, but its private
+        // directory and chats are there from before.
+        live.sessions[3] = Some(Resumable {
+            session: UUID.into(),
+            spent: 1,
+        });
+        let transcript = transcript_of(&live, &w, 3, UUID);
+        let private = live.gemini_home(1, Role::Worker, "gemini-1");
+        std::fs::create_dir_all(private.join("policy")).unwrap();
+        std::fs::write(private.join("GEMINI.md"), "role").unwrap();
+        let kept = gemini_kept(
+            &live.gemini_config,
+            &private,
+            "gemini-1",
+            &[("session-2026-10-30T10-00-aaaaaaaa.jsonl", "{}")],
+        );
+        // A leader that was never a session: nothing to forget, nothing said.
+        live.settle = Duration::from_millis(400);
+        assert_eq!(live.close_project(&mut w, 1), Ok(()));
+        assert_eq!(live.sessions[3], None);
+        thread::sleep(Duration::from_millis(100));
+        assert!(
+            transcript.is_file() && private.is_dir(),
+            "the processes are given time to be gone first"
+        );
+        assert!(gone_soon(&transcript), "the Claude worker's transcript");
+        assert!(gone_soon(&private), "the Gemini worker's private directory");
+        assert!(gone_soon(&kept), "and what Gemini kept for it");
+        assert!(traced_soon(
+            &mut live,
+            &mut w,
+            3,
+            &format!("forgot session {UUID}: its transcript was removed")
+        ));
+        assert!(traced_soon(
+            &mut live,
+            &mut w,
+            2,
+            "forgotten: its chats and private directory were removed"
+        ));
+        assert!(
+            !w.agents[1].trace.iter().any(|l| l.contains("forgot")),
+            "{:?}",
+            w.agents[1].trace
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+        let _ = std::fs::remove_dir_all(&repo);
+    }
+
+    #[test]
+    fn the_person_can_make_a_remembered_agent_forget_its_session() {
+        let (mut w, mut live, repo, root) = remembered_worker("forget", true);
+        // No process ran: nothing to wait for.
+        live.settle = Duration::from_secs(30);
+        let file = claude::transcript(&live.claude_home, &live.cwd_of(&w, 1), UUID);
+        assert!(file.is_file());
+        // The leader never had a session: nothing to forget.
+        let e = live.forget_agent(&mut w, 0).unwrap_err();
+        assert!(
+            matches!(&e, Refusal::Command(why) if why == "it has no session to forget"),
+            "{e:?}"
+        );
+        assert_eq!(journaled(&w, &Event::Forgotten { agent: 0 }), 0);
+
+        assert_eq!(live.forget_agent(&mut w, 1), Ok(()));
+        assert_eq!(live.sessions[1], None);
+        assert!(gone_soon(&file));
+        assert_eq!(journaled(&w, &Event::Forgotten { agent: 1 }), 1);
+        assert_eq!(w.agents[1].status, Status::Asleep);
+        assert!(live.remembered[1]);
+        assert_eq!(
+            live.interrupted[1],
+            ["finish it"],
+            "the cut turn is still told"
+        );
+        assert!(
+            w.agents[1]
+                .trace
+                .iter()
+                .any(|l| l.contains("the person made it forget its session"))
+        );
+        // Twice is nothing to forget.
+        assert!(live.forget_agent(&mut w, 1).is_err());
+        assert_eq!(journaled(&w, &Event::Forgotten { agent: 1 }), 1);
+        // Its next message starts a new session, briefed in full.
+        live.told(&mut w, 1, "go on").unwrap();
+        assert_eq!(journaled(&w, &Event::Restarted { agent: 1 }), 1);
+        assert_eq!(journaled(&w, &Event::Resumed { agent: 1 }), 0);
+        let q = queued(&live, 1);
+        assert!(
+            q[0].contains("Where you left off") && q[0].contains("finish it"),
+            "{}",
+            q[0]
+        );
+        assert!(live.resuming[1].is_none());
+        // A gone agent has nothing.
+        w.agents[1].gone = true;
+        live.sessions[1] = Some(Resumable {
+            session: UUID.into(),
+            spent: 0,
+        });
+        assert!(live.forget_agent(&mut w, 1).is_err());
+        let home = live.claude_home.clone();
+        for d in [repo, root, home] {
+            let _ = std::fs::remove_dir_all(d);
+        }
+    }
+
+    #[test]
+    fn forgetting_a_running_agent_ends_its_session_and_keeps_its_cut_prompts_to_tell() {
+        use std::os::unix::process::CommandExt;
+        let mut w = team(1);
+        let mut live = idle_live(2);
+        let ended = Arc::new(AtomicBool::new(false));
+        live.ready(
+            &mut w,
+            1,
+            Ok((Box::new(Ends(ended.clone())), PathBuf::from("/w"), None)),
+        );
+        live.told(&mut w, 1, "do x").unwrap();
+        live.told(&mut w, 1, "then y").unwrap();
+        assert_eq!(live.inflight[1], ["do x", "then y"]);
+        assert!(live.asked[1]);
+        assert_eq!(w.agents[1].status, Status::Working);
+        let generation = live.generation[1];
+        let mut sleeper = std::process::Command::new("sleep")
+            .arg("30")
+            .process_group(0)
+            .spawn()
+            .unwrap();
+        live.running[1].add(sleeper.id() as i32);
+        assert_eq!(live.forget_agent(&mut w, 1), Ok(()));
+        assert!(
+            ended.load(Ordering::SeqCst),
+            "the session was asked to stop"
+        );
+        assert!(matches!(live.slots[1], Slot::None));
+        assert_eq!(live.generation[1], generation + 1);
+        assert!(live.inflight[1].is_empty());
+        assert_eq!(live.interrupted[1], ["do x", "then y"]);
+        assert!(!live.asked[1]);
+        assert!(live.remembered[1]);
+        assert_eq!(w.agents[1].status, Status::Asleep);
+        assert_eq!(live.turns[1], 0);
+        assert_eq!(journaled(&w, &Event::Forgotten { agent: 1 }), 1);
+        for _ in 0..200 {
+            if sleeper.try_wait().unwrap().is_some() {
+                break;
+            }
+            thread::sleep(Duration::from_millis(25));
+        }
+        assert!(sleeper.try_wait().unwrap().is_some(), "its run was killed");
+        // Mail, notes and helpers stay: only the session is gone.
+        live.mail[1].push(Mail {
+            from: 0,
+            kind: MsgKind::Inform,
+            body: "kept".into(),
+        });
+        assert_eq!(live.mail[1].len(), 1);
+    }
+
+    #[test]
+    fn forgetting_a_codex_or_gemini_agent_takes_what_its_vendor_kept() {
+        let (mut w, mut live, repo, root) = remembered_vendor_worker("forget-codex", Vendor::Codex);
+        assert_eq!(live.forget_agent(&mut w, 1), Ok(()));
+        assert_eq!(live.sessions[1], None);
+        // Codex is asked through a process of its own; here there is none.
+        assert!(traced_soon(
+            &mut live,
+            &mut w,
+            1,
+            &format!("could not remove its thread of session {UUID}: ")
+        ));
+        let home = live.claude_home.clone();
+        for d in [repo, root, home] {
+            let _ = std::fs::remove_dir_all(d);
+        }
+
+        let (mut w, mut live, repo, root) =
+            remembered_vendor_worker("forget-gemini", Vendor::Gemini);
+        live.gemini_config = trees("forget-gemini-config");
+        let name = w.agents[1].name.clone();
+        let private = live.gemini_home(0, Role::Worker, &name);
+        std::fs::create_dir_all(&private).unwrap();
+        let header = json!({ "sessionId": UUID, "kind": "main" }).to_string();
+        let kept = gemini_kept(
+            &live.gemini_config,
+            &private,
+            "g",
+            &[
+                (
+                    &format!("session-2026-10-30T10-00-{}.jsonl", &UUID[..8]),
+                    &header,
+                ),
+                ("session-2026-10-30T10-00-bbbbbbbb.jsonl", ""),
+                (
+                    "session-2026-10-30T10-01-cccccccc.jsonl",
+                    "{\"sessionId\":\"other\"}",
+                ),
+            ],
+        );
+        assert_eq!(live.forget_agent(&mut w, 1), Ok(()));
+        assert!(traced_soon(
+            &mut live,
+            &mut w,
+            1,
+            &format!("forgot session {UUID}: 2 chat files were removed")
+        ));
+        assert!(
+            kept.join("chats")
+                .join("session-2026-10-30T10-01-cccccccc.jsonl")
+                .is_file(),
+            "another session's chat stays"
+        );
+        assert!(
+            private.is_dir(),
+            "the agent stays, so its private directory does"
+        );
+        let home = live.claude_home.clone();
+        for d in [repo, root, home, live.gemini_config.clone()] {
+            let _ = std::fs::remove_dir_all(d);
+        }
+    }
+
+    #[test]
+    fn fresh_forgets_every_remembered_session_when_the_world_is_taken_in() {
+        for fresh in [false, true] {
+            let repo = checkout(&format!("fresh-{fresh}"));
+            let root = trees(&format!("fresh-{fresh}"));
+            let mut w = team(2);
+            let mut live = Live::new(
+                0,
+                claude_at("/nonexistent/claude"),
+                repo.clone(),
+                root.clone(),
+            );
+            live.claude_home = trees(&format!("fresh-{fresh}-home"));
+            live.fresh = fresh;
+            // No process ran at the start: nothing to wait for.
+            live.settle = Duration::from_secs(30);
+            let file = transcript_of(&live, &w, 1, UUID);
+            // A worker that is gone with a session still remembered: it
+            // goes too, with no journal line for an agent that is gone.
+            w.agents[2].gone = true;
+            let other = "aaaaaaaa-0000-4000-8000-000000000000";
+            let left = transcript_of(&live, &w, 2, other);
+            let found = Found {
+                sessions: vec![
+                    None,
+                    Some(Resumable {
+                        session: UUID.into(),
+                        spent: 3,
+                    }),
+                    Some(Resumable {
+                        session: other.into(),
+                        spent: 0,
+                    }),
+                ],
+                ..Default::default()
+            };
+            live.adopt(&mut w, found, 0);
+            assert_eq!(w.agents[1].status, Status::Asleep);
+            assert!(live.remembered[1]);
+            if fresh {
+                assert_eq!(live.sessions[1], None);
+                assert_eq!(live.sessions[2], None);
+                assert!(gone_soon(&file), "the transcript goes");
+                assert!(gone_soon(&left), "the gone worker's too");
+                assert_eq!(
+                    journaled(&w, &Event::Forgotten { agent: 2 }),
+                    0,
+                    "it is gone"
+                );
+                assert_eq!(journaled(&w, &Event::Forgotten { agent: 1 }), 1);
+                assert_eq!(
+                    journaled(&w, &Event::Forgotten { agent: 0 }),
+                    0,
+                    "it had none"
+                );
+                assert!(
+                    w.agents[1]
+                        .trace
+                        .iter()
+                        .any(|l| l.contains("started with --fresh"))
+                );
+            } else {
+                assert_eq!(live.sessions[1].as_ref().map(|s| s.spent), Some(3));
+                thread::sleep(Duration::from_millis(100));
+                assert!(file.is_file(), "kept");
+                assert_eq!(journaled(&w, &Event::Forgotten { agent: 1 }), 0);
+            }
+            let home = live.claude_home.clone();
+            for d in [repo, root, home] {
+                let _ = std::fs::remove_dir_all(d);
+            }
+        }
+    }
+
+    #[test]
+    fn the_fresh_flag_reaches_the_world_that_is_loaded() {
+        let repo = checkout("fresh-flag");
+        let state = trees("fresh-flag-state");
+        let options = |fresh| Options {
+            repo: repo.clone(),
+            state: state.clone(),
+            max_workers: 2,
+            max_helpers: 1,
+            lead: Vendor::Claude,
+            tiers: Vec::new(),
+            budget: None,
+            fresh,
+            run_programs: Vec::new(),
+            run_timeout: DEFAULT_RUN_TIMEOUT,
+        };
+        let present = [(Vendor::Claude, true)];
+        let (w, mut live) = world(options(false), &present).unwrap();
+        live.sessions[0] = Some(Resumable {
+            session: UUID.into(),
+            spent: 1,
+        });
+        assert_eq!(live.persist(&w), Ok(true));
+        drop(live);
+        let (w, live) = world(options(false), &present).unwrap();
+        assert!(live.sessions[0].is_some(), "kept without the flag");
+        assert_eq!(journaled(&w, &Event::Forgotten { agent: 0 }), 0);
+        drop(live);
+        let (w, live) = world(options(true), &present).unwrap();
+        assert!(live.fresh);
+        assert_eq!(live.sessions[0], None);
+        assert_eq!(journaled(&w, &Event::Forgotten { agent: 0 }), 1);
+        drop(live);
+        let _ = std::fs::remove_dir_all(&repo);
+        let _ = std::fs::remove_dir_all(&state);
     }
 }

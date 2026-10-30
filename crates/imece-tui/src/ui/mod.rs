@@ -1811,7 +1811,9 @@ mod tests {
         key(&mut app, KeyCode::Char(':'));
         assert_eq!(
             app.menu.as_ref().unwrap().items,
-            ["budget", "close", "lead", "open", "rename", "theme"]
+            [
+                "budget", "close", "forget", "lead", "open", "rename", "theme"
+            ]
         );
         let row = menu_row(&app, 140);
         assert!(row.contains("budget") && row.contains("lead"), "{row}");

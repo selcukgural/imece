@@ -96,6 +96,7 @@ pub fn event(lang: Lang, w: &World, e: &Event) -> String {
         Event::Opened { leader, path } => fill(t.ev_opened, &[project(w, *leader), path]),
         Event::Closed { leader } => fill(t.ev_closed, &[project(w, *leader)]),
         Event::Renamed { from, to, .. } => fill(t.ev_renamed, &[from, to]),
+        Event::Forgotten { agent } => fill(t.ev_forgotten, &[name(w, *agent)]),
         Event::WorktreeMoved { agent, from, to } => {
             fill(t.ev_worktree_moved, &[name(w, *agent), from, to])
         }

@@ -10,7 +10,9 @@ use std::path::Path;
 use crate::model::{Agent, ProjectId, World};
 
 /// The commands imece itself takes after `:`.
-pub const COMMANDS: [&str; 6] = ["budget", "close", "lead", "open", "rename", "theme"];
+pub const COMMANDS: [&str; 7] = [
+    "budget", "close", "forget", "lead", "open", "rename", "theme",
+];
 
 /// What `:lead` takes.
 pub const LEADS: [&str; 4] = ["claude", "codex", "gemini", "ask"];
@@ -123,6 +125,17 @@ pub fn suggest(input: &str, w: &World, project: ProjectId, home: Option<&Path>) 
                 let start = input.len() - arg.len();
                 let names = w.open_projects().map(|p| p.name.as_str());
                 menu(start, arg, matching(arg, names), "")
+            }
+            // Agents of every open project, with or without the `@`.
+            Some(("forget", arg)) => {
+                let word = arg.strip_prefix('@').unwrap_or(arg);
+                let start = input.len() - word.len();
+                let names = w
+                    .agents
+                    .iter()
+                    .filter(|a| !a.gone && !w.projects[a.project].closed)
+                    .map(|a| a.name.as_str());
+                menu(start, word, matching(word, names), "")
             }
             Some(("open", arg)) => dirs(input.len() - arg.len(), arg, home, &list_dirs),
             Some(_) => None,
@@ -426,10 +439,56 @@ mod tests {
         assert_eq!((m.start, m.tail), (7, ""));
         let m = suggest(":close M", &w, 0, None).unwrap();
         assert_eq!(m.items, ["mobile-app"]);
+        // :forget takes an agent of any open project, @ or not.
+        let live: Vec<&str> = w
+            .agents
+            .iter()
+            .filter(|a| !a.gone)
+            .map(|a| a.name.as_str())
+            .collect();
+        let m = suggest(":forget ", &w, 0, None).unwrap();
+        assert_eq!(m.items, live);
+        assert_eq!((m.start, m.tail), (8, ""));
+        let m = suggest(":forget @", &w, 0, None).unwrap();
+        assert_eq!(m.items, live);
+        assert_eq!(m.start, 9, "the word after the @");
+        let first = live[0];
+        let m = suggest(
+            &format!(":forget @{}", first[..2].to_uppercase()),
+            &w,
+            0,
+            None,
+        )
+        .unwrap();
+        assert!(m.items.contains(&first.to_string()), "{:?}", m.items);
+        assert!(
+            m.items
+                .iter()
+                .all(|n| n[..2].eq_ignore_ascii_case(&first[..2]))
+        );
+        assert_eq!(suggest(&format!(":forget {first}"), &w, 0, None), None);
+        let m = suggest(":close M", &w, 0, None).unwrap();
         assert_eq!(m.start, 7, "the word starts after the command");
         assert_eq!(suggest(":close shop-api", &w, 0, None), None);
         let mut w = w;
         w.projects[1].closed = true;
+        let gone = w.projects[0].leader;
+        w.agents[gone].gone = true;
+        let m = suggest(":forget ", &w, 0, None).unwrap();
+        assert!(
+            m.items
+                .iter()
+                .all(|n| w.agents[w.agent_by_name(n).unwrap()].project == 0),
+            "a closed project's agents are not offered: {:?}",
+            m.items
+        );
+        assert!(
+            !m.items.contains(&w.agents[gone].name),
+            "nor a gone one: {:?}",
+            m.items
+        );
+        assert!(!m.items.is_empty());
+        w.agents[gone].gone = false;
         assert_eq!(
             names(&suggest(":close ", &w, 0, None)),
             ["shop-api"],
