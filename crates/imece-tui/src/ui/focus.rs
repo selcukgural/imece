@@ -144,7 +144,7 @@ pub fn trace(f: &mut Frame, area: Rect, app: &App, id: AgentId) {
 /// code; `stopped` in the colour of what is wrong; the bus (`send`,
 /// `mail`, `woken`, `hire`, `hired`, `post`, `claim`) with its first word
 /// in the accent. Anything else as written. The vocabulary is the trace
-/// producers' in live.rs, read back here by the first word; a line that
+/// producers' in `live/`, read back here by the first word; a line that
 /// matches none is still shown whole. A line that runs over rows (a
 /// command with a heredoc) keeps them: the first [`TRACE_ROWS`] under it,
 /// indented, then how many more.
