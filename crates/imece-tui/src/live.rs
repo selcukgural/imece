@@ -3127,7 +3127,11 @@ fn system_prompt(
                      strong for design that cuts across the code, hard debugging and \
                      review. Give each worker its part with the send tool (type \
                      assign: what to do, which files, when it is done); give different \
-                     workers different files where you can. Work that any worker could \
+                     workers different files where you can. A file most tasks touch (a \
+                     changelog, a version, a shared list) belongs to one worker at a \
+                     time: tell the others to leave it out and to say in their done what \
+                     it should get, since two changes to the same lines cannot both be \
+                     applied. Work that any worker could \
                      pick up may go on the board instead (post); idle workers take it \
                      themselves. A worker's done shows the person its change (its \
                      worktree's diff); they apply it to their checkout or reject it, and \
@@ -3192,7 +3196,9 @@ fn system_prompt(
                  answer starts your next turn. imece may offer you open cards from \
                  the board; take one that fits with claim, and send whoever posted \
                  it a done message when it is done. Work you find outside your \
-                 task goes on the board (post), not into your change.{helpers} Use \
+                 task goes on the board (post), not into your change; so do files \
+                 your task does not name that every task touches (a changelog): \
+                 say in your done what they should get.{helpers} Use \
                  these tools only for that, not for chatter.",
                 a.name,
                 abilities(a.vendor, Role::Worker, confine)

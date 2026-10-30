@@ -269,18 +269,77 @@ fn file_change(line: &str) -> Option<FileChange> {
 }
 
 /// Applies `patch` to the checkout `repo`, staged, so what came from an
-/// agent is marked for the person to look over and commit. A patch that
-/// does not fit as a whole (the checkout moved on in the same lines, or
-/// has edits of its own in the file) is refused with git's words, and
-/// the checkout is as it was: nothing is half applied.
+/// agent is marked for the person to look over and commit. A patch whose
+/// lines moved in the checkout since is merged three-way when that merges
+/// cleanly. One that does not fit as a whole (the checkout changed the
+/// same lines, or has edits of its own in the file) is refused with the
+/// conflicting files or git's words, and the checkout is as it was:
+/// nothing is half applied.
 pub fn apply(repo: &Path, patch: &str) -> io::Result<()> {
     // A file touched but unchanged looks changed to git until its index
     // is refreshed; refreshing changes nothing else. It reports files
     // with real changes as a failure, which is not one here.
     let _ = git_bytes(repo, &[], &["update-index", "-q", "--refresh"]);
-    let mut child = child::command("git", repo, &[])
-        .args(["apply", "--index", "-"])
-        .env("LC_ALL", "C")
+    let Err(plain) = git_apply(repo, &[], &["--index"], patch) else {
+        return Ok(());
+    };
+    // The person's own unstaged edits come first: no merge goes over them.
+    if plain.to_string().contains("does not match index") {
+        return Err(plain);
+    }
+    // The checkout moved on under the patch (two workers added lines to
+    // the same file): it may still merge three-way. Git's own three-way
+    // leaves conflict markers in the files and the rest applied, so it is
+    // tried on a copy of the checkout's index first and runs for real only
+    // when that merged cleanly.
+    match conflicts(repo, patch) {
+        Ok(None) => git_apply(repo, &[], &["--index", "--3way"], patch),
+        Ok(Some(files)) => Err(io::Error::other(format!(
+            "conflicts with the checkout in {}",
+            files.join(", ")
+        ))),
+        Err(_) => Err(plain),
+    }
+}
+
+/// Merges `patch` three-way into a copy of `repo`'s index, which leaves
+/// the checkout's files and index alone: none when it merged cleanly, the
+/// files that conflict otherwise. An error when it could not merge at all
+/// (a file the patch makes already there, a patch git does not read).
+fn conflicts(repo: &Path, patch: &str) -> io::Result<Option<Vec<String>>> {
+    let index = repo.join(git(repo, &["rev-parse", "--git-path", "index"])?);
+    let git_dir = PathBuf::from(git(repo, &["rev-parse", "--absolute-git-dir"])?);
+    let copy = git_dir.join("imece-apply-index");
+    let env = [("GIT_INDEX_FILE", copy.to_str().unwrap_or_default())];
+    let merged = (|| {
+        std::fs::copy(&index, &copy)?;
+        let Err(e) = git_apply(repo, &env, &["--cached", "--3way"], patch) else {
+            return Ok(None);
+        };
+        // Each conflicting file is listed once per side (stages 1-3).
+        let mut files: Vec<String> = git_env(repo, &env, &["ls-files", "--unmerged"])?
+            .lines()
+            .filter_map(|l| l.split_once('\t').map(|(_, path)| path.to_string()))
+            .collect();
+        files.dedup();
+        if files.is_empty() {
+            return Err(e);
+        }
+        Ok(Some(files))
+    })();
+    let _ = std::fs::remove_file(&copy);
+    merged
+}
+
+/// `git apply ARGS -` in `repo` with `env` set and `patch` on stdin; a
+/// failure carries git's error lines.
+fn git_apply(repo: &Path, env: &[(&str, &str)], args: &[&str], patch: &str) -> io::Result<()> {
+    let mut cmd = child::command("git", repo, &[]);
+    cmd.arg("apply").args(args).arg("-").env("LC_ALL", "C");
+    for (k, v) in env {
+        cmd.env(k, v);
+    }
+    let mut child = cmd
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -569,11 +628,12 @@ mod tests {
         assert_eq!(std::fs::read_to_string(r.join("new.txt")).unwrap(), "new\n");
         let staged = git(r, &["diff", "--cached", "--name-only"]).unwrap();
         assert_eq!(staged, "a.txt\nnew.txt");
-        // The same patch again does not fit: the checkout is left as it is.
-        let e = apply(r, &c.patch).unwrap_err().to_string();
-        assert!(e.contains("does not apply"), "{e}");
+        // The same patch again merges into what it already made: no change.
+        apply(r, &c.patch).unwrap();
         assert_eq!(std::fs::read_to_string(r.join("a.txt")).unwrap(), "a\nb\n");
-        assert!(apply(r, "not a patch\n").is_err());
+        assert_eq!(std::fs::read_to_string(r.join("new.txt")).unwrap(), "new\n");
+        let e = apply(r, "not a patch\n").unwrap_err().to_string();
+        assert!(e.starts_with("No valid patches in input"), "{e}");
         // The person's own unstaged edit in a file is never overwritten.
         std::fs::write(r.join("a.txt"), "theirs\n").unwrap();
         std::fs::write(w.join("a.txt"), "a\nb\nc\n").unwrap();
@@ -613,6 +673,57 @@ mod tests {
         let next = change(&w, 1 << 20).unwrap().unwrap();
         assert_eq!(next.files.len(), 1);
         assert_eq!(next.files[0].path, "later.txt");
+    }
+
+    #[test]
+    fn a_change_whose_lines_moved_in_the_checkout_merges_and_a_clash_changes_nothing() {
+        let s = repo("merge");
+        let r = &s.repo;
+        let lines = "a\nb\nc\nd\ne\nf\ng\nh\n";
+        std::fs::write(r.join("log.md"), lines).unwrap();
+        std::fs::write(r.join("x.md"), "x\n").unwrap();
+        let base = commit(r, "base");
+        let w = ensure(r, &s.dir.join("wt"), "claude-1").unwrap().path;
+        std::fs::write(w.join("log.md"), "a\nb\nc\nd\nWORKER\ne\nf\ng\nh\n").unwrap();
+        std::fs::write(w.join("x.md"), "x\ny\n").unwrap();
+        let c = change(&w, 1 << 20).unwrap().unwrap();
+        let index = r.join(".git").join("imece-apply-index");
+
+        // The person changed a line next to the worker's: the plain patch
+        // does not fit, the three-way merge keeps both, staged.
+        std::fs::write(r.join("log.md"), "a\nb\nC\nd\ne\nf\ng\nh\n").unwrap();
+        commit(r, "near");
+        apply(r, &c.patch).unwrap();
+        assert_eq!(
+            std::fs::read_to_string(r.join("log.md")).unwrap(),
+            "a\nb\nC\nd\nWORKER\ne\nf\ng\nh\n"
+        );
+        assert_eq!(std::fs::read_to_string(r.join("x.md")).unwrap(), "x\ny\n");
+        let staged = git(r, &["diff", "--cached", "--name-only"]).unwrap();
+        assert_eq!(staged, "log.md\nx.md");
+        assert!(!index.exists());
+
+        // The person wrote the same line: refused with the file, and
+        // nothing of the patch reaches the checkout, not even x.md.
+        git(r, &["reset", "--quiet", "--hard", &base]).unwrap();
+        std::fs::write(r.join("log.md"), "a\nb\nc\nd\nPERSON\ne\nf\ng\nh\n").unwrap();
+        commit(r, "clash");
+        let e = apply(r, &c.patch).unwrap_err().to_string();
+        assert_eq!(e, "conflicts with the checkout in log.md");
+        assert_eq!(
+            std::fs::read_to_string(r.join("log.md")).unwrap(),
+            "a\nb\nc\nd\nPERSON\ne\nf\ng\nh\n"
+        );
+        assert_eq!(std::fs::read_to_string(r.join("x.md")).unwrap(), "x\n");
+        assert_eq!(git(r, &["status", "--porcelain"]).unwrap(), "");
+        assert!(!index.exists());
+
+        // Every conflicting file is named, once.
+        std::fs::write(r.join("x.md"), "x\nz\n").unwrap();
+        commit(r, "clash too");
+        let e = apply(r, &c.patch).unwrap_err().to_string();
+        assert_eq!(e, "conflicts with the checkout in log.md, x.md");
+        assert_eq!(git(r, &["status", "--porcelain"]).unwrap(), "");
     }
 
     #[test]
