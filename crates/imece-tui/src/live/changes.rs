@@ -844,13 +844,21 @@ mod tests {
                 .filter(|e| matches!(e.event, Event::WorktreeMoved { agent: 1, .. }))
                 .count()
         };
-        // Mid-turn (its own or a helper's): not moved.
+        // Mid-turn (its own or a helper's), or with no running session:
+        // git is not even asked.
         live.turns[1] = 1;
         live.follow(&mut w, 1);
+        assert_eq!(live.placing[1], None);
         live.turns[1] = 0;
         live.turns[2] = 1;
         live.follow(&mut w, 1);
+        assert_eq!(live.placing[1], None);
         live.turns[2] = 0;
+        let running = std::mem::replace(&mut live.slots[1], Slot::Starting(Vec::new()));
+        live.follow(&mut w, 1);
+        assert_eq!(live.placing[1], None);
+        live.slots[1] = running;
+        settle(&mut live, &mut w);
         assert_eq!(moved(&w), 0);
         assert_eq!(git_in(&tree, &["rev-parse", "HEAD"]), old);
         // The leader's directory is the checkout itself: never moved.
