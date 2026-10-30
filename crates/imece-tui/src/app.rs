@@ -1107,13 +1107,8 @@ impl App {
     fn tell(&mut self, id: AgentId, text: &str) {
         let command = text.starts_with('/');
         let refused = match &mut self.engine {
-            Engine::Sim(_) if command => Some(Refusal::Command(
-                self.lang.text().demo_no_command_line.to_string(),
-            )),
-            Engine::Sim(s) => {
-                s.told(&mut self.world, id, text);
-                None
-            }
+            Engine::Sim(s) if command => s.command(&mut self.world, id, text).err(),
+            Engine::Sim(s) => s.told(&mut self.world, id, text).err(),
             Engine::Live(l) if command => l.command(&mut self.world, id, text).err(),
             Engine::Live(l) => l.told(&mut self.world, id, text).err(),
         };
@@ -1264,7 +1259,7 @@ impl App {
 
     /// `:forget [@NAME]`: the agent (named, else the one at hand) forgets
     /// its session; its next message starts a new one, told where it left
-    /// off. Live only: the demo's agents have no sessions.
+    /// off.
     fn forget_agent(&mut self, arg: &str) {
         let t = self.lang.text();
         let word = arg.strip_prefix('@').unwrap_or(arg).trim();
@@ -1277,10 +1272,11 @@ impl App {
             return self.flash(fill(t.no_agent, &[word]));
         };
         let name = self.world.agents[id].name.clone();
-        let Engine::Live(live) = &mut self.engine else {
-            return self.flash(t.forget_demo);
+        let forgot = match &mut self.engine {
+            Engine::Live(live) => live.forget_agent(&mut self.world, id),
+            Engine::Sim(sim) => sim.forget(&mut self.world, id),
         };
-        match live.forget_agent(&mut self.world, id) {
+        match forgot {
             Ok(()) => self.flash(fill(t.forgot, &[&name])),
             Err(Refusal::Command(why)) => self.flash(fill(t.forget_refused, &[&name, &why])),
             Err(why) => self.flash(fill(t.forget_refused, &[&name, &format!("{why:?}")])),
@@ -1410,13 +1406,14 @@ impl App {
             return self.decide_change(self.world.inbox[item].agent, approve);
         }
         if self.world.inbox[item].kind == InboxKind::Approval {
-            // Only a live session asks; the demo has none.
-            if let Engine::Live(l) = &mut self.engine {
-                let name = self.world.agents[self.world.inbox[item].agent].name.clone();
-                l.decide(&mut self.world, item, approve);
-                let how = if approve { t.allowed } else { t.refused };
-                self.flash(fill(how, &[&name]));
+            let name = self.world.agents[self.world.inbox[item].agent].name.clone();
+            match &mut self.engine {
+                Engine::Live(l) => l.decide(&mut self.world, item, approve),
+                // The demo's session goes on once the item is closed.
+                Engine::Sim(_) => self.world.decided(item, approve),
             }
+            let how = if approve { t.allowed } else { t.refused };
+            self.flash(fill(how, &[&name]));
             self.inbox_sel = self.inbox_sel.min(open.len().saturating_sub(2));
             return;
         }
@@ -1449,20 +1446,21 @@ impl App {
         let t = self.lang.text();
         let name = self.world.agents[id].name.clone();
         let open = self.world.open_inbox().len();
-        match &mut self.engine {
-            Engine::Sim(_) => self.flash(t.demo_no_change),
-            Engine::Live(l) if apply => match l.apply_change(&self.world, id) {
-                Ok(()) => self.flash(fill(t.applying, &[&name])),
-                Err(why) => self.flash(fill(t.apply_failed, &[&name, &why])),
-            },
-            Engine::Live(l) => match l.reject_change(&mut self.world, id) {
-                Ok(()) => {
-                    self.flash(fill(t.rejected_change, &[&name]));
-                    self.typing = true;
-                    self.input = format!("@{name} ");
-                }
-                Err(why) => self.flash(fill(t.reject_failed, &[&name, &why])),
-            },
+        let decided = match &mut self.engine {
+            Engine::Live(l) if apply => l.apply_change(&self.world, id),
+            Engine::Sim(s) if apply => s.apply_change(&self.world, id),
+            Engine::Live(l) => l.reject_change(&mut self.world, id),
+            Engine::Sim(s) => s.reject_change(&mut self.world, id),
+        };
+        match decided {
+            Ok(()) if apply => self.flash(fill(t.applying, &[&name])),
+            Err(why) if apply => self.flash(fill(t.apply_failed, &[&name, &why])),
+            Ok(()) => {
+                self.flash(fill(t.rejected_change, &[&name]));
+                self.typing = true;
+                self.input = format!("@{name} ");
+            }
+            Err(why) => self.flash(fill(t.reject_failed, &[&name, &why])),
         }
         if self.zoom == Zoom::Diff(id) {
             self.zoom = Zoom::None;
@@ -1572,21 +1570,39 @@ mod tests {
 
     #[test]
     fn a_and_r_decide_the_open_change_and_close_it() {
+        let t = Lang::En.text();
+        let flash = |app: &App| app.flash.as_ref().map(|(m, _)| m.clone());
         for c in ['a', 'r'] {
             let (mut app, worker) = with_change(&two_files());
+            let name = app.world.agents[worker].name.clone();
             app.on_key(key(KeyCode::Char(c)));
             assert_eq!(app.zoom, Zoom::None, "{c} closes the change");
             assert_eq!(app.pane, Pane::Inbox, "{c} returns to the inbox");
-            let flash = app.flash.as_ref().map(|(m, _)| m.as_str());
-            assert_eq!(
-                flash,
-                Some(Lang::En.text().demo_no_change),
-                "{c} on the demo says there is nothing to apply"
-            );
-            assert!(
-                app.world.change_of(worker).is_some(),
-                "the demo keeps the change"
-            );
+            if c == 'a' {
+                // The demo applies it as git's thread does: the next step
+                // says how it went.
+                assert_eq!(flash(&app), Some(fill(t.applying, &[&name])));
+                assert!(app.world.change_of(worker).is_some() && !app.typing);
+                app.on_key(key(KeyCode::Char('a')));
+                assert_eq!(
+                    flash(&app),
+                    Some(fill(
+                        t.apply_failed,
+                        &[&name, "their change is being applied"]
+                    )),
+                    "once is enough"
+                );
+                app.step();
+                assert!(app.world.journal.iter().any(|e| matches!(
+                    e.event,
+                    Event::Applied { agent, .. } | Event::ApplyFailed { agent, .. } if agent == worker
+                )));
+            } else {
+                assert_eq!(flash(&app), Some(fill(t.rejected_change, &[&name])));
+                assert!(app.world.change_of(worker).is_none());
+                assert!(app.typing, "the composer opens for the reasons");
+                assert_eq!(app.input, format!("@{name} "));
+            }
         }
     }
 
@@ -1665,14 +1681,16 @@ mod tests {
                 tick: 0,
             });
             app.inbox_sel = 1;
+            let name = app.world.agents[worker].name.clone();
             app.on_key(key(KeyCode::Char(c)));
             assert_eq!(app.zoom, Zoom::None, "{c} closes the change");
-            let flash = app.flash.as_ref().map(|(m, _)| m.as_str());
-            assert_eq!(flash, Some(Lang::En.text().demo_no_change));
-            assert!(
-                app.world.change_of(worker).is_some(),
-                "the demo keeps the change"
-            );
+            let flash = app.flash.as_ref().map(|(m, _)| m.clone());
+            let said = if c == 'a' {
+                Lang::En.text().applying
+            } else {
+                Lang::En.text().rejected_change
+            };
+            assert_eq!(flash, Some(fill(said, &[&name])));
             let other = app
                 .world
                 .inbox
@@ -1734,28 +1752,23 @@ mod tests {
         );
         assert!(!app.world.projects[0].closed);
         // :forget names an agent, @ or not, else takes the one at hand;
-        // the demo's agents have no sessions.
+        // a demo agent has a session once it took a turn, as a live one.
+        let t = Lang::En.text();
         app.command("forget nobody");
         assert_eq!(said(&mut app), "no agent named \"nobody\"");
         app.command("forget @nobody");
         assert_eq!(said(&mut app), "no agent named \"nobody\"");
         let lead = app.world.agents[0].name.clone();
+        let none = fill(t.forget_refused, &[&lead, "it has no session to forget"]);
         app.command(&format!("forget @{lead}"));
-        assert_eq!(
-            said(&mut app),
-            "the demo's agents have no sessions to forget"
-        );
+        assert_eq!(said(&mut app), none);
+        app.tell(0, "hello");
         app.command(&format!("f {lead}"));
-        assert_eq!(
-            said(&mut app),
-            "the demo's agents have no sessions to forget"
-        );
+        assert_eq!(said(&mut app), fill(t.forgot, &[&lead]));
+        assert_eq!(app.world.agents[0].status, Status::Asleep);
         app.selected = Sel::Agent(0);
         app.command("forget");
-        assert_eq!(
-            said(&mut app),
-            "the demo's agents have no sessions to forget"
-        );
+        assert_eq!(said(&mut app), none, "forgotten already");
     }
 
     #[test]

@@ -16,7 +16,7 @@ use crate::app::App;
 
 /// Every status glyph the map can show (the salon's), in the order the
 /// legend lists them; `Text::code_glyphs` words them in the same order.
-pub(crate) const GLYPHS: [&str; 10] = ["○", "◆", "●", "◐", "✕", "!", "◌", "◇", "■", "◦"];
+pub(crate) const GLYPHS: [&str; 8] = ["○", "●", "◐", "✕", "!", "◇", "■", "◦"];
 
 /// Where `mark` sits in `GLYPHS`.
 fn kind(mark: &str) -> Option<usize> {
@@ -423,12 +423,10 @@ mod tests {
         );
         let statuses = [
             Status::Idle,
-            Status::Planning { until: 1 },
             Status::Working,
             Status::Asking { to: 0, until: 1 },
             Status::Blocked,
             Status::WaitingHuman,
-            Status::Verifying { until: 1 },
             Status::Researching {
                 for_agent: 0,
                 until: 1,

@@ -11,7 +11,8 @@ first seen and on change; Gemini from ACP `available_commands_update`;
 Codex the adapter's own `/compact` mapping; `live/sessions.rs` adds imece's
 `/clear` where missing), never a static list (user, 2026-10-29: a
 vendor's new command must not need a release), so empty until a
-session says and in the demo,
+session says (the demo's agents get their vendor's list when their
+session starts, decision 31),
 `:w` → `budget`/`lead`, `:lead w` → claude/codex/gemini/ask (no tail);
 nothing for `!` or plain text; one match equal to the word = no menu.
 Keys (`type_key`): tab inserts the highlighted item then steps,

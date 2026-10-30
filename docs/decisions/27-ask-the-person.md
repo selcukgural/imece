@@ -22,7 +22,8 @@ may send a mid-task question (its closing text still reaches the person
 as before), a worker asks its leader first and sends the person only
 what only they can decide, a helper only what no teammate can answer;
 the `send` tool's `to` says "or you for the person". Store schema 3 (no
-table changed; the new tags). The demo has no questions to the person.
+table changed; the new tags). The demo asks the person too (decision
+31).
 Known gaps: no answer from the screen but a message (there is no
 "answered without words"); a question of an agent that is gone or
 stopped stays open until the person writes to it.
