@@ -14,8 +14,9 @@ every line through `clean`, +/- coloured, `j k` / pages / `gg G` /
 `[ ]` file headers), `a` → `Live::apply_change`: `git apply --index`
 in the checkout (atomic; `update-index --refresh` first so a touched
 but unchanged file is not a mismatch; refused with git's error lines
-on any conflict or unstaged edit, journaled `ApplyFailed`, the item
-stays), then `worktree::applied` commits the reviewed tree in the
+on an unstaged edit or a patch git can not read, journaled
+`ApplyFailed`, the item stays; see "Three-way apply" below for a
+checkout that moved on under the patch), then `worktree::applied` commits the reviewed tree in the
 worktree as `imece <imece@localhost>` and `git reset -q` to it (files
 untouched, index = HEAD) so the next change is incremental; `r` →
 `reject_change` (item closes, the change stays in the worktree, the
@@ -29,3 +30,24 @@ helpers too), journaled `WorktreeMoved`. The sim has no changes.
 Known gaps: git runs on the UI thread (a huge diff stalls a frame);
 no partial apply; the `done needs evidence` line (last run after the
 last change) is not yet shown on the item.
+
+Three-way apply (2026-10-30, the first Kule run: two workers both added
+to CHANGELOG, the second Δ did not apply): when the plain `git apply
+--index` fails for any reason but the person's own unstaged edits
+("does not match index", returned as it is: no merge goes over them),
+the patch is merged three-way into a COPY of the checkout's index
+(`<git dir>/imece-apply-index`, `git apply --cached --3way`, removed
+after), which touches no file; only when that is clean does `git apply
+--index --3way` run for real. Git's own three-way on a conflict leaves
+markers in the files and the other files applied (probed on git 2.56),
+so it never runs unchecked. A conflict is refused as `conflicts with
+the checkout in a, b` (unmerged paths of the copy, each once); a patch
+that does not merge at all keeps the plain error. The patch's blob ids
+are full (`--binary` implies `--full-index`) and the worktree shares
+the checkout's objects, so the preimages are there. The same patch
+applied again now merges into what it made and changes nothing. The
+prompts: the leader gives a file most tasks touch (a changelog, a
+version) to one worker at a time and tells the others to leave it out
+and say in their done what it should get; a worker leaves such files
+out unless its task names them. Symbol leases are still the real fix
+for two workers in one file.
