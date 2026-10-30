@@ -54,14 +54,16 @@ jobs:
             echo "## Mutants (shard $SHARD of 4)"
             echo
             for f in caught missed timeout unviable; do
-              n=$(wc -l < "mutants.out/$f.txt" 2>/dev/null || echo 0)
+              n=0
+              [ -f "mutants.out/$f.txt" ] && n=$(wc -l < "mutants.out/$f.txt")
               echo "- $f: $n"
             done
             echo
             echo "### Missed"
             echo
             echo '```'
-            cat mutants.out/missed.txt mutants.out/timeout.txt 2>/dev/null
+            # A change without Rust in it has no mutants and no files.
+            cat mutants.out/missed.txt mutants.out/timeout.txt 2>/dev/null || true
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
         env:
@@ -126,14 +128,16 @@ jobs:
             echo "## Mutants (shard $SHARD of 6)"
             echo
             for f in caught missed timeout unviable; do
-              n=$(wc -l < "mutants.out/$f.txt" 2>/dev/null || echo 0)
+              n=0
+              [ -f "mutants.out/$f.txt" ] && n=$(wc -l < "mutants.out/$f.txt")
               echo "- $f: $n"
             done
             echo
             echo "### Missed"
             echo
             echo '```'
-            cat mutants.out/missed.txt mutants.out/timeout.txt 2>/dev/null
+            # A change without Rust in it has no mutants and no files.
+            cat mutants.out/missed.txt mutants.out/timeout.txt 2>/dev/null || true
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
