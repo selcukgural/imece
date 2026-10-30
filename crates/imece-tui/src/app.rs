@@ -314,6 +314,7 @@ impl App {
             Engine::Sim(s) => s.step(&mut self.world),
             Engine::Live(l) => l.step(&mut self.world),
         }
+        self.follow_thread();
         self.persist();
     }
 
@@ -394,7 +395,39 @@ impl App {
 
     pub fn on_key(&mut self, k: KeyEvent) {
         self.key(k);
+        self.follow_thread();
         self.persist();
+    }
+
+    /// Keeps an open conversation current: the journal lines of its two
+    /// parties that came since it was opened (or last followed) are
+    /// appended. The person's own line, just written from the window, is
+    /// selected, and so is a line that came while the last one was
+    /// selected, so the window follows the talk; a selection further up
+    /// stays where the person is reading.
+    pub(crate) fn follow_thread(&mut self) {
+        let Some(th) = &mut self.thread else {
+            return;
+        };
+        let Some(&first) = th.entries.first() else {
+            return;
+        };
+        let Some(pair) = ui::words::said(&self.world.journal[first].event).map(|s| s.pair()) else {
+            return;
+        };
+        let from = th.entries.last().map_or(0, |&l| l + 1);
+        let at_end = th.sel + 1 == th.entries.len();
+        let mut written = false;
+        for (i, e) in self.world.journal.iter().enumerate().skip(from) {
+            if ui::words::said(&e.event).is_some_and(|s| s.pair() == pair) {
+                th.entries.push(i);
+                written |= matches!(e.event, Event::YouSaid { .. });
+            }
+        }
+        if (written || at_end) && th.sel + 1 < th.entries.len() {
+            th.sel = th.entries.len() - 1;
+            th.follow.set(true);
+        }
     }
 
     fn key(&mut self, k: KeyEvent) {
@@ -1900,5 +1933,103 @@ mod tests {
             .as_secs();
         assert!(at.abs_diff(now) <= 2);
         App::new(1, 1, 0, 1, Lang::En).leave();
+    }
+
+    /// A demo app with a conversation between the person and worker 1
+    /// open on its only line.
+    fn with_thread() -> (App, AgentId) {
+        let mut app = App::new(1, 2, 0, 1, Lang::En);
+        let worker = app
+            .world
+            .agents
+            .iter()
+            .find(|a| a.role == Role::Worker)
+            .map(|a| a.id)
+            .unwrap();
+        app.world.said(worker, "first");
+        let i = app.world.journal.len() - 1;
+        app.open_thread(i);
+        assert_eq!(app.thread.as_ref().unwrap().entries, [i]);
+        (app, worker)
+    }
+
+    #[test]
+    fn a_message_written_from_the_conversation_window_lands_in_it_selected() {
+        let (mut app, worker) = with_thread();
+        let name = app.world.agents[worker].name.clone();
+        app.thread.as_mut().unwrap().follow.set(false);
+        app.typing = true;
+        app.input = format!("@{name} second");
+        app.on_key(key(KeyCode::Enter));
+        let i = app.world.journal.len() - 1;
+        assert!(matches!(app.world.journal[i].event, Event::YouSaid { .. }));
+        let th = app.thread.as_ref().unwrap();
+        assert_eq!(th.entries.len(), 2);
+        assert_eq!(th.entries[1], i);
+        assert_eq!(th.sel, 1, "the line just written is selected");
+        assert!(th.follow.get());
+    }
+
+    #[test]
+    fn a_reply_that_comes_while_the_last_line_is_selected_is_followed() {
+        let (mut app, worker) = with_thread();
+        app.thread.as_mut().unwrap().follow.set(false);
+        app.world.note(Event::Replied {
+            agent: worker,
+            text: "yes".into(),
+        });
+        let i = app.world.journal.len() - 1;
+        app.step();
+        let th = app.thread.as_ref().unwrap();
+        assert!(th.entries.contains(&i), "{:?}", th.entries);
+        assert_eq!(th.entries[0], th.entries[0].min(i));
+        assert_eq!(th.sel + 1, th.entries.len(), "still at the end");
+        assert!(th.follow.get());
+    }
+
+    #[test]
+    fn a_reply_that_comes_while_the_person_reads_further_up_leaves_the_selection() {
+        let (mut app, worker) = with_thread();
+        app.world.said(worker, "second");
+        app.follow_thread();
+        let th = app.thread.as_mut().unwrap();
+        assert_eq!(th.entries.len(), 2);
+        th.sel = 0;
+        th.follow.set(false);
+        app.world.note(Event::Replied {
+            agent: worker,
+            text: "yes".into(),
+        });
+        let i = app.world.journal.len() - 1;
+        app.follow_thread();
+        let th = app.thread.as_ref().unwrap();
+        assert_eq!(th.entries.len(), 3);
+        assert_eq!(th.entries[2], i);
+        assert_eq!(th.sel, 0, "reading up: the selection stays");
+        assert!(!th.follow.get());
+        // Followed once: a second pass adds nothing.
+        app.follow_thread();
+        assert_eq!(app.thread.as_ref().unwrap().entries.len(), 3);
+    }
+
+    #[test]
+    fn a_line_of_another_conversation_stays_out_of_the_open_one() {
+        let (mut app, worker) = with_thread();
+        let other = (0..app.world.agents.len())
+            .find(|&id| id != worker && app.world.agents[id].role == Role::Worker)
+            .unwrap();
+        app.world.said(other, "elsewhere");
+        app.follow_thread();
+        assert_eq!(app.thread.as_ref().unwrap().entries.len(), 1);
+        // A thread opened on a line that is not a conversation follows nothing.
+        app.world.note(Event::Forgotten { agent: worker });
+        let i = app.world.journal.len() - 1;
+        app.open_thread(i);
+        app.world.said(worker, "third");
+        app.follow_thread();
+        assert_eq!(app.thread.as_ref().unwrap().entries, [i]);
+        app.thread = None;
+        app.follow_thread();
+        assert!(app.thread.is_none());
     }
 }

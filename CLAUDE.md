@@ -833,7 +833,12 @@ and owned here from then on:
   "Fix the …"; two cards had read `Fix Gi` and `Fix Gi`). Known gaps: a
   tool_use line's multi-line argument (a Bash heredoc) still wraps as one
   long paragraph; the trace's vocabulary is read back from strings, a new
-  producer word is plain until named in `trace_lines`.
+  producer word is plain until named in `trace_lines`. An open
+  conversation window FOLLOWS the talk (`App::follow_thread`, after every
+  key and step): journal lines of its pair that came since are appended;
+  the person's own line (written from the window with `@`) is selected,
+  as is a line that came while the last one was selected; a selection
+  further up stays (was: close and open again to see what was written).
 
 ## Neighbours
 
