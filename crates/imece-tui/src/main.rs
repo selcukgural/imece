@@ -24,7 +24,7 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
-use imece_agent::Tier;
+use imece_agent::{Confine, Tier};
 use ratatui::crossterm::event::{self, Event, KeyEventKind};
 
 use crate::i18n::Lang;
@@ -32,7 +32,7 @@ use crate::model::{Vendor, parse_dollars};
 
 const USAGE: &str = "usage: imece [--repo DIR] [--agents N] [--helpers N] [--lead VENDOR]
              [--model [V:]NAME]... [--tier [V:]T=NAME]... [--budget USD] [--fresh]
-             [--lang en|tr] [--theme NAME|FILE]
+             [--confine standard|strict|open] [--lang en|tr] [--theme NAME|FILE]
        imece --demo [--projects N] [--agents N] [--researchers N] [--seed N]
 
 imece runs coding agents on the checkout DIR is in: a leader that reads it
@@ -62,6 +62,17 @@ one at hand; ? lists every key and command.
                     new one, told where it left off, and what the vendors
                     kept of the old ones is removed (:forget @NAME does it
                     for one agent while imece runs)
+  --confine LEVEL   how much of its vendor each agent gets: standard (the
+                    default) gives workers and helpers the vendor's full
+                    coding toolset (read, write, shell, web search and
+                    fetch) and the leader the web, with nothing of your own
+                    vendor setup loaded; strict gives file tools only, with
+                    commands through imece's run tool; open runs the vendor
+                    as you have it set up (your settings, hooks, MCP
+                    servers, skills, extensions). The leader never writes
+                    and the vendor's own sub-agent tool stays off at every
+                    level; imece sandboxes nothing, isolation is a
+                    container's job
   --run PROG[,..]   programs workers may run with their run tool, next to
                     cargo and git's reading commands (repeatable)
   --run-timeout S   seconds one run may take (10-3600, default 600)
@@ -98,6 +109,7 @@ struct Args {
     budget: Option<u64>,
     run_programs: Vec<String>,
     run_timeout: Duration,
+    confine: Confine,
 }
 
 /// What `--lead` asks for.
@@ -189,6 +201,7 @@ fn parse(
         budget: None,
         run_programs: Vec::new(),
         run_timeout: live::DEFAULT_RUN_TIMEOUT,
+        confine: Confine::default(),
     };
     // Options of the demo alone, to refuse them without it.
     let mut demo_only: Vec<String> = Vec::new();
@@ -262,6 +275,11 @@ fn parse(
                 }
             }
             "--run-timeout" => args.run_timeout = Duration::from_secs(number(10, 3600)?),
+            "--confine" => {
+                args.confine = Confine::from_wire(&value).ok_or_else(|| {
+                    format!("--confine: {value:?} is not standard, strict or open")
+                })?
+            }
             _ => return Err(format!("unknown option {flag}\n\n{USAGE}")),
         }
     }
@@ -411,6 +429,7 @@ fn main() -> std::io::Result<()> {
             fresh: args.fresh,
             run_programs: args.run_programs,
             run_timeout: args.run_timeout,
+            confine: args.confine,
         };
         match live::world(options, &present) {
             Ok((world, live)) => {
@@ -640,6 +659,30 @@ mod tests {
         assert_eq!(choose_lead(None, None, &[]), Some(Claude));
         assert_eq!(choose_lead(None, Some(Codex), &[]), Some(Codex));
         assert_eq!(choose_lead(Some(Lead::Ask), None, &[]), Some(Claude));
+    }
+
+    #[test]
+    fn the_confine_dial_is_standard_unless_said_and_takes_only_its_levels() {
+        assert_eq!(args(&[], &[]).unwrap().confine, Confine::Standard);
+        assert_eq!(
+            args(&["--confine", "strict"], &[]).unwrap().confine,
+            Confine::Strict
+        );
+        assert_eq!(
+            args(&["--confine", "open"], &[]).unwrap().confine,
+            Confine::Open
+        );
+        assert_eq!(
+            args(&["--confine", "standard"], &[]).unwrap().confine,
+            Confine::Standard
+        );
+        let e = args(&["--confine", "loose"], &[]).unwrap_err();
+        assert!(
+            e.contains("\"loose\" is not standard, strict or open"),
+            "{e}"
+        );
+        assert!(USAGE.contains("--confine LEVEL"));
+        assert!(USAGE.contains("[--confine standard|strict|open]"));
     }
 
     #[test]

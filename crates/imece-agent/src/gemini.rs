@@ -8,11 +8,17 @@
 //! of the folder it runs in, and only a root-owned system settings file
 //! could override them. What imece can set, it sets on the command line:
 //! its own POLICY file (the user tier's only policy once `--policy` names
-//! it; just root-owned system policies rank above it) denies every tool
-//! and allows exactly the file tools of the role and imece's own MCP
-//! tools, so nothing is ever asked (what would ask is denied instead, and
-//! imece denies every permission request anyway); extensions are off, no
-//! MCP server but imece's is allowed; the approval mode is `default`.
+//! it; just root-owned system policies rank above it) allows exactly the
+//! tools of the role and the level (file tools; from standard on the web
+//! too, and a shell when the agent may write; an allow runs without a
+//! prompt) and imece's own MCP tools, and under strict and standard
+//! denies every other tool, so nothing is ever asked (what would ask is
+//! denied instead, and imece denies every permission request anyway);
+//! extensions are off, no MCP server but imece's is allowed; the approval
+//! mode is `default`. Under open the person's extensions and MCP servers
+//! load and their tools run under the person's own policies (what asks
+//! is still denied); imece denies by name only Gemini's agent tools, and
+//! a reader's writing tools.
 //! Gemini runs in a private directory imece owns (its working directory,
 //! holding the policy and a `GEMINI.md` with the agent's instructions, the
 //! only way ACP has to give instructions) and gets the agent's files as an
@@ -49,7 +55,7 @@ use std::time::{Duration, Instant};
 use serde_json::{Value, json};
 
 use crate::child::{self, Child, Out};
-use crate::{Event, MCP_SERVER, Mcp, mcp_tool};
+use crate::{Confine, Event, MCP_SERVER, Mcp, mcp_tool};
 
 /// Variables Gemini CLI may need besides [`child::BASE_ENV`]: an API key
 /// (a key entered in the CLI lives in the keychain), its config home, and
@@ -110,6 +116,26 @@ pub const EDIT_TOOLS: &[&str] = &[
     "write_file",
     "replace",
 ];
+/// The shell.
+pub const SHELL_TOOL: &str = "run_shell_command";
+/// The web: searching and fetching a page.
+pub const WEB_TOOLS: &[&str] = &["google_web_search", "web_fetch"];
+/// Gemini CLI's tools that run agents of its own (and the agents it
+/// offers as tools): off at every level.
+pub const SUBAGENT_TOOLS: &[&str] = &["invoke_agent", "codebase_investigator", "generalist"];
+
+/// The tools of Gemini's own an agent gets at `confine`: file tools; from
+/// standard on the web too, and the shell when it may write.
+pub fn tools(write: bool, confine: Confine) -> Vec<&'static str> {
+    let mut t: Vec<&str> = if write { EDIT_TOOLS } else { READ_TOOLS }.to_vec();
+    if confine.full() {
+        t.extend(WEB_TOOLS);
+        if write {
+            t.push(SHELL_TOOL);
+        }
+    }
+    t
+}
 
 /// The file imece's instructions go in, the one Gemini reads as context.
 const INSTRUCTIONS: &str = "GEMINI.md";
@@ -280,6 +306,8 @@ pub struct Spec {
     pub model: Option<String>,
     /// Whether the agent changes files or only reads them.
     pub write: bool,
+    /// How much of Gemini CLI the session gets; see [`Confine`].
+    pub confine: Confine,
     /// The agent's instructions: its role in imece.
     pub system: String,
     /// imece's MCP server, if the agent gets its tools.
@@ -291,8 +319,8 @@ pub struct Spec {
 }
 
 impl Spec {
-    fn tools(&self) -> &'static [&'static str] {
-        if self.write { EDIT_TOOLS } else { READ_TOOLS }
+    fn tools(&self) -> Vec<&'static str> {
+        tools(self.write, self.confine)
     }
 
     fn policy_dir(&self) -> PathBuf {
@@ -316,11 +344,14 @@ fn toml_str(s: &str) -> String {
     out
 }
 
-/// The policy for `spec`: the role's file tools and imece's own tools
-/// allowed by exact name, every other tool denied (and so not even shown
-/// to the model). The highest priority wins in Gemini's policy engine, so
-/// the allows rank first, the denial right under them, and both above
-/// anything the person's settings add.
+/// The policy for `spec`: the tools of the role and the level and imece's
+/// own tools allowed by exact name (an allow runs without a prompt), and
+/// every other tool denied (and so not even shown to the model); under
+/// open only Gemini's agent tools are denied, and a reader's writing
+/// tools, the rest run under the person's own policies. The highest
+/// priority wins in Gemini's policy engine, so the allows rank first, the
+/// denial right under them, and both above anything the person's settings
+/// add.
 pub fn policy(spec: &Spec) -> String {
     let list = |names: &[String]| {
         format!(
@@ -333,6 +364,21 @@ pub fn policy(spec: &Spec) -> String {
         )
     };
     let tools: Vec<String> = spec.tools().iter().map(|t| t.to_string()).collect();
+    let denied = if spec.confine == Confine::Open {
+        let mut d: Vec<String> = SUBAGENT_TOOLS.iter().map(|t| t.to_string()).collect();
+        if !spec.write {
+            d.push(SHELL_TOOL.into());
+            d.extend(
+                EDIT_TOOLS
+                    .iter()
+                    .filter(|t| !READ_TOOLS.contains(t))
+                    .map(|t| t.to_string()),
+            );
+        }
+        list(&d)
+    } else {
+        "\"*\"".to_string()
+    };
     let mut out = format!(
         "# Written by imece for this session; imece replaces it on every start.\n\
          [[rule]]\n\
@@ -341,7 +387,7 @@ pub fn policy(spec: &Spec) -> String {
          priority = 999\n\
          \n\
          [[rule]]\n\
-         toolName = \"*\"\n\
+         toolName = {denied}\n\
          decision = \"deny\"\n\
          priority = 998\n\
          denyMessage = \"imece: this tool is not available in this session\"\n",
@@ -397,13 +443,12 @@ pub fn args(spec: &Spec) -> Vec<String> {
         "default".into(),
         "--include-directories".into(),
         spec.cwd.to_string_lossy().into_owned(),
+    ];
+    if spec.confine != Confine::Open {
         // No extensions, and no MCP server but imece's own, whatever the
         // person's settings bring.
-        "-e".into(),
-        "none".into(),
-        "--allowed-mcp-server-names".into(),
-        MCP_SERVER.into(),
-    ];
+        a.extend(["-e", "none", "--allowed-mcp-server-names", MCP_SERVER].map(String::from));
+    }
     if let Some(m) = &spec.model {
         a.push("-m".into());
         a.push(m.clone());
@@ -451,9 +496,21 @@ enum Pay {
     Plan,
 }
 
-/// Tool kinds a leader's session must never show; a worker's may edit.
-const NEVER: &[&str] = &["execute", "fetch", "switch_mode"];
+/// Tool kinds a reader's session must never show: a writer's may edit,
+/// and from standard on fetch, and run commands when it may write.
 const WRITES: &[&str] = &["edit", "delete", "move"];
+
+/// Whether a tool call of `kind` may show in a session that may `write`
+/// files at `confine`; a mode change never may.
+fn allowed_kind(kind: &str, write: bool, confine: Confine) -> bool {
+    match kind {
+        "switch_mode" => false,
+        "execute" => write && confine.full(),
+        "fetch" => confine.full(),
+        k if WRITES.contains(&k) => write,
+        _ => true,
+    }
+}
 
 /// Turns stdout lines into [`Act`]s and checks what Gemini reports.
 pub struct Protocol {
@@ -461,6 +518,7 @@ pub struct Protocol {
     home: PathBuf,
     model: Option<String>,
     write: bool,
+    confine: Confine,
     mcp: Option<Mcp>,
     /// Tools imece's server offers, as Gemini names them to the model.
     tools: BTreeSet<String>,
@@ -492,6 +550,7 @@ impl Protocol {
             home: spec.home.clone(),
             model: spec.model.clone(),
             write: spec.write,
+            confine: spec.confine,
             mcp: spec.mcp.clone(),
             tools: spec
                 .mcp
@@ -724,7 +783,12 @@ impl Protocol {
                     }
                     None => return Err("did not say how it is logged in".into()),
                 });
-                vec![self.say("/extensions list", Wait::Extensions)]
+                if self.confine == Confine::Open {
+                    // The person's extensions are theirs to have on.
+                    vec![self.say("/memory list", Wait::Memory)]
+                } else {
+                    vec![self.say("/extensions list", Wait::Extensions)]
+                }
             }
             Wait::Extensions => {
                 let text = std::mem::take(&mut self.text);
@@ -912,7 +976,7 @@ impl Protocol {
                     return Err("used a tool before its settings were checked".into());
                 }
                 let kind = u["kind"].as_str().unwrap_or("other");
-                if NEVER.contains(&kind) || (!self.write && WRITES.contains(&kind)) {
+                if !allowed_kind(kind, self.write, self.confine) {
                     return Err(format!("used a {kind} tool it was not given"));
                 }
                 let title = u["title"].as_str().unwrap_or_default();
@@ -994,8 +1058,15 @@ impl Protocol {
         if self.tools.contains(&called) {
             return Ok(mcp_tool(called.trim_start_matches(&prefix())));
         }
-        let own = if self.write { EDIT_TOOLS } else { READ_TOOLS };
-        if own.contains(&called.as_str()) {
+        if tools(self.write, self.confine).contains(&called.as_str()) {
+            return Ok(called);
+        }
+        if SUBAGENT_TOOLS.contains(&called.as_str()) {
+            return Err(format!("used tool {called}, which runs agents of its own"));
+        }
+        // Under open the person's own tools (extensions, their MCP
+        // servers) run by their names; the kind check above still holds.
+        if self.confine == Confine::Open {
             return Ok(called);
         }
         Err(format!(
@@ -1251,6 +1322,7 @@ mod tests {
             home: PathBuf::from("/state/gemini/gemini-1"),
             model: None,
             write,
+            confine: Confine::Strict,
             system: "You are gemini-1.".into(),
             mcp: None,
             resume: None,
@@ -1517,19 +1589,23 @@ mod tests {
                 .unwrap()
                 .is_empty()
         );
-        let acts = p.line(&reply(3, command_done())).unwrap();
-        assert_eq!(
-            sent(&acts)[0]["params"]["prompt"][0]["text"],
-            "/extensions list"
-        );
-        assert!(p.line(&chunk("[]")).unwrap().is_empty());
-        let acts = p.line(&reply(4, command_done())).unwrap();
+        let mut acts = p.line(&reply(3, command_done())).unwrap();
+        let mut id = 3;
+        if spec.confine != Confine::Open {
+            assert_eq!(
+                sent(&acts)[0]["params"]["prompt"][0]["text"],
+                "/extensions list"
+            );
+            assert!(p.line(&chunk("[]")).unwrap().is_empty());
+            id += 1;
+            acts = p.line(&reply(id, command_done())).unwrap();
+        }
         assert_eq!(
             sent(&acts)[0]["params"]["prompt"][0]["text"],
             "/memory list"
         );
         assert!(p.line(&chunk(&memory(spec))).unwrap().is_empty());
-        let acts = p.line(&reply(5, command_done())).unwrap();
+        let acts = p.line(&reply(id + 1, command_done())).unwrap();
         assert_eq!(
             events(&acts),
             [
@@ -1566,13 +1642,17 @@ mod tests {
         let mut p = Protocol::new(spec);
         p.open();
         let want = spec.model.clone().unwrap_or_else(|| "auto".into());
-        let steps: Vec<(&str, String, Value)> = vec![
+        let mut steps: Vec<(&str, String, Value)> = vec![
             ("initialize", String::new(), init()),
             ("session/new", String::new(), session(&want)),
             ("/about", about(&want, "gemini-api-key"), command_done()),
             ("/extensions list", "[]".into(), command_done()),
             ("/memory list", memory(spec), command_done()),
         ];
+        if spec.confine == Confine::Open {
+            // The person's extensions are not asked about.
+            steps.retain(|(step, ..)| *step != "/extensions list");
+        }
         let mut id = 0;
         for (step, good_text, good) in steps {
             id += 1;
@@ -1590,6 +1670,249 @@ mod tests {
             }
         }
         unreachable!("{upto} is not a start step");
+    }
+
+    /// [`with_bus`] at `confine`.
+    fn at(confine: Confine, write: bool) -> Spec {
+        let mut s = with_bus(write);
+        s.confine = confine;
+        s
+    }
+
+    #[test]
+    fn the_level_and_the_role_give_gemini_s_own_tools() {
+        let t = |write, c| tools(write, c).join(",");
+        assert_eq!(
+            t(false, Confine::Strict),
+            "read_file,list_directory,glob,grep_search"
+        );
+        assert_eq!(
+            t(true, Confine::Strict),
+            "read_file,list_directory,glob,grep_search,write_file,replace"
+        );
+        assert_eq!(
+            t(false, Confine::Standard),
+            "read_file,list_directory,glob,grep_search,google_web_search,web_fetch"
+        );
+        assert_eq!(
+            t(true, Confine::Standard),
+            "read_file,list_directory,glob,grep_search,write_file,replace,google_web_search,web_fetch,run_shell_command"
+        );
+        assert_eq!(t(false, Confine::Open), t(false, Confine::Standard));
+        assert_eq!(t(true, Confine::Open), t(true, Confine::Standard));
+    }
+
+    #[test]
+    fn the_policy_follows_the_level_and_open_denies_only_by_name() {
+        let p = policy(&at(Confine::Standard, true));
+        assert!(
+            p.contains("\"write_file\", \"replace\", \"google_web_search\", \"web_fetch\", \"run_shell_command\"]\ndecision = \"allow\"\npriority = 999"),
+            "{p}"
+        );
+        assert!(
+            p.contains("toolName = \"*\"\ndecision = \"deny\"\npriority = 998"),
+            "{p}"
+        );
+        let p = policy(&at(Confine::Standard, false));
+        assert!(
+            p.contains(
+                "\"grep_search\", \"google_web_search\", \"web_fetch\"]\ndecision = \"allow\""
+            ),
+            "{p}"
+        );
+        assert!(
+            !p.contains("run_shell_command") && !p.contains("write_file"),
+            "{p}"
+        );
+        assert!(p.contains("toolName = \"*\"\ndecision = \"deny\""), "{p}");
+        // Open: the agent tools denied by name, the rest is the person's.
+        let p = policy(&at(Confine::Open, true));
+        assert!(!p.contains("toolName = \"*\""), "{p}");
+        assert!(
+            p.contains("toolName = [\"invoke_agent\", \"codebase_investigator\", \"generalist\"]\ndecision = \"deny\"\npriority = 998"),
+            "{p}"
+        );
+        assert!(
+            p.contains("\"run_shell_command\"]\ndecision = \"allow\""),
+            "{p}"
+        );
+        // A reader under open: its writing tools denied too, the role stays.
+        let p = policy(&at(Confine::Open, false));
+        assert!(
+            p.contains("toolName = [\"invoke_agent\", \"codebase_investigator\", \"generalist\", \"run_shell_command\", \"write_file\", \"replace\"]\ndecision = \"deny\"\npriority = 998"),
+            "{p}"
+        );
+        assert!(
+            p.contains(
+                "\"mcp_imece_send\", \"mcp_imece_post\"]\ndecision = \"allow\"\npriority = 999"
+            ),
+            "{p}"
+        );
+    }
+
+    #[test]
+    fn open_lets_the_person_s_extensions_and_servers_in() {
+        let a = args(&at(Confine::Open, true));
+        assert!(!a.iter().any(|x| x == "-e"), "{a:?}");
+        assert!(
+            !a.iter().any(|x| x == "--allowed-mcp-server-names"),
+            "{a:?}"
+        );
+        assert!(a.iter().any(|x| x == "--policy"), "the policy still");
+        assert_eq!(
+            a[a.iter().position(|x| x == "--approval-mode").unwrap() + 1],
+            "default"
+        );
+        for c in [Confine::Standard, Confine::Strict] {
+            let a = args(&at(c, true));
+            assert!(a.windows(2).any(|w| w == ["-e", "none"]), "{a:?}");
+            assert!(
+                a.windows(2)
+                    .any(|w| w == ["--allowed-mcp-server-names", "imece"]),
+                "{a:?}"
+            );
+        }
+        // The start skips the extensions question under open.
+        let acts = start_until(
+            &at(Confine::Open, true),
+            "/about",
+            &about("auto", "gemini-api-key"),
+            command_done(),
+        )
+        .unwrap();
+        assert_eq!(
+            sent(&acts)[0]["params"]["prompt"][0]["text"],
+            "/memory list"
+        );
+        let acts = start_until(
+            &at(Confine::Standard, true),
+            "/about",
+            &about("auto", "gemini-api-key"),
+            command_done(),
+        )
+        .unwrap();
+        assert_eq!(
+            sent(&acts)[0]["params"]["prompt"][0]["text"],
+            "/extensions list"
+        );
+        started(&at(Confine::Open, true));
+        started(&at(Confine::Standard, false));
+    }
+
+    #[test]
+    fn a_tool_call_s_kind_is_allowed_by_the_role_and_the_level() {
+        use Confine::*;
+        assert!(!allowed_kind("switch_mode", true, Open));
+        assert!(!allowed_kind("execute", true, Strict));
+        assert!(!allowed_kind("execute", false, Standard));
+        assert!(allowed_kind("execute", true, Standard));
+        assert!(allowed_kind("execute", true, Open));
+        assert!(!allowed_kind("fetch", true, Strict));
+        assert!(allowed_kind("fetch", false, Standard));
+        assert!(allowed_kind("fetch", false, Open));
+        for k in ["edit", "delete", "move"] {
+            assert!(allowed_kind(k, true, Strict), "{k}");
+            assert!(!allowed_kind(k, false, Open), "{k}");
+        }
+        assert!(allowed_kind("read", false, Strict));
+        assert!(allowed_kind("other", false, Strict));
+        // Live: a worker's shell at standard shows on the screen.
+        let mut p = started(&at(Standard, true));
+        let acts = p
+            .line(&tool_call(
+                "run_shell_command__call_1",
+                "execute",
+                "cargo test",
+                None,
+            ))
+            .unwrap();
+        assert_eq!(
+            events(&acts),
+            [Event::Tool {
+                name: "run_shell_command".into(),
+                target: "cargo test".into()
+            }]
+        );
+        let acts = p
+            .line(&tool_call("web_fetch__call_2", "fetch", "https://x", None))
+            .unwrap();
+        assert_eq!(
+            events(&acts)[0],
+            Event::Tool {
+                name: "web_fetch".into(),
+                target: "https://x".into()
+            }
+        );
+        // A leader at standard: the web, never a shell.
+        let mut p = started(&at(Standard, false));
+        assert!(
+            p.line(&tool_call(
+                "google_web_search__call_1",
+                "other",
+                "google_web_search(q)",
+                None
+            ))
+            .is_ok()
+        );
+        let e = p
+            .line(&tool_call(
+                "run_shell_command__call_2",
+                "execute",
+                "ls",
+                None,
+            ))
+            .unwrap_err();
+        assert!(e.contains("used a execute tool"), "{e}");
+        // Under open the person's own tools run by their names; the agent
+        // tools never.
+        let mut p = started(&at(Open, true));
+        let acts = p
+            .line(&tool_call(
+                "my_ext_tool__call_3",
+                "other",
+                "my_ext_tool(x)",
+                None,
+            ))
+            .unwrap();
+        assert_eq!(
+            events(&acts)[0],
+            Event::Tool {
+                name: "my_ext_tool".into(),
+                target: "x".into()
+            }
+        );
+        let e = p
+            .line(&tool_call(
+                "invoke_agent__call_4",
+                "other",
+                "invoke_agent(x)",
+                None,
+            ))
+            .unwrap_err();
+        assert!(
+            e.contains("used tool invoke_agent, which runs agents"),
+            "{e}"
+        );
+        let mut p = started(&at(Standard, true));
+        let e = p
+            .line(&tool_call(
+                "my_ext_tool__call_3",
+                "other",
+                "my_ext_tool(x)",
+                None,
+            ))
+            .unwrap_err();
+        assert!(e.contains("used tool my_ext_tool it was not given"), "{e}");
+        let mut p = started(&at(Strict, true));
+        let e = p
+            .line(&tool_call(
+                "codebase_investigator__call_5",
+                "other",
+                "codebase_investigator(x)",
+                None,
+            ))
+            .unwrap_err();
+        assert!(e.contains("runs agents of its own"), "{e}");
     }
 
     #[test]
@@ -2882,6 +3205,7 @@ done"#;
             home: dir.join("home"),
             model: std::env::var("IMECE_LIVE_GEMINI_MODEL").ok(),
             write: false,
+            confine: Confine::Strict,
             system: "You are gemini-1, a coding agent in imece. Answer briefly.".into(),
             mcp: None,
             resume: None,
@@ -2988,6 +3312,7 @@ done"#;
             home: dir.join("home"),
             model: std::env::var("IMECE_LIVE_GEMINI_MODEL").ok(),
             write: false,
+            confine: Confine::Strict,
             system: "You are gemini-1, a coding agent in imece, a team led by lead. \
                      You can read files but not change them or run commands."
                 .into(),

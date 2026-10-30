@@ -85,6 +85,52 @@ impl Tier {
     }
 }
 
+/// How much of its vendor's capability an agent's session gets: the
+/// confine dial (`--confine`). The leader stays non-writing at every
+/// level (a role, not a restriction), and the vendor's own sub-agent tool
+/// stays off at every level: a sub-agent spawned inside the CLI would
+/// skip the worktree, the budget, the bus and the screen. imece sandboxes
+/// nothing; what each level switches on is the vendor's own restrictions,
+/// checked fail closed against what the session reports.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum Confine {
+    /// The person's own vendor setup, as if they ran the CLI by hand:
+    /// their settings, hooks, MCP servers, skills and extensions load.
+    /// imece checks only what it still asks for: its own server with its
+    /// tools, the role's tools, no sub-agent tool.
+    Open,
+    /// The vendor's full coding toolset (read, write, shell, web search
+    /// and fetch) for workers and helpers, web for the leader; nothing of
+    /// the person's setup loads, no MCP server but imece's.
+    #[default]
+    Standard,
+    /// File tools only, commands through imece's `run` tool.
+    Strict,
+}
+
+impl Confine {
+    pub const ALL: [Confine; 3] = [Confine::Open, Confine::Standard, Confine::Strict];
+
+    /// The level's name on the command line and in the journal.
+    pub fn wire(self) -> &'static str {
+        match self {
+            Confine::Open => "open",
+            Confine::Standard => "standard",
+            Confine::Strict => "strict",
+        }
+    }
+
+    pub fn from_wire(s: &str) -> Option<Confine> {
+        Confine::ALL.into_iter().find(|c| c.wire() == s)
+    }
+
+    /// Whether the session gets a shell, web search and fetch: every
+    /// level but strict.
+    pub fn full(self) -> bool {
+        self != Confine::Strict
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -99,6 +145,22 @@ mod tests {
         }
         assert_eq!(Tier::from_wire("huge"), None);
         assert_eq!(Tier::from_wire(""), None);
+    }
+
+    #[test]
+    fn the_confine_dial_has_three_levels_and_standard_is_the_default() {
+        assert_eq!(Confine::default(), Confine::Standard);
+        assert_eq!(Confine::Open.wire(), "open");
+        assert_eq!(Confine::Standard.wire(), "standard");
+        assert_eq!(Confine::Strict.wire(), "strict");
+        for c in Confine::ALL {
+            assert_eq!(Confine::from_wire(c.wire()), Some(c));
+        }
+        assert_eq!(Confine::from_wire("loose"), None);
+        assert_eq!(Confine::from_wire("Strict"), None);
+        assert!(Confine::Open.full());
+        assert!(Confine::Standard.full());
+        assert!(!Confine::Strict.full());
     }
 }
 
