@@ -145,8 +145,18 @@ enum Slot {
 }
 
 /// A started session (and where its worktree stands, when it has one), or
-/// why it could not start.
-type Ready = Result<(Box<dyn Session>, PathBuf, Option<worktree::Placed>), String>;
+/// why it could not start. Last, for a woken worker's first prompt: the
+/// line saying what its worktree holds and where it goes in the prompt,
+/// read on the session's thread (see [`Live::brief`]).
+type Ready = Result<
+    (
+        Box<dyn Session>,
+        PathBuf,
+        Option<worktree::Placed>,
+        Option<(usize, String)>,
+    ),
+    String,
+>;
 
 /// A tool call of an agent (tool name, arguments), and where its answer
 /// goes.
@@ -164,6 +174,9 @@ const JOURNAL_KEEP: usize = 5000;
 const MAX_BRIEFING: usize = 6000;
 
 const MAX_BRIEFING_LINE: usize = 300;
+
+/// What imece's notes to an agent start with, ahead of the first.
+const FROM_IMECE: &str = "From imece (not from the person or a teammate):\n- ";
 
 /// The longest message body, in characters.
 const MAX_BODY: usize = 4000;

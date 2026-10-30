@@ -32,8 +32,11 @@ prompt is not run again but told at the wake. The wake briefing
 (`Live::brief`, pushed as an imece note ahead of the first prompt,
 every line through `clean`, 300 chars a line, 6000 in all): the card
 and its last 12 story lines, the cut prompt, how many messages wait,
-the worktree's uncommitted changes (`worktree::change` on
-`<root>/<tree>` if it exists), the board's open cards. A worker told
+the worktree's uncommitted changes, the board's open cards. The
+worktree's line is read on the session's start thread, after
+`worktree::ensure` (`brief` gives where it goes and keeps 303 chars of
+room for it; `ready` puts it into the first queued prompt and its
+`inflight` copy), so git never runs on the screen's loop for it. A worker told
 again goes on with an unfinished card (was: a new card for a stopped
 one). The checkout imece starts in is `Live::home` (opened as a new
 project if the store does not have it; the salon selects its leader);

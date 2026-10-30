@@ -192,8 +192,15 @@ impl Live {
     /// short, mail that waits. A new session knows nothing of the old
     /// one and is told from what the world kept (its card's story, the
     /// cut turn, mail, its worktree's changes, the board). Every line
-    /// cleaned and the whole capped.
-    pub(super) fn brief(&mut self, w: &World, id: AgentId, resumed: bool) -> String {
+    /// cleaned and the whole capped. What a worker's or helper's worktree
+    /// holds is read with its session, off the screen's loop: the second
+    /// value is where that line goes in the briefing, room kept for it.
+    pub(super) fn brief(
+        &mut self,
+        w: &World,
+        id: AgentId,
+        resumed: bool,
+    ) -> (String, Option<usize>) {
         let a = &w.agents[id];
         let mut lines = vec![if resumed {
             "imece started again since your last turn; this session goes on where it was, \
@@ -204,10 +211,7 @@ impl Live {
              remembers nothing of the old one. Where you left off:"
                 .to_string()
         }];
-        let mut line = |text: String| {
-            let text = clean(text.lines().next().unwrap_or_default());
-            lines.push(format!("- {}", cut(&text, MAX_BRIEFING_LINE)));
-        };
+        let mut line = |text: String| lines.push(briefing_line(&text));
         if resumed {
             // Kept until the session confirms it is the old one; a new
             // one is briefed in full.
@@ -227,7 +231,7 @@ impl Live {
             if lines.len() == 1 {
                 lines.push("- Nothing; go on.".to_string());
             }
-            return cut(&lines.join("\n"), MAX_BRIEFING).to_string();
+            return (cut(&lines.join("\n"), MAX_BRIEFING).to_string(), None);
         }
         if let Some(c) = a.card {
             let card = &w.cards[c];
@@ -287,26 +291,9 @@ impl Live {
                 self.mail[id].len()
             ));
         }
-        if a.role != Role::Leader {
-            let tree = a.parent.map_or(&a.name, |p| &w.agents[p].name);
-            let path = self.places[a.project].root.join(tree);
-            if path.is_dir()
-                && let Ok(Some(c)) = worktree::change(&path, MAX_PATCH)
-            {
-                let (added, removed) = c.counts();
-                line(format!(
-                    "Your worktree holds changes the person has not applied: {} files, \
-                     +{added} −{removed}: {}",
-                    c.files.len(),
-                    c.files
-                        .iter()
-                        .take(20)
-                        .map(|f| f.path.as_str())
-                        .collect::<Vec<_>>()
-                        .join(", ")
-                ));
-            }
-        }
+        drop(line);
+        let held = (a.role != Role::Leader).then(|| lines.join("\n").len());
+        let mut line = |text: String| lines.push(briefing_line(&text));
         let open: Vec<CardId> = self.open(w, a.project).collect();
         if !open.is_empty() {
             line(format!("The board has {} open cards:", open.len()));
@@ -319,7 +306,12 @@ impl Live {
                 ));
             }
         }
-        cut(&lines.join("\n"), MAX_BRIEFING).to_string()
+        drop(line);
+        // The worktree's line may come: room for it.
+        let room = MAX_BRIEFING - held.map_or(0, |_| MAX_BRIEFING_LINE + 3);
+        let text = cut(&lines.join("\n"), room).to_string();
+        let held = held.map(|at| at.min(text.len()));
+        (text, held)
     }
 
     /// Agent `id`'s session is forgotten: its next prompt starts a new
@@ -457,6 +449,28 @@ impl Live {
             spent: self.floor[id],
         })
     }
+}
+
+/// One line of a briefing: `text`'s first line, cleaned and capped.
+fn briefing_line(text: &str) -> String {
+    let text = clean(text.lines().next().unwrap_or_default());
+    format!("- {}", cut(&text, MAX_BRIEFING_LINE))
+}
+
+/// The briefing's line on what a worker's worktree holds.
+pub(super) fn holds(c: &worktree::Change) -> String {
+    let (added, removed) = c.counts();
+    briefing_line(&format!(
+        "Your worktree holds changes the person has not applied: {} files, \
+         +{added} −{removed}: {}",
+        c.files.len(),
+        c.files
+            .iter()
+            .take(20)
+            .map(|f| f.path.as_str())
+            .collect::<Vec<_>>()
+            .join(", ")
+    ))
 }
 
 #[cfg(test)]
@@ -753,33 +767,93 @@ mod tests {
 
     #[test]
     fn a_remembered_worker_is_told_what_its_worktree_holds() {
+        use std::os::unix::fs::PermissionsExt;
         let repo = checkout("brief-tree");
         let root = trees("brief-tree");
+        // A `claude` that keeps what it is given.
+        let heard = root.with_extension("heard");
+        let program = root.with_extension("claude");
+        std::fs::write(
+            &program,
+            format!("#!/bin/sh\ncat > '{}'\n", heard.display()),
+        )
+        .unwrap();
+        std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o700)).unwrap();
         let mut w = team(1);
         let mut live = Live::new(
             2,
-            claude_at("/nonexistent/claude"),
+            claude_at(&program.to_string_lossy()),
             repo.clone(),
             root.clone(),
         );
         let tree = worktree::ensure(&repo, &root, "claude-1").unwrap().path;
         std::fs::write(tree.join("a.txt"), "changed\n").unwrap();
         std::fs::write(tree.join("b.txt"), "new\n").unwrap();
+        live.post(&mut w, 0, &json!({"title": "write docs", "body": "b"}))
+            .unwrap();
+        live.mail[1].push(Mail {
+            from: 0,
+            kind: MsgKind::Inform,
+            body: "x".into(),
+        });
         live.remembered[1] = true;
         w.agents[1].status = Status::Asleep;
+        w.agents[1].card = None;
         live.told(&mut w, 1, "go on").unwrap();
-        let text = &queued(&live, 1)[0];
-        assert!(
-            text.contains("Your worktree holds changes the person has not applied: 2 files, +2 −1: a.txt, b.txt"),
-            "{text}"
-        );
-        // The leader has no worktree: nothing said of one.
-        live.remembered[0] = true;
-        w.agents[0].status = Status::Asleep;
-        live.told(&mut w, 0, "go on").unwrap();
-        assert!(!queued(&live, 0)[0].contains("worktree"));
+        // Git is not asked on the screen's loop: the line comes with the
+        // session, where the briefing kept its place.
+        assert!(!queued(&live, 1)[0].contains("worktree"));
+        let line = "\n- 1 messages wait for you; they come with a turn of their own.\
+                    \n- Your worktree holds changes the person has not applied: 2 files, \
+                    +2 −1: a.txt, b.txt\
+                    \n- The board has 1 open cards:";
+        let mut given = String::new();
+        for _ in 0..500 {
+            live.step(&mut w);
+            given = std::fs::read_to_string(&heard)
+                .unwrap_or_default()
+                .replace("\\n", "\n");
+            if given.contains("go on") {
+                break;
+            }
+            thread::sleep(Duration::from_millis(10));
+        }
+        assert!(given.contains(line), "{given}");
+        assert!(live.inflight[1][0].contains(line), "{:?}", live.inflight[1]);
+        live.dismiss(&mut w, 1);
+        // The leader has no worktree, and a session that goes on knows
+        // its own: no place for the line.
+        assert_eq!(live.brief(&w, 0, false).1, None);
+        assert_eq!(live.brief(&w, 1, true).1, None);
         let _ = std::fs::remove_dir_all(&repo);
         let _ = std::fs::remove_dir_all(&root);
+        let _ = std::fs::remove_file(&heard);
+        let _ = std::fs::remove_file(&program);
+    }
+
+    #[test]
+    fn the_worktree_s_line_goes_into_the_first_prompt_as_given_and_as_remembered() {
+        let mut w = team(1);
+        let mut live = idle_live(2);
+        live.slots[1] = Slot::Starting(vec!["a\nb".into(), "cd".into()]);
+        live.inflight[1] = vec!["a\nb".into(), "cd".into()];
+        let held = Some((1, "- holds".to_string()));
+        live.ready(
+            &mut w,
+            1,
+            Ok((Box::new(Stub), PathBuf::from("/w"), None, held)),
+        );
+        assert_eq!(live.inflight[1], ["a\n- holds\nb", "cd"]);
+        // Not at a character's boundary: left out rather than broken.
+        let mut live = idle_live(2);
+        live.slots[1] = Slot::Starting(vec!["é".into()]);
+        let held = Some((1, "- holds".to_string()));
+        live.ready(
+            &mut w,
+            1,
+            Ok((Box::new(Stub), PathBuf::from("/w"), None, held)),
+        );
+        assert!(matches!(live.slots[1], Slot::Running(_)));
     }
 
     #[test]
@@ -801,6 +875,18 @@ mod tests {
             text.chars().count()
         );
         assert!(text.contains("- A turn of yours was cut short"));
+        // A worker's keeps room for its worktree's line, which goes where
+        // the cut ended; a leader's does not.
+        let long: Vec<String> = (0..40)
+            .map(|i| format!("{i} {}", "x".repeat(500)))
+            .collect();
+        live.interrupted[1].clone_from(&long);
+        let (text, at) = live.brief(&w, 1, false);
+        assert_eq!(text.chars().count(), 6000 - 303);
+        assert_eq!(at, Some(text.len()));
+        live.interrupted[0] = long;
+        let (text, at) = live.brief(&w, 0, false);
+        assert_eq!((text.chars().count(), at), (6000, None));
         assert_eq!(cut("héllo", 2), "hé");
         assert_eq!(cut("ab", 5), "ab");
         assert_eq!(cut("", 0), "");
@@ -1689,7 +1775,11 @@ mod tests {
     fn a_session_renewed_after_its_cap_forgets_the_capped_one() {
         let mut w = team(1);
         let mut live = idle_live(2);
-        live.ready(&mut w, 1, Ok((Box::new(Stub), PathBuf::from("/w"), None)));
+        live.ready(
+            &mut w,
+            1,
+            Ok((Box::new(Stub), PathBuf::from("/w"), None, None)),
+        );
         live.told(&mut w, 1, "go").unwrap();
         live.claude_home = trees("renew-home");
         live.sessions[1] = Some(Resumable {
@@ -1862,7 +1952,12 @@ mod tests {
         live.ready(
             &mut w,
             1,
-            Ok((Box::new(Ends(ended.clone())), PathBuf::from("/w"), None)),
+            Ok((
+                Box::new(Ends(ended.clone())),
+                PathBuf::from("/w"),
+                None,
+                None,
+            )),
         );
         live.told(&mut w, 1, "do x").unwrap();
         live.told(&mut w, 1, "then y").unwrap();
@@ -1965,7 +2060,7 @@ mod tests {
         );
         // imece's /clear on a Gemini session nothing is remembered of:
         // nothing to remove, and the private directory stays.
-        live.ready(&mut w, 1, Ok((Box::new(Stub), private.clone(), None)));
+        live.ready(&mut w, 1, Ok((Box::new(Stub), private.clone(), None, None)));
         assert_eq!(live.sessions[1], None);
         live.command(&mut w, 1, "/clear").unwrap();
         thread::sleep(Duration::from_millis(200));

@@ -222,13 +222,18 @@ mod tests {
         live.ready(
             &mut w,
             1,
-            Ok((Box::new(Ends(lead_ended.clone())), repo.clone(), None)),
+            Ok((Box::new(Ends(lead_ended.clone())), repo.clone(), None, None)),
         );
         let ended = Arc::new(AtomicBool::new(false));
         live.ready(
             &mut w,
             2,
-            Ok((Box::new(Ends(ended.clone())), PathBuf::from("/w"), None)),
+            Ok((
+                Box::new(Ends(ended.clone())),
+                PathBuf::from("/w"),
+                None,
+                None,
+            )),
         );
         live.mail[2].push(Mail {
             from: 1,

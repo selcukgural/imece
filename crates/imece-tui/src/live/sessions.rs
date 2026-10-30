@@ -180,12 +180,24 @@ impl Live {
     }
 
     pub(super) fn ready(&mut self, w: &mut World, id: AgentId, ready: Ready) {
-        let waiting = match std::mem::replace(&mut self.slots[id], Slot::None) {
+        let mut waiting = match std::mem::replace(&mut self.slots[id], Slot::None) {
             Slot::Starting(q) => q,
             _ => Vec::new(),
         };
         let mut session = match ready {
-            Ok((session, cwd, placed)) => {
+            Ok((session, cwd, placed, held)) => {
+                // The briefing's line on the worktree, in the first prompt
+                // as it is given and as it is remembered.
+                if let Some((at, line)) = held {
+                    for first in [waiting.first_mut(), self.inflight[id].first_mut()]
+                        .into_iter()
+                        .flatten()
+                    {
+                        if first.is_char_boundary(at) {
+                            first.insert_str(at, &format!("\n{line}"));
+                        }
+                    }
+                }
                 w.agents[id].trace(w.tick, format!("session in {}", cwd.display()));
                 self.cwds[id] = Some(cwd);
                 match placed {
@@ -294,6 +306,8 @@ impl Live {
     ) -> Result<(), String> {
         let t = w.tick;
         self.follow(w, id);
+        // Where the line on what its worktree holds goes in the prompt.
+        let mut held = None;
         if std::mem::take(&mut self.remembered[id]) {
             let resumed = self.resumable(w, id);
             if let Some(r) = &resumed {
@@ -306,13 +320,14 @@ impl Live {
             } else {
                 w.note(Event::Restarted { agent: id });
             }
-            let briefing = self.brief(w, id, resumed.is_some());
+            let (briefing, at) = self.brief(w, id, resumed.is_some());
+            held = at.map(|at| FROM_IMECE.len() + at);
             self.notes[id].insert(0, briefing);
         }
         let text = self.with_notes(id, text);
         match &mut self.slots[id] {
             Slot::None => {
-                self.start(w, id);
+                self.start(w, id, held);
                 self.slots[id] = Slot::Starting(vec![text.clone()]);
             }
             Slot::Starting(q) => q.push(text.clone()),
@@ -365,17 +380,16 @@ impl Live {
         if notes.is_empty() {
             return text;
         }
-        let mut out = String::from("From imece (not from the person or a teammate):");
-        for n in &notes {
-            out.push_str("\n- ");
-            out.push_str(n);
-        }
+        let mut out = String::from(FROM_IMECE);
+        out.push_str(&notes.join("\n- "));
         out.push_str("\n\n");
         out + &text
     }
 
     /// Starts agent `id`'s session on its own thread; `step` picks it up.
-    pub(super) fn start(&self, w: &mut World, id: AgentId) {
+    /// With `held`, the thread also reads what its worktree holds, for
+    /// the line that goes there in its first prompt.
+    pub(super) fn start(&self, w: &mut World, id: AgentId, held: Option<usize>) {
         let a = &w.agents[id];
         let leader = a.role == Role::Leader;
         let confine = self.confine;
@@ -422,6 +436,10 @@ impl Live {
                     let w = worktree::ensure(&repo, &root, &tree).map_err(|e| e.to_string())?;
                     (w.path, Some(w.placed))
                 };
+                let held = held.and_then(|at| match worktree::change(&cwd, MAX_PATCH) {
+                    Ok(Some(c)) => Some((at, remember::holds(&c))),
+                    _ => None,
+                });
                 let on = move |e| {
                     let _ = tx.send((id, generation, e));
                 };
@@ -482,7 +500,7 @@ impl Live {
                         .map_err(|e| format!("{program}: {e}"))?,
                     ),
                 };
-                Ok((session, cwd, placed))
+                Ok((session, cwd, placed, held))
             })();
             // Nobody to take it (imece is closing): dropping it stops it.
             let _ = ready.send((id, generation, started));
@@ -762,7 +780,7 @@ mod tests {
             "{e:?}"
         );
         let cwd = PathBuf::from("/work/claude-1");
-        live.ready(&mut w, 1, Ok((Box::new(Stub), cwd.clone(), None)));
+        live.ready(&mut w, 1, Ok((Box::new(Stub), cwd.clone(), None, None)));
         live.command(&mut w, 1, " /known ").unwrap();
         assert_eq!(live.turns[1], 1);
         assert!(live.asked[1]);
@@ -840,7 +858,7 @@ mod tests {
         ));
         let _ = std::fs::remove_dir_all(&live.claude_home);
         // Over budget nothing runs, a clear included.
-        live.ready(&mut w, 1, Ok((Box::new(Stub), cwd, None)));
+        live.ready(&mut w, 1, Ok((Box::new(Stub), cwd, None, None)));
         w.agents[1].cost = w.budget;
         assert_eq!(live.command(&mut w, 1, "/clear"), Err(Refusal::Budget));
     }

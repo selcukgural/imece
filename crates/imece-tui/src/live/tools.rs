@@ -944,6 +944,7 @@ mod tests {
                 Box::new(Decides(answers.clone())),
                 PathBuf::from("/w"),
                 None,
+                None,
             )),
         );
         (live, answers)
@@ -1082,7 +1083,12 @@ mod tests {
         live.ready(
             &mut w,
             1,
-            Ok((Box::new(Ends(ended.clone())), PathBuf::from("/w"), None)),
+            Ok((
+                Box::new(Ends(ended.clone())),
+                PathBuf::from("/w"),
+                None,
+                None,
+            )),
         );
         let mut sleeper = std::process::Command::new("sleep")
             .arg("30")
