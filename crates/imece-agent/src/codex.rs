@@ -1033,6 +1033,84 @@ impl crate::Agent for Session {
     }
 }
 
+/// How long deleting a thread may take: a process of its own starts.
+const DELETE_WAIT: Duration = Duration::from_secs(30);
+
+/// Deletes thread `id` where Codex keeps it (its rollout file and its row
+/// in Codex's own thread index), through an app server started for it:
+/// `initialize`, `thread/delete`, done. Blocks for the answer, at most
+/// [`DELETE_WAIT`]; an error answer (a thread Codex does not know, too)
+/// is an error. Only an id shaped like a UUID goes to Codex.
+pub fn delete(program: &str, id: &str) -> io::Result<()> {
+    if !crate::valid_uuid(id) {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!("{id:?} is not a thread id"),
+        ));
+    }
+    let (tx, rx) = mpsc::channel();
+    let mut cmd = child::command(program, &std::env::temp_dir(), ENV);
+    cmd.arg("app-server");
+    let mut child = Child::spawn(cmd, move |out| {
+        tx.send(match out {
+            Out::Line(l) => Ok(l.to_string()),
+            Out::End(why) => Err(why),
+        })
+        .is_ok()
+    })?;
+    let deadline = Instant::now() + DELETE_WAIT;
+    let requests = [
+        (
+            "initialize",
+            json!({
+                "clientInfo": {
+                    "name": "imece",
+                    "title": "imece",
+                    "version": env!("CARGO_PKG_VERSION"),
+                },
+                "capabilities": { "optOutNotificationMethods": QUIET },
+            }),
+        ),
+        ("thread/delete", json!({ "threadId": id })),
+    ];
+    for (n, (method, params)) in requests.into_iter().enumerate() {
+        let n = n + 1;
+        child.write_line(
+            &json!({ "jsonrpc": "2.0", "id": n, "method": method, "params": params }).to_string(),
+        )?;
+        answer(&rx, deadline, n).map_err(|why| io::Error::other(format!("{method}: {why}")))?;
+    }
+    Ok(())
+}
+
+/// The answer to request `n` from `rx`, by `deadline`: its result, or the
+/// error Codex gave, or why there was none.
+fn answer(
+    rx: &Receiver<Result<String, String>>,
+    deadline: Instant,
+    n: usize,
+) -> Result<Value, String> {
+    loop {
+        let left = deadline.saturating_duration_since(Instant::now());
+        let line = match rx.recv_timeout(left) {
+            Ok(Ok(line)) => line,
+            Ok(Err(why)) => return Err(format!("codex ended first ({why})")),
+            Err(_) => return Err("codex did not answer in time".to_string()),
+        };
+        let Ok(v) = serde_json::from_str::<Value>(&line) else {
+            continue;
+        };
+        if v["id"] != json!(n) {
+            continue;
+        }
+        if let Some(e) = v.get("error") {
+            let message = e["message"].as_str().unwrap_or("error");
+            return Err(message.to_string());
+        }
+        return Ok(v["result"].clone());
+    }
+}
+
 /// Why a session whose process refused a write is over: the process's
 /// own end (of this generation) when it is reported within `END_WAIT`
 /// (a process that has exited refuses input before its reader says
@@ -2744,5 +2822,126 @@ done"#
             "{gone:?}"
         );
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A stand-in app server at `path`: logs every request to `log`,
+    /// answers `initialize`, and answers `thread/delete` with success,
+    /// with Codex's error for `gone`, or by exiting for `mute`.
+    fn fake_app_server(dir: &Path, gone: &str, mute: &str) -> (String, PathBuf) {
+        use std::os::unix::fs::PermissionsExt;
+        let path = dir.join("fake-codex");
+        let log = dir.join("requests.log");
+        let script = format!(
+            "#!/bin/sh\n\
+             [ \"$1\" = app-server ] || exit 9\n\
+             printf '%s\\n' 'not json' '{{\"jsonrpc\":\"2.0\",\"method\":\"noise\"}}'\n\
+             while IFS= read -r line; do\n\
+               printf '%s\\n' \"$line\" >> {log}\n\
+               case \"$line\" in\n\
+                 *'\"method\":\"initialize\"'*) printf '%s\\n' '{{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{{\"userAgent\":\"codex\"}}}}' ;;\n\
+                 *'\"method\":\"thread/delete\"'*)\n\
+                   case \"$line\" in\n\
+                     *{gone}*) printf '%s\\n' '{{\"jsonrpc\":\"2.0\",\"id\":2,\"error\":{{\"code\":-32600,\"message\":\"no rollout found for thread id {gone}\"}}}}' ;;\n\
+                     *{mute}*) exit 0 ;;\n\
+                     *) printf '%s\\n' '{{\"jsonrpc\":\"2.0\",\"id\":7,\"result\":{{}}}}' '{{\"jsonrpc\":\"2.0\",\"id\":2,\"result\":{{}}}}' ;;\n\
+                   esac ;;\n\
+               esac\n\
+             done\n",
+            log = log.display(),
+        );
+        std::fs::write(&path, script).unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o700)).unwrap();
+        (path.to_string_lossy().into_owned(), log)
+    }
+
+    #[test]
+    fn delete_asks_an_app_server_of_its_own_to_delete_the_thread_and_reports_its_answer() {
+        let dir = std::env::temp_dir().join(format!("imece-codex-delete-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let id = "01a14673-5104-70b2-b314-a45e688f44da";
+        let gone = "01a14673-0000-70b2-b314-a45e688f44da";
+        let mute = "01a14673-1111-70b2-b314-a45e688f44da";
+        let (program, log) = fake_app_server(&dir, gone, mute);
+
+        delete(&program, id).unwrap();
+        let requests = std::fs::read_to_string(&log).unwrap();
+        let lines: Vec<Value> = requests
+            .lines()
+            .map(|l| serde_json::from_str(l).unwrap())
+            .collect();
+        assert_eq!(lines.len(), 2, "{requests}");
+        assert_eq!(lines[0]["method"], "initialize");
+        assert_eq!(lines[0]["id"], 1);
+        assert_eq!(lines[0]["params"]["clientInfo"]["name"], "imece");
+        assert_eq!(lines[1]["method"], "thread/delete");
+        assert_eq!(lines[1]["id"], 2);
+        assert_eq!(lines[1]["params"], json!({ "threadId": id }));
+        std::fs::remove_file(&log).unwrap();
+
+        // Codex's error is imece's, with the method in front.
+        let e = delete(&program, gone).unwrap_err();
+        assert!(
+            e.to_string()
+                .starts_with("thread/delete: no rollout found for thread id"),
+            "{e}"
+        );
+        assert_eq!(
+            std::fs::read_to_string(&log).unwrap().lines().count(),
+            2,
+            "both requests were made"
+        );
+        std::fs::remove_file(&log).unwrap();
+
+        // A server that ends without answering is an error, not a wait.
+        let e = delete(&program, mute).unwrap_err();
+        assert!(e.to_string().contains("codex ended first"), "{e}");
+
+        // Only a thread id goes to Codex: nothing is started for another.
+        let e = delete(&program, "t1; rm -rf /").unwrap_err();
+        assert_eq!(e.kind(), io::ErrorKind::InvalidInput);
+        assert_eq!(
+            std::fs::read_to_string(&log).unwrap().lines().count(),
+            2,
+            "the muted call's requests only"
+        );
+        // A program that is not there is an error too.
+        assert!(delete("/nonexistent/codex", id).is_err());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn an_answer_is_the_line_with_the_request_s_id_whatever_comes_before() {
+        let (tx, rx) = mpsc::channel();
+        let soon = Instant::now() + Duration::from_secs(5);
+        for l in [
+            "garbage",
+            r#"{"jsonrpc":"2.0","method":"thread/started","params":{}}"#,
+            r#"{"jsonrpc":"2.0","id":3,"result":{"other":true}}"#,
+            r#"{"jsonrpc":"2.0","id":2,"result":{"ok":true}}"#,
+        ] {
+            tx.send(Ok(l.to_string())).unwrap();
+        }
+        assert_eq!(answer(&rx, soon, 2), Ok(json!({ "ok": true })));
+        tx.send(Ok(
+            r#"{"jsonrpc":"2.0","id":4,"error":{"code":1,"message":"nope"}}"#.to_string(),
+        ))
+        .unwrap();
+        assert_eq!(answer(&rx, soon, 4), Err("nope".to_string()));
+        tx.send(Ok(
+            r#"{"jsonrpc":"2.0","id":5,"error":{"code":1}}"#.to_string()
+        ))
+        .unwrap();
+        assert_eq!(answer(&rx, soon, 5), Err("error".to_string()));
+        tx.send(Err("exit 1".to_string())).unwrap();
+        assert_eq!(
+            answer(&rx, soon, 6),
+            Err("codex ended first (exit 1)".to_string())
+        );
+        // Nothing comes: the deadline, not forever.
+        assert_eq!(
+            answer(&rx, Instant::now() + Duration::from_millis(50), 7),
+            Err("codex did not answer in time".to_string())
+        );
     }
 }

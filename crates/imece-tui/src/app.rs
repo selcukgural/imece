@@ -1048,6 +1048,7 @@ impl App {
             "open" | "o" => self.open_project(arg),
             "close" | "c" => self.close_project(arg),
             "rename" => self.rename_project(arg),
+            "forget" | "f" => self.forget_agent(arg),
             _ => self.flash(fill(t.no_command, &[name])),
         }
     }
@@ -1130,6 +1131,31 @@ impl App {
         let open = self.world.open_inbox().len();
         self.inbox_sel = self.inbox_sel.min(open.saturating_sub(1));
         self.flash(fill(t.closed, &[&name]));
+    }
+
+    /// `:forget [@NAME]`: the agent (named, else the one at hand) forgets
+    /// its session; its next message starts a new one, told where it left
+    /// off. Live only: the demo's agents have no sessions.
+    fn forget_agent(&mut self, arg: &str) {
+        let t = self.lang.text();
+        let word = arg.strip_prefix('@').unwrap_or(arg).trim();
+        let id = if word.is_empty() {
+            self.agent_at_hand()
+        } else {
+            self.world.agent_by_name(word)
+        };
+        let Some(id) = id else {
+            return self.flash(fill(t.no_agent, &[word]));
+        };
+        let name = self.world.agents[id].name.clone();
+        let Engine::Live(live) = &mut self.engine else {
+            return self.flash(t.forget_demo);
+        };
+        match live.forget_agent(&mut self.world, id) {
+            Ok(()) => self.flash(fill(t.forgot, &[&name])),
+            Err(Refusal::Command(why)) => self.flash(fill(t.forget_refused, &[&name, &why])),
+            Err(why) => self.flash(fill(t.forget_refused, &[&name, &format!("{why:?}")])),
+        }
     }
 
     /// `:rename NAME`: the project at hand is called NAME from now on, and
@@ -1484,6 +1510,29 @@ mod tests {
             "shop-api is the last open project; q q quits"
         );
         assert!(!app.world.projects[0].closed);
+        // :forget names an agent, @ or not, else takes the one at hand;
+        // the demo's agents have no sessions.
+        app.command("forget nobody");
+        assert_eq!(said(&mut app), "no agent named \"nobody\"");
+        app.command("forget @nobody");
+        assert_eq!(said(&mut app), "no agent named \"nobody\"");
+        let lead = app.world.agents[0].name.clone();
+        app.command(&format!("forget @{lead}"));
+        assert_eq!(
+            said(&mut app),
+            "the demo's agents have no sessions to forget"
+        );
+        app.command(&format!("f {lead}"));
+        assert_eq!(
+            said(&mut app),
+            "the demo's agents have no sessions to forget"
+        );
+        app.selected = Sel::Agent(0);
+        app.command("forget");
+        assert_eq!(
+            said(&mut app),
+            "the demo's agents have no sessions to forget"
+        );
     }
 
     #[test]

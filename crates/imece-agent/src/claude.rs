@@ -124,6 +124,23 @@ pub fn transcript(config: &Path, cwd: &Path, id: &str) -> PathBuf {
         .join(format!("{id}.jsonl"))
 }
 
+/// Removes the transcript of session `id` run in `cwd`, so a session
+/// imece has forgotten leaves nothing behind; whether there was one. Only
+/// an id shaped like a UUID reaches the path.
+pub fn forget(config: &Path, cwd: &Path, id: &str) -> io::Result<bool> {
+    if !crate::valid_uuid(id) {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!("{id:?} is not a session id"),
+        ));
+    }
+    match std::fs::remove_file(transcript(config, cwd, id)) {
+        Ok(()) => Ok(true),
+        Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(false),
+        Err(e) => Err(e),
+    }
+}
+
 /// The command line for `spec`. Prompts never go here; they go to stdin.
 pub fn args(spec: &Spec) -> Vec<String> {
     let mut a: Vec<String> = [
@@ -1186,6 +1203,40 @@ sleep 5"#
         ] {
             assert!(!valid_session(bad), "{bad:?}");
         }
+    }
+
+    #[test]
+    fn forget_removes_the_session_s_transcript_and_only_a_uuid_reaches_the_path() {
+        let dir = std::env::temp_dir().join(format!("imece-claude-forget-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let cwd = dir.join("work");
+        let id = "686c6d27-d50b-4ae2-ad6a-159bf2984671";
+        let other = "aaaaaaaa-0000-4000-8000-000000000000";
+        let file = transcript(&dir, &cwd, id);
+        std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+        std::fs::write(&file, "{}\n").unwrap();
+        let kept = transcript(&dir, &cwd, other);
+        std::fs::write(&kept, "{}\n").unwrap();
+        assert!(forget(&dir, &cwd, id).unwrap(), "there was one");
+        assert!(!file.exists());
+        assert!(kept.is_file(), "another session's stays");
+        assert!(!forget(&dir, &cwd, id).unwrap(), "gone already");
+        assert!(kept.is_file());
+        let e = forget(&dir, &cwd, "../../../etc/passwd").unwrap_err();
+        assert_eq!(e.kind(), io::ErrorKind::InvalidInput);
+        assert!(e.to_string().contains("not a session id"), "{e}");
+        let e = forget(&dir, &cwd, "686c6d27-d50b-4ae2-ad6a-159bf298467g").unwrap_err();
+        assert_eq!(e.kind(), io::ErrorKind::InvalidInput);
+        // A transcript that can not be removed is an error, not a lie.
+        let locked = dir.join("locked");
+        let inside = transcript(&dir, &locked, id);
+        std::fs::create_dir_all(&inside).unwrap();
+        std::fs::write(inside.join("x"), "").unwrap();
+        assert!(
+            forget(&dir, &locked, id).is_err(),
+            "a directory, not a file"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

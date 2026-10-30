@@ -726,6 +726,12 @@ pub enum Event {
         from: String,
         to: String,
     },
+    /// The person made an agent forget its session (`:forget`, or every
+    /// agent's with `--fresh`): the next message starts a new one, told
+    /// where it left off, and what the vendor kept of the old one is gone.
+    Forgotten {
+        agent: AgentId,
+    },
     /// A live agent's worktree was clean at an older commit and was moved
     /// to the checkout's HEAD when its session started.
     WorktreeMoved {
@@ -813,7 +819,8 @@ impl Event {
             | Event::Shell { .. }
             | Event::Opened { .. }
             | Event::Closed { .. }
-            | Event::Renamed { .. } => EntryKind::Person,
+            | Event::Renamed { .. }
+            | Event::Forgotten { .. } => EntryKind::Person,
         }
     }
 
@@ -842,6 +849,7 @@ impl Event {
             | Event::Claimed { agent, .. }
             | Event::Hired { agent, .. }
             | Event::Left { agent }
+            | Event::Forgotten { agent }
             | Event::Fallback { agent, .. }
             | Event::Resumed { agent }
             | Event::Restarted { agent }
@@ -1489,7 +1497,9 @@ mod tests {
             (6, 7, 8),
             "the person's project events belong to the project's leader"
         );
-        for e in [&opened, &closed, &renamed] {
+        let forgotten = Event::Forgotten { agent: 9 };
+        assert_eq!(forgotten.agent(), 9);
+        for e in [&opened, &closed, &renamed, &forgotten] {
             assert_eq!(e.kind(), EntryKind::Person);
         }
     }

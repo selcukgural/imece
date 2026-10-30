@@ -113,6 +113,111 @@ pub const EDIT_TOOLS: &[&str] = &[
 
 /// The file imece's instructions go in, the one Gemini reads as context.
 const INSTRUCTIONS: &str = "GEMINI.md";
+
+/// Gemini CLI's configuration directory, where its registry of project
+/// directories and the chats of every session are (`GEMINI_CLI_HOME`,
+/// else `~/.gemini`).
+pub fn config_dir() -> PathBuf {
+    std::env::var_os("GEMINI_CLI_HOME")
+        .filter(|d| !d.is_empty())
+        .map(PathBuf::from)
+        .unwrap_or_else(|| {
+            let home = std::env::var_os("HOME").unwrap_or_default();
+            Path::new(&home).join(".gemini")
+        })
+}
+
+/// The directory Gemini CLI keeps what it wrote for sessions run in `cwd`
+/// (their chats under `chats/`): `<config>/tmp/<name>`, the name from
+/// Gemini's registry `projects.json`, keyed by the directory as given or
+/// as canonical; none when the directory was never registered. A name
+/// that is not one plain path segment is refused: nothing else from a
+/// file reaches a path.
+pub fn kept(config: &Path, cwd: &Path) -> Option<PathBuf> {
+    let text = std::fs::read_to_string(config.join("projects.json")).ok()?;
+    let registry: Value = serde_json::from_str(&text).ok()?;
+    let projects = registry.get("projects")?.as_object()?;
+    let canonical = cwd.canonicalize().ok();
+    let keys = [Some(cwd.to_path_buf()), canonical];
+    let name = keys
+        .iter()
+        .flatten()
+        .find_map(|k| projects.get(&k.to_string_lossy().into_owned()))?
+        .as_str()?;
+    let plain = !name.is_empty()
+        && name != "."
+        && name != ".."
+        && !name.contains(['/', '\\'])
+        && !name.contains('\0');
+    plain.then(|| config.join("tmp").join(name))
+}
+
+/// The first line of the chat file at `path`: the session's header.
+fn chat_header(path: &Path) -> Option<Value> {
+    use std::io::{BufRead, Read};
+    let file = std::fs::File::open(path).ok()?;
+    let mut line = String::new();
+    std::io::BufReader::new(file.take(MAX_HEADER))
+        .read_line(&mut line)
+        .ok()?;
+    serde_json::from_str(&line).ok()
+}
+
+/// A chat header is one short line.
+const MAX_HEADER: u64 = 16 << 10;
+
+/// Removes the chat of session `id` run in `cwd` (named after the id's
+/// first eight characters, saying the whole id in its first line) and the
+/// empty chat files Gemini leaves behind at each start; how many files
+/// went. Only an id shaped like a UUID is looked for.
+pub fn forget(config: &Path, cwd: &Path, id: &str) -> io::Result<usize> {
+    if !crate::valid_uuid(id) {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!("{id:?} is not a session id"),
+        ));
+    }
+    let Some(chats) = kept(config, cwd).map(|d| d.join("chats")) else {
+        return Ok(0);
+    };
+    let entries = match std::fs::read_dir(&chats) {
+        Ok(e) => e,
+        Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(0),
+        Err(e) => return Err(e),
+    };
+    let suffix = format!("-{}.jsonl", &id[..8]);
+    let mut gone = 0;
+    for entry in entries {
+        let entry = entry?;
+        let name = entry.file_name();
+        let name = name.to_string_lossy();
+        if !name.starts_with("session-") || !name.ends_with(".jsonl") {
+            continue;
+        }
+        let path = entry.path();
+        let empty = entry.metadata().map(|m| m.len() == 0).unwrap_or(false);
+        let ours = name.ends_with(&suffix)
+            && chat_header(&path).is_some_and(|h| h["sessionId"] == json!(id));
+        if empty || ours {
+            std::fs::remove_file(&path)?;
+            gone += 1;
+        }
+    }
+    Ok(gone)
+}
+
+/// Removes everything Gemini kept of sessions run in `cwd`; whether there
+/// was anything.
+pub fn forget_all(config: &Path, cwd: &Path) -> io::Result<bool> {
+    let Some(dir) = kept(config, cwd) else {
+        return Ok(false);
+    };
+    match std::fs::remove_dir_all(&dir) {
+        Ok(()) => Ok(true),
+        Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(false),
+        Err(e) => Err(e),
+    }
+}
 /// The policy directory inside the private directory.
 const POLICY_DIR: &str = "policy";
 
@@ -2759,7 +2864,8 @@ done"#;
     /// Three processes: one that takes a turn in a new session, one that
     /// loads that session and must remember the turn, one that asks for
     /// a session there is no chat of and must stop before any turn. The
-    /// chats stay under `~/.gemini/tmp` (imece deletes none yet).
+    /// chats stay under `~/.gemini/tmp` (this test deletes none; imece's
+    /// [`forget`] does when a session is forgotten).
     #[test]
     #[ignore = "runs a real Gemini CLI session: IMECE_LIVE_GEMINI=1 cargo test -p imece-agent -- --ignored live_gemini_resumes"]
     fn live_gemini_resumes_its_session_and_stops_on_one_that_is_gone() {
@@ -2936,5 +3042,176 @@ done"#;
             "{calls:?}"
         );
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    fn registry(config: &Path, entries: &[(&str, &str)]) {
+        std::fs::create_dir_all(config).unwrap();
+        let projects: serde_json::Map<String, Value> = entries
+            .iter()
+            .map(|(k, v)| (k.to_string(), json!(v)))
+            .collect();
+        std::fs::write(
+            config.join("projects.json"),
+            json!({ "projects": projects }).to_string(),
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn kept_finds_the_directory_gemini_registered_by_the_path_as_given_or_canonical() {
+        let dir = std::env::temp_dir().join(format!("imece-gemini-kept-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let config = dir.join("config");
+        assert_eq!(kept(&config, &dir.join("ws")), None, "no registry");
+        std::fs::create_dir_all(&config).unwrap();
+        std::fs::write(config.join("projects.json"), "not json").unwrap();
+        assert_eq!(kept(&config, &dir.join("ws")), None, "no registry to read");
+        std::fs::write(config.join("projects.json"), "{}").unwrap();
+        assert_eq!(kept(&config, &dir.join("ws")), None);
+        let real = dir.join("real");
+        std::fs::create_dir_all(&real).unwrap();
+        std::os::unix::fs::symlink(&real, dir.join("link")).unwrap();
+        let canonical = real.canonicalize().unwrap();
+        let ws = dir.join("ws");
+        registry(
+            &config,
+            &[
+                (&ws.to_string_lossy(), "ws"),
+                (&canonical.to_string_lossy(), "real-1"),
+                ("/x", "../evil"),
+                ("/y", "a/b"),
+                ("/z", ""),
+                ("/dot", "."),
+                ("/dots", ".."),
+                ("/nul", "a\u{0}b"),
+            ],
+        );
+        assert_eq!(kept(&config, &ws), Some(config.join("tmp").join("ws")));
+        assert_eq!(
+            kept(&config, &dir.join("link")),
+            Some(config.join("tmp").join("real-1")),
+            "by the canonical path when the given one is not registered"
+        );
+        assert_eq!(kept(&config, &dir.join("other")), None, "never registered");
+        for bad in ["/x", "/y", "/z", "/dot", "/dots", "/nul"] {
+            assert_eq!(
+                kept(&config, Path::new(bad)),
+                None,
+                "{bad}: not a plain name"
+            );
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn forget_removes_the_session_s_chat_and_the_empty_strays_and_nothing_else() {
+        let dir = std::env::temp_dir().join(format!("imece-gemini-forget-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let config = dir.join("config");
+        let ws = dir.join("ws");
+        registry(&config, &[(&ws.to_string_lossy(), "ws")]);
+        let chats = config.join("tmp").join("ws").join("chats");
+        std::fs::create_dir_all(&chats).unwrap();
+        let id = "23ed147f-6571-4157-990e-4b28f92ddb93";
+        let twin = "23ed147f-0000-4157-990e-4b28f92ddb93";
+        let header = |id: &str| {
+            format!(
+                "{}\n{{\"type\":\"user\"}}\n",
+                json!({ "sessionId": id, "kind": "main" })
+            )
+        };
+        let files = [
+            ("session-2026-10-29T12-16-23ed147f.jsonl", header(id), false),
+            (
+                "session-2026-10-29T12-17-23ed147f.jsonl",
+                header(twin),
+                true,
+            ),
+            (
+                "session-2026-10-29T12-18-aaaaaaaa.jsonl",
+                header("aaaaaaaa-0000-4157-990e-4b28f92ddb93"),
+                true,
+            ),
+            (
+                "session-2026-10-29T12-19-bbbbbbbb.jsonl",
+                String::new(),
+                false,
+            ),
+            ("session-2026-10-29T12-20-23ed147f.txt", String::new(), true),
+            ("notes-23ed147f.jsonl", String::new(), true),
+            (
+                "session-2026-10-29T12-21-23ed147f.jsonl",
+                "not json\n".to_string(),
+                true,
+            ),
+            // The right header under another name is not its file.
+            ("session-2026-10-29T12-22-zzzzzzzz.jsonl", header(id), true),
+        ];
+        for (name, text, _) in &files {
+            std::fs::write(chats.join(name), text).unwrap();
+        }
+        assert_eq!(forget(&config, &ws, id).unwrap(), 2);
+        for (name, _, stays) in &files {
+            assert_eq!(chats.join(name).exists(), *stays, "{name}");
+        }
+        assert_eq!(forget(&config, &ws, id).unwrap(), 0, "nothing left of it");
+        assert_eq!(
+            forget(&config, &dir.join("other"), id).unwrap(),
+            0,
+            "never registered"
+        );
+        std::fs::remove_dir_all(&chats).unwrap();
+        assert_eq!(forget(&config, &ws, id).unwrap(), 0, "no chats directory");
+        // A chats path that can not be read is an error, not nothing.
+        std::fs::write(&chats, "").unwrap();
+        assert!(forget(&config, &ws, id).is_err(), "chats is a file");
+        let e = forget(&config, &ws, "23ed147f").unwrap_err();
+        assert_eq!(e.kind(), io::ErrorKind::InvalidInput);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn forget_all_removes_everything_kept_for_the_directory() {
+        let dir =
+            std::env::temp_dir().join(format!("imece-gemini-forget-all-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let config = dir.join("config");
+        let ws = dir.join("ws");
+        registry(&config, &[(&ws.to_string_lossy(), "ws")]);
+        let kept_dir = config.join("tmp").join("ws");
+        std::fs::create_dir_all(kept_dir.join("chats")).unwrap();
+        std::fs::write(kept_dir.join("chats").join("session-x.jsonl"), "").unwrap();
+        std::fs::create_dir_all(config.join("tmp").join("other")).unwrap();
+        assert!(forget_all(&config, &ws).unwrap());
+        assert!(!kept_dir.exists());
+        assert!(
+            config.join("tmp").join("other").is_dir(),
+            "another directory's stays"
+        );
+        assert!(!forget_all(&config, &ws).unwrap(), "gone already");
+        assert!(
+            !forget_all(&config, &dir.join("other")).unwrap(),
+            "never registered"
+        );
+        // What can not be removed is an error, not nothing.
+        std::fs::write(&kept_dir, "").unwrap();
+        assert!(
+            forget_all(&config, &ws).is_err(),
+            "a file where the directory was"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn the_config_dir_is_the_env_s_when_set_else_under_home() {
+        // The one test that touches this variable.
+        let home = PathBuf::from(std::env::var_os("HOME").unwrap());
+        unsafe { std::env::remove_var("GEMINI_CLI_HOME") };
+        assert_eq!(config_dir(), home.join(".gemini"));
+        unsafe { std::env::set_var("GEMINI_CLI_HOME", "") };
+        assert_eq!(config_dir(), home.join(".gemini"));
+        unsafe { std::env::set_var("GEMINI_CLI_HOME", "/opt/gem") };
+        assert_eq!(config_dir(), PathBuf::from("/opt/gem"));
+        unsafe { std::env::remove_var("GEMINI_CLI_HOME") };
     }
 }

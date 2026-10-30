@@ -31,8 +31,8 @@ use crate::i18n::Lang;
 use crate::model::{Vendor, parse_dollars};
 
 const USAGE: &str = "usage: imece [--repo DIR] [--agents N] [--helpers N] [--lead VENDOR]
-             [--model [V:]NAME]... [--tier [V:]T=NAME]... [--budget USD] [--lang en|tr]
-             [--theme NAME|FILE]
+             [--model [V:]NAME]... [--tier [V:]T=NAME]... [--budget USD] [--fresh]
+             [--lang en|tr] [--theme NAME|FILE]
        imece --demo [--projects N] [--agents N] [--researchers N] [--seed N]
 
 imece runs coding agents on the checkout DIR is in: a leader that reads it
@@ -58,6 +58,10 @@ one at hand; ? lists every key and command.
   --budget USD      the most all agents together may spend; one pot, kept
                     between runs (50 the first time); :budget USD changes
                     it while agents run
+  --fresh           forget every agent's remembered session: each wakes in a
+                    new one, told where it left off, and what the vendors
+                    kept of the old ones is removed (:forget @NAME does it
+                    for one agent while imece runs)
   --run PROG[,..]   programs workers may run with their run tool, next to
                     cargo and git's reading commands (repeatable)
   --run-timeout S   seconds one run may take (10-3600, default 600)
@@ -84,6 +88,7 @@ struct Args {
     lang: Lang,
     theme: Option<String>,
     demo: bool,
+    fresh: bool,
     repo: PathBuf,
     lead: Option<Lead>,
     /// Stand-ins for the vendors' own models, by vendor (none: the
@@ -177,6 +182,7 @@ fn parse(
             None => None,
         },
         demo: false,
+        fresh: false,
         repo: PathBuf::from("."),
         lead: None,
         tiers: Vec::new(),
@@ -193,6 +199,10 @@ fn parse(
         }
         if flag == "--demo" {
             args.demo = true;
+            continue;
+        }
+        if flag == "--fresh" {
+            args.fresh = true;
             continue;
         }
         if flag == "--live" {
@@ -396,6 +406,7 @@ fn main() -> std::io::Result<()> {
             lead,
             tiers: args.tiers,
             budget: args.budget,
+            fresh: args.fresh,
             run_programs: args.run_programs,
             run_timeout: args.run_timeout,
         };
@@ -574,6 +585,8 @@ mod tests {
         assert_eq!(a.lead, None, "who leads is decided at the start");
         assert!(a.tiers.is_empty());
         assert_eq!(a.budget, None, "the pot is kept between runs");
+        assert!(!a.fresh, "sessions are remembered unless --fresh says");
+        assert!(args(&["--fresh"], &[]).unwrap().fresh);
         assert_eq!(
             args(&["--budget", "2.50"], &[]).unwrap().budget,
             Some(25_000),
