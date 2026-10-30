@@ -111,9 +111,11 @@ fn in_view(start: usize, end: usize, scroll: usize, height: usize) -> usize {
 
 /// The rows of a conversation `width` cells wide, oldest first: each
 /// message is a head (when, who to whom, the kind) and its text as
-/// Markdown, wrapped, then a blank row. The selected message carries a
-/// mark in the gutter on every row and the selection background. Returns
-/// the rows and each message's row range (the blank row not included).
+/// Markdown, wrapped, then a blank row; a day row stands before the first
+/// message of each day that is not the day of the message above it (today,
+/// for the first). The selected message carries a mark in the gutter on
+/// every row and the selection background. Returns the rows and each
+/// message's row range (the day row and the blank row not included).
 pub(crate) fn thread_rows(
     lang: Lang,
     w: &World,
@@ -124,8 +126,16 @@ pub(crate) fn thread_rows(
     let text_width = usize::from(width).saturating_sub(GUTTER);
     let mut rows: Vec<Line> = Vec::new();
     let mut ranges = Vec::new();
+    let mut above = day(w.tick);
     for (n, &i) in th.entries.iter().enumerate() {
         let e = &w.journal[i];
+        let of = day(e.tick);
+        if of != above {
+            let mut row = date_row(of);
+            row.spans.insert(0, Span::raw("  "));
+            rows.push(row);
+            above = of;
+        }
         let selected = n == th.sel;
         let mut part = vec![Line::from(vec![Span::styled(
             format!("{} ", clock(e.tick)),

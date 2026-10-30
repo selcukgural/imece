@@ -353,6 +353,8 @@ fn main() -> std::io::Result<()> {
     );
     let mut terminal = screen::init().inspect_err(|_| screen::restore())?;
     let mut app = if args.demo {
+        // The simulation's clock says 14:00 at its start, on today's date.
+        model::start_clock_at(14 * 3600, live::today());
         app::App::new(
             args.projects,
             args.agents.unwrap_or(24),
@@ -414,7 +416,8 @@ fn main() -> std::io::Result<()> {
             Ok((world, live)) => {
                 // The screen's clock counts from when the world began,
                 // which may be an earlier run.
-                model::start_clock_at(live::local_seconds_after_midnight(world.started_at));
+                let (seconds, day) = live::local_clock(world.started_at);
+                model::start_clock_at(seconds, day);
                 app::App::with(world, app::Engine::Live(Box::new(live)), args.lang)
             }
             Err(msg) => fail(msg),
