@@ -3457,9 +3457,14 @@ done"#;
             matches!(&e, Event::Stopped(w) if w.contains("code 3")),
             "{e:?}"
         );
-        // The driver is gone with the process; a prompt has nowhere to go.
+        // The driver goes away right after its last word; give it a moment
+        // (a bounded one), then nothing can be sent any more.
         assert!(rx.recv_timeout(Duration::from_secs(5)).is_err());
-        assert!(session.prompt("hi").is_err() || session.prompt("hi").is_err());
+        let refused = (0..100).any(|_| {
+            thread::sleep(Duration::from_millis(50));
+            session.prompt("late").is_err()
+        });
+        assert!(refused, "the session still took prompts after it was over");
         session.terminate();
         let _ = std::fs::remove_dir_all(&dir);
     }

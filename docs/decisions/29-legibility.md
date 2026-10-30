@@ -17,10 +17,13 @@ code (ok / bad), `stopped` and `run refused` bad, the bus words in the
 accent, the rest as written. The `post` title and the `send` body
 descriptions tell the model the first line is the card's title as the
 salon shows it (20 cells: lead with what tells the cards apart, not
-"Fix the …"; two cards had read `Fix Gi` and `Fix Gi`). Known gaps: a
-tool_use line's multi-line argument (a Bash heredoc) still wraps as one
-long paragraph; the trace's vocabulary is read back from strings, a new
-producer word is plain until named in `trace_lines`. An open
+"Fix the …"; two cards had read `Fix Gi` and `Fix Gi`). A trace line
+that runs over rows (a Bash heredoc in a `tool_use`) keeps them: each
+cleaned on its own, indented under the first, at most `TRACE_ROWS` (6),
+then `… +N` dim; before, `clean` made the newlines spaces and the
+heredoc wrapped as one long paragraph. Known gap: the trace's
+vocabulary is read back from strings, a new producer word is plain
+until named in `trace_lines`. An open
 conversation window FOLLOWS the talk (`App::follow_thread`, after every
 key and step): journal lines of its pair that came since are appended;
 the person's own line (written from the window with `@`) is selected,

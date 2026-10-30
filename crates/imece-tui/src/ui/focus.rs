@@ -145,8 +145,29 @@ pub fn trace(f: &mut Frame, area: Rect, app: &App, id: AgentId) {
 /// `mail`, `woken`, `hire`, `hired`, `post`, `claim`) with its first word
 /// in the accent. Anything else as written. The vocabulary is the trace
 /// producers' in live.rs, read back here by the first word; a line that
-/// matches none is still shown whole.
+/// matches none is still shown whole. A line that runs over rows (a
+/// command with a heredoc) keeps them: the first [`TRACE_ROWS`] under it,
+/// indented, then how many more.
 pub(crate) fn trace_lines(raw: &str, vendor: Color) -> Vec<Line<'static>> {
+    let mut rows = raw.lines();
+    let mut out = trace_row(rows.next().unwrap_or_default(), vendor);
+    let more: Vec<&str> = rows.collect();
+    let indent = || Span::raw(" ".repeat(9));
+    for row in more.iter().take(TRACE_ROWS) {
+        out.push(Line::from(vec![indent(), Span::raw(clean(row))]));
+    }
+    if more.len() > TRACE_ROWS {
+        let left = format!("… +{}", more.len() - TRACE_ROWS);
+        out.push(Line::from(vec![indent(), Span::styled(left, dim())]));
+    }
+    out
+}
+
+/// How many rows of a trace line are drawn after its first.
+const TRACE_ROWS: usize = 6;
+
+/// The first row of a trace line, as [`trace_lines`] tells.
+fn trace_row(raw: &str, vendor: Color) -> Vec<Line<'static>> {
     let line = clean(raw);
     let (clock, rest) = line.split_once(' ').unwrap_or((&line, ""));
     let clock = Span::styled(format!("{clock} "), dim());
@@ -293,6 +314,39 @@ mod tests {
             texts(&trace_lines("12:00:01 text not quoted", v)),
             ["12:00:01 not quoted"],
             "a text that is not one quoted string shows as written"
+        );
+    }
+
+    #[test]
+    fn a_command_over_rows_keeps_them_up_to_a_few_and_counts_the_rest() {
+        let v = Color::Indexed(9);
+        let body = |n: usize| (1..=n).map(|i| format!("\nline {i}")).collect::<String>();
+        let six = format!("12:00:02 tool_use Bash cat > a.txt <<EOF{}", body(6));
+        assert_eq!(
+            texts(&trace_lines(&six, v)),
+            [
+                "12:00:02 tool_use Bash cat > a.txt <<EOF",
+                "         line 1",
+                "         line 2",
+                "         line 3",
+                "         line 4",
+                "         line 5",
+                "         line 6",
+            ]
+        );
+        let nine = format!("12:00:02 tool_use Bash cat > a.txt <<EOF{}\n", body(9));
+        let lines = trace_lines(&nine, v);
+        assert_eq!(lines.len(), 8, "{:?}", texts(&lines));
+        assert_eq!(texts(&lines[6..]), ["         line 6", "         … +3"]);
+        assert_eq!(colour_of(&lines[7], "… +3"), Some(pal().dim));
+        assert_eq!(colour_of(&lines[0], "Bash"), Some(pal().info));
+        // Each row is cleaned on its own.
+        assert_eq!(
+            texts(&trace_lines(
+                "12:00:02 tool_use Bash x\nTOKEN=abc \u{1b}[2J",
+                v
+            ))[1],
+            "         [***]  [2J"
         );
     }
 
