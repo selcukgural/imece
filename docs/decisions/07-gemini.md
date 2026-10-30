@@ -27,9 +27,11 @@ memory), plus a line naming its files' directory. Checks before the
 first turn, fail closed: `initialize` (ACP 1, `gemini-cli`),
 `session/new` (mode `default`, the model asked for), then the
 zero-token commands `/about` (model, auth type), `/extensions list`
-(none active) and `/memory list` (imece's GEMINI.md in use). Every
+(none active) and `/memory list` (imece's GEMINI.md in use). A
 `session/request_permission` is answered `cancel` and counted as
-denied; a `tool_call` of kind execute/fetch/switch_mode (or edit/delete/
+denied under strict (since Approval routing v0 part 3, under standard
+and open it waits for the person and a worker's shell is `ask_user`,
+see `30-approval-routing.md`); a `tool_call` of kind execute/fetch/switch_mode (or edit/delete/
 move for a leader), an MCP tool not offered, or a `current_mode_update`
 stops the session. A prompt starting with `/` or `$` would run as a
 Gemini command, so it is prefixed with `Text:`. Cost: `session/prompt`'s
@@ -37,7 +39,11 @@ answer carries usage (input, cached, output, thought) and
 `_meta.quota.model_usage`; API key (`gemini-api-key`) → list-price
 table in gemini.rs (per-1M prices in thousandths of a dollar, <=200K
 tier, thoughts as output, cached at the cached rate, a turn on several
-models booked at the dearest), unknown model → session stops; Google
+models booked at the dearest), unknown model → session stops; a
+turn named by the alias asked for (`auto`, `pro`, `flash`,
+`flash-lite`: Gemini CLI 0.65.0 keeps the alias when no `model_info`
+came, seen live on a turn with a tool call) is booked at the dearest
+model the alias may mean; Google
 login (`oauth-personal`) → 0 with a Note; vertex-ai/gateway refused.
 Tool calls: a `tool_call`'s id carries the tool's name
 (`write_file__call_7`, `mcp_imece_send__call_3`), its `title` is the

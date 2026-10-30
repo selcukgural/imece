@@ -158,14 +158,17 @@ is, and the journal says so either way.
   settings, hooks and `.env` never reach the session. A policy file imece
   writes there allows exactly the tools of the role and the level (read
   tools for the lead, read and edit tools for workers and helpers; from
-  standard on the web for everyone and a shell for workers and helpers,
-  all without a prompt) and imece's own tools, and under strict and
-  standard denies every other tool (a denied tool is not even shown to
-  the model); extensions are off, no MCP server but imece's is allowed,
-  and every permission request is refused. Under open your extensions and
-  MCP servers load and run under your own policies (what would ask is
-  still refused); imece denies by name only Gemini's agent tools and, for
-  the lead, the writing tools. The agent's instructions go in a
+  standard on the web for everyone, all without a prompt, and a shell for
+  workers and helpers that asks before every command) and imece's own
+  tools, and under strict and standard denies every other tool (a denied
+  tool is not even shown to the model); extensions are off and no MCP
+  server but imece's is allowed. What the shell asks runs on its own when
+  it is a routine command in the agent's directory; any other waits in
+  WAITING FOR YOU like Claude's and Codex's. Under open your extensions,
+  MCP servers and the shell run under your own policies (what they ask
+  waits for you the same way); imece denies by name only Gemini's agent
+  tools and, for the lead, the writing tools. Under strict whatever would
+  ask is refused. The agent's instructions go in a
   `GEMINI.md` in that private directory, the only way ACP has to give
   them. What Gemini reports (the session's mode and model, and its
   `/about`, `/extensions list` and `/memory list`, which cost no tokens)

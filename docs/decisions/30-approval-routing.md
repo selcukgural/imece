@@ -102,8 +102,45 @@ the command came as `/bin/zsh -lc 'touch …'`, the first request id was
 `0`; declined, the item ended `declined` (`denied: 1`), no file, and
 the model said "refused"; accepted, the file was made.
 
-Known gaps: Gemini's `session/request_permission` still refuses
-(part 3); a Codex command wrapped in a shell elsewhere
+Part 3, Gemini (2026-10-30, the Gemini approvals PR): under standard
+the policy file makes a writer's `run_shell_command` `ask_user` at 999
+(its other tools stay `allow`), so every command comes as a
+`session/request_permission`; under open the policy names no shell and
+the person's own policies decide (Gemini's default asks); under strict
+there is no shell. From standard on, a checked session's request is an
+`Event::Asks` (request = the JSON-RPC id as text) answered by
+`Agent::decide` (`Msg::Decide`, `Protocol::decide`) with the option of
+kind `allow_once` or `reject_once` (`cancel` when none is offered); a
+request with no `allow_once` option, one before the checks, and every
+one under strict is refused at once as before. A refusal counts as
+denied; Gemini fails the call ("canceled by the user") and the turn
+goes on. The turn's end (its answer or its error) withdraws what still
+waits. Gemini sends no tool input with the ask: a shell command is the
+call's title (the command whole), and where it runs comes from Gemini's
+explanation, `[in DIR]` or `[current working directory DIR]`, resolved
+against the private directory Gemini runs in; only a command that runs
+in the agent's directory (or under it) is an `Ask::Command` that may be
+routine, anything else is `Other` with `(in DIR)`, and an explanation
+with a second `]` (a description with one, a background command) gives
+no directory. Other tools show the path they touch or their title; an
+`@path` outside the workspace in a prompt asks as `read`. Gemini's
+writer prompt says to give each command its files' directory as
+`dir_path` (Gemini runs in its private directory, so a command without
+one runs there and waits for the person).
+
+Probe facts (Gemini CLI 0.65.0, API key, `auto`, the ignored test
+`live_gemini_asks_before_a_command_and_does_what_it_hears`, ~18 min for
+two turns on the free tier): the policy's `ask_user` reached imece as
+`session/request_permission` (first id `0`) after a `tool_call` with
+status `pending`; the model gave `dir_path`, so `touch no.txt` came as
+`Ask::Command`; refused, the call failed, the turn ended `denied: 1`
+and the model said "refused", no file; allowed, the file was made.
+The options were `proceed_always` (allow_always), `proceed_once`
+(allow_once), `cancel` (reject_once). Both turns' usage named the
+model by its alias (`auto`), which stopped the session until aliases
+were priced (record 07).
+
+Known gaps: a Codex command wrapped in a shell elsewhere
 (`/opt/homebrew/bin/zsh`) is shown and judged whole, so it is never
 routine; an
 `Other` ask shows what the tool touches, not all of its input (a

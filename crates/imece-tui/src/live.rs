@@ -3513,6 +3513,16 @@ fn abilities(vendor: Vendor, role: Role, confine: Confine) -> &'static str {
              do not try the same another way. The run tool runs the build and the \
              tests with their output tidied."
         }
+        (Vendor::Gemini, _, true) => {
+            "You can read and change files here, run commands in your shell and reach \
+             the web. Give each command your files' directory as its dir_path: one that \
+             runs there and is one program with its arguments (no pipes, redirections, \
+             && or $, one line) running the build, the tests or git's reading commands \
+             runs at once; most others wait for the person's yes, so prefer the first \
+             kind. A refusal is the person's decision, not an error: do not try the same \
+             another way. The run tool runs the build and the tests with their output \
+             tidied."
+        }
         (_, _, true) => {
             "You can read and change files here, run commands in your shell and reach \
              the web; the run tool runs the build and the tests with their output \
@@ -7146,6 +7156,7 @@ in p.rs",
         assert!(!strict(Vendor::Codex, Role::Leader).contains("search the web"));
         assert!(!strict(Vendor::Claude, Role::Worker).contains("the person's yes"));
         assert!(!strict(Vendor::Codex, Role::Worker).contains("the person's yes"));
+        assert!(!strict(Vendor::Gemini, Role::Worker).contains("the person's yes"));
         assert!(
             strict(Vendor::Codex, Role::Worker)
                 .contains("inside this directory and refuses the network")
@@ -7189,7 +7200,18 @@ in p.rs",
                     "{r:?}"
                 );
             }
-            assert!(!full(Vendor::Gemini, Role::Worker).contains("the person's yes"));
+            // And Gemini's, run in the agent's directory.
+            for r in [Role::Worker, Role::Helper] {
+                let g = full(Vendor::Gemini, r);
+                assert!(g.contains("most others wait for the person's yes"), "{r:?}");
+                assert!(g.contains("your files' directory as its dir_path"), "{r:?}");
+            }
+            assert!(!full(Vendor::Gemini, Role::Leader).contains("the person's yes"));
+            assert!(!full(Vendor::Qwen, Role::Worker).contains("the person's yes"));
+            assert!(
+                full(Vendor::Qwen, Role::Worker)
+                    .contains("run commands in your shell and reach the web")
+            );
             assert!(!full(Vendor::Claude, Role::Leader).contains("the person's yes"));
             assert!(!full(Vendor::Codex, Role::Leader).contains("the person's yes"));
             assert!(
