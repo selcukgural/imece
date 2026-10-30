@@ -41,6 +41,32 @@ pub struct Mcp {
     pub tools: Vec<String>,
 }
 
+/// The tool of imece's MCP server a Claude Code session asks through
+/// before a tool call that needs a yes (`--permission-prompt-tool`).
+/// Claude Code hides it from the model: it is never among a session's
+/// tools, so never in [`Mcp::tools`].
+pub const APPROVE_TOOL: &str = "approve";
+
+/// What a session asks the person's yes for, before it does it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Ask {
+    /// A shell command, as the agent wrote it.
+    Command { tool: String, command: String },
+    /// Any other tool call: the tool and what it would touch.
+    Other { tool: String, detail: String },
+}
+
+impl Ask {
+    /// One line for the person: the tool and what it runs or touches.
+    pub fn line(&self) -> String {
+        match self {
+            Ask::Command { tool, command } => format!("{tool}: {command}"),
+            Ask::Other { tool, detail } if detail.is_empty() => tool.clone(),
+            Ask::Other { tool, detail } => format!("{tool}: {detail}"),
+        }
+    }
+}
+
 /// A running session of any vendor, as the screen drives it.
 pub trait Agent: Send {
     /// Gives the agent a prompt. A busy session takes it after the running
@@ -161,6 +187,25 @@ mod tests {
         assert!(Confine::Open.full());
         assert!(Confine::Standard.full());
         assert!(!Confine::Strict.full());
+    }
+
+    #[test]
+    fn an_ask_is_one_line_with_its_tool() {
+        let run = Ask::Command {
+            tool: "Bash".into(),
+            command: "cargo publish".into(),
+        };
+        assert_eq!(run.line(), "Bash: cargo publish");
+        let fetch = Ask::Other {
+            tool: "WebFetch".into(),
+            detail: "https://example.com".into(),
+        };
+        assert_eq!(fetch.line(), "WebFetch: https://example.com");
+        let bare = Ask::Other {
+            tool: "Mystery".into(),
+            detail: String::new(),
+        };
+        assert_eq!(bare.line(), "Mystery");
     }
 }
 

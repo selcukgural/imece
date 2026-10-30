@@ -117,9 +117,14 @@ is, and the journal says so either way.
 - A Claude Code session is a long-lived `claude -p`, under standard and
   strict in `--restricted` mode: no user or project settings (so no
   hooks), no MCP servers but imece's own, file access confined to the
-  agent's directory, nothing that would ask for permission allowed. Strict
-  names the file tools only; standard names the shell and the web tools
-  too and allows them outright; open drops `--restricted` and gives a
+  agent's directory. Strict names the file tools only and refuses what
+  would ask for permission; standard names the shell and the web tools
+  too and allows the web outright; a shell command Claude Code would ask
+  about comes to imece, which runs a routine one at once (one program
+  and its arguments, no shell syntax, what the `run` tool would run:
+  the build, the tests, git's reading commands) and puts any other in
+  WAITING FOR YOU (`⚑`, shown whole) for you to allow or refuse; open
+  drops `--restricted` and gives a
   worker Claude Code's default toolset less the sub-agent tool, with your
   own settings, hooks and MCP servers loaded. What Claude Code reports it
   runs with is checked on every turn; anything else stops the session.
@@ -211,7 +216,7 @@ is one line, and that line still shows what waits for you.
 | `L` | English / Türkçe |
 | `enter` / `esc` | look deeper (focus, then the raw stream) / go back |
 | `tab`, `w` | salon ↔ the items waiting for you · straight to them |
-| `a` / `r` | approve / reject the selected item |
+| `a` / `r` | approve / apply / allow · reject / refuse the selected item |
 | `space`, `+` `-` | pause, simulation speed (`--demo` only) |
 | `?`, `q` | help, quit |
 

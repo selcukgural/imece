@@ -37,7 +37,9 @@ use crate::model::*;
 /// The file's layout; a file from a newer imece is refused.
 /// 3 (2026-10-30): the `Question` inbox kind and the `ToYou` events (no
 /// table changed; an older imece would not know the tags).
-pub const SCHEMA_VERSION: i64 = 3;
+/// 4 (2026-10-30): the `Approval` inbox kind and the `Decided` events,
+/// the same way.
+pub const SCHEMA_VERSION: i64 = 4;
 /// Trace lines kept per agent, as the world keeps them.
 const TRACE_KEEP: usize = 200;
 /// The file's name under the state directory.
@@ -1456,6 +1458,14 @@ mod tests {
                     open: true,
                     tick: 6,
                 },
+                InboxItem {
+                    kind: InboxKind::Approval,
+                    agent: 1,
+                    detail: "Bash: make".into(),
+                    researcher: None,
+                    open: true,
+                    tick: 6,
+                },
             ],
             budget: 123_400,
             max_researchers: 0,
@@ -2125,6 +2135,39 @@ mod tests {
     }
 
     #[test]
+    fn what_the_person_decided_of_an_ask_is_kept() {
+        let (mut w, k) = (world(), kept());
+        w.journal.push(Entry {
+            tick: 9,
+            event: Event::Decided {
+                agent: 1,
+                what: "Bash: make\nmake check".into(),
+                allowed: false,
+            },
+        });
+        let mut store = Store::in_memory();
+        store.save(&w, &k.kept()).unwrap();
+        let back = store.load(100).unwrap().unwrap();
+        same(&w, &back.world);
+        let kind: String = store
+            .raw()
+            .query_row(
+                "SELECT kind FROM journal ORDER BY seq DESC LIMIT 1",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(kind, "Decided");
+        assert!(
+            back.world
+                .inbox
+                .iter()
+                .any(|i| i.kind == InboxKind::Approval && i.open),
+            "the store keeps it open; the start closes it"
+        );
+    }
+
+    #[test]
     fn lines_another_imece_wrote_are_skipped_and_counted() {
         let (w, k) = (world(), kept());
         let mut store = Store::in_memory();
@@ -2450,7 +2493,7 @@ mod tests {
                 |r| r.get(0),
             )
             .unwrap();
-        assert_eq!(version, "3");
+        assert_eq!(version, "4");
         let back = store.load(100).unwrap().expect("a world");
         assert_eq!(back.world.agents[0].name, "lead");
         assert_eq!(back.found.sessions, [None]);

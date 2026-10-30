@@ -69,6 +69,14 @@ pub fn event(lang: Lang, w: &World, e: &Event) -> String {
             research: true,
         } => fill(t.ev_approved_research, &[name(w, *agent)]),
         Event::Rejected { agent } => fill(t.ev_rejected, &[name(w, *agent)]),
+        Event::Decided {
+            agent,
+            what,
+            allowed,
+        } => fill(
+            if *allowed { t.ev_allowed } else { t.ev_refused },
+            &[name(w, *agent), &one_line(what)],
+        ),
         Event::Stopped { agent, why } => fill(t.ev_stopped, &[name(w, *agent), why]),
         Event::Interrupted { agent } => fill(t.ev_interrupted, &[name(w, *agent)]),
         Event::Posted { agent, card } => fill(
@@ -305,6 +313,13 @@ pub fn ago(lang: Lang, seconds: u64) -> String {
     }
 }
 
+/// A command on one row, its lines joined with a mark so none is hidden:
+/// what the person is asked to allow is shown as it is, never as
+/// markdown.
+pub(crate) fn one_line(text: &str) -> String {
+    text.trim().lines().collect::<Vec<_>>().join(" ↵ ")
+}
+
 pub fn inbox(lang: Lang, w: &World, item: &InboxItem) -> String {
     let t = lang.text();
     match (item.kind, item.researcher) {
@@ -316,6 +331,10 @@ pub fn inbox(lang: Lang, w: &World, item: &InboxItem) -> String {
         (InboxKind::Question, _) => fill(
             t.in_question,
             &[name(w, item.agent), &super::plain(&item.detail)],
+        ),
+        (InboxKind::Approval, _) => fill(
+            t.in_approval,
+            &[name(w, item.agent), &one_line(&item.detail)],
         ),
         (InboxKind::Change, _) => {
             let (files, added, removed) = w.change_of(item.agent).map_or((0, 0, 0), |c| {
@@ -434,6 +453,55 @@ mod tests {
         assert_eq!(
             inbox(Lang::Tr, &w, &item),
             format!("{who} sana soruyor: Which?")
+        );
+    }
+
+    #[test]
+    fn an_ask_is_worded_as_it_is_on_one_row_and_so_is_the_decision() {
+        let w = crate::live::testing::team(1);
+        let who = &w.agents[1].name;
+        let item = InboxItem {
+            kind: InboxKind::Approval,
+            agent: 1,
+            detail: "Bash: rm *.txt **x**\ncat <<EOF\n".into(),
+            researcher: None,
+            open: true,
+            tick: 0,
+        };
+        // Never as markdown: what runs is what the person reads.
+        assert_eq!(
+            inbox(Lang::En, &w, &item),
+            format!("{who} waits for your yes: Bash: rm *.txt **x** ↵ cat <<EOF")
+        );
+        assert_eq!(
+            inbox(Lang::Tr, &w, &item),
+            format!("{who} onayını bekliyor: Bash: rm *.txt **x** ↵ cat <<EOF")
+        );
+        let yes = Event::Decided {
+            agent: 1,
+            what: "Bash: make\nmake check".into(),
+            allowed: true,
+        };
+        assert_eq!(
+            event(Lang::En, &w, &yes),
+            format!("you allowed {who}: Bash: make ↵ make check")
+        );
+        assert_eq!(
+            event(Lang::Tr, &w, &yes),
+            format!("{who} için izin verdin: Bash: make ↵ make check")
+        );
+        let no = Event::Decided {
+            agent: 1,
+            what: "Bash: curl x".into(),
+            allowed: false,
+        };
+        assert_eq!(
+            event(Lang::En, &w, &no),
+            format!("you refused {who}: Bash: curl x")
+        );
+        assert_eq!(
+            event(Lang::Tr, &w, &no),
+            format!("{who} için reddettin: Bash: curl x")
         );
     }
 

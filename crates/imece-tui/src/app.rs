@@ -1406,6 +1406,17 @@ impl App {
         if self.world.inbox[item].kind == InboxKind::Change {
             return self.decide_change(self.world.inbox[item].agent, approve);
         }
+        if self.world.inbox[item].kind == InboxKind::Approval {
+            // Only a live session asks; the demo has none.
+            if let Engine::Live(l) = &mut self.engine {
+                let name = self.world.agents[self.world.inbox[item].agent].name.clone();
+                l.decide(&mut self.world, item, approve);
+                let how = if approve { t.allowed } else { t.refused };
+                self.flash(fill(how, &[&name]));
+            }
+            self.inbox_sel = self.inbox_sel.min(open.len().saturating_sub(2));
+            return;
+        }
         if self.world.inbox[item].kind == InboxKind::Question {
             // A question is answered by writing back: the composer opens
             // to the agent, and the item closes when the answer goes.

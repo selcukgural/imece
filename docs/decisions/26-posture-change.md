@@ -16,8 +16,9 @@ one start-up line says isolation is not imece's when not strict (entry
 "Confine dial v0" below). (d) Vendor
 APPROVAL REQUESTS routed to WAITING FOR YOU instead of denied or
 stopping the session: Claude `--permission-prompt-tool` served by
-imece's MCP server, Codex approval requests, Gemini
-`session/request_permission`; auto-approve rules for routine actions.
+imece's MCP server (DONE in the approvals PR, entry "Approval routing
+v0", with routine commands allowed on their own), Codex approval
+requests, Gemini `session/request_permission` (to come).
 Then dogfooding (imece writes imece) in standard mode, with an
 `AGENTS.md` under the 16 KiB cap and a known-good binary kept as
 `imece-stable`.

@@ -44,7 +44,7 @@ Gemini's shell under a policy allow was probed live on 0.65.0
 (headless, `--approval-mode default`, imece's policy: one
 `run_shell_command`, decision accept, no prompt). Known gaps: the ACP
 path with the shell was not run end to end (free-tier latency, ~4 min
-a turn); a Bash under standard needs no approval at all until (d) routes
-prompts to the person; a Codex leader has web search but no network in
+a turn); a Bash under standard needed no approval at all until (d) routed
+Claude's prompts to the person (entry "Approval routing v0"); a Codex leader has web search but no network in
 its shell (read-only sandbox); Claude's `NotebookEdit` and the like
 come only with open.
