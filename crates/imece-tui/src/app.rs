@@ -1971,6 +1971,34 @@ mod tests {
     }
 
     #[test]
+    fn the_persons_own_line_is_selected_even_when_reading_further_up() {
+        let (mut app, worker) = with_thread();
+        let name = app.world.agents[worker].name.clone();
+        app.world.said(worker, "second");
+        app.follow_thread();
+        let th = app.thread.as_mut().unwrap();
+        th.sel = 0;
+        th.follow.set(false);
+        app.typing = true;
+        app.input = format!("@{name} third");
+        app.on_key(key(KeyCode::Enter));
+        let th = app.thread.as_ref().unwrap();
+        assert_eq!(th.entries.len(), 3);
+        assert_eq!(th.sel, 2, "what the person wrote is selected");
+        assert!(th.follow.get());
+    }
+
+    #[test]
+    fn nothing_new_moves_nothing() {
+        let (mut app, _) = with_thread();
+        app.thread.as_mut().unwrap().follow.set(false);
+        app.follow_thread();
+        let th = app.thread.as_ref().unwrap();
+        assert_eq!((th.entries.len(), th.sel), (1, 0));
+        assert!(!th.follow.get(), "at the end with nothing new: no scroll");
+    }
+
+    #[test]
     fn a_reply_that_comes_while_the_last_line_is_selected_is_followed() {
         let (mut app, worker) = with_thread();
         app.thread.as_mut().unwrap().follow.set(false);
