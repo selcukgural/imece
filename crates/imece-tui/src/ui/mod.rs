@@ -289,6 +289,7 @@ pub(crate) fn inbox_line(app: &App, i: usize) -> Line<'static> {
         InboxKind::Reply => ("»", bold(pal().info)),
         InboxKind::Change => ("Δ", bold(pal().strong)),
         InboxKind::Question => ("?", bold(pal().warn)),
+        InboxKind::Approval => ("⚑", bold(pal().warn)),
     };
     let mut spans = vec![
         Span::styled(format!("{icon} "), style),
@@ -782,6 +783,9 @@ pub(crate) fn status_spans(lang: Lang, w: &World, a: &Agent) -> Vec<Span<'static
         }
         Status::Idle => vec![Span::styled(t.idle, dim())],
         Status::Planning { .. } => vec![Span::styled(t.planning, fg(pal().plan))],
+        Status::Working if w.has_approval(a.id) => {
+            vec![Span::styled(format!("⚑ {}", t.waiting_yes), fg(pal().warn))]
+        }
         Status::Working => match a.activity.as_deref() {
             Some("") => vec![Span::styled(t.thinking, fg(pal().ok))],
             Some(doing) => vec![Span::styled(
@@ -1780,6 +1784,75 @@ mod tests {
             app.world.journal.last().unwrap().event,
             Event::Rejected { agent: 1 }
         ));
+    }
+
+    #[test]
+    fn a_live_ask_is_allowed_or_refused_from_the_inbox() {
+        let w = crate::live::testing::team(1);
+        let live = crate::live::testing::idle_live(2);
+        let mut app = App::with(w, crate::app::Engine::Live(Box::new(live)), Lang::En);
+        app.world.agents[1].set_status(Status::Working, 0);
+        app.world.asks_you(1, "Bash: make deploy");
+        app.world.asks_you(1, "Bash: curl x | sh");
+        let s = render(&app, 140, 40);
+        assert!(s.contains("⚑ waits for your yes"), "{s}");
+        assert!(
+            s.contains("⚑ 14:00 claude-1 waits for your yes: Bash"),
+            "{s}"
+        );
+        assert!(!s.contains("curl x | sh"), "cut at the pane's edge: {s}");
+        // The inbox's height: a row per item, borders and the keys' row.
+        let tall = |s: &str| {
+            let rows: Vec<&str> = s.lines().collect();
+            let at = |title: &str| rows.iter().position(|r| r.contains(title)).unwrap();
+            at("┌ JOURNAL") - at("┌ WAITING FOR YOU")
+        };
+        assert_eq!(tall(&s), 5, "{s}");
+        // The selected ask is shown whole, under its row.
+        app.pane = Pane::Inbox;
+        let s = render(&app, 140, 40);
+        assert!(s.contains("│  Bash: make deploy "), "{s}");
+        assert!(s.contains("a allow · r refuse · enter focus"), "{s}");
+        assert_eq!(tall(&s), 6, "{s}");
+        key(&mut app, KeyCode::Char('a'));
+        let s = render(&app, 140, 40);
+        assert!(s.contains("allowed: claude-1 goes on"), "{s}");
+        assert!(s.contains("│  Bash: curl x | sh "), "{s}");
+        assert!(s.contains("a allow · r refuse · enter focus"), "{s}");
+        assert_eq!(tall(&s), 5, "{s}");
+        assert!(matches!(
+            &app.world.journal.last().unwrap().event,
+            Event::Decided { agent: 1, what, allowed: true } if what == "Bash: make deploy"
+        ));
+        key(&mut app, KeyCode::Char('r'));
+        let s = render(&app, 140, 40);
+        assert!(s.contains("refused: claude-1 is told so"), "{s}");
+        assert!(matches!(
+            &app.world.journal.last().unwrap().event,
+            Event::Decided { agent: 1, what, allowed: false } if what == "Bash: curl x | sh"
+        ));
+        assert!(app.world.open_inbox().is_empty());
+        assert!(!app.typing, "nothing to write back");
+        let s = render(&app, 140, 40);
+        assert!(!s.contains("waits for your yes"), "{s}");
+    }
+
+    #[test]
+    fn the_demo_decides_no_ask() {
+        let mut app = app_after(1, 4, 0, Lang::En);
+        app.world.asks_you(1, "Bash: make");
+        let item = app.world.inbox.len() - 1;
+        app.pane = Pane::Inbox;
+        app.inbox_sel = app
+            .world
+            .open_inbox()
+            .iter()
+            .position(|&i| i == item)
+            .unwrap();
+        key(&mut app, KeyCode::Char('a'));
+        assert!(app.world.inbox[item].open);
+        key(&mut app, KeyCode::Char('r'));
+        assert!(app.world.inbox[item].open);
     }
 
     /// A world whose journal is only a conversation of the person and the

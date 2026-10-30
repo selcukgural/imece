@@ -439,8 +439,21 @@ fn side(f: &mut Frame, area: Rect, app: &App) {
     let w = &app.world;
     let t = app.lang.text();
     let open = w.open_inbox();
-    // One line per item, one more for the selected item's keys.
-    let want = (open.len() as u16 + 3).max(3);
+    // The selected ask is shown whole under its row: the person allows
+    // what they read, not a row cut at the pane's edge.
+    let whole = match open.get(app.inbox_sel) {
+        Some(&i) if app.pane == Pane::Inbox && w.inbox[i].kind == InboxKind::Approval => wrap(
+            Line::from(vec![
+                Span::raw("  "),
+                Span::raw(clean(&words::one_line(&w.inbox[i].detail))),
+            ]),
+            area.width.saturating_sub(2) as usize,
+        ),
+        _ => Vec::new(),
+    };
+    // One line per item, one more for the selected item's keys, and the
+    // selected ask whole.
+    let want = (open.len() as u16 + 3 + whole.len() as u16).max(3);
     let inbox_h = want.min(area.height / 2).max(3.min(area.height));
     let [top, bottom] =
         Layout::vertical([Constraint::Length(inbox_h), Constraint::Min(0)]).areas(area);
@@ -461,9 +474,11 @@ fn side(f: &mut Frame, area: Rect, app: &App) {
         let line = inbox_line(app, i);
         if focused && n == app.inbox_sel {
             lines.push(line.style(Style::new().add_modifier(Modifier::REVERSED)));
+            lines.extend(whole.iter().cloned());
             let keys = match item.kind {
                 InboxKind::Reply => t.reply_keys,
                 InboxKind::Change => t.change_keys,
+                InboxKind::Approval => t.approval_keys,
                 _ => t.item_keys,
             };
             lines.push(Line::from(Span::styled(keys, dim())));

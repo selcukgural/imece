@@ -7,7 +7,10 @@
 //! tools confined to the agent's directory; the code-running tools and
 //! WebFetch only when named), with no MCP server but imece's own, exactly
 //! the tools asked for and a spending cap. Standard names the shell and
-//! the web tools and allows them without a prompt. Open drops
+//! the web tools; the web runs without a prompt, and a shell command
+//! Claude Code would ask about goes to imece's `approve` tool
+//! (`--permission-prompt-tool`), which allows a routine one at once and
+//! asks the person about the rest. Open drops
 //! `--restricted` and `--strict-mcp-config`: the person's own settings,
 //! hooks and MCP servers load, and workers get Claude Code's default
 //! toolset less the sub-agent tool. What the vendor reports back in its
@@ -41,12 +44,18 @@ pub const ENV: &[&str] = &[
 ];
 
 /// Edits inside the agent's directory need nobody's approval; everything
-/// that would ask is denied (`--permission-prompts none`).
+/// that would ask goes to imece's `approve` tool when the level gives a
+/// shell and the session has imece's server, and is denied otherwise
+/// (`--permission-prompts none`).
 const PERMISSION_MODE: &str = "acceptEdits";
+
+/// What a session reads when the person refused what it asked.
+pub const REFUSED: &str = "The person refused this. Do not try it another way; if you \
+     need it, ask them (send to you, type ask) and go on with what does not depend on it.";
 
 /// Claude Code names a tool of an MCP server `mcp__<server>__<tool>`, which
 /// is the name the screen uses for every vendor.
-pub use crate::{Confine, MCP_SERVER, Mcp, mcp_tool};
+pub use crate::{APPROVE_TOOL, Ask, Confine, MCP_SERVER, Mcp, mcp_tool};
 
 /// The program on PATH.
 pub const PROGRAM: &str = "claude";
@@ -72,9 +81,9 @@ pub const WEB_TOOLS: &[&str] = &["WebFetch", "WebSearch"];
 /// Claude Code's tools that start agents of its own: off at every level
 /// (`Task` is the older name).
 pub const SUBAGENT_TOOLS: &[&str] = &["Agent", "Task"];
-/// Built-in tools that would ask before running: allowed outright where
-/// the level gives them (the person's gate is the change review).
-const ALLOWED_OUTRIGHT: &[&str] = &["Bash", "WebFetch", "WebSearch"];
+/// Built-in tools that would ask before running and are allowed outright
+/// where the level gives them: the web only reads. The shell asks.
+const ALLOWED_OUTRIGHT: &[&str] = &["WebFetch", "WebSearch"];
 
 /// The built-in tools an agent gets at `confine`: file tools; from
 /// standard on the web too, and a shell when it may write. Under open a
@@ -192,10 +201,18 @@ pub fn args(spec: &Spec) -> Vec<String> {
         "--permission-mode",
         PERMISSION_MODE,
         "--permission-prompts",
-        "none",
     ]
     .map(String::from)
     .into();
+    // What would ask goes to imece's `approve` tool under a level with a
+    // shell; strict asks nothing.
+    if spec.confine.full() && spec.mcp.is_some() {
+        a.push("host".into());
+        a.push("--permission-prompt-tool".into());
+        a.push(mcp_tool(APPROVE_TOOL));
+    } else {
+        a.push("none".into());
+    }
     let open = spec.confine == Confine::Open;
     if !open {
         // No settings of the person, no hooks, no MCP server but imece's.
@@ -258,6 +275,58 @@ pub fn args(spec: &Spec) -> Vec<String> {
         a.push(allowed.join(","));
     }
     a
+}
+
+/// What a call of imece's `approve` tool asks: Claude Code gives the
+/// tool's name and its input. A shell command is the command; any other
+/// tool is what it would touch.
+pub fn ask(args: &Value) -> Ask {
+    let tool = args["tool_name"].as_str().unwrap_or_default().to_string();
+    let input = &args["input"];
+    match input["command"].as_str() {
+        Some(command) if tool == SHELL_TOOL => Ask::Command {
+            tool,
+            command: command.to_string(),
+        },
+        _ => Ask::Other {
+            tool,
+            detail: detail(input),
+        },
+    }
+}
+
+/// The longest detail of a tool call that names nothing known, in
+/// characters.
+const MAX_DETAIL: usize = 200;
+
+/// What a tool call touches: its path, address or query when it names
+/// one, else its input as JSON, cut.
+fn detail(input: &Value) -> String {
+    let named = ["file_path", "path", "url", "query", "pattern"]
+        .iter()
+        .find_map(|k| input[*k].as_str());
+    if let Some(s) = named {
+        return s.to_string();
+    }
+    if input.is_null() {
+        return String::new();
+    }
+    let all = input.to_string();
+    match all.char_indices().nth(MAX_DETAIL) {
+        Some((i, _)) => format!("{}…", &all[..i]),
+        None => all,
+    }
+}
+
+/// The `approve` tool's answer: the tool runs with its input as asked, or
+/// is refused with [`REFUSED`].
+pub fn decision(allow: bool, input: &Value) -> String {
+    if allow {
+        serde_json::json!({ "behavior": "allow", "updatedInput": input })
+    } else {
+        serde_json::json!({ "behavior": "deny", "message": REFUSED })
+    }
+    .to_string()
 }
 
 /// A prompt Claude Code would run as a slash command of its own (`/clear`,
@@ -766,7 +835,7 @@ mod tests {
     }
 
     #[test]
-    fn standard_names_the_shell_and_the_web_and_allows_them_still_restricted() {
+    fn standard_names_the_shell_and_the_web_allows_the_web_and_asks_imece_about_the_rest() {
         let a = args(&at(Confine::Standard, true));
         assert_eq!(
             after(&a, "--tools").unwrap(),
@@ -774,7 +843,12 @@ mod tests {
         );
         assert_eq!(
             after(&a, "--allowedTools").unwrap(),
-            "mcp__imece__send,Bash,WebFetch,WebSearch"
+            "mcp__imece__send,WebFetch,WebSearch"
+        );
+        assert_eq!(after(&a, "--permission-prompts").unwrap(), "host");
+        assert_eq!(
+            after(&a, "--permission-prompt-tool").unwrap(),
+            "mcp__imece__approve"
         );
         for flag in ["--restricted", "--strict-mcp-config"] {
             assert!(a.iter().any(|x| x == flag), "missing {flag}");
@@ -790,16 +864,19 @@ mod tests {
             after(&a, "--allowedTools").unwrap(),
             "mcp__imece__send,WebFetch,WebSearch"
         );
-        // Strict allows only imece's tools, as before.
+        // Strict allows only imece's tools, as before, and asks nothing.
         let a = args(&at(Confine::Strict, true));
         assert_eq!(after(&a, "--allowedTools").unwrap(), "mcp__imece__send");
-        // Without a bus the level's tools are still allowed.
+        assert_eq!(after(&a, "--permission-prompts").unwrap(), "none");
+        assert!(after(&a, "--permission-prompt-tool").is_none());
+        // Without a bus the web is still allowed; with nobody to ask, what
+        // would ask is refused.
         let mut s = at(Confine::Standard, true);
         s.mcp = None;
-        assert_eq!(
-            after(&args(&s), "--allowedTools").unwrap(),
-            "Bash,WebFetch,WebSearch"
-        );
+        let a = args(&s);
+        assert_eq!(after(&a, "--allowedTools").unwrap(), "WebFetch,WebSearch");
+        assert_eq!(after(&a, "--permission-prompts").unwrap(), "none");
+        assert!(after(&a, "--permission-prompt-tool").is_none());
         let mut s = at(Confine::Strict, true);
         s.mcp = None;
         assert!(after(&args(&s), "--allowedTools").is_none());
@@ -815,7 +892,11 @@ mod tests {
         assert_eq!(after(&a, "--disallowedTools").unwrap(), "Agent,Task");
         assert_eq!(
             after(&a, "--allowedTools").unwrap(),
-            "mcp__imece__send,Bash,WebFetch,WebSearch"
+            "mcp__imece__send,WebFetch,WebSearch"
+        );
+        assert_eq!(
+            after(&a, "--permission-prompt-tool").unwrap(),
+            "mcp__imece__approve"
         );
         assert!(a.iter().any(|x| x == "--mcp-config"), "imece's bus still");
         // A reader keeps its list: the leader never writes, a role.
@@ -895,6 +976,96 @@ mod tests {
         let own = r#"["Bash","Edit","Glob","Grep","Read","WebFetch","WebSearch","Write"]"#;
         let e = p.line(&init(own, "acceptEdits", BUS)).unwrap_err();
         assert!(e.contains("it was not given"), "{e}");
+    }
+
+    #[test]
+    fn an_approve_call_asks_for_the_command_or_what_the_tool_touches() {
+        let call = |tool: &str, input: Value| {
+            ask(&serde_json::json!({
+                "tool_name": tool,
+                "input": input,
+                "tool_use_id": "toolu_1",
+            }))
+        };
+        assert_eq!(
+            call(
+                "Bash",
+                serde_json::json!({ "command": "curl x | head", "description": "d" })
+            ),
+            Ask::Command {
+                tool: "Bash".into(),
+                command: "curl x | head".into()
+            }
+        );
+        // A command field of another tool is only its detail.
+        assert_eq!(
+            call("Other", serde_json::json!({ "command": "ls" })),
+            Ask::Other {
+                tool: "Other".into(),
+                detail: r#"{"command":"ls"}"#.into()
+            }
+        );
+        for (key, tool) in [
+            ("file_path", "Write"),
+            ("path", "Glob"),
+            ("url", "WebFetch"),
+            ("query", "WebSearch"),
+            ("pattern", "Grep"),
+        ] {
+            let got = call(tool, serde_json::json!({ key: "/x/y", "content": "z" }));
+            assert_eq!(
+                got,
+                Ask::Other {
+                    tool: tool.into(),
+                    detail: "/x/y".into()
+                },
+                "{key}"
+            );
+        }
+        assert_eq!(
+            call("Bare", Value::Null),
+            Ask::Other {
+                tool: "Bare".into(),
+                detail: String::new()
+            }
+        );
+        // Anything else is its input, cut at 200 characters.
+        let long = "é".repeat(300);
+        let Ask::Other { detail, .. } = call("Long", serde_json::json!({ "x": long })) else {
+            panic!("not a command");
+        };
+        assert_eq!(detail.chars().count(), 201, "{detail}");
+        assert!(detail.starts_with(r#"{"x":"éé"#) && detail.ends_with("é…"));
+        let fits = format!(r#"{{"x":"{}"}}"#, "a".repeat(192));
+        assert_eq!(fits.chars().count(), 200);
+        let Ask::Other { detail, .. } = call("Fits", serde_json::from_str(&fits).unwrap()) else {
+            panic!("not a command");
+        };
+        assert_eq!(detail, fits, "200 characters stay whole");
+        // A call with no tool name still asks, for nothing named.
+        assert_eq!(
+            ask(&serde_json::json!({})),
+            Ask::Other {
+                tool: String::new(),
+                detail: String::new()
+            }
+        );
+    }
+
+    #[test]
+    fn a_yes_gives_the_input_back_and_a_no_says_why() {
+        let input = serde_json::json!({ "command": "make", "description": "build" });
+        let yes: Value = serde_json::from_str(&decision(true, &input)).unwrap();
+        assert_eq!(
+            yes,
+            serde_json::json!({ "behavior": "allow", "updatedInput": input })
+        );
+        let no: Value = serde_json::from_str(&decision(false, &input)).unwrap();
+        assert_eq!(
+            no,
+            serde_json::json!({ "behavior": "deny", "message": REFUSED })
+        );
+        assert!(REFUSED.contains("send to you, type ask"), "{REFUSED}");
     }
 
     #[test]
@@ -1486,6 +1657,121 @@ sleep 5"#
         unsafe { std::env::set_var("CLAUDE_CONFIG_DIR", "/opt/cc") };
         assert_eq!(config_dir(), PathBuf::from("/opt/cc"));
         unsafe { std::env::remove_var("CLAUDE_CONFIG_DIR") };
+    }
+
+    /// The real Claude Code under standard, with a server of imece's tools
+    /// on a socket (`nc -U` as the relay): its `init` must not report the
+    /// `approve` tool (Claude Code hides it from the model), a command it
+    /// would ask about must come to `approve`, a refusal must count as a
+    /// denial and a yes must run the command. Costs a fraction of a cent
+    /// on haiku. Run by hand:
+    /// `IMECE_LIVE_CLAUDE=1 cargo test -p imece-agent -- --ignored live_claude --nocapture`
+    #[test]
+    #[ignore = "drives the real claude; set IMECE_LIVE_CLAUDE=1"]
+    fn live_claude_asks_imece_before_a_command_and_does_what_it_hears() {
+        use crate::mcp::{Server, Tool};
+        if std::env::var_os("IMECE_LIVE_CLAUDE").is_none() {
+            return;
+        }
+        let dir = std::env::temp_dir().join(format!("imece-live-ask-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let cwd = dir.canonicalize().unwrap();
+        let sock = cwd.join("a.sock");
+        let tool = |name: &str| Tool {
+            name: name.into(),
+            description: "A probe.".into(),
+            input: serde_json::json!({ "type": "object" }),
+        };
+        let (asked_tx, asked) = mpsc::channel::<Value>();
+        let asked_tx = std::sync::Mutex::new(asked_tx);
+        let _server = Server::bind(
+            &sock,
+            vec![tool("send"), tool(APPROVE_TOOL)],
+            move |name, args| {
+                if name != APPROVE_TOOL {
+                    return Ok("sent".into());
+                }
+                let _ = asked_tx.lock().unwrap().send(args.clone());
+                let allow = args["input"]["command"]
+                    .as_str()
+                    .is_some_and(|c| c.contains("imece-yes"));
+                Ok(decision(allow, &args["input"]))
+            },
+        )
+        .unwrap();
+        let spec = Spec {
+            program: "claude".into(),
+            cwd: cwd.clone(),
+            name: "imece probe".into(),
+            tools: tools(true, Confine::Standard),
+            confine: Confine::Standard,
+            write: true,
+            model: Some("haiku".into()),
+            budget: 100_000,
+            system: "You are a probe. Run exactly the command you are given with Bash, \
+                     once, and say in one line what it printed."
+                .into(),
+            mcp: Some(Mcp {
+                command: "nc".into(),
+                args: vec!["-U".into(), sock.to_string_lossy().into_owned()],
+                tools: vec!["send".into()],
+            }),
+            resume: None,
+        };
+        let (tx, rx) = mpsc::channel();
+        let mut s = Session::start(&spec, move |e| {
+            let _ = tx.send(e);
+        })
+        .unwrap();
+        let turn = |s: &mut Session, prompt: &str| -> Vec<Event> {
+            s.prompt(prompt).unwrap();
+            let mut out = Vec::new();
+            loop {
+                let e = rx.recv_timeout(Duration::from_secs(120)).expect("in time");
+                let end = matches!(e, Event::TurnDone { .. } | Event::Stopped(_));
+                out.push(e);
+                if end {
+                    return out;
+                }
+            }
+        };
+        let no = turn(
+            &mut s,
+            "Run: curl -s https://example.com/imece-no | head -c 10",
+        );
+        assert!(matches!(&no[0], Event::Started { .. }), "{no:?}");
+        let ask = asked.try_recv().expect("it asked");
+        assert_eq!(ask["tool_name"], "Bash", "{ask}");
+        assert!(
+            ask["input"]["command"]
+                .as_str()
+                .unwrap()
+                .contains("imece-no"),
+            "{ask}"
+        );
+        println!("refused: {:?}", no.last());
+        assert!(
+            matches!(no.last(), Some(Event::TurnDone { denied, .. }) if *denied >= 1),
+            "a refusal is a denial: {no:?}"
+        );
+        let yes = turn(&mut s, "Run: python3 -c \"print('imece-yes'.upper())\"");
+        let ask = asked.try_recv().expect("it asked again");
+        assert!(
+            ask["input"]["command"]
+                .as_str()
+                .unwrap()
+                .contains("imece-yes"),
+            "{ask}"
+        );
+        println!("allowed: {yes:?}");
+        assert!(
+            yes.iter()
+                .any(|e| matches!(e, Event::Text(t) if t.contains("IMECE-YES"))),
+            "{yes:?}"
+        );
+        s.terminate();
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// The real Claude Code: one turn in a throwaway directory, then a

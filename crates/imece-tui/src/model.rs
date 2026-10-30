@@ -687,6 +687,13 @@ pub enum Event {
         to: AgentId,
         text: String,
     },
+    /// The person allowed or refused what a live agent's session asked
+    /// before doing it (a command, or the tool and what it touches).
+    Decided {
+        agent: AgentId,
+        what: String,
+        allowed: bool,
+    },
     /// A live agent sent the person a message over the bus (`to: you`);
     /// an `ask` waits in their inbox, the rest is for the journal.
     ToYou {
@@ -893,6 +900,7 @@ impl Event {
             Event::Approved { .. }
             | Event::Rejected { .. }
             | Event::YouSaid { .. }
+            | Event::Decided { .. }
             | Event::Budget { .. }
             | Event::Shell { .. }
             | Event::Opened { .. }
@@ -921,6 +929,7 @@ impl Event {
             | Event::Failed { agent }
             | Event::Approved { agent, .. }
             | Event::Rejected { agent }
+            | Event::Decided { agent, .. }
             | Event::Replied { agent, .. }
             | Event::Stopped { agent, .. }
             | Event::Interrupted { agent }
@@ -978,6 +987,11 @@ pub enum InboxKind {
     /// answer; the detail is the question's first line. Closes when the
     /// person writes back to that agent.
     Question,
+    /// A live agent's session waits for the person's yes before a tool
+    /// call (a command, or the tool and what it touches, in the detail);
+    /// the person allows or refuses it. Closes with the decision or when
+    /// the session ends.
+    Approval,
 }
 
 #[derive(Clone, Debug)]
@@ -1391,6 +1405,55 @@ impl World {
         self.inbox
             .iter()
             .any(|i| i.open && i.kind == InboxKind::Question && i.agent == id)
+    }
+
+    /// Agent `id`'s session asks the person's yes for `what` before it
+    /// does it; every ask is an item of its own, in the order they came.
+    pub fn asks_you(&mut self, id: AgentId, what: &str) {
+        self.inbox.push(InboxItem {
+            kind: InboxKind::Approval,
+            agent: id,
+            detail: what.to_string(),
+            researcher: None,
+            open: true,
+            tick: self.tick,
+        });
+    }
+
+    /// The person allowed or refused what open item `item` asks: it
+    /// closes and the journal says so. Anything but an open approval is
+    /// left alone.
+    pub fn decided(&mut self, item: usize, allowed: bool) {
+        let Some(it) = self
+            .inbox
+            .get_mut(item)
+            .filter(|i| i.open && i.kind == InboxKind::Approval)
+        else {
+            return;
+        };
+        it.open = false;
+        let (agent, what) = (it.agent, it.detail.clone());
+        self.note(Event::Decided {
+            agent,
+            what,
+            allowed,
+        });
+    }
+
+    /// Agent `id`'s session is over: what it asked waits for nobody.
+    pub fn close_approvals(&mut self, id: AgentId) {
+        for i in &mut self.inbox {
+            if i.kind == InboxKind::Approval && i.agent == id {
+                i.open = false;
+            }
+        }
+    }
+
+    /// Whether agent `id`'s session waits for the person's yes.
+    pub fn has_approval(&self, id: AgentId) -> bool {
+        self.inbox
+            .iter()
+            .any(|i| i.open && i.kind == InboxKind::Approval && i.agent == id)
     }
 
     fn close(&mut self, item: usize) -> Option<(InboxKind, AgentId)> {
@@ -2022,6 +2085,83 @@ mod tests {
             .kind(),
             StoryKind::Talk
         );
+    }
+
+    #[test]
+    fn each_ask_waits_on_its_own_until_the_person_decides_or_the_session_ends() {
+        let mut w = world(vec![
+            agent(0, Role::Leader, Status::Idle),
+            agent(1, Role::Worker, Status::Working),
+            agent(2, Role::Worker, Status::Working),
+        ]);
+        w.tick = 7;
+        assert!(!w.has_approval(1));
+        w.asks_you(1, "Bash: make a\nmake b");
+        w.asks_you(1, "Bash: make c");
+        w.asks_you(2, "WebFetch: https://x");
+        let it = &w.inbox[0];
+        assert_eq!(
+            (
+                it.kind,
+                it.agent,
+                it.detail.as_str(),
+                it.open,
+                it.tick,
+                it.researcher
+            ),
+            (
+                InboxKind::Approval,
+                1,
+                "Bash: make a\nmake b",
+                true,
+                7,
+                None
+            ),
+            "the whole command, every line of it"
+        );
+        assert_eq!(w.open_inbox(), [0, 1, 2], "each ask is its own item");
+        assert!(w.has_approval(1) && w.has_approval(2));
+
+        w.decided(1, false);
+        assert_eq!(w.open_inbox(), [0, 2]);
+        assert!(matches!(
+            &w.journal.last().unwrap().event,
+            Event::Decided { agent: 1, what, allowed: false } if what == "Bash: make c"
+        ));
+        let journal = w.journal.len();
+        w.decided(1, true);
+        assert_eq!(w.journal.len(), journal, "a closed item is decided once");
+        w.decided(0, true);
+        assert!(matches!(
+            &w.journal.last().unwrap().event,
+            Event::Decided {
+                agent: 1,
+                allowed: true,
+                ..
+            }
+        ));
+        assert!(!w.has_approval(1) && w.has_approval(2));
+        // Neither a question nor a change is decided here.
+        w.asked_you(2, "Which?");
+        let journal = w.journal.len();
+        w.decided(3, true);
+        w.decided(99, true);
+        assert!(w.inbox[3].open);
+        assert_eq!(w.journal.len(), journal);
+
+        // The session's end closes its asks alone.
+        w.asks_you(1, "Bash: make d");
+        w.close_approvals(2);
+        assert!(!w.has_approval(2) && w.has_approval(1));
+        assert!(w.has_question(2), "its question still waits");
+        assert!(w.inbox[3].open);
+
+        let e = Event::Decided {
+            agent: 2,
+            what: "x".into(),
+            allowed: true,
+        };
+        assert_eq!((e.kind(), e.agent()), (EntryKind::Person, 2));
     }
 
     #[test]

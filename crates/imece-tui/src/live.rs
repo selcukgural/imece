@@ -35,8 +35,8 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use imece_agent::mcp::{Answer, Server, Tool};
 use imece_agent::{
-    Agent as Session, Confine, Event as AgentEvent, Mcp, Tier, child, claude, codex, gemini, run,
-    worktree,
+    APPROVE_TOOL, Agent as Session, Ask, Confine, Event as AgentEvent, Mcp, Tier, child, claude,
+    codex, gemini, run, worktree,
 };
 use serde_json::{Value, json};
 
@@ -315,6 +315,9 @@ const MAX_OPEN: usize = 20;
 const MAX_POSTS: u32 = 10;
 /// How long a tool call waits for the screen's loop to answer it.
 const CALL_WAIT: Duration = Duration::from_secs(30);
+/// How long a session's ask waits for the person's yes: the person may be
+/// away for hours, and the session waits with them.
+const APPROVE_WAIT: Duration = Duration::from_secs(24 * 3600);
 /// How long one run may take unless `--run-timeout` says otherwise.
 pub const DEFAULT_RUN_TIMEOUT: Duration = Duration::from_secs(600);
 
@@ -356,6 +359,11 @@ const GIT_READ: &[&str] = &[
     "status",
 ];
 
+/// git options that run a program (a pager: `-O`, `--open-files-in-pager`)
+/// or write a file (`--output`), by their start: `-Ovim` and
+/// `--output=x` too. `-O<orderfile>` of diff and log goes with them.
+const GIT_DENIED_OPTIONS: &[&str] = &["-O", "--open-files-in-pager", "--output"];
+
 /// imece's MCP servers, one socket per agent in a private directory.
 struct Bus {
     dir: PathBuf,
@@ -381,6 +389,14 @@ pub struct LeftBehind {
     /// Seconds since the earlier run last wrote the file; none for a file
     /// an older imece wrote.
     pub ago: Option<u64>,
+}
+
+/// A tool call a session waits on the person's yes for: what it asks,
+/// the tool's input to give back with a yes, and where the answer goes.
+struct Pending {
+    what: Ask,
+    input: Value,
+    reply: Sender<Answer>,
 }
 
 /// A wake that goes on with the agent's earlier session: what to start
@@ -502,16 +518,20 @@ pub struct Live {
     run_timeout: Duration,
     /// How much of its vendor each session gets; see [`Confine`].
     confine: Confine,
+    /// What each agent's session waits on the person's yes for, in the
+    /// order its approval items are in the inbox.
+    pending: Vec<Vec<Pending>>,
 }
 
 /// How long a tool call waits for imece's answer: a run is answered when
 /// the program ends, not by the screen's loop, so it waits for the run's
-/// deadline and a little more; the rest are answered within a step.
+/// deadline and a little more; an ask waits for the person; the rest are
+/// answered within a step.
 fn call_wait(tool: &str, run_timeout: Duration) -> Duration {
-    if tool == "run" {
-        run_timeout + CALL_WAIT
-    } else {
-        CALL_WAIT
+    match tool {
+        "run" => run_timeout + CALL_WAIT,
+        APPROVE_TOOL => APPROVE_WAIT,
+        _ => CALL_WAIT,
     }
 }
 
@@ -712,6 +732,8 @@ impl Live {
             self.woken[id] = found.woken.get(id).copied().unwrap_or(0);
             self.posted[id] = found.posted.get(id).copied().unwrap_or(0);
             self.sessions[id] = found.sessions.get(id).cloned().flatten();
+            // The session that asked is gone with the process before.
+            w.close_approvals(id);
             if w.agents[id].gone {
                 continue;
             }
@@ -1011,6 +1033,7 @@ impl Live {
             run_programs: Vec::new(),
             run_timeout: DEFAULT_RUN_TIMEOUT,
             confine: Confine::default(),
+            pending: Vec::new(),
         }
     }
 
@@ -1039,6 +1062,7 @@ impl Live {
         self.posted.push(0);
         self.cwds.push(None);
         self.running.push(run::Running::default());
+        self.pending.push(Vec::new());
     }
 
     /// The vendor `v` as imece drives it. Every agent's vendor is one.
@@ -1082,21 +1106,26 @@ impl Live {
             servers: Vec::new(),
         });
         for id in 0..self.slots.len() {
-            self.bind(id, w.agents[id].role)?;
+            self.bind(id, w.agents[id].role, w.agents[id].vendor)?;
         }
         Ok(())
     }
 
     /// Binds the socket of agent `id`, the next one to get a socket, with
-    /// the tools of `role`. Without a bus (before it opens) there is
-    /// nothing to bind.
-    fn bind(&mut self, id: AgentId, role: Role) -> io::Result<()> {
-        let tools = tools_of(
+    /// the tools of `role`, and on `vendor` Claude the tool its session
+    /// asks through: the other vendors ask on their own wire, and their
+    /// sessions must report exactly imece's tools. Without a bus (before
+    /// it opens) there is nothing to bind.
+    fn bind(&mut self, id: AgentId, role: Role, vendor: Vendor) -> io::Result<()> {
+        let mut tools = tools_of(
             role,
             &self.vendor_names(),
             &self.run_programs,
             self.run_timeout,
         );
+        if vendor == Vendor::Claude {
+            tools.push(approve_tool());
+        }
         let Some(bus) = &mut self.bus else {
             return Ok(());
         };
@@ -1252,6 +1281,10 @@ impl Live {
                 self.run(w, from, &args, reply);
                 continue;
             }
+            if tool == APPROVE_TOOL {
+                self.approve(w, from, &args, reply);
+                continue;
+            }
             let answer = match tool.as_str() {
                 "send" => self.send(w, from, &args),
                 "post" => self.post(w, from, &args),
@@ -1343,8 +1376,58 @@ impl Live {
         });
     }
 
+    /// Agent `from`'s Claude Code session asks before a tool call (its
+    /// permission prompt, through imece's socket): a routine command is
+    /// allowed at once, anything else waits in the person's inbox and is
+    /// answered when they decide. The trace says which.
+    fn approve(&mut self, w: &mut World, from: AgentId, args: &Value, reply: Sender<Answer>) {
+        let what = claude::ask(args);
+        let input = args["input"].clone();
+        if routine(w.agents[from].role, &what, &self.run_programs) {
+            w.agents[from].trace(w.tick, format!("allowed on its own: {}", what.line()));
+            let _ = reply.send(Ok(claude::decision(true, &input)));
+            return;
+        }
+        w.agents[from].trace(w.tick, format!("asks the person: {}", what.line()));
+        w.asks_you(from, &what.line());
+        self.pending[from].push(Pending { what, input, reply });
+    }
+
+    /// The person allowed or refused what inbox item `item` asks: the
+    /// session waiting on it goes on. An item that is not an open
+    /// approval is left alone.
+    pub fn decide(&mut self, w: &mut World, item: usize, allow: bool) {
+        let Some(id) = w
+            .inbox
+            .get(item)
+            .filter(|i| i.open && i.kind == InboxKind::Approval)
+            .map(|i| i.agent)
+        else {
+            return;
+        };
+        // An agent's open approvals and its waiting calls are in the same
+        // order: an ask adds one of each, a decision or the session's end
+        // takes them away together.
+        let nth = w.inbox[..item]
+            .iter()
+            .filter(|i| i.open && i.kind == InboxKind::Approval && i.agent == id)
+            .count();
+        w.decided(item, allow);
+        if nth < self.pending[id].len() {
+            let p = self.pending[id].remove(nth);
+            let how = if allow { "allowed" } else { "refused" };
+            w.agents[id].trace(w.tick, format!("the person {how}: {}", p.what.line()));
+            let _ = p.reply.send(Ok(claude::decision(allow, &p.input)));
+        }
+    }
+
     /// A session ended: the next message starts a new one.
-    fn end(&mut self, w: &World, id: AgentId) {
+    fn end(&mut self, w: &mut World, id: AgentId) {
+        // What it asked waits for nobody now.
+        for p in self.pending[id].drain(..) {
+            let _ = p.reply.send(Err("the session ended".into()));
+        }
+        w.close_approvals(id);
         self.spent_before[id] = w.agents[id].cost;
         self.slots[id] = Slot::None;
         self.cwds[id] = None;
@@ -1543,7 +1626,7 @@ impl Live {
     /// Agent `id`'s session and runs end, and what waited on it goes: its
     /// mail, imece's notes to it, its change and the person's question.
     /// Its slot stays, for the screen's ids.
-    fn dismiss(&mut self, w: &World, id: AgentId) {
+    fn dismiss(&mut self, w: &mut World, id: AgentId) {
         self.running[id].kill_all();
         if let Slot::Running(s) = &mut self.slots[id] {
             s.terminate();
@@ -1585,7 +1668,7 @@ impl Live {
         let reuse = w.projects.iter().find(|q| q.closed && at(q)).map(|q| q.id);
         let id = w.agents.len();
         // The socket first: an agent without one could never start.
-        self.bind(id, Role::Leader)
+        self.bind(id, Role::Leader, self.lead)
             .map_err(|e| ProjectRefusal::Bus(e.to_string()))?;
         let model = self.of(self.lead).ladder.standard.clone();
         self.grow(model, false);
@@ -1782,7 +1865,7 @@ impl Live {
             .expect("some number is free");
         let id = w.agents.len();
         // The socket first: an agent without one could never start.
-        self.bind(id, role)
+        self.bind(id, role, vendor.vendor)
             .map_err(|e| format!("{name} could not get a socket: {e}"))?;
         self.grow(model.clone(), tiered);
         let t = w.tick;
@@ -2766,6 +2849,41 @@ pub fn apply(w: &mut World, id: AgentId, e: AgentEvent, before: u64) {
     }
 }
 
+/// The tool a Claude Code session asks through before a tool call that
+/// needs a yes. Claude Code calls it itself and hides it from the model.
+fn approve_tool() -> Tool {
+    Tool {
+        name: APPROVE_TOOL.into(),
+        description: "Asks the person whether a tool call may run.".into(),
+        input: json!({
+            "type": "object",
+            "properties": {
+                "tool_name": { "type": "string" },
+                "input": { "type": "object" },
+                "tool_use_id": { "type": "string" },
+            },
+            "required": ["tool_name", "input"],
+        }),
+    }
+}
+
+/// Whether what a session asks is routine, allowed without the person:
+/// one line that is one program with its arguments (nothing a shell would
+/// read otherwise, no second line), which the run tool would run for
+/// `role`: the build, the tests, git's reading commands, the programs
+/// the person named.
+fn routine(role: Role, what: &Ask, programs: &[String]) -> bool {
+    match what {
+        Ask::Command { command, .. } => {
+            let line = command.trim();
+            // A shell runs each line as a command of its own.
+            !line.contains(['\n', '\r'])
+                && run::split(line).is_ok_and(|argv| allowed(role, &argv, programs).is_ok())
+        }
+        Ask::Other { .. } => false,
+    }
+}
+
 /// imece's tools for an agent of `role`: workers alone take cards, the
 /// leader hires workers and a worker hires helpers (from `vendors`);
 /// helpers and researchers hire nobody.
@@ -2858,6 +2976,23 @@ fn allowed(role: Role, argv: &[String], programs: &[String]) -> Result<(), Strin
             Ok(())
         }
         "git" => {
+            // git's options before the command (`-c`, `-C`, `--git-dir`)
+            // change what it runs and where; a pager or an output file
+            // runs a program or writes outside the directory.
+            if argv[1..].first().is_some_and(|a| a.starts_with('-')) {
+                return Err(
+                    "git takes no options before its command here; name the command first"
+                        .to_string(),
+                );
+            }
+            if let Some(a) = argv
+                .iter()
+                .find(|a| GIT_DENIED_OPTIONS.iter().any(|o| a.starts_with(o)))
+            {
+                return Err(format!(
+                    "git {sub} {a}: a pager or an output file is not run through imece"
+                ));
+            }
             if GIT_READ.contains(&sub) {
                 Ok(())
             } else {
@@ -3303,6 +3438,15 @@ fn abilities(vendor: Vendor, role: Role, confine: Confine) -> &'static str {
         (_, _, false) => {
             "You can read and change files here; the run tool runs the build, the \
              tests and git's reading commands, nothing else."
+        }
+        (Vendor::Claude, _, true) => {
+            "You can read and change files here, run commands in your shell and reach \
+             the web. A command that is one program with its arguments (no pipes, \
+             redirections, && or $, one line) and runs the build, the tests or git's \
+             reading commands runs at once; most others wait for the person's yes, so \
+             prefer the first kind. A refusal is the person's decision, not an error: \
+             do not try the same another way. The run tool runs the build and the \
+             tests with their output tidied."
         }
         (_, _, true) => {
             "You can read and change files here, run commands in your shell and reach \
@@ -3998,6 +4142,248 @@ mod tests {
         for tool in ["send", "post", "board", "claim", "hire"] {
             assert_eq!(call_wait(tool, t), CALL_WAIT, "{tool}");
         }
+        // An ask waits for the person, who may be away for a day.
+        assert_eq!(call_wait("approve", t), Duration::from_secs(86_400));
+    }
+
+    #[test]
+    fn git_through_imece_takes_no_options_before_its_command_no_pager_and_no_output_file() {
+        let argv = |s: &str| run::split(s).unwrap();
+        for before in [
+            "git -c diff.external=x diff",
+            "git -cdiff.external=x diff",
+            "git -C /elsewhere log",
+            "git --git-dir=/x status",
+            "git --no-pager log",
+        ] {
+            let e = allowed(Role::Worker, &argv(before), &[]).unwrap_err();
+            assert!(e.contains("no options before its command"), "{before}: {e}");
+        }
+        for runs in [
+            "git grep -O x",
+            "git grep -Ovim x",
+            "git grep --open-files-in-pager=vim x",
+            "git diff --output=/tmp/x",
+            "git log --output /tmp/x",
+            "git show HEAD --output=x",
+        ] {
+            let e = allowed(Role::Leader, &argv(runs), &[]).unwrap_err();
+            assert!(
+                e.contains("a pager or an output file is not run through imece"),
+                "{runs}: {e}"
+            );
+        }
+        let e = allowed(Role::Worker, &argv("git diff -Oorder"), &[]).unwrap_err();
+        assert!(e.starts_with("git diff -Oorder:"), "{e}");
+        for reads in [
+            "git log --oneline -5",
+            "git diff --stat HEAD~1",
+            "git grep -n foo",
+            "git show HEAD:src/x.rs",
+        ] {
+            allowed(Role::Leader, &argv(reads), &[]).unwrap();
+        }
+    }
+
+    fn bash(command: &str) -> Ask {
+        Ask::Command {
+            tool: "Bash".into(),
+            command: command.into(),
+        }
+    }
+
+    #[test]
+    fn a_routine_command_is_one_line_the_run_tool_would_run() {
+        let extra = vec!["npm".to_string()];
+        for yes in [
+            "cargo test",
+            "  cargo build --release\n",
+            "git log --oneline -5",
+            "npm test",
+        ] {
+            assert!(routine(Role::Worker, &bash(yes), &extra), "{yes:?}");
+        }
+        for no in [
+            "cargo test | tail",
+            "cargo test 2>&1",
+            "cargo test && rm -rf x",
+            "cargo test\nrm -rf x",
+            "cargo test\rrm -rf x",
+            "echo $HOME",
+            "cargo publish",
+            "git push",
+            "git -c x=y log",
+            "ls",
+            "",
+        ] {
+            assert!(!routine(Role::Worker, &bash(no), &extra), "{no:?}");
+        }
+        // The run tool's rules, role and programs included.
+        assert!(!routine(Role::Worker, &bash("npm test"), &[]));
+        assert!(routine(Role::Worker, &bash("cargo fmt"), &extra));
+        assert!(!routine(Role::Leader, &bash("cargo fmt"), &extra));
+        // Only a command is ever routine.
+        let other = Ask::Other {
+            tool: "Bash".into(),
+            detail: "cargo test".into(),
+        };
+        assert!(!routine(Role::Worker, &other, &extra));
+    }
+
+    /// Agent `from`'s session asks to run `command`, through the bus;
+    /// where its answer comes.
+    fn ask_to_run(live: &Live, from: AgentId, command: &str) -> Receiver<Answer> {
+        let (tx, rx) = mpsc::channel();
+        let args = json!({
+            "tool_name": "Bash",
+            "input": { "command": command, "description": "d" },
+            "tool_use_id": "toolu_1",
+        });
+        live.calls_tx
+            .send((from, APPROVE_TOOL.into(), args, tx))
+            .unwrap();
+        rx
+    }
+
+    /// What the session reads back from an ask.
+    fn verdict(rx: &Receiver<Answer>) -> Value {
+        serde_json::from_str(&rx.try_recv().unwrap().unwrap()).unwrap()
+    }
+
+    #[test]
+    fn a_routine_ask_is_allowed_at_once_and_the_rest_wait_for_the_person_in_order() {
+        let mut w = team(1);
+        let mut live = idle_live(2);
+        let routine = ask_to_run(&live, 1, "cargo test");
+        live.step(&mut w);
+        let yes = verdict(&routine);
+        assert_eq!(yes["behavior"], "allow");
+        assert_eq!(yes["updatedInput"]["command"], "cargo test");
+        assert!(w.open_inbox().is_empty());
+        assert!(
+            w.agents[1]
+                .trace
+                .iter()
+                .any(|l| l.ends_with(" allowed on its own: Bash: cargo test"))
+        );
+
+        // An older question of the worker and the leader's ask come first:
+        // neither counts among the worker's asks.
+        w.asked_you(1, "Which API?");
+        let lead = ask_to_run(&live, 0, "make lead");
+        let asks: Vec<_> = ["make a", "make b", "make c"]
+            .iter()
+            .map(|c| ask_to_run(&live, 1, c))
+            .collect();
+        live.step(&mut w);
+        assert!(lead.try_recv().is_err() && asks.iter().all(|a| a.try_recv().is_err()));
+        let open = w.open_inbox();
+        let shown: Vec<_> = open
+            .iter()
+            .map(|&i| {
+                (
+                    w.inbox[i].kind,
+                    w.inbox[i].agent,
+                    w.inbox[i].detail.as_str(),
+                )
+            })
+            .collect();
+        assert_eq!(
+            shown,
+            [
+                (InboxKind::Question, 1, "Which API?"),
+                (InboxKind::Approval, 0, "Bash: make lead"),
+                (InboxKind::Approval, 1, "Bash: make a"),
+                (InboxKind::Approval, 1, "Bash: make b"),
+                (InboxKind::Approval, 1, "Bash: make c"),
+            ]
+        );
+        assert!(w.has_approval(0) && w.has_approval(1));
+        assert!(
+            w.agents[1]
+                .trace
+                .iter()
+                .any(|l| l.ends_with(" asks the person: Bash: make b"))
+        );
+        // Another kind of item is not an approval, whoever's it is.
+        live.decide(&mut w, open[0], true);
+        assert!(w.inbox[open[0]].open);
+        assert!(asks.iter().all(|a| a.try_recv().is_err()));
+        live.decide(&mut w, 999, true);
+
+        // The middle one first: refused, and only that call hears it.
+        live.decide(&mut w, open[3], false);
+        let no = verdict(&asks[1]);
+        assert_eq!(no["behavior"], "deny");
+        assert_eq!(no["message"], claude::REFUSED);
+        assert!(asks[0].try_recv().is_err() && asks[2].try_recv().is_err());
+        assert!(matches!(
+            &w.journal.last().unwrap().event,
+            Event::Decided { agent: 1, what, allowed: false } if what == "Bash: make b"
+        ));
+        assert!(
+            w.agents[1]
+                .trace
+                .iter()
+                .any(|l| l.ends_with(" the person refused: Bash: make b"))
+        );
+        // Decided once: the closed item is left alone, and so are the
+        // calls still waiting.
+        let journal = w.journal.len();
+        live.decide(&mut w, open[3], true);
+        assert_eq!(w.journal.len(), journal);
+        assert!(asks[0].try_recv().is_err() && asks[2].try_recv().is_err());
+        // Then the first and the last, past the decided one.
+        live.decide(&mut w, open[2], true);
+        assert_eq!(verdict(&asks[0])["updatedInput"]["command"], "make a");
+        live.decide(&mut w, open[4], true);
+        assert_eq!(verdict(&asks[2])["updatedInput"]["command"], "make c");
+        assert!(matches!(
+            &w.journal.last().unwrap().event,
+            Event::Decided { agent: 1, what, allowed: true } if what == "Bash: make c"
+        ));
+        assert!(
+            w.agents[1]
+                .trace
+                .iter()
+                .any(|l| l.ends_with(" the person allowed: Bash: make c"))
+        );
+        assert!(!w.has_approval(1) && w.has_approval(0));
+        assert!(live.pending[1].is_empty());
+        // The leader's waits on.
+        assert!(lead.try_recv().is_err());
+        assert_eq!(live.pending[0].len(), 1);
+    }
+
+    #[test]
+    fn an_approval_whose_session_ended_closes_and_its_call_hears_so() {
+        let mut w = team(1);
+        let mut live = idle_live(2);
+        let ask = ask_to_run(&live, 1, "make deploy");
+        let lead = ask_to_run(&live, 0, "make lead");
+        live.step(&mut w);
+        live.end(&mut w, 1);
+        assert_eq!(
+            ask.try_recv().unwrap(),
+            Err("the session ended".to_string())
+        );
+        assert!(!w.has_approval(1) && w.has_approval(0));
+        assert!(live.pending[1].is_empty());
+        assert!(lead.try_recv().is_err());
+        // An item with no call behind it (none waits any more) is only
+        // closed, and the journal still says what the person decided.
+        w.asks_you(1, "Bash: make again");
+        let item = w.inbox.len() - 1;
+        live.decide(&mut w, item, false);
+        assert!(!w.inbox[item].open);
+        assert!(matches!(
+            &w.journal.last().unwrap().event,
+            Event::Decided {
+                agent: 1,
+                allowed: false,
+                ..
+            }
+        ));
     }
 
     /// A session that says when it was ended.
@@ -4691,8 +5077,9 @@ mod tests {
     fn the_bus_answers_through_the_socket_of_the_caller() {
         use std::io::{BufRead, BufReader, Write};
         use std::os::unix::net::UnixStream;
-        let mut w = team(1);
-        let mut live = idle_live(2);
+        let mut w = team(2);
+        w.agents[2].vendor = Vendor::Codex;
+        let mut live = idle_live(3);
         live.open_bus(&w, "/opt/imece".into()).unwrap();
         let dir = live.bus.as_ref().unwrap().dir.clone();
         use std::os::unix::fs::PermissionsExt;
@@ -4718,21 +5105,29 @@ mod tests {
             w.journal[0].event,
             Event::Sent { from: 1, to: 0, .. }
         ));
-        // The leader's socket does not even offer claim; it alone offers hire.
-        let lead = live.bus.as_ref().unwrap().servers[0].path().to_path_buf();
-        let mut sock = UnixStream::connect(lead).unwrap();
-        writeln!(sock, r#"{{"jsonrpc":"2.0","id":1,"method":"tools/list"}}"#).unwrap();
-        let mut line = String::new();
-        BufReader::new(&sock).read_line(&mut line).unwrap();
-        let listed: Value = serde_json::from_str(&line).unwrap();
-        let names: Vec<&str> = listed["result"]["tools"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(|t| t["name"].as_str().unwrap())
-            .collect();
-        assert_eq!(names, ["send", "post", "board", "run", "hire"]);
-        drop(sock);
+        // The leader's socket does not even offer claim; it alone offers
+        // hire. A Claude session's socket offers approve, which Claude
+        // Code asks through; another vendor's does not.
+        let list = |n: usize| {
+            let path = live.bus.as_ref().unwrap().servers[n].path().to_path_buf();
+            let mut sock = UnixStream::connect(path).unwrap();
+            writeln!(sock, r#"{{"jsonrpc":"2.0","id":1,"method":"tools/list"}}"#).unwrap();
+            let mut line = String::new();
+            BufReader::new(&sock).read_line(&mut line).unwrap();
+            let listed: Value = serde_json::from_str(&line).unwrap();
+            listed["result"]["tools"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|t| t["name"].as_str().unwrap().to_string())
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(list(0), ["send", "post", "board", "run", "hire", "approve"]);
+        assert_eq!(
+            list(2),
+            ["send", "post", "board", "run", "claim", "hire"],
+            "codex asks on its own wire"
+        );
         drop(live);
         assert!(!dir.exists());
     }
@@ -5423,7 +5818,10 @@ in p.rs",
             .iter()
             .map(|t| t["name"].as_str().unwrap())
             .collect();
-        assert_eq!(names, ["send", "post", "board", "run", "claim", "hire"]);
+        assert_eq!(
+            names,
+            ["send", "post", "board", "run", "claim", "hire", "approve"]
+        );
     }
 
     #[test]
@@ -6521,6 +6919,7 @@ in p.rs",
         );
         assert!(strict(Vendor::Codex, Role::Leader).contains("refuses writes and the network"));
         assert!(!strict(Vendor::Codex, Role::Leader).contains("search the web"));
+        assert!(!strict(Vendor::Claude, Role::Worker).contains("the person's yes"));
         assert!(
             strict(Vendor::Codex, Role::Worker)
                 .contains("inside this directory and refuses the network")
@@ -6550,6 +6949,15 @@ in p.rs",
                     .contains("run commands in your shell and reach the web")
             );
             assert!(!full(Vendor::Claude, Role::Worker).contains("nothing else"));
+            // Claude's shell asks the person about what is not routine.
+            for r in [Role::Worker, Role::Helper] {
+                assert!(
+                    full(Vendor::Claude, r).contains("most others wait for the person's yes"),
+                    "{r:?}"
+                );
+            }
+            assert!(!full(Vendor::Gemini, Role::Worker).contains("the person's yes"));
+            assert!(!full(Vendor::Claude, Role::Leader).contains("the person's yes"));
             assert!(
                 full(Vendor::Codex, Role::Leader)
                     .contains("search the web and run commands that only read")
@@ -6894,7 +7302,7 @@ in p.rs",
         // checkout, with one closed, is a new project.
         let other = checkout("close-other");
         w.open_project(None, "third".into(), "/t".into(), Vendor::Claude);
-        live.bind(4, Role::Leader).unwrap();
+        live.bind(4, Role::Leader, Vendor::Claude).unwrap();
         live.grow(None, false);
         live.places.push(Place {
             repo: PathBuf::from("/t"),
@@ -7098,7 +7506,7 @@ in p.rs",
             .iter()
             .map(|t| t["name"].as_str().unwrap())
             .collect();
-        assert_eq!(names, ["send", "post", "board", "run", "hire"]);
+        assert_eq!(names, ["send", "post", "board", "run", "hire", "approve"]);
         let _ = std::fs::remove_dir_all(&repo);
     }
 
@@ -7300,8 +7708,11 @@ in p.rs",
         };
         let mut live = Live::bare(claude_at("x"), Vendor::Claude);
         live.state = state.clone();
+        // What a session asked went with the process.
+        w.asks_you(1, "Bash: make");
         let journal = w.journal.len();
         live.adopt(&mut w, found, 3);
+        assert!(!w.has_approval(1));
         assert_eq!(live.places.len(), 2);
         assert_eq!(live.places[0].repo, repo);
         assert_eq!(live.places[0].root, root_for(&state, &repo));
