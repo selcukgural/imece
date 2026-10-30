@@ -58,7 +58,7 @@ mod tools;
 
 pub(crate) use self::prompts::MAX_NOTES_KIB;
 pub use self::sessions::apply;
-use self::{hiring::*, projects::*, prompts::*, tools::*};
+use self::{changes::*, hiring::*, projects::*, prompts::*, tools::*};
 
 pub struct Options {
     pub repo: PathBuf,
@@ -235,6 +235,45 @@ pub struct LeftBehind {
     pub ago: Option<u64>,
 }
 
+/// A job for the git thread (see [`Live::git`]).
+enum GitJob {
+    /// Read worker `agent`'s change in `path` for its done titled
+    /// `title`. `said` is what the worker is told before what the change
+    /// is, on `reply`.
+    Read {
+        agent: AgentId,
+        path: PathBuf,
+        title: String,
+        said: String,
+        reply: Sender<Answer>,
+    },
+    /// Apply worker `agent`'s change to the checkout `repo`.
+    Apply {
+        agent: AgentId,
+        repo: PathBuf,
+        change: worktree::Change,
+        title: String,
+    },
+}
+
+/// What a git job came to, back on the screen's loop.
+enum GitDone {
+    Read {
+        agent: AgentId,
+        title: String,
+        said: String,
+        reply: Sender<Answer>,
+        read: io::Result<Option<worktree::Change>>,
+    },
+    /// `mark` is the worktree's mark commit, when `applied` is ok.
+    Applied {
+        agent: AgentId,
+        title: String,
+        applied: io::Result<()>,
+        mark: io::Result<String>,
+    },
+}
+
 /// What a session waits on the person's yes for, and how the answer
 /// reaches it.
 struct Pending {
@@ -345,6 +384,17 @@ pub struct Live {
     /// Workers' changes waiting for the person, as git knows them; the
     /// screen's copy is in the world.
     changes: HashMap<AgentId, worktree::Change>,
+    /// Git work on changes (reading a done's change, applying one) runs
+    /// on a thread of its own, one job at a time in the order given: the
+    /// screen never waits on git, two applies never meet in the checkout,
+    /// and a change is read only after the apply asked before it.
+    git: Sender<GitJob>,
+    git_back: Receiver<GitDone>,
+    /// Reads of each worker's change under way: a change is not applied
+    /// while a newer one is being read.
+    reading: Vec<usize>,
+    /// Whether each worker's change is being applied.
+    applying: Vec<bool>,
     bus: Option<Bus>,
     calls_tx: Sender<Call>,
     calls_rx: Receiver<Call>,
@@ -506,6 +556,9 @@ impl Live {
         let (tx, rx) = mpsc::channel();
         let (ready_tx, ready_rx) = mpsc::channel();
         let (calls_tx, calls_rx) = mpsc::channel();
+        let (git, jobs) = mpsc::channel();
+        let (done, git_back) = mpsc::channel();
+        thread::spawn(move || git_thread(jobs, done));
         Live {
             state: std::env::temp_dir(),
             store: None,
@@ -541,6 +594,10 @@ impl Live {
             leaving: Vec::new(),
             notes: Vec::new(),
             changes: HashMap::new(),
+            git,
+            git_back,
+            reading: Vec::new(),
+            applying: Vec::new(),
             bus: None,
             calls_tx,
             calls_rx,
@@ -642,6 +699,7 @@ impl Live {
                 self.ready(w, id, ready);
             }
         }
+        self.take_git(w);
         while let Ok((id, generation, e)) = self.rx.try_recv() {
             if generation != self.generation[id] {
                 continue;
@@ -778,8 +836,11 @@ impl Live {
                 self.approve(w, from, &args, reply);
                 continue;
             }
+            if tool == "send" {
+                self.send(w, from, &args, reply);
+                continue;
+            }
             let answer = match tool.as_str() {
-                "send" => self.send(w, from, &args),
                 "post" => self.post(w, from, &args),
                 "board" => Ok(self.board(w, from)),
                 "claim" => self.claim(w, from, &args),

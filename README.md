@@ -31,9 +31,11 @@ your HEAD. Your checkout is never touched by an agent. When a worker sends
 its `done`, what its worktree holds shows up in WAITING FOR YOU as a
 change (`Δ`): `enter` opens the whole diff (`j k` scroll, `[ ]` file to
 file), `a` applies it to your checkout, staged, for you to look over and
-commit, `r` rejects it and opens the composer so you say why. A change
-that does not fit (you edited the same file, or the same lines moved on)
-is refused with git's words and nothing is half applied. An applied
+commit, `r` rejects it and opens the composer so you say why. Git reads
+and applies changes on a thread of its own, so the screen never waits;
+the journal says when a change is in. A change that does not fit (you
+edited the same file, or the same lines moved on) is refused with git's
+words and nothing is half applied. An applied
 change is committed in the worktree as a mark (author `imece`), so the
 worker's next `done` shows only what came after, and the worktree still
 follows your HEAD once you commit. The trace (`enter` twice) shows where

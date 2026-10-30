@@ -831,15 +831,12 @@ mod tests {
         assert_eq!(live.turns[1], 0, "mail that waited through does not wake");
         assert_eq!(w.agents[1].status, Status::Asleep);
         // Mail that does not wake an idle agent does not wake a sleeper.
-        live.send(&mut w, 0, &msg("claude-2", "inform", "fyi"))
-            .unwrap();
+        sent(&mut live, &mut w, 0, &msg("claude-2", "inform", "fyi")).unwrap();
         assert_eq!(w.agents[2].status, Status::Asleep);
         live.step(&mut w);
         assert_eq!(live.turns[2], 0);
         // New mail wakes, and the old rides along.
-        let answer = live
-            .send(&mut w, 0, &msg("claude-1", "assign", "new"))
-            .unwrap();
+        let answer = sent(&mut live, &mut w, 0, &msg("claude-1", "assign", "new")).unwrap();
         assert!(answer.contains("starts on it now"), "{answer}");
         assert_eq!(w.agents[1].status, Status::Idle);
         assert!(

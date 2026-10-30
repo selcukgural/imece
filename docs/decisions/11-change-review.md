@@ -27,7 +27,8 @@ worktree whose own commits are all imece's follow the checkout (it
 stays while the checkout has not moved past them), and `Live::follow`
 runs it before every prompt of a worker that is between turns (its
 helpers too), journaled `WorktreeMoved`. The sim has no changes.
-Known gaps: git runs on the UI thread (a huge diff stalls a frame);
+Known gaps: `follow` (`worktree::place`, before every worker prompt)
+and the wake briefing's `worktree::change` still run on the UI thread;
 no partial apply; the `done needs evidence` line (last run after the
 last change) is not yet shown on the item.
 
@@ -51,3 +52,21 @@ version) to one worker at a time and tells the others to leave it out
 and say in their done what it should get; a worker leaves such files
 out unless its task names them. Symbol leases are still the real fix
 for two workers in one file.
+
+Git off the screen's loop (2026-10-30; on a Kule clone reading a change
+took ~250 ms, a frame the screen stood still): reading a done's change
+and applying one are jobs for a git thread of Live's own
+(`changes::git_thread`), one at a time in the order given, their
+outcomes taken in by `Live::take_git` at the start of `step`. One
+thread, not one per job: two applies never meet in the person's
+checkout, and a done sent after an apply is read only once that apply
+has marked the worktree, so the new change holds only what came after.
+The worker's `send` answer waits for the read (`Live::send` takes the
+reply; `message` is the part before git), as a `run` waits for its
+command. `a` only starts the apply: the flash says it is under way,
+the journal says how it went (`Applied` / `ApplyFailed`). Refused, with
+why: `a` while that change is being applied or while a newer one of
+the worker's is still being read (`reading`), `r` while it is being
+applied (`applying`; the flash `reject_failed`). Without its thread (it
+can not end while Live lives, but a send can fail) a done is answered
+"imece could not read your change" and an apply is refused.

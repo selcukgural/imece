@@ -4,9 +4,32 @@
 use super::*;
 
 impl Live {
-    /// Agent `from` sends a message (the `send` tool's arguments). The
-    /// answer tells the sender what became of it.
-    pub(super) fn send(&mut self, w: &mut World, from: AgentId, args: &Value) -> Answer {
+    /// Agent `from` sends a message (the `send` tool's arguments); what
+    /// became of it goes back on `reply`. A worker's done shows the person
+    /// what its worktree holds: that answer waits until git has read it.
+    pub(super) fn send(
+        &mut self,
+        w: &mut World,
+        from: AgentId,
+        args: &Value,
+        reply: Sender<Answer>,
+    ) {
+        match self.message(w, from, args) {
+            Ok((said, Some(title))) => self.snapshot(w, from, title, said, reply),
+            said => {
+                let _ = reply.send(said.map(|(said, _)| said));
+            }
+        }
+    }
+
+    /// What [`send`](Live::send) does before git: the answer, and the
+    /// title of a worker's done whose change is to be read.
+    fn message(
+        &mut self,
+        w: &mut World,
+        from: AgentId,
+        args: &Value,
+    ) -> Result<(String, Option<String>), String> {
         let arg = |k: &str| args[k].as_str().map(str::trim).unwrap_or_default();
         let kind = MsgKind::from_wire(arg("type")).ok_or_else(|| {
             let kinds: Vec<&str> = MsgKind::ALL.iter().map(|k| k.wire()).collect();
@@ -79,12 +102,8 @@ impl Live {
 
         let t = w.tick;
         let first = body.lines().next().unwrap_or_default().to_string();
-        // A worker's done shows the person what its worktree holds.
-        let change = if kind == MsgKind::Done && w.agents[from].role == Role::Worker {
-            self.snapshot(w, from, &first)
-        } else {
-            String::new()
-        };
+        let read =
+            (kind == MsgKind::Done && w.agents[from].role == Role::Worker).then(|| first.clone());
         let story = StoryEvent::Sent {
             from,
             to,
@@ -120,7 +139,7 @@ impl Live {
                 kind.wire()
             ),
         };
-        Ok(delivered + &change)
+        Ok((delivered, read))
     }
 
     /// A message to the person (`to: you`). An `ask` waits in their inbox
@@ -129,13 +148,13 @@ impl Live {
     /// wakes nobody. A worker's `done` shows its change as any done does.
     /// Nothing here counts against the mail caps or the budget: the
     /// person reads for free.
-    pub(super) fn send_you(
+    fn send_you(
         &mut self,
         w: &mut World,
         from: AgentId,
         kind: MsgKind,
         body: &str,
-    ) -> Answer {
+    ) -> Result<(String, Option<String>), String> {
         if matches!(kind, MsgKind::Assign | MsgKind::Handoff | MsgKind::Cancel) {
             return Err(format!(
                 "{} is not for the person; ask them, or tell them (inform, done, blocked)",
@@ -144,11 +163,8 @@ impl Live {
         }
         let t = w.tick;
         let first = body.lines().next().unwrap_or_default().to_string();
-        let change = if kind == MsgKind::Done && w.agents[from].role == Role::Worker {
-            self.snapshot(w, from, &first)
-        } else {
-            String::new()
-        };
+        let read =
+            (kind == MsgKind::Done && w.agents[from].role == Role::Worker).then(|| first.clone());
         let card = w.agents[from].card;
         w.story(
             card,
@@ -180,7 +196,7 @@ impl Live {
             "noted; the person sees it in the journal. Nothing wakes them: a question \
              goes as type ask."
         };
-        Ok(answer.to_string() + &change)
+        Ok((answer.to_string(), read))
     }
 
     /// Agent `from` puts a card on the board (the `post` tool's arguments).
@@ -432,7 +448,8 @@ mod tests {
         let mut w = team(2);
         w.agents[1].status = Status::Idle;
         let mut live = idle_live(3);
-        let got = live.send(
+        let got = sent(
+            &mut live,
             &mut w,
             0,
             &msg("claude-1", "assign", "Fix the parser\nin src/p.rs"),
@@ -496,8 +513,7 @@ mod tests {
         // The worker's turn on its mail: it sent done (journaled as such)
         // and its closing text restates it.
         live.turns[1] = 1;
-        live.send(&mut w, 1, &msg("lead", "done", "Parser fixed."))
-            .unwrap();
+        sent(&mut live, &mut w, 1, &msg("lead", "done", "Parser fixed.")).unwrap();
         finish(&mut live, &mut w, 1, "Fixed the parser and told lead.");
         assert_eq!(answers(&w), []);
         assert_eq!(journaled_replies(&w), []);
@@ -545,7 +561,7 @@ mod tests {
         let mut w = team(1);
         let mut live = idle_live(2);
         live.turns[0] = 1;
-        let got = live.send(&mut w, 1, &msg("lead", "done", "Parser fixed."));
+        let got = sent(&mut live, &mut w, 1, &msg("lead", "done", "Parser fixed."));
         assert!(got.unwrap().contains("busy"));
         live.step(&mut w);
         assert!(queued(&live, 0).is_empty(), "not while it works");
@@ -570,12 +586,10 @@ mod tests {
     fn an_inform_waits_for_a_turn_something_else_starts() {
         let mut w = team(2);
         let mut live = idle_live(3);
-        live.send(&mut w, 2, &msg("lead", "progress", "Half done."))
-            .unwrap();
+        sent(&mut live, &mut w, 2, &msg("lead", "progress", "Half done.")).unwrap();
         live.step(&mut w);
         assert!(queued(&live, 0).is_empty());
-        live.send(&mut w, 1, &msg("lead", "ask", "Which file?"))
-            .unwrap();
+        sent(&mut live, &mut w, 1, &msg("lead", "ask", "Which file?")).unwrap();
         live.step(&mut w);
         let q = queued(&live, 0);
         assert_eq!(q.len(), 1, "both in one turn");
@@ -587,7 +601,7 @@ mod tests {
         let mut w = team(1);
         let mut live = idle_live(2);
         let refused = |live: &mut Live, w: &mut World, args: Value| {
-            live.send(w, 1, &args).expect_err("refused")
+            sent(live, w, 1, &args).expect_err("refused")
         };
         assert!(refused(&mut live, &mut w, msg("ghost", "ask", "hi")).contains("the team is lead"));
         assert!(refused(&mut live, &mut w, msg("claude-1", "ask", "me")).contains("no teammate"));
@@ -607,14 +621,23 @@ mod tests {
         let mut w = team(2);
         w.agents[1].status = Status::Idle;
         let mut live = idle_live(3);
-        live.send(&mut w, 0, &msg("claude-1", "assign", "Fix the parser"))
-            .unwrap();
+        sent(
+            &mut live,
+            &mut w,
+            0,
+            &msg("claude-1", "assign", "Fix the parser"),
+        )
+        .unwrap();
         live.step(&mut w);
         let card = w.agents[1].card.expect("a card");
         let t = w.tick;
-        let ok = live
-            .send(&mut w, 1, &msg("you", "ask", "Which API?\nDetails."))
-            .unwrap();
+        let ok = sent(
+            &mut live,
+            &mut w,
+            1,
+            &msg("you", "ask", "Which API?\nDetails."),
+        )
+        .unwrap();
         assert!(ok.contains("WAITING FOR YOU"), "{ok}");
         assert!(live.mail.iter().all(|m| m.is_empty()), "nobody's mail");
         let open = w.open_inbox();
@@ -641,8 +664,7 @@ mod tests {
         );
         assert!(a.trace.back().unwrap().contains("send to=you type=ask"));
         // A second question takes the first's place in the inbox.
-        live.send(&mut w, 1, &msg("you", "ask", "Or this?"))
-            .unwrap();
+        sent(&mut live, &mut w, 1, &msg("you", "ask", "Or this?")).unwrap();
         let open = w.open_inbox();
         assert_eq!((open.len(), w.inbox.len()), (1, 2));
         assert_eq!(w.inbox[open[0]].detail, "Or this?");
@@ -651,16 +673,14 @@ mod tests {
         assert!(!w.has_question(1) && w.open_inbox().is_empty());
         // The person reads for free: a spent budget refuses nothing here.
         w.agents[1].cost = w.budget;
-        assert!(live.send(&mut w, 1, &msg("you", "ask", "Still?")).is_ok());
+        assert!(sent(&mut live, &mut w, 1, &msg("you", "ask", "Still?")).is_ok());
     }
 
     #[test]
     fn what_is_not_a_question_only_informs_the_person() {
         let mut w = team(2);
         let mut live = idle_live(3);
-        let ok = live
-            .send(&mut w, 1, &msg("you", "inform", "Halfway."))
-            .unwrap();
+        let ok = sent(&mut live, &mut w, 1, &msg("you", "inform", "Halfway.")).unwrap();
         assert!(ok.starts_with("noted"), "{ok}");
         assert!(w.open_inbox().is_empty() && !w.has_question(1));
         assert!(matches!(
@@ -672,7 +692,7 @@ mod tests {
         // the worktree is read (here one that is not there, so the
         // reading fails and says so); nothing else reads it.
         live.cwds[1] = Some(PathBuf::from("/nonexistent/tree"));
-        let ok = live.send(&mut w, 1, &msg("you", "done", "Done.")).unwrap();
+        let ok = sent(&mut live, &mut w, 1, &msg("you", "done", "Done.")).unwrap();
         assert!(
             ok.starts_with("noted") && ok.contains("could not read your change"),
             "{ok}"
@@ -685,23 +705,21 @@ mod tests {
                 ..
             }
         ));
-        let ok = live
-            .send(&mut w, 1, &msg("you", "blocked", "Stuck."))
-            .unwrap();
+        let ok = sent(&mut live, &mut w, 1, &msg("you", "blocked", "Stuck.")).unwrap();
         assert!(!ok.contains("change"), "{ok}");
         w.agents[0].role = Role::Worker;
         w.agents[1].role = Role::Leader;
-        let ok = live.send(&mut w, 1, &msg("you", "done", "Done.")).unwrap();
+        let ok = sent(&mut live, &mut w, 1, &msg("you", "done", "Done.")).unwrap();
         assert!(!ok.contains("change"), "a leader has no change: {ok}");
         // Work is not handed to the person.
         let before = w.journal.len();
         for kind in ["assign", "handoff", "cancel"] {
-            let err = live.send(&mut w, 1, &msg("you", kind, "x")).unwrap_err();
+            let err = sent(&mut live, &mut w, 1, &msg("you", kind, "x")).unwrap_err();
             assert!(err.contains("not for the person"), "{kind}: {err}");
         }
         assert_eq!(w.journal.len(), before);
         // Only the exact name reaches the person.
-        let err = live.send(&mut w, 1, &msg("You", "ask", "x")).unwrap_err();
+        let err = sent(&mut live, &mut w, 1, &msg("You", "ask", "x")).unwrap_err();
         assert!(err.contains("no teammate is called"), "{err}");
     }
 
@@ -710,22 +728,20 @@ mod tests {
         let mut w = team(1);
         let mut live = idle_live(2);
         live.woken[0] = MAX_WOKEN;
-        let err = live
-            .send(&mut w, 1, &msg("lead", "ask", "again?"))
-            .unwrap_err();
+        let err = sent(&mut live, &mut w, 1, &msg("lead", "ask", "again?")).unwrap_err();
         assert!(err.contains("tell the person"), "{err}");
         // What does not wake still goes through.
-        live.send(&mut w, 1, &msg("lead", "inform", "fyi")).unwrap();
+        sent(&mut live, &mut w, 1, &msg("lead", "inform", "fyi")).unwrap();
         // The person speaking resets the count.
         live.told(&mut w, 1, "carry on").unwrap();
         assert_eq!(live.woken[0], 0);
-        live.send(&mut w, 1, &msg("lead", "ask", "again?")).unwrap();
+        sent(&mut live, &mut w, 1, &msg("lead", "ask", "again?")).unwrap();
         live.mail[0].clear();
         for _ in 0..MAX_MAIL {
-            live.send(&mut w, 1, &msg("lead", "inform", "x")).unwrap();
+            sent(&mut live, &mut w, 1, &msg("lead", "inform", "x")).unwrap();
         }
         assert!(
-            live.send(&mut w, 1, &msg("lead", "inform", "x"))
+            sent(&mut live, &mut w, 1, &msg("lead", "inform", "x"))
                 .unwrap_err()
                 .contains("unread")
         );
@@ -737,7 +753,7 @@ mod tests {
         let mut live = idle_live(2);
         w.agents[0].cost = w.budget;
         assert!(
-            live.send(&mut w, 1, &msg("lead", "done", "x"))
+            sent(&mut live, &mut w, 1, &msg("lead", "done", "x"))
                 .unwrap_err()
                 .contains("budget")
         );
@@ -1024,9 +1040,9 @@ mod tests {
         let mut w = team(1);
         let mut live = idle_live(2);
         let body = "x".repeat(MAX_BODY);
-        assert!(live.send(&mut w, 1, &msg("lead", "inform", &body)).is_ok());
+        assert!(sent(&mut live, &mut w, 1, &msg("lead", "inform", &body)).is_ok());
         let over = format!("{body}x");
-        assert!(live.send(&mut w, 1, &msg("lead", "inform", &over)).is_err());
+        assert!(sent(&mut live, &mut w, 1, &msg("lead", "inform", &over)).is_err());
         let title = "t".repeat(MAX_TITLE);
         assert!(live.post(&mut w, 0, &card(&title, &body)).is_ok());
         assert!(
@@ -1040,7 +1056,7 @@ mod tests {
     fn a_message_to_oneself_is_refused_and_the_team_listed_leaves_oneself_out() {
         let mut w = team(2);
         let mut live = idle_live(3);
-        let got = live.send(&mut w, 1, &msg("claude-1", "inform", "hello me"));
+        let got = sent(&mut live, &mut w, 1, &msg("claude-1", "inform", "hello me"));
         let Err(why) = got else {
             panic!("sent to itself: {got:?}");
         };
@@ -1082,9 +1098,15 @@ Taken:
         let mut w = team(1);
         w.agents[1].status = Status::Idle;
         let mut live = idle_live(2);
-        live.send(&mut w, 0, &msg("claude-1", "inform", "a note first"))
-            .unwrap();
-        live.send(
+        sent(
+            &mut live,
+            &mut w,
+            0,
+            &msg("claude-1", "inform", "a note first"),
+        )
+        .unwrap();
+        sent(
+            &mut live,
             &mut w,
             0,
             &msg(

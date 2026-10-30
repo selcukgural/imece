@@ -173,6 +173,8 @@ impl Live {
         self.cwds.push(None);
         self.running.push(run::Running::default());
         self.pending.push(Vec::new());
+        self.reading.push(0);
+        self.applying.push(false);
     }
 
     /// The vendor `v` as imece drives it. Every agent's vendor is one.
@@ -458,11 +460,15 @@ mod tests {
         live.turns[1] = 1;
         live.turns[2] = 1;
         // done to someone else is a message like any other.
-        live.send(&mut w, 2, &msg("lead", "done", "fyi")).unwrap();
+        sent(&mut live, &mut w, 2, &msg("lead", "done", "fyi")).unwrap();
         assert!(!live.leaving[2]);
-        let got = live
-            .send(&mut w, 2, &msg("claude-1", "done", "Tests written."))
-            .unwrap();
+        let got = sent(
+            &mut live,
+            &mut w,
+            2,
+            &msg("claude-1", "done", "Tests written."),
+        )
+        .unwrap();
         assert!(got.starts_with("queued; claude-1 is busy"), "{got}");
         assert!(live.leaving[2], "leaves when the turn ends, not now");
         assert!(!w.agents[2].gone);
@@ -559,8 +565,7 @@ mod tests {
         live.vendors[0].ladder.standard = Some("sonnet".into());
         live.hire(&mut w, 0, &json!({ "tier": "strong" })).unwrap();
         assert_eq!(live.models[1].as_deref(), Some("opus"));
-        live.send(&mut w, 0, &msg("claude-1", "assign", "Fix it"))
-            .unwrap();
+        sent(&mut live, &mut w, 0, &msg("claude-1", "assign", "Fix it")).unwrap();
         live.step(&mut w);
         assert_eq!(live.inflight[1].len(), 1);
         let card = w.agents[1].card.expect("a card");
