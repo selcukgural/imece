@@ -264,6 +264,44 @@ pub(super) fn call(
     rx.recv_timeout(std::time::Duration::from_secs(5)).unwrap()
 }
 
+/// A change of worker `id`'s that imece holds as git read it, for tests
+/// of the screen; nothing of it is on disk.
+pub(crate) fn hold_change(live: &mut Live, id: AgentId) {
+    let change = worktree::Change {
+        path: PathBuf::from("/nonexistent/tree"),
+        tree: String::new(),
+        files: Vec::new(),
+        patch: String::new(),
+    };
+    live.changes.insert(id, change);
+}
+
+/// Worker `id`'s change as if git were applying it.
+pub(crate) fn as_if_applying(live: &mut Live, id: AgentId) {
+    live.applying[id] = true;
+}
+
+/// What the git thread was given, done and taken in; a bounded wait.
+pub(super) fn settle(live: &mut Live, w: &mut World) {
+    for _ in 0..500 {
+        live.take_git(w);
+        if live.reading.iter().all(|&n| n == 0) && !live.applying.contains(&true) {
+            return;
+        }
+        thread::sleep(Duration::from_millis(10));
+    }
+    panic!("git did not finish in time");
+}
+
+/// What agent `from`'s `send` was answered, once git has read what a
+/// done needs.
+pub(super) fn sent(live: &mut Live, w: &mut World, from: AgentId, args: &Value) -> Answer {
+    let (tx, rx) = std::sync::mpsc::channel();
+    live.send(w, from, args, tx);
+    settle(live, w);
+    rx.try_recv().expect("answered")
+}
+
 /// A helper of worker `parent`, as `hire` would add it; its id.
 pub(super) fn with_helper(w: &mut World, parent: AgentId) -> AgentId {
     let id = w.agents.len();

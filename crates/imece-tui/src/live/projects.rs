@@ -397,9 +397,9 @@ mod tests {
         let tree = worker_in(&mut live, &mut w, 2, &repo, &root);
         assert!(tree.starts_with(&root), "{}", tree.display());
         std::fs::write(tree.join("a.txt"), "changed\n").unwrap();
-        live.send(&mut w, 2, &msg("lead-two", "done", "Changed a"))
-            .unwrap();
-        live.apply_change(&mut w, 2).unwrap();
+        sent(&mut live, &mut w, 2, &msg("lead-two", "done", "Changed a")).unwrap();
+        live.apply_change(&w, 2).unwrap();
+        settle(&mut live, &mut w);
         assert_eq!(git_in(&two, &["diff", "--cached", "--name-only"]), "a.txt");
         assert_eq!(git_in(&one, &["status", "--porcelain"]), "");
         let _ = std::fs::remove_dir_all(&one);

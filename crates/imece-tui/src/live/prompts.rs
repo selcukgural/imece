@@ -404,8 +404,13 @@ mod tests {
         );
         assert_eq!(w.agents.len(), 3);
         // A worker is given to the leader by send; it is told so.
-        live.send(&mut w, 0, &msg("claude-2", "assign", "Add a test"))
-            .unwrap();
+        sent(
+            &mut live,
+            &mut w,
+            0,
+            &msg("claude-2", "assign", "Add a test"),
+        )
+        .unwrap();
     }
 
     #[test]

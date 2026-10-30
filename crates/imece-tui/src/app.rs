@@ -1441,7 +1441,8 @@ impl App {
         self.inbox_sel = self.inbox_sel.min(open.len().saturating_sub(2));
     }
 
-    /// The person applies worker `id`'s change to their checkout, or
+    /// The person has worker `id`'s change applied to their checkout (git
+    /// does it on a thread of its own; the journal says how it went), or
     /// rejects it; a rejection opens the composer to that worker, so they
     /// say why. The change's view closes either way.
     fn decide_change(&mut self, id: AgentId, apply: bool) {
@@ -1450,16 +1451,18 @@ impl App {
         let open = self.world.open_inbox().len();
         match &mut self.engine {
             Engine::Sim(_) => self.flash(t.demo_no_change),
-            Engine::Live(l) if apply => match l.apply_change(&mut self.world, id) {
-                Ok(()) => self.flash(fill(t.applied, &[&name])),
+            Engine::Live(l) if apply => match l.apply_change(&self.world, id) {
+                Ok(()) => self.flash(fill(t.applying, &[&name])),
                 Err(why) => self.flash(fill(t.apply_failed, &[&name, &why])),
             },
-            Engine::Live(l) => {
-                l.reject_change(&mut self.world, id);
-                self.flash(fill(t.rejected_change, &[&name]));
-                self.typing = true;
-                self.input = format!("@{name} ");
-            }
+            Engine::Live(l) => match l.reject_change(&mut self.world, id) {
+                Ok(()) => {
+                    self.flash(fill(t.rejected_change, &[&name]));
+                    self.typing = true;
+                    self.input = format!("@{name} ");
+                }
+                Err(why) => self.flash(fill(t.reject_failed, &[&name, &why])),
+            },
         }
         if self.zoom == Zoom::Diff(id) {
             self.zoom = Zoom::None;
@@ -1584,6 +1587,63 @@ mod tests {
                 "the demo keeps the change"
             );
         }
+    }
+
+    #[test]
+    fn a_and_r_on_a_live_change_say_what_became_of_it() {
+        use crate::live::testing::{as_if_applying, hold_change, idle_live, team};
+        let t = Lang::En.text();
+        let app_with = |live: crate::live::Live| {
+            let mut w = team(1);
+            w.change_ready(Change {
+                agent: 1,
+                title: "did it".into(),
+                files: Vec::new(),
+                patch: String::new(),
+            });
+            let mut app = App::with(w, Engine::Live(Box::new(live)), Lang::En);
+            app.zoom = Zoom::Diff(1);
+            app.pane = Pane::Inbox;
+            app
+        };
+        let flash = |app: &App| app.flash.as_ref().map(|(m, _)| m.clone());
+        // Nothing imece holds: refused, with why.
+        let mut app = app_with(idle_live(2));
+        app.on_key(key(KeyCode::Char('a')));
+        assert_eq!(
+            flash(&app),
+            Some(fill(
+                t.apply_failed,
+                &["claude-1", "no change of theirs waits"]
+            ))
+        );
+        // A change it holds: git applies it, the journal will say.
+        let mut live = idle_live(2);
+        hold_change(&mut live, 1);
+        let mut app = app_with(live);
+        app.on_key(key(KeyCode::Char('a')));
+        assert_eq!(flash(&app), Some(fill(t.applying, &["claude-1"])));
+        // Rejected while being applied: refused, the change still waits,
+        // no composer.
+        let mut live = idle_live(2);
+        as_if_applying(&mut live, 1);
+        let mut app = app_with(live);
+        app.on_key(key(KeyCode::Char('r')));
+        assert_eq!(
+            flash(&app),
+            Some(fill(
+                t.reject_failed,
+                &["claude-1", "their change is being applied"]
+            ))
+        );
+        assert!(app.world.change_of(1).is_some() && !app.typing);
+        // Rejected: the composer opens to the worker for the reasons.
+        let mut app = app_with(idle_live(2));
+        app.on_key(key(KeyCode::Char('r')));
+        assert_eq!(flash(&app), Some(fill(t.rejected_change, &["claude-1"])));
+        assert!(app.world.change_of(1).is_none());
+        assert!(app.typing);
+        assert_eq!(app.input, "@claude-1 ");
     }
 
     /// The inbox selection may have moved while the change was open (an

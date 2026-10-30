@@ -4,15 +4,121 @@
 
 use super::*;
 
-impl Live {
-    /// Reads what worker `id`'s worktree holds, for the person: it waits
-    /// in their inbox until they apply or reject it. Says what the worker
-    /// is told about it.
-    pub(super) fn snapshot(&mut self, w: &mut World, id: AgentId, title: &str) -> String {
-        let Some(cwd) = self.cwds[id].clone() else {
-            return String::new();
+/// Runs the git jobs one after another, in the order they came, until
+/// imece drops its end.
+pub(super) fn git_thread(jobs: Receiver<GitJob>, done: Sender<GitDone>) {
+    for job in jobs {
+        let out = match job {
+            GitJob::Read {
+                agent,
+                path,
+                title,
+                said,
+                reply,
+            } => GitDone::Read {
+                agent,
+                title,
+                said,
+                reply,
+                read: worktree::change(&path, MAX_PATCH),
+            },
+            GitJob::Apply {
+                agent,
+                repo,
+                change,
+                title,
+            } => {
+                let applied = worktree::apply(&repo, &change.patch);
+                let mark = match &applied {
+                    Ok(()) => {
+                        worktree::applied(&change, &format!("imece: the person applied: {title}"))
+                    }
+                    Err(_) => Ok(String::new()),
+                };
+                GitDone::Applied {
+                    agent,
+                    title,
+                    applied,
+                    mark,
+                }
+            }
         };
-        match worktree::change(&cwd, MAX_PATCH) {
+        if done.send(out).is_err() {
+            return;
+        }
+    }
+}
+
+impl Live {
+    /// Has git read what worker `id`'s worktree holds, for the person: it
+    /// waits in their inbox until they apply or reject it. The worker
+    /// hears `said` and what the change is on `reply` once it is read; at
+    /// once when it has no directory to read.
+    pub(super) fn snapshot(
+        &mut self,
+        w: &mut World,
+        id: AgentId,
+        title: String,
+        said: String,
+        reply: Sender<Answer>,
+    ) {
+        let Some(path) = self.cwds[id].clone() else {
+            let _ = reply.send(Ok(said));
+            return;
+        };
+        self.reading[id] += 1;
+        let job = GitJob::Read {
+            agent: id,
+            path,
+            title,
+            said,
+            reply,
+        };
+        if let Err(mpsc::SendError(GitJob::Read { said, reply, .. })) = self.git.send(job) {
+            self.reading[id] -= 1;
+            w.agents[id].trace(w.tick, "change: git is gone");
+            let _ = reply.send(Ok(said + "; imece could not read your change"));
+        }
+    }
+
+    /// What the git thread finished since the last step.
+    pub(super) fn take_git(&mut self, w: &mut World) {
+        while let Ok(done) = self.git_back.try_recv() {
+            match done {
+                GitDone::Read {
+                    agent,
+                    title,
+                    said,
+                    reply,
+                    read,
+                } => {
+                    self.reading[agent] -= 1;
+                    let words = self.read(w, agent, &title, read);
+                    let _ = reply.send(Ok(said + &words));
+                }
+                GitDone::Applied {
+                    agent,
+                    title,
+                    applied,
+                    mark,
+                } => {
+                    self.applying[agent] = false;
+                    self.applied(w, agent, &title, applied, mark);
+                }
+            }
+        }
+    }
+
+    /// Worker `id`'s change as git read it: it waits for the person, an
+    /// older one of the worker's goes. Says what the worker is told.
+    fn read(
+        &mut self,
+        w: &mut World,
+        id: AgentId,
+        title: &str,
+        read: io::Result<Option<worktree::Change>>,
+    ) -> String {
+        match read {
             Ok(None) => {
                 w.agents[id].trace(w.tick, "change: none");
                 "; your worktree holds no change".to_string()
@@ -50,21 +156,51 @@ impl Live {
         }
     }
 
-    /// The person takes worker `id`'s change: it goes into the checkout,
-    /// staged, and is committed in the worktree as a mark, so the next
-    /// change holds only what comes after. A change that does not fit is
-    /// refused with git's words and still waits.
-    pub fn apply_change(&mut self, w: &mut World, id: AgentId) -> Result<(), String> {
+    /// The person takes worker `id`'s change: git puts it into the
+    /// checkout, staged, and commits it in the worktree as a mark, so the
+    /// next change holds only what comes after; the journal says how it
+    /// went. Refused while it is being applied, or while a newer change of
+    /// the worker's is still being read.
+    pub fn apply_change(&mut self, w: &World, id: AgentId) -> Result<(), String> {
+        if self.applying[id] {
+            return Err("their change is being applied".into());
+        }
+        if self.reading[id] > 0 {
+            return Err("imece is still reading their newer change".into());
+        }
         let Some(c) = self.changes.get(&id) else {
             return Err("no change of theirs waits".into());
         };
         let title = w.change_of(id).map(|c| c.title.clone()).unwrap_or_default();
-        if let Err(e) = worktree::apply(&self.places[w.agents[id].project].repo, &c.patch) {
-            let why = e.to_string();
-            w.change_failed(id, why.clone());
-            return Err(why);
+        let job = GitJob::Apply {
+            agent: id,
+            repo: self.places[w.agents[id].project].repo.clone(),
+            change: c.clone(),
+            title,
+        };
+        self.git
+            .send(job)
+            .map_err(|_| "imece's git thread is gone".to_string())?;
+        self.applying[id] = true;
+        Ok(())
+    }
+
+    /// How applying worker `id`'s change went. One that did not fit is
+    /// refused with git's words and still waits; one applied but not
+    /// marked is applied all the same.
+    fn applied(
+        &mut self,
+        w: &mut World,
+        id: AgentId,
+        title: &str,
+        applied: io::Result<()>,
+        mark: io::Result<String>,
+    ) {
+        if let Err(e) = applied {
+            w.change_failed(id, e.to_string());
+            return;
         }
-        let mark = match worktree::applied(c, &format!("imece: the person applied: {title}")) {
+        let mark = match mark {
             Ok(mark) => mark,
             Err(e) => {
                 w.change_failed(
@@ -81,12 +217,15 @@ impl Live {
              committed at {mark} as a mark of that; your files are as you left them. \
              Go on from here with the next task."
         ));
-        Ok(())
     }
 
     /// The person rejects worker `id`'s change: it stays in the worktree,
-    /// and the worker is told to wait for their reasons.
-    pub fn reject_change(&mut self, w: &mut World, id: AgentId) {
+    /// and the worker is told to wait for their reasons. Not while it is
+    /// being applied.
+    pub fn reject_change(&mut self, w: &mut World, id: AgentId) -> Result<(), String> {
+        if self.applying[id] {
+            return Err("their change is being applied".into());
+        }
         let title = w.change_of(id).map(|c| c.title.clone()).unwrap_or_default();
         self.changes.remove(&id);
         w.change_rejected(id);
@@ -94,6 +233,7 @@ impl Live {
             "The person rejected your change ({title}). It stays in your worktree, not \
              applied; they say why themselves. Do not send it again as it is."
         ));
+        Ok(())
     }
 
     /// Between turns, a worker's clean worktree follows the checkout's
@@ -141,9 +281,7 @@ mod tests {
         );
         let tree = worker_in(&mut live, &mut w, 1, &repo, &root);
         // Nothing changed: the done says so, nothing waits.
-        let got = live
-            .send(&mut w, 1, &msg("lead", "done", "Nothing to do."))
-            .unwrap();
+        let got = sent(&mut live, &mut w, 1, &msg("lead", "done", "Nothing to do.")).unwrap();
         assert!(got.ends_with("; your worktree holds no change"), "{got}");
         assert!(w.open_inbox().is_empty());
         assert!(
@@ -155,13 +293,13 @@ mod tests {
         // A change: the person sees it, the worker is told so.
         std::fs::write(tree.join("a.txt"), "a\nb\n").unwrap();
         std::fs::write(tree.join("new.txt"), "new\n").unwrap();
-        let got = live
-            .send(
-                &mut w,
-                1,
-                &msg("lead", "done", "Added b and new.txt\nDetails."),
-            )
-            .unwrap();
+        let got = sent(
+            &mut live,
+            &mut w,
+            1,
+            &msg("lead", "done", "Added b and new.txt\nDetails."),
+        )
+        .unwrap();
         assert!(
             got.contains("the person sees your change (2 files, +3 −1)"),
             "{got}"
@@ -192,8 +330,7 @@ mod tests {
         assert_eq!(live.mail[0].len(), 2);
         // A second done supersedes: one change waits, with everything.
         std::fs::write(tree.join("more.txt"), "more\n").unwrap();
-        live.send(&mut w, 1, &msg("lead", "done", "And more."))
-            .unwrap();
+        sent(&mut live, &mut w, 1, &msg("lead", "done", "And more.")).unwrap();
         assert_eq!(w.open_inbox().len(), 1);
         assert_eq!(w.change_of(1).unwrap().files.len(), 3);
         assert_eq!(live.changes[&1].files.len(), 3);
@@ -201,7 +338,12 @@ mod tests {
         // The person's own edit in a touched file: the change does not
         // apply, nothing is half done, it still waits.
         std::fs::write(repo.join("a.txt"), "theirs").unwrap();
-        let e = live.apply_change(&mut w, 1).unwrap_err();
+        live.apply_change(&w, 1).unwrap();
+        settle(&mut live, &mut w);
+        let Event::ApplyFailed { agent: 1, why: e } = &w.journal.last().unwrap().event else {
+            panic!("{:?}", w.journal.last());
+        };
+        let e = e.clone();
         assert!(e.contains("does not match index"), "{e}");
         assert_eq!(
             std::fs::read_to_string(repo.join("a.txt")).unwrap(),
@@ -218,8 +360,20 @@ mod tests {
         std::fs::write(repo.join("a.txt"), "a").unwrap();
 
         // Applied: staged in the checkout, marked in the worktree, the
-        // worker hears of it at its next turn.
-        live.apply_change(&mut w, 1).unwrap();
+        // worker hears of it at its next turn. Git does it on its own
+        // thread: until it is done, the change waits as it was and is
+        // neither applied nor rejected again.
+        live.apply_change(&w, 1).unwrap();
+        assert_eq!(
+            live.apply_change(&w, 1),
+            Err("their change is being applied".into())
+        );
+        assert_eq!(
+            live.reject_change(&mut w, 1),
+            Err("their change is being applied".into())
+        );
+        assert!(live.changes.contains_key(&1) && live.notes[1].is_empty());
+        settle(&mut live, &mut w);
         assert_eq!(
             std::fs::read_to_string(repo.join("a.txt")).unwrap(),
             "a\nb\n"
@@ -254,8 +408,149 @@ mod tests {
         live.told(&mut w, 1, "Again.").unwrap();
         assert_eq!(live.inflight[1][1], "Again.");
         // Nothing waits: applying again is refused, quietly.
-        let e = live.apply_change(&mut w, 1).unwrap_err();
+        let e = live.apply_change(&w, 1).unwrap_err();
         assert!(e.contains("no change of theirs waits"), "{e}");
+        let _ = std::fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&repo);
+    }
+
+    #[test]
+    fn git_takes_the_changes_in_order_and_an_apply_waits_for_a_read() {
+        let repo = checkout("order-repo");
+        let root = trees("order");
+        let mut w = team(1);
+        let mut live = Live::new(
+            2,
+            claude_at("/nonexistent/claude"),
+            repo.clone(),
+            root.clone(),
+        );
+        let tree = worker_in(&mut live, &mut w, 1, &repo, &root);
+        std::fs::write(tree.join("a.txt"), "changed").unwrap();
+        sent(&mut live, &mut w, 1, &msg("lead", "done", "Changed a.")).unwrap();
+        // A newer change still being read is not passed over.
+        live.reading[1] = 1;
+        assert_eq!(
+            live.apply_change(&w, 1),
+            Err("imece is still reading their newer change".into())
+        );
+        live.reading[1] = 0;
+        // Applied, then a done right after: git reads it once the apply is
+        // in, so the new change holds only what came after.
+        live.apply_change(&w, 1).unwrap();
+        std::fs::write(tree.join("new.txt"), "new\n").unwrap();
+        let (tx, rx) = mpsc::channel();
+        live.send(&mut w, 1, &msg("lead", "done", "Added new."), tx);
+        assert!(rx.try_recv().is_err(), "the answer waits for git");
+        assert_eq!(live.reading[1], 1);
+        settle(&mut live, &mut w);
+        let got = rx.try_recv().unwrap().unwrap();
+        assert!(got.contains("(1 files, +1 −0)"), "{got}");
+        let applied = w
+            .journal
+            .iter()
+            .position(|e| matches!(e.event, Event::Applied { agent: 1, .. }))
+            .unwrap();
+        let ready = w
+            .journal
+            .iter()
+            .rposition(|e| matches!(e.event, Event::ChangeReady { agent: 1, .. }))
+            .unwrap();
+        assert!(applied < ready, "{applied} {ready}");
+        let files: Vec<&str> = w
+            .change_of(1)
+            .unwrap()
+            .files
+            .iter()
+            .map(|f| f.path.as_str())
+            .collect();
+        assert_eq!(files, ["new.txt"]);
+        assert_eq!(live.changes[&1].files.len(), 1);
+        let _ = std::fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&repo);
+    }
+
+    #[test]
+    fn a_worker_s_done_to_the_person_shows_its_change_on_the_screen_s_loop() {
+        let repo = checkout("you-repo");
+        let root = trees("you");
+        let mut w = team(1);
+        let mut live = Live::new(
+            3,
+            claude_at("/nonexistent/claude"),
+            repo.clone(),
+            root.clone(),
+        );
+        let tree = worker_in(&mut live, &mut w, 1, &repo, &root);
+        let helper = with_helper(&mut w, 1);
+        live.ready(&mut w, helper, Ok((Box::new(Stub), tree.clone(), None)));
+        live.ready(&mut w, 0, Ok((Box::new(Stub), repo.clone(), None)));
+        std::fs::write(tree.join("a.txt"), "changed").unwrap();
+        // Only a worker's done: not its inform, not a helper's or the
+        // leader's done.
+        for (from, kind) in [(1, "inform"), (helper, "done"), (0, "done")] {
+            let got = sent(&mut live, &mut w, from, &msg("you", kind, "x")).unwrap();
+            assert!(!got.contains("change"), "{from} {kind}: {got}");
+        }
+        assert!(w.change_of(1).is_none());
+        // Through the bus: the answer comes on a later step, once git has
+        // read the change.
+        let (tx, rx) = mpsc::channel();
+        live.calls_tx
+            .send((1, "send".into(), msg("you", "done", "Changed a."), tx))
+            .unwrap();
+        let got = (0..500)
+            .find_map(|_| {
+                live.step(&mut w);
+                thread::sleep(Duration::from_millis(10));
+                rx.try_recv().ok()
+            })
+            .expect("answered in time")
+            .unwrap();
+        assert!(
+            got.starts_with("noted; the person sees it in the journal"),
+            "{got}"
+        );
+        assert!(
+            got.contains("the person sees your change (1 files, +1 −1)"),
+            "{got}"
+        );
+        assert_eq!(w.change_of(1).unwrap().title, "Changed a.");
+        let _ = std::fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&repo);
+    }
+
+    #[test]
+    fn without_its_git_thread_a_done_is_answered_and_nothing_is_applied() {
+        let repo = checkout("gone-repo");
+        let root = trees("gone");
+        let mut w = team(1);
+        let mut live = Live::new(
+            2,
+            claude_at("/nonexistent/claude"),
+            repo.clone(),
+            root.clone(),
+        );
+        let tree = worker_in(&mut live, &mut w, 1, &repo, &root);
+        let (gone, _) = mpsc::channel();
+        live.git = gone;
+        std::fs::write(tree.join("a.txt"), "changed").unwrap();
+        let got = sent(&mut live, &mut w, 1, &msg("lead", "done", "Changed a.")).unwrap();
+        assert!(got.ends_with("; imece could not read your change"), "{got}");
+        assert_eq!(live.reading[1], 0);
+        assert!(w.open_inbox().is_empty());
+        assert!(
+            w.agents[1]
+                .trace
+                .iter()
+                .any(|l| l.ends_with("change: git is gone"))
+        );
+        hold_change(&mut live, 1);
+        assert_eq!(
+            live.apply_change(&w, 1),
+            Err("imece's git thread is gone".into())
+        );
+        assert!(!live.applying[1]);
         let _ = std::fs::remove_dir_all(&root);
         let _ = std::fs::remove_dir_all(&repo);
     }
@@ -273,10 +568,9 @@ mod tests {
         );
         let tree = worker_in(&mut live, &mut w, 1, &repo, &root);
         std::fs::write(tree.join("a.txt"), "changed").unwrap();
-        live.send(&mut w, 1, &msg("lead", "done", "Changed a."))
-            .unwrap();
+        sent(&mut live, &mut w, 1, &msg("lead", "done", "Changed a.")).unwrap();
         assert_eq!(w.open_inbox().len(), 1);
-        live.reject_change(&mut w, 1);
+        live.reject_change(&mut w, 1).unwrap();
         assert!(w.open_inbox().is_empty());
         assert!(w.change_of(1).is_none() && !live.changes.contains_key(&1));
         assert!(matches!(
@@ -292,7 +586,7 @@ mod tests {
         assert_eq!(live.notes[1].len(), 1);
         assert!(live.notes[1][0].contains("rejected your change (Changed a.)"));
         // Rejecting nothing is nothing.
-        live.reject_change(&mut w, 1);
+        live.reject_change(&mut w, 1).unwrap();
         assert_eq!(live.notes[1].len(), 2);
         let _ = std::fs::remove_dir_all(&root);
         let _ = std::fs::remove_dir_all(&repo);
@@ -321,19 +615,19 @@ mod tests {
         // a progress message is not a done.
         for (from, kind) in [(2, "done"), (0, "done"), (1, "progress")] {
             let to = if from == 0 { "claude-1" } else { "lead" };
-            let got = live.send(&mut w, from, &msg(to, kind, "x")).unwrap();
+            let got = sent(&mut live, &mut w, from, &msg(to, kind, "x")).unwrap();
             assert!(!got.contains("change"), "{from} {kind}: {got}");
         }
         assert!(w.open_inbox().is_empty());
         // A worker without a directory (no session yet) has nothing to read.
         live.cwds[1] = None;
-        let got = live.send(&mut w, 1, &msg("lead", "done", "x")).unwrap();
+        let got = sent(&mut live, &mut w, 1, &msg("lead", "done", "x")).unwrap();
         assert!(!got.contains("change"), "{got}");
         assert!(w.open_inbox().is_empty());
         // Too large to show: the worker is told, nothing waits.
         live.cwds[1] = Some(tree.clone());
         std::fs::write(tree.join("big.txt"), "x".repeat(MAX_PATCH + 1)).unwrap();
-        let got = live.send(&mut w, 1, &msg("lead", "done", "x")).unwrap();
+        let got = sent(&mut live, &mut w, 1, &msg("lead", "done", "x")).unwrap();
         assert!(got.contains("imece could not read your change"), "{got}");
         assert!(w.open_inbox().is_empty());
         assert!(

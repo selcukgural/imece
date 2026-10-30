@@ -848,8 +848,13 @@ mod tests {
         let c = with_card(&mut w, 1);
         let mut live = idle_live(2);
         // The leader has no card; the worker's card keeps the line.
-        live.send(&mut w, 0, &msg("claude-1", "inform", "first line\nmore"))
-            .unwrap();
+        sent(
+            &mut live,
+            &mut w,
+            0,
+            &msg("claude-1", "inform", "first line\nmore"),
+        )
+        .unwrap();
         let last = &w.cards[c].story.last().unwrap().event;
         let said = crate::ui::words::said_in_story(1, last).expect("a conversation line");
         assert_eq!((said.from, said.to), (Party::Agent(0), Party::Agent(1)));
@@ -906,8 +911,7 @@ mod tests {
         let mut w = team(1);
         w.agents[1].status = Status::Idle;
         let mut live = idle_live(2);
-        live.send(&mut w, 0, &msg("claude-1", "assign", "do it"))
-            .unwrap();
+        sent(&mut live, &mut w, 0, &msg("claude-1", "assign", "do it")).unwrap();
         live.step(&mut w);
         assert_eq!(live.woken[1], 1);
     }
