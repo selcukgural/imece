@@ -2,7 +2,10 @@ name: mutants
 
 # Mutation testing: cargo-mutants plants a bug and sees whether a test
 # catches it. A pull request is held to the code it touches; the whole
-# workspace runs every night, so a gap anywhere shows within a day.
+# workspace runs every night, so a gap anywhere shows within a day. Both
+# are split over several runners (cargo-mutants `--shard k/n`: every
+# runner lists the same mutants and takes every n-th), so the wall-clock
+# is minutes, not hours.
 
 on:
   pull_request:
@@ -51,14 +54,16 @@ jobs:
             echo "## Mutants (shard $SHARD of 4)"
             echo
             for f in caught missed timeout unviable; do
-              n=$(wc -l < "mutants.out/$f.txt" 2>/dev/null || echo 0)
+              n=0
+              [ -f "mutants.out/$f.txt" ] && n=$(wc -l < "mutants.out/$f.txt")
               echo "- $f: $n"
             done
             echo
             echo "### Missed"
             echo
             echo '```'
-            cat mutants.out/missed.txt mutants.out/timeout.txt 2>/dev/null
+            # A change without Rust in it has no mutants and no files.
+            cat mutants.out/missed.txt mutants.out/timeout.txt 2>/dev/null || true
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
         env:
@@ -84,10 +89,17 @@ jobs:
           echo "shards: $RESULT"
           test "$RESULT" = "success"
 
+  # The whole workspace, nightly, over six runners the same way; a shard
+  # reports its own counts and misses in its summary.
   all:
+    name: all (shard ${{ matrix.shard }})
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
-    timeout-minutes: 240
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3, 4, 5]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -100,30 +112,36 @@ jobs:
         # Exit 2 (timeouts) and 3 (missed) are the report, not a failure:
         # the pull-request job holds a change to the code it touches.
         # Anything else (a build or baseline failure) is.
+        env:
+          SHARD: ${{ matrix.shard }}
         run: |
           set +e
-          cargo mutants --jobs 2 --timeout 180
+          cargo mutants --shard "$SHARD/6" --jobs 2 --timeout 180
           code=$?
           case $code in 0|2|3) ;; *) exit $code ;; esac
       - name: Summary
         if: always()
+        env:
+          SHARD: ${{ matrix.shard }}
         run: |
           {
-            echo "## Mutants"
+            echo "## Mutants (shard $SHARD of 6)"
             echo
             for f in caught missed timeout unviable; do
-              n=$(wc -l < "mutants.out/$f.txt" 2>/dev/null || echo 0)
+              n=0
+              [ -f "mutants.out/$f.txt" ] && n=$(wc -l < "mutants.out/$f.txt")
               echo "- $f: $n"
             done
             echo
             echo "### Missed"
             echo
             echo '```'
-            cat mutants.out/missed.txt 2>/dev/null
+            # A change without Rust in it has no mutants and no files.
+            cat mutants.out/missed.txt mutants.out/timeout.txt 2>/dev/null || true
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
-          name: mutants-all
+          name: mutants-all-${{ matrix.shard }}
           path: mutants.out
