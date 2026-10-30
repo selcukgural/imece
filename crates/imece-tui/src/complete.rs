@@ -461,6 +461,7 @@ mod tests {
         )
         .unwrap();
         assert!(m.items.contains(&first.to_string()), "{:?}", m.items);
+        assert_eq!(m.start, 9, "the word, not the @, is replaced");
         assert!(
             m.items
                 .iter()

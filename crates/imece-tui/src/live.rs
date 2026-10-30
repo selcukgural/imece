@@ -8134,8 +8134,114 @@ in p.rs",
             private.is_dir(),
             "the agent stays, so its private directory does"
         );
+        // imece's /clear on a Gemini session nothing is remembered of:
+        // nothing to remove, and the private directory stays.
+        live.ready(&mut w, 1, Ok((Box::new(Stub), private.clone(), None)));
+        assert_eq!(live.sessions[1], None);
+        live.command(&mut w, 1, "/clear").unwrap();
+        thread::sleep(Duration::from_millis(200));
+        assert!(private.is_dir(), "no session, nothing of it to remove");
+        assert!(kept.is_dir());
         let home = live.claude_home.clone();
         for d in [repo, root, home, live.gemini_config.clone()] {
+            let _ = std::fs::remove_dir_all(d);
+        }
+    }
+
+    #[test]
+    fn forgetting_the_whole_of_a_gemini_agent_says_what_it_found() {
+        // (session remembered, kept directory, private directory) → the note.
+        let cases: [(bool, bool, Option<&str>, &str); 5] = [
+            (
+                false,
+                true,
+                Some("dir"),
+                "forgotten: its chats and private directory were removed",
+            ),
+            (
+                true,
+                true,
+                Some("dir"),
+                "its chats and private directory were removed",
+            ),
+            (
+                true,
+                true,
+                None,
+                "its chats and private directory were removed",
+            ),
+            (false, false, None, "forgotten: it had no chats left"),
+            (
+                true,
+                true,
+                Some("file"),
+                "could not remove its chat of session",
+            ),
+        ];
+        for (i, (remembered, kept, private, note)) in cases.into_iter().enumerate() {
+            let (mut w, mut live, repo, root) =
+                remembered_vendor_worker(&format!("forget-whole-{i}"), Vendor::Gemini);
+            live.gemini_config = trees(&format!("forget-whole-{i}-config"));
+            let name = w.agents[1].name.clone();
+            let home = live.gemini_home(0, Role::Worker, &name);
+            let kept_dir = if kept {
+                Some(gemini_kept(
+                    &live.gemini_config,
+                    &home,
+                    "g",
+                    &[("session-x.jsonl", "")],
+                ))
+            } else {
+                None
+            };
+            match private {
+                Some("dir") => std::fs::create_dir_all(&home).unwrap(),
+                Some(_) => {
+                    std::fs::create_dir_all(home.parent().unwrap()).unwrap();
+                    std::fs::write(&home, "").unwrap();
+                }
+                None => {}
+            }
+            if !remembered {
+                live.sessions[1] = None;
+            }
+            live.forget(&w, 1, true, false);
+            assert_eq!(live.sessions[1], None);
+            assert!(traced_soon(&mut live, &mut w, 1, note), "case {i}");
+            if remembered {
+                assert!(
+                    traced_soon(&mut live, &mut w, 1, &format!("session {UUID}")),
+                    "case {i} names the session"
+                );
+            }
+            let failed = private == Some("file");
+            assert!(!home.is_dir(), "case {i}");
+            assert_eq!(home.exists(), failed, "case {i}: a file is left as it is");
+            if let Some(k) = &kept_dir {
+                assert!(!k.exists(), "case {i}: what Gemini kept goes first");
+            }
+            let claude_home = live.claude_home.clone();
+            for d in [repo, root, claude_home, live.gemini_config.clone()] {
+                let _ = std::fs::remove_dir_all(d);
+            }
+        }
+    }
+
+    #[test]
+    fn a_transcript_that_can_not_be_removed_is_said_so() {
+        let (mut w, mut live, repo, root) = remembered_worker("forget-stuck", false);
+        let file = claude::transcript(&live.claude_home, &live.cwd_of(&w, 1), UUID);
+        std::fs::create_dir_all(file.join("inside")).unwrap();
+        assert_eq!(live.forget_agent(&mut w, 1), Ok(()));
+        assert!(traced_soon(
+            &mut live,
+            &mut w,
+            1,
+            &format!("could not remove its transcript of session {UUID}: ")
+        ));
+        assert!(file.is_dir(), "left as it was");
+        let home = live.claude_home.clone();
+        for d in [repo, root, home] {
             let _ = std::fs::remove_dir_all(d);
         }
     }

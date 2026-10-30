@@ -3162,6 +3162,9 @@ done"#;
         );
         std::fs::remove_dir_all(&chats).unwrap();
         assert_eq!(forget(&config, &ws, id).unwrap(), 0, "no chats directory");
+        // A chats path that can not be read is an error, not nothing.
+        std::fs::write(&chats, "").unwrap();
+        assert!(forget(&config, &ws, id).is_err(), "chats is a file");
         let e = forget(&config, &ws, "23ed147f").unwrap_err();
         assert_eq!(e.kind(), io::ErrorKind::InvalidInput);
         let _ = std::fs::remove_dir_all(&dir);
@@ -3189,6 +3192,12 @@ done"#;
         assert!(
             !forget_all(&config, &dir.join("other")).unwrap(),
             "never registered"
+        );
+        // What can not be removed is an error, not nothing.
+        std::fs::write(&kept_dir, "").unwrap();
+        assert!(
+            forget_all(&config, &ws).is_err(),
+            "a file where the directory was"
         );
         let _ = std::fs::remove_dir_all(&dir);
     }
