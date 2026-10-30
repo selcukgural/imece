@@ -21,6 +21,16 @@ pub fn mcp_tool(tool: &str) -> String {
     format!("mcp__{MCP_SERVER}__{tool}")
 }
 
+/// Whether `id` is a UUID as the vendors give their session ids: the only
+/// form that goes on a command line, into a path or back to a vendor.
+pub fn valid_uuid(id: &str) -> bool {
+    id.len() == 36
+        && id.bytes().enumerate().all(|(i, b)| match i {
+            8 | 13 | 18 | 23 => b == b'-',
+            _ => b.is_ascii_hexdigit(),
+        })
+}
+
 /// How a session starts imece's MCP server, and which of its tools the
 /// agent may call without asking.
 #[derive(Clone, Debug, PartialEq)]

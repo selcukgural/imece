@@ -93,11 +93,7 @@ pub struct Resume {
 /// Whether `id` is a session id as Claude Code gives them (a UUID): the
 /// only form that goes on a command line or into a path.
 pub fn valid_session(id: &str) -> bool {
-    id.len() == 36
-        && id.bytes().enumerate().all(|(i, b)| match i {
-            8 | 13 | 18 | 23 => b == b'-',
-            _ => b.is_ascii_hexdigit(),
-        })
+    crate::valid_uuid(id)
 }
 
 /// Claude Code's configuration directory: `CLAUDE_CONFIG_DIR`, else

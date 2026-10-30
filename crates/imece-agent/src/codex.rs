@@ -9,8 +9,8 @@
 //! on the thread: approvals are never asked (what the sandbox refuses just
 //! fails), the sandbox is read-only for a leader and workspace-write for a
 //! worker (writes stay in its directory, no network), web search is off,
-//! and there are no plugins, apps, hooks, sub-agents or memories, no session
-//! files on disk, and no MCP server but imece's own. Codex loads the
+//! and there are no plugins, apps, hooks, sub-agents or memories, and no
+//! MCP server but imece's own. Codex loads the
 //! person's own config as well, and some of what comes with it (MCP servers
 //! that plugins put there, the system skills) can only be turned off by
 //! name: a session that finds such things when it first starts is started
@@ -23,6 +23,14 @@
 //! Codex reports tokens, not dollars. On a ChatGPT plan the tokens cost
 //! nothing beyond the plan, so a session books no cost and says so once; an
 //! API-key login would cost money imece can not count yet, so it is refused.
+//!
+//! A thread is kept on disk (Codex's rollout under `~/.codex/sessions`, its
+//! message history still off), so an agent woken in a later run goes on in
+//! the thread it had: `thread/resume` instead of `thread/start`, answered
+//! with the same settings to check, and refused ("no rollout found") when
+//! the rollout is gone, which stops the session before any turn so the
+//! screen starts a new one. A resumed thread keeps the developer
+//! instructions it was started with; the ones passed again are not taken.
 
 use std::collections::{BTreeSet, VecDeque};
 use std::io;
@@ -150,6 +158,8 @@ pub struct Spec {
     pub system: String,
     /// imece's MCP server, if the agent gets its tools.
     pub mcp: Option<Mcp>,
+    /// The thread of an earlier run to go on with, if the agent had one.
+    pub resume: Option<String>,
 }
 
 /// What a first start found in the person's config that only a name turns
@@ -306,6 +316,8 @@ pub struct Protocol {
     effort: Option<String>,
     system: String,
     mcp: Option<Mcp>,
+    /// The thread asked for instead of a new one; see [`Spec::resume`].
+    resume: Option<String>,
     /// Tools imece's server offers, as Codex names them.
     tools: BTreeSet<String>,
     /// What a first start found and this start has named off, if this is
@@ -337,6 +349,7 @@ impl Protocol {
             effort,
             system: spec.system.clone(),
             mcp: spec.mcp.clone(),
+            resume: spec.resume.clone(),
             tools: spec
                 .mcp
                 .iter()
@@ -515,16 +528,35 @@ impl Protocol {
                     "approvalPolicy": "never",
                     "sandbox": sandbox(self.write),
                     "developerInstructions": self.system,
-                    "ephemeral": true,
                 });
                 if let Some(m) = &self.model {
                     params["model"] = json!(m);
                 }
-                vec![self.request("thread/start", params, Wait::Thread)]
+                // The thread is kept, to go on with in a later run; a
+                // resumed one needs no history sent back (its turns are
+                // in Codex, not on the screen).
+                let method = match &self.resume {
+                    Some(id) => {
+                        params["threadId"] = json!(id);
+                        params["excludeTurns"] = json!(true);
+                        "thread/resume"
+                    }
+                    None => {
+                        params["ephemeral"] = json!(false);
+                        "thread/start"
+                    }
+                };
+                vec![self.request(method, params, Wait::Thread)]
             }
             Wait::Thread => {
                 self.check_thread(r)?;
-                self.thread = Some(r["thread"]["id"].as_str().unwrap_or_default().to_string());
+                let id = r["thread"]["id"].as_str().unwrap_or_default();
+                if let Some(asked) = &self.resume
+                    && id != asked
+                {
+                    return Err(format!("resumed thread {id:?}, not {asked:?}"));
+                }
+                self.thread = Some(id.to_string());
                 self.started = true;
                 let mut acts = vec![
                     Act::Event(Event::Started {
@@ -686,6 +718,10 @@ impl Protocol {
         }
         if r["cwd"].as_str().map(Path::new) != Some(self.cwd.as_path()) {
             return Err(format!("started a thread in {}", r["cwd"]));
+        }
+        // Kept on disk, or there is nothing to go on with next time.
+        if r["thread"]["ephemeral"] != false {
+            return Err("started a thread that is not kept".into());
         }
         Ok(())
     }
@@ -1105,7 +1141,17 @@ mod tests {
             write,
             system: "You are codex-1.".into(),
             mcp: None,
+            resume: None,
         }
+    }
+
+    /// [`spec`] for a worker with a model of its own, remembered with
+    /// thread `t1` from an earlier run.
+    fn resumed() -> Spec {
+        let mut s = spec(true);
+        s.choice = Some("gpt-6-luna@high".into());
+        s.resume = Some("t1".into());
+        s
     }
 
     fn with_bus(write: bool) -> Spec {
@@ -1292,7 +1338,7 @@ mod tests {
 
     fn thread(write: bool, cwd: &str) -> Value {
         json!({
-            "thread": { "id": "t1", "model": "gpt-6-luna" },
+            "thread": { "id": "t1", "model": "gpt-6-luna", "ephemeral": false },
             "model": "gpt-6-luna",
             "approvalPolicy": "never",
             "cwd": cwd,
@@ -1353,8 +1399,10 @@ mod tests {
                 assert_eq!(t["params"]["approvalPolicy"], "never");
                 assert_eq!(t["params"]["sandbox"], sandbox(spec.write));
                 assert_eq!(t["params"]["cwd"], "/work/w1");
-                assert_eq!(t["params"]["ephemeral"], true);
+                assert_eq!(t["params"]["ephemeral"], false, "kept, to resume");
                 assert_eq!(t["params"]["developerInstructions"], "You are codex-1.");
+                assert!(t["params"].get("threadId").is_none());
+                assert!(t["params"].get("excludeTurns").is_none());
             }
         }
         assert_eq!(
@@ -1400,7 +1448,14 @@ mod tests {
             ("plugin/installed", json!({ "marketplaces": [] })),
             ("hooks/list", json!({ "data": [] })),
             ("mcpServerStatus/list", servers(bus, &[])),
-            ("thread/start", thread(spec.write, "/work/w1")),
+            (
+                if spec.resume.is_some() {
+                    "thread/resume"
+                } else {
+                    "thread/start"
+                },
+                thread(spec.write, "/work/w1"),
+            ),
         ];
         let mut id = 0;
         for (method, good) in steps {
@@ -1540,6 +1595,110 @@ mod tests {
         assert!(start_until(&spec(true), "thread/start", t).is_err());
         let t = thread(true, "/elsewhere");
         assert!(start_until(&spec(true), "thread/start", t).is_err());
+        // A thread that is not kept could not be resumed next time.
+        let mut t = thread(true, "/work/w1");
+        t["thread"]["ephemeral"] = json!(true);
+        let e = start_until(&spec(true), "thread/start", t).unwrap_err();
+        assert!(e.contains("not kept"), "{e}");
+        let mut t = thread(true, "/work/w1");
+        t["thread"].as_object_mut().unwrap().remove("ephemeral");
+        assert!(start_until(&spec(true), "thread/start", t).is_err());
+    }
+
+    #[test]
+    fn a_remembered_thread_is_resumed_with_the_same_settings_to_check() {
+        let mut p = Protocol::new(&resumed(), None);
+        p.open();
+        let steps = [
+            json!({ "userAgent": "codex" }),
+            json!({ "account": { "type": "chatgpt" } }),
+            json!({ "config": good_config(true, &[], false) }),
+            json!({ "data": [] }),
+            json!({ "marketplaces": [] }),
+            json!({ "data": [] }),
+            servers(false, &[]),
+        ];
+        let mut acts = Vec::new();
+        for (i, r) in steps.into_iter().enumerate() {
+            acts = p.line(&reply(i as u64 + 1, r)).unwrap();
+        }
+        let asked = sent(&acts);
+        assert_eq!(asked.len(), 1, "{acts:?}");
+        let t = &asked[0];
+        assert_eq!(t["id"], 8);
+        assert_eq!(t["method"], "thread/resume");
+        assert_eq!(t["params"]["threadId"], "t1");
+        assert_eq!(t["params"]["cwd"], "/work/w1");
+        assert_eq!(t["params"]["approvalPolicy"], "never");
+        assert_eq!(t["params"]["sandbox"], "workspace-write");
+        assert_eq!(t["params"]["developerInstructions"], "You are codex-1.");
+        assert_eq!(t["params"]["model"], "gpt-6-luna");
+        assert_eq!(t["params"]["excludeTurns"], true, "its turns stay in codex");
+        assert!(t["params"].get("ephemeral").is_none());
+        assert!(
+            t["params"].get("effort").is_none(),
+            "effort goes on the turn"
+        );
+        // The thread that comes back is the one asked for, checked like
+        // a new one, and the session goes on from it.
+        let acts = p.line(&reply(8, thread(true, "/work/w1"))).unwrap();
+        assert_eq!(
+            events(&acts)[0],
+            Event::Started {
+                session: "t1".into(),
+                model: "gpt-6-luna".into()
+            }
+        );
+        assert_eq!(p.thread.as_deref(), Some("t1"));
+        assert!(p.started);
+        let acts = p.prompt("go on");
+        assert_eq!(sent(&acts)[0]["method"], "mcpServerStatus/list");
+        let acts = p.line(&reply(9, servers(false, &[]))).unwrap();
+        let turn = &sent(&acts)[0];
+        assert_eq!(turn["method"], "turn/start");
+        assert_eq!(turn["params"]["threadId"], "t1");
+        assert_eq!(turn["params"]["effort"], "high");
+    }
+
+    #[test]
+    fn a_resume_must_come_back_as_the_thread_asked_for_and_kept() {
+        let mut t = thread(true, "/work/w1");
+        t["thread"]["id"] = json!("t2");
+        let e = start_until(&resumed(), "thread/resume", t).unwrap_err();
+        assert!(e.contains("\"t2\"") && e.contains("\"t1\""), "{e}");
+        // The settings are checked on a resumed thread as on a new one.
+        let t = thread(false, "/work/w1");
+        assert!(start_until(&resumed(), "thread/resume", t).is_err());
+        let t = thread(true, "/elsewhere");
+        assert!(start_until(&resumed(), "thread/resume", t).is_err());
+        let mut t = thread(true, "/work/w1");
+        t["thread"]["ephemeral"] = json!(true);
+        assert!(start_until(&resumed(), "thread/resume", t).is_err());
+        // A rollout that is gone is refused by codex: the session stops
+        // before any turn, and the screen starts a new one.
+        let mut p = Protocol::new(&resumed(), None);
+        p.open();
+        let steps = [
+            json!({ "userAgent": "codex" }),
+            json!({ "account": { "type": "chatgpt" } }),
+            json!({ "config": good_config(true, &[], false) }),
+            json!({ "data": [] }),
+            json!({ "marketplaces": [] }),
+            json!({ "data": [] }),
+            servers(false, &[]),
+        ];
+        for (i, r) in steps.into_iter().enumerate() {
+            p.line(&reply(i as u64 + 1, r)).unwrap();
+        }
+        let e = p
+            .line(
+                &json!({ "jsonrpc": "2.0", "id": 8, "error": {
+                    "code": -32600, "message": "no rollout found for thread id t1" } })
+                .to_string(),
+            )
+            .unwrap_err();
+        assert_eq!(e, "refused Thread: no rollout found for thread id t1");
+        assert!(!p.started);
     }
 
     #[test]
@@ -2452,6 +2611,7 @@ done"#
                 args: vec!["-U".into(), sock.to_string_lossy().into_owned()],
                 tools: vec!["send".into()],
             }),
+            resume: None,
         };
         let (tx, rx) = mpsc::channel();
         let session = Session::start(&s, move |e| {
@@ -2496,6 +2656,92 @@ done"#
                 .unwrap_or_default()
                 .contains("scratch"),
             "{calls:?}"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// `IMECE_LIVE_CODEX=1 cargo test -p imece-agent -- --ignored live_codex_resumes --nocapture`
+    ///
+    /// Three processes: one that takes a turn in a new thread, one that
+    /// resumes that thread and must remember the turn, one that asks for a
+    /// thread there is no rollout of and must stop before any turn. The
+    /// rollouts stay under `~/.codex/sessions` (imece deletes none yet).
+    #[test]
+    #[ignore = "drives the real codex; set IMECE_LIVE_CODEX=1"]
+    fn live_codex_resumes_its_thread_and_stops_on_one_that_is_gone() {
+        if std::env::var_os("IMECE_LIVE_CODEX").is_none() {
+            return;
+        }
+        let dir = std::env::temp_dir().join(format!("imece-live-codex-r-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let cwd = dir.canonicalize().unwrap();
+        let mut spec = Spec {
+            program: PROGRAM.into(),
+            cwd: cwd.clone(),
+            choice: Some("@low".into()),
+            write: false,
+            system: "You are codex-1, a coding agent in imece. Answer briefly.".into(),
+            mcp: None,
+            resume: None,
+        };
+        // One process, one prompt: every event until the turn or the
+        // session ends.
+        let run = |spec: &Spec, prompt: &str| -> Vec<Event> {
+            let (tx, rx) = mpsc::channel();
+            let mut session = Session::start(spec, move |e| {
+                let _ = tx.send(e);
+            })
+            .unwrap();
+            session.prompt(prompt).unwrap();
+            let mut got = Vec::new();
+            loop {
+                let e = rx
+                    .recv_timeout(Duration::from_secs(180))
+                    .expect("codex answers within three minutes");
+                eprintln!("live codex: {e:?}");
+                let end = matches!(e, Event::TurnDone { .. } | Event::Stopped(_));
+                got.push(e);
+                if end {
+                    break;
+                }
+            }
+            got
+        };
+        let first = run(&spec, "Reply with exactly the word: marigold");
+        let Some(Event::Started {
+            session: thread, ..
+        }) = first.first().cloned()
+        else {
+            panic!("the checks passed: {first:?}");
+        };
+        assert!(crate::valid_uuid(&thread), "{thread}");
+        assert!(
+            matches!(first.last(), Some(Event::TurnDone { ok: true, .. })),
+            "{first:?}"
+        );
+        spec.resume = Some(thread.clone());
+        let again = run(
+            &spec,
+            "Which word did I ask you to reply with before? Answer with that word only.",
+        );
+        assert_eq!(
+            again
+                .first()
+                .map(|e| matches!(e, Event::Started { session, .. } if *session == thread)),
+            Some(true),
+            "the same thread: {again:?}"
+        );
+        assert!(
+            matches!(again.last(), Some(Event::TurnDone { ok: true, text, .. }) if text.to_lowercase().contains("marigold")),
+            "{again:?}"
+        );
+        spec.resume = Some("01a18b35-6d6d-70f2-94d1-5ac2cf796999".into());
+        let gone = run(&spec, "unused");
+        assert_eq!(gone.len(), 1, "{gone:?}");
+        assert!(
+            matches!(&gone[0], Event::Stopped(why) if why.contains("no rollout found")),
+            "{gone:?}"
         );
         let _ = std::fs::remove_dir_all(&dir);
     }
