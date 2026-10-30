@@ -285,7 +285,10 @@ pub(crate) fn as_if_applying(live: &mut Live, id: AgentId) {
 pub(super) fn settle(live: &mut Live, w: &mut World) {
     for _ in 0..500 {
         live.take_git(w);
-        if live.reading.iter().all(|&n| n == 0) && !live.applying.contains(&true) {
+        if live.reading.iter().all(|&n| n == 0)
+            && !live.applying.contains(&true)
+            && live.placing.iter().all(Option::is_none)
+        {
             return;
         }
         thread::sleep(Duration::from_millis(10));

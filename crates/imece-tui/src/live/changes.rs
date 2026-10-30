@@ -42,6 +42,16 @@ pub(super) fn git_thread(jobs: Receiver<GitJob>, done: Sender<GitDone>) {
                     mark,
                 }
             }
+            GitJob::Place {
+                agent,
+                generation,
+                repo,
+                path,
+            } => GitDone::Placed {
+                agent,
+                generation,
+                placed: worktree::place(&repo, &path),
+            },
         };
         if done.send(out).is_err() {
             return;
@@ -105,6 +115,11 @@ impl Live {
                     self.applying[agent] = false;
                     self.applied(w, agent, &title, applied, mark);
                 }
+                GitDone::Placed {
+                    agent,
+                    generation,
+                    placed,
+                } => self.placed(w, agent, generation, placed),
             }
         }
     }
@@ -239,17 +254,48 @@ impl Live {
     /// Between turns, a worker's clean worktree follows the checkout's
     /// HEAD (as it does when its session starts), so a change the person
     /// applied and committed is under the worker's feet for the next task.
-    /// Not while it or one of its helpers is mid-turn.
+    /// Not while it or one of its helpers is mid-turn. Git moves it on
+    /// its thread; the prompts wait in `placing` until it is done.
     pub(super) fn follow(&mut self, w: &mut World, id: AgentId) {
         let a = &w.agents[id];
         let busy = self.turns[id] > 0 || w.helpers_of(id).any(|h| self.turns[h.id] > 0);
-        if a.role != Role::Worker || busy || !matches!(self.slots[id], Slot::Running(_)) {
+        if a.role != Role::Worker
+            || busy
+            || self.placing[id].is_some()
+            || !matches!(self.slots[id], Slot::Running(_))
+        {
             return;
         }
-        let Some(cwd) = self.cwds[id].clone() else {
+        let Some(path) = self.cwds[id].clone() else {
             return;
         };
-        match worktree::place(&self.places[a.project].repo, &cwd) {
+        let job = GitJob::Place {
+            agent: id,
+            generation: self.generation[id],
+            repo: self.places[a.project].repo.clone(),
+            path,
+        };
+        if self.git.send(job).is_ok() {
+            self.placing[id] = Some(Vec::new());
+        } else {
+            w.agents[id].trace(w.tick, "worktree: git is gone");
+        }
+    }
+
+    /// Where git put worker `id`'s worktree; then its session gets the
+    /// prompts that waited, in order. Nothing for a session that ended
+    /// meanwhile.
+    fn placed(
+        &mut self,
+        w: &mut World,
+        id: AgentId,
+        generation: u64,
+        placed: io::Result<worktree::Placed>,
+    ) {
+        if generation != self.generation[id] {
+            return;
+        }
+        match placed {
             Ok(worktree::Placed::Moved { from, to }) => {
                 w.note(Event::WorktreeMoved {
                     agent: id,
@@ -260,11 +306,27 @@ impl Live {
             Ok(_) => {}
             Err(e) => w.agents[id].trace(w.tick, format!("worktree: {e}")),
         }
+        for text in self.placing[id].take().unwrap_or_default() {
+            let Slot::Running(s) = &mut self.slots[id] else {
+                return;
+            };
+            if let Err(e) = s.prompt(&text) {
+                self.end(w, id);
+                return apply(
+                    w,
+                    id,
+                    AgentEvent::Stopped(e.to_string()),
+                    self.spent_before[id],
+                );
+            }
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use std::sync::{Arc, Mutex};
+
     use super::*;
     use crate::live::testing::*;
 
@@ -551,6 +613,16 @@ mod tests {
             Err("imece's git thread is gone".into())
         );
         assert!(!live.applying[1]);
+        // Nor is the worktree moved: the prompt goes on without that.
+        live.told(&mut w, 1, "go").unwrap();
+        assert_eq!(live.placing[1], None);
+        assert_eq!(live.inflight[1], ["go"]);
+        assert!(
+            w.agents[1]
+                .trace
+                .iter()
+                .any(|l| l.ends_with("worktree: git is gone"))
+        );
         let _ = std::fs::remove_dir_all(&root);
         let _ = std::fs::remove_dir_all(&repo);
     }
@@ -640,6 +712,99 @@ mod tests {
         let _ = std::fs::remove_dir_all(&repo);
     }
 
+    /// A session that keeps what it is prompted with; one that fails
+    /// refuses every prompt.
+    struct Heard(Arc<Mutex<Vec<String>>>, bool);
+
+    impl imece_agent::Agent for Heard {
+        fn prompt(&mut self, text: &str) -> io::Result<()> {
+            if self.1 {
+                return Err(io::Error::new(io::ErrorKind::BrokenPipe, "gone"));
+            }
+            self.0.lock().unwrap().push(text.to_string());
+            Ok(())
+        }
+        fn command(&mut self, _: &str) -> io::Result<()> {
+            Ok(())
+        }
+        fn terminate(&mut self) {}
+    }
+
+    #[test]
+    fn prompts_wait_while_git_moves_the_worktree_and_go_in_order() {
+        let repo = checkout("placing-repo");
+        let root = trees("placing");
+        let mut w = team(1);
+        let mut live = Live::new(
+            2,
+            claude_at("/nonexistent/claude"),
+            repo.clone(),
+            root.clone(),
+        );
+        let tree = worktree::ensure(&repo, &root, "claude-1").unwrap().path;
+        let heard = Arc::new(Mutex::new(Vec::new()));
+        let session = |fails| Box::new(Heard(heard.clone(), fails));
+        live.ready(&mut w, 1, Ok((session(false), tree.clone(), None)));
+        let commit = |name: &str| {
+            std::fs::write(repo.join(name), name).unwrap();
+            git_in(&repo, &["add", "."]);
+            git_in(
+                &repo,
+                &[
+                    "-c",
+                    "user.name=t",
+                    "-c",
+                    "user.email=t@t",
+                    "-c",
+                    "commit.gpgsign=false",
+                    "commit",
+                    "-q",
+                    "-m",
+                    name,
+                ],
+            );
+        };
+        let moved = |w: &World| {
+            w.journal
+                .iter()
+                .filter(|e| matches!(e.event, Event::WorktreeMoved { agent: 1, .. }))
+                .count()
+        };
+        commit("b.txt");
+        // The prompt waits for git; the one after it waits behind it.
+        live.told(&mut w, 1, "go").unwrap();
+        live.told(&mut w, 1, "more").unwrap();
+        assert_eq!(
+            live.placing[1],
+            Some(vec!["go".to_string(), "more".to_string()])
+        );
+        assert_eq!(live.turns[1], 2);
+        assert!(heard.lock().unwrap().is_empty());
+        settle(&mut live, &mut w);
+        assert_eq!(*heard.lock().unwrap(), ["go", "more"]);
+        assert_eq!(moved(&w), 1);
+        assert!(tree.join("b.txt").exists());
+        // A session that ended meanwhile hears nothing, and nothing is said.
+        commit("c.txt");
+        live.turns[1] = 0;
+        live.told(&mut w, 1, "late").unwrap();
+        live.end(&mut w, 1);
+        assert_eq!(live.placing[1], None);
+        settle(&mut live, &mut w);
+        assert_eq!(heard.lock().unwrap().len(), 2);
+        assert_eq!(moved(&w), 1);
+        // A session that refuses the prompt that waited is stopped.
+        live.ready(&mut w, 1, Ok((session(true), tree.clone(), None)));
+        commit("d.txt");
+        live.told(&mut w, 1, "refused").unwrap();
+        settle(&mut live, &mut w);
+        assert_eq!(moved(&w), 2);
+        assert_eq!(w.agents[1].status, Status::Stopped);
+        assert!(matches!(live.slots[1], Slot::None));
+        let _ = std::fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&repo);
+    }
+
     #[test]
     fn a_worker_s_clean_worktree_follows_the_checkout_between_turns() {
         let repo = checkout("follow-repo");
@@ -693,12 +858,14 @@ mod tests {
         live.follow(&mut w, 0);
         // Between turns: the next prompt finds the worktree at HEAD.
         live.told(&mut w, 1, "go").unwrap();
+        settle(&mut live, &mut w);
         assert_eq!(moved(&w), 1);
         assert_eq!(git_in(&tree, &["rev-parse", "HEAD"]), new);
         assert!(tree.join("b.txt").exists());
         // Already there: nothing more is said.
         live.turns[1] = 0;
         live.told(&mut w, 1, "go on").unwrap();
+        settle(&mut live, &mut w);
         assert_eq!(moved(&w), 1);
         // With changes of its own it stays, and a broken directory is a
         // trace line, not a crash.
@@ -722,11 +889,13 @@ mod tests {
         std::fs::write(tree.join("mine.txt"), "mine").unwrap();
         live.turns[1] = 0;
         live.told(&mut w, 1, "more").unwrap();
+        settle(&mut live, &mut w);
         assert_eq!(moved(&w), 1);
         assert_eq!(git_in(&tree, &["rev-parse", "HEAD"]), new);
         live.cwds[1] = Some(PathBuf::from("/nonexistent/tree"));
         live.turns[1] = 0;
         live.told(&mut w, 1, "still").unwrap();
+        settle(&mut live, &mut w);
         assert!(
             w.agents[1].trace.iter().any(|l| l.contains("worktree: ")),
             "{:?}",

@@ -111,6 +111,7 @@ impl Live {
         self.inflight[id].clear();
         self.floor[id] = 0;
         self.resuming[id] = None;
+        self.placing[id] = None;
     }
 
     /// The directory agent `id`'s session runs in: the checkout for a
@@ -315,6 +316,8 @@ impl Live {
                 self.slots[id] = Slot::Starting(vec![text.clone()]);
             }
             Slot::Starting(q) => q.push(text.clone()),
+            // Git is moving its worktree: the prompt waits for that.
+            Slot::Running(_) if let Some(q) = &mut self.placing[id] => q.push(text.clone()),
             Slot::Running(s) => {
                 if let Err(e) = s.prompt(&text) {
                     self.end(w, id);

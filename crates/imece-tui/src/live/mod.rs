@@ -254,6 +254,15 @@ enum GitJob {
         change: worktree::Change,
         title: String,
     },
+    /// Move worker `agent`'s worktree `path` to the checkout `repo`'s
+    /// HEAD if it can (see [`worktree::place`]), for the session of
+    /// `generation`.
+    Place {
+        agent: AgentId,
+        generation: u64,
+        repo: PathBuf,
+        path: PathBuf,
+    },
 }
 
 /// What a git job came to, back on the screen's loop.
@@ -271,6 +280,11 @@ enum GitDone {
         title: String,
         applied: io::Result<()>,
         mark: io::Result<String>,
+    },
+    Placed {
+        agent: AgentId,
+        generation: u64,
+        placed: io::Result<worktree::Placed>,
     },
 }
 
@@ -395,6 +409,10 @@ pub struct Live {
     reading: Vec<usize>,
     /// Whether each worker's change is being applied.
     applying: Vec<bool>,
+    /// The prompts each worker's session waits to be given while git
+    /// moves its worktree to HEAD (see [`Live::follow`]); none when it
+    /// is not moving.
+    placing: Vec<Option<Vec<String>>>,
     bus: Option<Bus>,
     calls_tx: Sender<Call>,
     calls_rx: Receiver<Call>,
@@ -598,6 +616,7 @@ impl Live {
             git_back,
             reading: Vec::new(),
             applying: Vec::new(),
+            placing: Vec::new(),
             bus: None,
             calls_tx,
             calls_rx,

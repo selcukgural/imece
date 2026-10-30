@@ -27,9 +27,9 @@ worktree whose own commits are all imece's follow the checkout (it
 stays while the checkout has not moved past them), and `Live::follow`
 runs it before every prompt of a worker that is between turns (its
 helpers too), journaled `WorktreeMoved`. The sim has no changes.
-Known gaps: `follow` (`worktree::place`, before every worker prompt)
-and the wake briefing's `worktree::change` still run on the UI thread;
-no partial apply; the `done needs evidence` line (last run after the
+Known gaps: the wake briefing's `worktree::change` (once per
+remembered worker per run, at its first prompt) still runs on the UI
+thread; no partial apply; the `done needs evidence` line (last run after the
 last change) is not yet shown on the item.
 
 Three-way apply (2026-10-30, the first Kule run: two workers both added
@@ -70,3 +70,15 @@ the worker's is still being read (`reading`), `r` while it is being
 applied (`applying`; the flash `reject_failed`). Without its thread (it
 can not end while Live lives, but a send can fail) a done is answered
 "imece could not read your change" and an apply is refused.
+
+`follow` on the git thread too (2026-10-30; `place` is ~110 ms and ran
+before every worker prompt): a worker between turns gets a
+`GitJob::Place` for the session's generation, and its prompts wait in
+`Live::placing` (the session stays `Slot::Running`, so approvals,
+commands and the end still reach it) until `GitDone::Placed` comes
+back; then they go in order. A session that ended meanwhile (its
+generation moved on, `end` empties the queue) hears nothing and
+nothing is journaled; a prompt the session refuses then stops it, as
+a refused prompt does anywhere. The bookkeeping (turn count, card,
+status Working) happens when the prompt is given, not when it is
+sent, so nothing offers or delivers to the worker twice meanwhile.
