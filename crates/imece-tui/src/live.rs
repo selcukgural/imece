@@ -359,6 +359,16 @@ impl Drop for Bus {
     }
 }
 
+/// A wake that goes on with the agent's earlier session: what to start
+/// over with, briefed, if the vendor can not find it.
+struct Attempt {
+    session: String,
+    /// The first prompt as it was given, without imece's notes.
+    text: String,
+    /// imece's notes as they waited before the wake.
+    notes: Vec<String>,
+}
+
 pub struct Live {
     /// Where the worktrees and the store live.
     state: PathBuf,
@@ -374,6 +384,17 @@ pub struct Live {
     remembered: Vec<bool>,
     /// The prompts an earlier run's turn did not finish, for that briefing.
     interrupted: Vec<Vec<String>>,
+    /// The vendor session each agent had last, to go on with at its wake
+    /// (Claude so far); kept up to date from what the session reports.
+    sessions: Vec<Option<Resumable>>,
+    /// What the agent's current session had cost before this run resumed
+    /// it (millionths of a dollar); 0 for a new session.
+    floor: Vec<u64>,
+    /// Wakes that go on with the earlier session, until the vendor
+    /// confirms it or fails to find it.
+    resuming: Vec<Option<Attempt>>,
+    /// Claude Code's configuration directory, where its transcripts are.
+    claude_home: PathBuf,
     /// Events tagged with the agent and the session's generation, so a late
     /// event of an ended session never touches the next one.
     tx: Sender<(AgentId, u64, AgentEvent)>,
@@ -600,6 +621,7 @@ impl Live {
             self.notes[id] = found.notes.get(id).cloned().unwrap_or_default();
             self.woken[id] = found.woken.get(id).copied().unwrap_or(0);
             self.posted[id] = found.posted.get(id).copied().unwrap_or(0);
+            self.sessions[id] = found.sessions.get(id).cloned().flatten();
             if w.agents[id].gone {
                 continue;
             }
@@ -684,6 +706,7 @@ impl Live {
             mail: &self.mail,
             notes: &self.notes,
             inflight: &self.inflight,
+            sessions: &self.sessions,
             posts: &self.posts,
             offered: &self.offered,
             changes: &self.changes,
@@ -692,21 +715,48 @@ impl Live {
     }
 
     /// Tells a remembered agent where it left off, ahead of its first
-    /// prompt this run: its session is new and knows nothing of the old
-    /// one. Built from what the world kept (its card's story, a turn that
-    /// was cut short, mail that waits, its worktree's changes, the board),
-    /// every line cleaned and the whole capped.
-    fn brief(&mut self, w: &World, id: AgentId) -> String {
+    /// prompt this run. A session that goes on (`resumed`) knows its own
+    /// story and hears only what happened since: a turn that was cut
+    /// short, mail that waits. A new session knows nothing of the old
+    /// one and is told from what the world kept (its card's story, the
+    /// cut turn, mail, its worktree's changes, the board). Every line
+    /// cleaned and the whole capped.
+    fn brief(&mut self, w: &World, id: AgentId, resumed: bool) -> String {
         let a = &w.agents[id];
-        let mut lines = vec![
+        let mut lines = vec![if resumed {
+            "imece started again since your last turn; this session goes on where it was, \
+             so you remember everything up to then. Since then:"
+                .to_string()
+        } else {
             "imece started again since your last turn, so this is a new session that \
              remembers nothing of the old one. Where you left off:"
-                .to_string(),
-        ];
+                .to_string()
+        }];
         let mut line = |text: String| {
             let text = clean(text.lines().next().unwrap_or_default());
             lines.push(format!("- {}", cut(&text, MAX_BRIEFING_LINE)));
         };
+        if resumed {
+            // Kept until the session confirms it is the old one; a new
+            // one is briefed in full.
+            for text in self.interrupted[id].clone() {
+                line(format!(
+                    "A turn of yours was cut short when imece closed, before it ended; it is \
+                     not run again. Its prompt was: {text}"
+                ));
+            }
+            if !self.mail[id].is_empty() {
+                line(format!(
+                    "{} messages wait for you; they come with a turn of their own.",
+                    self.mail[id].len()
+                ));
+            }
+            drop(line);
+            if lines.len() == 1 {
+                lines.push("- Nothing; go on.".to_string());
+            }
+            return cut(&lines.join("\n"), MAX_BRIEFING).to_string();
+        }
         if let Some(c) = a.card {
             let card = &w.cards[c];
             let state = match card.column {
@@ -812,6 +862,10 @@ impl Live {
             loaded_cards: 0,
             remembered: Vec::new(),
             interrupted: Vec::new(),
+            sessions: Vec::new(),
+            floor: Vec::new(),
+            resuming: Vec::new(),
+            claude_home: claude::config_dir(),
             tx,
             rx,
             ready_tx,
@@ -854,6 +908,9 @@ impl Live {
     fn grow(&mut self, model: Option<String>, tiered: bool) {
         self.remembered.push(false);
         self.interrupted.push(Vec::new());
+        self.sessions.push(None);
+        self.floor.push(0);
+        self.resuming.push(None);
         self.slots.push(Slot::None);
         self.generation.push(0);
         self.spent_before.push(0);
@@ -1010,6 +1067,32 @@ impl Live {
                 AgentEvent::TurnDone { ok: true, text, .. } => Some(text.clone()),
                 _ => None,
             };
+            match &e {
+                // The session the vendor runs is the one to go on with
+                // next time; a wake that asked for the old one has it.
+                AgentEvent::Started { session, .. } => {
+                    self.sessions[id] = Some(Resumable {
+                        session: session.clone(),
+                        spent: self.floor[id],
+                    });
+                    if self.resuming[id].take().is_some() {
+                        self.interrupted[id].clear();
+                        w.note(Event::Resumed { agent: id });
+                    }
+                }
+                AgentEvent::TurnDone { cost, .. } => {
+                    if let Some(s) = &mut self.sessions[id] {
+                        s.spent = self.floor[id] + cost;
+                    }
+                }
+                AgentEvent::Stopped(why) => {
+                    if let Some(a) = self.resuming[id].take() {
+                        self.restart(w, id, a, why);
+                        continue;
+                    }
+                }
+                _ => {}
+            }
             let stopped = matches!(e, AgentEvent::Stopped(_));
             if stopped {
                 self.end(w, id);
@@ -1156,6 +1239,73 @@ impl Live {
         self.turns[id] = 0;
         self.turned[id] = false;
         self.inflight[id].clear();
+        self.floor[id] = 0;
+        self.resuming[id] = None;
+    }
+
+    /// Whether agent `id`, remembered from an earlier run, can go on in
+    /// the session it had: its vendor resumes (Claude so far) and the
+    /// session's transcript is still where the vendor keeps it for the
+    /// directory the agent runs in. Said once, at the wake; a session
+    /// that is gone is forgotten.
+    fn resumable(&mut self, w: &World, id: AgentId) -> Option<Resumable> {
+        let r = self.sessions[id].clone()?;
+        let there = w.agents[id].vendor == Vendor::Claude
+            && claude::valid_session(&r.session)
+            && claude::transcript(&self.claude_home, &self.cwd_of(w, id), &r.session).is_file();
+        if !there {
+            self.sessions[id] = None;
+        }
+        there.then_some(r)
+    }
+
+    /// The session agent `id`'s next process goes on with, if its wake
+    /// asked for one: the old session above what it had cost.
+    fn resume_of(&self, id: AgentId) -> Option<claude::Resume> {
+        self.resuming[id].as_ref().map(|r| claude::Resume {
+            session: r.session.clone(),
+            spent: self.floor[id],
+        })
+    }
+
+    /// The directory agent `id`'s session runs in: the checkout for a
+    /// leader, its (or its worker's) worktree for the rest, as the vendor
+    /// sees it (a worktree is canonical once it exists).
+    fn cwd_of(&self, w: &World, id: AgentId) -> PathBuf {
+        let a = &w.agents[id];
+        let place = &self.places[a.project];
+        if a.role == Role::Leader {
+            return place.repo.clone();
+        }
+        let tree = a.parent.map_or(&a.name, |p| &w.agents[p].name);
+        let path = place.root.join(tree);
+        path.canonicalize().unwrap_or(path)
+    }
+
+    /// Agent `id`'s earlier session could not be resumed (`why`): a new
+    /// session, told where it left off, gets the prompts the old one was
+    /// given, the first as it was before imece's notes.
+    fn restart(&mut self, w: &mut World, id: AgentId, a: Attempt, why: &str) {
+        let mut texts = std::mem::take(&mut self.inflight[id]);
+        self.end(w, id);
+        self.sessions[id] = None;
+        self.notes[id] = a.notes;
+        self.remembered[id] = true;
+        if let Some(first) = texts.first_mut() {
+            *first = a.text;
+        }
+        w.agents[id].trace(
+            w.tick,
+            format!(
+                "session {} could not be resumed ({why}); a new one is told where it left off",
+                a.session
+            ),
+        );
+        for text in texts {
+            if let Err(why) = self.prompt(w, id, text, None) {
+                return apply(w, id, AgentEvent::Stopped(why), self.spent_before[id]);
+            }
+        }
     }
 
     /// Helper `id` leaves: its session ends, its mail is dropped, and it is
@@ -1976,6 +2126,7 @@ impl Live {
             Err(e) if e.kind() == io::ErrorKind::Unsupported && line == "/clear" => {
                 s.terminate();
                 self.end(w, id);
+                self.sessions[id] = None;
                 w.agents[id].trace(
                     w.tick,
                     "session ended on /clear; the next message starts a new one",
@@ -1998,7 +2149,18 @@ impl Live {
         let t = w.tick;
         self.follow(w, id);
         if std::mem::take(&mut self.remembered[id]) {
-            let briefing = self.brief(w, id);
+            let resumed = self.resumable(w, id);
+            if let Some(r) = &resumed {
+                self.floor[id] = r.spent;
+                self.resuming[id] = Some(Attempt {
+                    session: r.session.clone(),
+                    text: text.clone(),
+                    notes: self.notes[id].clone(),
+                });
+            } else {
+                w.note(Event::Restarted { agent: id });
+            }
+            let briefing = self.brief(w, id, resumed.is_some());
             self.notes[id].insert(0, briefing);
         }
         let text = self.with_notes(id, text);
@@ -2118,6 +2280,7 @@ impl Live {
         }
         let (program, model) = (vendor.program.clone(), self.models[id].clone());
         let name = format!("imece {}", a.name);
+        let resume = self.resume_of(id);
         // In millionths of a dollar: what is left of the budget.
         let budget = w.budget.saturating_sub(w.spent()) * 100;
         let kind = a.vendor;
@@ -2185,6 +2348,7 @@ impl Live {
                                     budget,
                                     system,
                                     mcp,
+                                    resume,
                                 },
                                 on,
                             )
@@ -3298,9 +3462,15 @@ mod tests {
                 .any(|l| l.ends_with("nothing to say"))
         );
         assert_eq!(live.turns[1], 0);
-        // /clear without one of the vendor's own: the session ends.
+        // /clear without one of the vendor's own: the session ends, and
+        // is not one to go on with later.
+        live.sessions[1] = Some(Resumable {
+            session: "686c6d27-d50b-4ae2-ad6a-159bf2984671".into(),
+            spent: 5,
+        });
         live.command(&mut w, 1, "/clear").unwrap();
         assert!(matches!(live.slots[1], Slot::None));
+        assert_eq!(live.sessions[1], None);
         assert!(
             w.agents[1]
                 .trace
@@ -6338,6 +6508,15 @@ in p.rs",
                 Vec::new(),
             ],
             notes: vec![vec!["a note".into()], Vec::new(), Vec::new(), Vec::new()],
+            sessions: vec![
+                Some(Resumable {
+                    session: "686c6d27-d50b-4ae2-ad6a-159bf2984671".into(),
+                    spent: 524,
+                }),
+                None,
+                None,
+                None,
+            ],
             inflight: vec![
                 Vec::new(),
                 vec!["go on".into()],
@@ -6719,6 +6898,10 @@ in p.rs",
         w.budget = 70_000;
         w.agents[0].cost = 1_234;
         live.inflight[0].push("hello".into());
+        live.sessions[0] = Some(Resumable {
+            session: "686c6d27-d50b-4ae2-ad6a-159bf2984671".into(),
+            spent: 524,
+        });
         assert_eq!(live.persist(&w), Ok(true));
         drop(live);
 
@@ -6727,6 +6910,13 @@ in p.rs",
         assert_eq!(w.projects.len(), 1);
         assert_eq!(w.agents[0].status, Status::Asleep);
         assert_eq!((w.agents[0].cost, live.spent_before[0]), (1_234, 1_234));
+        assert_eq!(
+            live.sessions[0],
+            Some(Resumable {
+                session: "686c6d27-d50b-4ae2-ad6a-159bf2984671".into(),
+                spent: 524,
+            })
+        );
         assert_eq!(w.budget, 20_000);
         assert_eq!((w.started_at, w.run_spent), (began, 1_234));
         assert!(live.remembered[0]);
@@ -6773,5 +6963,351 @@ in p.rs",
         let _ = std::fs::remove_dir_all(&repo);
         let _ = std::fs::remove_dir_all(&other);
         let _ = std::fs::remove_dir_all(&state);
+    }
+
+    const UUID: &str = "686c6d27-d50b-4ae2-ad6a-159bf2984671";
+
+    /// A worker remembered with session [`UUID`], a turn cut short and one
+    /// message waiting, in a team whose Claude transcripts live under a
+    /// temp dir; `there` puts the session's transcript where Claude would
+    /// have it for the worker's worktree.
+    fn remembered_worker(name: &str, there: bool) -> (World, Live, PathBuf, PathBuf) {
+        let repo = checkout(name);
+        let root = trees(name);
+        let mut w = team(1);
+        let mut live = Live::new(
+            2,
+            claude_at("/nonexistent/claude"),
+            repo.clone(),
+            root.clone(),
+        );
+        live.claude_home = trees(&format!("{name}-home"));
+        // Made first, so its path is the canonical one the session has.
+        worktree::ensure(&repo, &root, "claude-1").unwrap();
+        live.sessions[1] = Some(Resumable {
+            session: UUID.into(),
+            spent: 524,
+        });
+        live.remembered[1] = true;
+        live.interrupted[1] = vec!["finish it".into()];
+        live.mail[1].push(Mail {
+            from: 0,
+            kind: MsgKind::Inform,
+            body: "one".into(),
+        });
+        w.agents[1].status = Status::Asleep;
+        if there {
+            let file = claude::transcript(&live.claude_home, &live.cwd_of(&w, 1), UUID);
+            std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+            std::fs::write(&file, "{}\n").unwrap();
+        }
+        (w, live, repo, root)
+    }
+
+    fn journaled(w: &World, e: &Event) -> usize {
+        w.journal.iter().filter(|j| j.event == *e).count()
+    }
+
+    #[test]
+    fn a_remembered_claude_agent_goes_on_in_its_session_when_its_transcript_is_there() {
+        let (mut w, mut live, repo, root) = remembered_worker("resume", true);
+        let home = live.claude_home.clone();
+        with_card(&mut w, 1);
+        live.told(&mut w, 1, "go on").unwrap();
+        // The short briefing: what happened since, not the story it knows.
+        let text = &queued(&live, 1)[0];
+        assert!(
+            text.starts_with("From imece (not from the person or a teammate):"),
+            "{text}"
+        );
+        for part in [
+            "this session goes on where it was",
+            "cut short when imece closed",
+            "Its prompt was: finish it",
+            "1 messages wait for you",
+        ] {
+            assert!(text.contains(part), "{part:?} in {text}");
+        }
+        for not in [
+            "Where you left off",
+            "Your task",
+            "fix it",
+            "Nothing; go on",
+        ] {
+            assert!(!text.contains(not), "{not:?} in {text}");
+        }
+        assert!(text.ends_with("\n\ngo on"), "{text}");
+        assert_eq!(
+            live.resume_of(1),
+            Some(claude::Resume {
+                session: UUID.into(),
+                spent: 524,
+            })
+        );
+        assert_eq!(live.resume_of(0), None);
+        assert_eq!(live.floor[1], 524);
+        let a = live.resuming[1].as_ref().unwrap();
+        assert_eq!((a.session.as_str(), a.text.as_str()), (UUID, "go on"));
+        assert!(a.notes.is_empty());
+        assert_eq!(
+            live.interrupted[1],
+            ["finish it"],
+            "kept until the session confirms"
+        );
+        assert_eq!(journaled(&w, &Event::Restarted { agent: 1 }), 0);
+        assert_eq!(journaled(&w, &Event::Resumed { agent: 1 }), 0);
+        // The session confirms it is the old one.
+        live.tx
+            .send((
+                1,
+                live.generation[1],
+                AgentEvent::Started {
+                    session: UUID.into(),
+                    model: "m".into(),
+                },
+            ))
+            .unwrap();
+        live.step(&mut w);
+        assert_eq!(journaled(&w, &Event::Resumed { agent: 1 }), 1);
+        assert!(live.resuming[1].is_none());
+        assert!(live.interrupted[1].is_empty());
+        assert_eq!(live.resume_of(1), None);
+        assert_eq!(
+            live.sessions[1],
+            Some(Resumable {
+                session: UUID.into(),
+                spent: 524,
+            })
+        );
+        // A turn's cost is what the session reports above its floor; the
+        // session is remembered at its whole cost.
+        live.tx
+            .send((
+                1,
+                live.generation[1],
+                AgentEvent::TurnDone {
+                    ok: true,
+                    text: "done".into(),
+                    cost: 136,
+                    denied: 0,
+                },
+            ))
+            .unwrap();
+        live.step(&mut w);
+        assert_eq!(live.sessions[1].as_ref().unwrap().spent, 660);
+        assert_eq!(w.agents[1].cost, 1, "136 millionths in ten-thousandths");
+        // The vendor's /clear brings a new session id: that is the one to
+        // go on with, from nothing; no second resume is journaled.
+        live.tx
+            .send((
+                1,
+                live.generation[1],
+                AgentEvent::Started {
+                    session: "s2".into(),
+                    model: "m".into(),
+                },
+            ))
+            .unwrap();
+        live.step(&mut w);
+        assert_eq!(
+            live.sessions[1],
+            Some(Resumable {
+                session: "s2".into(),
+                spent: 524,
+            })
+        );
+        assert_eq!(journaled(&w, &Event::Resumed { agent: 1 }), 1);
+        // Told again: no second briefing, no second attempt.
+        live.told(&mut w, 1, "more").unwrap();
+        assert!(live.resuming[1].is_none());
+        // Nothing happened since: said so, briefly.
+        let (mut w, mut live, repo2, root2) = remembered_worker("resume-quiet", true);
+        let home2 = live.claude_home.clone();
+        live.interrupted[1].clear();
+        live.mail[1].clear();
+        live.told(&mut w, 1, "go on").unwrap();
+        let text = &queued(&live, 1)[0];
+        assert!(
+            text.contains("Since then:\n- Nothing; go on.\n\ngo on"),
+            "{text}"
+        );
+        // A process that could not start is no resume to fall back from:
+        // the next start is a plain one.
+        live.ready(&mut w, 1, Err("no such program".into()));
+        assert_eq!(w.agents[1].status, Status::Stopped);
+        assert!(live.resuming[1].is_none());
+        assert_eq!(live.resume_of(1), None);
+        assert_eq!(live.floor[1], 0);
+        for d in [repo, root, home, repo2, root2, home2] {
+            let _ = std::fs::remove_dir_all(d);
+        }
+    }
+
+    #[test]
+    fn a_session_the_vendor_can_not_find_is_started_over_with_the_full_briefing() {
+        let (mut w, mut live, repo, root) = remembered_worker("resume-gone", true);
+        let home = live.claude_home.clone();
+        with_card(&mut w, 1);
+        live.notes[1].push("the person applied it".into());
+        live.told(&mut w, 1, "go on").unwrap();
+        assert!(queued(&live, 1)[0].contains("the person applied it"));
+        live.tx
+            .send((
+                1,
+                live.generation[1],
+                AgentEvent::Stopped(
+                    "stopped: the session could not resume session 686c… (error_during_execution)"
+                        .into(),
+                ),
+            ))
+            .unwrap();
+        live.step(&mut w);
+        // A new session, started over: the old one forgotten, the first
+        // prompt as it was, briefed in full, imece's older note kept.
+        assert_eq!(live.generation[1], 1, "one session ended, a new one starts");
+        assert_eq!(live.sessions[1], None);
+        assert_eq!(live.floor[1], 0);
+        assert!(live.resuming[1].is_none());
+        assert_eq!(live.resume_of(1), None);
+        assert!(!live.remembered[1]);
+        assert!(live.interrupted[1].is_empty());
+        let q = queued(&live, 1);
+        assert_eq!(q.len(), 1);
+        let text = &q[0];
+        for part in [
+            "a new session that remembers nothing",
+            "Where you left off",
+            "Your task: #1 fix it (not finished)",
+            "Its prompt was: finish it",
+            "1 messages wait for you",
+            "the person applied it",
+        ] {
+            assert!(text.contains(part), "{part:?} in {text}");
+        }
+        assert_eq!(text.matches("From imece").count(), 1, "{text}");
+        assert!(!text.contains("goes on where it was"), "{text}");
+        assert!(text.ends_with("\n\ngo on"), "{text}");
+        assert_eq!(live.inflight[1], q);
+        assert_eq!(live.turns[1], 1);
+        assert_eq!(w.agents[1].status, Status::Working);
+        assert_eq!(journaled(&w, &Event::Restarted { agent: 1 }), 1);
+        assert_eq!(journaled(&w, &Event::Resumed { agent: 1 }), 0);
+        assert!(
+            !w.journal
+                .iter()
+                .any(|j| matches!(j.event, Event::Stopped { agent: 1, .. })),
+            "not a stop: {:?}",
+            w.journal
+        );
+        assert!(
+            w.agents[1]
+                .trace
+                .iter()
+                .any(|l| l.contains("could not be resumed")
+                    && l.contains(UUID)
+                    && l.contains("error_during_execution")),
+            "{:?}",
+            w.agents[1].trace
+        );
+        // A stop of the new session is a stop.
+        live.tx
+            .send((1, live.generation[1], AgentEvent::Stopped("gone".into())))
+            .unwrap();
+        live.step(&mut w);
+        assert_eq!(w.agents[1].status, Status::Stopped);
+        assert_eq!(live.generation[1], 2);
+        for d in [repo, root, home] {
+            let _ = std::fs::remove_dir_all(d);
+        }
+    }
+
+    #[test]
+    fn without_the_transcript_a_remembered_agent_starts_over_and_the_session_is_forgotten() {
+        let (mut w, mut live, repo, root) = remembered_worker("resume-none", false);
+        let home = live.claude_home.clone();
+        live.told(&mut w, 1, "go on").unwrap();
+        let text = &queued(&live, 1)[0];
+        assert!(text.contains("Where you left off"), "{text}");
+        assert!(!text.contains("goes on where it was"), "{text}");
+        assert_eq!(live.sessions[1], None);
+        assert!(live.resuming[1].is_none());
+        assert_eq!(live.floor[1], 0);
+        assert!(live.interrupted[1].is_empty());
+        assert_eq!(journaled(&w, &Event::Restarted { agent: 1 }), 1);
+        // The new session's id is the one remembered from now on.
+        live.tx
+            .send((
+                1,
+                live.generation[1],
+                AgentEvent::Started {
+                    session: "s7".into(),
+                    model: "m".into(),
+                },
+            ))
+            .unwrap();
+        live.step(&mut w);
+        assert_eq!(
+            live.sessions[1],
+            Some(Resumable {
+                session: "s7".into(),
+                spent: 0,
+            })
+        );
+        assert_eq!(journaled(&w, &Event::Resumed { agent: 1 }), 0);
+        for d in [repo, root, home] {
+            let _ = std::fs::remove_dir_all(d);
+        }
+    }
+
+    #[test]
+    fn only_a_claude_session_with_a_uuid_and_its_file_is_resumable() {
+        let (mut w, mut live, repo, root) = remembered_worker("resume-who", true);
+        let home = live.claude_home.clone();
+        let ok = Some(Resumable {
+            session: UUID.into(),
+            spent: 524,
+        });
+        assert_eq!(live.resumable(&w, 1), ok);
+        assert_eq!(live.sessions[1], ok, "still remembered");
+        // Another vendor's session (resume comes later for them).
+        w.agents[1].vendor = Vendor::Codex;
+        assert_eq!(live.resumable(&w, 1), None);
+        assert_eq!(live.sessions[1], None, "forgotten");
+        w.agents[1].vendor = Vendor::Claude;
+        // An id that is not a UUID never reaches a command line or a path.
+        live.sessions[1] = Some(Resumable {
+            session: "../x".into(),
+            spent: 0,
+        });
+        assert_eq!(live.resumable(&w, 1), None);
+        // The leader runs in the checkout; the worker's file is not its.
+        live.sessions[0] = ok.clone();
+        assert_eq!(live.resumable(&w, 0), None);
+        assert_eq!(live.cwd_of(&w, 0), repo);
+        // A helper runs in its worker's worktree.
+        w.agents.push(Agent::new(
+            2,
+            0,
+            "claude-1.1".into(),
+            Vendor::Claude,
+            Role::Helper,
+            Status::Asleep,
+            0,
+        ));
+        w.agents[2].parent = Some(1);
+        live.grow(None, false);
+        assert_eq!(live.cwd_of(&w, 2), live.cwd_of(&w, 1));
+        assert_eq!(
+            live.cwd_of(&w, 1),
+            root.join("claude-1").canonicalize().unwrap()
+        );
+        live.sessions[2] = ok.clone();
+        assert_eq!(live.resumable(&w, 2), ok);
+        // Nothing remembered: nothing to resume.
+        live.sessions[1] = None;
+        assert_eq!(live.resumable(&w, 1), None);
+        for d in [repo, root, home] {
+            let _ = std::fs::remove_dir_all(d);
+        }
     }
 }

@@ -89,6 +89,8 @@ pub fn event(lang: Lang, w: &World, e: &Event) -> String {
         ),
         Event::Left { agent } => fill(t.ev_left, &[name(w, *agent)]),
         Event::Fallback { agent, model } => fill(t.ev_fallback, &[name(w, *agent), model]),
+        Event::Resumed { agent } => fill(t.ev_resumed, &[name(w, *agent)]),
+        Event::Restarted { agent } => fill(t.ev_restarted, &[name(w, *agent)]),
         Event::Budget { from, to, .. } => fill(t.ev_budget, &[&dollars(*to), &dollars(*from)]),
         Event::Shell { command, ended, .. } => shell(lang, command, *ended),
         Event::Opened { leader, path } => fill(t.ev_opened, &[project(w, *leader), path]),

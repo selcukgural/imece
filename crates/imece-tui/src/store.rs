@@ -29,7 +29,7 @@ use serde::{Serialize, de::DeserializeOwned};
 use crate::model::*;
 
 /// The file's layout; a file from a newer imece is refused.
-pub const SCHEMA_VERSION: i64 = 1;
+pub const SCHEMA_VERSION: i64 = 2;
 /// Trace lines kept per agent, as the world keeps them.
 const TRACE_KEEP: usize = 200;
 /// The file's name under the state directory.
@@ -45,7 +45,8 @@ CREATE TABLE IF NOT EXISTS agents (
     vendor TEXT NOT NULL, role TEXT NOT NULL, parent INTEGER, card INTEGER,
     cost INTEGER NOT NULL, taint TEXT NOT NULL, gone INTEGER NOT NULL,
     changed_at INTEGER NOT NULL, traced INTEGER NOT NULL, commands TEXT NOT NULL,
-    model TEXT, tiered INTEGER NOT NULL, woken INTEGER NOT NULL, posted INTEGER NOT NULL);
+    model TEXT, tiered INTEGER NOT NULL, woken INTEGER NOT NULL, posted INTEGER NOT NULL,
+    session TEXT, session_spent INTEGER NOT NULL DEFAULT 0);
 CREATE TABLE IF NOT EXISTS cards (
     id INTEGER PRIMARY KEY, project INTEGER NOT NULL, title TEXT NOT NULL,
     owner INTEGER, col TEXT NOT NULL, started INTEGER NOT NULL, finished INTEGER NOT NULL);
@@ -100,6 +101,8 @@ pub struct Kept<'a> {
     pub notes: &'a [Vec<String>],
     /// Prompts each agent was given and has not finished.
     pub inflight: &'a [Vec<String>],
+    /// The vendor session each agent had last, to go on with.
+    pub sessions: &'a [Option<Resumable>],
     pub posts: &'a HashMap<CardId, Post>,
     pub offered: &'a HashMap<CardId, Vec<AgentId>>,
     pub changes: &'a HashMap<AgentId, worktree::Change>,
@@ -116,6 +119,7 @@ pub struct Found {
     pub mail: Vec<Vec<Mail>>,
     pub notes: Vec<Vec<String>>,
     pub inflight: Vec<Vec<String>>,
+    pub sessions: Vec<Option<Resumable>>,
     pub posts: HashMap<CardId, Post>,
     pub offered: HashMap<CardId, Vec<AgentId>>,
     pub changes: HashMap<AgentId, worktree::Change>,
@@ -292,6 +296,13 @@ impl Store {
         self.conn.pragma_update(None, "journal_mode", "WAL")?;
         self.conn.pragma_update(None, "synchronous", "NORMAL")?;
         self.conn.execute_batch(SCHEMA)?;
+        // Schema 2 (2026-10-30) added the session an agent can go on with.
+        if !self.has_column("agents", "session")? {
+            self.conn.execute_batch(
+                "ALTER TABLE agents ADD COLUMN session TEXT;
+                 ALTER TABLE agents ADD COLUMN session_spent INTEGER NOT NULL DEFAULT 0;",
+            )?;
+        }
         let version: i64 = self
             .conn
             .query_row(
@@ -313,6 +324,14 @@ impl Store {
             params![SCHEMA_VERSION.to_string()],
         )?;
         Ok(())
+    }
+
+    fn has_column(&self, table: &str, column: &str) -> rusqlite::Result<bool> {
+        let mut st = self
+            .conn
+            .prepare(&format!("SELECT name FROM pragma_table_info('{table}')"))?;
+        let names: Vec<String> = st.query_map([], |r| r.get(0))?.collect::<Result<_, _>>()?;
+        Ok(names.iter().any(|n| n == column))
     }
 
     /// Writes what moved since the last save, in one transaction. Says
@@ -354,8 +373,10 @@ impl Store {
             let a = &w.agents[id];
             tx.execute(
                 "INSERT OR REPLACE INTO agents (id, project, name, vendor, role, parent, card, \
-                 cost, taint, gone, changed_at, traced, commands, model, tiered, woken, posted) \
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17)",
+                 cost, taint, gone, changed_at, traced, commands, model, tiered, woken, posted, \
+                 session, session_spent) \
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, \
+                 ?17, ?18, ?19)",
                 params![
                     n(a.id),
                     n(a.project),
@@ -374,6 +395,13 @@ impl Store {
                     k.tiered.get(id).copied().unwrap_or(false),
                     k.woken.get(id).copied().unwrap_or(0),
                     k.posted.get(id).copied().unwrap_or(0),
+                    k.sessions
+                        .get(id)
+                        .and_then(|s| s.as_ref().map(|s| s.session.clone())),
+                    k.sessions
+                        .get(id)
+                        .and_then(|s| s.as_ref().map(|s| big(s.spent)))
+                        .unwrap_or(0),
                 ],
             )?;
         }
@@ -567,6 +595,7 @@ impl Store {
                     k.tiered.get(id),
                     k.woken.get(id),
                     k.posted.get(id),
+                    k.sessions.get(id),
                 )),
             ));
             if s.agents.get(id) != Some(&h) {
@@ -740,7 +769,8 @@ impl Store {
         }
         let mut st = conn.prepare(
             "SELECT id, project, name, vendor, role, parent, card, cost, taint, gone, \
-             changed_at, traced, commands, model, tiered, woken, posted FROM agents ORDER BY id",
+             changed_at, traced, commands, model, tiered, woken, posted, session, session_spent \
+             FROM agents ORDER BY id",
         )?;
         for row in st.query_map([], |r| {
             let id = u(r.get(0)?);
@@ -769,9 +799,13 @@ impl Store {
                 r.get::<_, bool>(14)?,
                 r.get::<_, u32>(15)?,
                 r.get::<_, u32>(16)?,
+                r.get::<_, Option<String>>(17)?.map(|session| Resumable {
+                    session,
+                    spent: ubig(r.get(18).unwrap_or(0)),
+                }),
             ))
         })? {
-            let (a, model, tiered, woken, posted) = row?;
+            let (a, model, tiered, woken, posted, session) = row?;
             if a.id != w.agents.len() {
                 return Err(bad(format!("agent {} is out of order", a.id)));
             }
@@ -780,6 +814,7 @@ impl Store {
             found.tiered.push(tiered);
             found.woken.push(woken);
             found.posted.push(posted);
+            found.sessions.push(session);
         }
         let mut traces =
             conn.prepare("SELECT line FROM trace WHERE agent = ?1 ORDER BY seq DESC LIMIT ?2")?;
@@ -947,6 +982,7 @@ impl Store {
             mail: &found.mail,
             notes: &found.notes,
             inflight: &found.inflight,
+            sessions: &found.sessions,
             posts: &found.posts,
             offered: &found.offered,
             changes: &found.changes,
@@ -1259,6 +1295,7 @@ mod tests {
         mail: Vec<Vec<Mail>>,
         notes: Vec<Vec<String>>,
         inflight: Vec<Vec<String>>,
+        sessions: Vec<Option<Resumable>>,
         posts: HashMap<CardId, Post>,
         offered: HashMap<CardId, Vec<AgentId>>,
         changes: HashMap<AgentId, worktree::Change>,
@@ -1275,6 +1312,7 @@ mod tests {
                 mail: &self.mail,
                 notes: &self.notes,
                 inflight: &self.inflight,
+                sessions: &self.sessions,
                 posts: &self.posts,
                 offered: &self.offered,
                 changes: &self.changes,
@@ -1291,6 +1329,7 @@ mod tests {
                 mail: self.mail.clone(),
                 notes: self.notes.clone(),
                 inflight: self.inflight.clone(),
+                sessions: self.sessions.clone(),
                 posts: self.posts.clone(),
                 offered: self.offered.clone(),
                 changes: self.changes.clone(),
@@ -1333,6 +1372,18 @@ mod tests {
                 vec!["go on".into(), "then stop".into()],
                 Vec::new(),
                 Vec::new(),
+            ],
+            sessions: vec![
+                Some(Resumable {
+                    session: "686c6d27-d50b-4ae2-ad6a-159bf2984671".into(),
+                    spent: 524,
+                }),
+                None,
+                Some(Resumable {
+                    session: "thread_9".into(),
+                    spent: 0,
+                }),
+                None,
             ],
             posts: HashMap::from([(
                 1,
@@ -1494,6 +1545,7 @@ mod tests {
                 mail: f.mail.clone(),
                 notes: f.notes.clone(),
                 inflight: f.inflight.clone(),
+                sessions: f.sessions.clone(),
                 posts: f.posts.clone(),
                 offered: f.offered.clone(),
                 changes: f.changes.clone(),
@@ -1939,7 +1991,7 @@ mod tests {
             .execute_batch(
                 "INSERT INTO meta VALUES ('started_at', '1'); \
                  INSERT INTO agents VALUES (0, 0, 'x', 'Clod', 'Leader', NULL, NULL, 0, 'Clean', \
-                 0, 0, 0, '[]', NULL, 0, 0, 0);",
+                 0, 0, 0, '[]', NULL, 0, 0, 0, NULL, 0);",
             )
             .unwrap();
         let e = store.load(100).err().expect("refused").to_string();
@@ -1990,5 +2042,97 @@ mod tests {
         );
         assert_ne!(hash(&1u8), hash(&2u8));
         assert_eq!(hash(&"a"), hash(&"a"));
+    }
+
+    #[test]
+    fn a_session_that_changes_is_written_again() {
+        let (w, mut k) = (world(), kept());
+        let mut store = Store::in_memory();
+        store.save(&w, &k.kept()).unwrap();
+        k.sessions[1] = Some(Resumable {
+            session: "aaaaaaaa-0000-4000-8000-000000000000".into(),
+            spent: 7,
+        });
+        assert!(store.save(&w, &k.kept()).unwrap(), "a new session moved");
+        k.sessions[0].as_mut().unwrap().spent = 600;
+        assert!(store.save(&w, &k.kept()).unwrap(), "more spent moved");
+        k.sessions[2] = None;
+        assert!(store.save(&w, &k.kept()).unwrap(), "a forgotten one moved");
+        assert!(!store.save(&w, &k.kept()).unwrap());
+        let back = store.load(100).unwrap().unwrap();
+        assert_eq!(back.found.sessions, k.sessions);
+        assert_eq!(back.found.sessions[0].as_ref().unwrap().spent, 600);
+        assert_eq!(back.found.sessions[2], None);
+    }
+
+    #[test]
+    fn a_file_of_schema_1_gets_the_session_columns() {
+        let d = dir("schema1");
+        std::fs::create_dir_all(&d).unwrap();
+        let path = d.join(FILE);
+        {
+            // The agents table as schema 1 had it, with one agent in it.
+            let conn = Connection::open(&path).unwrap();
+            conn.execute_batch(
+                "CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL) WITHOUT ROWID;
+                 INSERT INTO meta VALUES ('schema_version', '1'), ('started_at', '1700000000'),
+                     ('budget', '500000');
+                 CREATE TABLE projects (
+                     id INTEGER PRIMARY KEY, name TEXT NOT NULL, leader INTEGER NOT NULL,
+                     closed INTEGER NOT NULL, repo TEXT NOT NULL);
+                 INSERT INTO projects VALUES (0, 'one', 0, 0, '/repo/one');
+                 CREATE TABLE agents (
+                     id INTEGER PRIMARY KEY, project INTEGER NOT NULL, name TEXT NOT NULL,
+                     vendor TEXT NOT NULL, role TEXT NOT NULL, parent INTEGER, card INTEGER,
+                     cost INTEGER NOT NULL, taint TEXT NOT NULL, gone INTEGER NOT NULL,
+                     changed_at INTEGER NOT NULL, traced INTEGER NOT NULL, commands TEXT NOT NULL,
+                     model TEXT, tiered INTEGER NOT NULL, woken INTEGER NOT NULL,
+                     posted INTEGER NOT NULL);
+                 INSERT INTO agents VALUES (0, 0, 'lead', 'Claude', 'Leader', NULL, NULL, 12,
+                     'Clean', 0, 3, 0, '[]', NULL, 0, 0, 0);",
+            )
+            .unwrap();
+        }
+        let mut store = Store::open(&path).unwrap();
+        let version: String = store
+            .raw()
+            .query_row(
+                "SELECT value FROM meta WHERE key = 'schema_version'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(version, "2");
+        let back = store.load(100).unwrap().expect("a world");
+        assert_eq!(back.world.agents[0].name, "lead");
+        assert_eq!(back.found.sessions, [None]);
+        // Saved with a session, read back with it.
+        let (mut w, mut found) = (back.world, back.found);
+        found.sessions[0] = Some(Resumable {
+            session: "686c6d27-d50b-4ae2-ad6a-159bf2984671".into(),
+            spent: 524,
+        });
+        w.agents[0].cost = 13;
+        let kept = Kept {
+            repos: found.repos.iter().map(PathBuf::as_path).collect(),
+            models: &found.models,
+            tiered: &found.tiered,
+            woken: &found.woken,
+            posted: &found.posted,
+            mail: &found.mail,
+            notes: &found.notes,
+            inflight: &found.inflight,
+            sessions: &found.sessions,
+            posts: &found.posts,
+            offered: &found.offered,
+            changes: &found.changes,
+        };
+        assert!(store.save(&w, &kept).unwrap());
+        drop(store);
+        // Opening again does not add the columns twice.
+        let mut store = Store::open(&path).unwrap();
+        let back = store.load(100).unwrap().unwrap();
+        assert_eq!(back.found.sessions, found.sessions);
+        let _ = std::fs::remove_dir_all(&d);
     }
 }
