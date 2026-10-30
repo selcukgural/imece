@@ -2059,7 +2059,8 @@ mod tests {
             Column::Working,
             "not done while they run"
         );
-        while w.tick + 1 < until {
+        // A range: a step that does not move the clock cannot hang it.
+        for _ in w.tick + 1..until {
             s.step(&mut w);
         }
         assert!(w.change_of(worker).is_none(), "not before they end");
@@ -2314,7 +2315,7 @@ mod tests {
         s.told(&mut w, worker, "Use cents").unwrap();
         let due = s.replies[0].at;
         assert!((t + 2..=t + 5).contains(&due), "{due}");
-        while w.tick + 1 < due {
+        for _ in w.tick + 1..due {
             s.step(&mut w);
         }
         let replied = |w: &World| {
@@ -2657,7 +2658,7 @@ mod tests {
                 .count()
         };
         let before = decided(&w);
-        while w.tick + 1 < asked + APPROVAL_WAIT {
+        for _ in w.tick + 1..asked + APPROVAL_WAIT {
             s.step(&mut w);
         }
         assert!(w.inbox[item].open);
@@ -2691,7 +2692,7 @@ mod tests {
         ));
         assert_eq!(w.agents[worker].status, Status::Idle);
         assert!(!Sim::free(&w, worker), "its card waits for it");
-        while w.tick + 1 < asked + QUESTION_WAIT {
+        for _ in w.tick + 1..asked + QUESTION_WAIT {
             s.step(&mut w);
         }
         assert_eq!(w.agents[worker].status, Status::Idle);
