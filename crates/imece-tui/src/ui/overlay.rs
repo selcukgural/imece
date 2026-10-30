@@ -7,7 +7,7 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Paragraph};
 
 use super::*;
-use crate::app::{App, Digest, Thread};
+use crate::app::{App, Digest, LeftOff, Thread};
 
 fn centered(area: Rect, width: u16, height: u16) -> Rect {
     let width = width.min(area.width);
@@ -99,6 +99,97 @@ pub fn digest(f: &mut Frame, app: &App, d: &Digest) {
         lines,
         84,
     );
+}
+
+/// Where the person left off, at the start of a run that remembers an
+/// earlier one: the pot, each project in a line, what waits (the oldest
+/// items as the inbox lists them), turns the earlier run cut short, and
+/// its last journal lines, with a day row where they are not of today.
+pub fn left_off(f: &mut Frame, app: &App, l: &LeftOff) {
+    let t = app.lang.text();
+    let w = &app.world;
+    let mut lines: Vec<Line> = vec![Line::from(Span::styled(
+        format!(
+            " {}",
+            fill(t.left_spent, &[&dollars(l.spent), &dollars(l.budget)])
+        ),
+        dim(),
+    ))];
+    for (name, agents, cards) in &l.projects {
+        lines.push(Line::from(vec![
+            Span::raw(" "),
+            Span::styled(
+                fill(
+                    t.left_project,
+                    &[name, &agents.to_string(), &cards.to_string()],
+                ),
+                fg(pal().strong),
+            ),
+        ]));
+    }
+    lines.push(Line::raw(""));
+    if l.waiting.is_empty() {
+        lines.push(Line::from(Span::styled(
+            format!(" {}", t.nothing_needed),
+            dim(),
+        )));
+    } else {
+        lines.push(Line::from(vec![
+            Span::styled(" ! ", bold(pal().warn)),
+            Span::styled(
+                fill(t.left_waiting, &[&l.waiting_total.to_string()]),
+                bold(pal().warn),
+            ),
+        ]));
+        for &i in &l.waiting {
+            let mut line = inbox_line(app, i);
+            line.spans.insert(0, Span::raw("   "));
+            lines.push(line);
+        }
+        let more = l.waiting_total.saturating_sub(l.waiting.len());
+        if more > 0 {
+            lines.push(Line::from(Span::styled(
+                format!("   {}", fill(t.left_more, &[&more.to_string()])),
+                dim(),
+            )));
+        }
+    }
+    if !l.interrupted.is_empty() {
+        let (icon, style) = entry_icon(EntryKind::Failed);
+        let names: Vec<&str> = l
+            .interrupted
+            .iter()
+            .map(|&id| w.agents[id].name.as_str())
+            .collect();
+        lines.push(Line::from(vec![
+            Span::styled(format!(" {icon} "), style),
+            Span::raw(fill(t.left_interrupted, &[&names.join(", ")])),
+        ]));
+    }
+    if !l.last.is_empty() {
+        lines.push(Line::raw(""));
+        lines.push(Line::from(Span::styled(format!(" {}", t.left_last), dim())));
+        let mut above = day(w.tick);
+        for e in &l.last {
+            let of = day(e.tick);
+            if of != above {
+                let mut row = date_row(of);
+                row.spans.insert(0, Span::raw("   "));
+                lines.push(row);
+                above = of;
+            }
+            let mut line = entry_line(app, e);
+            line.spans.insert(0, Span::raw("   "));
+            lines.push(line);
+        }
+    }
+    lines.push(Line::raw(""));
+    lines.push(Line::from(Span::styled(t.close, dim())));
+    let title = match l.ago {
+        Some(ago) => fill(t.left_title_ago, &[&words::ago(app.lang, ago)]),
+        None => t.left_title.to_string(),
+    };
+    window(f, title, lines, 84);
 }
 
 /// Where `scroll` must be for rows `start..end` to show in `height` rows,

@@ -428,8 +428,10 @@ fn main() -> std::io::Result<()> {
     }
     app.primary = saved.lead;
     let result = run(&mut terminal, &mut app, &state);
-    // The last word before the sessions end: what every agent had in hand.
+    // The last word before the sessions end: what every agent had in hand,
+    // and when this run ended.
     app.persist();
+    app.leave();
     screen::restore();
     result
 }

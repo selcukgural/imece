@@ -222,7 +222,7 @@ mod tests {
         save(&dir, 31, "mono", None).unwrap();
         assert_eq!(load(&dir).side, Some(31), "written beside it");
         // The world's keys are not settings.
-        for key in ["schema_version", "started_at", "budget"] {
+        for key in ["schema_version", "started_at", "budget", "saved_at"] {
             let e = store::set_settings(&file(&dir), &[(key, "1")], &[]).unwrap_err();
             assert!(e.contains(key), "{e}");
             let e = store::set_settings(&file(&dir), &[], &[key]).unwrap_err();
