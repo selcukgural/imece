@@ -14,10 +14,19 @@ permissions:
   contents: read
 
 jobs:
-  changed:
+  # A pull request's mutants are split over four runners (cargo-mutants
+  # `--shard`), so a big change takes minutes of wall-clock, not half an
+  # hour; `changed` below gathers them into the one check the branch
+  # rules require.
+  shard:
+    name: changed (shard ${{ matrix.shard }})
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -31,15 +40,49 @@ jobs:
       - name: Mutants in the change
         env:
           BASE: ${{ github.event.pull_request.base.sha }}
+          SHARD: ${{ matrix.shard }}
         run: |
           git diff "$BASE"...HEAD > change.diff
-          cargo mutants --in-diff change.diff --jobs 2 --timeout 180
+          cargo mutants --in-diff change.diff --shard "$SHARD/4" --jobs 2 --timeout 180
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "## Mutants (shard $SHARD of 4)"
+            echo
+            for f in caught missed timeout unviable; do
+              n=$(wc -l < "mutants.out/$f.txt" 2>/dev/null || echo 0)
+              echo "- $f: $n"
+            done
+            echo
+            echo "### Missed"
+            echo
+            echo '```'
+            cat mutants.out/missed.txt mutants.out/timeout.txt 2>/dev/null
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+        env:
+          SHARD: ${{ matrix.shard }}
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
-          name: mutants-in-change
+          name: mutants-in-change-${{ matrix.shard }}
           path: mutants.out
           if-no-files-found: ignore
+
+  # The one check the branch rules ask for: green when every shard is.
+  changed:
+    if: always() && github.event_name == 'pull_request'
+    needs: shard
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Every shard passed
+        env:
+          RESULT: ${{ needs.shard.result }}
+        run: |
+          echo "shards: $RESULT"
+          test "$RESULT" = "success"
 
   all:
     if: github.event_name != 'pull_request'
