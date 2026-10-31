@@ -30,3 +30,26 @@ never leaks into the key stream (2026-10-29: Terminal.app answered
 after the first probe's 200 ms, and the `rgb:…` opened the code map
 and the composer at start). Known gaps: no Alacritty (TOML) or
 `.itermcolors` (plist) reader, convert with mbadolato's tools.
+
+Following the terminal and previewing (2026-10-31, backlog C21 in #56,
+from herdr and Warp). While `:theme NAME` is written with NAME a
+built-in theme, typed or stepped to in its menu (`App::preview_theme`,
+after every key and paste), the screen wears it; the theme in use is
+kept in `App::theme_was` and comes back when the line names none any
+more or is given up; `submit` puts it back before the command runs, so
+`:theme NAME` keeps NAME and nothing else changes it. What is
+remembered for the next run is `App::theme()`, the chosen one, never a
+preview. Following: the `terminal` theme turns light or dark with the
+terminal. Terminals that report a change of their own (DEC mode 2031,
+`CSI ? 997 ; 1|2 n`: Ghostty, kitty, Contour) cannot be heard through
+crossterm 0.29: its parser takes `CSI ? … n` for a sequence still
+coming, and the keys after it would be swallowed. So imece turns on
+focus reports (`CSI ? 1004 h` with the screen, off when it is given
+back) and on `FocusGained` asks the colours again
+(`probe::colours_again`, the start's queries in raw mode, read up to
+the cursor report); `theme::follow` builds the theme again only when
+they changed, at the colour depth it had. A key pressed in the moment
+of the asking may be read with the answer. Gaps: a change while the
+window keeps the focus shows at the next focus; tmux passes focus only
+with `focus-events on`; a terminal that does not answer keeps what was
+known.

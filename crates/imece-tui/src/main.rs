@@ -522,14 +522,21 @@ fn run(
         if let Some(Event::Paste(text)) = &event {
             app.paste(text);
         }
+        // Back in the window: the terminal's theme may have turned light
+        // or dark meanwhile, and `terminal` follows it.
+        if let Some(Event::FocusGained) = &event
+            && let Some(back) = probe::colours_again()
+        {
+            theme::follow(back);
+        }
         if let Some(Event::Key(k)) = event
             && k.kind == KeyEventKind::Press
         {
-            let (side, theme, primary) = (app.side, theme::chosen(), app.primary.clone());
+            let (side, theme, primary) = (app.side, app.theme(), app.primary.clone());
             app.on_key(k);
-            if app.side != side || theme::chosen() != theme || app.primary != primary {
+            if app.side != side || app.theme() != theme || app.primary != primary {
                 // Remembered for the next run; a failure only costs that.
-                let _ = prefs::save(state, app.side, &theme::chosen(), app.primary.as_deref());
+                let _ = prefs::save(state, app.side, &app.theme(), app.primary.as_deref());
             }
             if let Some(text) = app.copy.take() {
                 app.copied(clip::copy(&text));

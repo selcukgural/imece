@@ -61,11 +61,37 @@ pub fn terminal() -> Said {
     }
 }
 
+/// The terminal's colours again, while the screen has it (raw mode on),
+/// for when its window comes back into focus: its theme may have turned
+/// light or dark meanwhile. A terminal that does not answer leaves what
+/// was known (`None`).
+pub fn colours_again() -> Option<Back> {
+    colours_in(&asked().ok()?)
+}
+
+/// The colours a `reply` tells, when it tells the background at least.
+fn colours_in(reply: &[u8]) -> Option<Back> {
+    let (bg, fg) = parse(reply);
+    let bg = bg?;
+    Some(Back {
+        dark: bg.is_dark(),
+        bg: Some(bg),
+        fg,
+    })
+}
+
 /// Sends the two queries and the position report, and collects what
 /// comes back until the report's answer, or `WAIT` is over.
 fn ask() -> io::Result<Vec<u8>> {
     enable_raw_mode()?;
-    let result = (|| {
+    let result = asked();
+    disable_raw_mode()?;
+    result
+}
+
+/// `ask` in a terminal already in raw mode.
+fn asked() -> io::Result<Vec<u8>> {
+    {
         let mut out = io::stdout();
         out.write_all(b"\x1b]11;?\x1b\\\x1b]10;?\x1b\\\x1b[?u\x1b[6n")?;
         out.flush()?;
@@ -85,9 +111,7 @@ fn ask() -> io::Result<Vec<u8>> {
             reply.extend_from_slice(&buf[..n as usize]);
         }
         Ok(reply)
-    })();
-    disable_raw_mode()?;
-    result
+    }
 }
 
 /// Whether stdin has bytes to read within `wait`.
@@ -206,6 +230,34 @@ mod tests {
         ] {
             assert!(!done(not_yet), "{:?}", String::from_utf8_lossy(not_yet));
         }
+    }
+
+    #[test]
+    fn colours_asked_again_need_the_background_and_say_light_or_dark() {
+        let light = b"\x1b]11;rgb:fdfd/f6f6/e3e3\x1b\\\x1b]10;rgb:5858/6e6e/7575\x1b\\\x1b[4;1R";
+        assert_eq!(
+            colours_in(light),
+            Some(Back {
+                dark: false,
+                bg: Some(Rgb(0xfd, 0xf6, 0xe3)),
+                fg: Some(Rgb(0x58, 0x6e, 0x75)),
+            })
+        );
+        let dark = b"\x1b]11;rgb:2828/2a2a/3636\x1b\\\x1b[4;1R";
+        assert_eq!(
+            colours_in(dark),
+            Some(Back {
+                dark: true,
+                bg: Some(Rgb(0x28, 0x2a, 0x36)),
+                fg: None,
+            })
+        );
+        // No background, no news: what was known stays.
+        assert_eq!(
+            colours_in(b"\x1b]10;rgb:5858/6e6e/7575\x1b\\\x1b[4;1R"),
+            None
+        );
+        assert_eq!(colours_in(b"\x1b[4;1R"), None);
     }
 
     #[test]

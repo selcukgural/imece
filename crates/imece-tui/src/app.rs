@@ -292,6 +292,9 @@ pub struct App {
     pub left_off: Option<LeftOff>,
     /// What quitting now would leave behind, open over the screen (`q s`).
     pub leaving: bool,
+    /// The theme in use while another is previewed (`:theme NAME` being
+    /// written): put back unless the line is sent.
+    pub theme_was: Option<String>,
     pub flash: Option<(String, Instant)>,
     pub quit: bool,
     /// The store's last failure, flashed once.
@@ -364,6 +367,7 @@ impl App {
             digest: None,
             left_off,
             leaving: false,
+            theme_was: None,
             flash: None,
             quit: false,
             store_error: None,
@@ -583,10 +587,46 @@ impl App {
 
     pub fn on_key(&mut self, k: KeyEvent) {
         self.key(k);
+        self.preview_theme();
         self.seen();
         self.settle();
         self.follow_thread();
         self.persist();
+    }
+
+    /// While `:theme NAME` is being written with NAME a built-in theme
+    /// (typed, or stepped to in its menu), the screen wears it; the theme
+    /// in use comes back when the line no longer names one or is given
+    /// up. `submit` puts it back before the command runs, so `:theme
+    /// NAME` keeps NAME and anything else keeps what was.
+    fn preview_theme(&mut self) {
+        let named = (self.input.strip_prefix(":theme ").filter(|_| self.typing))
+            .map(str::trim)
+            .filter(|n| theme::builtins().any(|b| b == *n));
+        match named {
+            Some(name) => {
+                if self.theme_was.is_none() {
+                    self.theme_was = Some(theme::chosen());
+                }
+                let _ = theme::choose(name);
+            }
+            None => self.end_preview(),
+        }
+    }
+
+    /// The theme in use before a preview, back.
+    fn end_preview(&mut self) {
+        if let Some(was) = self.theme_was.take() {
+            // It was in use a moment ago: a file gone since leaves the
+            // preview, nothing worse.
+            let _ = theme::choose(&was);
+        }
+    }
+
+    /// The theme chosen, not one being previewed: what is remembered for
+    /// the next run.
+    pub fn theme(&self) -> String {
+        self.theme_was.clone().unwrap_or_else(theme::chosen)
     }
 
     /// Keeps an open conversation current: the journal lines of its two
@@ -1473,6 +1513,11 @@ impl App {
     /// elsewhere its characters would be taken as keys, so it is left
     /// out and the person told how to write first.
     pub fn paste(&mut self, text: &str) {
+        self.paste_in(text);
+        self.preview_theme();
+    }
+
+    fn paste_in(&mut self, text: &str) {
         // Into the help's filter while it is typed, on one line.
         if self.help && self.help_typing {
             let text = pasted(text).replace(['\n', '\t'], " ");
@@ -1604,6 +1649,7 @@ impl App {
     }
 
     fn submit(&mut self) {
+        self.end_preview();
         let text = self.input.trim().to_string();
         let target = self.typing_target();
         self.input.clear();
@@ -2551,6 +2597,81 @@ mod tests {
         assert_eq!(millis(Duration::from_micros(1_234_567)), 1_234);
         assert_eq!(millis(Duration::ZERO), 0);
         assert_eq!(millis(Duration::MAX), u64::MAX, "too long to count");
+    }
+
+    #[test]
+    fn writing_colon_theme_name_previews_it_and_only_sending_keeps_it() {
+        let mut app = App::new(1, 1, 0, 1, Lang::En);
+        theme::choose("terminal").unwrap();
+        let typed =
+            |app: &mut App, s: &str| s.chars().for_each(|c| app.on_key(key(KeyCode::Char(c))));
+        typed(&mut app, ":theme ");
+        assert_eq!(
+            (pal_name(), app.theme_was.clone()),
+            ("terminal".into(), None)
+        );
+        typed(&mut app, "dark");
+        assert_eq!(pal_name(), "dark", "previewed");
+        assert_eq!(app.theme(), "terminal", "not chosen");
+        app.on_key(key(KeyCode::Backspace));
+        assert_eq!(
+            (pal_name(), app.theme_was.clone()),
+            ("terminal".into(), None)
+        );
+        typed(&mut app, "k");
+        assert_eq!(pal_name(), "dark");
+        // Given up: back to what was.
+        app.on_key(key(KeyCode::Esc));
+        app.on_key(key(KeyCode::Esc));
+        assert!(!app.typing);
+        assert_eq!(
+            (pal_name(), app.theme()),
+            ("terminal".into(), "terminal".into())
+        );
+        // Stepping through the menu wears each one in turn.
+        typed(&mut app, ":theme ");
+        app.on_key(key(KeyCode::Tab));
+        let first = app.input.strip_prefix(":theme ").unwrap().to_string();
+        assert_eq!(pal_name(), first);
+        app.on_key(key(KeyCode::Tab));
+        let second = app.input.strip_prefix(":theme ").unwrap().to_string();
+        assert_ne!(first, second);
+        assert_eq!(pal_name(), second);
+        app.on_key(key(KeyCode::Tab));
+        let third = app.input.strip_prefix(":theme ").unwrap().to_string();
+        assert_eq!(pal_name(), third);
+        assert_eq!(app.theme(), "terminal", "what was before the first one");
+        // Sent: kept.
+        app.on_key(key(KeyCode::Esc));
+        app.on_key(key(KeyCode::Esc));
+        assert_eq!(pal_name(), "terminal");
+        typed(&mut app, ":theme light");
+        assert_eq!(
+            (pal_name(), app.theme()),
+            ("light".into(), "terminal".into())
+        );
+        app.on_key(key(KeyCode::Enter));
+        assert_eq!((pal_name(), app.theme()), ("light".into(), "light".into()));
+        assert_eq!(app.theme_was, None);
+        // A paste names one too.
+        typed(&mut app, ":theme ");
+        app.paste("dark");
+        assert_eq!((pal_name(), app.theme()), ("dark".into(), "light".into()));
+        // Only after `:theme `, and only while writing.
+        app.on_key(key(KeyCode::Esc));
+        app.on_key(key(KeyCode::Esc));
+        app.input = ":theme dark".into();
+        app.preview_theme();
+        assert_eq!(pal_name(), "light", "not writing");
+        app.typing = true;
+        app.input = "theme dark".into();
+        app.preview_theme();
+        assert_eq!(pal_name(), "light");
+        theme::choose("terminal").unwrap();
+    }
+
+    fn pal_name() -> String {
+        theme::pal().name.clone()
     }
 
     #[test]

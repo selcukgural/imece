@@ -92,6 +92,10 @@ your shell's title comes back when imece ends.
   and then steps on, `⇧tab` back, `↑` `↓` and ctrl-n / ctrl-p step too,
   the text following; `enter` takes the highlighted one when it is not in
   yet, else sends; `esc` hides the menu, and cancels the writing after.
+- `:theme NAME` wears each built-in theme while it is written (typed, or
+  stepped to with `tab`); `enter` keeps it, `esc` gives it up. The
+  `terminal` theme follows the terminal turning light or dark: imece asks
+  for its colours again when its window comes back into focus.
 - The line edits as a shell's does (readline): ctrl-a / ctrl-e to the
   start / end, alt-b / alt-f (or alt or ctrl with `←` `→`) a word back /
   on, `←` `→` a character, ctrl-w cuts back to the space before,
