@@ -3794,13 +3794,20 @@ mod tests {
 
     #[test]
     fn a_command_that_ran_is_journaled_under_the_project_and_flashed() {
+        use crate::shell::Ran;
+        use std::time::Duration;
+        let back = |ended: Ended, ms: u64| Ran {
+            ended,
+            took: Duration::from_millis(ms),
+        };
+        let ran = |ended: Ended, ms: u64| Ok(back(ended, ms));
         let mut app = app_after(2, 2, 0, Lang::En);
         app.selected = Sel::Project(1);
-        app.ran("cargo test", Ok(Ended::Exit(0)));
+        app.ran("cargo test", ran(Ended::Exit(0), 2_400));
         let e = app.world.journal.last().unwrap();
         let leader = app.world.projects[1].leader;
         assert!(
-            matches!(&e.event, Event::Shell { leader: l, command, ended: Ended::Exit(0) }
+            matches!(&e.event, Event::Shell { leader: l, command, ended: Ended::Exit(0), took: Some(2_400) }
                 if *l == leader && command == "cargo test"),
             "{:?}",
             e.event
@@ -3808,12 +3815,15 @@ mod tests {
         assert_eq!(e.event.agent(), leader);
         assert_eq!(e.event.kind(), EntryKind::Person);
         let s = render(&app, 140, 40);
-        assert!(s.contains("you ran `cargo test` → exit 0"), "{s}");
-        app.ran("sleep 9", Ok(Ended::Signal(2)));
+        assert!(s.contains("you ran `cargo test` → exit 0 · 2 s"), "{s}");
+        app.ran("sleep 9", ran(Ended::Signal(2), 61_000));
         let s = render(&app, 140, 40);
-        assert!(s.contains("you ran `sleep 9` → stopped by signal 2"), "{s}");
-        app.ran("make", Ok(Ended::Exit(2)));
-        assert!(render(&app, 140, 40).contains("you ran `make` → exit 2"));
+        assert!(
+            s.contains("you ran `sleep 9` → stopped by signal 2 · 1 min 1 s"),
+            "{s}"
+        );
+        app.ran("make", ran(Ended::Exit(2), 40));
+        assert!(render(&app, 140, 40).contains("you ran `make` → exit 2 · 40 ms"));
         // A shell that could not start is said, not journaled.
         let n = app.world.journal.len();
         app.ran("x", Err(std::io::Error::other("no shell")));
@@ -3822,23 +3832,40 @@ mod tests {
         assert!(s.contains("could not run `x`: no shell"), "{s}");
         // Turkish words it the same way, and the line under the output.
         app.lang = Lang::Tr;
-        app.ran("make", Ok(Ended::Exit(1)));
-        assert!(render(&app, 140, 40).contains("`make` çalıştırdın → çıkış 1"));
+        app.ran("make", ran(Ended::Exit(1), 3_000));
+        let s = render(&app, 140, 40);
+        assert!(
+            s.contains("`make` çalıştırdın → çıkış 1 · 3 sn sürdü"),
+            "{s}"
+        );
         assert_eq!(
-            app.shell_back(Ended::Exit(3)),
-            "[imece] çıkış 3 · herhangi bir tuş: ekrana dön\n"
+            app.shell_back(back(Ended::Exit(3), 5_000)),
+            "[imece] çıkış 3 · 5 sn sürdü · herhangi bir tuş: ekrana dön\n"
+        );
+        assert_eq!(
+            app.shell_back(back(Ended::Signal(9), 5_000)),
+            "[imece] 9 sinyali durdurdu · 5 sn sürdü · herhangi bir tuş: ekrana dön\n"
         );
         app.lang = Lang::En;
         assert_eq!(
-            app.shell_back(Ended::Exit(0)),
-            "[imece] exit 0 · any key: back to the screen\n"
+            app.shell_back(back(Ended::Exit(0), 7)),
+            "[imece] exit 0 · 7 ms · any key: back to the screen\n"
         );
         assert_eq!(
-            app.shell_back(Ended::Signal(15)),
-            "[imece] stopped by signal 15 · any key: back to the screen\n"
+            app.shell_back(back(Ended::Signal(15), 1_500)),
+            "[imece] stopped by signal 15 · 1 s · any key: back to the screen\n"
         );
+        // A line saved before the time was kept says none.
+        let old = Event::Shell {
+            leader,
+            command: "ls".into(),
+            ended: Ended::Exit(0),
+            took: None,
+        };
+        let line = crate::ui::words::event(Lang::En, &app.world, &old);
+        assert_eq!(line, "you ran `ls` → exit 0");
         // What the person typed is cleaned like everything else drawn.
-        app.ran("echo \x1b[31mred TOKEN=abc123", Ok(Ended::Exit(0)));
+        app.ran("echo \x1b[31mred TOKEN=abc123", ran(Ended::Exit(0), 1));
         let s = render(&app, 140, 40);
         assert!(!s.contains("abc123") && !s.contains('\x1b'), "{s}");
     }

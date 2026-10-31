@@ -1441,6 +1441,7 @@ mod tests {
                         leader: 0,
                         command: "ls".into(),
                         ended: Ended::Signal(2),
+                        took: Some(1_250),
                     },
                 },
                 Entry {
@@ -2257,6 +2258,33 @@ mod tests {
             "a story of a card that is not there is not a line"
         );
         same(&w, &back.world);
+    }
+
+    #[test]
+    fn a_shell_line_saved_before_its_time_was_kept_loads_without_one() {
+        let (w, k) = (world(), kept());
+        let mut store = Store::in_memory();
+        store.save(&w, &k.kept()).unwrap();
+        store
+            .raw()
+            .execute_batch(
+                "INSERT INTO journal (seq, tick, project, agent, kind, data) \
+                 VALUES (99, 9, 0, 0, 'Shell', \
+                 '{\"Shell\":{\"leader\":0,\"command\":\"make\",\"ended\":{\"Exit\":2}}}');",
+            )
+            .unwrap();
+        let back = store.load(100).unwrap().unwrap();
+        assert_eq!(back.skipped, 0);
+        let last = &back.world.journal.last().unwrap().event;
+        assert_eq!(
+            *last,
+            Event::Shell {
+                leader: 0,
+                command: "make".into(),
+                ended: Ended::Exit(2),
+                took: None,
+            }
+        );
     }
 
     #[test]
