@@ -178,11 +178,14 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App) {
         .areas(area);
         (l, r)
     };
-    salon(f, left, app);
+    match app.card {
+        Some(c) => super::card::draw(f, left, app, c),
+        None => salon(f, left, app),
+    }
     side(f, right, app);
 }
 
-fn pane_block(title: String, focused: bool) -> Block<'static> {
+pub(super) fn pane_block(title: String, focused: bool) -> Block<'static> {
     let border = if focused { fg(pal().accent) } else { border() };
     Block::bordered().title(title).border_style(border)
 }
@@ -344,7 +347,7 @@ fn project_line(app: &App, p: ProjectId) -> Line<'static> {
     }
 }
 
-fn agent_line(app: &App, a: &Agent, prefix: &'static str) -> Line<'static> {
+pub(super) fn agent_line(app: &App, a: &Agent, prefix: &'static str) -> Line<'static> {
     let w = &app.world;
     let (g, color) = glyph(a);
     let mut spans = vec![
@@ -435,10 +438,26 @@ fn queue_line(app: &App) -> Line<'static> {
     Line::from(spans)
 }
 
+/// What waits for the person and the journal: the whole guild's, or on a
+/// card's screen only that card's, its number marked where it is named.
 fn side(f: &mut Frame, area: Rect, app: &App) {
     let w = &app.world;
     let t = app.lang.text();
-    let open = w.open_inbox();
+    let open = app.inbox_rows();
+    let rows = app.journal_rows();
+    let (inbox_title, journal_title) = match app.card {
+        Some(c) => {
+            let tag = format!("#{}", c + 1);
+            (
+                fill(t.card_inbox, &[&tag, &open.len().to_string()]),
+                fill(t.card_journal, &[&tag, &rows.len().to_string()]),
+            )
+        }
+        None => (
+            fill(t.inbox_title, &[&open.len().to_string()]),
+            t.journal.to_string(),
+        ),
+    };
     // The selected ask is shown whole under its row: the person allows
     // what they read, not a row cut at the pane's edge.
     let whole = match open.get(app.inbox_sel) {
@@ -459,7 +478,7 @@ fn side(f: &mut Frame, area: Rect, app: &App) {
         Layout::vertical([Constraint::Length(inbox_h), Constraint::Min(0)]).areas(area);
 
     let focused = app.pane == Pane::Inbox;
-    let mut block = pane_block(fill(t.inbox_title, &[&open.len().to_string()]), focused);
+    let mut block = pane_block(inbox_title, focused);
     if !open.is_empty() && !focused {
         block = block.border_style(fg(pal().warn));
     }
@@ -489,10 +508,9 @@ fn side(f: &mut Frame, area: Rect, app: &App) {
     f.render_widget(Paragraph::new(lines), inner);
 
     let focused = app.pane == Pane::Journal;
-    let block = pane_block(t.journal.into(), focused);
+    let block = pane_block(journal_title, focused);
     let inner = block.inner(bottom);
     f.render_widget(block, bottom);
-    let rows = journal_rows(w);
     let sel = app
         .journal_sel
         .filter(|_| focused)
@@ -517,6 +535,9 @@ fn side(f: &mut Frame, area: Rect, app: &App) {
             above = of;
         }
         let mut line = entry_line(app, &w.journal[i]);
+        if let Some(c) = app.card {
+            line = marked(line, c);
+        }
         if more > 0 {
             line.spans.push(Span::styled(format!("  +{more}"), dim()));
         }
@@ -575,6 +596,42 @@ pub(crate) fn journal_rows(w: &World) -> Vec<(usize, usize)> {
         .rev()
         .filter(|(_, e)| e.event.kind() != EntryKind::Assign);
     fold_threads(shown).collect()
+}
+
+/// Card `c`'s journal as its screen shows it, newest first, folded like
+/// [`journal_rows`]: the lines that name the card (posted, claimed,
+/// assigned, merged) and what was said with its number (`#323`) in it.
+pub(crate) fn card_rows(w: &World, c: CardId) -> Vec<(usize, usize)> {
+    let shown = w.journal.iter().enumerate().rev().filter(|(_, e)| {
+        e.event.card() == Some(c)
+            || words::said(&e.event).is_some_and(|s| !mentions(s.text, c).is_empty())
+    });
+    fold_threads(shown).collect()
+}
+
+/// `line` with card `c`'s number marked wherever it is named.
+pub(crate) fn marked(line: Line<'static>, c: CardId) -> Line<'static> {
+    let mut spans = Vec::with_capacity(line.spans.len());
+    for span in line.spans {
+        let text = span.content.as_ref();
+        let mut at = 0;
+        for r in mentions(text, c) {
+            if r.start > at {
+                spans.push(Span::styled(text[at..r.start].to_string(), span.style));
+            }
+            spans.push(Span::styled(
+                text[r.clone()].to_string(),
+                bold(pal().accent),
+            ));
+            at = r.end;
+        }
+        if at == 0 {
+            spans.push(span);
+        } else if at < text.len() {
+            spans.push(Span::styled(text[at..].to_string(), span.style));
+        }
+    }
+    Line::from(spans).style(line.style)
 }
 
 /// The whole conversation journal line `i` belongs to, oldest first: every
@@ -703,5 +760,69 @@ mod tests {
         // Both directions are one conversation; another pair or any other
         // event ends the fold.
         assert_eq!(folded, [2, 0, 0, 1]);
+    }
+
+    #[test]
+    fn a_card_s_journal_is_what_names_it_and_what_was_said_with_its_number() {
+        let (mut w, _) = crate::sim::world(1, 2, 0, 1, crate::i18n::Lang::En);
+        w.journal.clear();
+        let said = |from, to, text: &str| Event::Sent {
+            from,
+            to,
+            kind: MsgKind::Ask,
+            text: text.into(),
+        };
+        // Card 2 is #3.
+        for event in [
+            Event::Posted { agent: 0, card: 2 },
+            Event::Posted { agent: 0, card: 3 },
+            Event::Assign { agent: 1, card: 2 },
+            said(1, 2, "#30 is another"),
+            said(1, 2, "about #3"),
+            said(2, 1, "#3, yes"),
+            Event::Failed { agent: 1 },
+            Event::Claimed { agent: 1, card: 2 },
+            Event::Merged { agent: 1, card: 2 },
+            Event::Merged { agent: 1, card: 1 },
+        ] {
+            w.journal.push(Entry { tick: 0, event });
+        }
+        // Newest first; the conversation's two lines fold into one.
+        assert_eq!(card_rows(&w, 2), [(8, 0), (7, 0), (5, 1), (2, 0), (0, 0)]);
+        assert_eq!(card_rows(&w, 3), [(1, 0)]);
+        assert!(card_rows(&w, 4).is_empty());
+    }
+
+    #[test]
+    fn a_card_s_number_is_marked_where_it_is_named() {
+        let base = Style::new().fg(Color::Indexed(3));
+        let line = Line::from(vec![
+            Span::styled("#3 and #30, #3", base),
+            Span::raw("none"),
+            Span::raw("#3"),
+        ])
+        .style(Style::new().add_modifier(Modifier::REVERSED));
+        let out = marked(line, 2);
+        let mark = bold(pal().accent);
+        let spans: Vec<(&str, Style)> = out
+            .spans
+            .iter()
+            .map(|s| (s.content.as_ref(), s.style))
+            .collect();
+        assert_eq!(
+            spans,
+            [
+                ("#3", mark),
+                (" and #30, ", base),
+                ("#3", mark),
+                ("none", Style::new()),
+                ("#3", mark),
+            ]
+        );
+        assert_eq!(out.style, Style::new().add_modifier(Modifier::REVERSED));
+        let tail = marked(Line::from(Span::styled("x #3 y", base)), 2);
+        let texts: Vec<&str> = tail.spans.iter().map(|s| s.content.as_ref()).collect();
+        assert_eq!(texts, ["x ", "#3", " y"]);
+        assert_eq!(tail.spans[2].style, base);
     }
 }

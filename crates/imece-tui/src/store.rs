@@ -40,7 +40,8 @@ use crate::model::*;
 /// 4 (2026-10-30): the `Approval` inbox kind and the `Decided` events,
 /// the same way.
 /// 5 (2026-10-30): the runs on a change's tree (`changes.runs`).
-pub const SCHEMA_VERSION: i64 = 5;
+/// 6 (2026-10-31): the card an inbox item came on (`inbox.card`).
+pub const SCHEMA_VERSION: i64 = 6;
 /// Trace lines kept per agent, as the world keeps them.
 const TRACE_KEEP: usize = 200;
 /// The file's name under the state directory.
@@ -76,7 +77,8 @@ CREATE TABLE IF NOT EXISTS journal (
     agent INTEGER NOT NULL, kind TEXT NOT NULL, data TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS inbox (
     id INTEGER PRIMARY KEY, kind TEXT NOT NULL, agent INTEGER NOT NULL,
-    detail TEXT NOT NULL, researcher INTEGER, open INTEGER NOT NULL, tick INTEGER NOT NULL);
+    detail TEXT NOT NULL, researcher INTEGER, open INTEGER NOT NULL, tick INTEGER NOT NULL,
+    card INTEGER);
 -- Read per agent, newest first with a cap (`load`): the key serves it.
 CREATE TABLE IF NOT EXISTS trace (
     agent INTEGER NOT NULL, seq INTEGER NOT NULL, line TEXT NOT NULL,
@@ -337,6 +339,10 @@ impl Store {
             self.conn
                 .execute_batch("ALTER TABLE changes ADD COLUMN runs TEXT NOT NULL DEFAULT '[]';")?;
         }
+        if !self.has_column("inbox", "card")? {
+            self.conn
+                .execute_batch("ALTER TABLE inbox ADD COLUMN card INTEGER;")?;
+        }
         let version: i64 = self
             .conn
             .query_row(
@@ -542,8 +548,8 @@ impl Store {
         for &i in &plan.inbox {
             let it = &w.inbox[i];
             tx.execute(
-                "INSERT OR REPLACE INTO inbox (id, kind, agent, detail, researcher, open, tick) \
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                "INSERT OR REPLACE INTO inbox (id, kind, agent, detail, researcher, open, tick, \
+                 card) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
                 params![
                     n(i),
                     tag(&it.kind),
@@ -551,7 +557,8 @@ impl Store {
                     it.detail,
                     opt(it.researcher),
                     it.open,
-                    big(it.tick)
+                    big(it.tick),
+                    opt(it.card)
                 ],
             )?;
         }
@@ -767,6 +774,7 @@ impl Store {
                 it.researcher,
                 it.open,
                 it.tick,
+                it.card,
             ));
             if s.inbox.get(i) != Some(&h) {
                 plan.inbox.push(i);
@@ -1005,7 +1013,7 @@ impl Store {
         entries.reverse();
         w.journal = entries;
         let mut st = conn.prepare(
-            "SELECT id, kind, agent, detail, researcher, open, tick FROM inbox ORDER BY id",
+            "SELECT id, kind, agent, detail, researcher, open, tick, card FROM inbox ORDER BY id",
         )?;
         for row in st.query_map([], |r| {
             Ok((
@@ -1017,6 +1025,7 @@ impl Store {
                     researcher: uopt(r.get(4)?),
                     open: r.get(5)?,
                     tick: ubig(r.get(6)?),
+                    card: uopt(r.get(7)?),
                 },
             ))
         })? {
@@ -1115,7 +1124,7 @@ impl Store {
             "SELECT sender, kind, body FROM mail WHERE agent = 1 ORDER BY seq",
             "SELECT card, tick, data FROM story ORDER BY card, seq",
             "SELECT seq, tick, data FROM journal ORDER BY seq DESC LIMIT 5000",
-            "SELECT id, kind, agent, detail, researcher, open, tick FROM inbox ORDER BY id",
+            "SELECT id, kind, agent, detail, researcher, open, tick, card FROM inbox ORDER BY id",
             "DELETE FROM journal WHERE seq <= 10 AND tick < 20",
         ]
         .iter()
@@ -1455,6 +1464,7 @@ mod tests {
                     researcher: None,
                     open: false,
                     tick: 3,
+                    card: None,
                 },
                 InboxItem {
                     kind: InboxKind::Change,
@@ -1463,6 +1473,7 @@ mod tests {
                     researcher: Some(2),
                     open: true,
                     tick: 6,
+                    card: Some(0),
                 },
                 InboxItem {
                     kind: InboxKind::Question,
@@ -1471,6 +1482,7 @@ mod tests {
                     researcher: None,
                     open: true,
                     tick: 6,
+                    card: None,
                 },
                 InboxItem {
                     kind: InboxKind::Approval,
@@ -1479,6 +1491,7 @@ mod tests {
                     researcher: None,
                     open: true,
                     tick: 6,
+                    card: None,
                 },
             ],
             budget: 123_400,
@@ -1701,6 +1714,7 @@ mod tests {
             i.researcher,
             i.open,
             i.tick,
+            i.card,
         )
     }
 
@@ -1945,6 +1959,7 @@ mod tests {
                 Box::new(|w, _| w.inbox[0].researcher = Some(0)),
             ),
             ("inbox tick", Box::new(|w, _| w.inbox[0].tick = 4)),
+            ("inbox card", Box::new(|w, _| w.inbox[0].card = Some(0))),
             (
                 "new inbox item",
                 Box::new(|w, _| {
@@ -1955,6 +1970,7 @@ mod tests {
                         researcher: None,
                         open: true,
                         tick: 60,
+                        card: None,
                     })
                 }),
             ),
@@ -2509,6 +2525,36 @@ mod tests {
     }
 
     #[test]
+    fn a_file_of_schema_5_gets_the_inbox_card_column() {
+        let d = dir("schema5");
+        std::fs::create_dir_all(&d).unwrap();
+        let path = d.join(FILE);
+        {
+            // A whole file as schema 5 wrote it, its inbox without cards.
+            let mut store = Store::open(&path).unwrap();
+            assert!(store.save(&world(), &kept().kept()).unwrap());
+            store
+                .raw()
+                .execute_batch(
+                    "ALTER TABLE inbox DROP COLUMN card;
+                     UPDATE meta SET value = '5' WHERE key = 'schema_version';",
+                )
+                .unwrap();
+        }
+        let mut store = Store::open(&path).unwrap();
+        let back = store.load(100).unwrap().expect("a world");
+        let cards: Vec<Option<CardId>> = back.world.inbox.iter().map(|i| i.card).collect();
+        assert_eq!(cards, [None; 4], "no card was kept");
+        assert_eq!(back.world.inbox.len(), world().inbox.len());
+        // The next save keeps them.
+        let mut w = back.world;
+        w.inbox[1].card = Some(0);
+        assert!(store.save(&w, &kept().kept()).unwrap());
+        let again = store.load(100).unwrap().unwrap();
+        assert_eq!(again.world.inbox[1].card, Some(0));
+    }
+
+    #[test]
     fn a_file_of_schema_4_gets_the_runs_column() {
         let d = dir("schema4");
         std::fs::create_dir_all(&d).unwrap();
@@ -2573,7 +2619,7 @@ mod tests {
                 |r| r.get(0),
             )
             .unwrap();
-        assert_eq!(version, "5");
+        assert_eq!(version, "6");
         let back = store.load(100).unwrap().expect("a world");
         assert_eq!(back.world.agents[0].name, "lead");
         assert_eq!(back.found.sessions, [None]);
