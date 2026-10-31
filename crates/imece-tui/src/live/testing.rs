@@ -20,6 +20,7 @@ pub(crate) fn team(workers: usize) -> World {
             trunk: None,
             repo: &[],
             closed: false,
+            pinned: false,
         }],
         agents: Vec::new(),
         cards: Vec::new(),

@@ -12,9 +12,9 @@ use crate::model::{Agent, CardId, ProjectId, World};
 
 /// The commands imece itself takes after `:`: its own, and a name for
 /// every key that acts (not the ones that move).
-pub const COMMANDS: [&str; 26] = [
+pub const COMMANDS: [&str; 27] = [
     "board", "budget", "close", "code", "defer", "export", "faster", "fold", "forget", "help",
-    "lang", "lead", "needs", "next", "open", "pause", "pending", "quit", "rename", "salon",
+    "lang", "lead", "needs", "next", "open", "pause", "pending", "pin", "quit", "rename", "salon",
     "slower", "talk", "theme", "trace", "unfold", "waiting",
 ];
 
@@ -208,7 +208,7 @@ pub fn suggest(input: &str, w: &World, project: ProjectId, home: Option<&Path>) 
                 let start = input.len() - arg.len();
                 menu(start, arg, matching(arg, crate::theme::builtins()), "")
             }
-            Some(("close", arg)) => {
+            Some(("close" | "pin", arg)) => {
                 let start = input.len() - arg.len();
                 let names = w.open_projects().map(|p| p.name.as_str());
                 menu(start, arg, matching(arg, names), "")
@@ -574,6 +574,8 @@ mod tests {
         assert_eq!((m.start, m.tail), (7, ""));
         let m = suggest(":close M", &w, 0, None).unwrap();
         assert_eq!(m.items, ["mobile-app"]);
+        let m = suggest(":pin m", &w, 0, None).unwrap();
+        assert_eq!((m.items, m.start), (vec!["mobile-app".to_string()], 5));
         // :forget takes an agent of any open project, @ or not.
         let live: Vec<&str> = w
             .agents

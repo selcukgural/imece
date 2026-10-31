@@ -41,7 +41,8 @@ use crate::model::*;
 /// the same way.
 /// 5 (2026-10-30): the runs on a change's tree (`changes.runs`).
 /// 6 (2026-10-31): the card an inbox item came on (`inbox.card`).
-pub const SCHEMA_VERSION: i64 = 6;
+/// 7 (2026-10-31): whether the person pinned a project (`projects.pinned`).
+pub const SCHEMA_VERSION: i64 = 7;
 /// Trace lines kept per agent, as the world keeps them.
 const TRACE_KEEP: usize = 200;
 /// The file's name under the state directory.
@@ -56,7 +57,7 @@ const SCHEMA: &str = "
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL) WITHOUT ROWID;
 CREATE TABLE IF NOT EXISTS projects (
     id INTEGER PRIMARY KEY, name TEXT NOT NULL, leader INTEGER NOT NULL,
-    closed INTEGER NOT NULL, repo TEXT NOT NULL);
+    closed INTEGER NOT NULL, repo TEXT NOT NULL, pinned INTEGER NOT NULL DEFAULT 0);
 CREATE TABLE IF NOT EXISTS agents (
     id INTEGER PRIMARY KEY, project INTEGER NOT NULL, name TEXT NOT NULL,
     vendor TEXT NOT NULL, role TEXT NOT NULL, parent INTEGER, card INTEGER,
@@ -343,6 +344,11 @@ impl Store {
             self.conn
                 .execute_batch("ALTER TABLE inbox ADD COLUMN card INTEGER;")?;
         }
+        if !self.has_column("projects", "pinned")? {
+            self.conn.execute_batch(
+                "ALTER TABLE projects ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0;",
+            )?;
+        }
         let version: i64 = self
             .conn
             .query_row(
@@ -451,8 +457,8 @@ impl Store {
         for &p in &plan.projects {
             let q = &w.projects[p];
             tx.execute(
-                "INSERT OR REPLACE INTO projects (id, name, leader, closed, repo) \
-                 VALUES (?1, ?2, ?3, ?4, ?5)",
+                "INSERT OR REPLACE INTO projects (id, name, leader, closed, repo, pinned) \
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
                 params![
                     n(q.id),
                     q.name,
@@ -460,7 +466,8 @@ impl Store {
                     q.closed,
                     k.repos
                         .get(p)
-                        .map_or(String::new(), |r| r.display().to_string())
+                        .map_or(String::new(), |r| r.display().to_string()),
+                    q.pinned,
                 ],
             )?;
         }
@@ -687,6 +694,7 @@ impl Store {
                 q.leader,
                 q.closed,
                 k.repos.get(p).map(|r| r.as_os_str()),
+                q.pinned,
             ));
             if s.projects.get(p) != Some(&h) {
                 plan.projects.push(p);
@@ -853,8 +861,8 @@ impl Store {
         let mut saved = Saved::default();
         let mut skipped = 0;
         let conn = &self.conn;
-        let mut st =
-            conn.prepare("SELECT id, name, leader, closed, repo FROM projects ORDER BY id")?;
+        let mut st = conn
+            .prepare("SELECT id, name, leader, closed, repo, pinned FROM projects ORDER BY id")?;
         for row in st.query_map([], |r| {
             Ok((
                 u(r.get(0)?),
@@ -862,9 +870,10 @@ impl Store {
                 u(r.get(2)?),
                 r.get::<_, bool>(3)?,
                 r.get::<_, String>(4)?,
+                r.get::<_, bool>(5)?,
             ))
         })? {
-            let (id, name, leader, closed, repo) = row?;
+            let (id, name, leader, closed, repo, pinned) = row?;
             if id != w.projects.len() {
                 return Err(bad(format!("project {id} is out of order")));
             }
@@ -875,6 +884,7 @@ impl Store {
                 trunk: None,
                 repo: &[],
                 closed,
+                pinned,
             });
             found.repos.push(PathBuf::from(repo));
         }
@@ -1335,6 +1345,7 @@ mod tests {
                     trunk: None,
                     repo: &[],
                     closed: false,
+                    pinned: false,
                 },
                 Project {
                     id: 1,
@@ -1343,6 +1354,7 @@ mod tests {
                     trunk: None,
                     repo: &[],
                     closed: true,
+                    pinned: false,
                 },
             ],
             agents: vec![
@@ -2553,6 +2565,38 @@ mod tests {
     }
 
     #[test]
+    fn a_pin_is_saved_on_its_own_and_a_file_of_schema_6_gets_the_column() {
+        let d = dir("schema6");
+        std::fs::create_dir_all(&d).unwrap();
+        let path = d.join(FILE);
+        let mut w = world();
+        {
+            let mut store = Store::open(&path).unwrap();
+            assert!(store.save(&w, &kept().kept()).unwrap());
+            assert!(!store.save(&w, &kept().kept()).unwrap(), "nothing new");
+            // A pin alone is something to save.
+            w.projects[0].pinned = true;
+            assert!(store.save(&w, &kept().kept()).unwrap());
+            let back = store.load(100).unwrap().unwrap();
+            let pins: Vec<bool> = back.world.projects.iter().map(|p| p.pinned).collect();
+            assert_eq!(pins, [true, false]);
+            // As schema 6 wrote it: no pins.
+            store
+                .raw()
+                .execute_batch(
+                    "ALTER TABLE projects DROP COLUMN pinned;
+                     UPDATE meta SET value = '6' WHERE key = 'schema_version';",
+                )
+                .unwrap();
+        }
+        let mut store = Store::open(&path).unwrap();
+        let back = store.load(100).unwrap().expect("a world");
+        assert!(back.world.projects.iter().all(|p| !p.pinned));
+        assert!(store.save(&w, &kept().kept()).unwrap());
+        assert!(store.load(100).unwrap().unwrap().world.projects[0].pinned);
+    }
+
+    #[test]
     fn a_file_of_schema_5_gets_the_inbox_card_column() {
         let d = dir("schema5");
         std::fs::create_dir_all(&d).unwrap();
@@ -2647,9 +2691,10 @@ mod tests {
                 |r| r.get(0),
             )
             .unwrap();
-        assert_eq!(version, "6");
+        assert_eq!(version, SCHEMA_VERSION.to_string());
         let back = store.load(100).unwrap().expect("a world");
         assert_eq!(back.world.agents[0].name, "lead");
+        assert!(!back.world.projects[0].pinned, "pinned came in later");
         assert_eq!(back.found.sessions, [None]);
         assert_eq!(back.saved_at, None, "an older file does not say when");
         // Saved with a session, read back with it.

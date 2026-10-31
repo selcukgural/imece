@@ -374,6 +374,9 @@ pub struct Project {
     /// Closed by the person (`:close`): its agents left and it is not
     /// drawn; kept so ids stay stable, and opened again in place.
     pub closed: bool,
+    /// Pinned by the person (`:pin`): the salon shows it above the ones
+    /// that are not.
+    pub pinned: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -1181,6 +1184,16 @@ impl World {
         self.projects.iter().filter(|p| !p.closed)
     }
 
+    /// The open projects in the salon's order: the pinned ones first,
+    /// each group in the order they were opened.
+    pub fn salon_order(&self) -> Vec<ProjectId> {
+        let (mut pinned, rest): (Vec<ProjectId>, Vec<ProjectId>) = (self.open_projects())
+            .map(|p| p.id)
+            .partition(|&p| self.projects[p].pinned);
+        pinned.extend(rest);
+        pinned
+    }
+
     /// The open project called `name`, exactly.
     pub fn project_by_name(&self, name: &str) -> Option<ProjectId> {
         self.open_projects().find(|p| p.name == name).map(|p| p.id)
@@ -1244,6 +1257,7 @@ impl World {
                 trunk: None,
                 repo: &[],
                 closed: false,
+                pinned: false,
             }),
         }
         self.note(Event::Opened { leader, path });
@@ -1783,6 +1797,7 @@ mod tests {
                 trunk: None,
                 repo: &[],
                 closed: false,
+                pinned: false,
             }],
             agents,
             cards: Vec::new(),
@@ -2234,6 +2249,7 @@ mod tests {
             trunk: None,
             repo: &[],
             closed: false,
+            pinned: false,
         });
         w.projects[0].closed = true;
         w.budget = 400;

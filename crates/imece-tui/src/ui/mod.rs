@@ -1783,6 +1783,97 @@ mod tests {
     }
 
     #[test]
+    fn a_pinned_project_comes_first_wears_its_mark_and_folds_last() {
+        let mut app = app_after(2, 8, 0, Lang::En);
+        app.world.inbox.clear();
+        app.world.tick = 100;
+        for a in &mut app.world.agents {
+            a.status = Status::Working;
+            a.changed_at = 0;
+            a.talk = None;
+        }
+        app.selected = Sel::Project(0);
+        let first = |app: &App| salon::rows(app, 100)[0];
+        // Which project the folded line is under.
+        let folded_under = |app: &App, capacity: usize| {
+            let mut under = None;
+            for r in salon::rows(app, capacity) {
+                match r {
+                    salon::Row::Project(p) => under = Some(p),
+                    salon::Row::Folded(_) => return under,
+                    _ => {}
+                }
+            }
+            None
+        };
+        let all = salon::rows(&app, 100).len();
+        assert_eq!(first(&app), salon::Row::Project(0));
+        assert_eq!(folded_under(&app, all - 1), Some(1), "the bottom one");
+        app.world.projects[1].pinned = true;
+        assert_eq!(first(&app), salon::Row::Project(1));
+        assert_eq!(folded_under(&app, all - 1), Some(0), "the pinned one last");
+        let name = app.world.projects[1].name.clone();
+        let s = render(&app, 140, 40);
+        assert!(s.contains(&format!("▾ ▴ {name}")), "{s}");
+        assert!(!s.contains(&format!("▴ {}", app.world.projects[0].name)));
+        app.help = true;
+        assert!(
+            render(&app, 140, 40).contains("▴ pinned"),
+            "the legend says it"
+        );
+    }
+
+    #[test]
+    fn the_salon_order_puts_the_pinned_open_projects_first() {
+        let mut w = app_after(3, 3, 0, Lang::En).world;
+        assert_eq!(w.salon_order(), [0, 1, 2]);
+        w.projects[2].pinned = true;
+        assert_eq!(w.salon_order(), [2, 0, 1]);
+        w.projects[0].pinned = true;
+        assert_eq!(w.salon_order(), [0, 2, 1], "each group as opened");
+        w.projects[2].closed = true;
+        assert_eq!(w.salon_order(), [0, 1], "a closed one is not shown");
+    }
+
+    #[test]
+    fn colon_pin_pins_and_unpins_the_project_at_hand_or_named() {
+        let mut app = app_after(2, 2, 0, Lang::En);
+        let (one, two) = (
+            app.world.projects[0].name.clone(),
+            app.world.projects[1].name.clone(),
+        );
+        app.selected = Sel::Project(0);
+        let typed = |app: &mut App, line: &str| {
+            for c in line.chars() {
+                key(app, KeyCode::Char(c));
+            }
+        };
+        typed(&mut app, ":pi");
+        assert_eq!(app.menu.as_ref().unwrap().notes, [format!("({one})")]);
+        typed(&mut app, "n");
+        key(&mut app, KeyCode::Enter);
+        assert!(app.world.projects[0].pinned);
+        assert!(
+            render(&app, 140, 40).contains(&format!("{one} is pinned to the top of the salon"))
+        );
+        typed(&mut app, ":pi");
+        assert_eq!(app.menu.as_ref().unwrap().notes, [format!("(▴ {one})")]);
+        key(&mut app, KeyCode::Esc);
+        key(&mut app, KeyCode::Esc);
+        typed(&mut app, ":pin");
+        key(&mut app, KeyCode::Enter);
+        assert!(!app.world.projects[0].pinned);
+        assert!(render(&app, 140, 40).contains(&format!("{one} is not pinned any more")));
+        typed(&mut app, &format!(":pin {two}"));
+        key(&mut app, KeyCode::Enter);
+        assert!(app.world.projects[1].pinned && !app.world.projects[0].pinned);
+        typed(&mut app, ":pin nowhere");
+        key(&mut app, KeyCode::Enter);
+        assert!(render(&app, 140, 40).contains("no open project named nowhere"));
+        assert!(app.world.projects[1].pinned, "nothing else changed");
+    }
+
+    #[test]
     fn workers_that_need_the_person_more_come_first_and_fold_last() {
         let (mut app, w, _) = calm_team();
         app.world.inbox.clear();
@@ -3213,7 +3304,11 @@ mod tests {
         assert_eq!(m.items, want);
         assert_eq!(m.notes.len(), m.items.len());
         key(&mut app, KeyCode::Char('p'));
-        assert_eq!(app.menu.as_ref().unwrap().items, ["pending"], "not pause");
+        assert_eq!(
+            app.menu.as_ref().unwrap().items,
+            ["pending", "pin"],
+            "not pause"
+        );
         key(&mut app, KeyCode::Backspace);
         for c in "fa".chars() {
             key(&mut app, KeyCode::Char(c));
@@ -4103,9 +4198,9 @@ mod tests {
             let t = lang.text();
             for shift_enter in [true, false] {
                 let keys = overlay::help_keys(lang, shift_enter);
-                assert_eq!(keys[15].0, "^w ^u ^k ^y", "{lang:?}");
+                assert_eq!(keys[16].0, "^w ^u ^k ^y", "{lang:?}");
                 let want = t.help_newline[usize::from(!shift_enter)];
-                assert_eq!(keys[16], want, "{lang:?} {shift_enter}");
+                assert_eq!(keys[17], want, "{lang:?} {shift_enter}");
                 assert_eq!(keys.len(), t.help_keys.len() + 1);
             }
         }
