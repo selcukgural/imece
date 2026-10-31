@@ -50,7 +50,7 @@ use std::time::{Duration, Instant};
 use serde_json::{Value, json};
 
 use crate::child::{self, Child, Out};
-use crate::{Ask, Confine, Event, MCP_SERVER, Mcp, mcp_tool};
+use crate::{Ask, Confine, Event, Limit, MCP_SERVER, Mcp, mcp_tool};
 
 /// Variables Codex may need besides [`child::BASE_ENV`]: its home (login,
 /// config), an API key, and proxy and CA settings of corporate networks.
@@ -152,6 +152,7 @@ const FEATURES_OFF: &[&str] = &[
 ];
 
 /// Notifications nobody here reads: streamed deltas and account noise.
+/// (`account/rateLimits/updated` is read: the plan's usage windows.)
 const QUIET: &[&str] = &[
     "item/agentMessage/delta",
     "item/reasoning/summaryTextDelta",
@@ -161,7 +162,6 @@ const QUIET: &[&str] = &[
     "item/fileChange/outputDelta",
     "item/plan/delta",
     "turn/diff/updated",
-    "account/rateLimits/updated",
     "remoteControl/status/changed",
     "thread/readState/changed",
 ];
@@ -977,6 +977,12 @@ impl Protocol {
             // An ask Codex settled itself (the turn was stopped); one
             // imece answered is gone already.
             "serverRequest/resolved" => Ok(self.withdraw(&p["requestId"].to_string())),
+            // The plan's usage windows; sparse, so a window not named is as
+            // it was.
+            "account/rateLimits/updated" => Ok(limits(&p["rateLimits"])
+                .map(|l| Act::Event(Event::Limits(l)))
+                .into_iter()
+                .collect()),
             "thread/tokenUsage/updated" => {
                 let t = &p["tokenUsage"]["total"];
                 let n = |k: &str| t[k].as_u64().unwrap_or(0);
@@ -1459,6 +1465,27 @@ fn drive(spec: Spec, child: Child, rx: Receiver<Msg>, tx: Sender<Msg>, mut on: i
             }
         }
     }
+}
+
+/// The windows an `account/rateLimits/updated` names: `primary` and
+/// `secondary`, each with its length in minutes and the percent used
+/// (`resetsAt` in seconds). One without a length or a percent is left
+/// out; none when nothing is left.
+fn limits(snapshot: &Value) -> Option<Vec<Limit>> {
+    let window = |w: &Value| -> Option<Limit> {
+        let minutes = u32::try_from(w["windowDurationMins"].as_u64()?).ok()?;
+        let used = w["usedPercent"].as_f64()?.round().clamp(0.0, 100.0) as u8;
+        Some(Limit {
+            minutes,
+            used,
+            resets_at: w["resetsAt"].as_u64(),
+        })
+    };
+    let out: Vec<Limit> = ["primary", "secondary"]
+        .iter()
+        .filter_map(|k| window(&snapshot[*k]))
+        .collect();
+    (!out.is_empty()).then_some(out)
 }
 
 #[cfg(test)]
@@ -2409,6 +2436,56 @@ mod tests {
             .unwrap();
         assert!(acts.is_empty());
         p
+    }
+
+    #[test]
+    fn a_rate_limits_update_reports_the_windows_it_names() {
+        let mut p = in_turn(&with_bus(true));
+        let update = |limits: Value| {
+            notify(
+                "account/rateLimits/updated",
+                json!({ "rateLimits": limits }),
+            )
+        };
+        let both = json!({ "limitId": "codex", "planType": "plus",
+            "primary": { "usedPercent": 48.4, "windowDurationMins": 300, "resetsAt": 1_700_000_000u64 },
+            "secondary": { "usedPercent": 12.5, "windowDurationMins": 10_080, "resetsAt": null } });
+        assert_eq!(
+            events(&p.line(&update(both)).unwrap()),
+            [Event::Limits(vec![
+                Limit {
+                    minutes: 300,
+                    used: 48,
+                    resets_at: Some(1_700_000_000)
+                },
+                Limit {
+                    minutes: 10_080,
+                    used: 13,
+                    resets_at: None
+                },
+            ])]
+        );
+        // Sparse: only the window it names; one past full is full.
+        let one = json!({ "primary": null, "secondary": { "usedPercent": 140.0, "windowDurationMins": 10_080 } });
+        assert_eq!(
+            events(&p.line(&update(one)).unwrap()),
+            [Event::Limits(vec![Limit {
+                minutes: 10_080,
+                used: 100,
+                resets_at: None
+            }])]
+        );
+        // A window without a length or a use says nothing.
+        for none in [
+            json!({ "primary": null, "secondary": null }),
+            json!({ "primary": { "usedPercent": 5.0, "windowDurationMins": null } }),
+            json!({ "primary": { "windowDurationMins": 300 } }),
+            json!({ "primary": { "usedPercent": 5.0, "windowDurationMins": -1 } }),
+        ] {
+            assert!(p.line(&update(none.clone())).unwrap().is_empty(), "{none}");
+        }
+        // It is asked for: not among the notifications turned off.
+        assert!(!QUIET.contains(&"account/rateLimits/updated"));
     }
 
     #[test]

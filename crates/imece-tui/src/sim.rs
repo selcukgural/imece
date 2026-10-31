@@ -209,6 +209,12 @@ const PROJECTS: &[(&str, Repo, &Kit)] = &[
 
 pub const MAX_PROJECTS: usize = 4;
 
+/// What a vendor's agents spend in the demo for each percent of its
+/// plan's five-hour window, in ten-thousandths of a dollar.
+const LIMIT_COST: u64 = 200;
+const FIVE_HOURS: u32 = imece_agent::FIVE_HOURS;
+const WEEK: u32 = imece_agent::WEEK;
+
 /// The most workers a demo leader has in a project.
 const MAX_WORKERS: usize = 6;
 /// Ticks an approval waits before the session stops waiting, as Claude's
@@ -535,6 +541,7 @@ pub fn world(
     };
     let mut w = World {
         marks: Default::default(),
+        limits: Vec::new(),
         tick: 0,
         started_at: 0,
         run_spent: 0,
@@ -653,6 +660,11 @@ impl Sim {
             self.minds.resize_with(id + 1, Mind::default);
         }
         &mut self.minds[id]
+    }
+
+    /// Whether agent `id` has a session (without making it a mind).
+    fn started(&self, id: AgentId) -> bool {
+        self.minds.get(id).is_some_and(|m| m.started)
     }
 
     /// Whether agent `id` has a card it has not finished.
@@ -846,6 +858,10 @@ impl Sim {
             let fits = !self.rng.one_in(8);
             self.applied(w, id, fits);
         }
+        // Live sessions report their plan's windows now and then.
+        if t.is_multiple_of(12) {
+            self.limits(w);
+        }
         let (due, later): (Vec<Due>, Vec<Due>) = std::mem::take(&mut self.replies)
             .into_iter()
             .partition(|r| r.at <= t);
@@ -868,6 +884,33 @@ impl Sim {
                 Role::Helper => self.helper(w, id),
                 Role::Researcher => self.researcher(w, id),
                 Role::Leader => {}
+            }
+        }
+    }
+
+    /// The usage windows of the plans whose sessions run, as live Claude
+    /// and Codex sessions report them: what a vendor's agents spent fills
+    /// its five-hour window, a percent for every [`LIMIT_COST`], and a
+    /// quarter as much of its week; each starts again at the next whole
+    /// window of the world's clock.
+    fn limits(&mut self, w: &mut World) {
+        let now = w.now();
+        for v in [Vendor::Claude, Vendor::Codex] {
+            let ours = |a: &&Agent| a.vendor == v;
+            let running = (w.agents.iter().filter(ours)).any(|a| self.started(a.id));
+            if !running {
+                continue;
+            }
+            let spent: u64 = w.agents.iter().filter(ours).map(|a| a.cost).sum();
+            let five = (spent / LIMIT_COST).min(100) as u8;
+            for (minutes, used) in [(FIVE_HOURS, five), (WEEK, five / 4)] {
+                let length = u64::from(minutes) * 60;
+                w.limit(Limit {
+                    vendor: v,
+                    minutes,
+                    used,
+                    resets_at: Some((now / length + 1) * length),
+                });
             }
         }
     }
@@ -2936,6 +2979,66 @@ mod tests {
                 .any(|e| e.event == Event::Forgotten { agent: lead })
         );
         assert!(s.replies.is_empty(), "a forgotten session answers nothing");
+    }
+
+    #[test]
+    fn the_demo_s_running_vendors_fill_their_windows_with_what_they_spend() {
+        let (mut w, mut s) = world(1, 2, 0, 1, Lang::En);
+        let lead = w.projects[0].leader;
+        let workers = workers_of(&w, 0);
+        w.agents[lead].vendor = Vendor::Claude;
+        w.agents[workers[0]].vendor = Vendor::Codex;
+        w.agents[workers[1]].vendor = Vendor::Claude;
+        // Nobody runs yet: nothing said.
+        s.limits(&mut w);
+        assert!(w.limits.is_empty());
+        s.start(&mut w, lead);
+        w.agents[lead].cost = 3_000;
+        w.agents[workers[1]].cost = 2_100;
+        w.agents[workers[0]].cost = 99_999;
+        w.tick = 4_000;
+        s.limits(&mut w);
+        // $0.51 of Claude: 25% of five hours, 6% of the week; Codex has no
+        // session.
+        let now = w.now();
+        assert_eq!(now, 20_000);
+        assert_eq!(
+            w.limits,
+            [
+                Limit {
+                    vendor: Vendor::Claude,
+                    minutes: 300,
+                    used: 25,
+                    resets_at: Some(36_000)
+                },
+                Limit {
+                    vendor: Vendor::Claude,
+                    minutes: 10_080,
+                    used: 6,
+                    resets_at: Some(604_800)
+                },
+            ]
+        );
+        // Codex once it runs, full at most.
+        s.start(&mut w, workers[0]);
+        s.limits(&mut w);
+        assert_eq!(
+            w.tightest()[1],
+            Limit {
+                vendor: Vendor::Codex,
+                minutes: 300,
+                used: 100,
+                resets_at: Some(36_000)
+            }
+        );
+        // Said every minute of the demo's clock.
+        w.limits.clear();
+        w.tick = 11;
+        s.step(&mut w);
+        assert!(!w.limits.is_empty(), "tick 12");
+        w.limits.clear();
+        s.step(&mut w);
+        assert!(w.limits.is_empty(), "tick 13");
     }
 
     #[test]

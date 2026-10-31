@@ -1240,9 +1240,62 @@ pub struct World {
     pub changes: Vec<Change>,
     /// The journal lines the person marked to come back to (`m`), by index.
     pub marks: BTreeSet<usize>,
+    /// What the vendors last said of their plans' usage windows, one
+    /// entry per vendor and window. Not kept between runs: a session
+    /// says it again.
+    pub limits: Vec<Limit>,
+}
+
+/// One window of a vendor plan's usage limit, as the vendor last said it
+/// (`imece_agent::Limit`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Limit {
+    pub vendor: Vendor,
+    /// Its length in minutes (300: five hours).
+    pub minutes: u32,
+    /// Percent used, at most 100.
+    pub used: u8,
+    /// When it starts again, in seconds since the Unix epoch (the world's
+    /// seconds, `World::now`).
+    pub resets_at: Option<u64>,
 }
 
 impl World {
+    /// Now as the world counts it, in seconds since the Unix epoch: its
+    /// first start and the ticks since (the demo starts at 0).
+    pub fn now(&self) -> u64 {
+        self.started_at + self.tick * SECONDS_PER_TICK
+    }
+
+    /// A vendor said how much of one of its windows is used: that window
+    /// is as it says now; the others stay as they were.
+    pub fn limit(&mut self, l: Limit) {
+        let same = |k: &&mut Limit| k.vendor == l.vendor && k.minutes == l.minutes;
+        match self.limits.iter_mut().find(same) {
+            Some(k) => *k = l,
+            None => self.limits.push(l),
+        }
+    }
+
+    /// Each vendor's window nearest to full (the most used; the shorter
+    /// one on a tie), vendors in the order they first said one.
+    pub fn tightest(&self) -> Vec<Limit> {
+        let mut out: Vec<Limit> = Vec::new();
+        for &l in &self.limits {
+            match out.iter_mut().find(|k| k.vendor == l.vendor) {
+                Some(k)
+                    if (l.used, std::cmp::Reverse(l.minutes))
+                        > (k.used, std::cmp::Reverse(k.minutes)) =>
+                {
+                    *k = l
+                }
+                Some(_) => {}
+                None => out.push(l),
+            }
+        }
+        out
+    }
+
     pub fn agent_by_name(&self, name: &str) -> Option<AgentId> {
         self.agents
             .iter()
@@ -2002,6 +2055,7 @@ mod tests {
     fn world(agents: Vec<Agent>) -> World {
         World {
             marks: Default::default(),
+            limits: Vec::new(),
             tick: 0,
             started_at: 0,
             run_spent: 0,
@@ -2044,6 +2098,45 @@ mod tests {
         assert_eq!(w.marks, BTreeSet::from([0]));
         assert!(!w.mark(2), "past the journal's end");
         assert_eq!(w.marks, BTreeSet::from([0]));
+    }
+
+    #[test]
+    fn a_window_said_again_replaces_its_old_self_and_the_tightest_shows() {
+        let mut w = world(vec![agent(0, Role::Leader, Status::Idle)]);
+        let at = |vendor, minutes, used| Limit {
+            vendor,
+            minutes,
+            used,
+            resets_at: Some(u64::from(minutes)),
+        };
+        w.limit(at(Vendor::Codex, 300, 10));
+        w.limit(at(Vendor::Claude, 300, 40));
+        w.limit(at(Vendor::Claude, 10_080, 40));
+        // The same window again: replaced, not added.
+        w.limit(at(Vendor::Codex, 300, 30));
+        assert_eq!(w.limits.len(), 3);
+        // Codex first (it said one first); Claude's tie goes to the
+        // shorter window.
+        assert_eq!(
+            w.tightest(),
+            [at(Vendor::Codex, 300, 30), at(Vendor::Claude, 300, 40)]
+        );
+        // The week fills up past the five hours: it is the tightest.
+        w.limit(at(Vendor::Claude, 10_080, 41));
+        assert_eq!(w.tightest()[1], at(Vendor::Claude, 10_080, 41));
+        // A later, emptier window does not take the place.
+        w.limit(at(Vendor::Codex, 10_080, 29));
+        assert_eq!(w.tightest()[0], at(Vendor::Codex, 300, 30));
+        w.limit(at(Vendor::Codex, 60, 30));
+        assert_eq!(
+            w.tightest()[0],
+            at(Vendor::Codex, 60, 30),
+            "a tie: the shorter"
+        );
+        // Its clock: the first start and the ticks since.
+        w.started_at = 1_000;
+        w.tick = 3;
+        assert_eq!(w.now(), 1_015);
     }
 
     fn item(kind: InboxKind, agent: AgentId, open: bool) -> InboxItem {
