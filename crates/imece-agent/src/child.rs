@@ -18,6 +18,10 @@ pub const STDERR_TAIL: usize = 4096;
 /// How long a process gets to exit after SIGTERM before SIGKILL.
 const GRACE: Duration = Duration::from_millis(1500);
 const POLL: Duration = Duration::from_millis(20);
+/// Starts tried while the program is busy being written, and the wait
+/// between them (see [`retry_busy`]).
+const BUSY_TRIES: usize = 10;
+const BUSY_WAIT: Duration = Duration::from_millis(50);
 
 /// Variables every child gets, when they are set: finding programs, the
 /// home directory, the user, locale and temporary files. Everything else
@@ -37,6 +41,26 @@ pub fn command(program: &str, cwd: &Path, keep: &[&str]) -> Command {
         }
     }
     c
+}
+
+/// `start` again, a few times and a moment apart, while it fails because
+/// the program is busy: Linux will not run a file someone holds open for
+/// writing (`ETXTBSY`), and another thread's fork of a moment ago holds
+/// it until its `exec` (#74: tests that write a fake CLI and run it at
+/// once), as does a CLI being updated in place. Any other outcome is
+/// returned at once; after [`BUSY_TRIES`] the last try's.
+fn retry_busy<T>(mut start: impl FnMut() -> io::Result<T>) -> io::Result<T> {
+    for _ in 1..BUSY_TRIES {
+        match start() {
+            Err(e) if busy(&e) => thread::sleep(BUSY_WAIT),
+            other => return other,
+        }
+    }
+    start()
+}
+
+fn busy(e: &io::Error) -> bool {
+    e.raw_os_error() == Some(libc::ETXTBSY)
 }
 
 /// What the reader thread hands to the caller.
@@ -61,12 +85,11 @@ impl Child {
         mut cmd: Command,
         mut on: impl FnMut(Out) -> bool + Send + 'static,
     ) -> io::Result<Child> {
-        let mut p = cmd
-            .stdin(Stdio::piped())
+        cmd.stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
-            .process_group(0)
-            .spawn()?;
+            .process_group(0);
+        let mut p = retry_busy(|| cmd.spawn())?;
         let pgid = p.id() as i32;
         let stdin = p.stdin.take();
         let stdout = p.stdout.take().expect("stdout is piped");
@@ -392,5 +415,75 @@ mod tests {
     #[test]
     fn a_last_line_exactly_at_the_cap_without_newline_is_a_line() {
         assert_eq!(lines(b"0123456789", 10), [Some("0123456789".into())]);
+    }
+
+    #[test]
+    fn a_busy_program_is_tried_again_a_bounded_number_of_times() {
+        let busy_now = || io::Error::from_raw_os_error(libc::ETXTBSY);
+        // Busy twice, then it starts.
+        let mut calls = 0;
+        let started = retry_busy(|| {
+            calls += 1;
+            if calls < 3 {
+                Err(busy_now())
+            } else {
+                Ok(calls)
+            }
+        });
+        assert_eq!(started.unwrap(), 3);
+        // Any other failure comes back at once.
+        let mut calls = 0;
+        let e = retry_busy::<()>(|| {
+            calls += 1;
+            Err(io::Error::from(io::ErrorKind::NotFound))
+        })
+        .unwrap_err();
+        assert_eq!((e.kind(), calls), (io::ErrorKind::NotFound, 1));
+        let mut calls = 0;
+        let e = retry_busy::<()>(|| {
+            calls += 1;
+            Err(io::Error::from_raw_os_error(libc::EACCES))
+        })
+        .unwrap_err();
+        assert_eq!((e.raw_os_error(), calls), (Some(libc::EACCES), 1));
+        // Busy for good: ten tries, and the last one's error.
+        let mut calls = 0;
+        let e = retry_busy::<()>(|| {
+            calls += 1;
+            Err(busy_now())
+        })
+        .unwrap_err();
+        assert_eq!((e.raw_os_error(), calls), (Some(libc::ETXTBSY), 10));
+    }
+
+    /// The race of #74 itself: Linux refuses to run a file someone holds
+    /// open for writing; once it is let go, the program starts. (macOS
+    /// runs it anyway, so the test means something only on Linux.)
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn a_program_held_open_for_writing_starts_once_it_is_let_go() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = std::env::temp_dir().join(format!("imece-busy-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("cli");
+        std::fs::write(&path, "#!/bin/sh\necho hi\n").unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let held = std::fs::OpenOptions::new().write(true).open(&path).unwrap();
+        let letting_go = thread::spawn(move || {
+            thread::sleep(Duration::from_millis(150));
+            drop(held);
+        });
+        let (tx, rx) = mpsc::channel();
+        let _child = Child::spawn(Command::new(&path), move |o| {
+            if let Out::Line(l) = o {
+                let _ = tx.send(l.to_string());
+            }
+            true
+        })
+        .unwrap();
+        assert_eq!(rx.recv_timeout(Duration::from_secs(10)).unwrap(), "hi");
+        letting_go.join().unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
