@@ -483,6 +483,8 @@ struct Mind {
     /// imece's runs on its tree since its last change, the last of each
     /// command.
     runs: Vec<Ran>,
+    /// It compacted its session and took no turn since.
+    compacted: bool,
 }
 
 /// An answer to the person, due at a tick.
@@ -490,6 +492,9 @@ struct Due {
     agent: AgentId,
     at: u64,
     text: String,
+    /// The turn failed, `text` says why (as a refused `/compact` of a
+    /// live Codex session does).
+    failed: bool,
 }
 
 /// How a worker comes to its card.
@@ -693,6 +698,7 @@ impl Sim {
         let stopped = w.agents[id].status == Status::Stopped;
         let had = self.mind(id).started;
         self.start(w, id);
+        self.mind(id).compacted = false;
         if stopped && had {
             w.agents[id].trace(t, "session resumed");
             w.note(Event::Resumed { agent: id });
@@ -730,6 +736,7 @@ impl Sim {
             agent: id,
             at,
             text,
+            failed: false,
         });
         Ok(())
     }
@@ -760,7 +767,13 @@ impl Sim {
             );
             return Ok(());
         }
+        // Codex turns a second compaction with nothing new down, and a
+        // refused one is a failed turn, not a stopped session (#52).
+        let codex = w.agents[id].vendor == Vendor::Codex;
+        let again = line == "/compact" && std::mem::replace(&mut self.mind(id).compacted, true);
+        let failed = codex && again;
         let text = match line {
+            _ if failed => "compaction refused: nothing new to compact since the last one".into(),
             "/cost" => format!("Total cost: {}", dollars(w.agents[id].cost)),
             "/compact" => "Compacted the conversation.".to_string(),
             _ => format!("{line}: done."),
@@ -769,6 +782,7 @@ impl Sim {
             agent: id,
             at: t + 1,
             text,
+            failed,
         });
         Ok(())
     }
@@ -867,7 +881,10 @@ impl Sim {
             .partition(|r| r.at <= t);
         self.replies = later;
         for r in due {
-            self.answer(w, r.agent, &r.text);
+            match r.failed {
+                true => self.failed(w, r.agent, &r.text),
+                false => self.answer(w, r.agent, &r.text),
+            }
         }
         for p in 0..w.projects.len() {
             if !w.projects[p].closed {
@@ -1519,6 +1536,26 @@ impl Sim {
         let a = &mut w.agents[id];
         a.activity = None;
         a.set_status(Status::Idle, t);
+    }
+
+    /// A turn of agent `id` failed, `why` says why; its session goes on.
+    /// As live takes a failed turn: idle again, the story and the journal
+    /// say why.
+    fn failed(&mut self, w: &mut World, id: AgentId, why: &str) {
+        if w.agents[id].gone {
+            return;
+        }
+        let t = w.tick;
+        let card = w.agents[id].card;
+        let a = &mut w.agents[id];
+        a.activity = None;
+        a.trace(t, format!("result ✕ {} denied 0", dollars(a.cost)));
+        a.set_status(Status::Idle, t);
+        w.story(card, StoryEvent::Stopped(why.into()));
+        w.note(Event::Stopped {
+            agent: id,
+            why: why.into(),
+        });
     }
 
     /// Worker `id`'s session ends under it; the person's next message
@@ -2929,6 +2966,7 @@ mod tests {
             agent: lead,
             at: w.tick + 1,
             text: "x".into(),
+            failed: false,
         });
         s.forget(&mut w, lead).unwrap_err();
         s.told(&mut w, lead, "again").unwrap();
@@ -3039,6 +3077,93 @@ mod tests {
         w.limits.clear();
         s.step(&mut w);
         assert!(w.limits.is_empty(), "tick 13");
+    }
+
+    #[test]
+    fn a_codex_compaction_with_nothing_new_is_a_failed_turn_and_the_session_goes_on() {
+        let (mut w, mut s) = world(1, 1, 0, 1, Lang::En);
+        let lead = w.projects[0].leader;
+        w.agents[lead].vendor = Vendor::Codex;
+        s.told(&mut w, lead, "hello").unwrap();
+        s.replies.clear();
+        let due = |s: &Sim| -> Vec<(String, bool)> {
+            s.replies
+                .iter()
+                .map(|r| (r.text.clone(), r.failed))
+                .collect()
+        };
+        assert_eq!(s.command(&mut w, lead, "/compact"), Ok(()));
+        let refused = "compaction refused: nothing new to compact since the last one";
+        assert_eq!(s.command(&mut w, lead, "/compact"), Ok(()));
+        assert_eq!(
+            due(&s),
+            [
+                ("Compacted the conversation.".to_string(), false),
+                (refused.to_string(), true)
+            ]
+        );
+        // Delivered: the journal and the trace say it failed, the session
+        // stays.
+        s.step(&mut w);
+        assert!(w.journal.iter().any(|e| e.event
+            == Event::Stopped {
+                agent: lead,
+                why: refused.into()
+            }));
+        let cost = dollars(w.agents[lead].cost);
+        let line = format!(" result ✕ {cost} denied 0");
+        let trace = &w.agents[lead].trace;
+        assert!(trace.iter().any(|l| l.ends_with(&line)), "{trace:?}");
+        assert!(s.mind(lead).started, "the session goes on");
+        // A turn between: there is something new to compact again.
+        s.replies.clear();
+        s.told(&mut w, lead, "more").unwrap();
+        s.replies.clear();
+        assert_eq!(s.command(&mut w, lead, "/compact"), Ok(()));
+        assert_eq!(
+            due(&s),
+            [("Compacted the conversation.".to_string(), false)]
+        );
+        // Claude compacts as often as it is asked.
+        let (mut w, mut s) = world(1, 1, 0, 1, Lang::En);
+        let lead = w.projects[0].leader;
+        s.told(&mut w, lead, "hello").unwrap();
+        s.replies.clear();
+        for _ in 0..2 {
+            assert_eq!(s.command(&mut w, lead, "/compact"), Ok(()));
+        }
+        assert!(due(&s).iter().all(|(_, failed)| !failed));
+        // Any other command does not count as a compaction.
+        w.agents[lead].vendor = Vendor::Codex;
+        s.mind(lead).compacted = false;
+        assert_eq!(s.command(&mut w, lead, "/cost"), Ok(()));
+        assert!(!s.mind(lead).compacted);
+    }
+
+    #[test]
+    fn a_failed_turn_leaves_the_agent_idle_with_its_reason_told() {
+        let (mut w, mut s, worker, card) = one_at_work();
+        w.agents[worker].set_status(Status::Working, w.tick);
+        w.agents[worker].activity = Some("Read x".into());
+        s.failed(&mut w, worker, "no");
+        let a = &w.agents[worker];
+        assert_eq!(a.status, Status::Idle);
+        assert_eq!(a.activity, None);
+        assert!(
+            matches!(&w.cards[card].story.last().unwrap().event, StoryEvent::Stopped(why) if why == "no")
+        );
+        assert_eq!(
+            w.journal.last().unwrap().event,
+            Event::Stopped {
+                agent: worker,
+                why: "no".into()
+            }
+        );
+        // One that is gone says nothing.
+        w.agents[worker].gone = true;
+        let n = w.journal.len();
+        s.failed(&mut w, worker, "no");
+        assert_eq!(w.journal.len(), n);
     }
 
     #[test]
@@ -3295,11 +3420,13 @@ mod tests {
                 agent: a,
                 at: 99,
                 text: "a".into(),
+                failed: false,
             },
             Due {
                 agent: b,
                 at: 99,
                 text: "b".into(),
+                failed: false,
             },
         ];
         s.close_project(&mut w, 1).unwrap();
