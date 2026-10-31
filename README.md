@@ -262,7 +262,7 @@ not yet seen.
 | `W` / `S` | from anywhere: open the next item waiting for you / put this one off and open the next |
 | `a` / `r` | approve / apply / allow · reject / refuse the selected item |
 | `space`, `+` `-` | pause, simulation speed (`--demo` only) |
-| `?`, `q` | help, quit |
+| `?`, `q` | help (`/` in it filters the keys: every word, Turkish letters or not; `enter` keeps, `esc` drops), quit |
 | `q` `s` | before quitting: the agents mid-turn and the changes not reviewed (`q` there quits, `W` opens the next waiting) |
 
 ## Screen principles
