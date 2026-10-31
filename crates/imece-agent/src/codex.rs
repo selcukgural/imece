@@ -1382,6 +1382,10 @@ fn refused(rx: &Receiver<Msg>, generation: u64, e: &io::Error) -> String {
 /// Runs the protocol against the Codex process, starting it a second time
 /// when the first start found things to name off.
 fn drive(spec: Spec, child: Child, rx: Receiver<Msg>, tx: Sender<Msg>, mut on: impl FnMut(Event)) {
+    // A local drops before the parameters: the commands' receiver goes
+    // before the events' sender, so once the events end a command finds
+    // nobody to take it (#74).
+    let rx = rx;
     let mut generation = 0;
     let mut child = Some(child);
     let mut protocol = Protocol::new(&spec, None);
