@@ -1977,6 +1977,65 @@ mod tests {
     }
 
     #[test]
+    fn a_worker_s_row_says_where_its_worktree_stands_and_only_what_there_is() {
+        let text =
+            |spans: &[Span]| -> String { spans.iter().map(|s| s.content.as_ref()).collect() };
+        let stand = |branch: Option<&str>, ahead, behind, added, removed| Stand {
+            branch: branch.map(String::from),
+            ahead,
+            behind,
+            added,
+            removed,
+        };
+        assert!(salon::stand_spans(&Stand::default()).is_empty());
+        let all = salon::stand_spans(&stand(Some("fix-parser"), 2, 1, 12, 3));
+        assert_eq!(text(&all), "  ⎇ fix-parser ↑2 ↓1 +12 −3");
+        let styles: Vec<Style> = all.iter().skip(1).step_by(2).map(|s| s.style).collect();
+        assert_eq!(
+            styles,
+            [
+                dim(),
+                fg(pal().info),
+                fg(pal().warn),
+                fg(pal().ok),
+                fg(pal().bad)
+            ]
+        );
+        // Each part alone, the first after two spaces.
+        assert_eq!(text(&salon::stand_spans(&stand(None, 1, 0, 0, 0))), "  ↑1");
+        assert_eq!(text(&salon::stand_spans(&stand(None, 0, 4, 0, 0))), "  ↓4");
+        assert_eq!(text(&salon::stand_spans(&stand(None, 0, 0, 5, 0))), "  +5");
+        assert_eq!(text(&salon::stand_spans(&stand(None, 0, 0, 0, 6))), "  −6");
+        assert_eq!(
+            text(&salon::stand_spans(&stand(None, 0, 0, 5, 6))),
+            "  +5 −6"
+        );
+        // An agent's branch name is cleaned and cut.
+        let long = salon::stand_spans(&stand(Some("a-very-long-branch-name\u{1b}[2J"), 0, 0, 0, 0));
+        assert_eq!(text(&long), "  ⎇ a-very-long-bra…");
+
+        // On a worker's row, after its cost; never on a leader's.
+        let mut app = idle_team(Lang::En);
+        let worker = app
+            .world
+            .agents
+            .iter()
+            .find(|a| a.role == Role::Worker)
+            .unwrap()
+            .id;
+        let row = |app: &App, id: AgentId| {
+            let line = salon::agent_line(app, &app.world.agents[id], "");
+            text(&line.spans)
+        };
+        app.world.agents[worker].stand = stand(None, 0, 0, 7, 2);
+        app.world.agents[worker].cost = 150;
+        let want = format!("{}  +7 −2", dollars(150));
+        assert!(row(&app, worker).ends_with(&want), "{}", row(&app, worker));
+        app.world.agents[0].stand = stand(None, 0, 0, 7, 2);
+        assert!(!row(&app, 0).contains("+7"), "{}", row(&app, 0));
+    }
+
+    #[test]
     fn before_you_go_lists_who_is_mid_turn_and_the_changes_not_reviewed() {
         let quiet = |projects| {
             let mut app = app_after(projects, 4, 0, Lang::En);
@@ -3254,6 +3313,10 @@ mod tests {
             "the frame closes under the last line"
         );
         assert_ne!(buf[(x, top + lines + 2)].symbol(), "│", "and no further");
+        assert!(
+            (top..top + lines).any(|y| row(y).contains("⎇ branch  ↑ own commits")),
+            "the legend says what a worker's row counts"
+        );
     }
 
     #[test]

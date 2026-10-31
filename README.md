@@ -194,7 +194,10 @@ your shell's title comes back when imece ends.
   attention colour and the journal says so once. Beside it the fleet:
   `● 2 working  ✓ 1 done  ✕ 1 stuck`. An agent that finished a turn you
   have not opened since shows `✓` and "done, not seen yet" on its row,
-  until you open it.
+  until you open it. A worker's row also says where its worktree stands:
+  `⎇ fix-parser ↑2 ↓1 +12 −3` is the branch an agent made (none while
+  detached), its own commits, the checkout's newer commits, and the lines
+  its next done would hand you, counted as they are written.
 - What imece knows is remembered between runs in one SQLite file
   (`$XDG_STATE_HOME/imece/imece.sqlite`, yours alone): projects, agents,
   cards and their stories, the journal, the inbox, mail that waits and the

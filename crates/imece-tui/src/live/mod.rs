@@ -31,7 +31,7 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use imece_agent::mcp::{Answer, Server, Tool};
 use imece_agent::{
@@ -220,6 +220,10 @@ const MAX_PATCH: usize = 4 << 20;
 
 /// The most output of one run that goes back to the agent, in bytes.
 const MAX_RUN_OUTPUT: usize = 48 << 10;
+/// How often a worker's row learns where its worktree stands while it or
+/// a helper of its works; between turns it learns at each turn's end.
+const STAND_EVERY: Duration = Duration::from_secs(15);
+
 /// Runs remembered with the tree they ran on, for the changes read after
 /// them (see [`Change::runs`]); the oldest go first.
 const RAN_KEEP: usize = 64;
@@ -279,6 +283,13 @@ enum GitJob {
         repo: PathBuf,
         path: PathBuf,
     },
+    /// Read where worker `agent`'s worktree `path` stands next to the
+    /// checkout `repo` (see [`worktree::stand`]).
+    Stand {
+        agent: AgentId,
+        repo: PathBuf,
+        path: PathBuf,
+    },
 }
 
 /// What a git job came to, back on the screen's loop.
@@ -301,6 +312,10 @@ enum GitDone {
         agent: AgentId,
         generation: u64,
         placed: io::Result<worktree::Placed>,
+    },
+    Stood {
+        agent: AgentId,
+        stand: io::Result<worktree::Stand>,
     },
 }
 
@@ -429,6 +444,12 @@ pub struct Live {
     /// moves its worktree to HEAD (see [`Live::follow`]); none when it
     /// is not moving.
     placing: Vec<Option<Vec<String>>>,
+    /// Whether git reads where each worker's worktree stands; `true`
+    /// when the worktree may have changed since that read was asked, so
+    /// another follows it.
+    standing: Vec<Option<bool>>,
+    /// When each worker's stand was last asked for.
+    stood_at: Vec<Option<Instant>>,
     /// Workers' and helpers' runs that ran on one tree from start to end,
     /// with that tree, oldest first, at most [`RAN_KEEP`]. They come from
     /// the runs' threads on `ran_back`, each before its run is answered,
@@ -641,6 +662,8 @@ impl Live {
             reading: Vec::new(),
             applying: Vec::new(),
             placing: Vec::new(),
+            standing: Vec::new(),
+            stood_at: Vec::new(),
             ran: VecDeque::new(),
             ran_tx,
             ran_back,
@@ -746,6 +769,7 @@ impl Live {
             }
         }
         self.take_git(w);
+        self.stand_busy(w, Instant::now());
         while let Ok((id, generation, e)) = self.rx.try_recv() {
             if generation != self.generation[id] {
                 continue;
@@ -845,6 +869,7 @@ impl Live {
                 }
             }
             if turn_done {
+                self.stand(w, id);
                 self.turns[id] = self.turns[id].saturating_sub(1);
                 if self.turns[id] == 0 && self.leaving[id] {
                     self.release(w, id);

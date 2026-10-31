@@ -252,10 +252,59 @@ pub fn change(path: &Path, max_patch: usize) -> io::Result<Option<Change>> {
 /// what it ran on. Read like [`change`], through an index file of its own
 /// for each call (runs are read while git reads a change).
 pub fn tree(path: &Path) -> io::Result<String> {
+    staged(path, &own_index("tree"), |_, tree| Ok(tree))
+}
+
+/// A name for an index file of imece's own no other call uses: reads of
+/// trees and stands run on several threads at once.
+fn own_index(what: &str) -> String {
     static NEXT: AtomicU64 = AtomicU64::new(0);
     let n = NEXT.fetch_add(1, Ordering::Relaxed);
-    let name = format!("imece-tree-{}-{n}", std::process::id());
-    staged(path, &name, |_, tree| Ok(tree))
+    format!("imece-{what}-{}-{n}", std::process::id())
+}
+
+/// Where a worktree stands next to the checkout, as a worker's row in the
+/// salon shows it.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Stand {
+    /// The branch it is on; none while it is detached, as imece makes it.
+    pub branch: Option<String>,
+    /// Commits of its own the checkout's HEAD does not have; imece's marks
+    /// of applied changes do not count (the checkout has those already).
+    pub ahead: u32,
+    /// Commits of the checkout's HEAD it does not have.
+    pub behind: u32,
+    /// Lines added and removed against its own HEAD, untracked files
+    /// included: what a done would hand the person now.
+    pub added: u32,
+    pub removed: u32,
+}
+
+/// Where the worktree at `path` stands next to the checkout `repo`. The
+/// lines are read like [`change`], through an index file of its own, so
+/// the agent's index is never touched; no patch is made.
+pub fn stand(repo: &Path, path: &Path) -> io::Result<Stand> {
+    let head = git(repo, &["rev-parse", "HEAD"])?;
+    let branch = git(path, &["symbolic-ref", "--quiet", "--short", "HEAD"])
+        .ok()
+        .filter(|b| !b.is_empty());
+    let own = git(path, &["log", "--format=%ae", &format!("{head}..HEAD")])?;
+    let ahead = own.lines().filter(|l| *l != IMECE_EMAIL).count();
+    let behind = git(path, &["rev-list", "--count", &format!("HEAD..{head}")])?;
+    let (added, removed) = staged(path, &own_index("stand"), |env, _| {
+        let stat = git_env(path, env, &["diff", "--cached", "--numstat", "HEAD"])?;
+        Ok(stat
+            .lines()
+            .filter_map(file_change)
+            .fold((0, 0), |(a, r), f| (a + f.added, r + f.removed)))
+    })?;
+    Ok(Stand {
+        branch,
+        ahead: u32::try_from(ahead).unwrap_or(u32::MAX),
+        behind: behind.parse().unwrap_or(0),
+        added,
+        removed,
+    })
 }
 
 /// Stages everything the worktree at `path` holds in an index file of
@@ -474,6 +523,15 @@ mod tests {
             std::fs::create_dir_all(&self).unwrap();
             self.canonicalize().unwrap()
         }
+    }
+
+    #[test]
+    fn each_own_index_has_a_name_no_other_call_uses() {
+        let (a, b) = (own_index("stand"), own_index("stand"));
+        assert_ne!(a, b, "two threads at once must not share an index");
+        let pid = std::process::id();
+        assert!(a.starts_with(&format!("imece-stand-{pid}-")), "{a}");
+        assert!(own_index("tree").starts_with("imece-tree-"));
     }
 
     #[test]
@@ -820,6 +878,55 @@ mod tests {
                 why: Why::Commits
             }
         );
+    }
+
+    #[test]
+    fn a_stand_counts_lines_and_own_commits_both_ways_and_names_a_branch() {
+        let s = repo("stand");
+        let r = &s.repo;
+        let w = ensure(r, &s.dir.join("wt"), "claude-1").unwrap().path;
+        assert_eq!(stand(r, &w).unwrap(), Stand::default(), "fresh: nothing");
+        // Two files, so a sum is told from a product or a difference.
+        std::fs::write(w.join("a.txt"), "x\ny\nz\n").unwrap();
+        std::fs::write(w.join("new.txt"), "1\n2\n3\n4\n5\n").unwrap();
+        assert_eq!(
+            stand(r, &w).unwrap(),
+            Stand {
+                added: 8,
+                removed: 1,
+                ..Stand::default()
+            },
+            "untracked lines count"
+        );
+        // imece's mark is not the worktree's own; the agent's commit is.
+        let c = change(&w, 1 << 20).unwrap().unwrap();
+        applied(&c, "applied").unwrap();
+        assert_eq!(stand(r, &w).unwrap(), Stand::default());
+        std::fs::write(w.join("mine.txt"), "m\n").unwrap();
+        commit(&w, "mine");
+        std::fs::write(r.join("b.txt"), "b").unwrap();
+        commit(r, "one");
+        commit(r, "two");
+        assert_eq!(
+            stand(r, &w).unwrap(),
+            Stand {
+                ahead: 1,
+                behind: 2,
+                ..Stand::default()
+            }
+        );
+        // The agent made a branch of its own.
+        git(&w, &["checkout", "--quiet", "-b", "fix-parser"]).unwrap();
+        assert_eq!(stand(r, &w).unwrap().branch.as_deref(), Some("fix-parser"));
+        // The agent's index is as it was, and imece's own index files go.
+        let git_dir = PathBuf::from(git(&w, &["rev-parse", "--absolute-git-dir"]).unwrap());
+        let left: Vec<_> = std::fs::read_dir(&git_dir)
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+            .filter(|n| n.starts_with("imece-"))
+            .collect();
+        assert!(left.is_empty(), "{left:?}");
+        assert!(stand(r, &s.dir.join("nowhere")).is_err());
     }
 
     #[test]

@@ -1,6 +1,6 @@
 //! A worker's change: read from its worktree on `done`, applied to
 //! the person's checkout or rejected, and the worktree following the
-//! checkout between turns.
+//! checkout between turns, and where each worker's worktree stands.
 
 use super::*;
 
@@ -51,6 +51,10 @@ pub(super) fn git_thread(jobs: Receiver<GitJob>, done: Sender<GitDone>) {
                 agent,
                 generation,
                 placed: worktree::place(&repo, &path),
+            },
+            GitJob::Stand { agent, repo, path } => GitDone::Stood {
+                agent,
+                stand: worktree::stand(&repo, &path),
             },
         };
         if done.send(out).is_err() {
@@ -132,6 +136,70 @@ impl Live {
                     generation,
                     placed,
                 } => self.placed(w, agent, generation, placed),
+                GitDone::Stood { agent, stand } => self.stood(w, agent, stand),
+            }
+        }
+    }
+
+    /// Has git read where worker `id`'s worktree stands, for its row; a
+    /// helper's worktree is its worker's. One read at a time per worker:
+    /// asked again meanwhile, another follows it, so the row ends with
+    /// what the worktree holds after the last ask.
+    pub(super) fn stand(&mut self, w: &World, id: AgentId) {
+        let a = &w.agents[id];
+        let id = match (a.role, a.parent) {
+            (Role::Worker, _) => id,
+            (Role::Helper, Some(worker)) => worker,
+            _ => return,
+        };
+        if let Some(again) = &mut self.standing[id] {
+            *again = true;
+            return;
+        }
+        let Some(path) = self.cwds[id].clone() else {
+            return;
+        };
+        let job = GitJob::Stand {
+            agent: id,
+            repo: self.places[w.agents[id].project].repo.clone(),
+            path,
+        };
+        if self.git.send(job).is_ok() {
+            self.standing[id] = Some(false);
+            self.stood_at[id] = Some(Instant::now());
+        }
+    }
+
+    /// Where git found worker `id`'s worktree; asked again meanwhile, it
+    /// reads it once more.
+    fn stood(&mut self, w: &mut World, id: AgentId, stand: io::Result<worktree::Stand>) {
+        let again = self.standing[id].take() == Some(true);
+        match stand {
+            Ok(s) => {
+                w.agents[id].stand = Stand {
+                    branch: s.branch,
+                    ahead: s.ahead,
+                    behind: s.behind,
+                    added: s.added,
+                    removed: s.removed,
+                };
+            }
+            Err(e) => w.agents[id].trace(w.tick, format!("stand: {e}")),
+        }
+        if again {
+            self.stand(w, id);
+        }
+    }
+
+    /// A worker that works, or whose helper works, learns where its
+    /// worktree stands every [`STAND_EVERY`] (as of `now`); its row
+    /// counts the lines as they are written.
+    pub(super) fn stand_busy(&mut self, w: &World, now: Instant) {
+        for a in w.agents.iter().filter(|a| a.role == Role::Worker) {
+            let busy = self.turns[a.id] > 0 || w.helpers_of(a.id).any(|h| self.turns[h.id] > 0);
+            let due = self.stood_at[a.id].is_none_or(|at| now.duration_since(at) >= STAND_EVERY);
+            if busy && due && self.standing[a.id].is_none() {
+                self.stand(w, a.id);
             }
         }
     }
@@ -254,6 +322,7 @@ impl Live {
         };
         self.changes.remove(&id);
         w.change_applied(id, mark.clone());
+        self.stand(w, id);
         self.notes[id].push(format!(
             "The person applied your change ({title}) to their checkout. Your worktree is \
              committed at {mark} as a mark of that; your files are as you left them. \
@@ -333,6 +402,7 @@ impl Live {
             Ok(_) => {}
             Err(e) => w.agents[id].trace(w.tick, format!("worktree: {e}")),
         }
+        self.stand(w, id);
         for text in self.placing[id].take().unwrap_or_default() {
             let Slot::Running(s) = &mut self.slots[id] else {
                 return;
@@ -922,6 +992,136 @@ mod tests {
         assert_eq!(moved(&w), 2);
         assert_eq!(w.agents[1].status, Status::Stopped);
         assert!(matches!(live.slots[1], Slot::None));
+        let _ = std::fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&repo);
+    }
+
+    #[test]
+    fn a_worker_s_row_learns_where_its_worktree_stands() {
+        let repo = checkout("stand-repo");
+        let root = trees("stand");
+        let mut w = team(2);
+        w.agents[2].role = Role::Helper;
+        w.agents[2].parent = Some(1);
+        let mut live = Live::new(
+            3,
+            claude_at("/nonexistent/claude"),
+            repo.clone(),
+            root.clone(),
+        );
+        let tree = worker_in(&mut live, &mut w, 1, &repo, &root);
+        assert_eq!(live.standing[1], Some(false), "as its session starts");
+        settle(&mut live, &mut w);
+        assert_eq!(w.agents[1].stand, Stand::default());
+        // A helper's turn ends: its worker's row counts what it wrote.
+        std::fs::write(tree.join("new.txt"), "1\n2\n").unwrap();
+        live.turns[2] = 1;
+        live.tx
+            .send((
+                2,
+                live.generation[2],
+                AgentEvent::TurnDone {
+                    ok: true,
+                    text: String::new(),
+                    cost: 0,
+                    denied: 0,
+                },
+            ))
+            .unwrap();
+        live.step(&mut w);
+        settle(&mut live, &mut w);
+        assert_eq!(
+            w.agents[1].stand,
+            Stand {
+                added: 2,
+                ..Stand::default()
+            }
+        );
+        assert_eq!(w.agents[2].stand, Stand::default(), "the helper has none");
+        // A leader has no worktree to count, even in a directory.
+        live.cwds[0] = Some(repo.clone());
+        live.stand(&w, 0);
+        assert_eq!(live.standing[0], None);
+
+        // Asked again while git reads: once more after, never lost.
+        live.stand(&w, 2);
+        assert_eq!(live.standing[1], Some(false));
+        live.stand(&w, 1);
+        assert_eq!(live.standing[1], Some(true));
+        settle(&mut live, &mut w);
+        live.standing[1] = Some(true);
+        let read = worktree::Stand {
+            branch: Some("fix".into()),
+            ahead: 1,
+            behind: 2,
+            added: 3,
+            removed: 4,
+        };
+        live.stood(&mut w, 1, Ok(read));
+        assert_eq!(
+            w.agents[1].stand,
+            Stand {
+                branch: Some("fix".into()),
+                ahead: 1,
+                behind: 2,
+                added: 3,
+                removed: 4,
+            }
+        );
+        assert_eq!(live.standing[1], Some(false), "read once more");
+        settle(&mut live, &mut w);
+        assert_eq!(w.agents[1].stand.added, 2);
+        live.standing[1] = Some(false);
+        live.stood(&mut w, 1, Err(io::Error::other("boom")));
+        assert_eq!(live.standing[1], None);
+        assert_eq!(w.agents[1].stand.added, 2, "a failed read keeps the last");
+        assert!(
+            w.agents[1].trace.iter().any(|l| l.ends_with("stand: boom")),
+            "{:?}",
+            w.agents[1].trace
+        );
+
+        // While it or a helper works, every STAND_EVERY; between turns,
+        // at the turn's end only.
+        let now = Instant::now();
+        live.stood_at[1] = Some(now - STAND_EVERY);
+        live.stand_busy(&w, now);
+        assert_eq!(live.standing[1], None, "between turns");
+        live.turns[2] = 1;
+        live.stood_at[1] = Some(now - STAND_EVERY + Duration::from_millis(1));
+        live.stand_busy(&w, now);
+        assert_eq!(live.standing[1], None, "not yet");
+        live.stood_at[1] = Some(now - STAND_EVERY);
+        live.stand_busy(&w, now);
+        assert_eq!(live.standing[1], Some(false), "its helper works");
+        live.stand_busy(&w, now);
+        assert_eq!(
+            live.standing[1],
+            Some(false),
+            "one read under way is enough"
+        );
+        settle(&mut live, &mut w);
+        live.turns[2] = 0;
+        live.turns[1] = 1;
+        live.stood_at[1] = None;
+        live.step(&mut w);
+        assert_eq!(
+            live.standing[1],
+            Some(false),
+            "it works, never read: each step looks"
+        );
+        settle(&mut live, &mut w);
+
+        // After an apply and after git placed the worktree.
+        live.applied(&mut w, 1, "t", Ok(()), Ok("abc1234".into()));
+        assert_eq!(live.standing[1], Some(false), "applied");
+        settle(&mut live, &mut w);
+        let generation = live.generation[1];
+        live.placed(&mut w, 1, generation + 1, Ok(worktree::Placed::AtHead));
+        assert_eq!(live.standing[1], None, "a session that ended hears nothing");
+        live.placed(&mut w, 1, generation, Ok(worktree::Placed::AtHead));
+        assert_eq!(live.standing[1], Some(false), "placed");
+        settle(&mut live, &mut w);
         let _ = std::fs::remove_dir_all(&root);
         let _ = std::fs::remove_dir_all(&repo);
     }

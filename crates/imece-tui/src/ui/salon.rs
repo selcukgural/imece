@@ -388,6 +388,9 @@ pub(super) fn agent_line(app: &App, a: &Agent, prefix: &'static str) -> Line<'st
     if a.cost > 0 {
         spans.push(Span::styled(format!("  {}", dollars(a.cost)), dim()));
     }
+    if a.role == Role::Worker {
+        spans.extend(stand_spans(&a.stand));
+    }
     let helpers = w.helpers_of(a.id).count();
     if helpers > 0 {
         // Its helpers are under it, or folded away: the mark says which.
@@ -415,6 +418,38 @@ pub(super) fn agent_line(app: &App, a: &Agent, prefix: &'static str) -> Line<'st
     } else {
         line
     }
+}
+
+/// Where a worker's worktree stands, `  ⎇ fix-parser ↑2 ↓1 +12 −3`: the
+/// branch an agent put it on, its own commits the checkout lacks, the
+/// checkout's it lacks, and the lines a done would hand over now. Each
+/// part only when there is something to say; nothing for a worktree at
+/// the checkout's HEAD with nothing written.
+pub(super) fn stand_spans(s: &Stand) -> Vec<Span<'static>> {
+    let mut parts = Vec::new();
+    if let Some(b) = &s.branch {
+        // The agent named it: cleaned, and cut where it would push the
+        // rest off the row.
+        parts.push(Span::styled(format!("⎇ {}", fit(b, 16).trim_end()), dim()));
+    }
+    if s.ahead > 0 {
+        parts.push(Span::styled(format!("↑{}", s.ahead), fg(pal().info)));
+    }
+    if s.behind > 0 {
+        parts.push(Span::styled(format!("↓{}", s.behind), fg(pal().warn)));
+    }
+    if s.added > 0 {
+        parts.push(Span::styled(format!("+{}", s.added), fg(pal().ok)));
+    }
+    if s.removed > 0 {
+        parts.push(Span::styled(format!("−{}", s.removed), fg(pal().bad)));
+    }
+    let mut spans = Vec::with_capacity(parts.len() * 2);
+    for (i, p) in parts.into_iter().enumerate() {
+        spans.push(Span::raw(if i == 0 { "  " } else { " " }));
+        spans.push(p);
+    }
+    spans
 }
 
 fn queue_line(app: &App) -> Line<'static> {

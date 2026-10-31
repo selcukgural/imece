@@ -288,6 +288,7 @@ pub(super) fn settle(live: &mut Live, w: &mut World) {
         if live.reading.iter().all(|&n| n == 0)
             && !live.applying.contains(&true)
             && live.placing.iter().all(Option::is_none)
+            && live.standing.iter().all(Option::is_none)
         {
             return;
         }
