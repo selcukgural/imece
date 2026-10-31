@@ -191,7 +191,10 @@ your shell's title comes back when imece ends.
   on its own cannot pass it either.
   The header shows what the last ten minutes cost per hour and how long
   the pot lasts at that rate; with under half an hour left it turns the
-  attention colour and the journal says so once.
+  attention colour and the journal says so once. Beside it the fleet:
+  `● 2 working  ✓ 1 done  ✕ 1 stuck`. An agent that finished a turn you
+  have not opened since shows `✓` and "done, not seen yet" on its row,
+  until you open it.
 - What imece knows is remembered between runs in one SQLite file
   (`$XDG_STATE_HOME/imece/imece.sqlite`, yours alone): projects, agents,
   cards and their stories, the journal, the inbox, mail that waits and the
