@@ -526,6 +526,15 @@ mod tests {
     }
 
     #[test]
+    fn each_own_index_has_a_name_no_other_call_uses() {
+        let (a, b) = (own_index("stand"), own_index("stand"));
+        assert_ne!(a, b, "two threads at once must not share an index");
+        let pid = std::process::id();
+        assert!(a.starts_with(&format!("imece-stand-{pid}-")), "{a}");
+        assert!(own_index("tree").starts_with("imece-tree-"));
+    }
+
+    #[test]
     fn names_never_become_paths() {
         for bad in ["", "../x", "a/b", "-rf", "A", "x y", "é", &"a".repeat(41)] {
             assert!(!valid_name(bad), "{bad:?}");
