@@ -79,6 +79,8 @@ pub struct Text {
     pub budget: &'static str,
     pub researchers: &'static str,
     pub waiting_for_you: &'static str,
+    /// The terminal's title while something waits for the person.
+    pub title_waiting: &'static str,
     pub paused: &'static str,
     // Footer
     pub write_lead: &'static str,
@@ -350,6 +352,7 @@ pub const EN: Text = Text {
     budget: "spent {} of {}",
     researchers: "researchers {}/{}",
     waiting_for_you: " ! {} waiting for you ",
+    title_waiting: "imece · {} waiting",
     paused: " ‖ PAUSED ",
     write_lead: "write to the lead",
     to_agent: "to an agent",
@@ -681,6 +684,7 @@ pub const TR: Text = Text {
     budget: "{} / {} harcandı",
     researchers: "araştırmacı {}/{}",
     waiting_for_you: " ! {} seni bekliyor ",
+    title_waiting: "imece · {} seni bekliyor",
     paused: " ‖ DURDU ",
     write_lead: "lidere yaz",
     to_agent: "agent'a",
