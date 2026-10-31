@@ -207,6 +207,13 @@ pub struct App {
     pub folded_workers: BTreeSet<AgentId>,
     /// Position in the open inbox items.
     pub inbox_sel: usize,
+    /// Inbox items the person put off with `S`, in the order they were put
+    /// off: `W` comes to them after everything else. Kept for this run
+    /// only.
+    pub deferred: Vec<usize>,
+    /// The item `W` or `S` last opened, so the next `W` goes on after it
+    /// even when opening it closed it (a reply is read when opened).
+    pub waiting_at: Option<usize>,
     /// The first patch line the open change shows.
     pub diff_scroll: usize,
     /// Rows the last drawing of a change had, for paging.
@@ -286,6 +293,8 @@ impl App {
             collapsed,
             folded_workers: BTreeSet::new(),
             inbox_sel: 0,
+            deferred: Vec::new(),
+            waiting_at: None,
             diff_scroll: 0,
             diff_page: Cell::new(10),
             journal_sel: None,
@@ -563,6 +572,10 @@ impl App {
             KeyCode::Tab | KeyCode::Char(']') if self.pane_keys() => self.cycle_pane(true),
             KeyCode::BackTab | KeyCode::Char('[') if self.pane_keys() => self.cycle_pane(false),
             KeyCode::Char('w') if self.pane_keys() => self.pane = Pane::Inbox,
+            // From anywhere: what waits for the person, one item after
+            // the other; `S` puts this one off first.
+            KeyCode::Char('W') => self.next_waiting(false),
+            KeyCode::Char('S') => self.next_waiting(true),
             // `,` and `.` are the same keys without shift.
             KeyCode::Char('<') | KeyCode::Char(',') => self.resize(true),
             KeyCode::Char('>') | KeyCode::Char('.') => self.resize(false),
@@ -642,6 +655,72 @@ impl App {
             _ => return None,
         };
         self.world.helpers_of(worker).next().map(|_| worker)
+    }
+
+    /// Where open inbox item `i` comes in `W`'s order: the items not put
+    /// off first, oldest first, then the ones put off, in the order they
+    /// were.
+    fn waiting_rank(&self, i: usize) -> (usize, usize) {
+        match self.deferred.iter().position(|&d| d == i) {
+            None => (0, i),
+            Some(n) => (1, n),
+        }
+    }
+
+    /// The inbox item the person has at hand: the one `W` last opened,
+    /// open or closed since (opening a reply reads it, an answer closes
+    /// it, and the panel's selection slides onto the next row when an item
+    /// above it closes), else the one selected in the waiting panel.
+    /// Moving the selection by hand forgets what `W` opened.
+    fn waiting_at_hand(&self) -> Option<usize> {
+        let selected = || match self.pane {
+            Pane::Inbox => self.inbox_rows().get(self.inbox_sel).copied(),
+            _ => None,
+        };
+        self.waiting_at.or_else(selected)
+    }
+
+    /// The first open item whose place in `W`'s order comes after
+    /// `after`, or the first one when none does (or `after` is none).
+    fn waiting_after(&self, after: Option<(usize, usize)>) -> Option<usize> {
+        let open = self.world.open_inbox();
+        let first =
+            |items: &mut dyn Iterator<Item = usize>| items.min_by_key(|&i| self.waiting_rank(i));
+        first(
+            &mut open
+                .iter()
+                .copied()
+                .filter(|&i| after.is_none_or(|a| self.waiting_rank(i) > a)),
+        )
+        .or_else(|| first(&mut open.iter().copied()))
+    }
+
+    /// `W`: from wherever the person is, the next item waiting for them,
+    /// selected in the salon's waiting panel and opened as `enter` opens
+    /// it. With `defer` (`S`) the item at hand is put off first: it goes
+    /// after everything else.
+    fn next_waiting(&mut self, defer: bool) {
+        let at = self.waiting_at_hand();
+        // Where it was before it was put off: what came after it then
+        // comes next.
+        let after = at.map(|i| self.waiting_rank(i));
+        let open = |i: usize| self.world.inbox.get(i).is_some_and(|x| x.open);
+        if defer && let Some(i) = at.filter(|&i| open(i)) {
+            self.deferred.retain(|&d| d != i && open(d));
+            self.deferred.push(i);
+        }
+        let Some(i) = self.waiting_after(after) else {
+            self.flash(self.lang.text().nothing_needed);
+            return;
+        };
+        self.card = None;
+        self.thread = None;
+        self.view = View::Salon;
+        self.zoom = Zoom::None;
+        self.pane = Pane::Inbox;
+        self.inbox_sel = self.inbox_rows().iter().position(|&o| o == i).unwrap_or(0);
+        self.waiting_at = Some(i);
+        self.deeper();
     }
 
     /// Panels cycle only on the salon, outside a focus.
@@ -728,6 +807,7 @@ impl App {
                 }
             }
             Pane::Inbox => {
+                self.waiting_at = None;
                 let n = self.inbox_rows().len();
                 self.inbox_sel = if first { 0 } else { n.saturating_sub(1) };
             }
@@ -1441,6 +1521,8 @@ impl App {
         match self.pane {
             Pane::Journal => self.select_journal(Some(down)),
             Pane::Inbox => {
+                // The person picks: `W` goes on from what they picked.
+                self.waiting_at = None;
                 let n = self.inbox_rows().len();
                 if n > 0 {
                     self.inbox_sel = if down {
@@ -2298,6 +2380,158 @@ mod tests {
     }
 
     /// The demo after a while, its cards on the board.
+    /// A demo team at its start whose inbox holds only `kinds`, one item
+    /// each, oldest first, item `n` from agent `n + 1`.
+    fn waiting(kinds: &[InboxKind]) -> App {
+        let mut app = App::new(1, 4, 0, 1, Lang::En);
+        app.world.inbox.clear();
+        for (n, &kind) in kinds.iter().enumerate() {
+            app.world.inbox.push(InboxItem {
+                kind,
+                agent: n + 1,
+                detail: format!("item {n}"),
+                researcher: None,
+                open: true,
+                tick: n as u64,
+                card: None,
+            });
+        }
+        app
+    }
+
+    /// Presses `c` and says which inbox item is open and selected.
+    fn press(app: &mut App, c: char) -> Option<usize> {
+        app.on_key(key(KeyCode::Char(c)));
+        assert_eq!((app.view, app.pane), (View::Salon, Pane::Inbox));
+        let at = app.waiting_at?;
+        assert_eq!(
+            app.zoom,
+            Zoom::Focus(app.world.inbox[at].agent),
+            "opened as enter opens it"
+        );
+        Some(at)
+    }
+
+    #[test]
+    fn capital_w_opens_what_waits_one_after_the_other_from_anywhere() {
+        let mut app = with_cards(1);
+        app.world.inbox.clear();
+        for n in 0..3 {
+            app.world.inbox.push(InboxItem {
+                kind: InboxKind::Sensitive,
+                agent: n + 1,
+                detail: format!("item {n}"),
+                researcher: None,
+                open: true,
+                tick: n as u64,
+                card: None,
+            });
+        }
+        // A card's screen, the board, a conversation and a raw stream.
+        app.open_card(0);
+        app.view = View::Board;
+        app.zoom = Zoom::Trace(0);
+        app.thread = Some(Thread {
+            entries: vec![0],
+            sel: 0,
+            scroll: Cell::new(0),
+            follow: Cell::new(false),
+            page: Cell::new(10),
+        });
+        assert_eq!(press(&mut app, 'W'), Some(0));
+        assert!(app.card.is_none() && app.thread.is_none());
+        assert_eq!(app.inbox_sel, 0);
+        assert_eq!(press(&mut app, 'W'), Some(1));
+        assert_eq!(app.inbox_sel, 1);
+        assert_eq!(press(&mut app, 'W'), Some(2));
+        assert_eq!(app.inbox_sel, 2);
+        assert_eq!(press(&mut app, 'W'), Some(0), "round again");
+        assert_eq!(app.inbox_sel, 0);
+    }
+
+    #[test]
+    fn capital_s_puts_the_item_off_and_w_comes_to_it_after_the_rest() {
+        let mut app = waiting(&[InboxKind::Sensitive; 4]);
+        assert_eq!(press(&mut app, 'W'), Some(0));
+        assert_eq!(press(&mut app, 'W'), Some(1));
+        assert_eq!(press(&mut app, 'S'), Some(2), "1 put off, the next open");
+        assert_eq!(app.deferred, [1]);
+        assert_eq!(press(&mut app, 'W'), Some(3));
+        assert_eq!(press(&mut app, 'W'), Some(1), "what was put off comes last");
+        assert_eq!(press(&mut app, 'S'), Some(0), "put off again, round");
+        assert_eq!(app.deferred, [1]);
+        assert_eq!(press(&mut app, 'S'), Some(2));
+        assert_eq!(app.deferred, [1, 0], "in the order they were put off");
+        assert_eq!(press(&mut app, 'W'), Some(3));
+        assert_eq!(press(&mut app, 'W'), Some(1), "not by age");
+        assert_eq!(press(&mut app, 'W'), Some(0));
+        assert_eq!(press(&mut app, 'W'), Some(2));
+        // What was put off and closed since is forgotten.
+        app.world.inbox[1].open = false;
+        assert_eq!(press(&mut app, 'S'), Some(3));
+        assert_eq!(app.deferred, [0, 2]);
+    }
+
+    #[test]
+    fn capital_w_goes_on_after_what_it_opened_or_what_the_person_picked() {
+        use InboxKind::{Reply, Sensitive};
+        // A reply is read when opened: W goes on after it all the same.
+        let mut app = waiting(&[Reply, Sensitive, Sensitive, Sensitive]);
+        app.on_key(key(KeyCode::Char('W')));
+        assert!(!app.world.inbox[0].open, "read");
+        assert_eq!(app.waiting_at, Some(0));
+        assert_eq!(press(&mut app, 'W'), Some(1));
+        // Put off: nothing closed is put off.
+        let mut app = waiting(&[Reply, Sensitive, Sensitive, Sensitive]);
+        app.on_key(key(KeyCode::Char('W')));
+        assert_eq!(press(&mut app, 'S'), Some(1));
+        assert!(app.deferred.is_empty(), "{:?}", app.deferred);
+        // The person picks another row by hand: W goes on from there.
+        let mut app = waiting(&[Reply, Sensitive, Sensitive, Sensitive]);
+        app.on_key(key(KeyCode::Char('W')));
+        app.on_key(key(KeyCode::Char('j')));
+        assert_eq!(app.waiting_at, None);
+        assert_eq!(press(&mut app, 'W'), Some(3), "after the picked 2");
+        let mut app = waiting(&[Reply, Sensitive, Sensitive, Sensitive]);
+        app.on_key(key(KeyCode::Char('W')));
+        app.on_key(key(KeyCode::Char('G')));
+        assert_eq!(app.waiting_at, None);
+        app.on_key(key(KeyCode::Char('g')));
+        app.on_key(key(KeyCode::Char('g')));
+        assert_eq!(press(&mut app, 'W'), Some(2), "after the picked 1");
+        // The person looked elsewhere: W goes on after what it opened, not
+        // after a selection the waiting panel no longer has in hand.
+        let mut app = waiting(&[Sensitive; 4]);
+        app.on_key(key(KeyCode::Char('W')));
+        app.on_key(key(KeyCode::Char('W')));
+        app.zoom = Zoom::None;
+        app.pane = Pane::Journal;
+        app.inbox_sel = 2;
+        assert_eq!(press(&mut app, 'W'), Some(2), "after 1, not after 2");
+        // Nothing at hand: the first.
+        let mut app = waiting(&[Sensitive; 3]);
+        app.inbox_sel = 2;
+        assert_eq!(press(&mut app, 'W'), Some(0));
+    }
+
+    #[test]
+    fn capital_w_with_nothing_waiting_says_so_and_stays() {
+        let mut app = waiting(&[InboxKind::Sensitive]);
+        app.world.inbox[0].open = false;
+        app.view = View::Board;
+        for c in ['W', 'S'] {
+            app.on_key(key(KeyCode::Char(c)));
+            assert_eq!(
+                (app.view, app.pane, app.zoom),
+                (View::Board, Pane::Salon, Zoom::None)
+            );
+            let said = app.flash.as_ref().map(|(m, _)| m.as_str());
+            assert_eq!(said, Some(Lang::En.text().nothing_needed));
+            app.flash = None;
+        }
+        assert!(app.deferred.is_empty());
+    }
+
     fn with_cards(projects: usize) -> App {
         let mut app = App::new(projects, 4, 4, 7, Lang::En);
         for _ in 0..140 * projects {
