@@ -302,7 +302,8 @@ not yet seen.
 4. **An attention budget:** only decisions that need you reach the inbox;
    calm agents fold into one line.
 5. **Coming back is cheap:** after a pause, the first key shows what happened
-   while you were away.
+   while you were away; back in the terminal after a few minutes in
+   another window, it shows at once, without a key.
 
 ## Security
 
