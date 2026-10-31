@@ -523,11 +523,17 @@ fn run(
             app.paste(text);
         }
         // Back in the window: the terminal's theme may have turned light
-        // or dark meanwhile, and `terminal` follows it.
+        // or dark meanwhile, and `terminal` follows it; after a few
+        // minutes away, what happened shows at once.
         if let Some(Event::FocusGained) = &event
             && let Some(back) = probe::colours_again()
         {
             theme::follow(back);
+        }
+        match &event {
+            Some(Event::FocusGained) => app.focus(true, Instant::now()),
+            Some(Event::FocusLost) => app.focus(false, Instant::now()),
+            _ => {}
         }
         if let Some(Event::Key(k)) = event
             && k.kind == KeyEventKind::Press

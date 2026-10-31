@@ -151,6 +151,7 @@ record in the same PR.
 - 49 `diff-notes`: `c` notes the top line of a change (`App::diff_notes`, by patch hash), `n` sends them in one message (`ui::notes_message`, `ui::place` file:line, `−N` removed) and the change goes back like a reject; the top row is the line at hand.
 - 50 `partial-apply`: `x` chooses hunks (`App::chosen`), `a` applies only them: `worktree::subset` + `worktree::part` (the part's tree through an index of its own), the worktree marked with only that part, the rest read again as a new Δ; the demo mirrors it.
 - 51 `back-key`: `^o` goes back through the places left (`App::been`, `Place` = view, zoom, pane, card; recorded in `on_key` when a key moved the person, 50 kept), passing over places gone; closes a conversation first.
+- 52 `focus-brief`: back in the terminal after `FOCUS_AWAY` (3 min) in another window, the away digest shows at once (`App::focus`, from the journal since the blur, no model), not over writing or another window.
 
 `docs/neighbours.md`: voff, what was taken from it and the rules that come
 from what it lacks. Read it before building a part it names.

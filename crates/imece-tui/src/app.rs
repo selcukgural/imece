@@ -28,6 +28,9 @@ pub enum Engine {
 
 /// After this long without a key, the next key first shows what happened.
 const AWAY: Duration = Duration::from_secs(20);
+/// After this long in another window, coming back shows what happened at
+/// once, without waiting for a key.
+pub const FOCUS_AWAY: Duration = Duration::from_secs(180);
 /// How long a short notice stays in the bottom line.
 pub const FLASH: Duration = Duration::from_secs(3);
 
@@ -349,6 +352,8 @@ pub struct App {
     pub shown: RefCell<Vec<Sel>>,
     last_key: Instant,
     last_key_tick: u64,
+    /// When the terminal lost the focus, and the tick then.
+    blurred: Option<(Instant, u64)>,
 }
 
 impl App {
@@ -424,6 +429,7 @@ impl App {
             shown: RefCell::new(Vec::new()),
             last_key: Instant::now(),
             last_key_tick: 0,
+            blurred: None,
         }
     }
 
@@ -2027,6 +2033,30 @@ impl App {
             self.pane = Pane::Inbox;
         }
         self.inbox_sel = self.inbox_sel.min(open.saturating_sub(1));
+    }
+
+    /// The terminal lost the focus (`gained` false) at `now`, or got it
+    /// back: after [`FOCUS_AWAY`] or more, what happened meanwhile shows
+    /// at once, as after a key past [`AWAY`] (built from the journal, no
+    /// model asked). Not over what the person is writing or another
+    /// window.
+    pub fn focus(&mut self, gained: bool, now: Instant) {
+        if !gained {
+            self.blurred = Some((now, self.world.tick));
+            return;
+        }
+        let Some((at, tick)) = self.blurred.take() else {
+            return;
+        };
+        let busy = self.typing
+            || self.help
+            || self.leaving
+            || self.digest.is_some()
+            || self.left_off.is_some();
+        if busy || now.duration_since(at) < FOCUS_AWAY {
+            return;
+        }
+        self.digest = Digest::since(&self.world, tick);
     }
 
     /// Where the person is now.
@@ -4403,6 +4433,55 @@ mod tests {
         assert!(!th.follow.get());
         assert_eq!(flashed(&app).as_deref(), Some(app.lang.text().no_marks));
         assert_eq!(app.pane, Pane::Salon, "the journal is not where it went");
+    }
+
+    #[test]
+    fn coming_back_after_minutes_away_shows_what_happened_at_once() {
+        let mut app = App::new(1, 1, 0, 1, Lang::En);
+        let t0 = Instant::now();
+        let away = |app: &mut App, secs: u64| {
+            app.focus(false, t0);
+            app.world.tick += 1;
+            app.world.note(Event::Failed { agent: 0 });
+            app.focus(true, t0 + Duration::from_secs(secs));
+        };
+        // Not long enough: nothing, and the blur is forgotten.
+        away(&mut app, 179);
+        assert!(app.digest.is_none() && app.blurred.is_none());
+        // Three minutes: what happened since the blur.
+        away(&mut app, 180);
+        let d = app.digest.take().expect("a digest");
+        assert_eq!(d.highlights.len(), 1, "only what came after leaving");
+        // Focus back without a blur first: nothing.
+        app.focus(true, t0 + Duration::from_secs(999));
+        assert!(app.digest.is_none());
+        // Nothing new: nothing to tell.
+        app.focus(false, t0);
+        app.focus(true, t0 + Duration::from_secs(999));
+        assert!(app.digest.is_none());
+        // Not over writing or another window.
+        for busy in [
+            |a: &mut App| a.typing = true,
+            |a: &mut App| a.help = true,
+            |a: &mut App| a.leaving = true,
+            |a: &mut App| a.left_off = Some(LeftOff::default()),
+        ] {
+            let mut app = App::new(1, 1, 0, 1, Lang::En);
+            busy(&mut app);
+            away(&mut app, 999);
+            assert!(app.digest.is_none());
+        }
+        let mut app = App::new(1, 1, 0, 1, Lang::En);
+        app.digest = Some(Digest {
+            minutes: 42,
+            ..Digest::default()
+        });
+        away(&mut app, 999);
+        assert_eq!(
+            app.digest.as_ref().unwrap().minutes,
+            42,
+            "the one open stays"
+        );
     }
 
     #[test]
