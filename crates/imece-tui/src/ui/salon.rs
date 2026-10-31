@@ -349,7 +349,12 @@ fn project_line(app: &App, p: ProjectId) -> Line<'static> {
 
 pub(super) fn agent_line(app: &App, a: &Agent, prefix: &'static str) -> Line<'static> {
     let w = &app.world;
-    let (g, color) = glyph(a);
+    let done = app.done_unseen(a.id);
+    let (g, color) = match glyph(a) {
+        // A leader is always a leader.
+        (_, _) if done && a.role != Role::Leader => ("✓", pal().ok),
+        other => other,
+    };
     let mut spans = vec![
         Span::styled(prefix, dim()),
         Span::styled(format!("{g} "), fg(color)),
@@ -375,7 +380,11 @@ pub(super) fn agent_line(app: &App, a: &Agent, prefix: &'static str) -> Line<'st
         }
     }
     spans.push(Span::raw(" "));
-    spans.extend(status_spans(app.lang, w, a));
+    if done {
+        spans.push(Span::styled(app.lang.text().done_unseen, fg(pal().ok)));
+    } else {
+        spans.extend(status_spans(app.lang, w, a));
+    }
     if a.cost > 0 {
         spans.push(Span::styled(format!("  {}", dollars(a.cost)), dim()));
     }

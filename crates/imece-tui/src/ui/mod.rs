@@ -847,6 +847,41 @@ pub(crate) fn status_spans(lang: Lang, w: &World, a: &Agent) -> Vec<Span<'static
     }
 }
 
+/// The fleet at a glance: how many agents are mid-turn, done and not
+/// seen, stuck (blocked, or their session stopped); counts of none are
+/// left out, and with none at all it says all are idle.
+pub(crate) fn fleet(app: &App) -> Vec<Span<'static>> {
+    let w = &app.world;
+    let t = app.lang.text();
+    let here = || w.agents.iter().filter(|a| !a.gone);
+    let counts = [
+        (t.fleet_working, w.mid_turn().len(), pal().ok),
+        (
+            t.fleet_done,
+            here().filter(|a| app.done_unseen(a.id)).count(),
+            pal().ok,
+        ),
+        (
+            t.fleet_stuck,
+            here()
+                .filter(|a| matches!(a.status, Status::Blocked | Status::Stopped))
+                .count(),
+            pal().bad,
+        ),
+    ];
+    let mut spans = Vec::new();
+    for (words, n, colour) in counts.into_iter().filter(|c| c.1 > 0) {
+        if !spans.is_empty() {
+            spans.push(Span::raw("  "));
+        }
+        spans.push(Span::styled(fill(words, &[&n.to_string()]), fg(colour)));
+    }
+    if spans.is_empty() {
+        spans.push(Span::styled(t.fleet_idle, dim()));
+    }
+    spans
+}
+
 fn header(f: &mut Frame, area: Rect, app: &App) {
     let w = &app.world;
     let t = app.lang.text();
@@ -861,10 +896,8 @@ fn header(f: &mut Frame, area: Rect, app: &App) {
         )));
         spans.push(sep());
     }
-    spans.extend([
-        Span::raw(fill(t.agents_working, &[&w.active_agents().to_string()])),
-        sep(),
-    ]);
+    spans.extend(fleet(app));
+    spans.push(sep());
     let mut rate = fill(t.per_hour, &[&dollars(w.rate_per_hour())]);
     if let Some(minutes) = w.pot_lasts() {
         rate += ", ";
@@ -1859,6 +1892,88 @@ mod tests {
             line.spans.last().unwrap().content,
             " · ✗ bu ağaçta başarısız: cargo clippy, make"
         );
+    }
+
+    /// A demo team at its start, everyone idle and nothing waiting.
+    fn idle_team(lang: Lang) -> App {
+        let mut app = app_after(1, 4, 0, lang);
+        app.world.inbox.clear();
+        for a in &mut app.world.agents {
+            a.status = Status::Idle;
+        }
+        app
+    }
+
+    #[test]
+    fn the_fleet_counts_who_works_who_is_done_unseen_and_who_is_stuck() {
+        let text =
+            |app: &App| -> String { fleet(app).iter().map(|s| s.content.as_ref()).collect() };
+        let mut app = idle_team(Lang::En);
+        assert_eq!(text(&app), "all idle");
+        assert_eq!(fleet(&app)[0].style, dim());
+        app.world.agents[0].status = Status::Working;
+        app.world.agents[1].status = Status::Researching {
+            for_agent: 0,
+            until: 9,
+        };
+        assert_eq!(text(&app), "● 2 working");
+        assert_eq!(fleet(&app)[0].style, fg(pal().ok));
+        app.unseen.insert(2);
+        assert_eq!(text(&app), "● 2 working  ✓ 1 done");
+        assert_eq!(fleet(&app)[2].style, fg(pal().ok));
+        app.world.agents[3].status = Status::Blocked;
+        app.world.agents[4].status = Status::Stopped;
+        assert_eq!(text(&app), "● 2 working  ✓ 1 done  ✕ 2 stuck");
+        assert_eq!(fleet(&app)[4].style, fg(pal().bad));
+        // What is gone is not counted, done or stuck.
+        app.world.agents[4].gone = true;
+        app.world.agents[2].gone = true;
+        assert_eq!(text(&app), "● 2 working  ✕ 1 stuck");
+        app.world.agents[0].status = Status::Idle;
+        app.world.agents[1].status = Status::Idle;
+        assert_eq!(text(&app), "✕ 1 stuck", "no separator before the first");
+        app.lang = Lang::Tr;
+        app.world.agents[0].status = Status::Working;
+        assert_eq!(text(&app), "● 1 çalışıyor  ✕ 1 takıldı");
+        let s = render(&app, 160, 30);
+        assert!(
+            s.contains("● 1 çalışıyor  ✕ 1 takıldı"),
+            "in the header: {s}"
+        );
+    }
+
+    #[test]
+    fn a_row_done_and_not_seen_says_so_and_a_leader_keeps_its_mark() {
+        let mut app = idle_team(Lang::En);
+        let worker = app
+            .world
+            .agents
+            .iter()
+            .find(|a| a.role == Role::Worker)
+            .unwrap()
+            .id;
+        let row = |app: &App, id: AgentId| salon::agent_line(app, &app.world.agents[id], "");
+        let text =
+            |line: &Line| -> String { line.spans.iter().map(|s| s.content.as_ref()).collect() };
+        assert_eq!(row(&app, worker).spans[1].content, "○ ");
+        app.unseen.insert(worker);
+        let line = row(&app, worker);
+        assert_eq!(
+            (line.spans[1].content.as_ref(), line.spans[1].style),
+            ("✓ ", fg(pal().ok))
+        );
+        assert!(
+            text(&line).contains("done, not seen yet"),
+            "{}",
+            text(&line)
+        );
+        assert!(!text(&line).contains(" idle"), "instead of idle");
+        app.unseen.insert(0);
+        let line = row(&app, 0);
+        assert_eq!(line.spans[1].content, "◆ ");
+        assert!(text(&line).contains("done, not seen yet"));
+        app.lang = Lang::Tr;
+        assert!(text(&row(&app, worker)).contains("bitti, henüz bakılmadı"));
     }
 
     #[test]

@@ -205,6 +205,10 @@ pub struct App {
     pub collapsed: Vec<bool>,
     /// Workers whose helpers are folded away.
     pub folded_workers: BTreeSet<AgentId>,
+    /// Agents that finished a turn since the person last opened them.
+    pub unseen: BTreeSet<AgentId>,
+    /// The agents that were mid-turn at the last step.
+    turning: BTreeSet<AgentId>,
     /// Position in the open inbox items.
     pub inbox_sel: usize,
     /// Inbox items the person put off with `S`, in the order they were put
@@ -294,6 +298,8 @@ impl App {
             selected,
             collapsed,
             folded_workers: BTreeSet::new(),
+            unseen: BTreeSet::new(),
+            turning: BTreeSet::new(),
             inbox_sel: 0,
             deferred: Vec::new(),
             waiting_at: None,
@@ -332,8 +338,63 @@ impl App {
             Engine::Live(l) => l.step(&mut self.world),
         }
         self.world.watch_spending();
+        self.watch_turns();
         self.follow_thread();
         self.persist();
+    }
+
+    /// Marks the agents whose turn ended in this step, idle now, as done
+    /// and not yet seen; one that is mid-turn again is not, and neither is
+    /// one the person has open.
+    fn watch_turns(&mut self) {
+        let now: BTreeSet<AgentId> = self.world.mid_turn().into_iter().collect();
+        for &id in self.turning.difference(&now) {
+            if self.world.agents[id].status == Status::Idle {
+                self.unseen.insert(id);
+            }
+        }
+        self.unseen.retain(|id| !now.contains(id));
+        self.turning = now;
+        self.seen();
+    }
+
+    /// The agents the person has open: zoomed in on, or a party of the
+    /// open conversation.
+    fn opened(&self) -> Vec<AgentId> {
+        if let Zoom::Focus(id) | Zoom::Trace(id) | Zoom::Diff(id) = self.zoom {
+            return vec![id];
+        }
+        let Some(&first) = self.thread.as_ref().and_then(|th| th.entries.first()) else {
+            return Vec::new();
+        };
+        let Some((a, b)) = ui::words::said(&self.world.journal[first].event).map(|s| s.pair())
+        else {
+            return Vec::new();
+        };
+        [a, b]
+            .into_iter()
+            .filter_map(|p| match p {
+                Party::Agent(id) => Some(id),
+                Party::Person => None,
+            })
+            .collect()
+    }
+
+    /// What the person has open is seen.
+    fn seen(&mut self) {
+        for id in self.opened() {
+            self.unseen.remove(&id);
+        }
+    }
+
+    /// Agent `id` finished a turn the person has not looked at since, and
+    /// nothing of it waits for them (an answer, a question, a change: its
+    /// item says more).
+    pub fn done_unseen(&self, id: AgentId) -> bool {
+        let w = &self.world;
+        self.unseen.contains(&id)
+            && w.agents[id].status == Status::Idle
+            && !w.open_inbox().iter().any(|&i| w.inbox[i].agent == id)
     }
 
     /// Saves what moved, for the next run. A store that fails is said
@@ -413,6 +474,7 @@ impl App {
 
     pub fn on_key(&mut self, k: KeyEvent) {
         self.key(k);
+        self.seen();
         self.follow_thread();
         self.persist();
     }
@@ -2518,6 +2580,104 @@ mod tests {
         app.on_key(key(KeyCode::Char('W')));
         assert!(!app.leaving && !app.quit);
         assert_eq!((app.view, app.zoom), (View::Salon, Zoom::Diff(3)));
+    }
+
+    #[test]
+    fn a_turn_that_ends_unseen_is_marked_until_it_is_opened() {
+        let mut app = quiet();
+        app.world.agents[1].status = Status::Working;
+        app.world.agents[2].status = Status::Researching {
+            for_agent: 1,
+            until: 9,
+        };
+        app.world.agents[3].status = Status::Working;
+        app.watch_turns();
+        assert!(app.unseen.is_empty(), "still at work");
+        app.world.agents[1].status = Status::Idle;
+        app.world.agents[2].status = Status::Idle;
+        app.world.agents[3].status = Status::Asking { to: 1, until: 9 };
+        app.watch_turns();
+        assert_eq!(app.unseen, BTreeSet::from([1, 2]), "asking is not done");
+        // At work again: the earlier turn is no news any more.
+        app.world.agents[1].status = Status::Working;
+        app.watch_turns();
+        assert_eq!(app.unseen, BTreeSet::from([2]));
+        // Opened: seen.
+        app.zoom = Zoom::Focus(2);
+        app.on_key(key(KeyCode::Char('x')));
+        assert!(app.unseen.is_empty());
+        // A turn that ends while the person looks at it is seen.
+        app.zoom = Zoom::Trace(1);
+        app.world.agents[1].status = Status::Idle;
+        app.watch_turns();
+        assert!(app.unseen.is_empty(), "{:?}", app.unseen);
+    }
+
+    #[test]
+    fn the_demo_marks_the_turns_that_end_as_it_steps() {
+        let mut app = App::new(1, 4, 0, 7, Lang::En);
+        // A bounded range: the demo's workers finish turns well within it.
+        let marked = (0..400).position(|_| {
+            app.step();
+            let ids: Vec<AgentId> = app.world.agents.iter().map(|a| a.id).collect();
+            ids.into_iter().any(|id| app.done_unseen(id))
+        });
+        assert!(marked.is_some(), "a turn ended and nobody looked");
+    }
+
+    #[test]
+    fn what_is_open_is_the_zoomed_agent_or_the_conversations_agents() {
+        let mut app = quiet();
+        assert!(app.opened().is_empty());
+        for (zoom, id) in [(Zoom::Focus(1), 1), (Zoom::Trace(2), 2), (Zoom::Diff(3), 3)] {
+            app.zoom = zoom;
+            assert_eq!(app.opened(), [id]);
+        }
+        app.zoom = Zoom::None;
+        app.world.note(Event::YouSaid {
+            to: 2,
+            text: "hi".into(),
+        });
+        app.open_thread(app.world.journal.len() - 1);
+        assert_eq!(app.opened(), [2], "the person is not an agent");
+        app.world.note(Event::Talk {
+            from: 3,
+            to: 1,
+            text: "hi".into(),
+        });
+        app.open_thread(app.world.journal.len() - 1);
+        let mut both = app.opened();
+        both.sort();
+        assert_eq!(both, [1, 3]);
+        app.unseen = BTreeSet::from([1, 2, 3]);
+        app.on_key(key(KeyCode::Char('j')));
+        assert_eq!(app.unseen, BTreeSet::from([2]));
+    }
+
+    #[test]
+    fn done_unseen_is_an_idle_agent_marked_with_nothing_waiting() {
+        let mut app = quiet();
+        assert!(!app.done_unseen(1), "not marked");
+        app.unseen.insert(1);
+        assert!(app.done_unseen(1));
+        app.world.agents[1].status = Status::Asleep;
+        assert!(!app.done_unseen(1), "only an idle one");
+        app.world.agents[1].status = Status::Idle;
+        app.world.inbox.push(InboxItem {
+            kind: InboxKind::Question,
+            agent: 1,
+            detail: "which?".into(),
+            researcher: None,
+            open: true,
+            tick: 0,
+            card: None,
+        });
+        assert!(!app.done_unseen(1), "its question says more");
+        app.world.inbox[0].agent = 2;
+        assert!(app.done_unseen(1), "another's item is not its");
+        app.world.inbox[0].agent = 1;
+        app.world.inbox[0].open = false;
+        assert!(app.done_unseen(1), "a closed item waits no more");
     }
 
     /// A demo team at its start whose inbox holds only `kinds`, one item

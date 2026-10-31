@@ -1315,13 +1315,6 @@ impl World {
         });
     }
 
-    pub fn active_agents(&self) -> usize {
-        self.agents
-            .iter()
-            .filter(|a| !a.gone && !matches!(a.status, Status::Idle | Status::Asleep))
-            .count()
-    }
-
     /// Agents in the middle of a turn, spending tokens: what quitting now
     /// would cut short.
     pub fn mid_turn(&self) -> Vec<AgentId> {
@@ -2058,14 +2051,8 @@ mod tests {
             agent(6, Role::Worker, Status::Working),
             agent(7, Role::Researcher, Status::Working),
         ]);
-        // Two working workers and two researchers: not the two idle ones,
-        // not the two that are gone.
-        assert_eq!(w.active_agents(), 4);
+        // Two researchers at work: not the one that is gone.
         assert_eq!(w.active_researchers(), 2);
-        w.agents[6].status = Status::Asleep;
-        assert_eq!(w.active_agents(), 3, "a sleeper is not at work");
-        w.agents[6].status = Status::Stopped;
-        assert_eq!(w.active_agents(), 4, "a stopped one still counts");
         assert!(!Status::Asleep.busy() && !Status::Asleep.needs_attention());
         w.inbox = vec![
             item(InboxKind::Sensitive, 1, true),

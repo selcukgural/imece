@@ -73,7 +73,14 @@ pub fn fill(template: &str, args: &[&str]) -> String {
 pub struct Text {
     // Header
     pub cards: &'static str,
-    pub agents_working: &'static str,
+    /// The header's fleet: agents mid-turn, done and not seen, stuck
+    /// (blocked or stopped); `fleet_idle` when there are none.
+    pub fleet_working: &'static str,
+    pub fleet_done: &'static str,
+    pub fleet_stuck: &'static str,
+    pub fleet_idle: &'static str,
+    /// An agent's row when it finished a turn the person has not opened.
+    pub done_unseen: &'static str,
     pub per_hour: &'static str,
     pub pot_lasts: &'static str,
     pub budget: &'static str,
@@ -358,7 +365,11 @@ pub struct Text {
 
 pub const EN: Text = Text {
     cards: "{}/{} cards",
-    agents_working: "{} agents working",
+    fleet_working: "● {} working",
+    fleet_done: "✓ {} done",
+    fleet_stuck: "✕ {} stuck",
+    fleet_idle: "all idle",
+    done_unseen: "done, not seen yet",
     per_hour: "{}/h",
     pot_lasts: "~{} left",
     budget: "spent {} of {}",
@@ -676,7 +687,7 @@ pub const EN: Text = Text {
     ],
     help_legend: [
         " ◆ lead  ● working  ◐ asking  ✕ blocked  ! waiting for you",
-        " ◇ researcher  ○ idle  ⇄ conversation  ▾ ▸ project / helpers",
+        " ◇ researcher  ○ idle  ✓ done, not seen  ■ stopped  ⇄ conversation  ▾ ▸ project / helpers",
         " ~ soft-tainted (read a report)  ≈ tainted (reads the outside world)",
     ],
     close: " any key: close",
@@ -703,7 +714,11 @@ pub const EN: Text = Text {
 
 pub const TR: Text = Text {
     cards: "{}/{} kart",
-    agents_working: "{} agent çalışıyor",
+    fleet_working: "● {} çalışıyor",
+    fleet_done: "✓ {} bitti",
+    fleet_stuck: "✕ {} takıldı",
+    fleet_idle: "hepsi boşta",
+    done_unseen: "bitti, henüz bakılmadı",
     per_hour: "{}/sa",
     pot_lasts: "~{} kaldı",
     budget: "{} / {} harcandı",
@@ -1029,7 +1044,7 @@ pub const TR: Text = Text {
     ],
     help_legend: [
         " ◆ lider  ● çalışıyor  ◐ soruyor  ✕ bloke  ! onayını bekliyor",
-        " ◇ araştırmacı  ○ boşta  ⇄ konuşma  ▾ ▸ proje / yardımcılar",
+        " ◇ araştırmacı  ○ boşta  ✓ bitti, bakılmadı  ■ durdu  ⇄ konuşma  ▾ ▸ proje / yardımcılar",
         " ~ hafif kirli (rapor okudu)  ≈ kirli (dış dünyayı okuyor)",
     ],
     close: " herhangi bir tuş: kapat",
