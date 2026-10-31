@@ -251,6 +251,8 @@ pub struct App {
     pub digest: Option<Digest>,
     /// What an earlier run left behind, shown once at the start.
     pub left_off: Option<LeftOff>,
+    /// What quitting now would leave behind, open over the screen (`q s`).
+    pub leaving: bool,
     pub flash: Option<(String, Instant)>,
     pub quit: bool,
     /// The store's last failure, flashed once.
@@ -314,6 +316,7 @@ impl App {
             primary: None,
             digest: None,
             left_off,
+            leaving: false,
             flash: None,
             quit: false,
             store_error: None,
@@ -455,6 +458,16 @@ impl App {
             self.quit = true;
             return;
         }
+        // What quitting would leave: `q` quits after all, `W` goes to what
+        // waits, anything else stays.
+        if std::mem::take(&mut self.leaving) {
+            match k.code {
+                KeyCode::Char('q') => self.quit = true,
+                KeyCode::Char('W') => self.next_waiting(false),
+                _ => {}
+            }
+            return;
+        }
         // An overlay takes the key that closes it.
         if self.digest.take().is_some()
             || self.left_off.take().is_some()
@@ -497,7 +510,8 @@ impl App {
             // `q` asks; `qq` quits (ctrl-c still quits at once).
             KeyCode::Char('q') => {
                 self.pending = Some('q');
-                self.flash(self.lang.text().quit_ask);
+                let ask = self.quit_ask();
+                self.flash(ask);
             }
             // `i` as in vim: start writing.
             KeyCode::Char('/') | KeyCode::Char('i') => self.typing = true,
@@ -612,6 +626,7 @@ impl App {
         }
         match (first, k.code) {
             ('q', KeyCode::Char('q')) => self.quit = true,
+            ('q', KeyCode::Char('s')) => self.leaving = self.in_flight(),
             ('g', KeyCode::Char('g')) => self.jump(true),
             ('z', KeyCode::Char('a')) if self.salon_keys() => {
                 let folded = match self.worker_at_hand() {
@@ -721,6 +736,30 @@ impl App {
         self.inbox_sel = self.inbox_rows().iter().position(|&o| o == i).unwrap_or(0);
         self.waiting_at = Some(i);
         self.deeper();
+    }
+
+    /// Something quitting now would cut short or leave unreviewed.
+    fn in_flight(&self) -> bool {
+        !self.world.mid_turn().is_empty() || !self.world.open_changes().is_empty()
+    }
+
+    /// The quit question, with what is in flight counted.
+    fn quit_ask(&self) -> String {
+        let t = self.lang.text();
+        let counts = [
+            (t.quit_mid_turn, self.world.mid_turn().len()),
+            (t.quit_changes, self.world.open_changes().len()),
+        ];
+        let said: Vec<String> = counts
+            .iter()
+            .filter(|(_, n)| *n > 0)
+            .map(|(words, n)| fill(words, &[&n.to_string()]))
+            .collect();
+        if said.is_empty() {
+            t.quit_ask.to_string()
+        } else {
+            fill(t.quit_ask_busy, &[&said.join(", ")])
+        }
     }
 
     /// Panels cycle only on the salon, outside a focus.
@@ -2380,6 +2419,107 @@ mod tests {
     }
 
     /// The demo after a while, its cards on the board.
+    /// A demo team at its start with nobody at work and nothing waiting.
+    fn quiet() -> App {
+        let mut app = App::new(1, 4, 0, 1, Lang::En);
+        app.world.inbox.clear();
+        for a in &mut app.world.agents {
+            a.status = Status::Idle;
+        }
+        app
+    }
+
+    fn a_change(agent: AgentId) -> Change {
+        Change {
+            agent,
+            title: "did it".into(),
+            files: Vec::new(),
+            patch: "+x\n".into(),
+            runs: Vec::new(),
+        }
+    }
+
+    /// What one `q` asks.
+    fn asked(app: &mut App) -> String {
+        app.on_key(key(KeyCode::Char('q')));
+        assert_eq!(app.pending, Some('q'));
+        let said = app.flash.take().map(|(m, _)| m).unwrap_or_default();
+        app.pending = None;
+        said
+    }
+
+    #[test]
+    fn the_quit_question_counts_what_is_mid_turn_and_not_reviewed() {
+        let mut app = quiet();
+        let t = Lang::En.text();
+        assert_eq!(asked(&mut app), t.quit_ask);
+        app.world.agents[1].status = Status::Working;
+        assert_eq!(
+            asked(&mut app),
+            "quit imece? agents mid-turn: 1 · q again quits · s shows them · any other key stays"
+        );
+        app.world.agents[2].status = Status::Researching {
+            for_agent: 1,
+            until: 9,
+        };
+        app.world.change_ready(a_change(3));
+        app.world.agents[3].status = Status::Idle;
+        assert_eq!(
+            asked(&mut app),
+            "quit imece? agents mid-turn: 2, changes not reviewed: 1 · q again quits · s shows them · any other key stays"
+        );
+        app.world.agents[1].status = Status::Idle;
+        app.world.agents[2].status = Status::Idle;
+        assert_eq!(
+            asked(&mut app),
+            "quit imece? changes not reviewed: 1 · q again quits · s shows them · any other key stays"
+        );
+        app.lang = Lang::Tr;
+        assert_eq!(
+            asked(&mut app),
+            "imece kapatılsın mı? incelenmemiş değişiklik: 1 · bir daha q çıkar · s gösterir · başka bir tuş kalır"
+        );
+        // Another key stays.
+        app.on_key(key(KeyCode::Char('q')));
+        app.on_key(key(KeyCode::Char('x')));
+        assert!(!app.quit && app.pending.is_none());
+    }
+
+    #[test]
+    fn q_s_shows_what_quitting_would_leave_and_q_there_quits() {
+        let mut app = quiet();
+        // Nothing in flight: nothing to show, nothing quits.
+        app.on_key(key(KeyCode::Char('q')));
+        app.on_key(key(KeyCode::Char('s')));
+        assert!(!app.leaving && !app.quit);
+        // A turn under way: shown; another key goes back.
+        app.world.agents[1].status = Status::Working;
+        app.on_key(key(KeyCode::Char('q')));
+        app.on_key(key(KeyCode::Char('s')));
+        assert!(
+            app.leaving && app.flash.is_none(),
+            "the question is answered"
+        );
+        app.on_key(key(KeyCode::Char('x')));
+        assert!(!app.leaving && !app.quit && app.pending.is_none());
+        // q in the window quits at once.
+        app.on_key(key(KeyCode::Char('q')));
+        app.on_key(key(KeyCode::Char('s')));
+        app.on_key(key(KeyCode::Char('q')));
+        assert!(app.quit && !app.leaving);
+        // A change alone is shown too, and W there opens it.
+        let mut app = quiet();
+        app.world.change_ready(a_change(3));
+        app.world.agents[3].status = Status::Idle;
+        app.view = View::Board;
+        app.on_key(key(KeyCode::Char('q')));
+        app.on_key(key(KeyCode::Char('s')));
+        assert!(app.leaving);
+        app.on_key(key(KeyCode::Char('W')));
+        assert!(!app.leaving && !app.quit);
+        assert_eq!((app.view, app.zoom), (View::Salon, Zoom::Diff(3)));
+    }
+
     /// A demo team at its start whose inbox holds only `kinds`, one item
     /// each, oldest first, item `n` from agent `n + 1`.
     fn waiting(kinds: &[InboxKind]) -> App {

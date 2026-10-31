@@ -235,6 +235,7 @@ is one line, and that line still shows what waits for you.
 | `a` / `r` | approve / apply / allow · reject / refuse the selected item |
 | `space`, `+` `-` | pause, simulation speed (`--demo` only) |
 | `?`, `q` | help, quit |
+| `q` `s` | before quitting: the agents mid-turn and the changes not reviewed (`q` there quits, `W` opens the next waiting) |
 
 ## Screen principles
 
