@@ -36,7 +36,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use imece_agent::mcp::{Answer, Server, Tool};
 use imece_agent::{
     APPROVE_TOOL, Agent as Session, Ask, Confine, Event as AgentEvent, Mcp, Tier, child, claude,
-    codex, gemini, run, worktree,
+    codex, copy, gemini, run, worktree,
 };
 use serde_json::{Value, json};
 
@@ -147,15 +147,17 @@ enum Slot {
 }
 
 /// A started session (and where its worktree stands, when it has one), or
-/// why it could not start. Last, for a woken worker's first prompt: the
+/// why it could not start. Then, for a woken worker's first prompt: the
 /// line saying what its worktree holds and where it goes in the prompt,
-/// read on the session's thread (see [`Live::brief`]).
+/// read on the session's thread (see [`Live::brief`]). Last, what became
+/// of the paths the person listed to copy into the worktree.
 type Ready = Result<
     (
         Box<dyn Session>,
         PathBuf,
         Option<worktree::Placed>,
         Option<(usize, String)>,
+        Vec<copy::Copied>,
     ),
     String,
 >;
@@ -219,6 +221,11 @@ const MAX_COMMAND: usize = 1000;
 
 /// The largest change (as a patch) the person is shown.
 const MAX_PATCH: usize = 4 << 20;
+
+/// The most bytes copied into one worktree at a session's start, all the
+/// listed paths together (`:copy`): a clone costs little on APFS, a
+/// whole copy does elsewhere.
+pub const COPY_BUDGET: u64 = 2 << 30;
 
 /// The most output of one run that goes back to the agent, in bytes.
 const MAX_RUN_OUTPUT: usize = 48 << 10;

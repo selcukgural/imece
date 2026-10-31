@@ -211,7 +211,8 @@ impl Live {
             _ => Vec::new(),
         };
         let mut session = match ready {
-            Ok((session, cwd, placed, held)) => {
+            Ok((session, cwd, placed, held, copied)) => {
+                self.copied(w, id, copied);
                 // The briefing's line on the worktree, in the first prompt
                 // as it is given and as it is remembered.
                 if let Some((at, line)) = held {
@@ -401,6 +402,42 @@ impl Live {
         Ok(())
     }
 
+    /// What became of the listed paths at agent `id`'s start, in the
+    /// journal: the ones copied in one line, each skipped one with why;
+    /// the ones the worktree had say nothing.
+    pub(super) fn copied(&self, w: &mut World, id: AgentId, copied: Vec<copy::Copied>) {
+        let (mut paths, mut bytes) = (Vec::new(), 0);
+        for c in copied {
+            match c {
+                copy::Copied::Copied { path, bytes: b } => {
+                    paths.push(path);
+                    bytes += b;
+                }
+                copy::Copied::Skipped { path, why } => {
+                    w.note(Event::CopySkipped {
+                        agent: id,
+                        path,
+                        why,
+                    });
+                }
+                copy::Copied::There { .. } => {}
+            }
+        }
+        if !paths.is_empty() {
+            w.note(Event::Copied {
+                agent: id,
+                paths,
+                bytes,
+            });
+        }
+    }
+
+    /// Whether `path` may be copied into project `p`'s worktrees (see
+    /// [`copy::checkable`]); why not.
+    pub fn may_copy(&self, p: ProjectId, path: &str) -> Result<(), String> {
+        copy::checkable(&self.places[p].repo, path)
+    }
+
     /// What imece has to tell agent `id`, ahead of `text`.
     pub(super) fn with_notes(&mut self, id: AgentId, text: String) -> String {
         let notes = std::mem::take(&mut self.notes[id]);
@@ -453,15 +490,17 @@ impl Live {
         // A helper changes the same files as its worker: its worktree.
         let tree = a.parent.map_or(&a.name, |p| &w.agents[p].name).clone();
         let (repo, root) = (place.repo.clone(), place.root.clone());
+        let copies = w.projects[a.project].copies.clone();
         let home = self.gemini_home(a.project, a.role, &a.name);
         let (tx, ready) = (self.tx.clone(), self.ready_tx.clone());
         thread::spawn(move || {
             let started = (|| {
-                let (cwd, placed) = if leader {
-                    (repo, None)
+                let (cwd, placed, copied) = if leader {
+                    (repo, None, Vec::new())
                 } else {
                     let w = worktree::ensure(&repo, &root, &tree).map_err(|e| e.to_string())?;
-                    (w.path, Some(w.placed))
+                    let copied = copy::into(&repo, &w.path, &copies, COPY_BUDGET);
+                    (w.path, Some(w.placed), copied)
                 };
                 let held = held.and_then(|at| match worktree::change(&cwd, MAX_PATCH) {
                     Ok(Some(c)) => Some((at, remember::holds(&c))),
@@ -527,7 +566,7 @@ impl Live {
                         .map_err(|e| format!("{program}: {e}"))?,
                     ),
                 };
-                Ok((session, cwd, placed, held))
+                Ok((session, cwd, placed, held, copied))
             })();
             // Nobody to take it (imece is closing): dropping it stops it.
             let _ = ready.send((id, generation, started));
@@ -552,6 +591,85 @@ impl Live {
 mod tests {
     use super::*;
     use crate::live::testing::*;
+
+    #[test]
+    fn what_was_copied_is_one_line_and_each_skip_another() {
+        let mut w = team(1);
+        let live = idle_live(2);
+        live.copied(
+            &mut w,
+            1,
+            vec![
+                copy::Copied::Copied {
+                    path: ".env".into(),
+                    bytes: 5,
+                },
+                copy::Copied::There {
+                    path: "target".into(),
+                },
+                copy::Copied::Skipped {
+                    path: "dist".into(),
+                    why: "not in the checkout".into(),
+                },
+                copy::Copied::Copied {
+                    path: "node_modules".into(),
+                    bytes: 7,
+                },
+            ],
+        );
+        let events: Vec<&Event> = w.journal.iter().map(|e| &e.event).collect();
+        assert_eq!(
+            events,
+            [
+                &Event::CopySkipped {
+                    agent: 1,
+                    path: "dist".into(),
+                    why: "not in the checkout".into()
+                },
+                &Event::Copied {
+                    agent: 1,
+                    paths: vec![".env".into(), "node_modules".into()],
+                    bytes: 12
+                },
+            ]
+        );
+        // What the worktree had says nothing.
+        let mut w = team(1);
+        let there = copy::Copied::There {
+            path: ".env".into(),
+        };
+        live.copied(&mut w, 1, vec![there]);
+        assert!(w.journal.is_empty());
+    }
+
+    #[test]
+    fn a_workers_start_copies_the_listed_paths_into_its_worktree() {
+        let repo = checkout("copy-start");
+        std::fs::write(repo.join(".gitignore"), ".env\n").unwrap();
+        std::fs::write(repo.join(".env"), "KEY=1").unwrap();
+        let root = repo.with_extension("trees");
+        let mut w = team(1);
+        w.projects[0].copies = vec![".env".into()];
+        let mut live = idle_live_in(&repo, 2);
+        live.places[0].root = root.clone();
+        assert_eq!(live.may_copy(0, ".env"), Ok(()));
+        assert!(
+            live.may_copy(0, "a.txt")
+                .unwrap_err()
+                .contains("does not ignore")
+        );
+        live.start(&mut w, 1, None);
+        let copied = root.join("claude-1/.env");
+        for _ in 0..500 {
+            if copied.exists() {
+                break;
+            }
+            thread::sleep(Duration::from_millis(10));
+        }
+        assert_eq!(std::fs::read_to_string(&copied).unwrap(), "KEY=1");
+        let _ = std::fs::remove_dir_all(&repo);
+        let _ = std::fs::remove_dir_all(&root);
+    }
 
     #[test]
     fn the_command_line_a_session_lists_is_kept_with_imeces_clear_added() {
@@ -851,7 +969,11 @@ mod tests {
             "{e:?}"
         );
         let cwd = PathBuf::from("/work/claude-1");
-        live.ready(&mut w, 1, Ok((Box::new(Stub), cwd.clone(), None, None)));
+        live.ready(
+            &mut w,
+            1,
+            Ok((Box::new(Stub), cwd.clone(), None, None, Vec::new())),
+        );
         live.command(&mut w, 1, " /known ").unwrap();
         assert_eq!(live.turns[1], 1);
         assert!(live.asked[1]);
@@ -929,7 +1051,7 @@ mod tests {
         ));
         let _ = std::fs::remove_dir_all(&live.claude_home);
         // Over budget nothing runs, a clear included.
-        live.ready(&mut w, 1, Ok((Box::new(Stub), cwd, None, None)));
+        live.ready(&mut w, 1, Ok((Box::new(Stub), cwd, None, None, Vec::new())));
         w.agents[1].cost = w.budget;
         assert_eq!(live.command(&mut w, 1, "/clear"), Err(Refusal::Budget));
     }

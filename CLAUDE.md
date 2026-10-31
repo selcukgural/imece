@@ -156,6 +156,7 @@ record in the same PR.
 - 54 `diff-files`: a change of several files lists them above its patch (`ui::diff::file_lines`, six and the rest counted); `w` wraps its long lines (`App::diff_wrap`); folding all files is D3b.
 - 55 `diff-kinds`: a change's files by kind (source, tests, generated, by name: `ui::diff::kind`), its lines per kind above the file list when there is more than one; the commit-message suggestion (D6b) is record 56.
 - 56 `commit-message`: `:commit` asks Claude's cheap tier (`claude::once`: no tools, own system prompt, not saved) for a message for what is staged, put on the command line as `!git commit -m '…'`; $0.05 a call, 20 calls and $1 a day, reserved in the store (`paid`, schema 9) and the pot before the call, settled after; the same staged tree again costs nothing.
+- 57 `copy-list`: `:copy PATH` lists paths git ignores (`.env`, `target`) per project (`projects.copies`, schema 10); a worker's start copies the ones its worktree lacks (`copy::into`: literal, inside, ignored, never a link, never over what is there, 2 GiB, APFS clone / reflink); the journal says what was copied and what was skipped.
 
 `docs/neighbours.md`: voff, what was taken from it and the rules that come
 from what it lacks. Read it before building a part it names.

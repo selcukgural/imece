@@ -712,9 +712,13 @@ mod tests {
         live.ready(
             &mut w,
             helper,
-            Ok((Box::new(Stub), tree.clone(), None, None)),
+            Ok((Box::new(Stub), tree.clone(), None, None, Vec::new())),
         );
-        live.ready(&mut w, 0, Ok((Box::new(Stub), repo.clone(), None, None)));
+        live.ready(
+            &mut w,
+            0,
+            Ok((Box::new(Stub), repo.clone(), None, None, Vec::new())),
+        );
         live.run_programs.push("sh".into());
         // A script outside the worktree, so changing it changes no tree.
         let outside = std::env::temp_dir().join(format!("imece-ran-{}", std::process::id()));
@@ -858,9 +862,13 @@ mod tests {
         live.ready(
             &mut w,
             helper,
-            Ok((Box::new(Stub), tree.clone(), None, None)),
+            Ok((Box::new(Stub), tree.clone(), None, None, Vec::new())),
         );
-        live.ready(&mut w, 0, Ok((Box::new(Stub), repo.clone(), None, None)));
+        live.ready(
+            &mut w,
+            0,
+            Ok((Box::new(Stub), repo.clone(), None, None, Vec::new())),
+        );
         std::fs::write(tree.join("a.txt"), "changed").unwrap();
         // Only a worker's done: not its inform, not a helper's or the
         // leader's done.
@@ -993,8 +1001,16 @@ mod tests {
             root.clone(),
         );
         let tree = worker_in(&mut live, &mut w, 1, &repo, &root);
-        live.ready(&mut w, 2, Ok((Box::new(Stub), tree.clone(), None, None)));
-        live.ready(&mut w, 0, Ok((Box::new(Stub), repo.clone(), None, None)));
+        live.ready(
+            &mut w,
+            2,
+            Ok((Box::new(Stub), tree.clone(), None, None, Vec::new())),
+        );
+        live.ready(
+            &mut w,
+            0,
+            Ok((Box::new(Stub), repo.clone(), None, None, Vec::new())),
+        );
         std::fs::write(tree.join("a.txt"), "changed").unwrap();
         std::fs::write(repo.join("b.txt"), "b").unwrap();
         // A helper's done is its worker's business; a leader changes nothing;
@@ -1058,7 +1074,11 @@ mod tests {
         let tree = worktree::ensure(&repo, &root, "claude-1").unwrap().path;
         let heard = Arc::new(Mutex::new(Vec::new()));
         let session = |fails| Box::new(Heard(heard.clone(), fails));
-        live.ready(&mut w, 1, Ok((session(false), tree.clone(), None, None)));
+        live.ready(
+            &mut w,
+            1,
+            Ok((session(false), tree.clone(), None, None, Vec::new())),
+        );
         let commit = |name: &str| {
             std::fs::write(repo.join(name), name).unwrap();
             git_in(&repo, &["add", "."]);
@@ -1108,7 +1128,11 @@ mod tests {
         assert_eq!(heard.lock().unwrap().len(), 2);
         assert_eq!(moved(&w), 1);
         // A session that refuses the prompt that waited is stopped.
-        live.ready(&mut w, 1, Ok((session(true), tree.clone(), None, None)));
+        live.ready(
+            &mut w,
+            1,
+            Ok((session(true), tree.clone(), None, None, Vec::new())),
+        );
         commit("d.txt");
         live.told(&mut w, 1, "refused").unwrap();
         settle(&mut live, &mut w);
@@ -1306,7 +1330,11 @@ mod tests {
         assert_eq!(moved(&w), 0);
         assert_eq!(git_in(&tree, &["rev-parse", "HEAD"]), old);
         // The leader's directory is the checkout itself: never moved.
-        live.ready(&mut w, 0, Ok((Box::new(Stub), repo.clone(), None, None)));
+        live.ready(
+            &mut w,
+            0,
+            Ok((Box::new(Stub), repo.clone(), None, None, Vec::new())),
+        );
         live.follow(&mut w, 0);
         // Between turns: the next prompt finds the worktree at HEAD.
         live.told(&mut w, 1, "go").unwrap();

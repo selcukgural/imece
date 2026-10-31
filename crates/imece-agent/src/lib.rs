@@ -5,6 +5,7 @@
 pub mod child;
 pub mod claude;
 pub mod codex;
+pub mod copy;
 pub mod gemini;
 pub mod mcp;
 pub mod run;

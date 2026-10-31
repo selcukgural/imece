@@ -17,6 +17,17 @@ fn card_ref(c: CardId) -> String {
     format!("#{}", c + 1)
 }
 
+/// A size in bytes in the largest unit that keeps it whole: `512 B`,
+/// `3 KiB`, `40 MiB`, `2 GiB`.
+pub fn size(bytes: u64) -> String {
+    match bytes {
+        b if b < 1 << 10 => format!("{b} B"),
+        b if b < 1 << 20 => format!("{} KiB", b >> 10),
+        b if b < 1 << 30 => format!("{} MiB", b >> 20),
+        b => format!("{} GiB", b >> 30),
+    }
+}
+
 pub fn event(lang: Lang, w: &World, e: &Event) -> String {
     let t = lang.text();
     match e {
@@ -170,6 +181,17 @@ pub fn event(lang: Lang, w: &World, e: &Event) -> String {
         Event::Suggested { model, cost, .. } => fill(t.ev_suggested, &[model, &dollars(*cost)]),
         Event::SuggestFailed { why, cost, .. } => {
             fill(t.ev_suggest_failed, &[&dollars(*cost), why])
+        }
+        Event::Copied {
+            agent,
+            paths,
+            bytes,
+        } => fill(
+            t.ev_copied,
+            &[&paths.join(", "), name(w, *agent), &size(*bytes)],
+        ),
+        Event::CopySkipped { agent, path, why } => {
+            fill(t.ev_copy_skipped, &[path, name(w, *agent), why])
         }
         // Conversations are drawn from `said`, with their speakers coloured.
         Event::Talk { .. }
@@ -529,6 +551,52 @@ mod tests {
         assert_eq!(ok.kind(), EntryKind::Sensitive);
         assert_eq!(failed.kind(), EntryKind::Failed);
         assert_eq!((ok.agent(), failed.agent()), (0, 0));
+    }
+
+    #[test]
+    fn a_size_is_said_in_the_largest_unit_that_keeps_it_whole() {
+        assert_eq!(size(0), "0 B");
+        assert_eq!(size(1023), "1023 B");
+        assert_eq!(size(1024), "1 KiB");
+        assert_eq!(size((1 << 20) - 1), "1023 KiB");
+        assert_eq!(size(1 << 20), "1 MiB");
+        assert_eq!(size(5 << 20 | 7), "5 MiB");
+        assert_eq!(size((1 << 30) - 1), "1023 MiB");
+        assert_eq!(size(3 << 30), "3 GiB");
+    }
+
+    #[test]
+    fn copies_are_said_with_their_paths_and_size_and_a_skip_with_why() {
+        let w = crate::live::testing::team(1);
+        let copied = Event::Copied {
+            agent: 1,
+            paths: vec![".env".into(), "target".into()],
+            bytes: 3 << 20,
+        };
+        assert_eq!(
+            event(Lang::En, &w, &copied),
+            "copied .env, target into claude-1's worktree (3 MiB)"
+        );
+        assert_eq!(
+            event(Lang::Tr, &w, &copied),
+            ".env, target → claude-1 çalışma ağacına kopyalandı (3 MiB)"
+        );
+        let skipped = Event::CopySkipped {
+            agent: 1,
+            path: "node_modules".into(),
+            why: "not in the checkout".into(),
+        };
+        assert_eq!(
+            event(Lang::En, &w, &skipped),
+            "node_modules was not copied into claude-1's worktree: not in the checkout"
+        );
+        assert_eq!(
+            event(Lang::Tr, &w, &skipped),
+            "node_modules → claude-1 çalışma ağacına kopyalanmadı: not in the checkout"
+        );
+        assert_eq!(copied.kind(), EntryKind::Assumption);
+        assert_eq!(skipped.kind(), EntryKind::Failed);
+        assert_eq!((copied.agent(), skipped.agent()), (1, 1));
     }
 
     #[test]

@@ -317,7 +317,15 @@ mod tests {
         let mut w = team(2);
         let mut live = idle_live(3);
         let cwd = PathBuf::from("/work/claude-1");
-        let placed = |p| Ok((Box::new(Stub) as Box<dyn Session>, cwd.clone(), p, None));
+        let placed = |p| {
+            Ok((
+                Box::new(Stub) as Box<dyn Session>,
+                cwd.clone(),
+                p,
+                None,
+                Vec::new(),
+            ))
+        };
         live.ready(&mut w, 1, placed(Some(worktree::Placed::Fresh)));
         live.ready(&mut w, 1, placed(Some(worktree::Placed::AtHead)));
         live.ready(&mut w, 0, placed(None));

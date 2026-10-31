@@ -555,14 +555,16 @@ pub struct Sim {
     notes_cut: bool,
     /// A Gemini session listed no command line this run (said once).
     unlisted: bool,
-    /// `:commit` as the demo plays it, boxed: rarely used, and the
-    /// engine stays small.
-    commits: Box<Commits>,
+    /// What the person's rarer commands keep, boxed: the engine stays
+    /// small.
+    extras: Box<Extras>,
 }
 
-/// What the demo keeps for `:commit`.
+/// What the demo keeps for `:commit` and `:copy`.
 #[derive(Default)]
-struct Commits {
+struct Extras {
+    /// The listed paths each worker's worktree has, copied at a start.
+    copied: HashMap<AgentId, Vec<String>>,
     /// The titles of the changes applied to each project's checkout, as
     /// if staged there; the newest last.
     staged: HashMap<ProjectId, Vec<String>>,
@@ -595,7 +597,7 @@ pub fn world(
         applying: Vec::new(),
         notes_cut: false,
         unlisted: false,
-        commits: Box::default(),
+        extras: Box::default(),
     };
     let mut w = World {
         marks: Default::default(),
@@ -642,6 +644,7 @@ pub fn world(
             repo,
             closed: false,
             pinned: false,
+            copies: Vec::new(),
         });
     }
     // The confine dial's default, said once a start as live does.
@@ -921,7 +924,7 @@ impl Sim {
         let mark = sha(&mut self.rng);
         w.change_applied(id, mark);
         let p = w.agents[id].project;
-        self.commits
+        self.extras
             .staged
             .entry(p)
             .or_default()
@@ -961,7 +964,7 @@ impl Sim {
     /// project `p` comes, or the journal says nothing is staged. The
     /// model it asks.
     pub fn suggest(&mut self, w: &World, p: ProjectId) -> Result<String, String> {
-        if self.commits.suggesting.is_some() {
+        if self.extras.suggesting.is_some() {
             return Err("a suggestion is under way".into());
         }
         if w.budget.saturating_sub(w.spent()) < SUGGEST_CAP {
@@ -970,7 +973,7 @@ impl Sim {
                 dollars(SUGGEST_CAP)
             ));
         }
-        let (calls, cost) = self.commits.paid_calls;
+        let (calls, cost) = self.extras.paid_calls;
         if calls >= SUGGEST_DAY_CALLS {
             return Err(format!("today's {SUGGEST_DAY_CALLS} suggestions were made"));
         }
@@ -980,7 +983,7 @@ impl Sim {
                 dollars(SUGGEST_DAY_COST)
             ));
         }
-        self.commits.suggesting = Some((p, w.tick + 2));
+        self.extras.suggesting = Some((p, w.tick + 2));
         Ok("haiku".into())
     }
 
@@ -989,15 +992,15 @@ impl Sim {
     /// run's ceilings and paid from the pot (live reserves its cap and
     /// settles at once to what it cost; the demo's call costs at once).
     fn suggested(&mut self, w: &mut World) {
-        let Some((p, at)) = self.commits.suggesting else {
+        let Some((p, at)) = self.extras.suggesting else {
             return;
         };
         if w.tick < at {
             return;
         }
-        self.commits.suggesting = None;
+        self.extras.suggesting = None;
         let leader = w.projects[p].leader;
-        let staged = self.commits.staged.get(&p).cloned().unwrap_or_default();
+        let staged = self.extras.staged.get(&p).cloned().unwrap_or_default();
         let Some(first) = staged.first() else {
             w.note(Event::SuggestFailed {
                 leader,
@@ -1006,7 +1009,7 @@ impl Sim {
             });
             return;
         };
-        if let Some((was, text)) = self.commits.suggestions.get(&p)
+        if let Some((was, text)) = self.extras.suggestions.get(&p)
             && *was == staged
         {
             w.suggested = Some(Suggestion {
@@ -1016,8 +1019,8 @@ impl Sim {
             return;
         }
         let cost = self.rng.range(20, 60);
-        self.commits.paid_calls.0 += 1;
-        self.commits.paid_calls.1 += cost;
+        self.extras.paid_calls.0 += 1;
+        self.extras.paid_calls.1 += cost;
         w.paid += cost;
         let mut text = first.clone();
         if staged.len() > 1 {
@@ -1025,7 +1028,7 @@ impl Sim {
             let rest: Vec<String> = staged[1..].iter().map(|t| format!("- {t}")).collect();
             text.push_str(&rest.join("\n"));
         }
-        self.commits.suggestions.insert(p, (staged, text.clone()));
+        self.extras.suggestions.insert(p, (staged, text.clone()));
         w.suggested = Some(Suggestion { project: p, text });
         w.note(Event::Suggested {
             leader,
@@ -1169,8 +1172,45 @@ impl Sim {
         if w.agents[id].role != Role::Worker {
             return;
         }
+        self.copy_in(w, id);
         let roll = self.rng.below(12);
         self.worktree(w, id, roll);
+    }
+
+    /// The paths the person listed (`:copy`) that worker `id`'s worktree
+    /// lacks, copied as its session starts, as live does: made-up sizes,
+    /// small for a dotfile and large for a directory, and now and then
+    /// one gone from the checkout since it was listed.
+    fn copy_in(&mut self, w: &mut World, id: AgentId) {
+        let listed = w.projects[w.agents[id].project].copies.clone();
+        let had = self.extras.copied.entry(id).or_default();
+        let lacks: Vec<String> = listed.into_iter().filter(|p| !had.contains(p)).collect();
+        let (mut paths, mut bytes) = (Vec::new(), 0);
+        for path in lacks {
+            if self.rng.one_in(8) {
+                w.note(Event::CopySkipped {
+                    agent: id,
+                    path,
+                    why: "not in the checkout".into(),
+                });
+                continue;
+            }
+            bytes += match path.starts_with('.') {
+                true => self.rng.range(100, 4_000),
+                false => self.rng.range(1 << 20, 400 << 20),
+            };
+            paths.push(path);
+        }
+        if paths.is_empty() {
+            return;
+        }
+        let had = self.extras.copied.entry(id).or_default();
+        had.extend(paths.iter().cloned());
+        w.note(Event::Copied {
+            agent: id,
+            paths,
+            bytes,
+        });
     }
 
     /// What a worker's worktree says as its session starts, by `roll`: it
@@ -2600,12 +2640,54 @@ mod tests {
         let title = w.change_of(worker).unwrap().title.clone();
         s.applied(&mut w, worker, false, &[]);
         assert!(
-            s.commits.staged.is_empty(),
+            s.extras.staged.is_empty(),
             "one that did not fit is not staged"
         );
         s.applied(&mut w, worker, true, &[]);
         let p = w.agents[worker].project;
-        assert_eq!(s.commits.staged.get(&p), Some(&vec![title]));
+        assert_eq!(s.extras.staged.get(&p), Some(&vec![title]));
+    }
+
+    #[test]
+    fn a_demo_worker_gets_the_listed_paths_it_lacks_at_its_start() {
+        let (mut w, mut s, worker, _) = one_at_work();
+        let p = w.agents[worker].project;
+        w.projects[p].copies = vec![".env".into(), "target".into()];
+        let mut had: Vec<String> = Vec::new();
+        for _ in 0..20 {
+            let lines = w.journal.len();
+            s.copy_in(&mut w, worker);
+            for e in &w.journal[lines..] {
+                match &e.event {
+                    Event::Copied {
+                        agent,
+                        paths,
+                        bytes,
+                    } => {
+                        assert_eq!(*agent, worker);
+                        assert!(paths.iter().all(|p| !had.contains(p)), "copied once");
+                        let small = paths.iter().all(|p| p.starts_with('.'));
+                        let range = match small {
+                            true => 100..=4_000,
+                            false => 1 << 20..=(400 << 20) + 4_000,
+                        };
+                        assert!(range.contains(bytes), "{paths:?} {bytes}");
+                        had.extend(paths.iter().cloned());
+                    }
+                    Event::CopySkipped { agent, why, .. } => {
+                        assert_eq!((*agent, why.as_str()), (worker, "not in the checkout"));
+                    }
+                    other => panic!("{other:?}"),
+                }
+            }
+        }
+        had.sort();
+        assert_eq!(had, [".env", "target"], "each in the end, once");
+        assert_eq!(s.extras.copied[&worker].len(), 2);
+        // All there: nothing said.
+        let lines = w.journal.len();
+        s.copy_in(&mut w, worker);
+        assert_eq!(w.journal.len(), lines);
     }
 
     #[test]
@@ -2615,27 +2697,27 @@ mod tests {
         w.budget = spent + SUGGEST_CAP;
         assert_eq!(s.suggest(&w, 0), Ok("haiku".into()), "just the cap left");
         assert_eq!(s.suggest(&w, 0), Err("a suggestion is under way".into()));
-        s.commits.suggesting = None;
+        s.extras.suggesting = None;
         w.budget -= 1;
         assert_eq!(
             s.suggest(&w, 0),
             Err("the pot has less than $0.05 left".into())
         );
         w.budget = spent + 100 * SUGGEST_CAP;
-        s.commits.paid_calls = (SUGGEST_DAY_CALLS - 1, SUGGEST_DAY_COST - SUGGEST_CAP);
+        s.extras.paid_calls = (SUGGEST_DAY_CALLS - 1, SUGGEST_DAY_COST - SUGGEST_CAP);
         assert_eq!(s.suggest(&w, 0), Ok("haiku".into()));
-        s.commits.suggesting = None;
-        s.commits.paid_calls = (SUGGEST_DAY_CALLS, 0);
+        s.extras.suggesting = None;
+        s.extras.paid_calls = (SUGGEST_DAY_CALLS, 0);
         assert_eq!(
             s.suggest(&w, 0),
             Err("today's 20 suggestions were made".into())
         );
-        s.commits.paid_calls = (0, SUGGEST_DAY_COST - SUGGEST_CAP + 1);
+        s.extras.paid_calls = (0, SUGGEST_DAY_COST - SUGGEST_CAP + 1);
         assert_eq!(
             s.suggest(&w, 0),
             Err("today's $1.00 for suggestions is spent".into())
         );
-        assert_eq!(s.commits.suggesting, None);
+        assert_eq!(s.extras.suggesting, None);
     }
 
     #[test]
@@ -2644,13 +2726,13 @@ mod tests {
         let leader = w.projects[0].leader;
         let at = w.tick;
         assert_eq!(s.suggest(&w, 0), Ok("haiku".into()));
-        assert_eq!(s.commits.suggesting, Some((0, at + 2)));
+        assert_eq!(s.extras.suggesting, Some((0, at + 2)));
         w.tick = at + 1;
         s.suggested(&mut w);
-        assert!(s.commits.suggesting.is_some(), "not yet");
+        assert!(s.extras.suggesting.is_some(), "not yet");
         w.tick = at + 2;
         s.suggested(&mut w);
-        assert_eq!(s.commits.suggesting, None);
+        assert_eq!(s.extras.suggesting, None);
         assert_eq!(
             w.journal.last().unwrap().event,
             Event::SuggestFailed {
@@ -2660,7 +2742,7 @@ mod tests {
             }
         );
         // Two changes applied: the first is the subject, the rest the body.
-        s.commits
+        s.extras
             .staged
             .insert(0, vec!["Add the parser".into(), "Fix the lexer".into()]);
         let paid = w.paid;
@@ -2671,7 +2753,7 @@ mod tests {
         assert_eq!(w.suggested.take().map(|g| g.text), Some(text.clone()));
         let cost = w.paid - paid;
         assert!((20..=60).contains(&cost), "{cost}");
-        assert_eq!(s.commits.paid_calls, (1, cost));
+        assert_eq!(s.extras.paid_calls, (1, cost));
         assert_eq!(
             w.journal.last().unwrap().event,
             Event::Suggested {
@@ -2686,10 +2768,10 @@ mod tests {
         w.tick += 2;
         s.suggested(&mut w);
         assert_eq!(w.suggested.take().map(|g| g.text), Some(text));
-        assert_eq!((w.paid - paid, s.commits.paid_calls.0), (cost, 1));
+        assert_eq!((w.paid - paid, s.extras.paid_calls.0), (cost, 1));
         assert_eq!(w.journal.len(), lines);
         // One change alone has no body.
-        s.commits.staged.insert(0, vec!["Only".into()]);
+        s.extras.staged.insert(0, vec!["Only".into()]);
         s.suggest(&w, 0).unwrap();
         w.tick += 2;
         s.suggested(&mut w);
