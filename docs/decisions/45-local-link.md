@@ -39,7 +39,12 @@ The leader, which writes nothing and reads in the person's checkout,
 and researchers get no address on their row. The `?` legend says what
 `↗` is, in both languages. The demo's workers on the projects that
 serve (shop-api, web, billing) say where the app runs after a build,
-so their rows show it; a stopped session drops it there too.
+so their rows show it; a stopped session drops it there too. Each
+runs its own copy in its worktree, so each has a port of its own, as
+live workers would (2026-10-31, with record 46): the project's first
+port plus how many of its workers and helpers came before it, gone
+ones too, so a port stays its worker's when another leaves
+(`sim::serving_before`).
 
 Not done: the card screen draws the same row (`card.rs`) with the
 address as plain text, not linked; not tried in a real terminal yet,

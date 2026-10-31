@@ -22,6 +22,6 @@ Movement, so no `:` name (record 41). The window's hint row and the
 help's `[  ]` line name both uses, in both languages. Pure screen
 logic: the demo's conversations show it as live's do.
 
-Not done (C6's other half, now C6b in #56): bookmarks. A mark the
-person sets would want to outlive the run, so it is a store column
-and a decision of its own.
+C6's other half, bookmarks (C6b in #56), is record 46: a mark the
+person sets outlives the run, so it is a store column and a decision
+of its own.
