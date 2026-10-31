@@ -109,7 +109,6 @@ pub struct Text {
     pub write_this: &'static str,
     pub scroll: &'static str,
     pub file: &'static str,
-    pub apply: &'static str,
     pub reject: &'static str,
     /// `>` in a change, and what it says where there is no hunk to quote.
     pub quote: &'static str,
@@ -124,6 +123,11 @@ pub struct Text {
     pub note_dropped: &'static str,
     pub no_notes: &'static str,
     pub notes_sent: &'static str,
+    /// `x` in a change: how many hunks are chosen of how many, none any
+    /// more; the footer's `a x`.
+    pub chosen: &'static str,
+    pub unchosen: &'static str,
+    pub apply_part: &'static str,
     pub views: [&'static str; 3],
     pub typing_to: &'static str,
     pub typing_command: &'static str,
@@ -412,7 +416,7 @@ pub struct Text {
     pub waiting_yes: &'static str,
     // Overlays
     pub help_title: &'static str,
-    pub help_keys: [(&'static str, &'static str); 49],
+    pub help_keys: [(&'static str, &'static str); 50],
     /// The help's line for a new line in the writing, put after the
     /// writing keys: where the terminal tells shift-enter apart, and
     /// where it does not.
@@ -472,7 +476,6 @@ pub const EN: Text = Text {
     write_this: "write to this agent",
     scroll: "scroll",
     file: "file",
-    apply: "apply to the checkout",
     reject: "reject",
     quote: "quote to it",
     no_hunk: "no hunk here to quote",
@@ -483,6 +486,9 @@ pub const EN: Text = Text {
     note_dropped: "note taken away",
     no_notes: "no notes on this change yet: c writes one on the top line",
     notes_sent: "{} notes went to {}; the change went back to them",
+    chosen: "{} of {} hunks chosen; a applies only them, the rest waits",
+    unchosen: "no hunk chosen; a applies the whole change",
+    apply_part: "apply · choose a hunk",
     views: ["salon", "board", "code"],
     typing_to: " › to {}: ",
     typing_command: " › command: ",
@@ -825,6 +831,10 @@ pub const EN: Text = Text {
             "c  n",
             "in a change: a note on the top line · send the notes, it goes back",
         ),
+        (
+            "x",
+            "in a change: choose the hunk at the top; a applies only the chosen",
+        ),
         ("space", ":pause / resume"),
         ("+  -", ":faster / :slower simulation"),
         ("L  :lang", "Türkçe / English; :lang en|tr"),
@@ -904,7 +914,6 @@ pub const TR: Text = Text {
     write_this: "bu agent'a yaz",
     scroll: "kaydır",
     file: "dosya",
-    apply: "checkout'a uygula",
     reject: "reddet",
     quote: "ona alıntıla",
     no_hunk: "burada alıntılanacak bir parça yok",
@@ -915,6 +924,9 @@ pub const TR: Text = Text {
     note_dropped: "not kaldırıldı",
     no_notes: "bu değişiklikte henüz not yok: c en üstteki satıra bir tane yazar",
     notes_sent: "{} not {} adlı ajana gitti; değişiklik ona geri döndü",
+    chosen: "{} / {} parça seçili; a yalnız onları uygular, kalanı bekler",
+    unchosen: "seçili parça yok; a değişikliğin tamamını uygular",
+    apply_part: "uygula · parça seç",
     views: ["salon", "pano", "kod"],
     typing_to: " › {} için: ",
     typing_command: " › komut: ",
@@ -1258,6 +1270,10 @@ pub const TR: Text = Text {
         (
             "c  n",
             "değişiklikte: üstteki satıra not · notları gönder, geri döner",
+        ),
+        (
+            "x",
+            "değişiklikte: üstteki parçayı seç; a yalnız seçilenleri uygular",
         ),
         ("space", ":pause durdur / devam"),
         ("+  -", "simülasyon :faster / :slower"),

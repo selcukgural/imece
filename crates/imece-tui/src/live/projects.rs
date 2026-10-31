@@ -403,7 +403,7 @@ mod tests {
         assert!(tree.starts_with(&root), "{}", tree.display());
         std::fs::write(tree.join("a.txt"), "changed\n").unwrap();
         sent(&mut live, &mut w, 2, &msg("lead-two", "done", "Changed a")).unwrap();
-        live.apply_change(&w, 2).unwrap();
+        live.apply_change(&w, 2, Vec::new()).unwrap();
         settle(&mut live, &mut w);
         assert_eq!(git_in(&two, &["diff", "--cached", "--name-only"]), "a.txt");
         assert_eq!(git_in(&one, &["status", "--porcelain"]), "");

@@ -265,6 +265,9 @@ pub struct App {
     pub diff_notes: Vec<DiffNote>,
     /// The note being written: whose change and which patch line.
     pub noting: Option<(AgentId, usize)>,
+    /// Hunks the person chose to apply alone (`x`): whose change, its
+    /// patch's hash, the hunk's `@@` line.
+    pub chosen: Vec<(AgentId, u64, usize)>,
     /// Rows the last drawing of a change had, for paging.
     pub diff_page: Cell<u16>,
     /// The selected journal line (a journal index).
@@ -370,6 +373,7 @@ impl App {
             diff_scroll: 0,
             diff_notes: Vec::new(),
             noting: None,
+            chosen: Vec::new(),
             diff_page: Cell::new(10),
             journal_sel: None,
             thread: None,
@@ -1235,6 +1239,7 @@ impl App {
             KeyCode::Char('r') => self.decide_change(id, false),
             KeyCode::Char('>') => self.quote_hunk(id),
             KeyCode::Char('c') => self.note_line(id),
+            KeyCode::Char('x') => self.choose_hunk(id),
             KeyCode::Char('n') => self.send_notes(id),
             // Writing, views, language, help and quitting work as anywhere.
             _ => return false,
@@ -1876,6 +1881,45 @@ impl App {
         notes
     }
 
+    /// The hunks of worker `id`'s change as it is now that the person
+    /// chose to apply alone, by their `@@` lines, in order.
+    pub fn chosen_of(&self, id: AgentId) -> Vec<usize> {
+        let Some(patch) = self.world.change_of(id).map(|c| patch_key(&c.patch)) else {
+            return Vec::new();
+        };
+        let mut hunks: Vec<usize> = (self.chosen.iter())
+            .filter(|&&(a, p, _)| a == id && p == patch)
+            .map(|&(_, _, h)| h)
+            .collect();
+        hunks.sort_unstable();
+        hunks
+    }
+
+    /// `x` in worker `id`'s change: the hunk at hand is chosen to be
+    /// applied alone (with the others chosen), or no longer.
+    fn choose_hunk(&mut self, id: AgentId) {
+        let t = self.lang.text();
+        let Some(c) = self.world.change_of(id) else {
+            return;
+        };
+        let Some(hunk) = ui::hunk_at(&c.patch, self.diff_scroll) else {
+            return self.flash(t.no_hunk);
+        };
+        let all = c.patch.lines().filter(|l| l.starts_with("@@")).count();
+        let key = (id, patch_key(&c.patch), hunk);
+        let was = self.chosen.len();
+        self.chosen.retain(|&k| k != key);
+        if self.chosen.len() == was {
+            self.chosen.push(key);
+        }
+        let n = self.chosen_of(id).len();
+        let said = match n {
+            0 => t.unchosen.to_string(),
+            _ => fill(t.chosen, &[&n.to_string(), &all.to_string()]),
+        };
+        self.flash(said);
+    }
+
     /// `c` in worker `id`'s change: a note on the line at hand (the top
     /// one), written in the command line; one there already is written
     /// again. Only a line of a hunk takes one.
@@ -2439,9 +2483,10 @@ impl App {
         let t = self.lang.text();
         let name = self.world.agents[id].name.clone();
         let open = self.inbox_rows().len();
+        let hunks = self.chosen_of(id);
         let decided = match &mut self.engine {
-            Engine::Live(l) if apply => l.apply_change(&self.world, id),
-            Engine::Sim(s) if apply => s.apply_change(&self.world, id),
+            Engine::Live(l) if apply => l.apply_change(&self.world, id, hunks),
+            Engine::Sim(s) if apply => s.apply_change(&self.world, id, hunks),
             Engine::Live(l) => l.reject_change(&mut self.world, id),
             Engine::Sim(s) => s.reject_change(&mut self.world, id),
         };
@@ -4052,6 +4097,47 @@ mod tests {
         press(&mut app, 'n');
         assert_eq!(flashed(&app).as_deref(), Some(t.no_notes));
         assert_eq!(app.zoom, Zoom::Diff(worker), "nothing sent, still there");
+    }
+
+    #[test]
+    fn x_chooses_the_hunk_at_hand_and_a_applies_only_the_chosen() {
+        let patch =
+            "diff --git a/x b/x\n--- a/x\n+++ b/x\n@@ -1 +1 @@\n-a\n+b\n@@ -9 +9 @@\n-c\n+d\n";
+        let (mut app, worker) = with_change(patch);
+        let t = app.lang.text();
+        // On the header: the first hunk; inside the second: that one.
+        app.diff_scroll = 0;
+        app.on_key(key(KeyCode::Char('x')));
+        assert_eq!(app.chosen_of(worker), [3]);
+        assert_eq!(
+            flashed(&app).as_deref(),
+            Some("1 of 2 hunks chosen; a applies only them, the rest waits")
+        );
+        app.diff_scroll = 8;
+        app.on_key(key(KeyCode::Char('x')));
+        assert_eq!(app.chosen_of(worker), [3, 6]);
+        // Again: no longer chosen.
+        app.on_key(key(KeyCode::Char('x')));
+        app.diff_scroll = 4;
+        app.on_key(key(KeyCode::Char('x')));
+        assert!(app.chosen_of(worker).is_empty());
+        assert_eq!(flashed(&app).as_deref(), Some(t.unchosen));
+        // Another change's or another worker's choice is not this one's.
+        app.chosen
+            .extend([(worker, patch_key("older"), 3), (0, patch_key(patch), 3)]);
+        assert!(app.chosen_of(worker).is_empty());
+        app.diff_scroll = 6;
+        app.on_key(key(KeyCode::Char('x')));
+        app.on_key(key(KeyCode::Char('a')));
+        let Engine::Sim(s) = &app.engine else {
+            panic!("the demo")
+        };
+        assert_eq!(s.applying_now(), [(worker, vec![6])]);
+        // A change with no hunk: nothing to choose.
+        let (mut app, worker) = with_change("diff --git a/b b/b\nBinary files differ\n");
+        app.on_key(key(KeyCode::Char('x')));
+        assert!(app.chosen_of(worker).is_empty());
+        assert_eq!(flashed(&app).as_deref(), Some(t.no_hunk));
     }
 
     #[test]

@@ -444,6 +444,34 @@ fn kit(p: ProjectId) -> &'static Kit {
     PROJECTS[p % PROJECTS.len()].2
 }
 
+/// The files a patch changes and its lines added and removed in each,
+/// as `--numstat` counts them.
+fn files_of(patch: &str) -> Vec<ChangedFile> {
+    let mut files: Vec<ChangedFile> = Vec::new();
+    let mut in_hunk = false;
+    for l in patch.lines() {
+        if let Some(names) = l.strip_prefix("diff --git ") {
+            let path = names.rsplit_once(" b/").map_or(names, |(_, p)| p);
+            files.push(ChangedFile {
+                path: path.into(),
+                added: 0,
+                removed: 0,
+                binary: false,
+            });
+            in_hunk = false;
+        } else if l.starts_with("@@") {
+            in_hunk = true;
+        } else if let Some(f) = files.last_mut().filter(|_| in_hunk) {
+            match l.chars().next() {
+                Some('+') => f.added += 1,
+                Some('-') => f.removed += 1,
+                _ => {}
+            }
+        }
+    }
+    files
+}
+
 /// How many of agent `id`'s project's workers and helpers came before it,
 /// gone ones too: its dev server takes the port after theirs, and keeps
 /// it when one of them leaves.
@@ -520,7 +548,8 @@ pub struct Sim {
     replies: Vec<Due>,
     /// Workers whose change the person applies: git's answer comes on the
     /// next step, as it does from live's git thread.
-    applying: Vec<AgentId>,
+    /// Changes being applied, with the hunks chosen (none: all).
+    applying: Vec<(AgentId, Vec<usize>)>,
     /// A session started with the head of long repository notes; said once
     /// a run.
     notes_cut: bool,
@@ -817,21 +846,36 @@ impl Sim {
 
     /// The person has worker `id`'s change applied: the next step says
     /// how it went. Refused while it is being applied, or when none waits.
-    pub fn apply_change(&mut self, w: &World, id: AgentId) -> Result<(), String> {
-        if self.applying.contains(&id) {
+    pub fn apply_change(
+        &mut self,
+        w: &World,
+        id: AgentId,
+        hunks: Vec<usize>,
+    ) -> Result<(), String> {
+        if self.is_applying(id) {
             return Err("their change is being applied".into());
         }
         if w.change_of(id).is_none() {
             return Err("no change of theirs waits".into());
         }
-        self.applying.push(id);
+        self.applying.push((id, hunks));
         Ok(())
+    }
+
+    /// The changes being applied, with their chosen hunks.
+    #[cfg(test)]
+    pub fn applying_now(&self) -> &[(AgentId, Vec<usize>)] {
+        &self.applying
+    }
+
+    fn is_applying(&self, id: AgentId) -> bool {
+        self.applying.iter().any(|(a, _)| *a == id)
     }
 
     /// The person rejects worker `id`'s change; not while it is being
     /// applied.
     pub fn reject_change(&mut self, w: &mut World, id: AgentId) -> Result<(), String> {
-        if self.applying.contains(&id) {
+        if self.is_applying(id) {
             return Err("their change is being applied".into());
         }
         w.change_rejected(id);
@@ -840,12 +884,11 @@ impl Sim {
 
     /// How applying worker `id`'s change went: it `fits` the checkout and
     /// is applied with a mark, or git refuses it and it still waits.
-    fn applied(&mut self, w: &mut World, id: AgentId, fits: bool) {
-        let Some(file) = w
-            .change_of(id)
-            .and_then(|c| c.files.first())
-            .map(|f| f.path.clone())
-        else {
+    fn applied(&mut self, w: &mut World, id: AgentId, fits: bool, hunks: &[usize]) {
+        let Some(change) = w.change_of(id).cloned() else {
+            return;
+        };
+        let Some(file) = change.files.first().map(|f| f.path.clone()) else {
             return;
         };
         if !fits {
@@ -854,10 +897,33 @@ impl Sim {
         }
         let mark = sha(&mut self.rng);
         w.change_applied(id, mark);
-        // The worktree is marked at the change: nothing written since.
+        let stand = &mut w.agents[id].stand;
+        if hunks.is_empty() {
+            // The worktree is marked at the change: nothing written since.
+            (stand.added, stand.removed) = (0, 0);
+            return;
+        }
+        // Some hunks only: the rest waits as a change again, as live
+        // reads it from the worktree; it is what the worktree holds.
+        let rest: Vec<usize> = (change.patch.lines().enumerate())
+            .filter(|(_, l)| l.starts_with("@@"))
+            .map(|(i, _)| i)
+            .filter(|i| !hunks.contains(i))
+            .collect();
+        let patch = imece_agent::worktree::subset(&change.patch, &rest);
+        let files = files_of(&patch);
         let s = &mut w.agents[id].stand;
-        s.added = 0;
-        s.removed = 0;
+        (s.added, s.removed) = files
+            .iter()
+            .fold((0, 0), |(a, r), f| (a + f.added, r + f.removed));
+        if !files.is_empty() {
+            w.change_ready(Change {
+                files,
+                patch,
+                runs: Vec::new(),
+                ..change
+            });
+        }
     }
 
     pub fn step(&mut self, w: &mut World) {
@@ -871,9 +937,9 @@ impl Sim {
                 a.cost += a.vendor.cost_per_tick();
             }
         }
-        for id in std::mem::take(&mut self.applying) {
+        for (id, hunks) in std::mem::take(&mut self.applying) {
             let fits = !self.rng.one_in(8);
-            self.applied(w, id, fits);
+            self.applied(w, id, fits, &hunks);
         }
         // Live sessions report their plan's windows now and then.
         if t.is_multiple_of(12) {
@@ -1964,7 +2030,7 @@ mod tests {
             let a = w.inbox[i].agent;
             match w.inbox[i].kind {
                 InboxKind::Change => {
-                    let _ = s.apply_change(w, a);
+                    let _ = s.apply_change(w, a, Vec::new());
                 }
                 InboxKind::Approval => w.decided(i, true),
                 InboxKind::Question => {
@@ -2394,14 +2460,14 @@ mod tests {
     fn applying_answers_on_the_next_step_and_refuses_twice() {
         let (mut w, mut s, worker, _) = one_at_work();
         assert_eq!(
-            s.apply_change(&w, worker),
+            s.apply_change(&w, worker, Vec::new()),
             Err("no change of theirs waits".into())
         );
         s.test(&mut w, worker);
         s.tested(&mut w, worker, 0);
-        assert_eq!(s.apply_change(&w, worker), Ok(()));
+        assert_eq!(s.apply_change(&w, worker, Vec::new()), Ok(()));
         assert_eq!(
-            s.apply_change(&w, worker),
+            s.apply_change(&w, worker, Vec::new()),
             Err("their change is being applied".into())
         );
         assert_eq!(
@@ -2417,11 +2483,91 @@ mod tests {
         )));
     }
 
+    const TWO_FILES: &str = "\
+diff --git a/a.rs b/a.rs
+--- a/a.rs
++++ b/a.rs
+@@ -1 +1,2 @@
+-x
++y
++z
+diff --git a/b.rs b/b.rs
+--- a/b.rs
++++ b/b.rs
+@@ -4 +4 @@
+-p
++q
+";
+
+    #[test]
+    fn a_patch_s_files_count_their_hunks_lines_only() {
+        let files = files_of(TWO_FILES);
+        let got: Vec<(&str, u32, u32)> = (files.iter())
+            .map(|f| (f.path.as_str(), f.added, f.removed))
+            .collect();
+        assert_eq!(got, [("a.rs", 2, 1), ("b.rs", 1, 1)]);
+        assert!(files_of("").is_empty());
+        let header_only = "diff --git a/c b/c\n--- a/c\n+++ b/c\n";
+        assert_eq!(files_of(header_only)[0].added, 0, "headers are no lines");
+    }
+
+    #[test]
+    fn chosen_hunks_are_applied_and_the_rest_waits_as_a_change_again() {
+        let (mut w, mut s, worker, _) = one_at_work();
+        let ready = |w: &mut World| {
+            w.change_ready(Change {
+                agent: worker,
+                title: "two files".into(),
+                files: files_of(TWO_FILES),
+                patch: TWO_FILES.into(),
+                // A run on the whole change's tree.
+                runs: vec![Ran {
+                    line: "cargo test".into(),
+                    code: Some(0),
+                    timed_out: false,
+                }],
+            })
+        };
+        ready(&mut w);
+        assert_eq!(s.apply_change(&w, worker, vec![3]), Ok(()));
+        assert_eq!(s.applying, [(worker, vec![3])]);
+        s.applying.clear();
+        s.applied(&mut w, worker, true, &[3]);
+        assert!(matches!(
+            w.journal.iter().rev().find(|e| matches!(e.event, Event::Applied { .. })).unwrap().event,
+            Event::Applied { agent, files: 2, .. } if agent == worker
+        ));
+        let rest = w.change_of(worker).expect("the rest waits");
+        assert_eq!(rest.title, "two files");
+        assert!(
+            rest.runs.is_empty(),
+            "the rest is another tree: nothing ran on it"
+        );
+        assert_eq!(
+            rest.patch,
+            "diff --git a/b.rs b/b.rs\n--- a/b.rs\n+++ b/b.rs\n@@ -4 +4 @@\n-p\n+q\n"
+        );
+        assert_eq!(rest.files.len(), 1);
+        let stand = &w.agents[worker].stand;
+        assert_eq!(
+            (stand.added, stand.removed),
+            (1, 1),
+            "what the worktree still holds"
+        );
+        assert_eq!(w.open_inbox().len(), 1);
+        // Every hunk chosen: nothing waits after.
+        ready(&mut w);
+        s.applied(&mut w, worker, true, &[3, 10]);
+        assert!(w.change_of(worker).is_none());
+        let stand = &w.agents[worker].stand;
+        assert_eq!((stand.added, stand.removed), (0, 0));
+    }
+
     #[test]
     fn a_change_that_fits_is_applied_with_a_mark_one_that_does_not_still_waits() {
         let (mut w, mut s, worker, _) = one_at_work();
         let lines = |w: &World| (w.agents[worker].stand.added, w.agents[worker].stand.removed);
-        s.applied(&mut w, worker, true);
+        s.applied(&mut w, worker, true, &[]);
         assert!(
             w.journal
                 .iter()
@@ -2433,7 +2579,7 @@ mod tests {
         let held = lines(&w);
         assert_ne!(held, (0, 0));
         let file = w.change_of(worker).unwrap().files[0].path.clone();
-        s.applied(&mut w, worker, false);
+        s.applied(&mut w, worker, false, &[]);
         assert_eq!(
             w.journal.last().unwrap().event,
             Event::ApplyFailed {
@@ -2444,7 +2590,7 @@ mod tests {
         assert!(w.change_of(worker).is_some());
         assert_eq!(lines(&w), held, "not applied: still in the worktree");
         w.agents[worker].stand.ahead = 2;
-        s.applied(&mut w, worker, true);
+        s.applied(&mut w, worker, true, &[]);
         assert!(w.change_of(worker).is_none());
         assert_eq!(lines(&w), (0, 0), "marked");
         assert_eq!(w.agents[worker].stand.ahead, 2, "its own commits stay");
@@ -2462,7 +2608,7 @@ mod tests {
         for _ in 0..64 {
             s.test(&mut w, worker);
             s.tested(&mut w, worker, 0);
-            s.apply_change(&w, worker).unwrap();
+            s.apply_change(&w, worker, Vec::new()).unwrap();
             let n = w.journal.len();
             s.step(&mut w);
             let how = w.journal[n..].iter().find_map(|e| match e.event {

@@ -21,6 +21,21 @@ pub fn file_starts(patch: &str) -> Vec<usize> {
         .collect()
 }
 
+/// The hunk the diff view has at `top` (its first row), by its `@@`
+/// line: the one `top` is in, else, on a file's header, the first one
+/// after it; past the end, the last line's. None in a patch without one.
+pub fn hunk_at(patch: &str, top: usize) -> Option<usize> {
+    let lines: Vec<&str> = patch.lines().collect();
+    let file = |i: &usize| lines[*i].starts_with("diff --git ");
+    let hunk = |i: &usize| lines[*i].starts_with("@@");
+    let top = top.min(lines.len().checked_sub(1)?);
+    let before = (0..=top).rev().find(|i| hunk(i) || file(i));
+    match before.filter(hunk) {
+        Some(at) => Some(at),
+        None => (top..lines.len()).find(hunk),
+    }
+}
+
 /// The most lines of a hunk `>` quotes; the rest is counted after them.
 pub const QUOTE_LINES: usize = 40;
 
@@ -35,12 +50,7 @@ pub fn quote(patch: &str, top: usize) -> Option<String> {
     let lines: Vec<&str> = patch.lines().collect();
     let file = |i: &usize| lines[*i].starts_with("diff --git ");
     let hunk = |i: &usize| lines[*i].starts_with("@@");
-    let top = top.min(lines.len().checked_sub(1)?);
-    let before = (0..=top).rev().find(|i| hunk(i) || file(i));
-    let start = match before.filter(hunk) {
-        Some(at) => at,
-        None => (top..lines.len()).find(hunk)?,
-    };
+    let start = hunk_at(patch, top)?;
     let end = (start + 1..lines.len())
         .find(|i| hunk(i) || file(i))
         .unwrap_or(lines.len());
@@ -188,18 +198,34 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App, id: AgentId) {
     f.render_widget(Paragraph::new(run_lines(app.lang, &c.runs)), runs);
     app.diff_page.set(inner.height);
     let height = usize::from(inner.height);
-    let lines = patch_rows(&c.patch, app.diff_scroll, &app.notes_of(id), height);
+    let lines = patch_rows(
+        &c.patch,
+        app.diff_scroll,
+        &app.notes_of(id),
+        &app.chosen_of(id),
+        height,
+    );
     f.render_widget(Paragraph::new(lines), inner);
 }
 
 /// The rows of `patch` from line `top` on, `height` of them: each line
-/// cleaned and coloured, the top one (the line at hand) marked, and a
-/// note under the line it is on, every line of it after `✎`.
-fn patch_rows(patch: &str, top: usize, notes: &[&DiffNote], height: usize) -> Vec<Line<'static>> {
+/// cleaned and coloured, the top one (the line at hand) marked, a chosen
+/// hunk's `@@` line with `✓` after it, and a note under the line it is
+/// on, every line of it after `✎`.
+fn patch_rows(
+    patch: &str,
+    top: usize,
+    notes: &[&DiffNote],
+    chosen: &[usize],
+    height: usize,
+) -> Vec<Line<'static>> {
     let mut rows = Vec::new();
     // Each line takes a row at least: `height` lines fill the rows.
     for (i, l) in patch.lines().enumerate().skip(top).take(height) {
         let mut row = Line::from(Span::styled(clean(l), line_style(l)));
+        if chosen.contains(&i) {
+            row.spans.push(Span::styled("  ✓", bold(pal().ok)));
+        }
         if i == top {
             row = row.style(changed());
         }
@@ -366,7 +392,7 @@ diff --git a/c.rs b/c.rs
             text: text.into(),
         };
         let (a, b) = (note(6, "one"), note(5, "two\nlines"));
-        let rows = patch_rows(PATCH, 5, &[&a, &b], 8);
+        let rows = patch_rows(PATCH, 5, &[&a, &b], &[], 8);
         let text: Vec<String> = rows.iter().map(|r| r.to_string()).collect();
         assert_eq!(
             text,
@@ -385,8 +411,22 @@ diff --git a/c.rs b/c.rs
         assert!(rows[1..].iter().all(|r| r.style == Style::new()));
         assert_eq!(rows[1].spans[0].style, bold(pal().accent));
         // Cut at the height, a note's rows too.
-        assert_eq!(patch_rows(PATCH, 5, &[&a, &b], 2).len(), 2);
-        assert_eq!(patch_rows(PATCH, 17, &[], 8).len(), 2, "the patch ends");
+        assert_eq!(patch_rows(PATCH, 5, &[&a, &b], &[], 2).len(), 2);
+        assert_eq!(
+            patch_rows(PATCH, 17, &[], &[], 8).len(),
+            2,
+            "the patch ends"
+        );
+        // A chosen hunk's `@@` line says so; the others do not.
+        let rows = patch_rows(PATCH, 4, &[], &[8], 6);
+        assert_eq!(rows[4].to_string(), "@@ -9,1 +9,2 @@  ✓");
+        assert_eq!(rows[4].spans[1].style, bold(pal().ok));
+        assert_eq!(rows[0].to_string(), "@@ -1,2 +1,2 @@");
+        // The hunk at hand, for `x`: as `>` finds it.
+        assert_eq!(hunk_at(PATCH, 0), Some(4));
+        assert_eq!(hunk_at(PATCH, 9), Some(8));
+        assert_eq!(hunk_at(PATCH, 11), Some(16));
+        assert_eq!(hunk_at("", 0), None);
     }
 
     #[test]

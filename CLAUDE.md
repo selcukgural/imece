@@ -149,6 +149,7 @@ record in the same PR.
 - 47 `quote-hunk`: `>` in a change opens `@worker ` with the hunk at the top quoted in a `diff` fence (`ui::quote`, its file's names, 40 lines, cleaned); the `!cmd` output half of C15 is C15b.
 - 48 `limits`: Claude's `rate_limit_event` and Codex's `account/rateLimits/updated` as `Event::Limits`; `World.limits` by vendor and window, the header shows each vendor's tightest (`words::limit`, loud from 90%); the demo fills them from spending; not kept between runs.
 - 49 `diff-notes`: `c` notes the top line of a change (`App::diff_notes`, by patch hash), `n` sends them in one message (`ui::notes_message`, `ui::place` file:line, `−N` removed) and the change goes back like a reject; the top row is the line at hand.
+- 50 `partial-apply`: `x` chooses hunks (`App::chosen`), `a` applies only them: `worktree::subset` + `worktree::part` (the part's tree through an index of its own), the worktree marked with only that part, the rest read again as a new Δ; the demo mirrors it.
 
 `docs/neighbours.md`: voff, what was taken from it and the rules that come
 from what it lacks. Read it before building a part it names.

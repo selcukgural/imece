@@ -28,7 +28,7 @@ stays while the checkout has not moved past them), and `Live::follow`
 runs it before every prompt of a worker that is between turns (its
 helpers too), journaled `WorktreeMoved`. The sim has no changes.
 The wake briefing's `worktree::change` runs on the session's start
-thread (record 19). Known gap: no partial apply.
+thread (record 19). Partial apply came later (record 50).
 
 Three-way apply (2026-10-30, the first Kule run: two workers both added
 to CHANGELOG, the second Δ did not apply): when the plain `git apply
