@@ -358,6 +358,7 @@ pub struct Text {
     pub ev_forgotten: &'static str,
     /// Agent, file, the file's KiB, the cap's KiB.
     pub ev_notes_cut: &'static str,
+    pub ev_commands_missing: &'static str,
     /// The confine level at a start that is not strict: standard, open.
     pub ev_confine_standard: &'static str,
     pub ev_confine_open: &'static str,
@@ -704,6 +705,7 @@ pub const EN: Text = Text {
     ev_renamed: "you renamed {} to {}",
     ev_forgotten: "you made {} forget its session; it starts a new one, told where it left off",
     ev_notes_cut: "{}: the repository's {} is {} KiB; only its first {} KiB went into the instructions",
+    ev_commands_missing: "{}'s session listed no commands of its own; {}'s format may have changed, so only /clear completes",
     ev_confine_standard: "confine standard: workers get their vendor's shell and web; isolation is a container's job, not imece's",
     ev_confine_open: "confine open: agents run with your own vendor setup (settings, hooks, MCP servers); isolation is a container's job, not imece's",
     ev_worktree_moved: "{}: worktree moved from {} to HEAD {}",
@@ -1143,6 +1145,7 @@ pub const TR: Text = Text {
     ev_renamed: "{} projesine {} adını verdin",
     ev_forgotten: "{} oturumunu unutturdun; yeni bir oturumla başlıyor, kaldığı yer anlatılacak",
     ev_notes_cut: "{}: deponun {} dosyası {} KiB; talimatlara yalnızca ilk {} KiB girdi",
+    ev_commands_missing: "{} oturumu kendi komutlarını listelemedi; {} biçimi değişmiş olabilir, yalnızca /clear tamamlanır",
     ev_confine_standard: "confine standard: işçiler satıcılarının kabuğunu ve web'ini alır; yalıtım bir konteynerin işi, imece'nin değil",
     ev_confine_open: "confine open: ajanlar senin kendi satıcı kurulumunla çalışır (ayarlar, hook'lar, MCP sunucuları); yalıtım bir konteynerin işi, imece'nin değil",
     ev_worktree_moved: "{}: çalışma ağacı {} yerine HEAD {} oldu",
@@ -1409,6 +1412,7 @@ mod tests {
             (EN.limit_resets, TR.limit_resets),
             (EN.window_hours, TR.window_hours),
             (EN.window_days, TR.window_days),
+            (EN.ev_commands_missing, TR.ev_commands_missing),
             (EN.ev_confine_standard, TR.ev_confine_standard),
             (EN.ev_confine_open, TR.ev_confine_open),
             (EN.in_question, TR.in_question),

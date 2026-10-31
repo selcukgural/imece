@@ -26,8 +26,12 @@ timeout + 30 s for it); the vendor's own command line from imece's
 commands on again, prompts starting with `/` get a `Text:\n` prefix
 like Gemini's, `/clear` restarts the cost counter so the parser keeps
 a monotonic total; Gemini: raw over session/prompt; Codex: only
-`/compact` → `thread/compact/start`; `/clear` without one of the
-vendor's own = imece ends the session). Known gaps, in the order to
+`/compact` → `thread/compact/start`, which Codex may refuse: since
+#52 (2026-10-31) a refusal is a failed turn (`TurnDone { ok: false }`,
+"compaction refused: …") and the next queued turn runs, where before it
+stopped the session like a failed start-up check, which still fail
+closed; `/clear` without one of the vendor's own = imece ends the
+session). Known gaps, in the order to
 feel them: no session persistence across runs, `run` has no network
 block (cargo may reach the registry if the lockfile is off), each
 worktree has its own `target/` on purpose (a shared one thrashes
