@@ -275,6 +275,7 @@ not yet seen.
 | `⇧enter` (or `\` `enter`, `⌥enter`) | while writing: a new line; `↑` `↓` go between lines |
 | `1` `2` `3` | salon · board · code map |
 | `↑` `↓` / `j` `k` | select |
+| `^o` | back where you were (view, panel, focus, card), as vim's jump list; an open conversation closes first |
 | `←` `→` / `h` `l` | fold / unfold a project (`enter` on its header too) |
 | `f` | the salon shows only what needs you (waiting for you, stuck, done and not seen) · everyone again |
 | `L` | English / Türkçe |
