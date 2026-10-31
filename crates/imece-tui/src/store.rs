@@ -43,7 +43,8 @@ use crate::model::*;
 /// 6 (2026-10-31): the card an inbox item came on (`inbox.card`).
 /// 7 (2026-10-31): whether the person pinned a project (`projects.pinned`).
 /// 8 (2026-10-31): the journal lines the person marked (`journal.marked`).
-pub const SCHEMA_VERSION: i64 = 8;
+/// 9 (2026-10-31): imece's own paid calls, by day (`paid`).
+pub const SCHEMA_VERSION: i64 = 9;
 /// Trace lines kept per agent, as the world keeps them.
 const TRACE_KEEP: usize = 200;
 /// The file's name under the state directory.
@@ -103,6 +104,8 @@ CREATE TABLE IF NOT EXISTS offers (
 CREATE TABLE IF NOT EXISTS changes (
     agent INTEGER PRIMARY KEY, path TEXT NOT NULL, tree TEXT NOT NULL,
     files TEXT NOT NULL, patch TEXT NOT NULL, runs TEXT NOT NULL DEFAULT '[]');
+CREATE TABLE IF NOT EXISTS paid (
+    day INTEGER PRIMARY KEY, calls INTEGER NOT NULL, cost INTEGER NOT NULL) WITHOUT ROWID;
 ";
 
 /// What the engine keeps beside the world, borrowed for a save: by
@@ -735,6 +738,66 @@ impl Store {
         Ok(())
     }
 
+    /// imece's own paid calls on `day` (days since the epoch, UTC): how
+    /// many, and what they cost or hold reserved, in ten-thousandths of a
+    /// dollar.
+    pub fn paid_on(&self, day: u64) -> rusqlite::Result<(u32, u64)> {
+        self.conn
+            .query_row(
+                "SELECT calls, cost FROM paid WHERE day = ?1",
+                params![big(day)],
+                |r| Ok((r.get::<_, u32>(0)?, ubig(r.get(1)?))),
+            )
+            .optional()
+            .map(Option::unwrap_or_default)
+    }
+
+    /// What all of imece's own paid calls cost, every day together: part
+    /// of the pot, as what the agents spent is.
+    pub fn paid_total(&self) -> rusqlite::Result<u64> {
+        self.conn
+            .query_row("SELECT COALESCE(SUM(cost), 0) FROM paid", [], |r| {
+                Ok(ubig(r.get(0)?))
+            })
+    }
+
+    /// Reserves one paid call on `day` that may cost up to `cap`, before
+    /// it is made, when the day's calls stay at most `calls` and their
+    /// cost at most `cost` with it; whether it did. One transaction: what
+    /// is counted is what was checked.
+    pub fn reserve(&mut self, day: u64, cap: u64, calls: u32, cost: u64) -> rusqlite::Result<bool> {
+        let tx = self
+            .conn
+            .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+        let (had_calls, had_cost): (u32, u64) = tx
+            .query_row(
+                "SELECT calls, cost FROM paid WHERE day = ?1",
+                params![big(day)],
+                |r| Ok((r.get(0)?, ubig(r.get(1)?))),
+            )
+            .optional()?
+            .unwrap_or_default();
+        if had_calls >= calls || had_cost + cap > cost {
+            return Ok(false);
+        }
+        tx.execute(
+            "INSERT OR REPLACE INTO paid (day, calls, cost) VALUES (?1, ?2, ?3)",
+            params![big(day), had_calls + 1, big(had_cost + cap)],
+        )?;
+        tx.commit()?;
+        Ok(true)
+    }
+
+    /// A call reserved on `day` with `cap` cost `spent`: the day keeps
+    /// that instead of the cap.
+    pub fn settle(&mut self, day: u64, cap: u64, spent: u64) -> rusqlite::Result<()> {
+        self.conn.execute(
+            "UPDATE paid SET cost = MAX(cost - ?2, 0) + ?3 WHERE day = ?1",
+            params![big(day), big(cap), big(spent)],
+        )?;
+        Ok(())
+    }
+
     /// What a save has to write, and what is saved once it did.
     fn plan(&self, w: &World, k: &Kept) -> Plan {
         let s = &self.saved;
@@ -919,6 +982,8 @@ impl Store {
             research_queue: VecDeque::new(),
             plans: Vec::new(),
             changes: Vec::new(),
+            paid: 0,
+            suggested: None,
         };
         let mut found = Found::default();
         let mut saved = Saved::default();
@@ -1615,6 +1680,8 @@ mod tests {
             research_queue: VecDeque::new(),
             plans: Vec::new(),
             changes: Vec::new(),
+            paid: 0,
+            suggested: None,
         };
         w.agents[1].cost = 4_321;
         w.agents[1].card = Some(0);
@@ -3007,5 +3074,61 @@ mod tests {
             .as_secs();
         assert!(saved_at(&mut store).unwrap().abs_diff(now) <= 2);
         assert!(unix_now().abs_diff(now) <= 2);
+    }
+
+    #[test]
+    fn a_paid_call_is_reserved_only_under_both_of_the_days_ceilings() {
+        let mut st = Store::in_memory();
+        assert_eq!(st.paid_on(7).unwrap(), (0, 0));
+        // Two calls a day, 0.10 a day; each may cost 0.04.
+        assert!(st.reserve(7, 400, 2, 1_000).unwrap());
+        assert_eq!(st.paid_on(7).unwrap(), (1, 400));
+        assert!(st.reserve(7, 400, 2, 1_000).unwrap());
+        assert_eq!(st.paid_on(7).unwrap(), (2, 800));
+        // The count is full: refused, nothing counted.
+        assert!(!st.reserve(7, 100, 2, 1_000).unwrap());
+        assert_eq!(st.paid_on(7).unwrap(), (2, 800));
+        // Another day starts from nothing.
+        assert!(
+            st.reserve(8, 1_000, 3, 1_000).unwrap(),
+            "up to the cost is room"
+        );
+        assert!(!st.reserve(8, 1, 3, 1_000).unwrap(), "one more is past it");
+        assert_eq!(st.paid_on(8).unwrap(), (1, 1_000));
+        assert_eq!(st.paid_total().unwrap(), 1_800);
+    }
+
+    #[test]
+    fn a_settled_call_keeps_what_it_cost_instead_of_its_cap() {
+        let mut st = Store::in_memory();
+        assert_eq!(st.paid_total().unwrap(), 0);
+        assert!(st.reserve(3, 500, 9, 9_000).unwrap());
+        assert!(st.reserve(3, 500, 9, 9_000).unwrap());
+        st.settle(3, 500, 37).unwrap();
+        assert_eq!(st.paid_on(3).unwrap(), (2, 537));
+        // A day that is not there takes nothing.
+        st.settle(4, 500, 37).unwrap();
+        assert_eq!(st.paid_on(4).unwrap(), (0, 0));
+        assert_eq!(st.paid_total().unwrap(), 537);
+    }
+
+    #[test]
+    fn paid_calls_stay_in_the_file() {
+        let dir = std::env::temp_dir().join(format!("imece-paid-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join(FILE);
+        {
+            let mut st = Store::open(&path).unwrap();
+            assert!(st.reserve(5, 200, 1, 1_000).unwrap());
+            st.settle(5, 200, 12).unwrap();
+        }
+        let mut st = Store::open(&path).unwrap();
+        assert_eq!(st.paid_on(5).unwrap(), (1, 12));
+        assert!(
+            !st.reserve(5, 1, 1, 1_000).unwrap(),
+            "the day's one call was made"
+        );
+        drop(st);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

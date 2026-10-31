@@ -154,7 +154,8 @@ record in the same PR.
 - 52 `focus-brief`: back in the terminal after `FOCUS_AWAY` (3 min) in another window, the away digest shows at once (`App::focus`, from the journal since the blur, no model), not over writing or another window.
 - 53 `awake`: `--awake`/`:awake` (opt-in) hold the machine's sleep while an agent is mid-turn: `awake.rs`, caffeinate or systemd-inhibit as a child in its own process group, let go when nothing is mid-turn or imece ends; a failure is said once.
 - 54 `diff-files`: a change of several files lists them above its patch (`ui::diff::file_lines`, six and the rest counted); `w` wraps its long lines (`App::diff_wrap`); folding all files is D3b.
-- 55 `diff-kinds`: a change's files by kind (source, tests, generated, by name: `ui::diff::kind`), its lines per kind above the file list when there is more than one; the commit-message suggestion (D6b) is a paid call, left for the person.
+- 55 `diff-kinds`: a change's files by kind (source, tests, generated, by name: `ui::diff::kind`), its lines per kind above the file list when there is more than one; the commit-message suggestion (D6b) is record 56.
+- 56 `commit-message`: `:commit` asks Claude's cheap tier (`claude::once`: no tools, own system prompt, not saved) for a message for what is staged, put on the command line as `!git commit -m '…'`; $0.05 a call, 20 calls and $1 a day, reserved in the store (`paid`, schema 9) and the pot before the call, settled after; the same staged tree again costs nothing.
 
 `docs/neighbours.md`: voff, what was taken from it and the rules that come
 from what it lacks. Read it before building a part it names.

@@ -33,6 +33,8 @@ pub(crate) fn team(workers: usize) -> World {
         research_queue: Default::default(),
         plans: Vec::new(),
         changes: Vec::new(),
+        paid: 0,
+        suggested: None,
     };
     w.agents.push(Agent::new(
         0,

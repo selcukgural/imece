@@ -279,6 +279,57 @@ pub fn change(path: &Path, max_patch: usize) -> io::Result<Option<Change>> {
     })
 }
 
+/// What is staged in a checkout, for a commit message: the tree its
+/// index makes (what names it), `git diff --cached --stat`, the patch
+/// (at most the bytes asked for, cut at a line; `cut` says so) and the
+/// subjects of the newest commits, for their style.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Staged {
+    pub tree: String,
+    pub stat: String,
+    pub patch: String,
+    pub cut: bool,
+    pub subjects: Vec<String>,
+}
+
+/// The newest commit subjects [`staged_change`] gives.
+const SUBJECTS: usize = 8;
+
+/// What is staged in the checkout `repo` against its HEAD (see
+/// [`Staged`]), or none when nothing is. Only reads: the person's index
+/// stays as it is (`write-tree` adds the tree's objects, nothing else),
+/// and no diff or text-conversion program of theirs runs.
+pub fn staged_change(repo: &Path, max_patch: usize) -> io::Result<Option<Staged>> {
+    let diff = [
+        "diff",
+        "--cached",
+        "--no-color",
+        "--no-ext-diff",
+        "--no-textconv",
+    ];
+    let stat = git(repo, &[&diff[..], &["--stat"]].concat())?;
+    if stat.is_empty() {
+        return Ok(None);
+    }
+    let tree = git(repo, &["write-tree"])?;
+    let patch = git_bytes(repo, &[], &diff)?;
+    let cut = patch.len() > max_patch;
+    let mut patch = String::from_utf8_lossy(&patch[..patch.len().min(max_patch)]).into_owned();
+    if cut {
+        // The last whole line, never half of one.
+        patch.truncate(patch.rfind('\n').map_or(0, |i| i + 1));
+    }
+    // A checkout without a commit has no subjects.
+    let log = git(repo, &["log", &format!("-{SUBJECTS}"), "--format=%s"]).unwrap_or_default();
+    Ok(Some(Staged {
+        tree,
+        stat,
+        patch,
+        cut,
+        subjects: log.lines().map(str::to_string).collect(),
+    }))
+}
+
 /// The tree the worktree at `path` makes as it is, untracked files
 /// included: what names its content, so a run can be tied to exactly
 /// what it ran on. Read like [`change`], through an index file of its own
@@ -627,6 +678,56 @@ mod tests {
         let pid = std::process::id();
         assert!(a.starts_with(&format!("imece-stand-{pid}-")), "{a}");
         assert!(own_index("tree").starts_with("imece-tree-"));
+    }
+
+    #[test]
+    fn what_is_staged_is_read_without_touching_the_index() {
+        let s = repo("staged");
+        let r = &s.repo;
+        assert_eq!(staged_change(r, 1 << 20).unwrap(), None, "nothing staged");
+        // Written but not staged is not staged either.
+        std::fs::write(r.join("a.txt"), "a\nb\n").unwrap();
+        assert_eq!(staged_change(r, 1 << 20).unwrap(), None);
+        git(r, &["add", "a.txt"]).unwrap();
+        let before = git(r, &["diff", "--cached", "--name-only"]).unwrap();
+        let got = staged_change(r, 1 << 20).unwrap().unwrap();
+        assert_eq!(got.tree, git(r, &["write-tree"]).unwrap());
+        assert!(got.stat.contains("a.txt"), "{got:?}");
+        assert!(got.patch.contains("+b\n"), "{got:?}");
+        assert!(!got.cut);
+        assert_eq!(got.subjects, ["init"]);
+        assert_eq!(
+            git(r, &["diff", "--cached", "--name-only"]).unwrap(),
+            before
+        );
+        // Cut at a line, and said.
+        let whole = got.patch.len();
+        let cut = staged_change(r, whole - 1).unwrap().unwrap();
+        assert!(cut.cut);
+        assert!(
+            cut.patch.ends_with('\n') && cut.patch.len() < whole,
+            "{cut:?}"
+        );
+        assert!(got.patch.starts_with(&cut.patch));
+        let exact = staged_change(r, whole).unwrap().unwrap();
+        assert!(!exact.cut, "a patch of just the size is whole");
+        assert_eq!(exact.patch, got.patch);
+    }
+
+    #[test]
+    fn the_newest_eight_subjects_come_newest_first() {
+        let s = repo("subjects");
+        let r = &s.repo;
+        for i in 1..=9 {
+            commit(r, &format!("c{i}"));
+        }
+        std::fs::write(r.join("b.txt"), "b").unwrap();
+        git(r, &["add", "b.txt"]).unwrap();
+        let got = staged_change(r, 1 << 20).unwrap().unwrap();
+        assert_eq!(
+            got.subjects,
+            ["c9", "c8", "c7", "c6", "c5", "c4", "c3", "c2"]
+        );
     }
 
     #[test]

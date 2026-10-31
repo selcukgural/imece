@@ -976,6 +976,21 @@ pub enum Event {
         agent: AgentId,
         why: String,
     },
+    /// `model` suggested a commit message for what was staged in the
+    /// checkout of `leader`'s project (`:commit`), for `cost`
+    /// (ten-thousandths of a dollar, from the pot).
+    Suggested {
+        leader: AgentId,
+        model: String,
+        cost: u64,
+    },
+    /// No commit message came for `leader`'s project: why, and what the
+    /// try cost.
+    SuggestFailed {
+        leader: AgentId,
+        why: String,
+        cost: u64,
+    },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -1020,11 +1035,13 @@ impl Event {
             Event::ResearchNeedsYou { .. }
             | Event::Sensitive { .. }
             | Event::ChangeReady { .. }
+            | Event::Suggested { .. }
             | Event::PotLow { .. } => EntryKind::Sensitive,
             Event::Merged { .. } | Event::Applied { .. } => EntryKind::Merged,
             Event::Failed { .. }
             | Event::Stopped { .. }
             | Event::Interrupted { .. }
+            | Event::SuggestFailed { .. }
             | Event::ApplyFailed { .. } => EntryKind::Failed,
             Event::Approved { .. }
             | Event::Rejected { .. }
@@ -1056,6 +1073,8 @@ impl Event {
             Event::Plan { leader, .. }
             | Event::Budget { leader, .. }
             | Event::PotLow { leader, .. }
+            | Event::Suggested { leader, .. }
+            | Event::SuggestFailed { leader, .. }
             | Event::Shell { leader, .. }
             | Event::Confine { leader, .. }
             | Event::Opened { leader, .. }
@@ -1253,6 +1272,22 @@ pub struct World {
     /// entry per vendor and window. Not kept between runs: a session
     /// says it again.
     pub limits: Vec<Limit>,
+    /// What imece's own paid calls cost (the suggested commit messages),
+    /// in ten-thousandths of a dollar: part of the pot, beside what the
+    /// agents spent. A call counts at its cap from before it is made
+    /// until it says what it cost.
+    pub paid: u64,
+    /// A commit message suggested for a project's staged changes, until
+    /// the screen puts it on the command line.
+    pub suggested: Option<Suggestion>,
+}
+
+/// A commit message a cheap model suggested for what is staged in a
+/// project's checkout (`:commit`), cleaned.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Suggestion {
+    pub project: ProjectId,
+    pub text: String,
 }
 
 /// One window of a vendor plan's usage limit, as the vendor last said it
@@ -1324,8 +1359,10 @@ impl World {
         self.marks.insert(i)
     }
 
+    /// What the pot has paid: what every agent spent and imece's own
+    /// calls.
     pub fn spent(&self) -> u64 {
-        self.agents.iter().map(|a| a.cost).sum()
+        self.agents.iter().map(|a| a.cost).sum::<u64>() + self.paid
     }
 
     /// The projects that are open, in id order.
@@ -2048,6 +2085,16 @@ mod tests {
     }
 
     #[test]
+    fn the_pot_has_paid_the_agents_and_imeces_own_calls() {
+        let mut w = crate::live::testing::team(2);
+        w.agents.iter_mut().for_each(|a| a.cost = 0);
+        w.agents[1].cost = 300;
+        w.agents[2].cost = 20;
+        w.paid = 5;
+        assert_eq!(w.spent(), 325);
+    }
+
+    #[test]
     fn a_cost_under_a_cent_is_not_shown_as_free() {
         assert_eq!(dollars(0), "$0.00");
         assert_eq!(dollars(3), "<$0.01");
@@ -2085,6 +2132,8 @@ mod tests {
             max_researchers: 0,
             research_queue: Default::default(),
             changes: Vec::new(),
+            paid: 0,
+            suggested: None,
             plans: Vec::new(),
         }
     }

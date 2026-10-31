@@ -167,6 +167,10 @@ pub fn event(lang: Lang, w: &World, e: &Event) -> String {
             fill(t.ev_applied, &[name(w, *agent), &files.to_string(), mark])
         }
         Event::ApplyFailed { agent, why } => fill(t.ev_apply_failed, &[name(w, *agent), why]),
+        Event::Suggested { model, cost, .. } => fill(t.ev_suggested, &[model, &dollars(*cost)]),
+        Event::SuggestFailed { why, cost, .. } => {
+            fill(t.ev_suggest_failed, &[&dollars(*cost), why])
+        }
         // Conversations are drawn from `said`, with their speakers coloured.
         Event::Talk { .. }
         | Event::YouSaid { .. }
@@ -491,6 +495,40 @@ mod tests {
         assert_eq!(title(Lang::En, 1), "imece · 1 waiting");
         assert_eq!(title(Lang::En, 12), "imece · 12 waiting");
         assert_eq!(title(Lang::Tr, 3), "imece · 3 seni bekliyor");
+    }
+
+    #[test]
+    fn a_suggestion_is_said_with_its_model_and_cost_and_a_failure_with_why() {
+        let w = crate::live::testing::team(1);
+        let ok = Event::Suggested {
+            leader: 0,
+            model: "haiku".into(),
+            cost: 420,
+        };
+        assert_eq!(
+            event(Lang::En, &w, &ok),
+            "haiku suggested a commit message for what is staged, for $0.04"
+        );
+        assert_eq!(
+            event(Lang::Tr, &w, &ok),
+            "haiku stage'dekiler için bir commit mesajı önerdi, $0.04 tuttu"
+        );
+        let failed = Event::SuggestFailed {
+            leader: 0,
+            why: "nothing is staged\u{1b}[2J".into(),
+            cost: 0,
+        };
+        assert_eq!(
+            event(Lang::En, &w, &failed),
+            "no commit message came ($0.00): nothing is staged [2J"
+        );
+        assert_eq!(
+            event(Lang::Tr, &w, &failed),
+            "commit mesajı gelmedi ($0.00): nothing is staged [2J"
+        );
+        assert_eq!(ok.kind(), EntryKind::Sensitive);
+        assert_eq!(failed.kind(), EntryKind::Failed);
+        assert_eq!((ok.agent(), failed.agent()), (0, 0));
     }
 
     #[test]
