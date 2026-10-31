@@ -12,10 +12,10 @@ use crate::model::{Agent, CardId, ProjectId, World};
 
 /// The commands imece itself takes after `:`: its own, and a name for
 /// every key that acts (not the ones that move).
-pub const COMMANDS: [&str; 27] = [
+pub const COMMANDS: [&str; 28] = [
     "board", "budget", "close", "code", "defer", "export", "faster", "fold", "forget", "help",
-    "lang", "lead", "needs", "next", "open", "pause", "pending", "pin", "quit", "rename", "salon",
-    "slower", "talk", "theme", "trace", "unfold", "waiting",
+    "lang", "lead", "mark", "needs", "next", "open", "pause", "pending", "pin", "quit", "rename",
+    "salon", "slower", "talk", "theme", "trace", "unfold", "waiting",
 ];
 
 /// The commands only the demo takes: live agents run in real time.

@@ -361,13 +361,21 @@ pub(crate) fn thread_rows(
                 .push(Span::raw(words::event(lang, w, &e.event))),
         }
         let start = rows.len();
+        // The mark, when the line has one, in the gutter of its first row.
+        let mut mark = w.marks.contains(&i);
         for line in part {
             for mut row in wrap(line, text_width) {
+                let second = match std::mem::take(&mut mark) {
+                    true => Span::styled(MARK, bold(pal().accent)),
+                    false => Span::raw(" "),
+                };
                 if selected {
-                    row.spans.insert(0, Span::styled("▌ ", fg(pal().accent)));
+                    row.spans.insert(0, Span::styled("▌", fg(pal().accent)));
+                    row.spans.insert(1, second);
                     row = row.style(changed());
                 } else {
-                    row.spans.insert(0, Span::raw("  "));
+                    row.spans.insert(0, Span::raw(" "));
+                    row.spans.insert(1, second);
                 }
                 rows.push(row);
             }

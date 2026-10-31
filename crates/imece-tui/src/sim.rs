@@ -120,14 +120,37 @@ struct Kit {
     /// Where a worker says the project runs once it is built, as a live
     /// worker writes a dev server's address; nothing for an app that
     /// serves nothing.
-    serves: Option<&'static str>,
+    serves: Option<Serves>,
     asks: &'static [&'static str],
+}
+
+/// A dev server's address: each worker of a project runs its own copy in
+/// its worktree, so each takes the next port after the one before.
+struct Serves {
+    /// Scheme and host.
+    at: &'static str,
+    /// The first worker's port.
+    port: u16,
+    path: &'static str,
+}
+
+impl Serves {
+    /// The address the `n`th worker or helper of the project (from 0)
+    /// serves at.
+    fn url(&self, n: usize) -> String {
+        let port = usize::from(self.port) + n;
+        format!("{}:{port}{}", self.at, self.path)
+    }
 }
 
 const SHOP_KIT: Kit = Kit {
     build: "dotnet build",
     test: "dotnet test",
-    serves: Some("http://localhost:5080/swagger"),
+    serves: Some(Serves {
+        at: "http://localhost",
+        port: 5080,
+        path: "/swagger",
+    }),
     asks: &[
         "Bash: dotnet add package Polly --version 8.5.0",
         "Bash: dotnet ef database update",
@@ -150,7 +173,11 @@ const MOBILE_KIT: Kit = Kit {
 const WEB_KIT: Kit = Kit {
     build: "npm run build",
     test: "npm test",
-    serves: Some("http://localhost:5173/"),
+    serves: Some(Serves {
+        at: "http://localhost",
+        port: 5173,
+        path: "/",
+    }),
     asks: &[
         "Bash: npm install zod@3",
         "Edit: package.json",
@@ -161,7 +188,11 @@ const WEB_KIT: Kit = Kit {
 const BILLING_KIT: Kit = Kit {
     build: "go build ./...",
     test: "go test ./...",
-    serves: Some("http://127.0.0.1:8080/healthz"),
+    serves: Some(Serves {
+        at: "http://127.0.0.1",
+        port: 8080,
+        path: "/healthz",
+    }),
     asks: &[
         "Bash: go get github.com/shopspring/decimal",
         "Edit: go.mod",
@@ -407,6 +438,17 @@ fn kit(p: ProjectId) -> &'static Kit {
     PROJECTS[p % PROJECTS.len()].2
 }
 
+/// How many of agent `id`'s project's workers and helpers came before it,
+/// gone ones too: its dev server takes the port after theirs, and keeps
+/// it when one of them leaves.
+fn serving_before(w: &World, id: AgentId) -> usize {
+    let project = w.agents[id].project;
+    w.agents[..id]
+        .iter()
+        .filter(|a| a.project == project && matches!(a.role, Role::Worker | Role::Helper))
+        .count()
+}
+
 /// The agent's own command line, as a session of its vendor reports it
 /// (imece's `/clear` where the vendor has none).
 fn commands_of(v: Vendor) -> Vec<String> {
@@ -492,6 +534,7 @@ pub fn world(
         notes_cut: false,
     };
     let mut w = World {
+        marks: Default::default(),
         tick: 0,
         started_at: 0,
         run_spent: 0,
@@ -1377,7 +1420,11 @@ impl Sim {
             (Some(s), 0) => (format!("Read {}", s.file), None, None),
             (Some(s), 1) => (format!("Edit {}", s.file), Some(s.file), None),
             (Some(s), 2) => (format!("Grep {:?}", s.name), None, None),
-            (_, 3) => (format!("run {}", kit.build), None, kit.serves),
+            (_, 3) => (
+                format!("run {}", kit.build),
+                None,
+                kit.serves.as_ref().map(|s| s.url(serving_before(w, id))),
+            ),
             _ => (String::new(), None, None),
         };
         let a = &mut w.agents[id];
@@ -2997,6 +3044,38 @@ mod tests {
         w.agents[lead].commands.clear();
         s.start(&mut w, lead);
         assert!(w.agents[lead].commands.is_empty(), "once");
+    }
+
+    #[test]
+    fn each_worker_serves_on_its_own_port_after_the_ones_before_it() {
+        let (mut w, mut s) = world(2, 2, 0, 3, Lang::En);
+        // The second shop worker comes after the mobile one.
+        s.hire(&mut w, 0);
+        let shop = workers_of(&w, 0);
+        let mobile = workers_of(&w, 1);
+        assert!(shop[0] < mobile[0] && mobile[0] < shop[1]);
+        assert_eq!(serving_before(&w, shop[0]), 0);
+        assert_eq!(serving_before(&w, shop[1]), 1);
+        assert_eq!(
+            serving_before(&w, mobile[0]),
+            0,
+            "another project's workers and leaders do not count"
+        );
+        let card = w
+            .cards
+            .iter()
+            .position(|c| c.column == Column::Waiting && c.project == 0)
+            .unwrap();
+        let helper = s.helper_for(&mut w, shop[0], card);
+        assert_eq!(serving_before(&w, helper), 2, "a helper counts");
+        w.agents[shop[0]].gone = true;
+        assert_eq!(serving_before(&w, shop[1]), 1, "a gone one keeps its port");
+        let shop_kit = kit(0).serves.as_ref().unwrap();
+        assert_eq!(shop_kit.url(0), "http://localhost:5080/swagger");
+        assert_eq!(shop_kit.url(3), "http://localhost:5083/swagger");
+        let billing = PROJECTS.iter().find(|p| p.2.build.starts_with("go"));
+        let billing = billing.unwrap().2.serves.as_ref().unwrap();
+        assert_eq!(billing.url(2), "http://127.0.0.1:8082/healthz");
     }
 
     #[test]

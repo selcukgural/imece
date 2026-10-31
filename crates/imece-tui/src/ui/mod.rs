@@ -282,6 +282,21 @@ pub(crate) fn entry_line(app: &App, e: &Entry) -> Line<'static> {
     Line::from(spans)
 }
 
+/// What shows on a line the person marked (`m`).
+pub(crate) const MARK: &str = "✱";
+
+/// Journal line `line` (as [`entry_line`] draws it) with the mark in the
+/// space after its clock, so marked and unmarked lines stay aligned.
+pub(crate) fn bookmarked(mut line: Line<'static>) -> Line<'static> {
+    if let Some(clock) = line.spans.first_mut()
+        && let Some(bare) = clock.content.strip_suffix(' ')
+    {
+        clock.content = bare.to_string().into();
+        line.spans.insert(1, Span::styled(MARK, bold(pal().accent)));
+    }
+    line
+}
+
 /// An open inbox item `i` as the salon lists it: its kind's glyph, when it
 /// came (its date too when that is not today), its project when there are
 /// several, and what it is, worded.
@@ -5395,6 +5410,42 @@ mod tests {
     }
 
     #[test]
+    fn a_marked_line_shows_its_mark_once_in_the_gutter_and_in_the_journal() {
+        let mut app = talking();
+        app.open_thread(4);
+        let entries = app.thread.as_ref().unwrap().entries.clone();
+        // The long last message, selected, and the first one, not.
+        app.world.marks.extend([entries[0], entries[3]]);
+        let th = app.thread.as_ref().unwrap();
+        let (rows, ranges) = overlay::thread_rows(app.lang, &app.world, th, 60);
+        let gutter = |n: usize| -> String {
+            let r: &Line = &rows[n];
+            r.spans.iter().take(2).map(|s| s.content.as_ref()).collect()
+        };
+        for (at, first) in [(0, " ✱"), (3, "▌✱")] {
+            let (start, end) = ranges[at];
+            assert_eq!(gutter(start), first);
+            assert_eq!(rows[start].spans[1].style, bold(pal().accent));
+            for n in start + 1..end {
+                assert!(!gutter(n).contains(MARK), "only its first row: {n}");
+            }
+        }
+        let (start, _) = ranges[1];
+        assert_eq!(gutter(start), "  ", "an unmarked line");
+        assert!(rows.iter().all(|r| r.width() <= 60));
+        // In the journal the mark takes the space after the clock.
+        let e = &app.world.journal[entries[0]];
+        let plain = entry_line(&app, e);
+        let line = bookmarked(entry_line(&app, e));
+        assert_eq!(line.width(), plain.width(), "aligned with the others");
+        let clock = plain.spans[0].content.trim_end().to_string();
+        assert_eq!(line.spans[0].content, clock);
+        assert_eq!(line.spans[1].content, MARK);
+        assert_eq!(line.spans[1].style, bold(pal().accent));
+        assert_eq!(line.spans[2..], plain.spans[1..]);
+    }
+
+    #[test]
     fn the_conversation_marks_every_row_of_the_selected_message() {
         let mut app = talking();
         app.open_thread(4);
@@ -5404,7 +5455,7 @@ mod tests {
         let (start, end) = ranges[3];
         assert!(end - start > 10, "the long message wraps into many rows");
         assert_eq!(end, rows.len() - 1, "a blank row closes it");
-        let marked = |n: usize| rows[n].spans.first().is_some_and(|s| s.content == "▌ ");
+        let marked = |n: usize| rows[n].spans.first().is_some_and(|s| s.content == "▌");
         assert!((start..end).all(marked), "every row of it carries the mark");
         assert!(
             (start..end).all(|n| rows[n].style == changed()),
