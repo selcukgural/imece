@@ -42,7 +42,11 @@ impl Live {
         if body.chars().count() > MAX_BODY {
             return Err(format!("the body is longer than {MAX_BODY} characters"));
         }
+        let re = reply_to(&args["re"])?;
         if arg("to") == YOU {
+            if re.is_some() {
+                return Err("re is for a teammate's message: the person's have no number".into());
+            }
             return self.send_you(w, from, kind, body);
         }
         let project = w.agents[from].project;
@@ -63,6 +67,9 @@ impl Live {
                 )
             })?;
         let name = w.agents[to].name.clone();
+        if let Some(re) = re {
+            replies(w, from, to, re)?;
+        }
         if w.agents[to].status == Status::Stopped {
             return Err(format!(
                 "{name} has stopped; it runs again when the person talks to it"
@@ -82,10 +89,13 @@ impl Live {
                 "{name} has {MAX_MAIL} unread messages; wait for it"
             ));
         }
+        let id = w.number();
         self.mail[to].push(Mail {
             from,
             kind,
             body: body.to_string(),
+            id,
+            re,
         });
         if kind.wakes() && w.agents[to].status == Status::Asleep {
             // Something new since the start: a sleeper takes it like any
@@ -109,6 +119,8 @@ impl Live {
             to,
             kind,
             text: body.to_string(),
+            id,
+            re,
         };
         let (mine, theirs) = (w.agents[from].card, w.agents[to].card);
         w.story(mine, story.clone());
@@ -120,10 +132,16 @@ impl Live {
             to,
             kind,
             text: first.clone(),
+            id,
+            re,
         });
         let sender = w.agents[from].name.clone();
-        w.agents[from].trace(t, format!("send to={name} type={}", kind.wire()));
-        w.agents[to].trace(t, format!("mail from={sender} type={}", kind.wire()));
+        let numbers = numbers(id, re);
+        w.agents[from].trace(t, format!("send to={name} type={}{numbers}", kind.wire()));
+        w.agents[to].trace(
+            t,
+            format!("mail from={sender} type={}{numbers}", kind.wire()),
+        );
         for (a, other) in [(from, to), (to, from)] {
             w.agents[a].talk = Some(Talk {
                 with: Party::Agent(other),
@@ -132,10 +150,12 @@ impl Live {
             });
         }
         let delivered = match (kind.wakes(), self.turns[to] > 0) {
-            (true, false) => format!("delivered; {name} starts on it now"),
-            (true, true) => format!("queued; {name} is busy and gets it when its turn ends"),
+            (true, false) => format!("delivered as message {id}; {name} starts on it now"),
+            (true, true) => {
+                format!("queued as message {id}; {name} is busy and gets it when its turn ends")
+            }
             (false, _) => format!(
-                "queued for {name}'s next turn ({} does not wake it)",
+                "queued as message {id} for {name}'s next turn ({} does not wake it)",
                 kind.wire()
             ),
         };
@@ -438,6 +458,45 @@ impl Live {
     }
 }
 
+/// The `send` tool's `re`: none when it is not given, else a message's
+/// number.
+fn reply_to(re: &Value) -> Result<Option<MsgId>, String> {
+    if re.is_null() {
+        return Ok(None);
+    }
+    re.as_u64()
+        .and_then(|n| MsgId::try_from(n).ok())
+        .filter(|&n| n > 0)
+        .map(Some)
+        .ok_or_else(|| "re must be the number of a message you got, as its heading shows".into())
+}
+
+/// Whether `from` may send `to` a reply to message `re`: one sent to
+/// `from`, by `to`. A reply goes back to whoever wrote what it answers.
+fn replies(w: &World, from: AgentId, to: AgentId, re: MsgId) -> Result<(), String> {
+    let Some((asker, asked, _)) = w.message(re) else {
+        return Err(format!("there is no message {re}"));
+    };
+    if asked != from {
+        return Err(format!("message {re} was not sent to you"));
+    }
+    if asker != to {
+        return Err(format!(
+            "message {re} came from {}; send the reply to it",
+            w.agents[asker].name
+        ));
+    }
+    Ok(())
+}
+
+/// A message's numbers as a trace line ends with them (the demo's too).
+pub(crate) fn numbers(id: MsgId, re: Option<MsgId>) -> String {
+    match re {
+        Some(re) => format!(" id={id} re={re}"),
+        None => format!(" id={id}"),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -454,12 +513,15 @@ mod tests {
             0,
             &msg("claude-1", "assign", "Fix the parser\nin src/p.rs"),
         );
-        assert!(got.unwrap().starts_with("delivered"));
+        assert_eq!(
+            got.unwrap(),
+            "delivered as message 1; claude-1 starts on it now"
+        );
         live.step(&mut w);
         let q = queued(&live, 1);
         assert_eq!(q.len(), 1);
         assert!(
-            q[0].contains("[assign] from lead:\nFix the parser\nin src/p.rs"),
+            q[0].contains("[assign 1] from lead:\nFix the parser\nin src/p.rs"),
             "{q:?}"
         );
         assert!(q[0].contains("not by the person"));
@@ -579,21 +641,205 @@ mod tests {
             .unwrap();
         live.step(&mut w);
         assert_eq!(live.turns[0], 1);
-        assert!(queued(&live, 0)[0].contains("[done] from claude-1:\nParser fixed."));
+        assert!(queued(&live, 0)[0].contains("[done 1] from claude-1:\nParser fixed."));
     }
 
     #[test]
     fn an_inform_waits_for_a_turn_something_else_starts() {
         let mut w = team(2);
         let mut live = idle_live(3);
-        sent(&mut live, &mut w, 2, &msg("lead", "progress", "Half done.")).unwrap();
+        let got = sent(&mut live, &mut w, 2, &msg("lead", "progress", "Half done."));
+        assert_eq!(
+            got.unwrap(),
+            "queued as message 1 for lead's next turn (progress does not wake it)"
+        );
         live.step(&mut w);
         assert!(queued(&live, 0).is_empty());
         sent(&mut live, &mut w, 1, &msg("lead", "ask", "Which file?")).unwrap();
         live.step(&mut w);
         let q = queued(&live, 0);
         assert_eq!(q.len(), 1, "both in one turn");
-        assert!(q[0].contains("[progress] from claude-2") && q[0].contains("[ask] from claude-1"));
+        assert!(
+            q[0].contains("[progress 1] from claude-2") && q[0].contains("[ask 2] from claude-1"),
+            "{q:?}"
+        );
+    }
+
+    /// [`msg`] with `re`, the number of the message it replies to.
+    fn reply(to: &str, kind: &str, body: &str, re: Value) -> Value {
+        let mut m = msg(to, kind, body);
+        m["re"] = re;
+        m
+    }
+
+    #[test]
+    fn a_message_is_numbered_and_a_reply_names_the_one_it_answers() {
+        let mut w = team(2);
+        let mut live = idle_live(3);
+        // Numbers go on from those an earlier run gave.
+        w.messages = 6;
+        w.cards.push(Card {
+            id: 0,
+            project: 0,
+            title: "parser".into(),
+            owner: Some(1),
+            column: Column::Working,
+            story: Vec::new(),
+            symbols: Vec::new(),
+            started: 0,
+            finished: 0,
+        });
+        w.agents[1].card = Some(0);
+        live.turns[1] = 1;
+        let got = sent(
+            &mut live,
+            &mut w,
+            0,
+            &msg("claude-1", "ask", "Which parser?\nThe old one?"),
+        );
+        assert_eq!(
+            got.unwrap(),
+            "queued as message 7; claude-1 is busy and gets it when its turn ends"
+        );
+        assert_eq!((live.mail[1][0].id, live.mail[1][0].re), (7, None));
+        live.turns[0] = 1;
+        let got = sent(
+            &mut live,
+            &mut w,
+            1,
+            &reply("lead", "answer", "The new one.", json!(7)),
+        );
+        assert_eq!(
+            got.unwrap(),
+            "queued as message 8; lead is busy and gets it when its turn ends"
+        );
+        assert_eq!(w.messages, 8);
+        assert_eq!(
+            live.mail[0],
+            [Mail {
+                from: 1,
+                kind: MsgKind::Answer,
+                body: "The new one.".into(),
+                id: 8,
+                re: Some(7),
+            }]
+        );
+        assert_eq!(
+            w.journal.last().unwrap().event,
+            Event::Sent {
+                from: 1,
+                to: 0,
+                kind: MsgKind::Answer,
+                text: "The new one.".into(),
+                id: 8,
+                re: Some(7),
+            }
+        );
+        assert_eq!(
+            w.cards[0].story.last().unwrap().event,
+            StoryEvent::Sent {
+                from: 1,
+                to: 0,
+                kind: MsgKind::Answer,
+                text: "The new one.".into(),
+                id: 8,
+                re: Some(7),
+            }
+        );
+        assert_eq!(w.message(7), Some((0, 1, "Which parser?")));
+        let last = |w: &World, a: AgentId| w.agents[a].trace.back().cloned().unwrap();
+        assert!(last(&w, 1).ends_with(" send to=lead type=answer id=8 re=7"));
+        assert!(last(&w, 0).ends_with(" mail from=claude-1 type=answer id=8 re=7"));
+        // What lead reads when its turn ends: the number, and what it answers.
+        live.turns[0] = 0;
+        live.step(&mut w);
+        let q = queued(&live, 0);
+        assert!(
+            q[0].contains("\n\n[answer 8, re 7] from claude-1:\nThe new one."),
+            "{q:?}"
+        );
+    }
+
+    #[test]
+    fn a_reply_answers_a_message_sent_to_it_and_goes_back_to_its_sender() {
+        let mut w = team(2);
+        let mut live = idle_live(3);
+        live.turns = vec![1, 1, 1];
+        sent(&mut live, &mut w, 0, &msg("claude-1", "ask", "Which?")).unwrap();
+        let refused = |live: &mut Live, w: &mut World, from: AgentId, args: Value| {
+            sent(live, w, from, &args).expect_err("refused")
+        };
+        for bad in [
+            json!("1"),
+            json!(0),
+            json!(-1),
+            json!(1.5),
+            json!(u64::from(u32::MAX) + 1),
+        ] {
+            let why = refused(
+                &mut live,
+                &mut w,
+                1,
+                reply("lead", "answer", "x", bad.clone()),
+            );
+            assert!(why.starts_with("re must be the number"), "{bad}: {why}");
+        }
+        assert_eq!(
+            refused(
+                &mut live,
+                &mut w,
+                1,
+                reply("lead", "answer", "x", json!(u32::MAX))
+            ),
+            format!("there is no message {}", u32::MAX)
+        );
+        assert_eq!(
+            refused(&mut live, &mut w, 1, reply("lead", "answer", "x", json!(2))),
+            "there is no message 2"
+        );
+        assert_eq!(
+            refused(&mut live, &mut w, 2, reply("lead", "answer", "x", json!(1))),
+            "message 1 was not sent to you"
+        );
+        assert_eq!(
+            refused(
+                &mut live,
+                &mut w,
+                1,
+                reply("claude-2", "answer", "x", json!(1))
+            ),
+            "message 1 came from lead; send the reply to it"
+        );
+        assert_eq!(
+            refused(&mut live, &mut w, 1, reply("you", "answer", "x", json!(1))),
+            "re is for a teammate's message: the person's have no number"
+        );
+        assert_eq!(w.messages, 1, "a refused message takes no number");
+        assert!(live.mail[0].is_empty() && live.mail[2].is_empty());
+        assert_eq!(w.journal.len(), 1);
+        sent(
+            &mut live,
+            &mut w,
+            1,
+            &reply("lead", "answer", "x", json!(1)),
+        )
+        .unwrap();
+        sent(
+            &mut live,
+            &mut w,
+            1,
+            &reply("lead", "inform", "y", Value::Null),
+        )
+        .unwrap();
+        let got: Vec<(MsgId, Option<MsgId>)> = live.mail[0].iter().map(|m| (m.id, m.re)).collect();
+        assert_eq!(got, [(2, Some(1)), (3, None)], "null is no re");
+        assert!(
+            w.agents[1]
+                .trace
+                .back()
+                .unwrap()
+                .ends_with(" type=inform id=3")
+        );
     }
 
     #[test]

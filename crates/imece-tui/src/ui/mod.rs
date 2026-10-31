@@ -28,7 +28,7 @@ use crate::i18n::{Lang, clean, fill};
 use crate::model::*;
 pub(crate) use crate::theme::pal;
 pub(crate) use diff::{file_starts, hunk_at, notes_message, place, quote};
-pub(crate) use salon::{card_rows, journal_rows, thread_of, turn_starts};
+pub(crate) use salon::{card_rows, journal_rows, reply_jump, thread_of, turn_starts};
 
 pub fn draw(f: &mut Frame, app: &App) {
     paint(f, f.area());
@@ -213,6 +213,9 @@ pub(crate) fn said_spans(lang: Lang, w: &World, s: &words::Said) -> Vec<Span<'st
             dim(),
         ));
     }
+    if s.re.is_some() {
+        spans.push(Span::styled(" ↩", dim()));
+    }
     spans.push(Span::raw(format!(": {}", plain(s.text))));
     spans
 }
@@ -261,6 +264,22 @@ pub(crate) fn entry_icon(k: EntryKind) -> (&'static str, Style) {
 /// its first line when that is not of today. The date needs no words.
 pub(crate) fn date_row(day: u64) -> Line<'static> {
     Line::from(Span::styled(format!("─ {}", date(day)), dim()))
+}
+
+/// Under a reply in a conversation: what it answers (that message's
+/// first line), or that the journal no longer has it. None for a message
+/// that replies to nothing.
+pub(crate) fn re_row(lang: Lang, w: &World, s: &words::Said) -> Option<Line<'static>> {
+    let re = s.re?;
+    let t = lang.text();
+    let text = match w.message(re) {
+        Some((_, _, text)) => {
+            let first = text.lines().next().unwrap_or_default();
+            fill(t.re_line, &[&re.to_string(), first])
+        }
+        None => fill(t.re_gone, &[&re.to_string()]),
+    };
+    Some(Line::from(Span::styled(format!("  {text}"), dim())))
 }
 
 /// One journal line: time, icon, the event in words.
@@ -1354,6 +1373,8 @@ mod tests {
             to: 1,
             kind: MsgKind::Ask,
             text: "which?".into(),
+            id: 0,
+            re: None,
         });
         app.world.note(Event::Budget {
             leader: 0,
@@ -2163,6 +2184,8 @@ mod tests {
                 to,
                 kind: MsgKind::Inform,
                 text: text.into(),
+                id: 0,
+                re: None,
             });
         }
         let mut t = Terminal::new(TestBackend::new(140, 40)).unwrap();
@@ -5524,6 +5547,86 @@ mod tests {
         assert_eq!(line.spans[2..], plain.spans[1..]);
     }
 
+    /// A conversation between the lead (0) and agent 1 on the bus: an
+    /// ask, a progress, the answer to the ask and an answer to a message
+    /// the journal no longer has, numbered 5 on.
+    fn replies() -> App {
+        let mut app = app_after(1, 4, 0, Lang::En);
+        app.world.journal.clear();
+        app.world.messages = 4;
+        let lines = [
+            (0, 1, MsgKind::Ask, "Which parser?\nThe old one?", None),
+            (1, 0, MsgKind::Progress, "Half way.", None),
+            (1, 0, MsgKind::Answer, "The new one.", Some(5)),
+            (1, 0, MsgKind::Answer, "Late.", Some(2)),
+        ];
+        for (from, to, kind, text, re) in lines {
+            let id = app.world.number();
+            app.world.note(Event::Sent {
+                from,
+                to,
+                kind,
+                text: text.into(),
+                id,
+                re,
+            });
+        }
+        app.open_thread(0);
+        assert_eq!(app.thread.as_ref().unwrap().entries, [0, 1, 2, 3]);
+        app
+    }
+
+    #[test]
+    fn a_reply_shows_what_it_answers_and_percent_goes_there_and_back() {
+        let mut app = replies();
+        let worker = app.world.agents[1].name.clone();
+        let th = app.thread.as_ref().unwrap();
+        let (rows, ranges) = overlay::thread_rows(Lang::En, &app.world, th, 80);
+        let lines = text(&rows);
+        let head = |n: usize| lines[ranges[n].0].clone();
+        assert!(
+            head(2).ends_with(&format!("{worker} → lead [answer] ↩")),
+            "{}",
+            head(2)
+        );
+        assert!(
+            head(0).ends_with(
+                "lead → {worker} [ask]"
+                    .replace("{worker}", &worker)
+                    .as_str()
+            )
+        );
+        assert_eq!(lines[ranges[2].0 + 1], "    ↩ re 5: Which parser?");
+        assert_eq!(lines[ranges[2].0 + 2], "    The new one.");
+        assert_eq!(
+            lines[ranges[3].0 + 1],
+            "    ↩ re 2, which the journal no longer has"
+        );
+        assert_eq!(
+            lines[ranges[1].0 + 1],
+            "    Half way.",
+            "no reply, no ↩ row"
+        );
+        let th = app.thread.as_ref().unwrap();
+        let tr = text(&overlay::thread_rows(Lang::Tr, &app.world, th, 80).0);
+        assert_eq!(tr[ranges[2].0 + 1], "    ↩ 5 yanıtı: Which parser?");
+        assert_eq!(tr[ranges[3].0 + 1], "    ↩ 2 yanıtı; günlükte artık yok");
+        // % from the answer to the ask, and from the ask to its answer.
+        let press = |app: &mut App, from: usize| {
+            let th = app.thread.as_mut().unwrap();
+            th.sel = from;
+            th.follow.set(false);
+            key(app, KeyCode::Char('%'));
+            let th = app.thread.as_ref().unwrap();
+            (th.sel, th.follow.get())
+        };
+        assert_eq!(press(&mut app, 2), (0, true));
+        assert_eq!(press(&mut app, 0), (2, true));
+        assert_eq!(press(&mut app, 1), (1, false), "neither: it stays");
+        assert_eq!(press(&mut app, 3), (3, false), "what it answers is gone");
+        assert!(app.thread.is_some(), "% does not close it");
+    }
+
     #[test]
     fn the_conversation_marks_every_row_of_the_selected_message() {
         let mut app = talking();
@@ -5571,13 +5674,16 @@ mod tests {
             screen.contains(" c  copy message   C  copy conversation"),
             "{screen}"
         );
-        assert!(screen.contains("message   [ ]  turn   pgup"), "{screen}");
+        assert!(
+            screen.contains("message   [ ]  turn   %  reply ↔ question   pgup"),
+            "{screen}"
+        );
         app.lang = Lang::Tr;
         let screen = render(&app, 120, 30);
         assert!(screen.contains("KONUŞMA · lead ⇄ sen · 4/4"), "{screen}");
         assert!(screen.contains(" c  mesajı kopyala"), "{screen}");
         assert!(
-            screen.contains("mesaj   [ ]  söz sırası   pgup"),
+            screen.contains("mesaj   [ ]  söz sırası   %  yanıt ↔ soru   pgup"),
             "{screen}"
         );
     }

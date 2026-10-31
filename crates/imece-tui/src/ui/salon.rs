@@ -806,6 +806,24 @@ pub(crate) fn turn_starts(w: &World, entries: &[usize]) -> Vec<usize> {
         .collect()
 }
 
+/// Where `%` goes from position `sel` of conversation `entries`: from a
+/// reply to the message it answers, else from a message to its first
+/// reply; none when the conversation has neither.
+pub(crate) fn reply_jump(w: &World, entries: &[usize], sel: usize) -> Option<usize> {
+    let said = |n: usize| {
+        w.journal
+            .get(*entries.get(n)?)
+            .and_then(|e| words::said(&e.event))
+    };
+    let me = said(sel)?;
+    let find = |hit: &dyn Fn(&words::Said) -> bool| {
+        (0..entries.len()).find(|&n| said(n).is_some_and(|o| hit(&o)))
+    };
+    me.re
+        .and_then(|re| find(&|o| o.id == re))
+        .or_else(|| find(&|o| o.re == Some(me.id)))
+}
+
 /// Each entry with how many older lines of the same conversation directly
 /// follow it and are folded under it. A line the person marked is never
 /// folded: it keeps a row of its own, for `'` to come back to. Display
@@ -842,6 +860,8 @@ mod tests {
                 to,
                 kind: MsgKind::Ask,
                 text: String::new(),
+                id: 0,
+                re: None,
             },
         }
     }
@@ -935,6 +955,8 @@ mod tests {
             to,
             kind: MsgKind::Ask,
             text: text.into(),
+            id: 0,
+            re: None,
         };
         // Card 2 is #3.
         for event in [

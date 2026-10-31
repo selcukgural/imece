@@ -386,6 +386,15 @@ pub(super) fn send_tool() -> Tool {
                                     the task, the files it touches and when it is done.",
                     "maxLength": MAX_BODY,
                 },
+                "re": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "description": "The number of the message this replies to: each \
+                                    message you get is headed [type number]. An answer \
+                                    to an ask, and a done for an assign, carry it. Only \
+                                    a message sent to you, and the reply goes to its \
+                                    sender.",
+                },
             },
             "required": ["to", "type", "body"],
             "additionalProperties": false,

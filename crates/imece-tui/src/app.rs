@@ -1329,6 +1329,12 @@ impl App {
                     th.follow.set(true);
                 }
             }
+            KeyCode::Char('%') => {
+                if let Some(to) = ui::reply_jump(&self.world, &th.entries, th.sel) {
+                    th.sel = to;
+                    th.follow.set(true);
+                }
+            }
             KeyCode::Char('c') | KeyCode::Char('y') => {
                 let one = th.entries[th.sel];
                 self.copy = Some(ui::copy_text(self.lang, &self.world, &[one]));
@@ -4717,6 +4723,8 @@ mod tests {
             to,
             kind: MsgKind::Ask,
             text: "x".into(),
+            id: 0,
+            re: None,
         };
         for _ in 0..2 {
             app.world.note(said(0, 1));
@@ -5070,6 +5078,8 @@ mod tests {
             to: worker,
             kind: MsgKind::Inform,
             text: text.into(),
+            id: 0,
+            re: None,
         };
         app.world.note(said("about #, #x, #99 and #2 then #3"));
         app.journal_sel = Some(app.world.journal.len() - 1);

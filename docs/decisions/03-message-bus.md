@@ -10,3 +10,5 @@ agent; waking types start the next turn when the agent has no prompt
 left, inform/progress/notice ride along. Caps: body 4000 chars, 20
 unread, 12 message-driven turns per agent until the person speaks again;
 a stopped agent gets no waking mail, nobody does once the budget is spent.
+Each message gets a number, and a reply may name the one it answers
+(`re`): see Reply-to numbers (record 58).

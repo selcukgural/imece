@@ -274,12 +274,20 @@ pub struct Talk {
     pub until: u64,
 }
 
-/// A message waiting for an agent's next turn.
+/// A message's number on the bus: given in order from 1 across the
+/// world, kept between runs, so an agent can say which message it
+/// replies to (`re`). 0 is a message saved before numbers were given.
+pub type MsgId = u32;
+
+/// A message waiting for an agent's next turn: its number, and the one
+/// it replies to.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Mail {
     pub from: AgentId,
     pub kind: MsgKind,
     pub body: String,
+    pub id: MsgId,
+    pub re: Option<MsgId>,
 }
 
 /// A vendor session an agent had, kept to go on with it after imece
@@ -571,12 +579,17 @@ pub enum StoryEvent {
     /// imece was closed while the agent's turn ran; the turn is not run
     /// again, the agent hears of it when it wakes.
     Interrupted,
-    /// A live agent sent a teammate a message.
+    /// A live agent sent a teammate a message: its number on the bus and
+    /// the one it replies to (none in a file from before numbers: 0).
     Sent {
         from: AgentId,
         to: AgentId,
         kind: MsgKind,
         text: String,
+        #[serde(default)]
+        id: MsgId,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        re: Option<MsgId>,
     },
     /// A live agent put this card on the board; `text` is what it asks for.
     Posted {
@@ -827,12 +840,18 @@ pub enum Event {
     Interrupted {
         agent: AgentId,
     },
-    /// A live agent sent a teammate a message.
+    /// A live agent sent a teammate a message (its first line): its
+    /// number on the bus and the one it replies to (none in a file from
+    /// before numbers: 0).
     Sent {
         from: AgentId,
         to: AgentId,
         kind: MsgKind,
         text: String,
+        #[serde(default)]
+        id: MsgId,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        re: Option<MsgId>,
     },
     /// A live agent put a card on the board.
     Posted {
@@ -1301,6 +1320,8 @@ pub struct World {
     /// A commit message suggested for a project's staged changes, until
     /// the screen puts it on the command line.
     pub suggested: Option<Suggestion>,
+    /// The number the last message on the bus was given ([`MsgId`]).
+    pub messages: MsgId,
 }
 
 /// A commit message a cheap model suggested for what is staged in a
@@ -1663,6 +1684,31 @@ impl World {
             .iter()
             .filter(|c| c.column == Column::Done)
             .count()
+    }
+
+    /// The next message's number on the bus.
+    pub fn number(&mut self) -> MsgId {
+        self.messages += 1;
+        self.messages
+    }
+
+    /// Who sent message `id` on the bus, to whom, and its first line, as
+    /// the journal has it; none when it is not there (never numbered, or
+    /// older than the journal keeps).
+    pub fn message(&self, id: MsgId) -> Option<(AgentId, AgentId, &str)> {
+        if id == 0 {
+            return None;
+        }
+        self.journal.iter().rev().find_map(|e| match &e.event {
+            Event::Sent {
+                from,
+                to,
+                text,
+                id: n,
+                ..
+            } if *n == id => Some((*from, *to, text.as_str())),
+            _ => None,
+        })
     }
 
     pub fn note(&mut self, event: Event) {
@@ -2157,8 +2203,75 @@ mod tests {
             changes: Vec::new(),
             paid: 0,
             suggested: None,
+            messages: 0,
             plans: Vec::new(),
         }
+    }
+
+    #[test]
+    fn messages_are_numbered_in_order_and_found_by_their_number() {
+        let mut w = world(vec![
+            agent(0, Role::Leader, Status::Idle),
+            agent(1, Role::Worker, Status::Idle),
+        ]);
+        w.messages = 4;
+        assert_eq!((w.number(), w.number(), w.messages), (5, 6, 6));
+        let sent = |from, to, text: &str, id| Event::Sent {
+            from,
+            to,
+            kind: MsgKind::Ask,
+            text: text.into(),
+            id,
+            re: None,
+        };
+        // One saved before numbers (0), then two numbered.
+        w.note(sent(1, 0, "old", 0));
+        w.note(sent(0, 1, "first", 5));
+        w.note(Event::Left { agent: 1 });
+        w.note(sent(1, 0, "second", 6));
+        assert_eq!(w.message(5), Some((0, 1, "first")));
+        assert_eq!(w.message(6), Some((1, 0, "second")));
+        assert_eq!(w.message(7), None);
+        assert_eq!(w.message(0), None, "0 is no number");
+    }
+
+    #[test]
+    fn a_message_saved_before_numbers_reads_as_number_0_replying_to_none() {
+        let old = r#"{"Sent":{"from":1,"to":0,"kind":"Done","text":"x"}}"#;
+        let e: Event = serde_json::from_str(old).unwrap();
+        assert!(
+            matches!(
+                e,
+                Event::Sent {
+                    id: 0,
+                    re: None,
+                    ..
+                }
+            ),
+            "{e:?}"
+        );
+        let s: StoryEvent = serde_json::from_str(old).unwrap();
+        assert!(
+            matches!(
+                s,
+                StoryEvent::Sent {
+                    id: 0,
+                    re: None,
+                    ..
+                }
+            ),
+            "{s:?}"
+        );
+        let e = Event::Sent {
+            from: 1,
+            to: 0,
+            kind: MsgKind::Done,
+            text: "x".into(),
+            id: 3,
+            re: Some(2),
+        };
+        let back: Event = serde_json::from_str(&serde_json::to_string(&e).unwrap()).unwrap();
+        assert_eq!(back, e);
     }
 
     #[test]
@@ -3242,6 +3355,8 @@ mod tests {
             to,
             kind: MsgKind::Ask,
             text: String::new(),
+            id: 0,
+            re: None,
         };
         w.cards.push(card(
             0,

@@ -269,7 +269,11 @@ pub struct Text {
     pub thread_title: &'static str,
     pub event_title: &'static str,
     /// Keys of the open conversation: `(key, what it does)`.
-    pub thread_hints: [(&'static str, &'static str); 6],
+    pub thread_hints: [(&'static str, &'static str); 7],
+    /// Under a reply in a conversation: the first line of what it answers;
+    /// or that the journal no longer has it.
+    pub re_line: &'static str,
+    pub re_gone: &'static str,
     pub copied: &'static str,
     pub copy_failed: &'static str,
     pub side_width: &'static str,
@@ -630,10 +634,13 @@ pub const EN: Text = Text {
     diff_gone: "nothing of {}'s waits any more",
     journal_keys: "  enter open the conversation · c copy the message · m mark",
     thread_title: " CONVERSATION · {} ⇄ {} · {}/{} ",
+    re_line: "↩ re {}: {}",
+    re_gone: "↩ re {}, which the journal no longer has",
     event_title: " EVENT ",
     thread_hints: [
         ("↑↓ j k", "message"),
         ("[ ]", "turn"),
+        ("%", "reply ↔ question"),
         ("pgup pgdn", "scroll"),
         ("c", "copy message"),
         ("C", "copy conversation"),
@@ -866,7 +873,7 @@ pub const EN: Text = Text {
         ("tab ⇧tab [ ]", "next / previous panel"),
         ("w  :waiting", "straight to waiting for you"),
         ("W  S", ":next waiting, from anywhere · :defer this"),
-        ("enter", "in the journal: the whole conversation"),
+        ("enter  %", "the conversation · % in it: reply ↔ question"),
         ("c C  y Y", "copy the message · the conversation"),
         (
             "m  :mark",
@@ -1099,10 +1106,13 @@ pub const TR: Text = Text {
     diff_gone: "{} için bekleyen bir şey kalmadı",
     journal_keys: "  enter konuşmayı aç · c mesajı kopyala · m işaretle",
     thread_title: " KONUŞMA · {} ⇄ {} · {}/{} ",
+    re_line: "↩ {} yanıtı: {}",
+    re_gone: "↩ {} yanıtı; günlükte artık yok",
     event_title: " OLAY ",
     thread_hints: [
         ("↑↓ j k", "mesaj"),
         ("[ ]", "söz sırası"),
+        ("%", "yanıt ↔ soru"),
         ("pgup pgdn", "kaydır"),
         ("c", "mesajı kopyala"),
         ("C", "konuşmayı kopyala"),
@@ -1337,7 +1347,7 @@ pub const TR: Text = Text {
         ("tab ⇧tab [ ]", "sonraki / önceki panel"),
         ("w  :waiting", "doğrudan seni bekleyenlere"),
         ("W  S", ":next bekleyen, her yerden · :defer ertele"),
-        ("enter", "defterde: konuşmanın tamamı"),
+        ("enter  %", "konuşmanın tamamı · içinde %: yanıt ↔ soru"),
         ("c C  y Y", "mesajı · konuşmayı kopyala"),
         (
             "m  :mark",

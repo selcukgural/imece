@@ -354,6 +354,7 @@ pub(crate) fn thread_rows(
                 let mut said = said_spans(lang, w, &s);
                 said.pop(); // the one-line text; it follows whole below
                 part[0].spans.extend(said);
+                part.extend(re_row(lang, w, &s));
                 part.extend(markdown(s.text, "  "));
             }
             None => part[0]
