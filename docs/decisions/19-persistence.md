@@ -18,7 +18,8 @@ commands), cards, story, journal, inbox, trace, mail, notes, inflight,
 posts, offers, changes (since schema 5 with the runs on each change's
 tree, record 11; since schema 6 the inbox keeps the card an item came
 on, record 32), paid (since schema 9: imece's own paid calls by day,
-written at once rather than at a save, record 56); events (`Event`, `StoryEvent`) are JSON with
+written at once rather than at a save, record 56; since schema 10 a
+project keeps the paths copied into its worktrees, record 57); events (`Event`, `StoryEvent`) are JSON with
 the variant name in a `kind` column (serde derives, pinned). A save
 runs after every step and every key (`App::persist`, failures flashed
 once) and once more at quit, and writes only what moved: new journal,

@@ -377,6 +377,9 @@ pub struct Project {
     /// Pinned by the person (`:pin`): the salon shows it above the ones
     /// that are not.
     pub pinned: bool,
+    /// Paths git ignores that the person listed (`:copy`) to be copied
+    /// from the checkout into each worker's worktree.
+    pub copies: Vec<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -991,6 +994,20 @@ pub enum Event {
         why: String,
         cost: u64,
     },
+    /// The paths the person listed (`:copy`) that worker `agent`'s
+    /// worktree lacked were copied into it from the checkout, `bytes` in
+    /// all.
+    Copied {
+        agent: AgentId,
+        paths: Vec<String>,
+        bytes: u64,
+    },
+    /// A listed path was not copied into worker `agent`'s worktree: why.
+    CopySkipped {
+        agent: AgentId,
+        path: String,
+        why: String,
+    },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -1027,6 +1044,7 @@ impl Event {
             | Event::CommandsMissing { .. }
             | Event::Confine { .. }
             | Event::WorktreeMoved { .. }
+            | Event::Copied { .. }
             | Event::WorktreeKept { .. } => EntryKind::Assumption,
             Event::Blocked { .. } => EntryKind::Blocked,
             Event::ResearchOpened { .. }
@@ -1042,6 +1060,7 @@ impl Event {
             | Event::Stopped { .. }
             | Event::Interrupted { .. }
             | Event::SuggestFailed { .. }
+            | Event::CopySkipped { .. }
             | Event::ApplyFailed { .. } => EntryKind::Failed,
             Event::Approved { .. }
             | Event::Rejected { .. }
@@ -1105,6 +1124,8 @@ impl Event {
             | Event::CommandsMissing { agent }
             | Event::WorktreeMoved { agent, .. }
             | Event::WorktreeKept { agent, .. }
+            | Event::Copied { agent, .. }
+            | Event::CopySkipped { agent, .. }
             | Event::ChangeReady { agent, .. }
             | Event::Applied { agent, .. }
             | Event::ApplyFailed { agent, .. } => agent,
@@ -1444,6 +1465,7 @@ impl World {
                 repo: &[],
                 closed: false,
                 pinned: false,
+                copies: Vec::new(),
             }),
         }
         self.note(Event::Opened { leader, path });
@@ -2123,6 +2145,7 @@ mod tests {
                 repo: &[],
                 closed: false,
                 pinned: false,
+                copies: Vec::new(),
             }],
             agents,
             cards: Vec::new(),
@@ -2640,6 +2663,7 @@ mod tests {
             repo: &[],
             closed: false,
             pinned: false,
+            copies: Vec::new(),
         });
         w.projects[0].closed = true;
         w.budget = 400;

@@ -23,6 +23,7 @@ pub(crate) fn team(workers: usize) -> World {
             repo: &[],
             closed: false,
             pinned: false,
+            copies: Vec::new(),
         }],
         agents: Vec::new(),
         cards: Vec::new(),
@@ -387,7 +388,11 @@ pub(super) fn worker_in(
 ) -> PathBuf {
     let name = w.agents[id].name.clone();
     let tree = worktree::ensure(repo, root, &name).unwrap().path;
-    live.ready(w, id, Ok((Box::new(Stub), tree.clone(), None, None)));
+    live.ready(
+        w,
+        id,
+        Ok((Box::new(Stub), tree.clone(), None, None, Vec::new())),
+    );
     tree
 }
 

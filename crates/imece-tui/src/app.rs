@@ -1365,6 +1365,42 @@ impl App {
         }
     }
 
+    /// `:copy [PATH]`: the paths git ignores that are copied from the
+    /// project at hand's checkout into its workers' worktrees at their
+    /// start (said when none is given), one more (checked: literal,
+    /// inside, ignored; the demo checks only the first), or one fewer
+    /// when it is listed already. A trailing `/` is the same path.
+    fn copy_path(&mut self, arg: &str) {
+        let t = self.lang.text();
+        let p = self.current_project();
+        let name = self.world.projects[p].name.clone();
+        if arg.is_empty() {
+            let copies = &self.world.projects[p].copies;
+            let said = match copies.is_empty() {
+                true => fill(t.copy_none, &[&name]),
+                false => fill(t.copy_list, &[&name, &copies.join(", ")]),
+            };
+            return self.flash(said);
+        }
+        let path = arg.trim_end_matches('/');
+        let copies = &mut self.world.projects[p].copies;
+        if let Some(i) = copies.iter().position(|c| c == path) {
+            copies.remove(i);
+            return self.flash(fill(t.copy_removed, &[path]));
+        }
+        let checked = match &self.engine {
+            Engine::Live(l) => l.may_copy(p, path),
+            Engine::Sim(_) => imece_agent::copy::literal(path),
+        };
+        match checked {
+            Ok(()) => {
+                self.world.projects[p].copies.push(path.to_string());
+                self.flash(fill(t.copy_added, &[path, &name]));
+            }
+            Err(why) => self.flash(fill(t.copy_refused, &[path, &why])),
+        }
+    }
+
     /// `:commit`: a cheap model is asked for a commit message for what is
     /// staged in the project at hand's checkout; it comes to the command
     /// line when it answers (see [`App::show_suggestion`]).
@@ -1731,6 +1767,10 @@ impl App {
             "faster" | "slower" => Some(format!("×{}", self.speed)),
             "export" if self.thread.is_some() => Some(t.value_thread.to_string()),
             "export" => self.card.map(|c| format!("#{}", c + 1)),
+            "copy" => {
+                let copies = &self.world.projects[self.current_project()].copies;
+                (!copies.is_empty()).then(|| copies.join(", "))
+            }
             _ => None,
         };
         let bill = matches!(name, "forget" | "open" | "commit");
@@ -1903,6 +1943,7 @@ impl App {
             "forget" => self.forget_agent(arg),
             "export" => self.export(arg),
             "commit" => self.suggest_commit(),
+            "copy" => self.copy_path(arg),
             "pin" => self.pin(arg),
             "mark" => self.toggle_mark(),
             "salon" => self.show(View::Salon),
@@ -3396,6 +3437,56 @@ mod tests {
         );
         let _ = std::fs::remove_dir_all(&one);
         let _ = std::fs::remove_dir_all(&two);
+    }
+
+    #[test]
+    fn colon_copy_lists_adds_and_drops_paths_of_the_project_at_hand() {
+        let mut app = App::new(1, 1, 0, 1, Lang::En);
+        let flash = |app: &App| app.flash.as_ref().map(|(m, _)| m.clone()).unwrap();
+        let p = app.current_project();
+        let name = app.world.projects[p].name.clone();
+        assert_eq!(app.command_note("copy"), "");
+        app.command("copy");
+        assert_eq!(
+            flash(&app),
+            format!(
+                "nothing is copied into {name}'s worktrees; :copy PATH adds a path git ignores"
+            )
+        );
+        app.command("copy .env");
+        assert_eq!(
+            flash(&app),
+            format!(".env is copied into {name}'s worktrees that lack it, at a worker's start")
+        );
+        app.command("copy target/");
+        assert_eq!(app.world.projects[p].copies, [".env", "target"]);
+        assert_eq!(app.command_note("copy"), "(.env, target)");
+        app.command("copy");
+        assert_eq!(
+            flash(&app),
+            format!("copied into {name}'s worktrees: .env, target")
+        );
+        app.command("copy ../secret");
+        assert!(flash(&app).starts_with("../secret can not be copied: a relative path"));
+        app.command("copy .env");
+        assert_eq!(flash(&app), ".env is no longer copied");
+        assert_eq!(app.world.projects[p].copies, ["target"]);
+    }
+
+    #[test]
+    fn colon_copy_live_asks_git_whether_it_ignores_the_path() {
+        let repo = crate::live::testing::checkout("app-copy");
+        std::fs::write(repo.join(".gitignore"), ".env\n").unwrap();
+        std::fs::write(repo.join(".env"), "KEY=1").unwrap();
+        let w = crate::live::testing::team(0);
+        let live = crate::live::testing::idle_live_in(&repo, 1);
+        let mut app = App::with(w, Engine::Live(Box::new(live)), Lang::En);
+        app.command("copy a.txt");
+        let said = app.flash.as_ref().map(|(m, _)| m.clone()).unwrap();
+        assert!(said.contains("git does not ignore it"), "{said}");
+        app.command("copy .env");
+        assert_eq!(app.world.projects[0].copies, [".env"]);
+        let _ = std::fs::remove_dir_all(&repo);
     }
 
     #[test]

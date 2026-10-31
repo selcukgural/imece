@@ -945,6 +945,7 @@ mod tests {
                 PathBuf::from("/w"),
                 None,
                 None,
+                Vec::new(),
             )),
         );
         (live, answers)
@@ -1088,6 +1089,7 @@ mod tests {
                 PathBuf::from("/w"),
                 None,
                 None,
+                Vec::new(),
             )),
         );
         let mut sleeper = std::process::Command::new("sleep")

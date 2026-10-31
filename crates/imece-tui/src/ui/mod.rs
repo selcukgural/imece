@@ -4445,9 +4445,9 @@ mod tests {
             let t = lang.text();
             for shift_enter in [true, false] {
                 let keys = overlay::help_keys(lang, shift_enter);
-                assert_eq!(keys[17].0, "^w ^u ^k ^y", "{lang:?}");
+                assert_eq!(keys[18].0, "^w ^u ^k ^y", "{lang:?}");
                 let want = t.help_newline[usize::from(!shift_enter)];
-                assert_eq!(keys[18], want, "{lang:?} {shift_enter}");
+                assert_eq!(keys[19], want, "{lang:?} {shift_enter}");
                 assert_eq!(keys.len(), t.help_keys.len() + 1);
             }
         }

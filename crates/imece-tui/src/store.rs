@@ -44,7 +44,9 @@ use crate::model::*;
 /// 7 (2026-10-31): whether the person pinned a project (`projects.pinned`).
 /// 8 (2026-10-31): the journal lines the person marked (`journal.marked`).
 /// 9 (2026-10-31): imece's own paid calls, by day (`paid`).
-pub const SCHEMA_VERSION: i64 = 9;
+/// 10 (2026-11-01): the paths copied into a project's worktrees
+/// (`projects.copies`).
+pub const SCHEMA_VERSION: i64 = 10;
 /// Trace lines kept per agent, as the world keeps them.
 const TRACE_KEEP: usize = 200;
 /// The file's name under the state directory.
@@ -390,6 +392,11 @@ impl Store {
                 "ALTER TABLE projects ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0;",
             )?;
         }
+        if !self.has_column("projects", "copies")? {
+            self.conn.execute_batch(
+                "ALTER TABLE projects ADD COLUMN copies TEXT NOT NULL DEFAULT '[]';",
+            )?;
+        }
         if !self.has_column("journal", "marked")? {
             self.conn.execute_batch(
                 "ALTER TABLE journal ADD COLUMN marked INTEGER NOT NULL DEFAULT 0;",
@@ -509,8 +516,8 @@ impl Store {
         for &p in &plan.projects {
             let q = &w.projects[p];
             tx.execute(
-                "INSERT OR REPLACE INTO projects (id, name, leader, closed, repo, pinned) \
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                "INSERT OR REPLACE INTO projects (id, name, leader, closed, repo, pinned, \
+                 copies) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
                 params![
                     n(q.id),
                     q.name,
@@ -520,6 +527,7 @@ impl Store {
                         .get(p)
                         .map_or(String::new(), |r| r.display().to_string()),
                     q.pinned,
+                    serde_json::to_string(&q.copies).unwrap_or_else(|_| "[]".into()),
                 ],
             )?;
         }
@@ -813,6 +821,7 @@ impl Store {
                 q.closed,
                 k.repos.get(p).map(|r| r.as_os_str()),
                 q.pinned,
+                &q.copies,
             ));
             if s.projects.get(p) != Some(&h) {
                 plan.projects.push(p);
@@ -989,8 +998,9 @@ impl Store {
         let mut saved = Saved::default();
         let mut skipped = 0;
         let conn = &self.conn;
-        let mut st = conn
-            .prepare("SELECT id, name, leader, closed, repo, pinned FROM projects ORDER BY id")?;
+        let mut st = conn.prepare(
+            "SELECT id, name, leader, closed, repo, pinned, copies FROM projects ORDER BY id",
+        )?;
         for row in st.query_map([], |r| {
             Ok((
                 u(r.get(0)?),
@@ -999,9 +1009,12 @@ impl Store {
                 r.get::<_, bool>(3)?,
                 r.get::<_, String>(4)?,
                 r.get::<_, bool>(5)?,
+                r.get::<_, String>(6)?,
             ))
         })? {
-            let (id, name, leader, closed, repo, pinned) = row?;
+            let (id, name, leader, closed, repo, pinned, copies) = row?;
+            let copies: Vec<String> = serde_json::from_str(&copies)
+                .map_err(|e| bad(format!("project {id}'s copies: {e}")))?;
             if id != w.projects.len() {
                 return Err(bad(format!("project {id} is out of order")));
             }
@@ -1013,6 +1026,7 @@ impl Store {
                 repo: &[],
                 closed,
                 pinned,
+                copies,
             });
             found.repos.push(PathBuf::from(repo));
         }
@@ -1514,6 +1528,7 @@ mod tests {
                     repo: &[],
                     closed: false,
                     pinned: false,
+                    copies: Vec::new(),
                 },
                 Project {
                     id: 1,
@@ -1523,6 +1538,7 @@ mod tests {
                     repo: &[],
                     closed: true,
                     pinned: false,
+                    copies: Vec::new(),
                 },
             ],
             agents: vec![
@@ -2899,6 +2915,43 @@ mod tests {
         assert!(back.world.projects.iter().all(|p| !p.pinned));
         assert!(store.save(&w, &kept().kept()).unwrap());
         assert!(store.load(100).unwrap().unwrap().world.projects[0].pinned);
+    }
+
+    #[test]
+    fn a_projects_copies_are_saved_on_their_own_and_schema_9_gets_the_column() {
+        let d = dir("schema9");
+        std::fs::create_dir_all(&d).unwrap();
+        let path = d.join(FILE);
+        let mut w = world();
+        {
+            let mut store = Store::open(&path).unwrap();
+            assert!(store.save(&w, &kept().kept()).unwrap());
+            // The list alone is something to save.
+            w.projects[1].copies = vec![".env".into(), "target".into()];
+            assert!(store.save(&w, &kept().kept()).unwrap());
+            assert!(!store.save(&w, &kept().kept()).unwrap(), "nothing new");
+            let back = store.load(100).unwrap().unwrap();
+            assert!(back.world.projects[0].copies.is_empty());
+            assert_eq!(back.world.projects[1].copies, [".env", "target"]);
+            // As schema 9 wrote it: no copies.
+            store
+                .raw()
+                .execute_batch(
+                    "ALTER TABLE projects DROP COLUMN copies;
+                     UPDATE meta SET value = '9' WHERE key = 'schema_version';",
+                )
+                .unwrap();
+        }
+        let mut store = Store::open(&path).unwrap();
+        let back = store.load(100).unwrap().expect("a world");
+        assert!(back.world.projects.iter().all(|p| p.copies.is_empty()));
+        // A list that is not one is refused, never read as empty.
+        store
+            .raw()
+            .execute_batch("UPDATE projects SET copies = 'x' WHERE id = 1;")
+            .unwrap();
+        let e = store.load(100).err().expect("refused").to_string();
+        assert!(e.contains("project 1's copies"), "{e}");
     }
 
     #[test]
