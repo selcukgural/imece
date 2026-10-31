@@ -371,6 +371,8 @@ pub struct Parser {
     cost_last: u64,
     /// The slash commands the last `init` listed, to report a change.
     commands: Vec<String>,
+    /// An `init` came without its `slash_commands` field, and it was said.
+    unlisted: bool,
     /// What the resumed session had reported before; see [`Resume`].
     floor: u64,
     /// The session asked for, until its first `init` confirms it.
@@ -398,6 +400,7 @@ impl Parser {
             started: false,
             calls: HashMap::new(),
             commands: Vec::new(),
+            unlisted: false,
             cost_base: 0,
             // A resumed session reports its whole cost: what it had
             // reported before is the floor the new turns count from.
@@ -530,6 +533,11 @@ impl Parser {
         if commands != self.commands {
             self.commands = commands.clone();
             out.push(Event::Commands(commands));
+        }
+        // No field at all is not an empty list: the format may have moved.
+        if !v["slash_commands"].is_array() && !self.unlisted {
+            self.unlisted = true;
+            out.push(Event::CommandsMissing);
         }
         Ok(out)
     }
@@ -835,9 +843,11 @@ mod tests {
         assert!(p.line(&init(BUS_INIT, "acceptEdits", BUS)).is_err());
     }
 
+    /// An `init` as Claude sends it, with an empty command list (which
+    /// is a list: the field is there).
     fn init(tools: &str, mode: &str, mcp: &str) -> String {
         format!(
-            r#"{{"type":"system","subtype":"init","session_id":"s1","model":"m1","tools":{tools},"permissionMode":"{mode}","mcp_servers":{mcp}}}"#
+            r#"{{"type":"system","subtype":"init","session_id":"s1","model":"m1","tools":{tools},"permissionMode":"{mode}","mcp_servers":{mcp},"slash_commands":[]}}"#
         )
     }
 
@@ -1191,6 +1201,17 @@ mod tests {
                 Event::Commands(vec!["/clear".into()])
             ]
         );
+        // An init without the field at all is not an empty list: said
+        // once, whatever comes after; one that is not a list counts too.
+        let without = init(GOOD_INIT, "acceptEdits", "[]").replace(r#","slash_commands":[]"#, "");
+        for odd in [without.clone(), with(r#""compact""#), with("null")] {
+            let mut p = Parser::new(&spec(EDIT_TOOLS));
+            let events = p.line(&odd).unwrap();
+            assert_eq!(events.last(), Some(&Event::CommandsMissing), "{odd}");
+            assert_eq!(p.line(&odd).unwrap(), [], "once: {odd}");
+            assert_eq!(p.line(&with("[]")).unwrap(), []);
+            assert_eq!(p.line(&without).unwrap(), [], "still once");
+        }
 
         let bad = [
             init(
