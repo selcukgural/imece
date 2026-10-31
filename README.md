@@ -222,7 +222,11 @@ your shell's title comes back when imece ends.
   on its own cannot pass it either.
   The header shows what the last ten minutes cost per hour and how long
   the pot lasts at that rate; with under half an hour left it turns the
-  attention colour and the journal says so once. Beside it the fleet:
+  attention colour and the journal says so once. After the pot, each
+  vendor plan's usage window nearest to full, as Claude and Codex
+  sessions report it (`claude 5h: 48% left, resets in 1 h 59 min`; the
+  attention colour from 90% used): a subscription's limit can stop the
+  team before the pot does. Beside it the fleet:
   `● 2 working  ✓ 1 done  ✕ 1 stuck`. An agent that finished a turn you
   have not opened since shows `✓` and "done, not seen yet" on its row,
   until you open it. A worker's row also says where its worktree stands:

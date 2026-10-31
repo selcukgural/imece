@@ -238,6 +238,21 @@ mod tests {
 }
 
 /// What a session reports, whatever the vendor.
+/// One window of a vendor plan's usage limit, as its session reports it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Limit {
+    /// The window's length in minutes (300: five hours, 10080: a week).
+    pub minutes: u32,
+    /// How much of it is used, in percent, at most 100.
+    pub used: u8,
+    /// When it starts again, in seconds since the Unix epoch, if said.
+    pub resets_at: Option<u64>,
+}
+
+/// Minutes in the windows the vendors name.
+pub const FIVE_HOURS: u32 = 5 * 60;
+pub const WEEK: u32 = 7 * 24 * 60;
+
 #[derive(Clone, Debug, PartialEq)]
 pub enum Event {
     /// The vendor confirmed the settings it runs with, and they are the ones
@@ -247,6 +262,10 @@ pub enum Event {
     /// when the session starts and again whenever it changes; the screen
     /// completes with it, so a vendor's new command needs no release.
     Commands(Vec<String>),
+    /// How much of its plan's usage limits the vendor says is used, one
+    /// window each (a five-hour one, a weekly one). A window not named
+    /// is as it was: an update may be sparse.
+    Limits(Vec<Limit>),
     /// Text the agent wrote during a turn. Display only.
     Text(String),
     /// The agent used a tool: its name and what it touched (a path relative
