@@ -6,6 +6,7 @@ mod board;
 mod card;
 mod code;
 mod diff;
+pub(crate) mod export;
 mod focus;
 mod overlay;
 pub mod pick;
@@ -1251,6 +1252,206 @@ mod tests {
             .map(|&(id, _)| Sel::Agent(id))
             .collect();
         assert_eq!(shown, people);
+    }
+
+    /// A fresh directory of this test's own under the system's temp one.
+    fn scratch(name: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!("imece-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn export_writes_a_conversation_as_markdown_with_the_day_on_every_time() {
+        let mut app = talking();
+        app.world.note(Event::YouSaid {
+            to: 0,
+            text: "my TOKEN=abc123 \x1b[31m".into(),
+        });
+        let lead = app.world.agents[0].name.clone();
+        let text = export::thread(Lang::En, &app.world, &[0, 1, 5]);
+        assert!(
+            text.starts_with(&format!("# Conversation: {lead} ⇄ you\n\n"))
+                || text.starts_with(&format!("# Conversation: you ⇄ {lead}\n\n")),
+            "{text}"
+        );
+        let first = format!("### {} you → {lead}\n\ncheck the readme\n\n", stamp(0));
+        assert!(text.contains(&first), "{text}");
+        assert!(text.contains(&format!("### {} {lead} → you\n\n# Readme\n", stamp(0))));
+        assert!(text.contains("```\ncargo run\n```\n"), "{text}");
+        assert!(!text.contains("abc123") && !text.contains('\x1b'), "{text}");
+        // A kind is named; a line that is no message is a list item.
+        app.world.note(Event::Sent {
+            from: 0,
+            to: 1,
+            kind: MsgKind::Ask,
+            text: "which?".into(),
+        });
+        app.world.note(Event::Budget {
+            leader: 0,
+            from: 10_000,
+            to: 20_000,
+        });
+        let worker = app.world.agents[1].name.clone();
+        let text = export::thread(Lang::En, &app.world, &[6]);
+        assert!(
+            text.contains(&format!("{lead} → {worker} [ask]\n\nwhich?")),
+            "{text}"
+        );
+        let text = export::thread(Lang::En, &app.world, &[7]);
+        assert_eq!(
+            text,
+            format!(
+                "# Conversation: \n\n- {} you set the budget to $2.00 (was $1.00)\n",
+                stamp(0)
+            )
+        );
+        // List items follow each other; a message stands apart.
+        let text = export::thread(Lang::En, &app.world, &[7, 7, 6, 7]);
+        let budget = format!("- {} you set the budget to $2.00 (was $1.00)\n", stamp(0));
+        let ask = format!("### {} {lead} → {worker} [ask]\n\nwhich?\n", stamp(0));
+        assert_eq!(
+            text,
+            format!("# Conversation: {lead} ⇄ {worker}\n\n{budget}{budget}\n{ask}\n{budget}")
+        );
+        let tr = export::thread(Lang::Tr, &app.world, &[0]);
+        assert!(
+            tr.starts_with("# Konuşma: ") && tr.contains(" sen → "),
+            "{tr}"
+        );
+    }
+
+    #[test]
+    fn export_writes_a_cards_screen_as_markdown() {
+        let app = on_card_one(Lang::En);
+        let w = &app.world;
+        let card = &w.cards[0];
+        let owner = &w.agents[card.owner.unwrap()].name;
+        let text = export::card(&app, 0);
+        let minutes = card::minutes(w, card);
+        for want in [
+            format!("# #1 {}\n\n", card.title),
+            format!("shop-api · DONE · {minutes} min\n\n"),
+            "lease  ".to_string(),
+            "## WHO\n\n- posted: ".to_string(),
+            format!("- owner: {owner}\n"),
+            "- talked: ".to_string(),
+            "\n## STORY\n\n- ".to_string(),
+            format!("{owner}: {}", card.title),
+            "\n## Waiting for you\n\n- ".to_string(),
+            format!("{owner} finished: {}", card.title),
+            format!("- 14:00 ◎ intent {owner}: {}\n", card.title),
+            "\n## Journal\n\n".to_string(),
+        ] {
+            assert!(text.contains(&want), "{want:?} missing:\n{text}");
+        }
+        // Every journal line of the card, oldest first, none folded.
+        let lines = salon::card_lines(w, 0);
+        assert!(!lines.is_empty() && lines.len() < w.journal.len());
+        assert!(lines.windows(2).all(|p| p[0] < p[1]), "{lines:?}");
+        let folded: Vec<usize> = salon::card_rows(w, 0).iter().map(|r| r.0).collect();
+        assert!(folded.iter().all(|i| lines.contains(i)));
+        let journal = &text[text.find("## Journal").unwrap()..];
+        let at: Vec<usize> = (lines.iter())
+            .map(|&i| journal.find(&stamp(w.journal[i].tick)).unwrap())
+            .collect();
+        assert!(
+            at.windows(2).all(|p| p[0] <= p[1]),
+            "oldest first:\n{journal}"
+        );
+        // No story, nothing waiting, no lines: said or left out.
+        let mut app = on_card_one(Lang::Tr);
+        app.world.cards[0].story.clear();
+        app.world.cards[0].symbols.clear();
+        app.world.inbox.iter_mut().for_each(|i| i.open = false);
+        app.world.journal.clear();
+        let text = export::card(&app, 0);
+        assert!(text.contains("## KİM\n"), "{text}");
+        assert!(text.contains("## HİKÂYE\n\nHenüz hikâye yok.\n"), "{text}");
+        for gone in ["## Seni bekleyenler", "## Defter", "lease"] {
+            assert!(!text.contains(gone), "{gone}:\n{text}");
+        }
+    }
+
+    #[test]
+    fn an_exports_file_is_named_after_what_and_when_and_never_written_over() {
+        let digits: String = stamp(42).chars().filter(char::is_ascii_digit).collect();
+        assert_eq!(digits.len(), 12);
+        assert_eq!(
+            export::file_name("card-12", 42),
+            format!("imece-card-12-{}-{}.md", &digits[..8], &digits[8..])
+        );
+        let dir = scratch("export-write");
+        // No target: in the directory given.
+        let path = export::write(None, &dir, "a.md", "one").unwrap();
+        assert_eq!(path, dir.join("a.md"));
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "one");
+        let e = export::write(None, &dir, "a.md", "two").unwrap_err();
+        assert_eq!(e.kind(), std::io::ErrorKind::AlreadyExists);
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "one", "kept");
+        // A directory: named in it; a file: that file.
+        let sub = dir.join("sub");
+        std::fs::create_dir(&sub).unwrap();
+        let path = export::write(Some(&sub), &dir, "b.md", "three").unwrap();
+        assert_eq!(path, sub.join("b.md"));
+        let named = dir.join("mine.md");
+        let path = export::write(Some(&named), &dir, "c.md", "four").unwrap();
+        assert_eq!(path, named);
+        assert_eq!(std::fs::read_to_string(&named).unwrap(), "four");
+        assert!(!dir.join("c.md").exists());
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn colon_export_writes_what_is_open_and_says_where() {
+        let dir = scratch("export-command");
+        let typed = |app: &mut App, line: &str| {
+            for c in line.chars() {
+                key(app, KeyCode::Char(c));
+            }
+        };
+        let mut app = talking();
+        typed(&mut app, ":export");
+        assert_eq!(app.menu, None, "whole already");
+        key(&mut app, KeyCode::Enter);
+        let s = render(&app, 160, 40);
+        assert!(
+            s.contains("nothing to export: open a conversation (v)"),
+            "{s}"
+        );
+        // The conversation open: the menu says so, the file has it.
+        app.open_thread(4);
+        typed(&mut app, ":exp");
+        assert_eq!(app.menu.as_ref().unwrap().notes, ["(the conversation)"]);
+        let file = dir.join("talk.md");
+        typed(&mut app, &format!("ort {}", file.display()));
+        key(&mut app, KeyCode::Enter);
+        let text = std::fs::read_to_string(&file).unwrap();
+        assert!(text.starts_with("# Conversation: "), "{text}");
+        let s = render(&app, 200, 40);
+        assert!(s.contains(&format!("written to {}", file.display())), "{s}");
+        // Again: not written over, and said.
+        typed(&mut app, &format!(":export {}", file.display()));
+        key(&mut app, KeyCode::Enter);
+        let s = render(&app, 200, 40);
+        assert!(
+            s.contains(&format!("could not write {}: ", file.display())),
+            "{s}"
+        );
+        // A card's screen, into a directory.
+        let mut app = on_card_one(Lang::En);
+        typed(&mut app, ":exp");
+        assert_eq!(app.menu.as_ref().unwrap().notes, ["(#1)"]);
+        typed(&mut app, &format!("ort {}", dir.display()));
+        key(&mut app, KeyCode::Enter);
+        let name = export::file_name("card-1", app.world.tick);
+        let text = std::fs::read_to_string(dir.join(&name)).unwrap();
+        assert!(text.starts_with("# #1 "), "{text}");
+        let mut app = app_after(1, 1, 0, Lang::En);
+        typed(&mut app, ":exp");
+        assert_eq!(app.menu.as_ref().unwrap().notes, [""], "nothing open");
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]
@@ -3902,9 +4103,9 @@ mod tests {
             let t = lang.text();
             for shift_enter in [true, false] {
                 let keys = overlay::help_keys(lang, shift_enter);
-                assert_eq!(keys[14].0, "^w ^u ^k ^y", "{lang:?}");
+                assert_eq!(keys[15].0, "^w ^u ^k ^y", "{lang:?}");
                 let want = t.help_newline[usize::from(!shift_enter)];
-                assert_eq!(keys[15], want, "{lang:?} {shift_enter}");
+                assert_eq!(keys[16], want, "{lang:?} {shift_enter}");
                 assert_eq!(keys.len(), t.help_keys.len() + 1);
             }
         }

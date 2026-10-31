@@ -142,6 +142,16 @@ pub struct Text {
     pub lead_asks: &'static str,
     pub bad_lead: &'static str,
     pub no_command: &'static str,
+    /// `:export`: a conversation's heading (who talked), a card's
+    /// sections, what was written, what was not, and nothing open.
+    pub export_thread: &'static str,
+    pub export_waiting: &'static str,
+    pub export_journal: &'static str,
+    pub exported: &'static str,
+    pub export_failed: &'static str,
+    pub nothing_to_export: &'static str,
+    /// In the `:` menu after `:export`: a conversation is open.
+    pub value_thread: &'static str,
     /// `:lang` with something that is not a language.
     pub bad_lang: &'static str,
     /// `:pause`, `:faster` or `:slower` while live.
@@ -370,7 +380,7 @@ pub struct Text {
     pub waiting_yes: &'static str,
     // Overlays
     pub help_title: &'static str,
-    pub help_keys: [(&'static str, &'static str); 43],
+    pub help_keys: [(&'static str, &'static str); 44],
     /// The help's line for a new line in the writing, put after the
     /// writing keys: where the terminal tells shift-enter apart, and
     /// where it does not.
@@ -460,6 +470,13 @@ pub const EN: Text = Text {
     bad_lead: "{} is not claude, codex, gemini or ask",
     no_command: "no command {}; : and tab list them",
     bad_lang: "{} is not a language: en or tr",
+    export_thread: "Conversation: {}",
+    export_waiting: "Waiting for you",
+    export_journal: "Journal",
+    exported: "written to {}",
+    export_failed: "could not write {}: {}",
+    nothing_to_export: "nothing to export: open a conversation (v) or a card (#N) first",
+    value_thread: "the conversation",
     demo_only: ":{} is for the demo: live agents run in real time",
     value_on: "on",
     value_off: "off",
@@ -702,6 +719,7 @@ pub const EN: Text = Text {
             ":forget @NAME",
             "the agent forgets its session; a new one is told where it left off",
         ),
+        (":export PATH", "the open conversation or card, as Markdown"),
         ("!cmd", "run cmd in your own shell, screen aside"),
         ("tab ⇧tab ↑ ↓", "while writing: complete names and commands"),
         ("^a ^e ⌥b ⌥f", "writing: to start / end, a word back / on"),
@@ -840,6 +858,13 @@ pub const TR: Text = Text {
     bad_lead: "{} claude, codex, gemini ya da ask değil",
     no_command: "{} diye komut yok; : ve tab hepsini listeler",
     bad_lang: "{} bir dil değil: en ya da tr",
+    export_thread: "Konuşma: {}",
+    export_waiting: "Seni bekleyenler",
+    export_journal: "Defter",
+    exported: "{} dosyasına yazıldı",
+    export_failed: "{} yazılamadı: {}",
+    nothing_to_export: "dışa aktarılacak bir şey yok: önce bir konuşma (v) ya da iş (#N) aç",
+    value_thread: "konuşma",
     demo_only: ":{} demo için: canlı agent'lar gerçek zamanda çalışır",
     value_on: "açık",
     value_off: "kapalı",
@@ -1084,6 +1109,7 @@ pub const TR: Text = Text {
             ":forget @AD",
             "agent oturumunu unutur; yenisine kaldığı yer anlatılır",
         ),
+        (":export YOL", "açık konuşma ya da iş, Markdown olarak"),
         ("!kmt", "kmt kendi kabuğunda; ekran kenara çekilir"),
         ("tab ⇧tab ↑ ↓", "yazarken: ad ve komut tamamla"),
         ("^a ^e ⌥b ⌥f", "yazarken: başa / sona, kelime geri / ileri"),

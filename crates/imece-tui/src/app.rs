@@ -1549,6 +1549,8 @@ impl App {
             "needs" => Some(on_off(self.needs_only)),
             "pause" => Some(on_off(self.paused)),
             "faster" | "slower" => Some(format!("×{}", self.speed)),
+            "export" if self.thread.is_some() => Some(t.value_thread.to_string()),
+            "export" => self.card.map(|c| format!("#{}", c + 1)),
             _ => None,
         };
         let bill = matches!(name, "forget" | "open");
@@ -1715,6 +1717,7 @@ impl App {
             "close" => self.close_project(arg),
             "rename" => self.rename_project(arg),
             "forget" => self.forget_agent(arg),
+            "export" => self.export(arg),
             "salon" => self.show(View::Salon),
             "board" => self.show(View::Board),
             "code" => self.show(View::Code),
@@ -1752,6 +1755,34 @@ impl App {
             "faster" => self.faster(),
             "slower" => self.slower(),
             _ => self.flash(fill(t.no_command, &[name])),
+        }
+    }
+
+    /// `:export [PATH]`: the open conversation, else the card's screen,
+    /// as Markdown in PATH (a file, or a directory to name one in), else
+    /// in the directory imece was started from. Nothing is written over.
+    fn export(&mut self, arg: &str) {
+        let t = self.lang.text();
+        let (what, text) = match (&self.thread, self.card) {
+            (Some(th), _) => (
+                "conversation".to_string(),
+                ui::export::thread(self.lang, &self.world, &th.entries),
+            ),
+            (None, Some(c)) => (format!("card-{}", c + 1), ui::export::card(self, c)),
+            (None, None) => return self.flash(t.nothing_to_export),
+        };
+        let name = ui::export::file_name(&what, self.world.tick);
+        let target = (!arg.is_empty()).then(|| expand_tilde(arg, self.home.as_deref()));
+        let here = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+        match ui::export::write(target.as_deref(), &here, &name, &text) {
+            Ok(path) => self.flash(fill(t.exported, &[&path.display().to_string()])),
+            Err(e) => {
+                let path = target.unwrap_or_else(|| here.join(&name));
+                self.flash(fill(
+                    t.export_failed,
+                    &[&path.display().to_string(), &e.to_string()],
+                ))
+            }
         }
     }
 

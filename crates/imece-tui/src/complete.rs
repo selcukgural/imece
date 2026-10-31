@@ -12,10 +12,10 @@ use crate::model::{Agent, CardId, ProjectId, World};
 
 /// The commands imece itself takes after `:`: its own, and a name for
 /// every key that acts (not the ones that move).
-pub const COMMANDS: [&str; 25] = [
-    "board", "budget", "close", "code", "defer", "faster", "fold", "forget", "help", "lang",
-    "lead", "needs", "next", "open", "pause", "pending", "quit", "rename", "salon", "slower",
-    "talk", "theme", "trace", "unfold", "waiting",
+pub const COMMANDS: [&str; 26] = [
+    "board", "budget", "close", "code", "defer", "export", "faster", "fold", "forget", "help",
+    "lang", "lead", "needs", "next", "open", "pause", "pending", "quit", "rename", "salon",
+    "slower", "talk", "theme", "trace", "unfold", "waiting",
 ];
 
 /// The commands only the demo takes: live agents run in real time.
@@ -224,7 +224,7 @@ pub fn suggest(input: &str, w: &World, project: ProjectId, home: Option<&Path>) 
                     .map(|a| a.name.as_str());
                 menu(start, word, matching(word, names), "")
             }
-            Some(("open", arg)) => dirs(input.len() - arg.len(), arg, home, &list_dirs),
+            Some(("open" | "export", arg)) => dirs(input.len() - arg.len(), arg, home, &list_dirs),
             Some(_) => None,
         };
     }
@@ -551,6 +551,9 @@ mod tests {
             names(&suggest(&format!(":open {}", at("b")), &w, 0, None)),
             [at("beta")]
         );
+        let m = suggest(&format!(":export {}", at("")), &w, 0, None).unwrap();
+        assert_eq!(m.items, [at("alpha"), at("beta")], ":export too");
+        assert_eq!(m.start, 8);
         let m = suggest(":open ~/", &w, 0, Some(&dir)).unwrap();
         assert_eq!(m.items, ["~/alpha", "~/beta"]);
         assert_eq!(suggest(":open /nonexistent-dir/", &w, 0, None), None);

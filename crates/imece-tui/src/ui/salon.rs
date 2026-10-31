@@ -667,11 +667,23 @@ pub(crate) fn journal_rows(w: &World) -> Vec<(usize, usize)> {
 /// [`journal_rows`]: the lines that name the card (posted, claimed,
 /// assigned, merged) and what was said with its number (`#323`) in it.
 pub(crate) fn card_rows(w: &World, c: CardId) -> Vec<(usize, usize)> {
-    let shown = w.journal.iter().enumerate().rev().filter(|(_, e)| {
-        e.event.card() == Some(c)
-            || words::said(&e.event).is_some_and(|s| !mentions(s.text, c).is_empty())
-    });
+    let shown = (w.journal.iter().enumerate().rev()).filter(|(_, e)| on_card(c, e));
     fold_threads(shown).collect()
+}
+
+/// Card `c`'s journal lines, oldest first and none folded (for `:export`).
+pub(crate) fn card_lines(w: &World, c: CardId) -> Vec<usize> {
+    (w.journal.iter().enumerate())
+        .filter(|(_, e)| on_card(c, e))
+        .map(|(i, _)| i)
+        .collect()
+}
+
+/// Whether journal line `e` is one of card `c`'s: it names the card, or
+/// what was said in it has its number.
+fn on_card(c: CardId, e: &Entry) -> bool {
+    e.event.card() == Some(c)
+        || words::said(&e.event).is_some_and(|s| !mentions(s.text, c).is_empty())
 }
 
 /// `line` with card `c`'s number marked wherever it is named.
