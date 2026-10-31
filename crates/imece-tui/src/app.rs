@@ -90,6 +90,19 @@ pub fn patch_key(patch: &str) -> u64 {
     h.finish()
 }
 
+/// Where the person is: the view, the zoom, the salon's panel and the
+/// card whose screen is open. `^o` goes back through the places left.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Place {
+    pub view: View,
+    pub zoom: Zoom,
+    pub pane: Pane,
+    pub card: Option<CardId>,
+}
+
+/// The most places `^o` remembers.
+const PLACES: usize = 50;
+
 /// A selectable salon line: a project's header or an agent.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Sel {
@@ -277,6 +290,10 @@ pub struct App {
     /// and who had a part in it, what waits for the person on it and its
     /// journal lines.
     pub card: Option<CardId>,
+    /// The places left, oldest first, for `^o`.
+    pub been: Vec<Place>,
+    /// The last key was `^o`: the place it left is not one to go back to.
+    went_back: bool,
     /// The side panel's width, in percent.
     pub side: u16,
     /// Text the person asked to copy; the main loop hands it to the
@@ -378,6 +395,8 @@ impl App {
             journal_sel: None,
             thread: None,
             card: None,
+            been: Vec::new(),
+            went_back: false,
             side: SIDE_DEFAULT,
             copy: None,
             shell: None,
@@ -617,7 +636,17 @@ impl App {
     }
 
     pub fn on_key(&mut self, k: KeyEvent) {
+        let was = self.place();
         self.key(k);
+        // A key that took the person elsewhere leaves the place behind;
+        // `^o` going back does not.
+        let back = std::mem::take(&mut self.went_back);
+        if !back && self.place() != was {
+            self.been.push(was);
+            if self.been.len() > PLACES {
+                self.been.remove(0);
+            }
+        }
         self.preview_theme();
         self.seen();
         self.settle();
@@ -737,6 +766,7 @@ impl App {
                 KeyCode::Char('u') => self.page(false, true),
                 KeyCode::Char('f') => self.page(true, false),
                 KeyCode::Char('b') => self.page(false, false),
+                KeyCode::Char('o') => self.go_back(),
                 _ => {}
             }
             return;
@@ -1997,6 +2027,47 @@ impl App {
             self.pane = Pane::Inbox;
         }
         self.inbox_sel = self.inbox_sel.min(open.saturating_sub(1));
+    }
+
+    /// Where the person is now.
+    pub fn place(&self) -> Place {
+        Place {
+            view: self.view,
+            zoom: self.zoom,
+            pane: self.pane,
+            card: self.card,
+        }
+    }
+
+    /// `^o`: back to the place the person was before, as vim's jump list
+    /// goes; an open conversation closes first. A place that is not there
+    /// any more (a gone agent's focus, a change applied since) is passed
+    /// over, and with none left it says so.
+    fn go_back(&mut self) {
+        self.went_back = true;
+        if self.thread.take().is_some() {
+            return;
+        }
+        while let Some(p) = self.been.pop() {
+            let agent_ok = |id: AgentId| self.world.agents.get(id).is_some_and(|a| !a.gone);
+            let zoom_ok = match p.zoom {
+                Zoom::None => true,
+                Zoom::Focus(id) | Zoom::Trace(id) => agent_ok(id),
+                Zoom::Diff(id) => self.world.change_of(id).is_some(),
+            };
+            let card_ok = p.card.is_none_or(|c| c < self.world.cards.len());
+            if zoom_ok && card_ok && p != self.place() {
+                self.view = p.view;
+                self.zoom = p.zoom;
+                self.pane = p.pane;
+                self.card = p.card;
+                if self.pane == Pane::Journal {
+                    self.select_journal(None);
+                }
+                return;
+            }
+        }
+        self.flash(self.lang.text().no_back);
     }
 
     /// `m` or `:mark`: the line at hand (the open conversation's selected
@@ -4332,6 +4403,89 @@ mod tests {
         assert!(!th.follow.get());
         assert_eq!(flashed(&app).as_deref(), Some(app.lang.text().no_marks));
         assert_eq!(app.pane, Pane::Salon, "the journal is not where it went");
+    }
+
+    #[test]
+    fn ctrl_o_goes_back_through_the_places_left_and_not_further() {
+        let mut app = App::new(1, 1, 0, 1, Lang::En);
+        let t = app.lang.text();
+        let salon = app.place();
+        app.on_key(key(KeyCode::Char('2')));
+        let board = app.place();
+        app.on_key(key(KeyCode::Char('3')));
+        assert_eq!(app.been, [salon, board]);
+        // A key that goes nowhere leaves nothing.
+        app.on_key(key(KeyCode::Char('j')));
+        assert_eq!(app.been.len(), 2);
+        app.on_key(ctrl('o'));
+        assert_eq!(app.place(), board);
+        assert_eq!(app.been, [salon], "going back leaves nothing behind");
+        app.on_key(ctrl('o'));
+        assert_eq!(app.place(), salon);
+        app.on_key(ctrl('o'));
+        assert_eq!(app.place(), salon);
+        assert_eq!(flashed(&app).as_deref(), Some(t.no_back));
+        // The journal panel comes back with a row selected.
+        app.pane = Pane::Journal;
+        app.journal_sel = None;
+        app.been.push(app.place());
+        app.pane = Pane::Salon;
+        app.on_key(ctrl('o'));
+        assert_eq!(app.pane, Pane::Journal);
+        assert!(app.journal_sel.is_some());
+    }
+
+    #[test]
+    fn ctrl_o_closes_a_conversation_first_and_passes_over_places_gone() {
+        let (mut app, worker) = with_change("diff --git a/x b/x\n@@ -1 +1 @@\n-a\n+b\n");
+        app.zoom = Zoom::None;
+        app.pane = Pane::Salon;
+        let here = app.place();
+        app.open_thread(0);
+        app.on_key(ctrl('o'));
+        assert!(app.thread.is_none());
+        assert_eq!(app.place(), here);
+        let at = |zoom, card| Place {
+            view: View::Salon,
+            zoom,
+            pane: Pane::Inbox,
+            card,
+        };
+        let lead = app.world.projects[0].leader;
+        let cards = app.world.cards.len();
+        app.been = vec![
+            at(Zoom::None, Some(0)),
+            at(Zoom::Focus(lead), None),
+            at(Zoom::Diff(worker), None),
+            here,
+            at(Zoom::None, Some(cards)),
+            at(Zoom::Diff(lead), None),
+            at(Zoom::Trace(worker), None),
+        ];
+        app.world.agents[worker].gone = true;
+        // The gone worker's stream, a change that is not there, a card
+        // that is not, where it is already: passed over.
+        app.on_key(ctrl('o'));
+        assert_eq!(app.place(), at(Zoom::Diff(worker), None));
+        app.on_key(ctrl('o'));
+        assert_eq!(app.place(), at(Zoom::Focus(lead), None));
+        app.on_key(ctrl('o'));
+        assert_eq!(app.place(), at(Zoom::None, Some(0)), "a card that is there");
+        assert!(app.been.is_empty());
+    }
+
+    #[test]
+    fn the_places_left_are_kept_up_to_fifty_the_oldest_going_first() {
+        let mut app = App::new(1, 1, 0, 1, Lang::En);
+        for n in 0..60 {
+            let c = ['2', '1'][n % 2];
+            app.on_key(key(KeyCode::Char(c)));
+        }
+        assert_eq!(app.been.len(), 50);
+        // The last place left was the board, the one before the salon.
+        assert_eq!(app.been[49].view, View::Board);
+        assert_eq!(app.been[48].view, View::Salon);
+        assert_eq!(app.been[0].view, View::Salon);
     }
 
     #[test]

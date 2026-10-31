@@ -150,6 +150,7 @@ record in the same PR.
 - 48 `limits`: Claude's `rate_limit_event` and Codex's `account/rateLimits/updated` as `Event::Limits`; `World.limits` by vendor and window, the header shows each vendor's tightest (`words::limit`, loud from 90%); the demo fills them from spending; not kept between runs.
 - 49 `diff-notes`: `c` notes the top line of a change (`App::diff_notes`, by patch hash), `n` sends them in one message (`ui::notes_message`, `ui::place` file:line, `−N` removed) and the change goes back like a reject; the top row is the line at hand.
 - 50 `partial-apply`: `x` chooses hunks (`App::chosen`), `a` applies only them: `worktree::subset` + `worktree::part` (the part's tree through an index of its own), the worktree marked with only that part, the rest read again as a new Δ; the demo mirrors it.
+- 51 `back-key`: `^o` goes back through the places left (`App::been`, `Place` = view, zoom, pane, card; recorded in `on_key` when a key moved the person, 50 kept), passing over places gone; closes a conversation first.
 
 `docs/neighbours.md`: voff, what was taken from it and the rules that come
 from what it lacks. Read it before building a part it names.

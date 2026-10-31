@@ -268,6 +268,8 @@ pub struct Text {
     pub unmarked: &'static str,
     pub mark_where: &'static str,
     pub no_marks: &'static str,
+    /// `^o` with nowhere to go back to.
+    pub no_back: &'static str,
     pub theme_is: &'static str,
     pub folded: &'static str,
     /// After a worker's name: how many helpers it has (folded or not).
@@ -415,7 +417,7 @@ pub struct Text {
     pub waiting_yes: &'static str,
     // Overlays
     pub help_title: &'static str,
-    pub help_keys: [(&'static str, &'static str); 50],
+    pub help_keys: [(&'static str, &'static str); 51],
     /// The help's line for a new line in the writing, put after the
     /// writing keys: where the terminal tells shift-enter apart, and
     /// where it does not.
@@ -608,6 +610,7 @@ pub const EN: Text = Text {
     unmarked: "mark taken away",
     mark_where: "m marks a line of the journal or of a conversation",
     no_marks: "no marked line here yet: m marks one",
+    no_back: "nowhere to go back to yet",
     theme_is: "theme: {}",
     folded: "… {} agents doing fine",
     helpers: "{} helpers",
@@ -795,6 +798,7 @@ pub const EN: Text = Text {
         ("↑ ↓  j k", "select"),
         ("gg  G", "first / last line"),
         ("^d ^u ^f ^b", "half a page / a page"),
+        ("^o", "back where you were: view, panel, focus, card"),
         ("← →  h l", "fold / unfold a project or a worker's helpers"),
         ("za  zM  zR", "fold: toggle · all (:fold) · none (:unfold)"),
         ("f  :needs", "salon: only what needs you · everyone"),
@@ -1045,6 +1049,7 @@ pub const TR: Text = Text {
     unmarked: "işaret kaldırıldı",
     mark_where: "m günlükte ya da bir konuşmada bir satırı işaretler",
     no_marks: "burada henüz işaretli satır yok: m bir tane işaretler",
+    no_back: "henüz dönülecek bir yer yok",
     theme_is: "tema: {}",
     folded: "… {} agent yolunda",
     helpers: "{} yardımcı",
@@ -1231,6 +1236,7 @@ pub const TR: Text = Text {
         ("↑ ↓  j k", "seç"),
         ("gg  G", "ilk / son satır"),
         ("^d ^u ^f ^b", "yarım sayfa / tam sayfa"),
+        ("^o", "olduğun yere geri: görünüm, panel, odak, kart"),
         (
             "← →  h l",
             "projeyi ya da işçinin yardımcılarını katla / aç",
