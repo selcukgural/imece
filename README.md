@@ -275,6 +275,7 @@ not yet seen.
 | `f` | the salon shows only what needs you (waiting for you, stuck, done and not seen) · everyone again |
 | `L` | English / Türkçe |
 | `enter` / `esc` | look deeper (focus, then the raw stream) / go back |
+| `enter` in the journal, `v` | the whole conversation; `[` `]` go from turn to turn (the lines one side says before the other answers) |
 | `tab`, `w` | salon ↔ the items waiting for you · straight to them |
 | `W` / `S` | from anywhere: open the next item waiting for you / put this one off and open the next |
 | `a` / `r` | approve / apply / allow · reject / refuse the selected item |

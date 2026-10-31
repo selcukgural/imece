@@ -736,6 +736,23 @@ pub(crate) fn thread_of(w: &World, i: usize) -> Vec<usize> {
         .collect()
 }
 
+/// Where each turn of conversation `entries` starts, as positions in it:
+/// a turn is the lines one party says before the other answers, so the
+/// first line starts one and so does every line whose speaker is not the
+/// one before. Lines that are no conversation have no speaker.
+pub(crate) fn turn_starts(w: &World, entries: &[usize]) -> Vec<usize> {
+    let speaker = |&i: &usize| {
+        w.journal
+            .get(i)
+            .and_then(|e| words::said(&e.event))
+            .map(|s| s.from)
+    };
+    let speakers: Vec<_> = entries.iter().map(speaker).collect();
+    (0..speakers.len())
+        .filter(|&n| n == 0 || speakers[n] != speakers[n - 1])
+        .collect()
+}
+
 /// Each entry with how many older lines of the same conversation directly
 /// follow it and are folded under it. Display only: the agents' stories
 /// keep every line.

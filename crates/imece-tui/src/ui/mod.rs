@@ -25,7 +25,7 @@ use crate::i18n::{Lang, clean, fill};
 use crate::model::*;
 pub(crate) use crate::theme::pal;
 pub(crate) use diff::file_starts;
-pub(crate) use salon::{card_rows, journal_rows, thread_of};
+pub(crate) use salon::{card_rows, journal_rows, thread_of, turn_starts};
 
 pub fn draw(f: &mut Frame, app: &App) {
     paint(f, f.area());
@@ -5230,10 +5230,15 @@ mod tests {
             screen.contains(" c  copy message   C  copy conversation"),
             "{screen}"
         );
+        assert!(screen.contains("message   [ ]  turn   pgup"), "{screen}");
         app.lang = Lang::Tr;
         let screen = render(&app, 120, 30);
         assert!(screen.contains("KONUŞMA · lead ⇄ sen · 4/4"), "{screen}");
         assert!(screen.contains(" c  mesajı kopyala"), "{screen}");
+        assert!(
+            screen.contains("mesaj   [ ]  söz sırası   pgup"),
+            "{screen}"
+        );
     }
 
     #[test]
