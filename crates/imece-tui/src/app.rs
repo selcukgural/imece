@@ -2335,8 +2335,6 @@ fn pasted(text: &str) -> String {
         .collect()
 }
 
-/// Where `[` or `]` goes from `at`: the nearest of `starts` (in order)
-/// before it, or after it when `forward`; none past the first or last.
 /// The first of `marked` (positions, ascending) after `at`, or the first
 /// of them when none is after it or nothing is at hand.
 fn next_of(marked: &[usize], at: Option<usize>) -> Option<usize> {
@@ -2344,6 +2342,8 @@ fn next_of(marked: &[usize], at: Option<usize>) -> Option<usize> {
     after.or(marked.first()).copied()
 }
 
+/// Where `[` or `]` goes from `at`: the nearest of `starts` (in order)
+/// before it, or after it when `forward`; none past the first or last.
 fn jump(starts: &[usize], at: usize, forward: bool) -> Option<usize> {
     if forward {
         starts.iter().find(|&&s| s > at).copied()
