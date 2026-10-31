@@ -27,7 +27,7 @@ use crate::app::{App, FLASH, View, Zoom};
 use crate::i18n::{Lang, clean, fill};
 use crate::model::*;
 pub(crate) use crate::theme::pal;
-pub(crate) use diff::{file_starts, notes_message, place, quote};
+pub(crate) use diff::{file_starts, hunk_at, notes_message, place, quote};
 pub(crate) use salon::{card_rows, journal_rows, thread_of, turn_starts};
 
 pub fn draw(f: &mut Frame, app: &App) {
@@ -1178,7 +1178,7 @@ fn footer(f: &mut Frame, area: Rect, app: &App) {
             Zoom::Diff(_) => vec![
                 ("j k", t.scroll),
                 ("[ ]", t.file),
-                ("a", t.apply),
+                ("a x", t.apply_part),
                 ("r", t.reject),
                 (">", t.quote),
                 ("c n", t.notes),
@@ -2966,7 +2966,7 @@ mod tests {
             "control characters go: {s}"
         );
         assert!(
-            s.contains(" j k ") && s.contains("apply to the checkout"),
+            s.contains(" j k ") && s.contains(" a x  apply · choose a hunk"),
             "{s}"
         );
         assert!(s.contains(" >  quote to it"), "{s}");

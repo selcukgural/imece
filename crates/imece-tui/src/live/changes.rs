@@ -27,19 +27,31 @@ pub(super) fn git_thread(jobs: Receiver<GitJob>, done: Sender<GitDone>) {
                 repo,
                 change,
                 title,
+                hunks,
             } => {
-                let applied = worktree::apply(&repo, &change.patch);
-                let mark = match &applied {
-                    Ok(()) => {
-                        worktree::applied(&change, &format!("imece: the person applied: {title}"))
+                // Some hunks only: the part they make is what is applied
+                // and marked; the rest stays in the worktree.
+                let part = (!hunks.is_empty()).then_some(hunks.len());
+                let change = match part {
+                    Some(_) => worktree::part(&change, &worktree::subset(&change.patch, &hunks)),
+                    None => Ok(change),
+                };
+                let applied = change
+                    .as_ref()
+                    .map_err(|e| io::Error::other(e.to_string()))
+                    .and_then(|c| worktree::apply(&repo, &c.patch));
+                let mark = match (&applied, &change) {
+                    (Ok(()), Ok(c)) => {
+                        worktree::applied(c, &format!("imece: the person applied: {title}"))
                     }
-                    Err(_) => Ok(String::new()),
+                    _ => Ok(String::new()),
                 };
                 GitDone::Applied {
                     agent,
                     title,
                     applied,
                     mark,
+                    part,
                 }
             }
             GitJob::Place {
@@ -127,9 +139,10 @@ impl Live {
                     title,
                     applied,
                     mark,
+                    part,
                 } => {
                     self.applying[agent] = false;
-                    self.applied(w, agent, &title, applied, mark);
+                    self.applied(w, agent, &title, applied, mark, part);
                 }
                 GitDone::Placed {
                     agent,
@@ -271,7 +284,12 @@ impl Live {
     /// next change holds only what comes after; the journal says how it
     /// went. Refused while it is being applied, or while a newer change of
     /// the worker's is still being read.
-    pub fn apply_change(&mut self, w: &World, id: AgentId) -> Result<(), String> {
+    pub fn apply_change(
+        &mut self,
+        w: &World,
+        id: AgentId,
+        hunks: Vec<usize>,
+    ) -> Result<(), String> {
         if self.applying[id] {
             return Err("their change is being applied".into());
         }
@@ -287,6 +305,7 @@ impl Live {
             repo: self.places[w.agents[id].project].repo.clone(),
             change: c.clone(),
             title,
+            hunks,
         };
         self.git
             .send(job)
@@ -297,7 +316,8 @@ impl Live {
 
     /// How applying worker `id`'s change went. One that did not fit is
     /// refused with git's words and still waits; one applied but not
-    /// marked is applied all the same.
+    /// marked is applied all the same. When only `part` of its hunks
+    /// went, the rest is read again and waits as a change of its own.
     fn applied(
         &mut self,
         w: &mut World,
@@ -305,6 +325,7 @@ impl Live {
         title: &str,
         applied: io::Result<()>,
         mark: io::Result<String>,
+        part: Option<usize>,
     ) {
         if let Err(e) = applied {
             w.change_failed(id, e.to_string());
@@ -323,11 +344,23 @@ impl Live {
         self.changes.remove(&id);
         w.change_applied(id, mark.clone());
         self.stand(w, id);
+        let Some(n) = part else {
+            self.notes[id].push(format!(
+                "The person applied your change ({title}) to their checkout. Your worktree is \
+                 committed at {mark} as a mark of that; your files are as you left them. \
+                 Go on from here with the next task."
+            ));
+            return;
+        };
         self.notes[id].push(format!(
-            "The person applied your change ({title}) to their checkout. Your worktree is \
-             committed at {mark} as a mark of that; your files are as you left them. \
-             Go on from here with the next task."
+            "The person applied part of your change ({title}) to their checkout: {n} of its \
+             hunks. Your worktree is committed at {mark} with only that part; your files are \
+             as you left them, and the rest is not committed and waits for the person as a \
+             change again."
         ));
+        // Nobody waits on this reading: the worker's done was answered.
+        let (said, _) = mpsc::channel();
+        self.snapshot(w, id, title.to_string(), String::new(), said);
     }
 
     /// The person rejects worker `id`'s change: it stays in the worktree,
@@ -428,6 +461,91 @@ mod tests {
     use crate::live::testing::*;
 
     #[test]
+    fn chosen_hunks_go_to_the_checkout_and_the_rest_waits_as_a_change_again() {
+        let repo = checkout("part-repo");
+        let root = trees("part");
+        let mut w = team(2);
+        let mut live = Live::new(
+            3,
+            claude_at("/nonexistent/claude"),
+            repo.clone(),
+            root.clone(),
+        );
+        let tree = worker_in(&mut live, &mut w, 1, &repo, &root);
+        std::fs::write(tree.join("a.txt"), "a\nb\n").unwrap();
+        std::fs::write(tree.join("new.txt"), "new\n").unwrap();
+        sent(&mut live, &mut w, 1, &msg("lead", "done", "Two things.")).unwrap();
+        settle(&mut live, &mut w);
+        let patch = w.change_of(1).unwrap().patch.clone();
+        let hunks: Vec<usize> = (patch.lines().enumerate())
+            .filter(|(_, l)| l.starts_with("@@"))
+            .map(|(i, _)| i)
+            .collect();
+        assert_eq!(hunks.len(), 2, "{patch}");
+        // new.txt's hunk alone.
+        let new = hunks[1];
+        assert_eq!(patch.lines().nth(new - 1), Some("+++ b/new.txt"), "{patch}");
+        live.apply_change(&w, 1, vec![new]).unwrap();
+        settle(&mut live, &mut w);
+        assert_eq!(
+            std::fs::read_to_string(repo.join("new.txt")).unwrap(),
+            "new\n"
+        );
+        assert_eq!(std::fs::read_to_string(repo.join("a.txt")).unwrap(), "a");
+        assert_eq!(
+            git_in(&repo, &["diff", "--cached", "--name-only"]),
+            "new.txt"
+        );
+        assert!(matches!(
+            w.journal
+                .iter()
+                .rev()
+                .find(|e| matches!(e.event, Event::Applied { .. }))
+                .unwrap()
+                .event,
+            Event::Applied {
+                agent: 1,
+                files: 2,
+                ..
+            }
+        ));
+        // The worker hears it was part; its files are as they were.
+        assert_eq!(live.notes[1].len(), 1);
+        assert!(live.notes[1][0].contains("applied part of your change (Two things.)"));
+        assert!(live.notes[1][0].contains("1 of its hunks"));
+        assert_eq!(
+            std::fs::read_to_string(tree.join("a.txt")).unwrap(),
+            "a\nb\n"
+        );
+        // The rest waits as a change again, a.txt's alone.
+        let rest = w.change_of(1).expect("the rest waits");
+        assert_eq!(rest.title, "Two things.");
+        let files: Vec<&str> = rest.files.iter().map(|f| f.path.as_str()).collect();
+        assert_eq!(files, ["a.txt"]);
+        assert_eq!(live.changes[&1].files.len(), 1);
+        assert_eq!(w.open_inbox().len(), 1);
+        // Applied whole, nothing waits after.
+        live.apply_change(&w, 1, Vec::new()).unwrap();
+        settle(&mut live, &mut w);
+        assert!(w.change_of(1).is_none() && w.open_inbox().is_empty());
+        assert_eq!(
+            std::fs::read_to_string(repo.join("a.txt")).unwrap(),
+            "a\nb\n"
+        );
+        // A chosen hunk the patch does not have refuses, and it still waits.
+        std::fs::write(tree.join("a.txt"), "a\nb\nc\n").unwrap();
+        sent(&mut live, &mut w, 1, &msg("lead", "done", "One more.")).unwrap();
+        settle(&mut live, &mut w);
+        live.apply_change(&w, 1, vec![0]).unwrap();
+        settle(&mut live, &mut w);
+        assert!(matches!(
+            w.journal.last().unwrap().event,
+            Event::ApplyFailed { agent: 1, .. }
+        ));
+        assert!(w.change_of(1).is_some());
+    }
+
+    #[test]
     fn a_worker_s_done_shows_the_person_its_change_which_apply_puts_in_the_checkout() {
         let repo = checkout("change-repo");
         let root = trees("change");
@@ -497,7 +615,7 @@ mod tests {
         // The person's own edit in a touched file: the change does not
         // apply, nothing is half done, it still waits.
         std::fs::write(repo.join("a.txt"), "theirs").unwrap();
-        live.apply_change(&w, 1).unwrap();
+        live.apply_change(&w, 1, Vec::new()).unwrap();
         settle(&mut live, &mut w);
         let Event::ApplyFailed { agent: 1, why: e } = &w.journal.last().unwrap().event else {
             panic!("{:?}", w.journal.last());
@@ -522,9 +640,9 @@ mod tests {
         // worker hears of it at its next turn. Git does it on its own
         // thread: until it is done, the change waits as it was and is
         // neither applied nor rejected again.
-        live.apply_change(&w, 1).unwrap();
+        live.apply_change(&w, 1, Vec::new()).unwrap();
         assert_eq!(
-            live.apply_change(&w, 1),
+            live.apply_change(&w, 1, Vec::new()),
             Err("their change is being applied".into())
         );
         assert_eq!(
@@ -567,7 +685,7 @@ mod tests {
         live.told(&mut w, 1, "Again.").unwrap();
         assert_eq!(live.inflight[1][1], "Again.");
         // Nothing waits: applying again is refused, quietly.
-        let e = live.apply_change(&w, 1).unwrap_err();
+        let e = live.apply_change(&w, 1, Vec::new()).unwrap_err();
         assert!(e.contains("no change of theirs waits"), "{e}");
         let _ = std::fs::remove_dir_all(&root);
         let _ = std::fs::remove_dir_all(&repo);
@@ -680,13 +798,13 @@ mod tests {
         // A newer change still being read is not passed over.
         live.reading[1] = 1;
         assert_eq!(
-            live.apply_change(&w, 1),
+            live.apply_change(&w, 1, Vec::new()),
             Err("imece is still reading their newer change".into())
         );
         live.reading[1] = 0;
         // Applied, then a done right after: git reads it once the apply is
         // in, so the new change holds only what came after.
-        live.apply_change(&w, 1).unwrap();
+        live.apply_change(&w, 1, Vec::new()).unwrap();
         std::fs::write(tree.join("new.txt"), "new\n").unwrap();
         let (tx, rx) = mpsc::channel();
         live.send(&mut w, 1, &msg("lead", "done", "Added new."), tx);
@@ -800,7 +918,7 @@ mod tests {
         );
         hold_change(&mut live, 1);
         assert_eq!(
-            live.apply_change(&w, 1),
+            live.apply_change(&w, 1, Vec::new()),
             Err("imece's git thread is gone".into())
         );
         assert!(!live.applying[1]);
@@ -1113,7 +1231,7 @@ mod tests {
         settle(&mut live, &mut w);
 
         // After an apply and after git placed the worktree.
-        live.applied(&mut w, 1, "t", Ok(()), Ok("abc1234".into()));
+        live.applied(&mut w, 1, "t", Ok(()), Ok("abc1234".into()), None);
         assert_eq!(live.standing[1], Some(false), "applied");
         settle(&mut live, &mut w);
         let generation = live.generation[1];
