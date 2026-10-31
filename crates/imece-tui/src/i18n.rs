@@ -270,6 +270,10 @@ pub struct Text {
     pub no_marks: &'static str,
     /// `^o` with nowhere to go back to.
     pub no_back: &'static str,
+    /// `:awake` on and off, and a hold on sleep that failed.
+    pub awake_on: &'static str,
+    pub awake_off: &'static str,
+    pub awake_failed: &'static str,
     pub theme_is: &'static str,
     pub folded: &'static str,
     /// After a worker's name: how many helpers it has (folded or not).
@@ -417,7 +421,7 @@ pub struct Text {
     pub waiting_yes: &'static str,
     // Overlays
     pub help_title: &'static str,
-    pub help_keys: [(&'static str, &'static str); 51],
+    pub help_keys: [(&'static str, &'static str); 52],
     /// The help's line for a new line in the writing, put after the
     /// writing keys: where the terminal tells shift-enter apart, and
     /// where it does not.
@@ -611,6 +615,9 @@ pub const EN: Text = Text {
     mark_where: "m marks a line of the journal or of a conversation",
     no_marks: "no marked line here yet: m marks one",
     no_back: "nowhere to go back to yet",
+    awake_on: "the machine stays awake while an agent is mid-turn",
+    awake_off: "the machine may sleep again",
+    awake_failed: "could not keep the machine awake: {}",
     theme_is: "theme: {}",
     folded: "… {} agents doing fine",
     helpers: "{} helpers",
@@ -841,6 +848,7 @@ pub const EN: Text = Text {
         ("+  -", ":faster / :slower simulation"),
         ("L  :lang", "Türkçe / English; :lang en|tr"),
         ("T  :theme", "next theme · :theme NAME or FILE"),
+        (":awake", "keep the machine awake mid-turn; again: off"),
         ("q q  :quit", "quit (q or :quit asks first)"),
         ("q s  :pending", "before quitting: mid-turn, not reviewed"),
         ("?  :help", "this help; / in it filters the keys"),
@@ -1050,6 +1058,9 @@ pub const TR: Text = Text {
     mark_where: "m günlükte ya da bir konuşmada bir satırı işaretler",
     no_marks: "burada henüz işaretli satır yok: m bir tane işaretler",
     no_back: "henüz dönülecek bir yer yok",
+    awake_on: "bir ajan turdayken makine uyanık kalır",
+    awake_off: "makine yeniden uyuyabilir",
+    awake_failed: "makine uyanık tutulamadı: {}",
     theme_is: "tema: {}",
     folded: "… {} agent yolunda",
     helpers: "{} yardımcı",
@@ -1282,6 +1293,7 @@ pub const TR: Text = Text {
         ("+  -", "simülasyon :faster / :slower"),
         ("L  :lang", "English / Türkçe; :lang en|tr"),
         ("T  :theme", "sonraki tema · :theme AD ya da DOSYA"),
+        (":awake", "turda makineyi uyanık tut; yine: kapat"),
         ("q q  :quit", "çık (q ya da :quit önce sorar)"),
         ("q s  :pending", "çıkmadan önce: tur ortası, incelenmemiş"),
         ("?  :help", "bu yardım; içinde / tuşları süzer"),

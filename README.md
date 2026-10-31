@@ -268,6 +268,7 @@ not yet seen.
 | `:budget USD` | raise or lower the budget while agents run (`:b 80`) |
 | `:` `tab` | imece's commands with their values; `$` raises the next bill; every key below that acts has a `:` name too |
 | `:pin [NAME]` | pin a project (the one at hand when no NAME) to the top of the salon; again unpins; kept across runs |
+| `:awake`, `--awake` | keep the machine from sleeping while an agent is mid-turn (`caffeinate` on macOS, `systemd-inhibit` on Linux, a child of imece that goes when nothing is mid-turn); again turns it off; off by default |
 | `:export [PATH]` | the open conversation, else the card's screen, as a Markdown file (in the directory imece started from when no PATH; never over an existing file) |
 | `!cmd` | run `cmd` in your own shell; the screen steps aside until a key; the journal keeps its exit code and how long it took |
 | `tab` `⇧tab` `↑` `↓` | while writing: complete an agent's name (`@`), a command (`:`, `/`) |
