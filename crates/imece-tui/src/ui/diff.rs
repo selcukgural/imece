@@ -8,7 +8,7 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Paragraph};
 
 use super::*;
-use crate::app::App;
+use crate::app::{App, DiffNote};
 
 /// Line offsets of the file headers (`diff --git`) in `patch`, for
 /// jumping from file to file.
@@ -63,6 +63,72 @@ pub fn quote(patch: &str, top: usize) -> Option<String> {
     }
     out.push_str("```");
     Some(out)
+}
+
+/// Where line `i` of `patch` is, for a note on it: its file (the new
+/// name) and its line there, or, for a removed line, its line in the old
+/// file with a minus sign (`src/p.rs:12`, `src/p.rs:−7`). None for a line
+/// that is no line of a hunk (a header, a `@@` line, past the end).
+pub fn place(patch: &str, i: usize) -> Option<String> {
+    let lines: Vec<&str> = patch.lines().collect();
+    let line = *lines.get(i)?;
+    // The hunk it is in: the nearest `@@` above, with no file header
+    // between (a file's `---`/`+++` come before its first `@@`, so a
+    // removed `-- x`, which reads `--- x`, is a line of a hunk).
+    let at = (0..i)
+        .rev()
+        .find(|&n| lines[n].starts_with("@@") || lines[n].starts_with("diff --git "))?;
+    if !lines[at].starts_with("@@") || !line.starts_with([' ', '+', '-']) {
+        return None;
+    }
+    let (old, new) = starts(lines[at])?;
+    let path = (0..at)
+        .rev()
+        .find(|&n| lines[n].starts_with("diff --git "))
+        .and_then(|n| lines[n].rsplit_once(" b/"))
+        .map(|(_, p)| p)?;
+    let (mut o, mut n) = (old, new);
+    for l in &lines[at + 1..i] {
+        match l.chars().next() {
+            Some('+') => n += 1,
+            Some('-') => o += 1,
+            Some(' ') => (o, n) = (o + 1, n + 1),
+            _ => {}
+        }
+    }
+    match line.starts_with('-') {
+        true => Some(format!("{}:−{o}", clean(path))),
+        false => Some(format!("{}:{n}", clean(path))),
+    }
+}
+
+/// The old and new start lines a `@@ -a,b +c,d @@` header names.
+fn starts(header: &str) -> Option<(u32, u32)> {
+    let mut words = header.split(' ').skip(1);
+    let start = |w: Option<&str>, sign: char| -> Option<u32> {
+        let w = w?.strip_prefix(sign)?;
+        w.split(',').next()?.parse().ok()
+    };
+    Some((start(words.next(), '-')?, start(words.next(), '+')?))
+}
+
+/// The message notes on a change's lines go to its worker in: what it is,
+/// then each note under its place and the line it is on.
+pub fn notes_message(patch: &str, notes: &[(usize, &str)]) -> String {
+    let lines: Vec<&str> = patch.lines().collect();
+    let mut out = String::from(
+        "Notes on your change, line by line. It stays in your worktree, not applied: \
+         change it as they say and send done again.",
+    );
+    for &(i, text) in notes {
+        let place = place(patch, i).unwrap_or_default();
+        let line = lines.get(i).copied().map(clean).unwrap_or_default();
+        out.push_str(&format!(
+            "\n\n{place}\n```diff\n{line}\n```\n{}",
+            text.trim()
+        ));
+    }
+    out
 }
 
 fn line_style(l: &str) -> Style {
@@ -121,14 +187,34 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App, id: AgentId) {
     f.render_widget(Paragraph::new(run_lines(app.lang, &c.runs)), runs);
     app.diff_page.set(inner.height);
     let height = usize::from(inner.height);
-    let lines: Vec<Line> = c
-        .patch
-        .lines()
-        .skip(app.diff_scroll)
-        .take(height)
-        .map(|l| Line::from(Span::styled(clean(l), line_style(l))))
-        .collect();
+    let lines = patch_rows(&c.patch, app.diff_scroll, &app.notes_of(id), height);
     f.render_widget(Paragraph::new(lines), inner);
+}
+
+/// The rows of `patch` from line `top` on, `height` of them: each line
+/// cleaned and coloured, the top one (the line at hand) marked, and a
+/// note under the line it is on, every line of it after `✎`.
+fn patch_rows(patch: &str, top: usize, notes: &[&DiffNote], height: usize) -> Vec<Line<'static>> {
+    let mut rows = Vec::new();
+    // Each line takes a row at least: `height` lines fill the rows.
+    for (i, l) in patch.lines().enumerate().skip(top).take(height) {
+        let mut row = Line::from(Span::styled(clean(l), line_style(l)));
+        if i == top {
+            row = row.style(changed());
+        }
+        rows.push(row);
+        for n in notes.iter().filter(|n| n.line == i) {
+            for (k, text) in n.text.lines().enumerate() {
+                let lead = if k == 0 { "  ✎ " } else { "    " };
+                rows.push(Line::from(vec![
+                    Span::styled(lead, bold(pal().accent)),
+                    Span::styled(clean(text), fg(pal().accent)),
+                ]));
+            }
+        }
+    }
+    rows.truncate(height);
+    rows
 }
 
 /// The runs on a change's tree, one a line, coloured by how they ended;
@@ -211,6 +297,95 @@ diff --git a/c.rs b/c.rs
         assert_eq!(quote("", 0), None);
         assert_eq!(quote("diff --git a/b b/b\nBinary files differ\n", 0), None);
         assert_eq!(quote("diff --git a/b b/b\nBinary files differ\n", 1), None);
+    }
+
+    #[test]
+    fn a_line_s_place_is_its_new_line_or_its_old_one_when_removed() {
+        let at = |i| place(PATCH, i);
+        for header in [0, 1, 2, 3, 4, 8, 11, 12, 13, 14, 15, 16, 19] {
+            assert_eq!(at(header), None, "{header}");
+        }
+        assert_eq!(at(5).as_deref(), Some("a.rs:−1"));
+        assert_eq!(
+            at(6).as_deref(),
+            Some("a.rs:−2"),
+            "a removed `-- z` is a line"
+        );
+        assert_eq!(at(7).as_deref(), Some("a.rs:1"));
+        assert_eq!(at(9).as_deref(), Some("a.rs:9"));
+        assert_eq!(at(10).as_deref(), Some("a.rs:−10"));
+        assert_eq!(at(17).as_deref(), Some("c.rs:−1"));
+        assert_eq!(at(18).as_deref(), Some("c.rs:1"));
+        // Each kind of line moves its own side on.
+        let p = "diff --git a/p b/q\n--- a/p\n+++ b/q\n@@ -3,4 +10,5 @@\n a\n-b\n+c\n+d\n e\n\\ No newline at end of file\n-f\n";
+        let places: Vec<Option<String>> = (4..11).map(|i| place(p, i)).collect();
+        assert_eq!(
+            places,
+            [
+                Some("q:10".into()),
+                Some("q:−4".into()),
+                Some("q:11".into()),
+                Some("q:12".into()),
+                Some("q:13".into()),
+                None,
+                Some("q:−6".into()),
+            ]
+        );
+        // A header it can not read: no place.
+        for bad in [
+            "@@ x @@",
+            "@@ -1 x @@",
+            "@@ -a +1 @@",
+            "@@ 1 +1 @@",
+            "@@ -1 1 @@",
+        ] {
+            let p = format!("diff --git a/p b/p\n{bad}\n+x\n");
+            assert_eq!(place(&p, 2), None, "{bad}");
+        }
+        assert_eq!(starts("@@ -7,2 +9 @@"), Some((7, 9)));
+    }
+
+    #[test]
+    fn notes_go_in_one_message_each_under_its_place_and_line() {
+        let m = notes_message(PATCH, &[(7, " make it newer "), (17, "why?\nreally")]);
+        assert_eq!(
+            m,
+            "Notes on your change, line by line. It stays in your worktree, not applied: change it as they say and send done again.\n\n\
+             a.rs:1\n```diff\n+new\n```\nmake it newer\n\n\
+             c.rs:−1\n```diff\n-c\n```\nwhy?\nreally"
+        );
+    }
+
+    #[test]
+    fn the_rows_mark_the_top_line_and_show_a_note_under_its_line() {
+        let note = |line, text: &str| DiffNote {
+            agent: 0,
+            patch: 0,
+            line,
+            text: text.into(),
+        };
+        let (a, b) = (note(6, "one"), note(5, "two\nlines"));
+        let rows = patch_rows(PATCH, 5, &[&a, &b], 8);
+        let text: Vec<String> = rows.iter().map(|r| r.to_string()).collect();
+        assert_eq!(
+            text,
+            [
+                "-old",
+                "  ✎ two",
+                "    lines",
+                "--- z",
+                "  ✎ one",
+                "+new",
+                "@@ -9,1 +9,2 @@",
+                " ctx"
+            ]
+        );
+        assert_eq!(rows[0].style, changed(), "the line at hand");
+        assert!(rows[1..].iter().all(|r| r.style == Style::new()));
+        assert_eq!(rows[1].spans[0].style, bold(pal().accent));
+        // Cut at the height, a note's rows too.
+        assert_eq!(patch_rows(PATCH, 5, &[&a, &b], 2).len(), 2);
+        assert_eq!(patch_rows(PATCH, 17, &[], 8).len(), 2, "the patch ends");
     }
 
     #[test]

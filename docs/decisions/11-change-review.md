@@ -112,3 +112,9 @@ reading a change, without its diff); a run that edits a
 file and puts it back between the reads counts; ignored files
 (`.env`, `target/`) are not part of the tree, so a run that depends on
 them is not told apart.
+
+Notes as a third answer (2026-10-31, record 49): beside apply and
+reject, `c` notes lines of the change and `n` sends the notes to the
+worker in one message; the change goes back as a rejection does
+(`reject_change`, the item closes, it stays in the worktree), and the
+worker's next `done` is a new Δ.

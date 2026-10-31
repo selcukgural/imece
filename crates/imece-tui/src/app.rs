@@ -70,6 +70,26 @@ pub struct Thread {
     pub page: Cell<u16>,
 }
 
+/// The person's note on a line of a worker's change (`c` in the diff),
+/// kept until it is sent with the others (`n`) or the change goes.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DiffNote {
+    pub agent: AgentId,
+    /// The patch it was written on, by its hash: a newer change from the
+    /// same worker has other lines.
+    pub patch: u64,
+    pub line: usize,
+    pub text: String,
+}
+
+/// What a note is kept against: the patch's hash.
+pub fn patch_key(patch: &str) -> u64 {
+    use std::hash::{DefaultHasher, Hash, Hasher};
+    let mut h = DefaultHasher::new();
+    patch.hash(&mut h);
+    h.finish()
+}
+
 /// A selectable salon line: a project's header or an agent.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Sel {
@@ -238,8 +258,13 @@ pub struct App {
     /// The item `W` or `S` last opened, so the next `W` goes on after it
     /// even when opening it closed it (a reply is read when opened).
     pub waiting_at: Option<usize>,
-    /// The first patch line the open change shows.
+    /// The first patch line the open change shows: the line at hand,
+    /// which `c` writes a note on and `>` quotes the hunk of.
     pub diff_scroll: usize,
+    /// The person's notes on lines of workers' changes, not sent yet.
+    pub diff_notes: Vec<DiffNote>,
+    /// The note being written: whose change and which patch line.
+    pub noting: Option<(AgentId, usize)>,
     /// Rows the last drawing of a change had, for paging.
     pub diff_page: Cell<u16>,
     /// The selected journal line (a journal index).
@@ -343,6 +368,8 @@ impl App {
             deferred: Vec::new(),
             waiting_at: None,
             diff_scroll: 0,
+            diff_notes: Vec::new(),
+            noting: None,
             diff_page: Cell::new(10),
             journal_sel: None,
             thread: None,
@@ -1207,6 +1234,8 @@ impl App {
             KeyCode::Char('a') => self.decide_change(id, true),
             KeyCode::Char('r') => self.decide_change(id, false),
             KeyCode::Char('>') => self.quote_hunk(id),
+            KeyCode::Char('c') => self.note_line(id),
+            KeyCode::Char('n') => self.send_notes(id),
             // Writing, views, language, help and quitting work as anywhere.
             _ => return false,
         }
@@ -1422,6 +1451,7 @@ impl App {
             KeyCode::Esc if self.menu.is_some() => self.menu = None,
             KeyCode::Esc => {
                 self.typing = false;
+                self.noting = None;
                 self.input.clear();
                 self.after = 0;
             }
@@ -1548,7 +1578,7 @@ impl App {
     /// What the composer could complete the input with, now. Nothing once
     /// the text runs over lines: a name or a command is on one.
     fn suggest(&self) -> Option<Menu> {
-        if self.input.contains('\n') {
+        if self.input.contains('\n') || self.noting.is_some() {
             return None;
         }
         let mut m = complete::suggest(
@@ -1660,6 +1690,9 @@ impl App {
         self.after = 0;
         self.typing = false;
         self.menu = None;
+        if let Some((id, line)) = self.noting.take() {
+            return self.keep_note(id, line, text);
+        }
         if text.is_empty() {
             return;
         }
@@ -1829,6 +1862,97 @@ impl App {
         self.after = self.input.len() - head.len();
         self.typing = true;
         self.menu = None;
+    }
+
+    /// The notes on worker `id`'s change as it is now, by line.
+    pub fn notes_of(&self, id: AgentId) -> Vec<&DiffNote> {
+        let Some(patch) = self.world.change_of(id).map(|c| patch_key(&c.patch)) else {
+            return Vec::new();
+        };
+        let mut notes: Vec<&DiffNote> = (self.diff_notes.iter())
+            .filter(|n| n.agent == id && n.patch == patch)
+            .collect();
+        notes.sort_by_key(|n| n.line);
+        notes
+    }
+
+    /// `c` in worker `id`'s change: a note on the line at hand (the top
+    /// one), written in the command line; one there already is written
+    /// again. Only a line of a hunk takes one.
+    fn note_line(&mut self, id: AgentId) {
+        let line = self.diff_scroll;
+        let Some(c) = self.world.change_of(id) else {
+            return;
+        };
+        if ui::place(&c.patch, line).is_none() {
+            return self.flash(self.lang.text().note_where);
+        }
+        let patch = patch_key(&c.patch);
+        let had = (self.diff_notes.iter())
+            .find(|n| n.agent == id && n.patch == patch && n.line == line)
+            .map(|n| n.text.clone());
+        self.input = had.unwrap_or_default();
+        self.after = 0;
+        self.typing = true;
+        self.menu = None;
+        self.noting = Some((id, line));
+    }
+
+    /// The note written on `line` of worker `id`'s change is kept (in
+    /// place of one there was); an empty one takes it away.
+    fn keep_note(&mut self, id: AgentId, line: usize, text: String) {
+        let Some(patch) = self.world.change_of(id).map(|c| patch_key(&c.patch)) else {
+            return;
+        };
+        let t = self.lang.text();
+        self.diff_notes
+            .retain(|n| !(n.agent == id && n.patch == patch && n.line == line));
+        if text.is_empty() {
+            return self.flash(t.note_dropped);
+        }
+        self.diff_notes.push(DiffNote {
+            agent: id,
+            patch,
+            line,
+            text,
+        });
+        let n = self.notes_of(id).len().to_string();
+        self.flash(fill(t.noted, &[&n]));
+    }
+
+    /// `n` in worker `id`'s change: its notes go to it in one message and
+    /// the change goes back, not applied, for it to change and send again:
+    /// the third answer beside apply and reject.
+    fn send_notes(&mut self, id: AgentId) {
+        let t = self.lang.text();
+        let notes: Vec<(usize, String)> = (self.notes_of(id).iter())
+            .map(|n| (n.line, n.text.clone()))
+            .collect();
+        let Some(patch) = self.world.change_of(id).map(|c| c.patch.clone()) else {
+            return;
+        };
+        if notes.is_empty() {
+            return self.flash(t.no_notes);
+        }
+        let name = self.world.agents[id].name.clone();
+        let refs: Vec<(usize, &str)> = notes.iter().map(|(l, n)| (*l, n.as_str())).collect();
+        let message = ui::notes_message(&patch, &refs);
+        let returned = match &mut self.engine {
+            Engine::Live(l) => l.reject_change(&mut self.world, id),
+            Engine::Sim(s) => s.reject_change(&mut self.world, id),
+        };
+        if let Err(why) = returned {
+            return self.flash(fill(t.reject_failed, &[&name, &why]));
+        }
+        self.diff_notes.retain(|n| n.agent != id);
+        self.tell(id, &message);
+        self.flash(fill(t.notes_sent, &[&notes.len().to_string(), &name]));
+        let open = self.inbox_rows().len();
+        if self.zoom == Zoom::Diff(id) {
+            self.zoom = Zoom::None;
+            self.pane = Pane::Inbox;
+        }
+        self.inbox_sel = self.inbox_sel.min(open.saturating_sub(1));
     }
 
     /// `m` or `:mark`: the line at hand (the open conversation's selected
@@ -3846,6 +3970,120 @@ mod tests {
         assert_eq!(app.inbox_sel, 2);
         assert_eq!(press(&mut app, 'W'), Some(0), "round again");
         assert_eq!(app.inbox_sel, 0);
+    }
+
+    #[test]
+    fn c_writes_a_note_on_the_top_line_and_again_rewrites_or_takes_it_away() {
+        let patch = "diff --git a/x b/x\n--- a/x\n+++ b/x\n@@ -1,2 +1,2 @@\n-a\n+b\n c\n";
+        let (mut app, worker) = with_change(patch);
+        let t = app.lang.text();
+        let press = |app: &mut App, c: char| app.on_key(key(KeyCode::Char(c)));
+        // Off a hunk's lines: no note.
+        app.diff_scroll = 3;
+        press(&mut app, 'c');
+        assert!(!app.typing && app.noting.is_none());
+        assert_eq!(flashed(&app).as_deref(), Some(t.note_where));
+        // On one: written in the command line, kept on enter.
+        app.diff_scroll = 5;
+        press(&mut app, 'c');
+        assert!(app.typing);
+        assert_eq!(app.noting, Some((worker, 5)));
+        assert_eq!(app.menu, None);
+        for c in "@b is wrong".chars() {
+            press(&mut app, c);
+        }
+        assert_eq!(app.menu, None, "no names offered in a note");
+        app.on_key(key(KeyCode::Enter));
+        assert!(!app.typing && app.noting.is_none());
+        assert_eq!(
+            flashed(&app).as_deref(),
+            Some("note kept (1 on this change); n sends them")
+        );
+        let notes: Vec<(usize, String)> = (app.notes_of(worker).iter())
+            .map(|n| (n.line, n.text.clone()))
+            .collect();
+        assert_eq!(notes, [(5, "@b is wrong".to_string())]);
+        // Again on the same line: the note to write over.
+        press(&mut app, 'c');
+        assert_eq!(app.input, "@b is wrong");
+        for _ in 0..11 {
+            app.on_key(key(KeyCode::Backspace));
+        }
+        app.on_key(key(KeyCode::Enter));
+        assert!(app.notes_of(worker).is_empty());
+        assert_eq!(flashed(&app).as_deref(), Some(t.note_dropped));
+        // Esc gives a note up.
+        press(&mut app, 'c');
+        press(&mut app, 'x');
+        app.on_key(key(KeyCode::Esc));
+        assert!(app.noting.is_none() && app.notes_of(worker).is_empty());
+        // A note on another patch of the same worker, or on another
+        // worker's, is not this one's; nor is one on another line.
+        let here = patch_key(patch);
+        let other = |agent, patch, line, text: &str| DiffNote {
+            agent,
+            patch,
+            line,
+            text: text.into(),
+        };
+        app.diff_notes.extend([
+            other(worker, patch_key("older"), 5, "old"),
+            other(0, here, 5, "not mine"),
+            other(worker, here, 4, "above"),
+        ]);
+        let notes: Vec<&str> = (app.notes_of(worker).iter())
+            .map(|n| n.text.as_str())
+            .collect();
+        assert_eq!(notes, ["above"]);
+        press(&mut app, 'c');
+        assert_eq!(app.input, "", "line 5 has none of its own");
+        press(&mut app, 'y');
+        app.on_key(key(KeyCode::Enter));
+        assert_eq!(app.diff_notes.len(), 4, "kept beside the others");
+        // Taking it away leaves the others.
+        press(&mut app, 'c');
+        assert_eq!(app.input, "y");
+        app.on_key(key(KeyCode::Backspace));
+        app.on_key(key(KeyCode::Enter));
+        assert_eq!(app.diff_notes.len(), 3);
+        app.diff_notes.retain(|n| n.text != "above");
+        press(&mut app, 'n');
+        assert_eq!(flashed(&app).as_deref(), Some(t.no_notes));
+        assert_eq!(app.zoom, Zoom::Diff(worker), "nothing sent, still there");
+    }
+
+    #[test]
+    fn n_sends_the_notes_in_one_message_and_the_change_goes_back() {
+        let patch = "diff --git a/x b/x\n--- a/x\n+++ b/x\n@@ -1,2 +1,2 @@\n-a\n+b\n c\n";
+        let (mut app, worker) = with_change(patch);
+        let name = app.world.agents[worker].name.clone();
+        for (line, text) in [(6, "and here"), (4, "why")] {
+            app.diff_scroll = line;
+            app.on_key(key(KeyCode::Char('c')));
+            for c in text.chars() {
+                app.on_key(key(KeyCode::Char(c)));
+            }
+            app.on_key(key(KeyCode::Enter));
+        }
+        assert_eq!(app.notes_of(worker).len(), 2);
+        app.on_key(key(KeyCode::Char('n')));
+        assert!(app.world.change_of(worker).is_none(), "it went back");
+        assert!(app.diff_notes.is_empty());
+        assert_eq!((app.zoom, app.pane), (Zoom::None, Pane::Inbox));
+        assert_eq!(
+            flashed(&app),
+            Some(format!(
+                "2 notes went to {name}; the change went back to them"
+            ))
+        );
+        let said = app.world.journal.iter().rev().find_map(|e| match &e.event {
+            Event::YouSaid { to, text } if *to == worker => Some(text.clone()),
+            _ => None,
+        });
+        assert_eq!(
+            said,
+            Some(ui::notes_message(patch, &[(4, "why"), (6, "and here")]))
+        );
     }
 
     #[test]
