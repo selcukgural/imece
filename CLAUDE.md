@@ -150,6 +150,11 @@ record in the same PR.
 - 48 `limits`: Claude's `rate_limit_event` and Codex's `account/rateLimits/updated` as `Event::Limits`; `World.limits` by vendor and window, the header shows each vendor's tightest (`words::limit`, loud from 90%); the demo fills them from spending; not kept between runs.
 - 49 `diff-notes`: `c` notes the top line of a change (`App::diff_notes`, by patch hash), `n` sends them in one message (`ui::notes_message`, `ui::place` file:line, `−N` removed) and the change goes back like a reject; the top row is the line at hand.
 - 50 `partial-apply`: `x` chooses hunks (`App::chosen`), `a` applies only them: `worktree::subset` + `worktree::part` (the part's tree through an index of its own), the worktree marked with only that part, the rest read again as a new Δ; the demo mirrors it.
+- 51 `back-key`: `^o` goes back through the places left (`App::been`, `Place` = view, zoom, pane, card; recorded in `on_key` when a key moved the person, 50 kept), passing over places gone; closes a conversation first.
+- 52 `focus-brief`: back in the terminal after `FOCUS_AWAY` (3 min) in another window, the away digest shows at once (`App::focus`, from the journal since the blur, no model), not over writing or another window.
+- 53 `awake`: `--awake`/`:awake` (opt-in) hold the machine's sleep while an agent is mid-turn: `awake.rs`, caffeinate or systemd-inhibit as a child in its own process group, let go when nothing is mid-turn or imece ends; a failure is said once.
+- 54 `diff-files`: a change of several files lists them above its patch (`ui::diff::file_lines`, six and the rest counted); `w` wraps its long lines (`App::diff_wrap`); folding all files is D3b.
+- 55 `diff-kinds`: a change's files by kind (source, tests, generated, by name: `ui::diff::kind`), its lines per kind above the file list when there is more than one; the commit-message suggestion (D6b) is a paid call, left for the person.
 
 `docs/neighbours.md`: voff, what was taken from it and the rules that come
 from what it lacks. Read it before building a part it names.

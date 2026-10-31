@@ -28,6 +28,9 @@ pub enum Engine {
 
 /// After this long without a key, the next key first shows what happened.
 const AWAY: Duration = Duration::from_secs(20);
+/// After this long in another window, coming back shows what happened at
+/// once, without waiting for a key.
+pub const FOCUS_AWAY: Duration = Duration::from_secs(180);
 /// How long a short notice stays in the bottom line.
 pub const FLASH: Duration = Duration::from_secs(3);
 
@@ -89,6 +92,19 @@ pub fn patch_key(patch: &str) -> u64 {
     patch.hash(&mut h);
     h.finish()
 }
+
+/// Where the person is: the view, the zoom, the salon's panel and the
+/// card whose screen is open. `^o` goes back through the places left.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Place {
+    pub view: View,
+    pub zoom: Zoom,
+    pub pane: Pane,
+    pub card: Option<CardId>,
+}
+
+/// The most places `^o` remembers.
+const PLACES: usize = 50;
 
 /// A selectable salon line: a project's header or an agent.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -261,6 +277,8 @@ pub struct App {
     /// The first patch line the open change shows: the line at hand,
     /// which `c` writes a note on and `>` quotes the hunk of.
     pub diff_scroll: usize,
+    /// Whether a change's long lines wrap (`w`) instead of being cut.
+    pub diff_wrap: bool,
     /// The person's notes on lines of workers' changes, not sent yet.
     pub diff_notes: Vec<DiffNote>,
     /// The note being written: whose change and which patch line.
@@ -277,6 +295,10 @@ pub struct App {
     /// and who had a part in it, what waits for the person on it and its
     /// journal lines.
     pub card: Option<CardId>,
+    /// The places left, oldest first, for `^o`.
+    pub been: Vec<Place>,
+    /// The last key was `^o`: the place it left is not one to go back to.
+    went_back: bool,
     /// The side panel's width, in percent.
     pub side: u16,
     /// Text the person asked to copy; the main loop hands it to the
@@ -332,6 +354,11 @@ pub struct App {
     pub shown: RefCell<Vec<Sel>>,
     last_key: Instant,
     last_key_tick: u64,
+    /// When the terminal lost the focus, and the tick then.
+    blurred: Option<(Instant, u64)>,
+    /// The hold on the machine's sleep while an agent is mid-turn
+    /// (`--awake`, `:awake`).
+    pub awake: crate::awake::Awake,
 }
 
 impl App {
@@ -371,6 +398,7 @@ impl App {
             deferred: Vec::new(),
             waiting_at: None,
             diff_scroll: 0,
+            diff_wrap: false,
             diff_notes: Vec::new(),
             noting: None,
             chosen: Vec::new(),
@@ -378,6 +406,8 @@ impl App {
             journal_sel: None,
             thread: None,
             card: None,
+            been: Vec::new(),
+            went_back: false,
             side: SIDE_DEFAULT,
             copy: None,
             shell: None,
@@ -405,6 +435,8 @@ impl App {
             shown: RefCell::new(Vec::new()),
             last_key: Instant::now(),
             last_key_tick: 0,
+            blurred: None,
+            awake: crate::awake::Awake::new(false, crate::awake::command(std::process::id())),
         }
     }
 
@@ -415,6 +447,7 @@ impl App {
         }
         self.world.watch_spending();
         self.watch_turns();
+        self.keep_awake();
         self.settle();
         self.follow_thread();
         self.persist();
@@ -617,7 +650,17 @@ impl App {
     }
 
     pub fn on_key(&mut self, k: KeyEvent) {
+        let was = self.place();
         self.key(k);
+        // A key that took the person elsewhere leaves the place behind;
+        // `^o` going back does not.
+        let back = std::mem::take(&mut self.went_back);
+        if !back && self.place() != was {
+            self.been.push(was);
+            if self.been.len() > PLACES {
+                self.been.remove(0);
+            }
+        }
         self.preview_theme();
         self.seen();
         self.settle();
@@ -737,6 +780,7 @@ impl App {
                 KeyCode::Char('u') => self.page(false, true),
                 KeyCode::Char('f') => self.page(true, false),
                 KeyCode::Char('b') => self.page(false, false),
+                KeyCode::Char('o') => self.go_back(),
                 _ => {}
             }
             return;
@@ -1240,6 +1284,7 @@ impl App {
             KeyCode::Char('>') => self.quote_hunk(id),
             KeyCode::Char('c') => self.note_line(id),
             KeyCode::Char('x') => self.choose_hunk(id),
+            KeyCode::Char('w') => self.diff_wrap = !self.diff_wrap,
             KeyCode::Char('n') => self.send_notes(id),
             // Writing, views, language, help and quitting work as anywhere.
             _ => return false,
@@ -1638,6 +1683,7 @@ impl App {
                 Some(fill(t.value_waiting, &[&open]))
             }
             "needs" => Some(on_off(self.needs_only)),
+            "awake" => Some(on_off(self.awake.on)),
             "pause" => Some(on_off(self.paused)),
             "faster" | "slower" => Some(format!("×{}", self.speed)),
             "export" if self.thread.is_some() => Some(t.value_thread.to_string()),
@@ -1851,6 +1897,16 @@ impl App {
             "pause" => self.pause(),
             "faster" => self.faster(),
             "slower" => self.slower(),
+            "awake" => {
+                self.awake.on = !self.awake.on;
+                let t = self.lang.text();
+                self.flash(if self.awake.on {
+                    t.awake_on
+                } else {
+                    t.awake_off
+                });
+                self.keep_awake();
+            }
             _ => self.flash(fill(t.no_command, &[name])),
         }
     }
@@ -1997,6 +2053,82 @@ impl App {
             self.pane = Pane::Inbox;
         }
         self.inbox_sel = self.inbox_sel.min(open.saturating_sub(1));
+    }
+
+    /// The terminal lost the focus (`gained` false) at `now`, or got it
+    /// back: after [`FOCUS_AWAY`] or more, what happened meanwhile shows
+    /// at once, as after a key past [`AWAY`] (built from the journal, no
+    /// model asked). Not over what the person is writing or another
+    /// window.
+    pub fn focus(&mut self, gained: bool, now: Instant) {
+        if !gained {
+            self.blurred = Some((now, self.world.tick));
+            return;
+        }
+        let Some((at, tick)) = self.blurred.take() else {
+            return;
+        };
+        let busy = self.typing
+            || self.help
+            || self.leaving
+            || self.digest.is_some()
+            || self.left_off.is_some();
+        if busy || now.duration_since(at) < FOCUS_AWAY {
+            return;
+        }
+        self.digest = Digest::since(&self.world, tick);
+    }
+
+    /// The machine is held awake while an agent is mid-turn and the person
+    /// asked for it (`--awake`, `:awake`), and let go otherwise; a hold
+    /// that fails is said once.
+    fn keep_awake(&mut self) {
+        let busy = !self.world.mid_turn().is_empty();
+        if let Err(why) = self.awake.hold(busy) {
+            let t = self.lang.text();
+            self.flash(fill(t.awake_failed, &[&why]));
+        }
+    }
+
+    /// Where the person is now.
+    pub fn place(&self) -> Place {
+        Place {
+            view: self.view,
+            zoom: self.zoom,
+            pane: self.pane,
+            card: self.card,
+        }
+    }
+
+    /// `^o`: back to the place the person was before, as vim's jump list
+    /// goes; an open conversation closes first. A place that is not there
+    /// any more (a gone agent's focus, a change applied since) is passed
+    /// over, and with none left it says so.
+    fn go_back(&mut self) {
+        self.went_back = true;
+        if self.thread.take().is_some() {
+            return;
+        }
+        while let Some(p) = self.been.pop() {
+            let agent_ok = |id: AgentId| self.world.agents.get(id).is_some_and(|a| !a.gone);
+            let zoom_ok = match p.zoom {
+                Zoom::None => true,
+                Zoom::Focus(id) | Zoom::Trace(id) => agent_ok(id),
+                Zoom::Diff(id) => self.world.change_of(id).is_some(),
+            };
+            let card_ok = p.card.is_none_or(|c| c < self.world.cards.len());
+            if zoom_ok && card_ok && p != self.place() {
+                self.view = p.view;
+                self.zoom = p.zoom;
+                self.pane = p.pane;
+                self.card = p.card;
+                if self.pane == Pane::Journal {
+                    self.select_journal(None);
+                }
+                return;
+            }
+        }
+        self.flash(self.lang.text().no_back);
     }
 
     /// `m` or `:mark`: the line at hand (the open conversation's selected
@@ -4100,6 +4232,21 @@ mod tests {
     }
 
     #[test]
+    fn w_in_a_change_wraps_its_long_lines_and_cuts_them_again() {
+        let (mut app, _) = with_change("diff --git a/x b/x\n@@ -1 +1 @@\n-a\n+b\n");
+        assert!(!app.diff_wrap);
+        app.on_key(key(KeyCode::Char('w')));
+        assert!(app.diff_wrap);
+        assert_eq!(
+            app.pane,
+            Pane::Inbox,
+            "w is the diff's here, not the panel's"
+        );
+        app.on_key(key(KeyCode::Char('w')));
+        assert!(!app.diff_wrap);
+    }
+
+    #[test]
     fn x_chooses_the_hunk_at_hand_and_a_applies_only_the_chosen() {
         let patch =
             "diff --git a/x b/x\n--- a/x\n+++ b/x\n@@ -1 +1 @@\n-a\n+b\n@@ -9 +9 @@\n-c\n+d\n";
@@ -4332,6 +4479,175 @@ mod tests {
         assert!(!th.follow.get());
         assert_eq!(flashed(&app).as_deref(), Some(app.lang.text().no_marks));
         assert_eq!(app.pane, Pane::Salon, "the journal is not where it went");
+    }
+
+    #[test]
+    fn the_machine_is_held_awake_while_an_agent_is_mid_turn_when_asked() {
+        let mut app = App::new(1, 1, 0, 1, Lang::En);
+        let t = app.lang.text();
+        let sleeper = || Some(vec!["sleep".to_string(), "30".to_string()]);
+        app.awake = crate::awake::Awake::new(false, sleeper());
+        let tick = app.world.tick;
+        for a in &mut app.world.agents {
+            a.set_status(Status::Idle, tick);
+        }
+        assert_eq!(app.command_note("awake"), "(off)");
+        app.world.agents[0].set_status(Status::Working, tick);
+        app.keep_awake();
+        assert!(!app.awake.holding(), "not asked for");
+        app.command("awake");
+        assert_eq!(flashed(&app).as_deref(), Some(t.awake_on));
+        assert_eq!(app.command_note("awake"), "(on)");
+        assert!(app.awake.holding(), "at once, mid-turn");
+        app.world.agents[0].set_status(Status::Idle, tick);
+        app.keep_awake();
+        assert!(!app.awake.holding(), "nothing mid-turn");
+        app.world.agents[0].set_status(Status::Working, tick);
+        app.keep_awake();
+        assert!(app.awake.holding());
+        app.command("awake");
+        assert_eq!(flashed(&app).as_deref(), Some(t.awake_off));
+        assert!(!app.awake.holding(), "turned off: let go at once");
+        // One that can not start says so.
+        app.awake = crate::awake::Awake::new(true, Some(vec!["/nonexistent/caffeinate".into()]));
+        app.keep_awake();
+        let said = flashed(&app).unwrap();
+        assert!(
+            said.starts_with("could not keep the machine awake: /nonexistent/caffeinate: "),
+            "{said}"
+        );
+    }
+
+    #[test]
+    fn coming_back_after_minutes_away_shows_what_happened_at_once() {
+        let mut app = App::new(1, 1, 0, 1, Lang::En);
+        let t0 = Instant::now();
+        let away = |app: &mut App, secs: u64| {
+            app.focus(false, t0);
+            app.world.tick += 1;
+            app.world.note(Event::Failed { agent: 0 });
+            app.focus(true, t0 + Duration::from_secs(secs));
+        };
+        // Not long enough: nothing, and the blur is forgotten.
+        away(&mut app, 179);
+        assert!(app.digest.is_none() && app.blurred.is_none());
+        // Three minutes: what happened since the blur.
+        away(&mut app, 180);
+        let d = app.digest.take().expect("a digest");
+        assert_eq!(d.highlights.len(), 1, "only what came after leaving");
+        // Focus back without a blur first: nothing.
+        app.focus(true, t0 + Duration::from_secs(999));
+        assert!(app.digest.is_none());
+        // Nothing new: nothing to tell.
+        app.focus(false, t0);
+        app.focus(true, t0 + Duration::from_secs(999));
+        assert!(app.digest.is_none());
+        // Not over writing or another window.
+        for busy in [
+            |a: &mut App| a.typing = true,
+            |a: &mut App| a.help = true,
+            |a: &mut App| a.leaving = true,
+            |a: &mut App| a.left_off = Some(LeftOff::default()),
+        ] {
+            let mut app = App::new(1, 1, 0, 1, Lang::En);
+            busy(&mut app);
+            away(&mut app, 999);
+            assert!(app.digest.is_none());
+        }
+        let mut app = App::new(1, 1, 0, 1, Lang::En);
+        app.digest = Some(Digest {
+            minutes: 42,
+            ..Digest::default()
+        });
+        away(&mut app, 999);
+        assert_eq!(
+            app.digest.as_ref().unwrap().minutes,
+            42,
+            "the one open stays"
+        );
+    }
+
+    #[test]
+    fn ctrl_o_goes_back_through_the_places_left_and_not_further() {
+        let mut app = App::new(1, 1, 0, 1, Lang::En);
+        let t = app.lang.text();
+        let salon = app.place();
+        app.on_key(key(KeyCode::Char('2')));
+        let board = app.place();
+        app.on_key(key(KeyCode::Char('3')));
+        assert_eq!(app.been, [salon, board]);
+        // A key that goes nowhere leaves nothing.
+        app.on_key(key(KeyCode::Char('j')));
+        assert_eq!(app.been.len(), 2);
+        app.on_key(ctrl('o'));
+        assert_eq!(app.place(), board);
+        assert_eq!(app.been, [salon], "going back leaves nothing behind");
+        app.on_key(ctrl('o'));
+        assert_eq!(app.place(), salon);
+        app.on_key(ctrl('o'));
+        assert_eq!(app.place(), salon);
+        assert_eq!(flashed(&app).as_deref(), Some(t.no_back));
+        // The journal panel comes back with a row selected.
+        app.pane = Pane::Journal;
+        app.journal_sel = None;
+        app.been.push(app.place());
+        app.pane = Pane::Salon;
+        app.on_key(ctrl('o'));
+        assert_eq!(app.pane, Pane::Journal);
+        assert!(app.journal_sel.is_some());
+    }
+
+    #[test]
+    fn ctrl_o_closes_a_conversation_first_and_passes_over_places_gone() {
+        let (mut app, worker) = with_change("diff --git a/x b/x\n@@ -1 +1 @@\n-a\n+b\n");
+        app.zoom = Zoom::None;
+        app.pane = Pane::Salon;
+        let here = app.place();
+        app.open_thread(0);
+        app.on_key(ctrl('o'));
+        assert!(app.thread.is_none());
+        assert_eq!(app.place(), here);
+        let at = |zoom, card| Place {
+            view: View::Salon,
+            zoom,
+            pane: Pane::Inbox,
+            card,
+        };
+        let lead = app.world.projects[0].leader;
+        let cards = app.world.cards.len();
+        app.been = vec![
+            at(Zoom::None, Some(0)),
+            at(Zoom::Focus(lead), None),
+            at(Zoom::Diff(worker), None),
+            here,
+            at(Zoom::None, Some(cards)),
+            at(Zoom::Diff(lead), None),
+            at(Zoom::Trace(worker), None),
+        ];
+        app.world.agents[worker].gone = true;
+        // The gone worker's stream, a change that is not there, a card
+        // that is not, where it is already: passed over.
+        app.on_key(ctrl('o'));
+        assert_eq!(app.place(), at(Zoom::Diff(worker), None));
+        app.on_key(ctrl('o'));
+        assert_eq!(app.place(), at(Zoom::Focus(lead), None));
+        app.on_key(ctrl('o'));
+        assert_eq!(app.place(), at(Zoom::None, Some(0)), "a card that is there");
+        assert!(app.been.is_empty());
+    }
+
+    #[test]
+    fn the_places_left_are_kept_up_to_fifty_the_oldest_going_first() {
+        let mut app = App::new(1, 1, 0, 1, Lang::En);
+        for n in 0..60 {
+            let c = ['2', '1'][n % 2];
+            app.on_key(key(KeyCode::Char(c)));
+        }
+        assert_eq!(app.been.len(), 50);
+        // The last place left was the board, the one before the salon.
+        assert_eq!(app.been[49].view, View::Board);
+        assert_eq!(app.been[48].view, View::Salon);
+        assert_eq!(app.been[0].view, View::Salon);
     }
 
     #[test]

@@ -268,6 +268,7 @@ not yet seen.
 | `:budget USD` | raise or lower the budget while agents run (`:b 80`) |
 | `:` `tab` | imece's commands with their values; `$` raises the next bill; every key below that acts has a `:` name too |
 | `:pin [NAME]` | pin a project (the one at hand when no NAME) to the top of the salon; again unpins; kept across runs |
+| `:awake`, `--awake` | keep the machine from sleeping while an agent is mid-turn (`caffeinate` on macOS, `systemd-inhibit` on Linux, a child of imece that goes when nothing is mid-turn); again turns it off; off by default |
 | `:export [PATH]` | the open conversation, else the card's screen, as a Markdown file (in the directory imece started from when no PATH; never over an existing file) |
 | `!cmd` | run `cmd` in your own shell; the screen steps aside until a key; the journal keeps its exit code and how long it took |
 | `tab` `⇧tab` `↑` `↓` | while writing: complete an agent's name (`@`), a command (`:`, `/`) |
@@ -275,6 +276,7 @@ not yet seen.
 | `⇧enter` (or `\` `enter`, `⌥enter`) | while writing: a new line; `↑` `↓` go between lines |
 | `1` `2` `3` | salon · board · code map |
 | `↑` `↓` / `j` `k` | select |
+| `^o` | back where you were (view, panel, focus, card), as vim's jump list; an open conversation closes first |
 | `←` `→` / `h` `l` | fold / unfold a project (`enter` on its header too) |
 | `f` | the salon shows only what needs you (waiting for you, stuck, done and not seen) · everyone again |
 | `L` | English / Türkçe |
@@ -287,6 +289,7 @@ not yet seen.
 | `>` in a change | write to its worker with the hunk at the top of the view quoted under your line (its file's names, at most 40 lines) |
 | `c` / `n` in a change | a note on the top line (the line at hand, marked; `c` again rewrites it, an empty one takes it away) / send the notes to the worker in one message, each under its `file:line` and the line, and the change goes back to it, not applied: the third answer beside `a` and `r` |
 | `x` in a change | choose the hunk at the top (`✓` on its `@@` line; again: no longer); `a` then applies only the chosen hunks, and the rest waits as a change again |
+| `w` in a change | long lines wrap under themselves; again: cut at the edge. A change of several files lists them (six at most, `+N −M` each) above its patch, and when they are of more than one kind, its lines by kind first: `source +20 −1 (2) · tests +18 −0 (1) · generated +7 −5 (1)` |
 | `space`, `+` `-` | pause, simulation speed (`--demo` only) |
 | `?`, `q` | help (`/` in it filters the keys: every word, Turkish letters or not; `enter` keeps, `esc` drops), quit |
 | `q` `s` | before quitting: the agents mid-turn and the changes not reviewed (`q` there quits, `W` opens the next waiting) |
@@ -301,7 +304,8 @@ not yet seen.
 4. **An attention budget:** only decisions that need you reach the inbox;
    calm agents fold into one line.
 5. **Coming back is cheap:** after a pause, the first key shows what happened
-   while you were away.
+   while you were away; back in the terminal after a few minutes in
+   another window, it shows at once, without a key.
 
 ## Security
 
