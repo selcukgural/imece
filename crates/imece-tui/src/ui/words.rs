@@ -562,6 +562,7 @@ mod tests {
         assert_eq!(size(1 << 20), "1 MiB");
         assert_eq!(size(5 << 20 | 7), "5 MiB");
         assert_eq!(size((1 << 30) - 1), "1023 MiB");
+        assert_eq!(size(1 << 30), "1 GiB");
         assert_eq!(size(3 << 30), "3 GiB");
     }
 

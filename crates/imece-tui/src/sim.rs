@@ -579,6 +579,16 @@ struct Extras {
     paid_calls: (u32, u64),
 }
 
+/// The size the demo gives a copied path, from `roll`: a dotfile is a
+/// few KiB at most (100 to 3 999 bytes), anything else a directory of
+/// 1 to 400 MiB.
+fn made_up_size(path: &str, roll: u64) -> u64 {
+    match path.starts_with('.') {
+        true => 100 + roll % 3_900,
+        false => (1 + roll % 400) << 20,
+    }
+}
+
 pub fn world(
     projects: usize,
     workers: usize,
@@ -1195,10 +1205,7 @@ impl Sim {
                 });
                 continue;
             }
-            bytes += match path.starts_with('.') {
-                true => self.rng.range(100, 4_000),
-                false => self.rng.range(1 << 20, 400 << 20),
-            };
+            bytes += made_up_size(&path, self.rng.below(u64::MAX));
             paths.push(path);
         }
         if paths.is_empty() {
@@ -2649,6 +2656,17 @@ mod tests {
     }
 
     #[test]
+    fn a_made_up_size_is_small_for_a_dotfile_and_large_for_a_directory() {
+        assert_eq!(made_up_size(".env", 0), 100);
+        assert_eq!(made_up_size(".env", 3_899), 3_999);
+        assert_eq!(made_up_size(".env", 3_900), 100);
+        assert_eq!(made_up_size("target", 0), 1 << 20);
+        assert_eq!(made_up_size("target", 7), 8 << 20);
+        assert_eq!(made_up_size("target", 399), 400 << 20);
+        assert_eq!(made_up_size("target", 400), 1 << 20);
+    }
+
+    #[test]
     fn a_demo_worker_gets_the_listed_paths_it_lacks_at_its_start() {
         let (mut w, mut s, worker, _) = one_at_work();
         let p = w.agents[worker].project;
@@ -2666,12 +2684,7 @@ mod tests {
                     } => {
                         assert_eq!(*agent, worker);
                         assert!(paths.iter().all(|p| !had.contains(p)), "copied once");
-                        let small = paths.iter().all(|p| p.starts_with('.'));
-                        let range = match small {
-                            true => 100..=4_000,
-                            false => 1 << 20..=(400 << 20) + 4_000,
-                        };
-                        assert!(range.contains(bytes), "{paths:?} {bytes}");
+                        assert!(*bytes >= 100, "{paths:?} {bytes}");
                         had.extend(paths.iter().cloned());
                     }
                     Event::CopySkipped { agent, why, .. } => {
