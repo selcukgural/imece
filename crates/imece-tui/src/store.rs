@@ -895,6 +895,7 @@ impl Store {
         let saved_at = meta("saved_at")?.and_then(|v| v.parse().ok());
         let mut w = World {
             marks: Default::default(),
+            limits: Vec::new(),
             tick: 0,
             started_at,
             run_spent: 0,
@@ -1425,6 +1426,7 @@ mod tests {
     fn world() -> World {
         let mut w = World {
             marks: Default::default(),
+            limits: Vec::new(),
             tick: 77,
             started_at: 1_700_000_000,
             run_spent: 5,

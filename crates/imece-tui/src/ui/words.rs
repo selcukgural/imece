@@ -365,6 +365,28 @@ pub fn ago(lang: Lang, seconds: u64) -> String {
     }
 }
 
+/// A vendor plan's usage window `l` as the header says it, `now` being
+/// the world's seconds: the vendor, the window's length, what is left of
+/// it, and when it starts again (when said and still ahead).
+pub fn limit(lang: Lang, l: &Limit, now: u64) -> String {
+    let t = lang.text();
+    let hours = l.minutes / 60;
+    let window = if hours < 24 {
+        fill(t.window_hours, &[&hours.to_string()])
+    } else {
+        fill(t.window_days, &[&(hours / 24).to_string()])
+    };
+    let left = (100 - l.used.min(100)).to_string();
+    let vendor = l.vendor.label();
+    match l.resets_at.filter(|&r| r > now) {
+        Some(r) => fill(
+            t.limit_resets,
+            &[vendor, &window, &left, &ago(lang, r - now)],
+        ),
+        None => fill(t.limit, &[vendor, &window, &left]),
+    }
+}
+
 /// A command on one row, its lines joined with a mark so none is hidden:
 /// what the person is asked to allow is shown as it is, never as
 /// markdown.
@@ -504,6 +526,56 @@ mod tests {
         assert_eq!(ago(Lang::Tr, 3 * 3600 + 5 * 60), "3 sa 5 dk");
         assert_eq!(ago(Lang::Tr, 60), "1 dk");
         assert_eq!(ago(Lang::Tr, 86_400), "1 g 0 sa");
+    }
+
+    #[test]
+    fn a_usage_window_is_worded_with_what_is_left_and_when_it_starts_again() {
+        let l = Limit {
+            vendor: Vendor::Claude,
+            minutes: 300,
+            used: 52,
+            resets_at: Some(10_000 + 2 * 3600 + 59 * 60),
+        };
+        assert_eq!(
+            limit(Lang::En, &l, 10_000),
+            "claude 5h: 48% left, resets in 2 h 59 min"
+        );
+        assert_eq!(
+            limit(Lang::Tr, &l, 10_000),
+            "claude 5 sa: %48 kaldı, 2 sa 59 dk sonra yenilenir"
+        );
+        // A week, already past its reset or without one: no time.
+        let week = Limit {
+            vendor: Vendor::Codex,
+            minutes: 10_080,
+            used: 100,
+            resets_at: Some(10_000),
+        };
+        assert_eq!(limit(Lang::En, &week, 10_000), "codex 7d: 0% left");
+        assert_eq!(limit(Lang::Tr, &week, 10_000), "codex 7 g: %0 kaldı");
+        let day = Limit {
+            minutes: 24 * 60,
+            resets_at: None,
+            ..week
+        };
+        assert_eq!(limit(Lang::En, &day, 0), "codex 1d: 0% left");
+        let hour = Limit {
+            minutes: 23 * 60,
+            used: 0,
+            ..day
+        };
+        assert_eq!(limit(Lang::En, &hour, 0), "codex 23h: 100% left");
+        assert_eq!(
+            limit(
+                Lang::En,
+                &Limit {
+                    resets_at: Some(1),
+                    ..hour
+                },
+                0
+            ),
+            "codex 23h: 100% left, resets in 0 min"
+        );
     }
 
     #[test]

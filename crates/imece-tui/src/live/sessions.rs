@@ -26,6 +26,18 @@ pub fn apply(w: &mut World, id: AgentId, e: AgentEvent, before: u64) {
             a.trace(t, format!("text {text:?}"));
         }
         AgentEvent::Note(text) => w.agents[id].trace(t, text),
+        // The account's windows, not the agent's: kept by vendor.
+        AgentEvent::Limits(limits) => {
+            let vendor = w.agents[id].vendor;
+            for l in limits {
+                w.limit(Limit {
+                    vendor,
+                    minutes: l.minutes,
+                    used: l.used,
+                    resets_at: l.resets_at,
+                });
+            }
+        }
         AgentEvent::CommandsMissing => {
             w.agents[id].trace(
                 t,
@@ -583,6 +595,38 @@ mod tests {
             Event::CommandsMissing { agent: 1 }
         );
         assert_eq!(w.agents[1].commands, ["/clear"]);
+    }
+
+    #[test]
+    fn usage_windows_are_kept_by_the_agent_s_vendor() {
+        let mut w = team(2);
+        w.agents[1].vendor = Vendor::Codex;
+        let window = |minutes, used| imece_agent::Limit {
+            minutes,
+            used,
+            resets_at: Some(7),
+        };
+        apply(
+            &mut w,
+            1,
+            AgentEvent::Limits(vec![window(300, 20), window(10_080, 5)]),
+            0,
+        );
+        apply(&mut w, 2, AgentEvent::Limits(vec![window(300, 60)]), 0);
+        let kept = |vendor, minutes, used| Limit {
+            vendor,
+            minutes,
+            used,
+            resets_at: Some(7),
+        };
+        assert_eq!(
+            w.limits,
+            [
+                kept(Vendor::Codex, 300, 20),
+                kept(Vendor::Codex, 10_080, 5),
+                kept(w.agents[2].vendor, 300, 60),
+            ]
+        );
     }
 
     #[test]

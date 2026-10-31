@@ -23,8 +23,8 @@ use std::path::{Path, PathBuf};
 
 use serde_json::Value;
 
-use crate::Event;
 use crate::child::{self, Child, Out};
+use crate::{Event, FIVE_HOURS, Limit, WEEK};
 
 /// Variables Claude Code may need besides [`child::BASE_ENV`]: an API key
 /// (a subscription login lives in the keychain), its config directory, and
@@ -438,7 +438,11 @@ impl Parser {
             "assistant" => self.assistant(&v),
             "user" => Ok(self.results(&v)),
             "result" => Ok(vec![self.result(&v)]),
-            // Rate limits, retries, partial chunks, hook events, the reset
+            "rate_limit_event" => Ok(limits(&v["rate_limit_info"])
+                .map(Event::Limits)
+                .into_iter()
+                .collect()),
+            // Retries, partial chunks, hook events, the reset
             // `/clear` announces (its new `init` is checked like the first):
             // nothing the screen needs yet.
             _ => Ok(Vec::new()),
@@ -696,6 +700,42 @@ impl crate::Agent for Session {
     fn terminate(&mut self) {
         Session::terminate(self)
     }
+}
+
+/// The windows a `rate_limit_event`'s `rate_limit_info` reports: each of
+/// `unifiedWindows` (five hours, a week), else the one `rateLimitType`
+/// names. `utilization` is a fraction; a window without one, or of a
+/// kind with no fixed length (overage, one model's week), is left out.
+/// None when nothing is left.
+fn limits(info: &Value) -> Option<Vec<Limit>> {
+    let window = |kind: &str, w: &Value| -> Option<Limit> {
+        let minutes = match kind {
+            "five_hour" => FIVE_HOURS,
+            "seven_day" => WEEK,
+            _ => return None,
+        };
+        let used = w["utilization"].as_f64()?;
+        Some(Limit {
+            minutes,
+            used: percent(used),
+            resets_at: w["resetsAt"].as_u64(),
+        })
+    };
+    let mut out: Vec<Limit> = match info["unifiedWindows"].as_object() {
+        Some(ws) => ws.iter().filter_map(|(k, w)| window(k, w)).collect(),
+        None => info["rateLimitType"]
+            .as_str()
+            .and_then(|k| window(k, info))
+            .into_iter()
+            .collect(),
+    };
+    out.sort_by_key(|l| l.minutes);
+    (!out.is_empty()).then_some(out)
+}
+
+/// A fraction as a whole percent, 0 to 100.
+fn percent(fraction: f64) -> u8 {
+    (fraction * 100.0).round().clamp(0.0, 100.0) as u8
 }
 
 #[cfg(test)]
@@ -1476,6 +1516,70 @@ sleep 5"#
         assert_eq!(cost(&mut p, &done(0.0003)), 1500);
         // The settings after a reset are checked like the first.
         assert!(p.line(&init(r#"["Bash"]"#, "acceptEdits", "[]")).is_err());
+    }
+
+    #[test]
+    fn a_rate_limit_event_reports_its_windows_in_percent() {
+        use serde_json::json;
+        let mut p = Parser::new(&spec(EDIT_TOOLS));
+        let event = |info: Value| {
+            json!({ "type": "rate_limit_event", "rate_limit_info": info }).to_string()
+        };
+        // Both windows, a fraction each; before the settings too.
+        let both = json!({ "status": "allowed", "unifiedWindows": {
+            "seven_day": { "utilization": 0.2, "resetsAt": 1_800_000_000u64 },
+            "five_hour": { "utilization": 0.516, "resetsAt": 1_700_000_000u64, "status": "allowed" },
+            "seven_day_overage_included": { "utilization": 0.9, "resetsAt": 1 },
+        }});
+        assert_eq!(
+            p.line(&event(both)).unwrap(),
+            [Event::Limits(vec![
+                Limit {
+                    minutes: 300,
+                    used: 52,
+                    resets_at: Some(1_700_000_000)
+                },
+                Limit {
+                    minutes: 10_080,
+                    used: 20,
+                    resets_at: Some(1_800_000_000)
+                },
+            ])]
+        );
+        // Without them, the one its type names.
+        let one = json!({ "status": "allowed_warning", "rateLimitType": "seven_day",
+            "utilization": 0.994, "resetsAt": 5 });
+        assert_eq!(
+            p.line(&event(one)).unwrap(),
+            [Event::Limits(vec![Limit {
+                minutes: 10_080,
+                used: 99,
+                resets_at: Some(5)
+            }])]
+        );
+        let over = json!({ "rateLimitType": "five_hour", "utilization": 1.7 });
+        assert_eq!(
+            p.line(&event(over)).unwrap(),
+            [Event::Limits(vec![Limit {
+                minutes: 300,
+                used: 100,
+                resets_at: None
+            }])]
+        );
+        // Nothing with a length and a use: nothing said.
+        for none in [
+            json!({ "status": "allowed" }),
+            json!({ "rateLimitType": "overage", "utilization": 0.5 }),
+            json!({ "rateLimitType": "five_hour" }),
+            json!({ "unifiedWindows": { "seven_day_opus": { "utilization": 0.5, "resetsAt": 1 } } }),
+            json!({ "unifiedWindows": {}, "rateLimitType": "five_hour", "utilization": 0.5 }),
+        ] {
+            assert_eq!(p.line(&event(none.clone())).unwrap(), [], "{none}");
+        }
+        assert_eq!(percent(0.0), 0);
+        assert_eq!(percent(0.004), 0);
+        assert_eq!(percent(0.005), 1);
+        assert_eq!(percent(-0.5), 0);
     }
 
     #[test]

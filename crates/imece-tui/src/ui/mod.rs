@@ -925,6 +925,19 @@ pub(crate) fn fleet(app: &App) -> Vec<Span<'static>> {
     spans
 }
 
+/// Percent of a vendor's usage window used from which the header says
+/// it the way it says what waits for the person.
+const LIMIT_LOUD: u8 = 90;
+
+/// A vendor's tightest usage window as the header shows it.
+fn limit_span(lang: Lang, l: &Limit, now: u64) -> Span<'static> {
+    let said = words::limit(lang, l, now);
+    match l.used >= LIMIT_LOUD {
+        true => Span::styled(said, attention()),
+        false => Span::raw(said),
+    }
+}
+
 fn header(f: &mut Frame, area: Rect, app: &App) {
     let w = &app.world;
     let t = app.lang.text();
@@ -952,6 +965,11 @@ fn header(f: &mut Frame, area: Rect, app: &App) {
     } else {
         spans.push(Span::raw(spent));
         spans.push(Span::styled(format!(" ({rate})"), dim()));
+    }
+    // Each vendor's window nearest to full, loud when little is left.
+    for l in w.tightest() {
+        spans.push(sep());
+        spans.push(limit_span(app.lang, &l, w.now()));
     }
     if w.max_researchers > 0 {
         spans.push(sep());
@@ -5399,6 +5417,33 @@ mod tests {
         assert_eq!(pieces("abc", 1), ["a", "b", "c"]);
         assert_eq!(pieces("abc", 2), ["ab", "c"]);
         assert_eq!(pieces("", 3), [""]);
+    }
+
+    #[test]
+    fn the_header_shows_each_vendor_s_tightest_window_loud_when_nearly_full() {
+        let mut app = App::new(1, 1, 0, 1, Lang::En);
+        let at = |vendor, minutes, used| Limit {
+            vendor,
+            minutes,
+            used,
+            resets_at: None,
+        };
+        app.world.limits = vec![
+            at(Vendor::Claude, 300, 52),
+            at(Vendor::Claude, 10_080, 10),
+            at(Vendor::Codex, 10_080, 90),
+        ];
+        let screen = render(&app, 200, 20);
+        let top = screen.lines().next().unwrap();
+        assert!(
+            top.contains(" │ claude 5h: 48% left │ codex 7d: 10% left"),
+            "{top}"
+        );
+        assert!(!top.contains("claude 7d"), "{top}");
+        let span = |used| limit_span(Lang::En, &at(Vendor::Codex, 300, used), 0);
+        assert_eq!(span(89).style, Style::new());
+        assert_eq!(span(90).style, attention());
+        assert_eq!(span(90).content, "codex 5h: 10% left");
     }
 
     #[test]

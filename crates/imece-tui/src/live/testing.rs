@@ -9,6 +9,7 @@ use super::*;
 pub(crate) fn team(workers: usize) -> World {
     let mut w = World {
         marks: Default::default(),
+        limits: Vec::new(),
         tick: 3,
         // Begun just now: a step puts the tick at 0.
         started_at: now(),
