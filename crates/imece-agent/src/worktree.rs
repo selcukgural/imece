@@ -131,13 +131,45 @@ pub fn ensure(repo: &Path, root: &Path, name: &str) -> io::Result<Worktree> {
     }
     std::fs::create_dir_all(root)?;
     let p = path.to_string_lossy();
-    git(
+    if let Err(e) = git(
         repo,
         &["worktree", "add", "--quiet", "--detach", &p, "HEAD"],
-    )?;
+    ) {
+        // Removed by hand, still on git's list: git's own words say "use
+        // add -f", which would throw away what git knows of it. imece
+        // leaves that to the person.
+        return Err(if registered(repo, &path) {
+            io::Error::other(format!(
+                "{} is gone, but git still has it as a worktree of {}: whatever it \
+                 held that was not committed is lost; `git worktree prune` there lets \
+                 imece make it anew",
+                path.display(),
+                repo.display()
+            ))
+        } else {
+            e
+        });
+    }
     Ok(Worktree {
         path: path.canonicalize()?,
         placed: Placed::Fresh,
+    })
+}
+
+/// Whether git lists `path` (which may be gone) as one of `repo`'s
+/// worktrees. git keeps the real path, so `path`'s directory is resolved
+/// first; when that is gone too, git can not list it as there.
+fn registered(repo: &Path, path: &Path) -> bool {
+    let Some(real) = (path.parent().and_then(|d| d.canonicalize().ok()))
+        .zip(path.file_name())
+        .map(|(d, n)| d.join(n))
+    else {
+        return false;
+    };
+    git(repo, &["worktree", "list", "--porcelain"]).is_ok_and(|list| {
+        list.lines()
+            .filter_map(|l| l.strip_prefix("worktree "))
+            .any(|p| Path::new(p) == real)
     })
 }
 
@@ -1001,6 +1033,48 @@ mod tests {
         std::fs::write(root.join("claude-1/mine.txt"), "x").unwrap();
         assert!(ensure(r, &root, "claude-1").is_err());
         assert!(root.join("claude-1/mine.txt").exists());
+    }
+
+    #[test]
+    fn a_worktree_removed_by_hand_is_said_to_be_gone_and_made_anew_only_after_a_prune() {
+        let s = repo("vanished");
+        let r = &s.repo;
+        // Reached through a link, as a temp dir may be: git keeps the real
+        // path.
+        let link = s.dir.join("link");
+        std::os::unix::fs::symlink(&s.dir, &link).unwrap();
+        let root = link.join("wt");
+        let w = ensure(r, &root, "claude-1").unwrap().path;
+        std::fs::remove_dir_all(&w).unwrap();
+        let e = ensure(r, &root, "claude-1").expect_err("refused");
+        assert_eq!(
+            e.to_string(),
+            format!(
+                "{} is gone, but git still has it as a worktree of {}: whatever it held \
+                 that was not committed is lost; `git worktree prune` there lets imece make \
+                 it anew",
+                root.join("claude-1").display(),
+                r.display()
+            )
+        );
+        assert!(!w.exists(), "nothing made behind the person's back");
+        git(r, &["worktree", "prune"]).unwrap();
+        let again = ensure(r, &root, "claude-1").unwrap();
+        assert_eq!((again.path, again.placed), (w, Placed::Fresh));
+    }
+
+    #[test]
+    fn a_worktree_git_can_not_add_says_what_git_said() {
+        // No commit yet: no HEAD to check out, and nothing of git's list.
+        let s = repo("headless");
+        let empty = s.dir.join("empty");
+        std::fs::create_dir_all(&empty).unwrap();
+        git(&empty, &["init", "--quiet"]).unwrap();
+        let e = ensure(&empty, &s.dir.join("wt"), "claude-1")
+            .expect_err("refused")
+            .to_string();
+        assert!(e.starts_with("git worktree add --quiet --detach "), "{e}");
+        assert!(!e.contains("is gone"), "{e}");
     }
 
     #[test]

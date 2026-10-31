@@ -2245,6 +2245,55 @@ mod tests {
     }
 
     #[test]
+    fn a_world_the_store_cannot_load_is_refused_and_the_file_kept() {
+        let repo = checkout("unloadable");
+        let state = trees("unloadable-state");
+        let options = || Options {
+            repo: repo.clone(),
+            state: state.clone(),
+            max_workers: 2,
+            max_helpers: 1,
+            lead: Vendor::Claude,
+            tiers: Vec::new(),
+            budget: None,
+            fresh: false,
+            run_programs: Vec::new(),
+            run_timeout: DEFAULT_RUN_TIMEOUT,
+            confine: Confine::Standard,
+        };
+        let present = [(Vendor::Claude, true)];
+        let (w, mut live) = world(options(), &present).unwrap();
+        assert_eq!(live.persist(&w), Ok(true));
+        drop(live);
+        let file = state.join(store::FILE);
+        let vendor = || {
+            let st = Store::open(&file).unwrap();
+            st.raw()
+                .query_row("SELECT vendor FROM agents WHERE id = 0", [], |r| {
+                    r.get::<_, String>(0)
+                })
+                .unwrap()
+        };
+        {
+            let st = Store::open(&file).unwrap();
+            st.raw()
+                .execute("UPDATE agents SET vendor = 'Clod' WHERE id = 0", [])
+                .unwrap();
+        }
+        let e = world(options(), &present).err().expect("refused");
+        assert!(e.starts_with(&format!("{}: ", file.display())), "{e}");
+        assert!(e.contains("\"Clod\""), "{e}");
+        assert!(
+            e.contains("\nimece left the file as it was. To start afresh"),
+            "{e}"
+        );
+        assert_eq!(vendor(), "Clod", "the row stays as it was");
+        for d in [repo, state] {
+            let _ = std::fs::remove_dir_all(d);
+        }
+    }
+
+    #[test]
     fn the_fresh_flag_reaches_the_world_that_is_loaded() {
         let repo = checkout("fresh-flag");
         let state = trees("fresh-flag-state");

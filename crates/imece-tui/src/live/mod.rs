@@ -519,10 +519,11 @@ pub fn leaders(present: &[(Vendor, bool)]) -> Vec<Vendor> {
 pub fn world(o: Options, present: &[(Vendor, bool)]) -> Result<(World, Live), String> {
     let repo = worktree::top(&o.repo).map_err(|e| format!("{}: {e}", o.repo.display()))?;
     let vendors = team_vendors(hireable(present, o.lead)?, o.lead, &o.tiers);
-    let mut store = Store::open(&o.state.join(store::FILE))?;
+    let file = o.state.join(store::FILE);
+    let mut store = Store::open(&file)?;
     let loaded = store
         .load(JOURNAL_KEEP)
-        .map_err(|e| format!("{}: {e}", o.state.join(store::FILE).display()))?;
+        .map_err(|e| store::unreadable(&file, e))?;
     let now = now();
     // Old journal lines past what was just loaded go, and the file is
     // packed when it is mostly air. Nothing is lost when this fails: the
