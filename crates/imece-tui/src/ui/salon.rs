@@ -136,7 +136,8 @@ pub fn rows(app: &App, capacity: usize) -> Vec<Row> {
     // helper would fold the helper with it. Rows that fit fold nothing:
     // the loop stops at once.
     if !app.needs_only {
-        'fold: for p in (0..w.projects.len()).rev() {
+        // From the bottom of the salon up: a pinned project folds last.
+        'fold: for p in w.salon_order().into_iter().rev() {
             for a in order[p].iter().rev() {
                 if total <= capacity {
                     break 'fold;
@@ -154,7 +155,8 @@ pub fn rows(app: &App, capacity: usize) -> Vec<Row> {
     }
 
     let mut out = Vec::new();
-    for p in w.open_projects().filter(|p| shown[p.id]) {
+    let salon = w.salon_order();
+    for p in (salon.iter().map(|&p| &w.projects[p])).filter(|p| shown[p.id]) {
         out.push(Row::Project(p.id));
         if app.collapsed[p.id] {
             continue;
@@ -333,13 +335,17 @@ fn project_line(app: &App, p: ProjectId) -> Line<'static> {
         .filter(|a| a.status == Status::Blocked)
         .count();
 
-    let mut spans = vec![
-        Span::styled(
-            format!("{} ", if open { "▾" } else { "▸" }),
-            bold(pal().strong),
-        ),
-        Span::styled(fit(&project.name, 12), bold(pal().strong)),
-    ];
+    let mut spans = vec![Span::styled(
+        format!("{} ", if open { "▾" } else { "▸" }),
+        bold(pal().strong),
+    )];
+    // A pinned project's name gives two of its columns to the mark.
+    if project.pinned {
+        spans.push(Span::styled("▴ ", bold(pal().accent)));
+        spans.push(Span::styled(fit(&project.name, 10), bold(pal().strong)));
+    } else {
+        spans.push(Span::styled(fit(&project.name, 12), bold(pal().strong)));
+    }
     if let Some(trunk) = project.trunk {
         spans.push(Span::styled(format!(" trunk #{trunk} "), dim()));
         spans.push(Span::styled("✓", fg(pal().ok)));

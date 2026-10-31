@@ -523,6 +523,7 @@ pub fn world(
             trunk: None,
             repo,
             closed: false,
+            pinned: false,
         });
     }
     // The confine dial's default, said once a start as live does.

@@ -152,6 +152,9 @@ pub struct Text {
     pub nothing_to_export: &'static str,
     /// In the `:` menu after `:export`: a conversation is open.
     pub value_thread: &'static str,
+    /// `:pin`: a project pinned, unpinned.
+    pub pinned: &'static str,
+    pub unpinned: &'static str,
     /// `:lang` with something that is not a language.
     pub bad_lang: &'static str,
     /// `:pause`, `:faster` or `:slower` while live.
@@ -380,7 +383,7 @@ pub struct Text {
     pub waiting_yes: &'static str,
     // Overlays
     pub help_title: &'static str,
-    pub help_keys: [(&'static str, &'static str); 44],
+    pub help_keys: [(&'static str, &'static str); 45],
     /// The help's line for a new line in the writing, put after the
     /// writing keys: where the terminal tells shift-enter apart, and
     /// where it does not.
@@ -470,6 +473,8 @@ pub const EN: Text = Text {
     bad_lead: "{} is not claude, codex, gemini or ask",
     no_command: "no command {}; : and tab list them",
     bad_lang: "{} is not a language: en or tr",
+    pinned: "{} is pinned to the top of the salon",
+    unpinned: "{} is not pinned any more",
     export_thread: "Conversation: {}",
     export_waiting: "Waiting for you",
     export_journal: "Journal",
@@ -720,6 +725,10 @@ pub const EN: Text = Text {
             "the agent forgets its session; a new one is told where it left off",
         ),
         (":export PATH", "the open conversation or card, as Markdown"),
+        (
+            ":pin NAME",
+            "pin a project to the top of the salon; again: unpin",
+        ),
         ("!cmd", "run cmd in your own shell, screen aside"),
         ("tab ⇧tab ↑ ↓", "while writing: complete names and commands"),
         ("^a ^e ⌥b ⌥f", "writing: to start / end, a word back / on"),
@@ -768,7 +777,7 @@ pub const EN: Text = Text {
     ],
     help_legend: [
         " ◆ lead  ● working  ◐ asking  ✕ blocked  ! waiting for you",
-        " ◇ researcher  ○ idle  ✓ done, not seen  ■ stopped  ⇄ conversation  ▾ ▸ project / helpers",
+        " ◇ researcher  ○ idle  ✓ done, not seen  ■ stopped  ⇄ conversation  ▾ ▸ project / helpers  ▴ pinned",
         " ~ soft-tainted (read a report)  ≈ tainted (reads the outside world)",
         " ⎇ branch  ↑ own commits  ↓ the checkout's new commits  +N −M lines not yet handed over",
     ],
@@ -858,6 +867,8 @@ pub const TR: Text = Text {
     bad_lead: "{} claude, codex, gemini ya da ask değil",
     no_command: "{} diye komut yok; : ve tab hepsini listeler",
     bad_lang: "{} bir dil değil: en ya da tr",
+    pinned: "{} salonun en üstüne sabitlendi",
+    unpinned: "{} artık sabit değil",
     export_thread: "Konuşma: {}",
     export_waiting: "Seni bekleyenler",
     export_journal: "Defter",
@@ -1110,6 +1121,7 @@ pub const TR: Text = Text {
             "agent oturumunu unutur; yenisine kaldığı yer anlatılır",
         ),
         (":export YOL", "açık konuşma ya da iş, Markdown olarak"),
+        (":pin AD", "projeyi salonun en üstüne sabitle; yine: bırak"),
         ("!kmt", "kmt kendi kabuğunda; ekran kenara çekilir"),
         ("tab ⇧tab ↑ ↓", "yazarken: ad ve komut tamamla"),
         ("^a ^e ⌥b ⌥f", "yazarken: başa / sona, kelime geri / ileri"),
@@ -1161,7 +1173,7 @@ pub const TR: Text = Text {
     ],
     help_legend: [
         " ◆ lider  ● çalışıyor  ◐ soruyor  ✕ bloke  ! onayını bekliyor",
-        " ◇ araştırmacı  ○ boşta  ✓ bitti, bakılmadı  ■ durdu  ⇄ konuşma  ▾ ▸ proje / yardımcılar",
+        " ◇ araştırmacı  ○ boşta  ✓ bitti, bakılmadı  ■ durdu  ⇄ konuşma  ▾ ▸ proje / yardımcılar  ▴ sabit",
         " ~ hafif kirli (rapor okudu)  ≈ kirli (dış dünyayı okuyor)",
         " ⎇ dal  ↑ kendi commit'leri  ↓ checkout'un yeni commit'leri  +N −M henüz verilmemiş satırlar",
     ],

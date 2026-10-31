@@ -1539,6 +1539,13 @@ impl App {
             "theme" => Some(theme::pal().name.clone()),
             "lang" => Some(t.language.to_string()),
             "close" | "rename" => Some(self.world.projects[self.current_project()].name.clone()),
+            // The project at hand, marked as the salon marks it when
+            // pinned (then `:pin` unpins it).
+            "pin" => {
+                let p = &self.world.projects[self.current_project()];
+                let mark = if p.pinned { "▴ " } else { "" };
+                Some(format!("{mark}{}", p.name))
+            }
             "forget" | "talk" | "trace" => self
                 .agent_at_hand()
                 .map(|id| self.world.agents[id].name.clone()),
@@ -1718,6 +1725,7 @@ impl App {
             "rename" => self.rename_project(arg),
             "forget" => self.forget_agent(arg),
             "export" => self.export(arg),
+            "pin" => self.pin(arg),
             "salon" => self.show(View::Salon),
             "board" => self.show(View::Board),
             "code" => self.show(View::Code),
@@ -1756,6 +1764,25 @@ impl App {
             "slower" => self.slower(),
             _ => self.flash(fill(t.no_command, &[name])),
         }
+    }
+
+    /// `:pin [NAME]`: the named project (else the one at hand) is pinned
+    /// to the top of the salon, or unpinned when it was.
+    fn pin(&mut self, arg: &str) {
+        let t = self.lang.text();
+        let p = if arg.is_empty() {
+            self.current_project()
+        } else {
+            match self.world.project_by_name(arg) {
+                Some(p) => p,
+                None => return self.flash(fill(t.no_project, &[arg])),
+            }
+        };
+        let project = &mut self.world.projects[p];
+        project.pinned = !project.pinned;
+        let said = if project.pinned { t.pinned } else { t.unpinned };
+        let said = fill(said, &[&project.name]);
+        self.flash(said);
     }
 
     /// `:export [PATH]`: the open conversation, else the card's screen,
