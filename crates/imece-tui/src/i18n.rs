@@ -114,6 +114,16 @@ pub struct Text {
     /// `>` in a change, and what it says where there is no hunk to quote.
     pub quote: &'static str,
     pub no_hunk: &'static str,
+    /// Notes on a change's lines: the hint, `c` off a hunk's lines, the
+    /// writing's label (the place), one kept (how many now), one taken
+    /// away, `n` with none, and `n` done (how many, to whom).
+    pub notes: &'static str,
+    pub note_where: &'static str,
+    pub typing_note: &'static str,
+    pub noted: &'static str,
+    pub note_dropped: &'static str,
+    pub no_notes: &'static str,
+    pub notes_sent: &'static str,
     pub views: [&'static str; 3],
     pub typing_to: &'static str,
     pub typing_command: &'static str,
@@ -132,6 +142,8 @@ pub struct Text {
     /// The footer's hint while writing; `{}` is the key for a new line,
     /// `newline_shift` or `newline_plain`.
     pub send_cancel: &'static str,
+    /// The same while a note on a change's line is written: enter keeps it.
+    pub keep_cancel: &'static str,
     pub newline_shift: &'static str,
     pub newline_plain: &'static str,
     /// Text pasted while not writing: it is left out.
@@ -400,7 +412,7 @@ pub struct Text {
     pub waiting_yes: &'static str,
     // Overlays
     pub help_title: &'static str,
-    pub help_keys: [(&'static str, &'static str); 48],
+    pub help_keys: [(&'static str, &'static str); 49],
     /// The help's line for a new line in the writing, put after the
     /// writing keys: where the terminal tells shift-enter apart, and
     /// where it does not.
@@ -464,6 +476,13 @@ pub const EN: Text = Text {
     reject: "reject",
     quote: "quote to it",
     no_hunk: "no hunk here to quote",
+    notes: "note · send notes",
+    note_where: "a note goes on a line of a hunk: scroll one to the top",
+    typing_note: "note on {} ▸ ",
+    noted: "note kept ({} on this change); n sends them",
+    note_dropped: "note taken away",
+    no_notes: "no notes on this change yet: c writes one on the top line",
+    notes_sent: "{} notes went to {}; the change went back to them",
     views: ["salon", "board", "code"],
     typing_to: " › to {}: ",
     typing_command: " › command: ",
@@ -478,6 +497,7 @@ pub const EN: Text = Text {
     shell_back: "[imece] exit {} · {} · any key: back to the screen\n",
     shell_back_signal: "[imece] stopped by signal {} · {} · any key: back to the screen\n",
     send_cancel: "   enter send · {} new line · esc cancel",
+    keep_cancel: "   enter keep · {} new line · esc cancel",
     newline_shift: "⇧enter",
     newline_plain: "\\ enter",
     paste_not_writing: "a paste goes into the line you write: / or @ first",
@@ -801,6 +821,10 @@ pub const EN: Text = Text {
             ">",
             "in a change: the hunk at the top, quoted in a message to its worker",
         ),
+        (
+            "c  n",
+            "in a change: a note on the top line · send the notes, it goes back",
+        ),
         ("space", ":pause / resume"),
         ("+  -", ":faster / :slower simulation"),
         ("L  :lang", "Türkçe / English; :lang en|tr"),
@@ -884,6 +908,13 @@ pub const TR: Text = Text {
     reject: "reddet",
     quote: "ona alıntıla",
     no_hunk: "burada alıntılanacak bir parça yok",
+    notes: "not · notları gönder",
+    note_where: "not bir parçanın satırına yazılır: bir satırı en üste kaydır",
+    typing_note: "{} için not ▸ ",
+    noted: "not tutuldu (bu değişiklikte {}); n gönderir",
+    note_dropped: "not kaldırıldı",
+    no_notes: "bu değişiklikte henüz not yok: c en üstteki satıra bir tane yazar",
+    notes_sent: "{} not {} adlı ajana gitti; değişiklik ona geri döndü",
     views: ["salon", "pano", "kod"],
     typing_to: " › {} için: ",
     typing_command: " › komut: ",
@@ -898,6 +929,7 @@ pub const TR: Text = Text {
     shell_back: "[imece] çıkış {} · {} sürdü · herhangi bir tuş: ekrana dön\n",
     shell_back_signal: "[imece] {} sinyali durdurdu · {} sürdü · herhangi bir tuş: ekrana dön\n",
     send_cancel: "   enter gönder · {} yeni satır · esc vazgeç",
+    keep_cancel: "   enter tut · {} yeni satır · esc vazgeç",
     newline_shift: "⇧enter",
     newline_plain: "\\ enter",
     paste_not_writing: "yapıştırılan, yazdığın satıra girer: önce / ya da @",
@@ -1223,6 +1255,10 @@ pub const TR: Text = Text {
             ">",
             "değişiklikte: üstteki parça, worker'ına bir mesajda alıntı",
         ),
+        (
+            "c  n",
+            "değişiklikte: üstteki satıra not · notları gönder, geri döner",
+        ),
         ("space", ":pause durdur / devam"),
         ("+  -", "simülasyon :faster / :slower"),
         ("L  :lang", "English / Türkçe; :lang en|tr"),
@@ -1318,6 +1354,7 @@ mod tests {
             (EN.code_title, TR.code_title),
             (EN.typing_to, TR.typing_to),
             (EN.send_cancel, TR.send_cancel),
+            (EN.keep_cancel, TR.keep_cancel),
             (EN.cannot_start, TR.cannot_start),
             (EN.ev_stopped, TR.ev_stopped),
             (EN.ev_interrupted, TR.ev_interrupted),
