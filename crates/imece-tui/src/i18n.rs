@@ -186,6 +186,16 @@ pub struct Text {
     pub side_width: &'static str,
     /// After one `q`: the question in the bottom bar.
     pub quit_ask: &'static str,
+    /// The quit question when something is in flight: `{}` is the
+    /// counts, joined.
+    pub quit_ask_busy: &'static str,
+    pub quit_mid_turn: &'static str,
+    pub quit_changes: &'static str,
+    /// The window `q s` opens.
+    pub leaving_title: &'static str,
+    pub leaving_mid_turn: &'static str,
+    pub leaving_changes: &'static str,
+    pub leaving_keys: &'static str,
     pub no_talk_yet: &'static str,
     pub theme_is: &'static str,
     pub folded: &'static str,
@@ -327,7 +337,7 @@ pub struct Text {
     pub waiting_yes: &'static str,
     // Overlays
     pub help_title: &'static str,
-    pub help_keys: [(&'static str, &'static str); 36],
+    pub help_keys: [(&'static str, &'static str); 37],
     pub help_legend: [&'static str; 3],
     pub close: &'static str,
     pub away_title: &'static str,
@@ -455,6 +465,13 @@ pub const EN: Text = Text {
     copy_failed: "could not copy: {}",
     side_width: "side panel {}% (, . or < >)",
     quit_ask: "quit imece? q again to quit · any other key to stay",
+    quit_ask_busy: "quit imece? {} · q again quits · s shows them · any other key stays",
+    quit_mid_turn: "agents mid-turn: {}",
+    quit_changes: "changes not reviewed: {}",
+    leaving_title: " BEFORE YOU GO ",
+    leaving_mid_turn: "Mid-turn: quitting cuts these turns short",
+    leaving_changes: "Changes not reviewed",
+    leaving_keys: " q quits · W opens the next waiting · any other key: back",
     no_talk_yet: "no conversation with {} yet",
     theme_is: "theme: {}",
     folded: "… {} agents doing fine",
@@ -655,6 +672,7 @@ pub const EN: Text = Text {
         ("L", "Türkçe / English"),
         ("T  :theme", "next theme · :theme NAME or FILE"),
         ("q q", "quit (one q asks first)"),
+        ("q s", "before quitting: what is mid-turn or not reviewed"),
     ],
     help_legend: [
         " ◆ lead  ● working  ◐ asking  ✕ blocked  ! waiting for you",
@@ -792,6 +810,13 @@ pub const TR: Text = Text {
     copy_failed: "kopyalanamadı: {}",
     side_width: "yan panel %{} (, . ya da < >)",
     quit_ask: "imece kapatılsın mı? bir daha q çıkar · başka bir tuş kalır",
+    quit_ask_busy: "imece kapatılsın mı? {} · bir daha q çıkar · s gösterir · başka bir tuş kalır",
+    quit_mid_turn: "tur ortasındaki agent: {}",
+    quit_changes: "incelenmemiş değişiklik: {}",
+    leaving_title: " ÇIKMADAN ÖNCE ",
+    leaving_mid_turn: "Tur ortasında: çıkmak bu turları yarıda keser",
+    leaving_changes: "İncelenmemiş değişiklikler",
+    leaving_keys: " q çıkar · W bekleyen sıradakini açar · başka bir tuş: geri",
     no_talk_yet: "{} ile henüz konuşma yok",
     theme_is: "tema: {}",
     folded: "… {} agent yolunda",
@@ -997,6 +1022,10 @@ pub const TR: Text = Text {
         ("L", "English / Türkçe"),
         ("T  :theme", "sonraki tema · :theme AD ya da DOSYA"),
         ("q q", "çık (tek q önce sorar)"),
+        (
+            "q s",
+            "çıkmadan önce: tur ortasında olan, incelenmemiş olan",
+        ),
     ],
     help_legend: [
         " ◆ lider  ● çalışıyor  ◐ soruyor  ✕ bloke  ! onayını bekliyor",

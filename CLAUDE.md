@@ -133,6 +133,7 @@ record in the same PR.
 - 31 `demo-mirrors-live`: the demo shows what live does (Δ, `⚑`, questions, hiring, helpers, sessions); the merge queue left it.
 - 32 `card-screen`: `#323` or `#word` opens a card's screen (who, story, its inbox and journal lines), `n p`, `inbox.card`, the `#N` heading fix.
 - 33 `next-waiting`: `W` opens the next item waiting for the person from anywhere, `S` puts one off; order, at hand, run-only.
+- 34 `quit-ask`: the quit question counts agents mid-turn and changes not reviewed; `q s` lists them.
 
 `docs/neighbours.md`: voff, what was taken from it and the rules that come
 from what it lacks. Read it before building a part it names.

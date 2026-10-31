@@ -1322,6 +1322,24 @@ impl World {
             .count()
     }
 
+    /// Agents in the middle of a turn, spending tokens: what quitting now
+    /// would cut short.
+    pub fn mid_turn(&self) -> Vec<AgentId> {
+        self.agents
+            .iter()
+            .filter(|a| !a.gone && a.status.busy())
+            .map(|a| a.id)
+            .collect()
+    }
+
+    /// The open inbox items that are workers' changes, not yet reviewed.
+    pub fn open_changes(&self) -> Vec<usize> {
+        self.open_inbox()
+            .into_iter()
+            .filter(|&i| self.inbox[i].kind == InboxKind::Change)
+            .collect()
+    }
+
     /// The helpers worker `id` has right now.
     pub fn helpers_of(&self, id: AgentId) -> impl Iterator<Item = &Agent> {
         self.agents
@@ -2072,6 +2090,33 @@ mod tests {
             card(Column::Done),
         ];
         assert_eq!(w.cards_done(), 2);
+    }
+
+    #[test]
+    fn mid_turn_is_who_spends_now_and_open_changes_only_open_changes() {
+        let mut gone = agent(3, Role::Worker, Status::Working);
+        gone.gone = true;
+        let researching = Status::Researching {
+            for_agent: 1,
+            until: 9,
+        };
+        let mut w = world(vec![
+            agent(0, Role::Leader, Status::Working),
+            agent(1, Role::Worker, Status::Asking { to: 0, until: 9 }),
+            agent(2, Role::Worker, Status::Idle),
+            gone,
+            agent(4, Role::Researcher, researching),
+            agent(5, Role::Worker, Status::Stopped),
+            agent(6, Role::Worker, Status::WaitingHuman),
+        ]);
+        assert_eq!(w.mid_turn(), [0, 4]);
+        w.inbox = vec![
+            item(InboxKind::Change, 1, true),
+            item(InboxKind::Change, 2, false),
+            item(InboxKind::Reply, 2, true),
+            item(InboxKind::Change, 6, true),
+        ];
+        assert_eq!(w.open_changes(), [0, 3]);
     }
 
     #[test]

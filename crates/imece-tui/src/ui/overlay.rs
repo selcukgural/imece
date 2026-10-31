@@ -193,6 +193,48 @@ pub fn left_off(f: &mut Frame, app: &App, l: &LeftOff) {
     window(f, title, lines, 84);
 }
 
+/// What quitting now would leave behind (`q s`): the agents mid-turn, with
+/// what each is doing, and the changes not reviewed, as the waiting panel
+/// shows them.
+pub fn leaving(f: &mut Frame, app: &App) {
+    let t = app.lang.text();
+    let w = &app.world;
+    let heading = |words: &str| Line::from(Span::styled(format!(" {words}"), bold(pal().warn)));
+    let mut lines = Vec::new();
+    let busy = w.mid_turn();
+    if !busy.is_empty() {
+        lines.push(heading(t.leaving_mid_turn));
+        for id in busy {
+            let a = &w.agents[id];
+            let mut spans = vec![
+                Span::raw("   "),
+                Span::styled(fit(&a.name, 16), bold(vendor_color(a.vendor))),
+            ];
+            if w.projects.len() > 1 {
+                spans.push(Span::styled(fit(&w.projects[a.project].name, 12), dim()));
+            }
+            spans.push(Span::raw(" "));
+            spans.extend(status_spans(app.lang, w, a));
+            lines.push(Line::from(spans));
+        }
+    }
+    let changes = w.open_changes();
+    if !changes.is_empty() {
+        if !lines.is_empty() {
+            lines.push(Line::raw(""));
+        }
+        lines.push(heading(t.leaving_changes));
+        for i in changes {
+            let mut line = inbox_line(app, i);
+            line.spans.insert(0, Span::raw("   "));
+            lines.push(line);
+        }
+    }
+    lines.push(Line::raw(""));
+    lines.push(Line::from(Span::styled(t.leaving_keys, dim())));
+    window(f, t.leaving_title.to_string(), lines, 84);
+}
+
 /// Where `scroll` must be for rows `start..end` to show in `height` rows,
 /// moving as little as it can; a part longer than the screen shows from
 /// its start.

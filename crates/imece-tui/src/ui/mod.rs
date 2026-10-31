@@ -63,6 +63,8 @@ pub fn draw(f: &mut Frame, app: &App) {
         overlay::digest(f, app, d);
     } else if let Some(l) = &app.left_off {
         overlay::left_off(f, app, l);
+    } else if app.leaving {
+        overlay::leaving(f, app);
     }
 }
 
@@ -1860,6 +1862,67 @@ mod tests {
     }
 
     #[test]
+    fn before_you_go_lists_who_is_mid_turn_and_the_changes_not_reviewed() {
+        let quiet = |projects| {
+            let mut app = app_after(projects, 4, 0, Lang::En);
+            app.world.inbox.clear();
+            app.world.change_ready(a_change(1));
+            for a in &mut app.world.agents {
+                a.status = Status::Idle;
+            }
+            app.leaving = true;
+            app
+        };
+        let rows = |app: &App| -> Vec<String> {
+            render(app, 140, 40).lines().map(str::to_string).collect()
+        };
+        let at = |rows: &[String], words: &str| rows.iter().position(|r| r.contains(words));
+        let mut app = quiet(1);
+        app.world.agents[2].status = Status::Working;
+        let name = app.world.agents[2].name.clone();
+        let s = rows(&app);
+        let title = at(&s, "BEFORE YOU GO").expect("the window");
+        assert_eq!(
+            at(&s, "Mid-turn: quitting cuts these turns short"),
+            Some(title + 1)
+        );
+        assert!(s[title + 2].contains(&name), "{}", s[title + 2]);
+        let project = app.world.projects[0].name.clone();
+        assert!(!s[title + 2].contains(&project), "one project: no name");
+        assert!(
+            s[title + 3].trim_matches(['│', ' ']).is_empty(),
+            "a blank row between"
+        );
+        assert_eq!(at(&s, "Changes not reviewed"), Some(title + 4));
+        assert!(s[title + 5].contains("Fix the parser"), "{}", s[title + 5]);
+        assert!(s[title + 7].contains("q quits · W opens the next waiting"));
+        // Only the change.
+        app.world.agents[2].status = Status::Idle;
+        let s = rows(&app);
+        let title = at(&s, "BEFORE YOU GO").unwrap();
+        assert_eq!(at(&s, "Changes not reviewed"), Some(title + 1));
+        assert_eq!(at(&s, "Mid-turn"), None);
+        // Only the turn: the change was reviewed.
+        app.world.agents[2].status = Status::Working;
+        app.world.inbox.iter_mut().for_each(|i| i.open = false);
+        let s = rows(&app);
+        assert!(at(&s, "Mid-turn").is_some());
+        assert_eq!(at(&s, "Changes not reviewed"), None);
+        // Two projects: each agent's project is named.
+        let mut app = quiet(2);
+        app.world.agents[2].status = Status::Working;
+        let project = app.world.projects[app.world.agents[2].project].name.clone();
+        let s = rows(&app);
+        let title = at(&s, "BEFORE YOU GO").unwrap();
+        assert!(s[title + 2].contains(&project), "{}", s[title + 2]);
+        app.lang = Lang::Tr;
+        let s = rows(&app);
+        assert!(
+            at(&s, "ÇIKMADAN ÖNCE").is_some() && at(&s, "İncelenmemiş değişiklikler").is_some()
+        );
+    }
+
+    #[test]
     fn an_item_put_off_says_later_up_front_in_both_languages() {
         let mut app = app_after(1, 4, 0, Lang::En);
         app.world.inbox.clear();
@@ -3598,7 +3661,11 @@ mod tests {
         assert!(!app.quit, "one q does not quit");
         assert_eq!(app.pending, Some('q'));
         let s = render(&app, 140, 40);
-        assert!(s.contains("quit imece? q again to quit"), "{s}");
+        // The demo's agents are at work by now: the question counts them.
+        assert!(
+            s.contains("quit imece? agents mid-turn: ") && s.contains("· q again quits"),
+            "{s}"
+        );
         // Any other key stays, and is spent on the answer.
         key(&mut app, KeyCode::Char('j'));
         assert!(!app.quit);
