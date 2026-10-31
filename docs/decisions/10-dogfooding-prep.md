@@ -3,7 +3,10 @@
 Dogfooding prep (2026-10-29, user's decisions: imece will write imece):
 a worktree found clean at an older commit is moved to the checkout's
 HEAD when its agent starts (`worktree::ensure` returns `Placed`; the
-journal says moved / kept with changes / kept with own commits); every
+journal says moved / kept with changes / kept with own commits; a
+worktree removed by hand that git still lists is refused with what was
+lost and `git worktree prune`, not re-added with `-f`, and the agent
+stops with that reason, its row kept: user, 2026-10-31, #58 E11); every
 agent's instructions end with the repo's `AGENTS.md` else `CLAUDE.md`
 (16 KiB cap; Codex gets only a CLAUDE.md, it reads AGENTS.md itself)
 because `--restricted` (Claude) and the private Gemini directory drop

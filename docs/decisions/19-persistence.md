@@ -7,7 +7,12 @@ again, resume must not depend on three vendor implementations):
 `<state>/imece.sqlite` (0600, WAL, rusqlite bundled and pinned; a
 `.lock` next to it, flock'd, so a second imece is refused with "use
 :open from the first"; a file from a newer imece is refused;
-`schema_version` in `meta`). Tables: meta, projects (with the
+`schema_version` in `meta`). A file imece cannot open or load (not a
+database, a newer schema, a row it does not know) is refused and left
+as it was (user, 2026-10-31, issue #58 E11): `store::unreadable` names
+the file and says how to start afresh (move it away with its `-wal` and
+`-shm`), never a backup or a fresh start on its own, since a newer
+imece may still read it. Tables: meta, projects (with the
 checkout), agents (with model, tiered, woken, posted, traced,
 commands), cards, story, journal, inbox, trace, mail, notes, inflight,
 posts, offers, changes (since schema 5 with the runs on each change's

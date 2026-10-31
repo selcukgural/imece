@@ -28,7 +28,11 @@ first prompt put back as it was (without imece's notes), the notes
 restored, `remembered` set again, so the same `prompt` path gives the
 full briefing and journals `Restarted` (which every fresh wake does,
 Codex and Gemini included). `end()` resets the floor and the attempt;
-imece's own `/clear` forgets the session. Known gaps: `renew` and
+imece's own `/clear` forgets the session. The restart is one attempt,
+never a loop, so there is no crash count to cap (user, 2026-10-31, #58
+E3 closed as not mapping; E9 too: sessions start at their own wake,
+never all at once); an automatic restart, if one is ever added, comes
+with a cap and the vendor's last stderr lines. Known gaps: `renew` and
 `fall_back` start fresh (no resume mid-run), the `/clear` inside a
 resumed session leaves `spent` as a guess (Claude's counter resets, the
 floor does not), a stopped session (tools differ etc.) is still the one

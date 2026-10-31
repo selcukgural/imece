@@ -294,6 +294,17 @@ fn ubig(v: i64) -> u64 {
     u64::try_from(v).unwrap_or_default()
 }
 
+/// Why the file at `path` was refused (`e`), and what the person can do:
+/// imece never moves, mends or writes over a file it cannot read, since
+/// what it holds may still be wanted (a newer imece reads it).
+pub fn unreadable(path: &Path, e: impl std::fmt::Display) -> String {
+    let p = path.display();
+    format!(
+        "{p}: {e}\nimece left the file as it was. To start afresh, move it somewhere else \
+         with its {p}-wal and {p}-shm files, if they are there; the next start makes a new one."
+    )
+}
+
 impl Store {
     /// Opens (or makes) the file at `path`, the person's alone, held
     /// against a second imece.
@@ -321,16 +332,14 @@ impl Store {
             });
         }
         make_private(path)?;
-        let conn = Connection::open(path).map_err(|e| format!("{}: {e}", path.display()))?;
+        let conn = Connection::open(path).map_err(|e| unreadable(path, e))?;
         let mut store = Store {
             conn,
             saved: Saved::default(),
             seqs: Seqs::default(),
             _lock: lock,
         };
-        store
-            .prepare()
-            .map_err(|e| format!("{}: {e}", path.display()))?;
+        store.prepare().map_err(|e| unreadable(path, e))?;
         Ok(store)
     }
 
@@ -2226,6 +2235,36 @@ mod tests {
         }
         let e = Store::open(&path).err().expect("refused");
         assert!(e.contains("newer imece") && e.contains("schema 99"), "{e}");
+        assert!(e.contains("imece left the file as it was"), "{e}");
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn a_file_imece_cannot_read_is_left_as_it_was_and_the_person_told_how_to_start_afresh() {
+        let d = dir("unreadable");
+        let path = d.join(FILE);
+        let junk = b"not a database, but somebody's file all the same".repeat(200);
+        std::fs::create_dir_all(&d).unwrap();
+        std::fs::write(&path, &junk).unwrap();
+        let e = Store::open(&path).err().expect("refused");
+        let p = path.display();
+        assert_eq!(
+            e.lines().nth(1),
+            Some(
+                format!(
+                    "imece left the file as it was. To start afresh, move it somewhere else \
+                     with its {p}-wal and {p}-shm files, if they are there; the next start \
+                     makes a new one."
+                )
+                .as_str()
+            ),
+            "{e}"
+        );
+        assert!(e.starts_with(&format!("{p}: ")), "{e}");
+        assert_eq!(std::fs::read(&path).unwrap(), junk, "written over");
+        // Again: still refused, still untouched.
+        assert!(Store::open(&path).is_err());
+        assert_eq!(std::fs::read(&path).unwrap(), junk);
         let _ = std::fs::remove_dir_all(&d);
     }
 
