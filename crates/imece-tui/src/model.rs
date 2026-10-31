@@ -1280,20 +1280,19 @@ impl World {
     /// Each vendor's window nearest to full (the most used; the shorter
     /// one on a tie), vendors in the order they first said one.
     pub fn tightest(&self) -> Vec<Limit> {
-        let mut out: Vec<Limit> = Vec::new();
-        for &l in &self.limits {
-            match out.iter_mut().find(|k| k.vendor == l.vendor) {
-                Some(k)
-                    if (l.used, std::cmp::Reverse(l.minutes))
-                        > (k.used, std::cmp::Reverse(k.minutes)) =>
-                {
-                    *k = l
-                }
-                Some(_) => {}
-                None => out.push(l),
+        let mut vendors: Vec<Vendor> = Vec::new();
+        for l in &self.limits {
+            if !vendors.contains(&l.vendor) {
+                vendors.push(l.vendor);
             }
         }
-        out
+        let fullest = |v: Vendor| {
+            (self.limits.iter())
+                .filter(|l| l.vendor == v)
+                .max_by_key(|l| (l.used, std::cmp::Reverse(l.minutes)))
+                .copied()
+        };
+        vendors.into_iter().filter_map(fullest).collect()
     }
 
     pub fn agent_by_name(&self, name: &str) -> Option<AgentId> {
