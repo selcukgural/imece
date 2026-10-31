@@ -107,7 +107,6 @@ pub struct Text {
     pub trace: &'static str,
     pub back: &'static str,
     pub write_this: &'static str,
-    pub scroll: &'static str,
     pub file: &'static str,
     pub reject: &'static str,
     /// `>` in a change, and what it says where there is no hunk to quote.
@@ -128,6 +127,11 @@ pub struct Text {
     pub chosen: &'static str,
     pub unchosen: &'static str,
     pub apply_part: &'static str,
+    /// The diff's footer `j k  w`, its file list's binary file and the
+    /// files it does not show.
+    pub scroll_wrap: &'static str,
+    pub binary: &'static str,
+    pub more_files: &'static str,
     pub views: [&'static str; 3],
     pub typing_to: &'static str,
     pub typing_command: &'static str,
@@ -422,7 +426,7 @@ pub struct Text {
     pub waiting_yes: &'static str,
     // Overlays
     pub help_title: &'static str,
-    pub help_keys: [(&'static str, &'static str); 52],
+    pub help_keys: [(&'static str, &'static str); 53],
     /// The help's line for a new line in the writing, put after the
     /// writing keys: where the terminal tells shift-enter apart, and
     /// where it does not.
@@ -480,7 +484,6 @@ pub const EN: Text = Text {
     trace: "trace",
     back: "back",
     write_this: "write to this agent",
-    scroll: "scroll",
     file: "file",
     reject: "reject",
     quote: "quote to it",
@@ -495,6 +498,9 @@ pub const EN: Text = Text {
     chosen: "{} of {} hunks chosen; a applies only them, the rest waits",
     unchosen: "no hunk chosen; a applies the whole change",
     apply_part: "apply · choose a hunk",
+    scroll_wrap: "scroll · wrap",
+    binary: "binary",
+    more_files: " … {} more files",
     views: ["salon", "board", "code"],
     typing_to: " › to {}: ",
     typing_command: " › command: ",
@@ -846,6 +852,7 @@ pub const EN: Text = Text {
             "x",
             "in a change: choose the hunk at the top; a applies only the chosen",
         ),
+        ("w", "in a change: wrap long lines · cut them again"),
         ("space", ":pause / resume"),
         ("+  -", ":faster / :slower simulation"),
         ("L  :lang", "Türkçe / English; :lang en|tr"),
@@ -924,7 +931,6 @@ pub const TR: Text = Text {
     trace: "iz",
     back: "geri",
     write_this: "bu agent'a yaz",
-    scroll: "kaydır",
     file: "dosya",
     reject: "reddet",
     quote: "ona alıntıla",
@@ -939,6 +945,9 @@ pub const TR: Text = Text {
     chosen: "{} / {} parça seçili; a yalnız onları uygular, kalanı bekler",
     unchosen: "seçili parça yok; a değişikliğin tamamını uygular",
     apply_part: "uygula · parça seç",
+    scroll_wrap: "kaydır · sar",
+    binary: "ikili",
+    more_files: " … {} dosya daha",
     views: ["salon", "pano", "kod"],
     typing_to: " › {} için: ",
     typing_command: " › komut: ",
@@ -1292,6 +1301,7 @@ pub const TR: Text = Text {
             "x",
             "değişiklikte: üstteki parçayı seç; a yalnız seçilenleri uygular",
         ),
+        ("w", "değişiklikte: uzun satırları sar · yine kes"),
         ("space", ":pause durdur / devam"),
         ("+  -", "simülasyon :faster / :slower"),
         ("L  :lang", "English / Türkçe; :lang en|tr"),
