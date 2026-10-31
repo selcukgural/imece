@@ -219,7 +219,7 @@ pub struct Text {
     pub thread_title: &'static str,
     pub event_title: &'static str,
     /// Keys of the open conversation: `(key, what it does)`.
-    pub thread_hints: [(&'static str, &'static str); 5],
+    pub thread_hints: [(&'static str, &'static str); 6],
     pub copied: &'static str,
     pub copy_failed: &'static str,
     pub side_width: &'static str,
@@ -538,6 +538,7 @@ pub const EN: Text = Text {
     event_title: " EVENT ",
     thread_hints: [
         ("↑↓ j k", "message"),
+        ("[ ]", "turn"),
         ("pgup pgdn", "scroll"),
         ("c", "copy message"),
         ("C", "copy conversation"),
@@ -759,7 +760,10 @@ pub const EN: Text = Text {
             "a  r",
             "approve / apply / allow · reject / refuse (in waiting for you)",
         ),
-        ("[  ]", "in a change: previous / next file"),
+        (
+            "[  ]",
+            "in a change: previous / next file · in a conversation: turn",
+        ),
         ("space", ":pause / resume"),
         ("+  -", ":faster / :slower simulation"),
         ("L  :lang", "Türkçe / English; :lang en|tr"),
@@ -932,6 +936,7 @@ pub const TR: Text = Text {
     event_title: " OLAY ",
     thread_hints: [
         ("↑↓ j k", "mesaj"),
+        ("[ ]", "söz sırası"),
         ("pgup pgdn", "kaydır"),
         ("c", "mesajı kopyala"),
         ("C", "konuşmayı kopyala"),
@@ -1155,7 +1160,10 @@ pub const TR: Text = Text {
             "a  r",
             "onayla / uygula / izin ver · reddet (seni bekleyenlerde)",
         ),
-        ("[  ]", "değişiklikte: önceki / sonraki dosya"),
+        (
+            "[  ]",
+            "değişiklikte: önceki / sonraki dosya · konuşmada: söz sırası",
+        ),
         ("space", ":pause durdur / devam"),
         ("+  -", "simülasyon :faster / :slower"),
         ("L  :lang", "English / Türkçe; :lang en|tr"),

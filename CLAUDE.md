@@ -143,6 +143,7 @@ record in the same PR.
 - 41 `colon-names`: every key that acts has a `:` name (`:salon` `:lang` `:quit` …, demo-only ones left out live); the `:` menu shows values (`Menu::notes`) and `$` on what raises the next bill; `:q` and the other short names run on enter.
 - 42 `export`: `:export [PATH]` writes the open conversation, else the card's screen, as Markdown; days on every time, cleaned, never over an existing file.
 - 43 `pin`: `:pin [NAME]` pins a project to the top of the salon (`▴`, folds last), saved in the store (schema 7); a colour per project is not done.
+- 44 `turns`: `[ ]` in a conversation go turn to turn (the lines one side says before the other answers), `ui::turn_starts`, `app::jump` shared with the diff's file jump; bookmarks are C6b.
 
 `docs/neighbours.md`: voff, what was taken from it and the rules that come
 from what it lacks. Read it before building a part it names.

@@ -1198,13 +1198,7 @@ impl App {
                     .change_of(id)
                     .map(|c| ui::file_starts(&c.patch))
                     .unwrap_or_default();
-                let at = self.diff_scroll;
-                let to = if k.code == KeyCode::Char(']') {
-                    starts.iter().find(|&&s| s > at).copied()
-                } else {
-                    starts.iter().rev().find(|&&s| s < at).copied()
-                };
-                if let Some(to) = to {
+                if let Some(to) = jump(&starts, self.diff_scroll, k.code == KeyCode::Char(']')) {
                     self.diff_scroll = to;
                 }
             }
@@ -1244,6 +1238,13 @@ impl App {
             KeyCode::End | KeyCode::Char('G') => {
                 th.sel = last;
                 th.follow.set(true);
+            }
+            KeyCode::Char('[') | KeyCode::Char(']') => {
+                let starts = ui::turn_starts(&self.world, &th.entries);
+                if let Some(to) = jump(&starts, th.sel, k.code == KeyCode::Char(']')) {
+                    th.sel = to;
+                    th.follow.set(true);
+                }
             }
             KeyCode::Char('c') | KeyCode::Char('y') => {
                 let one = th.entries[th.sel];
@@ -2271,13 +2272,23 @@ fn pasted(text: &str) -> String {
         .collect()
 }
 
-/// `path` with a leading `~` or `~/` replaced by `home`; anything else as
-/// it is, and so is `~` when there is no home.
+/// Where `[` or `]` goes from `at`: the nearest of `starts` (in order)
+/// before it, or after it when `forward`; none past the first or last.
+fn jump(starts: &[usize], at: usize, forward: bool) -> Option<usize> {
+    if forward {
+        starts.iter().find(|&&s| s > at).copied()
+    } else {
+        starts.iter().rev().find(|&&s| s < at).copied()
+    }
+}
+
 /// A run's time in whole milliseconds, as the journal keeps it.
 pub fn millis(d: Duration) -> u64 {
     u64::try_from(d.as_millis()).unwrap_or(u64::MAX)
 }
 
+/// `path` with a leading `~` or `~/` replaced by `home`; anything else as
+/// it is, and so is `~` when there is no home.
 pub fn expand_tilde(path: &str, home: Option<&Path>) -> PathBuf {
     match (path, home) {
         ("~", Some(home)) => home.to_path_buf(),
@@ -3394,6 +3405,72 @@ mod tests {
         // Followed once: a second pass adds nothing.
         app.follow_thread();
         assert_eq!(app.thread.as_ref().unwrap().entries.len(), 3);
+    }
+
+    #[test]
+    fn brackets_go_from_turn_to_turn_in_a_conversation() {
+        // Speakers: you you · worker · you · worker worker.
+        let (mut app, worker) = with_thread();
+        app.world.said(worker, "second");
+        let reply = |app: &mut App, text: &str| {
+            app.world.note(Event::Replied {
+                agent: worker,
+                text: text.into(),
+            })
+        };
+        reply(&mut app, "one");
+        app.world.said(worker, "third");
+        reply(&mut app, "two");
+        reply(&mut app, "three");
+        app.follow_thread();
+        let entries = app.thread.as_ref().unwrap().entries.clone();
+        assert_eq!(entries.len(), 6);
+        assert_eq!(ui::turn_starts(&app.world, &entries), [0, 2, 3, 4]);
+        let pane = app.pane;
+        let press = |app: &mut App, c: char| {
+            app.thread.as_mut().unwrap().follow.set(false);
+            app.on_key(key(KeyCode::Char(c)));
+            let th = app.thread.as_ref().unwrap();
+            assert!(th.follow.get(), "{c}: the drawing scrolls to it");
+            th.sel
+        };
+        app.thread.as_mut().unwrap().sel = 0;
+        assert_eq!(press(&mut app, ']'), 2, "past the person's second line");
+        assert_eq!(press(&mut app, ']'), 3);
+        assert_eq!(press(&mut app, ']'), 4);
+        app.thread.as_mut().unwrap().follow.set(false);
+        app.on_key(key(KeyCode::Char(']')));
+        let th = app.thread.as_ref().unwrap();
+        assert_eq!(th.sel, 4, "no turn after the last one");
+        assert!(!th.follow.get());
+        assert_eq!(
+            press(&mut app, '['),
+            3,
+            "from a turn's start: the one before"
+        );
+        app.thread.as_mut().unwrap().sel = 5;
+        assert_eq!(press(&mut app, '['), 4, "from inside a turn: its start");
+        assert_eq!(press(&mut app, '['), 3);
+        assert_eq!(press(&mut app, '['), 2);
+        assert_eq!(press(&mut app, '['), 0);
+        app.on_key(key(KeyCode::Char('[')));
+        assert_eq!(app.thread.as_ref().unwrap().sel, 0, "none before the first");
+        assert_eq!(app.pane, pane, "the conversation keeps [ ], no panel moves");
+    }
+
+    #[test]
+    fn a_conversation_of_one_speaker_is_one_turn_and_other_lines_have_none() {
+        let (mut app, worker) = with_thread();
+        app.world.said(worker, "second");
+        app.follow_thread();
+        let entries = app.thread.as_ref().unwrap().entries.clone();
+        assert_eq!(ui::turn_starts(&app.world, &entries), [0]);
+        app.world.note(Event::Forgotten { agent: worker });
+        let lone = app.world.journal.len() - 1;
+        assert_eq!(ui::turn_starts(&app.world, &[lone]), [0]);
+        assert_eq!(ui::turn_starts(&app.world, &[lone, lone]), [0]);
+        assert_eq!(ui::turn_starts(&app.world, &[lone, entries[0]]), [0, 1]);
+        assert!(ui::turn_starts(&app.world, &[]).is_empty());
     }
 
     #[test]
