@@ -2701,6 +2701,35 @@ mod tests {
     }
 
     #[test]
+    fn the_demo_pauses_and_changes_speed_by_halves_and_doubles_and_live_does_not() {
+        let mut app = App::new(1, 1, 0, 1, Lang::En);
+        assert_eq!((app.speed, app.paused), (1, false));
+        let mut speeds = vec![];
+        for c in "+=++----".chars() {
+            app.on_key(key(KeyCode::Char(c)));
+            speeds.push(app.speed);
+        }
+        assert_eq!(
+            speeds,
+            [2, 4, 8, 8, 4, 2, 1, 1],
+            "doubled to 8, halved to 1"
+        );
+        app.on_key(key(KeyCode::Char(' ')));
+        assert!(app.paused);
+        app.on_key(key(KeyCode::Char(' ')));
+        assert!(!app.paused);
+        // Live agents run in real time.
+        let w = crate::live::testing::team(1);
+        let live = crate::live::testing::idle_live(2);
+        let mut app = App::with(w, Engine::Live(Box::new(live)), Lang::En);
+        app.speed = 4;
+        for c in "+=- ".chars() {
+            app.on_key(key(KeyCode::Char(c)));
+            assert_eq!((app.speed, app.paused), (4, false), "{c:?}");
+        }
+    }
+
+    #[test]
     fn a_live_app_starts_with_where_you_left_off_and_any_key_closes_it() {
         let mut w = crate::live::testing::team(1);
         w.note(Event::Failed { agent: 1 });
