@@ -1125,9 +1125,10 @@ fn writing(app: &App, rows: usize) -> Vec<Line<'static>> {
         t.newline_plain
     };
     hint.push(Span::styled(
-        match app.menu {
-            Some(_) => t.pick_cancel.to_string(),
-            None => fill(t.send_cancel, &[newline]),
+        match (&app.menu, app.noting) {
+            (Some(_), _) => t.pick_cancel.to_string(),
+            (None, Some(_)) => fill(t.keep_cancel, &[newline]),
+            (None, None) => fill(t.send_cancel, &[newline]),
         },
         dim(),
     ));
@@ -5445,6 +5446,8 @@ mod tests {
         key(&mut app, KeyCode::Char('c'));
         let screen = render(&app, 120, 20);
         assert!(screen.contains("note on x:1 ▸"), "{screen}");
+        assert!(screen.contains("enter keep · "), "{screen}");
+        assert!(!screen.contains("enter send"), "{screen}");
         app.lang = Lang::Tr;
         assert!(render(&app, 120, 20).contains("x:1 için not ▸"));
     }

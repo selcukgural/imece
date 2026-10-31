@@ -142,6 +142,8 @@ pub struct Text {
     /// The footer's hint while writing; `{}` is the key for a new line,
     /// `newline_shift` or `newline_plain`.
     pub send_cancel: &'static str,
+    /// The same while a note on a change's line is written: enter keeps it.
+    pub keep_cancel: &'static str,
     pub newline_shift: &'static str,
     pub newline_plain: &'static str,
     /// Text pasted while not writing: it is left out.
@@ -494,6 +496,7 @@ pub const EN: Text = Text {
     shell_back: "[imece] exit {} · {} · any key: back to the screen\n",
     shell_back_signal: "[imece] stopped by signal {} · {} · any key: back to the screen\n",
     send_cancel: "   enter send · {} new line · esc cancel",
+    keep_cancel: "   enter keep · {} new line · esc cancel",
     newline_shift: "⇧enter",
     newline_plain: "\\ enter",
     paste_not_writing: "a paste goes into the line you write: / or @ first",
@@ -924,6 +927,7 @@ pub const TR: Text = Text {
     shell_back: "[imece] çıkış {} · {} sürdü · herhangi bir tuş: ekrana dön\n",
     shell_back_signal: "[imece] {} sinyali durdurdu · {} sürdü · herhangi bir tuş: ekrana dön\n",
     send_cancel: "   enter gönder · {} yeni satır · esc vazgeç",
+    keep_cancel: "   enter tut · {} yeni satır · esc vazgeç",
     newline_shift: "⇧enter",
     newline_plain: "\\ enter",
     paste_not_writing: "yapıştırılan, yazdığın satıra girer: önce / ya da @",
@@ -1347,6 +1351,7 @@ mod tests {
             (EN.code_title, TR.code_title),
             (EN.typing_to, TR.typing_to),
             (EN.send_cancel, TR.send_cancel),
+            (EN.keep_cancel, TR.keep_cancel),
             (EN.cannot_start, TR.cannot_start),
             (EN.ev_stopped, TR.ev_stopped),
             (EN.ev_interrupted, TR.ev_interrupted),

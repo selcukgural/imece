@@ -40,6 +40,7 @@ against its change's patch by hash: a newer Δ from the worker has other
 lines, so older notes are not shown or sent with it; sending drops the
 worker's notes. Not kept between runs.
 
-Not done: the footer still says "enter send" while a note is written
-(it keeps it); notes on several changes are not listed anywhere but on
+While a note is written the footer says "enter keep", not "send".
+
+Not done: notes on several changes are not listed anywhere but on
 their diff.
