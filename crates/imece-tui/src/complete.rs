@@ -10,10 +10,39 @@ use std::path::Path;
 
 use crate::model::{Agent, CardId, ProjectId, World};
 
-/// The commands imece itself takes after `:`.
-pub const COMMANDS: [&str; 7] = [
-    "budget", "close", "forget", "lead", "open", "rename", "theme",
+/// The commands imece itself takes after `:`: its own, and a name for
+/// every key that acts (not the ones that move).
+pub const COMMANDS: [&str; 25] = [
+    "board", "budget", "close", "code", "defer", "faster", "fold", "forget", "help", "lang",
+    "lead", "needs", "next", "open", "pause", "pending", "quit", "rename", "salon", "slower",
+    "talk", "theme", "trace", "unfold", "waiting",
 ];
+
+/// The commands only the demo takes: live agents run in real time.
+pub const DEMO_ONLY: [&str; 3] = ["faster", "pause", "slower"];
+
+/// The short names a command also answers to. Typed whole, one is a
+/// command already: no menu, so `enter` runs it.
+pub const SHORT: [(&str, &str); 6] = [
+    ("b", "budget"),
+    ("c", "close"),
+    ("f", "forget"),
+    ("o", "open"),
+    ("q", "quit"),
+    ("t", "theme"),
+];
+
+/// The command a word typed after `:` names: itself, or the one it is
+/// short for.
+pub fn long(word: &str) -> &str {
+    SHORT
+        .iter()
+        .find(|(short, _)| *short == word)
+        .map_or(word, |(_, long)| long)
+}
+
+/// What `:lang` takes.
+pub const LANGS: [&str; 2] = ["en", "tr"];
 
 /// What `:lead` takes.
 pub const LEADS: [&str; 4] = ["claude", "codex", "gemini", "ask"];
@@ -31,6 +60,9 @@ pub struct Menu {
     /// Whether the highlighted item is in the input already (then `tab`
     /// steps on instead of inserting).
     pub inserted: bool,
+    /// What is drawn after each item and never inserted (a command's
+    /// value now, `$` when it raises the bill); empty for none.
+    pub notes: Vec<String>,
 }
 
 impl Menu {
@@ -44,6 +76,7 @@ impl Menu {
             chosen: 0,
             tail,
             inserted: false,
+            notes: Vec::new(),
         })
     }
 
@@ -160,7 +193,12 @@ pub fn suggest(input: &str, w: &World, project: ProjectId, home: Option<&Path>) 
     }
     if let Some(rest) = input.strip_prefix(':') {
         return match rest.split_once(' ') {
+            None if long(rest) != rest => None,
             None => menu(1, rest, matching(rest, COMMANDS.into_iter()), " "),
+            Some(("lang", arg)) => {
+                let start = input.len() - arg.len();
+                menu(start, arg, matching(arg, LANGS.into_iter()), "")
+            }
             Some(("lead", arg)) => {
                 let start = input.len() - arg.len();
                 menu(start, arg, matching(arg, LEADS.into_iter()), "")
@@ -176,7 +214,7 @@ pub fn suggest(input: &str, w: &World, project: ProjectId, home: Option<&Path>) 
                 menu(start, arg, matching(arg, names), "")
             }
             // Agents of every open project, with or without the `@`.
-            Some(("forget", arg)) => {
+            Some(("forget" | "talk" | "trace", arg)) => {
                 let word = arg.strip_prefix('@').unwrap_or(arg);
                 let start = input.len() - word.len();
                 let names = w
@@ -362,12 +400,52 @@ mod tests {
     }
 
     #[test]
+    fn a_short_name_is_its_command_and_offers_no_menu() {
+        let w = world();
+        for (short, whole) in SHORT {
+            assert_eq!(long(short), whole);
+            assert_eq!(suggest(&format!(":{short}"), &w, 0, None), None, "{short}");
+        }
+        assert_eq!(long("quit"), "quit");
+        assert_eq!(long("x"), "x");
+        assert_eq!(names(&suggest(":qu", &w, 0, None)), ["quit"]);
+        assert_eq!(names(&suggest(":fo", &w, 0, None)), ["fold", "forget"]);
+        // Every short name stands for a command, every demo one is one.
+        assert!(SHORT.iter().all(|(_, c)| COMMANDS.contains(c)));
+        assert!(DEMO_ONLY.iter().all(|c| COMMANDS.contains(c)));
+        let m = suggest(":", &w, 0, None).unwrap();
+        assert!(m.notes.is_empty(), "notes are the screen's to add");
+    }
+
+    #[test]
+    fn lang_offers_the_languages_and_trace_and_talk_the_agents() {
+        let w = world();
+        let m = suggest(":lang ", &w, 0, None).unwrap();
+        assert_eq!(
+            (m.items, m.start, m.tail),
+            (LANGS.map(String::from).to_vec(), 6, "")
+        );
+        assert_eq!(names(&suggest(":lang t", &w, 0, None)), ["tr"]);
+        assert_eq!(suggest(":lang tr", &w, 0, None), None);
+        let name = &w.agents[1].name;
+        let head = &name[..3];
+        for cmd in ["talk", "trace", "forget"] {
+            let m = suggest(&format!(":{cmd} @{head}"), &w, 0, None).unwrap();
+            assert!(m.items.contains(name), "{cmd}");
+            assert_eq!(m.start, cmd.len() + 3, "{cmd}: after the @");
+            let m = suggest(&format!(":{cmd} {head}"), &w, 0, None).unwrap();
+            assert_eq!(m.start, cmd.len() + 2, "{cmd}");
+        }
+    }
+
+    #[test]
     fn a_colon_offers_imeces_commands_and_lead_its_vendors() {
         let w = world();
         let m = suggest(":", &w, 0, None).unwrap();
         assert_eq!(m.items, COMMANDS);
         assert_eq!((m.start, m.tail), (1, " "));
-        assert_eq!(names(&suggest(":B", &w, 0, None)), ["budget"]);
+        assert_eq!(names(&suggest(":B", &w, 0, None)), ["board", "budget"]);
+        assert_eq!(names(&suggest(":Bu", &w, 0, None)), ["budget"]);
         assert_eq!(suggest(":budget", &w, 0, None), None);
         assert_eq!(suggest(":budget 8", &w, 0, None), None);
         assert_eq!(suggest(":x", &w, 0, None), None);

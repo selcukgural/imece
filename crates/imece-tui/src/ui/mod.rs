@@ -943,28 +943,35 @@ fn header(f: &mut Frame, area: Rect, app: &App) {
 /// out, in a window that always holds it when they do not all fit.
 fn completions(f: &mut Frame, area: Rect, m: &crate::complete::Menu) {
     let width = area.width as usize;
-    let cell = |s: &str| s.chars().count() + 2;
+    // An item with its note (a command's value, `$`), a space either side.
+    let cells: Vec<String> = (m.items.iter().enumerate())
+        .map(|(i, item)| match m.notes.get(i).filter(|n| !n.is_empty()) {
+            Some(note) => format!(" {} {} ", clean(item), clean(note)),
+            None => format!(" {} ", clean(item)),
+        })
+        .collect();
+    let cell = |i: usize| cells[i].chars().count();
     // Start the window at the highlighted item and pull it back while
     // earlier items still fit.
     let mut first = m.chosen;
-    let mut used = cell(&m.items[m.chosen]);
-    while first > 0 && used + cell(&m.items[first - 1]) <= width {
+    let mut used = cell(m.chosen);
+    while first > 0 && used + cell(first - 1) <= width {
         first -= 1;
-        used += cell(&m.items[first]);
+        used += cell(first);
     }
     let mut spans = Vec::new();
     let mut taken = 0;
-    for (i, item) in m.items.iter().enumerate().skip(first) {
-        if taken + cell(item) > width {
+    for (i, text) in cells.iter().enumerate().skip(first) {
+        if taken + cell(i) > width {
             break;
         }
-        taken += cell(item);
+        taken += cell(i);
         let style = if i == m.chosen {
             Style::new().add_modifier(Modifier::REVERSED)
         } else {
             dim()
         };
-        spans.push(Span::styled(format!(" {} ", clean(item)), style));
+        spans.push(Span::styled(text.clone(), style));
     }
     f.render_widget(Paragraph::new(Line::from(spans)), area);
 }
@@ -2972,18 +2979,69 @@ mod tests {
     }
 
     #[test]
+    fn the_completion_row_draws_each_note_after_its_item() {
+        let mut m = menu_of(&["budget", "open", "help"], 1);
+        m.notes = vec!["(spent $1.00 of $5.00)".into(), "$".into(), String::new()];
+        let (row, out) = completion_row(&m, 60);
+        assert_eq!(
+            row.trim_end(),
+            " budget (spent $1.00 of $5.00)  open $  help",
+            "an empty note adds nothing"
+        );
+        let open = row.find(" open").unwrap();
+        assert!(
+            out[open..open + 8].iter().all(|&o| o),
+            "the note stands out too"
+        );
+        assert!(!out[open + 8], "{row}");
+        // The window counts the notes: the highlighted item stays in view.
+        let (row, _) = completion_row(&m, 14);
+        assert!(row.starts_with(" open $  help"), "{row}");
+    }
+
+    #[test]
+    fn live_the_colon_menu_leaves_out_the_demos_clock_and_its_names_say_so() {
+        let w = crate::live::testing::team(1);
+        let live = crate::live::testing::idle_live(2);
+        let mut app = App::with(w, crate::app::Engine::Live(Box::new(live)), Lang::En);
+        key(&mut app, KeyCode::Char(':'));
+        let m = app.menu.clone().unwrap();
+        let want: Vec<&str> = (crate::complete::COMMANDS.into_iter())
+            .filter(|c| !crate::complete::DEMO_ONLY.contains(c))
+            .collect();
+        assert_eq!(m.items, want);
+        assert_eq!(m.notes.len(), m.items.len());
+        key(&mut app, KeyCode::Char('p'));
+        assert_eq!(app.menu.as_ref().unwrap().items, ["pending"], "not pause");
+        key(&mut app, KeyCode::Backspace);
+        for c in "fa".chars() {
+            key(&mut app, KeyCode::Char(c));
+        }
+        assert_eq!(app.menu, None, "nothing left to offer");
+        for c in "ster".chars() {
+            key(&mut app, KeyCode::Char(c));
+        }
+        key(&mut app, KeyCode::Enter);
+        assert_eq!(app.speed, 1);
+        let s = render(&app, 140, 40);
+        assert!(s.contains(":faster is for the demo"), "{s}");
+        for c in ":pause".chars() {
+            key(&mut app, KeyCode::Char(c));
+        }
+        key(&mut app, KeyCode::Enter);
+        assert!(!app.paused);
+    }
+
+    #[test]
     fn a_colon_offers_the_commands_and_lead_its_vendors_to_the_end() {
         let mut app = app_after(1, 2, 0, Lang::En);
         key(&mut app, KeyCode::Char(':'));
-        assert_eq!(
-            app.menu.as_ref().unwrap().items,
-            [
-                "budget", "close", "forget", "lead", "open", "rename", "theme"
-            ]
-        );
+        // The demo's own commands too.
+        assert_eq!(app.menu.as_ref().unwrap().items, crate::complete::COMMANDS);
         let row = menu_row(&app, 140);
-        assert!(row.contains("budget") && row.contains("lead"), "{row}");
+        assert!(row.contains("budget") && row.contains("board"), "{row}");
         key(&mut app, KeyCode::Char('l'));
+        key(&mut app, KeyCode::Char('e'));
         key(&mut app, KeyCode::Tab);
         assert_eq!(app.input, ":lead ");
         key(&mut app, KeyCode::Char('c'));
@@ -3407,6 +3465,7 @@ mod tests {
             chosen,
             tail: " ",
             inserted: false,
+            notes: Vec::new(),
         }
     }
 
@@ -3816,9 +3875,9 @@ mod tests {
             let t = lang.text();
             for shift_enter in [true, false] {
                 let keys = overlay::help_keys(lang, shift_enter);
-                assert_eq!(keys[12].0, "^w ^u ^k ^y", "{lang:?}");
+                assert_eq!(keys[14].0, "^w ^u ^k ^y", "{lang:?}");
                 let want = t.help_newline[usize::from(!shift_enter)];
-                assert_eq!(keys[13], want, "{lang:?} {shift_enter}");
+                assert_eq!(keys[15], want, "{lang:?} {shift_enter}");
                 assert_eq!(keys.len(), t.help_keys.len() + 1);
             }
         }
@@ -3919,7 +3978,8 @@ mod tests {
         assert_eq!(got, [&("gg  G", "first / last line")], "every word");
         assert!(overlay::found(&keys, "first zzz", text).is_empty());
         let got = overlay::found(&keys, "zM", text);
-        assert_eq!(got, [&("za  zM  zR", "fold: toggle · all · none")], "keys");
+        let fold = ("za  zM  zR", "fold: toggle · all (:fold) · none (:unfold)");
+        assert_eq!(got, [&fold], "keys");
         // Turkish letters typed or not.
         let tr = overlay::help_keys(Lang::Tr, false);
         for filter in ["butceyi artir", "bütçeyi artır", "BÜTÇEYİ"] {

@@ -78,6 +78,16 @@ your shell's title comes back when imece ends.
 - Writing completes as a shell does: after `@` the agents' names (the
   project at hand first), after `:` imece's commands and, after `:lead`,
   the vendors, after `/` (or `@name /`) that agent's own command line.
+  The `:` menu shows what each command stands at now (`theme (dark)`,
+  `budget (spent $3.10 of $20.00)`, the project or agent a bare command
+  acts on), and `$` marks the ones that raise the next bill (`:open`, a
+  new leader; `:forget`, a new session that pays the briefing again).
+- Every key that acts also has a `:` name, so it can be typed from
+  anywhere: `:salon` `:board` `:code`, `:lang`, `:theme` (alone: the next
+  one), `:help`, `:quit` (`:q`, asks as `q` does), `:pending`, `:next`
+  `:defer`, `:waiting`, `:needs`, `:fold` `:unfold`, `:trace` `:talk`
+  (`@NAME` after them, or the agent at hand), and in the demo `:pause`
+  `:faster` `:slower`.
   The matches show above the footer as you type; `tab` puts the first in
   and then steps on, `⇧tab` back, `↑` `↓` and ctrl-n / ctrl-p step too,
   the text following; `enter` takes the highlighted one when it is not in
@@ -248,6 +258,7 @@ not yet seen.
 | `@name text` | write to one agent |
 | `/cmd`, `@name /cmd` | the agent's own command line (`/clear`, `/compact`, `/cost` …) |
 | `:budget USD` | raise or lower the budget while agents run (`:b 80`) |
+| `:` `tab` | imece's commands with their values; `$` raises the next bill; every key below that acts has a `:` name too |
 | `!cmd` | run `cmd` in your own shell; the screen steps aside until a key |
 | `tab` `⇧tab` `↑` `↓` | while writing: complete an agent's name (`@`), a command (`:`, `/`) |
 | `^a` `^e` `⌥b` `⌥f` `^w` `^u` `^k` `^y` | while writing: readline's keys, to the start / end, a word back / on, cut a word / before / after the cursor, put the cut back |
