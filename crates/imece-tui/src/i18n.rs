@@ -186,6 +186,12 @@ pub struct Text {
     pub nothing_to_export: &'static str,
     /// In the `:` menu after `:export`: a conversation is open.
     pub value_thread: &'static str,
+    /// `:commit`: the call is under way (model, project), refused (why);
+    /// the journal: suggested (model, cost), none came (cost, why).
+    pub suggesting: &'static str,
+    pub suggest_refused: &'static str,
+    pub ev_suggested: &'static str,
+    pub ev_suggest_failed: &'static str,
     /// `:pin`: a project pinned, unpinned.
     pub pinned: &'static str,
     pub unpinned: &'static str,
@@ -430,7 +436,7 @@ pub struct Text {
     pub waiting_yes: &'static str,
     // Overlays
     pub help_title: &'static str,
-    pub help_keys: [(&'static str, &'static str); 53],
+    pub help_keys: [(&'static str, &'static str); 54],
     /// The help's line for a new line in the writing, put after the
     /// writing keys: where the terminal tells shift-enter apart, and
     /// where it does not.
@@ -550,6 +556,10 @@ pub const EN: Text = Text {
     export_failed: "could not write {}: {}",
     nothing_to_export: "nothing to export: open a conversation (v) or a card (#N) first",
     value_thread: "the conversation",
+    suggesting: "asking {} for a commit message for what is staged in {}",
+    suggest_refused: "no commit message: {}",
+    ev_suggested: "{} suggested a commit message for what is staged, for {}",
+    ev_suggest_failed: "no commit message came ({}): {}",
     demo_only: ":{} is for the demo: live agents run in real time",
     value_on: "on",
     value_off: "off",
@@ -804,6 +814,10 @@ pub const EN: Text = Text {
         ),
         (":export PATH", "the open conversation or card, as Markdown"),
         (
+            ":commit",
+            "a cheap model suggests a commit message for what is staged ($)",
+        ),
+        (
             ":pin NAME",
             "pin a project to the top of the salon; again: unpin",
         ),
@@ -1000,6 +1014,10 @@ pub const TR: Text = Text {
     export_failed: "{} yazılamadı: {}",
     nothing_to_export: "dışa aktarılacak bir şey yok: önce bir konuşma (v) ya da iş (#N) aç",
     value_thread: "konuşma",
+    suggesting: "{} modeline {} içinde stage'dekiler için commit mesajı soruluyor",
+    suggest_refused: "commit mesajı yok: {}",
+    ev_suggested: "{} stage'dekiler için bir commit mesajı önerdi, {} tuttu",
+    ev_suggest_failed: "commit mesajı gelmedi ({}): {}",
     demo_only: ":{} demo için: canlı agent'lar gerçek zamanda çalışır",
     value_on: "açık",
     value_off: "kapalı",
@@ -1255,6 +1273,10 @@ pub const TR: Text = Text {
             "agent oturumunu unutur; yenisine kaldığı yer anlatılır",
         ),
         (":export YOL", "açık konuşma ya da iş, Markdown olarak"),
+        (
+            ":commit",
+            "ucuz bir model stage'dekiler için commit mesajı önerir ($)",
+        ),
         (":pin AD", "projeyi salonun en üstüne sabitle; yine: bırak"),
         ("!kmt", "kmt kendi kabuğunda; ekran kenara çekilir"),
         ("tab ⇧tab ↑ ↓", "yazarken: ad ve komut tamamla"),
@@ -1428,6 +1450,10 @@ mod tests {
             (EN.forgot, TR.forgot),
             (EN.forget_refused, TR.forget_refused),
             (EN.ev_budget, TR.ev_budget),
+            (EN.suggesting, TR.suggesting),
+            (EN.suggest_refused, TR.suggest_refused),
+            (EN.ev_suggested, TR.ev_suggested),
+            (EN.ev_suggest_failed, TR.ev_suggest_failed),
             (EN.ev_pot_low, TR.ev_pot_low),
             (EN.pot_lasts, TR.pot_lasts),
             (EN.ev_shell, TR.ev_shell),

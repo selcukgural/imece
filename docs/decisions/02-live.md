@@ -15,6 +15,8 @@ the pot has room is ended and started again with the same prompts and
 the new remainder, once per session until a turn finishes (`renewed`).
 Sessions start off the UI
 thread; events carry a session generation so late ones are dropped.
+imece's own paid calls (a suggested commit message, record 56) are paid
+from the same pot (`World::paid`, in `World::spent`).
 
 The rate (2026-10-30, after the first run on Kule burnt ~$15/h with three
 Claude sessions): the header's `$/h` is what the last ten minutes cost

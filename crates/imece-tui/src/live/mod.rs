@@ -52,13 +52,15 @@ mod projects;
 mod prompts;
 mod remember;
 mod sessions;
+mod suggest;
 #[cfg(test)]
 pub(crate) mod testing;
 mod tools;
 
 pub(crate) use self::prompts::MAX_NOTES_KIB;
 pub use self::sessions::apply;
-use self::{changes::*, hiring::*, projects::*, prompts::*, tools::*};
+pub(crate) use self::suggest::{SUGGEST_CAP, SUGGEST_DAY_CALLS, SUGGEST_DAY_COST};
+use self::{changes::*, hiring::*, projects::*, prompts::*, suggest::*, tools::*};
 
 pub struct Options {
     pub repo: PathBuf,
@@ -292,6 +294,9 @@ enum GitJob {
         repo: PathBuf,
         path: PathBuf,
     },
+    /// Read what is staged in project `project`'s checkout `repo`, for a
+    /// commit message (see [`worktree::staged_change`]).
+    Staged { project: ProjectId, repo: PathBuf },
 }
 
 /// What a git job came to, back on the screen's loop.
@@ -320,6 +325,10 @@ enum GitDone {
     Stood {
         agent: AgentId,
         stand: io::Result<worktree::Stand>,
+    },
+    Staged {
+        project: ProjectId,
+        staged: io::Result<Option<worktree::Staged>>,
     },
 }
 
@@ -490,6 +499,17 @@ pub struct Live {
     /// What each agent's session waits on the person's yes for, in the
     /// order its approval items are in the inbox.
     pending: Vec<Vec<Pending>>,
+    /// The project a commit message is being suggested for: one at a
+    /// time, from the person's ask until it answered or was refused.
+    suggesting: Option<ProjectId>,
+    /// The last suggestion of each project, with the staged tree it was
+    /// for: the same tree asked again gets it again without a call.
+    suggestions: HashMap<ProjectId, (String, String)>,
+    /// The day the ceilings count (see [`suggest::SUGGEST_DAY_CALLS`]),
+    /// with its suggestions and their cost as the store has them.
+    paid_day: (u64, u32, u64),
+    said_tx: Sender<Said>,
+    said_rx: Receiver<Said>,
 }
 
 /// The coding agents among `known` (see [`KNOWN`]) on PATH, run from the
@@ -553,6 +573,8 @@ pub fn world(o: Options, present: &[(Vendor, bool)]) -> Result<(World, Live), St
                 research_queue: Default::default(),
                 plans: Vec::new(),
                 changes: Vec::new(),
+                paid: 0,
+                suggested: None,
             },
             None,
         ),
@@ -561,6 +583,10 @@ pub fn world(o: Options, present: &[(Vendor, bool)]) -> Result<(World, Live), St
         w.budget = b;
     }
     w.tick = now.saturating_sub(w.started_at) / SECONDS_PER_TICK;
+    // imece's own calls are in the pot as the agents' turns are.
+    w.paid = store
+        .paid_total()
+        .map_err(|e| store::unreadable(&file, e))?;
     w.run_spent = w.spent();
     let mut live = Live::bare(vendors, o.lead);
     live.state = o.state;
@@ -628,6 +654,7 @@ impl Live {
         let (git, jobs) = mpsc::channel();
         let (done, git_back) = mpsc::channel();
         let (ran_tx, ran_back) = mpsc::channel();
+        let (said_tx, said_rx) = mpsc::channel();
         thread::spawn(move || git_thread(jobs, done));
         Live {
             state: std::env::temp_dir(),
@@ -690,6 +717,12 @@ impl Live {
             run_timeout: DEFAULT_RUN_TIMEOUT,
             confine: Confine::default(),
             pending: Vec::new(),
+            suggesting: None,
+            suggestions: HashMap::new(),
+            // No day yet: the first ask reads the day's count.
+            paid_day: (u64::MAX, 0, 0),
+            said_tx,
+            said_rx,
         }
     }
 
@@ -776,6 +809,7 @@ impl Live {
             }
         }
         self.take_git(w);
+        self.take_said(w);
         self.stand_busy(w, Instant::now());
         while let Ok((id, generation, e)) = self.rx.try_recv() {
             if generation != self.generation[id] {

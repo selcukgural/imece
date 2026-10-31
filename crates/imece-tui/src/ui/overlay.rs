@@ -130,7 +130,7 @@ pub(crate) fn fold(s: &str) -> String {
 
 /// How many of `help_keys` come before the help's new-line line: the
 /// writing keys end there.
-const WRITING_KEYS: usize = 17;
+const WRITING_KEYS: usize = 18;
 
 /// The keys the help lists, in its order: the new-line line, the one
 /// this terminal has (`shift_enter`), after the writing keys.

@@ -445,6 +445,7 @@ impl App {
             Engine::Sim(s) => s.step(&mut self.world),
             Engine::Live(l) => l.step(&mut self.world),
         }
+        self.show_suggestion();
         self.world.watch_spending();
         self.watch_turns();
         self.keep_awake();
@@ -1364,6 +1365,48 @@ impl App {
         }
     }
 
+    /// `:commit`: a cheap model is asked for a commit message for what is
+    /// staged in the project at hand's checkout; it comes to the command
+    /// line when it answers (see [`App::show_suggestion`]).
+    fn suggest_commit(&mut self) {
+        let t = self.lang.text();
+        let p = self.current_project();
+        let asked = match &mut self.engine {
+            Engine::Live(l) => l.suggest(&self.world, p),
+            Engine::Sim(s) => s.suggest(&self.world, p),
+        };
+        match asked {
+            Ok(model) => {
+                let name = self.world.projects[p].name.clone();
+                self.flash(fill(t.suggesting, &[&model, &name]));
+            }
+            Err(why) => self.flash(fill(t.suggest_refused, &[&why])),
+        }
+    }
+
+    /// A suggested commit message, once the command line is free: it
+    /// opens as a `!git commit` of the message to edit and run, in the
+    /// project's checkout (`-C` when that is not the one at hand). The
+    /// demo's commits nothing (`--dry-run`): its message was made up.
+    fn show_suggestion(&mut self) {
+        if self.typing {
+            return;
+        }
+        let Some(s) = self.world.suggested.take() else {
+            return;
+        };
+        let dir = match &self.engine {
+            Engine::Live(l) if s.project != self.current_project() => {
+                Some(l.repo_of(s.project).to_path_buf())
+            }
+            _ => None,
+        };
+        self.input = commit_line(&s.text, dir.as_deref(), !self.live());
+        self.after = 0;
+        self.typing = true;
+        self.menu = None;
+    }
+
     /// The line under a `!` command's output, before the screen comes
     /// back.
     pub fn shell_back(&self, ran: Ran) -> String {
@@ -1690,7 +1733,7 @@ impl App {
             "export" => self.card.map(|c| format!("#{}", c + 1)),
             _ => None,
         };
-        let bill = matches!(name, "forget" | "open");
+        let bill = matches!(name, "forget" | "open" | "commit");
         match (value, bill) {
             (Some(v), true) => format!("({v}) $"),
             (Some(v), false) => format!("({v})"),
@@ -1859,6 +1902,7 @@ impl App {
             "rename" => self.rename_project(arg),
             "forget" => self.forget_agent(arg),
             "export" => self.export(arg),
+            "commit" => self.suggest_commit(),
             "pin" => self.pin(arg),
             "mark" => self.toggle_mark(),
             "salon" => self.show(View::Salon),
@@ -2640,6 +2684,27 @@ impl App {
     }
 }
 
+/// `text` for a POSIX shell (and fish): in single quotes, each of its own
+/// as `'\''`, so nothing in it is read by the shell.
+pub fn sh_quote(text: &str) -> String {
+    format!("'{}'", text.replace('\'', "'\\''"))
+}
+
+/// The command line that commits what is staged with `message`: in `dir`
+/// when given, only tried (`--dry-run`) when `dry`.
+pub fn commit_line(message: &str, dir: Option<&Path>, dry: bool) -> String {
+    let mut line = "!git".to_string();
+    if let Some(d) = dir {
+        line.push_str(&format!(" -C {}", sh_quote(&d.to_string_lossy())));
+    }
+    line.push_str(" commit");
+    if dry {
+        line.push_str(" --dry-run");
+    }
+    line.push_str(&format!(" -m {}", sh_quote(message)));
+    line
+}
+
 /// Pasted text as the line takes it: line ends as `\n` (a terminal
 /// pastes them as `\r`, Windows text as `\r\n`), tabs kept, every other
 /// control character (an escape sequence's ESC among them) left out.
@@ -3252,6 +3317,115 @@ mod tests {
         assert_eq!(app.current_project(), 1, "the salon's selection");
         app.pane = Pane::Inbox;
         assert_eq!(app.current_project(), 0, "the inbox's selection");
+    }
+
+    #[test]
+    fn a_commit_line_quotes_the_message_for_the_shell() {
+        assert_eq!(sh_quote("it's"), r"'it'\''s'");
+        assert_eq!(sh_quote("$(rm -rf ~) `x`"), "'$(rm -rf ~) `x`'");
+        assert_eq!(
+            commit_line("Fix it\n\nWhy", None, false),
+            "!git commit -m 'Fix it\n\nWhy'"
+        );
+        assert_eq!(
+            commit_line("A", Some(Path::new("/w/it's")), true),
+            r"!git -C '/w/it'\''s' commit --dry-run -m 'A'"
+        );
+    }
+
+    #[test]
+    fn a_suggestion_opens_the_command_line_once_it_is_free() {
+        let mut app = App::new(1, 1, 0, 1, Lang::En);
+        let suggestion = Suggestion {
+            project: 0,
+            text: "Fix it".into(),
+        };
+        app.world.suggested = Some(suggestion.clone());
+        app.typing = true;
+        app.input = "@lead hi".into();
+        app.show_suggestion();
+        assert_eq!(app.input, "@lead hi", "not over what the person writes");
+        assert_eq!(app.world.suggested, Some(suggestion));
+        app.typing = false;
+        app.input.clear();
+        app.after = 3;
+        app.show_suggestion();
+        // The demo's message is made up: it only tries.
+        assert_eq!(app.input, "!git commit --dry-run -m 'Fix it'");
+        assert!(app.typing);
+        assert_eq!(app.after, 0, "the cursor at the end");
+        assert!(app.menu.is_none());
+        assert_eq!(app.world.suggested, None);
+        // Nothing waits: nothing opens.
+        app.typing = false;
+        app.input.clear();
+        app.show_suggestion();
+        assert!(!app.typing);
+        assert!(app.input.is_empty());
+    }
+
+    #[test]
+    fn a_live_suggestion_commits_in_its_own_projects_checkout() {
+        let one = crate::live::testing::checkout("sugg-one");
+        let two = crate::live::testing::checkout("sugg-two");
+        let w = crate::live::testing::team(0);
+        let live = crate::live::testing::idle_live_in(&one, 1);
+        let mut app = App::with(w, Engine::Live(Box::new(live)), Lang::En);
+        app.command(&format!("open {} two", two.display()));
+        app.selected = Sel::Agent(0);
+        app.typing = false;
+        app.world.suggested = Some(Suggestion {
+            project: 0,
+            text: "Here".into(),
+        });
+        app.show_suggestion();
+        assert_eq!(app.input, "!git commit -m 'Here'");
+        app.typing = false;
+        app.world.suggested = Some(Suggestion {
+            project: 1,
+            text: "There".into(),
+        });
+        app.show_suggestion();
+        let top = imece_agent::worktree::top(&two).unwrap();
+        assert_eq!(
+            app.input,
+            format!(
+                "!git -C {} commit -m 'There'",
+                sh_quote(&top.to_string_lossy())
+            )
+        );
+        let _ = std::fs::remove_dir_all(&one);
+        let _ = std::fs::remove_dir_all(&two);
+    }
+
+    #[test]
+    fn colon_commit_asks_and_says_so_or_why_not() {
+        let mut app = App::new(1, 1, 0, 1, Lang::En);
+        let flash = |app: &App| app.flash.as_ref().map(|(m, _)| m.clone());
+        let name = app.world.projects[app.current_project()].name.clone();
+        app.command("commit");
+        assert_eq!(
+            flash(&app),
+            Some(format!(
+                "asking haiku for a commit message for what is staged in {name}"
+            ))
+        );
+        app.command("commit");
+        assert_eq!(
+            flash(&app),
+            Some("no commit message: a suggestion is under way".into())
+        );
+        assert_eq!(app.command_note("commit"), "$");
+        // Live without Claude Code: refused, said why.
+        let w = crate::live::testing::team(0);
+        let live = crate::live::testing::idle_live(1);
+        let mut app = App::with(w, Engine::Live(Box::new(live)), Lang::En);
+        app.world.budget = 0;
+        app.command("commit");
+        assert_eq!(
+            flash(&app),
+            Some("no commit message: the pot has less than $0.05 left".into())
+        );
     }
 
     #[test]

@@ -6,11 +6,11 @@
 //! shared by all projects, and symbol leases, show what is still to come.
 //! A seed replays the same scenario.
 
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 use std::path::Path;
 
 use crate::i18n::Lang;
-use crate::live::Refusal;
+use crate::live::{Refusal, SUGGEST_CAP, SUGGEST_DAY_CALLS, SUGGEST_DAY_COST};
 use crate::model::*;
 use crate::rng::Rng;
 
@@ -555,6 +555,26 @@ pub struct Sim {
     notes_cut: bool,
     /// A Gemini session listed no command line this run (said once).
     unlisted: bool,
+    /// `:commit` as the demo plays it, boxed: rarely used, and the
+    /// engine stays small.
+    commits: Box<Commits>,
+}
+
+/// What the demo keeps for `:commit`.
+#[derive(Default)]
+struct Commits {
+    /// The titles of the changes applied to each project's checkout, as
+    /// if staged there; the newest last.
+    staged: HashMap<ProjectId, Vec<String>>,
+    /// The commit message being suggested: for which project, and the
+    /// tick it answers at.
+    suggesting: Option<(ProjectId, u64)>,
+    /// The last suggestion of each project and what was staged for it:
+    /// asked again for the same, it comes again without a call.
+    suggestions: HashMap<ProjectId, (Vec<String>, String)>,
+    /// The suggestions of this run and what they cost, for the day's
+    /// ceilings (the demo's day is its run).
+    paid_calls: (u32, u64),
 }
 
 pub fn world(
@@ -575,6 +595,7 @@ pub fn world(
         applying: Vec::new(),
         notes_cut: false,
         unlisted: false,
+        commits: Box::default(),
     };
     let mut w = World {
         marks: Default::default(),
@@ -592,6 +613,8 @@ pub fn world(
         max_researchers,
         research_queue: VecDeque::new(),
         changes: Vec::new(),
+        paid: 0,
+        suggested: None,
         plans: Vec::new(),
     };
     for (p, &(name, repo, _)) in PROJECTS.iter().take(projects).enumerate() {
@@ -897,6 +920,12 @@ impl Sim {
         }
         let mark = sha(&mut self.rng);
         w.change_applied(id, mark);
+        let p = w.agents[id].project;
+        self.commits
+            .staged
+            .entry(p)
+            .or_default()
+            .push(change.title.clone());
         let stand = &mut w.agents[id].stand;
         if hunks.is_empty() {
             // The worktree is marked at the change: nothing written since.
@@ -926,6 +955,85 @@ impl Sim {
         }
     }
 
+    /// `:commit` in the demo, as live does it: one at a time, refused
+    /// when the pot or the run (the demo's day) has no room, reserved at
+    /// its cap; two ticks later a made-up message for what was applied to
+    /// project `p` comes, or the journal says nothing is staged. The
+    /// model it asks.
+    pub fn suggest(&mut self, w: &World, p: ProjectId) -> Result<String, String> {
+        if self.commits.suggesting.is_some() {
+            return Err("a suggestion is under way".into());
+        }
+        if w.budget.saturating_sub(w.spent()) < SUGGEST_CAP {
+            return Err(format!(
+                "the pot has less than {} left",
+                dollars(SUGGEST_CAP)
+            ));
+        }
+        let (calls, cost) = self.commits.paid_calls;
+        if calls >= SUGGEST_DAY_CALLS {
+            return Err(format!("today's {SUGGEST_DAY_CALLS} suggestions were made"));
+        }
+        if cost + SUGGEST_CAP > SUGGEST_DAY_COST {
+            return Err(format!(
+                "today's {} for suggestions is spent",
+                dollars(SUGGEST_DAY_COST)
+            ));
+        }
+        self.commits.suggesting = Some((p, w.tick + 2));
+        Ok("haiku".into())
+    }
+
+    /// The suggestion asked two ticks ago answers: nothing staged, the
+    /// same as last time (no call), or a new message, counted against the
+    /// run's ceilings and paid from the pot (live reserves its cap and
+    /// settles at once to what it cost; the demo's call costs at once).
+    fn suggested(&mut self, w: &mut World) {
+        let Some((p, at)) = self.commits.suggesting else {
+            return;
+        };
+        if w.tick < at {
+            return;
+        }
+        self.commits.suggesting = None;
+        let leader = w.projects[p].leader;
+        let staged = self.commits.staged.get(&p).cloned().unwrap_or_default();
+        let Some(first) = staged.first() else {
+            w.note(Event::SuggestFailed {
+                leader,
+                why: "nothing is staged".into(),
+                cost: 0,
+            });
+            return;
+        };
+        if let Some((was, text)) = self.commits.suggestions.get(&p)
+            && *was == staged
+        {
+            w.suggested = Some(Suggestion {
+                project: p,
+                text: text.clone(),
+            });
+            return;
+        }
+        let cost = self.rng.range(20, 60);
+        self.commits.paid_calls.0 += 1;
+        self.commits.paid_calls.1 += cost;
+        w.paid += cost;
+        let mut text = first.clone();
+        if staged.len() > 1 {
+            text.push_str("\n\n");
+            let rest: Vec<String> = staged[1..].iter().map(|t| format!("- {t}")).collect();
+            text.push_str(&rest.join("\n"));
+        }
+        self.commits.suggestions.insert(p, (staged, text.clone()));
+        w.suggested = Some(Suggestion { project: p, text });
+        w.note(Event::Suggested {
+            leader,
+            model: "haiku".into(),
+            cost,
+        });
+    }
+
     pub fn step(&mut self, w: &mut World) {
         w.tick += 1;
         let t = w.tick;
@@ -941,6 +1049,7 @@ impl Sim {
             let fits = !self.rng.one_in(8);
             self.applied(w, id, fits, &hunks);
         }
+        self.suggested(w);
         // Live sessions report their plan's windows now and then.
         if t.is_multiple_of(12) {
             self.limits(w);
@@ -2481,6 +2590,110 @@ mod tests {
             e.event,
             Event::Applied { agent, .. } | Event::ApplyFailed { agent, .. } if agent == worker
         )));
+    }
+
+    #[test]
+    fn an_applied_change_is_staged_in_its_projects_checkout() {
+        let (mut w, mut s, worker, _) = one_at_work();
+        s.test(&mut w, worker);
+        s.tested(&mut w, worker, 0);
+        let title = w.change_of(worker).unwrap().title.clone();
+        s.applied(&mut w, worker, false, &[]);
+        assert!(
+            s.commits.staged.is_empty(),
+            "one that did not fit is not staged"
+        );
+        s.applied(&mut w, worker, true, &[]);
+        let p = w.agents[worker].project;
+        assert_eq!(s.commits.staged.get(&p), Some(&vec![title]));
+    }
+
+    #[test]
+    fn a_demo_suggestion_is_refused_as_live_refuses_one() {
+        let (mut w, mut s) = world(1, 1, 0, 3, Lang::En);
+        let spent = w.spent();
+        w.budget = spent + SUGGEST_CAP;
+        assert_eq!(s.suggest(&w, 0), Ok("haiku".into()), "just the cap left");
+        assert_eq!(s.suggest(&w, 0), Err("a suggestion is under way".into()));
+        s.commits.suggesting = None;
+        w.budget -= 1;
+        assert_eq!(
+            s.suggest(&w, 0),
+            Err("the pot has less than $0.05 left".into())
+        );
+        w.budget = spent + 100 * SUGGEST_CAP;
+        s.commits.paid_calls = (SUGGEST_DAY_CALLS - 1, SUGGEST_DAY_COST - SUGGEST_CAP);
+        assert_eq!(s.suggest(&w, 0), Ok("haiku".into()));
+        s.commits.suggesting = None;
+        s.commits.paid_calls = (SUGGEST_DAY_CALLS, 0);
+        assert_eq!(
+            s.suggest(&w, 0),
+            Err("today's 20 suggestions were made".into())
+        );
+        s.commits.paid_calls = (0, SUGGEST_DAY_COST - SUGGEST_CAP + 1);
+        assert_eq!(
+            s.suggest(&w, 0),
+            Err("today's $1.00 for suggestions is spent".into())
+        );
+        assert_eq!(s.commits.suggesting, None);
+    }
+
+    #[test]
+    fn a_demo_suggestion_answers_two_ticks_later_from_what_was_applied() {
+        let (mut w, mut s) = world(1, 1, 0, 3, Lang::En);
+        let leader = w.projects[0].leader;
+        let at = w.tick;
+        assert_eq!(s.suggest(&w, 0), Ok("haiku".into()));
+        assert_eq!(s.commits.suggesting, Some((0, at + 2)));
+        w.tick = at + 1;
+        s.suggested(&mut w);
+        assert!(s.commits.suggesting.is_some(), "not yet");
+        w.tick = at + 2;
+        s.suggested(&mut w);
+        assert_eq!(s.commits.suggesting, None);
+        assert_eq!(
+            w.journal.last().unwrap().event,
+            Event::SuggestFailed {
+                leader,
+                why: "nothing is staged".into(),
+                cost: 0
+            }
+        );
+        // Two changes applied: the first is the subject, the rest the body.
+        s.commits
+            .staged
+            .insert(0, vec!["Add the parser".into(), "Fix the lexer".into()]);
+        let paid = w.paid;
+        s.suggest(&w, 0).unwrap();
+        w.tick += 2;
+        s.suggested(&mut w);
+        let text = "Add the parser\n\n- Fix the lexer".to_string();
+        assert_eq!(w.suggested.take().map(|g| g.text), Some(text.clone()));
+        let cost = w.paid - paid;
+        assert!((20..=60).contains(&cost), "{cost}");
+        assert_eq!(s.commits.paid_calls, (1, cost));
+        assert_eq!(
+            w.journal.last().unwrap().event,
+            Event::Suggested {
+                leader,
+                model: "haiku".into(),
+                cost
+            }
+        );
+        // The same again: the same message, no call.
+        let lines = w.journal.len();
+        s.suggest(&w, 0).unwrap();
+        w.tick += 2;
+        s.suggested(&mut w);
+        assert_eq!(w.suggested.take().map(|g| g.text), Some(text));
+        assert_eq!((w.paid - paid, s.commits.paid_calls.0), (cost, 1));
+        assert_eq!(w.journal.len(), lines);
+        // One change alone has no body.
+        s.commits.staged.insert(0, vec!["Only".into()]);
+        s.suggest(&w, 0).unwrap();
+        w.tick += 2;
+        s.suggested(&mut w);
+        assert_eq!(w.suggested.take().map(|g| g.text), Some("Only".into()));
     }
 
     const TWO_FILES: &str = "\

@@ -20,6 +20,8 @@
 use std::collections::{BTreeSet, HashMap};
 use std::io;
 use std::path::{Path, PathBuf};
+use std::sync::mpsc;
+use std::time::{Duration, Instant};
 
 use serde_json::Value;
 
@@ -633,9 +635,19 @@ pub struct Session {
 impl Session {
     /// Starts the session. `on` gets its events on a reader thread; the
     /// last one is always [`Event::Stopped`].
-    pub fn start(spec: &Spec, mut on: impl FnMut(Event) + Send + 'static) -> io::Result<Session> {
+    pub fn start(spec: &Spec, on: impl FnMut(Event) + Send + 'static) -> io::Result<Session> {
+        Session::start_with(spec, args(spec), on)
+    }
+
+    /// [`Session::start`] on command line `argv`, the settings checked
+    /// against `spec` all the same.
+    fn start_with(
+        spec: &Spec,
+        argv: Vec<String>,
+        mut on: impl FnMut(Event) + Send + 'static,
+    ) -> io::Result<Session> {
         let mut cmd = child::command(&spec.program, &spec.cwd, ENV);
-        cmd.args(args(spec));
+        cmd.args(argv);
         let mut parser = Parser::new(spec);
         let mut stopped = false;
         let child = Child::spawn(cmd, move |out| match out {
@@ -699,6 +711,82 @@ impl crate::Agent for Session {
 
     fn terminate(&mut self) {
         Session::terminate(self)
+    }
+}
+
+/// What one call of [`once`] said, and what it cost (millionths of a
+/// dollar).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Said {
+    pub text: String,
+    pub cost: u64,
+}
+
+/// Why a call of [`once`] said nothing, and what it cost when that is
+/// known: nothing when it could not start, Claude Code's total when it
+/// ended its turn in an error, unknown when it stopped or ran out of time
+/// before reporting one (the caller keeps what it reserved).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Unsaid {
+    pub why: String,
+    pub cost: Option<u64>,
+}
+
+/// The command line of a [`once`] call: a session's ([`args`]) whose
+/// system prompt replaces Claude Code's own (a few lines instead of its
+/// many thousand tokens, on every call) and which is not saved to be
+/// resumed.
+pub fn once_args(spec: &Spec) -> Vec<String> {
+    let mut a = args(spec);
+    for arg in &mut a {
+        if arg == "--append-system-prompt" {
+            *arg = "--system-prompt".into();
+        }
+    }
+    a.push("--no-session-persistence".into());
+    a
+}
+
+/// One prompt, one answer, then the process goes: a session on `spec`
+/// that takes `prompt` and ends at its first result or at `deadline`.
+/// The spec's tools, MCP server and confine level are checked as any
+/// session's are (a session that runs with something else is stopped
+/// before it answers); its budget is the call's cap.
+pub fn once(spec: &Spec, prompt: &str, deadline: Duration) -> Result<Said, Unsaid> {
+    let (tx, rx) = mpsc::channel();
+    let started = Session::start_with(spec, once_args(spec), move |e| {
+        let _ = tx.send(e);
+    });
+    let mut session = started.map_err(|e| Unsaid {
+        why: format!("{} could not start: {e}", spec.program),
+        cost: Some(0),
+    })?;
+    let unknown = |why: String| Unsaid { why, cost: None };
+    session
+        .prompt(prompt)
+        .map_err(|e| unknown(format!("the prompt did not reach it: {e}")))?;
+    let end = Instant::now() + deadline;
+    loop {
+        let left = end.saturating_duration_since(Instant::now());
+        match rx.recv_timeout(left) {
+            Ok(Event::TurnDone {
+                ok: true,
+                text,
+                cost,
+                ..
+            }) => return Ok(Said { text, cost }),
+            Ok(Event::TurnDone { text, cost, .. }) => {
+                return Err(Unsaid {
+                    why: text,
+                    cost: Some(cost),
+                });
+            }
+            Ok(Event::Stopped(why)) => return Err(unknown(why)),
+            Ok(_) => {}
+            Err(_) => {
+                return Err(unknown(format!("no answer in {} s", deadline.as_secs())));
+            }
+        }
     }
 }
 
@@ -1363,6 +1451,133 @@ echo '{{"type":"result","subtype":"success","result":"hi","total_cost_usd":0.5}}
                 Event::Stopped("exited with code 0".into()),
             ]
         );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A tool-less, server-less session for [`once`], on `program`.
+    fn once_spec(program: String, cwd: &Path) -> Spec {
+        let mut s = spec(&[]);
+        s.program = program;
+        s.cwd = cwd.to_path_buf();
+        s.write = false;
+        s.model = Some("haiku".into());
+        s.budget = 50_000;
+        s.system = "Write commit messages.".into();
+        s
+    }
+
+    #[test]
+    fn a_once_call_replaces_the_system_prompt_and_is_not_saved() {
+        let s = once_spec("claude".into(), Path::new("/work"));
+        let a = once_args(&s);
+        let after = |flag: &str| {
+            let i = a
+                .iter()
+                .position(|x| x == flag)
+                .unwrap_or_else(|| panic!("{flag}"));
+            a[i + 1].clone()
+        };
+        assert_eq!(after("--system-prompt"), "Write commit messages.");
+        assert!(!a.iter().any(|x| x == "--append-system-prompt"), "{a:?}");
+        assert_eq!(
+            a.last().map(String::as_str),
+            Some("--no-session-persistence")
+        );
+        // The rest is a session's: no tools, its cap, its model.
+        assert_eq!(after("--tools"), "");
+        assert_eq!(after("--max-budget-usd"), "0.050000");
+        assert_eq!(after("--model"), "haiku");
+        assert_eq!(a.len(), args(&s).len() + 1);
+    }
+
+    #[test]
+    fn a_once_call_answers_with_the_text_and_what_it_cost() {
+        let dir = std::env::temp_dir().join(format!("imece-once-{}", std::process::id()));
+        let init = init("[]", "acceptEdits", "[]");
+        let body = format!(
+            r#"case "$*" in *--no-session-persistence*) ;; *) echo "saved: $*" >&2; exit 8;; esac
+read line
+case "$line" in *'"content":"the diff"'*) ;; *) echo "bad stdin: $line" >&2; exit 9;; esac
+echo '{init}'
+echo '{{"type":"result","subtype":"success","result":" Fix the parser ","total_cost_usd":0.004}}'
+sleep 5"#
+        );
+        let s = once_spec(fake(&dir, &body), &dir);
+        let got = once(&s, "the diff", Duration::from_secs(10));
+        assert_eq!(
+            got,
+            Ok(Said {
+                text: "Fix the parser".into(),
+                cost: 4_000
+            })
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_once_call_that_errs_says_why_and_its_cost() {
+        let dir = std::env::temp_dir().join(format!("imece-once-err-{}", std::process::id()));
+        let init = init("[]", "acceptEdits", "[]");
+        let body = format!(
+            r#"read line
+echo '{init}'
+echo '{{"type":"result","subtype":"error_max_budget_usd","is_error":true,"total_cost_usd":0.06}}'"#
+        );
+        let s = once_spec(fake(&dir, &body), &dir);
+        let got = once(&s, "the diff", Duration::from_secs(10));
+        assert_eq!(
+            got,
+            Err(Unsaid {
+                why: "error_max_budget_usd".into(),
+                cost: Some(60_000)
+            })
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_once_call_with_tools_is_stopped_and_its_cost_is_not_known() {
+        let dir = std::env::temp_dir().join(format!("imece-once-bad-{}", std::process::id()));
+        let init = init(r#"["Bash"]"#, "acceptEdits", "[]");
+        let body = format!(
+            r#"read line
+echo '{init}'
+echo '{{"type":"result","subtype":"success","result":"hi","total_cost_usd":0.5}}'"#
+        );
+        let s = once_spec(fake(&dir, &body), &dir);
+        let got = once(&s, "the diff", Duration::from_secs(10)).unwrap_err();
+        assert!(got.why.contains("tools differ"), "{got:?}");
+        assert_eq!(got.cost, None);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_once_call_that_can_not_start_cost_nothing() {
+        let s = once_spec("/nonexistent/claude".into(), Path::new("/"));
+        let got = once(&s, "the diff", Duration::from_secs(10)).unwrap_err();
+        assert!(
+            got.why.starts_with("/nonexistent/claude could not start"),
+            "{got:?}"
+        );
+        assert_eq!(got.cost, Some(0));
+    }
+
+    #[test]
+    fn a_once_call_past_its_deadline_is_given_up_with_its_cost_unknown() {
+        let dir = std::env::temp_dir().join(format!("imece-once-slow-{}", std::process::id()));
+        let init = init("[]", "acceptEdits", "[]");
+        let body = format!("read line\necho '{init}'\nsleep 30");
+        let s = once_spec(fake(&dir, &body), &dir);
+        let started = Instant::now();
+        let got = once(&s, "the diff", Duration::from_millis(300)).unwrap_err();
+        assert_eq!(
+            got,
+            Unsaid {
+                why: "no answer in 0 s".into(),
+                cost: None
+            }
+        );
+        assert!(started.elapsed() < Duration::from_secs(10));
         let _ = std::fs::remove_dir_all(&dir);
     }
 

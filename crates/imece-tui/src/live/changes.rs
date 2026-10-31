@@ -68,6 +68,10 @@ pub(super) fn git_thread(jobs: Receiver<GitJob>, done: Sender<GitDone>) {
                 agent,
                 stand: worktree::stand(&repo, &path),
             },
+            GitJob::Staged { project, repo } => GitDone::Staged {
+                project,
+                staged: worktree::staged_change(&repo, SUGGEST_PATCH),
+            },
         };
         if done.send(out).is_err() {
             return;
@@ -150,6 +154,7 @@ impl Live {
                     placed,
                 } => self.placed(w, agent, generation, placed),
                 GitDone::Stood { agent, stand } => self.stood(w, agent, stand),
+                GitDone::Staged { project, staged } => self.take_staged(w, project, staged),
             }
         }
     }
