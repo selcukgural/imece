@@ -8,6 +8,7 @@ use super::*;
 /// A team without sessions, to apply events to.
 pub(crate) fn team(workers: usize) -> World {
     let mut w = World {
+        marks: Default::default(),
         tick: 3,
         // Begun just now: a step puts the tick at 0.
         started_at: now(),

@@ -27,7 +27,9 @@ falls back now and then (`Fallback`); a session starts once (its vendor's
 a run, `NotesCut`), stops now and then (`Stopped`, resumed with
 `Resumed` when told), and is forgotten with `:forget` or `/clear`
 (`Forgotten`, asleep, `Restarted` when told); `/cost` and `/compact`
-answer as a turn; a spent pot refuses words and commands and starts no
+answer as a turn, and a Codex agent's second `/compact` with no turn
+between is refused as a failed turn (`Stopped` with the reason, the
+session goes on, #52); a spent pot refuses words and commands and starts no
 work; `Confine` is said at the start.
 What the demo had and live does not was replaced: the merge queue (trunk
 numbers, `Merged`/`Failed`, the verifying status) and the sensitive-change

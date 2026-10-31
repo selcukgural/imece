@@ -120,14 +120,37 @@ struct Kit {
     /// Where a worker says the project runs once it is built, as a live
     /// worker writes a dev server's address; nothing for an app that
     /// serves nothing.
-    serves: Option<&'static str>,
+    serves: Option<Serves>,
     asks: &'static [&'static str],
+}
+
+/// A dev server's address: each worker of a project runs its own copy in
+/// its worktree, so each takes the next port after the one before.
+struct Serves {
+    /// Scheme and host.
+    at: &'static str,
+    /// The first worker's port.
+    port: u16,
+    path: &'static str,
+}
+
+impl Serves {
+    /// The address the `n`th worker or helper of the project (from 0)
+    /// serves at.
+    fn url(&self, n: usize) -> String {
+        let port = usize::from(self.port) + n;
+        format!("{}:{port}{}", self.at, self.path)
+    }
 }
 
 const SHOP_KIT: Kit = Kit {
     build: "dotnet build",
     test: "dotnet test",
-    serves: Some("http://localhost:5080/swagger"),
+    serves: Some(Serves {
+        at: "http://localhost",
+        port: 5080,
+        path: "/swagger",
+    }),
     asks: &[
         "Bash: dotnet add package Polly --version 8.5.0",
         "Bash: dotnet ef database update",
@@ -150,7 +173,11 @@ const MOBILE_KIT: Kit = Kit {
 const WEB_KIT: Kit = Kit {
     build: "npm run build",
     test: "npm test",
-    serves: Some("http://localhost:5173/"),
+    serves: Some(Serves {
+        at: "http://localhost",
+        port: 5173,
+        path: "/",
+    }),
     asks: &[
         "Bash: npm install zod@3",
         "Edit: package.json",
@@ -161,7 +188,11 @@ const WEB_KIT: Kit = Kit {
 const BILLING_KIT: Kit = Kit {
     build: "go build ./...",
     test: "go test ./...",
-    serves: Some("http://127.0.0.1:8080/healthz"),
+    serves: Some(Serves {
+        at: "http://127.0.0.1",
+        port: 8080,
+        path: "/healthz",
+    }),
     asks: &[
         "Bash: go get github.com/shopspring/decimal",
         "Edit: go.mod",
@@ -407,6 +438,17 @@ fn kit(p: ProjectId) -> &'static Kit {
     PROJECTS[p % PROJECTS.len()].2
 }
 
+/// How many of agent `id`'s project's workers and helpers came before it,
+/// gone ones too: its dev server takes the port after theirs, and keeps
+/// it when one of them leaves.
+fn serving_before(w: &World, id: AgentId) -> usize {
+    let project = w.agents[id].project;
+    w.agents[..id]
+        .iter()
+        .filter(|a| a.project == project && matches!(a.role, Role::Worker | Role::Helper))
+        .count()
+}
+
 /// The agent's own command line, as a session of its vendor reports it
 /// (imece's `/clear` where the vendor has none).
 fn commands_of(v: Vendor) -> Vec<String> {
@@ -435,6 +477,8 @@ struct Mind {
     /// imece's runs on its tree since its last change, the last of each
     /// command.
     runs: Vec<Ran>,
+    /// It compacted its session and took no turn since.
+    compacted: bool,
 }
 
 /// An answer to the person, due at a tick.
@@ -442,6 +486,9 @@ struct Due {
     agent: AgentId,
     at: u64,
     text: String,
+    /// The turn failed, `text` says why (as a refused `/compact` of a
+    /// live Codex session does).
+    failed: bool,
 }
 
 /// How a worker comes to its card.
@@ -495,6 +542,7 @@ pub fn world(
         unlisted: false,
     };
     let mut w = World {
+        marks: Default::default(),
         tick: 0,
         started_at: 0,
         run_spent: 0,
@@ -641,6 +689,7 @@ impl Sim {
         let stopped = w.agents[id].status == Status::Stopped;
         let had = self.mind(id).started;
         self.start(w, id);
+        self.mind(id).compacted = false;
         if stopped && had {
             w.agents[id].trace(t, "session resumed");
             w.note(Event::Resumed { agent: id });
@@ -678,6 +727,7 @@ impl Sim {
             agent: id,
             at,
             text,
+            failed: false,
         });
         Ok(())
     }
@@ -708,7 +758,13 @@ impl Sim {
             );
             return Ok(());
         }
+        // Codex turns a second compaction with nothing new down, and a
+        // refused one is a failed turn, not a stopped session (#52).
+        let codex = w.agents[id].vendor == Vendor::Codex;
+        let again = line == "/compact" && std::mem::replace(&mut self.mind(id).compacted, true);
+        let failed = codex && again;
         let text = match line {
+            _ if failed => "compaction refused: nothing new to compact since the last one".into(),
             "/cost" => format!("Total cost: {}", dollars(w.agents[id].cost)),
             "/compact" => "Compacted the conversation.".to_string(),
             _ => format!("{line}: done."),
@@ -717,6 +773,7 @@ impl Sim {
             agent: id,
             at: t + 1,
             text,
+            failed,
         });
         Ok(())
     }
@@ -811,7 +868,10 @@ impl Sim {
             .partition(|r| r.at <= t);
         self.replies = later;
         for r in due {
-            self.answer(w, r.agent, &r.text);
+            match r.failed {
+                true => self.failed(w, r.agent, &r.text),
+                false => self.answer(w, r.agent, &r.text),
+            }
         }
         for p in 0..w.projects.len() {
             if !w.projects[p].closed {
@@ -1393,7 +1453,11 @@ impl Sim {
             (Some(s), 0) => (format!("Read {}", s.file), None, None),
             (Some(s), 1) => (format!("Edit {}", s.file), Some(s.file), None),
             (Some(s), 2) => (format!("Grep {:?}", s.name), None, None),
-            (_, 3) => (format!("run {}", kit.build), None, kit.serves),
+            (_, 3) => (
+                format!("run {}", kit.build),
+                None,
+                kit.serves.as_ref().map(|s| s.url(serving_before(w, id))),
+            ),
             _ => (String::new(), None, None),
         };
         let a = &mut w.agents[id];
@@ -1445,6 +1509,26 @@ impl Sim {
         let a = &mut w.agents[id];
         a.activity = None;
         a.set_status(Status::Idle, t);
+    }
+
+    /// A turn of agent `id` failed, `why` says why; its session goes on.
+    /// As live takes a failed turn: idle again, the story and the journal
+    /// say why.
+    fn failed(&mut self, w: &mut World, id: AgentId, why: &str) {
+        if w.agents[id].gone {
+            return;
+        }
+        let t = w.tick;
+        let card = w.agents[id].card;
+        let a = &mut w.agents[id];
+        a.activity = None;
+        a.trace(t, format!("result ✕ {} denied 0", dollars(a.cost)));
+        a.set_status(Status::Idle, t);
+        w.story(card, StoryEvent::Stopped(why.into()));
+        w.note(Event::Stopped {
+            agent: id,
+            why: why.into(),
+        });
     }
 
     /// Worker `id`'s session ends under it; the person's next message
@@ -2855,6 +2939,7 @@ mod tests {
             agent: lead,
             at: w.tick + 1,
             text: "x".into(),
+            failed: false,
         });
         s.forget(&mut w, lead).unwrap_err();
         s.told(&mut w, lead, "again").unwrap();
@@ -2936,6 +3021,93 @@ mod tests {
         s.start(&mut w, workers[1]);
         assert_eq!(w.agents[workers[1]].commands, ["/clear", "/stats"]);
         assert_eq!(missing(&w), [workers[0]]);
+    }
+
+    #[test]
+    fn a_codex_compaction_with_nothing_new_is_a_failed_turn_and_the_session_goes_on() {
+        let (mut w, mut s) = world(1, 1, 0, 1, Lang::En);
+        let lead = w.projects[0].leader;
+        w.agents[lead].vendor = Vendor::Codex;
+        s.told(&mut w, lead, "hello").unwrap();
+        s.replies.clear();
+        let due = |s: &Sim| -> Vec<(String, bool)> {
+            s.replies
+                .iter()
+                .map(|r| (r.text.clone(), r.failed))
+                .collect()
+        };
+        assert_eq!(s.command(&mut w, lead, "/compact"), Ok(()));
+        let refused = "compaction refused: nothing new to compact since the last one";
+        assert_eq!(s.command(&mut w, lead, "/compact"), Ok(()));
+        assert_eq!(
+            due(&s),
+            [
+                ("Compacted the conversation.".to_string(), false),
+                (refused.to_string(), true)
+            ]
+        );
+        // Delivered: the journal and the trace say it failed, the session
+        // stays.
+        s.step(&mut w);
+        assert!(w.journal.iter().any(|e| e.event
+            == Event::Stopped {
+                agent: lead,
+                why: refused.into()
+            }));
+        let cost = dollars(w.agents[lead].cost);
+        let line = format!(" result ✕ {cost} denied 0");
+        let trace = &w.agents[lead].trace;
+        assert!(trace.iter().any(|l| l.ends_with(&line)), "{trace:?}");
+        assert!(s.mind(lead).started, "the session goes on");
+        // A turn between: there is something new to compact again.
+        s.replies.clear();
+        s.told(&mut w, lead, "more").unwrap();
+        s.replies.clear();
+        assert_eq!(s.command(&mut w, lead, "/compact"), Ok(()));
+        assert_eq!(
+            due(&s),
+            [("Compacted the conversation.".to_string(), false)]
+        );
+        // Claude compacts as often as it is asked.
+        let (mut w, mut s) = world(1, 1, 0, 1, Lang::En);
+        let lead = w.projects[0].leader;
+        s.told(&mut w, lead, "hello").unwrap();
+        s.replies.clear();
+        for _ in 0..2 {
+            assert_eq!(s.command(&mut w, lead, "/compact"), Ok(()));
+        }
+        assert!(due(&s).iter().all(|(_, failed)| !failed));
+        // Any other command does not count as a compaction.
+        w.agents[lead].vendor = Vendor::Codex;
+        s.mind(lead).compacted = false;
+        assert_eq!(s.command(&mut w, lead, "/cost"), Ok(()));
+        assert!(!s.mind(lead).compacted);
+    }
+
+    #[test]
+    fn a_failed_turn_leaves_the_agent_idle_with_its_reason_told() {
+        let (mut w, mut s, worker, card) = one_at_work();
+        w.agents[worker].set_status(Status::Working, w.tick);
+        w.agents[worker].activity = Some("Read x".into());
+        s.failed(&mut w, worker, "no");
+        let a = &w.agents[worker];
+        assert_eq!(a.status, Status::Idle);
+        assert_eq!(a.activity, None);
+        assert!(
+            matches!(&w.cards[card].story.last().unwrap().event, StoryEvent::Stopped(why) if why == "no")
+        );
+        assert_eq!(
+            w.journal.last().unwrap().event,
+            Event::Stopped {
+                agent: worker,
+                why: "no".into()
+            }
+        );
+        // One that is gone says nothing.
+        w.agents[worker].gone = true;
+        let n = w.journal.len();
+        s.failed(&mut w, worker, "no");
+        assert_eq!(w.journal.len(), n);
     }
 
     #[test]
@@ -3044,6 +3216,38 @@ mod tests {
         w.agents[lead].commands.clear();
         s.start(&mut w, lead);
         assert!(w.agents[lead].commands.is_empty(), "once");
+    }
+
+    #[test]
+    fn each_worker_serves_on_its_own_port_after_the_ones_before_it() {
+        let (mut w, mut s) = world(2, 2, 0, 3, Lang::En);
+        // The second shop worker comes after the mobile one.
+        s.hire(&mut w, 0);
+        let shop = workers_of(&w, 0);
+        let mobile = workers_of(&w, 1);
+        assert!(shop[0] < mobile[0] && mobile[0] < shop[1]);
+        assert_eq!(serving_before(&w, shop[0]), 0);
+        assert_eq!(serving_before(&w, shop[1]), 1);
+        assert_eq!(
+            serving_before(&w, mobile[0]),
+            0,
+            "another project's workers and leaders do not count"
+        );
+        let card = w
+            .cards
+            .iter()
+            .position(|c| c.column == Column::Waiting && c.project == 0)
+            .unwrap();
+        let helper = s.helper_for(&mut w, shop[0], card);
+        assert_eq!(serving_before(&w, helper), 2, "a helper counts");
+        w.agents[shop[0]].gone = true;
+        assert_eq!(serving_before(&w, shop[1]), 1, "a gone one keeps its port");
+        let shop_kit = kit(0).serves.as_ref().unwrap();
+        assert_eq!(shop_kit.url(0), "http://localhost:5080/swagger");
+        assert_eq!(shop_kit.url(3), "http://localhost:5083/swagger");
+        let billing = PROJECTS.iter().find(|p| p.2.build.starts_with("go"));
+        let billing = billing.unwrap().2.serves.as_ref().unwrap();
+        assert_eq!(billing.url(2), "http://127.0.0.1:8082/healthz");
     }
 
     #[test]
@@ -3160,11 +3364,13 @@ mod tests {
                 agent: a,
                 at: 99,
                 text: "a".into(),
+                failed: false,
             },
             Due {
                 agent: b,
                 at: 99,
                 text: "b".into(),
+                failed: false,
             },
         ];
         s.close_project(&mut w, 1).unwrap();

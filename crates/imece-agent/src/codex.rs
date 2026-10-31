@@ -539,7 +539,21 @@ impl Protocol {
         self.awaiting = None;
         if let Some(e) = v.get("error") {
             let msg = e["message"].as_str().unwrap_or("unknown error");
-            return Err(format!("refused {wait:?}: {msg}"));
+            // A refused compaction is a turn that failed, not a broken
+            // session: the thread is as it was and the next turn runs.
+            // Everything else (the start-up checks above all) fails closed.
+            if wait != Wait::Compact {
+                return Err(format!("refused {wait:?}: {msg}"));
+            }
+            self.busy = false;
+            let mut acts = vec![Act::Event(Event::TurnDone {
+                ok: false,
+                text: format!("compaction refused: {msg}"),
+                cost: 0,
+                denied: 0,
+            })];
+            acts.extend(self.next_turn());
+            return Ok(acts);
         }
         let r = &v["result"];
         Ok(match wait {
@@ -1382,6 +1396,10 @@ fn refused(rx: &Receiver<Msg>, generation: u64, e: &io::Error) -> String {
 /// Runs the protocol against the Codex process, starting it a second time
 /// when the first start found things to name off.
 fn drive(spec: Spec, child: Child, rx: Receiver<Msg>, tx: Sender<Msg>, mut on: impl FnMut(Event)) {
+    // A local drops before the parameters: the commands' receiver goes
+    // before the events' sender, so once the events end a command finds
+    // nobody to take it (#74).
+    let rx = rx;
     let mut generation = 0;
     let mut child = Some(child);
     let mut protocol = Protocol::new(&spec, None);
@@ -2492,11 +2510,25 @@ mod tests {
             ))
             .unwrap();
         assert_eq!(sent(&acts)[0]["method"], "thread/compact/start");
-        // A compaction Codex refuses stops the session, like any refusal.
-        let e = p
+        // A compaction Codex refuses is a failed turn, not a stopped
+        // session: the prompt queued behind it still runs.
+        assert!(p.prompt("after").is_empty(), "queued behind the compaction");
+        let acts = p
             .line(&json!({ "jsonrpc": "2.0", "id": 12, "error": { "message": "no" } }).to_string())
-            .unwrap_err();
-        assert!(e.contains("refused Compact"), "{e}");
+            .unwrap();
+        assert!(
+            matches!(
+                &acts[0],
+                Act::Event(Event::TurnDone { ok: false, text, cost: 0, denied: 0 })
+                    if text == "compaction refused: no"
+            ),
+            "{acts:?}"
+        );
+        let q = sent(&acts);
+        assert_eq!(q.len(), 1);
+        assert_eq!(q[0]["method"], "mcpServerStatus/list");
+        let acts = p.line(&reply(13, servers(true, &[]))).unwrap();
+        assert_eq!(sent(&acts)[0]["params"]["input"][0]["text"], "after");
     }
 
     #[test]

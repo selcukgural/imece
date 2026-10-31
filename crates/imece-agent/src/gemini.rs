@@ -1476,6 +1476,10 @@ fn refused(rx: &Receiver<Msg>, e: &io::Error) -> String {
 
 /// Runs the protocol against the Gemini process.
 fn drive(spec: Spec, mut child: Child, rx: Receiver<Msg>, mut on: impl FnMut(Event)) {
+    // A local drops before the parameters: the commands' receiver goes
+    // before the events' sender, so once the events end a command finds
+    // nobody to take it (#74).
+    let rx = rx;
     let mut protocol = Protocol::new(&spec);
     let mut acts = protocol.open();
     let mut deadline: Option<Instant> = None;

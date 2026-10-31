@@ -236,6 +236,12 @@ pub struct Text {
     pub leaving_changes: &'static str,
     pub leaving_keys: &'static str,
     pub no_talk_yet: &'static str,
+    /// `m`: a line marked, its mark taken away; `m` with no line at hand;
+    /// `'` with no marked line where it looks.
+    pub marked: &'static str,
+    pub unmarked: &'static str,
+    pub mark_where: &'static str,
+    pub no_marks: &'static str,
     pub theme_is: &'static str,
     pub folded: &'static str,
     /// After a worker's name: how many helpers it has (folded or not).
@@ -384,12 +390,12 @@ pub struct Text {
     pub waiting_yes: &'static str,
     // Overlays
     pub help_title: &'static str,
-    pub help_keys: [(&'static str, &'static str); 45],
+    pub help_keys: [(&'static str, &'static str); 47],
     /// The help's line for a new line in the writing, put after the
     /// writing keys: where the terminal tells shift-enter apart, and
     /// where it does not.
     pub help_newline: [(&'static str, &'static str); 2],
-    pub help_legend: [&'static str; 5],
+    pub help_legend: [&'static str; 6],
     /// The help's last line: how to filter it or close it; while the
     /// person types a filter, after it; with a filter kept, after it.
     pub help_close: &'static str,
@@ -534,7 +540,7 @@ pub const EN: Text = Text {
     change_keys: "  enter see the diff · a apply to the checkout · r reject",
     diff_title: " CHANGE · {} · {} files +{} −{} · {} ",
     diff_gone: "nothing of {}'s waits any more",
-    journal_keys: "  enter open the conversation · c copy the message",
+    journal_keys: "  enter open the conversation · c copy the message · m mark",
     thread_title: " CONVERSATION · {} ⇄ {} · {}/{} ",
     event_title: " EVENT ",
     thread_hints: [
@@ -557,6 +563,10 @@ pub const EN: Text = Text {
     leaving_changes: "Changes not reviewed",
     leaving_keys: " q quits · W opens the next waiting · any other key: back",
     no_talk_yet: "no conversation with {} yet",
+    marked: "marked: ' comes back to it",
+    unmarked: "mark taken away",
+    mark_where: "m marks a line of the journal or of a conversation",
+    no_marks: "no marked line here yet: m marks one",
     theme_is: "theme: {}",
     folded: "… {} agents doing fine",
     helpers: "{} helpers",
@@ -757,6 +767,11 @@ pub const EN: Text = Text {
         ("W  S", ":next waiting, from anywhere · :defer this"),
         ("enter", "in the journal: the whole conversation"),
         ("c C  y Y", "copy the message · the conversation"),
+        (
+            "m  :mark",
+            "mark the line at hand to come back to; again: unmark",
+        ),
+        ("'", "the next marked line: conversation, else journal"),
         (",  .  <  >", "wider / narrower side panel"),
         (
             "a  r",
@@ -787,6 +802,7 @@ pub const EN: Text = Text {
         " ~ soft-tainted (read a report)  ≈ tainted (reads the outside world)",
         " ⎇ branch  ↑ own commits  ↓ the checkout's new commits  +N −M lines not yet handed over",
         " ↗ a local address the worker wrote (localhost), a link the terminal opens",
+        " ✱ a line you marked (m), kept between runs; ' goes to the next",
     ],
     help_close: " / filter · any other key: close",
     help_finding: "   enter keep · esc all keys",
@@ -934,7 +950,7 @@ pub const TR: Text = Text {
     change_keys: "  enter diff'i gör · a checkout'a uygula · r reddet",
     diff_title: " DEĞİŞİKLİK · {} · {} dosya +{} −{} · {} ",
     diff_gone: "{} için bekleyen bir şey kalmadı",
-    journal_keys: "  enter konuşmayı aç · c mesajı kopyala",
+    journal_keys: "  enter konuşmayı aç · c mesajı kopyala · m işaretle",
     thread_title: " KONUŞMA · {} ⇄ {} · {}/{} ",
     event_title: " OLAY ",
     thread_hints: [
@@ -957,6 +973,10 @@ pub const TR: Text = Text {
     leaving_changes: "İncelenmemiş değişiklikler",
     leaving_keys: " q çıkar · W bekleyen sıradakini açar · başka bir tuş: geri",
     no_talk_yet: "{} ile henüz konuşma yok",
+    marked: "işaretlendi: ' ona geri getirir",
+    unmarked: "işaret kaldırıldı",
+    mark_where: "m günlükte ya da bir konuşmada bir satırı işaretler",
+    no_marks: "burada henüz işaretli satır yok: m bir tane işaretler",
     theme_is: "tema: {}",
     folded: "… {} agent yolunda",
     helpers: "{} yardımcı",
@@ -1159,6 +1179,11 @@ pub const TR: Text = Text {
         ("W  S", ":next bekleyen, her yerden · :defer ertele"),
         ("enter", "defterde: konuşmanın tamamı"),
         ("c C  y Y", "mesajı · konuşmayı kopyala"),
+        (
+            "m  :mark",
+            "eldeki satırı sonra dönmek için işaretle; yine: kaldır",
+        ),
+        ("'", "sonraki işaretli satır: konuşma, yoksa günlük"),
         (",  .  <  >", "yan paneli genişlet / daralt"),
         (
             "a  r",
@@ -1189,6 +1214,7 @@ pub const TR: Text = Text {
         " ~ hafif kirli (rapor okudu)  ≈ kirli (dış dünyayı okuyor)",
         " ⎇ dal  ↑ kendi commit'leri  ↓ checkout'un yeni commit'leri  +N −M henüz verilmemiş satırlar",
         " ↗ worker'ın yazdığı yerel adres (localhost), terminalin açtığı bir bağlantı",
+        " ✱ işaretlediğin satır (m), çalıştırmalar arasında kalır; ' sonrakine gider",
     ],
     help_close: " / süz · başka bir tuş: kapat",
     help_finding: "   enter tut · esc tüm tuşlar",
