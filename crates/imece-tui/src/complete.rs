@@ -425,7 +425,12 @@ mod tests {
             (m.items, m.start, m.tail),
             (LANGS.map(String::from).to_vec(), 6, "")
         );
-        assert_eq!(names(&suggest(":lang t", &w, 0, None)), ["tr"]);
+        let m = suggest(":lang t", &w, 0, None).unwrap();
+        assert_eq!(
+            (m.items, m.start),
+            (vec!["tr".to_string()], 6),
+            "the word's start"
+        );
         assert_eq!(suggest(":lang tr", &w, 0, None), None);
         let name = &w.agents[1].name;
         let head = &name[..3];

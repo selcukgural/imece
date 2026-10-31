@@ -2481,6 +2481,20 @@ mod tests {
     }
 
     #[test]
+    fn the_view_keys_and_l_do_what_their_colon_names_do() {
+        let mut app = App::new(1, 1, 0, 1, Lang::En);
+        for (c, view) in [('3', View::Code), ('2', View::Board), ('1', View::Salon)] {
+            app.on_key(key(KeyCode::Char(c)));
+            assert_eq!(app.view, view, "{c}");
+        }
+        app.on_key(key(KeyCode::Char('L')));
+        assert_eq!(app.lang, Lang::Tr);
+        assert_eq!(app.flash.take().unwrap().0, "Türkçe");
+        app.on_key(key(KeyCode::Char('L')));
+        assert_eq!(app.lang, Lang::En);
+    }
+
+    #[test]
     fn every_key_that_acts_has_a_colon_name_doing_the_same() {
         let mut app = App::new(1, 1, 0, 1, Lang::En);
         let said = |app: &mut App| app.flash.take().map(|f| f.0).unwrap_or_default();
