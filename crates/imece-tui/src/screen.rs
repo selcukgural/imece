@@ -38,8 +38,8 @@ use ratatui::backend::{Backend, ClearType, CrosstermBackend, WindowSize};
 use ratatui::buffer::Cell;
 use ratatui::crossterm::cursor::MoveTo;
 use ratatui::crossterm::event::{
-    DisableBracketedPaste, EnableBracketedPaste, KeyboardEnhancementFlags,
-    PopKeyboardEnhancementFlags, PushKeyboardEnhancementFlags,
+    DisableBracketedPaste, DisableFocusChange, EnableBracketedPaste, EnableFocusChange,
+    KeyboardEnhancementFlags, PopKeyboardEnhancementFlags, PushKeyboardEnhancementFlags,
 };
 use ratatui::crossterm::terminal::{
     self, Clear, DisableLineWrap, EnableLineWrap, EnterAlternateScreen, LeaveAlternateScreen,
@@ -99,7 +99,10 @@ fn taking(out: &mut impl Write, keys: bool) -> io::Result<()> {
         out,
         EnterAlternateScreen,
         DisableLineWrap,
-        EnableBracketedPaste
+        EnableBracketedPaste,
+        // Coming back to the window is when the terminal's colours are
+        // asked again: its theme may have turned light or dark meanwhile.
+        EnableFocusChange
     )?;
     if keys {
         let flags = KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES;
@@ -115,6 +118,7 @@ fn giving(out: &mut impl Write, keys: bool) -> io::Result<()> {
     }
     execute!(
         out,
+        DisableFocusChange,
         DisableBracketedPaste,
         EnableLineWrap,
         LeaveAlternateScreen
@@ -301,14 +305,14 @@ mod tests {
         take_over(&mut taken).unwrap();
         assert_eq!(
             String::from_utf8(taken).unwrap(),
-            "\x1b[22;0t\x1b[?1049h\x1b[?7l\x1b[?2004h",
-            "the shell's title is saved first; pastes bracketed"
+            "\x1b[22;0t\x1b[?1049h\x1b[?7l\x1b[?2004h\x1b[?1004h",
+            "the shell's title is saved first; pastes bracketed; focus told"
         );
         let mut given = Vec::new();
         give_back(&mut given).unwrap();
         assert_eq!(
             String::from_utf8(given).unwrap(),
-            "\x1b[?2004l\x1b[?7h\x1b[?1049l\x1b]2;\x07\x1b[23;0t",
+            "\x1b[?1004l\x1b[?2004l\x1b[?7h\x1b[?1049l\x1b]2;\x07\x1b[23;0t",
             "emptied, then the shell's title back"
         );
     }
@@ -319,14 +323,14 @@ mod tests {
         taking(&mut taken, true).unwrap();
         assert_eq!(
             String::from_utf8(taken).unwrap(),
-            "\x1b[22;0t\x1b[?1049h\x1b[?7l\x1b[?2004h\x1b[>1u",
+            "\x1b[22;0t\x1b[?1049h\x1b[?7l\x1b[?2004h\x1b[?1004h\x1b[>1u",
             "pushed on the alternate screen, disambiguate only"
         );
         let mut given = Vec::new();
         giving(&mut given, true).unwrap();
         assert_eq!(
             String::from_utf8(given).unwrap(),
-            "\x1b[<1u\x1b[?2004l\x1b[?7h\x1b[?1049l\x1b]2;\x07\x1b[23;0t",
+            "\x1b[<1u\x1b[?1004l\x1b[?2004l\x1b[?7h\x1b[?1049l\x1b]2;\x07\x1b[23;0t",
             "popped before the alternate screen is left"
         );
     }

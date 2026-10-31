@@ -17,8 +17,8 @@ exclude_re = [
     "src/clip.rs:.*: replace .* in (copy|tools|pipe|osc52)$",
     "src/shell.rs:.*: replace (run|step_aside|wait_for_key|come_back) ",
     "src/shell.rs:.*: (replace|delete) .* in (run|step_aside|wait_for_key|come_back)$",
-    "src/probe.rs:.*: replace (terminal|ask|readable) ",
-    "src/probe.rs:.*: (replace|delete) .* in (terminal|ask|readable)$",
+    "src/probe.rs:.*: replace (terminal|ask|asked|colours_again|readable) ",
+    "src/probe.rs:.*: (replace|delete) .* in (terminal|ask|asked|colours_again|readable)$",
     "src/screen.rs:.*: replace (init|restore|terminal_rows|<impl Backend for Quiet<W>>::(size|window_size|get_cursor_position)) ",
     "src/screen.rs:.*: (replace|delete) .* in (init|restore|terminal_rows|<impl Backend for Quiet<W>>::(size|window_size|get_cursor_position))$",
 ]

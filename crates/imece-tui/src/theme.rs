@@ -350,6 +350,22 @@ pub fn probed(back: Back, truecolor: bool) {
     switch(source);
 }
 
+/// What the terminal says of its colours now (its window came back into
+/// focus, `probe::colours_again`): the theme in use is built again when
+/// they changed, so `terminal` turns light or dark with it. Whether they
+/// did.
+pub fn follow(back: Back) -> bool {
+    let (was, truecolor) = STATE.with(|s| {
+        let s = s.borrow();
+        (s.back, s.truecolor)
+    });
+    if was == back {
+        return false;
+    }
+    probed(back, truecolor);
+    true
+}
+
 fn build(source: &Source, back: Back, truecolor: bool) -> Theme {
     let paint = Paint { truecolor };
     match source {
@@ -657,6 +673,33 @@ selection-foreground = #ffffff
     fn reset() {
         probed(Back::default(), true);
         assert!(set("terminal"));
+    }
+
+    #[test]
+    fn a_terminal_that_turned_light_turns_the_terminal_theme_with_it() {
+        reset();
+        let light = Back {
+            dark: false,
+            bg: Some(Rgb(0xfd, 0xf6, 0xe3)),
+            fg: Some(Rgb(0x58, 0x6e, 0x75)),
+        };
+        assert_eq!(pal().on_badge, Color::Black);
+        assert!(follow(light), "a change");
+        assert_eq!(pal().on_badge, Color::Rgb(0xfd, 0xf6, 0xe3));
+        assert!(!follow(light), "the same again is none");
+        // The colour depth stays what it was.
+        probed(Back::default(), false);
+        assert!(follow(light));
+        assert!(
+            matches!(pal().on_badge, Color::Indexed(_)),
+            "{:?}",
+            pal().on_badge
+        );
+        // A scheme of its own keeps its colours.
+        assert!(set("dark"));
+        assert!(follow(Back::default()));
+        assert_eq!(pal().on_badge, Color::Black);
+        reset();
     }
 
     #[test]

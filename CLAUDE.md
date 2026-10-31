@@ -114,7 +114,7 @@ record in the same PR.
 - 12 `completion`: `complete.rs` menus for names, commands, `:` words and directories.
 - 13 `own-shell`: `!cmd` in the person's shell, the terminal dance, its exit code and time in the journal.
 - 14 `journal`: when a closing text is journaled as `Replied`.
-- 15 `themes`: `theme.rs`, terminal/dark/light/mono, base16 schemes, colour files, the probe.
+- 15 `themes`: `theme.rs`, terminal/dark/light/mono, base16 schemes, colour files, the probe; `:theme NAME` previews while written; the probe again on focus (not mode 2031: crossterm swallows it).
 - 16 `quiet-erase`: row-by-row erase and auto-wrap off (iTerm2 scrollback leaks); the title counts what waits.
 - 17 `code-map`: one row per file, fixed lease columns, a legend of the glyphs shown.
 - 18 `projects`: `:open`/`:close`/`:rename`, places per project, the demo's copies.
