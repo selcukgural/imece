@@ -1206,6 +1206,7 @@ impl App {
             }
             KeyCode::Char('a') => self.decide_change(id, true),
             KeyCode::Char('r') => self.decide_change(id, false),
+            KeyCode::Char('>') => self.quote_hunk(id),
             // Writing, views, language, help and quitting work as anywhere.
             _ => return false,
         }
@@ -1814,6 +1815,20 @@ impl App {
             "slower" => self.slower(),
             _ => self.flash(fill(t.no_command, &[name])),
         }
+    }
+
+    /// `>` in worker `id`'s change: a message to it opens with the hunk at
+    /// the top of the view quoted under the line the person writes on.
+    fn quote_hunk(&mut self, id: AgentId) {
+        let change = self.world.change_of(id);
+        let Some(quote) = change.and_then(|c| ui::quote(&c.patch, self.diff_scroll)) else {
+            return self.flash(self.lang.text().no_hunk);
+        };
+        let head = format!("@{} ", self.world.agents[id].name);
+        self.input = format!("{head}\n{quote}");
+        self.after = self.input.len() - head.len();
+        self.typing = true;
+        self.menu = None;
     }
 
     /// `m` or `:mark`: the line at hand (the open conversation's selected
@@ -3831,6 +3846,40 @@ mod tests {
         assert_eq!(app.inbox_sel, 2);
         assert_eq!(press(&mut app, 'W'), Some(0), "round again");
         assert_eq!(app.inbox_sel, 0);
+    }
+
+    #[test]
+    fn quote_in_a_change_writes_to_its_worker_with_the_hunk_under_the_line() {
+        let patch = "diff --git a/x b/x\n--- a/x\n+++ b/x\n@@ -1 +1 @@\n-a\n+b\n";
+        let (mut app, worker) = with_change(patch);
+        let name = app.world.agents[worker].name.clone();
+        app.diff_scroll = 4;
+        app.on_key(key(KeyCode::Char('>')));
+        assert!(app.typing);
+        let head = format!("@{name} ");
+        let quoted = "```diff\n--- a/x\n+++ b/x\n@@ -1 +1 @@\n-a\n+b\n```";
+        assert_eq!(app.input, format!("{head}\n{quoted}"));
+        assert_eq!(
+            app.cursor(),
+            head.len(),
+            "on the first line, after the name"
+        );
+        assert_eq!(app.menu, None);
+        for c in "why b".chars() {
+            app.on_key(key(KeyCode::Char(c)));
+        }
+        app.on_key(key(KeyCode::Enter));
+        assert!(!app.typing);
+        let said = app.world.journal.iter().rev().find_map(|e| match &e.event {
+            Event::YouSaid { to, text } if *to == worker => Some(text.clone()),
+            _ => None,
+        });
+        assert_eq!(said, Some(format!("why b\n{quoted}")));
+        // No hunk to quote: it says so and nothing is written.
+        let (mut app, _) = with_change("diff --git a/b b/b\nBinary files differ\n");
+        app.on_key(key(KeyCode::Char('>')));
+        assert!(!app.typing && app.input.is_empty());
+        assert_eq!(flashed(&app).as_deref(), Some(app.lang.text().no_hunk));
     }
 
     /// A demo whose journal is only `n` lines that stand alone, with the

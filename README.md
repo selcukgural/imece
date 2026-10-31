@@ -280,6 +280,7 @@ not yet seen.
 | `tab`, `w` | salon ↔ the items waiting for you · straight to them |
 | `W` / `S` | from anywhere: open the next item waiting for you / put this one off and open the next |
 | `a` / `r` | approve / apply / allow · reject / refuse the selected item |
+| `>` in a change | write to its worker with the hunk at the top of the view quoted under your line (its file's names, at most 40 lines) |
 | `space`, `+` `-` | pause, simulation speed (`--demo` only) |
 | `?`, `q` | help (`/` in it filters the keys: every word, Turkish letters or not; `enter` keeps, `esc` drops), quit |
 | `q` `s` | before quitting: the agents mid-turn and the changes not reviewed (`q` there quits, `W` opens the next waiting) |
