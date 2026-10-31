@@ -518,6 +518,8 @@ pub struct Sim {
     /// A session started with the head of long repository notes; said once
     /// a run.
     notes_cut: bool,
+    /// A Gemini session listed no command line this run (said once).
+    unlisted: bool,
 }
 
 pub fn world(
@@ -537,6 +539,7 @@ pub fn world(
         replies: Vec::new(),
         applying: Vec::new(),
         notes_cut: false,
+        unlisted: false,
     };
     let mut w = World {
         marks: Default::default(),
@@ -926,9 +929,22 @@ impl Sim {
         }
         m.started = true;
         let forgot = std::mem::take(&mut m.forgot);
+        // The first Gemini session of a run lists no command line, as a
+        // changed format would leave it (#53): only imece's /clear.
+        let gemini = w.agents[id].vendor == Vendor::Gemini;
+        let unlisted = gemini && !std::mem::replace(&mut self.unlisted, true);
         let a = &mut w.agents[id];
-        a.commands = commands_of(a.vendor);
         a.trace(t, "session/new");
+        if unlisted {
+            a.commands = vec!["/clear".into()];
+            a.trace(
+                t,
+                "commands not listed: the vendor's format may have changed",
+            );
+            w.note(Event::CommandsMissing { agent: id });
+        } else {
+            a.commands = commands_of(a.vendor);
+        }
         if forgot {
             w.note(Event::Restarted { agent: id });
         }
@@ -2974,6 +2990,37 @@ mod tests {
                 .any(|e| e.event == Event::Forgotten { agent: lead })
         );
         assert!(s.replies.is_empty(), "a forgotten session answers nothing");
+    }
+
+    #[test]
+    fn the_first_gemini_session_of_a_run_lists_no_command_line_as_live_says_it() {
+        let (mut w, mut s) = world(1, 2, 0, 1, Lang::En);
+        let workers = workers_of(&w, 0);
+        let lead = w.projects[0].leader;
+        for &id in &workers {
+            w.agents[id].vendor = Vendor::Gemini;
+        }
+        // A Claude session lists its own.
+        s.start(&mut w, lead);
+        assert_eq!(w.agents[lead].commands, commands_of(Vendor::Claude));
+        let missing = |w: &World| {
+            (w.journal.iter())
+                .filter(|e| matches!(e.event, Event::CommandsMissing { .. }))
+                .map(|e| e.event.agent())
+                .collect::<Vec<_>>()
+        };
+        assert!(missing(&w).is_empty());
+        s.start(&mut w, workers[0]);
+        assert_eq!(w.agents[workers[0]].commands, ["/clear"]);
+        assert!(
+            (w.agents[workers[0]].trace.iter())
+                .any(|l| l.ends_with(" commands not listed: the vendor's format may have changed"))
+        );
+        assert_eq!(missing(&w), [workers[0]]);
+        // Once a run: the next Gemini session lists its own.
+        s.start(&mut w, workers[1]);
+        assert_eq!(w.agents[workers[1]].commands, ["/clear", "/stats"]);
+        assert_eq!(missing(&w), [workers[0]]);
     }
 
     #[test]

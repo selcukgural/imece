@@ -587,6 +587,10 @@ pub struct Protocol {
     cost: u64,
     /// The session's tokens so far: input, cached, output.
     tokens: (u64, u64, u64),
+    /// Whether Gemini listed its command line (`available_commands_update`)
+    /// yet, and whether its silence was said at a turn's end.
+    listed: bool,
+    unlisted: bool,
 }
 
 impl Protocol {
@@ -618,6 +622,8 @@ impl Protocol {
             denied: 0,
             cost: 0,
             tokens: (0, 0, 0),
+            listed: false,
+            unlisted: false,
         }
     }
 
@@ -888,6 +894,7 @@ impl Protocol {
     fn turn_failed(&mut self, why: String) -> Vec<Act> {
         self.busy = false;
         let mut acts = self.withdraw_all();
+        acts.extend(self.unlisted());
         acts.push(Act::Event(Event::TurnDone {
             ok: false,
             text: why,
@@ -896,6 +903,17 @@ impl Protocol {
         }));
         acts.extend(self.next_turn());
         acts
+    }
+
+    /// At a turn's end: when Gemini has not listed its command line by
+    /// now (it does at a session's start), its format may have moved;
+    /// said once.
+    fn unlisted(&mut self) -> Option<Act> {
+        if self.listed || self.unlisted {
+            return None;
+        }
+        self.unlisted = true;
+        Some(Act::Event(Event::CommandsMissing))
     }
 
     /// What the ended turn asked can not run after it: every ask still
@@ -944,6 +962,7 @@ impl Protocol {
         }
         let text = self.text.trim().to_string();
         let mut acts = self.withdraw_all();
+        acts.extend(self.unlisted());
         if !text.is_empty() {
             acts.push(Act::Event(Event::Text(text.clone())));
         }
@@ -1189,7 +1208,8 @@ impl Protocol {
 
     /// Gemini lists its own command line (at the start, and again when it
     /// changes); the screen completes with it.
-    fn commands(&self, u: &Value) -> Vec<Act> {
+    fn commands(&mut self, u: &Value) -> Vec<Act> {
+        self.listed = true;
         let commands = u["availableCommands"]
             .as_array()
             .into_iter()
@@ -1827,7 +1847,16 @@ mod tests {
             "nothing to say until a prompt comes"
         );
         assert!(!p.waiting());
+        // And, as a clean Gemini does once a session is there, its
+        // command line (here an empty one, which is a list).
+        let acts = p.line(&commands_listed(&[])).unwrap();
+        assert_eq!(events(&acts), [Event::Commands(vec![])]);
         p
+    }
+
+    fn commands_listed(names: &[&str]) -> String {
+        let list: Vec<Value> = names.iter().map(|n| json!({ "name": n })).collect();
+        update(json!({ "sessionUpdate": "available_commands_update", "availableCommands": list }))
     }
 
     #[test]
@@ -2462,6 +2491,59 @@ mod tests {
         let mut r = turn_result("x", 0, 0, 0, 0);
         r["_meta"] = json!({});
         assert!(p.line(&reply(6, r)).is_ok());
+    }
+
+    /// [`started`] without the command line a clean Gemini lists.
+    fn started_unlisted(spec: &Spec) -> Protocol {
+        let mut p = started(spec);
+        p.listed = false;
+        p
+    }
+
+    #[test]
+    fn a_command_line_never_listed_is_said_once_at_a_turn_s_end() {
+        let s = spec(false);
+        let missing = |acts: &[Act]| {
+            events(acts)
+                .iter()
+                .filter(|e| **e == Event::CommandsMissing)
+                .count()
+        };
+        // An ended turn says it, once; the next one does not.
+        let mut p = started_unlisted(&s);
+        p.prompt("hello");
+        let acts = p
+            .line(&reply(6, turn_result("gemini-2.5-flash", 1, 0, 1, 0)))
+            .unwrap();
+        assert_eq!(missing(&acts), 1);
+        let acts = p.prompt("again");
+        let id = sent(&acts)[0]["id"].as_u64().unwrap();
+        let acts = p
+            .line(&reply(id, turn_result("gemini-2.5-flash", 1, 0, 1, 0)))
+            .unwrap();
+        assert_eq!(missing(&acts), 0, "once a session");
+        // A refused turn says it too.
+        let mut p = started_unlisted(&s);
+        p.prompt("hello");
+        let refused =
+            json!({ "jsonrpc": "2.0", "id": 6, "error": { "code": 500, "message": "no" } });
+        let acts = p.line(&refused.to_string()).unwrap();
+        assert_eq!(missing(&acts), 1);
+        // Listed, even empty, before the turn ends: nothing to say.
+        let mut p = started_unlisted(&s);
+        p.line(&commands_listed(&[])).unwrap();
+        p.prompt("hello");
+        let acts = p
+            .line(&reply(6, turn_result("gemini-2.5-flash", 1, 0, 1, 0)))
+            .unwrap();
+        assert_eq!(missing(&acts), 0);
+        // And a clean start lists it.
+        let mut p = started(&s);
+        p.prompt("hello");
+        let acts = p
+            .line(&reply(6, turn_result("gemini-2.5-flash", 1, 0, 1, 0)))
+            .unwrap();
+        assert_eq!(missing(&acts), 0);
     }
 
     #[test]
@@ -3302,6 +3384,9 @@ done"#;
                     name: "read".into(),
                     target: "README.md".into()
                 },
+                // The stand-in never lists its command line: said when
+                // the first turn ends.
+                Event::CommandsMissing,
                 Event::Text("pong".into()),
                 // 1000 at 0.30 and 100 at 2.50.
                 Event::TurnDone {

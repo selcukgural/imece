@@ -120,6 +120,10 @@ pub fn event(lang: Lang, w: &World, e: &Event) -> String {
                 t.ev_confine_standard.to_string()
             }
         }
+        Event::CommandsMissing { agent } => {
+            let vendor = w.agents[*agent].vendor.label();
+            fill(t.ev_commands_missing, &[name(w, *agent), vendor])
+        }
         Event::NotesCut { agent, file, size } => fill(
             t.ev_notes_cut,
             &[
@@ -500,6 +504,26 @@ mod tests {
         assert_eq!(ago(Lang::Tr, 3 * 3600 + 5 * 60), "3 sa 5 dk");
         assert_eq!(ago(Lang::Tr, 60), "1 dk");
         assert_eq!(ago(Lang::Tr, 86_400), "1 g 0 sa");
+    }
+
+    #[test]
+    fn a_command_line_never_listed_is_worded_with_the_agent_and_its_vendor() {
+        let mut w = crate::live::testing::team(1);
+        w.agents[1].vendor = Vendor::Gemini;
+        let e = Event::CommandsMissing { agent: 1 };
+        let who = &w.agents[1].name;
+        assert_eq!(
+            event(Lang::En, &w, &e),
+            format!(
+                "{who}'s session listed no commands of its own; gemini's format may have changed, so only /clear completes"
+            )
+        );
+        assert_eq!(
+            event(Lang::Tr, &w, &e),
+            format!(
+                "{who} oturumu kendi komutlarını listelemedi; gemini biçimi değişmiş olabilir, yalnızca /clear tamamlanır"
+            )
+        );
     }
 
     #[test]
