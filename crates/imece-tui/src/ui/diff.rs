@@ -193,7 +193,10 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App, id: AgentId) {
     let inner = block.inner(area);
     f.render_widget(block, area);
     let ran = run_lines(app.lang, &c.runs);
-    let files = file_lines(app.lang, &c.files);
+    let mut files = file_lines(app.lang, &c.files);
+    if let Some(split) = kinds_line(app.lang, &c.files) {
+        files.insert(0, split);
+    }
     let rows = |n: usize| u16::try_from(n).unwrap_or(u16::MAX);
     let [runs, list, inner] = Layout::vertical([
         Constraint::Length(rows(ran.len())),
@@ -260,6 +263,102 @@ fn patch_rows(
     }
     rows.truncate(height);
     rows
+}
+
+/// What a changed file is, for the split above a change's files.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+enum Kind {
+    Source,
+    Tests,
+    /// Lock files, minified or generated code: written by a tool, read
+    /// by nobody line by line.
+    Generated,
+}
+
+/// What `path` is, by its name alone.
+fn kind(path: &str) -> Kind {
+    let lower = path.to_ascii_lowercase();
+    let name = lower.rsplit('/').next().unwrap_or(&lower);
+    const LOCKS: [&str; 8] = [
+        "cargo.lock",
+        "package-lock.json",
+        "yarn.lock",
+        "pnpm-lock.yaml",
+        "go.sum",
+        "poetry.lock",
+        "gemfile.lock",
+        "composer.lock",
+    ];
+    let generated = LOCKS.contains(&name)
+        || [
+            ".min.js",
+            ".min.css",
+            ".pb.go",
+            "_pb2.py",
+            ".g.dart",
+            ".designer.cs",
+        ]
+        .iter()
+        .any(|e| name.ends_with(e))
+        || ["generated/", "dist/", "vendor/"]
+            .iter()
+            .any(|d| lower.starts_with(d) || lower.contains(&format!("/{d}")));
+    let tests = ["tests/", "test/", "__tests__/", "spec/"]
+        .iter()
+        .any(|d| lower.starts_with(d) || lower.contains(&format!("/{d}")))
+        || name.starts_with("test_")
+        || [
+            "_test.go",
+            "_test.rs",
+            "_test.py",
+            ".test.ts",
+            ".test.js",
+            ".test.tsx",
+            ".spec.ts",
+            ".spec.js",
+            "tests.cs",
+            "test.java",
+        ]
+        .iter()
+        .any(|e| name.ends_with(e));
+    match (generated, tests) {
+        (true, _) => Kind::Generated,
+        (false, true) => Kind::Tests,
+        (false, false) => Kind::Source,
+    }
+}
+
+/// A change's lines by what its files are (`source +20 −1 (2) · tests
+/// +18 −0 (1)`), when it has files of more than one kind; binary files
+/// count as files, not lines.
+fn kinds_line(lang: Lang, files: &[ChangedFile]) -> Option<Line<'static>> {
+    let t = lang.text();
+    let mut sums: Vec<(Kind, u32, u32, usize)> = Vec::new();
+    for f in files {
+        let k = kind(&f.path);
+        match sums.iter_mut().find(|s| s.0 == k) {
+            Some(s) => (s.1, s.2, s.3) = (s.1 + f.added, s.2 + f.removed, s.3 + 1),
+            None => sums.push((k, f.added, f.removed, 1)),
+        }
+    }
+    if sums.len() < 2 {
+        return None;
+    }
+    sums.sort_by_key(|s| s.0);
+    let words: Vec<String> = (sums.iter())
+        .map(|&(k, a, r, n)| {
+            let name = match k {
+                Kind::Source => t.kind_source,
+                Kind::Tests => t.kind_tests,
+                Kind::Generated => t.kind_generated,
+            };
+            format!("{name} +{a} −{r} ({n})")
+        })
+        .collect();
+    Some(Line::from(Span::styled(
+        format!(" {}", words.join(" · ")),
+        bold(pal().strong),
+    )))
 }
 
 /// The files a change shows above its patch, at most this many; the rest
@@ -513,6 +612,81 @@ diff --git a/c.rs b/c.rs
         let mut odd = file(1, false);
         odd.path = "a\u{1b}[2Jb".into();
         assert_eq!(text(&[odd, file(2, false)])[0], " a [2Jb +1 −1", "cleaned");
+    }
+
+    #[test]
+    fn a_file_is_source_tests_or_generated_by_its_name() {
+        for (path, want) in [
+            ("src/parser.rs", Kind::Source),
+            ("README.md", Kind::Source),
+            ("contest/main.go", Kind::Source),
+            ("tests/cli.rs", Kind::Tests),
+            ("crates/a/tests/cli.rs", Kind::Tests),
+            ("test/x.c", Kind::Tests),
+            ("web/__tests__/a.js", Kind::Tests),
+            ("spec/models/user_spec.rb", Kind::Tests),
+            ("test_parser.py", Kind::Tests),
+            ("pkg/parser_test.go", Kind::Tests),
+            ("src/lib_test.rs", Kind::Tests),
+            ("tools/x_test.py", Kind::Tests),
+            ("web/App.test.tsx", Kind::Tests),
+            ("web/a.test.ts", Kind::Tests),
+            ("web/a.test.js", Kind::Tests),
+            ("web/a.spec.ts", Kind::Tests),
+            ("web/a.spec.js", Kind::Tests),
+            ("Api.Tests/ParserTests.cs", Kind::Tests),
+            ("src/ParserTest.java", Kind::Tests),
+            ("Cargo.lock", Kind::Generated),
+            ("web/package-lock.json", Kind::Generated),
+            ("yarn.lock", Kind::Generated),
+            ("pnpm-lock.yaml", Kind::Generated),
+            ("go.sum", Kind::Generated),
+            ("poetry.lock", Kind::Generated),
+            ("Gemfile.lock", Kind::Generated),
+            ("composer.lock", Kind::Generated),
+            ("web/app.min.js", Kind::Generated),
+            ("web/app.min.css", Kind::Generated),
+            ("api/user.pb.go", Kind::Generated),
+            ("api/user_pb2.py", Kind::Generated),
+            ("lib/a.g.dart", Kind::Generated),
+            ("Form1.Designer.cs", Kind::Generated),
+            ("generated/schema.ts", Kind::Generated),
+            ("src/generated/schema.ts", Kind::Generated),
+            ("dist/app.js", Kind::Generated),
+            ("web/dist/app.js", Kind::Generated),
+            ("vendor/lib.go", Kind::Generated),
+            ("tests/generated/fixture.rs", Kind::Generated),
+        ] {
+            assert_eq!(kind(path), want, "{path}");
+        }
+    }
+
+    #[test]
+    fn the_split_says_each_kind_s_lines_when_there_are_several() {
+        let file = |path: &str, added, removed| ChangedFile {
+            path: path.into(),
+            added,
+            removed,
+            binary: false,
+        };
+        let one_kind = [file("src/a.rs", 1, 0), file("src/b.rs", 2, 0)];
+        assert!(kinds_line(Lang::En, &one_kind).is_none());
+        let files = [
+            file("Cargo.lock", 7, 5),
+            file("src/a.rs", 10, 1),
+            file("tests/a.rs", 18, 0),
+            file("src/b.rs", 3, 2),
+        ];
+        let line = kinds_line(Lang::En, &files).unwrap();
+        assert_eq!(
+            line.to_string(),
+            " source +13 −3 (2) · tests +18 −0 (1) · generated +7 −5 (1)"
+        );
+        assert_eq!(line.spans[0].style, bold(pal().strong));
+        assert_eq!(
+            kinds_line(Lang::Tr, &files[..2]).unwrap().to_string(),
+            " kaynak +10 −1 (1) · üretilmiş +7 −5 (1)"
+        );
     }
 
     #[test]
