@@ -266,6 +266,11 @@ pub enum Event {
     /// window each (a five-hour one, a weekly one). A window not named
     /// is as it was: an update may be sparse.
     Limits(Vec<Limit>),
+    /// The session said nothing about its command line where its vendor's
+    /// format puts it (a field gone from the start message, a list that
+    /// never came), which an empty list is not: the format may have
+    /// changed, and only imece's own commands complete. Once a session.
+    CommandsMissing,
     /// Text the agent wrote during a turn. Display only.
     Text(String),
     /// The agent used a tool: its name and what it touched (a path relative
