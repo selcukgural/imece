@@ -504,8 +504,11 @@ fn run(
     state: &std::path::Path,
 ) -> std::io::Result<()> {
     let mut last = Instant::now();
+    let mut title = screen::Title::default();
     while !app.quit && !SIGNALLED.load(Ordering::SeqCst) {
         terminal.draw(|f| ui::draw(f, app))?;
+        let waiting = app.world.open_inbox().len();
+        title.show(&mut std::io::stdout(), &ui::words::title(app.lang, waiting))?;
         let timeout = app.tick_interval().saturating_sub(last.elapsed());
         let ready = match event::poll(timeout) {
             Ok(ready) => ready,
@@ -529,6 +532,8 @@ fn run(
                 let cwd = app.cwd();
                 let how = shell::run(terminal, &cwd, &command, |ended| app.shell_back(ended));
                 app.ran(&command, how);
+                // The shell had the terminal, and its title back.
+                title.forget();
             }
         }
         if last.elapsed() >= app.tick_interval() {

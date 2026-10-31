@@ -297,6 +297,16 @@ pub fn said_in_story(me: AgentId, e: &StoryEvent) -> Option<Said<'_>> {
 
 /// A span of `seconds` as the person reads it: minutes under an hour,
 /// hours and minutes under a day, days and hours from then on.
+/// The terminal's title: what a tab in the background shows, `waiting`
+/// being the count of open inbox items (the header's).
+pub fn title(lang: Lang, waiting: usize) -> String {
+    if waiting == 0 {
+        "imece".to_string()
+    } else {
+        fill(lang.text().title_waiting, &[&waiting.to_string()])
+    }
+}
+
 pub fn ago(lang: Lang, seconds: u64) -> String {
     let t = lang.text();
     let minutes = seconds / 60;
@@ -393,6 +403,15 @@ pub fn ran(lang: Lang, r: &Ran) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_title_names_imece_and_counts_what_waits_in_both_languages() {
+        assert_eq!(title(Lang::En, 0), "imece");
+        assert_eq!(title(Lang::Tr, 0), "imece");
+        assert_eq!(title(Lang::En, 1), "imece · 1 waiting");
+        assert_eq!(title(Lang::En, 12), "imece · 12 waiting");
+        assert_eq!(title(Lang::Tr, 3), "imece · 3 seni bekliyor");
+    }
 
     #[test]
     fn a_low_pot_is_said_with_its_rate_and_time_left() {

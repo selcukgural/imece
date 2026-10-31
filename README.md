@@ -43,7 +43,9 @@ follows your HEAD once you commit. The trace (`enter` twice) shows where
 each worktree is. A worktree is kept between runs: one found clean at an
 older commit is moved to your HEAD when its agent next starts and between
 turns; one with uncommitted changes or commits of its own stays where it
-is, and the journal says so either way.
+is, and the journal says so either way. The terminal's title counts what
+waits for you (`imece · 2 waiting`), so a tab in the background shows it;
+your shell's title comes back when imece ends.
 
 - Plain text goes to the lead, `@claude-2 text` to one agent. A message to
   an idle worker opens a card; its answer closes it.

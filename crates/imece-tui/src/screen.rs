@@ -14,6 +14,13 @@
 //! every cell itself and never needs the wrap, so auto-wrap (DECAWM) is
 //! off while the screen is up and on again whenever the terminal is
 //! handed back, to the shell at the end or to a `!` command.
+//!
+//! The terminal's title says how many items wait for the person (`Title`),
+//! so a tab in the background shows it. The shell's title is pushed on the
+//! terminal's title stack when imece takes the terminal and popped when it
+//! gives it back (`CSI 22;0 t`, `CSI 23;0 t`; xterm, iTerm2, kitty,
+//! WezTerm, Ghostty). Before the pop the title is emptied, so a terminal
+//! without a stack shows its own default rather than a stale count.
 
 use std::io::{self, Stdout, Write};
 
@@ -53,14 +60,47 @@ pub fn restore() {
     }
 }
 
-/// The alternate screen, with auto-wrap off.
+/// The shell's title saved, then the alternate screen, with auto-wrap off.
 pub fn take_over(out: &mut impl Write) -> io::Result<()> {
+    out.write_all(PUSH_TITLE)?;
     execute!(out, EnterAlternateScreen, DisableLineWrap)
 }
 
-/// Auto-wrap on again, then the main screen.
+/// Auto-wrap on again, the main screen, then the shell's title back.
 pub fn give_back(out: &mut impl Write) -> io::Result<()> {
-    execute!(out, EnableLineWrap, LeaveAlternateScreen)
+    execute!(out, EnableLineWrap, LeaveAlternateScreen)?;
+    out.write_all(b"\x1b]2;\x07")?;
+    out.write_all(POP_TITLE)?;
+    out.flush()
+}
+
+/// xterm's window ops: save the title on the stack, take it back.
+const PUSH_TITLE: &[u8] = b"\x1b[22;0t";
+const POP_TITLE: &[u8] = b"\x1b[23;0t";
+
+/// The terminal's title (OSC 2), written only when it changes.
+#[derive(Default)]
+pub struct Title(Option<String>);
+
+impl Title {
+    /// Sets the title to `text`, unless it already says that. Control
+    /// characters are left out: none can end the sequence early.
+    pub fn show(&mut self, out: &mut impl Write, text: &str) -> io::Result<()> {
+        let text: String = text.chars().filter(|c| !c.is_control()).collect();
+        if self.0.as_deref() == Some(text.as_str()) {
+            return Ok(());
+        }
+        write!(out, "\x1b]2;{text}\x07")?;
+        out.flush()?;
+        self.0 = Some(text);
+        Ok(())
+    }
+
+    /// The terminal was handed back and taken again (its title popped and
+    /// pushed): the next `show` writes whatever it is given.
+    pub fn forget(&mut self) {
+        self.0 = None;
+    }
 }
 
 /// Erases `rows` rows one by one and leaves the cursor at the top left.
@@ -209,10 +249,56 @@ mod tests {
     fn the_screen_is_taken_without_auto_wrap_and_given_back_with_it() {
         let mut taken = Vec::new();
         take_over(&mut taken).unwrap();
-        assert_eq!(String::from_utf8(taken).unwrap(), "\x1b[?1049h\x1b[?7l");
+        assert_eq!(
+            String::from_utf8(taken).unwrap(),
+            "\x1b[22;0t\x1b[?1049h\x1b[?7l",
+            "the shell's title is saved first"
+        );
         let mut given = Vec::new();
         give_back(&mut given).unwrap();
-        assert_eq!(String::from_utf8(given).unwrap(), "\x1b[?7h\x1b[?1049l");
+        assert_eq!(
+            String::from_utf8(given).unwrap(),
+            "\x1b[?7h\x1b[?1049l\x1b]2;\x07\x1b[23;0t",
+            "emptied, then the shell's title back"
+        );
+    }
+
+    #[test]
+    fn the_title_is_written_only_when_it_changes_and_again_after_a_forget() {
+        let mut title = Title::default();
+        let mut out = Vec::new();
+        title.show(&mut out, "imece").unwrap();
+        assert_eq!(out, b"\x1b]2;imece\x07");
+        out.clear();
+        title.show(&mut out, "imece").unwrap();
+        assert!(out.is_empty(), "the same title is not written twice");
+        title.show(&mut out, "imece · 2 waiting").unwrap();
+        assert_eq!(
+            String::from_utf8(out.clone()).unwrap(),
+            "\x1b]2;imece · 2 waiting\x07"
+        );
+        out.clear();
+        title.forget();
+        title.show(&mut out, "imece · 2 waiting").unwrap();
+        assert_eq!(
+            String::from_utf8(out).unwrap(),
+            "\x1b]2;imece · 2 waiting\x07",
+            "after the terminal came back"
+        );
+    }
+
+    #[test]
+    fn a_title_cannot_end_its_sequence_or_start_another() {
+        let mut title = Title::default();
+        let mut out = Vec::new();
+        title.show(&mut out, "a\x07b\x1b]2;c\nd").unwrap();
+        assert_eq!(
+            String::from_utf8(out.clone()).unwrap(),
+            "\x1b]2;ab]2;cd\x07"
+        );
+        out.clear();
+        title.show(&mut out, "ab]2;cd").unwrap();
+        assert!(out.is_empty(), "the cleaned title is what is remembered");
     }
 
     #[test]
