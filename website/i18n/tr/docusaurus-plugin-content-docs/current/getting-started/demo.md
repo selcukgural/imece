@@ -26,7 +26,7 @@ imece --demo --lang tr --theme nord
 | `--theme AD\|DOSYA` | (terminal) | bir tema, canlının aldığı gibi |
 | `--awake` | kapalı | sahte bir ajan turdayken makinenin uykusunu tutar, canlıdaki gibi |
 
-`--projects`, `--researchers` ve `--seed` yalnız demoya aittir: canlı imece bunları `--projects is for --demo` sözüyle reddeder. Demonun saati bugünün tarihinde 14:00'te başlar. Demo deponun ekran ayarlarını (tema, yan panel genişliği) canlıyla paylaşır ama başka hiçbir şey yazmaz: proje yok, günlük yok, kese yok.
+`--projects`, `--researchers` ve `--seed` yalnız demoya aittir: canlı imece bunları `--projects is for --demo` sözüyle reddeder. Demonun saati bugünün tarihinde 14:00'te başlar. Demo deponun ekran ayarlarını (tema, yan panel genişliği, birincil satıcı) canlıyla paylaşır ama başka hiçbir şey yazmaz: proje yok, günlük yok, kese yok.
 
 ## Hız
 

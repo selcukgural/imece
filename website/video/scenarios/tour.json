@@ -81,15 +81,16 @@
     {
       "id": "bus",
       "chapter": "Agents talk to each other",
-      "narration": "Agents talk to each other over a bus: they ask, answer, hand work off, report progress, and say when they are blocked. imece reads only the envelope; the body is never interpreted. Let us speed the simulation up and let them work for a while.",
+      "narration": "Agents talk to each other over a bus: they ask, answer, hand work off, report progress, and say when they are blocked. imece reads only the envelope; the body is never interpreted. Let us speed the simulation up, let them work for a while, and pause it.",
       "steps": [
         { "action": "type", "target": "#corner", "text": "+", "delayMs": 0 },
+        { "action": "wait", "seconds": 2 },
+        { "action": "type", "target": "#corner", "text": "++", "delayMs": 300 },
+        { "action": "wait", "seconds": 5 },
+        { "action": "type", "target": "#corner", "text": "---", "delayMs": 200 },
         { "action": "wait", "seconds": 3 },
-        { "action": "type", "target": "#corner", "text": "+", "delayMs": 0 },
-        { "action": "wait", "seconds": 3 },
-        { "action": "type", "target": "#corner", "text": "+", "delayMs": 0 },
-        { "action": "wait", "seconds": 6 },
-        { "action": "type", "target": "#corner", "text": "---", "delayMs": 200 }
+        { "action": "type", "target": "#corner", "text": " ", "delayMs": 0 },
+        { "action": "wait", "seconds": 2 }
       ]
     },
     {
@@ -132,8 +133,10 @@
     {
       "id": "pot",
       "chapter": "One pot",
-      "narration": "One pot for the whole team, kept between runs. The header shows what was spent, what the last ten minutes cost per hour, and how long the pot lasts at that rate. Beside it, each vendor plan's usage window nearest to full, and the fleet: working, done, stuck.",
+      "narration": "Let the simulation run again. One pot for the whole team, kept between runs. The header shows what was spent, what the last ten minutes cost per hour, and how long the pot lasts at that rate. Beside it, each vendor plan's usage window nearest to full, and the fleet: working, done, stuck.",
       "steps": [
+        { "action": "type", "target": "#corner", "text": " ", "delayMs": 0 },
+        { "action": "wait", "seconds": 1 },
         { "action": "type", "target": "#corner", "text": "1", "delayMs": 0 },
         { "action": "wait", "seconds": 8 },
         { "action": "type", "target": "#corner", "text": "k", "delayMs": 0 },

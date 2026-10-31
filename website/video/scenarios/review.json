@@ -35,15 +35,17 @@
     {
       "id": "gate",
       "chapter": "The gate",
-      "narration": "A worker never writes to your checkout. It works in a git worktree of its own, and when it sends its done, what that worktree holds shows up as a change, waiting for you. Let us speed the simulation up until a few workers are done.",
+      "narration": "A worker never writes to your checkout. It works in a git worktree of its own, and when it sends its done, what that worktree holds shows up as a change, waiting for you. Let us speed the simulation up until a few workers are done, then pause it, so the list holds still.",
       "steps": [
         { "action": "goto", "path": "/" },
         { "action": "wait", "seconds": 2 },
         { "action": "type", "target": "#corner", "text": "+", "delayMs": 0 },
-        { "action": "wait", "seconds": 3 },
+        { "action": "wait", "seconds": 2 },
         { "action": "type", "target": "#corner", "text": "++", "delayMs": 300 },
-        { "action": "wait", "seconds": 7 },
+        { "action": "wait", "seconds": 5 },
         { "action": "type", "target": "#corner", "text": "---", "delayMs": 200 },
+        { "action": "wait", "seconds": 2 },
+        { "action": "type", "target": "#corner", "text": " ", "delayMs": 0 },
         { "action": "wait", "seconds": 2 }
       ]
     },
@@ -76,10 +78,10 @@
         { "action": "type", "target": "#corner", "text": "use the Money type here, not decimal", "delayMs": 60 },
         { "action": "press", "key": "Enter" },
         { "action": "wait", "seconds": 2 },
-        { "action": "type", "target": "#corner", "text": "jjjj", "delayMs": 250 },
+        { "action": "type", "target": "#corner", "text": "jjjjjjjjj", "delayMs": 200 },
         { "action": "type", "target": "#corner", "text": "c", "delayMs": 0 },
         { "action": "wait", "seconds": 1 },
-        { "action": "type", "target": "#corner", "text": "this test still asserts the old message", "delayMs": 60 },
+        { "action": "type", "target": "#corner", "text": "validate before the lookup, not after", "delayMs": 60 },
         { "action": "press", "key": "Enter" },
         { "action": "wait", "seconds": 2 }
       ]
@@ -141,14 +143,19 @@
     {
       "id": "asks",
       "chapter": "Commands and questions",
-      "narration": "Changes are not the only thing that waits for you. A flag is a shell command a vendor would have asked you about: routine ones, the build and the tests, run on their own, the rest wait here, shown whole, for a to allow or r to refuse. A question mark is a question an agent asked you. Capital S puts the item at hand off and opens the next.",
+      "narration": "Let the simulation run again. Changes are not the only thing that waits for you. A flag is a shell command a vendor would have asked you about: routine ones, the build and the tests, run on their own; the rest wait here, shown whole, for a to allow or r to refuse. A question mark is a question an agent asked you. Capital S puts the item at hand off and opens the next.",
       "steps": [
+        { "action": "type", "target": "#corner", "text": " ", "delayMs": 0 },
+        { "action": "wait", "seconds": 1 },
+        { "action": "type", "target": "#corner", "text": "1", "delayMs": 0 },
         { "action": "type", "target": "#corner", "text": "w", "delayMs": 0 },
-        { "action": "wait", "seconds": 6 },
+        { "action": "wait", "seconds": 7 },
+        { "action": "type", "target": "#corner", "text": "j", "delayMs": 0 },
+        { "action": "wait", "seconds": 5 },
         { "action": "type", "target": "#corner", "text": "W", "delayMs": 0 },
-        { "action": "wait", "seconds": 5 },
+        { "action": "wait", "seconds": 4 },
         { "action": "type", "target": "#corner", "text": "S", "delayMs": 0 },
-        { "action": "wait", "seconds": 5 },
+        { "action": "wait", "seconds": 4 },
         { "action": "press", "key": "Escape" },
         { "action": "wait", "seconds": 2 }
       ]

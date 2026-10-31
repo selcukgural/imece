@@ -13,7 +13,7 @@ Salon, imece'nin açıldığı ve `1` ya da `:salon` ile geri döndüğünüz ek
 │▾ ▴ shop-api  2 çalışıyor  $2.40   ! 2 bekliyor  ││Δ 13:58 claude-1 bitirdi: parser (3 dosya, +41 −6) · ✓ bu ağaçta temiz geçti: cargo test
 │  ◆ ▎lead      claude             koordine ediyor││⚑ 14:01 codex-2 onayını bekliyor: Bash: npm install left-pad
 │  ├ ● ▎claude-1 #3   Parse the manifest  testleri yazıyor  $1.10  ⎇ fix-parser ↑2 ↓1 +12 −3
-│  │ └ ● ▎claude-1/1                      düşünüyor…   ⎇                                    │
+│  │ └ ● ▎claude-1.1                      düşünüyor…   ⎇                                    │
 │  ├ ✓ ▎codex-2  #5   Money rounding      bitti, henüz bakılmadı  $0.80  ↗ localhost:5173/  │
 │  └ … 2 agent yolunda                             │└────────────────────────────────────────┘
 │▸ web  1 çalışıyor  $0.70                         │┌ DEFTER ────────────────────────────────┐
@@ -53,7 +53,7 @@ Bir agent'ın satırı:
   ├ ● ▎claude-1 #3   Parse the manifest  testleri yazıyor  $1.10  ⎇ fix-parser ↑2 ↓1 +12 −3  ▾ 1 yardımcı  ↗ localhost:5173/
 ```
 
-- Ağaç çizgileri `├ └ │` kimin kimin altında olduğunu gösterir; bir yardımcı işçisinin altındadır ve `claude-1/1` diye adlanır.
+- Ağaç çizgileri `├ └ │` kimin kimin altında olduğunu gösterir; bir yardımcı işçisinin altındadır ve `claude-1.1` diye adlanır.
 - Durum işareti (aşağıdaki lejant) ve bir turu bitirmiş ama henüz açmadığınız bir işçi için onun yerine `✓`, durum olarak `bitti, henüz bakılmadı`. Lider hep `◆` kalır.
 - Agent'ın konuşmacı renginde `▎`: günlükte ve bir konuşmada satırlarının taşıdığı renk, böylece satır ve konuşması tek agent olarak okunur.
 - Satıcısının renginde adı; sonra kirliyse `~` ya da `≈` (araştırma kirliliği, yalnız demoda).

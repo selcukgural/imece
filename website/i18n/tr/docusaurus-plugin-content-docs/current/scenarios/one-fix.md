@@ -92,7 +92,7 @@ Boru komutu rutin olmaktan çıkarır. Komut bütünüyle gösterilir, asla mark
  14:07 › claude-1 için izin verdin: Bash: cargo test 2>&1 | tail -20
 ```
 
-`r`, `reddedildi: claude-1 bunu öğrenecek` derdi ve modele "The person refused this. Do not try it another way; if you need it, ask them" gider. Bir çağrı yanıtınızı bir güne kadar bekler; oturumun bitmesi onu geri çeker.
+`r`, `reddedildi: claude-1 bunu öğrenecek` derdi ve modele "The person refused this. Do not try it another way; if you need it, ask them (send to you, type ask) and go on with what does not depend on it." gider. Bir çağrı yanıtınızı bir güne kadar bekler; oturumun bitmesi onu geri çeker.
 
 ## 6. `done` değişikliğe dönüşür
 

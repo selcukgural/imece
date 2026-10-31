@@ -29,7 +29,7 @@ imece --demo --lang tr                             # ya da IMECE_LANG=tr
 
 - `--demo`, `--fresh` ve `--awake` dışında her bayrak bir değer alır: sonraki kelime. Değersiz bir bayrak reddedilir: `--agents needs a value`, ardından kullanım metni gelir.
 - Bayraklar herhangi bir sırada gelebilir. `--model` ve `--tier` yinelenebilir; ötekiler son değerlerini alır.
-- Bir sayı aralığıyla karşılaştırılır; dışındaysa imece `--agents: 17 is not in 0-200` der (bayrağın aralığı).
+- Bir sayı aralığıyla karşılaştırılır; dışındaysa imece `--helpers: 9 is not in 0-8` der (bayrağın aralığı).
 - `--projects`, `--researchers` ve `--seed` `--demo`'ya aittir. Onsuz verilirse imece `--projects is for --demo` der ve kullanımı yazar.
 - `-h` ya da `--help` kullanım metnini yazar. Reddedilen her komut satırı gibi 2 çıkış koduyla biter.
 - `--live` kabul edilir ve yok sayılır: canlı ajanlar varsayılan olmadan önce onlar bu bayrakla istenirdi.
@@ -127,7 +127,7 @@ Tüm ajanların birlikte harcayabileceği en çok: bütün takım için tek bir 
 imece --fresh
 ```
 
-Depo alınırken her ajanın hatırlanan satıcı oturumunu unutturur: her ajan yeni bir oturumda uyanır, kaldığı yer anlatılır, ve satıcıların eski oturumlardan tuttuğu silinir (Claude'un transkripti, Codex'in iş parçacığı, Gemini'nin sohbet dosyaları; bkz. [dosyalar](files.md)). Günlük, gitmemiş her ajan için `you made X forget its session` der. `:forget @NAME` aynısını imece çalışırken tek bir ajan için yapar. Yeni oturum bütün brifingi, önbelleksiz, yeniden öder.
+Depo alınırken her ajanın hatırlanan satıcı oturumunu unutturur: her ajan yeni bir oturumda uyanır, kaldığı yer anlatılır, ve satıcıların eski oturumlardan tuttuğu silinir (Claude'un transkripti, Codex'in iş parçacığı, Gemini'nin sohbet dosyaları; bkz. [dosyalar](files.md)). Günlük, gitmemiş her ajan için `X oturumunu unutturdun; yeni bir oturumla başlıyor, kaldığı yer anlatılacak` der. `:forget @NAME` aynısını imece çalışırken tek bir ajan için yapar. Yeni oturum bütün brifingi, önbelleksiz, yeniden öder.
 
 ### `--awake`
 

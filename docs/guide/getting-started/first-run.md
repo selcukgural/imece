@@ -92,7 +92,7 @@ The leader reads the checkout (it has read tools, the web, and read-only command
    ● claude-1  #1   accept a trailing comma   thinking…
 ```
 
-The journal says `lead posted #1 accept a trailing comma`, `lead hired claude-1 (default model)`, `lead → claude-1: assign #1 …`. The leader's closing text comes to you as a reply (`»`) in WAITING FOR YOU: `enter` reads it whole, `r` dismisses it, or you just write back.
+The journal says `lead posted #1 accept a trailing comma`, `lead hired claude-1 (default model)`, `⇄ lead → claude-1 [assign]: #1 …`. The leader's closing text comes to you as a reply (`»`) in WAITING FOR YOU: `enter` reads it whole, `r` dismisses it, or you just write back.
 
 A tier model your account does not have fails its first turn; imece then restarts that worker on the standard model and the journal says `claude-1: model opus is not available here, using the default`.
 

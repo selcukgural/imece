@@ -92,7 +92,7 @@ Lider checkout'u okur (okuma araçları, web ve salt okunur komutları vardır; 
    ● claude-1  #1   sondaki virgülü kabul et   düşünüyor…
 ```
 
-Günlük `lead panoya astı: #1 sondaki virgülü kabul et`, `lead işe aldı: claude-1 (varsayılan model)`, `lead → claude-1: görev #1 …` der. Liderin kapanış metni size SENİ BEKLEYEN'de bir yanıt (`»`) olarak gelir: `enter` tamamını okur, `r` kapatır, ya da doğrudan yanıt yazarsınız.
+Günlük `lead panoya astı: #1 sondaki virgülü kabul et`, `lead işe aldı: claude-1 (varsayılan model)`, `⇄ lead → claude-1 [görev]: #1 …` der. Liderin kapanış metni size SENİ BEKLEYEN'de bir yanıt (`»`) olarak gelir: `enter` tamamını okur, `r` kapatır, ya da doğrudan yanıt yazarsınız.
 
 Hesabınızda olmayan bir katman modeli ilk turunda düşer; imece o işçiyi standart modelde yeniden başlatır ve günlük `claude-1: opus modeli burada yok, varsayılanla devam` der.
 

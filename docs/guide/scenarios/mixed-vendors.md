@@ -88,7 +88,7 @@ Under `standard` a Gemini writer's `run_shell_command` is `ask_user` in the poli
    a allow · r refuse · enter focus
 ```
 
-`a` allows once, `r` refuses: Gemini fails the call ("canceled by the user") and the turn goes on. A Codex worker asks the same way (`on-request`) for what needs more than its `workspace-write` sandbox gives, shown as `shell: …` with Codex's own shell wrapper taken off. The turn's end withdraws an ask still waiting (its item closes, the trace says `no longer asks`). The journal keeps every decision:
+`a` allows once, `r` refuses: imece answers Gemini's ask with its own cancel option, the call fails and the turn goes on. A Codex worker asks the same way (`on-request`) for what needs more than its `workspace-write` sandbox gives, shown as `shell: …` with Codex's own shell wrapper taken off. The turn's end withdraws an ask still waiting (its item closes, the trace says `no longer asks`). The journal keeps every decision:
 
 ```text
  14:09 › you allowed gemini-1: shell: npm run lint:fix (in /Users/you/code/api)

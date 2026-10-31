@@ -64,9 +64,9 @@
     {
       "id": "reply",
       "chapter": "A reply and its question",
-      "narration": "Every message on the bus has a number, and a reply names the one it answers. Capital W opens the reply; the arrow shows what it answers, and the percent key goes there and back. The brackets go from turn to turn: the lines one side says before the other answers.",
+      "narration": "Every message on the bus has a number, and a reply names the one it answers. v opens the conversation with the agent at hand, here the leader; the arrow shows what its reply answers, and the percent key goes there and back. The brackets go from turn to turn: the lines one side says before the other answers.",
       "steps": [
-        { "action": "type", "target": "#corner", "text": "W", "delayMs": 0 },
+        { "action": "type", "target": "#corner", "text": "ggjv", "delayMs": 300 },
         { "action": "wait", "seconds": 6 },
         { "action": "type", "target": "#corner", "text": "%", "delayMs": 0 },
         { "action": "wait", "seconds": 4 },
@@ -83,6 +83,8 @@
       "narration": "Hash and a number, or hash and a word of its title, opens a card's screen: who works on it, its story, the inbox and journal lines about it. n and p step to the next and the previous card.",
       "steps": [
         { "action": "type", "target": "#corner", "text": "#3", "delayMs": 300 },
+        { "action": "wait", "seconds": 1 },
+        { "action": "press", "key": "Escape" },
         { "action": "press", "key": "Enter" },
         { "action": "wait", "seconds": 6 },
         { "action": "type", "target": "#corner", "text": "n", "delayMs": 0 },

@@ -21,7 +21,7 @@ The budget is one pot for the whole team: once all agents together have spent it
 ## The header
 
 ```text
- imece · 3/7 cards · $2.40/h · ~2 h 10 min left · spent $3.10 of $20.00 · claude 5h: 48% left, resets in 1 h 59 min · ● 2 working ✓ 1 done
+ imece  3/7 cards │ ● 2 working ✓ 1 done │ spent $3.10 of $20.00 ($2.40/h, ~2 h 10 min left) │ claude 5h: 48% left, resets in 1 h 59 min
 ```
 
 - `$/h` is what the **last ten minutes** cost per hour, not the average since the start (an idle hour would pull that down and a first turn push it up). Costs arrive at turn ends, so the rate moves in steps. Only this run counts.

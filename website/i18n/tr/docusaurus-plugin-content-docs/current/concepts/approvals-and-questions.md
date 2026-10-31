@@ -33,7 +33,7 @@ Başka her şey SENİ BEKLEYEN'de bir `⚑` öğesidir: "claude-1 onayını bekl
 ```
 
 - `a` izin verir; çağrı istendiği gibi çalışır ve günlük `claude-1 için izin verdin: Bash: …` der.
-- `r` reddeder; ajana "The person refused this. Do not try it another way; if you need it, ask them" denir ve günlük `… için reddettin` der. Ret bir karardır, hata değil; tur devam eder.
+- `r` reddeder; ajana "The person refused this. Do not try it another way; if you need it, ask them (send to you, type ask) and go on with what does not depend on it." denir ve günlük `… için reddettin` der. Ret bir karardır, hata değil; tur devam eder.
 - Bir çağrı en çok bir gün bekler. Bağlantı başına bir anda bir çağrı; bekleyen bir istek o oturumun diğer imece araçlarını tutar (istek ortasında zaten kullanamazdı).
 - Oturum bitince bekleyen her istek "the session ended" ile yanıtlanır ve öğeleri kapanır. Deponun önceki çalıştırmadan tuttuğu bir istek başlangıçta kapatılır: soran süreç gitmiştir. Codex ve Gemini tur bitince isteği geri çeker; öğe kararsız kapanır.
 

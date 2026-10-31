@@ -13,7 +13,7 @@ The salon is the screen imece opens on and the one you come back to with `1` or 
 │▾ ▴ shop-api  2 working  $2.40   ! 2 waiting     ││Δ 13:58 claude-1 finished: parser (3 files, +41 −6) · ✓ ran clean on this tree: cargo test
 │  ◆ ▎lead      claude                coordinating ││⚑ 14:01 codex-2 waits for your yes: Bash: npm install left-pad
 │  ├ ● ▎claude-1 #3   Parse the manifest  writing tests  $1.10  ⎇ fix-parser ↑2 ↓1 +12 −3
-│  │ └ ● ▎claude-1/1                      thinking…    ⎇                                    │
+│  │ └ ● ▎claude-1.1                      thinking…    ⎇                                    │
 │  ├ ✓ ▎codex-2  #5   Money rounding      done, not seen yet  $0.80  ↗ localhost:5173/      │
 │  └ … 2 agents doing fine                         │└────────────────────────────────────────┘
 │▸ web  1 working  $0.70                           │┌ JOURNAL ───────────────────────────────┐
@@ -52,7 +52,7 @@ An agent's row:
   ├ ● ▎claude-1 #3   Parse the manifest  writing tests  $1.10  ⎇ fix-parser ↑2 ↓1 +12 −3  ▾ 1 helpers  ↗ localhost:5173/
 ```
 
-- The tree lines `├ └ │` show who is under whom; a helper is under its worker, named `claude-1/1`.
+- The tree lines `├ └ │` show who is under whom; a helper is under its worker, named `claude-1.1`.
 - The state glyph (see the legend below) and, for a worker that finished a turn you have not opened since, `✓` in its place with `done, not seen yet` as its status. A leader always keeps `◆`.
 - `▎` in the agent's speaker colour, the same colour its lines have in the journal and in a conversation, so a row and its talk read as one agent.
 - Its name in its vendor's colour, then `~` or `≈` when it is tainted (research taint, demo only).

@@ -26,7 +26,7 @@ imece --demo --lang tr --theme nord
 | `--theme NAME\|FILE` | (terminal) | a theme, as live takes it |
 | `--awake` | off | holds the machine's sleep while a fake agent is mid-turn, as live does |
 
-`--projects`, `--researchers` and `--seed` belong to the demo alone: live imece refuses them with `--projects is for --demo`. The demo's clock starts at 14:00 on today's date. The demo shares the store's screen settings (theme, side panel width) with live but writes nothing else: no projects, no journal, no pot.
+`--projects`, `--researchers` and `--seed` belong to the demo alone: live imece refuses them with `--projects is for --demo`. The demo's clock starts at 14:00 on today's date. The demo shares the store's screen settings (theme, side panel width, the primary vendor) with live but writes nothing else: no projects, no journal, no pot.
 
 ## Speed
 

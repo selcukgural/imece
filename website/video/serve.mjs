@@ -75,8 +75,10 @@ const server = http.createServer((req, res) => {
           // cursor, and the browser scrolls it into view when the cursor is on
           // the last row, cutting the header off the top of the frame.
           // overflow:hidden alone does not stop a scrollIntoView, so every
-          // scroll, on the window or on any element, is put back to 0.
-          `<style>html,body{margin:0;height:100%;overflow:hidden}</style><script>(function(){document.addEventListener('scroll',function(e){var el=e.target===document?document.scrollingElement:e.target;if(el&&el.scrollTop!==undefined){el.scrollTop=0;el.scrollLeft=0;}},true);var t=setInterval(function(){var x=document.querySelector('.xterm');if(!x)return;clearInterval(t);var s=document.createElement('span');s.id='corner';s.style.cssText='position:fixed;right:3px;bottom:3px;width:6px;height:6px;z-index:10';x.appendChild(s);},100);})();</script></body>`,
+          // scroll, on the window or on any element, is put back to 0. ttyd
+          // fits the terminal before its client options (the font, the line
+          // height) arrive, so a resize is raised after them to fit again.
+          `<style>html,body{margin:0;height:100%;overflow:hidden}</style><script>(function(){document.addEventListener('scroll',function(e){var el=e.target===document?document.scrollingElement:e.target;if(el&&el.scrollTop!==undefined){el.scrollTop=0;el.scrollLeft=0;}},true);var t=setInterval(function(){var x=document.querySelector('.xterm');if(!x)return;clearInterval(t);var s=document.createElement('span');s.id='corner';s.style.cssText='position:fixed;right:3px;bottom:3px;width:6px;height:6px;z-index:10';x.appendChild(s);[800,2000,4000].forEach(function(ms){setTimeout(function(){window.dispatchEvent(new Event('resize'));},ms);});},100);})();</script></body>`,
         );
         const h = { ...up.headers };
         delete h['content-length'];

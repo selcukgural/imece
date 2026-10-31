@@ -66,7 +66,7 @@ Bir salon panelinde çalışan komutlar (`:waiting`, `:needs`, `:fold`, `:unfold
 
 ### Menü ve değerler
 
-Menü her komutun değerini ardında, ayraç içinde gösterir; çizilir, asla eklenmez: `budget ($3.10 / $20.00 harcandı)`, `lead (claude)` ya da `(ask)`, `theme (dark)`, `lang (Türkçe)`, `close` ve `rename` eldeki projeyle, `forget` `talk` `trace` eldeki agent'la, `next` ve `waiting` kaç öge beklediğiyle, `needs` ve `pause` açık ya da kapalı, `faster` `slower` hızla, `pin` projeyle (sabitse `▴` ile), `export` ne yazacağıyla (`konuşma`, `#12`). `$` sonraki faturayı büyüteni işaretler: `:open` (yeni bir lider oturumu) ve `:forget` (sonraki mesaj, bütün brifingi yeniden ödeyen yeni bir oturum başlatır). Hiçbir `:` komutu kendi başına ücretli bir tur başlatmaz; `:commit` bir modele sorduğu için yardımda `$` ile işaretlidir.
+Menü her komutun değerini ardında, ayraç içinde gösterir; çizilir, asla eklenmez: `budget ($3.10 / $20.00 harcandı)`, `lead (claude)` ya da `(ask)`, `theme (dark)`, `lang (Türkçe)`, `close` ve `rename` eldeki projeyle, `forget` `talk` `trace` eldeki agent'la, `next` ve `waiting` kaç öge beklediğiyle, `needs` ve `pause` açık ya da kapalı, `faster` `slower` hızla, `pin` projeyle (sabitse `▴` ile), `export` ne yazacağıyla (`konuşma`, `#12`). `$` sonraki faturayı büyüteni işaretler: `:open` (yeni bir lider oturumu), `:forget` (sonraki mesaj, bütün brifingi yeniden ödeyen yeni bir oturum başlatır) ve `:commit` (mesajı bir modele sorar). Başka hiçbir `:` komutu kendi başına ücretli bir tur başlatmaz.
 
 ### Kısa adlar
 
@@ -78,7 +78,7 @@ Menü her komutun değerini ardında, ayraç içinde gösterir; çizilir, asla e
 
 ## Tamamlama
 
-Yazmak bir kabuktaki gibi tamamlanır: `@` ardından agent adları (eldeki proje önce, gidenler dışarıda, önek eşleşmesi, büyük küçük harf ayırmadan), `:` ardından imece'nin komutları ve `:lead` ardından satıcılar, `/` ya da `@name /` ardından o agent'ın oturumunun bildirdiği kendi komut satırı (asla sabit bir liste değil, böylece satıcının yeni komutu sürüm gerektirmez; oturum söyleyene dek boş, ve bir oturum hiç komut listelemediğinde günlük yalnız `/clear`'ın tamamlanacağını söyler), `#` ardından kartlar, `:open`, `:export` ve `:copy` ardından dizinler; `:pin` ve `:close` açık projelerin adlarını tamamlar. Eşleşmeler yazarken alt satırın üstünde tek satırda görünür; sözcüğe eşit tek eşleşme menü değildir.
+Yazmak bir kabuktaki gibi tamamlanır: `@` ardından agent adları (eldeki proje önce, gidenler dışarıda, önek eşleşmesi, büyük küçük harf ayırmadan), `:` ardından imece'nin komutları ve `:lead` ardından satıcılar, `/` ya da `@name /` ardından o agent'ın oturumunun bildirdiği kendi komut satırı (asla sabit bir liste değil, böylece satıcının yeni komutu sürüm gerektirmez; oturum söyleyene dek boş, ve bir oturum hiç komut listelemediğinde günlük yalnız `/clear`'ın tamamlanacağını söyler), `#` ardından kartlar, `:open` ve `:export` ardından dizinler; `:pin` ve `:close` açık projelerin adlarını tamamlar. Eşleşmeler yazarken alt satırın üstünde tek satırda görünür; sözcüğe eşit tek eşleşme menü değildir.
 
 | Tuş | Ne yapar |
 | --- | --- |

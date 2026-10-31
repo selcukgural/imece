@@ -33,7 +33,7 @@ Anything else is a `⚑` item in WAITING FOR YOU: "claude-1 waits for your yes: 
 ```
 
 - `a` allows; the call runs as asked and the journal says `you allowed claude-1: Bash: …`.
-- `r` refuses; the agent is told "The person refused this. Do not try it another way; if you need it, ask them" and the journal says `you refused …`. A refusal is a decision, not an error; the turn goes on.
+- `r` refuses; the agent is told "The person refused this. Do not try it another way; if you need it, ask them (send to you, type ask) and go on with what does not depend on it." and the journal says `you refused …`. A refusal is a decision, not an error; the turn goes on.
 - A call waits up to a day. One call at a time per connection, so a waiting ask holds that session's other imece tools (it could not use them mid-ask anyway).
 - When the session ends, every pending ask is answered "the session ended" and its items close. An ask the store kept from an earlier run is closed at the start: the process that asked is gone. Codex and Gemini withdraw an ask when the turn ends; the item closes without a decision.
 

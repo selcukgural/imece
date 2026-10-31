@@ -92,7 +92,7 @@ Press `tab` (or `w`) to the panel, or `W` from anywhere, and `a`. The flash says
  14:07 › you allowed claude-1: Bash: cargo test 2>&1 | tail -20
 ```
 
-`r` would say `refused: claude-1 is told so`, and the model gets "The person refused this. Do not try it another way; if you need it, ask them". A call waits for your answer up to a day; the session's end withdraws it.
+`r` would say `refused: claude-1 is told so`, and the model gets "The person refused this. Do not try it another way; if you need it, ask them (send to you, type ask) and go on with what does not depend on it.". A call waits for your answer up to a day; the session's end withdraws it.
 
 ## 6. `done` becomes a change
 

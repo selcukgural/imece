@@ -88,7 +88,7 @@ Gemini'de `--restricted` yoktur; imece onu kendine ait özel bir dizinde, worktr
    a izin ver · r reddet · enter odak
 ```
 
-`a` bir kez izin verir, `r` reddeder: Gemini çağrıyı başarısız sayar ("canceled by the user") ve tur sürer. Bir Codex işçisi `workspace-write` sandbox'ının verdiğinden fazlasını gerektiren şeyler için aynı yolla sorar (`on-request`), Codex'in kendi kabuk sargısı çıkarılmış hâlde `shell: …` olarak gösterilir. Turun bitmesi hâlâ bekleyen bir soruyu geri çeker (öğesi kapanır, iz `no longer asks` der). Günlük her kararı tutar:
+`a` bir kez izin verir, `r` reddeder: imece Gemini'nin sorusunu onun kendi iptal seçeneğiyle yanıtlar, çağrı başarısız olur ve tur sürer. Bir Codex işçisi `workspace-write` sandbox'ının verdiğinden fazlasını gerektiren şeyler için aynı yolla sorar (`on-request`), Codex'in kendi kabuk sargısı çıkarılmış hâlde `shell: …` olarak gösterilir. Turun bitmesi hâlâ bekleyen bir soruyu geri çeker (öğesi kapanır, iz `no longer asks` der). Günlük her kararı tutar:
 
 ```text
  14:09 › gemini-1 için izin verdin: shell: npm run lint:fix (in /Users/you/code/api)

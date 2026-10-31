@@ -28,11 +28,12 @@ cleanup() { kill 0 2>/dev/null; }
 trap cleanup INT TERM EXIT
 
 # At 1920x1080 (device scale 1: xterm.js draws twice too big under an emulated
-# scale of 2) a 24 px Menlo gives 133 columns by 39 rows.
+# scale of 2) a 24 px Menlo gives 133 columns by 38 rows (xterm.js measures the font,
+# about 28 px a row); serve.mjs refits the terminal once the options are in.
 XDG_STATE_HOME="$state" COLORTERM=truecolor TERM=xterm-256color \
 ttyd -i 127.0.0.1 -p "$ttyd_port" -W \
   -t fontSize=24 -t fontFamily=Menlo \
-  -t lineHeight=1.15 -t cursorBlink=false -t disableLeaveAlert=true -t disableResizeOverlay=true \
+  -t lineHeight=1.0 -t cursorBlink=false -t disableLeaveAlert=true -t disableResizeOverlay=true \
   -t 'theme={"background":"#15161b","foreground":"#e6e6ea","cursor":"#e3a93f"}' \
   "$bin" --demo --theme dark --lang en --seed "$seed" --projects 2 --agents 12 &
 sleep 0.5

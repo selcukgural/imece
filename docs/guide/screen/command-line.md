@@ -66,7 +66,7 @@ The commands that work in a salon panel (`:waiting`, `:needs`, `:fold`, `:unfold
 
 ### The menu and its values
 
-The menu shows each command's value after it, in brackets, drawn but never inserted: `budget (spent $3.10 of $20.00)`, `lead (claude)` or `(ask)`, `theme (dark)`, `lang (English)`, `close` and `rename` with the project at hand, `forget` `talk` `trace` with the agent at hand, `next` and `waiting` with how many items wait, `needs` and `pause` on or off, `faster` `slower` the speed, `pin` the project (with `▴` when pinned), `export` what it would write (`the conversation`, `#12`). `$` marks what raises the next bill: `:open` (a new leader session) and `:forget` (the next message starts a new session that pays the whole briefing again). No `:` command starts a paid turn by itself; `:commit` is marked `$` in the help, since it asks a model.
+The menu shows each command's value after it, in brackets, drawn but never inserted: `budget (spent $3.10 of $20.00)`, `lead (claude)` or `(ask)`, `theme (dark)`, `lang (English)`, `close` and `rename` with the project at hand, `forget` `talk` `trace` with the agent at hand, `next` and `waiting` with how many items wait, `needs` and `pause` on or off, `faster` `slower` the speed, `pin` the project (with `▴` when pinned), `export` what it would write (`the conversation`, `#12`). `$` marks what raises the next bill: `:open` (a new leader session), `:forget` (the next message starts a new session that pays the whole briefing again) and `:commit` (it asks a model for the message). No other `:` command starts a paid turn by itself.
 
 ### Short names
 
@@ -78,7 +78,7 @@ While `:theme NAME` is written with NAME a built-in theme, typed or stepped to w
 
 ## Completion
 
-Writing completes as a shell does: after `@` the agents' names (the project at hand first, gone ones left out, prefix match, case aside), after `:` imece's commands and after `:lead` the vendors, after `/` or `@name /` that agent's own command line as its session reported it (never a static list, so a vendor's new command needs no release; empty until a session says, and the journal says when a session listed none so only `/clear` completes), after `#` the cards, and directories after `:open`, `:export` and `:copy`; `:pin` and `:close` complete the open projects' names. The matches show in one row above the footer as you type; one match equal to the word is no menu.
+Writing completes as a shell does: after `@` the agents' names (the project at hand first, gone ones left out, prefix match, case aside), after `:` imece's commands and after `:lead` the vendors, after `/` or `@name /` that agent's own command line as its session reported it (never a static list, so a vendor's new command needs no release; empty until a session says, and the journal says when a session listed none so only `/clear` completes), after `#` the cards, and directories after `:open` and `:export`; `:pin` and `:close` complete the open projects' names. The matches show in one row above the footer as you type; one match equal to the word is no menu.
 
 | Key | What it does |
 | --- | --- |

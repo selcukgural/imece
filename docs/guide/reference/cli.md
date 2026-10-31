@@ -29,7 +29,7 @@ imece --demo --lang tr                             # or IMECE_LANG=tr
 
 - Every flag but `--demo`, `--fresh` and `--awake` takes one value, the next word. A flag without one is refused: `--agents needs a value`, followed by the usage text.
 - Flags may come in any order. `--model` and `--tier` may be repeated; the others take their last value.
-- A number is checked against its range; outside it imece says `--agents: 17 is not in 0-200` (the range of the flag).
+- A number is checked against its range; outside it imece says `--helpers: 9 is not in 0-8` (the range of the flag).
 - `--projects`, `--researchers` and `--seed` belong to `--demo`. Given without it, imece says `--projects is for --demo` and prints the usage.
 - `-h` or `--help` prints the usage text. It leaves with exit code 2, like every other refused command line.
 - `--live` is accepted and ignored: it is what live agents were asked for with before they became the default.
@@ -127,7 +127,7 @@ The most all agents together may spend: one pot for the whole team, kept between
 imece --fresh
 ```
 
-Forgets every agent's remembered vendor session when the store is taken in: each agent wakes in a new session, told where it left off, and what the vendors kept of the old ones is removed (Claude's transcript, Codex's thread, Gemini's chat files; see [files](files.md)). The journal says `you made X forget its session` for every agent that is not gone. `:forget @NAME` does the same for one agent while imece runs. The next session pays the whole briefing again, without the cache.
+Forgets every agent's remembered vendor session when the store is taken in: each agent wakes in a new session, told where it left off, and what the vendors kept of the old ones is removed (Claude's transcript, Codex's thread, Gemini's chat files; see [files](files.md)). The journal says `you made X forget its session; it starts a new one, told where it left off` for every agent that is not gone. `:forget @NAME` does the same for one agent while imece runs. The next session pays the whole briefing again, without the cache.
 
 ### `--awake`
 

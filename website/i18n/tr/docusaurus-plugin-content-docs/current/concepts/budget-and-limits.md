@@ -21,7 +21,7 @@ Bütçe bütün ekip için tek bir kesedir: bütün ajanlar birlikte onu bitirin
 ## Başlık
 
 ```text
- imece · 3/7 kart · $2.40/sa · ~2 sa 10 dk kaldı · $3.10 / $20.00 harcandı · claude 5 sa: %48 kaldı, 1 sa 59 dk sonra yenilenir · ● 2 çalışıyor ✓ 1 bitti
+ imece  3/7 kart │ ● 2 çalışıyor ✓ 1 bitti │ $3.10 / $20.00 harcandı ($2.40/sa, ~2 sa 10 dk kaldı) │ claude 5 sa: %48 kaldı, 1 sa 59 dk sonra yenilenir
 ```
 
 - `$/sa`, **son on dakikanın** saat başına maliyetidir; başlangıçtan beri ortalama değil (boş bir saat onu aşağı, ilk tur yukarı çekerdi). Maliyetler tur sonlarında gelir, bu yüzden hız basamak basamak oynar. Yalnız bu çalıştırma sayılır.
