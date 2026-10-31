@@ -2460,7 +2460,12 @@ diff --git a/b.rs b/b.rs
                 title: "two files".into(),
                 files: files_of(TWO_FILES),
                 patch: TWO_FILES.into(),
-                runs: Vec::new(),
+                // A run on the whole change's tree.
+                runs: vec![Ran {
+                    line: "cargo test".into(),
+                    code: Some(0),
+                    timed_out: false,
+                }],
             })
         };
         ready(&mut w);
@@ -2474,6 +2479,10 @@ diff --git a/b.rs b/b.rs
         ));
         let rest = w.change_of(worker).expect("the rest waits");
         assert_eq!(rest.title, "two files");
+        assert!(
+            rest.runs.is_empty(),
+            "the rest is another tree: nothing ran on it"
+        );
         assert_eq!(
             rest.patch,
             "diff --git a/b.rs b/b.rs\n--- a/b.rs\n+++ b/b.rs\n@@ -4 +4 @@\n-p\n+q\n"
