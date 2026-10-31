@@ -104,6 +104,25 @@ pub(super) fn commit_message(text: &str) -> String {
     message.chars().take(MESSAGE_CHARS).collect()
 }
 
+/// The call's session: `program` in `cwd` on `model`, no tools, no MCP
+/// server, the strict level, [`SUGGEST_CAP`] as its spending cap (the
+/// spec counts millionths of a dollar, the pot ten-thousandths).
+pub(super) fn suggest_spec(program: String, cwd: PathBuf, model: &str) -> claude::Spec {
+    claude::Spec {
+        program,
+        cwd,
+        name: "imece-commit".into(),
+        tools: Vec::new(),
+        confine: Confine::Strict,
+        write: false,
+        model: Some(model.to_string()),
+        budget: SUGGEST_CAP * 100,
+        system: SUGGEST_SYSTEM.into(),
+        mcp: None,
+        resume: None,
+    }
+}
+
 impl Live {
     /// The person asks for a commit message for what is staged in project
     /// `p`'s checkout: refused at once when one is under way, when Claude
@@ -247,19 +266,7 @@ impl Live {
                 return failed(w, why);
             }
         };
-        let spec = claude::Spec {
-            program,
-            cwd: self.quiet_dir(),
-            name: "imece-commit".into(),
-            tools: Vec::new(),
-            confine: Confine::Strict,
-            write: false,
-            model: Some(model.clone()),
-            budget: SUGGEST_CAP * 100,
-            system: SUGGEST_SYSTEM.into(),
-            mcp: None,
-            resume: None,
-        };
+        let spec = suggest_spec(program, self.quiet_dir(), &model);
         let prompt = suggest_prompt(&staged);
         let tx = self.said_tx.clone();
         let tree = staged.tree;
@@ -728,6 +735,23 @@ mod tests {
         );
         assert_eq!(w.suggested, None);
         assert!(live.suggestions.is_empty());
+    }
+
+    #[test]
+    fn the_call_has_no_tools_and_a_five_cent_cap() {
+        let spec = suggest_spec("/bin/claude".into(), PathBuf::from("/q"), "haiku");
+        assert_eq!(spec.budget, 50_000, "$0.05 in millionths");
+        assert_eq!(
+            (spec.program.as_str(), spec.cwd.as_path()),
+            ("/bin/claude", Path::new("/q"))
+        );
+        assert_eq!(spec.model.as_deref(), Some("haiku"));
+        assert!(spec.tools.is_empty() && spec.mcp.is_none() && !spec.write);
+        assert_eq!(spec.confine, Confine::Strict);
+        assert_eq!(spec.system, SUGGEST_SYSTEM);
+        let args = claude::once_args(&spec);
+        let cap = args.iter().position(|a| a == "--max-budget-usd").unwrap();
+        assert_eq!(args[cap + 1], "0.050000");
     }
 
     #[test]
