@@ -915,6 +915,13 @@ pub enum Event {
     Forgotten {
         agent: AgentId,
     },
+    /// Agent `agent`'s session said nothing about its own command line
+    /// where its vendor's format puts it (not an empty list: no list): the
+    /// format may have changed, and only imece's `/clear` completes. Once
+    /// a session.
+    CommandsMissing {
+        agent: AgentId,
+    },
     /// imece started with the confine dial at `level` (`standard` or
     /// `open`, never strict: that has nothing to say): the agents' sessions
     /// get their vendor's shell and web, and isolation is a container's
@@ -1002,6 +1009,7 @@ impl Event {
             | Event::Resumed { .. }
             | Event::Restarted { .. }
             | Event::NotesCut { .. }
+            | Event::CommandsMissing { .. }
             | Event::Confine { .. }
             | Event::WorktreeMoved { .. }
             | Event::WorktreeKept { .. } => EntryKind::Assumption,
@@ -1075,6 +1083,7 @@ impl Event {
             | Event::Resumed { agent }
             | Event::Restarted { agent }
             | Event::NotesCut { agent, .. }
+            | Event::CommandsMissing { agent }
             | Event::WorktreeMoved { agent, .. }
             | Event::WorktreeKept { agent, .. }
             | Event::ChangeReady { agent, .. }
@@ -2136,6 +2145,11 @@ mod tests {
             size: 1,
         };
         assert_eq!((cut.agent(), cut.kind()), (10, EntryKind::Assumption));
+        let unlisted = Event::CommandsMissing { agent: 11 };
+        assert_eq!(
+            (unlisted.agent(), unlisted.kind()),
+            (11, EntryKind::Assumption)
+        );
         let level = Event::Confine {
             leader: 3,
             level: "open".into(),
