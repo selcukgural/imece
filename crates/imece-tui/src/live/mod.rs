@@ -273,6 +273,8 @@ enum GitJob {
         repo: PathBuf,
         change: worktree::Change,
         title: String,
+        /// The hunks the person chose, by their `@@` lines; none: all.
+        hunks: Vec<usize>,
     },
     /// Move worker `agent`'s worktree `path` to the checkout `repo`'s
     /// HEAD if it can (see [`worktree::place`]), for the session of
@@ -307,6 +309,8 @@ enum GitDone {
         title: String,
         applied: io::Result<()>,
         mark: io::Result<String>,
+        /// How many hunks were applied, when only some were.
+        part: Option<usize>,
     },
     Placed {
         agent: AgentId,

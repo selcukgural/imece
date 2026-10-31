@@ -441,6 +441,69 @@ fn git_apply(repo: &Path, env: &[(&str, &str)], args: &[&str], patch: &str) -> i
     Ok(())
 }
 
+/// The hunks of `patch` whose `@@` lines are at `hunks` (line indexes),
+/// each file's header before its first chosen one: a patch `git apply`
+/// takes, of only those. A file with no chosen hunk is left out, and so
+/// is a binary one, which has none.
+pub fn subset(patch: &str, hunks: &[usize]) -> String {
+    let mut out = String::new();
+    let mut header: Vec<&str> = Vec::new();
+    let (mut in_hunks, mut said, mut keep) = (false, false, false);
+    for (i, l) in patch.lines().enumerate() {
+        if l.starts_with("diff --git ") {
+            header = vec![l];
+            (in_hunks, said, keep) = (false, false, false);
+            continue;
+        }
+        if l.starts_with("@@") {
+            in_hunks = true;
+            keep = hunks.contains(&i);
+            if keep && !said {
+                said = true;
+                header.iter().for_each(|h| {
+                    out.push_str(h);
+                    out.push('\n');
+                });
+            }
+        } else if !in_hunks {
+            header.push(l);
+            continue;
+        }
+        if keep {
+            out.push_str(l);
+            out.push('\n');
+        }
+    }
+    out
+}
+
+/// The part of `change` that `patch` (a [`subset`] of its patch) makes,
+/// as a change of its own: the tree its worktree's HEAD makes with only
+/// that applied, read through an index file of imece's own (the agent's
+/// index and files are not touched). Applied and marked with
+/// [`applied`], it leaves the rest of the change in the worktree, not
+/// committed, for the next [`change`] to hold.
+pub fn part(change: &Change, patch: &str) -> io::Result<Change> {
+    let path = &change.path;
+    let git_dir = PathBuf::from(git(path, &["rev-parse", "--absolute-git-dir"])?);
+    let index = git_dir.join(own_index("part"));
+    let env = [("GIT_INDEX_FILE", index.to_str().unwrap_or_default())];
+    let out = (|| {
+        git_env(path, &env, &["read-tree", "HEAD"])?;
+        git_apply(path, &env, &["--cached"], patch)?;
+        let tree = git_env(path, &env, &["write-tree"])?;
+        let stat = git_env(path, &env, &["diff", "--cached", "--numstat", "HEAD"])?;
+        Ok(Change {
+            path: path.clone(),
+            tree,
+            files: stat.lines().filter_map(file_change).collect(),
+            patch: patch.to_string(),
+        })
+    })();
+    let _ = std::fs::remove_file(&index);
+    out
+}
+
 /// Commits `change` in its worktree as imece, once the person applied it:
 /// HEAD and the index move to the change, the files stay as they are, so
 /// the next [`change`] holds only what came after. Gives the commit's
@@ -949,5 +1012,110 @@ mod tests {
         let w = ensure(&theirs.repo, &root, "claude-1").unwrap().path;
         assert!(ensure(&ours.repo, &root, "claude-1").is_err());
         assert!(w.join("a.txt").exists(), "nothing of theirs was touched");
+    }
+
+    #[test]
+    fn a_subset_keeps_the_chosen_hunks_under_their_file_s_header() {
+        let patch = "\
+diff --git a/a b/a
+index 1..2 100644
+--- a/a
++++ b/a
+@@ -1 +1 @@
+-x
++y
+@@ -9 +9 @@
+-p
++q
+diff --git a/img b/img
+index 3..4 100644
+GIT binary patch
+literal 1
+Ic${NkU|@&?00JHW1^@s6
+
+diff --git a/old b/new
+similarity index 90%
+rename from old
+rename to new
+--- a/old
++++ b/new
+@@ -2 +2 @@
+-m
++n
+";
+        assert_eq!(subset(patch, &[]), "");
+        assert_eq!(
+            subset(patch, &[7]),
+            "diff --git a/a b/a\nindex 1..2 100644\n--- a/a\n+++ b/a\n@@ -9 +9 @@\n-p\n+q\n"
+        );
+        assert_eq!(
+            subset(patch, &[4, 22]),
+            "diff --git a/a b/a\nindex 1..2 100644\n--- a/a\n+++ b/a\n@@ -1 +1 @@\n-x\n+y\n\
+             diff --git a/old b/new\nsimilarity index 90%\nrename from old\nrename to new\n\
+             --- a/old\n+++ b/new\n@@ -2 +2 @@\n-m\n+n\n"
+        );
+        // A line index that is no hunk's chooses nothing.
+        assert_eq!(subset(patch, &[5, 12, 0]), "");
+    }
+
+    #[test]
+    fn a_part_applied_and_marked_leaves_the_rest_for_the_next_change() {
+        let s = repo("part");
+        let r = &s.repo;
+        let lines: Vec<String> = (1..=20).map(|n| format!("{n}\n")).collect();
+        std::fs::write(r.join("a.txt"), lines.concat()).unwrap();
+        commit(r, "twenty");
+        let mut edited = lines.clone();
+        edited[1] = "two\n".into();
+        edited[17] = "eighteen\n".into();
+        std::fs::write(r.join("a.txt"), edited.concat()).unwrap();
+        std::fs::write(r.join("b.txt"), "b\n").unwrap();
+        let c = change(r, 1 << 20).unwrap().unwrap();
+        let hunks: Vec<usize> = (c.patch.lines().enumerate())
+            .filter(|(_, l)| l.starts_with("@@"))
+            .map(|(i, _)| i)
+            .collect();
+        assert_eq!(hunks.len(), 3, "{}", c.patch);
+        // The first hunk of a.txt and b.txt's.
+        let sub = subset(&c.patch, &[hunks[0], hunks[2]]);
+        let p = part(&c, &sub).unwrap();
+        assert_eq!(p.patch, sub);
+        assert_ne!(p.tree, c.tree);
+        let files: Vec<(String, u32, u32)> = (p.files.iter())
+            .map(|f| (f.path.clone(), f.added, f.removed))
+            .collect();
+        assert_eq!(files, [("a.txt".into(), 1, 1), ("b.txt".into(), 1, 0)]);
+        // Nothing of the worktree moved yet.
+        assert_eq!(
+            git(r, &["status", "--porcelain"]).unwrap(),
+            "M a.txt\n?? b.txt"
+        );
+        applied(&p, "applied: part").unwrap();
+        // The files are as they were; only the rest is a change now.
+        assert_eq!(
+            std::fs::read_to_string(r.join("a.txt")).unwrap(),
+            edited.concat()
+        );
+        let rest = change(r, 1 << 20).unwrap().unwrap();
+        let files: Vec<(String, u32, u32)> = (rest.files.iter())
+            .map(|f| (f.path.clone(), f.added, f.removed))
+            .collect();
+        assert_eq!(files, [("a.txt".into(), 1, 1)]);
+        assert!(rest.patch.contains("+eighteen") && !rest.patch.contains("+two"));
+        // A part that does not fit is refused; no index file is left.
+        assert!(
+            part(
+                &c,
+                "diff --git a/z b/z\n--- a/z\n+++ b/z\n@@ -1 +1 @@\n-no\n+yes\n"
+            )
+            .is_err()
+        );
+        let git_dir = PathBuf::from(git(r, &["rev-parse", "--absolute-git-dir"]).unwrap());
+        let left: Vec<String> = std::fs::read_dir(&git_dir)
+            .unwrap()
+            .filter_map(|e| e.ok()?.file_name().into_string().ok())
+            .filter(|n| n.starts_with("imece-part"))
+            .collect();
+        assert!(left.is_empty(), "{left:?}");
     }
 }
