@@ -1564,6 +1564,45 @@ mod tests {
     }
 
     #[test]
+    fn only_a_calm_worker_folds_not_one_talking_just_changed_or_selected() {
+        // Project, lead and four workers; in five lines two fold, the last
+        // two.
+        let folded = |app: &App, capacity, id| {
+            !salon::rows(app, capacity).contains(&salon::Row::Agent { id, depth: 2 })
+        };
+        let (mut app, w, _) = calm_team();
+        app.world.inbox.clear();
+        assert!(!folded(&app, 6, w[3]), "it fits");
+        assert!(folded(&app, 5, w[3]) && folded(&app, 5, w[2]));
+        // Talking: one line more, and it stays.
+        app.world.agents[w[3]].talk = Some(Talk {
+            with: Party::Person,
+            text: "on it".into(),
+            until: 0,
+        });
+        assert!(!folded(&app, 6, w[3]) && folded(&app, 6, w[2]));
+        app.world.agents[w[3]].talk = None;
+        // Changed six steps ago is news still; seven is calm.
+        app.world.agents[w[3]].changed_at = app.world.tick - 6;
+        assert!(!folded(&app, 5, w[3]));
+        app.world.agents[w[3]].changed_at = app.world.tick - 7;
+        assert!(folded(&app, 5, w[3]));
+        // The selection never folds away.
+        app.selected = Sel::Agent(w[3]);
+        assert!(!folded(&app, 5, w[3]) && folded(&app, 5, w[1]));
+    }
+
+    #[test]
+    fn the_salon_wears_the_focus_colour_while_it_has_the_keys() {
+        let mut app = app_after(1, 4, 50, Lang::En);
+        let corner = |app: &App| buffer(app, 140, 36)[(0, 1)].style().fg;
+        assert_eq!(app.pane, Pane::Salon);
+        assert_eq!(corner(&app), Some(pal().accent));
+        app.pane = Pane::Inbox;
+        assert_ne!(corner(&app), Some(pal().accent));
+    }
+
+    #[test]
     fn needs_only_shows_what_needs_you_with_the_worker_it_hangs_under() {
         let (mut app, w, r) = calm_team();
         app.world.inbox.clear();

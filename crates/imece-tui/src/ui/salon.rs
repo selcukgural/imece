@@ -133,8 +133,9 @@ pub fn rows(app: &App, capacity: usize) -> Vec<Row> {
     let mut folded = vec![false; w.agents.len()];
     let mut nfolded = vec![0usize; w.projects.len()];
     // What needs the person is never folded away; a worker shown for its
-    // helper would fold the helper with it.
-    if total > capacity && !app.needs_only {
+    // helper would fold the helper with it. Rows that fit fold nothing:
+    // the loop stops at once.
+    if !app.needs_only {
         'fold: for p in (0..w.projects.len()).rev() {
             for a in order[p].iter().rev() {
                 if total <= capacity {
