@@ -259,7 +259,7 @@ not yet seen.
 | `/cmd`, `@name /cmd` | the agent's own command line (`/clear`, `/compact`, `/cost` …) |
 | `:budget USD` | raise or lower the budget while agents run (`:b 80`) |
 | `:` `tab` | imece's commands with their values; `$` raises the next bill; every key below that acts has a `:` name too |
-| `!cmd` | run `cmd` in your own shell; the screen steps aside until a key |
+| `!cmd` | run `cmd` in your own shell; the screen steps aside until a key; the journal keeps its exit code and how long it took |
 | `tab` `⇧tab` `↑` `↓` | while writing: complete an agent's name (`@`), a command (`:`, `/`) |
 | `^a` `^e` `⌥b` `⌥f` `^w` `^u` `^k` `^y` | while writing: readline's keys, to the start / end, a word back / on, cut a word / before / after the cursor, put the cut back |
 | `⇧enter` (or `\` `enter`, `⌥enter`) | while writing: a new line; `↑` `↓` go between lines |

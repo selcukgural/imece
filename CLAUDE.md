@@ -112,7 +112,7 @@ record in the same PR.
 - 10 `dogfooding-prep`: worktrees follow HEAD, repo notes in instructions, the `run` tool, vendor commands.
 - 11 `change-review`: a worker's `done` → Δ in WAITING FOR YOU, diff view, apply (three-way when clean)/reject, the runs on exactly its tree.
 - 12 `completion`: `complete.rs` menus for names, commands, `:` words and directories.
-- 13 `own-shell`: `!cmd` in the person's shell, the terminal dance.
+- 13 `own-shell`: `!cmd` in the person's shell, the terminal dance, its exit code and time in the journal.
 - 14 `journal`: when a closing text is journaled as `Replied`.
 - 15 `themes`: `theme.rs`, terminal/dark/light/mono, base16 schemes, colour files, the probe.
 - 16 `quiet-erase`: row-by-row erase and auto-wrap off (iTerm2 scrollback leaks); the title counts what waits.

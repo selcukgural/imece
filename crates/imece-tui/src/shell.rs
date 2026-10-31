@@ -9,6 +9,7 @@ use std::io::{self, Write};
 use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitStatus};
+use std::time::{Duration, Instant};
 
 use ratatui::Terminal;
 use ratatui::crossterm::event::{self, Event, KeyEventKind};
@@ -17,6 +18,14 @@ use ratatui::crossterm::{cursor, execute};
 
 use crate::model::Ended;
 use crate::screen::{self, Quiet, Screen};
+
+/// How a command ran: how it ended and how long it took, from the spawn
+/// to its end.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Ran {
+    pub ended: Ended,
+    pub took: Duration,
+}
 
 /// The shell that runs the command: the person's own (`$SHELL`), else
 /// `/bin/sh`.
@@ -42,8 +51,8 @@ pub fn ended(status: ExitStatus) -> Ended {
 /// stdout and stderr, and waits for it. Ctrl-C in the terminal reaches
 /// the command (which is what the person means) and not imece: SIGINT is
 /// ignored here while the command runs, and set back to the default in
-/// the child before it runs.
-pub fn run_in(shell: &Path, cwd: &Path, command: &str) -> io::Result<Ended> {
+/// the child before it runs. The time is taken around the run.
+pub fn run_in(shell: &Path, cwd: &Path, command: &str) -> io::Result<Ran> {
     // SAFETY: `signal` only swaps the handler; the old one is put back
     // below. SIG_IGN is inherited across exec, so the child resets it in
     // `pre_exec`, where only async-signal-safe calls are made.
@@ -57,33 +66,38 @@ pub fn run_in(shell: &Path, cwd: &Path, command: &str) -> io::Result<Ended> {
             Ok(())
         });
     }
+    let start = Instant::now();
     let status = child.status();
+    let took = start.elapsed();
     // SAFETY: restoring the handler that was there.
     unsafe { libc::signal(libc::SIGINT, was) };
-    status.map(ended)
+    status.map(|s| Ran {
+        ended: ended(s),
+        took,
+    })
 }
 
 /// The whole round: the screen steps aside, `command` runs in `cwd`,
-/// `back` (already worded, with the exit code's place filled by the
-/// caller) is shown and a key brings the screen back. What the command
+/// `back` (already worded by the caller from how it ran) is shown and a
+/// key brings the screen back. What the command
 /// printed stays on the terminal's main screen, where it is seen again
 /// when imece quits.
 pub fn run(
     terminal: &mut Screen,
     cwd: &Path,
     command: &str,
-    back: impl FnOnce(Ended) -> String,
-) -> io::Result<Ended> {
+    back: impl FnOnce(Ran) -> String,
+) -> io::Result<Ran> {
     step_aside()?;
     let mut out = io::stdout();
     writeln!(out, "$ {command}")?;
     out.flush()?;
-    let ended = run_in(
+    let ran = run_in(
         &program(std::env::var("SHELL").ok().as_deref()),
         cwd,
         command,
     );
-    let ended = match ended {
+    let ran = match ran {
         Ok(e) => e,
         Err(e) => {
             // Back to the screen whatever happened; the error is reported
@@ -92,11 +106,11 @@ pub fn run(
             return Err(e);
         }
     };
-    write!(out, "{}", back(ended))?;
+    write!(out, "{}", back(ran))?;
     out.flush()?;
     wait_for_key()?;
     come_back(terminal)?;
-    Ok(ended)
+    Ok(ran)
 }
 
 /// Leaves the alternate screen (auto-wrap on again) and raw mode: the
@@ -166,22 +180,33 @@ mod tests {
     fn the_command_runs_in_the_directory_and_its_exit_code_comes_back() {
         let _turn = one_at_a_time();
         let dir = std::env::temp_dir();
-        assert_eq!(run_in(&sh(), &dir, "true").unwrap(), Ended::Exit(0));
-        assert_eq!(run_in(&sh(), &dir, "exit 3").unwrap(), Ended::Exit(3));
+        let ended = |command: &str| run_in(&sh(), &dir, command).unwrap().ended;
+        assert_eq!(ended("true"), Ended::Exit(0));
+        assert_eq!(ended("exit 3"), Ended::Exit(3));
         let here = dir.canonicalize().unwrap();
         let marker = format!("test -d . && [ \"$(pwd -P)\" = '{}' ]", here.display());
-        assert_eq!(run_in(&sh(), &dir, &marker).unwrap(), Ended::Exit(0));
+        assert_eq!(ended(&marker), Ended::Exit(0));
         assert_eq!(
-            run_in(&sh(), &dir, "cd / && [ \"$(pwd -P)\" = '/' ] && exit 7").unwrap(),
+            ended("cd / && [ \"$(pwd -P)\" = '/' ] && exit 7"),
             Ended::Exit(7)
         );
+    }
+
+    #[test]
+    fn the_time_the_command_took_comes_back_with_how_it_ended() {
+        let _turn = one_at_a_time();
+        let dir = std::env::temp_dir();
+        let ran = run_in(&sh(), &dir, "sleep 0.3; exit 2").unwrap();
+        assert_eq!(ran.ended, Ended::Exit(2));
+        assert!(ran.took >= Duration::from_millis(300), "{:?}", ran.took);
+        assert!(ran.took < Duration::from_secs(20), "{:?}", ran.took);
     }
 
     #[test]
     fn a_signal_that_stops_the_command_is_told_apart_from_an_exit() {
         let _turn = one_at_a_time();
         let dir = std::env::temp_dir();
-        let ended = run_in(&sh(), &dir, "kill -TERM $$").unwrap();
+        let ended = run_in(&sh(), &dir, "kill -TERM $$").unwrap().ended;
         assert_eq!(ended, Ended::Signal(libc::SIGTERM));
     }
 
@@ -192,7 +217,9 @@ mod tests {
         // the whole test binary dies here), the child must die of it.
         let _turn = one_at_a_time();
         let dir = std::env::temp_dir();
-        let ended = run_in(&sh(), &dir, "kill -INT $PPID; kill -INT $$").unwrap();
+        let ended = run_in(&sh(), &dir, "kill -INT $PPID; kill -INT $$")
+            .unwrap()
+            .ended;
         assert_eq!(ended, Ended::Signal(libc::SIGINT));
         // Afterwards the handler is what it was, not left at ignore.
         // SAFETY: reading the disposition and putting it straight back.

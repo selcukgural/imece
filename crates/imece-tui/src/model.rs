@@ -808,10 +808,14 @@ pub enum Event {
     },
     /// The person ran a command in their own shell (`!command`), in the
     /// checkout; `leader` is the one of the project they were looking at.
+    /// `took` is how long it ran, in milliseconds (none in a journal
+    /// saved before it was kept).
     Shell {
         leader: AgentId,
         command: String,
         ended: Ended,
+        #[serde(default)]
+        took: Option<u64>,
     },
     /// The person opened the checkout at `path` as a project (`:open`);
     /// `leader` is its new leader.

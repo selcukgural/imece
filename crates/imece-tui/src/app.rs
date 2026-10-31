@@ -15,6 +15,7 @@ use crate::i18n::{Lang, fill};
 use crate::live::{Live, Refusal};
 use crate::model::*;
 use crate::prefs::{SIDE_DEFAULT, SIDE_MAX, SIDE_MIN};
+use crate::shell::Ran;
 use crate::sim::{self, Sim};
 use crate::theme;
 use crate::ui;
@@ -1242,22 +1243,24 @@ impl App {
 
     /// The line under a `!` command's output, before the screen comes
     /// back.
-    pub fn shell_back(&self, ended: Ended) -> String {
-        ui::words::shell_back(self.lang, ended)
+    pub fn shell_back(&self, ran: Ran) -> String {
+        ui::words::shell_back(self.lang, ran.ended, millis(ran.took))
     }
 
     /// A `!` command ran (or could not be started): the journal keeps it
     /// under the project at hand, and the footer says how it went.
-    pub fn ran(&mut self, command: &str, how: io::Result<Ended>) {
+    pub fn ran(&mut self, command: &str, how: io::Result<Ran>) {
         match how {
-            Ok(ended) => {
+            Ok(Ran { ended, took }) => {
                 let leader = self.world.projects[self.current_project()].leader;
+                let took = Some(millis(took));
                 self.world.note(Event::Shell {
                     leader,
                     command: command.to_string(),
                     ended,
+                    took,
                 });
-                self.flash(ui::words::shell(self.lang, command, ended));
+                self.flash(ui::words::shell(self.lang, command, ended, took));
             }
             Err(e) => {
                 let t = self.lang.text();
@@ -2166,6 +2169,11 @@ fn pasted(text: &str) -> String {
 
 /// `path` with a leading `~` or `~/` replaced by `home`; anything else as
 /// it is, and so is `~` when there is no home.
+/// A run's time in whole milliseconds, as the journal keeps it.
+pub fn millis(d: Duration) -> u64 {
+    u64::try_from(d.as_millis()).unwrap_or(u64::MAX)
+}
+
 pub fn expand_tilde(path: &str, home: Option<&Path>) -> PathBuf {
     match (path, home) {
         ("~", Some(home)) => home.to_path_buf(),
@@ -2478,6 +2486,13 @@ mod tests {
         app.menu = app.suggest();
         assert!(!app.menu.as_ref().unwrap().items.is_empty());
         assert!(app.menu.as_ref().unwrap().notes.is_empty());
+    }
+
+    #[test]
+    fn a_runs_time_is_kept_in_whole_milliseconds() {
+        assert_eq!(millis(Duration::from_micros(1_234_567)), 1_234);
+        assert_eq!(millis(Duration::ZERO), 0);
+        assert_eq!(millis(Duration::MAX), u64::MAX, "too long to count");
     }
 
     #[test]

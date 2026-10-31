@@ -103,7 +103,12 @@ pub fn event(lang: Lang, w: &World, e: &Event) -> String {
         Event::PotLow { rate, minutes, .. } => {
             fill(t.ev_pot_low, &[&dollars(*rate), &ago(lang, minutes * 60)])
         }
-        Event::Shell { command, ended, .. } => shell(lang, command, *ended),
+        Event::Shell {
+            command,
+            ended,
+            took,
+            ..
+        } => shell(lang, command, *ended, *took),
         Event::Opened { leader, path } => fill(t.ev_opened, &[project(w, *leader), path]),
         Event::Closed { leader } => fill(t.ev_closed, &[project(w, *leader)]),
         Event::Renamed { from, to, .. } => fill(t.ev_renamed, &[from, to]),
@@ -169,20 +174,50 @@ pub fn event(lang: Lang, w: &World, e: &Event) -> String {
 
 /// How a command of the person's own went: the journal line, and the
 /// flash after it.
-pub fn shell(lang: Lang, command: &str, ended: Ended) -> String {
+pub fn shell(lang: Lang, command: &str, ended: Ended, took: Option<u64>) -> String {
     let t = lang.text();
-    match ended {
+    let said = match ended {
         Ended::Exit(code) => fill(t.ev_shell, &[command, &code.to_string()]),
         Ended::Signal(sig) => fill(t.ev_shell_signal, &[command, &sig.to_string()]),
+    };
+    match took {
+        Some(ms) => fill(t.ev_shell_took, &[&said, &took_words(lang, ms)]),
+        None => said,
     }
 }
 
-/// The line under a command's output, before the screen comes back.
-pub fn shell_back(lang: Lang, ended: Ended) -> String {
+/// The line under a command's output, before the screen comes back:
+/// how it ended and how long it took.
+pub fn shell_back(lang: Lang, ended: Ended, took: u64) -> String {
     let t = lang.text();
+    let took = took_words(lang, took);
     match ended {
-        Ended::Exit(code) => fill(t.shell_back, &[&code.to_string()]),
-        Ended::Signal(sig) => fill(t.shell_back_signal, &[&sig.to_string()]),
+        Ended::Exit(code) => fill(t.shell_back, &[&code.to_string(), &took]),
+        Ended::Signal(sig) => fill(t.shell_back_signal, &[&sig.to_string(), &took]),
+    }
+}
+
+/// How long something ran, `ms` milliseconds, in the largest units that
+/// say it: milliseconds under a second, whole seconds under a minute,
+/// minutes and seconds under an hour, else hours and minutes.
+pub fn took_words(lang: Lang, ms: u64) -> String {
+    let t = lang.text();
+    let seconds = ms / 1000;
+    let minutes = seconds / 60;
+    if seconds == 0 {
+        fill(t.took_ms, &[&ms.to_string()])
+    } else if minutes == 0 {
+        fill(t.took_s, &[&seconds.to_string()])
+    } else if minutes < 60 {
+        fill(
+            t.took_min,
+            &[&minutes.to_string(), &(seconds % 60).to_string()],
+        )
+    } else {
+        fill(
+            t.ago_hours,
+            &[&(minutes / 60).to_string(), &(minutes % 60).to_string()],
+        )
     }
 }
 
@@ -403,6 +438,25 @@ pub fn ran(lang: Lang, r: &Ran) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_runs_time_is_said_in_the_largest_units_that_say_it() {
+        let en = |ms| took_words(Lang::En, ms);
+        assert_eq!(en(0), "0 ms");
+        assert_eq!(en(999), "999 ms");
+        assert_eq!(en(1_000), "1 s");
+        assert_eq!(en(59_999), "59 s");
+        assert_eq!(en(60_000), "1 min 0 s");
+        assert_eq!(en(125_000), "2 min 5 s");
+        assert_eq!(en(3_599_999), "59 min 59 s");
+        assert_eq!(en(3_600_000), "1 h 0 min");
+        assert_eq!(en(3_725_000), "1 h 2 min");
+        let tr = |ms| took_words(Lang::Tr, ms);
+        assert_eq!(tr(40), "40 ms");
+        assert_eq!(tr(2_000), "2 sn");
+        assert_eq!(tr(125_000), "2 dk 5 sn");
+        assert_eq!(tr(7_380_000), "2 sa 3 dk");
+    }
 
     #[test]
     fn the_title_names_imece_and_counts_what_waits_in_both_languages() {

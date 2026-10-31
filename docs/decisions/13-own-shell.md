@@ -10,8 +10,17 @@ ctrl-c stops the command and not imece, a worded line says how it
 ended and one key press (raw mode, so no newline) brings the screen
 back (a fresh `Terminal`, not `Terminal::clear`, which asks the
 terminal for the cursor and waits 2 s on a plain pty). `Event::Shell { leader,
-command, ended }` journals it under the project at hand
+command, ended, took }` journals it under the project at hand
 (`EntryKind::Person`); a shell that could not start is only flashed.
+How long it ran (2026-10-31, backlog C22 in #56, from Warp): `run_in`
+times the child from the spawn to its end (`shell::Ran { ended, took
+}`), the journal keeps it in milliseconds (`took: Option<u64>`, none
+in a line saved before, which loads as it was and is worded without
+it) and says it after how it ended in the largest units that say it
+(`40 ms`, `2 s`, `1 min 5 s`, `1 h 2 min`; `words::took_words`), as do
+the flash and the line under the output (`[imece] exit 2 · 3 s · any
+key …`). The exit code was there from the start. The demo runs `!`
+in the same shell, so it shows the same.
 The output is not captured (no pty) and never reaches an agent; it
 stays on the terminal's main screen. `w` took over "straight to
 waiting for you". The terminal dance is excluded from mutants;
