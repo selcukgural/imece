@@ -1292,9 +1292,8 @@ impl App {
     /// `↑` `↓` go between lines while no menu is shown.
     fn type_key(&mut self, k: KeyEvent) {
         let ctrl = k.modifiers.contains(KeyModifiers::CONTROL);
-        let newline = k
-            .modifiers
-            .intersects(KeyModifiers::SHIFT | KeyModifiers::ALT);
+        let newline =
+            k.modifiers.contains(KeyModifiers::SHIFT) || k.modifiers.contains(KeyModifiers::ALT);
         match k.code {
             KeyCode::Char('n') if ctrl => self.pick(true),
             KeyCode::Char('p') if ctrl => self.pick(false),

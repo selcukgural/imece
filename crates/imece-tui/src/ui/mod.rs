@@ -3220,6 +3220,11 @@ mod tests {
         with(&mut app, KeyCode::Enter, KeyModifiers::SHIFT);
         assert_eq!((app.input.as_str(), app.menu.is_none()), ("@\n", true));
         assert!(app.typing, "the menu did not take the enter");
+        // Alt-enter as well, the menu open again.
+        key(&mut app, KeyCode::Backspace);
+        assert!(app.menu.is_some());
+        with(&mut app, KeyCode::Enter, KeyModifiers::ALT);
+        assert_eq!((app.input.as_str(), app.menu.is_none()), ("@\n", true));
         write(&mut app, "abc");
         key(&mut app, KeyCode::Up);
         assert_eq!((app.cursor(), app.after), (1, 4), "the first line's end");
@@ -3242,7 +3247,10 @@ mod tests {
         key(&mut app, KeyCode::Left);
         app.paste("one\r\ntwo\rthree\x1b[1m\tç\x07");
         assert_eq!(app.input, "aone\ntwo\nthree[1m\tçb");
-        assert_eq!(app.cursor(), app.input.len() - 1, "after what was pasted");
+        assert_eq!(
+            app.after, 1,
+            "the cursor after what was pasted, before the b"
+        );
         assert!(app.typing, "a paste never sends");
         // An overlay over the line takes nothing either.
         let line = app.input.clone();
