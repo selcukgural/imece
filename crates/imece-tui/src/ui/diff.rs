@@ -88,7 +88,8 @@ pub fn place(patch: &str, i: usize) -> Option<String> {
         .and_then(|n| lines[n].rsplit_once(" b/"))
         .map(|(_, p)| p)?;
     let (mut o, mut n) = (old, new);
-    for l in &lines[at + 1..i] {
+    // From the `@@` line on, which moves neither side.
+    for l in &lines[at..i] {
         match l.chars().next() {
             Some('+') => n += 1,
             Some('-') => o += 1,

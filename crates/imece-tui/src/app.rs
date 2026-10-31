@@ -3989,10 +3989,12 @@ mod tests {
         assert!(app.typing);
         assert_eq!(app.noting, Some((worker, 5)));
         assert_eq!(app.menu, None);
-        for c in "@b is wrong".chars() {
+        // A note is no command: `:` offers none.
+        press(&mut app, ':');
+        assert_eq!(app.menu, None, "no commands offered in a note");
+        for c in "b is wrong".chars() {
             press(&mut app, c);
         }
-        assert_eq!(app.menu, None, "no names offered in a note");
         app.on_key(key(KeyCode::Enter));
         assert!(!app.typing && app.noting.is_none());
         assert_eq!(
@@ -4002,10 +4004,10 @@ mod tests {
         let notes: Vec<(usize, String)> = (app.notes_of(worker).iter())
             .map(|n| (n.line, n.text.clone()))
             .collect();
-        assert_eq!(notes, [(5, "@b is wrong".to_string())]);
+        assert_eq!(notes, [(5, ":b is wrong".to_string())]);
         // Again on the same line: the note to write over.
         press(&mut app, 'c');
-        assert_eq!(app.input, "@b is wrong");
+        assert_eq!(app.input, ":b is wrong");
         for _ in 0..11 {
             app.on_key(key(KeyCode::Backspace));
         }
