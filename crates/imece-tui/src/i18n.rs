@@ -354,12 +354,19 @@ pub struct Text {
     pub waiting_yes: &'static str,
     // Overlays
     pub help_title: &'static str,
-    pub help_keys: [(&'static str, &'static str); 40],
+    pub help_keys: [(&'static str, &'static str); 41],
     /// The help's line for a new line in the writing, put after the
     /// writing keys: where the terminal tells shift-enter apart, and
     /// where it does not.
     pub help_newline: [(&'static str, &'static str); 2],
     pub help_legend: [&'static str; 4],
+    /// The help's last line: how to filter it or close it; while the
+    /// person types a filter, after it; with a filter kept, after it.
+    pub help_close: &'static str,
+    pub help_finding: &'static str,
+    pub help_found: &'static str,
+    /// No key and no legend line has every word of the filter.
+    pub help_none: &'static str,
     pub close: &'static str,
     pub away_title: &'static str,
     pub away_counts: [&'static str; 5],
@@ -708,6 +715,7 @@ pub const EN: Text = Text {
         ("T  :theme", "next theme · :theme NAME or FILE"),
         ("q q", "quit (one q asks first)"),
         ("q s", "before quitting: what is mid-turn or not reviewed"),
+        ("?", "this help; / in it filters the keys"),
     ],
     help_newline: [
         ("⇧enter ⌥enter", "writing: a new line; ↑ ↓ between lines"),
@@ -722,6 +730,10 @@ pub const EN: Text = Text {
         " ~ soft-tainted (read a report)  ≈ tainted (reads the outside world)",
         " ⎇ branch  ↑ own commits  ↓ the checkout's new commits  +N −M lines not yet handed over",
     ],
+    help_close: " / filter · any other key: close",
+    help_finding: "   enter keep · esc all keys",
+    help_found: "   / change · any other key: close",
+    help_none: " nothing has every word of it",
     close: " any key: close",
     away_title: " WHILE YOU WERE AWAY · last {} min ",
     away_counts: [
@@ -1083,6 +1095,7 @@ pub const TR: Text = Text {
             "q s",
             "çıkmadan önce: tur ortasında olan, incelenmemiş olan",
         ),
+        ("?", "bu yardım; içinde / tuşları süzer"),
     ],
     help_newline: [
         ("⇧enter ⌥enter", "yazarken: yeni satır; ↑ ↓ satırlar arası"),
@@ -1097,6 +1110,10 @@ pub const TR: Text = Text {
         " ~ hafif kirli (rapor okudu)  ≈ kirli (dış dünyayı okuyor)",
         " ⎇ dal  ↑ kendi commit'leri  ↓ checkout'un yeni commit'leri  +N −M henüz verilmemiş satırlar",
     ],
+    help_close: " / süz · başka bir tuş: kapat",
+    help_finding: "   enter tut · esc tüm tuşlar",
+    help_found: "   / değiştir · başka bir tuş: kapat",
+    help_none: " hiçbirinde bu kelimelerin hepsi yok",
     close: " herhangi bir tuş: kapat",
     away_title: " SEN YOKKEN · son {} dk ",
     away_counts: [

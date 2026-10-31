@@ -58,7 +58,7 @@ pub fn draw(f: &mut Frame, app: &App) {
         overlay::thread(f, app, th);
     }
     if app.help {
-        overlay::help(f, app.lang, app.shift_enter);
+        overlay::help(f, app);
     } else if let Some(d) = &app.digest {
         overlay::digest(f, app, d);
     } else if let Some(l) = &app.left_off {
@@ -3904,6 +3904,140 @@ mod tests {
     }
 
     #[test]
+    fn fold_lowers_the_case_and_the_turkish_letters() {
+        assert_eq!(overlay::fold("ÇçĞğİıÖöŞşÜü"), "ccggiioossuu");
+        assert_eq!(overlay::fold("ISIM Abc ⇧enter"), "isim abc ⇧enter");
+    }
+
+    #[test]
+    fn the_help_filter_keeps_what_has_every_word_in_either_column() {
+        let text = |k: &(&str, &str)| format!("{} {}", k.0, k.1);
+        let keys = overlay::help_keys(Lang::En, false);
+        assert_eq!(overlay::found(&keys, "", text).len(), keys.len(), "all");
+        assert_eq!(overlay::found(&keys, "  ", text).len(), keys.len());
+        let got = overlay::found(&keys, "FIRST  last", text);
+        assert_eq!(got, [&("gg  G", "first / last line")], "every word");
+        assert!(overlay::found(&keys, "first zzz", text).is_empty());
+        let got = overlay::found(&keys, "zM", text);
+        assert_eq!(got, [&("za  zM  zR", "fold: toggle · all · none")], "keys");
+        // Turkish letters typed or not.
+        let tr = overlay::help_keys(Lang::Tr, false);
+        for filter in ["butceyi artir", "bütçeyi artır", "BÜTÇEYİ"] {
+            let got = overlay::found(&tr, filter, text);
+            assert_eq!(got.len(), 1, "{filter}");
+            assert_eq!(got[0].0, ":budget USD");
+        }
+    }
+
+    #[test]
+    fn slash_in_the_help_filters_it_until_enter_keeps_or_esc_drops_it() {
+        let mut app = app_after(1, 4, 0, Lang::En);
+        let typed = |app: &mut App, s: &str| s.chars().for_each(|c| key(app, KeyCode::Char(c)));
+        key(&mut app, KeyCode::Char('?'));
+        assert!(app.help && !app.help_typing);
+        key(&mut app, KeyCode::Char('/'));
+        assert!(app.help && app.help_typing);
+        typed(&mut app, "f?/qu");
+        assert_eq!(app.help_find, "f?/qu", "every key is typed, ? q u too");
+        ctrl(&mut app, 'u');
+        assert_eq!(app.help_find, "", "^u empties it");
+        ctrl(&mut app, 'x');
+        alt(&mut app, KeyCode::Char('x'));
+        key(&mut app, KeyCode::Up);
+        assert_eq!((app.help_find.as_str(), app.help_typing), ("", true));
+        typed(&mut app, "folds");
+        key(&mut app, KeyCode::Backspace);
+        assert_eq!(app.help_find, "fold");
+        let s = render(&app, 140, 40);
+        assert!(s.contains(" /fold▏") && s.contains("enter keep"), "{s}");
+        // Enter keeps it; / goes back to it; any other key closes.
+        key(&mut app, KeyCode::Enter);
+        assert!(app.help && !app.help_typing);
+        assert_eq!(app.help_find, "fold");
+        let s = render(&app, 140, 40);
+        assert!(s.contains(" /fold ") && !s.contains("▏"), "{s}");
+        assert!(s.contains("/ change · any other key: close"), "{s}");
+        key(&mut app, KeyCode::Char('/'));
+        typed(&mut app, "s");
+        assert_eq!((app.help_find.as_str(), app.help_typing), ("folds", true));
+        // Esc drops it and the whole help is back.
+        key(&mut app, KeyCode::Esc);
+        assert!(app.help && !app.help_typing);
+        assert_eq!(app.help_find, "");
+        let s = render(&app, 140, 40);
+        assert!(s.contains("/ filter · any other key: close"), "{s}");
+        // Backspace past the start leaves the filter, not the help.
+        key(&mut app, KeyCode::Char('/'));
+        typed(&mut app, "x");
+        key(&mut app, KeyCode::Backspace);
+        assert!(app.help_typing, "x went, the filter stays");
+        key(&mut app, KeyCode::Backspace);
+        assert!(app.help && !app.help_typing);
+        // A kept filter closes with the help and is gone when it opens.
+        key(&mut app, KeyCode::Char('/'));
+        typed(&mut app, "gg");
+        key(&mut app, KeyCode::Enter);
+        key(&mut app, KeyCode::Char('j'));
+        assert!(!app.help, "closed");
+        key(&mut app, KeyCode::Char('?'));
+        assert!(app.help && app.help_find.is_empty(), "{:?}", app.help_find);
+    }
+
+    #[test]
+    fn a_filtered_help_shows_what_matches_and_keeps_its_size() {
+        let t = Lang::En.text();
+        let mut app = app_after(1, 4, 50, Lang::En);
+        app.help = true;
+        // The rows of the frame's top and bottom corners.
+        let frame = |app: &App, width: u16| {
+            let buf = buffer(app, width, 40);
+            let ys: Vec<u16> = (0..40)
+                .filter(|&y| (0..width).any(|x| matches!(buf[(x, y)].symbol(), "┌" | "└")))
+                .collect();
+            (ys[0], ys[ys.len() - 1])
+        };
+        let (wide, narrow) = (frame(&app, 140), frame(&app, 80));
+        app.help_typing = true;
+        for (find, keys, legend, none) in [
+            ("fold", &["za  zM  zR", "← →  h l"][..], false, false),
+            ("tainted", &[][..], true, false),
+            ("zzz", &[][..], false, true),
+            ("", &["gg  G", "za  zM  zR"][..], true, false),
+        ] {
+            app.help_find = find.into();
+            let s = render(&app, 140, 40);
+            for k in keys {
+                assert!(s.contains(k), "{find}: {k} {s}");
+            }
+            assert_eq!(s.contains("gg  G"), find.is_empty(), "{find}: {s}");
+            assert_eq!(s.contains("≈ tainted"), legend, "{find}: {s}");
+            assert_eq!(s.contains("◆ lead"), find.is_empty(), "{find}: {s}");
+            assert_eq!(s.contains(t.help_none.trim()), none, "{find}: {s}");
+            assert_eq!(frame(&app, 140), wide, "{find}: the same size");
+            assert_eq!(frame(&app, 80), narrow, "{find}: narrow too");
+        }
+    }
+
+    #[test]
+    fn a_paste_goes_into_the_help_filter_while_it_is_typed() {
+        let mut app = app_after(1, 4, 0, Lang::En);
+        (app.help, app.help_typing) = (true, true);
+        app.help_find = "a".into();
+        app.paste("b\nc\td\u{1b}");
+        assert_eq!(app.help_find, "ab c d", "one line, no control characters");
+        assert!(app.flash.is_none() && app.input.is_empty());
+        app.help_typing = false;
+        app.paste("x");
+        assert_eq!(app.help_find, "ab c d");
+        assert!(app.flash.is_some(), "with the filter not typed, as before");
+        // Not into a filter left from a help that closed.
+        (app.help, app.help_typing) = (false, true);
+        app.flash = None;
+        app.paste("x");
+        assert_eq!(app.help_find, "ab c d");
+    }
+
+    #[test]
     fn the_help_window_is_as_tall_as_its_lines_and_their_frame() {
         let mut app = app_after(1, 4, 50, Lang::En);
         app.help = true;
@@ -3917,7 +4051,11 @@ mod tests {
         let lines = u16::try_from(keys.div_ceil(2) + t.help_legend.len() + 3).unwrap();
         let x = (140 - 118) / 2;
         assert_eq!(buf[(x, top)].symbol(), "┌");
-        assert!(row(top + lines).contains(t.close), "{}", row(top + lines));
+        assert!(
+            row(top + lines).contains(t.help_close),
+            "{}",
+            row(top + lines)
+        );
         assert_eq!(
             buf[(x, top + lines + 1)].symbol(),
             "└",

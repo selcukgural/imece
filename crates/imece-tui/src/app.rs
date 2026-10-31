@@ -277,6 +277,11 @@ pub struct App {
     pub paused: bool,
     pub speed: u32,
     pub help: bool,
+    /// What the help is filtered by (`/` in it), empty each time the help
+    /// opens, and whether the person is still typing it (the help closes
+    /// only after `enter` or `esc` ends that).
+    pub help_find: String,
+    pub help_typing: bool,
     /// The vendor that leads from the next start on without being asked
     /// (`claude`), as the preferences keep it; none asks when there is a
     /// choice.
@@ -352,6 +357,8 @@ impl App {
             paused: false,
             speed: 1,
             help: false,
+            help_find: String::new(),
+            help_typing: false,
             primary: None,
             digest: None,
             left_off,
@@ -633,10 +640,11 @@ impl App {
             return;
         }
         // An overlay takes the key that closes it.
-        if self.digest.take().is_some()
-            || self.left_off.take().is_some()
-            || std::mem::take(&mut self.help)
-        {
+        if self.digest.take().is_some() || self.left_off.take().is_some() {
+            return;
+        }
+        if self.help {
+            self.help_key(k);
             return;
         }
         if away && let Some(d) = Digest::since(&self.world, since) {
@@ -746,7 +754,10 @@ impl App {
                 self.speed = (self.speed * 2).min(8)
             }
             KeyCode::Char('-') if !self.live() => self.speed = (self.speed / 2).max(1),
-            KeyCode::Char('?') => self.help = true,
+            KeyCode::Char('?') => {
+                self.help = true;
+                self.help_find.clear();
+            }
             KeyCode::Tab | KeyCode::Char(']') if self.pane_keys() => self.cycle_pane(true),
             KeyCode::BackTab | KeyCode::Char('[') if self.pane_keys() => self.cycle_pane(false),
             KeyCode::Char('w') if self.pane_keys() => self.pane = Pane::Inbox,
@@ -1377,12 +1388,50 @@ impl App {
         }
     }
 
+    /// A key while the help is open: `/` starts (or goes back to) a
+    /// filter, which takes the keys typed until `enter` keeps it or `esc`
+    /// drops it (backspace past its start leaves it too); any other key
+    /// closes the help.
+    fn help_key(&mut self, k: KeyEvent) {
+        if !self.help_typing {
+            match k.code {
+                KeyCode::Char('/') => self.help_typing = true,
+                _ => self.help = false,
+            }
+            return;
+        }
+        let plain = !k.modifiers.contains(KeyModifiers::CONTROL)
+            && !k.modifiers.contains(KeyModifiers::ALT);
+        match k.code {
+            KeyCode::Enter => self.help_typing = false,
+            KeyCode::Esc => {
+                self.help_find.clear();
+                self.help_typing = false;
+            }
+            KeyCode::Backspace => {
+                if self.help_find.pop().is_none() {
+                    self.help_typing = false;
+                }
+            }
+            KeyCode::Char('u') if k.modifiers.contains(KeyModifiers::CONTROL) => {
+                self.help_find.clear()
+            }
+            KeyCode::Char(c) if plain => self.help_find.push(c),
+            _ => {}
+        }
+    }
+
     /// Text the terminal says was pasted (bracketed paste): it goes into
     /// the line at the cursor whole, its new lines kept, so a paste's
     /// line ends do not send it a line at a time. Only while writing;
     /// elsewhere its characters would be taken as keys, so it is left
     /// out and the person told how to write first.
     pub fn paste(&mut self, text: &str) {
+        // Into the help's filter while it is typed, on one line.
+        if self.help && self.help_typing {
+            let text = pasted(text).replace(['\n', '\t'], " ");
+            return self.help_find.push_str(&text);
+        }
         let open = self.help || self.digest.is_some() || self.left_off.is_some() || self.leaving;
         if !self.typing || open {
             return self.flash(self.lang.text().paste_not_writing);
@@ -2649,6 +2698,35 @@ mod tests {
         let l = LeftOff::of(w, 0, Some(5)).unwrap();
         assert_eq!((l.waiting.as_slice(), l.waiting_total), (&[0][..], 1));
         assert!(l.last.is_empty());
+    }
+
+    #[test]
+    fn the_demo_pauses_and_changes_speed_by_halves_and_doubles_and_live_does_not() {
+        let mut app = App::new(1, 1, 0, 1, Lang::En);
+        assert_eq!((app.speed, app.paused), (1, false));
+        let mut speeds = vec![];
+        for c in "+=++----".chars() {
+            app.on_key(key(KeyCode::Char(c)));
+            speeds.push(app.speed);
+        }
+        assert_eq!(
+            speeds,
+            [2, 4, 8, 8, 4, 2, 1, 1],
+            "doubled to 8, halved to 1"
+        );
+        app.on_key(key(KeyCode::Char(' ')));
+        assert!(app.paused);
+        app.on_key(key(KeyCode::Char(' ')));
+        assert!(!app.paused);
+        // Live agents run in real time.
+        let w = crate::live::testing::team(1);
+        let live = crate::live::testing::idle_live(2);
+        let mut app = App::with(w, Engine::Live(Box::new(live)), Lang::En);
+        app.speed = 4;
+        for c in "+=- ".chars() {
+            app.on_key(key(KeyCode::Char(c)));
+            assert_eq!((app.speed, app.paused), (4, false), "{c:?}");
+        }
     }
 
     #[test]

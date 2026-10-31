@@ -32,9 +32,11 @@ fn window(f: &mut Frame, title: String, lines: Vec<Line<'static>>, width: u16) {
 
 /// The keys, two columns on a wide screen, then the legend. The line for
 /// a new line in the writing names the key this terminal has for it
-/// (`shift_enter`: it tells shift-enter from enter).
-pub fn help(f: &mut Frame, lang: Lang, shift_enter: bool) {
-    let t = lang.text();
+/// (`shift_enter`: it tells shift-enter from enter). Filtered (`/`), only
+/// the keys and legend lines with every word of the filter stay, and the
+/// window keeps its size, so it does not jump while the person types.
+pub fn help(f: &mut Frame, app: &App) {
+    let t = app.lang.text();
     let key = |(k, what): &(&str, &str)| {
         vec![
             Span::styled(format!(" {}", fit(k, 13)), bold(pal().strong)),
@@ -44,30 +46,86 @@ pub fn help(f: &mut Frame, lang: Lang, shift_enter: bool) {
     // Two columns where the screen is wide enough, so the help fits a
     // short screen too.
     let wide = f.area().width >= 120;
-    let keys = help_keys(lang, shift_enter);
-    let rows = if wide {
-        keys.len().div_ceil(2)
-    } else {
-        keys.len()
-    };
-    let mut lines: Vec<Line> = (0..rows)
+    let rows = |n: usize| if wide { n.div_ceil(2) } else { n };
+    let all = help_keys(app.lang, app.shift_enter);
+    let keys = found(&all, &app.help_find, |k| format!("{} {}", k.0, k.1));
+    let shown = rows(keys.len());
+    let mut lines: Vec<Line> = (0..shown)
         .map(|r| {
-            let mut spans = key(&keys[r]);
-            if wide && let Some(k) = keys.get(r + rows) {
+            let mut spans = key(keys[r]);
+            if wide && let Some(k) = keys.get(r + shown) {
                 spans.extend(key(k));
             }
             Line::from(spans)
         })
         .collect();
+    let legend = found(&t.help_legend, &app.help_find, |l| l.to_string());
+    if keys.is_empty() && legend.is_empty() {
+        lines.push(Line::from(Span::styled(t.help_none, dim())));
+    }
+    lines.resize(rows(all.len()), Line::raw(""));
     lines.push(Line::raw(""));
-    lines.extend(
-        t.help_legend
-            .iter()
-            .map(|l| Line::from(Span::styled(*l, dim()))),
+    lines.extend(legend.iter().map(|l| Line::from(Span::styled(**l, dim()))));
+    lines.resize(
+        lines.len() + t.help_legend.len() - legend.len(),
+        Line::raw(""),
     );
     lines.push(Line::raw(""));
-    lines.push(Line::from(Span::styled(t.close, dim())));
+    lines.push(if app.help_typing || !app.help_find.is_empty() {
+        let mut spans = vec![
+            Span::styled(" /", fg(pal().accent)),
+            Span::styled(app.help_find.clone(), bold(pal().strong)),
+        ];
+        if app.help_typing {
+            spans.push(Span::styled("▏", fg(pal().accent)));
+        }
+        let hint = if app.help_typing {
+            t.help_finding
+        } else {
+            t.help_found
+        };
+        spans.push(Span::styled(hint, dim()));
+        Line::from(spans)
+    } else {
+        Line::from(Span::styled(t.help_close, dim()))
+    });
     window(f, t.help_title.into(), lines, if wide { 118 } else { 60 });
+}
+
+/// The items whose `text` has every word of `filter`, case and Turkish
+/// letters folded; all of them when the filter has no words.
+pub(crate) fn found<'a, T>(
+    items: &'a [T],
+    filter: &str,
+    text: impl Fn(&T) -> String,
+) -> Vec<&'a T> {
+    let words: Vec<String> = filter.split_whitespace().map(fold).collect();
+    items
+        .iter()
+        .filter(|i| {
+            let hay = fold(&text(i));
+            words.iter().all(|w| hay.contains(w.as_str()))
+        })
+        .collect()
+}
+
+/// `s` in lower case with the Turkish letters as their plain Latin ones,
+/// so `calis` finds `çalış` and `ISIM` finds `isim`.
+pub(crate) fn fold(s: &str) -> String {
+    s.chars()
+        .flat_map(|c| {
+            let plain = match c {
+                'ç' | 'Ç' => 'c',
+                'ğ' | 'Ğ' => 'g',
+                'ı' | 'İ' => 'i',
+                'ö' | 'Ö' => 'o',
+                'ş' | 'Ş' => 's',
+                'ü' | 'Ü' => 'u',
+                c => c,
+            };
+            plain.to_lowercase()
+        })
+        .collect()
 }
 
 /// How many of `help_keys` come before the help's new-line line: the
