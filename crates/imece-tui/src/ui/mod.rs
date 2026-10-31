@@ -27,7 +27,7 @@ use crate::app::{App, FLASH, View, Zoom};
 use crate::i18n::{Lang, clean, fill};
 use crate::model::*;
 pub(crate) use crate::theme::pal;
-pub(crate) use diff::file_starts;
+pub(crate) use diff::{file_starts, quote};
 pub(crate) use salon::{card_rows, journal_rows, thread_of, turn_starts};
 
 pub fn draw(f: &mut Frame, app: &App) {
@@ -1157,6 +1157,7 @@ fn footer(f: &mut Frame, area: Rect, app: &App) {
                 ("[ ]", t.file),
                 ("a", t.apply),
                 ("r", t.reject),
+                (">", t.quote),
                 ("esc", t.back),
                 ("?", t.help),
             ],
@@ -2944,6 +2945,7 @@ mod tests {
             s.contains(" j k ") && s.contains("apply to the checkout"),
             "{s}"
         );
+        assert!(s.contains(" >  quote to it"), "{s}");
         // The agent at hand is the change's: `@` writes to it.
         key(&mut app, KeyCode::Char('@'));
         assert_eq!(app.input, format!("@{name} "));
