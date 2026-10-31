@@ -13,7 +13,10 @@ pub mod pick;
 pub(crate) mod salon;
 pub(crate) mod words;
 
+use std::num::NonZeroU16;
+
 use ratatui::Frame;
+use ratatui::buffer::{Buffer, CellDiffOption};
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
@@ -763,6 +766,30 @@ pub(crate) fn fit(s: &str, n: usize) -> String {
         let mut out: String = s.chars().take(n.saturating_sub(1)).collect();
         out.push('…');
         out
+    }
+}
+
+/// Makes the cells of `area` one link to `url` the terminal opens (OSC 8;
+/// cells with the same `id` light up together), after ratatui has laid
+/// the row out. Each cell opens the link, writes its own symbol and
+/// closes it again, and keeps its width (`ForcedWidth(1)`): the width
+/// math is untouched, and a cell redrawn alone never leaves a link open
+/// over what is written after it. A URL with a control character (which
+/// could end the sequence) links nothing; `model::local_url` lets none
+/// through anyway.
+pub(crate) fn hyperlink(buf: &mut Buffer, area: Rect, url: &str, id: AgentId) {
+    if url.chars().any(char::is_control) {
+        return;
+    }
+    let one = NonZeroU16::MIN;
+    for (x, y) in area.intersection(buf.area).positions().map(|p| (p.x, p.y)) {
+        let cell = &mut buf[(x, y)];
+        let symbol = format!(
+            "\x1b]8;id=imece-{id};{url}\x1b\\{}\x1b]8;;\x1b\\",
+            cell.symbol()
+        );
+        cell.set_symbol(&symbol)
+            .set_diff_option(CellDiffOption::ForcedWidth(one));
     }
 }
 
@@ -2586,6 +2613,186 @@ mod tests {
         assert!(row(&app, worker).ends_with(&want), "{}", row(&app, worker));
         app.world.agents[0].stand = stand(None, 0, 0, 7, 2);
         assert!(!row(&app, 0).contains("+7"), "{}", row(&app, 0));
+    }
+
+    const OPEN_1: &str = "\x1b]8;id=imece-3;http://localhost:1/\x1b\\";
+    const CLOSE: &str = "\x1b]8;;\x1b\\";
+
+    #[test]
+    fn a_link_cell_opens_and_closes_its_own_link_and_keeps_its_width() {
+        let url = "http://localhost:1/";
+        let mut buf = Buffer::with_lines(["abcd"]);
+        hyperlink(&mut buf, Rect::new(1, 0, 2, 1), url, 3);
+        let symbols: Vec<&str> = (0..4).map(|x| buf[(x, 0)].symbol()).collect();
+        assert_eq!(
+            symbols,
+            [
+                "a",
+                &format!("{OPEN_1}b{CLOSE}"),
+                &format!("{OPEN_1}c{CLOSE}"),
+                "d"
+            ]
+        );
+        let one = CellDiffOption::ForcedWidth(NonZeroU16::MIN);
+        assert_eq!(buf[(1, 0)].diff_option, one);
+        assert_eq!(buf[(2, 0)].diff_option, one);
+        assert_eq!(buf[(0, 0)].diff_option, CellDiffOption::None);
+        // Cut to the buffer.
+        let mut buf = Buffer::with_lines(["abcd", "efgh"]);
+        hyperlink(&mut buf, Rect::new(3, 1, 5, 2), url, 3);
+        assert_eq!(buf[(3, 1)].symbol(), format!("{OPEN_1}h{CLOSE}"));
+        assert_eq!(buf[(2, 1)].symbol(), "g");
+        assert_eq!(buf[(3, 0)].symbol(), "d");
+        // A control character, which could end the sequence, links nothing.
+        let mut buf = Buffer::with_lines(["abcd"]);
+        let before = buf.clone();
+        hyperlink(
+            &mut buf,
+            Rect::new(0, 0, 4, 1),
+            "http://localhost:1/\x07",
+            3,
+        );
+        assert_eq!(buf, before);
+    }
+
+    #[test]
+    fn a_link_is_written_in_one_run_and_a_cell_redrawn_alone_closes_its_own() {
+        use ratatui::backend::{Backend, CrosstermBackend};
+        let url = "http://localhost:1/";
+        let written = |prev: &Buffer, next: &Buffer| {
+            let mut out = Vec::new();
+            CrosstermBackend::new(&mut out)
+                .draw(prev.diff(next).into_iter())
+                .unwrap();
+            String::from_utf8(out).unwrap()
+        };
+        let mut next = Buffer::with_lines(["abcd"]);
+        hyperlink(&mut next, Rect::new(1, 0, 2, 1), url, 3);
+        let all = written(&Buffer::empty(next.area), &next);
+        // One cursor move: each cell is one column wide, as ratatui counts.
+        assert!(
+            all.contains(&format!("a{OPEN_1}b{CLOSE}{OPEN_1}c{CLOSE}d")),
+            "{all:?}"
+        );
+        assert_eq!(all.matches('H').count(), 1, "{all:?}");
+        let mut later = Buffer::with_lines(["abxd"]);
+        hyperlink(&mut later, Rect::new(1, 0, 2, 1), url, 3);
+        assert_eq!(next.diff(&later).len(), 1);
+        let one = written(&next, &later);
+        assert!(one.contains(&format!("{OPEN_1}x{CLOSE}")), "{one:?}");
+        assert_eq!(one.matches(CLOSE).count(), 1);
+        // Gone again: the plain cells are written over the linked ones.
+        let plain = Buffer::with_lines(["abcd"]);
+        assert_eq!(later.diff(&plain).len(), 2);
+    }
+
+    #[test]
+    fn a_worker_s_or_helper_s_loopback_url_is_shown_as_it_is_and_no_one_else_s() {
+        let text =
+            |spans: &[Span]| -> String { spans.iter().map(|s| s.content.as_ref()).collect() };
+        let agent = |role, url: &str| {
+            let mut a = Agent::new(3, 0, "w".into(), Vendor::Claude, role, Status::Idle, 0);
+            a.local = Some(url.into());
+            a
+        };
+        let url = "http://localhost:5173/";
+        for role in [Role::Worker, Role::Helper] {
+            assert_eq!(salon::linked(&agent(role, url)), Some(url));
+            let spans = salon::local_spans(&agent(role, url));
+            assert_eq!(text(&spans), "  ↗ localhost:5173/");
+            assert_eq!(spans[0].style, dim());
+            assert_eq!(
+                spans[1].style,
+                fg(pal().info).add_modifier(Modifier::UNDERLINED)
+            );
+        }
+        for role in [Role::Leader, Role::Researcher] {
+            assert_eq!(salon::linked(&agent(role, url)), None);
+            assert!(salon::local_spans(&agent(role, url)).is_empty());
+        }
+        let mut none = agent(Role::Worker, url);
+        none.local = None;
+        assert!(salon::local_spans(&none).is_empty());
+        // Only `http://` is left out of the text.
+        let https = agent(Role::Worker, "https://127.0.0.1:8443/");
+        assert_eq!(
+            text(&salon::local_spans(&https)),
+            "  ↗ https://127.0.0.1:8443/"
+        );
+        // A path cleaning would hide is not shown: the text is the link.
+        let secret = agent(Role::Worker, "http://localhost:1/TOKEN=abc");
+        assert_eq!(salon::linked(&secret), None);
+        assert!(salon::local_spans(&secret).is_empty());
+    }
+
+    #[test]
+    fn a_link_covers_only_a_url_its_row_shows_whole() {
+        let list = Rect::new(2, 3, 20, 5);
+        assert_eq!(
+            salon::link_cells(list, 1, 5, 15),
+            Some(Rect::new(7, 4, 15, 1))
+        );
+        assert_eq!(
+            salon::link_cells(list, 4, 0, 20),
+            Some(Rect::new(2, 7, 20, 1))
+        );
+        assert_eq!(salon::link_cells(list, 1, 5, 16), None, "cut at the edge");
+        assert_eq!(salon::link_cells(list, 5, 0, 1), None, "below the list");
+        assert_eq!(salon::link_cells(list, 1, 70_000, 1), None);
+    }
+
+    #[test]
+    fn the_salon_links_a_worker_s_loopback_url_on_its_row() {
+        let mut app = idle_team(Lang::En);
+        let worker = app
+            .world
+            .agents
+            .iter()
+            .find(|a| a.role == Role::Worker)
+            .unwrap()
+            .id;
+        app.world.agents[worker].local = Some("http://localhost:5173/".into());
+        app.world.agents[0].local = Some("http://localhost:9999/".into());
+        let open = format!("\x1b]8;id=imece-{worker};http://localhost:5173/\x1b\\");
+        let drawn = |width| {
+            let mut t = Terminal::new(TestBackend::new(width, 30)).unwrap();
+            t.draw(|f| draw(f, &app)).unwrap();
+            t.backend().buffer().clone()
+        };
+        let buf = drawn(200);
+        let cells: Vec<ratatui::layout::Position> = buf
+            .area
+            .positions()
+            .filter(|&p| buf[p].symbol().starts_with(&open))
+            .collect();
+        let shown: String = cells
+            .iter()
+            .map(|&p| {
+                let s = buf[p].symbol().strip_prefix(&open).unwrap();
+                s.strip_suffix(CLOSE).unwrap().to_string()
+            })
+            .collect();
+        assert_eq!(shown, "localhost:5173/");
+        // Side by side on the worker's row, right after the arrow.
+        let (x, y) = (cells[0].x, cells[0].y);
+        assert!(
+            cells
+                .iter()
+                .enumerate()
+                .all(|(i, p)| p.y == y && p.x == x + i as u16)
+        );
+        let row: String = (0..buf.area.width).map(|x| buf[(x, y)].symbol()).collect();
+        assert!(row.contains(&app.world.agents[worker].name), "{row:?}");
+        let arrow: String = (x - 4..x).map(|x| buf[(x, y)].symbol()).collect();
+        assert_eq!(arrow, "  ↗ ");
+        let all: String = buf.content.iter().map(|c| c.symbol()).collect();
+        assert!(!all.contains("9999"), "never on a leader's row");
+        assert_eq!(all.matches("]8;id=").count(), 15, "nothing else is linked");
+        // Too narrow to show it whole: the text is cut, nothing linked.
+        let narrow = drawn(116);
+        let all: String = narrow.content.iter().map(|c| c.symbol()).collect();
+        assert!(!all.contains("]8;"), "{all:?}");
+        assert!(all.contains("↗ local") && !all.contains("localhost:5173/"));
     }
 
     #[test]
@@ -4448,6 +4655,10 @@ mod tests {
         assert!(
             (top..top + lines).any(|y| row(y).contains("⎇ branch  ↑ own commits")),
             "the legend says what a worker's row counts"
+        );
+        assert!(
+            (top..top + lines).any(|y| row(y).contains("↗ a local address the worker wrote")),
+            "and what its link is"
         );
     }
 
