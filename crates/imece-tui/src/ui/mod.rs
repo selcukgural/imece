@@ -1176,7 +1176,7 @@ fn footer(f: &mut Frame, area: Rect, app: &App) {
             ],
             Zoom::Trace(_) => vec![("esc", t.back), ("@", t.write_this), ("?", t.help)],
             Zoom::Diff(_) => vec![
-                ("j k", t.scroll),
+                ("j k  w", t.scroll_wrap),
                 ("[ ]", t.file),
                 ("a x", t.apply_part),
                 ("r", t.reject),
@@ -2954,13 +2954,12 @@ mod tests {
             "{s}"
         );
         assert!(s.contains("-OLD-LINE") && s.contains("+NEW-LINE"), "{s}");
-        // What ran on it heads the diff, the patch right under it.
+        // What ran on it heads the diff, its files under that, then the
+        // patch.
         let row = |needle: &str| s.lines().position(|l| l.contains(needle)).unwrap();
-        assert_eq!(
-            row("no imece run on exactly this change") + 1,
-            row("diff --git a/src/p.rs"),
-            "{s}"
-        );
+        let ran = row("no imece run on exactly this change");
+        assert_eq!(ran + 1, row("│ src/p.rs +"), "{s}");
+        assert_eq!(ran + 3, row("diff --git a/src/p.rs"), "{s}");
         assert!(
             s.contains("+Q-LINE \n") || s.contains("+Q-LINE "),
             "control characters go: {s}"

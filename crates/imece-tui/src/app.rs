@@ -277,6 +277,8 @@ pub struct App {
     /// The first patch line the open change shows: the line at hand,
     /// which `c` writes a note on and `>` quotes the hunk of.
     pub diff_scroll: usize,
+    /// Whether a change's long lines wrap (`w`) instead of being cut.
+    pub diff_wrap: bool,
     /// The person's notes on lines of workers' changes, not sent yet.
     pub diff_notes: Vec<DiffNote>,
     /// The note being written: whose change and which patch line.
@@ -394,6 +396,7 @@ impl App {
             deferred: Vec::new(),
             waiting_at: None,
             diff_scroll: 0,
+            diff_wrap: false,
             diff_notes: Vec::new(),
             noting: None,
             chosen: Vec::new(),
@@ -1278,6 +1281,7 @@ impl App {
             KeyCode::Char('>') => self.quote_hunk(id),
             KeyCode::Char('c') => self.note_line(id),
             KeyCode::Char('x') => self.choose_hunk(id),
+            KeyCode::Char('w') => self.diff_wrap = !self.diff_wrap,
             KeyCode::Char('n') => self.send_notes(id),
             // Writing, views, language, help and quitting work as anywhere.
             _ => return false,
@@ -4221,6 +4225,21 @@ mod tests {
         press(&mut app, 'n');
         assert_eq!(flashed(&app).as_deref(), Some(t.no_notes));
         assert_eq!(app.zoom, Zoom::Diff(worker), "nothing sent, still there");
+    }
+
+    #[test]
+    fn w_in_a_change_wraps_its_long_lines_and_cuts_them_again() {
+        let (mut app, _) = with_change("diff --git a/x b/x\n@@ -1 +1 @@\n-a\n+b\n");
+        assert!(!app.diff_wrap);
+        app.on_key(key(KeyCode::Char('w')));
+        assert!(app.diff_wrap);
+        assert_eq!(
+            app.pane,
+            Pane::Inbox,
+            "w is the diff's here, not the panel's"
+        );
+        app.on_key(key(KeyCode::Char('w')));
+        assert!(!app.diff_wrap);
     }
 
     #[test]
