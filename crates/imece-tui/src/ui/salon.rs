@@ -3,6 +3,8 @@
 //! too), who talks to whom right now, what waits for the person, and the
 //! journal of meaningful events.
 
+use std::collections::BTreeSet;
+
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::{Modifier, Style};
@@ -654,6 +656,9 @@ fn side(f: &mut Frame, area: Rect, app: &App) {
             above = of;
         }
         let mut line = entry_line(app, &w.journal[i]);
+        if w.marks.contains(&i) {
+            line = bookmarked(line);
+        }
         if let Some(c) = app.card {
             line = marked(line, c);
         }
@@ -714,7 +719,7 @@ pub(crate) fn journal_rows(w: &World) -> Vec<(usize, usize)> {
         .enumerate()
         .rev()
         .filter(|(_, e)| e.event.kind() != EntryKind::Assign);
-    fold_threads(shown).collect()
+    fold_threads(shown, &w.marks).collect()
 }
 
 /// Card `c`'s journal as its screen shows it, newest first, folded like
@@ -722,7 +727,7 @@ pub(crate) fn journal_rows(w: &World) -> Vec<(usize, usize)> {
 /// assigned, merged) and what was said with its number (`#323`) in it.
 pub(crate) fn card_rows(w: &World, c: CardId) -> Vec<(usize, usize)> {
     let shown = (w.journal.iter().enumerate().rev()).filter(|(_, e)| on_card(c, e));
-    fold_threads(shown).collect()
+    fold_threads(shown, &w.marks).collect()
 }
 
 /// Card `c`'s journal lines, oldest first and none folded (for `:export`).
@@ -802,20 +807,22 @@ pub(crate) fn turn_starts(w: &World, entries: &[usize]) -> Vec<usize> {
 }
 
 /// Each entry with how many older lines of the same conversation directly
-/// follow it and are folded under it. Display only: the agents' stories
-/// keep every line.
+/// follow it and are folded under it. A line the person marked is never
+/// folded: it keeps a row of its own, for `'` to come back to. Display
+/// only: the agents' stories keep every line.
 fn fold_threads<'a>(
-    entries: impl Iterator<Item = (usize, &'a Entry)>,
-) -> impl Iterator<Item = (usize, usize)> {
+    entries: impl Iterator<Item = (usize, &'a Entry)> + 'a,
+    marks: &'a BTreeSet<usize>,
+) -> impl Iterator<Item = (usize, usize)> + 'a {
     let mut entries = entries.peekable();
     std::iter::from_fn(move || {
         let (i, e) = entries.next()?;
         let mut more = 0;
         if let Some(pair) = words::said(&e.event).map(|s| s.pair()) {
-            while entries
-                .next_if(|(_, n)| words::said(&n.event).is_some_and(|s| s.pair() == pair))
-                .is_some()
-            {
+            let same = |(n, l): &(usize, &Entry)| {
+                !marks.contains(n) && words::said(&l.event).is_some_and(|s| s.pair() == pair)
+            };
+            while entries.next_if(same).is_some() {
                 more += 1;
             }
         }
@@ -902,12 +909,21 @@ mod tests {
             sent(2, 0),
             sent(0, 2),
         ];
-        let folded: Vec<usize> = fold_threads(journal.iter().enumerate())
+        let none = BTreeSet::new();
+        let folded: Vec<usize> = fold_threads(journal.iter().enumerate(), &none)
             .map(|(_, n)| n)
             .collect();
         // Both directions are one conversation; another pair or any other
         // event ends the fold.
         assert_eq!(folded, [2, 0, 0, 1]);
+        // A marked line keeps a row of its own, and may fold the ones
+        // after it.
+        let marks = BTreeSet::from([1]);
+        let rows: Vec<(usize, usize)> = fold_threads(journal.iter().enumerate(), &marks).collect();
+        assert_eq!(rows, [(0, 0), (1, 1), (3, 0), (4, 0), (5, 1)]);
+        let first = BTreeSet::from([0]);
+        let rows: Vec<(usize, usize)> = fold_threads(journal.iter().enumerate(), &first).collect();
+        assert_eq!(rows[0], (0, 2), "a marked line folds what follows it");
     }
 
     #[test]

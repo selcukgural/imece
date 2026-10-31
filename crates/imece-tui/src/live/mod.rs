@@ -532,6 +532,7 @@ pub fn world(o: Options, present: &[(Vendor, bool)]) -> Result<(World, Live), St
         Some(l) => (l.world, Some((l.found, l.skipped))),
         None => (
             World {
+                marks: Default::default(),
                 tick: 0,
                 started_at: now,
                 run_spent: 0,

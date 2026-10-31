@@ -22,7 +22,7 @@
 //! table, but go through a connection of their own without the world's
 //! lock (`settings`, `set_settings`).
 
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{BTreeSet, HashMap, HashSet, VecDeque};
 use std::fs::OpenOptions;
 use std::hash::{DefaultHasher, Hash, Hasher};
 use std::os::unix::fs::OpenOptionsExt;
@@ -42,7 +42,8 @@ use crate::model::*;
 /// 5 (2026-10-30): the runs on a change's tree (`changes.runs`).
 /// 6 (2026-10-31): the card an inbox item came on (`inbox.card`).
 /// 7 (2026-10-31): whether the person pinned a project (`projects.pinned`).
-pub const SCHEMA_VERSION: i64 = 7;
+/// 8 (2026-10-31): the journal lines the person marked (`journal.marked`).
+pub const SCHEMA_VERSION: i64 = 8;
 /// Trace lines kept per agent, as the world keeps them.
 const TRACE_KEEP: usize = 200;
 /// The file's name under the state directory.
@@ -72,10 +73,12 @@ CREATE TABLE IF NOT EXISTS cards (
 CREATE TABLE IF NOT EXISTS story (
     card INTEGER NOT NULL, seq INTEGER NOT NULL, tick INTEGER NOT NULL,
     kind TEXT NOT NULL, data TEXT NOT NULL, PRIMARY KEY (card, seq)) WITHOUT ROWID;
--- Read newest first with a cap (`load`), which the rowid order gives.
+-- Read newest first with a cap (`load`), which the rowid order gives; the
+-- marked lines older than those through `journal_marked` (`prepare`).
 CREATE TABLE IF NOT EXISTS journal (
     seq INTEGER PRIMARY KEY, tick INTEGER NOT NULL, project INTEGER NOT NULL,
-    agent INTEGER NOT NULL, kind TEXT NOT NULL, data TEXT NOT NULL);
+    agent INTEGER NOT NULL, kind TEXT NOT NULL, data TEXT NOT NULL,
+    marked INTEGER NOT NULL DEFAULT 0);
 CREATE TABLE IF NOT EXISTS inbox (
     id INTEGER PRIMARY KEY, kind TEXT NOT NULL, agent INTEGER NOT NULL,
     detail TEXT NOT NULL, researcher INTEGER, open INTEGER NOT NULL, tick INTEGER NOT NULL,
@@ -181,6 +184,8 @@ struct Saved {
     /// number in the file (older lines may not be loaded).
     journal: usize,
     journal_seq: i64,
+    /// The journal lines that are saved marked.
+    marks: BTreeSet<usize>,
     inbox: Vec<u64>,
     /// Each agent's `traced` at the last save.
     trace: Vec<u64>,
@@ -196,8 +201,30 @@ struct Saved {
 pub struct Store {
     conn: Connection,
     saved: Saved,
+    /// Where the world's journal lines are in the file.
+    seqs: Seqs,
     /// The lock file, held open: its lease is imece's run.
     _lock: std::fs::File,
+}
+
+/// Where each of the world's journal lines is in the file (its `seq`): the
+/// lines a load brought, which may have gaps (a line this imece could not
+/// read, the old ones only a mark brought), and after them the lines this
+/// run wrote, one after the other from the last one the file had.
+#[derive(Default)]
+struct Seqs {
+    loaded: Vec<i64>,
+    /// The file's last `seq` at the load.
+    last: i64,
+}
+
+impl Seqs {
+    fn of(&self, i: usize) -> i64 {
+        match self.loaded.get(i) {
+            Some(&seq) => seq,
+            None => self.last + n(i - self.loaded.len()) + 1,
+        }
+    }
 }
 
 /// Seconds since the Unix epoch.
@@ -298,6 +325,7 @@ impl Store {
         let mut store = Store {
             conn,
             saved: Saved::default(),
+            seqs: Seqs::default(),
             _lock: lock,
         };
         store
@@ -318,6 +346,7 @@ impl Store {
         let mut store = Store {
             conn: Connection::open_in_memory().unwrap(),
             saved: Saved::default(),
+            seqs: Seqs::default(),
             _lock: std::fs::File::open("/dev/null").unwrap(),
         };
         store.prepare().unwrap();
@@ -349,6 +378,16 @@ impl Store {
                 "ALTER TABLE projects ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0;",
             )?;
         }
+        if !self.has_column("journal", "marked")? {
+            self.conn.execute_batch(
+                "ALTER TABLE journal ADD COLUMN marked INTEGER NOT NULL DEFAULT 0;",
+            )?;
+        }
+        // The few marked lines, without reading the many others (`load`);
+        // after the column, which an older file gets just above.
+        self.conn.execute_batch(
+            "CREATE INDEX IF NOT EXISTS journal_marked ON journal (seq) WHERE marked = 1;",
+        )?;
         let version: i64 = self
             .conn
             .query_row(
@@ -401,9 +440,10 @@ impl Store {
                     r.get(0)
                 })?;
         // `seq <= ?1` walks the primary key up to there: the newer lines,
-        // the bulk of a file that is tidied every start, are not read.
+        // the bulk of a file that is tidied every start, are not read. A
+        // line the person marked stays.
         let journal = self.conn.execute(
-            "DELETE FROM journal WHERE seq <= ?1 AND tick < ?2",
+            "DELETE FROM journal WHERE seq <= ?1 AND tick < ?2 AND marked = 0",
             params![newest - n(journal_keep), big(cutoff)],
         )?;
         let free: i64 = self
@@ -534,22 +574,28 @@ impl Store {
                 )?;
             }
         }
-        let mut seq = self.saved.journal_seq;
-        for e in &w.journal[self.saved.journal.min(w.journal.len())..] {
-            seq += 1;
+        let from = self.saved.journal.min(w.journal.len());
+        for (i, e) in w.journal.iter().enumerate().skip(from) {
             let (kind, data) = event_json(&e.event);
             let agent = e.event.agent();
             tx.execute(
-                "INSERT OR REPLACE INTO journal (seq, tick, project, agent, kind, data) \
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                "INSERT OR REPLACE INTO journal (seq, tick, project, agent, kind, data, marked) \
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
                 params![
-                    seq,
+                    self.seqs.of(i),
                     big(e.tick),
                     n(w.agents[agent].project),
                     n(agent),
                     kind,
-                    data
+                    data,
+                    w.marks.contains(&i)
                 ],
+            )?;
+        }
+        for &(i, marked) in &plan.marks {
+            tx.execute(
+                "UPDATE journal SET marked = ?1 WHERE seq = ?2",
+                params![marked, self.seqs.of(i)],
             )?;
         }
         for &i in &plan.inbox {
@@ -774,6 +820,12 @@ impl Store {
         plan.journal = new > 0;
         after.journal = w.journal.len();
         after.journal_seq = s.journal_seq + n(new);
+        // A line whose mark came or went is written again (a new line goes
+        // in with its mark, and the writing again comes after it).
+        plan.marks = (s.marks.symmetric_difference(&w.marks))
+            .map(|&i| (i, w.marks.contains(&i)))
+            .collect();
+        after.marks = w.marks.clone();
         for (i, it) in w.inbox.iter().enumerate() {
             let h = hash(&(
                 it.kind,
@@ -842,6 +894,7 @@ impl Store {
         let budget = meta("budget")?.and_then(|v| v.parse().ok()).unwrap_or(0);
         let saved_at = meta("saved_at")?.and_then(|v| v.parse().ok());
         let mut w = World {
+            marks: Default::default(),
             tick: 0,
             started_at,
             run_spent: 0,
@@ -1007,21 +1060,51 @@ impl Store {
                 Err(_) => skipped += 1,
             }
         }
+        // The newest lines, and the marked ones older than those: a mark
+        // keeps its line within reach whatever its age.
         let mut st =
-            conn.prepare("SELECT seq, tick, data FROM journal ORDER BY seq DESC LIMIT ?1")?;
-        let mut entries = Vec::new();
+            conn.prepare("SELECT seq, tick, data, marked FROM journal ORDER BY seq DESC LIMIT ?1")?;
+        let mut newest = Vec::new();
+        let mut oldest = i64::MAX;
         for row in st.query_map(params![n(journal_keep)], |r| {
-            Ok((r.get::<_, i64>(0)?, ubig(r.get(1)?), r.get::<_, String>(2)?))
+            Ok((
+                r.get::<_, i64>(0)?,
+                ubig(r.get(1)?),
+                r.get::<_, String>(2)?,
+                r.get::<_, bool>(3)?,
+            ))
         })? {
-            let (seq, tick, data) = row?;
+            let (seq, tick, data, marked) = row?;
             saved.journal_seq = saved.journal_seq.max(seq);
+            oldest = oldest.min(seq);
             match serde_json::from_str(&data) {
-                Ok(event) => entries.push(Entry { tick, event }),
+                Ok(event) => newest.push((seq, Entry { tick, event }, marked)),
                 Err(_) => skipped += 1,
             }
         }
-        entries.reverse();
-        w.journal = entries;
+        newest.reverse();
+        let mut st = conn.prepare(
+            "SELECT seq, tick, data FROM journal WHERE marked = 1 AND seq < ?1 ORDER BY seq",
+        )?;
+        let mut lines = Vec::new();
+        for row in st.query_map(params![oldest], |r| {
+            Ok((r.get::<_, i64>(0)?, ubig(r.get(1)?), r.get::<_, String>(2)?))
+        })? {
+            let (seq, tick, data) = row?;
+            match serde_json::from_str(&data) {
+                Ok(event) => lines.push((seq, Entry { tick, event }, true)),
+                Err(_) => skipped += 1,
+            }
+        }
+        lines.extend(newest);
+        let mut seqs = Vec::with_capacity(lines.len());
+        for (seq, entry, marked) in lines {
+            if marked {
+                w.marks.insert(w.journal.len());
+            }
+            seqs.push(seq);
+            w.journal.push(entry);
+        }
         let mut st = conn.prepare(
             "SELECT id, kind, agent, detail, researcher, open, tick, card FROM inbox ORDER BY id",
         )?;
@@ -1117,6 +1200,10 @@ impl Store {
         let mut after = self.plan(&w, &kept).after;
         after.journal_seq = saved.journal_seq;
         self.saved = after;
+        self.seqs = Seqs {
+            loaded: seqs,
+            last: saved.journal_seq,
+        };
         Ok(Some(Loaded {
             world: w,
             found,
@@ -1133,9 +1220,10 @@ impl Store {
             "SELECT line FROM trace WHERE agent = 1 ORDER BY seq DESC LIMIT 200",
             "SELECT sender, kind, body FROM mail WHERE agent = 1 ORDER BY seq",
             "SELECT card, tick, data FROM story ORDER BY card, seq",
-            "SELECT seq, tick, data FROM journal ORDER BY seq DESC LIMIT 5000",
+            "SELECT seq, tick, data, marked FROM journal ORDER BY seq DESC LIMIT 5000",
             "SELECT id, kind, agent, detail, researcher, open, tick, card FROM inbox ORDER BY id",
-            "DELETE FROM journal WHERE seq <= 10 AND tick < 20",
+            "DELETE FROM journal WHERE seq <= 10 AND tick < 20 AND marked = 0",
+            "SELECT seq, tick, data FROM journal WHERE marked = 1 AND seq < 10 ORDER BY seq",
         ]
         .iter()
         .map(|q| {
@@ -1163,6 +1251,8 @@ struct Plan {
     cards: Vec<CardId>,
     story: Vec<CardId>,
     journal: bool,
+    /// Journal lines whose mark changed, with the mark they have now.
+    marks: Vec<(usize, bool)>,
     inbox: Vec<usize>,
     trace: Vec<AgentId>,
     mail: Vec<AgentId>,
@@ -1183,6 +1273,7 @@ impl Plan {
     fn is_empty(&self) -> bool {
         !self.meta
             && !self.journal
+            && self.marks.is_empty()
             && self.projects.is_empty()
             && self.agents.is_empty()
             && self.cards.is_empty()
@@ -1333,6 +1424,7 @@ mod tests {
     /// columns apart.
     fn world() -> World {
         let mut w = World {
+            marks: Default::default(),
             tick: 77,
             started_at: 1_700_000_000,
             run_spent: 5,
@@ -2135,6 +2227,105 @@ mod tests {
         let _ = std::fs::remove_dir_all(&d);
     }
 
+    /// The journal lines the file has marked, by their `seq`.
+    fn marked_seqs(store: &Store) -> Vec<i64> {
+        store
+            .raw()
+            .prepare("SELECT seq FROM journal WHERE marked = 1 ORDER BY seq")
+            .unwrap()
+            .query_map([], |r| r.get(0))
+            .unwrap()
+            .map(Result::unwrap)
+            .collect()
+    }
+
+    #[test]
+    fn a_mark_is_saved_with_its_line_and_comes_back() {
+        let (mut w, k) = (world(), kept());
+        // Marked before the line was ever saved: it goes in marked.
+        w.marks.insert(1);
+        let mut store = Store::in_memory();
+        store.save(&w, &k.kept()).unwrap();
+        assert_eq!(marked_seqs(&store), [2]);
+        // Marked and unmarked once saved: written again, and only that.
+        w.marks.insert(4);
+        w.marks.remove(&1);
+        assert!(store.save(&w, &k.kept()).unwrap());
+        assert_eq!(marked_seqs(&store), [5]);
+        assert!(!store.save(&w, &k.kept()).unwrap(), "nothing moved");
+        let back = store.load(100).unwrap().unwrap();
+        assert_eq!(back.world.marks, BTreeSet::from([4]));
+        assert_eq!(back.world.journal, w.journal);
+    }
+
+    #[test]
+    fn a_marked_line_loads_past_the_newest_and_keeps_its_place() {
+        let (mut w, k) = (world(), kept());
+        // Ticks 1 to 6; the first and the third marked.
+        w.marks.extend([0, 2]);
+        let mut store = Store::in_memory();
+        store.save(&w, &k.kept()).unwrap();
+        let back = store.load(2).unwrap().unwrap();
+        let ticks = |w: &World| w.journal.iter().map(|e| e.tick).collect::<Vec<_>>();
+        assert_eq!(
+            ticks(&back.world),
+            [1, 3, 5, 6],
+            "the marked, then the newest two"
+        );
+        assert_eq!(back.world.marks, BTreeSet::from([0, 1]));
+        // Lines loaded with a gap between them are found where they are.
+        let mut cut = back.world;
+        cut.mark(1);
+        cut.mark(3);
+        for tick in [7, 8] {
+            cut.journal.push(Entry {
+                tick,
+                event: Event::Left { agent: 2 },
+            });
+        }
+        cut.mark(5);
+        assert!(store.save(&cut, &k.kept()).unwrap());
+        assert_eq!(marked_seqs(&store), [1, 6, 8]);
+        let all = store.load(100).unwrap().unwrap();
+        assert_eq!(ticks(&all.world), [1, 2, 3, 4, 5, 6, 7, 8]);
+        assert_eq!(all.world.marks, BTreeSet::from([0, 5, 7]));
+    }
+
+    #[test]
+    fn a_line_that_cannot_be_read_leaves_the_marks_where_they_are() {
+        let (w, k) = (world(), kept());
+        let mut store = Store::in_memory();
+        store.save(&w, &k.kept()).unwrap();
+        // The second line, from another imece, and the fourth marked.
+        store
+            .raw()
+            .execute(
+                "UPDATE journal SET data = '{\"Gone\":{}}' WHERE seq = 2",
+                [],
+            )
+            .unwrap();
+        store
+            .raw()
+            .execute("UPDATE journal SET marked = 1 WHERE seq IN (2, 4)", [])
+            .unwrap();
+        let back = store.load(100).unwrap().unwrap();
+        assert_eq!(back.skipped, 1);
+        assert_eq!(
+            back.world.marks,
+            BTreeSet::from([2]),
+            "the fourth is third now"
+        );
+        let mut cut = back.world;
+        cut.mark(2);
+        cut.mark(3);
+        store.save(&cut, &k.kept()).unwrap();
+        assert_eq!(marked_seqs(&store), [2, 5], "the unread line keeps its own");
+        // An old marked line that cannot be read counts as one too.
+        let back = store.load(1).unwrap().unwrap();
+        assert_eq!(back.skipped, 1);
+        assert_eq!(back.world.journal.len(), 2);
+    }
+
     #[test]
     fn the_journal_loads_its_newest_lines_and_goes_on_from_the_last() {
         let (mut w, k) = (world(), kept());
@@ -2359,7 +2550,7 @@ mod tests {
             (1, 0),          // old, past the newest three: goes
             (2, cutoff - 1), // old by one tick: goes
             (3, cutoff),     // at the cutoff: stays
-            (4, 0),          // old: goes
+            (4, 0),          // old, but marked: stays
             (5, cutoff + 1), // young: stays
             (6, cutoff * 2), // young: stays
             (7, 0),          // old, the last one past the newest three: goes
@@ -2371,14 +2562,14 @@ mod tests {
             store
                 .raw()
                 .execute(
-                    "INSERT INTO journal (seq, tick, project, agent, kind, data) \
-                     VALUES (?1, ?2, 0, 0, 'Failed', '{\"Failed\":{\"agent\":0}}')",
-                    params![seq, big(tick)],
+                    "INSERT INTO journal (seq, tick, project, agent, kind, data, marked) \
+                     VALUES (?1, ?2, 0, 0, 'Failed', '{\"Failed\":{\"agent\":0}}', ?3)",
+                    params![seq, big(tick), seq == 4],
                 )
                 .unwrap();
         }
         let tidied = store.tidy(now, 3).unwrap();
-        assert_eq!(tidied.journal, 4);
+        assert_eq!(tidied.journal, 3);
         let left: Vec<i64> = store
             .raw()
             .prepare("SELECT seq FROM journal ORDER BY seq")
@@ -2387,7 +2578,7 @@ mod tests {
             .unwrap()
             .map(Result::unwrap)
             .collect();
-        assert_eq!(left, [3, 5, 6, 8, 9, 10]);
+        assert_eq!(left, [3, 4, 5, 6, 8, 9, 10]);
         // Nothing more to let go of; a young world has nothing at all.
         assert_eq!(store.tidy(now, 3).unwrap(), Tidied::default());
         assert_eq!(
@@ -2408,10 +2599,10 @@ mod tests {
             3,
             "one tick more: the lines of the first tick go"
         );
-        // Lines 3, 5 and 6 are left. The load goes on from the last line
-        // kept, so the file's numbering stays one sequence.
+        // Lines 3, 4 (marked), 5 and 6 are left. The load goes on from the
+        // last line kept, so the file's numbering stays one sequence.
         let l = store.load(10).unwrap().unwrap();
-        assert_eq!(l.world.journal.len(), 3);
+        assert_eq!(l.world.journal.len(), 4);
         let mut w2 = l.world;
         w2.journal.push(Entry {
             tick: 5,
@@ -2504,9 +2695,15 @@ mod tests {
         store.save(&w, &k.kept()).unwrap();
         for (query, plan) in store.plans() {
             assert!(!plan.contains("TEMP B-TREE"), "{query}: {plan}");
+            // The marked lines have an index of their own, which holds
+            // only them.
+            let key = match query.contains("marked = 1") {
+                true => "USING INDEX journal_marked",
+                false => "PRIMARY KEY",
+            };
             if query.contains("WHERE") {
                 assert!(
-                    plan.contains("SEARCH") && plan.contains("PRIMARY KEY"),
+                    plan.contains("SEARCH") && plan.contains(key),
                     "{query}: {plan}"
                 );
             }
@@ -2678,7 +2875,11 @@ mod tests {
                      model TEXT, tiered INTEGER NOT NULL, woken INTEGER NOT NULL,
                      posted INTEGER NOT NULL);
                  INSERT INTO agents VALUES (0, 0, 'lead', 'Claude', 'Leader', NULL, NULL, 12,
-                     'Clean', 0, 3, 0, '[]', NULL, 0, 0, 0);",
+                     'Clean', 0, 3, 0, '[]', NULL, 0, 0, 0);
+                 CREATE TABLE journal (
+                     seq INTEGER PRIMARY KEY, tick INTEGER NOT NULL, project INTEGER NOT NULL,
+                     agent INTEGER NOT NULL, kind TEXT NOT NULL, data TEXT NOT NULL);
+                 INSERT INTO journal VALUES (1, 2, 0, 0, 'Left', '{\"Left\":{\"agent\":0}}');",
             )
             .unwrap();
         }
@@ -2695,6 +2896,8 @@ mod tests {
         let back = store.load(100).unwrap().expect("a world");
         assert_eq!(back.world.agents[0].name, "lead");
         assert!(!back.world.projects[0].pinned, "pinned came in later");
+        assert_eq!(back.world.journal.len(), 1);
+        assert!(back.world.marks.is_empty(), "marks came in later");
         assert_eq!(back.found.sessions, [None]);
         assert_eq!(back.saved_at, None, "an older file does not say when");
         // Saved with a session, read back with it.
