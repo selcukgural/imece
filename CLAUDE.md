@@ -152,6 +152,7 @@ record in the same PR.
 - 50 `partial-apply`: `x` chooses hunks (`App::chosen`), `a` applies only them: `worktree::subset` + `worktree::part` (the part's tree through an index of its own), the worktree marked with only that part, the rest read again as a new Δ; the demo mirrors it.
 - 51 `back-key`: `^o` goes back through the places left (`App::been`, `Place` = view, zoom, pane, card; recorded in `on_key` when a key moved the person, 50 kept), passing over places gone; closes a conversation first.
 - 52 `focus-brief`: back in the terminal after `FOCUS_AWAY` (3 min) in another window, the away digest shows at once (`App::focus`, from the journal since the blur, no model), not over writing or another window.
+- 53 `awake`: `--awake`/`:awake` (opt-in) hold the machine's sleep while an agent is mid-turn: `awake.rs`, caffeinate or systemd-inhibit as a child in its own process group, let go when nothing is mid-turn or imece ends; a failure is said once.
 
 `docs/neighbours.md`: voff, what was taken from it and the rules that come
 from what it lacks. Read it before building a part it names.
