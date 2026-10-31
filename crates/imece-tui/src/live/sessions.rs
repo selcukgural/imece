@@ -26,6 +26,13 @@ pub fn apply(w: &mut World, id: AgentId, e: AgentEvent, before: u64) {
             a.trace(t, format!("text {text:?}"));
         }
         AgentEvent::Note(text) => w.agents[id].trace(t, text),
+        AgentEvent::CommandsMissing => {
+            w.agents[id].trace(
+                t,
+                "commands not listed: the vendor's format may have changed",
+            );
+            w.note(Event::CommandsMissing { agent: id });
+        }
         AgentEvent::Tool { name, target } => {
             let mcp = imece_agent::mcp_tool("");
             let name = name.strip_prefix(&mcp).map_or(name.clone(), str::to_string);
@@ -563,6 +570,18 @@ mod tests {
         );
         assert_eq!(w.agents[1].commands, ["/clear", "/stats"]);
         apply(&mut w, 1, AgentEvent::Commands(vec![]), 0);
+        assert_eq!(w.agents[1].commands, ["/clear"]);
+        // No list at all: the trace and the journal say so, and the
+        // commands it had stay.
+        apply(&mut w, 1, AgentEvent::CommandsMissing, 0);
+        assert!(
+            (w.agents[1].trace.back().unwrap())
+                .ends_with(" commands not listed: the vendor's format may have changed")
+        );
+        assert_eq!(
+            w.journal.last().unwrap().event,
+            Event::CommandsMissing { agent: 1 }
+        );
         assert_eq!(w.agents[1].commands, ["/clear"]);
     }
 
