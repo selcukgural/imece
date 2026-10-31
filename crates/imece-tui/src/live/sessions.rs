@@ -20,7 +20,11 @@ pub fn apply(w: &mut World, id: AgentId, e: AgentEvent, before: u64) {
             w.agents[id].trace(t, format!("commands {}", commands.join(" ")));
             w.agents[id].commands = commands;
         }
-        AgentEvent::Text(text) => w.agents[id].trace(t, format!("text {text:?}")),
+        AgentEvent::Text(text) => {
+            let a = &mut w.agents[id];
+            a.wrote(&text);
+            a.trace(t, format!("text {text:?}"));
+        }
         AgentEvent::Note(text) => w.agents[id].trace(t, text),
         AgentEvent::Tool { name, target } => {
             let mcp = imece_agent::mcp_tool("");
@@ -51,6 +55,7 @@ pub fn apply(w: &mut World, id: AgentId, e: AgentEvent, before: u64) {
             let a = &mut w.agents[id];
             a.cost = before + cost / 100;
             a.activity = None;
+            a.wrote(&text);
             a.trace(
                 t,
                 format!(
@@ -102,6 +107,8 @@ impl Live {
             }
         }
         w.close_approvals(id);
+        // What it served went with its session.
+        w.agents[id].local = None;
         self.spent_before[id] = w.agents[id].cost;
         self.slots[id] = Slot::None;
         self.cwds[id] = None;

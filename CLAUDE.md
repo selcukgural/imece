@@ -144,6 +144,7 @@ record in the same PR.
 - 42 `export`: `:export [PATH]` writes the open conversation, else the card's screen, as Markdown; days on every time, cleaned, never over an existing file.
 - 43 `pin`: `:pin [NAME]` pins a project to the top of the salon (`▴`, folds last), saved in the store (schema 7); a colour per project is not done.
 - 44 `turns`: `[ ]` in a conversation go turn to turn (the lines one side says before the other answers), `ui::turn_starts`, `app::jump` shared with the diff's file jump; bookmarks are C6b.
+- 45 `local-link`: the newest loopback URL a worker or helper wrote shows on its row as an OSC 8 link (`model::local_url`, strict; `ui::hyperlink`, each cell opens and closes its own link, `ForcedWidth(1)`); gone with the session.
 
 `docs/neighbours.md`: voff, what was taken from it and the rules that come
 from what it lacks. Read it before building a part it names.

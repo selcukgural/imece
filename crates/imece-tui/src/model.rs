@@ -414,6 +414,9 @@ pub struct Agent {
     /// Where a worker's worktree stands next to its project's checkout, as
     /// git last read it; nothing to show until it is read.
     pub stand: Stand,
+    /// The newest loopback URL the agent wrote in its text this session
+    /// (`local_url`), drawn on its row as a link the terminal opens.
+    pub local: Option<String>,
     /// A researcher that finished; kept so ids stay stable.
     pub gone: bool,
 }
@@ -462,6 +465,7 @@ impl Agent {
             activity: None,
             commands: Vec::new(),
             stand: Stand::default(),
+            local: None,
             gone: false,
         }
     }
@@ -470,6 +474,14 @@ impl Agent {
         if self.status != status {
             self.status = status;
             self.changed_at = tick;
+        }
+    }
+
+    /// The agent wrote `text`: the newest loopback URL in it, if any, is
+    /// the one its row shows from now on.
+    pub fn wrote(&mut self, text: &str) {
+        if let Some(url) = local_url(text) {
+            self.local = Some(url);
         }
     }
 
@@ -644,6 +656,67 @@ pub enum Part {
 /// Where `text` names card `c` as the person sees it (`#323`, `c` being
 /// 322): byte ranges of each `#` and its number, where no digit follows,
 /// so `#32` is not found in `#323`.
+/// The longest loopback URL a row links to; a longer one is not shown, so
+/// what the person clicks is all on the row.
+pub const LOCAL_URL_MAX: usize = 60;
+
+/// The last loopback URL in `text` (`http://localhost:5173/app`), without
+/// its query and fragment, or nothing. Strict, as it becomes a link the
+/// person clicks: the scheme is `http` or `https`, the host `localhost`,
+/// `127.0.0.1` or `[::1]` and nothing else (`localhost.evil.com` and
+/// `localhost@evil.com` are not it), the port 1–65535, the path plain
+/// ASCII without quotes, brackets, backslashes or control characters;
+/// sentence punctuation after it is not part of it.
+pub fn local_url(text: &str) -> Option<String> {
+    text.match_indices("http")
+        .filter_map(|(i, _)| local_url_at(&text[i..]))
+        .last()
+}
+
+/// The loopback URL `s` starts with, as `local_url` takes it.
+fn local_url_at(s: &str) -> Option<String> {
+    let rest = s
+        .strip_prefix("http://")
+        .or_else(|| s.strip_prefix("https://"))?;
+    let host = ["localhost", "127.0.0.1", "[::1]"]
+        .into_iter()
+        .find(|h| rest.starts_with(h))?;
+    let after = &rest[host.len()..];
+    let run = after
+        .find(|c: char| !url_char(c))
+        .map_or(after, |end| &after[..end]);
+    // The query and the fragment are left out of the link.
+    let run = run.find(['?', '#']).map_or(run, |end| &run[..end]);
+    let run = run.trim_end_matches(['.', ',', ':', '!']);
+    let (port, path) = match run.strip_prefix(':') {
+        Some(p) => {
+            let end = p.find('/').unwrap_or(p.len());
+            (Some(&p[..end]), &p[end..])
+        }
+        None => (None, run),
+    };
+    if !path.is_empty() && !path.starts_with('/') {
+        // `localhost.evil.com`, `localhost@evil.com`, `localhostx`.
+        return None;
+    }
+    if let Some(port) = port {
+        let digits = port.len() <= 5 && port.bytes().all(|b| b.is_ascii_digit());
+        if !digits || !(1..=65535).contains(&port.parse::<u32>().ok()?) {
+            return None;
+        }
+    }
+    let scheme_len = s.len() - rest.len();
+    let url = &s[..scheme_len + host.len() + run.len()];
+    (url.len() <= LOCAL_URL_MAX).then(|| url.to_string())
+}
+
+/// A character a loopback URL's port and path may have: ASCII letters,
+/// digits and `-._~:/?#[]@!$&*+,=%`; no quotes, brackets, `;`, `\` or
+/// anything that could end the terminal's link sequence.
+fn url_char(c: char) -> bool {
+    c.is_ascii_alphanumeric() || "-._~:/?#[]@!$&*+,=%".contains(c)
+}
+
 pub fn mentions(text: &str, c: CardId) -> Vec<std::ops::Range<usize>> {
     let tag = format!("#{}", c + 1);
     text.match_indices(&tag)
@@ -1770,6 +1843,133 @@ pub fn dollars(cost: u64) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_loopback_url_is_found_with_its_port_and_path_and_nothing_after() {
+        let url = |t: &str| local_url(t);
+        let some = |u: &str| Some(u.to_string());
+        assert_eq!(
+            url("up at http://localhost:5173/ now"),
+            some("http://localhost:5173/")
+        );
+        assert_eq!(
+            url("https://127.0.0.1:8443/app"),
+            some("https://127.0.0.1:8443/app")
+        );
+        assert_eq!(url("http://[::1]:3000"), some("http://[::1]:3000"));
+        assert_eq!(url("http://localhost"), some("http://localhost"));
+        assert_eq!(url("http://localhost/x"), some("http://localhost/x"));
+        // Sentence punctuation and brackets around it are not part of it.
+        assert_eq!(
+            url("(see http://localhost:3000)."),
+            some("http://localhost:3000")
+        );
+        for end in [".", ",", ":", "!", "\"", "'", ";", "`", ">"] {
+            assert_eq!(
+                url(&format!("http://localhost:3000{end}")),
+                some("http://localhost:3000"),
+                "{end}"
+            );
+        }
+        assert_eq!(url("at http://localhost: then"), some("http://localhost"));
+        // The query and fragment are dropped.
+        assert_eq!(
+            url("http://localhost:8888/lab?token=abc#x"),
+            some("http://localhost:8888/lab")
+        );
+        assert_eq!(
+            url("http://localhost:8888#top"),
+            some("http://localhost:8888")
+        );
+        // The newest one counts.
+        assert_eq!(
+            url("http://localhost:1/ moved to http://localhost:2/ and https://example.com"),
+            some("http://localhost:2/")
+        );
+        assert_eq!(url("httphttp://localhost:9/"), some("http://localhost:9/"));
+        // Ports: 1 to 65535, five digits at most.
+        assert_eq!(url("http://localhost:1"), some("http://localhost:1"));
+        assert_eq!(
+            url("http://localhost:65535/"),
+            some("http://localhost:65535/")
+        );
+        assert_eq!(
+            url("http://localhost:00080"),
+            some("http://localhost:00080")
+        );
+        // Nothing that could end the terminal's sequence or leave the host.
+        assert_eq!(
+            url("http://localhost:3000\u{1b}]8;;http://evil.com\u{1b}\\"),
+            some("http://localhost:3000")
+        );
+        assert_eq!(
+            url("http://localhost:3000\\@evil.com"),
+            some("http://localhost:3000")
+        );
+        assert_eq!(
+            url("http://localhost:3000/ü/x"),
+            some("http://localhost:3000/")
+        );
+        assert_eq!(
+            url("http://localhost:3000/a b"),
+            some("http://localhost:3000/a")
+        );
+    }
+
+    #[test]
+    fn only_a_loopback_host_and_a_real_port_make_a_url_and_a_long_one_is_left_out() {
+        for text in [
+            "no url here",
+            "https://example.com:5173/",
+            "ftp://localhost/",
+            "HTTP://LOCALHOST/",
+            "http://localhost.evil.com/",
+            "http://localhost@evil.com/",
+            "http://evil.com@localhost/",
+            "http://localhostx/",
+            "http://localhost-x/",
+            "http://127.0.0.1.nip.io/",
+            "http://[::1].evil/",
+            "http://localhost:0/",
+            "http://localhost:65536/",
+            "http://localhost:000080/",
+            "http://localhost:80a/",
+            "http://localhost:80:81/",
+            "http://localhost:3000@evil.com/",
+            "http://localhost:/x",
+        ] {
+            assert_eq!(local_url(text), None, "{text}");
+        }
+        // As long as the row allows, not a character more.
+        let head = "http://localhost:5173/";
+        let fits = format!("{head}{}", "a".repeat(LOCAL_URL_MAX - head.len()));
+        assert_eq!(fits.len(), 60);
+        assert_eq!(local_url(&fits), Some(fits.clone()));
+        assert_eq!(local_url(&format!("{fits}a")), None);
+        // Dropped parts do not count against it.
+        assert_eq!(local_url(&format!("{fits}?q=1")), Some(fits));
+    }
+
+    #[test]
+    fn what_an_agent_writes_keeps_its_newest_loopback_url() {
+        let mut a = Agent::new(
+            0,
+            0,
+            "w".into(),
+            Vendor::Claude,
+            Role::Worker,
+            Status::Idle,
+            0,
+        );
+        a.wrote("thinking");
+        assert_eq!(a.local, None);
+        a.wrote("runs at http://localhost:5173/");
+        assert_eq!(a.local.as_deref(), Some("http://localhost:5173/"));
+        a.wrote("nothing new");
+        assert_eq!(a.local.as_deref(), Some("http://localhost:5173/"), "kept");
+        a.wrote("now http://127.0.0.1:8080");
+        assert_eq!(a.local.as_deref(), Some("http://127.0.0.1:8080"));
+    }
 
     #[test]
     fn a_cost_under_a_cent_is_not_shown_as_free() {

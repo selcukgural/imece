@@ -117,12 +117,17 @@ const BILLING: Repo = &[
 struct Kit {
     build: &'static str,
     test: &'static str,
+    /// Where a worker says the project runs once it is built, as a live
+    /// worker writes a dev server's address; nothing for an app that
+    /// serves nothing.
+    serves: Option<&'static str>,
     asks: &'static [&'static str],
 }
 
 const SHOP_KIT: Kit = Kit {
     build: "dotnet build",
     test: "dotnet test",
+    serves: Some("http://localhost:5080/swagger"),
     asks: &[
         "Bash: dotnet add package Polly --version 8.5.0",
         "Bash: dotnet ef database update",
@@ -134,6 +139,7 @@ const SHOP_KIT: Kit = Kit {
 const MOBILE_KIT: Kit = Kit {
     build: "./gradlew assembleDebug",
     test: "./gradlew testDebugUnitTest",
+    serves: None,
     asks: &[
         "Edit: app/build.gradle.kts",
         "Bash: ./gradlew dependencies --refresh-dependencies",
@@ -144,6 +150,7 @@ const MOBILE_KIT: Kit = Kit {
 const WEB_KIT: Kit = Kit {
     build: "npm run build",
     test: "npm test",
+    serves: Some("http://localhost:5173/"),
     asks: &[
         "Bash: npm install zod@3",
         "Edit: package.json",
@@ -154,6 +161,7 @@ const WEB_KIT: Kit = Kit {
 const BILLING_KIT: Kit = Kit {
     build: "go build ./...",
     test: "go test ./...",
+    serves: Some("http://127.0.0.1:8080/healthz"),
     asks: &[
         "Bash: go get github.com/shopspring/decimal",
         "Edit: go.mod",
@@ -1364,19 +1372,25 @@ impl Sim {
     fn tool(&mut self, w: &mut World, id: AgentId, card: CardId) {
         let t = w.tick;
         let first = w.cards[card].symbols.first().copied();
-        let build = kit(w.agents[id].project).build;
-        let (doing, edits) = match (first, self.rng.below(5)) {
-            (Some(s), 0) => (format!("Read {}", s.file), None),
-            (Some(s), 1) => (format!("Edit {}", s.file), Some(s.file)),
-            (Some(s), 2) => (format!("Grep {:?}", s.name), None),
-            (_, 3) => (format!("run {build}"), None),
-            _ => (String::new(), None),
+        let kit = kit(w.agents[id].project);
+        let (doing, edits, serves) = match (first, self.rng.below(5)) {
+            (Some(s), 0) => (format!("Read {}", s.file), None, None),
+            (Some(s), 1) => (format!("Edit {}", s.file), Some(s.file), None),
+            (Some(s), 2) => (format!("Grep {:?}", s.name), None, None),
+            (_, 3) => (format!("run {}", kit.build), None, kit.serves),
+            _ => (String::new(), None, None),
         };
         let a = &mut w.agents[id];
         if !doing.is_empty() {
             a.trace(t, format!("tool_use {doing}"));
         }
         a.activity = Some(doing);
+        if let Some(url) = serves {
+            // Built, it runs: its address goes on the row as a link.
+            let text = format!("It builds; the app runs at {url}.");
+            a.wrote(&text);
+            a.trace(t, format!("text {text:?}"));
+        }
         if edits.is_some() {
             // An edit writes lines, and the row counts them as git would
             // read them. From the clock, so the scenario stays the seed's.
@@ -1424,6 +1438,8 @@ impl Sim {
         let card = w.agents[id].card;
         let a = &mut w.agents[id];
         a.activity = None;
+        // What it served went with its session.
+        a.local = None;
         a.set_status(Status::Stopped, t);
         a.trace(t, format!("stopped {STOPPED:?}"));
         w.story(card, StoryEvent::Stopped(STOPPED.into()));
@@ -2981,6 +2997,50 @@ mod tests {
         w.agents[lead].commands.clear();
         s.start(&mut w, lead);
         assert!(w.agents[lead].commands.is_empty(), "once");
+    }
+
+    #[test]
+    fn a_built_project_that_serves_puts_its_address_on_the_row_until_the_session_stops() {
+        let (mut w, mut s, worker, card) = one_at_work();
+        // A range: a roll that never builds cannot hang the test.
+        for _ in 0..200 {
+            s.tool(&mut w, worker, card);
+            let built = w.agents[worker].activity.as_deref() == Some("run dotnet build");
+            if built {
+                break;
+            }
+            assert_eq!(w.agents[worker].local, None, "not before it is built");
+        }
+        assert_eq!(
+            w.agents[worker].local.as_deref(),
+            Some("http://localhost:5080/swagger")
+        );
+        let said = w.agents[worker].trace.back().unwrap();
+        assert!(
+            said.ends_with(r#"text "It builds; the app runs at http://localhost:5080/swagger.""#),
+            "{said}"
+        );
+        s.stop(&mut w, worker);
+        assert_eq!(w.agents[worker].local, None, "it went with the session");
+
+        // An app that serves nothing puts nothing there.
+        let (mut w, mut s) = world(2, 2, 0, 3, Lang::En);
+        let worker = workers_of(&w, 1)[0];
+        let card = w
+            .cards
+            .iter()
+            .position(|c| c.column == Column::Waiting && c.project == 1)
+            .unwrap();
+        s.take(&mut w, worker, card, Taken::Claimed);
+        for _ in 0..200 {
+            s.tool(&mut w, worker, card);
+        }
+        let ran = w.agents[worker]
+            .trace
+            .iter()
+            .any(|l| l.contains("run ./gradlew assembleDebug"));
+        assert!(ran, "it built");
+        assert_eq!(w.agents[worker].local, None);
     }
 
     #[test]

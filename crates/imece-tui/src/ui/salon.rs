@@ -249,6 +249,8 @@ fn salon(f: &mut Frame, area: Rect, app: &App) {
 
     let mut under_last = false;
     let mut lines = Vec::with_capacity(rows.len());
+    // Rows whose loopback URL becomes a link: row, column, width, URL, agent.
+    let mut links = Vec::new();
     for (i, row) in rows.iter().enumerate() {
         let line = match *row {
             Row::Project(p) => project_line(app, p),
@@ -272,7 +274,12 @@ fn salon(f: &mut Frame, area: Rect, app: &App) {
                         }
                     }
                 };
-                agent_line(app, &w.agents[id], prefix)
+                let line = agent_line(app, &w.agents[id], prefix);
+                if let Some(url) = linked(&w.agents[id]) {
+                    let width = line.spans.last().map_or(0, Span::width);
+                    links.push((i, line.width() - width, width, url, id));
+                }
+                line
             }
             Row::Talk(id) => {
                 let a = &w.agents[id];
@@ -305,6 +312,11 @@ fn salon(f: &mut Frame, area: Rect, app: &App) {
         lines.push(Line::from(Span::styled(t.salon_none, dim())));
     }
     f.render_widget(Paragraph::new(lines), list);
+    for (i, x, width, url, id) in links {
+        if let Some(cells) = link_cells(list, i, x, width) {
+            hyperlink(f.buffer_mut(), cells, url, id);
+        }
+    }
     f.render_widget(Paragraph::new(queue_line(app)), queue);
 }
 
@@ -434,6 +446,8 @@ pub(super) fn agent_line(app: &App, a: &Agent, prefix: &'static str) -> Line<'st
             dim(),
         ));
     }
+    // Last, so the screen knows where the text it links starts.
+    spans.extend(local_spans(a));
 
     let line = Line::from(spans);
     let recent = w.tick > 4 && w.tick.saturating_sub(a.changed_at) <= 4;
@@ -477,6 +491,40 @@ pub(super) fn stand_spans(s: &Stand) -> Vec<Span<'static>> {
         spans.push(p);
     }
     spans
+}
+
+/// The cells of `list` that row `i`'s link covers, `width` of them from
+/// column `x`: only a URL the row shows whole, so what is clicked is what
+/// is read; none for a row below the list.
+pub(super) fn link_cells(list: Rect, i: usize, x: usize, width: usize) -> Option<Rect> {
+    let y = u16::try_from(i).ok()?;
+    let x = u16::try_from(x).ok()?;
+    let width = u16::try_from(width).ok()?;
+    (y < list.height && u32::from(x) + u32::from(width) <= u32::from(list.width))
+        .then(|| Rect::new(list.x + x, list.y + y, width, 1))
+}
+
+/// The loopback URL a worker's or helper's row links to, when it has one
+/// the row can show as it is: one cleaning would change (a path that
+/// looks like a secret) is not shown, so the text is the link.
+pub(super) fn linked(a: &Agent) -> Option<&str> {
+    if !matches!(a.role, Role::Worker | Role::Helper) {
+        return None;
+    }
+    a.local.as_deref().filter(|url| clean(url) == *url)
+}
+
+/// A worker's or helper's loopback URL, `  ↗ localhost:5173/`: the
+/// arrow, then the text the terminal links, the last spans of its row.
+pub(super) fn local_spans(a: &Agent) -> Vec<Span<'static>> {
+    let Some(url) = linked(a) else {
+        return Vec::new();
+    };
+    let shown = url.strip_prefix("http://").unwrap_or(url).to_string();
+    vec![
+        Span::styled("  ↗ ", dim()),
+        Span::styled(shown, fg(pal().info).add_modifier(Modifier::UNDERLINED)),
+    ]
 }
 
 fn queue_line(app: &App) -> Line<'static> {

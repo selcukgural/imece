@@ -1179,6 +1179,31 @@ mod tests {
     }
 
     #[test]
+    fn a_loopback_url_an_agent_writes_stays_on_its_row_until_its_session_ends() {
+        let mut w = team(1);
+        let mut live = Live::new(2, claude_at("x"), PathBuf::new(), PathBuf::new());
+        let local = |w: &World| w.agents[1].local.clone();
+        let text = AgentEvent::Text("dev server: http://localhost:5173/".into());
+        live.tx.send((1, 0, text)).unwrap();
+        live.step(&mut w);
+        assert_eq!(local(&w).as_deref(), Some("http://localhost:5173/"));
+        let done = AgentEvent::TurnDone {
+            ok: true,
+            text: "Moved it to http://127.0.0.1:8080.".into(),
+            cost: 0,
+            denied: 0,
+        };
+        live.tx.send((1, 0, done)).unwrap();
+        live.step(&mut w);
+        assert_eq!(local(&w).as_deref(), Some("http://127.0.0.1:8080"));
+        live.tx
+            .send((1, 0, AgentEvent::Stopped("gone".into())))
+            .unwrap();
+        live.step(&mut w);
+        assert_eq!(local(&w), None, "it went with the session");
+    }
+
+    #[test]
     fn a_late_event_of_an_ended_session_is_ignored() {
         let mut w = team(1);
         let mut live = Live::new(2, claude_at("x"), PathBuf::new(), PathBuf::new());

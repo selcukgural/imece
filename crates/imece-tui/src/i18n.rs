@@ -388,7 +388,7 @@ pub struct Text {
     /// writing keys: where the terminal tells shift-enter apart, and
     /// where it does not.
     pub help_newline: [(&'static str, &'static str); 2],
-    pub help_legend: [&'static str; 4],
+    pub help_legend: [&'static str; 5],
     /// The help's last line: how to filter it or close it; while the
     /// person types a filter, after it; with a filter kept, after it.
     pub help_close: &'static str,
@@ -784,6 +784,7 @@ pub const EN: Text = Text {
         " ◇ researcher  ○ idle  ✓ done, not seen  ■ stopped  ⇄ conversation  ▾ ▸ project / helpers  ▴ pinned",
         " ~ soft-tainted (read a report)  ≈ tainted (reads the outside world)",
         " ⎇ branch  ↑ own commits  ↓ the checkout's new commits  +N −M lines not yet handed over",
+        " ↗ a local address the worker wrote (localhost), a link the terminal opens",
     ],
     help_close: " / filter · any other key: close",
     help_finding: "   enter keep · esc all keys",
@@ -1184,6 +1185,7 @@ pub const TR: Text = Text {
         " ◇ araştırmacı  ○ boşta  ✓ bitti, bakılmadı  ■ durdu  ⇄ konuşma  ▾ ▸ proje / yardımcılar  ▴ sabit",
         " ~ hafif kirli (rapor okudu)  ≈ kirli (dış dünyayı okuyor)",
         " ⎇ dal  ↑ kendi commit'leri  ↓ checkout'un yeni commit'leri  +N −M henüz verilmemiş satırlar",
+        " ↗ worker'ın yazdığı yerel adres (localhost), terminalin açtığı bir bağlantı",
     ],
     help_close: " / süz · başka bir tuş: kapat",
     help_finding: "   enter tut · esc tüm tuşlar",
