@@ -276,6 +276,7 @@ not yet seen.
 | `L` | English / Türkçe |
 | `enter` / `esc` | look deeper (focus, then the raw stream) / go back |
 | `enter` in the journal, `v` | the whole conversation; `[` `]` go from turn to turn (the lines one side says before the other answers) |
+| `m` (`:mark`) / `'` | mark the selected line of the journal or of a conversation to come back to (kept between runs; again: unmark) / the next marked line, round to the first: in the open conversation, else in the journal |
 | `tab`, `w` | salon ↔ the items waiting for you · straight to them |
 | `W` / `S` | from anywhere: open the next item waiting for you / put this one off and open the next |
 | `a` / `r` | approve / apply / allow · reject / refuse the selected item |

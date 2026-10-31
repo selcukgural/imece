@@ -798,6 +798,8 @@ impl App {
                     self.copy = Some(ui::copy_text(self.lang, &self.world, &[i]));
                 }
             }
+            KeyCode::Char('m') => self.toggle_mark(),
+            KeyCode::Char('\'') => self.next_mark(),
             KeyCode::Up | KeyCode::Char('k') => self.move_selection(false),
             KeyCode::Down | KeyCode::Char('j') => self.move_selection(true),
             KeyCode::Left | KeyCode::Char('h') if self.salon_keys() => self.fold(true),
@@ -1773,6 +1775,7 @@ impl App {
             "forget" => self.forget_agent(arg),
             "export" => self.export(arg),
             "pin" => self.pin(arg),
+            "mark" => self.toggle_mark(),
             "salon" => self.show(View::Salon),
             "board" => self.show(View::Board),
             "code" => self.show(View::Code),
@@ -1810,6 +1813,66 @@ impl App {
             "faster" => self.faster(),
             "slower" => self.slower(),
             _ => self.flash(fill(t.no_command, &[name])),
+        }
+    }
+
+    /// `m` or `:mark`: the line at hand (the open conversation's selected
+    /// line, else the journal's) is marked to come back to, or loses its
+    /// mark.
+    fn toggle_mark(&mut self) {
+        let journal = self.view == View::Salon && self.zoom == Zoom::None;
+        let at = match &self.thread {
+            Some(th) => th.entries.get(th.sel).copied(),
+            None if journal && self.pane == Pane::Journal => self.journal_sel,
+            None => None,
+        };
+        let t = self.lang.text();
+        let said = match at {
+            Some(i) if self.world.mark(i) => t.marked,
+            Some(_) => t.unmarked,
+            None => t.mark_where,
+        };
+        self.flash(said);
+    }
+
+    /// `'`: the next marked line after the one at hand, round to the first
+    /// again: among the open conversation's lines, else in the journal
+    /// (the card's, on a card's screen) in the order it lists them, newest
+    /// first; from anywhere else the journal is where it goes.
+    fn next_mark(&mut self) {
+        let marks = &self.world.marks;
+        let found = match &mut self.thread {
+            Some(th) => {
+                let marked: Vec<usize> = (0..th.entries.len())
+                    .filter(|&n| marks.contains(&th.entries[n]))
+                    .collect();
+                let to = next_of(&marked, Some(th.sel));
+                if let Some(n) = to {
+                    th.sel = n;
+                    th.follow.set(true);
+                }
+                to.is_some()
+            }
+            None => {
+                self.view = View::Salon;
+                self.zoom = Zoom::None;
+                self.pane = Pane::Journal;
+                let rows = self.journal_rows();
+                let marked: Vec<usize> = (0..rows.len())
+                    .filter(|&n| marks.contains(&rows[n].0))
+                    .collect();
+                let at = (self.journal_sel).and_then(|i| rows.iter().position(|&(r, _)| r == i));
+                let to = next_of(&marked, at);
+                if let Some(n) = to {
+                    self.journal_sel = Some(rows[n].0);
+                } else {
+                    self.select_journal(None);
+                }
+                to.is_some()
+            }
+        };
+        if !found {
+            self.flash(self.lang.text().no_marks);
         }
     }
 
@@ -2274,6 +2337,13 @@ fn pasted(text: &str) -> String {
 
 /// Where `[` or `]` goes from `at`: the nearest of `starts` (in order)
 /// before it, or after it when `forward`; none past the first or last.
+/// The first of `marked` (positions, ascending) after `at`, or the first
+/// of them when none is after it or nothing is at hand.
+fn next_of(marked: &[usize], at: Option<usize>) -> Option<usize> {
+    let after = marked.iter().find(|&&p| at.is_none_or(|a| p > a));
+    after.or(marked.first()).copied()
+}
+
 fn jump(starts: &[usize], at: usize, forward: bool) -> Option<usize> {
     if forward {
         starts.iter().find(|&&s| s > at).copied()
@@ -3761,6 +3831,143 @@ mod tests {
         assert_eq!(app.inbox_sel, 2);
         assert_eq!(press(&mut app, 'W'), Some(0), "round again");
         assert_eq!(app.inbox_sel, 0);
+    }
+
+    /// A demo whose journal is only `n` lines that stand alone, with the
+    /// journal panel of the salon at hand.
+    fn journal_of(n: usize) -> App {
+        let mut app = App::new(1, 1, 0, 1, Lang::En);
+        app.world.journal.clear();
+        for _ in 0..n {
+            app.world.note(Event::Failed { agent: 0 });
+        }
+        app.pane = Pane::Journal;
+        app
+    }
+
+    fn flashed(app: &App) -> Option<String> {
+        app.flash.as_ref().map(|(m, _)| m.clone())
+    }
+
+    #[test]
+    fn m_marks_the_line_at_hand_and_again_takes_the_mark_away() {
+        let mut app = journal_of(3);
+        let t = app.lang.text();
+        app.journal_sel = Some(1);
+        app.on_key(key(KeyCode::Char('m')));
+        assert_eq!(app.world.marks, BTreeSet::from([1]));
+        assert_eq!(flashed(&app).as_deref(), Some(t.marked));
+        app.on_key(key(KeyCode::Char('m')));
+        assert!(app.world.marks.is_empty());
+        assert_eq!(flashed(&app).as_deref(), Some(t.unmarked));
+        // `:mark` is the same.
+        app.command("mark");
+        assert_eq!(app.world.marks, BTreeSet::from([1]));
+        // Nothing at hand: another panel, a focus, another view.
+        app.world.marks.clear();
+        for at in [
+            |a: &mut App| a.pane = Pane::Salon,
+            |a: &mut App| a.zoom = Zoom::Focus(0),
+            |a: &mut App| a.view = View::Board,
+        ] {
+            let mut app = journal_of(3);
+            app.journal_sel = Some(0);
+            at(&mut app);
+            app.on_key(key(KeyCode::Char('m')));
+            assert!(app.world.marks.is_empty());
+            assert_eq!(flashed(&app).as_deref(), Some(t.mark_where));
+        }
+        // In a conversation, its selected line, whatever the panel.
+        let mut app = journal_of(3);
+        app.pane = Pane::Salon;
+        app.open_thread(2);
+        app.on_key(key(KeyCode::Char('m')));
+        assert_eq!(app.world.marks, BTreeSet::from([2]));
+        assert!(app.thread.is_some(), "it stays open");
+    }
+
+    #[test]
+    fn quote_goes_to_the_next_marked_row_of_the_journal_round_to_the_first() {
+        let mut app = journal_of(5);
+        let t = app.lang.text();
+        // Rows newest first: journal lines 4 3 2 1 0.
+        app.world.marks.extend([3, 1]);
+        app.view = View::Board;
+        app.zoom = Zoom::Focus(0);
+        app.pane = Pane::Salon;
+        app.on_key(key(KeyCode::Char('\'')));
+        assert_eq!(
+            (app.view, app.zoom, app.pane),
+            (View::Salon, Zoom::None, Pane::Journal)
+        );
+        assert_eq!(
+            app.journal_sel,
+            Some(3),
+            "nothing selected: the first marked"
+        );
+        app.on_key(key(KeyCode::Char('\'')));
+        assert_eq!(app.journal_sel, Some(1));
+        app.on_key(key(KeyCode::Char('\'')));
+        assert_eq!(app.journal_sel, Some(3), "round again");
+        app.journal_sel = Some(2);
+        app.on_key(key(KeyCode::Char('\'')));
+        assert_eq!(app.journal_sel, Some(1), "from between two: the one after");
+        assert!(flashed(&app).is_none());
+        // None marked: the selection stays on a row, and it says so.
+        app.world.marks.clear();
+        app.journal_sel = None;
+        app.on_key(key(KeyCode::Char('\'')));
+        assert_eq!(app.journal_sel, Some(4), "the first row");
+        assert_eq!(flashed(&app).as_deref(), Some(t.no_marks));
+    }
+
+    #[test]
+    fn quote_in_a_conversation_goes_among_its_own_marked_lines() {
+        let mut app = App::new(1, 1, 0, 1, Lang::En);
+        app.world.journal.clear();
+        let said = |from, to| Event::Sent {
+            from,
+            to,
+            kind: MsgKind::Ask,
+            text: "x".into(),
+        };
+        for _ in 0..2 {
+            app.world.note(said(0, 1));
+            app.world.note(Event::Failed { agent: 0 });
+        }
+        app.world.note(said(1, 0));
+        // The conversation is lines 0 2 4; line 1 is marked but not in it.
+        app.world.marks.extend([1, 4]);
+        app.open_thread(0);
+        assert_eq!(app.thread.as_ref().unwrap().entries, [0, 2, 4]);
+        app.on_key(key(KeyCode::Char('\'')));
+        let th = app.thread.as_ref().unwrap();
+        assert_eq!(th.sel, 2);
+        assert!(th.follow.get(), "the drawing scrolls to it");
+        // At the only mark: it stays there.
+        app.on_key(key(KeyCode::Char('\'')));
+        assert_eq!(app.thread.as_ref().unwrap().sel, 2);
+        // None in it: the selection stays, and it says so.
+        app.world.marks.remove(&4);
+        app.thread.as_mut().unwrap().sel = 1;
+        app.thread.as_ref().unwrap().follow.set(false);
+        app.on_key(key(KeyCode::Char('\'')));
+        let th = app.thread.as_ref().unwrap();
+        assert_eq!(th.sel, 1);
+        assert!(!th.follow.get());
+        assert_eq!(flashed(&app).as_deref(), Some(app.lang.text().no_marks));
+        assert_eq!(app.pane, Pane::Salon, "the journal is not where it went");
+    }
+
+    #[test]
+    fn next_of_is_the_first_after_or_the_first_of_all() {
+        assert_eq!(next_of(&[1, 3], None), Some(1));
+        assert_eq!(next_of(&[1, 3], Some(0)), Some(1));
+        assert_eq!(next_of(&[1, 3], Some(1)), Some(3));
+        assert_eq!(next_of(&[1, 3], Some(2)), Some(3));
+        assert_eq!(next_of(&[1, 3], Some(3)), Some(1));
+        assert_eq!(next_of(&[], Some(3)), None);
+        assert_eq!(next_of(&[], None), None);
     }
 
     #[test]

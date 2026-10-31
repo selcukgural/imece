@@ -4,7 +4,7 @@
 //! Events are stored as data, not sentences: the screen words them in the
 //! person's language when it draws them.
 
-use std::collections::VecDeque;
+use std::collections::{BTreeSet, VecDeque};
 use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -1238,6 +1238,8 @@ pub struct World {
     pub plans: Vec<Plan>,
     /// Workers' changes waiting for the person, one per worker at most.
     pub changes: Vec<Change>,
+    /// The journal lines the person marked to come back to (`m`), by index.
+    pub marks: BTreeSet<usize>,
 }
 
 impl World {
@@ -1246,6 +1248,19 @@ impl World {
             .iter()
             .find(|a| !a.gone && a.name == name)
             .map(|a| a.id)
+    }
+
+    /// Marks journal line `i` to come back to, or takes its mark away;
+    /// says whether it is marked now. A line the journal does not have
+    /// stays unmarked.
+    pub fn mark(&mut self, i: usize) -> bool {
+        if i >= self.journal.len() {
+            return false;
+        }
+        if self.marks.remove(&i) {
+            return false;
+        }
+        self.marks.insert(i)
     }
 
     pub fn spent(&self) -> u64 {
@@ -1986,6 +2001,7 @@ mod tests {
 
     fn world(agents: Vec<Agent>) -> World {
         World {
+            marks: Default::default(),
             tick: 0,
             started_at: 0,
             run_spent: 0,
@@ -2009,6 +2025,25 @@ mod tests {
             changes: Vec::new(),
             plans: Vec::new(),
         }
+    }
+
+    #[test]
+    fn a_mark_comes_and_goes_and_only_on_a_line_the_journal_has() {
+        let mut w = world(vec![agent(0, Role::Leader, Status::Idle)]);
+        for _ in 0..2 {
+            w.note(Event::Confine {
+                leader: 0,
+                level: "standard".into(),
+            });
+        }
+        assert!(w.mark(1));
+        assert_eq!(w.marks, BTreeSet::from([1]));
+        assert!(w.mark(0));
+        assert_eq!(w.marks, BTreeSet::from([0, 1]));
+        assert!(!w.mark(1), "again: unmarked");
+        assert_eq!(w.marks, BTreeSet::from([0]));
+        assert!(!w.mark(2), "past the journal's end");
+        assert_eq!(w.marks, BTreeSet::from([0]));
     }
 
     fn item(kind: InboxKind, agent: AgentId, open: bool) -> InboxItem {
