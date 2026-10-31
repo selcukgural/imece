@@ -1,0 +1,130 @@
+/* Copied from kule@c09ec13545c331fd56d74ab76cb5f8557594a16c website/src/css/custom.css
+   and recoloured for imece (see VENDORED.md).
+
+   imece's colours: a warm amber (the screen's attention colour) on a dark
+   ground, with the monospace of a terminal where the screen is quoted. */
+
+:root {
+  --ifm-color-primary: #b7791f;
+  --ifm-color-primary-dark: #a56d1c;
+  --ifm-color-primary-darker: #9c671a;
+  --ifm-color-primary-darkest: #805516;
+  --ifm-color-primary-light: #c98a2a;
+  --ifm-color-primary-lighter: #cf9236;
+  --ifm-color-primary-lightest: #dcab5e;
+  --ifm-code-font-size: 92%;
+  --ifm-font-family-base: 'IBM Plex Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --ifm-font-family-monospace: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  --docusaurus-highlighted-code-line-bg: rgba(0, 0, 0, 0.08);
+  --imece-ground: #15161b;
+}
+
+[data-theme='dark'] {
+  --ifm-color-primary: #e3a93f;
+  --ifm-color-primary-dark: #dc9c24;
+  --ifm-color-primary-darker: #d2941f;
+  --ifm-color-primary-darkest: #ad7a1a;
+  --ifm-color-primary-light: #e7b55a;
+  --ifm-color-primary-lighter: #e9bb68;
+  --ifm-color-primary-lightest: #f0cf94;
+  --ifm-background-color: var(--imece-ground);
+  --ifm-navbar-background-color: #1c1d24;
+  --docusaurus-highlighted-code-line-bg: rgba(255, 255, 255, 0.1);
+}
+
+/* Command synopsis blocks in the reference. */
+.markdown h2 code,
+.markdown h3 code {
+  font-size: 0.9em;
+}
+
+/* Keys quoted in running text look like keys. */
+.markdown kbd {
+  font-family: var(--ifm-font-family-monospace);
+  font-size: 0.85em;
+  padding: 0.05em 0.4em;
+  border-radius: 4px;
+  border: 1px solid var(--ifm-color-emphasis-400);
+  border-bottom-width: 2px;
+  background: var(--ifm-color-emphasis-100);
+}
+
+/* The home page. */
+.imece-hero {
+  background: var(--imece-ground);
+  color: #f4f4f6;
+  padding: 4rem 1rem 3rem;
+  text-align: center;
+}
+.imece-hero h1 {
+  font-size: clamp(2rem, 6vw, 3.4rem);
+  margin-bottom: 0.6rem;
+  font-family: var(--ifm-font-family-monospace);
+  letter-spacing: 0.04em;
+}
+.imece-hero p {
+  font-size: 1.2rem;
+  max-width: 46rem;
+  margin: 0 auto 1.8rem;
+  color: #c9cad2;
+}
+.imece-hero .button + .button {
+  margin-left: 0.8rem;
+}
+.imece-loop {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.5rem;
+  margin: 2rem auto 0;
+  font-family: var(--ifm-font-family-monospace);
+  font-size: 0.95rem;
+}
+.imece-loop span {
+  border: 1px solid #3a3c46;
+  border-radius: 999px;
+  padding: 0.25rem 0.8rem;
+}
+.imece-loop span.arrow {
+  border: none;
+  color: #e3a93f;
+  padding: 0.25rem 0;
+}
+.imece-features {
+  padding: 3rem 1rem;
+}
+.imece-features h3 {
+  margin-top: 1rem;
+}
+.imece-screen {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 0 1rem 3rem;
+}
+.imece-screen pre {
+  font-size: 0.78rem;
+  line-height: 1.35;
+}
+.imece-video {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 0 1rem 3rem;
+}
+.imece-video video {
+  width: 100%;
+  border-radius: 12px;
+  border: 1px solid var(--ifm-color-emphasis-300);
+  background: #000;
+}
+.imece-terminal {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 0 1rem 3rem;
+}
+@media (max-width: 600px) {
+  .imece-hero .button {
+    display: block;
+    margin: 0.5rem auto 0 !important;
+    max-width: 18rem;
+  }
+}

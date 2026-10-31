@@ -1,0 +1,142 @@
+---
+title: Salon
+description: imece'nin varsayılan ekranı - başlık satırı, projeye göre gruplanmış lonca ağacı, her agent'ın satırı ve işareti, katlama ve yandaki paneller.
+---
+
+# Salon
+
+Salon, imece'nin açıldığı ve `1` ya da `:salon` ile geri döndüğünüz ekrandır. Bütün takımı bir bakışta gösterir: üstte bütçe ve filoyu sayan başlık satırı, solda lonca ağacı (her proje, lideri, işçileri ve yardımcıları), sağda iki yan panel: SENİ BEKLEYEN ve DEFTER (günlük). Pano ve kod haritası bir tuş uzakta (`2`, `3`); geri kalan her şey salonun üstünde açılır ve `esc` salonu geri getirir.
+
+```text
+ imece  3/9 kart │ ● 2 çalışıyor  ✓ 1 bitti │ $3.10 / $20.00 harcandı ($1.80/sa, ~9 sa kaldı) │ claude 5 sa: %48 kaldı, 1 sa 59 dk sonra yenilenir │  ! 2 seni bekliyor   14:02
+┌ SALON ──────────────────────────────────────────┐┌ SENİ BEKLEYEN (2) ─────────────────────┐
+│▾ ▴ shop-api  2 çalışıyor  $2.40   ! 2 bekliyor  ││Δ 13:58 claude-1 bitirdi: parser (3 dosya, +41 −6) · ✓ bu ağaçta temiz geçti: cargo test
+│  ◆ ▎lead      claude             koordine ediyor││⚑ 14:01 codex-2 onayını bekliyor: Bash: npm install left-pad
+│  ├ ● ▎claude-1 #3   Parse the manifest  testleri yazıyor  $1.10  ⎇ fix-parser ↑2 ↓1 +12 −3
+│  │ └ ● ▎claude-1/1                      düşünüyor…   ⎇                                    │
+│  ├ ✓ ▎codex-2  #5   Money rounding      bitti, henüz bakılmadı  $0.80  ↗ localhost:5173/  │
+│  └ … 2 agent yolunda                             │└────────────────────────────────────────┘
+│▸ web  1 çalışıyor  $0.70                         │┌ DEFTER ────────────────────────────────┐
+│                                                  ││13:58 ! claude-1 bitirdi: 3 dosya, +41 −6 → seni bekliyor
+│                                                  ││13:55 ⇄ lead → claude-1 [görev] #3 Parse the manifest
+│                                                  ││13:40 › sen: boş dosyadaki parser çökmesini düzelt
+│KUYRUK  boş  │ son: #2 ✓ #1 ✓                     ││                                        │
+└──────────────────────────────────────────────────┘└────────────────────────────────────────┘
+  / lidere yaz  @ agent'a  # iş  tab panel  ← → katla  enter odak  ? yardım   1 salon  2 pano  3 kod
+```
+
+## Başlık satırı
+
+Tek satır, soldan sağa, parçalar `│` ile ayrılmış:
+
+| Parça | Ne söyler |
+| --- | --- |
+| `3/9 kart` | biten kartlar / bütün kartlar; kart yokken gösterilmez (canlı bir başlangıçta lider kart asana dek yoktur). |
+| `● 2 çalışıyor  ✓ 1 bitti  ✕ 1 takıldı` | filo: tur ortasındaki (token harcayan) agent'lar, bir turu bitirmiş ama o zamandan beri açmadığınız agent'lar, bloke olan ya da oturumu duran agent'lar. Sıfır olan sayı yazılmaz; hiçbiri yoksa `hepsi boşta` der. Sizi bekleyenler filoda değildir: kendi sayısı vardır. |
+| `$3.10 / $20.00 harcandı ($1.80/sa, ~9 sa kaldı)` | kese (bütçe): bütün agent'ların birlikte harcadığı, son on dakikanın saat başına maliyeti ve bu hızla bütçenin ne kadar dayanacağı. Yarım saatten az kaldığında parçanın tamamı dikkat rengine döner ve günlük bunu bir kez söyler. |
+| `claude 5 sa: %48 kaldı, 1 sa 59 dk sonra yenilenir` | her satıcı planının dolmaya en yakın kullanım penceresi, Claude ve Codex oturumlarının bildirdiği gibi (Gemini bildirmez); %90'dan itibaren dikkat renginde. Bir aboneliğin sınırı takımı bütçeden önce durdurabilir. Çalıştırmalar arasında saklanmaz: oturum ilk turunda yeniden söyler. |
+| `araştırmacı 1/4` | çalışan araştırmacılar / üst sınır; yalnız bir üst sınır varken (`--demo --researchers N`; araştırmacılar canlıda yapılmadı). |
+| `! 2 seni bekliyor` | SENİ BEKLEYEN'deki açık ögeler, dikkat renginde. Terminalin başlığı aynı sayıyı taşır, `imece · 2 seni bekliyor`, böylece arkadaki bir sekme de gösterir; imece bitince kabuğunuzun başlığı geri gelir. |
+| `14:02` | saat. |
+
+Bütçenin ve pencerelerin nasıl sayıldığı [bütçe ve sınırlar](../concepts/budget-and-limits.md) sayfasında.
+
+## Lonca ağacı
+
+Agent'lar projeye göre gruplanır. Her proje bir başlık satırıdır; altında lideri, sonra işçileri, her işçinin altında yardımcıları. Projeler açıldıkları sırayla gelir, sabitlenenler önce.
+
+Bir proje başlığı: `▾ shop-api  2 çalışıyor  $2.40  ✕1   ! 2 bekliyor`. `▾` açık, `▸` katlı. Adın ardından: boşta olmayan işçi ve yardımcı sayısı, projenin agent'larının harcadığı, varsa `✕N` bloke agent ve dikkat renginde bu projenin sizi bekleyen öge sayısı. Katlı bir proje tek satırdır ve o satır da bekleyenleri gösterir: sessiz ama sağır değil. Sabitlenmiş bir proje (`:pin`) adının önünde `▴` taşır ve salonun en üstünde kalır; sabitleme çalıştırmalar arasında saklanır.
+
+Bir agent'ın satırı:
+
+```text
+  ├ ● ▎claude-1 #3   Parse the manifest  testleri yazıyor  $1.10  ⎇ fix-parser ↑2 ↓1 +12 −3  ▾ 1 yardımcı  ↗ localhost:5173/
+```
+
+- Ağaç çizgileri `├ └ │` kimin kimin altında olduğunu gösterir; bir yardımcı işçisinin altındadır ve `claude-1/1` diye adlanır.
+- Durum işareti (aşağıdaki lejant) ve bir turu bitirmiş ama henüz açmadığınız bir işçi için onun yerine `✓`, durum olarak `bitti, henüz bakılmadı`. Lider hep `◆` kalır.
+- Agent'ın konuşmacı renginde `▎`: günlükte ve bir konuşmada satırlarının taşıdığı renk, böylece satır ve konuşması tek agent olarak okunur.
+- Satıcısının renginde adı; sonra kirliyse `~` ya da `≈` (araştırma kirliliği, yalnız demoda).
+- Bir işçinin kartı: `#3` ve kartın başlığı. Lider yerine satıcısını gösterir.
+- Durumu: `düşünüyor…`, yaptığını söylediği şey, bir takım arkadaşının yanıtını beklerken `? → claude-2`, bir sorusu sizi beklerken `? → sen`, bir araç çağrısı SENİ BEKLEYEN'de beklerken `⚑ onayını bekliyor`, yanıtı okunmayı beklerken `sana yanıt verdi`, işçileri çalışan bir lider için `koordine ediyor`, `BLOKE`, `■ durdu, yazınca yeniden başlar`, `◦ önceki çalışmadan beri uyuyor, yazınca uyanır`.
+- Varsa harcadığı.
+- Bir işçinin worktree durumu, `⎇ fix-parser ↑2 ↓1 +12 −3`: agent'ın açtığı dal (worktree imece'nin bıraktığı gibi detached iken yok), checkout'ta olmayan kendi commit'leri (imece'nin uygulanan değişiklik işaretleri sayılmaz), kendisinde olmayan checkout commit'leri ve kendi HEAD'ine göre eklenen ve silinen satırlar, izlenmeyen dosyalar dahil: bir sonraki `done`'un size vereceği şey. Her parça yalnız söyleyecek bir şey varken görünür. imece'nin git iş parçacığında okunur: oturum başlarken, bir tur bitince, bir uygulamadan sonra ve işçi ya da bir yardımcısı tur ortasındayken her 15 saniyede; çalıştırmalar arasında saklanmaz.
+- `▾ 1 yardımcı` ya da `▸ 1 yardımcı`: yardımcıları altında listelenir ya da katlanmıştır.
+- `↗ localhost:5173/`: işçi ya da yardımcının kendi metninde yazdığı en yeni yerel adres, terminalin açtığı bir bağlantı olarak (OSC 8). Yalnız `localhost`, `127.0.0.1` ya da `[::1]` üzerinde `http`/`https` sayılır, sorgu ve parça atılır, 60 karakteri aşan bir adres hiç gösterilmez. Oturumla birlikte gider.
+- Konuşan bir satırın altında, en son alışverişi taşıyan soluk italik bir satır: `⇄ claude-2 "hangi parser?"`.
+
+Yeni değişen bir satır bir an öne çıkar, sonra sakinleşir. Seçili satır ters renklidir.
+
+Satırlar panele sığmadığında sakin işçiler (çalışan ya da boşta, son zamanda bir şey dememiş, seçili olmayan) salonun altından yukarıya doğru tek satıra katlanır: `… 2 agent yolunda`; sabitlenmiş bir proje en son katlanır ve sizi bekleyen hiç katlanmaz. Panelin alt satırı `KUYRUK`, doğrulanan kartları ve son dört biteni (`#2 ✓`) listeler; canlıda doğrulama kısmını hiçbir şey doldurmaz, `boş` yazar.
+
+## Lejant
+
+`?` yardımının listelediği her işaret, ekranın çizdiği gibi:
+
+| İşaret | Anlamı |
+| --- | --- |
+| `◆` | lider (ne yapsa bu işareti taşır) |
+| `●` | çalışıyor: tur ortasında |
+| `◐` | bir takım arkadaşına soruyor, yanıtını bekliyor |
+| `✕` | bloke (araştırma bekliyor) ya da bir proje başlığında bloke agent sayısı |
+| `!` | onayınızı bekliyor; başlıktaki sayı ve SENİ BEKLEYEN'in kendi işareti de |
+| `◇` | araştırmacı (yalnız demoda; araştırmacı katmanı canlıda yapılmadı) |
+| `○` | boşta |
+| `✓` | bitti, bakılmadı: bir turu bitirdi, o zamandan beri açmadınız |
+| `■` | durdu: oturum bitti; ona yazmak yeni bir oturum başlatır |
+| `◦` | önceki çalıştırmadan beri uyuyor; ona yazmak uyandırır |
+| `⇄` | bir konuşma satırı |
+| `▾` `▸` | bir proje ya da bir işçinin yardımcıları, açık ya da katlı |
+| `▴` | sabitlenmiş proje |
+| `~` | hafif kirli: bir araştırma raporu okudu (yalnız demoda) |
+| `≈` | kirli: dış dünyayı okuyor (yalnız demoda) |
+| `⎇` `↑` `↓` `+N −M` | bir işçinin worktree'si: dal, kendi commit'leri, checkout'un yeni commit'leri, henüz verilmemiş satırlar |
+| `↗` | işçinin yazdığı yerel adres, terminalin açtığı bir bağlantı |
+| `✱` | `m` ile işaretlediğiniz satır; `'` sonrakine gider |
+
+Başlıktaki filo aynı şekilleri kullanır, böylece mono temada da okunur.
+
+## Hareket ve katlama
+
+| Tuş | Ne yapar |
+| --- | --- |
+| `↑` `↓` / `j` `k` | üstteki ya da alttaki satırı seç |
+| `gg` / `G` | ilk / son satır |
+| `^d` `^u` / `^f` `^b` | yarım sayfa / tam sayfa |
+| `←` `→` / `h` `l` | seçili projeyi ya da seçili işçinin yardımcılarını (seçili yardımcının işçisini de) katla / aç. Bir proje başlığında `enter` da katlar ve açar. |
+| `za` | eldeki katlamayı değiştir |
+| `zM` / `zR` (`:fold` / `:unfold`) | her projeyi ve her işçinin yardımcılarını katla / aç |
+| `f` (`:needs`) | salon yalnız sizi bekleyenleri gösterir, sonra yine herkesi |
+| `enter` | derine in: bir agent'ın odağı (kartı, durumu, kökeni ve hikâyesi), yine `enter` ham akışı (iz) |
+| `t` (`:trace`) / `v` (`:talk`) | eldeki agent'ın ham akışı / konuşması |
+| `esc` | bir derinlik yukarı |
+
+Katlama seçimi işçiye ya da başlığa taşır, böylece seçim kaybolmaz.
+
+## Yalnız sizi bekleyenler
+
+Bir agent'ın sizden neye ihtiyacı olduğu tek bir sıradır, en önemlisi önce: bir şeyi SENİ BEKLEYEN'de bekliyor, takılmış (bloke ya da oturumu durmuş), bakmadığınız bir turu bitirmiş, hiçbiri. Bir projede işçiler bu sıraya göre dizilir, eşitler sırasını korur, böylece sakin olanlar yer değiştirmez. Satırlar sığmadığında önce sakinler katlanır.
+
+`f` yalnız bir şeye ihtiyacı olan agent'ları tutar, her biri projesinin başlığı altında: bir işçi, bir şeye ihtiyacı olan yardımcısı için gelir, lider yalnız kendisinin ihtiyacı varsa. Hiçbir şeyi olmayan proje dışarıda kalır, bir şeyi olan katlı proje yalnız başlığıyla görünür ve hiçbir şey yoksa salon `Şu an senden bir şey gerekmiyor · f herkesi gösterir` der. Panel başlığı süzgecin açık olduğunu söyler: `SALON · yalnızca seni bekleyenler (f)`. Açıkken, satırı giden bir seçim projesinin hâlâ görünen ilk satırına taşınır (yazarken değil: seçim `/` ile kime yazdığınızı belirler). Süzgeç yalnız bu çalıştırma boyunca sürer.
+
+## Yan paneller
+
+Sağda üstte SENİ BEKLEYEN, altında DEFTER. `tab` ve `⇧tab` (ya da `]` ve `[`) panelleri döndürür: salon → bekleyenler → günlük; `w` (`:waiting`) doğrudan bekleyenler paneline gider. Bekleyenler paneli ögelerinin gerektiği kadar satır alır, en çok yan tarafın yarısı; ögeler beklerken ve panel odakta değilken çerçevesi uyarı rengine döner.
+
+`,` ve `.` (ya da `<` ve `>`) yan paneli dört sütun genişletir ya da daraltır, ekranın %20'si ile %70'i arasında; flaş `yan panel %38 (, . ya da < >)` der ve genişlik sonraki çalıştırma için saklanır. Bir değişikliğin görünümünde `>` bunun yerine bir parçayı alıntılar; `.` yine daraltır.
+
+## Okunaklılık
+
+Salonun üstünde açılan bir pencere (bir konuşma, yardım, uzaktayken özeti, nerede kalmıştın) çevresindeki her şeyi soluklaştırır, böylece ağaç ve günlüğün kesilen satır sonları arka plan olarak okunur. Günlük paneli ve bekleyenlerdeki bir soru, bir mesajı tek satır düz söz olarak gösterir: temizlenmiş, satırları birleştirilmiş, başlık ve liste işaretleri atılmış, bir bağlantı etiketiyle. İz, satırın ilk sözcüğüne göre renklenir: agent'ın kendi metni satıcı renginde, araç çağrıları bilgi renginde, bir çalıştırma çıkış koduna göre, bus sözcükleri vurgu renginde. Açık bir konuşma konuşmayı izler: gelen satırlar eklenir, seçim son satırdaysa onunla gider.
+
+Bir agent'ın yazdığı her şey ekrana yalnız kontrol karakterlerini atan ve gizli anahtara benzeyen parçaları saklayan bir temizlikten geçerek ulaşır; hiçbir şey ham çizilmez.
+
+## Ayrıca bakınız
+
+- [SENİ BEKLEYEN](waiting.md)
+- [Günlük](journal.md)
+- [Konuşmalar](conversations.md)
+- [Pano ve kod haritası](board-and-code-map.md)
+- [Klavye](keyboard.md)
+- [Bütçe ve sınırlar](../concepts/budget-and-limits.md)
+- [Projeler](../concepts/projects.md)

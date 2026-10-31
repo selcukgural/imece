@@ -1,0 +1,9 @@
+{
+  "title": { "message": "imece", "description": "The title in the navbar" },
+  "logo.alt": { "message": "imece", "description": "The alt text of navbar logo" },
+  "item.label.Docs": { "message": "Dokümanlar", "description": "Navbar item with label Docs" },
+  "item.label.Scenarios": { "message": "Senaryolar", "description": "Navbar item with label Scenarios" },
+  "item.label.Keys": { "message": "Tuşlar", "description": "Navbar item with label Keys" },
+  "item.label.Videos": { "message": "Videolar", "description": "Navbar item with label Videos" },
+  "item.label.GitHub": { "message": "GitHub", "description": "Navbar item with label GitHub" }
+}

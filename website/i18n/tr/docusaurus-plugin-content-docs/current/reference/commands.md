@@ -1,0 +1,194 @@
+---
+title: Komutlar
+description: imece'nin aldığı her `:` komutu; argümanları, karşılığı olan tuş, kısa adı, yalnızca demoda mı olduğu, `$` ile sonraki faturayı büyüten diye işaretlenip işaretlenmediği ve menü notunun gösterdiği.
+---
+
+# Komutlar
+
+`:` ile başlayan bir satır imece'ye bir komuttur, bir ajana mesaj değil. Komut satırına yazarsınız (`:` onu açar), `tab` eşleşenleri değerleriyle sunar, `enter` çalıştırır. *Eyleyen* her tuşun (yalnızca hareket edenlerin değil) bir `:` adı da vardır; böylece her şey her yerden yazılarak yapılabilir. Tuş işleyicileri ve komutlar aynı kodu çağırır, bu yüzden birbirinden ayrı düşemezler.
+
+## `:` satırı nasıl çalışır
+
+- `:` sonra `tab` komutları listeler. Menü her komutun ardında şu an ne durumda olduğunu ya da neye etki edeceğini ayraç içinde gösterir: `budget (spent $3.10 of $20.00)`, `theme (dark)`, `lead (claude)`, `close (kule)`, `forget (claude-2)`, `next (2 waiting)`, `needs (off)`. Not çizilir, asla satıra eklenmez.
+- Bir komutun ardındaki `$` sonraki faturayı büyütenleri işaretler: `:open` (yeni bir lider oturumu), `:forget` (bütün brifingi önbelleksiz yeniden ödeyen yeni bir oturum) ve `:commit` (ücretli bir çağrı). Hiçbir `:` komutu kendi başına ücretli bir tur başlatmaz; `:budget` işaret yerine değerini gösterir.
+- Kısa adlar: `:b` budget, `:c` close, `:f` forget, `:o` open, `:q` quit, `:t` theme. Bütünüyle yazılan kısa ad zaten bir komuttur; menü bir şey sunmaz ve `enter` çalıştırır (`:q` sonra `enter` hemen sorar).
+- Argümanlar da tamamlanır: `:lang` sonra diller, `:lead` sonra satıcılar, `:theme` sonra yerleşik adlar, `:close` ve `:pin` sonra açık projeler, `:forget`, `:talk` ve `:trace` sonra açık projelerin ajanları (`@` ile ya da onsuz), `:open` ve `:export` sonra dizinler (`~` ev dizininiz, gizli olanlar yalnızca bir `.` sonrası, `tab` seçilenin içine adım atar).
+- imece'nin bilmediği bir ad: `no command xyz; : and tab list them`. Canlıda yazılan yalnızca demoya ait bir komut: `:pause is for the demo: live agents run in real time`.
+- `!cmd` kendi kabuğunuzda bir komut çalıştırır, `/cmd` ajanın kendi komut satırıdır; ikisi de `:` komutu değildir ([komut satırı](../screen/command-line.md)).
+
+## Bütün komutlar
+
+| Komut | Tuş | Kısa | Yalnız demo | `$` | Menü notu |
+| --- | --- | --- | --- | --- | --- |
+| `:awake` | — | | | | açık / kapalı |
+| `:board` | `2` | | | | |
+| `:budget USD` | — | `:b` | | | harcanan / bütçe |
+| `:close [NAME]` | — | `:c` | | | eldeki proje |
+| `:code` | `3` | | | | |
+| `:commit` | — | | | `$` | |
+| `:copy [PATH]` | — | | | | liste, varsa |
+| `:defer` | `S` | | | | |
+| `:export [PATH]` | — | | | | `konuşma` ya da `#12` |
+| `:faster` | `+` | | evet | | hız, `×2` |
+| `:fold` | `zM` | | | | |
+| `:forget [@NAME]` | — | `:f` | | `$` | eldeki ajan |
+| `:help` | `?` | | | | |
+| `:lang [en\|tr]` | `L` | | | | `English` / `Türkçe` |
+| `:lead VENDOR` | — | | | | birincil satıcı, ya da `ask` |
+| `:mark` | `m` | | | | |
+| `:needs` | `f` | | | | açık / kapalı |
+| `:next` | `W` | | | | N bekliyor |
+| `:open PATH [NAME]` | — | `:o` | | `$` | |
+| `:pause` | `space` | | evet | | açık / kapalı |
+| `:pending` | `q s` | | | | |
+| `:pin [NAME]` | — | | | | eldeki proje, sabitse `▴` |
+| `:quit` | `q` | `:q` | | | |
+| `:rename NAME` | — | | | | eldeki proje |
+| `:salon` | `1` | | | | |
+| `:slower` | `-` | | evet | | hız, `×2` |
+| `:talk [@NAME]` | `v` | | | | eldeki ajan |
+| `:theme [NAME\|FILE]` | `T` | `:t` | | | kullanılan tema |
+| `:trace [@NAME]` | `t` | | | | eldeki ajan |
+| `:unfold` | `zR` | | | | |
+| `:waiting` | `w` | | | | N bekliyor |
+
+Canlıda `:pause`, `:faster` ve `:slower` menüde yer almaz. Hareket eden tuşların (`j k`, `gg G`, `enter`, `esc`, `tab`) ve seçili satıra etki eden tuşların (`a r c n x`) `:` adı yoktur: yazmak tuştan yavaş olurdu ve satırın adlandırılması gerekirdi.
+
+## Komutlar
+
+### `:awake`
+
+Makineyi uyanık tutmayı açar ya da kapar (`--awake` ile aynı). Açıkken ve herhangi bir ajan tur ortasındayken imece `caffeinate` (macOS) ya da `systemd-inhibit` (Linux) aracını çocuk olarak çalıştırır, hiçbir şey tur ortasında olmayınca bırakır. Flaş `bir ajan turdayken makine uyanık kalır` ya da `makine yeniden uyuyabilir` der; başlayamayan bir araç bir kez söylenir: `makine uyanık tutulamadı: …`. Çalıştırmalar arasında hatırlanmaz.
+
+### `:board`
+
+Pano görünümü, `2` gibi. Bkz. [pano ve kod haritası](../screen/board-and-code-map.md).
+
+### `:budget USD`
+
+Ajanlar çalışırken bütçeyi artırır ya da azaltır (`:b 80`). Değer, noktadan önce en çok dört rakam ve en çok iki ondalıkla dolardır (`80`, `2.50`); başkası: `80$ dolar değil; 80 ya da 2.50 gibi yaz`. Flaş `bütçe artık $80.00` der, günlük `bütçeyi $80.00 yaptın (önce $50.00)`, ve bütçenin azaldığı uyarısı yeniden çalabilir. Süren bir tur eski sınırında biter; sonraki yeni kalanla başlar, eskisi sınırına çarpmışsa yeni bir oturumda. Bütçe bütün projeler için tektir ve çalıştırmalar arasında saklanır. Menü notu: `(spent $3.10 of $20.00)`. Bkz. [bütçe ve sınırlar](../concepts/budget-and-limits.md).
+
+### `:close [NAME]`
+
+`NAME` projesini ya da eldekini kapatır (`:c`). Ajanlarının oturumları ve çalıştırmaları biter, postaları, notları, teklifleri ve değişiklikleri düşer, SENİ BEKLEYEN'deki kalemleri kapanır ve proje kapalı işaretlenir: salon onu atlar, aynı çalışma kopyası yeniden açılırsa yeni bir liderle onun yerini alır. Worktree'ler diskte kalır. Flaş: `kule kapatıldı: agent'ları ayrıldı; worktree'leri diskte kaldı`. Son açık proje reddeder: `kule son açık proje; q q çıkar`; kimsenin olmadığı bir ad: `x adında açık proje yok`. Demoda projenin ajanları aynı biçimde ayrılır. Bkz. [projeler](../concepts/projects.md).
+
+### `:code`
+
+Kod haritası, `3` gibi. Canlıda henüz ortak trunk olmadığını söyler (her ajan kendi worktree'sinde çalışır, gösterilecek lease yoktur); sembol lease'leri yapılmamıştır. Bkz. [pano ve kod haritası](../screen/board-and-code-map.md).
+
+### `:commit`
+
+Claude Code'un ucuz kademesine (`haiku`, ya da sizin `--tier claude:cheap=…`) eldeki projenin çalışma kopyasında stage'dekiler için bir commit mesajı sorar ve onu komut satırına `!git commit -m '…'` olarak koyar; düzenleyip `enter` ile kendi kabuğunuzda çalıştırır ya da `esc` ile bırakırsınız. imece hiçbir şey commit'lemez. Flaş `haiku modeline kule içinde stage'dekiler için commit mesajı soruluyor` der; günlük her öneriyi modeli ve maliyetiyle, her başarısızlığı nedeniyle söyler.
+
+Para eder: her çağrı en çok 0,05 $ (çağrının kendi sert sınırı), bir gün (UTC) bütün projeler için en çok 20 çağrı ve 1,00 $; çağrıdan önce bütçeden ayrılır, sonra gerçek değerle kapatılır. Stage'de bir şey yoksa, gün dolmuşsa, bütçede sınırdan az kalmışsa ya da Claude Code PATH'te değilse `commit mesajı yok: …` ile reddedilir (harcama sınırı alan tek satıcı o; Codex ve Gemini liderleri bunun için Claude Code'a gerek duyar). Aynı stage ağacı yeniden sorulursa para etmez: son öneri geri gelir. Çağrı `git diff --cached --stat`'ı, yamayı (en çok 24 KiB) ve en yeni sekiz commit konusunu okur; araçsız, MCP sunucusuz, kendi kısa sistem istemiyle çalışır, hiçbir şey kaydedilmez. Demo, o projede uygulanan değişikliklerin başlıklarından `git commit --dry-run` olarak yanıtlar. Bkz. [kendi kabuğu ve commit](../scenarios/own-shell-and-commit.md).
+
+### `:copy [PATH]`
+
+Bir işçinin başlangıcının worktree'sine kopyaladığı, git'in yok saydığı yolların listesi (`.env`, `node_modules`, `target`): bir worktree taze bir çalışma kopyasıdır, git'in yok saydığı orada yoktur. `:copy PATH` eldeki projeye bir yol ekler, `:copy PATH` yeniden onu düşürür (sondaki `/` aynı yoldur), `:copy` tek başına listeyi söyler: `kule çalışma ağaçlarına kopyalananlar: .env, target` ya da `kule çalışma ağaçlarına hiçbir şey kopyalanmıyor; :copy YOL git'in yok saydığı bir yolu ekler`.
+
+Yol göreli, düz (glob yok, `..` yok, `.git` içinde değil, en çok 200 bayt), çalışma kopyasında var, bağlantı değil, çözümlenince çalışma kopyasının içinde ve git'çe yok sayılan olmalıdır (izlenen bir dosya worktree'de zaten vardır); yoksa `x kopyalanamaz: …`. Kopya her işçinin başlangıcında olur (yardımcılar işçilerinin worktree'sini paylaşır; lider için asla), yalnızca worktree'de olmayan yollar için, bir başlangıcın bütün yolları 2 GiB içinde, birimin elverdiği yerde APFS klonu ya da reflink olarak. Günlük neyin kopyalandığını ve neyin atlandığını söyler. Projeyle birlikte depoda saklanır. Bkz. [dosyalar](files.md) ve [projeler](../concepts/projects.md).
+
+### `:defer`
+
+SENİ BEKLEYEN'deki eldeki kalemi erteler ve sonrakini açar, `S` gibi. Bkz. [seni bekleyenler](../screen/waiting.md).
+
+### `:export [PATH]`
+
+Açık olanı Markdown dosyası olarak yazar: açık konuşma (`# Konuşma: lead ⇄ claude-1`, her mesaj günü, saati, kimden kime ve türüyle bir başlık), yoksa kartın ekranı (`# #12 başlık`, projesi, sütunu ve dakikaları, KİM, HİKÂYE, onda sizi bekleyenler ve günlük satırları, en eski önce, hiçbiri katlanmamış). Açık bir şey yoksa: `dışa aktarılacak bir şey yok: önce bir konuşma (v) ya da iş (#N) aç`.
+
+`PATH` bir dosya, ya da içinde dosya adlandırılacak bir dizindir; yoksa imece'nin başlatıldığı dizin. Ad neyi ve ne zaman olduğunu söyler: `imece-conversation-20261031-1400.md`, `imece-card-12-20261031-1400.md`. Zaten orada olan bir dosyanın üstüne asla yazılmaz; flaş `… dosyasına yazıldı` ya da `… yazılamadı: …` der. Her saatin günü vardır, her satır ekranla aynı temizlikten geçer. Menü notu neyi yazacağını söyler: `(konuşma)` ya da `(#12)`.
+
+### `:faster`
+
+Yalnız demo, `+` gibi: simülasyon hızlanır. Menü notu hızı gösterir (`×2`).
+
+### `:fold`
+
+Salonda her projeyi ve her işçinin yardımcılarını katlar, `zM` gibi; başka bir görünümden önce salona gider. Bkz. [salon](../screen/salon.md).
+
+### `:forget [@NAME]`
+
+Ajana satıcı oturumunu unutturur (`:f`): çalışan oturum biter (çalıştırması öldürülür, bitmemiş bir istem kesilmiş olarak tutulur, uyanışta anlatılır ve yeniden çalıştırılmaz), hatırlanan oturum satıcının ondan tuttuğuyla gider (Claude'un transkripti, Codex'in iş parçacığı, Gemini'nin sohbet dosyaları), ajan kendisiyle konuşulana dek uyur ve sonraki mesajı tam brifingle yeni bir oturum başlatır. Ad yoksa eldeki ajan. Flaş: `claude-2 oturumunu unuttu; sonraki mesaj yeni bir oturum başlatır, kaldığı yer anlatılır`; unutacak şeyi olmayan ya da gitmiş bir ajan için reddedilir: `claude-2 oturumunu koruyor: it has no session to forget`. Günlük: `claude-2 oturumunu unutturdun`. `--fresh` başlangıçta her ajan için yapar. `$`: yeni oturum bütün brifingi yeniden öder. Bkz. [oturumlar](../concepts/sessions.md).
+
+### `:help`
+
+`?` yardımı: iki dilde her tuş ve komut, glif açıklamaları; içinde `/` her kelimeyle süzer. Bkz. [klavye](../screen/keyboard.md).
+
+### `:lang [en|tr]`
+
+Ekranın dili, `L` gibi. Tek başına öteki dile geçer; `:lang en` ya da `:lang tr` birini seçer. Başka bir şey: `de bir dil değil: en ya da tr`. Menü notu kullanılan dili gösterir. Yalnızca bu çalıştırma için; sonraki başlangıç `--lang` ya da `IMECE_LANG`'i okur.
+
+### `:lead VENDOR`
+
+Sonraki başlangıçtan itibaren sormadan kimin lider olacağı: `claude`, `codex` ya da `gemini` o satıcıyı birincil yapar (`bir sonraki açılıştan itibaren claude lider, sorulmadan`); `ask` unutturur (`bir sonraki açılışta kimin lider olacağı sorulur`). Başka bir şey: `x claude, codex, gemini ya da ask değil`. Birincil satıcı depoda saklanır; komut satırındaki `--lead` bir çalıştırma için onu geçer, PATH'te olmayan bir birincil soru ekranında söylenir, asla sessizce değiştirilmez. Menü notu: `(claude)` ya da `(ask)`. Bkz. [satıcılar](../concepts/vendors.md).
+
+### `:mark`
+
+Eldeki satırı sonra dönmek için işaretler, `m` gibi: açık konuşmada, yoksa günlükte; yeniden kaldırır. İşaretli satır `✱` taşır, çalıştırmalar arasında kalır ve asla katlanmaz, temizlenmez ya da yüklemeden dışarıda kalmaz; `'` sonraki işaretli satıra gider. Flaş: `işaretlendi: ' ona geri getirir`. Bkz. [günlük](../screen/journal.md).
+
+### `:needs`
+
+Salon yalnızca sizi bekleyenleri gösterir (sizi bekleyen, takılmış, bitmiş ve bakılmamış), `f` gibi; yeniden, herkesi. Önce salona gider. Menü notu: `(açık)` / `(kapalı)`.
+
+### `:next`
+
+Sizi bekleyen sonraki kalemi her yerden açar, `W` gibi. Menü notu kaç kalemin beklediğini söyler: `(2 bekliyor)`.
+
+### `:open PATH [NAME]`
+
+`PATH`'teki git çalışma kopyasını kendi başına bir proje olarak açar (`:o`), takımın lider satıcısında (aynı model ve kademelerle) `lead-NAME` adlı yeni bir liderle. `NAME` varsayılan olarak dizinin adının güvenli hali: harf, rakam, `.`, `_`, `-` ile 1-24 karakter (kalanlar `-` olur); yanlış bir ad reddedilir: `"x y" proje adı olamaz: 1-24 harf, rakam, . _ -`. `~` ev dizininizdir; boşluklu bir yol ayrıştırılmaz. Flaş: `kule açıldı (/Users/me/src/kule); lead-kule adına yaz`. Redler: `:open YOL [AD], YOL'daki git çalışma kopyasını proje olarak açar` (yol yok), `kule adında açık bir proje var`, `kule zaten açık, adı k2`, `açılamadı: …` (çalışma kopyası değil). Aynı çalışma kopyasıyla kapalı bir proje yerinde yeniden açılır. Açılan projeler çalıştırmalar arasında hatırlanır; başka bir çalışma kopyasında ikinci bir imece'ye ilkinden `:open` kullanması söylenir. `$`: yeni bir lider oturumu. Demo bir liderle, iki işçiyle ve üç kartla sahte bir proje ekler. Bkz. [projeler](../concepts/projects.md).
+
+### `:pause`
+
+Yalnız demo, `space` gibi: simülasyonu durdurur ya da sürdürür. Menü notu: `(açık)` / `(kapalı)`.
+
+### `:pending`
+
+Çıkmadan önce `q s`'nin gösterdiği liste: tur ortasındaki ajanlar ve incelenmemiş değişiklikler; orada `q` çıkar, `W` sonraki bekleyeni açar.
+
+### `:pin [NAME]`
+
+`NAME` projesini ya da eldekini salonun en üstüne sabitler; yeniden kaldırır. Sabit projeler önce gelir, açıldıkları sırayla, ve salon kısaysa en son katlanır; sabit bir başlık `▴` taşır. Flaş: `kule salonun en üstüne sabitlendi` / `kule artık sabit değil`. Depoda saklanır; kapalı bir proje yeniden açıldığı zaman için sabitini korur. Menü notu etki edeceği projeyi gösterir, zaten sabitse `▴ kule`. Proje başına bir renk yapılmamıştır.
+
+### `:quit`
+
+Çıkar, `q` gibi (`:q`): önce sorar (`imece kapatılsın mı? bir daha q çıkar · başka bir tuş kalır`), varsa tur ortasındaki ajanları ve incelenmemiş değişiklikleri sayarak; `s` listeler.
+
+### `:rename NAME`
+
+Eldeki projeyi ve liderini `lead-NAME` olarak adlandırır (0 numaralı projenin `lead`'i de). Oturumlar sürer; projenin her canlı ajanı sonraki isteminde bir not alır ve eski ada bir `send` takım listesiyle yanıtlanır. `:open` ile aynı ad kuralı. Flaş: `kule artık k2; lead-k2 adına yaz`.
+
+### `:salon`
+
+Salon, `1` gibi.
+
+### `:slower`
+
+Yalnız demo, `-` gibi: simülasyon yavaşlar.
+
+### `:talk [@NAME]`
+
+Ajanın sizinle konuşması, `v` gibi; ad yoksa eldeki ajan (henüz yoksa `claude-2 ile henüz konuşma yok`). Bkz. [konuşmalar](../screen/conversations.md).
+
+### `:theme [NAME|FILE]`
+
+Tema, `T` gibi (`:t`). Tek başına: sonraki yerleşik tema, sondan başa dönerek. Bir adla: `terminal`, `dark`, `light`, `mono`, `dracula`, `nord`, `gruvbox-dark-medium`, `gruvbox-light-medium`, `catppuccin-mocha`, `catppuccin-latte`, `tokyo-night-dark`, `solarized-dark`, `solarized-light`, `onedark`, `rose-pine`, `everforest`, `kanagawa`, `github`, `monokai`'den biri, ya da Ghostty veya Kitty biçiminde bir renk dosyası (içinde `/` olan ya da bir dosya olan her şey). Bir ad yazılırken ya da `tab` ile üstüne gelinirken ekran onu giyer; `enter` tutar, `esc` bırakır. Flaş: `tema: nord`; yanlış biri: `tema solar: not one of terminal|dark|… and no such file`. Sonraki çalıştırma için hatırlanır. Bkz. [temalar ve dil](../screen/themes-and-language.md).
+
+### `:trace [@NAME]`
+
+Ajanın ham akışı, `t` gibi: oturumunun söylediği her satır, veri olarak, en çok 200 satır tutulur. Ad yoksa eldeki ajan.
+
+### `:unfold`
+
+Salonda her şeyi açar, `zR` gibi.
+
+### `:waiting`
+
+Doğrudan SENİ BEKLEYEN'e, `w` gibi. Menü notu kaç kalemin beklediğini söyler.
+
+## Ayrıca bkz.
+
+- [Komut satırı](cli.md): aynı şeylerin başlangıçtaki bayrakları
+- [Komut satırı (ekran)](../screen/command-line.md): yazma, tamamlama, readline tuşları, `!cmd` ve `/cmd`
+- [Klavye](../screen/keyboard.md): her tuş
+- [Dosyalar](files.md): `:export`, `:copy`, `:forget` ve `:open`'ın nereyi okuyup yazdığı

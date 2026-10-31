@@ -1,0 +1,98 @@
+---
+title: Video turları
+sidebar_label: Video turları
+description: imece'nin gerçek ekranından, simülasyon üzerinde kaydedilmiş üç kısa tur; bölümleri ve altyazısıyla.
+---
+
+import useBaseUrl from '@docusaurus/useBaseUrl';
+
+# Video turları
+
+imece'nin gerçek ekranından, [simülasyon](getting-started/demo.md) çalışırken
+kaydedilmiş üç kısa tur; gördüğünüz ekranların aynısını, düzenli bir tempoda
+gösterirler. Videolar İngilizcedir; altyazı oynatıcıdan açılabilir ve her
+bölüm, onu anlatan sayfaya bağlanır.
+
+## 1 · imece nedir
+
+Tek ekranda bir lider, işçileri ve yardımcıları; sizi bekleyen bir değişiklik,
+sizi bekleyen bir komut, bütçe ve sınırlar, çıkış sorusu.
+
+<video
+  controls
+  preload="metadata"
+  playsInline
+  poster={useBaseUrl('/video/imece-tour.jpg')}
+  style={{ width: '100%', borderRadius: '12px', background: '#000' }}>
+  <source src={useBaseUrl('/video/imece-tour.mp4')} type="video/mp4" />
+  <track kind="captions" srcLang="en" label="English" src={useBaseUrl('/video/imece-tour.vtt')} default />
+</video>
+
+| Bölüm | Nerede okunur |
+| --- | --- |
+| Salon: projeler, liderler, işçiler, yardımcılar | [Salon](screen/salon.md) |
+| Bir ajanın ekranı ve ham akışı | [Sohbetler ve iz](screen/conversations.md) |
+| SENİ BEKLEYEN: bir değişiklik (Δ), bir komut (⚑), bir soru | [SENİ BEKLEYEN](screen/waiting.md) |
+| Bir değişikliği okumak ve uygulamak | [Değişiklikler](concepts/changes.md) |
+| Bütçe, yakma hızı, satıcı sınırları | [Bütçe ve sınırlar](concepts/budget-and-limits.md) |
+| Pano ve kod haritası | [Pano ve kod haritası](screen/board-and-code-map.md) |
+| Çıkış: tur ortasında olanlar, incelenmemiş olanlar | [Tuşlar](screen/keyboard.md) |
+
+## 2 · Bir değişikliği incelemek
+
+Birkaç dosyalık bir değişiklik: dosya listesi ve türe göre satırlar, satırlara
+yazılıp tek mesajla geri gönderilen notlar, bir soruda alıntılanan bir parça,
+yarısı uygulanıp gerisi bekletilen bir değişiklik, gerekçeli bir ret.
+
+<video
+  controls
+  preload="metadata"
+  playsInline
+  poster={useBaseUrl('/video/imece-review.jpg')}
+  style={{ width: '100%', borderRadius: '12px', background: '#000' }}>
+  <source src={useBaseUrl('/video/imece-review.mp4')} type="video/mp4" />
+  <track kind="captions" srcLang="en" label="English" src={useBaseUrl('/video/imece-review.vtt')} default />
+</video>
+
+| Bölüm | Nerede okunur |
+| --- | --- |
+| Diff görünümü, dosyadan dosyaya, sarılan satırlar | [Diff görünümü](screen/changes.md) |
+| Satırlara notlar, tek mesajla gönderilir | [Değişiklikler](concepts/changes.md) |
+| Parça seçmek, yalnızca onları uygulamak | [Değişiklikler](concepts/changes.md) |
+| Bir parçayı işçisine alıntılamak | [Diff görünümü](screen/changes.md) |
+| Bir komuta izin vermek ya da reddetmek (⚑) | [Onaylar ve sorular](concepts/approvals-and-questions.md) |
+| Senaryo, adım adım | [Bir değişikliği geri göndermek, sonra yarısını almak](scenarios/review-with-notes.md) |
+
+## 3 · Ekiple konuşmak
+
+Lidere ve tek bir işçiye yazmak, bir yanıt ve yanıtladığı soru, bir kartın
+ekranı, değerleriyle `:` menüsü, yazılırken önizlenen bir tema, Türkçe ekran,
+yardım penceresi ve süzgeci.
+
+<video
+  controls
+  preload="metadata"
+  playsInline
+  poster={useBaseUrl('/video/imece-team.jpg')}
+  style={{ width: '100%', borderRadius: '12px', background: '#000' }}>
+  <source src={useBaseUrl('/video/imece-team.mp4')} type="video/mp4" />
+  <track kind="captions" srcLang="en" label="English" src={useBaseUrl('/video/imece-team.vtt')} default />
+</video>
+
+| Bölüm | Nerede okunur |
+| --- | --- |
+| Lidere, tek bir ajana yazmak, bir satıcı komutu | [Komut satırı](screen/command-line.md) |
+| Bir sohbet, turları, bir yanıt ve sorusu | [Sohbetler](screen/conversations.md) |
+| Bir kartın ekranı | [Kartlar](screen/cards.md) |
+| `:` komutları ve değerleri | [`:` komutları](reference/commands.md) |
+| Temalar ve dil | [Temalar ve dil](screen/themes-and-language.md) |
+| Yardım penceresi | [Tuşlar](screen/keyboard.md) |
+
+:::note
+
+Turlar `imece --demo` üzerinde çalışır: ajanlar sahtedir, bu yüzden videolar
+hiçbir şeye mal olmaz ve her seferinde aynı şeyi gösterir. Canlı ajanlar,
+[senaryoların](scenarios/index.md) anlattığı gibi gerçek satıcılar ve gerçek
+bir bütçeyle davranır.
+
+:::

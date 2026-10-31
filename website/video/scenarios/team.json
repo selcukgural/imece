@@ -1,0 +1,181 @@
+// imece's third tour: talking to the team, and the command line. See
+// tour.json for how the scenarios work and ../README.md for the render.
+{
+  "title": "imece — talking to the team",
+  "language": "en",
+  "baseUrl": "http://127.0.0.1:8791",
+  "viewport": { "width": 1920, "height": 1080, "deviceScaleFactor": 1 },
+  "output": { "width": 1920, "height": 1080, "fps": 30 },
+  "colorScheme": "dark",
+  "voice": {
+    "provider": "google",
+    "name": "Charon",
+    "model": "gemini-2.5-pro-tts",
+    "prompt": "Read in a calm, warm and clear product-tour voice, at a natural pace.",
+    "rate": 1.0
+  },
+  "music": { "generate": "ambient", "volume": 0.15 },
+  "pronounce": {
+    "imece's": "ee-meh-jeh's",
+    "imece": "ee-meh-jeh",
+    "selcukgural.github.io/imece": "selcuk gural dot github dot I O slash ee-meh-jeh",
+    "codex-1": "codex one",
+    "worktree": "work-tree",
+    "worktrees": "work-trees"
+  },
+  "scenes": [
+    {
+      "id": "opening",
+      "chapter": "Talking to the team",
+      "minSeconds": 4.5,
+      "steps": [
+        { "action": "goto", "path": "/card.html?t=imece&s=Talking%20to%20the%20team" },
+        { "action": "hover", "target": "#corner" }
+      ]
+    },
+    {
+      "id": "leader",
+      "chapter": "The leader",
+      "narration": "Plain text goes to the leader of the project at hand. It reads the checkout, splits your request into cards and posts them on the board; the workers take them. Its reply comes back as an item waiting for you.",
+      "steps": [
+        { "action": "goto", "path": "/" },
+        { "action": "wait", "seconds": 2 },
+        { "action": "type", "target": "#corner", "text": "/", "delayMs": 0 },
+        { "action": "wait", "seconds": 1 },
+        { "action": "type", "target": "#corner", "text": "rate limiting on the public API, with tests", "delayMs": 60 },
+        { "action": "press", "key": "Enter" },
+        { "action": "wait", "seconds": 6 }
+      ]
+    },
+    {
+      "id": "one",
+      "chapter": "One agent",
+      "narration": "At-name writes to one agent. After the at sign, tab completes the names, the project at hand first. A message to an idle worker opens a card; its answer closes it. A line that starts with a slash is the agent's own command line: slash compact, slash cost, whatever the vendor's CLI knows.",
+      "steps": [
+        { "action": "type", "target": "#corner", "text": "@co", "delayMs": 150 },
+        { "action": "wait", "seconds": 1.5 },
+        { "action": "press", "key": "Tab" },
+        { "action": "wait", "seconds": 1 },
+        { "action": "type", "target": "#corner", "text": "keep the retry bounded to three tries", "delayMs": 60 },
+        { "action": "press", "key": "Enter" },
+        { "action": "wait", "seconds": 5 }
+      ]
+    },
+    {
+      "id": "reply",
+      "chapter": "A reply and its question",
+      "narration": "Every message on the bus has a number, and a reply names the one it answers. Capital W opens the reply; the arrow shows what it answers, and the percent key goes there and back. The brackets go from turn to turn: the lines one side says before the other answers.",
+      "steps": [
+        { "action": "type", "target": "#corner", "text": "W", "delayMs": 0 },
+        { "action": "wait", "seconds": 6 },
+        { "action": "type", "target": "#corner", "text": "%", "delayMs": 0 },
+        { "action": "wait", "seconds": 4 },
+        { "action": "type", "target": "#corner", "text": "%", "delayMs": 0 },
+        { "action": "wait", "seconds": 3 },
+        { "action": "type", "target": "#corner", "text": "[", "delayMs": 0 },
+        { "action": "wait", "seconds": 3 },
+        { "action": "press", "key": "Escape" }
+      ]
+    },
+    {
+      "id": "card",
+      "chapter": "A card's screen",
+      "narration": "Hash and a number, or hash and a word of its title, opens a card's screen: who works on it, its story, the inbox and journal lines about it. n and p step to the next and the previous card.",
+      "steps": [
+        { "action": "type", "target": "#corner", "text": "#3", "delayMs": 300 },
+        { "action": "press", "key": "Enter" },
+        { "action": "wait", "seconds": 6 },
+        { "action": "type", "target": "#corner", "text": "n", "delayMs": 0 },
+        { "action": "wait", "seconds": 4 },
+        { "action": "type", "target": "#corner", "text": "p", "delayMs": 0 },
+        { "action": "wait", "seconds": 2 },
+        { "action": "press", "key": "Escape" }
+      ]
+    },
+    {
+      "id": "colon",
+      "chapter": "The : commands",
+      "narration": "Every key that acts has a colon name too. Colon and tab show the commands with what each stands at now: the theme, the budget spent and left, the project a bare command acts on. A dollar sign marks the ones that raise the next bill. Colon budget changes the pot while agents run.",
+      "steps": [
+        { "action": "type", "target": "#corner", "text": ":", "delayMs": 0 },
+        { "action": "wait", "seconds": 1 },
+        { "action": "press", "key": "Tab" },
+        { "action": "wait", "seconds": 5 },
+        { "action": "press", "key": "Tab" },
+        { "action": "wait", "seconds": 3 },
+        { "action": "press", "key": "Escape" },
+        { "action": "press", "key": "Escape" },
+        { "action": "type", "target": "#corner", "text": ":budget 300", "delayMs": 90 },
+        { "action": "press", "key": "Enter" },
+        { "action": "wait", "seconds": 4 }
+      ]
+    },
+    {
+      "id": "theme",
+      "chapter": "Themes",
+      "narration": "Colon theme wears each theme while its name is written: the built-in ones, base16 schemes, or a colour file in Ghostty's or Kitty's format. Enter keeps it, escape gives it up. The terminal theme follows your terminal's own colours, light or dark.",
+      "steps": [
+        { "action": "type", "target": "#corner", "text": ":theme nord", "delayMs": 120 },
+        { "action": "wait", "seconds": 3 },
+        { "action": "press", "key": "Backspace" },
+        { "action": "press", "key": "Backspace" },
+        { "action": "press", "key": "Backspace" },
+        { "action": "press", "key": "Backspace" },
+        { "action": "type", "target": "#corner", "text": "gruvbox-dark-medium", "delayMs": 90 },
+        { "action": "wait", "seconds": 3 },
+        { "action": "press", "key": "Escape" },
+        { "action": "wait", "seconds": 2 }
+      ]
+    },
+    {
+      "id": "lang",
+      "chapter": "Two languages",
+      "narration": "Capital L turns the screen Turkish, and back. Every word on the screen lives in both languages; what an agent wrote is cleaned before it is drawn, control characters removed and secret-looking tokens hidden.",
+      "steps": [
+        { "action": "type", "target": "#corner", "text": "L", "delayMs": 0 },
+        { "action": "wait", "seconds": 7 },
+        { "action": "type", "target": "#corner", "text": "L", "delayMs": 0 },
+        { "action": "wait", "seconds": 3 }
+      ]
+    },
+    {
+      "id": "help",
+      "chapter": "Help",
+      "narration": "Question mark lists every key and every command. Slash filters them by every word you type, Turkish letters or not; enter keeps the filter, escape drops it.",
+      "steps": [
+        { "action": "type", "target": "#corner", "text": "?", "delayMs": 0 },
+        { "action": "wait", "seconds": 4 },
+        { "action": "type", "target": "#corner", "text": "/change", "delayMs": 150 },
+        { "action": "wait", "seconds": 4 },
+        { "action": "press", "key": "Escape" },
+        { "action": "wait", "seconds": 1 },
+        { "action": "press", "key": "Escape" }
+      ]
+    },
+    {
+      "id": "focus",
+      "chapter": "Only what needs you",
+      "narration": "f shows only what needs you: waiting for you, stuck, done and not yet seen, in that order; calm agents fold away. h and l fold and unfold a project; a folded project is one line that still shows what waits. Colon open adds another checkout as a project of its own, with its own leader.",
+      "steps": [
+        { "action": "type", "target": "#corner", "text": "f", "delayMs": 0 },
+        { "action": "wait", "seconds": 6 },
+        { "action": "type", "target": "#corner", "text": "f", "delayMs": 0 },
+        { "action": "wait", "seconds": 2 },
+        { "action": "type", "target": "#corner", "text": "h", "delayMs": 0 },
+        { "action": "wait", "seconds": 5 },
+        { "action": "type", "target": "#corner", "text": "l", "delayMs": 0 },
+        { "action": "wait", "seconds": 3 }
+      ]
+    },
+    {
+      "id": "closing",
+      "chapter": "Learn more",
+      "narration": "Every key, every command and every scenario: selcukgural.github.io/imece.",
+      "tail": 1.5,
+      "steps": [
+        { "action": "card", "title": "imece", "text": "selcukgural.github.io/imece" },
+        { "action": "wait", "seconds": 3 }
+      ]
+    }
+  ]
+}

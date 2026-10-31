@@ -307,6 +307,13 @@ not yet seen.
    while you were away; back in the terminal after a few minutes in
    another window, it shows at once, without a key.
 
+## Documentation
+
+The site, in English and Turkish, with every feature, every key, use-case
+walkthroughs and video tours: <https://selcukgural.github.io/imece/>. Its
+pages are the Markdown files in `docs/guide/` (English) and
+`website/i18n/tr/docusaurus-plugin-content-docs/current/` (Turkish).
+
 ## Security
 
 Please report security problems privately; see [SECURITY.md](SECURITY.md).

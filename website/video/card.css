@@ -1,0 +1,18 @@
+/* Copied from kule@c09ec13545c331fd56d74ab76cb5f8557594a16c website/video/card.css
+   and recoloured (see VENDORED.md). The tour's title cards: imece's mark on its own ground. */
+html, body { margin: 0; height: 100%; background: #15161b; color: #f4f4f6; }
+body { font-family: -apple-system, "SF Pro Display", "Helvetica Neue", system-ui, sans-serif; }
+.card {
+  height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2.2vh;
+  background: radial-gradient(ellipse at 50% 38%, #26272f 0%, #191a20 55%, #111216 100%);
+  opacity: 0; transform: scale(1.02); animation: in 0.9s ease forwards;
+}
+.mark { width: min(20vh, 200px); height: auto; filter: drop-shadow(0 12px 40px rgba(227, 169, 63, 0.25)); }
+h1 { margin: 1.4vh 0 0; font-size: min(11vh, 104px); font-weight: 750; letter-spacing: 0.02em;
+     font-family: "JetBrains Mono", Menlo, ui-monospace, monospace; }
+p { margin: 0; text-align: center; padding: 0 8vw; }
+#sub { font-size: min(4.2vh, 40px); font-weight: 500; color: #e3a93f; max-width: 1300px; }
+.line { font-size: min(2.8vh, 26px); color: #a9abb6; letter-spacing: 0.02em; }
+.line:empty, #sub:empty { display: none; }
+@keyframes in { to { opacity: 1; transform: scale(1); } }
+#corner { position: fixed; right: 3vw; bottom: 4vh; width: 8px; height: 8px; }
