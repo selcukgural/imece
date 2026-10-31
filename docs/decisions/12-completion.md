@@ -13,7 +13,9 @@ Codex the adapter's own `/compact` mapping; `live/sessions.rs` adds imece's
 vendor's new command must not need a release), so empty until a
 session says (the demo's agents get their vendor's list when their
 session starts, decision 31),
-`:w` → `budget`/`lead`, `:lead w` → claude/codex/gemini/ask (no tail);
+`:w` → imece's commands (with their values and `$`, decision
+`colon-names`; a short name typed whole, `:b` `:q`, offers none so
+`enter` runs it), `:lead w` → claude/codex/gemini/ask (no tail);
 nothing for `!` or plain text; one match equal to the word = no menu.
 Keys (`type_key`): tab inserts the highlighted item then steps,
 ⇧tab/↑/↓/ctrl-n/ctrl-p step with the text following (zsh menu style;

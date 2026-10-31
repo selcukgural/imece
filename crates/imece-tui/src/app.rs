@@ -680,11 +680,7 @@ impl App {
 
         match k.code {
             // `q` asks; `qq` quits (ctrl-c still quits at once).
-            KeyCode::Char('q') => {
-                self.pending = Some('q');
-                let ask = self.quit_ask();
-                self.flash(ask);
-            }
+            KeyCode::Char('q') => self.ask_quit(),
             // `i` as in vim: start writing.
             KeyCode::Char('/') | KeyCode::Char('i') => self.typing = true,
             KeyCode::Char(':') => {
@@ -716,7 +712,7 @@ impl App {
             KeyCode::Char('G') => self.jump(false),
             KeyCode::Char('t') => {
                 if let Some(id) = self.agent_at_hand() {
-                    self.zoom = Zoom::Trace(id);
+                    self.trace(id);
                 }
             }
             KeyCode::Char('v') => {
@@ -737,27 +733,13 @@ impl App {
             KeyCode::Char('1') => self.show(View::Salon),
             KeyCode::Char('2') => self.show(View::Board),
             KeyCode::Char('3') => self.show(View::Code),
-            KeyCode::Char('T') => {
-                let name = theme::next().name.clone();
-                self.flash(fill(self.lang.text().theme_is, &[&name]));
-            }
-            KeyCode::Char('L') => {
-                self.lang = self.lang.other();
-                if let Engine::Sim(s) = &mut self.engine {
-                    s.set_lang(self.lang);
-                }
-                self.flash(self.lang.text().language);
-            }
+            KeyCode::Char('T') => self.next_theme(),
+            KeyCode::Char('L') => self.set_lang(self.lang.other()),
             // Live agents run in real time: nothing to pause or speed up.
-            KeyCode::Char(' ') if !self.live() => self.paused = !self.paused,
-            KeyCode::Char('+') | KeyCode::Char('=') if !self.live() => {
-                self.speed = (self.speed * 2).min(8)
-            }
-            KeyCode::Char('-') if !self.live() => self.speed = (self.speed / 2).max(1),
-            KeyCode::Char('?') => {
-                self.help = true;
-                self.help_find.clear();
-            }
+            KeyCode::Char(' ') if !self.live() => self.pause(),
+            KeyCode::Char('+') | KeyCode::Char('=') if !self.live() => self.faster(),
+            KeyCode::Char('-') if !self.live() => self.slower(),
+            KeyCode::Char('?') => self.open_help(),
             KeyCode::Tab | KeyCode::Char(']') if self.pane_keys() => self.cycle_pane(true),
             KeyCode::BackTab | KeyCode::Char('[') if self.pane_keys() => self.cycle_pane(false),
             KeyCode::Char('w') if self.pane_keys() => self.pane = Pane::Inbox,
@@ -815,6 +797,67 @@ impl App {
             ('z', KeyCode::Char('R')) if self.salon_keys() => self.fold_all(false),
             _ => {}
         }
+    }
+
+    /// `q` or `:quit`: the quit question; a `q` after it quits.
+    fn ask_quit(&mut self) {
+        self.pending = Some('q');
+        let ask = self.quit_ask();
+        self.flash(ask);
+    }
+
+    /// `?` or `:help`: the help, all of it.
+    fn open_help(&mut self) {
+        self.help = true;
+        self.help_find.clear();
+    }
+
+    /// `T` or `:theme` alone: the next built-in theme.
+    fn next_theme(&mut self) {
+        let name = theme::next().name.clone();
+        self.flash(fill(self.lang.text().theme_is, &[&name]));
+    }
+
+    /// `L` or `:lang`: the screen speaks `lang` from now on.
+    fn set_lang(&mut self, lang: Lang) {
+        self.lang = lang;
+        if let Engine::Sim(s) = &mut self.engine {
+            s.set_lang(self.lang);
+        }
+        self.flash(self.lang.text().language);
+    }
+
+    /// `t` or `:trace`: the raw stream of agent `id`.
+    fn trace(&mut self, id: AgentId) {
+        self.zoom = Zoom::Trace(id);
+    }
+
+    /// `space` or `:pause` in the demo: the simulation stops or goes on.
+    fn pause(&mut self) {
+        self.paused = !self.paused;
+    }
+
+    /// `+` or `:faster` in the demo: twice the speed, eight times at most.
+    fn faster(&mut self) {
+        self.speed = (self.speed * 2).min(8);
+    }
+
+    /// `-` or `:slower` in the demo: half the speed, never below one.
+    fn slower(&mut self) {
+        self.speed = (self.speed / 2).max(1);
+    }
+
+    /// `:waiting` (`w` in the salon): the salon's waiting panel.
+    fn go_waiting(&mut self) {
+        self.show(View::Salon);
+        self.pane = Pane::Inbox;
+    }
+
+    /// The salon's agent panel, for the `:` names of keys that act there
+    /// (`:needs`, `:fold`, `:unfold`).
+    fn go_salon(&mut self) {
+        self.show(View::Salon);
+        self.pane = Pane::Salon;
     }
 
     /// Folds or unfolds every project and every worker's helpers.
@@ -1456,12 +1499,62 @@ impl App {
         if self.input.contains('\n') {
             return None;
         }
-        complete::suggest(
+        let mut m = complete::suggest(
             &self.input,
             &self.world,
             self.current_project(),
             self.home.as_deref(),
-        )
+        )?;
+        // The command names: the demo's own left out live, each with its
+        // value.
+        if self.typing_command() && !self.input.contains(' ') {
+            if self.live() {
+                m.items
+                    .retain(|i| !complete::DEMO_ONLY.contains(&i.as_str()));
+                if m.items.is_empty() {
+                    return None;
+                }
+            }
+            m.notes = m.items.iter().map(|i| self.command_note(i)).collect();
+        }
+        Some(m)
+    }
+
+    /// What the `:` menu shows after command `name`: what it stands at
+    /// now or would act on, in brackets, and `$` when using it raises the
+    /// next bill (`:open` a new leader session, `:forget` a new session
+    /// that pays the whole briefing again, without the cache).
+    fn command_note(&self, name: &str) -> String {
+        let t = self.lang.text();
+        let on_off = |on: bool| if on { t.value_on } else { t.value_off }.to_string();
+        let value = match name {
+            "budget" => Some(fill(
+                t.budget,
+                &[&dollars(self.world.spent()), &dollars(self.world.budget)],
+            )),
+            "lead" => Some(self.primary.clone().unwrap_or_else(|| "ask".to_string())),
+            "theme" => Some(theme::pal().name.clone()),
+            "lang" => Some(t.language.to_string()),
+            "close" | "rename" => Some(self.world.projects[self.current_project()].name.clone()),
+            "forget" | "talk" | "trace" => self
+                .agent_at_hand()
+                .map(|id| self.world.agents[id].name.clone()),
+            "next" | "waiting" => {
+                let open = self.world.open_inbox().len().to_string();
+                Some(fill(t.value_waiting, &[&open]))
+            }
+            "needs" => Some(on_off(self.needs_only)),
+            "pause" => Some(on_off(self.paused)),
+            "faster" | "slower" => Some(format!("×{}", self.speed)),
+            _ => None,
+        };
+        let bill = matches!(name, "forget" | "open");
+        match (value, bill) {
+            (Some(v), true) => format!("({v}) $"),
+            (Some(v), false) => format!("({v})"),
+            (None, true) => "$".to_string(),
+            (None, false) => String::new(),
+        }
     }
 
     /// Whether what is being typed is a command to imece (`:budget 80`),
@@ -1577,13 +1670,17 @@ impl App {
     /// VENDOR` makes that vendor the primary one, leading from the next
     /// start on without asking; `lead ask` forgets it. `theme NAME` (or
     /// `t`) switches to a built-in theme or a colour file.
+    ///
+    /// Every key that acts has a name here too (`:salon`, `:lang`,
+    /// `:quit` ...; `complete::COMMANDS`), doing what the key does from
+    /// wherever the person is.
     fn command(&mut self, line: &str) {
         let t = self.lang.text();
         let (name, arg) = line
             .split_once(char::is_whitespace)
             .map_or((line, ""), |(n, a)| (n, a.trim()));
-        match name {
-            "budget" | "b" => match parse_dollars(arg) {
+        match complete::long(name) {
+            "budget" => match parse_dollars(arg) {
                 Some(to) => {
                     let from = self.world.budget;
                     self.world.budget = to;
@@ -1606,16 +1703,69 @@ impl App {
                 }
                 (_, None) => self.flash(fill(t.bad_lead, &[arg])),
             },
-            "theme" | "t" => match theme::choose(arg) {
+            "theme" if arg.is_empty() => self.next_theme(),
+            "theme" => match theme::choose(arg) {
                 Ok(theme) => self.flash(fill(t.theme_is, &[&theme.name])),
                 Err(why) => self.flash(fill(t.bad_theme, &[arg, &why])),
             },
-            "open" | "o" => self.open_project(arg),
-            "close" | "c" => self.close_project(arg),
+            "open" => self.open_project(arg),
+            "close" => self.close_project(arg),
             "rename" => self.rename_project(arg),
-            "forget" | "f" => self.forget_agent(arg),
+            "forget" => self.forget_agent(arg),
+            "salon" => self.show(View::Salon),
+            "board" => self.show(View::Board),
+            "code" => self.show(View::Code),
+            "lang" if arg.is_empty() => self.set_lang(self.lang.other()),
+            "lang" => match Lang::parse(arg) {
+                Some(lang) => self.set_lang(lang),
+                None => self.flash(fill(t.bad_lang, &[arg])),
+            },
+            "help" => self.open_help(),
+            "quit" => self.ask_quit(),
+            "pending" => self.leaving = self.in_flight(),
+            "next" => self.next_waiting(false),
+            "defer" => self.next_waiting(true),
+            "waiting" => self.go_waiting(),
+            "needs" => {
+                self.go_salon();
+                self.toggle_needs();
+            }
+            which @ ("fold" | "unfold") => {
+                self.go_salon();
+                self.fold_all(which == "fold");
+            }
+            "trace" => {
+                if let Some(id) = self.agent_named(arg) {
+                    self.trace(id);
+                }
+            }
+            "talk" => {
+                if let Some(id) = self.agent_named(arg) {
+                    self.open_talk_with(id);
+                }
+            }
+            "pause" | "faster" | "slower" if self.live() => self.flash(fill(t.demo_only, &[name])),
+            "pause" => self.pause(),
+            "faster" => self.faster(),
+            "slower" => self.slower(),
             _ => self.flash(fill(t.no_command, &[name])),
         }
+    }
+
+    /// The agent a command's argument names, `@` or not; none named is
+    /// the agent at hand. Nobody by that name is said.
+    fn agent_named(&mut self, arg: &str) -> Option<AgentId> {
+        let word = arg.strip_prefix('@').unwrap_or(arg).trim();
+        let id = if word.is_empty() {
+            self.agent_at_hand()
+        } else {
+            self.world.agent_by_name(word)
+        };
+        if id.is_none() {
+            let t = self.lang.text();
+            self.flash(fill(t.no_agent, &[word]));
+        }
+        id
     }
 
     /// `:open PATH [NAME]`: the checkout at PATH becomes a project of its
@@ -1706,14 +1856,8 @@ impl App {
     /// off.
     fn forget_agent(&mut self, arg: &str) {
         let t = self.lang.text();
-        let word = arg.strip_prefix('@').unwrap_or(arg).trim();
-        let id = if word.is_empty() {
-            self.agent_at_hand()
-        } else {
-            self.world.agent_by_name(word)
-        };
-        let Some(id) = id else {
-            return self.flash(fill(t.no_agent, &[word]));
+        let Some(id) = self.agent_named(arg) else {
+            return;
         };
         let name = self.world.agents[id].name.clone();
         let forgot = match &mut self.engine {
@@ -2264,6 +2408,180 @@ mod tests {
         assert_eq!(app.pane, Pane::Inbox);
         assert!(app.world.change_of(worker).is_some());
         assert!(app.flash.is_none());
+    }
+
+    #[test]
+    fn the_colon_menu_notes_each_commands_value_and_what_raises_the_bill() {
+        let mut app = App::new(1, 1, 0, 1, Lang::En);
+        app.world.agents.iter_mut().for_each(|a| a.cost = 0);
+        app.world.agents[0].cost = 31_000;
+        app.world.budget = 200_000;
+        assert_eq!(app.command_note("budget"), "(spent $3.10 of $20.00)");
+        assert_eq!(app.command_note("lead"), "(ask)");
+        app.primary = Some("codex".into());
+        assert_eq!(app.command_note("lead"), "(codex)");
+        theme::choose("light").unwrap();
+        assert_eq!(app.command_note("theme"), "(light)");
+        assert_eq!(app.command_note("lang"), "(English)");
+        app.lang = Lang::Tr;
+        assert_eq!(app.command_note("lang"), "(Türkçe)");
+        assert_eq!(app.command_note("needs"), "(kapalı)");
+        app.lang = Lang::En;
+        let project = format!("({})", app.world.projects[0].name);
+        assert_eq!(app.command_note("close"), project);
+        assert_eq!(app.command_note("rename"), project);
+        // The agent a bare command acts on; `$` on what raises the bill.
+        app.selected = Sel::Agent(1);
+        let name = app.world.agents[1].name.clone();
+        assert_eq!(app.command_note("forget"), format!("({name}) $"));
+        assert_eq!(app.command_note("talk"), format!("({name})"));
+        assert_eq!(app.command_note("trace"), format!("({name})"));
+        assert_eq!(app.command_note("open"), "$");
+        app.pane = Pane::Inbox;
+        assert_eq!(app.command_note("forget"), "$", "no agent at hand");
+        assert_eq!(app.command_note("talk"), "");
+        assert_eq!(app.command_note("next"), "(0 waiting)");
+        app.world.asks_you(1, "Bash: make deploy");
+        app.world.asks_you(1, "Bash: make test");
+        assert_eq!(app.command_note("next"), "(2 waiting)");
+        assert_eq!(app.command_note("waiting"), "(2 waiting)");
+        assert_eq!(app.command_note("needs"), "(off)");
+        app.needs_only = true;
+        assert_eq!(app.command_note("needs"), "(on)");
+        assert_eq!(app.command_note("pause"), "(off)");
+        app.paused = true;
+        assert_eq!(app.command_note("pause"), "(on)");
+        app.speed = 4;
+        assert_eq!(app.command_note("faster"), "(×4)");
+        assert_eq!(app.command_note("slower"), "(×4)");
+        for plain in ["help", "quit", "salon", "fold", "defer"] {
+            assert_eq!(app.command_note(plain), "", "{plain}");
+        }
+    }
+
+    #[test]
+    fn the_colon_menu_carries_the_notes_of_its_items() {
+        let mut app = App::new(1, 1, 0, 1, Lang::En);
+        app.on_key(key(KeyCode::Char(':')));
+        for c in "op".chars() {
+            app.on_key(key(KeyCode::Char(c)));
+        }
+        let m = app.menu.clone().unwrap();
+        assert_eq!(m.items, ["open"]);
+        assert_eq!(m.notes, ["$"]);
+        // An argument's menu has no notes, nor do names after `@`.
+        app.input = ":lead c".into();
+        app.menu = app.suggest();
+        assert_eq!(app.menu.as_ref().unwrap().items, ["claude", "codex"]);
+        assert!(app.menu.as_ref().unwrap().notes.is_empty());
+        app.input = "@".into();
+        app.menu = app.suggest();
+        assert!(!app.menu.as_ref().unwrap().items.is_empty());
+        assert!(app.menu.as_ref().unwrap().notes.is_empty());
+    }
+
+    #[test]
+    fn the_view_keys_and_l_do_what_their_colon_names_do() {
+        let mut app = App::new(1, 1, 0, 1, Lang::En);
+        for (c, view) in [('3', View::Code), ('2', View::Board), ('1', View::Salon)] {
+            app.on_key(key(KeyCode::Char(c)));
+            assert_eq!(app.view, view, "{c}");
+        }
+        app.on_key(key(KeyCode::Char('L')));
+        assert_eq!(app.lang, Lang::Tr);
+        assert_eq!(app.flash.take().unwrap().0, "Türkçe");
+        app.on_key(key(KeyCode::Char('L')));
+        assert_eq!(app.lang, Lang::En);
+    }
+
+    #[test]
+    fn every_key_that_acts_has_a_colon_name_doing_the_same() {
+        let mut app = App::new(1, 1, 0, 1, Lang::En);
+        let said = |app: &mut App| app.flash.take().map(|f| f.0).unwrap_or_default();
+        app.command("board");
+        assert_eq!(app.view, View::Board);
+        app.command("code");
+        assert_eq!(app.view, View::Code);
+        app.command("salon");
+        assert_eq!(app.view, View::Salon);
+        // The language: turned over, or named.
+        app.command("lang");
+        assert_eq!(app.lang, Lang::Tr);
+        assert_eq!(said(&mut app), "Türkçe");
+        app.command("lang tr");
+        assert_eq!(app.lang, Lang::Tr);
+        app.command("lang en");
+        assert_eq!(app.lang, Lang::En);
+        app.command("lang xx");
+        assert_eq!(app.lang, Lang::En);
+        assert_eq!(said(&mut app), "xx is not a language: en or tr");
+        // `:theme` alone is `T`.
+        theme::choose("dark").unwrap();
+        app.command("theme");
+        let next = "light";
+        assert_eq!(theme::pal().name, next);
+        assert_eq!(said(&mut app), format!("theme: {next}"));
+        app.help_find = "old".into();
+        app.command("help");
+        assert!(app.help && app.help_find.is_empty());
+        app.help = false;
+        // `:quit` and `:q` ask as `q` does.
+        for line in ["quit", "q"] {
+            app.pending = None;
+            app.command(line);
+            assert_eq!(app.pending, Some('q'), "{line}");
+            assert_eq!(said(&mut app), app.quit_ask());
+        }
+        app.pending = None;
+        app.leaving = true;
+        app.command("pending");
+        assert!(!app.leaving, "nothing in flight");
+        app.world.asks_you(1, "Bash: one");
+        app.world.asks_you(1, "Bash: two");
+        app.command("next");
+        assert_eq!(app.waiting_at, Some(0));
+        app.command("defer");
+        assert_eq!(app.waiting_at, Some(1));
+        app.show(View::Board);
+        app.command("waiting");
+        assert_eq!((app.view, app.pane), (View::Salon, Pane::Inbox));
+        app.show(View::Board);
+        app.pane = Pane::Inbox;
+        app.command("needs");
+        assert_eq!((app.view, app.pane), (View::Salon, Pane::Salon));
+        assert!(app.needs_only);
+        app.show(View::Code);
+        app.command("fold");
+        assert_eq!(app.view, View::Salon);
+        assert!(app.collapsed.iter().all(|&c| c));
+        app.command("unfold");
+        assert!(app.collapsed.iter().all(|&c| !c));
+        // An agent: the one at hand, or named, `@` or not.
+        let name = app.world.agents[1].name.clone();
+        app.selected = Sel::Agent(0);
+        app.command("trace");
+        assert_eq!(app.zoom, Zoom::Trace(0));
+        app.command(&format!("trace @{name}"));
+        assert_eq!(app.zoom, Zoom::Trace(1));
+        app.zoom = Zoom::None;
+        app.command("trace nobody");
+        assert_eq!(app.zoom, Zoom::None);
+        assert_eq!(said(&mut app), "no agent named \"nobody\"");
+        app.command(&format!("talk {name}"));
+        let t = app.lang.text();
+        assert_eq!(said(&mut app), fill(t.no_talk_yet, &[&name]));
+        app.command("talk nobody");
+        assert_eq!(said(&mut app), "no agent named \"nobody\"");
+        // The demo's clock.
+        app.command("pause");
+        assert!(app.paused);
+        app.command("faster");
+        assert_eq!(app.speed, 2);
+        app.command("faster");
+        app.command("slower");
+        assert_eq!(app.speed, 2);
+        app.command("nope");
+        assert_eq!(said(&mut app), "no command nope; : and tab list them");
     }
 
     #[test]
