@@ -50,5 +50,7 @@ Gaps: a line wider than the footer is cut at the right edge, and the
 cursor can go past what is shown (the footer does not scroll yet). On
 macOS the alt keys need the terminal to send Option as Meta (iTerm2:
 Esc+; Terminal.app: "Use Option as Meta key"); without it Option-b types
-`∫`. Kill-ring cycling (alt-y), undo (ctrl-_), transposing (ctrl-t) and
-multi-line writing (C10, Shift+Enter) are not here.
+`∫`. Kill-ring cycling (alt-y), undo (ctrl-_) and transposing (ctrl-t)
+are not here. Multi-line writing came later (record 39): since then
+ctrl-a / ctrl-e, home / end and ctrl-u / ctrl-k stop at the ends of the
+line the cursor is on, which for one line is where they always went.

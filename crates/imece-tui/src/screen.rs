@@ -21,13 +21,26 @@
 //! gives it back (`CSI 22;0 t`, `CSI 23;0 t`; xterm, iTerm2, kitty,
 //! WezTerm, Ghostty). Before the pop the title is emptied, so a terminal
 //! without a stack shows its own default rather than a stale count.
+//!
+//! While imece has the screen, a paste comes as one event (bracketed
+//! paste), so its line ends do not send the line, and a terminal that
+//! speaks the kitty keyboard protocol is asked to tell keys apart
+//! (`CSI > 1 u`, disambiguate only: shift-enter then comes as itself,
+//! not as enter). Both are switched off whenever the terminal is handed
+//! back, the protocol's flags popped before the alternate screen is
+//! left, so the shell gets the keys it knows.
 
 use std::io::{self, Stdout, Write};
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use ratatui::Terminal;
 use ratatui::backend::{Backend, ClearType, CrosstermBackend, WindowSize};
 use ratatui::buffer::Cell;
 use ratatui::crossterm::cursor::MoveTo;
+use ratatui::crossterm::event::{
+    DisableBracketedPaste, EnableBracketedPaste, KeyboardEnhancementFlags,
+    PopKeyboardEnhancementFlags, PushKeyboardEnhancementFlags,
+};
 use ratatui::crossterm::terminal::{
     self, Clear, DisableLineWrap, EnableLineWrap, EnterAlternateScreen, LeaveAlternateScreen,
     disable_raw_mode, enable_raw_mode,
@@ -38,10 +51,17 @@ use ratatui::layout::{Position, Size};
 /// imece's terminal: the alternate screen, raw mode, quiet erases.
 pub type Screen = Terminal<Quiet<Stdout>>;
 
+/// Whether the terminal speaks the kitty keyboard protocol, as the probe
+/// found: its flags are pushed when the screen is taken and popped when
+/// it is given back.
+static KEYS: AtomicBool = AtomicBool::new(false);
+
 /// Takes the terminal (raw mode, alternate screen without auto-wrap, a
 /// panic hook that gives it back) and returns the screen to draw on.
-/// `restore` undoes it.
-pub fn init() -> io::Result<Screen> {
+/// `keys`: the terminal speaks the kitty keyboard protocol. `restore`
+/// undoes it.
+pub fn init(keys: bool) -> io::Result<Screen> {
+    KEYS.store(keys, Ordering::SeqCst);
     let hook = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
         restore();
@@ -60,15 +80,45 @@ pub fn restore() {
     }
 }
 
-/// The shell's title saved, then the alternate screen, with auto-wrap off.
+/// The shell's title saved, then the alternate screen, with auto-wrap off,
+/// pastes bracketed and, where the terminal has them, keys told apart.
 pub fn take_over(out: &mut impl Write) -> io::Result<()> {
-    out.write_all(PUSH_TITLE)?;
-    execute!(out, EnterAlternateScreen, DisableLineWrap)
+    taking(out, KEYS.load(Ordering::SeqCst))
 }
 
-/// Auto-wrap on again, the main screen, then the shell's title back.
+/// Keys as the shell knows them, auto-wrap on again, the main screen,
+/// then the shell's title back.
 pub fn give_back(out: &mut impl Write) -> io::Result<()> {
-    execute!(out, EnableLineWrap, LeaveAlternateScreen)?;
+    giving(out, KEYS.load(Ordering::SeqCst))
+}
+
+/// `take_over`, with `keys` saying whether the kitty flags are pushed.
+fn taking(out: &mut impl Write, keys: bool) -> io::Result<()> {
+    out.write_all(PUSH_TITLE)?;
+    execute!(
+        out,
+        EnterAlternateScreen,
+        DisableLineWrap,
+        EnableBracketedPaste
+    )?;
+    if keys {
+        let flags = KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES;
+        execute!(out, PushKeyboardEnhancementFlags(flags))?;
+    }
+    Ok(())
+}
+
+/// `give_back`, with `keys` saying whether the kitty flags are popped.
+fn giving(out: &mut impl Write, keys: bool) -> io::Result<()> {
+    if keys {
+        execute!(out, PopKeyboardEnhancementFlags)?;
+    }
+    execute!(
+        out,
+        DisableBracketedPaste,
+        EnableLineWrap,
+        LeaveAlternateScreen
+    )?;
     out.write_all(b"\x1b]2;\x07")?;
     out.write_all(POP_TITLE)?;
     out.flush()
@@ -251,15 +301,33 @@ mod tests {
         take_over(&mut taken).unwrap();
         assert_eq!(
             String::from_utf8(taken).unwrap(),
-            "\x1b[22;0t\x1b[?1049h\x1b[?7l",
-            "the shell's title is saved first"
+            "\x1b[22;0t\x1b[?1049h\x1b[?7l\x1b[?2004h",
+            "the shell's title is saved first; pastes bracketed"
         );
         let mut given = Vec::new();
         give_back(&mut given).unwrap();
         assert_eq!(
             String::from_utf8(given).unwrap(),
-            "\x1b[?7h\x1b[?1049l\x1b]2;\x07\x1b[23;0t",
+            "\x1b[?2004l\x1b[?7h\x1b[?1049l\x1b]2;\x07\x1b[23;0t",
             "emptied, then the shell's title back"
+        );
+    }
+
+    #[test]
+    fn a_terminal_with_the_kitty_protocol_tells_keys_apart_only_while_imece_has_it() {
+        let mut taken = Vec::new();
+        taking(&mut taken, true).unwrap();
+        assert_eq!(
+            String::from_utf8(taken).unwrap(),
+            "\x1b[22;0t\x1b[?1049h\x1b[?7l\x1b[?2004h\x1b[>1u",
+            "pushed on the alternate screen, disambiguate only"
+        );
+        let mut given = Vec::new();
+        giving(&mut given, true).unwrap();
+        assert_eq!(
+            String::from_utf8(given).unwrap(),
+            "\x1b[<1u\x1b[?2004l\x1b[?7h\x1b[?1049l\x1b]2;\x07\x1b[23;0t",
+            "popped before the alternate screen is left"
         );
     }
 

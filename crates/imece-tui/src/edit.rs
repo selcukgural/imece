@@ -4,23 +4,42 @@
 //! with the arrows) a word, ctrl-w cuts back to the space before,
 //! alt-backspace / alt-d a word back / on, ctrl-u / ctrl-k the line
 //! before / after the cursor, ctrl-y puts the last cut back, ctrl-d and
-//! delete take the character under the cursor. Pure: the app hands over
-//! the text, the cursor and the cut, and gets the cursor back.
+//! delete take the character under the cursor. The text may run over
+//! lines: shift-enter and alt-enter start a new one, as does enter after
+//! a `\` (where the terminal sends shift-enter as a plain enter); the
+//! keys that go to or cut to an end (ctrl-a, ctrl-e, home, end, ctrl-u,
+//! ctrl-k) stop at the line's, and `↑` `↓` go a line up and down. Pure:
+//! the app hands over the text, the cursor and the cut, and gets the
+//! cursor back.
 
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 /// What the key does to `text` with the cursor at `at` (a byte offset on
 /// a character's edge): the cursor after it, or `None` when the key is
 /// not an editing key. What a cut takes goes to `cut`, unless it took
-/// nothing (then the last cut stays for ctrl-y).
+/// nothing (then the last cut stays for ctrl-y). A plain enter is an
+/// editing key only after a `\`, which it turns into a new line; else it
+/// is the app's, to send.
 pub fn key(k: KeyEvent, text: &mut String, at: usize, cut: &mut String) -> Option<usize> {
     let ctrl = k.modifiers.contains(KeyModifiers::CONTROL);
     let alt = k.modifiers.contains(KeyModifiers::ALT);
-    let end = text.len();
+    let shift = k.modifiers.contains(KeyModifiers::SHIFT);
+    // The ends of the line the cursor is on.
+    let (start, end) = (line_start(text, at), line_end(text, at));
     let word = char::is_alphanumeric;
     match k.code {
+        KeyCode::Enter if shift || alt => {
+            text.insert(at, '\n');
+            Some(at + 1)
+        }
+        KeyCode::Enter if text[..at].ends_with('\\') => {
+            text.replace_range(at - 1..at, "\n");
+            Some(at)
+        }
+        KeyCode::Up => Some(up(text, at)),
+        KeyCode::Down => Some(down(text, at)),
         KeyCode::Char(c) if ctrl => match c {
-            'a' => Some(0),
+            'a' => Some(start),
             'e' => Some(end),
             'b' => Some(left(text, at)),
             'f' => Some(right(text, at)),
@@ -28,7 +47,7 @@ pub fn key(k: KeyEvent, text: &mut String, at: usize, cut: &mut String) -> Optio
                 let from = back(text, at, |c| !c.is_whitespace());
                 Some(take(text, from, at, cut))
             }
-            'u' => Some(take(text, 0, at, cut)),
+            'u' => Some(take(text, start, at, cut)),
             'k' => Some(take(text, at, end, cut)),
             'd' => {
                 let to = right(text, at);
@@ -54,7 +73,7 @@ pub fn key(k: KeyEvent, text: &mut String, at: usize, cut: &mut String) -> Optio
         KeyCode::Right if ctrl || alt => Some(on(text, at, word)),
         KeyCode::Left => Some(left(text, at)),
         KeyCode::Right => Some(right(text, at)),
-        KeyCode::Home => Some(0),
+        KeyCode::Home => Some(start),
         KeyCode::End => Some(end),
         KeyCode::Backspace => {
             let from = left(text, at);
@@ -69,6 +88,47 @@ pub fn key(k: KeyEvent, text: &mut String, at: usize, cut: &mut String) -> Optio
             Some(at + c.len_utf8())
         }
         _ => None,
+    }
+}
+
+/// Where the line `at` is on starts: after the new line before it.
+fn line_start(s: &str, at: usize) -> usize {
+    s[..at].rfind('\n').map_or(0, |i| i + 1)
+}
+
+/// Where the line `at` is on ends: at the new line after it.
+fn line_end(s: &str, at: usize) -> usize {
+    s[at..].find('\n').map_or(s.len(), |i| at + i)
+}
+
+/// The place `column` characters into the line starting at `start`, or
+/// that line's end when it is shorter.
+fn column(s: &str, start: usize, column: usize) -> usize {
+    let end = line_end(s, start);
+    s[start..end]
+        .char_indices()
+        .nth(column)
+        .map_or(end, |(i, _)| start + i)
+}
+
+/// How many characters into its line `at` is.
+fn column_of(s: &str, at: usize) -> usize {
+    s[line_start(s, at)..at].chars().count()
+}
+
+/// The same column a line up (`at` on the first line).
+fn up(s: &str, at: usize) -> usize {
+    match line_start(s, at) {
+        0 => at,
+        start => column(s, line_start(s, start - 1), column_of(s, at)),
+    }
+}
+
+/// The same column a line down (`at` on the last line).
+fn down(s: &str, at: usize) -> usize {
+    match line_end(s, at) {
+        end if end == s.len() => at,
+        end => column(s, end + 1, column_of(s, at)),
     }
 }
 
@@ -300,12 +360,71 @@ mod tests {
             (KeyCode::Enter, KeyModifiers::NONE),
             (KeyCode::Esc, KeyModifiers::NONE),
             (KeyCode::Tab, KeyModifiers::NONE),
-            (KeyCode::Up, KeyModifiers::NONE),
             (KeyCode::Char('n'), KeyModifiers::CONTROL),
             (KeyCode::Char('p'), KeyModifiers::CONTROL),
             (KeyCode::Char('x'), KeyModifiers::CONTROL),
         ] {
             assert_eq!(press("a|b", "old", code, mods), None, "{code:?} {mods:?}");
         }
+        // Enter sends unless a `\\` is just before the cursor.
+        for line in ["a\\b|", "a|\\", "|", "a\n|b"] {
+            assert_eq!(plain_maybe(line, KeyCode::Enter), None, "{line:?}");
+        }
+    }
+
+    fn plain_maybe(line: &str, code: KeyCode) -> Option<String> {
+        press(line, "old", code, KeyModifiers::NONE)
+    }
+
+    #[test]
+    fn shift_or_alt_enter_and_a_backslash_enter_start_a_new_line() {
+        for mods in [KeyModifiers::SHIFT, KeyModifiers::ALT] {
+            let p = |line| press(line, "", KeyCode::Enter, mods).unwrap();
+            assert_eq!(p("ab|cd"), "ab\n|cd/", "{mods:?}");
+            assert_eq!(p("ç|"), "ç\n|/", "{mods:?}");
+        }
+        // The `\\` becomes the new line, as in Claude Code.
+        assert_eq!(plain("fix\\|", KeyCode::Enter), "fix\n|/old");
+        assert_eq!(plain("a\\|b", KeyCode::Enter), "a\n|b/old");
+        assert_eq!(plain("ş\\|", KeyCode::Enter), "ş\n|/old");
+    }
+
+    #[test]
+    fn the_ends_and_the_cuts_to_them_are_the_line_s() {
+        let three = "ab\ncd|ef\ngh";
+        assert_eq!(ctrl(three, 'a'), "ab\n|cdef\ngh/old");
+        assert_eq!(ctrl(three, 'e'), "ab\ncdef|\ngh/old");
+        assert_eq!(plain(three, KeyCode::Home), "ab\n|cdef\ngh/old");
+        assert_eq!(plain(three, KeyCode::End), "ab\ncdef|\ngh/old");
+        assert_eq!(ctrl(three, 'u'), "ab\n|ef\ngh/cd");
+        assert_eq!(ctrl(three, 'k'), "ab\ncd|\ngh/ef");
+        // The first line starts the text; the last ends it.
+        assert_eq!(ctrl("a|b\ncd", 'e'), "ab|\ncd/old");
+        assert_eq!(ctrl("ab\nc|d", 'a'), "ab\n|cd/old");
+        assert_eq!(ctrl("ab\nc|d", 'e'), "ab\ncd|/old");
+        assert_eq!(ctrl("ab\nc|d", 'k'), "ab\nc|/d");
+        // At a line's start or end there is nothing to cut on that side,
+        // and the new line itself is not cut.
+        assert_eq!(ctrl("ab\n|cd", 'u'), "ab\n|cd/old");
+        assert_eq!(ctrl("ab|\ncd", 'k'), "ab|\ncd/old");
+    }
+
+    #[test]
+    fn up_and_down_keep_the_column_in_characters() {
+        let three = "abc\nde|f\nghij";
+        assert_eq!(plain(three, KeyCode::Up), "ab|c\ndef\nghij/old");
+        assert_eq!(plain(three, KeyCode::Down), "abc\ndef\ngh|ij/old");
+        assert_eq!(plain("ab\ncd\nef|", KeyCode::Up), "ab\ncd|\nef/old");
+        assert_eq!(plain("a|b\ncd\nef", KeyCode::Down), "ab\nc|d\nef/old");
+        assert_eq!(plain("ab\n|cd", KeyCode::Up), "|ab\ncd/old");
+        // A shorter line: its end.
+        assert_eq!(plain("a\nbcd|", KeyCode::Up), "a|\nbcd/old");
+        assert_eq!(plain("abc|\nd", KeyCode::Down), "abc\nd|/old");
+        assert_eq!(plain("çağ\nab|", KeyCode::Up), "ça|ğ\nab/old");
+        assert_eq!(plain("ab|\nçağ", KeyCode::Down), "ab\nça|ğ/old");
+        // On the first line up stays, on the last down does.
+        assert_eq!(plain("a|b\nc", KeyCode::Up), "a|b\nc/old");
+        assert_eq!(plain("a\nb|c", KeyCode::Down), "a\nb|c/old");
+        assert_eq!(plain("a|b", KeyCode::Up), "a|b/old");
     }
 }

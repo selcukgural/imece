@@ -3,7 +3,10 @@
 //! Ghostty, Kitty, WezTerm, Alacritty, foot and tmux answer), so the
 //! `terminal` theme knows whether it is dark and what to shade a
 //! selection with. A terminal that does not answer is taken as dark, or
-//! as `COLORFGBG` says.
+//! as `COLORFGBG` says. It also asks whether the terminal speaks the
+//! kitty keyboard protocol (`CSI ? u`, answered `CSI ? flags u` by kitty,
+//! Ghostty, WezTerm with it on, foot, Alacritty and iTerm2): only then
+//! can shift-enter be told from enter.
 //!
 //! The queries are followed by a cursor position report (`CSI 6 n`),
 //! which every terminal answers, and the reading goes on until that
@@ -26,8 +29,16 @@ use crate::theme::{Back, Rgb};
 /// never answers the cursor position report waits this long.
 const WAIT: Duration = Duration::from_millis(1000);
 
+/// What the terminal said about itself.
+pub struct Said {
+    /// Its colours.
+    pub back: Back,
+    /// Whether it speaks the kitty keyboard protocol.
+    pub keys: bool,
+}
+
 /// What the terminal on stdin and stdout says about itself.
-pub fn terminal() -> Back {
+pub fn terminal() -> Said {
     let mut back = Back::default();
     if let Some(dark) = std::env::var("COLORFGBG").ok().and_then(|v| colorfgbg(&v)) {
         back.dark = dark;
@@ -35,15 +46,19 @@ pub fn terminal() -> Back {
     // SAFETY: isatty only reads the descriptor's state.
     let tty = unsafe { libc::isatty(0) == 1 && libc::isatty(1) == 1 };
     if !tty || std::env::var("TERM").is_ok_and(|t| t == "dumb") {
-        return back;
+        return Said { back, keys: false };
     }
-    let (bg, fg) = parse(&ask().unwrap_or_default());
+    let reply = ask().unwrap_or_default();
+    let (bg, fg) = parse(&reply);
     back.bg = bg;
     back.fg = fg;
     if let Some(bg) = bg {
         back.dark = bg.is_dark();
     }
-    back
+    Said {
+        back,
+        keys: kitty_keys(&reply),
+    }
 }
 
 /// Sends the two queries and the position report, and collects what
@@ -52,7 +67,7 @@ fn ask() -> io::Result<Vec<u8>> {
     enable_raw_mode()?;
     let result = (|| {
         let mut out = io::stdout();
-        out.write_all(b"\x1b]11;?\x1b\\\x1b]10;?\x1b\\\x1b[6n")?;
+        out.write_all(b"\x1b]11;?\x1b\\\x1b]10;?\x1b\\\x1b[?u\x1b[6n")?;
         out.flush()?;
         let mut reply = Vec::new();
         let deadline = Instant::now() + WAIT;
@@ -106,6 +121,18 @@ fn done(reply: &[u8]) -> bool {
         let semicolons = rest[..n].iter().filter(|b| **b == b';').count();
         let semi = rest[..n].iter().position(|b| *b == b';');
         semicolons == 1 && semi.is_some_and(|p| p > 0 && p + 1 < n) && rest.get(n) == Some(&b'R')
+    })
+}
+
+/// Whether the reply has the kitty keyboard protocol's answer, the flags
+/// in force: `ESC [ ? digits u`.
+fn kitty_keys(reply: &[u8]) -> bool {
+    (0..reply.len()).any(|at| {
+        let Some(rest) = reply[at..].strip_prefix(b"\x1b[?") else {
+            return false;
+        };
+        let n = rest.iter().take_while(|b| b.is_ascii_digit()).count();
+        n > 0 && rest.get(n) == Some(&b'u')
     })
 }
 
@@ -178,6 +205,26 @@ mod tests {
             b"\x1b]12;57R\x1b\\",
         ] {
             assert!(!done(not_yet), "{:?}", String::from_utf8_lossy(not_yet));
+        }
+    }
+
+    #[test]
+    fn the_kitty_keyboard_answer_is_its_flags_between_a_question_mark_and_u() {
+        let whole = b"\x1b]11;rgb:2828/2a2a/3636\x1b\\\x1b[?0u\x1b[4;1R";
+        assert!(kitty_keys(whole), "flags 0: it speaks it, nothing on yet");
+        assert!(kitty_keys(b"\x1b[?15u"));
+        assert!(done(whole), "the report still ends the reading");
+        for not in [
+            &b""[..],
+            b"\x1b[4;1R",
+            b"\x1b[?4;1R",
+            b"\x1b[?u",
+            b"\x1b[0u",
+            b"\x1b[?1;2u",
+            b"\x1b[?1",
+            b"?1u",
+        ] {
+            assert!(!kitty_keys(not), "{:?}", String::from_utf8_lossy(not));
         }
     }
 
