@@ -141,6 +141,7 @@ record in the same PR.
 - 39 `multi-line`: shift-enter (kitty keyboard protocol, probed), `\` enter and alt-enter for a new line, the footer grows, bracketed paste.
 - 40 `help-filter`: `/` in the `?` help filters keys and legend by every word, case and Turkish letters folded; enter keeps, esc drops; the window keeps its size.
 - 41 `colon-names`: every key that acts has a `:` name (`:salon` `:lang` `:quit` …, demo-only ones left out live); the `:` menu shows values (`Menu::notes`) and `$` on what raises the next bill; `:q` and the other short names run on enter.
+- 42 `export`: `:export [PATH]` writes the open conversation, else the card's screen, as Markdown; days on every time, cleaned, never over an existing file.
 
 `docs/neighbours.md`: voff, what was taken from it and the rules that come
 from what it lacks. Read it before building a part it names.
