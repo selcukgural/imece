@@ -119,7 +119,13 @@ pub struct Text {
     /// back; ends with a newline of its own.
     pub shell_back: &'static str,
     pub shell_back_signal: &'static str,
+    /// The footer's hint while writing; `{}` is the key for a new line,
+    /// `newline_shift` or `newline_plain`.
     pub send_cancel: &'static str,
+    pub newline_shift: &'static str,
+    pub newline_plain: &'static str,
+    /// Text pasted while not writing: it is left out.
+    pub paste_not_writing: &'static str,
     /// The footer's hint while the composer offers completions.
     pub pick_cancel: &'static str,
     // Notices
@@ -349,6 +355,10 @@ pub struct Text {
     // Overlays
     pub help_title: &'static str,
     pub help_keys: [(&'static str, &'static str); 40],
+    /// The help's line for a new line in the writing, put after the
+    /// writing keys: where the terminal tells shift-enter apart, and
+    /// where it does not.
+    pub help_newline: [(&'static str, &'static str); 2],
     pub help_legend: [&'static str; 4],
     pub close: &'static str,
     pub away_title: &'static str,
@@ -408,7 +418,10 @@ pub const EN: Text = Text {
     shell_failed: "could not run `{}`: {}",
     shell_back: "[imece] exit {} · any key: back to the screen\n",
     shell_back_signal: "[imece] stopped by signal {} · any key: back to the screen\n",
-    send_cancel: "   enter send · esc cancel",
+    send_cancel: "   enter send · {} new line · esc cancel",
+    newline_shift: "⇧enter",
+    newline_plain: "\\ enter",
+    paste_not_writing: "a paste goes into the line you write: / or @ first",
     pick_cancel: "   tab next · enter take · esc hide",
     sent: "sent to {}",
     no_agent: "no agent named \"{}\"",
@@ -696,6 +709,13 @@ pub const EN: Text = Text {
         ("q q", "quit (one q asks first)"),
         ("q s", "before quitting: what is mid-turn or not reviewed"),
     ],
+    help_newline: [
+        ("⇧enter ⌥enter", "writing: a new line; ↑ ↓ between lines"),
+        (
+            "\\enter ⌥enter",
+            "writing: a new line (here ⇧enter is enter)",
+        ),
+    ],
     help_legend: [
         " ◆ lead  ● working  ◐ asking  ✕ blocked  ! waiting for you",
         " ◇ researcher  ○ idle  ✓ done, not seen  ■ stopped  ⇄ conversation  ▾ ▸ project / helpers",
@@ -765,7 +785,10 @@ pub const TR: Text = Text {
     shell_failed: "`{}` çalıştırılamadı: {}",
     shell_back: "[imece] çıkış {} · herhangi bir tuş: ekrana dön\n",
     shell_back_signal: "[imece] {} sinyali durdurdu · herhangi bir tuş: ekrana dön\n",
-    send_cancel: "   enter gönder · esc vazgeç",
+    send_cancel: "   enter gönder · {} yeni satır · esc vazgeç",
+    newline_shift: "⇧enter",
+    newline_plain: "\\ enter",
+    paste_not_writing: "yapıştırılan, yazdığın satıra girer: önce / ya da @",
     pick_cancel: "   tab sonraki · enter al · esc gizle",
     sent: "iletildi → {}",
     no_agent: "\"{}\" adında bir agent yok",
@@ -1061,6 +1084,13 @@ pub const TR: Text = Text {
             "çıkmadan önce: tur ortasında olan, incelenmemiş olan",
         ),
     ],
+    help_newline: [
+        ("⇧enter ⌥enter", "yazarken: yeni satır; ↑ ↓ satırlar arası"),
+        (
+            "\\enter ⌥enter",
+            "yazarken: yeni satır (burada ⇧enter = enter)",
+        ),
+    ],
     help_legend: [
         " ◆ lider  ● çalışıyor  ◐ soruyor  ✕ bloke  ! onayını bekliyor",
         " ◇ araştırmacı  ○ boşta  ✓ bitti, bakılmadı  ■ durdu  ⇄ konuşma  ▾ ▸ proje / yardımcılar",
@@ -1134,6 +1164,7 @@ mod tests {
             (EN.theme_is, TR.theme_is),
             (EN.code_title, TR.code_title),
             (EN.typing_to, TR.typing_to),
+            (EN.send_cancel, TR.send_cancel),
             (EN.cannot_start, TR.cannot_start),
             (EN.ev_stopped, TR.ev_stopped),
             (EN.ev_interrupted, TR.ev_interrupted),

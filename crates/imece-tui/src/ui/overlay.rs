@@ -30,7 +30,10 @@ fn window(f: &mut Frame, title: String, lines: Vec<Line<'static>>, width: u16) {
     f.render_widget(Paragraph::new(lines).block(block), area);
 }
 
-pub fn help(f: &mut Frame, lang: Lang) {
+/// The keys, two columns on a wide screen, then the legend. The line for
+/// a new line in the writing names the key this terminal has for it
+/// (`shift_enter`: it tells shift-enter from enter).
+pub fn help(f: &mut Frame, lang: Lang, shift_enter: bool) {
     let t = lang.text();
     let key = |(k, what): &(&str, &str)| {
         vec![
@@ -41,7 +44,7 @@ pub fn help(f: &mut Frame, lang: Lang) {
     // Two columns where the screen is wide enough, so the help fits a
     // short screen too.
     let wide = f.area().width >= 120;
-    let keys = &t.help_keys;
+    let keys = help_keys(lang, shift_enter);
     let rows = if wide {
         keys.len().div_ceil(2)
     } else {
@@ -65,6 +68,19 @@ pub fn help(f: &mut Frame, lang: Lang) {
     lines.push(Line::raw(""));
     lines.push(Line::from(Span::styled(t.close, dim())));
     window(f, t.help_title.into(), lines, if wide { 118 } else { 60 });
+}
+
+/// How many of `help_keys` come before the help's new-line line: the
+/// writing keys end there.
+const WRITING_KEYS: usize = 13;
+
+/// The keys the help lists, in its order: the new-line line, the one
+/// this terminal has (`shift_enter`), after the writing keys.
+pub(crate) fn help_keys(lang: Lang, shift_enter: bool) -> Vec<(&'static str, &'static str)> {
+    let t = lang.text();
+    let mut keys = t.help_keys.to_vec();
+    keys.insert(WRITING_KEYS, t.help_newline[usize::from(!shift_enter)]);
+    keys
 }
 
 pub fn digest(f: &mut Frame, app: &App, d: &Digest) {

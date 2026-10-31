@@ -91,6 +91,7 @@ pub enum Need {
 }
 
 /// What happened while the person was away.
+#[derive(Default)]
 pub struct Digest {
     pub minutes: u64,
     pub merged: usize,
@@ -103,7 +104,7 @@ pub struct Digest {
 
 /// Where the person left off: what an earlier run of imece left behind,
 /// told once at the start, before anything moves.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct LeftOff {
     /// Seconds since the earlier run last wrote the store; none when the
     /// file does not say.
@@ -269,6 +270,10 @@ pub struct App {
     pub cut: String,
     /// What the composer offers for the word being typed, if anything.
     pub menu: Option<Menu>,
+    /// Whether the terminal tells shift-enter from enter (it speaks the
+    /// kitty keyboard protocol): `?` and the footer name shift-enter for
+    /// a new line, else `\` enter.
+    pub shift_enter: bool,
     pub paused: bool,
     pub speed: u32,
     pub help: bool,
@@ -341,6 +346,7 @@ impl App {
             typing: false,
             input: String::new(),
             after: 0,
+            shift_enter: false,
             cut: String::new(),
             menu: None,
             paused: false,
@@ -1282,11 +1288,21 @@ impl App {
     /// before it cancels the writing. The rest are readline's editing
     /// keys (`edit::key`); the menu is offered only with the cursor at
     /// the end, since a completion replaces the word the line ends with.
+    /// Shift-enter, alt-enter and enter after a `\` start a new line;
+    /// `↑` `↓` go between lines while no menu is shown.
     fn type_key(&mut self, k: KeyEvent) {
         let ctrl = k.modifiers.contains(KeyModifiers::CONTROL);
+        let newline =
+            k.modifiers.contains(KeyModifiers::SHIFT) || k.modifiers.contains(KeyModifiers::ALT);
         match k.code {
             KeyCode::Char('n') if ctrl => self.pick(true),
             KeyCode::Char('p') if ctrl => self.pick(false),
+            KeyCode::Enter if newline => {
+                self.edit(k);
+            }
+            KeyCode::Up | KeyCode::Down if self.menu.is_none() => {
+                self.edit(k);
+            }
             KeyCode::Enter => match &mut self.menu {
                 Some(m) if !m.inserted => {
                     m.insert(&mut self.input);
@@ -1295,7 +1311,12 @@ impl App {
                         self.submit();
                     }
                 }
-                _ => self.submit(),
+                // Enter after a `\` is a new line, not a send.
+                _ => {
+                    if !self.edit(k) {
+                        self.submit();
+                    }
+                }
             },
             KeyCode::Esc if self.menu.is_some() => self.menu = None,
             KeyCode::Esc => {
@@ -1316,7 +1337,9 @@ impl App {
             },
             KeyCode::BackTab | KeyCode::Up => self.pick(false),
             KeyCode::Down => self.pick(true),
-            _ => self.edit(k),
+            _ => {
+                self.edit(k);
+            }
         }
     }
 
@@ -1331,12 +1354,19 @@ impl App {
     }
 
     /// An editing key: the line or the cursor changes, and with them
-    /// what the menu offers.
-    fn edit(&mut self, k: KeyEvent) {
+    /// what the menu offers. False for a key that is not an editing key.
+    fn edit(&mut self, k: KeyEvent) -> bool {
         let (was, at) = (self.input.clone(), self.cursor());
         let Some(to) = edit::key(k, &mut self.input, at, &mut self.cut) else {
-            return;
+            return false;
         };
+        self.moved(&was, at, to);
+        true
+    }
+
+    /// The line was `was` with the cursor at `at`; now the cursor is at
+    /// `to`. A change or a move asks the menu again, at the end only.
+    fn moved(&mut self, was: &str, at: usize, to: usize) {
         self.after = self.input.len() - to;
         if to != at || self.input != was {
             self.menu = if self.after == 0 {
@@ -1347,6 +1377,22 @@ impl App {
         }
     }
 
+    /// Text the terminal says was pasted (bracketed paste): it goes into
+    /// the line at the cursor whole, its new lines kept, so a paste's
+    /// line ends do not send it a line at a time. Only while writing;
+    /// elsewhere its characters would be taken as keys, so it is left
+    /// out and the person told how to write first.
+    pub fn paste(&mut self, text: &str) {
+        let open = self.help || self.digest.is_some() || self.left_off.is_some() || self.leaving;
+        if !self.typing || open {
+            return self.flash(self.lang.text().paste_not_writing);
+        }
+        let text = pasted(text);
+        let (was, at) = (self.input.clone(), self.cursor());
+        self.input.insert_str(at, &text);
+        self.moved(&was, at, at + text.len());
+    }
+
     /// Highlights the next (or previous) match and puts it in.
     fn pick(&mut self, forward: bool) {
         if let Some(m) = &mut self.menu {
@@ -1355,8 +1401,12 @@ impl App {
         }
     }
 
-    /// What the composer could complete the input with, now.
+    /// What the composer could complete the input with, now. Nothing once
+    /// the text runs over lines: a name or a command is on one.
     fn suggest(&self) -> Option<Menu> {
+        if self.input.contains('\n') {
+            return None;
+        }
         complete::suggest(
             &self.input,
             &self.world,
@@ -1387,7 +1437,11 @@ impl App {
     /// the current project.
     pub fn typing_target(&self) -> String {
         match self.input.strip_prefix('@') {
-            Some(rest) => rest.split(' ').next().unwrap_or_default().to_string(),
+            Some(rest) => rest
+                .split(char::is_whitespace)
+                .next()
+                .unwrap_or_default()
+                .to_string(),
             None => {
                 let leader = self.world.projects[self.current_project()].leader;
                 self.world.agents[leader].name.clone()
@@ -1427,7 +1481,10 @@ impl App {
             let leader = self.world.projects[self.current_project()].leader;
             return self.tell(leader, &text);
         };
-        let msg = rest.split_once(' ').map_or("", |(_, m)| m).trim();
+        let msg = rest
+            .split_once(char::is_whitespace)
+            .map_or("", |(_, m)| m)
+            .trim();
         match self.world.agent_by_name(&target) {
             Some(_) if msg.is_empty() => self.flash(t.empty_message),
             Some(id) => self.tell(id, msg),
@@ -1901,6 +1958,17 @@ impl App {
         }
         self.inbox_sel = self.inbox_sel.min(open.saturating_sub(2));
     }
+}
+
+/// Pasted text as the line takes it: line ends as `\n` (a terminal
+/// pastes them as `\r`, Windows text as `\r\n`), tabs kept, every other
+/// control character (an escape sequence's ESC among them) left out.
+fn pasted(text: &str) -> String {
+    text.replace("\r\n", "\n")
+        .replace('\r', "\n")
+        .chars()
+        .filter(|&c| c == '\n' || c == '\t' || !c.is_control())
+        .collect()
 }
 
 /// `path` with a leading `~` or `~/` replaced by `home`; anything else as

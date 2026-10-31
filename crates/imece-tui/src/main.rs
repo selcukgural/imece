@@ -366,11 +366,12 @@ fn main() -> std::io::Result<()> {
         let _ = theme::choose(name);
     }
     // Before the screen takes the terminal: what colours it has.
+    let said = probe::terminal();
     theme::probed(
-        probe::terminal(),
+        said.back,
         theme::truecolor(std::env::var("COLORTERM").ok().as_deref()),
     );
-    let mut terminal = screen::init().inspect_err(|_| screen::restore())?;
+    let mut terminal = screen::init(said.keys).inspect_err(|_| screen::restore())?;
     let mut app = if args.demo {
         // The simulation's clock says 14:00 at its start, on today's date.
         model::start_clock_at(14 * 3600, live::today());
@@ -446,6 +447,7 @@ fn main() -> std::io::Result<()> {
     if let Some(side) = saved.side {
         app.side = side;
     }
+    app.shift_enter = said.keys;
     app.primary = saved.lead;
     let result = run(&mut terminal, &mut app, &state);
     // The last word before the sessions end: what every agent had in hand,
@@ -516,8 +518,11 @@ fn run(
             Err(e) if e.kind() == ErrorKind::Interrupted => continue,
             Err(e) => return Err(e),
         };
-        if ready
-            && let Event::Key(k) = event::read()?
+        let event = if ready { Some(event::read()?) } else { None };
+        if let Some(Event::Paste(text)) = &event {
+            app.paste(text);
+        }
+        if let Some(Event::Key(k)) = event
             && k.kind == KeyEventKind::Press
         {
             let (side, theme, primary) = (app.side, theme::chosen(), app.primary.clone());

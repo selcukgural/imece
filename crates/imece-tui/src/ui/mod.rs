@@ -34,7 +34,7 @@ pub fn draw(f: &mut Frame, app: &App) {
         Constraint::Length(1),
         Constraint::Min(0),
         Constraint::Length(menu_rows),
-        Constraint::Length(1),
+        Constraint::Length(input_rows(app, f.area().height)),
     ])
     .areas(f.area());
     header(f, head, app);
@@ -58,7 +58,7 @@ pub fn draw(f: &mut Frame, app: &App) {
         overlay::thread(f, app, th);
     }
     if app.help {
-        overlay::help(f, app.lang);
+        overlay::help(f, app.lang, app.shift_enter);
     } else if let Some(d) = &app.digest {
         overlay::digest(f, app, d);
     } else if let Some(l) = &app.left_off {
@@ -986,36 +986,93 @@ fn cursor_spans(input: &str, at: usize) -> Vec<Span<'static>> {
     }
 }
 
+/// The most rows the line being written takes.
+const INPUT_ROWS: u16 = 8;
+
+/// How many rows the footer takes: one, or while writing one per line of
+/// the text, at most [`INPUT_ROWS`] and a third of the screen.
+fn input_rows(app: &App, height: u16) -> u16 {
+    if !app.typing {
+        return 1;
+    }
+    let lines = app.input.split('\n').count();
+    let most = (height / 3).clamp(1, INPUT_ROWS);
+    u16::try_from(lines).unwrap_or(u16::MAX).min(most)
+}
+
+/// The text being written, a row per line of it, under who it goes to:
+/// the cursor's line always shown (the rows above it go out of view
+/// first), the keys to send or cancel after the last row shown, with
+/// where the cursor is (`3/12`) when not all lines fit.
+fn writing(app: &App, rows: usize) -> Vec<Line<'static>> {
+    let t = app.lang.text();
+    let to = Span::styled(
+        if app.typing_shell() {
+            t.typing_shell.to_string()
+        } else if app.typing_card() {
+            t.typing_card.to_string()
+        } else if app.typing_command() {
+            t.typing_command.to_string()
+        } else {
+            fill(t.typing_to, &[&app.typing_target()])
+        },
+        bold(pal().strong),
+    );
+    let indent = Span::raw(" ".repeat(to.width()));
+    let at = app.cursor();
+    let here = app.input[..at].matches('\n').count();
+    let total = app.input.split('\n').count();
+    let first = (here + 1).saturating_sub(rows);
+    let mut start = 0;
+    let mut out = Vec::new();
+    for (n, line) in app.input.split('\n').enumerate() {
+        let from = start;
+        start += line.len() + 1;
+        if n < first || out.len() == rows {
+            continue;
+        }
+        let lead = if out.is_empty() {
+            to.clone()
+        } else {
+            indent.clone()
+        };
+        let text = if n == here {
+            cursor_spans(line, at - from)
+        } else {
+            vec![Span::raw(clean(line))]
+        };
+        out.push(Line::from([vec![lead], text].concat()));
+    }
+    let mut hint = Vec::new();
+    if total > out.len() {
+        hint.push(Span::styled(format!("   {}/{total}", here + 1), dim()));
+    }
+    let newline = if app.shift_enter {
+        t.newline_shift
+    } else {
+        t.newline_plain
+    };
+    hint.push(Span::styled(
+        match app.menu {
+            Some(_) => t.pick_cancel.to_string(),
+            None => fill(t.send_cancel, &[newline]),
+        },
+        dim(),
+    ));
+    if let Some(last) = out.last_mut() {
+        last.spans.extend(hint);
+    }
+    out
+}
+
 fn footer(f: &mut Frame, area: Rect, app: &App) {
     let t = app.lang.text();
     let key = key_style;
-    let line = if app.typing {
-        Line::from(
-            vec![Span::styled(
-                if app.typing_shell() {
-                    t.typing_shell.to_string()
-                } else if app.typing_card() {
-                    t.typing_card.to_string()
-                } else if app.typing_command() {
-                    t.typing_command.to_string()
-                } else {
-                    fill(t.typing_to, &[&app.typing_target()])
-                },
-                bold(pal().strong),
-            )]
-            .into_iter()
-            .chain(cursor_spans(&app.input, app.cursor()))
-            .chain([Span::styled(
-                if app.menu.is_some() {
-                    t.pick_cancel
-                } else {
-                    t.send_cancel
-                },
-                dim(),
-            )])
-            .collect::<Vec<_>>(),
-        )
-    } else if let Some((msg, at)) = &app.flash
+    if app.typing {
+        let lines = writing(app, usize::from(area.height));
+        return f.render_widget(Paragraph::new(lines), area);
+    }
+    let line = if let Some((msg, at)) = &app.flash
         && at.elapsed() < FLASH
     {
         Line::from(Span::styled(format!(" {msg}"), fg(pal().warn)))
@@ -1085,7 +1142,7 @@ mod tests {
     use ratatui::Terminal;
     use ratatui::backend::TestBackend;
 
-    use ratatui::crossterm::event::{KeyCode, KeyEvent};
+    use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
     use super::*;
     use crate::app::{App, Need, Pane, Sel};
@@ -2842,7 +2899,7 @@ mod tests {
             key(&mut app, KeyCode::Char(c));
         }
         assert_eq!(app.menu, None);
-        assert!(render(&app, 140, 40).contains("enter send · esc cancel"));
+        assert!(render(&app, 140, 40).contains("enter send · \\ enter new line · esc cancel"));
         key(&mut app, KeyCode::Enter);
         assert!(!app.typing);
         assert!(
@@ -3110,6 +3167,192 @@ mod tests {
             app.after = after;
             assert_eq!(app.cursor(), at, "{after}");
         }
+    }
+
+    fn with(app: &mut App, code: KeyCode, mods: KeyModifiers) {
+        app.on_key(KeyEvent::new(code, mods));
+    }
+
+    /// What the person last said, to whom.
+    fn last_said(app: &App) -> Option<(usize, String)> {
+        app.world.journal.iter().rev().find_map(|e| match &e.event {
+            Event::YouSaid { to, text } => Some((*to, text.clone())),
+            _ => None,
+        })
+    }
+
+    #[test]
+    fn shift_enter_alt_enter_and_a_backslash_enter_write_a_new_line_and_enter_sends_it_all() {
+        let mut app = app_after(1, 3, 0, Lang::En);
+        let lead = app.world.projects[0].leader;
+        key(&mut app, KeyCode::Char('/'));
+        write(&mut app, "fix");
+        with(&mut app, KeyCode::Enter, KeyModifiers::SHIFT);
+        write(&mut app, "the");
+        with(&mut app, KeyCode::Enter, KeyModifiers::ALT);
+        write(&mut app, "parser\\");
+        key(&mut app, KeyCode::Enter);
+        assert!(app.typing, "a backslash enter does not send");
+        write(&mut app, "now");
+        assert_eq!(app.input, "fix\nthe\nparser\nnow");
+        key(&mut app, KeyCode::Enter);
+        assert!(!app.typing);
+        assert_eq!(
+            last_said(&app),
+            Some((lead, "fix\nthe\nparser\nnow".to_string()))
+        );
+        // To one agent: the name ends at the new line too.
+        let name = app.world.agents[1].name.clone();
+        key(&mut app, KeyCode::Char('@'));
+        write(&mut app, &name);
+        with(&mut app, KeyCode::Enter, KeyModifiers::SHIFT);
+        write(&mut app, "hi");
+        assert_eq!(app.typing_target(), name);
+        key(&mut app, KeyCode::Enter);
+        assert_eq!(last_said(&app), Some((1, "hi".to_string())));
+    }
+
+    #[test]
+    fn a_new_line_hides_the_menu_and_up_and_down_go_between_lines_without_one() {
+        let mut app = app_after(1, 3, 0, Lang::En);
+        key(&mut app, KeyCode::Char('@'));
+        assert!(app.menu.is_some());
+        with(&mut app, KeyCode::Enter, KeyModifiers::SHIFT);
+        assert_eq!((app.input.as_str(), app.menu.is_none()), ("@\n", true));
+        assert!(app.typing, "the menu did not take the enter");
+        // Alt-enter as well, the menu open again.
+        key(&mut app, KeyCode::Backspace);
+        assert!(app.menu.is_some());
+        with(&mut app, KeyCode::Enter, KeyModifiers::ALT);
+        assert_eq!((app.input.as_str(), app.menu.is_none()), ("@\n", true));
+        write(&mut app, "abc");
+        key(&mut app, KeyCode::Up);
+        assert_eq!((app.cursor(), app.after), (1, 4), "the first line's end");
+        key(&mut app, KeyCode::Down);
+        assert_eq!(app.cursor(), 3, "column 1, under it");
+        key(&mut app, KeyCode::Down);
+        assert_eq!(app.cursor(), 3, "the last line: it stays");
+        assert!(app.typing && app.menu.is_none());
+    }
+
+    #[test]
+    fn a_paste_goes_into_the_line_whole_and_only_while_writing() {
+        let mut app = app_after(1, 3, 0, Lang::En);
+        app.paste("ls");
+        assert!(!app.typing && app.input.is_empty(), "not writing: left out");
+        let said = Lang::En.text().paste_not_writing;
+        assert!(render(&app, 140, 40).contains(said));
+        key(&mut app, KeyCode::Char('/'));
+        write(&mut app, "ab");
+        key(&mut app, KeyCode::Left);
+        app.paste("one\r\ntwo\rthree\x1b[1m\tç\x07");
+        assert_eq!(app.input, "aone\ntwo\nthree[1m\tçb");
+        assert_eq!(
+            app.after, 1,
+            "the cursor after what was pasted, before the b"
+        );
+        assert!(app.typing, "a paste never sends");
+        // An overlay over the line takes nothing either.
+        let line = app.input.clone();
+        for open in 0..4 {
+            match open {
+                0 => app.help = true,
+                1 => app.digest = Some(Default::default()),
+                2 => app.left_off = Some(Default::default()),
+                _ => app.leaving = true,
+            }
+            app.flash = None;
+            app.paste("x");
+            assert_eq!(app.input, line, "overlay {open}");
+            assert!(app.flash.is_some(), "overlay {open}");
+            (app.help, app.digest, app.left_off, app.leaving) = (false, None, None, false);
+        }
+        app.paste("x");
+        assert_ne!(app.input, line, "and with none open it goes in");
+    }
+
+    #[test]
+    fn the_footer_grows_with_the_lines_and_keeps_the_cursor_s_in_view() {
+        let mut app = app_after(1, 3, 0, Lang::En);
+        let lead = app.world.agents[app.world.projects[0].leader].name.clone();
+        let to = format!(" › to {lead}: ");
+        key(&mut app, KeyCode::Char('/'));
+        write(&mut app, "one");
+        with(&mut app, KeyCode::Enter, KeyModifiers::SHIFT);
+        write(&mut app, "two");
+        let s = render(&app, 140, 40);
+        let rows: Vec<&str> = s.lines().collect();
+        let (first, last) = (rows[38], rows[39]);
+        assert!(first.starts_with(&format!("{to}one")), "{first}");
+        let indent = " ".repeat(to.chars().count());
+        assert!(last.starts_with(&format!("{indent}two")), "{last}");
+        assert!(last.contains("enter send · \\ enter new line · esc cancel"));
+        assert!(!first.contains("enter send"), "the hint ends the last row");
+        assert!(!s.contains("/2"), "all lines fit: no count");
+        app.shift_enter = true;
+        assert!(render(&app, 140, 40).contains("enter send · ⇧enter new line · esc cancel"));
+
+        // Twelve lines: eight rows on a tall screen, four on a short one.
+        for n in 3..=12 {
+            with(&mut app, KeyCode::Enter, KeyModifiers::SHIFT);
+            write(&mut app, &format!("line{n}"));
+        }
+        let s = render(&app, 140, 40);
+        let rows: Vec<&str> = s.lines().collect();
+        assert!(rows[32].starts_with(&format!("{to}line5")), "{}", rows[32]);
+        assert!(
+            rows[39].starts_with(&format!("{indent}line12")),
+            "{}",
+            rows[39]
+        );
+        assert!(rows[39].contains("12/12"), "{}", rows[39]);
+        assert!(!s.contains("line4"), "out of view above");
+        let short = render(&app, 140, 12);
+        let rows: Vec<&str> = short.lines().collect();
+        assert!(rows[8].starts_with(&format!("{to}line9")), "{}", rows[8]);
+        assert!(!short.contains("line8"));
+        // The cursor goes to the top: the rows follow it.
+        for _ in 0..11 {
+            key(&mut app, KeyCode::Up);
+        }
+        let s = render(&app, 140, 40);
+        let rows: Vec<&str> = s.lines().collect();
+        assert!(rows[32].starts_with(&format!("{to}one")), "{}", rows[32]);
+        assert!(
+            rows[39].starts_with(&format!("{indent}line8")),
+            "{}",
+            rows[39]
+        );
+        assert!(rows[39].contains("1/12"), "{}", rows[39]);
+        assert!(!s.contains("line9"));
+        // Not writing: one row again.
+        key(&mut app, KeyCode::Esc);
+        let s = render(&app, 140, 40);
+        assert!(!s.lines().nth(38).unwrap().contains("line"));
+    }
+
+    #[test]
+    fn the_cursor_is_drawn_on_its_own_line_at_its_own_character() {
+        let mut app = app_after(1, 3, 0, Lang::En);
+        key(&mut app, KeyCode::Char('/'));
+        app.input = "one\ntwo\nthree".into();
+        app.after = 4; // under the h of three
+        let buf = buffer(&app, 140, 40);
+        let reversed: Vec<(u16, u16, String)> = (37..40)
+            .flat_map(|y| (0..140).map(move |x| (x, y)))
+            .filter(|&(x, y)| buf[(x, y)].modifier.contains(Modifier::REVERSED))
+            .map(|(x, y)| (x, y, buf[(x, y)].symbol().to_string()))
+            .collect();
+        assert_eq!(reversed.len(), 1, "{reversed:?}");
+        assert_eq!((reversed[0].1, reversed[0].2.as_str()), (39, "h"));
+        app.after = 8; // under the w of two
+        let buf = buffer(&app, 140, 40);
+        let under: Vec<(u16, String)> = (37..40)
+            .flat_map(|y| (0..140).map(move |x| (x, y)))
+            .filter(|&(x, y)| buf[(x, y)].modifier.contains(Modifier::REVERSED))
+            .map(|(x, y)| (y, buf[(x, y)].symbol().to_string()))
+            .collect();
+        assert_eq!(under, vec![(38, "w".to_string())]);
     }
 
     #[test]
@@ -3568,6 +3811,28 @@ mod tests {
     }
 
     #[test]
+    fn the_help_names_the_new_line_key_this_terminal_has_after_the_writing_keys() {
+        for lang in [Lang::En, Lang::Tr] {
+            let t = lang.text();
+            for shift_enter in [true, false] {
+                let keys = overlay::help_keys(lang, shift_enter);
+                assert_eq!(keys[12].0, "^w ^u ^k ^y", "{lang:?}");
+                let want = t.help_newline[usize::from(!shift_enter)];
+                assert_eq!(keys[13], want, "{lang:?} {shift_enter}");
+                assert_eq!(keys.len(), t.help_keys.len() + 1);
+            }
+        }
+        let mut app = app_after(1, 4, 0, Lang::En);
+        app.help = true;
+        let plain = render(&app, 140, 40);
+        assert!(plain.contains("here ⇧enter is enter"), "{plain}");
+        app.shift_enter = true;
+        let kitty = render(&app, 140, 40);
+        assert!(kitty.contains("a new line; ↑ ↓ between lines"), "{kitty}");
+        assert!(!kitty.contains("here ⇧enter is enter"));
+    }
+
+    #[test]
     fn the_help_lists_the_vim_keys_in_two_columns_when_wide() {
         let mut app = app_after(1, 4, 50, Lang::En);
         app.help = true;
@@ -3577,7 +3842,7 @@ mod tests {
             "{wide}"
         );
         // Two columns: a line of the first half carries one of the second.
-        let keys = &Lang::En.text().help_keys;
+        let keys = overlay::help_keys(Lang::En, false);
         let row = keys.iter().position(|k| k.0 == "gg  G").unwrap();
         let other = keys[row + keys.len().div_ceil(2)].1;
         let line = wide.lines().find(|l| l.contains("gg  G")).unwrap();
@@ -3647,7 +3912,9 @@ mod tests {
         let row = |y: u16| -> String { (0..140).map(|x| buf[(x, y)].symbol()).collect() };
         let top = (0..40).find(|&y| row(y).contains(t.help_title)).unwrap();
         // Two columns of keys, a blank line, the legend, a blank line, close.
-        let lines = u16::try_from(t.help_keys.len().div_ceil(2) + t.help_legend.len() + 3).unwrap();
+        let keys = overlay::help_keys(Lang::En, false).len();
+        assert_eq!(keys, t.help_keys.len() + 1, "and the new-line line");
+        let lines = u16::try_from(keys.div_ceil(2) + t.help_legend.len() + 3).unwrap();
         let x = (140 - 118) / 2;
         assert_eq!(buf[(x, top)].symbol(), "┌");
         assert!(row(top + lines).contains(t.close), "{}", row(top + lines));

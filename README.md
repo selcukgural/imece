@@ -90,6 +90,15 @@ your shell's title comes back when imece ends.
   waits until the cursor is at the end again. On macOS the alt keys need
   the terminal to send Option as Meta (iTerm2: Profiles → Keys → Left
   Option key: Esc+; Terminal.app: Use Option as Meta key).
+- A message can run over lines: shift-enter starts a new one, as in
+  Claude Code, where the terminal tells it from enter (it speaks the
+  kitty keyboard protocol: kitty, Ghostty, WezTerm with
+  `enable_kitty_keyboard`, foot, Alacritty, iTerm2); everywhere `\`
+  then enter does, and alt-enter where Option is Meta. `?` and the
+  footer say which works in your terminal. The footer grows with the
+  lines (up to eight); ctrl-a / ctrl-e and ctrl-u / ctrl-k keep to the
+  line at hand, `↑` `↓` go between lines. A paste goes into the line
+  whole, its line ends kept, and is never sent by them.
 - `!cargo test` runs a command of your own in your own shell (`$SHELL`),
   in the checkout, as `:!` does in vim: the screen steps aside, the
   command has the terminal to itself (so `git log`, `less` and `vim`
@@ -242,6 +251,7 @@ not yet seen.
 | `!cmd` | run `cmd` in your own shell; the screen steps aside until a key |
 | `tab` `⇧tab` `↑` `↓` | while writing: complete an agent's name (`@`), a command (`:`, `/`) |
 | `^a` `^e` `⌥b` `⌥f` `^w` `^u` `^k` `^y` | while writing: readline's keys, to the start / end, a word back / on, cut a word / before / after the cursor, put the cut back |
+| `⇧enter` (or `\` `enter`, `⌥enter`) | while writing: a new line; `↑` `↓` go between lines |
 | `1` `2` `3` | salon · board · code map |
 | `↑` `↓` / `j` `k` | select |
 | `←` `→` / `h` `l` | fold / unfold a project (`enter` on its header too) |
