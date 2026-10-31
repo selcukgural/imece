@@ -27,3 +27,20 @@ moving off the end hides it, `tab` there does nothing, coming back
 offers it again. Drawn as one row above the footer
 (`completions` in ui/mod.rs: window that keeps the chosen item in
 view), footer hint `pick_cancel`. No path completion after `!`.
+
+A list that never comes (2026-10-31, #53): what is fixed in code is
+the wire format, so a vendor that renames `slash_commands` or stops
+sending `available_commands_update` would leave only imece's `/clear`
+with nothing said. `imece_agent::Event::CommandsMissing` tells a
+missing list from an empty one, once a session: Claude on an `init`
+whose `slash_commands` is not a list at all (absent, `null`, a
+string; `[]` is a list and stays quiet), Gemini when a turn ends (or is
+refused) and no `available_commands_update` came yet (a clean Gemini
+sends it as the session starts; a loaded one with its history). Codex
+lists none by design and says nothing. The screen puts a line in the
+agent's trace and `CommandsMissing` in the journal ("{agent}'s session
+listed no commands of its own; {vendor}'s format may have changed, so
+only /clear completes", both languages; the trace is the raw stream
+and stays English, so the worded line is the journal's). The demo
+shows it on the first Gemini session of a run, whose list is then
+only `/clear`.
