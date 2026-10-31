@@ -3,6 +3,7 @@
 //! (`sim`).
 
 mod app;
+mod awake;
 mod clip;
 mod complete;
 mod edit;
@@ -32,7 +33,7 @@ use crate::i18n::Lang;
 use crate::model::{Vendor, parse_dollars};
 
 const USAGE: &str = "usage: imece [--repo DIR] [--agents N] [--helpers N] [--lead VENDOR]
-             [--model [V:]NAME]... [--tier [V:]T=NAME]... [--budget USD] [--fresh]
+             [--model [V:]NAME]... [--tier [V:]T=NAME]... [--budget USD] [--fresh] [--awake]
              [--confine standard|strict|open] [--lang en|tr] [--theme NAME|FILE]
        imece --demo [--projects N] [--agents N] [--researchers N] [--seed N]
 
@@ -63,6 +64,9 @@ one at hand; ? lists every key and command.
                     new one, told where it left off, and what the vendors
                     kept of the old ones is removed (:forget @NAME does it
                     for one agent while imece runs)
+  --awake           keep the machine from sleeping while an agent is
+                    mid-turn (caffeinate on macOS, systemd-inhibit on
+                    Linux); :awake turns it on or off while imece runs
   --confine LEVEL   how much of its vendor each agent gets: standard (the
                     default) gives workers and helpers the vendor's full
                     coding toolset (read, write, shell, web search and
@@ -101,6 +105,7 @@ struct Args {
     theme: Option<String>,
     demo: bool,
     fresh: bool,
+    awake: bool,
     repo: PathBuf,
     lead: Option<Lead>,
     /// Stand-ins for the vendors' own models, by vendor (none: the
@@ -196,6 +201,7 @@ fn parse(
         },
         demo: false,
         fresh: false,
+        awake: false,
         repo: PathBuf::from("."),
         lead: None,
         tiers: Vec::new(),
@@ -217,6 +223,10 @@ fn parse(
         }
         if flag == "--fresh" {
             args.fresh = true;
+            continue;
+        }
+        if flag == "--awake" {
+            args.awake = true;
             continue;
         }
         if flag == "--live" {
@@ -449,6 +459,7 @@ fn main() -> std::io::Result<()> {
     }
     app.shift_enter = said.keys;
     app.primary = saved.lead;
+    app.awake.on = args.awake;
     let result = run(&mut terminal, &mut app, &state);
     // The last word before the sessions end: what every agent had in hand,
     // and when this run ended.
@@ -635,6 +646,13 @@ mod tests {
         assert_eq!(a.budget, None, "the pot is kept between runs");
         assert!(!a.fresh, "sessions are remembered unless --fresh says");
         assert!(args(&["--fresh"], &[]).unwrap().fresh);
+        assert!(args(&["--awake"], &[]).unwrap().awake);
+        assert!(!args(&[], &[]).unwrap().awake);
+        assert!(
+            args(&["--demo", "--awake"], &[]).unwrap().awake,
+            "the demo too"
+        );
+        assert!(USAGE.contains("[--awake]") && USAGE.contains("  --awake  "));
         assert_eq!(
             args(&["--budget", "2.50"], &[]).unwrap().budget,
             Some(25_000),

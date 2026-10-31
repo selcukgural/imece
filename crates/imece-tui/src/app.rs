@@ -354,6 +354,9 @@ pub struct App {
     last_key_tick: u64,
     /// When the terminal lost the focus, and the tick then.
     blurred: Option<(Instant, u64)>,
+    /// The hold on the machine's sleep while an agent is mid-turn
+    /// (`--awake`, `:awake`).
+    pub awake: crate::awake::Awake,
 }
 
 impl App {
@@ -430,6 +433,7 @@ impl App {
             last_key: Instant::now(),
             last_key_tick: 0,
             blurred: None,
+            awake: crate::awake::Awake::new(false, crate::awake::command(std::process::id())),
         }
     }
 
@@ -440,6 +444,7 @@ impl App {
         }
         self.world.watch_spending();
         self.watch_turns();
+        self.keep_awake();
         self.settle();
         self.follow_thread();
         self.persist();
@@ -1674,6 +1679,7 @@ impl App {
                 Some(fill(t.value_waiting, &[&open]))
             }
             "needs" => Some(on_off(self.needs_only)),
+            "awake" => Some(on_off(self.awake.on)),
             "pause" => Some(on_off(self.paused)),
             "faster" | "slower" => Some(format!("×{}", self.speed)),
             "export" if self.thread.is_some() => Some(t.value_thread.to_string()),
@@ -1887,6 +1893,16 @@ impl App {
             "pause" => self.pause(),
             "faster" => self.faster(),
             "slower" => self.slower(),
+            "awake" => {
+                self.awake.on = !self.awake.on;
+                let t = self.lang.text();
+                self.flash(if self.awake.on {
+                    t.awake_on
+                } else {
+                    t.awake_off
+                });
+                self.keep_awake();
+            }
             _ => self.flash(fill(t.no_command, &[name])),
         }
     }
@@ -2057,6 +2073,17 @@ impl App {
             return;
         }
         self.digest = Digest::since(&self.world, tick);
+    }
+
+    /// The machine is held awake while an agent is mid-turn and the person
+    /// asked for it (`--awake`, `:awake`), and let go otherwise; a hold
+    /// that fails is said once.
+    fn keep_awake(&mut self) {
+        let busy = !self.world.mid_turn().is_empty();
+        if let Err(why) = self.awake.hold(busy) {
+            let t = self.lang.text();
+            self.flash(fill(t.awake_failed, &[&why]));
+        }
     }
 
     /// Where the person is now.
@@ -4433,6 +4460,43 @@ mod tests {
         assert!(!th.follow.get());
         assert_eq!(flashed(&app).as_deref(), Some(app.lang.text().no_marks));
         assert_eq!(app.pane, Pane::Salon, "the journal is not where it went");
+    }
+
+    #[test]
+    fn the_machine_is_held_awake_while_an_agent_is_mid_turn_when_asked() {
+        let mut app = App::new(1, 1, 0, 1, Lang::En);
+        let t = app.lang.text();
+        let sleeper = || Some(vec!["sleep".to_string(), "30".to_string()]);
+        app.awake = crate::awake::Awake::new(false, sleeper());
+        let tick = app.world.tick;
+        for a in &mut app.world.agents {
+            a.set_status(Status::Idle, tick);
+        }
+        assert_eq!(app.command_note("awake"), "(off)");
+        app.world.agents[0].set_status(Status::Working, tick);
+        app.keep_awake();
+        assert!(!app.awake.holding(), "not asked for");
+        app.command("awake");
+        assert_eq!(flashed(&app).as_deref(), Some(t.awake_on));
+        assert_eq!(app.command_note("awake"), "(on)");
+        assert!(app.awake.holding(), "at once, mid-turn");
+        app.world.agents[0].set_status(Status::Idle, tick);
+        app.keep_awake();
+        assert!(!app.awake.holding(), "nothing mid-turn");
+        app.world.agents[0].set_status(Status::Working, tick);
+        app.keep_awake();
+        assert!(app.awake.holding());
+        app.command("awake");
+        assert_eq!(flashed(&app).as_deref(), Some(t.awake_off));
+        assert!(!app.awake.holding(), "turned off: let go at once");
+        // One that can not start says so.
+        app.awake = crate::awake::Awake::new(true, Some(vec!["/nonexistent/caffeinate".into()]));
+        app.keep_awake();
+        let said = flashed(&app).unwrap();
+        assert!(
+            said.starts_with("could not keep the machine awake: /nonexistent/caffeinate: "),
+            "{said}"
+        );
     }
 
     #[test]
