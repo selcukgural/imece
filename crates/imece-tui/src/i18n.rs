@@ -104,6 +104,9 @@ pub struct Text {
     pub file: &'static str,
     pub apply: &'static str,
     pub reject: &'static str,
+    /// `>` in a change, and what it says where there is no hunk to quote.
+    pub quote: &'static str,
+    pub no_hunk: &'static str,
     pub views: [&'static str; 3],
     pub typing_to: &'static str,
     pub typing_command: &'static str,
@@ -389,7 +392,7 @@ pub struct Text {
     pub waiting_yes: &'static str,
     // Overlays
     pub help_title: &'static str,
-    pub help_keys: [(&'static str, &'static str); 47],
+    pub help_keys: [(&'static str, &'static str); 48],
     /// The help's line for a new line in the writing, put after the
     /// writing keys: where the terminal tells shift-enter apart, and
     /// where it does not.
@@ -447,6 +450,8 @@ pub const EN: Text = Text {
     file: "file",
     apply: "apply to the checkout",
     reject: "reject",
+    quote: "quote to it",
+    no_hunk: "no hunk here to quote",
     views: ["salon", "board", "code"],
     typing_to: " › to {}: ",
     typing_command: " › command: ",
@@ -779,6 +784,10 @@ pub const EN: Text = Text {
             "[  ]",
             "in a change: previous / next file · in a conversation: turn",
         ),
+        (
+            ">",
+            "in a change: the hunk at the top, quoted in a message to its worker",
+        ),
         ("space", ":pause / resume"),
         ("+  -", ":faster / :slower simulation"),
         ("L  :lang", "Türkçe / English; :lang en|tr"),
@@ -856,6 +865,8 @@ pub const TR: Text = Text {
     file: "dosya",
     apply: "checkout'a uygula",
     reject: "reddet",
+    quote: "ona alıntıla",
+    no_hunk: "burada alıntılanacak bir parça yok",
     views: ["salon", "pano", "kod"],
     typing_to: " › {} için: ",
     typing_command: " › komut: ",
@@ -1189,6 +1200,10 @@ pub const TR: Text = Text {
         (
             "[  ]",
             "değişiklikte: önceki / sonraki dosya · konuşmada: söz sırası",
+        ),
+        (
+            ">",
+            "değişiklikte: üstteki parça, worker'ına bir mesajda alıntı",
         ),
         ("space", ":pause durdur / devam"),
         ("+  -", "simülasyon :faster / :slower"),

@@ -146,6 +146,7 @@ record in the same PR.
 - 44 `turns`: `[ ]` in a conversation go turn to turn (the lines one side says before the other answers), `ui::turn_starts`, `app::jump` shared with the diff's file jump; bookmarks are record 46.
 - 45 `local-link`: the newest loopback URL a worker or helper wrote shows on its row as an OSC 8 link (`model::local_url`, strict; `ui::hyperlink`, each cell opens and closes its own link, `ForcedWidth(1)`); gone with the session.
 - 46 `bookmarks`: `m`/`:mark` marks the line at hand (conversation, else journal), `'` goes to the next; `World.marks`, `journal.marked` + partial index (schema 8), a mark is never folded, tidied or left out of a load.
+- 47 `quote-hunk`: `>` in a change opens `@worker ` with the hunk at the top quoted in a `diff` fence (`ui::quote`, its file's names, 40 lines, cleaned); the `!cmd` output half of C15 is C15b.
 
 `docs/neighbours.md`: voff, what was taken from it and the rules that come
 from what it lacks. Read it before building a part it names.
