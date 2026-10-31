@@ -880,11 +880,18 @@ impl Sim {
         }
         let mark = sha(&mut self.rng);
         w.change_applied(id, mark);
+        let stand = &mut w.agents[id].stand;
+        if hunks.is_empty() {
+            // The worktree is marked at the change: nothing written since.
+            (stand.added, stand.removed) = (0, 0);
+            return;
+        }
         // Some hunks only: the rest waits as a change again, as live
         // reads it from the worktree; it is what the worktree holds.
         let rest: Vec<usize> = (change.patch.lines().enumerate())
-            .filter(|(i, l)| l.starts_with("@@") && !hunks.is_empty() && !hunks.contains(i))
+            .filter(|(_, l)| l.starts_with("@@"))
             .map(|(i, _)| i)
+            .filter(|i| !hunks.contains(i))
             .collect();
         let patch = imece_agent::worktree::subset(&change.patch, &rest);
         let files = files_of(&patch);
