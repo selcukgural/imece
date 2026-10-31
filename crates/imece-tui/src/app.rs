@@ -292,6 +292,8 @@ pub struct App {
     pub card: Option<CardId>,
     /// The places left, oldest first, for `^o`.
     pub been: Vec<Place>,
+    /// The last key was `^o`: the place it left is not one to go back to.
+    went_back: bool,
     /// The side panel's width, in percent.
     pub side: u16,
     /// Text the person asked to copy; the main loop hands it to the
@@ -394,6 +396,7 @@ impl App {
             thread: None,
             card: None,
             been: Vec::new(),
+            went_back: false,
             side: SIDE_DEFAULT,
             copy: None,
             shell: None,
@@ -637,7 +640,7 @@ impl App {
         self.key(k);
         // A key that took the person elsewhere leaves the place behind;
         // `^o` going back does not.
-        let back = k.modifiers.contains(KeyModifiers::CONTROL) && k.code == KeyCode::Char('o');
+        let back = std::mem::take(&mut self.went_back);
         if !back && self.place() != was {
             self.been.push(was);
             if self.been.len() > PLACES {
@@ -2041,6 +2044,7 @@ impl App {
     /// any more (a gone agent's focus, a change applied since) is passed
     /// over, and with none left it says so.
     fn go_back(&mut self) {
+        self.went_back = true;
         if self.thread.take().is_some() {
             return;
         }
@@ -4450,6 +4454,7 @@ mod tests {
         let lead = app.world.projects[0].leader;
         let cards = app.world.cards.len();
         app.been = vec![
+            at(Zoom::None, Some(0)),
             at(Zoom::Focus(lead), None),
             at(Zoom::Diff(worker), None),
             here,
@@ -4464,6 +4469,8 @@ mod tests {
         assert_eq!(app.place(), at(Zoom::Diff(worker), None));
         app.on_key(ctrl('o'));
         assert_eq!(app.place(), at(Zoom::Focus(lead), None));
+        app.on_key(ctrl('o'));
+        assert_eq!(app.place(), at(Zoom::None, Some(0)), "a card that is there");
         assert!(app.been.is_empty());
     }
 
