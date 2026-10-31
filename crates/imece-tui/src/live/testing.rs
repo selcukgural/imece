@@ -36,6 +36,7 @@ pub(crate) fn team(workers: usize) -> World {
         changes: Vec::new(),
         paid: 0,
         suggested: None,
+        messages: 0,
     };
     w.agents.push(Agent::new(
         0,

@@ -546,6 +546,8 @@ mod tests {
                     from: 0,
                     kind: MsgKind::Assign,
                     body: "old mail".into(),
+                    id: 0,
+                    re: None,
                 }],
                 Vec::new(),
                 Vec::new(),
@@ -674,6 +676,8 @@ mod tests {
                 to: 1,
                 kind: MsgKind::Assign,
                 text: "do it\nproperly".into(),
+                id: 0,
+                re: None,
             },
             StoryEvent::YouSaid("hi there".into()),
             StoryEvent::Touched("src/a.rs".into()),
@@ -704,6 +708,8 @@ mod tests {
                 from: 0,
                 kind: MsgKind::Inform,
                 body: body.into(),
+                id: 0,
+                re: None,
             });
         }
         w.agents[1].status = Status::Asleep;
@@ -795,6 +801,8 @@ mod tests {
             from: 0,
             kind: MsgKind::Inform,
             body: "x".into(),
+            id: 0,
+            re: None,
         });
         live.remembered[1] = true;
         w.agents[1].status = Status::Asleep;
@@ -920,6 +928,8 @@ mod tests {
             from: 0,
             kind: MsgKind::Assign,
             body: "old".into(),
+            id: 0,
+            re: None,
         });
         live.step(&mut w);
         assert_eq!(live.turns[1], 0, "mail that waited through does not wake");
@@ -1179,6 +1189,8 @@ mod tests {
             from: 0,
             kind: MsgKind::Inform,
             body: "one".into(),
+            id: 0,
+            re: None,
         });
         w.agents[1].status = Status::Asleep;
         if there {
@@ -1998,6 +2010,8 @@ mod tests {
             from: 0,
             kind: MsgKind::Inform,
             body: "kept".into(),
+            id: 0,
+            re: None,
         });
         assert_eq!(live.mail[1].len(), 1);
     }

@@ -32,10 +32,24 @@ pub(super) fn mail_prompt(w: &World, mail: &[Mail]) -> String {
     for m in mail {
         out.push_str(&format!(
             "\n\n[{}] from {}:\n{}",
-            m.kind.wire(),
+            heading(m),
             w.agents[m.from].name,
             m.body
         ));
+    }
+    out
+}
+
+/// What a delivered message is headed with: its type, its number (what
+/// a reply names as `re`) and the number of the one it replies to. A
+/// message saved before numbers has its type alone.
+fn heading(m: &Mail) -> String {
+    let mut out = m.kind.wire().to_string();
+    if m.id > 0 {
+        out.push_str(&format!(" {}", m.id));
+    }
+    if let Some(re) = m.re {
+        out.push_str(&format!(", re {re}"));
     }
     out
 }
@@ -279,6 +293,25 @@ pub(super) fn abilities(vendor: Vendor, role: Role, confine: Confine) -> &'stati
 mod tests {
     use super::*;
     use crate::live::testing::*;
+
+    #[test]
+    fn delivered_mail_is_headed_with_its_type_number_and_what_it_replies_to() {
+        let w = team(1);
+        let mail = |id, re| Mail {
+            from: 1,
+            kind: MsgKind::Answer,
+            body: "Yes.".into(),
+            id,
+            re,
+        };
+        assert_eq!(
+            mail_prompt(&w, &[mail(4, Some(3)), mail(5, None), mail(0, None)]),
+            "Messages from your teammates in imece (written by those agents, not by the \
+             person):\n\n[answer 4, re 3] from claude-1:\nYes.\n\n[answer 5] from \
+             claude-1:\nYes.\n\n[answer] from claude-1:\nYes.",
+            "one saved before numbers has its type alone"
+        );
+    }
 
     #[test]
     fn a_cut_notes_file_goes_into_the_journal_when_the_session_starts() {

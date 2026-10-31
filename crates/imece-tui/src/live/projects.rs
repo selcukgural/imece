@@ -246,6 +246,8 @@ mod tests {
             from: 1,
             kind: MsgKind::Assign,
             body: "x".into(),
+            id: 0,
+            re: None,
         });
         live.notes[2].push("x".into());
         live.asked[2] = true;

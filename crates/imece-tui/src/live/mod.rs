@@ -57,6 +57,7 @@ mod suggest;
 pub(crate) mod testing;
 mod tools;
 
+pub(crate) use self::bus::numbers;
 pub(crate) use self::prompts::MAX_NOTES_KIB;
 pub use self::sessions::apply;
 pub(crate) use self::suggest::{SUGGEST_CAP, SUGGEST_DAY_CALLS, SUGGEST_DAY_COST};
@@ -582,6 +583,7 @@ pub fn world(o: Options, present: &[(Vendor, bool)]) -> Result<(World, Live), St
                 changes: Vec::new(),
                 paid: 0,
                 suggested: None,
+                messages: 0,
             },
             None,
         ),

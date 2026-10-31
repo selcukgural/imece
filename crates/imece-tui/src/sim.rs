@@ -10,7 +10,7 @@ use std::collections::{HashMap, VecDeque};
 use std::path::Path;
 
 use crate::i18n::Lang;
-use crate::live::{Refusal, SUGGEST_CAP, SUGGEST_DAY_CALLS, SUGGEST_DAY_COST};
+use crate::live::{Refusal, SUGGEST_CAP, SUGGEST_DAY_CALLS, SUGGEST_DAY_COST, numbers};
 use crate::model::*;
 use crate::rng::Rng;
 
@@ -513,6 +513,12 @@ struct Mind {
     runs: Vec<Ran>,
     /// It compacted its session and took no turn since.
     compacted: bool,
+    /// The question it sent a teammate, until the answer, which replies
+    /// to it.
+    question: Option<MsgId>,
+    /// The assign that gave it its card or task, which its done replies
+    /// to.
+    assigned: Option<MsgId>,
 }
 
 /// An answer to the person, due at a tick.
@@ -627,6 +633,7 @@ pub fn world(
         changes: Vec::new(),
         paid: 0,
         suggested: None,
+        messages: 0,
         plans: Vec::new(),
     };
     for (p, &(name, repo, _)) in PROJECTS.iter().take(projects).enumerate() {
@@ -1550,13 +1557,15 @@ impl Sim {
         match how {
             Taken::Assigned => {
                 let leader = w.projects[project].leader;
-                self.send(
+                let n = self.send(
                     w,
                     leader,
                     agent,
                     MsgKind::Assign,
                     &format!("#{} {title}", card + 1),
+                    None,
                 );
+                self.mind(agent).assigned = Some(n);
             }
             Taken::Claimed => {
                 w.note(Event::Claimed { agent, card });
@@ -1567,14 +1576,26 @@ impl Sim {
         self.start(w, agent);
     }
 
-    /// Agent `from` sends `to` a typed message over the bus.
-    fn send(&mut self, w: &mut World, from: AgentId, to: AgentId, kind: MsgKind, text: &str) {
+    /// Agent `from` sends `to` a typed message over the bus, a reply to
+    /// message `re` when it is one, as live's `send` does; its number.
+    fn send(
+        &mut self,
+        w: &mut World,
+        from: AgentId,
+        to: AgentId,
+        kind: MsgKind,
+        text: &str,
+        re: Option<MsgId>,
+    ) -> MsgId {
         let t = w.tick;
+        let id = w.number();
         let story = StoryEvent::Sent {
             from,
             to,
             kind,
             text: text.into(),
+            id,
+            re,
         };
         let (mine, theirs) = (w.agents[from].card, w.agents[to].card);
         w.story(mine, story.clone());
@@ -1586,10 +1607,16 @@ impl Sim {
             to,
             kind,
             text: text.into(),
+            id,
+            re,
         });
         let (name, sender) = (w.agents[to].name.clone(), w.agents[from].name.clone());
-        w.agents[from].trace(t, format!("send to={name} type={}", kind.wire()));
-        w.agents[to].trace(t, format!("mail from={sender} type={}", kind.wire()));
+        let numbers = numbers(id, re);
+        w.agents[from].trace(t, format!("send to={name} type={}{numbers}", kind.wire()));
+        w.agents[to].trace(
+            t,
+            format!("mail from={sender} type={}{numbers}", kind.wire()),
+        );
         for (a, other) in [(from, to), (to, from)] {
             w.agents[a].talk = Some(Talk {
                 with: Party::Agent(other),
@@ -1597,6 +1624,7 @@ impl Sim {
                 until: t + 8,
             });
         }
+        id
     }
 
     /// Agent `from` sends the person a message; an `ask` waits in their
@@ -1634,7 +1662,8 @@ impl Sim {
             Status::Working => self.work(w, id),
             Status::Asking { to, until } if t >= until => {
                 let answer = *self.rng.pick(self.content.answers);
-                self.send(w, to, id, MsgKind::Answer, answer);
+                let re = self.mind(id).question.take();
+                self.send(w, to, id, MsgKind::Answer, answer, re);
                 w.agents[id].set_status(Status::Working, t);
             }
             Status::Idle
@@ -1697,7 +1726,7 @@ impl Sim {
             12..15 => {
                 let d = *self.rng.pick(self.content.decisions);
                 let leader = w.projects[w.agents[id].project].leader;
-                self.send(w, id, leader, MsgKind::Progress, d);
+                self.send(w, id, leader, MsgKind::Progress, d, None);
             }
             15..16 if w.helpers_of(id).next().is_none() => {
                 self.helper_for(w, id, card);
@@ -1831,7 +1860,8 @@ impl Sim {
         w.agents.push(a);
         self.hired(w, id, helper);
         let task = format!("{}: {}", w.cards[card].title, self.content.tests);
-        self.send(w, id, helper, MsgKind::Assign, &task);
+        let n = self.send(w, id, helper, MsgKind::Assign, &task, None);
+        self.mind(helper).assigned = Some(n);
         self.start(w, helper);
         let until = t + self.rng.range(10, 25);
         self.mind(helper).until = until;
@@ -1848,7 +1878,8 @@ impl Sim {
             return;
         }
         let worker = w.agents[id].parent.expect("a helper has a worker");
-        self.send(w, id, worker, MsgKind::Done, self.content.helper_done);
+        let re = self.mind(id).assigned.take();
+        self.send(w, id, worker, MsgKind::Done, self.content.helper_done, re);
         w.leave(id);
         w.note(Event::Left { agent: id });
     }
@@ -1905,7 +1936,8 @@ impl Sim {
         };
         let title = w.cards[card].title.clone();
         let leader = w.projects[w.agents[id].project].leader;
-        self.send(w, id, leader, MsgKind::Done, &title);
+        let re = self.mind(id).assigned.take();
+        self.send(w, id, leader, MsgKind::Done, &title, re);
         let (files, patch) = self.patch(&w.cards[card].symbols);
         let runs = std::mem::take(&mut self.mind(id).runs);
         let change = Change {
@@ -1991,7 +2023,8 @@ impl Sim {
         let to = *self.rng.pick(&others);
         let q = *self.rng.pick(self.content.questions);
         let until = t + self.rng.range(3, 8);
-        self.send(w, id, to, MsgKind::Ask, q);
+        let n = self.send(w, id, to, MsgKind::Ask, q, None);
+        self.mind(id).question = Some(n);
         w.agents[id].set_status(Status::Asking { to, until }, t);
     }
 
@@ -2498,7 +2531,7 @@ mod tests {
         let n = w.journal.len();
         assert!(matches!(
             &w.journal[n - 2].event,
-            Event::Sent { from, to, kind: MsgKind::Done, text } if *from == worker && *to == lead && *text == title
+            Event::Sent { from, to, kind: MsgKind::Done, text, .. } if *from == worker && *to == lead && *text == title
         ));
         assert!(matches!(
             w.journal[n - 1].event,
@@ -3182,7 +3215,10 @@ diff --git a/b.rs b/b.rs
         let (mut w, mut s, worker, card) = one_at_work();
         let name = w.agents[worker].name.clone();
         let title = w.cards[card].title.clone();
+        let before = w.messages;
         let h = s.helper_for(&mut w, worker, card);
+        let assign = before + 1;
+        assert_eq!(w.messages, assign, "its task is the one message");
         let a = &w.agents[h];
         assert_eq!(a.name, format!("{name}.1"));
         assert_eq!(
@@ -3200,7 +3236,9 @@ diff --git a/b.rs b/b.rs
                 from: worker,
                 to: h,
                 kind: MsgKind::Assign,
-                text: format!("{title}: tests")
+                text: format!("{title}: tests"),
+                id: assign,
+                re: None
             }));
         let until = s.mind(h).until;
         let t = w.tick;
@@ -3220,9 +3258,13 @@ diff --git a/b.rs b/b.rs
                 from: h,
                 to: worker,
                 kind: MsgKind::Done,
-                text: EN.helper_done.into()
-            }
+                text: EN.helper_done.into(),
+                id: assign + 1,
+                re: Some(assign),
+            },
+            "its done replies to its task"
         );
+        assert_eq!(s.mind(h).assigned, None, "and is through with it");
         assert_eq!(w.journal[n - 1].event, Event::Left { agent: h });
         // A helper that left is still counted: the next is the second.
         let h2 = s.helper_for(&mut w, worker, card);
@@ -4175,6 +4217,8 @@ diff --git a/b.rs b/b.rs
         }
         let (asker, other) = (ws[0], ws[1]);
         s.ask(&mut w, asker);
+        let question = w.messages;
+        assert_eq!(s.mind(asker).question, Some(question));
         let Status::Asking { to, until } = w.agents[asker].status else {
             panic!("{:?}", w.agents[asker].status);
         };
@@ -4199,7 +4243,75 @@ diff --git a/b.rs b/b.rs
         assert_eq!(w.agents[asker].status, Status::Working);
         assert!(matches!(
             &w.journal.last().unwrap().event,
-            Event::Sent { from, to, kind: MsgKind::Answer, text } if *from == other && *to == asker && EN.answers.contains(&text.as_str())
+            Event::Sent { from, to, kind: MsgKind::Answer, text, .. } if *from == other && *to == asker && EN.answers.contains(&text.as_str())
+        ));
+        let Event::Sent { id, re, .. } = w.journal.last().unwrap().event else {
+            unreachable!()
+        };
+        assert_eq!(
+            (id, re),
+            (question + 1, Some(question)),
+            "it answers the ask"
+        );
+        assert_eq!(s.mind(asker).question, None);
+        assert!(
+            w.agents[other]
+                .trace
+                .back()
+                .unwrap()
+                .ends_with(&format!(" type=answer id={id} re={question}"))
+        );
+    }
+
+    #[test]
+    fn a_workers_done_replies_to_the_assign_that_gave_it_its_card() {
+        let (mut w, mut s) = world(1, 1, 0, 3, Lang::En);
+        let worker = workers_of(&w, 0)[0];
+        let lead = w.projects[0].leader;
+        let waiting = |w: &World| {
+            w.cards
+                .iter()
+                .position(|c| c.column == Column::Waiting)
+                .unwrap()
+        };
+        let card = waiting(&w);
+        s.take(&mut w, worker, card, Taken::Assigned);
+        let assign = w.messages;
+        assert_eq!(s.mind(worker).assigned, Some(assign));
+        assert!(matches!(
+            &w.journal.last().unwrap().event,
+            Event::Sent { from, to, kind: MsgKind::Assign, id, re: None, .. }
+                if *from == lead && *to == worker && *id == assign
+        ));
+        s.done(&mut w, worker);
+        let done = w.journal.iter().rev().find_map(|e| match &e.event {
+            Event::Sent {
+                kind: MsgKind::Done,
+                id,
+                re,
+                ..
+            } => Some((*id, *re)),
+            _ => None,
+        });
+        assert_eq!(done, Some((assign + 1, Some(assign))));
+        assert_eq!(s.mind(worker).assigned, None);
+        // A card it claimed came with no message: its done replies to none.
+        w.agents[worker].card = None;
+        let card = s.new_card(&mut w, 0, "x".into());
+        s.take(&mut w, worker, card, Taken::Claimed);
+        s.done(&mut w, worker);
+        assert!(matches!(
+            w.journal
+                .iter()
+                .rev()
+                .find(|e| matches!(e.event, Event::Sent { .. }))
+                .unwrap()
+                .event,
+            Event::Sent {
+                kind: MsgKind::Done,
+                re: None,
+                ..
+            }
         ));
     }
 

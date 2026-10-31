@@ -46,7 +46,10 @@ use crate::model::*;
 /// 9 (2026-10-31): imece's own paid calls, by day (`paid`).
 /// 10 (2026-11-01): the paths copied into a project's worktrees
 /// (`projects.copies`).
-pub const SCHEMA_VERSION: i64 = 10;
+/// 11 (2026-11-01): messages' numbers on the bus: the last one given
+/// (`meta.messages`), and an unread message's own and the one it replies
+/// to (`mail.number`, `mail.re`).
+pub const SCHEMA_VERSION: i64 = 11;
 /// Trace lines kept per agent, as the world keeps them.
 const TRACE_KEEP: usize = 200;
 /// The file's name under the state directory.
@@ -55,7 +58,13 @@ pub const FILE: &str = "imece.sqlite";
 /// ones a load takes, which stay whatever their age.
 pub const JOURNAL_DAYS: u64 = 90;
 /// Keys of `meta` that are the world's, not the person's settings.
-const WORLD_KEYS: [&str; 4] = ["schema_version", "started_at", "budget", "saved_at"];
+const WORLD_KEYS: [&str; 5] = [
+    "schema_version",
+    "started_at",
+    "budget",
+    "saved_at",
+    "messages",
+];
 
 const SCHEMA: &str = "
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL) WITHOUT ROWID;
@@ -92,7 +101,8 @@ CREATE TABLE IF NOT EXISTS trace (
     PRIMARY KEY (agent, seq)) WITHOUT ROWID;
 CREATE TABLE IF NOT EXISTS mail (
     agent INTEGER NOT NULL, seq INTEGER NOT NULL, sender INTEGER NOT NULL,
-    kind TEXT NOT NULL, body TEXT NOT NULL, PRIMARY KEY (agent, seq)) WITHOUT ROWID;
+    kind TEXT NOT NULL, body TEXT NOT NULL, number INTEGER NOT NULL DEFAULT 0, re INTEGER,
+    PRIMARY KEY (agent, seq)) WITHOUT ROWID;
 CREATE TABLE IF NOT EXISTS notes (
     agent INTEGER NOT NULL, seq INTEGER NOT NULL, text TEXT NOT NULL,
     PRIMARY KEY (agent, seq)) WITHOUT ROWID;
@@ -397,6 +407,12 @@ impl Store {
                 "ALTER TABLE projects ADD COLUMN copies TEXT NOT NULL DEFAULT '[]';",
             )?;
         }
+        if !self.has_column("mail", "number")? {
+            self.conn.execute_batch(
+                "ALTER TABLE mail ADD COLUMN number INTEGER NOT NULL DEFAULT 0;
+                 ALTER TABLE mail ADD COLUMN re INTEGER;",
+            )?;
+        }
         if !self.has_column("journal", "marked")? {
             self.conn.execute_batch(
                 "ALTER TABLE journal ADD COLUMN marked INTEGER NOT NULL DEFAULT 0;",
@@ -506,6 +522,7 @@ impl Store {
             for (key, value) in [
                 ("started_at", w.started_at.to_string()),
                 ("budget", w.budget.to_string()),
+                ("messages", w.messages.to_string()),
             ] {
                 tx.execute(
                     "INSERT OR REPLACE INTO meta (key, value) VALUES (?1, ?2)",
@@ -658,8 +675,9 @@ impl Store {
             tx.execute("DELETE FROM mail WHERE agent = ?1", params![n(id)])?;
             for (seq, m) in k.mail[id].iter().enumerate() {
                 tx.execute(
-                    "INSERT INTO mail (agent, seq, sender, kind, body) VALUES (?1, ?2, ?3, ?4, ?5)",
-                    params![n(id), n(seq), n(m.from), tag(&m.kind), m.body],
+                    "INSERT INTO mail (agent, seq, sender, kind, body, number, re) \
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                    params![n(id), n(seq), n(m.from), tag(&m.kind), m.body, m.id, m.re],
                 )?;
             }
         }
@@ -811,7 +829,7 @@ impl Store {
         let s = &self.saved;
         let mut plan = Plan::default();
         let mut after = Saved::default();
-        let meta = hash(&(w.started_at, w.budget));
+        let meta = hash(&(w.started_at, w.budget, w.messages));
         plan.meta = s.meta != Some(meta);
         after.meta = Some(meta);
         for (p, q) in w.projects.iter().enumerate() {
@@ -973,6 +991,7 @@ impl Store {
             return Ok(None);
         };
         let budget = meta("budget")?.and_then(|v| v.parse().ok()).unwrap_or(0);
+        let messages = meta("messages")?.and_then(|v| v.parse().ok()).unwrap_or(0);
         let saved_at = meta("saved_at")?.and_then(|v| v.parse().ok());
         let mut w = World {
             marks: Default::default(),
@@ -993,6 +1012,7 @@ impl Store {
             changes: Vec::new(),
             paid: 0,
             suggested: None,
+            messages,
         };
         let mut found = Found::default();
         let mut saved = Saved::default();
@@ -1081,8 +1101,9 @@ impl Store {
         }
         let mut traces =
             conn.prepare("SELECT line FROM trace WHERE agent = ?1 ORDER BY seq DESC LIMIT ?2")?;
-        let mut mails =
-            conn.prepare("SELECT sender, kind, body FROM mail WHERE agent = ?1 ORDER BY seq")?;
+        let mut mails = conn.prepare(
+            "SELECT sender, kind, body, number, re FROM mail WHERE agent = ?1 ORDER BY seq",
+        )?;
         let mut texts = [
             conn.prepare("SELECT text FROM notes WHERE agent = ?1 ORDER BY seq")?,
             conn.prepare("SELECT text FROM inflight WHERE agent = ?1 ORDER BY seq")?,
@@ -1099,6 +1120,8 @@ impl Store {
                     from: u(r.get(0)?),
                     kind: untag(&r.get::<_, String>(1)?)?,
                     body: r.get(2)?,
+                    id: r.get(3)?,
+                    re: r.get(4)?,
                 })
             })? {
                 mail.push(m?);
@@ -1307,7 +1330,7 @@ impl Store {
     fn plans(&self) -> Vec<(String, String)> {
         [
             "SELECT line FROM trace WHERE agent = 1 ORDER BY seq DESC LIMIT 200",
-            "SELECT sender, kind, body FROM mail WHERE agent = 1 ORDER BY seq",
+            "SELECT sender, kind, body, number, re FROM mail WHERE agent = 1 ORDER BY seq",
             "SELECT card, tick, data FROM story ORDER BY card, seq",
             "SELECT seq, tick, data, marked FROM journal ORDER BY seq DESC LIMIT 5000",
             "SELECT id, kind, agent, detail, researcher, open, tick, card FROM inbox ORDER BY id",
@@ -1566,6 +1589,8 @@ mod tests {
                                 to: 0,
                                 kind: MsgKind::Progress,
                                 text: "half way".into(),
+                                id: 10,
+                                re: Some(9),
                             },
                         },
                         Story {
@@ -1629,6 +1654,8 @@ mod tests {
                         to: 1,
                         kind: MsgKind::Assign,
                         text: "fix the parser".into(),
+                        id: 11,
+                        re: None,
                     },
                 },
                 Entry {
@@ -1698,6 +1725,7 @@ mod tests {
             changes: Vec::new(),
             paid: 0,
             suggested: None,
+            messages: 12,
         };
         w.agents[1].cost = 4_321;
         w.agents[1].card = Some(0);
@@ -1812,11 +1840,15 @@ mod tests {
                         from: 0,
                         kind: MsgKind::Assign,
                         body: "fix the parser\nin src".into(),
+                        id: 0,
+                        re: None,
                     },
                     Mail {
                         from: 2,
                         kind: MsgKind::Done,
                         body: "tests pass".into(),
+                        id: 12,
+                        re: Some(11),
                     },
                 ],
                 Vec::new(),
@@ -1918,7 +1950,10 @@ mod tests {
     }
 
     fn same(w: &World, back: &World) {
-        assert_eq!((back.started_at, back.budget), (w.started_at, w.budget));
+        assert_eq!(
+            (back.started_at, back.budget, back.messages),
+            (w.started_at, w.budget, w.messages)
+        );
         assert_eq!(
             back.projects
                 .iter()
@@ -2032,6 +2067,7 @@ mod tests {
         type Move = Box<dyn Fn(&mut World, &mut Owned)>;
         let moves: Vec<(&str, Move)> = vec![
             ("budget", Box::new(|w, _| w.budget += 1)),
+            ("messages", Box::new(|w, _| w.messages += 1)),
             ("started_at", Box::new(|w, _| w.started_at += 1)),
             (
                 "project name",
@@ -2180,6 +2216,8 @@ mod tests {
                         from: 1,
                         kind: MsgKind::Ask,
                         body: "which".into(),
+                        id: 0,
+                        re: None,
                     })
                 }),
             ),
@@ -2955,6 +2993,33 @@ mod tests {
     }
 
     #[test]
+    fn a_file_of_schema_10_reads_its_mail_unnumbered_and_numbers_on_from_1() {
+        let d = dir("schema10");
+        std::fs::create_dir_all(&d).unwrap();
+        let path = d.join(FILE);
+        {
+            let mut store = Store::open(&path).unwrap();
+            assert!(store.save(&world(), &kept().kept()).unwrap());
+            // As schema 10 wrote it: no numbers anywhere.
+            store
+                .raw()
+                .execute_batch(
+                    "ALTER TABLE mail DROP COLUMN number;
+                     ALTER TABLE mail DROP COLUMN re;
+                     DELETE FROM meta WHERE key = 'messages';
+                     UPDATE meta SET value = '10' WHERE key = 'schema_version';",
+                )
+                .unwrap();
+        }
+        let mut store = Store::open(&path).unwrap();
+        let back = store.load(100).unwrap().expect("a world");
+        assert_eq!(back.world.messages, 0);
+        let numbers: Vec<_> = back.found.mail[1].iter().map(|m| (m.id, m.re)).collect();
+        assert_eq!(numbers, [(0, None), (0, None)]);
+        assert_eq!(back.found.mail[1][1].body, "tests pass");
+    }
+
+    #[test]
     fn a_file_of_schema_5_gets_the_inbox_card_column() {
         let d = dir("schema5");
         std::fs::create_dir_all(&d).unwrap();
@@ -3116,7 +3181,10 @@ mod tests {
             .raw()
             .query_row("SELECT count(*) FROM meta", [], |r| r.get(0))
             .unwrap();
-        assert_eq!(rows, 4, "schema_version, started_at, budget, saved_at");
+        assert_eq!(
+            rows, 5,
+            "schema_version, started_at, budget, saved_at, messages"
+        );
         // `save` takes the time from the clock (the clock itself, not what
         // the store thinks it is).
         w.budget += 1;

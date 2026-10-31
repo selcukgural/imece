@@ -298,6 +298,10 @@ pub struct Said<'a> {
     pub to: Party,
     pub kind: Option<MsgKind>,
     pub text: &'a str,
+    /// A message's number on the bus (0: none) and the number of the one
+    /// it replies to.
+    pub id: MsgId,
+    pub re: Option<MsgId>,
 }
 
 impl Said<'_> {
@@ -316,6 +320,8 @@ pub fn said(e: &Event) -> Option<Said<'_>> {
             to,
             kind,
             text,
+            id: 0,
+            re: None,
         })
     };
     match e {
@@ -328,7 +334,13 @@ pub fn said(e: &Event) -> Option<Said<'_>> {
             to,
             kind,
             text,
-        } => s(Agent(*from), Agent(*to), Some(*kind), text),
+            id,
+            re,
+        } => Some(Said {
+            id: *id,
+            re: *re,
+            ..s(Agent(*from), Agent(*to), Some(*kind), text)?
+        }),
         _ => None,
     }
 }
@@ -342,6 +354,8 @@ pub fn said_in_story(me: AgentId, e: &StoryEvent) -> Option<Said<'_>> {
             to,
             kind,
             text,
+            id: 0,
+            re: None,
         })
     };
     match e {
@@ -355,7 +369,13 @@ pub fn said_in_story(me: AgentId, e: &StoryEvent) -> Option<Said<'_>> {
             to,
             kind,
             text,
-        } => s(Agent(*from), Agent(*to), Some(*kind), text),
+            id,
+            re,
+        } => Some(Said {
+            id: *id,
+            re: *re,
+            ..s(Agent(*from), Agent(*to), Some(*kind), text)?
+        }),
         _ => None,
     }
 }
@@ -735,6 +755,36 @@ mod tests {
     }
 
     #[test]
+    fn a_message_on_the_bus_is_a_conversation_line_with_its_numbers() {
+        let line = Said {
+            from: Party::Agent(1),
+            to: Party::Agent(0),
+            kind: Some(MsgKind::Answer),
+            text: "Yes.",
+            id: 3,
+            re: Some(2),
+        };
+        let e = Event::Sent {
+            from: 1,
+            to: 0,
+            kind: MsgKind::Answer,
+            text: "Yes.".into(),
+            id: 3,
+            re: Some(2),
+        };
+        assert_eq!(said(&e), Some(line.clone()));
+        let s = StoryEvent::Sent {
+            from: 1,
+            to: 0,
+            kind: MsgKind::Answer,
+            text: "Yes.".into(),
+            id: 3,
+            re: Some(2),
+        };
+        assert_eq!(said_in_story(1, &s), Some(line));
+    }
+
+    #[test]
     fn a_message_to_the_person_is_a_conversation_line_and_a_question_an_inbox_line() {
         let w = crate::live::testing::team(1);
         let e = Event::ToYou {
@@ -749,6 +799,8 @@ mod tests {
                 to: Party::Person,
                 kind: Some(MsgKind::Ask),
                 text: "Which?\nmore",
+                id: 0,
+                re: None
             })
         );
         assert_eq!(event(Lang::En, &w, &e), "", "drawn as a conversation line");
@@ -763,6 +815,8 @@ mod tests {
                 to: Party::Person,
                 kind: Some(MsgKind::Inform),
                 text: "fyi",
+                id: 0,
+                re: None
             })
         );
         let item = InboxItem {

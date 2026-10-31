@@ -472,7 +472,10 @@ mod tests {
             &msg("claude-1", "done", "Tests written."),
         )
         .unwrap();
-        assert!(got.starts_with("queued; claude-1 is busy"), "{got}");
+        assert!(
+            got.starts_with("queued as message 2; claude-1 is busy"),
+            "{got}"
+        );
         assert!(live.leaving[2], "leaves when the turn ends, not now");
         assert!(!w.agents[2].gone);
         // Mail that came for it meanwhile goes nowhere.
@@ -480,6 +483,8 @@ mod tests {
             from: 1,
             kind: MsgKind::Inform,
             body: "x".into(),
+            id: 0,
+            re: None,
         });
         finish(&mut live, &mut w, 2, "done");
         let h = &w.agents[2];
@@ -503,6 +508,8 @@ mod tests {
             from: 1,
             kind: MsgKind::Assign,
             body: "more".into(),
+            id: 0,
+            re: None,
         });
         live.step(&mut w);
         assert_eq!(live.turns[2], 0);
