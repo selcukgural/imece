@@ -294,6 +294,10 @@ pub(crate) fn inbox_line(app: &App, i: usize) -> Line<'static> {
         Span::styled(format!("{icon} "), style),
         Span::styled(format!("{} ", when(item.tick, day(w.tick))), dim()),
     ];
+    // Up front: a long row is cut at the panel's edge.
+    if app.deferred.contains(&i) {
+        spans.push(Span::styled(app.lang.text().later, dim()));
+    }
     if w.projects.len() > 1 {
         let p = w.agents[item.agent].project;
         spans.push(Span::styled(format!("{} ", w.projects[p].name), dim()));
@@ -1853,6 +1857,37 @@ mod tests {
             line.spans.last().unwrap().content,
             " · ✗ bu ağaçta başarısız: cargo clippy, make"
         );
+    }
+
+    #[test]
+    fn an_item_put_off_says_later_up_front_in_both_languages() {
+        let mut app = app_after(1, 4, 0, Lang::En);
+        app.world.inbox.clear();
+        for n in 0..2 {
+            app.world.inbox.push(InboxItem {
+                kind: InboxKind::Sensitive,
+                agent: 1,
+                detail: format!("item {n}"),
+                researcher: None,
+                open: true,
+                tick: 0,
+                card: None,
+            });
+        }
+        app.deferred = vec![1];
+        let third = |app: &App, i| inbox_line(app, i).spans[2].clone();
+        assert!(
+            third(&app, 0).content.ends_with("item 0"),
+            "{:?}",
+            third(&app, 0)
+        );
+        assert_eq!(
+            (third(&app, 1).content.as_ref(), third(&app, 1).style),
+            ("later · ", dim()),
+            "after the icon and the time"
+        );
+        app.lang = Lang::Tr;
+        assert_eq!(third(&app, 1).content, "sonra · ");
     }
 
     #[test]

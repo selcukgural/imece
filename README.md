@@ -231,6 +231,7 @@ is one line, and that line still shows what waits for you.
 | `L` | English / Türkçe |
 | `enter` / `esc` | look deeper (focus, then the raw stream) / go back |
 | `tab`, `w` | salon ↔ the items waiting for you · straight to them |
+| `W` / `S` | from anywhere: open the next item waiting for you / put this one off and open the next |
 | `a` / `r` | approve / apply / allow · reject / refuse the selected item |
 | `space`, `+` `-` | pause, simulation speed (`--demo` only) |
 | `?`, `q` | help, quit |
