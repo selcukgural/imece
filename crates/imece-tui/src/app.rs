@@ -1921,6 +1921,12 @@ mod tests {
         assert_eq!(app.current_project(), 1, "the first open one");
         app.selected = Sel::Project(1);
         assert_eq!(app.current_project(), 1);
+        // What waits in the inbox leads only while the inbox has the keys.
+        app.world.projects[0].closed = false;
+        app.world.replied(app.world.projects[0].leader, "an answer");
+        assert_eq!(app.current_project(), 1, "the salon's selection");
+        app.pane = Pane::Inbox;
+        assert_eq!(app.current_project(), 0, "the inbox's selection");
     }
 
     #[test]

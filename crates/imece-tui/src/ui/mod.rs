@@ -1081,6 +1081,16 @@ mod tests {
     }
 
     #[test]
+    fn a_card_s_screen_wears_the_focus_colour_while_it_has_the_keys() {
+        let mut app = on_card_one(Lang::En);
+        let corner = |app: &App| buffer(app, 140, 36)[(0, 1)].style().fg;
+        assert_eq!(app.pane, Pane::Journal);
+        assert_ne!(corner(&app), Some(pal().accent));
+        app.pane = Pane::Salon;
+        assert_eq!(corner(&app), Some(pal().accent));
+    }
+
+    #[test]
     fn a_card_s_screen_shows_where_it_stands_who_had_a_part_and_its_lines() {
         let app = on_card_one(Lang::En);
         let s = render(&app, 140, 36);
