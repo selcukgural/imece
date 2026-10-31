@@ -563,6 +563,29 @@ pub fn held_symbols(w: &World, project: ProjectId) -> Vec<Symbol> {
 }
 
 /// A short commit id.
+/// Where a worktree kept at `at` next to the checkout's `head` stands: with
+/// `commits` of its own on a branch the agent made, or with changes; the
+/// numbers come from the ids, so the scenario stays the seed's.
+fn kept(name: &str, at: &str, head: &str, commits: bool) -> Stand {
+    let digit = |s: &str| s.chars().next().and_then(|c| c.to_digit(16)).unwrap_or(0);
+    let behind = 1 + digit(head) % 4;
+    if commits {
+        Stand {
+            branch: Some(format!("wip-{name}")),
+            ahead: 1 + digit(at) % 3,
+            behind,
+            ..Stand::default()
+        }
+    } else {
+        Stand {
+            behind,
+            added: 5 + digit(at) * 3,
+            removed: digit(at) % 5,
+            ..Stand::default()
+        }
+    }
+}
+
 fn sha(rng: &mut Rng) -> String {
     format!("{:07x}", rng.below(1 << 28))
 }
@@ -750,6 +773,10 @@ impl Sim {
         }
         let mark = sha(&mut self.rng);
         w.change_applied(id, mark);
+        // The worktree is marked at the change: nothing written since.
+        let s = &mut w.agents[id].stand;
+        s.added = 0;
+        s.removed = 0;
     }
 
     pub fn step(&mut self, w: &mut World) {
@@ -851,6 +878,7 @@ impl Sim {
         match roll {
             0 => {
                 let (from, to) = (sha(&mut self.rng), sha(&mut self.rng));
+                w.agents[id].stand = Stand::default();
                 w.note(Event::WorktreeMoved {
                     agent: id,
                     from,
@@ -860,6 +888,7 @@ impl Sim {
             1 => {
                 let (at, head) = (sha(&mut self.rng), sha(&mut self.rng));
                 let commits = self.rng.one_in(2);
+                w.agents[id].stand = kept(&w.agents[id].name, &at, &head, commits);
                 w.note(Event::WorktreeKept {
                     agent: id,
                     at,
@@ -1347,6 +1376,12 @@ impl Sim {
             a.trace(t, format!("tool_use {doing}"));
         }
         a.activity = Some(doing);
+        if edits.is_some() {
+            // An edit writes lines, and the row counts them as git would
+            // read them. From the clock, so the scenario stays the seed's.
+            a.stand.added += 2 + (t % 9) as u32;
+            a.stand.removed += (t % 4) as u32;
+        }
         if let Some(file) = edits {
             let seen = w.cards[card]
                 .story
@@ -1509,6 +1544,9 @@ impl Sim {
         a.activity = None;
         a.set_status(Status::Idle, t);
         a.trace(t, format!("change: {n} files +{added} −{removed}"));
+        // What the person reviews is what the worktree holds.
+        a.stand.added = added;
+        a.stand.removed = removed;
     }
 
     /// A patch that changes each of `symbols` in its file, as `git diff`
@@ -2100,6 +2138,8 @@ mod tests {
             .filter(|l| l.starts_with('-') && !l.starts_with("---"))
             .count();
         assert_eq!(change.counts(), (plus as u32, minus as u32));
+        let stand = &w.agents[worker].stand;
+        assert_eq!((stand.added, stand.removed), change.counts(), "the row");
         assert_eq!(
             change.runs,
             [
@@ -2220,6 +2260,7 @@ mod tests {
     #[test]
     fn a_change_that_fits_is_applied_with_a_mark_one_that_does_not_still_waits() {
         let (mut w, mut s, worker, _) = one_at_work();
+        let lines = |w: &World| (w.agents[worker].stand.added, w.agents[worker].stand.removed);
         s.applied(&mut w, worker, true);
         assert!(
             w.journal
@@ -2229,6 +2270,8 @@ mod tests {
         );
         s.test(&mut w, worker);
         s.tested(&mut w, worker, 0);
+        let held = lines(&w);
+        assert_ne!(held, (0, 0));
         let file = w.change_of(worker).unwrap().files[0].path.clone();
         s.applied(&mut w, worker, false);
         assert_eq!(
@@ -2239,8 +2282,12 @@ mod tests {
             }
         );
         assert!(w.change_of(worker).is_some());
+        assert_eq!(lines(&w), held, "not applied: still in the worktree");
+        w.agents[worker].stand.ahead = 2;
         s.applied(&mut w, worker, true);
         assert!(w.change_of(worker).is_none());
+        assert_eq!(lines(&w), (0, 0), "marked");
+        assert_eq!(w.agents[worker].stand.ahead, 2, "its own commits stay");
         assert!(matches!(
             &w.journal.last().unwrap().event,
             Event::Applied { agent, mark, .. } if *agent == worker && mark.len() == 7
@@ -2868,15 +2915,57 @@ mod tests {
         assert!(
             matches!(&w.journal.last().unwrap().event, Event::NotesCut { file, .. } if file == "CLAUDE.md")
         );
-        // Kept with commits, or with changes only: both come up.
+        // Kept with commits, or with changes only: both come up, and the
+        // row says which; moved, it says nothing.
         let mut both = std::collections::BTreeSet::new();
         for _ in 0..32 {
             s.worktree(&mut w, worker, 1);
-            if let Event::WorktreeKept { commits, .. } = w.journal.last().unwrap().event {
-                both.insert(commits);
-            }
+            let Event::WorktreeKept {
+                at, head, commits, ..
+            } = &w.journal.last().unwrap().event
+            else {
+                panic!("kept");
+            };
+            assert_eq!(
+                w.agents[worker].stand,
+                kept(&w.agents[worker].name, at, head, *commits)
+            );
+            both.insert(*commits);
         }
         assert_eq!(both.len(), 2);
+        s.worktree(&mut w, worker, 0);
+        assert_eq!(w.agents[worker].stand, Stand::default());
+    }
+
+    #[test]
+    fn a_kept_worktree_stands_by_its_ids() {
+        assert_eq!(
+            kept("codex-1", "5ab", "6cd", true),
+            Stand {
+                branch: Some("wip-codex-1".into()),
+                ahead: 3,
+                behind: 3,
+                ..Stand::default()
+            }
+        );
+        assert_eq!(
+            kept("codex-1", "7ab", "f00", false),
+            Stand {
+                behind: 4,
+                added: 26,
+                removed: 2,
+                ..Stand::default()
+            }
+        );
+        assert_eq!(
+            kept("x", "0", "0", true),
+            Stand {
+                branch: Some("wip-x".into()),
+                ahead: 1,
+                behind: 1,
+                ..Stand::default()
+            }
+        );
     }
 
     #[test]
@@ -2913,6 +3002,25 @@ mod tests {
         .into_iter()
         .collect();
         assert_eq!(doing, want);
+        // Each edit adds to the row's lines, by the clock; nothing else
+        // does.
+        for t in 100..140 {
+            w.tick = t;
+            let before = w.agents[worker].stand.clone();
+            s.tool(&mut w, worker, card);
+            let after = &w.agents[worker].stand;
+            let edit = w.agents[worker].activity.as_deref() == Some(&format!("Edit {file}"));
+            let (added, removed) = if edit {
+                (2 + (t % 9) as u32, (t % 4) as u32)
+            } else {
+                (0, 0)
+            };
+            assert_eq!(
+                (after.added - before.added, after.removed - before.removed),
+                (added, removed),
+                "at {t}"
+            );
+        }
         let touched = w.cards[card]
             .story
             .iter()

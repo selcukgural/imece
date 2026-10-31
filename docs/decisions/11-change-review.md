@@ -55,7 +55,9 @@ Git off the screen's loop (2026-10-30; on a Kule clone reading a change
 took ~250 ms, a frame the screen stood still): reading a done's change
 and applying one are jobs for a git thread of Live's own
 (`changes::git_thread`), one at a time in the order given, their
-outcomes taken in by `Live::take_git` at the start of `step`. One
+outcomes taken in by `Live::take_git` at the start of `step` (the
+thread also reads where a worker's worktree stands for its row, record
+36). One
 thread, not one per job: two applies never meet in the person's
 checkout, and a done sent after an apply is read only once that apply
 has marked the worktree, so the new change holds only what came after.

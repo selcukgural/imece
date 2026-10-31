@@ -135,6 +135,7 @@ record in the same PR.
 - 33 `next-waiting`: `W` opens the next item waiting for the person from anywhere, `S` puts one off; order, at hand, run-only.
 - 34 `quit-ask`: the quit question counts agents mid-turn and changes not reviewed; `q s` lists them.
 - 35 `fleet-and-done-unseen`: `✓` done, not seen until opened (`App::unseen`); the header's fleet `● working ✓ done ✕ stuck`.
+- 36 `worktree-stand`: a worker's row `⎇ branch ↑own ↓checkout +N −M`, `worktree::stand` on the git thread, when it is read.
 
 `docs/neighbours.md`: voff, what was taken from it and the rules that come
 from what it lacks. Read it before building a part it names.

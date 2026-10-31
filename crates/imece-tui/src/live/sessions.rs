@@ -200,6 +200,7 @@ impl Live {
                 }
                 w.agents[id].trace(w.tick, format!("session in {}", cwd.display()));
                 self.cwds[id] = Some(cwd);
+                self.stand(w, id);
                 match placed {
                     Some(worktree::Placed::Moved { from, to }) => {
                         w.note(Event::WorktreeMoved {

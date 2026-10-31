@@ -408,8 +408,24 @@ pub struct Agent {
     /// `/compact` ...), imece's `/clear` added where the vendor has none;
     /// empty until a session says. The composer completes with it.
     pub commands: Vec<String>,
+    /// Where a worker's worktree stands next to its project's checkout, as
+    /// git last read it; nothing to show until it is read.
+    pub stand: Stand,
     /// A researcher that finished; kept so ids stay stable.
     pub gone: bool,
+}
+
+/// Where a worker's worktree stands: the branch an agent put it on (none
+/// while detached, as imece makes it), its own commits the checkout does
+/// not have and the checkout's it does not have, and the lines its
+/// worktree changed that a done would hand over.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Stand {
+    pub branch: Option<String>,
+    pub ahead: u32,
+    pub behind: u32,
+    pub added: u32,
+    pub removed: u32,
 }
 
 impl Agent {
@@ -442,6 +458,7 @@ impl Agent {
             traced: 0,
             activity: None,
             commands: Vec::new(),
+            stand: Stand::default(),
             gone: false,
         }
     }

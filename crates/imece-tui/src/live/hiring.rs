@@ -176,6 +176,8 @@ impl Live {
         self.reading.push(0);
         self.applying.push(false);
         self.placing.push(None);
+        self.standing.push(None);
+        self.stood_at.push(None);
     }
 
     /// The vendor `v` as imece drives it. Every agent's vendor is one.
