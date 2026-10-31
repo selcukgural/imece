@@ -1,0 +1,162 @@
+WEBVTT
+
+1
+00:00:04.903 --> 00:00:07.691
+A worker never writes to your checkout.
+
+2
+00:00:07.691 --> 00:00:13.125
+It works in a git worktree of its own, and when it sends its done, what that
+
+3
+00:00:13.125 --> 00:00:16.915
+worktree holds shows up as a change, waiting for you.
+
+4
+00:00:16.915 --> 00:00:22.778
+Let us speed the simulation up until a few workers are done, then pause it, so the
+
+5
+00:00:22.778 --> 00:00:23.994
+list holds still.
+
+6
+00:00:29.029 --> 00:00:32.035
+Capital W opens the next change.
+
+7
+00:00:32.035 --> 00:00:39.738
+A change of several files lists them above its patch, with the lines each adds and
+
+8
+00:00:39.738 --> 00:00:47.441
+removes, and when they are of more than one kind, the lines by kind first: source,
+
+9
+00:00:47.441 --> 00:00:49.038
+tests, generated.
+
+10
+00:00:49.038 --> 00:00:56.647
+j and k scroll; the brackets jump from file to file; w wraps the long lines under
+
+11
+00:00:56.647 --> 00:00:57.680
+themselves.
+
+12
+00:00:58.883 --> 00:01:03.219
+c puts a note on the line at the top of the view.
+
+13
+00:01:03.219 --> 00:01:10.563
+Scroll a line of a hunk to the top, press c, write, and enter keeps it; the line is
+
+14
+00:01:10.563 --> 00:01:11.182
+marked.
+
+15
+00:01:11.182 --> 00:01:13.660
+A second note, further down.
+
+16
+00:01:13.660 --> 00:01:19.854
+The notes belong to this patch: they stay with it until you send them.
+
+17
+00:01:29.285 --> 00:01:35.416
+n sends the notes to the worker in one message, each under its file and line with
+
+18
+00:01:35.416 --> 00:01:41.472
+the line itself quoted, and the change goes back like a reject: not applied, the
+
+19
+00:01:41.472 --> 00:01:43.819
+worker goes on with your notes.
+
+20
+00:01:43.819 --> 00:01:47.376
+It is the third answer beside apply and reject.
+
+21
+00:01:48.578 --> 00:01:49.856
+The next change.
+
+22
+00:01:49.856 --> 00:01:54.887
+x chooses the hunk at the top; a check mark goes on its header.
+
+23
+00:01:54.887 --> 00:02:01.516
+a then applies only the chosen hunks, staged in your checkout, and the rest is read
+
+24
+00:02:01.516 --> 00:02:06.069
+again from the worktree and waits as a change of its own.
+
+25
+00:02:15.691 --> 00:02:16.800
+Another change.
+
+26
+00:02:16.800 --> 00:02:22.861
+The greater-than key opens a message to its worker with the hunk at the top quoted
+
+27
+00:02:22.861 --> 00:02:26.927
+under your line, in a diff fence with its file's names.
+
+28
+00:02:26.927 --> 00:02:29.662
+Write the question above it and send.
+
+29
+00:02:39.866 --> 00:02:46.977
+And a change you do not want: r rejects it and opens the composer addressed to its
+
+30
+00:02:46.977 --> 00:02:48.972
+worker, so you say why.
+
+31
+00:02:48.972 --> 00:02:55.736
+The worker reads your reason and tries another way; nothing of it touched your
+
+32
+00:02:55.736 --> 00:02:56.517
+checkout.
+
+33
+00:03:01.460 --> 00:03:03.943
+Let the simulation run again.
+
+34
+00:03:03.943 --> 00:03:08.225
+Changes are not the only thing that waits for you.
+
+35
+00:03:08.225 --> 00:03:15.076
+A flag is a shell command a vendor would have asked you about: routine ones, the
+
+36
+00:03:15.076 --> 00:03:21.926
+build and the tests, run on their own; the rest wait here, shown whole, for a to
+
+37
+00:03:21.926 --> 00:03:23.725
+allow or r to refuse.
+
+38
+00:03:23.725 --> 00:03:27.921
+A question mark is a question an agent asked you.
+
+39
+00:03:27.921 --> 00:03:32.631
+Capital S puts the item at hand off and opens the next.
+
+40
+00:03:36.492 --> 00:03:46.903
+The scenario, step by step, with every key: selcukgural.github.io/imece.
+

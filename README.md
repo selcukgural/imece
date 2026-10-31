@@ -6,11 +6,12 @@ imece (Turkish: neighbours finishing a job together) runs a guild of coding
 agents (Claude Code, Codex, Gemini and any agent that speaks
 [ACP](https://agentclientprotocol.com)) on one codebase, on one screen. A
 leader agent splits the work into cards and hands them out; the agents talk
-to each other, ask a capped pool of researchers, and lease the symbols they
-change so several of them can work in the same file.
+to each other, and every change waits for you before it reaches your
+checkout. A capped pool of researchers and symbol leases (several agents in
+one file) are designed, shown by the demo, and not built yet.
 
-> Status: early. imece runs real Claude Code and Codex agents on one project
-> (a leader that hires workers and talks to you),
+> Status: early. imece runs real Claude Code, Codex and Gemini CLI agents
+> on one or more projects (a leader that hires workers and talks to you),
 > or a seeded simulation with `--demo`.
 
 ## Run it

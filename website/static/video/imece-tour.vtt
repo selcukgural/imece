@@ -1,0 +1,206 @@
+WEBVTT
+
+1
+00:00:04.903 --> 00:00:12.301
+imece runs a team of coding agents from many vendors on one codebase, on one screen.
+
+2
+00:00:12.301 --> 00:00:19.523
+A leader reads your checkout and hires workers as the work needs them; each worker
+
+3
+00:00:19.523 --> 00:00:24.367
+changes a git worktree of its own, never your checkout.
+
+4
+00:00:24.367 --> 00:00:28.595
+Claude Code, Codex and Gemini CLI, side by side.
+
+5
+00:00:29.795 --> 00:00:31.156
+This is the salon.
+
+6
+00:00:31.156 --> 00:00:34.481
+Each project is a group with its own leader.
+
+7
+00:00:34.481 --> 00:00:40.755
+A worker's row shows its card, what it is doing right now, what it has cost so far,
+
+8
+00:00:40.755 --> 00:00:43.022
+and where its worktree stands.
+
+9
+00:00:43.022 --> 00:00:48.766
+The journal on the right keeps every message and every event, with the time.
+
+10
+00:00:49.968 --> 00:00:56.931
+Enter looks deeper: an agent's screen, with its card's story and its conversations.
+
+11
+00:00:56.931 --> 00:01:01.881
+Enter again shows the raw stream from the vendor's own CLI.
+
+12
+00:01:01.881 --> 00:01:03.307
+Escape goes back.
+
+13
+00:01:03.307 --> 00:01:09.179
+Three depths, everywhere: the guild, one card's story, the raw stream.
+
+14
+00:01:10.381 --> 00:01:16.471
+Agents talk to each other over a bus: they ask, answer, hand work off, report
+
+15
+00:01:16.471 --> 00:01:19.634
+progress, and say when they are blocked.
+
+16
+00:01:19.634 --> 00:01:24.458
+imece reads only the envelope; the body is never interpreted.
+
+17
+00:01:24.458 --> 00:01:30.152
+Let us speed the simulation up, let them work for a while, and pause it.
+
+18
+00:01:32.651 --> 00:01:36.618
+Everything that needs you lands in one place: WAITING FOR YOU.
+
+19
+00:01:36.618 --> 00:01:41.992
+A change a worker has finished, a shell command a vendor would have asked you about,
+
+20
+00:01:41.992 --> 00:01:43.208
+a question for you.
+
+21
+00:01:43.208 --> 00:01:47.942
+The terminal's title counts them, so a tab in the background shows it too.
+
+22
+00:01:52.488 --> 00:01:56.385
+Capital W opens the next item from anywhere.
+
+23
+00:01:56.385 --> 00:02:03.029
+This one is a change: what the worker's worktree holds since its last done.
+
+24
+00:02:03.029 --> 00:02:08.964
+The files above the patch, the lines by kind, then the diff itself.
+
+25
+00:02:08.964 --> 00:02:13.659
+j and k scroll it; the brackets go from file to file.
+
+26
+00:02:14.860 --> 00:02:20.688
+a applies the change to your checkout, staged, for you to look over and commit.
+
+27
+00:02:20.688 --> 00:02:24.746
+r sends it back and opens the composer, so you say why.
+
+28
+00:02:24.746 --> 00:02:30.722
+Git does its work on a thread of its own; the journal says when the change is in.
+
+29
+00:02:30.722 --> 00:02:34.632
+Your checkout is the one place an agent never writes.
+
+30
+00:02:35.834 --> 00:02:38.179
+Let the simulation run again.
+
+31
+00:02:38.179 --> 00:02:41.900
+One pot for the whole team, kept between runs.
+
+32
+00:02:41.900 --> 00:02:48.452
+The header shows what was spent, what the last ten minutes cost per hour, and how
+
+33
+00:02:48.452 --> 00:02:51.041
+long the pot lasts at that rate.
+
+34
+00:02:51.041 --> 00:02:57.754
+Beside it, each vendor plan's usage window nearest to full, and the fleet: working,
+
+35
+00:02:57.754 --> 00:02:58.725
+done, stuck.
+
+36
+00:02:59.927 --> 00:03:07.241
+Two is the board: the cards the leaders posted, who claimed which, what is done.
+
+37
+00:03:07.241 --> 00:03:11.172
+An idle worker may claim a card on its own.
+
+38
+00:03:11.172 --> 00:03:17.481
+Three is the code map: one row per file, and who holds which symbols.
+
+39
+00:03:17.481 --> 00:03:19.858
+One brings the salon back.
+
+40
+00:03:21.059 --> 00:03:24.383
+You talk to the leader, not to thirty agents.
+
+41
+00:03:24.383 --> 00:03:30.439
+Type what you want; the leader turns it into cards, and the workers take them from
+
+42
+00:03:30.439 --> 00:03:31.178
+the board.
+
+43
+00:03:31.178 --> 00:03:34.870
+The reply comes back as something waiting for you.
+
+44
+00:03:36.135 --> 00:03:44.258
+q asks before quitting: how many agents are mid-turn, how many changes you have not
+
+45
+00:03:44.258 --> 00:03:45.139
+reviewed.
+
+46
+00:03:45.139 --> 00:03:46.411
+s lists them.
+
+47
+00:03:46.411 --> 00:03:54.533
+Everything imece knows is kept in one SQLite file; the next imece opens on the same
+
+48
+00:03:54.533 --> 00:03:59.427
+screen, every agent asleep until you write to one.
+
+49
+00:04:00.629 --> 00:04:02.796
+imece is open source.
+
+50
+00:04:02.796 --> 00:04:11.153
+Install it from source, try the simulation for free, and read every key and every
+
+51
+00:04:11.153 --> 00:04:15.280
+scenario at selcukgural.github.io/imece.
+

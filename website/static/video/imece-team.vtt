@@ -1,0 +1,150 @@
+WEBVTT
+
+1
+00:00:04.902 --> 00:00:09.083
+Plain text goes to the leader of the project at hand.
+
+2
+00:00:09.083 --> 00:00:15.552
+It reads the checkout, splits your request into cards and posts them on the board;
+
+3
+00:00:15.552 --> 00:00:17.287
+the workers take them.
+
+4
+00:00:17.287 --> 00:00:21.074
+Its reply comes back as an item waiting for you.
+
+5
+00:00:22.290 --> 00:00:24.717
+At-name writes to one agent.
+
+6
+00:00:24.717 --> 00:00:30.783
+After the at sign, tab completes the names, the project at hand first.
+
+7
+00:00:30.783 --> 00:00:36.242
+A message to an idle worker opens a card; its answer closes it.
+
+8
+00:00:36.242 --> 00:00:43.088
+A line that starts with a slash is the agent's own command line: slash compact,
+
+9
+00:00:43.088 --> 00:00:46.901
+slash cost, whatever the vendor's CLI knows.
+
+10
+00:00:48.103 --> 00:00:53.717
+Every message on the bus has a number, and a reply names the one it answers.
+
+11
+00:00:53.717 --> 00:00:59.701
+v opens the conversation with the agent at hand, here the leader; the arrow shows
+
+12
+00:00:59.701 --> 00:01:04.428
+what its reply answers, and the percent key goes there and back.
+
+13
+00:01:04.428 --> 00:01:10.634
+The brackets go from turn to turn: the lines one side says before the other answers.
+
+14
+00:01:14.063 --> 00:01:21.817
+Hash and a number, or hash and a word of its title, opens a card's screen: who works
+
+15
+00:01:21.817 --> 00:01:26.895
+on it, its story, the inbox and journal lines about it.
+
+16
+00:01:26.895 --> 00:01:31.234
+n and p step to the next and the previous card.
+
+17
+00:01:35.047 --> 00:01:39.205
+Every key that acts has a colon name too.
+
+18
+00:01:39.205 --> 00:01:47.623
+Colon and tab show the commands with what each stands at now: the theme, the budget
+
+19
+00:01:47.623 --> 00:01:52.796
+spent and left, the project a bare command acts on.
+
+20
+00:01:52.796 --> 00:01:58.273
+A dollar sign marks the ones that raise the next bill.
+
+21
+00:01:58.273 --> 00:02:02.938
+Colon budget changes the pot while agents run.
+
+22
+00:02:04.141 --> 00:02:10.518
+Colon theme wears each theme while its name is written: the built-in ones, base16
+
+23
+00:02:10.518 --> 00:02:15.005
+schemes, or a colour file in Ghostty's or Kitty's format.
+
+24
+00:02:15.005 --> 00:02:17.761
+Enter keeps it, escape gives it up.
+
+25
+00:02:17.761 --> 00:02:23.272
+The terminal theme follows your terminal's own colours, light or dark.
+
+26
+00:02:24.474 --> 00:02:28.471
+Capital L turns the screen Turkish, and back.
+
+27
+00:02:28.471 --> 00:02:35.578
+Every word on the screen lives in both languages; what an agent wrote is cleaned
+
+28
+00:02:35.578 --> 00:02:42.685
+before it is drawn, control characters removed and secret-looking tokens hidden.
+
+29
+00:02:43.886 --> 00:02:47.779
+Question mark lists every key and every command.
+
+30
+00:02:47.779 --> 00:02:54.430
+Slash filters them by every word you type, Turkish letters or not; enter keeps the
+
+31
+00:02:54.430 --> 00:02:56.377
+filter, escape drops it.
+
+32
+00:02:59.067 --> 00:03:07.506
+f shows only what needs you: waiting for you, stuck, done and not yet seen, in that
+
+33
+00:03:07.506 --> 00:03:10.454
+order; calm agents fold away.
+
+34
+00:03:10.454 --> 00:03:18.588
+h and l fold and unfold a project; a folded project is one line that still shows
+
+35
+00:03:18.588 --> 00:03:19.707
+what waits.
+
+36
+00:03:19.707 --> 00:03:27.638
+Colon open adds another checkout as a project of its own, with its own leader.
+
+37
+00:03:28.839 --> 00:03:39.690
+Every key, every command and every scenario: selcukgural.github.io/imece.
+

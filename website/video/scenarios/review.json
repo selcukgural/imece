@@ -104,7 +104,8 @@
       "steps": [
         { "action": "type", "target": "#corner", "text": "W", "delayMs": 0 },
         { "action": "wait", "seconds": 5 },
-        { "action": "type", "target": "#corner", "text": "jjjj", "delayMs": 250 },
+        { "action": "type", "target": "#corner", "text": "]", "delayMs": 0 },
+        { "action": "type", "target": "#corner", "text": "jjj", "delayMs": 250 },
         { "action": "type", "target": "#corner", "text": "x", "delayMs": 0 },
         { "action": "wait", "seconds": 5 },
         { "action": "type", "target": "#corner", "text": "a", "delayMs": 0 },
