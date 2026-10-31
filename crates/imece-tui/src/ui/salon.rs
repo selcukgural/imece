@@ -3,8 +3,6 @@
 //! too), who talks to whom right now, what waits for the person, and the
 //! journal of meaningful events.
 
-use std::collections::BTreeSet;
-
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::{Modifier, Style};
@@ -12,7 +10,7 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Paragraph};
 
 use super::*;
-use crate::app::{App, Pane, Sel};
+use crate::app::{App, Need, Pane, Sel};
 
 /// Drawn before an agent's name in its speaker colour.
 pub(crate) const SPEAKER_MARK: &str = "▎";
@@ -29,31 +27,49 @@ pub enum Row {
     Folded(usize),
 }
 
+impl Row {
+    /// What selecting this row selects; talk and folded lines are not
+    /// selectable.
+    pub fn sel(&self) -> Option<Sel> {
+        match *self {
+            Row::Project(p) => Some(Sel::Project(p)),
+            Row::Agent { id, .. } => Some(Sel::Agent(id)),
+            _ => None,
+        }
+    }
+}
+
 /// The salon's rows for `capacity` lines. A folded project is one line; a
-/// worker in `folded_workers` shows no helpers. In an open project, workers
-/// that need the person come first; the rest keep their order so the screen
-/// does not jump. When the rows do not fit, calm workers (working or idle,
-/// not talking, nothing new) fold into one line per project.
-pub fn rows(
-    w: &World,
-    collapsed: &[bool],
-    folded_workers: &BTreeSet<AgentId>,
-    selected: Sel,
-    capacity: usize,
-) -> Vec<Row> {
+/// worker in `folded_workers` shows no helpers. In an open project, the
+/// workers that need the person more come first (waiting for them, stuck,
+/// done and not seen); the rest keep their order so the screen does not
+/// jump. When the rows do not fit, calm workers (working or idle, not
+/// talking, nothing new) fold into one line per project, from the bottom
+/// up: those that need the person more fold last.
+/// With `needs_only` (`f`), only agents that need the person are shown,
+/// under their project's header, a worker also for a helper or
+/// researcher of its that does; a project with none is left out.
+pub fn rows(app: &App, capacity: usize) -> Vec<Row> {
+    let w = &app.world;
     let t = w.tick;
+    let need = app.needs();
+    let kept = |a: &Agent| !app.needs_only || need[a.id] > Need::Nothing;
     let researcher_of = |a: &Agent| {
         w.agents.iter().find(|r| {
             r.role == Role::Researcher
                 && !r.gone
                 && matches!(r.status, Status::Researching { for_agent, .. } if for_agent == a.id)
+                && kept(r)
         })
     };
     let helpers_of = |a: &Agent| -> Vec<AgentId> {
-        if folded_workers.contains(&a.id) {
+        if app.folded_workers.contains(&a.id) {
             return Vec::new();
         }
-        w.helpers_of(a.id).map(|h| h.id).collect()
+        w.helpers_of(a.id)
+            .filter(|h| kept(h))
+            .map(|h| h.id)
+            .collect()
     };
     let lines = |a: &Agent| {
         1 + usize::from(a.talk.is_some())
@@ -64,55 +80,61 @@ pub fn rows(
         matches!(a.status, Status::Working | Status::Idle)
             && a.talk.is_none()
             && t.saturating_sub(a.changed_at) > 6
-            && selected != Sel::Agent(a.id)
+            && app.selected != Sel::Agent(a.id)
     };
+    let shown: Vec<bool> = w
+        .projects
+        .iter()
+        .map(|p| {
+            !p.closed && (!app.needs_only || w.agents.iter().any(|a| a.project == p.id && kept(a)))
+        })
+        .collect();
 
     // Workers of each open project, in display order.
     let order: Vec<Vec<&Agent>> = w
         .projects
         .iter()
         .map(|p| {
-            if p.closed || collapsed[p.id] {
+            if !shown[p.id] || app.collapsed[p.id] {
                 return Vec::new();
             }
-            let workers: Vec<&Agent> = w
+            let mut o: Vec<&Agent> = w
                 .agents
                 .iter()
                 .filter(|a| a.project == p.id && a.role == Role::Worker)
+                .filter(|a| kept(a) || !helpers_of(a).is_empty() || researcher_of(a).is_some())
                 .collect();
-            let mut o: Vec<&Agent> = workers
-                .iter()
-                .copied()
-                .filter(|a| a.status.needs_attention())
-                .collect();
-            o.extend(
-                workers
-                    .iter()
-                    .copied()
-                    .filter(|a| !a.status.needs_attention()),
-            );
+            // Stable: equals keep their order.
+            o.sort_by_key(|a| std::cmp::Reverse(need[a.id]));
             o
         })
         .collect();
 
+    let leads = |p: &Project| kept(&w.agents[p.leader]);
     let mut total: usize = w
         .projects
         .iter()
         .map(|p| {
-            if p.closed {
+            if !shown[p.id] {
                 return 0;
             }
-            if collapsed[p.id] {
+            if app.collapsed[p.id] {
                 return 1;
             }
             let leader = &w.agents[p.leader];
-            2 + usize::from(leader.talk.is_some())
-                + order[p.id].iter().map(|a| lines(a)).sum::<usize>()
+            let lead = if leads(p) {
+                1 + usize::from(leader.talk.is_some())
+            } else {
+                0
+            };
+            1 + lead + order[p.id].iter().map(|a| lines(a)).sum::<usize>()
         })
         .sum();
     let mut folded = vec![false; w.agents.len()];
     let mut nfolded = vec![0usize; w.projects.len()];
-    if total > capacity {
+    // What needs the person is never folded away; a worker shown for its
+    // helper would fold the helper with it.
+    if total > capacity && !app.needs_only {
         'fold: for p in (0..w.projects.len()).rev() {
             for a in order[p].iter().rev() {
                 if total <= capacity {
@@ -131,17 +153,19 @@ pub fn rows(
     }
 
     let mut out = Vec::new();
-    for p in w.open_projects() {
+    for p in w.open_projects().filter(|p| shown[p.id]) {
         out.push(Row::Project(p.id));
-        if collapsed[p.id] {
+        if app.collapsed[p.id] {
             continue;
         }
-        out.push(Row::Agent {
-            id: p.leader,
-            depth: 1,
-        });
-        if w.agents[p.leader].talk.is_some() {
-            out.push(Row::Talk(p.leader));
+        if leads(p) {
+            out.push(Row::Agent {
+                id: p.leader,
+                depth: 1,
+            });
+            if w.agents[p.leader].talk.is_some() {
+                out.push(Row::Talk(p.leader));
+            }
         }
         for a in order[p.id].iter().filter(|a| !folded[a.id]) {
             out.push(Row::Agent { id: a.id, depth: 2 });
@@ -192,26 +216,19 @@ pub(super) fn pane_block(title: String, focused: bool) -> Block<'static> {
 
 fn salon(f: &mut Frame, area: Rect, app: &App) {
     let w = &app.world;
-    let block = pane_block(app.lang.text().salon.into(), app.pane == Pane::Salon);
+    let t = app.lang.text();
+    let title = if app.needs_only {
+        t.salon_needs
+    } else {
+        t.salon
+    };
+    let block = pane_block(title.into(), app.pane == Pane::Salon);
     let inner = block.inner(area);
     f.render_widget(block, area);
     let [list, queue] = Layout::vertical([Constraint::Min(0), Constraint::Length(1)]).areas(inner);
 
-    let rows = rows(
-        w,
-        &app.collapsed,
-        &app.folded_workers,
-        app.selected,
-        usize::from(list.height),
-    );
-    *app.shown.borrow_mut() = rows
-        .iter()
-        .filter_map(|r| match r {
-            Row::Project(p) => Some(Sel::Project(*p)),
-            Row::Agent { id, .. } => Some(Sel::Agent(*id)),
-            _ => None,
-        })
-        .collect();
+    let rows = rows(app, usize::from(list.height));
+    *app.shown.borrow_mut() = rows.iter().filter_map(Row::sel).collect();
 
     // Whether a worker (or folded) line is the last branch of its project.
     let mut last = vec![false; rows.len()];
@@ -280,6 +297,9 @@ fn salon(f: &mut Frame, area: Rect, app: &App) {
             ]),
         };
         lines.push(line);
+    }
+    if lines.is_empty() && app.needs_only {
+        lines.push(Line::from(Span::styled(t.salon_none, dim())));
     }
     f.render_widget(Paragraph::new(lines), list);
     f.render_widget(Paragraph::new(queue_line(app)), queue);

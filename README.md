@@ -229,7 +229,9 @@ cargo run -p imece-tui -- --demo --lang tr                  # or IMECE_LANG=tr; 
 ```
 
 Each project is a group in the salon with its own leader. A folded project
-is one line, and that line still shows what waits for you.
+is one line, and that line still shows what waits for you. In a project, the
+workers that need you come first: waiting for you, then stuck, then done and
+not yet seen.
 
 | Key | What it does |
 | --- | --- |
@@ -243,6 +245,7 @@ is one line, and that line still shows what waits for you.
 | `1` `2` `3` | salon · board · code map |
 | `↑` `↓` / `j` `k` | select |
 | `←` `→` / `h` `l` | fold / unfold a project (`enter` on its header too) |
+| `f` | the salon shows only what needs you (waiting for you, stuck, done and not seen) · everyone again |
 | `L` | English / Türkçe |
 | `enter` / `esc` | look deeper (focus, then the raw stream) / go back |
 | `tab`, `w` | salon ↔ the items waiting for you · straight to them |

@@ -76,6 +76,20 @@ pub enum Sel {
     Agent(AgentId),
 }
 
+/// How much an agent needs the person, least first: the salon puts the
+/// workers that need more first and `f` shows only those that need
+/// something.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Need {
+    Nothing,
+    /// Finished a turn the person has not looked at.
+    Done,
+    /// Blocked, or its session stopped.
+    Stuck,
+    /// Something of it waits in WAITING FOR YOU.
+    Waiting,
+}
+
 /// What happened while the person was away.
 pub struct Digest {
     pub minutes: u64,
@@ -206,6 +220,9 @@ pub struct App {
     pub collapsed: Vec<bool>,
     /// Workers whose helpers are folded away.
     pub folded_workers: BTreeSet<AgentId>,
+    /// The salon shows only the agents that need the person (`f`). Kept
+    /// for this run only.
+    pub needs_only: bool,
     /// Agents that finished a turn since the person last opened them.
     pub unseen: BTreeSet<AgentId>,
     /// The agents that were mid-turn at the last step.
@@ -305,6 +322,7 @@ impl App {
             selected,
             collapsed,
             folded_workers: BTreeSet::new(),
+            needs_only: false,
             unseen: BTreeSet::new(),
             turning: BTreeSet::new(),
             inbox_sel: 0,
@@ -348,6 +366,7 @@ impl App {
         }
         self.world.watch_spending();
         self.watch_turns();
+        self.settle();
         self.follow_thread();
         self.persist();
     }
@@ -404,6 +423,73 @@ impl App {
         self.unseen.contains(&id)
             && w.agents[id].status == Status::Idle
             && !w.open_inbox().iter().any(|&i| w.inbox[i].agent == id)
+    }
+
+    /// What each agent needs of the person, by id. Gone agents need
+    /// nothing.
+    pub fn needs(&self) -> Vec<Need> {
+        let w = &self.world;
+        let mut waits = vec![false; w.agents.len()];
+        for i in w.open_inbox() {
+            waits[w.inbox[i].agent] = true;
+        }
+        w.agents
+            .iter()
+            .map(|a| {
+                if a.gone {
+                    Need::Nothing
+                } else if waits[a.id] || a.status == Status::WaitingHuman {
+                    Need::Waiting
+                } else if a.status.needs_attention() {
+                    // Blocked, or its session stopped.
+                    Need::Stuck
+                } else if self.unseen.contains(&a.id) && a.status == Status::Idle {
+                    // `done_unseen`, its inbox already looked at.
+                    Need::Done
+                } else {
+                    Need::Nothing
+                }
+            })
+            .collect()
+    }
+
+    /// `f`: the salon shows only what needs the person, or everyone again.
+    fn toggle_needs(&mut self) {
+        self.needs_only = !self.needs_only;
+        let t = self.lang.text();
+        self.flash(if self.needs_only {
+            t.needs_on
+        } else {
+            t.needs_off
+        });
+    }
+
+    /// While the salon shows only what needs the person, a selection whose
+    /// row left it (the agent needs nothing any more) moves to the first
+    /// row of its project still shown, else to the first row; nothing
+    /// shown leaves it where it is. Not while the person writes: who they
+    /// write to stays put.
+    fn settle(&mut self) {
+        if !self.needs_only || self.typing {
+            return;
+        }
+        let shown: Vec<Sel> = ui::salon::rows(self, usize::MAX)
+            .iter()
+            .filter_map(ui::salon::Row::sel)
+            .collect();
+        if shown.is_empty() || shown.contains(&self.selected) {
+            return;
+        }
+        let of = |s: &Sel| match *s {
+            Sel::Project(p) => p,
+            Sel::Agent(a) => self.world.agents[a].project,
+        };
+        let p = of(&self.selected);
+        self.selected = shown
+            .iter()
+            .find(|s| of(s) == p)
+            .copied()
+            .unwrap_or(shown[0]);
     }
 
     /// Saves what moved, for the next run. A store that fails is said
@@ -484,6 +570,7 @@ impl App {
     pub fn on_key(&mut self, k: KeyEvent) {
         self.key(k);
         self.seen();
+        self.settle();
         self.follow_thread();
         self.persist();
     }
@@ -675,6 +762,7 @@ impl App {
             KeyCode::Down | KeyCode::Char('j') => self.move_selection(true),
             KeyCode::Left | KeyCode::Char('h') if self.salon_keys() => self.fold(true),
             KeyCode::Right | KeyCode::Char('l') if self.salon_keys() => self.fold(false),
+            KeyCode::Char('f') if self.salon_keys() => self.toggle_needs(),
             KeyCode::Enter => self.deeper(),
             KeyCode::Esc if self.on_card() => self.leave_card(),
             KeyCode::Esc => {
@@ -2252,6 +2340,169 @@ mod tests {
             tick: 0,
             card: None,
         }
+    }
+
+    #[test]
+    fn what_an_agent_needs_of_the_person_is_ranked() {
+        let mut app = quiet();
+        assert_eq!(app.world.agents.len(), 5, "the lead and four workers");
+        assert_eq!(app.needs(), [Need::Nothing; 5], "idle, nothing open");
+        // An open item waits, a closed one does not; one that left needs
+        // nothing.
+        app.world.inbox.push(item(1, true));
+        app.world.inbox.push(item(2, false));
+        app.world.inbox.push(item(3, true));
+        app.world.agents[3].gone = true;
+        assert_eq!(
+            app.needs(),
+            [
+                Need::Nothing,
+                Need::Waiting,
+                Need::Nothing,
+                Need::Nothing,
+                Need::Nothing
+            ]
+        );
+        app.world.inbox.clear();
+        app.world.agents[3].gone = false;
+        app.world.agents[1].status = Status::WaitingHuman;
+        app.world.agents[2].status = Status::Blocked;
+        app.world.agents[3].status = Status::Stopped;
+        app.unseen.extend([0, 4]);
+        assert_eq!(
+            app.needs(),
+            [
+                Need::Done,
+                Need::Waiting,
+                Need::Stuck,
+                Need::Stuck,
+                Need::Done
+            ]
+        );
+        // Done is a finished turn: at work again it is no news; an item
+        // says more than done.
+        app.world.agents[4].status = Status::Working;
+        app.world.inbox.push(item(0, true));
+        assert_eq!(app.needs()[4], Need::Nothing);
+        assert_eq!(app.needs()[0], Need::Waiting);
+        app.world.agents[2].gone = true;
+        assert_eq!(app.needs()[2], Need::Nothing, "gone and blocked");
+        assert!(Need::Waiting > Need::Stuck && Need::Stuck > Need::Done);
+        assert!(Need::Done > Need::Nothing);
+    }
+
+    /// The salon's selectable rows.
+    fn shown(app: &App) -> Vec<Sel> {
+        ui::salon::rows(app, 100)
+            .iter()
+            .filter_map(ui::salon::Row::sel)
+            .collect()
+    }
+
+    /// Two projects, everyone idle with nothing open; the first two
+    /// workers of project 0 and the first of project 1.
+    fn two_quiet_projects() -> (App, [AgentId; 3]) {
+        let mut app = App::new(2, 4, 0, 1, Lang::En);
+        app.world.inbox.clear();
+        for a in &mut app.world.agents {
+            a.status = Status::Idle;
+        }
+        let of = |p| {
+            app.world
+                .agents
+                .iter()
+                .filter(move |a| a.project == p && a.role == Role::Worker)
+                .map(|a| a.id)
+        };
+        let mut zero = of(0);
+        let (a, b) = (zero.next().unwrap(), zero.next().unwrap());
+        let c = of(1).next().unwrap();
+        (app, [a, b, c])
+    }
+
+    #[test]
+    fn f_shows_only_what_needs_you_and_a_project_with_none_is_left_out() {
+        let (mut app, [a, b, c]) = two_quiet_projects();
+        app.world.agents[c].status = Status::Blocked;
+        // Not from another pane.
+        app.pane = Pane::Inbox;
+        app.on_key(key(KeyCode::Char('f')));
+        assert!(!app.needs_only);
+        app.pane = Pane::Salon;
+        app.on_key(key(KeyCode::Char('f')));
+        assert!(app.needs_only);
+        assert_eq!(app.flash.as_ref().unwrap().0, Lang::En.text().needs_on);
+        // Only project 1, and of it only its stuck worker: not its lead.
+        assert_eq!(shown(&app), [Sel::Project(1), Sel::Agent(c)]);
+        // A folded project shows its header alone.
+        app.collapsed[1] = true;
+        assert_eq!(shown(&app), [Sel::Project(1)]);
+        app.collapsed[1] = false;
+        app.world.agents[b].status = Status::Blocked;
+        assert_eq!(
+            shown(&app),
+            [
+                Sel::Project(0),
+                Sel::Agent(b),
+                Sel::Project(1),
+                Sel::Agent(c)
+            ]
+        );
+        assert!(!shown(&app).contains(&Sel::Agent(a)));
+        app.on_key(key(KeyCode::Char('f')));
+        assert!(!app.needs_only);
+        assert_eq!(app.flash.as_ref().unwrap().0, Lang::En.text().needs_off);
+        assert!(shown(&app).contains(&Sel::Agent(a)), "everyone again");
+    }
+
+    #[test]
+    fn with_only_what_needs_you_shown_the_selection_stays_on_a_shown_row() {
+        let (mut app, [a, b, c]) = two_quiet_projects();
+        for id in [a, b, c] {
+            app.world.agents[id].status = Status::Blocked;
+        }
+        app.selected = Sel::Agent(b);
+        app.on_key(key(KeyCode::Char('f')));
+        assert_eq!(app.selected, Sel::Agent(b), "shown: it stays");
+        // b needs nothing now: to the first row of its project.
+        app.world.agents[b].status = Status::Idle;
+        app.on_key(key(KeyCode::Char('x')));
+        assert_eq!(app.selected, Sel::Project(0));
+        // Nothing left in project 1: to the first row there is.
+        app.selected = Sel::Agent(c);
+        app.world.agents[c].status = Status::Idle;
+        app.on_key(key(KeyCode::Char('x')));
+        assert_eq!(app.selected, Sel::Project(0));
+        // Not while the person writes: who they write to stays put.
+        app.selected = Sel::Agent(a);
+        app.on_key(key(KeyCode::Char('i')));
+        app.world.agents[a].status = Status::Idle;
+        app.on_key(key(KeyCode::Char('z')));
+        assert_eq!(app.selected, Sel::Agent(a));
+        assert_eq!(app.input, "z");
+        // Nothing shown at all: it stays too.
+        app.on_key(key(KeyCode::Esc));
+        assert!(!app.typing && shown(&app).is_empty());
+        assert_eq!(app.selected, Sel::Agent(a));
+        // Showing everyone, a selection off the rows is left alone.
+        app.needs_only = false;
+        app.collapsed[0] = true;
+        app.on_key(key(KeyCode::Char('x')));
+        assert_eq!(app.selected, Sel::Agent(a));
+    }
+
+    #[test]
+    fn a_step_moves_a_selection_whose_row_left_the_filter() {
+        let (mut app, [a, b, c]) = two_quiet_projects();
+        for id in [a, c] {
+            app.world.agents[id].status = Status::Blocked;
+        }
+        app.needs_only = true;
+        app.world.agents[b].gone = true;
+        app.selected = Sel::Agent(b);
+        app.step();
+        assert_ne!(app.selected, Sel::Agent(b));
+        assert!(shown(&app).contains(&app.selected), "{:?}", app.selected);
     }
 
     #[test]
