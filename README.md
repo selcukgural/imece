@@ -82,6 +82,14 @@ your shell's title comes back when imece ends.
   and then steps on, `⇧tab` back, `↑` `↓` and ctrl-n / ctrl-p step too,
   the text following; `enter` takes the highlighted one when it is not in
   yet, else sends; `esc` hides the menu, and cancels the writing after.
+- The line edits as a shell's does (readline): ctrl-a / ctrl-e to the
+  start / end, alt-b / alt-f (or alt or ctrl with `←` `→`) a word back /
+  on, `←` `→` a character, ctrl-w cuts back to the space before,
+  alt-backspace / alt-d a word back / on, ctrl-u / ctrl-k what is
+  before / after the cursor, ctrl-y puts the last cut back. Completion
+  waits until the cursor is at the end again. On macOS the alt keys need
+  the terminal to send Option as Meta (iTerm2: Profiles → Keys → Left
+  Option key: Esc+; Terminal.app: Use Option as Meta key).
 - `!cargo test` runs a command of your own in your own shell (`$SHELL`),
   in the checkout, as `:!` does in vim: the screen steps aside, the
   command has the terminal to itself (so `git log`, `less` and `vim`
@@ -231,6 +239,7 @@ is one line, and that line still shows what waits for you.
 | `:budget USD` | raise or lower the budget while agents run (`:b 80`) |
 | `!cmd` | run `cmd` in your own shell; the screen steps aside until a key |
 | `tab` `⇧tab` `↑` `↓` | while writing: complete an agent's name (`@`), a command (`:`, `/`) |
+| `^a` `^e` `⌥b` `⌥f` `^w` `^u` `^k` `^y` | while writing: readline's keys, to the start / end, a word back / on, cut a word / before / after the cursor, put the cut back |
 | `1` `2` `3` | salon · board · code map |
 | `↑` `↓` / `j` `k` | select |
 | `←` `→` / `h` `l` | fold / unfold a project (`enter` on its header too) |

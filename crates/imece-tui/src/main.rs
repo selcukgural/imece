@@ -5,6 +5,7 @@
 mod app;
 mod clip;
 mod complete;
+mod edit;
 mod i18n;
 mod live;
 mod model;

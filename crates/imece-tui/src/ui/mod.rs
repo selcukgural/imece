@@ -969,12 +969,29 @@ fn completions(f: &mut Frame, area: Rect, m: &crate::complete::Menu) {
     f.render_widget(Paragraph::new(Line::from(spans)), area);
 }
 
+/// The line being written with its cursor: the character under it in
+/// reverse, or a block at the end. A line `clean` would change (a pasted
+/// token) is drawn cleaned whole with the block at the end, so moving
+/// into it does not split the token past hiding.
+fn cursor_spans(input: &str, at: usize) -> Vec<Span<'static>> {
+    let whole = clean(input);
+    let under = input[at..].chars().next();
+    match under {
+        Some(c) if whole == input => vec![
+            Span::raw(input[..at].to_string()),
+            Span::styled(c.to_string(), Style::new().add_modifier(Modifier::REVERSED)),
+            Span::raw(input[at + c.len_utf8()..].to_string()),
+        ],
+        _ => vec![Span::raw(whole), Span::styled("█", dim())],
+    }
+}
+
 fn footer(f: &mut Frame, area: Rect, app: &App) {
     let t = app.lang.text();
     let key = key_style;
     let line = if app.typing {
-        Line::from(vec![
-            Span::styled(
+        Line::from(
+            vec![Span::styled(
                 if app.typing_shell() {
                     t.typing_shell.to_string()
                 } else if app.typing_card() {
@@ -985,18 +1002,19 @@ fn footer(f: &mut Frame, area: Rect, app: &App) {
                     fill(t.typing_to, &[&app.typing_target()])
                 },
                 bold(pal().strong),
-            ),
-            Span::raw(clean(&app.input)),
-            Span::styled("█", dim()),
-            Span::styled(
+            )]
+            .into_iter()
+            .chain(cursor_spans(&app.input, app.cursor()))
+            .chain([Span::styled(
                 if app.menu.is_some() {
                     t.pick_cancel
                 } else {
                     t.send_cancel
                 },
                 dim(),
-            ),
-        ])
+            )])
+            .collect::<Vec<_>>(),
+        )
     } else if let Some((msg, at)) = &app.flash
         && at.elapsed() < FLASH
     {
@@ -2796,6 +2814,153 @@ mod tests {
         let body = |s: &str| s.lines().take(11).map(str::to_string).collect::<Vec<_>>();
         assert_eq!(body(&before), body(&after), "only the footer changed");
         assert_ne!(before, after);
+    }
+
+    fn alt(app: &mut App, code: KeyCode) {
+        app.on_key(KeyEvent::new(
+            code,
+            ratatui::crossterm::event::KeyModifiers::ALT,
+        ));
+    }
+
+    fn write(app: &mut App, text: &str) {
+        for c in text.chars() {
+            key(app, KeyCode::Char(c));
+        }
+    }
+
+    #[test]
+    fn readline_keys_edit_the_line_at_the_cursor() {
+        let mut app = app_after(1, 3, 0, Lang::En);
+        key(&mut app, KeyCode::Char('/'));
+        write(&mut app, "fix parser");
+        ctrl(&mut app, 'a');
+        assert_eq!((app.cursor(), app.after), (0, 10));
+        write(&mut app, "please ");
+        assert_eq!(app.input, "please fix parser");
+        alt(&mut app, KeyCode::Char('f'));
+        assert_eq!(app.cursor(), 10);
+        ctrl(&mut app, 'k');
+        assert_eq!(
+            (app.input.as_str(), app.cut.as_str()),
+            ("please fix", " parser")
+        );
+        alt(&mut app, KeyCode::Char('b'));
+        ctrl(&mut app, 'w');
+        assert_eq!((app.input.as_str(), app.cut.as_str()), ("fix", "please "));
+        ctrl(&mut app, 'e');
+        ctrl(&mut app, 'y');
+        assert_eq!(app.input, "fixplease ");
+        ctrl(&mut app, 'u');
+        assert_eq!((app.input.as_str(), app.cut.as_str()), ("", "fixplease "));
+        assert!(app.typing, "ctrl keys edit, they do not leave");
+    }
+
+    #[test]
+    fn the_menu_is_offered_only_with_the_cursor_at_the_end() {
+        let mut app = app_after(1, 3, 0, Lang::En);
+        key(&mut app, KeyCode::Char('@'));
+        write(&mut app, "cl");
+        assert!(app.menu.is_some());
+        key(&mut app, KeyCode::Left);
+        assert_eq!(app.menu, None, "moved off the end");
+        key(&mut app, KeyCode::Tab);
+        assert_eq!(
+            (app.input.as_str(), app.menu.is_none()),
+            ("@cl", true),
+            "tab waits for the end"
+        );
+        key(&mut app, KeyCode::End);
+        assert!(app.menu.is_some(), "back at the end");
+        // A cut that leaves the cursor where it is but at the end now.
+        key(&mut app, KeyCode::Left);
+        write(&mut app, "x");
+        assert_eq!((app.input.as_str(), app.menu.is_none()), ("@cxl", true));
+        key(&mut app, KeyCode::Left);
+        ctrl(&mut app, 'k');
+        assert_eq!(app.input, "@c");
+        assert!(
+            app.menu.is_some(),
+            "the line changed and ends at the cursor"
+        );
+        // A key that does nothing leaves the menu as it was.
+        key(&mut app, KeyCode::Tab);
+        let menu = app.menu.clone();
+        assert!(menu.as_ref().unwrap().inserted);
+        key(&mut app, KeyCode::Right);
+        ctrl(&mut app, 'x');
+        assert_eq!(app.menu, menu);
+    }
+
+    #[test]
+    fn tab_at_the_end_with_the_menu_hidden_offers_it_again() {
+        let mut app = app_after(1, 3, 0, Lang::En);
+        key(&mut app, KeyCode::Char('@'));
+        write(&mut app, "cl");
+        key(&mut app, KeyCode::Esc);
+        assert!(app.typing && app.menu.is_none(), "esc hid the menu");
+        key(&mut app, KeyCode::Tab);
+        let m = app.menu.as_ref().unwrap();
+        assert!(m.inserted);
+        assert_eq!(app.input, format!("@{} ", m.items[0]));
+    }
+
+    #[test]
+    fn the_cursor_starts_at_the_end_after_esc_and_after_sending() {
+        let mut app = app_after(1, 3, 0, Lang::En);
+        key(&mut app, KeyCode::Char('/'));
+        write(&mut app, "ab");
+        key(&mut app, KeyCode::Left);
+        key(&mut app, KeyCode::Esc);
+        key(&mut app, KeyCode::Char(':'));
+        write(&mut app, "b");
+        assert_eq!(app.input, ":b");
+        key(&mut app, KeyCode::Left);
+        key(&mut app, KeyCode::Enter);
+        assert!(!app.typing);
+        key(&mut app, KeyCode::Char('!'));
+        write(&mut app, "ls");
+        assert_eq!(app.input, "!ls");
+    }
+
+    #[test]
+    fn a_stale_cursor_lands_on_the_next_character_edge() {
+        let mut app = app_after(1, 3, 0, Lang::En);
+        app.input = "aç".into();
+        for (after, at) in [(0, 3), (1, 3), (2, 1), (3, 0), (9, 0)] {
+            app.after = after;
+            assert_eq!(app.cursor(), at, "{after}");
+        }
+    }
+
+    #[test]
+    fn the_character_under_the_cursor_is_drawn_in_reverse() {
+        let texts = |spans: &[Span]| {
+            spans
+                .iter()
+                .map(|s| s.content.to_string())
+                .collect::<Vec<_>>()
+        };
+        let reversed = |s: &Span| s.style.add_modifier.contains(Modifier::REVERSED);
+        let spans = cursor_spans("açb", 1);
+        assert_eq!(texts(&spans), ["a", "ç", "b"]);
+        assert_eq!(
+            spans.iter().map(reversed).collect::<Vec<_>>(),
+            [false, true, false]
+        );
+        let spans = cursor_spans("ab", 2);
+        assert_eq!(texts(&spans), ["ab", "█"]);
+        assert!(!reversed(&spans[1]));
+        // A line `clean` changes is drawn cleaned, with the block at the
+        // end, wherever the cursor is.
+        assert_eq!(texts(&cursor_spans("x sk-abc", 3)), ["x [***]", "█"]);
+        // On screen: the footer has the line and the reversed letter.
+        let mut app = app_after(1, 3, 0, Lang::En);
+        key(&mut app, KeyCode::Char('/'));
+        write(&mut app, "hello");
+        key(&mut app, KeyCode::Home);
+        assert!(render(&app, 140, 40).contains("hello"));
+        assert!(!render(&app, 140, 40).contains("hello█"));
     }
 
     /// `completions` alone: a row of `width` cells with `m` drawn in it,

@@ -136,6 +136,7 @@ record in the same PR.
 - 34 `quit-ask`: the quit question counts agents mid-turn and changes not reviewed; `q s` lists them.
 - 35 `fleet-and-done-unseen`: `✓` done, not seen until opened (`App::unseen`); the header's fleet `● working ✓ done ✕ stuck`.
 - 36 `worktree-stand`: a worker's row `⎇ branch ↑own ↓checkout +N −M`, `worktree::stand` on the git thread, when it is read.
+- 37 `readline-keys`: ctrl-a/e/w/u/k/y, alt-b/f/d in the command line (`edit.rs`), the cursor as `App::after`, the menu only at the end.
 
 `docs/neighbours.md`: voff, what was taken from it and the rules that come
 from what it lacks. Read it before building a part it names.

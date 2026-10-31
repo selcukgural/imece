@@ -10,6 +10,7 @@ use std::time::{Duration, Instant};
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use crate::complete::{self, Menu};
+use crate::edit;
 use crate::i18n::{Lang, fill};
 use crate::live::{Live, Refusal};
 use crate::model::*;
@@ -243,6 +244,12 @@ pub struct App {
     pub pending: Option<char>,
     pub typing: bool,
     pub input: String,
+    /// Where the cursor is in `input`, as the bytes after it: 0 is the
+    /// end, so text put in from elsewhere starts with the cursor there.
+    pub after: usize,
+    /// What the last ctrl-w / ctrl-u / ctrl-k (or alt-backspace, alt-d)
+    /// cut, for ctrl-y.
+    pub cut: String,
     /// What the composer offers for the word being typed, if anything.
     pub menu: Option<Menu>,
     pub paused: bool,
@@ -315,6 +322,8 @@ impl App {
             pending: None,
             typing: false,
             input: String::new(),
+            after: 0,
+            cut: String::new(),
             menu: None,
             paused: false,
             speed: 1,
@@ -1182,17 +1191,14 @@ impl App {
     /// match in and then steps on, `⇧tab` steps back, the arrows (and
     /// ctrl-n / ctrl-p) step too, `enter` takes the highlighted match
     /// when the word is not in yet, else sends, and `esc` hides the menu
-    /// before it cancels the writing.
+    /// before it cancels the writing. The rest are readline's editing
+    /// keys (`edit::key`); the menu is offered only with the cursor at
+    /// the end, since a completion replaces the word the line ends with.
     fn type_key(&mut self, k: KeyEvent) {
-        if k.modifiers.contains(KeyModifiers::CONTROL) {
-            match k.code {
-                KeyCode::Char('n') => self.pick(true),
-                KeyCode::Char('p') => self.pick(false),
-                _ => {}
-            }
-            return;
-        }
+        let ctrl = k.modifiers.contains(KeyModifiers::CONTROL);
         match k.code {
+            KeyCode::Char('n') if ctrl => self.pick(true),
+            KeyCode::Char('p') if ctrl => self.pick(false),
             KeyCode::Enter => match &mut self.menu {
                 Some(m) if !m.inserted => {
                     m.insert(&mut self.input);
@@ -1207,12 +1213,10 @@ impl App {
             KeyCode::Esc => {
                 self.typing = false;
                 self.input.clear();
-            }
-            KeyCode::Backspace => {
-                self.input.pop();
-                self.menu = self.suggest();
+                self.after = 0;
             }
             KeyCode::Tab => match &mut self.menu {
+                None if self.after > 0 => {}
                 None => {
                     self.menu = self.suggest();
                     if let Some(m) = &mut self.menu {
@@ -1224,11 +1228,34 @@ impl App {
             },
             KeyCode::BackTab | KeyCode::Up => self.pick(false),
             KeyCode::Down => self.pick(true),
-            KeyCode::Char(c) => {
-                self.input.push(c);
-                self.menu = self.suggest();
-            }
-            _ => {}
+            _ => self.edit(k),
+        }
+    }
+
+    /// Where the cursor is in `input`, as a byte offset on a character's
+    /// edge (the next edge on, should `after` be stale).
+    pub fn cursor(&self) -> usize {
+        let end = self.input.len();
+        let at = end.saturating_sub(self.after);
+        (at..end)
+            .find(|&i| self.input.is_char_boundary(i))
+            .unwrap_or(end)
+    }
+
+    /// An editing key: the line or the cursor changes, and with them
+    /// what the menu offers.
+    fn edit(&mut self, k: KeyEvent) {
+        let (was, at) = (self.input.clone(), self.cursor());
+        let Some(to) = edit::key(k, &mut self.input, at, &mut self.cut) else {
+            return;
+        };
+        self.after = self.input.len() - to;
+        if to != at || self.input != was {
+            self.menu = if self.after == 0 {
+                self.suggest()
+            } else {
+                None
+            };
         }
     }
 
@@ -1284,6 +1311,7 @@ impl App {
         let text = self.input.trim().to_string();
         let target = self.typing_target();
         self.input.clear();
+        self.after = 0;
         self.typing = false;
         self.menu = None;
         if text.is_empty() {
