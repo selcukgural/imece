@@ -344,7 +344,7 @@ pub struct Text {
     pub waiting_yes: &'static str,
     // Overlays
     pub help_title: &'static str,
-    pub help_keys: [(&'static str, &'static str); 37],
+    pub help_keys: [(&'static str, &'static str); 39],
     pub help_legend: [&'static str; 4],
     pub close: &'static str,
     pub away_title: &'static str,
@@ -649,6 +649,8 @@ pub const EN: Text = Text {
         ),
         ("!cmd", "run cmd in your own shell, screen aside"),
         ("tab ⇧tab ↑ ↓", "while writing: complete names and commands"),
+        ("^a ^e ⌥b ⌥f", "writing: to start / end, a word back / on"),
+        ("^w ^u ^k ^y", "writing: cut a word / before / after; paste"),
         (
             "#N  #word",
             "a card by number or title: all of it on one screen",
@@ -1001,6 +1003,8 @@ pub const TR: Text = Text {
         ),
         ("!kmt", "kmt kendi kabuğunda; ekran kenara çekilir"),
         ("tab ⇧tab ↑ ↓", "yazarken: ad ve komut tamamla"),
+        ("^a ^e ⌥b ⌥f", "yazarken: başa / sona, kelime geri / ileri"),
+        ("^w ^u ^k ^y", "yazarken: kelime/öncesi/sonrası kes; koy"),
         (
             "#N  #kelime",
             "numara ya da başlıkla bir iş: hepsi tek ekranda",

@@ -18,6 +18,10 @@ nothing for `!` or plain text; one match equal to the word = no menu.
 Keys (`type_key`): tab inserts the highlighted item then steps,
 ⇧tab/↑/↓/ctrl-n/ctrl-p step with the text following (zsh menu style;
 `Menu::inserted`), enter takes the item when not in yet else sends,
-esc hides the menu then cancels. Drawn as one row above the footer
+esc hides the menu then cancels. Since readline's keys
+(decision 37) move the cursor, the menu is offered only with the
+cursor at the end (a completion replaces the word the line ends with):
+moving off the end hides it, `tab` there does nothing, coming back
+offers it again. Drawn as one row above the footer
 (`completions` in ui/mod.rs: window that keeps the chosen item in
 view), footer hint `pick_cancel`. No path completion after `!`.
