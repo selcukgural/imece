@@ -1423,6 +1423,7 @@ mod tests {
         a.changed_at = app.world.tick;
         a.stand = Stand::default();
         a.local = None;
+        a.plan.clear();
         a.talk = Some(Talk {
             with: Party::Person,
             mine: true,
@@ -5933,6 +5934,7 @@ mod tests {
             a.starting = false;
             a.changed_at = 100;
             a.local = None;
+            a.plan.clear();
             a.cost = 0;
         }
         app
@@ -6233,6 +6235,167 @@ mod tests {
         assert!(!r.contains(&"a".repeat(27)), "{r}");
     }
 
+    fn steps(n: usize, done: usize) -> Vec<Step> {
+        (1..=n)
+            .map(|i| Step {
+                text: format!("s{i}"),
+                state: if i <= done {
+                    StepState::Done
+                } else if i == done + 1 {
+                    StepState::Doing
+                } else {
+                    StepState::Todo
+                },
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_row_marks_how_far_its_to_do_list_is_and_the_focus_lists_the_steps() {
+        let mut app = quiet_rows();
+        let w = 1;
+        assert!(!row(&app, w, 200).contains('≡'));
+        let a = &mut app.world.agents[w];
+        a.plan = vec![
+            Step {
+                text: "Read the parser".into(),
+                state: StepState::Done,
+            },
+            Step {
+                text: "Change it".into(),
+                state: StepState::Doing,
+            },
+            Step {
+                text: "Test <it>".into(),
+                state: StepState::Todo,
+            },
+        ];
+        a.cost = 12_345;
+        a.changed_at = 64;
+        let r = row(&app, w, 200);
+        assert!(r.contains("idle · 3 min  ≡ 1/3  $1.23"), "{r}");
+        app.zoom = Zoom::Focus(w);
+        let s = render(&app, 140, 40);
+        for line in [
+            "TO DO 1/3",
+            "✓ Read the parser",
+            "▸ Change it",
+            "○ Test <it>",
+        ] {
+            assert!(s.contains(line), "{line}\n{s}");
+        }
+        app.lang = Lang::Tr;
+        assert!(render(&app, 140, 40).contains("YAPILACAKLAR 1/3"));
+        // No list, no title.
+        app.world.agents[w].plan.clear();
+        assert!(!render(&app, 140, 40).contains("YAPILACAKLAR"));
+    }
+
+    #[test]
+    fn a_long_to_do_list_folds_its_done_steps_and_counts_what_it_leaves_off() {
+        let t = Lang::En.text();
+        let text = |lines: Vec<Line>| -> Vec<String> {
+            lines
+                .iter()
+                .map(|l| l.spans.iter().map(|s| s.content.as_ref()).collect())
+                .collect()
+        };
+        // Eight fit whole.
+        assert_eq!(
+            text(focus::plan_lines(t, &steps(8, 2))),
+            [
+                "✓ s1", "✓ s2", "▸ s3", "○ s4", "○ s5", "○ s6", "○ s7", "○ s8"
+            ]
+        );
+        // Twelve, four done: the done fold, the rest to the cap, the count.
+        assert_eq!(
+            text(focus::plan_lines(t, &steps(12, 4))),
+            [
+                "✓ 4 done",
+                "▸ s5",
+                "○ s6",
+                "○ s7",
+                "○ s8",
+                "○ s9",
+                "○ s10",
+                "… 2 more"
+            ]
+        );
+        // Nine with none done: nothing to fold, seven and the count.
+        assert_eq!(
+            text(focus::plan_lines(t, &steps(9, 0))),
+            [
+                "▸ s1",
+                "○ s2",
+                "○ s3",
+                "○ s4",
+                "○ s5",
+                "○ s6",
+                "○ s7",
+                "… 2 more"
+            ]
+        );
+        // All done: the fold alone.
+        assert_eq!(text(focus::plan_lines(t, &steps(9, 9))), ["✓ 9 done"]);
+        let tr = text(focus::plan_lines(Lang::Tr.text(), &steps(12, 4)));
+        assert_eq!((tr[0].as_str(), tr[7].as_str()), ("✓ 4 bitti", "… 2 daha"));
+        // The legend names the mark in both languages.
+        assert!(
+            t.help_legend[4].ends_with("  ≡ 3/7 its to-do steps done"),
+            "{}",
+            t.help_legend[4]
+        );
+        assert!(
+            Lang::Tr.text().help_legend[4].ends_with("  ≡ 3/7 yapılacaklarından biten"),
+            "{}",
+            Lang::Tr.text().help_legend[4]
+        );
+    }
+
+    #[test]
+    fn the_to_do_mark_gives_way_after_the_quote_and_the_time() {
+        let mut app = quiet_rows();
+        let (worker, _) = with_helpers(&mut app);
+        let a = &mut app.world.agents[worker];
+        a.status = Status::Idle;
+        a.changed_at = 64;
+        a.local = Some("http://localhost:5173/".into());
+        a.plan = steps(3, 1);
+        told(a, Party::Person, true, "parser fixed");
+        // The 113 of the row without the mark, and the mark's 7.
+        let whole = row(&app, worker, 200);
+        assert_eq!(whole.chars().count(), 120, "{whole}");
+        assert!(
+            whole.contains(
+                "idle → you \"parser fixed\" · 3 min  ≡ 1/3  ▾ 2 helpers  ↗ localhost:5173/"
+            ),
+            "{whole}"
+        );
+        assert_eq!(row(&app, worker, 120), whole, "fits exactly");
+        // One short: the quote shrinks first.
+        let r = row(&app, worker, 119);
+        assert!(r.contains("\"parser fix…\" · 3 min  ≡ 1/3  ▾"), "{r}");
+        // Then the quote goes, then the time; the mark stays longest.
+        let r = row(&app, worker, 100);
+        assert!(r.contains("idle · 3 min  ≡ 1/3  ▾ 2 helpers"), "{r}");
+        // The time needs its eight after the mark: at 99 exactly, at 98 not.
+        let r = row(&app, worker, 99);
+        assert!(r.contains("idle · 3 min  ≡ 1/3  ▾ 2 helpers"), "{r}");
+        let r = row(&app, worker, 98);
+        assert!(
+            r.contains("idle  ≡ 1/3  ▾ 2 helpers") && !r.contains("min"),
+            "{r}"
+        );
+        // The mark needs its seven: at 91 exactly, at 90 not.
+        let r = row(&app, worker, 91);
+        assert!(
+            r.contains("idle  ≡ 1/3  ▾ 2 helpers") && !r.contains("min"),
+            "{r}"
+        );
+        let r = row(&app, worker, 90);
+        assert!(r.contains("idle  ▾ 2 helpers") && !r.contains('≡'), "{r}");
+    }
+
     #[test]
     fn a_row_says_how_long_it_has_been_in_its_state_from_a_minute_on() {
         let mut app = quiet_rows();
@@ -6274,6 +6437,7 @@ mod tests {
         a.status = Status::Idle;
         a.changed_at = 64;
         a.local = Some("http://localhost:5173/".into());
+        a.plan.clear();
         told(a, Party::Person, true, "parser fixed");
         let tail = "  ▾ 2 helpers  ↗ localhost:5173/";
         // Glyph, mark, name, taint, card and `idle` take 52; the quote 21,

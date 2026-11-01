@@ -137,6 +137,11 @@ pub const WEB_TOOLS: &[&str] = &["google_web_search", "web_fetch"];
 /// Gemini CLI's tools that run agents of its own (and the agents it
 /// offers as tools): off at every level.
 pub const SUBAGENT_TOOLS: &[&str] = &["invoke_agent", "codebase_investigator", "generalist"];
+/// Gemini CLI's own to-do list (`write_todos`, on by default and asked
+/// for by its own prompt): given at every level, it changes no file. Over
+/// ACP (0.65) its call carries only its title, `Set 3 todo(s)`, and its
+/// result nothing, so the list's steps do not reach the screen.
+pub const TODO_TOOL: &str = "write_todos";
 
 /// The tools of Gemini's own an agent gets at `confine`: file tools; from
 /// standard on the web too, and the shell when it may write.
@@ -148,6 +153,7 @@ pub fn tools(write: bool, confine: Confine) -> Vec<&'static str> {
             t.push(SHELL_TOOL);
         }
     }
+    t.push(TODO_TOOL);
     t
 }
 
@@ -1180,7 +1186,9 @@ impl Protocol {
                     .as_str()
                     .map(|p| relative(p, &self.cwd))
                     .unwrap_or_else(|| {
-                        if kind == "other" {
+                        // The to-do tool's title is its whole word
+                        // (`Set 3 todo(s)`), not a call with arguments.
+                        if kind == "other" && name != TODO_TOOL {
                             mcp_target(title)
                         } else {
                             one_line(title)
@@ -1652,7 +1660,7 @@ mod tests {
         let allow = p.find("decision = \"allow\"").unwrap();
         let deny = p.find("decision = \"deny\"").unwrap();
         assert!(allow < deny, "the allows come first:\n{p}");
-        assert!(p.contains("toolName = [\"read_file\", \"list_directory\", \"glob\", \"grep_search\"]\ndecision = \"allow\"\npriority = 999"), "{p}");
+        assert!(p.contains("toolName = [\"read_file\", \"list_directory\", \"glob\", \"grep_search\", \"write_todos\"]\ndecision = \"allow\"\npriority = 999"), "{p}");
         assert!(
             p.contains("toolName = \"*\"\ndecision = \"deny\"\npriority = 998"),
             "{p}"
@@ -1660,7 +1668,10 @@ mod tests {
         assert!(p.contains("toolName = [\"mcp_imece_send\", \"mcp_imece_post\"]\ndecision = \"allow\"\npriority = 999"), "{p}");
         assert!(!p.contains("write_file"));
         let w = policy(&with_bus(true));
-        assert!(w.contains("\"write_file\", \"replace\"]"), "{w}");
+        assert!(
+            w.contains("\"write_file\", \"replace\", \"write_todos\"]"),
+            "{w}"
+        );
         let alone = policy(&spec(true));
         assert!(
             !alone.contains("mcp_imece"),
@@ -1960,31 +1971,85 @@ mod tests {
     #[test]
     fn the_level_and_the_role_give_gemini_s_own_tools() {
         let t = |write, c| tools(write, c).join(",");
+        // The to-do tool last, at every level: it changes no file.
         assert_eq!(
             t(false, Confine::Strict),
-            "read_file,list_directory,glob,grep_search"
+            "read_file,list_directory,glob,grep_search,write_todos"
         );
         assert_eq!(
             t(true, Confine::Strict),
-            "read_file,list_directory,glob,grep_search,write_file,replace"
+            "read_file,list_directory,glob,grep_search,write_file,replace,write_todos"
         );
         assert_eq!(
             t(false, Confine::Standard),
-            "read_file,list_directory,glob,grep_search,google_web_search,web_fetch"
+            "read_file,list_directory,glob,grep_search,google_web_search,web_fetch,write_todos"
         );
         assert_eq!(
             t(true, Confine::Standard),
-            "read_file,list_directory,glob,grep_search,write_file,replace,google_web_search,web_fetch,run_shell_command"
+            "read_file,list_directory,glob,grep_search,write_file,replace,google_web_search,web_fetch,run_shell_command,write_todos"
         );
         assert_eq!(t(false, Confine::Open), t(false, Confine::Standard));
         assert_eq!(t(true, Confine::Open), t(true, Confine::Standard));
     }
 
     #[test]
+    fn the_to_do_tool_is_allowed_and_its_call_is_named_by_its_whole_title() {
+        let mut p = started(&with_bus(true));
+        let acts = p
+            .line(&tool_call(
+                "write_todos__call_1",
+                "other",
+                "Set 3 todo(s)",
+                None,
+            ))
+            .unwrap();
+        assert_eq!(
+            events(&acts),
+            [Event::Tool {
+                name: "write_todos".into(),
+                target: "Set 3 todo(s)".into()
+            }]
+        );
+        // A reader has it too, at the strictest level.
+        let mut p = started(&at(Confine::Strict, false));
+        let acts = p
+            .line(&tool_call(
+                "write_todos__call_2",
+                "other",
+                "Cleared todo list",
+                None,
+            ))
+            .unwrap();
+        assert_eq!(
+            events(&acts),
+            [Event::Tool {
+                name: "write_todos".into(),
+                target: "Cleared todo list".into()
+            }]
+        );
+        // Another tool of the kind is still read as a call with arguments.
+        let acts = p
+            .line(&tool_call(
+                "mcp_imece_send__call_3",
+                "other",
+                "send(to: lead, type: inform, body: pong)",
+                None,
+            ))
+            .unwrap();
+        assert_eq!(
+            events(&acts),
+            [Event::Tool {
+                name: "mcp__imece__send".into(),
+                target: "lead".into()
+            }]
+        );
+    }
+
+    #[test]
     fn the_policy_follows_the_level_and_open_denies_only_by_name() {
         let p = policy(&at(Confine::Standard, true));
         assert!(
-            p.contains("\"write_file\", \"replace\", \"google_web_search\", \"web_fetch\"]\ndecision = \"allow\"\npriority = 999"),
+            p.contains("\"write_file\", \"replace\", \"google_web_search\", \"web_fetch\", \"write_todos\"]\ndecision = \"allow\"\npriority = 999"),
             "{p}"
         );
         // A writer's shell asks before every command.
@@ -2002,7 +2067,7 @@ mod tests {
         let p = policy(&at(Confine::Standard, false));
         assert!(
             p.contains(
-                "\"grep_search\", \"google_web_search\", \"web_fetch\"]\ndecision = \"allow\""
+                "\"grep_search\", \"google_web_search\", \"web_fetch\", \"write_todos\"]\ndecision = \"allow\""
             ),
             "{p}"
         );

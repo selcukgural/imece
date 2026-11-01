@@ -50,7 +50,7 @@ use std::time::{Duration, Instant};
 use serde_json::{Value, json};
 
 use crate::child::{self, Child, Out};
-use crate::{Ask, Confine, Event, Limit, MCP_SERVER, Mcp, mcp_tool};
+use crate::{Ask, Confine, Event, Limit, MCP_SERVER, Mcp, Step, StepState, mcp_tool};
 
 /// Variables Codex may need besides [`child::BASE_ENV`]: its home (login,
 /// config), an API key, and proxy and CA settings of corporate networks.
@@ -99,7 +99,15 @@ const OVERRIDES: &[(&str, &str)] = &[
     ("notify", "[]"),
     ("history.persistence", "\"none\""),
     ("check_for_update_on_startup", "false"),
+    (PLAN_TOOL, "true"),
 ];
+
+/// Codex's `update_plan` tool, off in an app-server thread unless asked
+/// for: the agent's own to-do list, which changes no file, read as
+/// [`Event::Plan`] from `turn/plan/updated`. `config/read` does not echo
+/// it (0.165 echoes `tools.web_search` alone), so it is the one override
+/// not checked: a thread without it only has no list to show.
+const PLAN_TOOL: &str = "tools.update_plan.enabled";
 
 /// Codex's approval policy for a session: a writer from standard on asks
 /// (`on-request`: what needs more than the sandbox gives waits for the
@@ -1001,6 +1009,8 @@ impl Protocol {
                 .map(|l| Act::Event(Event::Limits(l)))
                 .into_iter()
                 .collect()),
+            // Its `update_plan` tool: the whole list every time.
+            "turn/plan/updated" => Ok(vec![Act::Event(Event::Plan(plan(&p["plan"])))]),
             "thread/tokenUsage/updated" => {
                 let t = &p["tokenUsage"]["total"];
                 let n = |k: &str| t[k].as_u64().unwrap_or(0);
@@ -1144,6 +1154,24 @@ impl Protocol {
         }
         Ok(out)
     }
+}
+
+/// The steps of a `turn/plan/updated`, in Codex's order; a status it
+/// does not name is not begun.
+fn plan(steps: &Value) -> Vec<Step> {
+    steps
+        .as_array()
+        .into_iter()
+        .flatten()
+        .map(|s| Step {
+            text: one_line(s["step"].as_str().unwrap_or_default()),
+            state: match s["status"].as_str().unwrap_or_default() {
+                "inProgress" => StepState::Doing,
+                "completed" => StepState::Done,
+                _ => StepState::Todo,
+            },
+        })
+        .collect()
 }
 
 /// Paths of the skills Codex would offer the model.
@@ -1627,6 +1655,7 @@ mod tests {
         assert_eq!(after(&a, "web_search"), Some("\"disabled\""));
         assert_eq!(after(&a, "notify"), Some("[]"));
         assert_eq!(after(&a, "history.persistence"), Some("\"none\""));
+        assert_eq!(after(&a, "tools.update_plan.enabled"), Some("true"));
         assert_eq!(
             after(&a, "sandbox_workspace_write.network_access"),
             Some("false")
@@ -2546,6 +2575,44 @@ mod tests {
         }
         // It is asked for: not among the notifications turned off.
         assert!(!QUIET.contains(&"account/rateLimits/updated"));
+    }
+
+    #[test]
+    fn a_plan_update_is_the_agent_s_to_do_list_whole() {
+        use crate::StepState::*;
+        let step = |text: &str, state| Step {
+            text: text.into(),
+            state,
+        };
+        let mut p = in_turn(&with_bus(true));
+        let update = json!({ "threadId": "t1", "turnId": "u1", "explanation": null, "plan": [
+            { "step": "Read the parser", "status": "completed" },
+            { "step": "Change it\nin two files", "status": "inProgress" },
+            { "step": "Test", "status": "pending" },
+            { "step": "Odd", "status": "someday" } ] });
+        assert_eq!(
+            events(&p.line(&notify("turn/plan/updated", update)).unwrap()),
+            [Event::Plan(vec![
+                step("Read the parser", Done),
+                step("Change it", Doing),
+                step("Test", Todo),
+                step("Odd", Todo),
+            ])]
+        );
+        let none = json!({ "threadId": "t1", "turnId": "u1", "plan": [] });
+        assert_eq!(
+            events(&p.line(&notify("turn/plan/updated", none)).unwrap()),
+            [Event::Plan(Vec::new())]
+        );
+        // It is asked for; the proposed-plan deltas are not.
+        assert!(!QUIET.contains(&"turn/plan/updated"));
+        assert!(QUIET.contains(&"item/plan/delta"));
+        // Before the settings are checked, like every turn notification.
+        let mut p = Protocol::new(&with_bus(true), None);
+        let e = p
+            .line(&notify("turn/plan/updated", json!({ "plan": [] })))
+            .unwrap_err();
+        assert!(e.contains("before its settings were checked"), "{e}");
     }
 
     #[test]
@@ -3822,6 +3889,75 @@ done"#
                 .unwrap_or_default()
                 .contains("scratch"),
             "{calls:?}"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// `IMECE_LIVE_CODEX=1 cargo test -p imece-agent -- --ignored live_codex_reports --nocapture`
+    ///
+    /// Codex's `update_plan` tool is on in an app-server thread without
+    /// being asked for: its plan comes as `turn/plan/updated`.
+    #[test]
+    #[ignore = "drives the real codex; set IMECE_LIVE_CODEX=1"]
+    fn live_codex_reports_its_plan() {
+        if std::env::var_os("IMECE_LIVE_CODEX").is_none() {
+            return;
+        }
+        let dir =
+            std::env::temp_dir().join(format!("imece-live-codex-plan-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let cwd = dir.canonicalize().unwrap();
+        let s = Spec {
+            program: PROGRAM.into(),
+            cwd: cwd.clone(),
+            choice: Some("@low".into()),
+            write: false,
+            confine: Confine::Strict,
+            system: "You are codex-1, a coding agent in imece.".into(),
+            mcp: None,
+            resume: None,
+        };
+        let (tx, rx) = mpsc::channel();
+        let mut session = Session::start(&s, move |e| {
+            let _ = tx.send(e);
+        })
+        .unwrap();
+        session
+            .prompt(
+                "With your update_plan tool, write a plan of exactly three steps and mark \
+                 the first one in progress. Then reply with the single word: pong",
+            )
+            .unwrap();
+        let mut got = Vec::new();
+        loop {
+            let e = rx
+                .recv_timeout(Duration::from_secs(180))
+                .expect("codex answers within three minutes");
+            eprintln!("live codex: {e:?}");
+            let end = matches!(e, Event::TurnDone { .. } | Event::Stopped(_));
+            got.push(e);
+            if end {
+                break;
+            }
+        }
+        drop(session);
+        let plans: Vec<&Vec<Step>> = got
+            .iter()
+            .filter_map(|e| match e {
+                Event::Plan(p) => Some(p),
+                _ => None,
+            })
+            .collect();
+        assert!(
+            plans
+                .iter()
+                .any(|p| p.len() == 3 && p.iter().any(|s| s.state == crate::StepState::Doing)),
+            "a plan of three with one in hand: {got:?}"
+        );
+        assert!(
+            matches!(got.last(), Some(Event::TurnDone { ok: true, .. })),
+            "{got:?}"
         );
         let _ = std::fs::remove_dir_all(&dir);
     }

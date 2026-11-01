@@ -17,7 +17,7 @@
 //! `init` event is checked against that on every turn; anything else stops
 //! the session.
 
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc;
@@ -26,7 +26,7 @@ use std::time::{Duration, Instant};
 use serde_json::Value;
 
 use crate::child::{self, Child, Out};
-use crate::{Event, FIVE_HOURS, Limit, WEEK};
+use crate::{Event, FIVE_HOURS, Limit, Step, StepState, WEEK};
 
 /// Variables Claude Code may need besides [`child::BASE_ENV`]: an API key
 /// (a subscription login lives in the keychain), its config directory, and
@@ -95,6 +95,10 @@ pub const WEB_TOOLS: &[&str] = &["WebFetch", "WebSearch"];
 /// Claude Code's tools that start agents of its own: off at every level
 /// (`Task` is the older name).
 pub const SUBAGENT_TOOLS: &[&str] = &["Agent", "Task"];
+/// Claude Code's own to-do list (2.1.316: tasks, `TodoWrite` is gone):
+/// given at every level, it changes no file; its calls are read into
+/// [`Event::Plan`]. A Claude Code without them runs on without, noted.
+pub const TASK_TOOLS: &[&str] = &["TaskCreate", "TaskGet", "TaskList", "TaskUpdate"];
 /// Built-in tools that would ask before running and are allowed outright
 /// where the level gives them: the web only reads. The shell asks.
 const ALLOWED_OUTRIGHT: &[&str] = &["WebFetch", "WebSearch"];
@@ -111,6 +115,7 @@ pub fn tools(write: bool, confine: Confine) -> Vec<String> {
         }
         t.extend(WEB_TOOLS);
     }
+    t.extend(TASK_TOOLS);
     t.sort_unstable();
     t.iter().map(|t| t.to_string()).collect()
 }
@@ -399,6 +404,28 @@ pub struct Parser {
     resuming: Option<String>,
     /// The session id the last `init` reported: `/clear` starts a new one.
     session: String,
+    /// The agent's tasks by Claude Code's number, as its task tools last
+    /// left them: its to-do list.
+    tasks: BTreeMap<u64, Step>,
+    /// Task-tool calls whose result has not come, by tool-use id: a task
+    /// counts once Claude Code says it took the call.
+    pending: HashMap<String, TaskOp>,
+    /// `init` listed no task tools, and it was said.
+    untasked: bool,
+}
+
+/// A task-tool call in flight.
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum TaskOp {
+    /// `TaskCreate`: the subject the task gets.
+    Create(String),
+    /// `TaskUpdate`: the task's number, its new status and subject, those
+    /// the call names.
+    Update {
+        id: u64,
+        status: Option<String>,
+        subject: Option<String>,
+    },
 }
 
 impl Parser {
@@ -428,7 +455,15 @@ impl Parser {
             floor: spec.resume.as_ref().map_or(0, |r| r.spent),
             resuming: spec.resume.as_ref().map(|r| r.session.clone()),
             session: String::new(),
+            tasks: BTreeMap::new(),
+            pending: HashMap::new(),
+            untasked: false,
         }
+    }
+
+    /// The to-do list as the tasks stand, in Claude Code's order.
+    fn plan(&self) -> Event {
+        Event::Plan(self.tasks.values().cloned().collect())
     }
 
     /// The events in one stdout line, or why the session must stop.
@@ -496,7 +531,12 @@ impl Parser {
             .map(|t| t.as_str().unwrap_or_default().to_string())
             .collect();
         let extra: Vec<&String> = tools.difference(&self.tools).collect();
-        let missing: Vec<&String> = self.tools.difference(&tools).collect();
+        // The task tools only keep a list: a Claude Code without them
+        // (an older one) runs on, and the trace says so once.
+        let (untasked, missing): (Vec<&String>, Vec<&String>) = self
+            .tools
+            .difference(&tools)
+            .partition(|t| TASK_TOOLS.contains(&t.as_str()));
         if !missing.is_empty() || (!self.open && !extra.is_empty()) {
             return Err(format!(
                 "tools differ: extra {extra:?}, missing {missing:?}"
@@ -543,12 +583,24 @@ impl Parser {
         // The first `init`, and the one `/clear` brings with a new
         // session id: the screen keeps the id to resume later.
         if !self.started || session != self.session {
+            // A new session has no tasks yet; the list of the old one goes.
+            if !self.tasks.is_empty() {
+                self.tasks.clear();
+                self.pending.clear();
+                out.push(self.plan());
+            }
             self.started = true;
             self.session = session.clone();
             out.push(Event::Started {
                 session,
                 model: v["model"].as_str().unwrap_or_default().to_string(),
             });
+        }
+        if !untasked.is_empty() && !self.untasked {
+            self.untasked = true;
+            out.push(Event::Note(
+                "no task tools in this Claude Code: its to-do list stays empty".into(),
+            ));
         }
         if commands != self.commands {
             self.commands = commands.clone();
@@ -579,6 +631,9 @@ impl Parser {
                     }
                     if let Some(id) = block["id"].as_str() {
                         self.calls.insert(id.to_string(), name.clone());
+                        if let Some(op) = task_op(&name, &block["input"]) {
+                            self.pending.insert(id.to_string(), op);
+                        }
                     }
                     let target = target(&block["input"], &self.cwd);
                     out.push(Event::Tool { name, target });
@@ -595,15 +650,107 @@ impl Parser {
             if block["type"] != "tool_result" {
                 continue;
             }
-            let name = block["tool_use_id"]
-                .as_str()
-                .and_then(|id| self.calls.remove(id))
-                .unwrap_or_default();
+            let id = block["tool_use_id"].as_str().unwrap_or_default();
+            let name = self.calls.remove(id).unwrap_or_default();
+            let op = self.pending.remove(id);
             if block["is_error"] == true {
                 out.push(Event::ToolFailed { name });
+                continue;
+            }
+            // A task counts once Claude Code took the call: a create by
+            // the number its answer gives, an update as it was asked.
+            let changed = match op {
+                Some(TaskOp::Create(subject)) => match created(&block["content"]) {
+                    Some(n) => {
+                        self.tasks.insert(
+                            n,
+                            Step {
+                                text: subject,
+                                state: StepState::Todo,
+                            },
+                        );
+                        true
+                    }
+                    None => false,
+                },
+                Some(TaskOp::Update {
+                    id,
+                    status,
+                    subject,
+                }) => {
+                    if status.as_deref() == Some("deleted") {
+                        self.tasks.remove(&id).is_some()
+                    } else if let Some(step) = self.tasks.get_mut(&id) {
+                        if let Some(state) = status.as_deref().and_then(state_of) {
+                            step.state = state;
+                        }
+                        if let Some(s) = subject {
+                            step.text = s;
+                        }
+                        true
+                    } else {
+                        false
+                    }
+                }
+                None => false,
+            };
+            if changed {
+                out.push(self.plan());
             }
         }
         out
+    }
+}
+
+/// What a task-tool call does, read from its input; nothing for a call
+/// of another tool, or one that names no task.
+fn task_op(name: &str, input: &Value) -> Option<TaskOp> {
+    let string = |k: &str| input[k].as_str().map(str::to_string);
+    match name {
+        "TaskCreate" => Some(TaskOp::Create(string("subject")?)),
+        "TaskUpdate" => {
+            let id = &input["taskId"];
+            let id = id
+                .as_u64()
+                .or_else(|| id.as_str().and_then(|s| s.trim().parse().ok()))?;
+            Some(TaskOp::Update {
+                id,
+                status: string("status"),
+                subject: string("subject"),
+            })
+        }
+        _ => None,
+    }
+}
+
+/// The number in a `TaskCreate` answer, `Task #7 created successfully:
+/// …`; the answer is a string, or text blocks.
+fn created(content: &Value) -> Option<u64> {
+    let text = match content {
+        Value::String(s) => s.clone(),
+        Value::Array(blocks) => blocks
+            .iter()
+            .filter_map(|b| b["text"].as_str())
+            .collect::<Vec<_>>()
+            .join("\n"),
+        _ => return None,
+    };
+    let rest = text.split_once("Task #")?.1;
+    let digits: String = rest.chars().take_while(char::is_ascii_digit).collect();
+    let n = digits.parse().ok()?;
+    rest[digits.len()..]
+        .trim_start()
+        .starts_with("created")
+        .then_some(n)
+}
+
+/// A task's state as Claude Code names it.
+fn state_of(status: &str) -> Option<StepState> {
+    match status {
+        "pending" => Some(StepState::Todo),
+        "in_progress" => Some(StepState::Doing),
+        "completed" => Some(StepState::Done),
+        _ => None,
     }
 }
 
@@ -1022,15 +1169,22 @@ mod tests {
     #[test]
     fn the_level_and_the_role_give_the_built_in_tools() {
         let t = |write, c| tools(write, c).join(",");
-        assert_eq!(t(false, Confine::Strict), "Glob,Grep,Read");
-        assert_eq!(t(true, Confine::Strict), "Edit,Glob,Grep,Read,Write");
+        // The task tools at every level: a to-do list changes no file.
+        assert_eq!(
+            t(false, Confine::Strict),
+            "Glob,Grep,Read,TaskCreate,TaskGet,TaskList,TaskUpdate"
+        );
+        assert_eq!(
+            t(true, Confine::Strict),
+            "Edit,Glob,Grep,Read,TaskCreate,TaskGet,TaskList,TaskUpdate,Write"
+        );
         assert_eq!(
             t(false, Confine::Standard),
-            "Glob,Grep,Read,WebFetch,WebSearch"
+            "Glob,Grep,Read,TaskCreate,TaskGet,TaskList,TaskUpdate,WebFetch,WebSearch"
         );
         assert_eq!(
             t(true, Confine::Standard),
-            "Bash,Edit,Glob,Grep,Read,WebFetch,WebSearch,Write"
+            "Bash,Edit,Glob,Grep,Read,TaskCreate,TaskGet,TaskList,TaskUpdate,WebFetch,WebSearch,Write"
         );
         assert_eq!(t(false, Confine::Open), t(false, Confine::Standard));
         assert_eq!(t(true, Confine::Open), t(true, Confine::Standard));
@@ -1041,7 +1195,7 @@ mod tests {
         let a = args(&at(Confine::Standard, true));
         assert_eq!(
             after(&a, "--tools").unwrap(),
-            "Bash,Edit,Glob,Grep,Read,WebFetch,WebSearch,Write"
+            "Bash,Edit,Glob,Grep,Read,TaskCreate,TaskGet,TaskList,TaskUpdate,WebFetch,WebSearch,Write"
         );
         assert_eq!(
             after(&a, "--allowedTools").unwrap(),
@@ -1060,7 +1214,7 @@ mod tests {
         let a = args(&at(Confine::Standard, false));
         assert_eq!(
             after(&a, "--tools").unwrap(),
-            "Glob,Grep,Read,WebFetch,WebSearch"
+            "Glob,Grep,Read,TaskCreate,TaskGet,TaskList,TaskUpdate,WebFetch,WebSearch"
         );
         assert_eq!(
             after(&a, "--allowedTools").unwrap(),
@@ -1106,7 +1260,7 @@ mod tests {
         assert!(!a.iter().any(|x| x == "--restricted"));
         assert_eq!(
             after(&a, "--tools").unwrap(),
-            "Glob,Grep,Read,WebFetch,WebSearch"
+            "Glob,Grep,Read,TaskCreate,TaskGet,TaskList,TaskUpdate,WebFetch,WebSearch"
         );
         assert!(after(&a, "--disallowedTools").is_none());
         assert_eq!(
@@ -1389,6 +1543,321 @@ mod tests {
         let text = r#"{"type":"assistant","message":{"content":[{"type":"text","text":"hi"}]}}"#;
         assert!(p.line(text).is_err());
         assert!(p.line("not json").is_err());
+    }
+
+    const TASKED_INIT: &str =
+        r#"["Edit","Glob","Grep","Read","TaskCreate","TaskGet","TaskList","TaskUpdate","Write"]"#;
+
+    /// A strict writer's spec: the edit tools and the task tools.
+    fn tasked() -> Spec {
+        let t = tools(true, Confine::Strict);
+        spec(&t.iter().map(String::as_str).collect::<Vec<_>>())
+    }
+
+    fn tool_use(id: &str, name: &str, input: &str) -> String {
+        format!(
+            r#"{{"type":"assistant","message":{{"content":[{{"type":"tool_use","id":"{id}","name":"{name}","input":{input}}}]}}}}"#
+        )
+    }
+
+    fn tool_result(id: &str, content: &str) -> String {
+        format!(
+            r#"{{"type":"user","message":{{"content":[{{"type":"tool_result","tool_use_id":"{id}","content":{content}}}]}}}}"#
+        )
+    }
+
+    fn step(text: &str, state: StepState) -> Step {
+        Step {
+            text: text.into(),
+            state,
+        }
+    }
+
+    #[test]
+    fn the_task_tools_keep_the_agent_s_to_do_list() {
+        use StepState::*;
+        let mut p = Parser::new(&tasked());
+        p.line(&init(TASKED_INIT, "acceptEdits", "[]")).unwrap();
+        // A create counts by the number Claude Code answers with.
+        assert_eq!(
+            p.line(&tool_use(
+                "t1",
+                "TaskCreate",
+                r#"{"subject":"alpha","description":"Item alpha"}"#
+            ))
+            .unwrap(),
+            [Event::Tool {
+                name: "TaskCreate".into(),
+                target: String::new()
+            }]
+        );
+        assert_eq!(
+            p.line(&tool_result(
+                "t1",
+                r#""Task #1 created successfully: alpha""#
+            ))
+            .unwrap(),
+            [Event::Plan(vec![step("alpha", Todo)])]
+        );
+        // The answer may come as text blocks; the number may have digits.
+        p.line(&tool_use("t2", "TaskCreate", r#"{"subject":"beta"}"#))
+            .unwrap();
+        assert_eq!(
+            p.line(&tool_result(
+                "t2",
+                r#"[{"type":"text","text":"Task #12 created successfully: beta"}]"#
+            ))
+            .unwrap(),
+            [Event::Plan(vec![step("alpha", Todo), step("beta", Todo)])]
+        );
+        // Updates by number, as a string or a number: a status, a subject.
+        p.line(&tool_use(
+            "t3",
+            "TaskUpdate",
+            r#"{"taskId":"1","status":"in_progress"}"#,
+        ))
+        .unwrap();
+        assert_eq!(
+            p.line(&tool_result("t3", r#""Updated task #1 status""#))
+                .unwrap(),
+            [Event::Plan(vec![step("alpha", Doing), step("beta", Todo)])]
+        );
+        p.line(&tool_use(
+            "t4",
+            "TaskUpdate",
+            r#"{"taskId":12,"status":"completed","subject":"beta!"}"#,
+        ))
+        .unwrap();
+        assert_eq!(
+            p.line(&tool_result("t4", r#""Updated task #12 status, subject""#))
+                .unwrap(),
+            [Event::Plan(vec![step("alpha", Doing), step("beta!", Done)])]
+        );
+        p.line(&tool_use(
+            "t5",
+            "TaskUpdate",
+            r#"{"taskId":"1","status":"pending"}"#,
+        ))
+        .unwrap();
+        assert_eq!(
+            p.line(&tool_result("t5", r#""Updated task #1 status""#))
+                .unwrap(),
+            [Event::Plan(vec![step("alpha", Todo), step("beta!", Done)])]
+        );
+        // A status it does not know leaves the step as it was.
+        p.line(&tool_use(
+            "t6",
+            "TaskUpdate",
+            r#"{"taskId":"1","status":"blocked"}"#,
+        ))
+        .unwrap();
+        assert_eq!(
+            p.line(&tool_result("t6", r#""Updated task #1 status""#))
+                .unwrap(),
+            [Event::Plan(vec![step("alpha", Todo), step("beta!", Done)])]
+        );
+        // A deleted task is gone; a task it never had changes nothing.
+        p.line(&tool_use(
+            "t7",
+            "TaskUpdate",
+            r#"{"taskId":"12","status":"deleted"}"#,
+        ))
+        .unwrap();
+        assert_eq!(
+            p.line(&tool_result("t7", r#""Updated task #12 status""#))
+                .unwrap(),
+            [Event::Plan(vec![step("alpha", Todo)])]
+        );
+        for status in ["completed", "deleted"] {
+            p.line(&tool_use(
+                "t8",
+                "TaskUpdate",
+                &format!(r#"{{"taskId":"9","status":"{status}"}}"#),
+            ))
+            .unwrap();
+            assert!(
+                p.line(&tool_result("t8", r#""Task #9 not found""#))
+                    .unwrap()
+                    .is_empty(),
+                "{status}"
+            );
+        }
+        // A refused call counts nothing, and a late answer to it neither.
+        p.line(&tool_use("t10", "TaskCreate", r#"{"subject":"gamma"}"#))
+            .unwrap();
+        let failed = r#"{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"t10","is_error":true,"content":"Task #3 created successfully: gamma"}]}}"#;
+        assert_eq!(
+            p.line(failed).unwrap(),
+            [Event::ToolFailed {
+                name: "TaskCreate".into()
+            }]
+        );
+        assert!(
+            p.line(&tool_result(
+                "t10",
+                r#""Task #3 created successfully: gamma""#
+            ))
+            .unwrap()
+            .is_empty()
+        );
+        // An answer that names no created task, a create without a
+        // subject, an update without a task, another tool's answer and
+        // the reading task tools count nothing.
+        p.line(&tool_use("t11", "TaskCreate", r#"{"subject":"delta"}"#))
+            .unwrap();
+        assert!(
+            p.line(&tool_result("t11", r#""Task #3 not found""#))
+                .unwrap()
+                .is_empty()
+        );
+        p.line(&tool_use("t12", "TaskCreate", r#"{"subject":"delta"}"#))
+            .unwrap();
+        assert!(
+            p.line(&tool_result(
+                "t12",
+                r#""Task #x created successfully: delta""#
+            ))
+            .unwrap()
+            .is_empty()
+        );
+        p.line(&tool_use(
+            "t13",
+            "TaskCreate",
+            r#"{"description":"no subject"}"#,
+        ))
+        .unwrap();
+        assert!(
+            p.line(&tool_result("t13", r#""Task #3 created successfully: ""#))
+                .unwrap()
+                .is_empty()
+        );
+        p.line(&tool_use("t14", "TaskUpdate", r#"{"status":"completed"}"#))
+            .unwrap();
+        assert!(
+            p.line(&tool_result("t14", r#""Updated task""#))
+                .unwrap()
+                .is_empty()
+        );
+        p.line(&tool_use("t15", "Read", r#"{"file_path":"/work/w1/a"}"#))
+            .unwrap();
+        assert!(
+            p.line(&tool_result("t15", r#""Task #4 created successfully: x""#))
+                .unwrap()
+                .is_empty()
+        );
+        p.line(&tool_use("t16", "TaskList", "{}")).unwrap();
+        assert!(
+            p.line(&tool_result("t16", r##""#1 alpha""##))
+                .unwrap()
+                .is_empty()
+        );
+        p.line(&tool_use("t17", "TaskGet", r#"{"taskId":"1"}"#))
+            .unwrap();
+        assert!(
+            p.line(&tool_result("t17", r##""#1 alpha""##))
+                .unwrap()
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn a_new_session_starts_without_the_old_one_s_tasks() {
+        let mut p = Parser::new(&tasked());
+        let init_as = |session: &str| {
+            format!(
+                r#"{{"type":"system","subtype":"init","session_id":"{session}","model":"m1","tools":{TASKED_INIT},"permissionMode":"acceptEdits","mcp_servers":[],"slash_commands":[]}}"#
+            )
+        };
+        p.line(&init_as("s1")).unwrap();
+        // Nothing to clear: the new session is only said.
+        assert_eq!(
+            p.line(&init_as("s2")).unwrap(),
+            [Event::Started {
+                session: "s2".into(),
+                model: "m1".into()
+            }]
+        );
+        p.line(&tool_use("t1", "TaskCreate", r#"{"subject":"alpha"}"#))
+            .unwrap();
+        p.line(&tool_result(
+            "t1",
+            r#""Task #1 created successfully: alpha""#,
+        ))
+        .unwrap();
+        p.line(&tool_use("t2", "TaskCreate", r#"{"subject":"beta"}"#))
+            .unwrap();
+        // The same session said again keeps the list.
+        assert!(p.line(&init_as("s2")).unwrap().is_empty());
+        // `/clear`: the list goes before the new session is said, and an
+        // answer the old session owed counts nothing.
+        assert_eq!(
+            p.line(&init_as("s3")).unwrap(),
+            [
+                Event::Plan(Vec::new()),
+                Event::Started {
+                    session: "s3".into(),
+                    model: "m1".into()
+                }
+            ]
+        );
+        assert!(
+            p.line(&tool_result(
+                "t2",
+                r#""Task #2 created successfully: beta""#
+            ))
+            .unwrap()
+            .is_empty()
+        );
+    }
+
+    #[test]
+    fn a_claude_code_without_task_tools_runs_on_and_the_trace_says_so_once() {
+        let note =
+            Event::Note("no task tools in this Claude Code: its to-do list stays empty".into());
+        let mut p = Parser::new(&tasked());
+        assert_eq!(
+            p.line(&init(GOOD_INIT, "acceptEdits", "[]")).unwrap(),
+            [
+                Event::Started {
+                    session: "s1".into(),
+                    model: "m1".into()
+                },
+                note.clone()
+            ]
+        );
+        assert!(
+            p.line(&init(GOOD_INIT, "acceptEdits", "[]"))
+                .unwrap()
+                .is_empty()
+        );
+        // Some of them missing is said too.
+        let mut p = Parser::new(&tasked());
+        let some = r#"["Edit","Glob","Grep","Read","TaskCreate","Write"]"#;
+        assert!(
+            p.line(&init(some, "acceptEdits", "[]"))
+                .unwrap()
+                .contains(&note)
+        );
+        // All of them there: nothing to say.
+        let mut p = Parser::new(&tasked());
+        assert!(
+            !p.line(&init(TASKED_INIT, "acceptEdits", "[]"))
+                .unwrap()
+                .contains(&note)
+        );
+        // Any other tool missing still stops the session, as does an
+        // extra one.
+        let mut p = Parser::new(&tasked());
+        let no_write =
+            r#"["Edit","Glob","Grep","Read","TaskCreate","TaskGet","TaskList","TaskUpdate"]"#;
+        let e = p.line(&init(no_write, "acceptEdits", "[]")).unwrap_err();
+        assert!(
+            e.contains("missing [\"Write\"]") && !e.contains("Task"),
+            "{e}"
+        );
+        let mut p = Parser::new(&spec(EDIT_TOOLS));
+        let e = p.line(&init(TASKED_INIT, "acceptEdits", "[]")).unwrap_err();
+        assert!(e.contains("extra [\"TaskCreate\""), "{e}");
     }
 
     #[test]

@@ -72,7 +72,7 @@ An open window keeps up with the talk: journal lines of its pair that arrive are
 
 ## The trace
 
-`enter` on an agent in the salon opens its focus (FOCUS · name: its card, status, origin, leases and story); `enter` again, or `t` (`:trace`), opens its raw stream, TRACE · name. The trace is the agent's session as imece sees it, line by line, coloured by the line's first word: the agent's own text in its vendor colour, `tool_use` with the tool's name in the info colour, a `run:` by its exit code, `stopped` and `run refused` in the bad colour, the bus words in the accent. A tool call that runs over rows keeps them, indented, at most six, then `… +N`. `esc` goes back to the focus, then to the salon. `@` in a focus or a trace starts a message to that agent.
+`enter` on an agent in the salon opens its focus (FOCUS · name: its card, status, origin, leases, its own to-do list when it keeps one, and story). The to-do list is TO DO 3/7 and a step a line, `✓` done, `▸` in hand, `○` not begun, in the agent's order; a list longer than eight rows folds the done steps at its top into `✓ 4 done` and ends with `… 2 more`, so what is in hand stays in view; `enter` again, or `t` (`:trace`), opens its raw stream, TRACE · name. The trace is the agent's session as imece sees it, line by line, coloured by the line's first word: the agent's own text in its vendor colour, `tool_use` with the tool's name in the info colour, a `run:` by its exit code, `stopped` and `run refused` in the bad colour, the bus words in the accent. A tool call that runs over rows keeps them, indented, at most six, then `… +N`. `esc` goes back to the focus, then to the salon. `@` in a focus or a trace starts a message to that agent.
 
 ## See also
 

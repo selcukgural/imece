@@ -250,7 +250,13 @@ struct Content {
     helper_done: &'static str,
     tests: &'static str,
     docs: &'static str,
+    /// A worker's own to-do list for a card, as its planning tool would
+    /// hold it; filled in as its progress grows.
+    steps: [&'static str; STEPS],
 }
+
+/// Steps on a demo worker's to-do list.
+const STEPS: usize = 5;
 
 const EN: Content = Content {
     titles: &[
@@ -338,6 +344,13 @@ const EN: Content = Content {
     helper_done: "Tests written; they pass.",
     tests: "tests",
     docs: "docs",
+    steps: [
+        "Read the code around it",
+        "Make the change",
+        "Write the tests",
+        "Run the tests",
+        "Write it up for the leader",
+    ],
 };
 
 const TR: Content = Content {
@@ -426,6 +439,13 @@ const TR: Content = Content {
     helper_done: "Testler yazıldı, geçiyor.",
     tests: "testler",
     docs: "doküman",
+    steps: [
+        "Çevresindeki kodu oku",
+        "Değişikliği yap",
+        "Testleri yaz",
+        "Testleri çalıştır",
+        "Lidere yaz",
+    ],
 };
 
 const HOSTS: &[&str] = &[
@@ -1663,6 +1683,16 @@ impl Sim {
         a.card = Some(card);
         a.progress = 0;
         a.activity = Some(String::new());
+        // Its list for the card, nothing begun; its progress fills it in.
+        a.plan = self
+            .content
+            .steps
+            .iter()
+            .map(|&text| Step {
+                text: text.into(),
+                state: StepState::Todo,
+            })
+            .collect();
         // Its first task starts its session, as live does.
         a.starting = a.cost == 0;
         a.set_status(Status::Working, t);
@@ -1829,6 +1859,7 @@ impl Sim {
         }
         let progress = (w.agents[id].progress + self.rng.range(1, 2) as u8).min(100);
         w.agents[id].progress = progress;
+        Self::plan_at(w, id, progress);
         if progress >= 100 {
             self.test(w, id);
             return;
@@ -1855,6 +1886,32 @@ impl Sim {
             16..17 if self.rng.one_in(4) => self.stop(w, id),
             20..70 => self.tool(w, id, card),
             _ => {}
+        }
+    }
+
+    /// Worker `id`'s to-do list at `progress` percent: a step is done per
+    /// fifth of the way, the next one in hand, as a live worker's planning
+    /// tool would mark them; the trace says so when a step completes.
+    fn plan_at(w: &mut World, id: AgentId, progress: u8) {
+        let t = w.tick;
+        let a = &mut w.agents[id];
+        let done = usize::from(progress) * a.plan.len() / 100;
+        let was = a.plan_count().0;
+        for (i, step) in a.plan.iter_mut().enumerate() {
+            step.state = if i < done {
+                StepState::Done
+            } else if i == done {
+                StepState::Doing
+            } else {
+                StepState::Todo
+            };
+        }
+        if done != was {
+            let doing = a
+                .plan
+                .get(done)
+                .map_or(String::new(), |s| format!(" {:?}", s.text));
+            a.trace(t, format!("plan {done}/{}{doing}", a.plan.len()));
         }
     }
 
@@ -1953,8 +2010,9 @@ impl Sim {
         let card = w.agents[id].card;
         let a = &mut w.agents[id];
         a.activity = None;
-        // What it served went with its session.
+        // What it served, and its to-do list, went with its session.
         a.local = None;
+        a.plan.clear();
         a.topic = STOPPED.into();
         a.set_status(Status::Stopped, t);
         a.trace(t, format!("stopped {STOPPED:?}"));
@@ -4059,6 +4117,94 @@ diff --git a/b.rs b/b.rs
         let billing = PROJECTS.iter().find(|p| p.2.build.starts_with("go"));
         let billing = billing.unwrap().2.serves.as_ref().unwrap();
         assert_eq!(billing.url(2), "http://127.0.0.1:8082/healthz");
+    }
+
+    #[test]
+    fn a_worker_s_to_do_list_fills_in_with_its_progress_and_goes_with_its_session() {
+        use StepState::*;
+        let (mut w, mut s, worker, card) = one_at_work();
+        let texts = |w: &World| -> Vec<String> {
+            w.agents[worker]
+                .plan
+                .iter()
+                .map(|s| s.text.clone())
+                .collect()
+        };
+        let states = |w: &World| -> Vec<StepState> {
+            w.agents[worker].plan.iter().map(|s| s.state).collect()
+        };
+        assert_eq!(
+            texts(&w),
+            [
+                "Read the code around it",
+                "Make the change",
+                "Write the tests",
+                "Run the tests",
+                "Write it up for the leader"
+            ]
+        );
+        assert_eq!(states(&w), [Todo; 5]);
+        let traced = w.agents[worker].trace.len();
+        Sim::plan_at(&mut w, worker, 0);
+        assert_eq!(states(&w), [Doing, Todo, Todo, Todo, Todo]);
+        assert_eq!(
+            w.agents[worker].trace.len(),
+            traced,
+            "nothing done: no line"
+        );
+        Sim::plan_at(&mut w, worker, 19);
+        assert_eq!(w.agents[worker].plan_count(), (0, 5));
+        Sim::plan_at(&mut w, worker, 20);
+        assert_eq!(states(&w), [Done, Doing, Todo, Todo, Todo]);
+        let last = w.agents[worker].trace.back().unwrap();
+        assert!(last.ends_with(r#" plan 1/5 "Make the change""#), "{last}");
+        let traced = w.agents[worker].trace.len();
+        Sim::plan_at(&mut w, worker, 39);
+        assert_eq!(
+            w.agents[worker].trace.len(),
+            traced,
+            "the same step: no new line"
+        );
+        Sim::plan_at(&mut w, worker, 99);
+        assert_eq!(states(&w), [Done, Done, Done, Done, Doing]);
+        Sim::plan_at(&mut w, worker, 100);
+        assert_eq!(states(&w), [Done; 5]);
+        let last = w.agents[worker].trace.back().unwrap();
+        assert!(last.ends_with(" plan 5/5"), "{last}");
+        // Its done keeps the list, as a live turn's end does.
+        s.done(&mut w, worker);
+        assert_eq!(states(&w), [Done; 5]);
+        assert_eq!(w.cards[card].column, Column::Done);
+        // Stopped: gone with the session.
+        s.stop(&mut w, worker);
+        assert!(w.agents[worker].plan.is_empty());
+
+        // Its work fills it in with the progress bar, a step per fifth.
+        let (mut w, mut s, worker, card) = one_at_work();
+        for _ in 0..60 {
+            s.work(&mut w, worker);
+            let a = &w.agents[worker];
+            if a.status == Status::Stopped || w.cards[card].column == Column::Done {
+                break;
+            }
+            assert_eq!(
+                a.plan_count().0,
+                usize::from(a.progress) * 5 / 100,
+                "at {}%",
+                a.progress
+            );
+        }
+        // Turkish steps for a Turkish demo.
+        let (mut w, mut s) = world(1, 1, 0, 3, Lang::Tr);
+        let worker = workers_of(&w, 0)[0];
+        let card = w
+            .cards
+            .iter()
+            .position(|c| c.column == Column::Waiting)
+            .unwrap();
+        s.take(&mut w, worker, card, Taken::Claimed);
+        assert_eq!(w.agents[worker].plan[0].text, "Çevresindeki kodu oku");
+        assert_eq!(w.agents[worker].plan.len(), STEPS);
     }
 
     #[test]

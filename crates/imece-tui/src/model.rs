@@ -461,8 +461,27 @@ pub struct Agent {
     /// The newest loopback URL the agent wrote in its text this session
     /// (`local_url`), drawn on its row as a link the terminal opens.
     pub local: Option<String>,
+    /// Its own to-do list, as its vendor's planning tool last set it
+    /// (`imece_agent::Event::Plan`): `≡ 3/7` on its row, the steps on its
+    /// focus. Gone with the session; not kept between runs.
+    pub plan: Vec<Step>,
     /// A researcher that finished; kept so ids stay stable.
     pub gone: bool,
+}
+
+/// One step of an agent's own to-do list (`imece_agent::Step`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Step {
+    pub text: String,
+    pub state: StepState,
+}
+
+/// Where a [`Step`] stands.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum StepState {
+    Todo,
+    Doing,
+    Done,
 }
 
 /// Where a worker's worktree stands: the branch an agent put it on (none
@@ -511,8 +530,19 @@ impl Agent {
             commands: Vec::new(),
             stand: Stand::default(),
             local: None,
+            plan: Vec::new(),
             gone: false,
         }
+    }
+
+    /// How far the agent's to-do list is: the steps done, and all of them.
+    pub fn plan_count(&self) -> (usize, usize) {
+        let done = self
+            .plan
+            .iter()
+            .filter(|s| s.state == StepState::Done)
+            .count();
+        (done, self.plan.len())
     }
 
     pub fn set_status(&mut self, status: Status, tick: u64) {
@@ -1477,6 +1507,7 @@ impl World {
         let a = &mut self.agents[id];
         a.activity = None;
         a.talk = None;
+        a.plan.clear();
         a.set_status(Status::Idle, t);
         a.gone = true;
         a.trace(t, "left");
@@ -2120,6 +2151,34 @@ pub fn dollars(cost: u64) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn plan_count_counts_the_done_steps_and_leaving_clears_the_list() {
+        let step = |state| Step {
+            text: "s".into(),
+            state,
+        };
+        let mut a = Agent::new(
+            0,
+            0,
+            "a".into(),
+            Vendor::Claude,
+            Role::Worker,
+            Status::Idle,
+            0,
+        );
+        assert_eq!(a.plan_count(), (0, 0));
+        a.plan = vec![
+            step(StepState::Done),
+            step(StepState::Doing),
+            step(StepState::Done),
+            step(StepState::Done),
+        ];
+        assert_eq!(a.plan_count(), (3, 4), "done, not the rest");
+        let mut w = world(vec![a]);
+        w.leave(0);
+        assert!(w.agents[0].plan.is_empty());
+    }
 
     #[test]
     fn a_loopback_url_is_found_with_its_port_and_path_and_nothing_after() {

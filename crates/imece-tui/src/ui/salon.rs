@@ -403,9 +403,10 @@ pub(super) fn project_line(app: &App, p: ProjectId, rungs: &[Rung]) -> Line<'sta
     }
 }
 
-/// An agent's row, `width` columns wide: its status, its newest exchange
-/// and how long it has been in that state in the room the row's fixed
-/// parts (cost, stand, helpers, link) leave, then those parts.
+/// An agent's row, `width` columns wide: its status, its newest exchange,
+/// how long it has been in that state and how far its to-do list is, in
+/// the room the row's fixed parts (cost, stand, helpers, link) leave, then
+/// those parts.
 pub(super) fn agent_line(
     app: &App,
     a: &Agent,
@@ -485,17 +486,23 @@ pub(super) fn agent_line(
     // Last, so the screen knows where the text it links starts.
     tail.extend(local_spans(a));
 
-    // What is new on the row gives way to what was there: the time, then
-    // the quote, take only what the row has left once the rest is on it.
+    // What is new on the row gives way to what was there: the to-do mark,
+    // the time, then the quote, take only what the row has left once the
+    // rest is on it.
     let mut room = width.saturating_sub(columns(&spans) + columns(&tail));
-    let since = if columns(&since) <= room {
-        room -= columns(&since);
-        since
-    } else {
-        Vec::new()
+    let mut fits = |part: Vec<Span<'static>>| {
+        if columns(&part) <= room {
+            room -= columns(&part);
+            part
+        } else {
+            Vec::new()
+        }
     };
+    let plan = fits(plan_spans(a));
+    let since = fits(since);
     spans.extend(quote_spans(app, a, used, room));
     spans.extend(since);
+    spans.extend(plan);
     spans.extend(tail);
 
     let line = Line::from(spans);
@@ -508,6 +515,16 @@ pub(super) fn agent_line(
     } else {
         line
     }
+}
+
+/// How far the agent's own to-do list is, `≡ 3/7`, when it has one; the
+/// focus lists the steps.
+pub(super) fn plan_spans(a: &Agent) -> Vec<Span<'static>> {
+    let (done, all) = a.plan_count();
+    if all == 0 {
+        return Vec::new();
+    }
+    vec![Span::styled(format!("  ≡ {done}/{all}"), dim())]
 }
 
 /// Whether the status words already carry a text of their own (what it
