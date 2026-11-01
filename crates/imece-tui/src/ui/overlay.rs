@@ -8,7 +8,7 @@ use ratatui::widgets::{Block, Paragraph};
 
 use super::*;
 use crate::app::{App, Digest, LeftOff, PickStep, SoloPick, TalkNote, Thread};
-use crate::keys::Keymap;
+use crate::keys::{Keymap, Scope};
 use crate::welcome::{self, Seen};
 use imece_agent::Login;
 
@@ -64,7 +64,7 @@ pub fn help(f: &mut Frame, app: &App) {
     // short screen too.
     let wide = f.area().width >= 120;
     let rows = |n: usize| if wide { n.div_ceil(2) } else { n };
-    let all = help_rows(app.lang, app.shift_enter, &app.keys);
+    let all = help_rows(app.lang, app.shift_enter, &app.keys, app.scope_below());
     let keys = found(&all, &app.help_find, |k| format!("{} {}", k.0, k.1));
     let shown = rows(keys.len());
     let mut lines: Vec<Line> = (0..shown)
@@ -155,12 +155,24 @@ const WRITING_KEYS: usize = 19;
 pub(crate) const TYPED: [usize; 5] = [4, 16, 17, 18, WRITING_KEYS];
 
 /// The help's rows with the person's own keys: one for each key the key
-/// file gives first, then `help_keys` with every key the file moved
-/// written as the keys that do it now (`Keymap::shown`).
-pub(crate) fn help_rows(lang: Lang, shift_enter: bool, keys: &Keymap) -> Vec<(String, String)> {
+/// file gives first (those of a place say where), then `help_keys` with
+/// every key the file moved written as the keys that do it now at
+/// `place`, where the help was opened (`Keymap::shown`).
+pub(crate) fn help_rows(
+    lang: Lang,
+    shift_enter: bool,
+    keys: &Keymap,
+    place: Option<Scope>,
+) -> Vec<(String, String)> {
     let t = lang.text();
-    let mine =
+    let everywhere =
         (keys.given().iter()).map(|(from, to)| (from.name(), fill(t.keys_as, &[&to.name()])));
+    let placed = (keys.placed().iter()).map(|(p, from, to)| {
+        let said = fill(t.keys_as_in, &[p.words(lang), &to.name()]);
+        (from.name(), said)
+    });
+    let keys = keys.at(place);
+    let mine = everywhere.chain(placed);
     let rows = help_keys(lang, shift_enter)
         .into_iter()
         .enumerate()

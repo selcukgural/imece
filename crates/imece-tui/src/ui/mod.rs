@@ -5106,7 +5106,7 @@ mod tests {
         for lang in [Lang::En, Lang::Tr] {
             for shift_enter in [true, false] {
                 let plain = overlay::help_keys(lang, shift_enter);
-                let rows = overlay::help_rows(lang, shift_enter, &none);
+                let rows = overlay::help_rows(lang, shift_enter, &none, None);
                 let want: Vec<(String, String)> = (plain.iter())
                     .map(|(k, w)| (k.to_string(), w.to_string()))
                     .collect();
@@ -5128,7 +5128,7 @@ mod tests {
             );
         }
         let keys = crate::keys::Keymap::read("^n = j\nj = G\n↑ = k\n^w = q").unwrap();
-        let rows = overlay::help_rows(Lang::En, false, &keys);
+        let rows = overlay::help_rows(Lang::En, false, &keys, None);
         let row = |k: &str| -> Vec<&str> {
             (rows.iter().filter(|r| r.1 == k))
                 .map(|r| r.0.as_str())
@@ -5155,7 +5155,7 @@ mod tests {
             row("writing: cut a word / before / after; paste"),
             ["^w ^u ^k ^y"]
         );
-        let tr = overlay::help_rows(Lang::Tr, false, &keys);
+        let tr = overlay::help_rows(Lang::Tr, false, &keys, None);
         assert_eq!(tr[0], ("^n".to_string(), "senin tuşun: j gibi".to_string()));
         assert_eq!(tr.len(), rows.len());
         // Drawn, and found by the filter.
@@ -5170,7 +5170,7 @@ mod tests {
         assert!(!found.contains("first / last line"), "{found}");
         // Keys of two, on either side.
         let two = crate::keys::Keymap::read("gt = G\nx = gg\n^t = z M").unwrap();
-        let rows = overlay::help_rows(Lang::En, false, &two);
+        let rows = overlay::help_rows(Lang::En, false, &two, None);
         let row = |k: &str| -> Vec<&str> {
             (rows.iter().filter(|r| r.1 == k))
                 .map(|r| r.0.as_str())
@@ -5185,6 +5185,31 @@ mod tests {
             ]
         );
         assert_eq!(row("first / last line"), ["x/gg  gt/G"]);
+        // A place's keys: said where, and the rows as they are there.
+        let placed = crate::keys::Keymap::read("J = G\n[change]\n^n = j\nJ = gg").unwrap();
+        let rows = |lang, place| overlay::help_rows(lang, false, &placed, place);
+        let change = rows(Lang::En, Some(crate::keys::Scope::Change));
+        assert_eq!(
+            change[..3],
+            [
+                ("J".to_string(), "your key: as G".to_string()),
+                ("^n".into(), "your key in a change: as j".into()),
+                ("J".into(), "your key in a change: as gg".into()),
+            ]
+        );
+        let row = |rows: &[(String, String)], k: &str| -> Vec<String> {
+            (rows.iter().filter(|r| r.1 == k))
+                .map(|r| r.0.clone())
+                .collect()
+        };
+        assert_eq!(row(&change, "first / last line"), ["J/gg  G"]);
+        assert_eq!(row(&change, "select"), ["↑ ↓  ^n/j k"]);
+        let salon = rows(Lang::En, Some(crate::keys::Scope::Salon));
+        assert_eq!(row(&salon, "first / last line"), ["gg  J/G"]);
+        assert_eq!(row(&salon, "select"), ["↑ ↓  j k"]);
+        assert_eq!(rows(Lang::En, None), salon);
+        let tr = rows(Lang::Tr, Some(crate::keys::Scope::Change));
+        assert_eq!(tr[1].1, "senin tuşun, değişiklikte: j gibi");
     }
 
     #[test]

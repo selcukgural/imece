@@ -287,6 +287,65 @@ pub enum Why {
     /// A key on line `n` given alone and as the first of two keys, the
     /// other on line `first`: alone, it would never wait for a second.
     Starts(usize, Key, usize),
+    /// A `[place]` on line `n` that is none of [`Scope`]'s.
+    Place(usize, String),
+}
+
+/// A place of the screen a part of the key file holds in, below a
+/// `[place]` line; the lines above the first hold everywhere.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Scope {
+    Salon,
+    Board,
+    Code,
+    /// A conversation.
+    Talk,
+    /// A change (Δ) open.
+    Change,
+    /// Lines being chosen to copy, in a conversation or a change.
+    Choose,
+    Peek,
+    Help,
+}
+
+impl Scope {
+    /// Every place, in the order the file's names are listed.
+    pub const ALL: [Scope; 8] = [
+        Scope::Salon,
+        Scope::Board,
+        Scope::Code,
+        Scope::Talk,
+        Scope::Change,
+        Scope::Choose,
+        Scope::Peek,
+        Scope::Help,
+    ];
+
+    /// The place's name in the file: `[change]`.
+    pub fn name(self) -> &'static str {
+        match self {
+            Scope::Salon => "salon",
+            Scope::Board => "board",
+            Scope::Code => "code",
+            Scope::Talk => "talk",
+            Scope::Change => "change",
+            Scope::Choose => "choose",
+            Scope::Peek => "peek",
+            Scope::Help => "help",
+        }
+    }
+
+    /// The place a name means, whatever the case of its letters.
+    pub fn parse(name: &str) -> Option<Scope> {
+        Scope::ALL
+            .into_iter()
+            .find(|s| s.name().eq_ignore_ascii_case(name))
+    }
+
+    /// Where the keys are, as a row of the help says it: `in a change`.
+    pub fn words(self, lang: Lang) -> &'static str {
+        lang.text().keys_scopes[self as usize]
+    }
 }
 
 /// The most keys on a side of a line: `gt = G`, `x = gg`.
@@ -352,21 +411,36 @@ fn side(words: &[&str]) -> Result<Vec<Key>, String> {
 const CHORDS: [&str; 6] = ["gg", "za", "zM", "zR", "qq", "qs"];
 
 /// The keys a file gives: each of the person's keys and the keys of
-/// imece's it acts as, in the file's order.
+/// imece's it acts as, in the file's order; those that hold everywhere,
+/// and those of a place (`[change]`). [`Keymap::at`] gives the keys of
+/// one place as one map.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Keymap {
     given: Vec<(Keys, Keys)>,
+    placed: Vec<(Scope, Keys, Keys)>,
 }
 
 impl Keymap {
     /// The keys `text` gives, or the first reason it cannot be taken.
     pub fn read(text: &str) -> Result<Keymap, Why> {
-        let mut given: Vec<(Keys, Keys)> = Vec::new();
-        let mut lines: Vec<usize> = Vec::new();
+        // Each line taken: its place (none: everywhere), its keys, its
+        // number.
+        let mut taken: Vec<(Option<Scope>, Keys, Keys, usize)> = Vec::new();
+        let mut place: Option<Scope> = None;
         for (i, line) in text.lines().enumerate() {
             let n = i + 1;
             let line = line.trim();
             if line.is_empty() || line.starts_with('#') {
+                continue;
+            }
+            // `[change]`, one word: `[ = ]` is a line that gives `[`.
+            if let Some(name) = (line.strip_prefix('[').and_then(|l| l.strip_suffix(']')))
+                .filter(|name| !name.is_empty() && !name.contains(char::is_whitespace))
+            {
+                place = Some(
+                    Scope::parse(name)
+                        .ok_or_else(|| Why::Place(n, name.chars().take(SAID).collect()))?,
+                );
                 continue;
             }
             let words: Vec<&str> = line.split_whitespace().collect();
@@ -389,23 +463,62 @@ impl Keymap {
                 return Err(Why::Unused(n, k));
             }
             let (from, to) = (Keys(from), Keys(to));
-            if let Some(at) = given.iter().position(|(f, _)| *f == from) {
-                return Err(Why::Twice(n, from, lines[at]));
+            if let Some(&(.., at)) = (taken.iter()).find(|(p, f, ..)| *p == place && *f == from) {
+                return Err(Why::Twice(n, from, at));
             }
-            // The first key alone on one line and first of two on another.
+            // The first key alone on one line and first of two on another
+            // that holds in the same place: the lines above every place
+            // hold in each, and they come first.
             let first = from.0[0];
-            if let Some(at) = (given.iter())
-                .position(|(f, _)| f.0[0] == first && (f.0.len() == 1) != (from.0.len() == 1))
-            {
-                return Err(Why::Starts(n, first, lines[at]));
+            let meet = |p: Option<Scope>| p.is_none() || p == place;
+            if let Some(&(.., at)) = taken.iter().find(|(p, f, ..)| {
+                meet(*p) && f.0[0] == first && (f.0.len() == 1) != (from.0.len() == 1)
+            }) {
+                return Err(Why::Starts(n, first, at));
             }
-            if given.len() == MAX_KEYS {
+            if taken.len() == MAX_KEYS {
                 return Err(Why::TooMany);
             }
-            given.push((from, to));
-            lines.push(n);
+            taken.push((place, from, to, n));
         }
-        Ok(Keymap { given })
+        let mut map = Keymap::default();
+        for (place, from, to, _) in taken {
+            match place {
+                None => map.given.push((from, to)),
+                Some(p) => map.placed.push((p, from, to)),
+            }
+        }
+        Ok(map)
+    }
+
+    /// The keys that hold at `place` (none: where no place is named) as
+    /// one map: the place's lines first, then those that hold
+    /// everywhere, but for a key the place gave.
+    pub fn at(&self, place: Option<Scope>) -> Keymap {
+        let mut given: Vec<(Keys, Keys)> = (self.placed.iter())
+            .filter(|(p, ..)| Some(*p) == place)
+            .map(|(_, from, to)| (from.clone(), to.clone()))
+            .collect();
+        let own = given.len();
+        for (from, to) in &self.given {
+            if !given[..own].iter().any(|(f, _)| f == from) {
+                given.push((from.clone(), to.clone()));
+            }
+        }
+        Keymap {
+            given,
+            placed: Vec::new(),
+        }
+    }
+
+    /// The lines of a place, in the file's order.
+    pub fn placed(&self) -> &[(Scope, Keys, Keys)] {
+        &self.placed
+    }
+
+    /// How many lines give a key, everywhere or in a place.
+    pub fn len(&self) -> usize {
+        self.given.len() + self.placed.len()
     }
 
     /// The keys a line gives for exactly `keys`.
@@ -437,7 +550,8 @@ impl Keymap {
         (self.given.iter()).any(|(from, _)| from.0.len() == STROKES && from.0[0] == key)
     }
 
-    /// Each of the person's keys and the keys it acts as.
+    /// Each of the person's keys that holds everywhere, and the keys it
+    /// acts as.
     pub fn given(&self) -> &[(Keys, Keys)] {
         &self.given
     }
@@ -472,9 +586,22 @@ impl Keymap {
     }
 
     /// imece's keys (alone, or two such as `gg`) the file took a
-    /// meaning from without giving it to other keys: nothing does what
-    /// they did.
+    /// meaning from without giving it to other keys, everywhere or in a
+    /// place: nothing does what they did there.
     pub fn lost(&self) -> Vec<Keys> {
+        let mut lost = self.at(None).lost_here();
+        for (place, ..) in &self.placed {
+            for keys in self.at(Some(*place)).lost_here() {
+                if !lost.contains(&keys) {
+                    lost.push(keys);
+                }
+            }
+        }
+        lost
+    }
+
+    /// [`Keymap::lost`] of the lines that hold everywhere.
+    fn lost_here(&self) -> Vec<Keys> {
         (self.given.iter())
             .map(|(from, _)| from)
             .filter(|from| match &from.0[..] {
@@ -637,6 +764,10 @@ pub fn refusal(lang: Lang, path: &Path, why: &Why) -> String {
         Why::Starts(n, key, first) => {
             line(*n, fill(t.keys_starts, &[&key.name(), &first.to_string()]))
         }
+        Why::Place(n, name) => {
+            let names: Vec<&str> = Scope::ALL.iter().map(|s| s.name()).collect();
+            line(*n, fill(t.keys_place, &[name, &names.join(" ")]))
+        }
     };
     fill(t.keys_refused, &[&path.display().to_string(), &what])
 }
@@ -647,7 +778,7 @@ pub fn taken(lang: Lang, path: &Path, map: &Keymap) -> String {
     let t = lang.text();
     let mut said = fill(
         t.keys_taken,
-        &[&path.display().to_string(), &map.given().len().to_string()],
+        &[&path.display().to_string(), &map.len().to_string()],
     );
     let lost: Vec<String> = map.lost().iter().map(Keys::name).collect();
     if !lost.is_empty() {
@@ -1088,6 +1219,110 @@ mod tests {
     }
 
     #[test]
+    fn a_place_holds_the_lines_below_it() {
+        let m = map(
+            "j = k\nn = G\n[change]\nj = G\nx = gg\n\n# talk\n[talk]\nk = j\n[Change]\nn = j\n[ = ]",
+        );
+        assert_eq!(m.given(), [(ks("j"), ks("k")), (ks("n"), ks("G"))]);
+        assert_eq!(
+            m.placed(),
+            [
+                (Scope::Change, ks("j"), ks("G")),
+                (Scope::Change, ks("x"), ks("gg")),
+                (Scope::Talk, ks("k"), ks("j")),
+                (Scope::Change, ks("n"), ks("j")),
+                (Scope::Change, ks("["), ks("]")),
+            ],
+            "a place again goes on; `[ = ]` gives a key"
+        );
+        assert_eq!(m.len(), 7);
+        assert_eq!(map("[talk]").len(), 0);
+        // One map per place: the place's lines, then the rest.
+        let change = m.at(Some(Scope::Change));
+        assert_eq!(
+            change.given(),
+            [
+                (ks("j"), ks("G")),
+                (ks("x"), ks("gg")),
+                (ks("n"), ks("j")),
+                (ks("["), ks("]")),
+            ]
+        );
+        assert!(change.placed().is_empty());
+        assert_eq!(
+            m.at(Some(Scope::Talk)).given(),
+            [(ks("k"), ks("j")), (ks("j"), ks("k")), (ks("n"), ks("G"))]
+        );
+        assert_eq!(m.at(None).given(), m.given());
+        assert_eq!(m.at(Some(Scope::Peek)).given(), m.given());
+        assert_eq!(m.at(Some(Scope::Change)).alone(plain('j')), [plain('G')]);
+        assert_eq!(m.at(None).alone(plain('j')), [plain('k')]);
+        assert_eq!(m.at(Some(Scope::Talk)).alone(plain('x')), [plain('x')]);
+    }
+
+    #[test]
+    fn a_place_is_refused_by_its_name_and_its_lines_as_any() {
+        let why = |text: &str| Keymap::read(text).unwrap_err();
+        assert_eq!(why("j = k\n[nope]"), Why::Place(2, "nope".into()));
+        assert_eq!(
+            why(&format!("[{}]", "x".repeat(40))),
+            Why::Place(1, "x".repeat(SAID))
+        );
+        assert_eq!(why("[]"), Why::Shape(1));
+        assert_eq!(why("[ talk ]"), Why::Shape(1), "one word");
+        assert_eq!(why("[change]\nj = k\nj = G"), Why::Twice(3, ks("j"), 2));
+        assert_eq!(
+            why("[change]\nj = k\n[talk]\nk = j\n[change]\nj = G"),
+            Why::Twice(6, ks("j"), 2)
+        );
+        assert!(Keymap::read("j = k\n[change]\nj = G\n[talk]\nj = G").is_ok());
+        assert_eq!(why("g = j\n[talk]\ngt = G"), Why::Starts(3, key("g"), 1));
+        assert_eq!(why("gt = G\n[peek]\ng = j"), Why::Starts(3, key("g"), 1));
+        assert_eq!(
+            why("[talk]\ngt = G\n[talk]\ng = j"),
+            Why::Starts(4, key("g"), 2)
+        );
+        assert!(
+            Keymap::read("[talk]\ngt = G\n[peek]\ng = j").is_ok(),
+            "two places apart"
+        );
+        for s in Scope::ALL {
+            assert_eq!(Scope::parse(s.name()), Some(s));
+            assert_eq!(Scope::parse(&s.name().to_uppercase()), Some(s));
+            for lang in [Lang::En, Lang::Tr] {
+                let said = s.words(lang);
+                assert!(!said.is_empty());
+                let alike = Scope::ALL.iter().filter(|o| o.words(lang) == said).count();
+                assert_eq!(alike, 1, "{said}");
+            }
+        }
+        assert_eq!(Scope::Change.words(Lang::En), "in a change");
+        assert_eq!(Scope::Help.words(Lang::Tr), "yardımda");
+        assert_eq!(Scope::parse("nope"), None);
+    }
+
+    #[test]
+    fn what_a_place_loses_is_lost() {
+        assert_eq!(map("[change]\nx = j").lost(), [ks("x")]);
+        assert_eq!(
+            map("j = G\n[talk]\nk = j").lost(),
+            [ks("j"), ks("k")],
+            "k does j only in talk, and nothing does k there"
+        );
+        assert_eq!(
+            map("[talk]\nj = G\n[change]\nj = G").lost(),
+            [ks("j")],
+            "said once"
+        );
+        assert_eq!(
+            map("j = G\n[talk]\nj = k\nk = j").lost(),
+            [ks("j")],
+            "lost everywhere but talk"
+        );
+        assert_eq!(map("[talk]\nj = k\nk = j").lost(), Vec::<Keys>::new());
+    }
+
+    #[test]
     fn what_acts_as_a_key_and_what_is_lost() {
         let m = map("^n = j\n^j = j\nj = G\nk = j\n^x = k");
         let acting = |keys: &str| m.acting_as(&ks(keys).0);
@@ -1324,6 +1559,18 @@ mod tests {
         assert_eq!(
             say(Lang::En, Why::Starts(8, key("g"), 2)),
             "/c/imece/keys: line 8: g is given alone and as the first of two keys (line 2); the keys you had stay"
+        );
+        assert_eq!(
+            say(Lang::En, Why::Place(3, "nope".into())),
+            "/c/imece/keys: line 3: `[nope]` is no place; the places are salon board code talk change choose peek help; the keys you had stay"
+        );
+        assert_eq!(
+            say(Lang::Tr, Why::Place(3, "nope".into())),
+            "/c/imece/keys: satır 3: `[nope]` bir yer değil; yerler: salon board code talk change choose peek help; elindeki tuşlar kalıyor"
+        );
+        assert_eq!(
+            taken(Lang::En, path, &map("^n = j\n[change]\nx = j")),
+            "/c/imece/keys: keys taken (2); nothing does x now"
         );
         assert_eq!(
             say(Lang::Tr, Why::Long(7)),

@@ -1546,7 +1546,8 @@ impl App {
         {
             self.around(|app| {
                 if let Some((first, _)) = app.keys_held.take() {
-                    app.act_all(app.keys.alone(first), None);
+                    let keys = app.keys.at(app.key_scope());
+                    app.act_all(keys.alone(first), None);
                 }
             });
         }
@@ -1660,20 +1661,62 @@ impl App {
         // else it acts alone first.
         let mut away = away;
         if let Some((first, _)) = self.keys_held.take() {
-            if let Some(both) = self.keys.pair(first, k) {
+            let keys = self.keys.at(self.key_scope());
+            if let Some(both) = keys.pair(first, k) {
                 self.act_all(both, away);
                 return;
             }
-            self.act_all(self.keys.alone(first), away.take());
+            self.act_all(keys.alone(first), away.take());
         }
         if self.typing || self.hints.is_some() || (self.help && self.help_typing) {
             self.act(k, away);
-        } else if self.pending.is_none() && self.keys.starts(k) {
+            return;
+        }
+        // The keys of the place the screen is at, after the first acted.
+        let keys = self.keys.at(self.key_scope());
+        if self.pending.is_none() && keys.starts(k) {
             // imece's own chord waits for its second key first.
             self.keys_held = Some((k, self.last_key));
         } else {
-            self.act_all(self.keys.alone(k), away);
+            self.act_all(keys.alone(k), away);
         }
+    }
+
+    /// The place of the screen whose part of the key file holds now
+    /// (`[change]`), in the order `act` takes keys; none on the windows
+    /// and questions over it.
+    pub fn key_scope(&self) -> Option<keys::Scope> {
+        let below = self.scope_below()?;
+        Some(if self.help { keys::Scope::Help } else { below })
+    }
+
+    /// [`App::key_scope`] under the help: where `?` was pressed.
+    pub fn scope_below(&self) -> Option<keys::Scope> {
+        use keys::Scope;
+        if self.leaving
+            || !self.news.is_empty()
+            || self.welcome
+            || self.digest.is_some()
+            || self.left_off.is_some()
+            || self.solo_pick.is_some()
+        {
+            return None;
+        }
+        Some(if self.peek.is_some() {
+            Scope::Peek
+        } else if self.copying() {
+            Scope::Choose
+        } else if self.thread.is_some() {
+            Scope::Talk
+        } else if let Zoom::Diff(_) = self.zoom {
+            Scope::Change
+        } else {
+            match self.view {
+                View::Salon => Scope::Salon,
+                View::Board => Scope::Board,
+                View::Code => Scope::Code,
+            }
+        })
     }
 
     /// Each of `keys` as if pressed, one after the other; the second goes
@@ -3135,7 +3178,7 @@ impl App {
             "unsettle" => Some((self.settled.len() + self.settled_projects.len()).to_string()),
             "awake" => Some(on_off(self.awake.on)),
             "notify" => Some(self.notify.name().to_string()),
-            "keys" => Some(self.keys.given().len().to_string()),
+            "keys" => Some(self.keys.len().to_string()),
             "pause" => Some(on_off(self.paused)),
             "faster" | "slower" => Some(format!("×{}", self.speed)),
             "export" if self.thread.is_some() => Some(t.value_thread.to_string()),
@@ -9984,6 +10027,83 @@ mod tests {
         app.on_key(key(KeyCode::Char('y')));
         assert!(app.typing);
         assert_eq!(app.input, ":q");
+    }
+
+    #[test]
+    fn the_key_file_s_place_is_where_the_screen_is() {
+        use keys::Scope;
+        let mut app = App::new(1, 1, 0, 1, Lang::En);
+        assert_eq!(app.key_scope(), Some(Scope::Salon));
+        app.view = View::Board;
+        assert_eq!(app.key_scope(), Some(Scope::Board));
+        app.view = View::Code;
+        assert_eq!(app.key_scope(), Some(Scope::Code));
+        app.view = View::Salon;
+        app.help = true;
+        assert_eq!(app.key_scope(), Some(Scope::Help));
+        assert_eq!(app.scope_below(), Some(Scope::Salon), "where ? was pressed");
+        app.help = false;
+        app.peek = Some(0);
+        assert_eq!(app.key_scope(), Some(Scope::Peek));
+        app.peek = None;
+        // A window or a question over the screen has none.
+        for over in [
+            |a: &mut App| a.leaving = true,
+            |a: &mut App| a.welcome = true,
+            |a: &mut App| a.news = vec!["new"],
+            |a: &mut App| a.digest = Some(Digest::default()),
+            |a: &mut App| a.left_off = Some(LeftOff::default()),
+            |a: &mut App| a.solo_pick = Some(SoloPick::new(None, None, Vec::new())),
+        ] {
+            let mut app = App::new(1, 1, 0, 1, Lang::En);
+            over(&mut app);
+            assert_eq!(app.key_scope(), None);
+            app.help = true;
+            assert_eq!(app.key_scope(), None, "the window takes the key first");
+        }
+        let (mut app, worker) = with_change("+one\n+two\n");
+        assert_eq!(app.key_scope(), Some(Scope::Change));
+        app.on_key(key(KeyCode::Char('v')));
+        assert!(app.diff_copy_of(worker).is_some());
+        assert_eq!(app.key_scope(), Some(Scope::Choose));
+        let (mut app, _) = with_thread();
+        assert_eq!(app.key_scope(), Some(Scope::Talk));
+        app.zoom = Zoom::Diff(0);
+        assert_eq!(
+            app.key_scope(),
+            Some(Scope::Talk),
+            "the conversation over it"
+        );
+        app.thread.as_mut().unwrap().copy = Some(Copying::new(0));
+        assert_eq!(app.key_scope(), Some(Scope::Choose));
+    }
+
+    #[test]
+    fn a_place_s_keys_hold_only_there() {
+        let mut app = three_rows();
+        app.keys = keymap("d = 3\n[board]\nd = 1\ngt = 3\n[code]\ne = 2");
+        app.on_key(key(KeyCode::Char('d')));
+        assert_eq!(app.view, View::Code, "d is 3 where no place says else");
+        app.on_key(key(KeyCode::Char('e')));
+        assert_eq!(app.view, View::Board, "e is 2 in the code map");
+        app.on_key(key(KeyCode::Char('d')));
+        assert_eq!(app.view, View::Salon, "d is 1 on the board");
+        app.on_key(key(KeyCode::Char('e')));
+        assert_eq!(app.view, View::Salon, "e is nothing in the salon");
+        app.on_key(key(KeyCode::Char('g')));
+        assert!(app.keys_held.is_none(), "gt is the board's");
+        app.on_key(key(KeyCode::Char('2')));
+        assert_eq!(app.view, View::Salon, "g2 is no chord");
+        app.on_key(key(KeyCode::Char('2')));
+        app.on_key(key(KeyCode::Char('g')));
+        assert!(app.keys_held.is_some(), "the board's g waits");
+        app.keys_due(Instant::now() + keys::WAIT * 2);
+        assert_eq!(app.pending, Some('g'), "and goes alone as the board's");
+        app.on_key(key(KeyCode::Char('g')));
+        app.on_key(key(KeyCode::Char('g')));
+        app.on_key(key(KeyCode::Char('t')));
+        assert_eq!(app.view, View::Code, "gt is 3 on the board");
+        assert_eq!(app.command_note("keys"), "(4)", "every line counts");
     }
 
     #[test]
