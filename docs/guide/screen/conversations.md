@@ -21,7 +21,7 @@ A conversation is everything said between two parties, you and an agent or two a
 │▌  ↩ re 8: Which parser? There are two                                     │
 │▌  `manifest::read`; the legacy one goes in the next card.                 │
 │                                                                           │
-│ ↑↓ j k message  [ ] turn  % reply ↔ question  pgup pgdn scroll  c copy message  C copy conversation  esc close
+│ ↑↓ j k message  [ ] turn  % reply ↔ question  c C copy message · all  v copy lines  esc close
 └───────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -47,6 +47,7 @@ A message to an idle worker opens a card for it (the first line is the card's ti
 | `pgup` `pgdn`, `^d` `^u` `^f` `^b`, `space` | scroll a page or half of one |
 | `m` (`:mark`) / `'` | mark the selected message to come back to, again to unmark · the next marked message, round to the first |
 | `c` `y` / `C` `Y` | copy the message / the whole conversation |
+| `v` | choose lines to copy (below) |
 | `:export [PATH]` | write the conversation as a Markdown file |
 | `esc` | close |
 
@@ -61,6 +62,33 @@ Every message one agent sends another has a number on the bus, in order across t
 ### Copying
 
 `c` or `y` copies the selected message: its text alone. `C` or `Y` copies the whole conversation: every message with its day and time, who to whom and its type, `2026-10-31 14:01 lead → claude-1 [answer]`, then the text. The clipboard is the system's (`pbcopy`, `wl-copy`, `xclip`, `xsel`) or the terminal's over OSC 52, which works over ssh where the terminal allows it; the flash says which, `copied (pbcopy)`. The text is cleaned like everything drawn: no control characters, secret-looking tokens hidden.
+
+### Copying lines
+
+Your terminal's own selection still works (imece never takes the mouse), but it takes the window's border and gutter with the text, stops at the edge of what is shown, and cuts a wrapped line in two. `v` copies with the keyboard instead: a cursor opens on the first line of the selected message, and the lines between where you started and the cursor are chosen.
+
+```text
+┌ COPY · 3 chosen ───────────────────────────────────────────────────────────┐
+│ 13:57 claude-1 → lead [ask]                                               │
+│   Which parser? There are two: `manifest::read` and the legacy one.       │
+│                                                                           │
+│▌ 14:01 lead → claude-1 [answer]                                           │
+│▌   `manifest::read`; the legacy one goes in the next card.                │
+│▶   Leave the old tests as they are.                                       │
+│                                                                           │
+│ ↑↓ j k line  pgup pgdn page  gg G first · last  y copy  v esc leave
+└───────────────────────────────────────────────────────────────────────────┘
+```
+
+| Key | What it does |
+| --- | --- |
+| `j` `k` / `↑` `↓` | the cursor a line down / up, across messages; the window keeps it in view and the title's count follows |
+| `pgup` `pgdn`, `space`, `^d` `^u` `^f` `^b` | a page or half of one |
+| `gg` `G` | the first / last line |
+| `y` | copy the chosen lines and leave |
+| `v` `esc` | leave without copying; a second `esc` closes the window |
+
+A line is a line as drawn before it wraps: a message's head, the `↩` line under a reply, and each line of its text. What is copied is the line as it was written, so a code block copies as its code without its fences (they are never drawn, so the cursor never lands on them), and a table copies as its Markdown rows. Lines of different messages come with a blank line between them. Other keys do nothing while you choose, so `c` or `[` is not taken by mistake; `?` and `q` still work. The copy goes the same way as `c`, cleaned the same.
 
 ### Export
 

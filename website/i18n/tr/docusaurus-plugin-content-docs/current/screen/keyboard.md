@@ -88,6 +88,7 @@ Gelenekler vim'inkidir: `h` `j` `k` `l` hareket ve katlama, `gg` ve `G` uçlara,
 | `enter`  `%` | konuşma (bir günlük satırından) · içinde `%`: yanıt ↔ soru |
 | `[`  `]` | söz sırasından söz sırasına (bir tarafın diğeri yanıt vermeden önce söylediği satırlar) |
 | `c` `C`  `y` `Y` | mesajı · konuşmayı kopyala |
+| `v` | kopyalanacak satırları seç: `j` `k` ve sayfa tuşları gezer, `y` kopyalar, `v` `esc` çıkar |
 | `m`  `:mark` | eldeki satırı sonra dönmek için işaretle; yine: kaldır |
 | `'` | sonraki işaretli satır: konuşma, yoksa günlük |
 | `space`, `pgup` `pgdn` | bir sayfa |
@@ -102,6 +103,7 @@ Gelenekler vim'inkidir: `h` `j` `k` `l` hareket ve katlama, `gg` ve `G` uçlara,
 | `c`  `n` | değişiklikte: üstteki satıra not · notları gönder, geri döner |
 | `x` | değişiklikte: üstteki parçayı seç; `a` yalnız seçilenleri uygular |
 | `w` | değişiklikte: uzun satırları sar · yine kes |
+| `v` | değişiklikte: kopyalanacak satırları seç; `y` yazıldığı gibi, `Y` yeni hali |
 | `a`  `r` | uygula (seçili parçalar, yoksa hepsi) · reddet |
 | `j` `k`, `gg` `G`, `^d` `^u` `^f` `^b`, `space` | hareket |
 

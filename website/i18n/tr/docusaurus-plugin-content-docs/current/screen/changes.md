@@ -26,7 +26,7 @@ Bir işçi `done` gönderdiğinde imece worktree'sini okur ve değişiklik SENİ
 │+    }                                                                                       │
 │+    let doc: Doc = toml::from_str(&text)?;                                                  │
 └─────────────────────────────────────────────────────────────────────────────────────────────┘
-  j k  w kaydır · sar  [ ] dosya  a x uygula · parça seç  r reddet  > ona alıntıla  c n not · notları gönder  esc geri  ? yardım
+  j k  w kaydır · sar  [ ] dosya  a x uygula · parça seç  r reddet  > ona alıntıla  c n not · notları gönder  v satır kopyala  esc geri  ? yardım
 ```
 
 Başlık: işçi, dosyalar ve satırlar, done'un ilk satırı. Çerçeve işçinin satıcı rengindedir.
@@ -47,6 +47,7 @@ Başlık: işçi, dosyalar ve satırlar, done'un ilk satırı. Çerçeve işçin
 | `^f` `^b`, `pgdn` `pgup`, `space` | bir sayfa aşağı / yukarı |
 | `[` `]` | önceki / sonraki dosya: `diff --git` başlıkları |
 | `w` | uzun satırları alt alta sar (küçültülmüş bir dosya, uzun bir dize); yine basılınca kenarda keser. Kaydırma yine yama satırlarını sayar, böylece `j` kaç satır kaplasa da bütün bir satır gider. Kapatılana dek her değişiklik için açık; çalıştırmalar arasında saklanmaz |
+| `v` | kopyalanacak satırları seç (aşağıda) |
 | `esc` | SENİ BEKLEYEN'e geri |
 
 Eklenen ve silinen satırların kendi renkleri vardır; başlıklar öne çıkar. Her satır çizilen her şeyin geçtiği temizlikten geçer.
@@ -88,6 +89,18 @@ Git iş parçacığında parça, bir şey uygulanmadan önce kendi başına bir 
 
 `>` değişikliğin işçisine bir mesaj başlatır, `@claude-1 ` ve imleç ardında, satırınızın altında dosyanın `---` ve `+++` satırlarını ve en üstteki parçayı tutan bir `diff` çiti: en çok 40 satır, kalanı `… +N` diye sayılmış (işçide parçanın tamamı worktree'sinde var). `enter`'dan önce hepsini düzenlersiniz; düz bir mesajdır, söylendi diye günlüğe geçer. Alıntılanacak parça yoksa (boş bir değişiklik) flaş söyler. Bu görünümde `>` alıntılar, yan paneli artık daraltmaz; `.` yine daraltır.
 
+### Satır kopyalama
+
+`v` eldeki satırdan başlayarak kopyalanacak satırları seçer: başlık `KOPYALA · 3 seçili · y yazıldığı gibi · Y yeni hali · v esc çık` olur, alt satır yalnız bu tuşları listeler. `j` `k`, sayfa tuşları ve `gg` `G` imleci gezdirir; başladığınız yerle imleç arasındaki satırlar işaretlenir, imlecinki kalın; satırlar sığdıkça görünüm başladığınız yeri en üstte tutar, sığmazsa imleci olabildiğince az kayarak izler.
+
+| Tuş | Ne yapar |
+| --- | --- |
+| `y` | satırları yamadaki gibi kopyala, her biri `+`, `-` ya da boşluğuyla |
+| `Y` | yeni hali kopyala: yalnız parçaların eklenen ve kalan satırları, işaretsiz, kod olarak yapıştırmaya hazır. Silinen satırlar, dosya başlıkları ve `@@` satırları dışarıda kalır; geriye bir şey kalmazsa flaş söyler ve satırlar seçili kalır |
+| `v` `esc` | kopyalamadan çık |
+
+Seçerken başka tuşlar bir şey yapmaz, yani `a` değişikliği yanlışlıkla uygulamaz; `?` ve `q` yine çalışır. Kopya, konuşmadaki `c` gibi sistemin panosuna ya da terminalinkine (OSC 52) gider ve her satır önce temizlenir. İşçiden daha yeni bir Δ ya da değişiklikten çıkmak seçimi bitirir.
+
 ## Günlük sonra ne der
 
 ```text
@@ -101,7 +114,7 @@ Bir `done`, `claude-1 bitirdi: 3 dosya, +41 −6 → seni bekliyor` diye gelir; 
 
 ## Demo
 
-`--demo` aynı değişiklikleri kartlarından ve çalıştırmalarından yapar ve `a`, `r`, `n`, `x` ve `>` tuşlarını aynı şekilde alır (başarısızlığı göstermek için orada sekiz uygulamadan biri başarısız olur).
+`--demo` aynı değişiklikleri kartlarından ve çalıştırmalarından yapar ve `a`, `r`, `n`, `x`, `>` ve `v` tuşlarını aynı şekilde alır (başarısızlığı göstermek için orada sekiz uygulamadan biri başarısız olur).
 
 ## Ayrıca bakınız
 

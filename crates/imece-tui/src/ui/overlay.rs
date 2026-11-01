@@ -354,9 +354,81 @@ pub fn leaving(f: &mut Frame, app: &App) {
 /// Where `scroll` must be for rows `start..end` to show in `height` rows,
 /// moving as little as it can; a part longer than the screen shows from
 /// its start.
-fn in_view(start: usize, end: usize, scroll: usize, height: usize) -> usize {
+pub(crate) fn in_view(start: usize, end: usize, scroll: usize, height: usize) -> usize {
     // No further down than `start`, no further up than what shows `end`.
     scroll.clamp(end.saturating_sub(height).min(start), start)
+}
+
+/// One line of a conversation as copy mode (`v`) moves over it: the
+/// message it belongs to (an index into the conversation's entries) and
+/// what copying it takes.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct CopyLine {
+    pub entry: usize,
+    pub text: String,
+}
+
+/// What a drawn line reads as: its spans' text, trailing blanks dropped.
+fn line_text(line: &Line) -> String {
+    let text: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
+    text.trim().to_string()
+}
+
+/// A message's lines before wrapping, each with what copying it takes:
+/// its head (when, who to whom, the kind) and the line it answers as
+/// read, its text as written ([`markdown_src`]).
+fn message_lines(lang: Lang, w: &World, i: usize) -> Vec<(Line<'static>, String)> {
+    let e = &w.journal[i];
+    let mut head = Line::from(vec![Span::styled(format!("{} ", clock(e.tick)), dim())]);
+    let mut rest = Vec::new();
+    match words::said(&e.event) {
+        Some(s) => {
+            let mut said = said_spans(lang, w, &s);
+            said.pop(); // the one-line text; it follows whole below
+            head.spans.extend(said);
+            rest.extend(re_row(lang, w, &s).map(|l| {
+                let text = line_text(&l);
+                (l, text)
+            }));
+            rest.extend(markdown_src(s.text, "  "));
+        }
+        None => head.spans.push(Span::raw(words::event(lang, w, &e.event))),
+    }
+    let text = line_text(&head);
+    let mut lines = vec![(head, text)];
+    lines.extend(rest);
+    lines
+}
+
+/// The lines of a conversation copy mode moves over, in order.
+pub(crate) fn thread_lines(lang: Lang, w: &World, entries: &[usize]) -> Vec<CopyLine> {
+    let mut out = Vec::new();
+    for (n, &i) in entries.iter().enumerate() {
+        out.extend(
+            message_lines(lang, w, i)
+                .into_iter()
+                .map(|(_, text)| CopyLine { entry: n, text }),
+        );
+    }
+    out
+}
+
+/// What copying lines `from..=to` of a conversation takes: their text,
+/// a blank line where one message ends and the next begins.
+pub(crate) fn copy_lines(lines: &[CopyLine], from: usize, to: usize) -> String {
+    let mut out = String::new();
+    let mut entry = None;
+    for l in lines.iter().take(to + 1).skip(from) {
+        if entry.is_some_and(|e| e != l.entry) {
+            out.push('\n');
+        }
+        if entry.is_some() {
+            out.push('\n');
+        }
+        out.push_str(&l.text);
+        entry = Some(l.entry);
+    }
+    out
 }
 
 /// The rows of a conversation `width` cells wide, oldest first: each
@@ -366,16 +438,33 @@ fn in_view(start: usize, end: usize, scroll: usize, height: usize) -> usize {
 /// for the first). The selected message carries a mark in the gutter on
 /// every row and the selection background. Returns the rows and each
 /// message's row range (the day row and the blank row not included).
+#[cfg(test)]
 pub(crate) fn thread_rows(
     lang: Lang,
     w: &World,
     th: &Thread,
     width: u16,
 ) -> (Vec<Line<'static>>, Vec<(usize, usize)>) {
+    let (rows, ranges, _) = thread_layout(lang, w, th, width);
+    (rows, ranges)
+}
+
+/// [`thread_rows`], and each line's row range as well (a line wraps to
+/// several). While lines are being chosen to copy (`Thread::copy`), the
+/// chosen ones carry the mark and the background instead of the selected
+/// message, the cursor's with `▶`.
+#[allow(clippy::type_complexity)]
+fn thread_layout(
+    lang: Lang,
+    w: &World,
+    th: &Thread,
+    width: u16,
+) -> (Vec<Line<'static>>, Vec<(usize, usize)>, Vec<(usize, usize)>) {
     const GUTTER: usize = 2;
     let text_width = usize::from(width).saturating_sub(GUTTER);
     let mut rows: Vec<Line> = Vec::new();
     let mut ranges = Vec::new();
+    let mut line_ranges = Vec::new();
     let mut above = day(w.tick);
     for (n, &i) in th.entries.iter().enumerate() {
         let e = &w.journal[i];
@@ -386,34 +475,24 @@ pub(crate) fn thread_rows(
             rows.push(row);
             above = of;
         }
-        let selected = n == th.sel;
-        let mut part = vec![Line::from(vec![Span::styled(
-            format!("{} ", clock(e.tick)),
-            dim(),
-        )])];
-        match words::said(&e.event) {
-            Some(s) => {
-                let mut said = said_spans(lang, w, &s);
-                said.pop(); // the one-line text; it follows whole below
-                part[0].spans.extend(said);
-                part.extend(re_row(lang, w, &s));
-                part.extend(markdown(s.text, "  "));
-            }
-            None => part[0]
-                .spans
-                .push(Span::raw(words::event(lang, w, &e.event))),
-        }
         let start = rows.len();
         // The mark, when the line has one, in the gutter of its first row.
         let mut mark = w.marks.contains(&i);
-        for line in part {
+        for (line, _) in message_lines(lang, w, i) {
+            let at = line_ranges.len();
+            let (selected, cursor) = match th.copy {
+                Some(c) => (c.holds(at), c.at == at),
+                None => (n == th.sel, false),
+            };
+            let line_start = rows.len();
             for mut row in wrap(line, text_width) {
                 let second = match std::mem::take(&mut mark) {
                     true => Span::styled(MARK, bold(pal().accent)),
                     false => Span::raw(" "),
                 };
                 if selected {
-                    row.spans.insert(0, Span::styled("▌", fg(pal().accent)));
+                    let bar = if cursor { "▶" } else { "▌" };
+                    row.spans.insert(0, Span::styled(bar, fg(pal().accent)));
                     row.spans.insert(1, second);
                     row = row.style(changed());
                 } else {
@@ -422,11 +501,12 @@ pub(crate) fn thread_rows(
                 }
                 rows.push(row);
             }
+            line_ranges.push((line_start, rows.len()));
         }
         ranges.push((start, rows.len()));
         rows.push(Line::raw(""));
     }
-    (rows, ranges)
+    (rows, ranges, line_ranges)
 }
 
 /// A conversation read whole, oldest first; the selected message is
@@ -462,22 +542,33 @@ pub fn thread(f: &mut Frame, app: &App, th: &Thread) {
         }
         None => t.event_title.to_string(),
     };
+    // Choosing lines to copy: the title counts them, the keys are copy
+    // mode's.
+    let (title, hints) = match th.copy {
+        Some(c) => (
+            fill(t.copy_title, &[&c.len().to_string()]),
+            &t.copy_hints[..],
+        ),
+        None => (title, &t.thread_hints[..]),
+    };
     let block = Block::bordered()
         .title(title)
         .border_style(fg(pal().accent));
     let inner = block.inner(area);
     f.render_widget(block, area);
     let [body, keys] = Layout::vertical([Constraint::Min(0), Constraint::Length(1)]).areas(inner);
-    f.render_widget(
-        Paragraph::new(Line::from(hint_spans(&t.thread_hints))),
-        keys,
-    );
+    f.render_widget(Paragraph::new(Line::from(hint_spans(hints))), keys);
 
-    let (rows, ranges) = thread_rows(app.lang, w, th, body.width);
+    let (rows, ranges, lines) = thread_layout(app.lang, w, th, body.width);
     let height = usize::from(body.height);
     let max = rows.len().saturating_sub(height);
+    // The cursor's line is kept in view while copying, else the message.
+    let shown = match th.copy {
+        Some(c) => lines.get(c.at),
+        None => ranges.get(th.sel),
+    };
     if th.follow.take()
-        && let Some(&(start, end)) = ranges.get(th.sel)
+        && let Some(&(start, end)) = shown
     {
         let at = in_view(start, end, usize::from(th.scroll.get()), height);
         th.scroll.set(u16::try_from(at).unwrap_or(u16::MAX));
