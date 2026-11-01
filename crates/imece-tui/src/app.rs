@@ -46,6 +46,10 @@ fn recalled(text: &str) -> bool {
 /// After this long in another window, coming back shows what happened at
 /// once, without waiting for a key.
 pub const FOCUS_AWAY: Duration = Duration::from_secs(180);
+/// How often the screen is drawn while the terminal does not have the
+/// focus and the person did nothing: the clocks and spinners still move,
+/// ten times less often than live's tick.
+pub const BLURRED_DRAW: Duration = Duration::from_secs(1);
 /// How long a short notice stays in the bottom line.
 pub const FLASH: Duration = Duration::from_secs(3);
 
@@ -779,6 +783,10 @@ pub struct App {
     last_key_tick: u64,
     /// When the terminal lost the focus, and the tick then.
     blurred: Option<(Instant, u64)>,
+    /// When the screen was last drawn, and whether something came from
+    /// the terminal since (a key, a paste, a resize, the focus).
+    drawn_at: Option<Instant>,
+    pub stirred: bool,
     /// The hold on the machine's sleep while an agent is mid-turn
     /// (`--awake`, `:awake`).
     pub awake: crate::awake::Awake,
@@ -895,6 +903,8 @@ impl App {
             last_key: Instant::now(),
             last_key_tick: 0,
             blurred: None,
+            drawn_at: None,
+            stirred: false,
             awake: crate::awake::Awake::new(false, crate::awake::command(std::process::id())),
             notify: Notify::Off,
             notices: notify::Notices::default(),
@@ -3835,6 +3845,24 @@ impl App {
             self.pane = Pane::Inbox;
         }
         self.inbox_sel = self.inbox_sel.min(open.saturating_sub(1));
+    }
+
+    /// Whether the screen is drawn at `now`: always while the terminal has
+    /// the focus or never says (no focus reports); without it, when
+    /// something came from the terminal since the last drawing, or
+    /// [`BLURRED_DRAW`] after it.
+    pub fn draw_due(&self, now: Instant) -> bool {
+        self.blurred.is_none()
+            || self.stirred
+            || self
+                .drawn_at
+                .is_none_or(|at| now.duration_since(at) >= BLURRED_DRAW)
+    }
+
+    /// The screen was drawn at `now`.
+    pub fn drawn(&mut self, now: Instant) {
+        self.drawn_at = Some(now);
+        self.stirred = false;
     }
 
     /// The terminal lost the focus (`gained` false) at `now`, or got it
@@ -8830,6 +8858,33 @@ mod tests {
             42,
             "the one open stays"
         );
+    }
+
+    #[test]
+    fn another_window_is_drawn_once_a_second_unless_something_comes() {
+        let mut app = App::new(1, 1, 0, 1, Lang::En);
+        let t0 = Instant::now();
+        let ms = Duration::from_millis;
+        assert!(app.draw_due(t0), "never drawn");
+        app.drawn(t0);
+        assert!(app.draw_due(t0), "with the focus, every time");
+        app.focus(false, t0);
+        assert!(!app.draw_due(t0 + ms(1)));
+        assert!(!app.draw_due(t0 + BLURRED_DRAW - ms(1)), "not yet");
+        assert!(app.draw_due(t0 + BLURRED_DRAW), "a second on");
+        app.drawn(t0 + BLURRED_DRAW);
+        assert!(!app.draw_due(t0 + BLURRED_DRAW + ms(1)));
+        app.stirred = true;
+        assert!(app.draw_due(t0 + BLURRED_DRAW + ms(1)), "a key, a resize");
+        app.drawn(t0 + BLURRED_DRAW + ms(1));
+        assert!(!app.stirred, "drawn, stirred no more");
+        assert!(!app.draw_due(t0 + BLURRED_DRAW + ms(2)));
+        app.focus(true, t0 + BLURRED_DRAW + ms(2));
+        assert!(app.draw_due(t0 + BLURRED_DRAW + ms(2)), "back: at once");
+        // Blurred before the first drawing: drawn.
+        let mut app = App::new(1, 1, 0, 1, Lang::En);
+        app.focus(false, t0);
+        assert!(app.draw_due(t0));
     }
 
     #[test]

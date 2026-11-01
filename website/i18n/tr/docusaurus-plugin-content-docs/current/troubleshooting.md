@@ -175,6 +175,12 @@ imece kapalı düşer (fail closed): bir dosya, bir oturum ya da bir değişikli
 
 **Neden.** Depoya bir kayıt başarısız oldu (disk dolu, dosya gitmiş). Bir kez flash'lanır; ekran sürer ve sonraki kayıt yeniden dener.
 
+### imece makineden kendisi ne kadar kullanıyor?
+
+**Neden.** Az: ekran her tikte (canlıda 100 ms) çizilir ve yalnız değişen hücreler gönderilir. Terminal odakta değilken (başka bir penceredesiniz; tmux'ta `focus-events on` gerekir) imece saniyede bir çizer, araya bir tuş, yapıştırma ya da boyut değişimi girmedikçe; başlık, bildirimler ve ajanların turları eskisi gibi sürer. Odağı bildirmeyen bir terminal her tikte çizilir.
+
+**Ne yapmalı.** Kendi makinenizdeki rakamlar için `cargo build --release`, sonra `python3 -I tools/measure.py --fast` çalıştırın: biri odakta, biri başka pencerede iki demo çalışması, her birinin CPU süresi, en yüksek belleği ve terminale gönderilen baytlarıyla. M3 Max bir MacBook Pro'da demo'nun en yüksek hızında 15 sn, odakta 0.55 sn CPU, başka pencerede 0.10 sn tuttu (0.64'e karşı 0.17 MiB çizildi), iki durumda da 6 MiB bellek.
+
 ## Ayrıca bakınız
 
 - [Kurulum](getting-started/install.md)
