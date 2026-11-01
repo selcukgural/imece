@@ -51,7 +51,7 @@ those keys (`keys::Start`) and says why in the flash; a kept text that no
 longer reads is dropped. No file means imece's own keys, and the kept
 text is forgotten: deleting the file is how to go back.
 
-**Read at start and on `:keys` (user, 2026-11-02; not watched).** `:keys`
+**Read at start, on `:keys` and when it changes (user, 2026-11-02).** `:keys`
 reads the file again and flashes `PATH: keys taken (N)`, or `no key file;
 KEY = KEY lines in PATH give you keys of your own`, or the refusal with
 `the keys you had stay`. A good file whose lines take a key of imece's
@@ -59,6 +59,23 @@ away without giving that meaning to another key adds `; nothing does j
 now` (`Keymap::lost`); that is a warning, not a refusal, since moving a
 key away can be what the person wants. The menu note is how many keys the
 file gives. `App::keys_new` tells the main loop to keep the new text.
+
+The file is also watched (C9c, #173): `App::watch_keys`, called by the
+main loop, looks at it every `keys::EVERY` (2 s), and at once after the
+terminal gets the focus back (`App::focus` forgets when it last looked),
+so an edit in another window is taken by the time the person is back.
+It compares `keys::stamp`, the file's modified time, length and inode
+through a link (no read, one `stat`), with the stamp taken before the
+file was last read (by the start in `main`, by `:keys`, by a watch), so
+a change while it is read is seen the next time. A different stamp reads
+the file as `:keys` does and says the same words; the same stamp says
+nothing, so a bad edit is said once and its keys stay, not every two
+seconds. A removed file gives imece's own keys back, as on `:keys`; an
+editor that saves by renaming over the file leaves no gap a two-second
+look is likely to fall in. A save within the clock's step that keeps the
+length and the inode is not seen until the next change (`:keys` still
+reads it). Polling, not `kqueue`/`inotify`: no new crate, one `stat`
+every two seconds, and the same code on macOS and Linux.
 
 **The help (user, 2026-11-02: in place and a section).** `?` lists the
 file's keys first (`^n  your key: as j`), then every key line with each
@@ -77,5 +94,4 @@ the same way, so there is nothing to fake.
 
 **Gaps.** A key of two strokes cannot be given (`gt = G`), nor a key
 turned into two (`x = gg`); the chords themselves (`gg`, `zM`, `q q`)
-turn key by key. The file is not watched; `:keys` after an edit. Keys
-are not per context (the same file holds in the salon and in a change).
+turn key by key. Keys are not per context (the same file holds in the salon and in a change).

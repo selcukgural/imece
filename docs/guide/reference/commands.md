@@ -146,7 +146,7 @@ Hint letters, as `F`: a label of one or two letters over the start of every row 
 
 ### `:keys`
 
-Reads your key file (`~/.config/imece/keys`) again and says what came of it: `…/imece/keys: keys taken (5)`, with `; nothing does j now` when a key of imece's lost its meaning to no other key; `no key file; KEY = KEY lines in … give you keys of your own` (imece's own keys are back); or why the file was refused, the keys you had staying: `…/imece/keys: line 3: write it as KEY = KEY; the keys you had stay`. The menu note is how many keys the file gives. See [your own keys](../screen/keyboard.md#your-own-keys).
+Reads your key file (`~/.config/imece/keys`) again and says what came of it: `…/imece/keys: keys taken (5)`, with `; nothing does j now` when a key of imece's lost its meaning to no other key; `no key file; KEY = KEY lines in … give you keys of your own` (imece's own keys are back); or why the file was refused, the keys you had staying: `…/imece/keys: line 3: write it as KEY = KEY; the keys you had stay`. The menu note is how many keys the file gives. imece also reads the file by itself when it changes, with the same words, so `:keys` is only needed to hear them again. See [your own keys](../screen/keyboard.md#your-own-keys).
 
 ### `:lang [en|tr]`
 

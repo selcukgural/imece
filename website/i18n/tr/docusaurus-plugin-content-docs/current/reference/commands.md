@@ -146,7 +146,7 @@ Gönderdiğiniz satırları arar, `^r` gibi: komut satırı üstünde `WORDS` il
 
 ### `:keys`
 
-Tuş dosyanızı (`~/.config/imece/keys`) yeniden okur ve ne çıktığını söyler: `…/imece/keys: tuşlar alındı (5)`, imece'nin bir tuşunun anlamı başka bir tuşa geçmeden gittiyse `; artık hiçbir tuş j işini yapmıyor` ile; `tuş dosyası yok; … içine yazılan TUŞ = TUŞ satırları sana kendi tuşlarını verir` (imece'nin kendi tuşları geri gelir); ya da dosyanın neden reddedildiği, elinizdeki tuşlar kalarak: `…/imece/keys: satır 3: TUŞ = TUŞ diye yaz; elindeki tuşlar kalıyor`. Menü notu dosyanın kaç tuş verdiğidir. Bkz. [kendi tuşlarınız](../screen/keyboard.md#kendi-tuşlarınız).
+Tuş dosyanızı (`~/.config/imece/keys`) yeniden okur ve ne çıktığını söyler: `…/imece/keys: tuşlar alındı (5)`, imece'nin bir tuşunun anlamı başka bir tuşa geçmeden gittiyse `; artık hiçbir tuş j işini yapmıyor` ile; `tuş dosyası yok; … içine yazılan TUŞ = TUŞ satırları sana kendi tuşlarını verir` (imece'nin kendi tuşları geri gelir); ya da dosyanın neden reddedildiği, elinizdeki tuşlar kalarak: `…/imece/keys: satır 3: TUŞ = TUŞ diye yaz; elindeki tuşlar kalıyor`. Menü notu dosyanın kaç tuş verdiğidir. imece dosya değişince onu kendiliğinden de aynı sözlerle okur; `:keys` yalnızca bunları yeniden duymak için gerekir. Bkz. [kendi tuşlarınız](../screen/keyboard.md#kendi-tuşlarınız).
 
 ### `:lang [en|tr]`
 

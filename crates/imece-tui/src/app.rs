@@ -728,6 +728,10 @@ pub struct App {
     /// whether it changed since it was last kept.
     pub keys_good: Option<String>,
     pub keys_new: bool,
+    /// The key file as it was last read (`keys::stamp`), and when it was
+    /// last looked at for a change; none looks at once.
+    keys_seen: keys::Stamp,
+    keys_looked: Option<Instant>,
     /// A bare `:solo` asks the vendor, the model and the effort on a
     /// screen of its own; the words it came with wait in it.
     pub solo_pick: Option<SoloPick>,
@@ -865,6 +869,8 @@ impl App {
             keys_file: None,
             keys_good: None,
             keys_new: false,
+            keys_seen: keys::Stamp::default(),
+            keys_looked: None,
             solo_pick: None,
             primary: None,
             digest: None,
@@ -1427,11 +1433,12 @@ impl App {
         self.flash = Some((msg.into(), Instant::now()));
     }
 
-    /// The keys a start found (`keys::Start`), the key file at `file`;
-    /// a file refused is said.
-    pub fn start_keys(&mut self, file: Option<PathBuf>, start: keys::Start) {
+    /// The keys a start found (`keys::Start`), the key file at `file` as
+    /// it was before it was read (`seen`); a file refused is said.
+    pub fn start_keys(&mut self, file: Option<PathBuf>, seen: keys::Stamp, start: keys::Start) {
         self.keys = start.map;
         self.keys_file = file;
+        self.keys_seen = seen;
         self.keys_new = false;
         self.keys_good = start.good;
         if let (Some(why), Some(path)) = (start.refused, &self.keys_file) {
@@ -1448,6 +1455,7 @@ impl App {
             return self.flash(t.keys_nowhere);
         };
         let shown = path.display().to_string();
+        self.keys_seen = keys::stamp(&path);
         let good = match keys::load(&path) {
             keys::Read::Missing => {
                 self.keys = Keymap::default();
@@ -1464,6 +1472,26 @@ impl App {
         if good != self.keys_good {
             self.keys_good = good;
             self.keys_new = true;
+        }
+    }
+
+    /// The key file looked at at `now`, at most every [`keys::EVERY`]:
+    /// changed since it was last read (another text, saved over, made or
+    /// removed), it is read again as on `:keys`, and what came of it is
+    /// said; a bad edit leaves the keys in use.
+    pub fn watch_keys(&mut self, now: Instant) {
+        if self
+            .keys_looked
+            .is_some_and(|at| now.duration_since(at) < keys::EVERY)
+        {
+            return;
+        }
+        self.keys_looked = Some(now);
+        let Some(path) = &self.keys_file else {
+            return;
+        };
+        if keys::stamp(path) != self.keys_seen {
+            self.read_keys();
         }
     }
 
@@ -3763,6 +3791,8 @@ impl App {
     /// model asked). Not over what the person is writing or another
     /// window.
     pub fn focus(&mut self, gained: bool, now: Instant) {
+        // Back from the editor: the key file is looked at at once.
+        self.keys_looked = None;
         if !gained {
             self.blurred = Some((now, self.world.tick));
             return;
@@ -9892,7 +9922,7 @@ mod tests {
             good: Some("^p = k".into()),
             refused: Some(keys::Why::Quits(2)),
         };
-        app.start_keys(Some(path.clone()), start);
+        app.start_keys(Some(path.clone()), keys::Stamp::default(), start);
         assert_eq!(app.keys, keymap("^p = k"));
         assert_eq!(app.keys_good.as_deref(), Some("^p = k"));
         assert_eq!(app.keys_file, Some(path.clone()));
@@ -9902,14 +9932,95 @@ mod tests {
             Some("/c/imece/keys: line 2: ctrl-c always quits; the keys you had stay")
         );
         let mut app = App::new(1, 1, 0, 1, Lang::En);
-        app.start_keys(Some(path), keys::Start::default());
+        app.start_keys(Some(path), keys::Stamp::default(), keys::Start::default());
         assert_eq!(flashed(&app), None, "a good start says nothing");
         let mut app = App::new(1, 1, 0, 1, Lang::En);
         let start = keys::Start {
             refused: Some(keys::Why::TooBig),
             ..keys::Start::default()
         };
-        app.start_keys(None, start);
+        app.start_keys(None, keys::Stamp::default(), start);
         assert_eq!(flashed(&app), None, "no file to name");
+    }
+
+    #[test]
+    fn a_changed_key_file_is_read_again_every_few_seconds() {
+        let dir = dir("watch");
+        let path = dir.join("keys");
+        let shown = path.display().to_string();
+        std::fs::write(&path, "^n = j\n").unwrap();
+        let mut app = App::new(1, 1, 0, 1, Lang::En);
+        let seen = keys::stamp(&path);
+        let start = keys::Start::new(Some(keys::load(&path)), None);
+        app.start_keys(Some(path.clone()), seen, start);
+        let at = Instant::now();
+        let after = |n: u32| at + keys::EVERY * n;
+        app.watch_keys(at);
+        assert_eq!(flashed(&app), None, "as the start read it: not read");
+        assert!(!app.keys_new);
+        std::fs::write(&path, "^n = j\nj = G\n").unwrap();
+        app.watch_keys(after(1) - Duration::from_millis(1));
+        assert_eq!(app.keys, keymap("^n = j"), "not looked at yet");
+        app.watch_keys(after(1));
+        assert_eq!(app.keys, keymap("^n = j\nj = G"), "looked at, read again");
+        assert_eq!(flashed(&app), Some(format!("{shown}: keys taken (2)")));
+        assert_eq!(app.keys_good.as_deref(), Some("^n = j\nj = G\n"));
+        assert!(std::mem::take(&mut app.keys_new), "to keep");
+        app.flash = None;
+        app.watch_keys(after(2));
+        assert_eq!(flashed(&app), None, "read once for each change");
+        std::fs::write(&path, "^n = j\nnope\n").unwrap();
+        app.watch_keys(after(3));
+        assert_eq!(
+            flashed(&app),
+            Some(format!(
+                "{shown}: line 2: write it as KEY = KEY; the keys you had stay"
+            ))
+        );
+        assert_eq!(app.keys, keymap("^n = j\nj = G"), "a bad edit: they stay");
+        assert!(!app.keys_new);
+        app.flash = None;
+        app.watch_keys(after(4));
+        assert_eq!(flashed(&app), None, "said once, not every few seconds");
+        std::fs::remove_file(&path).unwrap();
+        app.watch_keys(after(5));
+        assert_eq!(app.keys, Keymap::default(), "removed: imece's own keys");
+        assert!(std::mem::take(&mut app.keys_new));
+        std::fs::write(&path, "^p = k\n").unwrap();
+        app.watch_keys(after(6));
+        assert_eq!(app.keys, keymap("^p = k"), "made again");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn back_in_the_window_the_key_file_is_looked_at_at_once() {
+        let dir = dir("focus");
+        let path = dir.join("keys");
+        let mut app = App::new(1, 1, 0, 1, Lang::En);
+        app.start_keys(
+            Some(path.clone()),
+            keys::Stamp::default(),
+            keys::Start::default(),
+        );
+        let at = Instant::now();
+        app.watch_keys(at);
+        assert_eq!(flashed(&app), None, "no file, as at the start");
+        app.focus(false, at);
+        std::fs::write(&path, "^n = j\n").unwrap();
+        let back = at + Duration::from_millis(5);
+        app.focus(true, back);
+        app.watch_keys(back);
+        assert_eq!(app.keys, keymap("^n = j"));
+        std::fs::write(&path, "^n = j\nj = G\n").unwrap();
+        app.command("keys");
+        assert_eq!(app.keys, keymap("^n = j\nj = G"));
+        app.flash = None;
+        app.focus(true, back);
+        app.watch_keys(back);
+        assert_eq!(flashed(&app), None, "`:keys` read it: nothing new");
+        let mut app = App::new(1, 1, 0, 1, Lang::En);
+        app.watch_keys(at);
+        assert_eq!(flashed(&app), None, "no home, no file to look at");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
