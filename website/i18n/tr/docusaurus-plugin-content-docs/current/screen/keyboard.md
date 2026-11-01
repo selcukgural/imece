@@ -25,6 +25,7 @@ Gelenekler vim'inkidir: `h` `j` `k` `l` hareket ve katlama, `gg` ve `G` uçlara,
 | `:budget USD` | agent'lar çalışırken bütçeyi artır ya da azalt; `USD` `80` ya da `2.50` gibi dolar |
 | `:lead VENDOR` | sonraki açılıştan itibaren kim lider; `VENDOR` `claude`, `codex`, `gemini` ya da `ask` |
 | `:open PATH` | `PATH`'teki çalışma kopyasını proje olarak aç; ardına bir `NAME` adlandırır |
+| `:solo CHOICE` | lidersiz, kendin sürdüğün bir solo oturum: `CHOICE` `satıcı[:model][@çaba]`; bir `PATH` ve bir `NAME` de gelebilir |
 | `:close NAME` | `NAME` projesini kapat: agent'lar ayrılır, worktree'ler kalır |
 | `:rename NAME` | eldeki projeyi adlandır; lideri `lead-NAME` olur |
 | `:forget @NAME` | `@NAME` agent'ı oturumunu unutur; yenisine kaldığı yer anlatılır |
@@ -156,7 +157,7 @@ Gelenekler vim'inkidir: `h` `j` `k` `l` hareket ve katlama, `gg` ve `G` uçlara,
 | `:trace` / `:talk` | `t` / `v` |
 | `:mark` | `m` |
 | `:pause`, `:faster`, `:slower` | `space`, `+`, `-` (demo) |
-| `:budget` (`:b`), `:lead`, `:open` (`:o`), `:close` (`:c`), `:rename`, `:forget` (`:f`), `:export`, `:commit`, `:copy`, `:pin`, `:awake` | tuşu yok: `:` ardından yazılır |
+| `:budget` (`:b`), `:lead`, `:open` (`:o`), `:close` (`:c`), `:rename`, `:solo`, `:forget` (`:f`), `:export`, `:commit`, `:copy`, `:pin`, `:awake` | tuşu yok: `:` ardından yazılır |
 
 Her komutun ne aldığının tam listesi [komutlar başvurusunda](../reference/commands.md).
 

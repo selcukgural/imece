@@ -1,6 +1,6 @@
 ---
 title: Scenarios
-description: Six step-by-step walks through imece, each key and command named with what the screen shows in reply.
+description: Seven step-by-step walks through imece, each key and command named with what the screen shows in reply.
 ---
 
 # Scenarios
@@ -9,7 +9,7 @@ The concept and screen pages say what each part of imece is. The scenarios put t
 
 Every scenario is true of the real imece: the keys are the ones the `?` help lists, the journal lines are the words the screen uses, the numbers (caps, prices, defaults) are the ones in the code. Drawn screens are short and plausible, not a transcript of a real run.
 
-## The six
+## The seven
 
 | Scenario | One line |
 | --- | --- |
@@ -17,6 +17,7 @@ Every scenario is true of the real imece: the keys are the ones the `?` help lis
 | [Codex leads, Claude and Gemini work](mixed-vendors.md) | `--lead codex`, hiring across vendors, what a tier means per vendor, tokens against dollars, the header's usage limits, `--confine strict`. |
 | [Sending a change back, then taking half of it](review-with-notes.md) | Notes with `c` and `n`, the worker's answer with `↩` and `%`, hunks chosen with `x`, `>` to quote one, `r` to reject the rest. |
 | [Three checkouts, one screen](many-projects.md) | `:open`, folding, `:pin`, `f`, `:rename`, `:copy .env`, `:close`, and the one pot every project draws from. |
+| [A solo beside the team](solo-beside-the-team.md) | `:solo claude:opus@xhigh`, a session you drive yourself with no leader, the `Δ` after every answer, a second solo on Codex, `--solo` the next morning. |
 | [Coming back](next-morning.md) | Quitting mid-turn, the "where you left off" window, agents asleep, how each vendor resumes, `:forget`, the away digest, marks, `:export`. |
 | [Your shell next to the team](own-shell-and-commit.md) | `!cargo test`, `!vim`, ctrl-c, `:commit` and its ceilings, `:awake`, `:budget 80`, `:theme nord`, `L`. |
 
@@ -31,7 +32,8 @@ Everything a scenario does on the screen can be tried with `imece --demo`: fake 
 3. [Your shell next to the team](own-shell-and-commit.md): the person's own tools beside the agents.
 4. [Codex leads, Claude and Gemini work](mixed-vendors.md): when more than one vendor is on PATH.
 5. [Three checkouts, one screen](many-projects.md): when more than one project is open.
-6. [Coming back](next-morning.md): the second day.
+6. [A solo beside the team](solo-beside-the-team.md): when you want to drive one agent yourself.
+7. [Coming back](next-morning.md): the second day.
 
 ## See also
 

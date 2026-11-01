@@ -14,11 +14,13 @@ An imece team is a leader that talks to you and hires workers as the work needs 
 | Leader (`lead`) | Your checkout, read only | `send`, `post`, `board`, `run`, `hire` (workers) |
 | Worker (`claude-1`, `codex-2`, …) | Its own worktree, detached at your HEAD | `send`, `post`, `board`, `run`, `claim`, `hire` (helpers) |
 | Helper (`claude-1.1`, …) | Its worker's worktree, the files its worker names | `send`, `post`, `board`, `run` |
+| Solo (`solo`, `solo-notes`) | Its own worktree, in a project with no leader | `send`, `run`, `hire` (helpers) |
 | Researcher | not built yet | — |
 
 - **The leader** reads the checkout, splits your request into cards and hands them out with `send` (type `assign`), or puts them on the board for any worker to take. It never changes a file, at every `--confine` level: it works in your checkout, where a write would skip the review. It gets its vendor's read tools and, from `standard` on, the web.
 - **A worker** changes files in its own worktree, checks its work with the `run` tool, and sends `done` to whoever gave it the task. Its `done` becomes a change for you to review ([changes](../concepts/changes.md)). One card at a time per worker.
 - **A helper** is to a worker what a worker is to the leader. A worker hires one for a part that can run beside its own work, in files it is not changing. A helper is not offered cards, hires nobody (no helpers of helpers), and is not counted against `--agents`. Its `done` to its worker marks it leaving; it leaves when that turn ends, so the turn's cost is still reported. The journal says `finished and left`. A worker that stops takes its helpers with it.
+- **A solo** is a worker without a leader: you drive it yourself, on the vendor, model and effort you chose (`:solo`, `--solo`), in a project of its own. It has no board and no cards; every turn that ends with an answer shows you its worktree's diff. It may hire helpers as a worker does ([solo sessions](solo.md)).
 - **Researchers** are a planned layer (a capped pool that answers questions, with graded taint and trusted sources). They are not built; only the demo shows them (`--researchers N`).
 
 The vendor's own sub-agent tool (Claude Code's `Agent`/`Task`, Codex's `multi_agent`, Gemini's `invoke_agent` and the like) is off at every level: a sub-agent spawned inside a CLI would skip the worktree, the pot, the bus and the screen. Helpers are imece's answer to that need.

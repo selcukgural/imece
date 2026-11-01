@@ -497,6 +497,7 @@ mod tests {
             "gone".into(),
             "/nonexistent/gone".into(),
             Vendor::Claude,
+            Role::Leader,
         );
         let lead_gone = 3;
         let other = w.cards.len();
@@ -1012,6 +1013,7 @@ mod tests {
             run_programs: Vec::new(),
             run_timeout: DEFAULT_RUN_TIMEOUT,
             confine: Confine::Standard,
+            solo: None,
         };
         let present = [(Vendor::Claude, true)];
         let (mut w, mut live) = world(options(&repo, None), &present).unwrap();
@@ -1838,7 +1840,10 @@ mod tests {
         live.claude_home = dir.join("claude");
         live.gemini_config = dir.join("gemini");
         live.open_bus(&w, "/opt/imece".into()).unwrap();
-        assert_eq!(live.open_project(&mut w, &repo, Some("api")), Ok(1));
+        assert_eq!(
+            live.open_project(&mut w, &repo, Some("api"), Open::Team),
+            Ok(1)
+        );
         live.hire(&mut w, 1, &json!({ "vendor": "gemini" }))
             .unwrap();
         live.hire(&mut w, 1, &json!({})).unwrap();
@@ -2279,6 +2284,7 @@ mod tests {
             run_programs: Vec::new(),
             run_timeout: DEFAULT_RUN_TIMEOUT,
             confine: Confine::Standard,
+            solo: None,
         };
         let present = [(Vendor::Claude, true)];
         let (w, mut live) = world(options(), &present).unwrap();
@@ -2328,6 +2334,7 @@ mod tests {
             run_programs: Vec::new(),
             run_timeout: DEFAULT_RUN_TIMEOUT,
             confine: Confine::Strict,
+            solo: None,
         };
         let present = [(Vendor::Claude, true)];
         let (w, mut live) = world(options(false), &present).unwrap();

@@ -11,8 +11,9 @@ description: imece'nin her bayrağı, varsayılanı ve aralığıyla; satıcı �
 
 ```text
 usage: imece [--repo DIR] [--agents N] [--helpers N] [--lead VENDOR]
-             [--model [V:]NAME]... [--tier [V:]T=NAME]... [--budget USD] [--fresh] [--awake]
-             [--confine standard|strict|open] [--lang en|tr] [--theme NAME|FILE]
+             [--solo V[:MODEL][@EFFORT]] [--model [V:]NAME]... [--tier [V:]T=NAME]...
+             [--budget USD] [--fresh] [--awake] [--confine standard|strict|open]
+             [--lang en|tr] [--theme NAME|FILE]
        imece --demo [--projects N] [--agents N] [--researchers N] [--seed N]
 ```
 
@@ -93,6 +94,16 @@ imece --lead codex      # claude, codex, gemini ya da ask
 ```
 
 Liderin kodlama ajanı. Onsuz: birincil satıcınız (soru ekranında `p` ile, ya da `:lead VENDOR` ile ayarlanır) PATH'teyse ve imece onu sürüyorsa o; yoksa PATH'teki tek böyle satıcı; o da yoksa salondan önce KİM LİDER? sorusu. `--lead ask` soruyu zorlar. Burada adı geçen ama PATH'te olmayan bir satıcı, sessizce değiştirilmez: takım kurulurken dürüst hatayı verir. Başka bir şey: `--lead: "cursor" is not claude, codex, gemini or ask`. Bkz. [satıcılar](../concepts/vendors.md).
+
+### `--solo V[:MODEL][@EFFORT]`
+
+```sh
+imece --solo claude                    # Claude Code, kendi modeli ve çabası
+imece --solo claude:opus@xhigh         # opus, xhigh çabayla düşünen
+imece --solo codex:gpt-5.6-terra@high
+```
+
+Checkout'ta bir takım yerine bir solo oturumla başlar: kendinizin sürdüğü tek bir ajan, lidersiz; `V` satıcısında (`claude`, `codex`, `gemini`), `MODEL` modelinde (varsayılan: satıcının kendisi ya da `--model`'in adlandırdığı) ve `EFFORT` çabasında (satıcının kendi düzeyleri, bkz. `--model`; Gemini'de yoktur). Proje dizinin adını alır, ajan `solo`dur (başka yerde `solo-AD`); kendi worktree'sinde yazar ve bir yanıtla biten her turda diff'i size gösterir. Bu checkout'ta aynı satıcı ve seçimle açık bir solo varsa onunla sürülür, böylece her sabah aynı komut aynı oturumu sürdürür; farklı bir seçim yanına `-2` adlı başka bir solo açar; burada açık bir takım, siz ona yazana dek uykuda kalır. `--lead` yoksa `:open`'ın eklediği takımlara `V` liderlik eder, KİM LİDER? sorusu gelmez. Redler: `--solo: "x" is not VENDOR[:MODEL][@EFFORT], like claude:opus@xhigh`, `--solo: imece does not drive qwen`, `--solo: claude has no effort "bogus"; …` ve başlangıçta `--solo: codex is not on PATH here, or imece does not drive it` (çıkış kodu 1). Demo da alır. Bkz. [solo oturumlar](../concepts/solo.md).
 
 ### `--model [V:]NAME`
 

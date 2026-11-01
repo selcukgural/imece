@@ -95,17 +95,22 @@ pub(super) fn tools_of(
     programs: &[String],
     timeout: Duration,
 ) -> Vec<Tool> {
-    let mut tools = vec![
-        send_tool(),
-        post_tool(),
-        board_tool(),
-        run_tool(role, programs, timeout),
-    ];
+    // The board is the team's: a solo has none.
+    let mut tools = match role {
+        Role::Solo => vec![send_tool(), run_tool(role, programs, timeout)],
+        _ => vec![
+            send_tool(),
+            post_tool(),
+            board_tool(),
+            run_tool(role, programs, timeout),
+        ],
+    };
     match role {
         Role::Worker => {
             tools.push(claim_tool());
             tools.push(hire_tool(vendors, HIRE_HELPER));
         }
+        Role::Solo => tools.push(hire_tool(vendors, HIRE_HELPER)),
         Role::Leader => tools.push(hire_tool(vendors, HIRE_WORKER)),
         Role::Helper | Role::Researcher => {}
     }
@@ -1119,6 +1124,29 @@ mod tests {
             let status = s.wait().unwrap();
             assert_eq!(status.signal(), Some(libc::SIGKILL), "{status:?}");
         }
+    }
+
+    #[test]
+    fn each_role_gets_its_tools_and_a_solo_has_no_board() {
+        let names = |role| -> Vec<String> {
+            tools_of(role, &["claude"], &[], Duration::from_secs(5))
+                .into_iter()
+                .map(|t| t.name)
+                .collect()
+        };
+        assert_eq!(names(Role::Solo), ["send", "run", "hire"]);
+        assert_eq!(
+            names(Role::Worker),
+            ["send", "post", "board", "run", "claim", "hire"]
+        );
+        assert_eq!(
+            names(Role::Leader),
+            ["send", "post", "board", "run", "hire"]
+        );
+        assert_eq!(names(Role::Helper), ["send", "post", "board", "run"]);
+        assert_eq!(names(Role::Researcher), ["send", "post", "board", "run"]);
+        let solo_hire = &tools_of(Role::Solo, &["claude"], &[], Duration::from_secs(5))[2];
+        assert_eq!(solo_hire.description, HIRE_HELPER, "a solo hires helpers");
     }
 
     #[test]

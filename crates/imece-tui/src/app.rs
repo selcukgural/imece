@@ -12,7 +12,7 @@ use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use crate::complete::{self, Menu};
 use crate::edit;
 use crate::i18n::{Lang, fill};
-use crate::live::{Live, Refusal};
+use crate::live::{Live, Open, Refusal};
 use crate::model::*;
 use crate::prefs::{SIDE_DEFAULT, SIDE_MAX, SIDE_MIN};
 use crate::shell::Ran;
@@ -1779,7 +1779,7 @@ impl App {
             }
             _ => None,
         };
-        let bill = matches!(name, "forget" | "open" | "commit");
+        let bill = matches!(name, "forget" | "open" | "solo" | "commit");
         match (value, bill) {
             (Some(v), true) => format!("({v}) $"),
             (Some(v), false) => format!("({v})"),
@@ -1944,6 +1944,7 @@ impl App {
                 Err(why) => self.flash(fill(t.bad_theme, &[arg, &why])),
             },
             "open" => self.open_project(arg),
+            "solo" => self.solo_project(arg),
             "close" => self.close_project(arg),
             "rename" => self.rename_project(arg),
             "forget" => self.forget_agent(arg),
@@ -2357,7 +2358,7 @@ impl App {
         }
         let full = expand_tilde(path, self.home.as_deref());
         let opened = match &mut self.engine {
-            Engine::Live(live) => live.open_project(&mut self.world, &full, name),
+            Engine::Live(live) => live.open_project(&mut self.world, &full, name, Open::Team),
             Engine::Sim(sim) => sim.open_project(&mut self.world, path, name),
         };
         match opened {
@@ -2385,6 +2386,90 @@ impl App {
             Err(ProjectRefusal::PathOpen(n)) => self.flash(fill(t.project_open, &[path, &n])),
             Err(ProjectRefusal::BadName(n)) => self.flash(fill(t.bad_project_name, &[&n])),
             Err(e) => self.flash(fill(t.bad_open, &[&e.describe()])),
+        }
+    }
+
+    /// `:solo [PATH] [VENDOR[:MODEL][@EFFORT]] [NAME]`, the words in any
+    /// order: a solo session on the checkout at PATH (else the project at
+    /// hand's), on the vendor and choice (else the lead vendor at its
+    /// standard rung), as a project named NAME (else after the directory,
+    /// numbered when taken). A word with a `/`, or starting with `~` or
+    /// `.`, is the path; one that starts with a vendor's name is the
+    /// choice; the one left is the name. Selected when opened.
+    fn solo_project(&mut self, arg: &str) {
+        let t = self.lang.text();
+        let (mut path, mut choice, mut name) = (None, None, None);
+        for word in arg.split_whitespace() {
+            let slot = if word.contains('/') || word.starts_with(['~', '.']) {
+                &mut path
+            } else if let Some(c) = vendor_choice(word) {
+                if choice.replace(c).is_some() {
+                    return self.flash(t.solo_usage);
+                }
+                continue;
+            } else {
+                &mut name
+            };
+            if slot.replace(word).is_some() {
+                return self.flash(t.solo_usage);
+            }
+        }
+        let (vendor, choice) = match choice {
+            Some((v, c)) => (Some(v), c),
+            None => (None, None),
+        };
+        let here = self.current_project();
+        let full = match path {
+            Some(p) => expand_tilde(p, self.home.as_deref()),
+            None => match &self.engine {
+                Engine::Live(live) => live.repo_of(here).to_path_buf(),
+                Engine::Sim(_) => PathBuf::from(&self.world.projects[here].name),
+            },
+        };
+        let shown = full.display().to_string();
+        let opened = match &mut self.engine {
+            Engine::Live(live) => live.open_project(
+                &mut self.world,
+                &full,
+                name,
+                Open::Solo {
+                    vendor,
+                    choice: choice.clone(),
+                },
+            ),
+            Engine::Sim(sim) => sim.open_solo(&mut self.world, &shown, vendor, choice, name),
+        };
+        match opened {
+            Ok(p) => {
+                if p == self.collapsed.len() {
+                    self.collapsed.push(false);
+                } else {
+                    self.collapsed[p] = false;
+                }
+                let project = &self.world.projects[p];
+                let head = project.leader;
+                let a = &self.world.agents[head];
+                let runs = match self.model_of(head) {
+                    Some(m) => format!("{} {m}", a.vendor.label()),
+                    None => a.vendor.label().to_string(),
+                };
+                let said = fill(t.solo_opened, &[&project.name, &shown, &a.name, &runs]);
+                self.zoom = Zoom::None;
+                self.selected = Sel::Agent(head);
+                self.flash(said);
+            }
+            Err(ProjectRefusal::NameTaken(n)) => self.flash(fill(t.project_exists, &[&n])),
+            Err(ProjectRefusal::BadName(n)) => self.flash(fill(t.bad_project_name, &[&n])),
+            Err(e) => self.flash(fill(t.bad_open, &[&e.describe()])),
+        }
+    }
+
+    /// The `[MODEL][@EFFORT]` choice agent `id` runs on, none for its
+    /// vendor's own default: a solo's row shows it.
+    pub fn model_of(&self, id: AgentId) -> Option<String> {
+        match &self.engine {
+            Engine::Live(live) => live.model_of(id).map(str::to_string),
+            Engine::Sim(sim) => sim.model_of(id).map(str::to_string),
         }
     }
 
@@ -3288,6 +3373,75 @@ mod tests {
     }
 
     #[test]
+    fn colon_solo_places_its_words_opens_a_solo_and_selects_it() {
+        let mut app = App::new(1, 1, 0, 1, Lang::En);
+        app.home = None;
+        let t = Lang::En.text();
+        let said = |app: &mut App| app.flash.take().map(|f| f.0).unwrap_or_default();
+        // The words in any order: a path, a vendor choice, a name.
+        app.command("solo notes codex@high ~/x");
+        assert_eq!(app.world.projects.len(), 2);
+        let p = &app.world.projects[1];
+        let head = p.leader;
+        let a = &app.world.agents[head];
+        assert_eq!(p.name, "notes");
+        assert_eq!(
+            (a.name.as_str(), a.role, a.vendor),
+            ("solo-notes", Role::Solo, Vendor::Codex)
+        );
+        assert_eq!(app.model_of(head).as_deref(), Some("@high"));
+        assert_eq!(app.selected, Sel::Agent(head));
+        assert_eq!(app.collapsed, [false, false]);
+        assert_eq!(
+            said(&mut app),
+            "opened notes at ~/x as a solo session; write to solo-notes (codex @high)"
+        );
+        assert!(app.world.is_solo(1));
+        // Typing goes to the solo now, as to a leader.
+        assert_eq!(app.typing_target(), "solo-notes");
+        // Bare: the project at hand's checkout, the lead vendor, named
+        // after it with a number; the demo names its path after the project.
+        app.command("solo");
+        assert_eq!(app.world.projects.len(), 3);
+        assert_eq!(app.world.projects[2].name, "notes-2");
+        assert_eq!(
+            app.world.agents[app.world.projects[2].leader].vendor,
+            Vendor::Claude
+        );
+        assert_eq!(app.model_of(app.world.projects[2].leader), None);
+        assert_eq!(
+            said(&mut app),
+            "opened notes-2 at notes as a solo session; write to solo-notes-2 (claude)"
+        );
+        // A path is told by a `/` alone, a `~` alone or a `.` alone.
+        for (n, (word, at)) in [("a/b", "a/b"), ("~", "~"), (".", ".")]
+            .into_iter()
+            .enumerate()
+        {
+            app.command(&format!("solo claude {word} p-{n}"));
+            let flash = said(&mut app);
+            assert!(
+                flash.contains(&format!(" at {at} as a solo session")),
+                "{word}: {flash}"
+            );
+        }
+        assert_eq!(app.world.projects.len(), 6);
+        // Two names, two paths or two choices: the usage line, nothing opened.
+        for bad in ["solo a b", "solo ~/x ./y", "solo claude codex"] {
+            app.command(bad);
+            assert_eq!(said(&mut app), t.solo_usage, "{bad}");
+            assert_eq!(app.world.projects.len(), 6, "{bad}");
+        }
+        // A name that is taken, a name that can not be one.
+        app.command("solo notes");
+        assert_eq!(said(&mut app), fill(t.project_exists, &["notes"]));
+        app.command("solo a:b");
+        assert_eq!(said(&mut app), fill(t.bad_project_name, &["a:b"]));
+        // `:solo` raises the next bill, as `:open` does.
+        assert_eq!(app.command_note("solo"), "$");
+    }
+
+    #[test]
     fn the_demo_opens_closes_and_renames_projects_too() {
         let mut app = App::new(1, 1, 0, 1, Lang::En);
         app.home = None;
@@ -3548,7 +3702,8 @@ mod tests {
         let two = crate::live::testing::checkout("home-two");
         let mut w = crate::live::testing::team(0);
         let mut live = crate::live::testing::idle_live_in(&one, 1);
-        live.open_project(&mut w, &two, Some("two")).unwrap();
+        live.open_project(&mut w, &two, Some("two"), Open::Team)
+            .unwrap();
         live.set_home(1);
         let app = App::with(w, Engine::Live(Box::new(live)), Lang::En);
         assert_eq!(app.selected, Sel::Agent(1), "the second project's leader");

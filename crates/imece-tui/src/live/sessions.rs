@@ -149,9 +149,21 @@ impl Live {
         if a.role == Role::Leader {
             return place.repo.clone();
         }
-        let tree = a.parent.map_or(&a.name, |p| &w.agents[p].name);
-        let path = place.root.join(tree);
+        let path = place.root.join(Self::tree_of(w, id));
         path.canonicalize().unwrap_or(path)
+    }
+
+    /// The name of the worktree agent `id` works in: a worker's own name,
+    /// a helper's worker's; a solo's is `solo-<project id>`, so a renamed
+    /// solo project (which renames the agent) keeps its worktree.
+    pub(super) fn tree_of(w: &World, id: AgentId) -> String {
+        let a = &w.agents[id];
+        let owner = a.parent.map_or(a, |p| &w.agents[p]);
+        if owner.role == Role::Solo {
+            format!("solo-{}", owner.project)
+        } else {
+            owner.name.clone()
+        }
     }
 
     /// Agent `id`'s earlier session could not be resumed (`why`): a new
@@ -455,6 +467,7 @@ impl Live {
     /// the line that goes there in its first prompt.
     pub(super) fn start(&self, w: &mut World, id: AgentId, held: Option<usize>) {
         let a = &w.agents[id];
+        // Everyone but a leader writes, in a worktree.
         let leader = a.role == Role::Leader;
         let confine = self.confine;
         let vendor = self.of(a.vendor);
@@ -488,10 +501,10 @@ impl Live {
         let kind = a.vendor;
         let generation = self.generation[id];
         // A helper changes the same files as its worker: its worktree.
-        let tree = a.parent.map_or(&a.name, |p| &w.agents[p].name).clone();
+        let tree = Self::tree_of(w, id);
         let (repo, root) = (place.repo.clone(), place.root.clone());
         let copies = w.projects[a.project].copies.clone();
-        let home = self.gemini_home(a.project, a.role, &a.name);
+        let home = self.gemini_home(a.project, a.role, &tree);
         let (tx, ready) = (self.tx.clone(), self.ready_tx.clone());
         thread::spawn(move || {
             let started = (|| {
@@ -596,6 +609,51 @@ impl Live {
 mod tests {
     use super::*;
     use crate::live::testing::*;
+
+    #[test]
+    fn a_solo_s_worktree_is_named_after_its_project_so_a_rename_keeps_it() {
+        let mut w = team(1);
+        let worker_helper = with_helper(&mut w, 1);
+        w.open_project(
+            None,
+            "notes".into(),
+            "/n".into(),
+            Vendor::Claude,
+            Role::Solo,
+        );
+        let solo = w.projects[1].leader;
+        let solo_helper = with_helper(&mut w, solo);
+        w.agents[solo_helper].project = 1;
+        assert_eq!(Live::tree_of(&w, 1), "claude-1");
+        assert_eq!(Live::tree_of(&w, worker_helper), "claude-1", "its worker's");
+        assert_eq!(Live::tree_of(&w, solo), "solo-1");
+        assert_eq!(Live::tree_of(&w, solo_helper), "solo-1", "its solo's");
+        w.rename_project(1, "ideas".into());
+        assert_eq!(
+            Live::tree_of(&w, solo),
+            "solo-1",
+            "the name moved, the tree did not"
+        );
+        let mut live = idle_live(w.agents.len());
+        live.places.push(Place {
+            repo: PathBuf::from("/n"),
+            root: PathBuf::from("/n-trees"),
+        });
+        assert_eq!(live.cwd_of(&w, solo), PathBuf::from("/n-trees/solo-1"));
+        assert_eq!(
+            live.cwd_of(&w, solo_helper),
+            PathBuf::from("/n-trees/solo-1")
+        );
+        assert_eq!(
+            live.cwd_of(&w, 0),
+            live.places[0].repo,
+            "a leader: the checkout"
+        );
+        assert!(
+            live.gemini_home(1, Role::Solo, "solo-1")
+                .ends_with("solo-1")
+        );
+    }
 
     #[test]
     fn what_was_copied_is_one_line_and_each_skip_another() {
@@ -1310,7 +1368,7 @@ mod tests {
             PathBuf::from("/nonexistent"),
         );
         live.vendors[0].ladder.standard = Some("sonnet".into());
-        assert_eq!(live.open_project(&mut w, &repo, None), Ok(1));
+        assert_eq!(live.open_project(&mut w, &repo, None, Open::Team), Ok(1));
         assert_eq!(w.projects.len(), 2);
         let p = &w.projects[1];
         let name = project_name_of(&top);
@@ -1350,7 +1408,10 @@ mod tests {
         // A name given, another checkout, another lead vendor.
         let other = checkout("open-other");
         live.lead = Vendor::Codex;
-        assert_eq!(live.open_project(&mut w, &other, Some("api")), Ok(2));
+        assert_eq!(
+            live.open_project(&mut w, &other, Some("api"), Open::Team),
+            Ok(2)
+        );
         assert_eq!(w.projects[2].name, "api");
         assert_eq!(w.agents[2].name, "lead-api");
         assert_eq!(w.agents[2].vendor, Vendor::Codex);

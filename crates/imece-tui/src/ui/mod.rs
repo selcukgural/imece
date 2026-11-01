@@ -2147,6 +2147,44 @@ mod tests {
     }
 
     #[test]
+    fn a_solo_s_helper_counts_as_a_line_when_the_salon_decides_what_to_fold() {
+        let mut app = app_after(1, 3, 0, Lang::En);
+        app.home = None;
+        // Calm workers: idle, quiet, unchanged for a while, not selected.
+        app.world.tick = 20;
+        for c in ":solo claude notes".chars() {
+            key(&mut app, KeyCode::Char(c));
+        }
+        key(&mut app, KeyCode::Enter);
+        let head = app.world.projects[1].leader;
+        let helper = app.world.agents.len();
+        let mut h = Agent::new(
+            helper,
+            1,
+            "solo-notes.1".into(),
+            Vendor::Claude,
+            Role::Helper,
+            Status::Working,
+            20,
+        );
+        h.parent = Some(head);
+        app.world.agents.push(h);
+        app.selected = Sel::Project(1);
+        // Two headers, the leader, three workers, the solo and its helper.
+        let all = salon::rows(&app, 100);
+        assert_eq!(all.len(), 8, "{all:?}");
+        assert!(!all.iter().any(|r| matches!(r, salon::Row::Folded(_))));
+        assert_eq!(salon::rows(&app, 8).len(), 8, "it fits exactly");
+        // One line short: a calm worker folds, because the helper's line
+        // was counted.
+        let tight = salon::rows(&app, 7);
+        assert!(
+            tight.iter().any(|r| matches!(r, salon::Row::Folded(_))),
+            "{tight:?}"
+        );
+    }
+
+    #[test]
     fn agent_text_reaches_the_screen_clean() {
         let mut app = app_after(1, 4, 50, Lang::En);
         let id = app
@@ -2759,7 +2797,7 @@ mod tests {
             a
         };
         let url = "http://localhost:5173/";
-        for role in [Role::Worker, Role::Helper] {
+        for role in [Role::Worker, Role::Helper, Role::Solo] {
             assert_eq!(salon::linked(&agent(role, url)), Some(url));
             let spans = salon::local_spans(&agent(role, url));
             assert_eq!(text(&spans), "  ↗ localhost:5173/");
@@ -4463,14 +4501,85 @@ mod tests {
     }
 
     #[test]
+    fn a_solo_s_row_names_its_vendor_and_choice_and_its_helpers_hang_under_it() {
+        let mut app = app_after(1, 1, 0, Lang::En);
+        app.home = None;
+        let typed = |app: &mut App, line: &str| {
+            for c in line.chars() {
+                key(app, KeyCode::Char(c));
+            }
+            key(app, KeyCode::Enter);
+        };
+        typed(&mut app, ":solo codex:gpt-5.6-terra@xhigh notes");
+        let head = app.world.projects[1].leader;
+        let text =
+            |line: &Line| -> String { line.spans.iter().map(|s| s.content.as_ref()).collect() };
+        let line = salon::agent_line(&app, &app.world.agents[head], "");
+        assert!(
+            text(&line).contains("solo-notes") && text(&line).contains("codex gpt-5.6-terra@xhigh"),
+            "{}",
+            text(&line)
+        );
+        assert_eq!(
+            line.spans[1].content, "○ ",
+            "a solo's glyph is its status, not ◆"
+        );
+        app.world.agents[head].stand.added = 3;
+        let line = text(&salon::agent_line(&app, &app.world.agents[head], ""));
+        assert!(
+            line.contains("+3"),
+            "a solo's row shows where its worktree stands: {line}"
+        );
+        // Without a choice: the vendor alone.
+        typed(&mut app, ":solo claude other");
+        let other = app.world.projects[2].leader;
+        let line = text(&salon::agent_line(&app, &app.world.agents[other], ""));
+        assert!(
+            line.contains(" claude ") && !line.contains("claude @"),
+            "{line}"
+        );
+        // Its helpers are rows under it, as a worker's are.
+        let helper = app.world.agents.len();
+        let mut h = Agent::new(
+            helper,
+            1,
+            "solo-notes.1".into(),
+            Vendor::Codex,
+            Role::Helper,
+            Status::Working,
+            0,
+        );
+        h.parent = Some(head);
+        app.world.agents.push(h);
+        let rows = salon::rows(&app, 40);
+        let at = |id| {
+            rows.iter()
+                .position(|r| matches!(r, salon::Row::Agent { id: i, .. } if *i == id))
+        };
+        let (head_at, helper_at) = (at(head).unwrap(), at(helper).unwrap());
+        assert_eq!(helper_at, head_at + 1);
+        assert!(matches!(
+            rows[helper_at],
+            salon::Row::Agent { depth: 2, .. }
+        ));
+        // The project's header counts a working solo as working.
+        app.world.agents[head].set_status(Status::Working, 0);
+        let header = text(&salon::project_line(&app, 1));
+        assert!(
+            header.contains("2 working") || header.contains("working"),
+            "{header}"
+        );
+    }
+
+    #[test]
     fn the_help_names_the_new_line_key_this_terminal_has_after_the_writing_keys() {
         for lang in [Lang::En, Lang::Tr] {
             let t = lang.text();
             for shift_enter in [true, false] {
                 let keys = overlay::help_keys(lang, shift_enter);
-                assert_eq!(keys[18].0, "^w ^u ^k ^y", "{lang:?}");
+                assert_eq!(keys[19].0, "^w ^u ^k ^y", "{lang:?}");
                 let want = t.help_newline[usize::from(!shift_enter)];
-                assert_eq!(keys[19], want, "{lang:?} {shift_enter}");
+                assert_eq!(keys[20], want, "{lang:?} {shift_enter}");
                 assert_eq!(keys.len(), t.help_keys.len() + 1);
             }
         }
@@ -4695,9 +4804,9 @@ mod tests {
         let mut app = app_after(1, 4, 50, Lang::En);
         app.help = true;
         let t = Lang::En.text();
-        let buf = buffer(&app, 140, 40);
+        let buf = buffer(&app, 140, 44);
         let row = |y: u16| -> String { (0..140).map(|x| buf[(x, y)].symbol()).collect() };
-        let top = (0..40).find(|&y| row(y).contains(t.help_title)).unwrap();
+        let top = (0..44).find(|&y| row(y).contains(t.help_title)).unwrap();
         // Two columns of keys, a blank line, the legend, a blank line, close.
         let keys = overlay::help_keys(Lang::En, false).len();
         assert_eq!(keys, t.help_keys.len() + 1, "and the new-line line");

@@ -58,6 +58,7 @@ pub(crate) mod testing;
 mod tools;
 
 pub(crate) use self::bus::numbers;
+pub use self::projects::Open;
 pub(crate) use self::prompts::MAX_NOTES_KIB;
 pub use self::sessions::apply;
 pub(crate) use self::suggest::{SUGGEST_CAP, SUGGEST_DAY_CALLS, SUGGEST_DAY_COST};
@@ -91,6 +92,10 @@ pub struct Options {
     pub run_timeout: Duration,
     /// How much of its vendor each agent's session gets (`--confine`).
     pub confine: Confine,
+    /// `--solo`: start with a solo session on the checkout, on this vendor
+    /// and `[MODEL][@EFFORT]` choice (none: the vendor's standard rung);
+    /// an open one of the same vendor and choice is gone on with.
+    pub solo: Option<(Vendor, Option<String>)>,
 }
 
 /// A coding agent imece knows: its program on PATH, and whether imece can
@@ -626,13 +631,46 @@ pub fn world(o: Options, present: &[(Vendor, bool)]) -> Result<(World, Live), St
     if let Some((found, skipped)) = found {
         live.adopt(&mut w, found, skipped);
     }
-    let at = |q: &Project| live.places.get(q.id).is_some_and(|pl| pl.repo == repo);
-    let home = w.open_projects().find(|q| at(q)).map(|q| q.id);
-    live.home = match home {
-        Some(p) => p,
-        None => live
-            .open_project(&mut w, &repo, None)
-            .map_err(|e| e.describe())?,
+    // The project of the checkout at hand: with `--solo`, the solo on the
+    // asked vendor and choice, opened unless one is open already; else the
+    // team, opened unless one is open already (a solo alone here does not
+    // stand in for it).
+    let at = |q: &Project, live: &Live| live.places.get(q.id).is_some_and(|pl| pl.repo == repo);
+    live.home = match o.solo {
+        Some((vendor, choice)) => {
+            let Some(h) = live.vendors.iter().find(|h| h.vendor == vendor) else {
+                return Err(format!(
+                    "--solo: {} is not on PATH here, or imece does not drive it",
+                    vendor.label()
+                ));
+            };
+            let model = choice.clone().or_else(|| h.ladder.standard.clone());
+            match live.solo_at(&w, &repo, vendor, &model) {
+                Some(p) => p,
+                None => live
+                    .open_project(
+                        &mut w,
+                        &repo,
+                        None,
+                        Open::Solo {
+                            vendor: Some(vendor),
+                            choice,
+                        },
+                    )
+                    .map_err(|e| format!("--solo: {}", e.describe()))?,
+            }
+        }
+        None => {
+            let team = (w.open_projects())
+                .find(|q| at(q, &live) && !w.is_solo(q.id))
+                .map(|q| q.id);
+            match team {
+                Some(p) => p,
+                None => live
+                    .open_project(&mut w, &repo, None, Open::Team)
+                    .map_err(|e| e.describe())?,
+            }
+        }
     };
     // Said once per start: the sessions reach out of their directories
     // (a shell, the web), and what keeps them in is not imece.
@@ -665,6 +703,12 @@ impl Live {
     /// The project of the checkout imece was started in.
     pub fn home(&self) -> ProjectId {
         self.home
+    }
+
+    /// The `[MODEL][@EFFORT]` choice agent `id` runs on, none for its
+    /// vendor's own default; what a solo's row shows.
+    pub fn model_of(&self, id: AgentId) -> Option<&str> {
+        self.models[id].as_deref()
     }
 
     #[cfg(test)]
@@ -947,6 +991,14 @@ impl Live {
                     w.agents[id].set_status(Status::Working, w.tick);
                 } else if let Some(text) = answer.filter(|_| self.asked[id] || self.reports(w, id))
                 {
+                    if w.agents[id].role == Role::Solo && !text.is_empty() {
+                        // Nobody sends done for a solo: every turn that
+                        // ends with an answer shows the person what its
+                        // worktree holds (a command's turn says nothing).
+                        let title = text.lines().next().unwrap_or_default().to_string();
+                        let (nobody, _) = mpsc::channel();
+                        self.snapshot(w, id, title, String::new(), nobody);
+                    }
                     // The person waits for this: it goes to them and into
                     // the journal. The closing text of a turn that mail or
                     // a board offer started restates what the agent sent
@@ -1002,10 +1054,11 @@ impl Live {
     }
 
     /// Whether a leader's finished turn is its report to the person: the
-    /// team's work it led has come back and nobody works or has mail.
+    /// team's work it led has come back and nobody works or has mail. A
+    /// solo's turn is its report the same way, once its helpers are quiet.
     fn reports(&self, w: &World, id: AgentId) -> bool {
         let a = &w.agents[id];
-        a.role == Role::Leader
+        matches!(a.role, Role::Leader | Role::Solo)
             && w.agents.iter().all(|o| {
                 o.project != a.project || (self.turns[o.id] == 0 && self.mail[o.id].is_empty())
             })

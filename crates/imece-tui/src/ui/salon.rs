@@ -124,8 +124,9 @@ pub fn rows(app: &App, capacity: usize) -> Vec<Row> {
                 return 1;
             }
             let leader = &w.agents[p.leader];
+            // A solo's helpers hang under it as a worker's do.
             let lead = if leads(p) {
-                1 + usize::from(leader.talk.is_some())
+                1 + usize::from(leader.talk.is_some()) + helpers_of(leader).len()
             } else {
                 0
             };
@@ -170,6 +171,9 @@ pub fn rows(app: &App, capacity: usize) -> Vec<Row> {
             });
             if w.agents[p.leader].talk.is_some() {
                 out.push(Row::Talk(p.leader));
+            }
+            for h in helpers_of(&w.agents[p.leader]) {
+                out.push(Row::Agent { id: h, depth: 2 });
             }
         }
         for a in order[p.id].iter().filter(|a| !folded[a.id]) {
@@ -324,7 +328,7 @@ fn salon(f: &mut Frame, area: Rect, app: &App) {
 
 /// A project's header: folded or open, its trunk, how many work, what it
 /// costs, and (even when folded) how much waits for the person.
-fn project_line(app: &App, p: ProjectId) -> Line<'static> {
+pub(super) fn project_line(app: &App, p: ProjectId) -> Line<'static> {
     let w = &app.world;
     let t = app.lang.text();
     let project = &w.projects[p];
@@ -334,7 +338,9 @@ fn project_line(app: &App, p: ProjectId) -> Line<'static> {
         .agents
         .iter()
         .filter(in_project)
-        .filter(|a| matches!(a.role, Role::Worker | Role::Helper) && a.status != Status::Idle)
+        .filter(|a| {
+            matches!(a.role, Role::Worker | Role::Helper | Role::Solo) && a.status != Status::Idle
+        })
         .count();
     let cost: u64 = w.agents.iter().filter(in_project).map(|a| a.cost).sum();
     let waiting = w
@@ -410,6 +416,14 @@ pub(super) fn agent_line(app: &App, a: &Agent, prefix: &'static str) -> Line<'st
             fit(&format!(" {}", a.vendor.label()), 27),
             dim(),
         )),
+        // What the person chose to run: the vendor, its model and effort.
+        Role::Solo => {
+            let runs = match app.model_of(a.id) {
+                Some(m) => format!(" {} {m}", a.vendor.label()),
+                None => format!(" {}", a.vendor.label()),
+            };
+            spans.push(Span::styled(fit(&runs, 27), dim()));
+        }
         Role::Researcher => {}
         Role::Helper => spans.push(Span::raw(" ".repeat(27))),
         Role::Worker => {
@@ -429,7 +443,7 @@ pub(super) fn agent_line(app: &App, a: &Agent, prefix: &'static str) -> Line<'st
     if a.cost > 0 {
         spans.push(Span::styled(format!("  {}", dollars(a.cost)), dim()));
     }
-    if a.role == Role::Worker {
+    if matches!(a.role, Role::Worker | Role::Solo) {
         spans.extend(stand_spans(&a.stand));
     }
     let helpers = w.helpers_of(a.id).count();
@@ -510,7 +524,7 @@ pub(super) fn link_cells(list: Rect, i: usize, x: usize, width: usize) -> Option
 /// the row can show as it is: one cleaning would change (a path that
 /// looks like a secret) is not shown, so the text is the link.
 pub(super) fn linked(a: &Agent) -> Option<&str> {
-    if !matches!(a.role, Role::Worker | Role::Helper) {
+    if !matches!(a.role, Role::Worker | Role::Helper | Role::Solo) {
         return None;
     }
     a.local.as_deref().filter(|url| clean(url) == *url)

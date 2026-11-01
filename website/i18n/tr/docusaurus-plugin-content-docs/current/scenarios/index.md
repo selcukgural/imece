@@ -1,6 +1,6 @@
 ---
 title: Senaryolar
-description: imece'de adım adım altı yürüyüş; her adımda basılan tuş ya da komut ve ekranın buna verdiği karşılık.
+description: imece'de adım adım yedi yürüyüş; her adımda basılan tuş ya da komut ve ekranın buna verdiği karşılık.
 ---
 
 # Senaryolar
@@ -9,7 +9,7 @@ Kavram ve ekran sayfaları imece'nin her parçasının ne olduğunu anlatır. Se
 
 Her senaryo gerçek imece için doğrudur: tuşlar `?` yardımının listelediği tuşlar, günlük satırları ekranın kullandığı sözcükler, sayılar (sınırlar, fiyatlar, varsayılanlar) koddaki sayılardır. Çizili ekranlar kısa ve inandırıcıdır; gerçek bir çalışmanın kaydı değildir.
 
-## Altı senaryo
+## Yedi senaryo
 
 | Senaryo | Tek satırla |
 | --- | --- |
@@ -17,6 +17,7 @@ Her senaryo gerçek imece için doğrudur: tuşlar `?` yardımının listelediğ
 | [Codex lider, Claude ve Gemini işçi](mixed-vendors.md) | `--lead codex`, satıcılar arası işe alım, bir kademenin her satıcıda anlamı, dolara karşı token, başlıktaki kullanım sınırları, `--confine strict`. |
 | [Bir değişikliği geri göndermek, sonra yarısını almak](review-with-notes.md) | `c` ve `n` ile notlar, işçinin `↩` ve `%` ile yanıtı, `x` ile seçilen parçalar, birini alıntılayan `>`, kalanı reddeden `r`. |
 | [Üç çalışma kopyası, tek ekran](many-projects.md) | `:open`, katlama, `:pin`, `f`, `:rename`, `:copy .env`, `:close` ve her projenin çektiği tek bütçe. |
+| [Takımın yanında bir solo](solo-beside-the-team.md) | `:solo claude:opus@xhigh`, lidersiz, kendinizin sürdüğü bir oturum, her yanıttan sonra `Δ`, Codex'te ikinci bir solo, ertesi sabah `--solo`. |
 | [Geri dönmek](next-morning.md) | Tur ortasında çıkmak, "nerede kalmıştın" penceresi, uyuyan ajanlar, her satıcının nasıl devam ettiği, `:forget`, uzaktayken özeti, işaretler, `:export`. |
 | [Takımın yanında kendi kabuğunuz](own-shell-and-commit.md) | `!cargo test`, `!vim`, ctrl-c, `:commit` ve tavanları, `:awake`, `:budget 80`, `:theme nord`, `L`. |
 
@@ -31,7 +32,8 @@ Bir senaryonun ekranda yaptığı her şey `imece --demo` ile denenebilir: sahte
 3. [Takımın yanında kendi kabuğunuz](own-shell-and-commit.md): ajanların yanında kişinin kendi araçları.
 4. [Codex lider, Claude ve Gemini işçi](mixed-vendors.md): PATH'te birden fazla satıcı varken.
 5. [Üç çalışma kopyası, tek ekran](many-projects.md): birden fazla proje açıkken.
-6. [Geri dönmek](next-morning.md): ikinci gün.
+6. [Takımın yanında bir solo](solo-beside-the-team.md): tek bir ajanı kendiniz sürmek istediğinizde.
+7. [Geri dönmek](next-morning.md): ikinci gün.
 
 ## Ayrıca bakın
 

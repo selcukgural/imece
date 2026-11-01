@@ -14,11 +14,13 @@ Bir imece ekibi, sizinle konuşan ve iş gerektirdikçe işçi alan bir lider, g
 | Lider (`lead`) | Checkout'unuz, yalnız okuma | `send`, `post`, `board`, `run`, `hire` (işçiler) |
 | İşçi (`claude-1`, `codex-2`, …) | HEAD'inizde detached kendi worktree'si | `send`, `post`, `board`, `run`, `claim`, `hire` (yardımcılar) |
 | Yardımcı (`claude-1.1`, …) | İşçisinin worktree'si, işçisinin adını verdiği dosyalar | `send`, `post`, `board`, `run` |
+| Solo (`solo`, `solo-notes`) | Kendi worktree'si, lideri olmayan bir projede | `send`, `run`, `hire` (yardımcılar) |
 | Araştırmacı | henüz yapılmadı | — |
 
 - **Lider** checkout'u okur, isteğinizi kartlara böler ve `send` (tür `assign`) ile dağıtır ya da herhangi bir işçinin alması için panoya asar. Hiçbir `--confine` düzeyinde dosya değiştirmez: checkout'unuzda çalışır, orada bir yazma incelemeyi atlar. Satıcısının okuma araçlarını ve `standard`'dan itibaren web'i alır.
 - **Bir işçi** kendi worktree'sinde dosya değiştirir, işini `run` aracıyla denetler ve görevi kim verdiyse ona `done` gönderir. `done`'ı, incelemeniz için bir değişikliğe dönüşür ([değişiklikler](../concepts/changes.md)). İşçi başına bir anda bir kart.
 - **Bir yardımcı**, işçi için liderin işçisi neyse odur. İşçi, kendi işinin yanında yürüyebilecek bir parça için, değiştirmediği dosyalarda bir yardımcı alır. Yardımcıya kart teklif edilmez, kimseyi işe almaz (yardımcının yardımcısı yok) ve `--agents` sınırına sayılmaz. İşçisine gönderdiği `done` ayrılışını işaretler; o tur bitince ayrılır, böylece turun maliyeti yine raporlanır. Günlük `işini bitirdi, ayrıldı` der. Duran bir işçi yardımcılarını da götürür.
+- **Bir solo**, lideri olmayan bir işçidir: onu, seçtiğiniz satıcı, model ve çabada (`:solo`, `--solo`) kendi başına bir projede siz sürersiniz. Panosu ve kartı yoktur; bir yanıtla biten her turda worktree'sinin diff'ini size gösterir. Bir işçi gibi yardımcı alabilir ([solo oturumlar](solo.md)).
 - **Araştırmacılar** planlanmış bir katmandır (soruları yanıtlayan sınırlı bir havuz, dereceli kirlilik ve güvenilir kaynaklarla). Yapılmadı; yalnız demo gösterir (`--researchers N`).
 
 Satıcının kendi alt ajan aracı (Claude Code'un `Agent`/`Task`'ı, Codex'in `multi_agent`'ı, Gemini'nin `invoke_agent`'ı ve benzerleri) her düzeyde kapalıdır: CLI'nin içinde açılan bir alt ajan worktree'yi, bütçeyi, bus'ı ve ekranı atlardı. Yardımcılar imece'nin bu ihtiyaca yanıtıdır.

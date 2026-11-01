@@ -49,7 +49,7 @@ use crate::model::*;
 /// 11 (2026-11-01): messages' numbers on the bus: the last one given
 /// (`meta.messages`), and an unread message's own and the one it replies
 /// to (`mail.number`, `mail.re`).
-pub const SCHEMA_VERSION: i64 = 11;
+pub const SCHEMA_VERSION: i64 = 12;
 /// Trace lines kept per agent, as the world keeps them.
 const TRACE_KEEP: usize = 200;
 /// The file's name under the state directory.
@@ -2921,6 +2921,62 @@ mod tests {
         assert_eq!(back.found.sessions, k.sessions);
         assert_eq!(back.found.sessions[0].as_ref().unwrap().spent, 600);
         assert_eq!(back.found.sessions[2], None);
+    }
+
+    #[test]
+    fn a_solo_comes_back_as_one_and_the_file_says_schema_12() {
+        let d = dir("solo");
+        std::fs::create_dir_all(&d).unwrap();
+        let path = d.join(FILE);
+        let mut w = world();
+        let p = w.open_project(None, "notes".into(), "/n".into(), Vendor::Codex, Role::Solo);
+        let head = w.projects[p].leader;
+        let mut owned = kept();
+        owned.repos.push(PathBuf::from("/n"));
+        owned.models.push(Some("gpt-5.6-terra@xhigh".into()));
+        owned.tiered.push(false);
+        owned.woken.push(0);
+        owned.posted.push(0);
+        owned.mail.push(Vec::new());
+        owned.notes.push(Vec::new());
+        owned.inflight.push(Vec::new());
+        owned.sessions.push(None);
+        {
+            let mut store = Store::open(&path).unwrap();
+            assert!(store.save(&w, &owned.kept()).unwrap());
+            let version: String = store
+                .raw()
+                .query_row(
+                    "SELECT value FROM meta WHERE key = 'schema_version'",
+                    [],
+                    |r| r.get(0),
+                )
+                .unwrap();
+            assert_eq!(
+                version, "12",
+                "the solo role: an older imece can not read it"
+            );
+            assert_eq!(SCHEMA_VERSION, 12);
+        }
+        let back = Store::open(&path)
+            .unwrap()
+            .load(100)
+            .unwrap()
+            .expect("a world");
+        let a = &back.world.agents[head];
+        assert_eq!(
+            (a.name.as_str(), a.role, a.vendor, a.project),
+            ("solo-notes", Role::Solo, Vendor::Codex, p)
+        );
+        assert!(back.world.is_solo(p));
+        assert_eq!(
+            back.found.models.get(head).cloned().flatten().as_deref(),
+            Some("gpt-5.6-terra@xhigh"),
+            "its choice comes back for its row and its session"
+        );
+        assert_eq!(tag(&Role::Solo), "Solo");
+        assert_eq!(untag::<Role>("Solo").unwrap(), Role::Solo);
+        let _ = std::fs::remove_dir_all(&d);
     }
 
     #[test]

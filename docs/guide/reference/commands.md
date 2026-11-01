@@ -10,7 +10,7 @@ A line that starts with `:` is a command to imece, not a message to an agent. Yo
 ## How the `:` line works
 
 - `:` then `tab` lists the commands. The menu shows after each command what it stands at now or would act on, in brackets: `budget (spent $3.10 of $20.00)`, `theme (dark)`, `lead (claude)`, `close (kule)`, `forget (claude-2)`, `next (2 waiting)`, `needs (off)`. The note is drawn, never inserted.
-- `$` after a command marks one that raises the next bill: `:open` (a new leader session), `:forget` (a new session that pays the whole briefing again, without the cache) and `:commit` (a paid call). No `:` command starts a paid turn by itself; `:budget` shows its value instead of a mark.
+- `$` after a command marks one that raises the next bill: `:open` (a new leader session), `:solo` (a new session), `:forget` (a new session that pays the whole briefing again, without the cache) and `:commit` (a paid call). No `:` command starts a paid turn by itself; `:budget` shows its value instead of a mark.
 - Short names: `:b` budget, `:c` close, `:f` forget, `:o` open, `:q` quit, `:t` theme. A short name typed whole is a command already, so the menu offers nothing and `enter` runs it (`:q` then `enter` asks at once).
 - Arguments complete too: after `:lang` the languages, after `:lead` the vendors, after `:theme` the built-in names, after `:close` and `:pin` the open projects, after `:forget`, `:talk` and `:trace` the agents of open projects (`@` or not), after `:open` and `:export` directories (`~` for your home, hidden ones only after a `.`, `tab` steps into the chosen one).
 - A name imece does not know: `no command xyz; : and tab list them`. A demo-only command typed live: `:pause is for the demo: live agents run in real time`.
@@ -46,6 +46,7 @@ A line that starts with `:` is a command to imece, not a message to an agent. Yo
 | `:rename NAME` | — | | | | the project at hand |
 | `:salon` | `1` | | | | |
 | `:slower` | `-` | | yes | | the speed, `×2` |
+| `:solo [PATH] [CHOICE] [NAME]` | — | | | `$` | |
 | `:talk [@NAME]` | `v` | | | | the agent at hand |
 | `:theme [NAME\|FILE]` | `T` | `:t` | | | the theme in use |
 | `:trace [@NAME]` | `t` | | | | the agent at hand |
@@ -165,6 +166,10 @@ The salon, as `1`.
 ### `:slower`
 
 Demo only, as `-`: the simulation runs slower.
+
+### `:solo [PATH] [CHOICE] [NAME]`
+
+Opens a solo session: one agent you drive yourself, with no leader and no team, as a project of its own ([solo sessions](../concepts/solo.md)). The three words may come in any order: a word with a `/`, or starting with `~` or `.`, is the PATH of the checkout (default: the project at hand's); a word that starts with a vendor's name is the CHOICE, `VENDOR[:MODEL][@EFFORT]` (`claude`, `claude:opus@xhigh`, `codex@high`, `gemini:pro`; default: the lead vendor at its standard rung); the word left is the NAME (default: the directory's name, numbered `-2`, `-3` when taken). The agent is `solo-NAME`, writes in its own worktree, and every turn that ends with an answer shows you its worktree's diff as a `Δ`. Any number of solos may share a checkout with its team. The flash: `opened notes at ~/src/kule as a solo session; write to solo-notes (claude opus@xhigh)`. Refusals: the usage line when two words want the same place, `a project named notes is open already`, `"a:b" can not name a project: …`, `could not open: codex is not on PATH here, or imece does not drive it`, `could not open: claude has no effort "bogus"; one of low, medium, high, xhigh, max`. `$`: a new session. The demo opens a fake solo that answers and shows a change now and then.
 
 ### `:talk [@NAME]`
 

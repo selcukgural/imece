@@ -552,6 +552,9 @@ pub struct Sim {
     minds: Vec<Mind>,
     /// Answers to the person still to come.
     replies: Vec<Due>,
+    /// The `[MODEL][@EFFORT]` choice each solo agent runs on, when the
+    /// person named one.
+    models: HashMap<AgentId, String>,
     /// Workers whose change the person applies: git's answer comes on the
     /// next step, as it does from live's git thread.
     /// Changes being applied, with the hunks chosen (none: all).
@@ -610,6 +613,7 @@ pub fn world(
         cache: Vec::new(),
         minds: Vec::new(),
         replies: Vec::new(),
+        models: HashMap::new(),
         applying: Vec::new(),
         notes_cut: false,
         unlisted: false,
@@ -795,7 +799,7 @@ impl Sim {
                 let card = self.new_card(w, w.agents[id].project, title);
                 self.take(w, id, card, Taken::Told);
             }
-            Role::Worker | Role::Helper => {
+            Role::Worker | Role::Helper | Role::Solo => {
                 let a = &mut w.agents[id];
                 a.set_status(Status::Working, t);
                 if a.activity.is_none() {
@@ -1098,7 +1102,7 @@ impl Sim {
                 Role::Worker => self.worker(w, id),
                 Role::Helper => self.helper(w, id),
                 Role::Researcher => self.researcher(w, id),
-                Role::Leader => {}
+                Role::Leader | Role::Solo => {}
             }
         }
     }
@@ -1151,9 +1155,32 @@ impl Sim {
             text: text.lines().next().unwrap_or_default().to_string(),
             until: t + 12,
         });
-        if a.role == Role::Leader {
+        if matches!(a.role, Role::Leader | Role::Solo) {
             a.activity = None;
             a.set_status(Status::Idle, t);
+        }
+        // A solo's turn end shows what its worktree holds, as live reads
+        // it: a change about every other answer.
+        if w.agents[id].role == Role::Solo && self.rng.one_in(2) {
+            let repo = w.projects[w.agents[id].project].repo;
+            let (file, names) = *self.rng.pick(repo);
+            let symbols: Vec<Symbol> = names
+                .iter()
+                .take(2)
+                .map(|n| Symbol { file, name: n })
+                .collect();
+            let (files, patch) = self.patch(&symbols);
+            let change = Change {
+                agent: id,
+                title: text.lines().next().unwrap_or_default().to_string(),
+                files,
+                patch,
+                runs: Vec::new(),
+            };
+            let (added, removed) = change.counts();
+            let n = change.files.len();
+            w.change_ready(change);
+            w.agents[id].trace(t, format!("change: {n} files +{added} −{removed}"));
         }
     }
 
@@ -1354,7 +1381,7 @@ impl Sim {
             .iter()
             .find(|q| q.closed && q.name == name)
             .map(|q| q.id);
-        let p = w.open_project(reuse, name, path.to_string(), Vendor::Claude);
+        let p = w.open_project(reuse, name, path.to_string(), Vendor::Claude, Role::Leader);
         if reuse.is_none() {
             w.projects[p].repo = PROJECTS[p % PROJECTS.len()].1;
         }
@@ -1366,6 +1393,52 @@ impl Sim {
             self.post(w, p, title);
         }
         Ok(p)
+    }
+
+    /// `:solo [PATH] [CHOICE] [NAME]` in the demo: a fake solo session on
+    /// `vendor` (else Claude) and `choice`, named `name` (else after the
+    /// last part of `path`, numbered when taken), alone in a project of
+    /// its own on one of the demo's code maps; it answers what the person
+    /// writes and, now and then, shows a change. A closed solo of that
+    /// name opens again in place.
+    pub fn open_solo(
+        &mut self,
+        w: &mut World,
+        path: &str,
+        vendor: Option<Vendor>,
+        choice: Option<String>,
+        name: Option<&str>,
+    ) -> Result<ProjectId, ProjectRefusal> {
+        let name = match name {
+            Some(n) if !valid_project_name(n) => {
+                return Err(ProjectRefusal::BadName(n.to_string()));
+            }
+            Some(n) => n.to_string(),
+            None => free_project_name(w, &project_name_of(Path::new(path))),
+        };
+        if w.project_by_name(&name).is_some() {
+            return Err(ProjectRefusal::NameTaken(name));
+        }
+        let reuse = w
+            .projects
+            .iter()
+            .find(|q| q.closed && q.name == name && w.is_solo(q.id))
+            .map(|q| q.id);
+        let vendor = vendor.unwrap_or(Vendor::Claude);
+        let p = w.open_project(reuse, name, path.to_string(), vendor, Role::Solo);
+        if reuse.is_none() {
+            w.projects[p].repo = PROJECTS[p % PROJECTS.len()].1;
+        }
+        if let Some(c) = choice {
+            self.models.insert(w.projects[p].leader, c);
+        }
+        Ok(p)
+    }
+
+    /// The `[MODEL][@EFFORT]` choice agent `id` runs on, when the person
+    /// named one.
+    pub fn model_of(&self, id: AgentId) -> Option<&str> {
+        self.models.get(&id).map(String::as_str)
     }
 
     /// `:close` in the demo: the project's agents leave and its plans and
@@ -3991,6 +4064,105 @@ diff --git a/b.rs b/b.rs
         s.answer(&mut w, lead, "done");
         assert_eq!(w.agents[lead].status, Status::Idle);
         assert_eq!(w.agents[lead].activity, None);
+    }
+
+    #[test]
+    fn the_demo_opens_a_solo_that_answers_the_person_and_shows_a_change_now_and_then() {
+        let (mut w, mut s) = world(1, 2, 4, 7, Lang::En);
+        let p = s
+            .open_solo(
+                &mut w,
+                "~/work/shop",
+                Some(Vendor::Codex),
+                Some("@high".into()),
+                None,
+            )
+            .unwrap();
+        assert_eq!(p, 1);
+        let head = w.projects[1].leader;
+        let a = &w.agents[head];
+        assert_eq!(w.projects[1].name, "shop");
+        assert_eq!(
+            (a.name.as_str(), a.role, a.vendor, a.status),
+            ("solo-shop", Role::Solo, Vendor::Codex, Status::Idle)
+        );
+        assert_eq!(s.model_of(head), Some("@high"));
+        assert_eq!(w.projects[1].repo, PROJECTS[1].1, "a code map of its own");
+        assert_eq!(
+            w.agents.iter().filter(|a| a.project == 1).count(),
+            1,
+            "alone: no workers, no cards"
+        );
+        assert!(w.cards.iter().all(|c| c.project != 1));
+        // The same directory again: numbered; a name of the person's own.
+        assert_eq!(s.open_solo(&mut w, "~/work/shop", None, None, None), Ok(2));
+        assert_eq!(w.projects[2].name, "shop-2");
+        assert_eq!(w.agents[w.projects[2].leader].vendor, Vendor::Claude);
+        assert_eq!(s.model_of(w.projects[2].leader), None);
+        assert_eq!(
+            s.open_solo(&mut w, "/x", None, None, Some("shop")),
+            Err(ProjectRefusal::NameTaken("shop".into()))
+        );
+        assert_eq!(
+            s.open_solo(&mut w, "/x", None, None, Some("a b")),
+            Err(ProjectRefusal::BadName("a b".into()))
+        );
+        // Told something, it works and answers; about every other answer
+        // shows a change of its worktree, as live reads one at a turn end.
+        let mut changes = 0;
+        let mut answers = 0;
+        for i in 0..40 {
+            s.told(&mut w, head, &format!("task {i}")).unwrap();
+            assert_eq!(w.agents[head].status, Status::Working);
+            for _ in 0..8 {
+                s.step(&mut w);
+            }
+            assert_eq!(
+                w.agents[head].status,
+                Status::Idle,
+                "answered within 8 ticks"
+            );
+            answers += 1;
+            if let Some(c) = w.change_of(head) {
+                assert_eq!(c.agent, head);
+                assert!(!c.title.is_empty(), "titled by the answer's first line");
+                assert!(!c.files.is_empty());
+                changes += 1;
+                s.apply_change(&w, head, Vec::new()).unwrap();
+                s.step(&mut w);
+            }
+        }
+        assert_eq!(answers, 40);
+        assert!(
+            (5..=35).contains(&changes),
+            "about every other answer: {changes}"
+        );
+        let replied = w
+            .journal
+            .iter()
+            .filter(|e| matches!(e.event, Event::Replied { agent, .. } if agent == head))
+            .count();
+        assert_eq!(replied, 40);
+        // Closed, a solo of that name opens again in place; not one of
+        // another name, and never a closed team of that name.
+        assert_eq!(s.close_project(&mut w, 1), Ok(()));
+        assert_eq!(s.close_project(&mut w, 2), Ok(()));
+        assert_eq!(
+            s.open_solo(&mut w, "/z", None, None, Some("third")),
+            Ok(3),
+            "another name: a project of its own"
+        );
+        assert_eq!(s.open_solo(&mut w, "/z", None, None, Some("shop")), Ok(1));
+        assert!(w.is_solo(1) && !w.projects[1].closed);
+        assert!(w.projects[2].closed, "shop-2 stays closed");
+        assert_eq!(s.open_project(&mut w, "/t", Some("team")), Ok(4));
+        assert_eq!(s.close_project(&mut w, 4), Ok(()));
+        assert_eq!(
+            s.open_solo(&mut w, "/t", None, None, Some("team")),
+            Ok(5),
+            "a closed team of that name is not a solo's place"
+        );
+        assert!(w.projects[4].closed && !w.is_solo(4) && w.is_solo(5));
     }
 
     #[test]

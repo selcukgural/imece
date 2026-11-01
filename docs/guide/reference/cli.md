@@ -11,8 +11,9 @@ description: Every flag of imece with its default and range, the vendor prefix r
 
 ```text
 usage: imece [--repo DIR] [--agents N] [--helpers N] [--lead VENDOR]
-             [--model [V:]NAME]... [--tier [V:]T=NAME]... [--budget USD] [--fresh] [--awake]
-             [--confine standard|strict|open] [--lang en|tr] [--theme NAME|FILE]
+             [--solo V[:MODEL][@EFFORT]] [--model [V:]NAME]... [--tier [V:]T=NAME]...
+             [--budget USD] [--fresh] [--awake] [--confine standard|strict|open]
+             [--lang en|tr] [--theme NAME|FILE]
        imece --demo [--projects N] [--agents N] [--researchers N] [--seed N]
 ```
 
@@ -93,6 +94,16 @@ imece --lead codex      # claude, codex, gemini or ask
 ```
 
 The leader's coding agent. Without it: your primary vendor (set with `p` on the question screen, or with `:lead VENDOR`) when it is on PATH and imece drives it; else the only such vendor on PATH; else the question WHO LEADS? before the salon. `--lead ask` forces the question. A vendor named here that is not on PATH gives the honest error when the team is built, not a silent replacement. Anything else: `--lead: "cursor" is not claude, codex, gemini or ask`. See [vendors](../concepts/vendors.md).
+
+### `--solo V[:MODEL][@EFFORT]`
+
+```sh
+imece --solo claude                    # Claude Code, its own model and effort
+imece --solo claude:opus@xhigh         # opus, thinking at xhigh
+imece --solo codex:gpt-5.6-terra@high
+```
+
+Starts with a solo session on the checkout instead of a team: one agent you drive yourself, no leader, on vendor `V` (`claude`, `codex`, `gemini`), model `MODEL` (default: the vendor's own, or what `--model` names) and effort `EFFORT` (the vendor's own levels, see `--model`; Gemini has none). The project is named after the directory, the agent `solo` (`solo-NAME` elsewhere); it writes in its own worktree and every turn that ends with an answer shows you the diff. An open solo on this checkout with the same vendor and choice is gone on with, so the same command every morning continues the same session; a different choice opens another solo beside it, named `-2`; a team open here stays, asleep until you write to it. Without `--lead`, `V` leads the teams `:open` adds, so no WHO LEADS? question comes. Refused: `--solo: "x" is not VENDOR[:MODEL][@EFFORT], like claude:opus@xhigh`, `--solo: imece does not drive qwen`, `--solo: claude has no effort "bogus"; …`, and at the start `--solo: codex is not on PATH here, or imece does not drive it` (exit code 1). The demo takes it too. See [solo sessions](../concepts/solo.md).
 
 ### `--model [V:]NAME`
 
