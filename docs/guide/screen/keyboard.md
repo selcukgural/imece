@@ -110,6 +110,8 @@ The conventions are vim's: `h` `j` `k` `l` move and fold, `gg` and `G` go to the
 | `c`  `n` | in a change: a note on the top line · send the notes, it goes back (in a conversation: on the words chosen, above) |
 | `x` | in a change: choose the hunk at the top; `a` applies only the chosen |
 | `w` | in a change: wrap long lines · cut them again |
+| `h` `l`  `←` `→` | in a change: fold the file at hand to its header · open it |
+| `za`  `zM`  `zR` | in a change: turn the file at hand · fold every file (`:fold`) · open them all (`:unfold`) |
 | `v` | in a change: choose lines to copy; `y` as written, `Y` the new side |
 | `a`  `r` | apply (the chosen hunks, else all) · reject |
 | `j` `k`, `gg` `G`, `^d` `^u` `^f` `^b`, `space` | move |

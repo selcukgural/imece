@@ -21,6 +21,20 @@ whole line however many rows it takes. In the view, `w` is the diff's,
 not the salon's "waiting" key. The footer's `j k  w  scroll · wrap`
 and a help line name it, in both languages.
 
-Not done (now D3b in #57): folding every file to its header and
-unfolding them (`zM zR` in the salon), which needs the scroll to count
-what is shown, not the patch.
+**Files folded (D3b, 2026-11-02, made while the person was away).** `h`
+or `←` folds the file of the line at hand to its header, `l` or `→`
+opens it, `za` turns it, `zM` / `:fold` folds every file and `zR` /
+`:unfold` opens them all: the keys of the salon and of a conversation.
+`App::diff_folds` holds the folds (`Folds`, by the file's number in the
+patch) with the worker and the patch's hash, so a new patch starts open,
+as the notes and the chosen hunks do. `ui::diff::Shown::of` gives the
+lines shown (a folded file: its `diff --git` line only, which says
+`▸ N lines`; lines before the first header always) and `Shown::step`
+moves over them: the scroll stays a patch line number, always one shown,
+so `c`, `>`, `x`, the notes and `[ ]` work on it as before. `j k`, the
+pages, `G` and `gg` step over the lines shown; folding the file of a
+hidden line puts the line at hand on its header (`App::fold_files`). `v`
+opens every file first, since lines are chosen from the whole patch. A
+conversation over a change keeps the fold keys for itself
+(`App::diff_zoom`). The help's `← →  h l` row names files too; the
+demo's changes fold the same way.
