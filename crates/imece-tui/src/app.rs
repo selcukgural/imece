@@ -12,6 +12,7 @@ use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use crate::complete::{self, Jump, Menu};
 use crate::edit;
 use crate::i18n::{Lang, fill};
+use crate::keys::{self, Keymap};
 use crate::live::{self, Live, Open, Refusal};
 use crate::model::*;
 use crate::notify::{self, Note, Notify};
@@ -719,6 +720,14 @@ pub struct App {
     /// only after `enter` or `esc` ends that).
     pub help_find: String,
     pub help_typing: bool,
+    /// The person's own keys (`keys.rs`): the key file's, else imece's.
+    pub keys: Keymap,
+    /// Where the key file is; none without a home.
+    pub keys_file: Option<PathBuf>,
+    /// The text of the good key file in use, kept for the next start; and
+    /// whether it changed since it was last kept.
+    pub keys_good: Option<String>,
+    pub keys_new: bool,
     /// A bare `:solo` asks the vendor, the model and the effort on a
     /// screen of its own; the words it came with wait in it.
     pub solo_pick: Option<SoloPick>,
@@ -852,6 +861,10 @@ impl App {
             help: false,
             help_find: String::new(),
             help_typing: false,
+            keys: Keymap::default(),
+            keys_file: None,
+            keys_good: None,
+            keys_new: false,
             solo_pick: None,
             primary: None,
             digest: None,
@@ -1414,6 +1427,46 @@ impl App {
         self.flash = Some((msg.into(), Instant::now()));
     }
 
+    /// The keys a start found (`keys::Start`), the key file at `file`;
+    /// a file refused is said.
+    pub fn start_keys(&mut self, file: Option<PathBuf>, start: keys::Start) {
+        self.keys = start.map;
+        self.keys_file = file;
+        self.keys_new = false;
+        self.keys_good = start.good;
+        if let (Some(why), Some(path)) = (start.refused, &self.keys_file) {
+            self.flash(keys::refusal(self.lang, path, &why));
+        }
+    }
+
+    /// `:keys`: the key file read again. A good one is taken and said
+    /// (with the keys of imece's nothing does now), none leaves imece's
+    /// own keys, a bad one leaves the keys in use and says why.
+    fn read_keys(&mut self) {
+        let t = self.lang.text();
+        let Some(path) = self.keys_file.clone() else {
+            return self.flash(t.keys_nowhere);
+        };
+        let shown = path.display().to_string();
+        let good = match keys::load(&path) {
+            keys::Read::Missing => {
+                self.keys = Keymap::default();
+                self.flash(fill(t.keys_none, &[&shown]));
+                None
+            }
+            keys::Read::Good(map, text) => {
+                self.flash(keys::taken(self.lang, &path, &map));
+                self.keys = map;
+                Some(text)
+            }
+            keys::Read::Bad(why) => return self.flash(keys::refusal(self.lang, &path, &why)),
+        };
+        if good != self.keys_good {
+            self.keys_good = good;
+            self.keys_new = true;
+        }
+    }
+
     /// The project the person is looking at: of the selected line, the
     /// focused agent or the selected inbox item.
     pub fn current_project(&self) -> ProjectId {
@@ -1550,6 +1603,12 @@ impl App {
             self.quit = true;
             return;
         }
+        // The person's own keys, everywhere but where keys are text.
+        let k = if self.typing || self.hints.is_some() || (self.help && self.help_typing) {
+            k
+        } else {
+            self.keys.turn(k)
+        };
         // What quitting would leave: `q` quits after all, `W` goes to what
         // waits, anything else stays.
         if std::mem::take(&mut self.leaving) {
@@ -2996,6 +3055,7 @@ impl App {
             "unsettle" => Some((self.settled.len() + self.settled_projects.len()).to_string()),
             "awake" => Some(on_off(self.awake.on)),
             "notify" => Some(self.notify.name().to_string()),
+            "keys" => Some(self.keys.given().len().to_string()),
             "pause" => Some(on_off(self.paused)),
             "faster" | "slower" => Some(format!("×{}", self.speed)),
             "export" if self.thread.is_some() => Some(t.value_thread.to_string()),
@@ -3332,6 +3392,7 @@ impl App {
                 });
                 self.keep_awake();
             }
+            "keys" => self.read_keys(),
             "notify" => match (arg, Notify::parse(arg)) {
                 ("", _) => self.set_notify(self.notify.next()),
                 (_, Some(how)) => self.set_notify(how),
@@ -9706,5 +9767,149 @@ mod tests {
         app.on_key(shift('F'));
         assert!(app.hints.is_none(), "nothing drawn to label");
         assert_eq!(flashed(&app), none);
+    }
+
+    fn keymap(text: &str) -> Keymap {
+        Keymap::read(text).unwrap()
+    }
+
+    #[test]
+    fn the_key_file_turns_keys_but_not_writing_the_help_filter_or_hints() {
+        let (mut app, _) = drawn_for_hints();
+        app.keys = keymap("^n = 2\nd = 3\ne = /");
+        app.on_key(ctrl('n'));
+        assert_eq!(app.view, View::Board, "^n is 2");
+        app.on_key(key(KeyCode::Char('d')));
+        assert_eq!(app.view, View::Code, "d is 3");
+        app.on_key(key(KeyCode::Char('1')));
+        assert_eq!(app.view, View::Salon, "a key not named is itself");
+        // Writing takes the letter.
+        app.on_key(key(KeyCode::Char('/')));
+        app.on_key(key(KeyCode::Char('d')));
+        assert_eq!(app.input, "d");
+        app.on_key(key(KeyCode::Esc));
+        assert!(!app.typing);
+        // So does the help's filter, but the help itself turns keys.
+        app.on_key(key(KeyCode::Char('?')));
+        app.on_key(key(KeyCode::Char('/')));
+        app.on_key(key(KeyCode::Char('d')));
+        assert_eq!(app.help_find, "d");
+        app.on_key(key(KeyCode::Enter));
+        assert!(app.help && !app.help_typing);
+        app.on_key(key(KeyCode::Char('e')));
+        assert!(app.help_typing, "e is /: the filter again, not closed");
+        app.on_key(key(KeyCode::Char('e')));
+        assert_eq!(app.help_find, "de", "and then a letter");
+        app.on_key(key(KeyCode::Enter));
+        app.on_key(key(KeyCode::Char('d')));
+        assert!(!app.help, "any key closes it");
+        assert_eq!(app.view, View::Salon, "and does nothing else");
+        // A hint letter is a letter.
+        app.on_key(shift('F'));
+        assert!(app.hints.is_some());
+        app.on_key(key(KeyCode::Char('d')));
+        assert!(app.hints.is_none(), "d was a label");
+        assert_eq!(app.view, View::Salon);
+        assert_eq!(app.selected, Sel::Agent(1), "the third row");
+        // ctrl-c quits whatever the file says.
+        app.on_key(ctrl('c'));
+        assert!(app.quit);
+    }
+
+    #[test]
+    fn a_turned_key_acts_with_its_ctrl() {
+        let mut app = App::new(1, 4, 0, 1, Lang::En);
+        app.keys = keymap("x = ^o");
+        app.on_key(key(KeyCode::Char('2')));
+        app.on_key(key(KeyCode::Char('x')));
+        assert_eq!(app.view, View::Salon, "x is ^o: back where the person was");
+    }
+
+    fn dir(name: &str) -> PathBuf {
+        let dir =
+            std::env::temp_dir().join(format!("imece-app-keys-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn colon_keys_reads_the_file_again_and_a_bad_one_leaves_the_keys() {
+        let dir = dir("read");
+        let path = dir.join("keys");
+        let mut app = App::new(1, 1, 0, 1, Lang::En);
+        app.command("keys");
+        assert_eq!(
+            flashed(&app).as_deref(),
+            Some("no home folder, so no key file")
+        );
+        app.keys_file = Some(path.clone());
+        let shown = path.display().to_string();
+        app.command("keys");
+        assert_eq!(
+            flashed(&app),
+            Some(format!(
+                "no key file; KEY = KEY lines in {shown} give you keys of your own"
+            ))
+        );
+        assert!(!app.keys_new, "nothing was kept, nothing to keep");
+        assert_eq!(app.command_note("keys"), "(0)");
+        std::fs::write(&path, "^n = j\nj = G\n").unwrap();
+        app.command("keys");
+        assert_eq!(flashed(&app), Some(format!("{shown}: keys taken (2)")));
+        assert_eq!(app.keys, keymap("^n = j\nj = G"));
+        assert_eq!(app.keys_good.as_deref(), Some("^n = j\nj = G\n"));
+        assert!(std::mem::take(&mut app.keys_new), "to keep");
+        assert_eq!(app.command_note("keys"), "(2)");
+        app.command("keys");
+        assert!(!app.keys_new, "the same file again: nothing new to keep");
+        std::fs::write(&path, "^n = j\nnope\n").unwrap();
+        app.command("keys");
+        assert_eq!(
+            flashed(&app),
+            Some(format!(
+                "{shown}: line 2: write it as KEY = KEY; the keys you had stay"
+            ))
+        );
+        assert_eq!(app.keys, keymap("^n = j\nj = G"), "they stay");
+        assert_eq!(app.keys_good.as_deref(), Some("^n = j\nj = G\n"));
+        assert!(!app.keys_new);
+        std::fs::remove_file(&path).unwrap();
+        app.command("keys");
+        assert_eq!(app.keys, Keymap::default(), "no file: imece's own keys");
+        assert_eq!(app.keys_good, None);
+        assert!(app.keys_new, "forgotten for the next start too");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_start_says_why_the_key_file_was_refused() {
+        let mut app = App::new(1, 1, 0, 1, Lang::En);
+        app.keys_new = true;
+        let path = PathBuf::from("/c/imece/keys");
+        let start = keys::Start {
+            map: keymap("^p = k"),
+            good: Some("^p = k".into()),
+            refused: Some(keys::Why::Quits(2)),
+        };
+        app.start_keys(Some(path.clone()), start);
+        assert_eq!(app.keys, keymap("^p = k"));
+        assert_eq!(app.keys_good.as_deref(), Some("^p = k"));
+        assert_eq!(app.keys_file, Some(path.clone()));
+        assert!(!app.keys_new, "main keeps what a start found");
+        assert_eq!(
+            flashed(&app).as_deref(),
+            Some("/c/imece/keys: line 2: ctrl-c always quits; the keys you had stay")
+        );
+        let mut app = App::new(1, 1, 0, 1, Lang::En);
+        app.start_keys(Some(path), keys::Start::default());
+        assert_eq!(flashed(&app), None, "a good start says nothing");
+        let mut app = App::new(1, 1, 0, 1, Lang::En);
+        let start = keys::Start {
+            refused: Some(keys::Why::TooBig),
+            ..keys::Start::default()
+        };
+        app.start_keys(None, start);
+        assert_eq!(flashed(&app), None, "no file to name");
     }
 }

@@ -34,6 +34,9 @@ const NOTIFY: &str = "notify";
 /// The newest version whose "what's new" a start showed (or that started
 /// first): the next start of a newer one shows what is new since.
 const SEEN: &str = "seen";
+/// The text of the last key file that was taken whole (`keys.rs`): a
+/// start whose file is refused has these keys still.
+const KEYS: &str = "keys";
 
 /// The person's choices; a missing or bad value is `None`.
 #[derive(Debug, Default, PartialEq, Eq)]
@@ -148,6 +151,21 @@ pub fn save(
         None => unset.push(LEAD),
     }
     store::set_settings(&file(dir), &set, &unset)
+}
+
+/// The last good key file's text kept in `dir`, if any.
+pub fn keys(dir: &Path) -> Option<String> {
+    store::settings(&file(dir), &[KEYS])
+        .ok()
+        .and_then(|mut v| v.pop().flatten())
+}
+
+/// Keeps `text` as the last good key file in `dir`; none forgets it.
+pub fn keep_keys(dir: &Path, text: Option<&str>) -> Result<(), String> {
+    match text {
+        Some(text) => store::set_settings(&file(dir), &[(KEYS, text)], &[]),
+        None => store::set_settings(&file(dir), &[], &[KEYS]),
+    }
 }
 
 /// Keeps `version` as the one that started last in `dir`.
@@ -285,6 +303,27 @@ mod tests {
             assert!(e.contains(key), "{e}");
         }
         drop(st);
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn the_last_good_key_file_is_kept_and_forgotten() {
+        let dir = dir("keys");
+        assert_eq!(keys(&dir), None, "nothing kept, no file made");
+        assert!(!file(&dir).exists());
+        keep_keys(&dir, Some("^n = j\n")).unwrap();
+        assert_eq!(keys(&dir).as_deref(), Some("^n = j\n"));
+        save(&dir, 40, "dark", None, Notify::Off).unwrap();
+        assert_eq!(
+            keys(&dir).as_deref(),
+            Some("^n = j\n"),
+            "beside the choices"
+        );
+        keep_keys(&dir, Some("^p = k")).unwrap();
+        assert_eq!(keys(&dir).as_deref(), Some("^p = k"));
+        keep_keys(&dir, None).unwrap();
+        assert_eq!(keys(&dir), None);
+        assert_eq!(load(&dir).side, Some(40), "the choices stay");
         fs::remove_dir_all(&dir).unwrap();
     }
 }

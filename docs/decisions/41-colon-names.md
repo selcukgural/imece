@@ -46,3 +46,5 @@ in both languages. Pure screen logic: the demo shows it as live does.
 
 Record 65 adds `&` = `:goto [NAME]`.
 Record 66 adds `^r` = `:history [WORDS]`.
+
+Record 76 adds `:keys`.

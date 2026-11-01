@@ -5101,6 +5101,76 @@ mod tests {
     }
 
     #[test]
+    fn the_help_shows_the_persons_own_keys_first_and_in_place() {
+        let none = crate::keys::Keymap::default();
+        for lang in [Lang::En, Lang::Tr] {
+            for shift_enter in [true, false] {
+                let plain = overlay::help_keys(lang, shift_enter);
+                let rows = overlay::help_rows(lang, shift_enter, &none);
+                let want: Vec<(String, String)> = (plain.iter())
+                    .map(|(k, w)| (k.to_string(), w.to_string()))
+                    .collect();
+                assert_eq!(rows, want, "no key file: the help as it is");
+            }
+            // The rows whose keys are written stay as they are.
+            let plain = overlay::help_keys(lang, false);
+            let typed: Vec<&str> = overlay::TYPED.iter().map(|&i| plain[i].0).collect();
+            assert_eq!(
+                typed,
+                [
+                    "$",
+                    "tab ↑ ↓ ^r",
+                    "^a ^e ⌥b ⌥f",
+                    "^w ^u ^k ^y",
+                    "\\enter ⌥enter"
+                ],
+                "{lang:?}"
+            );
+        }
+        let keys = crate::keys::Keymap::read("^n = j\nj = G\n↑ = k\n^w = q").unwrap();
+        let rows = overlay::help_rows(Lang::En, false, &keys);
+        let row = |k: &str| -> Vec<&str> {
+            (rows.iter().filter(|r| r.1 == k))
+                .map(|r| r.0.as_str())
+                .collect()
+        };
+        assert_eq!(
+            rows[..4],
+            [
+                ("^n".to_string(), "your key: as j".to_string()),
+                ("j".into(), "your key: as G".into()),
+                ("↑".into(), "your key: as k".into()),
+                ("^w".into(), "your key: as q".into()),
+            ]
+        );
+        assert_eq!(row("select"), ["– ↓  ^n ↑/k"]);
+        assert_eq!(row("first / last line"), ["gg  j/G"]);
+        assert_eq!(row("quit (q or :quit asks first)"), ["^w/q ^w/q  :quit"]);
+        assert_eq!(
+            row("writing: complete · sent lines · :history"),
+            ["tab ↑ ↓ ^r"],
+            "written keys are not turned"
+        );
+        assert_eq!(
+            row("writing: cut a word / before / after; paste"),
+            ["^w ^u ^k ^y"]
+        );
+        let tr = overlay::help_rows(Lang::Tr, false, &keys);
+        assert_eq!(tr[0], ("^n".to_string(), "senin tuşun: j gibi".to_string()));
+        assert_eq!(tr.len(), rows.len());
+        // Drawn, and found by the filter.
+        let mut app = app_after(1, 4, 0, Lang::En);
+        app.keys = keys;
+        app.help = true;
+        let shown = render(&app, 140, 50);
+        assert!(shown.contains("your key: as G"), "{shown}");
+        app.help_find = "your key".into();
+        let found = render(&app, 140, 50);
+        assert!(found.contains("your key: as q"), "{found}");
+        assert!(!found.contains("first / last line"), "{found}");
+    }
+
+    #[test]
     fn the_help_lists_the_vim_keys_in_two_columns_when_wide() {
         let mut app = app_after(1, 4, 50, Lang::En);
         app.help = true;

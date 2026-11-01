@@ -37,6 +37,7 @@ A line that starts with `:` is a command to imece, not a message to an agent. Yo
 | `:history [WORDS]` | `^r` | | | | |
 | `:help` | `?` | | | | |
 | `:hints` | `F` | | | | |
+| `:keys` | — | | | | how many keys your file gives |
 | `:lang [en\|tr]` | `L` | | | | `English` / `Türkçe` |
 | `:lead VENDOR` | — | | | | the primary vendor, or `ask` |
 | `:mark` | `m` | | | | |
@@ -142,6 +143,10 @@ The `?` help: every key and command in both languages, the legend of glyphs; `/`
 ### `:hints`
 
 Hint letters, as `F`: a label of one or two letters over the start of every row of the salon's screen you can select (project headers, agents, the people on a card's screen, waiting items, journal lines). Typing a label selects its row in its panel; its last letter in capitals opens it too, as `enter`. `backspace` takes a letter back, `esc` closes them. A row gone from the screen since: `that row has left the screen`. Off the salon's screen: `no rows to label here: F works on the salon's screen`. See [salon](../screen/salon.md).
+
+### `:keys`
+
+Reads your key file (`~/.config/imece/keys`) again and says what came of it: `…/imece/keys: keys taken (5)`, with `; nothing does j now` when a key of imece's lost its meaning to no other key; `no key file; KEY = KEY lines in … give you keys of your own` (imece's own keys are back); or why the file was refused, the keys you had staying: `…/imece/keys: line 3: write it as KEY = KEY; the keys you had stay`. The menu note is how many keys the file gives. See [your own keys](../screen/keyboard.md#your-own-keys).
 
 ### `:lang [en|tr]`
 

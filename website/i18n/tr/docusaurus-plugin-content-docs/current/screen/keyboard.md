@@ -139,7 +139,7 @@ Gelenekler vim'inkidir: `h` `j` `k` `l` hareket ve katlama, `gg` ve `G` uçlara,
 | `:notify` | başka penceredeyken bir şey beklemeye düşerse haber: `:notify off\|bell\|text`; yalın yazılınca sıradaki |
 | `q` `q`  `:quit` | çık (`q` ya da `:quit` önce sorar; `^c` hemen çıkar) |
 | `q` `s`  `:pending` | çıkmadan önce: tur ortası, incelenmemiş |
-| `?`  `:help` | bu yardım; içinde `/` tuşları süzer |
+| `?`  `:help` | bu yardım; içinde `/` tuşları süzer · `:keys` tuş dosyanızı yeniden okur |
 | `W` | bekleyen sıradaki öge, her yerden |
 | `^o` | olduğunuz yere geri |
 
@@ -174,9 +174,28 @@ Gelenekler vim'inkidir: `h` `j` `k` `l` hareket ve katlama, `gg` ve `G` uçlara,
 | `:trace` / `:talk` | `t` / `v` |
 | `:mark` | `m` |
 | `:pause`, `:faster`, `:slower` | `space`, `+`, `-` (demo) |
-| `:budget` (`:b`), `:lead`, `:open` (`:o`), `:close` (`:c`), `:rename`, `:solo`, `:effort`, `:model`, `:forget` (`:f`), `:export`, `:commit`, `:copy`, `:pin`, `:awake`, `:notify`, `:unsettle` | tuşu yok: `:` ardından yazılır |
+| `:budget` (`:b`), `:lead`, `:open` (`:o`), `:close` (`:c`), `:rename`, `:solo`, `:effort`, `:model`, `:forget` (`:f`), `:export`, `:commit`, `:copy`, `:pin`, `:awake`, `:notify`, `:unsettle`, `:keys` | tuşu yok: `:` ardından yazılır |
 
 Her komutun ne aldığının tam listesi [komutlar başvurusunda](../reference/commands.md).
+
+## Kendi tuşlarınız
+
+Bir tuş dosyası size kendi tuşlarınızı verir: `~/.config/imece/keys` (ya da `$XDG_CONFIG_HOME/imece/keys`). Her satır bir tuşu imece'nin bir tuşu gibi çalıştırır, `TUŞ = TUŞ`; `#` ile başlayan satır yorumdur:
+
+```text
+# j ile k ters, ctrl-n / ctrl-p ile de gezinmek için
+j = k
+k = j
+^n = j
+^p = k
+J = G
+```
+
+Bir tuş yardımın yazdığı gibi (`j`, `G`, `^n`, `⌥b`, `⇧tab`, `enter`, `esc`, `tab`, `space`, `↑ ↓ ← →`, `home`, `end`, `pgup`, `pgdn`) ya da sözcükle (`ctrl-n`, `alt-b`, `shift-tab`, `up`, `escape`, `pageup`) yazılır; `=`'in solunda `#` `hash` diye yazılır, çünkü `#` ile başlayan satır yorumdur. Bir satır bir kez uygulanır, vim'in `noremap`'i gibi: `j = k` ile `k = j` ikisini yer değiştirir, dosyanın adını anmadığı tuş kendisi kalır. Dosyanın tuşları imece'nin tuş okuduğu her yerde çalışır (salon, bir konuşma, bir değişiklik, peek, pencereler, seçiciler, başta lider sorusu); tuşların metin olduğu yerler dışında: yazarken, yardımın `/` süzgecinde ve ipucu harflerinde. `^c` her zaman çıkar, verilemez.
+
+imece dosyayı başta ve `:keys` ile okur. Bütünüyle alamadığı bir dosyayı reddeder ve elinizdeki tuşlar kalır: `TUŞ = TUŞ` olmayan bir satır (`satır 3: TUŞ = TUŞ diye yaz`), tuş olmayan bir ad (`` `nope` bir tuş değil ``), sağda imece'nin bir şey yapmadığı bir tuş (`imece d ile bir şey yapmıyor`), iki kez verilen bir tuş (`^n 1. satırda zaten verilmiş`), iki yanda da `^c`, 200'den fazla tuş, 64 KiB'tan büyük ya da metin olmayan bir dosya. Son iyi dosya store'da tutulur; böylece dosyası reddedilen bir başlangıç da tuşlarınızla açılır ve nedenini söyler. Dosya yoksa imece'nin kendi tuşları geri gelir.
+
+`?` yardımında önce sizin tuşlarınız gelir (`^n  senin tuşun: j gibi`), her tuş satırı da o işi şimdi yapan tuşları gösterir: yukarıdaki dosyayla `seç` satırı `↑ ↓  k/^n j/^p` okunur; anlamı başka bir tuşa geçmeyen bir tuş `–` gösterir. Yazma tuşları olduğu gibi gösterilir, çünkü dosya onları çevirmez.
 
 ## Ayrıca bakınız
 

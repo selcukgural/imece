@@ -8,6 +8,7 @@ mod clip;
 mod complete;
 mod edit;
 mod i18n;
+mod keys;
 mod live;
 mod model;
 mod notify;
@@ -421,6 +422,11 @@ fn main() -> std::io::Result<()> {
     };
     let state = prefs::state_dir();
     let mut saved = prefs::load(&state);
+    // The person's own keys, or the last good ones when their file is
+    // refused; the lead question already takes them.
+    let keys_file = keys::file();
+    let kept_keys = prefs::keys(&state);
+    let keys_start = keys::Start::new(keys_file.as_deref().map(keys::load), kept_keys.clone());
     // A flag or the environment wins over the saved theme.
     if args.theme.is_none()
         && let Some(name) = &saved.theme
@@ -467,7 +473,7 @@ fn main() -> std::io::Result<()> {
             Some(v) => v,
             None => {
                 let mut pick = ui::pick::Pick::new(candidates, primary, args.lang);
-                match ask(&mut terminal, &mut pick) {
+                match ask(&mut terminal, &mut pick, &keys_start.map) {
                     Ok(Some(ui::pick::Picked::Lead { vendor, remember })) => {
                         if remember {
                             saved.lead = Some(vendor.label().to_string());
@@ -528,6 +534,11 @@ fn main() -> std::io::Result<()> {
         app.side = side;
     }
     app.shift_enter = said.keys;
+    app.start_keys(keys_file, keys_start);
+    if app.keys_good != kept_keys {
+        // Kept for the next start; a failure only costs that.
+        let _ = prefs::keep_keys(&state, app.keys_good.as_deref());
+    }
     app.primary = saved.lead;
     app.notify = saved.notify.unwrap_or_default();
     app.awake.on = args.awake;
@@ -544,6 +555,7 @@ fn main() -> std::io::Result<()> {
 fn ask(
     terminal: &mut screen::Screen,
     pick: &mut ui::pick::Pick,
+    keys: &keys::Keymap,
 ) -> std::io::Result<Option<ui::pick::Picked>> {
     loop {
         if SIGNALLED.load(Ordering::SeqCst) {
@@ -558,7 +570,7 @@ fn ask(
         if ready
             && let Event::Key(k) = event::read()?
             && k.kind == KeyEventKind::Press
-            && let Some(picked) = pick.on_key(k.code)
+            && let Some(picked) = pick.on_key(keys.turn(k).code)
         {
             return Ok(Some(picked));
         }
@@ -637,6 +649,9 @@ fn run(
                     app.primary.as_deref(),
                     app.notify,
                 );
+            }
+            if std::mem::take(&mut app.keys_new) {
+                let _ = prefs::keep_keys(state, app.keys_good.as_deref());
             }
             if let Some(text) = app.copy.take() {
                 app.copied(clip::copy(&text));
