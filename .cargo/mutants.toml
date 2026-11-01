@@ -12,9 +12,12 @@
 # `free_project_name` tries `projects.len() + 2` numbers: more than it can
 # ever need, since each taken name is a project. A bound made larger
 # (`+` → `*`) changes nothing a test can see; a smaller one is caught.
+# `child::ENDED` joins waitid's flags, distinct bits, with `|`: `^` gives
+# the same number, so no test can tell them apart (`&` is caught).
 # A pattern matches the mutant's full name, `path:line:col: replace fn ...`.
 exclude_re = [
     "src/model.rs:.*: replace \\+ with \\* in free_project_name",
+    "src/child.rs:.*: replace \\| with \\^$",
     "src/main.rs:.*: replace (main|run|ask|catch_signals|on_signal) ",
     "src/main.rs:.*: (replace|delete) .* in (main|run|ask|catch_signals|on_signal)$",
     "src/clip.rs:.*: replace (copy|tools|pipe|osc52) ",
