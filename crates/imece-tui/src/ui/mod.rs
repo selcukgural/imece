@@ -1424,6 +1424,7 @@ mod tests {
         a.stand = Stand::default();
         a.local = None;
         a.plan.clear();
+        a.context = None;
         a.talk = Some(Talk {
             with: Party::Person,
             mine: true,
@@ -5935,6 +5936,7 @@ mod tests {
             a.changed_at = 100;
             a.local = None;
             a.plan.clear();
+            a.context = None;
             a.cost = 0;
         }
         app
@@ -6394,6 +6396,111 @@ mod tests {
         );
         let r = row(&app, worker, 90);
         assert!(r.contains("idle  ▾ 2 helpers") && !r.contains('≡'), "{r}");
+    }
+
+    #[test]
+    fn a_row_warns_of_a_full_context_from_seventy_percent_and_the_focus_has_the_figure() {
+        let mut app = quiet_rows();
+        let w = 1;
+        let fill = |used, size| {
+            Some(Fill {
+                used,
+                size: Some(size),
+            })
+        };
+        app.world.agents[w].context = fill(139_999, 200_000);
+        assert!(!row(&app, w, 200).contains('◔'), "69%: not on the row");
+        app.world.agents[w].context = fill(140_000, 200_000);
+        let r = row(&app, w, 200);
+        assert!(r.contains("idle  ◔ 70%"), "{r}");
+        let spans = salon::context_spans(&app.world.agents[w]);
+        assert_eq!(spans[0].style.fg, dim().fg, "quiet under ninety");
+        app.world.agents[w].context = fill(179_999, 200_000);
+        assert_eq!(
+            salon::context_spans(&app.world.agents[w])[0].style.fg,
+            dim().fg
+        );
+        app.world.agents[w].context = fill(180_000, 200_000);
+        let spans = salon::context_spans(&app.world.agents[w]);
+        assert_eq!(spans[0].content.as_ref(), "  ◔ 90%");
+        assert_eq!(spans[0].style.fg, Some(pal().warn), "loud from ninety");
+        // No size: nothing on the row, the tokens on the focus.
+        app.world.agents[w].context = Some(Fill {
+            used: 45_506,
+            size: None,
+        });
+        assert!(salon::context_spans(&app.world.agents[w]).is_empty());
+        app.zoom = Zoom::Focus(w);
+        let s = render(&app, 140, 40);
+        assert!(s.contains("context:  45k tokens"), "{s}");
+        app.world.agents[w].context = fill(45_506, 200_000);
+        let s = render(&app, 140, 40);
+        assert!(s.contains("context:  22% · 45k of 200k"), "{s}");
+        app.lang = Lang::Tr;
+        let s = render(&app, 140, 40);
+        assert!(s.contains("bağlam:   %22 · 45k / 200k"), "{s}");
+        app.world.agents[w].context = None;
+        assert!(!render(&app, 140, 40).contains("bağlam:"));
+        // Token counts in a few characters.
+        for (n, s) in [
+            (980, "980"),
+            (1_000, "1k"),
+            (45_506, "45k"),
+            (999_999, "999k"),
+            (1_000_000, "1M"),
+            (1_250_000, "1.2M"),
+            (2_000_000, "2M"),
+        ] {
+            assert_eq!(words::tokens(n), s, "{n}");
+        }
+        // The legend names the mark in both languages.
+        assert!(
+            Lang::En.text().help_legend[2]
+                .ends_with("  ◔ 72% of its context window used (from 70%)")
+        );
+        assert!(
+            Lang::Tr.text().help_legend[2].ends_with("  ◔ %72 bağlam penceresi dolu (%70'ten)")
+        );
+    }
+
+    #[test]
+    fn the_context_warning_stays_on_the_row_longer_than_the_to_do_mark() {
+        let mut app = quiet_rows();
+        let (worker, _) = with_helpers(&mut app);
+        let a = &mut app.world.agents[worker];
+        a.status = Status::Idle;
+        a.changed_at = 64;
+        a.local = Some("http://localhost:5173/".into());
+        a.plan = steps(3, 1);
+        a.context = Some(Fill {
+            used: 150_000,
+            size: Some(200_000),
+        });
+        told(a, Party::Person, true, "parser fixed");
+        // The 120 of the row with the mark, and the warning's 7.
+        let whole = row(&app, worker, 200);
+        assert_eq!(whole.chars().count(), 127, "{whole}");
+        assert!(
+            whole.contains("\"parser fixed\" · 3 min  ≡ 1/3  ◔ 75%  ▾ 2 helpers"),
+            "{whole}"
+        );
+        // Head 52, tail 32: the warning needs its seven, the mark seven
+        // more, the time eight more.
+        let r = row(&app, worker, 106);
+        assert!(r.contains("idle · 3 min  ≡ 1/3  ◔ 75%  ▾"), "{r}");
+        let r = row(&app, worker, 105);
+        assert!(
+            r.contains("idle  ≡ 1/3  ◔ 75%  ▾") && !r.contains("min"),
+            "{r}"
+        );
+        let r = row(&app, worker, 98);
+        assert!(r.contains("idle  ≡ 1/3  ◔ 75%  ▾"), "{r}");
+        let r = row(&app, worker, 97);
+        assert!(r.contains("idle  ◔ 75%  ▾") && !r.contains('≡'), "{r}");
+        let r = row(&app, worker, 91);
+        assert!(r.contains("idle  ◔ 75%  ▾"), "{r}");
+        let r = row(&app, worker, 90);
+        assert!(r.contains("idle  ▾ 2 helpers") && !r.contains('◔'), "{r}");
     }
 
     #[test]

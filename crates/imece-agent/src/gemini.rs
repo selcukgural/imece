@@ -1219,7 +1219,19 @@ impl Protocol {
             }
             "current_mode_update" => Err(format!("changed its mode to {}", u["currentModeId"])),
             "available_commands_update" => Ok(self.commands(u)),
-            // Thoughts, plans, usage meters: nothing the screen needs.
+            // After each model response: the tokens in the context and the
+            // model's window, from Gemini's own table.
+            "usage_update" => Ok(u["used"]
+                .as_u64()
+                .map(|used| {
+                    Act::Event(Event::Context {
+                        used,
+                        size: u["size"].as_u64().filter(|&s| s > 0),
+                    })
+                })
+                .into_iter()
+                .collect()),
+            // Thoughts, plans and the rest: nothing the screen needs.
             _ => Ok(Vec::new()),
         }
     }
@@ -2046,6 +2058,44 @@ mod tests {
     }
 
     #[test]
+    fn a_usage_update_without_a_size_or_a_use_says_what_it_can() {
+        let mut p = started(&with_bus(true));
+        // A size of nothing is no size.
+        assert_eq!(
+            events(
+                &p.line(&update(
+                    json!({ "sessionUpdate": "usage_update", "used": 7, "size": 0 })
+                ))
+                .unwrap()
+            ),
+            [Event::Context {
+                used: 7,
+                size: None
+            }]
+        );
+        assert_eq!(
+            events(
+                &p.line(&update(
+                    json!({ "sessionUpdate": "usage_update", "used": 7 })
+                ))
+                .unwrap()
+            ),
+            [Event::Context {
+                used: 7,
+                size: None
+            }]
+        );
+        // No use: nothing.
+        assert!(
+            p.line(&update(
+                json!({ "sessionUpdate": "usage_update", "size": 9 })
+            ))
+            .unwrap()
+            .is_empty()
+        );
+    }
+
+    #[test]
     fn the_policy_follows_the_level_and_open_denies_only_by_name() {
         let p = policy(&at(Confine::Standard, true));
         assert!(
@@ -2493,12 +2543,18 @@ mod tests {
             ))
             .unwrap();
         assert_eq!(events(&acts), [Event::Commands(vec![])]);
-        assert!(
-            p.line(&update(
-                json!({ "sessionUpdate": "usage_update", "used": 5, "size": 9 })
-            ))
-            .unwrap()
-            .is_empty()
+        // A usage meter is the context's fill.
+        assert_eq!(
+            events(
+                &p.line(&update(
+                    json!({ "sessionUpdate": "usage_update", "used": 5, "size": 9 })
+                ))
+                .unwrap()
+            ),
+            [Event::Context {
+                used: 5,
+                size: Some(9)
+            }]
         );
         assert!(
             p.line(

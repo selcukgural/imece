@@ -486,9 +486,9 @@ pub(super) fn agent_line(
     // Last, so the screen knows where the text it links starts.
     tail.extend(local_spans(a));
 
-    // What is new on the row gives way to what was there: the to-do mark,
-    // the time, then the quote, take only what the row has left once the
-    // rest is on it.
+    // What is new on the row gives way to what was there: the context
+    // warning, the to-do mark, the time, then the quote, take only what
+    // the row has left once the rest is on it.
     let mut room = width.saturating_sub(columns(&spans) + columns(&tail));
     let mut fits = |part: Vec<Span<'static>>| {
         if columns(&part) <= room {
@@ -498,11 +498,13 @@ pub(super) fn agent_line(
             Vec::new()
         }
     };
+    let context = fits(context_spans(a));
     let plan = fits(plan_spans(a));
     let since = fits(since);
     spans.extend(quote_spans(app, a, used, room));
     spans.extend(since);
     spans.extend(plan);
+    spans.extend(context);
     spans.extend(tail);
 
     let line = Line::from(spans);
@@ -515,6 +517,24 @@ pub(super) fn agent_line(
     } else {
         line
     }
+}
+
+/// How full the agent's context window is, `◔ 72%`, from `CONTEXT_SHOWN`
+/// on, in the attention colour from `CONTEXT_LOUD`; the focus has the
+/// figure whatever it is.
+pub(super) fn context_spans(a: &Agent) -> Vec<Span<'static>> {
+    let Some(p) = a.context.and_then(|f| f.percent()) else {
+        return Vec::new();
+    };
+    if p < CONTEXT_SHOWN {
+        return Vec::new();
+    }
+    let style = if p >= CONTEXT_LOUD {
+        fg(pal().warn)
+    } else {
+        dim()
+    };
+    vec![Span::styled(format!("  ◔ {p}%"), style)]
 }
 
 /// How far the agent's own to-do list is, `≡ 3/7`, when it has one; the

@@ -398,6 +398,9 @@ pub enum Event {
     /// The agent's own to-do list as its planning tool now holds it,
     /// whole, in the agent's order; an empty list is a cleared one.
     Plan(Vec<Step>),
+    /// How full the session's context window is, as the vendor last
+    /// said: the tokens in it, and its size when the vendor says.
+    Context { used: u64, size: Option<u64> },
     /// The session waits for the person's yes before it does `what`;
     /// [`Agent::decide`] with `request` answers it.
     Asks { request: String, what: Ask },

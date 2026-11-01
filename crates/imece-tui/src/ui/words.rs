@@ -529,6 +529,31 @@ pub fn ran(lang: Lang, r: &Ran) -> String {
     }
 }
 
+/// A token count in a few characters: `980`, `144k`, `1.2M`.
+pub(crate) fn tokens(n: u64) -> String {
+    if n >= 1_000_000 {
+        let tenths = n / 100_000;
+        if tenths.is_multiple_of(10) {
+            format!("{}M", tenths / 10)
+        } else {
+            format!("{}.{}M", tenths / 10, tenths % 10)
+        }
+    } else if n >= 1_000 {
+        format!("{}k", n / 1_000)
+    } else {
+        n.to_string()
+    }
+}
+
+/// How full a context is, for the trace: `72% · 144k of 200k`, or the
+/// tokens alone when the window's size is not known.
+pub(crate) fn fill_words(f: &Fill) -> String {
+    match (f.percent(), f.size) {
+        (Some(p), Some(size)) => format!("{p}% · {} of {}", tokens(f.used), tokens(size)),
+        _ => format!("{} tokens", tokens(f.used)),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

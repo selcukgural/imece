@@ -543,7 +543,18 @@ struct Mind {
     /// The assign that gave it its card or task, which its done replies
     /// to.
     assigned: Option<MsgId>,
+    /// Tokens in its context window: its work fills it, a compaction
+    /// empties it, its session's end forgets it.
+    filled: u64,
 }
+
+/// A demo session's context window, what a request and a compaction leave
+/// in it, and the fill at which the session compacts on its own, as the
+/// vendors' sessions do near their limit.
+const WINDOW: u64 = 200_000;
+const FRESH_CONTEXT: u64 = 20_000;
+const PER_TICK: u64 = 1_600;
+const AUTO_COMPACT: u64 = WINDOW * 9 / 10;
 
 /// An answer to the person, due at a tick.
 struct Due {
@@ -878,7 +889,12 @@ impl Sim {
         let text = match line {
             _ if failed => "compaction refused: nothing new to compact since the last one".into(),
             "/cost" => format!("Total cost: {}", dollars(w.agents[id].cost)),
-            "/compact" => "Compacted the conversation.".to_string(),
+            "/compact" => {
+                // A compacted context holds its summary alone.
+                self.mind(id).filled = 0;
+                self.fill(w, id, 0);
+                "Compacted the conversation.".to_string()
+            }
             _ => format!("{line}: done."),
         };
         self.replies.push(Due {
@@ -1860,6 +1876,7 @@ impl Sim {
         let progress = (w.agents[id].progress + self.rng.range(1, 2) as u8).min(100);
         w.agents[id].progress = progress;
         Self::plan_at(w, id, progress);
+        self.fill(w, id, PER_TICK);
         if progress >= 100 {
             self.test(w, id);
             return;
@@ -1887,6 +1904,25 @@ impl Sim {
             20..70 => self.tool(w, id, card),
             _ => {}
         }
+    }
+
+    /// Agent `id`'s context grows by `tokens`, as a live request would
+    /// leave it: its row and focus say how full it is. Past
+    /// `AUTO_COMPACT` the session compacts on its own, as live ones do,
+    /// and the trace says so.
+    fn fill(&mut self, w: &mut World, id: AgentId, tokens: u64) {
+        let t = w.tick;
+        let m = self.mind(id);
+        m.filled = m.filled.max(FRESH_CONTEXT) + tokens;
+        if m.filled > AUTO_COMPACT {
+            m.filled = FRESH_CONTEXT;
+            w.agents[id].trace(t, "context compacted by the session");
+        }
+        let used = self.mind(id).filled;
+        w.agents[id].context = Some(Fill {
+            used,
+            size: Some(WINDOW),
+        });
     }
 
     /// Worker `id`'s to-do list at `progress` percent: a step is done per
@@ -2010,9 +2046,12 @@ impl Sim {
         let card = w.agents[id].card;
         let a = &mut w.agents[id];
         a.activity = None;
-        // What it served, and its to-do list, went with its session.
+        // What it served, its to-do list and its context went with its
+        // session.
         a.local = None;
         a.plan.clear();
+        a.context = None;
+        self.mind(id).filled = 0;
         a.topic = STOPPED.into();
         a.set_status(Status::Stopped, t);
         a.trace(t, format!("stopped {STOPPED:?}"));
@@ -4205,6 +4244,60 @@ diff --git a/b.rs b/b.rs
         s.take(&mut w, worker, card, Taken::Claimed);
         assert_eq!(w.agents[worker].plan[0].text, "Çevresindeki kodu oku");
         assert_eq!(w.agents[worker].plan.len(), STEPS);
+    }
+
+    #[test]
+    fn a_worker_s_context_fills_with_its_work_compacts_near_the_top_and_goes_with_its_session() {
+        let (mut w, mut s, worker, _card) = one_at_work();
+        assert_eq!(
+            w.agents[worker].context, None,
+            "nothing said before a request"
+        );
+        s.fill(&mut w, worker, PER_TICK);
+        assert_eq!(
+            w.agents[worker].context,
+            Some(Fill {
+                used: FRESH_CONTEXT + PER_TICK,
+                size: Some(WINDOW)
+            })
+        );
+        assert_eq!((WINDOW, FRESH_CONTEXT, PER_TICK), (200_000, 20_000, 1_600));
+        s.fill(&mut w, worker, 100);
+        assert_eq!(w.agents[worker].context.unwrap().used, 21_700);
+        // Up to the top, where the session compacts on its own, said once.
+        let traced = w.agents[worker].trace.len();
+        s.fill(&mut w, worker, AUTO_COMPACT - 21_700);
+        assert_eq!(
+            w.agents[worker].context.unwrap().used,
+            AUTO_COMPACT,
+            "at the line, not over"
+        );
+        assert_eq!(w.agents[worker].trace.len(), traced);
+        s.fill(&mut w, worker, 1);
+        assert_eq!(w.agents[worker].context.unwrap().used, FRESH_CONTEXT);
+        let last = w.agents[worker].trace.back().unwrap();
+        assert!(
+            last.ends_with(" context compacted by the session"),
+            "{last}"
+        );
+        // The person's /compact empties it too.
+        s.fill(&mut w, worker, 50_000);
+        s.command(&mut w, worker, "/compact").unwrap();
+        assert_eq!(w.agents[worker].context.unwrap().used, FRESH_CONTEXT);
+        // Its work fills it a request a tick.
+        let before = w.agents[worker].context.unwrap().used;
+        s.work(&mut w, worker);
+        let after = w.agents[worker].context.unwrap().used;
+        assert!(
+            after == before + PER_TICK || w.agents[worker].status != Status::Working,
+            "{before} -> {after}"
+        );
+        // Stopped: gone with the session, and a new one starts fresh.
+        s.stop(&mut w, worker);
+        assert_eq!(w.agents[worker].context, None);
+        assert_eq!(s.mind(worker).filled, 0);
+        s.fill(&mut w, worker, 0);
+        assert_eq!(w.agents[worker].context.unwrap().used, FRESH_CONTEXT);
     }
 
     #[test]

@@ -412,6 +412,12 @@ pub struct Parser {
     pending: HashMap<String, TaskOp>,
     /// `init` listed no task tools, and it was said.
     untasked: bool,
+    /// The context window's size, as the last `result` said it for the
+    /// session's model; unknown until the first turn ends.
+    window: Option<u64>,
+    /// The tokens in the context at the last request, as its `usage`
+    /// said; none until the session's first message.
+    used: Option<u64>,
 }
 
 /// A task-tool call in flight.
@@ -458,7 +464,17 @@ impl Parser {
             tasks: BTreeMap::new(),
             pending: HashMap::new(),
             untasked: false,
+            window: None,
+            used: None,
         }
+    }
+
+    /// How full the context is, as last seen.
+    fn context(&self) -> Option<Event> {
+        self.used.map(|used| Event::Context {
+            used,
+            size: self.window,
+        })
     }
 
     /// The to-do list as the tasks stand, in Claude Code's order.
@@ -492,7 +508,7 @@ impl Parser {
         match kind {
             "assistant" => self.assistant(&v),
             "user" => Ok(self.results(&v)),
-            "result" => Ok(vec![self.result(&v)]),
+            "result" => Ok(self.result(&v)),
             "rate_limit_event" => Ok(limits(&v["rate_limit_info"])
                 .map(Event::Limits)
                 .into_iter()
@@ -504,7 +520,20 @@ impl Parser {
         }
     }
 
-    fn result(&mut self, v: &Value) -> Event {
+    fn result(&mut self, v: &Value) -> Vec<Event> {
+        let mut out = Vec::new();
+        // The window's size, said per model: the largest named, in case a
+        // turn ran on more than one.
+        let window = v["modelUsage"]
+            .as_object()
+            .into_iter()
+            .flatten()
+            .filter_map(|(_, m)| m["contextWindow"].as_u64())
+            .max();
+        if window.is_some() && window != self.window {
+            self.window = window;
+            out.extend(self.context());
+        }
         let mut e = result(v);
         if let Event::TurnDone { cost, .. } = &mut e {
             if *cost < self.cost_last {
@@ -516,7 +545,8 @@ impl Parser {
             // under it (then the reported cost is the new spending).
             *cost = (*cost + self.cost_base).saturating_sub(self.floor);
         }
-        e
+        out.push(e);
+        out
     }
 
     fn init(&mut self, v: &Value) -> Result<Vec<Event>, String> {
@@ -589,6 +619,13 @@ impl Parser {
                 self.pending.clear();
                 out.push(self.plan());
             }
+            // And an empty context.
+            if self.used.take().is_some() {
+                out.push(Event::Context {
+                    used: 0,
+                    size: self.window,
+                });
+            }
             self.started = true;
             self.session = session.clone();
             out.push(Event::Started {
@@ -616,6 +653,19 @@ impl Parser {
 
     fn assistant(&mut self, v: &Value) -> Result<Vec<Event>, String> {
         let mut out = Vec::new();
+        // The request's prompt (read from the cache or not) and its
+        // answer: what the context holds now.
+        let u = &v["message"]["usage"];
+        if u["input_tokens"].is_u64() {
+            let n = |k: &str| u[k].as_u64().unwrap_or(0);
+            self.used = Some(
+                n("input_tokens")
+                    + n("cache_creation_input_tokens")
+                    + n("cache_read_input_tokens")
+                    + n("output_tokens"),
+            );
+            out.extend(self.context());
+        }
         for block in v["message"]["content"].as_array().into_iter().flatten() {
             match block["type"].as_str().unwrap_or_default() {
                 "text" => {
@@ -1758,6 +1808,80 @@ mod tests {
                 .unwrap()
                 .is_empty()
         );
+    }
+
+    #[test]
+    fn every_message_s_usage_says_how_full_the_context_is_and_the_result_its_window() {
+        let mut p = Parser::new(&spec(EDIT_TOOLS));
+        p.line(&init(GOOD_INIT, "acceptEdits", "[]")).unwrap();
+        // The prompt, cached or not, and the answer; no window yet.
+        let said = r#"{"type":"assistant","message":{"usage":{"input_tokens":6,"cache_creation_input_tokens":15000,"cache_read_input_tokens":30000,"output_tokens":500},"content":[{"type":"text","text":"hi"}]}}"#;
+        assert_eq!(
+            p.line(said).unwrap(),
+            [
+                Event::Context {
+                    used: 45_506,
+                    size: None
+                },
+                Event::Text("hi".into())
+            ]
+        );
+        // A message without a usage says nothing of the context.
+        let mute = r#"{"type":"assistant","message":{"content":[{"type":"text","text":"more"}]}}"#;
+        assert_eq!(p.line(mute).unwrap(), [Event::Text("more".into())]);
+        // The result names the window per model: the largest, once known,
+        // comes with the fill before the turn's end.
+        let done = r#"{"type":"result","subtype":"success","is_error":false,"result":"ok","total_cost_usd":0.01,"permission_denials":[],"modelUsage":{"claude-haiku-5-5":{"contextWindow":1000000},"claude-opus-5-5":{"contextWindow":200000}}}"#;
+        assert_eq!(
+            p.line(done).unwrap(),
+            [
+                Event::Context {
+                    used: 45_506,
+                    size: Some(1_000_000)
+                },
+                Event::TurnDone {
+                    ok: true,
+                    text: "ok".into(),
+                    cost: 10_000,
+                    denied: 0
+                }
+            ]
+        );
+        // The same window again is not said again; the next message has
+        // the size.
+        assert_eq!(p.line(done).unwrap().len(), 1);
+        let again = r#"{"type":"assistant","message":{"usage":{"input_tokens":100,"output_tokens":1},"content":[]}}"#;
+        assert_eq!(
+            p.line(again).unwrap(),
+            [Event::Context {
+                used: 101,
+                size: Some(1_000_000)
+            }]
+        );
+        // A result without a model usage leaves the window as it was.
+        let bare = r#"{"type":"result","subtype":"success","is_error":false,"result":"ok","total_cost_usd":0.01}"#;
+        assert_eq!(p.line(bare).unwrap().len(), 1);
+        // `/clear`: an empty context, said before the new session is.
+        let cleared = format!(
+            r#"{{"type":"system","subtype":"init","session_id":"s2","model":"m1","tools":{GOOD_INIT},"permissionMode":"acceptEdits","mcp_servers":[],"slash_commands":[]}}"#
+        );
+        assert_eq!(
+            p.line(&cleared).unwrap(),
+            [
+                Event::Context {
+                    used: 0,
+                    size: Some(1_000_000)
+                },
+                Event::Started {
+                    session: "s2".into(),
+                    model: "m1".into()
+                }
+            ]
+        );
+        // Nothing to empty: not said.
+        let mut p = Parser::new(&spec(EDIT_TOOLS));
+        p.line(&init(GOOD_INIT, "acceptEdits", "[]")).unwrap();
+        assert_eq!(p.line(&cleared).unwrap().len(), 1);
     }
 
     #[test]

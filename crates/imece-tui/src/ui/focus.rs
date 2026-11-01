@@ -89,6 +89,20 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App, id: AgentId) {
             Span::raw(leases),
         ]));
     }
+    if let Some(f) = a.context {
+        let line = match (f.percent(), f.size) {
+            (Some(p), Some(size)) => fill(
+                t.context_line,
+                &[&p.to_string(), &words::tokens(f.used), &words::tokens(size)],
+            ),
+            _ => fill(t.context_tokens, &[&words::tokens(f.used)]),
+        };
+        let style = match f.percent() {
+            Some(p) if p >= CONTEXT_LOUD => fg(pal().warn),
+            _ => dim(),
+        };
+        head.push(Line::from(Span::styled(line, style)));
+    }
     if !a.plan.is_empty() {
         let (done, all) = a.plan_count();
         head.push(Line::from(Span::styled(
