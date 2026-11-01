@@ -29,6 +29,12 @@ imece kapalı düşer (fail closed): bir dosya, bir oturum ya da bir değişikli
 
 **Neden.** imece satıcıların kendi CLI'larını sürer ve hiçbirini bulamadı. Birini kurun ve programının imece'yi başlattığınız kabuğun PATH'inde olduğundan emin olun.
 
+### `codex giriş yapmamış: :welcome nasıl yapılacağını söyler`
+
+**Neden.** Başlangıçta imece liderin satıcısına giriş yapılmış olup olmadığını sordu (`codex login status`, `claude auth status`) ve hayır dedi; sen yazıyordun, bu yüzden hoş geldin penceresi satırın üstüne açılmadı.
+
+**Ne yapmalı.** `:welcome` giriş yapan komutu gösterir (`codex login`, `claude auth login`); onu bir kabukta çalıştırın (`!codex login` imece'nin içinden çalıştırır), sonra lidere yeniden yazın.
+
 ### `codex is not on PATH (found claude); install it, or pick the leader with --lead`
 
 **Neden.** `--lead` (ya da önceki bir `p` ile birinciliniz) orada olmayan bir satıcıyı adlandırıyor. Eksik bir birincil KİM LİDER? ekranında da söylenir (`codex birincil ajanın, ama PATH'te yok`), sessizce değiştirilmez. `:lead ask` birinciliyi unutturur.

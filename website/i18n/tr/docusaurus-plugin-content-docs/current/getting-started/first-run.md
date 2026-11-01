@@ -34,6 +34,48 @@ PATH'te tek satıcı varsa o liderdir ve salon açılır. Birden çoksa, `--lead
 
 `enter` bu çalıştırma için seçer; `p` seçer ve o satıcıyı **birincil** yapar, böylece sonraki başlangıç sormaz. Birincil, imece çalışırken `:lead claude` ile de ayarlanır (`:lead ask` unutturur; komut satırında `--lead ask` yine de sorar). Artık PATH'te olmayan bir birincil bu ekranda söylenir (`claude birincil ajanın, ama PATH'te yok`), sessizce değiştirilmez. Sessiz bir varsayılan yoktur: bu sizin kararınızdır.
 
+### Hoş geldin penceresi
+
+İlk başlangıçta (depo önceki bir çalıştırmayı hatırlamıyorsa), bir şey hareket etmeden önce bir pencere açılır: imece nedir, bu makinedeki kodlama agent'ları ve başlamak için tuşlar.
+
+```text
+┌ IMECE 0.1.0 SÜRÜMÜNE HOŞ GELDİN ─────────────────────────────────────────────────┐
+│ Birçok kodlama agent'ı için tek terminal. Lider worker tutar; her biri kendi      │
+│ worktree'sinde çalışır, değiştirdiği şey senin onayını bekler.                    │
+│                                                                                  │
+│ Bu makinedeki kodlama agent'ları:                                                │
+│   ✓ claude  2.1.316 (Claude Code) · giriş yapılmış                               │
+│   ✕ codex   codex-cli 0.165.0 · giriş yapılmamış: codex login çalıştır           │
+│   ? gemini  0.65.0 · girişi ilk açıldığında denetlenir                           │
+│                                                                                  │
+│ Başlamak için tuşlar:                                                            │
+│   /  i            lidere yaz: ne yapılmasını istediğini söyle                    │
+│   @ad mesaj       tek bir agent'a yaz                                            │
+│   W               seni bekleyen sıradaki şey: bir değişiklik, bir soru           │
+│   …                                                                              │
+│ herhangi bir tuş: kapat · :welcome bunu yine gösterir                            │
+└──────────────────────────────────────────────────────────────────────────────────┘
+```
+
+Her satıcının satırı sürümünü ve giriş yapılmış olup olmadığını, ya da nasıl giriş yapılacağını söyler: `claude auth login`, `codex login`. imece bunu CLI'ların kendisine sorar (`claude auth status`, `codex login status`), kendi iş parçacığında, ağa çıkmadan ve para harcamadan; cevabı gelene dek satırda `bakılıyor…`, program yoksa `PATH'te yok` yazar. Gemini CLI'ın böyle bir sorusu yoktur: girişi ilk oturumu açılırken denetlenir, eksikse o oturum nedeniyle durur.
+
+Sonraki her başlangıçta imece yalnızca liderin satıcısına sorar ve giriş yapılmadığını söylerse aynı pencereyi açar (sen yazarken bunun yerine bir satır `codex giriş yapmamış: :welcome nasıl yapılacağını söyler` der). `:welcome` onu her an açar ve her satıcıya yeniden sorar. Herhangi bir tuş onu kapatır ve başka bir şey yapmaz.
+
+### Yeni olanlar
+
+Yeni bir sürümün ilk başlangıcı, ondan önce başlayan sürümden bu yana yeni olanları bir kez gösterir (en çok üç sürüm), NEREDE KALMIŞTIN'dan önce:
+
+```text
+┌ IMECE 0.1.0 SÜRÜMÜNDE YENİ OLANLAR ──────────────────────────────────────────────────────┐
+│ 0.1.0                                                                                    │
+│   · İlk sürüm, macOS ve Linux için: tek bir curl satırı kurar ve günceller.               │
+│   · …                                                                                    │
+│ herhangi bir tuş: kapat · :news bunu yine gösterir                                       │
+└──────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+En son başlayan sürüm depoda tutulur (`seen`); en ilk başlangıç bunun yerine hoş geldin penceresini gösterir. Herhangi bir tuş kapatır; `:news` son sürümlerin yeniliklerini her an gösterir.
+
 ### Nerede kalmıştın
 
 İlk seferde gösterilecek bir şey yoktur. Önceki bir çalıştırmayı hatırlayan sonraki bir başlangıçta, bir şey hareket etmeden önce bir pencere açılır:

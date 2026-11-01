@@ -74,6 +74,10 @@ pub fn draw(f: &mut Frame, app: &App) {
         overlay::solo_pick(f, app, p);
     } else if app.help {
         overlay::help(f, app);
+    } else if !app.news.is_empty() {
+        overlay::news(f, app);
+    } else if app.welcome {
+        overlay::welcome(f, app);
     } else if let Some(d) = &app.digest {
         overlay::digest(f, app, d);
     } else if let Some(l) = &app.left_off {
@@ -4397,11 +4401,13 @@ mod tests {
         assert!(app.typing, "a paste never sends");
         // An overlay over the line takes nothing either.
         let line = app.input.clone();
-        for open in 0..4 {
+        for open in 0..6 {
             match open {
                 0 => app.help = true,
                 1 => app.digest = Some(Default::default()),
                 2 => app.left_off = Some(Default::default()),
+                3 => app.news = vec!["0.1.0"],
+                4 => app.welcome = true,
                 _ => app.leaving = true,
             }
             app.flash = None;
@@ -4409,6 +4415,7 @@ mod tests {
             assert_eq!(app.input, line, "overlay {open}");
             assert!(app.flash.is_some(), "overlay {open}");
             (app.help, app.digest, app.left_off, app.leaving) = (false, None, None, false);
+            (app.news, app.welcome) = (Vec::new(), false);
         }
         app.paste("x");
         assert_ne!(app.input, line, "and with none open it goes in");
@@ -5717,6 +5724,85 @@ mod tests {
             );
             assert!(line.starts_with("! 14:00 "), "{line}");
         }
+    }
+
+    #[test]
+    fn the_welcome_window_lists_each_vendor_as_it_answered_and_the_keys() {
+        use crate::welcome::Seen;
+        use imece_agent::Login;
+        let mut app = App::new(1, 1, 0, 1, Lang::En);
+        let here = |version: &str, login| Seen::Here {
+            version: version.into(),
+            login,
+        };
+        app.vendors = vec![
+            (Vendor::Claude, here("2.1.3 (Claude Code)", Login::Yes)),
+            (Vendor::Codex, here("codex-cli \u{1b}[31m0.9", Login::No)),
+            (Vendor::Gemini, here("0.65.0", Login::Unknown)),
+        ];
+        app.welcome = true;
+        let screen = render(&app, 120, 40);
+        for want in [
+            &format!("WELCOME TO IMECE {}", crate::welcome::VERSION),
+            "One terminal for many coding agents.",
+            "Coding agents on this machine:",
+            "✓ claude  2.1.3 (Claude Code) · signed in",
+            "✕ codex   codex-cli",
+            "0.9 · not signed in: run codex login",
+            "? gemini  0.65.0 · its sign-in is checked when it first starts",
+            "Keys to start with:",
+            "   /  i            write to the leader",
+            "   ?               every key; / in it filters",
+            "any key: close · :welcome shows this again",
+        ] {
+            assert!(screen.contains(want), "{want} missing:\n{screen}");
+        }
+        assert!(!screen.contains('\u{1b}'), "a CLI's words are cleaned");
+        // Before the answers, and a vendor not there.
+        app.vendors = vec![
+            (Vendor::Claude, Seen::Checking),
+            (Vendor::Codex, Seen::Missing),
+        ];
+        let screen = render(&app, 120, 40);
+        assert!(screen.contains("… claude  checking…"), "{screen}");
+        assert!(screen.contains("· codex   not on PATH"), "{screen}");
+        // In Turkish.
+        app.lang = Lang::Tr;
+        let screen = render(&app, 120, 40);
+        assert!(
+            screen.contains("Bu makinedeki kodlama agent'ları:"),
+            "{screen}"
+        );
+        assert!(screen.contains("PATH'te yok"), "{screen}");
+    }
+
+    #[test]
+    fn the_news_window_lists_each_version_newest_first() {
+        let mut app = App::new(1, 1, 0, 1, Lang::En);
+        app.news = vec!["0.1.0"];
+        let screen = render(&app, 120, 40);
+        for want in [
+            &format!("WHAT'S NEW IN IMECE {}", crate::welcome::VERSION),
+            " 0.1.0",
+            "· The first release, for macOS and Linux",
+            "any key: close · :news shows this again",
+        ] {
+            assert!(screen.contains(want), "{want} missing:\n{screen}");
+        }
+        // The first version right under the title, no blank line above.
+        let lines: Vec<&str> = screen.lines().collect();
+        let top = lines.iter().position(|l| l.contains("WHAT'S NEW")).unwrap();
+        assert!(lines[top + 1].contains("│ 0.1.0"), "{screen}");
+        // The news come before the welcome, which comes before where the
+        // person left off.
+        app.welcome = true;
+        app.left_off = Some(Default::default());
+        assert!(render(&app, 120, 40).contains("WHAT'S NEW"));
+        app.news.clear();
+        let screen = render(&app, 120, 40);
+        assert!(screen.contains("WELCOME TO IMECE") && !screen.contains("WHAT'S NEW"));
+        app.welcome = false;
+        assert!(render(&app, 120, 40).contains("WHERE YOU LEFT OFF"));
     }
 
     #[test]

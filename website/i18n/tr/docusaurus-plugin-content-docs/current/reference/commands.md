@@ -42,6 +42,7 @@ description: imece'nin aldığı her `:` komutu; argümanları, karşılığı o
 | `:mark` | `m` | | | | |
 | `:model NAME` | — | | | | eldeki solonun modeli ya da `default` |
 | `:needs` | `f` | | | | açık / kapalı |
+| `:news` | — | | | | bu sürüm |
 | `:next` | `W` | | | | N bekliyor |
 | `:notify [off\|bell\|text]` | — | | | | off / bell / text |
 | `:open PATH [NAME]` | — | `:o` | | `$` | |
@@ -62,6 +63,7 @@ description: imece'nin aldığı her `:` komutu; argümanları, karşılığı o
 | `:unfold` | `zR` | | | | |
 | `:unsettle` | — | | | | kaç şeyin kaldırıldığı |
 | `:waiting` | `w` | | | | N bekliyor |
+| `:welcome` | — | | | | |
 
 Canlıda `:pause`, `:faster` ve `:slower` menüde yer almaz. Hareket eden tuşların (`j k`, `gg G`, `enter`, `esc`, `tab`) ve seçili satıra etki eden tuşların (`a r c n x`) `:` adı yoktur: yazmak tuştan yavaş olurdu ve satırın adlandırılması gerekirdi.
 
@@ -161,6 +163,10 @@ Eldeki solo oturumun sonraki turundan itibaren çalıştığı modeli ayarlar: b
 
 Salon yalnızca sizi bekleyenleri gösterir (sizi bekleyen, takılmış, bitmiş ve bakılmamış), `f` gibi; yeniden, herkesi. Önce salona gider. Menü notu: `(açık)` / `(kapalı)`.
 
+### `:news`
+
+Son sürümlerde yeni olanlar (en çok üç), en yenisi önce, herhangi bir tuşun kapattığı bir pencerede. Yeni bir sürümün ilk başlangıcı onu kendiliğinden bir kez gösterir, önceki başlayan sürümden bu yana yeni olanlarla. Menü notu bu derlemenin sürümüdür. Bkz. [ilk çalıştırma](../getting-started/first-run.md#yeni-olanlar).
+
 ### `:next`
 
 Sizi bekleyen sonraki kalemi her yerden açar, `W` gibi. Menü notu kaç kalemin beklediğini söyler: `(2 bekliyor)`.
@@ -242,6 +248,10 @@ Salonda her şeyi açar, `zR` gibi; açık bir konuşma varken onun her mesajın
 ### `:waiting`
 
 Doğrudan SENİ BEKLEYEN'e, `w` gibi. Menü notu kaç kalemin beklediğini söyler.
+
+### `:welcome`
+
+İlk çalıştırma penceresi: imece nedir, bu makinedeki kodlama agent'ları sürümleri ve her birinin giriş yapılmış olup olmadığıyla (ya da giriş yapan komutla; Gemini CLI'ınki ilk açılışında denetlenir), ve başlamak için tuşlar. Her satıcıya ağa çıkmadan yeniden sorulur; cevabı gelene dek satırda `bakılıyor…` yazar. İlk başlangıçta ve liderin satıcısının giriş yapmadığı bir başlangıçta kendiliğinden açılır. Herhangi bir tuş kapatır. Bkz. [ilk çalıştırma](../getting-started/first-run.md#hoş-geldin-penceresi).
 
 ## Ayrıca bkz.
 

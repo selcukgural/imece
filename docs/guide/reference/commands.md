@@ -42,6 +42,7 @@ A line that starts with `:` is a command to imece, not a message to an agent. Yo
 | `:mark` | `m` | | | | |
 | `:model NAME` | — | | | | the solo at hand's model, or `default` |
 | `:needs` | `f` | | | | on / off |
+| `:news` | — | | | | this version |
 | `:next` | `W` | | | | N waiting |
 | `:notify [off\|bell\|text]` | — | | | | off / bell / text |
 | `:open PATH [NAME]` | — | `:o` | | `$` | |
@@ -62,6 +63,7 @@ A line that starts with `:` is a command to imece, not a message to an agent. Yo
 | `:unfold` | `zR` | | | | |
 | `:unsettle` | — | | | | how many are settled |
 | `:waiting` | `w` | | | | N waiting |
+| `:welcome` | — | | | | |
 
 Live, `:pause`, `:faster` and `:slower` are left out of the menu. Keys that move (`j k`, `gg G`, `enter`, `esc`, `tab`) and keys that act on the selected row (`a r c n x`) have no `:` name: typing them would be slower than the key, and the row would have to be named.
 
@@ -161,6 +163,10 @@ Sets the model the solo session at hand runs on, from its next turn: an alias (`
 
 The salon shows only what needs you (waiting for you, stuck, done and not seen), as `f`; again, everyone. Goes to the salon first. The menu note: `(on)` / `(off)`.
 
+### `:news`
+
+What is new in the latest versions (three at most), newest first, in a window any key closes. The first start of a new version shows it once by itself, with what is new since the version that started before. The menu note is this build's version. See [first run](../getting-started/first-run.md#whats-new).
+
 ### `:next`
 
 Opens the next item waiting for you from anywhere, as `W`. The menu note says how many wait: `(2 waiting)`.
@@ -242,6 +248,10 @@ Brings back everything settled with `s` or `:settle`, and goes to the salon. The
 ### `:waiting`
 
 Straight to WAITING FOR YOU, as `w`. The menu note says how many wait.
+
+### `:welcome`
+
+The first-run window: what imece is, the coding agents on this machine with their version and whether each is signed in (or the command that signs it in; Gemini CLI's is checked at its first start), and the keys to start with. Every vendor is asked again, without the network; a line says `checking…` until its answer comes. It opens by itself on the first start ever and on a start where the leader's vendor is not signed in. Any key closes it. See [first run](../getting-started/first-run.md#the-welcome-window).
 
 ## See also
 

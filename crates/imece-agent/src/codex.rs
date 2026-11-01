@@ -85,6 +85,29 @@ pub fn model(tier: crate::Tier) -> Option<&'static str> {
 
 /// Codex has no model aliases: a model is named in full, or left to
 /// Codex's own default.
+/// Whether Codex is signed in, with ChatGPT or an API key: `codex login
+/// status` answers offline, `Logged in using …` with success or `Not
+/// logged in` with a failure, on stderr.
+pub fn login(program: &str) -> crate::Login {
+    let mut cmd = child::command(program, &std::env::temp_dir(), ENV);
+    cmd.args(["login", "status"]);
+    child::ask(cmd, crate::ASK_WAIT).map_or(crate::Login::Unknown, |(status, said)| {
+        login_in(status.success(), &said)
+    })
+}
+
+/// What `codex login status` said, and whether it ended in success.
+fn login_in(success: bool, said: &str) -> crate::Login {
+    let mut lines = said.lines().map(str::trim);
+    if lines.clone().any(|l| l == "Not logged in") {
+        crate::Login::No
+    } else if success && lines.any(|l| l.starts_with("Logged in")) {
+        crate::Login::Yes
+    } else {
+        crate::Login::Unknown
+    }
+}
+
 pub const ALIASES: &[&str] = &[];
 
 /// The reasoning efforts Codex takes on a turn, least first. One it does
@@ -1587,6 +1610,39 @@ mod tests {
             tools: vec!["send".into(), "post".into()],
         });
         s
+    }
+
+    #[test]
+    fn signed_in_is_what_login_status_says() {
+        use crate::Login::*;
+        assert_eq!(login_in(true, "Logged in using ChatGPT\n"), Yes);
+        assert_eq!(
+            login_in(true, "  Logged in using an API key - sk-***\n"),
+            Yes
+        );
+        assert_eq!(login_in(false, "Logged in using ChatGPT\n"), Unknown);
+        assert_eq!(login_in(false, "Not logged in\n"), No);
+        assert_eq!(login_in(true, "WARNING: x\nNot logged in\n"), No);
+        assert_eq!(login_in(true, "Usage: codex login\n"), Unknown);
+        let dir =
+            std::env::temp_dir().join(format!("imece-login-{}-{}", "codex", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let fake = |name: &str, script: &str| {
+            let path = dir.join(name);
+            std::fs::write(&path, format!("#!/bin/sh\n{script}\n")).unwrap();
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+            path.display().to_string()
+        };
+        let yes = fake(
+            "yes",
+            r#"[ "$*" = "login status" ] && echo "Logged in using ChatGPT" >&2 && exit 0; exit 9"#,
+        );
+        assert_eq!(login(&yes), Yes);
+        let no = fake("no", r#"echo "Not logged in" >&2; exit 1"#);
+        assert_eq!(login(&no), No);
+        assert_eq!(login(&dir.join("gone").display().to_string()), Unknown);
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]

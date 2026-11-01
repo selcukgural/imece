@@ -35,8 +35,8 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use imece_agent::mcp::{Answer, Server, Tool};
 use imece_agent::{
-    APPROVE_TOOL, Agent as Session, Ask, Choice, Confine, Event as AgentEvent, Mcp, Tier, child,
-    claude, codex, copy, gemini, run, worktree,
+    APPROVE_TOOL, Agent as Session, Ask, Choice, Confine, Event as AgentEvent, Login, Mcp, Tier,
+    child, claude, codex, copy, gemini, run, worktree,
 };
 use serde_json::{Value, json};
 
@@ -44,6 +44,7 @@ use crate::i18n::{Lang, clean};
 use crate::model::*;
 use crate::store::{self, Found, Kept, Store};
 use crate::ui::words;
+use crate::welcome::{Answers, Seen};
 
 mod bus;
 mod changes;
@@ -603,6 +604,42 @@ pub fn probe(repo: &Path, known: &[Known]) -> Result<Vec<(Vendor, bool)>, String
         .filter(|(_, program, _)| on_path(program, &repo))
         .map(|&(vendor, _, drives)| (vendor, drives))
         .collect())
+}
+
+/// Asks each of `known`'s CLIs whose vendor is among `which`, each on a
+/// thread of its own, for its version and whether it is signed in, outside
+/// any checkout and without the network; the answers come one by one.
+/// Gemini CLI has no such question: its sign-in is [`Login::Unknown`].
+pub fn look(known: &[Known], which: &[Vendor]) -> Answers {
+    let (tx, rx) = mpsc::channel();
+    for &(vendor, program, _) in known.iter().filter(|k| which.contains(&k.0)) {
+        let tx = tx.clone();
+        thread::spawn(move || {
+            let seen = match imece_agent::version(program, env_of(vendor)) {
+                None => Seen::Missing,
+                Some(version) => Seen::Here {
+                    version,
+                    login: match vendor {
+                        Vendor::Claude => claude::login(program),
+                        Vendor::Codex => codex::login(program),
+                        _ => Login::Unknown,
+                    },
+                },
+            };
+            let _ = tx.send((vendor, seen));
+        });
+    }
+    rx
+}
+
+/// The variables vendor `v`'s CLI gets besides the base ones: its login,
+/// config and proxies.
+fn env_of(v: Vendor) -> &'static [&'static str] {
+    match v {
+        Vendor::Codex => codex::ENV,
+        Vendor::Gemini => gemini::ENV,
+        _ => claude::ENV,
+    }
 }
 
 /// The vendors among `present` that could lead: the ones imece drives.
@@ -1263,6 +1300,75 @@ pub fn today() -> u64 {
 mod tests {
     use super::*;
     use crate::live::testing::*;
+
+    #[test]
+    fn a_look_asks_the_vendors_named_for_their_version_and_sign_in() {
+        let dir = std::env::temp_dir().join(format!("imece-look-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let fake = |name: &str, script: &str| -> &'static str {
+            let path = dir.join(name);
+            std::fs::write(&path, format!("#!/bin/sh\n{script}\n")).unwrap();
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+            Box::leak(path.display().to_string().into_boxed_str())
+        };
+        let claude = fake(
+            "claude",
+            r#"case "$*" in
+--version) echo "2.1.3 (Claude Code)";;
+"auth status --json") echo '{"loggedIn": true}';;
+*) exit 9;;
+esac"#,
+        );
+        let codex = fake(
+            "codex",
+            r#"case "$*" in
+--version) echo "codex-cli 0.9.1";;
+"login status") echo "Not logged in" >&2; exit 1;;
+*) exit 9;;
+esac"#,
+        );
+        let gemini = fake("gemini", r#"[ "$1" = --version ] && echo 0.65.0"#);
+        let known = [
+            (Vendor::Claude, claude, true),
+            (Vendor::Codex, codex, true),
+            (Vendor::Gemini, gemini, true),
+        ];
+        let answers = |which: &[Vendor]| {
+            let rx = look(&known, which);
+            let mut got: Vec<_> = rx.iter().collect();
+            got.sort_by_key(|(v, _)| v.label());
+            got
+        };
+        let here = |version: &str, login| Seen::Here {
+            version: version.into(),
+            login,
+        };
+        assert_eq!(
+            answers(&[Vendor::Claude, Vendor::Codex, Vendor::Gemini]),
+            [
+                (Vendor::Claude, here("2.1.3 (Claude Code)", Login::Yes)),
+                (Vendor::Codex, here("codex-cli 0.9.1", Login::No)),
+                (Vendor::Gemini, here("0.65.0", Login::Unknown)),
+            ]
+        );
+        // Only the ones named are asked.
+        assert_eq!(
+            answers(&[Vendor::Codex]),
+            [(Vendor::Codex, here("codex-cli 0.9.1", Login::No))]
+        );
+        // Each CLI gets its own vendor's variables (its login lives there).
+        assert!(env_of(Vendor::Claude).contains(&"ANTHROPIC_API_KEY"));
+        assert!(env_of(Vendor::Codex).contains(&"CODEX_HOME"));
+        assert!(env_of(Vendor::Gemini).contains(&"GEMINI_API_KEY"));
+        let gone: &'static str = Box::leak(dir.join("gone").display().to_string().into_boxed_str());
+        let rx = look(&[(Vendor::Claude, gone, true)], &[Vendor::Claude]);
+        assert_eq!(
+            rx.iter().collect::<Vec<_>>(),
+            [(Vendor::Claude, Seen::Missing)]
+        );
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
 
     #[test]
     fn the_known_vendors_are_the_ones_the_leader_may_be() {

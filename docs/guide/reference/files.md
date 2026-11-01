@@ -37,7 +37,7 @@ imece never moves, mends or writes over a file it cannot read: a newer imece may
 
 | Table | Holds |
 | --- | --- |
-| `meta` | key-value: `schema_version`, `started_at` (the world's first start, which the clock and the ticks count from), `budget` (the pot), `saved_at` (the last save, for "WHERE YOU LEFT OFF · 2 h ago"), `messages` (the last message number given), and your settings `side` (the side panel's width), `theme`, `lead` (the primary vendor) |
+| `meta` | key-value: `schema_version`, `started_at` (the world's first start, which the clock and the ticks count from), `budget` (the pot), `saved_at` (the last save, for "WHERE YOU LEFT OFF · 2 h ago"), `messages` (the last message number given), and your settings `side` (the side panel's width), `theme`, `lead` (the primary vendor), `notify`, `seen` (the version that started last, for what is new) |
 | `projects` | each project's name, leader, whether it is closed, its checkout path, whether it is pinned, and the paths `:copy` lists (`copies`, JSON) |
 | `agents` | each agent's project, name, vendor, role, parent (a helper's worker), card, cost, taint, whether it is gone, its model and whether a tier chose it, the message-driven turns and posts since you last spoke, its own command list, and its last vendor session with what that session had spent |
 | `cards` | each card's project, title, owner, column and when it started and finished |

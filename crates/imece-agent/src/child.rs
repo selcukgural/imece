@@ -162,6 +162,58 @@ impl Drop for Child {
     }
 }
 
+/// The most of a quick question's answer read (see [`ask`]).
+pub const ANSWER_MAX: u64 = 64 << 10;
+
+/// Runs `cmd` for a quick question about the program itself (its version,
+/// whether it is signed in), with nothing on stdin, in its own process
+/// group, for at most `wait` (and as long again for what it wrote to be
+/// read): its exit status and what it wrote, stdout then stderr, each cut
+/// at [`ANSWER_MAX`]. None when it could not start or did not answer in
+/// time (then its group is killed). The pipes are read on a thread of
+/// their own, so an answer bigger than a pipe holds does not stall the
+/// program, and one a process outside the group keeps open does not stall
+/// the caller.
+pub fn ask(mut cmd: Command, wait: Duration) -> Option<(ExitStatus, String)> {
+    cmd.stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .process_group(0);
+    let mut proc = retry_busy(|| cmd.spawn()).ok()?;
+    let pgid = proc.id() as i32;
+    let deadline = Instant::now() + wait;
+    let (out, err) = (proc.stdout.take(), proc.stderr.take());
+    let (tx, rx) = std::sync::mpsc::channel();
+    thread::spawn(move || {
+        let mut said = String::new();
+        let pipes: [Option<Box<dyn Read>>; 2] = [
+            out.map(|p| Box::new(p) as Box<dyn Read>),
+            err.map(|p| Box::new(p) as Box<dyn Read>),
+        ];
+        for pipe in pipes.into_iter().flatten() {
+            let mut bytes = Vec::new();
+            let _ = pipe.take(ANSWER_MAX).read_to_end(&mut bytes);
+            said.push_str(&String::from_utf8_lossy(&bytes));
+        }
+        let _ = tx.send(said);
+    });
+    let status = loop {
+        if let Some(status) = proc.try_wait().ok()? {
+            break status;
+        }
+        if Instant::now() >= deadline {
+            kill_group(pgid, libc::SIGKILL);
+            let _ = proc.wait();
+            return None;
+        }
+        thread::sleep(POLL);
+    };
+    // What its own children left in the group goes too.
+    kill_group(pgid, libc::SIGKILL);
+    let said = rx.recv_timeout(wait).ok()?;
+    Some((status, said))
+}
+
 pub(crate) fn kill_group(pgid: i32, signal: i32) {
     // SAFETY: killpg only sends a signal; a group that is gone gives ESRCH.
     unsafe {
@@ -277,6 +329,60 @@ mod tests {
     fn stderr_keeps_only_its_tail() {
         let s = read_tail(&b"abcdefghij"[..], 4);
         assert_eq!(s, "ghij");
+    }
+
+    fn sh(script: &str) -> Command {
+        let mut c = Command::new("sh");
+        c.args(["-c", script]);
+        c
+    }
+
+    #[test]
+    fn a_question_gets_the_status_and_stdout_then_stderr() {
+        let (status, said) = ask(
+            sh("echo out; echo err >&2; exit 3"),
+            Duration::from_secs(10),
+        )
+        .expect("answered");
+        assert_eq!(status.code(), Some(3));
+        assert_eq!(said, "out\nerr\n");
+        // Nothing on stdin: a program that reads it sees its end at once.
+        let (status, said) = ask(sh("cat; echo done"), Duration::from_secs(10)).unwrap();
+        assert!(status.success());
+        assert_eq!(said, "done\n");
+    }
+
+    #[test]
+    fn a_question_not_answered_in_time_gets_nothing_and_its_group_dies() {
+        let start = Instant::now();
+        assert_eq!(ask(sh("sleep 30"), Duration::from_millis(300)), None);
+        assert!(
+            start.elapsed() < Duration::from_secs(5),
+            "{:?}",
+            start.elapsed()
+        );
+        assert_eq!(
+            ask(Command::new("/nonexistent/imece-x"), Duration::from_secs(1)),
+            None
+        );
+    }
+
+    #[test]
+    fn a_question_s_answer_is_cut_and_what_its_children_hold_does_not_stall_it() {
+        let big = format!("head -c {} /dev/zero | tr '\\0' a", ANSWER_MAX * 2);
+        let (_, said) = ask(sh(&big), Duration::from_secs(10)).expect("not stalled");
+        assert_eq!(said.len(), ANSWER_MAX as usize);
+        assert_eq!(ANSWER_MAX, 65536);
+        // A child left behind holds stdout open: the group goes when the
+        // program is done, and the answer comes at once.
+        let start = Instant::now();
+        let (_, said) = ask(sh("sleep 30 & echo hi"), Duration::from_secs(5)).expect("answered");
+        assert_eq!(said, "hi\n");
+        assert!(
+            start.elapsed() < Duration::from_secs(4),
+            "{:?}",
+            start.elapsed()
+        );
     }
 
     fn run(cmd: Command) -> (Vec<String>, String) {

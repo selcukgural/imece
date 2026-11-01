@@ -29,6 +29,12 @@ imece fails closed: when a file, a session or a change is not what it expects, i
 
 **Why.** imece drives the vendors' own CLIs and found none. Install one and make sure its program is on the PATH of the shell you start imece from.
 
+### `codex is not signed in: :welcome says how`
+
+**Why.** At the start imece asked the leader's vendor whether it is signed in (`codex login status`, `claude auth status`), and it said no; you were writing, so the welcome window did not open over the line.
+
+**What to do.** `:welcome` shows the command that signs it in (`codex login`, `claude auth login`); run it in a shell (`!codex login` runs it from imece), then write to the leader again.
+
 ### `codex is not on PATH (found claude); install it, or pick the leader with --lead`
 
 **Why.** `--lead` (or your primary from an earlier `p`) names a vendor that is not there. A primary that is missing is also said on the WHO LEADS? screen (`codex is your primary, but not on PATH`), never replaced silently. `:lead ask` forgets a primary.

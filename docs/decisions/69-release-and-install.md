@@ -68,6 +68,9 @@ release workflow itself only runs on a tag: its build steps were checked
 by hand (the aarch64 musl build in a container, static, its tests green;
 the x86_64 macOS cross build run under Rosetta).
 
+A new version needs its "what's new" lines (`Text::news`, both
+languages, record 75): the tests fail on a version without them.
+
 Gaps. Releases are not signed with a key of the person's own; the
 attestation ties an archive to this repository's workflow and tag. The
 installer trusts the TLS of github.com and github.io, as every `curl |

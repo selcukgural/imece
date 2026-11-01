@@ -45,6 +45,31 @@ pub const ENV: &[&str] = &[
     "SSL_CERT_FILE",
 ];
 
+/// Whether Claude Code is signed in, a subscription or an API key: `claude
+/// auth status --json` answers offline with `loggedIn`.
+pub fn login(program: &str) -> crate::Login {
+    let mut cmd = child::command(program, &std::env::temp_dir(), ENV);
+    cmd.args(["auth", "status", "--json"]);
+    child::ask(cmd, crate::ASK_WAIT).map_or(crate::Login::Unknown, |(_, said)| login_in(&said))
+}
+
+/// What `claude auth status --json` said: its JSON object (whatever is
+/// around it) with `loggedIn`.
+fn login_in(said: &str) -> crate::Login {
+    let object = said.find('{').zip(said.rfind('}'));
+    let object = object.and_then(|(a, b)| said.get(a..=b));
+    let status: Option<Value> = object.and_then(|o| serde_json::from_str(o).ok());
+    match status
+        .as_ref()
+        .and_then(|v| v.get("loggedIn"))
+        .and_then(Value::as_bool)
+    {
+        Some(true) => crate::Login::Yes,
+        Some(false) => crate::Login::No,
+        None => crate::Login::Unknown,
+    }
+}
+
 /// Edits inside the agent's directory need nobody's approval; everything
 /// that would ask goes to imece's `approve` tool when the level gives a
 /// shell and the session has imece's server, and is denied otherwise
@@ -1084,6 +1109,40 @@ mod tests {
 
     const BUS: &str = r#"[{"name":"imece","status":"connected","source":"dynamic"}]"#;
     const BUS_INIT: &str = r#"["Edit","Glob","Grep","Read","Write","mcp__imece__send"]"#;
+
+    #[test]
+    fn signed_in_is_what_auth_status_says_of_logged_in() {
+        use crate::Login::*;
+        assert_eq!(
+            login_in(r#"{"loggedIn": true, "authMethod": "claude.ai"}"#),
+            Yes
+        );
+        assert_eq!(login_in("warning\n{\n  \"loggedIn\": false\n}\nbye"), No);
+        assert_eq!(login_in(r#"{"loggedIn": "yes"}"#), Unknown);
+        assert_eq!(login_in(r#"{"authMethod": "none"}"#), Unknown);
+        assert_eq!(login_in("} not {"), Unknown);
+        assert_eq!(login_in("{}"), Unknown);
+        assert_eq!(login_in("Usage: claude [options]"), Unknown);
+        let dir =
+            std::env::temp_dir().join(format!("imece-login-{}-{}", "claude", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let fake = |name: &str, script: &str| {
+            let path = dir.join(name);
+            std::fs::write(&path, format!("#!/bin/sh\n{script}\n")).unwrap();
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+            path.display().to_string()
+        };
+        let yes = fake(
+            "yes",
+            r#"[ "$*" = "auth status --json" ] && echo '{"loggedIn": true}' && exit 0; exit 9"#,
+        );
+        assert_eq!(login(&yes), Yes);
+        let no = fake("no", r#"echo '{"loggedIn": false}'; exit 1"#);
+        assert_eq!(login(&no), No);
+        assert_eq!(login(&dir.join("gone").display().to_string()), Unknown);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
 
     #[test]
     fn the_tiers_are_claude_code_s_aliases_and_its_own_default() {

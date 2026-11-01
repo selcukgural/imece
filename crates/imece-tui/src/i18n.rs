@@ -597,6 +597,28 @@ pub struct Text {
     pub ago_minutes: &'static str,
     pub ago_hours: &'static str,
     pub ago_days: &'static str,
+    // The first-run window (`:welcome`) and what is new (`:news`)
+    pub welcome_title: &'static str,
+    pub welcome_about: [&'static str; 2],
+    pub welcome_vendors: &'static str,
+    /// A vendor asked about itself, no answer yet.
+    pub seen_checking: &'static str,
+    pub seen_missing: &'static str,
+    pub login_yes: &'static str,
+    /// The command that signs it in.
+    pub login_no: &'static str,
+    /// Gemini CLI, which can not be asked.
+    pub login_unknown: &'static str,
+    pub welcome_keys_title: &'static str,
+    pub welcome_keys: [(&'static str, &'static str); 9],
+    pub welcome_close: &'static str,
+    /// The leader's vendor is not signed in, said while the person writes.
+    pub not_signed_in: &'static str,
+    pub news_title: &'static str,
+    pub news_close: &'static str,
+    /// Each version's news, newest first; both languages list the same
+    /// versions.
+    pub news: &'static [(&'static str, &'static [&'static str])],
 }
 
 pub const EN: Text = Text {
@@ -1148,6 +1170,42 @@ pub const EN: Text = Text {
     ago_minutes: "{} min",
     ago_hours: "{} h {} min",
     ago_days: "{} d {} h",
+    welcome_title: " WELCOME TO IMECE {} ",
+    welcome_about: [
+        "One terminal for many coding agents. A leader hires workers; each works",
+        "in a worktree of its own, and what it changes waits for your yes.",
+    ],
+    welcome_vendors: "Coding agents on this machine:",
+    seen_checking: "checking…",
+    seen_missing: "not on PATH",
+    login_yes: "signed in",
+    login_no: "not signed in: run {}",
+    login_unknown: "its sign-in is checked when it first starts",
+    welcome_keys_title: "Keys to start with:",
+    welcome_keys: [
+        ("/  i", "write to the leader: say what you want built"),
+        ("@name text", "write to one agent"),
+        ("W", "the next thing waiting for you: a change, a question"),
+        ("a  r", "in waiting for you: apply or approve · reject"),
+        ("j k  enter  esc", "move · open · go back"),
+        ("&", "go to an agent or a project"),
+        (":", "a command to imece; tab lists them"),
+        ("?", "every key; / in it filters"),
+        ("q", "quit; the agents sleep until the next start"),
+    ],
+    welcome_close: " any key: close · :welcome shows this again",
+    not_signed_in: "{} is not signed in: :welcome says how",
+    news_title: " WHAT'S NEW IN IMECE {} ",
+    news_close: " any key: close · :news shows this again",
+    news: &[(
+        "0.1.0",
+        &[
+            "The first release, for macOS and Linux: one curl line installs and updates it.",
+            "A leader hires workers from Claude Code, Codex and Gemini CLI, each in a worktree.",
+            "A worker's change waits for your yes in WAITING FOR YOU: all of it or some hunks.",
+            ":solo opens a session you drive alone, beside the teams.",
+        ],
+    )],
 };
 
 pub const TR: Text = Text {
@@ -1698,6 +1756,42 @@ pub const TR: Text = Text {
     ago_minutes: "{} dk",
     ago_hours: "{} sa {} dk",
     ago_days: "{} g {} sa",
+    welcome_title: " IMECE {} SÜRÜMÜNE HOŞ GELDİN ",
+    welcome_about: [
+        "Birçok kodlama agent'ı için tek terminal. Lider worker tutar; her biri kendi",
+        "worktree'sinde çalışır, değiştirdiği şey senin onayını bekler.",
+    ],
+    welcome_vendors: "Bu makinedeki kodlama agent'ları:",
+    seen_checking: "bakılıyor…",
+    seen_missing: "PATH'te yok",
+    login_yes: "giriş yapılmış",
+    login_no: "giriş yapılmamış: {} çalıştır",
+    login_unknown: "girişi ilk açıldığında denetlenir",
+    welcome_keys_title: "Başlamak için tuşlar:",
+    welcome_keys: [
+        ("/  i", "lidere yaz: ne yapılmasını istediğini söyle"),
+        ("@ad mesaj", "tek bir agent'a yaz"),
+        ("W", "seni bekleyen sıradaki şey: bir değişiklik, bir soru"),
+        ("a  r", "seni bekleyenlerde: uygula ya da onayla · reddet"),
+        ("j k  enter  esc", "dolaş · aç · geri dön"),
+        ("&", "bir agent'a ya da projeye git"),
+        (":", "imece'ye bir komut; tab hepsini listeler"),
+        ("?", "bütün tuşlar; içinde / süzer"),
+        ("q", "çık; agent'lar bir sonraki açılışa dek uyur"),
+    ],
+    welcome_close: " herhangi bir tuş: kapat · :welcome bunu yine gösterir",
+    not_signed_in: "{} giriş yapmamış: :welcome nasıl yapılacağını söyler",
+    news_title: " IMECE {} SÜRÜMÜNDE YENİ OLANLAR ",
+    news_close: " herhangi bir tuş: kapat · :news bunu yine gösterir",
+    news: &[(
+        "0.1.0",
+        &[
+            "İlk sürüm, macOS ve Linux için: tek bir curl satırı kurar ve günceller.",
+            "Lider Claude Code, Codex ve Gemini CLI'dan worker tutar; her biri bir worktree'de.",
+            "Bir worker'ın değişikliği SENİ BEKLEYEN'de onayını bekler: tamamı ya da bazı parçaları.",
+            ":solo, takımların yanında yalnız senin sürdüğün bir oturum açar.",
+        ],
+    )],
 };
 
 #[cfg(test)]
@@ -1883,6 +1977,10 @@ mod tests {
             (e.ago_minutes, t.ago_minutes),
             (e.ago_hours, t.ago_hours),
             (e.ago_days, t.ago_days),
+            (e.welcome_title, t.welcome_title),
+            (e.login_no, t.login_no),
+            (e.not_signed_in, t.not_signed_in),
+            (e.news_title, t.news_title),
             (e.no_card_found, t.no_card_found),
             (e.card_inbox, t.card_inbox),
             (e.card_journal, t.card_journal),

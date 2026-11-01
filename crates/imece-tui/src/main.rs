@@ -21,6 +21,7 @@ mod sim;
 mod store;
 mod theme;
 mod ui;
+mod welcome;
 
 use std::io::ErrorKind;
 use std::path::PathBuf;
@@ -508,7 +509,17 @@ fn main() -> std::io::Result<()> {
                 // which may be an earlier run.
                 let (seconds, day) = live::local_clock(world.started_at);
                 model::start_clock_at(seconds, day);
-                app::App::with(world, app::Engine::Live(Box::new(live)), args.lang)
+                // Nothing remembered: the first start ever.
+                let first = live.left_off().is_none();
+                let mut app = app::App::with(world, app::Engine::Live(Box::new(live)), args.lang);
+                app.look = Some(|which| live::look(live::KNOWN, which));
+                app.start_welcome(first);
+                // What is new since the version that started last, once.
+                let versions: Vec<&str> = app.lang.text().news.iter().map(|n| n.0).collect();
+                let seen = saved.seen.as_deref();
+                app.news = welcome::news_since(seen, first, welcome::VERSION, &versions);
+                let _ = prefs::seen(&state, welcome::VERSION);
+                app
             }
             Err(msg) => fail(msg),
         }
@@ -580,6 +591,7 @@ fn run(
     let mut last = Instant::now();
     let mut title = screen::Title::default();
     while !app.quit && !SIGNALLED.load(Ordering::SeqCst) {
+        app.looked();
         terminal.draw(|f| ui::draw(f, app))?;
         let waiting = app.world.open_inbox().len();
         title.show(&mut std::io::stdout(), &ui::words::title(app.lang, waiting))?;

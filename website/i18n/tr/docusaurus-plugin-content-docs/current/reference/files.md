@@ -37,7 +37,7 @@ imece okuyamadığı bir dosyayı asla taşımaz, onarmaz ya da üstüne yazmaz:
 
 | Tablo | Tuttuğu |
 | --- | --- |
-| `meta` | anahtar-değer: `schema_version`, `started_at` (dünyanın ilk başlangıcı; saat ve tikler oradan sayar), `budget` (bütçe), `saved_at` (son kayıt, "NEREDE KALMIŞTIN · 2 sa önce" için), `messages` (verilen son mesaj numarası), ve ayarlarınız `side` (yan panelin genişliği), `theme`, `lead` (birincil satıcı) |
+| `meta` | anahtar-değer: `schema_version`, `started_at` (dünyanın ilk başlangıcı; saat ve tikler oradan sayar), `budget` (bütçe), `saved_at` (son kayıt, "NEREDE KALMIŞTIN · 2 sa önce" için), `messages` (verilen son mesaj numarası), ve ayarlarınız `side` (yan panelin genişliği), `theme`, `lead` (birincil satıcı), `notify`, `seen` (en son başlayan sürüm, yeni olanlar için) |
 | `projects` | her projenin adı, lideri, kapalı olup olmadığı, çalışma kopyası yolu, sabit olup olmadığı ve `:copy`'nin listelediği yollar (`copies`, JSON) |
 | `agents` | her ajanın projesi, adı, satıcısı, rolü, ebeveyni (yardımcının işçisi), kartı, maliyeti, kirliliği, gitmiş olup olmadığı, modeli ve bir kademenin seçip seçmediği, siz son konuştuğunuzdan beri mesaj kaynaklı turları ve kart asmaları, kendi komut listesi, ve son satıcı oturumuyla o oturumun harcadığı |
 | `cards` | her kartın projesi, başlığı, sahibi, sütunu ve ne zaman başlayıp bittiği |
