@@ -66,6 +66,12 @@ Bir agent'ın diğerine gönderdiği her mesajın bus'ta bir numarası vardır; 
 
 Bir konuşma açıkken `:export` onu Markdown olarak yazar: `# Konuşma: lead ⇄ claude-1`, sonra her mesaj günü ve saati, kimden kime ve türüyle bir başlık, altında bütün metni. YOL bir dosya ya da içinde dosya adlandırılacak bir dizindir; verilmezse imece'nin başlatıldığı dizin, ad `imece-conversation-20261031-1401.md`. Var olan bir dosyanın üzerine asla yazılmaz. Bir kartın dışa aktarımı için [günlük](journal.md).
 
+## Mesajda dosyalar ve semboller
+
+Bir agent'a yazarken (ya da bir `!kmt` satırında) son sözcük eldeki projenin bir dosyasına tamamlanır: içinde `/` olan bir sözcük menüyü kendiliğinden açar (`src/au` → `src/auth.rs`), başka bir sözcük `tab` ile (`auth` → `src/auth.rs`, `tests/auth_test.rs`). Adı sözcükle başlayan dosyalar önce gelir, sonra yolunun herhangi bir yerinde geçenler, kısa yol önce; büyük küçük harf ve Türkçe harfler fark etmez; en çok otuz. `tab`, `↑` ve `↓` ilerler, `enter` dosyayı sözcüğün yerine ardına bir boşlukla koyar, yeniden `enter` gönderir. Kod haritasında bir agent'ın tuttuğu dosya ardında tutanı gösterir (`● claude-1`), orada kiralanmış semboller dosyalardan sonra `dosya::ad` olarak gelir (`Session.` → `src/Auth/Session.cs::Session.Start`; `auth.rs::` o dosyanınkileri listeler). Bir ad (`@`), bir komut (`/`), `:` `#` `&` satırları ve birkaç satırlık metin için değil.
+
+Canlıda dosyalar git'in çalışma kopyasında listeledikleridir: izlenenler ve izlenmeyen ama yok sayılmayanlar; projenin açılışında, uyguladığınız her değişiklikten sonra ve ajanlarından biri tur ortasındayken her dakika okunur; 20.000'den çok dosyalı bir çalışma kopyasında ilk 20.000'i tamamlanır ve defter bunu bir kez söyler. Demonun dosyaları kod haritasınınkilerdir. Canlıda henüz kiralanmış sembol yok (bkz. [dosyalar](../reference/files.md)).
+
 ## Konuşma izler
 
 Açık bir pencere konuşmaya ayak uydurur: çiftinin gelen günlük satırları eklenir. Pencereden `@` ile yazdığınız kendi satırınız seçilir; son satır seçiliyken gelen bir satır da. Daha yukarıdaki bir seçim okuduğunuz yerde kalır. Bundan önce bir yanıtı görmek için kapatıp yeniden açmak gerekiyordu.

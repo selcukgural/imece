@@ -1890,7 +1890,7 @@ impl App {
             KeyCode::Tab => match &mut self.menu {
                 None if self.after > 0 => {}
                 None => {
-                    self.menu = self.suggest();
+                    self.menu = self.suggest_with(true);
                     if let Some(m) = &mut self.menu {
                         m.insert(&mut self.input);
                     }
@@ -2018,6 +2018,12 @@ impl App {
     /// What the composer could complete the input with, now. Nothing once
     /// the text runs over lines: a name or a command is on one.
     fn suggest(&self) -> Option<Menu> {
+        self.suggest_with(false)
+    }
+
+    /// [`suggest`](Self::suggest); `forced` when `tab` asked, which
+    /// completes any word of a message to a file.
+    fn suggest_with(&self, forced: bool) -> Option<Menu> {
         if self.input.contains('\n') || self.noting.is_some() {
             return None;
         }
@@ -2034,12 +2040,14 @@ impl App {
         if let Some(m) = self.choice_menu() {
             return Some(m);
         }
-        let mut m = complete::suggest(
+        let Some(mut m) = complete::suggest(
             &self.input,
             &self.world,
             self.current_project(),
             self.home.as_deref(),
-        )?;
+        ) else {
+            return self.file_menu(forced);
+        };
         // The command names: the demo's own left out live, each with its
         // value.
         if self.typing_command() && !self.input.contains(' ') {
@@ -2111,6 +2119,52 @@ impl App {
             (None, true) => "$".to_string(),
             (None, false) => String::new(),
         }
+    }
+
+    /// The last word of a message or a `!` line, completed to a file of
+    /// the project at hand, or a symbol leased on its code map
+    /// (`file::name`), the holder of the file as the note (see
+    /// [`complete::files`]). Not on the lines that are something else
+    /// (`:` `#` `&`, a search), nor for a name (`@`) or a command (`/`).
+    fn file_menu(&self, forced: bool) -> Option<Menu> {
+        if self.input.starts_with([':', '#', '&']) {
+            return None;
+        }
+        let word = self
+            .input
+            .rsplit(char::is_whitespace)
+            .next()
+            .unwrap_or_default();
+        let word = if word.len() == self.input.len() {
+            word.strip_prefix('!').unwrap_or(word)
+        } else {
+            word
+        };
+        if word.is_empty() || word.starts_with(['@', '/']) {
+            return None;
+        }
+        let start = self.input.len() - word.len();
+        let w = &self.world;
+        let p = self.current_project();
+        let paths = w.files_of(p);
+        let held: Vec<(&str, &str, AgentId)> = w
+            .cards
+            .iter()
+            .filter(|c| c.project == p && c.holds_leases())
+            .filter_map(|c| c.owner.map(|o| (c, o)))
+            .flat_map(|(c, o)| c.symbols.iter().map(move |s| (s.file, s.name, o)))
+            .collect();
+        let note = |file: &str| -> String {
+            held.iter()
+                .find(|h| h.0 == file)
+                .map(|h| {
+                    let a = &w.agents[h.2];
+                    format!("{} {}", ui::glyph(a).0, a.name)
+                })
+                .unwrap_or_default()
+        };
+        let symbols: Vec<(&str, &str)> = held.iter().map(|h| (h.0, h.1)).collect();
+        complete::files(start, word, forced, &paths, &symbols, note)
     }
 
     /// Whether what is being typed is a command to imece (`:budget 80`),
@@ -4247,6 +4301,122 @@ mod tests {
         app.world.agents[w[0]].status = Status::Idle;
         app.command(&format!("goto {}", name(&app, w[0])));
         assert!(!app.needs_only, "idle would be hidden: everyone shown");
+    }
+
+    #[test]
+    fn a_word_of_a_message_completes_to_a_file_of_the_project_by_itself_with_a_slash_else_on_tab() {
+        let (mut app, w) = four_idle();
+        let name = app.world.agents[w[0]].name.clone();
+        let tab = |app: &mut App| app.on_key(KeyEvent::from(KeyCode::Tab));
+        let menu = |app: &App| {
+            app.menu
+                .as_ref()
+                .map(|m| m.items.clone())
+                .unwrap_or_default()
+        };
+        // The demo's files are its code map's.
+        let files = app.world.files_of(0);
+        assert!(files.contains(&"src/Auth/Session.cs"), "{files:?}");
+        // A word with a `/` opens the menu by itself, at the word; enter
+        // puts the file in its place, a space after it; enter sends.
+        app.on_key(KeyEvent::from(KeyCode::Char('/')));
+        type_in(&mut app, "see src/Auth/Se");
+        assert_eq!(menu(&app), ["src/Auth/Session.cs"]);
+        assert_eq!(app.menu.as_ref().unwrap().start, 4);
+        app.on_key(KeyEvent::from(KeyCode::Enter));
+        assert_eq!(app.input, "see src/Auth/Session.cs ");
+        assert!(app.typing);
+        app.on_key(KeyEvent::from(KeyCode::Enter));
+        assert!(!app.typing);
+        // Without a `/`, nothing until tab, which takes the first match.
+        app.on_key(KeyEvent::from(KeyCode::Char('/')));
+        type_in(&mut app, "fix Rates");
+        assert!(app.menu.is_none());
+        tab(&mut app);
+        assert_eq!(app.input, "fix src/Shipping/Rates.cs ");
+        app.on_key(KeyEvent::from(KeyCode::Esc));
+        app.on_key(KeyEvent::from(KeyCode::Esc));
+        // In a message to one agent, and on a `!` line (its `!` is not
+        // part of the first word).
+        type_in(&mut app, &format!("@{name} src/Orders/Mo"));
+        assert_eq!(menu(&app), ["src/Orders/Money.cs"]);
+        app.on_key(KeyEvent::from(KeyCode::Esc));
+        app.on_key(KeyEvent::from(KeyCode::Esc));
+        type_in(&mut app, "!src/Orders/Mo");
+        assert_eq!(menu(&app), ["src/Orders/Money.cs"]);
+        assert_eq!(app.menu.as_ref().unwrap().start, 1);
+        app.on_key(KeyEvent::from(KeyCode::Enter));
+        assert_eq!(app.input, "!src/Orders/Money.cs ");
+        app.on_key(KeyEvent::from(KeyCode::Esc));
+        // Not a name, not a command, not on the lines that are something
+        // else, not after a space, not over several lines.
+        type_in(&mut app, "@cl");
+        assert!(
+            menu(&app).iter().all(|i| !i.contains('/')),
+            "{:?}",
+            menu(&app)
+        );
+        app.on_key(KeyEvent::from(KeyCode::Esc));
+        app.on_key(KeyEvent::from(KeyCode::Esc));
+        for line in ["#src/", "&src/", "//src/"] {
+            type_in(&mut app, line);
+            assert!(
+                menu(&app).iter().all(|i| !i.ends_with(".cs")),
+                "{line}: {:?}",
+                menu(&app)
+            );
+            app.on_key(KeyEvent::from(KeyCode::Esc));
+            app.on_key(KeyEvent::from(KeyCode::Esc));
+        }
+        app.on_key(KeyEvent::from(KeyCode::Char('/')));
+        type_in(&mut app, "src/Or ");
+        assert!(app.menu.is_none());
+        tab(&mut app);
+        assert!(app.menu.is_none() && app.input == "src/Or ");
+        type_in(&mut app, "x\\");
+        app.on_key(KeyEvent::from(KeyCode::Enter));
+        type_in(&mut app, "src/Or");
+        assert!(app.menu.is_none(), "over lines");
+        app.on_key(KeyEvent::from(KeyCode::Esc));
+        // A symbol leased on the code map: `file::name`, the holder as the
+        // note of the file and of its symbols.
+        let card = app
+            .world
+            .cards
+            .iter()
+            .position(|c| c.project == 0)
+            .expect("a card");
+        app.world.cards[card].owner = Some(w[1]);
+        app.world.cards[card].column = Column::Working;
+        app.world.cards[card].symbols = vec![Symbol {
+            file: "src/Auth/Session.cs",
+            name: "Session.Start",
+        }];
+        for c in app.world.cards.iter_mut().filter(|c| c.id != card) {
+            c.symbols.clear();
+        }
+        // A card that holds no lease any more (done) offers nothing.
+        let done = app.world.cards.iter().position(|c| c.id != card).unwrap();
+        app.world.cards[done].project = 0;
+        app.world.cards[done].owner = Some(w[2]);
+        app.world.cards[done].column = Column::Done;
+        app.world.cards[done].symbols = vec![Symbol {
+            file: "src/Auth/Session.cs",
+            name: "Session.End",
+        }];
+        app.on_key(KeyEvent::from(KeyCode::Char('/')));
+        type_in(&mut app, "Session.");
+        tab(&mut app);
+        let m = app.menu.as_ref().expect("the menu");
+        assert_eq!(
+            m.items,
+            ["src/Auth/Session.cs", "src/Auth/Session.cs::Session.Start"]
+        );
+        let holder = format!("○ {}", app.world.agents[w[1]].name);
+        assert_eq!(m.notes, [holder.clone(), holder]);
+        assert_eq!(app.input, "src/Auth/Session.cs ");
+        tab(&mut app);
+        assert_eq!(app.input, "src/Auth/Session.cs::Session.Start ");
     }
 
     #[test]

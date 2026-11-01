@@ -16,3 +16,6 @@ the glyphs the map had started to use). Tests check the columns line
 up on the demo (the other project's names must not widen them), the
 badge count, the dim rows, the directory headers and that the legend
 names exactly the glyphs shown.
+
+Record 67 completes the map's files and leased symbols in a message;
+live's map is empty, its files come from git instead.

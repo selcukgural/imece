@@ -50,6 +50,33 @@ fn git(dir: &Path, args: &[&str]) -> io::Result<String> {
     git_env(dir, &[], args)
 }
 
+/// The files of the checkout `repo` as git lists them: the ones it
+/// tracks and the untracked ones it does not ignore, relative to `repo`,
+/// sorted, each once, at most `max`; whether more were cut.
+pub fn files(repo: &Path, max: usize) -> io::Result<(Vec<String>, bool)> {
+    let out = git_bytes(
+        repo,
+        &[],
+        &[
+            "ls-files",
+            "-z",
+            "--cached",
+            "--others",
+            "--exclude-standard",
+        ],
+    )?;
+    let mut files: Vec<String> = String::from_utf8_lossy(&out)
+        .split('\0')
+        .filter(|p| !p.is_empty())
+        .map(str::to_string)
+        .collect();
+    files.sort();
+    files.dedup();
+    let cut = files.len() > max;
+    files.truncate(max);
+    Ok((files, cut))
+}
+
 /// The top directory of the checkout `dir` is in.
 pub fn top(dir: &Path) -> io::Result<PathBuf> {
     PathBuf::from(git(dir, &["rev-parse", "--show-toplevel"])?).canonicalize()
@@ -669,6 +696,29 @@ mod tests {
             std::fs::create_dir_all(&self).unwrap();
             self.canonicalize().unwrap()
         }
+    }
+
+    #[test]
+    fn the_files_are_the_tracked_and_the_untracked_not_ignored_sorted_and_capped() {
+        let s = repo("files");
+        std::fs::create_dir_all(s.repo.join("src")).unwrap();
+        std::fs::write(s.repo.join("src/main.rs"), "fn main() {}").unwrap();
+        std::fs::write(s.repo.join(".gitignore"), "target/\n").unwrap();
+        std::fs::create_dir_all(s.repo.join("target")).unwrap();
+        std::fs::write(s.repo.join("target/out"), "x").unwrap();
+        commit(&s.repo, "src");
+        // Untracked, not ignored: listed; ignored: not.
+        std::fs::write(s.repo.join("b.txt"), "b").unwrap();
+        let (listed, cut) = files(&s.repo, 10).unwrap();
+        assert_eq!(listed, [".gitignore", "a.txt", "b.txt", "src/main.rs"]);
+        assert!(!cut);
+        // Capped, and said so; exactly the cap is not a cut.
+        assert_eq!(
+            files(&s.repo, 2).unwrap(),
+            (vec![".gitignore".to_string(), "a.txt".into()], true)
+        );
+        assert!(!files(&s.repo, 4).unwrap().1);
+        assert!(files(&s.dir, 10).is_err(), "not a checkout");
     }
 
     #[test]

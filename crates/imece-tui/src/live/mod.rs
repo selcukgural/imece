@@ -26,7 +26,7 @@
 //! turn of its own; it goes to the next only when that worker's turn ended
 //! without taking it, so a card wakes each worker at most once.
 
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{self, Receiver, Sender};
@@ -265,6 +265,11 @@ const MAX_RUN_OUTPUT: usize = 48 << 10;
 /// a helper of its works; between turns it learns at each turn's end.
 const STAND_EVERY: Duration = Duration::from_secs(15);
 
+/// How often a project's file list (for completion in a message) is read
+/// again while one of its agents is mid-turn; between turns it is read
+/// when a change is applied.
+const FILES_EVERY: Duration = Duration::from_secs(60);
+
 /// Runs remembered with the tree they ran on, for the changes read after
 /// them (see [`Change::runs`]); the oldest go first.
 const RAN_KEEP: usize = 64;
@@ -336,6 +341,9 @@ enum GitJob {
     /// Read what is staged in project `project`'s checkout `repo`, for a
     /// commit message (see [`worktree::staged_change`]).
     Staged { project: ProjectId, repo: PathBuf },
+    /// List the files of project `project`'s checkout `repo`, for
+    /// completion in a message (see [`worktree::files`]).
+    Files { project: ProjectId, repo: PathBuf },
 }
 
 /// What a git job came to, back on the screen's loop.
@@ -368,6 +376,11 @@ enum GitDone {
     Staged {
         project: ProjectId,
         staged: io::Result<Option<worktree::Staged>>,
+    },
+    /// The files of project `project`'s checkout, or why not.
+    Files {
+        project: ProjectId,
+        files: io::Result<(Vec<String>, bool)>,
     },
 }
 
@@ -502,6 +515,14 @@ pub struct Live {
     standing: Vec<Option<bool>>,
     /// When each worker's stand was last asked for.
     stood_at: Vec<Option<Instant>>,
+    /// When each project's file list was last asked for; a project not
+    /// here has never been read (or was closed) and is read at once.
+    filed_at: HashMap<ProjectId, Instant>,
+    /// The projects whose file list git is reading now.
+    filing: HashSet<ProjectId>,
+    /// The projects told once that their checkout has more files than
+    /// completion keeps.
+    files_cut: HashSet<ProjectId>,
     /// Workers' and helpers' runs that ran on one tree from start to end,
     /// with that tree, oldest first, at most [`RAN_KEEP`]. They come from
     /// the runs' threads on `ran_back`, each before its run is answered,
@@ -832,6 +853,9 @@ impl Live {
             placing: Vec::new(),
             standing: Vec::new(),
             stood_at: Vec::new(),
+            filed_at: HashMap::new(),
+            filing: HashSet::new(),
+            files_cut: HashSet::new(),
             ran: VecDeque::new(),
             ran_tx,
             ran_back,
@@ -939,6 +963,7 @@ impl Live {
         self.take_git(w);
         self.take_said(w);
         self.stand_busy(w, Instant::now());
+        self.files_due(w, Instant::now());
         while let Ok((id, generation, e)) = self.rx.try_recv() {
             if generation != self.generation[id] {
                 continue;

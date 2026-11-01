@@ -52,3 +52,6 @@ Known gaps: `↓` counts the checkout's commits since the worktree's
 base, also those that only commit what the person applied from this
 worker (until the worktree follows at its next prompt). A 15 s read
 costs an `add -A` of the worktree, as reading a change does.
+
+Record 67 puts a project's file listing on the same git thread
+(`GitJob::Files`), every `FILES_EVERY` while an agent is mid-turn.

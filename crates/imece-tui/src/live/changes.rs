@@ -72,6 +72,10 @@ pub(super) fn git_thread(jobs: Receiver<GitJob>, done: Sender<GitDone>) {
                 project,
                 staged: worktree::staged_change(&repo, SUGGEST_PATCH),
             },
+            GitJob::Files { project, repo } => GitDone::Files {
+                project,
+                files: worktree::files(&repo, FILES_MAX),
+            },
         };
         if done.send(out).is_err() {
             return;
@@ -155,6 +159,70 @@ impl Live {
                 } => self.placed(w, agent, generation, placed),
                 GitDone::Stood { agent, stand } => self.stood(w, agent, stand),
                 GitDone::Staged { project, staged } => self.take_staged(w, project, staged),
+                GitDone::Files { project, files } => self.filed(w, project, files),
+            }
+        }
+    }
+
+    /// Has git list project `p`'s files, for completion in a message;
+    /// not while it is listing them already.
+    pub(super) fn files(&mut self, p: ProjectId) {
+        if self.filing.contains(&p) {
+            return;
+        }
+        let Some(place) = self.places.get(p) else {
+            return;
+        };
+        let job = GitJob::Files {
+            project: p,
+            repo: place.repo.clone(),
+        };
+        if self.git.send(job).is_ok() {
+            self.filing.insert(p);
+            self.filed_at.insert(p, Instant::now());
+        }
+    }
+
+    /// Every open project's files are listed once it opens (or opens
+    /// again), and again every [`FILES_EVERY`] (as of `now`) while one of
+    /// its agents is mid-turn, when new files may come; between turns
+    /// the list is read when a change is applied.
+    pub(super) fn files_due(&mut self, w: &World, now: Instant) {
+        let open: Vec<ProjectId> = w.open_projects().map(|p| p.id).collect();
+        for p in open {
+            let busy = w
+                .agents
+                .iter()
+                .any(|a| a.project == p && self.turns[a.id] > 0);
+            let due = match self.filed_at.get(&p) {
+                None => true,
+                Some(at) => busy && now.duration_since(*at) >= FILES_EVERY,
+            };
+            if due {
+                self.files(p);
+            }
+        }
+    }
+
+    /// What git listed for project `p`: the files for completion; a
+    /// checkout with more than it keeps is said once in the journal; a
+    /// listing that failed keeps the last one and is traced.
+    fn filed(&mut self, w: &mut World, p: ProjectId, files: io::Result<(Vec<String>, bool)>) {
+        self.filing.remove(&p);
+        let leader = w.projects[p].leader;
+        match files {
+            Ok((files, cut)) => {
+                w.projects[p].files = files;
+                if cut && self.files_cut.insert(p) {
+                    w.note(Event::FilesCut {
+                        leader,
+                        kept: FILES_MAX,
+                    });
+                }
+            }
+            Err(e) => {
+                let t = w.tick;
+                w.agents[leader].trace(t, format!("files: {e}"));
             }
         }
     }
@@ -349,6 +417,8 @@ impl Live {
         self.changes.remove(&id);
         w.change_applied(id, mark.clone());
         self.stand(w, id);
+        // The checkout has new files now, maybe: the list is read again.
+        self.files(w.agents[id].project);
         let Some(n) = part else {
             self.notes[id].push(format!(
                 "The person applied your change ({title}) to their checkout. Your worktree is \
@@ -1248,6 +1318,76 @@ mod tests {
         assert_eq!(w.agents[1].status, Status::Stopped);
         assert!(matches!(live.slots[1], Slot::None));
         let _ = std::fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&repo);
+    }
+
+    #[test]
+    fn a_projects_files_are_listed_at_its_opening_then_while_busy_and_a_cut_list_is_said_once() {
+        let repo = checkout("files-repo");
+        let mut w = team(1);
+        let mut live = idle_live_in(&repo, 2);
+        let now = Instant::now();
+        // Never read: read at once, whoever is busy.
+        live.files_due(&w, now);
+        assert!(live.filing.contains(&0) && live.filed_at.contains_key(&0));
+        live.files_due(&w, now);
+        assert_eq!(live.filing.len(), 1, "one listing at a time");
+        for _ in 0..500 {
+            live.take_git(&mut w);
+            if !live.filing.contains(&0) {
+                break;
+            }
+            thread::sleep(Duration::from_millis(10));
+        }
+        assert_eq!(w.projects[0].files, ["a.txt"]);
+        assert!(w.journal.is_empty(), "not cut");
+        // Read: again only while an agent is mid-turn, every FILES_EVERY.
+        std::fs::write(repo.join("b.txt"), "b").unwrap();
+        live.filed_at.insert(0, now);
+        live.files_due(&w, now + FILES_EVERY);
+        assert!(!live.filing.contains(&0), "nobody busy");
+        live.turns[1] = 1;
+        live.files_due(&w, now + FILES_EVERY - Duration::from_millis(1));
+        assert!(!live.filing.contains(&0), "not yet");
+        live.files_due(&w, now + FILES_EVERY);
+        assert!(live.filing.contains(&0));
+        for _ in 0..500 {
+            live.take_git(&mut w);
+            if !live.filing.contains(&0) {
+                break;
+            }
+            thread::sleep(Duration::from_millis(10));
+        }
+        assert_eq!(w.projects[0].files, ["a.txt", "b.txt"]);
+        assert_eq!(FILES_EVERY, Duration::from_secs(60));
+        // A list cut at FILES_MAX is said once in the journal; a listing
+        // that fails keeps the last list and is traced on the leader.
+        live.filed(&mut w, 0, Ok((vec!["a.txt".into()], true)));
+        live.filed(&mut w, 0, Ok((vec!["a.txt".into()], true)));
+        let cuts: Vec<&Event> = w
+            .journal
+            .iter()
+            .map(|e| &e.event)
+            .filter(|e| matches!(e, Event::FilesCut { .. }))
+            .collect();
+        assert_eq!(
+            cuts,
+            [&Event::FilesCut {
+                leader: 0,
+                kept: FILES_MAX
+            }]
+        );
+        assert_eq!(FILES_MAX, 20_000);
+        live.filed(&mut w, 0, Err(io::Error::other("boom")));
+        assert_eq!(w.projects[0].files, ["a.txt"]);
+        assert!(
+            w.agents[0].trace.iter().any(|l| l.ends_with("files: boom")),
+            "{:?}",
+            w.agents[0].trace
+        );
+        // A project without a place (not opened live) is not read.
+        live.files(7);
+        assert!(!live.filing.contains(&7));
         let _ = std::fs::remove_dir_all(&repo);
     }
 

@@ -16,6 +16,8 @@ pub type ProjectId = usize;
 
 /// Seconds per tick.
 pub const SECONDS_PER_TICK: u64 = 5;
+/// How many of a checkout's files are kept for completion.
+pub const FILES_MAX: usize = 20_000;
 /// How far back the spending rate looks, in ticks: long enough for a few
 /// turns, short enough that an idle hour does not hide a busy team.
 pub const RATE_WINDOW: u64 = 10 * 60 / SECONDS_PER_TICK;
@@ -406,8 +408,13 @@ pub struct Project {
     /// The last change the merge queue landed; `None` without a merge queue
     /// (live agents keep their work in their own worktrees).
     pub trunk: Option<u32>,
-    /// The project's files and the symbols agents lease in them.
+    /// The project's files and the symbols agents lease in them (the
+    /// demo's; live has none until leases are built).
     pub repo: &'static [(&'static str, &'static [&'static str])],
+    /// The checkout's files as git lists them, for completion in a
+    /// message (live: read on the git thread, at most [`FILES_MAX`]; not
+    /// saved). The demo's files are `repo`'s (`World::files_of`).
+    pub files: Vec<String>,
     /// Closed by the person (`:close`): its agents left and it is not
     /// drawn; kept so ids stay stable, and opened again in place.
     pub closed: bool,
@@ -1119,6 +1126,12 @@ pub enum Event {
         paths: Vec<String>,
         bytes: u64,
     },
+    /// The checkout of `leader`'s project lists more files than imece
+    /// keeps for completion: the first `kept` complete.
+    FilesCut {
+        leader: AgentId,
+        kept: usize,
+    },
     /// A listed path was not copied into worker `agent`'s worktree: why.
     CopySkipped {
         agent: AgentId,
@@ -1162,6 +1175,7 @@ impl Event {
             | Event::Confine { .. }
             | Event::WorktreeMoved { .. }
             | Event::Copied { .. }
+            | Event::FilesCut { .. }
             | Event::WorktreeKept { .. } => EntryKind::Assumption,
             Event::Blocked { .. } => EntryKind::Blocked,
             Event::ResearchOpened { .. }
@@ -1208,6 +1222,7 @@ impl Event {
     pub fn agent(&self) -> AgentId {
         match *self {
             Event::Plan { leader, .. }
+            | Event::FilesCut { leader, .. }
             | Event::Budget { leader, .. }
             | Event::PotLow { leader, .. }
             | Event::Suggested { leader, .. }
@@ -1467,6 +1482,17 @@ impl World {
         self.started_at + self.tick * SECONDS_PER_TICK
     }
 
+    /// The files of project `p` a message may name: the code map's where
+    /// it has one (the demo), else what git listed.
+    pub fn files_of(&self, p: ProjectId) -> Vec<&str> {
+        let project = &self.projects[p];
+        if project.repo.is_empty() {
+            project.files.iter().map(String::as_str).collect()
+        } else {
+            project.repo.iter().map(|(f, _)| *f).collect()
+        }
+    }
+
     /// The person sent `text` now: kept for recall, unless it is the last
     /// line again (a shell keeps one of a run of the same line).
     pub fn recall_line(&mut self, text: &str) {
@@ -1626,6 +1652,7 @@ impl World {
                 name,
                 leader,
                 trunk: None,
+                files: Vec::new(),
                 repo: &[],
                 closed: false,
                 pinned: false,
@@ -2427,6 +2454,7 @@ mod tests {
                 name: "p".into(),
                 leader: 0,
                 trunk: None,
+                files: Vec::new(),
                 repo: &[],
                 closed: false,
                 pinned: false,
@@ -3139,6 +3167,7 @@ mod tests {
             name: "q".into(),
             leader: 1,
             trunk: None,
+            files: Vec::new(),
             repo: &[],
             closed: false,
             pinned: false,

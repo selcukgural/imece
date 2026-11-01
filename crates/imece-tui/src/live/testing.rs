@@ -21,6 +21,7 @@ pub(crate) fn team(workers: usize) -> World {
             name: "repo".into(),
             leader: 0,
             trunk: None,
+            files: Vec::new(),
             repo: &[],
             closed: false,
             pinned: false,
