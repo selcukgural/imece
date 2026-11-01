@@ -67,7 +67,7 @@ Everything is done with keys, vim style (`hjkl`, `gg` `G`, `^d` `^u`, `esc` back
 
 ## Status
 
-imece is early. It runs real Claude Code, Codex and Gemini CLI sessions, and a seeded simulation with `--demo` that shows the same screen without a vendor or a cost. Install is from source (a Rust toolchain and `cargo`); there are no packages yet. It is used to write itself.
+imece is early. It runs real Claude Code, Codex and Gemini CLI sessions, and a seeded simulation with `--demo` that shows the same screen without a vendor or a cost. It installs with one line on macOS and Linux (`curl -fsSL https://selcukgural.github.io/imece/install.sh | sh`), or from source with `cargo`. It is used to write itself.
 
 Every behaviour on this site comes from a decision record in [`docs/decisions/`](https://github.com/selcukgural/imece/tree/main/docs/decisions) on GitHub: one file per decision, with the reasons, the facts the probes found and the gaps left. Where this site says *why*, that is where the why comes from; where you want the exact version a fact was probed on, read the record.
 

@@ -15,6 +15,7 @@ usage: imece [--repo DIR] [--agents N] [--helpers N] [--lead VENDOR]
              [--budget USD] [--fresh] [--awake] [--confine standard|strict|open]
              [--lang en|tr] [--theme NAME|FILE]
        imece --demo [--projects N] [--agents N] [--researchers N] [--seed N]
+       imece --version
 ```
 
 ```sh
@@ -33,6 +34,7 @@ imece --demo --lang tr                             # or IMECE_LANG=tr
 - A number is checked against its range; outside it imece says `--helpers: 9 is not in 0-8` (the range of the flag).
 - `--projects`, `--researchers` and `--seed` belong to `--demo`. Given without it, imece says `--projects is for --demo` and prints the usage.
 - `-h` or `--help` prints the usage text. It leaves with exit code 2, like every other refused command line.
+- `--version` (or `-V`) first prints `imece 0.1.0` on stdout and leaves with exit code 0; the installer checks the binary it put in place this way.
 - `--live` is accepted and ignored: it is what live agents were asked for with before they became the default.
 - `imece mcp-relay SOCKET` is not for you: a vendor's CLI starts imece this way as its MCP server, and the process only carries bytes between the CLI and imece's socket for that agent ([message types](message-types.md)).
 
@@ -44,7 +46,7 @@ imece --demo --lang tr                             # or IMECE_LANG=tr
 
 | Code | When | What you see |
 | --- | --- | --- |
-| 0 | A normal quit (`q q`, `:quit`, or SIGTERM, SIGHUP and SIGINT from outside, which imece turns into a normal quit so sessions stop and the bus's sockets are removed) | the shell's title comes back |
+| 0 | `--version`, or a normal quit (`q q`, `:quit`, or SIGTERM, SIGHUP and SIGINT from outside, which imece turns into a normal quit so sessions stop and the bus's sockets are removed) | the shell's title comes back |
 | 1 | The start failed after the flags were read: no coding agent on PATH, `--repo` is not a git checkout, another imece holds the store, the store cannot be read, a vendor's session could not start | `imece: <reason>` on stderr, after the screen is restored |
 | 2 | A flag is wrong, or `--help` | the message on stderr; for a missing value, an unknown option and a demo flag given live, the usage text follows |
 

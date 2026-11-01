@@ -1207,7 +1207,9 @@ fn cut(s: &str, max: usize) -> &str {
 /// (`start_clock_at`) for a world begun then. Without a local time (no
 /// zone the C library knows) the clock is UTC.
 pub fn local_clock(at: u64) -> (u64, u64) {
-    let secs = at as libc::time_t;
+    // `time_t` by inference: naming it is deprecated on musl, whose
+    // `time_t` is changing to 64 bits.
+    let secs = at as _;
     // SAFETY: `tm` is plain data that localtime_r fills; it keeps no pointer.
     let mut tm: libc::tm = unsafe { std::mem::zeroed() };
     if unsafe { libc::localtime_r(&secs, &mut tm) }.is_null() {

@@ -38,6 +38,7 @@ const USAGE: &str = "usage: imece [--repo DIR] [--agents N] [--helpers N] [--lea
              [--budget USD] [--fresh] [--awake] [--confine standard|strict|open]
              [--lang en|tr] [--theme NAME|FILE]
        imece --demo [--projects N] [--agents N] [--researchers N] [--seed N]
+       imece --version
 
 imece runs coding agents on the checkout DIR is in: a leader that reads it
 and talks to you, and workers it hires as the work needs them, each changing
@@ -380,7 +381,22 @@ fn checked(flag: &str, vendor: Option<Vendor>, model: &str) -> Result<(), String
     Ok(())
 }
 
+/// What `imece --version` (or `-V`) prints.
+fn version_line() -> String {
+    format!("imece {}", env!("CARGO_PKG_VERSION"))
+}
+
+/// Whether the command line asks for the version: `--version` or `-V`
+/// first.
+fn asks_version(first: Option<&std::ffi::OsStr>) -> bool {
+    first.is_some_and(|a| a == "--version" || a == "-V")
+}
+
 fn main() -> std::io::Result<()> {
+    if asks_version(std::env::args_os().nth(1).as_deref()) {
+        println!("{}", version_line());
+        return Ok(());
+    }
     // A live agent's CLI starts imece this way as its MCP server: it only
     // carries bytes between the CLI and imece's socket for that agent.
     let mut argv = std::env::args_os().skip(1);
@@ -636,6 +652,18 @@ fn run(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_version_is_asked_first_and_said_with_the_name() {
+        use std::ffi::OsStr;
+        assert!(asks_version(Some(OsStr::new("--version"))));
+        assert!(asks_version(Some(OsStr::new("-V"))));
+        assert!(!asks_version(Some(OsStr::new("--demo"))));
+        assert!(!asks_version(Some(OsStr::new("-v"))));
+        assert!(!asks_version(None));
+        assert_eq!(version_line(), concat!("imece ", env!("CARGO_PKG_VERSION")));
+        assert!(USAGE.contains("imece --version"));
+    }
 
     #[test]
     fn a_signal_becomes_a_quit() {

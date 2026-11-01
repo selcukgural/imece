@@ -1,13 +1,36 @@
 ---
 title: Kurulum
-description: imece'yi kaynaktan derleyin, satıcı CLI'larını PATH'e koyun ve durumunu nerede tuttuğunu bilin.
+description: imece'yi tek satırla kurun (ya da kaynaktan derleyin), satıcı CLI'larını PATH'e koyun ve durumunu nerede tuttuğunu bilin.
 ---
 
 # Kurulum
 
-imece `cargo` ile kaynaktan kurulur; paket henüz yok. Git, bir Rust araç zinciri ve PATH'te en az bir satıcının oturum açılmış komut satırı ajanı gerekir. Bu sayfa, [ilk çalıştırma](first-run.md) öncesinde yerinde olması gerekenlerdir.
+imece macOS ve Linux'ta, x86_64 ve arm64 üzerinde çalışır (Windows'ta: WSL içinde). Git ve PATH'te en az bir satıcının oturum açılmış komut satırı ajanı gerekir. Bu sayfa, [ilk çalıştırma](first-run.md) öncesinde yerinde olması gerekenlerdir.
 
-## Rust araç zinciri
+## Kurulum betiğiyle
+
+```sh
+curl -fsSL https://selcukgural.github.io/imece/install.sh | sh
+```
+
+Betik sisteminiz için önceden derlenmiş imece'yi [sürümlerden](https://github.com/selcukgural/imece/releases) indirir (Linux derlemeleri statiktir, her dağıtımda çalışır) ve sürümün `SHA256SUMS` dosyasıyla karşılaştırır: uyuşmazsa hiçbir şey kurulmaz. `imece`'yi `~/.local/bin`'e koyar; orası henüz PATH'te değilse kabuğunuzun başlangıç dosyasına bir kez, bir `# imece` satırının altına ekler: `~/.zshrc`, `~/.bashrc` (macOS'ta `~/.bash_profile`), fish'in `conf.d/imece.fish` dosyası, yoksa `~/.profile`. Yeni bir terminal açın ya da yazdığı satırı çalıştırın; `imece --version` cevap verir. Sonunda PATH'te hangi kodlama ajanlarını bulduğunu söyler. Yeniden çalıştırmak imece'yi günceller; çalışan bir imece bitene kadar kendi dosyasını tutar.
+
+| Değişken | Etkisi |
+| --- | --- |
+| `IMECE_VERSION=0.1.0` | en yenisi yerine o sürüm |
+| `IMECE_INSTALL_DIR=DIZIN` | imece'nin gideceği yer (varsayılan `~/.local/bin`) |
+| `IMECE_NO_MODIFY_PATH=1` | hiçbir başlangıç dosyasına dokunulmaz |
+| `IMECE_DOWNLOAD_URL=URL` | sürüm dosyalarının yeri, bir yansı için |
+
+```sh
+curl -fsSL https://selcukgural.github.io/imece/install.sh | IMECE_VERSION=0.1.0 sh
+```
+
+Betiği çalışmadan önce okumak için: `curl -fsSL https://selcukgural.github.io/imece/install.sh -o install.sh`, okuyun, sonra `sh install.sh`. Her arşiv ayrıca bir derleme kökeni onayı (build provenance attestation) taşır; `gh attestation verify imece-aarch64-apple-darwin.tar.gz --repo selcukgural/imece` onu bu deponun sürüm iş akışının kendi etiketinden derlediğini denetler.
+
+Kaldırmak için: `rm ~/.local/bin/imece` ve başlangıç dosyasındaki `# imece` altındaki satırlar. Durum dizini (aşağıda) siz silene kadar kalır.
+
+## Kaynaktan
 
 Depo derleyicisini `rust-toolchain.toml` dosyasında sabitler (kanal `1.99.1`, `clippy` ve `rustfmt` ile). [rustup](https://rustup.rs) kuruluysa `cargo` ilk derlemede o araç zincirini kendisi alır; yeni bir derleyici yalnız o dosyadaki bir değişiklikle gelir.
 
@@ -24,6 +47,8 @@ Ya da kurmadan, checkout'tan çalıştırın:
 cargo run -p imece-tui -- --help
 cargo run -p imece-tui -- --demo
 ```
+
+Bu yolla `~/.cargo/bin`'e konan bir imece ile kurulum betiğinin `~/.local/bin`'e koyduğu iki ayrı kopyadır; diğeri PATH'te önce geliyorsa betik bunu söyler.
 
 Crate `imece-tui`, ikili dosyası `imece`. SQLite derlemeye gömülür, depo için sistem kütüphanesi gerekmez. Git PATH'te olmalı: imece değişiklikleri git'in kendisiyle okur ve uygular; üç yollu uygulama git 2.56 üzerinde sondalandı.
 

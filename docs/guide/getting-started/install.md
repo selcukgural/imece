@@ -1,13 +1,36 @@
 ---
 title: Install
-description: Build imece from source, put the vendor CLIs on PATH, and know where it keeps its state.
+description: Install imece with one line (or build it from source), put the vendor CLIs on PATH, and know where it keeps its state.
 ---
 
 # Install
 
-imece is installed from source with `cargo`; there are no packages yet. It needs git, a Rust toolchain, and at least one vendor's command-line agent on PATH, logged in. This page is what to have in place before the [first run](first-run.md).
+imece runs on macOS and Linux, x86_64 and arm64 (on Windows: inside WSL). It needs git and at least one vendor's command-line agent on PATH, logged in. This page is what to have in place before the [first run](first-run.md).
 
-## Rust toolchain
+## With the installer
+
+```sh
+curl -fsSL https://selcukgural.github.io/imece/install.sh | sh
+```
+
+The script downloads the prebuilt imece for your system from the [releases](https://github.com/selcukgural/imece/releases) (the Linux builds are static, so any distribution takes them) and checks it against the release's `SHA256SUMS`: when it does not match, nothing is installed. It puts `imece` in `~/.local/bin` and, when that is not on PATH yet, adds it once to your shell's startup file: `~/.zshrc`, `~/.bashrc` (`~/.bash_profile` on macOS), fish's `conf.d/imece.fish`, else `~/.profile`, under a `# imece` line. Open a new terminal, or run the line it prints, and `imece --version` answers. It ends by saying which coding agents it found on PATH. Running it again updates imece; a running imece keeps its file until it ends.
+
+| Variable | Effect |
+| --- | --- |
+| `IMECE_VERSION=0.1.0` | that version instead of the latest |
+| `IMECE_INSTALL_DIR=DIR` | where imece goes (default `~/.local/bin`) |
+| `IMECE_NO_MODIFY_PATH=1` | no startup file is touched |
+| `IMECE_DOWNLOAD_URL=URL` | where the release files are, for a mirror |
+
+```sh
+curl -fsSL https://selcukgural.github.io/imece/install.sh | IMECE_VERSION=0.1.0 sh
+```
+
+To read the script before it runs: `curl -fsSL https://selcukgural.github.io/imece/install.sh -o install.sh`, read it, then `sh install.sh`. Each archive also carries a build provenance attestation; `gh attestation verify imece-aarch64-apple-darwin.tar.gz --repo selcukgural/imece` checks that this repository's release workflow built it from its tag.
+
+To uninstall: `rm ~/.local/bin/imece`, and the lines under `# imece` in the startup file. The state directory (below) stays until you remove it.
+
+## From source
 
 The repository pins its compiler in `rust-toolchain.toml` (channel `1.99.1`, with `clippy` and `rustfmt`). With [rustup](https://rustup.rs) installed, `cargo` picks that toolchain up on its own the first time you build; a new compiler comes in only by a change to that file.
 
@@ -24,6 +47,8 @@ Or run it from the checkout without installing:
 cargo run -p imece-tui -- --help
 cargo run -p imece-tui -- --demo
 ```
+
+An imece put in `~/.cargo/bin` this way and one the installer put in `~/.local/bin` are two copies; the installer says so when the other comes first on PATH.
 
 The crate is `imece-tui`; its binary is `imece`. SQLite is bundled into the build, so no system library is needed for the store. Git must be on PATH: imece reads and applies changes with git itself, and the three-way apply was probed on git 2.56.
 

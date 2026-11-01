@@ -67,7 +67,7 @@ Her şey tuşlarla, vim tarzı yapılır (`hjkl`, `gg` `G`, `^d` `^u`, `esc` ger
 
 ## Durum
 
-imece erken bir sürümdür. Gerçek Claude Code, Codex ve Gemini CLI oturumları çalıştırır; `--demo` ile de satıcısız ve maliyetsiz aynı ekranı gösteren tohumlu bir simülasyon. Kurulum kaynaktandır (bir Rust araç zinciri ve `cargo`); paket henüz yok. Kendini yazmak için kullanılıyor.
+imece erken bir sürümdür. Gerçek Claude Code, Codex ve Gemini CLI oturumları çalıştırır; `--demo` ile de satıcısız ve maliyetsiz aynı ekranı gösteren tohumlu bir simülasyon. macOS ve Linux'ta tek satırla kurulur (`curl -fsSL https://selcukgural.github.io/imece/install.sh | sh`), ya da `cargo` ile kaynaktan. Kendini yazmak için kullanılıyor.
 
 Bu sitedeki her davranış, GitHub'daki [`docs/decisions/`](https://github.com/selcukgural/imece/tree/main/docs/decisions) içindeki bir karar kaydından gelir: karar başına bir dosya; nedenleri, sondaların bulduğu olgular ve kalan boşluklar. Bu site *neden* diyorsa neden oradan gelir; bir olgunun hangi sürümde sondalandığını isterseniz kaydı okuyun.
 
