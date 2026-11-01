@@ -93,6 +93,17 @@ and owned here from then on:
   groups fold to one line that still shows what waits for the person. The
   researcher cap is shared by all projects.
 
+- The site (user, 2026-11-01): `https://selcukgural.github.io/imece/` is built
+  from `docs/guide/` (English) and `website/i18n/tr/…/current/` (Turkish) by
+  `.github/workflows/docs.yml`; every feature imece has is described there,
+  and every PR that adds, changes or removes a feature updates the pages it
+  touches in BOTH languages in the same PR (the keyboard page for a key, the
+  commands reference for a `:` command, the scenario that shows it).
+  `website/check.sh` fails the build when a page lacks its Turkish copy, or
+  when a `:` command or a `?` help key is missing from the reference pages.
+  The tour videos (`website/video/`, English only) are re-rendered when what
+  they show changes; `website/video/README.md` says how.
+
 ## Decision records
 
 Each decision, with its reasons, probe facts and known gaps, is a file in

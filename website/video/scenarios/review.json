@@ -1,0 +1,175 @@
+// imece's second tour: reviewing a change. See tour.json for how the
+// scenarios work and ../README.md for how they are rendered.
+{
+  "title": "imece — reviewing a change",
+  "language": "en",
+  "baseUrl": "http://127.0.0.1:8791",
+  "viewport": { "width": 1920, "height": 1080, "deviceScaleFactor": 1 },
+  "output": { "width": 1920, "height": 1080, "fps": 30 },
+  "colorScheme": "dark",
+  "voice": {
+    "provider": "google",
+    "name": "Charon",
+    "model": "gemini-2.5-pro-tts",
+    "prompt": "Read in a calm, warm and clear product-tour voice, at a natural pace.",
+    "rate": 1.0
+  },
+  "music": { "generate": "ambient", "volume": 0.15 },
+  "pronounce": {
+    "imece's": "ee-meh-jeh's",
+    "imece": "ee-meh-jeh",
+    "selcukgural.github.io/imece": "selcuk gural dot github dot I O slash ee-meh-jeh",
+    "worktree": "work-tree",
+    "worktrees": "work-trees"
+  },
+  "scenes": [
+    {
+      "id": "opening",
+      "chapter": "Reviewing a change",
+      "minSeconds": 4.5,
+      "steps": [
+        { "action": "goto", "path": "/card.html?t=imece&s=Reviewing%20a%20change" },
+        { "action": "hover", "target": "#corner" }
+      ]
+    },
+    {
+      "id": "gate",
+      "chapter": "The gate",
+      "narration": "A worker never writes to your checkout. It works in a git worktree of its own, and when it sends its done, what that worktree holds shows up as a change, waiting for you. Let us speed the simulation up until a few workers are done, then pause it, so the list holds still.",
+      "steps": [
+        { "action": "goto", "path": "/" },
+        { "action": "wait", "seconds": 2 },
+        { "action": "type", "target": "#corner", "text": "+", "delayMs": 0 },
+        { "action": "wait", "seconds": 2 },
+        { "action": "type", "target": "#corner", "text": "++", "delayMs": 300 },
+        { "action": "wait", "seconds": 5 },
+        { "action": "type", "target": "#corner", "text": "---", "delayMs": 200 },
+        { "action": "wait", "seconds": 2 },
+        { "action": "type", "target": "#corner", "text": " ", "delayMs": 0 },
+        { "action": "wait", "seconds": 2 }
+      ]
+    },
+    {
+      "id": "diff",
+      "chapter": "The diff view",
+      "narration": "Capital W opens the next change. A change of several files lists them above its patch, with the lines each adds and removes, and when they are of more than one kind, the lines by kind first: source, tests, generated. j and k scroll; the brackets jump from file to file; w wraps the long lines under themselves.",
+      "steps": [
+        { "action": "type", "target": "#corner", "text": "W", "delayMs": 0 },
+        { "action": "wait", "seconds": 7 },
+        { "action": "type", "target": "#corner", "text": "jjj", "delayMs": 400 },
+        { "action": "wait", "seconds": 3 },
+        { "action": "type", "target": "#corner", "text": "]", "delayMs": 0 },
+        { "action": "wait", "seconds": 3 },
+        { "action": "type", "target": "#corner", "text": "w", "delayMs": 0 },
+        { "action": "wait", "seconds": 3 },
+        { "action": "type", "target": "#corner", "text": "w", "delayMs": 0 },
+        { "action": "wait", "seconds": 1 }
+      ]
+    },
+    {
+      "id": "notes",
+      "chapter": "Notes on lines",
+      "narration": "c puts a note on the line at the top of the view. Scroll a line of a hunk to the top, press c, write, and enter keeps it; the line is marked. A second note, further down. The notes belong to this patch: they stay with it until you send them.",
+      "steps": [
+        { "action": "type", "target": "#corner", "text": "[", "delayMs": 0 },
+        { "action": "type", "target": "#corner", "text": "jjjjj", "delayMs": 250 },
+        { "action": "type", "target": "#corner", "text": "c", "delayMs": 0 },
+        { "action": "wait", "seconds": 1 },
+        { "action": "type", "target": "#corner", "text": "use the Money type here, not decimal", "delayMs": 60 },
+        { "action": "press", "key": "Enter" },
+        { "action": "wait", "seconds": 2 },
+        { "action": "type", "target": "#corner", "text": "jjjjjjjjj", "delayMs": 200 },
+        { "action": "type", "target": "#corner", "text": "c", "delayMs": 0 },
+        { "action": "wait", "seconds": 1 },
+        { "action": "type", "target": "#corner", "text": "validate before the lookup, not after", "delayMs": 60 },
+        { "action": "press", "key": "Enter" },
+        { "action": "wait", "seconds": 2 }
+      ]
+    },
+    {
+      "id": "send",
+      "chapter": "Send them back",
+      "narration": "n sends the notes to the worker in one message, each under its file and line with the line itself quoted, and the change goes back like a reject: not applied, the worker goes on with your notes. It is the third answer beside apply and reject.",
+      "steps": [
+        { "action": "type", "target": "#corner", "text": "n", "delayMs": 0 },
+        { "action": "wait", "seconds": 8 },
+        { "action": "type", "target": "#corner", "text": "k", "delayMs": 0 },
+        { "action": "wait", "seconds": 5 }
+      ]
+    },
+    {
+      "id": "partial",
+      "chapter": "Half of a change",
+      "narration": "The next change. x chooses the hunk at the top; a check mark goes on its header. a then applies only the chosen hunks, staged in your checkout, and the rest is read again from the worktree and waits as a change of its own.",
+      "steps": [
+        { "action": "type", "target": "#corner", "text": "W", "delayMs": 0 },
+        { "action": "wait", "seconds": 5 },
+        { "action": "type", "target": "#corner", "text": "]", "delayMs": 0 },
+        { "action": "type", "target": "#corner", "text": "jjj", "delayMs": 250 },
+        { "action": "type", "target": "#corner", "text": "x", "delayMs": 0 },
+        { "action": "wait", "seconds": 5 },
+        { "action": "type", "target": "#corner", "text": "a", "delayMs": 0 },
+        { "action": "wait", "seconds": 6 }
+      ]
+    },
+    {
+      "id": "quote",
+      "chapter": "Ask about a hunk",
+      "narration": "Another change. The greater-than key opens a message to its worker with the hunk at the top quoted under your line, in a diff fence with its file's names. Write the question above it and send.",
+      "steps": [
+        { "action": "type", "target": "#corner", "text": "W", "delayMs": 0 },
+        { "action": "wait", "seconds": 4 },
+        { "action": "type", "target": "#corner", "text": "jjjj", "delayMs": 250 },
+        { "action": "type", "target": "#corner", "text": ">", "delayMs": 0 },
+        { "action": "wait", "seconds": 2 },
+        { "action": "type", "target": "#corner", "text": "is this retry bounded? what stops it on a 4xx?", "delayMs": 60 },
+        { "action": "press", "key": "Enter" },
+        { "action": "wait", "seconds": 5 }
+      ]
+    },
+    {
+      "id": "reject",
+      "chapter": "Reject, with a reason",
+      "narration": "And a change you do not want: r rejects it and opens the composer addressed to its worker, so you say why. The worker reads your reason and tries another way; nothing of it touched your checkout.",
+      "steps": [
+        { "action": "type", "target": "#corner", "text": "W", "delayMs": 0 },
+        { "action": "wait", "seconds": 4 },
+        { "action": "type", "target": "#corner", "text": "r", "delayMs": 0 },
+        { "action": "wait", "seconds": 2 },
+        { "action": "type", "target": "#corner", "text": "keep the old endpoint, it is public; add the new one beside it", "delayMs": 60 },
+        { "action": "press", "key": "Enter" },
+        { "action": "wait", "seconds": 5 }
+      ]
+    },
+    {
+      "id": "asks",
+      "chapter": "Commands and questions",
+      "narration": "Let the simulation run again. Changes are not the only thing that waits for you. A flag is a shell command a vendor would have asked you about: routine ones, the build and the tests, run on their own; the rest wait here, shown whole, for a to allow or r to refuse. A question mark is a question an agent asked you. Capital S puts the item at hand off and opens the next.",
+      "steps": [
+        { "action": "type", "target": "#corner", "text": " ", "delayMs": 0 },
+        { "action": "wait", "seconds": 1 },
+        { "action": "type", "target": "#corner", "text": "1", "delayMs": 0 },
+        { "action": "type", "target": "#corner", "text": "w", "delayMs": 0 },
+        { "action": "wait", "seconds": 7 },
+        { "action": "type", "target": "#corner", "text": "j", "delayMs": 0 },
+        { "action": "wait", "seconds": 5 },
+        { "action": "type", "target": "#corner", "text": "W", "delayMs": 0 },
+        { "action": "wait", "seconds": 4 },
+        { "action": "type", "target": "#corner", "text": "S", "delayMs": 0 },
+        { "action": "wait", "seconds": 4 },
+        { "action": "press", "key": "Escape" },
+        { "action": "wait", "seconds": 2 }
+      ]
+    },
+    {
+      "id": "closing",
+      "chapter": "Learn more",
+      "narration": "The scenario, step by step, with every key: selcukgural.github.io/imece.",
+      "tail": 1.5,
+      "steps": [
+        { "action": "card", "title": "imece", "text": "selcukgural.github.io/imece" },
+        { "action": "wait", "seconds": 3 }
+      ]
+    }
+  ]
+}

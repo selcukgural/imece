@@ -1,0 +1,15 @@
+{
+  "link.title.Start": { "message": "Başlangıç", "description": "The title of the footer links column with title=Start in the footer" },
+  "link.title.Reference": { "message": "Başvuru", "description": "The title of the footer links column with title=Reference in the footer" },
+  "link.title.Project": { "message": "Proje", "description": "The title of the footer links column with title=Project in the footer" },
+  "link.item.label.Install": { "message": "Kurulum", "description": "The label of footer link with label=Install linking to /docs/getting-started/install" },
+  "link.item.label.First run": { "message": "İlk çalıştırma", "description": "The label of footer link with label=First run linking to /docs/getting-started/first-run" },
+  "link.item.label.The simulation": { "message": "Simülasyon", "description": "The label of footer link with label=The simulation linking to /docs/getting-started/demo" },
+  "link.item.label.Command line flags": { "message": "Komut satırı bayrakları", "description": "The label of footer link with label=Command line flags linking to /docs/reference/cli" },
+  "link.item.label.: commands": { "message": ": komutları", "description": "The label of footer link with label=: commands linking to /docs/reference/commands" },
+  "link.item.label.Keys": { "message": "Tuşlar", "description": "The label of footer link with label=Keys linking to /docs/screen/keyboard" },
+  "link.item.label.GitHub": { "message": "GitHub", "description": "The label of footer link with label=GitHub linking to https://github.com/selcukgural/imece" },
+  "link.item.label.Decision records": { "message": "Karar kayıtları", "description": "The label of footer link with label=Decision records linking to https://github.com/selcukgural/imece/tree/main/docs/decisions" },
+  "link.item.label.Report a vulnerability": { "message": "Güvenlik açığı bildir", "description": "The label of footer link with label=Report a vulnerability linking to https://github.com/selcukgural/imece/security/policy" },
+  "copyright": { "message": "imece, Apache-2.0 lisansıyla açık kaynaktır.", "description": "The footer copyright" }
+}

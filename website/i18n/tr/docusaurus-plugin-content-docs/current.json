@@ -1,0 +1,8 @@
+{
+  "version.label": { "message": "Next", "description": "The label for version current" },
+  "sidebar.docs.category.Getting started": { "message": "Başlarken", "description": "The label for category 'Getting started' in sidebar 'docs'" },
+  "sidebar.docs.category.Concepts": { "message": "Kavramlar", "description": "The label for category 'Concepts' in sidebar 'docs'" },
+  "sidebar.docs.category.The screen": { "message": "Ekran", "description": "The label for category 'The screen' in sidebar 'docs'" },
+  "sidebar.docs.category.Scenarios": { "message": "Senaryolar", "description": "The label for category 'Scenarios' in sidebar 'docs'" },
+  "sidebar.docs.category.Reference": { "message": "Başvuru", "description": "The label for category 'Reference' in sidebar 'docs'" }
+}

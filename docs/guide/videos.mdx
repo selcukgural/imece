@@ -1,0 +1,98 @@
+---
+title: Video tours
+sidebar_label: Video tours
+description: Three short tours of imece, recorded from its real screen on the simulation, with chapters and captions.
+---
+
+import useBaseUrl from '@docusaurus/useBaseUrl';
+
+# Video tours
+
+Three short tours, recorded from imece's real screen running the
+[simulation](getting-started/demo.md), so they show the same screens you
+see, at an even pace. The videos are in English; the captions can be turned
+on in the player, and every chapter links to the page that explains it.
+
+## 1 · What imece is
+
+A leader, its workers and their helpers on one screen; a change that waits
+for you, a command that waits for you, the pot and the limits, and the quit
+question.
+
+<video
+  controls
+  preload="metadata"
+  playsInline
+  poster={useBaseUrl('/video/imece-tour.jpg')}
+  style={{ width: '100%', borderRadius: '12px', background: '#000' }}>
+  <source src={useBaseUrl('/video/imece-tour.mp4')} type="video/mp4" />
+  <track kind="captions" srcLang="en" label="English" src={useBaseUrl('/video/imece-tour.vtt')} default />
+</video>
+
+| Chapter | Where to read more |
+| --- | --- |
+| The salon: projects, leaders, workers, helpers | [The salon](screen/salon.md) |
+| An agent's screen and its raw stream | [Conversations and the trace](screen/conversations.md) |
+| WAITING FOR YOU: a change (Δ), a command (⚑), a question | [WAITING FOR YOU](screen/waiting.md) |
+| Reading a change and applying it | [Changes](concepts/changes.md) |
+| The pot, the burn rate, the vendor limits | [Budget and limits](concepts/budget-and-limits.md) |
+| The board and the code map | [The board and the code map](screen/board-and-code-map.md) |
+| Quitting: what is mid-turn, what is not reviewed | [Keys](screen/keyboard.md) |
+
+## 2 · Reviewing a change
+
+A change of several files: the file list and the lines by kind, notes on
+lines sent back in one message, a hunk quoted in a question, half of a
+change applied and the rest kept waiting, a reject with a reason.
+
+<video
+  controls
+  preload="metadata"
+  playsInline
+  poster={useBaseUrl('/video/imece-review.jpg')}
+  style={{ width: '100%', borderRadius: '12px', background: '#000' }}>
+  <source src={useBaseUrl('/video/imece-review.mp4')} type="video/mp4" />
+  <track kind="captions" srcLang="en" label="English" src={useBaseUrl('/video/imece-review.vtt')} default />
+</video>
+
+| Chapter | Where to read more |
+| --- | --- |
+| The diff view, file to file, wrapped lines | [The diff view](screen/changes.md) |
+| Notes on lines, sent in one message | [Changes](concepts/changes.md) |
+| Choosing hunks, applying only them | [Changes](concepts/changes.md) |
+| Quoting a hunk to its worker | [The diff view](screen/changes.md) |
+| Allowing or refusing a command (⚑) | [Approvals and questions](concepts/approvals-and-questions.md) |
+| The scenario, step by step | [Sending a change back, then taking half of it](scenarios/review-with-notes.md) |
+
+## 3 · Talking to the team
+
+Writing to the leader and to one worker, a reply and what it answers, a
+card's screen, the `:` menu with its values, a theme previewed while typed,
+the screen in Turkish, the help window and its filter.
+
+<video
+  controls
+  preload="metadata"
+  playsInline
+  poster={useBaseUrl('/video/imece-team.jpg')}
+  style={{ width: '100%', borderRadius: '12px', background: '#000' }}>
+  <source src={useBaseUrl('/video/imece-team.mp4')} type="video/mp4" />
+  <track kind="captions" srcLang="en" label="English" src={useBaseUrl('/video/imece-team.vtt')} default />
+</video>
+
+| Chapter | Where to read more |
+| --- | --- |
+| Writing to the leader, to one agent, a vendor command | [The command line](screen/command-line.md) |
+| A conversation, its turns, a reply and its question | [Conversations](screen/conversations.md) |
+| A card's screen | [Cards](screen/cards.md) |
+| The `:` commands and their values | [`:` commands](reference/commands.md) |
+| Themes and the language | [Themes and language](screen/themes-and-language.md) |
+| The help window | [Keys](screen/keyboard.md) |
+
+:::note
+
+The tours run on `imece --demo`: the agents are fake, so the videos cost
+nothing to make and show the same thing every time. Live agents behave as the
+[scenarios](scenarios/index.md) describe, with real vendors and a real pot.
+
+:::

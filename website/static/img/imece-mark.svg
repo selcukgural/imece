@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="imece">
+  <!-- Five hands round one job: a ring of five dots on a dark ground. -->
+  <rect width="64" height="64" rx="14" fill="#15161b"/>
+  <g fill="#e3a93f">
+    <circle cx="32" cy="14" r="6"/>
+    <circle cx="49.1" cy="26.4" r="6"/>
+    <circle cx="42.6" cy="46.6" r="6"/>
+    <circle cx="21.4" cy="46.6" r="6"/>
+    <circle cx="14.9" cy="26.4" r="6"/>
+  </g>
+  <circle cx="32" cy="33" r="5" fill="#f4f4f6"/>
+</svg>

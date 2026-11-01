@@ -1,0 +1,50 @@
+{
+  "home.loop.ask": { "message": "lidere söyle" },
+  "home.loop.hire": { "message": "işçi tutar" },
+  "home.loop.work": { "message": "worktree'lerinde çalışırlar" },
+  "home.loop.review": { "message": "her değişikliği incele" },
+  "home.loop.apply": { "message": "uygula ya da geri gönder" },
+  "home.f.team.title": { "message": "Tek ajan değil, bir ekip" },
+  "home.f.team.text": {
+    "message": "Bir lider çalışma kopyanızı okur ve iş gerektirdikçe işçi tutar; her işçinin kendi kartı vardır. İşçiler bir görevin parçaları için yardımcı tutar. Siz otuz ajanla değil, liderle konuşursunuz."
+  },
+  "home.f.vendors.title": { "message": "Tek ekranda birçok satıcı" },
+  "home.f.vendors.text": {
+    "message": "Claude Code, Codex ve Gemini CLI uzun ömürlü oturumlar olarak çalışır; ekran hiçbir tel biçimini görmez. Codex liderlik ederken Claude ve Gemini çalışabilir; ucuz, standart ya da güçlü katmanlarda."
+  },
+  "home.f.gate.title": { "message": "Çalışma kopyanıza dokunulmaz" },
+  "home.f.gate.text": {
+    "message": "Her işçi kendi git worktree'sini değiştirir. Bitirdiğinde değişikliği (Δ) SENİ BEKLEYEN'e düşer: diff'i okuyun, satırlara not yazın, tümünü ya da yalnızca seçtiğiniz parçaları uygulayın ya da gerekçenizle geri gönderin."
+  },
+  "home.f.bus.title": { "message": "Ajanlar birbiriyle konuşur" },
+  "home.f.bus.text": {
+    "message": "Tipli zarflarla bir mesaj hattı: assign, ask, answer, done, blocked. Boşta kalan işçilerin kart aldığı bir pano. Sizi gerektiren sorular ve kabuk komutları tek kuyruğa gelir."
+  },
+  "home.f.pot.title": { "message": "Tek bütçe, tek tavan" },
+  "home.f.pot.text": {
+    "message": "Bütün ekip için tek bütçe, çalıştırmalar arasında saklanır; her oturum kalanla sınırlıdır. Başlık yakma hızını, bütçenin ne kadar dayanacağını ve her satıcı planının en dar kullanım penceresini gösterir."
+  },
+  "home.f.remember.title": { "message": "Hatırlar, geri dönüş ucuzdur" },
+  "home.f.remember.text": {
+    "message": "Projeler, kartlar, sohbetler ve günlük tek bir SQLite dosyasında yaşar. Ajanlar siz yazana kadar uyur ve bıraktıkları oturumda uyanır. Başka bir pencereden dönünce uzaktayken olanların özeti hemen görünür."
+  },
+  "home.title": { "message": "Birçok kodlama ajanı için tek terminal" },
+  "home.description": {
+    "message": "imece, birçok satıcıdan bir kodlama ajanı ekibini tek kod tabanında, tek ekranda çalıştırır: bir lider işçi tutar, işçiler worktree'lerde çalışır ve her değişiklik çalışma kopyanıza ulaşmadan önce sizden geçer."
+  },
+  "home.hero": {
+    "message": "Birçok satıcıdan birçok kodlama ajanı için tek terminal. Bir lider isteğinizi kartlara böler ve işçi tutar; işçiler birbiriyle konuşur ve kendi worktree'lerinde çalışır; her değişiklik çalışma kopyanıza ulaşmadan önce sizi bekler."
+  },
+  "home.cta.install": { "message": "Kurulum" },
+  "home.cta.firstrun": { "message": "İlk çalıştırma" },
+  "home.cta.video": { "message": "Turları izle" },
+  "home.terminal.title": { "message": "Kodunuzun olduğu yerde başlatın" },
+  "home.terminal.more": { "message": "Her bayrak şurada açıklanır:" },
+  "home.terminal.link": { "message": "komut satırı başvurusu" },
+  "theme.ErrorPageContent.title": { "message": "Bu sayfa çöktü." },
+  "theme.NotFound.title": { "message": "Sayfa bulunamadı" },
+  "theme.NotFound.p1": { "message": "Aradığınız şeyi bulamadık." },
+  "theme.NotFound.p2": {
+    "message": "Lütfen sizi bu adrese getiren sitenin sahibine bağlantının kırık olduğunu bildirin."
+  }
+}

@@ -1,0 +1,194 @@
+// imece's first tour: what imece is. imece's real screen on the simulation
+// (`imece --demo`, seed 7), served by ../serve.sh; rendered with PromoVideo
+// (../README.md). Every claim in the narration is one the README and the
+// docs make; the agents and their work are the simulation's.
+//
+// The simulation steps on the wall clock, so a key that lands later than
+// planned sees a slightly different screen: the steps name what to show, not
+// a row the viewer must find. Keys arrive at least every 18 seconds, since
+// after 20 seconds without one the next key would open the away digest.
+{
+  "title": "imece — what it is",
+  "language": "en",
+  "baseUrl": "http://127.0.0.1:8791",
+  "viewport": { "width": 1920, "height": 1080, "deviceScaleFactor": 1 },
+  "output": { "width": 1920, "height": 1080, "fps": 30 },
+  "colorScheme": "dark",
+  "voice": {
+    "provider": "google",
+    "name": "Charon",
+    "model": "gemini-2.5-pro-tts",
+    "prompt": "Read in a calm, warm and clear product-tour voice, at a natural pace.",
+    "rate": 1.0
+  },
+  "music": { "generate": "ambient", "volume": 0.15 },
+  "pronounce": {
+    "imece's": "ee-meh-jeh's",
+    "imece": "ee-meh-jeh",
+    "selcukgural.github.io/imece": "selcuk gural dot github dot I O slash ee-meh-jeh",
+    "worktree": "work-tree",
+    "worktrees": "work-trees"
+  },
+  "scenes": [
+    {
+      "id": "opening",
+      "chapter": "imece",
+      "minSeconds": 4.5,
+      "steps": [
+        { "action": "goto", "path": "/card.html?t=imece&s=One%20terminal%20for%20many%20coding%20agents" },
+        { "action": "hover", "target": "#corner" }
+      ]
+    },
+    {
+      "id": "what",
+      "chapter": "What imece is",
+      "narration": "imece runs a team of coding agents from many vendors on one codebase, on one screen. A leader reads your checkout and hires workers as the work needs them; each worker changes a git worktree of its own, never your checkout. Claude Code, Codex and Gemini CLI, side by side.",
+      "steps": [
+        { "action": "goto", "path": "/" },
+        { "action": "wait", "seconds": 2 },
+        { "action": "type", "target": "#corner", "text": "j", "delayMs": 0 },
+        { "action": "wait", "seconds": 6 },
+        { "action": "type", "target": "#corner", "text": "j", "delayMs": 0 },
+        { "action": "wait", "seconds": 5 }
+      ]
+    },
+    {
+      "id": "salon",
+      "chapter": "The salon",
+      "narration": "This is the salon. Each project is a group with its own leader. A worker's row shows its card, what it is doing right now, what it has cost so far, and where its worktree stands. The journal on the right keeps every message and every event, with the time.",
+      "steps": [
+        { "action": "type", "target": "#corner", "text": "j", "delayMs": 0 },
+        { "action": "wait", "seconds": 6 },
+        { "action": "type", "target": "#corner", "text": "j", "delayMs": 0 },
+        { "action": "wait", "seconds": 6 },
+        { "action": "type", "target": "#corner", "text": "j", "delayMs": 0 }
+      ]
+    },
+    {
+      "id": "deeper",
+      "chapter": "Three depths",
+      "narration": "Enter looks deeper: an agent's screen, with its card's story and its conversations. Enter again shows the raw stream from the vendor's own CLI. Escape goes back. Three depths, everywhere: the guild, one card's story, the raw stream.",
+      "steps": [
+        { "action": "press", "key": "Enter" },
+        { "action": "wait", "seconds": 5 },
+        { "action": "press", "key": "Enter" },
+        { "action": "wait", "seconds": 5 },
+        { "action": "press", "key": "Escape" },
+        { "action": "wait", "seconds": 1 },
+        { "action": "press", "key": "Escape" }
+      ]
+    },
+    {
+      "id": "bus",
+      "chapter": "Agents talk to each other",
+      "narration": "Agents talk to each other over a bus: they ask, answer, hand work off, report progress, and say when they are blocked. imece reads only the envelope; the body is never interpreted. Let us speed the simulation up, let them work for a while, and pause it.",
+      "steps": [
+        { "action": "type", "target": "#corner", "text": "+", "delayMs": 0 },
+        { "action": "wait", "seconds": 2 },
+        { "action": "type", "target": "#corner", "text": "++", "delayMs": 300 },
+        { "action": "wait", "seconds": 5 },
+        { "action": "type", "target": "#corner", "text": "---", "delayMs": 200 },
+        { "action": "wait", "seconds": 3 },
+        { "action": "type", "target": "#corner", "text": " ", "delayMs": 0 },
+        { "action": "wait", "seconds": 2 }
+      ]
+    },
+    {
+      "id": "waiting",
+      "chapter": "Waiting for you",
+      "narration": "Everything that needs you lands in one place: WAITING FOR YOU. A change a worker has finished, a shell command a vendor would have asked you about, a question for you. The terminal's title counts them, so a tab in the background shows it too.",
+      "steps": [
+        { "action": "type", "target": "#corner", "text": "w", "delayMs": 0 },
+        { "action": "wait", "seconds": 5 },
+        { "action": "type", "target": "#corner", "text": "j", "delayMs": 0 },
+        { "action": "wait", "seconds": 5 },
+        { "action": "type", "target": "#corner", "text": "j", "delayMs": 0 },
+        { "action": "wait", "seconds": 4 }
+      ]
+    },
+    {
+      "id": "change",
+      "chapter": "A change",
+      "narration": "Capital W opens the next item from anywhere. This one is a change: what the worker's worktree holds since its last done. The files above the patch, the lines by kind, then the diff itself. j and k scroll it; the brackets go from file to file.",
+      "steps": [
+        { "action": "type", "target": "#corner", "text": "W", "delayMs": 0 },
+        { "action": "wait", "seconds": 6 },
+        { "action": "type", "target": "#corner", "text": "jjjj", "delayMs": 400 },
+        { "action": "wait", "seconds": 3 },
+        { "action": "type", "target": "#corner", "text": "]", "delayMs": 0 },
+        { "action": "wait", "seconds": 4 }
+      ]
+    },
+    {
+      "id": "apply",
+      "chapter": "Apply or send it back",
+      "narration": "a applies the change to your checkout, staged, for you to look over and commit. r sends it back and opens the composer, so you say why. Git does its work on a thread of its own; the journal says when the change is in. Your checkout is the one place an agent never writes.",
+      "steps": [
+        { "action": "type", "target": "#corner", "text": "a", "delayMs": 0 },
+        { "action": "wait", "seconds": 7 },
+        { "action": "type", "target": "#corner", "text": "k", "delayMs": 0 },
+        { "action": "wait", "seconds": 6 }
+      ]
+    },
+    {
+      "id": "pot",
+      "chapter": "One pot",
+      "narration": "Let the simulation run again. One pot for the whole team, kept between runs. The header shows what was spent, what the last ten minutes cost per hour, and how long the pot lasts at that rate. Beside it, each vendor plan's usage window nearest to full, and the fleet: working, done, stuck.",
+      "steps": [
+        { "action": "type", "target": "#corner", "text": " ", "delayMs": 0 },
+        { "action": "wait", "seconds": 1 },
+        { "action": "type", "target": "#corner", "text": "1", "delayMs": 0 },
+        { "action": "wait", "seconds": 8 },
+        { "action": "type", "target": "#corner", "text": "k", "delayMs": 0 },
+        { "action": "wait", "seconds": 6 }
+      ]
+    },
+    {
+      "id": "board",
+      "chapter": "The board and the code map",
+      "narration": "Two is the board: the cards the leaders posted, who claimed which, what is done. An idle worker may claim a card on its own. Three is the code map: one row per file, and who holds which symbols. One brings the salon back.",
+      "steps": [
+        { "action": "type", "target": "#corner", "text": "2", "delayMs": 0 },
+        { "action": "wait", "seconds": 7 },
+        { "action": "type", "target": "#corner", "text": "3", "delayMs": 0 },
+        { "action": "wait", "seconds": 6 },
+        { "action": "type", "target": "#corner", "text": "1", "delayMs": 0 },
+        { "action": "wait", "seconds": 1 }
+      ]
+    },
+    {
+      "id": "talk",
+      "chapter": "You talk to the leader",
+      "narration": "You talk to the leader, not to thirty agents. Type what you want; the leader turns it into cards, and the workers take them from the board. The reply comes back as something waiting for you.",
+      "steps": [
+        { "action": "type", "target": "#corner", "text": "/", "delayMs": 0 },
+        { "action": "wait", "seconds": 1 },
+        { "action": "type", "target": "#corner", "text": "rate limiting on the public API, with tests", "delayMs": 70 },
+        { "action": "press", "key": "Enter" },
+        { "action": "wait", "seconds": 6 }
+      ]
+    },
+    {
+      "id": "quit",
+      "chapter": "Quitting, and coming back",
+      "narration": "q asks before quitting: how many agents are mid-turn, how many changes you have not reviewed. s lists them. Everything imece knows is kept in one SQLite file; the next imece opens on the same screen, every agent asleep until you write to one.",
+      "steps": [
+        { "action": "type", "target": "#corner", "text": "q", "delayMs": 0 },
+        { "action": "wait", "seconds": 5 },
+        { "action": "type", "target": "#corner", "text": "s", "delayMs": 0 },
+        { "action": "wait", "seconds": 7 },
+        { "action": "press", "key": "Escape" }
+      ]
+    },
+    {
+      "id": "closing",
+      "chapter": "Learn more",
+      "narration": "imece is open source. Install it from source, try the simulation for free, and read every key and every scenario at selcukgural.github.io/imece.",
+      "tail": 1.5,
+      "steps": [
+        { "action": "card", "title": "imece", "text": "selcukgural.github.io/imece" },
+        { "action": "wait", "seconds": 3 }
+      ]
+    }
+  ]
+}
