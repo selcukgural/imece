@@ -197,21 +197,39 @@ pub fn ask(mut cmd: Command, wait: Duration) -> Option<(ExitStatus, String)> {
         }
         let _ = tx.send(said);
     });
-    let status = loop {
-        if let Some(status) = proc.try_wait().ok()? {
-            break status;
+    // The group is killed while its leader is still unreaped: a reaped
+    // one's number may be given to someone else's process at once.
+    let done = loop {
+        if exited(pgid).ok()? {
+            break true;
         }
         if Instant::now() >= deadline {
-            kill_group(pgid, libc::SIGKILL);
-            let _ = proc.wait();
-            return None;
+            break false;
         }
         thread::sleep(POLL);
     };
     // What its own children left in the group goes too.
     kill_group(pgid, libc::SIGKILL);
+    let status = proc.wait().ok()?;
+    if !done {
+        return None;
+    }
     let said = rx.recv_timeout(wait).ok()?;
     Some((status, said))
+}
+
+/// Whether child `pid` has ended, leaving it unreaped (a zombie keeps its
+/// number, and its group's, from being given out again).
+fn exited(pid: i32) -> io::Result<bool> {
+    // SAFETY: siginfo_t is plain data; all zeros is a valid value.
+    let mut info: libc::siginfo_t = unsafe { std::mem::zeroed() };
+    let how = libc::WEXITED | libc::WNOHANG | libc::WNOWAIT;
+    // SAFETY: waitid only writes `info`, which outlives the call.
+    if unsafe { libc::waitid(libc::P_PID, pid as libc::id_t, &mut info, how) } != 0 {
+        return Err(io::Error::last_os_error());
+    }
+    // Nothing to report leaves `info` as it was: zeros.
+    Ok(info.si_signo == libc::SIGCHLD)
 }
 
 pub(crate) fn kill_group(pgid: i32, signal: i32) {

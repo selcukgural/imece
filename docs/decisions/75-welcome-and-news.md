@@ -13,7 +13,11 @@ with nothing on stdin, in its own process group, for at most
 `ASK_WAIT` (5 s): its status and what it wrote (stdout, then stderr,
 each cut at 64 KiB), read on a thread of its own so a big answer does
 not stall the program and a pipe a leftover process holds does not
-stall the caller; the group is killed at the end either way. On it:
+stall the caller; the group is killed at the end either way, while
+its leader is still unreaped (`waitid` with `WNOWAIT`): a reaped
+leader's number may at once be another process's, and a kill after
+reaping could hit that one (CI's first run caught one test's `ask`
+killing another's CLI). On it:
 `imece_agent::version` (`--version`'s first line, at most 60
 characters), `claude::login` (`claude auth status --json`, its
 `loggedIn`; an API key counts) and `codex::login` (`codex login

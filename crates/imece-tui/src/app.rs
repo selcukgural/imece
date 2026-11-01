@@ -7470,6 +7470,26 @@ mod tests {
     fn the_demo_s_welcome_lists_its_own_vendors_and_news_shows_the_latest() {
         let mut app = App::new(1, 1, 0, 1, Lang::En);
         assert_eq!(app.vendors, crate::sim::vendors());
+        // All three there, as live lists them; Gemini's sign-in not asked.
+        let logins: Vec<(Vendor, Option<Login>)> = app
+            .vendors
+            .iter()
+            .map(|(v, seen)| match seen {
+                Seen::Here { version, login } => {
+                    assert!(version.ends_with("· demo"), "{version}");
+                    (*v, Some(*login))
+                }
+                _ => (*v, None),
+            })
+            .collect();
+        assert_eq!(
+            logins,
+            [
+                (Vendor::Claude, Some(Login::Yes)),
+                (Vendor::Codex, Some(Login::Yes)),
+                (Vendor::Gemini, Some(Login::Unknown)),
+            ]
+        );
         assert!(!app.welcome && app.news.is_empty() && app.look.is_none());
         app.input = ":welcome".into();
         app.typing = true;
