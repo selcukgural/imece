@@ -167,6 +167,28 @@ pub enum Refusal {
 struct Place {
     repo: PathBuf,
     root: PathBuf,
+    /// A git checkout with a first commit, which worktrees are made of;
+    /// a folder without (a solo's only) has its agents work straight in
+    /// it, and nothing of git runs on it.
+    git: bool,
+}
+
+/// The folder a project at `path` lives in, and whether it is a git
+/// checkout with a first commit: git's top directory then (also for a
+/// checkout with nothing committed yet, which is no such checkout), else
+/// `path` itself, when it is a directory.
+pub(crate) fn checkout_of(path: &Path) -> Result<(PathBuf, bool), String> {
+    match worktree::top(path) {
+        Ok(top) => {
+            let git = worktree::born(&top);
+            Ok((top, git))
+        }
+        Err(_) if path.is_dir() => {
+            let folder = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
+            Ok((folder, false))
+        }
+        Err(e) => Err(format!("{}: {e}", path.display())),
+    }
 }
 
 /// An agent's session, if it has one.
@@ -575,7 +597,7 @@ pub struct Live {
 /// The coding agents among `known` (see [`KNOWN`]) on PATH, run from the
 /// checkout `repo` is in, with whether imece drives them.
 pub fn probe(repo: &Path, known: &[Known]) -> Result<Vec<(Vendor, bool)>, String> {
-    let repo = worktree::top(repo).map_err(|e| format!("{}: {e}", repo.display()))?;
+    let repo = checkout_of(repo)?.0;
     Ok(known
         .iter()
         .filter(|(_, program, _)| on_path(program, &repo))
@@ -597,7 +619,10 @@ pub fn leaders(present: &[(Vendor, bool)]) -> Vec<Vendor> {
 /// runs (every agent asleep), and the checkout at hand as a project if it
 /// is not one yet, led by its leader alone, who hires the rest.
 pub fn world(o: Options, present: &[(Vendor, bool)]) -> Result<(World, Live), String> {
-    let repo = worktree::top(&o.repo).map_err(|e| format!("{}: {e}", o.repo.display()))?;
+    let (repo, git) = checkout_of(&o.repo)?;
+    if !git && o.solo.is_none() {
+        return Err(no_git_team(&repo.display().to_string()));
+    }
     let vendors = team_vendors(hireable(present, o.lead)?, o.lead, &o.tiers);
     check_ladders(&vendors)?;
     let file = o.state.join(store::FILE);

@@ -84,6 +84,13 @@ pub(super) fn git_thread(jobs: Receiver<GitJob>, done: Sender<GitDone>) {
 }
 
 impl Live {
+    /// Agent `id`'s worktree, for git to read or move: none before its
+    /// session has a directory, and none in a folder without git, where
+    /// it works straight in the folder and there is nothing to read.
+    fn tree_at(&self, w: &World, id: AgentId) -> Option<PathBuf> {
+        (self.cwds[id].clone()).filter(|_| self.places[w.agents[id].project].git)
+    }
+
     /// Has git read what worker `id`'s worktree holds, for the person: it
     /// waits in their inbox until they apply or reject it. The worker
     /// hears `said` and what the change is on `reply` once it is read; at
@@ -96,7 +103,7 @@ impl Live {
         said: String,
         reply: Sender<Answer>,
     ) {
-        let Some(path) = self.cwds[id].clone() else {
+        let Some(path) = self.tree_at(w, id) else {
             let _ = reply.send(Ok(said));
             return;
         };
@@ -170,7 +177,8 @@ impl Live {
         if self.filing.contains(&p) {
             return;
         }
-        let Some(place) = self.places.get(p) else {
+        // A folder without git has no list of git's to read.
+        let Some(place) = self.places.get(p).filter(|pl| pl.git) else {
             return;
         };
         let job = GitJob::Files {
@@ -242,7 +250,7 @@ impl Live {
             *again = true;
             return;
         }
-        let Some(path) = self.cwds[id].clone() else {
+        let Some(path) = self.tree_at(w, id) else {
             return;
         };
         let job = GitJob::Stand {
@@ -470,7 +478,7 @@ impl Live {
         {
             return;
         }
-        let Some(path) = self.cwds[id].clone() else {
+        let Some(path) = self.tree_at(w, id) else {
             return;
         };
         let job = GitJob::Place {
@@ -938,6 +946,7 @@ mod tests {
         live.places.push(Place {
             repo: repo.clone(),
             root: root.clone(),
+            git: true,
         });
         let tree = worktree::ensure(&repo, &root, "solo-1").unwrap().path;
         live.ready(
@@ -1647,6 +1656,100 @@ mod tests {
         let outside = std::env::temp_dir().join("imece-probe-nowhere");
         let err = probe(&outside, known).unwrap_err();
         assert!(err.contains("imece-probe-nowhere"), "{err}");
+        let _ = std::fs::remove_dir_all(&repo);
+    }
+
+    #[test]
+    fn a_solo_in_a_folder_without_git_works_straight_in_it_and_shows_no_change() {
+        let repo = checkout("bare-repo");
+        let root = trees("bare");
+        let folder = plain_folder("bare-folder", false);
+        let mut w = team(1);
+        let mut live = Live::new(
+            2,
+            claude_at("/nonexistent/claude"),
+            repo.clone(),
+            root.clone(),
+        );
+        let solo_open = Open::Solo {
+            vendor: None,
+            choice: None,
+        };
+        let p = live
+            .open_project(&mut w, &folder, Some("notes"), solo_open.clone())
+            .unwrap();
+        let solo = w.projects[p].leader;
+        assert!(!live.places[p].git && live.places[0].git);
+        assert_eq!(live.places[p].repo, folder);
+        assert!(w.projects[p].no_git && !w.projects[0].no_git);
+        let shown = folder.display().to_string();
+        assert!(w.journal.iter().any(|e| matches!(
+            &e.event, Event::NoGit { leader, path } if *leader == solo && *path == shown
+        )));
+        // It and its helper work in the folder itself; a worker of a
+        // checkout in its worktree.
+        let helper = with_helper(&mut w, solo);
+        w.agents[helper].project = p;
+        live.grow(None, false);
+        assert_eq!(live.cwd_of(&w, solo), folder);
+        assert_eq!(live.cwd_of(&w, helper), folder);
+        assert_eq!(live.cwd_of(&w, 1), root.join("claude-1"));
+        // Nothing of git runs on it: no stand, no following, no change.
+        live.ready(
+            &mut w,
+            solo,
+            Ok((Box::new(Stub), folder.clone(), None, None, Vec::new())),
+        );
+        assert_eq!(live.standing[solo], None, "no worktree to read");
+        live.follow(&mut w, solo);
+        assert!(live.placing[solo].is_none());
+        std::fs::write(folder.join("hello.txt"), "hi").unwrap();
+        live.turns[solo] = 1;
+        live.asked[solo] = false;
+        live.tx
+            .send((
+                solo,
+                live.generation[solo],
+                AgentEvent::TurnDone {
+                    ok: true,
+                    text: "Wrote hello.txt.".into(),
+                    cost: 0,
+                    denied: 0,
+                },
+            ))
+            .unwrap();
+        live.step(&mut w);
+        settle(&mut live, &mut w);
+        assert!(w.journal.iter().any(|e| matches!(
+            &e.event, Event::Replied { agent, text } if *agent == solo && text == "Wrote hello.txt."
+        )));
+        assert!(
+            w.change_of(solo).is_none(),
+            "written already, nothing to review"
+        );
+        // No list of git's for completion; the checkout's is read.
+        live.files(p);
+        assert!(!live.filing.contains(&p));
+        live.files(0);
+        assert!(live.filing.contains(&0));
+        assert_eq!(
+            live.suggest(&w, p),
+            Err("this folder is not a git checkout with a commit".into())
+        );
+        // A first commit since: opened again, it has a worktree.
+        live.close_project(&mut w, p).unwrap();
+        commit_all(&folder);
+        let again = live
+            .open_project(&mut w, &folder, Some("notes"), solo_open)
+            .unwrap();
+        assert_eq!(again, p);
+        assert!(live.places[p].git && !w.projects[p].no_git);
+        assert_eq!(
+            live.cwd_of(&w, w.projects[p].leader),
+            live.places[p].root.join(format!("solo-{p}"))
+        );
+        let _ = std::fs::remove_dir_all(&folder);
+        let _ = std::fs::remove_dir_all(&root);
         let _ = std::fs::remove_dir_all(&repo);
     }
 }

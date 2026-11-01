@@ -1,6 +1,6 @@
 ---
 title: Solo sessions
-description: A session you drive yourself, with no leader - :solo and --solo, the vendor, model and effort you pick, its own worktree, the Δ after every answer, helpers, and how solos and teams share a checkout.
+description: A session you drive yourself, with no leader - :solo and --solo, the vendor, model and effort you pick, its own worktree, the Δ after every answer, helpers, a folder without git, and how solos and teams share a checkout.
 ---
 
 # Solo sessions
@@ -39,6 +39,14 @@ The flash says what opened: `opened notes at ~/src/kule as a solo session; write
 - **Helpers.** A solo may hire helpers (`solo-notes.1`), up to `--helpers`, as a worker does: a coding agent in its worktree, for a part that can run beside its own work. They are told they work for an agent that works alone with the person.
 - **The one pot.** A solo's turns are paid from the same pot as every team's, and its vendor's usage window shows in the header like any session's ([budget and limits](budget-and-limits.md)).
 - **Remembered.** A solo, its session and its choice are in the store like any agent: it comes back asleep, told where it left off ([sessions](sessions.md)).
+
+## In a folder without git
+
+A solo also runs in a folder that is not a git checkout, or one where `git init` ran but nothing is committed yet: a new project before its first file, or a folder you keep without git. There it works **straight in the folder**: no worktree, so what it writes is in your files at once, and no `Δ` comes after its answers (there is no base to compare with, and nothing to apply). Its helpers work there too. The project's header says it in the warning colour, `▾ notes  ⌀ no git`, and the journal says it at the open and at every start: `solo-notes works straight in ~/src/notes: no git here, so its edits are not reviewed as a Δ (with a first commit, the next start gives it a worktree)`. The agent is told the same, and to run `git init` or commit only when you ask. Nothing of git runs on such a folder: no worktree stand on its row, no file completion, `:commit` says `this folder is not a git checkout with a commit`, and `:copy` has nothing to copy into. It does not need git installed at all.
+
+Once the folder has a first commit (the agent can make it when you ask: `git init`, then a commit), the next start, or closing the solo and opening it again, gives it a worktree and the `Δ` like any solo.
+
+A **team** does not start in such a folder: `imece` there says `~/src/notes is not a git checkout with a commit: a team works in git worktrees. A solo works here without git (--solo VENDOR, :solo); or run git init && git commit --allow-empty -m init first`, and `:open` says the same. A team stored on a folder that lost its git closes at the next start. Running teams without git is [issue #162](https://github.com/selcukgural/imece/issues/162).
 
 ## Solos and teams on one checkout
 

@@ -26,6 +26,7 @@ pub(crate) fn team(workers: usize) -> World {
             closed: false,
             pinned: false,
             copies: Vec::new(),
+            no_git: false,
         }],
         agents: Vec::new(),
         cards: Vec::new(),
@@ -129,7 +130,11 @@ impl Live {
         let lead = vendors.first().map_or(Vendor::Claude, |h| h.vendor);
         let mut live = Live::bare(vendors, lead);
         live.settle = Duration::ZERO;
-        live.places.push(Place { repo, root });
+        live.places.push(Place {
+            repo,
+            root,
+            git: true,
+        });
         for _ in 0..agents {
             live.grow(None, false);
         }
@@ -450,4 +455,50 @@ pub(super) fn traced_soon(live: &mut Live, w: &mut World, id: AgentId, needle: &
     }
     eprintln!("{:?}", w.agents[id].trace);
     false
+}
+
+/// A folder of its own under the temp directory, made anew, canonical;
+/// with `git`, a `git init` in it with nothing committed.
+pub(crate) fn plain_folder(name: &str, git: bool) -> PathBuf {
+    let dir = std::env::temp_dir().join(format!("imece-{name}-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    if git {
+        let out = std::process::Command::new("git")
+            .args(["init", "--quiet"])
+            .current_dir(&dir)
+            .output()
+            .unwrap();
+        assert!(out.status.success());
+    }
+    dir.canonicalize().unwrap()
+}
+
+/// Commits everything in `dir` (a `git init` first, which is harmless
+/// in a repo already), a first commit or the next.
+pub(crate) fn commit_all(dir: &Path) {
+    for args in [
+        &["init", "--quiet"][..],
+        &["add", "."][..],
+        &[
+            "-c",
+            "user.name=t",
+            "-c",
+            "user.email=t@t",
+            "-c",
+            "commit.gpgsign=false",
+            "commit",
+            "--quiet",
+            "--allow-empty",
+            "-m",
+            "first",
+        ],
+    ] {
+        let out = std::process::Command::new("git")
+            .args(args)
+            .current_dir(dir)
+            .output()
+            .unwrap();
+        assert!(out.status.success(), "git {args:?}");
+    }
 }

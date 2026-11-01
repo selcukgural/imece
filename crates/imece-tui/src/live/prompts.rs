@@ -121,6 +121,34 @@ pub(super) fn system_prompt(
                 abilities(a.vendor, Role::Leader, confine)
             )
         }
+        Role::Solo if w.projects[a.project].no_git => {
+            let helpers = if max_helpers == 0 {
+                String::new()
+            } else {
+                format!(
+                    " You may hire helpers with the hire tool, up to {max_helpers} at once: \
+                     each is a coding agent in this folder, changing the same files as \
+                     you. Give one a part of your task with send (type assign: what to do, \
+                     which files, when it is done), in files you are not changing yourself; \
+                     it sends you done and leaves. Hire for a part that can run beside your \
+                     own work, not for the whole task and not in advance."
+                )
+            };
+            format!(
+                "You are {}, a coding agent in imece, working alone with the person in their \
+                 folder: no leader, no team. The folder is not a git checkout with a commit, \
+                 so you work straight in it (your current directory): what you write is in \
+                 the person's files at once, and nothing reviews it first. {} Run git init \
+                 or commit only when the person asks. The person talks to you and gives you \
+                 your tasks. Finish a piece before you answer, and check it with the run tool \
+                 (build, test) after your last edit. Answer briefly: what you did and what is \
+                 left; when you need the person to decide, end with one clear question, or \
+                 send it mid-task (send to you, type ask) and their answer starts your next \
+                 turn.{helpers} Use these tools only for that, not for chatter.",
+                a.name,
+                abilities(a.vendor, Role::Solo, confine)
+            )
+        }
         Role::Solo => {
             let helpers = if max_helpers == 0 {
                 String::new()
@@ -154,10 +182,16 @@ pub(super) fn system_prompt(
         }
         Role::Helper if w.is_solo(a.project) => {
             let parent = &w.agents[a.parent.expect("a helper has a worker")].name;
+            let place = if w.projects[a.project].no_git {
+                "straight in the person's folder, which is not a git checkout (your \
+                 current directory; what you write is in their files at once)"
+                    .to_string()
+            } else {
+                format!("in {parent}'s git worktree of the repository (your current directory)")
+            };
             format!(
                 "You are {}, a helper of {parent}, a coding agent in imece that works alone \
-                 with the person. You work in {parent}'s git worktree of the repository (your \
-                 current directory), on the files {parent} gave you; it changes others at the \
+                 with the person. You work {place}, on the files {parent} gave you; it changes others at the \
                  same time, so stay in yours. {} Do not commit. Your task comes from {parent}. \
                  When it is done, send {parent} a done message with a short summary of what \
                  you changed and what is left open; you leave then. If you are stuck, send \
@@ -552,6 +586,34 @@ mod tests {
             h.contains("a team led by lead"),
             "a team's helper as before: {h}"
         );
+        assert!(!p.contains("not a git checkout") && !h.contains("not a git checkout"));
+        // In a folder without git: straight in it, nothing reviews it.
+        w.projects[1].no_git = true;
+        let p = system_prompt(&w, solo, 4, 2, Confine::Standard);
+        for part in [
+            "You are solo-notes, a coding agent in imece, working alone with the person in their folder",
+            "The folder is not a git checkout with a commit, so you work straight in it",
+            "nothing reviews it first",
+            "Run git init or commit only when the person asks",
+            "check it with the run tool",
+            "each is a coding agent in this folder",
+            "up to 2 at once",
+            "send to you, type ask",
+            "reach the web",
+        ] {
+            assert!(p.contains(part), "{part:?} in {p}");
+        }
+        assert!(!p.contains("worktree"), "{p}");
+        let p = system_prompt(&w, solo, 4, 0, Confine::Standard);
+        assert!(!p.contains("hire helpers"), "--helpers 0");
+        let h = system_prompt(&w, solo_helper, 4, 2, Confine::Standard);
+        assert!(
+            h.contains("You work straight in the person's folder, which is not a git checkout"),
+            "{h}"
+        );
+        assert!(!h.contains("worktree"), "{h}");
+        let h = system_prompt(&w, team_helper, 4, 2, Confine::Standard);
+        assert!(h.contains("git worktree"), "another project's helper: {h}");
     }
 
     #[test]

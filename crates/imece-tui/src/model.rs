@@ -330,6 +330,9 @@ pub enum ProjectRefusal {
     Vendor(String),
     /// A solo's `[MODEL][@EFFORT]` asks for an effort its vendor lacks.
     Choice(String),
+    /// A team on a folder that is no git checkout with a first commit:
+    /// the folder.
+    NoGit(String),
 }
 
 impl ProjectRefusal {
@@ -337,6 +340,7 @@ impl ProjectRefusal {
     pub fn describe(&self) -> String {
         match self {
             ProjectRefusal::NotCheckout(why) => why.clone(),
+            ProjectRefusal::NoGit(path) => no_git_team(path),
             ProjectRefusal::NameTaken(name) => format!("a project named {name} is open already"),
             ProjectRefusal::PathOpen(name) => format!("that checkout is open already, as {name}"),
             ProjectRefusal::BadName(name) => {
@@ -354,6 +358,16 @@ impl ProjectRefusal {
 
 /// Whether `name` may name a project: 1-24 ASCII letters, digits, `.`,
 /// `_` or `-`, so `lead-NAME` is one word the composer can address.
+/// Why a team does not open on the folder `path`: it is no git checkout
+/// with a first commit, and what works there instead.
+pub fn no_git_team(path: &str) -> String {
+    format!(
+        "{path} is not a git checkout with a commit: a team works in git worktrees. \
+         A solo works here without git (--solo VENDOR, :solo); or run \
+         git init && git commit --allow-empty -m init first"
+    )
+}
+
 pub fn valid_project_name(name: &str) -> bool {
     (1..=24).contains(&name.chars().count())
         && name
@@ -424,6 +438,10 @@ pub struct Project {
     /// Paths git ignores that the person listed (`:copy`) to be copied
     /// from the checkout into each worker's worktree.
     pub copies: Vec<String>,
+    /// The folder is not a git checkout with a first commit, so its solo
+    /// works straight in it: no worktree, no change to review. Found at
+    /// each open and start, not saved.
+    pub no_git: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -1019,6 +1037,13 @@ pub enum Event {
         leader: AgentId,
         path: String,
     },
+    /// The solo `leader` works straight in the folder at `path`: it is no
+    /// git checkout with a first commit, so there is no worktree and no
+    /// change to review. Said at its open and at each start.
+    NoGit {
+        leader: AgentId,
+        path: String,
+    },
     /// The person closed a project (`:close`); its agents left.
     Closed {
         leader: AgentId,
@@ -1176,6 +1201,7 @@ impl Event {
             | Event::WorktreeMoved { .. }
             | Event::Copied { .. }
             | Event::FilesCut { .. }
+            | Event::NoGit { .. }
             | Event::WorktreeKept { .. } => EntryKind::Assumption,
             Event::Blocked { .. } => EntryKind::Blocked,
             Event::ResearchOpened { .. }
@@ -1223,6 +1249,7 @@ impl Event {
         match *self {
             Event::Plan { leader, .. }
             | Event::FilesCut { leader, .. }
+            | Event::NoGit { leader, .. }
             | Event::Budget { leader, .. }
             | Event::PotLow { leader, .. }
             | Event::Suggested { leader, .. }
@@ -1657,10 +1684,23 @@ impl World {
                 closed: false,
                 pinned: false,
                 copies: Vec::new(),
+                no_git: false,
             }),
         }
         self.note(Event::Opened { leader, path });
         p
+    }
+
+    /// Project `p`'s folder is a git checkout with a first commit (`None`)
+    /// or it is not (the folder's path): then its solo works straight in
+    /// the folder, which the journal says.
+    pub fn set_no_git(&mut self, p: ProjectId, folder: Option<&str>) {
+        self.projects[p].no_git = folder.is_some();
+        if let Some(path) = folder {
+            let leader = self.projects[p].leader;
+            let path = path.to_string();
+            self.note(Event::NoGit { leader, path });
+        }
     }
 
     /// Project `p` closes: every agent of it leaves, what waited of theirs
@@ -2459,6 +2499,7 @@ mod tests {
                 closed: false,
                 pinned: false,
                 copies: Vec::new(),
+                no_git: false,
             }],
             agents,
             cards: Vec::new(),
@@ -2736,6 +2777,41 @@ mod tests {
             level: "open".into(),
         };
         assert_eq!((level.agent(), level.kind()), (3, EntryKind::Assumption));
+        let no_git = Event::NoGit {
+            leader: 12,
+            path: "/n".into(),
+        };
+        assert_eq!((no_git.agent(), no_git.kind()), (12, EntryKind::Assumption));
+    }
+
+    #[test]
+    fn a_folder_without_git_is_marked_and_said() {
+        let mut w = world(vec![]);
+        w.projects.clear();
+        let p = w.open_project(
+            None,
+            "notes".into(),
+            "/n".into(),
+            Vendor::Claude,
+            Role::Solo,
+        );
+        let leader = w.projects[p].leader;
+        let journal = w.journal.len();
+        w.set_no_git(p, None);
+        assert!(!w.projects[p].no_git);
+        assert_eq!(w.journal.len(), journal, "a checkout: nothing to say");
+        w.set_no_git(p, Some("/n"));
+        assert!(w.projects[p].no_git);
+        assert_eq!(
+            w.journal.last().unwrap().event,
+            Event::NoGit {
+                leader,
+                path: "/n".into()
+            }
+        );
+        w.set_no_git(p, None);
+        assert!(!w.projects[p].no_git, "a first commit since");
+        assert!(no_git_team("/n").starts_with("/n is not a git checkout with a commit"));
     }
 
     #[test]
@@ -3172,6 +3248,7 @@ mod tests {
             closed: false,
             pinned: false,
             copies: Vec::new(),
+            no_git: false,
         });
         w.projects[0].closed = true;
         w.budget = 400;

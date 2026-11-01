@@ -37,6 +37,12 @@ imece fails closed: when a file, a session or a change is not what it expects, i
 
 **Why.** `--projects`, `--researchers` and `--seed` belong to the simulation; live `--agents` is 0-16 (default 4), `--helpers` 0-8 (default 2). The usage text follows the message.
 
+### `… is not a git checkout with a commit: a team works in git worktrees …`
+
+**Why.** imece started (or `:open` ran) on a folder that is not a git checkout, or one with nothing committed yet: a team's workers each work in a git worktree, which is made from a commit.
+
+**What to do.** For one agent you drive yourself, `imece --solo claude` (or `:solo PATH`) runs straight in the folder ([solo sessions](concepts/solo.md#in-a-folder-without-git)). For a team, `git init && git commit --allow-empty -m init` there first.
+
 ## Sessions
 
 ### `codex-1 could not start: is logged in with apikey, whose cost imece can not count yet; log in with ChatGPT (codex login)`

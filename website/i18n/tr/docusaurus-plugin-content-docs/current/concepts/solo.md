@@ -1,6 +1,6 @@
 ---
 title: Solo oturumlar
-description: Lidersiz, kendinizin sürdüğü bir oturum - :solo ve --solo, seçtiğiniz satıcı, model ve çaba, kendi worktree'si, her yanıttan sonra Δ, yardımcılar ve soloların takımlarla bir checkout'u nasıl paylaştığı.
+description: Lidersiz, kendinizin sürdüğü bir oturum - :solo ve --solo, seçtiğiniz satıcı, model ve çaba, kendi worktree'si, her yanıttan sonra Δ, yardımcılar, git'siz bir klasör ve soloların takımlarla bir checkout'u nasıl paylaştığı.
 ---
 
 # Solo oturumlar
@@ -39,6 +39,14 @@ Flaş neyin açıldığını söyler: `notes solo oturum olarak açıldı (~/src
 - **Yardımcılar.** Solo, bir işçi gibi `--helpers`'a kadar yardımcı alabilir (`solo-notes.1`): kendi işinin yanında yürüyebilecek bir parça için worktree'sinde bir kodlama ajanı. Onlara, kişiyle tek başına çalışan bir ajan için çalıştıkları söylenir.
 - **Tek bütçe.** Solonun turları her takımla aynı bütçeden ödenir ve satıcısının kullanım penceresi her oturumunki gibi başlıkta görünür ([bütçe ve sınırlar](budget-and-limits.md)).
 - **Hatırlanır.** Solo, oturumu ve seçimi her ajan gibi depodadır: uykuda geri gelir, nerede kaldığı anlatılır ([oturumlar](sessions.md)).
+
+## Git'siz bir klasörde
+
+Solo, git checkout'u olmayan bir klasörde ya da `git init` yapılmış ama henüz hiçbir şey commit'lenmemiş bir klasörde de çalışır: ilk dosyasından önceki yeni bir proje ya da git'siz tuttuğunuz bir klasör. Orada **doğrudan klasörde** çalışır: worktree yoktur, yani yazdığı anında dosyalarınızdadır, ve yanıtlarından sonra `Δ` gelmez (karşılaştırılacak bir taban, uygulanacak bir şey yoktur). Yardımcıları da orada çalışır. Projenin başlığı bunu uyarı renginde söyler, `▾ notes  ⌀ git yok`, ve günlük bunu açılışta ve her başlangıçta söyler: `solo-notes doğrudan ~/src/notes içinde çalışıyor: burada git yok, düzenlemeleri Δ olarak incelenmez (ilk commit'ten sonra bir sonraki açılışta kendi worktree'si olur)`. Ajana da aynısı söylenir, ve `git init` ya da commit'i yalnız siz isteyince yapması. Böyle bir klasörde git'ten hiçbir şey çalışmaz: satırında worktree durumu yok, dosya tamamlama yok, `:commit` `this folder is not a git checkout with a commit` der, `:copy`'nin kopyalayacağı bir yer yoktur. Git'in kurulu olması bile gerekmez.
+
+Klasörün ilk commit'i olunca (ajan siz isteyince yapabilir: `git init`, sonra bir commit), bir sonraki başlangıç ya da soloyu kapatıp yeniden açmak ona her solo gibi bir worktree ve `Δ` verir.
+
+Bir **takım** böyle bir klasörde başlamaz: orada `imece` şunu der: `~/src/notes is not a git checkout with a commit: a team works in git worktrees. A solo works here without git (--solo VENDOR, :solo); or run git init && git commit --allow-empty -m init first`, `:open` da aynısını der. Git'ini kaybetmiş bir klasördeki kayıtlı takım bir sonraki başlangıçta kapanır. Takımları git'siz çalıştırmak [issue #162](https://github.com/selcukgural/imece/issues/162).
 
 ## Bir checkout'ta solo ve takım
 

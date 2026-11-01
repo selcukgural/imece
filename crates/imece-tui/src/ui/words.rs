@@ -122,6 +122,7 @@ pub fn event(lang: Lang, w: &World, e: &Event) -> String {
             ..
         } => shell(lang, command, *ended, *took),
         Event::Opened { leader, path } => fill(t.ev_opened, &[project(w, *leader), path]),
+        Event::NoGit { leader, path } => fill(t.ev_no_git, &[name(w, *leader), path]),
         Event::Closed { leader } => fill(t.ev_closed, &[project(w, *leader)]),
         Event::Renamed { from, to, .. } => fill(t.ev_renamed, &[from, to]),
         Event::Forgotten { agent } => fill(t.ev_forgotten, &[name(w, *agent)]),

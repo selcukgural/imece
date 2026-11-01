@@ -8071,6 +8071,34 @@ after | not a table";
         );
     }
 
+    #[test]
+    fn a_folder_without_git_is_said_in_the_journal_and_on_its_header() {
+        let mut app = App::new(1, 1, 0, 1, Lang::En);
+        let lead = app.world.agents[0].name.clone();
+        let e = Event::NoGit {
+            leader: 0,
+            path: "/n".into(),
+        };
+        for lang in [Lang::En, Lang::Tr] {
+            assert_eq!(
+                words::event(lang, &app.world, &e),
+                fill(lang.text().ev_no_git, &[&lead, "/n"])
+            );
+        }
+        assert!(
+            words::event(Lang::En, &app.world, &e)
+                .starts_with(&format!("{lead} works straight in /n: no git here"))
+        );
+        let s = render(&app, 140, 30);
+        assert!(!s.contains("⌀ no git"), "{s}");
+        app.world.projects[0].no_git = true;
+        let s = render(&app, 140, 30);
+        assert!(s.contains("⌀ no git"), "{s}");
+        app.lang = Lang::Tr;
+        let s = render(&app, 140, 30);
+        assert!(s.contains("⌀ git yok"), "{s}");
+    }
+
     /// A demo team, everyone idle and nothing waiting: the lead (0) and
     /// workers 1 to 4, agent 3 a helper of worker 1 and agent 4
     /// researching for it.

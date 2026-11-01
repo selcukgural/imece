@@ -384,6 +384,10 @@ pub(super) fn project_line(app: &App, p: ProjectId, rungs: &[Rung]) -> Line<'sta
         spans.push(Span::styled(format!(" trunk #{trunk} "), dim()));
         spans.push(Span::styled("✓", fg(pal().ok)));
     }
+    // Its solo writes straight in the folder: nothing comes as a Δ.
+    if project.no_git {
+        spans.push(Span::styled(format!("  ⌀ {}", t.no_git), fg(pal().warn)));
+    }
     spans.push(Span::styled(
         format!("  {}", fill(t.group_working, &[&working.to_string()])),
         dim(),
