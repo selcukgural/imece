@@ -90,6 +90,21 @@ pub(super) fn team_vendors(
         .collect()
 }
 
+/// Every rung of every ladder asks its vendor only for an effort it has;
+/// else which does not, and why. The bare `--model` and `--tier` values
+/// are checked here, once the leader's vendor is known; the ones with a
+/// vendor prefix were checked on the command line.
+pub(super) fn check_ladders(vendors: &[Hireable]) -> Result<(), String> {
+    for h in vendors {
+        for tier in Tier::ALL {
+            if let Some(m) = h.ladder.model(tier) {
+                valid_choice(h.vendor, m).map_err(|why| format!("--model/--tier {m:?}: {why}"))?;
+            }
+        }
+    }
+    Ok(())
+}
+
 /// Whether `program` runs from `repo` with a cleared environment.
 pub(super) fn on_path(program: &str, repo: &Path) -> bool {
     child::command(program, repo, &[])
@@ -739,6 +754,65 @@ mod tests {
     }
 
     #[test]
+    fn a_ladder_may_ask_a_vendor_only_for_an_effort_it_has() {
+        assert_eq!(
+            efforts(Vendor::Claude),
+            ["low", "medium", "high", "xhigh", "max"]
+        );
+        assert_eq!(efforts(Vendor::Codex), ["low", "medium", "high", "xhigh"]);
+        assert!(efforts(Vendor::Gemini).is_empty());
+        assert_eq!(valid_choice(Vendor::Claude, "opus@max"), Ok(()));
+        assert_eq!(valid_choice(Vendor::Codex, "@xhigh"), Ok(()));
+        assert_eq!(valid_choice(Vendor::Gemini, "pro"), Ok(()));
+        assert_eq!(
+            valid_choice(Vendor::Codex, "@max"),
+            Err("codex has no effort \"max\"; one of low, medium, high, xhigh".into())
+        );
+        assert_eq!(
+            valid_choice(Vendor::Gemini, "pro@high"),
+            Err("gemini has no effort setting; name only a model, not @high".into())
+        );
+        // Every rung, every vendor: a bare `--tier` rides on the leader's.
+        let fine = team_vendors(
+            vec![Vendor::Claude, Vendor::Codex],
+            Vendor::Claude,
+            &[(None, Tier::Strong, "opus@xhigh".into())],
+        );
+        assert_eq!(check_ladders(&fine), Ok(()));
+        for (lead, tier, bad, why) in [
+            (
+                Vendor::Claude,
+                Tier::Strong,
+                "opus@bogus",
+                "claude has no effort \"bogus\"",
+            ),
+            (
+                Vendor::Codex,
+                Tier::Cheap,
+                "@max",
+                "codex has no effort \"max\"",
+            ),
+            (
+                Vendor::Gemini,
+                Tier::Standard,
+                "pro@low",
+                "gemini has no effort setting",
+            ),
+        ] {
+            let team = team_vendors(
+                vec![Vendor::Claude, Vendor::Codex, Vendor::Gemini],
+                lead,
+                &[(None, tier, bad.into())],
+            );
+            let e = check_ladders(&team).unwrap_err();
+            assert!(
+                e.starts_with(&format!("--model/--tier {bad:?}: {why}")),
+                "{e}"
+            );
+        }
+    }
+
+    #[test]
     fn the_person_s_stand_ins_go_to_their_vendor_and_bare_ones_to_the_leader_s() {
         let tiers = vec![
             (None, Tier::Strong, "opus[1m]".to_string()),
@@ -1114,6 +1188,40 @@ mod tests {
             "the repository's notes end the prompt: {raw}"
         );
         assert!(!args.contains(&"--mcp-config"), "no bus, no MCP server");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_claude_agent_s_choice_splits_into_its_model_and_its_effort() {
+        let dir = std::env::temp_dir().join(format!("imece-effort-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let start = |model: &str| {
+            let mut w = team(0);
+            let mut live = Live::new(
+                1,
+                claude_at(&fake_claude(&dir)),
+                dir.clone(),
+                dir.join("worktrees"),
+            );
+            live.models[0] = Some(model.into());
+            live.told(&mut w, 0, "hello").unwrap();
+            wait_for(&mut live, &mut w, |w| w.agents[0].status == Status::Stopped);
+            let args = std::fs::read_to_string(dir.join("args.txt")).unwrap();
+            let args: Vec<String> = args.lines().map(String::from).collect();
+            let after = |f: &str| {
+                args.iter()
+                    .position(|a| a == f)
+                    .map(|i| args[i + 1].clone())
+            };
+            (after("--model"), after("--effort"))
+        };
+        assert_eq!(
+            start("opus@xhigh"),
+            (Some("opus".into()), Some("xhigh".into()))
+        );
+        assert_eq!(start("@max"), (None, Some("max".into())), "an effort alone");
+        assert_eq!(start("sonnet"), (Some("sonnet".into()), None));
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

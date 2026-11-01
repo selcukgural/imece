@@ -83,13 +83,9 @@ pub fn model(tier: crate::Tier) -> Option<&'static str> {
     }
 }
 
-/// The model and the reasoning effort in a `[MODEL][@EFFORT]` choice; none
-/// for Codex's own default.
-pub fn choice(s: &str) -> (Option<String>, Option<String>) {
-    let (model, effort) = s.split_once('@').unwrap_or((s, ""));
-    let some = |s: &str| (!s.is_empty()).then(|| s.to_string());
-    (some(model), some(effort))
-}
+/// The reasoning efforts Codex takes on a turn, least first. One it does
+/// not know is refused before the session starts.
+pub const EFFORTS: &[&str] = &["low", "medium", "high", "xhigh"];
 
 /// Config every session gets at every level (`-c key=value`, TOML values)
 /// and that `config/read` must echo. The approval policy, web search,
@@ -417,7 +413,11 @@ pub struct Protocol {
 impl Protocol {
     /// For `spec`; `off` is what the first start found, on the second.
     pub fn new(spec: &Spec, off: Option<Off>) -> Protocol {
-        let (model, effort) = spec.choice.as_deref().map_or((None, None), choice);
+        let crate::Choice { model, effort } = spec
+            .choice
+            .as_deref()
+            .map(crate::Choice::parse)
+            .unwrap_or_default();
         Protocol {
             cwd: spec.cwd.clone(),
             write: spec.write,
@@ -1237,6 +1237,10 @@ impl Session {
     /// Starts the session. `on` gets its events on the driver thread; the
     /// last one is [`Event::Stopped`], unless the session was terminated.
     pub fn start(spec: &Spec, on: impl FnMut(Event) + Send + 'static) -> io::Result<Session> {
+        let choice = spec.choice.as_deref().map(crate::Choice::parse);
+        if let Err(why) = choice.unwrap_or_default().check(PROGRAM, EFFORTS) {
+            return Err(io::Error::new(io::ErrorKind::InvalidInput, why));
+        }
         let (tx, rx) = mpsc::channel();
         let child = spawn(spec, &Off::default(), tx.clone(), 0)?;
         let spec = spec.clone();
@@ -1548,16 +1552,49 @@ mod tests {
         assert_eq!(model(crate::Tier::Standard), None);
         assert_eq!(model(crate::Tier::Strong), Some("@high"));
         assert_eq!(PROGRAM, "codex");
-        assert_eq!(choice("@low"), (None, Some("low".into())));
+        assert_eq!(EFFORTS, ["low", "medium", "high", "xhigh"]);
+        let p = |c: &str| {
+            let mut s = spec(true);
+            s.choice = Some(c.into());
+            let p = Protocol::new(&s, None);
+            (p.model, p.effort)
+        };
+        assert_eq!(p("@low"), (None, Some("low".into())));
+        assert_eq!(p("gpt-5.6-terra"), (Some("gpt-5.6-terra".into()), None));
         assert_eq!(
-            choice("gpt-5.6-terra"),
-            (Some("gpt-5.6-terra".into()), None)
-        );
-        assert_eq!(
-            choice("gpt-5.6-terra@xhigh"),
+            p("gpt-5.6-terra@xhigh"),
             (Some("gpt-5.6-terra".into()), Some("xhigh".into()))
         );
-        assert_eq!(choice(""), (None, None));
+        assert_eq!(p(""), (None, None));
+        assert_eq!(
+            (
+                Protocol::new(&spec(true), None).model,
+                Protocol::new(&spec(true), None).effort
+            ),
+            (None, None)
+        );
+    }
+
+    #[test]
+    fn an_effort_codex_does_not_have_never_starts_a_session() {
+        // Before the program is looked for.
+        let mut s = spec(true);
+        s.program = "/nonexistent/codex".into();
+        for bad in ["@max", "gpt-5.6-terra@bogus", "@High"] {
+            s.choice = Some(bad.into());
+            let e = Session::start(&s, |_| {}).err().expect("refused");
+            assert_eq!(e.kind(), io::ErrorKind::InvalidInput, "{bad:?}");
+            assert!(
+                e.to_string().contains("codex has no effort")
+                    && e.to_string().contains("low, medium, high, xhigh"),
+                "{bad:?}: {e}"
+            );
+        }
+        for fine in ["@xhigh", "gpt-5.6-terra", ""] {
+            s.choice = Some(fine.into());
+            let e = Session::start(&s, |_| {}).err().expect("refused");
+            assert_ne!(e.kind(), io::ErrorKind::InvalidInput, "{fine:?}: {e}");
+        }
     }
 
     #[test]

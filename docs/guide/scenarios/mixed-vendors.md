@@ -62,7 +62,7 @@ Workers are numbered per vendor: `claude-1`, `gemini-1`, and a later Codex worke
 | `standard` | the vendor's own default | its default effort | `auto` |
 | `strong` | `opus` | `@high` | `pro` |
 
-Codex's tiers are reasoning efforts, not models: a tier value is `[MODEL][@EFFORT]`, so `--tier codex:strong=gpt-5.6-terra@xhigh` names both. A tier model your account does not have fails its first turn at no cost; imece restarts that worker on the standard model and says so:
+Codex's tiers are reasoning efforts, not models: a tier value is `[MODEL][@EFFORT]`, so `--tier codex:strong=gpt-5.6-terra@xhigh` names both; the same form gives Claude an effort (`--tier strong=opus@xhigh`), while Gemini takes a model alone. A tier model your account does not have fails its first turn at no cost; imece restarts that worker on the standard model and says so:
 
 ```text
  14:03 ⚑ claude-1: model opus is not available here, using the default

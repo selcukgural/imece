@@ -46,7 +46,7 @@ The leader picks a tier for a worker, never a model name. Each vendor maps tiers
 | `strong` | design that cuts across the code, hard debugging, review | `opus` | `@high` | `pro` |
 
 - The leader itself runs on its vendor's default, or on `--model`.
-- `--tier [V:]T=NAME` changes what a tier means: `--tier strong=opus[1m]`, `--tier codex:strong=gpt-5.6-terra@xhigh` (a Codex value is `[MODEL][@EFFORT]`). `--model [V:]NAME` sets the model agents of vendor V run on. Without a vendor prefix both speak of the leader's vendor.
+- `--tier [V:]T=NAME` changes what a tier means: `--tier strong=opus[1m]`, `--tier strong=opus@xhigh`, `--tier codex:strong=gpt-5.6-terra@xhigh` (a value is `[MODEL][@EFFORT]`; the efforts are the vendor's own, Gemini has none). `--model [V:]NAME` sets the model agents of vendor V run on. Without a vendor prefix both speak of the leader's vendor.
 - **Fallback:** a tier model your account does not have fails its first turn (Claude Code reports it as a session that starts and then errors at zero cost). imece then replaces that worker once with the standard model, with the same prompts, and the journal says `model X is not available here, using the default`. One attempt, never a loop.
 
 ## Who leads

@@ -46,7 +46,7 @@ Lider bir işçi için kademe seçer, asla model adı değil. Her satıcı kadem
 | `strong` | kodu enine kesen tasarım, zor hata ayıklama, inceleme | `opus` | `@high` | `pro` |
 
 - Liderin kendisi satıcısının varsayılanında ya da `--model`'de çalışır.
-- `--tier [V:]T=AD` bir kademenin anlamını değiştirir: `--tier strong=opus[1m]`, `--tier codex:strong=gpt-5.6-terra@xhigh` (bir Codex değeri `[MODEL][@ÇABA]`). `--model [V:]AD`, V satıcısının ajanlarının çalıştığı modeli belirler. Satıcı öneki olmadan ikisi de liderin satıcısından söz eder.
+- `--tier [V:]T=AD` bir kademenin anlamını değiştirir: `--tier strong=opus[1m]`, `--tier strong=opus@xhigh`, `--tier codex:strong=gpt-5.6-terra@xhigh` (bir değer `[MODEL][@ÇABA]`dır; çabalar satıcının kendi çabalarıdır, Gemini'de yoktur). `--model [V:]AD`, V satıcısının ajanlarının çalıştığı modeli belirler. Satıcı öneki olmadan ikisi de liderin satıcısından söz eder.
 - **Geri düşme:** hesabınızda olmayan bir kademe modeli ilk turunda başarısız olur (Claude Code bunu başlayan ve sonra sıfır maliyetle hata veren bir oturum olarak bildirir). imece o işçiyi aynı istemlerle, bir kez, standart modelle değiştirir ve günlük `X modeli burada yok, varsayılanla devam` der. Tek deneme, asla döngü değil.
 
 ## Kim lider

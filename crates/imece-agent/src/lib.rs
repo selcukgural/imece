@@ -124,6 +124,63 @@ impl Tier {
     }
 }
 
+/// What an agent runs on, as the person names it: `[MODEL][@EFFORT]`, each
+/// part optional (`opus`, `@xhigh`, `gpt-5.6-terra@high`); nothing is the
+/// vendor's own default model at its own default effort. The same words
+/// for every vendor; which efforts a vendor has is the vendor's
+/// ([`claude::EFFORTS`], [`codex::EFFORTS`]; Gemini CLI has no such
+/// setting, [`gemini::EFFORTS`] is empty), and a choice is checked against
+/// them before a session starts, never passed on unchecked: Claude Code
+/// only warns about an effort it does not know and runs at its default.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Choice {
+    pub model: Option<String>,
+    pub effort: Option<String>,
+}
+
+impl Choice {
+    /// `[MODEL][@EFFORT]`: the part before the first `@` is the model, the
+    /// part after it the effort; an empty part is none.
+    pub fn parse(s: &str) -> Choice {
+        let (model, effort) = s.split_once('@').unwrap_or((s, ""));
+        let some = |s: &str| (!s.is_empty()).then(|| s.to_string());
+        Choice {
+            model: some(model),
+            effort: some(effort),
+        }
+    }
+
+    /// The choice as the person writes it: `[MODEL][@EFFORT]`.
+    pub fn wire(&self) -> String {
+        let mut s = self.model.clone().unwrap_or_default();
+        if let Some(e) = &self.effort {
+            s.push('@');
+            s.push_str(e);
+        }
+        s
+    }
+
+    /// Whether the effort, if any, is one of `efforts`, the ones the
+    /// vendor called `vendor` has; why not, in words for the person.
+    pub fn check(&self, vendor: &str, efforts: &[&str]) -> Result<(), String> {
+        let Some(e) = &self.effort else {
+            return Ok(());
+        };
+        if efforts.is_empty() {
+            return Err(format!(
+                "{vendor} has no effort setting; name only a model, not @{e}"
+            ));
+        }
+        if !efforts.contains(&e.as_str()) {
+            return Err(format!(
+                "{vendor} has no effort {e:?}; one of {}",
+                efforts.join(", ")
+            ));
+        }
+        Ok(())
+    }
+}
+
 /// How much of its vendor's capability an agent's session gets: the
 /// confine dial (`--confine`). The leader stays non-writing at every
 /// level (a role, not a restriction), and the vendor's own sub-agent tool
@@ -184,6 +241,49 @@ mod tests {
         }
         assert_eq!(Tier::from_wire("huge"), None);
         assert_eq!(Tier::from_wire(""), None);
+    }
+
+    #[test]
+    fn a_choice_is_a_model_an_effort_or_both_and_writes_back_the_same() {
+        let some = |s: &str| Some(s.to_string());
+        for (s, model, effort) in [
+            ("", None, None),
+            ("@", None, None),
+            ("opus", some("opus"), None),
+            ("@xhigh", None, some("xhigh")),
+            ("gpt-5.6-terra@high", some("gpt-5.6-terra"), some("high")),
+            // The first `@` splits; what follows is one effort, right or not.
+            ("a@b@c", some("a"), some("b@c")),
+        ] {
+            let c = Choice::parse(s);
+            assert_eq!(
+                (c.model.clone(), c.effort.clone()),
+                (model, effort),
+                "{s:?}"
+            );
+            assert_eq!(c.wire(), s.trim_end_matches('@'), "{s:?} back");
+        }
+        assert_eq!(Choice::default(), Choice::parse(""));
+    }
+
+    #[test]
+    fn a_choice_s_effort_must_be_one_the_vendor_has() {
+        let efforts = ["low", "high"];
+        assert_eq!(Choice::parse("opus").check("claude", &efforts), Ok(()));
+        assert_eq!(Choice::parse("opus").check("gemini", &[]), Ok(()));
+        assert_eq!(Choice::parse("@high").check("claude", &efforts), Ok(()));
+        assert_eq!(Choice::parse("opus@low").check("claude", &efforts), Ok(()));
+        let e = Choice::parse("opus@max")
+            .check("claude", &efforts)
+            .unwrap_err();
+        assert_eq!(e, "claude has no effort \"max\"; one of low, high");
+        let e = Choice::parse("@High").check("codex", &efforts).unwrap_err();
+        assert!(e.starts_with("codex has no effort \"High\""), "{e}");
+        let e = Choice::parse("pro@high").check("gemini", &[]).unwrap_err();
+        assert_eq!(
+            e,
+            "gemini has no effort setting; name only a model, not @high"
+        );
     }
 
     #[test]

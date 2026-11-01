@@ -116,6 +116,7 @@ pub(super) fn suggest_spec(program: String, cwd: PathBuf, model: &str) -> claude
         confine: Confine::Strict,
         write: false,
         model: Some(model.to_string()),
+        effort: None,
         budget: SUGGEST_CAP * 100,
         system: SUGGEST_SYSTEM.into(),
         mcp: None,

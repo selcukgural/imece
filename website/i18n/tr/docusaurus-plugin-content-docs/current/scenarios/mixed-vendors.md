@@ -62,7 +62,7 @@ Thread başlamadan önce imece Codex'in neyle çalıştığını bildirdiğini d
 | `standard` | satıcının kendi varsayılanı | varsayılan çabası | `auto` |
 | `strong` | `opus` | `@high` | `pro` |
 
-Codex'in kademeleri model değil akıl yürütme çabasıdır: bir kademe değeri `[MODEL][@EFFORT]` biçimindedir, `--tier codex:strong=gpt-5.6-terra@xhigh` ikisini de adlandırır. Hesabınızda olmayan bir kademe modeli ilk turunu bedelsiz kaybeder; imece o işçiyi standart modelde yeniden başlatır ve söyler:
+Codex'in kademeleri model değil akıl yürütme çabasıdır: bir kademe değeri `[MODEL][@EFFORT]` biçimindedir, `--tier codex:strong=gpt-5.6-terra@xhigh` ikisini de adlandırır; aynı biçim Claude'a da bir çaba verir (`--tier strong=opus@xhigh`), Gemini ise yalnız model alır. Hesabınızda olmayan bir kademe modeli ilk turunu bedelsiz kaybeder; imece o işçiyi standart modelde yeniden başlatır ve söyler:
 
 ```text
  14:03 ⚑ claude-1: opus modeli burada yok, varsayılanla devam

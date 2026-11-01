@@ -543,28 +543,33 @@ impl Live {
                         )
                         .map_err(|e| format!("{program}: {e}"))?,
                     ),
-                    _ => Box::new(
-                        claude::Session::start(
-                            &claude::Spec {
-                                program: program.clone(),
-                                cwd: cwd.clone(),
-                                name,
-                                tools: claude::tools(!leader, confine),
-                                confine,
-                                write: !leader,
-                                model,
-                                budget,
-                                system,
-                                mcp,
-                                resume: resume.map(|r| claude::Resume {
-                                    session: r.session,
-                                    spent: r.spent,
-                                }),
-                            },
-                            on,
+                    _ => {
+                        let Choice { model, effort } =
+                            model.as_deref().map(Choice::parse).unwrap_or_default();
+                        Box::new(
+                            claude::Session::start(
+                                &claude::Spec {
+                                    program: program.clone(),
+                                    cwd: cwd.clone(),
+                                    name,
+                                    tools: claude::tools(!leader, confine),
+                                    confine,
+                                    write: !leader,
+                                    model,
+                                    effort,
+                                    budget,
+                                    system,
+                                    mcp,
+                                    resume: resume.map(|r| claude::Resume {
+                                        session: r.session,
+                                        spent: r.spent,
+                                    }),
+                                },
+                                on,
+                            )
+                            .map_err(|e| format!("{program}: {e}"))?,
                         )
-                        .map_err(|e| format!("{program}: {e}"))?,
-                    ),
+                    }
                 };
                 Ok((session, cwd, placed, held, copied))
             })();
