@@ -4126,6 +4126,42 @@ mod tests {
     }
 
     #[test]
+    fn the_jump_list_keeps_the_salons_project_order_among_equals() {
+        let mut app = App::new(2, 1, 0, 1, Lang::En);
+        app.world.inbox.clear();
+        app.unseen.clear();
+        for a in &mut app.world.agents {
+            a.status = Status::Idle;
+            a.talk = None;
+            a.starting = false;
+        }
+        let order = app.world.salon_order();
+        assert_eq!(order.len(), 2);
+        // The second project pinned: its agents come first, then its row.
+        app.world.projects[1].pinned = true;
+        let order = app.world.salon_order();
+        assert_eq!(order, [1, 0]);
+        app.on_key(KeyEvent::from(KeyCode::Char('&')));
+        let projects: Vec<ProjectId> = app
+            .jumps
+            .iter()
+            .filter_map(|j| app.world.agent_by_name(&j.name))
+            .map(|id| app.world.agents[id].project)
+            .collect();
+        assert_eq!(projects.len(), app.world.agents.len());
+        let first = projects.iter().filter(|&&p| p == 1).count();
+        assert!(
+            first > 0 && projects[..first].iter().all(|&p| p == 1),
+            "{projects:?}"
+        );
+        assert!(projects[first..].iter().all(|&p| p == 0), "{projects:?}");
+        let names: Vec<&str> = app.jumps.iter().map(|j| j.name.as_str()).collect();
+        let n = names.len();
+        assert_eq!(names[n - 2], app.world.projects[1].name);
+        assert_eq!(names[n - 1], app.world.projects[0].name);
+    }
+
+    #[test]
     fn the_jump_line_takes_a_name_a_number_a_project_or_says_what_it_did_not_find() {
         let (mut app, w) = four_idle();
         let t = Lang::En.text();
@@ -4183,6 +4219,13 @@ mod tests {
                 .as_ref()
                 .is_some_and(|m| m.items[0].starts_with('#'))
         );
+        app.on_key(KeyEvent::from(KeyCode::Esc));
+        app.on_key(KeyEvent::from(KeyCode::Esc));
+        assert!(!app.typing);
+        // `#` anywhere else is a letter: a message keeps it.
+        type_in(&mut app, "@");
+        type_in(&mut app, &format!("{name} see #"));
+        assert_eq!(app.input, format!("@{name} see #"));
         app.on_key(KeyEvent::from(KeyCode::Esc));
         // `:goto` with a name goes, with `@` too; bare, it opens the line.
         app.command(&format!("goto @{name}"));
