@@ -68,8 +68,8 @@ Gelenekler vim'inkidir: `h` `j` `k` `l` hareket ve katlama, `gg` ve `G` uçlara,
 
 | Tuş | Ne yapar |
 | --- | --- |
-| `←` `→`  `h` `l` | projeyi ya da işçinin yardımcılarını katla / aç |
-| `za`  `zM`  `zR` | katla: değiştir · hepsi (`:fold`) · hiçbiri (`:unfold`) |
+| `←` `→`  `h` `l` | projeyi ya da işçinin yardımcılarını katla / aç (konuşmada: bir mesajı) |
+| `za`  `zM`  `zR` | katla: değiştir · hepsi (`:fold`) · hiçbiri (`:unfold`); konuşmada mesajlarını |
 | `f`  `:needs` | salon: yalnız sizi bekleyenler · herkes |
 
 ## SENİ BEKLEYEN
@@ -88,9 +88,12 @@ Gelenekler vim'inkidir: `h` `j` `k` `l` hareket ve katlama, `gg` ve `G` uçlara,
 | `enter`  `%` | konuşma (bir günlük satırından) · içinde `%`: yanıt ↔ soru |
 | `[`  `]` | söz sırasından söz sırasına (bir tarafın diğeri yanıt vermeden önce söylediği satırlar) |
 | `c` `C`  `y` `Y` | mesajı · konuşmayı kopyala |
-| `v` | kopyalanacak satırları seç: `j` `k` ve sayfa tuşları gezer, `y` kopyalar, `v` `esc` çıkar |
-| `m`  `:mark` | eldeki satırı sonra dönmek için işaretle; yine: kaldır |
-| `'` | sonraki işaretli satır: konuşma, yoksa günlük |
+| `h` `l`  `←` `→` | seçili mesajı tek satıra katla · aç |
+| `za`  `zM`  `zR` | katla: mesajı değiştir · hepsi (`:fold`) · hiçbiri (`:unfold`) |
+| `v` | satırları seç: `j` `k` ve sayfa tuşları gezer, `y` kopyalar, `v` `esc` çıkar |
+| `v`  `w b`  `s` | seçerken: `w` `b` (`l` `h`, `→` `←`) bir kelime ileri / geri, seçim kelime kelime olur · `s` seçimi imlecin olduğu yerden yeniden başlatır |
+| `c`  `n` | seçerken: seçili kelimelere not · `n` konuşmanın notlarını ajanlarına gönderir |
+| `m '`  `:mark` | eldeki satırı sonra dönmek için işaretle (yine: kaldır) · `'` sonraki işaretli satır: konuşma, yoksa günlük |
 | `space`, `pgup` `pgdn` | bir sayfa |
 | `esc` | kapat |
 
@@ -142,7 +145,7 @@ Gelenekler vim'inkidir: `h` `j` `k` `l` hareket ve katlama, `gg` ve `G` uçlara,
 | İşaret | Anlamı |
 | --- | --- |
 | `◆` lider  `◌` başlıyor  `●` çalışıyor  `◐` soruyor  `✕` bloke  `!` onayını bekliyor | bir agent'ın durumu |
-| `◇` araştırmacı  `○` boşta  `✓` bitti, bakılmadı  `■` durdu  `⇄` konuşma  `▾` `▸` proje / yardımcılar  `▴` sabit | |
+| `◇` araştırmacı  `○` boşta  `✓` bitti, bakılmadı  `■` durdu  `⇄` konuşma  `▾` `▸` proje / yardımcılar / katlanmış mesaj  `▴` sabit | |
 | `~` hafif kirli (rapor okudu)  `≈` kirli (dış dünyayı okuyor) | yalnız demo: araştırmacılar canlıda yapılmadı |
 | `⎇` dal  `↑` kendi commit'leri  `↓` checkout'un yeni commit'leri  `+N −M` henüz verilmemiş satırlar | bir işçinin worktree'si |
 | `↗` worker'ın yazdığı yerel adres (localhost), terminalin açtığı bir bağlantı | |

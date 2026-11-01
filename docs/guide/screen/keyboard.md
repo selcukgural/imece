@@ -68,8 +68,8 @@ The conventions are vim's: `h` `j` `k` `l` move and fold, `gg` and `G` go to the
 
 | Key | What it does |
 | --- | --- |
-| `←` `→`  `h` `l` | fold / unfold a project or a worker's helpers |
-| `za`  `zM`  `zR` | fold: toggle · all (`:fold`) · none (`:unfold`) |
+| `←` `→`  `h` `l` | fold / unfold a project or a worker's helpers (in a conversation: a message) |
+| `za`  `zM`  `zR` | fold: toggle · all (`:fold`) · none (`:unfold`); in a conversation its messages |
 | `f`  `:needs` | salon: only what needs you · everyone |
 
 ## WAITING FOR YOU
@@ -88,9 +88,12 @@ The conventions are vim's: `h` `j` `k` `l` move and fold, `gg` and `G` go to the
 | `enter`  `%` | the conversation (from a journal line) · `%` in it: reply ↔ question |
 | `[`  `]` | turn to turn (the lines one side says before the other answers) |
 | `c` `C`  `y` `Y` | copy the message · the conversation |
-| `v` | choose lines to copy: `j` `k` and the page keys move, `y` copies, `v` `esc` leave |
-| `m`  `:mark` | mark the line at hand to come back to; again: unmark |
-| `'` | the next marked line: conversation, else journal |
+| `h` `l`  `←` `→` | fold the selected message to one row · open it |
+| `za`  `zM`  `zR` | fold: the message toggled · all (`:fold`) · none (`:unfold`) |
+| `v` | choose lines: `j` `k` and the page keys move, `y` copies, `v` `esc` leave |
+| `v`  `w b`  `s` | while choosing: `w` `b` (`l` `h`, `→` `←`) a word on / back, the choice turns word by word · `s` starts it again where the cursor is |
+| `c`  `n` | while choosing: a note on the words chosen · `n` sends the conversation's notes to their agents |
+| `m '`  `:mark` | mark the line at hand to come back to (again: unmark) · `'` the next marked line: conversation, else journal |
 | `space`, `pgup` `pgdn` | a page |
 | `esc` | close |
 
@@ -100,7 +103,7 @@ The conventions are vim's: `h` `j` `k` `l` move and fold, `gg` and `G` go to the
 | --- | --- |
 | `[`  `]` | in a change: previous / next file · in a conversation: turn |
 | `>` | in a change: the hunk at the top, quoted in a message to its worker |
-| `c`  `n` | in a change: a note on the top line · send the notes, it goes back |
+| `c`  `n` | in a change: a note on the top line · send the notes, it goes back (in a conversation: on the words chosen, above) |
 | `x` | in a change: choose the hunk at the top; `a` applies only the chosen |
 | `w` | in a change: wrap long lines · cut them again |
 | `v` | in a change: choose lines to copy; `y` as written, `Y` the new side |
@@ -142,7 +145,7 @@ The conventions are vim's: `h` `j` `k` `l` move and fold, `gg` and `G` go to the
 | Glyph | Meaning |
 | --- | --- |
 | `◆` lead  `◌` starting  `●` working  `◐` asking  `✕` blocked  `!` waiting for you | an agent's state |
-| `◇` researcher  `○` idle  `✓` done, not seen  `■` stopped  `⇄` conversation  `▾` `▸` project / helpers  `▴` pinned | |
+| `◇` researcher  `○` idle  `✓` done, not seen  `■` stopped  `⇄` conversation  `▾` `▸` project / helpers / a folded message  `▴` pinned | |
 | `~` soft-tainted (read a report)  `≈` tainted (reads the outside world) | demo only: researchers are not built live |
 | `⎇` branch  `↑` own commits  `↓` the checkout's new commits  `+N −M` lines not yet handed over | a worker's worktree |
 | `↗` a local address the worker wrote (localhost), a link the terminal opens | |

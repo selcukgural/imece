@@ -74,5 +74,7 @@ conversations and changes copy the same way (record 31); nothing is
 faked.
 
 Not done: a copy mode over the journal or a card's screen (`c` copies a
-journal line whole); choosing within a line (columns); a copy of the
-rows as drawn, with list bullets and the table's padding.
+journal line whole); a copy of the rows as drawn, with list bullets and
+the table's padding. Choosing within a line came with conversation folds
+and notes on words (record 71): word by word, not by column; there `c`
+while choosing writes a note on the words, no longer nothing.
