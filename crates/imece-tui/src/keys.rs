@@ -1,5 +1,6 @@
 //! The person's own keys: a file of `KEY = KEY` lines that makes a key
-//! act as one of imece's (`^n = j`), read at start and on `:keys`.
+//! act as one of imece's (`^n = j`), read at start, on `:keys` and
+//! again when it changes ([`stamp`], looked at every [`EVERY`]).
 //!
 //! A line is turned once, as vim's `noremap`: `j = k` and `k = j` swap
 //! the two, and a key the file does not name stays itself. The map holds
@@ -9,7 +10,9 @@
 //! store, so a start with a bad file still has them. See
 //! `docs/decisions/76-keys.md`.
 
+use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
+use std::time::{Duration, SystemTime};
 
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
@@ -19,6 +22,9 @@ use crate::i18n::{Lang, fill};
 pub const NAME: &str = "keys";
 /// A bigger file is refused unread.
 pub const MAX_BYTES: u64 = 64 * 1024;
+/// How often the key file is looked at for a change; back in the
+/// window it is looked at once more.
+pub const EVERY: Duration = Duration::from_secs(2);
 /// A file with more lines that give a key is refused.
 pub const MAX_KEYS: usize = 200;
 /// The longest part of a wrong name a refusal repeats.
@@ -417,6 +423,24 @@ pub enum Read {
     Good(Keymap, String),
     /// A file that cannot be taken, and why.
     Bad(Why),
+}
+
+/// What tells one state of the key file from another without reading
+/// it: its modified time, its length and its inode (an editor that saves
+/// by renaming a new file over it gives a new one). The default is no
+/// file, or one that cannot be looked at.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Stamp(Option<(Option<SystemTime>, u64, u64)>);
+
+/// The stamp of the file at `path` now, through a link as [`load`] reads
+/// it. Taken before the file is read, so a change while it is read is
+/// seen the next time.
+pub fn stamp(path: &Path) -> Stamp {
+    Stamp(
+        std::fs::metadata(path)
+            .ok()
+            .map(|m| (m.modified().ok(), m.len(), m.ino())),
+    )
 }
 
 /// Reads the key file at `path`.
@@ -937,6 +961,30 @@ mod tests {
             Read::Bad(Why::Unreadable),
             "a file in the way is not a missing file"
         );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_stamp_tells_a_changed_file_from_the_same_one() {
+        let dir = dir("stamp");
+        let path = dir.join(NAME);
+        assert_eq!(stamp(&path), Stamp::default(), "no file");
+        std::fs::write(&path, "^n = j\n").unwrap();
+        let first = stamp(&path);
+        assert_ne!(first, Stamp::default(), "a file");
+        assert_eq!(stamp(&path), first, "looked at again, unchanged");
+        std::fs::write(&path, "^n = j\nj = G\n").unwrap();
+        let longer = stamp(&path);
+        assert_ne!(longer, first, "a longer text");
+        let other = dir.join("new");
+        std::fs::write(&other, "^p = k\nj = G\n").unwrap();
+        std::fs::rename(&other, &path).unwrap();
+        assert_ne!(stamp(&path), longer, "a new file saved over it");
+        let link = dir.join("link");
+        std::os::unix::fs::symlink(&path, &link).unwrap();
+        assert_eq!(stamp(&link), stamp(&path), "through a link");
+        std::fs::remove_file(&path).unwrap();
+        assert_eq!(stamp(&path), Stamp::default(), "gone again");
         let _ = std::fs::remove_dir_all(&dir);
     }
 

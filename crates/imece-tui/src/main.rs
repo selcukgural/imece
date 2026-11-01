@@ -426,6 +426,8 @@ fn main() -> std::io::Result<()> {
     // refused; the lead question already takes them.
     let keys_file = keys::file();
     let kept_keys = prefs::keys(&state);
+    // Before it is read: a change meanwhile is read again soon.
+    let keys_seen = keys_file.as_deref().map(keys::stamp).unwrap_or_default();
     let keys_start = keys::Start::new(keys_file.as_deref().map(keys::load), kept_keys.clone());
     // A flag or the environment wins over the saved theme.
     if args.theme.is_none()
@@ -534,7 +536,7 @@ fn main() -> std::io::Result<()> {
         app.side = side;
     }
     app.shift_enter = said.keys;
-    app.start_keys(keys_file, keys_start);
+    app.start_keys(keys_file, keys_seen, keys_start);
     if app.keys_good != kept_keys {
         // Kept for the next start; a failure only costs that.
         let _ = prefs::keep_keys(&state, app.keys_good.as_deref());
@@ -650,9 +652,6 @@ fn run(
                     app.notify,
                 );
             }
-            if std::mem::take(&mut app.keys_new) {
-                let _ = prefs::keep_keys(state, app.keys_good.as_deref());
-            }
             if let Some(text) = app.copy.take() {
                 app.copied(clip::copy(&text));
             }
@@ -663,6 +662,11 @@ fn run(
                 // The shell had the terminal, and its title back.
                 title.forget();
             }
+        }
+        // The key file changed (`:keys` or an edit): kept for the next start.
+        app.watch_keys(Instant::now());
+        if std::mem::take(&mut app.keys_new) {
+            let _ = prefs::keep_keys(state, app.keys_good.as_deref());
         }
         if last.elapsed() >= app.tick_interval() {
             if !app.paused {
