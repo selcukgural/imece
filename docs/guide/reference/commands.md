@@ -61,6 +61,7 @@ A line that starts with `:` is a command to imece, not a message to an agent. Yo
 | `:talk [@NAME]` | `v` | | | | the agent at hand |
 | `:theme [NAME\|FILE]` | `T` | `:t` | | | the theme in use |
 | `:trace [@NAME]` | `t` | | | | the agent at hand |
+| `:undo` | `u` | | | | |
 | `:unfold` | `zR` | | | | |
 | `:unsettle` | — | | | | how many are settled |
 | `:waiting` | `w` | | | | N waiting |
@@ -84,7 +85,7 @@ Raises or lowers the pot while agents run (`:b 80`). The value is dollars with a
 
 ### `:close [NAME]`
 
-Closes the project `NAME`, or the one at hand (`:c`). Its agents' sessions and runs end, their mail, notes, offers and changes are dropped, their items in WAITING FOR YOU close, and the project is marked closed: the salon skips it, the same checkout opened again takes its place with a new leader. The worktrees stay on disk. The flash: `closed kule: its agents left; their worktrees stay on disk`. The last open project refuses: `kule is the last open project; q q quits`; a name nobody has: `no open project named x`. In the demo, the project's agents leave the same way. See [projects](../concepts/projects.md).
+Closes the project `NAME`, or the one at hand (`:c`), ten seconds after it is asked: the bottom line counts down, and `u` ([`:undo`](#undo)) keeps it open. Its agents' sessions and runs end, their mail, notes, offers and changes are dropped, their items in WAITING FOR YOU close, and the project is marked closed: the salon skips it, the same checkout opened again takes its place with a new leader. The worktrees stay on disk. The flash: `closed kule: its agents left; their worktrees stay on disk`. The last open project refuses: `kule is the last open project; q q quits`; a name nobody has: `no open project named x`. In the demo, the project's agents leave the same way. See [projects](../concepts/projects.md).
 
 ### `:code`
 
@@ -126,7 +127,7 @@ Folds every project and every worker's helpers in the salon, as `zM`; from anoth
 
 ### `:forget [@NAME]`
 
-Makes the agent forget its vendor session (`:f`): the running session ends (its run killed, an unfinished prompt kept as interrupted, told at the wake and not run again), the remembered session goes with what the vendor kept of it (Claude's transcript, Codex's thread, Gemini's chat files), the agent sleeps until spoken to, and its next message starts a new session with the full briefing. No name is the agent at hand. The flash: `claude-2 forgot its session; the next message starts a new one, told where it left off`; refused for an agent with nothing to forget or one that is gone: `claude-2 keeps its session: it has no session to forget`. The journal: `you made claude-2 forget its session; it starts a new one, told where it left off`. `--fresh` does it for every agent at the start. `$`: the new session pays the whole briefing again. See [sessions](../concepts/sessions.md).
+Makes the agent forget its vendor session (`:f`), ten seconds after it is asked: the bottom line counts down, and `u` ([`:undo`](#undo)) keeps it. Then the running session ends (its run killed, an unfinished prompt kept as interrupted, told at the wake and not run again), the remembered session goes with what the vendor kept of it (Claude's transcript, Codex's thread, Gemini's chat files), the agent sleeps until spoken to, and its next message starts a new session with the full briefing. No name is the agent at hand. The flash: `claude-2 forgot its session; the next message starts a new one, told where it left off`; refused for an agent with nothing to forget or one that is gone: `claude-2 keeps its session: it has no session to forget`. The journal: `you made claude-2 forget its session; it starts a new one, told where it left off`. `--fresh` does it for every agent at the start. `$`: the new session pays the whole briefing again. See [sessions](../concepts/sessions.md).
 
 ### `:goto [NAME]`
 
@@ -241,6 +242,10 @@ The theme, as `T` (`:t`). Alone: the next built-in one, around the end. With a n
 ### `:trace [@NAME]`
 
 The raw stream of the agent, as `t`: every line its session said, as data, up to 200 lines kept. No name is the agent at hand.
+
+### `:undo`
+
+Keeps a `:close` or `:forget` from happening, as `u`. Both wait ten seconds before they act, and the bottom line counts down meanwhile: `◷ closing kule in 7 s · u keeps it open`, `◷ claude-2 forgets its session in 7 s · u keeps it`. `u` in that time leaves everything as it was (`kule stays open`, `claude-2 keeps its session`); with nothing counting down it says `nothing to undo`. One waits at a time: another `:close` or `:forget` makes the one waiting act first. Quitting while one counts down lets it act. A refusal (the last open project, no session to forget, a name nobody has) is said at once and waits for nothing. Both the demo and live sessions wait.
 
 ### `:unfold`
 

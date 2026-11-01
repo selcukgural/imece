@@ -61,6 +61,7 @@ description: imece'nin aldığı her `:` komutu; argümanları, karşılığı o
 | `:talk [@NAME]` | `v` | | | | eldeki ajan |
 | `:theme [NAME\|FILE]` | `T` | `:t` | | | kullanılan tema |
 | `:trace [@NAME]` | `t` | | | | eldeki ajan |
+| `:undo` | `u` | | | | |
 | `:unfold` | `zR` | | | | |
 | `:unsettle` | — | | | | kaç şeyin kaldırıldığı |
 | `:waiting` | `w` | | | | N bekliyor |
@@ -84,7 +85,7 @@ Ajanlar çalışırken bütçeyi artırır ya da azaltır (`:b 80`). Değer, nok
 
 ### `:close [NAME]`
 
-`NAME` projesini ya da eldekini kapatır (`:c`). Ajanlarının oturumları ve çalıştırmaları biter, postaları, notları, teklifleri ve değişiklikleri düşer, SENİ BEKLEYEN'deki kalemleri kapanır ve proje kapalı işaretlenir: salon onu atlar, aynı çalışma kopyası yeniden açılırsa yeni bir liderle onun yerini alır. Worktree'ler diskte kalır. Flaş: `kule kapatıldı: agent'ları ayrıldı; worktree'leri diskte kaldı`. Son açık proje reddeder: `kule son açık proje; q q çıkar`; kimsenin olmadığı bir ad: `x adında açık proje yok`. Demoda projenin ajanları aynı biçimde ayrılır. Bkz. [projeler](../concepts/projects.md).
+`NAME` projesini ya da eldekini kapatır (`:c`), istendikten on saniye sonra: alt satır geri sayar, `u` ([`:undo`](#undo)) açık tutar. Ajanlarının oturumları ve çalıştırmaları biter, postaları, notları, teklifleri ve değişiklikleri düşer, SENİ BEKLEYEN'deki kalemleri kapanır ve proje kapalı işaretlenir: salon onu atlar, aynı çalışma kopyası yeniden açılırsa yeni bir liderle onun yerini alır. Worktree'ler diskte kalır. Flaş: `kule kapatıldı: agent'ları ayrıldı; worktree'leri diskte kaldı`. Son açık proje reddeder: `kule son açık proje; q q çıkar`; kimsenin olmadığı bir ad: `x adında açık proje yok`. Demoda projenin ajanları aynı biçimde ayrılır. Bkz. [projeler](../concepts/projects.md).
 
 ### `:code`
 
@@ -126,7 +127,7 @@ Salonda her projeyi ve her işçinin yardımcılarını katlar, `zM` gibi; başk
 
 ### `:forget [@NAME]`
 
-Ajana satıcı oturumunu unutturur (`:f`): çalışan oturum biter (çalıştırması öldürülür, bitmemiş bir istem kesilmiş olarak tutulur, uyanışta anlatılır ve yeniden çalıştırılmaz), hatırlanan oturum satıcının ondan tuttuğuyla gider (Claude'un transkripti, Codex'in iş parçacığı, Gemini'nin sohbet dosyaları), ajan kendisiyle konuşulana dek uyur ve sonraki mesajı tam brifingle yeni bir oturum başlatır. Ad yoksa eldeki ajan. Flaş: `claude-2 oturumunu unuttu; sonraki mesaj yeni bir oturum başlatır, kaldığı yer anlatılır`; unutacak şeyi olmayan ya da gitmiş bir ajan için reddedilir: `claude-2 oturumunu koruyor: it has no session to forget`. Günlük: `claude-2 oturumunu unutturdun; yeni bir oturumla başlıyor, kaldığı yer anlatılacak`. `--fresh` başlangıçta her ajan için yapar. `$`: yeni oturum bütün brifingi yeniden öder. Bkz. [oturumlar](../concepts/sessions.md).
+Ajana satıcı oturumunu unutturur (`:f`), istendikten on saniye sonra: alt satır geri sayar, `u` ([`:undo`](#undo)) tutar. Sonra: çalışan oturum biter (çalıştırması öldürülür, bitmemiş bir istem kesilmiş olarak tutulur, uyanışta anlatılır ve yeniden çalıştırılmaz), hatırlanan oturum satıcının ondan tuttuğuyla gider (Claude'un transkripti, Codex'in iş parçacığı, Gemini'nin sohbet dosyaları), ajan kendisiyle konuşulana dek uyur ve sonraki mesajı tam brifingle yeni bir oturum başlatır. Ad yoksa eldeki ajan. Flaş: `claude-2 oturumunu unuttu; sonraki mesaj yeni bir oturum başlatır, kaldığı yer anlatılır`; unutacak şeyi olmayan ya da gitmiş bir ajan için reddedilir: `claude-2 oturumunu koruyor: it has no session to forget`. Günlük: `claude-2 oturumunu unutturdun; yeni bir oturumla başlıyor, kaldığı yer anlatılacak`. `--fresh` başlangıçta her ajan için yapar. `$`: yeni oturum bütün brifingi yeniden öder. Bkz. [oturumlar](../concepts/sessions.md).
 
 ### `:goto [NAME]`
 
@@ -241,6 +242,10 @@ Tema, `T` gibi (`:t`). Tek başına: sonraki yerleşik tema, sondan başa döner
 ### `:trace [@NAME]`
 
 Ajanın ham akışı, `t` gibi: oturumunun söylediği her satır, veri olarak, en çok 200 satır tutulur. Ad yoksa eldeki ajan.
+
+### `:undo`
+
+Bir `:close` ya da `:forget`'in olmasını önler, `u` gibi. İkisi de iş görmeden önce on saniye bekler, bu arada alt satır geri sayar: `◷ kule 7 sn sonra kapanıyor · u açık tutar`, `◷ claude-2 7 sn sonra oturumunu unutuyor · u tutar`. O sürede `u` her şeyi olduğu gibi bırakır (`kule açık kalıyor`, `claude-2 oturumunu tutuyor`); geri sayan bir şey yoksa `geri alınacak bir şey yok` der. Bir seferde biri bekler: başka bir `:close` ya da `:forget`, bekleyeni önce uygular. Biri geri sayarken çıkmak onu uygular. Bir ret (son açık proje, unutulacak oturum yok, kimsenin taşımadığı bir ad) hemen söylenir, hiçbir şey beklemez. Demo da canlı oturumlar da bekler.
 
 ### `:unfold`
 

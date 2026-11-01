@@ -979,12 +979,18 @@ impl Sim {
         Ok(runs)
     }
 
+    /// Whether demo agent `id` has a session to forget: it took a turn.
+    pub fn can_forget(&self, w: &World, id: AgentId) -> Result<(), Refusal> {
+        if w.agents[id].gone || !self.started(id) {
+            return Err(Refusal::Command("it has no session to forget".into()));
+        }
+        Ok(())
+    }
+
     /// `:forget` in the demo: agent `id`'s session goes, and it sleeps
     /// until a message starts a new one, told where it left off.
     pub fn forget(&mut self, w: &mut World, id: AgentId) -> Result<(), Refusal> {
-        if w.agents[id].gone || !self.mind(id).started {
-            return Err(Refusal::Command("it has no session to forget".into()));
-        }
+        self.can_forget(w, id)?;
         let m = self.mind(id);
         m.started = false;
         m.forgot = true;
