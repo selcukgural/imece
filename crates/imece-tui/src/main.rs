@@ -572,7 +572,7 @@ fn ask(
         if ready
             && let Event::Key(k) = event::read()?
             && k.kind == KeyEventKind::Press
-            && let Some(picked) = pick.on_key(keys.turn(k).code)
+            && let Some(picked) = (keys.alone(k).iter()).find_map(|k| pick.on_key(k.code))
         {
             return Ok(Some(picked));
         }
@@ -665,6 +665,7 @@ fn run(
         }
         // The key file changed (`:keys` or an edit): kept for the next start.
         app.watch_keys(Instant::now());
+        app.keys_due(Instant::now());
         if std::mem::take(&mut app.keys_new) {
             let _ = prefs::keep_keys(state, app.keys_good.as_deref());
         }

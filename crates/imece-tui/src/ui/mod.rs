@@ -5168,6 +5168,23 @@ mod tests {
         let found = render(&app, 140, 50);
         assert!(found.contains("your key: as q"), "{found}");
         assert!(!found.contains("first / last line"), "{found}");
+        // Keys of two, on either side.
+        let two = crate::keys::Keymap::read("gt = G\nx = gg\n^t = z M").unwrap();
+        let rows = overlay::help_rows(Lang::En, false, &two);
+        let row = |k: &str| -> Vec<&str> {
+            (rows.iter().filter(|r| r.1 == k))
+                .map(|r| r.0.as_str())
+                .collect()
+        };
+        assert_eq!(
+            rows[..3],
+            [
+                ("gt".to_string(), "your key: as G".to_string()),
+                ("x".into(), "your key: as gg".into()),
+                ("^t".into(), "your key: as zM".into()),
+            ]
+        );
+        assert_eq!(row("first / last line"), ["x/gg  gt/G"]);
     }
 
     #[test]

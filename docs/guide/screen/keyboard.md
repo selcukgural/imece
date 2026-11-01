@@ -193,9 +193,21 @@ J = G
 
 A key is written as the help writes it (`j`, `G`, `^n`, `⌥b`, `⇧tab`, `enter`, `esc`, `tab`, `space`, `↑ ↓ ← →`, `home`, `end`, `pgup`, `pgdn`) or in words (`ctrl-n`, `alt-b`, `shift-tab`, `up`, `escape`, `pageup`); `#` is `hash` on the left of the `=`, since a line starting with `#` is a comment. A line is applied once, as vim's `noremap`: `j = k` and `k = j` swap the two, and a key the file does not name stays itself. The file's keys work wherever imece reads keys (the salon, a conversation, a change, peek, the windows, the pickers, the lead question at start), except where keys are text: writing, the help's `/` filter and the hint letters. `^c` always quits and cannot be given.
 
-imece reads the file at start, on `:keys`, and again when you save it: it looks every two seconds, and at once when you come back to its window, and says what came of it as `:keys` does. A file it cannot take whole is refused, and the keys you had stay: a line that is not `KEY = KEY` (`line 3: write it as KEY = KEY`), a name that is no key (`` `nope` is not a key ``), a key imece does nothing with on the right (`imece does nothing with d`), a key given twice (`^n is given on line 1 already`), `^c` on either side, more than 200 keys, a file over 64 KiB or not text. The last good file is kept in the store, so a start with a file refused still has your keys and says why. A bad edit is said once and leaves the keys you had. With no file, imece's own keys are back.
+A side of a line can be two keys, one after the other:
 
-In the `?` help, your keys come first (`^n  your key: as j`), and every key line shows the keys that do it now: with the file above, `select` reads `↑ ↓  k/^n j/^p`; a key whose meaning went to no other key shows `–`. The writing keys are shown as they are, since the file does not turn them.
+```text
+# gt goes to the last line, x to the first, ctrl-t folds everything
+gt = G
+x = gg
+^t = zM
+g enter = ^o
+```
+
+Two plain keys go in one word (`gt`, `zM`); a word that is a key's name is that key (`f1`, `up`), so write `f 1` or `u p` for two. Keys with ctrl, alt or a name are written apart (`g enter`, `^x j`). The first key of two waits for the second, as in vim, for a second at most; another key, or none in time, lets it through as itself, so `g` then `g` is still imece's `gg`. A key given alone cannot also be the first of two (`g is given alone and as the first of two keys (line 2)`), and a side has two keys at most. The keys that come out are not turned again; the second goes where the first left the screen (`y = :q` opens the command line and writes `q`).
+
+imece reads the file at start, on `:keys`, and again when you save it: it looks every two seconds, and at once when you come back to its window, and says what came of it as `:keys` does. A file it cannot take whole is refused, and the keys you had stay: a line that is not `KEY = KEY` (`line 3: write it as KEY = KEY`), a name that is no key (`` `nope` is not a key ``), a key imece does nothing with on the right (`imece does nothing with d`), a key given twice (`^n is given on line 1 already`), three keys on a side, `^c` on either side, more than 200 keys, a file over 64 KiB or not text. The last good file is kept in the store, so a start with a file refused still has your keys and says why. A bad edit is said once and leaves the keys you had. With no file, imece's own keys are back.
+
+In the `?` help, your keys come first (`^n  your key: as j`), and every key line shows the keys that do it now: with the file above, `select` reads `↑ ↓  k/^n j/^p`; a key whose meaning went to no other key shows `–`; with the lines of two above, `first / last line` reads `x/gg  gt/G`. The writing keys are shown as they are, since the file does not turn them.
 
 ## See also
 
