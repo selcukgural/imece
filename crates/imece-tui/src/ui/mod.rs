@@ -2191,6 +2191,49 @@ mod tests {
     }
 
     #[test]
+    fn the_last_branch_of_each_project_closes_its_tree() {
+        let mut app = app_after(2, 6, 0, Lang::En);
+        // Per project, the tree mark of each worker (or folded) line.
+        let marks = |app: &App, height: u16| -> Vec<Vec<&'static str>> {
+            let s = render(app, 140, height);
+            let mut out: Vec<Vec<&'static str>> = Vec::new();
+            for l in s.lines() {
+                let l = l.strip_prefix('│').unwrap_or(l);
+                if l.starts_with("▾ ") || l.starts_with("▸ ") {
+                    out.push(Vec::new());
+                } else if let Some(b) = out.last_mut() {
+                    if l.starts_with("  ├ ") {
+                        b.push("├");
+                    } else if l.starts_with("  └ ") {
+                        b.push("└");
+                    }
+                }
+            }
+            out
+        };
+        let all = marks(&app, 45);
+        assert_eq!(all.len(), 2, "{all:?}");
+        assert!(all.iter().any(|b| b.len() >= 2), "{all:?}");
+        for b in &all {
+            assert_eq!(b.last(), Some(&"└"), "{all:?}");
+            assert!(b[..b.len() - 1].iter().all(|m| *m == "├"), "{all:?}");
+        }
+        // A folded line is the last branch too.
+        for a in &mut app.world.agents {
+            a.changed_at = 0;
+            a.talk = None;
+        }
+        app.world.tick = 100;
+        let s = render(&app, 140, 12);
+        assert!(s.contains("  └ … "), "{s}");
+        let tight = marks(&app, 12);
+        for b in &tight {
+            assert_eq!(b.last(), Some(&"└"), "{tight:?}");
+            assert_eq!(b.iter().filter(|m| **m == "└").count(), 1, "{tight:?}");
+        }
+    }
+
+    #[test]
     fn the_folded_line_names_the_loudest_of_the_folded() {
         // Project, lead and four workers in five lines: the last two in
         // order fold, all idle.

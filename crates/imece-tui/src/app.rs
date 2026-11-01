@@ -5724,10 +5724,14 @@ mod tests {
         );
         assert_eq!(app.notices(at(200)), None, "once");
         // Several at once: the count. An agent stuck counts too, an agent
-        // that waits in the inbox only once.
+        // that waits in the inbox only once: the change of agent 4 and
+        // agent 0 blocked; not agent 4 again as stuck, nor agent 1, blocked
+        // with its change (the first item) long known.
         app.world.inbox.push(item(InboxKind::Change, 4));
         app.world.agents[0].status = Status::Blocked;
+        app.world.agents[1].status = Status::Blocked;
         app.world.agents[4].status = Status::Stopped;
+        assert_eq!(app.world.inbox[0].agent, 1);
         assert_eq!(app.notices(at(300)), None);
         assert_eq!(
             app.notices(at(305)).as_deref(),
