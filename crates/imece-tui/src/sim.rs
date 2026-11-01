@@ -4261,7 +4261,11 @@ diff --git a/b.rs b/b.rs
                 size: Some(WINDOW)
             })
         );
-        assert_eq!((WINDOW, FRESH_CONTEXT, PER_TICK), (200_000, 20_000, 1_600));
+        assert_eq!(
+            (WINDOW, FRESH_CONTEXT, PER_TICK, AUTO_COMPACT),
+            (200_000, 20_000, 1_600, 180_000),
+            "the line is nine tenths of the window"
+        );
         s.fill(&mut w, worker, 100);
         assert_eq!(w.agents[worker].context.unwrap().used, 21_700);
         // Up to the top, where the session compacts on its own, said once.

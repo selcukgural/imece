@@ -6436,6 +6436,25 @@ mod tests {
         app.world.agents[w].context = fill(45_506, 200_000);
         let s = render(&app, 140, 40);
         assert!(s.contains("context:  22% · 45k of 200k"), "{s}");
+        // The focus line is loud from ninety too, by the exact token.
+        let colour = |app: &App| {
+            let buf = buffer(app, 140, 40);
+            let y = (0..40)
+                .find(|&y| {
+                    (0..140)
+                        .map(|x| buf[(x, y)].symbol())
+                        .collect::<String>()
+                        .contains("context:")
+                })
+                .unwrap();
+            let x = (0..140).find(|&x| buf[(x, y)].symbol() == "c").unwrap();
+            buf[(x, y)].style().fg
+        };
+        app.world.agents[w].context = fill(179_999, 200_000);
+        assert_eq!(colour(&app), dim().fg, "89%: quiet");
+        app.world.agents[w].context = fill(180_000, 200_000);
+        assert_eq!(colour(&app), Some(pal().warn), "90%: loud");
+        app.world.agents[w].context = fill(45_506, 200_000);
         app.lang = Lang::Tr;
         let s = render(&app, 140, 40);
         assert!(s.contains("bağlam:   %22 · 45k / 200k"), "{s}");
