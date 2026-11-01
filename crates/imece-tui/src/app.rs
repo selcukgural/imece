@@ -5723,6 +5723,13 @@ mod tests {
             Some(format!("imece · {name} asks you").as_str())
         );
         assert_eq!(app.notices(at(200)), None, "once");
+        // Its question answered while away: no news, and an idle agent
+        // without an item is not stuck.
+        let q3 = app.world.inbox.len() - 1;
+        assert_eq!(app.world.inbox[q3].agent, 3);
+        app.world.inbox[q3].open = false;
+        assert_eq!(app.notices(at(201)), None);
+        assert_eq!(app.notices(at(260)), None, "nothing new");
         // Several at once: the count. An agent stuck counts too, an agent
         // that waits in the inbox only once: the change of agent 4 and
         // agent 0 blocked; not agent 4 again as stuck, nor agent 1, blocked
