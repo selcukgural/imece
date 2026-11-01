@@ -608,7 +608,12 @@ fn run(
     let mut title = screen::Title::default();
     while !app.quit && !SIGNALLED.load(Ordering::SeqCst) {
         app.looked();
-        terminal.draw(|f| ui::draw(f, app))?;
+        // In another window, the screen is drawn less often.
+        let now = Instant::now();
+        if app.draw_due(now) {
+            terminal.draw(|f| ui::draw(f, app))?;
+            app.drawn(now);
+        }
         let waiting = app.world.open_inbox().len();
         title.show(&mut std::io::stdout(), &ui::words::title(app.lang, waiting))?;
         let timeout = app.tick_interval().saturating_sub(last.elapsed());
@@ -618,6 +623,7 @@ fn run(
             Err(e) => return Err(e),
         };
         let event = if ready { Some(event::read()?) } else { None };
+        app.stirred |= event.is_some();
         if let Some(Event::Paste(text)) = &event {
             app.paste(text);
         }

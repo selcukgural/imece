@@ -1116,17 +1116,14 @@ pub const EN: Text = Text {
             ":open :solo",
             "a checkout as a project, or a solo you drive",
         ),
-        (
-            ":close NAME",
-            "close it in 10 s: its agents leave, worktrees stay",
-        ),
+        (":close NAME", "close it: its agents leave, worktrees stay"),
         (
             ":rename NAME",
             "rename the project at hand; lead-NAME leads",
         ),
         (
             ":forget @NAME",
-            "in 10 s the agent forgets its session; a new one is told where it left off",
+            "the agent forgets its session; a new one is told where it left off",
         ),
         (":export PATH", "the open conversation or card, as Markdown"),
         (
@@ -1745,14 +1742,11 @@ pub const TR: Text = Text {
             ":open :solo",
             "checkout'u proje olarak, ya da sürdüğün solo",
         ),
-        (
-            ":close AD",
-            "10 sn sonra kapat: agent'lar ayrılır, worktree'ler kalır",
-        ),
+        (":close AD", "kapat: agent'lar ayrılır, worktree'ler kalır"),
         (":rename AD", "eldeki projeyi adlandır; lideri lead-AD olur"),
         (
             ":forget @AD",
-            "10 sn sonra agent oturumunu unutur; yenisine kaldığı yer anlatılır",
+            "agent oturumunu unutur; yenisine kaldığı yer anlatılır",
         ),
         (":export YOL", "açık konuşma ya da iş, Markdown olarak"),
         (
