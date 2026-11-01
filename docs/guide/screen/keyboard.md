@@ -47,8 +47,8 @@ The conventions are vim's: `h` `j` `k` `l` move and fold, `gg` and `G` go to the
 
 | Key | What it does |
 | --- | --- |
-| `#N`  `#word` | a card by number or title: all of it on one screen |
-| `n`  `p` | on a card's screen: next / previous card |
+| `#N`  `#word`  `n` `p` | a card by number or title, all of it on one screen; on it `n` `p`: next / previous card |
+| `&`  `:goto` | go to an agent or a project: type a name, `1`-`9` the nth on the list, `!` keeps only what needs you; `&#` turns to the cards |
 | `1` `2` `3` | `:salon` · `:board` · `:code` map |
 | `↑` `↓`  `j` `k` | select |
 | `gg`  `G` | first / last line |

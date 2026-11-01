@@ -116,6 +116,7 @@ The fleet in the header uses the same shapes, so it reads in the mono theme too.
 | `za` | toggle the fold at hand |
 | `zM` / `zR` (`:fold` / `:unfold`) | fold / unfold every project and every worker's helpers |
 | `f` (`:needs`) | the salon shows only what needs you, then everyone again |
+| `&` (`:goto`) | go to an agent or a project by name or number, what needs you first; its project and its worker's helpers unfold, and `f` lets go when it would hide the row |
 | `enter` | look deeper: an agent's focus (its card, status, origin and story), `enter` again its raw stream (the trace) |
 | `t` (`:trace`) / `v` (`:talk`) | the raw stream / the conversation of the agent at hand |
 | `esc` | back up one depth |

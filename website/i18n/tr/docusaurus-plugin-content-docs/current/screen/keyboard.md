@@ -47,8 +47,8 @@ Gelenekler vim'inkidir: `h` `j` `k` `l` hareket ve katlama, `gg` ve `G` uçlara,
 
 | Tuş | Ne yapar |
 | --- | --- |
-| `#N`  `#word` | numara ya da başlıkla bir kart: hepsi tek ekranda |
-| `n`  `p` | kart ekranında: sonraki / önceki kart |
+| `#N`  `#word`  `n` `p` | numara ya da başlıkla bir kart, hepsi tek ekranda; o ekranda `n` `p`: sonraki / önceki kart |
+| `&`  `:goto` | bir agent'a ya da projeye git: bir ad yazın, `1`-`9` listedeki n'inci, `!` yalnız sizi bekleyenleri tutar; `&#` kartlara döner |
 | `1` `2` `3` | `:salon` · `:board` pano · `:code` harita |
 | `↑` `↓`  `j` `k` | seç |
 | `gg`  `G` | ilk / son satır |

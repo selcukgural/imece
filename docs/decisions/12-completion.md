@@ -44,3 +44,6 @@ only /clear completes", both languages; the trace is the raw stream
 and stays English, so the worded line is the journal's). The demo
 shows it on the first Gemini session of a run, whose list is then
 only `/clear`.
+
+Record 65 adds the `&` line's menu on the same `Menu`: the places to
+go, numbered as a list frozen when the line opened, with notes.
