@@ -12,13 +12,14 @@ use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use crate::complete::{self, Menu};
 use crate::edit;
 use crate::i18n::{Lang, fill};
-use crate::live::{Live, Open, Refusal};
+use crate::live::{self, Live, Open, Refusal};
 use crate::model::*;
 use crate::prefs::{SIDE_DEFAULT, SIDE_MAX, SIDE_MIN};
 use crate::shell::Ran;
 use crate::sim::{self, Sim};
 use crate::theme;
 use crate::ui;
+use imece_agent::Choice;
 
 /// What drives the agents.
 pub enum Engine {
@@ -107,6 +108,151 @@ pub struct Place {
 const PLACES: usize = 50;
 
 /// A selectable salon line: a project's header or an agent.
+/// Which part of a solo's choice a command sets.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Part {
+    Effort,
+    Model,
+}
+
+/// The screen a bare `:solo` opens: the vendor, then the model (the
+/// vendor's own or an alias), then the effort (the vendor's own or one of
+/// its levels; skipped for a vendor without any). The path and name typed
+/// with `:solo` wait here for the choice.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SoloPick {
+    pub path: Option<String>,
+    pub name: Option<String>,
+    pub vendors: Vec<Vendor>,
+    pub step: PickStep,
+    /// The highlighted row of each step.
+    pub vendor: usize,
+    pub model: usize,
+    pub effort: usize,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PickStep {
+    Vendor,
+    Model,
+    Effort,
+}
+
+impl SoloPick {
+    pub fn new(path: Option<String>, name: Option<String>, vendors: Vec<Vendor>) -> SoloPick {
+        SoloPick {
+            path,
+            name,
+            vendors,
+            step: PickStep::Vendor,
+            vendor: 0,
+            model: 0,
+            effort: 0,
+        }
+    }
+
+    /// The vendor highlighted.
+    pub fn chosen_vendor(&self) -> Vendor {
+        self.vendors[self.vendor.min(self.vendors.len().saturating_sub(1))]
+    }
+
+    /// The rows of the step at hand: the vendors; `default` and the
+    /// vendor's model aliases; `default` and the vendor's efforts.
+    pub fn items(&self) -> Vec<String> {
+        let own = || vec![complete::DEFAULT.to_string()];
+        match self.step {
+            PickStep::Vendor => self.vendors.iter().map(|v| v.label().to_string()).collect(),
+            PickStep::Model => {
+                let mut items = own();
+                items.extend(
+                    live::aliases(self.chosen_vendor())
+                        .iter()
+                        .map(|a| a.to_string()),
+                );
+                items
+            }
+            PickStep::Effort => {
+                let mut items = own();
+                items.extend(
+                    live::efforts(self.chosen_vendor())
+                        .iter()
+                        .map(|e| e.to_string()),
+                );
+                items
+            }
+        }
+    }
+
+    /// The highlighted row of the step at hand.
+    pub fn sel(&self) -> usize {
+        match self.step {
+            PickStep::Vendor => self.vendor,
+            PickStep::Model => self.model,
+            PickStep::Effort => self.effort,
+        }
+    }
+
+    fn sel_mut(&mut self) -> &mut usize {
+        match self.step {
+            PickStep::Vendor => &mut self.vendor,
+            PickStep::Model => &mut self.model,
+            PickStep::Effort => &mut self.effort,
+        }
+    }
+
+    /// The choice picked so far, as `:solo` would take it: none for the
+    /// vendor's own model and effort.
+    pub fn choice(&self) -> Option<String> {
+        let v = self.chosen_vendor();
+        let pick = |items: Vec<&str>, i: usize| items.get(i).copied().map(str::to_string);
+        let c = Choice {
+            model: pick(live::aliases(v), self.model.saturating_sub(1)).filter(|_| self.model > 0),
+            effort: pick(live::efforts(v).to_vec(), self.effort.saturating_sub(1))
+                .filter(|_| self.effort > 0),
+        };
+        Some(c.wire()).filter(|w| !w.is_empty())
+    }
+
+    /// A key: `Some(Some(..))` once the last step is answered (the vendor
+    /// and the choice), `Some(None)` when the screen is given up.
+    pub fn on_key(&mut self, code: KeyCode) -> Option<Option<(Vendor, Option<String>)>> {
+        let last = self.items().len().saturating_sub(1);
+        match code {
+            KeyCode::Up | KeyCode::Char('k') => *self.sel_mut() = self.sel().saturating_sub(1),
+            KeyCode::Down | KeyCode::Char('j') => *self.sel_mut() = (self.sel() + 1).min(last),
+            KeyCode::Char('g') | KeyCode::Home => *self.sel_mut() = 0,
+            KeyCode::Char('G') | KeyCode::End => *self.sel_mut() = last,
+            KeyCode::Char(c @ '1'..='9') => {
+                let n = usize::from(u8::try_from(c).unwrap_or(b'1') - b'1');
+                if n <= last {
+                    *self.sel_mut() = n;
+                }
+            }
+            KeyCode::Enter => match self.step {
+                PickStep::Vendor => {
+                    // Another vendor: its own models and efforts.
+                    self.model = 0;
+                    self.effort = 0;
+                    self.step = PickStep::Model;
+                }
+                PickStep::Model if live::efforts(self.chosen_vendor()).is_empty() => {
+                    return Some(Some((self.chosen_vendor(), self.choice())));
+                }
+                PickStep::Model => self.step = PickStep::Effort,
+                PickStep::Effort => return Some(Some((self.chosen_vendor(), self.choice()))),
+            },
+            KeyCode::Esc => match self.step {
+                PickStep::Vendor => return Some(None),
+                PickStep::Model => self.step = PickStep::Vendor,
+                PickStep::Effort => self.step = PickStep::Model,
+            },
+            KeyCode::Char('q') => return Some(None),
+            _ => {}
+        }
+        None
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Sel {
     Project(ProjectId),
@@ -333,6 +479,9 @@ pub struct App {
     /// only after `enter` or `esc` ends that).
     pub help_find: String,
     pub help_typing: bool,
+    /// A bare `:solo` asks the vendor, the model and the effort on a
+    /// screen of its own; the words it came with wait in it.
+    pub solo_pick: Option<SoloPick>,
     /// The vendor that leads from the next start on without being asked
     /// (`claude`), as the preferences keep it; none asks when there is a
     /// choice.
@@ -424,6 +573,7 @@ impl App {
             help: false,
             help_find: String::new(),
             help_typing: false,
+            solo_pick: None,
             primary: None,
             digest: None,
             left_off,
@@ -757,6 +907,10 @@ impl App {
         }
         // An overlay takes the key that closes it.
         if self.digest.take().is_some() || self.left_off.take().is_some() {
+            return;
+        }
+        if self.solo_pick.is_some() {
+            self.solo_pick_key(k.code);
             return;
         }
         if self.help {
@@ -1692,7 +1846,11 @@ impl App {
             let text = pasted(text).replace(['\n', '\t'], " ");
             return self.help_find.push_str(&text);
         }
-        let open = self.help || self.digest.is_some() || self.left_off.is_some() || self.leaving;
+        let open = self.help
+            || self.solo_pick.is_some()
+            || self.digest.is_some()
+            || self.left_off.is_some()
+            || self.leaving;
         if !self.typing || open {
             return self.flash(self.lang.text().paste_not_writing);
         }
@@ -1715,6 +1873,9 @@ impl App {
     fn suggest(&self) -> Option<Menu> {
         if self.input.contains('\n') || self.noting.is_some() {
             return None;
+        }
+        if let Some(m) = self.choice_menu() {
+            return Some(m);
         }
         let mut m = complete::suggest(
             &self.input,
@@ -1777,6 +1938,12 @@ impl App {
                 let copies = &self.world.projects[self.current_project()].copies;
                 (!copies.is_empty()).then(|| copies.join(", "))
             }
+            // What the solo at hand runs on, the part the command sets.
+            "effort" | "model" => self.solo_at_hand().map(|id| {
+                let c = Choice::parse(self.model_of(id).as_deref().unwrap_or_default());
+                let part = if name == "effort" { c.effort } else { c.model };
+                part.unwrap_or_else(|| complete::DEFAULT.to_string())
+            }),
             _ => None,
         };
         let bill = matches!(name, "forget" | "open" | "solo" | "commit");
@@ -1945,6 +2112,8 @@ impl App {
             },
             "open" => self.open_project(arg),
             "solo" => self.solo_project(arg),
+            "effort" => self.rechoose(Part::Effort, arg),
+            "model" => self.rechoose(Part::Model, arg),
             "close" => self.close_project(arg),
             "rename" => self.rename_project(arg),
             "forget" => self.forget_agent(arg),
@@ -2162,6 +2331,7 @@ impl App {
         };
         let busy = self.typing
             || self.help
+            || self.solo_pick.is_some()
             || self.leaving
             || self.digest.is_some()
             || self.left_off.is_some();
@@ -2391,11 +2561,12 @@ impl App {
 
     /// `:solo [PATH] [VENDOR[:MODEL][@EFFORT]] [NAME]`, the words in any
     /// order: a solo session on the checkout at PATH (else the project at
-    /// hand's), on the vendor and choice (else the lead vendor at its
-    /// standard rung), as a project named NAME (else after the directory,
-    /// numbered when taken). A word with a `/`, or starting with `~` or
-    /// `.`, is the path; one that starts with a vendor's name is the
-    /// choice; the one left is the name. Selected when opened.
+    /// hand's), on the vendor and choice, as a project named NAME (else
+    /// after the directory, numbered when taken). A word with a `/`, or
+    /// starting with `~` or `.`, is the path; one that starts with a
+    /// vendor's name is the choice; the one left is the name. Without a
+    /// choice, a screen asks the vendor, the model and the effort first.
+    /// Selected when opened.
     fn solo_project(&mut self, arg: &str) {
         let t = self.lang.text();
         let (mut path, mut choice, mut name) = (None, None, None);
@@ -2410,16 +2581,54 @@ impl App {
             } else {
                 &mut name
             };
-            if slot.replace(word).is_some() {
+            if slot.replace(word.to_string()).is_some() {
                 return self.flash(t.solo_usage);
             }
         }
-        let (vendor, choice) = match choice {
-            Some((v, c)) => (Some(v), c),
-            None => (None, None),
+        match choice {
+            Some((vendor, choice)) => self.open_solo(path, name, Some(vendor), choice),
+            None => self.solo_pick = Some(SoloPick::new(path, name, self.vendors())),
+        }
+    }
+
+    /// The vendors a solo may run on here: the engine's, the lead vendor
+    /// first; the demo's three.
+    fn vendors(&self) -> Vec<Vendor> {
+        match &self.engine {
+            Engine::Live(live) => live.vendors(),
+            Engine::Sim(_) => vec![Vendor::Claude, Vendor::Codex, Vendor::Gemini],
+        }
+    }
+
+    /// A key on the solo pick screen: a step answered opens the solo
+    /// with what was picked; `q` or `esc` at the first step drops it.
+    fn solo_pick_key(&mut self, code: KeyCode) {
+        let Some(pick) = &mut self.solo_pick else {
+            return;
         };
+        match pick.on_key(code) {
+            None => {}
+            Some(None) => self.solo_pick = None,
+            Some(Some(picked)) => {
+                let pick = self.solo_pick.take().expect("open");
+                self.open_solo(pick.path, pick.name, Some(picked.0), picked.1);
+            }
+        }
+    }
+
+    /// Opens a solo on the checkout at `path` (none: the project at hand's)
+    /// named `name`, on `vendor` (none: the lead vendor) and `choice`;
+    /// selected when opened, the flash says what it runs on.
+    fn open_solo(
+        &mut self,
+        path: Option<String>,
+        name: Option<String>,
+        vendor: Option<Vendor>,
+        choice: Option<String>,
+    ) {
+        let t = self.lang.text();
         let here = self.current_project();
-        let full = match path {
+        let full = match &path {
             Some(p) => expand_tilde(p, self.home.as_deref()),
             None => match &self.engine {
                 Engine::Live(live) => live.repo_of(here).to_path_buf(),
@@ -2427,6 +2636,7 @@ impl App {
             },
         };
         let shown = full.display().to_string();
+        let name = name.as_deref();
         let opened = match &mut self.engine {
             Engine::Live(live) => live.open_project(
                 &mut self.world,
@@ -2461,6 +2671,101 @@ impl App {
             Err(ProjectRefusal::NameTaken(n)) => self.flash(fill(t.project_exists, &[&n])),
             Err(ProjectRefusal::BadName(n)) => self.flash(fill(t.bad_project_name, &[&n])),
             Err(e) => self.flash(fill(t.bad_open, &[&e.describe()])),
+        }
+    }
+
+    /// The solo session the person looks at: the agent at hand when it is
+    /// one, else the project at hand's head when that is one.
+    fn solo_at_hand(&self) -> Option<AgentId> {
+        let w = &self.world;
+        let at_hand = self
+            .agent_at_hand()
+            .filter(|&id| w.agents[id].role == Role::Solo);
+        at_hand.or_else(|| {
+            let p = self.current_project();
+            w.is_solo(p).then(|| w.projects[p].leader)
+        })
+    }
+
+    /// `:effort LEVEL` / `:model NAME`: the solo at hand runs on it from
+    /// its next turn; `default` is the vendor's own. The other part of its
+    /// choice stays.
+    fn rechoose(&mut self, part: Part, arg: &str) {
+        let t = self.lang.text();
+        let word = arg.trim();
+        if word.is_empty() {
+            return self.flash(match part {
+                Part::Effort => t.effort_usage,
+                Part::Model => t.model_usage,
+            });
+        }
+        let Some(id) = self.solo_at_hand() else {
+            return self.flash(t.no_solo);
+        };
+        let name = self.world.agents[id].name.clone();
+        let value = (word != complete::DEFAULT).then(|| word.to_string());
+        if value
+            .as_deref()
+            .is_some_and(|v| !valid_model(v) || v.contains('@'))
+        {
+            return self.flash(fill(
+                t.chose_refused,
+                &[
+                    &name,
+                    &format!(
+                        "{word:?} is not {}",
+                        match part {
+                            Part::Effort => "an effort level",
+                            Part::Model => "a model name",
+                        }
+                    ),
+                ],
+            ));
+        }
+        let mut choice = Choice::parse(self.model_of(id).as_deref().unwrap_or_default());
+        match part {
+            Part::Effort => choice.effort = value,
+            Part::Model => choice.model = value,
+        }
+        let choice = Some(choice.wire()).filter(|c| !c.is_empty());
+        let changed = match &mut self.engine {
+            Engine::Live(live) => live.rechoose(&mut self.world, id, choice),
+            Engine::Sim(sim) => sim.rechoose(&mut self.world, id, choice),
+        };
+        match changed {
+            Ok(runs) => self.flash(fill(t.chose, &[&name, &runs])),
+            Err(why) => self.flash(fill(t.chose_refused, &[&name, &why])),
+        }
+    }
+
+    /// The menus of `:solo`, `:effort` and `:model`: what the engine can
+    /// run here, by vendor.
+    fn choice_menu(&self) -> Option<Menu> {
+        let rest = self.input.strip_prefix(':')?;
+        let (cmd, arg) = rest.split_once(' ')?;
+        let word = arg.rsplit(' ').next().unwrap_or_default();
+        let start = self.input.len() - word.len();
+        match complete::long(cmd) {
+            "solo" => {
+                let vendors = self.vendors();
+                complete::solo_words(
+                    start,
+                    word,
+                    self.home.as_deref(),
+                    &vendors,
+                    &|v| live::efforts(v).to_vec(),
+                    &complete::list_dirs,
+                )
+            }
+            "effort" => {
+                let v = self.world.agents[self.solo_at_hand()?].vendor;
+                complete::choice_words(start, arg, live::efforts(v))
+            }
+            "model" => {
+                let v = self.world.agents[self.solo_at_hand()?].vendor;
+                complete::choice_words(start, arg, &live::aliases(v))
+            }
+            _ => None,
         }
     }
 
@@ -3399,9 +3704,21 @@ mod tests {
         assert!(app.world.is_solo(1));
         // Typing goes to the solo now, as to a leader.
         assert_eq!(app.typing_target(), "solo-notes");
-        // Bare: the project at hand's checkout, the lead vendor, named
-        // after it with a number; the demo names its path after the project.
+        // Bare: the pick screen asks the vendor, the model and the effort;
+        // the project at hand's checkout, named after it with a number (the
+        // demo names its path after the project).
         app.command("solo");
+        assert_eq!(app.world.projects.len(), 2, "nothing yet");
+        let pick = app.solo_pick.as_ref().expect("the pick screen");
+        assert_eq!((pick.path.as_deref(), pick.name.as_deref()), (None, None));
+        assert_eq!(
+            pick.vendors,
+            [Vendor::Claude, Vendor::Codex, Vendor::Gemini]
+        );
+        for _ in 0..3 {
+            app.on_key(key(KeyCode::Enter));
+        }
+        assert!(app.solo_pick.is_none());
         assert_eq!(app.world.projects.len(), 3);
         assert_eq!(app.world.projects[2].name, "notes-2");
         assert_eq!(
@@ -3426,6 +3743,18 @@ mod tests {
             );
         }
         assert_eq!(app.world.projects.len(), 6);
+        // With a path and a name but no choice, they wait for the pick.
+        app.command("solo ~/y ideas");
+        let pick = app.solo_pick.as_ref().expect("the pick screen");
+        assert_eq!(
+            (pick.path.as_deref(), pick.name.as_deref()),
+            (Some("~/y"), Some("ideas"))
+        );
+        app.on_key(key(KeyCode::Char('q')));
+        assert!(
+            app.solo_pick.is_none() && app.world.projects.len() == 6,
+            "given up"
+        );
         // Two names, two paths or two choices: the usage line, nothing opened.
         for bad in ["solo a b", "solo ~/x ./y", "solo claude codex"] {
             app.command(bad);
@@ -3433,12 +3762,205 @@ mod tests {
             assert_eq!(app.world.projects.len(), 6, "{bad}");
         }
         // A name that is taken, a name that can not be one.
-        app.command("solo notes");
+        app.command("solo claude notes");
         assert_eq!(said(&mut app), fill(t.project_exists, &["notes"]));
-        app.command("solo a:b");
+        app.command("solo claude a:b");
         assert_eq!(said(&mut app), fill(t.bad_project_name, &["a:b"]));
         // `:solo` raises the next bill, as `:open` does.
         assert_eq!(app.command_note("solo"), "$");
+    }
+
+    #[test]
+    fn the_menus_after_solo_effort_and_model_offer_what_the_engine_can_run() {
+        let mut app = App::new(1, 1, 0, 1, Lang::En);
+        app.home = None;
+        let items = |app: &mut App, line: &str| -> Vec<String> {
+            app.input = line.to_string();
+            app.typing = true;
+            app.suggest().map(|m| m.items).unwrap_or_default()
+        };
+        assert_eq!(items(&mut app, ":solo "), ["claude", "codex", "gemini"]);
+        assert_eq!(items(&mut app, ":solo co"), ["codex"]);
+        assert_eq!(
+            items(&mut app, ":solo notes claude:opus@x"),
+            ["claude:opus@xhigh"]
+        );
+        assert_eq!(
+            items(&mut app, ":solo gemini@"),
+            Vec::<String>::new(),
+            "no efforts"
+        );
+        // No solo at hand: the effort and model menus have nothing.
+        assert!(items(&mut app, ":effort ").is_empty());
+        app.command("solo codex notes");
+        assert_eq!(
+            items(&mut app, ":effort "),
+            ["default", "low", "medium", "high", "xhigh"]
+        );
+        assert_eq!(items(&mut app, ":effort x"), ["xhigh"]);
+        assert_eq!(
+            items(&mut app, ":model "),
+            ["default"],
+            "Codex names models in full"
+        );
+        app.command("solo claude ideas");
+        assert_eq!(
+            items(&mut app, ":model "),
+            ["default", "fable", "opus", "sonnet", "haiku"]
+        );
+        assert_eq!(items(&mut app, ":model s"), ["sonnet"]);
+    }
+
+    #[test]
+    fn the_solo_pick_screen_walks_vendor_model_effort_and_composes_the_choice() {
+        let vendors = vec![Vendor::Claude, Vendor::Codex, Vendor::Gemini];
+        let mut p = SoloPick::new(Some("~/x".into()), None, vendors.clone());
+        assert_eq!((p.step, p.sel()), (PickStep::Vendor, 0));
+        assert_eq!(p.items(), ["claude", "codex", "gemini"]);
+        // j k g G and digits move within the step; nothing past its ends.
+        assert_eq!(p.on_key(KeyCode::Char('j')), None);
+        assert_eq!(p.sel(), 1);
+        p.on_key(KeyCode::Char('G'));
+        assert_eq!(p.sel(), 2);
+        p.on_key(KeyCode::Char('j'));
+        assert_eq!(p.sel(), 2, "the last");
+        p.on_key(KeyCode::Char('g'));
+        p.on_key(KeyCode::Char('k'));
+        assert_eq!(p.sel(), 0, "the first");
+        p.on_key(KeyCode::Char('9'));
+        assert_eq!(p.sel(), 0, "no ninth");
+        p.on_key(KeyCode::Char('1'));
+        assert_eq!(p.chosen_vendor(), Vendor::Claude);
+        // Enter: the model step, default then Claude's aliases.
+        assert_eq!(p.on_key(KeyCode::Enter), None);
+        assert_eq!(p.step, PickStep::Model);
+        assert_eq!(p.items(), ["default", "fable", "opus", "sonnet", "haiku"]);
+        assert_eq!(p.choice(), None, "default: the vendor's own");
+        p.on_key(KeyCode::Char('3'));
+        assert_eq!(p.choice().as_deref(), Some("opus"));
+        // Then the effort step; the choice carries both.
+        assert_eq!(p.on_key(KeyCode::Enter), None);
+        assert_eq!(p.step, PickStep::Effort);
+        assert_eq!(
+            p.items(),
+            ["default", "low", "medium", "high", "xhigh", "max"]
+        );
+        p.on_key(KeyCode::Char('5'));
+        assert_eq!(p.choice().as_deref(), Some("opus@xhigh"));
+        // Esc goes back a step and keeps what was picked there.
+        assert_eq!(p.on_key(KeyCode::Esc), None);
+        assert_eq!((p.step, p.sel()), (PickStep::Model, 2));
+        assert_eq!(p.on_key(KeyCode::Enter), None);
+        assert_eq!(
+            p.on_key(KeyCode::Enter),
+            Some(Some((Vendor::Claude, Some("opus@xhigh".into()))))
+        );
+        // Another vendor picked: its own lists, from their defaults.
+        let mut p = SoloPick::new(None, None, vendors.clone());
+        p.on_key(KeyCode::Char('3'));
+        assert_eq!(p.on_key(KeyCode::Enter), None);
+        assert_eq!(p.items(), ["default", "auto", "pro", "flash", "flash-lite"]);
+        p.on_key(KeyCode::Char('3'));
+        // Gemini has no efforts: the model step is the last.
+        assert_eq!(
+            p.on_key(KeyCode::Enter),
+            Some(Some((Vendor::Gemini, Some("pro".into()))))
+        );
+        let mut p = SoloPick::new(None, None, vendors.clone());
+        p.on_key(KeyCode::Char('2'));
+        p.on_key(KeyCode::Enter);
+        assert_eq!(p.items(), ["default"], "Codex has no aliases");
+        p.on_key(KeyCode::Enter);
+        assert_eq!(p.items(), ["default", "low", "medium", "high", "xhigh"]);
+        p.on_key(KeyCode::Char('2'));
+        assert_eq!(
+            p.on_key(KeyCode::Enter),
+            Some(Some((Vendor::Codex, Some("@low".into()))))
+        );
+        // Given up: esc at the first step, q anywhere.
+        let mut p = SoloPick::new(None, None, vendors.clone());
+        assert_eq!(p.on_key(KeyCode::Esc), Some(None));
+        let mut p = SoloPick::new(None, None, vendors);
+        p.on_key(KeyCode::Enter);
+        assert_eq!(p.on_key(KeyCode::Char('q')), Some(None));
+        assert_eq!(
+            p.on_key(KeyCode::Char('x')),
+            None,
+            "an unknown key does nothing"
+        );
+    }
+
+    #[test]
+    fn colon_effort_and_colon_model_retune_the_solo_at_hand() {
+        let mut app = App::new(1, 1, 0, 1, Lang::En);
+        app.home = None;
+        let t = Lang::En.text();
+        let said = |app: &mut App| app.flash.take().map(|f| f.0).unwrap_or_default();
+        // No solo at hand: said so; nothing to do without a value.
+        app.command("effort high");
+        assert_eq!(said(&mut app), t.no_solo);
+        app.command("solo claude:opus@high notes");
+        said(&mut app);
+        let head = app.world.projects[1].leader;
+        assert_eq!(app.selected, Sel::Agent(head));
+        app.command("effort");
+        assert_eq!(said(&mut app), t.effort_usage);
+        app.command("model");
+        assert_eq!(said(&mut app), t.model_usage);
+        // One part changes, the other stays.
+        app.command("effort max");
+        assert_eq!(
+            said(&mut app),
+            fill(t.chose, &["solo-notes", "claude opus@max"])
+        );
+        assert_eq!(app.model_of(head).as_deref(), Some("opus@max"));
+        app.command("model sonnet");
+        assert_eq!(app.model_of(head).as_deref(), Some("sonnet@max"));
+        app.command("effort default");
+        assert_eq!(app.model_of(head).as_deref(), Some("sonnet"));
+        app.command("model default");
+        assert_eq!(app.model_of(head), None);
+        assert_eq!(said(&mut app), fill(t.chose, &["solo-notes", "claude"]));
+        assert!(app.world.journal.iter().any(|e| matches!(
+            &e.event, Event::Chose { agent, choice } if *agent == head && choice == "claude"
+        )));
+        // Refused: an effort the vendor lacks, a word that is no model name,
+        // a solo mid-turn.
+        app.command("effort turbo");
+        assert!(
+            said(&mut app)
+                .starts_with("could not change solo-notes: claude has no effort \"turbo\""),
+        );
+        app.command("model -x");
+        assert!(said(&mut app).contains("is not a model name"));
+        app.command("effort a@b");
+        assert!(said(&mut app).contains("is not an effort level"));
+        app.tell(head, "work");
+        app.command("effort low");
+        assert_eq!(
+            said(&mut app),
+            fill(
+                t.chose_refused,
+                &["solo-notes", "solo-notes is mid-turn; wait for its answer"]
+            )
+        );
+        // The project at hand's solo counts when a line of its is at hand;
+        // a team's agent never does.
+        app.selected = Sel::Project(1);
+        assert_eq!(app.solo_at_hand(), Some(head));
+        app.selected = Sel::Project(0);
+        assert_eq!(app.solo_at_hand(), None);
+        app.command("model opus");
+        assert_eq!(said(&mut app), t.no_solo);
+        // The menu notes the part as it stands, each its own.
+        app.selected = Sel::Agent(head);
+        assert_eq!(app.command_note("effort"), "(default)");
+        assert_eq!(app.command_note("model"), "(default)");
+        app.command("solo codex:gpt-5.6-terra@xhigh other");
+        assert_eq!(app.command_note("effort"), "(xhigh)");
+        assert_eq!(app.command_note("model"), "(gpt-5.6-terra)");
+        app.selected = Sel::Project(0);
+        assert_eq!(app.command_note("effort"), "", "no solo at hand");
     }
 
     #[test]

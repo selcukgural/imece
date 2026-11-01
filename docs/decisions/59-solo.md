@@ -102,3 +102,36 @@ names; a solo's turn that ends while a helper is mid-turn is not a report
 (as a leader's), so its answer waits in its story and the Δ comes with the
 next answer; the two kinds of project are told apart only by the head's
 role.
+
+The pick screen, `:effort` and `:model` (PR 3, the `solo-pick` branch,
+2026-11-01): a bare `:solo` (no `VENDOR[:MODEL][@EFFORT]` word) opens a
+screen of its own instead of guessing (`App::solo_pick`, `SoloPick` in
+`app.rs`, drawn by `overlay::solo_pick`, keys before the help's): the
+vendor (`Live::vendors`, the hireable ones with the lead vendor first; the
+demo's three), then the model (`default` for the vendor's own, then its
+aliases: `claude::ALIASES` fable/opus/sonnet/haiku, `codex::ALIASES` none,
+`gemini::alias_names()`; a full name is typed after `:solo VENDOR:`), then
+the effort (`default`, then the vendor's `EFFORTS`; the step is skipped
+for a vendor with none), `j k`, `1`-`9`, `enter` on, `esc` back a step
+(at the first, given up), `q` given up; the path and name typed with the
+bare `:solo` wait in it. `:effort LEVEL` and `:model NAME` set one part of
+the solo at hand's choice (`App::solo_at_hand`: the selected agent when it
+is a solo, else the project at hand's solo; `default` for the vendor's
+own; the other part stays), through `Live::rechoose` / `Sim::rechoose`:
+solo only, the choice checked against the vendor, refused mid-turn so no
+answer is cut; the running session ENDS and the next message starts a new
+one on the same transcript (`Live::end` keeps `sessions[id]`, so the start
+resumes), `models[id]` set, `tiered` off; `Event::Chose { agent, choice }`
+in the journal (`ev_chose`), the flash `chose`; the `:` menu notes the part
+as it stands (`(xhigh)`, `(default)`). Completion: after `:solo ` a
+path-looking word completes directories, else the vendors, and after
+`claude@` that vendor's efforts (`complete::solo_words`); after `:effort `
+and `:model ` `default` then the vendor's efforts or aliases
+(`complete::choice_words`). `COMMANDS` 34, the `?` help two lines longer
+(`WRITING_KEYS` 22). The i18n placeholder test reads the texts by
+reference (a debug build copied the whole `Text` per field and overflowed
+the stack once the struct grew). Known gaps: a model typed on the pick
+screen is not possible (aliases only; type it after `:solo VENDOR:`); a
+rechosen Codex solo starts a new app-server process on `thread/resume`,
+which re-reads its config; `:effort`/`:model` on a team's agent is refused
+(the leader hires by tier).

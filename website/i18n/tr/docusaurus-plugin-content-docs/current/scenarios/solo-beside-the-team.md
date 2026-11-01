@@ -93,6 +93,8 @@ Başka bir soru, başka bir model. Bu kez bir yol ve ad yok:
 
 Bir checkout'ta üç grup: bir takım ve iki solo, her biri kendi worktree'sinde, checkout'unuza hiçbiri dokunmuyor. Hepsini tek bütçe öder; başlığın `$/h`'si onları birlikte sayar. Aynı checkout'ta ikinci bir *takım* reddedilir (`that checkout is open already, as kule`): checkout başına bir takım, istendiği kadar solo.
 
+Çıplak bir `:solo` tahmin etmez, sorar: bir ekran imece'nin burada çalıştırabildiği satıcıları, sonra modeli, sonra çabayı listeler; `j k` ve `enter` seçer, `esc` bir adım geri gider. Çalışan bir solo da yeniden ayarlanır: `:effort max`, `solo-notes`u sonraki turundan itibaren `max`ta düşündürür (flaş: `solo-notes sonraki turundan itibaren claude opus@max üzerinde; oturumu onunla yeniden başlar`), `:model sonnet` kalan küçük düzeltmeler için onu daha ucuz bir modele taşır; oturum aynı transkript üzerinde yeniden başlar, konuşmadan hiçbir şey yitmez.
+
 imece'nin yerine getiremeyeceği bir seçim, bir şey başlamadan reddedilir. `:solo gemini:pro@high` `açılamadı: gemini has no effort setting; name only a model, not @high` der, `:solo claude@turbo` ise `açılamadı: claude has no effort "turbo"; one of low, medium, high, xhigh, max`.
 
 ## 5. Bir yardımcı

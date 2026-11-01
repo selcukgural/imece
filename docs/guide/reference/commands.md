@@ -28,6 +28,7 @@ A line that starts with `:` is a command to imece, not a message to an agent. Yo
 | `:commit` | — | | | `$` | |
 | `:copy [PATH]` | — | | | | the list, when there is one |
 | `:defer` | `S` | | | | |
+| `:effort LEVEL` | — | | | | the solo at hand's effort, or `default` |
 | `:export [PATH]` | — | | | | `the conversation` or `#12` |
 | `:faster` | `+` | | yes | | the speed, `×2` |
 | `:fold` | `zM` | | | | |
@@ -36,6 +37,7 @@ A line that starts with `:` is a command to imece, not a message to an agent. Yo
 | `:lang [en\|tr]` | `L` | | | | `English` / `Türkçe` |
 | `:lead VENDOR` | — | | | | the primary vendor, or `ask` |
 | `:mark` | `m` | | | | |
+| `:model NAME` | — | | | | the solo at hand's model, or `default` |
 | `:needs` | `f` | | | | on / off |
 | `:next` | `W` | | | | N waiting |
 | `:open PATH [NAME]` | — | `:o` | | `$` | |
@@ -93,6 +95,10 @@ A path must be relative, literal (no glob, no `..`, not in `.git`, at most 200 b
 
 Puts the item at hand in WAITING FOR YOU off and opens the next one, as `S`. See [waiting for you](../screen/waiting.md).
 
+### `:effort LEVEL`
+
+Sets how deep the solo session at hand thinks, from its next turn: one of its vendor's efforts (Claude Code: `low`, `medium`, `high`, `xhigh`, `max`; Codex: `low`, `medium`, `high`, `xhigh`), or `default` for the vendor's own. The solo at hand is the selected agent when it is a solo, else the project at hand's solo. Its running session ends and the next message starts a new one on the same transcript, told where it left off, so nothing is lost but the process; refused mid-turn (`could not change solo-notes: solo-notes is mid-turn; wait for its answer`), for a vendor without efforts (`gemini has no effort setting; …`), for a level the vendor lacks (`claude has no effort "turbo"; one of …`) and when no solo is at hand (`no solo session at hand: select one, or open one with :solo`). The flash: `solo-notes runs on claude opus@max from its next turn; its session starts again on it`; the journal: `you set solo-notes to run on claude opus@max`. The menu note shows the effort now, `(xhigh)` or `(default)`; after `:effort ` the levels complete. The model part of the choice stays. See [solo sessions](../concepts/solo.md).
+
 ### `:export [PATH]`
 
 Writes what is open as a Markdown file: the open conversation (`# Conversation: lead ⇄ claude-1`, each message a heading with its day, time, who to whom and its type), else the card's screen (`# #12 title`, its project, column and minutes, WHO, STORY, what waits for you on it, and its journal lines, oldest first, none folded). Nothing open: `nothing to export: open a conversation (v) or a card (#N) first`.
@@ -126,6 +132,10 @@ Who leads from the next start on, without asking: `claude`, `codex` or `gemini` 
 ### `:mark`
 
 Marks the line at hand to come back to, as `m`: in the open conversation, else in the journal; again unmarks. A marked line shows `✱`, is kept between runs and is never folded, tidied or left out of a load; `'` goes to the next marked line. The flash: `marked: ' comes back to it`. See [journal](../screen/journal.md).
+
+### `:model NAME`
+
+Sets the model the solo session at hand runs on, from its next turn: an alias (`opus`, `sonnet`, `haiku`, `fable` for Claude Code; `auto`, `pro`, `flash`, `flash-lite` for Gemini CLI) or a full name as the vendor takes it (`gpt-5.6-terra`), or `default` for the vendor's own. The same rules, refusals, flash and journal line as `:effort`; a name that is not a model name (`a b`, `-x`) is refused. After `:model ` the aliases complete; a full name is typed. The effort part of the choice stays.
 
 ### `:needs`
 
@@ -169,7 +179,7 @@ Demo only, as `-`: the simulation runs slower.
 
 ### `:solo [PATH] [CHOICE] [NAME]`
 
-Opens a solo session: one agent you drive yourself, with no leader and no team, as a project of its own ([solo sessions](../concepts/solo.md)). The three words may come in any order: a word with a `/`, or starting with `~` or `.`, is the PATH of the checkout (default: the project at hand's); a word that starts with a vendor's name is the CHOICE, `VENDOR[:MODEL][@EFFORT]` (`claude`, `claude:opus@xhigh`, `codex@high`, `gemini:pro`; default: the lead vendor at its standard rung); the word left is the NAME (default: the directory's name, numbered `-2`, `-3` when taken). The agent is `solo-NAME`, writes in its own worktree, and every turn that ends with an answer shows you its worktree's diff as a `Δ`. Any number of solos may share a checkout with its team. The flash: `opened notes at ~/src/kule as a solo session; write to solo-notes (claude opus@xhigh)`. Refusals: the usage line when two words want the same place, `a project named notes is open already`, `"a:b" can not name a project: …`, `could not open: codex is not on PATH here, or imece does not drive it`, `could not open: claude has no effort "bogus"; one of low, medium, high, xhigh, max`. `$`: a new session. The demo opens a fake solo that answers and shows a change now and then.
+Opens a solo session: one agent you drive yourself, with no leader and no team, as a project of its own ([solo sessions](../concepts/solo.md)). The three words may come in any order: a word with a `/`, or starting with `~` or `.`, is the PATH of the checkout (default: the project at hand's); a word that starts with a vendor's name is the CHOICE, `VENDOR[:MODEL][@EFFORT]` (`claude`, `claude:opus@xhigh`, `codex@high`, `gemini:pro`); the word left is the NAME (default: the directory's name, numbered `-2`, `-3` when taken). The agent is `solo-NAME`, writes in its own worktree, and every turn that ends with an answer shows you its worktree's diff as a `Δ`. Any number of solos may share a checkout with its team. The flash: `opened notes at ~/src/kule as a solo session; write to solo-notes (claude opus@xhigh)`. Refusals: the usage line when two words want the same place, `a project named notes is open already`, `"a:b" can not name a project: …`, `could not open: codex is not on PATH here, or imece does not drive it`, `could not open: claude has no effort "bogus"; one of low, medium, high, xhigh, max`. `$`: a new session. Without a CHOICE, a screen asks first: the vendor (the ones imece can run here, the lead vendor first), then the model (`default`, the vendor's own, or one of its aliases; a full name is typed after `:solo VENDOR:`), then the effort (`default` or one of the vendor's levels; skipped for Gemini, which has none); `j k` and `1`-`9` choose, `enter` goes on, `esc` back a step (at the first, it gives up), `q` gives up. A PATH or NAME typed with the bare `:solo` waits for the choice. After `:solo ` the completion offers the vendors, then, after `claude@`, that vendor's efforts, and directories for a word that looks like a path. The demo opens a fake solo that answers and shows a change now and then.
 
 ### `:talk [@NAME]`
 

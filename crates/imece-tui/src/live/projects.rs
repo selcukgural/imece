@@ -537,6 +537,141 @@ mod tests {
     }
 
     #[test]
+    fn rechoosing_a_solo_ends_its_session_keeps_the_transcript_and_says_what_it_runs_on() {
+        let mut w = team(1);
+        let mut live = idle_live(2);
+        w.open_project(
+            None,
+            "notes".into(),
+            "/n".into(),
+            Vendor::Claude,
+            Role::Solo,
+        );
+        let solo = w.projects[1].leader;
+        live.grow(Some("opus@high".into()), false);
+        live.places.push(Place {
+            repo: PathBuf::from("/n"),
+            root: PathBuf::from("/n-trees"),
+        });
+        // The vendors here, the lead vendor first.
+        assert_eq!(live.vendors(), [Vendor::Claude]);
+        // Not a solo: refused, nothing changes.
+        assert_eq!(
+            live.rechoose(&mut w, 1, Some("opus".into())),
+            Err("claude-1 is not a solo session".into())
+        );
+        assert_eq!(live.models[1], None);
+        // An effort the vendor lacks: refused in the vendor's words.
+        let e = live
+            .rechoose(&mut w, solo, Some("opus@turbo".into()))
+            .unwrap_err();
+        assert!(e.starts_with("claude has no effort \"turbo\""), "{e}");
+        assert_eq!(live.models[solo].as_deref(), Some("opus@high"), "unchanged");
+        // Mid-turn: refused, so no answer is cut.
+        live.turns[solo] = 1;
+        assert_eq!(
+            live.rechoose(&mut w, solo, Some("opus@max".into())),
+            Err("solo-notes is mid-turn; wait for its answer".into())
+        );
+        live.turns[solo] = 0;
+        // With no session running: the choice changes, nothing to end.
+        assert_eq!(
+            live.rechoose(&mut w, solo, Some("opus@max".into())),
+            Ok("claude opus@max".into())
+        );
+        assert_eq!(live.models[solo].as_deref(), Some("opus@max"));
+        assert!(matches!(
+            &w.journal.last().unwrap().event,
+            Event::Chose { agent, choice } if *agent == solo && choice == "claude opus@max"
+        ));
+        assert!(
+            w.agents[solo]
+                .trace
+                .iter()
+                .any(|l| l.ends_with("the person chose claude opus@max"))
+        );
+        // With a session running: it ends; the remembered session stays,
+        // so the next message resumes it on the new choice.
+        live.ready(
+            &mut w,
+            solo,
+            Ok((
+                Box::new(Stub),
+                PathBuf::from("/n-trees/solo-1"),
+                None,
+                None,
+                Vec::new(),
+            )),
+        );
+        live.sessions[solo] = Some(Resumable {
+            session: "686c6d27-d50b-4ae2-ad6a-159bf2984671".into(),
+            spent: 5,
+        });
+        live.tiered[solo] = true;
+        assert!(matches!(live.slots[solo], Slot::Running(_)));
+        assert_eq!(live.rechoose(&mut w, solo, None), Ok("claude".into()));
+        assert_eq!(live.models[solo], None, "the vendor's own");
+        assert!(!live.tiered[solo], "a choice is nobody's tier");
+        assert!(
+            !matches!(live.slots[solo], Slot::Running(_)),
+            "the session ended"
+        );
+        assert!(live.sessions[solo].is_some(), "kept, to resume");
+        assert!(
+            w.agents[solo]
+                .trace
+                .iter()
+                .any(|l| l.ends_with("the person chose claude; the session starts again on it"))
+        );
+        let chose = w
+            .journal
+            .iter()
+            .filter(|e| matches!(e.event, Event::Chose { agent, .. } if agent == solo))
+            .count();
+        assert_eq!(chose, 2);
+        // The event is the person's, and worded with the agent and choice.
+        let e = Event::Chose {
+            agent: solo,
+            choice: "claude".into(),
+        };
+        assert_eq!(e.kind(), EntryKind::Person);
+        assert_eq!(e.agent(), solo);
+        assert_eq!(
+            words::event(Lang::En, &w, &e),
+            "you set solo-notes to run on claude"
+        );
+        assert_eq!(
+            words::event(Lang::Tr, &w, &e),
+            "solo-notes artık claude üzerinde çalışıyor"
+        );
+        // Two vendors: the lead vendor comes first whatever the order.
+        let live = Live::new(
+            0,
+            two_vendors(&std::env::temp_dir()),
+            PathBuf::from("/r"),
+            PathBuf::from("/t"),
+        );
+        assert_eq!(live.vendors(), [Vendor::Claude, Vendor::Codex]);
+        let mut live = Live::new(
+            0,
+            two_vendors(&std::env::temp_dir()),
+            PathBuf::from("/r"),
+            PathBuf::from("/t"),
+        );
+        live.lead = Vendor::Codex;
+        assert_eq!(live.vendors(), [Vendor::Codex, Vendor::Claude]);
+        assert_eq!(
+            aliases(Vendor::Claude),
+            ["fable", "opus", "sonnet", "haiku"]
+        );
+        assert!(aliases(Vendor::Codex).is_empty());
+        assert_eq!(
+            aliases(Vendor::Gemini),
+            ["auto", "pro", "flash", "flash-lite"]
+        );
+    }
+
+    #[test]
     fn renaming_a_solo_project_renames_the_solo_and_tells_it_and_its_helper_so() {
         let mut w = team(0);
         let mut live = idle_live(1);

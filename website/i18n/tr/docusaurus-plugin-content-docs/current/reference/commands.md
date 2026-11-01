@@ -28,6 +28,7 @@ description: imece'nin aldığı her `:` komutu; argümanları, karşılığı o
 | `:commit` | — | | | `$` | |
 | `:copy [PATH]` | — | | | | liste, varsa |
 | `:defer` | `S` | | | | |
+| `:effort LEVEL` | — | | | | eldeki solonun çabası ya da `default` |
 | `:export [PATH]` | — | | | | `konuşma` ya da `#12` |
 | `:faster` | `+` | | evet | | hız, `×2` |
 | `:fold` | `zM` | | | | |
@@ -36,6 +37,7 @@ description: imece'nin aldığı her `:` komutu; argümanları, karşılığı o
 | `:lang [en\|tr]` | `L` | | | | `English` / `Türkçe` |
 | `:lead VENDOR` | — | | | | birincil satıcı, ya da `ask` |
 | `:mark` | `m` | | | | |
+| `:model NAME` | — | | | | eldeki solonun modeli ya da `default` |
 | `:needs` | `f` | | | | açık / kapalı |
 | `:next` | `W` | | | | N bekliyor |
 | `:open PATH [NAME]` | — | `:o` | | `$` | |
@@ -93,6 +95,10 @@ Yol göreli, düz (glob yok, `..` yok, `.git` içinde değil, en çok 200 bayt),
 
 SENİ BEKLEYEN'deki eldeki kalemi erteler ve sonrakini açar, `S` gibi. Bkz. [seni bekleyenler](../screen/waiting.md).
 
+### `:effort LEVEL`
+
+Eldeki solo oturumun sonraki turundan itibaren ne kadar derin düşüneceğini ayarlar: satıcısının çabalarından biri (Claude Code: `low`, `medium`, `high`, `xhigh`, `max`; Codex: `low`, `medium`, `high`, `xhigh`) ya da satıcının kendisi için `default`. Eldeki solo, seçili ajan soloysa odur, yoksa eldeki projenin solosu. Çalışan oturumu biter ve sonraki mesaj aynı transkript üzerinde, kaldığı yer anlatılarak yeni bir oturum başlatır; süreçten başka bir şey yitmez. Tur ortasında (`solo-notes değiştirilemedi: solo-notes is mid-turn; wait for its answer`), çabası olmayan bir satıcıda (`gemini has no effort setting; …`), satıcının olmayan bir düzeyde (`claude has no effort "turbo"; one of …`) ve elde solo yokken (`elde solo oturum yok: birini seç ya da :solo ile aç`) reddedilir. Flaş: `solo-notes sonraki turundan itibaren claude opus@max üzerinde; oturumu onunla yeniden başlar`; günlük: `solo-notes artık claude opus@max üzerinde çalışıyor`. Menü notu şimdiki çabayı gösterir, `(xhigh)` ya da `(default)`; `:effort ` ardından düzeyler tamamlanır. Seçimin model kısmı kalır. Bkz. [solo oturumlar](../concepts/solo.md).
+
 ### `:export [PATH]`
 
 Açık olanı Markdown dosyası olarak yazar: açık konuşma (`# Konuşma: lead ⇄ claude-1`, her mesaj günü, saati, kimden kime ve türüyle bir başlık), yoksa kartın ekranı (`# #12 başlık`, projesi, sütunu ve dakikaları, KİM, HİKÂYE, onda sizi bekleyenler ve günlük satırları, en eski önce, hiçbiri katlanmamış). Açık bir şey yoksa: `dışa aktarılacak bir şey yok: önce bir konuşma (v) ya da iş (#N) aç`.
@@ -126,6 +132,10 @@ Sonraki başlangıçtan itibaren sormadan kimin lider olacağı: `claude`, `code
 ### `:mark`
 
 Eldeki satırı sonra dönmek için işaretler, `m` gibi: açık konuşmada, yoksa günlükte; yeniden kaldırır. İşaretli satır `✱` taşır, çalıştırmalar arasında kalır ve asla katlanmaz, temizlenmez ya da yüklemeden dışarıda kalmaz; `'` sonraki işaretli satıra gider. Flaş: `işaretlendi: ' ona geri getirir`. Bkz. [günlük](../screen/journal.md).
+
+### `:model NAME`
+
+Eldeki solo oturumun sonraki turundan itibaren çalıştığı modeli ayarlar: bir takma ad (Claude Code için `opus`, `sonnet`, `haiku`, `fable`; Gemini CLI için `auto`, `pro`, `flash`, `flash-lite`) ya da satıcının aldığı biçimde tam bir ad (`gpt-5.6-terra`), ya da satıcının kendisi için `default`. `:effort` ile aynı kurallar, redler, flaş ve günlük satırı; model adı olmayan bir ad (`a b`, `-x`) reddedilir. `:model ` ardından takma adlar tamamlanır; tam bir ad yazılır. Seçimin çaba kısmı kalır.
 
 ### `:needs`
 
@@ -169,7 +179,7 @@ Yalnız demo, `-` gibi: simülasyon yavaşlar.
 
 ### `:solo [PATH] [CHOICE] [NAME]`
 
-Bir solo oturum açar: lideri ve takımı olmayan, kendinizin sürdüğü tek bir ajan, kendi başına bir proje olarak ([solo oturumlar](../concepts/solo.md)). Üç sözcük herhangi bir sırada gelebilir: içinde `/` olan ya da `~` veya `.` ile başlayan sözcük checkout'un PATH'idir (varsayılan: eldeki projeninki); bir satıcı adıyla başlayan sözcük CHOICE'tur, `SATICI[:MODEL][@ÇABA]` (`claude`, `claude:opus@xhigh`, `codex@high`, `gemini:pro`; varsayılan: lider satıcı, standart basamağında); kalan sözcük NAME'dir (varsayılan: dizinin adı, alınmışsa `-2`, `-3` ile numaralı). Ajan `solo-NAME`'dir, kendi worktree'sinde yazar ve bir yanıtla biten her turda worktree'sinin diff'ini size `Δ` olarak gösterir. Bir checkout'ta takımının yanında istendiği kadar solo olabilir. Flaş: `notes solo oturum olarak açıldı (~/src/kule); solo-notes adına yaz (claude opus@xhigh)`. Redler: iki sözcük aynı yeri isteyince kullanım satırı, `notes adında açık bir proje var`, `"a:b" proje adı olamaz: …`, `açılamadı: codex is not on PATH here, or imece does not drive it`, `açılamadı: claude has no effort "bogus"; one of low, medium, high, xhigh, max`. `$`: yeni bir oturum. Demo, yanıt veren ve ara sıra bir değişiklik gösteren sahte bir solo açar.
+Bir solo oturum açar: lideri ve takımı olmayan, kendinizin sürdüğü tek bir ajan, kendi başına bir proje olarak ([solo oturumlar](../concepts/solo.md)). Üç sözcük herhangi bir sırada gelebilir: içinde `/` olan ya da `~` veya `.` ile başlayan sözcük checkout'un PATH'idir (varsayılan: eldeki projeninki); bir satıcı adıyla başlayan sözcük CHOICE'tur, `SATICI[:MODEL][@ÇABA]` (`claude`, `claude:opus@xhigh`, `codex@high`, `gemini:pro`); kalan sözcük NAME'dir (varsayılan: dizinin adı, alınmışsa `-2`, `-3` ile numaralı). Ajan `solo-NAME`'dir, kendi worktree'sinde yazar ve bir yanıtla biten her turda worktree'sinin diff'ini size `Δ` olarak gösterir. Bir checkout'ta takımının yanında istendiği kadar solo olabilir. Flaş: `notes solo oturum olarak açıldı (~/src/kule); solo-notes adına yaz (claude opus@xhigh)`. Redler: iki sözcük aynı yeri isteyince kullanım satırı, `notes adında açık bir proje var`, `"a:b" proje adı olamaz: …`, `açılamadı: codex is not on PATH here, or imece does not drive it`, `açılamadı: claude has no effort "bogus"; one of low, medium, high, xhigh, max`. `$`: yeni bir oturum. CHOICE yoksa önce bir ekran sorar: satıcı (imece'nin burada çalıştırabildikleri, lider satıcı önce), sonra model (`default`, satıcının kendisi, ya da takma adlarından biri; tam bir ad `:solo SATICI:` ardına yazılır), sonra çaba (`default` ya da satıcının düzeylerinden biri; çabası olmayan Gemini'de atlanır); `j k` ve `1`-`9` seçer, `enter` ileri gider, `esc` bir adım geri (ilkinde vazgeçer), `q` vazgeçer. Çıplak `:solo` ile yazılan bir PATH ya da NAME seçimi bekler. `:solo ` ardından tamamlama satıcıları, sonra `claude@` ardından o satıcının çabalarını ve yola benzeyen bir sözcük için dizinleri önerir. Demo, yanıt veren ve ara sıra bir değişiklik gösteren sahte bir solo açar.
 
 ### `:talk [@NAME]`
 

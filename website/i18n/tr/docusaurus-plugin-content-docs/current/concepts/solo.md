@@ -11,7 +11,8 @@ Takım, imece'nin alışılmış biçimidir: bir lider checkout'unuzu okur, iş�
 
 | Nasıl | Ne yapar |
 | --- | --- |
-| `:solo [PATH] [CHOICE] [NAME]` | ekrandan, imece çalışırken. Sözcükler herhangi bir sırada gelebilir: içinde `/` olan ya da `~` veya `.` ile başlayan sözcük checkout'un yoludur (varsayılan: eldeki projeninki); bir satıcı adıyla başlayan sözcük seçimdir; kalan sözcük projenin adıdır (varsayılan: dizinin adı, alınmışsa `-2`, `-3` ile numaralı). |
+| `:solo [PATH] [CHOICE] [NAME]` | ekrandan, imece çalışırken. Sözcükler herhangi bir sırada gelebilir: içinde `/` olan ya da `~` veya `.` ile başlayan sözcük checkout'un yoludur (varsayılan: eldeki projeninki); bir satıcı adıyla başlayan sözcük seçimdir; kalan sözcük projenin adıdır (varsayılan: dizinin adı, alınmışsa `-2`, `-3` ile numaralı). Seçimsiz, bir ekran `j k enter` ile satıcıyı, modeli ve çabayı sorar. |
+| `:effort DÜZEY`, `:model AD` | eldeki solonun sonraki turundan itibaren üzerinde çalıştığını değiştirir; `default` satıcının kendisidir. Oturumu aynı transkript üzerinde yeniden başlar. |
 | `imece --solo V[:MODEL][@EFFORT]` | komut satırından: imece checkout'ta takım yerine bir soloyla başlar. Aynı satıcı ve seçimle açık bir solo sürdürülür, böylece her sabah aynı komut aynı oturumu sürdürür; farklı bir seçim yanına başka bir solo açar. `--lead` yoksa `:open`'ın eklediği takımlara solonun satıcısı liderlik eder, KİM LİDER? sorusu gelmez. |
 
 **Seçim** `SATICI[:MODEL][@ÇABA]` biçimindedir, satıcıdan sonraki her parça isteğe bağlı:
@@ -47,7 +48,6 @@ Bir checkout'ta en çok bir açık **takım** (ikinci bir `:open` `that checkout
 
 ## Henüz olmayanlar
 
-- Seçimsiz çıplak bir `:solo`, lider satıcıyı standart basamağında alır. Bir seçim ekranı (satıcı, model, çaba; `j k enter`), `:solo ` sonrasında tamamlama ve çalışan bir soloyu değiştiren `:effort` / `:model` planlıdır.
 - Yardımcılarından biri tur ortasındayken solonun yanıtı (bir liderinki gibi) hikâyesinde kalır ve sonraki yanıtla birlikte, `Δ`sıyla size gelir.
 
 ## Bkz.
