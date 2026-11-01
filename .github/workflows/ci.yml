@@ -25,3 +25,25 @@ jobs:
       - run: cargo fmt --all --check
       - run: cargo clippy --workspace --all-targets --locked -- -D warnings
       - run: cargo test --workspace --locked
+
+  # install.sh (website/static) end to end against a release made from this
+  # build: the download, the checksum, the install, the PATH line, the
+  # refusals (website/test-install.sh); record 69.
+  installer:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: shellcheck
+        if: runner.os == 'Linux'
+        run: shellcheck website/static/install.sh website/test-install.sh
+      - name: Rust toolchain (rust-toolchain.toml)
+        run: rustup toolchain install
+      - run: cargo build --locked -p imece-tui
+      - run: website/test-install.sh target/debug/imece

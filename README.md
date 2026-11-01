@@ -40,7 +40,7 @@ and applied it.
 ## Run it
 
 ```sh
-cargo install --path crates/imece-tui      # needs claude, codex or gemini on PATH
+curl -fsSL https://selcukgural.github.io/imece/install.sh | sh   # macOS, Linux; needs claude, codex or gemini on PATH
 cd your/checkout
 imece                                      # a leader reads the checkout and waits for you
 imece --agents 8 --budget 10 --lead codex  # up to 8 workers, a $10 pot, Codex leads

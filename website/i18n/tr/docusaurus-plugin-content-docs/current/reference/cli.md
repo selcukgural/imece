@@ -15,6 +15,7 @@ usage: imece [--repo DIR] [--agents N] [--helpers N] [--lead VENDOR]
              [--budget USD] [--fresh] [--awake] [--confine standard|strict|open]
              [--lang en|tr] [--theme NAME|FILE]
        imece --demo [--projects N] [--agents N] [--researchers N] [--seed N]
+       imece --version
 ```
 
 ```sh
@@ -33,6 +34,7 @@ imece --demo --lang tr                             # ya da IMECE_LANG=tr
 - Bir sayı aralığıyla karşılaştırılır; dışındaysa imece `--helpers: 9 is not in 0-8` der (bayrağın aralığı).
 - `--projects`, `--researchers` ve `--seed` `--demo`'ya aittir. Onsuz verilirse imece `--projects is for --demo` der ve kullanımı yazar.
 - `-h` ya da `--help` kullanım metnini yazar. Reddedilen her komut satırı gibi 2 çıkış koduyla biter.
+- İlk bayrak `--version` (ya da `-V`) ise stdout'a `imece 0.1.0` yazar ve 0 çıkış koduyla biter; kurulum betiği yerine koyduğu dosyayı böyle denetler.
 - `--live` kabul edilir ve yok sayılır: canlı ajanlar varsayılan olmadan önce onlar bu bayrakla istenirdi.
 - `imece mcp-relay SOCKET` sizin için değildir: bir satıcının CLI'ı imece'yi bu biçimde kendi MCP sunucusu olarak başlatır ve süreç yalnızca CLI ile imece'nin o ajana ait soketi arasında bayt taşır ([mesaj türleri](message-types.md)).
 
@@ -44,7 +46,7 @@ imece --demo --lang tr                             # ya da IMECE_LANG=tr
 
 | Kod | Ne zaman | Ne görürsünüz |
 | --- | --- | --- |
-| 0 | Olağan bir çıkış (`q q`, `:quit`, ya da dışarıdan SIGTERM, SIGHUP ve SIGINT; imece bunları olağan bir çıkışa çevirir ki oturumlar dursun ve veriyolunun soketleri kaldırılsın) | kabuğunuzun başlığı geri gelir |
+| 0 | `--version`, ya da olağan bir çıkış (`q q`, `:quit`, ya da dışarıdan SIGTERM, SIGHUP ve SIGINT; imece bunları olağan bir çıkışa çevirir ki oturumlar dursun ve veriyolunun soketleri kaldırılsın) | kabuğunuzun başlığı geri gelir |
 | 1 | Bayraklar okunduktan sonra başlangıç başarısız oldu: PATH'te kodlama ajanı yok, `--repo` bir git çalışma kopyası değil, depoyu başka bir imece tutuyor, depo okunamıyor, bir satıcının oturumu başlatılamadı | ekran geri getirildikten sonra stderr'de `imece: <neden>` |
 | 2 | Bir bayrak yanlış, ya da `--help` | stderr'de mesaj; eksik değerde, bilinmeyen seçenekte ve canlıda verilen demo bayrağında ardından kullanım metni |
 
