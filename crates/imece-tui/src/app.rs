@@ -3781,6 +3781,11 @@ mod tests {
         };
         assert_eq!(items(&mut app, ":solo "), ["claude", "codex", "gemini"]);
         assert_eq!(items(&mut app, ":solo co"), ["codex"]);
+        // The menu replaces the word being typed, where it starts.
+        app.input = ":solo notes co".into();
+        assert_eq!(app.suggest().unwrap().start, 12);
+        app.input = ":solo co".into();
+        assert_eq!(app.suggest().unwrap().start, 6);
         assert_eq!(
             items(&mut app, ":solo notes claude:opus@x"),
             ["claude:opus@xhigh"]
@@ -3824,6 +3829,10 @@ mod tests {
         assert_eq!(p.sel(), 2);
         p.on_key(KeyCode::Char('j'));
         assert_eq!(p.sel(), 2, "the last");
+        p.on_key(KeyCode::Char('k'));
+        assert_eq!(p.sel(), 1, "k goes up one");
+        p.on_key(KeyCode::Up);
+        assert_eq!(p.sel(), 0);
         p.on_key(KeyCode::Char('g'));
         p.on_key(KeyCode::Char('k'));
         assert_eq!(p.sel(), 0, "the first");
