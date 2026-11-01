@@ -223,6 +223,10 @@ const APPROVAL_WAIT: u64 = 100 / SECONDS_PER_TICK;
 /// Ticks a worker that asked the person waits before it goes on with what
 /// does not depend on the answer.
 const QUESTION_WAIT: u64 = 40;
+/// Ticks a session takes to start (live: the process, a first worktree's
+/// checkout), its row saying `◌ starting…` meanwhile; the work under it
+/// goes on as before, so the demo's course is unchanged.
+const STARTING: u64 = 3;
 /// Why a demo session stops, in the words of a vendor's process.
 const STOPPED: &str = "the session ended: the process exited with code 1";
 
@@ -1661,6 +1665,8 @@ impl Sim {
         a.card = Some(card);
         a.progress = 0;
         a.activity = Some(String::new());
+        // Its first task starts its session, as live does.
+        a.starting = a.cost == 0;
         a.set_status(Status::Working, t);
         if !lease.is_empty() {
             a.trace(t, format!("tool_use lonca.lease_acquire [{lease}]"));
@@ -1793,6 +1799,9 @@ impl Sim {
 
     fn work(&mut self, w: &mut World, id: AgentId) {
         let t = w.tick;
+        if w.agents[id].starting && t >= w.agents[id].changed_at + STARTING {
+            w.agents[id].starting = false;
+        }
         // A session that waits for the person's yes does nothing else,
         // until it stops waiting.
         if let Some(since) = w
@@ -1979,6 +1988,7 @@ impl Sim {
         self.mind(helper).until = until;
         let a = &mut w.agents[helper];
         a.set_status(Status::Working, t);
+        a.starting = true;
         a.activity = Some(format!("run {}", kit(project).test));
         helper
     }
@@ -1986,7 +1996,11 @@ impl Sim {
     /// A helper works until its task is done, then tells its worker and
     /// leaves.
     fn helper(&mut self, w: &mut World, id: AgentId) {
-        if w.agents[id].status != Status::Working || w.tick < self.mind(id).until {
+        let a = &mut w.agents[id];
+        if a.starting && w.tick >= a.changed_at + STARTING {
+            a.starting = false;
+        }
+        if a.status != Status::Working || w.tick < self.mind(id).until {
             return;
         }
         let worker = w.agents[id].parent.expect("a helper has a worker");
@@ -2604,6 +2618,54 @@ mod tests {
         w.agents[worker].card = None;
         assert!(Sim::free(&w, worker));
         assert!(s.mind(worker).started, "taking a card starts a session");
+    }
+
+    #[test]
+    fn a_worker_s_first_card_starts_its_session_for_three_ticks_a_helper_s_too() {
+        let (mut w, mut s, worker, card) = one_at_work();
+        let began = w.tick;
+        assert_eq!(w.agents[worker].changed_at, began);
+        assert!(
+            w.agents[worker].starting,
+            "its first card, nothing spent yet"
+        );
+        assert!(w.agents[worker].progress == 0);
+        s.step(&mut w);
+        s.step(&mut w);
+        assert_eq!(w.tick, began + 2);
+        assert!(w.agents[worker].starting, "two ticks: still starting");
+        assert!(
+            w.agents[worker].progress > 0,
+            "the work under it goes on: the demo's course is unchanged"
+        );
+        s.step(&mut w);
+        assert!(!w.agents[worker].starting, "three ticks: up");
+        // A helper's session starts with it, for as long.
+        let h = s.helper_for(&mut w, worker, card);
+        assert!(w.agents[h].starting && w.agents[h].status == Status::Working);
+        s.step(&mut w);
+        s.step(&mut w);
+        assert!(w.agents[h].starting);
+        s.step(&mut w);
+        assert!(!w.agents[h].starting);
+        // A later card of a worker that spent something starts no session.
+        w.cards[card].column = Column::Done;
+        w.agents[worker].status = Status::Idle;
+        w.agents[worker].card = None;
+        assert!(w.agents[worker].cost > 0);
+        let next = w.cards.len();
+        s.post(&mut w, 0, "next".into());
+        s.take(&mut w, worker, next, Taken::Claimed);
+        assert!(!w.agents[worker].starting);
+        // One that never spent (started with `--agents`, idle) does.
+        w.agents[worker].cost = 0;
+        w.cards[next].column = Column::Done;
+        w.agents[worker].status = Status::Idle;
+        w.agents[worker].card = None;
+        let again = w.cards.len();
+        s.post(&mut w, 0, "again".into());
+        s.take(&mut w, worker, again, Taken::Claimed);
+        assert!(w.agents[worker].starting);
     }
 
     #[test]

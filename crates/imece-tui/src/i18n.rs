@@ -354,6 +354,9 @@ pub struct Text {
     pub research_queue: &'static str,
     pub waiting_human: &'static str,
     pub thinking: &'static str,
+    /// A live agent whose session is being started (the process, a first
+    /// worktree's checkout) and has not answered yet.
+    pub starting: &'static str,
     pub stopped: &'static str,
     pub asleep: &'static str,
     /// The store could not save; `{}` is the error.
@@ -730,7 +733,7 @@ pub const EN: Text = Text {
     notice_stuck: "imece · {} is stuck",
     notify_many: "imece · {} things wait for you",
     theme_is: "theme: {}",
-    folded: "… {} agents doing fine",
+    folded: "… {} agents folded, loudest",
     helpers: "{} helpers",
     group_working: "{} working",
     group_waiting: " ! {} waiting ",
@@ -742,6 +745,7 @@ pub const EN: Text = Text {
     research_queue: " in the researcher queue",
     waiting_human: "waiting for you",
     thinking: "thinking…",
+    starting: "starting…",
     stopped: "■ stopped, write to it to start again",
     asleep: "◦ asleep since the last run, write to it to wake it",
     store_failed: "not saved for the next run: {}",
@@ -989,7 +993,7 @@ pub const EN: Text = Text {
         ),
     ],
     help_legend: [
-        " ◆ lead  ● working  ◐ asking  ✕ blocked  ! waiting for you",
+        " ◆ lead  ◌ starting  ● working  ◐ asking  ✕ blocked  ! waiting for you",
         " ◇ researcher  ○ idle  ✓ done, not seen  ■ stopped  ⇄ conversation  ▾ ▸ project / helpers  ▴ pinned",
         " ~ soft-tainted (read a report)  ≈ tainted (reads the outside world)",
         " ⎇ branch  ↑ own commits  ↓ the checkout's new commits  +N −M lines not yet handed over",
@@ -1233,7 +1237,7 @@ pub const TR: Text = Text {
     notice_stuck: "imece · {} takıldı",
     notify_many: "imece · {} şey seni bekliyor",
     theme_is: "tema: {}",
-    folded: "… {} agent yolunda",
+    folded: "… {} agent katlı, en yükseği",
     helpers: "{} yardımcı",
     group_working: "{} çalışıyor",
     group_waiting: " ! {} bekliyor ",
@@ -1245,6 +1249,7 @@ pub const TR: Text = Text {
     research_queue: " araştırmacı sırasında",
     waiting_human: "onayını bekliyor",
     thinking: "düşünüyor…",
+    starting: "başlıyor…",
     stopped: "■ durdu, yazınca yeniden başlar",
     asleep: "◦ önceki çalışmadan beri uyuyor, yazınca uyanır",
     store_failed: "sonraki çalışma için kaydedilemedi: {}",
@@ -1494,7 +1499,7 @@ pub const TR: Text = Text {
         ),
     ],
     help_legend: [
-        " ◆ lider  ● çalışıyor  ◐ soruyor  ✕ bloke  ! onayını bekliyor",
+        " ◆ lider  ◌ başlıyor  ● çalışıyor  ◐ soruyor  ✕ bloke  ! onayını bekliyor",
         " ◇ araştırmacı  ○ boşta  ✓ bitti, bakılmadı  ■ durdu  ⇄ konuşma  ▾ ▸ proje / yardımcılar  ▴ sabit",
         " ~ hafif kirli (rapor okudu)  ≈ kirli (dış dünyayı okuyor)",
         " ⎇ dal  ↑ kendi commit'leri  ↓ checkout'un yeni commit'leri  +N −M henüz verilmemiş satırlar",

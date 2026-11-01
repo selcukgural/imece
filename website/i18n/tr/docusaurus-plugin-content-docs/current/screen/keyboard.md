@@ -136,7 +136,7 @@ Gelenekler vim'inkidir: `h` `j` `k` `l` hareket ve katlama, `gg` ve `G` uçlara,
 
 | İşaret | Anlamı |
 | --- | --- |
-| `◆` lider  `●` çalışıyor  `◐` soruyor  `✕` bloke  `!` onayını bekliyor | bir agent'ın durumu |
+| `◆` lider  `◌` başlıyor  `●` çalışıyor  `◐` soruyor  `✕` bloke  `!` onayını bekliyor | bir agent'ın durumu |
 | `◇` araştırmacı  `○` boşta  `✓` bitti, bakılmadı  `■` durdu  `⇄` konuşma  `▾` `▸` proje / yardımcılar  `▴` sabit | |
 | `~` hafif kirli (rapor okudu)  `≈` kirli (dış dünyayı okuyor) | yalnız demo: araştırmacılar canlıda yapılmadı |
 | `⎇` dal  `↑` kendi commit'leri  `↓` checkout'un yeni commit'leri  `+N −M` henüz verilmemiş satırlar | bir işçinin worktree'si |

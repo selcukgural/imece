@@ -12,7 +12,7 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Paragraph};
 
 use super::*;
-use crate::app::{App, Need, Pane, Sel};
+use crate::app::{App, Need, Pane, Rung, Sel};
 
 /// Drawn before an agent's name in its speaker colour.
 pub(crate) const SPEAKER_MARK: &str = "▎";
@@ -25,8 +25,12 @@ pub enum Row {
         depth: u8,
     },
     Talk(AgentId),
-    /// Calm workers of a project folded into one line.
-    Folded(usize),
+    /// Calm workers of a project folded into one line: how many, and the
+    /// loudest of them (the highest rung, the first among equals).
+    Folded {
+        n: usize,
+        loud: AgentId,
+    },
 }
 
 impl Row {
@@ -189,7 +193,13 @@ pub fn rows(app: &App, capacity: usize) -> Vec<Row> {
             }
         }
         if nfolded[p.id] > 0 {
-            out.push(Row::Folded(nfolded[p.id]));
+            let loud = app
+                .loudest(order[p.id].iter().filter(|a| folded[a.id]).map(|a| a.id))
+                .expect("a folded line folds somebody");
+            out.push(Row::Folded {
+                n: nfolded[p.id],
+                loud,
+            });
         }
     }
     out
@@ -238,6 +248,7 @@ fn salon(f: &mut Frame, area: Rect, app: &App) {
 
     let rows = rows(app, usize::from(list.height));
     *app.shown.borrow_mut() = rows.iter().filter_map(Row::sel).collect();
+    let rungs = app.rungs();
 
     // Whether a worker (or folded) line is the last branch of its project.
     let mut last = vec![false; rows.len()];
@@ -245,7 +256,7 @@ fn salon(f: &mut Frame, area: Rect, app: &App) {
     for (i, row) in rows.iter().enumerate().rev() {
         match row {
             Row::Project(_) => seen = false,
-            Row::Agent { depth: 2, .. } | Row::Folded(_) if !seen => {
+            Row::Agent { depth: 2, .. } | Row::Folded { .. } if !seen => {
                 last[i] = true;
                 seen = true;
             }
@@ -259,7 +270,7 @@ fn salon(f: &mut Frame, area: Rect, app: &App) {
     let mut links = Vec::new();
     for (i, row) in rows.iter().enumerate() {
         let line = match *row {
-            Row::Project(p) => project_line(app, p),
+            Row::Project(p) => project_line(app, p, &rungs),
             Row::Agent { id, depth } => {
                 let prefix = match depth {
                     1 => "  ",
@@ -280,7 +291,7 @@ fn salon(f: &mut Frame, area: Rect, app: &App) {
                         }
                     }
                 };
-                let line = agent_line(app, &w.agents[id], prefix);
+                let line = agent_line(app, &w.agents[id], prefix, &rungs);
                 if let Some(url) = linked(&w.agents[id]) {
                     let width = line.spans.last().map_or(0, Span::width);
                     links.push((i, line.width() - width, width, url, id));
@@ -307,10 +318,14 @@ fn salon(f: &mut Frame, area: Rect, app: &App) {
                     Span::styled(format!(" \"{}\"", clean(text)), talk),
                 ])
             }
-            Row::Folded(n) => Line::from(vec![
-                Span::styled("  └ ", dim()),
-                Span::styled(fill(app.lang.text().folded, &[&n.to_string()]), dim()),
-            ]),
+            Row::Folded { n, loud } => {
+                let mut spans = vec![
+                    Span::styled("  └ ", dim()),
+                    Span::styled(fill(app.lang.text().folded, &[&n.to_string()]), dim()),
+                ];
+                spans.extend(member(app, loud, &rungs));
+                Line::from(spans)
+            }
         };
         lines.push(line);
     }
@@ -326,9 +341,22 @@ fn salon(f: &mut Frame, area: Rect, app: &App) {
     f.render_widget(Paragraph::new(queue_line(app)), queue);
 }
 
+/// `  ◌ claude-2`: the loudest member of a folded group, its rung's glyph
+/// (its own colour) and its name.
+fn member(app: &App, id: AgentId, rungs: &[Rung]) -> Vec<Span<'static>> {
+    let a = &app.world.agents[id];
+    let (g, color) = rung_glyph(a, rungs[id]);
+    vec![
+        Span::styled(format!("  {g} "), fg(color)),
+        Span::styled(clean(&a.name), fg(vendor_color(a.vendor))),
+    ]
+}
+
 /// A project's header: folded or open, its trunk, how many work, what it
-/// costs, and (even when folded) how much waits for the person.
-pub(super) fn project_line(app: &App, p: ProjectId) -> Line<'static> {
+/// costs, how many are blocked (`✕`) or stopped (`■`), and (even when
+/// folded) how much waits for the person. A folded project ends with its
+/// loudest member.
+pub(super) fn project_line(app: &App, p: ProjectId, rungs: &[Rung]) -> Line<'static> {
     let w = &app.world;
     let t = app.lang.text();
     let project = &w.projects[p];
@@ -354,6 +382,12 @@ pub(super) fn project_line(app: &App, p: ProjectId) -> Line<'static> {
         .filter(in_project)
         .filter(|a| a.status == Status::Blocked)
         .count();
+    let stopped = w
+        .agents
+        .iter()
+        .filter(in_project)
+        .filter(|a| a.status == Status::Stopped)
+        .count();
 
     let mut spans = vec![Span::styled(
         format!("{} ", if open { "▾" } else { "▸" }),
@@ -378,6 +412,9 @@ pub(super) fn project_line(app: &App, p: ProjectId) -> Line<'static> {
     if blocked > 0 {
         spans.push(Span::styled(format!("  ✕{blocked}"), fg(pal().bad)));
     }
+    if stopped > 0 {
+        spans.push(Span::styled(format!("  ■{stopped}"), fg(pal().stopped)));
+    }
     if waiting > 0 {
         // A folded project is quiet, not deaf.
         spans.push(Span::raw("  "));
@@ -385,6 +422,9 @@ pub(super) fn project_line(app: &App, p: ProjectId) -> Line<'static> {
             fill(t.group_waiting, &[&waiting.to_string()]),
             attention(),
         ));
+    }
+    if !open && let Some(loud) = app.loudest(w.agents.iter().filter(in_project).map(|a| a.id)) {
+        spans.extend(member(app, loud, rungs));
     }
     let line = Line::from(spans);
     if app.pane == Pane::Salon && app.selected == Sel::Project(p) {
@@ -394,14 +434,15 @@ pub(super) fn project_line(app: &App, p: ProjectId) -> Line<'static> {
     }
 }
 
-pub(super) fn agent_line(app: &App, a: &Agent, prefix: &'static str) -> Line<'static> {
+pub(super) fn agent_line(
+    app: &App,
+    a: &Agent,
+    prefix: &'static str,
+    rungs: &[Rung],
+) -> Line<'static> {
     let w = &app.world;
     let done = app.done_unseen(a.id);
-    let (g, color) = match glyph(a) {
-        // A leader is always a leader.
-        (_, _) if done && a.role != Role::Leader => ("✓", pal().ok),
-        other => other,
-    };
+    let (g, color) = rung_glyph(a, rungs[a.id]);
     let mut spans = vec![
         Span::styled(prefix, dim()),
         Span::styled(format!("{g} "), fg(color)),
@@ -448,12 +489,10 @@ pub(super) fn agent_line(app: &App, a: &Agent, prefix: &'static str) -> Line<'st
     }
     let helpers = w.helpers_of(a.id).count();
     if helpers > 0 {
-        // Its helpers are under it, or folded away: the mark says which.
-        let mark = if app.folded_workers.contains(&a.id) {
-            "▸"
-        } else {
-            "▾"
-        };
+        // Its helpers are under it, or folded away: the mark says which,
+        // and a folded group shows its loudest member.
+        let folded = app.folded_workers.contains(&a.id);
+        let mark = if folded { "▸" } else { "▾" };
         spans.push(Span::styled(
             format!(
                 "  {mark} {}",
@@ -461,6 +500,9 @@ pub(super) fn agent_line(app: &App, a: &Agent, prefix: &'static str) -> Line<'st
             ),
             dim(),
         ));
+        if folded && let Some(loud) = app.loudest(w.helpers_of(a.id).map(|h| h.id)) {
+            spans.extend(member(app, loud, rungs));
+        }
     }
     // Last, so the screen knows where the text it links starts.
     spans.extend(local_spans(a));

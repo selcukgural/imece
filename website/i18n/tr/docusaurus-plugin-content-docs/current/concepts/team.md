@@ -82,7 +82,7 @@ Ajanlar bus'ta birbirlerine bu adlarla seslenir; aynı projenin ekibinde olmayan
  ✓ gemini-1        bitti, henüz bakılmadı
 ```
 
-Sizi bekleyen işçiler önce gelir (onayınızı bekleyen, sonra takılan, sonra bitip bakılmamış); yardımcılar işçilerinin altında durur ve `h` `l` ile katlanır. Başlık filoyu sayar: `● 2 çalışıyor ✓ 1 bitti ✕ 1 takıldı`.
+Sizi bekleyen işçiler önce gelir (takılan, sonra sizi bekleyen, sonra bitip bakılmamış: [durum merdiveni](../screen/salon.md#durum-merdiveni)); yardımcılar işçilerinin altında durur ve `h` `l` ile katlanır. Başlık filoyu sayar: `● 2 çalışıyor ✓ 1 bitti ✕ 1 takıldı`.
 
 ## Ayrıca bakınız
 
