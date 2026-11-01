@@ -205,9 +205,22 @@ g enter = ^o
 
 İki düz tuş tek sözcükte yazılır (`gt`, `zM`); bir tuşun adı olan sözcük o tuştur (`f1`, `up`), iki tuş için `f 1` ya da `u p` yazın. ctrl'li, alt'lı ya da adı olan tuşlar ayrı yazılır (`g enter`, `^x j`). İki tuşun ilki, vim'deki gibi, ikincisini en çok bir saniye bekler; başka bir tuş gelirse ya da zamanında hiçbiri gelmezse kendisi olarak geçer, yani `g` sonra `g` yine imece'nin `gg`'sidir. Tek başına verilen bir tuş aynı zamanda iki tuşun ilki olamaz (`g hem tek başına hem iki tuşun ilki olarak verilmiş (2. satır)`), bir yanda en çok iki tuş olur. Çıkan tuşlar bir daha çevrilmez; ikincisi, ilkinin ekranı bıraktığı yere gider (`y = :q` komut satırını açar ve `q` yazar).
 
-imece dosyayı başta, `:keys` ile ve siz kaydettiğinizde yeniden okur: iki saniyede bir bakar, penceresine döndüğünüzde de hemen; ne çıktığını `:keys` gibi söyler. Bütünüyle alamadığı bir dosyayı reddeder ve elinizdeki tuşlar kalır: `TUŞ = TUŞ` olmayan bir satır (`satır 3: TUŞ = TUŞ diye yaz`), tuş olmayan bir ad (`` `nope` bir tuş değil ``), sağda imece'nin bir şey yapmadığı bir tuş (`imece d ile bir şey yapmıyor`), iki kez verilen bir tuş (`^n 1. satırda zaten verilmiş`), bir yanda üç tuş, iki yanda da `^c`, 200'den fazla tuş, 64 KiB'tan büyük ya da metin olmayan bir dosya. Son iyi dosya store'da tutulur; böylece dosyası reddedilen bir başlangıç da tuşlarınızla açılır ve nedenini söyler. Hatalı bir düzenleme bir kez söylenir ve elinizdeki tuşları bırakır. Dosya yoksa imece'nin kendi tuşları geri gelir.
+Bir `[yer]` satırı, altındaki satırları bir sonraki `[yer]`e kadar yalnız orada geçerli kılar; ilk yerin üstündeki satırlar her yerde geçerlidir, bir yerin yeniden verdiği tuş dışında:
 
-`?` yardımında önce sizin tuşlarınız gelir (`^n  senin tuşun: j gibi`), her tuş satırı da o işi şimdi yapan tuşları gösterir: yukarıdaki dosyayla `seç` satırı `↑ ↓  k/^n j/^p` okunur; anlamı başka bir tuşa geçmeyen bir tuş `–` gösterir; yukarıdaki iki tuşlu satırlarla `ilk / son satır` satırı `x/gg  gt/G` okunur. Yazma tuşları olduğu gibi gösterilir, çünkü dosya onları çevirmez.
+```text
+# her yerde
+^n = j
+# bir değişiklikte x aşağı iner, X hunk'ı seçer
+[change]
+x = j
+X = x
+```
+
+Yerler `salon`, `board` (pano), `code` (kod haritası), `talk` (bir konuşma), `change` (açık bir değişiklik), `choose` (bir konuşmada ya da değişiklikte kopyalamak için satır seçerken), `peek` ve `help`'tir (yerlerin adları İngilizce yazılır). Yer, tuşların gittiği yerdir: bir değişikliğin üstünde açık bir konuşma `talk`'tır, içinde satır seçmek `choose`'dur. Herhangi bir tuşla kapanan pencereler (yenilikler, hoş geldin, uzaktayken özeti, kaldığın yer), çıkış sorusu ve solo seçimi yalnız her yerde geçerli satırları alır. Bir yer aşağıda yeniden gelebilir; bir yerde iki kez verilen tuş reddedilir, bir yerde tek başına verilen tuş da aynı yerde ya da her yerde iki tuşun ilki olamaz.
+
+imece dosyayı başta, `:keys` ile ve siz kaydettiğinizde yeniden okur: iki saniyede bir bakar, penceresine döndüğünüzde de hemen; ne çıktığını `:keys` gibi söyler. Bütünüyle alamadığı bir dosyayı reddeder ve elinizdeki tuşlar kalır: `TUŞ = TUŞ` olmayan bir satır (`satır 3: TUŞ = TUŞ diye yaz`), tuş olmayan bir ad (`` `nope` bir tuş değil ``), sağda imece'nin bir şey yapmadığı bir tuş (`imece d ile bir şey yapmıyor`), iki kez verilen bir tuş (`^n 1. satırda zaten verilmiş`), bir yanda üç tuş, bunlardan biri olmayan bir yer (`` `[nope]` bir yer değil ``), iki yanda da `^c`, 200'den fazla tuş, 64 KiB'tan büyük ya da metin olmayan bir dosya. Son iyi dosya store'da tutulur; böylece dosyası reddedilen bir başlangıç da tuşlarınızla açılır ve nedenini söyler. Hatalı bir düzenleme bir kez söylenir ve elinizdeki tuşları bırakır. Dosya yoksa imece'nin kendi tuşları geri gelir.
+
+`?` yardımında önce sizin tuşlarınız gelir (`^n  senin tuşun: j gibi`), her tuş satırı da o işi şimdi yapan tuşları gösterir: yukarıdaki dosyayla `seç` satırı `↑ ↓  k/^n j/^p` okunur; anlamı başka bir tuşa geçmeyen bir tuş `–` gösterir; yukarıdaki iki tuşlu satırlarla `ilk / son satır` satırı `x/gg  gt/G` okunur. Bir yerin tuşları yerini söyler (`x  senin tuşun, değişiklikte: j gibi`), tuş satırları da `?`'e bastığınız yerin tuşlarını gösterir. Yazma tuşları olduğu gibi gösterilir, çünkü dosya onları çevirmez.
 
 ## Ayrıca bakınız
 

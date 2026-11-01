@@ -118,6 +118,38 @@ made while the person was away and to go over together:
   line gives those two another meaning). `Keymap::lost` also names
   imece's chords (`gg za zM zR qq qs`) a line took and nothing gives.
 
+**Keys per place (C9d, #177, 2026-11-02).** A line `[place]` (one word
+in brackets, any case; `[ = ]` stays a line that gives `[`) makes the
+lines below it hold only at that place, until the next one; the lines
+above the first hold everywhere. `keys::Scope` names the places:
+`salon board code talk change choose peek help` (English, as the `:`
+commands are). `Keymap` keeps the lines that hold everywhere (`given`)
+and those of a place (`placed`); `Keymap::at(place)` gives one flat map,
+the place's lines first and then the others but for a key the place
+gave, and every lookup goes through it (`alone`, `pair`, `starts`).
+Decisions made while the person was away, to go over together:
+
+- Where the keys go is the place (`App::key_scope`, in the order `act`
+  takes keys): the windows that close on any key, the quit question and
+  the solo pick have none (the lines above every place only); then the
+  help; then peek, choosing lines (`choose`, in a conversation or a
+  change), a conversation (also over a change), a change, else the view.
+  The focus and trace zooms are the salon's. The scope is taken when the
+  key comes, after a held first key acted, so `2` then a board key works.
+- The help shows the key lines as they are where `?` was pressed
+  (`App::scope_below`), and lists a place's lines with where they hold
+  (`x  your key in a change: as j`).
+- A key given twice in one place is refused, not twice in two places or
+  everywhere and in a place (that is what a place is for). `Why::Starts`
+  holds between a place and everywhere, not between two places. A place
+  may come again further down. A name that is no place refuses the file
+  (`Why::Place`) and lists the places.
+- `:keys` counts every line (`Keymap::len`); `Keymap::lost` is said for
+  everywhere and for each place, each key once, without saying where.
+  `Key::used` is still one list, so `[salon] x = j` warns that nothing
+  does `x`, though `x` does nothing in the salon.
+- The lead question at start takes the lines that hold everywhere.
+
 **The help (user, 2026-11-02: in place and a section).** `?` lists the
 file's keys first (`^n  your key: as j`), then every key line with each
 key the file moved written as the keys that do it now
@@ -134,5 +166,6 @@ the `?  :help` row's text.
 the same way, so there is nothing to fake.
 
 **Gaps.** Three keys or more on a side cannot be given. A held key is
-not shown anywhere while it waits (vim's `showcmd`). Keys are not per
-context (the same file holds in the salon and in a change; C9d).
+not shown anywhere while it waits (vim's `showcmd`). A place cannot name
+an agent or a project (`[talk @api]`), and the windows have no place of
+their own.
