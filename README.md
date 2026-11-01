@@ -1,5 +1,7 @@
 # imece
 
+[![latest release](https://img.shields.io/github/v/release/selcukgural/imece)](https://github.com/selcukgural/imece/releases/latest)
+
 **One terminal for many coding agents from many vendors.**
 
 imece (Turkish: neighbours finishing a job together) runs a team of coding
@@ -11,6 +13,16 @@ and applied it.
 
 **Documentation, every key and scenario, video tours:
 <https://selcukgural.github.io/imece/>** (English · [Türkçe](https://selcukgural.github.io/imece/tr/))
+
+**Install** on macOS or Linux, x86_64 or arm64 (prebuilt, checksum
+checked, put on your PATH):
+
+```sh
+curl -fsSL https://selcukgural.github.io/imece/install.sh | sh
+```
+
+or [download a release](https://github.com/selcukgural/imece/releases/latest)
+by hand (`imece-<target>.tar.gz`, with `SHA256SUMS`).
 
 ![imece's salon: two projects, their leaders and workers, what waits for you, and the journal](docs/salon.png)
 
@@ -48,6 +60,7 @@ imece --demo                               # fake agents, to see the screen at w
 ```
 
 [Install](https://selcukgural.github.io/imece/docs/getting-started/install) ·
+[Download](https://github.com/selcukgural/imece/releases/latest) ·
 [First run](https://selcukgural.github.io/imece/docs/getting-started/first-run) ·
 [Keys](https://selcukgural.github.io/imece/docs/screen/keyboard) ·
 [Scenarios](https://selcukgural.github.io/imece/docs/scenarios) ·
