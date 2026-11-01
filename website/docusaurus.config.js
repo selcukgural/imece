@@ -66,10 +66,11 @@ const config = {
       image: 'img/social-preview.png',
       colorMode: { respectPrefersColorScheme: true },
       announcementBar: {
-        id: 'early',
+        // A new id shows the bar again to those who closed the old one.
+        id: 'early-install',
         content: tr
-          ? 'imece <b>erken</b> bir sürümdür: Claude Code, Codex ve Gemini CLI ile çalışır; kurulum kaynaktan.'
-          : 'imece is <b>early</b>: it runs Claude Code, Codex and Gemini CLI; install from source.',
+          ? 'imece <b>erken</b> bir sürümdür: Claude Code, Codex ve Gemini CLI ile çalışır; macOS ve Linux için tek satırla kurulur.'
+          : 'imece is <b>early</b>: it runs Claude Code, Codex and Gemini CLI; one line installs it on macOS and Linux.',
         isCloseable: true,
       },
       navbar: {

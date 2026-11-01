@@ -27,7 +27,9 @@ jobs:
   build:
     name: build (${{ matrix.target }})
     strategy:
-      fail-fast: true
+      # Every build runs to its end, so one failure shows all there are;
+      # publish needs all four anyway.
+      fail-fast: false
       matrix:
         include:
           - target: aarch64-apple-darwin
@@ -72,7 +74,10 @@ jobs:
       - name: Static on Linux
         if: runner.os == 'Linux'
         run: |
-          file "target/$TARGET/release/imece" | tee /dev/stderr | grep -q 'statically linked'
+          # `file` says "statically linked", or "static-pie linked" for a
+          # position-independent one (x86_64 musl).
+          file "target/$TARGET/release/imece" | tee /dev/stderr |
+            grep -Eq 'statically linked|static-pie linked'
       - name: Package
         run: |
           mkdir -p pack dist

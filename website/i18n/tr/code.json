@@ -36,6 +36,10 @@
     "message": "Birçok satıcıdan birçok kodlama ajanı için tek terminal. Bir lider isteğinizi kartlara böler ve işçi tutar; işçiler birbiriyle konuşur ve kendi worktree'lerinde çalışır; her değişiklik çalışma kopyanıza ulaşmadan önce sizi bekler."
   },
   "home.cta.install": { "message": "Kurulum" },
+  "home.install.label": { "message": "macOS ve Linux" },
+  "home.install.copy": { "message": "Kopyala" },
+  "home.install.copied": { "message": "Kopyalandı" },
+  "home.install.copyLabel": { "message": "Kurulum komutunu kopyala" },
   "home.cta.firstrun": { "message": "İlk çalıştırma" },
   "home.cta.video": { "message": "Turları izle" },
   "home.terminal.title": { "message": "Kodunuzun olduğu yerde başlatın" },

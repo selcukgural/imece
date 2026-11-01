@@ -66,6 +66,74 @@ const features = [
   },
 ];
 
+const installLine = 'curl -fsSL https://selcukgural.github.io/imece/install.sh | sh';
+
+// Copies `text` the old way, for a browser without the Clipboard API (or
+// a page not served over HTTPS): a selected, hidden text area.
+function copyByHand(text) {
+  const area = document.createElement('textarea');
+  area.value = text;
+  area.setAttribute('readonly', '');
+  area.style.position = 'fixed';
+  area.style.opacity = '0';
+  document.body.appendChild(area);
+  area.select();
+  let copied = false;
+  try {
+    copied = document.execCommand('copy');
+  } catch (e) {
+    copied = false;
+  }
+  document.body.removeChild(area);
+  return copied;
+}
+
+// The install line with a copy button, as install pages have it: the
+// command in full, selectable, and a button that copies it and says so
+// for two seconds.
+function InstallLine() {
+  const [copied, setCopied] = React.useState(false);
+  const done = () => {
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+  const copy = () => {
+    if (navigator.clipboard && window.isSecureContext) {
+      navigator.clipboard.writeText(installLine).then(done, () => {
+        if (copyByHand(installLine)) done();
+      });
+    } else if (copyByHand(installLine)) {
+      done();
+    }
+  };
+  return (
+    <div className="imece-install">
+      <span className="imece-install-label">
+        <Translate id="home.install.label">macOS and Linux</Translate>
+      </span>
+      <div className="imece-install-line">
+        <code>
+          <span className="imece-install-prompt" aria-hidden="true">
+            ${' '}
+          </span>
+          {installLine}
+        </code>
+        <button
+          type="button"
+          className="imece-install-copy"
+          onClick={copy}
+          aria-label={translate({ id: 'home.install.copyLabel', message: 'Copy the install command' })}>
+          {copied ? (
+            <Translate id="home.install.copied">Copied</Translate>
+          ) : (
+            <Translate id="home.install.copy">Copy</Translate>
+          )}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 const session = `cd your/checkout
 imece                                  # a leader reads the checkout and waits for you
 imece --agents 8 --budget 10           # up to 8 workers, a $10 pot
@@ -90,6 +158,7 @@ export default function Home() {
             change waits for you before it reaches your checkout.
           </Translate>
         </p>
+        <InstallLine />
         <Link className="button button--primary button--lg" to="/docs/getting-started/install">
           <Translate id="home.cta.install">Install</Translate>
         </Link>
