@@ -218,14 +218,16 @@ pub fn ask(mut cmd: Command, wait: Duration) -> Option<(ExitStatus, String)> {
     Some((status, said))
 }
 
+/// `waitid`'s question: has it ended? Without waiting, without reaping.
+const ENDED: libc::c_int = libc::WEXITED | libc::WNOHANG | libc::WNOWAIT;
+
 /// Whether child `pid` has ended, leaving it unreaped (a zombie keeps its
 /// number, and its group's, from being given out again).
 fn exited(pid: i32) -> io::Result<bool> {
     // SAFETY: siginfo_t is plain data; all zeros is a valid value.
     let mut info: libc::siginfo_t = unsafe { std::mem::zeroed() };
-    let how = libc::WEXITED | libc::WNOHANG | libc::WNOWAIT;
     // SAFETY: waitid only writes `info`, which outlives the call.
-    if unsafe { libc::waitid(libc::P_PID, pid as libc::id_t, &mut info, how) } != 0 {
+    if unsafe { libc::waitid(libc::P_PID, pid as libc::id_t, &mut info, ENDED) } != 0 {
         return Err(io::Error::last_os_error());
     }
     // Nothing to report leaves `info` as it was: zeros.
