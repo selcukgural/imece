@@ -255,17 +255,24 @@ impl MsgKind {
     }
 }
 
-/// Who an agent is talking with right now, for the salon's `⇄` line; also
-/// the two ends of a conversation line.
+/// Who an agent is talking with: the other end of its newest exchange on
+/// its salon row; also the two ends of a conversation line.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Party {
     Agent(AgentId),
     Person,
 }
 
+/// An agent's newest exchange: a message it sent or got, the person's
+/// words to it, what it said at the end of a turn. Its salon row ends its
+/// status with it (`→ claude-2 "which parser?"`, `← you "fix the parser"`)
+/// until the next exchange replaces it; `until` only says how long the
+/// row counts as news (it does not fold while the talk is fresh).
 #[derive(Clone, Debug)]
 pub struct Talk {
     pub with: Party,
+    /// The agent said it (`→`), or was told it (`←`).
+    pub mine: bool,
     pub text: String,
     pub until: u64,
 }
@@ -429,7 +436,8 @@ pub struct Agent {
     pub talk: Option<Talk>,
     /// The researcher a blocked worker waits for.
     pub researcher: Option<AgentId>,
-    /// What a researcher researches, or what a blocked worker waits for.
+    /// What a researcher researches, what a blocked worker waits for, or
+    /// why a stopped session stopped (`■ stopped: …` on its row).
     pub topic: String,
     /// Tick of the last status change; the screen marks recent changes.
     pub changed_at: u64,
@@ -1927,9 +1935,15 @@ impl World {
 
     /// Whether agent `id` waits for the person's answer to a question.
     pub fn has_question(&self, id: AgentId) -> bool {
+        self.open_item(id, InboxKind::Question).is_some()
+    }
+
+    /// The oldest open item of `kind` that agent `id` waits on: the one its
+    /// row quotes.
+    pub fn open_item(&self, id: AgentId, kind: InboxKind) -> Option<&InboxItem> {
         self.inbox
             .iter()
-            .any(|i| i.open && i.kind == InboxKind::Question && i.agent == id)
+            .find(|i| i.open && i.kind == kind && i.agent == id)
     }
 
     /// Agent `id`'s session asks the person's yes for `what` before it
@@ -1989,10 +2003,9 @@ impl World {
     }
 
     /// Whether agent `id`'s session waits for the person's yes.
+    #[cfg(test)]
     pub fn has_approval(&self, id: AgentId) -> bool {
-        self.inbox
-            .iter()
-            .any(|i| i.open && i.kind == InboxKind::Approval && i.agent == id)
+        self.open_item(id, InboxKind::Approval).is_some()
     }
 
     fn close(&mut self, item: usize) -> Option<(InboxKind, AgentId)> {
@@ -2017,6 +2030,7 @@ impl World {
         let a = &mut self.agents[id];
         a.talk = Some(Talk {
             with: Party::Person,
+            mine: false,
             text: text.into(),
             until: t + 6,
         });
@@ -3108,6 +3122,8 @@ mod tests {
         let talk = w.agents[0].talk.as_ref().unwrap();
         assert_eq!(talk.until, 3 + 6);
         assert_eq!(talk.with, Party::Person);
+        assert!(!talk.mine, "the person's words, not the agent's");
+        assert_eq!(talk.text, "hello");
     }
 
     #[test]

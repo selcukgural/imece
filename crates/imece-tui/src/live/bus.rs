@@ -145,6 +145,7 @@ impl Live {
         for (a, other) in [(from, to), (to, from)] {
             w.agents[a].talk = Some(Talk {
                 with: Party::Agent(other),
+                mine: a == from,
                 text: first.clone(),
                 until: t + 8,
             });
@@ -205,6 +206,7 @@ impl Live {
         a.trace(t, format!("send to=you type={}", kind.wire()));
         a.talk = Some(Talk {
             with: Party::Person,
+            mine: true,
             text: first,
             until: t + 8,
         });
@@ -528,6 +530,16 @@ mod tests {
         let card = w.agents[1].card.expect("a card");
         assert_eq!(w.cards[card].title, "Fix the parser");
         assert!(live.mail[1].is_empty());
+        // Both rows quote the first line, each knowing who said it.
+        let talk = |id: AgentId| w.agents[id].talk.clone().expect("a talk");
+        assert_eq!(
+            (talk(0).with, talk(0).mine, talk(0).text.as_str()),
+            (Party::Agent(1), true, "Fix the parser")
+        );
+        assert_eq!(
+            (talk(1).with, talk(1).mine, talk(1).text.as_str()),
+            (Party::Agent(0), false, "Fix the parser")
+        );
         assert!(matches!(
             w.journal.last().unwrap().event,
             Event::Sent {
@@ -905,8 +917,8 @@ mod tests {
         let a = &w.agents[1];
         let talk = a.talk.as_ref().unwrap();
         assert_eq!(
-            (talk.with, talk.text.as_str(), talk.until),
-            (Party::Person, "Which API?", t + 8)
+            (talk.with, talk.mine, talk.text.as_str(), talk.until),
+            (Party::Person, true, "Which API?", t + 8)
         );
         assert!(a.trace.back().unwrap().contains("send to=you type=ask"));
         // A second question takes the first's place in the inbox.

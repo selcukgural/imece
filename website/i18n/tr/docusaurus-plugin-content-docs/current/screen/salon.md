@@ -12,9 +12,9 @@ Salon, imece'nin açıldığı ve `1` ya da `:salon` ile geri döndüğünüz ek
 ┌ SALON ──────────────────────────────────────────┐┌ SENİ BEKLEYEN (2) ─────────────────────┐
 │▾ ▴ shop-api  2 çalışıyor  $2.40   ! 2 bekliyor  ││Δ 13:58 claude-1 bitirdi: parser (3 dosya, +41 −6) · ✓ bu ağaçta temiz geçti: cargo test
 │  ◆ ▎lead      claude             koordine ediyor││⚑ 14:01 codex-2 onayını bekliyor: Bash: npm install left-pad
-│  ├ ● ▎claude-1 #3   Parse the manifest  testleri yazıyor  $1.10  ⎇ fix-parser ↑2 ↓1 +12 −3
-│  │ └ ● ▎claude-1.1                      düşünüyor…   ⎇                                    │
-│  ├ ✓ ▎codex-2  #5   Money rounding      bitti, henüz bakılmadı  $0.80  ↗ localhost:5173/  │
+│  ├ ● ▎claude-1 #3   Parse the manifest  testleri yazıyor · 2 dk  $1.10  ⎇ fix-parser ↑2 +12
+│  │ └ ● ▎claude-1.1                      düşünüyor… ← claude-1 "testleri ekle"   ⎇         │
+│  ├ ✓ ▎codex-2  #5   Money rounding      bitti, henüz bakılmadı → sen "yukarı yuvarlandı" · 5 dk│
 │  └ … 2 agent yolunda                             │└────────────────────────────────────────┘
 │▸ web  1 çalışıyor  $0.70                         │┌ DEFTER ────────────────────────────────┐
 │                                                  ││13:58 ! claude-1 bitirdi: 3 dosya, +41 −6 → seni bekliyor
@@ -50,7 +50,7 @@ Bir proje başlığı: `▾ shop-api  2 çalışıyor  $2.40  ✕1  ■1   ! 2 b
 Bir agent'ın satırı:
 
 ```text
-  ├ ● ▎claude-1 #3   Parse the manifest  testleri yazıyor  $1.10  ⎇ fix-parser ↑2 ↓1 +12 −3  ▾ 1 yardımcı  ↗ localhost:5173/
+  ├ ● ▎claude-1 #3   Parse the manifest  testleri yazıyor · 2 dk  $1.10  ⎇ fix-parser ↑2 ↓1 +12 −3  ▾ 1 yardımcı  ↗ localhost:5173/
 ```
 
 - Ağaç çizgileri `├ └ │` kimin kimin altında olduğunu gösterir; bir yardımcı işçisinin altındadır ve `claude-1.1` diye adlanır.
@@ -58,15 +58,15 @@ Bir agent'ın satırı:
 - Agent'ın konuşmacı renginde `▎`: günlükte ve bir konuşmada satırlarının taşıdığı renk, böylece satır ve konuşması tek agent olarak okunur.
 - Satıcısının renginde adı; sonra kirliyse `~` ya da `≈` (araştırma kirliliği, yalnız demoda).
 - Bir işçinin kartı: `#3` ve kartın başlığı. Lider yerine satıcısını gösterir.
-- Durumu: oturumu kalkarken (süreç, ilk worktree'nin checkout'u) `başlıyor…`, `düşünüyor…`, yaptığını söylediği şey, bir takım arkadaşının yanıtını beklerken `? → claude-2`, bir sorusu sizi beklerken `? → sen`, bir araç çağrısı SENİ BEKLEYEN'de beklerken `⚑ onayını bekliyor`, yanıtı okunmayı beklerken `sana yanıt verdi`, işçileri çalışan bir lider için `koordine ediyor`, `BLOKE`, `■ durdu, yazınca yeniden başlar`, `◦ önceki çalışmadan beri uyuyor, yazınca uyanır`.
+- Durumu: oturumu kalkarken (süreç, ilk worktree'nin checkout'u) `başlıyor…`, `düşünüyor…`, yaptığını söylediği şey, bir takım arkadaşının yanıtını beklerken `? → claude-2`, bir sorusu sizi beklerken `? → sen`, bir araç çağrısı SENİ BEKLEYEN'de beklerken `⚑ onayını bekliyor`, yanıtı okunmayı beklerken `sana yanıt verdi`, işçileri çalışan bir lider için `koordine ediyor`, `BLOKE`, `■ durdu, yazınca yeniden başlar`, `◦ önceki çalışmadan beri uyuyor, yazınca uyanır`. Durumun kendi metni varsa satır onu taşır: `? → sen "hangi index?"`, `sana yanıt verdi "enum kullan"`, `⚑ onayını bekliyor "cargo test"`, `BLOKE "JWT saat kayması" ← researcher-1`, `■ durdu: süreç 1 koduyla çıktı`. Yoksa durum, agent'ın en son alışverişiyle biter; ok kimin söylediğini gösterir: `düşünüyor… ← lead "parser'ı düzelt"`, `boşta → sen "parser düzeldi, testler yeşil"`, `? → claude-2 "hangi parser?"` (beklediği kişiye kendi sorusu, tek başına alıntılanır). Alışveriş bir sonrakine dek kalır; böylece satır agent'ın en son ne yaptığını söyler, durum ve metni kırk sütunu geçmez.
+- O durumda ne zamandır olduğu, bir dakikadan başlayarak: `· 3 dk`, `· 1 sa 5 dk`. Sizi bekleyen bir şey için öğe geldiğinden beri.
 - Varsa harcadığı.
 - Bir işçinin worktree durumu, `⎇ fix-parser ↑2 ↓1 +12 −3`: agent'ın açtığı dal (worktree imece'nin bıraktığı gibi detached iken yok), checkout'ta olmayan kendi commit'leri (imece'nin uygulanan değişiklik işaretleri sayılmaz), kendisinde olmayan checkout commit'leri ve kendi HEAD'ine göre eklenen ve silinen satırlar, izlenmeyen dosyalar dahil: bir sonraki `done`'un size vereceği şey. Her parça yalnız söyleyecek bir şey varken görünür. imece'nin git iş parçacığında okunur: oturum başlarken, bir tur bitince, bir uygulamadan sonra ve işçi ya da bir yardımcısı tur ortasındayken her 15 saniyede; çalıştırmalar arasında saklanmaz.
 - `▾ 1 yardımcı` ya da `▸ 1 yardımcı`: yardımcıları altında listelenir ya da katlanmıştır.
 - `↗ localhost:5173/`: işçi ya da yardımcının kendi metninde yazdığı en yeni yerel adres, terminalin açtığı bir bağlantı olarak (OSC 8). Yalnız `localhost`, `127.0.0.1` ya da `[::1]` üzerinde `http`/`https` sayılır, sorgu ve parça atılır, 60 karakteri aşan bir adres hiç gösterilmez. Oturumla birlikte gider.
 - Yardımcıları olan bir işçi `▾ 2 yardımcı` ile, katlıysa `▸ 2 yardımcı  ● claude-1.1` ile biter: sayı ve en yüksekleri.
-- Konuşan bir satırın altında, en son alışverişi taşıyan soluk italik bir satır: `⇄ claude-2 "hangi parser?"`.
 
-Yeni değişen bir satır bir an öne çıkar, sonra sakinleşir. Seçili satır ters renklidir.
+Her agent tek satırdır, ne söylerse söylesin: satırların yüksekliği değişmez. Süre ve alıntı yalnız satırda maliyet, worktree durumu, yardımcılar ve bağlantıdan arta kalan yeri alır; dar bir bölme önce alıntıyı, sonra süreyi düşürür (`.` yan paneli daraltır). Yeni değişen bir satır bir an öne çıkar, sonra sakinleşir. Seçili satır ters renklidir.
 
 Satırlar panele sığmadığında sakin işçiler (çalışan ya da boşta, son zamanda bir şey dememiş, seçili olmayan) salonun altından yukarıya doğru tek satıra katlanır: `… 2 agent katlı, en yükseği  ● codex-2`, en yükseklerinin adıyla; sabitlenmiş bir proje en son katlanır ve sizi bekleyen hiç katlanmaz. Panelin alt satırı `KUYRUK`, doğrulanan kartları ve son dört biteni (`#2 ✓`) listeler; canlıda doğrulama kısmını hiçbir şey doldurmaz, `boş` yazar.
 

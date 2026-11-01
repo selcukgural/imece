@@ -1105,9 +1105,6 @@ impl Sim {
         w.tick += 1;
         let t = w.tick;
         for a in &mut w.agents {
-            if a.talk.as_ref().is_some_and(|k| k.until <= t) {
-                a.talk = None;
-            }
             if !a.gone && a.status.busy() {
                 a.cost += a.vendor.cost_per_tick();
             }
@@ -1195,6 +1192,7 @@ impl Sim {
         a.trace(t, format!("result ok {}", dollars(a.cost)));
         a.talk = Some(Talk {
             with: Party::Person,
+            mine: true,
             text: text.lines().next().unwrap_or_default().to_string(),
             until: t + 12,
         });
@@ -1738,6 +1736,7 @@ impl Sim {
         for (a, other) in [(from, to), (to, from)] {
             w.agents[a].talk = Some(Talk {
                 with: Party::Agent(other),
+                mine: a == from,
                 text: text.into(),
                 until: t + 8,
             });
@@ -1769,6 +1768,7 @@ impl Sim {
         a.trace(t, format!("send to=you type={}", kind.wire()));
         a.talk = Some(Talk {
             with: Party::Person,
+            mine: true,
             text: text.into(),
             until: t + 8,
         });
@@ -1955,6 +1955,7 @@ impl Sim {
         a.activity = None;
         // What it served went with its session.
         a.local = None;
+        a.topic = STOPPED.into();
         a.set_status(Status::Stopped, t);
         a.trace(t, format!("stopped {STOPPED:?}"));
         w.story(card, StoryEvent::Stopped(STOPPED.into()));
@@ -2506,6 +2507,7 @@ mod tests {
                 .map(|a| a.id)
                 .collect();
             for id in stopped {
+                assert_eq!(w.agents[id].topic, STOPPED, "a stopped row says why");
                 s.told(&mut w, id, "go on").unwrap();
                 w.said(id, "go on");
             }
@@ -3213,7 +3215,7 @@ diff --git a/b.rs b/b.rs
         let a = &w.agents[worker];
         assert_eq!(a.status, Status::Working, "a worker goes on");
         assert!(
-            matches!(&a.talk, Some(Talk { with: Party::Person, text: said, until }) if *said == text && *until == w.tick + 12)
+            matches!(&a.talk, Some(Talk { with: Party::Person, mine: true, text: said, until }) if *said == text && *until == w.tick + 12)
         );
         assert!(s.replies.is_empty());
     }
@@ -3606,6 +3608,7 @@ diff --git a/b.rs b/b.rs
         assert!(
             matches!(&w.cards[card].story.last().unwrap().event, StoryEvent::Stopped(why) if why == STOPPED)
         );
+        assert_eq!(w.agents[worker].topic, STOPPED, "why, for its row");
         s.told(&mut w, worker, "go on").unwrap();
         assert_eq!(
             w.journal.last().unwrap().event,
@@ -4545,7 +4548,10 @@ diff --git a/b.rs b/b.rs
                 matches!(&w.cards[c].story.last().unwrap().event, StoryEvent::Sent { from, to, kind: MsgKind::Ask, .. } if *from == asker && *to == other),
                 "{id}"
             );
-            assert!(matches!(&w.agents[id].talk, Some(Talk { until, .. }) if *until == t + 8));
+            assert!(
+                matches!(&w.agents[id].talk, Some(Talk { with: Party::Agent(o), mine, until, .. }) if *until == t + 8 && *mine == (id == asker) && *o == if id == asker { other } else { asker }),
+                "{id}"
+            );
         }
         assert!((t + 3..=t + 8).contains(&until), "{until}");
         while w.tick + 1 < until {
@@ -4641,6 +4647,7 @@ diff --git a/b.rs b/b.rs
             &w.agents[worker].talk,
             Some(Talk {
                 with: Party::Person,
+                mine: true,
                 until: 18,
                 ..
             })

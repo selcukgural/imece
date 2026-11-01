@@ -51,4 +51,4 @@ before, now by checking the inbox rather than the rank.
 Not done: the fleet in the header (record 35) still counts working, done
 and stuck only, no `◌`; a per-rung count on an open project's header was
 not added (its rows are right under it). B4 (what each row does now and
-for how long, fixed row height) is next in the backlog.
+for how long, one line per agent) is record 62.
