@@ -46,6 +46,13 @@ fn file_in(config: Option<PathBuf>, home: Option<PathBuf>) -> Option<PathBuf> {
         .map(|d| d.join("imece").join(NAME))
 }
 
+/// The modifiers imece tells keys apart by. Joined with `union`, not
+/// `|`: `^` gives the same flags, so a mutant of `|` could not be told
+/// apart.
+const KEPT: KeyModifiers = KeyModifiers::CONTROL
+    .union(KeyModifiers::ALT)
+    .union(KeyModifiers::SHIFT);
+
 /// One key as imece tells keys apart: its code and ctrl, alt and shift.
 /// A character carries its shift in itself (`G`), so its shift is not
 /// kept, nor ⇧tab's.
@@ -58,8 +65,7 @@ pub struct Key {
 impl Key {
     /// The key `k` is, as imece tells keys apart.
     pub fn of(k: &KeyEvent) -> Key {
-        let kept = KeyModifiers::CONTROL | KeyModifiers::ALT | KeyModifiers::SHIFT;
-        Key::new(k.code, k.modifiers & kept)
+        Key::new(k.code, k.modifiers.intersection(KEPT))
     }
 
     fn new(code: KeyCode, mut mods: KeyModifiers) -> Key {
@@ -924,6 +930,12 @@ mod tests {
             load(&dir.join("gone/keys")),
             Read::Missing,
             "no folder, no file"
+        );
+        std::fs::write(dir.join("plain"), "").unwrap();
+        assert_eq!(
+            load(&dir.join("plain/keys")),
+            Read::Bad(Why::Unreadable),
+            "a file in the way is not a missing file"
         );
         let _ = std::fs::remove_dir_all(&dir);
     }
