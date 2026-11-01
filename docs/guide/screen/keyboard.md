@@ -205,9 +205,22 @@ g enter = ^o
 
 Two plain keys go in one word (`gt`, `zM`); a word that is a key's name is that key (`f1`, `up`), so write `f 1` or `u p` for two. Keys with ctrl, alt or a name are written apart (`g enter`, `^x j`). The first key of two waits for the second, as in vim, for a second at most; another key, or none in time, lets it through as itself, so `g` then `g` is still imece's `gg`. A key given alone cannot also be the first of two (`g is given alone and as the first of two keys (line 2)`), and a side has two keys at most. The keys that come out are not turned again; the second goes where the first left the screen (`y = :q` opens the command line and writes `q`).
 
-imece reads the file at start, on `:keys`, and again when you save it: it looks every two seconds, and at once when you come back to its window, and says what came of it as `:keys` does. A file it cannot take whole is refused, and the keys you had stay: a line that is not `KEY = KEY` (`line 3: write it as KEY = KEY`), a name that is no key (`` `nope` is not a key ``), a key imece does nothing with on the right (`imece does nothing with d`), a key given twice (`^n is given on line 1 already`), three keys on a side, `^c` on either side, more than 200 keys, a file over 64 KiB or not text. The last good file is kept in the store, so a start with a file refused still has your keys and says why. A bad edit is said once and leaves the keys you had. With no file, imece's own keys are back.
+A line `[place]` makes the lines below it hold only there, until the next `[place]`; the lines above the first hold everywhere, except for a key a place gives again:
 
-In the `?` help, your keys come first (`^n  your key: as j`), and every key line shows the keys that do it now: with the file above, `select` reads `↑ ↓  k/^n j/^p`; a key whose meaning went to no other key shows `–`; with the lines of two above, `first / last line` reads `x/gg  gt/G`. The writing keys are shown as they are, since the file does not turn them.
+```text
+# everywhere
+^n = j
+# in a change, x goes down and X chooses the hunk
+[change]
+x = j
+X = x
+```
+
+The places are `salon`, `board`, `code` (the code map), `talk` (a conversation), `change` (a change open), `choose` (lines being chosen to copy, in a conversation or a change), `peek` and `help`. The place is where the keys go: a conversation open over a change is `talk`, choosing lines inside it is `choose`. The windows that close on any key (what's new, welcome, the away digest, where you left off), the quit question and the solo pick take only the lines that hold everywhere. A place may come again further down; a key given twice in one place is refused, and a key given alone in one place cannot start two keys in the same place or everywhere.
+
+imece reads the file at start, on `:keys`, and again when you save it: it looks every two seconds, and at once when you come back to its window, and says what came of it as `:keys` does. A file it cannot take whole is refused, and the keys you had stay: a line that is not `KEY = KEY` (`line 3: write it as KEY = KEY`), a name that is no key (`` `nope` is not a key ``), a key imece does nothing with on the right (`imece does nothing with d`), a key given twice (`^n is given on line 1 already`), three keys on a side, a place that is none of these (`` `[nope]` is no place ``), `^c` on either side, more than 200 keys, a file over 64 KiB or not text. The last good file is kept in the store, so a start with a file refused still has your keys and says why. A bad edit is said once and leaves the keys you had. With no file, imece's own keys are back.
+
+In the `?` help, your keys come first (`^n  your key: as j`), and every key line shows the keys that do it now: with the file above, `select` reads `↑ ↓  k/^n j/^p`; a key whose meaning went to no other key shows `–`; with the lines of two above, `first / last line` reads `x/gg  gt/G`. A place's keys say where (`x  your key in a change: as j`), and the key lines show the keys of the place where you pressed `?`. The writing keys are shown as they are, since the file does not turn them.
 
 ## See also
 
