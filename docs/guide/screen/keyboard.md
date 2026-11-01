@@ -58,6 +58,7 @@ The conventions are vim's: `h` `j` `k` `l` move and fold, `gg` and `G` go to the
 | `^d` `^u` `^f` `^b` | half a page / a page |
 | `^o` | back where you were: view, panel, focus, card (vim's jump list, fifty places; an open conversation closes first) |
 | `enter` | look deeper: focus, then the raw stream |
+| `K`  `:peek` | a peek: the focus of the agent at hand in a window over the view, which stays as it was; in it `j` `k` the next / previous agent of the salon, `enter` its whole focus, `@` write to it, `esc` or `K` close |
 | `t`  `:trace` | the raw stream of the agent at hand |
 | `v`  `:talk` | its conversation with you |
 | `esc` | go back |
@@ -71,6 +72,7 @@ The conventions are vim's: `h` `j` `k` `l` move and fold, `gg` and `G` go to the
 | `←` `→`  `h` `l` | fold / unfold a project or a worker's helpers (in a conversation: a message) |
 | `za`  `zM`  `zR` | fold: toggle · all (`:fold`) · none (`:unfold`); in a conversation its messages |
 | `f`  `:needs` | salon: only what needs you · everyone |
+| `s`  `:settle` | settle the selected worker's row, or the project (on its header or its leader), out of the salon until it needs you again; `:unsettle` brings everything back |
 
 ## WAITING FOR YOU
 
@@ -164,11 +166,13 @@ The conventions are vim's: `h` `j` `k` `l` move and fold, `gg` and `G` go to the
 | `:next` / `:defer` | `W` / `S` |
 | `:waiting` | `w` |
 | `:needs` | `f` |
+| `:settle` | `s` |
+| `:peek` | `K` |
 | `:fold` / `:unfold` | `zM` / `zR` |
 | `:trace` / `:talk` | `t` / `v` |
 | `:mark` | `m` |
 | `:pause`, `:faster`, `:slower` | `space`, `+`, `-` (demo) |
-| `:budget` (`:b`), `:lead`, `:open` (`:o`), `:close` (`:c`), `:rename`, `:solo`, `:effort`, `:model`, `:forget` (`:f`), `:export`, `:commit`, `:copy`, `:pin`, `:awake`, `:notify` | no key: typed after `:` |
+| `:budget` (`:b`), `:lead`, `:open` (`:o`), `:close` (`:c`), `:rename`, `:solo`, `:effort`, `:model`, `:forget` (`:f`), `:export`, `:commit`, `:copy`, `:pin`, `:awake`, `:notify`, `:unsettle` | no key: typed after `:` |
 
 The full list of what each command takes is in the [commands reference](../reference/commands.md).
 

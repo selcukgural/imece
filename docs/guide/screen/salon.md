@@ -116,8 +116,10 @@ The fleet in the header uses the same shapes, so it reads in the mono theme too.
 | `za` | toggle the fold at hand |
 | `zM` / `zR` (`:fold` / `:unfold`) | fold / unfold every project and every worker's helpers |
 | `f` (`:needs`) | the salon shows only what needs you, then everyone again |
+| `s` (`:settle`) | settle the selected worker's row, or the selected project (its header or its leader), until it needs you again; `:unsettle` brings everything back |
 | `&` (`:goto`) | go to an agent or a project by name or number, what needs you first; its project and its worker's helpers unfold, and `f` lets go when it would hide the row |
 | `enter` | look deeper: an agent's focus (its card, status, origin and story), `enter` again its raw stream (the trace) |
+| `K` (`:peek`) | a peek: the agent at hand's focus in a window over the view, which stays as it was; `j` `k` the next / previous agent, `enter` its whole focus, `@` write to it, `esc` or `K` close |
 | `t` (`:trace`) / `v` (`:talk`) | the raw stream / the conversation of the agent at hand |
 | `esc` | back up one depth |
 
@@ -129,6 +131,16 @@ What an agent needs of you is one rank, most first: something of it waits in WAI
 
 `f` keeps only the agents that need something, each under its project's header: a worker comes along for a helper of its that needs something, the leader only when it needs something itself. A project with nothing is left out, a folded one with something shows its header alone, and with nothing at all the salon says `Nothing needs you right now · f shows everyone`. The pane title says the filter is on, `SALON · only what needs you (f)`. While it is on, a selection whose row left moves to the first row of its project still shown (not while you write: the selection decides who `/` writes to). The filter lasts the run only.
 
+## Settling what is finished
+
+A worker that finished and that you have looked at still takes a row. `s` on its row settles it: the row goes, with its helpers and the researcher working for it, until it needs you again. On a project's header, or on its leader's row, `s` settles the whole project. The selection goes on to the next row still shown (else the one before it).
+
+What waits for you or is stuck is never settled: `not settled: claude-2 needs you`. A finished turn not seen yet is fine; settling counts it as seen. A settled agent comes back by itself the moment something of its row needs you again: a question or a change in WAITING FOR YOU, blocked or stopped, or a new turn finished. A settled project comes back when any of its agents does. Nothing is gone silently: the pane title counts what is settled, `SALON · 2 settled (:unsettle)`, the header's fleet still counts every agent, and `&` still lists them; going to one with `&` or `:goto` brings its row (and its project) back. `:unsettle` brings everything back at once. Settling lasts the run only.
+
+## A peek
+
+`K` opens the focus of the agent at hand (selected in the salon, behind the inbox item or journal line, or the one you are zoomed in on) in a window over the screen, a little smaller than it; the view under it, the salon, the board, the code map or a card, does not move. In the window `j` `k` (or the arrows) step to the next / previous agent in the salon's order, `enter` opens its whole focus, `@` starts a message to it, `esc` or `K` close it; other keys do nothing. Looking at a finished agent this way counts as seeing it.
+
 ## The side panels
 
 To the right, WAITING FOR YOU on top and the JOURNAL under it. `tab` and `⇧tab` (or `]` and `[`) cycle salon → waiting → journal; `w` (`:waiting`) goes straight to the waiting panel. The waiting panel takes as many rows as its items need, up to half the side, and its border turns the warning colour when items wait and the panel is not focused.
@@ -137,7 +149,7 @@ To the right, WAITING FOR YOU on top and the JOURNAL under it. `tab` and `⇧tab
 
 ## Legibility
 
-A window over the salon (a conversation, the help, the away digest, where you left off) dims everything around it, so the tree and the journal's clipped line ends read as background. The journal pane and a question in the inbox show a message as one row of plain words: cleaned, lines joined, heading and list marks off, a link by its label. The trace colours by the line's first word: the agent's own text in its vendor colour, tool calls in the info colour, a run by its exit code, bus words in the accent. An open conversation follows the talk: lines that arrive are appended, and the selection follows when it was on the last line.
+A window over the salon (a conversation, a peek, the help, the away digest, where you left off) dims everything around it, so the tree and the journal's clipped line ends read as background. The journal pane and a question in the inbox show a message as one row of plain words: cleaned, lines joined, heading and list marks off, a link by its label. The trace colours by the line's first word: the agent's own text in its vendor colour, tool calls in the info colour, a run by its exit code, bus words in the accent. An open conversation follows the talk: lines that arrive are appended, and the selection follows when it was on the last line.
 
 Everything an agent wrote reaches the screen only through a cleaning that removes control characters and hides secret-looking tokens; nothing is drawn raw.
 

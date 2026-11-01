@@ -30,6 +30,20 @@ fn window(f: &mut Frame, title: String, lines: Vec<Line<'static>>, width: u16) {
     f.render_widget(Paragraph::new(lines).block(block), area);
 }
 
+/// `K`: agent `id`'s focus in a window over the screen, a little smaller
+/// than it so the view under it, which does not move, shows around it.
+pub fn peek(f: &mut Frame, app: &App, id: AgentId) {
+    let full = f.area();
+    let area = centered(
+        full,
+        full.width.saturating_sub(8),
+        full.height.saturating_sub(6),
+    );
+    shade(f, area);
+    clear(f, area);
+    super::focus::draw(f, area, app, id);
+}
+
 /// The keys, two columns on a wide screen, then the legend. The line for
 /// a new line in the writing names the key this terminal has for it
 /// (`shift_enter`: it tells shift-enter from enter). Filtered (`/`), only
