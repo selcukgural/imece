@@ -43,3 +43,5 @@ starts a paid turn by itself; `:budget` shows its value instead of a
 mark. The `?` help gives `:` and `$` a line each, and every key's line
 names its `:` name (in the key column where it fits, else in the text),
 in both languages. Pure screen logic: the demo shows it as live does.
+
+Record 65 adds `&` = `:goto [NAME]`.

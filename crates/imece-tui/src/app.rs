@@ -9,7 +9,7 @@ use std::time::{Duration, Instant};
 
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
-use crate::complete::{self, Menu};
+use crate::complete::{self, Jump, Menu};
 use crate::edit;
 use crate::i18n::{Lang, fill};
 use crate::live::{self, Live, Open, Refusal};
@@ -481,6 +481,10 @@ pub struct App {
     pub card: Option<CardId>,
     /// The places left, oldest first, for `^o`.
     pub been: Vec<Place>,
+    /// Where `&` may go, frozen as the line opened (what needs the person
+    /// first), so the numbers hold while the person types; empty when the
+    /// line is not open.
+    pub jumps: Vec<Jump>,
     /// The last key was `^o`: the place it left is not one to go back to.
     went_back: bool,
     /// The side panel's width, in percent.
@@ -598,6 +602,7 @@ impl App {
             thread: None,
             card: None,
             been: Vec::new(),
+            jumps: Vec::new(),
             went_back: false,
             side: SIDE_DEFAULT,
             copy: None,
@@ -1051,6 +1056,7 @@ impl App {
                 };
                 self.menu = self.suggest();
             }
+            KeyCode::Char('&') => self.open_jump(),
             KeyCode::Char('n') | KeyCode::Char('p') if self.on_card() => {
                 self.step_card(k.code == KeyCode::Char('n'))
             }
@@ -1804,8 +1810,9 @@ impl App {
             KeyCode::Enter => match &mut self.menu {
                 Some(m) if !m.inserted => {
                     m.insert(&mut self.input);
-                    // A card is all there is to take: it opens at once.
-                    if self.typing_card() {
+                    // A card or a place to go is all there is to take: it
+                    // opens at once.
+                    if self.typing_card() || self.typing_jump() {
                         self.submit();
                     }
                 }
@@ -1822,6 +1829,18 @@ impl App {
                 self.noting = None;
                 self.input.clear();
                 self.after = 0;
+                self.jumps.clear();
+            }
+            // Right after `&`: a digit goes to the nth at once, `#` turns
+            // to the cards.
+            KeyCode::Char(d) if ('1'..='9').contains(&d) && self.input == "&" => {
+                self.input.push(d);
+                self.submit();
+            }
+            KeyCode::Char('#') if self.input == "&" => {
+                self.input = "#".into();
+                self.jumps.clear();
+                self.menu = self.suggest();
             }
             KeyCode::Tab => match &mut self.menu {
                 None if self.after > 0 => {}
@@ -1953,6 +1972,9 @@ impl App {
         if self.input.contains('\n') || self.noting.is_some() {
             return None;
         }
+        if let Some(rest) = self.input.strip_prefix('&') {
+            return complete::jumps(rest, &self.jumps);
+        }
         if let Some(m) = self.choice_menu() {
             return Some(m);
         }
@@ -2047,6 +2069,11 @@ impl App {
         self.input.starts_with('#')
     }
 
+    /// Whether what is being typed names a place to go (`&claude-1`, `&3`).
+    pub fn typing_jump(&self) -> bool {
+        self.input.starts_with('&')
+    }
+
     /// Whether what is being typed is a command for the person's own shell
     /// (`!cargo test`), not a message to an agent.
     pub fn typing_shell(&self) -> bool {
@@ -2091,6 +2118,20 @@ impl App {
             return match complete::card_named(&text, &self.world) {
                 Some(c) => self.open_card(c),
                 None => self.flash(fill(t.no_card_found, &[&text])),
+            };
+        }
+        if let Some(rest) = text.strip_prefix('&') {
+            let list = std::mem::take(&mut self.jumps);
+            return match complete::jump_named(&text, &list) {
+                Some(name) => self.goto(&name),
+                // A number past the list's end is nowhere; a bare `&` is
+                // nothing to do.
+                None => {
+                    let rest = rest.trim_start_matches('!').trim();
+                    if !rest.is_empty() {
+                        self.flash(fill(self.lang.text().no_jump, &[rest]));
+                    }
+                }
             };
         }
         if let Some(command) = text.strip_prefix('!') {
@@ -2197,6 +2238,7 @@ impl App {
             "close" => self.close_project(arg),
             "rename" => self.rename_project(arg),
             "forget" => self.forget_agent(arg),
+            "goto" => self.goto(arg),
             "export" => self.export(arg),
             "commit" => self.suggest_commit(),
             "copy" => self.copy_path(arg),
@@ -2255,6 +2297,126 @@ impl App {
             },
             _ => self.flash(fill(t.no_command, &[name])),
         }
+    }
+
+    /// `&`: the line that goes to an agent or a project by name, its menu
+    /// the places as they stand now, what needs the person first.
+    fn open_jump(&mut self) {
+        self.jumps = self.jump_list();
+        self.typing = true;
+        self.noting = None;
+        self.input = "&".into();
+        self.after = 0;
+        self.menu = self.suggest();
+    }
+
+    /// Where `&` may go, in the order its menu offers: the agents of open
+    /// projects that need the person first (stuck, waiting, done and not
+    /// seen), the rest by their rung (working before idle), the salon's
+    /// order among equals; then the open projects. Each agent with its
+    /// glyph and status words.
+    fn jump_list(&self) -> Vec<Jump> {
+        let w = &self.world;
+        let needs = self.needs();
+        let rungs = self.rungs();
+        let order = w.salon_order();
+        let place = |p: ProjectId| order.iter().position(|&o| o == p).unwrap_or(usize::MAX);
+        let mut agents: Vec<&Agent> = w
+            .agents
+            .iter()
+            .filter(|a| !a.gone && !w.projects[a.project].closed)
+            .collect();
+        agents.sort_by_key(|a| {
+            (
+                std::cmp::Reverse(needs[a.id]),
+                std::cmp::Reverse(rungs[a.id]),
+                place(a.project),
+                a.id,
+            )
+        });
+        let mut out: Vec<Jump> = agents
+            .iter()
+            .map(|a| {
+                let glyph = ui::rung_glyph(a, rungs[a.id]).0;
+                // As its row words it: done and not seen says so.
+                let status: String = if self.done_unseen(a.id) {
+                    self.lang.text().done_unseen.to_string()
+                } else {
+                    ui::status_spans(self.lang, w, a)
+                        .iter()
+                        .map(|s| s.content.as_ref())
+                        .collect::<String>()
+                        .split_whitespace()
+                        .collect::<Vec<_>>()
+                        .join(" ")
+                };
+                let status: String = status.chars().take(30).collect();
+                Jump {
+                    name: a.name.clone(),
+                    note: format!("{glyph} {status}").trim_end().to_string(),
+                    needs: needs[a.id] != Need::Nothing,
+                }
+            })
+            .collect();
+        let t = self.lang.text();
+        out.extend(order.iter().map(|&p| Jump {
+            name: w.projects[p].name.clone(),
+            note: t.jump_project.to_string(),
+            needs: false,
+        }));
+        out
+    }
+
+    /// `:goto NAME`, or what `&` was given: to the agent of that name, else
+    /// the open project; a bare one opens the `&` line.
+    fn goto(&mut self, name: &str) {
+        let name = name.strip_prefix('@').unwrap_or(name).trim();
+        if name.is_empty() {
+            return self.open_jump();
+        }
+        // As the menu matches: case and Turkish letters aside.
+        let want = ui::fold(name);
+        let agent = self
+            .world
+            .agents
+            .iter()
+            .find(|a| {
+                !a.gone && !self.world.projects[a.project].closed && ui::fold(&a.name) == want
+            })
+            .map(|a| a.id);
+        if let Some(id) = agent {
+            return self.go_agent(id);
+        }
+        let project = self
+            .world
+            .open_projects()
+            .find(|p| ui::fold(&p.name) == want)
+            .map(|p| p.id);
+        match project {
+            Some(p) => {
+                self.go_salon();
+                self.thread = None;
+                self.selected = Sel::Project(p);
+            }
+            None => self.flash(fill(self.lang.text().no_jump, &[name])),
+        }
+    }
+
+    /// The salon with agent `id`'s row selected: its project unfolded, its
+    /// worker's helpers too when it is one, and everyone shown again when
+    /// `f` would hide it.
+    fn go_agent(&mut self, id: AgentId) {
+        self.go_salon();
+        self.thread = None;
+        let a = &self.world.agents[id];
+        self.collapsed[a.project] = false;
+        if let Some(p) = a.parent {
+            self.folded_workers.remove(&p);
+        }
+        if self.needs_only && self.needs()[id] == Need::Nothing {
+            self.needs_only = false;
+        }
+        self.selected = Sel::Agent(id);
     }
 
     /// `>` in worker `id`'s change: a message to it opens with the hunk at
@@ -3807,6 +3969,228 @@ mod tests {
         assert_eq!(app.speed, 2);
         app.command("nope");
         assert_eq!(said(&mut app), "no command nope; : and tab list them");
+    }
+
+    /// A quiet world of one project and four idle workers.
+    fn four_idle() -> (App, Vec<AgentId>) {
+        let mut app = App::new(1, 4, 0, 1, Lang::En);
+        app.world.inbox.clear();
+        app.unseen.clear();
+        for a in &mut app.world.agents {
+            a.status = Status::Idle;
+            a.talk = None;
+            a.starting = false;
+        }
+        let workers: Vec<AgentId> = app
+            .world
+            .agents
+            .iter()
+            .filter(|a| a.role == Role::Worker)
+            .map(|a| a.id)
+            .collect();
+        assert_eq!(workers.len(), 4);
+        (app, workers)
+    }
+
+    #[test]
+    fn ampersand_lists_where_to_go_what_needs_you_first_frozen_and_a_digit_goes_at_once() {
+        let (mut app, w) = four_idle();
+        let t = Lang::En.text();
+        app.world.agents[w[2]].status = Status::Blocked;
+        app.world.agents[w[2]].topic = "the JWT clock, the refresh and the cookie".into();
+        app.world.inbox.push(InboxItem {
+            kind: InboxKind::Question,
+            agent: w[1],
+            detail: "which index?".into(),
+            researcher: None,
+            open: true,
+            tick: 0,
+            card: None,
+        });
+        app.world.agents[w[1]].status = Status::WaitingHuman;
+        app.unseen.insert(w[3]);
+        app.world.agents[w[0]].status = Status::Working;
+        let name = |app: &App, id: AgentId| app.world.agents[id].name.clone();
+        app.on_key(KeyEvent::from(KeyCode::Char('&')));
+        assert!(app.typing && app.input == "&", "{}", app.input);
+        // Stuck, waiting, done and not seen; then the working one before the
+        // idle ones; the project last.
+        let names: Vec<String> = app.jumps.iter().map(|j| j.name.clone()).collect();
+        assert_eq!(names[0], name(&app, w[2]));
+        assert_eq!(names[1], name(&app, w[1]));
+        assert_eq!(names[2], name(&app, w[3]));
+        assert_eq!(names[3], name(&app, w[0]));
+        assert_eq!(names.last().unwrap(), &app.world.projects[0].name);
+        assert_eq!(app.jumps.len(), app.world.agents.len() + 1);
+        assert_eq!(
+            app.jumps.iter().filter(|j| j.needs).count(),
+            3,
+            "stuck, waiting and done need the person"
+        );
+        // Each agent with its glyph and status; a project with its word.
+        assert!(
+            app.jumps[0].note.starts_with("✕ BLOCKED \"the J"),
+            "{}",
+            app.jumps[0].note
+        );
+        assert_eq!(app.jumps[1].note, format!("! {}", t.waiting_human));
+        assert_eq!(app.jumps[2].note, format!("✓ {}", t.done_unseen));
+        assert!(app.jumps[3].note.starts_with("● "), "{}", app.jumps[3].note);
+        assert_eq!(
+            app.jumps[0].note.chars().count(),
+            32,
+            "the glyph, a space and thirty of the status: {}",
+            app.jumps[0].note
+        );
+        assert!(app.jumps.iter().all(|j| j.note.chars().count() <= 32));
+        assert_eq!(app.jumps.last().unwrap().note, t.jump_project);
+        let m = app.menu.as_ref().expect("the menu");
+        assert_eq!(m.items[0], format!("&1 {}", names[0]));
+        assert_eq!(m.notes[0], app.jumps[0].note);
+        // Frozen: a change in the world does not reorder the open list.
+        app.world.agents[w[0]].status = Status::Blocked;
+        type_in(&mut app, "c");
+        assert_eq!(
+            app.jumps.iter().map(|j| j.name.clone()).collect::<Vec<_>>(),
+            names
+        );
+        assert_eq!(
+            app.menu.as_ref().unwrap().items[0],
+            format!("&1 {}", names[0])
+        );
+        // `!` keeps only what needed the person when the list was made.
+        app.input = "&!".into();
+        app.menu = app.suggest();
+        assert_eq!(app.menu.as_ref().unwrap().items.len(), 3);
+        // Esc closes the menu, then the line, which drops the list.
+        app.on_key(KeyEvent::from(KeyCode::Esc));
+        assert!(app.typing && app.menu.is_none());
+        app.on_key(KeyEvent::from(KeyCode::Esc));
+        assert!(app.jumps.is_empty() && !app.typing, "esc drops the list");
+        // A digit right after `&` goes at once.
+        app.zoom = Zoom::Focus(w[0]);
+        // A fresh list: the two stuck first, by id; `2` is the second.
+        app.on_key(KeyEvent::from(KeyCode::Char('&')));
+        assert_eq!(
+            app.jumps
+                .iter()
+                .take(3)
+                .map(|j| j.name.clone())
+                .collect::<Vec<_>>(),
+            [name(&app, w[0]), name(&app, w[2]), name(&app, w[1])]
+        );
+        app.on_key(KeyEvent::from(KeyCode::Char('2')));
+        assert!(!app.typing);
+        assert_eq!(app.selected, Sel::Agent(w[2]));
+        assert_eq!(
+            (app.view, app.zoom, app.pane),
+            (View::Salon, Zoom::None, Pane::Salon)
+        );
+        assert!(app.jumps.is_empty(), "the list went with the line");
+        // `0` only filters.
+        app.on_key(KeyEvent::from(KeyCode::Char('&')));
+        app.on_key(KeyEvent::from(KeyCode::Char('0')));
+        assert!(app.typing && app.input == "&0");
+        assert_eq!(app.menu, None, "no tenth");
+        app.on_key(KeyEvent::from(KeyCode::Esc));
+        // `9` goes at once too; past the list's end (six here) it says so
+        // and the line closes.
+        app.on_key(KeyEvent::from(KeyCode::Char('&')));
+        assert_eq!(app.jumps.len(), 6);
+        app.on_key(KeyEvent::from(KeyCode::Char('9')));
+        assert!(!app.typing && app.jumps.is_empty());
+        assert_eq!(
+            app.flash.take().map(|f| f.0).unwrap_or_default(),
+            "nothing called \"9\" to go to: an agent or a project"
+        );
+        assert_eq!(app.selected, Sel::Agent(w[2]), "nothing moved");
+        // A bare `&` and enter: nothing said, nothing moved.
+        app.on_key(KeyEvent::from(KeyCode::Char('&')));
+        app.on_key(KeyEvent::from(KeyCode::Enter));
+        assert!(!app.typing && app.flash.is_none());
+        // Someone gone is not on the list.
+        app.world.agents[w[3]].gone = true;
+        app.on_key(KeyEvent::from(KeyCode::Char('&')));
+        assert_eq!(app.jumps.len(), 5);
+        assert!(app.jumps.iter().all(|j| j.name != name(&app, w[3])));
+        app.on_key(KeyEvent::from(KeyCode::Esc));
+        // `f` stays on when the one gone to needs the person: its row shows.
+        app.needs_only = true;
+        app.command(&format!("goto {}", name(&app, w[1])));
+        assert!(app.needs_only && app.selected == Sel::Agent(w[1]));
+        app.command(&format!("goto {}", name(&app, w[0])));
+        assert!(app.needs_only, "stuck needs the person too");
+        app.world.agents[w[0]].status = Status::Idle;
+        app.command(&format!("goto {}", name(&app, w[0])));
+        assert!(!app.needs_only, "idle would be hidden: everyone shown");
+    }
+
+    #[test]
+    fn the_jump_line_takes_a_name_a_number_a_project_or_says_what_it_did_not_find() {
+        let (mut app, w) = four_idle();
+        let t = Lang::En.text();
+        let said = |app: &mut App| app.flash.take().map(|f| f.0).unwrap_or_default();
+        let name = app.world.agents[w[3]].name.clone();
+        // `&3 name` as the menu inserts it: the name is what counts.
+        app.on_key(KeyEvent::from(KeyCode::Char('&')));
+        let third = app.jumps[2].name.clone();
+        type_in(&mut app, &format!("3 {third}"));
+        app.on_key(KeyEvent::from(KeyCode::Enter));
+        assert_eq!(
+            app.selected,
+            Sel::Agent(app.world.agent_by_name(&third).unwrap())
+        );
+        // A name typed in any case.
+        app.on_key(KeyEvent::from(KeyCode::Char('&')));
+        type_in(&mut app, &name.to_uppercase());
+        app.on_key(KeyEvent::from(KeyCode::Enter));
+        assert_eq!(app.selected, Sel::Agent(w[3]));
+        // Enter on the highlighted item takes it at once.
+        app.on_key(KeyEvent::from(KeyCode::Char('&')));
+        let second = app.world.agents[w[1]].name.clone();
+        type_in(&mut app, &second);
+        app.on_key(KeyEvent::from(KeyCode::Down));
+        app.on_key(KeyEvent::from(KeyCode::Enter));
+        assert_eq!(app.selected, Sel::Agent(w[1]));
+        assert!(!app.typing);
+        // A project: its header.
+        let project = app.world.projects[0].name.clone();
+        app.on_key(KeyEvent::from(KeyCode::Char('&')));
+        type_in(&mut app, &project);
+        app.on_key(KeyEvent::from(KeyCode::Enter));
+        assert_eq!(app.selected, Sel::Project(0));
+        assert_eq!(app.pane, Pane::Salon);
+        // Nothing of the name: said, nothing moves.
+        app.on_key(KeyEvent::from(KeyCode::Char('&')));
+        type_in(&mut app, "zzz");
+        app.on_key(KeyEvent::from(KeyCode::Enter));
+        assert_eq!(
+            said(&mut app),
+            "nothing called \"zzz\" to go to: an agent or a project"
+        );
+        assert_eq!(app.selected, Sel::Project(0));
+        // A gone agent is nobody.
+        app.world.agents[w[2]].gone = true;
+        app.command(&format!("goto {}", app.world.agents[w[2]].name.clone()));
+        assert!(said(&mut app).starts_with("nothing called"));
+        // `&#` turns to the cards.
+        app.on_key(KeyEvent::from(KeyCode::Char('&')));
+        app.on_key(KeyEvent::from(KeyCode::Char('#')));
+        assert_eq!(app.input, "#");
+        assert!(app.jumps.is_empty());
+        assert!(
+            app.menu
+                .as_ref()
+                .is_some_and(|m| m.items[0].starts_with('#'))
+        );
+        app.on_key(KeyEvent::from(KeyCode::Esc));
+        // `:goto` with a name goes, with `@` too; bare, it opens the line.
+        app.command(&format!("goto @{name}"));
+        assert_eq!(app.selected, Sel::Agent(w[3]));
+        app.command("goto");
+        assert!(app.typing && app.input == "&" && !app.jumps.is_empty());
+        assert_eq!(t.typing_jump, " › go to: ");
+        assert!(complete::COMMANDS.contains(&"goto"));
     }
 
     #[test]

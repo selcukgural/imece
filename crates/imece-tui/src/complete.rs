@@ -9,14 +9,15 @@
 use std::path::Path;
 
 use crate::model::{Agent, CardId, ProjectId, Vendor, World};
+use crate::ui::fold;
 
 /// The commands imece itself takes after `:`: its own, and a name for
 /// every key that acts (not the ones that move).
-pub const COMMANDS: [&str; 35] = [
+pub const COMMANDS: [&str; 36] = [
     "awake", "board", "budget", "close", "code", "commit", "copy", "defer", "effort", "export",
-    "faster", "fold", "forget", "help", "lang", "lead", "mark", "model", "needs", "next", "notify",
-    "open", "pause", "pending", "pin", "quit", "rename", "salon", "slower", "solo", "talk",
-    "theme", "trace", "unfold", "waiting",
+    "faster", "fold", "forget", "goto", "help", "lang", "lead", "mark", "model", "needs", "next",
+    "notify", "open", "pause", "pending", "pin", "quit", "rename", "salon", "slower", "solo",
+    "talk", "theme", "trace", "unfold", "waiting",
 ];
 
 /// The word for a vendor's own model or effort after `:model`, `:effort`
@@ -153,6 +154,71 @@ fn cards(rest: &str, w: &World) -> Option<Menu> {
         .map(|c| format!("#{} {}", c + 1, w.cards[c].title))
         .collect();
     Menu::new(0, items, "")
+}
+
+/// Where `&` may go: an agent or a project, by name; the words the menu
+/// shows after it (an agent's glyph and status); whether it needs the
+/// person, for the `!` filter.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Jump {
+    pub name: String,
+    pub note: String,
+    pub needs: bool,
+}
+
+/// The targets for what follows `&`, numbered as `list` stands (the list
+/// is frozen when the line opens, so the numbers hold while it is open):
+/// digits match the start of a number; `!` first keeps only what needs the
+/// person; anything else matches inside the name, case and Turkish
+/// letters folded, every word; nothing typed offers the whole list. Each
+/// item is `&N name`, the whole input replaced.
+pub fn jumps(rest: &str, list: &[Jump]) -> Option<Menu> {
+    let (needs, rest) = match rest.strip_prefix('!') {
+        Some(r) => (true, r),
+        None => (false, rest),
+    };
+    let numbered = list.iter().enumerate().filter(|(_, j)| !needs || j.needs);
+    let found: Vec<(usize, &Jump)> = if !rest.is_empty() && rest.bytes().all(|b| b.is_ascii_digit())
+    {
+        numbered
+            .filter(|(i, _)| (i + 1).to_string().starts_with(rest))
+            .collect()
+    } else {
+        let words: Vec<String> = rest.split_whitespace().map(fold).collect();
+        numbered
+            .filter(|(_, j)| {
+                let hay = fold(&j.name);
+                words.iter().all(|w| hay.contains(w.as_str()))
+            })
+            .collect()
+    };
+    let items = found
+        .iter()
+        .map(|(i, j)| format!("&{} {}", i + 1, j.name))
+        .collect();
+    let mut m = Menu::new(0, items, "")?;
+    m.notes = found.iter().map(|(_, j)| j.note.clone()).collect();
+    Some(m)
+}
+
+/// The name a line typed after `&` goes to: the one numbered as it starts
+/// (`&3`, `&3 claude-1`), else the words themselves (`&claude-1`), the
+/// `!` filter dropped; nothing for a bare `&`.
+pub fn jump_named(input: &str, list: &[Jump]) -> Option<String> {
+    let rest = input.strip_prefix('&')?;
+    let rest = rest.strip_prefix('!').unwrap_or(rest).trim();
+    let digits: String = rest.chars().take_while(char::is_ascii_digit).collect();
+    if !digits.is_empty()
+        && digits.len() == rest.split_whitespace().next().unwrap_or_default().len()
+    {
+        return digits
+            .parse::<usize>()
+            .ok()?
+            .checked_sub(1)
+            .and_then(|i| list.get(i))
+            .map(|j| j.name.clone());
+    }
+    (!rest.is_empty()).then(|| rest.to_string())
 }
 
 /// The card a line typed after `#` names: the number it starts with, if a
@@ -622,6 +688,81 @@ mod tests {
         assert_eq!(suggest("hello", &w, 0, None), None);
         assert_eq!(suggest("!cargo", &w, 0, None), None);
         assert_eq!(suggest("", &w, 0, None), None);
+    }
+
+    fn jump(name: &str, needs: bool) -> Jump {
+        Jump {
+            name: name.into(),
+            note: format!("note {name}"),
+            needs,
+        }
+    }
+
+    #[test]
+    fn the_jump_menu_numbers_the_list_as_it_stands_and_filters_by_number_need_or_name() {
+        let list = [
+            jump("claude-1", true),
+            jump("codex-1", false),
+            jump("işler", true),
+        ];
+        let items = |m: Option<Menu>| m.map(|m| (m.items, m.notes));
+        // Nothing typed: the whole list, numbered, each with its note.
+        assert_eq!(
+            items(jumps("", &list)),
+            Some((
+                vec!["&1 claude-1".into(), "&2 codex-1".into(), "&3 işler".into()],
+                vec![
+                    "note claude-1".into(),
+                    "note codex-1".into(),
+                    "note işler".into()
+                ]
+            ))
+        );
+        // Digits: the start of a number; the numbers hold.
+        assert_eq!(items(jumps("2", &list)).unwrap().0, ["&2 codex-1"]);
+        // `!`: only what needs the person, still by their numbers.
+        assert_eq!(
+            items(jumps("!", &list)).unwrap().0,
+            ["&1 claude-1", "&3 işler"]
+        );
+        assert_eq!(items(jumps("!3", &list)).unwrap().0, ["&3 işler"]);
+        assert_eq!(items(jumps("!cod", &list)), None);
+        // A name: inside, case and Turkish letters folded, every word.
+        assert_eq!(items(jumps("ODEX", &list)).unwrap().0, ["&2 codex-1"]);
+        assert_eq!(items(jumps("isler", &list)).unwrap().0, ["&3 işler"]);
+        assert_eq!(items(jumps("İŞ", &list)).unwrap().0, ["&3 işler"]);
+        assert_eq!(
+            items(jumps("-1", &list)).unwrap().0,
+            ["&1 claude-1", "&2 codex-1"]
+        );
+        assert_eq!(items(jumps("cla 1", &list)).unwrap().0, ["&1 claude-1"]);
+        assert_eq!(items(jumps("cla x", &list)), None);
+        assert_eq!(items(jumps("", &[])), None);
+    }
+
+    #[test]
+    fn the_jump_line_names_its_target_by_number_or_by_the_words_typed() {
+        let list = [jump("claude-1", true), jump("codex-1", false)];
+        let named = |input: &str| jump_named(input, &list);
+        assert_eq!(named("&2"), Some("codex-1".into()));
+        assert_eq!(named("&2 codex-1"), Some("codex-1".into()));
+        assert_eq!(named("&!1"), Some("claude-1".into()));
+        assert_eq!(named("&3"), None, "no third");
+        assert_eq!(named("&0"), None);
+        assert_eq!(
+            named("&CLAUDE-1"),
+            Some("CLAUDE-1".into()),
+            "as typed: the screen folds it"
+        );
+        assert_eq!(named("& codex-1 "), Some("codex-1".into()));
+        assert_eq!(
+            named("&12x"),
+            Some("12x".into()),
+            "digits glued to letters are a name"
+        );
+        assert_eq!(named("&"), None);
+        assert_eq!(named("&!"), None);
+        assert_eq!(named("#1"), None);
     }
 
     #[test]

@@ -117,6 +117,7 @@ Başlıktaki filo aynı şekilleri kullanır, böylece mono temada da okunur.
 | `za` | eldeki katlamayı değiştir |
 | `zM` / `zR` (`:fold` / `:unfold`) | her projeyi ve her işçinin yardımcılarını katla / aç |
 | `f` (`:needs`) | salon yalnız sizi bekleyenleri gösterir, sonra yine herkesi |
+| `&` (`:goto`) | bir agent'a ya da projeye adıyla ya da numarasıyla git, sizi bekleyenler önde; projesi ve işçisinin yardımcıları açılır, satırı gizleyecekse `f` bırakılır |
 | `enter` | derine in: bir agent'ın odağı (kartı, durumu, kökeni ve hikâyesi), yine `enter` ham akışı (iz) |
 | `t` (`:trace`) / `v` (`:talk`) | eldeki agent'ın ham akışı / konuşması |
 | `esc` | bir derinlik yukarı |

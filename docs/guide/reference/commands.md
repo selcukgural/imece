@@ -12,7 +12,7 @@ A line that starts with `:` is a command to imece, not a message to an agent. Yo
 - `:` then `tab` lists the commands. The menu shows after each command what it stands at now or would act on, in brackets: `budget (spent $3.10 of $20.00)`, `theme (dark)`, `lead (claude)`, `close (kule)`, `forget (claude-2)`, `next (2 waiting)`, `needs (off)`. The note is drawn, never inserted.
 - `$` after a command marks one that raises the next bill: `:open` (a new leader session), `:solo` (a new session), `:forget` (a new session that pays the whole briefing again, without the cache) and `:commit` (a paid call). No `:` command starts a paid turn by itself; `:budget` shows its value instead of a mark.
 - Short names: `:b` budget, `:c` close, `:f` forget, `:o` open, `:q` quit, `:t` theme. A short name typed whole is a command already, so the menu offers nothing and `enter` runs it (`:q` then `enter` asks at once).
-- Arguments complete too: after `:lang` the languages, after `:lead` the vendors, after `:notify` its three words, after `:theme` the built-in names, after `:close` and `:pin` the open projects, after `:forget`, `:talk` and `:trace` the agents of open projects (`@` or not), after `:open` and `:export` directories (`~` for your home, hidden ones only after a `.`, `tab` steps into the chosen one).
+- Arguments complete too: after `:lang` the languages, after `:lead` the vendors, after `:notify` its three words, after `:theme` the built-in names, after `:close` and `:pin` the open projects, after `:goto` nothing (the `&` line has its own menu), after `:forget`, `:talk` and `:trace` the agents of open projects (`@` or not), after `:open` and `:export` directories (`~` for your home, hidden ones only after a `.`, `tab` steps into the chosen one).
 - A name imece does not know: `no command xyz; : and tab list them`. A demo-only command typed live: `:pause is for the demo: live agents run in real time`.
 - `!cmd` runs a command in your own shell and `/cmd` is the agent's own command line; neither is a `:` command ([command line](../screen/command-line.md)).
 
@@ -33,6 +33,7 @@ A line that starts with `:` is a command to imece, not a message to an agent. Yo
 | `:faster` | `+` | | yes | | the speed, `×2` |
 | `:fold` | `zM` | | | | |
 | `:forget [@NAME]` | — | `:f` | | `$` | the agent at hand |
+| `:goto [NAME]` | `&` | | | | |
 | `:help` | `?` | | | | |
 | `:lang [en\|tr]` | `L` | | | | `English` / `Türkçe` |
 | `:lead VENDOR` | — | | | | the primary vendor, or `ask` |
@@ -117,6 +118,10 @@ Folds every project and every worker's helpers in the salon, as `zM`; from anoth
 ### `:forget [@NAME]`
 
 Makes the agent forget its vendor session (`:f`): the running session ends (its run killed, an unfinished prompt kept as interrupted, told at the wake and not run again), the remembered session goes with what the vendor kept of it (Claude's transcript, Codex's thread, Gemini's chat files), the agent sleeps until spoken to, and its next message starts a new session with the full briefing. No name is the agent at hand. The flash: `claude-2 forgot its session; the next message starts a new one, told where it left off`; refused for an agent with nothing to forget or one that is gone: `claude-2 keeps its session: it has no session to forget`. The journal: `you made claude-2 forget its session; it starts a new one, told where it left off`. `--fresh` does it for every agent at the start. `$`: the new session pays the whole briefing again. See [sessions](../concepts/sessions.md).
+
+### `:goto [NAME]`
+
+Goes to the agent called `NAME` (an `@` before it is fine), else to the open project of that name: the salon with its row selected, the project unfolded, a helper's worker unfolded, and `f` let go when it would hide the row; a project's name selects its header. Case and Turkish letters do not matter. Nothing of the name: `nothing called "zzz" to go to: an agent or a project`, and nothing moves. Alone it opens the `&` line: the places as they stand now, what needs you first (stuck, then waiting, then done and not seen), the rest by their state (working before idle), then the open projects, each agent with its glyph and status words. The list is frozen while the line is open, so its numbers hold while you type; a digit `1`-`9` right after `&` goes at once, `#` right after `&` turns to the card line, `!` keeps only what needs you, digits match the start of a number, anything else matches inside the names. `enter` goes to the item under the cursor, or to the name typed. See [salon](../screen/salon.md).
 
 ### `:help`
 

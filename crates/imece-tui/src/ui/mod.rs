@@ -28,6 +28,7 @@ use crate::i18n::{Lang, clean, fill};
 use crate::model::*;
 pub(crate) use crate::theme::pal;
 pub(crate) use diff::{file_starts, hunk_at, notes_message, place, quote};
+pub(crate) use overlay::fold;
 pub(crate) use salon::{card_rows, journal_rows, reply_jump, thread_of, turn_starts};
 
 pub fn draw(f: &mut Frame, app: &App) {
@@ -1172,6 +1173,8 @@ fn writing(app: &App, rows: usize) -> Vec<Line<'static>> {
             t.typing_shell.to_string()
         } else if app.typing_card() {
             t.typing_card.to_string()
+        } else if app.typing_jump() {
+            t.typing_jump.to_string()
         } else if app.typing_command() {
             t.typing_command.to_string()
         } else {
@@ -6520,6 +6523,52 @@ mod tests {
         assert!(r.contains("idle  ◔ 75%  ▾"), "{r}");
         let r = row(&app, worker, 90);
         assert!(r.contains("idle  ▾ 2 helpers") && !r.contains('◔'), "{r}");
+    }
+
+    #[test]
+    fn going_to_a_helper_unfolds_its_worker_and_project_and_shows_everyone_again() {
+        let mut app = quiet_rows();
+        let (worker, [h1, _]) = with_helpers(&mut app);
+        let helper = app.world.agents[h1].name.clone();
+        app.world.agents[h1].status = Status::Idle;
+        app.world.agents[h1].activity = None;
+        app.folded_workers.insert(worker);
+        app.collapsed[0] = true;
+        app.needs_only = true;
+        app.zoom = Zoom::Focus(worker);
+        key(&mut app, KeyCode::Char('&'));
+        let s = render(&app, 160, 40);
+        assert!(s.contains(" › go to: &"), "{s}");
+        for c in helper.chars() {
+            key(&mut app, KeyCode::Char(c));
+        }
+        let m = app.menu.as_ref().expect("the menu");
+        assert!(m.items[0].ends_with(&format!(" {helper}")), "{:?}", m.items);
+        assert_eq!(m.notes[0], "○ idle", "the helper with its glyph and status");
+        key(&mut app, KeyCode::Enter);
+        assert_eq!(app.selected, Sel::Agent(h1));
+        assert!(!app.collapsed[0], "the project unfolded");
+        assert!(
+            !app.folded_workers.contains(&worker),
+            "its worker's helpers unfolded"
+        );
+        assert!(!app.needs_only, "everyone shown, so the row is there");
+        assert_eq!(
+            (app.view, app.zoom, app.pane),
+            (View::Salon, Zoom::None, Pane::Salon)
+        );
+        let s = render(&app, 160, 40);
+        assert!(s.contains(&format!("▎{helper}")), "{s}");
+        // In Turkish the line says where it goes too; the help names the key.
+        app.lang = Lang::Tr;
+        key(&mut app, KeyCode::Char('&'));
+        assert!(render(&app, 160, 40).contains(" › git: &"));
+        for lang in [Lang::En, Lang::Tr] {
+            assert!(
+                lang.text().help_keys.iter().any(|(k, _)| *k == "&  :goto"),
+                "{lang:?}"
+            );
+        }
     }
 
     #[test]
