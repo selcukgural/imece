@@ -1,6 +1,6 @@
 ---
 title: Konuşmalar
-description: Konuşma penceresi - iki taraf arasında söylenen her şey bütünüyle, söz sıraları, yanıtlar, işaretler, kopyalama ve dışa aktarma.
+description: Konuşma penceresi - iki taraf arasında söylenen her şey bütünüyle, söz sıraları, yanıtlar, işaretler, katlama, kopyalama, kelimelere notlar ve dışa aktarma.
 ---
 
 # Konuşmalar
@@ -21,11 +21,11 @@ Bir konuşma, iki taraf arasında söylenen her şeydir: siz ve bir agent, ya da
 │▌  ↩ 8 yanıtı: Hangi parser? İki tane var                                  │
 │▌  `manifest::read`; eskisi bir sonraki karta.                             │
 │                                                                           │
-│ ↑↓ j k mesaj  [ ] söz sırası  % yanıt ↔ soru  c C kopyala: mesaj · hepsi  v satır kopyala  esc kapat
+│ ↑↓ j k mesaj  [ ] sıra  % yanıt  h l zM zR katla  c C kopyala  v seç  n notları gönder  esc kapat
 └───────────────────────────────────────────────────────────────────────────┘
 ```
 
-Başlık iki tarafı ve seçimin yerini söyler, `4/5`. Konuşma olmayan bir satırda (günlüğün bir olayı) açılan pencere OLAY başlığını taşır ve o satırı tutar.
+Başlık iki tarafı ve seçimin yerini söyler, `4/5`; kelimelerine yazılmış iki not gönderilmeyi bekliyorsa ardından `✎ 2` (aşağıda). Konuşma olmayan bir satırda (günlüğün bir olayı) açılan pencere OLAY başlığını taşır ve o satırı tutar.
 
 ## Açmak
 
@@ -46,8 +46,11 @@ Boşta bir işçiye mesaj onun için bir kart açar (ilk satır kartın başlı�
 | `gg` `G` | ilk / son mesaj |
 | `pgup` `pgdn`, `^d` `^u` `^f` `^b`, `space` | bir sayfa ya da yarım sayfa kaydır |
 | `m` (`:mark`) / `'` | seçili mesajı sonra dönmek için işaretle, yine basılınca kaldır · sonraki işaretli mesaj, ilke dönerek |
+| `h` `←` / `l` `→` | seçili mesajı tek satıra katla / aç (aşağıda) |
+| `za` / `zM` `zR` | seçili mesajı katla ya da aç / her mesajı (`:fold` `:unfold`) |
 | `c` `y` / `C` `Y` | mesajı / bütün konuşmayı kopyala |
-| `v` | kopyalanacak satırları seç (aşağıda) |
+| `v` | kopyalamak ya da not yazmak için satırları, kelimeleri seç (aşağıda) |
+| `n` | kelimelerine yazılan notları ajanlarına gönder (aşağıda) |
 | `:export [YOL]` | konuşmayı Markdown dosyası olarak yaz |
 | `esc` | kapat |
 
@@ -63,6 +66,20 @@ Bir agent'ın diğerine gönderdiği her mesajın bus'ta bir numarası vardır; 
 
 `c` ya da `y` seçili mesajı kopyalar: yalnız metnini. `C` ya da `Y` bütün konuşmayı kopyalar: her mesaj günü ve saatiyle, kimden kime ve türü, `2026-10-31 14:01 lead → claude-1 [cevap]`, sonra metin. Pano sistemin kendi aracıdır (`pbcopy`, `wl-copy`, `xclip`, `xsel`) ya da OSC 52 üzerinden terminalin panosu, ki terminal izin verdiğinde ssh üzerinden de çalışır; flaş hangisi olduğunu söyler, `kopyalandı (pbcopy)`. Metin çizilen her şey gibi temizlenir: kontrol karakteri yok, gizli anahtara benzeyen parçalar saklı.
 
+### Katlama
+
+Uzun bir konuşma, her mesajı tek satırda olunca daha hızlı okunur. `h` (ya da `←`) seçili mesajı katlar, `l` (ya da `→`) açar, `za` ikisinden birini yapar; `zM` her mesajı katlar, `zR` hepsini açar (açık bir konuşmada `:fold` ve `:unfold` da aynısını yapar). Katlanmış mesaj tek satırdır: başlığı ve metni bir satırda, günlüğün gösterdiği gibi:
+
+```text
+│  14:00 sen → lead: Parser işini iki işçiye böl, eski API değişmesin.       │
+│                                                                           │
+│▌ 14:00 lead → sen: Plan İkiye bölüyorum: codex-1 lexer'ı ve… ▸ 6 satır     │
+│                                                                           │
+│  14:00 sen → lead: tamam                                                  │
+```
+
+Satırına sığmayan mesaj bunu sonunda söyler: metninin kesildiği yerde `…` ve `▸ 6 satır`, açınca kaç satır göstereceği. Satırına bütünüyle sığan mesajda işaret yoktur: görülecek başka bir şey yok. Kelimelerine yazılan notlar ardından sayılır, `✎ 2`. Hepsi katlıyken gelen mesaj da katlı gelir; `zM` ve `zR` bu çalıştırmada sonra açacağınız konuşmaların nasıl başlayacağını da belirler. Satır seçerken (`v`) her mesaj açıktır, imleç gizli bir satırın üstünden atlamaz; çıkınca katlar geri gelir.
+
 ### Satır kopyalama
 
 Terminalin kendi seçimi yine çalışır (imece fareyi asla almaz), ama metinle birlikte pencerenin çerçevesini ve kenarını da alır, gösterilenin kenarında durur ve sarılmış bir satırı ikiye böler. `v` bunun yerine klavyeyle kopyalar: seçili mesajın ilk satırında bir imleç açılır ve başladığınız yerle imleç arasındaki satırlar seçilir.
@@ -76,7 +93,7 @@ Terminalin kendi seçimi yine çalışır (imece fareyi asla almaz), ama metinle
 │▌   `manifest::read`; eskisi sonraki karta.                                │
 │▶   Eski testleri olduğu gibi bırak.                                       │
 │                                                                           │
-│ ↑↓ j k satır  pgup pgdn sayfa  gg G ilk · son  y kopyala  v esc çık
+│ ↑↓ j k satır  w b h l kelime  s buradan başla  gg G ilk · son  y kopyala  c not  v esc çık
 └───────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -85,10 +102,37 @@ Terminalin kendi seçimi yine çalışır (imece fareyi asla almaz), ama metinle
 | `j` `k` / `↑` `↓` | imleç bir satır aşağı / yukarı, mesajlar arasında da; pencere onu görünür tutar, başlıktaki sayı izler |
 | `pgup` `pgdn`, `space`, `^d` `^u` `^f` `^b` | bir sayfa ya da yarısı |
 | `gg` `G` | ilk / son satır |
-| `y` | seçili satırları kopyala ve çık |
+| `w` `b`, `l` `h`, `→` `←` | imleç bir kelime ileri / geri, satır sonunu geçip sonraki satıra; seçim kelime kelime olur |
+| `s` | seçimi imlecin olduğu yerden yeniden başlat |
+| `y` | seçileni kopyala ve çık |
+| `c` | seçilene not yaz (aşağıda) |
 | `v` `esc` | kopyalamadan çık; ikinci `esc` pencereyi kapatır |
 
-Satır, sarılmadan önce çizildiği haliyle bir satırdır: mesajın başlığı, bir yanıtın altındaki `↩` satırı ve metninin her satırı. Kopyalanan, satırın yazıldığı hâlidir; yani bir kod bloğu çitleri olmadan kodu olarak kopyalanır (çitler hiç çizilmez, imleç onlara gelmez), bir tablo Markdown satırları olarak. Farklı mesajların satırları aralarında boş bir satırla gelir. Seçerken başka tuşlar bir şey yapmaz, `c` ya da `[` yanlışlıkla alınmaz; `?` ve `q` yine çalışır. Kopya `c` ile aynı yoldan gider, aynı biçimde temizlenir.
+Satır, sarılmadan önce çizildiği haliyle bir satırdır: mesajın başlığı, bir yanıtın altındaki `↩` satırı ve metninin her satırı. Kopyalanan, satırın yazıldığı hâlidir; yani bir kod bloğu çitleri olmadan kodu olarak kopyalanır (çitler hiç çizilmez, imleç onlara gelmez), bir tablo Markdown satırları olarak. Farklı mesajların satırları aralarında boş bir satırla gelir. Seçerken başka tuşlar bir şey yapmaz, `[` ya da `r` yanlışlıkla alınmaz; `?` ve `q` yine çalışır. Kopya `c` ile aynı yoldan gider, aynı biçimde temizlenir.
+
+### Kelime seçmek
+
+`v` bütün satırları seçer. İlk kelime tuşu seçimi kelime kelime yapar, sahip olduğu ucu koruyarak: aşağı doğru seçilmişse ilk satırının başından başlar ve imleç son satırının son kelimesinde durur; yukarı doğru seçilmişse tersi; tek bir satır ilk kelimesinden başlar. Kelime, ekranın çizdiği haliyle boşluklar arasında kalandır (`**beta**` `beta` kelimesidir; girinti, listenin madde işareti, kod bloğunun çizgisi kelime değildir). `w` bir kelime ileri gider, satırın son kelimesini geçince sonraki satırın ilkine; `b` bir kelime geri; `j` `k` imleci gittikleri satırın bir kelimesinde tutar. Seçili kelimeler seçim arka planını taşır, imlecin kelimesi ters çizilir, bütünüyle seçilmiş bir satır satır olarak seçilir.
+
+Bir satırın ortasındaki kelimeleri seçmek için imleci ilkine getirip `s`'ye basın: seçim orada, yalnızca imlecin kelimesiyle yeniden başlar; sonra `w` daha fazlasını alır. Örneğin `v` `j` `s` `w` `w` mesajın ilk satırının ilk üç kelimesini seçer.
+
+`y`, bütünüyle seçilmiş bir satırı yukarıdaki gibi yazıldığı haliyle, bir kısmı seçilmiş satırı da seçili kelimeleri aralarında birer boşlukla kopyalar.
+
+### Kelimelere notlar
+
+Seçerken `c` seçilene bir not yazar. Komut satırı `"kelimeler…" için not ▸` ile açılır; `enter` notu tutar, `esc` bırakır. Not mesajının altında soluk görünür, `✎ "kelimeler" notunuz`, başlık da bekleyen notları sayar, `✎ 2`. Aynı kelimeleri yeniden seçip `c` notun üstüne yazar (metni satırda hazırdır); boş tutulursa not kaldırılır.
+
+Konuşmada `n` notlarını gönderir: notların gittiği her ajana bir mesaj; her not, ilgili olduğu kelimelerin altında, onlar alıntılanarak, kelimelerin geldiği mesajın numarası da (varsa) yazılarak:
+
+```text
+Notes on words from our conversation, each under the words it is about.
+
+On message 8:
+> the legacy one goes in the next card
+Which card? There is no card for it yet.
+```
+
+Mesajın kendisi İngilizcedir, ajanlara giden her şey gibi. Not, kelimelerinin başladığı mesajı yazan ajana gider; sizin bir mesajınızdaysa o mesajın gittiği ajana. Yani lider ile bir işçi arasındaki konuşmada liderin kelimelerine yazılan not lidere, işçininkine yazılan işçiye gider. Mesaj, diğerleri gibi sizindir: o ajanla konuşmanıza düşer, onu uyandırır, bir mesaj ne tutarsa o kadar tutar; gidemeyen bir mesaj (bütçe bitmiş) notlarını bekletir. Notlar imece çalıştığı sürece yaşar, çalıştırmalar arasında kalmaz; bir konuşmanın notları o kapalıyken de bekler. Demo hepsini aynı biçimde yapar; ajanları mesajı sizin diğer mesajlarınız gibi alır.
 
 ### Dışa aktarma
 

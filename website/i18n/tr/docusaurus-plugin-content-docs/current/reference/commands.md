@@ -115,7 +115,7 @@ Yalnız demo, `+` gibi: simülasyon hızlanır. Menü notu hızı gösterir (`×
 
 ### `:fold`
 
-Salonda her projeyi ve her işçinin yardımcılarını katlar, `zM` gibi; başka bir görünümden önce salona gider. Bkz. [salon](../screen/salon.md).
+Salonda her projeyi ve her işçinin yardımcılarını katlar, `zM` gibi; başka bir görünümden önce salona gider. Açık bir konuşma varken bunun yerine onun her mesajını tek satıra katlar, bu çalıştırmada sonra açılan konuşmalar da katlı başlar. Bkz. [salon](../screen/salon.md) ve [konuşmalar](../screen/conversations.md).
 
 ### `:forget [@NAME]`
 
@@ -217,7 +217,7 @@ Ajanın ham akışı, `t` gibi: oturumunun söylediği her satır, veri olarak, 
 
 ### `:unfold`
 
-Salonda her şeyi açar, `zR` gibi.
+Salonda her şeyi açar, `zR` gibi; açık bir konuşma varken onun her mesajını açar, sonra açılan konuşmalar da yine açık başlar.
 
 ### `:waiting`
 

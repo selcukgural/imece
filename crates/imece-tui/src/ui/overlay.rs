@@ -7,7 +7,7 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Paragraph};
 
 use super::*;
-use crate::app::{App, Digest, LeftOff, PickStep, SoloPick, Thread};
+use crate::app::{App, Digest, LeftOff, PickStep, SoloPick, TalkNote, Thread};
 
 fn centered(area: Rect, width: u16, height: u16) -> Rect {
     let width = width.min(area.width);
@@ -366,6 +366,172 @@ pub(crate) fn in_view(start: usize, end: usize, scroll: usize, height: usize) ->
 pub(crate) struct CopyLine {
     pub entry: usize,
     pub text: String,
+    /// Its words as drawn ([`line_words`]): what the cursor steps over
+    /// word by word, and what copying or noting part of it takes.
+    pub words: Vec<String>,
+}
+
+/// The words of a drawn line: what stands between blanks, after the
+/// spans that only lead it (indent, a list marker, a code rule, a quote
+/// bar), so `**bold** text` is two words.
+pub(crate) fn line_words(line: &Line) -> Vec<String> {
+    let lead = line.spans.iter().take_while(|s| is_lead(s)).count();
+    let text: String = (line.spans.iter().skip(lead))
+        .map(|s| s.content.as_ref())
+        .collect();
+    text.split_whitespace().map(str::to_string).collect()
+}
+
+/// `line` with its words `from..=to` ([`line_words`]) drawn as chosen,
+/// the blanks between two chosen words too, and word `cursor` (if any)
+/// reversed. `to` may lie past the last word.
+pub(crate) fn paint_words(
+    line: Line<'static>,
+    from: usize,
+    to: usize,
+    cursor: Option<usize>,
+) -> Line<'static> {
+    let lead = line.spans.iter().take_while(|s| is_lead(s)).count();
+    let style = line.style;
+    let mut spans: Vec<Span<'static>> = line.spans[..lead].to_vec();
+    // The word the text is in or last passed; none before the first.
+    let mut word: Option<usize> = None;
+    let mut blank = true;
+    for span in &line.spans[lead..] {
+        let mut piece = String::new();
+        let mut was: Option<Style> = None;
+        for ch in span.content.chars() {
+            let is_blank = ch.is_whitespace();
+            if !is_blank && blank {
+                word = Some(word.map_or(0, |w| w + 1));
+            }
+            blank = is_blank;
+            let chosen = match word {
+                // A blank is chosen between two chosen words.
+                Some(w) if is_blank => from <= w && w < to,
+                Some(w) => from <= w && w <= to,
+                None => false,
+            };
+            let mut st = span.style;
+            if chosen {
+                st = st.patch(changed());
+            }
+            if !is_blank && word == cursor {
+                st = st.patch(changed()).add_modifier(Modifier::REVERSED);
+            }
+            if was.is_some_and(|w| w != st) {
+                let style = was.unwrap_or_default();
+                spans.push(Span::styled(std::mem::take(&mut piece), style));
+            }
+            was = Some(st);
+            piece.push(ch);
+        }
+        if let Some(st) = was {
+            spans.push(Span::styled(piece, st));
+        }
+    }
+    Line::from(spans).style(style)
+}
+
+/// `line` cut to `room` cells, `…` where it was cut (the blanks before
+/// it dropped), and whether it was.
+pub(crate) fn cut(line: Line<'static>, room: usize) -> (Line<'static>, bool) {
+    if line.width() <= room {
+        return (line, false);
+    }
+    let style = line.style;
+    let mut left = room.saturating_sub(1);
+    let mut spans = Vec::new();
+    for span in line.spans {
+        let mut kept = String::new();
+        for ch in span.content.chars() {
+            let w = ch.width().unwrap_or(0);
+            if w > left {
+                left = 0;
+                break;
+            }
+            left -= w;
+            kept.push(ch);
+        }
+        spans.push(Span::styled(kept, span.style));
+        if left == 0 {
+            break;
+        }
+    }
+    if let Some(last) = spans.last_mut() {
+        last.content = last.content.trim_end().to_string().into();
+    }
+    spans.push(Span::styled("…", dim()));
+    (Line::from(spans).style(style), true)
+}
+
+/// Where the cursor goes from word `at.1` of line `at.0` one word on
+/// (`on`) or back, over lines of `counts` words: past a line's last word
+/// to the next line's first, before its first to the last of the line
+/// before; nowhere past the first or the last line. A word past its
+/// line's end counts as its last.
+pub(crate) fn word_step(counts: &[usize], at: (usize, usize), on: bool) -> (usize, usize) {
+    let (line, word) = at;
+    let last = |l: usize| counts.get(l).map_or(0, |n| n.saturating_sub(1));
+    let word = word.min(last(line));
+    if on {
+        if word < last(line) {
+            (line, word + 1)
+        } else if line + 1 < counts.len() {
+            (line + 1, 0)
+        } else {
+            (line, word)
+        }
+    } else if word > 0 {
+        (line, word - 1)
+    } else if line > 0 {
+        (line - 1, last(line - 1))
+    } else {
+        (line, word)
+    }
+}
+
+/// What copying or noting the choice of conversation `th` takes, over
+/// its `lines`: a line chosen whole as [`copy_lines`] reads it, part of
+/// one as its words chosen, a blank line where one message ends and the
+/// next begins.
+pub(crate) fn chosen_text(lines: &[CopyLine], th: &Thread) -> String {
+    let parts = lines.iter().enumerate().filter_map(|(i, l)| {
+        let (from, to) = th.part(i)?;
+        let last = l.words.len().saturating_sub(1);
+        let text = if from == 0 && to >= last {
+            l.text.clone()
+        } else {
+            let words = l.words.get(from..=to.min(last)).unwrap_or_default();
+            words.join(" ")
+        };
+        Some((l.entry, text))
+    });
+    join_lines(parts)
+}
+
+/// The notes on words of a conversation as the message that takes them
+/// to the agent: each note under the words it is about, quoted, and the
+/// number of the message they are from when it has one. The words are
+/// the screen's, cleaned already; the notes are the person's own, as a
+/// message they write is.
+pub(crate) fn talk_notes_message(w: &World, notes: &[&TalkNote]) -> String {
+    let mut out =
+        String::from("Notes on words from our conversation, each under the words it is about.");
+    for n in notes {
+        let id = (w.journal.get(n.entry))
+            .and_then(|e| words::said(&e.event))
+            .map_or(0, |s| s.id);
+        out.push_str("\n\n");
+        if id > 0 {
+            out.push_str(&format!("On message {id}:\n"));
+        }
+        for line in n.quote.lines() {
+            out.push_str(&format!("> {line}\n"));
+        }
+        out.push_str(n.text.trim());
+    }
+    out
 }
 
 /// What a drawn line reads as: its spans' text, trailing blanks dropped.
@@ -407,26 +573,39 @@ pub(crate) fn thread_lines(lang: Lang, w: &World, entries: &[usize]) -> Vec<Copy
         out.extend(
             message_lines(lang, w, i)
                 .into_iter()
-                .map(|(_, text)| CopyLine { entry: n, text }),
+                .map(|(line, text)| CopyLine {
+                    entry: n,
+                    words: line_words(&line),
+                    text,
+                }),
         );
     }
     out
 }
 
 /// What copying lines `from..=to` of a conversation takes: their text,
-/// a blank line where one message ends and the next begins.
+/// a blank line where one message ends and the next begins (what
+/// [`chosen_text`] takes for whole lines).
+#[cfg(test)]
 pub(crate) fn copy_lines(lines: &[CopyLine], from: usize, to: usize) -> String {
+    let parts = (lines.iter().take(to + 1).skip(from)).map(|l| (l.entry, l.text.clone()));
+    join_lines(parts)
+}
+
+/// Lines of a conversation, each with the message it is of, as one text:
+/// a blank line where one message ends and the next begins.
+fn join_lines(parts: impl Iterator<Item = (usize, String)>) -> String {
     let mut out = String::new();
     let mut entry = None;
-    for l in lines.iter().take(to + 1).skip(from) {
-        if entry.is_some_and(|e| e != l.entry) {
+    for (at, text) in parts {
+        if entry.is_some_and(|e| e != at) {
             out.push('\n');
         }
         if entry.is_some() {
             out.push('\n');
         }
-        out.push_str(&l.text);
-        entry = Some(l.entry);
+        out.push_str(&text);
+        entry = Some(at);
     }
     out
 }
@@ -445,22 +624,31 @@ pub(crate) fn thread_rows(
     th: &Thread,
     width: u16,
 ) -> (Vec<Line<'static>>, Vec<(usize, usize)>) {
-    let (rows, ranges, _) = thread_layout(lang, w, th, width);
+    let (rows, ranges, _) = thread_layout(lang, w, &[], th, width);
     (rows, ranges)
 }
 
 /// [`thread_rows`], and each line's row range as well (a line wraps to
 /// several). While lines are being chosen to copy (`Thread::copy`), the
 /// chosen ones carry the mark and the background instead of the selected
-/// message, the cursor's with `▶`.
+/// message, the cursor's with `▶`; chosen word by word, the words chosen
+/// carry the background, the cursor's word reversed, and only a line
+/// chosen whole the row's. A folded message (`Thread::folds`; none while
+/// choosing) is one row: its head and its text on one line, cut with `…`
+/// to fit, and, when opening it shows more, how many lines it has (its
+/// lines have no row ranges: they are only asked for while choosing). Under
+/// an open message, a row per note on its words (`✎ "words" note`); a
+/// folded one counts them.
 #[allow(clippy::type_complexity)]
-fn thread_layout(
+pub(crate) fn thread_layout(
     lang: Lang,
     w: &World,
+    talk_notes: &[TalkNote],
     th: &Thread,
     width: u16,
 ) -> (Vec<Line<'static>>, Vec<(usize, usize)>, Vec<(usize, usize)>) {
     const GUTTER: usize = 2;
+    let t = lang.text();
     let text_width = usize::from(width).saturating_sub(GUTTER);
     let mut rows: Vec<Line> = Vec::new();
     let mut ranges = Vec::new();
@@ -478,30 +666,93 @@ fn thread_layout(
         let start = rows.len();
         // The mark, when the line has one, in the gutter of its first row.
         let mut mark = w.marks.contains(&i);
-        for (line, _) in message_lines(lang, w, i) {
+        let gutter = |row: &mut Line<'static>, mark: &mut bool, bar: Option<&'static str>| {
+            let second = match std::mem::take(mark) {
+                true => Span::styled(MARK, bold(pal().accent)),
+                false => Span::raw(" "),
+            };
+            let first = match bar {
+                Some(bar) => Span::styled(bar, fg(pal().accent)),
+                None => Span::raw(" "),
+            };
+            row.spans.insert(0, first);
+            row.spans.insert(1, second);
+        };
+        let lines = message_lines(lang, w, i);
+        let notes: Vec<&TalkNote> = talk_notes.iter().filter(|n| n.entry == i).collect();
+        let said = words::said(&e.event);
+        if th.copy.is_none()
+            && th.folds.folded(n)
+            && let Some(s) = &said
+        {
+            let mut row = Line::from(Span::styled(format!("{} ", clock(e.tick)), dim()));
+            row.spans.extend(said_spans(lang, w, s));
+            let body = lines.len() - 1;
+            let noted = match notes.len() {
+                0 => String::new(),
+                k => format!(" ✎ {k}"),
+            };
+            let more = match body {
+                1 => format!(" {}", t.folded_line),
+                _ => format!(" {}", fill(t.folded_lines, &[&body.to_string()])),
+            };
+            // More to see: more lines than one, or the one cut to fit.
+            let fits = row.width() + noted.width() <= text_width;
+            let tail = match body > 1 || (body == 1 && !fits) {
+                true => format!("{more}{noted}"),
+                false => noted,
+            };
+            let (mut row, _) = cut(row, text_width.saturating_sub(tail.width()));
+            row.spans.push(Span::styled(tail, dim()));
+            let selected = n == th.sel;
+            gutter(&mut row, &mut mark, selected.then_some("▌"));
+            if selected {
+                row = row.style(changed());
+            }
+            rows.push(row);
+            ranges.push((start, rows.len()));
+            rows.push(Line::raw(""));
+            continue;
+        }
+        for (line, _) in lines {
             let at = line_ranges.len();
+            let part = th.part(at);
             let (selected, cursor) = match th.copy {
-                Some(c) => (c.holds(at), c.at == at),
+                Some(c) => (part.is_some(), c.at == at),
                 None => (n == th.sel, false),
+            };
+            // Chosen word by word, the row's background only when whole.
+            let (line, whole) = match (th.words, part) {
+                (Some((_, cw)), Some((from, to))) => {
+                    let last = line_words(&line).len().saturating_sub(1);
+                    let whole = from == 0 && to >= last;
+                    let painted = paint_words(line, from, to, cursor.then_some(cw));
+                    (painted, whole)
+                }
+                _ => (line, true),
             };
             let line_start = rows.len();
             for mut row in wrap(line, text_width) {
-                let second = match std::mem::take(&mut mark) {
-                    true => Span::styled(MARK, bold(pal().accent)),
-                    false => Span::raw(" "),
-                };
-                if selected {
-                    let bar = if cursor { "▶" } else { "▌" };
-                    row.spans.insert(0, Span::styled(bar, fg(pal().accent)));
-                    row.spans.insert(1, second);
+                let bar = selected.then_some(if cursor { "▶" } else { "▌" });
+                gutter(&mut row, &mut mark, bar);
+                if selected && whole {
                     row = row.style(changed());
-                } else {
-                    row.spans.insert(0, Span::raw(" "));
-                    row.spans.insert(1, second);
                 }
                 rows.push(row);
             }
             line_ranges.push((line_start, rows.len()));
+        }
+        for note in notes {
+            let quote = brief(&note.quote, usize::MAX);
+            let row = Line::from(vec![
+                Span::raw("    "),
+                Span::styled("✎ ", fg(pal().accent)),
+                Span::styled(format!("\"{quote}\" "), dim()),
+                Span::raw(clean(&note.text)),
+            ]);
+            let (mut row, _) = cut(row, text_width);
+            gutter(&mut row, &mut false, None);
+            rows.push(row);
         }
         ranges.push((start, rows.len()));
         rows.push(Line::raw(""));
@@ -542,12 +793,17 @@ pub fn thread(f: &mut Frame, app: &App, th: &Thread) {
         }
         None => t.event_title.to_string(),
     };
-    // Choosing lines to copy: the title counts them, the keys are copy
-    // mode's.
+    // Notes on its words not sent yet: counted after the title.
+    let title = match app.talk_notes_here().len() {
+        0 => title,
+        n => format!("{title}✎ {n} "),
+    };
+    // Choosing lines to copy: the title counts them, the keys are the
+    // choosing's.
     let (title, hints) = match th.copy {
         Some(c) => (
             fill(t.copy_title, &[&c.len().to_string()]),
-            &t.copy_hints[..],
+            &t.choose_hints[..],
         ),
         None => (title, &t.thread_hints[..]),
     };
@@ -559,7 +815,7 @@ pub fn thread(f: &mut Frame, app: &App, th: &Thread) {
     let [body, keys] = Layout::vertical([Constraint::Min(0), Constraint::Length(1)]).areas(inner);
     f.render_widget(Paragraph::new(Line::from(hint_spans(hints))), keys);
 
-    let (rows, ranges, lines) = thread_layout(app.lang, w, th, body.width);
+    let (rows, ranges, lines) = thread_layout(app.lang, w, &app.talk_notes, th, body.width);
     let height = usize::from(body.height);
     let max = rows.len().saturating_sub(height);
     // The cursor's line is kept in view while copying, else the message.

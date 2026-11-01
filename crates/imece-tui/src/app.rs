@@ -85,6 +85,91 @@ pub struct Thread {
     pub page: Cell<u16>,
     /// Lines being chosen to copy (`v`), over `ui::thread_lines`.
     pub copy: Option<Copying>,
+    /// The choice word by word (`w b h l`): the word of the anchor's line
+    /// it starts from and the cursor's word, each counted in its own line
+    /// (`ui::CopyLine::words`). None: whole lines.
+    pub words: Option<(usize, usize)>,
+    /// Which messages show as one row.
+    pub folds: Folds,
+}
+
+impl Thread {
+    /// The words chosen on line `i` (of `ui::thread_lines`): the first and
+    /// the last, counted in the line; the last may lie past the line's
+    /// end, which means to its end. None: nothing of it is chosen.
+    pub fn part(&self, i: usize) -> Option<(usize, usize)> {
+        let c = self.copy?;
+        let (from, to) = match self.words {
+            Some((aw, cw)) => {
+                let (a, b) = ((c.anchor, aw), (c.at, cw));
+                (a.min(b), a.max(b))
+            }
+            None => {
+                let (f, t) = c.span();
+                ((f, 0), (t, usize::MAX))
+            }
+        };
+        if i < from.0 || i > to.0 {
+            return None;
+        }
+        let first = if i == from.0 { from.1 } else { 0 };
+        let last = if i == to.0 { to.1 } else { usize::MAX };
+        Some((first, last))
+    }
+}
+
+/// Which messages of a conversation are folded to one row: all of them
+/// or none (`zM` `zR`), less or more the ones folded or opened one by one
+/// since (`h l za`), by their place in the conversation, so a message
+/// that comes later folds as the rest do.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Folds {
+    pub all: bool,
+    pub except: BTreeSet<usize>,
+}
+
+impl Folds {
+    /// All folded (`all`) or all open.
+    pub fn every(all: bool) -> Self {
+        Folds {
+            all,
+            except: BTreeSet::new(),
+        }
+    }
+
+    /// Whether message `n` shows as one row.
+    pub fn folded(&self, n: usize) -> bool {
+        self.all != self.except.contains(&n)
+    }
+
+    /// Message `n` folded (`fold`) or open.
+    pub fn set(&mut self, n: usize, fold: bool) {
+        if fold == self.all {
+            self.except.remove(&n);
+        } else {
+            self.except.insert(n);
+        }
+    }
+}
+
+/// The person's note on words of a conversation (`c` while choosing),
+/// kept until it is sent with the others (`n`): the agent it goes to,
+/// the journal line the words start in, the words as the screen showed
+/// them, the note.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TalkNote {
+    pub to: AgentId,
+    pub entry: usize,
+    pub quote: String,
+    pub text: String,
+}
+
+/// What the note being written goes on: a line of worker `.0`'s change,
+/// or words of a conversation (a [`TalkNote`] with no text yet).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Noting {
+    Line(AgentId, usize),
+    Words(TalkNote),
 }
 
 /// Lines being chosen to copy (`v`): the line the choice started on and
@@ -510,8 +595,14 @@ pub struct App {
     pub diff_wrap: bool,
     /// The person's notes on lines of workers' changes, not sent yet.
     pub diff_notes: Vec<DiffNote>,
-    /// The note being written: whose change and which patch line.
-    pub noting: Option<(AgentId, usize)>,
+    /// The note being written: on a line of a change, or on words of a
+    /// conversation.
+    pub noting: Option<Noting>,
+    /// The person's notes on words of conversations, not sent yet.
+    pub talk_notes: Vec<TalkNote>,
+    /// Whether a conversation opens with its messages folded: the last
+    /// `zM` or `zR` (`:fold` `:unfold` in one) says, for this run.
+    pub fold_talk: bool,
     /// Hunks the person chose to apply alone (`x`): whose change, its
     /// patch's hash, the hunk's `@@` line.
     pub chosen: Vec<(AgentId, u64, usize)>,
@@ -653,6 +744,8 @@ impl App {
             diff_wrap: false,
             diff_notes: Vec::new(),
             noting: None,
+            talk_notes: Vec::new(),
+            fold_talk: false,
             chosen: Vec::new(),
             diff_copy: None,
             diff_page: Cell::new(10),
@@ -1217,6 +1310,9 @@ impl App {
             ('q', KeyCode::Char('q')) => self.quit = true,
             ('q', KeyCode::Char('s')) => self.leaving = self.in_flight(),
             ('g', KeyCode::Char('g')) => self.jump(true),
+            ('z', KeyCode::Char('a')) if self.thread.is_some() => self.toggle_fold(),
+            ('z', KeyCode::Char('M')) if self.thread.is_some() => self.fold_talk(true),
+            ('z', KeyCode::Char('R')) if self.thread.is_some() => self.fold_talk(false),
             ('z', KeyCode::Char('a')) if self.salon_keys() => {
                 let folded = match self.worker_at_hand() {
                     Some(id) => self.folded_workers.contains(&id),
@@ -1674,8 +1770,18 @@ impl App {
                 let lines = ui::thread_lines(self.lang, &self.world, &th.entries);
                 let first = lines.iter().position(|l| l.entry == th.sel);
                 th.copy = Some(Copying::new(first.unwrap_or(0)));
+                th.words = None;
                 th.follow.set(true);
             }
+            KeyCode::Left | KeyCode::Char('h') => {
+                th.folds.set(th.sel, true);
+                th.follow.set(true);
+            }
+            KeyCode::Right | KeyCode::Char('l') => {
+                th.folds.set(th.sel, false);
+                th.follow.set(true);
+            }
+            KeyCode::Char('n') => self.send_talk_notes(),
             // Writing, views, language, help and quitting work as anywhere.
             _ => return false,
         }
@@ -1702,7 +1808,9 @@ impl App {
 
     /// A key while lines are being chosen to copy (`v`): the cursor moves
     /// (`j k`, a page, `gg G`), `y` copies, `Y` in a change copies the
-    /// new side, `v` and esc leave. `?` and `q` work as anywhere; any
+    /// new side, `v` and esc leave. In a conversation the cursor also
+    /// moves word by word (`w b h l`, the choice turns word-wise), `s`
+    /// starts the choice where it is and `c` notes the words chosen. `?` and `q` work as anywhere; any
     /// other key does nothing, so one meant for the change (`a` applies)
     /// is not taken by mistake. `false` when nothing is being chosen.
     fn copy_key(&mut self, k: KeyEvent) -> bool {
@@ -1723,6 +1831,10 @@ impl App {
             KeyCode::Char('g') => self.pending = Some('g'),
             KeyCode::Char('y') => self.copy_chosen(false),
             KeyCode::Char('Y') => self.copy_chosen(true),
+            KeyCode::Char('w') | KeyCode::Char('l') | KeyCode::Right => self.word_step(true),
+            KeyCode::Char('b') | KeyCode::Char('h') | KeyCode::Left => self.word_step(false),
+            KeyCode::Char('s') => self.choose_from_here(),
+            KeyCode::Char('c') => self.note_words(),
             KeyCode::Esc | KeyCode::Char('v') => {
                 if let Some(th) = &mut self.thread {
                     th.copy = None;
@@ -1750,6 +1862,9 @@ impl App {
             c.at = to(c.at, last, usize::from(th.page.get()).max(1)).min(last);
             if let Some(l) = lines.get(c.at) {
                 th.sel = l.entry;
+                if let Some((_, word)) = &mut th.words {
+                    *word = (*word).min(l.words.len().saturating_sub(1));
+                }
             }
             th.follow.set(true);
             return true;
@@ -1774,12 +1889,12 @@ impl App {
     /// on it is said, and the choice stays to be changed.
     fn copy_chosen(&mut self, new_side: bool) {
         if let Some(th) = &mut self.thread {
-            let Some(c) = th.copy.take() else {
+            if th.copy.is_none() {
                 return;
-            };
+            }
             let lines = ui::thread_lines(self.lang, &self.world, &th.entries);
-            let (from, to) = c.span();
-            self.copy = Some(ui::copy_lines(&lines, from, to));
+            self.copy = Some(ui::chosen_text(&lines, th));
+            th.copy = None;
             return;
         }
         let Zoom::Diff(id) = self.zoom else {
@@ -1801,6 +1916,162 @@ impl App {
         }
     }
 
+    /// `za` in a conversation: the selected message folded, or open.
+    fn toggle_fold(&mut self) {
+        if let Some(th) = &mut self.thread {
+            let folded = th.folds.folded(th.sel);
+            th.folds.set(th.sel, !folded);
+            th.follow.set(true);
+        }
+    }
+
+    /// `zM` (`fold`) or `zR` in a conversation, `:fold` `:unfold` with one
+    /// open: every message folded, or open; the conversations opened
+    /// after it in this run start so too.
+    fn fold_talk(&mut self, fold: bool) {
+        self.fold_talk = fold;
+        if let Some(th) = &mut self.thread {
+            th.folds = Folds::every(fold);
+            th.follow.set(true);
+        }
+    }
+
+    /// `w l →` (`on`) or `b h ←` while choosing in a conversation: the
+    /// cursor goes a word on or back, over the end of a line to the next
+    /// or the one before; the choice turns word-wise, from the end it
+    /// had (the start of its first line, the end of its last).
+    fn word_step(&mut self, on: bool) {
+        let Some(th) = &mut self.thread else {
+            return;
+        };
+        let Some(c) = &mut th.copy else {
+            return;
+        };
+        let lines = ui::thread_lines(self.lang, &self.world, &th.entries);
+        let counts: Vec<usize> = lines.iter().map(|l| l.words.len()).collect();
+        let last = |l: usize| counts.get(l).map_or(0, |n| n.saturating_sub(1));
+        let (aw, cw) = th.words.unwrap_or(match c.anchor.cmp(&c.at) {
+            std::cmp::Ordering::Less => (0, last(c.at)),
+            std::cmp::Ordering::Greater => (last(c.anchor), 0),
+            std::cmp::Ordering::Equal => (0, 0),
+        });
+        let (line, word) = ui::word_step(&counts, (c.at, cw), on);
+        c.at = line;
+        th.words = Some((aw, word));
+        if let Some(l) = lines.get(line) {
+            th.sel = l.entry;
+        }
+        th.follow.set(true);
+    }
+
+    /// `s` while choosing in a conversation: the choice starts again
+    /// where the cursor is, the cursor's word alone when it is word-wise.
+    fn choose_from_here(&mut self) {
+        if let Some(th) = &mut self.thread
+            && let Some(c) = &mut th.copy
+        {
+            c.anchor = c.at;
+            if let Some((aw, cw)) = &mut th.words {
+                *aw = *cw;
+            }
+        }
+    }
+
+    /// `c` while choosing in a conversation: a note on the words chosen,
+    /// written in the command line; one on the same words is written
+    /// again. The choosing ends. Blank words take no note. The note goes
+    /// to the agent of the line the words start in: whoever wrote it, or,
+    /// the person's own line, the agent it went to (`Event::agent`).
+    fn note_words(&mut self) {
+        let Some(th) = &mut self.thread else {
+            return;
+        };
+        let Some(c) = th.copy else {
+            return;
+        };
+        let lines = ui::thread_lines(self.lang, &self.world, &th.entries);
+        let quote = ui::chosen_text(&lines, th);
+        if quote.trim().is_empty() {
+            return self.flash(self.lang.text().note_blank);
+        }
+        let Some(&entry) = (lines.get(c.span().0)).and_then(|l| th.entries.get(l.entry)) else {
+            return;
+        };
+        th.copy = None;
+        let to = self.world.journal[entry].event.agent();
+        let had = (self.talk_notes.iter())
+            .find(|n| n.entry == entry && n.quote == quote)
+            .map(|n| n.text.clone());
+        self.input = had.unwrap_or_default();
+        self.after = 0;
+        self.typing = true;
+        self.menu = None;
+        self.noting = Some(Noting::Words(TalkNote {
+            to,
+            entry,
+            quote,
+            text: String::new(),
+        }));
+    }
+
+    /// The notes on words of the open conversation, oldest line first.
+    pub fn talk_notes_here(&self) -> Vec<&TalkNote> {
+        let Some(th) = &self.thread else {
+            return Vec::new();
+        };
+        let mut notes: Vec<&TalkNote> = (self.talk_notes.iter())
+            .filter(|n| th.entries.contains(&n.entry))
+            .collect();
+        notes.sort_by_key(|n| n.entry);
+        notes
+    }
+
+    /// The note written on `note`'s words is kept (in place of one there
+    /// was); an empty one takes it away.
+    fn keep_talk_note(&mut self, mut note: TalkNote, text: String) {
+        let t = self.lang.text();
+        self.talk_notes
+            .retain(|n| !(n.entry == note.entry && n.quote == note.quote));
+        if text.is_empty() {
+            return self.flash(t.note_dropped);
+        }
+        note.text = text;
+        self.talk_notes.push(note);
+        let n = self.talk_notes_here().len().to_string();
+        self.flash(fill(t.talk_noted, &[&n]));
+    }
+
+    /// `n` in a conversation: its notes go to the agents they are for,
+    /// one message each, every note under the words it is about. A note
+    /// whose message could not go stays.
+    fn send_talk_notes(&mut self) {
+        let t = self.lang.text();
+        let here: Vec<TalkNote> = self.talk_notes_here().into_iter().cloned().collect();
+        if here.is_empty() {
+            return self.flash(t.no_talk_notes);
+        }
+        let mut by: BTreeMap<AgentId, Vec<&TalkNote>> = BTreeMap::new();
+        for n in &here {
+            by.entry(n.to).or_default().push(n);
+        }
+        let (mut sent, mut names) = (0, Vec::new());
+        for (to, notes) in by {
+            let message = ui::talk_notes_message(&self.world, &notes);
+            if self.tell(to, &message) {
+                self.talk_notes.retain(|n| !notes.contains(&n));
+                sent += notes.len();
+                names.push(self.world.agents[to].name.clone());
+            }
+        }
+        if sent > 0 {
+            let t = self.lang.text();
+            self.flash(fill(
+                t.talk_notes_sent,
+                &[&sent.to_string(), &names.join(", ")],
+            ));
+        }
+    }
+
     /// Opens the conversation that journal line `i` belongs to, with that
     /// line selected.
     pub fn open_thread(&mut self, i: usize) {
@@ -1813,6 +2084,8 @@ impl App {
             follow: Cell::new(true),
             page: Cell::new(10),
             copy: None,
+            words: None,
+            folds: Folds::every(self.fold_talk),
         });
     }
 
@@ -2418,8 +2691,10 @@ impl App {
         self.menu = None;
         self.recall = None;
         self.searching = false;
-        if let Some((id, line)) = self.noting.take() {
-            return self.keep_note(id, line, text);
+        match self.noting.take() {
+            Some(Noting::Line(id, line)) => return self.keep_note(id, line, text),
+            Some(Noting::Words(note)) => return self.keep_talk_note(note, text),
+            None => {}
         }
         if text.is_empty() {
             return;
@@ -2461,7 +2736,8 @@ impl App {
         }
         let Some(rest) = text.strip_prefix('@') else {
             let leader = self.world.projects[self.current_project()].leader;
-            return self.tell(leader, &text);
+            self.tell(leader, &text);
+            return;
         };
         let msg = rest
             .split_once(char::is_whitespace)
@@ -2469,7 +2745,9 @@ impl App {
             .trim();
         match self.world.agent_by_name(&target) {
             Some(_) if msg.is_empty() => self.flash(t.empty_message),
-            Some(id) => self.tell(id, msg),
+            Some(id) => {
+                self.tell(id, msg);
+            }
             None => self.flash(fill(t.no_agent, &[&target])),
         }
     }
@@ -2477,8 +2755,8 @@ impl App {
     /// The person's message to agent `id`: the engine gets it first, and only
     /// a message that reached the agent is recorded as said. A line that
     /// starts with `/` is a command of the agent's own command line
-    /// (`/clear`, `/compact`, `/cost`), not a message.
-    fn tell(&mut self, id: AgentId, text: &str) {
+    /// (`/clear`, `/compact`, `/cost`), not a message. Whether it went.
+    fn tell(&mut self, id: AgentId, text: &str) -> bool {
         let command = text.starts_with('/');
         let refused = match &mut self.engine {
             Engine::Sim(s) if command => s.command(&mut self.world, id, text).err(),
@@ -2486,7 +2764,9 @@ impl App {
             Engine::Live(l) if command => l.command(&mut self.world, id, text).err(),
             Engine::Live(l) => l.told(&mut self.world, id, text).err(),
         };
+        let went = refused.is_none();
         self.report(id, text, refused);
+        went
     }
 
     /// Flashes how the person's `text` to agent `id` fared.
@@ -2580,6 +2860,9 @@ impl App {
             "needs" => {
                 self.go_salon();
                 self.toggle_needs();
+            }
+            which @ ("fold" | "unfold") if self.thread.is_some() => {
+                self.fold_talk(which == "fold");
             }
             which @ ("fold" | "unfold") => {
                 self.go_salon();
@@ -2904,7 +3187,7 @@ impl App {
         self.after = 0;
         self.typing = true;
         self.menu = None;
-        self.noting = Some((id, line));
+        self.noting = Some(Noting::Line(id, line));
     }
 
     /// The note written on `line` of worker `id`'s change is kept (in
@@ -4135,13 +4418,381 @@ mod tests {
             (Some(Copying { anchor: 5, at: 3 }), 1),
             "the message follows"
         );
-        app.on_key(key(KeyCode::Char('c')));
-        assert_eq!(app.copy, None, "c is not taken while choosing");
+        app.on_key(key(KeyCode::Char('r')));
+        assert_eq!(app.copy, None, "r is not taken while choosing");
         app.on_key(key(KeyCode::Char('j')));
         app.on_key(key(KeyCode::Char('y')));
         assert_eq!(app.copy, Some(format!("two\n\n{head}")));
         assert_eq!(th(&app).0, None, "y leaves the choosing");
         assert!(app.thread.is_some(), "not the conversation");
+    }
+
+    /// A conversation of the person with a worker: the person's "first",
+    /// then the worker's answer `alpha **beta** gamma` / `delta epsilon`,
+    /// selected. Its lines: 0 and 2 heads, 1 "first", 3 and 4 the answer.
+    fn talk_with_words() -> (App, AgentId) {
+        let (mut app, worker) = with_thread();
+        app.world.note(Event::ToYou {
+            from: worker,
+            kind: MsgKind::Answer,
+            text: "alpha **beta** gamma\ndelta epsilon".into(),
+        });
+        app.on_key(key(KeyCode::Char('G')));
+        assert_eq!(app.thread.as_ref().unwrap().sel, 1);
+        (app, worker)
+    }
+
+    fn keys(app: &mut App, keys: &str) {
+        for c in keys.chars() {
+            app.on_key(key(KeyCode::Char(c)));
+        }
+    }
+
+    /// The choice of the open conversation: the cursor's line, the anchor's,
+    /// the words.
+    fn choice(app: &App) -> (usize, usize, Option<(usize, usize)>) {
+        let th = app.thread.as_ref().unwrap();
+        let c = th.copy.unwrap();
+        (c.at, c.anchor, th.words)
+    }
+
+    #[test]
+    fn choosing_word_by_word_steps_over_words_and_lines_and_copies_them() {
+        let (mut app, _) = talk_with_words();
+        // From one line chosen whole: the cursor on its first word, then on.
+        keys(&mut app, "vjs");
+        assert_eq!(choice(&app), (3, 3, None));
+        keys(&mut app, "w");
+        assert_eq!(choice(&app), (3, 3, Some((0, 1))));
+        keys(&mut app, "y");
+        assert_eq!(
+            app.copy.as_deref(),
+            Some("alpha beta"),
+            "the words as drawn"
+        );
+        assert!(app.thread.as_ref().unwrap().copy.is_none(), "y leaves");
+        // The whole line is its source; over its end, the next line.
+        keys(&mut app, "vjswl");
+        assert_eq!(choice(&app), (3, 3, Some((0, 2))));
+        keys(&mut app, "y");
+        assert_eq!(app.copy.as_deref(), Some("alpha **beta** gamma"));
+        keys(&mut app, "vjsww");
+        app.on_key(key(KeyCode::Right));
+        assert_eq!(choice(&app), (4, 3, Some((0, 0))));
+        keys(&mut app, "y");
+        assert_eq!(app.copy.as_deref(), Some("alpha **beta** gamma\ndelta"));
+        // Back over the start of a line, to the last word of the one above.
+        keys(&mut app, "vjjs");
+        assert_eq!(choice(&app), (4, 4, None));
+        keys(&mut app, "b");
+        assert_eq!(choice(&app), (3, 4, Some((0, 2))));
+        keys(&mut app, "h");
+        app.on_key(key(KeyCode::Left));
+        assert_eq!(choice(&app), (3, 4, Some((0, 0))));
+        keys(&mut app, "y");
+        assert_eq!(app.copy.as_deref(), Some("alpha **beta** gamma\ndelta"));
+        // Into the message above: it is the one selected, kept in view.
+        keys(&mut app, "vjs");
+        app.thread.as_ref().unwrap().follow.set(false);
+        keys(&mut app, "bbbbbb");
+        let th = app.thread.as_ref().unwrap();
+        assert_eq!((choice(&app), th.sel), ((1, 3, Some((0, 0))), 0));
+        assert!(th.follow.get());
+    }
+
+    #[test]
+    fn a_choice_of_lines_turns_word_wise_from_the_ends_it_had() {
+        let (mut app, worker) = talk_with_words();
+        let name = app.world.agents[worker].name.clone();
+        // Downward: from the start of its first line; the cursor at the
+        // end of its last, so `b` gives that word back.
+        keys(&mut app, "vjj");
+        assert_eq!(choice(&app), (4, 2, None));
+        keys(&mut app, "b");
+        assert_eq!(choice(&app), (4, 2, Some((0, 0))));
+        keys(&mut app, "y");
+        let head = format!("{name} → you [answer]");
+        let copied = app.copy.clone().unwrap();
+        assert!(
+            copied.ends_with(&format!("{head}\nalpha **beta** gamma\ndelta")),
+            "{copied}"
+        );
+        // Upward: from the end of its last line; the cursor at the start
+        // of its first.
+        keys(&mut app, "vjjjsk");
+        assert_eq!(choice(&app), (3, 4, None));
+        keys(&mut app, "w");
+        assert_eq!(choice(&app), (3, 4, Some((1, 1))));
+        keys(&mut app, "y");
+        assert_eq!(app.copy.as_deref(), Some("beta gamma\ndelta epsilon"));
+        // Word-wise, j and k keep the cursor on a word of the line it goes to.
+        keys(&mut app, "vjswwj");
+        assert_eq!(choice(&app), (4, 3, Some((0, 1))), "two words, not three");
+        keys(&mut app, "k");
+        assert_eq!(choice(&app), (3, 3, Some((0, 1))));
+        // `s` starts again at the cursor's word.
+        keys(&mut app, "ws");
+        assert_eq!(choice(&app), (3, 3, Some((2, 2))));
+        keys(&mut app, "y");
+        assert_eq!(app.copy.as_deref(), Some("gamma"));
+        // `v` starts whole lines again.
+        keys(&mut app, "v");
+        assert_eq!(choice(&app), (2, 2, None));
+    }
+
+    #[test]
+    fn c_notes_the_words_chosen_and_n_sends_them_to_who_wrote_them() {
+        let (mut app, worker) = talk_with_words();
+        let answer = app.world.journal.len() - 1;
+        keys(&mut app, "vjswc");
+        assert!(app.typing && app.input.is_empty());
+        assert!(app.thread.as_ref().unwrap().copy.is_none(), "c leaves");
+        let note = TalkNote {
+            to: worker,
+            entry: answer,
+            quote: "alpha beta".into(),
+            text: String::new(),
+        };
+        assert_eq!(app.noting, Some(Noting::Words(note.clone())));
+        app.input = "say why".into();
+        app.on_key(key(KeyCode::Enter));
+        assert!(!app.typing && app.noting.is_none());
+        let kept = TalkNote {
+            text: "say why".into(),
+            ..note.clone()
+        };
+        assert_eq!(app.talk_notes, std::slice::from_ref(&kept));
+        assert_eq!(
+            app.flash.as_ref().unwrap().0,
+            fill(app.lang.text().talk_noted, &["1"])
+        );
+        // The same words again: the note to write over.
+        keys(&mut app, "vjswc");
+        assert_eq!(app.input, "say why");
+        app.input = "say why, shortly".into();
+        app.on_key(key(KeyCode::Enter));
+        assert_eq!(app.talk_notes.len(), 1, "in place of the one there was");
+        // Other words of the same message, or the same words of another
+        // message: a note of their own.
+        keys(&mut app, "vjjsc");
+        app.input = "other words".into();
+        app.on_key(key(KeyCode::Enter));
+        app.talk_notes.push(TalkNote {
+            entry: answer - 1,
+            ..app.talk_notes[0].clone()
+        });
+        assert_eq!(app.talk_notes.len(), 3);
+        keys(&mut app, "vjswc");
+        app.input.clear();
+        app.on_key(key(KeyCode::Enter));
+        assert_eq!(app.talk_notes.len(), 2, "written empty, only that one goes");
+        assert_eq!(app.talk_notes[0].quote, "delta epsilon");
+        app.talk_notes.clear();
+        keys(&mut app, "vjswc");
+        app.input = "say why, shortly".into();
+        app.on_key(key(KeyCode::Enter));
+        // The person's own line: to the agent it went to.
+        keys(&mut app, "ggvjsc");
+        app.input = "and this".into();
+        app.on_key(key(KeyCode::Enter));
+        assert_eq!(app.talk_notes[1].to, worker);
+        assert_eq!(app.talk_notes[1].quote, "first");
+        let was = app.world.journal.len();
+        keys(&mut app, "n");
+        assert!(app.talk_notes.is_empty());
+        let Event::YouSaid { to, text } = &app.world.journal[was].event else {
+            panic!("{:?}", app.world.journal[was].event);
+        };
+        assert_eq!(*to, worker);
+        let message = "Notes on words from our conversation, each under the words it is \
+                       about.\n\n> first\nand this\n\n> alpha beta\nsay why, shortly";
+        assert_eq!(text, message, "one message, the older line first");
+        let name = app.world.agents[worker].name.clone();
+        assert_eq!(
+            app.flash.as_ref().unwrap().0,
+            fill(app.lang.text().talk_notes_sent, &["2", &name])
+        );
+        keys(&mut app, "n");
+        assert_eq!(app.flash.as_ref().unwrap().0, app.lang.text().no_talk_notes);
+    }
+
+    #[test]
+    fn notes_on_a_talk_between_agents_go_each_to_its_writer() {
+        let mut app = App::new(1, 2, 0, 1, Lang::En);
+        app.world.journal.clear();
+        for (from, to, text) in [(0, 1, "do the parser"), (1, 0, "done the parser")] {
+            let id = app.world.number();
+            app.world.note(Event::Sent {
+                from,
+                to,
+                kind: MsgKind::Inform,
+                text: text.into(),
+                id,
+                re: None,
+            });
+        }
+        app.open_thread(0);
+        // The lead's line, then the worker's.
+        keys(&mut app, "vjsc");
+        app.input = "to the lead".into();
+        app.on_key(key(KeyCode::Enter));
+        keys(&mut app, "jvjsc");
+        app.input = "to the worker".into();
+        app.on_key(key(KeyCode::Enter));
+        let to: Vec<AgentId> = app.talk_notes.iter().map(|n| n.to).collect();
+        assert_eq!(to, [0, 1]);
+        keys(&mut app, "n");
+        let said: Vec<(AgentId, String)> = (app.world.journal.iter())
+            .filter_map(|e| match &e.event {
+                Event::YouSaid { to, text } => Some((*to, text.clone())),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(said.len(), 2, "{said:?}");
+        assert_eq!(said[0].0, 0);
+        assert!(
+            said[0]
+                .1
+                .ends_with("On message 1:\n> do the parser\nto the lead"),
+            "{said:?}"
+        );
+        assert_eq!(said[1].0, 1);
+        assert!(
+            said[1]
+                .1
+                .ends_with("On message 2:\n> done the parser\nto the worker")
+        );
+        let names = format!("{}, {}", app.world.agents[0].name, app.world.agents[1].name);
+        assert_eq!(
+            app.flash.as_ref().unwrap().0,
+            fill(app.lang.text().talk_notes_sent, &["2", &names])
+        );
+    }
+
+    #[test]
+    fn a_note_that_could_not_go_stays_and_an_empty_one_goes_away() {
+        let (mut app, _) = talk_with_words();
+        keys(&mut app, "vjc");
+        app.input = "keep me".into();
+        app.on_key(key(KeyCode::Enter));
+        app.world.budget = 0;
+        keys(&mut app, "n");
+        assert_eq!(app.talk_notes.len(), 1, "the budget is spent");
+        assert!(!app.flash.as_ref().unwrap().0.contains("went to"));
+        // Written empty, the note is taken away.
+        keys(&mut app, "vjc");
+        assert_eq!(app.input, "keep me");
+        app.input.clear();
+        app.on_key(key(KeyCode::Enter));
+        assert!(app.talk_notes.is_empty());
+        assert_eq!(app.flash.as_ref().unwrap().0, app.lang.text().note_dropped);
+        // Blank words take none, and the choice stays.
+        app.world.note(Event::ToYou {
+            from: 1,
+            kind: MsgKind::Answer,
+            text: "a\n\nb".into(),
+        });
+        keys(&mut app, "Gvjjsc");
+        assert!(!app.typing && app.noting.is_none());
+        assert_eq!(app.flash.as_ref().unwrap().0, app.lang.text().note_blank);
+        assert!(app.thread.as_ref().unwrap().copy.is_some());
+        // Esc while writing one keeps nothing.
+        keys(&mut app, "kc");
+        app.on_key(key(KeyCode::Esc));
+        assert!(app.noting.is_none() && app.talk_notes.is_empty());
+    }
+
+    #[test]
+    fn h_l_and_z_fold_messages_of_a_conversation_and_the_choice_is_kept() {
+        let (mut app, _) = talk_with_words();
+        let collapsed = app.collapsed.clone();
+        let folded = |app: &App| {
+            let th = app.thread.as_ref().unwrap();
+            (th.folds.folded(0), th.folds.folded(1))
+        };
+        let follows = |app: &App| app.thread.as_ref().unwrap().follow.take();
+        follows(&app);
+        keys(&mut app, "h");
+        assert_eq!(folded(&app), (false, true));
+        assert!(follows(&app), "the selected message stays in view");
+        keys(&mut app, "l");
+        assert_eq!(folded(&app), (false, false));
+        assert!(follows(&app));
+        app.on_key(key(KeyCode::Left));
+        assert_eq!(folded(&app), (false, true));
+        app.on_key(key(KeyCode::Right));
+        assert_eq!(folded(&app), (false, false));
+        keys(&mut app, "za");
+        assert_eq!(folded(&app), (false, true));
+        assert!(follows(&app));
+        keys(&mut app, "za");
+        assert_eq!(folded(&app), (false, false));
+        assert_eq!(app.collapsed, collapsed, "not the salon's folds");
+        keys(&mut app, "zM");
+        assert_eq!(folded(&app), (true, true));
+        assert!(follows(&app));
+        keys(&mut app, "l");
+        assert_eq!(folded(&app), (true, false), "one opened of all folded");
+        // The next conversation opens folded too, until zR.
+        app.on_key(key(KeyCode::Esc));
+        app.open_thread(0);
+        assert_eq!(folded(&app), (true, true));
+        keys(&mut app, "zR");
+        assert_eq!(folded(&app), (false, false));
+        assert!(!app.fold_talk);
+        app.on_key(key(KeyCode::Esc));
+        app.open_thread(0);
+        assert_eq!(folded(&app), (false, false));
+        // `:fold` and `:unfold` with a conversation open fold it.
+        app.command("fold");
+        assert_eq!(folded(&app), (true, true));
+        assert!(app.thread.is_some() && app.fold_talk);
+        app.command("unfold");
+        assert_eq!(folded(&app), (false, false));
+        assert_eq!(app.collapsed, collapsed);
+    }
+
+    #[test]
+    fn folds_say_which_messages_are_one_row() {
+        let mut f = Folds::every(true);
+        assert!(f.folded(0) && f.folded(7));
+        f.set(7, false);
+        assert!(f.folded(0) && !f.folded(7));
+        f.set(7, true);
+        assert_eq!(f, Folds::every(true), "back as it was");
+        f.set(3, true);
+        assert_eq!(f, Folds::every(true));
+        let mut f = Folds::every(false);
+        assert!(!f.folded(2));
+        f.set(2, true);
+        assert!(f.folded(2) && !f.folded(1));
+        f.set(2, false);
+        assert_eq!(f, Folds::default());
+    }
+
+    #[test]
+    fn a_thread_s_part_is_the_words_chosen_on_a_line() {
+        let (mut app, _) = with_thread();
+        let th = app.thread.as_mut().unwrap();
+        assert_eq!(th.part(0), None, "nothing chosen");
+        th.copy = Some(Copying { anchor: 4, at: 2 });
+        assert_eq!(th.part(1), None);
+        assert_eq!(th.part(2), Some((0, usize::MAX)));
+        assert_eq!(th.part(3), Some((0, usize::MAX)));
+        assert_eq!(th.part(4), Some((0, usize::MAX)));
+        assert_eq!(th.part(5), None);
+        // The anchor's word at 4, the cursor's at 2: from 2.1 to 4.3.
+        th.words = Some((3, 1));
+        assert_eq!(th.part(1), None);
+        assert_eq!(th.part(2), Some((1, usize::MAX)));
+        assert_eq!(th.part(3), Some((0, usize::MAX)));
+        assert_eq!(th.part(4), Some((0, 3)));
+        assert_eq!(th.part(5), None);
+        // On one line, either way round.
+        th.copy = Some(Copying { anchor: 2, at: 2 });
+        assert_eq!(th.part(2), Some((1, 3)));
+        th.words = Some((1, 3));
+        assert_eq!(th.part(2), Some((1, 3)));
     }
 
     #[test]
@@ -6749,6 +7400,8 @@ mod tests {
             follow: Cell::new(false),
             page: Cell::new(10),
             copy: None,
+            words: None,
+            folds: Folds::default(),
         });
         assert_eq!(press(&mut app, 'W'), Some(0));
         assert!(app.card.is_none() && app.thread.is_none());
@@ -6776,7 +7429,7 @@ mod tests {
         app.diff_scroll = 5;
         press(&mut app, 'c');
         assert!(app.typing);
-        assert_eq!(app.noting, Some((worker, 5)));
+        assert_eq!(app.noting, Some(Noting::Line(worker, 5)));
         assert_eq!(app.menu, None);
         // A note is no command: `:` offers none.
         press(&mut app, ':');
@@ -7691,6 +8344,8 @@ mod tests {
             follow: Cell::new(false),
             page: Cell::new(10),
             copy: None,
+            words: None,
+            folds: Folds::default(),
         });
         app.inbox_sel = 3;
         app.selected = Sel::Project(0);

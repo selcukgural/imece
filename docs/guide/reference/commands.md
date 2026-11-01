@@ -115,7 +115,7 @@ Demo only, as `+`: the simulation runs faster. The menu note shows the speed (`Ã
 
 ### `:fold`
 
-Folds every project and every worker's helpers in the salon, as `zM`; from another view it goes to the salon first. See [salon](../screen/salon.md).
+Folds every project and every worker's helpers in the salon, as `zM`; from another view it goes to the salon first. With a conversation open it folds every message of it to one row instead, and the conversations you open after it in this run start folded. See [salon](../screen/salon.md) and [conversations](../screen/conversations.md).
 
 ### `:forget [@NAME]`
 
@@ -217,7 +217,7 @@ The raw stream of the agent, as `t`: every line its session said, as data, up to
 
 ### `:unfold`
 
-Unfolds everything in the salon, as `zR`.
+Unfolds everything in the salon, as `zR`; with a conversation open, every message of it, and the conversations opened after it start open again.
 
 ### `:waiting`
 

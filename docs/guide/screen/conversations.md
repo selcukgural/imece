@@ -1,6 +1,6 @@
 ---
 title: Conversations
-description: The conversation window - everything said between two parties, read whole, with turns, replies, marks, copying and export.
+description: The conversation window - everything said between two parties, read whole, with turns, replies, marks, folding, copying, notes on words and export.
 ---
 
 # Conversations
@@ -21,11 +21,11 @@ A conversation is everything said between two parties, you and an agent or two a
 │▌  ↩ re 8: Which parser? There are two                                     │
 │▌  `manifest::read`; the legacy one goes in the next card.                 │
 │                                                                           │
-│ ↑↓ j k message  [ ] turn  % reply ↔ question  c C copy message · all  v copy lines  esc close
+│ ↑↓ j k message  [ ] turn  % reply  h l zM zR fold  c C copy  v choose  n send notes  esc close
 └───────────────────────────────────────────────────────────────────────────┘
 ```
 
-The title names the two parties and where the selection stands, `4/5`. A window opened on a line that is no conversation (an event of the journal) is titled EVENT and holds that line.
+The title names the two parties and where the selection stands, `4/5`, then `✎ 2` when two notes on its words wait to be sent (below). A window opened on a line that is no conversation (an event of the journal) is titled EVENT and holds that line.
 
 ## Opening one
 
@@ -46,8 +46,11 @@ A message to an idle worker opens a card for it (the first line is the card's ti
 | `gg` `G` | first / last message |
 | `pgup` `pgdn`, `^d` `^u` `^f` `^b`, `space` | scroll a page or half of one |
 | `m` (`:mark`) / `'` | mark the selected message to come back to, again to unmark · the next marked message, round to the first |
+| `h` `←` / `l` `→` | fold the selected message to one row / open it (below) |
+| `za` / `zM` `zR` | fold or open the selected message / every message (`:fold` `:unfold`) |
 | `c` `y` / `C` `Y` | copy the message / the whole conversation |
-| `v` | choose lines to copy (below) |
+| `v` | choose lines, or words, to copy or to note (below) |
+| `n` | send the notes on its words to their agents (below) |
 | `:export [PATH]` | write the conversation as a Markdown file |
 | `esc` | close |
 
@@ -63,6 +66,20 @@ Every message one agent sends another has a number on the bus, in order across t
 
 `c` or `y` copies the selected message: its text alone. `C` or `Y` copies the whole conversation: every message with its day and time, who to whom and its type, `2026-10-31 14:01 lead → claude-1 [answer]`, then the text. The clipboard is the system's (`pbcopy`, `wl-copy`, `xclip`, `xsel`) or the terminal's over OSC 52, which works over ssh where the terminal allows it; the flash says which, `copied (pbcopy)`. The text is cleaned like everything drawn: no control characters, secret-looking tokens hidden.
 
+### Folding
+
+A long conversation reads faster with its messages on one row each. `h` (or `←`) folds the selected message, `l` (or `→`) opens it, `za` does one or the other; `zM` folds every message, `zR` opens them all (`:fold` and `:unfold` do the same with a conversation open). A folded message is one row, its head and its text on one line, the way the journal shows it:
+
+```text
+│  14:00 you → lead: Please split the parser work between two workers.      │
+│                                                                           │
+│▌ 14:00 lead → you: Plan I will split it in two: codex-1 takes… ▸ 6 lines   │
+│                                                                           │
+│  14:00 you → lead: ok                                                     │
+```
+
+A message longer than its row says so at the end: `…` where its text was cut, and `▸ 6 lines`, how many lines opening it shows. A message that fits whole on its row has no mark: nothing more is there. Notes on its words are counted after it, `✎ 2`. A message that comes while all are folded comes folded too; `zM` and `zR` also say how the conversations you open after them in this run start. While you choose lines (`v`) every message is open, so the cursor never steps over a hidden line; the folds are back when you leave.
+
 ### Copying lines
 
 Your terminal's own selection still works (imece never takes the mouse), but it takes the window's border and gutter with the text, stops at the edge of what is shown, and cuts a wrapped line in two. `v` copies with the keyboard instead: a cursor opens on the first line of the selected message, and the lines between where you started and the cursor are chosen.
@@ -76,7 +93,7 @@ Your terminal's own selection still works (imece never takes the mouse), but it 
 │▌   `manifest::read`; the legacy one goes in the next card.                │
 │▶   Leave the old tests as they are.                                       │
 │                                                                           │
-│ ↑↓ j k line  pgup pgdn page  gg G first · last  y copy  v esc leave
+│ ↑↓ j k line  w b h l word  s start here  gg G first · last  y copy  c note  v esc leave
 └───────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -85,10 +102,37 @@ Your terminal's own selection still works (imece never takes the mouse), but it 
 | `j` `k` / `↑` `↓` | the cursor a line down / up, across messages; the window keeps it in view and the title's count follows |
 | `pgup` `pgdn`, `space`, `^d` `^u` `^f` `^b` | a page or half of one |
 | `gg` `G` | the first / last line |
-| `y` | copy the chosen lines and leave |
+| `w` `b`, `l` `h`, `→` `←` | the cursor a word on / back, over the end of a line to the next one; the choice turns word by word |
+| `s` | start the choice again where the cursor is |
+| `y` | copy what is chosen and leave |
+| `c` | write a note on what is chosen (below) |
 | `v` `esc` | leave without copying; a second `esc` closes the window |
 
-A line is a line as drawn before it wraps: a message's head, the `↩` line under a reply, and each line of its text. What is copied is the line as it was written, so a code block copies as its code without its fences (they are never drawn, so the cursor never lands on them), and a table copies as its Markdown rows. Lines of different messages come with a blank line between them. Other keys do nothing while you choose, so `c` or `[` is not taken by mistake; `?` and `q` still work. The copy goes the same way as `c`, cleaned the same.
+A line is a line as drawn before it wraps: a message's head, the `↩` line under a reply, and each line of its text. What is copied is the line as it was written, so a code block copies as its code without its fences (they are never drawn, so the cursor never lands on them), and a table copies as its Markdown rows. Lines of different messages come with a blank line between them. Other keys do nothing while you choose, so `[` or `r` is not taken by mistake; `?` and `q` still work. The copy goes the same way as `c`, cleaned the same.
+
+### Choosing words
+
+`v` chooses whole lines. The first word key turns the choice word by word, keeping the end it had: chosen downward, it starts at its first line's start and the cursor stands on its last line's last word; chosen upward, the other way round; a single line starts at its first word. A word is what stands between blanks as the screen draws it (`**beta**` is the word `beta`; the indent, a list's bullet, a code block's rule are no words). `w` steps a word on and past a line's last word to the next line's first, `b` a word back; `j` `k` keep the cursor on a word of the line they go to. The words chosen carry the selection background, the cursor's word is reversed, and a line chosen whole is chosen as a row.
+
+To choose words in the middle of a line, move the cursor to the first one and press `s`: the choice starts again there, the cursor's word alone; then `w` takes more. For example `v` `j` `s` `w` `w` chooses the first three words of the message's first line.
+
+`y` copies a line chosen whole as it was written, as above, and a line chosen in part as its words chosen, one blank between them.
+
+### Notes on words
+
+`c` while choosing writes a note on what is chosen. The command line opens with `note on "the words…" ▸`; `enter` keeps the note, `esc` drops it. The note shows under its message, dim, `✎ "the words" your note`, and the title counts the notes waiting, `✎ 2`. Choosing the same words again and `c` writes the note over (its text is on the line already); kept empty, it is taken away.
+
+`n` in the conversation sends its notes: one message to each agent they are for, every note under the words it is about, quoted, and the number of the message they came from when it has one:
+
+```text
+Notes on words from our conversation, each under the words it is about.
+
+On message 8:
+> the legacy one goes in the next card
+Which card? There is no card for it yet.
+```
+
+A note goes to the agent who wrote the message its words start in; on a message of yours, to the agent it went to. So in a conversation between the lead and a worker, a note on the lead's words goes to the lead and a note on the worker's to the worker. The message is yours like any other: it lands in your conversation with that agent, wakes it, costs what a message costs, and a message that could not go (the budget is spent) leaves its notes waiting. Notes live as long as imece runs, not between runs, and a conversation's notes wait while it is closed. The demo does all of it the same way; its agents get the message as they get any of yours.
 
 ### Export
 
