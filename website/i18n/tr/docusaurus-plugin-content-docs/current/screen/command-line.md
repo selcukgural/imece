@@ -117,7 +117,21 @@ Yapıştırılan satıra bütünüyle girer (bracketed paste): satır sonları y
 
 ## Kendi kabuğunuz
 
-`!cmd`, `cmd`'yi kendi kabuğunuzda (`$SHELL`, yoksa `/bin/sh`) checkout içinde çalıştırır, vim'deki `:!` gibi: ekran kenara çekilir, komutun terminali kendine olur (böylece `git log`, `less` ve `vim` çalışır ve ctrl-c imece'yi değil komutu durdurur), bir satır nasıl bittiğini ve ne kadar sürdüğünü söyler (`[imece] çıkış 0 · 3 sn sürdü · herhangi bir tuş: ekrana dön`) ve herhangi bir tuş ekranı geri getirir. Günlük komutu, çıkış kodunu (ya da durduran sinyali) ve süresini tutar: `` `cargo test` çalıştırdın → çıkış 0 · 12 sn sürdü ``. Çıktı terminalin ana ekranında kalır, imece çıkınca yeniden görürsünüz; hiçbir şeyi bir agent'a ulaşmaz. Terminalin başlığı sonra yeniden yazılır.
+`!cmd`, `cmd`'yi kendi kabuğunuzda (`$SHELL`, yoksa `/bin/sh`) checkout içinde çalıştırır, vim'deki `:!` gibi: ekran kenara çekilir ve komut kendine ait bir terminalde (`script`'in yaptığı gibi bir pty) çalışır; imece tuşlarınızı ona iletir, çıktısını geldikçe ekrana kopyalar. O terminal sizinki gibi ayarlı başlar ve pencerenizin boyutunu izler; böylece `git log`, `less` ve `vim` çalışır ve ctrl-c imece'yi değil komutu durdurur. ctrl-z hiçbir şeyi durdurmaz, çünkü durmuş bir komut ekranı tutardı. Bir satır nasıl bittiğini ve ne kadar sürdüğünü söyler (`[imece] çıkış 0 · 3 sn sürdü · herhangi bir tuş: ekrana dön`) ve herhangi bir tuş ekranı geri getirir. Günlük komutu, çıkış kodunu (ya da durduran sinyali) ve süresini tutar: `` `cargo test` çalıştırdın → çıkış 0 · 12 sn sürdü ``. Çıktı terminalin ana ekranında kalır, imece çıkınca yeniden görürsünüz. imece sonunu (son 64 KiB) `O` için bellekte tutar, diske hiç yazmaz; bir agent'a yalnızca siz gönderirseniz ulaşır. Terminalin başlığı sonra yeniden yazılır.
+
+`O` (ya da `:output`) eldeki projenin son `!kmt`'sini bir mesajda alıntılar. Komut satırı eldeki agent'a (yoksa projenin başına) açılır; yazdığınız satırın altında komutun nasıl bittiği ve gösterdiği son 40 satır durur. Renkler ve bir ilerleme çubuğunun üstüne yazdıkları gider, sır gibi görünen sözcükler gizlenir; satırlar, içlerindeki her ters tırnak dizisinden uzun bir `text` çiti içindedir:
+
+````text
+@lead 
+`cargo test` çalıştırdım → çıkış 101 · 12 sn sürdü
+```text
+… üstteki satırlar: 214
+test parse::tests::empty ... FAILED
+test result: FAILED. 41 passed; 1 failed
+```
+````
+
+`enter`a basana kadar hiçbir şey gönderilmez; `esc` bırakır. Her proje yalnızca en yeni çıktısını tutar; başlayamayan bir komut sonuncuyu olduğu gibi bırakır. Projede henüz komut çalışmadıysa: `bu projede henüz !komut çalışmadı`.
 
 `:commit`, düzenleyip bu yolla çalıştırmanız için satıra `!git commit -m '…'` koyar. Bkz. [kendi kabuğu ve commit](../scenarios/own-shell-and-commit.md).
 

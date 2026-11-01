@@ -127,7 +127,7 @@ Only an id shaped like a UUID ever reaches a path or a vendor. A session that wa
 ## What is not written
 
 - No log file and no trace file: the raw stream is the `trace` table (200 lines per agent), and the journal is the `journal` table.
-- `!cmd` output stays on your terminal's main screen; it is not captured.
+- `!cmd` output stays on your terminal's main screen; its end (the last 64 KiB per project, for `O`) is kept in memory only and gone when imece ends.
 - `:commit`'s call runs with `--no-session-persistence`: nothing under `~/.claude/projects`, nothing to resume.
 - The demo writes nothing but your screen settings (`side`, `theme`, `lead`) into the store.
 - The vendors' rate-limit windows shown in the header are not kept; a session says them again on its first turn.

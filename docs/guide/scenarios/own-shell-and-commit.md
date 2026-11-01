@@ -9,7 +9,7 @@ imece does not replace your terminal: `!cmd` runs a command of your own in your 
 
 ## 1. `!cargo test`
 
-Press `!`. The command line opens as ` › shell: ` with `!` already typed. Type `cargo test` and press `enter`. The screen steps aside (raw mode off, the alternate screen left) and the command has the terminal to itself, in the checkout, in your `$SHELL`. Under its output:
+Press `!`. The command line opens as ` › shell: ` with `!` already typed. Type `cargo test` and press `enter`. The screen steps aside (the alternate screen left) and the command runs in the checkout, in your `$SHELL`, on a terminal of its own that gets your keys and shows its output as it comes. Under its output:
 
 ```text
 test result: ok. 42 passed; 0 failed
@@ -23,11 +23,11 @@ Any key brings the screen back (the key is swallowed, nothing else happens). The
  20:02 › you ran `cargo test` → exit 0 · 12 s
 ```
 
-The time is said in the largest units that say it (`40 ms`, `2 s`, `1 min 5 s`, `1 h 2 min`). The output is not captured and never reaches an agent; it stays on the terminal's main screen, where you see it again when imece quits. A command that could not start is only flashed (`could not run …`); an empty one says `the command is empty`.
+The time is said in the largest units that say it (`40 ms`, `2 s`, `1 min 5 s`, `1 h 2 min`). The output stays on the terminal's main screen, where you see it again when imece quits; its end is kept in memory for `O`, and it reaches an agent only if you send it. A test failed? Press `O`: the command line opens to the lead with `` I ran `cargo test` → exit 101 · 12 s `` and the last 40 lines in a fence under the line you write on; write `fix this first` above them and press `enter`. A command that could not start is only flashed (`could not run …`); an empty one says `the command is empty`.
 
 ## 2. `!git log`, `!vim`
 
-Because the shell inherits the terminal, interactive programs work: `!git log` opens its pager, `!vim src/lib.rs` edits, `!less target/out.txt` scrolls. Quit them as you always do; the `[imece] exit …` line waits under them.
+Because the command's terminal passes your keys and window size through, interactive programs work: `!git log` opens its pager, `!vim src/lib.rs` edits, `!less target/out.txt` scrolls. Quit them as you always do; the `[imece] exit …` line waits under them.
 
 ## 3. ctrl-c stops the command, not imece
 

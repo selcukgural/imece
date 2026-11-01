@@ -22,7 +22,11 @@ the flash and the line under the output (`[imece] exit 2 · 3 s · any
 key …`). The exit code was there from the start. The demo runs `!`
 in the same shell, so it shows the same.
 The output is not captured (no pty) and never reaches an agent; it
-stays on the terminal's main screen. `w` took over "straight to
+stays on the terminal's main screen. (Replaced 2026-11-01 by record 68
+`own-shell-output`: the command runs on a pty of imece's own, its keys
+passed through with the person's terminal in raw mode, its output
+copied to the screen and its end kept in memory for `O`, which quotes
+it in a message the person sends; the rest of this record stands.) `w` took over "straight to
 waiting for you". The terminal dance is excluded from mutants;
 `run_in` (the spawn, the cwd, exit code vs signal, the SIGINT swap)
 is tested, with the tests that swap the handler taking turns.

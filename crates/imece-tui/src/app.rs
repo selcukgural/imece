@@ -2,7 +2,7 @@
 //! projects are folded, the language, and what the person is typing.
 
 use std::cell::{Cell, RefCell};
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::io;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
@@ -16,7 +16,7 @@ use crate::live::{self, Live, Open, Refusal};
 use crate::model::*;
 use crate::notify::{self, Note, Notify};
 use crate::prefs::{SIDE_DEFAULT, SIDE_MAX, SIDE_MIN};
-use crate::shell::Ran;
+use crate::shell::{Caught, Output, Ran};
 use crate::sim::{self, Sim};
 use crate::theme;
 use crate::ui;
@@ -484,6 +484,9 @@ pub struct App {
     pub diff_page: Cell<u16>,
     /// The selected journal line (a journal index).
     pub journal_sel: Option<usize>,
+    /// The last `!` command's output in each project, for `O`; in memory
+    /// only, gone when imece ends.
+    pub outputs: BTreeMap<ProjectId, Output>,
     pub thread: Option<Thread>,
     /// The card whose screen takes the salon's place (`#323`): its story
     /// and who had a part in it, what waits for the person on it and its
@@ -615,6 +618,7 @@ impl App {
             chosen: Vec::new(),
             diff_page: Cell::new(10),
             journal_sel: None,
+            outputs: BTreeMap::new(),
             thread: None,
             card: None,
             been: Vec::new(),
@@ -1134,6 +1138,7 @@ impl App {
             }
             KeyCode::Char('m') => self.toggle_mark(),
             KeyCode::Char('\'') => self.next_mark(),
+            KeyCode::Char('O') => self.quote_output(),
             KeyCode::Up | KeyCode::Char('k') => self.move_selection(false),
             KeyCode::Down | KeyCode::Char('j') => self.move_selection(true),
             KeyCode::Left | KeyCode::Char('h') if self.salon_keys() => self.fold(true),
@@ -1714,11 +1719,15 @@ impl App {
     }
 
     /// A `!` command ran (or could not be started): the journal keeps it
-    /// under the project at hand, and the footer says how it went.
-    pub fn ran(&mut self, command: &str, how: io::Result<Ran>) {
+    /// under the project at hand, the footer says how it went, and its
+    /// output is the project's for `O`.
+    pub fn ran(&mut self, command: &str, how: io::Result<Caught>) {
         match how {
-            Ok(Ran { ended, took }) => {
-                let leader = self.world.projects[self.current_project()].leader;
+            Ok(caught) => {
+                let Ran { ended, took } = caught.ran;
+                let project = self.current_project();
+                self.outputs.insert(project, Output::of(command, &caught));
+                let leader = self.world.projects[project].leader;
                 let took = Some(millis(took));
                 self.world.note(Event::Shell {
                     leader,
@@ -2100,6 +2109,8 @@ impl App {
             "faster" | "slower" => Some(format!("×{}", self.speed)),
             "export" if self.thread.is_some() => Some(t.value_thread.to_string()),
             "export" => self.card.map(|c| format!("#{}", c + 1)),
+            // The command whose output `:output` quotes.
+            "output" => (self.outputs.get(&self.current_project())).map(|o| o.command.clone()),
             "copy" => {
                 let copies = &self.world.projects[self.current_project()].copies;
                 (!copies.is_empty()).then(|| copies.join(", "))
@@ -2360,6 +2371,7 @@ impl App {
             "copy" => self.copy_path(arg),
             "pin" => self.pin(arg),
             "mark" => self.toggle_mark(),
+            "output" => self.quote_output(),
             "salon" => self.show(View::Salon),
             "board" => self.show(View::Board),
             "code" => self.show(View::Code),
@@ -2605,6 +2617,26 @@ impl App {
             return self.flash(self.lang.text().no_hunk);
         };
         let head = format!("@{} ", self.world.agents[id].name);
+        self.input = format!("{head}\n{quote}");
+        self.after = self.input.len() - head.len();
+        self.typing = true;
+        self.menu = None;
+    }
+
+    /// `O` or `:output`: a message opens to the agent at hand (else the
+    /// project's head) with the last `!` command of its project quoted
+    /// under the line the person writes on: how it ran and the last lines
+    /// it showed. Nothing is sent until the person sends it.
+    fn quote_output(&mut self) {
+        let project = self.current_project();
+        let Some(output) = self.outputs.get(&project) else {
+            return self.flash(self.lang.text().no_output);
+        };
+        let to = (self.agent_at_hand())
+            .filter(|&id| self.world.agents[id].project == project)
+            .unwrap_or(self.world.projects[project].leader);
+        let quote = ui::words::output_quote(self.lang, output);
+        let head = format!("@{} ", self.world.agents[to].name);
         self.input = format!("{head}\n{quote}");
         self.after = self.input.len() - head.len();
         self.typing = true;
@@ -6507,6 +6539,112 @@ mod tests {
         app.on_key(key(KeyCode::Char('>')));
         assert!(!app.typing && app.input.is_empty());
         assert_eq!(flashed(&app).as_deref(), Some(app.lang.text().no_hunk));
+    }
+
+    fn caught(kept: &[u8], ended: Ended) -> io::Result<Caught> {
+        Ok(Caught {
+            ran: Ran {
+                ended,
+                took: Duration::from_millis(3_000),
+            },
+            kept: kept.to_vec(),
+            lines: kept.iter().filter(|&&b| b == b'\n').count(),
+        })
+    }
+
+    #[test]
+    fn o_quotes_the_last_output_of_the_project_to_the_agent_at_hand() {
+        let mut app = App::new(2, 2, 0, 1, Lang::En);
+        let leader = app.world.projects[1].leader;
+        let other = (0..app.world.agents.len())
+            .find(|&a| app.world.agents[a].project == 1 && a != leader)
+            .expect("project 1 has an agent besides its leader");
+        // Nothing ran yet: it says so and nothing is written.
+        app.selected = Sel::Project(1);
+        app.on_key(key(KeyCode::Char('O')));
+        assert!(!app.typing && app.input.is_empty());
+        assert_eq!(flashed(&app).as_deref(), Some(app.lang.text().no_output));
+        // A command ran with project 1 at hand: its output is project 1's.
+        app.ran(
+            "make",
+            caught(b"\x1b[31mok\x1b[0m\r\nfail\r\n", Ended::Exit(2)),
+        );
+        assert!(app.outputs.contains_key(&1) && !app.outputs.contains_key(&0));
+        let quoted = "I ran `make` → exit 2 · 3 s\n```text\nok\nfail\n```";
+        app.on_key(key(KeyCode::Char('O')));
+        let head = format!("@{} ", app.world.agents[leader].name);
+        assert_eq!(app.input, format!("{head}\n{quoted}"), "the project's head");
+        assert!(app.typing);
+        assert_eq!(app.cursor(), head.len(), "after the name");
+        assert_eq!(app.menu, None);
+        // The agent at hand when it is of the project.
+        app.on_key(key(KeyCode::Esc));
+        app.input.clear();
+        app.selected = Sel::Agent(other);
+        app.command("output");
+        let head = format!("@{} ", app.world.agents[other].name);
+        assert_eq!(app.input, format!("{head}\n{quoted}"));
+        // Sent, it is the person's message to that agent, as written.
+        app.on_key(key(KeyCode::Enter));
+        let said = app.world.journal.iter().rev().find_map(|e| match &e.event {
+            Event::YouSaid { to, text } if *to == other => Some(text.clone()),
+            _ => None,
+        });
+        assert_eq!(said.as_deref(), Some(quoted));
+        // Another project has its own, or none.
+        app.selected = Sel::Project(0);
+        app.on_key(key(KeyCode::Char('O')));
+        assert!(!app.typing);
+        assert_eq!(flashed(&app).as_deref(), Some(app.lang.text().no_output));
+        // A newer run takes the place of the older one.
+        app.selected = Sel::Project(1);
+        app.ran("ls", caught(b"", Ended::Signal(2)));
+        assert_eq!(app.outputs[&1].command, "ls");
+        assert_eq!(app.command_note("output"), "(ls)");
+        app.selected = Sel::Project(0);
+        assert_eq!(app.command_note("output"), "");
+        // A shell that did not start leaves the last output as it was.
+        app.selected = Sel::Project(1);
+        app.ran("x", Err(io::Error::other("no shell")));
+        assert_eq!(app.outputs[&1].command, "ls");
+    }
+
+    #[test]
+    fn an_output_quote_is_fenced_past_its_backticks_and_counts_what_is_above() {
+        use crate::ui::words::output_quote;
+        let mut o = Output {
+            command: "cargo test".into(),
+            ended: Ended::Exit(101),
+            took: 61_000,
+            lines: vec!["a ``` b".into(), "c".into()],
+            above: 12,
+        };
+        assert_eq!(
+            output_quote(Lang::En, &o),
+            "I ran `cargo test` → exit 101 · 1 min 1 s\n````text\n… lines above: 12\na ``` b\nc\n````"
+        );
+        o.lines = vec!["x `y` ````z".into()];
+        o.above = 0;
+        o.ended = Ended::Signal(2);
+        assert_eq!(
+            output_quote(Lang::Tr, &o),
+            "`cargo test` çalıştırdım → 2 sinyali durdurdu · 1 dk 1 sn sürdü\n`````text\nx `y` ````z\n`````"
+        );
+        o.lines = vec!["``".into()];
+        o.above = 1;
+        assert_eq!(
+            output_quote(Lang::En, &o),
+            "I ran `cargo test` → stopped by signal 2 · 1 min 1 s\n```text\n… lines above: 1\n``\n```"
+        );
+        // Nothing shown: only how it ran.
+        o.lines.clear();
+        assert_eq!(
+            output_quote(Lang::En, &o),
+            "I ran `cargo test` → stopped by signal 2 · 1 min 1 s"
+        );
+        // The command is cleaned; the lines were cleaned when kept.
+        o.command = "echo TOKEN=abc\x1b".into();
+        assert!(!output_quote(Lang::En, &o).contains("abc"));
     }
 
     /// A demo whose journal is only `n` lines that stand alone, with the

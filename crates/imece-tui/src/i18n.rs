@@ -443,6 +443,14 @@ pub struct Text {
     pub ev_shell_signal: &'static str,
     /// A `!` run's journal line with how long it took after it.
     pub ev_shell_took: &'static str,
+    /// The head of a `!` command's output quoted in a message (`O`): the
+    /// person speaking to an agent.
+    pub output_ran: &'static str,
+    pub output_ran_signal: &'static str,
+    /// The lines of the output not quoted, above the ones that are.
+    pub output_above: &'static str,
+    /// `O` in a project where no `!` command has run.
+    pub no_output: &'static str,
     /// How long a `!` run took: milliseconds, seconds, minutes and
     /// seconds (hours use `ago_hours`).
     pub took_ms: &'static str,
@@ -854,6 +862,10 @@ pub const EN: Text = Text {
     ev_shell: "you ran `{}` → exit {}",
     ev_shell_signal: "you ran `{}` → stopped by signal {}",
     ev_shell_took: "{} · {}",
+    output_ran: "I ran `{}` → exit {}",
+    output_ran_signal: "I ran `{}` → stopped by signal {}",
+    output_above: "… lines above: {}",
+    no_output: "no !command has run in this project yet",
     took_ms: "{} ms",
     took_s: "{} s",
     took_min: "{} min {} s",
@@ -956,7 +968,7 @@ pub const EN: Text = Text {
             ":pin NAME",
             "pin a project to the top of the salon; again: unpin",
         ),
-        ("!cmd", "run cmd in your own shell, screen aside"),
+        ("!cmd  O", "run cmd in your shell; O quotes its output"),
         ("tab ↑ ↓ ^r", "writing: complete · sent lines · :history"),
         ("^a ^e ⌥b ⌥f", "writing: to start / end, a word back / on"),
         ("^w ^u ^k ^y", "writing: cut a word / before / after; paste"),
@@ -1367,6 +1379,10 @@ pub const TR: Text = Text {
     ev_shell: "`{}` çalıştırdın → çıkış {}",
     ev_shell_signal: "`{}` çalıştırdın → {} sinyali durdurdu",
     ev_shell_took: "{} · {} sürdü",
+    output_ran: "`{}` çalıştırdım → çıkış {}",
+    output_ran_signal: "`{}` çalıştırdım → {} sinyali durdurdu",
+    output_above: "… üstteki satırlar: {}",
+    no_output: "bu projede henüz !komut çalışmadı",
     took_ms: "{} ms",
     took_s: "{} sn",
     took_min: "{} dk {} sn",
@@ -1468,7 +1484,7 @@ pub const TR: Text = Text {
             "git'in yok saydığı bir yolu (.env) çalışma ağaçlarına kopyala; yine: bırak",
         ),
         (":pin AD", "projeyi salonun en üstüne sabitle; yine: bırak"),
-        ("!kmt", "kmt kendi kabuğunda; ekran kenara çekilir"),
+        ("!kmt  O", "kmt kendi kabuğunda; O çıktısını alıntılar"),
         ("tab ↑ ↓ ^r", "yazarken: tamamla · gönderilenler · :history"),
         ("^a ^e ⌥b ⌥f", "yazarken: başa / sona, kelime geri / ileri"),
         ("^w ^u ^k ^y", "yazarken: kelime/öncesi/sonrası kes; koy"),
@@ -1670,6 +1686,9 @@ mod tests {
             (e.ev_shell, t.ev_shell),
             (e.ev_shell_signal, t.ev_shell_signal),
             (e.ev_shell_took, t.ev_shell_took),
+            (e.output_ran, t.output_ran),
+            (e.output_ran_signal, t.output_ran_signal),
+            (e.output_above, t.output_above),
             (e.took_ms, t.took_ms),
             (e.took_s, t.took_s),
             (e.took_min, t.took_min),

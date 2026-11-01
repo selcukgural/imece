@@ -9,7 +9,7 @@ imece terminalinizin yerini almaz: `!kmt` ekran kenara çekilmiş hâlde kendi k
 
 ## 1. `!cargo test`
 
-`!` tuşuna basın. Komut satırı ` › kabuk: ` olarak, `!` yazılmış hâlde açılır. `cargo test` yazın ve `enter`a basın. Ekran kenara çekilir (ham kip kapanır, alternatif ekran bırakılır) ve komut terminali tek başına, çalışma kopyasında, `$SHELL`inizde kullanır. Çıktısının altında:
+`!` tuşuna basın. Komut satırı ` › kabuk: ` olarak, `!` yazılmış hâlde açılır. `cargo test` yazın ve `enter`a basın. Ekran kenara çekilir (alternatif ekran bırakılır) ve komut çalışma kopyasında, `$SHELL`inizde, tuşlarınızı alan ve çıktısını geldikçe gösteren kendine ait bir terminalde çalışır. Çıktısının altında:
 
 ```text
 test result: ok. 42 passed; 0 failed
@@ -23,11 +23,11 @@ Herhangi bir tuş ekranı geri getirir (tuş yutulur, başka bir şey olmaz). G�
  20:02 › `cargo test` çalıştırdın → çıkış 0 · 12 sn sürdü
 ```
 
-Süre onu söyleyen en büyük birimlerle verilir (`40 ms`, `2 sn`, `1 dk 5 sn`, `1 sa 2 dk`). Çıktı yakalanmaz ve hiçbir ajana ulaşmaz; terminalin ana ekranında kalır, imece çıkınca yeniden görürsünüz. Başlayamayan bir komut yalnızca anlık mesajla söylenir (`… çalıştırılamadı`); boş olanı `komut boş` der.
+Süre onu söyleyen en büyük birimlerle verilir (`40 ms`, `2 sn`, `1 dk 5 sn`, `1 sa 2 dk`). Çıktı terminalin ana ekranında kalır, imece çıkınca yeniden görürsünüz; sonu `O` için bellekte tutulur ve bir ajana yalnızca siz gönderirseniz ulaşır. Bir test mi kaldı? `O`ya basın: komut satırı lidere `` `cargo test` çalıştırdım → çıkış 101 · 12 sn sürdü `` ve yazdığınız satırın altında bir çit içinde son 40 satırla açılır; üstüne `önce bunu düzelt` yazıp `enter`a basın. Başlayamayan bir komut yalnızca anlık mesajla söylenir (`… çalıştırılamadı`); boş olanı `komut boş` der.
 
 ## 2. `!git log`, `!vim`
 
-Kabuk terminali devraldığı için etkileşimli programlar çalışır: `!git log` sayfalayıcısını açar, `!vim src/lib.rs` düzenler, `!less target/out.txt` kaydırır. Onlardan her zamanki gibi çıkın; `[imece] çıkış …` satırı altlarında bekler.
+Komutun terminali tuşlarınızı ve pencere boyutunu ilettiği için etkileşimli programlar çalışır: `!git log` sayfalayıcısını açar, `!vim src/lib.rs` düzenler, `!less target/out.txt` kaydırır. Onlardan her zamanki gibi çıkın; `[imece] çıkış …` satırı altlarında bekler.
 
 ## 3. ctrl-c komutu durdurur, imece'yi değil
 
