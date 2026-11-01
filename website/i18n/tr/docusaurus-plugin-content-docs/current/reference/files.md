@@ -22,7 +22,7 @@ Değişken ayarlı ve mutlaksa `$XDG_STATE_HOME/imece`, yoksa `~/.local/state/im
 
 ## Depo
 
-Her proje için, yalnızca size ait (SQLite açmadan önce 0600 yapılır) tek bir SQLite dosyası. Şema sürümü **11**; sürüm `meta`'dadır ve daha yeni bir imece'nin dosyası reddedilir. imece'nin açamadığı ya da yükleyemediği bir dosya (veritabanı olmayan, daha yeni bir şema, tanımadığı bir satır) reddedilir ve olduğu gibi bırakılır; mesaj dosyayı adlandırır ve nasıl sıfırdan başlanacağını söyler:
+Her proje için, yalnızca size ait (SQLite açmadan önce 0600 yapılır) tek bir SQLite dosyası. Şema sürümü **13**; sürüm `meta`'dadır ve daha yeni bir imece'nin dosyası reddedilir. imece'nin açamadığı ya da yükleyemediği bir dosya (veritabanı olmayan, daha yeni bir şema, tanımadığı bir satır) reddedilir ve olduğu gibi bırakılır; mesaj dosyayı adlandırır ve nasıl sıfırdan başlanacağını söyler:
 
 ```text
 /Users/me/.local/state/imece/imece.sqlite: <neden>
@@ -52,12 +52,13 @@ imece okuyamadığı bir dosyayı asla taşımaz, onarmaz ya da üstüne yazmaz:
 | `offers` | her kartın hangi işçilere sunulduğu |
 | `changes` | her işçinin sizi bekleyen değişikliği: worktree yolu, ağacı, dosyaları, yaması ve o ağaçtaki çalıştırmalar |
 | `paid` | imece'nin kendi ücretli çağrıları, güne (UTC) göre: kaç tane ve ne kadar (`:commit`) |
+| `sent` | gönderdiğiniz satırlar, tick'iyle, `↑` `↓` ve `^r` (`:history`) için; en yeni 500'ü yüklenir |
 
 Bir kayıt her adımdan ve her tuştan sonra ve çıkışta bir kez daha çalışır ve yalnızca değişeni yazar: günlük, hikâye ve iz satırları eklenir, büyüyen bir tablonun satırı yalnızca hash'i değişince yeniden yazılır. Kaydedilemeyen bir kez flaşlanır: `sonraki çalışma için kaydedilemedi: …`.
 
 ### Saklama ve VACUUM
 
-Her canlı başlangıçta, yüklemeden sonra bir kez: en yeni **5000**'in (bir başlangıcın yüklediği, yaşı ne olsun) gerisinde kalan **90 günden** eski günlük satırları silinir, işaretlediğiniz satırlar hariç; ve dosyanın boş sayfaları dörtte birini ya da fazlasını buluyorsa `VACUUM` onu yeniden yazar. Hikâyeler kartlarıyla kalır, bekleyen kalemler kalır (ikisi de konumla numaralanır). Başarısız olan bir temizlik yok sayılır ve sonraki başlangıçta denenir; sonucu hiçbir yerde gösterilmez. Uzun süredir kapalı projelerin hikâyeleri ve kapalı bekleyen kalemler için saklama kuralı henüz yoktur.
+Her canlı başlangıçta, yüklemeden sonra bir kez: en yeni **5000**'in (bir başlangıcın yüklediği, yaşı ne olsun) gerisinde kalan **90 günden** eski günlük satırları silinir, işaretlediğiniz satırlar hariç; en yeni **500**'ün gerisindeki gönderilen satırlar da gider; ve dosyanın boş sayfaları dörtte birini ya da fazlasını buluyorsa `VACUUM` onu yeniden yazar. Hikâyeler kartlarıyla kalır, bekleyen kalemler kalır (ikisi de konumla numaralanır). Başarısız olan bir temizlik yok sayılır ve sonraki başlangıçta denenir; sonucu hiçbir yerde gösterilmez. Uzun süredir kapalı projelerin hikâyeleri ve kapalı bekleyen kalemler için saklama kuralı henüz yoktur.
 
 ### Kilit
 

@@ -45,3 +45,4 @@ names its `:` name (in the key column where it fits, else in the text),
 in both languages. Pure screen logic: the demo shows it as live does.
 
 Record 65 adds `&` = `:goto [NAME]`.
+Record 66 adds `^r` = `:history [WORDS]`.

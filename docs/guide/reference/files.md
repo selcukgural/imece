@@ -22,7 +22,7 @@ imece keeps what it remembers in one directory, the state directory, and leaves 
 
 ## The store
 
-One SQLite file, yours alone (made 0600 before SQLite opens it), for every project. Schema version **11**; the version is in `meta`, and a file from a newer imece is refused. A file imece cannot open or load (not a database, a newer schema, a row it does not know) is refused and left as it was; the message names the file and says how to start afresh:
+One SQLite file, yours alone (made 0600 before SQLite opens it), for every project. Schema version **13**; the version is in `meta`, and a file from a newer imece is refused. A file imece cannot open or load (not a database, a newer schema, a row it does not know) is refused and left as it was; the message names the file and says how to start afresh:
 
 ```text
 /Users/me/.local/state/imece/imece.sqlite: <why>
@@ -52,12 +52,13 @@ imece never moves, mends or writes over a file it cannot read: a newer imece may
 | `offers` | which workers each card was offered to |
 | `changes` | each worker's change waiting for you: its worktree path, tree, files, patch and the runs on that tree |
 | `paid` | imece's own paid calls by day (UTC): how many and what they cost (`:commit`) |
+| `sent` | the lines you sent, with their tick, for `↑` `↓` and `^r` (`:history`); the newest 500 load |
 
 A save runs after every step and every key and once more at quit, and writes only what moved: journal, story and trace lines are appended, a row of a growing table is written again only when its hash changed. A failure to save is flashed once: `not saved for the next run: …`.
 
 ### Retention and VACUUM
 
-Once at every live start, after the load: journal lines older than **90 days** that lie past the newest **5000** (the ones a start loads, whatever their age) are deleted, except lines you marked; and when the file's free pages are a quarter of it or more, `VACUUM` writes it anew. Stories stay with their cards, inbox items stay (both are numbered by position). A tidy that fails is ignored and tried at the next start; its result is shown nowhere. There is no retention yet for the stories of long-closed projects or for closed inbox items.
+Once at every live start, after the load: journal lines older than **90 days** that lie past the newest **5000** (the ones a start loads, whatever their age) are deleted, except lines you marked; sent lines past the newest **500** go too; and when the file's free pages are a quarter of it or more, `VACUUM` writes it anew. Stories stay with their cards, inbox items stay (both are numbered by position). A tidy that fails is ignored and tried at the next start; its result is shown nowhere. There is no retention yet for the stories of long-closed projects or for closed inbox items.
 
 ### The lock
 

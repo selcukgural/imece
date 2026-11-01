@@ -80,3 +80,6 @@ space); the conversation (`v`) shows it with its lines. A terminal
 multiplexer (tmux, screen) that does not answer the query gets the
 fallback, `\` enter, even when the terminal around it could do more;
 not tried yet.
+
+Record 66: at the text's first line `↑`, and at its last line `↓`, step
+through the lines sent instead of moving; between lines they move as here.

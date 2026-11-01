@@ -30,6 +30,16 @@ pub enum Engine {
 
 /// After this long without a key, the next key first shows what happened.
 const AWAY: Duration = Duration::from_secs(20);
+
+/// Whether a line sent is one `↑` and `^r` bring back: a message, a
+/// command or a shell line; not the lines that only go somewhere (`#12`,
+/// `&3`, `:goto`, `:history`).
+fn recalled(text: &str) -> bool {
+    let word = text
+        .strip_prefix(':')
+        .map(|r| r.split_whitespace().next().unwrap_or_default());
+    !text.starts_with('#') && !text.starts_with('&') && !matches!(word, Some("goto" | "history"))
+}
 /// After this long in another window, coming back shows what happened at
 /// once, without waiting for a key.
 pub const FOCUS_AWAY: Duration = Duration::from_secs(180);
@@ -485,6 +495,12 @@ pub struct App {
     /// first), so the numbers hold while the person types; empty when the
     /// line is not open.
     pub jumps: Vec<Jump>,
+    /// `↑` on the command line brought a sent line back: which (its place
+    /// in `World::sent`), and what was being written before it, to come
+    /// back to past the newest; none while nothing is brought back.
+    recall: Option<(usize, String)>,
+    /// `^r`: the menu lists the lines sent that have the words typed.
+    pub searching: bool,
     /// The last key was `^o`: the place it left is not one to go back to.
     went_back: bool,
     /// The side panel's width, in percent.
@@ -603,6 +619,8 @@ impl App {
             card: None,
             been: Vec::new(),
             jumps: Vec::new(),
+            recall: None,
+            searching: false,
             went_back: false,
             side: SIDE_DEFAULT,
             copy: None,
@@ -1020,6 +1038,7 @@ impl App {
                 KeyCode::Char('f') => self.page(true, false),
                 KeyCode::Char('b') => self.page(false, false),
                 KeyCode::Char('o') => self.go_back(),
+                KeyCode::Char('r') => self.search_history(""),
                 _ => {}
             }
             return;
@@ -1801,11 +1820,35 @@ impl App {
         match k.code {
             KeyCode::Char('n') if ctrl => self.pick(true),
             KeyCode::Char('p') if ctrl => self.pick(false),
+            KeyCode::Char('r') if ctrl => {
+                let words = self.input.clone();
+                self.search_history(&words);
+            }
             KeyCode::Enter if newline => {
                 self.edit(k);
             }
+            // Searching: enter takes the line under the highlight (the words
+            // typed stay when nothing has them), tab steps on.
+            KeyCode::Enter if self.searching => self.take_sent(),
+            KeyCode::Tab if self.searching => {
+                if let Some(m) = &mut self.menu {
+                    m.step(true);
+                }
+            }
+            // At the text's first or last line, up and down bring back the
+            // lines sent, as a shell does; between lines they move.
             KeyCode::Up | KeyCode::Down if self.menu.is_none() => {
-                self.edit(k);
+                let (back, at) = (k.code == KeyCode::Up, self.cursor());
+                let at_end = if back {
+                    edit::line_start(&self.input, at) == 0
+                } else {
+                    edit::line_end(&self.input, at) == self.input.len()
+                };
+                if at_end {
+                    self.recall(back);
+                } else {
+                    self.edit(k);
+                }
             }
             KeyCode::Enter => match &mut self.menu {
                 Some(m) if !m.inserted => {
@@ -1830,6 +1873,8 @@ impl App {
                 self.input.clear();
                 self.after = 0;
                 self.jumps.clear();
+                self.recall = None;
+                self.searching = false;
             }
             // Right after `&`: a digit goes to the nth at once, `#` turns
             // to the cards.
@@ -1886,6 +1931,10 @@ impl App {
     /// `to`. A change or a move asks the menu again, at the end only.
     fn moved(&mut self, was: &str, at: usize, to: usize) {
         self.after = self.input.len() - to;
+        if self.input != was {
+            // Written on: the line is the person's own again.
+            self.recall = None;
+        }
         if to != at || self.input != was {
             self.menu = if self.after == 0 {
                 self.suggest()
@@ -1977,6 +2026,13 @@ impl App {
     fn suggest_with(&self, forced: bool) -> Option<Menu> {
         if self.input.contains('\n') || self.noting.is_some() {
             return None;
+        }
+        if self.searching {
+            let w = &self.world;
+            let lang = self.lang;
+            return complete::history(&self.input, &w.sent, |s| {
+                ui::words::ago(lang, w.tick.saturating_sub(s.tick) * SECONDS_PER_TICK)
+            });
         }
         if let Some(rest) = self.input.strip_prefix('&') {
             return complete::jumps(rest, &self.jumps);
@@ -2158,11 +2214,16 @@ impl App {
         self.after = 0;
         self.typing = false;
         self.menu = None;
+        self.recall = None;
+        self.searching = false;
         if let Some((id, line)) = self.noting.take() {
             return self.keep_note(id, line, text);
         }
         if text.is_empty() {
             return;
+        }
+        if recalled(&text) {
+            self.world.recall_line(&text);
         }
         let t = self.lang.text();
         if let Some(line) = text.strip_prefix(':') {
@@ -2293,6 +2354,7 @@ impl App {
             "rename" => self.rename_project(arg),
             "forget" => self.forget_agent(arg),
             "goto" => self.goto(arg),
+            "history" => self.search_history(arg),
             "export" => self.export(arg),
             "commit" => self.suggest_commit(),
             "copy" => self.copy_path(arg),
@@ -2454,6 +2516,68 @@ impl App {
             }
             None => self.flash(fill(self.lang.text().no_jump, &[name])),
         }
+    }
+
+    /// `↑` (`back`) and `↓` on the command line: the line sent before the
+    /// one shown (the newest first), or the one after; past the newest,
+    /// what was being written comes back; before the oldest it stays.
+    fn recall(&mut self, back: bool) {
+        let n = self.world.sent.len();
+        let shown = self.recall.as_ref().map(|(i, _)| *i);
+        let next = match (shown, back) {
+            (None, true) => n.checked_sub(1),
+            (None, false) => None,
+            (Some(i), true) => i.checked_sub(1),
+            (Some(i), false) => (i + 1 < n).then_some(i + 1),
+        };
+        match next {
+            Some(i) => {
+                match &mut self.recall {
+                    Some((at, _)) => *at = i,
+                    None => self.recall = Some((i, self.input.clone())),
+                }
+                self.input = self.world.sent[i].text.clone();
+            }
+            None if !back => {
+                let Some((_, mine)) = self.recall.take() else {
+                    return;
+                };
+                self.input = mine;
+            }
+            None => return,
+        }
+        self.after = 0;
+        self.menu = None;
+        self.searching = false;
+    }
+
+    /// `^r`, `:history WORDS`: the line open with `words`, the menu listing
+    /// the lines sent that have them; said when nothing was sent yet.
+    fn search_history(&mut self, words: &str) {
+        if self.world.sent.is_empty() {
+            return self.flash(self.lang.text().no_history.to_string());
+        }
+        self.typing = true;
+        self.noting = None;
+        self.searching = true;
+        self.recall = None;
+        self.input = words.trim().to_string();
+        self.after = 0;
+        self.menu = self.suggest();
+    }
+
+    /// Enter while searching: the line under the highlight becomes the
+    /// line written, whole (its own lines back), to send or go on with.
+    fn take_sent(&mut self) {
+        if let Some(m) = &self.menu {
+            let picks = complete::history_picks(&self.input, &self.world.sent);
+            if let Some(&i) = picks.get(m.chosen) {
+                self.input = self.world.sent[i].text.clone();
+            }
+        }
+        self.searching = false;
+        self.menu = None;
+        self.after = 0;
     }
 
     /// The salon with agent `id`'s row selected: its project unfolded, its
@@ -4293,6 +4417,221 @@ mod tests {
         assert_eq!(app.input, "src/Auth/Session.cs ");
         tab(&mut app);
         assert_eq!(app.input, "src/Auth/Session.cs::Session.Start ");
+    }
+
+    #[test]
+    fn a_line_sent_is_kept_for_recall_unless_it_only_went_somewhere() {
+        assert!(recalled("@claude-1 fix the clock"));
+        assert!(recalled(":budget 80"));
+        assert!(recalled("!cargo test"));
+        assert!(recalled("hello"));
+        assert!(!recalled("#12"));
+        assert!(!recalled("&3 claude-1"));
+        assert!(!recalled(":goto claude-1"));
+        assert!(!recalled(":history fix"));
+        assert!(!recalled(":history"));
+        assert!(recalled(":gotten"), "the word, not its start");
+        let (mut app, w) = four_idle();
+        let name = app.world.agents[w[0]].name.clone();
+        let send = |app: &mut App, line: &str| {
+            type_in(app, line);
+            app.on_key(KeyEvent::from(KeyCode::Enter));
+        };
+        app.world.tick = 4;
+        send(&mut app, &format!("@{name} fix the clock"));
+        send(&mut app, "#1");
+        app.on_key(KeyEvent::from(KeyCode::Esc));
+        send(&mut app, ":budget 80");
+        send(&mut app, ":budget 80");
+        app.command("goto nobody");
+        app.flash = None;
+        let texts = |app: &App| {
+            app.world
+                .sent
+                .iter()
+                .map(|s| s.text.clone())
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(
+            texts(&app),
+            [format!("@{name} fix the clock"), ":budget 80".into()]
+        );
+        assert_eq!(app.world.sent[0].tick, 4);
+        // The line as typed, trimmed; `!` lines too.
+        send(&mut app, "  !cargo test  ");
+        assert_eq!(texts(&app).last().unwrap(), "!cargo test");
+        assert_eq!(app.world.sent.len(), 3);
+    }
+
+    #[test]
+    fn up_and_down_bring_the_lines_sent_back_and_the_draft_after_the_newest() {
+        let (mut app, _) = four_idle();
+        let up = |app: &mut App| app.on_key(KeyEvent::from(KeyCode::Up));
+        let down = |app: &mut App| app.on_key(KeyEvent::from(KeyCode::Down));
+        // Nothing sent: up and down leave the line as it is.
+        app.on_key(KeyEvent::from(KeyCode::Char('/')));
+        type_in(&mut app, "draft");
+        up(&mut app);
+        down(&mut app);
+        assert_eq!(app.input, "draft");
+        app.on_key(KeyEvent::from(KeyCode::Esc));
+        for line in ["first", "second", "third"] {
+            app.world.recall_line(line);
+        }
+        app.on_key(KeyEvent::from(KeyCode::Char('/')));
+        type_in(&mut app, "draft");
+        up(&mut app);
+        assert_eq!((app.input.as_str(), app.after), ("third", 0));
+        assert!(app.menu.is_none());
+        up(&mut app);
+        assert_eq!(app.input, "second");
+        up(&mut app);
+        assert_eq!(app.input, "first");
+        up(&mut app);
+        assert_eq!(app.input, "first", "the oldest stays");
+        down(&mut app);
+        assert_eq!(app.input, "second");
+        down(&mut app);
+        down(&mut app);
+        assert_eq!(app.input, "draft", "past the newest: the draft is back");
+        assert!(app.recall.is_none());
+        down(&mut app);
+        assert_eq!(app.input, "draft");
+        // Writing on a line brought back makes it the person's own: up
+        // starts from the newest again, and down brings the written one.
+        up(&mut app);
+        up(&mut app);
+        assert_eq!(app.input, "second");
+        type_in(&mut app, "!");
+        assert!(app.recall.is_none());
+        up(&mut app);
+        assert_eq!(app.input, "third");
+        down(&mut app);
+        assert_eq!(app.input, "second!");
+        // Sent, it is the newest; the line is empty again.
+        app.on_key(KeyEvent::from(KeyCode::Enter));
+        assert_eq!(app.world.sent.last().unwrap().text, "second!");
+        assert!(!app.typing && app.recall.is_none());
+        // Over several lines, up and down move between them first; at the
+        // first line up brings a line back, at the last line down does.
+        app.world.recall_line("a\nb");
+        app.on_key(KeyEvent::from(KeyCode::Char('/')));
+        type_in(&mut app, "x\\");
+        app.on_key(KeyEvent::from(KeyCode::Enter));
+        type_in(&mut app, "y");
+        assert_eq!(app.input, "x\ny");
+        up(&mut app);
+        assert_eq!(app.input, "x\ny", "moved up a line, nothing brought back");
+        assert_eq!(app.cursor(), 1);
+        up(&mut app);
+        assert_eq!(app.input, "a\nb", "at the first line: the newest sent");
+        assert_eq!(app.cursor(), 3);
+        app.on_key(KeyEvent::from(KeyCode::Up));
+        assert_eq!(app.cursor(), 1, "up within the line brought back");
+        down(&mut app);
+        assert_eq!((app.input.as_str(), app.cursor()), ("a\nb", 3));
+        down(&mut app);
+        assert_eq!(app.input, "x\ny", "at the last line: the draft");
+        // Esc drops it all.
+        up(&mut app);
+        app.on_key(KeyEvent::from(KeyCode::Esc));
+        assert!(!app.typing && app.recall.is_none() && app.input.is_empty());
+    }
+
+    #[test]
+    fn ctrl_r_searches_the_lines_sent_and_enter_takes_one_to_the_line() {
+        let (mut app, _) = four_idle();
+        let said = |app: &mut App| app.flash.take().map(|f| f.0).unwrap_or_default();
+        // Nothing sent yet: said, the line stays closed.
+        app.on_key(ctrl('r'));
+        assert!(!app.typing && !app.searching);
+        assert_eq!(said(&mut app), "nothing sent yet to bring back");
+        app.world.tick = 0;
+        app.world.recall_line("@claude-1 fix the clock");
+        app.world.recall_line(":budget 80");
+        app.world.tick = 24;
+        app.world.recall_line("@codex-1 İşler\nnasıl?");
+        app.world.tick = 36;
+        // From the salon: the whole list, newest first, each with its age.
+        app.on_key(ctrl('r'));
+        assert!(app.typing && app.searching && app.input.is_empty());
+        let m = app.menu.clone().expect("the menu");
+        assert_eq!(
+            m.items,
+            [
+                "@codex-1 İşler ⏎ nasıl?",
+                ":budget 80",
+                "@claude-1 fix the clock"
+            ]
+        );
+        assert_eq!(m.notes, ["1 min", "3 min", "3 min"]);
+        assert_eq!(m.start, 0);
+        // Typing filters; tab and the arrows step; enter takes the line
+        // whole, its own lines back, and the search ends.
+        type_in(&mut app, "İŞ");
+        assert_eq!(app.menu.as_ref().unwrap().items.len(), 1);
+        app.on_key(KeyEvent::from(KeyCode::Enter));
+        assert_eq!(app.input, "@codex-1 İşler\nnasıl?");
+        assert!(app.typing && !app.searching && app.menu.is_none());
+        assert_eq!(app.after, 0);
+        app.on_key(KeyEvent::from(KeyCode::Esc));
+        app.on_key(ctrl('r'));
+        app.on_key(KeyEvent::from(KeyCode::Tab));
+        assert_eq!(app.menu.as_ref().unwrap().chosen, 1);
+        assert_eq!(app.input, "", "tab steps, it does not insert");
+        app.on_key(KeyEvent::from(KeyCode::Enter));
+        assert_eq!(app.input, ":budget 80");
+        // Enter again sends it, as any line.
+        app.on_key(KeyEvent::from(KeyCode::Enter));
+        assert!(!app.typing);
+        assert_eq!(app.world.sent.last().unwrap().text, ":budget 80");
+        // While writing, ^r takes the words written as the search.
+        app.on_key(KeyEvent::from(KeyCode::Char('/')));
+        type_in(&mut app, "fix clock");
+        app.on_key(ctrl('r'));
+        assert!(app.searching && app.input == "fix clock");
+        assert_eq!(
+            app.menu.as_ref().unwrap().items,
+            ["@claude-1 fix the clock"]
+        );
+        // Nothing has the words: no menu; enter keeps the words, ends the
+        // search, sends nothing.
+        type_in(&mut app, " zzz");
+        assert!(app.menu.is_none() && app.searching);
+        app.on_key(KeyEvent::from(KeyCode::Enter));
+        assert!(app.typing && !app.searching);
+        assert_eq!(app.input, "fix clock zzz");
+        assert_eq!(app.world.sent.len(), 4);
+        app.on_key(KeyEvent::from(KeyCode::Esc));
+        // Esc closes the menu first, the search goes on with the next key;
+        // esc again closes the line.
+        app.on_key(ctrl('r'));
+        app.on_key(KeyEvent::from(KeyCode::Esc));
+        assert!(app.menu.is_none() && app.searching && app.typing);
+        type_in(&mut app, "bud");
+        assert_eq!(app.menu.as_ref().unwrap().items, [":budget 80"]);
+        app.on_key(KeyEvent::from(KeyCode::Esc));
+        app.on_key(KeyEvent::from(KeyCode::Esc));
+        assert!(!app.typing && !app.searching);
+        // Up while searching with nothing matched leaves the search for
+        // the newest line.
+        app.on_key(ctrl('r'));
+        type_in(&mut app, "zzz");
+        app.on_key(KeyEvent::from(KeyCode::Up));
+        assert!(!app.searching);
+        assert_eq!(app.input, ":budget 80");
+        app.on_key(KeyEvent::from(KeyCode::Esc));
+        // `:history WORDS` is the same by name, the words trimmed.
+        app.command("history  fix ");
+        assert!(app.typing && app.searching && app.input == "fix");
+        assert_eq!(app.menu.as_ref().unwrap().items.len(), 1);
+        app.on_key(KeyEvent::from(KeyCode::Esc));
+        app.on_key(KeyEvent::from(KeyCode::Esc));
+        app.world.sent.clear();
+        app.command("history");
+        assert_eq!(said(&mut app), "nothing sent yet to bring back");
+        assert!(!app.typing);
+        assert!(complete::COMMANDS.contains(&"history"));
     }
 
     #[test]

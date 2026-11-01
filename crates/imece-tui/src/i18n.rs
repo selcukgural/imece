@@ -143,6 +143,10 @@ pub struct Text {
     pub typing_card: &'static str,
     /// Over the `&` line: where to go.
     pub typing_jump: &'static str,
+    /// Over the line while `^r` searches the lines sent.
+    pub typing_history: &'static str,
+    /// `^r` or `:history` with nothing sent yet.
+    pub no_history: &'static str,
     /// `&` or `:goto` found neither an agent nor a project of the name.
     pub no_jump: &'static str,
     /// The `&` menu's note after a project.
@@ -596,6 +600,8 @@ pub const EN: Text = Text {
     typing_shell: " › shell: ",
     typing_card: " › card: ",
     typing_jump: " › go to: ",
+    typing_history: " › history: ",
+    no_history: "nothing sent yet to bring back",
     no_jump: "nothing called \"{}\" to go to: an agent or a project",
     jump_project: "project",
     find_card: "card",
@@ -951,17 +957,11 @@ pub const EN: Text = Text {
             "pin a project to the top of the salon; again: unpin",
         ),
         ("!cmd", "run cmd in your own shell, screen aside"),
-        ("tab ⇧tab ↑ ↓", "while writing: complete names and commands"),
+        ("tab ↑ ↓ ^r", "writing: complete · sent lines · :history"),
         ("^a ^e ⌥b ⌥f", "writing: to start / end, a word back / on"),
         ("^w ^u ^k ^y", "writing: cut a word / before / after; paste"),
-        (
-            "#N  #word  n p",
-            "a card by number or title on one screen; n p: next / previous card",
-        ),
-        (
-            "&  :goto",
-            "go to an agent or project: a name, 1-9 the nth, ! only what needs you",
-        ),
+        ("#N #word n p", "a card on one screen; n p: next / previous"),
+        ("&  :goto", "to an agent or project; 1-9 nth, ! needs you"),
         ("1 2 3", ":salon · :board · :code map"),
         ("↑ ↓  j k", "select"),
         ("gg  G", "first / last line"),
@@ -1113,6 +1113,8 @@ pub const TR: Text = Text {
     typing_shell: " › kabuk: ",
     typing_card: " › iş: ",
     typing_jump: " › git: ",
+    typing_history: " › geçmiş: ",
+    no_history: "geri getirilecek bir şey gönderilmedi henüz",
     no_jump: "\"{}\" adında gidilecek bir yer yok: bir agent ya da proje",
     jump_project: "proje",
     find_card: "iş",
@@ -1467,17 +1469,11 @@ pub const TR: Text = Text {
         ),
         (":pin AD", "projeyi salonun en üstüne sabitle; yine: bırak"),
         ("!kmt", "kmt kendi kabuğunda; ekran kenara çekilir"),
-        ("tab ⇧tab ↑ ↓", "yazarken: ad ve komut tamamla"),
+        ("tab ↑ ↓ ^r", "yazarken: tamamla · gönderilenler · :history"),
         ("^a ^e ⌥b ⌥f", "yazarken: başa / sona, kelime geri / ileri"),
         ("^w ^u ^k ^y", "yazarken: kelime/öncesi/sonrası kes; koy"),
-        (
-            "#N  #kelime  n p",
-            "numara ya da başlıkla bir kart tek ekranda; n p: önceki / sonraki kart",
-        ),
-        (
-            "&  :goto",
-            "bir agent'a ya da projeye git: ad, 1-9 n'inci, ! yalnız seni bekleyenler",
-        ),
+        ("#N #kelime", "başlıkla bir kart; n p: önceki / sonraki"),
+        ("&  :goto", "agent'a/projeye git; 1-9 n'inci; ! bekleyen"),
         ("1 2 3", ":salon · :board pano · :code harita"),
         ("↑ ↓  j k", "seç"),
         ("gg  G", "ilk / son satır"),

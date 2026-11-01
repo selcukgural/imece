@@ -54,3 +54,6 @@ $50 the first time); `World.daily_budget` is `budget`. `Options.state`
 carries the state dir (tests no longer leak worktrees into
 `~/.local/state`). The gaps it left (Codex and Gemini resume, the day
 in the journal, retention, the prefs file) closed in the entries below.
+
+Record 66 adds the `sent` table (schema 13): the lines the person sent,
+the newest 500 loaded.

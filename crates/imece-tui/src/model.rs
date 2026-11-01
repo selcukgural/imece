@@ -1437,7 +1437,21 @@ pub struct World {
     pub suggested: Option<Suggestion>,
     /// The number the last message on the bus was given ([`MsgId`]).
     pub messages: MsgId,
+    /// The lines the person sent, oldest first, for `↑` `↓` and `^r` on
+    /// the command line; kept between runs (the newest [`SENT_KEEP`]).
+    pub sent: Vec<Sent>,
 }
+
+/// A line the person sent: a message, a `:` command or a `!cmd`, as it
+/// was typed, and when.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Sent {
+    pub tick: u64,
+    pub text: String,
+}
+
+/// How many sent lines a load brings back and a tidy keeps.
+pub const SENT_KEEP: usize = 500;
 
 /// A commit message a cheap model suggested for what is staged in a
 /// project's checkout (`:commit`), cleaned.
@@ -1477,6 +1491,18 @@ impl World {
         } else {
             project.repo.iter().map(|(f, _)| *f).collect()
         }
+    }
+
+    /// The person sent `text` now: kept for recall, unless it is the last
+    /// line again (a shell keeps one of a run of the same line).
+    pub fn recall_line(&mut self, text: &str) {
+        if self.sent.last().is_some_and(|s| s.text == text) {
+            return;
+        }
+        self.sent.push(Sent {
+            tick: self.tick,
+            text: text.to_string(),
+        });
     }
 
     /// A vendor said how much of one of its windows is used: that window
@@ -2417,6 +2443,7 @@ mod tests {
     fn world(agents: Vec<Agent>) -> World {
         World {
             marks: Default::default(),
+            sent: Vec::new(),
             limits: Vec::new(),
             tick: 0,
             started_at: 0,

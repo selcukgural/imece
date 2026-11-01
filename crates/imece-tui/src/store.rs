@@ -49,7 +49,8 @@ use crate::model::*;
 /// 11 (2026-11-01): messages' numbers on the bus: the last one given
 /// (`meta.messages`), and an unread message's own and the one it replies
 /// to (`mail.number`, `mail.re`).
-pub const SCHEMA_VERSION: i64 = 12;
+/// 13 (2026-11-01): the lines the person sent, for recall (`sent`).
+pub const SCHEMA_VERSION: i64 = 13;
 /// Trace lines kept per agent, as the world keeps them.
 const TRACE_KEEP: usize = 200;
 /// The file's name under the state directory.
@@ -118,6 +119,7 @@ CREATE TABLE IF NOT EXISTS changes (
     files TEXT NOT NULL, patch TEXT NOT NULL, runs TEXT NOT NULL DEFAULT '[]');
 CREATE TABLE IF NOT EXISTS paid (
     day INTEGER PRIMARY KEY, calls INTEGER NOT NULL, cost INTEGER NOT NULL) WITHOUT ROWID;
+CREATE TABLE IF NOT EXISTS sent (seq INTEGER PRIMARY KEY, tick INTEGER NOT NULL, text TEXT NOT NULL);
 ";
 
 /// What the engine keeps beside the world, borrowed for a save: by
@@ -169,6 +171,8 @@ pub struct Found {
 pub struct Tidied {
     /// Journal lines deleted.
     pub journal: usize,
+    /// Sent lines deleted (the ones past the newest [`SENT_KEEP`]).
+    pub sent: usize,
     /// Whether the file was written anew (`VACUUM`).
     pub vacuumed: bool,
 }
@@ -211,6 +215,10 @@ struct Saved {
     offered: HashMap<CardId, u64>,
     /// Each change by the tree it makes, which names its content.
     changes: HashMap<AgentId, String>,
+    /// Sent lines in the world that are saved, and the last sequence
+    /// number in the file (older lines may not be loaded).
+    sent: usize,
+    sent_seq: i64,
 }
 
 pub struct Store {
@@ -485,11 +493,21 @@ impl Store {
             .conn
             .query_row("PRAGMA freelist_count", [], |r| r.get(0))?;
         let pages: i64 = self.conn.query_row("PRAGMA page_count", [], |r| r.get(0))?;
+        // The sent lines past the newest SENT_KEEP: a load brings those
+        // only, so the rest would never be read.
+        let sent = self.conn.execute(
+            "DELETE FROM sent WHERE seq <= (SELECT COALESCE(MAX(seq), 0) FROM sent) - ?1",
+            params![n(SENT_KEEP)],
+        )?;
         let vacuumed = needs_vacuum(ubig(free), ubig(pages));
         if vacuumed {
             self.conn.execute_batch("VACUUM")?;
         }
-        Ok(Tidied { journal, vacuumed })
+        Ok(Tidied {
+            journal,
+            sent,
+            vacuumed,
+        })
     }
 
     fn has_column(&self, table: &str, column: &str) -> rusqlite::Result<bool> {
@@ -748,6 +766,17 @@ impl Store {
                 ],
             )?;
         }
+        let from = self.saved.sent.min(w.sent.len());
+        for (i, line) in w.sent.iter().enumerate().skip(from) {
+            tx.execute(
+                "INSERT OR REPLACE INTO sent (seq, tick, text) VALUES (?1, ?2, ?3)",
+                params![
+                    self.saved.sent_seq + n(i - from) + 1,
+                    big(line.tick),
+                    line.text
+                ],
+            )?;
+        }
         tx.commit()?;
         self.saved = plan.after;
         Ok(true)
@@ -972,6 +1001,10 @@ impl Store {
             .filter(|id| !after.changes.contains_key(id))
             .copied()
             .collect();
+        let new = w.sent.len().saturating_sub(s.sent);
+        plan.sent = new > 0;
+        after.sent = w.sent.len();
+        after.sent_seq = s.sent_seq + n(new);
         plan.after = after;
         plan
     }
@@ -995,6 +1028,7 @@ impl Store {
         let saved_at = meta("saved_at")?.and_then(|v| v.parse().ok());
         let mut w = World {
             marks: Default::default(),
+            sent: Vec::new(),
             limits: Vec::new(),
             tick: 0,
             started_at,
@@ -1310,8 +1344,21 @@ impl Store {
             offered: &found.offered,
             changes: &found.changes,
         };
+        // The newest sent lines, oldest first.
+        let mut st = conn.prepare("SELECT seq, tick, text FROM sent ORDER BY seq DESC LIMIT ?1")?;
+        let mut sent = Vec::new();
+        for row in st.query_map(params![n(SENT_KEEP)], |r| {
+            Ok((r.get::<_, i64>(0)?, ubig(r.get(1)?), r.get::<_, String>(2)?))
+        })? {
+            let (seq, tick, text) = row?;
+            saved.sent_seq = saved.sent_seq.max(seq);
+            sent.push(Sent { tick, text });
+        }
+        sent.reverse();
+        w.sent = sent;
         let mut after = self.plan(&w, &kept).after;
         after.journal_seq = saved.journal_seq;
+        after.sent_seq = saved.sent_seq;
         self.saved = after;
         self.seqs = Seqs {
             loaded: seqs,
@@ -1337,6 +1384,8 @@ impl Store {
             "SELECT id, kind, agent, detail, researcher, open, tick, card FROM inbox ORDER BY id",
             "DELETE FROM journal WHERE seq <= 10 AND tick < 20 AND marked = 0",
             "SELECT seq, tick, data FROM journal WHERE marked = 1 AND seq < 10 ORDER BY seq",
+            "SELECT seq, tick, text FROM sent ORDER BY seq DESC LIMIT 500",
+            "DELETE FROM sent WHERE seq <= (SELECT COALESCE(MAX(seq), 0) FROM sent) - 500",
         ]
         .iter()
         .map(|q| {
@@ -1377,6 +1426,7 @@ struct Plan {
     offered_gone: Vec<CardId>,
     changes: Vec<AgentId>,
     changes_gone: Vec<AgentId>,
+    sent: bool,
     after: Saved,
 }
 
@@ -1401,6 +1451,7 @@ impl Plan {
             && self.offered_gone.is_empty()
             && self.changes.is_empty()
             && self.changes_gone.is_empty()
+            && !self.sent
     }
 }
 
@@ -1538,6 +1589,7 @@ mod tests {
     fn world() -> World {
         let mut w = World {
             marks: Default::default(),
+            sent: Vec::new(),
             limits: Vec::new(),
             tick: 77,
             started_at: 1_700_000_000,
@@ -1749,6 +1801,14 @@ mod tests {
             files: Vec::new(),
             patch: String::new(),
             runs: runs(),
+        });
+        w.sent.push(Sent {
+            tick: 70,
+            text: "@claude-1 fix the clock".into(),
+        });
+        w.sent.push(Sent {
+            tick: 71,
+            text: ":budget 80\nsecond line".into(),
         });
         w
     }
@@ -1989,6 +2049,79 @@ mod tests {
             back.inbox.iter().map(inbox_view).collect::<Vec<_>>(),
             w.inbox.iter().map(inbox_view).collect::<Vec<_>>()
         );
+        assert_eq!(back.sent, w.sent);
+    }
+
+    fn sent_rows(store: &Store) -> Vec<(i64, u64, String)> {
+        store
+            .raw()
+            .prepare("SELECT seq, tick, text FROM sent ORDER BY seq")
+            .unwrap()
+            .query_map([], |r| Ok((r.get(0)?, ubig(r.get(1)?), r.get(2)?)))
+            .unwrap()
+            .map(Result::unwrap)
+            .collect()
+    }
+
+    #[test]
+    fn sent_lines_are_written_as_they_come_numbered_on_and_the_newest_five_hundred_kept() {
+        let (mut w, k) = (world(), kept());
+        let mut store = Store::in_memory();
+        store.save(&w, &k.kept()).unwrap();
+        assert_eq!(
+            sent_rows(&store),
+            [
+                (1, 70, "@claude-1 fix the clock".to_string()),
+                (2, 71, ":budget 80\nsecond line".to_string())
+            ]
+        );
+        // The new line alone is written, after the others.
+        w.tick = 80;
+        w.recall_line("!cargo test");
+        assert!(store.save(&w, &k.kept()).unwrap());
+        assert_eq!(sent_rows(&store).len(), 3);
+        assert_eq!(sent_rows(&store)[2], (3, 80, "!cargo test".to_string()));
+        assert!(!store.save(&w, &k.kept()).unwrap(), "nothing moved");
+        // The same line again is not kept; its tick stays the first one's.
+        w.tick = 81;
+        w.recall_line("!cargo test");
+        assert_eq!(w.sent.len(), 3);
+        assert_eq!(w.sent[2].tick, 80);
+        w.recall_line(":budget 80\nsecond line");
+        assert_eq!(w.sent.len(), 4, "an earlier line again is new");
+        store.save(&w, &k.kept()).unwrap();
+        // Back in order; a save after a load numbers on from the file.
+        let back = store.load(100).unwrap().unwrap();
+        assert_eq!(back.world.sent, w.sent);
+        let mut w2 = back.world;
+        w2.tick = 90;
+        w2.recall_line("@codex-1 go");
+        assert!(store.save(&w2, &k.kept()).unwrap());
+        assert_eq!(sent_rows(&store)[4], (5, 90, "@codex-1 go".to_string()));
+        // Past SENT_KEEP lines in the file: a load brings the newest, a
+        // tidy lets the rest go, once.
+        for i in 0..SENT_KEEP {
+            w2.tick += 1;
+            w2.recall_line(&format!("line {i}"));
+        }
+        store.save(&w2, &k.kept()).unwrap();
+        assert_eq!(sent_rows(&store).len(), SENT_KEEP + 5);
+        let back = store.load(100).unwrap().unwrap();
+        assert_eq!(back.world.sent.len(), SENT_KEEP);
+        assert_eq!(back.world.sent[0].text, "line 0");
+        assert_eq!(back.world.sent[SENT_KEEP - 1].text, "line 499");
+        let tidied = store.tidy(w2.started_at + 100 * 86_400, 3).unwrap();
+        assert_eq!(tidied.sent, 5);
+        assert_eq!(sent_rows(&store)[0].0, 6);
+        assert_eq!(sent_rows(&store).len(), SENT_KEEP);
+        assert_eq!(store.tidy(w2.started_at + 100 * 86_400, 3).unwrap().sent, 0);
+        // A line brought back after the tidy numbers on still.
+        let mut w3 = back.world;
+        w3.tick += 1;
+        w3.recall_line("after");
+        store.save(&w3, &k.kept()).unwrap();
+        assert_eq!(sent_rows(&store).last().unwrap().0, n(SENT_KEEP) + 6);
+        assert_eq!(SENT_KEEP, 500);
     }
 
     #[test]
@@ -2927,7 +3060,7 @@ mod tests {
     }
 
     #[test]
-    fn a_solo_comes_back_as_one_and_the_file_says_schema_12() {
+    fn a_solo_comes_back_as_one_and_the_file_says_schema_13() {
         let d = dir("solo");
         std::fs::create_dir_all(&d).unwrap();
         let path = d.join(FILE);
@@ -2956,10 +3089,10 @@ mod tests {
                 )
                 .unwrap();
             assert_eq!(
-                version, "12",
-                "the solo role: an older imece can not read it"
+                version, "13",
+                "the sent table: an older imece has no row for it"
             );
-            assert_eq!(SCHEMA_VERSION, 12);
+            assert_eq!(SCHEMA_VERSION, 13);
         }
         let back = Store::open(&path)
             .unwrap()

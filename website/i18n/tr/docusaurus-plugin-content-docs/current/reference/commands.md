@@ -12,7 +12,7 @@ description: imece'nin aldığı her `:` komutu; argümanları, karşılığı o
 - `:` sonra `tab` komutları listeler. Menü her komutun ardında şu an ne durumda olduğunu ya da neye etki edeceğini ayraç içinde gösterir: `budget (spent $3.10 of $20.00)`, `theme (dark)`, `lead (claude)`, `close (kule)`, `forget (claude-2)`, `next (2 waiting)`, `needs (off)`. Not çizilir, asla satıra eklenmez.
 - Bir komutun ardındaki `$` sonraki faturayı büyütenleri işaretler: `:open` (yeni bir lider oturumu), `:solo` (yeni bir oturum), `:forget` (bütün brifingi önbelleksiz yeniden ödeyen yeni bir oturum) ve `:commit` (ücretli bir çağrı). Hiçbir `:` komutu kendi başına ücretli bir tur başlatmaz; `:budget` işaret yerine değerini gösterir.
 - Kısa adlar: `:b` budget, `:c` close, `:f` forget, `:o` open, `:q` quit, `:t` theme. Bütünüyle yazılan kısa ad zaten bir komuttur; menü bir şey sunmaz ve `enter` çalıştırır (`:q` sonra `enter` hemen sorar).
-- Argümanlar da tamamlanır: `:lang` sonra diller, `:lead` sonra satıcılar, `:notify` sonra üç kelimesi, `:theme` sonra yerleşik adlar, `:close` ve `:pin` sonra açık projeler, `:goto` sonra hiçbir şey (`&` satırının kendi menüsü var), `:forget`, `:talk` ve `:trace` sonra açık projelerin ajanları (`@` ile ya da onsuz), `:open` ve `:export` sonra dizinler (`~` ev dizininiz, gizli olanlar yalnızca bir `.` sonrası, `tab` seçilenin içine adım atar).
+- Argümanlar da tamamlanır: `:lang` sonra diller, `:lead` sonra satıcılar, `:notify` sonra üç kelimesi, `:theme` sonra yerleşik adlar, `:close` ve `:pin` sonra açık projeler, `:goto` sonra hiçbir şey (`&` satırının kendi menüsü var), `:history` sonra gönderilen satırlar, `:forget`, `:talk` ve `:trace` sonra açık projelerin ajanları (`@` ile ya da onsuz), `:open` ve `:export` sonra dizinler (`~` ev dizininiz, gizli olanlar yalnızca bir `.` sonrası, `tab` seçilenin içine adım atar).
 - imece'nin bilmediği bir ad: `no command xyz; : and tab list them`. Canlıda yazılan yalnızca demoya ait bir komut: `:pause is for the demo: live agents run in real time`.
 - `!cmd` kendi kabuğunuzda bir komut çalıştırır, `/cmd` ajanın kendi komut satırıdır; ikisi de `:` komutu değildir ([komut satırı](../screen/command-line.md)).
 
@@ -34,6 +34,7 @@ description: imece'nin aldığı her `:` komutu; argümanları, karşılığı o
 | `:fold` | `zM` | | | | |
 | `:forget [@NAME]` | — | `:f` | | `$` | eldeki ajan |
 | `:goto [NAME]` | `&` | | | | |
+| `:history [WORDS]` | `^r` | | | | |
 | `:help` | `?` | | | | |
 | `:lang [en\|tr]` | `L` | | | | `English` / `Türkçe` |
 | `:lead VENDOR` | — | | | | birincil satıcı, ya da `ask` |
@@ -122,6 +123,10 @@ Ajana satıcı oturumunu unutturur (`:f`): çalışan oturum biter (çalıştır
 ### `:goto [NAME]`
 
 `NAME` adlı ajana (önünde `@` olabilir), yoksa o adlı açık projeye gider: salon, satırı seçili, projesi açılmış, bir yardımcının işçisi açılmış ve satırı gizleyecekse `f` bırakılmış; bir proje adı başlığını seçer. Büyük küçük harf ve Türkçe harfler fark etmez. O adda bir şey yoksa: `"zzz" adında gidilecek bir yer yok: bir agent ya da proje`, ve hiçbir şey kımıldamaz. Tek başına `&` satırını açar: yerler şu anki hâliyle, sizi bekleyenler önde (takılan, sonra bekleyen, sonra bitmiş ve görülmemiş), kalanlar durumuna göre (çalışan boştakinden önce), sonra açık projeler, her ajan glifi ve durum sözcükleriyle. Satır açıkken liste donar, böylece yazarken numaralar değişmez; `&` hemen ardından `1`-`9` bir rakam anında gider, `&` hemen ardından `#` kart satırına döner, `!` yalnız sizi bekleyenleri tutar, rakamlar bir numaranın başıyla eşleşir, geri kalanı adların içinde arar. `enter` imlecin altındakine, ya da yazılan ada gider. Bkz. [salon](../screen/salon.md).
+
+### `:history [WORDS]`
+
+Gönderdiğiniz satırları arar, `^r` gibi: komut satırı üstünde `WORDS` ile açılır ve tamamlama menüsü gönderilenlerden her sözcüğü geçenleri listeler (büyük küçük harf ve Türkçe harfler fark etmez), en yenisi önce, her satır bir kez ve ne kadar önce gönderildiğiyle; hiçbir şey yazılmamışsa hepsi. `tab`, `↑` ve `↓` aralarında ilerler, `enter` seçili satırı komut satırına bütün olarak koyar (birkaç satırlık bir satır olduğu gibi gelir), yeniden `enter` ile göndermek ya da önce değiştirmek için; hiçbiri eşleşmezse `enter` sözcükleri tutar ve aramayı bitirir. `esc` menüyü, sonra satırı kapatır. Yazarken `^r` yazılanı sözcük olarak alır. Henüz bir şey gönderilmemişse: `geri getirilecek bir şey gönderilmedi henüz`. Gönderilen her satır tutulur (bir mesaj, bir `:` komutu, bir `!kmt`; yalnız bir yere giden `#12`, `&3`, `:goto` ve `:history` hariç), çalıştırmalar arasında da: en yeni 500'ü sonraki başlangıçta geri gelir. Metnin ilk ya da son satırındayken `↑` ve `↓` aynı satırlarda aramasız gezer. Bkz. [klavye](../screen/keyboard.md) ve [dosyalar](files.md).
 
 ### `:help`
 

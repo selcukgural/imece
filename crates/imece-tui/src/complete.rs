@@ -8,16 +8,16 @@
 
 use std::path::Path;
 
-use crate::model::{Agent, CardId, ProjectId, Vendor, World};
+use crate::model::{Agent, CardId, ProjectId, Sent, Vendor, World};
 use crate::ui::fold;
 
 /// The commands imece itself takes after `:`: its own, and a name for
 /// every key that acts (not the ones that move).
-pub const COMMANDS: [&str; 36] = [
+pub const COMMANDS: [&str; 37] = [
     "awake", "board", "budget", "close", "code", "commit", "copy", "defer", "effort", "export",
-    "faster", "fold", "forget", "goto", "help", "lang", "lead", "mark", "model", "needs", "next",
-    "notify", "open", "pause", "pending", "pin", "quit", "rename", "salon", "slower", "solo",
-    "talk", "theme", "trace", "unfold", "waiting",
+    "faster", "fold", "forget", "goto", "help", "history", "lang", "lead", "mark", "model",
+    "needs", "next", "notify", "open", "pause", "pending", "pin", "quit", "rename", "salon",
+    "slower", "solo", "talk", "theme", "trace", "unfold", "waiting",
 ];
 
 /// The word for a vendor's own model or effort after `:model`, `:effort`
@@ -274,6 +274,50 @@ pub fn files(
     let mut m = menu(start, word, items, " ")?;
     m.notes = notes;
     Some(m)
+}
+
+/// A sent line as a menu shows it: on one line (`⏎` between its lines),
+/// at most this many characters.
+pub const LINE_SHOWN: usize = 60;
+
+/// The lines sent that have every word of `rest` in them (case and
+/// Turkish letters folded), newest first, each text once: their places
+/// in `sent`. Nothing typed is every line.
+pub fn history_picks(rest: &str, sent: &[Sent]) -> Vec<usize> {
+    let words: Vec<String> = rest.split_whitespace().map(fold).collect();
+    let mut seen = std::collections::HashSet::new();
+    sent.iter()
+        .enumerate()
+        .rev()
+        .filter(|(_, s)| {
+            let hay = fold(&s.text);
+            words.iter().all(|w| hay.contains(w.as_str()))
+        })
+        .filter(|(_, s)| seen.insert(s.text.as_str()))
+        .map(|(i, _)| i)
+        .collect()
+}
+
+/// The `^r` menu over `sent`: the picks for `rest`, each on one line
+/// with the note `when` gives it (how long ago); none when nothing has
+/// the words.
+pub fn history(rest: &str, sent: &[Sent], when: impl Fn(&Sent) -> String) -> Option<Menu> {
+    let picks = history_picks(rest, sent);
+    let items = picks.iter().map(|&i| one_line(&sent[i].text)).collect();
+    let mut m = Menu::new(0, items, "")?;
+    m.notes = picks.iter().map(|&i| when(&sent[i])).collect();
+    Some(m)
+}
+
+/// `text` on one line, cut to [`LINE_SHOWN`] characters with `…`.
+pub fn one_line(text: &str) -> String {
+    let flat = text.lines().collect::<Vec<_>>().join(" ⏎ ");
+    if flat.chars().count() <= LINE_SHOWN {
+        return flat;
+    }
+    let mut cut: String = flat.chars().take(LINE_SHOWN - 1).collect();
+    cut.push('…');
+    cut
 }
 
 /// The card a line typed after `#` names: the number it starts with, if a
@@ -818,6 +862,54 @@ mod tests {
         assert_eq!(named("&"), None);
         assert_eq!(named("&!"), None);
         assert_eq!(named("#1"), None);
+    }
+
+    fn sent(tick: u64, text: &str) -> Sent {
+        Sent {
+            tick,
+            text: text.into(),
+        }
+    }
+
+    #[test]
+    fn the_history_menu_lists_the_newest_first_each_line_once_with_every_word_typed() {
+        let lines = [
+            sent(1, "@claude-1 fix the clock"),
+            sent(2, ":budget 80"),
+            sent(3, "@claude-1 fix the clock"),
+            sent(4, "@codex-1 İşler nasıl?\nthe second line"),
+        ];
+        // Newest first; the repeated line once, at its newest.
+        assert_eq!(history_picks("", &lines), [3, 2, 1]);
+        // Every word, case and Turkish letters folded, anywhere in the line.
+        assert_eq!(history_picks("CLOCK fix", &lines), [2]);
+        assert_eq!(history_picks("isler", &lines), [3]);
+        assert_eq!(history_picks("second", &lines), [3]);
+        assert_eq!(history_picks("fix budget", &lines), Vec::<usize>::new());
+        assert_eq!(history_picks("", &[]), Vec::<usize>::new());
+        // The menu: each on one line, the whole input replaced, its note.
+        let m = history("", &lines, |s| format!("tick {}", s.tick)).unwrap();
+        assert_eq!(m.start, 0);
+        assert_eq!(
+            m.items,
+            [
+                "@codex-1 İşler nasıl? ⏎ the second line",
+                "@claude-1 fix the clock",
+                ":budget 80"
+            ]
+        );
+        assert_eq!(
+            m.notes,
+            ["tick 4", "tick 3", "tick 2"],
+            "the repeated line at its newest"
+        );
+        assert!(history("zzz", &lines, |_| String::new()).is_none());
+        // A long line is cut at sixty characters, the last one `…`.
+        let long = "x".repeat(61);
+        assert_eq!(one_line(&long).chars().count(), 60);
+        assert!(one_line(&long).ends_with("x…"));
+        assert_eq!(one_line(&"y".repeat(60)), "y".repeat(60));
+        assert_eq!(one_line("a\nb\nc"), "a ⏎ b ⏎ c");
     }
 
     #[test]

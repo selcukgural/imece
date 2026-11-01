@@ -619,6 +619,7 @@ pub fn world(o: Options, present: &[(Vendor, bool)]) -> Result<(World, Live), St
         None => (
             World {
                 marks: Default::default(),
+                sent: Vec::new(),
                 limits: Vec::new(),
                 tick: 0,
                 started_at: now,
