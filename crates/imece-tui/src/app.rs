@@ -50,6 +50,17 @@ pub const FOCUS_AWAY: Duration = Duration::from_secs(180);
 /// focus and the person did nothing: the clocks and spinners still move,
 /// ten times less often than live's tick.
 pub const BLURRED_DRAW: Duration = Duration::from_secs(1);
+/// How long `:close` and `:forget` wait before they act; `u` (`:undo`)
+/// meanwhile leaves things as they are.
+pub const UNDO_GRACE: Duration = Duration::from_secs(10);
+
+/// A `:close` or `:forget` asked for and not done yet.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Undoable {
+    Close(ProjectId),
+    Forget(AgentId),
+}
+
 /// How long a short notice stays in the bottom line.
 pub const FLASH: Duration = Duration::from_secs(3);
 
@@ -770,6 +781,9 @@ pub struct App {
     /// written): put back unless the line is sent.
     pub theme_was: Option<String>,
     pub flash: Option<(String, Instant)>,
+    /// A `:close` or `:forget` waiting out its [`UNDO_GRACE`], and when
+    /// it acts.
+    pub grace: Option<(Undoable, Instant)>,
     pub quit: bool,
     /// The store's last failure, flashed once.
     store_error: Option<String>,
@@ -896,6 +910,7 @@ impl App {
             leaving: false,
             theme_was: None,
             flash: None,
+            grace: None,
             quit: false,
             store_error: None,
             shown: RefCell::new(Vec::new()),
@@ -1895,6 +1910,7 @@ impl App {
                 }
             }
             KeyCode::Char('m') => self.toggle_mark(),
+            KeyCode::Char('u') => self.undo(),
             KeyCode::Char('\'') => self.next_mark(),
             KeyCode::Char('O') => self.quote_output(),
             KeyCode::Up | KeyCode::Char('k') => self.move_selection(false),
@@ -3453,6 +3469,7 @@ impl App {
             "effort" => self.rechoose(Part::Effort, arg),
             "model" => self.rechoose(Part::Model, arg),
             "close" => self.close_project(arg),
+            "undo" => self.undo(),
             "rename" => self.rename_project(arg),
             "forget" => self.forget_agent(arg),
             "goto" => self.goto(arg),
@@ -4422,6 +4439,8 @@ impl App {
     /// its agents leave, their worktrees stay. The last one stays open.
     fn close_project(&mut self, arg: &str) {
         let t = self.lang.text();
+        // One waits at a time: the one before acts now.
+        self.end_grace();
         let p = if arg.is_empty() {
             self.current_project()
         } else {
@@ -4430,6 +4449,62 @@ impl App {
                 None => return self.flash(fill(t.no_project, &[arg])),
             }
         };
+        if self.world.open_projects().count() < 2 {
+            let name = &self.world.projects[p].name;
+            return self.flash(fill(t.last_project, &[name]));
+        }
+        self.wait_grace(Undoable::Close(p));
+    }
+
+    /// A `:close` or `:forget` waits [`UNDO_GRACE`] from now; the bottom
+    /// line counts it down.
+    fn wait_grace(&mut self, what: Undoable) {
+        self.flash = None;
+        self.grace = Some((what, Instant::now() + UNDO_GRACE));
+    }
+
+    /// `u` or `:undo`: the `:close` or `:forget` waiting does not happen.
+    fn undo(&mut self) {
+        let t = self.lang.text();
+        let said = match self.grace.take() {
+            Some((Undoable::Close(p), _)) => fill(t.undone_close, &[&self.world.projects[p].name]),
+            Some((Undoable::Forget(id), _)) => {
+                fill(t.undone_forget, &[&self.world.agents[id].name])
+            }
+            None => t.nothing_to_undo.to_string(),
+        };
+        self.flash(said);
+    }
+
+    /// What waits out its grace at `now`, and the seconds it has left,
+    /// rounded up.
+    pub fn grace_left(&self, now: Instant) -> Option<(Undoable, u64)> {
+        let (what, at) = self.grace?;
+        let left = at.saturating_duration_since(now).as_millis();
+        Some((what, left.div_ceil(1000) as u64))
+    }
+
+    /// The `:close` or `:forget` whose grace ran out by `now` acts.
+    pub fn grace_due(&mut self, now: Instant) {
+        if self.grace.is_some_and(|(_, at)| now >= at) {
+            self.end_grace();
+            self.persist();
+        }
+    }
+
+    /// The `:close` or `:forget` waiting acts now: before another, and
+    /// when imece quits.
+    pub fn end_grace(&mut self) {
+        match self.grace.take() {
+            Some((Undoable::Close(p), _)) => self.close_now(p),
+            Some((Undoable::Forget(id), _)) => self.forget_now(id),
+            None => {}
+        }
+    }
+
+    /// Project `p` closes: its agents leave, what pointed into it moves.
+    fn close_now(&mut self, p: ProjectId) {
+        let t = self.lang.text();
         let name = self.world.projects[p].name.clone();
         let closed = match &mut self.engine {
             Engine::Live(live) => live.close_project(&mut self.world, p),
@@ -4462,10 +4537,24 @@ impl App {
     /// its session; its next message starts a new one, told where it left
     /// off.
     fn forget_agent(&mut self, arg: &str) {
-        let t = self.lang.text();
+        // One waits at a time: the one before acts now.
+        self.end_grace();
         let Some(id) = self.agent_named(arg) else {
             return;
         };
+        let can = match &self.engine {
+            Engine::Live(live) => live.can_forget(&self.world, id),
+            Engine::Sim(sim) => sim.can_forget(&self.world, id),
+        };
+        match can {
+            Ok(()) => self.wait_grace(Undoable::Forget(id)),
+            Err(why) => self.forget_refused(id, why),
+        }
+    }
+
+    /// Agent `id` forgets its session now.
+    fn forget_now(&mut self, id: AgentId) {
+        let t = self.lang.text();
         let name = self.world.agents[id].name.clone();
         let forgot = match &mut self.engine {
             Engine::Live(live) => live.forget_agent(&mut self.world, id),
@@ -4473,8 +4562,17 @@ impl App {
         };
         match forgot {
             Ok(()) => self.flash(fill(t.forgot, &[&name])),
-            Err(Refusal::Command(why)) => self.flash(fill(t.forget_refused, &[&name, &why])),
-            Err(why) => self.flash(fill(t.forget_refused, &[&name, &format!("{why:?}")])),
+            Err(why) => self.forget_refused(id, why),
+        }
+    }
+
+    /// Why agent `id` cannot forget its session, said.
+    fn forget_refused(&mut self, id: AgentId, why: Refusal) {
+        let t = self.lang.text();
+        let name = self.world.agents[id].name.clone();
+        match why {
+            Refusal::Command(why) => self.flash(fill(t.forget_refused, &[&name, &why])),
+            why => self.flash(fill(t.forget_refused, &[&name, &format!("{why:?}")])),
         }
     }
 
@@ -6852,6 +6950,8 @@ mod tests {
         assert_eq!(app.world.projects[1].name, "store");
         assert_eq!(said(&mut app), "shop is now store; write to lead-store");
         app.command("close store");
+        assert!(!app.world.projects[1].closed, "not before its grace");
+        app.end_grace();
         assert!(app.world.projects[1].closed);
         assert_eq!(app.selected, Sel::Agent(0));
         assert_eq!(
@@ -6877,11 +6977,106 @@ mod tests {
         assert_eq!(said(&mut app), none);
         app.tell(0, "hello");
         app.command(&format!("f {lead}"));
+        assert_eq!(app.grace.map(|g| g.0), Some(Undoable::Forget(0)));
+        app.end_grace();
         assert_eq!(said(&mut app), fill(t.forgot, &[&lead]));
         assert_eq!(app.world.agents[0].status, Status::Asleep);
         app.selected = Sel::Agent(0);
         app.command("forget");
         assert_eq!(said(&mut app), none, "forgotten already");
+    }
+
+    /// A demo app with projects `shop-api`, `shop` and `more` open.
+    fn three_projects() -> App {
+        let mut app = App::new(1, 1, 0, 1, Lang::En);
+        app.home = None;
+        app.command("open ~/work/shop");
+        app.command("open ~/work/more");
+        assert_eq!(app.world.open_projects().count(), 3);
+        app.flash = None;
+        app
+    }
+
+    #[test]
+    fn a_close_waits_out_its_grace_and_u_keeps_it_open() {
+        let mut app = three_projects();
+        let said = |app: &mut App| app.flash.take().map(|f| f.0).unwrap_or_default();
+        app.flash("before");
+        app.command("close shop");
+        assert_eq!(app.flash, None, "the count-down shows instead");
+        let (what, at) = app.grace.unwrap();
+        assert_eq!(what, Undoable::Close(1));
+        assert!(!app.world.projects[1].closed);
+        let ms = Duration::from_millis;
+        assert_eq!(app.grace_left(at - UNDO_GRACE), Some((what, 10)));
+        assert_eq!(app.grace_left(at - UNDO_GRACE + ms(1)), Some((what, 10)));
+        assert_eq!(app.grace_left(at - ms(1001)), Some((what, 2)));
+        assert_eq!(app.grace_left(at - ms(1)), Some((what, 1)));
+        assert_eq!(app.grace_left(at), Some((what, 0)));
+        app.grace_due(at - ms(1));
+        assert!(!app.world.projects[1].closed, "not yet");
+        app.grace_due(at);
+        assert!(app.world.projects[1].closed, "its time");
+        assert_eq!(app.grace, None);
+        assert_eq!(
+            said(&mut app),
+            "closed shop: its agents left; their worktrees stay on disk"
+        );
+        assert_eq!(app.grace_left(at), None);
+        // `u` keeps it open; again, nothing to undo.
+        app.command("close more");
+        app.on_key(key(KeyCode::Char('u')));
+        assert_eq!(app.grace, None);
+        assert_eq!(said(&mut app), "more stays open");
+        app.grace_due(at + UNDO_GRACE * 2);
+        assert!(!app.world.projects[2].closed);
+        app.command("undo");
+        assert_eq!(said(&mut app), Lang::En.text().nothing_to_undo);
+        app.on_key(key(KeyCode::Char('u')));
+        assert_eq!(said(&mut app), Lang::En.text().nothing_to_undo);
+        // Quitting: what was asked happens.
+        app.command("close more");
+        app.end_grace();
+        assert!(app.world.projects[2].closed);
+        assert_eq!(app.grace, None);
+        app.end_grace();
+        assert_eq!(app.grace, None, "nothing waits, nothing happens");
+    }
+
+    #[test]
+    fn one_close_or_forget_waits_at_a_time() {
+        let mut app = three_projects();
+        app.command("close shop");
+        app.command("close more");
+        assert!(app.world.projects[1].closed, "the one before acts");
+        assert_eq!(app.grace.map(|g| g.0), Some(Undoable::Close(2)));
+        // The last open project is refused at once, after the one waiting.
+        app.command("close shop-api");
+        assert!(app.world.projects[2].closed);
+        assert_eq!(app.grace, None);
+        assert_eq!(
+            app.flash.take().map(|f| f.0).as_deref(),
+            Some("shop-api is the last open project; q q quits")
+        );
+        // A :forget after a :close: the close acts.
+        let mut app = three_projects();
+        app.tell(0, "hello");
+        app.command("close more");
+        let lead = app.world.agents[0].name.clone();
+        app.command(&format!("forget @{lead}"));
+        assert!(app.world.projects[2].closed);
+        assert_eq!(app.grace.map(|g| g.0), Some(Undoable::Forget(0)));
+        app.on_key(key(KeyCode::Char('u')));
+        assert_eq!(
+            app.flash.take().map(|f| f.0),
+            Some(format!("{lead} keeps its session"))
+        );
+        assert_ne!(app.world.agents[0].status, Status::Asleep, "kept");
+        // A refused :forget waits for nothing.
+        app.command("forget @nobody");
+        assert_eq!(app.grace, None);
+        app.command(&format!("forget @{}", app.world.agents[1].name.clone()));
+        assert_eq!(app.grace, None, "no session yet");
     }
 
     #[test]
@@ -9404,12 +9599,14 @@ mod tests {
         let other = app.world.projects[1].name.clone();
         app.open_card(theirs);
         app.command(&format!("close {other}"));
+        app.end_grace();
         assert_eq!(app.card, None);
         // Another project closing leaves it open.
         app.home = None;
         app.command("open ~/x more");
         app.open_card(ours);
         app.command("close more");
+        app.end_grace();
         assert_eq!(app.card, Some(ours));
     }
 

@@ -23,7 +23,7 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Clear, Paragraph, Wrap};
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
-use crate::app::{App, FLASH, Hints, Noting, Rung, Target, View, Zoom};
+use crate::app::{App, FLASH, Hints, Noting, Rung, Target, Undoable, View, Zoom};
 use crate::i18n::{Lang, clean, fill};
 use crate::model::*;
 pub(crate) use crate::theme::pal;
@@ -1313,6 +1313,13 @@ fn footer(f: &mut Frame, area: Rect, app: &App) {
         && at.elapsed() < FLASH
     {
         Line::from(Span::styled(format!(" {msg}"), fg(pal().warn)))
+    } else if let Some((what, left)) = app.grace_left(std::time::Instant::now()) {
+        let left = left.to_string();
+        let said = match what {
+            Undoable::Close(p) => fill(t.grace_close, &[&app.world.projects[p].name, &left]),
+            Undoable::Forget(id) => fill(t.grace_forget, &[&app.world.agents[id].name, &left]),
+        };
+        Line::from(Span::styled(format!(" {said}"), fg(pal().warn)))
     } else {
         let hints: Vec<(&str, &str)> = match app.zoom {
             _ if app.hints.is_some() => vec![
@@ -5101,6 +5108,52 @@ mod tests {
     }
 
     #[test]
+    fn the_bottom_line_counts_a_close_or_forget_down() {
+        // A line written and sent, as the person does (the menu closed
+        // first, so enter sends the line as written).
+        let typed = |app: &mut App, line: &str| {
+            for c in line.chars() {
+                key(app, KeyCode::Char(c));
+            }
+            app.menu = None;
+            key(app, KeyCode::Enter);
+        };
+        for (lang, close, forget) in [
+            (
+                Lang::En,
+                "◷ closing shop in 10 s · u keeps it open",
+                "◷ {} forgets its session in 10 s · u keeps it",
+            ),
+            (
+                Lang::Tr,
+                "◷ shop 10 sn sonra kapanıyor · u açık tutar",
+                "◷ {} 10 sn sonra oturumunu unutuyor · u tutar",
+            ),
+        ] {
+            let mut app = app_after(1, 1, 0, lang);
+            app.home = None;
+            typed(&mut app, ":open ~/work/shop");
+            typed(&mut app, ":close shop");
+            assert!(app.grace.is_some(), "{:?}", app.flash);
+            let shown = render(&app, 140, 40);
+            assert!(shown.contains(close), "{shown}");
+            app.flash = Some(("something else".into(), std::time::Instant::now()));
+            let shown = render(&app, 140, 40);
+            assert!(
+                shown.contains("something else") && !shown.contains("◷"),
+                "{shown}"
+            );
+            app.flash = None;
+            app.grace = None;
+            let lead = app.world.agents[0].name.clone();
+            typed(&mut app, &format!("/@{lead} hello"));
+            typed(&mut app, &format!(":forget @{lead}"));
+            let shown = render(&app, 140, 40);
+            assert!(shown.contains(&forget.replace("{}", &lead)), "{shown}");
+        }
+    }
+
+    #[test]
     fn the_help_shows_the_persons_own_keys_first_and_in_place() {
         let none = crate::keys::Keymap::default();
         for lang in [Lang::En, Lang::Tr] {
@@ -8156,6 +8209,7 @@ after | not a table";
         app.selected = Sel::Agent(lead3);
         app.inbox_sel = 5;
         typed(&mut app, ":close shop");
+        app.end_grace();
         assert!(app.world.projects[1].closed);
         assert_eq!(app.zoom, Zoom::None);
         assert_eq!(app.selected, Sel::Agent(lead3), "not in the closed project");
@@ -8177,6 +8231,7 @@ after | not a table";
         assert_ne!(app.world.projects[1].leader, lead_api);
         assert_eq!(app.selected, Sel::Agent(app.world.projects[1].leader));
         typed(&mut app, ":close");
+        app.end_grace();
         assert!(
             app.world.projects[1].closed,
             "the one at hand, by the selection: {} {:?}",
@@ -8187,6 +8242,7 @@ after | not a table";
         app.selected = Sel::Project(0);
         app.zoom = Zoom::Trace(lead3);
         typed(&mut app, ":close repo");
+        app.end_grace();
         assert!(app.world.projects[0].closed);
         assert_eq!(app.selected, Sel::Agent(lead3));
         assert_eq!(app.zoom, Zoom::Trace(lead3), "a zoom elsewhere stays");

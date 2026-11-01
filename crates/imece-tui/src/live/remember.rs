@@ -400,16 +400,23 @@ impl Live {
         });
     }
 
+    /// Whether agent `id` has a session to forget, running or remembered.
+    pub fn can_forget(&self, w: &World, id: AgentId) -> Result<(), Refusal> {
+        let running = matches!(self.slots[id], Slot::Running(_));
+        if w.agents[id].gone || (!running && self.sessions[id].is_none()) {
+            return Err(Refusal::Command("it has no session to forget".into()));
+        }
+        Ok(())
+    }
+
     /// The person made agent `id` forget its session (`:forget`): the one
     /// running ends (its unfinished prompts are told at the wake, not run
     /// again), the one remembered goes with what its vendor kept, and the
     /// next message starts a new session, told where it left off. An
     /// agent with no session to forget is refused.
     pub fn forget_agent(&mut self, w: &mut World, id: AgentId) -> Result<(), Refusal> {
+        self.can_forget(w, id)?;
         let running = matches!(self.slots[id], Slot::Running(_));
-        if w.agents[id].gone || (!running && self.sessions[id].is_none()) {
-            return Err(Refusal::Command("it has no session to forget".into()));
-        }
         self.running[id].kill_all();
         if let Slot::Running(s) = &mut self.slots[id] {
             s.terminate();

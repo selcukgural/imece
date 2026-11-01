@@ -545,6 +545,8 @@ fn main() -> std::io::Result<()> {
     app.notify = saved.notify.unwrap_or_default();
     app.awake.on = args.awake;
     let result = run(&mut terminal, &mut app, &state);
+    // A :close or :forget still counting down was asked for: it happens.
+    app.end_grace();
     // The last word before the sessions end: what every agent had in hand,
     // and when this run ended.
     app.persist();
@@ -671,6 +673,7 @@ fn run(
         }
         // The key file changed (`:keys` or an edit): kept for the next start.
         app.watch_keys(Instant::now());
+        app.grace_due(Instant::now());
         app.keys_due(Instant::now());
         if std::mem::take(&mut app.keys_new) {
             let _ = prefs::keep_keys(state, app.keys_good.as_deref());

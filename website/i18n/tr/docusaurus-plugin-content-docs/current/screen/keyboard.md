@@ -63,6 +63,7 @@ Gelenekler vim'inkidir: `h` `j` `k` `l` hareket ve katlama, `gg` ve `G` uçlara,
 | `t`  `:trace` | eldeki agent'ın ham akışı |
 | `v`  `:talk` | onun sizinle konuşması |
 | `esc` | geri |
+| `u`  `:undo` | alt satır on saniyesini geri sayarken bir `:close` ya da `:forget`'in olmasını önle |
 | `tab` `⇧tab` `[` `]` | sonraki / önceki panel |
 | `,`  `.`  `<`  `>` | yan paneli genişlet / daralt |
 
