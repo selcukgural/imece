@@ -36,6 +36,7 @@ description: imece'nin aldığı her `:` komutu; argümanları, karşılığı o
 | `:goto [NAME]` | `&` | | | | |
 | `:history [WORDS]` | `^r` | | | | |
 | `:help` | `?` | | | | |
+| `:hints` | `F` | | | | |
 | `:lang [en\|tr]` | `L` | | | | `English` / `Türkçe` |
 | `:lead VENDOR` | — | | | | birincil satıcı, ya da `ask` |
 | `:mark` | `m` | | | | |
@@ -135,6 +136,10 @@ Gönderdiğiniz satırları arar, `^r` gibi: komut satırı üstünde `WORDS` il
 ### `:help`
 
 `?` yardımı: iki dilde her tuş ve komut, glif açıklamaları; içinde `/` her kelimeyle süzer. Bkz. [klavye](../screen/keyboard.md).
+
+### `:hints`
+
+İpucu harfleri, `F` gibi: salon ekranında seçilebilen her satırın (proje başlıkları, ajanlar, bir kartın ekranındaki kişiler, bekleyen kalemler, günlük satırları) başına bir ya da iki harflik bir etiket. Bir etiketi yazmak satırını kendi panelinde seçer; son harfi büyük yazılırsa onu `enter` gibi açar da. `backspace` bir harfi geri alır, `esc` kapatır. O arada ekrandan çıkan bir satır: `o satır ekrandan çıktı`. Salon ekranı dışında: `burada harf verilecek satır yok: F salon ekranında çalışır`. Bkz. [salon](../screen/salon.md).
 
 ### `:lang [en|tr]`
 

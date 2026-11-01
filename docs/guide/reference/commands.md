@@ -36,6 +36,7 @@ A line that starts with `:` is a command to imece, not a message to an agent. Yo
 | `:goto [NAME]` | `&` | | | | |
 | `:history [WORDS]` | `^r` | | | | |
 | `:help` | `?` | | | | |
+| `:hints` | `F` | | | | |
 | `:lang [en\|tr]` | `L` | | | | `English` / `Türkçe` |
 | `:lead VENDOR` | — | | | | the primary vendor, or `ask` |
 | `:mark` | `m` | | | | |
@@ -135,6 +136,10 @@ Searches the lines you sent, as `^r` does: the command line opens with `WORDS` o
 ### `:help`
 
 The `?` help: every key and command in both languages, the legend of glyphs; `/` in it filters by every word. See [keyboard](../screen/keyboard.md).
+
+### `:hints`
+
+Hint letters, as `F`: a label of one or two letters over the start of every row of the salon's screen you can select (project headers, agents, the people on a card's screen, waiting items, journal lines). Typing a label selects its row in its panel; its last letter in capitals opens it too, as `enter`. `backspace` takes a letter back, `esc` closes them. A row gone from the screen since: `that row has left the screen`. Off the salon's screen: `no rows to label here: F works on the salon's screen`. See [salon](../screen/salon.md).
 
 ### `:lang [en|tr]`
 

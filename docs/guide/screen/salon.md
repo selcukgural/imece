@@ -120,6 +120,7 @@ The fleet in the header uses the same shapes, so it reads in the mono theme too.
 | `&` (`:goto`) | go to an agent or a project by name or number, what needs you first; its project and its worker's helpers unfold, and `f` lets go when it would hide the row |
 | `enter` | look deeper: an agent's focus (its card, status, origin and story), `enter` again its raw stream (the trace) |
 | `K` (`:peek`) | a peek: the agent at hand's focus in a window over the view, which stays as it was; `j` `k` the next / previous agent, `enter` its whole focus, `@` write to it, `esc` or `K` close |
+| `F` (`:hints`) | hint letters on every row you can select; a label selects its row, its last letter in capitals opens it |
 | `t` (`:trace`) / `v` (`:talk`) | the raw stream / the conversation of the agent at hand |
 | `esc` | back up one depth |
 
@@ -140,6 +141,10 @@ What waits for you or is stuck is never settled: `not settled: claude-2 needs yo
 ## A peek
 
 `K` opens the focus of the agent at hand (selected in the salon, behind the inbox item or journal line, or the one you are zoomed in on) in a window over the screen, a little smaller than it; the view under it, the salon, the board, the code map or a card, does not move. In the window `j` `k` (or the arrows) step to the next / previous agent in the salon's order, `enter` opens its whole focus, `@` starts a message to it, `esc` or `K` close it; other keys do nothing. Looking at a finished agent this way counts as seeing it.
+
+## Hint letters
+
+`F` puts a label of one or two letters over the start of every row of the salon's screen you can select: the project headers and agents in the salon (on a card's screen, its people), the items of WAITING FOR YOU and the journal lines shown. The first rows drawn get one letter, home row first (`a s d f …`); when there are more rows than letters, the last letters start labels of two (`ma`, `ms`, …), as few as needed, and a letter that starts a label of two is never a label of its own. Typing a label selects its row and moves to its panel; typed with its last letter in capitals (`D`, `mS`), it also opens the row as `enter` does: an agent's focus, a change, a question's conversation, a journal line's conversation. The letters typed so far narrow the labels to those they start; a letter no label goes on does nothing, `backspace` takes one back, `?` shows the help over them, `esc` closes them. The labels are given when `F` opens them and stay with their rows: a row that moves follows its label, one that leaves the screen loses it, and typing its label says `that row has left the screen`. Where the screen has no such rows (the board, the code map, a focus, a conversation over the salon) `F` says so. Both the demo and live sessions have them.
 
 ## The side panels
 

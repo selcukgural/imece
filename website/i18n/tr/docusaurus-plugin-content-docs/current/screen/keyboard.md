@@ -59,6 +59,7 @@ Gelenekler vim'inkidir: `h` `j` `k` `l` hareket ve katlama, `gg` ve `G` uçlara,
 | `^o` | olduğunuz yere geri: görünüm, panel, odak, kart (vim'in atlama listesi, elli yer; açık konuşma önce kapanır) |
 | `enter` | derine in: odak, sonra ham akış |
 | `K`  `:peek` | göz at: eldeki agent'ın odağı görünümün üstünde bir pencerede, görünüm olduğu gibi kalır; içinde `j` `k` salondaki sonraki / önceki agent, `enter` odağın tamamı, `@` ona yaz, `esc` ya da `K` kapatır |
+| `F`  `:hints` | ipucu harfleri: salon ekranında seçilebilen her satıra (proje başlıkları, agent'lar, bekleyen kalemler, günlük satırları, bir kartın ekranındaki kişiler) bir ya da iki harflik bir etiket; bir etiketi yazmak satırını kendi panelinde seçer, son harfi büyük yazılırsa onu açar da (`enter` gibi); `backspace` bir harfi geri alır, `esc` kapatır |
 | `t`  `:trace` | eldeki agent'ın ham akışı |
 | `v`  `:talk` | onun sizinle konuşması |
 | `esc` | geri |
@@ -168,6 +169,7 @@ Gelenekler vim'inkidir: `h` `j` `k` `l` hareket ve katlama, `gg` ve `G` uçlara,
 | `:needs` | `f` |
 | `:settle` | `s` |
 | `:peek` | `K` |
+| `:hints` | `F` |
 | `:fold` / `:unfold` | `zM` / `zR` |
 | `:trace` / `:talk` | `t` / `v` |
 | `:mark` | `m` |

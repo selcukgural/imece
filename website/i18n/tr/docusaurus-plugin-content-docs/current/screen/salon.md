@@ -121,6 +121,7 @@ Başlıktaki filo aynı şekilleri kullanır, böylece mono temada da okunur.
 | `&` (`:goto`) | bir agent'a ya da projeye adıyla ya da numarasıyla git, sizi bekleyenler önde; projesi ve işçisinin yardımcıları açılır, satırı gizleyecekse `f` bırakılır |
 | `enter` | derine in: bir agent'ın odağı (kartı, durumu, kökeni ve hikâyesi), yine `enter` ham akışı (iz) |
 | `K` (`:peek`) | göz at: eldeki agent'ın odağı görünümün üstünde bir pencerede, görünüm olduğu gibi kalır; `j` `k` sonraki / önceki agent, `enter` odağın tamamı, `@` ona yaz, `esc` ya da `K` kapatır |
+| `F` (`:hints`) | seçilebilen her satırda ipucu harfleri; bir etiket satırını seçer, son harfi büyük yazılırsa açar |
 | `t` (`:trace`) / `v` (`:talk`) | eldeki agent'ın ham akışı / konuşması |
 | `esc` | bir derinlik yukarı |
 
@@ -141,6 +142,10 @@ Sizi bekleyen ya da takılmış bir şey hiç kaldırılmaz: `kaldırılmadı: c
 ## Göz atmak
 
 `K` eldeki agent'ın (salonda seçili olan, bekleyen kalemin ya da günlük satırının ardındaki, ya da yakınlaştığınız) odağını ekranın üstünde, ondan biraz küçük bir pencerede açar; alttaki görünüm (salon, pano, kod haritası ya da bir kart) kıpırdamaz. Pencerede `j` `k` (ya da oklar) salonun sırasında sonraki / önceki agent'a geçer, `enter` odağın tamamını açar, `@` ona bir mesaj başlatır, `esc` ya da `K` kapatır; başka tuşlar bir şey yapmaz. Bitmiş bir agent'a böyle bakmak onu görmüş sayılır.
+
+## İpucu harfleri
+
+`F`, salon ekranında seçilebilen her satırın başına bir ya da iki harflik bir etiket koyar: salondaki proje başlıkları ve agent'lar (bir kartın ekranında onun kişileri), SENİ BEKLEYEN'in kalemleri ve görünen günlük satırları. İlk çizilen satırlar tek harf alır, önce orta sıra (`a s d f …`); satır harften çoksa son harfler iki harflik etiketleri başlatır (`ma`, `ms`, …), gerektiği kadar az, ve iki harflik bir etiketi başlatan harf kendi başına hiç etiket olmaz. Bir etiketi yazmak satırını seçer ve paneline geçer; son harfi büyük yazılırsa (`D`, `mS`) satırı `enter` gibi açar da: bir agent'ın odağı, bir değişiklik, bir sorunun konuşması, bir günlük satırının konuşması. O ana dek yazılan harfler etiketleri onlarla başlayanlara daraltır; hiçbir etikete uymayan harf bir şey yapmaz, `backspace` birini geri alır, `?` yardımı üstlerinde gösterir, `esc` kapatır. Etiketler `F` açıldığında verilir ve satırlarıyla kalır: yer değiştiren satır etiketini götürür, ekrandan çıkan onu kaybeder ve etiketini yazmak `o satır ekrandan çıktı` der. Ekranda böyle satır yoksa (pano, kod haritası, bir odak, salonun üstünde bir konuşma) `F` bunu söyler. Hem demo hem canlı oturumlarda vardır.
 
 ## Yan paneller
 

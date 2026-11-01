@@ -62,6 +62,7 @@ Bir mesaj birkaç satıra yayılabilir; kart açan bir mesajın ilk satırı kar
 | `:fold` / `:unfold` | `zM` / `zR` | her projeyi ve her işçinin yardımcılarını katla / aç |
 | `:trace [@NAME]` / `:talk [@NAME]` | `t` / `v` | adı verilen, yoksa eldeki agent'ın ham akışı / konuşması |
 | `:peek [@NAME]` | `K` | adı verilen, yoksa eldeki agent'ın odağı görünümün üstünde bir pencerede |
+| `:hints` | `F` | salon ekranında seçilebilen her satırda ipucu harfleri |
 | `:mark` | `m` | eldeki satırı işaretle |
 | `:pause`, `:faster`, `:slower` | `space`, `+`, `-` | yalnız demo; canlıda bunu söyler ve menüde yer almaz |
 

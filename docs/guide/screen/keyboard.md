@@ -59,6 +59,7 @@ The conventions are vim's: `h` `j` `k` `l` move and fold, `gg` and `G` go to the
 | `^o` | back where you were: view, panel, focus, card (vim's jump list, fifty places; an open conversation closes first) |
 | `enter` | look deeper: focus, then the raw stream |
 | `K`  `:peek` | a peek: the focus of the agent at hand in a window over the view, which stays as it was; in it `j` `k` the next / previous agent of the salon, `enter` its whole focus, `@` write to it, `esc` or `K` close |
+| `F`  `:hints` | hint letters: a label of one or two letters on every row of the salon's screen you can select (project headers, agents, waiting items, journal lines, the people on a card's screen); typing a label selects its row in its panel, its last letter in capitals opens it too (as `enter`); `backspace` takes a letter back, `esc` closes |
 | `t`  `:trace` | the raw stream of the agent at hand |
 | `v`  `:talk` | its conversation with you |
 | `esc` | go back |
@@ -168,6 +169,7 @@ The conventions are vim's: `h` `j` `k` `l` move and fold, `gg` and `G` go to the
 | `:needs` | `f` |
 | `:settle` | `s` |
 | `:peek` | `K` |
+| `:hints` | `F` |
 | `:fold` / `:unfold` | `zM` / `zR` |
 | `:trace` / `:talk` | `t` / `v` |
 | `:mark` | `m` |

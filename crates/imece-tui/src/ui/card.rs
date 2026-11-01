@@ -9,7 +9,7 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
 
 use super::*;
-use crate::app::{App, Pane, Sel};
+use crate::app::{App, Pane, Sel, Target};
 
 pub fn draw(f: &mut Frame, area: Rect, app: &App, c: CardId) {
     let w = &app.world;
@@ -44,6 +44,8 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App, c: CardId) {
     let people = w.card_people(c);
     *app.shown.borrow_mut() = people.iter().map(|&(id, _)| Sel::Agent(id)).collect();
     for &(id, part) in &people {
+        let y = inner.y + head.len() as u16;
+        hintable(app, Target::Row(Sel::Agent(id)), inner.x, y, inner);
         // After the part's ten columns.
         let width = usize::from(inner.width).saturating_sub(10);
         let line = salon::agent_line(app, &w.agents[id], "", &app.rungs(), width);
