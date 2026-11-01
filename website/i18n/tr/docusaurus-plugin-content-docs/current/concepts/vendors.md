@@ -27,6 +27,7 @@ Bir oturum, ajan başına bir, uzun ömürlü bir `claude -p` akışıdır (stre
 - **Open** `--restricted`'ı bırakır: yazan, Claude Code'un varsayılan araç takımını `--disallowedTools Agent,Task` ile alır; ayarlarınız, hook'larınız ve MCP sunucularınız yüklenir; okuyan listesini korur.
 - **Her turda denetlenir:** `init` olayı tam istenen araçları bildirmeli (open altında: en az onları, imece'nin sunucusu bir kez ve bağlı, alt ajan aracı yok), imece'nin MCP sunucusu tam araçlarıyla. Başka her şey oturumu durdurur.
 - Her oturum `--max-budget-usd` alır: başladığında bütçeden kalan; kaçan bir oturuma sert bir tavan ([bütçe](../concepts/budget-and-limits.md)). Maliyetler dolar olarak gelir.
+- Çabalı bir seçim (`opus@xhigh`, `@max`) `--effort` olur: `low`, `medium`, `high`, `xhigh` ya da `max`. Claude Code bilmediği bir çabayı yalnız uyarıp varsayılanıyla çalışır ve `init` olayı hangisi olduğunu değil, yalnız tur başına bir çabanın açık olduğunu söyler; bu yüzden imece bilinmeyen bir çabayı oturum başlamadan reddeder ([komut satırı](../reference/cli.md)).
 - Talimatlar Claude Code'un kendi sistem istemine eklenir, sonunda deponun `AGENTS.md` ya da `CLAUDE.md`'si (16 KiB tavan), çünkü `--restricted` onları düşürür.
 
 ## Codex
@@ -38,12 +39,12 @@ Bir oturum, uzun ömürlü bir `codex app-server`'dır (stdio üzerinde JSON-RPC
 - Standard ve strict eklentileri, uygulamaları, hook'ları, alt ajanları, bellekleri ve diğer özellikleri kapatır, oturum dosyası yazmaz (`history.persistence = "none"`; thread'in kendi rollout'u devam için tutulur) ve kendi `~/.codex` yapılandırmanızın getirdiği MCP sunucularını ve skill'leri adlarıyla kapatır: Codex yapılandırmanızı imece ne yaparsa yapsın yükler, bu yüzden ilk başlangıç neyin açık olduğunu okur ve bir şey açıksa imece Codex'i her birini adıyla kapatarak ikinci kez başlatır. Open yapılandırmanızı korur, yalnız alt ajan özelliği (`multi_agent`) kapalı.
 - **Thread başlamadan önce denetlenir:** `account/read` (yalnız ChatGPT oturumu), `config/read` her geçersiz kılmayı yansıtır, etkin eklenti yok, hook yok, tam imece'nin MCP sunucusu tam araçlarıyla, thread'in yanıtı onay politikasını, sandbox'ı ve dizini yansıtır. MCP sunucuları her turdan önce yeniden denetlenir. Gelmemesi gereken bir onay isteği, bir elicitation, dinamik bir araç çağrısı, bir web arama ya da alt ajan öğesi oturumu durdurur.
 - **Dolar değil, token.** ChatGPT planında bir tur bütçeye hiçbir şey yazmaz; iz bunu söyler ve token'ları gösterir. API anahtarıyla oturum reddedilir; imece maliyetini henüz sayamaz. Codex için oturum başına dolar tavanı yoktur; bütçe yine yeni turları durdurur.
-- Kademeler Codex'in varsayılan modelinde akıl yürütme çabalarıdır: `@low`, varsayılan, `@high`; bir `--tier codex:T=MODEL@ÇABA` değeri ikisini de belirler.
+- Kademeler Codex'in varsayılan modelinde akıl yürütme çabalarıdır: `@low`, varsayılan, `@high`; bir `--tier codex:T=MODEL@ÇABA` değeri ikisini de belirler. Codex'in çabaları `low`, `medium`, `high` ve `xhigh`; çaba her turla gider, Codex'in olmayan biri oturum başlamadan reddedilir.
 - Codex `AGENTS.md`'yi kendi okur, bu yüzden ona yalnız `CLAUDE.md` verilir.
 
 ## Gemini CLI
 
-Bir oturum, uzun ömürlü bir `gemini --acp`'dir (Agent Client Protocol v1, stdio üzerinde JSON-RPC).
+Bir oturum, uzun ömürlü bir `gemini --acp`'dir (Agent Client Protocol v1, stdio üzerinde JSON-RPC). Gemini CLI'da çaba ayarı yoktur: bir seçim yalnız model adlandırır, `gemini:pro@high` reddedilir.
 
 - Gemini'de `--restricted` gibi bir şey yoktur ve ayarlarını `~/.gemini`'den ve çalıştığı klasörün `.gemini` dizininden alır. Bu yüzden imece onu kendi **özel dizininde** çalıştırır (worktree'lerin yanında, `<worktrees kökü>-gemini/<ajan>`, güvenilir) ve ajanın dosyalarını dahil edilen dizin olarak verir: bir deponun `.gemini` ayarları, hook'ları ve `.env`'i oturuma asla ulaşmaz.
 - imece'nin oraya yazdığı bir **politika dosyası** tam rolün ve düzeyin araçlarına izin verir (lider için okuma araçları; yazanlar için okuma ve düzenleme araçları; standard'dan itibaren herkese sormadan web ve yazanlara her komuttan önce soran bir kabuk), artı imece'nin kendi araçları; strict ve standard altında diğer her aracı reddeder, o araç modele gösterilmez bile. Uzantılar kapalıdır ve imece'ninki dışında MCP sunucusuna izin yoktur. Open altında uzantılarınız, MCP sunucularınız ve politikalarınız çalışır; imece yalnız Gemini'nin ajan araçlarını ve lider için yazma araçlarını adıyla reddeder.

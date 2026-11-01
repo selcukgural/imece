@@ -98,10 +98,12 @@ The leader's coding agent. Without it: your primary vendor (set with `p` on the 
 
 ```sh
 imece --model sonnet
+imece --model opus@xhigh                 # Claude's opus, thinking at xhigh
+imece --model claude:@max                # Claude's default model at its deepest effort
 imece --model codex:gpt-5.6-terra@high
 ```
 
-The model agents of vendor `V` run on; without `V`, the leader's vendor. It is the `standard` tier: the leader runs on it, and so does every worker hired at the standard tier. Default: the vendor's own default (what you set up in Claude Code, Codex or Gemini CLI). A name is 1-64 characters of letters, digits and `-._[]@`, not starting with `-`, as the vendors take them (`sonnet`, `claude-opus-5-5`, `opus[1m]`, `gpt-5.6-terra@high`); anything else: `--model: "x y" is not a model name`. May be repeated, once per vendor.
+The model agents of vendor `V` run on; without `V`, the leader's vendor. It is the `standard` tier: the leader runs on it, and so does every worker hired at the standard tier. Default: the vendor's own default (what you set up in Claude Code, Codex or Gemini CLI). `NAME` is `[MODEL][@EFFORT]`, each part optional: a model name as the vendor takes it (`sonnet`, `claude-opus-5-5`, `opus[1m]`, `gpt-5.6-terra`), an effort after `@`, or both. The efforts are the vendor's own: Claude Code's `low`, `medium`, `high`, `xhigh`, `max` (its `--effort`); Codex's `low`, `medium`, `high`, `xhigh` (the reasoning effort of every turn); Gemini CLI has none. The whole is 1-64 characters of letters, digits and `-._[]@`, not starting with `-`; anything else: `--model: "x y" is not a model name`. An effort the vendor lacks is refused on the command line when the vendor is named (`--model: claude has no effort "bogus"; one of low, medium, high, xhigh, max`, `--model: gemini has no effort setting; name only a model, not @high`) and, for a bare value, when the team is built and the leader's vendor is known (`--model/--tier "opus@bogus": …`, exit code 1); Claude Code itself would only warn and run at its default effort, so imece checks first. May be repeated, once per vendor.
 
 ### `--tier [V:]T=NAME`
 
@@ -111,7 +113,7 @@ imece --tier codex:strong=gpt-5.6-terra@xhigh
 imece --tier gemini:cheap=gemini-2.5-flash-lite
 ```
 
-What a tier stands for, `T` being `cheap`, `standard` or `strong`. The leader hires by tier, never by model; each vendor has its own ladder (Claude: `haiku`, the default, `opus`; Codex: `@low`, the default, `@high`, an effort on its default model, or `MODEL@EFFORT`; Gemini: `flash`, the default `auto`, `pro`). This flag replaces one rung. Refusals: `--tier: "strong" is not TIER=MODEL, like strong=opus`, `--tier: "huge" is not cheap, standard or strong`, `--tier: "…" is not a model name`. A tier model your account lacks fails its first turn; imece then restarts that worker on the standard model and the journal says so ([team](../concepts/team.md)).
+What a tier stands for, `T` being `cheap`, `standard` or `strong`. The leader hires by tier, never by model; each vendor has its own ladder (Claude: `haiku`, the default, `opus`; Codex: `@low`, the default, `@high`, an effort on its default model; Gemini: `flash`, the default `auto`, `pro`). This flag replaces one rung; `NAME` is `[MODEL][@EFFORT]` as for `--model`, so `--tier strong=opus@xhigh` makes the strong tier Claude's opus thinking at xhigh. Refusals: `--tier: "strong" is not TIER=MODEL, like strong=opus`, `--tier: "huge" is not cheap, standard or strong`, `--tier: "…" is not a model name`, and the effort refusals of `--model`. A tier model your account lacks fails its first turn; imece then restarts that worker on the standard model and the journal says so ([team](../concepts/team.md)).
 
 ### `--budget USD`
 

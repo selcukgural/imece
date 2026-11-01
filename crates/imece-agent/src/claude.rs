@@ -72,6 +72,13 @@ pub fn model(tier: crate::Tier) -> Option<&'static str> {
     }
 }
 
+/// The efforts Claude Code's `--effort` takes (2.1.316), least first. An
+/// effort it does not know is only warned about, and the session runs at
+/// its default, so imece refuses one before the session starts. The
+/// `init` event says only that a per-turn effort is active, not which, so
+/// the level asked for is not verified afterwards.
+pub const EFFORTS: &[&str] = &["low", "medium", "high", "xhigh", "max"];
+
 /// Tools that read files.
 pub const READ_TOOLS: &[&str] = &["Glob", "Grep", "Read"];
 /// Tools that read and change files.
@@ -118,6 +125,8 @@ pub struct Spec {
     /// default toolset and a reader its list.
     pub write: bool,
     pub model: Option<String>,
+    /// One of [`EFFORTS`], or none for Claude Code's own default.
+    pub effort: Option<String>,
     /// The session's spending cap, in millionths of a dollar.
     pub budget: u64,
     /// Appended to Claude Code's own system prompt.
@@ -244,6 +253,10 @@ pub fn args(spec: &Spec) -> Vec<String> {
     if let Some(m) = &spec.model {
         a.push("--model".into());
         a.push(m.clone());
+    }
+    if let Some(e) = &spec.effort {
+        a.push("--effort".into());
+        a.push(e.clone());
     }
     if let Some(r) = &spec.resume {
         a.push("--resume".into());
@@ -646,6 +659,14 @@ impl Session {
         argv: Vec<String>,
         mut on: impl FnMut(Event) + Send + 'static,
     ) -> io::Result<Session> {
+        // Claude Code would run at its default effort and only warn.
+        let choice = crate::Choice {
+            model: None,
+            effort: spec.effort.clone(),
+        };
+        if let Err(why) = choice.check(PROGRAM, EFFORTS) {
+            return Err(io::Error::new(io::ErrorKind::InvalidInput, why));
+        }
         let mut cmd = child::command(&spec.program, &spec.cwd, ENV);
         cmd.args(argv);
         let mut parser = Parser::new(spec);
@@ -841,6 +862,7 @@ mod tests {
             confine: Confine::Strict,
             write: true,
             model: None,
+            effort: None,
             budget: 1_250_000,
             system: "You are claude-1.".into(),
             mcp: None,
@@ -953,6 +975,42 @@ mod tests {
 
     fn after(a: &[String], f: &str) -> Option<String> {
         a.iter().position(|x| x == f).map(|i| a[i + 1].clone())
+    }
+
+    #[test]
+    fn the_effort_goes_on_the_command_line_only_when_chosen() {
+        assert_eq!(EFFORTS, ["low", "medium", "high", "xhigh", "max"]);
+        let mut s = spec(EDIT_TOOLS);
+        assert_eq!(after(&args(&s), "--effort"), None);
+        s.model = Some("opus".into());
+        s.effort = Some("xhigh".into());
+        let a = args(&s);
+        assert_eq!(after(&a, "--effort").as_deref(), Some("xhigh"));
+        assert_eq!(after(&a, "--model").as_deref(), Some("opus"));
+        s.model = None;
+        assert_eq!(after(&args(&s), "--effort").as_deref(), Some("xhigh"));
+        assert_eq!(after(&args(&s), "--model"), None, "an effort alone");
+    }
+
+    #[test]
+    fn an_effort_claude_code_does_not_know_never_starts_a_session() {
+        // Claude Code would only warn and run at its default effort; the
+        // check comes before the program is looked for.
+        let mut s = spec(EDIT_TOOLS);
+        s.program = "/nonexistent/claude".into();
+        for bad in ["bogus", "High", ""] {
+            s.effort = Some(bad.into());
+            let e = Session::start(&s, |_| {}).err().expect("refused");
+            assert_eq!(e.kind(), io::ErrorKind::InvalidInput, "{bad:?}");
+            assert!(
+                e.to_string().contains("claude has no effort")
+                    && e.to_string().contains("low, medium, high, xhigh, max"),
+                "{bad:?}: {e}"
+            );
+        }
+        s.effort = Some("max".into());
+        let e = Session::start(&s, |_| {}).err().expect("refused");
+        assert_ne!(e.kind(), io::ErrorKind::InvalidInput, "a known effort: {e}");
     }
 
     #[test]
@@ -2048,6 +2106,7 @@ sleep 5"#
             confine: Confine::Standard,
             write: true,
             model: Some("haiku".into()),
+            effort: None,
             budget: 100_000,
             system: "You are a probe. Run exactly the command you are given with Bash, \
                      once, and say in one line what it printed."
@@ -2137,6 +2196,7 @@ sleep 5"#
             confine: Confine::Strict,
             write: false,
             model: Some("haiku".into()),
+            effort: None,
             budget: 50_000,
             system: "You are a probe. Answer in one short line.".into(),
             mcp: None,

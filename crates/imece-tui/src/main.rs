@@ -52,11 +52,15 @@ one at hand; ? lists every key and command.
                     with p in that question, or with :lead VENDOR), else the
                     only one on PATH, else the question
   --model [V:]NAME  the model agents of vendor V run on (default: the
-                    vendor's own); without V, the leader's vendor
+                    vendor's own); without V, the leader's vendor. NAME is
+                    [MODEL][@EFFORT]: opus, opus@xhigh, @high; the efforts
+                    are claude's low, medium, high, xhigh, max and codex's
+                    low, medium, high, xhigh; gemini has none
   --tier [V:]T=NAME the model a tier stands for, T being cheap, standard or
                     strong (claude: haiku, the vendor's own, opus; codex:
                     an effort on its default model, @low, the default,
-                    @high, or MODEL@EFFORT); without V, the leader's vendor
+                    @high; gemini: flash, auto, pro); without V, the
+                    leader's vendor
   --budget USD      the most all agents together may spend; one pot, kept
                     between runs (50 the first time); :budget USD changes
                     it while agents run
@@ -331,19 +335,29 @@ fn parse_tier(s: &str) -> Result<(Option<Vendor>, Tier, String), String> {
         .ok_or_else(|| format!("--tier: {s:?} is not TIER=MODEL, like strong=opus"))?;
     let tier = Tier::from_wire(tier)
         .ok_or_else(|| format!("--tier: {tier:?} is not cheap, standard or strong"))?;
-    if !valid_model(model) {
-        return Err(format!("--tier: {model:?} is not a model name"));
-    }
+    checked("--tier", vendor, model)?;
     Ok((vendor, tier, model.to_string()))
 }
 
 /// `[VENDOR:]MODEL`, as `--model` takes it: the standard tier.
 fn parse_model(s: &str) -> Result<(Option<Vendor>, Tier, String), String> {
     let (vendor, model) = split_vendor("--model", s)?;
-    if !valid_model(model) {
-        return Err(format!("--model: {model:?} is not a model name"));
-    }
+    checked("--model", vendor, model)?;
     Ok((vendor, Tier::Standard, model.to_string()))
+}
+
+/// `model` (`[MODEL][@EFFORT]`) as `flag` took it: a model name, asking
+/// `vendor` only for an effort it has. A bare value's vendor is the
+/// leader's, known only once the team is built: its effort is checked
+/// there (`live::world`).
+fn checked(flag: &str, vendor: Option<Vendor>, model: &str) -> Result<(), String> {
+    if !valid_model(model) {
+        return Err(format!("{flag}: {model:?} is not a model name"));
+    }
+    if let Some(v) = vendor {
+        live::valid_choice(v, model).map_err(|why| format!("{flag}: {why}"))?;
+    }
+    Ok(())
 }
 
 fn main() -> std::io::Result<()> {
@@ -870,6 +884,42 @@ mod tests {
             let e = parse_model(bad).unwrap_err();
             assert!(e.starts_with("--model") && e.contains(why), "{bad}: {e}");
         }
+    }
+
+    #[test]
+    fn an_effort_is_checked_against_its_vendor_when_the_vendor_is_named() {
+        let ok = |s: &str| parse_model(s).is_ok();
+        assert!(ok("claude:opus@xhigh") && ok("claude:@max") && ok("codex:@xhigh"));
+        assert!(ok("gemini:pro"));
+        assert!(
+            ok("opus@bogus") && parse_tier("strong=pro@low").is_ok(),
+            "bare: the leader's vendor, checked when the team is built"
+        );
+        for (bad, why) in [
+            (
+                "claude:opus@bogus",
+                "claude has no effort \"bogus\"; one of low, medium, high, xhigh, max",
+            ),
+            (
+                "codex:@max",
+                "codex has no effort \"max\"; one of low, medium, high, xhigh",
+            ),
+            (
+                "gemini:pro@high",
+                "gemini has no effort setting; name only a model, not @high",
+            ),
+        ] {
+            assert_eq!(parse_model(bad), Err(format!("--model: {why}")), "{bad}");
+            let e = parse_tier(&format!(
+                "{}:strong={}",
+                &bad[..bad.find(':').unwrap()],
+                &bad[bad.find(':').unwrap() + 1..]
+            ))
+            .unwrap_err();
+            assert_eq!(e, format!("--tier: {why}"), "{bad}");
+        }
+        let e = args(&["--model", "codex:@max"], &[]).unwrap_err();
+        assert!(e.starts_with("--model: codex has no effort"), "{e}");
     }
 
     #[test]

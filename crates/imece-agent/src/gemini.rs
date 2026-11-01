@@ -104,6 +104,10 @@ pub fn model(tier: crate::Tier) -> Option<&'static str> {
     }
 }
 
+/// Gemini CLI has no effort setting (0.65.0: a model, nothing to turn on
+/// it), so a choice with an `@EFFORT` is refused before the session starts.
+pub const EFFORTS: &[&str] = &[];
+
 /// What Gemini CLI's `/about` reports as the model when none was named.
 const AUTO: &str = "auto";
 
@@ -1393,6 +1397,11 @@ impl Session {
     /// Starts the session. `on` gets its events on the driver thread; the
     /// last one is [`Event::Stopped`], unless the session was terminated.
     pub fn start(spec: &Spec, on: impl FnMut(Event) + Send + 'static) -> io::Result<Session> {
+        // Before anything is written to the private directory.
+        let choice = spec.model.as_deref().map(crate::Choice::parse);
+        if let Err(why) = choice.unwrap_or_default().check(PROGRAM, EFFORTS) {
+            return Err(io::Error::new(io::ErrorKind::InvalidInput, why));
+        }
         let (tx, rx) = mpsc::channel();
         let child = spawn(spec, tx.clone())?;
         let spec = spec.clone();
@@ -1564,6 +1573,32 @@ mod tests {
             tools: vec!["send".into(), "post".into()],
         });
         s
+    }
+
+    #[test]
+    fn gemini_has_no_effort_so_a_choice_with_one_never_starts_a_session() {
+        assert!(EFFORTS.is_empty());
+        let dir = std::env::temp_dir().join(format!("imece-gemini-effort-{}", std::process::id()));
+        let mut s = spec(true);
+        s.program = "/nonexistent/gemini".into();
+        s.home = dir.clone();
+        for bad in ["pro@high", "@low"] {
+            s.model = Some(bad.into());
+            let e = Session::start(&s, |_| {}).err().expect("refused");
+            assert_eq!(e.kind(), io::ErrorKind::InvalidInput, "{bad:?}");
+            assert!(
+                e.to_string().contains("gemini has no effort setting"),
+                "{bad:?}: {e}"
+            );
+        }
+        assert!(
+            !dir.exists(),
+            "refused before the private directory is made"
+        );
+        s.model = Some("pro".into());
+        let e = Session::start(&s, |_| {}).err().expect("refused");
+        assert_ne!(e.kind(), io::ErrorKind::InvalidInput, "a model alone: {e}");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

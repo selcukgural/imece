@@ -98,10 +98,12 @@ Liderin kodlama ajanı. Onsuz: birincil satıcınız (soru ekranında `p` ile, y
 
 ```sh
 imece --model sonnet
+imece --model opus@xhigh                 # Claude'un opus'u, xhigh düşünce çabasıyla
+imece --model claude:@max                # Claude'un varsayılan modeli en derin çabada
 imece --model codex:gpt-5.6-terra@high
 ```
 
-`V` satıcısının ajanlarının çalıştığı model; `V` yoksa liderin satıcısı. Bu `standard` kademesidir: lider onda çalışır, standart kademede işe alınan her işçi de. Varsayılan: satıcının kendi varsayılanı (Claude Code, Codex ya da Gemini CLI'da ayarladığınız). Bir ad, satıcıların aldığı biçimde, `-` ile başlamayan 1-64 karakter harf, rakam ve `-._[]@`'dir (`sonnet`, `claude-opus-5-5`, `opus[1m]`, `gpt-5.6-terra@high`); başkası: `--model: "x y" is not a model name`. Satıcı başına bir kez yinelenebilir.
+`V` satıcısının ajanlarının çalıştığı model; `V` yoksa liderin satıcısı. Bu `standard` kademesidir: lider onda çalışır, standart kademede işe alınan her işçi de. Varsayılan: satıcının kendi varsayılanı (Claude Code, Codex ya da Gemini CLI'da ayarladığınız). `NAME` `[MODEL][@ÇABA]` biçimindedir, iki parça da isteğe bağlı: satıcının aldığı biçimde bir model adı (`sonnet`, `claude-opus-5-5`, `opus[1m]`, `gpt-5.6-terra`), `@` sonrasında bir çaba, ya da ikisi. Çabalar satıcının kendi çabalarıdır: Claude Code'un `low`, `medium`, `high`, `xhigh`, `max` (kendi `--effort`'u); Codex'in `low`, `medium`, `high`, `xhigh` (her turun akıl yürütme çabası); Gemini CLI'da yoktur. Bütünü `-` ile başlamayan 1-64 karakter harf, rakam ve `-._[]@`'dir; başkası: `--model: "x y" is not a model name`. Satıcının olmayan bir çaba, satıcı adlandırılmışsa komut satırında reddedilir (`--model: claude has no effort "bogus"; one of low, medium, high, xhigh, max`, `--model: gemini has no effort setting; name only a model, not @high`); öneksiz bir değer için takım kurulup liderin satıcısı bilinince (`--model/--tier "opus@bogus": …`, çıkış kodu 1); Claude Code kendisi yalnız uyarıp varsayılan çabasıyla çalışırdı, bu yüzden imece önce denetler. Satıcı başına bir kez yinelenebilir.
 
 ### `--tier [V:]T=NAME`
 
@@ -111,7 +113,7 @@ imece --tier codex:strong=gpt-5.6-terra@xhigh
 imece --tier gemini:cheap=gemini-2.5-flash-lite
 ```
 
-Bir kademenin karşılığı; `T` `cheap`, `standard` ya da `strong`. Lider kademeyle işe alır, modelle değil; her satıcının kendi basamakları vardır (Claude: `haiku`, varsayılan, `opus`; Codex: varsayılan modelinde bir çaba, `@low`, varsayılan, `@high`, ya da `MODEL@EFFORT`; Gemini: `flash`, varsayılan `auto`, `pro`). Bu bayrak bir basamağı değiştirir. Redler: `--tier: "strong" is not TIER=MODEL, like strong=opus`, `--tier: "huge" is not cheap, standard or strong`, `--tier: "…" is not a model name`. Hesabınızda olmayan bir kademe modeli ilk turunda başarısız olur; imece o işçiyi standart modelle yeniden başlatır ve günlük bunu söyler ([takım](../concepts/team.md)).
+Bir kademenin karşılığı; `T` `cheap`, `standard` ya da `strong`. Lider kademeyle işe alır, modelle değil; her satıcının kendi basamakları vardır (Claude: `haiku`, varsayılan, `opus`; Codex: varsayılan modelinde bir çaba, `@low`, varsayılan, `@high`; Gemini: `flash`, varsayılan `auto`, `pro`). Bu bayrak bir basamağı değiştirir; `NAME` `--model`'deki gibi `[MODEL][@ÇABA]`dır, yani `--tier strong=opus@xhigh` güçlü kademeyi Claude'un xhigh çabayla düşünen opus'u yapar. Redler: `--tier: "strong" is not TIER=MODEL, like strong=opus`, `--tier: "huge" is not cheap, standard or strong`, `--tier: "…" is not a model name` ve `--model`'in çaba redleri. Hesabınızda olmayan bir kademe modeli ilk turunda başarısız olur; imece o işçiyi standart modelle yeniden başlatır ve günlük bunu söyler ([takım](../concepts/team.md)).
 
 ### `--budget USD`
 

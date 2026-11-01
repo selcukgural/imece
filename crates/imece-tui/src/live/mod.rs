@@ -35,8 +35,8 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use imece_agent::mcp::{Answer, Server, Tool};
 use imece_agent::{
-    APPROVE_TOOL, Agent as Session, Ask, Confine, Event as AgentEvent, Mcp, Tier, child, claude,
-    codex, copy, gemini, run, worktree,
+    APPROVE_TOOL, Agent as Session, Ask, Choice, Confine, Event as AgentEvent, Mcp, Tier, child,
+    claude, codex, copy, gemini, run, worktree,
 };
 use serde_json::{Value, json};
 
@@ -103,6 +103,22 @@ pub const KNOWN: &[Known] = &[
     (Vendor::Codex, codex::PROGRAM, true),
     (Vendor::Gemini, gemini::PROGRAM, true),
 ];
+
+/// The efforts vendor `v`'s CLI can be asked for; none for one with no
+/// such setting.
+pub fn efforts(v: Vendor) -> &'static [&'static str] {
+    match v {
+        Vendor::Codex => codex::EFFORTS,
+        Vendor::Gemini => gemini::EFFORTS,
+        _ => claude::EFFORTS,
+    }
+}
+
+/// Whether the choice `s` (`[MODEL][@EFFORT]`) asks vendor `v` only for an
+/// effort it has; else why not, in words for the person.
+pub fn valid_choice(v: Vendor, s: &str) -> Result<(), String> {
+    Choice::parse(s).check(v.label(), efforts(v))
+}
 
 /// The models a vendor's tiers stand for; none is the vendor's own default.
 #[derive(Clone, Debug, PartialEq)]
@@ -547,6 +563,7 @@ pub fn leaders(present: &[(Vendor, bool)]) -> Vec<Vendor> {
 pub fn world(o: Options, present: &[(Vendor, bool)]) -> Result<(World, Live), String> {
     let repo = worktree::top(&o.repo).map_err(|e| format!("{}: {e}", o.repo.display()))?;
     let vendors = team_vendors(hireable(present, o.lead)?, o.lead, &o.tiers);
+    check_ladders(&vendors)?;
     let file = o.state.join(store::FILE);
     let mut store = Store::open(&file)?;
     let loaded = store
