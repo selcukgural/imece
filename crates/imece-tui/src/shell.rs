@@ -135,7 +135,7 @@ fn no_suspend(mut t: libc::termios) -> libc::termios {
 /// closed on exec, so a child another thread spawns meanwhile holds
 /// neither; the command gets the slave as its own before its exec.
 fn open_pty(like: Option<&libc::termios>, size: libc::winsize) -> io::Result<(OwnedFd, OwnedFd)> {
-    let (mut master, mut slave) = (-1, -1);
+    let (mut master, mut slave): (RawFd, RawFd) = (0, 0);
     let mut like = like.copied().map(no_suspend);
     let mut size = size;
     let termp = like
@@ -149,7 +149,7 @@ fn open_pty(like: Option<&libc::termios>, size: libc::winsize) -> io::Result<(Ow
             &mut slave,
             std::ptr::null_mut(),
             termp,
-            &mut size,
+            &raw mut size,
         )
     };
     if opened != 0 {
@@ -236,7 +236,16 @@ fn got(read: io::Result<usize>) -> Got {
     match read {
         Ok(0) => Got::End,
         Ok(n) => Got::Bytes(n),
-        Err(e) if e.kind() == io::ErrorKind::Interrupted => Got::Again,
+        // A signal first, or nothing there after all (an input that
+        // does not block).
+        Err(e)
+            if matches!(
+                e.kind(),
+                io::ErrorKind::Interrupted | io::ErrorKind::WouldBlock
+            ) =>
+        {
+            Got::Again
+        }
         // EIO on the master once the command's side is closed.
         Err(_) => Got::End,
     }
@@ -289,22 +298,15 @@ fn pump(
         if done.is_some_and(|(_, _, at)| drained(at, Instant::now())) {
             break;
         }
-        let keys_fd = input.as_ref().map_or(-1, |i| i.as_raw_fd());
-        let mut fds = [
-            libc::pollfd {
-                fd: master.as_raw_fd(),
-                events: libc::POLLIN,
-                revents: 0,
-            },
-            libc::pollfd {
-                fd: keys_fd,
-                events: libc::POLLIN,
-                revents: 0,
-            },
-        ];
-        // SAFETY: two `pollfd`s that live through the call; a negative
-        // descriptor is skipped.
-        unsafe { libc::poll(fds.as_mut_ptr(), 2, TICK) };
+        let wait = |fd: RawFd| libc::pollfd {
+            fd,
+            events: libc::POLLIN,
+            revents: 0,
+        };
+        let mut fds = vec![wait(master.as_raw_fd())];
+        fds.extend(input.as_ref().map(|i| wait(i.as_raw_fd())));
+        // SAFETY: the `pollfd`s live through the call, `fds.len()` of them.
+        unsafe { libc::poll(fds.as_mut_ptr(), fds.len() as libc::nfds_t, TICK) };
         if fds[0].revents != 0 {
             match read_from(&mut master, &mut buf) {
                 Got::Bytes(n) => {
@@ -318,7 +320,7 @@ fn pump(
                 Got::End => break,
             }
         }
-        if fds[1].revents != 0
+        if fds.get(1).is_some_and(|keys| keys.revents != 0)
             && let Some(from) = input.as_mut()
         {
             match read_from(from, &mut buf) {
@@ -679,6 +681,11 @@ mod tests {
         // SAFETY: pipe writes two fresh descriptors.
         assert_eq!(unsafe { libc::pipe(fds.as_mut_ptr()) }, 0);
         let (r, w) = unsafe { (OwnedFd::from_raw_fd(fds[0]), File::from_raw_fd(fds[1])) };
+        // Not blocking, as a mutant that reads it when nothing is there
+        // must not hang the run (the screen's input is only read when
+        // `poll` says so).
+        // SAFETY: setting a flag on a descriptor the test owns.
+        unsafe { libc::fcntl(r.as_raw_fd(), libc::F_SETFL, libc::O_NONBLOCK) };
         let mut w = w;
         w.write_all(bytes).unwrap();
         (r, w)
@@ -727,6 +734,8 @@ mod tests {
         assert_eq!(got(Ok(0)), Got::End);
         let interrupted = io::Error::from(io::ErrorKind::Interrupted);
         assert_eq!(got(Err(interrupted)), Got::Again);
+        let empty = io::Error::from(io::ErrorKind::WouldBlock);
+        assert_eq!(got(Err(empty)), Got::Again);
         // EIO: the command's side of its terminal is closed.
         assert_eq!(got(Err(io::Error::from_raw_os_error(libc::EIO))), Got::End);
     }
@@ -742,6 +751,7 @@ mod tests {
 
     #[test]
     fn keep_cuts_to_the_last_kept_bytes_exactly() {
+        assert_eq!(KEPT, 65_536, "64 KiB");
         let mut kept = vec![b'x'; KEPT - 1];
         keep(&mut kept, b"ab");
         assert_eq!(kept.len(), KEPT);
