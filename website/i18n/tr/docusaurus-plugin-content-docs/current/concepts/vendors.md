@@ -67,6 +67,8 @@ Bir oturum, uzun ömürlü bir `gemini --acp`'dir (Agent Client Protocol v1, std
 
 Claude Code `rate_limit_event`, Codex `account/rateLimits/updated` gönderir; Gemini hiçbirini bildirmez. imece hesap için satıcı ve uzunluk başına (beş saat, bir hafta) bir pencere tutar ve başlık bütçeden sonra her satıcının dolmaya en yakın penceresini gösterir: `claude 5 sa: %48 kaldı, 1 sa 59 dk sonra yenilenir`, %90 kullanımdan itibaren dikkat renginde. Bir aboneliğin limiti ekibi bütçeden önce durdurabilir; imece bir turu kendisi durdurmaz, satıcının reddini gösterir. Pencereler çalıştırmalar arasında saklanmaz; bir oturum ilk turunda yeniden söyler.
 
+Her agent'ın bağlam penceresi de bildirilir: Claude Code'un her mesajı isteğin token'larını (o ana kadarki bağlam), sonucu modelin penceresini taşır; Codex'in `thread/tokenUsage/updated`'i son isteğin token'larını ve `modelContextWindow`'u; Gemini'nin `usage_update`'i kullanılan token'ları ve kendi tablosundaki boyutu. Agent'ın satırı %70'ten itibaren `◔ %72` gösterir, odağı rakamı ([salon](../screen/salon.md)); iz doluluğu onda birlik adımlarla not eder. Oturumla birlikte gider.
+
 ## Hangi satıcı lider, hangileri işe alınır
 
 `--lead` liderin satıcısını adlandırır; lider PATH'teki her satıcıdan işçi alabilir (`hire` bir satıcı alır). Karma ekipler işin özüdür: bkz. [karma satıcılar](../scenarios/mixed-vendors.md) ve [ekip](../concepts/team.md). Satıcı başına devam [oturumlar](../concepts/sessions.md) sayfasında.

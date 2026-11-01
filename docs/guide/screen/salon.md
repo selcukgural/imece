@@ -61,6 +61,7 @@ An agent's row:
 - How long it has been in that state, from a minute on: `· 3 min`, `· 1 h 5 min`. For something waiting for you, since the item came.
 - What it has cost, when anything.
 - `≡ 3/7`: how far its own to-do list is, the steps done and all of them, when its planning tool keeps one (Claude Code's tasks, Codex's `update_plan`; Gemini's `write_todos` reaches imece without its steps). The focus lists the steps. The mark gives way after the quote and the time when the row is narrow. Gone with the session.
+- `◔ 72%`: how full its context window is, from 70% on, in the attention colour from 90%, as its vendor last said (Claude Code's message usage and the window its result names, Codex's token-usage update, Gemini's usage meter). The focus has the figure whatever it is, `context: 22% · 45k of 200k`, or the tokens alone when the vendor does not say the window's size. It stays on a narrow row longer than the to-do mark. Gone with the session.
 - A worker's worktree stand, `⎇ fix-parser ↑2 ↓1 +12 −3`: the branch the agent made (none while the worktree is detached, as imece makes it), its own commits the checkout does not have (imece's marks of applied changes are not counted), the checkout's commits it does not have, and the lines added and removed against its own HEAD, untracked files included: what its next `done` would hand you. Each part shows only when there is something to say. Read on imece's git thread as the session starts, when a turn ends, after an apply and every 15 seconds while the worker or a helper is mid-turn; not kept between runs.
 - `▾ 1 helpers` or `▸ 1 helpers`: its helpers are listed under it, or folded away.
 - `↗ localhost:5173/`: the newest loopback address the worker or helper wrote in its own text, as a link the terminal opens (OSC 8). Only `http`/`https` on `localhost`, `127.0.0.1` or `[::1]` counts, the query and fragment are dropped, and an address over 60 characters is not shown. Gone with the session.
@@ -99,6 +100,7 @@ Every glyph the `?` help lists, as the screen draws them:
 | `⎇` `↑` `↓` `+N −M` | a worker's worktree: branch, own commits, the checkout's new commits, lines not yet handed over |
 | `↗` | a local address the worker wrote, a link the terminal opens |
 | `≡ 3/7` | its own to-do list: steps done, and all of them |
+| `◔ 72%` | its context window, this full; shown from 70%, loud from 90% |
 | `✱` | a line you marked with `m`; `'` goes to the next |
 
 The fleet in the header uses the same shapes, so it reads in the mono theme too.

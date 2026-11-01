@@ -283,6 +283,10 @@ pub struct Text {
     pub plan_done: &'static str,
     /// The steps a long list leaves off its focus: how many.
     pub plan_more: &'static str,
+    /// The focus's context line: percent, tokens in it, the window's size.
+    pub context_line: &'static str,
+    /// The same when the vendor does not say the window's size: tokens.
+    pub context_tokens: &'static str,
     pub queue: &'static str,
     pub queue_empty: &'static str,
     pub latest: &'static str,
@@ -688,6 +692,8 @@ pub const EN: Text = Text {
     plan_title: "TO DO {}/{}",
     plan_done: "✓ {} done",
     plan_more: "… {} more",
+    context_line: "context:  {}% · {} of {}",
+    context_tokens: "context:  {} tokens",
     queue: "QUEUE ",
     queue_empty: " empty",
     latest: "  │ latest:",
@@ -1007,7 +1013,7 @@ pub const EN: Text = Text {
     help_legend: [
         " ◆ lead  ◌ starting  ● working  ◐ asking  ✕ blocked  ! waiting for you",
         " ◇ researcher  ○ idle  ✓ done, not seen  ■ stopped  ⇄ conversation  ▾ ▸ project / helpers  ▴ pinned",
-        " ~ soft-tainted (read a report)  ≈ tainted (reads the outside world)",
+        " ~ soft-tainted (read a report)  ≈ tainted (reads the outside world)  ◔ 72% of its context window used (from 70%)",
         " ⎇ branch  ↑ own commits  ↓ the checkout's new commits  +N −M lines not yet handed over",
         " ↗ a local address the worker wrote (localhost), a link the terminal opens  ≡ 3/7 its to-do steps done",
         " ✱ a line you marked (m), kept between runs; ' goes to the next",
@@ -1196,6 +1202,8 @@ pub const TR: Text = Text {
     plan_title: "YAPILACAKLAR {}/{}",
     plan_done: "✓ {} bitti",
     plan_more: "… {} daha",
+    context_line: "bağlam:   %{} · {} / {}",
+    context_tokens: "bağlam:   {} token",
     queue: "KUYRUK ",
     queue_empty: " boş",
     latest: "  │ son:",
@@ -1517,7 +1525,7 @@ pub const TR: Text = Text {
     help_legend: [
         " ◆ lider  ◌ başlıyor  ● çalışıyor  ◐ soruyor  ✕ bloke  ! onayını bekliyor",
         " ◇ araştırmacı  ○ boşta  ✓ bitti, bakılmadı  ■ durdu  ⇄ konuşma  ▾ ▸ proje / yardımcılar  ▴ sabit",
-        " ~ hafif kirli (rapor okudu)  ≈ kirli (dış dünyayı okuyor)",
+        " ~ hafif kirli (rapor okudu)  ≈ kirli (dış dünyayı okuyor)  ◔ %72 bağlam penceresi dolu (%70'ten)",
         " ⎇ dal  ↑ kendi commit'leri  ↓ checkout'un yeni commit'leri  +N −M henüz verilmemiş satırlar",
         " ↗ worker'ın yazdığı yerel adres (localhost), terminalin açtığı bir bağlantı  ≡ 3/7 yapılacaklarından biten",
         " ✱ işaretlediğin satır (m), çalıştırmalar arasında kalır; ' sonrakine gider",
@@ -1604,6 +1612,8 @@ mod tests {
             (e.plan_title, t.plan_title),
             (e.plan_done, t.plan_done),
             (e.plan_more, t.plan_more),
+            (e.context_line, t.context_line),
+            (e.context_tokens, t.context_tokens),
             (e.ev_interrupted, t.ev_interrupted),
             (e.store_failed, t.store_failed),
             (e.st_touched, t.st_touched),

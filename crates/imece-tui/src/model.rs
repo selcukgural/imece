@@ -465,6 +465,11 @@ pub struct Agent {
     /// (`imece_agent::Event::Plan`): `≡ 3/7` on its row, the steps on its
     /// focus. Gone with the session; not kept between runs.
     pub plan: Vec<Step>,
+    /// How full its context window is, as its vendor last said
+    /// (`imece_agent::Event::Context`): `◔ 72%` on its row from
+    /// `CONTEXT_SHOWN`, the figure on its focus. Gone with the session;
+    /// not kept between runs.
+    pub context: Option<Fill>,
     /// A researcher that finished; kept so ids stay stable.
     pub gone: bool,
 }
@@ -482,6 +487,27 @@ pub enum StepState {
     Todo,
     Doing,
     Done,
+}
+
+/// How full an agent's context window is: the tokens in it, and its size
+/// when the vendor says.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Fill {
+    pub used: u64,
+    pub size: Option<u64>,
+}
+
+/// The row shows the context from this percent on.
+pub const CONTEXT_SHOWN: u8 = 70;
+/// And in the attention colour from this one.
+pub const CONTEXT_LOUD: u8 = 90;
+
+impl Fill {
+    /// Percent of the window used, at most 100; none without a size.
+    pub fn percent(&self) -> Option<u8> {
+        let size = self.size.filter(|&s| s > 0)?;
+        Some((self.used.saturating_mul(100) / size).min(100) as u8)
+    }
 }
 
 /// Where a worker's worktree stands: the branch an agent put it on (none
@@ -531,6 +557,7 @@ impl Agent {
             stand: Stand::default(),
             local: None,
             plan: Vec::new(),
+            context: None,
             gone: false,
         }
     }
@@ -1508,6 +1535,7 @@ impl World {
         a.activity = None;
         a.talk = None;
         a.plan.clear();
+        a.context = None;
         a.set_status(Status::Idle, t);
         a.gone = true;
         a.trace(t, "left");
@@ -2151,6 +2179,35 @@ pub fn dollars(cost: u64) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_fill_s_percent_needs_a_size_and_stops_at_a_hundred() {
+        let fill = |used, size| Fill { used, size };
+        assert_eq!(fill(45_506, None).percent(), None);
+        assert_eq!(fill(45_506, Some(0)).percent(), None);
+        assert_eq!(fill(45_506, Some(200_000)).percent(), Some(22));
+        assert_eq!(fill(139_999, Some(200_000)).percent(), Some(69));
+        assert_eq!(fill(140_000, Some(200_000)).percent(), Some(70));
+        assert_eq!(fill(200_000, Some(200_000)).percent(), Some(100));
+        assert_eq!(fill(250_000, Some(200_000)).percent(), Some(100));
+        assert_eq!(fill(0, Some(200_000)).percent(), Some(0));
+        assert_eq!((CONTEXT_SHOWN, CONTEXT_LOUD), (70, 90));
+        // Leaving forgets it.
+        let mut a = Agent::new(
+            0,
+            0,
+            "a".into(),
+            Vendor::Claude,
+            Role::Worker,
+            Status::Idle,
+            0,
+        );
+        assert_eq!(a.context, None);
+        a.context = Some(fill(1, Some(2)));
+        let mut w = world(vec![a]);
+        w.leave(0);
+        assert_eq!(w.agents[0].context, None);
+    }
 
     #[test]
     fn plan_count_counts_the_done_steps_and_leaving_clears_the_list() {

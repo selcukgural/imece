@@ -62,6 +62,7 @@ Bir agent'ın satırı:
 - O durumda ne zamandır olduğu, bir dakikadan başlayarak: `· 3 dk`, `· 1 sa 5 dk`. Sizi bekleyen bir şey için öğe geldiğinden beri.
 - Varsa harcadığı.
 - `≡ 3/7`: kendi yapılacaklar listesinin neresinde olduğu, biten adımlar ve hepsi; planlama aracı bir liste tutuyorsa (Claude Code'un görevleri, Codex'in `update_plan`'i; Gemini'nin `write_todos`'u imece'ye adımları olmadan ulaşır). Odak adımları listeler. Satır darsa işaret alıntıdan ve süreden sonra yer verir. Oturumla birlikte gider.
+- `◔ %72`: bağlam penceresinin ne kadar dolu olduğu, %70'ten itibaren, %90'dan itibaren dikkat renginde, satıcının son söylediğince (Claude Code'un mesaj kullanımı ve sonucun adlandırdığı pencere, Codex'in token kullanımı güncellemesi, Gemini'nin kullanım sayacı). Odak rakamı her hâlde gösterir, `bağlam: %22 · 45k / 200k`, ya da satıcı pencerenin boyutunu söylemiyorsa yalnız token sayısını. Dar bir satırda yapılacaklar işaretinden daha uzun kalır. Oturumla birlikte gider.
 - Bir işçinin worktree durumu, `⎇ fix-parser ↑2 ↓1 +12 −3`: agent'ın açtığı dal (worktree imece'nin bıraktığı gibi detached iken yok), checkout'ta olmayan kendi commit'leri (imece'nin uygulanan değişiklik işaretleri sayılmaz), kendisinde olmayan checkout commit'leri ve kendi HEAD'ine göre eklenen ve silinen satırlar, izlenmeyen dosyalar dahil: bir sonraki `done`'un size vereceği şey. Her parça yalnız söyleyecek bir şey varken görünür. imece'nin git iş parçacığında okunur: oturum başlarken, bir tur bitince, bir uygulamadan sonra ve işçi ya da bir yardımcısı tur ortasındayken her 15 saniyede; çalıştırmalar arasında saklanmaz.
 - `▾ 1 yardımcı` ya da `▸ 1 yardımcı`: yardımcıları altında listelenir ya da katlanmıştır.
 - `↗ localhost:5173/`: işçi ya da yardımcının kendi metninde yazdığı en yeni yerel adres, terminalin açtığı bir bağlantı olarak (OSC 8). Yalnız `localhost`, `127.0.0.1` ya da `[::1]` üzerinde `http`/`https` sayılır, sorgu ve parça atılır, 60 karakteri aşan bir adres hiç gösterilmez. Oturumla birlikte gider.
@@ -100,6 +101,7 @@ Her agent tek bir basamakta durur, en yüksekten: takıldı (bloke ya da oturumu
 | `⎇` `↑` `↓` `+N −M` | bir işçinin worktree'si: dal, kendi commit'leri, checkout'un yeni commit'leri, henüz verilmemiş satırlar |
 | `↗` | işçinin yazdığı yerel adres, terminalin açtığı bir bağlantı |
 | `≡ 3/7` | kendi yapılacaklar listesi: biten adımlar ve hepsi |
+| `◔ %72` | bağlam penceresi bu kadar dolu; %70'ten gösterilir, %90'dan yüksek sesle |
 | `✱` | `m` ile işaretlediğiniz satır; `'` sonrakine gider |
 
 Başlıktaki filo aynı şekilleri kullanır, böylece mono temada da okunur.

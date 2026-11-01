@@ -1015,7 +1015,18 @@ impl Protocol {
                 let t = &p["tokenUsage"]["total"];
                 let n = |k: &str| t[k].as_u64().unwrap_or(0);
                 self.tokens = Some((n("inputTokens"), n("cachedInputTokens"), n("outputTokens")));
-                Ok(Vec::new())
+                // The last request's tokens are what the context holds,
+                // its reasoning not kept; the window's size when said.
+                let last = &p["tokenUsage"]["last"];
+                let l = |k: &str| last[k].as_u64().unwrap_or(0);
+                let used = match last["totalTokens"].as_u64() {
+                    Some(total) => total.saturating_sub(l("reasoningOutputTokens")),
+                    None => l("inputTokens") + l("cachedInputTokens") + l("outputTokens"),
+                };
+                Ok(vec![Act::Event(Event::Context {
+                    used,
+                    size: p["tokenUsage"]["modelContextWindow"].as_u64(),
+                })])
             }
             "turn/completed" => {
                 let status = p["turn"]["status"].as_str().unwrap_or("unknown");
@@ -2613,6 +2624,48 @@ mod tests {
             .line(&notify("turn/plan/updated", json!({ "plan": [] })))
             .unwrap_err();
         assert!(e.contains("before its settings were checked"), "{e}");
+    }
+
+    #[test]
+    fn a_token_usage_update_says_how_full_the_context_is() {
+        let mut p = in_turn(&with_bus(true));
+        // The last request's tokens less its reasoning, and the window.
+        let full = json!({ "threadId": "t1", "turnId": "u1", "tokenUsage": {
+            "total": { "inputTokens": 9000, "cachedInputTokens": 8000, "outputTokens": 300, "reasoningOutputTokens": 100, "totalTokens": 17_300 },
+            "last": { "inputTokens": 5000, "cachedInputTokens": 4000, "outputTokens": 200, "reasoningOutputTokens": 150, "totalTokens": 9200 },
+            "modelContextWindow": 272_000 } });
+        assert_eq!(
+            events(&p.line(&notify("thread/tokenUsage/updated", full)).unwrap()),
+            [Event::Context {
+                used: 9050,
+                size: Some(272_000)
+            }]
+        );
+        // Without a total: the parts; without a window: none.
+        let parts = json!({ "threadId": "t1", "turnId": "u1", "tokenUsage": {
+            "total": { "inputTokens": 1, "cachedInputTokens": 1, "outputTokens": 1 },
+            "last": { "inputTokens": 5000, "cachedInputTokens": 4000, "outputTokens": 200 },
+            "modelContextWindow": null } });
+        assert_eq!(
+            events(&p.line(&notify("thread/tokenUsage/updated", parts)).unwrap()),
+            [Event::Context {
+                used: 9200,
+                size: None
+            }]
+        );
+        // The turn's note still counts the whole thread's tokens.
+        let acts = p
+            .line(&notify(
+                "turn/completed",
+                json!({ "turn": { "id": "u1", "status": "completed" } }),
+            ))
+            .unwrap();
+        assert!(
+            events(&acts)
+                .iter()
+                .any(|e| matches!(e, Event::Note(n) if n.contains("tokens"))),
+            "{acts:?}"
+        );
     }
 
     #[test]

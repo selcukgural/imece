@@ -86,6 +86,18 @@ pub fn apply(w: &mut World, id: AgentId, e: AgentEvent, before: u64) {
                 .map_or(String::new(), |s| format!(" {:?}", s.text));
             a.trace(t, format!("plan {done}/{all}{doing}"));
         }
+        // How full its context is; traced the first time and then only as
+        // the figure moves a tenth, so a turn of many requests does not
+        // fill the trace.
+        AgentEvent::Context { used, size } => {
+            let a = &mut w.agents[id];
+            let fill = Fill { used, size };
+            let tenth = |f: Fill| f.percent().map(|p| p / 10);
+            let before = a.context.replace(fill);
+            if before.is_none_or(|b| tenth(b) != tenth(fill)) {
+                a.trace(t, format!("context {}", words::fill_words(&fill)));
+            }
+        }
         // `Live::step` takes these to the person before anything is applied.
         AgentEvent::Asks { .. } | AgentEvent::Withdrawn { .. } => {}
         AgentEvent::TurnDone {
@@ -151,9 +163,11 @@ impl Live {
             }
         }
         w.close_approvals(id);
-        // What it served, and its to-do list, went with its session.
+        // What it served, its to-do list and its context went with its
+        // session.
         w.agents[id].local = None;
         w.agents[id].plan.clear();
+        w.agents[id].context = None;
         w.agents[id].starting = false;
         self.spent_before[id] = w.agents[id].cost;
         self.slots[id] = Slot::None;
@@ -898,6 +912,53 @@ mod tests {
         let mut live = idle_live(w.agents.len());
         live.end(&mut w, 1);
         assert!(w.agents[1].plan.is_empty());
+    }
+
+    #[test]
+    fn the_context_s_fill_is_kept_and_traced_by_the_tenth_until_the_session_ends() {
+        let mut w = team(1);
+        let context = |used, size| AgentEvent::Context { used, size };
+        apply(&mut w, 1, context(45_506, None), 0);
+        assert_eq!(
+            w.agents[1].context,
+            Some(Fill {
+                used: 45_506,
+                size: None
+            })
+        );
+        let last = w.agents[1].trace.back().unwrap().clone();
+        assert!(last.ends_with(" context 45k tokens"), "{last}");
+        // The size known: a percent; traced, a new tenth.
+        apply(&mut w, 1, context(45_506, Some(200_000)), 0);
+        let last = w.agents[1].trace.back().unwrap().clone();
+        assert!(last.ends_with(" context 22% · 45k of 200k"), "{last}");
+        // Within the tenth: kept, not traced.
+        let traced = w.agents[1].trace.len();
+        apply(&mut w, 1, context(58_000, Some(200_000)), 0);
+        assert_eq!(w.agents[1].context.unwrap().used, 58_000);
+        assert_eq!(
+            w.agents[1].trace.len(),
+            traced,
+            "29%: the same tenth as 22%"
+        );
+        apply(&mut w, 1, context(60_000, Some(200_000)), 0);
+        assert_eq!(w.agents[1].trace.len(), traced + 1, "30%: the next tenth");
+        // A turn's end keeps it; the session's end takes it.
+        apply(
+            &mut w,
+            1,
+            AgentEvent::TurnDone {
+                ok: true,
+                text: "done".into(),
+                cost: 0,
+                denied: 0,
+            },
+            0,
+        );
+        assert!(w.agents[1].context.is_some());
+        let mut live = idle_live(w.agents.len());
+        live.end(&mut w, 1);
+        assert_eq!(w.agents[1].context, None);
     }
 
     #[test]

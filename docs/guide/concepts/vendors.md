@@ -67,6 +67,8 @@ A line that starts with `/` is a command of the agent's own CLI, not a message: 
 
 Claude Code sends `rate_limit_event` and Codex `account/rateLimits/updated`; Gemini reports none. imece keeps one window per vendor and length (five hours, a week) for the account, and the header shows each vendor's window nearest to full after the pot: `claude 5h: 48% left, resets in 1 h 59 min`, in the attention colour from 90% used. A subscription's limit can stop the team before the pot does; imece does not stop a turn itself, it shows the vendor's refusal. Windows are not kept between runs; a session says them again on its first turn.
 
+Each agent's context window is reported too: Claude Code's every message carries the request's tokens (the context so far) and its result the model's window; Codex's `thread/tokenUsage/updated` the last request's tokens and `modelContextWindow`; Gemini's `usage_update` the tokens used and its own table's size. The agent's row shows `◔ 72%` from 70% on and its focus the figure ([the salon](../screen/salon.md)); the trace notes the fill by the tenth. Gone with the session.
+
 ## Which vendor leads, which are hired
 
 `--lead` names the leader's vendor; the leader may hire workers from any vendor on PATH (`hire` takes a vendor). Mixed teams are the point: see [mixed vendors](../scenarios/mixed-vendors.md) and [the team](../concepts/team.md). Resume per vendor is on [sessions](../concepts/sessions.md).

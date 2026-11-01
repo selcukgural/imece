@@ -56,7 +56,7 @@ column.
 
 Mirrors: the demo sets `mine` on its sends, answers and turn ends, and
 `STOPPED` as the why of a worker it stops, so the demo's rows say what
-live's do. Not done: the context-window fill (B8) is the next row word
-(the to-do list, B7, is record 63: `≡ 3/7` on the row, which gives way
-before the time); the status column's forty columns are a constant, not
-a share of the pane.
+live's do. Done since: the to-do list (B7) is record 63 (`≡ 3/7` on the row, which
+gives way before the time) and the context-window fill (B8) record 64
+(`◔ 72%`, which stays longer than the mark). Not done: the status
+column's forty columns are a constant, not a share of the pane.
