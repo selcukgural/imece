@@ -87,6 +87,7 @@ pub fn apply(w: &mut World, id: AgentId, e: AgentEvent, before: u64) {
             if ok {
                 a.talk = Some(Talk {
                     with: Party::Person,
+                    mine: true,
                     text: text.lines().next().unwrap_or_default().to_string(),
                     until: t + 12,
                 });
@@ -109,6 +110,7 @@ pub fn apply(w: &mut World, id: AgentId, e: AgentEvent, before: u64) {
             let a = &mut w.agents[id];
             a.trace(t, format!("stopped {why:?}"));
             a.activity = None;
+            a.topic = why.lines().next().unwrap_or_default().to_string();
             a.set_status(Status::Stopped, t);
             w.story(card, StoryEvent::Stopped(why.clone()));
             w.note(Event::Stopped { agent: id, why });
@@ -840,8 +842,12 @@ mod tests {
         assert_eq!(a.status, Status::Idle);
         assert_eq!(a.cost, 50 + 1234);
         assert_eq!(a.activity, None);
-        assert_eq!(a.talk.as_ref().unwrap().text, "Fixed both.");
-        assert_eq!(a.talk.as_ref().unwrap().until, w.tick + 12);
+        let talk = a.talk.as_ref().unwrap();
+        assert_eq!(
+            (talk.text.as_str(), talk.with, talk.mine, talk.until),
+            ("Fixed both.", Party::Person, true, w.tick + 12),
+            "its own closing words, on its row"
+        );
         let touched = w.cards[c]
             .story
             .iter()
@@ -876,6 +882,14 @@ mod tests {
             &w.journal.last().unwrap().event,
             Event::Stopped { agent: 1, why } if why == "exited with code 1"
         ));
+        assert_eq!(w.agents[1].topic, "exited with code 1", "why, for its row");
+        apply(
+            &mut w,
+            1,
+            AgentEvent::Stopped("first line\nthe rest".into()),
+            0,
+        );
+        assert_eq!(w.agents[1].topic, "first line", "the first line only");
     }
 
     #[test]
@@ -1161,18 +1175,19 @@ mod tests {
     }
 
     #[test]
-    fn an_expired_talk_line_goes_and_a_fresh_one_stays() {
+    fn a_talk_stays_on_the_row_past_its_news_time_until_the_next_exchange() {
         let mut w = team(2);
         let mut live = idle_live(3);
         let talk = |until| Talk {
             with: Party::Person,
+            mine: false,
             text: "hi".into(),
             until,
         };
         w.agents[1].talk = Some(talk(0));
         w.agents[2].talk = Some(talk(1_000_000));
         live.step(&mut w);
-        assert!(w.agents[1].talk.is_none());
+        assert!(w.agents[1].talk.is_some(), "stale, but still the newest");
         assert!(w.agents[2].talk.is_some());
     }
 

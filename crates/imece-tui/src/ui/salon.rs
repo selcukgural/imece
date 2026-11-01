@@ -24,7 +24,6 @@ pub enum Row {
         id: AgentId,
         depth: u8,
     },
-    Talk(AgentId),
     /// Calm workers of a project folded into one line: how many, and the
     /// loudest of them (the highest rung, the first among equals).
     Folded {
@@ -34,8 +33,7 @@ pub enum Row {
 }
 
 impl Row {
-    /// What selecting this row selects; talk and folded lines are not
-    /// selectable.
+    /// What selecting this row selects; a folded line is not selectable.
     pub fn sel(&self) -> Option<Sel> {
         match *self {
             Row::Project(p) => Some(Sel::Project(p)),
@@ -77,14 +75,11 @@ pub fn rows(app: &App, capacity: usize) -> Vec<Row> {
             .map(|h| h.id)
             .collect()
     };
-    let lines = |a: &Agent| {
-        1 + usize::from(a.talk.is_some())
-            + usize::from(researcher_of(a).is_some())
-            + helpers_of(a).len()
-    };
+    // One line per agent, whatever it says: rows never change height.
+    let lines = |a: &Agent| 1 + usize::from(researcher_of(a).is_some()) + helpers_of(a).len();
     let calm = |a: &Agent| {
         matches!(a.status, Status::Working | Status::Idle)
-            && a.talk.is_none()
+            && a.talk.as_ref().is_none_or(|k| k.until <= t)
             && t.saturating_sub(a.changed_at) > 6
             && app.selected != Sel::Agent(a.id)
     };
@@ -130,7 +125,7 @@ pub fn rows(app: &App, capacity: usize) -> Vec<Row> {
             let leader = &w.agents[p.leader];
             // A solo's helpers hang under it as a worker's do.
             let lead = if leads(p) {
-                1 + usize::from(leader.talk.is_some()) + helpers_of(leader).len()
+                1 + helpers_of(leader).len()
             } else {
                 0
             };
@@ -173,9 +168,6 @@ pub fn rows(app: &App, capacity: usize) -> Vec<Row> {
                 id: p.leader,
                 depth: 1,
             });
-            if w.agents[p.leader].talk.is_some() {
-                out.push(Row::Talk(p.leader));
-            }
             for h in helpers_of(&w.agents[p.leader]) {
                 out.push(Row::Agent { id: h, depth: 2 });
             }
@@ -187,9 +179,6 @@ pub fn rows(app: &App, capacity: usize) -> Vec<Row> {
             }
             if let Some(r) = researcher_of(a) {
                 out.push(Row::Agent { id: r.id, depth: 3 });
-            }
-            if a.talk.is_some() {
-                out.push(Row::Talk(a.id));
             }
         }
         if nfolded[p.id] > 0 {
@@ -291,32 +280,12 @@ fn salon(f: &mut Frame, area: Rect, app: &App) {
                         }
                     }
                 };
-                let line = agent_line(app, &w.agents[id], prefix, &rungs);
+                let line = agent_line(app, &w.agents[id], prefix, &rungs, usize::from(list.width));
                 if let Some(url) = linked(&w.agents[id]) {
                     let width = line.spans.last().map_or(0, Span::width);
                     links.push((i, line.width() - width, width, url, id));
                 }
                 line
-            }
-            Row::Talk(id) => {
-                let a = &w.agents[id];
-                let prefix = match (a.role, under_last) {
-                    (Role::Leader, _) => "    ",
-                    (_, true) => "      ",
-                    (_, false) => "  │   ",
-                };
-                let (with, color) = match a.talk.as_ref().map(|k| &k.with) {
-                    Some(Party::Agent(o)) => (clean(&w.agents[*o].name), speaker_color(*o)),
-                    _ => (app.lang.text().you.to_string(), pal().strong),
-                };
-                let text = a.talk.as_ref().map(|k| k.text.as_str()).unwrap_or_default();
-                let talk = Style::new().fg(pal().info).add_modifier(Modifier::ITALIC);
-                Line::from(vec![
-                    Span::styled(prefix, dim()),
-                    Span::styled("⇄ ", talk),
-                    Span::styled(with, talk.fg(color)),
-                    Span::styled(format!(" \"{}\"", clean(text)), talk),
-                ])
             }
             Row::Folded { n, loud } => {
                 let mut spans = vec![
@@ -434,11 +403,15 @@ pub(super) fn project_line(app: &App, p: ProjectId, rungs: &[Rung]) -> Line<'sta
     }
 }
 
+/// An agent's row, `width` columns wide: its status, its newest exchange
+/// and how long it has been in that state in the room the row's fixed
+/// parts (cost, stand, helpers, link) leave, then those parts.
 pub(super) fn agent_line(
     app: &App,
     a: &Agent,
     prefix: &'static str,
     rungs: &[Rung],
+    width: usize,
 ) -> Line<'static> {
     let w = &app.world;
     let done = app.done_unseen(a.id);
@@ -476,16 +449,21 @@ pub(super) fn agent_line(
         }
     }
     spans.push(Span::raw(" "));
-    if done {
-        spans.push(Span::styled(app.lang.text().done_unseen, fg(pal().ok)));
+    let status = if done {
+        vec![Span::styled(app.lang.text().done_unseen, fg(pal().ok))]
     } else {
-        spans.extend(status_spans(app.lang, w, a));
-    }
+        status_spans(app.lang, w, a)
+    };
+    let used = chars(&status);
+    spans.extend(status);
+    let since = since_spans(app, a);
+
+    let mut tail = Vec::new();
     if a.cost > 0 {
-        spans.push(Span::styled(format!("  {}", dollars(a.cost)), dim()));
+        tail.push(Span::styled(format!("  {}", dollars(a.cost)), dim()));
     }
     if matches!(a.role, Role::Worker | Role::Solo) {
-        spans.extend(stand_spans(&a.stand));
+        tail.extend(stand_spans(&a.stand));
     }
     let helpers = w.helpers_of(a.id).count();
     if helpers > 0 {
@@ -493,7 +471,7 @@ pub(super) fn agent_line(
         // and a folded group shows its loudest member.
         let folded = app.folded_workers.contains(&a.id);
         let mark = if folded { "▸" } else { "▾" };
-        spans.push(Span::styled(
+        tail.push(Span::styled(
             format!(
                 "  {mark} {}",
                 fill(app.lang.text().helpers, &[&helpers.to_string()])
@@ -501,11 +479,24 @@ pub(super) fn agent_line(
             dim(),
         ));
         if folded && let Some(loud) = app.loudest(w.helpers_of(a.id).map(|h| h.id)) {
-            spans.extend(member(app, loud, rungs));
+            tail.extend(member(app, loud, rungs));
         }
     }
     // Last, so the screen knows where the text it links starts.
-    spans.extend(local_spans(a));
+    tail.extend(local_spans(a));
+
+    // What is new on the row gives way to what was there: the time, then
+    // the quote, take only what the row has left once the rest is on it.
+    let mut room = width.saturating_sub(columns(&spans) + columns(&tail));
+    let since = if columns(&since) <= room {
+        room -= columns(&since);
+        since
+    } else {
+        Vec::new()
+    };
+    spans.extend(quote_spans(app, a, used, room));
+    spans.extend(since);
+    spans.extend(tail);
 
     let line = Line::from(spans);
     let recent = w.tick > 4 && w.tick.saturating_sub(a.changed_at) <= 4;
@@ -517,6 +508,91 @@ pub(super) fn agent_line(
     } else {
         line
     }
+}
+
+/// Whether the status words already carry a text of their own (what it
+/// does, waits for, asked, or why it stopped), so the row quotes nothing
+/// more after them.
+fn status_says(w: &World, a: &Agent) -> bool {
+    match a.status {
+        Status::Idle => {
+            w.open_item(a.id, InboxKind::Reply).is_some()
+                || w.open_item(a.id, InboxKind::Question).is_some()
+        }
+        Status::Working => {
+            w.open_item(a.id, InboxKind::Approval).is_some()
+                || a.activity.as_deref().is_some_and(|d| !d.is_empty())
+        }
+        Status::Blocked | Status::Researching { .. } => true,
+        Status::Stopped => !a.topic.is_empty(),
+        Status::Asking { .. } | Status::WaitingHuman | Status::Asleep => false,
+    }
+}
+
+/// Columns `spans` take on the screen.
+fn columns(spans: &[Span<'_>]) -> usize {
+    spans.iter().map(Span::width).sum()
+}
+
+/// After a row's status, which took `used` characters: the agent's newest
+/// exchange when the status says no text of its own, the arrow saying who
+/// said it (`→ claude-2 "which parser?"`, `← you "fix the parser"`; the
+/// question to the teammate it waits for is quoted alone, the status
+/// names them). It takes what `STATUS_WIDTH` leaves after the status, and
+/// never more than `room`, the row's free columns; too little room and
+/// nothing is quoted.
+pub(super) fn quote_spans(app: &App, a: &Agent, used: usize, room: usize) -> Vec<Span<'static>> {
+    let w = &app.world;
+    if status_says(w, a) {
+        return Vec::new();
+    }
+    let Some(k) = &a.talk else {
+        return Vec::new();
+    };
+    let (name, color) = match k.with {
+        Party::Agent(o) => (clean(&w.agents[o].name), speaker_color(o)),
+        Party::Person => (app.lang.text().you.to_string(), pal().strong),
+    };
+    let asked =
+        k.mine && matches!(a.status, Status::Asking { to, .. } if k.with == Party::Agent(to));
+    let arrow = if k.mine { "→ " } else { "← " };
+    // The arrow, the name and the space before the quote.
+    let head = if asked {
+        0
+    } else {
+        2 + name.chars().count() + 1
+    };
+    let room = STATUS_WIDTH
+        .saturating_sub(used + 1)
+        .min(room.saturating_sub(1))
+        .saturating_sub(head);
+    let Some(q) = quoted(&k.text, room) else {
+        return Vec::new();
+    };
+    let mut spans = vec![Span::raw(" ")];
+    if !asked {
+        spans.push(Span::styled(arrow, dim()));
+        spans.push(Span::styled(name, fg(color)));
+        spans.push(Span::raw(" "));
+    }
+    spans.push(Span::styled(
+        q,
+        Style::new().fg(pal().info).add_modifier(Modifier::ITALIC),
+    ));
+    spans
+}
+
+/// How long the agent has been in its state, from a minute on: ` · 3 min`
+/// after its status; nothing under a minute, so rows do not tick.
+pub(super) fn since_spans(app: &App, a: &Agent) -> Vec<Span<'static>> {
+    let seconds = app.world.tick.saturating_sub(app.since(a.id)) * SECONDS_PER_TICK;
+    if seconds < 60 {
+        return Vec::new();
+    }
+    vec![Span::styled(
+        format!(" · {}", words::ago(app.lang, seconds)),
+        dim(),
+    )]
 }
 
 /// Where a worker's worktree stands, `  ⎇ fix-parser ↑2 ↓1 +12 −3`: the

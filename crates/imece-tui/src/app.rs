@@ -702,6 +702,20 @@ impl App {
             && !w.open_inbox().iter().any(|&i| w.inbox[i].agent == id)
     }
 
+    /// The tick agent `id`'s state began, for how long its row says it has
+    /// been in it: when something of its waits for the person, the oldest
+    /// open item's; else its last status change.
+    pub fn since(&self, id: AgentId) -> u64 {
+        let w = &self.world;
+        w.open_inbox()
+            .into_iter()
+            .map(|i| &w.inbox[i])
+            .filter(|it| it.agent == id)
+            .map(|it| it.tick)
+            .min()
+            .unwrap_or(w.agents[id].changed_at)
+    }
+
     /// What each agent needs of the person, by id. Gone agents need
     /// nothing.
     pub fn needs(&self) -> Vec<Need> {
@@ -5230,6 +5244,32 @@ mod tests {
         app.unseen = BTreeSet::from([1, 2, 3]);
         app.on_key(key(KeyCode::Char('j')));
         assert_eq!(app.unseen, BTreeSet::from([2]));
+    }
+
+    #[test]
+    fn since_is_the_oldest_open_item_s_tick_else_the_last_status_change() {
+        let mut app = quiet();
+        app.world.tick = 50;
+        app.world.agents[1].changed_at = 5;
+        assert_eq!(app.since(1), 5);
+        let item = |agent, tick, open| InboxItem {
+            kind: InboxKind::Question,
+            agent,
+            detail: "q".into(),
+            researcher: None,
+            open,
+            tick,
+            card: None,
+        };
+        app.world.inbox.push(item(1, 9, true));
+        assert_eq!(app.since(1), 9, "the item, even after the status change");
+        app.world.inbox.push(item(1, 7, true));
+        assert_eq!(app.since(1), 7, "the oldest");
+        app.world.inbox.push(item(1, 3, false));
+        assert_eq!(app.since(1), 7, "a closed one does not count");
+        app.world.inbox.push(item(2, 2, true));
+        assert_eq!(app.since(1), 7, "another's does not count");
+        assert_eq!(app.since(2), 2);
     }
 
     #[test]

@@ -358,6 +358,8 @@ pub struct Text {
     /// worktree's checkout) and has not answered yet.
     pub starting: &'static str,
     pub stopped: &'static str,
+    /// A stopped session whose row knows why; `{}` is the reason.
+    pub stopped_why: &'static str,
     pub asleep: &'static str,
     /// The store could not save; `{}` is the error.
     pub store_failed: &'static str,
@@ -747,6 +749,7 @@ pub const EN: Text = Text {
     thinking: "thinking…",
     starting: "starting…",
     stopped: "■ stopped, write to it to start again",
+    stopped_why: "■ stopped: {}",
     asleep: "◦ asleep since the last run, write to it to wake it",
     store_failed: "not saved for the next run: {}",
     researching: "researching: {}",
@@ -1251,6 +1254,7 @@ pub const TR: Text = Text {
     thinking: "düşünüyor…",
     starting: "başlıyor…",
     stopped: "■ durdu, yazınca yeniden başlar",
+    stopped_why: "■ durdu: {}",
     asleep: "◦ önceki çalışmadan beri uyuyor, yazınca uyanır",
     store_failed: "sonraki çalışma için kaydedilemedi: {}",
     researching: "araştırıyor: {}",
@@ -1584,6 +1588,7 @@ mod tests {
             (e.keep_cancel, t.keep_cancel),
             (e.cannot_start, t.cannot_start),
             (e.ev_stopped, t.ev_stopped),
+            (e.stopped_why, t.stopped_why),
             (e.ev_interrupted, t.ev_interrupted),
             (e.store_failed, t.store_failed),
             (e.st_touched, t.st_touched),

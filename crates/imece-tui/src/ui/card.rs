@@ -44,7 +44,9 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App, c: CardId) {
     let people = w.card_people(c);
     *app.shown.borrow_mut() = people.iter().map(|&(id, _)| Sel::Agent(id)).collect();
     for &(id, part) in &people {
-        let line = salon::agent_line(app, &w.agents[id], "", &app.rungs());
+        // After the part's ten columns.
+        let width = usize::from(inner.width).saturating_sub(10);
+        let line = salon::agent_line(app, &w.agents[id], "", &app.rungs(), width);
         let mut spans = vec![Span::styled(fit(t.card_parts[part_index(part)], 10), dim())];
         spans.extend(line.spans);
         head.push(Line::from(spans).style(line.style));

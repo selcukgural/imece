@@ -860,21 +860,59 @@ pub(crate) fn bar(progress: u8) -> String {
     format!("{}{}", "▓".repeat(full), "░".repeat(5 - full))
 }
 
-/// What an agent is doing, in a few words.
+/// The most characters a row's status takes, the text it carries
+/// included (a question, a reason, the newest exchange).
+pub(crate) const STATUS_WIDTH: usize = 40;
+
+/// A quote that would be shorter than this (its quotes included) says
+/// nothing and is left out.
+pub(crate) const QUOTE_MIN: usize = 8;
+
+/// `text` as a row quotes it, `"…"`, cleaned and cut to `room`
+/// characters with its quotes; none for an empty text or a room under
+/// `QUOTE_MIN`.
+pub(crate) fn quoted(text: &str, room: usize) -> Option<String> {
+    let text = clean(text.trim());
+    if room < QUOTE_MIN || text.is_empty() {
+        return None;
+    }
+    Some(format!("\"{}\"", fit(&text, room - 2).trim_end()))
+}
+
+/// Characters `spans` take on the row.
+pub(crate) fn chars(spans: &[Span<'_>]) -> usize {
+    spans.iter().map(|s| s.content.chars().count()).sum()
+}
+
+/// `text` quoted after `spans`, in `style`, in what is left of
+/// `STATUS_WIDTH`; nothing when too little is left.
+fn add_quote(spans: &mut Vec<Span<'static>>, text: &str, style: Style) {
+    let room = STATUS_WIDTH.saturating_sub(chars(spans) + 1);
+    if let Some(q) = quoted(text, room) {
+        spans.push(Span::styled(format!(" {q}"), style));
+    }
+}
+
+/// What an agent is doing, in a few words, with the text that belongs to
+/// it: the question that waits for the person, the answer they have not
+/// read, what a tool call waits to do, what a blocked worker waits for,
+/// why a stopped session stopped.
 pub(crate) fn status_spans(lang: Lang, w: &World, a: &Agent) -> Vec<Span<'static>> {
     let t = lang.text();
     match a.status {
-        Status::Idle
-            if w.open_inbox()
-                .iter()
-                .any(|&i| w.inbox[i].kind == InboxKind::Reply && w.inbox[i].agent == a.id) =>
-        {
-            vec![Span::styled(t.answered, fg(pal().warn))]
+        Status::Idle if let Some(it) = w.open_item(a.id, InboxKind::Reply) => {
+            let mut spans = vec![Span::styled(t.answered, fg(pal().warn))];
+            add_quote(&mut spans, &it.detail, fg(pal().warn));
+            spans
         }
-        Status::Idle if w.has_question(a.id) => vec![
-            Span::styled(bar(a.progress), dim()),
-            Span::styled(format!(" ? → {}", t.you), fg(pal().warn)),
-        ],
+        Status::Idle if let Some(it) = w.open_item(a.id, InboxKind::Question) => {
+            let mut spans = vec![
+                Span::styled(bar(a.progress), dim()),
+                Span::styled(format!(" ? → {}", t.you), fg(pal().warn)),
+            ];
+            add_quote(&mut spans, &it.detail, fg(pal().warn));
+            spans
+        }
         Status::Idle
             if a.role == Role::Leader
                 && w.agents.iter().any(|o| {
@@ -887,8 +925,10 @@ pub(crate) fn status_spans(lang: Lang, w: &World, a: &Agent) -> Vec<Span<'static
             vec![Span::styled(t.coordinating, dim())]
         }
         Status::Idle => vec![Span::styled(t.idle, dim())],
-        Status::Working if w.has_approval(a.id) => {
-            vec![Span::styled(format!("⚑ {}", t.waiting_yes), fg(pal().warn))]
+        Status::Working if let Some(it) = w.open_item(a.id, InboxKind::Approval) => {
+            let mut spans = vec![Span::styled(format!("⚑ {}", t.waiting_yes), fg(pal().warn))];
+            add_quote(&mut spans, &words::one_line(&it.detail), fg(pal().warn));
+            spans
         }
         Status::Working if a.starting => vec![Span::styled(t.starting, fg(pal().ok))],
         Status::Working => match a.activity.as_deref() {
@@ -914,15 +954,25 @@ pub(crate) fn status_spans(lang: Lang, w: &World, a: &Agent) -> Vec<Span<'static
                 Some(r) => format!(" ← {}", clean(&w.agents[r].name)),
                 None => t.research_queue.into(),
             };
-            vec![
-                Span::styled(t.blocked, bold(pal().bad)),
-                Span::styled(wait, dim()),
-            ]
+            let mut spans = vec![Span::styled(t.blocked, bold(pal().bad))];
+            // What it waits for, in the room the wait leaves.
+            let room = STATUS_WIDTH.saturating_sub(chars(&spans) + 1 + wait.chars().count());
+            if let Some(q) = quoted(&a.topic, room) {
+                spans.push(Span::styled(format!(" {q}"), fg(pal().bad)));
+            }
+            spans.push(Span::styled(wait, dim()));
+            spans
         }
         Status::WaitingHuman => vec![Span::styled(t.waiting_human, bold(pal().warn))],
         Status::Researching { .. } => vec![Span::styled(
             fill(t.researching, &[&a.topic]),
             fg(pal().research),
+        )],
+        Status::Stopped if !a.topic.is_empty() => vec![Span::styled(
+            fit(&fill(t.stopped_why, &[&a.topic]), STATUS_WIDTH)
+                .trim_end()
+                .to_string(),
+            bold(pal().stopped),
         )],
         Status::Stopped => vec![Span::styled(t.stopped, bold(pal().stopped))],
         Status::Asleep => vec![Span::styled(t.asleep, dim())],
@@ -1361,6 +1411,38 @@ mod tests {
         assert_eq!(shown, people);
     }
 
+    #[test]
+    fn a_card_s_row_keeps_its_cost_in_the_pane_and_quotes_only_what_is_left() {
+        let mut app = on_card_one(Lang::En);
+        let owner = app.world.cards[0].owner.unwrap();
+        let name = app.world.agents[owner].name.clone();
+        let a = &mut app.world.agents[owner];
+        a.status = Status::Idle;
+        a.activity = None;
+        a.cost = 12_345;
+        a.changed_at = app.world.tick;
+        a.stand = Stand::default();
+        a.local = None;
+        a.talk = Some(Talk {
+            with: Party::Person,
+            mine: true,
+            text: "a".repeat(60),
+            until: 0,
+        });
+        app.world.inbox.clear();
+        app.unseen.clear();
+        let s = render(&app, 140, 36);
+        let row = s
+            .lines()
+            .find(|l| l.contains(&format!("▎{name}")))
+            .unwrap_or_else(|| panic!("{s}"));
+        let pane = row.split("││").next().unwrap();
+        assert!(
+            pane.contains("→ you \"aaaa") && pane.contains("…\"") && pane.contains("$1.23"),
+            "the quote is cut to the row inside the card's borders, after the part column: {pane}"
+        );
+    }
+
     /// A fresh directory of this test's own under the system's temp one.
     fn scratch(name: &str) -> std::path::PathBuf {
         let dir = std::env::temp_dir().join(format!("imece-{name}-{}", std::process::id()));
@@ -1745,7 +1827,7 @@ mod tests {
     }
 
     #[test]
-    fn a_worker_s_researcher_and_talk_count_as_lines_when_the_salon_fills() {
+    fn a_worker_s_researcher_counts_as_a_line_and_its_talk_does_not_when_the_salon_fills() {
         let (mut app, w, r) = calm_team();
         app.world.agents[r[0]].status = Status::Researching {
             for_agent: w[0],
@@ -1753,17 +1835,19 @@ mod tests {
         };
         app.world.agents[w[1]].talk = Some(Talk {
             with: Party::Person,
+            mine: false,
             text: "on it".into(),
             until: 0,
         });
         let rows = |app: &App, capacity: usize| salon::rows(app, capacity);
-        // Project, leader, w0 and its researcher, w1 and its talk, w2, w3.
-        let all = rows(&app, 8);
-        assert_eq!(all.len(), 8, "{all:?}");
+        // Project, leader, w0 and its researcher, w1 (its talk on its own
+        // row), w2, w3.
+        let all = rows(&app, 7);
+        assert_eq!(all.len(), 7, "{all:?}");
         assert!(!all.iter().any(|r| matches!(r, salon::Row::Folded { .. })));
         // One line short: the calm workers at the end fold into one line.
-        let tight = rows(&app, 7);
-        assert_eq!(tight.len(), 7, "{tight:?}");
+        let tight = rows(&app, 6);
+        assert_eq!(tight.len(), 6, "{tight:?}");
         assert!(
             matches!(tight.last(), Some(salon::Row::Folded { n: 2, .. })),
             "{tight:?}"
@@ -2035,20 +2119,22 @@ mod tests {
             !rows.contains(&salon::Row::Agent { id: w[2], depth: 2 }),
             "{rows:?}"
         );
-        // The lead's talk is a line too: seven lines fit seven, not six.
+        // The lead's talk is on its own row, no line more: six lines fit
+        // six, not five.
         let lead = app.world.projects[0].leader;
         app.world.agents[lead].talk = Some(Talk {
             with: Party::Person,
+            mine: true,
             text: "planning".into(),
-            until: 0,
+            until: app.world.tick + 1,
         });
         let folds = |app: &App, capacity| {
             salon::rows(app, capacity)
                 .iter()
                 .any(|r| matches!(r, salon::Row::Folded { .. }))
         };
-        assert!(!folds(&app, 7));
-        assert!(folds(&app, 6));
+        assert!(!folds(&app, 6));
+        assert!(folds(&app, 5));
     }
 
     #[test]
@@ -2062,13 +2148,21 @@ mod tests {
         app.world.inbox.clear();
         assert!(!folded(&app, 6, w[3]), "it fits");
         assert!(folded(&app, 5, w[3]) && folded(&app, 5, w[2]));
-        // Talking: one line more, and it stays.
-        app.world.agents[w[3]].talk = Some(Talk {
-            with: Party::Person,
-            text: "on it".into(),
-            until: 0,
-        });
-        assert!(!folded(&app, 6, w[3]) && folded(&app, 6, w[2]));
+        // Talked lately (its talk still news): no line more, but it stays;
+        // a talk past its news time is calm again.
+        let tick = app.world.tick;
+        let talk = |until| {
+            Some(Talk {
+                with: Party::Person,
+                mine: false,
+                text: "on it".into(),
+                until,
+            })
+        };
+        app.world.agents[w[3]].talk = talk(tick + 1);
+        assert!(!folded(&app, 5, w[3]) && folded(&app, 5, w[2]));
+        app.world.agents[w[3]].talk = talk(tick);
+        assert!(folded(&app, 5, w[3]));
         app.world.agents[w[3]].talk = None;
         // Changed six steps ago is news still; seven is calm.
         app.world.agents[w[3]].changed_at = app.world.tick - 6;
@@ -2099,6 +2193,7 @@ mod tests {
         let lead = app.world.projects[0].leader;
         app.world.agents[lead].talk = Some(Talk {
             with: Party::Person,
+            mine: true,
             text: "planning".into(),
             until: 0,
         });
@@ -2134,15 +2229,14 @@ mod tests {
             [(w[2], 2), (w[0], 2), (h2, 3), (w[1], 2), (r[0], 3)]
         );
         assert!(!salon_rows(&app).contains(&(h1, 3)));
-        // The lead, with its talk, when it needs the person.
-        assert!(!all(&app).contains(&salon::Row::Talk(lead)));
+        // The lead when it needs the person; its talk is on its row.
+        assert!(!all(&app).contains(&salon::Row::Agent { id: lead, depth: 1 }));
         app.world.agents[lead].status = Status::Blocked;
         assert_eq!(
-            all(&app)[..3],
+            all(&app)[..2],
             [
                 salon::Row::Project(0),
                 salon::Row::Agent { id: lead, depth: 1 },
-                salon::Row::Talk(lead)
             ]
         );
         // What needs the person is never folded away, nor the worker a
@@ -2321,7 +2415,7 @@ mod tests {
         let (mut app, w, _) = calm_team();
         app.world.inbox.clear();
         let row = |app: &App, id: AgentId| {
-            salon::agent_line(app, &app.world.agents[id], "", &app.rungs())
+            salon::agent_line(app, &app.world.agents[id], "", &app.rungs(), 200)
         };
         app.world.agents[w[0]].status = Status::Idle;
         assert_eq!(row(&app, w[0]).spans[1].content, "○ ");
@@ -2349,7 +2443,8 @@ mod tests {
         app.world.inbox.clear();
         let text =
             |line: &Line| -> String { line.spans.iter().map(|s| s.content.as_ref()).collect() };
-        let row = |app: &App| salon::agent_line(app, &app.world.agents[w[0]], "", &app.rungs());
+        let row =
+            |app: &App| salon::agent_line(app, &app.world.agents[w[0]], "", &app.rungs(), 200);
         app.world.agents[w[0]].activity = Some(String::new());
         assert!(text(&row(&app)).contains("thinking…"));
         app.world.agents[w[0]].starting = true;
@@ -2744,12 +2839,12 @@ mod tests {
                 .collect::<String>()
         };
         assert!(
-            words(&app, Lang::En).ends_with(" ? → you"),
+            words(&app, Lang::En).ends_with(" ? → you \"Which API?\""),
             "{:?}",
             words(&app, Lang::En)
         );
         assert!(
-            words(&app, Lang::Tr).ends_with(" ? → sen"),
+            words(&app, Lang::Tr).ends_with(" ? → sen \"Which API?\""),
             "{:?}",
             words(&app, Lang::Tr)
         );
@@ -2924,7 +3019,7 @@ mod tests {
             .unwrap()
             .id;
         let row = |app: &App, id: AgentId| {
-            salon::agent_line(app, &app.world.agents[id], "", &app.rungs())
+            salon::agent_line(app, &app.world.agents[id], "", &app.rungs(), 200)
         };
         let text =
             |line: &Line| -> String { line.spans.iter().map(|s| s.content.as_ref()).collect() };
@@ -2997,7 +3092,7 @@ mod tests {
             .unwrap()
             .id;
         let row = |app: &App, id: AgentId| {
-            let line = salon::agent_line(app, &app.world.agents[id], "", &app.rungs());
+            let line = salon::agent_line(app, &app.world.agents[id], "", &app.rungs(), 200);
             text(&line.spans)
         };
         app.world.agents[worker].stand = stand(None, 0, 0, 7, 2);
@@ -4806,7 +4901,7 @@ mod tests {
         let head = app.world.projects[1].leader;
         let text =
             |line: &Line| -> String { line.spans.iter().map(|s| s.content.as_ref()).collect() };
-        let line = salon::agent_line(&app, &app.world.agents[head], "", &app.rungs());
+        let line = salon::agent_line(&app, &app.world.agents[head], "", &app.rungs(), 200);
         assert!(
             text(&line).contains("solo-notes") && text(&line).contains("codex gpt-5.6-terra@xhigh"),
             "{}",
@@ -4822,6 +4917,7 @@ mod tests {
             &app.world.agents[head],
             "",
             &app.rungs(),
+            200,
         ));
         assert!(
             line.contains("+3"),
@@ -4835,6 +4931,7 @@ mod tests {
             &app.world.agents[other],
             "",
             &app.rungs(),
+            200,
         ));
         assert!(
             line.contains(" claude ") && !line.contains("claude @"),
@@ -5419,27 +5516,38 @@ mod tests {
     }
 
     #[test]
-    fn a_talk_row_names_the_partner_agent() {
+    fn a_row_quotes_its_talk_with_the_partner_s_name_and_who_said_it() {
         let mut app = app_after(1, 4, 50, Lang::En);
         for a in &mut app.world.agents {
             a.talk = None;
+            a.activity = None;
+            a.status = Status::Idle;
         }
+        app.world.inbox.clear();
         let (me, other) = (1, 2);
         let partner = app.world.agents[other].name.clone();
-        app.world.agents[me].talk = Some(Talk {
-            with: Party::Agent(other),
-            text: "shall we split it".into(),
-            until: 1_000_000,
-        });
-        let screen = render(&app, 140, 40);
-        let row = screen
-            .lines()
-            .find(|l| l.contains("shall we split it"))
-            .expect("the talk row");
-        // The salon's part of the row, before the side panel.
-        let salon = row.split("││").next().unwrap();
-        assert!(salon.contains(&partner), "{salon}");
-        assert!(!salon.contains("you"), "{salon}");
+        let mine = app.world.agents[me].name.clone();
+        for (said, arrow) in [(true, "→"), (false, "←")] {
+            app.world.agents[me].talk = Some(Talk {
+                with: Party::Agent(other),
+                mine: said,
+                text: "shall we split it".into(),
+                until: 1_000_000,
+            });
+            let screen = render(&app, 200, 40);
+            let row = screen
+                .lines()
+                .find(|l| l.contains("shall we split it"))
+                .expect("the row with the talk");
+            // The salon's part of the row, before the side panel.
+            let salon = row.split("││").next().unwrap();
+            assert!(salon.contains(&mine), "its own row\n{salon}");
+            assert!(
+                salon.contains(&format!("{arrow} {partner} \"shall we split it\"")),
+                "{salon}"
+            );
+            assert!(!salon.contains("you"), "{salon}");
+        }
     }
 
     #[test]
@@ -5808,6 +5916,393 @@ mod tests {
         rows.iter()
             .map(|l| l.spans.iter().map(|s| s.content.as_ref()).collect())
             .collect()
+    }
+
+    /// A quiet team at tick 100: everyone idle since now, nothing said,
+    /// nothing waiting, nothing new.
+    fn quiet_rows() -> App {
+        let mut app = app_after(1, 4, 50, Lang::En);
+        app.world.tick = 100;
+        app.world.inbox.clear();
+        app.unseen.clear();
+        for a in &mut app.world.agents {
+            a.status = Status::Idle;
+            a.activity = None;
+            a.talk = None;
+            a.topic.clear();
+            a.starting = false;
+            a.changed_at = 100;
+            a.local = None;
+            a.cost = 0;
+        }
+        app
+    }
+
+    /// Agent `id`'s row, `width` wide, as one string.
+    fn row(app: &App, id: AgentId, width: usize) -> String {
+        salon::agent_line(app, &app.world.agents[id], "", &app.rungs(), width)
+            .spans
+            .iter()
+            .map(|s| s.content.as_ref())
+            .collect()
+    }
+
+    fn told(a: &mut Agent, with: Party, mine: bool, text: &str) {
+        a.talk = Some(Talk {
+            with,
+            mine,
+            text: text.into(),
+            until: 0,
+        });
+    }
+
+    #[test]
+    fn quoted_cleans_cuts_to_the_room_and_says_nothing_under_the_minimum() {
+        assert_eq!(quoted("abc", 8).as_deref(), Some("\"abc\""));
+        assert_eq!(quoted("abc", 7), None, "under QUOTE_MIN");
+        assert_eq!(
+            quoted("abcdefgh", 8).as_deref(),
+            Some("\"abcde…\""),
+            "cut, its quotes inside the room"
+        );
+        assert_eq!(
+            quoted("abcdef", 8).as_deref(),
+            Some("\"abcdef\""),
+            "six letters fit in eight"
+        );
+        assert_eq!(quoted("", 20), None);
+        assert_eq!(quoted("   ", 20), None);
+        assert_eq!(quoted("  x  ", 20).as_deref(), Some("\"x\""), "trimmed");
+        let q = quoted("a\x1b[31mb", 20).unwrap();
+        assert!(!q.contains('\x1b'), "{q:?}");
+    }
+
+    #[test]
+    fn a_status_carries_the_text_that_belongs_to_it() {
+        let mut app = quiet_rows();
+        let w = 1;
+        let words = |app: &App, lang: Lang| -> String {
+            status_spans(lang, &app.world, &app.world.agents[w])
+                .iter()
+                .map(|s| s.content.as_ref())
+                .collect()
+        };
+        // An answer not read yet: its first line.
+        app.world.replied(w, "\nUse the enum.\nmore");
+        assert_eq!(words(&app, Lang::En), "answered you \"Use the enum.\"");
+        app.world.inbox.clear();
+        // A tool call waiting for a yes: what it would do, on one line.
+        app.world.agents[w].status = Status::Working;
+        app.world.asks_you(w, "cargo test\n-q");
+        assert_eq!(
+            words(&app, Lang::En),
+            "⚑ waits for your yes \"cargo test ↵ -q\""
+        );
+        // The forty columns: the mark and the words take 20, a space and
+        // the quotes 3, so 17 letters show whole and 18 are cut.
+        app.world.inbox.clear();
+        app.world.asks_you(w, &"c".repeat(17));
+        assert!(words(&app, Lang::En).ends_with(&format!("\"{}\"", "c".repeat(17))));
+        app.world.inbox.clear();
+        app.world.asks_you(w, &"c".repeat(18));
+        assert!(words(&app, Lang::En).ends_with(&format!("\"{}…\"", "c".repeat(16))));
+        app.world.inbox.clear();
+        // Blocked: what it waits for, then on whom.
+        app.world.agents[w].status = Status::Blocked;
+        app.world.agents[w].topic = "JWT clock skew".into();
+        // The queue's words leave eight of the forty.
+        assert_eq!(
+            words(&app, Lang::En),
+            "BLOCKED \"JWT c…\" in the researcher queue"
+        );
+        let r = (app.world.agents.iter())
+            .find(|a| a.role == Role::Researcher)
+            .unwrap()
+            .id;
+        app.world.agents[w].researcher = Some(r);
+        let name = app.world.agents[r].name.clone();
+        assert_eq!(
+            words(&app, Lang::En),
+            format!("BLOCKED \"JWT clock skew\" ← {name}")
+        );
+        // The topic gets what the wait leaves of the forty columns, eight
+        // at the least: BLOCKED, a space, ` ← ` and 21 letters leave 8.
+        app.world.agents[r].name = "r".repeat(21);
+        assert_eq!(
+            words(&app, Lang::En),
+            format!("BLOCKED \"JWT c…\" ← {}", "r".repeat(21))
+        );
+        app.world.agents[r].name = "r".repeat(22);
+        assert_eq!(
+            words(&app, Lang::En),
+            format!("BLOCKED ← {}", "r".repeat(22)),
+            "seven would be left: no quote"
+        );
+        // Stopped: why, within the forty columns; without a why, what to
+        // do about it.
+        app.world.agents[w].status = Status::Stopped;
+        app.world.agents[w].topic = "exited with code 1".into();
+        assert_eq!(words(&app, Lang::En), "■ stopped: exited with code 1");
+        assert_eq!(words(&app, Lang::Tr), "■ durdu: exited with code 1");
+        app.world.agents[w].topic = "x".repeat(50);
+        let said = words(&app, Lang::En);
+        assert_eq!(said.chars().count(), 40, "{said}");
+        assert!(
+            said.starts_with("■ stopped: xxx") && said.ends_with('…'),
+            "{said}"
+        );
+        app.world.agents[w].topic.clear();
+        assert_eq!(
+            words(&app, Lang::En),
+            "■ stopped, write to it to start again"
+        );
+    }
+
+    #[test]
+    fn a_row_quotes_its_newest_exchange_only_when_the_status_says_no_text() {
+        let mut app = quiet_rows();
+        let (w, other) = (1, 2);
+        let lead = app.world.projects[0].leader;
+        let other_name = app.world.agents[other].name.clone();
+        let lead_name = app.world.agents[lead].name.clone();
+        // Idle: what it last said.
+        told(
+            &mut app.world.agents[w],
+            Party::Person,
+            true,
+            "parser fixed",
+        );
+        let r = row(&app, w, 200);
+        assert!(r.contains("idle → you \"parser fixed\""), "{r}");
+        // Told by the lead: the lead's words, marked as told.
+        told(
+            &mut app.world.agents[w],
+            Party::Agent(lead),
+            false,
+            "fix the parser",
+        );
+        let r = row(&app, w, 200);
+        assert!(
+            r.contains(&format!("idle ← {lead_name} \"fix the parser\"")),
+            "{r}"
+        );
+        // Working: while it thinks, the quote; what it does says enough.
+        app.world.agents[w].status = Status::Working;
+        app.world.agents[w].activity = Some(String::new());
+        let r = row(&app, w, 200);
+        assert!(
+            r.contains(&format!("thinking… ← {lead_name} \"fix the parser\"")),
+            "{r}"
+        );
+        app.world.agents[w].activity = Some("Edit src/p.rs".into());
+        let r = row(&app, w, 200);
+        assert!(
+            r.contains("Edit src/p.rs") && !r.contains("fix the parser"),
+            "{r}"
+        );
+        app.world.agents[w].activity = None;
+        let r = row(&app, w, 200);
+        assert!(
+            r.contains("\"fix the parser\""),
+            "the bar says nothing: {r}"
+        );
+        app.world.agents[w].starting = true;
+        let r = row(&app, w, 200);
+        assert!(
+            r.contains(&format!("starting… ← {lead_name} \"fix the parser\"")),
+            "{r}"
+        );
+        app.world.agents[w].starting = false;
+        // Asking: its own question to the one it waits for is quoted
+        // alone, the status names them; another's word, or a word to
+        // someone else, says whose.
+        app.world.agents[w].status = Status::Asking {
+            to: other,
+            until: 0,
+        };
+        told(
+            &mut app.world.agents[w],
+            Party::Agent(other),
+            true,
+            "which parser?",
+        );
+        let r = row(&app, w, 200);
+        assert!(
+            r.contains(&format!("? → {other_name} \"which parser?\"")),
+            "{r}"
+        );
+        assert!(!r.contains(&format!("{other_name} → ")), "{r}");
+        told(
+            &mut app.world.agents[w],
+            Party::Agent(other),
+            false,
+            "the fast one",
+        );
+        let r = row(&app, w, 200);
+        assert!(
+            r.contains(&format!("? → {other_name} ← {other_name} \"the fast one\"")),
+            "{r}"
+        );
+        told(
+            &mut app.world.agents[w],
+            Party::Agent(lead),
+            true,
+            "which parser?",
+        );
+        let r = row(&app, w, 200);
+        assert!(
+            r.contains(&format!("? → {other_name} → {lead_name} \"which parser?\"")),
+            "{r}"
+        );
+        // A status with a text of its own quotes nothing more.
+        told(
+            &mut app.world.agents[w],
+            Party::Person,
+            true,
+            "parser fixed",
+        );
+        app.world.agents[w].topic = "a topic".into();
+        for status in [
+            Status::Blocked,
+            Status::Researching {
+                for_agent: other,
+                until: 0,
+            },
+            Status::Stopped,
+        ] {
+            app.world.agents[w].status = status;
+            assert!(!row(&app, w, 200).contains("parser fixed"), "{status:?}");
+        }
+        app.world.agents[w].topic.clear();
+        let r = row(&app, w, 200);
+        assert!(
+            r.contains("■ stopped, write to it to start again") && !r.contains('"'),
+            "stopped without a why: what to do fills the column: {r}"
+        );
+        app.world.agents[w].status = Status::Idle;
+        app.world.replied(w, "done");
+        assert!(
+            !row(&app, w, 200).contains("parser fixed"),
+            "the answer says more"
+        );
+        app.world.inbox.clear();
+        app.world.asked_you(w, "may I?");
+        assert!(
+            !row(&app, w, 200).contains("parser fixed"),
+            "the question says more"
+        );
+        app.world.inbox.clear();
+        app.world.agents[w].status = Status::Working;
+        app.world.asks_you(w, "rm -r build");
+        assert!(
+            !row(&app, w, 200).contains("parser fixed"),
+            "the ask says more"
+        );
+        app.world.inbox.clear();
+        app.world.agents[w].status = Status::WaitingHuman;
+        let r = row(&app, w, 200);
+        assert!(r.contains("waiting for you → you \"parser fixed\""), "{r}");
+        app.world.agents[w].status = Status::Asleep;
+        let r = row(&app, w, 200);
+        assert!(
+            r.contains("write to it to wake it") && !r.contains('"'),
+            "asleep: the hint fills the column: {r}"
+        );
+        // Done, not seen: what it said at the end of its turn.
+        app.world.agents[w].status = Status::Idle;
+        app.unseen.insert(w);
+        let r = row(&app, w, 200);
+        assert!(
+            r.contains("done, not seen yet → you \"parser fixed\""),
+            "{r}"
+        );
+        // The quote keeps to the status column: `idle`, a space and
+        // `→ you ` leave 29 of its forty.
+        app.unseen.clear();
+        told(
+            &mut app.world.agents[w],
+            Party::Person,
+            true,
+            &"a".repeat(40),
+        );
+        let r = row(&app, w, 200);
+        assert!(
+            r.contains(&format!("idle → you \"{}…\"", "a".repeat(26))),
+            "{r}"
+        );
+        assert!(!r.contains(&"a".repeat(27)), "{r}");
+    }
+
+    #[test]
+    fn a_row_says_how_long_it_has_been_in_its_state_from_a_minute_on() {
+        let mut app = quiet_rows();
+        let w = 1;
+        // Eleven ticks are 55 seconds; twelve, a minute.
+        app.world.agents[w].changed_at = 89;
+        let r = row(&app, w, 200);
+        assert!(!r.contains(" · "), "{r}");
+        app.world.agents[w].changed_at = 88;
+        let r = row(&app, w, 200);
+        assert!(r.contains("idle · 1 min"), "{r}");
+        app.world.agents[w].changed_at = 76;
+        let r = row(&app, w, 200);
+        assert!(r.contains("idle · 2 min"), "{r}");
+        // Something waiting for the person: since it came, not since the
+        // status changed.
+        app.world.agents[w].changed_at = 100;
+        app.world.inbox.push(InboxItem {
+            kind: InboxKind::Question,
+            agent: w,
+            detail: "q?".into(),
+            researcher: None,
+            open: true,
+            tick: 64,
+            card: None,
+        });
+        let r = row(&app, w, 200);
+        assert!(r.contains("? → you \"q?\" · 3 min"), "{r}");
+        app.lang = Lang::Tr;
+        let r = row(&app, w, 200);
+        assert!(r.contains("? → sen \"q?\" · 3 dk"), "{r}");
+    }
+
+    #[test]
+    fn the_time_and_the_quote_give_way_to_the_row_s_fixed_parts() {
+        let mut app = quiet_rows();
+        let (worker, _) = with_helpers(&mut app);
+        let a = &mut app.world.agents[worker];
+        a.status = Status::Idle;
+        a.changed_at = 64;
+        a.local = Some("http://localhost:5173/".into());
+        told(a, Party::Person, true, "parser fixed");
+        let tail = "  ▾ 2 helpers  ↗ localhost:5173/";
+        // Glyph, mark, name, taint, card and `idle` take 52; the quote 21,
+        // the time 8, the tail 32: 113 in all.
+        let whole = row(&app, worker, 200);
+        assert_eq!(whole.chars().count(), 113, "{whole}");
+        assert!(
+            whole.contains("idle → you \"parser fixed\" · 3 min") && whole.ends_with(tail),
+            "{whole}"
+        );
+        assert_eq!(row(&app, worker, 113), whole, "fits exactly");
+        // One short: the quote shrinks first, to what is left.
+        let r = row(&app, worker, 112);
+        assert!(r.contains("idle → you \"parser fix…\" · 3 min"), "{r}");
+        assert!(r.ends_with(tail) && r.chars().count() <= 112, "{r}");
+        // The shortest quote needs 15 free after the time: 107 shows one,
+        // 106 keeps the time alone.
+        let r = row(&app, worker, 107);
+        assert!(r.contains("\"parse…\" · 3 min"), "{r}");
+        let r = row(&app, worker, 106);
+        assert!(r.contains("idle · 3 min") && !r.contains('"'), "{r}");
+        assert!(r.ends_with(tail) && r.chars().count() <= 106, "{r}");
+        // Eight columns free take the time, seven do not: the fixed parts
+        // alone.
+        let r = row(&app, worker, 92);
+        assert!(r.contains("idle · 3 min") && r.ends_with(tail), "{r}");
+        let r = row(&app, worker, 91);
+        assert!(!r.contains(" · ") && !r.contains('"'), "{r}");
+        assert!(r.ends_with(tail) && r.chars().count() <= 91, "{r}");
     }
 
     #[test]

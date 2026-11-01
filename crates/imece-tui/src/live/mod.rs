@@ -930,12 +930,6 @@ impl Live {
     /// Moves the clock and applies what the sessions reported.
     pub fn step(&mut self, w: &mut World) {
         w.tick = now().saturating_sub(w.started_at) / SECONDS_PER_TICK;
-        let t = w.tick;
-        for a in &mut w.agents {
-            if a.talk.as_ref().is_some_and(|k| k.until <= t) {
-                a.talk = None;
-            }
-        }
         while let Ok((id, generation, ready)) = self.ready_rx.try_recv() {
             if generation == self.generation[id] {
                 self.ready(w, id, ready);
