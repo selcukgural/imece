@@ -3594,6 +3594,41 @@ diff --git a/b.rs b/b.rs
     }
 
     #[test]
+    fn a_step_charges_only_an_agent_that_is_here_and_busy() {
+        let (mut w, mut s) = world(1, 1, 1, 1, Lang::En);
+        let worker = workers_of(&w, 0)[0];
+        let lead = w.projects[0].leader;
+        w.agents[worker].status = Status::Working;
+        w.agents[worker].cost = 100;
+        let per_tick = w.agents[worker].vendor.cost_per_tick();
+        // Here but idle: nothing.
+        w.agents[lead].status = Status::Idle;
+        w.agents[lead].cost = 20;
+        assert!(per_tick > 0 && w.agents[lead].vendor.cost_per_tick() > 0);
+        // Gone, its status still a busy one: nothing.
+        let gone = w.agents.len();
+        let mut r = Agent::new(
+            gone,
+            0,
+            "researcher-9".into(),
+            Vendor::Claude,
+            Role::Researcher,
+            Status::Researching {
+                for_agent: worker,
+                until: 1_000,
+            },
+            w.tick,
+        );
+        r.gone = true;
+        r.cost = 7;
+        w.agents.push(r);
+        s.step(&mut w);
+        assert_eq!(w.agents[worker].cost, 100 + per_tick, "busy and here");
+        assert_eq!(w.agents[lead].cost, 20, "idle");
+        assert_eq!(w.agents[gone].cost, 7, "gone");
+    }
+
+    #[test]
     fn a_stopped_worker_resumes_in_its_session_when_told() {
         let (mut w, mut s, worker, card) = one_at_work();
         s.stop(&mut w, worker);
