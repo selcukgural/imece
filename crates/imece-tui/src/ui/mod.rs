@@ -1169,6 +1169,8 @@ fn writing(app: &App, rows: usize) -> Vec<Line<'static>> {
             let patch = app.world.change_of(id).map(|c| c.patch.as_str());
             let place = patch.and_then(|p| place(p, line)).unwrap_or_default();
             fill(t.typing_note, &[&place])
+        } else if app.searching {
+            t.typing_history.to_string()
         } else if app.typing_shell() {
             t.typing_shell.to_string()
         } else if app.typing_card() {
@@ -6523,6 +6525,48 @@ mod tests {
         assert!(r.contains("idle  ◔ 75%  ▾"), "{r}");
         let r = row(&app, worker, 90);
         assert!(r.contains("idle  ▾ 2 helpers") && !r.contains('◔'), "{r}");
+    }
+
+    #[test]
+    fn the_history_search_says_so_over_the_line_and_the_help_names_its_keys() {
+        let mut app = quiet_rows();
+        app.world.recall_line("@claude-1 fix the clock");
+        key(&mut app, KeyCode::Char('/'));
+        let s = render(&app, 160, 40);
+        assert!(!s.contains(" › history: "), "{s}");
+        app.on_key(KeyEvent::new(KeyCode::Char('r'), KeyModifiers::CONTROL));
+        let s = render(&app, 160, 40);
+        assert!(s.contains(" › history: "), "{s}");
+        assert!(s.contains("@claude-1 fix the clock"), "{s}");
+        app.lang = Lang::Tr;
+        assert!(render(&app, 160, 40).contains(" › geçmiş: "));
+        key(&mut app, KeyCode::Esc);
+        key(&mut app, KeyCode::Esc);
+        app.help = true;
+        let help = render(&app, 140, 40);
+        assert!(
+            help.contains("tab ↑ ↓ ^r   yazarken: tamamla · gönderilenler · :history"),
+            "{help}"
+        );
+        app.lang = Lang::En;
+        let help = render(&app, 140, 40);
+        assert!(
+            help.contains("tab ↑ ↓ ^r   writing: complete · sent lines · :history"),
+            "{help}"
+        );
+        // Every help row fits its cell: 13 columns of keys, 44 of words.
+        for lang in [Lang::En, Lang::Tr] {
+            let t = lang.text();
+            let (k, what) = t
+                .help_keys
+                .iter()
+                .find(|(k, _)| *k == "tab ↑ ↓ ^r")
+                .expect("the row");
+            assert!(
+                k.chars().count() <= 13 && what.chars().count() <= 44,
+                "{lang:?} {k} {what}"
+            );
+        }
     }
 
     #[test]
