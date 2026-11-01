@@ -37,6 +37,8 @@ The conventions are vim's: `h` `j` `k` `l` move and fold, `gg` and `G` go to the
 | `:pin NAME` | pin a project to the top of the salon; again: unpin |
 | `!cmd` | run `cmd` in your own shell, screen aside |
 | `tab` `⇧tab` `↑` `↓` | while writing: complete names and commands (`^n` `^p` step too) |
+| `↑` `↓` | writing, at the text's first / last line: the lines sent before, newest first; past the newest, what you were writing comes back |
+| `^r`  `:history` | search the lines sent: every word typed must be in the line, `enter` puts the one highlighted on the line, `tab` steps |
 | `^a` `^e` `⌥b` `⌥f` | writing: to the start / end, a word back / on |
 | `^w` `^u` `^k` `^y` | writing: cut a word / before / after the cursor; paste the cut back |
 | `⇧enter` `⌥enter` | writing: a new line; `↑` `↓` between lines (where the terminal speaks the kitty keyboard protocol) |

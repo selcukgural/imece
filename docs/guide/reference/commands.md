@@ -12,7 +12,7 @@ A line that starts with `:` is a command to imece, not a message to an agent. Yo
 - `:` then `tab` lists the commands. The menu shows after each command what it stands at now or would act on, in brackets: `budget (spent $3.10 of $20.00)`, `theme (dark)`, `lead (claude)`, `close (kule)`, `forget (claude-2)`, `next (2 waiting)`, `needs (off)`. The note is drawn, never inserted.
 - `$` after a command marks one that raises the next bill: `:open` (a new leader session), `:solo` (a new session), `:forget` (a new session that pays the whole briefing again, without the cache) and `:commit` (a paid call). No `:` command starts a paid turn by itself; `:budget` shows its value instead of a mark.
 - Short names: `:b` budget, `:c` close, `:f` forget, `:o` open, `:q` quit, `:t` theme. A short name typed whole is a command already, so the menu offers nothing and `enter` runs it (`:q` then `enter` asks at once).
-- Arguments complete too: after `:lang` the languages, after `:lead` the vendors, after `:notify` its three words, after `:theme` the built-in names, after `:close` and `:pin` the open projects, after `:goto` nothing (the `&` line has its own menu), after `:forget`, `:talk` and `:trace` the agents of open projects (`@` or not), after `:open` and `:export` directories (`~` for your home, hidden ones only after a `.`, `tab` steps into the chosen one).
+- Arguments complete too: after `:lang` the languages, after `:lead` the vendors, after `:notify` its three words, after `:theme` the built-in names, after `:close` and `:pin` the open projects, after `:goto` nothing (the `&` line has its own menu), after `:history` the lines sent, after `:forget`, `:talk` and `:trace` the agents of open projects (`@` or not), after `:open` and `:export` directories (`~` for your home, hidden ones only after a `.`, `tab` steps into the chosen one).
 - A name imece does not know: `no command xyz; : and tab list them`. A demo-only command typed live: `:pause is for the demo: live agents run in real time`.
 - `!cmd` runs a command in your own shell and `/cmd` is the agent's own command line; neither is a `:` command ([command line](../screen/command-line.md)).
 
@@ -34,6 +34,7 @@ A line that starts with `:` is a command to imece, not a message to an agent. Yo
 | `:fold` | `zM` | | | | |
 | `:forget [@NAME]` | — | `:f` | | `$` | the agent at hand |
 | `:goto [NAME]` | `&` | | | | |
+| `:history [WORDS]` | `^r` | | | | |
 | `:help` | `?` | | | | |
 | `:lang [en\|tr]` | `L` | | | | `English` / `Türkçe` |
 | `:lead VENDOR` | — | | | | the primary vendor, or `ask` |
@@ -122,6 +123,10 @@ Makes the agent forget its vendor session (`:f`): the running session ends (its 
 ### `:goto [NAME]`
 
 Goes to the agent called `NAME` (an `@` before it is fine), else to the open project of that name: the salon with its row selected, the project unfolded, a helper's worker unfolded, and `f` let go when it would hide the row; a project's name selects its header. Case and Turkish letters do not matter. Nothing of the name: `nothing called "zzz" to go to: an agent or a project`, and nothing moves. Alone it opens the `&` line: the places as they stand now, what needs you first (stuck, then waiting, then done and not seen), the rest by their state (working before idle), then the open projects, each agent with its glyph and status words. The list is frozen while the line is open, so its numbers hold while you type; a digit `1`-`9` right after `&` goes at once, `#` right after `&` turns to the card line, `!` keeps only what needs you, digits match the start of a number, anything else matches inside the names. `enter` goes to the item under the cursor, or to the name typed. See [salon](../screen/salon.md).
+
+### `:history [WORDS]`
+
+Searches the lines you sent, as `^r` does: the command line opens with `WORDS` on it and the completion menu lists the lines sent that have every one of them (case and Turkish letters aside), newest first, each line once with how long ago it was sent; nothing typed lists them all. `tab`, `↑` and `↓` step through them, `enter` puts the highlighted line on the command line, whole (a line of several lines comes back as it was), to send with `enter` again or to change first; with nothing matched, `enter` keeps the words and ends the search. `esc` closes the menu, then the line. While writing, `^r` takes what is written as the words. Nothing sent yet: `nothing sent yet to bring back`. Every line sent is kept (a message, a `:` command, a `!cmd`; not `#12`, `&3`, `:goto` and `:history`, which only go somewhere), between runs too: the newest 500 come back at the next start. `↑` and `↓` at the text's first or last line step through the same lines without a search. See [keyboard](../screen/keyboard.md) and [files](files.md).
 
 ### `:help`
 

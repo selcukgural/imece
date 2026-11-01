@@ -31,3 +31,6 @@ it, the world's keys (schema_version, started_at, budget) refused; a
 retention for stories of long-closed projects or closed inbox items; a
 tidy's result is shown nowhere; the clock ignores daylight-saving
 changes (above).
+
+Record 66 adds a second retention: sent lines past the newest 500 go at
+the tidy.

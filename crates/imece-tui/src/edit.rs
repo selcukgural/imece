@@ -92,12 +92,12 @@ pub fn key(k: KeyEvent, text: &mut String, at: usize, cut: &mut String) -> Optio
 }
 
 /// Where the line `at` is on starts: after the new line before it.
-fn line_start(s: &str, at: usize) -> usize {
+pub(crate) fn line_start(s: &str, at: usize) -> usize {
     s[..at].rfind('\n').map_or(0, |i| i + 1)
 }
 
 /// Where the line `at` is on ends: at the new line after it.
-fn line_end(s: &str, at: usize) -> usize {
+pub(crate) fn line_end(s: &str, at: usize) -> usize {
     s[at..].find('\n').map_or(s.len(), |i| at + i)
 }
 

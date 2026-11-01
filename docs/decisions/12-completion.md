@@ -47,3 +47,4 @@ only `/clear`.
 
 Record 65 adds the `&` line's menu on the same `Menu`: the places to
 go, numbered as a list frozen when the line opened, with notes.
+Record 66 puts the `^r` search over the lines sent on it too.
