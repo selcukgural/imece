@@ -82,6 +82,12 @@ pub fn top(dir: &Path) -> io::Result<PathBuf> {
     PathBuf::from(git(dir, &["rev-parse", "--show-toplevel"])?).canonicalize()
 }
 
+/// Whether the checkout `dir` is in has a first commit: what a worktree
+/// is made from. A `git init` with nothing committed yet has none.
+pub fn born(dir: &Path) -> bool {
+    git(dir, &["rev-parse", "--verify", "--quiet", "HEAD^{commit}"]).is_ok()
+}
+
 fn common_dir(dir: &Path) -> io::Result<PathBuf> {
     let d = git(dir, &["rev-parse", "--git-common-dir"])?;
     dir.join(d).canonicalize()
@@ -696,6 +702,19 @@ mod tests {
             std::fs::create_dir_all(&self).unwrap();
             self.canonicalize().unwrap()
         }
+    }
+
+    #[test]
+    fn a_checkout_is_born_with_its_first_commit() {
+        let s = repo("born");
+        assert!(born(&s.repo));
+        let empty = s.dir.join("empty");
+        std::fs::create_dir_all(&empty).unwrap();
+        assert!(!born(&empty), "no git at all");
+        git(&empty, &["init", "--quiet"]).unwrap();
+        assert!(!born(&empty), "git init, nothing committed");
+        commit(&empty, "first");
+        assert!(born(&empty));
     }
 
     #[test]

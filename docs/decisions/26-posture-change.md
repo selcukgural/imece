@@ -24,3 +24,7 @@ record): (d) is done.
 Then dogfooding (imece writes imece) in standard mode, with an
 `AGENTS.md` under the 16 KiB cap and a known-good binary kept as
 `imece-stable`.
+
+**Later (2026-11-01, record 73).** A solo in a folder without git has no
+Δ gate: it writes straight into the folder, by the person's choice, said
+on its header, in the journal and to the agent. See "A solo without git".

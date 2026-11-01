@@ -135,6 +135,9 @@ impl Live {
         if self.suggesting.is_some() {
             return Err("a suggestion is under way".into());
         }
+        if !self.places[p].git {
+            return Err("this folder is not a git checkout with a commit".into());
+        }
         let model = self.cheap_claude()?.1;
         self.room(w, today())?;
         self.git

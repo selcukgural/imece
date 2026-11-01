@@ -182,12 +182,13 @@ impl Live {
     }
 
     /// The directory agent `id`'s session runs in: the checkout for a
-    /// leader, its (or its worker's) worktree for the rest, as the vendor
-    /// sees it (a worktree is canonical once it exists).
+    /// leader and for everyone of a folder without git, its (or its
+    /// worker's) worktree for the rest, as the vendor sees it (a worktree
+    /// is canonical once it exists).
     pub(super) fn cwd_of(&self, w: &World, id: AgentId) -> PathBuf {
         let a = &w.agents[id];
         let place = &self.places[a.project];
-        if a.role == Role::Leader {
+        if a.role == Role::Leader || !place.git {
             return place.repo.clone();
         }
         let path = place.root.join(Self::tree_of(w, id));
@@ -510,8 +511,10 @@ impl Live {
     /// the line that goes there in its first prompt.
     pub(super) fn start(&self, w: &mut World, id: AgentId, held: Option<usize>) {
         let a = &w.agents[id];
-        // Everyone but a leader writes, in a worktree.
+        // Everyone but a leader writes, in a worktree; in a folder without
+        // git, straight in the folder.
         let leader = a.role == Role::Leader;
+        let direct = leader || !self.places[a.project].git;
         let confine = self.confine;
         let vendor = self.of(a.vendor);
         let mcp = self.bus.as_ref().map(|b| Mcp {
@@ -551,7 +554,7 @@ impl Live {
         let (tx, ready) = (self.tx.clone(), self.ready_tx.clone());
         thread::spawn(move || {
             let started = (|| {
-                let (cwd, placed, copied) = if leader {
+                let (cwd, placed, copied) = if direct {
                     (repo, None, Vec::new())
                 } else {
                     let w = worktree::ensure(&repo, &root, &tree).map_err(|e| e.to_string())?;
@@ -681,6 +684,7 @@ mod tests {
         live.places.push(Place {
             repo: PathBuf::from("/n"),
             root: PathBuf::from("/n-trees"),
+            git: true,
         });
         assert_eq!(live.cwd_of(&w, solo), PathBuf::from("/n-trees/solo-1"));
         assert_eq!(
@@ -775,6 +779,27 @@ mod tests {
         assert_eq!(std::fs::read_to_string(&copied).unwrap(), "KEY=1");
         let _ = std::fs::remove_dir_all(&repo);
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn in_a_folder_without_git_a_session_starts_in_the_folder_without_a_worktree() {
+        let folder = plain_folder("start-nogit", false);
+        let root = folder.with_extension("trees");
+        let mut w = team(1);
+        w.projects[0].copies = vec![".env".into()];
+        let mut live = idle_live_in(&folder, 2);
+        live.places[0].root = root.clone();
+        live.places[0].git = false;
+        let (tx, rx) = mpsc::channel();
+        live.ready_tx = tx;
+        live.start(&mut w, 1, None);
+        let (id, _, started) = rx.recv_timeout(Duration::from_secs(10)).unwrap();
+        // No worktree was asked of git: the vendor's program is what failed.
+        let e = started.err().expect("no such program");
+        assert_eq!(id, 1);
+        assert!(e.starts_with("/nonexistent/claude"), "{e}");
+        assert!(!root.exists(), "no worktree, nothing copied");
+        let _ = std::fs::remove_dir_all(&folder);
     }
 
     #[test]

@@ -54,14 +54,22 @@ impl Live {
     /// it loaded: every agent sleeps (no session, nothing spent until
     /// something wakes it), its mail, notes and offers wait, a turn that
     /// was cut short is marked on its card and told at its wake. A project
-    /// whose checkout is gone closes. `skipped` lines of the journal or a
-    /// story could not be read.
+    /// whose folder is gone closes, and so does a team whose folder is no
+    /// git checkout with a first commit any more; a solo there works
+    /// straight in its folder, which the journal says. `skipped` lines of
+    /// the journal or a story could not be read.
     pub(super) fn adopt(&mut self, w: &mut World, found: Found, skipped: usize) {
         for repo in &found.repos {
             let root = root_for(&self.state, repo);
+            // Found again at each start: a folder may have got its first
+            // commit since, or lost its git. Only the folder's own git
+            // counts, not a checkout around it.
+            let own = repo.canonicalize().unwrap_or_else(|_| repo.clone());
+            let git = checkout_of(repo).is_ok_and(|(top, born)| born && top == own);
             self.places.push(Place {
                 repo: repo.clone(),
                 root,
+                git,
             });
         }
         for id in 0..w.agents.len() {
@@ -142,7 +150,7 @@ impl Live {
             .filter(|q| {
                 self.places
                     .get(q.id)
-                    .is_none_or(|pl| worktree::top(&pl.repo).is_err())
+                    .is_none_or(|pl| !pl.repo.is_dir() || (!pl.git && !w.is_solo(q.id)))
             })
             .map(|q| q.id)
             .collect();
@@ -151,6 +159,14 @@ impl Live {
             self.offered.retain(|c, _| w.cards[*c].project != p);
             self.changes.retain(|a, _| w.agents[*a].project != p);
             w.close_project(p);
+        }
+        let bare: Vec<(ProjectId, String)> = (w.open_projects())
+            .filter_map(|q| self.places.get(q.id).map(|pl| (q.id, pl)))
+            .filter(|(_, pl)| !pl.git)
+            .map(|(p, pl)| (p, pl.repo.display().to_string()))
+            .collect();
+        for (p, folder) in bare {
+            w.set_no_git(p, Some(&folder));
         }
         if skipped > 0 {
             let lead = w.projects.first().map(|p| p.leader);
@@ -2362,5 +2378,56 @@ mod tests {
         drop(live);
         let _ = std::fs::remove_dir_all(&repo);
         let _ = std::fs::remove_dir_all(&state);
+    }
+
+    #[test]
+    fn a_folder_without_git_keeps_its_solo_and_closes_its_team() {
+        let repo = checkout("adopt-git");
+        let plain = plain_folder("adopt-plain", false);
+        let unborn = plain_folder("adopt-unborn", true);
+        let mut w = team(0);
+        for (name, path, role) in [
+            ("plain", &plain, Role::Leader),
+            ("unborn", &unborn, Role::Solo),
+            ("gone", &PathBuf::from("/nonexistent/gone"), Role::Solo),
+        ] {
+            let path = path.display().to_string();
+            w.open_project(None, name.into(), path, Vendor::Claude, role);
+        }
+        let found = Found {
+            repos: vec![
+                repo.clone(),
+                plain.clone(),
+                unborn.clone(),
+                "/nonexistent/gone".into(),
+            ],
+            ..Found::default()
+        };
+        let state = plain_folder("adopt-state", false);
+        let mut live = Live::bare(claude_at("x"), Vendor::Claude);
+        live.state = state.clone();
+        let journal = w.journal.len();
+        live.adopt(&mut w, found, 0);
+        let git: Vec<bool> = live.places.iter().map(|pl| pl.git).collect();
+        assert_eq!(git, [true, false, false, false]);
+        let open: Vec<bool> = w.projects.iter().map(|q| !q.closed).collect();
+        assert_eq!(open, [true, false, true, false], "a team needs git");
+        let no_git: Vec<bool> = w.projects.iter().map(|q| q.no_git).collect();
+        assert_eq!(no_git, [false, false, true, false]);
+        let said: Vec<&Event> = (w.journal[journal..].iter())
+            .map(|e| &e.event)
+            .filter(|e| matches!(e, Event::NoGit { .. }))
+            .collect();
+        let path = unborn.display().to_string();
+        assert_eq!(
+            said,
+            [&Event::NoGit {
+                leader: w.projects[2].leader,
+                path
+            }]
+        );
+        for dir in [&repo, &plain, &unborn, &state] {
+            let _ = std::fs::remove_dir_all(dir);
+        }
     }
 }

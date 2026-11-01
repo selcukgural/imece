@@ -3946,6 +3946,65 @@ done"#
         let _ = std::fs::remove_dir_all(&dir);
     }
 
+    /// `IMECE_LIVE_CODEX=1 cargo test -p imece-agent -- --ignored live_codex_writes_outside --nocapture`
+    ///
+    /// A solo opened in a folder that is not a git checkout runs there:
+    /// Codex's app-server starts, writes and ends a turn without a repo.
+    #[test]
+    #[ignore = "drives the real codex; set IMECE_LIVE_CODEX=1"]
+    fn live_codex_writes_outside_a_git_checkout() {
+        if std::env::var_os("IMECE_LIVE_CODEX").is_none() {
+            return;
+        }
+        let dir =
+            std::env::temp_dir().join(format!("imece-live-codex-nogit-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let cwd = dir.canonicalize().unwrap();
+        let s = Spec {
+            program: PROGRAM.into(),
+            cwd: cwd.clone(),
+            choice: Some("@low".into()),
+            write: true,
+            confine: Confine::Standard,
+            system: "You are solo, a coding agent in imece, working alone with the person.".into(),
+            mcp: None,
+            resume: None,
+        };
+        let (tx, rx) = mpsc::channel();
+        let mut session = Session::start(&s, move |e| {
+            let _ = tx.send(e);
+        })
+        .unwrap();
+        session
+            .prompt(
+                "Create a file named hello.txt whose only content is the word hi. \
+                 Then reply with the single word: pong",
+            )
+            .unwrap();
+        let mut got = Vec::new();
+        loop {
+            let e = rx
+                .recv_timeout(Duration::from_secs(180))
+                .expect("codex answers within three minutes");
+            eprintln!("live codex: {e:?}");
+            let end = matches!(e, Event::TurnDone { .. } | Event::Stopped(_));
+            got.push(e);
+            if end {
+                break;
+            }
+        }
+        drop(session);
+        assert!(matches!(&got[0], Event::Started { .. }), "{got:?}");
+        assert!(
+            matches!(got.last().unwrap(), Event::TurnDone { ok: true, .. }),
+            "{got:?}"
+        );
+        let hello = std::fs::read_to_string(cwd.join("hello.txt")).unwrap_or_default();
+        let _ = std::fs::remove_dir_all(&dir);
+        assert_eq!(hello.trim(), "hi");
+    }
+
     /// `IMECE_LIVE_CODEX=1 cargo test -p imece-agent -- --ignored live_codex_reports --nocapture`
     ///
     /// Codex's `update_plan` tool is on in an app-server thread without

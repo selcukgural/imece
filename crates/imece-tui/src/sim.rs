@@ -703,6 +703,7 @@ pub fn world(
             closed: false,
             pinned: false,
             copies: Vec::new(),
+            no_git: false,
         });
     }
     // The confine dial's default, said once a start as live does.
@@ -1240,7 +1241,10 @@ impl Sim {
         }
         // A solo's turn end shows what its worktree holds, as live reads
         // it: a change about every other answer.
-        if w.agents[id].role == Role::Solo && self.rng.one_in(2) {
+        if w.agents[id].role == Role::Solo
+            && !w.projects[w.agents[id].project].no_git
+            && self.rng.one_in(2)
+        {
             let repo = w.projects[w.agents[id].project].repo;
             let (file, names) = *self.rng.pick(repo);
             let symbols: Vec<Symbol> = names
@@ -1508,6 +1512,14 @@ impl Sim {
         if reuse.is_none() {
             w.projects[p].repo = PROJECTS[p % PROJECTS.len()].1;
         }
+        // A real folder without git, as live finds it: the solo works
+        // straight in it and shows no change. The demo's own made-up
+        // paths are checkouts.
+        let folder = match crate::live::checkout_of(Path::new(path)) {
+            Ok((folder, false)) => Some(folder.display().to_string()),
+            _ => None,
+        };
+        w.set_no_git(p, folder.as_deref());
         if let Some(c) = choice {
             self.models.insert(w.projects[p].leader, c);
         }
@@ -4547,6 +4559,44 @@ diff --git a/b.rs b/b.rs
             "a closed team of that name is not a solo's place"
         );
         assert!(w.projects[4].closed && !w.is_solo(4) && w.is_solo(5));
+    }
+
+    #[test]
+    fn the_demo_opens_a_solo_in_a_folder_without_git_as_live_does() {
+        let (mut w, mut s) = world(1, 2, 4, 7, Lang::En);
+        let plain = crate::live::testing::plain_folder("demo-nogit", false);
+        let shown = plain.display().to_string();
+        let p = s.open_solo(&mut w, &shown, None, None, None).unwrap();
+        let head = w.projects[p].leader;
+        assert!(w.projects[p].no_git);
+        assert_eq!(
+            w.journal.last().unwrap().event,
+            Event::NoGit {
+                leader: head,
+                path: shown.clone()
+            }
+        );
+        // Its answers come without a change: it wrote in the folder.
+        for i in 0..20 {
+            s.told(&mut w, head, &format!("task {i}")).unwrap();
+            for _ in 0..8 {
+                s.step(&mut w);
+            }
+            assert_eq!(w.agents[head].status, Status::Idle);
+            assert!(w.change_of(head).is_none(), "answer {i}");
+        }
+        // The demo's own paths, and a folder that got git since, are
+        // checkouts; closed and opened again, the mark goes.
+        let q = s
+            .open_solo(&mut w, "/x", None, None, Some("made-up"))
+            .unwrap();
+        assert!(!w.projects[q].no_git);
+        assert_eq!(s.close_project(&mut w, p), Ok(()));
+        crate::live::testing::commit_all(&plain);
+        let name = w.projects[p].name.clone();
+        assert_eq!(s.open_solo(&mut w, &shown, None, None, Some(&name)), Ok(p));
+        assert!(!w.projects[p].no_git);
+        let _ = std::fs::remove_dir_all(&plain);
     }
 
     #[test]

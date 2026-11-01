@@ -14,7 +14,7 @@ cd sizin/checkout
 imece
 ```
 
-Dizin bir git checkout'u olmalıdır (`--repo DİZİN` başkasını adlandırır). imece önce her satıcının `--version` komutunu çalıştırırken `PATH'te kodlama ajanları aranıyor…` der.
+Dizin commit'i olan bir git checkout'u olmalıdır (`--repo DİZİN` başkasını adlandırır); git'siz bir klasörde yalnız bir solo başlar (`imece --solo claude`, bkz. [solo oturumlar](../concepts/solo.md#gitsiz-bir-klasörde)). imece önce her satıcının `--version` komutunu çalıştırırken `PATH'te kodlama ajanları aranıyor…` der.
 
 ### Kim lider
 

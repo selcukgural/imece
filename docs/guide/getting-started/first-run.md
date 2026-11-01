@@ -14,7 +14,7 @@ cd your/checkout
 imece
 ```
 
-The directory must be a git checkout (`--repo DIR` names another). imece first says `looking for coding agents on PATH…` while it runs each vendor's `--version`.
+The directory must be a git checkout with a commit (`--repo DIR` names another); in a folder without git, only a solo starts (`imece --solo claude`, see [solo sessions](../concepts/solo.md#in-a-folder-without-git)). imece first says `looking for coding agents on PATH…` while it runs each vendor's `--version`.
 
 ### Who leads
 

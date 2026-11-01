@@ -42,9 +42,11 @@ impl Live {
         name: Option<&str>,
         kind: Open,
     ) -> Result<ProjectId, ProjectRefusal> {
-        let repo = worktree::top(path)
-            .map_err(|e| ProjectRefusal::NotCheckout(format!("{}: {e}", path.display())))?;
+        let (repo, git) = checkout_of(path).map_err(ProjectRefusal::NotCheckout)?;
         let solo = kind != Open::Team;
+        if !solo && !git {
+            return Err(ProjectRefusal::NoGit(repo.display().to_string()));
+        }
         let (vendor, model) = match &kind {
             Open::Team => (self.lead, self.of(self.lead).ladder.standard.clone()),
             Open::Solo { vendor, choice } => {
@@ -86,14 +88,20 @@ impl Live {
         self.bind(id, role, vendor)
             .map_err(|e| ProjectRefusal::Bus(e.to_string()))?;
         self.grow(model, false);
-        if reuse.is_none() {
-            let root = root_for(&self.state, &repo);
-            self.places.push(Place {
-                repo: repo.clone(),
-                root,
-            });
+        match reuse {
+            Some(p) => self.places[p].git = git,
+            None => {
+                let root = root_for(&self.state, &repo);
+                self.places.push(Place {
+                    repo: repo.clone(),
+                    root,
+                    git,
+                });
+            }
         }
-        let p = w.open_project(reuse, name, repo.display().to_string(), vendor, role);
+        let folder = repo.display().to_string();
+        let p = w.open_project(reuse, name, folder.clone(), vendor, role);
+        w.set_no_git(p, (!git).then_some(folder.as_str()));
         self.filed_at.remove(&p);
         Ok(p)
     }
@@ -108,8 +116,9 @@ impl Live {
         vendor: Vendor,
         model: &Option<String>,
     ) -> Option<ProjectId> {
-        // As the places keep it: git's idea of the checkout's path.
-        let repo = worktree::top(repo).unwrap_or_else(|_| repo.to_path_buf());
+        // As the places keep it: git's idea of the checkout's path, else
+        // the folder's own.
+        let repo = checkout_of(repo).map_or_else(|_| repo.to_path_buf(), |(r, _)| r);
         w.open_projects()
             .filter(|q| self.places.get(q.id).is_some_and(|pl| pl.repo == repo))
             .filter(|q| w.is_solo(q.id))
@@ -211,15 +220,29 @@ mod tests {
             )
         };
         let before = counts(&w, &live);
-        let nowhere = std::env::temp_dir().join("imece-refuse-nowhere");
-        std::fs::create_dir_all(&nowhere).unwrap();
+        let nowhere =
+            std::env::temp_dir().join(format!("imece-refuse-nowhere-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&nowhere);
         let err = live
             .open_project(&mut w, &nowhere, None, Open::Team)
             .unwrap_err();
         assert!(
             matches!(&err, ProjectRefusal::NotCheckout(why) if why.contains("imece-refuse-nowhere")),
-            "{err:?}"
+            "no such folder: {err:?}"
         );
+        // A folder without git: a team needs one, and says what works.
+        std::fs::create_dir_all(&nowhere).unwrap();
+        let err = live
+            .open_project(&mut w, &nowhere, None, Open::Team)
+            .unwrap_err();
+        let folder = nowhere.canonicalize().unwrap().display().to_string();
+        assert_eq!(err, ProjectRefusal::NoGit(folder.clone()));
+        assert!(
+            err.describe()
+                .starts_with(&format!("{folder} is not a git checkout"))
+        );
+        assert!(err.describe().contains("--solo VENDOR, :solo"));
+        let _ = std::fs::remove_dir_all(&nowhere);
         assert_eq!(
             live.open_project(&mut w, &repo, Some("a b"), Open::Team),
             Err(ProjectRefusal::BadName("a b".into()))
@@ -259,6 +282,7 @@ mod tests {
             ProjectRefusal::Bus("no socket".into()),
             ProjectRefusal::Vendor("gemini".into()),
             ProjectRefusal::Choice("gemini has no effort setting".into()),
+            ProjectRefusal::NoGit("/n".into()),
         ] {
             let said = r.describe();
             let arg = match &r {
@@ -268,7 +292,8 @@ mod tests {
                 | ProjectRefusal::BadName(s)
                 | ProjectRefusal::Bus(s)
                 | ProjectRefusal::Vendor(s)
-                | ProjectRefusal::Choice(s) => s.clone(),
+                | ProjectRefusal::Choice(s)
+                | ProjectRefusal::NoGit(s) => s.clone(),
                 ProjectRefusal::Last => unreachable!(),
             };
             assert!(said.contains(&arg), "{said}");
@@ -413,6 +438,7 @@ mod tests {
         live.places.push(Place {
             repo: PathBuf::from("/t"),
             root: PathBuf::from("/t-trees"),
+            git: true,
         });
         assert_eq!(live.close_project(&mut w, 1), Ok(()));
         assert_eq!(
@@ -556,6 +582,7 @@ mod tests {
         live.places.push(Place {
             repo: PathBuf::from("/n"),
             root: PathBuf::from("/n-trees"),
+            git: true,
         });
         // The vendors here, the lead vendor first.
         assert_eq!(live.vendors(), [Vendor::Claude]);
@@ -703,6 +730,70 @@ mod tests {
              you work for, is solo-ideas. Address it by that name."
         );
         assert!(live.notes[0].is_empty(), "the other project hears nothing");
+    }
+
+    #[test]
+    fn a_folder_is_a_checkout_when_it_has_a_first_commit() {
+        let repo = checkout("of-repo");
+        let top = repo.canonicalize().unwrap();
+        std::fs::create_dir_all(repo.join("src")).unwrap();
+        assert_eq!(
+            checkout_of(&repo.join("src")),
+            Ok((top.clone(), true)),
+            "its top"
+        );
+        let unborn = plain_folder("of-unborn", true);
+        assert_eq!(checkout_of(&unborn), Ok((unborn.clone(), false)));
+        let plain = plain_folder("of-plain", false);
+        std::fs::create_dir_all(plain.join("sub")).unwrap();
+        assert_eq!(
+            checkout_of(&plain.join("sub")),
+            Ok((plain.join("sub"), false))
+        );
+        let gone = plain.join("nothing");
+        let e = checkout_of(&gone).unwrap_err();
+        assert!(e.starts_with(&format!("{}: ", gone.display())), "{e}");
+        let file = plain.join("a.txt");
+        std::fs::write(&file, "a").unwrap();
+        assert!(checkout_of(&file).is_err(), "a file is no folder");
+        for dir in [&repo, &unborn, &plain] {
+            let _ = std::fs::remove_dir_all(dir);
+        }
+    }
+
+    #[test]
+    fn a_start_in_a_folder_without_git_opens_a_solo_and_refuses_a_team() {
+        let folder = plain_folder("nogit-start", false);
+        let state = trees("nogit-start-state");
+        let options = |solo: Option<Vendor>| Options {
+            repo: folder.clone(),
+            state: state.clone(),
+            max_workers: 2,
+            max_helpers: 1,
+            lead: Vendor::Claude,
+            tiers: Vec::new(),
+            budget: None,
+            fresh: false,
+            run_programs: Vec::new(),
+            run_timeout: DEFAULT_RUN_TIMEOUT,
+            confine: Confine::Standard,
+            solo: solo.map(|v| (v, None)),
+        };
+        assert_eq!(
+            probe(&folder, &[(Vendor::Claude, "sh", true)]),
+            Ok(vec![(Vendor::Claude, true)]),
+            "the vendors are looked for from the folder"
+        );
+        let present = [(Vendor::Claude, true)];
+        let e = world(options(None), &present).err().expect("refused");
+        assert_eq!(e, no_git_team(&folder.display().to_string()));
+        let (w, live) = world(options(Some(Vendor::Claude)), &present).unwrap();
+        assert_eq!(w.agents[0].role, Role::Solo);
+        assert!(w.projects[0].no_git && !live.places[0].git);
+        assert_eq!(live.places[0].repo, folder);
+        drop(live);
+        let _ = std::fs::remove_dir_all(&state);
+        let _ = std::fs::remove_dir_all(&folder);
     }
 
     #[test]

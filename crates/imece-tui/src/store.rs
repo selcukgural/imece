@@ -1082,6 +1082,7 @@ impl Store {
                 closed,
                 pinned,
                 copies,
+                no_git: false,
             });
             found.repos.push(PathBuf::from(repo));
         }
@@ -1606,6 +1607,7 @@ mod tests {
                     closed: false,
                     pinned: false,
                     copies: Vec::new(),
+                    no_git: false,
                 },
                 Project {
                     id: 1,
@@ -1617,6 +1619,7 @@ mod tests {
                     closed: true,
                     pinned: false,
                     copies: Vec::new(),
+                    no_git: false,
                 },
             ],
             agents: vec![

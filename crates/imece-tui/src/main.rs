@@ -45,7 +45,9 @@ and talks to you, and workers it hires as the work needs them, each changing
 its own git worktree; a worker may hire helpers for parts of its task. With
 --solo, one agent you drive yourself instead, on the vendor, model and
 effort you name, in a worktree of its own; what it changes waits for you
-after every turn. While it runs, :open PATH [NAME] opens another checkout
+after every turn. In a folder that is not a git checkout with a commit, a
+solo works straight in the folder (no worktree, nothing to review) and a
+team does not start. While it runs, :open PATH [NAME] opens another checkout
 as a project of its own, with its own leader, and :solo [PATH] [CHOICE]
 [NAME] a solo session (any number next to a team); :close NAME closes one,
 :rename NAME renames the one at hand; ? lists every key and command.

@@ -135,3 +135,7 @@ screen is not possible (aliases only; type it after `:solo VENDOR:`); a
 rechosen Codex solo starts a new app-server process on `thread/resume`,
 which re-reads its config; `:effort`/`:model` on a team's agent is refused
 (the leader hires by tier).
+
+**Later (2026-11-01, record 73).** In a folder that is not a git checkout
+with a first commit, a solo works straight in the folder: no worktree,
+no Δ; `⌀ no git` on its header. See "A solo without git".

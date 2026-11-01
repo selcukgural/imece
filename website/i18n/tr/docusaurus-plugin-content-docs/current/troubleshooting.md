@@ -37,6 +37,12 @@ imece kapalı düşer (fail closed): bir dosya, bir oturum ya da bir değişikli
 
 **Neden.** `--projects`, `--researchers` ve `--seed` simülasyona aittir; canlıda `--agents` 0-16 (varsayılan 4), `--helpers` 0-8 (varsayılan 2). Mesajın ardından kullanım metni gelir.
 
+### `… is not a git checkout with a commit: a team works in git worktrees …`
+
+**Neden.** imece git checkout'u olmayan ya da henüz hiçbir şey commit'lenmemiş bir klasörde başladı (ya da `:open` çalıştı): bir takımın işçilerinin her biri bir git worktree'sinde çalışır, bu da bir commit'ten yapılır.
+
+**Ne yapmalı.** Kendiniz sürdüğünüz tek bir ajan için `imece --solo claude` (ya da `:solo YOL`) doğrudan klasörde çalışır ([solo oturumlar](concepts/solo.md#gitsiz-bir-klasörde)). Bir takım için önce orada `git init && git commit --allow-empty -m init`.
+
 ## Oturumlar
 
 ### `codex-1 başlatılamadı: is logged in with apikey, whose cost imece can not count yet; log in with ChatGPT (codex login)`

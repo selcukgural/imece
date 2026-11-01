@@ -5,7 +5,7 @@ description: Install imece with one line (or build it from source), put the vend
 
 # Install
 
-imece runs on macOS and Linux, x86_64 and arm64 (on Windows: inside WSL). It needs git and at least one vendor's command-line agent on PATH, logged in. This page is what to have in place before the [first run](first-run.md).
+imece runs on macOS and Linux, x86_64 and arm64 (on Windows: inside WSL). It needs git (a solo also runs without it, in a folder that is no checkout) and at least one vendor's command-line agent on PATH, logged in. This page is what to have in place before the [first run](first-run.md).
 
 ## With the installer
 

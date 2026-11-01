@@ -5,7 +5,7 @@ description: imece'yi tek satırla kurun (ya da kaynaktan derleyin), satıcı CL
 
 # Kurulum
 
-imece macOS ve Linux'ta, x86_64 ve arm64 üzerinde çalışır (Windows'ta: WSL içinde). Git ve PATH'te en az bir satıcının oturum açılmış komut satırı ajanı gerekir. Bu sayfa, [ilk çalıştırma](first-run.md) öncesinde yerinde olması gerekenlerdir.
+imece macOS ve Linux'ta, x86_64 ve arm64 üzerinde çalışır (Windows'ta: WSL içinde). Git (bir solo, checkout olmayan bir klasörde git'siz de çalışır) ve PATH'te en az bir satıcının oturum açılmış komut satırı ajanı gerekir. Bu sayfa, [ilk çalıştırma](first-run.md) öncesinde yerinde olması gerekenlerdir.
 
 ## Kurulum betiğiyle
 
