@@ -2147,6 +2147,44 @@ mod tests {
     }
 
     #[test]
+    fn a_solo_s_helper_counts_as_a_line_when_the_salon_decides_what_to_fold() {
+        let mut app = app_after(1, 3, 0, Lang::En);
+        app.home = None;
+        // Calm workers: idle, quiet, unchanged for a while, not selected.
+        app.world.tick = 20;
+        for c in ":solo claude notes".chars() {
+            key(&mut app, KeyCode::Char(c));
+        }
+        key(&mut app, KeyCode::Enter);
+        let head = app.world.projects[1].leader;
+        let helper = app.world.agents.len();
+        let mut h = Agent::new(
+            helper,
+            1,
+            "solo-notes.1".into(),
+            Vendor::Claude,
+            Role::Helper,
+            Status::Working,
+            20,
+        );
+        h.parent = Some(head);
+        app.world.agents.push(h);
+        app.selected = Sel::Project(1);
+        // Two headers, the leader, three workers, the solo and its helper.
+        let all = salon::rows(&app, 100);
+        assert_eq!(all.len(), 8, "{all:?}");
+        assert!(!all.iter().any(|r| matches!(r, salon::Row::Folded(_))));
+        assert_eq!(salon::rows(&app, 8).len(), 8, "it fits exactly");
+        // One line short: a calm worker folds, because the helper's line
+        // was counted.
+        let tight = salon::rows(&app, 7);
+        assert!(
+            tight.iter().any(|r| matches!(r, salon::Row::Folded(_))),
+            "{tight:?}"
+        );
+    }
+
+    #[test]
     fn agent_text_reaches_the_screen_clean() {
         let mut app = app_after(1, 4, 50, Lang::En);
         let id = app

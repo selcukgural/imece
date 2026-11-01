@@ -335,12 +335,11 @@ fn split_vendor<'a>(flag: &str, s: &'a str) -> Result<(Option<Vendor>, &'a str),
 /// `VENDOR[:MODEL][@EFFORT]`, as `--solo` takes it: a vendor imece drives,
 /// asked only for an effort it has.
 fn parse_solo(s: &str) -> Result<(Vendor, Option<String>), String> {
+    // `vendor_choice` takes only the vendors imece leads with, which are
+    // the ones it drives.
     let (vendor, choice) = vendor_choice(s).ok_or_else(|| {
         format!("--solo: {s:?} is not VENDOR[:MODEL][@EFFORT], like claude:opus@xhigh")
     })?;
-    if !live::KNOWN.iter().any(|k| k.0 == vendor && k.2) {
-        return Err(format!("--solo: imece does not drive {}", vendor.label()));
-    }
     if let Some(c) = &choice {
         live::valid_choice(vendor, c).map_err(|why| format!("--solo: {why}"))?;
     }

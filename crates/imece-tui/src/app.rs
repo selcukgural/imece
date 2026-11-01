@@ -3413,11 +3413,24 @@ mod tests {
             said(&mut app),
             "opened notes-2 at notes as a solo session; write to solo-notes-2 (claude)"
         );
+        // A path is told by a `/` alone, a `~` alone or a `.` alone.
+        for (n, (word, at)) in [("a/b", "a/b"), ("~", "~"), (".", ".")]
+            .into_iter()
+            .enumerate()
+        {
+            app.command(&format!("solo claude {word} p-{n}"));
+            let flash = said(&mut app);
+            assert!(
+                flash.contains(&format!(" at {at} as a solo session")),
+                "{word}: {flash}"
+            );
+        }
+        assert_eq!(app.world.projects.len(), 6);
         // Two names, two paths or two choices: the usage line, nothing opened.
         for bad in ["solo a b", "solo ~/x ./y", "solo claude codex"] {
             app.command(bad);
             assert_eq!(said(&mut app), t.solo_usage, "{bad}");
-            assert_eq!(app.world.projects.len(), 3, "{bad}");
+            assert_eq!(app.world.projects.len(), 6, "{bad}");
         }
         // A name that is taken, a name that can not be one.
         app.command("solo notes");

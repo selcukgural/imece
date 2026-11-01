@@ -4143,10 +4143,26 @@ diff --git a/b.rs b/b.rs
             .filter(|e| matches!(e.event, Event::Replied { agent, .. } if agent == head))
             .count();
         assert_eq!(replied, 40);
-        // Closed, a solo of that name opens again in place.
+        // Closed, a solo of that name opens again in place; not one of
+        // another name, and never a closed team of that name.
         assert_eq!(s.close_project(&mut w, 1), Ok(()));
+        assert_eq!(s.close_project(&mut w, 2), Ok(()));
+        assert_eq!(
+            s.open_solo(&mut w, "/z", None, None, Some("third")),
+            Ok(3),
+            "another name: a project of its own"
+        );
         assert_eq!(s.open_solo(&mut w, "/z", None, None, Some("shop")), Ok(1));
         assert!(w.is_solo(1) && !w.projects[1].closed);
+        assert!(w.projects[2].closed, "shop-2 stays closed");
+        assert_eq!(s.open_project(&mut w, "/t", Some("team")), Ok(4));
+        assert_eq!(s.close_project(&mut w, 4), Ok(()));
+        assert_eq!(
+            s.open_solo(&mut w, "/t", None, None, Some("team")),
+            Ok(5),
+            "a closed team of that name is not a solo's place"
+        );
+        assert!(w.projects[4].closed && !w.is_solo(4) && w.is_solo(5));
     }
 
     #[test]
