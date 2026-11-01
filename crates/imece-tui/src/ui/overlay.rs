@@ -8,6 +8,7 @@ use ratatui::widgets::{Block, Paragraph};
 
 use super::*;
 use crate::app::{App, Digest, LeftOff, PickStep, SoloPick, TalkNote, Thread};
+use crate::keys::Keymap;
 use crate::welcome::{self, Seen};
 use imece_agent::Login;
 
@@ -53,7 +54,7 @@ pub fn peek(f: &mut Frame, app: &App, id: AgentId) {
 /// window keeps its size, so it does not jump while the person types.
 pub fn help(f: &mut Frame, app: &App) {
     let t = app.lang.text();
-    let key = |(k, what): &(&str, &str)| {
+    let key = |(k, what): &(String, String)| {
         vec![
             Span::styled(format!(" {}", fit(k, 13)), bold(pal().strong)),
             Span::raw(fit(what, 44)),
@@ -63,7 +64,7 @@ pub fn help(f: &mut Frame, app: &App) {
     // short screen too.
     let wide = f.area().width >= 120;
     let rows = |n: usize| if wide { n.div_ceil(2) } else { n };
-    let all = help_keys(app.lang, app.shift_enter);
+    let all = help_rows(app.lang, app.shift_enter, &app.keys);
     let keys = found(&all, &app.help_find, |k| format!("{} {}", k.0, k.1));
     let shown = rows(keys.len());
     let mut lines: Vec<Line> = (0..shown)
@@ -147,6 +148,32 @@ pub(crate) fn fold(s: &str) -> String {
 /// How many of `help_keys` come before the help's new-line line: the
 /// writing keys end there.
 const WRITING_KEYS: usize = 19;
+
+/// The rows of `help_keys` (with the new-line line) whose keys are
+/// written, or none of imece's: the person's key file does not turn
+/// them, so they are shown as they are.
+pub(crate) const TYPED: [usize; 5] = [4, 16, 17, 18, WRITING_KEYS];
+
+/// The help's rows with the person's own keys: one for each key the key
+/// file gives first, then `help_keys` with every key the file moved
+/// written as the keys that do it now (`Keymap::shown`).
+pub(crate) fn help_rows(lang: Lang, shift_enter: bool, keys: &Keymap) -> Vec<(String, String)> {
+    let t = lang.text();
+    let mine =
+        (keys.given().iter()).map(|(from, to)| (from.name(), fill(t.keys_as, &[&to.name()])));
+    let rows = help_keys(lang, shift_enter)
+        .into_iter()
+        .enumerate()
+        .map(|(i, (k, what))| {
+            let k = if TYPED.contains(&i) {
+                k.to_string()
+            } else {
+                keys.shown(k)
+            };
+            (k, what.to_string())
+        });
+    mine.chain(rows).collect()
+}
 
 /// The keys the help lists, in its order: the new-line line, the one
 /// this terminal has (`shift_enter`), after the writing keys.

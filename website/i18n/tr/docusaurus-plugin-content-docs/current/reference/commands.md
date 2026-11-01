@@ -37,6 +37,7 @@ description: imece'nin aldığı her `:` komutu; argümanları, karşılığı o
 | `:history [WORDS]` | `^r` | | | | |
 | `:help` | `?` | | | | |
 | `:hints` | `F` | | | | |
+| `:keys` | — | | | | dosyanızın verdiği tuş sayısı |
 | `:lang [en\|tr]` | `L` | | | | `English` / `Türkçe` |
 | `:lead VENDOR` | — | | | | birincil satıcı, ya da `ask` |
 | `:mark` | `m` | | | | |
@@ -142,6 +143,10 @@ Gönderdiğiniz satırları arar, `^r` gibi: komut satırı üstünde `WORDS` il
 ### `:hints`
 
 İpucu harfleri, `F` gibi: salon ekranında seçilebilen her satırın (proje başlıkları, ajanlar, bir kartın ekranındaki kişiler, bekleyen kalemler, günlük satırları) başına bir ya da iki harflik bir etiket. Bir etiketi yazmak satırını kendi panelinde seçer; son harfi büyük yazılırsa onu `enter` gibi açar da. `backspace` bir harfi geri alır, `esc` kapatır. O arada ekrandan çıkan bir satır: `o satır ekrandan çıktı`. Salon ekranı dışında: `burada harf verilecek satır yok: F salon ekranında çalışır`. Bkz. [salon](../screen/salon.md).
+
+### `:keys`
+
+Tuş dosyanızı (`~/.config/imece/keys`) yeniden okur ve ne çıktığını söyler: `…/imece/keys: tuşlar alındı (5)`, imece'nin bir tuşunun anlamı başka bir tuşa geçmeden gittiyse `; artık hiçbir tuş j işini yapmıyor` ile; `tuş dosyası yok; … içine yazılan TUŞ = TUŞ satırları sana kendi tuşlarını verir` (imece'nin kendi tuşları geri gelir); ya da dosyanın neden reddedildiği, elinizdeki tuşlar kalarak: `…/imece/keys: satır 3: TUŞ = TUŞ diye yaz; elindeki tuşlar kalıyor`. Menü notu dosyanın kaç tuş verdiğidir. Bkz. [kendi tuşlarınız](../screen/keyboard.md#kendi-tuşlarınız).
 
 ### `:lang [en|tr]`
 

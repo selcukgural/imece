@@ -139,7 +139,7 @@ The conventions are vim's: `h` `j` `k` `l` move and fold, `gg` and `G` go to the
 | `:notify` | in another window, a word when something comes to wait: `:notify off\|bell\|text`; bare, the next one round |
 | `q` `q`  `:quit` | quit (`q` or `:quit` asks first; `^c` quits at once) |
 | `q` `s`  `:pending` | before quitting: mid-turn, not reviewed |
-| `?`  `:help` | this help; `/` in it filters the keys |
+| `?`  `:help` | this help; `/` in it filters the keys · `:keys` reads your key file again |
 | `W` | the next item waiting, from anywhere |
 | `^o` | back where you were |
 
@@ -174,9 +174,28 @@ The conventions are vim's: `h` `j` `k` `l` move and fold, `gg` and `G` go to the
 | `:trace` / `:talk` | `t` / `v` |
 | `:mark` | `m` |
 | `:pause`, `:faster`, `:slower` | `space`, `+`, `-` (demo) |
-| `:budget` (`:b`), `:lead`, `:open` (`:o`), `:close` (`:c`), `:rename`, `:solo`, `:effort`, `:model`, `:forget` (`:f`), `:export`, `:commit`, `:copy`, `:pin`, `:awake`, `:notify`, `:unsettle` | no key: typed after `:` |
+| `:budget` (`:b`), `:lead`, `:open` (`:o`), `:close` (`:c`), `:rename`, `:solo`, `:effort`, `:model`, `:forget` (`:f`), `:export`, `:commit`, `:copy`, `:pin`, `:awake`, `:notify`, `:unsettle`, `:keys` | no key: typed after `:` |
 
 The full list of what each command takes is in the [commands reference](../reference/commands.md).
+
+## Your own keys
+
+A key file gives you keys of your own: `~/.config/imece/keys` (or `$XDG_CONFIG_HOME/imece/keys`). Each line makes a key act as one of imece's, `KEY = KEY`; a line starting with `#` is a comment:
+
+```text
+# j and k the other way round, and ctrl-n / ctrl-p to move too
+j = k
+k = j
+^n = j
+^p = k
+J = G
+```
+
+A key is written as the help writes it (`j`, `G`, `^n`, `⌥b`, `⇧tab`, `enter`, `esc`, `tab`, `space`, `↑ ↓ ← →`, `home`, `end`, `pgup`, `pgdn`) or in words (`ctrl-n`, `alt-b`, `shift-tab`, `up`, `escape`, `pageup`); `#` is `hash` on the left of the `=`, since a line starting with `#` is a comment. A line is applied once, as vim's `noremap`: `j = k` and `k = j` swap the two, and a key the file does not name stays itself. The file's keys work wherever imece reads keys (the salon, a conversation, a change, peek, the windows, the pickers, the lead question at start), except where keys are text: writing, the help's `/` filter and the hint letters. `^c` always quits and cannot be given.
+
+imece reads the file at start and on `:keys`. A file it cannot take whole is refused, and the keys you had stay: a line that is not `KEY = KEY` (`line 3: write it as KEY = KEY`), a name that is no key (`` `nope` is not a key ``), a key imece does nothing with on the right (`imece does nothing with d`), a key given twice (`^n is given on line 1 already`), `^c` on either side, more than 200 keys, a file over 64 KiB or not text. The last good file is kept in the store, so a start with a file refused still has your keys and says why. With no file, imece's own keys are back.
+
+In the `?` help, your keys come first (`^n  your key: as j`), and every key line shows the keys that do it now: with the file above, `select` reads `↑ ↓  k/^n j/^p`; a key whose meaning went to no other key shows `–`. The writing keys are shown as they are, since the file does not turn them.
 
 ## See also
 
