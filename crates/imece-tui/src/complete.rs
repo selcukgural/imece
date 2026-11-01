@@ -8,16 +8,20 @@
 
 use std::path::Path;
 
-use crate::model::{Agent, CardId, ProjectId, World};
+use crate::model::{Agent, CardId, ProjectId, Vendor, World};
 
 /// The commands imece itself takes after `:`: its own, and a name for
 /// every key that acts (not the ones that move).
-pub const COMMANDS: [&str; 32] = [
-    "awake", "board", "budget", "close", "code", "commit", "copy", "defer", "export", "faster",
-    "fold", "forget", "help", "lang", "lead", "mark", "needs", "next", "open", "pause", "pending",
-    "pin", "quit", "rename", "salon", "slower", "solo", "talk", "theme", "trace", "unfold",
-    "waiting",
+pub const COMMANDS: [&str; 34] = [
+    "awake", "board", "budget", "close", "code", "commit", "copy", "defer", "effort", "export",
+    "faster", "fold", "forget", "help", "lang", "lead", "mark", "model", "needs", "next", "open",
+    "pause", "pending", "pin", "quit", "rename", "salon", "slower", "solo", "talk", "theme",
+    "trace", "unfold", "waiting",
 ];
+
+/// The word for a vendor's own model or effort after `:model`, `:effort`
+/// and in a `:solo` choice.
+pub const DEFAULT: &str = "default";
 
 /// The commands only the demo takes: live agents run in real time.
 pub const DEMO_ONLY: [&str; 3] = ["faster", "pause", "slower"];
@@ -163,6 +167,41 @@ pub fn card_named(input: &str, w: &World) -> Option<CardId> {
         .map(|card| card.id)
 }
 
+/// What `:solo` could complete the word `arg` with: a directory when it
+/// looks like a path (`/`, `~`, `.`), else the vendors `vendors` and, once
+/// a vendor and `@` are typed, that vendor's efforts (`efforts`).
+pub fn solo_words(
+    start: usize,
+    arg: &str,
+    home: Option<&Path>,
+    vendors: &[Vendor],
+    efforts: &dyn Fn(Vendor) -> Vec<&'static str>,
+    list: &dyn Fn(&Path) -> Vec<String>,
+) -> Option<Menu> {
+    if arg.contains('/') || arg.starts_with(['~', '.']) {
+        return dirs(start, arg, home, list);
+    }
+    if let Some((head, after)) = arg.rsplit_once('@') {
+        let vendor = head.split(':').next().unwrap_or_default();
+        let v = vendors.iter().find(|v| v.label() == vendor)?;
+        let items: Vec<String> = efforts(*v)
+            .into_iter()
+            .filter(|e| e.starts_with(after))
+            .map(|e| format!("{head}@{e}"))
+            .collect();
+        return menu(start, arg, items, " ");
+    }
+    let names = vendors.iter().map(|v| v.label());
+    menu(start, arg, matching(arg, names), "")
+}
+
+/// What `:effort` or `:model` could complete `arg` with: `default`, then
+/// `items` (a vendor's efforts, or its model aliases).
+pub fn choice_words(start: usize, arg: &str, items: &[&str]) -> Option<Menu> {
+    let all = std::iter::once(DEFAULT).chain(items.iter().copied());
+    menu(start, arg, matching(arg, all), "")
+}
+
 /// What the composer could complete `input` with. `project` is the one
 /// at hand: its agents come first, and a `/` alone goes to its leader;
 /// `home` stands for `~` in a path.
@@ -257,7 +296,7 @@ pub fn dirs(
 }
 
 /// The directories in `dir`, sorted; none when it can not be read.
-fn list_dirs(dir: &Path) -> Vec<String> {
+pub fn list_dirs(dir: &Path) -> Vec<String> {
     let Ok(entries) = std::fs::read_dir(dir) else {
         return Vec::new();
     };
@@ -286,6 +325,90 @@ fn commands(input: &str, start: usize, after: &str, agent: &Agent) -> Option<Men
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn solo_words_complete_vendors_then_efforts_and_paths_as_directories() {
+        let vendors = [Vendor::Claude, Vendor::Codex];
+        let efforts = |v: Vendor| -> Vec<&'static str> {
+            match v {
+                Vendor::Claude => vec!["low", "high"],
+                _ => vec![],
+            }
+        };
+        let list = |_: &std::path::Path| {
+            vec!["src".to_string(), "docs".to_string(), ".hidden".to_string()]
+        };
+        let items = |m: Option<Menu>| m.map(|m| m.items).unwrap_or_default();
+        assert_eq!(
+            items(solo_words(6, "", None, &vendors, &efforts, &list)),
+            ["claude", "codex"]
+        );
+        assert_eq!(
+            items(solo_words(6, "cl", None, &vendors, &efforts, &list)),
+            ["claude"]
+        );
+        assert_eq!(
+            items(solo_words(6, "claude@", None, &vendors, &efforts, &list)),
+            ["claude@low", "claude@high"]
+        );
+        assert_eq!(
+            items(solo_words(
+                6,
+                "claude:opus@h",
+                None,
+                &vendors,
+                &efforts,
+                &list
+            )),
+            ["claude:opus@high"]
+        );
+        assert!(
+            solo_words(6, "codex@", None, &vendors, &efforts, &list).is_none(),
+            "no efforts"
+        );
+        assert!(
+            solo_words(6, "gemini@", None, &vendors, &efforts, &list).is_none(),
+            "not here"
+        );
+        let m = solo_words(6, "./s", None, &vendors, &efforts, &list).unwrap();
+        assert_eq!((m.items, m.tail), (vec!["./src".to_string()], "/"));
+        assert_eq!(
+            items(solo_words(6, "~/", None, &vendors, &efforts, &list)).len(),
+            2,
+            "a path"
+        );
+        assert!(
+            solo_words(6, "claude", None, &vendors, &efforts, &list).is_none(),
+            "typed whole"
+        );
+        // A path by a `/` alone, or a `.` alone: directories, not vendors.
+        assert_eq!(
+            items(solo_words(6, "a/d", None, &vendors, &efforts, &list)),
+            ["a/docs"]
+        );
+        assert_eq!(
+            items(solo_words(6, ".", None, &vendors, &efforts, &list)),
+            [".hidden"]
+        );
+        let m = solo_words(6, "c", None, &vendors, &efforts, &list).unwrap();
+        assert_eq!((m.start, m.tail), (6, ""));
+    }
+
+    #[test]
+    fn choice_words_offer_default_then_the_vendor_s_own() {
+        let m = choice_words(8, "", &["low", "high"]).unwrap();
+        assert_eq!(m.items, ["default", "low", "high"]);
+        assert_eq!(m.start, 8);
+        assert_eq!(choice_words(8, "d", &["low"]).unwrap().items, ["default"]);
+        assert_eq!(
+            choice_words(8, "h", &["low", "high"]).unwrap().items,
+            ["high"]
+        );
+        assert!(choice_words(8, "x", &["low"]).is_none());
+        assert!(choice_words(8, "default", &[]).is_none(), "typed whole");
+        assert_eq!(DEFAULT, "default");
+        assert!(COMMANDS.contains(&"effort") && COMMANDS.contains(&"model"));
+    }
     use crate::i18n::Lang;
 
     fn world() -> World {

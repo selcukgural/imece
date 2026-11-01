@@ -61,7 +61,9 @@ pub fn draw(f: &mut Frame, app: &App) {
     if let Some(th) = &app.thread {
         overlay::thread(f, app, th);
     }
-    if app.help {
+    if let Some(p) = &app.solo_pick {
+        overlay::solo_pick(f, app, p);
+    } else if app.help {
         overlay::help(f, app);
     } else if let Some(d) = &app.digest {
         overlay::digest(f, app, d);
@@ -2144,6 +2146,76 @@ mod tests {
         let app = app_after(1, 80, 200, Lang::En);
         let s = render(&app, 120, 30);
         assert!(s.contains("agents doing fine"), "no folded line:\n{s}");
+    }
+
+    #[test]
+    fn a_bare_colon_solo_opens_the_pick_screen_which_asks_vendor_model_and_effort() {
+        let mut app = app_after(1, 1, 0, Lang::En);
+        app.home = None;
+        let t = Lang::En.text();
+        for c in ":solo".chars() {
+            key(&mut app, KeyCode::Char(c));
+        }
+        key(&mut app, KeyCode::Enter);
+        let s = render(&app, 140, 40);
+        assert!(s.contains(t.solo_pick_title.trim()), "{s}");
+        assert!(
+            s.contains("Which coding agent?") && s.contains(" 1 claude"),
+            "{s}"
+        );
+        assert!(s.contains("esc back"), "{s}");
+        // A vendor's row wears its colour; only the chosen row is reversed.
+        let buf = buffer(&app, 140, 40);
+        let row = |y: u16| -> String { (0..140).map(|x| buf[(x, y)].symbol()).collect() };
+        let cell = |needle: &str| {
+            let y = (0..40).find(|&y| row(y).contains(needle)).expect(needle);
+            let line = row(y);
+            // Cells, not bytes: the frame's box characters are wide in bytes.
+            let at = line.find(needle).unwrap();
+            let x = line[..at].chars().count() + needle.chars().count() - 1;
+            buf[(u16::try_from(x).unwrap(), y)].clone()
+        };
+        let claude = cell(" 1 claude");
+        assert_eq!(claude.fg, vendor_color(Vendor::Claude));
+        assert!(
+            claude.modifier.contains(Modifier::REVERSED),
+            "the chosen row"
+        );
+        let codex = cell(" 2 codex");
+        assert_eq!(codex.fg, vendor_color(Vendor::Codex));
+        assert!(!codex.modifier.contains(Modifier::REVERSED), "not chosen");
+        // The keys go to the screen, not the salon: j moves its row.
+        key(&mut app, KeyCode::Char('j'));
+        assert_eq!(app.solo_pick.as_ref().unwrap().sel(), 1);
+        key(&mut app, KeyCode::Enter);
+        let s = render(&app, 140, 40);
+        assert!(
+            s.contains("Which model?") && s.contains("default (the vendor's own)"),
+            "{s}"
+        );
+        assert!(s.contains(" codex"), "what was picked so far: {s}");
+        key(&mut app, KeyCode::Enter);
+        let s = render(&app, 140, 40);
+        assert!(
+            s.contains("How deep should it think?") && s.contains(" 3 medium"),
+            "{s}"
+        );
+        key(&mut app, KeyCode::Char('4'));
+        key(&mut app, KeyCode::Enter);
+        assert!(app.solo_pick.is_none());
+        let head = app.world.projects[1].leader;
+        assert_eq!(app.world.agents[head].vendor, Vendor::Codex);
+        assert_eq!(app.model_of(head).as_deref(), Some("@high"));
+        // Turkish words too.
+        app.lang = Lang::Tr;
+        for c in ":solo".chars() {
+            key(&mut app, KeyCode::Char(c));
+        }
+        key(&mut app, KeyCode::Enter);
+        let s = render(&app, 140, 40);
+        assert!(s.contains("Hangi kodlama ajanı?"), "{s}");
+        key(&mut app, KeyCode::Esc);
+        assert!(app.solo_pick.is_none());
     }
 
     #[test]
@@ -4577,9 +4649,9 @@ mod tests {
             let t = lang.text();
             for shift_enter in [true, false] {
                 let keys = overlay::help_keys(lang, shift_enter);
-                assert_eq!(keys[19].0, "^w ^u ^k ^y", "{lang:?}");
+                assert_eq!(keys[18].0, "^w ^u ^k ^y", "{lang:?}");
                 let want = t.help_newline[usize::from(!shift_enter)];
-                assert_eq!(keys[20], want, "{lang:?} {shift_enter}");
+                assert_eq!(keys[19], want, "{lang:?} {shift_enter}");
                 assert_eq!(keys.len(), t.help_keys.len() + 1);
             }
         }
@@ -4804,9 +4876,10 @@ mod tests {
         let mut app = app_after(1, 4, 50, Lang::En);
         app.help = true;
         let t = Lang::En.text();
-        let buf = buffer(&app, 140, 44);
+        // Forty rows: the help must fit a screen that tall, whole.
+        let buf = buffer(&app, 140, 40);
         let row = |y: u16| -> String { (0..140).map(|x| buf[(x, y)].symbol()).collect() };
-        let top = (0..44).find(|&y| row(y).contains(t.help_title)).unwrap();
+        let top = (0..40).find(|&y| row(y).contains(t.help_title)).unwrap();
         // Two columns of keys, a blank line, the legend, a blank line, close.
         let keys = overlay::help_keys(Lang::En, false).len();
         assert_eq!(keys, t.help_keys.len() + 1, "and the new-line line");
@@ -6052,11 +6125,16 @@ after | not a table";
         for (lang, keys) in [
             (
                 Lang::En,
-                [":open PATH", ":close NAME", ":rename NAME", "NAME after it"],
+                [
+                    ":open :solo",
+                    ":close NAME",
+                    ":rename NAME",
+                    "a solo you drive",
+                ],
             ),
             (
                 Lang::Tr,
-                [":open YOL", ":close AD", ":rename AD", "ardına AD"],
+                [":open :solo", ":close AD", ":rename AD", "sürdüğün solo"],
             ),
         ] {
             app.lang = lang;

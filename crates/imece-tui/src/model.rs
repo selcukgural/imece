@@ -967,6 +967,13 @@ pub enum Event {
     Forgotten {
         agent: AgentId,
     },
+    /// The person changed what a solo runs on (`:model`, `:effort`):
+    /// `choice` is the vendor and the `[MODEL][@EFFORT]`, as the row shows
+    /// it. Its session starts again on it.
+    Chose {
+        agent: AgentId,
+        choice: String,
+    },
     /// Agent `agent`'s session said nothing about its own command line
     /// where its vendor's format puts it (not an empty list: no list): the
     /// format may have changed, and only imece's `/clear` completes. Once
@@ -1120,7 +1127,8 @@ impl Event {
             | Event::Opened { .. }
             | Event::Closed { .. }
             | Event::Renamed { .. }
-            | Event::Forgotten { .. } => EntryKind::Person,
+            | Event::Forgotten { .. }
+            | Event::Chose { .. } => EntryKind::Person,
         }
     }
 
@@ -1166,6 +1174,7 @@ impl Event {
             | Event::Hired { agent, .. }
             | Event::Left { agent }
             | Event::Forgotten { agent }
+            | Event::Chose { agent, .. }
             | Event::Fallback { agent, .. }
             | Event::Resumed { agent }
             | Event::Restarted { agent }

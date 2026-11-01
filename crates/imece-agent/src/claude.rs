@@ -72,6 +72,11 @@ pub fn model(tier: crate::Tier) -> Option<&'static str> {
     }
 }
 
+/// Claude Code's model aliases (2.1.316: `fable`, `opus`, `sonnet`, and
+/// `haiku` for its small model), which follow the newest model of each
+/// size; what a choice screen offers next to a full name.
+pub const ALIASES: &[&str] = &["fable", "opus", "sonnet", "haiku"];
+
 /// The efforts Claude Code's `--effort` takes (2.1.316), least first. An
 /// effort it does not know is only warned about, and the session runs at
 /// its default, so imece refuses one before the session starts. The
@@ -980,6 +985,7 @@ mod tests {
     #[test]
     fn the_effort_goes_on_the_command_line_only_when_chosen() {
         assert_eq!(EFFORTS, ["low", "medium", "high", "xhigh", "max"]);
+        assert_eq!(ALIASES, ["fable", "opus", "sonnet", "haiku"]);
         let mut s = spec(EDIT_TOOLS);
         assert_eq!(after(&args(&s), "--effort"), None);
         s.model = Some("opus".into());

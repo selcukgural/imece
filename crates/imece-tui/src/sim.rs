@@ -866,6 +866,45 @@ impl Sim {
         Ok(())
     }
 
+    /// `:effort` / `:model` in the demo, as live does it: the solo's choice
+    /// changes for its next turn; refused mid-turn and for anyone but a
+    /// solo. Says what it runs on now.
+    pub fn rechoose(
+        &mut self,
+        w: &mut World,
+        id: AgentId,
+        choice: Option<String>,
+    ) -> Result<String, String> {
+        let a = &w.agents[id];
+        if a.role != Role::Solo {
+            return Err(format!("{} is not a solo session", a.name));
+        }
+        if let Some(c) = &choice {
+            crate::live::valid_choice(a.vendor, c)?;
+        }
+        if a.status == Status::Working {
+            return Err(format!("{} is mid-turn; wait for its answer", a.name));
+        }
+        let runs = match &choice {
+            Some(c) => format!("{} {c}", a.vendor.label()),
+            None => a.vendor.label().to_string(),
+        };
+        match choice {
+            Some(c) => self.models.insert(id, c),
+            None => self.models.remove(&id),
+        };
+        let t = w.tick;
+        w.agents[id].trace(
+            t,
+            format!("the person chose {runs}; the session starts again on it"),
+        );
+        w.note(Event::Chose {
+            agent: id,
+            choice: runs.clone(),
+        });
+        Ok(runs)
+    }
+
     /// `:forget` in the demo: agent `id`'s session goes, and it sleeps
     /// until a message starts a new one, told where it left off.
     pub fn forget(&mut self, w: &mut World, id: AgentId) -> Result<(), Refusal> {
@@ -4163,6 +4202,48 @@ diff --git a/b.rs b/b.rs
             "a closed team of that name is not a solo's place"
         );
         assert!(w.projects[4].closed && !w.is_solo(4) && w.is_solo(5));
+    }
+
+    #[test]
+    fn the_demo_retunes_a_solo_as_live_does() {
+        let (mut w, mut s) = world(1, 1, 4, 7, Lang::En);
+        let p = s
+            .open_solo(
+                &mut w,
+                "/x",
+                Some(Vendor::Claude),
+                Some("opus".into()),
+                Some("notes"),
+            )
+            .unwrap();
+        let head = w.projects[p].leader;
+        let worker = w.agents.iter().find(|a| a.role == Role::Worker).unwrap().id;
+        assert_eq!(
+            s.rechoose(&mut w, worker, None),
+            Err(format!("{} is not a solo session", w.agents[worker].name))
+        );
+        let e = s.rechoose(&mut w, head, Some("@turbo".into())).unwrap_err();
+        assert!(e.starts_with("claude has no effort \"turbo\""), "{e}");
+        assert_eq!(s.model_of(head), Some("opus"), "unchanged");
+        s.told(&mut w, head, "work").unwrap();
+        assert_eq!(
+            s.rechoose(&mut w, head, Some("opus@max".into())),
+            Err("solo-notes is mid-turn; wait for its answer".into())
+        );
+        for _ in 0..8 {
+            s.step(&mut w);
+        }
+        assert_eq!(
+            s.rechoose(&mut w, head, Some("opus@max".into())),
+            Ok("claude opus@max".into())
+        );
+        assert_eq!(s.model_of(head), Some("opus@max"));
+        assert!(matches!(
+            &w.journal.last().unwrap().event,
+            Event::Chose { agent, choice } if *agent == head && choice == "claude opus@max"
+        ));
+        assert_eq!(s.rechoose(&mut w, head, None), Ok("claude".into()));
+        assert_eq!(s.model_of(head), None);
     }
 
     #[test]

@@ -93,6 +93,8 @@ A different question, a different model. This time a path and no name:
 
 Three groups on one checkout: a team and two solos, each in its own worktree, your checkout untouched by all of them. One pot pays for all; the header's `$/h` counts them together. A second *team* on the same checkout would be refused (`that checkout is open already, as kule`): one team per checkout, any number of solos.
 
+A bare `:solo` asks instead of guessing: a screen lists the vendors imece can run here, then the model, then the effort; `j k` and `enter` pick, `esc` goes back a step. And a running solo can be re-tuned: `:effort max` makes `solo-notes` think at `max` from its next turn (the flash: `solo-notes runs on claude opus@max from its next turn; its session starts again on it`), `:model sonnet` moves it to a cheaper model for the small remaining fixes; the session starts again on the same transcript, nothing of the conversation is lost.
+
 A choice imece cannot honour is refused before anything starts. `:solo gemini:pro@high` says `could not open: gemini has no effort setting; name only a model, not @high`, and `:solo claude@turbo` says `could not open: claude has no effort "turbo"; one of low, medium, high, xhigh, max`.
 
 ## 5. A helper

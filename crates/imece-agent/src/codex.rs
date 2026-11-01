@@ -83,6 +83,10 @@ pub fn model(tier: crate::Tier) -> Option<&'static str> {
     }
 }
 
+/// Codex has no model aliases: a model is named in full, or left to
+/// Codex's own default.
+pub const ALIASES: &[&str] = &[];
+
 /// The reasoning efforts Codex takes on a turn, least first. One it does
 /// not know is refused before the session starts.
 pub const EFFORTS: &[&str] = &["low", "medium", "high", "xhigh"];
@@ -1553,6 +1557,7 @@ mod tests {
         assert_eq!(model(crate::Tier::Strong), Some("@high"));
         assert_eq!(PROGRAM, "codex");
         assert_eq!(EFFORTS, ["low", "medium", "high", "xhigh"]);
+        assert!(ALIASES.is_empty(), "Codex names models in full");
         let p = |c: &str| {
             let mut s = spec(true);
             s.choice = Some(c.into());

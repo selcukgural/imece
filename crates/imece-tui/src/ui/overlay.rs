@@ -7,7 +7,7 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Paragraph};
 
 use super::*;
-use crate::app::{App, Digest, LeftOff, Thread};
+use crate::app::{App, Digest, LeftOff, PickStep, SoloPick, Thread};
 
 fn centered(area: Rect, width: u16, height: u16) -> Rect {
     let width = width.min(area.width);
@@ -130,7 +130,7 @@ pub(crate) fn fold(s: &str) -> String {
 
 /// How many of `help_keys` come before the help's new-line line: the
 /// writing keys end there.
-const WRITING_KEYS: usize = 20;
+const WRITING_KEYS: usize = 19;
 
 /// The keys the help lists, in its order: the new-line line, the one
 /// this terminal has (`shift_enter`), after the writing keys.
@@ -139,6 +139,48 @@ pub(crate) fn help_keys(lang: Lang, shift_enter: bool) -> Vec<(&'static str, &'s
     let mut keys = t.help_keys.to_vec();
     keys.insert(WRITING_KEYS, t.help_newline[usize::from(!shift_enter)]);
     keys
+}
+
+/// The solo pick screen: the step's question, its rows with the chosen
+/// one reversed, what was picked so far, and the keys.
+pub fn solo_pick(f: &mut Frame, app: &App, p: &SoloPick) {
+    let t = app.lang.text();
+    let question = match p.step {
+        PickStep::Vendor => t.solo_pick_vendor,
+        PickStep::Model => t.solo_pick_model,
+        PickStep::Effort => t.solo_pick_effort,
+    };
+    let mut lines = vec![Line::from(Span::raw(question)), Line::raw("")];
+    for (n, item) in p.items().iter().enumerate() {
+        let shown = if item == crate::complete::DEFAULT {
+            format!("{item} ({})", t.solo_pick_default)
+        } else {
+            item.clone()
+        };
+        let style = match p.step {
+            PickStep::Vendor => bold(vendor_color(p.vendors[n])),
+            _ => bold(pal().strong),
+        };
+        let line = Line::from(vec![
+            Span::styled(format!(" {} ", n + 1), dim()),
+            Span::styled(shown, style),
+        ]);
+        lines.push(if n == p.sel() {
+            line.style(Style::new().add_modifier(Modifier::REVERSED))
+        } else {
+            line
+        });
+    }
+    lines.push(Line::raw(""));
+    let so_far = match p.choice() {
+        Some(c) => format!(" {} {c}", p.chosen_vendor().label()),
+        None => format!(" {}", p.chosen_vendor().label()),
+    };
+    if p.step != PickStep::Vendor {
+        lines.push(Line::from(Span::styled(so_far, dim())));
+    }
+    lines.push(Line::from(Span::styled(t.solo_pick_keys, dim())));
+    window(f, t.solo_pick_title.into(), lines, 64);
 }
 
 pub fn digest(f: &mut Frame, app: &App, d: &Digest) {

@@ -25,7 +25,9 @@ The conventions are vim's: `h` `j` `k` `l` move and fold, `gg` and `G` go to the
 | `:budget USD` | raise or lower the budget while agents run; `USD` is dollars like `80` or `2.50` |
 | `:lead VENDOR` | who leads from the next start on; `VENDOR` is `claude`, `codex`, `gemini` or `ask` |
 | `:open PATH` | open the checkout at `PATH` as a project; a `NAME` after it names it |
-| `:solo CHOICE` | a solo session you drive yourself, no leader: `CHOICE` is `vendor[:model][@effort]`; a `PATH` and a `NAME` may come too |
+| `:solo CHOICE` | a solo session you drive yourself, no leader: `CHOICE` is `vendor[:model][@effort]`; a `PATH` and a `NAME` may come too; without a choice, a screen asks |
+| `:effort LEVEL` | the solo at hand thinks at `LEVEL` from its next turn (`default`: the vendor's own) |
+| `:model NAME` | the solo at hand runs on `NAME` from its next turn (`default`: the vendor's own) |
 | `:close NAME` | close the project `NAME`: its agents leave, worktrees stay |
 | `:rename NAME` | rename the project at hand; `lead-NAME` leads it |
 | `:forget @NAME` | the agent `@NAME` forgets its session; a new one is told where it left off |
@@ -157,7 +159,7 @@ The conventions are vim's: `h` `j` `k` `l` move and fold, `gg` and `G` go to the
 | `:trace` / `:talk` | `t` / `v` |
 | `:mark` | `m` |
 | `:pause`, `:faster`, `:slower` | `space`, `+`, `-` (demo) |
-| `:budget` (`:b`), `:lead`, `:open` (`:o`), `:close` (`:c`), `:rename`, `:solo`, `:forget` (`:f`), `:export`, `:commit`, `:copy`, `:pin`, `:awake` | no key: typed after `:` |
+| `:budget` (`:b`), `:lead`, `:open` (`:o`), `:close` (`:c`), `:rename`, `:solo`, `:effort`, `:model`, `:forget` (`:f`), `:export`, `:commit`, `:copy`, `:pin`, `:awake` | no key: typed after `:` |
 
 The full list of what each command takes is in the [commands reference](../reference/commands.md).
 

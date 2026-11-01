@@ -11,7 +11,8 @@ A team is imece's usual shape: a leader reads your checkout, hires workers, and 
 
 | How | What it does |
 | --- | --- |
-| `:solo [PATH] [CHOICE] [NAME]` | from the screen, while imece runs. The words may come in any order: a word with a `/`, or starting with `~` or `.`, is the checkout's path (default: the project at hand's); a word that starts with a vendor's name is the choice; the word left is the project's name (default: the directory's, numbered `-2`, `-3` when taken). |
+| `:solo [PATH] [CHOICE] [NAME]` | from the screen, while imece runs. The words may come in any order: a word with a `/`, or starting with `~` or `.`, is the checkout's path (default: the project at hand's); a word that starts with a vendor's name is the choice; the word left is the project's name (default: the directory's, numbered `-2`, `-3` when taken). Without a choice, a screen asks the vendor, the model and the effort, with `j k enter`. |
+| `:effort LEVEL`, `:model NAME` | change what the solo at hand runs on, from its next turn; `default` is the vendor's own. Its session starts again on the same transcript. |
 | `imece --solo V[:MODEL][@EFFORT]` | from the command line: imece starts with a solo on the checkout instead of a team. An open solo of the same vendor and choice is gone on with, so the same command every morning continues the same session; a different choice opens another solo beside it. Without `--lead`, the solo's vendor leads the teams `:open` adds, so no WHO LEADS? question comes. |
 
 The **choice** is `VENDOR[:MODEL][@EFFORT]`, each part after the vendor optional:
@@ -47,7 +48,6 @@ A bare `imece` opens a team on the checkout when none is open there, even when s
 
 ## What is not there yet
 
-- A bare `:solo` with no choice takes the lead vendor at its standard rung. A pick screen (vendor, model, effort with `j k enter`), completion after `:solo `, and `:effort` / `:model` to change a running solo are planned.
 - A solo's answer while one of its helpers is still mid-turn stays in its story (as a leader's does) and comes to you, with its `Δ`, when the next answer does.
 
 ## See also

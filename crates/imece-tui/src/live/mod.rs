@@ -125,6 +125,16 @@ pub fn valid_choice(v: Vendor, s: &str) -> Result<(), String> {
     Choice::parse(s).check(v.label(), efforts(v))
 }
 
+/// The model aliases vendor `v`'s CLI knows, for a choice screen and the
+/// completion; a full model name is always taken too.
+pub fn aliases(v: Vendor) -> Vec<&'static str> {
+    match v {
+        Vendor::Codex => codex::ALIASES.to_vec(),
+        Vendor::Gemini => gemini::alias_names().collect(),
+        _ => claude::ALIASES.to_vec(),
+    }
+}
+
 /// The models a vendor's tiers stand for; none is the vendor's own default.
 #[derive(Clone, Debug, PartialEq)]
 struct Ladder {
@@ -709,6 +719,59 @@ impl Live {
     /// vendor's own default; what a solo's row shows.
     pub fn model_of(&self, id: AgentId) -> Option<&str> {
         self.models[id].as_deref()
+    }
+
+    /// The vendors imece can run here, the lead vendor first: what a solo
+    /// may be opened on.
+    pub fn vendors(&self) -> Vec<Vendor> {
+        let mut v: Vec<Vendor> = self.vendors.iter().map(|h| h.vendor).collect();
+        if let Some(i) = v.iter().position(|&x| x == self.lead) {
+            v.swap(0, i);
+        }
+        v
+    }
+
+    /// The person changes what solo `id` runs on (`:model`, `:effort`):
+    /// `choice` is the whole `[MODEL][@EFFORT]`, none for the vendor's own.
+    /// Its running session ends (the next message starts a new one on the
+    /// same transcript, told where it left off); refused mid-turn, so no
+    /// answer is cut, and for anyone but a solo. Says what it runs on now.
+    pub fn rechoose(
+        &mut self,
+        w: &mut World,
+        id: AgentId,
+        choice: Option<String>,
+    ) -> Result<String, String> {
+        let a = &w.agents[id];
+        if a.role != Role::Solo {
+            return Err(format!("{} is not a solo session", a.name));
+        }
+        if let Some(c) = &choice {
+            valid_choice(a.vendor, c)?;
+        }
+        if self.turns[id] > 0 {
+            return Err(format!("{} is mid-turn; wait for its answer", a.name));
+        }
+        self.models[id] = choice.clone();
+        self.tiered[id] = false;
+        let runs = match &choice {
+            Some(c) => format!("{} {c}", a.vendor.label()),
+            None => a.vendor.label().to_string(),
+        };
+        if matches!(self.slots[id], Slot::Running(_)) {
+            self.end(w, id);
+            w.agents[id].trace(
+                w.tick,
+                format!("the person chose {runs}; the session starts again on it"),
+            );
+        } else {
+            w.agents[id].trace(w.tick, format!("the person chose {runs}"));
+        }
+        w.note(Event::Chose {
+            agent: id,
+            choice: runs.clone(),
+        });
+        Ok(runs)
     }
 
     #[cfg(test)]

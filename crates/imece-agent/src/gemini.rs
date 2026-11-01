@@ -108,6 +108,12 @@ pub fn model(tier: crate::Tier) -> Option<&'static str> {
 /// it), so a choice with an `@EFFORT` is refused before the session starts.
 pub const EFFORTS: &[&str] = &[];
 
+/// Gemini CLI's model aliases, as [`ALIASES`] prices them: what a choice
+/// screen offers next to a full name.
+pub fn alias_names() -> impl Iterator<Item = &'static str> {
+    ALIASES.iter().map(|(alias, _)| *alias)
+}
+
 /// What Gemini CLI's `/about` reports as the model when none was named.
 const AUTO: &str = "auto";
 
@@ -1578,6 +1584,10 @@ mod tests {
     #[test]
     fn gemini_has_no_effort_so_a_choice_with_one_never_starts_a_session() {
         assert!(EFFORTS.is_empty());
+        assert_eq!(
+            alias_names().collect::<Vec<_>>(),
+            ["auto", "pro", "flash", "flash-lite"]
+        );
         let dir = std::env::temp_dir().join(format!("imece-gemini-effort-{}", std::process::id()));
         let mut s = spec(true);
         s.program = "/nonexistent/gemini".into();
