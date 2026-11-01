@@ -109,6 +109,8 @@ Gelenekler vim'inkidir: `h` `j` `k` `l` hareket ve katlama, `gg` ve `G` uçlara,
 | `c`  `n` | değişiklikte: üstteki satıra not · notları gönder, geri döner |
 | `x` | değişiklikte: üstteki parçayı seç; `a` yalnız seçilenleri uygular |
 | `w` | değişiklikte: uzun satırları sar · yine kes |
+| `h` `l`  `←` `→` | değişiklikte: eldeki dosyayı başlığına katla · aç |
+| `za`  `zM`  `zR` | değişiklikte: eldeki dosyayı çevir · her dosyayı katla (`:fold`) · hepsini aç (`:unfold`) |
 | `v` | değişiklikte: kopyalanacak satırları seç; `y` yazıldığı gibi, `Y` yeni hali |
 | `a`  `r` | uygula (seçili parçalar, yoksa hepsi) · reddet |
 | `j` `k`, `gg` `G`, `^d` `^u` `^f` `^b`, `space` | hareket |

@@ -35,6 +35,8 @@ A run of the worker or a helper through imece's `run` tool is tied to the tree i
 
 `w` wraps long lines under themselves (`w` again cuts them at the edge). The top row is the line at hand: `c`, `>` and `x` act on it.
 
+`h` (or `←`) folds the file of the line at hand to its `diff --git` header, which then says how many lines it hides (`▸ 42 lines`); `l` (or `→`) opens it, `za` turns it, `zM` (`:fold`) folds every file and `zR` (`:unfold`) opens them all. `j` `k`, the pages and `G` go over the lines shown, so a folded file is one line to step over; `[` `]` still go from header to header. Folding the file of a hidden line puts the line at hand on its header. `v` opens every file first, since lines are chosen from the whole patch. The folds hold for that patch: a new one from the worker starts open.
+
 ## Apply
 
 `a` starts the apply on the git thread; the flash says it is under way and the journal says how it went.

@@ -8,7 +8,7 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Paragraph};
 
 use super::*;
-use crate::app::{App, Copying, DiffNote};
+use crate::app::{App, Copying, DiffNote, Folds};
 
 /// Line offsets of the file headers (`diff --git`) in `patch`, for
 /// jumping from file to file.
@@ -19,6 +19,75 @@ pub fn file_starts(patch: &str) -> Vec<usize> {
         .filter(|(_, l)| l.starts_with("diff --git "))
         .map(|(i, _)| i)
         .collect()
+}
+
+/// The lines of a change the view shows, its files folded as `folds`
+/// says (by their number in the patch): a folded file shows only its
+/// header, which says how many lines it hides.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Shown {
+    /// The patch's line numbers shown, in order.
+    pub lines: Vec<usize>,
+    /// A folded file's header line, and how many lines it hides.
+    pub hidden: Vec<(usize, usize)>,
+}
+
+impl Shown {
+    /// The lines of `patch` shown with `folds`; the lines before the
+    /// first header, if any, always.
+    pub fn of(patch: &str, folds: &Folds) -> Shown {
+        let mut shown = Shown::default();
+        let mut file: Option<usize> = None;
+        for (i, l) in patch.lines().enumerate() {
+            if l.starts_with("diff --git ") {
+                let n = file.map_or(0, |n| n + 1);
+                file = Some(n);
+                shown.lines.push(i);
+                if folds.folded(n) {
+                    shown.hidden.push((i, 0));
+                }
+            } else if file.is_some_and(|n| folds.folded(n)) {
+                if let Some(last) = shown.hidden.last_mut() {
+                    last.1 += 1;
+                }
+            } else {
+                shown.lines.push(i);
+            }
+        }
+        shown
+    }
+
+    /// The line shown `by` lines on from `at` (back when `on` is false),
+    /// at the first or last shown when it goes past; `at` itself need
+    /// not be shown (the shown line before it counts).
+    pub fn step(&self, at: usize, by: usize, on: bool) -> usize {
+        let Some(&last) = self.lines.last() else {
+            return 0;
+        };
+        // The place of the last shown line at or before `at`.
+        let here = self.lines.partition_point(|&i| i <= at).saturating_sub(1);
+        let to = if on {
+            here + by
+        } else {
+            here.saturating_sub(by)
+        };
+        self.lines.get(to).copied().unwrap_or(last)
+    }
+
+    /// How many lines a folded header at line `i` hides.
+    fn hides(&self, i: usize) -> Option<usize> {
+        self.hidden.iter().find(|&&(h, _)| h == i).map(|&(_, n)| n)
+    }
+}
+
+/// The number of the file line `i` of `patch` is in, counting from 0;
+/// none before the first header.
+pub fn file_of(patch: &str, i: usize) -> Option<usize> {
+    file_starts(patch)
+        .iter()
+        .filter(|&&s| s <= i)
+        .count()
+        .checked_sub(1)
 }
 
 /// The hunk the diff view has at `top` (its first row), by its `@@`
@@ -215,8 +284,11 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App, id: AgentId) {
     app.diff_page.set(inner.height);
     let height = usize::from(inner.height);
     let wrap = app.diff_wrap.then_some(usize::from(inner.width));
+    let shown = Shown::of(&c.patch, &app.diff_folds_of(id));
     let lines = patch_rows(
+        app.lang,
         &c.patch,
+        &shown,
         app.diff_scroll,
         &app.notes_of(id),
         &app.chosen_of(id),
@@ -227,13 +299,17 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App, id: AgentId) {
     f.render_widget(Paragraph::new(lines), inner);
 }
 
-/// The rows of `patch` from line `top` on, `height` of them: each line
-/// cleaned and coloured, the top one (the line at hand) marked, a chosen
-/// hunk's `@@` line with `✓` after it, and a note under the line it is
-/// on, every line of it after `✎`. While lines are being chosen to copy,
-/// those are marked instead of the top one, the cursor's in bold.
+/// The rows of `patch` from line `top` on, `height` of them, of the
+/// lines `shown`: each line cleaned and coloured, the top one (the line
+/// at hand) marked, a folded file's header with `▸ N lines` after it, a
+/// chosen hunk's `@@` line with `✓` after it, and a note under the line
+/// it is on, every line of it after `✎`. While lines are being chosen to
+/// copy, those are marked instead of the top one, the cursor's in bold.
+#[allow(clippy::too_many_arguments)]
 fn patch_rows(
+    lang: Lang,
     patch: &str,
+    shown: &Shown,
     top: usize,
     notes: &[&DiffNote],
     chosen: &[usize],
@@ -241,10 +317,21 @@ fn patch_rows(
     height: usize,
     wrap: Option<usize>,
 ) -> Vec<Line<'static>> {
+    let t = lang.text();
     let mut rows = Vec::new();
+    let lines: Vec<&str> = patch.lines().collect();
+    let from = shown.lines.partition_point(|&i| i < top);
     // Each line takes a row at least: `height` lines fill the rows.
-    for (i, l) in patch.lines().enumerate().skip(top).take(height) {
+    for &i in shown.lines.iter().skip(from).take(height) {
+        let l = lines[i];
         let mut row = Line::from(Span::styled(clean(l), line_style(l)));
+        if let Some(n) = shown.hides(i) {
+            let said = match n {
+                1 => t.folded_line.to_string(),
+                n => fill(t.folded_lines, &[&n.to_string()]),
+            };
+            row.spans.push(Span::styled(format!("  {said}"), dim()));
+        }
         if chosen.contains(&i) {
             row.spans.push(Span::styled("  ✓", bold(pal().ok)));
         }
@@ -461,6 +548,96 @@ fn run_lines(lang: Lang, runs: &[Ran]) -> Vec<Line<'static>> {
 mod tests {
     use super::*;
 
+    /// `patch_rows` of a change whose files are all open, in English.
+    fn open_rows(
+        patch: &str,
+        top: usize,
+        notes: &[&DiffNote],
+        chosen: &[usize],
+        copy: Option<Copying>,
+        height: usize,
+        wrap: Option<usize>,
+    ) -> Vec<Line<'static>> {
+        let shown = Shown::of(patch, &Folds::default());
+        patch_rows(
+            Lang::En,
+            patch,
+            &shown,
+            top,
+            notes,
+            chosen,
+            copy,
+            height,
+            wrap,
+        )
+    }
+
+    /// A line before the first header, a file of three more lines, one
+    /// of four.
+    const TWO: &str = "note\ndiff --git a/x b/x\n--- a/x\n+++ b/x\n+one\n\
+                       diff --git a/y b/y\n--- a/y\n+++ b/y\n+two\n+three\n";
+
+    #[test]
+    fn a_folded_file_shows_its_header_only() {
+        let open = Shown::of(TWO, &Folds::default());
+        assert_eq!(open.lines, (0..10).collect::<Vec<_>>());
+        assert!(open.hidden.is_empty());
+        let mut first = Folds::default();
+        first.set(0, true);
+        let shown = Shown::of(TWO, &first);
+        assert_eq!(shown.lines, [0, 1, 5, 6, 7, 8, 9]);
+        assert_eq!(shown.hidden, [(1, 3)]);
+        let all = Shown::of(TWO, &Folds::every(true));
+        assert_eq!(all.lines, [0, 1, 5]);
+        assert_eq!(all.hidden, [(1, 3), (5, 4)]);
+        let mut second_open = Folds::every(true);
+        second_open.set(1, false);
+        assert_eq!(Shown::of(TWO, &second_open).hidden, [(1, 3)]);
+        assert_eq!(Shown::of("", &Folds::every(true)), Shown::default());
+        assert_eq!(file_of(TWO, 0), None, "before the first header");
+        assert_eq!(file_of(TWO, 1), Some(0));
+        assert_eq!(file_of(TWO, 4), Some(0));
+        assert_eq!(file_of(TWO, 5), Some(1));
+        assert_eq!(file_of(TWO, 9), Some(1));
+    }
+
+    #[test]
+    fn the_scroll_steps_over_the_lines_shown() {
+        let mut first = Folds::default();
+        first.set(0, true);
+        let s = Shown::of(TWO, &first);
+        assert_eq!(s.step(1, 1, true), 5, "over the folded file");
+        assert_eq!(s.step(5, 1, false), 1);
+        assert_eq!(s.step(5, 2, true), 7);
+        assert_eq!(s.step(7, 2, false), 5);
+        assert_eq!(s.step(3, 0, true), 1, "a hidden line: its header");
+        assert_eq!(s.step(3, 1, true), 5);
+        assert_eq!(s.step(5, 99, true), 9, "stops at the last");
+        assert_eq!(s.step(5, 99, false), 0, "and the first");
+        assert_eq!(s.step(99, 0, true), 9);
+        assert_eq!(Shown::default().step(4, 1, true), 0);
+    }
+
+    #[test]
+    fn a_folded_header_says_how_many_lines_it_hides() {
+        let all = Shown::of(TWO, &Folds::every(true));
+        let rows = patch_rows(Lang::En, TWO, &all, 1, &[], &[], None, 8, None);
+        let text: Vec<String> = rows.iter().map(|r| r.to_string()).collect();
+        assert_eq!(
+            text,
+            [
+                "diff --git a/x b/x  ▸ 3 lines",
+                "diff --git a/y b/y  ▸ 4 lines"
+            ],
+            "from the line at hand on"
+        );
+        let one = "diff --git a/x b/x\n+one\ndiff --git a/y b/y\n+two\n";
+        let all = Shown::of(one, &Folds::every(true));
+        let rows = patch_rows(Lang::Tr, one, &all, 0, &[], &[], None, 8, None);
+        assert_eq!(rows[0].to_string(), "diff --git a/x b/x  ▸ 1 satır");
+        assert_eq!(rows.len(), 2);
+    }
+
     const PATCH: &str = "\
 diff --git a/a.rs b/a.rs
 index 1..2 100644
@@ -573,7 +750,7 @@ diff --git a/c.rs b/c.rs
     #[test]
     fn lines_chosen_to_copy_are_marked_instead_of_the_top_one() {
         let copy = Copying { anchor: 4, at: 2 };
-        let rows = patch_rows(PATCH, 0, &[], &[], Some(copy), 8, None);
+        let rows = open_rows(PATCH, 0, &[], &[], Some(copy), 8, None);
         assert_eq!(rows[0].style, Style::new(), "not the line at hand");
         assert_eq!(rows[1].style, Style::new());
         assert_eq!(
@@ -650,7 +827,7 @@ diff --git a/c.rs b/c.rs
             text: text.into(),
         };
         let (a, b) = (note(6, "one"), note(5, "two\nlines"));
-        let rows = patch_rows(PATCH, 5, &[&a, &b], &[], None, 8, None);
+        let rows = open_rows(PATCH, 5, &[&a, &b], &[], None, 8, None);
         let text: Vec<String> = rows.iter().map(|r| r.to_string()).collect();
         assert_eq!(
             text,
@@ -669,14 +846,14 @@ diff --git a/c.rs b/c.rs
         assert!(rows[1..].iter().all(|r| r.style == Style::new()));
         assert_eq!(rows[1].spans[0].style, bold(pal().accent));
         // Cut at the height, a note's rows too.
-        assert_eq!(patch_rows(PATCH, 5, &[&a, &b], &[], None, 2, None).len(), 2);
+        assert_eq!(open_rows(PATCH, 5, &[&a, &b], &[], None, 2, None).len(), 2);
         assert_eq!(
-            patch_rows(PATCH, 17, &[], &[], None, 8, None).len(),
+            open_rows(PATCH, 17, &[], &[], None, 8, None).len(),
             2,
             "the patch ends"
         );
         // A chosen hunk's `@@` line says so; the others do not.
-        let rows = patch_rows(PATCH, 4, &[], &[8], None, 6, None);
+        let rows = open_rows(PATCH, 4, &[], &[8], None, 6, None);
         assert_eq!(rows[4].to_string(), "@@ -9,1 +9,2 @@  ✓");
         assert_eq!(rows[4].spans[1].style, bold(pal().ok));
         assert_eq!(rows[0].to_string(), "@@ -1,2 +1,2 @@");
@@ -802,9 +979,9 @@ diff --git a/c.rs b/c.rs
     #[test]
     fn a_wrapped_patch_goes_on_under_a_long_line() {
         let patch = "diff --git a/x b/x\n@@ -1 +1 @@\n+one two three four five six\n";
-        let cut = patch_rows(patch, 2, &[], &[], None, 9, None);
+        let cut = open_rows(patch, 2, &[], &[], None, 9, None);
         assert_eq!(cut.len(), 1);
-        let wrapped = patch_rows(patch, 2, &[], &[], None, 9, Some(10));
+        let wrapped = open_rows(patch, 2, &[], &[], None, 9, Some(10));
         let text: Vec<String> = wrapped
             .iter()
             .map(|l| l.to_string().trim_end().to_string())
@@ -815,7 +992,7 @@ diff --git a/c.rs b/c.rs
             "the line at hand, all of it"
         );
         assert_eq!(
-            patch_rows(patch, 2, &[], &[], None, 2, Some(10)).len(),
+            open_rows(patch, 2, &[], &[], None, 2, Some(10)).len(),
             2,
             "cut at the height"
         );

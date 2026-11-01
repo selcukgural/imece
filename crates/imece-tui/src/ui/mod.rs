@@ -27,7 +27,9 @@ use crate::app::{App, FLASH, Hints, Noting, Rung, Target, View, Zoom};
 use crate::i18n::{Lang, clean, fill};
 use crate::model::*;
 pub(crate) use crate::theme::pal;
-pub(crate) use diff::{QUOTE_LINES, copy_patch, file_starts, hunk_at, notes_message, place, quote};
+pub(crate) use diff::{
+    QUOTE_LINES, Shown, copy_patch, file_of, file_starts, hunk_at, notes_message, place, quote,
+};
 pub(crate) use overlay::{chosen_text, fold, in_view, talk_notes_message, thread_lines, word_step};
 pub(crate) use salon::{card_rows, journal_rows, reply_jump, thread_of, turn_starts};
 

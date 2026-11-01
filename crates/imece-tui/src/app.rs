@@ -660,6 +660,9 @@ pub struct App {
     /// Lines of a change being chosen to copy (`v`): whose change, its
     /// patch's hash, the choice.
     pub diff_copy: Option<(AgentId, u64, Copying)>,
+    /// The files of a change folded to their headers (`h l za zM zR`):
+    /// whose change, by its patch, and which of its files.
+    pub diff_folds: Option<(AgentId, u64, Folds)>,
     /// Rows the last drawing of a change had, for paging.
     pub diff_page: Cell<u16>,
     /// The selected journal line (a journal index).
@@ -842,6 +845,7 @@ impl App {
             fold_talk: false,
             chosen: Vec::new(),
             diff_copy: None,
+            diff_folds: None,
             diff_page: Cell::new(10),
             journal_sel: None,
             outputs: BTreeMap::new(),
@@ -1918,6 +1922,20 @@ impl App {
             ('q', KeyCode::Char('s')) => self.leaving = self.in_flight(),
             ('g', KeyCode::Char('g')) => self.jump(true),
             ('z', KeyCode::Char('a')) if self.thread.is_some() => self.toggle_fold(),
+            ('z', KeyCode::Char('a')) if self.diff_zoom().is_some() => {
+                if let Some(id) = self.diff_zoom() {
+                    self.fold_files(id, |f, n| {
+                        if let Some(n) = n {
+                            f.set(n, !f.folded(n))
+                        }
+                    });
+                }
+            }
+            ('z', KeyCode::Char(c @ ('M' | 'R'))) if self.diff_zoom().is_some() => {
+                if let Some(id) = self.diff_zoom() {
+                    self.fold_files(id, |f, _| *f = Folds::every(c == 'M'));
+                }
+            }
             ('z', KeyCode::Char('M')) if self.thread.is_some() => self.fold_talk(true),
             ('z', KeyCode::Char('R')) if self.thread.is_some() => self.fold_talk(false),
             ('z', KeyCode::Char('a')) if self.salon_keys() => {
@@ -2182,7 +2200,8 @@ impl App {
                 .world
                 .change_of(id)
                 .map_or(0, |c| c.patch.lines().count());
-            self.diff_scroll = if first { 0 } else { lines.saturating_sub(1) };
+            let last = self.diff_shown(id).step(lines, 0, true);
+            self.diff_scroll = if first { 0 } else { last };
             return;
         }
         if let Some(th) = &mut self.thread {
@@ -2278,23 +2297,34 @@ impl App {
             .map_or(0, |c| c.patch.lines().count());
         let last = lines.saturating_sub(1);
         let page = usize::from(self.diff_page.get()).max(1);
+        // The scroll goes over the lines shown: a folded file is its header.
+        let shown = self.diff_shown(id);
+        let step = |at: usize, by: usize, on: bool| shown.step(at, by, on);
         match k.code {
             KeyCode::Esc => {
                 self.zoom = Zoom::None;
                 self.pane = Pane::Inbox;
             }
-            KeyCode::Up | KeyCode::Char('k') => {
-                self.diff_scroll = self.diff_scroll.saturating_sub(1)
-            }
+            KeyCode::Up | KeyCode::Char('k') => self.diff_scroll = step(self.diff_scroll, 1, false),
             KeyCode::Down | KeyCode::Char('j') => {
-                self.diff_scroll = (self.diff_scroll + 1).min(last)
+                self.diff_scroll = step(self.diff_scroll, 1, true)
             }
-            KeyCode::PageUp => self.diff_scroll = self.diff_scroll.saturating_sub(page),
+            KeyCode::PageUp => self.diff_scroll = step(self.diff_scroll, page, false),
             KeyCode::PageDown | KeyCode::Char(' ') => {
-                self.diff_scroll = (self.diff_scroll + page).min(last)
+                self.diff_scroll = step(self.diff_scroll, page, true)
             }
             KeyCode::Home => self.diff_scroll = 0,
-            KeyCode::End | KeyCode::Char('G') => self.diff_scroll = last,
+            KeyCode::End | KeyCode::Char('G') => self.diff_scroll = step(last, 0, true),
+            KeyCode::Left | KeyCode::Char('h') => self.fold_files(id, |f, n| {
+                if let Some(n) = n {
+                    f.set(n, true)
+                }
+            }),
+            KeyCode::Right | KeyCode::Char('l') => self.fold_files(id, |f, n| {
+                if let Some(n) = n {
+                    f.set(n, false)
+                }
+            }),
             KeyCode::Char('[') | KeyCode::Char(']') => {
                 let starts = self
                     .world
@@ -2313,6 +2343,8 @@ impl App {
             KeyCode::Char('w') => self.diff_wrap = !self.diff_wrap,
             KeyCode::Char('n') => self.send_notes(id),
             KeyCode::Char('v') => {
+                // Lines are chosen from the whole patch: its files open.
+                self.diff_folds = None;
                 if let Some(c) = self.world.change_of(id) {
                     let at = Copying::new(self.diff_scroll.min(last));
                     self.diff_copy = Some((id, patch_key(&c.patch), at));
@@ -2406,6 +2438,41 @@ impl App {
 
     /// The lines of worker `id`'s change as it is now being chosen to
     /// copy, if they are.
+    /// Which files of agent `id`'s change are folded: none unless they
+    /// were folded on this very patch.
+    pub fn diff_folds_of(&self, id: AgentId) -> Folds {
+        let patch = self.world.change_of(id).map(|c| patch_key(&c.patch));
+        (self.diff_folds.as_ref())
+            .filter(|(a, p, _)| *a == id && Some(*p) == patch)
+            .map(|(_, _, f)| f.clone())
+            .unwrap_or_default()
+    }
+
+    /// The lines agent `id`'s change shows now.
+    fn diff_shown(&self, id: AgentId) -> ui::Shown {
+        match self.world.change_of(id) {
+            Some(c) => ui::Shown::of(&c.patch, &self.diff_folds_of(id)),
+            None => ui::Shown::default(),
+        }
+    }
+
+    /// The files of agent `id`'s change folded as `change` makes them
+    /// from what they are; the line at hand, hidden, goes to its file's
+    /// header.
+    fn fold_files(&mut self, id: AgentId, change: impl FnOnce(&mut Folds, Option<usize>)) {
+        let Some(c) = self.world.change_of(id) else {
+            return;
+        };
+        let (key, file) = (patch_key(&c.patch), ui::file_of(&c.patch, self.diff_scroll));
+        let mut folds = self.diff_folds_of(id);
+        change(&mut folds, file);
+        self.diff_folds = Some((id, key, folds));
+        let shown = self.diff_shown(id);
+        if !shown.lines.contains(&self.diff_scroll) {
+            self.diff_scroll = shown.step(self.diff_scroll, 0, true);
+        }
+    }
+
     pub fn diff_copy_of(&self, id: AgentId) -> Option<Copying> {
         let patch = self.world.change_of(id).map(|c| patch_key(&c.patch))?;
         (self.diff_copy)
@@ -2520,6 +2587,14 @@ impl App {
                 let t = self.lang.text();
                 self.flash(t.copy_no_new.to_string());
             }
+        }
+    }
+
+    /// The change open, when no conversation is over it.
+    fn diff_zoom(&self) -> Option<AgentId> {
+        match self.zoom {
+            Zoom::Diff(id) if self.thread.is_none() => Some(id),
+            _ => None,
         }
     }
 
@@ -3470,6 +3545,11 @@ impl App {
             "needs" => {
                 self.go_salon();
                 self.toggle_needs();
+            }
+            which @ ("fold" | "unfold") if self.thread.is_none() && self.diff_zoom().is_some() => {
+                if let Some(id) = self.diff_zoom() {
+                    self.fold_files(id, |f, _| *f = Folds::every(which == "fold"));
+                }
             }
             which @ ("fold" | "unfold") if self.thread.is_some() => {
                 self.fold_talk(which == "fold");
@@ -4841,6 +4921,95 @@ mod tests {
         let mut p = String::from("diff --git a/x b/x\n--- a/x\n+++ b/x\n+one\n");
         p.push_str("diff --git a/y b/y\n--- a/y\n+++ b/y\n+two\n+three\n");
         p
+    }
+
+    #[test]
+    fn a_change_s_files_fold_to_their_headers_and_the_scroll_skips_them() {
+        // Lines 0-3 are x (header 0), 4-8 are y (header 4).
+        let (mut app, worker) = with_change(&two_files());
+        let k = |app: &mut App, c: char| app.on_key(key(KeyCode::Char(c)));
+        k(&mut app, 'h');
+        assert!(app.diff_folds_of(worker).folded(0), "the file at hand");
+        assert!(!app.diff_folds_of(worker).folded(1));
+        k(&mut app, 'j');
+        assert_eq!(app.diff_scroll, 4, "over the folded file");
+        k(&mut app, 'k');
+        assert_eq!(app.diff_scroll, 0);
+        app.on_key(key(KeyCode::Right));
+        assert!(!app.diff_folds_of(worker).folded(0), "l → open it");
+        k(&mut app, 'j');
+        assert_eq!(app.diff_scroll, 1);
+        // Folding the file of a hidden line puts the line at hand on its header.
+        app.diff_scroll = 6;
+        app.on_key(key(KeyCode::Left));
+        assert_eq!(app.diff_scroll, 4);
+        assert!(app.diff_folds_of(worker).folded(1));
+        k(&mut app, 'l');
+        // za toggles, zM folds them all, zR opens them.
+        app.diff_scroll = 2;
+        k(&mut app, 'z');
+        k(&mut app, 'a');
+        assert!(app.diff_folds_of(worker).folded(0));
+        assert_eq!(app.diff_scroll, 0);
+        k(&mut app, 'z');
+        k(&mut app, 'a');
+        assert!(!app.diff_folds_of(worker).folded(0));
+        app.diff_scroll = 7;
+        k(&mut app, 'z');
+        k(&mut app, 'M');
+        assert!(app.diff_folds_of(worker).folded(0) && app.diff_folds_of(worker).folded(1));
+        assert_eq!(app.diff_scroll, 4);
+        k(&mut app, 'G');
+        assert_eq!(app.diff_scroll, 4, "the last line shown");
+        app.on_key(key(KeyCode::PageUp));
+        assert_eq!(app.diff_scroll, 0);
+        app.on_key(key(KeyCode::PageDown));
+        assert_eq!(app.diff_scroll, 4);
+        k(&mut app, 'g');
+        k(&mut app, 'g');
+        assert_eq!(app.diff_scroll, 0);
+        k(&mut app, 'z');
+        k(&mut app, 'R');
+        assert!(!app.diff_folds_of(worker).folded(1));
+        k(&mut app, 'G');
+        assert_eq!(app.diff_scroll, 8);
+        // :fold and :unfold do it for the change open.
+        app.command("fold");
+        assert!(app.diff_folds_of(worker).folded(1));
+        assert_eq!(app.diff_scroll, 4);
+        app.command("unfold");
+        assert!(!app.diff_folds_of(worker).folded(1));
+        // `v` chooses from the whole patch: its files open.
+        k(&mut app, 'h');
+        k(&mut app, 'v');
+        assert_eq!(app.diff_folds_of(worker), Folds::default());
+        assert!(app.diff_copy_of(worker).is_some());
+        app.on_key(key(KeyCode::Esc));
+        // Another patch starts open.
+        k(&mut app, 'h');
+        assert!(app.diff_folds_of(worker).folded(1));
+        let c = app.world.change_of(worker).unwrap().clone();
+        app.world.change_ready(Change {
+            patch: format!("{}+four\n", c.patch),
+            ..c
+        });
+        assert_eq!(app.diff_folds_of(worker), Folds::default());
+        // A conversation over the change takes the fold keys.
+        assert_eq!(app.diff_zoom(), Some(worker));
+        app.thread = Some(Thread {
+            entries: vec![0],
+            sel: 0,
+            scroll: Cell::new(0),
+            follow: Cell::new(false),
+            page: Cell::new(10),
+            copy: None,
+            words: None,
+            folds: Folds::default(),
+        });
+        assert_eq!(app.diff_zoom(), None);
+        app.command("fold");
+        assert!(app.thread.as_ref().unwrap().folds.all, "the conversation's");
+        assert!(!app.diff_folds_of(worker).folded(0));
     }
 
     #[test]
