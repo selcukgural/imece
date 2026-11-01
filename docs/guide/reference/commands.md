@@ -12,7 +12,7 @@ A line that starts with `:` is a command to imece, not a message to an agent. Yo
 - `:` then `tab` lists the commands. The menu shows after each command what it stands at now or would act on, in brackets: `budget (spent $3.10 of $20.00)`, `theme (dark)`, `lead (claude)`, `close (kule)`, `forget (claude-2)`, `next (2 waiting)`, `needs (off)`. The note is drawn, never inserted.
 - `$` after a command marks one that raises the next bill: `:open` (a new leader session), `:solo` (a new session), `:forget` (a new session that pays the whole briefing again, without the cache) and `:commit` (a paid call). No `:` command starts a paid turn by itself; `:budget` shows its value instead of a mark.
 - Short names: `:b` budget, `:c` close, `:f` forget, `:o` open, `:q` quit, `:t` theme. A short name typed whole is a command already, so the menu offers nothing and `enter` runs it (`:q` then `enter` asks at once).
-- Arguments complete too: after `:lang` the languages, after `:lead` the vendors, after `:notify` its three words, after `:theme` the built-in names, after `:close` and `:pin` the open projects, after `:goto` nothing (the `&` line has its own menu), after `:history` the lines sent, after `:forget`, `:talk` and `:trace` the agents of open projects (`@` or not), after `:open` and `:export` directories (`~` for your home, hidden ones only after a `.`, `tab` steps into the chosen one).
+- Arguments complete too: after `:lang` the languages, after `:lead` the vendors, after `:notify` its three words, after `:theme` the built-in names, after `:close` and `:pin` the open projects, after `:goto` nothing (the `&` line has its own menu), after `:history` the lines sent, after `:forget`, `:talk`, `:trace` and `:peek` the agents of open projects (`@` or not), after `:open` and `:export` directories (`~` for your home, hidden ones only after a `.`, `tab` steps into the chosen one).
 - A name imece does not know: `no command xyz; : and tab list them`. A demo-only command typed live: `:pause is for the demo: live agents run in real time`.
 - `!cmd` runs a command in your own shell and `/cmd` is the agent's own command line; neither is a `:` command ([command line](../screen/command-line.md)).
 
@@ -46,17 +46,20 @@ A line that starts with `:` is a command to imece, not a message to an agent. Yo
 | `:open PATH [NAME]` | — | `:o` | | `$` | |
 | `:output` | `O` | | | | the command whose output it quotes |
 | `:pause` | `space` | | yes | | on / off |
+| `:peek [@NAME]` | `K` | | | | the agent at hand |
 | `:pending` | `q s` | | | | |
 | `:pin [NAME]` | — | | | | the project at hand, `▴` when pinned |
 | `:quit` | `q` | `:q` | | | |
 | `:rename NAME` | — | | | | the project at hand |
 | `:salon` | `1` | | | | |
+| `:settle` | `s` | | | | the selected row's agent or project |
 | `:slower` | `-` | | yes | | the speed, `×2` |
 | `:solo [PATH] [CHOICE] [NAME]` | — | | | `$` | |
 | `:talk [@NAME]` | `v` | | | | the agent at hand |
 | `:theme [NAME\|FILE]` | `T` | `:t` | | | the theme in use |
 | `:trace [@NAME]` | `t` | | | | the agent at hand |
 | `:unfold` | `zR` | | | | |
+| `:unsettle` | — | | | | how many are settled |
 | `:waiting` | `w` | | | | N waiting |
 
 Live, `:pause`, `:faster` and `:slower` are left out of the menu. Keys that move (`j k`, `gg G`, `enter`, `esc`, `tab`) and keys that act on the selected row (`a r c n x`) have no `:` name: typing them would be slower than the key, and the row would have to be named.
@@ -175,6 +178,10 @@ Quotes the last `!cmd` of the project at hand in a message, as `O`: the command 
 
 Demo only, as `space`: pauses or resumes the simulation. The menu note: `(on)` / `(off)`.
 
+### `:peek [@NAME]`
+
+The agent's focus in a window over the view, as `K`; no name is the agent at hand (selected in the salon, behind the inbox item or the journal line, or the one zoomed in on). The view under it does not move. In the window `j` `k` (or the arrows) step to the next / previous agent in the salon's order, `enter` opens its whole focus, `@` starts a message to it, `?` the help, `esc` or `K` close it; other keys do nothing. Looking at an agent this way counts as seeing its finished turn. See [salon](../screen/salon.md).
+
 ### `:pending`
 
 Before quitting, the list `q s` shows: the agents mid-turn and the changes not reviewed; `q` there quits, `W` opens the next waiting.
@@ -194,6 +201,10 @@ Renames the project at hand and its leader to `lead-NAME` (project 0's `lead` to
 ### `:salon`
 
 The salon, as `1`.
+
+### `:settle`
+
+Settles the salon's selected row, as `s` there: a worker's row (with its helpers and researcher) or, on a project's header or its leader, the whole project, out of the salon until it needs you again. Goes to the salon first. Refused while something of it waits for you or is stuck: `not settled: claude-2 needs you`. Its finished turns count as seen. The flash: `claude-2 settled: back when it needs you`. The menu note names the row. See [salon](../screen/salon.md).
 
 ### `:slower`
 
@@ -218,6 +229,10 @@ The raw stream of the agent, as `t`: every line its session said, as data, up to
 ### `:unfold`
 
 Unfolds everything in the salon, as `zR`; with a conversation open, every message of it, and the conversations opened after it start open again.
+
+### `:unsettle`
+
+Brings back everything settled with `s` or `:settle`, and goes to the salon. The flash: `3 back in the salon`. The menu note says how many are settled.
 
 ### `:waiting`
 

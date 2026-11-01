@@ -12,7 +12,7 @@ description: imece'nin aldığı her `:` komutu; argümanları, karşılığı o
 - `:` sonra `tab` komutları listeler. Menü her komutun ardında şu an ne durumda olduğunu ya da neye etki edeceğini ayraç içinde gösterir: `budget (spent $3.10 of $20.00)`, `theme (dark)`, `lead (claude)`, `close (kule)`, `forget (claude-2)`, `next (2 waiting)`, `needs (off)`. Not çizilir, asla satıra eklenmez.
 - Bir komutun ardındaki `$` sonraki faturayı büyütenleri işaretler: `:open` (yeni bir lider oturumu), `:solo` (yeni bir oturum), `:forget` (bütün brifingi önbelleksiz yeniden ödeyen yeni bir oturum) ve `:commit` (ücretli bir çağrı). Hiçbir `:` komutu kendi başına ücretli bir tur başlatmaz; `:budget` işaret yerine değerini gösterir.
 - Kısa adlar: `:b` budget, `:c` close, `:f` forget, `:o` open, `:q` quit, `:t` theme. Bütünüyle yazılan kısa ad zaten bir komuttur; menü bir şey sunmaz ve `enter` çalıştırır (`:q` sonra `enter` hemen sorar).
-- Argümanlar da tamamlanır: `:lang` sonra diller, `:lead` sonra satıcılar, `:notify` sonra üç kelimesi, `:theme` sonra yerleşik adlar, `:close` ve `:pin` sonra açık projeler, `:goto` sonra hiçbir şey (`&` satırının kendi menüsü var), `:history` sonra gönderilen satırlar, `:forget`, `:talk` ve `:trace` sonra açık projelerin ajanları (`@` ile ya da onsuz), `:open` ve `:export` sonra dizinler (`~` ev dizininiz, gizli olanlar yalnızca bir `.` sonrası, `tab` seçilenin içine adım atar).
+- Argümanlar da tamamlanır: `:lang` sonra diller, `:lead` sonra satıcılar, `:notify` sonra üç kelimesi, `:theme` sonra yerleşik adlar, `:close` ve `:pin` sonra açık projeler, `:goto` sonra hiçbir şey (`&` satırının kendi menüsü var), `:history` sonra gönderilen satırlar, `:forget`, `:talk`, `:trace` ve `:peek` sonra açık projelerin ajanları (`@` ile ya da onsuz), `:open` ve `:export` sonra dizinler (`~` ev dizininiz, gizli olanlar yalnızca bir `.` sonrası, `tab` seçilenin içine adım atar).
 - imece'nin bilmediği bir ad: `no command xyz; : and tab list them`. Canlıda yazılan yalnızca demoya ait bir komut: `:pause is for the demo: live agents run in real time`.
 - `!cmd` kendi kabuğunuzda bir komut çalıştırır, `/cmd` ajanın kendi komut satırıdır; ikisi de `:` komutu değildir ([komut satırı](../screen/command-line.md)).
 
@@ -46,17 +46,20 @@ description: imece'nin aldığı her `:` komutu; argümanları, karşılığı o
 | `:open PATH [NAME]` | — | `:o` | | `$` | |
 | `:output` | `O` | | | | çıktısını alıntıladığı komut |
 | `:pause` | `space` | | evet | | açık / kapalı |
+| `:peek [@NAME]` | `K` | | | | eldeki ajan |
 | `:pending` | `q s` | | | | |
 | `:pin [NAME]` | — | | | | eldeki proje, sabitse `▴` |
 | `:quit` | `q` | `:q` | | | |
 | `:rename NAME` | — | | | | eldeki proje |
 | `:salon` | `1` | | | | |
+| `:settle` | `s` | | | | seçili satırın ajanı ya da projesi |
 | `:slower` | `-` | | evet | | hız, `×2` |
 | `:solo [PATH] [CHOICE] [NAME]` | — | | | `$` | |
 | `:talk [@NAME]` | `v` | | | | eldeki ajan |
 | `:theme [NAME\|FILE]` | `T` | `:t` | | | kullanılan tema |
 | `:trace [@NAME]` | `t` | | | | eldeki ajan |
 | `:unfold` | `zR` | | | | |
+| `:unsettle` | — | | | | kaç şeyin kaldırıldığı |
 | `:waiting` | `w` | | | | N bekliyor |
 
 Canlıda `:pause`, `:faster` ve `:slower` menüde yer almaz. Hareket eden tuşların (`j k`, `gg G`, `enter`, `esc`, `tab`) ve seçili satıra etki eden tuşların (`a r c n x`) `:` adı yoktur: yazmak tuştan yavaş olurdu ve satırın adlandırılması gerekirdi.
@@ -175,6 +178,10 @@ Ne çalar: SENİ BEKLEYEN'e yeni düşen bir kalem (değişiklik, soru, cevap, o
 
 Yalnız demo, `space` gibi: simülasyonu durdurur ya da sürdürür. Menü notu: `(açık)` / `(kapalı)`.
 
+### `:peek [@NAME]`
+
+Ajanın odağı görünümün üstünde bir pencerede, `K` gibi; ad yoksa eldeki ajan (salonda seçili olan, bekleyen kalemin ya da günlük satırının ardındaki, ya da yakınlaşılmış olan). Alttaki görünüm kıpırdamaz. Pencerede `j` `k` (ya da oklar) salonun sırasında sonraki / önceki ajana geçer, `enter` odağın tamamını açar, `@` ona bir mesaj başlatır, `?` yardımı açar, `esc` ya da `K` kapatır; başka tuşlar bir şey yapmaz. Bir ajana böyle bakmak bitmiş turunu görmüş sayılır. Bkz. [salon](../screen/salon.md).
+
 ### `:pending`
 
 Çıkmadan önce `q s`'nin gösterdiği liste: tur ortasındaki ajanlar ve incelenmemiş değişiklikler; orada `q` çıkar, `W` sonraki bekleyeni açar.
@@ -194,6 +201,10 @@ Eldeki projeyi ve liderini `lead-NAME` olarak adlandırır (0 numaralı projenin
 ### `:salon`
 
 Salon, `1` gibi.
+
+### `:settle`
+
+Salonun seçili satırını kaldırır, oradaki `s` gibi: bir işçinin satırını (yardımcıları ve araştırmacısıyla) ya da bir projenin başlığında veya liderinde bütün projeyi, size yeniden ihtiyacı olana dek salondan çıkarır. Önce salona gider. Bir şeyi sizi bekliyorsa ya da takılmışsa reddedilir: `kaldırılmadı: claude-2 seni bekliyor`. Bitmiş turları görülmüş sayılır. Flaş: `claude-2 kaldırıldı: sana ihtiyacı olunca döner`. Menü notu satırın adını verir. Bkz. [salon](../screen/salon.md).
 
 ### `:slower`
 
@@ -218,6 +229,10 @@ Ajanın ham akışı, `t` gibi: oturumunun söylediği her satır, veri olarak, 
 ### `:unfold`
 
 Salonda her şeyi açar, `zR` gibi; açık bir konuşma varken onun her mesajını açar, sonra açılan konuşmalar da yine açık başlar.
+
+### `:unsettle`
+
+`s` ya da `:settle` ile kaldırılan her şeyi geri getirir ve salona gider. Flaş: `kaldırılan 3 şey salona döndü`. Menü notu kaç şeyin kaldırıldığını söyler.
 
 ### `:waiting`
 

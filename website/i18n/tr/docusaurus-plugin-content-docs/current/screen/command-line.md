@@ -58,12 +58,14 @@ Bir mesaj birkaç satıra yayılabilir; kart açan bir mesajın ilk satırı kar
 | `:next` / `:defer` | `W` / `S` | bekleyen sıradaki ögeyi aç / bunu ertele |
 | `:waiting` | `w` | bekleyenler paneli |
 | `:needs` | `f` | salon yalnız sizi bekleyenleri gösterir |
+| `:settle` / `:unsettle` | `s` / — | seçili satırı size yeniden ihtiyacı olana dek kaldır / kaldırılan her şeyi geri getir |
 | `:fold` / `:unfold` | `zM` / `zR` | her projeyi ve her işçinin yardımcılarını katla / aç |
 | `:trace [@NAME]` / `:talk [@NAME]` | `t` / `v` | adı verilen, yoksa eldeki agent'ın ham akışı / konuşması |
+| `:peek [@NAME]` | `K` | adı verilen, yoksa eldeki agent'ın odağı görünümün üstünde bir pencerede |
 | `:mark` | `m` | eldeki satırı işaretle |
 | `:pause`, `:faster`, `:slower` | `space`, `+`, `-` | yalnız demo; canlıda bunu söyler ve menüde yer almaz |
 
-Bir salon panelinde çalışan komutlar (`:waiting`, `:needs`, `:fold`, `:unfold`) önce o panele gider. Her komutun ne aldığı ve ne yanıtladığı [komutlar başvurusunda](../reference/commands.md).
+Bir salon panelinde çalışan komutlar (`:waiting`, `:needs`, `:fold`, `:unfold`, `:settle`, `:unsettle`) önce o panele gider. Her komutun ne aldığı ve ne yanıtladığı [komutlar başvurusunda](../reference/commands.md).
 
 ### Menü ve değerler
 

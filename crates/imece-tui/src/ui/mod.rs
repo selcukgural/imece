@@ -62,6 +62,9 @@ pub fn draw(f: &mut Frame, app: &App) {
     if let Some(th) = &app.thread {
         overlay::thread(f, app, th);
     }
+    if let Some(id) = app.peek {
+        overlay::peek(f, app, id);
+    }
     if let Some(p) = &app.solo_pick {
         overlay::solo_pick(f, app, p);
     } else if app.help {
@@ -1275,6 +1278,13 @@ fn footer(f: &mut Frame, area: Rect, app: &App) {
         Line::from(Span::styled(format!(" {msg}"), fg(pal().warn)))
     } else {
         let hints: Vec<(&str, &str)> = match app.zoom {
+            _ if app.peek.is_some() => vec![
+                ("j k", t.peek_next),
+                ("enter", t.focus),
+                ("@", t.write_this),
+                ("esc", t.back),
+                ("?", t.help),
+            ],
             Zoom::None if app.card.is_some() => vec![
                 ("tab", t.panel),
                 ("enter", t.focus),
@@ -4046,7 +4056,7 @@ mod tests {
         key(&mut app, KeyCode::Char('p'));
         assert_eq!(
             app.menu.as_ref().unwrap().items,
-            ["pending", "pin"],
+            ["peek", "pending", "pin"],
             "not pause"
         );
         key(&mut app, KeyCode::Backspace);
@@ -8087,5 +8097,93 @@ after | not a table";
         app.lang = Lang::Tr;
         let s = render(&app, 140, 30);
         assert!(s.contains("⌀ git yok"), "{s}");
+    }
+
+    /// A demo team, everyone idle and nothing waiting: the lead (0) and
+    /// workers 1 to 4, agent 3 a helper of worker 1 and agent 4
+    /// researching for it.
+    fn row_of_three() -> App {
+        let mut app = App::new(1, 4, 0, 1, Lang::En);
+        app.world.inbox.clear();
+        for a in &mut app.world.agents {
+            a.status = Status::Idle;
+        }
+        let a = &mut app.world.agents;
+        a[3].role = Role::Helper;
+        a[3].parent = Some(1);
+        a[4].role = Role::Researcher;
+        a[4].status = Status::Researching {
+            for_agent: 1,
+            until: 9,
+        };
+        app
+    }
+
+    fn agent_rows(app: &App) -> Vec<AgentId> {
+        salon::rows(app, 100)
+            .iter()
+            .filter_map(|r| match r.sel() {
+                Some(Sel::Agent(id)) => Some(id),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn settled_rows_and_projects_leave_the_salon_and_its_title_counts_them() {
+        let mut app = row_of_three();
+        assert_eq!(agent_rows(&app), [0, 1, 3, 4, 2]);
+        let s = render(&app, 140, 30);
+        assert!(!s.contains("settled"), "{s}");
+        // A helper alone, a researcher alone.
+        app.settled.insert(3);
+        assert_eq!(agent_rows(&app), [0, 1, 4, 2]);
+        app.settled.insert(4);
+        assert_eq!(agent_rows(&app), [0, 1, 2]);
+        // A worker goes with what hangs under it, settled or not.
+        app.settled.clear();
+        app.settled.insert(1);
+        assert_eq!(agent_rows(&app), [0, 2]);
+        // The same with only what needs you shown: its helper waits.
+        app.world.agents[3].status = Status::Blocked;
+        app.needs_only = true;
+        assert_eq!(agent_rows(&app), Vec::<AgentId>::new());
+        app.needs_only = false;
+        app.settled_projects.insert(0);
+        assert!(salon::rows(&app, 100).is_empty());
+        let s = render(&app, 140, 30);
+        assert!(s.contains(" SALON · 2 settled (:unsettle) "), "{s}");
+    }
+
+    #[test]
+    fn a_peek_is_the_focus_in_a_window_over_the_view() {
+        let mut app = row_of_three();
+        app.view = View::Board;
+        app.peek = Some(2);
+        let t = Lang::En.text();
+        let s = render(&app, 100, 40);
+        let rows: Vec<Vec<char>> = s.lines().map(|l| l.chars().collect()).collect();
+        // Four columns and three rows of the view show around it.
+        assert_eq!(rows[3][4], '┌', "{s}");
+        assert_ne!(rows[3][3], '┌', "{s}");
+        assert_ne!(rows[2][4], '┌', "{s}");
+        assert_eq!(rows[36][95], '┘', "{s}");
+        assert_eq!(rows[36].get(96), Some(&' '), "{s}");
+        let name = app.world.agents[2].name.clone();
+        assert!(
+            s.lines()
+                .nth(3)
+                .unwrap()
+                .contains(&fill(t.focus_title, &[&name]))
+        );
+        // The footer has the peek's keys.
+        let foot = s.lines().last().unwrap();
+        assert!(
+            foot.contains(t.peek_next) && foot.contains(t.write_this),
+            "{foot}"
+        );
+        app.peek = None;
+        let foot = render(&app, 100, 40).lines().last().unwrap().to_string();
+        assert!(!foot.contains(t.peek_next), "{foot}");
     }
 }

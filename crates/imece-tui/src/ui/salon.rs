@@ -53,11 +53,14 @@ impl Row {
 /// With `needs_only` (`f`), only agents that need the person are shown,
 /// under their project's header, a worker also for a helper or
 /// researcher of its that does; a project with none is left out.
+/// Settled agents (`s`) and their rows and settled projects are left out
+/// whatever the rest says.
 pub fn rows(app: &App, capacity: usize) -> Vec<Row> {
     let w = &app.world;
     let t = w.tick;
     let need = app.needs();
-    let kept = |a: &Agent| !app.needs_only || need[a.id] > Need::Nothing;
+    let kept =
+        |a: &Agent| !app.settled.contains(&a.id) && (!app.needs_only || need[a.id] > Need::Nothing);
     let researcher_of = |a: &Agent| {
         w.agents.iter().find(|r| {
             r.role == Role::Researcher
@@ -87,7 +90,9 @@ pub fn rows(app: &App, capacity: usize) -> Vec<Row> {
         .projects
         .iter()
         .map(|p| {
-            !p.closed && (!app.needs_only || w.agents.iter().any(|a| a.project == p.id && kept(a)))
+            !p.closed
+                && !app.settled_projects.contains(&p.id)
+                && (!app.needs_only || w.agents.iter().any(|a| a.project == p.id && kept(a)))
         })
         .collect();
 
@@ -103,6 +108,7 @@ pub fn rows(app: &App, capacity: usize) -> Vec<Row> {
                 .agents
                 .iter()
                 .filter(|a| a.project == p.id && a.role == Role::Worker)
+                .filter(|a| !app.settled.contains(&a.id))
                 .filter(|a| kept(a) || !helpers_of(a).is_empty() || researcher_of(a).is_some())
                 .collect();
             // Stable: equals keep their order.
@@ -225,12 +231,17 @@ pub(super) fn pane_block(title: String, focused: bool) -> Block<'static> {
 fn salon(f: &mut Frame, area: Rect, app: &App) {
     let w = &app.world;
     let t = app.lang.text();
-    let title = if app.needs_only {
+    let mut title = if app.needs_only {
         t.salon_needs
     } else {
         t.salon
-    };
-    let block = pane_block(title.into(), app.pane == Pane::Salon);
+    }
+    .to_string();
+    let settled = app.settled.len() + app.settled_projects.len();
+    if settled > 0 {
+        title.push_str(&fill(t.settled_count, &[&settled.to_string()]));
+    }
+    let block = pane_block(title, app.pane == Pane::Salon);
     let inner = block.inner(area);
     f.render_widget(block, area);
     let [list, queue] = Layout::vertical([Constraint::Min(0), Constraint::Length(1)]).areas(inner);

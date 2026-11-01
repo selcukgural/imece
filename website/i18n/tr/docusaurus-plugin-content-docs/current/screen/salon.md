@@ -117,8 +117,10 @@ Başlıktaki filo aynı şekilleri kullanır, böylece mono temada da okunur.
 | `za` | eldeki katlamayı değiştir |
 | `zM` / `zR` (`:fold` / `:unfold`) | her projeyi ve her işçinin yardımcılarını katla / aç |
 | `f` (`:needs`) | salon yalnız sizi bekleyenleri gösterir, sonra yine herkesi |
+| `s` (`:settle`) | seçili işçinin satırını ya da seçili projeyi (başlığı ya da lideri) size yeniden ihtiyacı olana dek kaldır; `:unsettle` hepsini geri getirir |
 | `&` (`:goto`) | bir agent'a ya da projeye adıyla ya da numarasıyla git, sizi bekleyenler önde; projesi ve işçisinin yardımcıları açılır, satırı gizleyecekse `f` bırakılır |
 | `enter` | derine in: bir agent'ın odağı (kartı, durumu, kökeni ve hikâyesi), yine `enter` ham akışı (iz) |
+| `K` (`:peek`) | göz at: eldeki agent'ın odağı görünümün üstünde bir pencerede, görünüm olduğu gibi kalır; `j` `k` sonraki / önceki agent, `enter` odağın tamamı, `@` ona yaz, `esc` ya da `K` kapatır |
 | `t` (`:trace`) / `v` (`:talk`) | eldeki agent'ın ham akışı / konuşması |
 | `esc` | bir derinlik yukarı |
 
@@ -130,6 +132,16 @@ Bir agent'ın sizden neye ihtiyacı olduğu tek bir sıradır, en önemlisi önc
 
 `f` yalnız bir şeye ihtiyacı olan agent'ları tutar, her biri projesinin başlığı altında: bir işçi, bir şeye ihtiyacı olan yardımcısı için gelir, lider yalnız kendisinin ihtiyacı varsa. Hiçbir şeyi olmayan proje dışarıda kalır, bir şeyi olan katlı proje yalnız başlığıyla görünür ve hiçbir şey yoksa salon `Şu an senden bir şey gerekmiyor · f herkesi gösterir` der. Panel başlığı süzgecin açık olduğunu söyler: `SALON · yalnızca seni bekleyenler (f)`. Açıkken, satırı giden bir seçim projesinin hâlâ görünen ilk satırına taşınır (yazarken değil: seçim `/` ile kime yazdığınızı belirler). Süzgeç yalnız bu çalıştırma boyunca sürer.
 
+## Biteni kaldırmak
+
+İşini bitirmiş ve baktığınız bir işçi yine de bir satır tutar. Satırında `s` onu kaldırır: satır, yardımcıları ve onun için çalışan araştırmacıyla birlikte, size yeniden ihtiyacı olana dek gider. Bir projenin başlığında ya da liderinin satırında `s` bütün projeyi kaldırır. Seçim hâlâ görünen sonraki satıra (yoksa öncekine) geçer.
+
+Sizi bekleyen ya da takılmış bir şey hiç kaldırılmaz: `kaldırılmadı: claude-2 seni bekliyor`. Henüz görülmemiş bitmiş bir tur sorun değildir; kaldırmak onu görülmüş sayar. Kaldırılmış bir agent, satırındaki bir şeyin size yeniden ihtiyacı olduğu anda kendiliğinden döner: SENİ BEKLEYEN'de bir soru ya da değişiklik, bloke ya da durmuş olmak, ya da yeni bir turu bitirmek. Kaldırılmış bir proje, agent'larından biri dönünce döner. Hiçbir şey sessizce gitmez: panel başlığı kaldırılanları sayar, `SALON · 2 kaldırıldı (:unsettle)`, başlık satırındaki filo yine her agent'ı sayar ve `&` hepsini yine listeler; `&` ya da `:goto` ile birine gitmek satırını (ve projesini) geri getirir. `:unsettle` hepsini bir kerede geri getirir. Kaldırma yalnız bu çalıştırma boyunca sürer.
+
+## Göz atmak
+
+`K` eldeki agent'ın (salonda seçili olan, bekleyen kalemin ya da günlük satırının ardındaki, ya da yakınlaştığınız) odağını ekranın üstünde, ondan biraz küçük bir pencerede açar; alttaki görünüm (salon, pano, kod haritası ya da bir kart) kıpırdamaz. Pencerede `j` `k` (ya da oklar) salonun sırasında sonraki / önceki agent'a geçer, `enter` odağın tamamını açar, `@` ona bir mesaj başlatır, `esc` ya da `K` kapatır; başka tuşlar bir şey yapmaz. Bitmiş bir agent'a böyle bakmak onu görmüş sayılır.
+
 ## Yan paneller
 
 Sağda üstte SENİ BEKLEYEN, altında DEFTER. `tab` ve `⇧tab` (ya da `]` ve `[`) panelleri döndürür: salon → bekleyenler → günlük; `w` (`:waiting`) doğrudan bekleyenler paneline gider. Bekleyenler paneli ögelerinin gerektiği kadar satır alır, en çok yan tarafın yarısı; ögeler beklerken ve panel odakta değilken çerçevesi uyarı rengine döner.
@@ -138,7 +150,7 @@ Sağda üstte SENİ BEKLEYEN, altında DEFTER. `tab` ve `⇧tab` (ya da `]` ve `
 
 ## Okunaklılık
 
-Salonun üstünde açılan bir pencere (bir konuşma, yardım, uzaktayken özeti, nerede kalmıştın) çevresindeki her şeyi soluklaştırır, böylece ağaç ve günlüğün kesilen satır sonları arka plan olarak okunur. Günlük paneli ve bekleyenlerdeki bir soru, bir mesajı tek satır düz söz olarak gösterir: temizlenmiş, satırları birleştirilmiş, başlık ve liste işaretleri atılmış, bir bağlantı etiketiyle. İz, satırın ilk sözcüğüne göre renklenir: agent'ın kendi metni satıcı renginde, araç çağrıları bilgi renginde, bir çalıştırma çıkış koduna göre, bus sözcükleri vurgu renginde. Açık bir konuşma konuşmayı izler: gelen satırlar eklenir, seçim son satırdaysa onunla gider.
+Salonun üstünde açılan bir pencere (bir konuşma, bir göz atma, yardım, uzaktayken özeti, nerede kalmıştın) çevresindeki her şeyi soluklaştırır, böylece ağaç ve günlüğün kesilen satır sonları arka plan olarak okunur. Günlük paneli ve bekleyenlerdeki bir soru, bir mesajı tek satır düz söz olarak gösterir: temizlenmiş, satırları birleştirilmiş, başlık ve liste işaretleri atılmış, bir bağlantı etiketiyle. İz, satırın ilk sözcüğüne göre renklenir: agent'ın kendi metni satıcı renginde, araç çağrıları bilgi renginde, bir çalıştırma çıkış koduna göre, bus sözcükleri vurgu renginde. Açık bir konuşma konuşmayı izler: gelen satırlar eklenir, seçim son satırdaysa onunla gider.
 
 Bir agent'ın yazdığı her şey ekrana yalnız kontrol karakterlerini atan ve gizli anahtara benzeyen parçaları saklayan bir temizlikten geçerek ulaşır; hiçbir şey ham çizilmez.
 
