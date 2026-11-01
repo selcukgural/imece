@@ -457,14 +457,7 @@ impl Live {
             } else {
                 None
             };
-            let mut pgid = None;
-            let outcome = run::run(&argv, &cwd, timeout, MAX_RUN_OUTPUT, |p| {
-                running.add(p);
-                pgid = Some(p);
-            });
-            if let Some(p) = pgid {
-                running.remove(p);
-            }
+            let outcome = run::run(&argv, &cwd, timeout, MAX_RUN_OUTPUT, &running);
             if let (Some(tree), Ok(o)) = (before, &outcome)
                 && worktree::tree(&cwd).is_ok_and(|after| after == tree)
             {

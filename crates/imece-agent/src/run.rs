@@ -128,15 +128,16 @@ pub fn split(line: &str) -> Result<Vec<String>, String> {
 }
 
 /// Runs `argv` in `cwd` and waits at most `timeout`, keeping at most `max`
-/// bytes of output (the first and last halves of it). `started` gets the
-/// process group's id as soon as it runs, so the caller can kill it if
-/// imece closes first.
+/// bytes of output (the first and last halves of it). Its process group is
+/// in `running` while it runs, so imece's end can kill it, and leaves it
+/// before the program is reaped, when the group's number stops being its
+/// own.
 pub fn run(
     argv: &[String],
     cwd: &Path,
     timeout: Duration,
     max: usize,
-    started: impl FnOnce(i32),
+    running: &Running,
 ) -> io::Result<Outcome> {
     let (program, args) = argv.split_first().expect("split gives a program");
     let mut cmd = child::command(program, cwd, BUILD_ENV);
@@ -154,23 +155,26 @@ pub fn run(
     let mut p = cmd.spawn()?;
     drop(cmd);
     let pgid = p.id() as i32;
-    started(pgid);
+    running.add(pgid);
     let collector = thread::spawn(move || collect(reader, max));
     let mut timed_out = false;
-    let status = loop {
-        if let Some(s) = p.try_wait()? {
-            break s;
+    // Not reaped until its group is killed: then the number is still its
+    // own.
+    loop {
+        if child::exited(pgid)? {
+            break;
         }
         if start.elapsed() >= timeout {
             timed_out = true;
-            child::kill_group(pgid, libc::SIGKILL);
-            break p.wait()?;
+            break;
         }
         thread::sleep(POLL);
-    };
+    }
     // Tools the program started may outlive it and hold the pipe open;
     // they go with it.
     child::kill_group(pgid, libc::SIGKILL);
+    running.remove(pgid);
+    let status = p.wait()?;
     let (raw, bytes) = collector.join().unwrap_or_default();
     Ok(Outcome {
         code: status.code(),
@@ -457,22 +461,23 @@ mod tests {
         assert!(s.contains("[... 19000 bytes cut ...]"));
     }
 
-    fn sh(script: &str, timeout: Duration, max: usize) -> (Outcome, Vec<i32>) {
-        let mut pgids = Vec::new();
+    /// The outcome, and whether the run left the list of runs under way.
+    fn sh(script: &str, timeout: Duration, max: usize) -> (Outcome, bool) {
+        let running = Running::default();
         let out = run(
             &["sh".into(), "-c".into(), script.into()],
             &std::env::temp_dir(),
             timeout,
             max,
-            |p| pgids.push(p),
+            &running,
         )
         .unwrap();
-        (out, pgids)
+        (out, running.is_empty())
     }
 
     #[test]
     fn a_run_gives_both_streams_in_order_its_code_and_its_time() {
-        let (out, pgids) = sh(
+        let (out, left) = sh(
             "echo one; echo two >&2; echo three; echo $FOO; exit 3",
             Duration::from_secs(10),
             1 << 16,
@@ -481,7 +486,7 @@ mod tests {
         assert!(!out.ok() && !out.timed_out);
         assert_eq!(out.output, "one\ntwo\nthree");
         assert_eq!(out.bytes, "one\ntwo\nthree\n\n".len());
-        assert_eq!(pgids.len(), 1);
+        assert!(left, "off the list of runs under way");
         assert!(out.took < Duration::from_secs(5));
         let (out, _) = sh("exit 0", Duration::from_secs(10), 1 << 16);
         assert!(out.ok());
@@ -503,11 +508,12 @@ mod tests {
     #[test]
     fn a_run_past_its_deadline_is_killed_with_its_children() {
         let start = Instant::now();
-        let (out, _) = sh(
+        let (out, left) = sh(
             "echo started; sleep 30 & sleep 30; echo never",
             Duration::from_millis(300),
             1 << 16,
         );
+        assert!(left);
         assert!(out.timed_out);
         assert_eq!(out.code, None);
         assert_eq!(out.output, "started");
@@ -544,7 +550,7 @@ mod tests {
             &std::env::temp_dir(),
             Duration::from_secs(1),
             100,
-            |_| {},
+            &Running::default(),
         );
         assert!(r.is_err());
     }
@@ -560,7 +566,7 @@ mod tests {
                 &std::env::temp_dir(),
                 Duration::from_secs(60),
                 100,
-                |p| r.add(p),
+                &r,
             )
             .unwrap()
         });
