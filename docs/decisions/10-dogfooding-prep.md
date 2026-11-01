@@ -17,7 +17,8 @@ cut silently); `run`
 tool on imece's MCP server for every agent (`crates/imece-agent/src/
 run.rs`: shell-less argv split that refuses `| & ; < > ( ) $ \` # * ? ~
 {`, one pipe for both streams, process group killed at `--run-timeout`
-(default 600 s) and in `Live::drop`, output tidied: ANSI stripped,
+(default 600 s) and in `Live::drop` (#169: the group is killed and the
+run leaves `Running` before the program is reaped, never after), output tidied: ANSI stripped,
 passing test lines dropped, repeats collapsed, middle cut past 48 KiB;
 policy `allowed()` in `live/tools.rs`: cargo minus add/remove/install/publish/
 login/owner/yank/uninstall, a leader also minus fmt-without-`--check`/

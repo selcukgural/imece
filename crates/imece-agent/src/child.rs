@@ -72,9 +72,37 @@ pub enum Out<'a> {
 }
 
 pub struct Child {
-    proc: Arc<Mutex<process::Child>>,
+    proc: Arc<Mutex<Proc>>,
     stdin: Option<ChildStdin>,
-    pgid: i32,
+}
+
+/// The process and whether it was reaped. Its group's number is its pid,
+/// and is its own only until it is reaped: then nothing may be sent to
+/// that number any more, since it may at once be another process's.
+/// Signals and the reaping take the same lock, so neither comes between
+/// the other's check and act.
+struct Proc {
+    child: process::Child,
+    reaped: bool,
+    /// How it ended, once reaped (none when the reaping failed).
+    status: Option<ExitStatus>,
+}
+
+impl Proc {
+    /// Sends `signal` to the whole group, unless the leader was reaped;
+    /// whether it was sent.
+    fn signal(&self, signal: i32) -> bool {
+        if self.reaped {
+            return false;
+        }
+        kill_group(self.child.id() as i32, signal);
+        true
+    }
+}
+
+/// Sends `signal` to `proc`'s group, unless its leader was reaped.
+fn signal(proc: &Mutex<Proc>, sig: i32) -> bool {
+    proc.lock().is_ok_and(|p| p.signal(sig))
 }
 
 impl Child {
@@ -90,11 +118,14 @@ impl Child {
             .stderr(Stdio::piped())
             .process_group(0);
         let mut p = retry_busy(|| cmd.spawn())?;
-        let pgid = p.id() as i32;
         let stdin = p.stdin.take();
         let stdout = p.stdout.take().expect("stdout is piped");
         let stderr = p.stderr.take().expect("stderr is piped");
-        let proc = Arc::new(Mutex::new(p));
+        let proc = Arc::new(Mutex::new(Proc {
+            child: p,
+            reaped: false,
+            status: None,
+        }));
 
         let tail = thread::spawn(move || read_tail(stderr, STDERR_TAIL));
         let reader = Arc::clone(&proc);
@@ -104,26 +135,25 @@ impl Child {
                 Some(l) => {
                     let go_on = on(Out::Line(l));
                     if !go_on {
-                        kill_group(pgid, libc::SIGKILL);
+                        signal(&reader, libc::SIGKILL);
                     }
                     go_on
                 }
                 None => {
                     why = format!("a line longer than {} MiB", MAX_LINE >> 20);
-                    kill_group(pgid, libc::SIGKILL);
+                    signal(&reader, libc::SIGKILL);
                     false
                 }
             });
-            let status = wait(&reader, None);
             // Tools the agent started may outlive it; they go with it.
-            kill_group(pgid, libc::SIGKILL);
+            let status = reap(&reader, None);
             let stderr = tail.join().unwrap_or_default();
             if why.is_empty() {
                 why = describe(status, &stderr);
             }
             on(Out::End(why));
         });
-        Ok(Child { proc, stdin, pgid })
+        Ok(Child { proc, stdin })
     }
 
     /// Writes one line to the process's stdin.
@@ -144,21 +174,23 @@ impl Child {
     }
 
     /// Closes stdin and asks the whole group to stop, without waiting. Drop
-    /// waits a moment, then kills what is left.
+    /// waits a moment, then kills what is left. A process already reaped
+    /// is sent nothing.
     pub fn terminate(&mut self) {
         self.stdin = None;
-        kill_group(self.pgid, libc::SIGTERM);
+        signal(&self.proc, libc::SIGTERM);
     }
 }
 
 impl Drop for Child {
     fn drop(&mut self) {
         self.terminate();
-        wait(&self.proc, Some(GRACE));
-        // Whether or not the leader is gone: what is left of the group, a
-        // tool that ignores SIGTERM for example, goes now.
-        kill_group(self.pgid, libc::SIGKILL);
-        wait(&self.proc, Some(GRACE));
+        // The leader gone in time: what is left of the group, a tool that
+        // ignores SIGTERM for example, goes as it is reaped.
+        if reap(&self.proc, Some(GRACE)).is_none() {
+            signal(&self.proc, libc::SIGKILL);
+            reap(&self.proc, Some(GRACE));
+        }
     }
 }
 
@@ -223,7 +255,7 @@ const ENDED: libc::c_int = libc::WEXITED | libc::WNOHANG | libc::WNOWAIT;
 
 /// Whether child `pid` has ended, leaving it unreaped (a zombie keeps its
 /// number, and its group's, from being given out again).
-fn exited(pid: i32) -> io::Result<bool> {
+pub(crate) fn exited(pid: i32) -> io::Result<bool> {
     // SAFETY: siginfo_t is plain data; all zeros is a valid value.
     let mut info: libc::siginfo_t = unsafe { std::mem::zeroed() };
     // SAFETY: waitid only writes `info`, which outlives the call.
@@ -241,15 +273,30 @@ pub(crate) fn kill_group(pgid: i32, signal: i32) {
     }
 }
 
-/// Waits for the process to exit, at most `limit`. Never blocks while
-/// holding the lock, so a drop and the reader can wait at the same time.
-fn wait(proc: &Mutex<process::Child>, limit: Option<Duration>) -> Option<ExitStatus> {
+/// Waits for the leader to end, at most `limit`, then kills what is left
+/// of its group and reaps it, while the group's number is still its own;
+/// its status (also when it was reaped before; none when it did not end
+/// in time).
+/// Never sleeps holding the lock, so a drop, a signal and the reader can
+/// go at the same time.
+fn reap(proc: &Mutex<Proc>, limit: Option<Duration>) -> Option<ExitStatus> {
     let start = Instant::now();
     loop {
-        if let Ok(mut p) = proc.lock()
-            && let Ok(Some(status)) = p.try_wait()
-        {
-            return Some(status);
+        if let Ok(mut p) = proc.lock() {
+            if p.reaped {
+                return p.status;
+            }
+            match exited(p.child.id() as i32) {
+                Ok(false) => {}
+                ended => {
+                    if ended.is_ok() {
+                        p.signal(libc::SIGKILL);
+                    }
+                    p.reaped = true;
+                    p.status = p.child.wait().ok();
+                    return p.status;
+                }
+            }
         }
         if limit.is_some_and(|l| start.elapsed() >= l) {
             return None;
@@ -480,6 +527,86 @@ mod tests {
         drop(child);
         thread::sleep(Duration::from_millis(2500));
         assert!(!marker.exists(), "a grandchild outlived the drop");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_reaped_leader_s_group_is_sent_nothing_any_more() {
+        let (tx, rx) = mpsc::channel();
+        let mut cmd = command("sh", Path::new("/"), &[]);
+        cmd.args(["-c", "echo hi; exit 3"]);
+        let mut child = Child::spawn(cmd, move |o| {
+            if let Out::End(why) = o {
+                let _ = tx.send(why);
+            }
+            true
+        })
+        .unwrap();
+        assert_eq!(
+            rx.recv_timeout(Duration::from_secs(10)).unwrap(),
+            "exited with code 3"
+        );
+        assert!(child.proc.lock().unwrap().reaped);
+        // Its number may be someone else's by now.
+        assert!(!signal(&child.proc, libc::SIGTERM));
+        child.terminate();
+        // Reaped once; asked again, the same status, at once.
+        let start = Instant::now();
+        let status = reap(&child.proc, Some(Duration::from_secs(5))).unwrap();
+        assert_eq!(status.code(), Some(3));
+        assert!(start.elapsed() < Duration::from_secs(1));
+        // A drop of a reaped child does not wait out its grace.
+        drop(child);
+        assert!(start.elapsed() < GRACE, "{:?}", start.elapsed());
+        // Before its end, it is sent what it is sent.
+        let mut cmd = command("sh", Path::new("/"), &[]);
+        cmd.args(["-c", "sleep 30"]);
+        let child = Child::spawn(cmd, |_| true).unwrap();
+        assert!(signal(&child.proc, libc::SIGKILL));
+    }
+
+    #[test]
+    fn a_reap_waits_its_limit_for_the_end_and_no_longer() {
+        let mut cmd = command("sh", Path::new("/"), &[]);
+        cmd.args(["-c", "sleep 0.3; exit 4"]);
+        let mut p = cmd.process_group(0).spawn().unwrap();
+        let _ = p.stdin.take();
+        let proc = Mutex::new(Proc {
+            child: p,
+            reaped: false,
+            status: None,
+        });
+        let start = Instant::now();
+        assert_eq!(reap(&proc, Some(Duration::from_millis(50))), None);
+        assert!(start.elapsed() < Duration::from_secs(1));
+        assert!(!proc.lock().unwrap().reaped, "not ended yet: not reaped");
+        let status = reap(&proc, Some(Duration::from_secs(10))).expect("ended in time");
+        assert_eq!(status.code(), Some(4));
+        assert!(proc.lock().unwrap().reaped);
+    }
+
+    #[test]
+    fn a_tool_left_behind_goes_when_its_agent_ends_by_itself() {
+        let dir = std::env::temp_dir().join(format!("imece-left-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let marker = dir.join("alive");
+        let mut cmd = command("sh", &dir, &[]);
+        cmd.args([
+            "-c",
+            "(trap '' TERM HUP; sleep 1; touch alive) >/dev/null 2>&1 & echo started",
+        ]);
+        let (tx, rx) = mpsc::channel();
+        let _child = Child::spawn(cmd, move |o| {
+            let _ = tx.send(matches!(o, Out::End(_)));
+            true
+        })
+        .unwrap();
+        // The line, then the end: the leader is gone, the tool killed.
+        assert!(!rx.recv_timeout(Duration::from_secs(10)).unwrap());
+        assert!(rx.recv_timeout(Duration::from_secs(10)).unwrap());
+        thread::sleep(Duration::from_millis(1500));
+        assert!(!marker.exists(), "a tool outlived its agent");
         let _ = std::fs::remove_dir_all(&dir);
     }
 

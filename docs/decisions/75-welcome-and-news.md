@@ -17,7 +17,10 @@ stall the caller; the group is killed at the end either way, while
 its leader is still unreaped (`waitid` with `WNOWAIT`): a reaped
 leader's number may at once be another process's, and a kill after
 reaping could hit that one (CI's first run caught one test's `ask`
-killing another's CLI). On it:
+killing another's CLI). Every session's `Child` and the `run` tool
+follow the same rule since #169: `child::Proc` keeps whether the leader
+was reaped, a signal to a reaped one's group is not sent, and `reap`
+kills what is left of the group before it reaps. On it:
 `imece_agent::version` (`--version`'s first line, at most 60
 characters), `claude::login` (`claude auth status --json`, its
 `loggedIn`; an API key counts) and `codex::login` (`codex login
