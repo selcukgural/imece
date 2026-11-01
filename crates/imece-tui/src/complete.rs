@@ -221,6 +221,61 @@ pub fn jump_named(input: &str, list: &[Jump]) -> Option<String> {
     (!rest.is_empty()).then(|| rest.to_string())
 }
 
+/// Files (and symbols) offered for a word at most.
+pub const FILES_SHOWN: usize = 30;
+
+/// The files of the project that have `word` in their path (case and
+/// Turkish letters folded), the ones whose name starts with it first,
+/// then the shorter path, then by name; after them the symbols leased on
+/// the code map whose name starts with the word, as `file::name` (a
+/// word with `::` names the file's part and the symbol's); at most
+/// [`FILES_SHOWN`], each with `note` (who holds the file). Nothing for a
+/// word without a `/` unless `forced` (`tab` asked), so writing is not
+/// interrupted; the item replaces the word, a space after it.
+pub fn files(
+    start: usize,
+    word: &str,
+    forced: bool,
+    paths: &[&str],
+    symbols: &[(&str, &str)],
+    note: impl Fn(&str) -> String,
+) -> Option<Menu> {
+    if word.is_empty() || (!forced && !word.contains('/')) {
+        return None;
+    }
+    let want = fold(word);
+    let base = |p: &str| p.rsplit('/').next().unwrap_or(p).to_string();
+    let mut found: Vec<(usize, &str)> = paths
+        .iter()
+        .copied()
+        .filter(|p| fold(p).contains(&want))
+        .map(|p| (usize::from(!fold(&base(p)).starts_with(&want)), p))
+        .collect();
+    found.sort_by(|a, b| {
+        a.0.cmp(&b.0)
+            .then(a.1.len().cmp(&b.1.len()))
+            .then(a.1.cmp(b.1))
+    });
+    let mut items: Vec<(String, String)> = found
+        .iter()
+        .map(|(_, p)| (p.to_string(), note(p)))
+        .collect();
+    let (file_part, sym_part) = match word.split_once("::") {
+        Some((f, s)) => (fold(f), fold(s)),
+        None => (String::new(), want.clone()),
+    };
+    for (file, name) in symbols {
+        if fold(name).starts_with(&sym_part) && fold(file).contains(&file_part) {
+            items.push((format!("{file}::{name}"), note(file)));
+        }
+    }
+    items.truncate(FILES_SHOWN);
+    let (items, notes): (Vec<String>, Vec<String>) = items.into_iter().unzip();
+    let mut m = menu(start, word, items, " ")?;
+    m.notes = notes;
+    Some(m)
+}
+
 /// The card a line typed after `#` names: the number it starts with, if a
 /// card of an open project has it.
 pub fn card_named(input: &str, w: &World) -> Option<CardId> {
@@ -763,6 +818,110 @@ mod tests {
         assert_eq!(named("&"), None);
         assert_eq!(named("&!"), None);
         assert_eq!(named("#1"), None);
+    }
+
+    #[test]
+    fn a_word_completes_to_the_files_that_have_it_names_first_then_the_symbols() {
+        let paths = [
+            "src/auth/session.rs",
+            "src/auth.rs",
+            "tests/auth_test.rs",
+            "docs/Authors.md",
+            "README.md",
+            "src/b/author.rs",
+        ];
+        let symbols = [("src/auth.rs", "verify"), ("src/auth.rs", "Session.Start")];
+        let note = |p: &str| {
+            if p == "src/auth.rs" {
+                "● claude-1".to_string()
+            } else {
+                String::new()
+            }
+        };
+        let items = |m: Option<Menu>| m.map(|m| (m.start, m.items, m.notes, m.tail));
+        // Without a `/`, only when asked (tab); then the names that start
+        // with the word first (the shorter path first, then by name), the
+        // rest by the same rule; the symbols after, by name.
+        assert_eq!(items(files(3, "auth", false, &paths, &symbols, note)), None);
+        assert_eq!(
+            items(files(3, "auth", true, &paths, &symbols, note)),
+            Some((
+                3,
+                vec![
+                    "src/auth.rs".to_string(),
+                    "docs/Authors.md".into(),
+                    "src/b/author.rs".into(),
+                    "tests/auth_test.rs".into(),
+                    "src/auth/session.rs".into(),
+                ],
+                vec![
+                    "● claude-1".to_string(),
+                    "".into(),
+                    "".into(),
+                    "".into(),
+                    "".into()
+                ],
+                " "
+            ))
+        );
+        // A `/` opens the menu by itself; the word matches inside the path.
+        assert_eq!(
+            items(files(0, "h/se", false, &paths, &symbols, note))
+                .unwrap()
+                .1,
+            ["src/auth/session.rs"]
+        );
+        // Case and Turkish letters aside.
+        assert_eq!(
+            items(files(0, "AUTHORS", true, &paths, &symbols, note))
+                .unwrap()
+                .1,
+            ["docs/Authors.md"]
+        );
+        // Symbols: by the start of their name, after the files; with `::`
+        // the file's part and the symbol's.
+        assert_eq!(
+            items(files(0, "ver", true, &paths, &symbols, note))
+                .unwrap()
+                .1,
+            ["src/auth.rs::verify"]
+        );
+        assert_eq!(
+            items(files(0, "sess", true, &paths, &symbols, note))
+                .unwrap()
+                .1,
+            ["src/auth/session.rs", "src/auth.rs::Session.Start"]
+        );
+        assert_eq!(
+            items(files(0, "auth.rs::", true, &paths, &symbols, note)).unwrap(),
+            (
+                0,
+                vec![
+                    "src/auth.rs::verify".to_string(),
+                    "src/auth.rs::Session.Start".into()
+                ],
+                vec!["● claude-1".to_string(), "● claude-1".into()],
+                " "
+            )
+        );
+        assert_eq!(
+            items(files(0, "b/::ver", true, &paths, &symbols, note)),
+            None
+        );
+        // Nothing: no menu; the one match that is the word already: none.
+        assert_eq!(items(files(0, "zzz", true, &paths, &symbols, note)), None);
+        assert_eq!(items(files(0, "", true, &paths, &symbols, note)), None);
+        assert_eq!(
+            items(files(0, "README.md", true, &paths, &symbols, note)),
+            None
+        );
+        // At most FILES_SHOWN.
+        let many: Vec<String> = (0..40).map(|i| format!("d/f{i:02}.rs")).collect();
+        let many: Vec<&str> = many.iter().map(String::as_str).collect();
+        let m = files(0, "d/", false, &many, &[], |_| String::new()).unwrap();
+        assert_eq!(m.items.len(), FILES_SHOWN);
+        assert_eq!(FILES_SHOWN, 30);
+        assert_eq!(m.notes.len(), 30);
     }
 
     #[test]

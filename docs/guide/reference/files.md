@@ -94,7 +94,7 @@ At each start imece makes `$TMPDIR/imece-<pid>-<hex>/` (0700; an existing direct
 ## What imece reads from the repository
 
 - `AGENTS.md`, else `CLAUDE.md`, at the checkout's top: the notes for coding agents, at most 16 KiB, passed to every agent with its instructions (Codex reads `AGENTS.md` itself). See [message types](message-types.md).
-- Git: the top of the checkout, HEAD, `git check-ignore` for `:copy`, `git diff --cached` and the eight newest subjects for `:commit` (with `--no-ext-diff --no-textconv`, so no program of yours runs).
+- Git: the top of the checkout, HEAD, `git check-ignore` for `:copy`, `git diff --cached` and the eight newest subjects for `:commit` (with `--no-ext-diff --no-textconv`, so no program of yours runs), and `git ls-files` (tracked, and untracked but not ignored; the first 20,000) for completing a file's name in a message: at the project's opening, after each change you apply, and every minute while one of its agents is mid-turn.
 - A colour file named with `--theme FILE` or `:theme FILE`, in Ghostty's or Kitty's format; its absolute path is remembered as the theme.
 
 Nothing else: no file of the repository is written by imece, and the vendors' CLIs are started so that nothing of the repository loads (under `standard` and `strict`).

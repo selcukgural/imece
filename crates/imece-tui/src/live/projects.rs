@@ -93,7 +93,9 @@ impl Live {
                 root,
             });
         }
-        Ok(w.open_project(reuse, name, repo.display().to_string(), vendor, role))
+        let p = w.open_project(reuse, name, repo.display().to_string(), vendor, role);
+        self.filed_at.remove(&p);
+        Ok(p)
     }
 
     /// The open solo project on the checkout `repo` whose agent runs on
@@ -136,6 +138,8 @@ impl Live {
         }
         self.posts.retain(|c, _| w.cards[*c].project != p);
         self.offered.retain(|c, _| w.cards[*c].project != p);
+        self.filed_at.remove(&p);
+        self.files_cut.remove(&p);
         w.close_project(p);
         Ok(())
     }

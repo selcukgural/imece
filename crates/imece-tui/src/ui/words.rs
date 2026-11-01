@@ -191,6 +191,14 @@ pub fn event(lang: Lang, w: &World, e: &Event) -> String {
             t.ev_copied,
             &[&paths.join(", "), name(w, *agent), &size(*bytes)],
         ),
+        Event::FilesCut { leader, kept } => fill(
+            t.ev_files_cut,
+            &[
+                &w.projects[w.agents[*leader].project].name,
+                &kept.to_string(),
+                &kept.to_string(),
+            ],
+        ),
         Event::CopySkipped { agent, path, why } => {
             fill(t.ev_copy_skipped, &[path, name(w, *agent), why])
         }

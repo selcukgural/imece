@@ -697,6 +697,7 @@ pub fn world(
             name: name.into(),
             leader,
             trunk: None,
+            files: Vec::new(),
             repo,
             closed: false,
             pinned: false,

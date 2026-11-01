@@ -207,6 +207,8 @@ pub struct Text {
     pub copy_list: &'static str,
     pub copy_none: &'static str,
     pub ev_copied: &'static str,
+    /// A checkout with more files than completion keeps: how many, kept.
+    pub ev_files_cut: &'static str,
     pub ev_copy_skipped: &'static str,
     /// `:pin`: a project pinned, unpinned.
     pub pinned: &'static str,
@@ -643,6 +645,7 @@ pub const EN: Text = Text {
     copy_list: "copied into {}'s worktrees: {}",
     copy_none: "nothing is copied into {}'s worktrees; :copy PATH adds a path git ignores",
     ev_copied: "copied {} into {}'s worktree ({})",
+    ev_files_cut: "{}'s checkout lists more than {} files; only the first {} complete in a message",
     ev_copy_skipped: "{} was not copied into {}'s worktree: {}",
     demo_only: ":{} is for the demo: live agents run in real time",
     value_on: "on",
@@ -1159,6 +1162,7 @@ pub const TR: Text = Text {
     copy_list: "{} çalışma ağaçlarına kopyalananlar: {}",
     copy_none: "{} çalışma ağaçlarına hiçbir şey kopyalanmıyor; :copy YOL git'in yok saydığı bir yolu ekler",
     ev_copied: "{} → {} çalışma ağacına kopyalandı ({})",
+    ev_files_cut: "{} projesinin çalışma kopyasında {} dosyadan fazlası var; mesajda yalnız ilk {} tamamlanır",
     ev_copy_skipped: "{} → {} çalışma ağacına kopyalanmadı: {}",
     demo_only: ":{} demo için: canlı agent'lar gerçek zamanda çalışır",
     value_on: "açık",
@@ -1663,6 +1667,7 @@ mod tests {
             (e.copy_list, t.copy_list),
             (e.copy_none, t.copy_none),
             (e.ev_copied, t.ev_copied),
+            (e.ev_files_cut, t.ev_files_cut),
             (e.ev_copy_skipped, t.ev_copy_skipped),
             (e.ev_pot_low, t.ev_pot_low),
             (e.pot_lasts, t.pot_lasts),

@@ -66,6 +66,12 @@ Every message one agent sends another has a number on the bus, in order across t
 
 `:export` with a conversation open writes it as Markdown: `# Conversation: lead ⇄ claude-1`, then each message as a heading with its day and time, who to whom and its kind, over its whole text. PATH is a file or a directory to name one in; none is the directory imece started from, the name `imece-conversation-20261031-1401.md`. A file that is there already is never written over. See [the journal](journal.md) for a card's export.
 
+## Files and symbols in a message
+
+While you write to an agent (or a `!cmd` line), the last word completes to a file of the project at hand: a word with a `/` in it opens the menu by itself (`src/au` → `src/auth.rs`), any other word on `tab` (`auth` → `src/auth.rs`, `tests/auth_test.rs`). The files whose name starts with the word come first, then the ones that have it anywhere in their path, the shorter path first; case and Turkish letters do not matter; thirty at most. `tab`, `↑` and `↓` step, `enter` puts the file in the word's place with a space after it, `enter` again sends. A file an agent holds on the code map shows its holder after it (`● claude-1`), and the symbols leased there come after the files as `file::name` (`Session.` → `src/Auth/Session.cs::Session.Start`; `auth.rs::` lists that file's). Not for a name (`@`), a command (`/`), the `:` `#` `&` lines, nor over several lines.
+
+Live, the files are what git lists in the checkout: tracked, and untracked but not ignored, read at the project's opening, again after each change you apply, and every minute while one of its agents is mid-turn; a checkout of more than 20,000 files completes the first 20,000 and the journal says so once. The demo's files are its code map's. Live has no leased symbols yet (see [files](../reference/files.md)).
+
 ## The conversation follows
 
 An open window keeps up with the talk: journal lines of its pair that arrive are appended. Your own line, written from the window with `@`, is selected, and so is a line that comes while the last one was selected; a selection further up stays where you are reading. Before this you had to close and reopen to see an answer.

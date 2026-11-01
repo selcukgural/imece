@@ -94,7 +94,7 @@ Her başlangıçta imece `$TMPDIR/imece-<pid>-<hex>/` yapar (0700; var olan bir 
 ## imece'nin depodan okuduğu
 
 - Çalışma kopyasının tepesindeki `AGENTS.md`, yoksa `CLAUDE.md`: kodlama ajanları için notlar, en çok 16 KiB, her ajana talimatlarıyla geçirilir (Codex `AGENTS.md`'yi kendi okur). Bkz. [mesaj türleri](message-types.md).
-- Git: çalışma kopyasının tepesi, HEAD, `:copy` için `git check-ignore`, `:commit` için `git diff --cached` ve en yeni sekiz konu (`--no-ext-diff --no-textconv` ile, böylece sizin bir programınız çalışmaz).
+- Git: çalışma kopyasının tepesi, HEAD, `:copy` için `git check-ignore`, `:commit` için `git diff --cached` ve en yeni sekiz konu (`--no-ext-diff --no-textconv` ile, böylece sizin bir programınız çalışmaz), ve bir mesajda dosya adı tamamlamak için `git ls-files` (izlenenler ve izlenmeyen ama yok sayılmayanlar; ilk 20.000): projenin açılışında, uyguladığınız her değişiklikten sonra ve ajanlarından biri tur ortasındayken her dakika.
 - `--theme FILE` ya da `:theme FILE` ile adlandırılan, Ghostty ya da Kitty biçiminde bir renk dosyası; mutlak yolu tema olarak hatırlanır.
 
 Başka bir şey yok: deponun hiçbir dosyası imece tarafından yazılmaz ve satıcıların CLI'ları depodan hiçbir şey yüklenmesin diye başlatılır (`standard` ve `strict` altında).
