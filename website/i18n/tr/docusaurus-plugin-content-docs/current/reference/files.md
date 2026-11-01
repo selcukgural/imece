@@ -127,7 +127,7 @@ Bir yola ya da bir satıcıya yalnızca UUID biçiminde bir kimlik ulaşır. Hen
 ## Yazılmayanlar
 
 - Günlük dosyası ve iz dosyası yok: ham akış `trace` tablosudur (ajan başına 200 satır), günlük `journal` tablosudur.
-- `!cmd` çıktısı terminalinizin ana ekranında kalır; yakalanmaz.
+- `!cmd` çıktısı terminalinizin ana ekranında kalır; sonu (`O` için, proje başına son 64 KiB) yalnızca bellekte tutulur ve imece bitince gider.
 - `:commit`'in çağrısı `--no-session-persistence` ile çalışır: `~/.claude/projects` altında hiçbir şey, sürdürülecek bir şey yok.
 - Demo, ekran ayarlarınız (`side`, `theme`, `lead`) dışında depoya hiçbir şey yazmaz.
 - Başlıkta gösterilen satıcı kullanım pencereleri saklanmaz; bir oturum ilk turunda yeniden söyler.

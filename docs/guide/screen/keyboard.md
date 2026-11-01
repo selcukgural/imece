@@ -36,6 +36,7 @@ The conventions are vim's: `h` `j` `k` `l` move and fold, `gg` and `G` go to the
 | `:copy PATH` | copy a path git ignores (`.env`) into worktrees; again: stop |
 | `:pin NAME` | pin a project to the top of the salon; again: unpin |
 | `!cmd` | run `cmd` in your own shell, screen aside |
+| `O`  `:output` | quote the last `!cmd` of the project at hand (how it ran, its last 40 lines) in a message to the agent at hand, else the project's head |
 | `tab` `⇧tab` `↑` `↓` | while writing: complete names and commands (`^n` `^p` step too); `tab` also completes any word of a message or a `!cmd` line to a file of the project (a word with a `/` opens the menu by itself), or to a symbol leased on the code map as `file::name` |
 | `↑` `↓` | writing, at the text's first / last line: the lines sent before, newest first; past the newest, what you were writing comes back |
 | `^r`  `:history` | search the lines sent: every word typed must be in the line, `enter` puts the one highlighted on the line, `tab` steps |

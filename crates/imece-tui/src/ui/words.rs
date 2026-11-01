@@ -3,6 +3,7 @@
 
 use crate::i18n::{Lang, fill};
 use crate::model::*;
+use crate::shell::Output;
 
 /// The name of the project agent `id` belongs to.
 fn project(w: &World, id: AgentId) -> &str {
@@ -223,6 +224,41 @@ pub fn shell(lang: Lang, command: &str, ended: Ended, took: Option<u64>) -> Stri
         Some(ms) => fill(t.ev_shell_took, &[&said, &took_words(lang, ms)]),
         None => said,
     }
+}
+
+/// A `!` command's output quoted in a message (`O`), from the person to
+/// an agent: how it ran, then its last lines in a `text` fence longer
+/// than any run of backticks in them (so none closes it early), the
+/// lines above them counted first. The lines are cleaned already; the
+/// command is cleaned here.
+pub fn output_quote(lang: Lang, o: &Output) -> String {
+    let t = lang.text();
+    let said = match o.ended {
+        Ended::Exit(code) => fill(t.output_ran, &[&o.command, &code.to_string()]),
+        Ended::Signal(sig) => fill(t.output_ran_signal, &[&o.command, &sig.to_string()]),
+    };
+    let mut out = fill(t.ev_shell_took, &[&said, &took_words(lang, o.took)]);
+    if o.lines.is_empty() {
+        return out;
+    }
+    let ticks = (o.lines.iter())
+        .map(|l| l.split(|c| c != '`').map(str::len).max().unwrap_or(0))
+        .max()
+        .unwrap_or(0);
+    let fence = "`".repeat(ticks.max(2) + 1);
+    out.push('\n');
+    out.push_str(&fence);
+    out.push_str("text\n");
+    if o.above > 0 {
+        out.push_str(&fill(t.output_above, &[&o.above.to_string()]));
+        out.push('\n');
+    }
+    for l in &o.lines {
+        out.push_str(l);
+        out.push('\n');
+    }
+    out.push_str(&fence);
+    out
 }
 
 /// The line under a command's output, before the screen comes back:

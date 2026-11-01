@@ -44,6 +44,7 @@ A line that starts with `:` is a command to imece, not a message to an agent. Yo
 | `:next` | `W` | | | | N waiting |
 | `:notify [off\|bell\|text]` | — | | | | off / bell / text |
 | `:open PATH [NAME]` | — | `:o` | | `$` | |
+| `:output` | `O` | | | | the command whose output it quotes |
 | `:pause` | `space` | | yes | | on / off |
 | `:pending` | `q s` | | | | |
 | `:pin [NAME]` | — | | | | the project at hand, `▴` when pinned |
@@ -165,6 +166,10 @@ What rings: a new item in WAITING FOR YOU (a change, a question, an answer, an a
 ### `:open PATH [NAME]`
 
 Opens the git checkout at `PATH` as a project of its own (`:o`), with a new leader named `lead-NAME` on the team's lead vendor (same model and tiers). `NAME` defaults to the directory's name made safe: 1-24 of letters, digits, `.`, `_`, `-` (the rest become `-`); a wrong name is refused: `"x y" can not name a project: 1-24 of letters, digits, . _ -`. `~` stands for your home; a path with spaces is not parsed. The flash: `opened kule at /Users/me/src/kule; write to lead-kule`. Refusals: `:open PATH [NAME] opens the git checkout at PATH as a project` (no path), `a project named kule is open already`, `kule is open already, as k2`, `could not open: …` (not a checkout). A closed project with the same checkout opens again in its place. Opened projects are remembered between runs; a second imece on another checkout is told to use `:open` from the first. `$`: a new leader session. The demo adds a fake project with a leader, two workers and three cards. See [projects](../concepts/projects.md).
+
+### `:output`
+
+Quotes the last `!cmd` of the project at hand in a message, as `O`: the command line opens to the agent at hand (else the project's head) with how the command ran and the last 40 lines it showed, cleaned, in a `text` fence, under the line you write on. Nothing is sent until you press `enter`. The output is kept in memory only, the newest per project. None yet: `no !command has run in this project yet`. The menu note: the command, `(cargo test)`. See [command line](../screen/command-line.md).
 
 ### `:pause`
 

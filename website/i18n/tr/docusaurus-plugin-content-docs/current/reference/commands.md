@@ -44,6 +44,7 @@ description: imece'nin aldığı her `:` komutu; argümanları, karşılığı o
 | `:next` | `W` | | | | N bekliyor |
 | `:notify [off\|bell\|text]` | — | | | | off / bell / text |
 | `:open PATH [NAME]` | — | `:o` | | `$` | |
+| `:output` | `O` | | | | çıktısını alıntıladığı komut |
 | `:pause` | `space` | | evet | | açık / kapalı |
 | `:pending` | `q s` | | | | |
 | `:pin [NAME]` | — | | | | eldeki proje, sabitse `▴` |
@@ -165,6 +166,10 @@ Ne çalar: SENİ BEKLEYEN'e yeni düşen bir kalem (değişiklik, soru, cevap, o
 ### `:open PATH [NAME]`
 
 `PATH`'teki git çalışma kopyasını kendi başına bir proje olarak açar (`:o`), takımın lider satıcısında (aynı model ve kademelerle) `lead-NAME` adlı yeni bir liderle. `NAME` varsayılan olarak dizinin adının güvenli hali: harf, rakam, `.`, `_`, `-` ile 1-24 karakter (kalanlar `-` olur); yanlış bir ad reddedilir: `"x y" proje adı olamaz: 1-24 harf, rakam, . _ -`. `~` ev dizininizdir; boşluklu bir yol ayrıştırılmaz. Flaş: `kule açıldı (/Users/me/src/kule); lead-kule adına yaz`. Redler: `:open YOL [AD], YOL'daki git çalışma kopyasını proje olarak açar` (yol yok), `kule adında açık bir proje var`, `kule zaten açık, adı k2`, `açılamadı: …` (çalışma kopyası değil). Aynı çalışma kopyasıyla kapalı bir proje yerinde yeniden açılır. Açılan projeler çalıştırmalar arasında hatırlanır; başka bir çalışma kopyasında ikinci bir imece'ye ilkinden `:open` kullanması söylenir. `$`: yeni bir lider oturumu. Demo bir liderle, iki işçiyle ve üç kartla sahte bir proje ekler. Bkz. [projeler](../concepts/projects.md).
+
+### `:output`
+
+`O` gibi, eldeki projenin son `!kmt`'sini bir mesajda alıntılar: komut satırı eldeki agent'a (yoksa projenin başına) açılır; yazdığınız satırın altında komutun nasıl bittiği ve gösterdiği son 40 satır, temizlenmiş, bir `text` çiti içinde durur. `enter`a basana kadar hiçbir şey gönderilmez. Çıktı yalnızca bellekte tutulur, proje başına en yenisi. Henüz yoksa: `bu projede henüz !komut çalışmadı`. Menü notu: komut, `(cargo test)`. Bkz. [komut satırı](../screen/command-line.md).
 
 ### `:pause`
 

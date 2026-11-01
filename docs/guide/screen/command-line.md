@@ -117,7 +117,21 @@ A paste goes into the line whole (bracketed paste): line ends become new lines, 
 
 ## Your own shell
 
-`!cmd` runs `cmd` in your own shell (`$SHELL`, else `/bin/sh`) in the checkout, as `:!` does in vim: the screen steps aside, the command has the terminal to itself (so `git log`, `less` and `vim` work, and ctrl-c stops the command, not imece), a line says how it ended and how long it took (`[imece] exit 0 · 3 s · any key: back to the screen`), and any key brings the screen back. The journal keeps the command, its exit code (or the signal that stopped it) and its time: `` you ran `cargo test` → exit 0 · 12 s ``. The output stays on the terminal's main screen, where you see it again when imece quits; nothing of it reaches an agent. The terminal's title is written again after.
+`!cmd` runs `cmd` in your own shell (`$SHELL`, else `/bin/sh`) in the checkout, as `:!` does in vim: the screen steps aside and the command runs on a terminal of its own (a pty, as `script` does), which imece passes your keys to and copies to the screen as it comes. That terminal starts set like yours and follows your window's size, so `git log`, `less` and `vim` work, and ctrl-c stops the command, not imece; ctrl-z stops nothing, since a stopped command would hold the screen. A line says how it ended and how long it took (`[imece] exit 0 · 3 s · any key: back to the screen`), and any key brings the screen back. The journal keeps the command, its exit code (or the signal that stopped it) and its time: `` you ran `cargo test` → exit 0 · 12 s ``. The output stays on the terminal's main screen, where you see it again when imece quits. imece keeps the end of it (the last 64 KiB) in memory for `O`, never on disk, and it reaches an agent only when you send it. The terminal's title is written again after.
+
+`O` (or `:output`) quotes the last `!cmd` of the project at hand in a message. The command line opens to the agent at hand (else the project's head) with how the command ran and the last 40 lines it showed under the line you write on. Colours and what a progress bar wrote over are gone and secret-looking words are hidden; the lines sit in a `text` fence longer than any run of backticks in them:
+
+````text
+@lead 
+I ran `cargo test` → exit 101 · 12 s
+```text
+… lines above: 214
+test parse::tests::empty ... FAILED
+test result: FAILED. 41 passed; 1 failed
+```
+````
+
+Nothing is sent until you press `enter`; `esc` drops it. Each project keeps only its newest output, and a command that could not start leaves the last one as it was. No command has run in the project yet: `no !command has run in this project yet`.
 
 `:commit` puts `!git commit -m '…'` on the line for you to edit and run this way. See [own shell and commit](../scenarios/own-shell-and-commit.md).
 

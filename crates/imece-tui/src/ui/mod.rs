@@ -27,7 +27,7 @@ use crate::app::{App, FLASH, Rung, View, Zoom};
 use crate::i18n::{Lang, clean, fill};
 use crate::model::*;
 pub(crate) use crate::theme::pal;
-pub(crate) use diff::{file_starts, hunk_at, notes_message, place, quote};
+pub(crate) use diff::{QUOTE_LINES, file_starts, hunk_at, notes_message, place, quote};
 pub(crate) use overlay::fold;
 pub(crate) use salon::{card_rows, journal_rows, reply_jump, thread_of, turn_starts};
 
@@ -4768,16 +4768,17 @@ mod tests {
         key(&mut app, KeyCode::Char('!'));
         assert!(render(&app, 140, 40).contains("› kabuk:"));
         key(&mut app, KeyCode::Esc);
-        // Both keys are in the help, whole, in both languages.
+        // Both keys are in the help, whole, in both languages, `O` on the
+        // `!` row.
         for (lang, bang, w) in [
             (
                 Lang::En,
-                "run cmd in your own shell, screen aside",
+                "run cmd in your shell; O quotes its output",
                 "straight to waiting for you",
             ),
             (
                 Lang::Tr,
-                "kmt kendi kabuğunda; ekran kenara çekilir",
+                "kmt kendi kabuğunda; O çıktısını alıntılar",
                 "doğrudan seni bekleyenlere",
             ),
         ] {
@@ -4792,13 +4793,19 @@ mod tests {
 
     #[test]
     fn a_command_that_ran_is_journaled_under_the_project_and_flashed() {
-        use crate::shell::Ran;
+        use crate::shell::{Caught, Ran};
         use std::time::Duration;
         let back = |ended: Ended, ms: u64| Ran {
             ended,
             took: Duration::from_millis(ms),
         };
-        let ran = |ended: Ended, ms: u64| Ok(back(ended, ms));
+        let ran = |ended: Ended, ms: u64| {
+            Ok(Caught {
+                ran: back(ended, ms),
+                kept: Vec::new(),
+                lines: 0,
+            })
+        };
         let mut app = app_after(2, 2, 0, Lang::En);
         app.selected = Sel::Project(1);
         app.ran("cargo test", ran(Ended::Exit(0), 2_400));

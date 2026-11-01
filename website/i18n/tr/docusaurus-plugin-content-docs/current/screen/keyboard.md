@@ -36,6 +36,7 @@ Gelenekler vim'inkidir: `h` `j` `k` `l` hareket ve katlama, `gg` ve `G` uçlara,
 | `:copy PATH` | git'in yok saydığı bir yolu (`.env`) worktree'lere kopyala; yine: bırak |
 | `:pin NAME` | projeyi salonun en üstüne sabitle; yine: bırak |
 | `!cmd` | `cmd`'yi kendi kabuğunuzda çalıştır, ekran kenara çekilir |
+| `O`  `:output` | eldeki projenin son `!kmt`'sini (nasıl bittiği, son 40 satırı) eldeki agent'a, yoksa projenin başına bir mesajda alıntıla |
 | `tab` `⇧tab` `↑` `↓` | yazarken: ad ve komut tamamla (`^n` `^p` de ilerler); `tab` bir mesajın ya da `!kmt` satırının herhangi bir sözcüğünü projenin bir dosyasına da tamamlar (`/` içeren bir sözcük menüyü kendiliğinden açar), ya da kod haritasında kiralanmış bir sembole, `dosya::ad` olarak |
 | `↑` `↓` | yazarken, metnin ilk / son satırında: önce gönderilenler, en yenisi önce; en yeninin ötesinde yazmakta olduğunuz geri gelir |
 | `^r`  `:history` | gönderilenleri ara: yazılan her sözcük satırda geçmeli, `enter` seçili olanı satıra koyar, `tab` ilerler |

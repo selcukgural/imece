@@ -13,11 +13,11 @@ use crate::ui::fold;
 
 /// The commands imece itself takes after `:`: its own, and a name for
 /// every key that acts (not the ones that move).
-pub const COMMANDS: [&str; 37] = [
+pub const COMMANDS: [&str; 38] = [
     "awake", "board", "budget", "close", "code", "commit", "copy", "defer", "effort", "export",
     "faster", "fold", "forget", "goto", "help", "history", "lang", "lead", "mark", "model",
-    "needs", "next", "notify", "open", "pause", "pending", "pin", "quit", "rename", "salon",
-    "slower", "solo", "talk", "theme", "trace", "unfold", "waiting",
+    "needs", "next", "notify", "open", "output", "pause", "pending", "pin", "quit", "rename",
+    "salon", "slower", "solo", "talk", "theme", "trace", "unfold", "waiting",
 ];
 
 /// The word for a vendor's own model or effort after `:model`, `:effort`
