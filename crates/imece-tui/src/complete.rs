@@ -13,11 +13,12 @@ use crate::ui::fold;
 
 /// The commands imece itself takes after `:`: its own, and a name for
 /// every key that acts (not the ones that move).
-pub const COMMANDS: [&str; 38] = [
+pub const COMMANDS: [&str; 41] = [
     "awake", "board", "budget", "close", "code", "commit", "copy", "defer", "effort", "export",
     "faster", "fold", "forget", "goto", "help", "history", "lang", "lead", "mark", "model",
-    "needs", "next", "notify", "open", "output", "pause", "pending", "pin", "quit", "rename",
-    "salon", "slower", "solo", "talk", "theme", "trace", "unfold", "waiting",
+    "needs", "next", "notify", "open", "output", "pause", "peek", "pending", "pin", "quit",
+    "rename", "salon", "settle", "slower", "solo", "talk", "theme", "trace", "unfold", "unsettle",
+    "waiting",
 ];
 
 /// The word for a vendor's own model or effort after `:model`, `:effort`
@@ -428,7 +429,7 @@ pub fn suggest(input: &str, w: &World, project: ProjectId, home: Option<&Path>) 
                 menu(start, arg, matching(arg, names), "")
             }
             // Agents of every open project, with or without the `@`.
-            Some(("forget" | "talk" | "trace", arg)) => {
+            Some(("forget" | "talk" | "trace" | "peek", arg)) => {
                 let word = arg.strip_prefix('@').unwrap_or(arg);
                 let start = input.len() - word.len();
                 let names = w
@@ -740,7 +741,7 @@ mod tests {
         assert_eq!(suggest(":notify bell", &w, 0, None), None);
         let name = &w.agents[1].name;
         let head = &name[..3];
-        for cmd in ["talk", "trace", "forget"] {
+        for cmd in ["talk", "trace", "forget", "peek"] {
             let m = suggest(&format!(":{cmd} @{head}"), &w, 0, None).unwrap();
             assert!(m.items.contains(name), "{cmd}");
             assert_eq!(m.start, cmd.len() + 3, "{cmd}: after the @");

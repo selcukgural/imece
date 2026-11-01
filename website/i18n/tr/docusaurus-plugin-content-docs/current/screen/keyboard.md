@@ -58,6 +58,7 @@ Gelenekler vim'inkidir: `h` `j` `k` `l` hareket ve katlama, `gg` ve `G` uçlara,
 | `^d` `^u` `^f` `^b` | yarım sayfa / tam sayfa |
 | `^o` | olduğunuz yere geri: görünüm, panel, odak, kart (vim'in atlama listesi, elli yer; açık konuşma önce kapanır) |
 | `enter` | derine in: odak, sonra ham akış |
+| `K`  `:peek` | göz at: eldeki agent'ın odağı görünümün üstünde bir pencerede, görünüm olduğu gibi kalır; içinde `j` `k` salondaki sonraki / önceki agent, `enter` odağın tamamı, `@` ona yaz, `esc` ya da `K` kapatır |
 | `t`  `:trace` | eldeki agent'ın ham akışı |
 | `v`  `:talk` | onun sizinle konuşması |
 | `esc` | geri |
@@ -71,6 +72,7 @@ Gelenekler vim'inkidir: `h` `j` `k` `l` hareket ve katlama, `gg` ve `G` uçlara,
 | `←` `→`  `h` `l` | projeyi ya da işçinin yardımcılarını katla / aç (konuşmada: bir mesajı) |
 | `za`  `zM`  `zR` | katla: değiştir · hepsi (`:fold`) · hiçbiri (`:unfold`); konuşmada mesajlarını |
 | `f`  `:needs` | salon: yalnız sizi bekleyenler · herkes |
+| `s`  `:settle` | seçili işçinin satırını ya da projeyi (başlığında ya da liderinde) size yeniden ihtiyacı olana dek salondan kaldır; `:unsettle` hepsini geri getirir |
 
 ## SENİ BEKLEYEN
 
@@ -164,11 +166,13 @@ Gelenekler vim'inkidir: `h` `j` `k` `l` hareket ve katlama, `gg` ve `G` uçlara,
 | `:next` / `:defer` | `W` / `S` |
 | `:waiting` | `w` |
 | `:needs` | `f` |
+| `:settle` | `s` |
+| `:peek` | `K` |
 | `:fold` / `:unfold` | `zM` / `zR` |
 | `:trace` / `:talk` | `t` / `v` |
 | `:mark` | `m` |
 | `:pause`, `:faster`, `:slower` | `space`, `+`, `-` (demo) |
-| `:budget` (`:b`), `:lead`, `:open` (`:o`), `:close` (`:c`), `:rename`, `:solo`, `:effort`, `:model`, `:forget` (`:f`), `:export`, `:commit`, `:copy`, `:pin`, `:awake`, `:notify` | tuşu yok: `:` ardından yazılır |
+| `:budget` (`:b`), `:lead`, `:open` (`:o`), `:close` (`:c`), `:rename`, `:solo`, `:effort`, `:model`, `:forget` (`:f`), `:export`, `:commit`, `:copy`, `:pin`, `:awake`, `:notify`, `:unsettle` | tuşu yok: `:` ardından yazılır |
 
 Her komutun ne aldığının tam listesi [komutlar başvurusunda](../reference/commands.md).
 
