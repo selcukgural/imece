@@ -8,11 +8,15 @@ says imece may be tried by others.
 
 What a release is. `.github/workflows/release.yml` runs on a tag `vX.Y.Z`,
 which must be the version in `Cargo.toml` (the build stops otherwise). It
-builds `imece-tui` in release mode for four targets: `aarch64-apple-darwin`
+builds `imece-tui` in release mode, every build to its end (`fail-fast`
+off, so one failure shows all), for four targets: `aarch64-apple-darwin`
 and `x86_64-apple-darwin` (on macOS arm64; the x86_64 build is not run
 there, Apple silicon may lack Rosetta), `x86_64-unknown-linux-musl` and
 `aarch64-unknown-linux-musl` (each on its own CPU, with musl-tools for the
-bundled SQLite; checked statically linked, so any distribution runs it).
+bundled SQLite; checked statically linked, so any distribution runs it:
+`file` says `statically linked`, or `static-pie linked` for x86_64, which
+the first v0.1.0 run missed and stopped on; the tag, which had no
+release yet, was moved to the fix with the person's consent).
 Each build runs `imece --version` against the tag. The archives are
 `imece-<target>.tar.gz`, with `imece` and `LICENSE` at their top and no
 version in the name, so `releases/latest/download/…` always names the
