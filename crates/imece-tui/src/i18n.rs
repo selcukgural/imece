@@ -951,14 +951,8 @@ pub const EN: Text = Text {
         ("tab ⇧tab ↑ ↓", "while writing: complete names and commands"),
         ("^a ^e ⌥b ⌥f", "writing: to start / end, a word back / on"),
         ("^w ^u ^k ^y", "writing: cut a word / before / after; paste"),
-        (
-            "#N  #word  n p",
-            "a card by number or title on one screen; n p: next / previous card",
-        ),
-        (
-            "&  :goto",
-            "go to an agent or project: a name, 1-9 the nth, ! only what needs you",
-        ),
+        ("#N #word n p", "a card on one screen; n p: next / previous"),
+        ("&  :goto", "to an agent or project; 1-9 nth, ! needs you"),
         ("1 2 3", ":salon · :board · :code map"),
         ("↑ ↓  j k", "select"),
         ("gg  G", "first / last line"),
@@ -1466,14 +1460,8 @@ pub const TR: Text = Text {
         ("tab ⇧tab ↑ ↓", "yazarken: ad ve komut tamamla"),
         ("^a ^e ⌥b ⌥f", "yazarken: başa / sona, kelime geri / ileri"),
         ("^w ^u ^k ^y", "yazarken: kelime/öncesi/sonrası kes; koy"),
-        (
-            "#N  #kelime  n p",
-            "numara ya da başlıkla bir kart tek ekranda; n p: önceki / sonraki kart",
-        ),
-        (
-            "&  :goto",
-            "bir agent'a ya da projeye git: ad, 1-9 n'inci, ! yalnız seni bekleyenler",
-        ),
+        ("#N #kelime", "başlıkla bir kart; n p: önceki / sonraki"),
+        ("&  :goto", "agent'a/projeye git; 1-9 n'inci; ! bekleyen"),
         ("1 2 3", ":salon · :board pano · :code harita"),
         ("↑ ↓  j k", "seç"),
         ("gg  G", "ilk / son satır"),
