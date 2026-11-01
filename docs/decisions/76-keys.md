@@ -28,7 +28,7 @@ comes out is not looked up again, so `j = k` and `k = j` swap the two,
 and a key the file does not name is itself. This was chosen over binding
 keys to `:` names because movement and row keys (`j k`, `enter`, `a r`)
 have no names (record 41), and because the translation sits in one place
-in front of every handler (`Keymap::turn` at the top of `App::key`),
+in front of every handler (`Keymap::turn` at the top of `App::key`; `Keymap::alone` and `Keymap::pair` since C9b),
 leaving all the context logic as it was. The key keeps its kind and
 state; it gets the target's code and modifiers, so `x = ^o` goes back and
 `^n = 2` is a plain `2`. It is not applied where keys are text: writing,
@@ -77,6 +77,47 @@ length and the inode is not seen until the next change (`:keys` still
 reads it). Polling, not `kqueue`/`inotify`: no new crate, one `stat`
 every two seconds, and the same code on macOS and Linux.
 
+**Keys of two (C9b, #175, 2026-11-02).** A side of a line is one key or
+two (`keys::Keys`, at most `keys::STROKES`): `gt = G` gives a key of two
+strokes, `x = gg` turns one key into two, `g enter = ^o` and `^t = z M`
+mix them. A word that is a key's name is that key (`^n`, `f1`, `up`);
+any other word of two characters is two plain keys (`gt`, `zM`); keys
+can also be written apart, which is the only way for two keys with ctrl,
+alt or a name, or for `f 1` and `u p`. `Keys::name` writes them back the
+same way (together unless that reads as another key). The decisions,
+made while the person was away and to go over together:
+
+- The first key of two is held (`App::keys_held`, with when) and waits
+  for the second, at most `keys::WAIT` (1 s, vim's `timeoutlen`); the
+  main loop's `App::keys_due` lets it through alone when the time is up,
+  through the same `around` as a key (the place left is recorded). The
+  loop wakes every tick (100 ms live, 500 ms in the demo), so the wait is
+  up to half a second longer in the demo.
+- A second key that does not make a line with it lets the first act
+  alone first, then the second is taken afresh (it may start a hold of
+  its own, as in vim). It is taken where the first left the screen: a
+  held `/` that turns out alone opens writing, and the second key is
+  then a letter.
+- A key is not held while imece's own chord waits for its second key
+  (`App::pending`): with `gt = G`, `g g` is still `gg` at once, not after
+  a second; only the first `g` waits.
+- A key may not be given alone and also start two keys (`Why::Starts`):
+  alone it would act at once and the two could never be typed. Vim
+  allows it with the timeout; refusing is the plainer rule. Three keys
+  or more on a side are refused (`Why::Long`).
+- The keys that come out (`Keymap::alone`, `Keymap::pair`) are acted one
+  after the other (`App::act_all`) and not turned again; the away digest
+  is only for the first. The lead question at start takes one-key lines
+  only through `alone` (a key given as two still works there, each key
+  in turn); two-key lines are not held there.
+- The help: a two-key line is in the "your keys" rows as written
+  (`gt  your key: as G`, `x  your key: as gg`); `Keymap::acting_as` takes
+  the keys of a help word (one, or two such as `gg`) and gives the lines
+  that give exactly those first, then the keys themselves the way the
+  person reaches them (two keys each by its first one-key way, unless a
+  line gives those two another meaning). `Keymap::lost` also names
+  imece's chords (`gg za zM zR qq qs`) a line took and nothing gives.
+
 **The help (user, 2026-11-02: in place and a section).** `?` lists the
 file's keys first (`^n  your key: as j`), then every key line with each
 key the file moved written as the keys that do it now
@@ -92,6 +133,6 @@ the `?  :help` row's text.
 **The demo.** The keymap is screen logic: the demo reads the same file
 the same way, so there is nothing to fake.
 
-**Gaps.** A key of two strokes cannot be given (`gt = G`), nor a key
-turned into two (`x = gg`); the chords themselves (`gg`, `zM`, `q q`)
-turn key by key. Keys are not per context (the same file holds in the salon and in a change).
+**Gaps.** Three keys or more on a side cannot be given. A held key is
+not shown anywhere while it waits (vim's `showcmd`). Keys are not per
+context (the same file holds in the salon and in a change; C9d).

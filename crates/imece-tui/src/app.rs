@@ -732,6 +732,9 @@ pub struct App {
     /// last looked at for a change; none looks at once.
     keys_seen: keys::Stamp,
     keys_looked: Option<Instant>,
+    /// The first of two keys the key file gives (`gt = G`), waiting for
+    /// the second since then; at most [`keys::WAIT`].
+    pub keys_held: Option<(KeyEvent, Instant)>,
     /// A bare `:solo` asks the vendor, the model and the effort on a
     /// screen of its own; the words it came with wait in it.
     pub solo_pick: Option<SoloPick>,
@@ -870,6 +873,7 @@ impl App {
             keys_good: None,
             keys_new: false,
             keys_seen: keys::Stamp::default(),
+            keys_held: None,
             keys_looked: None,
             solo_pick: None,
             primary: None,
@@ -1530,8 +1534,29 @@ impl App {
     }
 
     pub fn on_key(&mut self, k: KeyEvent) {
+        self.around(|app| app.key(k));
+    }
+
+    /// The first of two keys of the person's, held since [`keys::WAIT`]
+    /// before `now` with no second: it acts as itself alone.
+    pub fn keys_due(&mut self, now: Instant) {
+        if self
+            .keys_held
+            .is_some_and(|(_, at)| now.duration_since(at) >= keys::WAIT)
+        {
+            self.around(|app| {
+                if let Some((first, _)) = app.keys_held.take() {
+                    app.act_all(app.keys.alone(first), None);
+                }
+            });
+        }
+    }
+
+    /// What a key does, `act`, and what follows any key: the place left
+    /// behind, the theme previewed, what is seen and kept.
+    fn around(&mut self, act: impl FnOnce(&mut Self)) {
         let was = self.place();
-        self.key(k);
+        act(self);
         // A key that took the person elsewhere leaves the place behind;
         // `^o` going back does not.
         // Lines of a change being chosen to copy go with the change.
@@ -1622,8 +1647,7 @@ impl App {
     }
 
     fn key(&mut self, k: KeyEvent) {
-        let away = self.last_key.elapsed() >= AWAY;
-        let since = self.last_key_tick;
+        let away = (self.last_key.elapsed() >= AWAY).then_some(self.last_key_tick);
         self.last_key = Instant::now();
         self.last_key_tick = self.world.tick;
 
@@ -1631,12 +1655,38 @@ impl App {
             self.quit = true;
             return;
         }
-        // The person's own keys, everywhere but where keys are text.
-        let k = if self.typing || self.hints.is_some() || (self.help && self.help_typing) {
-            k
+        // The person's own keys, everywhere but where keys are text: a
+        // first key held goes with this one when the file gives the two,
+        // else it acts alone first.
+        let mut away = away;
+        if let Some((first, _)) = self.keys_held.take() {
+            if let Some(both) = self.keys.pair(first, k) {
+                self.act_all(both, away);
+                return;
+            }
+            self.act_all(self.keys.alone(first), away.take());
+        }
+        if self.typing || self.hints.is_some() || (self.help && self.help_typing) {
+            self.act(k, away);
+        } else if self.pending.is_none() && self.keys.starts(k) {
+            // imece's own chord waits for its second key first.
+            self.keys_held = Some((k, self.last_key));
         } else {
-            self.keys.turn(k)
-        };
+            self.act_all(self.keys.alone(k), away);
+        }
+    }
+
+    /// Each of `keys` as if pressed, one after the other; the second goes
+    /// where the first left the screen. `away` (the tick the person left
+    /// at) only for the first.
+    fn act_all(&mut self, keys: Vec<KeyEvent>, mut away: Option<u64>) {
+        for k in keys {
+            self.act(k, away.take());
+        }
+    }
+
+    /// What one key does where the screen is.
+    fn act(&mut self, k: KeyEvent, away: Option<u64>) {
         // What quitting would leave: `q` quits after all, `W` goes to what
         // waits, anything else stays.
         if std::mem::take(&mut self.leaving) {
@@ -1663,7 +1713,9 @@ impl App {
             self.help_key(k);
             return;
         }
-        if away && let Some(d) = Digest::since(&self.world, since) {
+        if let Some(since) = away
+            && let Some(d) = Digest::since(&self.world, since)
+        {
             self.digest = Some(d);
             return;
         }
@@ -9853,6 +9905,99 @@ mod tests {
         app.on_key(key(KeyCode::Char('2')));
         app.on_key(key(KeyCode::Char('x')));
         assert_eq!(app.view, View::Salon, "x is ^o: back where the person was");
+    }
+
+    /// A demo app whose salon shows three rows.
+    fn three_rows() -> App {
+        let app = quiet();
+        *app.shown.borrow_mut() = vec![Sel::Project(0), Sel::Agent(0), Sel::Agent(1)];
+        app
+    }
+
+    #[test]
+    fn two_keys_of_the_person_act_as_one() {
+        let mut app = three_rows();
+        app.keys = keymap("2x = 3\ngt = 2");
+        app.on_key(key(KeyCode::Char('2')));
+        assert_eq!(app.view, View::Salon, "2 waits for its second");
+        assert!(app.keys_held.is_some());
+        app.on_key(key(KeyCode::Char('x')));
+        assert_eq!(app.view, View::Code, "2x is 3");
+        assert!(app.keys_held.is_none());
+        // Another key: the first acts alone, then the other.
+        app.on_key(key(KeyCode::Char('1')));
+        app.on_key(key(KeyCode::Char('2')));
+        app.on_key(key(KeyCode::Char('?')));
+        assert_eq!(app.view, View::Board, "2 alone is 2");
+        assert!(app.help, "and ? acted after it");
+        assert!(app.keys_held.is_none());
+        app.on_key(key(KeyCode::Esc));
+        app.on_key(key(KeyCode::Char('1')));
+        let top = app.selected;
+        // g waits too, but imece's gg is not kept waiting.
+        app.on_key(key(KeyCode::Char('G')));
+        let bottom = app.selected;
+        assert_ne!(bottom, top);
+        app.on_key(key(KeyCode::Char('g')));
+        assert_eq!(app.pending, None, "held, not imece's yet");
+        app.on_key(key(KeyCode::Char('g')));
+        assert_eq!(app.selected, top, "gg at once");
+        assert!(
+            app.keys_held.is_none(),
+            "the second g went to imece's chord"
+        );
+        app.on_key(key(KeyCode::Char('g')));
+        app.on_key(key(KeyCode::Char('t')));
+        assert_eq!(app.view, View::Board, "gt is 2");
+        assert_eq!(app.pending, None);
+    }
+
+    #[test]
+    fn a_first_key_alone_acts_after_its_wait() {
+        let mut app = App::new(1, 4, 0, 1, Lang::En);
+        app.keys = keymap("2x = 3");
+        app.keys_due(Instant::now());
+        app.on_key(key(KeyCode::Char('2')));
+        let (_, at) = app.keys_held.unwrap();
+        app.keys_due(at + keys::WAIT - Duration::from_millis(1));
+        assert_eq!(app.view, View::Salon, "still waiting");
+        app.keys_due(at + keys::WAIT);
+        assert_eq!(app.view, View::Board, "2 alone");
+        assert!(app.keys_held.is_none());
+        app.on_key(ctrl('o'));
+        assert_eq!(app.view, View::Salon, "the place it left is behind");
+        app.keys_due(at + keys::WAIT * 3);
+        assert_eq!(app.view, View::Salon, "nothing held, nothing to do");
+    }
+
+    #[test]
+    fn one_key_of_the_person_acts_as_two() {
+        let mut app = three_rows();
+        let top = app.selected;
+        app.keys = keymap("x = gg\ny = :q\nG = j");
+        app.on_key(key(KeyCode::Char('G')));
+        assert_ne!(app.selected, top, "G is j");
+        app.on_key(key(KeyCode::Char('x')));
+        assert_eq!(app.selected, top, "x is gg");
+        assert_eq!(app.pending, None);
+        // The second goes where the first left the screen: writing.
+        app.on_key(key(KeyCode::Char('y')));
+        assert!(app.typing);
+        assert_eq!(app.input, ":q");
+    }
+
+    #[test]
+    fn a_held_key_that_starts_writing_leaves_the_next_one_as_text() {
+        let mut app = App::new(1, 4, 0, 1, Lang::En);
+        app.keys = keymap("/x = 3\n2y = 1");
+        app.on_key(key(KeyCode::Char('/')));
+        assert!(!app.typing, "/ waits");
+        app.on_key(key(KeyCode::Char('2')));
+        assert!(app.typing, "/ alone writes");
+        assert_eq!(app.input, "2", "and 2 is a letter, not held");
+        assert!(app.keys_held.is_none());
+        app.on_key(key(KeyCode::Char('x')));
+        assert_eq!(app.input, "2x", "writing is never turned");
     }
 
     fn dir(name: &str) -> PathBuf {

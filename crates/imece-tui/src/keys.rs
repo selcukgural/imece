@@ -3,7 +3,9 @@
 //! again when it changes ([`stamp`], looked at every [`EVERY`]).
 //!
 //! A line is turned once, as vim's `noremap`: `j = k` and `k = j` swap
-//! the two, and a key the file does not name stays itself. The map holds
+//! the two, and a key the file does not name stays itself. A side is one
+//! key or two ([`Keys`]): `gt = G`, `x = gg`; the first of two waits for
+//! the second up to [`WAIT`]. The map holds
 //! wherever imece reads keys except writing, the help's `/` filter and
 //! the hint letters, whose keys are text. A file imece cannot take whole
 //! is refused and the keys in use stay; the last good file is kept in the
@@ -274,25 +276,92 @@ pub enum Why {
     NotAKey(usize, String),
     /// A key on line `n` that imece does nothing with.
     Unused(usize, Key),
-    /// A key on line `n` that line `first` gave already.
-    Twice(usize, Key, usize),
+    /// Keys on line `n` that line `first` gave already.
+    Twice(usize, Keys, usize),
     /// ctrl-c on line `n`: it only ever quits.
     Quits(usize),
     /// More than [`MAX_KEYS`] keys.
     TooMany,
+    /// More than [`STROKES`] keys on a side of line `n`.
+    Long(usize),
+    /// A key on line `n` given alone and as the first of two keys, the
+    /// other on line `first`: alone, it would never wait for a second.
+    Starts(usize, Key, usize),
 }
 
-/// The keys a file gives: each key of the person's and the key of
+/// The most keys on a side of a line: `gt = G`, `x = gg`.
+pub const STROKES: usize = 2;
+/// How long the first key of the person's two waits for the second;
+/// then it is let through as itself (vim's `timeoutlen`).
+pub const WAIT: Duration = Duration::from_secs(1);
+
+/// One key or two, one after the other: a side of a line.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Keys(Vec<Key>);
+
+impl Keys {
+    /// The keys one after the other.
+    pub fn of(keys: &[Key]) -> Keys {
+        Keys(keys.to_vec())
+    }
+
+    /// The keys as the help writes them: `j`, `gt`, `^x j`. Plain
+    /// characters go together unless that reads as another key (`f1`,
+    /// `up`); the rest apart.
+    pub fn name(&self) -> String {
+        let names: Vec<String> = self.0.iter().map(|k| k.name()).collect();
+        let joined = names.concat();
+        if names.iter().all(|n| n.chars().count() == 1) && Key::parse(&joined).is_none() {
+            joined
+        } else {
+            names.join(" ")
+        }
+    }
+
+    /// The keys as key events, with the kind and state of `like`.
+    fn events(&self, like: KeyEvent) -> Vec<KeyEvent> {
+        (self.0.iter())
+            .map(|k| KeyEvent {
+                code: k.code,
+                modifiers: k.mods,
+                ..like
+            })
+            .collect()
+    }
+}
+
+/// The keys one side of a line names: one word or more (`g enter`), a
+/// word a key's name (`^n`, `f1`) or else up to [`STROKES`] plain keys
+/// one after the other (`gt`, `zM`). `Err` holds the word that is no key.
+fn side(words: &[&str]) -> Result<Vec<Key>, String> {
+    let mut keys = Vec::new();
+    for &word in words {
+        if let Some(k) = Key::parse(word) {
+            keys.push(k);
+            continue;
+        }
+        if word.chars().count() > STROKES {
+            return Err(word.chars().take(SAID).collect());
+        }
+        keys.extend(chord(word));
+    }
+    Ok(keys)
+}
+
+/// imece's own keys of two strokes, as the help writes them.
+const CHORDS: [&str; 6] = ["gg", "za", "zM", "zR", "qq", "qs"];
+
+/// The keys a file gives: each of the person's keys and the keys of
 /// imece's it acts as, in the file's order.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Keymap {
-    given: Vec<(Key, Key)>,
+    given: Vec<(Keys, Keys)>,
 }
 
 impl Keymap {
     /// The keys `text` gives, or the first reason it cannot be taken.
     pub fn read(text: &str) -> Result<Keymap, Why> {
-        let mut given: Vec<(Key, Key)> = Vec::new();
+        let mut given: Vec<(Keys, Keys)> = Vec::new();
         let mut lines: Vec<usize> = Vec::new();
         for (i, line) in text.lines().enumerate() {
             let n = i + 1;
@@ -301,21 +370,34 @@ impl Keymap {
                 continue;
             }
             let words: Vec<&str> = line.split_whitespace().collect();
-            let [from, "=", to] = words[..] else {
+            let mut parts = words.split(|&w| w == "=");
+            let (Some(from), Some(to), None) = (parts.next(), parts.next(), parts.next()) else {
                 return Err(Why::Shape(n));
             };
-            let key = |name: &str| {
-                Key::parse(name).ok_or_else(|| Why::NotAKey(n, name.chars().take(SAID).collect()))
-            };
-            let (from, to) = (key(from)?, key(to)?);
-            if from.quits() || to.quits() {
+            if from.is_empty() || to.is_empty() {
+                return Err(Why::Shape(n));
+            }
+            let not_a_key = |name| Why::NotAKey(n, name);
+            let (from, to) = (side(from).map_err(not_a_key)?, side(to).map_err(not_a_key)?);
+            if from.iter().chain(&to).any(|k| k.quits()) {
                 return Err(Why::Quits(n));
             }
-            if !to.used() {
-                return Err(Why::Unused(n, to));
+            if from.len() > STROKES || to.len() > STROKES {
+                return Err(Why::Long(n));
             }
-            if let Some(at) = given.iter().position(|&(f, _)| f == from) {
+            if let Some(&k) = to.iter().find(|k| !k.used()) {
+                return Err(Why::Unused(n, k));
+            }
+            let (from, to) = (Keys(from), Keys(to));
+            if let Some(at) = given.iter().position(|(f, _)| *f == from) {
                 return Err(Why::Twice(n, from, lines[at]));
+            }
+            // The first key alone on one line and first of two on another.
+            let first = from.0[0];
+            if let Some(at) = (given.iter())
+                .position(|(f, _)| f.0[0] == first && (f.0.len() == 1) != (from.0.len() == 1))
+            {
+                return Err(Why::Starts(n, first, lines[at]));
             }
             if given.len() == MAX_KEYS {
                 return Err(Why::TooMany);
@@ -326,43 +408,81 @@ impl Keymap {
         Ok(Keymap { given })
     }
 
-    /// `k` as the person means it: the key it acts as, or itself.
-    pub fn turn(&self, k: KeyEvent) -> KeyEvent {
-        let key = Key::of(&k);
-        match self.given.iter().find(|&&(from, _)| from == key) {
-            Some(&(_, to)) => KeyEvent {
-                code: to.code,
-                modifiers: to.mods,
-                ..k
-            },
-            None => k,
+    /// The keys a line gives for exactly `keys`.
+    fn to(&self, keys: &[Key]) -> Option<&Keys> {
+        (self.given.iter())
+            .find(|(from, _)| from.0 == keys)
+            .map(|(_, to)| to)
+    }
+
+    /// `k` by itself as the person means it: the keys it acts as, or
+    /// itself. Not looked up again, so `j = k` and `k = j` swap.
+    pub fn alone(&self, k: KeyEvent) -> Vec<KeyEvent> {
+        match self.to(&[Key::of(&k)]) {
+            Some(to) => to.events(k),
+            None => vec![k],
         }
     }
 
-    /// Each key of the person's and the one it acts as.
-    pub fn given(&self) -> &[(Key, Key)] {
+    /// The keys `first` and then `k` act as when the file gives the two
+    /// as one key of the person's.
+    pub fn pair(&self, first: KeyEvent, k: KeyEvent) -> Option<Vec<KeyEvent>> {
+        (self.to(&[Key::of(&first), Key::of(&k)])).map(|to| to.events(k))
+    }
+
+    /// Whether `k` is the first of two keys the file gives: it waits
+    /// for the second before it acts.
+    pub fn starts(&self, k: KeyEvent) -> bool {
+        let key = Key::of(&k);
+        (self.given.iter()).any(|(from, _)| from.0.len() == STROKES && from.0[0] == key)
+    }
+
+    /// Each of the person's keys and the keys it acts as.
+    pub fn given(&self) -> &[(Keys, Keys)] {
         &self.given
     }
 
-    /// The keys that act as `key` now: the person's, in the file's
-    /// order, then `key` itself unless the file gave it another meaning.
-    pub fn acting_as(&self, key: Key) -> Vec<Key> {
-        let mut keys: Vec<Key> = (self.given.iter())
-            .filter(|&&(_, to)| to == key)
-            .map(|&(from, _)| from)
+    /// The keys that do what `keys` (one of imece's, or two) does now:
+    /// the person's whose line gives exactly that, in the file's order,
+    /// then `keys` themselves as the person reaches them: a key unless
+    /// the file gave it alone another meaning; two keys each by its
+    /// first way, unless the file gives those two another meaning.
+    pub fn acting_as(&self, keys: &[Key]) -> Vec<Keys> {
+        let mut ways: Vec<Keys> = (self.given.iter())
+            .filter(|(_, to)| to.0 == keys)
+            .map(|(from, _)| from.clone())
             .collect();
-        if !self.given.iter().any(|&(from, _)| from == key) {
-            keys.push(key);
-        }
-        keys
+        let own = match keys {
+            [key] => (self.to(keys).is_none()).then(|| Keys(vec![*key])),
+            _ => {
+                let each: Option<Vec<Key>> = (keys.iter()).map(|&k| self.reaching(k)).collect();
+                each.filter(|each| self.to(each).is_none()).map(Keys)
+            }
+        };
+        ways.extend(own);
+        ways
     }
 
-    /// imece's keys the file took a meaning from without giving it to
-    /// another: nothing does what they did.
-    pub fn lost(&self) -> Vec<Key> {
+    /// The first key alone that does what `key` does now.
+    fn reaching(&self, key: Key) -> Option<Key> {
         (self.given.iter())
-            .map(|&(from, _)| from)
-            .filter(|&k| k.used() && self.acting_as(k).is_empty())
+            .find(|(from, to)| from.0.len() == 1 && to.0 == [key])
+            .map(|(from, _)| from.0[0])
+            .or_else(|| self.to(&[key]).is_none().then_some(key))
+    }
+
+    /// imece's keys (alone, or two such as `gg`) the file took a
+    /// meaning from without giving it to other keys: nothing does what
+    /// they did.
+    pub fn lost(&self) -> Vec<Keys> {
+        (self.given.iter())
+            .map(|(from, _)| from)
+            .filter(|from| match &from.0[..] {
+                [k] => k.used(),
+                _ => CHORDS.iter().any(|c| Keys::of(&chord(c)) == **from),
+            })
+            .filter(|from| self.acting_as(&from.0).is_empty())
+            .cloned()
             .collect()
     }
 
@@ -378,40 +498,36 @@ impl Keymap {
     }
 
     fn shown_word(&self, word: &str) -> String {
-        if let Some(key) = Key::parse(word).filter(|k| k.used()) {
-            let now = self.acting_as(key);
-            if now == [key] {
-                return word.to_string();
+        let keys = match Key::parse(word) {
+            Some(key) if key.used() => vec![key],
+            Some(_) => return word.to_string(),
+            // Two plain keys one after the other (`gg`, `zM`).
+            None => {
+                let keys = chord(word);
+                if keys.len() != STROKES || !keys.iter().all(|k| k.used()) {
+                    return word.to_string();
+                }
+                keys
             }
-            let names: Vec<String> = now.iter().map(|k| k.name()).collect();
-            return if names.is_empty() {
-                "–".into()
-            } else {
-                names.join("/")
-            };
-        }
-        // Two keys one after the other (`gg`, `zM`): each the person's
-        // first key for it.
-        let mut chars = word.chars();
-        let (Some(a), Some(b), None) = (chars.next(), chars.next(), chars.next()) else {
-            return word.to_string();
         };
-        let keys = [a, b].map(|c| Key::new(KeyCode::Char(c), KeyModifiers::NONE));
-        if !keys.iter().all(|k| k.used()) {
+        let now = self.acting_as(&keys);
+        if now == [Keys(keys)] {
             return word.to_string();
         }
-        let firsts: Vec<Option<Key>> = keys
-            .iter()
-            .map(|&k| self.acting_as(k).first().copied())
-            .collect();
-        if firsts == keys.map(Some) {
-            return word.to_string();
-        }
-        match firsts[..] {
-            [Some(a), Some(b)] => format!("{} {}", a.name(), b.name()),
-            _ => "–".into(),
+        let names: Vec<String> = now.iter().map(Keys::name).collect();
+        if names.is_empty() {
+            "–".into()
+        } else {
+            names.join("/")
         }
     }
+}
+
+/// The plain keys of `word`, one per character.
+fn chord(word: &str) -> Vec<Key> {
+    (word.chars())
+        .map(|c| Key::new(KeyCode::Char(c), KeyModifiers::NONE))
+        .collect()
 }
 
 /// What reading the key file gave.
@@ -517,6 +633,10 @@ pub fn refusal(lang: Lang, path: &Path, why: &Why) -> String {
         }
         Why::Quits(n) => line(*n, t.keys_quits.to_string()),
         Why::TooMany => fill(t.keys_too_many, &[&MAX_KEYS.to_string()]),
+        Why::Long(n) => line(*n, fill(t.keys_long, &[&STROKES.to_string()])),
+        Why::Starts(n, key, first) => {
+            line(*n, fill(t.keys_starts, &[&key.name(), &first.to_string()]))
+        }
     };
     fill(t.keys_refused, &[&path.display().to_string(), &what])
 }
@@ -529,7 +649,7 @@ pub fn taken(lang: Lang, path: &Path, map: &Keymap) -> String {
         t.keys_taken,
         &[&path.display().to_string(), &map.given().len().to_string()],
     );
-    let lost: Vec<String> = map.lost().iter().map(|k| k.name()).collect();
+    let lost: Vec<String> = map.lost().iter().map(Keys::name).collect();
     if !lost.is_empty() {
         said.push_str(&fill(t.keys_lost, &[&lost.join(" ")]));
     }
@@ -552,6 +672,12 @@ mod tests {
 
     fn map(text: &str) -> Keymap {
         Keymap::read(text).unwrap_or_else(|e| panic!("{text}: {e:?}"))
+    }
+
+    /// The keys a side of a line names.
+    fn ks(text: &str) -> Keys {
+        let words: Vec<&str> = text.split(' ').collect();
+        Keys(side(&words).unwrap_or_else(|w| panic!("{w} is no key")))
     }
 
     #[test]
@@ -755,13 +881,42 @@ mod tests {
         let m = map("# mine\n\n  ^n = j \n^p = k\nJ = G\n# the end");
         assert_eq!(
             m.given(),
-            [
-                (key("^n"), key("j")),
-                (key("^p"), key("k")),
-                (key("J"), key("G"))
-            ]
+            [(ks("^n"), ks("j")), (ks("^p"), ks("k")), (ks("J"), ks("G"))]
         );
         assert_eq!(map(""), Keymap::default());
+        let m = map("gt = G\nx = gg\ng enter = z M\n^t = ^d ^o\nf1 = zR\nu p = j");
+        let sides: Vec<(Vec<Key>, Vec<Key>)> = (m.given().iter())
+            .map(|(f, t)| (f.0.clone(), t.0.clone()))
+            .collect();
+        assert_eq!(
+            sides,
+            [
+                (vec![key("g"), key("t")], vec![key("G")]),
+                (vec![key("x")], vec![key("g"), key("g")]),
+                (vec![key("g"), key("enter")], vec![key("z"), key("M")]),
+                (vec![key("^t")], vec![key("^d"), key("^o")]),
+                (vec![key("f1")], vec![key("z"), key("R")]),
+                (vec![key("u"), key("p")], vec![key("j")]),
+            ],
+            "a word of two plain keys, or keys apart; a name is one key"
+        );
+    }
+
+    #[test]
+    fn keys_are_named_together_unless_that_reads_as_another_key() {
+        assert_eq!(ks("gt").name(), "gt");
+        assert_eq!(ks("z M").name(), "zM");
+        assert_eq!(ks("j").name(), "j");
+        assert_eq!(ks("^n").name(), "^n");
+        assert_eq!(ks("g enter").name(), "g enter");
+        assert_eq!(ks("^x j").name(), "^x j");
+        assert_eq!(ks("u p").name(), "u p", "`up` is ↑");
+        assert_eq!(ks("f 1").name(), "f 1", "`f1` is f1");
+        for keys in ["gt", "g enter", "u p", "f 1", "^x j", "zM"] {
+            let name = ks(keys).name();
+            let words: Vec<&str> = name.split(' ').collect();
+            assert_eq!(Keys(side(&words).unwrap()), ks(keys), "{keys} read back");
+        }
     }
 
     #[test]
@@ -770,8 +925,26 @@ mod tests {
         assert_eq!(why("^n = j\n^p k"), Why::Shape(2));
         assert_eq!(why("^n == j"), Why::Shape(1));
         assert_eq!(why("^n=j"), Why::Shape(1));
-        assert_eq!(why("^n = j k"), Why::Shape(1));
         assert_eq!(why("^n = j = k"), Why::Shape(1));
+        assert_eq!(why("= j"), Why::Shape(1));
+        assert_eq!(why("j ="), Why::Shape(1));
+        assert_eq!(why("j = k x a"), Why::Long(1));
+        assert_eq!(why("j = kx a"), Why::Long(1));
+        assert_eq!(why("\na b c = j"), Why::Long(2));
+        assert_eq!(why("ab c = j"), Why::Long(1));
+        assert_eq!(why("abc = j"), Why::NotAKey(1, "abc".into()));
+        assert_eq!(why("x = jd"), Why::Unused(1, key("d")));
+        assert_eq!(why("x = dj"), Why::Unused(1, key("d")));
+        assert_eq!(why("gt = G\ngt = j"), Why::Twice(2, ks("gt"), 1));
+        assert_eq!(why("g = j\nx = k\ngt = G"), Why::Starts(3, key("g"), 1));
+        assert_eq!(why("gt = G\ng = j"), Why::Starts(2, key("g"), 1));
+        assert_eq!(why("x ^c = j"), Why::Quits(1));
+        assert_eq!(why("x = j ^c"), Why::Quits(1));
+        assert!(
+            Keymap::read("gt = G\ngx = j\ntg = k").is_ok(),
+            "two firsts alike"
+        );
+        assert!(Keymap::read("g = G\ntg = j").is_ok(), "a second alike");
         assert_eq!(why("\n\nnope = j"), Why::NotAKey(3, "nope".into()));
         assert_eq!(why("^n = nope"), Why::NotAKey(1, "nope".into()));
         assert_eq!(
@@ -781,8 +954,8 @@ mod tests {
         );
         assert_eq!(why("^n = d"), Why::Unused(1, key("d")));
         assert_eq!(why("^n = ^a"), Why::Unused(1, key("^a")));
-        assert_eq!(why("^n = j\nx = k\n^n = k"), Why::Twice(3, key("^n"), 1));
-        assert_eq!(why("j = k\n# x\nj = G"), Why::Twice(3, key("j"), 1));
+        assert_eq!(why("^n = j\nx = k\n^n = k"), Why::Twice(3, ks("^n"), 1));
+        assert_eq!(why("j = k\n# x\nj = G"), Why::Twice(3, ks("j"), 1));
         assert_eq!(why("^c = j"), Why::Quits(1));
         assert_eq!(why("j = ^c"), Why::Quits(1));
         assert_eq!(why("x = ctrl-C"), Why::Quits(1));
@@ -812,12 +985,15 @@ mod tests {
     fn a_key_is_turned_once() {
         let m = map("j = k\nk = j\n^n = G\nx = ^d");
         let turn = |code, mods| {
-            let e = m.turn(KeyEvent {
+            let out = m.alone(KeyEvent {
                 code,
                 modifiers: mods,
                 kind: KeyEventKind::Press,
                 state: KeyEventState::NONE,
             });
+            let [e] = out[..] else {
+                panic!("one key: {out:?}")
+            };
             (e.code, e.modifiers, e.kind)
         };
         let none = KeyModifiers::NONE;
@@ -846,12 +1022,13 @@ mod tests {
             (KeyCode::Char('G'), KeyModifiers::SHIFT, press),
             "a key the file does not name is left as it came"
         );
-        let held = m.turn(KeyEvent {
+        let held = m.alone(KeyEvent {
             code: KeyCode::Char('j'),
             modifiers: none,
             kind: KeyEventKind::Repeat,
             state: KeyEventState::KEYPAD,
         });
+        let held = held[0];
         assert_eq!(
             (held.code, held.kind, held.state),
             (
@@ -861,30 +1038,103 @@ mod tests {
             )
         );
         assert_eq!(
-            Keymap::default().turn(event(KeyCode::Char('j'), none)).code,
-            KeyCode::Char('j')
+            Keymap::default().alone(event(KeyCode::Char('j'), none)),
+            [event(KeyCode::Char('j'), none)]
+        );
+    }
+
+    fn plain(c: char) -> KeyEvent {
+        event(KeyCode::Char(c), KeyModifiers::NONE)
+    }
+
+    #[test]
+    fn two_keys_are_one_and_one_key_two() {
+        let m = map("gt = G\nx = gg\n^t = z M\nj = k\ng enter = ^o");
+        assert!(m.starts(plain('g')), "g waits for its second");
+        assert!(!m.starts(plain('t')), "a second key does not");
+        assert!(!m.starts(plain('x')), "nor a key given alone");
+        assert!(!m.starts(plain('j')));
+        assert!(!Keymap::default().starts(plain('g')));
+        assert!(
+            !map("^g = j").starts(event(KeyCode::Char('g'), KeyModifiers::CONTROL)),
+            "a key alone is not the first of two"
+        );
+        assert_eq!(m.pair(plain('g'), plain('t')), Some(vec![plain('G')]));
+        let enter = event(KeyCode::Enter, KeyModifiers::NONE);
+        assert_eq!(
+            m.pair(plain('g'), enter),
+            Some(vec![event(KeyCode::Char('o'), KeyModifiers::CONTROL)])
+        );
+        assert_eq!(m.pair(plain('g'), plain('g')), None, "gg is imece's");
+        assert_eq!(m.pair(plain('t'), plain('g')), None, "in its order");
+        assert_eq!(m.pair(plain('x'), plain('g')), None);
+        assert_eq!(m.alone(plain('x')), [plain('g'), plain('g')]);
+        assert_eq!(
+            m.alone(event(KeyCode::Char('t'), KeyModifiers::CONTROL)),
+            [plain('z'), plain('M')]
+        );
+        assert_eq!(m.alone(plain('g')), [plain('g')], "g alone is g");
+        // The second key's kind and state go with what comes out.
+        let second = KeyEvent {
+            kind: KeyEventKind::Repeat,
+            state: KeyEventState::KEYPAD,
+            ..plain('t')
+        };
+        let out = m.pair(plain('g'), second).unwrap();
+        assert_eq!(
+            (out[0].kind, out[0].state),
+            (KeyEventKind::Repeat, KeyEventState::KEYPAD)
         );
     }
 
     #[test]
     fn what_acts_as_a_key_and_what_is_lost() {
         let m = map("^n = j\n^j = j\nj = G\nk = j\n^x = k");
-        assert_eq!(m.acting_as(key("j")), [key("^n"), key("^j"), key("k")]);
-        assert_eq!(m.acting_as(key("G")), [key("j"), key("G")]);
-        assert_eq!(m.acting_as(key("k")), [key("^x")]);
-        assert_eq!(m.acting_as(key("a")), [key("a")]);
+        let acting = |keys: &str| m.acting_as(&ks(keys).0);
+        assert_eq!(acting("j"), [ks("^n"), ks("^j"), ks("k")]);
+        assert_eq!(acting("G"), [ks("j"), ks("G")]);
+        assert_eq!(acting("k"), [ks("^x")]);
+        assert_eq!(acting("a"), [ks("a")]);
+        assert_eq!(acting("gg"), [ks("gg")], "two keys the file left");
+        assert_eq!(acting("jg"), [ks("^n g")], "each by its first way");
+        assert_eq!(acting("kj"), [ks("^x ^n")]);
         assert_eq!(
             m.lost(),
-            Vec::<Key>::new(),
+            Vec::<Keys>::new(),
             "j and k moved to other keys, ^x meant nothing"
         );
-        assert_eq!(map("x = j").lost(), [key("x")], "x chose a hunk");
+        assert_eq!(map("x = j").lost(), [ks("x")], "x chose a hunk");
         let m = map("j = G\nk = G\n^a = k\n^e = G");
         assert_eq!(
             m.lost(),
-            [key("j")],
+            [ks("j")],
             "j's meaning went nowhere; ^e meant nothing"
         );
+        let m = map("gt = G\nx = gg\nzM = j\nza = k\n^a = za\ngx = q");
+        let acting = |keys: &str| m.acting_as(&ks(keys).0);
+        assert_eq!(acting("G"), [ks("gt"), ks("G")], "two keys act as one");
+        assert_eq!(acting("gg"), [ks("x"), ks("gg")], "one key as two");
+        assert_eq!(acting("g"), [ks("g")], "g alone is still g");
+        assert_eq!(acting("zM"), Vec::<Keys>::new(), "zM is j now");
+        assert_eq!(acting("za"), [ks("^a")], "za is k, ^a is za");
+        assert_eq!(acting("q"), [ks("gx"), ks("q")]);
+        assert_eq!(
+            m.lost(),
+            [ks("x"), ks("zM")],
+            "nothing does x or zM; ^a does za"
+        );
+        assert_eq!(
+            map("gx = j").lost(),
+            Vec::<Keys>::new(),
+            "gx is none of imece's"
+        );
+        assert_eq!(map("qs = j\nqq = k").lost(), [ks("qs"), ks("qq")]);
+        assert_eq!(map("zR = j").lost(), [ks("zR")]);
+        assert_eq!(map("gg = j").lost(), [ks("gg")]);
+        assert_eq!(map("gg = j\n^g = gg").lost(), Vec::<Keys>::new());
+        let m = map("g = j\n^g = g");
+        assert_eq!(m.acting_as(&ks("gg").0), [ks("^g ^g")]);
+        assert_eq!(m.lost(), Vec::<Keys>::new());
     }
 
     #[test]
@@ -913,6 +1163,17 @@ mod tests {
             "↑ ↓  j k",
             "no file, no change"
         );
+        // Keys of two.
+        let m = map("gt = G\nx = gg\nzM = j\n^t = zR\ng enter = q");
+        assert_eq!(m.shown("gg  G"), "x/gg  gt/G");
+        assert_eq!(m.shown("zM  zR"), "–  ^t/zR");
+        assert_eq!(m.shown("j"), "zM/j");
+        assert_eq!(m.shown("q q"), "g enter/q g enter/q");
+        assert_eq!(m.shown("za"), "za");
+        assert_eq!(m.shown("zd"), "zd", "d is no key of imece's");
+        let m = map("^n = j\nj = G\nd = k");
+        assert_eq!(m.shown("jjj"), "jjj", "three keys are no chord of imece's");
+        assert_eq!(m.shown("d"), "d", "nor is a key it does nothing with");
     }
 
     fn dir(name: &str) -> PathBuf {
@@ -1057,7 +1318,27 @@ mod tests {
             "/c/imece/keys: line 4: imece does nothing with d; the keys you had stay"
         );
         assert_eq!(
-            say(Lang::En, Why::Twice(5, key("^n"), 1)),
+            say(Lang::En, Why::Long(7)),
+            "/c/imece/keys: line 7: 2 keys at most on a side; the keys you had stay"
+        );
+        assert_eq!(
+            say(Lang::En, Why::Starts(8, key("g"), 2)),
+            "/c/imece/keys: line 8: g is given alone and as the first of two keys (line 2); the keys you had stay"
+        );
+        assert_eq!(
+            say(Lang::Tr, Why::Long(7)),
+            "/c/imece/keys: satır 7: bir yanda en çok 2 tuş; elindeki tuşlar kalıyor"
+        );
+        assert_eq!(
+            say(Lang::Tr, Why::Starts(8, key("g"), 2)),
+            "/c/imece/keys: satır 8: g hem tek başına hem iki tuşun ilki olarak verilmiş (2. satır); elindeki tuşlar kalıyor"
+        );
+        assert_eq!(
+            say(Lang::En, Why::Twice(9, ks("gt"), 3)),
+            "/c/imece/keys: line 9: gt is given on line 3 already; the keys you had stay"
+        );
+        assert_eq!(
+            say(Lang::En, Why::Twice(5, ks("^n"), 1)),
             "/c/imece/keys: line 5: ^n is given on line 1 already; the keys you had stay"
         );
         assert_eq!(
@@ -1077,7 +1358,7 @@ mod tests {
             "/c/imece/keys: cannot be read as text; the keys you had stay"
         );
         assert_eq!(
-            say(Lang::Tr, Why::Twice(5, key("^n"), 1)),
+            say(Lang::Tr, Why::Twice(5, ks("^n"), 1)),
             "/c/imece/keys: satır 5: ^n 1. satırda zaten verilmiş; elindeki tuşlar kalıyor"
         );
         assert_eq!(
@@ -1099,6 +1380,11 @@ mod tests {
         assert_eq!(
             taken(Lang::En, path, &m),
             "/c/imece/keys: keys taken (3); nothing does j k now"
+        );
+        let m2 = map("gg = j\nx = G");
+        assert_eq!(
+            taken(Lang::En, path, &m2),
+            "/c/imece/keys: keys taken (2); nothing does gg x now"
         );
         assert_eq!(
             taken(Lang::Tr, path, &m),
