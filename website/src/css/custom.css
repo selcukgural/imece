@@ -68,6 +68,55 @@
   margin: 0 auto 1.8rem;
   color: #c9cad2;
 }
+.imece-install {
+  max-width: 46rem;
+  margin: 0 auto 1.8rem;
+}
+.imece-install-label {
+  display: block;
+  font-size: 0.85rem;
+  color: #9a9caa;
+  margin-bottom: 0.4rem;
+}
+.imece-install-line {
+  display: flex;
+  align-items: stretch;
+  border: 1px solid #3a3c46;
+  border-radius: 8px;
+  background: #15161b;
+  overflow: hidden;
+}
+.imece-install-line code {
+  flex: 1;
+  background: none;
+  border: none;
+  color: #f4f4f6;
+  font-size: 0.95rem;
+  padding: 0.7rem 1rem;
+  text-align: left;
+  overflow-x: auto;
+  white-space: nowrap;
+}
+.imece-install-prompt {
+  color: #e3a93f;
+  user-select: none;
+}
+.imece-install-copy {
+  border: none;
+  border-left: 1px solid #3a3c46;
+  background: #23252d;
+  color: #f4f4f6;
+  font: inherit;
+  font-size: 0.9rem;
+  padding: 0 1.1rem;
+  cursor: pointer;
+  min-width: 6.5rem;
+}
+.imece-install-copy:hover,
+.imece-install-copy:focus-visible {
+  background: #e3a93f;
+  color: #15161b;
+}
 .imece-hero .button + .button {
   margin-left: 0.8rem;
 }
