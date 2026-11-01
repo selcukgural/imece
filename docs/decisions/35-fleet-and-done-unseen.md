@@ -29,4 +29,5 @@ Demo: the same model and screen, so `--demo` shows both; its workers
 mostly end a card with an item for the person, so the first plain
 "done, not seen" comes after a few hundred steps (a test steps the demo
 to it). B1, the full state ladder with a folded group showing its loudest
-member, is still to come.
+member, is record 61; the `✓` of a done, not seen row is its rung's
+glyph there (`rung_glyph`).

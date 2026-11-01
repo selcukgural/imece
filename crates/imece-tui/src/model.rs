@@ -196,14 +196,6 @@ impl Status {
     pub fn busy(self) -> bool {
         matches!(self, Status::Working | Status::Researching { .. })
     }
-
-    /// Statuses the person should see first.
-    pub fn needs_attention(self) -> bool {
-        matches!(
-            self,
-            Status::Blocked | Status::WaitingHuman | Status::Stopped
-        )
-    }
 }
 
 /// The envelope type of a message between agents. Only the type drives
@@ -448,6 +440,9 @@ pub struct Agent {
     /// What a live agent is doing right now (`Edit src/main.rs`), drawn
     /// instead of the progress bar; empty while it thinks.
     pub activity: Option<String>,
+    /// Its session is being started (the process, a first worktree's
+    /// checkout) and has not answered yet: `◌ starting…` on its row.
+    pub starting: bool,
     /// The agent's own command line as its session reported it (`/clear`,
     /// `/compact` ...), imece's `/clear` added where the vendor has none;
     /// empty until a session says. The composer completes with it.
@@ -504,6 +499,7 @@ impl Agent {
             trace: VecDeque::new(),
             traced: 0,
             activity: None,
+            starting: false,
             commands: Vec::new(),
             stand: Stand::default(),
             local: None,
@@ -2452,16 +2448,18 @@ mod tests {
                 until: 1,
             },
         ];
-        let waits = [Status::Blocked, Status::WaitingHuman, Status::Stopped];
-        let rest = [Status::Idle, Status::Asking { to: 1, until: 1 }];
+        let rest = [
+            Status::Blocked,
+            Status::WaitingHuman,
+            Status::Stopped,
+            Status::Idle,
+            Status::Asking { to: 1, until: 1 },
+        ];
         for s in spends {
-            assert!(s.busy() && !s.needs_attention(), "{s:?}");
-        }
-        for s in waits {
-            assert!(!s.busy() && s.needs_attention(), "{s:?}");
+            assert!(s.busy(), "{s:?}");
         }
         for s in rest {
-            assert!(!s.busy() && !s.needs_attention(), "{s:?}");
+            assert!(!s.busy(), "{s:?}");
         }
     }
 
@@ -2826,7 +2824,7 @@ mod tests {
         ]);
         // Two researchers at work: not the one that is gone.
         assert_eq!(w.active_researchers(), 2);
-        assert!(!Status::Asleep.busy() && !Status::Asleep.needs_attention());
+        assert!(!Status::Asleep.busy());
         w.inbox = vec![
             item(InboxKind::Sensitive, 1, true),
             item(InboxKind::Sensitive, 1, false),

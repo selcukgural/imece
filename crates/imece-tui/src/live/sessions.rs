@@ -128,6 +128,7 @@ impl Live {
         w.close_approvals(id);
         // What it served went with its session.
         w.agents[id].local = None;
+        w.agents[id].starting = false;
         self.spent_before[id] = w.agents[id].cost;
         self.slots[id] = Slot::None;
         self.cwds[id] = None;
@@ -222,6 +223,7 @@ impl Live {
             Slot::Starting(q) => q,
             _ => Vec::new(),
         };
+        w.agents[id].starting = false;
         let mut session = match ready {
             Ok((session, cwd, placed, held, copied)) => {
                 self.copied(w, id, copied);
@@ -369,6 +371,7 @@ impl Live {
             Slot::None => {
                 self.start(w, id, held);
                 self.slots[id] = Slot::Starting(vec![text.clone()]);
+                w.agents[id].starting = true;
             }
             Slot::Starting(q) => q.push(text.clone()),
             // Git is moving its worktree: the prompt waits for that.
@@ -869,7 +872,6 @@ mod tests {
             0,
         );
         assert_eq!(w.agents[1].status, Status::Stopped);
-        assert!(w.agents[1].status.needs_attention());
         assert!(matches!(
             &w.journal.last().unwrap().event,
             Event::Stopped { agent: 1, why } if why == "exited with code 1"
@@ -1008,11 +1010,14 @@ mod tests {
             PathBuf::from("/nonexistent"),
         );
         live.told(&mut w, 0, "first").unwrap();
-        // The message waits while the session starts on its own thread.
+        // The message waits while the session starts on its own thread;
+        // the row says so.
         assert!(matches!(&live.slots[0], Slot::Starting(q) if q == &["first".to_string()]));
+        assert!(w.agents[0].starting && w.agents[0].status == Status::Working);
         live.told(&mut w, 0, "second").unwrap();
         wait_for(&mut live, &mut w, |w| w.agents[0].status == Status::Stopped);
         assert!(matches!(live.slots[0], Slot::None));
+        assert!(!w.agents[0].starting, "ended: not starting any more");
         assert!(matches!(
             &w.journal.last().unwrap().event,
             Event::Stopped { agent: 0, why } if why.contains("/nonexistent/claude")
@@ -1032,11 +1037,13 @@ mod tests {
             "{e:?}"
         );
         let cwd = PathBuf::from("/work/claude-1");
+        w.agents[1].starting = true;
         live.ready(
             &mut w,
             1,
             Ok((Box::new(Stub), cwd.clone(), None, None, Vec::new())),
         );
+        assert!(!w.agents[1].starting, "up: not starting any more");
         live.command(&mut w, 1, " /known ").unwrap();
         assert_eq!(live.turns[1], 1);
         assert!(live.asked[1]);

@@ -44,7 +44,7 @@ See [budget and limits](../concepts/budget-and-limits.md) for how the pot and th
 
 Agents are grouped by project. Each project is a header row, then its leader, then its workers, each worker's helpers under it. Projects come in the order they were opened, pinned ones first.
 
-A project header: `▾ shop-api  2 working  $2.40  ✕1   ! 2 waiting`. `▾` is open, `▸` folded. After the name: how many workers and helpers are not idle, what the project's agents have cost, `✕N` blocked agents when there are any, and, in the attention colour, how many items of this project wait for you. A folded project is one line and that line still shows what waits: quiet, not deaf. A pinned project (`:pin`) wears `▴` before its name and keeps the top of the salon; the pin is saved between runs.
+A project header: `▾ shop-api  2 working  $2.40  ✕1  ■1   ! 2 waiting`. `▾` is open, `▸` folded. After the name: how many workers and helpers are not idle, what the project's agents have cost, `✕N` blocked and `■N` stopped agents when there are any, and, in the attention colour, how many items of this project wait for you. A folded project is one line, that line still shows what waits (quiet, not deaf) and ends with its loudest member, `▸ shop-api  2 working  $2.40   ! 1 waiting  ! codex-2`: the agent highest on the state ladder below, the first in order among equals. A pinned project (`:pin`) wears `▴` before its name and keeps the top of the salon; the pin is saved between runs.
 
 An agent's row:
 
@@ -53,20 +53,25 @@ An agent's row:
 ```
 
 - The tree lines `├ └ │` show who is under whom; a helper is under its worker, named `claude-1.1`.
-- The state glyph (see the legend below) and, for a worker that finished a turn you have not opened since, `✓` in its place with `done, not seen yet` as its status. A leader always keeps `◆`.
+- The state glyph: where the agent stands on the state ladder (see the legend below). Stuck shows as its status says (`✕` blocked, `■` stopped); `!` when something of its waits for you, whatever it does meanwhile; `✓` for a worker that finished a turn you have not opened since, with `done, not seen yet` as its status; `◌` while its session starts; else its status's own mark (`●` `◐` `◇` at work, `○` `◦` idle). Every state is a shape of its own, so the mono theme tells them apart. A leader always keeps `◆`.
 - `▎` in the agent's speaker colour, the same colour its lines have in the journal and in a conversation, so a row and its talk read as one agent.
 - Its name in its vendor's colour, then `~` or `≈` when it is tainted (research taint, demo only).
 - A worker's card: `#3` and the card's title. A leader shows its vendor instead.
-- Its status: `thinking…`, what it says it is doing, `? → claude-2` while it waits for a teammate's answer, `? → you` while a question of its waits for you, `⚑ waits for your yes` while a tool call of its waits in WAITING FOR YOU, `answered you` while its answer waits to be read, `coordinating` for a leader whose workers work, `BLOCKED`, `■ stopped, write to it to start again`, `◦ asleep since the last run, write to it to wake it`.
+- Its status: `starting…` while its session comes up (the process, a first worktree's checkout), `thinking…`, what it says it is doing, `? → claude-2` while it waits for a teammate's answer, `? → you` while a question of its waits for you, `⚑ waits for your yes` while a tool call of its waits in WAITING FOR YOU, `answered you` while its answer waits to be read, `coordinating` for a leader whose workers work, `BLOCKED`, `■ stopped, write to it to start again`, `◦ asleep since the last run, write to it to wake it`.
 - What it has cost, when anything.
 - A worker's worktree stand, `⎇ fix-parser ↑2 ↓1 +12 −3`: the branch the agent made (none while the worktree is detached, as imece makes it), its own commits the checkout does not have (imece's marks of applied changes are not counted), the checkout's commits it does not have, and the lines added and removed against its own HEAD, untracked files included: what its next `done` would hand you. Each part shows only when there is something to say. Read on imece's git thread as the session starts, when a turn ends, after an apply and every 15 seconds while the worker or a helper is mid-turn; not kept between runs.
 - `▾ 1 helpers` or `▸ 1 helpers`: its helpers are listed under it, or folded away.
 - `↗ localhost:5173/`: the newest loopback address the worker or helper wrote in its own text, as a link the terminal opens (OSC 8). Only `http`/`https` on `localhost`, `127.0.0.1` or `[::1]` counts, the query and fragment are dropped, and an address over 60 characters is not shown. Gone with the session.
+- A worker with helpers ends with `▾ 2 helpers`, or `▸ 2 helpers  ● claude-1.1` when they are folded away: the count and the loudest of them.
 - Under a row that talks, a dim italic line `⇄ claude-2 "which parser?"` with the newest exchange.
 
 A row that just changed stands out for a moment, then calms down. The selected row is reversed.
 
-When the rows do not fit the pane, calm workers (working or idle, nothing said lately, not selected) fold from the bottom of the salon up into one line, `… 2 agents doing fine`; a pinned project folds last and what needs you is never folded away. The bottom line of the pane, `QUEUE`, lists cards being verified and the last four done (`#2 ✓`); live, nothing fills the verifying part, so it reads `empty`.
+When the rows do not fit the pane, calm workers (working or idle, nothing said lately, not selected) fold from the bottom of the salon up into one line, `… 2 agents folded, loudest  ● codex-2`, which names the loudest of them; a pinned project folds last and what needs you is never folded away. The bottom line of the pane, `QUEUE`, lists cards being verified and the last four done (`#2 ✓`); live, nothing fills the verifying part, so it reads `empty`.
+
+## The state ladder
+
+Every agent stands on one rung, loudest first: stuck (blocked, or its session stopped: it goes nowhere until you write to it) > something of its waits for you > working (mid-turn, asking a teammate, researching) > starting > done, not seen > idle (or asleep, or gone). The rung decides the row's glyph, which worker comes first in its project (stuck, then waiting for you, then done and not seen; the calm rungs keep their order so the screen does not jump as agents go from idle to working and back), what `f` shows, and which member a folded group (a project, a worker's helpers, the folded calm workers) shows for all of them: the highest rung, the first in order among equals.
 
 ## The legend
 
@@ -75,14 +80,15 @@ Every glyph the `?` help lists, as the screen draws them:
 | Glyph | Meaning |
 | --- | --- |
 | `◆` | the leader (it keeps this glyph whatever it does) |
+| `◌` | starting: its session is coming up and has not answered yet |
 | `●` | working: mid-turn |
 | `◐` | asking a teammate and waiting for the answer |
 | `✕` | blocked (waiting for research), or a count of blocked agents on a project header |
-| `!` | waiting for you; also the header's count and the inbox's own mark |
+| `!` | something of its waits for you, whatever it does meanwhile; also the header's count and the inbox's own mark |
 | `◇` | a researcher (demo only; the researcher layer is not built live) |
 | `○` | idle |
 | `✓` | done, not seen: finished a turn you have not opened since |
-| `■` | stopped: the session ended; writing to it starts a new one |
+| `■` | stopped: the session ended; writing to it starts a new one; also a count of stopped agents on a project header |
 | `◦` | asleep since an earlier run; writing to it wakes it |
 | `⇄` | a conversation line |
 | `▾` `▸` | a project or a worker's helpers, open or folded |

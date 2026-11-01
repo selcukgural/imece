@@ -23,7 +23,7 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Clear, Paragraph, Wrap};
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
-use crate::app::{App, FLASH, View, Zoom};
+use crate::app::{App, FLASH, Rung, View, Zoom};
 use crate::i18n::{Lang, clean, fill};
 use crate::model::*;
 pub(crate) use crate::theme::pal;
@@ -235,6 +235,23 @@ pub(crate) fn glyph(a: &Agent) -> (&'static str, Color) {
         Status::Researching { .. } => ("◇", pal().research),
         Status::Stopped => ("■", pal().stopped),
         Status::Asleep => ("◦", pal().dim),
+    }
+}
+
+/// The glyph of agent `a`'s row on the state ladder: a leader always `◆`;
+/// stuck as its status says (`✕` blocked, `■` stopped); `!` when something
+/// of it waits for the person, whatever it does meanwhile; `✓` done, not
+/// seen; `◌` while its session starts; else its status's own glyph (`●`
+/// `◐` `◇` working, `○` `◦` idle). Each a shape of its own.
+pub(crate) fn rung_glyph(a: &Agent, rung: Rung) -> (&'static str, Color) {
+    if a.role == Role::Leader {
+        return ("◆", pal().plan);
+    }
+    match rung {
+        Rung::Waiting => ("!", pal().warn),
+        Rung::Done => ("✓", pal().ok),
+        Rung::Starting => ("◌", pal().ok),
+        Rung::Stuck | Rung::Working | Rung::Idle => glyph(a),
     }
 }
 
@@ -873,6 +890,7 @@ pub(crate) fn status_spans(lang: Lang, w: &World, a: &Agent) -> Vec<Span<'static
         Status::Working if w.has_approval(a.id) => {
             vec![Span::styled(format!("⚑ {}", t.waiting_yes), fg(pal().warn))]
         }
+        Status::Working if a.starting => vec![Span::styled(t.starting, fg(pal().ok))],
         Status::Working => match a.activity.as_deref() {
             Some("") => vec![Span::styled(t.thinking, fg(pal().ok))],
             Some(doing) => vec![Span::styled(
@@ -1330,7 +1348,8 @@ mod tests {
             !s.contains("SALON"),
             "the card takes the salon's place:\n{s}"
         );
-        assert!(s.contains(&format!("owner     ● ▎{owner}")), "{s}");
+        // Its change waits for the person: `!`, whatever it does meanwhile.
+        assert!(s.contains(&format!("owner     ! ▎{owner}")), "{s}");
         // Who had a part are the lines to move among.
         let shown = app.shown.borrow().clone();
         let people: Vec<Sel> = app
@@ -1741,11 +1760,14 @@ mod tests {
         // Project, leader, w0 and its researcher, w1 and its talk, w2, w3.
         let all = rows(&app, 8);
         assert_eq!(all.len(), 8, "{all:?}");
-        assert!(!all.iter().any(|r| matches!(r, salon::Row::Folded(_))));
+        assert!(!all.iter().any(|r| matches!(r, salon::Row::Folded { .. })));
         // One line short: the calm workers at the end fold into one line.
         let tight = rows(&app, 7);
         assert_eq!(tight.len(), 7, "{tight:?}");
-        assert_eq!(tight.last(), Some(&salon::Row::Folded(2)), "{tight:?}");
+        assert!(
+            matches!(tight.last(), Some(salon::Row::Folded { n: 2, .. })),
+            "{tight:?}"
+        );
         assert!(
             tight.contains(&salon::Row::Agent { id: r[0], depth: 3 }),
             "{tight:?}"
@@ -1781,6 +1803,10 @@ mod tests {
                 .unwrap_or_default()
         };
         assert!(line(&s, &name).contains("▾ 2 helpers"), "{s}");
+        assert!(
+            !line(&s, &name).contains(&format!("{name}.1")),
+            "open: the helpers are under it, not on its row: {s}"
+        );
         assert!(line(&s, &format!("{name}.1")).contains("├ "), "{s}");
         assert!(line(&s, &format!("{name}.2")).contains("└ "), "{s}");
         assert!(
@@ -1796,9 +1822,21 @@ mod tests {
         assert_eq!(app.collapsed, [false]);
         let rows = salon_rows(&app);
         assert!(rows.contains(&(worker, 2)) && !rows.iter().any(|r| r.1 == 3));
-        let s = render(&app, 140, 45);
-        assert!(line(&s, &name).contains("▸ 2 helpers"), "{s}");
-        assert!(!s.contains(&format!("{name}.1")), "{s}");
+        // A folded group shows its loudest member: both helpers work, the
+        // first in order (a wide screen: the row ends with the member).
+        let s = render(&app, 200, 45);
+        assert!(
+            line(&s, &name).contains(&format!("▸ 2 helpers  ● {name}.1")),
+            "{s}"
+        );
+        assert!(!s.contains(&format!("{name}.2")), "{s}");
+        app.world.agents[h2].status = Status::Blocked;
+        let s = render(&app, 200, 45);
+        assert!(
+            line(&s, &name).contains(&format!("▸ 2 helpers  ✕ {name}.2")),
+            "{s}"
+        );
+        app.world.agents[h2].status = Status::Working;
         key(&mut app, KeyCode::Char('h'));
         assert_eq!(app.collapsed, [true]);
         assert_eq!(app.selected, Sel::Project(0));
@@ -1890,7 +1928,7 @@ mod tests {
             for r in salon::rows(app, capacity) {
                 match r {
                     salon::Row::Project(p) => under = Some(p),
-                    salon::Row::Folded(_) => return under,
+                    salon::Row::Folded { .. } => return under,
                     _ => {}
                 }
             }
@@ -1971,10 +2009,11 @@ mod tests {
         app.unseen.insert(w[1]);
         app.world.agents[w[2]].status = Status::Blocked;
         waiting(&mut app, w[3]);
-        assert_eq!(workers_shown(&app), [w[3], w[2], w[1], w[0]]);
+        // Stuck first, then waiting for the person, then done, not seen.
+        assert_eq!(workers_shown(&app), [w[2], w[3], w[1], w[0]]);
         // Equals keep their order.
         waiting(&mut app, w[0]);
-        assert_eq!(workers_shown(&app), [w[0], w[3], w[2], w[1]]);
+        assert_eq!(workers_shown(&app), [w[2], w[0], w[3], w[1]]);
 
         // Folding starts at the bottom: done and not seen folds after the
         // rest. Project, lead and four workers in five lines: two fold,
@@ -1984,7 +2023,10 @@ mod tests {
         app.world.agents[w[3]].status = Status::Idle;
         app.unseen.insert(w[3]);
         let rows = salon::rows(&app, 5);
-        assert_eq!(rows.last(), Some(&salon::Row::Folded(2)), "{rows:?}");
+        assert!(
+            matches!(rows.last(), Some(salon::Row::Folded { n: 2, .. })),
+            "{rows:?}"
+        );
         assert!(
             rows.contains(&salon::Row::Agent { id: w[3], depth: 2 }),
             "{rows:?}"
@@ -2003,7 +2045,7 @@ mod tests {
         let folds = |app: &App, capacity| {
             salon::rows(app, capacity)
                 .iter()
-                .any(|r| matches!(r, salon::Row::Folded(_)))
+                .any(|r| matches!(r, salon::Row::Folded { .. }))
         };
         assert!(!folds(&app, 7));
         assert!(folds(&app, 6));
@@ -2145,7 +2187,140 @@ mod tests {
     fn many_agents_fold_the_calm_ones() {
         let app = app_after(1, 80, 200, Lang::En);
         let s = render(&app, 120, 30);
-        assert!(s.contains("agents doing fine"), "no folded line:\n{s}");
+        assert!(s.contains("agents folded, loudest"), "no folded line:\n{s}");
+    }
+
+    #[test]
+    fn the_folded_line_names_the_loudest_of_the_folded() {
+        // Project, lead and four workers in five lines: the last two in
+        // order fold, all idle.
+        let (mut app, w, _) = calm_team();
+        app.world.inbox.clear();
+        for &id in &w {
+            app.world.agents[id].status = Status::Idle;
+        }
+        let folded = |app: &App| match salon::rows(app, 5).last() {
+            Some(&salon::Row::Folded { n, loud }) => (n, loud),
+            other => panic!("{other:?}"),
+        };
+        assert_eq!(folded(&app), (2, w[2]), "equals: the first in order");
+        app.world.agents[w[3]].status = Status::Working;
+        assert_eq!(folded(&app), (2, w[3]), "working over idle");
+        app.world.agents[w[2]].status = Status::Working;
+        app.world.agents[w[2]].starting = true;
+        assert_eq!(folded(&app), (2, w[3]), "working over starting");
+        let name = app.world.agents[w[3]].name.clone();
+        // Five rows of salon: the frame, the queue line and the header
+        // take the rest.
+        let s = render(&app, 140, 10);
+        let line = s
+            .lines()
+            .find(|l| l.contains("folded"))
+            .unwrap_or_else(|| panic!("{s}"));
+        assert!(
+            line.contains(&format!("… 2 agents folded, loudest  ● {name}")),
+            "{line}"
+        );
+        app.lang = Lang::Tr;
+        let s = render(&app, 140, 10);
+        assert!(
+            s.contains(&format!("… 2 agent katlı, en yükseği  ● {name}")),
+            "{s}"
+        );
+    }
+
+    #[test]
+    fn a_folded_project_s_header_ends_with_its_loudest_member_and_counts_the_stopped() {
+        let (mut app, w, _) = calm_team();
+        app.world.inbox.clear();
+        let text =
+            |line: &Line| -> String { line.spans.iter().map(|s| s.content.as_ref()).collect() };
+        let header = |app: &App| text(&salon::project_line(app, 0, &app.rungs()));
+        let name = |app: &App, id: AgentId| app.world.agents[id].name.clone();
+        let lead = app.world.projects[0].leader;
+        // Open: the counts, no member.
+        let open = header(&app);
+        assert!(
+            open.contains("▾ ") && !open.contains(&name(&app, w[0])),
+            "{open}"
+        );
+        assert!(!open.contains("✕") && !open.contains("■"), "{open}");
+        // Folded: the loudest member last; the lead counts as a member.
+        app.collapsed[0] = true;
+        let h = header(&app);
+        assert!(h.ends_with(&format!("  ◆ {}", name(&app, lead))), "{h}");
+        app.world.agents[lead].status = Status::Idle;
+        let h = header(&app);
+        assert!(h.ends_with(&format!("  ● {}", name(&app, w[0]))), "{h}");
+        app.world.agents[w[3]].status = Status::Stopped;
+        app.world.agents[w[1]].status = Status::Blocked;
+        let h = header(&app);
+        assert!(h.contains("  ✕1  ■1"), "{h}");
+        assert!(h.ends_with(&format!("  ✕ {}", name(&app, w[1]))), "{h}");
+        app.world.agents[w[1]].status = Status::Working;
+        let h = header(&app);
+        assert!(!h.contains("✕1") && h.contains("  ■1"), "{h}");
+        assert!(h.ends_with(&format!("  ■ {}", name(&app, w[3]))), "{h}");
+        waiting(&mut app, w[2]);
+        let h = header(&app);
+        assert!(h.contains("! 1 waiting"), "{h}");
+        assert!(
+            h.ends_with(&format!("  ■ {}", name(&app, w[3]))),
+            "stuck over waiting: {h}"
+        );
+        app.world.agents[w[3]].status = Status::Working;
+        let h = header(&app);
+        assert!(h.ends_with(&format!("  ! {}", name(&app, w[2]))), "{h}");
+    }
+
+    #[test]
+    fn a_row_whose_item_waits_shows_the_waiting_mark_whatever_it_does() {
+        let (mut app, w, _) = calm_team();
+        app.world.inbox.clear();
+        let row = |app: &App, id: AgentId| {
+            salon::agent_line(app, &app.world.agents[id], "", &app.rungs())
+        };
+        app.world.agents[w[0]].status = Status::Idle;
+        assert_eq!(row(&app, w[0]).spans[1].content, "○ ");
+        waiting(&mut app, w[0]);
+        let line = row(&app, w[0]);
+        assert_eq!(
+            (line.spans[1].content.as_ref(), line.spans[1].style),
+            ("! ", fg(pal().warn))
+        );
+        assert_eq!(row(&app, w[1]).spans[1].content, "● ");
+        waiting(&mut app, w[1]);
+        assert_eq!(row(&app, w[1]).spans[1].content, "! ", "working too");
+        // Stuck shows as stuck even with an item waiting.
+        app.world.agents[w[1]].status = Status::Stopped;
+        assert_eq!(row(&app, w[1]).spans[1].content, "■ ");
+        // The lead is always the lead.
+        let lead = app.world.projects[0].leader;
+        waiting(&mut app, lead);
+        assert_eq!(row(&app, lead).spans[1].content, "◆ ");
+    }
+
+    #[test]
+    fn a_starting_session_says_so_on_its_row_until_it_answers() {
+        let (mut app, w, _) = calm_team();
+        app.world.inbox.clear();
+        let text =
+            |line: &Line| -> String { line.spans.iter().map(|s| s.content.as_ref()).collect() };
+        let row = |app: &App| salon::agent_line(app, &app.world.agents[w[0]], "", &app.rungs());
+        app.world.agents[w[0]].activity = Some(String::new());
+        assert!(text(&row(&app)).contains("thinking…"));
+        app.world.agents[w[0]].starting = true;
+        let line = row(&app);
+        assert_eq!(
+            (line.spans[1].content.as_ref(), line.spans[1].style),
+            ("◌ ", fg(pal().ok))
+        );
+        assert!(text(&line).contains(" starting…"), "{}", text(&line));
+        assert!(!text(&line).contains("thinking…"));
+        app.lang = Lang::Tr;
+        assert!(text(&row(&app)).contains(" başlıyor…"));
+        app.world.agents[w[0]].starting = false;
+        assert!(text(&row(&app)).contains("düşünüyor…"));
     }
 
     #[test]
@@ -2245,13 +2420,13 @@ mod tests {
         // Two headers, the leader, three workers, the solo and its helper.
         let all = salon::rows(&app, 100);
         assert_eq!(all.len(), 8, "{all:?}");
-        assert!(!all.iter().any(|r| matches!(r, salon::Row::Folded(_))));
+        assert!(!all.iter().any(|r| matches!(r, salon::Row::Folded { .. })));
         assert_eq!(salon::rows(&app, 8).len(), 8, "it fits exactly");
         // One line short: a calm worker folds, because the helper's line
         // was counted.
         let tight = salon::rows(&app, 7);
         assert!(
-            tight.iter().any(|r| matches!(r, salon::Row::Folded(_))),
+            tight.iter().any(|r| matches!(r, salon::Row::Folded { .. })),
             "{tight:?}"
         );
     }
@@ -2705,7 +2880,9 @@ mod tests {
             .find(|a| a.role == Role::Worker)
             .unwrap()
             .id;
-        let row = |app: &App, id: AgentId| salon::agent_line(app, &app.world.agents[id], "");
+        let row = |app: &App, id: AgentId| {
+            salon::agent_line(app, &app.world.agents[id], "", &app.rungs())
+        };
         let text =
             |line: &Line| -> String { line.spans.iter().map(|s| s.content.as_ref()).collect() };
         assert_eq!(row(&app, worker).spans[1].content, "○ ");
@@ -2777,7 +2954,7 @@ mod tests {
             .unwrap()
             .id;
         let row = |app: &App, id: AgentId| {
-            let line = salon::agent_line(app, &app.world.agents[id], "");
+            let line = salon::agent_line(app, &app.world.agents[id], "", &app.rungs());
             text(&line.spans)
         };
         app.world.agents[worker].stand = stand(None, 0, 0, 7, 2);
@@ -4586,7 +4763,7 @@ mod tests {
         let head = app.world.projects[1].leader;
         let text =
             |line: &Line| -> String { line.spans.iter().map(|s| s.content.as_ref()).collect() };
-        let line = salon::agent_line(&app, &app.world.agents[head], "");
+        let line = salon::agent_line(&app, &app.world.agents[head], "", &app.rungs());
         assert!(
             text(&line).contains("solo-notes") && text(&line).contains("codex gpt-5.6-terra@xhigh"),
             "{}",
@@ -4597,7 +4774,12 @@ mod tests {
             "a solo's glyph is its status, not ◆"
         );
         app.world.agents[head].stand.added = 3;
-        let line = text(&salon::agent_line(&app, &app.world.agents[head], ""));
+        let line = text(&salon::agent_line(
+            &app,
+            &app.world.agents[head],
+            "",
+            &app.rungs(),
+        ));
         assert!(
             line.contains("+3"),
             "a solo's row shows where its worktree stands: {line}"
@@ -4605,7 +4787,12 @@ mod tests {
         // Without a choice: the vendor alone.
         typed(&mut app, ":solo claude other");
         let other = app.world.projects[2].leader;
-        let line = text(&salon::agent_line(&app, &app.world.agents[other], ""));
+        let line = text(&salon::agent_line(
+            &app,
+            &app.world.agents[other],
+            "",
+            &app.rungs(),
+        ));
         assert!(
             line.contains(" claude ") && !line.contains("claude @"),
             "{line}"
@@ -4636,7 +4823,7 @@ mod tests {
         ));
         // The project's header counts a working solo as working.
         app.world.agents[head].set_status(Status::Working, 0);
-        let header = text(&salon::project_line(&app, 1));
+        let header = text(&salon::project_line(&app, 1, &app.rungs()));
         assert!(
             header.contains("2 working") || header.contains("working"),
             "{header}"
@@ -5002,6 +5189,31 @@ mod tests {
         })
         .collect();
         assert_eq!(marks, ["○", "●", "◐", "✕", "!", "◇", "■", "◦"]);
+        // On the ladder: a rung's own glyph for waiting, done and
+        // starting, the status's for the rest; a leader's always `◆`.
+        assert!(!a.starting, "new: not starting");
+        a.status = Status::Working;
+        assert_eq!(rung_glyph(&a, Rung::Waiting), ("!", pal().warn));
+        assert_eq!(rung_glyph(&a, Rung::Done), ("✓", pal().ok));
+        assert_eq!(rung_glyph(&a, Rung::Starting), ("◌", pal().ok));
+        assert_eq!(rung_glyph(&a, Rung::Working), ("●", pal().ok));
+        a.status = Status::Stopped;
+        assert_eq!(rung_glyph(&a, Rung::Stuck), ("■", pal().stopped));
+        a.status = Status::Blocked;
+        assert_eq!(rung_glyph(&a, Rung::Stuck), ("✕", pal().bad));
+        a.status = Status::Asleep;
+        assert_eq!(rung_glyph(&a, Rung::Idle), ("◦", pal().dim));
+        a.role = Role::Leader;
+        for r in [Rung::Waiting, Rung::Done, Rung::Starting, Rung::Stuck] {
+            assert_eq!(rung_glyph(&a, r), ("◆", pal().plan), "{r:?}");
+        }
+        a.role = Role::Worker;
+        for lang in [Lang::En, Lang::Tr] {
+            let legend = lang.text().help_legend.join(" ");
+            for g in ["◆", "◌", "●", "◐", "✕", "!", "◇", "○", "✓", "■"] {
+                assert!(legend.contains(&format!(" {g} ")), "{lang:?} {g}");
+            }
+        }
         a.taint = Taint::Clean;
         assert_eq!(taint_span(&a).content, " ");
         a.taint = Taint::Soft;
@@ -6108,12 +6320,12 @@ after | not a table";
         let n = open.len();
         let tight = of(&app, n);
         assert!(
-            !tight.iter().any(|r| matches!(r, Row::Folded(_))),
+            !tight.iter().any(|r| matches!(r, Row::Folded { .. })),
             "{tight:?}"
         );
         let tighter = of(&app, n - 1);
         assert!(
-            tighter.iter().any(|r| matches!(r, Row::Folded(_))),
+            tighter.iter().any(|r| matches!(r, Row::Folded { .. })),
             "{tighter:?}"
         );
     }

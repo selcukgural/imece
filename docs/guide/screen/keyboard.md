@@ -136,7 +136,7 @@ The conventions are vim's: `h` `j` `k` `l` move and fold, `gg` and `G` go to the
 
 | Glyph | Meaning |
 | --- | --- |
-| `◆` lead  `●` working  `◐` asking  `✕` blocked  `!` waiting for you | an agent's state |
+| `◆` lead  `◌` starting  `●` working  `◐` asking  `✕` blocked  `!` waiting for you | an agent's state |
 | `◇` researcher  `○` idle  `✓` done, not seen  `■` stopped  `⇄` conversation  `▾` `▸` project / helpers  `▴` pinned | |
 | `~` soft-tainted (read a report)  `≈` tainted (reads the outside world) | demo only: researchers are not built live |
 | `⎇` branch  `↑` own commits  `↓` the checkout's new commits  `+N −M` lines not yet handed over | a worker's worktree |

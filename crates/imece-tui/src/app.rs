@@ -262,16 +262,53 @@ pub enum Sel {
 
 /// How much an agent needs the person, least first: the salon puts the
 /// workers that need more first and `f` shows only those that need
-/// something.
+/// something. The top of the [`Rung`] ladder, the calm rungs folded into
+/// `Nothing` so that an agent going from idle to working and back does
+/// not move on the screen.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Need {
     Nothing,
     /// Finished a turn the person has not looked at.
     Done,
-    /// Blocked, or its session stopped.
-    Stuck,
     /// Something of it waits in WAITING FOR YOU.
     Waiting,
+    /// Blocked, or its session stopped: it goes nowhere until the person
+    /// writes to it.
+    Stuck,
+}
+
+/// An agent's state as one rung of a ladder, lowest first: stuck > waiting
+/// for the person > working > starting > done, not seen > idle. Every rung
+/// has a glyph of its own shape, so the mono theme tells them apart, and a
+/// folded group (a project, a worker's helpers, the calm workers folded
+/// away) shows its loudest member: the one on the highest rung, the first
+/// in order among equals.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Rung {
+    /// Idle, asleep, or gone.
+    Idle,
+    /// Finished a turn the person has not looked at.
+    Done,
+    /// Its session is being started.
+    Starting,
+    /// Mid-turn, asking a teammate, researching.
+    Working,
+    /// Something of it waits in WAITING FOR YOU.
+    Waiting,
+    /// Blocked, or its session stopped.
+    Stuck,
+}
+
+impl Rung {
+    /// What the rung needs of the person.
+    pub fn need(self) -> Need {
+        match self {
+            Rung::Stuck => Need::Stuck,
+            Rung::Waiting => Need::Waiting,
+            Rung::Done => Need::Done,
+            Rung::Working | Rung::Starting | Rung::Idle => Need::Nothing,
+        }
+    }
 }
 
 /// What happened while the person was away.
@@ -668,6 +705,11 @@ impl App {
     /// What each agent needs of the person, by id. Gone agents need
     /// nothing.
     pub fn needs(&self) -> Vec<Need> {
+        self.rungs().into_iter().map(Rung::need).collect()
+    }
+
+    /// Every agent's rung on the state ladder (by id).
+    pub fn rungs(&self) -> Vec<Rung> {
         let w = &self.world;
         let mut waits = vec![false; w.agents.len()];
         for i in w.open_inbox() {
@@ -677,20 +719,36 @@ impl App {
             .iter()
             .map(|a| {
                 if a.gone {
-                    Need::Nothing
+                    Rung::Idle
+                } else if matches!(a.status, Status::Blocked | Status::Stopped) {
+                    Rung::Stuck
                 } else if waits[a.id] || a.status == Status::WaitingHuman {
-                    Need::Waiting
-                } else if a.status.needs_attention() {
-                    // Blocked, or its session stopped.
-                    Need::Stuck
-                } else if self.unseen.contains(&a.id) && a.status == Status::Idle {
+                    Rung::Waiting
+                } else if a.status == Status::Idle && self.unseen.contains(&a.id) {
                     // `done_unseen`, its inbox already looked at.
-                    Need::Done
+                    Rung::Done
+                } else if a.starting {
+                    Rung::Starting
+                } else if a.status.busy() || matches!(a.status, Status::Asking { .. }) {
+                    Rung::Working
                 } else {
-                    Need::Nothing
+                    Rung::Idle
                 }
             })
             .collect()
+    }
+
+    /// The loudest of `members`: the one on the highest rung, the first
+    /// among equals; none of an empty group.
+    pub fn loudest(&self, members: impl IntoIterator<Item = AgentId>) -> Option<AgentId> {
+        let rungs = self.rungs();
+        let mut loud: Option<AgentId> = None;
+        for id in members {
+            if loud.is_none_or(|l| rungs[id] > rungs[l]) {
+                loud = Some(id);
+            }
+        }
+        loud
     }
 
     /// `f`: the salon shows only what needs the person, or everyone again.
@@ -2375,16 +2433,21 @@ impl App {
             return None;
         }
         let w = &self.world;
-        let waiting: Vec<Note> = w
-            .open_inbox()
-            .into_iter()
+        let open = w.open_inbox();
+        // A stuck agent whose item waits in the inbox is noted once.
+        let stuck = |(id, n): (AgentId, Need)| {
+            (n == Need::Stuck && !open.iter().any(|&i| w.inbox[i].agent == id)).then_some(id)
+        };
+        let waiting: Vec<Note> = open
+            .iter()
+            .copied()
             .map(Note::Item)
             .chain(
                 self.needs()
                     .into_iter()
                     .enumerate()
-                    .filter(|(_, n)| *n == Need::Stuck)
-                    .map(|(id, _)| Note::Stuck(id)),
+                    .filter_map(stuck)
+                    .map(Note::Stuck),
             )
             .collect();
         let due = self.notices.due(&waiting, self.blurred.is_some(), now);
@@ -4424,15 +4487,112 @@ mod tests {
             ]
         );
         // Done is a finished turn: at work again it is no news; an item
-        // says more than done.
+        // says more than done; stuck says more than an item.
         app.world.agents[4].status = Status::Working;
         app.world.inbox.push(item(0, true));
+        app.world.inbox.push(item(3, true));
         assert_eq!(app.needs()[4], Need::Nothing);
         assert_eq!(app.needs()[0], Need::Waiting);
+        assert_eq!(app.needs()[3], Need::Stuck, "stopped, its item waiting");
         app.world.agents[2].gone = true;
         assert_eq!(app.needs()[2], Need::Nothing, "gone and blocked");
-        assert!(Need::Waiting > Need::Stuck && Need::Stuck > Need::Done);
+        assert!(Need::Stuck > Need::Waiting && Need::Waiting > Need::Done);
         assert!(Need::Done > Need::Nothing);
+    }
+
+    #[test]
+    fn every_agent_stands_on_one_rung_of_the_ladder() {
+        let mut app = quiet();
+        assert_eq!(app.rungs(), [Rung::Idle; 5]);
+        let a = &mut app.world.agents;
+        a[0].status = Status::Stopped;
+        a[1].status = Status::WaitingHuman;
+        a[2].status = Status::Working;
+        a[3].status = Status::Working;
+        a[3].starting = true;
+        a[4].status = Status::Asleep;
+        assert_eq!(
+            app.rungs(),
+            [
+                Rung::Stuck,
+                Rung::Waiting,
+                Rung::Working,
+                Rung::Starting,
+                Rung::Idle
+            ]
+        );
+        // Blocked is stuck too; asking and researching are work; an item
+        // waiting outranks work and starting; done, not seen is idle with
+        // a turn unseen; gone is nothing at all.
+        let a = &mut app.world.agents;
+        a[0].status = Status::Blocked;
+        a[1].status = Status::Asking { to: 0, until: 9 };
+        a[2].status = Status::Researching {
+            for_agent: 0,
+            until: 9,
+        };
+        a[4].status = Status::Idle;
+        app.unseen.insert(4);
+        app.world.inbox.push(item(2, true));
+        app.world.inbox.push(item(3, true));
+        assert_eq!(
+            app.rungs(),
+            [
+                Rung::Stuck,
+                Rung::Working,
+                Rung::Waiting,
+                Rung::Waiting,
+                Rung::Done
+            ]
+        );
+        app.world.inbox.clear();
+        assert_eq!(app.rungs()[2], Rung::Working, "researching");
+        assert_eq!(app.rungs()[3], Rung::Starting);
+        app.world.agents[3].gone = true;
+        assert_eq!(app.rungs()[3], Rung::Idle, "gone");
+        app.world.agents[4].status = Status::Working;
+        assert_eq!(app.rungs()[4], Rung::Working, "at work again: no news");
+        // The ladder, lowest first, and what each rung needs.
+        let ladder = [
+            Rung::Idle,
+            Rung::Done,
+            Rung::Starting,
+            Rung::Working,
+            Rung::Waiting,
+            Rung::Stuck,
+        ];
+        assert!(ladder.windows(2).all(|w| w[0] < w[1]));
+        assert_eq!(
+            ladder.map(Rung::need),
+            [
+                Need::Nothing,
+                Need::Done,
+                Need::Nothing,
+                Need::Nothing,
+                Need::Waiting,
+                Need::Stuck
+            ]
+        );
+    }
+
+    #[test]
+    fn the_loudest_of_a_group_is_its_highest_rung_the_first_among_equals() {
+        let mut app = quiet();
+        assert_eq!(app.loudest([]), None);
+        assert_eq!(app.loudest([3, 1, 2]), Some(3), "all idle: the first");
+        app.world.agents[2].status = Status::Working;
+        assert_eq!(app.loudest([3, 1, 2]), Some(2));
+        app.world.agents[1].status = Status::Working;
+        assert_eq!(app.loudest([3, 1, 2]), Some(1), "equals: the first");
+        app.world.agents[3].status = Status::Working;
+        app.world.agents[3].starting = true;
+        assert_eq!(app.loudest([3, 1, 2]), Some(1), "working over starting");
+        app.unseen.insert(4);
+        assert_eq!(app.loudest([4, 2]), Some(2), "working over done");
+        app.world.inbox.push(item(4, true));
+        assert_eq!(app.loudest([1, 4, 2]), Some(4), "waiting over working");
+        app.world.agents[2].status = Status::Stopped;
+        assert_eq!(app.loudest([1, 4, 2]), Some(2), "stuck over waiting");
     }
 
     /// The salon's selectable rows.

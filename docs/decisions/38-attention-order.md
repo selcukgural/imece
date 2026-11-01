@@ -34,7 +34,9 @@ the person writes, since the selection decides who `/` writes to.
 Choices: `f` for filter (free in every pane; vim's find-char has no
 meaning here). The filter is kept for the run only, like the put-off
 items of record 33: a fresh start that hid the team would confuse. The
-rank is the start of B1's state ladder (error > needs you > working >
-starting > done-unseen > idle, with a folded group showing its loudest
-member), which is still to come. Pure screen logic, so the demo shows
+rank was the start of B1's state ladder, finished in record 61 (`Rung`:
+stuck > waiting > working > starting > done > idle, a folded group
+showing its loudest member); that record put stuck above waiting, so
+`Need` now ranks `Stuck > Waiting > Done > Nothing` and the ranked
+workers come stuck first. Pure screen logic, so the demo shows
 it exactly as live does.

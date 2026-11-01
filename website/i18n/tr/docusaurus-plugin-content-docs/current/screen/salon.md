@@ -45,7 +45,7 @@ Bütçenin ve pencerelerin nasıl sayıldığı [bütçe ve sınırlar](../conce
 
 Agent'lar projeye göre gruplanır. Her proje bir başlık satırıdır; altında lideri, sonra işçileri, her işçinin altında yardımcıları. Projeler açıldıkları sırayla gelir, sabitlenenler önce.
 
-Bir proje başlığı: `▾ shop-api  2 çalışıyor  $2.40  ✕1   ! 2 bekliyor`. `▾` açık, `▸` katlı. Adın ardından: boşta olmayan işçi ve yardımcı sayısı, projenin agent'larının harcadığı, varsa `✕N` bloke agent ve dikkat renginde bu projenin sizi bekleyen öge sayısı. Katlı bir proje tek satırdır ve o satır da bekleyenleri gösterir: sessiz ama sağır değil. Sabitlenmiş bir proje (`:pin`) adının önünde `▴` taşır ve salonun en üstünde kalır; sabitleme çalıştırmalar arasında saklanır.
+Bir proje başlığı: `▾ shop-api  2 çalışıyor  $2.40  ✕1  ■1   ! 2 bekliyor`. `▾` açık, `▸` katlı. Adın ardından: boşta olmayan işçi ve yardımcı sayısı, projenin agent'larının harcadığı, varsa `✕N` bloke ve `■N` durmuş agent ve dikkat renginde bu projenin sizi bekleyen öge sayısı. Katlı bir proje tek satırdır, o satır da bekleyenleri gösterir (sessiz ama sağır değil) ve en yüksek üyesiyle biter, `▸ shop-api  2 çalışıyor  $2.40   ! 1 bekliyor  ! codex-2`: aşağıdaki durum merdiveninde en üstteki agent, eşitler arasında sıradaki ilk. Sabitlenmiş bir proje (`:pin`) adının önünde `▴` taşır ve salonun en üstünde kalır; sabitleme çalıştırmalar arasında saklanır.
 
 Bir agent'ın satırı:
 
@@ -54,20 +54,25 @@ Bir agent'ın satırı:
 ```
 
 - Ağaç çizgileri `├ └ │` kimin kimin altında olduğunu gösterir; bir yardımcı işçisinin altındadır ve `claude-1.1` diye adlanır.
-- Durum işareti (aşağıdaki lejant) ve bir turu bitirmiş ama henüz açmadığınız bir işçi için onun yerine `✓`, durum olarak `bitti, henüz bakılmadı`. Lider hep `◆` kalır.
+- Durum işareti: agent'ın durum merdivenindeki basamağı (aşağıdaki lejant). Takılan durumunun dediği gibi görünür (`✕` bloke, `■` durdu); bir şeyi sizi beklerken, o sırada ne yapıyorsa yapsın `!`; bir turu bitirmiş ama henüz açmadığınız bir işçi için `✓`, durum olarak `bitti, henüz bakılmadı`; oturumu başlarken `◌`; yoksa durumunun kendi işareti (`●` `◐` `◇` iş başında, `○` `◦` boşta). Her durum kendi biçimidir, mono tema da ayırt eder. Lider hep `◆` kalır.
 - Agent'ın konuşmacı renginde `▎`: günlükte ve bir konuşmada satırlarının taşıdığı renk, böylece satır ve konuşması tek agent olarak okunur.
 - Satıcısının renginde adı; sonra kirliyse `~` ya da `≈` (araştırma kirliliği, yalnız demoda).
 - Bir işçinin kartı: `#3` ve kartın başlığı. Lider yerine satıcısını gösterir.
-- Durumu: `düşünüyor…`, yaptığını söylediği şey, bir takım arkadaşının yanıtını beklerken `? → claude-2`, bir sorusu sizi beklerken `? → sen`, bir araç çağrısı SENİ BEKLEYEN'de beklerken `⚑ onayını bekliyor`, yanıtı okunmayı beklerken `sana yanıt verdi`, işçileri çalışan bir lider için `koordine ediyor`, `BLOKE`, `■ durdu, yazınca yeniden başlar`, `◦ önceki çalışmadan beri uyuyor, yazınca uyanır`.
+- Durumu: oturumu kalkarken (süreç, ilk worktree'nin checkout'u) `başlıyor…`, `düşünüyor…`, yaptığını söylediği şey, bir takım arkadaşının yanıtını beklerken `? → claude-2`, bir sorusu sizi beklerken `? → sen`, bir araç çağrısı SENİ BEKLEYEN'de beklerken `⚑ onayını bekliyor`, yanıtı okunmayı beklerken `sana yanıt verdi`, işçileri çalışan bir lider için `koordine ediyor`, `BLOKE`, `■ durdu, yazınca yeniden başlar`, `◦ önceki çalışmadan beri uyuyor, yazınca uyanır`.
 - Varsa harcadığı.
 - Bir işçinin worktree durumu, `⎇ fix-parser ↑2 ↓1 +12 −3`: agent'ın açtığı dal (worktree imece'nin bıraktığı gibi detached iken yok), checkout'ta olmayan kendi commit'leri (imece'nin uygulanan değişiklik işaretleri sayılmaz), kendisinde olmayan checkout commit'leri ve kendi HEAD'ine göre eklenen ve silinen satırlar, izlenmeyen dosyalar dahil: bir sonraki `done`'un size vereceği şey. Her parça yalnız söyleyecek bir şey varken görünür. imece'nin git iş parçacığında okunur: oturum başlarken, bir tur bitince, bir uygulamadan sonra ve işçi ya da bir yardımcısı tur ortasındayken her 15 saniyede; çalıştırmalar arasında saklanmaz.
 - `▾ 1 yardımcı` ya da `▸ 1 yardımcı`: yardımcıları altında listelenir ya da katlanmıştır.
 - `↗ localhost:5173/`: işçi ya da yardımcının kendi metninde yazdığı en yeni yerel adres, terminalin açtığı bir bağlantı olarak (OSC 8). Yalnız `localhost`, `127.0.0.1` ya da `[::1]` üzerinde `http`/`https` sayılır, sorgu ve parça atılır, 60 karakteri aşan bir adres hiç gösterilmez. Oturumla birlikte gider.
+- Yardımcıları olan bir işçi `▾ 2 yardımcı` ile, katlıysa `▸ 2 yardımcı  ● claude-1.1` ile biter: sayı ve en yüksekleri.
 - Konuşan bir satırın altında, en son alışverişi taşıyan soluk italik bir satır: `⇄ claude-2 "hangi parser?"`.
 
 Yeni değişen bir satır bir an öne çıkar, sonra sakinleşir. Seçili satır ters renklidir.
 
-Satırlar panele sığmadığında sakin işçiler (çalışan ya da boşta, son zamanda bir şey dememiş, seçili olmayan) salonun altından yukarıya doğru tek satıra katlanır: `… 2 agent yolunda`; sabitlenmiş bir proje en son katlanır ve sizi bekleyen hiç katlanmaz. Panelin alt satırı `KUYRUK`, doğrulanan kartları ve son dört biteni (`#2 ✓`) listeler; canlıda doğrulama kısmını hiçbir şey doldurmaz, `boş` yazar.
+Satırlar panele sığmadığında sakin işçiler (çalışan ya da boşta, son zamanda bir şey dememiş, seçili olmayan) salonun altından yukarıya doğru tek satıra katlanır: `… 2 agent katlı, en yükseği  ● codex-2`, en yükseklerinin adıyla; sabitlenmiş bir proje en son katlanır ve sizi bekleyen hiç katlanmaz. Panelin alt satırı `KUYRUK`, doğrulanan kartları ve son dört biteni (`#2 ✓`) listeler; canlıda doğrulama kısmını hiçbir şey doldurmaz, `boş` yazar.
+
+## Durum merdiveni
+
+Her agent tek bir basamakta durur, en yüksekten: takıldı (bloke ya da oturumu durdu: siz yazmadan bir yere varamaz) > bir şeyi sizi bekliyor > çalışıyor (tur ortasında, bir takım arkadaşına soruyor, araştırıyor) > başlıyor > bitti, bakılmadı > boşta (ya da uyuyor, ya da gitti). Basamak satırın işaretini, projesinde hangi işçinin önce geldiğini (takılan, sonra sizi bekleyen, sonra bitip bakılmamış; sakin basamaklar sıralarını korur ki agent'lar boştan işe gidip gelirken ekran zıplamasın), `f`'nin ne gösterdiğini ve katlı bir grubun (bir proje, bir işçinin yardımcıları, katlanan sakin işçiler) hepsi adına hangi üyeyi gösterdiğini belirler: en yüksek basamaktaki, eşitler arasında sıradaki ilk.
 
 ## Lejant
 
@@ -76,14 +81,15 @@ Satırlar panele sığmadığında sakin işçiler (çalışan ya da boşta, son
 | İşaret | Anlamı |
 | --- | --- |
 | `◆` | lider (ne yapsa bu işareti taşır) |
+| `◌` | başlıyor: oturumu kalkıyor, henüz yanıt vermedi |
 | `●` | çalışıyor: tur ortasında |
 | `◐` | bir takım arkadaşına soruyor, yanıtını bekliyor |
 | `✕` | bloke (araştırma bekliyor) ya da bir proje başlığında bloke agent sayısı |
-| `!` | onayınızı bekliyor; başlıktaki sayı ve SENİ BEKLEYEN'in kendi işareti de |
+| `!` | bir şeyi sizi bekliyor, o sırada ne yapıyorsa yapsın; başlıktaki sayı ve SENİ BEKLEYEN'in kendi işareti de |
 | `◇` | araştırmacı (yalnız demoda; araştırmacı katmanı canlıda yapılmadı) |
 | `○` | boşta |
 | `✓` | bitti, bakılmadı: bir turu bitirdi, o zamandan beri açmadınız |
-| `■` | durdu: oturum bitti; ona yazmak yeni bir oturum başlatır |
+| `■` | durdu: oturum bitti; ona yazmak yeni bir oturum başlatır; bir proje başlığında durmuş agent sayısı da |
 | `◦` | önceki çalıştırmadan beri uyuyor; ona yazmak uyandırır |
 | `⇄` | bir konuşma satırı |
 | `▾` `▸` | bir proje ya da bir işçinin yardımcıları, açık ya da katlı |

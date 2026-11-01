@@ -82,7 +82,7 @@ Agents address each other by these names on the bus; a `send` to a name that is 
  ✓ gemini-1        done, not seen yet
 ```
 
-Workers that need you come first (waiting for you, then stuck, then done and not seen); helpers sit under their worker and fold with `h` `l`. The header counts the fleet: `● 2 working ✓ 1 done ✕ 1 stuck`.
+Workers that need you come first (stuck, then waiting for you, then done and not seen: the [state ladder](../screen/salon.md#the-state-ladder)); helpers sit under their worker and fold with `h` `l`. The header counts the fleet: `● 2 working ✓ 1 done ✕ 1 stuck`.
 
 ## See also
 
