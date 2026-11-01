@@ -31,6 +31,9 @@ const SIDE: &str = "side";
 const THEME: &str = "theme";
 const LEAD: &str = "lead";
 const NOTIFY: &str = "notify";
+/// The newest version whose "what's new" a start showed (or that started
+/// first): the next start of a newer one shows what is new since.
+const SEEN: &str = "seen";
 
 /// The person's choices; a missing or bad value is `None`.
 #[derive(Debug, Default, PartialEq, Eq)]
@@ -41,6 +44,8 @@ pub struct Prefs {
     pub lead: Option<String>,
     /// How the person is told in another window (`:notify`).
     pub notify: Option<Notify>,
+    /// The version that started last (`0.2.0`).
+    pub seen: Option<String>,
 }
 
 impl Prefs {
@@ -50,6 +55,7 @@ impl Prefs {
         theme: Option<String>,
         lead: Option<String>,
         notify: Option<String>,
+        seen: Option<String>,
     ) -> Prefs {
         Prefs {
             side: side
@@ -60,6 +66,7 @@ impl Prefs {
                 .map(|l| l.trim().to_string())
                 .filter(|l| !l.is_empty() && l.chars().all(|c| c.is_ascii_lowercase())),
             notify: notify.and_then(|n| Notify::parse(&n)),
+            seen: seen.filter(|v| crate::welcome::parse_version(v).is_some()),
         }
     }
 
@@ -70,7 +77,7 @@ impl Prefs {
                 .find_map(|l| l.strip_prefix(key))
                 .map(|v| v.to_string())
         };
-        Prefs::checked(value("side="), value("theme="), value("lead="), None)
+        Prefs::checked(value("side="), value("theme="), value("lead="), None, None)
     }
 }
 
@@ -109,12 +116,13 @@ pub fn load(dir: &Path) -> Prefs {
             let _ = fs::remove_file(legacy(dir));
         }
     }
-    match store::settings(&file(dir), &[SIDE, THEME, LEAD, NOTIFY]) {
+    match store::settings(&file(dir), &[SIDE, THEME, LEAD, NOTIFY, SEEN]) {
         Ok(mut v) => {
+            let seen = v.pop().flatten();
             let notify = v.pop().flatten();
             let lead = v.pop().flatten();
             let theme = v.pop().flatten();
-            Prefs::checked(v.pop().flatten(), theme, lead, notify)
+            Prefs::checked(v.pop().flatten(), theme, lead, notify, seen)
         }
         Err(_) => Prefs::default(),
     }
@@ -142,6 +150,11 @@ pub fn save(
     store::set_settings(&file(dir), &set, &unset)
 }
 
+/// Keeps `version` as the one that started last in `dir`.
+pub fn seen(dir: &Path, version: &str) -> Result<(), String> {
+    store::set_settings(&file(dir), &[(SEEN, version)], &[])
+}
+
 #[cfg(test)]
 mod tests {
     use std::os::unix::fs::PermissionsExt;
@@ -167,6 +180,7 @@ mod tests {
                 theme: Some("light".into()),
                 lead: None,
                 notify: Some(Notify::Off),
+                seen: None,
             }
         );
         let mode = fs::metadata(file(&dir)).unwrap().permissions().mode();
@@ -198,6 +212,7 @@ mod tests {
                 theme: Some("gruvbox-dark-medium".into()),
                 lead: Some("codex".into()),
                 notify: Some(Notify::Text),
+                seen: None,
             }
         );
         set(&[("side", "70"), ("theme", "/home/me/Dracula.conf")]);
@@ -208,6 +223,14 @@ mod tests {
         assert_eq!(load(&dir), Prefs::default());
         set(&[("side", "19"), ("side", "x")]);
         assert_eq!(load(&dir).side, None);
+        // The version that started last, and only a version.
+        seen(&dir, "0.2.0").unwrap();
+        assert_eq!(load(&dir).seen.as_deref(), Some("0.2.0"));
+        assert_eq!(load(&dir).side, None, "nothing else written");
+        save(&dir, 40, "light", None, Notify::Off).unwrap();
+        assert_eq!(load(&dir).seen.as_deref(), Some("0.2.0"), "kept by a save");
+        set(&[("seen", "v1")]);
+        assert_eq!(load(&dir).seen, None);
         fs::remove_dir_all(&dir).unwrap();
     }
 
@@ -223,6 +246,7 @@ mod tests {
                 theme: Some("dracula".into()),
                 lead: Some("gemini".into()),
                 notify: None,
+                seen: None,
             }
         );
         assert!(!legacy(&dir).exists(), "moved, so gone");

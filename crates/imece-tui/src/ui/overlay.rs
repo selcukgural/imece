@@ -8,6 +8,8 @@ use ratatui::widgets::{Block, Paragraph};
 
 use super::*;
 use crate::app::{App, Digest, LeftOff, PickStep, SoloPick, TalkNote, Thread};
+use crate::welcome::{self, Seen};
+use imece_agent::Login;
 
 fn centered(area: Rect, width: u16, height: u16) -> Rect {
     let width = width.min(area.width);
@@ -321,6 +323,94 @@ pub fn left_off(f: &mut Frame, app: &App, l: &LeftOff) {
         None => t.left_title.to_string(),
     };
     window(f, title, lines, 84);
+}
+
+/// The first-run window (`:welcome`): what imece is, the coding agents on
+/// this machine (version, signed in or how to sign in, `checking…` until
+/// they answer), and the keys to start with.
+pub fn welcome(f: &mut Frame, app: &App) {
+    let t = app.lang.text();
+    let mut lines: Vec<Line> = t
+        .welcome_about
+        .iter()
+        .map(|l| Line::raw(format!(" {l}")))
+        .collect();
+    lines.push(Line::raw(""));
+    lines.push(Line::from(Span::styled(
+        format!(" {}", t.welcome_vendors),
+        bold(pal().strong),
+    )));
+    for (v, seen) in &app.vendors {
+        lines.push(vendor_line(app, *v, seen));
+    }
+    lines.push(Line::raw(""));
+    lines.push(Line::from(Span::styled(
+        format!(" {}", t.welcome_keys_title),
+        bold(pal().strong),
+    )));
+    for (k, what) in &t.welcome_keys {
+        lines.push(Line::from(vec![
+            Span::styled(format!("   {}", fit(k, 16)), key_style()),
+            Span::raw(*what),
+        ]));
+    }
+    lines.push(Line::raw(""));
+    lines.push(Line::from(Span::styled(t.welcome_close, dim())));
+    window(f, fill(t.welcome_title, &[welcome::VERSION]), lines, 84);
+}
+
+/// One vendor's line in the first-run window: a mark, its name, the
+/// version it gave (cleaned: a CLI's words) and its sign-in.
+fn vendor_line(app: &App, v: Vendor, seen: &Seen) -> Line<'static> {
+    let t = app.lang.text();
+    let (mark, style, version, what) = match seen {
+        Seen::Checking => ("…", dim(), String::new(), t.seen_checking.to_string()),
+        Seen::Missing => ("·", dim(), String::new(), t.seen_missing.to_string()),
+        Seen::Here { version, login } => {
+            let version = format!("{} · ", clean(version));
+            match login {
+                Login::Yes => ("✓", fg(pal().ok), version, t.login_yes.to_string()),
+                Login::No => (
+                    "✕",
+                    bold(pal().warn),
+                    version,
+                    fill(t.login_no, &[welcome::sign_in(v)]),
+                ),
+                Login::Unknown => ("?", dim(), version, t.login_unknown.to_string()),
+            }
+        }
+    };
+    Line::from(vec![
+        Span::styled(format!("   {mark} "), style),
+        Span::styled(fit(v.label(), 8), bold(pal().strong)),
+        Span::styled(version, dim()),
+        Span::styled(what, style),
+    ])
+}
+
+/// What is new (`:news`, and once at the first start of a new version):
+/// each version's lines, newest first.
+pub fn news(f: &mut Frame, app: &App) {
+    let t = app.lang.text();
+    let mut lines: Vec<Line> = Vec::new();
+    for version in &app.news {
+        let Some((_, said)) = t.news.iter().find(|(v, _)| v == version) else {
+            continue;
+        };
+        if !lines.is_empty() {
+            lines.push(Line::raw(""));
+        }
+        lines.push(Line::from(Span::styled(
+            format!(" {version}"),
+            bold(pal().strong),
+        )));
+        for l in *said {
+            lines.push(Line::raw(format!("   · {l}")));
+        }
+    }
+    lines.push(Line::raw(""));
+    lines.push(Line::from(Span::styled(t.news_close, dim())));
+    window(f, fill(t.news_title, &[welcome::VERSION]), lines, 92);
 }
 
 /// What quitting now would leave behind (`q s`): the agents mid-turn, with

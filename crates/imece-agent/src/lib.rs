@@ -12,6 +12,7 @@ pub mod run;
 pub mod worktree;
 
 use std::io;
+use std::time::Duration;
 
 /// The name imece's MCP server has in every session; its tools are named
 /// `mcp__imece__<tool>` on the screen, whatever the vendor calls them.
@@ -30,6 +31,40 @@ pub fn valid_uuid(id: &str) -> bool {
             8 | 13 | 18 | 23 => b == b'-',
             _ => b.is_ascii_hexdigit(),
         })
+}
+
+/// Whether a vendor's CLI says it is signed in, asked without the network
+/// and without spending ([`claude::login`], [`codex::login`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Login {
+    Yes,
+    No,
+    /// It did not say, or has no way to be asked (Gemini CLI): its first
+    /// session tells.
+    Unknown,
+}
+
+/// How long a vendor's CLI has to answer a question about itself.
+pub const ASK_WAIT: Duration = Duration::from_secs(5);
+
+/// The longest version line kept.
+const VERSION_MAX: usize = 60;
+
+/// What `program --version` says, its first line (at most 60 characters),
+/// run outside any checkout with the variables `keep` besides
+/// [`child::BASE_ENV`]; none when it is not there or does not answer.
+pub fn version(program: &str, keep: &[&str]) -> Option<String> {
+    let mut cmd = child::command(program, &std::env::temp_dir(), keep);
+    cmd.arg("--version");
+    let (status, said) = child::ask(cmd, ASK_WAIT)?;
+    status.success().then(|| first_line(&said))
+}
+
+/// The first line of `said` that is not blank, trimmed and cut at
+/// [`VERSION_MAX`] characters.
+fn first_line(said: &str) -> String {
+    let line = said.lines().map(str::trim).find(|l| !l.is_empty());
+    line.unwrap_or_default().chars().take(VERSION_MAX).collect()
 }
 
 /// How a session starts imece's MCP server, and which of its tools the
@@ -230,6 +265,39 @@ impl Confine {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_version_is_the_first_line_said_cut_and_only_when_it_answers() {
+        assert_eq!(
+            first_line("\n  2.1.3 (Claude Code)  \nmore\n"),
+            "2.1.3 (Claude Code)"
+        );
+        assert_eq!(first_line(""), "");
+        assert_eq!(first_line(&"x".repeat(80)).len(), 60);
+        assert_eq!(first_line(&"x".repeat(60)).len(), 60);
+        let dir = std::env::temp_dir().join(format!("imece-version-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let fake = |name: &str, script: &str| {
+            let path = dir.join(name);
+            std::fs::write(&path, format!("#!/bin/sh\n{script}\n")).unwrap();
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+            path.display().to_string()
+        };
+        let good = fake(
+            "good",
+            r#"[ "$1" = --version ] && echo "codex-cli 0.9" && exit 0; exit 9"#,
+        );
+        assert_eq!(version(&good, &[]).as_deref(), Some("codex-cli 0.9"));
+        let bad = fake("bad", "echo 1.0; exit 1");
+        assert_eq!(
+            version(&bad, &[]),
+            None,
+            "a failing --version is no version"
+        );
+        assert_eq!(version(&dir.join("gone").display().to_string(), &[]), None);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
 
     #[test]
     fn tiers_go_over_the_wire_by_name_and_back() {

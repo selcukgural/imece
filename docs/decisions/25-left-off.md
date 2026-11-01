@@ -20,3 +20,6 @@ it. Nothing to tell (no lines from before, nothing waiting) → no
 window; the demo never has one. `Live::left_off()` carries the journal
 count before `adopt` and the seconds since. `saved_at` is a world key
 (refused as a setting).
+
+What's new and the welcome window (record 75) come before it, each
+closed by its own key.

@@ -20,7 +20,9 @@ use crate::shell::{Caught, Output, Ran};
 use crate::sim::{self, Sim};
 use crate::theme;
 use crate::ui;
-use imece_agent::Choice;
+use crate::welcome::{self, LISTED, Seen};
+use imece_agent::{Choice, Login};
+use std::sync::mpsc::TryRecvError;
 
 /// What drives the agents.
 pub enum Engine {
@@ -727,6 +729,21 @@ pub struct App {
     pub digest: Option<Digest>,
     /// What an earlier run left behind, shown once at the start.
     pub left_off: Option<LeftOff>,
+    /// The first-run window is open (`:welcome`).
+    pub welcome: bool,
+    /// What the window lists of each vendor's CLI, in [`LISTED`]'s order.
+    pub vendors: Vec<(Vendor, Seen)>,
+    /// How a live run asks the vendors' CLIs ([`live::look`]); none in the
+    /// demo, whose vendors are its own.
+    pub look: Option<welcome::Look>,
+    /// The answers still to come.
+    looking: Option<welcome::Answers>,
+    /// The leader's vendor, while a start waits to hear whether it is
+    /// signed in: not opens the window.
+    lead_check: Option<Vendor>,
+    /// The versions whose news are open, newest first; none: closed
+    /// (`:news`).
+    pub news: Vec<&'static str>,
     /// What quitting now would leave behind, open over the screen (`q s`).
     pub leaving: bool,
     /// The theme in use while another is previewed (`:theme NAME` being
@@ -774,6 +791,12 @@ impl App {
                 .left_off()
                 .and_then(|left| LeftOff::of(&world, left.journal, left.ago)),
             Engine::Sim(_) => None,
+        };
+        // Live, every vendor is asked when the window opens; the demo's
+        // are its own.
+        let vendors = match &engine {
+            Engine::Live(_) => LISTED.map(|v| (v, Seen::Checking)).to_vec(),
+            Engine::Sim(_) => sim::vendors(),
         };
         App {
             world,
@@ -833,6 +856,12 @@ impl App {
             primary: None,
             digest: None,
             left_off,
+            welcome: false,
+            vendors,
+            look: None,
+            looking: None,
+            lead_check: None,
+            news: Vec::new(),
             leaving: false,
             theme_was: None,
             flash: None,
@@ -1153,6 +1182,100 @@ impl App {
     /// `F` or `:hints`: a label on every row the salon's screen showed
     /// last that can be selected, in the order drawn. Only there, with no
     /// conversation over it: elsewhere the screen has no such rows.
+    /// Whether a window any key closes is open: what is new, the
+    /// first-run window, the away digest, where the person left off.
+    fn window_open(&self) -> bool {
+        !self.news.is_empty() || self.welcome || self.digest.is_some() || self.left_off.is_some()
+    }
+
+    /// `:welcome`: the first-run window, every vendor asked again (live).
+    pub fn open_welcome(&mut self) {
+        self.welcome = true;
+        self.look_at(&LISTED);
+    }
+
+    /// Asks the vendors `which` about themselves again, live: their lines
+    /// say `checking…` until the answers come ([`App::looked`]).
+    fn look_at(&mut self, which: &[Vendor]) {
+        let Some(look) = self.look else {
+            return;
+        };
+        for (v, seen) in &mut self.vendors {
+            if which.contains(v) {
+                *seen = Seen::Checking;
+            }
+        }
+        self.looking = Some(look(which));
+    }
+
+    /// A live start: the first ever opens the first-run window; any other
+    /// asks only whether the leader's vendor is signed in, and opens it
+    /// when not ([`App::looked`]).
+    pub fn start_welcome(&mut self, first: bool) {
+        if first {
+            return self.open_welcome();
+        }
+        let p = &self.world.projects[self.current_project()];
+        let lead = self.world.agents[p.leader].vendor;
+        self.lead_check = Some(lead);
+        self.look_at(&[lead]);
+    }
+
+    /// The answers the vendors gave since last time, each on its line. The
+    /// leader's vendor not signed in at the start opens the window, the
+    /// others asked then; while the person writes, a line says so instead.
+    pub fn looked(&mut self) {
+        let (mut got, mut done) = (Vec::new(), false);
+        if let Some(rx) = &self.looking {
+            loop {
+                match rx.try_recv() {
+                    Ok(answer) => got.push(answer),
+                    Err(TryRecvError::Empty) => break,
+                    Err(TryRecvError::Disconnected) => {
+                        done = true;
+                        break;
+                    }
+                }
+            }
+        }
+        if done {
+            self.looking = None;
+        }
+        for (v, seen) in got {
+            let out = matches!(
+                seen,
+                Seen::Here {
+                    login: Login::No,
+                    ..
+                }
+            );
+            if let Some(line) = self.vendors.iter_mut().find(|(w, _)| *w == v) {
+                line.1 = seen;
+            }
+            if self.lead_check != Some(v) {
+                continue;
+            }
+            self.lead_check = None;
+            if !out {
+                continue;
+            }
+            if self.typing {
+                let t = self.lang.text();
+                self.flash(fill(t.not_signed_in, &[v.label()]));
+            } else {
+                self.welcome = true;
+                let others: Vec<Vendor> = LISTED.into_iter().filter(|&w| w != v).collect();
+                self.look_at(&others);
+            }
+        }
+    }
+
+    /// `:news`: what is new in the latest versions.
+    fn open_news(&mut self) {
+        let news = self.lang.text().news;
+        self.news = news.iter().take(welcome::NEWS_SHOWN).map(|n| n.0).collect();
+    }
+
     fn open_hints(&mut self) {
         let targets: Vec<Target> = if self.pane_keys() && self.thread.is_none() {
             self.hintable.borrow().iter().map(|&(t, _, _)| t).collect()
@@ -1438,7 +1561,11 @@ impl App {
             return;
         }
         // An overlay takes the key that closes it.
-        if self.digest.take().is_some() || self.left_off.take().is_some() {
+        if !std::mem::take(&mut self.news).is_empty()
+            || std::mem::take(&mut self.welcome)
+            || self.digest.take().is_some()
+            || self.left_off.take().is_some()
+        {
             return;
         }
         if self.solo_pick.is_some() {
@@ -2764,11 +2891,7 @@ impl App {
             let text = pasted(text).replace(['\n', '\t'], " ");
             return self.help_find.push_str(&text);
         }
-        let open = self.help
-            || self.solo_pick.is_some()
-            || self.digest.is_some()
-            || self.left_off.is_some()
-            || self.leaving;
+        let open = self.help || self.solo_pick.is_some() || self.window_open() || self.leaving;
         if !self.typing || open {
             return self.flash(self.lang.text().paste_not_writing);
         }
@@ -2865,6 +2988,7 @@ impl App {
                 Some(fill(t.value_waiting, &[&open]))
             }
             "needs" => Some(on_off(self.needs_only)),
+            "news" => Some(welcome::VERSION.to_string()),
             "settle" => Some(match self.selected {
                 Sel::Agent(id) => self.world.agents[id].name.clone(),
                 Sel::Project(p) => self.world.projects[p].name.clone(),
@@ -3182,6 +3306,8 @@ impl App {
                 }
             }
             "hints" => self.open_hints(),
+            "welcome" => self.open_welcome(),
+            "news" => self.open_news(),
             "settle" => {
                 self.go_salon();
                 self.settle_at_hand();
@@ -3587,8 +3713,7 @@ impl App {
             || self.help
             || self.solo_pick.is_some()
             || self.leaving
-            || self.digest.is_some()
-            || self.left_off.is_some();
+            || self.window_open();
         if busy || now.duration_since(at) < FOCUS_AWAY {
             return;
         }
@@ -7232,6 +7357,160 @@ mod tests {
         let app = App::with(w, Engine::Live(Box::new(live)), Lang::En);
         assert!(app.left_off.is_none());
         assert!(App::new(1, 1, 0, 1, Lang::En).left_off.is_none());
+    }
+
+    /// What `live::look` would answer, without running anything: Claude
+    /// Code signed in, Codex not, Gemini CLI not there; only the vendors
+    /// asked answer.
+    fn fake_look(which: &[Vendor]) -> welcome::Answers {
+        let (tx, rx) = std::sync::mpsc::channel();
+        for &v in which {
+            let seen = match v {
+                Vendor::Claude => here("2.1.3", Login::Yes),
+                Vendor::Codex => here("0.9", Login::No),
+                _ => Seen::Missing,
+            };
+            tx.send((v, seen)).unwrap();
+        }
+        rx
+    }
+
+    fn here(version: &str, login: Login) -> Seen {
+        Seen::Here {
+            version: version.into(),
+            login,
+        }
+    }
+
+    /// A live app whose leader is of `lead`, asking the fake vendors.
+    fn live_welcome(lead: Vendor) -> App {
+        let mut w = crate::live::testing::team(1);
+        let leader = w.projects[0].leader;
+        w.agents[leader].vendor = lead;
+        let live = crate::live::testing::idle_live(2);
+        let mut app = App::with(w, Engine::Live(Box::new(live)), Lang::En);
+        app.look = Some(fake_look);
+        app
+    }
+
+    #[test]
+    fn the_first_start_ever_opens_the_welcome_and_asks_every_vendor() {
+        let mut app = live_welcome(Vendor::Claude);
+        assert!(!app.welcome);
+        assert_eq!(app.vendors.len(), 3);
+        assert!(app.vendors.iter().all(|(_, s)| *s == Seen::Checking));
+        app.start_welcome(true);
+        assert!(app.welcome);
+        assert_eq!(app.lead_check, None, "the window is open already");
+        app.looked();
+        assert_eq!(
+            app.vendors,
+            [
+                (Vendor::Claude, here("2.1.3", Login::Yes)),
+                (Vendor::Codex, here("0.9", Login::No)),
+                (Vendor::Gemini, Seen::Missing),
+            ]
+        );
+        assert!(app.looking.is_none(), "every answer came");
+        // Any key closes it and does nothing else.
+        app.on_key(key(KeyCode::Char('?')));
+        assert!(!app.welcome && !app.help);
+        // `:welcome` opens it again and asks again.
+        app.vendors[0].1 = Seen::Missing;
+        app.input = ":welcome".into();
+        app.typing = true;
+        app.on_key(key(KeyCode::Enter));
+        assert!(app.welcome);
+        assert_eq!(app.vendors[0].1, Seen::Checking);
+        app.looked();
+        assert_eq!(app.vendors[0].1, here("2.1.3", Login::Yes));
+    }
+
+    #[test]
+    fn a_later_start_asks_only_the_leader_s_vendor_and_opens_when_it_is_not_signed_in() {
+        // Signed in: nothing opens, the others are not asked.
+        let mut app = live_welcome(Vendor::Claude);
+        app.vendors[1].1 = Seen::Missing;
+        app.start_welcome(false);
+        assert_eq!(app.lead_check, Some(Vendor::Claude));
+        assert!(!app.welcome);
+        app.looked();
+        assert!(!app.welcome);
+        assert_eq!(app.lead_check, None);
+        assert_eq!(app.vendors[0].1, here("2.1.3", Login::Yes));
+        assert_eq!(app.vendors[1].1, Seen::Missing, "not asked");
+        assert_eq!(app.vendors[2].1, Seen::Checking, "not asked");
+        // Not signed in: the window opens and the others are asked.
+        let mut app = live_welcome(Vendor::Codex);
+        app.start_welcome(false);
+        assert_eq!(app.lead_check, Some(Vendor::Codex));
+        assert_eq!(app.vendors[0].1, Seen::Checking);
+        app.looked();
+        assert!(app.welcome);
+        assert_eq!(app.lead_check, None);
+        assert_eq!(app.vendors[1].1, here("0.9", Login::No), "its answer stays");
+        app.looked();
+        assert_eq!(app.vendors[0].1, here("2.1.3", Login::Yes));
+        assert_eq!(app.vendors[2].1, Seen::Missing);
+        // While the person writes, a line says so instead.
+        let mut app = live_welcome(Vendor::Codex);
+        app.start_welcome(false);
+        app.typing = true;
+        app.looked();
+        assert!(!app.welcome);
+        let said = &app.flash.as_ref().expect("said").0;
+        assert_eq!(said, "codex is not signed in: :welcome says how");
+        // Nothing asked, nothing changes.
+        let mut app = live_welcome(Vendor::Codex);
+        app.looked();
+        assert!(!app.welcome && app.flash.is_none());
+    }
+
+    #[test]
+    fn the_demo_s_welcome_lists_its_own_vendors_and_news_shows_the_latest() {
+        let mut app = App::new(1, 1, 0, 1, Lang::En);
+        assert_eq!(app.vendors, crate::sim::vendors());
+        // All three there, as live lists them; Gemini's sign-in not asked.
+        let logins: Vec<(Vendor, Option<Login>)> = app
+            .vendors
+            .iter()
+            .map(|(v, seen)| match seen {
+                Seen::Here { version, login } => {
+                    assert!(version.ends_with("· demo"), "{version}");
+                    (*v, Some(*login))
+                }
+                _ => (*v, None),
+            })
+            .collect();
+        assert_eq!(
+            logins,
+            [
+                (Vendor::Claude, Some(Login::Yes)),
+                (Vendor::Codex, Some(Login::Yes)),
+                (Vendor::Gemini, Some(Login::Unknown)),
+            ]
+        );
+        assert!(!app.welcome && app.news.is_empty() && app.look.is_none());
+        app.input = ":welcome".into();
+        app.typing = true;
+        app.on_key(key(KeyCode::Enter));
+        assert!(app.welcome);
+        assert_eq!(app.vendors, crate::sim::vendors(), "nothing asked");
+        app.on_key(key(KeyCode::Char('x')));
+        assert!(!app.welcome);
+        app.input = ":news".into();
+        app.typing = true;
+        app.on_key(key(KeyCode::Enter));
+        let latest: Vec<&str> = Lang::En.text().news.iter().take(3).map(|n| n.0).collect();
+        assert_eq!(app.news, latest);
+        assert_eq!(app.news[0], welcome::VERSION);
+        assert_eq!(app.command_note("news"), format!("({})", welcome::VERSION));
+        // The news first, then the welcome: one key each.
+        app.welcome = true;
+        app.on_key(key(KeyCode::Char('x')));
+        assert!(app.news.is_empty() && app.welcome);
+        app.on_key(key(KeyCode::Char('x')));
+        assert!(!app.welcome);
     }
 
     /// Leaving tells the store when, so the next start can say how long

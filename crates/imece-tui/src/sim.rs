@@ -623,6 +623,37 @@ struct Extras {
     paid_calls: (u32, u64),
 }
 
+/// The demo's vendors as the first-run window (`:welcome`) lists them:
+/// all three there, Claude Code and Codex signed in, Gemini CLI's sign-in
+/// not asked, as live says it.
+pub fn vendors() -> Vec<(Vendor, crate::welcome::Seen)> {
+    use crate::welcome::Seen::Here;
+    use imece_agent::Login;
+    vec![
+        (
+            Vendor::Claude,
+            Here {
+                version: "2.1.0 (Claude Code) · demo".into(),
+                login: Login::Yes,
+            },
+        ),
+        (
+            Vendor::Codex,
+            Here {
+                version: "codex-cli 0.165.0 · demo".into(),
+                login: Login::Yes,
+            },
+        ),
+        (
+            Vendor::Gemini,
+            Here {
+                version: "0.65.0 · demo".into(),
+                login: Login::Unknown,
+            },
+        ),
+    ]
+}
+
 /// The size the demo gives a copied path, from `roll`: a dotfile is a
 /// few KiB at most (100 to 3 999 bytes), anything else a directory of
 /// 1 to 400 MiB.

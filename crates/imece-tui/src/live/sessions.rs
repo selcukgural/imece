@@ -770,8 +770,9 @@ mod tests {
         );
         live.start(&mut w, 1, None);
         let copied = root.join("claude-1/.env");
+        // Until it is written, not only made: the copy runs on a thread.
         for _ in 0..500 {
-            if copied.exists() {
+            if std::fs::read_to_string(&copied).is_ok_and(|s| s == "KEY=1") {
                 break;
             }
             thread::sleep(Duration::from_millis(10));

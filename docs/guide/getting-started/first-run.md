@@ -34,6 +34,48 @@ With one vendor on PATH, it leads and the salon opens. With several, and no `--l
 
 `enter` picks for this run; `p` picks and makes that vendor your **primary**, so the next start does not ask. The primary can also be set while imece runs with `:lead claude` (`:lead ask` forgets it, and `--lead ask` on the command line asks anyway). A primary that is no longer on PATH is said on this screen (`claude is your primary, but not on PATH`), never replaced silently. There is no silent default: this is a decision of yours.
 
+### The welcome window
+
+On the first start ever (the store remembers no earlier run), a window opens before anything moves: what imece is, the coding agents on this machine, and the keys to start with.
+
+```text
+┌ WELCOME TO IMECE 0.1.0 ──────────────────────────────────────────────────────────┐
+│ One terminal for many coding agents. A leader hires workers; each works          │
+│ in a worktree of its own, and what it changes waits for your yes.                │
+│                                                                                  │
+│ Coding agents on this machine:                                                   │
+│   ✓ claude  2.1.316 (Claude Code) · signed in                                    │
+│   ✕ codex   codex-cli 0.165.0 · not signed in: run codex login                   │
+│   ? gemini  0.65.0 · its sign-in is checked when it first starts                 │
+│                                                                                  │
+│ Keys to start with:                                                              │
+│   /  i            write to the leader: say what you want built                   │
+│   @name text      write to one agent                                             │
+│   W               the next thing waiting for you: a change, a question           │
+│   …                                                                              │
+│ any key: close · :welcome shows this again                                       │
+└──────────────────────────────────────────────────────────────────────────────────┘
+```
+
+Each vendor's line says its version and whether it is signed in, or how to sign in: `claude auth login`, `codex login`. imece asks the CLIs themselves (`claude auth status`, `codex login status`), on a thread of its own, without the network and without spending; a line says `checking…` until its answer comes, `not on PATH` when the program is not there. Gemini CLI has no such question: its sign-in is checked when its first session starts, and a missing one stops that session with the reason.
+
+On every later start imece asks only the leader's vendor, and opens the same window when it says it is not signed in (while you are writing, a line says `codex is not signed in: :welcome says how` instead). `:welcome` opens it any time and asks every vendor again. Any key closes it and does nothing else.
+
+### What's new
+
+The first start of a new version shows, once, what is new since the version that started before it (at most three versions), before WHERE YOU LEFT OFF:
+
+```text
+┌ WHAT'S NEW IN IMECE 0.1.0 ───────────────────────────────────────────────────────────────┐
+│ 0.1.0                                                                                    │
+│   · The first release, for macOS and Linux: one curl line installs and updates it.        │
+│   · …                                                                                    │
+│ any key: close · :news shows this again                                                  │
+└──────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+The version that started last is kept in the store (`seen`); the very first start shows the welcome window instead. Any key closes it; `:news` shows the latest versions' news any time.
+
 ### Where you left off
 
 The first time there is nothing to show. On a later start that remembers an earlier run, one window opens before anything moves:
