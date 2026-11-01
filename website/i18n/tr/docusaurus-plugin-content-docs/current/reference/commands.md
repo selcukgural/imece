@@ -12,7 +12,7 @@ description: imece'nin aldığı her `:` komutu; argümanları, karşılığı o
 - `:` sonra `tab` komutları listeler. Menü her komutun ardında şu an ne durumda olduğunu ya da neye etki edeceğini ayraç içinde gösterir: `budget (spent $3.10 of $20.00)`, `theme (dark)`, `lead (claude)`, `close (kule)`, `forget (claude-2)`, `next (2 waiting)`, `needs (off)`. Not çizilir, asla satıra eklenmez.
 - Bir komutun ardındaki `$` sonraki faturayı büyütenleri işaretler: `:open` (yeni bir lider oturumu), `:solo` (yeni bir oturum), `:forget` (bütün brifingi önbelleksiz yeniden ödeyen yeni bir oturum) ve `:commit` (ücretli bir çağrı). Hiçbir `:` komutu kendi başına ücretli bir tur başlatmaz; `:budget` işaret yerine değerini gösterir.
 - Kısa adlar: `:b` budget, `:c` close, `:f` forget, `:o` open, `:q` quit, `:t` theme. Bütünüyle yazılan kısa ad zaten bir komuttur; menü bir şey sunmaz ve `enter` çalıştırır (`:q` sonra `enter` hemen sorar).
-- Argümanlar da tamamlanır: `:lang` sonra diller, `:lead` sonra satıcılar, `:theme` sonra yerleşik adlar, `:close` ve `:pin` sonra açık projeler, `:forget`, `:talk` ve `:trace` sonra açık projelerin ajanları (`@` ile ya da onsuz), `:open` ve `:export` sonra dizinler (`~` ev dizininiz, gizli olanlar yalnızca bir `.` sonrası, `tab` seçilenin içine adım atar).
+- Argümanlar da tamamlanır: `:lang` sonra diller, `:lead` sonra satıcılar, `:notify` sonra üç kelimesi, `:theme` sonra yerleşik adlar, `:close` ve `:pin` sonra açık projeler, `:forget`, `:talk` ve `:trace` sonra açık projelerin ajanları (`@` ile ya da onsuz), `:open` ve `:export` sonra dizinler (`~` ev dizininiz, gizli olanlar yalnızca bir `.` sonrası, `tab` seçilenin içine adım atar).
 - imece'nin bilmediği bir ad: `no command xyz; : and tab list them`. Canlıda yazılan yalnızca demoya ait bir komut: `:pause is for the demo: live agents run in real time`.
 - `!cmd` kendi kabuğunuzda bir komut çalıştırır, `/cmd` ajanın kendi komut satırıdır; ikisi de `:` komutu değildir ([komut satırı](../screen/command-line.md)).
 
@@ -40,6 +40,7 @@ description: imece'nin aldığı her `:` komutu; argümanları, karşılığı o
 | `:model NAME` | — | | | | eldeki solonun modeli ya da `default` |
 | `:needs` | `f` | | | | açık / kapalı |
 | `:next` | `W` | | | | N bekliyor |
+| `:notify [off\|bell\|text]` | — | | | | off / bell / text |
 | `:open PATH [NAME]` | — | `:o` | | `$` | |
 | `:pause` | `space` | | evet | | açık / kapalı |
 | `:pending` | `q s` | | | | |
@@ -144,6 +145,12 @@ Salon yalnızca sizi bekleyenleri gösterir (sizi bekleyen, takılmış, bitmiş
 ### `:next`
 
 Sizi bekleyen sonraki kalemi her yerden açar, `W` gibi. Menü notu kaç kalemin beklediğini söyler: `(2 bekliyor)`.
+
+### `:notify [off|bell|text]`
+
+Başka bir penceredeyken sizi bekleyen bir şey geldiğinde nasıl haber alacağınız: `bell` terminalin zilini çalar (her terminalin bunun için bir ayarı vardır: ses, sekmede rozet, flaş; tmux'ta `monitor-bell`), `text` imece'nin sözleriyle bir masaüstü bildirimi gönderir (OSC 9: iTerm2, WezTerm, Ghostty; diziyi tanımayan bir terminal yok sayar, orada `bell` seçin), `off` (varsayılan) ikisi de değil. Yalın `:notify` sıradakine geçer: off, bell, text, off. Flaş `başka penceredeyken bir şey beklerse zil çalar`, `başka penceredeyken bir şey beklerse masaüstü bildirimi gelir` ya da `başka penceredeyken haber yok` der; başka bir kelime: `beep off, bell ya da text değil`. Menü notu değeri gösterir; depoda hatırlanır.
+
+Ne çalar: SENİ BEKLEYEN'e yeni düşen bir kalem (değişiklik, soru, cevap, onay isteği, hassas bir şey) ya da takılan bir ajan (bloke, oturumu durmuş), terminal odakta değilken geldiyse ve beş saniye sonra hâlâ oradaysa, her biri bir kez. Bildirim türü ve ajanı söyler, ajanın sözlerini asla: `imece · claude-1 bitirdi: bir değişiklik seni bekliyor`, `imece · codex-2 sana soruyor`, `imece · gemini-1 takıldı`; aynı anda birkaçı tek zil ya da sayıyla tek bildirimdir (`imece · 3 şey seni bekliyor`). Siz ayrılırken ekranda olan hiç çalmaz; pencereye dönünce çalmak üzere olan düşer: artık ekranda. Terminal odağı bildirmeli (tmux'ta `focus-events on` gerekir); bildirmeyen hiç çalmaz. Bkz. [SENİ BEKLEYEN](../screen/waiting.md).
 
 ### `:open PATH [NAME]`
 

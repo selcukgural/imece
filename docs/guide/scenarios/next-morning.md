@@ -1,6 +1,6 @@
 ---
 title: "Coming back"
-description: "Quitting with agents mid-turn and starting again the next day: the left-off window, agents asleep, how each vendor resumes, the wake briefing, forgetting a session, the away digest, marks and export."
+description: "Quitting with agents mid-turn and starting again the next day: the left-off window, agents asleep, how each vendor resumes, the wake briefing, forgetting a session, the away digest, a word in another window, marks and export."
 ---
 
 # Coming back
@@ -128,6 +128,14 @@ Switch to another window for a while. When the terminal gets the focus back afte
 ```
 
 The counts are the new journal lines by kind and what waits for you now; under them the important lines since (applies, changes ready, blocks, failures, assumptions; the last eight). It is built from the journal since the focus went, no model asked. It does not open over what you are writing, the help, the quit question or another window; a shorter absence shows nothing, and the first key after twenty seconds without one still brings the key-driven digest. The terminal must report focus (tmux needs `focus-events on`).
+
+The digest tells you when you are back; `:notify` fetches you. `:notify bell` rings the terminal's bell, `:notify text` sends a desktop notification, when something came to wait for you while you were in another window and is still there five seconds later: a change, a question, an ask for your yes, an agent stuck, each once. What was on screen when you left stays quiet, and so does whatever came and went within the wait.
+
+```text
+ imece · codex-1 finished: a change waits for you
+```
+
+Several at once are one bell, or one note with the count. `:notify` bare goes round: off, bell, text, off; the choice is remembered. It needs the same focus reports as the digest, and a terminal that knows OSC 9 for the text (iTerm2, WezTerm, Ghostty; elsewhere `bell`).
 
 ## 6. Keep a place with marks
 

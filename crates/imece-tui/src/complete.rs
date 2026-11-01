@@ -12,11 +12,11 @@ use crate::model::{Agent, CardId, ProjectId, Vendor, World};
 
 /// The commands imece itself takes after `:`: its own, and a name for
 /// every key that acts (not the ones that move).
-pub const COMMANDS: [&str; 34] = [
+pub const COMMANDS: [&str; 35] = [
     "awake", "board", "budget", "close", "code", "commit", "copy", "defer", "effort", "export",
-    "faster", "fold", "forget", "help", "lang", "lead", "mark", "model", "needs", "next", "open",
-    "pause", "pending", "pin", "quit", "rename", "salon", "slower", "solo", "talk", "theme",
-    "trace", "unfold", "waiting",
+    "faster", "fold", "forget", "help", "lang", "lead", "mark", "model", "needs", "next", "notify",
+    "open", "pause", "pending", "pin", "quit", "rename", "salon", "slower", "solo", "talk",
+    "theme", "trace", "unfold", "waiting",
 ];
 
 /// The word for a vendor's own model or effort after `:model`, `:effort`
@@ -242,6 +242,15 @@ pub fn suggest(input: &str, w: &World, project: ProjectId, home: Option<&Path>) 
             Some(("lead", arg)) => {
                 let start = input.len() - arg.len();
                 menu(start, arg, matching(arg, LEADS.into_iter()), "")
+            }
+            Some(("notify", arg)) => {
+                let start = input.len() - arg.len();
+                menu(
+                    start,
+                    arg,
+                    matching(arg, crate::notify::NAMES.into_iter()),
+                    "",
+                )
             }
             // Built-in names only; a path matches none of them.
             Some(("theme", arg)) => {
@@ -556,6 +565,14 @@ mod tests {
             "the word's start"
         );
         assert_eq!(suggest(":lang tr", &w, 0, None), None);
+        let m = suggest(":notify ", &w, 0, None).unwrap();
+        assert_eq!(
+            (m.items, m.start, m.tail),
+            (crate::notify::NAMES.map(String::from).to_vec(), 8, "")
+        );
+        let m = suggest(":notify b", &w, 0, None).unwrap();
+        assert_eq!((m.items, m.start), (vec!["bell".to_string()], 8));
+        assert_eq!(suggest(":notify bell", &w, 0, None), None);
         let name = &w.agents[1].name;
         let head = &name[..3];
         for cmd in ["talk", "trace", "forget"] {

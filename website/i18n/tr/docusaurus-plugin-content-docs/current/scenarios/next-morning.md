@@ -1,6 +1,6 @@
 ---
 title: "Geri dönmek"
-description: Ajanlar tur ortasındayken çıkmak ve ertesi gün yeniden başlamak; nerede kalmıştın penceresi, uyuyan ajanlar, her satıcının nasıl devam ettiği, uyanış özeti, bir oturumu unutturmak, uzaktayken özeti, işaretler ve dışa aktarma.
+description: Ajanlar tur ortasındayken çıkmak ve ertesi gün yeniden başlamak; nerede kalmıştın penceresi, uyuyan ajanlar, her satıcının nasıl devam ettiği, uyanış özeti, bir oturumu unutturmak, uzaktayken özeti, başka penceredeyken haber, işaretler ve dışa aktarma.
 ---
 
 # Geri dönmek
@@ -128,6 +128,14 @@ Bir süre başka pencereye geçin. Terminal odağı üç dakika ya da daha uzun 
 ```
 
 Sayılar türe göre yeni günlük satırları ve şu an sizi bekleyenlerdir; altlarında o zamandan beri önemli satırlar (uygulamalar, hazır değişiklikler, blokajlar, hatalar, varsayımlar; son sekizi). Odağın gittiği andan bu yana günlükten kurulur, modele sorulmaz. Yazdığınız bir şeyin, yardımın, çıkış sorusunun ya da başka bir pencerenin üstüne açılmaz; daha kısa bir yokluk hiçbir şey göstermez ve tuşsuz geçen yirmi saniyeden sonraki ilk tuş hâlâ tuşla gelen özeti getirir. Terminal odağı bildirmeli (tmux'ta `focus-events on` gerekir).
+
+Özet döndüğünüzde anlatır; `:notify` sizi çağırır. `:notify bell` terminalin zilini çalar, `:notify text` masaüstü bildirimi gönderir: siz başka penceredeyken sizi bekleyen bir şey geldiyse ve beş saniye sonra hâlâ oradaysa; bir değişiklik, bir soru, bir onay isteği, takılan bir ajan, her biri bir kez. Siz ayrılırken ekranda olan sessiz kalır, bekleme süresi içinde gelip giden de.
+
+```text
+ imece · codex-1 bitirdi: bir değişiklik seni bekliyor
+```
+
+Aynı anda birkaçı tek zil ya da sayıyla tek bildirimdir. Yalın `:notify` sırayla döner: off, bell, text, off; seçim hatırlanır. Özetle aynı odak bildirimlerini ister, metin için de OSC 9 bilen bir terminal (iTerm2, WezTerm, Ghostty; başka yerde `bell`).
 
 ## 6. İşaretlerle yer tutun
 

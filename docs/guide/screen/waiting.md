@@ -5,7 +5,7 @@ description: The panel that holds every decision only you can take - changes to 
 
 # WAITING FOR YOU
 
-WAITING FOR YOU is the top side panel of the salon. Only decisions that need you land there; everything else stays in the journal. You meet it the first time a worker sends `done`: its change (`Δ`) appears, the header counts `! 1 waiting for you`, and the terminal's title says `imece · 1 waiting`.
+WAITING FOR YOU is the top side panel of the salon. Only decisions that need you land there; everything else stays in the journal. You meet it the first time a worker sends `done`: its change (`Δ`) appears, the header counts `! 1 waiting for you`, and the terminal's title says `imece · 1 waiting`. In another window, `:notify bell` rings the terminal's bell and `:notify text` sends a desktop notification (`imece · claude-1 finished: a change waits for you`) when something new has waited five seconds; off unless you ask, see [`:notify`](../reference/commands.md#notify-offbelltext).
 
 ```text
 ┌ WAITING FOR YOU (3) ───────────────────────────────────────────────┐

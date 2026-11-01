@@ -12,7 +12,7 @@ A line that starts with `:` is a command to imece, not a message to an agent. Yo
 - `:` then `tab` lists the commands. The menu shows after each command what it stands at now or would act on, in brackets: `budget (spent $3.10 of $20.00)`, `theme (dark)`, `lead (claude)`, `close (kule)`, `forget (claude-2)`, `next (2 waiting)`, `needs (off)`. The note is drawn, never inserted.
 - `$` after a command marks one that raises the next bill: `:open` (a new leader session), `:solo` (a new session), `:forget` (a new session that pays the whole briefing again, without the cache) and `:commit` (a paid call). No `:` command starts a paid turn by itself; `:budget` shows its value instead of a mark.
 - Short names: `:b` budget, `:c` close, `:f` forget, `:o` open, `:q` quit, `:t` theme. A short name typed whole is a command already, so the menu offers nothing and `enter` runs it (`:q` then `enter` asks at once).
-- Arguments complete too: after `:lang` the languages, after `:lead` the vendors, after `:theme` the built-in names, after `:close` and `:pin` the open projects, after `:forget`, `:talk` and `:trace` the agents of open projects (`@` or not), after `:open` and `:export` directories (`~` for your home, hidden ones only after a `.`, `tab` steps into the chosen one).
+- Arguments complete too: after `:lang` the languages, after `:lead` the vendors, after `:notify` its three words, after `:theme` the built-in names, after `:close` and `:pin` the open projects, after `:forget`, `:talk` and `:trace` the agents of open projects (`@` or not), after `:open` and `:export` directories (`~` for your home, hidden ones only after a `.`, `tab` steps into the chosen one).
 - A name imece does not know: `no command xyz; : and tab list them`. A demo-only command typed live: `:pause is for the demo: live agents run in real time`.
 - `!cmd` runs a command in your own shell and `/cmd` is the agent's own command line; neither is a `:` command ([command line](../screen/command-line.md)).
 
@@ -40,6 +40,7 @@ A line that starts with `:` is a command to imece, not a message to an agent. Yo
 | `:model NAME` | — | | | | the solo at hand's model, or `default` |
 | `:needs` | `f` | | | | on / off |
 | `:next` | `W` | | | | N waiting |
+| `:notify [off\|bell\|text]` | — | | | | off / bell / text |
 | `:open PATH [NAME]` | — | `:o` | | `$` | |
 | `:pause` | `space` | | yes | | on / off |
 | `:pending` | `q s` | | | | |
@@ -144,6 +145,12 @@ The salon shows only what needs you (waiting for you, stuck, done and not seen),
 ### `:next`
 
 Opens the next item waiting for you from anywhere, as `W`. The menu note says how many wait: `(2 waiting)`.
+
+### `:notify [off|bell|text]`
+
+How you are told, in another window, that something came to wait for you: `bell` rings the terminal's bell (every terminal has a setting for it: a sound, a badge on the tab, a flash; tmux's `monitor-bell`), `text` sends a desktop notification with imece's words (OSC 9: iTerm2, WezTerm, Ghostty; a terminal that does not know the sequence ignores it, so choose `bell` there), `off` (the default) neither. Bare `:notify` goes to the next one round: off, bell, text, off. The flash says `the bell rings when something waits and you are in another window`, `a desktop note when something waits and you are in another window` or `no word in another window`; another word: `beep is not off, bell or text`. The menu note shows the value; it is remembered in the store.
+
+What rings: a new item in WAITING FOR YOU (a change, a question, an answer, an ask for your yes, something sensitive) or an agent that got stuck (blocked, its session stopped), when it came while the terminal did not have the focus and is still there five seconds later, once each. A note names the kind and the agent, never the agent's words: `imece · claude-1 finished: a change waits for you`, `imece · codex-2 asks you`, `imece · gemini-1 is stuck`; several due at once are one bell, or one note with the count (`imece · 3 things wait for you`). What was on screen when you left never rings, and back in the window what was about to ring is dropped: it is on screen now. The terminal must report focus (tmux needs `focus-events on`); one that does not never rings. See [WAITING FOR YOU](../screen/waiting.md).
 
 ### `:open PATH [NAME]`
 

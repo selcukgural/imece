@@ -48,6 +48,7 @@ Bir mesaj birkaç satıra yayılabilir; kart açan bir mesajın ilk satırı kar
 | `:copy PATH` | | git'in yok saydığı bir yolu (`.env`, `target`) işçilerin worktree'lerine başlarken kopyala; yine basılınca bırakır (`:copy YOL`) |
 | `:pin [NAME]` | | projeyi salonun en üstüne sabitle; yine basılınca bırakır (`:pin AD`) |
 | `:awake` | | bir agent tur ortasındayken makineyi uyanık tut; yine basılınca kapatır |
+| `:notify [off\|bell\|text]` | | başka penceredeyken sizi bekleyen bir şey gelirse zil ya da masaüstü bildirimi; yalın yazılınca sıradaki |
 | `:salon` `:board` `:code` | `1` `2` `3` | üç görünüm |
 | `:lang [en\|tr]` | `L` | diğer dil, ya da adı verilen |
 | `:theme [NAME\|FILE]` (`:t`) | `T` | sonraki yerleşik tema, ya da adı verilen (`:theme AD ya da DOSYA`) |

@@ -18,7 +18,7 @@ Her senaryo gerçek imece için doğrudur: tuşlar `?` yardımının listelediğ
 | [Bir değişikliği geri göndermek, sonra yarısını almak](review-with-notes.md) | `c` ve `n` ile notlar, işçinin `↩` ve `%` ile yanıtı, `x` ile seçilen parçalar, birini alıntılayan `>`, kalanı reddeden `r`. |
 | [Üç çalışma kopyası, tek ekran](many-projects.md) | `:open`, katlama, `:pin`, `f`, `:rename`, `:copy .env`, `:close` ve her projenin çektiği tek bütçe. |
 | [Takımın yanında bir solo](solo-beside-the-team.md) | `:solo claude:opus@xhigh`, lidersiz, kendinizin sürdüğü bir oturum, her yanıttan sonra `Δ`, Codex'te ikinci bir solo, ertesi sabah `--solo`. |
-| [Geri dönmek](next-morning.md) | Tur ortasında çıkmak, "nerede kalmıştın" penceresi, uyuyan ajanlar, her satıcının nasıl devam ettiği, `:forget`, uzaktayken özeti, işaretler, `:export`. |
+| [Geri dönmek](next-morning.md) | Tur ortasında çıkmak, "nerede kalmıştın" penceresi, uyuyan ajanlar, her satıcının nasıl devam ettiği, `:forget`, uzaktayken özeti, `:notify`, işaretler, `:export`. |
 | [Takımın yanında kendi kabuğunuz](own-shell-and-commit.md) | `!cargo test`, `!vim`, ctrl-c, `:commit` ve tavanları, `:awake`, `:budget 80`, `:theme nord`, `L`. |
 
 ## Bedavaya denemek
