@@ -27,8 +27,8 @@ use crate::app::{App, FLASH, Rung, View, Zoom};
 use crate::i18n::{Lang, clean, fill};
 use crate::model::*;
 pub(crate) use crate::theme::pal;
-pub(crate) use diff::{QUOTE_LINES, file_starts, hunk_at, notes_message, place, quote};
-pub(crate) use overlay::fold;
+pub(crate) use diff::{QUOTE_LINES, copy_patch, file_starts, hunk_at, notes_message, place, quote};
+pub(crate) use overlay::{copy_lines, fold, in_view, thread_lines};
 pub(crate) use salon::{card_rows, journal_rows, reply_jump, thread_of, turn_starts};
 
 pub fn draw(f: &mut Frame, app: &App) {
@@ -672,7 +672,19 @@ fn list_marker(rest: &str) -> Option<(String, &str)> {
 /// An agent's text drawn lightly as the Markdown it usually is: headings,
 /// bullet and numbered lists, quotes, rules, tables, fenced blocks and
 /// the inline marks of [`inline`]. Every line is cleaned first.
+#[cfg(test)]
 pub(crate) fn markdown(text: &str, indent: &str) -> Vec<Line<'static>> {
+    markdown_src(text, indent)
+        .into_iter()
+        .map(|(l, _)| l)
+        .collect()
+}
+
+/// [`markdown`], each drawn line with the source line it was drawn from
+/// (cleaned), which is what copying it takes: a fence is never drawn, so
+/// a code block copies as its code; a table's rule copies as the
+/// separator line it stands for.
+pub(crate) fn markdown_src(text: &str, indent: &str) -> Vec<(Line<'static>, String)> {
     let lines = body_lines(text);
     let code = fg(pal().code);
     let mut fenced = false;
@@ -691,12 +703,13 @@ pub(crate) fn markdown(text: &str, indent: &str) -> Vec<Line<'static>> {
         if fenced {
             spans.push(Span::styled("│ ", dim()));
             spans.push(Span::styled(line.clone(), code));
-            out.push(Line::from(spans));
+            out.push((Line::from(spans), line.clone()));
             continue;
         }
         let n = table_len(&lines, at);
         if n > 0 {
-            out.extend(table(&lines[at..at + n], indent));
+            let source = lines[at..at + n].iter().cloned();
+            out.extend(table(&lines[at..at + n], indent).into_iter().zip(source));
             skip = n - 1;
             continue;
         }
@@ -722,7 +735,7 @@ pub(crate) fn markdown(text: &str, indent: &str) -> Vec<Line<'static>> {
             }
             spans.extend(inline(rest, Style::new()));
         }
-        out.push(Line::from(spans));
+        out.push((Line::from(spans), line.clone()));
     }
     out
 }
@@ -1269,6 +1282,13 @@ fn footer(f: &mut Frame, area: Rect, app: &App) {
                 ("?", t.help),
             ],
             Zoom::Trace(_) => vec![("esc", t.back), ("@", t.write_this), ("?", t.help)],
+            // Choosing lines to copy: only copy mode's keys work.
+            Zoom::Diff(id) if app.diff_copy_of(id).is_some() => {
+                let mut keys = t.copy_hints.to_vec();
+                keys.push(("Y", t.new_side));
+                keys.push(("?", t.help));
+                keys
+            }
             Zoom::Diff(_) => vec![
                 ("j k  w", t.scroll_wrap),
                 ("[ ]", t.file),
@@ -1276,6 +1296,7 @@ fn footer(f: &mut Frame, area: Rect, app: &App) {
                 ("r", t.reject),
                 (">", t.quote),
                 ("c n", t.notes),
+                ("v", t.copy_lines),
                 ("esc", t.back),
                 ("?", t.help),
             ],
@@ -6899,6 +6920,125 @@ mod tests {
     }
 
     #[test]
+    fn a_conversation_s_copy_lines_are_heads_reply_lines_and_what_was_written() {
+        let app = replies();
+        let worker = app.world.agents[1].name.clone();
+        let th = app.thread.as_ref().unwrap();
+        let lines = thread_lines(Lang::En, &app.world, &th.entries);
+        let entries: Vec<usize> = lines.iter().map(|l| l.entry).collect();
+        assert_eq!(entries, [0, 0, 0, 1, 1, 2, 2, 2, 3, 3, 3]);
+        let head = &lines[3].text;
+        assert!(
+            head.ends_with(&format!("{worker} → lead [progress]")),
+            "{head}"
+        );
+        assert_eq!(head.trim(), head, "no blanks around");
+        assert_eq!(lines[6].text, "↩ re 5: Which parser?");
+        assert_eq!(lines[7].text, "The new one.");
+        assert_eq!(
+            copy_lines(&lines, 2, 4),
+            format!("The old one?\n\n{head}\nHalf way.")
+        );
+        assert_eq!(copy_lines(&lines, 1, 2), "Which parser?\nThe old one?");
+        assert_eq!(copy_lines(&lines, 7, 7), "The new one.");
+        let tr = thread_lines(Lang::Tr, &app.world, &th.entries);
+        assert_eq!(tr[6].text, "↩ 5 yanıtı: Which parser?");
+    }
+
+    #[test]
+    fn lines_chosen_to_copy_carry_the_mark_and_the_cursor_an_arrow() {
+        let mut app = replies();
+        let th = app.thread.as_mut().unwrap();
+        th.sel = 0;
+        th.copy = Some(crate::app::Copying { anchor: 1, at: 3 });
+        let th = app.thread.as_ref().unwrap();
+        let (rows, ranges) = overlay::thread_rows(Lang::En, &app.world, th, 80);
+        let bar = |row: usize| rows[row].spans[0].content.to_string();
+        let (first, second) = (ranges[0].0, ranges[1].0);
+        assert_eq!(bar(first), " ", "the selected message's head is not chosen");
+        assert_eq!(rows[first].style, Style::new());
+        assert_eq!([bar(first + 1), bar(first + 2)], ["▌", "▌"]);
+        assert_eq!(rows[first + 1].style, changed());
+        assert_eq!(bar(second), "▶", "the cursor");
+        assert_eq!(rows[second].style, changed());
+        assert_eq!(bar(second + 1), " ");
+    }
+
+    #[test]
+    fn choosing_lines_of_a_conversation_titles_it_and_keeps_the_cursor_in_view() {
+        let mut app = app_after(1, 4, 0, Lang::En);
+        let long: Vec<String> = (0..40).map(|i| format!("row{i}")).collect();
+        app.world.said(1, &long.join("\n"));
+        app.open_thread(app.world.journal.len() - 1);
+        let s = render(&app, 124, 20);
+        assert!(s.contains("copy lines") && !s.contains("row37"), "{s}");
+        let th = app.thread.as_mut().unwrap();
+        th.copy = Some(crate::app::Copying { anchor: 38, at: 38 });
+        th.follow.set(true);
+        let s = render(&app, 124, 20);
+        assert!(s.contains("COPY · 1 chosen") && s.contains("row37"), "{s}");
+        assert!(s.contains("leave") && !s.contains("copy message"), "{s}");
+        app.lang = Lang::Tr;
+        let s = render(&app, 124, 20);
+        assert!(s.contains("KOPYALA · 1 seçili") && s.contains("çık"), "{s}");
+    }
+
+    #[test]
+    fn choosing_lines_of_a_change_titles_it_with_the_keys() {
+        let mut app = app_after(1, 4, 50, Lang::En);
+        app.world.inbox.clear();
+        app.world.change_ready(a_change(1));
+        app.zoom = Zoom::Diff(1);
+        let patch = crate::app::patch_key(&app.world.change_of(1).unwrap().patch);
+        app.diff_copy = Some((1, patch, crate::app::Copying { anchor: 0, at: 2 }));
+        let s = render(&app, 160, 40);
+        assert!(
+            s.contains("COPY · 3 chosen · y as written · Y the new side"),
+            "{s}"
+        );
+        assert!(!s.contains("CHANGE ·"), "{s}");
+        assert!(
+            s.contains(" y  copy   v esc  leave   Y  copy the new side   ?  help"),
+            "{s}"
+        );
+        assert!(
+            !s.contains("note · send notes"),
+            "the change's keys rest: {s}"
+        );
+        app.diff_copy = None;
+        let s = render(&app, 160, 40);
+        assert!(
+            s.contains("CHANGE ·") && s.contains(" v  copy lines   esc  back"),
+            "{s}"
+        );
+        app.lang = Lang::Tr;
+        app.diff_copy = Some((1, patch, crate::app::Copying { anchor: 0, at: 2 }));
+        let s = render(&app, 160, 40);
+        assert!(
+            s.contains("KOPYALA · 3 seçili · y yazıldığı gibi") && s.contains("yeni hali kopyala"),
+            "{s}"
+        );
+    }
+
+    #[test]
+    fn markdown_keeps_each_drawn_line_s_source_for_copying() {
+        let md = "# Head\n```rust\nlet x = 1;\n```\n| a | b |\n|---|---|\n| 1 | 2 |\n- item **b**";
+        let src: Vec<String> = markdown_src(md, "  ").into_iter().map(|(_, s)| s).collect();
+        assert_eq!(
+            src,
+            [
+                "# Head",
+                "let x = 1;",
+                "| a | b |",
+                "|---|---|",
+                "| 1 | 2 |",
+                "- item **b**"
+            ]
+        );
+        assert_eq!(markdown_src(md, "  ").len(), markdown(md, "  ").len());
+    }
+
+    #[test]
     fn a_reply_shows_what_it_answers_and_percent_goes_there_and_back() {
         let mut app = replies();
         let worker = app.world.agents[1].name.clone();
@@ -6993,19 +7133,22 @@ mod tests {
             "{screen}"
         );
         assert!(
-            screen.contains(" c  copy message   C  copy conversation"),
+            screen.contains(" c C  copy message · all   v  copy lines   esc  close"),
             "{screen}"
         );
         assert!(
-            screen.contains("message   [ ]  turn   %  reply ↔ question   pgup"),
+            screen.contains("message   [ ]  turn   %  reply ↔ question   c C"),
             "{screen}"
         );
         app.lang = Lang::Tr;
         let screen = render(&app, 120, 30);
         assert!(screen.contains("KONUŞMA · lead ⇄ sen · 4/4"), "{screen}");
-        assert!(screen.contains(" c  mesajı kopyala"), "{screen}");
         assert!(
-            screen.contains("mesaj   [ ]  söz sırası   %  yanıt ↔ soru   pgup"),
+            screen.contains(" c C  kopyala: mesaj · hepsi   v  satır kopyala"),
+            "{screen}"
+        );
+        assert!(
+            screen.contains("mesaj   [ ]  söz sırası   %  yanıt ↔ soru   c C"),
             "{screen}"
         );
     }

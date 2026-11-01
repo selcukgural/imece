@@ -26,7 +26,7 @@ When a worker sends `done`, imece reads its worktree and the change waits for yo
 │+    }                                                                                       │
 │+    let doc: Doc = toml::from_str(&text)?;                                                  │
 └─────────────────────────────────────────────────────────────────────────────────────────────┘
-  j k  w scroll · wrap  [ ] file  a x apply · choose a hunk  r reject  > quote to it  c n note · send notes  esc back  ? help
+  j k  w scroll · wrap  [ ] file  a x apply · choose a hunk  r reject  > quote to it  c n note · send notes  v copy lines  esc back  ? help
 ```
 
 The title: the worker, the files and lines, the done's first line. The border is in the worker's vendor colour.
@@ -47,6 +47,7 @@ The title: the worker, the files and lines, the done's first line. The border is
 | `^f` `^b`, `pgdn` `pgup`, `space` | a page down / up |
 | `[` `]` | previous / next file: the `diff --git` headers |
 | `w` | wrap long lines under themselves (a minified file, a long string); again cuts them at the edge. The scroll still counts patch lines, so `j` moves a whole line however many rows it takes. On for every change until turned off; not kept between runs |
+| `v` | choose lines to copy (below) |
 | `esc` | back to WAITING FOR YOU |
 
 Added and removed lines have their own colours; headers stand out. Every line goes through the cleaning everything drawn gets.
@@ -88,6 +89,18 @@ On the git thread the part becomes a change of its own before anything is applie
 
 `>` starts a message to the change's worker, `@claude-1 ` with the cursor after it, and under your line a `diff` fence with the file's `---` and `+++` lines and the hunk at the top: at most 40 lines, the rest counted as `… +N` (the worker has the whole hunk in its worktree). You edit all of it before `enter`; it is a plain message, journaled as said. With no hunk to quote (an empty change) the flash says so. In this view `>` quotes and no longer narrows the side panel; `.` still does.
 
+### Copying lines
+
+`v` chooses lines to copy, from the line at hand: the title becomes `COPY · 3 chosen · y as written · Y the new side · v esc leave` and the footer lists only these keys. `j` `k`, the page keys and `gg` `G` move the cursor; the lines between where you started and the cursor are marked, the cursor's in bold, and the view keeps where you started at the top while the lines fit, else it follows the cursor as little as it can.
+
+| Key | What it does |
+| --- | --- |
+| `y` | copy the lines as the patch has them, each with its `+`, `-` or space |
+| `Y` | copy the new side: only the hunks' added and kept lines, without their mark, ready to paste as code. Removed lines, file heads and `@@` lines are left out; with nothing left the flash says so and the lines stay chosen |
+| `v` `esc` | leave without copying |
+
+Other keys do nothing while you choose, so `a` does not apply the change by mistake; `?` and `q` still work. The copy goes to the system's clipboard or the terminal's (OSC 52), as `c` in a conversation does, and every line is cleaned first. A newer Δ from the worker, or leaving the change, ends the choosing.
+
 ## What the journal says after
 
 ```text
@@ -101,7 +114,7 @@ A `done` arrives as `claude-1 finished: 3 files, +41 −6 → waits for you`; an
 
 ## Demo
 
-`--demo` makes the same changes from its cards and runs, and takes `a`, `r`, `n`, `x` and `>` the same way (one apply in eight fails there, to show the failure).
+`--demo` makes the same changes from its cards and runs, and takes `a`, `r`, `n`, `x`, `>` and `v` the same way (one apply in eight fails there, to show the failure).
 
 ## See also
 

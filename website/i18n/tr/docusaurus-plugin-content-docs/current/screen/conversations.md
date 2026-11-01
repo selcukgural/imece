@@ -21,7 +21,7 @@ Bir konuşma, iki taraf arasında söylenen her şeydir: siz ve bir agent, ya da
 │▌  ↩ 8 yanıtı: Hangi parser? İki tane var                                  │
 │▌  `manifest::read`; eskisi bir sonraki karta.                             │
 │                                                                           │
-│ ↑↓ j k mesaj  [ ] söz sırası  % yanıt ↔ soru  pgup pgdn kaydır  c mesajı kopyala  C konuşmayı kopyala  esc kapat
+│ ↑↓ j k mesaj  [ ] söz sırası  % yanıt ↔ soru  c C kopyala: mesaj · hepsi  v satır kopyala  esc kapat
 └───────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -47,6 +47,7 @@ Boşta bir işçiye mesaj onun için bir kart açar (ilk satır kartın başlı�
 | `pgup` `pgdn`, `^d` `^u` `^f` `^b`, `space` | bir sayfa ya da yarım sayfa kaydır |
 | `m` (`:mark`) / `'` | seçili mesajı sonra dönmek için işaretle, yine basılınca kaldır · sonraki işaretli mesaj, ilke dönerek |
 | `c` `y` / `C` `Y` | mesajı / bütün konuşmayı kopyala |
+| `v` | kopyalanacak satırları seç (aşağıda) |
 | `:export [YOL]` | konuşmayı Markdown dosyası olarak yaz |
 | `esc` | kapat |
 
@@ -61,6 +62,33 @@ Bir agent'ın diğerine gönderdiği her mesajın bus'ta bir numarası vardır; 
 ### Kopyalama
 
 `c` ya da `y` seçili mesajı kopyalar: yalnız metnini. `C` ya da `Y` bütün konuşmayı kopyalar: her mesaj günü ve saatiyle, kimden kime ve türü, `2026-10-31 14:01 lead → claude-1 [cevap]`, sonra metin. Pano sistemin kendi aracıdır (`pbcopy`, `wl-copy`, `xclip`, `xsel`) ya da OSC 52 üzerinden terminalin panosu, ki terminal izin verdiğinde ssh üzerinden de çalışır; flaş hangisi olduğunu söyler, `kopyalandı (pbcopy)`. Metin çizilen her şey gibi temizlenir: kontrol karakteri yok, gizli anahtara benzeyen parçalar saklı.
+
+### Satır kopyalama
+
+Terminalin kendi seçimi yine çalışır (imece fareyi asla almaz), ama metinle birlikte pencerenin çerçevesini ve kenarını da alır, gösterilenin kenarında durur ve sarılmış bir satırı ikiye böler. `v` bunun yerine klavyeyle kopyalar: seçili mesajın ilk satırında bir imleç açılır ve başladığınız yerle imleç arasındaki satırlar seçilir.
+
+```text
+┌ KOPYALA · 3 seçili ────────────────────────────────────────────────────────┐
+│ 13:57 claude-1 → lead [soru]                                              │
+│   Hangi parser? İki tane var: `manifest::read` ve eskisi.                 │
+│                                                                           │
+│▌ 14:01 lead → claude-1 [cevap]                                            │
+│▌   `manifest::read`; eskisi sonraki karta.                                │
+│▶   Eski testleri olduğu gibi bırak.                                       │
+│                                                                           │
+│ ↑↓ j k satır  pgup pgdn sayfa  gg G ilk · son  y kopyala  v esc çık
+└───────────────────────────────────────────────────────────────────────────┘
+```
+
+| Tuş | Ne yapar |
+| --- | --- |
+| `j` `k` / `↑` `↓` | imleç bir satır aşağı / yukarı, mesajlar arasında da; pencere onu görünür tutar, başlıktaki sayı izler |
+| `pgup` `pgdn`, `space`, `^d` `^u` `^f` `^b` | bir sayfa ya da yarısı |
+| `gg` `G` | ilk / son satır |
+| `y` | seçili satırları kopyala ve çık |
+| `v` `esc` | kopyalamadan çık; ikinci `esc` pencereyi kapatır |
+
+Satır, sarılmadan önce çizildiği haliyle bir satırdır: mesajın başlığı, bir yanıtın altındaki `↩` satırı ve metninin her satırı. Kopyalanan, satırın yazıldığı hâlidir; yani bir kod bloğu çitleri olmadan kodu olarak kopyalanır (çitler hiç çizilmez, imleç onlara gelmez), bir tablo Markdown satırları olarak. Farklı mesajların satırları aralarında boş bir satırla gelir. Seçerken başka tuşlar bir şey yapmaz, `c` ya da `[` yanlışlıkla alınmaz; `?` ve `q` yine çalışır. Kopya `c` ile aynı yoldan gider, aynı biçimde temizlenir.
 
 ### Dışa aktarma
 

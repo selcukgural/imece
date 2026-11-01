@@ -88,6 +88,7 @@ The conventions are vim's: `h` `j` `k` `l` move and fold, `gg` and `G` go to the
 | `enter`  `%` | the conversation (from a journal line) · `%` in it: reply ↔ question |
 | `[`  `]` | turn to turn (the lines one side says before the other answers) |
 | `c` `C`  `y` `Y` | copy the message · the conversation |
+| `v` | choose lines to copy: `j` `k` and the page keys move, `y` copies, `v` `esc` leave |
 | `m`  `:mark` | mark the line at hand to come back to; again: unmark |
 | `'` | the next marked line: conversation, else journal |
 | `space`, `pgup` `pgdn` | a page |
@@ -102,6 +103,7 @@ The conventions are vim's: `h` `j` `k` `l` move and fold, `gg` and `G` go to the
 | `c`  `n` | in a change: a note on the top line · send the notes, it goes back |
 | `x` | in a change: choose the hunk at the top; `a` applies only the chosen |
 | `w` | in a change: wrap long lines · cut them again |
+| `v` | in a change: choose lines to copy; `y` as written, `Y` the new side |
 | `a`  `r` | apply (the chosen hunks, else all) · reject |
 | `j` `k`, `gg` `G`, `^d` `^u` `^f` `^b`, `space` | move |
 

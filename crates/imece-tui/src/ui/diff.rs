@@ -8,7 +8,7 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Paragraph};
 
 use super::*;
-use crate::app::{App, DiffNote};
+use crate::app::{App, Copying, DiffNote};
 
 /// Line offsets of the file headers (`diff --git`) in `patch`, for
 /// jumping from file to file.
@@ -178,8 +178,11 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App, id: AgentId) {
         return;
     };
     let (added, removed) = c.counts();
-    let block = Block::bordered()
-        .title(fill(
+    let copy = app.diff_copy_of(id);
+    // Choosing lines to copy: the title counts them and says the keys.
+    let title = match copy {
+        Some(copy) => fill(t.diff_copy_title, &[&copy.len().to_string()]),
+        None => fill(
             t.diff_title,
             &[
                 &a.name,
@@ -188,7 +191,10 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App, id: AgentId) {
                 &removed.to_string(),
                 &c.title,
             ],
-        ))
+        ),
+    };
+    let block = Block::bordered()
+        .title(title)
         .border_style(fg(vendor_color(a.vendor)));
     let inner = block.inner(area);
     f.render_widget(block, area);
@@ -214,6 +220,7 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App, id: AgentId) {
         app.diff_scroll,
         &app.notes_of(id),
         &app.chosen_of(id),
+        copy,
         height,
         wrap,
     );
@@ -223,12 +230,14 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App, id: AgentId) {
 /// The rows of `patch` from line `top` on, `height` of them: each line
 /// cleaned and coloured, the top one (the line at hand) marked, a chosen
 /// hunk's `@@` line with `✓` after it, and a note under the line it is
-/// on, every line of it after `✎`.
+/// on, every line of it after `✎`. While lines are being chosen to copy,
+/// those are marked instead of the top one, the cursor's in bold.
 fn patch_rows(
     patch: &str,
     top: usize,
     notes: &[&DiffNote],
     chosen: &[usize],
+    copy: Option<Copying>,
     height: usize,
     wrap: Option<usize>,
 ) -> Vec<Line<'static>> {
@@ -239,8 +248,15 @@ fn patch_rows(
         if chosen.contains(&i) {
             row.spans.push(Span::styled("  ✓", bold(pal().ok)));
         }
-        if i == top {
+        let marked = match copy {
+            Some(c) => c.holds(i),
+            None => i == top,
+        };
+        if marked {
             row = row.style(changed());
+        }
+        if copy.is_some_and(|c| c.at == i) {
+            row = row.style(changed().add_modifier(Modifier::BOLD));
         }
         // Wrapped, a long line goes on in the rows under it; else the
         // screen cuts it.
@@ -263,6 +279,40 @@ fn patch_rows(
     }
     rows.truncate(height);
     rows
+}
+
+/// What copying lines `from..=to` of `patch` takes, each cleaned: the
+/// lines as written (`+`, `-` or a space before each), or with
+/// `new_side` the code as it reads after the change: only the hunks'
+/// added and kept lines, without their mark (a removed line, a file's
+/// head, an `@@` line are left out). `None` when the new side has none
+/// of them.
+pub(crate) fn copy_patch(patch: &str, from: usize, to: usize, new_side: bool) -> Option<String> {
+    let mut out = Vec::new();
+    let mut in_hunk = false;
+    for (i, l) in patch.lines().enumerate().take(to + 1) {
+        let kept = if !new_side {
+            Some(l)
+        } else if l.starts_with("diff ") {
+            in_hunk = false;
+            None
+        } else if l.starts_with("@@") {
+            in_hunk = true;
+            None
+        } else if !in_hunk {
+            None
+        } else if l.is_empty() {
+            Some(l)
+        } else {
+            l.strip_prefix('+').or_else(|| l.strip_prefix(' '))
+        };
+        if i >= from
+            && let Some(l) = kept
+        {
+            out.push(clean(l));
+        }
+    }
+    (!out.is_empty()).then(|| out.join("\n"))
 }
 
 /// What a changed file is, for the split above a change's files.
@@ -521,6 +571,66 @@ diff --git a/c.rs b/c.rs
     }
 
     #[test]
+    fn lines_chosen_to_copy_are_marked_instead_of_the_top_one() {
+        let copy = Copying { anchor: 4, at: 2 };
+        let rows = patch_rows(PATCH, 0, &[], &[], Some(copy), 8, None);
+        assert_eq!(rows[0].style, Style::new(), "not the line at hand");
+        assert_eq!(rows[1].style, Style::new());
+        assert_eq!(
+            rows[2].style,
+            changed().add_modifier(Modifier::BOLD),
+            "the cursor"
+        );
+        assert_eq!(rows[3].style, changed());
+        assert_eq!(rows[4].style, changed());
+        assert_eq!(rows[5].style, Style::new());
+    }
+
+    #[test]
+    fn copying_a_patch_takes_its_lines_as_written_or_the_new_side() {
+        let all = PATCH.lines().count() - 1;
+        assert_eq!(
+            copy_patch(PATCH, 7, 9, false).as_deref(),
+            Some("+new\n@@ -9,1 +9,2 @@\n ctx")
+        );
+        assert_eq!(copy_patch(PATCH, 7, 9, true).as_deref(), Some("new\nctx"));
+        assert_eq!(
+            copy_patch(PATCH, 8, 9, true).as_deref(),
+            Some("ctx"),
+            "from on"
+        );
+        assert_eq!(
+            copy_patch(PATCH, 7, 7, true).as_deref(),
+            Some("new"),
+            "to, no further"
+        );
+        // Heads, removed lines and what is between files are left out:
+        // `+++ b/c.rs` is a head, not an added line.
+        assert_eq!(
+            copy_patch(PATCH, 0, all, true).as_deref(),
+            Some("new\nctx\nC")
+        );
+        assert_eq!(
+            copy_patch(PATCH, 0, 3, false).as_deref(),
+            Some("diff --git a/a.rs b/a.rs\nindex 1..2 100644\n--- a/a.rs\n+++ b/a.rs")
+        );
+        assert_eq!(copy_patch(PATCH, 5, 6, true), None, "removed lines only");
+        assert_eq!(copy_patch(PATCH, 0, 3, true), None, "heads only");
+        // A blank line in a hunk stays; `\ No newline` does not.
+        let p = "@@ -1,3 +1,3 @@\n a\n\n b\n\\ No newline at end of file\n";
+        assert_eq!(copy_patch(p, 0, 4, true).as_deref(), Some("a\n\nb"));
+        // Cleaned: no escape reaches the clipboard.
+        let p = "@@ -1 +1 @@\n+a\x1b]52;c;eA==\x07b\n";
+        let copied = copy_patch(p, 0, 1, true).unwrap();
+        assert!(
+            !copied.contains('\x1b') && !copied.contains('\x07'),
+            "{copied:?}"
+        );
+        let copied = copy_patch(p, 1, 1, false).unwrap();
+        assert!(!copied.contains('\x1b'), "{copied:?}");
+    }
+
+    #[test]
     fn notes_go_in_one_message_each_under_its_place_and_line() {
         let m = notes_message(PATCH, &[(7, " make it newer "), (17, "why?\nreally")]);
         assert_eq!(
@@ -540,7 +650,7 @@ diff --git a/c.rs b/c.rs
             text: text.into(),
         };
         let (a, b) = (note(6, "one"), note(5, "two\nlines"));
-        let rows = patch_rows(PATCH, 5, &[&a, &b], &[], 8, None);
+        let rows = patch_rows(PATCH, 5, &[&a, &b], &[], None, 8, None);
         let text: Vec<String> = rows.iter().map(|r| r.to_string()).collect();
         assert_eq!(
             text,
@@ -559,14 +669,14 @@ diff --git a/c.rs b/c.rs
         assert!(rows[1..].iter().all(|r| r.style == Style::new()));
         assert_eq!(rows[1].spans[0].style, bold(pal().accent));
         // Cut at the height, a note's rows too.
-        assert_eq!(patch_rows(PATCH, 5, &[&a, &b], &[], 2, None).len(), 2);
+        assert_eq!(patch_rows(PATCH, 5, &[&a, &b], &[], None, 2, None).len(), 2);
         assert_eq!(
-            patch_rows(PATCH, 17, &[], &[], 8, None).len(),
+            patch_rows(PATCH, 17, &[], &[], None, 8, None).len(),
             2,
             "the patch ends"
         );
         // A chosen hunk's `@@` line says so; the others do not.
-        let rows = patch_rows(PATCH, 4, &[], &[8], 6, None);
+        let rows = patch_rows(PATCH, 4, &[], &[8], None, 6, None);
         assert_eq!(rows[4].to_string(), "@@ -9,1 +9,2 @@  ✓");
         assert_eq!(rows[4].spans[1].style, bold(pal().ok));
         assert_eq!(rows[0].to_string(), "@@ -1,2 +1,2 @@");
@@ -692,9 +802,9 @@ diff --git a/c.rs b/c.rs
     #[test]
     fn a_wrapped_patch_goes_on_under_a_long_line() {
         let patch = "diff --git a/x b/x\n@@ -1 +1 @@\n+one two three four five six\n";
-        let cut = patch_rows(patch, 2, &[], &[], 9, None);
+        let cut = patch_rows(patch, 2, &[], &[], None, 9, None);
         assert_eq!(cut.len(), 1);
-        let wrapped = patch_rows(patch, 2, &[], &[], 9, Some(10));
+        let wrapped = patch_rows(patch, 2, &[], &[], None, 9, Some(10));
         let text: Vec<String> = wrapped
             .iter()
             .map(|l| l.to_string().trim_end().to_string())
@@ -705,7 +815,7 @@ diff --git a/c.rs b/c.rs
             "the line at hand, all of it"
         );
         assert_eq!(
-            patch_rows(patch, 2, &[], &[], 2, Some(10)).len(),
+            patch_rows(patch, 2, &[], &[], None, 2, Some(10)).len(),
             2,
             "cut at the height"
         );
