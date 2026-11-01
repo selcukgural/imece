@@ -2164,6 +2164,26 @@ mod tests {
             "{s}"
         );
         assert!(s.contains("esc back"), "{s}");
+        // A vendor's row wears its colour; only the chosen row is reversed.
+        let buf = buffer(&app, 140, 40);
+        let row = |y: u16| -> String { (0..140).map(|x| buf[(x, y)].symbol()).collect() };
+        let cell = |needle: &str| {
+            let y = (0..40).find(|&y| row(y).contains(needle)).expect(needle);
+            let line = row(y);
+            // Cells, not bytes: the frame's box characters are wide in bytes.
+            let at = line.find(needle).unwrap();
+            let x = line[..at].chars().count() + needle.chars().count() - 1;
+            buf[(u16::try_from(x).unwrap(), y)].clone()
+        };
+        let claude = cell(" 1 claude");
+        assert_eq!(claude.fg, vendor_color(Vendor::Claude));
+        assert!(
+            claude.modifier.contains(Modifier::REVERSED),
+            "the chosen row"
+        );
+        let codex = cell(" 2 codex");
+        assert_eq!(codex.fg, vendor_color(Vendor::Codex));
+        assert!(!codex.modifier.contains(Modifier::REVERSED), "not chosen");
         // The keys go to the screen, not the salon: j moves its row.
         key(&mut app, KeyCode::Char('j'));
         assert_eq!(app.solo_pick.as_ref().unwrap().sel(), 1);

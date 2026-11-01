@@ -3833,9 +3833,15 @@ mod tests {
         assert_eq!(p.sel(), 1, "k goes up one");
         p.on_key(KeyCode::Up);
         assert_eq!(p.sel(), 0);
+        p.on_key(KeyCode::Char('G'));
         p.on_key(KeyCode::Char('g'));
+        assert_eq!(p.sel(), 0, "g: the first");
+        p.on_key(KeyCode::End);
+        assert_eq!(p.sel(), 2);
+        p.on_key(KeyCode::Home);
+        assert_eq!(p.sel(), 0, "home: the first");
         p.on_key(KeyCode::Char('k'));
-        assert_eq!(p.sel(), 0, "the first");
+        assert_eq!(p.sel(), 0, "not past the first");
         p.on_key(KeyCode::Char('9'));
         assert_eq!(p.sel(), 0, "no ninth");
         p.on_key(KeyCode::Char('1'));
