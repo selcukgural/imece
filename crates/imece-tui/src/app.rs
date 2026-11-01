@@ -14,6 +14,7 @@ use crate::edit;
 use crate::i18n::{Lang, fill};
 use crate::live::{self, Live, Open, Refusal};
 use crate::model::*;
+use crate::notify::{self, Note, Notify};
 use crate::prefs::{SIDE_DEFAULT, SIDE_MAX, SIDE_MIN};
 use crate::shell::Ran;
 use crate::sim::{self, Sim};
@@ -508,6 +509,10 @@ pub struct App {
     /// The hold on the machine's sleep while an agent is mid-turn
     /// (`--awake`, `:awake`).
     pub awake: crate::awake::Awake,
+    /// How the person is told, in another window, that something waits
+    /// (`:notify`), and what rang already.
+    pub notify: Notify,
+    notices: notify::Notices,
 }
 
 impl App {
@@ -587,6 +592,8 @@ impl App {
             last_key_tick: 0,
             blurred: None,
             awake: crate::awake::Awake::new(false, crate::awake::command(std::process::id())),
+            notify: Notify::Off,
+            notices: notify::Notices::default(),
         }
     }
 
@@ -1930,6 +1937,7 @@ impl App {
             }
             "needs" => Some(on_off(self.needs_only)),
             "awake" => Some(on_off(self.awake.on)),
+            "notify" => Some(self.notify.name().to_string()),
             "pause" => Some(on_off(self.paused)),
             "faster" | "slower" => Some(format!("×{}", self.speed)),
             "export" if self.thread.is_some() => Some(t.value_thread.to_string()),
@@ -2168,6 +2176,11 @@ impl App {
                 });
                 self.keep_awake();
             }
+            "notify" => match (arg, Notify::parse(arg)) {
+                ("", _) => self.set_notify(self.notify.next()),
+                (_, Some(how)) => self.set_notify(how),
+                (_, None) => self.flash(fill(t.bad_notify, &[arg])),
+            },
             _ => self.flash(fill(t.no_command, &[name])),
         }
     }
@@ -2339,6 +2352,48 @@ impl App {
             return;
         }
         self.digest = Digest::since(&self.world, tick);
+    }
+
+    /// `:notify`: how the person is told in another window.
+    fn set_notify(&mut self, how: Notify) {
+        self.notify = how;
+        let t = self.lang.text();
+        self.flash(match how {
+            Notify::Off => t.notify_off,
+            Notify::Bell => t.notify_bell,
+            Notify::Text => t.notify_text,
+        });
+    }
+
+    /// What to say to the person in another window right now, in the
+    /// words of [`crate::notify`]: what came to wait for them while the
+    /// terminal had no focus and is still there [`notify::AFTER`] later,
+    /// once each; several at once as a count. Nothing while `:notify` is
+    /// off, in the window, or for what was on screen before leaving.
+    pub fn notices(&mut self, now: Instant) -> Option<String> {
+        if self.notify == Notify::Off {
+            return None;
+        }
+        let w = &self.world;
+        let waiting: Vec<Note> = w
+            .open_inbox()
+            .into_iter()
+            .map(Note::Item)
+            .chain(
+                self.needs()
+                    .into_iter()
+                    .enumerate()
+                    .filter(|(_, n)| *n == Need::Stuck)
+                    .map(|(id, _)| Note::Stuck(id)),
+            )
+            .collect();
+        let due = self.notices.due(&waiting, self.blurred.is_some(), now);
+        let t = self.lang.text();
+        match due[..] {
+            [] => None,
+            [one] => Some(ui::words::notice(self.lang, &self.world, one)),
+            _ => Some(fill(t.notify_many, &[&due.len().to_string()])),
+        }
     }
 
     /// The machine is held awake while an agent is mid-turn and the person
@@ -5444,6 +5499,130 @@ mod tests {
         assert!(!th.follow.get());
         assert_eq!(flashed(&app).as_deref(), Some(app.lang.text().no_marks));
         assert_eq!(app.pane, Pane::Salon, "the journal is not where it went");
+    }
+
+    #[test]
+    fn notify_is_off_bell_or_text_by_word_or_round_and_the_menu_says_which() {
+        let mut app = App::new(1, 1, 0, 1, Lang::En);
+        let t = app.lang.text();
+        assert_eq!(app.notify, Notify::Off);
+        assert_eq!(app.command_note("notify"), "(off)");
+        app.command("notify");
+        assert_eq!(app.notify, Notify::Bell);
+        assert_eq!(flashed(&app).as_deref(), Some(t.notify_bell));
+        assert_eq!(app.command_note("notify"), "(bell)");
+        app.command("notify");
+        assert_eq!(app.notify, Notify::Text);
+        assert_eq!(flashed(&app).as_deref(), Some(t.notify_text));
+        app.command("notify");
+        assert_eq!(app.notify, Notify::Off);
+        assert_eq!(flashed(&app).as_deref(), Some(t.notify_off));
+        app.command("notify text");
+        assert_eq!(app.notify, Notify::Text);
+        assert_eq!(app.command_note("notify"), "(text)");
+        app.command("notify beep");
+        assert_eq!(app.notify, Notify::Text, "as it was");
+        assert_eq!(
+            flashed(&app).as_deref(),
+            Some("beep is not off, bell or text")
+        );
+    }
+
+    #[test]
+    fn in_another_window_what_came_to_wait_is_said_once_after_the_wait() {
+        let mut app = waiting(&[InboxKind::Change]);
+        let t0 = Instant::now();
+        let at = |s: u64| t0 + Duration::from_secs(s);
+        let item = |kind, agent| InboxItem {
+            kind,
+            agent,
+            detail: "x".into(),
+            researcher: None,
+            open: true,
+            tick: 0,
+            card: None,
+        };
+        // Off: nothing, whatever came while away.
+        app.focus(false, at(0));
+        app.world.inbox.push(item(InboxKind::Question, 2));
+        assert_eq!(app.notices(at(9)), None);
+        app.focus(true, at(10));
+        app.command("notify bell");
+        // In the window: nothing, and what is there is seen.
+        assert_eq!(app.notices(at(11)), None);
+        app.focus(false, at(12));
+        assert_eq!(app.notices(at(60)), None, "seen before leaving");
+        // A question while away: said once, after the wait, in imece's
+        // words with the agent's name, never the agent's.
+        app.world.inbox.push(item(InboxKind::Question, 3));
+        assert_eq!(app.notices(at(100)), None);
+        assert_eq!(app.notices(at(104)), None, "under the wait");
+        let name = app.world.agents[3].name.clone();
+        assert_eq!(
+            app.notices(at(105)).as_deref(),
+            Some(format!("imece · {name} asks you").as_str())
+        );
+        assert_eq!(app.notices(at(200)), None, "once");
+        // Several at once: the count. An agent stuck counts too, an agent
+        // that waits in the inbox only once.
+        app.world.inbox.push(item(InboxKind::Change, 4));
+        app.world.agents[0].status = Status::Blocked;
+        app.world.agents[4].status = Status::Stopped;
+        assert_eq!(app.notices(at(300)), None);
+        assert_eq!(
+            app.notices(at(305)).as_deref(),
+            Some("imece · 2 things wait for you")
+        );
+        // Back in the window: what was about to ring is dropped.
+        app.world.inbox.push(item(InboxKind::Reply, 2));
+        assert_eq!(app.notices(at(400)), None);
+        app.focus(true, at(401));
+        assert_eq!(app.notices(at(402)), None);
+        app.focus(false, at(403));
+        assert_eq!(app.notices(at(500)), None, "on screen when back");
+        // Closed: gone from what could ring.
+        app.world.inbox.push(item(InboxKind::Approval, 3));
+        assert_eq!(app.notices(at(600)), None);
+        app.world.inbox.last_mut().unwrap().open = false;
+        assert_eq!(app.notices(at(700)), None);
+    }
+
+    #[test]
+    fn a_notice_names_the_kind_of_what_waits_and_its_agent() {
+        use crate::notify::Note;
+        let mut app = waiting(&[
+            InboxKind::Sensitive,
+            InboxKind::Reply,
+            InboxKind::Change,
+            InboxKind::Question,
+        ]);
+        // Two more kinds, from the first two agents again.
+        for (n, kind) in [(1, InboxKind::Research), (2, InboxKind::Approval)] {
+            let mut item = app.world.inbox[0].clone();
+            item.kind = kind;
+            item.agent = n;
+            app.world.inbox.push(item);
+        }
+        let w = &app.world;
+        let name = |n: usize| w.agents[n].name.clone();
+        let said: Vec<String> = (0..6)
+            .map(|i| ui::words::notice(Lang::En, w, Note::Item(i)))
+            .collect();
+        assert_eq!(
+            said,
+            [
+                format!("imece · {}: something sensitive waits for you", name(1)),
+                format!("imece · {} answered you", name(2)),
+                format!("imece · {} finished: a change waits for you", name(3)),
+                format!("imece · {} asks you", name(4)),
+                format!("imece · {}: something sensitive waits for you", name(1)),
+                format!("imece · {} waits for your yes", name(2)),
+            ]
+        );
+        assert_eq!(
+            ui::words::notice(Lang::Tr, w, Note::Stuck(2)),
+            format!("imece · {} takıldı", name(2))
+        );
     }
 
     #[test]

@@ -18,7 +18,7 @@ Every scenario is true of the real imece: the keys are the ones the `?` help lis
 | [Sending a change back, then taking half of it](review-with-notes.md) | Notes with `c` and `n`, the worker's answer with `↩` and `%`, hunks chosen with `x`, `>` to quote one, `r` to reject the rest. |
 | [Three checkouts, one screen](many-projects.md) | `:open`, folding, `:pin`, `f`, `:rename`, `:copy .env`, `:close`, and the one pot every project draws from. |
 | [A solo beside the team](solo-beside-the-team.md) | `:solo claude:opus@xhigh`, a session you drive yourself with no leader, the `Δ` after every answer, a second solo on Codex, `--solo` the next morning. |
-| [Coming back](next-morning.md) | Quitting mid-turn, the "where you left off" window, agents asleep, how each vendor resumes, `:forget`, the away digest, marks, `:export`. |
+| [Coming back](next-morning.md) | Quitting mid-turn, the "where you left off" window, agents asleep, how each vendor resumes, `:forget`, the away digest, `:notify`, marks, `:export`. |
 | [Your shell next to the team](own-shell-and-commit.md) | `!cargo test`, `!vim`, ctrl-c, `:commit` and its ceilings, `:awake`, `:budget 80`, `:theme nord`, `L`. |
 
 ## Trying them for free

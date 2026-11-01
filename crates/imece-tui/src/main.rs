@@ -10,6 +10,7 @@ mod edit;
 mod i18n;
 mod live;
 mod model;
+mod notify;
 mod prefs;
 mod probe;
 mod rng;
@@ -456,6 +457,7 @@ fn main() -> std::io::Result<()> {
                                 saved.side.unwrap_or(prefs::SIDE_DEFAULT),
                                 &theme::chosen(),
                                 saved.lead.as_deref(),
+                                saved.notify.unwrap_or_default(),
                             );
                         }
                         vendor
@@ -498,6 +500,7 @@ fn main() -> std::io::Result<()> {
     }
     app.shift_enter = said.keys;
     app.primary = saved.lead;
+    app.notify = saved.notify.unwrap_or_default();
     app.awake.on = args.awake;
     let result = run(&mut terminal, &mut app, &state);
     // The last word before the sessions end: what every agent had in hand,
@@ -588,11 +591,22 @@ fn run(
         if let Some(Event::Key(k)) = event
             && k.kind == KeyEventKind::Press
         {
-            let (side, theme, primary) = (app.side, app.theme(), app.primary.clone());
+            let (side, theme, primary, notify) =
+                (app.side, app.theme(), app.primary.clone(), app.notify);
             app.on_key(k);
-            if app.side != side || app.theme() != theme || app.primary != primary {
+            if app.side != side
+                || app.theme() != theme
+                || app.primary != primary
+                || app.notify != notify
+            {
                 // Remembered for the next run; a failure only costs that.
-                let _ = prefs::save(state, app.side, &app.theme(), app.primary.as_deref());
+                let _ = prefs::save(
+                    state,
+                    app.side,
+                    &app.theme(),
+                    app.primary.as_deref(),
+                    app.notify,
+                );
             }
             if let Some(text) = app.copy.take() {
                 app.copied(clip::copy(&text));
@@ -610,6 +624,10 @@ fn run(
                 app.step();
             }
             last = Instant::now();
+        }
+        // In another window: a word when something came to wait.
+        if let Some(body) = app.notices(Instant::now()) {
+            notify::ring(&mut std::io::stdout(), app.notify, &body)?;
         }
     }
     Ok(())

@@ -5,7 +5,7 @@ description: Yalnız sizin verebileceğiniz her kararı tutan panel - incelenece
 
 # SENİ BEKLEYEN
 
-SENİ BEKLEYEN (İngilizce ekranda WAITING FOR YOU) salonun üst yan panelidir. Oraya yalnız sizi gerektiren kararlar düşer; geri kalan her şey günlükte kalır. Onunla ilk kez bir işçi `done` gönderdiğinde karşılaşırsınız: değişikliği (`Δ`) görünür, başlık `! 1 seni bekliyor` sayar ve terminalin başlığı `imece · 1 seni bekliyor` der.
+SENİ BEKLEYEN (İngilizce ekranda WAITING FOR YOU) salonun üst yan panelidir. Oraya yalnız sizi gerektiren kararlar düşer; geri kalan her şey günlükte kalır. Onunla ilk kez bir işçi `done` gönderdiğinde karşılaşırsınız: değişikliği (`Δ`) görünür, başlık `! 1 seni bekliyor` sayar ve terminalin başlığı `imece · 1 seni bekliyor` der. Başka bir penceredeyken `:notify bell` terminalin zilini çalar, `:notify text` masaüstü bildirimi gönderir (`imece · claude-1 bitirdi: bir değişiklik seni bekliyor`), yeni bir şey beş saniyedir bekliyorsa; siz istemedikçe kapalıdır, bkz. [`:notify`](../reference/commands.md#notify-offbelltext).
 
 ```text
 ┌ SENİ BEKLEYEN (3) ─────────────────────────────────────────────────┐

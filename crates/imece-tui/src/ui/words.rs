@@ -441,6 +441,27 @@ pub(crate) fn one_line(text: &str) -> String {
     text.trim().lines().collect::<Vec<_>>().join(" ↵ ")
 }
 
+/// What rings in another window for `note`: the kind of what waits and
+/// the agent's name, never the agent's words.
+pub fn notice(lang: Lang, w: &World, note: crate::notify::Note) -> String {
+    let t = lang.text();
+    let (text, agent) = match note {
+        crate::notify::Note::Stuck(id) => (t.notice_stuck, id),
+        crate::notify::Note::Item(i) => {
+            let item = &w.inbox[i];
+            let text = match item.kind {
+                InboxKind::Change => t.notice_change,
+                InboxKind::Question => t.notice_question,
+                InboxKind::Reply => t.notice_reply,
+                InboxKind::Approval => t.notice_approval,
+                InboxKind::Sensitive | InboxKind::Research => t.notice_sensitive,
+            };
+            (text, item.agent)
+        }
+    };
+    fill(text, &[name(w, agent)])
+}
+
 pub fn inbox(lang: Lang, w: &World, item: &InboxItem) -> String {
     let t = lang.text();
     match (item.kind, item.researcher) {

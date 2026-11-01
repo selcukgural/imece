@@ -1,6 +1,6 @@
 //! Where imece keeps its state, and the screen choices the person made
-//! (the side panel's width, the theme) and their primary vendor, the one
-//! that leads without asking. The choices live in the store's `meta`
+//! (the side panel's width, the theme, how they are told in another
+//! window) and their primary vendor, the one that leads without asking. The choices live in the store's `meta`
 //! table ([`crate::store::settings`]), read before the store is taken and
 //! written from a demo too; a `screen` file from before 2026-10-30 moves
 //! into it the first time it is seen.
@@ -8,6 +8,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use crate::notify::Notify;
 use crate::store;
 
 /// `$XDG_STATE_HOME/imece`, or `~/.local/state/imece`.
@@ -29,6 +30,7 @@ pub const SIDE_MAX: u16 = 70;
 const SIDE: &str = "side";
 const THEME: &str = "theme";
 const LEAD: &str = "lead";
+const NOTIFY: &str = "notify";
 
 /// The person's choices; a missing or bad value is `None`.
 #[derive(Debug, Default, PartialEq, Eq)]
@@ -37,11 +39,18 @@ pub struct Prefs {
     pub theme: Option<String>,
     /// The vendor that leads without being asked for (`claude`).
     pub lead: Option<String>,
+    /// How the person is told in another window (`:notify`).
+    pub notify: Option<Notify>,
 }
 
 impl Prefs {
     /// The values as kept, checked: nonsense reads as nothing.
-    fn checked(side: Option<String>, theme: Option<String>, lead: Option<String>) -> Prefs {
+    fn checked(
+        side: Option<String>,
+        theme: Option<String>,
+        lead: Option<String>,
+        notify: Option<String>,
+    ) -> Prefs {
         Prefs {
             side: side
                 .and_then(|v| v.trim().parse().ok())
@@ -50,6 +59,7 @@ impl Prefs {
             lead: lead
                 .map(|l| l.trim().to_string())
                 .filter(|l| !l.is_empty() && l.chars().all(|c| c.is_ascii_lowercase())),
+            notify: notify.and_then(|n| Notify::parse(&n)),
         }
     }
 
@@ -60,7 +70,7 @@ impl Prefs {
                 .find_map(|l| l.strip_prefix(key))
                 .map(|v| v.to_string())
         };
-        Prefs::checked(value("side="), value("theme="), value("lead="))
+        Prefs::checked(value("side="), value("theme="), value("lead="), None)
     }
 }
 
@@ -99,20 +109,31 @@ pub fn load(dir: &Path) -> Prefs {
             let _ = fs::remove_file(legacy(dir));
         }
     }
-    match store::settings(&file(dir), &[SIDE, THEME, LEAD]) {
+    match store::settings(&file(dir), &[SIDE, THEME, LEAD, NOTIFY]) {
         Ok(mut v) => {
+            let notify = v.pop().flatten();
             let lead = v.pop().flatten();
             let theme = v.pop().flatten();
-            Prefs::checked(v.pop().flatten(), theme, lead)
+            Prefs::checked(v.pop().flatten(), theme, lead, notify)
         }
         Err(_) => Prefs::default(),
     }
 }
 
 /// Saves the choices in `dir`; no primary vendor forgets the saved one.
-pub fn save(dir: &Path, side: u16, theme: &str, lead: Option<&str>) -> Result<(), String> {
+pub fn save(
+    dir: &Path,
+    side: u16,
+    theme: &str,
+    lead: Option<&str>,
+    notify: Notify,
+) -> Result<(), String> {
     let side = side.to_string();
-    let mut set = vec![(SIDE, side.as_str()), (THEME, theme)];
+    let mut set = vec![
+        (SIDE, side.as_str()),
+        (THEME, theme),
+        (NOTIFY, notify.name()),
+    ];
     let mut unset = Vec::new();
     match lead {
         Some(l) => set.push((LEAD, l)),
@@ -138,28 +159,37 @@ mod tests {
         let dir = dir("choices");
         assert_eq!(load(&dir), Prefs::default(), "nothing saved, no file made");
         assert!(!file(&dir).exists());
-        save(&dir, 46, "light", None).unwrap();
+        save(&dir, 46, "light", None, Notify::Off).unwrap();
         assert_eq!(
             load(&dir),
             Prefs {
                 side: Some(46),
                 theme: Some("light".into()),
                 lead: None,
+                notify: Some(Notify::Off),
             }
         );
         let mode = fs::metadata(file(&dir)).unwrap().permissions().mode();
         assert_eq!(mode & 0o777, 0o600, "the person's alone");
-        save(&dir, 46, "light", Some("claude")).unwrap();
+        save(&dir, 46, "light", Some("claude"), Notify::Bell).unwrap();
         assert_eq!(load(&dir).lead.as_deref(), Some("claude"));
-        save(&dir, 46, "light", None).unwrap();
+        assert_eq!(load(&dir).notify, Some(Notify::Bell));
+        save(&dir, 46, "light", None, Notify::Text).unwrap();
         assert_eq!(load(&dir).lead, None, "forgotten when saved without");
+        assert_eq!(load(&dir).notify, Some(Notify::Text));
         let set = |pairs: &[(&str, &str)]| store::set_settings(&file(&dir), pairs, &[]).unwrap();
-        set(&[("side", "99"), ("theme", "Neon 1"), ("lead", "Claude Code")]);
+        set(&[
+            ("side", "99"),
+            ("theme", "Neon 1"),
+            ("lead", "Claude Code"),
+            ("notify", "beep"),
+        ]);
         assert_eq!(load(&dir), Prefs::default(), "out of range, not a name");
         set(&[
             ("side", "20"),
             ("theme", "gruvbox-dark-medium"),
             ("lead", "codex"),
+            ("notify", "text"),
         ]);
         assert_eq!(
             load(&dir),
@@ -167,13 +197,14 @@ mod tests {
                 side: Some(20),
                 theme: Some("gruvbox-dark-medium".into()),
                 lead: Some("codex".into()),
+                notify: Some(Notify::Text),
             }
         );
         set(&[("side", "70"), ("theme", "/home/me/Dracula.conf")]);
         let p = load(&dir);
         assert_eq!(p.side, Some(70));
         assert_eq!(p.theme.as_deref(), Some("/home/me/Dracula.conf"));
-        set(&[("side", "71"), ("theme", ""), ("lead", "")]);
+        set(&[("side", "71"), ("theme", ""), ("lead", ""), ("notify", "")]);
         assert_eq!(load(&dir), Prefs::default());
         set(&[("side", "19"), ("side", "x")]);
         assert_eq!(load(&dir).side, None);
@@ -191,6 +222,7 @@ mod tests {
                 side: Some(52),
                 theme: Some("dracula".into()),
                 lead: Some("gemini".into()),
+                notify: None,
             }
         );
         assert!(!legacy(&dir).exists(), "moved, so gone");
@@ -214,12 +246,12 @@ mod tests {
     #[test]
     fn the_choices_share_the_file_with_the_world_and_neither_disturbs_the_other() {
         let dir = dir("shared");
-        save(&dir, 30, "mono", Some("codex")).unwrap();
+        save(&dir, 30, "mono", Some("codex"), Notify::Off).unwrap();
         // A file the settings made is a new world to the store.
         let mut st = store::Store::open(&file(&dir)).unwrap();
         assert!(st.load(10).unwrap().is_none());
         assert_eq!(load(&dir).side, Some(30), "while the store holds the file");
-        save(&dir, 31, "mono", None).unwrap();
+        save(&dir, 31, "mono", None, Notify::Bell).unwrap();
         assert_eq!(load(&dir).side, Some(31), "written beside it");
         // The world's keys are not settings.
         for key in ["schema_version", "started_at", "budget", "saved_at"] {

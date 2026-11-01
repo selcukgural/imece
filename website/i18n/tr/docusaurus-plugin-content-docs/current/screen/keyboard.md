@@ -125,6 +125,7 @@ Gelenekler vim'inkidir: `h` `j` `k` `l` hareket ve katlama, `gg` ve `G` uçlara,
 | `L`  `:lang` | English / Türkçe; `:lang en\|tr` |
 | `T`  `:theme` | sonraki tema · `:theme NAME` ya da `FILE` |
 | `:awake` | tur ortasında makineyi uyanık tut; yine: kapat |
+| `:notify` | başka penceredeyken bir şey beklemeye düşerse haber: `:notify off\|bell\|text`; yalın yazılınca sıradaki |
 | `q` `q`  `:quit` | çık (`q` ya da `:quit` önce sorar; `^c` hemen çıkar) |
 | `q` `s`  `:pending` | çıkmadan önce: tur ortası, incelenmemiş |
 | `?`  `:help` | bu yardım; içinde `/` tuşları süzer |
@@ -159,7 +160,7 @@ Gelenekler vim'inkidir: `h` `j` `k` `l` hareket ve katlama, `gg` ve `G` uçlara,
 | `:trace` / `:talk` | `t` / `v` |
 | `:mark` | `m` |
 | `:pause`, `:faster`, `:slower` | `space`, `+`, `-` (demo) |
-| `:budget` (`:b`), `:lead`, `:open` (`:o`), `:close` (`:c`), `:rename`, `:solo`, `:effort`, `:model`, `:forget` (`:f`), `:export`, `:commit`, `:copy`, `:pin`, `:awake` | tuşu yok: `:` ardından yazılır |
+| `:budget` (`:b`), `:lead`, `:open` (`:o`), `:close` (`:c`), `:rename`, `:solo`, `:effort`, `:model`, `:forget` (`:f`), `:export`, `:commit`, `:copy`, `:pin`, `:awake`, `:notify` | tuşu yok: `:` ardından yazılır |
 
 Her komutun ne aldığının tam listesi [komutlar başvurusunda](../reference/commands.md).
 

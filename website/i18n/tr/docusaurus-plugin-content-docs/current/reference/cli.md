@@ -57,7 +57,7 @@ imece --demo --lang tr                             # ya da IMECE_LANG=tr
 | tema (`--theme`, `T`, `:theme`; bir bayrak ya da `IMECE_THEME` kayıtlı olanı geçer) | dil (`--lang`, `IMECE_LANG`, yoksa İngilizce; `L` bu çalıştırma için değiştirir) |
 | bütçe (`--budget` ayarlar; bayraksız bırakıldığı gibi kalır; ilk seferde 50 $) | `--agents`, `--helpers`, `--confine`, `--run`, `--run-timeout` |
 | birincil satıcı (soru ekranında `p`, `:lead`) | `--model` ve `--tier` |
-| yan panelin genişliği (`,` `.` `<` `>`) | `--awake` (bilerek: makinenin güç davranışını değiştirir) |
+| yan panelin genişliği (`,` `.` `<` `>`), başka penceredeyken nasıl haber alacağınız (`:notify`) | `--awake` (bilerek: makinenin güç davranışını değiştirir) |
 | projeler, ajanlar, kartlar, günlük, posta, pano, sabitlemeler, işaretler, kopya listesi, her ajanın satıcı oturumu | başlıktaki satıcı kullanım pencereleri (bir oturum ilk turunda yeniden söyler) |
 
 ## Bayraklar
