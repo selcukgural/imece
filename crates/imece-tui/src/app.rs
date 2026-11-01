@@ -4753,6 +4753,18 @@ mod tests {
     }
 
     #[test]
+    fn a_message_to_an_agent_with_no_text_is_not_sent() {
+        let (mut app, worker) = with_thread();
+        let name = app.world.agents[worker].name.clone();
+        let was = app.world.journal.len();
+        app.typing = true;
+        app.input = format!("@{name}   ");
+        app.on_key(key(KeyCode::Enter));
+        assert_eq!(app.world.journal.len(), was, "nothing said");
+        assert_eq!(app.flash.as_ref().unwrap().0, app.lang.text().empty_message);
+    }
+
+    #[test]
     fn folds_say_which_messages_are_one_row() {
         let mut f = Folds::every(true);
         assert!(f.folded(0) && f.folded(7));

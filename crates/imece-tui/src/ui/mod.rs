@@ -7246,6 +7246,13 @@ mod tests {
         assert_eq!(&chars[13..18], [cursor; 5], "gamma, the cursor's");
         assert_eq!(chars[18], Style::new(), "the blank after the last");
         assert_eq!(&chars[19..], [Style::new(); 5], "delta: after it");
+        // The last word chosen, the cursor not on it: chosen all the same.
+        let painted = overlay::paint_words(line.clone(), 1, 2, None);
+        let chars: Vec<Style> = (painted.spans.iter())
+            .flat_map(|s| s.content.chars().map(move |_| s.style))
+            .collect();
+        assert_eq!(&chars[13..18], [changed(); 5], "gamma");
+        assert_eq!(chars[18], Style::new());
         // No cursor: nothing reversed; a choice past the end ends there.
         let painted = overlay::paint_words(line.clone(), 3, usize::MAX, None);
         let last = painted.spans.last().unwrap();
