@@ -217,6 +217,11 @@ pub struct Text {
     pub bad_theme: &'static str,
     pub opened: &'static str,
     pub open_usage: &'static str,
+    /// `:solo` with words it can not place.
+    pub solo_usage: &'static str,
+    /// A solo opened: the project, its path, the agent, its vendor and
+    /// choice.
+    pub solo_opened: &'static str,
     pub bad_open: &'static str,
     pub project_exists: &'static str,
     pub project_open: &'static str,
@@ -450,7 +455,7 @@ pub struct Text {
     pub waiting_yes: &'static str,
     // Overlays
     pub help_title: &'static str,
-    pub help_keys: [(&'static str, &'static str); 55],
+    pub help_keys: [(&'static str, &'static str); 56],
     /// The help's line for a new line in the writing, put after the
     /// writing keys: where the terminal tells shift-enter apart, and
     /// where it does not.
@@ -588,6 +593,8 @@ pub const EN: Text = Text {
     bad_theme: "theme {}: {}",
     opened: "opened {} at {}; write to {}",
     open_usage: ":open PATH [NAME] opens the git checkout at PATH as a project",
+    solo_usage: ":solo [PATH] [VENDOR[:MODEL][@EFFORT]] [NAME]: a session you drive yourself, no leader",
+    solo_opened: "opened {} at {} as a solo session; write to {} ({})",
     bad_open: "could not open: {}",
     project_exists: "a project named {} is open already",
     project_open: "{} is open already, as {}",
@@ -827,6 +834,10 @@ pub const EN: Text = Text {
             "who leads from the next start on; ask = choose then",
         ),
         (":open PATH", "open a checkout as a project; NAME after it"),
+        (
+            ":solo CHOICE",
+            "a session you drive yourself, no leader: vendor[:model][@effort]; PATH, NAME too",
+        ),
         (":close NAME", "close it: its agents leave, worktrees stay"),
         (
             ":rename NAME",
@@ -1060,6 +1071,8 @@ pub const TR: Text = Text {
     bad_theme: "tema {}: {}",
     opened: "{} açıldı ({}); {} adına yaz",
     open_usage: ":open YOL [AD], YOL'daki git çalışma kopyasını proje olarak açar",
+    solo_usage: ":solo [YOL] [SATICI[:MODEL][@ÇABA]] [AD]: lidersiz, kendin sürdüğün bir oturum",
+    solo_opened: "{} solo oturum olarak açıldı ({}); {} adına yaz ({})",
     bad_open: "açılamadı: {}",
     project_exists: "{} adında açık bir proje var",
     project_open: "{} zaten açık, adı {}",
@@ -1304,6 +1317,10 @@ pub const TR: Text = Text {
         (":budget USD", "agent'lar çalışırken bütçeyi artır / azalt"),
         (":lead VENDOR", "sonraki açılışta lider; ask = o zaman sor"),
         (":open YOL", "çalışma kopyasını proje olarak aç; ardına AD"),
+        (
+            ":solo SEÇİM",
+            "lidersiz, kendin sürdüğün oturum: satıcı[:model][@çaba]; YOL, AD da olur",
+        ),
         (":close AD", "kapat: agent'lar ayrılır, worktree'ler kalır"),
         (":rename AD", "eldeki projeyi adlandır; lideri lead-AD olur"),
         (

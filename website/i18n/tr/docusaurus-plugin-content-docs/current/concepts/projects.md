@@ -12,16 +12,18 @@ Bir proje, kendi lideri ve işçileri olan bir git checkout'udur. imece, içinde
 | Komut | Ne yapar |
 | --- | --- |
 | `:open YOL [AD]` (`:o`) | YOL'daki git checkout'unu kendi başına bir proje olarak açar; ekibin lider satıcısında (aynı model ve kademeler) `lead-AD` adlı yeni bir liderle. AD varsayılan olarak dizinin güvenli hale getirilmiş adıdır: 1-24 harf, rakam, `.`, `_`, `-`; kalanı `-` olur. `:` menüsü `$` ile işaretler: yeni bir lider oturumu. |
+| `:solo [YOL] [SEÇİM] [AD]` | kendi başına bir proje olarak bir solo oturum açar: lidersiz, kendinizin sürdüğü, adını verdiğiniz satıcı, model ve çabada tek bir ajan, `solo-AD` ([solo oturumlar](solo.md)). Bir checkout'ta takımının yanında istendiği kadar olabilir. `$`: yeni bir oturum. |
 | `:close [AD]` (`:c`) | projenin ajanlarının oturumlarını ve çalıştırmalarını bitirir, postalarını, notlarını, tekliflerini ve değişikliklerini düşürür, gelen kutusu öğelerini kapatır, projeyi kapalı işaretler. Worktree'ler diskte kalır. Ad yoksa eldeki proje. Son açık proje kapanmayı reddeder (`q q` çıkar). |
 | `:rename AD` | eldeki projeyi ve liderini `lead-AD` olarak yeniden adlandırır (ilk projenin de). Oturumlar sürer; projenin her canlı ajanı sonraki isteminde bir not alır ve eski ada `send` ekip listesiyle yanıtlanır. |
 
-- Kapalı bir proje kimliğini korur; aynı checkout yeniden açılınca yeni bir liderle onu yeniden kullanır. Sabitlemesi o zaman için saklanır.
+- Kapalı bir proje kimliğini korur; aynı checkout yeniden açılınca yeni bir liderle onu yeniden kullanır (kapalı bir soloyu o checkout'taki sonraki solo kullanır, bir takım asla). Sabitlemesi o zaman için saklanır.
+- Bir checkout'ta en çok bir açık takım (`that checkout is open already, as kule`) ve istendiği kadar solo bulunur. Bir projede varsa dizinin adı numara alır: `kule`, `kule-2`.
 - Adlar küreseldir: `@lead-api` o projenin liderine her yerden ulaşır; `@`'den sonraki tamamlama önce eldeki projeyi listeler.
 - Boşluklu bir YOL ayrıştırılmaz (tırnak yok). `:open ` dosya sisteminden dizinleri tamamlar (gizli olanlar `.`'dan sonra, ev için `~`); `:close ` ve `:pin ` açık projelerin adlarını tamamlar.
 - Günlük: `api projesini açtın (/src/api)`, `api projesini kapattın`, `api projesine gateway adını verdin`.
 - Projeler depoda hatırlanır; checkout'u gitmiş hatırlanan bir proje kapalı yüklenir.
 
-Lider satıcısı proje başına seçilemez: her lider ekibin lider satıcısında çalışır.
+Lider satıcısı proje başına seçilemez: her lider ekibin lider satıcısında çalışır. Bir solonun satıcısı, modeli ve çabası ise solo başına sizin seçiminizdir.
 
 ## Salonda gruplar
 

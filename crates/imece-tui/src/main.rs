@@ -30,19 +30,23 @@ use imece_agent::{Confine, Tier};
 use ratatui::crossterm::event::{self, Event, KeyEventKind};
 
 use crate::i18n::Lang;
-use crate::model::{Vendor, parse_dollars};
+use crate::model::{Vendor, parse_dollars, valid_model, vendor_choice};
 
 const USAGE: &str = "usage: imece [--repo DIR] [--agents N] [--helpers N] [--lead VENDOR]
-             [--model [V:]NAME]... [--tier [V:]T=NAME]... [--budget USD] [--fresh] [--awake]
-             [--confine standard|strict|open] [--lang en|tr] [--theme NAME|FILE]
+             [--solo V[:MODEL][@EFFORT]] [--model [V:]NAME]... [--tier [V:]T=NAME]...
+             [--budget USD] [--fresh] [--awake] [--confine standard|strict|open]
+             [--lang en|tr] [--theme NAME|FILE]
        imece --demo [--projects N] [--agents N] [--researchers N] [--seed N]
 
 imece runs coding agents on the checkout DIR is in: a leader that reads it
 and talks to you, and workers it hires as the work needs them, each changing
-its own git worktree; a worker may hire helpers for parts of its task.
-While it runs, :open PATH [NAME] opens another checkout as a project of its
-own, with its own leader; :close NAME closes one, :rename NAME renames the
-one at hand; ? lists every key and command.
+its own git worktree; a worker may hire helpers for parts of its task. With
+--solo, one agent you drive yourself instead, on the vendor, model and
+effort you name, in a worktree of its own; what it changes waits for you
+after every turn. While it runs, :open PATH [NAME] opens another checkout
+as a project of its own, with its own leader, and :solo [PATH] [CHOICE]
+[NAME] a solo session (any number next to a team); :close NAME closes one,
+:rename NAME renames the one at hand; ? lists every key and command.
 
   --repo DIR        the checkout (default: the current directory)
   --agents N        workers the leader may hire, at most (0-16, default 4)
@@ -51,6 +55,13 @@ one at hand; ? lists every key and command.
                     asks at the start. Without it: your primary vendor (set
                     with p in that question, or with :lead VENDOR), else the
                     only one on PATH, else the question
+  --solo V[:MODEL][@EFFORT]
+                    start with a solo session instead of a team: V (claude,
+                    codex, gemini) on MODEL (default: its own, or --model's)
+                    at EFFORT; claude@xhigh, codex:gpt-5.6-terra@high. An open
+                    solo of the same vendor and choice on this checkout is
+                    gone on with; a team open here stays. V leads the teams
+                    :open adds unless --lead says who
   --model [V:]NAME  the model agents of vendor V run on (default: the
                     vendor's own); without V, the leader's vendor. NAME is
                     [MODEL][@EFFORT]: opus, opus@xhigh, @high; the efforts
@@ -112,6 +123,8 @@ struct Args {
     awake: bool,
     repo: PathBuf,
     lead: Option<Lead>,
+    /// `--solo`: the vendor and its `[MODEL][@EFFORT]` choice.
+    solo: Option<(Vendor, Option<String>)>,
     /// Stand-ins for the vendors' own models, by vendor (none: the
     /// leader's) and tier; `--model` is the standard tier.
     tiers: Vec<(Option<Vendor>, Tier, String)>,
@@ -166,16 +179,6 @@ const DEFAULT_WORKERS: usize = 4;
 const MAX_HELPERS: u64 = 8;
 const DEFAULT_HELPERS: usize = 2;
 
-/// Dollars with at most two decimals, as ten-thousandths of a dollar.
-/// Model names as Claude Code takes them: `sonnet`, `claude-opus-5-5`,
-/// `opus[1m]`.
-fn valid_model(s: &str) -> bool {
-    (1..=64).contains(&s.len())
-        && !s.starts_with('-')
-        && s.bytes()
-            .all(|b| b.is_ascii_alphanumeric() || b"-._[]@".contains(&b))
-}
-
 fn parse_args() -> Result<Args, String> {
     parse(std::env::args().skip(1), |k| std::env::var(k).ok())
 }
@@ -208,6 +211,7 @@ fn parse(
         awake: false,
         repo: PathBuf::from("."),
         lead: None,
+        solo: None,
         tiers: Vec::new(),
         budget: None,
         run_programs: Vec::new(),
@@ -262,6 +266,7 @@ fn parse(
                     format!("--lead: {value:?} is not claude, codex, gemini or ask")
                 })?))
             }
+            "--solo" => args.solo = Some(parse_solo(&value)?),
             "--tier" => args.tiers.push(parse_tier(&value)?),
             "--theme" => match theme::choose(&value) {
                 Ok(_) => args.theme = Some(value),
@@ -325,6 +330,21 @@ fn split_vendor<'a>(flag: &str, s: &'a str) -> Result<(Option<Vendor>, &'a str),
                 format!("{flag}: {v:?} is not a vendor imece drives (claude, codex, gemini)")
             }),
     }
+}
+
+/// `VENDOR[:MODEL][@EFFORT]`, as `--solo` takes it: a vendor imece drives,
+/// asked only for an effort it has.
+fn parse_solo(s: &str) -> Result<(Vendor, Option<String>), String> {
+    let (vendor, choice) = vendor_choice(s).ok_or_else(|| {
+        format!("--solo: {s:?} is not VENDOR[:MODEL][@EFFORT], like claude:opus@xhigh")
+    })?;
+    if !live::KNOWN.iter().any(|k| k.0 == vendor && k.2) {
+        return Err(format!("--solo: imece does not drive {}", vendor.label()));
+    }
+    if let Some(c) = &choice {
+        live::valid_choice(vendor, c).map_err(|why| format!("--solo: {why}"))?;
+    }
+    Ok((vendor, choice))
 }
 
 /// `[VENDOR:]TIER=MODEL`, as `--tier` takes it.
@@ -419,7 +439,12 @@ fn main() -> std::io::Result<()> {
         let present = live::probe(&args.repo, live::KNOWN).unwrap_or_else(|e| fail(e));
         let candidates = live::leaders(&present);
         let primary = saved.lead.as_deref().and_then(Vendor::parse);
-        let lead = match choose_lead(args.lead, primary, &candidates) {
+        // A solo start leads the teams `:open` adds with its own vendor,
+        // unless --lead says who: no question for a session with no leader.
+        let asked = args
+            .lead
+            .or(args.solo.as_ref().map(|(v, _)| Lead::Vendor(*v)));
+        let lead = match choose_lead(asked, primary, &candidates) {
             Some(v) => v,
             None => {
                 let mut pick = ui::pick::Pick::new(candidates, primary, args.lang);
@@ -456,6 +481,7 @@ fn main() -> std::io::Result<()> {
             run_programs: args.run_programs,
             run_timeout: args.run_timeout,
             confine: args.confine,
+            solo: args.solo,
         };
         match live::world(options, &present) {
             Ok((world, live)) => {
@@ -769,7 +795,13 @@ mod tests {
         assert!(args(&["--run-timeout", "9"], &[]).is_err());
         assert!(args(&["--run-timeout", "3601"], &[]).is_err());
         assert!(USAGE.contains("--run PROG") && USAGE.contains("--run-timeout S"));
-        for cmd in [":open PATH [NAME]", ":close NAME", ":rename NAME"] {
+        for cmd in [
+            ":open PATH [NAME]",
+            ":close NAME",
+            ":rename NAME",
+            ":solo [PATH] [CHOICE]",
+            "--solo V[:MODEL][@EFFORT]",
+        ] {
             assert!(USAGE.contains(cmd), "{cmd}");
         }
     }
@@ -887,6 +919,37 @@ mod tests {
     }
 
     #[test]
+    fn solo_takes_a_vendor_with_a_model_and_or_an_effort_it_has() {
+        let some = |s: &str| Some(s.to_string());
+        assert_eq!(parse_solo("claude"), Ok((Vendor::Claude, None)));
+        assert_eq!(
+            parse_solo("claude:opus@xhigh"),
+            Ok((Vendor::Claude, some("opus@xhigh")))
+        );
+        assert_eq!(parse_solo("codex@high"), Ok((Vendor::Codex, some("@high"))));
+        assert_eq!(parse_solo("gemini:pro"), Ok((Vendor::Gemini, some("pro"))));
+        for (bad, why) in [
+            ("", "not VENDOR[:MODEL][@EFFORT]"),
+            ("qwen", "not VENDOR[:MODEL][@EFFORT]"),
+            ("claude:-x", "not VENDOR[:MODEL][@EFFORT]"),
+            ("claude@bogus", "claude has no effort \"bogus\""),
+            ("gemini:pro@high", "gemini has no effort setting"),
+        ] {
+            let e = parse_solo(bad).unwrap_err();
+            assert!(e.starts_with("--solo: ") && e.contains(why), "{bad:?}: {e}");
+        }
+        let a = args(&["--solo", "codex:gpt-5.6-terra@xhigh"], &[]).unwrap();
+        assert_eq!(a.solo, Some((Vendor::Codex, some("gpt-5.6-terra@xhigh"))));
+        assert_eq!(
+            a.lead, None,
+            "the start makes the solo's vendor lead unless --lead"
+        );
+        assert_eq!(args(&[], &[]).unwrap().solo, None);
+        let e = args(&["--solo", "x"], &[]).unwrap_err();
+        assert!(e.starts_with("--solo:"), "{e}");
+    }
+
+    #[test]
     fn an_effort_is_checked_against_its_vendor_when_the_vendor_is_named() {
         let ok = |s: &str| parse_model(s).is_ok();
         assert!(ok("claude:opus@xhigh") && ok("claude:@max") && ok("codex:@xhigh"));
@@ -935,22 +998,6 @@ mod tests {
         );
         for bad in ["", ".5", "1.234", "-1", "1e3", "12345", "nan", "1,5"] {
             assert_eq!(parse_dollars(bad), None, "{bad}");
-        }
-    }
-
-    #[test]
-    fn a_model_name_can_not_pass_as_a_flag() {
-        assert!(valid_model("sonnet") && valid_model("opus[1m]") && valid_model("claude-opus-5-5"));
-        assert!(valid_model("@low") && valid_model("gpt-5.6-terra@xhigh"));
-        for bad in [
-            "",
-            "--dangerously-skip-permissions",
-            "a b",
-            "x;y",
-            "m/../n",
-            "codex:x",
-        ] {
-            assert!(!valid_model(bad), "{bad}");
         }
     }
 }

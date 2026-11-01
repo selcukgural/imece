@@ -166,7 +166,7 @@ impl Live {
     pub(super) fn stand(&mut self, w: &World, id: AgentId) {
         let a = &w.agents[id];
         let id = match (a.role, a.parent) {
-            (Role::Worker, _) => id,
+            (Role::Worker | Role::Solo, _) => id,
             (Role::Helper, Some(worker)) => worker,
             _ => return,
         };
@@ -213,7 +213,7 @@ impl Live {
     /// worktree stands every [`STAND_EVERY`] (as of `now`); its row
     /// counts the lines as they are written.
     pub(super) fn stand_busy(&mut self, w: &World, now: Instant) {
-        for a in w.agents.iter().filter(|a| a.role == Role::Worker) {
+        for a in (w.agents.iter()).filter(|a| matches!(a.role, Role::Worker | Role::Solo)) {
             let busy = self.turns[a.id] > 0 || w.helpers_of(a.id).any(|h| self.turns[h.id] > 0);
             let due = self.stood_at[a.id].is_none_or(|at| now.duration_since(at) >= STAND_EVERY);
             if busy && due && self.standing[a.id].is_none() {
@@ -393,7 +393,7 @@ impl Live {
     pub(super) fn follow(&mut self, w: &mut World, id: AgentId) {
         let a = &w.agents[id];
         let busy = self.turns[id] > 0 || w.helpers_of(id).any(|h| self.turns[h.id] > 0);
-        if a.role != Role::Worker
+        if !matches!(a.role, Role::Worker | Role::Solo)
             || busy
             || self.placing[id].is_some()
             || !matches!(self.slots[id], Slot::Running(_))
@@ -842,6 +842,114 @@ mod tests {
             .collect();
         assert_eq!(files, ["new.txt"]);
         assert_eq!(live.changes[&1].files.len(), 1);
+        let _ = std::fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&repo);
+    }
+
+    #[test]
+    fn a_solo_s_turn_end_shows_the_person_what_its_worktree_holds() {
+        let repo = checkout("solo-turn-repo");
+        let root = trees("solo-turn");
+        let mut w = team(1);
+        w.open_project(
+            None,
+            "notes".into(),
+            repo.display().to_string(),
+            Vendor::Claude,
+            Role::Solo,
+        );
+        let solo = w.projects[1].leader;
+        let mut live = Live::new(
+            3,
+            claude_at("/nonexistent/claude"),
+            repo.clone(),
+            root.clone(),
+        );
+        live.places.push(Place {
+            repo: repo.clone(),
+            root: root.clone(),
+        });
+        let tree = worktree::ensure(&repo, &root, "solo-1").unwrap().path;
+        live.ready(
+            &mut w,
+            solo,
+            Ok((Box::new(Stub), tree.clone(), None, None, Vec::new())),
+        );
+        assert_eq!(
+            live.standing[solo],
+            Some(false),
+            "its row learns where it stands"
+        );
+        let worker_tree = worker_in(&mut live, &mut w, 1, &repo, &root);
+        // Busy, its row learns where it stands as a worker's does.
+        live.standing[solo] = None;
+        live.stood_at[solo] = None;
+        live.turns[solo] = 1;
+        live.stand_busy(&w, Instant::now());
+        assert_eq!(live.standing[solo], Some(false));
+        live.turns[solo] = 0;
+        settle(&mut live, &mut w);
+        // Between turns its clean worktree follows the checkout, as a
+        // worker's does: git is asked, the prompts wait meanwhile.
+        live.follow(&mut w, solo);
+        assert!(live.placing[solo].is_some());
+        settle(&mut live, &mut w);
+        let turn_ends = |live: &mut Live, w: &mut World, id: AgentId, text: &str| {
+            live.turns[id] = 1;
+            // Not asked by the person: a solo's turn is still its report
+            // to them, as a leader's is.
+            live.asked[id] = false;
+            live.tx
+                .send((
+                    id,
+                    live.generation[id],
+                    AgentEvent::TurnDone {
+                        ok: true,
+                        text: text.into(),
+                        cost: 0,
+                        denied: 0,
+                    },
+                ))
+                .unwrap();
+            live.step(w);
+            settle(live, w);
+        };
+        // Nothing changed: the answer reaches the person, no change waits.
+        turn_ends(&mut live, &mut w, solo, "Read it.\nNothing to change.");
+        assert!(w.journal.iter().any(|e| matches!(
+            &e.event, Event::Replied { agent, text } if *agent == solo && text == "Read it.\nNothing to change."
+        )));
+        assert!(w.change_of(solo).is_none());
+        assert!(
+            w.agents[solo]
+                .trace
+                .iter()
+                .any(|l| l.ends_with("change: none"))
+        );
+        // A change: the turn's first line titles it, the person sees it.
+        std::fs::write(tree.join("a.txt"), "a\nb\n").unwrap();
+        turn_ends(&mut live, &mut w, solo, "Added b.\nMore words.");
+        let c = w.change_of(solo).expect("a change waits");
+        assert_eq!((c.title.as_str(), c.files.len()), ("Added b.", 1));
+        // Next to the answer itself, the change waits for the person.
+        let changes: Vec<usize> = (w.open_inbox().into_iter())
+            .filter(|&i| w.inbox[i].kind == InboxKind::Change)
+            .collect();
+        assert_eq!(changes.len(), 1);
+        assert_eq!(w.inbox[changes[0]].agent, solo);
+        assert!(
+            w.open_inbox()
+                .iter()
+                .any(|&i| w.inbox[i].kind == InboxKind::Reply)
+        );
+        // A worker's turn end shows nothing: its done does.
+        std::fs::write(worker_tree.join("a.txt"), "changed").unwrap();
+        turn_ends(&mut live, &mut w, 1, "Changed a.");
+        assert!(w.change_of(1).is_none());
+        // A turn that ends with nothing to say (a command) reads nothing.
+        std::fs::write(tree.join("a.txt"), "a\nb\nc\n").unwrap();
+        turn_ends(&mut live, &mut w, solo, "");
+        assert_eq!(w.change_of(solo).unwrap().title, "Added b.", "the old one");
         let _ = std::fs::remove_dir_all(&root);
         let _ = std::fs::remove_dir_all(&repo);
     }

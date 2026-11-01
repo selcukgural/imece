@@ -53,3 +53,52 @@ gained `effort`; a Claude agent's choice is split in `Live::start`
 for models. Known gaps: the leader's own effort can only come through
 `--model`/`--tier` of the standard tier (a `--lead claude:opus@high` form
 is for later); the `hire` tool still picks tiers, never efforts.
+
+Solo sessions v0 (PR 2, the `solo` branch, 2026-11-01): `Role::Solo` in
+`model.rs`; `World::head_name(project, name, role)` (`lead`/`solo` at home,
+`lead-NAME`/`solo-NAME` elsewhere; `World::head_stem`), `World::open_project`
+takes the head's role, `rename_project` keeps the stem, `World::is_solo(p)`,
+`free_project_name` (`kule`, `kule-2`, cut to a project name). Live:
+`Live::open_project(w, path, name, Open)` with `Open::Team` or `Open::Solo {
+vendor, choice }` (`live/projects.rs`): a team refuses a checkout that has an
+open team (`PathOpen`), solos never; the directory's name is numbered when a
+project has it (teams too, now); a closed project is reused only by its own
+kind; the vendor must be hireable here (`ProjectRefusal::Vendor`) and the
+choice valid for it (`ProjectRefusal::Choice`); the solo's model is the
+choice, else the vendor's standard rung, never tiered. `Options.solo` and
+`imece --solo V[:MODEL][@EFFORT]` (`main.rs`, `parse_solo`, `vendor_choice`
+in `model.rs`; without `--lead` the solo's vendor leads, no question):
+`live::world` goes on with an open solo of the same vendor and choice at the
+checkout (`Live::solo_at`, through `worktree::top` so paths compare as git
+gives them), else opens one; a bare start opens a team unless one is open,
+solos do not stand in for it. A solo is a writer: `Live::start` gives it a
+worktree named `solo-<project id>` (`Live::tree_of`, also its helpers'; a
+rename renames the agent, not the tree), the worker's toolset under the
+confine dial, `tools_of(Solo)` = send, run, hire (no post, board, claim: the
+board is the team's), the Solo prompt and a solo's helper's prompt
+(`prompts.rs`), `hire` lets it hire helpers (`solo-notes.1`), `follow`,
+`stand`, `stand_busy` and the row's link treat it as a worker, `reports`
+as a leader. The Δ: in `Live::step`, a solo's turn that ends with an answer
+the person gets (`asked` or `reports`) calls `snapshot` with the answer's
+first line as the title and nobody to answer; an empty answer (a command's
+turn) reads nothing; a worker's turn end still reads nothing, its `done`
+does. Screen: `:solo [PATH] [CHOICE] [NAME]` (`App::solo_project`, the
+words placed by shape: `/` `~` `.` → path, a vendor's name → choice, the rest
+the name; the flash `solo_opened`; `$` in the menu), `App::model_of` from
+the engine for the row; the salon draws a solo with its vendor and choice
+where a leader shows its vendor, the status glyph (not ◆), its stand and
+link, its helpers under it at depth 2, and counts it as working in the
+header; `:solo CHOICE` in the `?` help (`WRITING_KEYS` 20). Store: schema 12
+with no DDL change (an older imece can not read the `Solo` role tag, so the
+file says it is newer). Demo: `Sim::open_solo` (`:solo`, numbered names,
+reopened by name), a told solo works and answers; about every other answer
+shows a change of its code map (`Sim::models` for the row); `--solo` is
+not taken by the demo (it has no vendors to pick from) and the default demo
+world has no solo, so the tour videos stand. Known gaps: no pick screen for
+a bare `:solo` (it takes the lead vendor's standard rung; PR 3), no
+completion after `:solo `, no `:effort`/`:model` (PR 3); a solo's Gemini
+private directory follows its tree name (`solo-N`), its helpers' their own
+names; a solo's turn that ends while a helper is mid-turn is not a report
+(as a leader's), so its answer waits in its story and the Δ comes with the
+next answer; the two kinds of project are told apart only by the head's
+role.

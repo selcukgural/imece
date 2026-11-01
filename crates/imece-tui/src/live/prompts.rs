@@ -121,6 +121,53 @@ pub(super) fn system_prompt(
                 abilities(a.vendor, Role::Leader, confine)
             )
         }
+        Role::Solo => {
+            let helpers = if max_helpers == 0 {
+                String::new()
+            } else {
+                format!(
+                    " You may hire helpers with the hire tool, up to {max_helpers} at once: \
+                     each is a coding agent in your worktree, changing the same files as \
+                     you. Give one a part of your task with send (type assign: what to do, \
+                     which files, when it is done), in files you are not changing yourself; \
+                     it sends you done and leaves. Hire for a part that can run beside your \
+                     own work, not for the whole task and not in advance."
+                )
+            };
+            format!(
+                "You are {}, a coding agent in imece, working alone with the person on the \
+                 repository: no leader, no team. You work in your own git worktree of it \
+                 (your current directory); the person's own checkout is theirs. {} Do not \
+                 commit. The person talks to you and gives you your tasks. Every time your \
+                 turn ends, the person sees your worktree's diff and applies it to their \
+                 checkout or rejects it, with notes when they have them; so finish a piece \
+                 before you answer, and check it with the run tool (build, test) after your \
+                 last edit: the person sees which runs passed on exactly the diff, and a \
+                 check in your own shell does not show there. Answer briefly: what you did \
+                 and what is left; when you need the person to decide, end with one clear \
+                 question, or send it mid-task (send to you, type ask) and their answer \
+                 starts your next turn.{helpers} Use these tools only for that, not for \
+                 chatter.",
+                a.name,
+                abilities(a.vendor, Role::Solo, confine)
+            )
+        }
+        Role::Helper if w.is_solo(a.project) => {
+            let parent = &w.agents[a.parent.expect("a helper has a worker")].name;
+            format!(
+                "You are {}, a helper of {parent}, a coding agent in imece that works alone \
+                 with the person. You work in {parent}'s git worktree of the repository (your \
+                 current directory), on the files {parent} gave you; it changes others at the \
+                 same time, so stay in yours. {} Do not commit. Your task comes from {parent}. \
+                 When it is done, send {parent} a done message with a short summary of what \
+                 you changed and what is left open; you leave then. If you are stuck, send \
+                 {parent} blocked or ask instead of guessing; only what nobody but the person \
+                 can answer goes to them (send to you, type ask). Use these tools only for \
+                 that, not for chatter.",
+                a.name,
+                abilities(a.vendor, Role::Helper, confine)
+            )
+        }
         Role::Helper => {
             let parent = &w.agents[a.parent.expect("a helper has a worker")].name;
             format!(
@@ -455,6 +502,56 @@ mod tests {
             &msg("claude-2", "assign", "Add a test"),
         )
         .unwrap();
+    }
+
+    #[test]
+    fn a_solo_and_its_helper_are_told_they_work_alone_with_the_person() {
+        let mut w = team(1);
+        let team_helper = with_helper(&mut w, 1);
+        w.open_project(
+            None,
+            "notes".into(),
+            "/n".into(),
+            Vendor::Claude,
+            Role::Solo,
+        );
+        let solo = w.projects[1].leader;
+        let solo_helper = with_helper(&mut w, solo);
+        w.agents[solo_helper].project = 1;
+        let p = system_prompt(&w, solo, 4, 2, Confine::Standard);
+        for part in [
+            "You are solo-notes, a coding agent in imece, working alone with the person",
+            "no leader, no team",
+            "Every time your turn ends, the person sees your worktree's diff",
+            "check it with the run tool",
+            "hire helpers with the hire tool, up to 2 at once",
+            "send to you, type ask",
+        ] {
+            assert!(p.contains(part), "{part:?} in {p}");
+        }
+        assert!(!p.contains("a team led by"));
+        assert!(
+            p.contains("reach the web"),
+            "a writer's abilities under standard"
+        );
+        let p = system_prompt(&w, solo, 4, 0, Confine::Strict);
+        assert!(!p.contains("hire helpers"), "--helpers 0");
+        assert!(
+            p.contains("the run tool runs the build"),
+            "strict: no shell"
+        );
+        let h = system_prompt(&w, solo_helper, 4, 2, Confine::Standard);
+        assert!(
+            h.starts_with("You are solo-notes.1, a helper of solo-notes, a coding agent in imece that works alone with the person."),
+            "{h}"
+        );
+        assert!(!h.contains("a team led by"));
+        assert!(h.contains("nobody but the person can answer"));
+        let h = system_prompt(&w, team_helper, 4, 2, Confine::Standard);
+        assert!(
+            h.contains("a team led by lead"),
+            "a team's helper as before: {h}"
+        );
     }
 
     #[test]

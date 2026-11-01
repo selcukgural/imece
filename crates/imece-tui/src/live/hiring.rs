@@ -256,7 +256,7 @@ impl Live {
         let (project, own) = (hirer.project, hirer.vendor);
         let role = match hirer.role {
             Role::Leader => Role::Worker,
-            Role::Worker => Role::Helper,
+            Role::Worker | Role::Solo => Role::Helper,
             _ => return Err("only the leader and workers hire; ask yours with send".into()),
         };
         // How many there are and how many there may be.
@@ -1101,6 +1101,38 @@ mod tests {
         );
         let _ = std::fs::remove_dir_all(&dir);
         let _ = std::fs::remove_dir_all(&repo);
+    }
+
+    #[test]
+    fn a_solo_hires_helpers_named_after_it_and_a_helper_hires_nobody() {
+        let mut w = team(0);
+        let mut live = idle_live(1);
+        w.open_project(
+            None,
+            "notes".into(),
+            "/n".into(),
+            Vendor::Claude,
+            Role::Solo,
+        );
+        live.grow(None, false);
+        live.max_helpers = 1;
+        let got = live.hire(&mut w, 1, &json!({ "tier": "cheap" })).unwrap();
+        assert!(
+            got.starts_with("solo-notes.1 joined (claude, haiku)"),
+            "{got}"
+        );
+        let h = &w.agents[2];
+        assert_eq!(
+            (h.name.as_str(), h.role, h.parent, h.project),
+            ("solo-notes.1", Role::Helper, Some(1), 1)
+        );
+        let e = live.hire(&mut w, 1, &json!({})).unwrap_err();
+        assert!(
+            e.contains("you have 1 helpers") && e.contains("--helpers 1"),
+            "{e}"
+        );
+        let e = live.hire(&mut w, 2, &json!({})).unwrap_err();
+        assert!(e.starts_with("only the leader and workers hire"), "{e}");
     }
 
     #[test]

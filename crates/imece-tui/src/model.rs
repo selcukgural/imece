@@ -121,6 +121,10 @@ impl Vendor {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Role {
     Leader,
+    /// A session the person drives alone, in a project of its own with
+    /// no leader: it writes in its own worktree as a worker does, and
+    /// every turn end shows the person what changed. It may hire helpers.
+    Solo,
     Worker,
     /// A worker's own helper: hired by the worker for a part of its task,
     /// working in the worker's worktree, gone when it sends done.
@@ -321,6 +325,10 @@ pub enum ProjectRefusal {
     Bus(String),
     /// The last open project stays open.
     Last,
+    /// A solo on a vendor that is not here.
+    Vendor(String),
+    /// A solo's `[MODEL][@EFFORT]` asks for an effort its vendor lacks.
+    Choice(String),
 }
 
 impl ProjectRefusal {
@@ -335,6 +343,10 @@ impl ProjectRefusal {
             }
             ProjectRefusal::Bus(why) => format!("the leader could not get a socket: {why}"),
             ProjectRefusal::Last => "the last open project stays open".into(),
+            ProjectRefusal::Vendor(v) => {
+                format!("{v} is not on PATH here, or imece does not drive it")
+            }
+            ProjectRefusal::Choice(why) => why.clone(),
         }
     }
 }
@@ -346,6 +358,24 @@ pub fn valid_project_name(name: &str) -> bool {
         && name
             .chars()
             .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
+}
+
+/// `stem` when no open project goes by it, else the first of `stem-2`,
+/// `stem-3`, … that none does, cut so the whole stays a project name: a
+/// second solo on a checkout. The search is bounded by the number of
+/// projects.
+pub fn free_project_name(w: &World, stem: &str) -> String {
+    if w.project_by_name(stem).is_none() {
+        return stem.to_string();
+    }
+    (2..=w.projects.len() + 2)
+        .map(|n| {
+            let suffix = format!("-{n}");
+            let keep: String = stem.chars().take(24 - suffix.len()).collect();
+            format!("{keep}{suffix}")
+        })
+        .find(|name| w.project_by_name(name).is_none())
+        .expect("some number is free")
 }
 
 /// The checkout's directory name, `repo` for the root.
@@ -1439,14 +1469,28 @@ impl World {
         a.trace(t, "left");
     }
 
-    /// What the leader of project `project`, named `name`, is called:
-    /// `lead` in the project imece started in, `lead-NAME` elsewhere.
-    pub fn leader_name(project: ProjectId, name: &str) -> String {
+    /// What the head of project `project`, named `name`, is called: `lead`
+    /// for a leader (`solo` for a solo agent) in the project imece started
+    /// in, `lead-NAME` (`solo-NAME`) elsewhere.
+    pub fn head_name(project: ProjectId, name: &str, role: Role) -> String {
+        let stem = World::head_stem(role);
         if project == 0 {
-            "lead".into()
+            stem.into()
         } else {
-            format!("lead-{name}")
+            format!("{stem}-{name}")
         }
+    }
+
+    /// `lead` for a leader, `solo` for a solo agent: the first word of a
+    /// project head's name.
+    pub fn head_stem(role: Role) -> &'static str {
+        if role == Role::Solo { "solo" } else { "lead" }
+    }
+
+    /// Whether project `p` is a solo session: its head is the agent the
+    /// person drives, not a leader.
+    pub fn is_solo(&self, p: ProjectId) -> bool {
+        self.agents[self.projects[p].leader].role == Role::Solo
     }
 
     /// Project `reuse` opens again, else a new project is added, named
@@ -1458,16 +1502,17 @@ impl World {
         name: String,
         path: String,
         vendor: Vendor,
+        role: Role,
     ) -> ProjectId {
         let p = reuse.unwrap_or(self.projects.len());
         let leader = self.agents.len();
-        let lead = World::leader_name(p, &name);
+        let lead = World::head_name(p, &name, role);
         self.agents.push(Agent::new(
             leader,
             p,
             lead,
             vendor,
-            Role::Leader,
+            role,
             Status::Idle,
             self.tick,
         ));
@@ -1516,11 +1561,13 @@ impl World {
         self.note(Event::Closed { leader });
     }
 
-    /// Project `p` is called `name` from now on, and its leader `lead-NAME`.
+    /// Project `p` is called `name` from now on, and its head `lead-NAME`
+    /// (`solo-NAME` for a solo session), project 0's too.
     pub fn rename_project(&mut self, p: ProjectId, name: String) {
         let leader = self.projects[p].leader;
         let from = std::mem::replace(&mut self.projects[p].name, name.clone());
-        self.agents[leader].name = format!("lead-{name}");
+        let stem = World::head_stem(self.agents[leader].role);
+        self.agents[leader].name = format!("{stem}-{name}");
         self.note(Event::Renamed {
             leader,
             from,
@@ -2001,6 +2048,36 @@ fn clock_seconds(tick: u64) -> String {
 
 /// Ten-thousandths of a dollar as `$D.CC`; a cost under a cent that is not
 /// zero reads `<$0.01`, so cheap work never looks free.
+/// Whether `s` may go to a vendor as a model choice (`[MODEL][@EFFORT]`):
+/// 1-64 of letters, digits and `-._[]@`, not starting with `-`, so it can
+/// never pass as a flag. Model names as the vendors take them: `sonnet`,
+/// `claude-opus-5-5`, `opus[1m]`, `gpt-5.6-terra@high`.
+pub fn valid_model(s: &str) -> bool {
+    (1..=64).contains(&s.len())
+        && !s.starts_with('-')
+        && s.bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b"-._[]@".contains(&b))
+}
+
+/// `VENDOR[:MODEL][@EFFORT]` as `--solo` and `:solo` take it: the vendor,
+/// and the `[MODEL][@EFFORT]` choice after it (`claude`, `claude:opus`,
+/// `claude@xhigh`, `codex:gpt-5.6-terra@high`), none for the vendor's
+/// own. None when the vendor is not one imece leads with, or the choice
+/// is not a model choice.
+pub fn vendor_choice(s: &str) -> Option<(Vendor, Option<String>)> {
+    let cut = s.find([':', '@']).unwrap_or(s.len());
+    let vendor = Vendor::parse(&s[..cut])?;
+    let rest = &s[cut..];
+    let choice = match rest.strip_prefix(':') {
+        Some(c) => c,
+        None => rest,
+    };
+    if choice.is_empty() {
+        return Some((vendor, None));
+    }
+    valid_model(choice).then(|| (vendor, Some(choice.to_string())))
+}
+
 /// Dollars as typed (`5`, `2.50`), in ten-thousandths of a dollar.
 pub fn parse_dollars(s: &str) -> Option<u64> {
     let (whole, cents) = s.split_once('.').unwrap_or((s, ""));
@@ -2475,12 +2552,18 @@ mod tests {
         w.projects.clear();
         w.tick = 9;
         assert_eq!(
-            w.open_project(None, "home".into(), "/h".into(), Vendor::Claude),
+            w.open_project(
+                None,
+                "home".into(),
+                "/h".into(),
+                Vendor::Claude,
+                Role::Leader
+            ),
             0
         );
         assert_eq!(w.agents[0].name, "lead", "the first project's leader");
         assert_eq!(
-            w.open_project(None, "api".into(), "/a".into(), Vendor::Codex),
+            w.open_project(None, "api".into(), "/a".into(), Vendor::Codex, Role::Leader),
             1
         );
         let a = &w.agents[1];
@@ -2522,7 +2605,13 @@ mod tests {
         ));
         w.close_project(1);
         assert_eq!(
-            w.open_project(Some(1), "api2".into(), "/a".into(), Vendor::Claude),
+            w.open_project(
+                Some(1),
+                "api2".into(),
+                "/a".into(),
+                Vendor::Claude,
+                Role::Leader
+            ),
             1
         );
         assert_eq!(w.projects.len(), 2, "reopened in place");
@@ -2538,7 +2627,13 @@ mod tests {
             agent(0, Role::Leader, Status::Idle),
             agent(1, Role::Worker, Status::Working),
         ]);
-        w.open_project(None, "api".into(), "/a".into(), Vendor::Claude);
+        w.open_project(
+            None,
+            "api".into(),
+            "/a".into(),
+            Vendor::Claude,
+            Role::Leader,
+        );
         let mut worker = agent(3, Role::Worker, Status::Working);
         worker.project = 1;
         w.agents.push(worker);
@@ -2593,8 +2688,115 @@ mod tests {
             &w.journal.last().unwrap().event,
             Event::Renamed { leader: 0, from, to } if from == "p" && to == "shop"
         ));
-        assert_eq!(World::leader_name(0, "x"), "lead");
-        assert_eq!(World::leader_name(1, "x"), "lead-x");
+        assert_eq!(World::head_name(0, "x", Role::Leader), "lead");
+        assert_eq!(World::head_name(1, "x", Role::Leader), "lead-x");
+        assert_eq!(World::head_name(0, "x", Role::Solo), "solo");
+        assert_eq!(World::head_name(2, "x", Role::Solo), "solo-x");
+        assert_eq!(
+            World::head_name(2, "x", Role::Worker),
+            "lead-x",
+            "only a solo is solo"
+        );
+    }
+
+    #[test]
+    fn a_free_project_name_numbers_from_two_and_stays_a_project_name() {
+        let mut w = world(vec![agent(0, Role::Leader, Status::Idle)]);
+        assert_eq!(free_project_name(&w, "shop"), "shop");
+        assert_eq!(free_project_name(&w, "p"), "p-2", "p is open");
+        w.open_project(None, "p-2".into(), "/r".into(), Vendor::Claude, Role::Solo);
+        assert_eq!(free_project_name(&w, "p"), "p-3");
+        let long = "a".repeat(24);
+        w.open_project(None, long.clone(), "/r".into(), Vendor::Claude, Role::Solo);
+        let next = free_project_name(&w, &long);
+        assert_eq!(next, format!("{}-2", "a".repeat(22)));
+        assert!(valid_project_name(&next));
+        w.close_project(1);
+        assert_eq!(
+            free_project_name(&w, "p"),
+            "p-2",
+            "a closed one does not count"
+        );
+    }
+
+    #[test]
+    fn a_vendor_choice_is_the_vendor_then_a_model_and_or_an_effort() {
+        let some = |s: &str| Some(s.to_string());
+        assert_eq!(vendor_choice("claude"), Some((Vendor::Claude, None)));
+        assert_eq!(vendor_choice("claude:"), Some((Vendor::Claude, None)));
+        assert_eq!(
+            vendor_choice("claude:opus"),
+            Some((Vendor::Claude, some("opus")))
+        );
+        assert_eq!(
+            vendor_choice("claude@xhigh"),
+            Some((Vendor::Claude, some("@xhigh")))
+        );
+        assert_eq!(
+            vendor_choice("claude:@max"),
+            Some((Vendor::Claude, some("@max")))
+        );
+        assert_eq!(
+            vendor_choice("codex:gpt-5.6-terra@high"),
+            Some((Vendor::Codex, some("gpt-5.6-terra@high")))
+        );
+        assert_eq!(
+            vendor_choice("gemini:pro"),
+            Some((Vendor::Gemini, some("pro")))
+        );
+        for bad in [
+            "",
+            "qwen",
+            "qwen:big",
+            "claude:-x",
+            "claude:a b",
+            "Claude",
+            "notes",
+        ] {
+            assert_eq!(vendor_choice(bad), None, "{bad:?}");
+        }
+    }
+
+    #[test]
+    fn a_model_choice_can_not_pass_as_a_flag() {
+        assert!(valid_model("sonnet") && valid_model("opus[1m]") && valid_model("claude-opus-5-5"));
+        assert!(valid_model("@low") && valid_model("gpt-5.6-terra@xhigh"));
+        for bad in [
+            "",
+            "--dangerously-skip-permissions",
+            "a b",
+            "x;y",
+            "m/../n",
+            "codex:x",
+        ] {
+            assert!(!valid_model(bad), "{bad}");
+        }
+        assert!(!valid_model(&"a".repeat(65)) && valid_model(&"a".repeat(64)));
+    }
+
+    #[test]
+    fn a_solo_project_s_head_is_the_solo_agent_and_renames_as_one() {
+        let mut w = world(vec![agent(0, Role::Leader, Status::Idle)]);
+        let p = w.open_project(None, "notes".into(), "/r".into(), Vendor::Codex, Role::Solo);
+        assert_eq!(p, 1);
+        let head = w.projects[p].leader;
+        let a = &w.agents[head];
+        assert_eq!(
+            (a.name.as_str(), a.role, a.vendor, a.project, a.status),
+            ("solo-notes", Role::Solo, Vendor::Codex, 1, Status::Idle)
+        );
+        assert!(w.is_solo(1) && !w.is_solo(0));
+        w.rename_project(1, "ideas".into());
+        assert_eq!(w.agents[head].name, "solo-ideas");
+        // A head's stem is its role's; project 0's head is the bare stem
+        // until a rename, which names it like any other.
+        assert_eq!(World::head_stem(Role::Solo), "solo");
+        for r in [Role::Leader, Role::Worker, Role::Helper, Role::Researcher] {
+            assert_eq!(World::head_stem(r), "lead");
+        }
+        w.agents[0].role = Role::Solo;
+        w.rename_project(0, "mine".into());
+        assert_eq!(w.agents[0].name, "solo-mine");
     }
 
     #[test]

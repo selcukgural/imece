@@ -12,16 +12,18 @@ A project is one git checkout with its own leader and workers. imece starts with
 | Command | What it does |
 | --- | --- |
 | `:open PATH [NAME]` (`:o`) | opens the git checkout at PATH as a project of its own, with a new leader `lead-NAME` on the team's lead vendor (same model and tiers). NAME defaults to the directory's name made safe: 1-24 of letters, digits, `.`, `_`, `-`, the rest replaced by `-`. The `:` menu marks it `$`: a new leader session. |
+| `:solo [PATH] [CHOICE] [NAME]` | opens a solo session as a project of its own: one agent, `solo-NAME`, that you drive yourself, on the vendor, model and effort you name, with no leader ([solo sessions](solo.md)). Any number may share a checkout with its team. `$`: a new session. |
 | `:close [NAME]` (`:c`) | ends the project's agents' sessions and runs, drops their mail, notes, offers and changes, closes their inbox items, marks the project closed. Worktrees stay on disk. No name: the project at hand. The last open project refuses to close (`q q` quits). |
 | `:rename NAME` | renames the project at hand and its leader to `lead-NAME` (the first project's too). Sessions go on; every live agent of it gets a note at its next prompt, and a `send` to the old name answers with the team list. |
 
-- A closed project keeps its id; opening the same checkout again reuses it, with a new leader. Its pin is kept for then.
+- A closed project keeps its id; opening the same checkout again reuses it, with a new leader (a closed solo is reused by the next solo on that checkout, never by a team). Its pin is kept for then.
+- One checkout holds at most one open team (`that checkout is open already, as kule`) and any number of solos. The directory's name takes a number when a project has it: `kule`, `kule-2`.
 - Names are global: `@lead-api` reaches that project's leader from anywhere; the completion after `@` lists the project at hand first.
 - A PATH with spaces is not parsed (no quoting). `:open ` completes directories from the filesystem (hidden ones after a `.`, `~` for home); `:close ` and `:pin ` complete the open projects' names.
 - The journal: `you opened api at /src/api`, `you closed api`, `you renamed api to gateway`.
 - Projects are remembered in the store; a remembered project whose checkout is gone loads closed.
 
-The lead vendor cannot be chosen per project: every leader runs on the team's lead vendor.
+The lead vendor cannot be chosen per project: every leader runs on the team's lead vendor. A solo's vendor, model and effort are yours to pick, per solo.
 
 ## Groups in the salon
 
