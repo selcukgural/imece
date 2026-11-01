@@ -63,6 +63,29 @@ pub fn apply(w: &mut World, id: AgentId, e: AgentEvent, before: u64) {
             }
         }
         AgentEvent::ToolFailed { name } => w.agents[id].trace(t, format!("tool_result {name} ✕")),
+        // Its own to-do list, whole; the trace says how far it is and
+        // what it has in hand.
+        AgentEvent::Plan(steps) => {
+            let a = &mut w.agents[id];
+            a.plan = steps
+                .into_iter()
+                .map(|s| Step {
+                    text: s.text,
+                    state: match s.state {
+                        imece_agent::StepState::Todo => StepState::Todo,
+                        imece_agent::StepState::Doing => StepState::Doing,
+                        imece_agent::StepState::Done => StepState::Done,
+                    },
+                })
+                .collect();
+            let (done, all) = a.plan_count();
+            let doing = a
+                .plan
+                .iter()
+                .find(|s| s.state == StepState::Doing)
+                .map_or(String::new(), |s| format!(" {:?}", s.text));
+            a.trace(t, format!("plan {done}/{all}{doing}"));
+        }
         // `Live::step` takes these to the person before anything is applied.
         AgentEvent::Asks { .. } | AgentEvent::Withdrawn { .. } => {}
         AgentEvent::TurnDone {
@@ -128,8 +151,9 @@ impl Live {
             }
         }
         w.close_approvals(id);
-        // What it served went with its session.
+        // What it served, and its to-do list, went with its session.
         w.agents[id].local = None;
+        w.agents[id].plan.clear();
         w.agents[id].starting = false;
         self.spent_before[id] = w.agents[id].cost;
         self.slots[id] = Slot::None;
@@ -816,6 +840,67 @@ mod tests {
     }
 
     #[test]
+    fn a_plan_is_the_agent_s_to_do_list_until_its_session_ends() {
+        let mut w = team(1);
+        let step = |text: &str, state| imece_agent::Step {
+            text: text.into(),
+            state,
+        };
+        let shown = |text: &str, state| Step {
+            text: text.into(),
+            state,
+        };
+        apply(
+            &mut w,
+            1,
+            AgentEvent::Plan(vec![
+                step("read", imece_agent::StepState::Done),
+                step("change", imece_agent::StepState::Doing),
+                step("test", imece_agent::StepState::Todo),
+            ]),
+            0,
+        );
+        let a = &w.agents[1];
+        assert_eq!(
+            a.plan,
+            [
+                shown("read", StepState::Done),
+                shown("change", StepState::Doing),
+                shown("test", StepState::Todo)
+            ]
+        );
+        assert_eq!(a.plan_count(), (1, 3));
+        let last = a.trace.back().unwrap();
+        assert!(last.ends_with(r#" plan 1/3 "change""#), "{last}");
+        // Nothing in hand: the count alone. The whole list each time.
+        apply(
+            &mut w,
+            1,
+            AgentEvent::Plan(vec![step("read", imece_agent::StepState::Done)]),
+            0,
+        );
+        let last = w.agents[1].trace.back().unwrap();
+        assert!(last.ends_with(" plan 1/1"), "{last}");
+        assert_eq!(w.agents[1].plan.len(), 1);
+        // A turn's end keeps it; the session's end takes it.
+        apply(
+            &mut w,
+            1,
+            AgentEvent::TurnDone {
+                ok: true,
+                text: "done".into(),
+                cost: 0,
+                denied: 0,
+            },
+            0,
+        );
+        assert_eq!(w.agents[1].plan.len(), 1);
+        let mut live = idle_live(w.agents.len());
+        live.end(&mut w, 1);
+        assert!(w.agents[1].plan.is_empty());
+    }
+
+    #[test]
     fn a_finished_turn_answers_the_person_and_closes_the_card() {
         let mut w = team(1);
         let c = with_card(&mut w, 1);
@@ -1296,7 +1381,10 @@ mod tests {
         let args: Vec<&str> = args.lines().collect();
         let after = |f: &str| args[args.iter().position(|a| *a == f).unwrap() + 1];
         // The leader never writes: its list, whatever the level.
-        assert_eq!(after("--tools"), "Glob,Grep,Read,WebFetch,WebSearch");
+        assert_eq!(
+            after("--tools"),
+            "Glob,Grep,Read,TaskCreate,TaskGet,TaskList,TaskUpdate,WebFetch,WebSearch"
+        );
         assert!(!args.contains(&"--restricted"), "{args:?}");
         assert!(!args.contains(&"--disallowedTools"), "{args:?}");
         live.told(&mut w, 1, "hello").unwrap();
@@ -1359,7 +1447,7 @@ mod tests {
         let after = |f: &str| args[args.iter().position(|a| *a == f).unwrap() + 1];
         assert_eq!(
             after("--tools"),
-            "Bash,Edit,Glob,Grep,Read,WebFetch,WebSearch,Write"
+            "Bash,Edit,Glob,Grep,Read,TaskCreate,TaskGet,TaskList,TaskUpdate,WebFetch,WebSearch,Write"
         );
         assert_eq!(after("--name"), "imece claude-1.1");
         assert!(after("--append-system-prompt").starts_with("You are claude-1.1, a helper"));

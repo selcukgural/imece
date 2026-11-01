@@ -354,6 +354,22 @@ pub struct Limit {
 pub const FIVE_HOURS: u32 = 5 * 60;
 pub const WEEK: u32 = 7 * 24 * 60;
 
+/// One step of the agent's own to-do list, as its vendor's planning tool
+/// keeps it (Claude Code's tasks, Codex's `update_plan`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Step {
+    pub text: String,
+    pub state: StepState,
+}
+
+/// Where a [`Step`] stands: not begun, in hand, or done.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum StepState {
+    Todo,
+    Doing,
+    Done,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub enum Event {
     /// The vendor confirmed the settings it runs with, and they are the ones
@@ -379,6 +395,9 @@ pub enum Event {
     Tool { name: String, target: String },
     /// A tool call came back with an error.
     ToolFailed { name: String },
+    /// The agent's own to-do list as its planning tool now holds it,
+    /// whole, in the agent's order; an empty list is a cleared one.
+    Plan(Vec<Step>),
     /// The session waits for the person's yes before it does `what`;
     /// [`Agent::decide`] with `request` answers it.
     Asks { request: String, what: Ask },

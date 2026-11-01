@@ -14,7 +14,8 @@ hooks and `.env` never load. Confinement is a POLICY file imece writes
 there (`--policy DIR`, the user tier's only policies once named; just
 root-owned system policies rank above): allow the role's file tools
 (read_file, list_directory, glob, grep_search; workers and helpers also
-write_file, replace) and imece's MCP tools by their FULL names
+write_file, replace; everyone write_todos since record 63, Gemini's own
+to-do list, whose steps ACP 0.65 does not carry) and imece's MCP tools by their FULL names
 (`mcp_imece_send`; the `mcpName` form matches when tools are shown to
 the model but not when one is called) at priority 999, deny `*` at 998
 (the highest matching rule wins, and a denied tool is hidden from the

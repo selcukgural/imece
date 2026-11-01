@@ -51,3 +51,5 @@ the whole disk, unlike Claude's `--restricted`; no per-session dollar cap
 for Codex (the pot still stops new turns). An ignored test
 (`IMECE_LIVE_CODEX=1 cargo test -p imece-agent -- --ignored live_codex`)
 runs one real turn with `send` over `nc -U`.
+
+Record 63 (2026-11-01) adds one override to every session: `tools.update_plan.enabled=true`, Codex's `update_plan` tool for the agent's own to-do list, off in an app-server thread unless asked for; `config/read` does not echo it, so `check_config` leaves it unchecked (it changes no file).

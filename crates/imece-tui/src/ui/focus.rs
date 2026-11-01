@@ -8,6 +8,7 @@ use ratatui::widgets::{Block, Paragraph};
 
 use super::*;
 use crate::app::App;
+use crate::i18n::Text;
 
 fn story_icon(k: StoryKind) -> (&'static str, usize, Color) {
     match k {
@@ -88,6 +89,14 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App, id: AgentId) {
             Span::raw(leases),
         ]));
     }
+    if !a.plan.is_empty() {
+        let (done, all) = a.plan_count();
+        head.push(Line::from(Span::styled(
+            fill(t.plan_title, &[&done.to_string(), &all.to_string()]),
+            bold(pal().strong),
+        )));
+        head.extend(plan_lines(t, &a.plan));
+    }
 
     let [top, body] = Layout::vertical([
         Constraint::Length(head.len() as u16 + 1),
@@ -101,6 +110,56 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App, id: AgentId) {
         None => vec![Line::from(Span::styled(t.no_story, dim()))],
     };
     tail(f, body, story);
+}
+
+/// Rows the agent's to-do list may take on its focus, the title not
+/// counted.
+pub(crate) const PLAN_ROWS: usize = 8;
+
+/// The agent's to-do list, a step a line in its order: `✓` done, `▸` in
+/// hand, `○` not begun. A list longer than [`PLAN_ROWS`] folds the done
+/// steps at its top into one line and counts what it leaves off, so what
+/// is in hand stays in view.
+pub(crate) fn plan_lines(t: &Text, plan: &[Step]) -> Vec<Line<'static>> {
+    let mut lines = Vec::new();
+    let mut rest = plan;
+    if plan.len() > PLAN_ROWS {
+        let done = plan
+            .iter()
+            .take_while(|s| s.state == StepState::Done)
+            .count();
+        if done > 0 {
+            lines.push(Line::from(Span::styled(
+                fill(t.plan_done, &[&done.to_string()]),
+                fg(pal().ok),
+            )));
+            rest = &plan[done..];
+        }
+    }
+    let room = PLAN_ROWS - lines.len();
+    let shown = if rest.len() > room {
+        room - 1
+    } else {
+        rest.len()
+    };
+    for s in &rest[..shown] {
+        let (glyph, style) = match s.state {
+            StepState::Done => ("✓", fg(pal().ok)),
+            StepState::Doing => ("▸", bold(pal().info)),
+            StepState::Todo => ("○", dim()),
+        };
+        lines.push(Line::from(vec![
+            Span::styled(format!("{glyph} "), style),
+            Span::styled(fit(&s.text, 100).trim_end().to_string(), style),
+        ]));
+    }
+    if rest.len() > shown {
+        lines.push(Line::from(Span::styled(
+            fill(t.plan_more, &[&(rest.len() - shown).to_string()]),
+            dim(),
+        )));
+    }
+    lines
 }
 
 /// Card `c`'s story, a line per event, oldest first; conversation lines

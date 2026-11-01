@@ -1208,7 +1208,10 @@ mod tests {
         assert_eq!(after("--model"), "sonnet");
         // What is left of the budget, in dollars: (10000 - 1000) ten-thousandths.
         assert_eq!(after("--max-budget-usd"), "0.900000");
-        assert_eq!(after("--tools"), "Glob,Grep,Read,WebFetch,WebSearch");
+        assert_eq!(
+            after("--tools"),
+            "Glob,Grep,Read,TaskCreate,TaskGet,TaskList,TaskUpdate,WebFetch,WebSearch"
+        );
         assert_eq!(after("--allowedTools"), "WebFetch,WebSearch");
         assert!(args.contains(&"--restricted"), "standard still restricts");
         assert_eq!(after("--name"), "imece lead");

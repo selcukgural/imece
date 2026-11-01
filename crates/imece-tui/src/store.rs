@@ -2007,7 +2007,7 @@ mod tests {
         assert!(
             b.agents
                 .iter()
-                .all(|a| a.talk.is_none() && a.activity.is_none())
+                .all(|a| a.talk.is_none() && a.activity.is_none() && a.plan.is_empty())
         );
         assert_eq!(b.agents[1].trace.len(), 200, "the kept tail");
         assert_eq!(b.agents[1].trace[0], w.agents[1].trace[0]);

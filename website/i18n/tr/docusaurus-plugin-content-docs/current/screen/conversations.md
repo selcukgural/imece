@@ -72,7 +72,7 @@ Açık bir pencere konuşmaya ayak uydurur: çiftinin gelen günlük satırları
 
 ## İz
 
-Salonda bir agent'ta `enter` odağını açar (ODAK · ad: kartı, durumu, kökeni, lease'leri ve hikâyesi); yine `enter`, ya da `t` (`:trace`), ham akışını açar: İZ · ad. İz, agent'ın oturumunun imece'nin gördüğü hâlidir, satır satır, satırın ilk sözcüğüne göre renkli: agent'ın kendi metni satıcı renginde, `tool_use` aracın adıyla bilgi renginde, bir `run:` çıkış koduna göre, `stopped` ve `run refused` kötü renkte, bus sözcükleri vurgu renginde. Birkaç satıra yayılan bir araç çağrısı satırlarını korur, içeriden, en çok altı, sonra `… +N`. `esc` odağa, sonra salona döner. Bir odakta ya da izde `@` o agent'a bir mesaj başlatır.
+Salonda bir agent'ta `enter` odağını açar (ODAK · ad: kartı, durumu, kökeni, lease'leri, tutuyorsa kendi yapılacaklar listesi ve hikâyesi). Yapılacaklar listesi YAPILACAKLAR 3/7 ve satır başına bir adımdır: `✓` bitti, `▸` elinde, `○` başlanmadı, agent'ın sırasıyla; sekiz satırı aşan bir liste tepesindeki biten adımları `✓ 4 bitti` diye katlar ve `… 2 daha` ile biter, böylece elindeki görünür kalır; yine `enter`, ya da `t` (`:trace`), ham akışını açar: İZ · ad. İz, agent'ın oturumunun imece'nin gördüğü hâlidir, satır satır, satırın ilk sözcüğüne göre renkli: agent'ın kendi metni satıcı renginde, `tool_use` aracın adıyla bilgi renginde, bir `run:` çıkış koduna göre, `stopped` ve `run refused` kötü renkte, bus sözcükleri vurgu renginde. Birkaç satıra yayılan bir araç çağrısı satırlarını korur, içeriden, en çok altı, sonra `… +N`. `esc` odağa, sonra salona döner. Bir odakta ya da izde `@` o agent'a bir mesaj başlatır.
 
 ## Ayrıca bakınız
 
