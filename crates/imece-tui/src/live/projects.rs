@@ -780,7 +780,9 @@ mod tests {
             solo: solo.map(|v| (v, None)),
         };
         assert_eq!(
-            probe(&folder, &[(Vendor::Claude, "sh", true)]),
+            // A program every runner has that answers `--version` (dash's
+            // `sh` does not).
+            probe(&folder, &[(Vendor::Claude, "git", true)]),
             Ok(vec![(Vendor::Claude, true)]),
             "the vendors are looked for from the folder"
         );
