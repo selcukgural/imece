@@ -175,6 +175,12 @@ imece fails closed: when a file, a session or a change is not what it expects, i
 
 **Why.** A save to the store failed (disk full, the file gone). It is flashed once; the screen goes on, and the next save tries again.
 
+### How much of the machine does imece itself use?
+
+**Why.** Little: the screen is drawn every tick (100 ms live) and only the cells that changed are sent. While the terminal does not have the focus (you are in another window; tmux needs `focus-events on`), imece draws once a second unless a key, a paste or a resize comes; the title, the notices and the agents' turns go on as before. A terminal that does not report the focus is drawn every tick.
+
+**What to do.** To see the figures on your machine, `cargo build --release` and run `python3 -I tools/measure.py --fast`: a demo run focused and one in another window, with the CPU time, the peak memory and the bytes sent to the terminal of each. On an M3 Max MacBook Pro, 15 s at the demo's top speed took 0.55 s of CPU focused and 0.10 s in another window (0.64 against 0.17 MiB drawn), 6 MiB of memory either way.
+
 ## See also
 
 - [Install](getting-started/install.md)
