@@ -23,7 +23,7 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Clear, Paragraph, Wrap};
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
-use crate::app::{App, FLASH, Noting, Rung, View, Zoom};
+use crate::app::{App, FLASH, Hints, Noting, Rung, Target, View, Zoom};
 use crate::i18n::{Lang, clean, fill};
 use crate::model::*;
 pub(crate) use crate::theme::pal;
@@ -33,6 +33,8 @@ pub(crate) use salon::{card_rows, journal_rows, reply_jump, thread_of, turn_star
 
 pub fn draw(f: &mut Frame, app: &App) {
     paint(f, f.area());
+    // The views that have rows to label put them back as they draw them.
+    app.hintable.borrow_mut().clear();
     // The completion menu takes a row above the footer while it is shown.
     let menu_rows = u16::from(app.typing && app.menu.is_some());
     let [head, body, menu, foot] = Layout::vertical([
@@ -59,6 +61,9 @@ pub fn draw(f: &mut Frame, app: &App) {
         completions(f, menu, m);
     }
     footer(f, foot, app);
+    if let Some(h) = &app.hints {
+        hint_labels(f, app, h);
+    }
     if let Some(th) = &app.thread {
         overlay::thread(f, app, th);
     }
@@ -75,6 +80,34 @@ pub fn draw(f: &mut Frame, app: &App) {
         overlay::left_off(f, app, l);
     } else if app.leaving {
         overlay::leaving(f, app);
+    }
+}
+
+/// Row `target` of the screen starts at column `x`, row `y`, inside
+/// `area`: a hint label (`F`) may go there. A row past the area's foot
+/// was not drawn and gets none.
+pub(crate) fn hintable(app: &App, target: Target, x: u16, y: u16, area: Rect) {
+    if y < area.bottom() {
+        app.hintable.borrow_mut().push((target, x, y));
+    }
+}
+
+/// Each label the letters typed so far go on, over the start of its row
+/// where the row is now: the letters typed as a key, the rest as what
+/// needs the person. A row no longer drawn shows none.
+fn hint_labels(f: &mut Frame, app: &App, h: &Hints) {
+    let at = app.hintable.borrow();
+    for (label, target) in &h.labels {
+        let Some(rest) = label.strip_prefix(h.typed.as_str()) else {
+            continue;
+        };
+        let Some(&(_, x, y)) = at.iter().find(|(t, _, _)| t == target) else {
+            continue;
+        };
+        let buf = f.buffer_mut();
+        // Labels are ASCII letters: one column each.
+        buf.set_string(x, y, &h.typed, key_style());
+        buf.set_string(x + h.typed.len() as u16, y, rest, attention());
     }
 }
 
@@ -1278,6 +1311,12 @@ fn footer(f: &mut Frame, area: Rect, app: &App) {
         Line::from(Span::styled(format!(" {msg}"), fg(pal().warn)))
     } else {
         let hints: Vec<(&str, &str)> = match app.zoom {
+            _ if app.hints.is_some() => vec![
+                ("a-z", t.hint_pick),
+                ("A-Z", t.hint_open),
+                ("esc", t.back),
+                ("?", t.help),
+            ],
             _ if app.peek.is_some() => vec![
                 ("j k", t.peek_next),
                 ("enter", t.focus),
@@ -8185,5 +8224,143 @@ after | not a table";
         app.peek = None;
         let foot = render(&app, 100, 40).lines().last().unwrap().to_string();
         assert!(!foot.contains(t.peek_next), "{foot}");
+    }
+
+    /// The rows of `screen` (as `render` gives it), one string each.
+    fn screen_rows(screen: &str) -> Vec<Vec<String>> {
+        screen
+            .lines()
+            .map(|l| l.chars().map(String::from).collect())
+            .collect()
+    }
+
+    #[test]
+    fn the_drawing_keeps_where_each_row_a_label_can_name_starts() {
+        let app = app_after(2, 6, 300, Lang::En);
+        let screen = render(&app, 140, 30);
+        let rows = screen_rows(&screen);
+        let at = app.hintable.borrow().clone();
+        // The salon's rows first, as shown, at the list's left edge.
+        let salon: Vec<(Target, u16, u16)> = (app.shown.borrow().iter().zip(2..))
+            .map(|(&s, y)| (Target::Row(s), 1, y))
+            .collect();
+        assert!(salon.len() > 4, "both projects' rows");
+        assert_eq!(at[..salon.len()], salon[..]);
+        for &(t, _, y) in &salon {
+            if let Target::Row(Sel::Agent(id)) = t {
+                let row: String = rows[usize::from(y)].concat();
+                assert!(row.contains(&app.world.agents[id].name), "{row}");
+            }
+        }
+        // Then what waits, one row each under the panel's top, at its left edge.
+        let side = rows[1].iter().position(|c| c == "┐").unwrap() as u16 + 2;
+        let open = app.inbox_rows();
+        let waiting: Vec<(Target, u16, u16)> = (open.iter().zip(2..))
+            .map(|(&i, y)| (Target::Waiting(i), side, y))
+            .collect();
+        assert!(waiting.len() > 1);
+        let rest = &at[salon.len()..];
+        assert_eq!(rest[..waiting.len()], waiting[..]);
+        // Then the journal's lines, as many as it shows, from under its top.
+        let top = rows
+            .iter()
+            .position(|r| r.concat().contains("┌ JOURNAL"))
+            .unwrap() as u16;
+        let lines = &rest[waiting.len()..];
+        let shown: Vec<(Target, u16, u16)> = (app.journal_rows().iter().zip(top + 1..28))
+            .map(|(&(i, _), y)| (Target::Line(i), side, y))
+            .collect();
+        assert_eq!(lines, &shown[..]);
+    }
+
+    #[test]
+    fn an_item_under_the_selected_one_starts_below_its_keys_and_a_row_not_drawn_has_no_place() {
+        let mut app = app_after(2, 6, 300, Lang::En);
+        app.pane = Pane::Inbox;
+        app.inbox_sel = 0;
+        render(&app, 140, 30);
+        let ys: Vec<u16> = (app.hintable.borrow().iter())
+            .filter(|(t, _, _)| matches!(t, Target::Waiting(_)))
+            .map(|&(_, _, y)| y)
+            .collect();
+        assert_eq!(ys[..3], [2, 4, 5], "the first item's keys take a row");
+        // A short screen: the panel holds five of the six items.
+        let screen = render(&app, 140, 16);
+        let rows = screen_rows(&screen);
+        let open = app.inbox_rows();
+        assert_eq!(open.len(), 6);
+        let side = rows[1].iter().position(|c| c == "┐").unwrap();
+        let bottom = (rows.iter().skip(2))
+            .position(|r| r[side + 1] == "└")
+            .unwrap() as u16
+            + 2;
+        let ys: Vec<u16> = (app.hintable.borrow().iter())
+            .filter(|(t, _, _)| matches!(t, Target::Waiting(_)))
+            .map(|&(_, _, y)| y)
+            .collect();
+        assert_eq!(ys.last(), Some(&(bottom - 1)), "the last row inside");
+        assert_eq!(ys.len(), 4, "the first item's keys took a row");
+    }
+
+    #[test]
+    fn the_people_on_a_card_s_screen_can_be_named() {
+        let mut app = app_after(1, 3, 300, Lang::En);
+        let c = (0..app.world.cards.len())
+            .find(|&c| app.world.card_people(c).len() > 1)
+            .expect("a card with more than one person");
+        app.open_card(c);
+        let screen = render(&app, 140, 30);
+        let rows = screen_rows(&screen);
+        let people: Vec<(Target, u16)> = (app.hintable.borrow().iter())
+            .filter(|(t, _, _)| matches!(t, Target::Row(_)))
+            .map(|&(t, x, y)| {
+                assert_eq!(x, 1);
+                (t, y)
+            })
+            .collect();
+        let want: Vec<Target> = (app.world.card_people(c).iter())
+            .map(|&(id, _)| Target::Row(Sel::Agent(id)))
+            .collect();
+        assert_eq!(people.iter().map(|&(t, _)| t).collect::<Vec<_>>(), want);
+        for (t, y) in people {
+            let Target::Row(Sel::Agent(id)) = t else {
+                unreachable!()
+            };
+            let row: String = rows[usize::from(y)].concat();
+            assert!(row.contains(&app.world.agents[id].name), "{row}");
+        }
+    }
+
+    #[test]
+    fn labels_sit_over_the_start_of_their_rows_and_the_letters_typed_narrow_them() {
+        let mut app = app_after(2, 6, 300, Lang::En);
+        let plain = render(&app, 140, 30);
+        app.on_key(KeyEvent::new(KeyCode::Char('F'), KeyModifiers::SHIFT));
+        let screen = render(&app, 140, 30);
+        let rows = screen_rows(&screen);
+        let at = app.hintable.borrow().clone();
+        let labels = app.hints.as_ref().unwrap().labels.clone();
+        assert!(labels.len() > 26, "labels of two letters too");
+        for (label, target) in &labels {
+            let &(_, x, y) = at.iter().find(|(t, _, _)| t == target).unwrap();
+            let (x, y) = (usize::from(x), usize::from(y));
+            let drawn = rows[y][x..x + label.len()].concat();
+            assert_eq!(&drawn, label);
+        }
+        assert!(rows[29].concat().contains(app.lang.text().hint_pick));
+        // `m` typed: only the labels it starts, the rest of the screen as it was.
+        app.on_key(KeyEvent::new(KeyCode::Char('m'), KeyModifiers::NONE));
+        let screen = render(&app, 140, 30);
+        let rows = screen_rows(&screen);
+        let plain = screen_rows(&plain);
+        for (label, target) in &labels {
+            let &(_, x, y) = at.iter().find(|(t, _, _)| t == target).unwrap();
+            let (x, y) = (usize::from(x), usize::from(y));
+            let want = match label.strip_prefix('m') {
+                Some(rest) => format!("m{rest}"),
+                None => plain[y][x..x + label.len()].concat(),
+            };
+            assert_eq!(rows[y][x..x + label.len()].concat(), want, "{label}");
+        }
     }
 }

@@ -62,6 +62,7 @@ A message can run over lines; the first line of one that opens a card is the car
 | `:fold` / `:unfold` | `zM` / `zR` | fold / unfold every project and every worker's helpers |
 | `:trace [@NAME]` / `:talk [@NAME]` | `t` / `v` | the raw stream / the conversation of the named agent, else the one at hand |
 | `:peek [@NAME]` | `K` | the focus of the named agent, else the one at hand, in a window over the view |
+| `:hints` | `F` | hint letters on every row of the salon's screen you can select |
 | `:mark` | `m` | mark the line at hand |
 | `:pause`, `:faster`, `:slower` | `space`, `+`, `-` | the demo only; live they say so and are left out of the menu |
 

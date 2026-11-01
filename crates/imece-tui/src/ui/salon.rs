@@ -12,7 +12,7 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Paragraph};
 
 use super::*;
-use crate::app::{App, Need, Pane, Rung, Sel};
+use crate::app::{App, Need, Pane, Rung, Sel, Target};
 
 /// Drawn before an agent's name in its speaker colour.
 pub(crate) const SPEAKER_MARK: &str = "▎";
@@ -269,6 +269,9 @@ fn salon(f: &mut Frame, area: Rect, app: &App) {
     // Rows whose loopback URL becomes a link: row, column, width, URL, agent.
     let mut links = Vec::new();
     for (i, row) in rows.iter().enumerate() {
+        if let Some(sel) = row.sel() {
+            hintable(app, Target::Row(sel), list.x, list.y + i as u16, list);
+        }
         let line = match *row {
             Row::Project(p) => project_line(app, p, &rungs),
             Row::Agent { id, depth } => {
@@ -796,6 +799,13 @@ fn side(f: &mut Frame, area: Rect, app: &App) {
     for (n, &i) in open.iter().enumerate() {
         let item = &w.inbox[i];
         let line = inbox_line(app, i);
+        hintable(
+            app,
+            Target::Waiting(i),
+            inner.x,
+            inner.y + lines.len() as u16,
+            inner,
+        );
         if focused && n == app.inbox_sel {
             lines.push(line.style(Style::new().add_modifier(Modifier::REVERSED)));
             lines.extend(whole.iter().cloned());
@@ -839,6 +849,13 @@ fn side(f: &mut Frame, area: Rect, app: &App) {
             lines.push(date_row(of));
             above = of;
         }
+        hintable(
+            app,
+            Target::Line(i),
+            inner.x,
+            inner.y + lines.len() as u16,
+            inner,
+        );
         let mut line = entry_line(app, &w.journal[i]);
         if w.marks.contains(&i) {
             line = bookmarked(line);
