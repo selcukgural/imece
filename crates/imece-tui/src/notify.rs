@@ -207,7 +207,12 @@ pub fn report(events: &[Event]) -> Option<(usize, Option<u64>)> {
                     .and_then(|id| id.parse().ok());
                 return Some((n + 1, ours));
             }
-            (KeyCode::Char(c), m) if !m.intersects(KeyModifiers::ALT | KeyModifiers::CONTROL) => {
+            // Two checks, not one of a union: the flags are distinct bits,
+            // so `|` and `^` would make the same mask (a mutant no test
+            // could catch).
+            (KeyCode::Char(c), m)
+                if !m.contains(KeyModifiers::ALT) && !m.contains(KeyModifiers::CONTROL) =>
+            {
                 text.push(c);
             }
             _ => return None,
