@@ -276,6 +276,7 @@ impl Live {
         self.end(w, id);
         self.forget(w, id, true, true);
         self.leaving[id] = false;
+        self.lost[id] = false;
         self.mail[id].clear();
         self.notes[id].clear();
         self.asked[id] = false;
@@ -525,8 +526,39 @@ impl Live {
         copy::checkable(&self.places[p].repo, path)
     }
 
+    /// Helper `id`'s session stopped, or its last turn failed for good,
+    /// before it sent done (`why`, the vendor's or imece's words): its
+    /// worker is told, at its next turn, that the part is not done, and
+    /// an idle worker is woken for it (`lost`), so it does not wait on a
+    /// helper that will not answer. Anyone else's end tells nobody.
+    pub(super) fn helper_lost(&mut self, w: &mut World, id: AgentId, why: &str) {
+        let a = &w.agents[id];
+        let (Role::Helper, Some(p)) = (a.role, a.parent) else {
+            return;
+        };
+        if w.agents[p].gone || self.leaving[id] {
+            return;
+        }
+        let said: String = why
+            .lines()
+            .map(str::trim)
+            .find(|l| !l.is_empty())
+            .unwrap_or_default()
+            .chars()
+            .take(LOST_SAID)
+            .collect();
+        let name = a.name.clone();
+        self.notes[p].push(format!(
+            "Your helper {name} stopped before it sent you done ({said}). The part you gave \
+             it is not done: do it yourself, or hire another helper for it."
+        ));
+        self.lost[p] = true;
+        w.agents[p].trace(w.tick, format!("told: {name} stopped"));
+    }
+
     /// What imece has to tell agent `id`, ahead of `text`.
     pub(super) fn with_notes(&mut self, id: AgentId, text: String) -> String {
+        self.lost[id] = false;
         let notes = std::mem::take(&mut self.notes[id]);
         if notes.is_empty() {
             return text;
@@ -1120,6 +1152,184 @@ mod tests {
             0,
         );
         assert_eq!(w.agents[1].topic, "first line", "the first line only");
+    }
+
+    /// A team of one worker with one helper, the worker's session
+    /// running on `Heard`; what the worker was prompted with.
+    fn helped() -> (World, Live, AgentId, Arc<std::sync::Mutex<Vec<String>>>) {
+        let mut w = team(1);
+        let helper = with_helper(&mut w, 1);
+        let mut live = idle_live(3);
+        // No git: the worktree is not moved between turns.
+        live.places[0].git = false;
+        let heard = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let session = Box::new(Heard(heard.clone(), false));
+        live.ready(
+            &mut w,
+            1,
+            Ok((session, std::env::temp_dir(), None, None, Vec::new())),
+        );
+        w.agents[1].status = Status::Idle;
+        (w, live, helper, heard)
+    }
+
+    fn lost_note(helper: &str, said: &str) -> String {
+        format!(
+            "From imece (not from the person or a teammate):\n- Your helper {helper} stopped \
+             before it sent you done ({said}). The part you gave it is not done: do it \
+             yourself, or hire another helper for it.\n\nGo on with your task."
+        )
+    }
+
+    #[test]
+    fn a_helper_that_stops_before_done_is_told_to_its_idle_worker_at_once() {
+        let (mut w, mut live, helper, heard) = helped();
+        let name = w.agents[helper].name.clone();
+        hear(
+            &live,
+            helper,
+            AgentEvent::Stopped("\n  rate limited\nstack".into()),
+        );
+        live.step(&mut w);
+        assert_eq!(*heard.lock().unwrap(), [lost_note(&name, "rate limited")]);
+        assert_eq!((live.woken[1], live.lost[1], live.turns[1]), (1, false, 1));
+        assert_eq!(
+            (live.woken[0], live.turns[0]),
+            (0, 0),
+            "nobody else is woken"
+        );
+        assert!(
+            w.agents[1]
+                .trace
+                .iter()
+                .any(|l| l.ends_with(&format!("told: {name} stopped")))
+        );
+        // Once.
+        live.step(&mut w);
+        assert_eq!(heard.lock().unwrap().len(), 1);
+        // What it is told is cut.
+        let (mut w, mut live, helper, heard) = helped();
+        let long = "é".repeat(LOST_SAID + 5);
+        hear(&live, helper, AgentEvent::Stopped(long));
+        live.step(&mut w);
+        let said = &heard.lock().unwrap()[0];
+        assert!(
+            said.contains(&format!("({})", "é".repeat(LOST_SAID))),
+            "{said}"
+        );
+    }
+
+    #[test]
+    fn a_busy_worker_hears_of_its_helper_when_its_turn_ends_and_only_once() {
+        let (mut w, mut live, helper, heard) = helped();
+        let name = w.agents[helper].name.clone();
+        live.prompt(&mut w, 1, "fix it".into(), None).unwrap();
+        hear(&live, helper, AgentEvent::Stopped("gone".into()));
+        live.step(&mut w);
+        assert_eq!(heard.lock().unwrap().len(), 1, "not mid-turn");
+        assert!(live.lost[1]);
+        let done = || AgentEvent::TurnDone {
+            ok: true,
+            text: "done".into(),
+            cost: 0,
+            denied: 0,
+        };
+        hear(&live, 1, done());
+        live.step(&mut w);
+        assert_eq!(heard.lock().unwrap()[1], lost_note(&name, "gone"));
+        // Told with the next prompt instead: nothing more to wake it for.
+        let (mut w, mut live, helper, heard) = helped();
+        live.prompt(&mut w, 1, "fix it".into(), None).unwrap();
+        hear(&live, helper, AgentEvent::Stopped("gone".into()));
+        live.step(&mut w);
+        live.prompt(&mut w, 1, "and this".into(), None).unwrap();
+        assert!(!live.lost[1]);
+        assert!(heard.lock().unwrap()[1].contains("Your helper"));
+        for _ in 0..2 {
+            hear(&live, 1, done());
+            live.step(&mut w);
+        }
+        assert_eq!(heard.lock().unwrap().len(), 2);
+    }
+
+    #[test]
+    fn a_helper_s_last_turn_failing_tells_its_worker_but_not_a_retry_or_one_queued() {
+        let failed = |text: &str| AgentEvent::TurnDone {
+            ok: false,
+            text: text.into(),
+            cost: 0,
+            denied: 0,
+        };
+        // Its last turn, failed for good.
+        let (mut w, mut live, helper, heard) = helped();
+        live.turns[helper] = 1;
+        hear(&live, helper, failed("credit balance too low"));
+        live.step(&mut w);
+        let name = w.agents[helper].name.clone();
+        assert_eq!(
+            *heard.lock().unwrap(),
+            [lost_note(&name, "credit balance too low")]
+        );
+        // Another turn queued after it: it goes on.
+        let (mut w, mut live, helper, heard) = helped();
+        live.turns[helper] = 2;
+        hear(&live, helper, failed("x"));
+        live.step(&mut w);
+        assert!(heard.lock().unwrap().is_empty() && !live.lost[1]);
+        // A passing error is tried again: not lost yet.
+        let (mut w, mut live, helper, heard) = helped();
+        live.turns[helper] = 1;
+        hear(
+            &live,
+            helper,
+            AgentEvent::Failed(imece_agent::Fault::Passing),
+        );
+        hear(&live, helper, failed("overloaded"));
+        live.step(&mut w);
+        assert!(w.agents[helper].retry.is_some());
+        assert!(heard.lock().unwrap().is_empty() && !live.lost[1]);
+    }
+
+    #[test]
+    fn nobody_is_told_of_a_helper_that_sent_done_a_worker_or_a_worker_gone_and_a_sleeper_waits() {
+        // A helper that sent done leaves; its end is no loss.
+        let (mut w, mut live, helper, heard) = helped();
+        live.leaving[helper] = true;
+        hear(&live, helper, AgentEvent::Stopped("gone".into()));
+        live.step(&mut w);
+        assert!(heard.lock().unwrap().is_empty() && !live.lost[1]);
+        // A worker's end tells its leader nothing.
+        let (mut w, mut live, _, _) = helped();
+        hear(&live, 1, AgentEvent::Stopped("gone".into()));
+        live.step(&mut w);
+        assert!(live.notes[0].is_empty() && !live.lost[0]);
+        // The worker gone: nobody to tell.
+        let (mut w, mut live, helper, _) = helped();
+        w.agents[1].gone = true;
+        hear(&live, helper, AgentEvent::Stopped("gone".into()));
+        live.step(&mut w);
+        assert!(live.notes[1].is_empty());
+        // Asleep, stopped, or woken to the cap: told, not woken.
+        for status in [Status::Asleep, Status::Stopped] {
+            let (mut w, mut live, helper, heard) = helped();
+            w.agents[1].status = status;
+            hear(&live, helper, AgentEvent::Stopped("gone".into()));
+            live.step(&mut w);
+            assert!(
+                heard.lock().unwrap().is_empty() && live.lost[1],
+                "{status:?}"
+            );
+            assert_eq!(live.notes[1].len(), 1);
+        }
+        let (mut w, mut live, helper, heard) = helped();
+        live.woken[1] = MAX_WOKEN;
+        hear(&live, helper, AgentEvent::Stopped("gone".into()));
+        live.step(&mut w);
+        assert!(heard.lock().unwrap().is_empty() && live.lost[1]);
+        live.woken[1] = MAX_WOKEN - 1;
+        live.step(&mut w);
+        assert_eq!(heard.lock().unwrap().len(), 1, "under the cap");
+        assert_eq!(live.woken[1], MAX_WOKEN);
     }
 
     #[test]

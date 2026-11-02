@@ -119,7 +119,7 @@ record in the same PR.
 - 06 `codex`: Codex app-server adapter, sandbox, overrides, fail-closed checks, efforts as tiers.
 - 07 `gemini`: Gemini ACP adapter, private directory, policy file, checks, price table.
 - 08 `who-leads`: `--lead`, the primary vendor, the question screen, `choose_lead`.
-- 09 `helpers`: workers hire helpers in their worktree, `--helpers`, salon folding.
+- 09 `helpers`: workers hire helpers in their worktree, `--helpers`, salon folding; a helper that stops or fails its last turn before `done` is told to its worker (`Live::helper_lost`, a note; an idle worker woken with `GO_ON` via `Live::lost`, counted in `MAX_WOKEN`); the demo mirrors it.
 - 10 `dogfooding-prep`: worktrees follow HEAD, repo notes in instructions, the `run` tool, vendor commands.
 - 11 `change-review`: a worker's `done` → Δ in WAITING FOR YOU, diff view, apply (three-way when clean)/reject, the runs on exactly its tree.
 - 12 `completion`: `complete.rs` menus for names, commands, `:` words and directories.

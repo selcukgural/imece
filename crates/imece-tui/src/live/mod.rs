@@ -279,6 +279,13 @@ pub(super) const RETRY_PROMPT: &str = "From imece (not from the person or a team
      last turn stopped on an error at your vendor's API (overloaded, a server error or a lost \
      connection). Carry on from where you stopped.";
 
+/// What wakes a worker whose helper stopped: the note before it says
+/// what happened.
+pub(super) const GO_ON: &str = "Go on with your task.";
+
+/// The most of a helper's last words its worker is told.
+pub(super) const LOST_SAID: usize = 200;
+
 /// The longest message body, in characters.
 const MAX_BODY: usize = 4000;
 
@@ -556,6 +563,9 @@ pub struct Live {
     /// Helpers that sent done to their worker: each leaves when its turn
     /// ends, so the turn's cost is still reported.
     leaving: Vec<bool>,
+    /// Whether each agent has a note that a helper of its stopped before
+    /// it sent done, not read yet: an idle one is woken for it.
+    lost: Vec<bool>,
     /// What imece itself has to tell each agent, at the start of its next
     /// turn: the person took or rejected its change.
     notes: Vec<Vec<String>>,
@@ -952,6 +962,7 @@ impl Live {
             inflight: Vec::new(),
             renewed: Vec::new(),
             leaving: Vec::new(),
+            lost: Vec::new(),
             notes: Vec::new(),
             changes: HashMap::new(),
             git,
@@ -1184,10 +1195,24 @@ impl Live {
                 _ => {}
             }
             let stopped = matches!(e, AgentEvent::Stopped(_));
+            // What a helper's end, or the last turn it had failing, takes
+            // from its worker.
+            let lost = match &e {
+                AgentEvent::Stopped(why) => Some(why.clone()),
+                AgentEvent::TurnDone {
+                    ok: false, text, ..
+                } if self.turns[id] == 1 => Some(text.clone()),
+                _ => None,
+            };
             if stopped {
                 self.end(w, id);
             }
             apply(w, id, e, self.spent_before[id]);
+            if let Some(why) = lost
+                && w.agents[id].retry.is_none()
+            {
+                self.helper_lost(w, id, &why);
+            }
             if stopped {
                 // Helpers work for their worker alone: none without it.
                 let helpers: Vec<AgentId> = w.helpers_of(id).map(|h| h.id).collect();
@@ -1279,6 +1304,21 @@ impl Live {
                 && !a.gone
             {
                 self.deliver(w, id);
+            }
+        }
+        for id in 0..self.lost.len() {
+            let a = &w.agents[id];
+            if self.lost[id]
+                && self.turns[id] == 0
+                && !matches!(a.status, Status::Stopped | Status::Asleep)
+                && !a.gone
+                && self.woken[id] < MAX_WOKEN
+                && !self.over_budget(w)
+            {
+                self.woken[id] += 1;
+                if let Err(why) = self.prompt(w, id, GO_ON.into(), None) {
+                    apply(w, id, AgentEvent::Stopped(why), self.spent_before[id]);
+                }
             }
         }
         for id in w.retries_due() {

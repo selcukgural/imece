@@ -180,6 +180,7 @@ impl Live {
         self.inflight.push(Vec::new());
         self.renewed.push(false);
         self.leaving.push(false);
+        self.lost.push(false);
         self.notes.push(Vec::new());
         self.mail.push(Vec::new());
         self.turns.push(0);

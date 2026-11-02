@@ -2254,6 +2254,29 @@ impl Sim {
         a.set_status(Status::Idle, t);
         w.story(card, StoryEvent::Stopped(why.into()));
         w.turn_failed(id, why, fault);
+        if w.agents[id].retry.is_none() {
+            Self::helper_lost(w, id);
+        }
+    }
+
+    /// As live's `helper_lost`: helper `id` stopped, or its turn failed
+    /// for good, before it sent done, so its worker is told (its trace)
+    /// and an idle one goes back to work for the part. Anyone else's end
+    /// tells nobody.
+    fn helper_lost(w: &mut World, id: AgentId) {
+        let (Role::Helper, Some(p)) = (w.agents[id].role, w.agents[id].parent) else {
+            return;
+        };
+        if w.agents[p].gone {
+            return;
+        }
+        let (t, name) = (w.tick, w.agents[id].name.clone());
+        let worker = &mut w.agents[p];
+        worker.trace(t, format!("told: {name} stopped"));
+        if worker.status == Status::Idle {
+            worker.set_status(Status::Working, t);
+            worker.activity.get_or_insert_with(String::new);
+        }
     }
 
     /// Worker `id`'s session ends under it; the person's next message
@@ -2279,6 +2302,7 @@ impl Sim {
             agent: id,
             why: STOPPED.into(),
         });
+        Self::helper_lost(w, id);
     }
 
     /// Worker `id` hires a helper of its vendor in its worktree, named
@@ -2725,6 +2749,40 @@ mod tests {
             .unwrap();
         s.take(&mut w, worker, card, Taken::Claimed);
         (w, s, worker, card)
+    }
+
+    #[test]
+    fn a_helper_lost_before_done_is_told_to_its_worker_who_goes_back_to_work() {
+        let (mut w, mut s, worker, card) = one_at_work();
+        let h = s.helper_for(&mut w, worker, card);
+        let name = w.agents[h].name.clone();
+        let told = |w: &World| {
+            (w.agents[worker].trace.iter())
+                .filter(|l| l.ends_with(&format!("told: {name} stopped")))
+                .count()
+        };
+        w.agents[worker].status = Status::Idle;
+        w.agents[worker].activity = None;
+        s.failed(&mut w, h, BAD_KEY, Some(Fault::Account));
+        assert_eq!(told(&w), 1);
+        assert_eq!(w.agents[worker].status, Status::Working, "back to work");
+        assert!(w.agents[worker].activity.is_some());
+        // A passing error is tried again: nothing yet.
+        s.failed(&mut w, h, OVERLOADED, Some(Fault::Passing));
+        assert_eq!(told(&w), 1);
+        // Stopped: told again; a busy worker stays as it is.
+        w.agents[worker].status = Status::Asking { to: 0, until: 9 };
+        s.stop(&mut w, h);
+        assert_eq!(told(&w), 2);
+        assert!(matches!(w.agents[worker].status, Status::Asking { .. }));
+        // A worker's own end, or a worker gone: nobody is told.
+        let lead = w.projects[0].leader;
+        let before = w.agents[lead].trace.len();
+        s.stop(&mut w, worker);
+        assert_eq!(w.agents[lead].trace.len(), before);
+        w.agents[worker].gone = true;
+        s.stop(&mut w, h);
+        assert_eq!(told(&w), 2);
     }
 
     #[test]
