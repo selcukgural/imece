@@ -4,8 +4,10 @@
 
 # Code no test can reach without a terminal, a clipboard or a child
 # process of its own: the main loop, the who-leads question loop, signal
-# handlers, the clipboard tools, the screen stepping aside for a `!`
-# command (`run_in`, which runs the command, is tested), the question to
+# handlers, which descriptor is the terminal (`input::terminal`, stdin
+# when it is one; the waiting on it is tested), the clipboard tools, the
+# screen stepping aside for a `!` command (`run_in`, which runs the
+# command, is tested), the question to
 # the terminal about its colours (`probe`; the parsing is tested), the
 # screen's take-over and what asks the terminal its size or cursor
 # (`screen`; the row-by-row erase is tested).
@@ -13,13 +15,17 @@
 # ever need, since each taken name is a project. A bound made larger
 # (`+` → `*`) changes nothing a test can see; a smaller one is caught.
 # `child::ENDED` joins waitid's flags, distinct bits, with `|`: `^` gives
-# the same number, so no test can tell them apart (`&` is caught).
+# the same number, so no test can tell them apart (`&` is caught); so do
+# `input::seen`'s poll flags.
 # A pattern matches the mutant's full name, `path:line:col: replace fn ...`.
 exclude_re = [
     "src/model.rs:.*: replace \\+ with \\* in free_project_name",
     "src/child.rs:.*: replace \\| with \\^$",
-    "src/main.rs:.*: replace (main|run|ask|catch_signals|on_signal) ",
-    "src/main.rs:.*: (replace|delete) .* in (main|run|ask|catch_signals|on_signal)$",
+    "src/main.rs:.*: replace (main|run|ask|catch_signals|on_signal|poll_terminal) ",
+    "src/main.rs:.*: (replace|delete) .* in (main|run|ask|catch_signals|on_signal|poll_terminal)$",
+    "src/input.rs:.*: replace terminal ",
+    "src/input.rs:.*: (replace|delete) .* in terminal$",
+    "src/input.rs:.*: replace \\| with \\^ in seen$",
     "src/clip.rs:.*: replace (copy|tools|pipe|osc52) ",
     "src/clip.rs:.*: replace .* in (copy|tools|pipe|osc52)$",
     "src/shell.rs:.*: replace (run|step_aside|wait_for_key|come_back) ",

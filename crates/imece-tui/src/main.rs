@@ -9,6 +9,7 @@ mod clip;
 mod complete;
 mod edit;
 mod i18n;
+mod input;
 mod keys;
 mod live;
 mod model;
@@ -574,6 +575,7 @@ fn ask(
     // Nothing on it moves by itself: drawn first and after what came from
     // the terminal (a key, a resize), never on a timer.
     let mut due = true;
+    let mut guard = input::Guard::default();
     loop {
         if SIGNALLED.load(Ordering::SeqCst) {
             return Ok(None);
@@ -584,8 +586,10 @@ fn ask(
             })?;
         }
         // The wait only bounds how late a signal is seen.
-        let ready = match event::poll(std::time::Duration::from_millis(200)) {
-            Ok(ready) => ready,
+        let ready = match poll_terminal(&mut guard, Duration::from_millis(200)) {
+            Ok(Some(ready)) => ready,
+            // The terminal went away: nobody is there to answer.
+            Ok(None) => return Ok(None),
             Err(e) if e.kind() == ErrorKind::Interrupted => continue,
             Err(e) => return Err(e),
         };
@@ -599,6 +603,19 @@ fn ask(
         {
             return Ok(Some(picked));
         }
+    }
+}
+
+/// Whether the terminal has an event within `timeout`; `None` when it
+/// went away (crossterm alone would spin on it: `input`).
+fn poll_terminal(guard: &mut input::Guard, timeout: Duration) -> std::io::Result<Option<bool>> {
+    match input::terminal() {
+        Some(fd) => guard.ready(
+            timeout,
+            |t| input::wait(fd, t),
+            || event::poll(Duration::ZERO),
+        ),
+        None => event::poll(timeout).map(Some),
     }
 }
 
@@ -654,6 +671,7 @@ fn run(
     // The last drawing as the terminal shows it, while a frame where only
     // the breath changes may be drawn from it.
     let mut shown: Option<ratatui::buffer::Buffer> = None;
+    let mut guard = input::Guard::default();
     while !app.quit && !SIGNALLED.load(Ordering::SeqCst) {
         app.looked();
         // Drawn when something changed; in another window, less often.
@@ -692,8 +710,12 @@ fn run(
         let event = match queued.pop_front() {
             Some(e) => Some(e),
             None => {
-                let ready = match event::poll(timeout) {
-                    Ok(ready) => ready,
+                let ready = match poll_terminal(&mut guard, timeout) {
+                    Ok(Some(ready)) => ready,
+                    // The terminal went away (its tab closed): a quit,
+                    // as SIGHUP would be, the sessions stopped on the
+                    // way out.
+                    Ok(None) => break,
                     Err(e) if e.kind() == ErrorKind::Interrupted => continue,
                     Err(e) => return Err(e),
                 };
@@ -706,7 +728,7 @@ fn run(
                         let mut came = vec![e];
                         while came.len() < notify::REPORT_MAX
                             && notify::report(&came).is_none()
-                            && event::poll(REPORT_WAIT)?
+                            && poll_terminal(&mut guard, REPORT_WAIT)? == Some(true)
                         {
                             came.push(event::read()?);
                         }
