@@ -46,7 +46,7 @@ imece --demo --lang tr                             # or IMECE_LANG=tr
 
 | Code | When | What you see |
 | --- | --- | --- |
-| 0 | `--version`, or a normal quit (`q q`, `:quit`, or SIGTERM, SIGHUP and SIGINT from outside, which imece turns into a normal quit so sessions stop and the bus's sockets are removed) | the shell's title comes back |
+| 0 | `--version`, or a normal quit (`q q`, `:quit`, or SIGTERM, SIGHUP and SIGINT from outside, which imece turns into a normal quit so sessions stop and the bus's sockets are removed; the same when the terminal itself goes away, its tab or window closed or its tmux server ended) | the shell's title comes back |
 | 1 | The start failed after the flags were read: no coding agent on PATH, `--repo` is not a git checkout, another imece holds the store, the store cannot be read, a vendor's session could not start | `imece: <reason>` on stderr, after the screen is restored |
 | 2 | A flag is wrong, or `--help` | the message on stderr; for a missing value, an unknown option and a demo flag given live, the usage text follows |
 
