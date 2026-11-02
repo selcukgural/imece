@@ -3,6 +3,7 @@
 //! (`sim`).
 
 mod app;
+mod archives;
 mod awake;
 mod clip;
 mod complete;

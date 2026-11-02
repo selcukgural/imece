@@ -74,6 +74,8 @@ pub fn draw(f: &mut Frame, app: &App) {
     }
     if let Some(p) = &app.solo_pick {
         overlay::solo_pick(f, app, p);
+    } else if let Some(b) = &app.archives {
+        overlay::archives(f, app, b);
     } else if app.help {
         overlay::help(f, app);
     } else if !app.news.is_empty() {
@@ -5475,6 +5477,208 @@ mod tests {
     }
 
     #[test]
+    fn a_opens_the_archives_as_a_tree_and_r_brings_the_one_at_hand_back() {
+        use crate::archives::Row;
+        let typed = |app: &mut App, line: &str| {
+            for c in line.chars() {
+                key(app, KeyCode::Char(c));
+            }
+            app.menu = None;
+            key(app, KeyCode::Enter);
+        };
+        let flashed = |app: &App| app.flash.as_ref().map(|f| f.0.clone()).unwrap_or_default();
+        for (lang, none, title, checkout, open, row, keys, back) in [
+            (
+                Lang::En,
+                "nothing is archived yet; :archive puts the project at hand away",
+                " ARCHIVES ",
+                " ▾ shop · 1 archived",
+                "   ● shop · open now · 1 agents",
+                "   ▸ first epic · $4.00 · 2 cards done · 2 agents · archived {}",
+                " j k move · h l za fold · / filter · r restore · esc close",
+                "brought shop “first epic” back",
+            ),
+            (
+                Lang::Tr,
+                "henüz arşiv yok; :archive elindeki projeyi kaldırır",
+                " ARŞİVLER ",
+                " ▾ shop · 1 arşiv",
+                "   ● shop · şu an açık · 1 agent",
+                "   ▸ first epic · $4.00 · 2 kart bitti · 2 agent · {} arşivlendi",
+                " j k gez · h l za katla · / süz · r geri getir · esc kapat",
+                "shop “first epic” geri geldi",
+            ),
+        ] {
+            let mut app = app_after(1, 1, 0, lang);
+            app.home = None;
+            key(&mut app, KeyCode::Char('A'));
+            assert!(app.archives.is_none());
+            assert_eq!(flashed(&app), none, "{lang:?}");
+            typed(&mut app, ":open ~/work/shop");
+            let ours: Vec<AgentId> = (app.world.agents.iter())
+                .filter(|a| a.project == 1)
+                .map(|a| a.id)
+                .collect();
+            let (lead, worker) = (ours[0], ours[1]);
+            // What it spent counts its gone agents; its agents do not.
+            app.world.agents[lead].cost = 15_000;
+            app.world.agents[worker].cost = 25_000;
+            for &id in &ours[2..] {
+                app.world.agents[id].gone = true;
+            }
+            // A helper's row goes in further than a leader's.
+            app.world.agents[worker].role = Role::Helper;
+            // Its cards done count, not the others nor another's.
+            let card = |id, project, column| Card {
+                id,
+                project,
+                title: "t".into(),
+                owner: None,
+                column,
+                story: Vec::new(),
+                symbols: Vec::new(),
+                started: 0,
+                finished: 0,
+            };
+            app.world.cards.clear();
+            app.world.cards.push(card(0, 1, Column::Done));
+            app.world.cards.push(card(1, 1, Column::Working));
+            app.world.cards.push(card(2, 0, Column::Done));
+            app.world.cards.push(card(3, 1, Column::Done));
+            app.selected = Sel::Agent(lead);
+            typed(&mut app, ":archive first epic");
+            // The `:archive` waiting acts first, and shows.
+            key(&mut app, KeyCode::Char('A'));
+            assert!(app.grace.is_none() && app.world.projects[1].archived.is_some());
+            let b = app.archives.as_ref().expect("open");
+            assert_eq!(b.groups.len(), 1);
+            assert_eq!(b.at(&app.world), Some(Row::Archive(1)));
+            let at = app.world.projects[1].archived.as_ref().unwrap().at;
+            let s = render(&app, 160, 40);
+            let row = row.replace("{}", &date(day(at)));
+            for want in [title, checkout, open, row.as_str(), keys] {
+                assert!(s.contains(want), "{lang:?} {want}\n{s}");
+            }
+            // `l` shows its agents: the leader marked, with what it spent.
+            key(&mut app, KeyCode::Char('l'));
+            let s = render(&app, 160, 40);
+            let name = &app.world.agents[lead].name;
+            assert!(
+                s.contains(&format!("│       ◆ {name}  claude · $1.50")),
+                "{s}"
+            );
+            let helper = &app.world.agents[worker];
+            let (name, vendor) = (&helper.name, helper.vendor.label());
+            assert!(
+                s.contains(&format!("│           {name}  {vendor} · $2.50")),
+                "{s}"
+            );
+            assert!(!s.contains(&app.world.agents[ours[2]].name), "gone: {s}");
+            // `?` is the browser's to keep; esc closes it, `:archives` opens it.
+            key(&mut app, KeyCode::Char('?'));
+            assert!(!app.help && app.archives.is_some());
+            key(&mut app, KeyCode::Esc);
+            assert!(app.archives.is_none());
+            typed(&mut app, ":archives");
+            assert!(app.archives.is_some());
+            // A paste goes into the filter only while it is typed.
+            app.flash = None;
+            app.paste("first");
+            assert_eq!(flashed(&app), lang.text().paste_not_writing);
+            assert_eq!(app.archives.as_ref().unwrap().find, "");
+            assert!(!render(&app, 160, 40).contains("│ /"), "no filter line");
+            key(&mut app, KeyCode::Char('/'));
+            app.paste("first");
+            assert_eq!(app.archives.as_ref().unwrap().find, "first");
+            assert_eq!(app.scope_below(), None, "no place's keys in it");
+            assert!(render(&app, 160, 40).contains("│ /first▏"));
+            key(&mut app, KeyCode::Enter);
+            let s = render(&app, 160, 40);
+            assert!(s.contains("│ /first ") && !s.contains("▏"), "kept: {s}");
+            key(&mut app, KeyCode::Char('/'));
+            key(&mut app, KeyCode::Char('%'));
+            let s = render(&app, 160, 40);
+            assert!(s.contains(lang.text().help_none), "{s}");
+            key(&mut app, KeyCode::Backspace);
+            key(&mut app, KeyCode::Enter);
+            key(&mut app, KeyCode::Char('r'));
+            assert!(app.archives.is_none());
+            assert!(app.world.projects[1].archived.is_none());
+            assert_eq!(app.selected, Sel::Agent(app.world.projects[1].leader));
+            assert!(flashed(&app).starts_with(back), "{lang:?}");
+        }
+    }
+
+    #[test]
+    fn the_archives_scroll_to_keep_the_selected_row_in_sight() {
+        let mut app = app_after(1, 1, 0, Lang::En);
+        for n in 0..8 {
+            app.end_grace();
+            app.selected = Sel::Agent(app.world.projects[app.world.projects.len() - 1].leader);
+            app.on_key(KeyEvent::from(KeyCode::Char(':')));
+            for c in format!("archive epic{n}").chars() {
+                key(&mut app, KeyCode::Char(c));
+            }
+            app.menu = None;
+            key(&mut app, KeyCode::Enter);
+        }
+        key(&mut app, KeyCode::Char('A'));
+        // A checkout, the project open on it, eight archives newest first.
+        let rows = app.archives.as_ref().unwrap().rows(&app.world).len();
+        assert_eq!(rows, 10);
+        key(&mut app, KeyCode::Char('G'));
+        // Twelve rows: the frame, a blank line above and below the rows and
+        // the keys leave seven for the rows.
+        let buf = buffer(&app, 120, 12);
+        let row = |y: u16| -> String { (0..120).map(|x| buf[(x, y)].symbol()).collect() };
+        let all: Vec<String> = (0..12).map(row).collect();
+        let at = |title: &str| all.iter().position(|r| r.contains(&format!("▸ {title} ")));
+        assert_eq!(at("epic0"), Some(8), "the last row, at the foot\n{all:#?}");
+        assert_eq!(at("epic6"), Some(2), "seven rows up from it");
+        assert_eq!(at("epic7"), None, "the one before is out of sight");
+        let x = all[8]
+            .find("▸ epic0")
+            .map(|b| all[8][..b].chars().count())
+            .unwrap();
+        let x = u16::try_from(x).unwrap();
+        assert!(
+            buf[(x, 8)].modifier.contains(Modifier::REVERSED),
+            "selected"
+        );
+        assert!(!buf[(x, 7)].modifier.contains(Modifier::REVERSED));
+        // However short the screen, the selected row is drawn.
+        assert!(render(&app, 120, 4).contains("▸ epic0 "));
+        // At the top again, the first rows are in sight.
+        key(&mut app, KeyCode::Char('g'));
+        key(&mut app, KeyCode::Char('g'));
+        let s = render(&app, 120, 12);
+        assert!(s.contains("· 8 archived") && !s.contains("epic1 "), "{s}");
+    }
+
+    #[test]
+    fn a_live_checkout_is_written_with_a_tilde_for_the_home() {
+        let mut w = crate::live::testing::team(1);
+        let home = std::env::temp_dir().join("imece-archives-home");
+        let repo = home.join("src").join("kule");
+        let live = crate::live::testing::idle_live_in(&repo, 2);
+        w.projects[0].closed = true;
+        w.projects[0].archived = Some(Archived {
+            at: 0,
+            title: "epic".into(),
+        });
+        let mut app = App::with(w, crate::app::Engine::Live(Box::new(live)), Lang::En);
+        app.home = Some(home.clone());
+        key(&mut app, KeyCode::Char('A'));
+        let checkout = |app: &App| app.archives.as_ref().unwrap().groups[0].checkout.clone();
+        assert_eq!(checkout(&app), "~/src/kule");
+        key(&mut app, KeyCode::Esc);
+        // Not under the home: the whole path.
+        app.home = Some(home.join("other"));
+        key(&mut app, KeyCode::Char('A'));
+        assert_eq!(checkout(&app), repo.display().to_string());
+    }
+
+    #[test]
     fn restore_completes_the_archives_titles_newest_first_with_name_and_day() {
         let mut app = app_after(1, 1, 0, Lang::En);
         app.world.tick = 10;
@@ -5908,7 +6112,8 @@ mod tests {
             "└",
             "the frame closes under the last line"
         );
-        assert_ne!(buf[(x, top + lines + 2)].symbol(), "│", "and no further");
+        // Whole on forty rows, with no row to spare.
+        assert_eq!(top + lines + 2, 40, "it fills the forty rows");
         assert!(
             (top..top + lines).any(|y| row(y).contains("⎇ branch  ↑ own commits")),
             "the legend says what a worker's row counts"

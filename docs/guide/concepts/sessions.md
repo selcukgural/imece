@@ -64,7 +64,9 @@ When an epic is done, `:archive [TITLE]` puts the project at hand away and opens
 
 Nothing of an archive wakes or spends: no card is offered to its workers, nobody reaches its agents by name (the fresh head may have the same one), and a tool call one of them made before the archive is answered `your project was put away; nothing was done`. `--fresh` leaves its sessions alone, and the tidy keeps its journal lines whatever their age. Its vendor sessions are the vendors' to keep: Claude Code, for one, removes old transcripts by itself after a while (30 days by default), and a session gone by then is started anew, told where it left off.
 
-`:restore [NAME]` brings one back ([`:restore`](../reference/commands.md#restore-name)): it opens again as it was put away, its head selected, nothing awake. Each agent goes on in its vendor session when you next write to it (resumed if the vendor still has it), told first that the project was put away and of the turn the archive cut short. The team open on its checkout gives way: archived in its turn when it did anything, closed when it did not. Looking at an archive without bringing it back is the next step.
+`:restore [NAME]` brings one back ([`:restore`](../reference/commands.md#restore-name)): it opens again as it was put away, its head selected, nothing awake. Each agent goes on in its vendor session when you next write to it (resumed if the vendor still has it), told first that the project was put away and of the turn the archive cut short. The team open on its checkout gives way: archived in its turn when it did anything, closed when it did not.
+
+`A` ([`:archives`](../reference/commands.md#archives)) lists the archives as a tree: each checkout, the projects open on it now, its archives newest first with what they spent, their cards done and their agents; `/` filters them, `r` brings the one at hand back. Looking at an archive read-only, without bringing it back, is the next step.
 
 ## Leftovers: days, retention, preferences
 

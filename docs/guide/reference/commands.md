@@ -21,6 +21,7 @@ A line that starts with `:` is a command to imece, not a message to an agent. Yo
 | Command | Key | Short | Demo only | `$` | Menu note |
 | --- | --- | --- | --- | --- | --- |
 | `:archive [TITLE]` | — | | | | |
+| `:archives` | `A` | | | | |
 | `:awake` | — | | | | on / off |
 | `:board` | `2` | | | | |
 | `:budget USD` | — | `:b` | | | spent X of Y |
@@ -78,6 +79,12 @@ Live, `:pause`, `:faster` and `:slower` are left out of the menu. Keys that move
 Puts the project at hand away as `TITLE` and opens a fresh one in its place, ten seconds after it is asked: the bottom line counts down (`◷ archiving kule as “first epic” in 7 s · u keeps it`, and when agents of it are mid-turn `…, cutting 2 turns short …`), and `u` ([`:undo`](#undo)) leaves it as it is. Without a title it is called by its name and its days (`kule 2026-10-30 → 2026-11-02`); a title is one line, at most 60 characters.
 
 The archived project's agents stop as at a quit (a turn under way is cut short and its prompt kept) and sleep with all they had: their vendor sessions, mail, notes, changes, cards and items in WAITING FOR YOU. All of it leaves the screen: the salon, WAITING FOR YOU, the journal, the board and the queue show only the fresh project, which has the same name, pin and `:copy` list, and a head of the same name, vendor and model. Nothing is spent, and the pot is the same one. The flash: `archived kule as “first epic”: its agents sleep with all they had; a fresh one opens`; the journal: `you archived kule as “first epic”; a fresh kule takes its place`. `--fresh` leaves an archive's sessions alone. The demo archives the same way. See [sessions](../concepts/sessions.md#archives) and the scenario [a new epic](../scenarios/new-epic.md).
+
+### `:archives`
+
+Opens the archives as a tree, as `A`: each checkout that has one (the one at hand first, then by its newest archive), under it the projects open on it now (`● kule · open now · 1 agents`), then its archives, newest first, each with what its agents spent, its cards done, its agents and the day it was archived (`▸ first epic · $4.20 · 3 cards done · 4 agents · archived 2026-11-02`). Nothing in it wakes or is spent.
+
+In it `j` `k` move, `gg` `G` go to the first / last row, `l` (or `→`) shows an archive's agents (each with its vendor and what it spent, its head marked `◆`) and opens a folded checkout, `h` (or `←`) folds them again (on an archive already folded, its checkout), `za` and `enter` fold or unfold the row at hand. `/` filters: only the archives with every word typed, in their title, project name, checkout or an agent's name, case and Turkish letters folded; `enter` keeps the filter, `esc` drops it. `r` on an archive or one of its agents brings it back, as [`:restore`](#restore-name) does, and closes the window; `esc`, `q` or `A` close it (`esc` drops a filter first). With nothing archived: `nothing is archived yet; :archive puts the project at hand away`. An `:archive` still counting down acts first, so it is listed. The demo lists its archives the same way, each under its project's name. Looking at an archive read-only, without bringing it back, is not done yet.
 
 ### `:awake`
 
