@@ -16,7 +16,7 @@ A project is one git checkout with its own leader and workers. imece starts with
 | `:close [NAME]` (`:c`) | ends the project's agents' sessions and runs, drops their mail, notes, offers and changes, closes their inbox items, marks the project closed. Worktrees stay on disk. No name: the project at hand. The last open project refuses to close (`q q` quits). |
 | `:archive [TITLE]` | puts the project at hand away with its agents asleep and all they had (sessions, mail, changes, cards, journal lines), out of sight, and opens a fresh project of the same name, head and `:copy` list in its place. Ten seconds of grace, `u` keeps it. See [archives](sessions.md#archives). |
 | `:restore [NAME]` | brings an archive back as it was put away, its agents asleep until written to; the team open on its checkout gives way (archived, or closed when it did nothing). See [archives](sessions.md#archives). |
-| `A`  `:archives` | the archives as a tree, by checkout, with what each spent, its cards done and its agents; `/` filters, `r` brings one back. |
+| `A`  `:archives` | the archives as a tree, by checkout, with what each spent, its cards done and its agents; `/` filters, `enter` opens one read-only, `r` brings one back. |
 | `:rename NAME` | renames the project at hand and its leader to `lead-NAME` (the first project's too). Sessions go on; every live agent of it gets a note at its next prompt, and a `send` to the old name answers with the team list. |
 
 - A closed project keeps its id; opening the same checkout again reuses it, with a new leader (a closed solo is reused by the next solo on that checkout, never by a team). Its pin is kept for then. An archived project is never reused this way.

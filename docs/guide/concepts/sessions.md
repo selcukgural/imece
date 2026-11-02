@@ -66,7 +66,7 @@ Nothing of an archive wakes or spends: no card is offered to its workers, nobody
 
 `:restore [NAME]` brings one back ([`:restore`](../reference/commands.md#restore-name)): it opens again as it was put away, its head selected, nothing awake. Each agent goes on in its vendor session when you next write to it (resumed if the vendor still has it), told first that the project was put away and of the turn the archive cut short. The team open on its checkout gives way: archived in its turn when it did anything, closed when it did not.
 
-`A` ([`:archives`](../reference/commands.md#archives)) lists the archives as a tree: each checkout, the projects open on it now, its archives newest first with what they spent, their cards done and their agents; `/` filters them, `r` brings the one at hand back. Looking at an archive read-only, without bringing it back, is the next step.
+`A` ([`:archives`](../reference/commands.md#archives)) lists the archives as a tree: each checkout, the projects open on it now, its archives newest first with what they spent, their cards done and their agents; `/` filters them, `r` brings the one at hand back, `enter` opens it read-only without bringing it back: that archive alone, as it was put away, with all the store keeps of its journal, under an `ARCHIVE · …` banner; nothing in it wakes or spends, `esc` goes back.
 
 ## Leftovers: days, retention, preferences
 

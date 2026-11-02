@@ -34,6 +34,12 @@ pub(crate) use overlay::{chosen_text, fold, in_view, talk_notes_message, thread_
 pub(crate) use salon::{card_rows, journal_rows, reply_jump, thread_of, turn_starts};
 
 pub fn draw(f: &mut Frame, app: &App) {
+    // An archive's view is a screen of its own, its banner in place of
+    // its header.
+    if let Some(v) = &app.viewing {
+        draw(f, v);
+        return view_banner(f, app, v);
+    }
     paint(f, f.area());
     // The views that have rows to label put them back as they draw them.
     app.hintable.borrow_mut().clear();
@@ -89,6 +95,30 @@ pub fn draw(f: &mut Frame, app: &App) {
     } else if app.leaving {
         overlay::leaving(f, app);
     }
+}
+
+/// The top row over an archive's view `v`: which archive, when it was
+/// put away, what waits for the person on the screen behind it, and how
+/// to go back.
+fn view_banner(f: &mut Frame, app: &App, v: &App) {
+    let Some(viewed) = v.viewed() else {
+        return;
+    };
+    let text = fill(
+        v.lang.text().view_banner,
+        &[
+            &v.world.projects[viewed.project].name,
+            &viewed.title,
+            &date(day(viewed.at)),
+            &app.world.open_inbox().len().to_string(),
+        ],
+    );
+    let area = Rect {
+        height: 1.min(f.area().height),
+        ..f.area()
+    };
+    f.render_widget(Clear, area);
+    f.render_widget(Paragraph::new(Span::styled(text, brand())), area);
 }
 
 /// Row `target` of the screen starts at column `x`, row `y`, inside
@@ -1418,7 +1448,7 @@ fn footer(f: &mut Frame, area: Rect, app: &App) {
         };
         let mut spans = vec![Span::raw(" ")];
         spans.extend(hint_spans(&hints));
-        if app.zoom == Zoom::None && !app.live() {
+        if app.zoom == Zoom::None && app.demo() {
             spans.push(Span::styled(" space ", key()));
             spans.push(Span::raw(format!(" {}  ", t.pause)));
         }
@@ -5495,7 +5525,7 @@ mod tests {
                 " ▾ shop · 1 archived",
                 "   ● shop · open now · 1 agents",
                 "   ▸ first epic · $4.00 · 2 cards done · 2 agents · archived {}",
-                " j k move · h l za fold · / filter · r restore · esc close",
+                " j k move · h l za fold · enter view · / filter · r restore · esc close",
                 "brought shop “first epic” back",
             ),
             (
@@ -5505,7 +5535,7 @@ mod tests {
                 " ▾ shop · 1 arşiv",
                 "   ● shop · şu an açık · 1 agent",
                 "   ▸ first epic · $4.00 · 2 kart bitti · 2 agent · {} arşivlendi",
-                " j k gez · h l za katla · / süz · r geri getir · esc kapat",
+                " j k gez · h l za katla · enter bak · / süz · r geri getir · esc kapat",
                 "shop “first epic” geri geldi",
             ),
         ] {
@@ -5607,6 +5637,80 @@ mod tests {
             assert_eq!(app.selected, Sel::Agent(app.world.projects[1].leader));
             assert!(flashed(&app).starts_with(back), "{lang:?}");
         }
+    }
+
+    #[test]
+    fn an_archive_opens_read_only_under_its_banner_and_exports_what_it_shows() {
+        let dir = scratch("archive-view");
+        let typed = |app: &mut App, line: &str| {
+            for c in line.chars() {
+                key(app, KeyCode::Char(c));
+            }
+            if let Some(v) = app.viewing.as_mut() {
+                v.menu = None;
+            }
+            key(app, KeyCode::Enter);
+        };
+        let mut app = app_after(2, 2, 120, Lang::En);
+        app.selected = Sel::Agent(app.world.projects[1].leader);
+        typed(&mut app, ":archive first epic");
+        app.end_grace();
+        // Something waits on the screen behind: the banner counts it.
+        app.world.inbox.push(InboxItem {
+            kind: InboxKind::Question,
+            agent: app.world.projects[0].leader,
+            detail: "x".into(),
+            researcher: None,
+            open: true,
+            tick: app.world.tick,
+            card: None,
+        });
+        let waiting = app.world.open_inbox().len().to_string();
+        key(&mut app, KeyCode::Char('A'));
+        key(&mut app, KeyCode::Enter);
+        let at = app.world.projects[1].archived.as_ref().unwrap().at;
+        let (name, other) = (
+            app.world.projects[1].name.clone(),
+            app.world.projects[0].name.clone(),
+        );
+        let s = render(&app, 160, 40);
+        let banner = format!(
+            " ARCHIVE · {name} “first epic” · archived {} · {waiting} waiting for you now · esc back ",
+            date(day(at))
+        );
+        let top = s.lines().next().unwrap();
+        assert!(top.starts_with(&banner), "{s}");
+        assert!(s.contains(&format!("▾ {name}")), "{s}");
+        assert!(!s.contains(other.as_str()), "only the archive: {s}");
+        // A conversation of it, exported.
+        let v = app.viewing.as_mut().unwrap();
+        let said = (v.world.journal.iter())
+            .position(|e| words::said(&e.event).is_some())
+            .expect("its agents talked");
+        v.open_thread(said);
+        assert!(v.thread.is_some());
+        let file = dir.join("archived.md");
+        typed(&mut app, &format!(":export {}", file.display()));
+        let text = std::fs::read_to_string(&file).unwrap();
+        assert!(text.starts_with("# Conversation: "), "{text}");
+        // In Turkish.
+        key(&mut app, KeyCode::Esc);
+        key(&mut app, KeyCode::Char('L'));
+        let s = render(&app, 160, 40);
+        let banner = format!(
+            " ARŞİV · {name} “first epic” · {} arşivlendi · şu an seni {waiting} şey bekliyor · esc geri ",
+            date(day(at))
+        );
+        assert!(s.lines().next().unwrap().starts_with(&banner), "{s}");
+        // Back: the screen behind as it was.
+        key(&mut app, KeyCode::Esc);
+        assert!(app.viewing.is_none());
+        let s = render(&app, 160, 40);
+        assert!(
+            !s.contains("ARCHIVE ·") && s.contains(other.as_str()),
+            "{s}"
+        );
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]

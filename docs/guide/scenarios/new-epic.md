@@ -1,6 +1,6 @@
 ---
 title: "A new epic"
-description: "Finishing a piece of work and starting the next on a clean screen: :archive, its grace and u, what the archive keeps, what the fresh project starts with, bringing it back with :restore, and what stays shared."
+description: "Finishing a piece of work and starting the next on a clean screen: :archive, its grace and u, what the archive keeps and looking at it read-only, what the fresh project starts with, bringing it back with :restore, and what stays shared."
 ---
 
 # A new epic
@@ -55,6 +55,14 @@ Nothing of the archive was thrown away:
 - its cards with their stories, its journal lines (the tidy keeps them whatever their age), its items that waited for you.
 
 None of it wakes or spends: no card is offered to its workers and nobody reaches them by name. `imece --fresh` leaves their sessions alone. The vendors keep the sessions themselves, and Claude Code removes old transcripts after a while (30 days by default); a session gone by then starts anew, told where it left off.
+
+To look at it again without bringing it back, press `A` and `enter` on `▸ v1 fixes`: the archive opens read-only, alone on the screen as it was put away, its whole journal there, under
+
+```text
+ ARCHIVE · kule “v1 fixes” · archived 2026-11-02 · 0 waiting for you now · esc back
+```
+
+Its conversations, cards and changes open as anywhere and `:export` writes one out; writing to its agents says `an archive is read-only · :restore brings it back · esc goes back`. `esc` goes back to the fresh `kule`, which went on meanwhile.
 
 ## 4. Bringing it back
 

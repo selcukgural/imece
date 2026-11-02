@@ -30,7 +30,31 @@ use std::sync::mpsc::TryRecvError;
 pub enum Engine {
     Sim(Sim),
     Live(Box<Live>),
+    /// Nothing: an archive's read-only view (`enter` in the archives
+    /// browser), a world of its own that never moves. Everything that
+    /// would act on an agent, a project or the store refuses
+    /// ([`App::read_only`]).
+    View(Viewed),
 }
+
+/// The archive a read-only view shows.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Viewed {
+    pub project: ProjectId,
+    pub title: String,
+    /// When it was archived (a tick).
+    pub at: u64,
+}
+
+/// The `:` commands an archive's view runs: they only look, go or change
+/// how the screen looks. Every other is refused there (deny by default:
+/// a new command is refused in the view until it is listed here);
+/// `:restore` asks the screen behind to bring the archive back.
+const VIEW_COMMANDS: &[&str] = &[
+    "goto", "history", "export", "salon", "board", "code", "lang", "theme", "help", "quit", "next",
+    "defer", "waiting", "needs", "fold", "unfold", "trace", "peek", "hints", "news", "settle",
+    "unsettle", "talk",
+];
 
 /// After this long without a key, the next key first shows what happened.
 const AWAY: Duration = Duration::from_secs(20);
@@ -774,6 +798,13 @@ pub struct App {
     pub solo_pick: Option<SoloPick>,
     /// The archives browser (`A`, `:archives`), while it is open.
     pub archives: Option<Browser>,
+    /// An archive's read-only view, while it is open: a screen of its own
+    /// over a world of its own ([`Engine::View`]) that keys and drawing go
+    /// to; this one goes on stepping behind it.
+    pub viewing: Option<Box<App>>,
+    /// In a view: `:restore` asked the screen behind to bring the archive
+    /// back.
+    pub restore_asked: bool,
     /// The vendor that leads from the next start on without being asked
     /// (`claude`), as the preferences keep it; none asks when there is a
     /// choice.
@@ -851,18 +882,21 @@ impl App {
             // selected: it is who to talk to.
             Engine::Live(l) => Sel::Agent(world.projects[l.home()].leader),
             Engine::Sim(_) => Sel::Project(0),
+            // The archive's head: who led it.
+            Engine::View(v) => Sel::Agent(world.projects[v.project].leader),
         };
         let left_off = match &engine {
             Engine::Live(l) => l
                 .left_off()
                 .and_then(|left| LeftOff::of(&world, left.journal, left.ago)),
-            Engine::Sim(_) => None,
+            Engine::Sim(_) | Engine::View(_) => None,
         };
         // Live, every vendor is asked when the window opens; the demo's
         // are its own.
         let vendors = match &engine {
             Engine::Live(_) => LISTED.map(|v| (v, Seen::Checking)).to_vec(),
             Engine::Sim(_) => sim::vendors(),
+            Engine::View(_) => Vec::new(),
         };
         App {
             world,
@@ -930,6 +964,8 @@ impl App {
             keys_looked: None,
             solo_pick: None,
             archives: None,
+            viewing: None,
+            restore_asked: false,
             primary: None,
             digest: None,
             left_off,
@@ -969,6 +1005,8 @@ impl App {
                 true
             }
             Engine::Live(l) => l.step(&mut self.world),
+            // An archive never moves.
+            Engine::View(_) => false,
         };
         self.changed |= came;
         self.show_suggestion();
@@ -1492,6 +1530,29 @@ impl App {
         matches!(self.engine, Engine::Live(_))
     }
 
+    /// Whether the demo drives the agents (it pauses and changes speed).
+    pub fn demo(&self) -> bool {
+        matches!(self.engine, Engine::Sim(_))
+    }
+
+    /// Whether this screen is an archive's read-only view.
+    pub fn viewing_archive(&self) -> bool {
+        matches!(self.engine, Engine::View(_))
+    }
+
+    /// The archive this screen is the read-only view of, if it is one.
+    pub fn viewed(&self) -> Option<&Viewed> {
+        match &self.engine {
+            Engine::View(v) => Some(v),
+            Engine::Sim(_) | Engine::Live(_) => None,
+        }
+    }
+
+    /// In an archive's view, what would act says it cannot.
+    fn read_only(&mut self) {
+        self.flash(self.lang.text().read_only);
+    }
+
     pub fn tick_interval(&self) -> Duration {
         if self.live() {
             // Real time: often enough that events show up at once.
@@ -1601,12 +1662,111 @@ impl App {
     }
 
     pub fn on_key(&mut self, k: KeyEvent) {
+        let ctrl_c = k.modifiers.contains(KeyModifiers::CONTROL) && k.code == KeyCode::Char('c');
+        if self.viewing.is_some() && !ctrl_c {
+            return self.view_key(k);
+        }
         self.around(|app| app.key(k));
+    }
+
+    /// A key while an archive's view is open: `esc` or `q` where the view
+    /// has nothing open closes it; any other goes to the view.
+    fn view_key(&mut self, k: KeyEvent) {
+        let Some(v) = self.viewing.as_mut() else {
+            return;
+        };
+        let leaves = matches!(k.code, KeyCode::Esc | KeyCode::Char('q'));
+        if leaves && k.modifiers.is_empty() && v.at_rest() {
+            self.viewing = None;
+            return;
+        }
+        v.on_key(k);
+        self.after_view();
+    }
+
+    /// What a key in an archive's view asked of this screen: text to
+    /// copy, to leave the view (`q q`, `:quit`), to bring the archive back
+    /// (`:restore`).
+    fn after_view(&mut self) {
+        let Some(v) = self.viewing.as_mut() else {
+            return;
+        };
+        if let Some(text) = v.copy.take() {
+            self.copy = Some(text);
+        }
+        if v.quit {
+            self.viewing = None;
+        } else if v.restore_asked {
+            let Some(p) = v.viewed().map(|viewed| viewed.project) else {
+                return;
+            };
+            self.viewing = None;
+            self.restore_at(p);
+        }
+    }
+
+    /// Whether nothing is open on this screen that `esc` would close: no
+    /// window, line, chord, conversation, card, focus or change; the
+    /// salon, the board or the code map as they are.
+    fn at_rest(&self) -> bool {
+        use keys::Scope;
+        !self.typing
+            && !self.help
+            && self.pending.is_none()
+            && self.keys_held.is_none()
+            && self.hints.is_none()
+            && self.noting.is_none()
+            && self.card.is_none()
+            && self.zoom == Zoom::None
+            && matches!(
+                self.scope_below(),
+                Some(Scope::Salon | Scope::Board | Scope::Code)
+            )
+    }
+
+    /// `enter` on an archive (or one of its agents, `agent`) in the
+    /// browser: its read-only view opens over this screen, from what the
+    /// store keeps of its journal (the demo: what it has in memory).
+    fn view_archive(&mut self, p: ProjectId, agent: Option<AgentId>) {
+        let t = self.lang.text();
+        let Some(archived) = self.world.projects[p].archived.clone() else {
+            return;
+        };
+        let read = match &self.engine {
+            Engine::Live(l) => l.project_journal(&self.world, p),
+            Engine::Sim(_) => Ok(self.world.journal_of(p)),
+            Engine::View(_) => return self.read_only(),
+        };
+        let (journal, marks) = match read {
+            Ok(read) => read,
+            Err(why) => return self.flash(fill(t.view_failed, &[&why])),
+        };
+        let world = self.world.view_of(p, journal, marks);
+        let viewed = Viewed {
+            project: p,
+            title: archived.title,
+            at: archived.at,
+        };
+        let mut v = App::with(world, Engine::View(viewed), self.lang);
+        v.keys = self.keys.clone();
+        v.side = self.side;
+        v.shift_enter = self.shift_enter;
+        v.home = self.home.clone();
+        v.fold_talk = self.fold_talk;
+        if let Some(id) = agent {
+            v.selected = Sel::Agent(id);
+        }
+        self.viewing = Some(Box::new(v));
     }
 
     /// The first of two keys of the person's, held since [`keys::WAIT`]
     /// before `now` with no second: it acts as itself alone.
     pub fn keys_due(&mut self, now: Instant) {
+        if let Some(v) = &mut self.viewing {
+            v.keys_due(now);
+            self.changed |= std::mem::take(&mut v.changed);
+            return self.after_view();
+        }
         if self
             .keys_held
             .is_some_and(|(_, at)| now.duration_since(at) >= keys::WAIT)
@@ -1938,9 +2098,9 @@ impl App {
             KeyCode::Char('T') => self.next_theme(),
             KeyCode::Char('L') => self.set_lang(self.lang.other()),
             // Live agents run in real time: nothing to pause or speed up.
-            KeyCode::Char(' ') if !self.live() => self.pause(),
-            KeyCode::Char('+') | KeyCode::Char('=') if !self.live() => self.faster(),
-            KeyCode::Char('-') if !self.live() => self.slower(),
+            KeyCode::Char(' ') if self.demo() => self.pause(),
+            KeyCode::Char('+') | KeyCode::Char('=') if self.demo() => self.faster(),
+            KeyCode::Char('-') if self.demo() => self.slower(),
             KeyCode::Char('?') => self.open_help(),
             KeyCode::Tab | KeyCode::Char(']') if self.pane_keys() => self.cycle_pane(true),
             KeyCode::BackTab | KeyCode::Char('[') if self.pane_keys() => self.cycle_pane(false),
@@ -2849,7 +3009,7 @@ impl App {
     pub fn cwd(&self) -> PathBuf {
         match &self.engine {
             Engine::Live(l) => l.repo_of(self.current_project()).to_path_buf(),
-            Engine::Sim(_) => PathBuf::from("."),
+            Engine::Sim(_) | Engine::View(_) => PathBuf::from("."),
         }
     }
 
@@ -2879,6 +3039,7 @@ impl App {
         let checked = match &self.engine {
             Engine::Live(l) => l.may_copy(p, path),
             Engine::Sim(_) => imece_agent::copy::literal(path),
+            Engine::View(_) => return self.read_only(),
         };
         match checked {
             Ok(()) => {
@@ -2898,6 +3059,7 @@ impl App {
         let asked = match &mut self.engine {
             Engine::Live(l) => l.suggest(&self.world, p),
             Engine::Sim(s) => s.suggest(&self.world, p),
+            Engine::View(_) => return self.read_only(),
         };
         match asked {
             Ok(model) => {
@@ -3239,6 +3401,10 @@ impl App {
     /// elsewhere its characters would be taken as keys, so it is left
     /// out and the person told how to write first.
     pub fn paste(&mut self, text: &str) {
+        if let Some(v) = &mut self.viewing {
+            v.paste(text);
+            return self.after_view();
+        }
         self.paste_in(text);
         self.preview_theme();
     }
@@ -3523,6 +3689,9 @@ impl App {
             if command.is_empty() {
                 return self.flash(t.shell_empty);
             }
+            if self.viewing_archive() {
+                return self.read_only();
+            }
             self.shell = Some(command.to_string());
             return;
         }
@@ -3555,6 +3724,10 @@ impl App {
             Engine::Sim(s) => s.told(&mut self.world, id, text).err(),
             Engine::Live(l) if command => l.command(&mut self.world, id, text).err(),
             Engine::Live(l) => l.told(&mut self.world, id, text).err(),
+            Engine::View(_) => {
+                self.read_only();
+                return false;
+            }
         };
         let went = refused.is_none();
         self.report(id, text, refused);
@@ -3591,7 +3764,17 @@ impl App {
         let (name, arg) = line
             .split_once(char::is_whitespace)
             .map_or((line, ""), |(n, a)| (n, a.trim()));
-        match complete::long(name) {
+        let long = complete::long(name);
+        if self.viewing_archive() && complete::COMMANDS.contains(&long) {
+            if long == "restore" {
+                self.restore_asked = true;
+                return;
+            }
+            if !VIEW_COMMANDS.contains(&long) {
+                return self.read_only();
+            }
+        }
+        match long {
             "budget" => match parse_dollars(arg) {
                 Some(to) => {
                     let from = self.world.budget;
@@ -4056,6 +4239,7 @@ impl App {
         let returned = match &mut self.engine {
             Engine::Live(l) => l.reject_change(&mut self.world, id),
             Engine::Sim(s) => s.reject_change(&mut self.world, id),
+            Engine::View(_) => return self.read_only(),
         };
         if let Err(why) = returned {
             return self.flash(fill(t.reject_failed, &[&name, &why]));
@@ -4097,7 +4281,9 @@ impl App {
 
     /// What the screen shows of time at `now`.
     fn clock(&self, now: Instant) -> Clock {
-        let flash = (self.flash.as_ref())
+        // A view's flash is the one on the screen.
+        let shown = self.viewing.as_ref().map_or(&self.flash, |v| &v.flash);
+        let flash = (shown.as_ref())
             .filter(|(_, at)| now.saturating_duration_since(*at) < FLASH)
             .map(|(_, at)| *at);
         let grace = self.grace_left(now).map(|(_, left)| left);
@@ -4123,6 +4309,7 @@ impl App {
             || self.help
             || self.solo_pick.is_some()
             || self.archives.is_some()
+            || self.viewing.is_some()
             || self.leaving
             || self.window_open();
         if busy || now.duration_since(at) < FOCUS_AWAY {
@@ -4234,6 +4421,10 @@ impl App {
     /// line, else the journal's) is marked to come back to, or loses its
     /// mark.
     fn toggle_mark(&mut self) {
+        // An archive's marks are as it left them.
+        if self.viewing_archive() {
+            return self.read_only();
+        }
         let journal = self.view == View::Salon && self.zoom == Zoom::None;
         let at = match &self.thread {
             Some(th) => th.entries.get(th.sel).copied(),
@@ -4367,6 +4558,7 @@ impl App {
         let opened = match &mut self.engine {
             Engine::Live(live) => live.open_project(&mut self.world, &full, name, Open::Team),
             Engine::Sim(sim) => sim.open_project(&mut self.world, path, name),
+            Engine::View(_) => return self.read_only(),
         };
         match opened {
             Ok(p) => {
@@ -4434,6 +4626,7 @@ impl App {
         match &self.engine {
             Engine::Live(live) => live.vendors(),
             Engine::Sim(_) => vec![Vendor::Claude, Vendor::Codex, Vendor::Gemini],
+            Engine::View(_) => Vec::new(),
         }
     }
 
@@ -4470,6 +4663,7 @@ impl App {
             None => match &self.engine {
                 Engine::Live(live) => live.repo_of(here).to_path_buf(),
                 Engine::Sim(_) => PathBuf::from(&self.world.projects[here].name),
+                Engine::View(_) => return self.read_only(),
             },
         };
         let shown = full.display().to_string();
@@ -4485,6 +4679,7 @@ impl App {
                 },
             ),
             Engine::Sim(sim) => sim.open_solo(&mut self.world, &shown, vendor, choice, name),
+            Engine::View(_) => return self.read_only(),
         };
         match opened {
             Ok(p) => {
@@ -4568,6 +4763,7 @@ impl App {
         let changed = match &mut self.engine {
             Engine::Live(live) => live.rechoose(&mut self.world, id, choice),
             Engine::Sim(sim) => sim.rechoose(&mut self.world, id, choice),
+            Engine::View(_) => return self.read_only(),
         };
         match changed {
             Ok(runs) => self.flash(fill(t.chose, &[&name, &runs])),
@@ -4612,6 +4808,8 @@ impl App {
         match &self.engine {
             Engine::Live(live) => live.model_of(id).map(str::to_string),
             Engine::Sim(sim) => sim.model_of(id).map(str::to_string),
+            // What it ran on is not kept with an archive.
+            Engine::View(_) => None,
         }
     }
 
@@ -4693,6 +4891,7 @@ impl App {
         let closed = match &mut self.engine {
             Engine::Live(live) => live.close_project(&mut self.world, p),
             Engine::Sim(sim) => sim.close_project(&mut self.world, p),
+            Engine::View(_) => return self.read_only(),
         };
         if closed.is_err() {
             return self.flash(fill(t.last_project, &[&name]));
@@ -4744,6 +4943,7 @@ impl App {
         let archived = match &mut self.engine {
             Engine::Live(live) => live.archive_project(&mut self.world, p, title.clone()),
             Engine::Sim(sim) => sim.archive_project(&mut self.world, p, title.clone()),
+            Engine::View(_) => return self.read_only(),
         };
         let fresh = match archived {
             Ok(fresh) => fresh,
@@ -4811,6 +5011,7 @@ impl App {
         let restored = match &mut self.engine {
             Engine::Live(live) => live.restore_project(&mut self.world, p),
             Engine::Sim(sim) => sim.restore_project(&mut self.world, p),
+            Engine::View(_) => return self.read_only(),
         };
         let gave_way = match restored {
             Ok(q) => q,
@@ -4827,6 +5028,10 @@ impl App {
     /// `A`, `:archives`: the archives as a tree, the checkout at hand's
     /// first; nothing archived says so.
     fn open_archives(&mut self) {
+        // The view's other projects are put away only to hide them.
+        if self.viewing_archive() {
+            return self.read_only();
+        }
         self.end_grace();
         if self.world.archives().is_empty() {
             return self.flash(self.lang.text().no_archives);
@@ -4848,7 +5053,7 @@ impl App {
                     None => repo.display().to_string(),
                 }
             }
-            Engine::Sim(_) => self.world.projects[p].name.clone(),
+            Engine::Sim(_) | Engine::View(_) => self.world.projects[p].name.clone(),
         }
     }
 
@@ -4860,6 +5065,10 @@ impl App {
         match b.on_key(&self.world, k) {
             None => {}
             Some(archives::Act::Close) => self.archives = None,
+            Some(archives::Act::View(p, agent)) => {
+                self.archives = None;
+                self.view_archive(p, agent);
+            }
             Some(archives::Act::Restore(p)) => {
                 self.archives = None;
                 self.restore_at(p);
@@ -4879,6 +5088,7 @@ impl App {
         let can = match &self.engine {
             Engine::Live(live) => live.can_forget(&self.world, id),
             Engine::Sim(sim) => sim.can_forget(&self.world, id),
+            Engine::View(_) => return self.read_only(),
         };
         match can {
             Ok(()) => self.wait_grace(Undoable::Forget(id)),
@@ -4893,6 +5103,7 @@ impl App {
         let forgot = match &mut self.engine {
             Engine::Live(live) => live.forget_agent(&mut self.world, id),
             Engine::Sim(sim) => sim.forget(&mut self.world, id),
+            Engine::View(_) => return self.read_only(),
         };
         match forgot {
             Ok(()) => self.flash(fill(t.forgot, &[&name])),
@@ -4919,6 +5130,7 @@ impl App {
         let renamed = match &mut self.engine {
             Engine::Live(live) => live.rename_project(&mut self.world, p, arg),
             Engine::Sim(sim) => sim.rename_project(&mut self.world, p, arg),
+            Engine::View(_) => return self.read_only(),
         };
         match renamed {
             Ok(()) => {
@@ -5119,6 +5331,9 @@ impl App {
     }
 
     fn answer(&mut self, approve: bool) {
+        if self.viewing_archive() {
+            return self.read_only();
+        }
         let open = self.inbox_rows();
         let Some(&item) = open.get(self.inbox_sel) else {
             return;
@@ -5133,6 +5348,7 @@ impl App {
                 Engine::Live(l) => l.decide(&mut self.world, item, approve),
                 // The demo's session goes on once the item is closed.
                 Engine::Sim(_) => self.world.decided(item, approve),
+                Engine::View(_) => return self.read_only(),
             }
             let how = if approve { t.allowed } else { t.refused };
             self.flash(fill(how, &[&name]));
@@ -5178,6 +5394,7 @@ impl App {
             Engine::Sim(s) if apply => s.apply_change(&self.world, id, hunks),
             Engine::Live(l) => l.reject_change(&mut self.world, id),
             Engine::Sim(s) => s.reject_change(&mut self.world, id),
+            Engine::View(_) => return self.read_only(),
         };
         match decided {
             Ok(()) if apply => self.flash(fill(t.applying, &[&name])),
@@ -7721,6 +7938,37 @@ mod tests {
     }
 
     #[test]
+    fn a_live_archive_is_viewed_from_the_store_and_a_store_that_fails_says_so() {
+        let mut w = crate::live::testing::team(1);
+        w.note(Event::Failed { agent: 1 });
+        w.projects[0].archived = Some(Archived {
+            at: 3,
+            title: "t".into(),
+        });
+        let mut live = crate::live::testing::idle_live(2);
+        live.store_in_memory();
+        live.persist(&w).unwrap();
+        let mut app = App::with(w, Engine::Live(Box::new(live)), Lang::En);
+        // A line the store does not have is not the archive's.
+        app.world.note(Event::Failed { agent: 0 });
+        app.view_archive(0, None);
+        let (lines, _) = app.world.journal_of(0);
+        assert_eq!(view(&app).world.journal[..], lines[..lines.len() - 1]);
+        app.viewing = None;
+        let Engine::Live(l) = &mut app.engine else {
+            unreachable!()
+        };
+        l.break_store();
+        app.view_archive(0, None);
+        assert!(app.viewing.is_none());
+        assert!(
+            said(&app).starts_with("the archive's journal could not be read: no such table"),
+            "{}",
+            said(&app)
+        );
+    }
+
+    #[test]
     fn a_store_that_fails_is_said_once_and_a_save_that_works_clears_it() {
         let w = crate::live::testing::team(1);
         let mut live = crate::live::testing::idle_live(2);
@@ -9476,6 +9724,273 @@ mod tests {
         );
     }
 
+    /// A demo of two projects that ran a while, project 1 archived as
+    /// "epic", and its read-only view open from the archives browser.
+    fn viewing() -> App {
+        let mut app = App::new(2, 2, 0, 7, Lang::En);
+        for _ in 0..120 {
+            app.step();
+        }
+        app.selected = Sel::Agent(app.world.projects[1].leader);
+        app.command("archive epic");
+        app.end_grace();
+        app.world.recall_line("a line sent");
+        app.on_key(key(KeyCode::Char('A')));
+        app.on_key(key(KeyCode::Enter));
+        assert!(app.viewing.is_some(), "{:?}", app.flash);
+        app
+    }
+
+    fn view(app: &App) -> &App {
+        app.viewing.as_deref().expect("the view is open")
+    }
+
+    /// `line` written in the view and sent, its menu put away first.
+    fn view_typed(app: &mut App, line: &str) {
+        // A plain message: writing starts with `i`.
+        if !line.starts_with([':', '!', '@']) {
+            app.on_key(key(KeyCode::Char('i')));
+        }
+        for c in line.chars() {
+            app.on_key(key(KeyCode::Char(c)));
+        }
+        if let Some(v) = app.viewing.as_mut() {
+            v.menu = None;
+        }
+        app.on_key(key(KeyCode::Enter));
+    }
+
+    fn said(app: &App) -> &str {
+        app.flash.as_ref().map_or("", |f| f.0.as_str())
+    }
+
+    #[test]
+    fn enter_in_the_archives_opens_its_view_of_only_that_archive() {
+        let app = viewing();
+        let v = view(&app);
+        let at = app.world.projects[1].archived.as_ref().unwrap().at;
+        assert_eq!(
+            v.viewed(),
+            Some(&Viewed {
+                project: 1,
+                title: "epic".into(),
+                at,
+            })
+        );
+        assert!(app.archives.is_none(), "the browser gave way");
+        let (lines, _) = app.world.journal_of(1);
+        assert!(!lines.is_empty());
+        assert_eq!(v.world.journal, lines, "its lines, and only those");
+        assert!(!v.world.projects[1].closed && v.world.projects[1].archived.is_none());
+        assert_eq!(v.selected, Sel::Agent(v.world.projects[1].leader));
+        assert_eq!(v.lang, app.lang);
+        // The screen behind goes on; the view does not move.
+        let tick = v.world.tick;
+        let mut app = app;
+        app.step();
+        app.step();
+        assert!(app.world.tick > tick);
+        assert_eq!(view(&app).world.tick, tick);
+        // `enter` on one of its agents opens it with that agent selected.
+        app.viewing = None;
+        let worker = (app.world.agents.iter())
+            .find(|a| a.project == 1 && a.role == Role::Worker)
+            .map(|a| a.id)
+            .unwrap();
+        app.view_archive(1, Some(worker));
+        assert_eq!(view(&app).selected, Sel::Agent(worker));
+        // What is not an archive opens nothing.
+        app.viewing = None;
+        app.view_archive(0, None);
+        assert!(app.viewing.is_none());
+    }
+
+    #[test]
+    fn a_view_is_at_rest_only_with_nothing_open_that_esc_closes() {
+        let mut rest = App::new(1, 1, 0, 1, Lang::En);
+        assert!(rest.at_rest());
+        for v in [View::Board, View::Code] {
+            rest.view = v;
+            assert!(rest.at_rest(), "{v:?}");
+        }
+        let busy: [fn(&mut App); 11] = [
+            |a| a.typing = true,
+            |a| a.help = true,
+            |a| a.pending = Some('g'),
+            |a| a.keys_held = Some((key(KeyCode::Char('x')), Instant::now())),
+            |a| {
+                a.hints = Some(Hints {
+                    labels: Vec::new(),
+                    typed: String::new(),
+                })
+            },
+            |a| a.noting = Some(Noting::Line(0, 0)),
+            |a| a.card = Some(0),
+            |a| a.zoom = Zoom::Focus(0),
+            |a| a.zoom = Zoom::Diff(0),
+            |a| a.peek = Some(0),
+            |a| a.archives = Some(Browser::new(&a.world, Vec::new())),
+        ];
+        for (i, busy) in busy.iter().enumerate() {
+            let mut a = App::new(1, 1, 0, 1, Lang::En);
+            busy(&mut a);
+            assert!(!a.at_rest(), "{i}");
+        }
+    }
+
+    #[test]
+    fn keys_go_to_the_view_and_esc_q_and_ctrl_c_leave_it() {
+        let mut app = viewing();
+        // ctrl-r searches the view's lines sent, not this screen's.
+        app.on_key(ctrl('r'));
+        assert!(view(&app).searching && !app.searching);
+        // `esc` ends that first, the view stays; then it closes the view.
+        app.viewing.as_mut().unwrap().menu = None;
+        app.on_key(key(KeyCode::Esc));
+        assert!(!view(&app).typing);
+        app.on_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::SHIFT));
+        app.on_key(key(KeyCode::Char('x')));
+        assert!(app.viewing.is_some(), "only a plain esc or q leaves");
+        app.on_key(key(KeyCode::Esc));
+        assert!(app.viewing.is_none());
+        assert!(!app.quit);
+        // `q` leaves it too.
+        app.view_archive(1, None);
+        app.on_key(key(KeyCode::Char('q')));
+        assert!(app.viewing.is_none() && !app.quit);
+        // `:quit` and its `q` leave the view, not imece.
+        app.view_archive(1, None);
+        view_typed(&mut app, ":quit");
+        assert!(app.viewing.is_some());
+        app.on_key(key(KeyCode::Char('q')));
+        assert!(app.viewing.is_none() && !app.quit);
+        // ctrl-c quits imece from the view.
+        app.view_archive(1, None);
+        app.on_key(ctrl('c'));
+        assert!(app.quit && app.viewing.is_some());
+    }
+
+    #[test]
+    fn what_the_view_copies_pastes_and_flashes_goes_through_the_screen_behind() {
+        let mut app = viewing();
+        app.viewing.as_mut().unwrap().copy = Some("words".into());
+        app.on_key(key(KeyCode::Char('x')));
+        assert_eq!(app.copy.as_deref(), Some("words"));
+        assert!(view(&app).copy.is_none());
+        // A paste goes into what the view writes.
+        app.on_key(key(KeyCode::Char(':')));
+        app.paste("board");
+        assert_eq!(view(&app).input, ":board");
+        assert!(app.input.is_empty());
+        // A key the key file holds back is let through in the view, and
+        // what it did is drawn.
+        let now = Instant::now();
+        app.on_key(key(KeyCode::Esc));
+        app.changed = false;
+        app.viewing.as_mut().unwrap().keys_held = Some((key(KeyCode::Char(':')), now - keys::WAIT));
+        app.keys_due(now);
+        assert!(view(&app).keys_held.is_none() && view(&app).typing);
+        assert!(app.changed && !view(&app).changed);
+        app.on_key(key(KeyCode::Esc));
+        // What was to be drawn still is.
+        app.viewing.as_mut().unwrap().keys_held = Some((key(KeyCode::Char(':')), now - keys::WAIT));
+        app.keys_due(now);
+        assert!(app.changed && view(&app).typing);
+        app.on_key(key(KeyCode::Esc));
+        // The view's flash is the screen's clock.
+        app.drawn(now);
+        assert!(!app.draw_due(now));
+        app.viewing.as_mut().unwrap().flash = Some(("x".into(), now));
+        assert!(app.draw_due(now));
+    }
+
+    #[test]
+    fn the_view_refuses_what_would_act_and_runs_what_only_looks() {
+        let mut app = viewing();
+        let read_only = Lang::En.text().read_only;
+        let look = |a: &App| {
+            let w = &view(a).world;
+            let projects: Vec<_> = (w.projects.iter())
+                .map(|q| {
+                    (
+                        q.name.clone(),
+                        q.closed,
+                        q.archived.clone(),
+                        q.copies.clone(),
+                    )
+                })
+                .collect();
+            let agents: Vec<_> = (w.agents.iter()).map(|a| (a.status, a.gone)).collect();
+            (w.journal.len(), w.marks.clone(), w.budget, projects, agents)
+        };
+        let was = look(&app);
+        let lead = view(&app).world.projects[1].leader;
+        let to_lead = format!("@{} hi", view(&app).world.agents[lead].name);
+        for line in [
+            ":budget 5",
+            "hello there",
+            &to_lead,
+            "!ls",
+            ":archives",
+            ":mark",
+            ":close",
+        ] {
+            app.viewing.as_mut().unwrap().flash = None;
+            view_typed(&mut app, line);
+            assert_eq!(said(view(&app)), read_only, "{line}");
+            assert!(app.shell.is_none() && view(&app).shell.is_none());
+        }
+        for k in ['m', 'A', 'a', 'r'] {
+            let v = app.viewing.as_mut().unwrap();
+            v.flash = None;
+            v.pane = if k == 'm' { Pane::Journal } else { Pane::Inbox };
+            v.journal_sel = Some(0);
+            app.on_key(key(KeyCode::Char(k)));
+            assert_eq!(said(view(&app)), read_only, "{k}");
+            assert!(view(&app).archives.is_none());
+        }
+        // Every way to the engine says the same, and changes nothing.
+        let calls: [fn(&mut App, AgentId); 10] = [
+            |v, _| v.copy_path("target"),
+            |v, _| v.suggest_commit(),
+            |v, id| {
+                assert!(!v.tell(id, "hi"));
+            },
+            |v, _| v.open_project("/tmp/elsewhere"),
+            |v, _| v.close_now(1),
+            |v, _| v.archive_now(1),
+            |v, _| v.restore_at(1),
+            |v, id| v.forget_now(id),
+            |v, _| v.forget_agent(""),
+            |v, id| v.decide_change(id, true),
+        ];
+        for (i, call) in calls.iter().enumerate() {
+            let v = app.viewing.as_mut().unwrap();
+            v.flash = None;
+            call(v, lead);
+            assert_eq!(said(view(&app)), read_only, "{i}");
+        }
+        assert_eq!(look(&app), was);
+        assert_eq!(view(&app).model_of(lead), None);
+        assert!(view(&app).vendors().is_empty());
+        // An unknown command is one, not a refusal.
+        view_typed(&mut app, ":nosuch");
+        assert_eq!(said(view(&app)), "no command nosuch; : and tab list them");
+        // What only looks or goes runs; nothing pauses.
+        view_typed(&mut app, ":board");
+        assert_eq!(view(&app).view, View::Board);
+        app.on_key(key(KeyCode::Char('1')));
+        app.on_key(key(KeyCode::Char(' ')));
+        assert!(!view(&app).paused);
+        view_typed(&mut app, ":lang tr");
+        assert_eq!((view(&app).lang, app.lang), (Lang::Tr, Lang::En));
+        // `:restore` brings the archive back from behind it.
+        view_typed(&mut app, ":restore");
+        assert!(app.viewing.is_none());
+        assert!(app.world.projects[1].archived.is_none());
+        assert!(said(&app).starts_with("brought "), "{}", said(&app));
+    }
+
     #[test]
     fn coming_back_after_minutes_away_shows_what_happened_at_once() {
         let mut app = App::new(1, 1, 0, 1, Lang::En);
@@ -9508,6 +10023,7 @@ mod tests {
             |a: &mut App| a.left_off = Some(LeftOff::default()),
             |a: &mut App| a.solo_pick = Some(SoloPick::new(None, None, Vec::new())),
             |a: &mut App| a.archives = Some(Browser::new(&a.world, Vec::new())),
+            |a: &mut App| a.viewing = Some(Box::new(App::new(1, 1, 0, 1, Lang::En))),
         ] {
             let mut app = App::new(1, 1, 0, 1, Lang::En);
             busy(&mut app);

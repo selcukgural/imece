@@ -64,7 +64,7 @@ The conventions are vim's: `h` `j` `k` `l` move and fold, `gg` and `G` go to the
 | `v`  `:talk` | its conversation with you |
 | `esc` | go back |
 | `u`  `:undo` | keep a `:close` or `:forget` from happening while the bottom line counts its ten seconds down |
-| `A`  `:archives` | the archives as a tree (checkout → archive → its agents); in it `j` `k` `gg` `G` move, `h` `l` `za` fold, `/` filters, `r` brings the one at hand back (`:restore`), `esc` closes; `:archive` puts the project at hand away |
+| `A`  `:archives` | the archives as a tree (checkout → archive → its agents); in it `j` `k` `gg` `G` move, `h` `l` `za` fold, `enter` opens an archive read-only (`esc` or `q` back), `/` filters, `r` brings the one at hand back (`:restore`), `esc` closes; `:archive` puts the project at hand away |
 | `tab` `⇧tab` `[` `]` | next / previous panel |
 | `,`  `.`  `<`  `>` | wider / narrower side panel |
 

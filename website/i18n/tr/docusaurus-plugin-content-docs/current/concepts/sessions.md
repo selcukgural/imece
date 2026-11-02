@@ -66,7 +66,7 @@ Bir arşivden hiçbir şey uyanmaz, hiçbir şey harcanmaz: işçilerine kart su
 
 `:restore [AD]` birini geri getirir ([`:restore`](../reference/commands.md#restore-name)): kaldırıldığı gibi yeniden açılır, başı seçilir, hiçbir şey uyanmaz. Her ajan, ona bir sonraki yazışınızda satıcı oturumunda sürer (satıcı hâlâ saklıyorsa sürdürülür); önce projenin kaldırıldığı ve arşivin yarıda kestiği tur ona söylenir. Çalışma kopyasında açık olan takım yer açar: bir şey yaptıysa sırası gelince arşivlenir, yapmadıysa kapatılır.
 
-`A` ([`:archives`](../reference/commands.md#archives)) arşivleri bir ağaç olarak listeler: her çalışma kopyası, şu an onda açık projeler, arşivleri en yenisi önce, harcadıkları, biten kartları ve ajanlarıyla; `/` onları süzer, `r` eldekini geri getirir. Bir arşive geri getirmeden, salt okunur bakmak sonraki adımdır.
+`A` ([`:archives`](../reference/commands.md#archives)) arşivleri bir ağaç olarak listeler: her çalışma kopyası, şu an onda açık projeler, arşivleri en yenisi önce, harcadıkları, biten kartları ve ajanlarıyla; `/` onları süzer, `r` eldekini geri getirir, `enter` onu geri getirmeden salt okunur açar: yalnızca o arşiv, kaldırıldığı gibi, deponun günlüğünden sakladığı her şeyle, bir `ARŞİV · …` şeridinin altında; içinde hiçbir şey uyanmaz, harcamaz, `esc` geri döner.
 
 ## Kalanlar: günler, saklama, tercihler
 
