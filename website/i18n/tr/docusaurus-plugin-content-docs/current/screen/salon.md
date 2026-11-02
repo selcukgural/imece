@@ -59,6 +59,7 @@ Bir agent'ın satırı:
 - Satıcısının renginde adı; sonra kirliyse `~` ya da `≈` (araştırma kirliliği, yalnız demoda).
 - Bir işçinin kartı: `#3` ve kartın başlığı. Lider yerine satıcısını gösterir.
 - Durumu: oturumu kalkarken (süreç, ilk worktree'nin checkout'u) `başlıyor…`, `düşünüyor…`, yaptığını söylediği şey, bir takım arkadaşının yanıtını beklerken `? → claude-2`, bir sorusu sizi beklerken `? → sen`, bir araç çağrısı SENİ BEKLEYEN'de beklerken `⚑ onayını bekliyor`, yanıtı okunmayı beklerken `sana yanıt verdi`, geçici bir satıcı hatasıyla biten bir turu imece yeniden denemeyi beklerken `↻ 2/3 · 25 sn sonra` (deneme, deneme sayısı, kalan süre), bir satıcı hatası sizi beklerken `✕ satıcı hatası`, işçileri çalışan bir lider için `koordine ediyor`, `BLOKE`, `■ durdu, yazınca yeniden başlar`, `◦ önceki çalışmadan beri uyuyor, yazınca uyanır`. Durumun kendi metni varsa satır onu taşır: `? → sen "hangi index?"`, `sana yanıt verdi "enum kullan"`, `⚑ onayını bekliyor "cargo test"`, `✕ satıcı hatası "Invalid API key"`, `BLOKE "JWT saat kayması" ← researcher-1`, `■ durdu: süreç 1 koduyla çıktı`. Yoksa durum, agent'ın en son alışverişiyle biter; ok kimin söylediğini gösterir: `düşünüyor… ← lead "parser'ı düzelt"`, `boşta → sen "parser düzeldi, testler yeşil"`, `? → claude-2 "hangi parser?"` (beklediği kişiye kendi sorusu, tek başına alıntılanır). Alışveriş bir sonrakine dek kalır; böylece satır agent'ın en son ne yaptığını söyler, durum ve metni kırk sütunu geçmez.
+- `▁▃▅▂▁`: agent'ın son zamanda yaptıkları, son beş tikin her biri için bir sütun (her biri 5 saniye, toplam 25), en eskisi önce: o tikte izine kaç satır düştüğü (bir metin, bir araç çağrısı, bir mesaj, bir not), her satırda aynı ölçekle (`▁` hiç, `▂` bir, `▃` iki, `▄` dörde kadar, `▅` altı, `▆` dokuz, `▇` on dört, `█` daha fazla); böylece yoğun bir satırla sakin bir satır bir bakışta ayrılır. Yalnızca agent bir şey yaptıkça ve tikler geçtikçe değişir, kendi zamanlayıcısıyla asla; beş tik boyunca hiçbir şey yazılmazsa kaybolur. Dar bir satırda alıntıdan da önce, ilk yer veren odur ve [`:motion off`](../reference/commands.md#motion-offcalmfull) onu göstermez. Çalıştırmalar arasında saklanmaz.
 - O durumda ne zamandır olduğu, bir dakikadan başlayarak: `· 3 dk`, `· 1 sa 5 dk`. Sizi bekleyen bir şey için öğe geldiğinden beri.
 - Varsa harcadığı.
 - `≡ 3/7`: kendi yapılacaklar listesinin neresinde olduğu, biten adımlar ve hepsi; planlama aracı bir liste tutuyorsa (Claude Code'un görevleri, Codex'in `update_plan`'i; Gemini'nin `write_todos`'u imece'ye adımları olmadan ulaşır). Odak adımları listeler. Satır darsa işaret alıntıdan ve süreden sonra yer verir. Oturumla birlikte gider.
@@ -68,7 +69,7 @@ Bir agent'ın satırı:
 - `↗ localhost:5173/`: işçi ya da yardımcının kendi metninde yazdığı en yeni yerel adres, terminalin açtığı bir bağlantı olarak (OSC 8). Yalnız `localhost`, `127.0.0.1` ya da `[::1]` üzerinde `http`/`https` sayılır, sorgu ve parça atılır, 60 karakteri aşan bir adres hiç gösterilmez. Oturumla birlikte gider.
 - Yardımcıları olan bir işçi `▾ 2 yardımcı` ile, katlıysa `▸ 2 yardımcı  ● claude-1.1` ile biter: sayı ve en yüksekleri.
 
-Her agent tek satırdır, ne söylerse söylesin: satırların yüksekliği değişmez. Süre ve alıntı yalnız satırda maliyet, worktree durumu, yardımcılar ve bağlantıdan arta kalan yeri alır; dar bir bölme önce alıntıyı, sonra süreyi düşürür (`.` yan paneli daraltır). Yeni değişen bir satır bir an öne çıkar, sonra sakinleşir. Seçili satır ters renklidir.
+Her agent tek satırdır, ne söylerse söylesin: satırların yüksekliği değişmez. Süre, alıntı ve etkinlik çubuğu yalnız satırda maliyet, worktree durumu, yardımcılar ve bağlantıdan arta kalan yeri alır; dar bir bölme önce çubuğu, sonra alıntıyı, en son süreyi düşürür (`.` yan paneli daraltır). Yeni değişen bir satır bir an öne çıkar, sonra sakinleşir. Seçili satır ters renklidir.
 
 Satırlar panele sığmadığında sakin işçiler (çalışan ya da boşta, son zamanda bir şey dememiş, seçili olmayan) salonun altından yukarıya doğru tek satıra katlanır: `… 2 agent katlı, en yükseği  ● codex-2`, en yükseklerinin adıyla; sabitlenmiş bir proje en son katlanır ve sizi bekleyen hiç katlanmaz. Panelin alt satırı `KUYRUK`, doğrulanan kartları ve son dört biteni (`#2 ✓`) listeler; canlıda doğrulama kısmını hiçbir şey doldurmaz, `boş` yazar.
 
@@ -103,6 +104,7 @@ Her agent tek bir basamakta durur, en yüksekten: takıldı (bloke ya da oturumu
 | `≡ 3/7` | kendi yapılacaklar listesi: biten adımlar ve hepsi |
 | `◔ %72` | bağlam penceresi bu kadar dolu; %70'ten gösterilir, %90'dan yüksek sesle |
 | `✱` | `m` ile işaretlediğiniz satır; `'` sonrakine gider |
+| `▁▃▅` | son zamanda yaptıkları: son beş tikin her birinde izine düşen satırlar, sütun başı 5 sn |
 
 Başlıktaki filo aynı şekilleri kullanır, böylece mono temada da okunur.
 

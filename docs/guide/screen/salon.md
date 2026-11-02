@@ -58,6 +58,7 @@ An agent's row:
 - Its name in its vendor's colour, then `~` or `≈` when it is tainted (research taint, demo only).
 - A worker's card: `#3` and the card's title. A leader shows its vendor instead.
 - Its status: `starting…` while its session comes up (the process, a first worktree's checkout), `thinking…`, what it says it is doing, `? → claude-2` while it waits for a teammate's answer, `? → you` while a question of its waits for you, `⚑ waits for your yes` while a tool call of its waits in WAITING FOR YOU, `answered you` while its answer waits to be read, `↻ 2/3 in 25 s` while imece waits to try a turn that failed on a passing vendor error again (the try, the tries, the time left), `✕ vendor error` while a vendor error waits for you, `coordinating` for a leader whose workers work, `BLOCKED`, `■ stopped, write to it to start again`, `◦ asleep since the last run, write to it to wake it`. Where the status has a text of its own, the row carries it: `? → you "which index?"`, `answered you "use the enum"`, `⚑ waits for your yes "cargo test"`, `✕ vendor error "Invalid API key"`, `BLOCKED "JWT clock skew" ← researcher-1`, `■ stopped: the process exited with code 1`. Otherwise the status ends with the agent's newest exchange, the arrow saying who said it: `thinking… ← lead "fix the parser"`, `idle → you "parser fixed, tests green"`, `? → claude-2 "which parser?"` (its own question to the one it waits for, quoted alone). The exchange stays until the next one replaces it, so a row says what the agent last did, and the status with its text keeps to forty columns.
+- `▁▃▅▂▁`: what the agent did lately, one column for each of the last five ticks (5 seconds each, 25 in all), the oldest first: how many lines its trace got in that tick (a text, a tool call, a message, a note), on one scale for every row (`▁` none, `▂` one, `▃` two, `▄` up to four, `▅` six, `▆` nine, `▇` fourteen, `█` more), so a busy row and a quiet one read apart at a glance. It moves only as the agent does something and as the ticks pass, never on a timer of its own; once nothing has been written for five ticks it is gone. It gives way first on a narrow row, even before the quote, and [`:motion off`](../reference/commands.md#motion-offcalmfull) leaves it out. Not kept between runs.
 - How long it has been in that state, from a minute on: `· 3 min`, `· 1 h 5 min`. For something waiting for you, since the item came.
 - What it has cost, when anything.
 - `≡ 3/7`: how far its own to-do list is, the steps done and all of them, when its planning tool keeps one (Claude Code's tasks, Codex's `update_plan`; Gemini's `write_todos` reaches imece without its steps). The focus lists the steps. The mark gives way after the quote and the time when the row is narrow. Gone with the session.
@@ -67,7 +68,7 @@ An agent's row:
 - `↗ localhost:5173/`: the newest loopback address the worker or helper wrote in its own text, as a link the terminal opens (OSC 8). Only `http`/`https` on `localhost`, `127.0.0.1` or `[::1]` counts, the query and fragment are dropped, and an address over 60 characters is not shown. Gone with the session.
 - A worker with helpers ends with `▾ 2 helpers`, or `▸ 2 helpers  ● claude-1.1` when they are folded away: the count and the loudest of them.
 
-Every agent is one row, whatever it says: rows never change height. The time and the quote take only what the row has left once its cost, stand, helpers and link are on it, so a narrow pane drops the quote first and the time next (`.` narrows the side panel). A row that just changed stands out for a moment, then calms down. The selected row is reversed.
+Every agent is one row, whatever it says: rows never change height. The time, the quote and the activity bar take only what the row has left once its cost, stand, helpers and link are on it, so a narrow pane drops the bar first, the quote next and then the time (`.` narrows the side panel). A row that just changed stands out for a moment, then calms down. The selected row is reversed.
 
 When the rows do not fit the pane, calm workers (working or idle, nothing said lately, not selected) fold from the bottom of the salon up into one line, `… 2 agents folded, loudest  ● codex-2`, which names the loudest of them; a pinned project folds last and what needs you is never folded away. The bottom line of the pane, `QUEUE`, lists cards being verified and the last four done (`#2 ✓`); live, nothing fills the verifying part, so it reads `empty`.
 
@@ -102,6 +103,7 @@ Every glyph the `?` help lists, as the screen draws them:
 | `≡ 3/7` | its own to-do list: steps done, and all of them |
 | `◔ 72%` | its context window, this full; shown from 70%, loud from 90% |
 | `✱` | a line you marked with `m`; `'` goes to the next |
+| `▁▃▅` | what it did lately: its trace lines in each of the last five ticks, 5 s a column |
 
 The fleet in the header uses the same shapes, so it reads in the mono theme too.
 

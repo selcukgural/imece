@@ -488,6 +488,9 @@ pub struct Agent {
     /// Trace lines ever written, the kept ones being the last of them; the
     /// store numbers lines by it.
     pub traced: u64,
+    /// Its trace lines in each of the last [`STIR_TICKS`] ticks: the
+    /// activity bar on its row (`▁▃▅▂▁`). Memory only.
+    pub stirs: Stirs,
     /// What a live agent is doing right now (`Edit src/main.rs`), drawn
     /// instead of the progress bar; empty while it thinks.
     pub activity: Option<String>,
@@ -629,6 +632,7 @@ impl Agent {
             changed_at: tick,
             trace: VecDeque::new(),
             traced: 0,
+            stirs: Stirs::default(),
             activity: None,
             starting: false,
             commands: Vec::new(),
@@ -675,6 +679,38 @@ impl Agent {
         self.trace
             .push_back(format!("{} {}", clock_seconds(tick), line.into()));
         self.traced += 1;
+        self.stirs.add(tick);
+    }
+}
+
+/// The ticks an agent's activity bar covers, one column each: 25 s live.
+pub const STIR_TICKS: usize = 5;
+
+/// How many trace lines an agent wrote in each of the [`STIR_TICKS`]
+/// ticks up to `at`, the oldest first.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Stirs {
+    at: u64,
+    counts: [u16; STIR_TICKS],
+}
+
+impl Stirs {
+    /// A line was written at `tick`; one from before the newest tick it
+    /// has counts as the newest.
+    pub fn add(&mut self, tick: u64) {
+        self.counts = self.at(tick);
+        self.at = self.at.max(tick);
+        let last = &mut self.counts[STIR_TICKS - 1];
+        *last = last.saturating_add(1);
+    }
+
+    /// The counts as they stand at `tick`, the oldest first: the ticks
+    /// since the newest line are empty columns.
+    pub fn at(&self, tick: u64) -> [u16; STIR_TICKS] {
+        let gone = tick.saturating_sub(self.at).min(STIR_TICKS as u64) as usize;
+        let mut counts = [0; STIR_TICKS];
+        counts[..STIR_TICKS - gone].copy_from_slice(&self.counts[gone..]);
+        counts
     }
 }
 
@@ -3829,6 +3865,44 @@ mod tests {
         w.watch_spending();
         assert_eq!(low(&w), 2);
         assert!(!w.spending.warned);
+    }
+
+    #[test]
+    fn stirs_count_the_lines_of_each_of_the_last_ticks() {
+        let mut s = Stirs::default();
+        assert_eq!(s.at(0), [0; STIR_TICKS]);
+        s.add(3);
+        s.add(3);
+        s.add(5);
+        assert_eq!(s.at(5), [0, 0, 2, 0, 1]);
+        // The ticks go by: the columns move left, empty ones come in.
+        assert_eq!(s.at(6), [0, 2, 0, 1, 0]);
+        assert_eq!(s.at(7), [2, 0, 1, 0, 0]);
+        assert_eq!(s.at(9), [1, 0, 0, 0, 0], "the newest, four ticks on");
+        assert_eq!(s.at(10), [0; STIR_TICKS], "five ticks on: all gone");
+        assert_eq!(s.at(1_000), [0; STIR_TICKS]);
+        // A tick before the newest is not looked back at.
+        assert_eq!(s.at(4), [0, 0, 2, 0, 1]);
+        // A line from before the newest tick counts as the newest.
+        s.add(4);
+        assert_eq!(s.at(5), [0, 0, 2, 0, 2]);
+        // A line after a gap: the old columns moved, the new one counted.
+        s.add(7);
+        assert_eq!(s.at(7), [2, 0, 2, 0, 1]);
+        s.add(20);
+        assert_eq!(s.at(20), [0, 0, 0, 0, 1]);
+        // A column does not overflow.
+        let mut s = Stirs::default();
+        for _ in 0..u16::MAX as u32 + 3 {
+            s.add(1);
+        }
+        assert_eq!(s.at(1), [0, 0, 0, 0, u16::MAX]);
+        // Every trace line is counted at its tick.
+        let mut a = agent(1, Role::Worker, Status::Working);
+        a.trace(8, "tool_use Read");
+        a.trace(9, "text \"hm\"");
+        a.trace(9, "tool_use Edit");
+        assert_eq!(a.stirs.at(9), [0, 0, 0, 1, 2]);
     }
 
     #[test]

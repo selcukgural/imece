@@ -8054,6 +8054,102 @@ mod tests {
     }
 
     #[test]
+    fn the_activity_bar_shows_the_last_ticks_and_gives_way_first() {
+        use crate::motion::Motion;
+        let mut app = quiet_rows();
+        app.motion = Motion::Calm;
+        let (worker, _) = with_helpers(&mut app);
+        for a in &mut app.world.agents {
+            a.stirs = Stirs::default();
+        }
+        let a = &mut app.world.agents[worker];
+        a.status = Status::Idle;
+        a.changed_at = 64;
+        a.local = Some("http://localhost:5173/".into());
+        a.plan = steps(3, 1);
+        told(a, Party::Person, true, "parser fixed");
+        // Nothing written lately: no bar.
+        let without = row(&app, worker, 200);
+        assert!(!without.contains('▁'), "{without}");
+        // One line four ticks ago, three now.
+        let a = &mut app.world.agents[worker];
+        a.trace(96, "tool_use Read");
+        for _ in 0..3 {
+            a.trace(100, "tool_use Edit");
+        }
+        let whole = row(&app, worker, 200);
+        assert!(
+            whole.contains("idle → you \"parser fixed\"  ▂▁▁▁▄ · 3 min  ≡ 1/3  ▾"),
+            "{whole}"
+        );
+        // The bar's seven: at the row's width exactly it stays.
+        let n = whole.chars().count();
+        assert_eq!(n, without.chars().count() + 7, "{whole}");
+        assert_eq!(row(&app, worker, n), whole, "fits exactly");
+        // One short: the bar goes, the quote keeps all of its words.
+        let r = row(&app, worker, n - 1);
+        assert_eq!(r, without, "the bar gives way before the quote");
+        // A quote cut short leaves no room for the bar either.
+        let r = row(&app, worker, n - 9);
+        assert!(
+            r.contains("\"parser fi…\" · 3 min") && !r.contains('▁'),
+            "{r}"
+        );
+        assert!(r.chars().count() <= n - 9, "{r}");
+        // A tick on, the columns move left; five on, it is gone.
+        app.world.tick = 101;
+        assert!(row(&app, worker, 200).contains("\"  ▁▁▁▄▁ · 3 min"));
+        app.world.tick = 104;
+        assert!(row(&app, worker, 200).contains("\"  ▄▁▁▁▁ · "));
+        app.world.tick = 105;
+        assert_eq!(row(&app, worker, 200), without);
+        // Motion off: no bar, whatever was written.
+        app.world.tick = 100;
+        app.motion = Motion::Off;
+        assert_eq!(row(&app, worker, 200), without);
+        app.motion = Motion::Full;
+        assert!(row(&app, worker, 200).contains("  ▂▁▁▁▄ · "));
+        let spans = salon::stir_spans(&app, &app.world.agents[worker]);
+        assert_eq!(spans[0].style, dim(), "quiet");
+        // One scale for every row, a column per count.
+        let bar: String = [0, 1, 2, 3, 4, 5, 6, 7, 9, 10, 14, 15, 200, u16::MAX]
+            .into_iter()
+            .map(salon::stir_glyph)
+            .collect();
+        assert_eq!(bar, "▁▂▃▄▄▅▅▆▆▇▇███");
+        // The legend names the bar in both languages.
+        assert!(
+            Lang::En.text().help_legend[5].ends_with("  ▁▃▅ what it did, 5 s a column"),
+            "{}",
+            Lang::En.text().help_legend[5]
+        );
+        assert!(
+            Lang::Tr.text().help_legend[5].ends_with("  ▁▃▅ yaptıkları, sütun başı 5 sn"),
+            "{}",
+            Lang::Tr.text().help_legend[5]
+        );
+    }
+
+    #[test]
+    fn the_demo_s_working_agents_wear_the_activity_bar() {
+        use crate::motion::Motion;
+        let mut app = app_after(1, 4, 60, Lang::En);
+        app.motion = Motion::Calm;
+        let tick = app.world.tick;
+        let busy: Vec<AgentId> = (app.world.agents.iter())
+            .filter(|a| a.stirs.at(tick).iter().any(|&n| n > 0))
+            .map(|a| a.id)
+            .collect();
+        assert!(!busy.is_empty(), "the demo writes traces");
+        for id in busy {
+            let r = row(&app, id, 300);
+            assert!(r.chars().any(|c| ('▁'..='█').contains(&c)), "{r}");
+        }
+        app.motion = Motion::Off;
+        assert!(!render(&app, 200, 45).contains("▁"));
+    }
+
+    #[test]
     fn a_row_warns_of_a_full_context_from_seventy_percent_and_the_focus_has_the_figure() {
         let mut app = quiet_rows();
         let w = 1;
