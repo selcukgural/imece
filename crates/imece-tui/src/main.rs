@@ -602,6 +602,20 @@ fn ask(
     }
 }
 
+/// Keeps `drawn` in `shown` while a frame may be drawn from it
+/// (`patchable`), reusing what `shown` holds; else lets it go.
+fn keep(
+    shown: &mut Option<ratatui::buffer::Buffer>,
+    drawn: &ratatui::buffer::Buffer,
+    patchable: bool,
+) {
+    match shown {
+        _ if !patchable => *shown = None,
+        Some(b) => b.clone_from(drawn),
+        None => *shown = Some(drawn.clone()),
+    }
+}
+
 /// How long a click report's next event may take to come after the one
 /// before it: the terminal writes it at once, a person never types it.
 const REPORT_WAIT: Duration = Duration::from_millis(20);
@@ -637,15 +651,28 @@ fn run(
     let mut tab = screen::Tab::new(progress);
     // Events read with a report's start and found to be keys after all.
     let mut queued: std::collections::VecDeque<Event> = std::collections::VecDeque::new();
+    // The last drawing as the terminal shows it, while a frame where only
+    // the breath changes may be drawn from it.
+    let mut shown: Option<ratatui::buffer::Buffer> = None;
     while !app.quit && !SIGNALLED.load(Ordering::SeqCst) {
         app.looked();
         // Drawn when something changed; in another window, less often.
         let now = Instant::now();
         if app.draw_due(now) {
             app.frame = now;
+            let patch = app.patch_due(now);
             // One frame, the cursor's look with it.
             screen::synced(&mut std::io::stdout(), || {
-                terminal.draw(|f| ui::draw(f, app))?;
+                let mut patched = false;
+                let done = terminal.draw(|f| {
+                    patched = patch && shown.as_ref().is_some_and(|b| ui::patch(f, app, b));
+                    if !patched {
+                        ui::draw(f, app);
+                    }
+                })?;
+                if !patched {
+                    keep(&mut shown, done.buffer, app.patchable());
+                }
                 cursor.show(&mut std::io::stdout(), ui::look(app))
             })?;
             app.drawn(now);
@@ -659,11 +686,9 @@ fn run(
         )?;
         tab.show(&mut std::io::stdout(), ladder)?;
         // Woken for the next tick, or sooner for the next frame of what
-        // moves on the screen.
+        // moves on the screen when it is not near the tick.
         let tick = app.tick_interval().saturating_sub(last.elapsed());
-        let timeout = app
-            .motion_wait(Instant::now())
-            .map_or(tick, |m| m.min(tick));
+        let timeout = app.wait(Instant::now(), tick);
         let event = match queued.pop_front() {
             Some(e) => Some(e),
             None => {
@@ -787,6 +812,24 @@ fn run(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_last_drawing_is_kept_only_while_it_may_be_patched() {
+        use ratatui::buffer::Buffer;
+        use ratatui::layout::Rect;
+        let mut drawn = Buffer::empty(Rect::new(0, 0, 4, 2));
+        drawn.set_string(0, 0, "ab", ratatui::style::Style::new());
+        let mut shown = None;
+        keep(&mut shown, &drawn, false);
+        assert_eq!(shown, None);
+        keep(&mut shown, &drawn, true);
+        assert_eq!(shown.as_ref(), Some(&drawn), "a copy");
+        drawn.set_string(0, 1, "cd", ratatui::style::Style::new());
+        keep(&mut shown, &drawn, true);
+        assert_eq!(shown.as_ref(), Some(&drawn), "the newest");
+        keep(&mut shown, &drawn, false);
+        assert_eq!(shown, None, "let go");
+    }
 
     #[test]
     fn the_version_is_asked_first_and_said_with_the_name() {

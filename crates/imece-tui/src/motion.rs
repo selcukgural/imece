@@ -87,6 +87,11 @@ pub fn over_ssh(var: impl Fn(&str) -> Option<String>) -> bool {
 pub const BEAT: Duration = Duration::from_millis(300);
 /// A working row's glyph: one tone, then the other, each this long.
 pub const BREATH: Duration = Duration::from_millis(600);
+/// How late a frame of what moves may come so that it falls on the
+/// tick's wake and drawing instead of one of its own: a third of the
+/// beat. Live ticks every 100 ms, so there what moves never wakes the
+/// screen by itself.
+pub const LATE: Duration = Duration::from_millis(100);
 /// `starting` and its dots: each count this long, with the breath.
 pub const DOTS: Duration = BREATH;
 /// The dots after `starting`, as many columns each.

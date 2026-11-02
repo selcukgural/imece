@@ -36,9 +36,14 @@ pub(crate) use overlay::{chosen_text, fold, in_view, talk_notes_message, thread_
 pub(crate) use salon::{card_rows, journal_rows, reply_jump, thread_of, turn_starts};
 
 pub fn draw(f: &mut Frame, app: &App) {
+    // The salon puts back where its glyphs breathe; anything else drawn
+    // over it takes them away again (`patch` is then not used).
+    *app.breathing.borrow_mut() = Some(Vec::new());
+    app.caret_at.set(None);
     // An archive's view is a screen of its own, its banner in place of
     // its header.
     if let Some(v) = &app.viewing {
+        *app.breathing.borrow_mut() = None;
         draw(f, v);
         return view_banner(f, app, v);
     }
@@ -84,6 +89,7 @@ pub fn draw(f: &mut Frame, app: &App) {
     }
     let line = line.filter(|&at| !over.iter().any(|r| r.contains(at)));
     let mut filter = None;
+    let mut window = true;
     if let Some(p) = &app.solo_pick {
         overlay::solo_pick(f, app, p);
     } else if let Some(b) = &app.archives {
@@ -100,6 +106,11 @@ pub fn draw(f: &mut Frame, app: &App) {
         overlay::left_off(f, app, l);
     } else if app.leaving {
         overlay::leaving(f, app);
+    } else {
+        window = false;
+    }
+    if window || !over.is_empty() || app.hints.is_some() {
+        *app.breathing.borrow_mut() = None;
     }
     // The terminal's own cursor, where the person types; hidden otherwise.
     let at = match app.caret() {
@@ -110,6 +121,50 @@ pub fn draw(f: &mut Frame, app: &App) {
     if let Some(at) = at {
         f.set_cursor_position(at);
     }
+    app.caret_at.set(at);
+}
+
+/// A glyph that breathes, where the last drawing put it: `width` cells
+/// from column `x` of row `y`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Glyph {
+    pub x: u16,
+    pub y: u16,
+    pub width: u16,
+}
+
+/// Draws the frame as `last` (the last drawing, as the terminal shows
+/// it) with only its breath changed: every glyph that breathes in this
+/// frame's tone, the cursor where it was. False, with nothing drawn, when
+/// `last` cannot be used (another size, the glyphs not all known).
+pub fn patch(f: &mut Frame, app: &App, last: &Buffer) -> bool {
+    let breathing = app.breathing.borrow();
+    let Some(glyphs) = breathing.as_ref() else {
+        return false;
+    };
+    let buf = f.buffer_mut();
+    if buf.area != last.area {
+        return false;
+    }
+    buf.content.clone_from_slice(&last.content);
+    let dim = app.breath();
+    for g in glyphs {
+        for x in g.x..g.x + g.width {
+            if let Some(cell) = buf.cell_mut((x, g.y)) {
+                cell.modifier.set(Modifier::DIM, dim);
+            }
+        }
+    }
+    if let Some(at) = app.caret_at.get() {
+        f.set_cursor_position(at);
+    }
+    true
+}
+
+/// Whether agent `a`'s glyph breathes on rung `rung` while motion moves:
+/// a working row's, not a leader's.
+pub(crate) fn breathes(a: &Agent, rung: Rung) -> bool {
+    rung == Rung::Working && a.role != Role::Leader
 }
 
 /// The top row over an archive's view `v`: which archive, when it was
@@ -350,7 +405,7 @@ pub(crate) fn rung_glyph(a: &Agent, rung: Rung) -> (&'static str, Color) {
 /// in every other beat while motion moves (record 84); never its shape.
 pub(crate) fn glyph_style(app: &App, a: &Agent, rung: Rung, color: Color) -> Style {
     let style = fg(color);
-    if rung == Rung::Working && a.role != Role::Leader && app.breath() {
+    if breathes(a, rung) && app.breath() {
         style.add_modifier(Modifier::DIM)
     } else {
         style
@@ -2724,6 +2779,139 @@ mod tests {
         let lead = app.world.projects[0].leader;
         waiting(&mut app, lead);
         assert_eq!(row(&app, lead).spans[1].content, "◆ ");
+    }
+
+    /// The screen of `app` drawn whole on a terminal of `width` columns:
+    /// its cells and the cursor.
+    fn whole(app: &App, width: u16) -> (Buffer, Option<Position>) {
+        let mut t = Terminal::new(TestBackend::new(width, 40)).unwrap();
+        t.draw(|f| draw(f, app)).unwrap();
+        let cursor = app.caret_at.get().map(|_| t.get_cursor_position().unwrap());
+        (t.backend().buffer().clone(), cursor)
+    }
+
+    /// The screen of `app` patched from `last` on a terminal of `width`
+    /// columns, if it could be.
+    fn patched(app: &App, last: &Buffer, width: u16) -> Option<(Buffer, Option<Position>)> {
+        let mut t = Terminal::new(TestBackend::new(width, 40)).unwrap();
+        let mut done = false;
+        t.draw(|f| done = patch(f, app, last)).unwrap();
+        let cursor = app.caret_at.get().map(|_| t.get_cursor_position().unwrap());
+        done.then(|| (t.backend().buffer().clone(), cursor))
+    }
+
+    #[test]
+    fn a_frame_patched_for_the_breath_is_the_frame_drawn_whole() {
+        use crate::motion::Motion;
+        let ms = std::time::Duration::from_millis;
+        let mut app = app_after(2, 10, 0, Lang::En);
+        app.motion = Motion::Calm;
+        let (mut checked, mut refused) = (0, 0);
+        for round in 0..120 {
+            app.step();
+            // Folded projects, a selected row, the person writing, a narrow
+            // screen: each in some rounds.
+            app.collapsed[1] = round % 3 == 1;
+            app.selected = match (app.world.agents.iter()).find(|a| breathes(a, app.rungs()[a.id]))
+            {
+                Some(a) if round % 4 == 2 => Sel::Agent(a.id),
+                _ => Sel::Project(0),
+            };
+            if round == 30 {
+                for c in ['/', 'h', 'i'] {
+                    app.on_key(KeyEvent::new(KeyCode::Char(c), KeyModifiers::NONE));
+                }
+            }
+            let width = if round % 5 == 4 { 70 } else { 160 };
+            // Drawn whole in one tone; the next frame, in the other, is
+            // patched where the main loop would patch it. Two seconds on,
+            // when the glows the step lit are over.
+            let since = std::time::Instant::now() + ms(2000) - app.after(ms(0));
+            let beat = since.as_millis() as u64 / 600 * 600 + 600;
+            for (from, to) in [(beat, beat + 600), (beat + 600, beat + 1200)] {
+                app.frame_after(ms(from));
+                let (first, _) = whole(&app, width);
+                app.drawn(app.after(ms(from)));
+                let glyphs = app.breathing.borrow().clone();
+                let due = app.patch_due(app.after(ms(to)));
+                app.frame_after(ms(to));
+                let got = patched(&app, &first, width);
+                let want = whole(&app, width);
+                assert_eq!(*app.breathing.borrow(), glyphs, "the same glyphs");
+                if due {
+                    assert_eq!(got, Some(want), "round {round}, {from} ms → {to} ms");
+                    checked += 1;
+                } else {
+                    refused += 1;
+                }
+            }
+        }
+        // Enough of each: the demo lights rows and starts sessions often.
+        assert!(checked > 40, "{checked} patched, {refused} not");
+        assert!(refused > 20, "{checked} patched, {refused} not");
+    }
+
+    #[test]
+    fn a_window_or_a_cut_glyph_leaves_the_drawing_unpatched() {
+        use crate::motion::Motion;
+        let (mut app, w, _) = calm_team();
+        app.motion = Motion::Calm;
+        let (first, _) = whole(&app, 160);
+        let known = app.breathing.borrow().clone().unwrap();
+        assert!(known.len() >= w.len(), "{known:?}");
+        assert!(app.patchable());
+        // The first worker's glyph: after the tree's branch, two cells.
+        assert!(
+            known.contains(&Glyph {
+                x: 5,
+                y: 4,
+                width: 2
+            }),
+            "{known:?}"
+        );
+        assert!(patched(&app, &first, 160).is_some());
+        app.help = true;
+        whole(&app, 160);
+        assert_eq!(*app.breathing.borrow(), None, "a window over it");
+        assert!(!app.patchable());
+        assert!(patched(&app, &first, 160).is_none());
+        app.help = false;
+        app.peek = Some(w[0]);
+        whole(&app, 160);
+        assert_eq!(*app.breathing.borrow(), None, "a peek over it");
+        app.peek = None;
+        app.on_key(KeyEvent::new(KeyCode::Char('F'), KeyModifiers::NONE));
+        assert!(app.hints.is_some());
+        whole(&app, 160);
+        assert_eq!(*app.breathing.borrow(), None, "hint letters over it");
+        app.on_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
+        app.viewing = Some(Box::new(App::new(1, 1, 0, 1, Lang::En)));
+        whole(&app, 160);
+        assert_eq!(*app.breathing.borrow(), None, "an archive's view");
+        app.viewing = None;
+        whole(&app, 160);
+        assert!(app.patchable(), "back");
+        let small = Buffer::empty(Rect::new(0, 0, 159, 40));
+        assert!(patched(&app, &small, 160).is_none(), "another size");
+        assert!(patched(&app, &first, 160).is_some());
+        // A folded project whose member breathes, then is cut by the
+        // right edge.
+        let lead = app.world.projects[0].leader;
+        app.world.agents[lead].status = Status::Idle;
+        app.collapsed[0] = true;
+        whole(&app, 160);
+        assert_eq!(app.breathing.borrow().as_ref().map(Vec::len), Some(1));
+        assert!(app.patchable());
+        whole(&app, 24);
+        assert_eq!(*app.breathing.borrow(), None, "cut");
+        // Nothing breathes: nothing to patch.
+        app.collapsed[0] = false;
+        for a in &mut app.world.agents {
+            a.status = Status::Idle;
+        }
+        whole(&app, 160);
+        assert_eq!(*app.breathing.borrow(), Some(Vec::new()));
+        assert!(!app.patchable());
     }
 
     #[test]
