@@ -16,6 +16,7 @@ use crate::i18n::{Lang, fill};
 use crate::keys::{self, Keymap};
 use crate::live::{self, Live, Open, Refusal};
 use crate::model::*;
+use crate::motion::{self, Glow, GlowOn, Lit, Motion};
 use crate::notify::{self, Note, Notify};
 use crate::prefs::{SIDE_DEFAULT, SIDE_MAX, SIDE_MIN};
 use crate::screen::Progress;
@@ -900,6 +901,26 @@ pub struct App {
     /// gets.
     noticed: Vec<(u64, Vec<Note>)>,
     notice_count: u64,
+    /// How much moves on the screen (`:motion`), whether imece runs over
+    /// SSH (full is calm there), and when motion's frames count from.
+    pub motion: Motion,
+    pub ssh: bool,
+    epoch: Instant,
+    /// The moment the frame being drawn shows: what moves is drawn as it
+    /// is then.
+    pub frame: Instant,
+    /// The rows lit for a moment (newest last), each with when it lit; the
+    /// rungs and the inbox's length the last step saw, to tell what is
+    /// new.
+    glows: Vec<(GlowOn, Glow, Instant)>,
+    glow_rungs: Vec<Rung>,
+    glow_items: usize,
+    /// When the frame after the one drawn last is due: something on it
+    /// moves.
+    drawn_motion: Option<Instant>,
+    /// What imece waits for an answer to (`:commit`), said on the bottom
+    /// line with a spinner until it comes.
+    pub asking: Option<String>,
 }
 
 impl App {
@@ -910,6 +931,8 @@ impl App {
 
     pub fn with(world: World, engine: Engine, lang: Lang) -> App {
         let collapsed = vec![false; world.projects.len()];
+        // What waits already at the start does not light up as new.
+        let glow_items = world.inbox.len();
         let selected = match &engine {
             // A live team starts with the leader of the checkout at hand
             // selected: it is who to talk to.
@@ -1029,6 +1052,15 @@ impl App {
             notices: notify::Notices::default(),
             noticed: Vec::new(),
             notice_count: 0,
+            motion: Motion::Off,
+            ssh: false,
+            epoch: Instant::now(),
+            frame: Instant::now(),
+            glows: Vec::new(),
+            glow_rungs: Vec::new(),
+            glow_items,
+            drawn_motion: None,
+            asking: None,
         }
     }
 
@@ -1047,6 +1079,15 @@ impl App {
         self.show_suggestion();
         self.world.watch_spending();
         self.watch_turns();
+        self.watch_glows(Instant::now());
+        let asking = match &self.engine {
+            Engine::Live(l) => l.asking(),
+            Engine::Sim(s) => s.asking(),
+            Engine::View(_) => false,
+        };
+        if !asking {
+            self.asking = None;
+        }
         self.wake_settled();
         self.keep_awake();
         self.settle();
@@ -3126,7 +3167,9 @@ impl App {
         match asked {
             Ok(model) => {
                 let name = self.world.projects[p].name.clone();
-                self.flash(fill(t.suggesting, &[&model, &name]));
+                let asking = fill(t.suggesting, &[&model, &name]);
+                self.asking = Some(asking.clone());
+                self.flash(asking);
             }
             Err(why) => self.flash(fill(t.suggest_refused, &[&why])),
         }
@@ -3588,6 +3631,7 @@ impl App {
             "unsettle" => Some((self.settled.len() + self.settled_projects.len()).to_string()),
             "awake" => Some(on_off(self.awake.on)),
             "notify" => Some(self.notify.name().to_string()),
+            "motion" => Some(self.motion.name().to_string()),
             "keys" => Some(self.keys.len().to_string()),
             "pause" => Some(on_off(self.paused)),
             "faster" | "slower" => Some(format!("×{}", self.speed)),
@@ -4000,6 +4044,11 @@ impl App {
                 (_, Some(how)) => self.set_notify(how),
                 (_, None) => self.flash(fill(t.bad_notify, &[arg])),
             },
+            "motion" => match (arg, Motion::parse(arg)) {
+                ("", _) => self.set_motion(self.motion.next()),
+                (_, Some(how)) => self.set_motion(how),
+                (_, None) => self.flash(fill(t.bad_motion, &[arg])),
+            },
             _ => self.flash(fill(t.no_command, &[name])),
         }
     }
@@ -4370,7 +4419,9 @@ impl App {
         if self.stirred {
             return true;
         }
-        let moved = self.changed || self.drawn_clock != Some(self.clock(now));
+        let moved = self.changed
+            || self.drawn_clock != Some(self.clock(now))
+            || self.drawn_motion.is_some_and(|at| now >= at);
         moved
             && (self.blurred.is_none()
                 || (self.drawn_at).is_none_or(|at| now.duration_since(at) >= BLURRED_DRAW))
@@ -4382,6 +4433,10 @@ impl App {
         self.drawn_clock = Some(self.clock(now));
         self.stirred = false;
         self.changed = false;
+        // A glow not yet begun (it waits for its beat) is kept.
+        self.glows
+            .retain(|&(_, glow, at)| now.saturating_duration_since(at) < glow.lasts());
+        self.drawn_motion = self.next_motion(now);
     }
 
     /// What the screen shows of time at `now`.
@@ -4405,6 +4460,8 @@ impl App {
         self.keys_looked = None;
         if !gained {
             self.blurred = Some((now, self.world.tick));
+            // Nothing moves in another window: no frame is waited for.
+            self.drawn_motion = None;
             return;
         }
         let Some((at, tick)) = self.blurred.take() else {
@@ -4432,6 +4489,184 @@ impl App {
             Notify::Bell => t.notify_bell,
             Notify::Text => t.notify_text,
         });
+    }
+
+    /// `:motion`: how much moves on the screen. Full over SSH says it
+    /// runs as calm.
+    fn set_motion(&mut self, how: Motion) {
+        self.motion = how;
+        let t = self.lang.text();
+        self.flash(match (how, how.under(self.ssh)) {
+            (Motion::Off, _) => t.motion_off,
+            (Motion::Calm, _) => t.motion_calm,
+            (Motion::Full, Motion::Full) => t.motion_full,
+            (Motion::Full, _) => t.motion_ssh,
+        });
+    }
+
+    /// What moves now: nothing in another window, and over SSH no more
+    /// than calm.
+    pub fn moving(&self) -> Motion {
+        if self.blurred.is_some() {
+            return Motion::Off;
+        }
+        self.motion.under(self.ssh)
+    }
+
+    /// How far into motion's round the frame being drawn is.
+    fn motion_age(&self) -> std::time::Duration {
+        self.frame.saturating_duration_since(self.epoch)
+    }
+
+    /// Whether a working row's glyph shows its second tone in this frame.
+    pub fn breath(&self) -> bool {
+        self.moving() != Motion::Off && motion::frame(self.motion_age(), motion::BREATH, 2) == 1
+    }
+
+    /// The dots after `starting` in this frame; none when nothing moves.
+    pub fn dots(&self) -> Option<&'static str> {
+        (self.moving() != Motion::Off).then(|| {
+            let at = motion::frame(self.motion_age(), motion::DOTS, motion::DOT_FRAMES.len());
+            motion::DOT_FRAMES[at]
+        })
+    }
+
+    /// The spinner's frame where imece waits for an answer; none when
+    /// nothing moves.
+    pub fn spin(&self) -> Option<&'static str> {
+        let period = self.moving().spin()?;
+        Some(motion::SPIN[motion::frame(self.motion_age(), period, motion::SPIN.len())])
+    }
+
+    /// The spinner by the header's fleet: full motion only, while anyone
+    /// is mid-turn.
+    pub fn head_spin(&self) -> Option<&'static str> {
+        (self.moving() == Motion::Full && !self.world.mid_turn().is_empty()).then(|| {
+            motion::SPIN[motion::frame(self.motion_age(), motion::SPIN_FULL, motion::SPIN.len())]
+        })
+    }
+
+    /// How `on` lights in this frame, if it does.
+    pub fn lit(&self, on: GlowOn) -> Option<Lit> {
+        if self.moving() == Motion::Off {
+            return None;
+        }
+        let &(_, glow, at) = self.glows.iter().find(|g| g.0 == on)?;
+        glow.lit(self.frame.saturating_duration_since(at))
+    }
+
+    /// What imece waits for an answer to (`:commit`), while it waits.
+    pub fn asking(&self) -> Option<&str> {
+        self.asking.as_deref()
+    }
+
+    /// Whether the bottom line shows the spinner at `now`: imece waits for
+    /// an answer and nothing else is said there.
+    fn footer_spins(&self, now: Instant) -> bool {
+        self.asking.is_some()
+            && !self.typing
+            && (self.flash.as_ref())
+                .is_none_or(|(_, at)| now.saturating_duration_since(*at) >= FLASH)
+            && self.grace_left(now).is_none()
+    }
+
+    /// When what moves on the screen next looks different, after `now`:
+    /// none when nothing moves (motion off, another window, an archive's
+    /// view, nothing on the screen that moves, every glow over).
+    pub fn next_motion(&self, now: Instant) -> Option<Instant> {
+        let moving = self.moving();
+        if moving == Motion::Off || self.viewing.is_some() {
+            return None;
+        }
+        let w = &self.world;
+        let mut periods = Vec::new();
+        if self.zoom == Zoom::None && self.view == View::Salon {
+            let rungs = self.rungs();
+            let shown = |a: &&Agent| !a.gone && !w.put_away(a.id);
+            if (w.agents.iter().filter(shown))
+                .any(|a| a.role != Role::Leader && rungs[a.id] == Rung::Working)
+            {
+                periods.push(motion::BREATH);
+            }
+            if (w.agents.iter().filter(shown)).any(|a| a.starting && a.status == Status::Working) {
+                periods.push(motion::DOTS);
+            }
+        }
+        let checking = self.welcome && self.vendors.iter().any(|(_, s)| *s == Seen::Checking);
+        if let Some(spin) = moving.spin()
+            && (self.footer_spins(now) || checking)
+        {
+            periods.push(spin);
+        }
+        if moving == Motion::Full && !w.mid_turn().is_empty() {
+            periods.push(motion::SPIN_FULL);
+        }
+        let since = now.saturating_duration_since(self.epoch);
+        // A glow that starts on the next beat is lit from now until the
+        // beat after it.
+        let glows = (self.glows.iter()).filter_map(|&(_, glow, at)| {
+            (glow.next(now.saturating_duration_since(at))).map(|after| now.max(at) + after)
+        });
+        (periods.into_iter())
+            .map(|p| now + motion::next_frame(since, p))
+            .chain(glows)
+            .min()
+    }
+
+    /// The frame drawn `after` motion's start (tests).
+    #[cfg(test)]
+    pub fn frame_after(&mut self, after: Duration) {
+        self.frame = self.epoch + after;
+    }
+
+    /// `on` lights with `glow` from the frame's beat (tests).
+    #[cfg(test)]
+    pub fn light_now(&mut self, on: GlowOn, glow: Glow) {
+        self.light(on, glow, self.frame);
+    }
+
+    /// How long the main loop may wait for the next frame of what moves.
+    pub fn motion_wait(&self, now: Instant) -> Option<Duration> {
+        self.drawn_motion
+            .map(|at| at.saturating_duration_since(now))
+    }
+
+    /// What changed since the last step that lights a row for a moment:
+    /// an agent that came to wait for the person, or a new item in
+    /// WAITING FOR YOU, blinks; one whose turn is done, or whose session
+    /// started, settles. Only what happens while motion moves lights.
+    fn watch_glows(&mut self, now: Instant) {
+        let rungs = self.rungs();
+        if self.moving() != Motion::Off {
+            for (id, &rung) in rungs.iter().enumerate() {
+                let Some(&was) = self.glow_rungs.get(id) else {
+                    continue;
+                };
+                let glow = match rung {
+                    _ if was == rung => continue,
+                    Rung::Waiting => Glow::Arrive,
+                    Rung::Done => Glow::Settle,
+                    _ if was == Rung::Starting => Glow::Settle,
+                    _ => continue,
+                };
+                self.light(GlowOn::Agent(id), glow, now);
+            }
+            let new = self.glow_items;
+            for i in (self.world.open_inbox().into_iter()).filter(|&i| i >= new) {
+                self.light(GlowOn::Item(i), Glow::Arrive, now);
+            }
+        }
+        self.glow_rungs = rungs;
+        self.glow_items = self.world.inbox.len();
+    }
+
+    /// `on` lights with `glow` from `now`, in place of a glow it had.
+    /// Its frames count from the first beat at or after `now`, with the
+    /// rest of what moves.
+    fn light(&mut self, on: GlowOn, glow: Glow, now: Instant) {
+        let at = self.epoch + motion::on_beat(now.saturating_duration_since(self.epoch));
+        self.glows.retain(|g| g.0 != on);
+        self.glows.push((on, glow, at));
     }
 
     /// What to say to the person in another window right now, in the
@@ -11984,5 +12219,375 @@ mod tests {
         app.watch_keys(at);
         assert_eq!(flashed(&app), None, "no home, no file to look at");
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A demo of one project and one worker, everyone idle, motion `m`;
+    /// the worker's id.
+    fn still(m: Motion) -> (App, AgentId) {
+        let mut app = App::new(1, 1, 0, 1, Lang::En);
+        for a in &mut app.world.agents {
+            a.status = Status::Idle;
+            a.starting = false;
+        }
+        app.world.inbox.clear();
+        app.motion = m;
+        let w = (app.world.agents.iter())
+            .find(|a| a.role == Role::Worker)
+            .unwrap()
+            .id;
+        (app, w)
+    }
+
+    #[test]
+    fn motion_is_off_calm_or_full_by_word_or_round_and_full_is_calm_over_ssh() {
+        let (mut app, _) = still(Motion::Off);
+        let t = app.lang.text();
+        assert_eq!(
+            App::new(1, 1, 0, 1, Lang::En).motion,
+            Motion::Off,
+            "until main says"
+        );
+        assert_eq!(app.command_note("motion"), "(off)");
+        app.command("motion");
+        assert_eq!(app.motion, Motion::Calm);
+        assert_eq!(flashed(&app).as_deref(), Some(t.motion_calm));
+        assert_eq!(app.command_note("motion"), "(calm)");
+        app.command("motion");
+        assert_eq!(app.motion, Motion::Full);
+        assert_eq!(flashed(&app).as_deref(), Some(t.motion_full));
+        assert_eq!(app.moving(), Motion::Full);
+        app.command("motion");
+        assert_eq!(app.motion, Motion::Off);
+        assert_eq!(flashed(&app).as_deref(), Some(t.motion_off));
+        assert_eq!(app.moving(), Motion::Off);
+        app.ssh = true;
+        app.command("motion full");
+        assert_eq!(app.motion, Motion::Full, "chosen, kept");
+        assert_eq!(flashed(&app).as_deref(), Some(t.motion_ssh));
+        assert_eq!(app.moving(), Motion::Calm, "runs as calm");
+        app.command("motion calm");
+        assert_eq!(flashed(&app).as_deref(), Some(t.motion_calm));
+        app.command("motion off");
+        assert_eq!(flashed(&app).as_deref(), Some(t.motion_off));
+        app.command("motion wild");
+        assert_eq!(app.motion, Motion::Off, "as it was");
+        assert_eq!(
+            flashed(&app).as_deref(),
+            Some("wild is not off, calm or full")
+        );
+        app.ssh = false;
+        app.motion = Motion::Full;
+        app.focus(false, Instant::now());
+        assert_eq!(app.moving(), Motion::Off, "nothing moves in another window");
+    }
+
+    #[test]
+    fn each_thing_that_moves_is_drawn_as_it_is_at_the_frame() {
+        let (mut app, w) = still(Motion::Off);
+        let ms = Duration::from_millis;
+        let e = app.epoch;
+        let at = |app: &mut App, n: u64| app.frame = e + ms(n);
+        at(&mut app, 700);
+        app.world.agents[w].status = Status::Working;
+        assert!(!app.breath());
+        assert_eq!(
+            (app.dots(), app.spin(), app.head_spin()),
+            (None, None, None)
+        );
+        app.motion = Motion::Calm;
+        at(&mut app, 599);
+        assert!(!app.breath());
+        assert_eq!(app.dots(), Some("   "));
+        assert_eq!(app.spin(), Some(motion::SPIN[1]));
+        assert_eq!(app.head_spin(), None, "calm has none");
+        at(&mut app, 600);
+        assert!(app.breath(), "the second tone");
+        assert_eq!(app.dots(), Some(".  "));
+        assert_eq!(app.spin(), Some(motion::SPIN[2]));
+        at(&mut app, 1200);
+        assert!(!app.breath());
+        assert_eq!(app.dots(), Some(".. "));
+        at(&mut app, 1800);
+        assert!(app.breath());
+        assert_eq!(app.dots(), Some("..."));
+        at(&mut app, 2400);
+        assert_eq!(app.dots(), Some("   "), "round again");
+        assert_eq!(app.spin(), Some(motion::SPIN[8]));
+        at(&mut app, 3300);
+        assert_eq!(app.spin(), Some(motion::SPIN[1]), "eleven beats: round");
+        app.motion = Motion::Full;
+        at(&mut app, 250);
+        assert_eq!(
+            app.spin(),
+            Some(motion::SPIN[2]),
+            "a tenth of a second each"
+        );
+        assert_eq!(app.head_spin(), Some(motion::SPIN[2]));
+        at(&mut app, 1150);
+        assert_eq!(app.head_spin(), Some(motion::SPIN[1]));
+        app.world.agents[w].status = Status::Idle;
+        assert_eq!(app.head_spin(), None, "no one mid-turn");
+        app.world.agents[w].status = Status::Working;
+        app.ssh = true;
+        assert_eq!(app.head_spin(), None, "calm over SSH");
+        assert_eq!(app.spin(), Some(motion::SPIN[3]));
+        app.ssh = false;
+        app.focus(false, Instant::now());
+        assert!(!app.breath());
+        assert_eq!(
+            (app.dots(), app.spin(), app.head_spin()),
+            (None, None, None)
+        );
+    }
+
+    #[test]
+    fn what_comes_to_wait_blinks_and_what_is_done_or_started_settles() {
+        let (mut app, w) = still(Motion::Calm);
+        let ms = Duration::from_millis;
+        let e = app.epoch;
+        let me = GlowOn::Agent(w);
+        app.watch_glows(e);
+        assert!(app.glows.is_empty(), "the first look lights nothing");
+        // A question: its row and its item blink from the next beat.
+        app.world.inbox.push(InboxItem {
+            kind: InboxKind::Question,
+            agent: w,
+            detail: "which?".into(),
+            researcher: None,
+            open: true,
+            tick: 0,
+            card: None,
+        });
+        app.watch_glows(e + ms(1000));
+        assert_eq!(
+            app.glows,
+            [
+                (me, Glow::Arrive, e + ms(1200)),
+                (GlowOn::Item(0), Glow::Arrive, e + ms(1200)),
+            ]
+        );
+        let lit = |app: &mut App, n: u64, on: GlowOn| {
+            app.frame = e + ms(n);
+            app.lit(on)
+        };
+        assert_eq!(lit(&mut app, 1000, me), Some(Lit::Reversed), "at once");
+        assert_eq!(lit(&mut app, 1499, me), Some(Lit::Reversed));
+        assert_eq!(lit(&mut app, 1500, me), None);
+        assert_eq!(lit(&mut app, 1800, GlowOn::Item(0)), Some(Lit::Reversed));
+        assert_eq!(lit(&mut app, 3000, me), None, "over");
+        assert_eq!(lit(&mut app, 1000, GlowOn::Item(1)), None);
+        app.watch_glows(e + ms(1100));
+        assert_eq!(app.glows.len(), 2, "nothing new, nothing lit");
+        // Answered and done: it settles; an item seen once is not new.
+        app.world.inbox[0].open = false;
+        app.unseen.insert(w);
+        app.watch_glows(e + ms(2000));
+        assert_eq!(app.glows[1], (me, Glow::Settle, e + ms(2100)));
+        assert_eq!(lit(&mut app, 2400, me), Some(Lit::Settle(1)));
+        // Seen, then starting, then started: it settles again.
+        app.unseen.clear();
+        app.world.agents[w].status = Status::Working;
+        app.world.agents[w].starting = true;
+        app.watch_glows(e + ms(4000));
+        assert_eq!(app.glows.len(), 2, "idle to starting lights nothing");
+        assert_eq!(app.glows[1], (me, Glow::Settle, e + ms(2100)), "as it was");
+        app.world.agents[w].starting = false;
+        app.watch_glows(e + ms(4200));
+        assert_eq!(
+            app.glows[1],
+            (me, Glow::Settle, e + ms(4200)),
+            "on the beat"
+        );
+        assert_eq!(app.glows.len(), 2, "in place of its last");
+        // Working to idle, nothing to say.
+        app.world.agents[w].status = Status::Idle;
+        app.watch_glows(e + ms(5000));
+        assert_eq!(app.glows.len(), 2);
+        assert_eq!(app.glows[1], (me, Glow::Settle, e + ms(4200)), "as it was");
+        // Motion off, or another window: nothing lights, and what changed
+        // meanwhile does not light later.
+        app.motion = Motion::Off;
+        app.unseen.insert(w);
+        app.world.inbox.push(app.world.inbox[0].clone());
+        app.world.inbox[1].open = true;
+        app.watch_glows(e + ms(6000));
+        assert_eq!(app.glows.len(), 2);
+        assert_eq!(lit(&mut app, 4300, me), None, "off: none shown");
+        app.motion = Motion::Calm;
+        app.watch_glows(e + ms(7000));
+        assert_eq!(app.glows.len(), 2, "already seen");
+        // An app that starts with items waiting lights none of them.
+        let (mut world, sim) = sim::world(1, 1, 0, 1, Lang::En);
+        world.inbox.push(app.world.inbox[1].clone());
+        let mut fresh = App::with(world, Engine::Sim(sim), Lang::En);
+        fresh.motion = Motion::Calm;
+        fresh.watch_glows(e);
+        assert!(fresh.glows.is_empty());
+    }
+
+    #[test]
+    fn the_next_frame_is_when_what_is_shown_moves_and_never_when_nothing_does() {
+        let (mut app, w) = still(Motion::Calm);
+        let ms = Duration::from_millis;
+        let e = app.epoch;
+        let now = e + ms(100);
+        assert_eq!(app.next_motion(now), None, "nothing moves");
+        app.world.agents[w].status = Status::Working;
+        assert_eq!(app.next_motion(now), Some(e + ms(600)), "it breathes");
+        assert_eq!(app.next_motion(e + ms(600)), Some(e + ms(1200)));
+        app.view = View::Board;
+        assert_eq!(app.next_motion(now), None, "not on the screen");
+        app.view = View::Salon;
+        app.zoom = Zoom::Focus(w);
+        assert_eq!(app.next_motion(now), None);
+        app.zoom = Zoom::None;
+        app.world.agents[w].gone = true;
+        assert_eq!(app.next_motion(now), None, "gone");
+        app.world.agents[w].gone = false;
+        app.world.projects[0].closed = true;
+        assert_eq!(app.next_motion(now), None, "put away");
+        app.world.projects[0].closed = false;
+        app.motion = Motion::Off;
+        assert_eq!(app.next_motion(now), None, "off");
+        app.motion = Motion::Calm;
+        // A leader working does not breathe; starting counts its dots.
+        app.world.agents[w].status = Status::Idle;
+        let lead = app.world.projects[0].leader;
+        app.world.agents[lead].status = Status::Working;
+        assert_eq!(app.next_motion(now), None);
+        app.world.agents[lead].status = Status::Idle;
+        app.world.agents[w].starting = true;
+        assert_eq!(app.next_motion(now), None, "starting, not working");
+        app.world.agents[w].status = Status::Working;
+        assert_eq!(app.rungs()[w], Rung::Starting);
+        assert_eq!(app.next_motion(now), Some(e + ms(600)), "its dots");
+        app.world.agents[w].starting = false;
+        app.world.agents[w].status = Status::Idle;
+        // Waiting for an answer: the bottom line spins when nothing else
+        // is said there.
+        app.asking = Some("asking".into());
+        assert_eq!(app.next_motion(now), Some(e + ms(300)));
+        app.flash = Some(("x".into(), now));
+        assert_eq!(app.next_motion(now), None, "a flash says something");
+        assert_eq!(
+            app.next_motion(now + FLASH),
+            Some(e + ms(3300)),
+            "gone at its end"
+        );
+        app.flash = None;
+        app.typing = true;
+        assert_eq!(app.next_motion(now), None, "writing");
+        app.typing = false;
+        app.grace = Some((Undoable::Close(0), now + UNDO_GRACE));
+        assert_eq!(app.next_motion(now), None, "a countdown");
+        app.grace = None;
+        app.asking = None;
+        // The first-run window checking a vendor spins.
+        app.welcome = true;
+        app.vendors = vec![(Vendor::Claude, Seen::Checking)];
+        assert_eq!(app.next_motion(now), Some(e + ms(300)));
+        app.vendors = vec![(Vendor::Claude, Seen::Missing)];
+        assert_eq!(app.next_motion(now), None, "checked");
+        app.vendors = vec![(Vendor::Claude, Seen::Checking)];
+        app.welcome = false;
+        assert_eq!(app.next_motion(now), None, "not shown");
+        // Full: the header spins while anyone works, on any screen.
+        app.motion = Motion::Full;
+        app.view = View::Board;
+        assert_eq!(app.next_motion(now), None, "no one works");
+        app.world.agents[lead].status = Status::Working;
+        assert_eq!(app.next_motion(now), Some(e + ms(200)));
+        app.view = View::Salon;
+        app.world.agents[lead].status = Status::Idle;
+        app.motion = Motion::Calm;
+        // A glow: from its beat to its end, then nothing.
+        app.light(GlowOn::Agent(w), Glow::Settle, now);
+        assert_eq!(app.glows[0].2, e + ms(300));
+        assert_eq!(
+            app.next_motion(now),
+            Some(e + ms(600)),
+            "the beat after its own"
+        );
+        assert_eq!(app.next_motion(e + ms(700)), Some(e + ms(900)));
+        assert_eq!(app.next_motion(e + ms(1100)), Some(e + ms(1200)), "its end");
+        assert_eq!(app.next_motion(e + ms(1200)), None);
+        // The soonest of all.
+        app.world.agents[w].status = Status::Working;
+        assert_eq!(app.next_motion(e + ms(700)), Some(e + ms(900)));
+        assert_eq!(app.next_motion(e + ms(1000)), Some(e + ms(1200)));
+        app.viewing = Some(Box::new(App::new(1, 1, 0, 1, Lang::En)));
+        assert_eq!(app.next_motion(now), None, "an archive's view over it");
+        app.viewing = None;
+        app.focus(false, now);
+        assert_eq!(app.next_motion(now), None, "another window");
+    }
+
+    #[test]
+    fn a_step_looks_for_what_lights() {
+        let (mut app, _) = still(Motion::Calm);
+        assert!(app.glow_rungs.is_empty());
+        app.step();
+        assert_eq!(
+            app.glow_rungs,
+            app.rungs(),
+            "seen, to tell what is new next"
+        );
+        assert_eq!(app.glow_items, app.world.inbox.len());
+    }
+
+    #[test]
+    fn what_moves_is_drawn_on_its_next_frame_and_never_in_another_window() {
+        let (mut app, w) = still(Motion::Calm);
+        let ms = Duration::from_millis;
+        let e = app.epoch;
+        app.world.agents[w].status = Status::Working;
+        let t0 = e + ms(100);
+        assert!(app.draw_due(t0));
+        app.drawn(t0);
+        assert_eq!(app.motion_wait(t0), Some(ms(500)));
+        assert_eq!(app.motion_wait(t0 + ms(700)), Some(ms(0)), "late: at once");
+        assert!(!app.draw_due(t0 + ms(499)));
+        assert!(app.draw_due(t0 + ms(500)), "the next tone");
+        app.drawn(t0 + ms(500));
+        assert_eq!(app.motion_wait(t0 + ms(500)), Some(ms(600)));
+        // A glow is kept to its end, then let go.
+        app.light(GlowOn::Agent(w), Glow::Arrive, t0 + ms(500));
+        app.drawn(e + ms(2399));
+        assert_eq!(app.glows.len(), 1);
+        app.drawn(e + ms(2400));
+        assert!(app.glows.is_empty(), "over");
+        // Not yet begun: kept.
+        app.light(GlowOn::Agent(w), Glow::Arrive, e + ms(2500));
+        app.drawn(e + ms(2500));
+        assert_eq!(app.glows.len(), 1);
+        // In another window nothing waits for a frame.
+        app.focus(false, e + ms(2600));
+        assert_eq!(app.motion_wait(e + ms(2600)), None);
+        assert!(!app.draw_due(e + ms(4000)));
+        app.drawn(e + ms(2600));
+        assert_eq!(app.motion_wait(e + ms(2600)), None);
+        app.motion = Motion::Off;
+        app.focus(true, e + ms(2700));
+        app.drawn(e + ms(2700));
+        assert_eq!(app.motion_wait(e + ms(2700)), None, "off");
+    }
+
+    #[test]
+    fn a_commit_message_asked_for_spins_until_it_comes() {
+        let (mut app, _) = still(Motion::Calm);
+        let t = app.lang.text();
+        app.command("commit");
+        let asked = app.asking().map(str::to_string);
+        assert!(asked.is_some(), "{:?}", flashed(&app));
+        assert_eq!(flashed(&app), asked, "said first, then spun");
+        assert!(asked.unwrap().contains(&fill(t.suggesting, &["", ""])[..6]));
+        app.step();
+        assert!(app.asking().is_some(), "not yet");
+        app.step();
+        assert_eq!(app.asking(), None, "it came");
+        // A refusal is only said.
+        app.world.budget = app.world.spent();
+        app.command("commit");
+        assert_eq!(app.asking(), None);
     }
 }

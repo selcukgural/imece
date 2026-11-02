@@ -54,7 +54,7 @@ Bir agent'ın satırı:
 ```
 
 - Ağaç çizgileri `├ └ │` kimin kimin altında olduğunu gösterir; bir yardımcı işçisinin altındadır ve `claude-1.1` diye adlanır.
-- Durum işareti: agent'ın durum merdivenindeki basamağı (aşağıdaki lejant). Takılan durumunun dediği gibi görünür (`✕` bloke, `■` durdu); bir şeyi sizi beklerken, o sırada ne yapıyorsa yapsın `!`; bir turu bitirmiş ama henüz açmadığınız bir işçi için `✓`, durum olarak `bitti, henüz bakılmadı`; oturumu başlarken `◌`; yoksa durumunun kendi işareti (`●` `◐` `◇` iş başında, `○` `◦` boşta). Her durum kendi biçimidir, mono tema da ayırt eder. Lider hep `◆` kalır.
+- Durum işareti: agent'ın durum merdivenindeki basamağı (aşağıdaki lejant). Takılan durumunun dediği gibi görünür (`✕` bloke, `■` durdu); bir şeyi sizi beklerken, o sırada ne yapıyorsa yapsın `!`; bir turu bitirmiş ama henüz açmadığınız bir işçi için `✓`, durum olarak `bitti, henüz bakılmadı`; oturumu başlarken `◌`; yoksa durumunun kendi işareti (`●` `◐` `◇` iş başında, `○` `◦` boşta). Her durum kendi biçimidir, mono tema da ayırt eder. Lider hep `◆` kalır. Hareket açıkken ([`:motion`](../reference/commands.md#motion-offcalmfull), varsayılan calm) çalışan bir satırın işareti renginde nefes alır (şeklinde asla), sizi beklemeye düşen bir satır üç kez yanıp söner, turu biten ya da oturumu kalkan bir satır yeşil bir zeminden yatışır ve `başlıyor` noktalarını sayar; başka penceredeyken hiçbir şey hareket etmez.
 - Agent'ın konuşmacı renginde `▎`: günlükte ve bir konuşmada satırlarının taşıdığı renk, böylece satır ve konuşması tek agent olarak okunur.
 - Satıcısının renginde adı; sonra kirliyse `~` ya da `≈` (araştırma kirliliği, yalnız demoda).
 - Bir işçinin kartı: `#3` ve kartın başlığı. Lider yerine satıcısını gösterir.

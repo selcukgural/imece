@@ -548,7 +548,12 @@ pub fn welcome(f: &mut Frame, app: &App) {
 fn vendor_line(app: &App, v: Vendor, seen: &Seen) -> Line<'static> {
     let t = app.lang.text();
     let (mark, style, version, what) = match seen {
-        Seen::Checking => ("…", dim(), String::new(), t.seen_checking.to_string()),
+        Seen::Checking => (
+            app.spin().unwrap_or("…"),
+            dim(),
+            String::new(),
+            t.seen_checking.to_string(),
+        ),
         Seen::Missing => ("·", dim(), String::new(), t.seen_missing.to_string()),
         Seen::Here { version, login } => {
             let version = format!("{} · ", clean(version));

@@ -8,14 +8,16 @@ state and config folder, closes the first-start window, and after
 reports the focus lost (`CSI O`) a moment after the start, as a terminal
 does when another window is chosen. `--fast` runs the demo at its top
 speed (`+` three times: a tick of 62 ms, closer to live's 100 ms than the
-demo's 500). Prints one line per run:
+demo's 500). `--motion off calm full` runs each of those `:motion`
+levels in turn (typed after the start; a fresh state is calm). Prints one
+line per run:
 
     focused fast  cpu 0.52 s (3.5%)  rss 5.8 MiB  drawn 0.64 MiB
     blurred fast  cpu 0.10 s (0.7%)  rss 5.8 MiB  drawn 0.17 MiB
 
 Stdlib only; run it as `python3 -I tools/measure.py`, after
 `cargo build --release`. Every process it starts is ended before it
-returns. See docs/decisions/77-quiet-blur.md.
+returns. See docs/decisions/77-quiet-blur.md and 84-motion.md.
 """
 
 import argparse
@@ -35,7 +37,7 @@ COLUMNS, ROWS = 160, 48
 BLUR = b"\x1b[O"
 
 
-def run(binary, seconds, blurred, fast, extra):
+def run(binary, seconds, blurred, fast, motion, extra):
     """One run; returns (cpu seconds, peak rss bytes, bytes drawn)."""
     with tempfile.TemporaryDirectory(prefix="imece-measure-") as home:
         env = {
@@ -61,6 +63,8 @@ def run(binary, seconds, blurred, fast, extra):
             # maybe lose the focus, and quit at the end.
             # Apart, so no key reads as alt with the escape before it.
             plan = [(1.0, b"\x1b")]
+            if motion:
+                plan.append((2.0, b":motion " + motion.encode() + b"\r"))
             if fast:
                 plan += [(1.5, b"+"), (1.7, b"+"), (1.9, b"+")]
             if blurred:
@@ -118,19 +122,34 @@ def main():
     which = ap.add_mutually_exclusive_group()
     which.add_argument("--blurred", action="store_true", help="only a blurred run")
     which.add_argument("--focused", action="store_true", help="only a focused run")
+    ap.add_argument(
+        "--motion",
+        nargs="+",
+        choices=["off", "calm", "full"],
+        default=[None],
+        help="each :motion level in turn",
+    )
     ap.add_argument("extra", nargs="*", help="more arguments for imece, after --")
     args = ap.parse_args()
     if not os.access(args.binary, os.X_OK):
         sys.exit(f"{args.binary}: not built (cargo build --release)")
     runs = [False] if args.focused else [True] if args.blurred else [False, True]
-    for blurred in runs:
-        cpu, rss, drawn = run(args.binary, args.seconds, blurred, args.fast, args.extra)
-        name = ("blurred" if blurred else "focused") + (" fast" if args.fast else "")
-        share = 100 * cpu / args.seconds
-        print(
-            f"{name}  cpu {cpu:.2f} s ({share:.1f}%)  rss {rss / 2**20:.1f} MiB"
-            f"  drawn {drawn / 2**20:.2f} MiB"
-        )
+    for motion in args.motion:
+        for blurred in runs:
+            measure(args, blurred, motion)
+
+
+def measure(args, blurred, motion):
+    """One run, said on one line."""
+    cpu, rss, drawn = run(args.binary, args.seconds, blurred, args.fast, motion, args.extra)
+    name = ("blurred" if blurred else "focused") + (" fast" if args.fast else "")
+    if motion:
+        name += f" {motion}"
+    share = 100 * cpu / args.seconds
+    print(
+        f"{name}  cpu {cpu:.2f} s ({share:.1f}%)  rss {rss / 2**20:.1f} MiB"
+        f"  drawn {drawn / 2**20:.2f} MiB"
+    )
 
 
 if __name__ == "__main__":

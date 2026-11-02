@@ -12,7 +12,7 @@ description: imece'nin aldığı her `:` komutu; argümanları, karşılığı o
 - `:` sonra `tab` komutları listeler. Menü her komutun ardında şu an ne durumda olduğunu ya da neye etki edeceğini ayraç içinde gösterir: `budget (spent $3.10 of $20.00)`, `theme (dark)`, `lead (claude)`, `close (kule)`, `forget (claude-2)`, `next (2 waiting)`, `needs (off)`. Not çizilir, asla satıra eklenmez.
 - Bir komutun ardındaki `$` sonraki faturayı büyütenleri işaretler: `:open` (yeni bir lider oturumu), `:solo` (yeni bir oturum), `:forget` (bütün brifingi önbelleksiz yeniden ödeyen yeni bir oturum) ve `:commit` (ücretli bir çağrı). Hiçbir `:` komutu kendi başına ücretli bir tur başlatmaz; `:budget` işaret yerine değerini gösterir.
 - Kısa adlar: `:b` budget, `:c` close, `:f` forget, `:o` open, `:q` quit, `:t` theme. Bütünüyle yazılan kısa ad zaten bir komuttur; menü bir şey sunmaz ve `enter` çalıştırır (`:q` sonra `enter` hemen sorar).
-- Argümanlar da tamamlanır: `:lang` sonra diller, `:lead` sonra satıcılar, `:notify` sonra üç kelimesi, `:theme` sonra yerleşik adlar, `:close` ve `:pin` sonra açık projeler, `:restore` sonra arşivlerin başlıkları (en yenisi önce, her biri projesinin adı ve arşivlendiği günle), `:goto` sonra hiçbir şey (`&` satırının kendi menüsü var), `:history` sonra gönderilen satırlar, `:forget`, `:talk`, `:trace` ve `:peek` sonra açık projelerin ajanları (`@` ile ya da onsuz), `:open` ve `:export` sonra dizinler (`~` ev dizininiz, gizli olanlar yalnızca bir `.` sonrası, `tab` seçilenin içine adım atar).
+- Argümanlar da tamamlanır: `:lang` sonra diller, `:lead` sonra satıcılar, `:notify` ve `:motion` sonra üç kelimesi, `:theme` sonra yerleşik adlar, `:close` ve `:pin` sonra açık projeler, `:restore` sonra arşivlerin başlıkları (en yenisi önce, her biri projesinin adı ve arşivlendiği günle), `:goto` sonra hiçbir şey (`&` satırının kendi menüsü var), `:history` sonra gönderilen satırlar, `:forget`, `:talk`, `:trace` ve `:peek` sonra açık projelerin ajanları (`@` ile ya da onsuz), `:open` ve `:export` sonra dizinler (`~` ev dizininiz, gizli olanlar yalnızca bir `.` sonrası, `tab` seçilenin içine adım atar).
 - imece'nin bilmediği bir ad: `no command xyz; : and tab list them`. Canlıda yazılan yalnızca demoya ait bir komut: `:pause is for the demo: live agents run in real time`.
 - `!cmd` kendi kabuğunuzda bir komut çalıştırır, `/cmd` ajanın kendi komut satırıdır; ikisi de `:` komutu değildir ([komut satırı](../screen/command-line.md)).
 
@@ -44,6 +44,7 @@ description: imece'nin aldığı her `:` komutu; argümanları, karşılığı o
 | `:lead VENDOR` | — | | | | birincil satıcı, ya da `ask` |
 | `:mark` | `m` | | | | |
 | `:model NAME` | — | | | | eldeki solonun modeli ya da `default` |
+| `:motion [off\|calm\|full]` | — | | | | off / calm / full |
 | `:needs` | `f` | | | | açık / kapalı |
 | `:news` | — | | | | bu sürüm |
 | `:next` | `W` | | | | N bekliyor |
@@ -181,6 +182,10 @@ Eldeki satırı sonra dönmek için işaretler, `m` gibi: açık konuşmada, yok
 ### `:model NAME`
 
 Eldeki solo oturumun sonraki turundan itibaren çalıştığı modeli ayarlar: bir takma ad (Claude Code için `opus`, `sonnet`, `haiku`, `fable`; Gemini CLI için `auto`, `pro`, `flash`, `flash-lite`) ya da satıcının aldığı biçimde tam bir ad (`gpt-5.6-terra`), ya da satıcının kendisi için `default`. `:effort` ile aynı kurallar, redler, flaş ve günlük satırı; model adı olmayan bir ad (`a b`, `-x`) reddedilir. `:model ` ardından takma adlar tamamlanır; tam bir ad yazılır. Seçimin çaba kısmı kalır.
+
+### `:motion [off|calm|full]`
+
+Ekranda ne kadar şeyin hareket ettiği. `calm` (varsayılan): çalışan bir satırın işareti nefes alır, rengi 0,6 saniyede bir kısılır, şekli hiç değişmez; `başlıyor` noktalarını sayar; imece bir yanıt beklerken (`:commit`) alt satırda bir dönücü görünür, ilk açılış penceresinde hâlâ denetlenen bir satıcının yanında da; sizi beklemeye düşen bir satır ya da kalem üç kez yanıp söner; turu biten ya da oturumu kalkan bir satır yeşil bir zeminden kendi renklerine yatışır (terminalin kendi renklerini kullanan bir temada: ters renk, sonra değişen satırların görünüşü). `full` biri çalışırken başlıktaki filonun yanına bir dönücü ekler ve daha hızlı döner; SSH üzerinde sakin çalışır (her kare ağdan geçer). `off`: hiçbir şey hareket etmez, ekran eskisi gibidir. Başka penceredeyken hiçbir şey hareket etmez ve orada olanlar dönünce yanıp sönmez; her şey tek bir vuruşa (0,3 sn) düşer, böylece aynı anda birkaç şeyin hareket etmesi tek bir şeyinkinden fazla kareye mal olmaz ve bir kare yalnızca gösterdiği şey hareket edince çizilir (bkz. [karar](https://github.com/selcukgural/imece/blob/main/docs/decisions/84-motion.md)). Yalın `:motion` sıradakine geçer: off, calm, full, off. Flaş yenisinin ne yaptığını söyler (`sakin hareket: çalışan satır nefes alır, seni bekleyen yanıp söner`, `tam hareket: dönücüler de, daha hızlı`, `SSH üzerinde tam hareket sakin çalışır`, `ekranda hiçbir şey hareket etmez`); başka bir kelime: `wild off, calm ya da full değil`. Menü notu değeri gösterir; depoda hatırlanır.
 
 ### `:needs`
 
