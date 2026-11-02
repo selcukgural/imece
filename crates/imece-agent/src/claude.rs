@@ -1912,6 +1912,9 @@ mod tests {
                 "api error 529 overloaded: retry 2/10 in 1163 ms".into()
             )]
         );
+        // Another system line (a hook's, a compaction's) is not a retry.
+        let hook = r#"{"type":"system","subtype":"hook_response","attempt":2,"max_retries":10,"error":"overloaded"}"#;
+        assert_eq!(p.line(hook).unwrap(), []);
         let lost = r#"{"type":"system","subtype":"api_retry","attempt":1,"max_retries":10,"retry_delay_ms":520,"error_status":null,"error":"unknown"}"#;
         assert_eq!(
             p.line(lost).unwrap(),

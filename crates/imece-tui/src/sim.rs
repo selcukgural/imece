@@ -2600,6 +2600,9 @@ mod tests {
                 }
                 InboxKind::Approval => w.decided(i, true),
                 InboxKind::Question | InboxKind::Fault => {
+                    // Closed here, once: a run's length never hangs on
+                    // `said` closing it.
+                    w.inbox[i].open = false;
                     if s.told(w, a, "yes").is_ok() {
                         w.said(a, "yes");
                     }
