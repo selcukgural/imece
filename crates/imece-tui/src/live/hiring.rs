@@ -340,7 +340,7 @@ impl Live {
         };
         // A bounded search: there are fewer agents than the numbers it
         // tries, so one is free.
-        let name = (next..=next + w.agents.len())
+        let name = (next..=next.saturating_add(w.agents.len()))
             .map(|n| format!("{stem}{n}"))
             .find(|name| !w.name_taken(name))
             .expect("some number is free");
