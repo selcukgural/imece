@@ -277,9 +277,8 @@ impl Browser {
     /// A key while the filter is typed: `enter` keeps it, `esc` drops it,
     /// `backspace` on nothing stops typing.
     fn filter_key(&mut self, w: &World, k: KeyEvent) {
-        let plain = !k
-            .modifiers
-            .intersects(KeyModifiers::CONTROL | KeyModifiers::ALT);
+        let plain = !k.modifiers.contains(KeyModifiers::CONTROL)
+            && !k.modifiers.contains(KeyModifiers::ALT);
         match k.code {
             KeyCode::Enter => self.typing = false,
             KeyCode::Esc => {
@@ -437,6 +436,11 @@ mod tests {
         b.on_key(&w, key(KeyCode::Char('h')));
         assert_eq!(b.at(&w), Some(Row::Archive(zero)), "back on its archive");
         assert_eq!(b.rows(&w).len(), rows.len());
+        // On an archive showing its agents, `h` folds them and stays.
+        b.on_key(&w, key(KeyCode::Char('l')));
+        b.on_key(&w, key(KeyCode::Char('h')));
+        assert_eq!(b.at(&w), Some(Row::Archive(zero)));
+        assert_eq!(b.rows(&w), rows);
         // `h` on a folded archive folds its checkout, selected.
         b.on_key(&w, key(KeyCode::Char('h')));
         assert_eq!(b.at(&w), Some(Row::Checkout(0)));
@@ -551,6 +555,11 @@ mod tests {
         b.on_key(&w, key(KeyCode::Char('/')));
         b.on_key(&w, key(KeyCode::Backspace));
         assert_eq!(b.find, "calisma ");
+        // `u` is a letter; only ctrl-u empties the filter.
+        b.on_key(&w, key(KeyCode::Char('u')));
+        assert_eq!(b.find, "calisma u");
+        b.on_key(&w, KeyEvent::new(KeyCode::Char('w'), KeyModifiers::CONTROL));
+        assert_eq!(b.find, "calisma u", "a ctrl letter is not typed");
         b.on_key(&w, KeyEvent::new(KeyCode::Char('u'), KeyModifiers::CONTROL));
         assert_eq!(b.find, "");
         assert!(b.typing);
@@ -561,10 +570,16 @@ mod tests {
         assert!(!b.typing);
         assert!(!b.paste(&w, "x"), "not typed: not taken");
         // An agent's name finds its archive.
-        let lead = &w.agents[w.projects[zero].leader].name;
+        let worker = agents_of(&w, zero)
+            .find(|&a| w.agents[a].role == crate::model::Role::Worker)
+            .expect("a worker");
+        let name = w.agents[worker].name.clone();
         b.on_key(&w, key(KeyCode::Char('/')));
-        b.paste(&w, lead);
-        assert!(b.rows(&w).contains(&Row::Archive(zero)));
+        b.paste(&w, &name);
+        let found: Vec<Row> = (b.rows(&w).into_iter())
+            .filter(|r| matches!(r, Row::Archive(_)))
+            .collect();
+        assert_eq!(found, [Row::Archive(zero)], "only its own: {name}");
         b.on_key(&w, key(KeyCode::Esc));
         assert!(!b.typing && b.find.is_empty());
         assert_eq!(b.rows(&w).len(), 7);

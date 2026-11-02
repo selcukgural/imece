@@ -5494,7 +5494,7 @@ mod tests {
                 " ARCHIVES ",
                 " ▾ shop · 1 archived",
                 "   ● shop · open now · 1 agents",
-                "   ▸ first epic · $4.00 · 1 cards done · 2 agents · archived {}",
+                "   ▸ first epic · $4.00 · 2 cards done · 2 agents · archived {}",
                 " j k move · h l za fold · / filter · r restore · esc close",
                 "brought shop “first epic” back",
             ),
@@ -5504,7 +5504,7 @@ mod tests {
                 " ARŞİVLER ",
                 " ▾ shop · 1 arşiv",
                 "   ● shop · şu an açık · 1 agent",
-                "   ▸ first epic · $4.00 · 1 kart bitti · 2 agent · {} arşivlendi",
+                "   ▸ first epic · $4.00 · 2 kart bitti · 2 agent · {} arşivlendi",
                 " j k gez · h l za katla · / süz · r geri getir · esc kapat",
                 "shop “first epic” geri geldi",
             ),
@@ -5544,6 +5544,7 @@ mod tests {
             app.world.cards.push(card(0, 1, Column::Done));
             app.world.cards.push(card(1, 1, Column::Working));
             app.world.cards.push(card(2, 0, Column::Done));
+            app.world.cards.push(card(3, 1, Column::Done));
             app.selected = Sel::Agent(lead);
             typed(&mut app, ":archive first epic");
             // The `:archive` waiting acts first, and shows.
