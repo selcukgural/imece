@@ -177,9 +177,9 @@ imece kapalı düşer (fail closed): bir dosya, bir oturum ya da bir değişikli
 
 ### imece makineden kendisi ne kadar kullanıyor?
 
-**Neden.** Az: ekran her tikte (canlıda 100 ms) çizilir ve yalnız değişen hücreler gönderilir. Terminal odakta değilken (başka bir penceredesiniz; tmux'ta `focus-events on` gerekir) imece saniyede bir çizer, araya bir tuş, yapıştırma ya da boyut değişimi girmedikçe; başlık, bildirimler ve ajanların turları eskisi gibi sürer. Odağı bildirmeyen bir terminal her tikte çizilir.
+**Neden.** Az: ekran yalnız üzerindeki bir şey değiştiğinde çizilir (bir tuş, bir ajanın sözü, git'in yanıtı, bus'ta bir çağrı, saatin beş saniyelik adımı, gelen ya da giden bir uyarı), en geç bir tik (canlıda 100 ms) sonra, ve yalnız değişen hücreler gönderilir; hiçbir şey olmuyorsa hiçbir şey çizilmez. Terminal odakta değilken (başka bir penceredesiniz; tmux'ta `focus-events on` gerekir) değişen en fazla saniyede bir çizilir, araya bir tuş, yapıştırma ya da boyut değişimi girmedikçe; başlık, bildirimler ve ajanların turları eskisi gibi sürer.
 
-**Ne yapmalı.** Kendi makinenizdeki rakamlar için `cargo build --release`, sonra `python3 -I tools/measure.py --fast` çalıştırın: biri odakta, biri başka pencerede iki demo çalışması, her birinin CPU süresi, en yüksek belleği ve terminale gönderilen baytlarıyla. M3 Max bir MacBook Pro'da demo'nun en yüksek hızında 15 sn, odakta 0.55 sn CPU, başka pencerede 0.10 sn tuttu (0.64'e karşı 0.17 MiB çizildi), iki durumda da 6 MiB bellek.
+**Ne yapmalı.** Kendi makinenizdeki rakamlar için `cargo build --release`, sonra `python3 -I tools/measure.py --fast` çalıştırın: biri odakta, biri başka pencerede iki demo çalışması, her birinin CPU süresi, en yüksek belleği ve terminale gönderilen baytlarıyla. M3 Max bir MacBook Pro'da demo'nun en yüksek hızında 15 sn, odakta 0.35 sn CPU, başka pencerede 0.07 sn tuttu (0.64'e karşı 0.17 MiB çizildi), iki durumda da 6 MiB bellek. Demo'nun dünyası her tikte ilerler; turlar arasındaki canlı bir ekip çok daha az çizer.
 
 ## Ayrıca bakınız
 

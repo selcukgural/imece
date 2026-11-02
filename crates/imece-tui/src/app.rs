@@ -46,10 +46,15 @@ fn recalled(text: &str) -> bool {
 /// After this long in another window, coming back shows what happened at
 /// once, without waiting for a key.
 pub const FOCUS_AWAY: Duration = Duration::from_secs(180);
-/// How often the screen is drawn while the terminal does not have the
-/// focus and the person did nothing: the clocks and spinners still move,
-/// ten times less often than live's tick.
+/// While the terminal does not have the focus, what changed is drawn at
+/// most this often unless the person did something: ten times less often
+/// than live's tick.
 pub const BLURRED_DRAW: Duration = Duration::from_secs(1);
+
+/// What the screen shows of time: the world's clock, the flash on show
+/// (by when it was said) and the seconds a `:close` or `:forget` still
+/// waits. A drawing is due when it moved.
+type Clock = (u64, Option<Instant>, Option<u64>);
 /// How long `:close` and `:forget` wait before they act; `u` (`:undo`)
 /// meanwhile leaves things as they are.
 pub const UNDO_GRACE: Duration = Duration::from_secs(10);
@@ -800,10 +805,15 @@ pub struct App {
     last_key_tick: u64,
     /// When the terminal lost the focus, and the tick then.
     blurred: Option<(Instant, u64)>,
-    /// When the screen was last drawn, and whether something came from
-    /// the terminal since (a key, a paste, a resize, the focus).
+    /// When the screen was last drawn and what its clock showed then;
+    /// whether something came from the terminal since (a key, a paste, a
+    /// resize, the focus), and whether something else the screen shows
+    /// changed (an engine's step that brought news, a vendor looked at,
+    /// a held key let through).
     drawn_at: Option<Instant>,
+    drawn_clock: Option<Clock>,
     pub stirred: bool,
+    pub changed: bool,
     /// The hold on the machine's sleep while an agent is mid-turn
     /// (`--awake`, `:awake`).
     pub awake: crate::awake::Awake,
@@ -923,6 +933,8 @@ impl App {
             last_key_tick: 0,
             blurred: None,
             drawn_at: None,
+            drawn_clock: None,
+            changed: false,
             stirred: false,
             awake: crate::awake::Awake::new(false, crate::awake::command(std::process::id())),
             notify: Notify::Off,
@@ -931,10 +943,15 @@ impl App {
     }
 
     pub fn step(&mut self) {
-        match &mut self.engine {
-            Engine::Sim(s) => s.step(&mut self.world),
+        let came = match &mut self.engine {
+            // The demo's world moves on every step.
+            Engine::Sim(s) => {
+                s.step(&mut self.world);
+                true
+            }
             Engine::Live(l) => l.step(&mut self.world),
-        }
+        };
+        self.changed |= came;
         self.show_suggestion();
         self.world.watch_spending();
         self.watch_turns();
@@ -1293,6 +1310,8 @@ impl App {
         if done {
             self.looking = None;
         }
+        // A vendor's line on the welcome window, if open.
+        self.changed |= !got.is_empty();
         for (v, seen) in got {
             let out = matches!(
                 seen,
@@ -1579,6 +1598,8 @@ impl App {
                     app.act_all(keys.alone(first), None);
                 }
             });
+            // What the key did shows, as after any key.
+            self.changed = true;
         }
     }
 
@@ -3987,22 +4008,37 @@ impl App {
         self.inbox_sel = self.inbox_sel.min(open.saturating_sub(1));
     }
 
-    /// Whether the screen is drawn at `now`: always while the terminal has
-    /// the focus or never says (no focus reports); without it, when
-    /// something came from the terminal since the last drawing, or
-    /// [`BLURRED_DRAW`] after it.
+    /// Whether the screen is drawn at `now`: on a change, never on a
+    /// timer. At once when something came from the terminal since the
+    /// last drawing; when something else changed or the screen's clock
+    /// moved ([`Clock`]), at once while the terminal has the focus or
+    /// never says (no focus reports), else [`BLURRED_DRAW`] after the
+    /// last drawing at the soonest.
     pub fn draw_due(&self, now: Instant) -> bool {
-        self.blurred.is_none()
-            || self.stirred
-            || self
-                .drawn_at
-                .is_none_or(|at| now.duration_since(at) >= BLURRED_DRAW)
+        if self.stirred {
+            return true;
+        }
+        let moved = self.changed || self.drawn_clock != Some(self.clock(now));
+        moved
+            && (self.blurred.is_none()
+                || (self.drawn_at).is_none_or(|at| now.duration_since(at) >= BLURRED_DRAW))
     }
 
     /// The screen was drawn at `now`.
     pub fn drawn(&mut self, now: Instant) {
         self.drawn_at = Some(now);
+        self.drawn_clock = Some(self.clock(now));
         self.stirred = false;
+        self.changed = false;
+    }
+
+    /// What the screen shows of time at `now`.
+    fn clock(&self, now: Instant) -> Clock {
+        let flash = (self.flash.as_ref())
+            .filter(|(_, at)| now.saturating_duration_since(*at) < FLASH)
+            .map(|(_, at)| *at);
+        let grace = self.grace_left(now).map(|(_, left)| left);
+        (self.world.tick, flash, grace)
     }
 
     /// The terminal lost the focus (`gained` false) at `now`, or got it
@@ -9268,30 +9304,141 @@ mod tests {
     }
 
     #[test]
-    fn another_window_is_drawn_once_a_second_unless_something_comes() {
+    fn the_screen_is_drawn_on_a_change_never_on_a_timer() {
         let mut app = App::new(1, 1, 0, 1, Lang::En);
         let t0 = Instant::now();
+        let s = Duration::from_secs;
         let ms = Duration::from_millis;
         assert!(app.draw_due(t0), "never drawn");
         app.drawn(t0);
-        assert!(app.draw_due(t0), "with the focus, every time");
+        assert!(!app.draw_due(t0 + s(60)), "nothing changed: no timer");
+        app.stirred = true;
+        assert!(app.draw_due(t0), "a key, a resize");
+        app.drawn(t0);
+        assert!(!app.stirred, "drawn, stirred no more");
+        app.changed = true;
+        assert!(app.draw_due(t0), "news from an engine, at once");
+        app.drawn(t0);
+        assert!(!app.changed && !app.draw_due(t0));
+        // The clock: the world's step, a flash coming and going, the
+        // seconds a :close waits.
+        app.world.tick += 1;
+        assert!(app.draw_due(t0), "the world's clock");
+        app.drawn(t0);
+        let t1 = t0 + s(20);
+        app.flash = Some(("x".into(), t1));
+        assert!(app.draw_due(t1), "a flash");
+        app.drawn(t1);
+        assert!(!app.draw_due(t1 + FLASH - ms(1)), "still on show");
+        assert!(app.draw_due(t1 + FLASH), "gone");
+        app.drawn(t1 + FLASH);
+        assert!(!app.draw_due(t1 + FLASH + s(9)));
+        let t2 = t1 + s(20);
+        app.grace = Some((Undoable::Close(0), t2 + UNDO_GRACE));
+        assert!(app.draw_due(t2), "the count starts");
+        app.drawn(t2);
+        assert!(!app.draw_due(t2 + ms(999)), "10 s still");
+        assert!(app.draw_due(t2 + s(1)), "9 s");
+        // A step of the demo moves its world.
+        app.drawn(t2 + s(1));
+        app.step();
+        assert!(app.changed && app.draw_due(t2 + s(1)));
+    }
+
+    #[test]
+    fn another_window_draws_what_changed_once_a_second_and_a_key_at_once() {
+        let mut app = App::new(1, 1, 0, 1, Lang::En);
+        let t0 = Instant::now();
+        let ms = Duration::from_millis;
+        // Blurred before the first drawing: drawn.
         app.focus(false, t0);
+        assert!(app.draw_due(t0));
+        app.drawn(t0);
+        assert!(!app.draw_due(t0 + BLURRED_DRAW), "nothing changed");
+        app.changed = true;
         assert!(!app.draw_due(t0 + ms(1)));
         assert!(!app.draw_due(t0 + BLURRED_DRAW - ms(1)), "not yet");
         assert!(app.draw_due(t0 + BLURRED_DRAW), "a second on");
         app.drawn(t0 + BLURRED_DRAW);
-        assert!(!app.draw_due(t0 + BLURRED_DRAW + ms(1)));
+        app.world.tick += 1;
+        assert!(
+            !app.draw_due(t0 + BLURRED_DRAW + ms(1)),
+            "the clock waits too"
+        );
         app.stirred = true;
-        assert!(app.draw_due(t0 + BLURRED_DRAW + ms(1)), "a key, a resize");
+        assert!(app.draw_due(t0 + BLURRED_DRAW + ms(1)), "a key, at once");
         app.drawn(t0 + BLURRED_DRAW + ms(1));
-        assert!(!app.stirred, "drawn, stirred no more");
-        assert!(!app.draw_due(t0 + BLURRED_DRAW + ms(2)));
-        app.focus(true, t0 + BLURRED_DRAW + ms(2));
-        assert!(app.draw_due(t0 + BLURRED_DRAW + ms(2)), "back: at once");
-        // Blurred before the first drawing: drawn.
+        app.changed = true;
+        let t1 = t0 + BLURRED_DRAW + ms(2);
+        assert!(!app.draw_due(t1));
+        app.focus(true, t1);
+        assert!(app.draw_due(t1), "back: what waited, at once");
+    }
+
+    #[test]
+    fn a_live_step_draws_only_when_something_came() {
+        let mut w = crate::live::testing::team(1);
+        // A clock far from now's: the first step moves it.
+        w.tick = 1_000;
+        let live = crate::live::testing::idle_live(2);
+        let mut app = App::with(w, Engine::Live(Box::new(live)), Lang::En);
+        let t0 = Instant::now();
+        app.step();
+        assert!(app.changed, "the clock moved");
+        // A step that leaves the clock where it was says what came.
+        let step = |app: &mut App, said: Option<&str>| {
+            for _ in 0..3 {
+                app.step();
+                app.drawn(t0);
+                let before = app.world.tick;
+                if let (Some(text), Engine::Live(l)) = (said, &app.engine) {
+                    let e = imece_agent::Event::Text(text.into());
+                    crate::live::testing::hear(l, 1, e);
+                }
+                app.step();
+                if app.world.tick == before {
+                    return app.changed;
+                }
+            }
+            panic!("the clock moved on every try");
+        };
+        assert!(!step(&mut app, None), "nothing came");
+        assert!(step(&mut app, Some("hello")), "a session's word");
+        // Something waiting to be drawn still is after a quiet step, and
+        // after one that brought more.
+        app.changed = true;
+        app.step();
+        assert!(app.changed);
+        if let Engine::Live(l) = &app.engine {
+            crate::live::testing::hear(l, 1, imece_agent::Event::Text("more".into()));
+        }
+        app.step();
+        assert!(app.changed);
+    }
+
+    #[test]
+    fn a_vendor_s_answer_and_a_held_key_let_through_are_drawn() {
+        let mut app = live_welcome(Vendor::Claude);
+        app.start_welcome(true);
+        app.looked();
+        assert!(app.changed, "the answers");
+        app.changed = false;
+        app.looked();
+        assert!(!app.changed, "nothing more came");
+        app.changed = true;
+        app.vendors[0].1 = Seen::Missing;
+        app.input = ":welcome".into();
+        app.typing = true;
+        app.on_key(key(KeyCode::Enter));
+        app.looked();
+        assert!(app.changed, "still, with more");
         let mut app = App::new(1, 1, 0, 1, Lang::En);
-        app.focus(false, t0);
-        assert!(app.draw_due(t0));
+        let now = Instant::now();
+        app.keys_held = Some((key(KeyCode::Char('2')), now));
+        app.keys_due(now);
+        assert!(!app.changed, "still held");
+        app.keys_due(now + keys::WAIT);
+        assert!(app.changed && app.view == View::Board);
     }
 
     #[test]

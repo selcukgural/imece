@@ -40,6 +40,39 @@ On an M3 Max MacBook Pro, 15 s with `--fast`, two runs each:
 Memory is 6 MiB either way. At the demo's own speed the figures are
 0.09 s and 0.10 MiB in 15 s, too small to tell apart.
 
+**Drawn on a change, never on a timer (user, 2026-11-02: "the right
+one").** The 1 s drawing above still drew the whole screen every tick
+while focused, and once a second while blurred with nothing changed:
+a timer, against the rule `docs/neighbours.md` takes from what voff
+lacks. Now `App::draw_due` draws when something came from the terminal
+(`stirred`, at once, focused or not), or when something the screen shows
+changed: `App::changed`, set by `App::step` from what the engine's step
+says (`Live::step -> bool`: the clock's step, a session's start report,
+a session's event, what git finished (`take_git -> bool`), a suggestion's
+answer (`take_said -> bool`), a call on the bus; the demo's world moves
+on every step), by `App::looked` when a vendor answered and by
+`App::keys_due` when a held key was let through; or when the screen's
+clock moved (`Clock`: the world's tick, the flash on show by when it was
+said, the seconds `grace_left` counts), compared with the clock at the
+last drawing. Focused or without focus reports, a change is drawn at
+once (within the loop's tick, 100 ms live); blurred, a change waits for
+`BLURRED_DRAW` after the last drawing (a rate, not a timer: nothing
+changed, nothing drawn). The lead question at start (`main::ask`) is
+drawn first and after each terminal event, no longer every 200 ms.
+
+Nothing on the screen reads the wall clock but the flash and the grace
+count (both in `Clock`); the rest is the world's tick (5 s live). A
+change the step does not report (a source missed) shows at the next
+tick, five seconds at most, never stale for good. Waking the loop from
+the vendors' threads instead of its 100 ms look (a reader thread turning
+the terminal's events into the same channel) was weighed and left: it
+saves at most 100 ms and ten idle wake-ups a second that draw nothing.
+
+Measured again (15 s, M3 Max): focused at top speed 0.35 s CPU (was
+0.50–0.56), blurred 0.07 s; at the demo's own speed 0.04 s focused (was
+0.09). The demo's world moves every tick, so this is the upper end; a
+live team between turns draws only on the clock's step.
+
 **Not done.** The measurement is not in CI: a shared runner's CPU time
 varies more than the difference it would guard, and the figures are for
 the person to run where they care. Live sessions are not measured (they
