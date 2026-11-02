@@ -1266,6 +1266,7 @@ impl Live {
                 "board" => Ok(self.board(w, from)),
                 "claim" => self.claim(w, from, &args),
                 "hire" => self.hire(w, from, &args),
+                "whoami" => Ok(self.whoami(w, from)),
                 _ => Err(format!("there is no tool {tool:?}")),
             };
             let _ = reply.send(answer);

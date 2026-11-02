@@ -11,9 +11,9 @@ Bir imece ekibi, sizinle konuşan ve iş gerektirdikçe işçi alan bir lider, g
 
 | Rol | Nerede çalışır | Bus'ta ne yapabilir |
 | --- | --- | --- |
-| Lider (`lead`) | Checkout'unuz, yalnız okuma | `send`, `post`, `board`, `run`, `hire` (işçiler) |
-| İşçi (`claude-1`, `codex-2`, …) | HEAD'inizde detached kendi worktree'si | `send`, `post`, `board`, `run`, `claim`, `hire` (yardımcılar) |
-| Yardımcı (`claude-1.1`, …) | İşçisinin worktree'si, işçisinin adını verdiği dosyalar | `send`, `post`, `board`, `run` |
+| Lider (`lead`) | Checkout'unuz, yalnız okuma | `send`, `post`, `board`, `run`, `whoami`, `hire` (işçiler) |
+| İşçi (`claude-1`, `codex-2`, …) | HEAD'inizde detached kendi worktree'si | `send`, `post`, `board`, `run`, `whoami`, `claim`, `hire` (yardımcılar) |
+| Yardımcı (`claude-1.1`, …) | İşçisinin worktree'si, işçisinin adını verdiği dosyalar | `send`, `post`, `board`, `run`, `whoami` |
 | Solo (`solo`, `solo-notes`) | Kendi worktree'si, lideri olmayan bir projede | `send`, `run`, `hire` (yardımcılar) |
 | Araştırmacı | henüz yapılmadı | — |
 

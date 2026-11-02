@@ -11,9 +11,9 @@ An imece team is a leader that talks to you and hires workers as the work needs 
 
 | Role | Where it works | What it may do on the bus |
 | --- | --- | --- |
-| Leader (`lead`) | Your checkout, read only | `send`, `post`, `board`, `run`, `hire` (workers) |
-| Worker (`claude-1`, `codex-2`, …) | Its own worktree, detached at your HEAD | `send`, `post`, `board`, `run`, `claim`, `hire` (helpers) |
-| Helper (`claude-1.1`, …) | Its worker's worktree, the files its worker names | `send`, `post`, `board`, `run` |
+| Leader (`lead`) | Your checkout, read only | `send`, `post`, `board`, `run`, `whoami`, `hire` (workers) |
+| Worker (`claude-1`, `codex-2`, …) | Its own worktree, detached at your HEAD | `send`, `post`, `board`, `run`, `whoami`, `claim`, `hire` (helpers) |
+| Helper (`claude-1.1`, …) | Its worker's worktree, the files its worker names | `send`, `post`, `board`, `run`, `whoami` |
 | Solo (`solo`, `solo-notes`) | Its own worktree, in a project with no leader | `send`, `run`, `hire` (helpers) |
 | Researcher | not built yet | — |
 

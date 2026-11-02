@@ -250,6 +250,97 @@ impl Live {
         }
     }
 
+    /// How many agent `from` has hired that are still here and how many
+    /// it may have, the leader's workers or a worker's (or solo's)
+    /// helpers; why not when it may hire none more. Helpers and
+    /// researchers hire nobody.
+    pub(super) fn hire_room(&self, w: &World, from: AgentId) -> Result<(usize, usize), String> {
+        let hirer = &w.agents[from];
+        match hirer.role {
+            Role::Leader => {
+                let workers = w
+                    .agents
+                    .iter()
+                    .filter(|o| o.project == hirer.project && o.role == Role::Worker && !o.gone)
+                    .count();
+                if self.max_workers == 0 {
+                    return Err("the person runs you without workers (--agents 0); answer \
+                                from what you read"
+                        .into());
+                }
+                if workers >= self.max_workers {
+                    return Err(format!(
+                        "the team is full: {workers} workers, the most the person allowed \
+                         (--agents {}); give the work to one of them",
+                        self.max_workers
+                    ));
+                }
+                Ok((workers, self.max_workers))
+            }
+            Role::Worker | Role::Solo => {
+                let helpers = w.helpers_of(from).count();
+                if self.max_helpers == 0 {
+                    return Err(
+                        "the person runs you without helpers (--helpers 0); do it yourself".into(),
+                    );
+                }
+                if helpers >= self.max_helpers {
+                    return Err(format!(
+                        "you have {helpers} helpers, the most the person allowed (--helpers \
+                         {}); wait for one to send done",
+                        self.max_helpers
+                    ));
+                }
+                Ok((helpers, self.max_helpers))
+            }
+            _ => Err("only the leader and workers hire; ask yours with send".into()),
+        }
+    }
+
+    /// `whoami`'s answer for agent `from`: its name, role and project, who
+    /// it answers to, what is left of the pot, and whether it may hire
+    /// (as `hire` would answer).
+    pub(super) fn whoami(&self, w: &World, from: AgentId) -> String {
+        let a = &w.agents[from];
+        let project = &w.projects[a.project];
+        let role = match a.role {
+            Role::Leader => "the leader",
+            Role::Worker => "a worker",
+            Role::Helper => "a helper",
+            Role::Researcher => "a researcher",
+            Role::Solo => "a solo session the person drives",
+        };
+        let over = match a.parent {
+            Some(p) if a.role == Role::Helper => format!("your worker {}", w.agents[p].name),
+            _ if a.role == Role::Solo => "the person (send to: you)".to_string(),
+            _ if a.role == Role::Leader => "the person (send to: you)".to_string(),
+            _ => format!("the leader {}", w.agents[project.leader].name),
+        };
+        let left = w.budget.saturating_sub(w.spent());
+        let hiring = match self.hire_room(w, from) {
+            Ok((had, cap)) => {
+                let whom = if a.role == Role::Leader {
+                    "workers"
+                } else {
+                    "helpers"
+                };
+                format!(
+                    "yes, {} more {whom} (you have {had} of at most {cap})",
+                    cap - had
+                )
+            }
+            Err(why) => format!("no: {why}"),
+        };
+        format!(
+            "name: {}\nrole: {role}\nproject: {}\nyou answer to: {over}\nbudget left: {} of \
+             {} (one pot for every agent)\nmay hire: {hiring}",
+            a.name,
+            project.name,
+            dollars(left),
+            dollars(w.budget),
+        )
+    }
+
     /// The leader `from` adds a worker, or the worker `from` adds a helper
     /// (the `hire` tool's arguments). The answer names it.
     pub(super) fn hire(&mut self, w: &mut World, from: AgentId, args: &Value) -> Answer {
@@ -260,43 +351,7 @@ impl Live {
             Role::Worker | Role::Solo => Role::Helper,
             _ => return Err("only the leader and workers hire; ask yours with send".into()),
         };
-        // How many there are and how many there may be.
-        let (so_far, cap) = if role == Role::Worker {
-            let workers = w
-                .agents
-                .iter()
-                .filter(|o| o.project == project && o.role == Role::Worker && !o.gone)
-                .count();
-            if self.max_workers == 0 {
-                return Err(
-                    "the person runs you without workers (--agents 0); answer from what you read"
-                        .into(),
-                );
-            }
-            if workers >= self.max_workers {
-                return Err(format!(
-                    "the team is full: {workers} workers, the most the person allowed \
-                     (--agents {}); give the work to one of them",
-                    self.max_workers
-                ));
-            }
-            (workers, self.max_workers)
-        } else {
-            let helpers = w.helpers_of(from).count();
-            if self.max_helpers == 0 {
-                return Err(
-                    "the person runs you without helpers (--helpers 0); do it yourself".into(),
-                );
-            }
-            if helpers >= self.max_helpers {
-                return Err(format!(
-                    "you have {helpers} helpers, the most the person allowed (--helpers {}); \
-                     wait for one to send done",
-                    self.max_helpers
-                ));
-            }
-            (helpers, self.max_helpers)
-        };
+        let (so_far, cap) = self.hire_room(w, from)?;
         let arg = |k: &str| args[k].as_str().map(str::trim).unwrap_or_default();
         let vendor = match arg("vendor") {
             "" => self.of(own).clone(),
@@ -395,6 +450,93 @@ mod tests {
         let got = live.hire(&mut w, 0, &json!({})).unwrap();
         assert!(got.starts_with("claude-5 joined"), "{got}");
         assert_eq!(w.agent_by_name("claude-5"), Some(4));
+    }
+
+    #[test]
+    fn whoami_says_name_role_project_who_is_over_it_the_pot_and_whether_it_may_hire() {
+        let mut w = team(2);
+        let helper = with_helper(&mut w, 1);
+        let mut live = idle_live(4);
+        (live.max_workers, live.max_helpers) = (3, 2);
+        w.agents[1].cost = 2_500;
+        w.paid = 1_000;
+        let pot = "budget left: $0.65 of $1.00 (one pot for every agent)";
+        assert_eq!(
+            live.whoami(&w, 0),
+            format!(
+                "name: lead\nrole: the leader\nproject: repo\nyou answer to: the person \
+                 (send to: you)\n{pot}\nmay hire: yes, 1 more workers (you have 2 of at most 3)"
+            )
+        );
+        assert_eq!(
+            live.whoami(&w, 1),
+            format!(
+                "name: claude-1\nrole: a worker\nproject: repo\nyou answer to: the leader \
+                 lead\n{pot}\nmay hire: yes, 1 more helpers (you have 1 of at most 2)"
+            )
+        );
+        assert_eq!(
+            live.whoami(&w, helper),
+            format!(
+                "name: claude-1.1\nrole: a helper\nproject: repo\nyou answer to: your worker \
+                 claude-1\n{pot}\nmay hire: no: only the leader and workers hire; ask yours \
+                 with send"
+            )
+        );
+        // As hire would answer: the cap reached, or none allowed.
+        live.max_workers = 2;
+        let said = live.whoami(&w, 0);
+        assert!(said.ends_with("may hire: no: the team is full: 2 workers, the most the person allowed (--agents 2); give the work to one of them"), "{said}");
+        live.max_helpers = 1;
+        assert!(
+            live.whoami(&w, 1)
+                .contains("may hire: no: you have 1 helpers")
+        );
+        assert_eq!(live.hire_room(&w, 2), Ok((0, 1)), "the other worker's own");
+        live.max_helpers = 0;
+        assert!(live.whoami(&w, 2).contains("without helpers"));
+        // Spent past the pot: nothing left, never below.
+        w.paid = 20_000;
+        assert!(live.whoami(&w, 2).contains("budget left: $0.00 of $1.00"));
+        w.agents[0].role = Role::Researcher;
+        assert!(
+            live.whoami(&w, 0)
+                .contains("role: a researcher\nproject: repo\nyou answer to: the leader lead")
+        );
+    }
+
+    #[test]
+    fn whoami_is_answered_on_the_bus_and_does_nothing() {
+        let mut w = team(1);
+        let mut live = idle_live(2);
+        let said = call(&mut live, &mut w, 1, "whoami", json!({})).unwrap();
+        assert!(
+            said.starts_with("name: claude-1\nrole: a worker\n"),
+            "{said}"
+        );
+        assert_eq!(w.agents.len(), 2);
+        assert!(w.journal.is_empty());
+    }
+
+    #[test]
+    fn a_solo_answers_to_the_person_and_hires_helpers() {
+        let mut w = team(0);
+        w.agents[0].role = Role::Solo;
+        let mut live = idle_live(1);
+        live.max_helpers = 2;
+        let said = live.whoami(&w, 0);
+        assert!(
+            said.contains("role: a solo session the person drives\n"),
+            "{said}"
+        );
+        assert!(
+            said.contains("you answer to: the person (send to: you)"),
+            "{said}"
+        );
+        assert!(
+            said.ends_with("yes, 2 more helpers (you have 0 of at most 2)"),
+            "{said}"
+        );
     }
 
     #[test]
@@ -582,7 +724,9 @@ mod tests {
             .collect();
         assert_eq!(
             names,
-            ["send", "post", "board", "run", "claim", "hire", "approve"]
+            [
+                "send", "post", "board", "run", "whoami", "claim", "hire", "approve"
+            ]
         );
     }
 
@@ -946,7 +1090,7 @@ mod tests {
         let got = live.hire(&mut w, 0, &json!({})).unwrap();
         assert!(got.starts_with("claude-1 joined"), "{got}");
         // The hire tool offers both.
-        let hire = &tools_of(Role::Leader, &live.vendor_names(), &[], DEFAULT_RUN_TIMEOUT)[4];
+        let hire = &tools_of(Role::Leader, &live.vendor_names(), &[], DEFAULT_RUN_TIMEOUT)[5];
         assert_eq!(
             hire.input["properties"]["vendor"]["enum"],
             json!(["claude", "codex"])

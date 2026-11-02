@@ -1648,7 +1648,10 @@ mod tests {
             .iter()
             .map(|t| t["name"].as_str().unwrap())
             .collect();
-        assert_eq!(names, ["send", "post", "board", "run", "hire", "approve"]);
+        assert_eq!(
+            names,
+            ["send", "post", "board", "run", "whoami", "hire", "approve"]
+        );
         let _ = std::fs::remove_dir_all(&repo);
     }
 

@@ -32,7 +32,7 @@ Ajanlar birbirleriyle ve sizinle, imece'nin kendisinin MCP üzerinden sunduğu a
 
 - Ajan başına bir Unix soketi, yeni açılmış `0700` geçici bir dizinde. Satıcının CLI'si imece'nin kendi ikilisi olan `imece mcp-relay <soket>`'i başlatır; o yalnızca bayt kopyalar. Araçlar imece'nin içinde çalışır.
 - Gönderen, çağrının geldiği sokettir; ajanın söylediği bir ad asla değil. Hiçbir ajan bir başkası ya da siz gibi konuşamaz.
-- Araçlar `send`, `post`, `board`, `run` ve role göre `claim` (işçiler), `hire` (lider işçi, işçi yardımcı işe alır) ve `approve` (yalnız bir Claude oturumu; Claude Code onay gereken bir araç çağrısından önce bunu kendisi çağırır).
+- Araçlar `send`, `post`, `board`, `run`, `whoami` (agent'ın imece'de kim olduğu: adı, rolü, projesi, kime bağlı olduğu, kalan bütçe, işe alıp alamayacağı) ve role göre `claim` (işçiler), `hire` (lider işçi, işçi yardımcı işe alır) ve `approve` (yalnız bir Claude oturumu; Claude Code onay gereken bir araç çağrısından önce bunu kendisi çağırır).
 
 Araçların ne yaptığı [mesajlar ve pano](../concepts/messages-and-board.md) ile [onaylar ve sorular](../concepts/approvals-and-questions.md) sayfalarında.
 
