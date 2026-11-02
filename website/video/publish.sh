@@ -2,13 +2,15 @@
 # Copies the rendered tours into the site: the video, its captions as WebVTT
 # and a poster frame. Usage, from anywhere, after the renders (README.md):
 #
-#   website/video/publish.sh [artifacts dir]   # default ~/RiderProjects/AfterApply/artifacts/promo-video
+#   website/video/publish.sh [artifacts dir] [tours...]   # default ~/RiderProjects/AfterApply/artifacts/promo-video
 set -eu
 here=$(cd "$(dirname "$0")" && pwd)
 out="$here/../static/video"
 from=${1:-$HOME/RiderProjects/AfterApply/artifacts/promo-video}
 mkdir -p "$out"
-for s in tour review team; do
+[ $# -gt 0 ] && shift
+tours=${*:-tour review team find}
+for s in $tours; do
   d="$from/$s"
   [ -f "$d/video.mp4" ] || { echo "no render at $d/video.mp4" >&2; exit 1; }
   # PromoVideo's render is near-lossless (hundreds of MB); a terminal's

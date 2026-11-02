@@ -1,6 +1,6 @@
 # imece's tour videos
 
-Three short tours of imece in English, recorded from imece's real screen
+Four short tours of imece in English, recorded from imece's real screen
 running the simulation (`imece --demo`), so the videos show what the
 terminal shows, at an even pace, and cost nothing to make. Nothing here is
 part of the docs site's build; the finished videos go to
@@ -11,7 +11,7 @@ part of the docs site's build; the finished videos go to
 | `serve.sh` | Starts `ttyd` running `imece --demo` (the release binary, a state directory of its own, so your `imece.sqlite` is never read) on `127.0.0.1`, and `serve.mjs` in front of it. |
 | `serve.mjs` | One origin for the tour: the terminal page from ttyd (websocket included) and the title cards from this folder. It adds a `#corner` span inside the terminal's element, where the tour clicks to type so the pointer stays out of the way. |
 | `card.html`, `card.css`, `card.js` | The opening card (`card.html?t=…&s=…&l=…`); the closing card is PromoVideo's own `card` step. |
-| `scenarios/tour.json`, `review.json`, `team.json` | The scenes, narration and keys, in PromoVideo's format (the tool lives in the AfterApply repository, `tools/PromoVideo`; its README has the schema). |
+| `scenarios/tour.json`, `review.json`, `team.json`, `find.json` | The scenes, narration and keys, in PromoVideo's format (the tool lives in the AfterApply repository, `tools/PromoVideo`; its README has the schema). |
 
 ## How the keys reach the screen
 
@@ -53,7 +53,7 @@ Text-to-Speech (Gemini-TTS), through the gcloud configuration whose project
 has the Text-to-Speech API enabled:
 
 ```sh
-for s in tour review team; do
+for s in tour review team find; do
   CLOUDSDK_ACTIVE_CONFIG_NAME=default dotnet run --project tools/PromoVideo -- render \
     ~/RiderProjects/imece/website/video/scenarios/$s.json
 done
@@ -66,7 +66,8 @@ Output: `~/RiderProjects/AfterApply/artifacts/promo-video/<scenario>/`:
 ## Publish
 
 ```sh
-website/video/publish.sh    # copies the three videos, their captions (vtt) and posters (jpg) into website/static/video/
+website/video/publish.sh    # copies the four videos, their captions (vtt) and posters (jpg) into website/static/video/
+website/video/publish.sh "" find   # only the tours named (an empty first argument keeps the default artifacts folder)
 ```
 
 Then build the site (`cd website && npm run build`) and open the videos page.

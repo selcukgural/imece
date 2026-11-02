@@ -16,9 +16,8 @@
   },
   "music": { "generate": "ambient", "volume": 0.15 },
   "pronounce": {
-    "imece's": "ee-meh-jeh's",
-    "imece": "ee-meh-jeh",
-    "selcukgural.github.io/imece": "selcuk gural dot github dot I O slash ee-meh-jeh",
+    "imece's": "imeje's",
+    "imece": "imeje",
     "worktree": "work-tree",
     "worktrees": "work-trees"
   },
@@ -144,7 +143,7 @@
     {
       "id": "asks",
       "chapter": "Commands and questions",
-      "narration": "Let the simulation run again. Changes are not the only thing that waits for you. A flag is a shell command a vendor would have asked you about: routine ones, the build and the tests, run on their own; the rest wait here, shown whole, for a to allow or r to refuse. A question mark is a question an agent asked you. Capital S puts the item at hand off and opens the next.",
+      "narration": "Let the simulation run again. Changes are not the only thing that waits for you. A flag is a command or an edit a vendor would have asked you about: routine commands, the build and the tests, run on their own; the rest wait here, shown whole, for a to allow or r to refuse. A question mark is a question an agent asked you. Capital S puts the item at hand off and opens the next.",
       "steps": [
         { "action": "type", "target": "#corner", "text": " ", "delayMs": 0 },
         { "action": "wait", "seconds": 1 },
@@ -164,10 +163,10 @@
     {
       "id": "closing",
       "chapter": "Learn more",
-      "narration": "The scenario, step by step, with every key: selcukgural.github.io/imece.",
+      "narration": "That is the gate: nothing reaches your checkout without your yes.",
       "tail": 1.5,
       "steps": [
-        { "action": "card", "title": "imece", "text": "selcukgural.github.io/imece" },
+        { "action": "card", "title": "imece", "text": "github.com/selcukgural/imece" },
         { "action": "wait", "seconds": 3 }
       ]
     }

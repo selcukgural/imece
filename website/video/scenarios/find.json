@@ -1,0 +1,173 @@
+// imece's fourth tour: finding your way on a busy screen. See tour.json for
+// how the scenarios work and ../README.md for the render.
+{
+  "title": "imece — finding your way",
+  "language": "en",
+  "baseUrl": "http://127.0.0.1:8791",
+  "viewport": { "width": 1920, "height": 1080, "deviceScaleFactor": 1 },
+  "output": { "width": 1920, "height": 1080, "fps": 30 },
+  "colorScheme": "dark",
+  "voice": {
+    "provider": "google",
+    "name": "Charon",
+    "model": "gemini-2.5-pro-tts",
+    "prompt": "Read in a calm, warm and clear product-tour voice, at a natural pace.",
+    "rate": 1.0
+  },
+  "music": { "generate": "ambient", "volume": 0.15 },
+  "pronounce": {
+    "imece's": "imeje's",
+    "imece": "imeje",
+    "codex-3": "codex three",
+    "worktree": "work-tree",
+    "worktrees": "work-trees"
+  },
+  "scenes": [
+    {
+      "id": "opening",
+      "chapter": "Finding your way",
+      "minSeconds": 4.5,
+      "steps": [
+        { "action": "goto", "path": "/card.html?t=imece&s=Finding%20your%20way" },
+        { "action": "hover", "target": "#corner" }
+      ]
+    },
+    {
+      "id": "jump",
+      "chapter": "Go to anyone",
+      "narration": "A dozen agents in two projects, and more as the leaders hire. The ampersand opens the jump line: every agent and every project, the ones that need you first, each with what it is doing. A few letters of a name narrow it, a digit takes the nth at once, and enter goes there, unfolding its project on the way.",
+      "steps": [
+        { "action": "goto", "path": "/" },
+        { "action": "wait", "seconds": 4 },
+        { "action": "type", "target": "#corner", "text": "&", "delayMs": 0 },
+        { "action": "wait", "seconds": 5 },
+        { "action": "type", "target": "#corner", "text": "codex-3", "delayMs": 200 },
+        { "action": "wait", "seconds": 3 },
+        { "action": "press", "key": "Enter" },
+        { "action": "wait", "seconds": 3 }
+      ]
+    },
+    {
+      "id": "focus",
+      "chapter": "An agent's screen",
+      "narration": "Let us pause the simulation, so the rows hold still. Enter opens its screen: the card and what it has cost, how full its context window is, how busy it was over the last two minutes, and its own to-do list, step by step. Below, its card's story.",
+      "steps": [
+        { "action": "type", "target": "#corner", "text": " ", "delayMs": 0 },
+        { "action": "wait", "seconds": 2 },
+        { "action": "press", "key": "Enter" },
+        { "action": "wait", "seconds": 11 },
+        { "action": "press", "key": "Escape" },
+        { "action": "wait", "seconds": 1 }
+      ]
+    },
+    {
+      "id": "peek",
+      "chapter": "A look without leaving",
+      "narration": "Capital K peeks instead: the same screen in a window over the salon, so you keep your place. j and k step from agent to agent; escape closes it.",
+      "steps": [
+        { "action": "type", "target": "#corner", "text": "K", "delayMs": 0 },
+        { "action": "wait", "seconds": 4 },
+        { "action": "type", "target": "#corner", "text": "j", "delayMs": 0 },
+        { "action": "wait", "seconds": 3 },
+        { "action": "type", "target": "#corner", "text": "j", "delayMs": 0 },
+        { "action": "wait", "seconds": 3 },
+        { "action": "press", "key": "Escape" },
+        { "action": "wait", "seconds": 1 }
+      ]
+    },
+    {
+      "id": "hints",
+      "chapter": "A letter on every row",
+      "narration": "Capital F puts a letter on every row you can select: the agents, the items waiting for you, the lines of the journal. Type the letter and you are there. Type it as a capital, and it opens too.",
+      "steps": [
+        { "action": "type", "target": "#corner", "text": "F", "delayMs": 0 },
+        { "action": "wait", "seconds": 4 },
+        { "action": "type", "target": "#corner", "text": "h", "delayMs": 0 },
+        { "action": "wait", "seconds": 3 },
+        { "action": "type", "target": "#corner", "text": "F", "delayMs": 0 },
+        { "action": "wait", "seconds": 3 },
+        { "action": "type", "target": "#corner", "text": "J", "delayMs": 0 },
+        { "action": "wait", "seconds": 4 },
+        { "action": "press", "key": "Escape" },
+        { "action": "wait", "seconds": 1 }
+      ]
+    },
+    {
+      "id": "settle",
+      "chapter": "Out of the way",
+      "narration": "s settles the row at hand: it leaves the salon until it needs you again, and the salon's title counts what is settled. A row that needs you does not go. Colon unsettle, or the jump line, brings it back.",
+      "steps": [
+        { "action": "type", "target": "#corner", "text": "s", "delayMs": 0 },
+        { "action": "wait", "seconds": 3 },
+        { "action": "type", "target": "#corner", "text": "k", "delayMs": 0 },
+        { "action": "type", "target": "#corner", "text": "s", "delayMs": 0 },
+        { "action": "wait", "seconds": 5 },
+        { "action": "type", "target": "#corner", "text": ":unsettle", "delayMs": 100 },
+        { "action": "press", "key": "Enter" },
+        { "action": "wait", "seconds": 3 }
+      ]
+    },
+    {
+      "id": "choose",
+      "chapter": "Choose and copy",
+      "narration": "Let the simulation run again. Your conversation with an agent is v from its row; here, the leader's reply to a request. Inside it, v chooses lines: j and k grow the choice, w and b go word by word, and y copies them as plain text, cleaned of anything that should not leave the screen. m marks a line to come back to with the apostrophe; marks are kept between runs.",
+      "steps": [
+        { "action": "type", "target": "#corner", "text": " ", "delayMs": 0 },
+        { "action": "type", "target": "#corner", "text": "&lead-s", "delayMs": 150 },
+        { "action": "press", "key": "Enter" },
+        { "action": "type", "target": "#corner", "text": "/", "delayMs": 0 },
+        { "action": "type", "target": "#corner", "text": "a status page for the API", "delayMs": 60 },
+        { "action": "press", "key": "Enter" },
+        { "action": "wait", "seconds": 4 },
+        { "action": "type", "target": "#corner", "text": "v", "delayMs": 0 },
+        { "action": "wait", "seconds": 4 },
+        { "action": "type", "target": "#corner", "text": "v", "delayMs": 0 },
+        { "action": "wait", "seconds": 2 },
+        { "action": "type", "target": "#corner", "text": "k", "delayMs": 0 },
+        { "action": "wait", "seconds": 2 },
+        { "action": "type", "target": "#corner", "text": "y", "delayMs": 0 },
+        { "action": "wait", "seconds": 3 },
+        { "action": "type", "target": "#corner", "text": "m", "delayMs": 0 },
+        { "action": "wait", "seconds": 3 },
+        { "action": "press", "key": "Escape" }
+      ]
+    },
+    {
+      "id": "archive",
+      "chapter": "Put a project away",
+      "narration": "When a project's work is done, colon archive puts it away. For ten seconds, u still keeps it; then its agents go to sleep with their sessions and their mail, and a fresh project of the same name takes its place.",
+      "steps": [
+        { "action": "type", "target": "#corner", "text": ":archive status page spike", "delayMs": 80 },
+        { "action": "press", "key": "Enter" },
+        { "action": "wait", "seconds": 13 }
+      ]
+    },
+    {
+      "id": "archives",
+      "chapter": "The archives",
+      "narration": "Capital A lists the archives by checkout. Enter opens one as it was, read-only: its salon, its journal, what still waits. Escape comes back, and r restores it, asleep, while the fresh project gives way.",
+      "steps": [
+        { "action": "type", "target": "#corner", "text": "A", "delayMs": 0 },
+        { "action": "wait", "seconds": 3 },
+        { "action": "type", "target": "#corner", "text": "jj", "delayMs": 400 },
+        { "action": "press", "key": "Enter" },
+        { "action": "wait", "seconds": 6 },
+        { "action": "press", "key": "Escape" },
+        { "action": "type", "target": "#corner", "text": "A", "delayMs": 0 },
+        { "action": "type", "target": "#corner", "text": "jj", "delayMs": 400 },
+        { "action": "type", "target": "#corner", "text": "r", "delayMs": 0 },
+        { "action": "wait", "seconds": 5 }
+      ]
+    },
+    {
+      "id": "closing",
+      "chapter": "Learn more",
+      "narration": "And every key can be bound to one of your own, in a key file.",
+      "tail": 1.5,
+      "steps": [
+        { "action": "card", "title": "imece", "text": "github.com/selcukgural/imece" },
+        { "action": "wait", "seconds": 3 }
+      ]
+    }
+  ]
+}

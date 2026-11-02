@@ -1,14 +1,14 @@
 ---
 title: Video tours
 sidebar_label: Video tours
-description: Three short tours of imece, recorded from its real screen on the simulation, with chapters and captions.
+description: Four short tours of imece, recorded from its real screen on the simulation, with chapters and captions.
 ---
 
 import useBaseUrl from '@docusaurus/useBaseUrl';
 
 # Video tours
 
-Three short tours, recorded from imece's real screen running the
+Four short tours, recorded from imece's real screen running the
 [simulation](getting-started/demo.md), so they show the same screens you
 see, at an even pace. The videos are in English; the captions can be turned
 on in the player, and every chapter links to the page that explains it.
@@ -88,6 +88,31 @@ the screen in Turkish, the help window and its filter.
 | The `:` commands and their values | [`:` commands](reference/commands.md) |
 | Themes and the language | [Themes and language](screen/themes-and-language.md) |
 | The help window | [Keys](screen/keyboard.md) |
+
+## 4 · Finding your way
+
+The jump line, an agent's screen with its to-do list, a peek over the salon,
+hint letters, a row settled out of the way, lines of a conversation chosen
+and copied, a mark, and a project archived, opened read-only and brought
+back.
+
+<video
+  controls
+  preload="metadata"
+  playsInline
+  poster={useBaseUrl('/video/imece-find.jpg')}
+  style={{ width: '100%', borderRadius: '12px', background: '#000' }}>
+  <source src={useBaseUrl('/video/imece-find.mp4')} type="video/mp4" />
+  <track kind="captions" srcLang="en" label="English" src={useBaseUrl('/video/imece-find.vtt')} default />
+</video>
+
+| Chapter | Where to read more |
+| --- | --- |
+| The jump line (`&`) | [Keys](screen/keyboard.md) |
+| An agent's screen: context, activity, to-do list | [The salon](screen/salon.md) |
+| A peek (`K`), hint letters (`F`), settling a row (`s`) | [The salon](screen/salon.md) |
+| Choosing and copying lines, marks | [Conversations](screen/conversations.md) |
+| `:archive`, the archives (`A`), restoring one | [Sessions](concepts/sessions.md) |
 
 :::note
 
