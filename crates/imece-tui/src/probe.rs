@@ -6,7 +6,10 @@
 //! as `COLORFGBG` says. It also asks whether the terminal speaks the
 //! kitty keyboard protocol (`CSI ? u`, answered `CSI ? flags u` by kitty,
 //! Ghostty, WezTerm with it on, foot, Alacritty and iTerm2): only then
-//! can shift-enter be told from enter.
+//! can shift-enter be told from enter. And it asks the terminal's name and
+//! version (XTVERSION, `CSI > 0 q`, answered `DCS > | name ST` by kitty,
+//! Ghostty, iTerm2, WezTerm, foot, xterm and tmux), which decides how a
+//! notice and the tab's progress are sent (`screen::Who`).
 //!
 //! The queries are followed by a cursor position report (`CSI 6 n`),
 //! which every terminal answers, and the reading goes on until that
@@ -23,6 +26,7 @@ use std::time::{Duration, Instant};
 
 use ratatui::crossterm::terminal::{disable_raw_mode, enable_raw_mode};
 
+use crate::screen::Who;
 use crate::theme::{Back, Rgb};
 
 /// How long the terminal has to answer, all in all; only a terminal that
@@ -35,6 +39,8 @@ pub struct Said {
     pub back: Back,
     /// Whether it speaks the kitty keyboard protocol.
     pub keys: bool,
+    /// Its name and version, when it answered XTVERSION.
+    pub who: Option<Who>,
 }
 
 /// What the terminal on stdin and stdout says about itself.
@@ -46,7 +52,11 @@ pub fn terminal() -> Said {
     // SAFETY: isatty only reads the descriptor's state.
     let tty = unsafe { libc::isatty(0) == 1 && libc::isatty(1) == 1 };
     if !tty || std::env::var("TERM").is_ok_and(|t| t == "dumb") {
-        return Said { back, keys: false };
+        return Said {
+            back,
+            keys: false,
+            who: None,
+        };
     }
     let reply = ask().unwrap_or_default();
     let (bg, fg) = parse(&reply);
@@ -58,6 +68,7 @@ pub fn terminal() -> Said {
     Said {
         back,
         keys: kitty_keys(&reply),
+        who: xtversion(&reply),
     }
 }
 
@@ -93,7 +104,7 @@ fn ask() -> io::Result<Vec<u8>> {
 fn asked() -> io::Result<Vec<u8>> {
     {
         let mut out = io::stdout();
-        out.write_all(b"\x1b]11;?\x1b\\\x1b]10;?\x1b\\\x1b[?u\x1b[6n")?;
+        out.write_all(b"\x1b]11;?\x1b\\\x1b]10;?\x1b\\\x1b[?u\x1b[>0q\x1b[6n")?;
         out.flush()?;
         let mut reply = Vec::new();
         let deadline = Instant::now() + WAIT;
@@ -160,6 +171,15 @@ fn kitty_keys(reply: &[u8]) -> bool {
     })
 }
 
+/// The terminal's name and version in its XTVERSION answer, `ESC P > |
+/// text ESC \` (or ended by BEL).
+fn xtversion(reply: &[u8]) -> Option<Who> {
+    let text = String::from_utf8_lossy(reply);
+    let rest = &text[text.find("\x1bP>|")? + 4..];
+    let end = rest.find(['\x1b', '\x07'])?;
+    Who::parse(&rest[..end])
+}
+
 /// The background and foreground in the replies, which look like
 /// `ESC ] 11 ; rgb:RRRR/GGGG/BBBB ESC \`.
 fn parse(reply: &[u8]) -> (Option<Rgb>, Option<Rgb>) {
@@ -198,6 +218,27 @@ fn colorfgbg(v: &str) -> Option<bool> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_terminal_s_name_comes_from_its_xtversion_answer() {
+        // kitty's own answer, as it gave it (probe, 2026-11-02).
+        let kitty = b"\x1b]11;rgb:2828/2a2a/3636\x1b\\\x1bP>|kitty(0.49.2)\x1b\\\x1b[12;1R";
+        assert_eq!(
+            xtversion(kitty),
+            Some(Who {
+                name: "kitty".into(),
+                version: Some([0, 49, 2])
+            })
+        );
+        assert!(done(kitty));
+        let bel = xtversion(b"\x1bP>|ghostty 1.4.0\x07").unwrap();
+        assert!(bel.is("ghostty", [1, 4, 0]), "ended by BEL");
+        assert_eq!(xtversion(b"\x1bP>|tmux 3.8\x1b\\").unwrap().name, "tmux");
+        assert_eq!(xtversion(b"\x1b[12;1R"), None, "Terminal.app: no answer");
+        assert_eq!(xtversion(b"\x1bP>|kitty(0.49"), None, "not ended");
+        assert_eq!(xtversion(b"\x1bP>|\x1b\\"), None, "no name");
+        assert_eq!(xtversion(b"\x1bP1$r0m\x1b\\"), None, "another DCS");
+    }
 
     #[test]
     fn the_reading_ends_with_the_cursor_position_report_and_not_before() {

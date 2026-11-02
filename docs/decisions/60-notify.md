@@ -40,3 +40,8 @@ without `focus-events on`) never rings, and never rings wrongly either:
 without a blur nothing is pending. Not done: a notification that opens
 the terminal when clicked (OSC 777/99 have no such thing portable), a
 per-kind choice (a bell for questions only), a sound of imece's own.
+
+Since record 83 (notice styles) `text` is sent the way the terminal
+shows it best, by its own name (XTVERSION): kitty's OSC 99 (a title,
+urgency, sound, and a click that opens what it was about), Ghostty's OSC
+777, OSC 9 through tmux's passthrough, else OSC 9 as above.

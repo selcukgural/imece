@@ -444,7 +444,10 @@ fn main() -> std::io::Result<()> {
         said.back,
         theme::truecolor(std::env::var("COLORTERM").ok().as_deref()),
     );
-    let progress = screen::shows_progress(|k| std::env::var(k).ok());
+    // Its own name decides how the tab's progress and a notice are sent.
+    let var = |k: &str| std::env::var(k).ok();
+    let progress = screen::shows_progress(said.who.as_ref(), var);
+    let style = notify::Style::of(said.who.as_ref(), var);
     let mut terminal = screen::init(said.keys, progress).inspect_err(|_| screen::restore())?;
     let mut app = if args.demo {
         // The simulation's clock says 14:00 at its start, on today's date.
@@ -548,7 +551,7 @@ fn main() -> std::io::Result<()> {
     app.primary = saved.lead;
     app.notify = saved.notify.unwrap_or_default();
     app.awake.on = args.awake;
-    let result = run(&mut terminal, &mut app, &state, progress);
+    let result = run(&mut terminal, &mut app, &state, progress, style);
     // A :close or :forget still counting down was asked for: it happens.
     app.end_grace();
     // The last word before the sessions end: what every agent had in hand,
@@ -596,6 +599,10 @@ fn ask(
     }
 }
 
+/// How long a click report's next event may take to come after the one
+/// before it: the terminal writes it at once, a person never types it.
+const REPORT_WAIT: Duration = Duration::from_millis(20);
+
 /// Set by SIGTERM, SIGHUP (the terminal went away) and SIGINT from outside.
 static SIGNALLED: AtomicBool = AtomicBool::new(false);
 
@@ -619,11 +626,14 @@ fn run(
     app: &mut app::App,
     state: &std::path::Path,
     progress: bool,
+    style: notify::Style,
 ) -> std::io::Result<()> {
     let mut last = Instant::now();
     let mut title = screen::Title::default();
     let mut cursor = screen::Cursor::default();
     let mut tab = screen::Tab::new(progress);
+    // Events read with a report's start and found to be keys after all.
+    let mut queued: std::collections::VecDeque<Event> = std::collections::VecDeque::new();
     while !app.quit && !SIGNALLED.load(Ordering::SeqCst) {
         app.looked();
         // Drawn when something changed; in another window, less often.
@@ -645,12 +655,47 @@ fn run(
         )?;
         tab.show(&mut std::io::stdout(), ladder)?;
         let timeout = app.tick_interval().saturating_sub(last.elapsed());
-        let ready = match event::poll(timeout) {
-            Ok(ready) => ready,
-            Err(e) if e.kind() == ErrorKind::Interrupted => continue,
-            Err(e) => return Err(e),
+        let event = match queued.pop_front() {
+            Some(e) => Some(e),
+            None => {
+                let ready = match event::poll(timeout) {
+                    Ok(ready) => ready,
+                    Err(e) if e.kind() == ErrorKind::Interrupted => continue,
+                    Err(e) => return Err(e),
+                };
+                let fresh = if ready { Some(event::read()?) } else { None };
+                // kitty's report of a click on a notification comes as
+                // keys (alt-], 9, 9, ;, …): what came with it is read, and
+                // a report is taken whole, never typed.
+                match fresh {
+                    Some(e) if style == notify::Style::Kitty && notify::opens_report(&e) => {
+                        let mut came = vec![e];
+                        while came.len() < notify::REPORT_MAX
+                            && notify::report(&came).is_none()
+                            && event::poll(REPORT_WAIT)?
+                        {
+                            came.push(event::read()?);
+                        }
+                        match notify::report(&came) {
+                            Some((taken, id)) => {
+                                if let Some(id) = id {
+                                    app.clicked(id);
+                                }
+                                app.stirred = true;
+                                queued.extend(came.drain(taken..));
+                                None
+                            }
+                            None => {
+                                let first = came.remove(0);
+                                queued.extend(came);
+                                Some(first)
+                            }
+                        }
+                    }
+                    other => other,
+                }
+            }
         };
-        let event = if ready { Some(event::read()?) } else { None };
         app.stirred |= event.is_some();
         if let Some(Event::Paste(text)) = &event {
             app.paste(text);
@@ -715,8 +760,8 @@ fn run(
             last = Instant::now();
         }
         // In another window: a word when something came to wait.
-        if let Some(body) = app.notices(Instant::now()) {
-            notify::ring(&mut std::io::stdout(), app.notify, &body)?;
+        if let Some(word) = app.notices(Instant::now()) {
+            notify::ring(&mut std::io::stdout(), app.notify, style, &word)?;
         }
     }
     Ok(())

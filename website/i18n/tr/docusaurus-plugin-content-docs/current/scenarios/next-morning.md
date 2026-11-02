@@ -138,7 +138,7 @@ Sayılar türe göre yeni günlük satırları ve şu an sizi bekleyenlerdir; al
  imece · codex-1 bitirdi: bir değişiklik seni bekliyor
 ```
 
-Aynı anda birkaçı tek zil ya da sayıyla tek bildirimdir. Yalın `:notify` sırayla döner: off, bell, text, off; seçim hatırlanır. Özetle aynı odak bildirimlerini ister, metin için de OSC 9 bilen bir terminal (iTerm2, WezTerm, Ghostty; başka yerde `bell`).
+Aynı anda birkaçı tek zil ya da sayıyla tek bildirimdir. Yalın `:notify` sırayla döner: off, bell, text, off; seçim hatırlanır. Özetle aynı odak bildirimlerini ister, metin için de bildirim gösteren bir terminal (iTerm2, WezTerm, Ghostty, kitty; başka yerde `bell`). kitty'de bildirime tıklayınca neyle ilgiliyse o açılır.
 
 ## 6. İşaretlerle yer tutun
 

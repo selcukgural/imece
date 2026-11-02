@@ -77,6 +77,10 @@ pub const FOCUS_AWAY: Duration = Duration::from_secs(180);
 /// than live's tick.
 pub const BLURRED_DRAW: Duration = Duration::from_secs(1);
 
+/// How many notifications sent are remembered for a click on one: more
+/// than can pile up in a desktop's list in a sitting away.
+pub const NOTICED: usize = 16;
+
 /// What the screen shows of time: the world's clock, the flash on show
 /// (by when it was said) and the seconds a `:close` or `:forget` still
 /// waits. A drawing is due when it moved.
@@ -890,6 +894,12 @@ pub struct App {
     /// (`:notify`), and what rang already.
     pub notify: Notify,
     notices: notify::Notices,
+    /// The notifications sent, newest last, each with its number and what
+    /// it was about, so kitty's report of a click opens that
+    /// ([`App::clicked`]); the last [`NOTICED`]. The number the next one
+    /// gets.
+    noticed: Vec<(u64, Vec<Note>)>,
+    notice_count: u64,
 }
 
 impl App {
@@ -1017,6 +1027,8 @@ impl App {
             awake: crate::awake::Awake::new(false, crate::awake::command(std::process::id())),
             notify: Notify::Off,
             notices: notify::Notices::default(),
+            noticed: Vec::new(),
+            notice_count: 0,
         }
     }
 
@@ -2376,6 +2388,12 @@ impl App {
             self.flash(self.lang.text().nothing_needed);
             return;
         };
+        self.open_waiting(i);
+    }
+
+    /// Item `i` waiting for the person, selected in the salon's waiting
+    /// panel and opened as `enter` opens it.
+    fn open_waiting(&mut self, i: usize) {
         self.card = None;
         self.thread = None;
         self.view = View::Salon;
@@ -4421,7 +4439,7 @@ impl App {
     /// terminal had no focus and is still there [`notify::AFTER`] later,
     /// once each; several at once as a count. Nothing while `:notify` is
     /// off, in the window, or for what was on screen before leaving.
-    pub fn notices(&mut self, now: Instant) -> Option<String> {
+    pub fn notices(&mut self, now: Instant) -> Option<notify::Word> {
         if self.notify == Notify::Off {
             return None;
         }
@@ -4445,10 +4463,47 @@ impl App {
             .collect();
         let due = self.notices.due(&waiting, self.blurred.is_some(), now);
         let t = self.lang.text();
-        match due[..] {
-            [] => None,
-            [one] => Some(ui::words::notice(self.lang, &self.world, one)),
-            _ => Some(fill(t.notify_many, &[&due.len().to_string()])),
+        let body = match due[..] {
+            [] => return None,
+            [one] => ui::words::notice(self.lang, &self.world, one),
+            _ => fill(t.notify_many, &[&due.len().to_string()]),
+        };
+        // Louder for what is stuck or failed.
+        let loud = due.iter().any(|&n| match n {
+            Note::Stuck(_) => true,
+            Note::Item(i) => self.world.inbox[i].kind == InboxKind::Fault,
+        });
+        self.notice_count += 1;
+        let id = self.notice_count;
+        self.noticed.push((id, due));
+        let over = self.noticed.len().saturating_sub(NOTICED);
+        self.noticed.drain(..over);
+        Some(notify::Word { body, id, loud })
+    }
+
+    /// kitty reported notification `id` clicked: what it was about opens,
+    /// over whatever window was open: the item that waits, the agent that
+    /// is stuck, or for several the next item waiting (`W`). A number imece
+    /// did not send, or one sent too long ago, does nothing.
+    pub fn clicked(&mut self, id: u64) {
+        let Some((_, notes)) = self.noticed.iter().find(|(n, _)| *n == id).cloned() else {
+            return;
+        };
+        self.viewing = None;
+        self.help = false;
+        self.archives = None;
+        self.peek = None;
+        self.hints = None;
+        self.news.clear();
+        self.welcome = false;
+        self.digest = None;
+        self.left_off = None;
+        self.leaving = false;
+        let open = |i: usize| self.world.inbox.get(i).is_some_and(|x| x.open);
+        match notes[..] {
+            [Note::Item(i)] if open(i) => self.open_waiting(i),
+            [Note::Stuck(a)] => self.go_agent(a),
+            _ => self.next_waiting(false),
         }
     }
 
@@ -9745,8 +9800,13 @@ mod tests {
         assert_eq!(app.notices(at(104)), None, "under the wait");
         let name = app.world.agents[3].name.clone();
         assert_eq!(
-            app.notices(at(105)).as_deref(),
-            Some(format!("imece · {name} asks you").as_str())
+            app.notices(at(105)),
+            Some(notify::Word {
+                body: format!("imece · {name} asks you"),
+                id: 1,
+                loud: false,
+            }),
+            "numbered from 1; a question is not loud"
         );
         assert_eq!(app.notices(at(200)), None, "once");
         // Its question answered while away: no news, and an idle agent
@@ -9767,8 +9827,13 @@ mod tests {
         assert_eq!(app.world.inbox[0].agent, 1);
         assert_eq!(app.notices(at(300)), None);
         assert_eq!(
-            app.notices(at(305)).as_deref(),
-            Some("imece · 2 things wait for you")
+            app.notices(at(305)),
+            Some(notify::Word {
+                body: "imece · 2 things wait for you".into(),
+                id: 2,
+                loud: true,
+            }),
+            "an agent stuck among them: loud"
         );
         // Back in the window: what was about to ring is dropped.
         app.world.inbox.push(item(InboxKind::Reply, 2));
@@ -9782,6 +9847,112 @@ mod tests {
         assert_eq!(app.notices(at(600)), None);
         app.world.inbox.last_mut().unwrap().open = false;
         assert_eq!(app.notices(at(700)), None);
+    }
+
+    #[test]
+    fn a_click_on_a_notification_opens_what_it_was_about() {
+        let mut app = waiting(&[InboxKind::Change]);
+        let t0 = Instant::now();
+        let at = |s: u64| t0 + Duration::from_secs(s);
+        let item = |kind, agent| InboxItem {
+            kind,
+            agent,
+            detail: "x".into(),
+            researcher: None,
+            open: true,
+            tick: 0,
+            card: None,
+        };
+        app.command("notify text");
+        app.focus(true, at(0));
+        assert_eq!(app.notices(at(1)), None);
+        app.focus(false, at(2));
+        // One question: its notification opens it.
+        app.world.inbox.push(item(InboxKind::Question, 3));
+        let q = app.world.inbox.len() - 1;
+        assert_eq!(app.notices(at(3)), None);
+        let asked = app.notices(at(9)).unwrap();
+        // A fault is loud on its own.
+        app.world.inbox.push(item(InboxKind::Fault, 2));
+        assert_eq!(app.notices(at(10)), None);
+        let fault = app.notices(at(16)).unwrap();
+        assert!(fault.loud && !asked.loud);
+        assert_eq!(fault.id, asked.id + 1);
+        // Agent 0 stuck, alone.
+        app.world.agents[0].status = Status::Blocked;
+        assert_eq!(app.notices(at(17)), None);
+        let stuck = app.notices(at(23)).unwrap();
+        assert!(stuck.loud);
+        // Over windows that would hide it.
+        app.help = true;
+        app.peek = Some(1);
+        app.welcome = true;
+        app.leaving = true;
+        app.archives = Some(Browser::new(&app.world, Vec::new()));
+        app.viewing = Some(Box::new(App::new(1, 1, 0, 1, Lang::En)));
+        app.clicked(asked.id);
+        assert!(!app.help && app.peek.is_none() && !app.welcome && !app.leaving);
+        assert!(app.archives.is_none() && app.viewing.is_none());
+        assert_eq!(app.waiting_at, Some(q), "the question it was about");
+        assert_eq!((app.view, app.pane), (View::Salon, Pane::Inbox));
+        app.clicked(stuck.id);
+        assert_eq!(app.selected, Sel::Agent(0), "the stuck agent");
+        // The question answered meanwhile: the next item waiting instead.
+        app.world.inbox[q].open = false;
+        app.waiting_at = None;
+        app.clicked(asked.id);
+        assert_ne!(app.waiting_at, Some(q));
+        assert!(app.waiting_at.is_some(), "{:?}", app.waiting_at);
+        // A number imece did not send does nothing.
+        app.selected = Sel::Agent(2);
+        app.help = true;
+        app.clicked(999);
+        assert!(app.help && app.selected == Sel::Agent(2));
+        // Only the last NOTICED are kept.
+        for n in 0..NOTICED + 2 {
+            app.noticed.push((100 + n as u64, vec![Note::Stuck(1)]));
+        }
+        let over = app.noticed.len() - NOTICED;
+        app.noticed.drain(..over);
+        app.clicked(100);
+        assert_eq!(app.selected, Sel::Agent(2), "forgotten");
+        app.clicked(101 + NOTICED as u64);
+        assert_eq!(app.selected, Sel::Agent(1));
+    }
+
+    #[test]
+    fn several_notices_at_once_are_one_that_opens_the_next_waiting() {
+        let mut app = waiting(&[InboxKind::Change, InboxKind::Question]);
+        let t0 = Instant::now();
+        let at = |s: u64| t0 + Duration::from_secs(s);
+        app.command("notify text");
+        app.focus(false, at(0));
+        // The two items came while away: one notice for both.
+        let word = app.notices(at(1));
+        assert_eq!(word, None);
+        let word = app.notices(at(7)).unwrap();
+        assert!(word.body.contains('2'), "{}", word.body);
+        app.help = true;
+        app.clicked(word.id);
+        assert!(!app.help);
+        assert!(app.waiting_at.is_some());
+        // The list keeps NOTICED notices, the oldest going first.
+        for n in 0..NOTICED + 3 {
+            app.world.inbox.push(InboxItem {
+                kind: InboxKind::Reply,
+                agent: n % 4,
+                detail: "x".into(),
+                researcher: None,
+                open: true,
+                tick: 0,
+                card: None,
+            });
+            let s = 10 + 10 * n as u64;
+            assert_eq!(app.notices(at(s)), None);
+            assert!(app.notices(at(s + 6)).is_some());
+        }
+        assert_eq!(app.noticed.len(), NOTICED);
+        assert_eq!(app.noticed[0].0, word.id + 4, "the oldest gone");
     }
 
     #[test]

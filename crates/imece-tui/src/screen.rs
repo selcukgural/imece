@@ -268,20 +268,69 @@ impl Progress {
     }
 }
 
-/// Whether the terminal is known to show a tab's progress, from what
-/// `var` (the environment) says. OSC 9 is a notice in older terminals, so
-/// only an allow-list gets it: Windows Terminal (`WT_SESSION`), Ghostty
-/// from 1.2 and iTerm2 from 3.6.6 (`TERM_PROGRAM` and its version, or
-/// `LC_TERMINAL`, which iTerm2 also sends over ssh). Never inside tmux,
-/// which would not pass it on. `IMECE_PROGRESS=on|off` says it outright.
-pub fn shows_progress(var: impl Fn(&str) -> Option<String>) -> bool {
+/// The terminal as it names itself in its answer to XTVERSION (`CSI > 0
+/// q`, asked at start by `probe`): `kitty(0.49.2)`, `ghostty 1.4.0`,
+/// `iTerm2 3.7.6`, `tmux 3.8`. Its own answer, unlike `TERM_PROGRAM`,
+/// which a terminal started from another one inherits.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Who {
+    /// The name, in lower case.
+    pub name: String,
+    /// Its version's first three numbers; none when it has none.
+    pub version: Option<[u32; 3]>,
+}
+
+impl Who {
+    /// The answer's text (between `DCS > |` and `ST`) as a name and a
+    /// version: the name runs to the first space or parenthesis.
+    pub fn parse(text: &str) -> Option<Who> {
+        let text = text.trim();
+        let end = text.find([' ', '(']).unwrap_or(text.len());
+        let name = text[..end].to_ascii_lowercase();
+        if name.is_empty() {
+            return None;
+        }
+        let rest = text[end..].trim_start_matches([' ', '(']);
+        Some(Who {
+            name,
+            version: version_of(rest),
+        })
+    }
+
+    /// Named `name`, at `least` or later.
+    pub fn is(&self, name: &str, least: [u32; 3]) -> bool {
+        self.name == name && self.version.is_some_and(|v| v >= least)
+    }
+}
+
+/// Whether imece runs inside tmux: it says so, or `TMUX` does.
+pub fn in_tmux(who: Option<&Who>, var: &impl Fn(&str) -> Option<String>) -> bool {
+    who.is_some_and(|w| w.name == "tmux") || var("TMUX").is_some()
+}
+
+/// Whether the terminal is known to show a tab's progress. OSC 9 is a
+/// notice in older terminals, so only an allow-list gets it.
+/// `IMECE_PROGRESS=on|off` says it outright. Inside tmux it is sent:
+/// tmux 3.8 passes it on to a terminal it knows shows it (Ghostty,
+/// iTerm2), and an older tmux drops an OSC it does not know. Else the
+/// terminal's own answer (`who`): kitty from 0.39, Ghostty from 1.2,
+/// iTerm2 from 3.6.6, and nothing else that answered. Only a terminal
+/// that did not answer is taken from the environment: Windows Terminal
+/// (`WT_SESSION`), or `TERM_PROGRAM` with its version, or when there is
+/// none `LC_TERMINAL` with its (iTerm2 sends these over ssh).
+pub fn shows_progress(who: Option<&Who>, var: impl Fn(&str) -> Option<String>) -> bool {
     match var("IMECE_PROGRESS").as_deref() {
         Some("on") => return true,
         Some("off") => return false,
         _ => {}
     }
-    if var("TMUX").is_some() {
-        return false;
+    if in_tmux(who, &var) {
+        return true;
+    }
+    if let Some(w) = who {
+        return w.is("kitty", [0, 39, 0])
+            || w.is("ghostty", [1, 2, 0])
+            || w.is("iterm2", [3, 6, 6]);
     }
     if var("WT_SESSION").is_some() {
         return true;
@@ -605,11 +654,16 @@ mod tests {
             let pairs: Vec<(String, String)> = (pairs.iter())
                 .map(|(k, v)| (k.to_string(), v.to_string()))
                 .collect();
-            shows_progress(|k| pairs.iter().find(|(n, _)| n == k).map(|(_, v)| v.clone()))
+            shows_progress(None, |k| {
+                pairs.iter().find(|(n, _)| n == k).map(|(_, v)| v.clone())
+            })
         };
         assert!(!shows(&[]), "nothing known");
         assert!(shows(&[("WT_SESSION", "x")]));
-        assert!(!shows(&[("WT_SESSION", "x"), ("TMUX", "/tmp/t")]), "tmux");
+        assert!(
+            shows(&[("TMUX", "/tmp/t")]),
+            "tmux passes it on or drops it"
+        );
         let ghostty = |v: &str| shows(&[("TERM_PROGRAM", "ghostty"), ("TERM_PROGRAM_VERSION", v)]);
         assert!(ghostty("1.2.0"));
         assert!(ghostty("1.2.0-main+abc"));
@@ -645,10 +699,62 @@ mod tests {
             ("TERM_PROGRAM_VERSION", "455")
         ]));
         // The person says outright, over everything.
-        assert!(shows(&[("IMECE_PROGRESS", "on"), ("TMUX", "/tmp/t")]));
+        assert!(shows(&[("IMECE_PROGRESS", "on")]));
+        assert!(!shows(&[("IMECE_PROGRESS", "off"), ("TMUX", "/tmp/t")]));
         assert!(!shows(&[("IMECE_PROGRESS", "off"), ("WT_SESSION", "x")]));
         assert!(shows(&[("IMECE_PROGRESS", "maybe"), ("WT_SESSION", "x")]));
         assert!(!shows(&[("IMECE_PROGRESS", "maybe")]));
+    }
+
+    #[test]
+    fn the_terminal_s_own_answer_names_it_and_beats_what_it_inherited() {
+        let who = |t: &str| Who::parse(t).unwrap();
+        assert_eq!(
+            who("kitty(0.49.2)"),
+            Who {
+                name: "kitty".into(),
+                version: Some([0, 49, 2])
+            }
+        );
+        assert_eq!(who("ghostty 1.4.0").version, Some([1, 4, 0]));
+        assert_eq!(who("iTerm2 3.7.6").name, "iterm2");
+        assert_eq!(who(" tmux 3.8 ").version, Some([3, 8, 0]));
+        assert_eq!(
+            who("WezTerm"),
+            Who {
+                name: "wezterm".into(),
+                version: None
+            }
+        );
+        assert_eq!(Who::parse(""), None);
+        assert_eq!(Who::parse(" (1.2)"), None);
+        assert!(who("kitty(0.39.0)").is("kitty", [0, 39, 0]));
+        assert!(!who("kitty(0.38.9)").is("kitty", [0, 39, 0]));
+        assert!(!who("kitty(0.49.2)").is("ghostty", [0, 0, 0]));
+        assert!(!who("kitty").is("kitty", [0, 0, 0]), "no version");
+        // The answer decides; what kitty inherited from iTerm2 does not.
+        let iterm_env = |k: &str| match k {
+            "TERM_PROGRAM" => Some("iTerm.app".to_string()),
+            "TERM_PROGRAM_VERSION" => Some("3.7.6".to_string()),
+            "WT_SESSION" => Some("x".to_string()),
+            _ => None,
+        };
+        let shows = |t: &str| shows_progress(Some(&who(t)), iterm_env);
+        assert!(!shows("kitty(0.38.0)"), "inherited iTerm2 env is not it");
+        assert!(shows("kitty(0.39.0)"));
+        assert!(shows("ghostty 1.2.0"));
+        assert!(!shows("ghostty 1.1.3"));
+        assert!(shows("iTerm2 3.6.6"));
+        assert!(!shows("iTerm2 3.6.5"));
+        assert!(!shows("WezTerm 20240203"), "not on the list");
+        assert!(shows("tmux 3.8"), "tmux by its answer");
+        let none = |_: &str| None;
+        assert!(in_tmux(Some(&who("tmux 3.2")), &none));
+        assert!(!in_tmux(Some(&who("kitty(0.49.2)")), &none));
+        assert!(!in_tmux(None, &none));
+        assert!(in_tmux(None, &|k: &str| (k == "TMUX").then(|| "/t".to_string())));
+        let off = |k: &str| (k == "IMECE_PROGRESS").then(|| "off".to_string());
+        assert!(!shows_progress(Some(&who("ghostty 1.4.0")), off));
     }
 
     #[test]

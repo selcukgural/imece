@@ -138,7 +138,7 @@ The digest tells you when you are back; `:notify` fetches you. `:notify bell` ri
  imece · codex-1 finished: a change waits for you
 ```
 
-Several at once are one bell, or one note with the count. `:notify` bare goes round: off, bell, text, off; the choice is remembered. It needs the same focus reports as the digest, and a terminal that knows OSC 9 for the text (iTerm2, WezTerm, Ghostty; elsewhere `bell`).
+Several at once are one bell, or one note with the count. `:notify` bare goes round: off, bell, text, off; the choice is remembered. It needs the same focus reports as the digest, and a terminal that shows notifications for the text (iTerm2, WezTerm, Ghostty, kitty; elsewhere `bell`). In kitty a click on the note opens what it was about.
 
 ## 6. Keep a place with marks
 
