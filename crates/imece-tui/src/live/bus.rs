@@ -50,6 +50,14 @@ impl Live {
             return self.send_you(w, from, kind, body);
         }
         let project = w.agents[from].project;
+        if w.agent_by_name(arg("to")).is_none()
+            && let Some(group) = Group::parse(arg("to"))
+        {
+            if re.is_some() {
+                return Err("re is for one teammate's message, not a group's".into());
+            }
+            return self.send_group(w, from, group, kind, body);
+        }
         let to = w
             .agent_by_name(arg("to"))
             .filter(|&t| t != from && w.agents[t].project == project)
@@ -461,6 +469,82 @@ impl Live {
     }
 }
 
+/// Whom a leader's message to a group goes to: every worker of its
+/// project, the idle ones, or those of one vendor.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum Group {
+    Workers,
+    Idle,
+    Vendor(Vendor),
+}
+
+impl Group {
+    /// The group `to` names: `workers`, `idle`, or a vendor's label; none
+    /// for anything else.
+    pub(super) fn parse(to: &str) -> Option<Group> {
+        match to {
+            "workers" => Some(Group::Workers),
+            "idle" => Some(Group::Idle),
+            v => Vendor::parse(v).map(Group::Vendor),
+        }
+    }
+}
+
+impl Live {
+    /// The leader `from` writes `body` (an inform or a notice) to every
+    /// worker of `group` in its project, one message each, through the
+    /// checks a message to one of them has; the answer names who got it
+    /// and who did not, and why.
+    fn send_group(
+        &mut self,
+        w: &mut World,
+        from: AgentId,
+        group: Group,
+        kind: MsgKind,
+        body: &str,
+    ) -> Result<(String, Option<String>), String> {
+        if w.agents[from].role != Role::Leader {
+            return Err("only the leader writes to a group; write to one teammate".into());
+        }
+        if !matches!(kind, MsgKind::Inform | MsgKind::Notice) {
+            return Err(
+                "a group gets inform or notice only: give work to one worker with \
+                        assign, or put it on the board with post"
+                    .into(),
+            );
+        }
+        let project = w.agents[from].project;
+        let names: Vec<String> = (w.agents.iter())
+            .filter(|a| a.project == project && a.role == Role::Worker && !a.gone)
+            .filter(|a| match group {
+                Group::Workers => true,
+                Group::Idle => a.status == Status::Idle && self.turns[a.id] == 0,
+                Group::Vendor(v) => a.vendor == v,
+            })
+            .map(|a| a.name.clone())
+            .collect();
+        if names.is_empty() {
+            return Err("no worker of yours is in that group".into());
+        }
+        let (mut got, mut not) = (Vec::new(), Vec::new());
+        for name in names {
+            let one = json!({ "to": name, "type": kind.wire(), "body": body });
+            match self.message(w, from, &one) {
+                Ok(_) => got.push(format!("{name} (message {})", w.messages)),
+                Err(why) => not.push(format!("{name}: {why}")),
+            }
+        }
+        if got.is_empty() {
+            return Err(format!("sent to nobody: {}", not.join("; ")));
+        }
+        let mut said = format!("sent to {}", got.join(", "));
+        if !not.is_empty() {
+            said.push_str(&format!("; not to {}", not.join("; ")));
+        }
+        Ok((said, None))
+    }
+}
+
 /// The `send` tool's `re`: none when it is not given, else a message's
 /// number.
 fn reply_to(re: &Value) -> Result<Option<MsgId>, String> {
@@ -504,6 +588,131 @@ pub(crate) fn numbers(id: MsgId, re: Option<MsgId>) -> String {
 mod tests {
     use super::*;
     use crate::live::testing::*;
+
+    #[test]
+    fn the_leader_writes_an_inform_to_a_group_each_worker_its_own_message() {
+        let mut w = team(3);
+        let helper = with_helper(&mut w, 1);
+        let mut live = idle_live(5);
+        let send = |live: &mut Live, w: &mut World, from, to: &str, kind: &str| {
+            call(
+                live,
+                w,
+                from,
+                "send",
+                json!({ "to": to, "type": kind, "body": "main moved" }),
+            )
+        };
+        let got = send(&mut live, &mut w, 0, "workers", "inform").unwrap();
+        assert_eq!(
+            got,
+            "sent to claude-1 (message 1), claude-2 (message 2), claude-3 (message 3)"
+        );
+        for id in 1..=3 {
+            assert_eq!(live.mail[id].len(), 1, "{id}");
+            assert_eq!(live.mail[id][0].kind, MsgKind::Inform);
+        }
+        assert!(
+            live.mail[0].is_empty() && live.mail[helper].is_empty(),
+            "workers only"
+        );
+        let sent = (w.journal.iter())
+            .filter(|e| matches!(e.event, Event::Sent { from: 0, .. }))
+            .count();
+        assert_eq!(sent, 3);
+        // The idle ones: idle with no turn under way.
+        w.agents[2].status = Status::Idle;
+        w.agents[3].status = Status::Idle;
+        live.turns[3] = 1;
+        let got = send(&mut live, &mut w, 0, "idle", "notice").unwrap();
+        assert_eq!(got, "sent to claude-2 (message 4)");
+        // A vendor's.
+        w.agents[3].vendor = Vendor::Codex;
+        let got = send(&mut live, &mut w, 0, "codex", "inform").unwrap();
+        assert_eq!(got, "sent to claude-3 (message 5)");
+        let err = send(&mut live, &mut w, 0, "gemini", "inform").unwrap_err();
+        assert_eq!(err, "no worker of yours is in that group");
+        // One that may not get it is said, the rest get it; none, an error.
+        w.agents[1].status = Status::Stopped;
+        w.agents[2].gone = true;
+        let got = send(&mut live, &mut w, 0, "workers", "inform").unwrap();
+        assert_eq!(
+            got,
+            "sent to claude-3 (message 6); not to claude-1: claude-1 has stopped; it runs \
+             again when the person talks to it"
+        );
+        w.agents[3].status = Status::Stopped;
+        let err = send(&mut live, &mut w, 0, "workers", "inform").unwrap_err();
+        assert!(
+            err.starts_with("sent to nobody: claude-1: claude-1 has stopped"),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn a_group_is_the_leader_s_for_informs_and_notices_and_a_name_comes_first() {
+        let mut w = team(2);
+        let mut live = idle_live(3);
+        let send =
+            |live: &mut Live, w: &mut World, from, args: Value| call(live, w, from, "send", args);
+        let err = send(
+            &mut live,
+            &mut w,
+            1,
+            json!({ "to": "workers", "type": "inform", "body": "x" }),
+        );
+        assert_eq!(
+            err.unwrap_err(),
+            "only the leader writes to a group; write to one teammate"
+        );
+        for kind in ["assign", "ask", "done", "cancel", "progress"] {
+            let err = send(
+                &mut live,
+                &mut w,
+                0,
+                json!({ "to": "workers", "type": kind, "body": "x" }),
+            );
+            assert!(
+                err.unwrap_err()
+                    .starts_with("a group gets inform or notice only"),
+                "{kind}"
+            );
+        }
+        let err = send(
+            &mut live,
+            &mut w,
+            0,
+            json!({ "to": "idle", "type": "inform", "body": "x", "re": 1 }),
+        );
+        assert_eq!(
+            err.unwrap_err(),
+            "re is for one teammate's message, not a group's"
+        );
+        assert!(live.mail.iter().all(Vec::is_empty));
+        // A teammate of that name is written to, not the group.
+        w.agents[2].name = "workers".into();
+        let got = send(
+            &mut live,
+            &mut w,
+            0,
+            json!({ "to": "workers", "type": "assign", "body": "x" }),
+        );
+        assert!(got.is_ok(), "{got:?}");
+        let to: Vec<AgentId> = (w.journal.iter())
+            .filter_map(|e| match e.event {
+                Event::Sent { to, .. } => Some(to),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(to, [2], "the one called so");
+        assert_eq!(Group::parse("claude"), Some(Group::Vendor(Vendor::Claude)));
+        assert_eq!(
+            Group::parse("qwen"),
+            None,
+            "only the vendors imece leads with"
+        );
+        assert_eq!(Group::parse("Workers"), None);
+    }
 
     #[test]
     fn an_assign_to_an_idle_worker_starts_its_turn_with_a_card() {
