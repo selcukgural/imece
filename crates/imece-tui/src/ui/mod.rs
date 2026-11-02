@@ -5823,7 +5823,7 @@ mod tests {
         key(&mut app, KeyCode::Char('/'));
         typed(&mut app, "gg");
         key(&mut app, KeyCode::Enter);
-        key(&mut app, KeyCode::Char('j'));
+        key(&mut app, KeyCode::Char('x'));
         assert!(!app.help, "closed");
         key(&mut app, KeyCode::Char('?'));
         assert!(app.help && app.help_find.is_empty(), "{:?}", app.help_find);
@@ -5881,6 +5881,115 @@ mod tests {
         app.flash = None;
         app.paste("x");
         assert_eq!(app.help_find, "ab c d");
+    }
+
+    #[test]
+    fn the_help_scrolls_where_the_screen_is_too_short_for_it() {
+        let t = Lang::En.text();
+        let mut app = app_after(1, 4, 50, Lang::En);
+        app.on_key(KeyEvent::from(KeyCode::Char('?')));
+        // One column: the keys, a blank, the legend, a blank: more lines
+        // than twenty rows less the frame and the last line.
+        let lines = overlay::help_keys(Lang::En, false).len() + t.help_legend.len() + 2;
+        let room = 20 - 3;
+        let first = |app: &App| {
+            let s = render(app, 80, 20);
+            assert!(s.contains(t.help_close.trim()), "the last line stays: {s}");
+            s
+        };
+        let s = first(&app);
+        assert!(s.contains(" /  i "), "the top: {s}");
+        let below = lines - room;
+        assert!(
+            s.contains(&format!(" ↓ {below} more · j k scroll · / filter")),
+            "{s}"
+        );
+        assert_eq!(app.help_room.get(), (room, below));
+        // `j` scrolls a line and keeps the help open; `k` back.
+        key(&mut app, KeyCode::Char('j'));
+        assert!(app.help);
+        assert_eq!(app.help_scroll, 1);
+        let s = first(&app);
+        assert!(!s.contains(" /  i ") && s.contains(" @name text"), "{s}");
+        assert!(s.contains(&format!(" ↓ {} more", below - 1)), "{s}");
+        key(&mut app, KeyCode::Up);
+        key(&mut app, KeyCode::Char('k'));
+        assert_eq!(app.help_scroll, 0, "not above the top");
+        // Half a page, a page, back; never past the last.
+        let ctrl =
+            |app: &mut App, c| app.on_key(KeyEvent::new(KeyCode::Char(c), KeyModifiers::CONTROL));
+        ctrl(&mut app, 'd');
+        assert_eq!(app.help_scroll, room / 2);
+        ctrl(&mut app, 'u');
+        assert_eq!(app.help_scroll, 0);
+        ctrl(&mut app, 'f');
+        assert_eq!(app.help_scroll, room);
+        ctrl(&mut app, 'b');
+        assert_eq!(app.help_scroll, 0);
+        key(&mut app, KeyCode::PageDown);
+        assert_eq!(app.help_scroll, room);
+        key(&mut app, KeyCode::PageUp);
+        assert_eq!(app.help_scroll, 0);
+        key(&mut app, KeyCode::Down);
+        key(&mut app, KeyCode::Char('G'));
+        assert_eq!(app.help_scroll, below);
+        let s = first(&app);
+        let foot: String = (t.help_legend[t.help_legend.len() - 1].chars())
+            .take(24)
+            .collect();
+        assert!(s.contains(&foot), "the foot: {s}");
+        assert!(
+            s.contains(" ↑ j k scroll · / filter") && !s.contains("more · j k"),
+            "{s}"
+        );
+        for _ in 0..3 {
+            key(&mut app, KeyCode::Char('j'));
+            ctrl(&mut app, 'd');
+            ctrl(&mut app, 'f');
+            key(&mut app, KeyCode::PageDown);
+            key(&mut app, KeyCode::End);
+        }
+        assert_eq!(app.help_scroll, below, "not past the last");
+        // `g` waits for the second; `gg` and home go to the top.
+        key(&mut app, KeyCode::Char('g'));
+        assert_eq!(app.help_scroll, below);
+        key(&mut app, KeyCode::Char('g'));
+        assert_eq!(app.help_scroll, 0);
+        key(&mut app, KeyCode::End);
+        key(&mut app, KeyCode::Home);
+        assert_eq!(app.help_scroll, 0);
+        // A key after `g` that is not `g` acts as itself.
+        key(&mut app, KeyCode::Char('g'));
+        key(&mut app, KeyCode::Char('j'));
+        assert_eq!(app.help_scroll, 1);
+        // The filter shows from its top; what it finds fits.
+        key(&mut app, KeyCode::Char('/'));
+        assert_eq!(app.help_scroll, 1, "not before a letter");
+        key(&mut app, KeyCode::Char('z'));
+        assert_eq!(app.help_scroll, 0);
+        key(&mut app, KeyCode::Enter);
+        // Any other key closes it, ctrl ones too; it opens at the top.
+        ctrl(&mut app, 'x');
+        assert!(!app.help);
+        app.help_scroll = 4;
+        key(&mut app, KeyCode::Char('?'));
+        assert!(app.help && app.help_scroll == 0);
+        // However short the screen, a line is in sight and ^d moves one.
+        render(&app, 80, 3);
+        assert_eq!(app.help_room.get().0, 1);
+        render(&app, 80, 4);
+        assert_eq!(app.help_room.get(), (1, lines - 1));
+        ctrl(&mut app, 'd');
+        assert_eq!(app.help_scroll, 1);
+        app.help_scroll = 0;
+        // A screen it fits: nothing to say, nothing to scroll.
+        let s = render(&app, 80, 80);
+        assert!(!s.contains("more · j k") && !s.contains("↑ j k"), "{s}");
+        assert_eq!(app.help_room.get().1, 0);
+        key(&mut app, KeyCode::Char('j'));
+        assert!(app.help && app.help_scroll == 0);
+        key(&mut app, KeyCode::Char('x'));
+        assert!(!app.help);
     }
 
     #[test]

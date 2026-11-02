@@ -638,6 +638,10 @@ pub struct Text {
     /// The help's last line: how to filter it or close it; while the
     /// person types a filter, after it; with a filter kept, after it.
     pub help_close: &'static str,
+    /// Before the help's last line when it does not fit the screen: how
+    /// many lines are below; at the foot, that there is more above.
+    pub help_more: &'static str,
+    pub help_top: &'static str,
     pub help_finding: &'static str,
     pub help_found: &'static str,
     /// No key and no legend line has every word of the filter.
@@ -1240,7 +1244,10 @@ pub const EN: Text = Text {
         ),
         ("q q  :quit", "quit (q or :quit asks first)"),
         ("q s  :pending", "before quitting: mid-turn, not reviewed"),
-        ("?  :help", "this help; / filters it · :keys your keys"),
+        (
+            "?  :help",
+            "this help; j k scroll, / filters · :keys your keys",
+        ),
     ],
     help_newline: [
         ("⇧enter ⌥enter", "writing: a new line; ↑ ↓ between lines"),
@@ -1258,6 +1265,8 @@ pub const EN: Text = Text {
         " ✱ a line you marked (m), kept between runs; ' goes to the next",
     ],
     help_close: " / filter · any other key: close",
+    help_more: " ↓ {} more · j k scroll ·",
+    help_top: " ↑ j k scroll ·",
     help_finding: "   enter keep · esc all keys",
     help_found: "   / change · any other key: close",
     help_none: " nothing has every word of it",
@@ -1888,7 +1897,10 @@ pub const TR: Text = Text {
         ),
         ("q q  :quit", "çık (q ya da :quit önce sorar)"),
         ("q s  :pending", "çıkmadan önce: tur ortası, incelenmemiş"),
-        ("?  :help", "bu yardım; / süzer · :keys senin tuşların"),
+        (
+            "?  :help",
+            "bu yardım; j k kaydırır, / süzer · :keys senin tuşların",
+        ),
     ],
     help_newline: [
         ("⇧enter ⌥enter", "yazarken: yeni satır; ↑ ↓ satırlar arası"),
@@ -1906,6 +1918,8 @@ pub const TR: Text = Text {
         " ✱ işaretlediğin satır (m), çalıştırmalar arasında kalır; ' sonrakine gider",
     ],
     help_close: " / süz · başka bir tuş: kapat",
+    help_more: " ↓ {} daha · j k kaydır ·",
+    help_top: " ↑ j k kaydır ·",
     help_finding: "   enter tut · esc tüm tuşlar",
     help_found: "   / değiştir · başka bir tuş: kapat",
     help_none: " hiçbirinde bu kelimelerin hepsi yok",

@@ -26,3 +26,25 @@ The window keeps the size of the whole help while it is filtered (the
 rows that went are blank), so it does not jump around while the person
 types. `?` is now listed in the help itself, with the `/`. Pure screen
 logic: the demo shows it exactly as live does.
+
+## Scrolling (2026-11-02)
+
+The person asked whether the help could scroll instead of every new row
+having to fit 40 rows. It also had a gap: the window was only centred and
+cut, so on a screen shorter than the help (or a narrow one, where it is one
+column of 64 lines) its foot could not be reached at all, `/` aside.
+
+Now the lines above the help's last line scroll where they do not fit:
+the last line stays and starts with how many lines are below
+(`help_more`, `↓ 12 more · j k scroll ·`) or, at the foot, `help_top`
+(`↑ j k scroll ·`). The drawing records what it had room for
+(`App::help_room`: lines in sight, the first line at most) and the keys
+clamp to it (`App::help_scroll`): `j k ↓ ↑` a line, `^d ^u` half the room
+(at least one), `^f ^b pgdn pgup` the room, `gg home` the top, `G end` the
+foot. These keys never close the help, even where it fits: before, `j`
+closed it, and that one habit changes. Every other key still closes it,
+ctrl ones too. The help opens at its top, and a change to the filter
+shows it from the top. At least one line is in sight on any screen.
+
+So the 40-row test now only says the help fits 40 rows whole on a wide
+screen; a row more makes it scroll there instead of being cut.

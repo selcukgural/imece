@@ -52,6 +52,8 @@ pub fn peek(f: &mut Frame, app: &App, id: AgentId) {
 /// (`shift_enter`: it tells shift-enter from enter). Filtered (`/`), only
 /// the keys and legend lines with every word of the filter stay, and the
 /// window keeps its size, so it does not jump while the person types.
+/// On a screen too short for it, its lines scroll (`App::help_scroll`)
+/// above the last line, which says how many are below.
 pub fn help(f: &mut Frame, app: &App) {
     let t = app.lang.text();
     let key = |(k, what): &(String, String)| {
@@ -88,7 +90,22 @@ pub fn help(f: &mut Frame, app: &App) {
         Line::raw(""),
     );
     lines.push(Line::raw(""));
-    lines.push(if app.help_typing || !app.help_find.is_empty() {
+    // The frame and the last line take three rows; what does not fit the
+    // rest scrolls, and the last line says how much is below.
+    let room = usize::from(f.area().height).saturating_sub(3).max(1);
+    let last = lines.len().saturating_sub(room);
+    app.help_room.set((room, last));
+    let from = app.help_scroll.min(last);
+    let below = lines.len().saturating_sub(from + room);
+    let mut lines: Vec<Line> = lines.into_iter().skip(from).take(room).collect();
+    let more = if below > 0 {
+        fill(t.help_more, &[&below.to_string()])
+    } else if from > 0 {
+        t.help_top.to_string()
+    } else {
+        String::new()
+    };
+    let mut foot = if app.help_typing || !app.help_find.is_empty() {
         let mut spans = vec![
             Span::styled(" /", fg(pal().accent)),
             Span::styled(app.help_find.clone(), bold(pal().strong)),
@@ -105,7 +122,11 @@ pub fn help(f: &mut Frame, app: &App) {
         Line::from(spans)
     } else {
         Line::from(Span::styled(t.help_close, dim()))
-    });
+    };
+    if !more.is_empty() {
+        foot.spans.insert(0, Span::styled(more, fg(pal().accent)));
+    }
+    lines.push(foot);
     window(f, t.help_title.into(), lines, if wide { 118 } else { 60 });
 }
 

@@ -11,7 +11,7 @@ The conventions are vim's: `h` `j` `k` `l` move and fold, `gg` and `G` go to the
 
 ## The help window
 
-`?` (`:help`) opens HELP: every key with what it does, in two columns on a wide screen, then the legend of glyphs, then the new-line key your terminal has. Any key closes it, except `/`: that starts a filter, typed on the window's last line. Every key typed goes into it (`?`, `q` and `/` too), so the help stays open while you type; backspace takes a letter back, `^u` empties it. A key line or a legend line stays when it has every word of the filter, in either column: `zM` finds the fold keys, `first last` finds `gg` `G`. Case and the Turkish letters fold to plain Latin (`calis` finds `çalış`, `BÜTÇE` finds `bütçe`). Nothing matching says so. `enter` keeps the filter and ends the typing (then `/` changes it, any other key closes); `esc` drops it and the whole help is back; backspace on an empty filter leaves it too. The window keeps its size while filtered, so it does not jump.
+`?` (`:help`) opens HELP: every key with what it does, in two columns on a wide screen, then the legend of glyphs, then the new-line key your terminal has. On a screen too short for it, its lines scroll above its last line, which says how many are below (`↓ 12 more · j k scroll`) or, at the foot, that there is more above: `j` `k` (or `↓` `↑`) a line, `^d` `^u` half a page, `^f` `^b` (or `pgdn` `pgup`) a page, `gg` (or `home`) the top, `G` (or `end`) the foot. These keys never close it, wherever it fits. Any other key closes it, except `/`: that starts a filter, typed on the window's last line. Every key typed goes into it (`?`, `q` and `/` too), so the help stays open while you type; backspace takes a letter back, `^u` empties it. A key line or a legend line stays when it has every word of the filter, in either column: `zM` finds the fold keys, `first last` finds `gg` `G`. Case and the Turkish letters fold to plain Latin (`calis` finds `çalış`, `BÜTÇE` finds `bütçe`). Nothing matching says so. `enter` keeps the filter and ends the typing (then `/` changes it, any other key closes); `esc` drops it and the whole help is back; backspace on an empty filter leaves it too. The window keeps its size while filtered, so it does not jump; a change to the filter shows it from the top. The help always opens at its top.
 
 ## Writing
 
@@ -142,7 +142,7 @@ The conventions are vim's: `h` `j` `k` `l` move and fold, `gg` and `G` go to the
 | `:notify` | in another window, a word when something comes to wait: `:notify off\|bell\|text`; bare, the next one round |
 | `q` `q`  `:quit` | quit (`q` or `:quit` asks first; `^c` quits at once) |
 | `q` `s`  `:pending` | before quitting: mid-turn, not reviewed |
-| `?`  `:help` | this help; `/` in it filters the keys · `:keys` reads your key file again |
+| `?`  `:help` | this help; in it `j` `k` scroll where it does not fit, `/` filters the keys · `:keys` reads your key file again |
 | `W` | the next item waiting, from anywhere |
 | `^o` | back where you were |
 
