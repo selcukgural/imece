@@ -50,7 +50,9 @@ use crate::model::*;
 /// (`meta.messages`), and an unread message's own and the one it replies
 /// to (`mail.number`, `mail.re`).
 /// 13 (2026-11-01): the lines the person sent, for recall (`sent`).
-pub const SCHEMA_VERSION: i64 = 13;
+/// 14 (2026-11-02): the `Fault` inbox kind and the `Retrying` events (no
+/// table changed; an older imece would not know the tags).
+pub const SCHEMA_VERSION: i64 = 14;
 /// Trace lines kept per agent, as the world keeps them.
 const TRACE_KEEP: usize = 200;
 /// The file's name under the state directory.
@@ -3092,10 +3094,10 @@ mod tests {
                 )
                 .unwrap();
             assert_eq!(
-                version, "13",
-                "the sent table: an older imece has no row for it"
+                version, "14",
+                "the sent table, the Fault kind: an older imece knows neither"
             );
-            assert_eq!(SCHEMA_VERSION, 13);
+            assert_eq!(SCHEMA_VERSION, 14);
         }
         let back = Store::open(&path)
             .unwrap()
@@ -3212,6 +3214,34 @@ mod tests {
         let numbers: Vec<_> = back.found.mail[1].iter().map(|m| (m.id, m.re)).collect();
         assert_eq!(numbers, [(0, None), (0, None)]);
         assert_eq!(back.found.mail[1][1].body, "tests pass");
+    }
+
+    #[test]
+    fn a_vendor_error_waiting_and_a_retry_said_come_back_as_they_went() {
+        let d = dir("fault");
+        std::fs::create_dir_all(&d).unwrap();
+        let path = d.join(FILE);
+        let mut w = world();
+        w.turn_failed(1, "overloaded", Some(Fault::Passing));
+        w.turn_failed(1, "Invalid API key", Some(Fault::Account));
+        let mut store = Store::open(&path).unwrap();
+        assert!(store.save(&w, &kept().kept()).unwrap());
+        let back = store.load(100).unwrap().expect("a world").world;
+        let it = back.inbox.last().unwrap();
+        assert_eq!(
+            (it.kind, it.agent, it.detail.as_str(), it.open),
+            (InboxKind::Fault, 1, "Invalid API key", true)
+        );
+        assert!(back.journal.iter().any(|e| e.event
+            == Event::Retrying {
+                agent: 1,
+                why: "overloaded".into(),
+                attempt: 1,
+                seconds: 30
+            }));
+        // A retry and its count are memory only.
+        assert_eq!((back.agents[1].retry, back.agents[1].tries), (None, 0));
+        let _ = std::fs::remove_dir_all(&d);
     }
 
     #[test]

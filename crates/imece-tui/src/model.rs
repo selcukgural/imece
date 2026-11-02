@@ -495,8 +495,43 @@ pub struct Agent {
     /// `CONTEXT_SHOWN`, the figure on its focus. Gone with the session;
     /// not kept between runs.
     pub context: Option<Fill>,
+    /// When imece tries its failed turn again after a passing vendor
+    /// error, and which try that is (`↻ 1/3` on its row); none when no
+    /// retry waits. Memory only.
+    pub retry: Option<Retry>,
+    /// The tries of a turn that keeps failing on passing vendor errors:
+    /// none after a good turn or the person's word. Memory only.
+    pub tries: u8,
+    /// The fault its vendor said the turn now ending failed on, taken by
+    /// that turn's end (`imece_agent::Event::Failed`). Memory only.
+    pub fault: Option<Fault>,
     /// A researcher that finished; kept so ids stay stable.
     pub gone: bool,
+}
+
+/// A failed turn imece tries again (record 79).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Retry {
+    /// Which try this is, from 1 to [`RETRY_TICKS`]' length.
+    pub attempt: u8,
+    /// The tick it goes at.
+    pub at: u64,
+}
+
+/// After a passing vendor error, a turn is tried again this many ticks
+/// after it failed, one entry per try: 30 s, 2 min, 8 min. When they are
+/// used up the error waits for the person.
+pub const RETRY_TICKS: [u64; 3] = [6, 24, 96];
+
+/// Why a turn failed on the vendor's side, as far as imece acts on it
+/// (`imece_agent::Fault`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Fault {
+    /// Overloaded, a server error, a lost connection, a short rate
+    /// limit: tried again later.
+    Passing,
+    /// The account (signed out, a key, a quota, a bill): the person's.
+    Account,
 }
 
 /// One step of an agent's own to-do list (`imece_agent::Step`).
@@ -583,6 +618,9 @@ impl Agent {
             local: None,
             plan: Vec::new(),
             context: None,
+            retry: None,
+            tries: 0,
+            fault: None,
             gone: false,
         }
     }
@@ -951,6 +989,15 @@ pub enum Event {
         agent: AgentId,
         why: String,
     },
+    /// A live agent's turn failed on a passing vendor error (`why` in the
+    /// vendor's words); imece tries it again `seconds` later, the
+    /// `attempt`th time.
+    Retrying {
+        agent: AgentId,
+        why: String,
+        attempt: u8,
+        seconds: u64,
+    },
     /// imece was closed while the agent's turn ran (or it died); the turn
     /// is not run again, the agent hears of it when it wakes.
     Interrupted {
@@ -1202,6 +1249,7 @@ impl Event {
             | Event::Copied { .. }
             | Event::FilesCut { .. }
             | Event::NoGit { .. }
+            | Event::Retrying { .. }
             | Event::WorktreeKept { .. } => EntryKind::Assumption,
             Event::Blocked { .. } => EntryKind::Blocked,
             Event::ResearchOpened { .. }
@@ -1271,6 +1319,7 @@ impl Event {
             | Event::Decided { agent, .. }
             | Event::Replied { agent, .. }
             | Event::Stopped { agent, .. }
+            | Event::Retrying { agent, .. }
             | Event::Interrupted { agent }
             | Event::Posted { agent, .. }
             | Event::Claimed { agent, .. }
@@ -1335,6 +1384,11 @@ pub enum InboxKind {
     /// the person allows or refuses it. Closes with the decision or when
     /// the session ends.
     Approval,
+    /// A live agent's turn failed on a vendor error only the person mends
+    /// (the account: signed out, a key, a quota, a bill), or on a passing
+    /// one imece tried again until its tries ran out; the detail is the
+    /// vendor's words. Closes when the person writes to the agent.
+    Fault,
 }
 
 #[derive(Clone, Debug)]
@@ -2085,6 +2139,77 @@ impl World {
         }
     }
 
+    /// A turn of agent `id` failed, `why` in the vendor's words, `fault`
+    /// its kind when the vendor said: a passing one is tried again after
+    /// the next of [`RETRY_TICKS`], until they are used up; that one and
+    /// an account's wait for the person in the inbox; any failure else
+    /// is said in the journal alone. The caller has made the agent idle.
+    pub fn turn_failed(&mut self, id: AgentId, why: &str, fault: Option<Fault>) {
+        let t = self.tick;
+        let a = &mut self.agents[id];
+        a.retry = None;
+        let tries = usize::from(a.tries);
+        if fault == Some(Fault::Passing) && tries < RETRY_TICKS.len() {
+            let after = RETRY_TICKS[tries];
+            a.tries += 1;
+            a.retry = Some(Retry {
+                attempt: a.tries,
+                at: t + after,
+            });
+            let attempt = a.tries;
+            self.note(Event::Retrying {
+                agent: id,
+                why: why.into(),
+                attempt,
+                seconds: after * SECONDS_PER_TICK,
+            });
+            return;
+        }
+        if fault.is_some() {
+            a.tries = 0;
+            self.close_faults(id);
+            self.inbox.push(InboxItem {
+                kind: InboxKind::Fault,
+                agent: id,
+                detail: why
+                    .lines()
+                    .find(|l| !l.trim().is_empty())
+                    .unwrap_or_default()
+                    .to_string(),
+                researcher: None,
+                open: true,
+                tick: t,
+                card: self.card_of(id),
+            });
+        }
+        self.note(Event::Stopped {
+            agent: id,
+            why: why.into(),
+        });
+    }
+
+    /// The agents whose failed turn is due to be tried again, in id
+    /// order: its tick has come and nothing else woke them (idle, here).
+    pub fn retries_due(&self) -> Vec<AgentId> {
+        self.agents
+            .iter()
+            .filter(|a| {
+                !a.gone && a.status == Status::Idle && a.retry.is_some_and(|r| r.at <= self.tick)
+            })
+            .map(|a| a.id)
+            .collect()
+    }
+
+    /// The person wrote to agent `id`, or its session ended: what it
+    /// waited on for a vendor error closes.
+    pub fn close_faults(&mut self, id: AgentId) {
+        for i in &mut self.inbox {
+            if i.kind == InboxKind::Fault && i.agent == id {
+                i.open = false;
+            }
+        }
+    }
+
     /// Whether agent `id` waits for the person's answer to a question.
     pub fn has_question(&self, id: AgentId) -> bool {
         self.open_item(id, InboxKind::Question).is_some()
@@ -2173,6 +2298,10 @@ impl World {
         let t = self.tick;
         self.close_replies(id);
         self.close_questions(id);
+        self.close_faults(id);
+        // The person's word is the next try: a new count from it.
+        self.agents[id].retry = None;
+        self.agents[id].tries = 0;
         self.note(Event::YouSaid {
             to: id,
             text: text.into(),
@@ -3407,6 +3536,166 @@ mod tests {
             patch: "diff --git a/x b/x\n".into(),
             runs: Vec::new(),
         }
+    }
+
+    #[test]
+    fn a_passing_fault_is_tried_again_three_times_later_each_then_waits_for_the_person() {
+        let mut w = world(vec![
+            agent(0, Role::Leader, Status::Idle),
+            agent(1, Role::Worker, Status::Idle),
+            agent(2, Role::Worker, Status::Idle),
+        ]);
+        w.cards.push(Card {
+            id: 0,
+            project: 0,
+            title: "Fix".into(),
+            owner: Some(1),
+            column: Column::Working,
+            story: Vec::new(),
+            symbols: Vec::new(),
+            started: 0,
+            finished: 0,
+        });
+        w.agents[1].card = Some(0);
+        w.tick = 10;
+        let retrying = |w: &World, attempt, seconds| {
+            assert_eq!(
+                w.journal.last().unwrap().event,
+                Event::Retrying {
+                    agent: 1,
+                    why: "overloaded".into(),
+                    attempt,
+                    seconds
+                }
+            );
+        };
+        w.turn_failed(1, "overloaded", Some(Fault::Passing));
+        assert_eq!(w.agents[1].retry, Some(Retry { attempt: 1, at: 16 }));
+        assert_eq!(w.agents[1].tries, 1);
+        retrying(&w, 1, 30);
+        w.tick = 20;
+        w.turn_failed(1, "overloaded", Some(Fault::Passing));
+        assert_eq!(w.agents[1].retry, Some(Retry { attempt: 2, at: 44 }));
+        retrying(&w, 2, 120);
+        w.tick = 50;
+        w.turn_failed(1, "overloaded", Some(Fault::Passing));
+        assert_eq!(
+            w.agents[1].retry,
+            Some(Retry {
+                attempt: 3,
+                at: 146
+            })
+        );
+        retrying(&w, 3, 480);
+        assert!(
+            w.open_inbox().is_empty(),
+            "nothing waits for the person yet"
+        );
+        // The tries are used up: the person's now, once.
+        w.tick = 150;
+        w.turn_failed(1, "\n \nstill overloaded\nmore", Some(Fault::Passing));
+        assert_eq!((w.agents[1].retry, w.agents[1].tries), (None, 0));
+        let it = &w.inbox[0];
+        assert_eq!(
+            (
+                it.kind,
+                it.agent,
+                it.detail.as_str(),
+                it.open,
+                it.tick,
+                it.card
+            ),
+            (InboxKind::Fault, 1, "still overloaded", true, 150, Some(0))
+        );
+        assert_eq!(
+            w.journal.last().unwrap().event,
+            Event::Stopped {
+                agent: 1,
+                why: "\n \nstill overloaded\nmore".into()
+            }
+        );
+        // An account's fault goes to the person at once, in the place of
+        // the one that waited.
+        w.agents[1].tries = 2;
+        w.agents[1].retry = Some(Retry {
+            attempt: 2,
+            at: 999,
+        });
+        w.turn_failed(1, "Invalid API key", Some(Fault::Account));
+        assert_eq!((w.agents[1].retry, w.agents[1].tries), (None, 0));
+        assert_eq!(w.open_inbox(), [1]);
+        assert_eq!(w.inbox[1].detail, "Invalid API key");
+        // A failure of no kind imece knows is said and nothing more.
+        let items = w.inbox.len();
+        w.agents[2].tries = 2;
+        w.agents[2].retry = Some(Retry {
+            attempt: 2,
+            at: 999,
+        });
+        w.turn_failed(2, "prompt is too long", None);
+        assert_eq!(w.inbox.len(), items);
+        assert_eq!((w.agents[2].retry, w.agents[2].tries), (None, 2));
+        assert!(matches!(
+            w.journal.last().unwrap().event,
+            Event::Stopped { agent: 2, .. }
+        ));
+        // The person's word closes what waits and counts again from it.
+        w.agents[1].tries = 1;
+        w.agents[1].retry = Some(Retry {
+            attempt: 1,
+            at: 999,
+        });
+        w.said(1, "the key is mended");
+        assert!(w.open_inbox().is_empty());
+        assert_eq!((w.agents[1].retry, w.agents[1].tries), (None, 0));
+        assert_eq!(
+            Event::Retrying {
+                agent: 2,
+                why: String::new(),
+                attempt: 1,
+                seconds: 30
+            }
+            .agent(),
+            2
+        );
+        assert_eq!(
+            Event::Retrying {
+                agent: 2,
+                why: String::new(),
+                attempt: 1,
+                seconds: 30
+            }
+            .kind(),
+            EntryKind::Assumption
+        );
+    }
+
+    #[test]
+    fn a_retry_is_due_at_its_tick_for_an_idle_agent_still_here() {
+        let mut w = world(vec![
+            agent(0, Role::Leader, Status::Idle),
+            agent(1, Role::Worker, Status::Idle),
+            agent(2, Role::Worker, Status::Working),
+            agent(3, Role::Worker, Status::Idle),
+            agent(4, Role::Worker, Status::Idle),
+        ]);
+        for id in 1..=4 {
+            w.agents[id].retry = Some(Retry { attempt: 1, at: 10 });
+        }
+        w.agents[3].gone = true;
+        w.agents[4].retry = Some(Retry { attempt: 1, at: 11 });
+        w.tick = 9;
+        assert!(w.retries_due().is_empty());
+        w.tick = 10;
+        assert_eq!(w.retries_due(), [1], "mid-turn, gone, later: not due");
+        w.tick = 11;
+        assert_eq!(w.retries_due(), [1, 4]);
+        // Only its own vendor errors close for an agent.
+        w.inbox.push(item(InboxKind::Fault, 1, true));
+        w.inbox.push(item(InboxKind::Question, 1, true));
+        w.inbox.push(item(InboxKind::Fault, 4, true));
+        w.close_faults(1);
+        assert_eq!(w.open_inbox(), [1, 2]);
     }
 
     #[test]

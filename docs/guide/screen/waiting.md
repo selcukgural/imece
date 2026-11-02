@@ -24,6 +24,7 @@ WAITING FOR YOU is the top side panel of the salon. Only decisions that need you
 | `⚑` | an ask | a tool call the agent's own vendor would ask permission for: a shell command Claude Code would ask about, a Codex `on-request` ask, a Gemini shell. Routine commands (the build, the tests, git's reading commands) run on their own and never get here. The selected ask is shown whole under its row, its lines joined with ` ↵ `, never read as Markdown: what you allow is what runs. | allow | refuse; the agent is told it was your decision |
 | `?` | a question | an agent's `send(to: "you", type: ask)`. A newer question of the same agent takes the older's place. | both open the composer `@agent `; the item closes when your answer goes | |
 | `»` | a reply | an agent answered you and waits for you to read it | `enter` reads it (the conversation opens) and closes it; `r` dismisses it | |
+| `✕` | a vendor error | a turn failed on an error only you can mend: the account (signed out, a refused key, a quota or a bill), or a passing one (overloaded, a server error, a lost connection) after imece's three tries ran out (see [when the vendor's API fails](../concepts/sessions.md#when-the-vendors-api-fails)). The row has the vendor's words. | both open the composer `@agent `; the item closes when your message goes, and that message is the agent's next try | |
 
 The row carries the time, `later ·` when you put it off, and the project's name when several are open. An item of another day carries its date.
 
@@ -54,7 +55,7 @@ Under the selected item a dim row names its keys (`enter see the diff · a apply
 
 ## The `!` on a row
 
-An agent whose item waits shows it on its own salon row: `? → you` while a question waits, `⚑ waits for your yes` while an ask does, `answered you` while a reply does; an agent with the status "waiting for you" wears `!` as its glyph. The project header counts them in the attention colour, `! 2 waiting`, even when the project is folded. `f` in the salon shows only the agents that need you, these first.
+An agent whose item waits shows it on its own salon row: `? → you` while a question waits, `⚑ waits for your yes` while an ask does, `answered you` while a reply does, `✕ vendor error` while a vendor error does; an agent with the status "waiting for you" wears `!` as its glyph. The project header counts them in the attention colour, `! 2 waiting`, even when the project is folded. `f` in the salon shows only the agents that need you, these first.
 
 ## Quitting with items open
 

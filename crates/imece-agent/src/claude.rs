@@ -26,7 +26,7 @@ use std::time::{Duration, Instant};
 use serde_json::Value;
 
 use crate::child::{self, Child, Out};
-use crate::{Event, FIVE_HOURS, Limit, Step, StepState, WEEK};
+use crate::{Event, FIVE_HOURS, Fault, Limit, Step, StepState, WEEK};
 
 /// Variables Claude Code may need besides [`child::BASE_ENV`]: an API key
 /// (a subscription login lives in the keychain), its config directory, and
@@ -534,6 +534,7 @@ impl Parser {
             "assistant" => self.assistant(&v),
             "user" => Ok(self.results(&v)),
             "result" => Ok(self.result(&v)),
+            "system" if v["subtype"] == "api_retry" => Ok(vec![Event::Note(retry(&v))]),
             "rate_limit_event" => Ok(limits(&v["rate_limit_info"])
                 .map(Event::Limits)
                 .into_iter()
@@ -559,6 +560,7 @@ impl Parser {
             self.window = window;
             out.extend(self.context());
         }
+        out.extend(fault(v).map(Event::Failed));
         let mut e = result(v);
         if let Event::TurnDone { cost, .. } = &mut e {
             if *cost < self.cost_last {
@@ -829,10 +831,39 @@ fn state_of(status: &str) -> Option<StepState> {
     }
 }
 
+/// The fault a turn's `result` reports: an API error after Claude
+/// Code's own retries, by its HTTP status (none when no answer came).
+fn fault(v: &Value) -> Option<Fault> {
+    if v["is_error"] != true || v["terminal_reason"] != "api_error" {
+        return None;
+    }
+    let status = v["api_error_status"]
+        .as_u64()
+        .map(|s| u16::try_from(s).unwrap_or(u16::MAX));
+    Fault::of_status(status, v["result"].as_str().unwrap_or_default())
+}
+
+/// One of Claude Code's own retries of a failed API call, for the trace.
+fn retry(v: &Value) -> String {
+    let n = |k: &str| v[k].as_u64().unwrap_or(0);
+    let status = v["error_status"]
+        .as_u64()
+        .map_or(String::new(), |s| format!(" {s}"));
+    format!(
+        "api error{status} {}: retry {}/{} in {} ms",
+        v["error"].as_str().unwrap_or("unknown"),
+        n("attempt"),
+        n("max_retries"),
+        n("retry_delay_ms"),
+    )
+}
+
 fn result(v: &Value) -> Event {
     let ok = v["subtype"] == "success" && v["is_error"] != true;
-    let text = match v["result"].as_str() {
-        Some(r) if ok => r.trim().to_string(),
+    // A failed turn says why in its result when it says anything (an API
+    // error's message); else its subtype is the reason.
+    let text = match v["result"].as_str().map(str::trim) {
+        Some(r) if ok || (v["is_error"] == true && !r.is_empty()) => r.to_string(),
         _ => v["subtype"].as_str().unwrap_or("error").to_string(),
     };
     let usd = v["total_cost_usd"].as_f64().unwrap_or(0.0);
@@ -1870,6 +1901,83 @@ mod tests {
     }
 
     #[test]
+    fn an_api_error_result_says_its_fault_first_and_each_retry_is_a_note() {
+        let mut p = Parser::new(&spec(EDIT_TOOLS));
+        p.line(&init(GOOD_INIT, "acceptEdits", "[]")).unwrap();
+        // Shapes as Claude Code 2.1.316 wrote them against a stub API.
+        let retry = r#"{"type":"system","subtype":"api_retry","attempt":2,"max_retries":10,"retry_delay_ms":1163,"error_status":529,"error":"overloaded","session_id":"s1"}"#;
+        assert_eq!(
+            p.line(retry).unwrap(),
+            [Event::Note(
+                "api error 529 overloaded: retry 2/10 in 1163 ms".into()
+            )]
+        );
+        let lost = r#"{"type":"system","subtype":"api_retry","attempt":1,"max_retries":10,"retry_delay_ms":520,"error_status":null,"error":"unknown"}"#;
+        assert_eq!(
+            p.line(lost).unwrap(),
+            [Event::Note(
+                "api error unknown: retry 1/10 in 520 ms".into()
+            )]
+        );
+        let failed = |status: &str, text: &str| {
+            format!(
+                r#"{{"type":"result","subtype":"success","is_error":true,"terminal_reason":"api_error","api_error_status":{status},"result":"{text}","total_cost_usd":0,"permission_denials":[]}}"#
+            )
+        };
+        let turn = |text: &str| Event::TurnDone {
+            ok: false,
+            text: text.into(),
+            cost: 0,
+            denied: 0,
+        };
+        for (status, text, fault) in [
+            (
+                "529",
+                "API Error: Repeated 529 Overloaded errors.",
+                Fault::Passing,
+            ),
+            (
+                "500",
+                "API Error: 500 Internal server error.",
+                Fault::Passing,
+            ),
+            ("null", "API Error: Connection refused", Fault::Passing),
+            ("429", "API Error: Request rejected (429)", Fault::Passing),
+            (
+                "401",
+                "Invalid API key · Fix external API key",
+                Fault::Account,
+            ),
+            ("400", "Credit balance is too low", Fault::Account),
+            ("429", "Claude usage limit reached", Fault::Account),
+        ] {
+            assert_eq!(
+                p.line(&failed(status, text)).unwrap(),
+                [Event::Failed(fault), turn(text)],
+                "{status} {text}"
+            );
+        }
+        // A refused request is no fault of either kind; nor is an error
+        // that is not the API's, nor a success.
+        assert_eq!(
+            p.line(&failed("400", "prompt is too long")).unwrap(),
+            [turn("prompt is too long")]
+        );
+        assert_eq!(
+            p.line(&failed("70000", "odd")).unwrap(),
+            [turn("odd")],
+            "a status past u16 is no status imece knows"
+        );
+        let budget = r#"{"type":"result","subtype":"error_max_budget_usd","is_error":true,"terminal_reason":"max_budget","api_error_status":529,"total_cost_usd":0}"#;
+        assert_eq!(p.line(budget).unwrap(), [turn("error_max_budget_usd")]);
+        let fine = r#"{"type":"result","subtype":"success","is_error":false,"terminal_reason":"api_error","api_error_status":529,"result":"ok","total_cost_usd":0}"#;
+        assert!(matches!(
+            p.line(fine).unwrap()[..],
+            [Event::TurnDone { ok: true, .. }]
+        ));
+    }
+
+    #[test]
     fn every_message_s_usage_says_how_full_the_context_is_and_the_result_its_window() {
         let mut p = Parser::new(&spec(EDIT_TOOLS));
         p.line(&init(GOOD_INIT, "acceptEdits", "[]")).unwrap();
@@ -2354,10 +2462,15 @@ sleep 5"#
                 denied: 0
             }
         );
-        let flagged = result(&json!({"subtype":"success","is_error":true,"result":"text"}));
+        let flagged = result(&json!({"subtype":"success","is_error":true,"result":" why "}));
         assert!(
-            matches!(&flagged, Event::TurnDone { ok: false, text, .. } if text == "success"),
+            matches!(&flagged, Event::TurnDone { ok: false, text, .. } if text == "why"),
             "{flagged:?}"
+        );
+        let blank = result(&json!({"subtype":"success","is_error":true,"result":"  "}));
+        assert!(
+            matches!(&blank, Event::TurnDone { ok: false, text, .. } if text == "success"),
+            "{blank:?}"
         );
         let failed = result(&json!({"subtype":"error_max_turns","result":"ignored"}));
         assert!(

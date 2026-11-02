@@ -4921,9 +4921,13 @@ impl App {
             self.inbox_sel = self.inbox_sel.min(open.len().saturating_sub(2));
             return;
         }
-        if self.world.inbox[item].kind == InboxKind::Question {
-            // A question is answered by writing back: the composer opens
-            // to the agent, and the item closes when the answer goes.
+        if matches!(
+            self.world.inbox[item].kind,
+            InboxKind::Question | InboxKind::Fault
+        ) {
+            // A question is answered by writing back, and a vendor error
+            // the person mended is told the same way: the composer opens
+            // to the agent, and the item closes when the message goes.
             let name = self.world.agents[self.world.inbox[item].agent].name.clone();
             self.typing = true;
             self.input = format!("@{name} ");

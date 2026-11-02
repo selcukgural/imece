@@ -34,6 +34,18 @@ Whether a woken agent goes on in its old session or starts a new one depends on 
 
 A resume that fails (the vendor says the session is gone, or reports another id) is one restart with the full wake briefing ([messages](../concepts/messages-and-board.md)), never a loop. Codex threads are kept for this (`ephemeral: false`); Codex's global message log stays off.
 
+## When the vendor's API fails
+
+Every vendor tries a failed API call again by itself first: Claude Code up to ten times (three for an overloaded API), Codex five, Gemini CLI ten; each of Claude Code's and Codex's tries is a line in the agent's trace (`api error 529 overloaded: retry 2/10 in 1163 ms`). Only when the vendor gives up does the turn fail, and imece looks at why:
+
+| The vendor says | imece |
+| --- | --- |
+| overloaded, a server error (5xx), a lost connection, a rate limit | a passing error: the journal says `claude-1 hit a vendor error: … · imece tries again in 30 s (1/3)`, the row counts down `↻ 1/3 in 25 s`, and when the time comes the session is told to carry on where it stopped. The second try is 2 min after the next failure, the third 8 min after that. After the third, it waits for you. |
+| signed out, a refused key, a used-up quota, a bill, a plan's usage limit | the account's: it waits for you at once, as `✕` in [WAITING FOR YOU](../screen/waiting.md). |
+| anything else (a refused request, a full context) | the journal says the turn stopped, as before. |
+
+The session lives on through a failed turn, and every vendor keeps the failed prompt in it, so a try sends a short "carry on", never the prompt again. A good turn, your message, or mail to the agent starts the count again; a session that ends takes a waiting try with it. In the demo, every third thing you tell an agent fails on an overloaded vendor and is tried again, every seventh on a refused key.
+
 ## `:forget` and `--fresh`
 
 A session imece forgets leaves nothing behind at its vendor:
