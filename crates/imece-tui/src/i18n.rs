@@ -197,6 +197,14 @@ pub struct Text {
     // Notices
     pub sent: &'static str,
     pub no_agent: &'static str,
+    /// `:why`: the agent, its rung (`rungs`), since when (a clock) and
+    /// the journal's line that put it there.
+    pub why: &'static str,
+    /// `:why` when the journal has no line of the agent before its state.
+    pub why_unsaid: &'static str,
+    /// The rungs of the state ladder in words, lowest first: idle, done
+    /// and not seen, starting, working, waiting for the person, stuck.
+    pub rungs: [&'static str; 6],
     pub forgot: &'static str,
     /// The bottom line while a `:close` or `:forget` waits: the project or
     /// agent and the seconds left.
@@ -814,6 +822,16 @@ pub const EN: Text = Text {
     pick_cancel: "   tab next · enter take · esc hide",
     sent: "sent to {}",
     no_agent: "no agent named \"{}\"",
+    why: "{}: {} · since {} · {}",
+    why_unsaid: "the journal does not say why",
+    rungs: [
+        "idle",
+        "done, not seen",
+        "starting",
+        "working",
+        "waiting for you",
+        "stuck",
+    ],
     forgot: "{} forgot its session; the next message starts a new one, told where it left off",
     grace_close: "◷ closing {} in {} s · u keeps it open",
     grace_forget: "◷ {} forgets its session in {} s · u keeps it",
@@ -1497,6 +1515,16 @@ pub const TR: Text = Text {
     pick_cancel: "   tab sonraki · enter al · esc gizle",
     sent: "iletildi → {}",
     no_agent: "\"{}\" adında bir agent yok",
+    why: "{}: {} · {} itibarıyla · {}",
+    why_unsaid: "günlük nedenini söylemiyor",
+    rungs: [
+        "boşta",
+        "bitti, bakılmadı",
+        "başlıyor",
+        "çalışıyor",
+        "onayını bekliyor",
+        "takıldı",
+    ],
     forgot: "{} oturumunu unuttu; sonraki mesaj yeni bir oturum başlatır, kaldığı yer anlatılır",
     grace_close: "◷ {} {} sn sonra kapanıyor · u açık tutar",
     grace_forget: "◷ {} {} sn sonra oturumunu unutuyor · u tutar",

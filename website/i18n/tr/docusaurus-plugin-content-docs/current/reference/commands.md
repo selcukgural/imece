@@ -70,6 +70,7 @@ description: imece'nin aldığı her `:` komutu; argümanları, karşılığı o
 | `:unsettle` | — | | | | kaç şeyin kaldırıldığı |
 | `:waiting` | `w` | | | | N bekliyor |
 | `:welcome` | — | | | | |
+| `:why [@NAME]` | — | | | | eldeki ajan |
 
 Canlıda `:pause`, `:faster` ve `:slower` menüde yer almaz. Hareket eden tuşların (`j k`, `gg G`, `enter`, `esc`, `tab`) ve seçili satıra etki eden tuşların (`a r c n x`) `:` adı yoktur: yazmak tuştan yavaş olurdu ve satırın adlandırılması gerekirdi.
 
@@ -294,6 +295,10 @@ Doğrudan SENİ BEKLEYEN'e, `w` gibi. Menü notu kaç kalemin beklediğini söyl
 ### `:welcome`
 
 İlk çalıştırma penceresi: imece nedir, bu makinedeki kodlama agent'ları sürümleri ve her birinin giriş yapılmış olup olmadığıyla (ya da giriş yapan komutla; Gemini CLI'ınki ilk açılışında denetlenir), ve başlamak için tuşlar. Her satıcıya ağa çıkmadan yeniden sorulur; cevabı gelene dek satırda `bakılıyor…` yazar. İlk başlangıçta ve liderin satıcısının giriş yapmadığı bir başlangıçta kendiliğinden açılır. Herhangi bir tuş kapatır. Bkz. [ilk çalıştırma](../getting-started/first-run.md#hoş-geldin-penceresi).
+
+### `:why [@NAME]`
+
+Ajanı bu duruma neyin getirdiği, alt satırda: merdivendeki basamağı (boşta, bitti ve bakılmadı, başlıyor, çalışıyor, onayını bekliyor, takıldı), ne zamandan beri ve onu oraya getiren günlük satırı, günlüğün kendi sözcükleriyle: `claude-1: takıldı · 14:02 itibarıyla · claude-1 durdu: oturum bitti`. Ad yoksa `:peek`'teki gibi eldeki ajan. "İtibarıyla", en eski kaleminin seni beklemeye başladığı an, yoksa durumunun son değiştiği andır; satır o andan ya da öncesinden en yeni günlük satırıdır. Günlükte artık yoksa (toplanmış, ya da ajan önceki bir çalışmadan gelmiş) bunu söyler. Yalnız baktığı için bir arşivin görünümünde de çalışır.
 
 ## Ayrıca bkz.
 

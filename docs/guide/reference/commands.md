@@ -70,6 +70,7 @@ A line that starts with `:` is a command to imece, not a message to an agent. Yo
 | `:unsettle` | — | | | | how many are settled |
 | `:waiting` | `w` | | | | N waiting |
 | `:welcome` | — | | | | |
+| `:why [@NAME]` | — | | | | the agent at hand |
 
 Live, `:pause`, `:faster` and `:slower` are left out of the menu. Keys that move (`j k`, `gg G`, `enter`, `esc`, `tab`) and keys that act on the selected row (`a r c n x`) have no `:` name: typing them would be slower than the key, and the row would have to be named.
 
@@ -294,6 +295,10 @@ Straight to WAITING FOR YOU, as `w`. The menu note says how many wait.
 ### `:welcome`
 
 The first-run window: what imece is, the coding agents on this machine with their version and whether each is signed in (or the command that signs it in; Gemini CLI's is checked at its first start), and the keys to start with. Every vendor is asked again, without the network; a line says `checking…` until its answer comes. It opens by itself on the first start ever and on a start where the leader's vendor is not signed in. Any key closes it. See [first run](../getting-started/first-run.md#the-welcome-window).
+
+### `:why [@NAME]`
+
+What put the agent in its state, on the bottom line: its rung of the ladder (idle, done and not seen, starting, working, waiting for you, stuck), since when, and the journal's line that put it there, in the journal's words: `claude-1: stuck · since 14:02 · claude-1 stopped: the session ended`. No name is the agent at hand, as for `:peek`. "Since" is when its oldest item began waiting for you, or else when its state last changed; the line is its newest journal line from then or before. When the journal no longer has one (tidied, or the agent came from an earlier run), it says so. It only looks, so it runs in an archive's view too.
 
 ## See also
 

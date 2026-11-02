@@ -55,7 +55,7 @@ pub struct Viewed {
 const VIEW_COMMANDS: &[&str] = &[
     "goto", "history", "export", "salon", "board", "code", "lang", "theme", "help", "quit", "next",
     "defer", "waiting", "needs", "fold", "unfold", "trace", "peek", "hints", "news", "settle",
-    "unsettle", "talk",
+    "unsettle", "talk", "why",
 ];
 
 /// After this long without a key, the next key first shows what happened.
@@ -1195,6 +1195,17 @@ impl App {
     }
 
     /// Every agent's rung on the state ladder (by id).
+    /// `:why`: agent `id`'s rung, since when (the tick [`App::since`]
+    /// says), and the journal's line that put it there: its newest line
+    /// from then or before, if the journal still has one.
+    pub fn why(&self, id: AgentId) -> (Rung, u64, Option<usize>) {
+        let since = self.since(id);
+        let line = (self.world.journal.iter().enumerate().rev())
+            .find(|(_, e)| e.tick <= since && e.event.agent() == id)
+            .map(|(i, _)| i);
+        (self.rungs()[id], since, line)
+    }
+
     pub fn rungs(&self) -> Vec<Rung> {
         let w = &self.world;
         let mut waits = vec![false; w.agents.len()];
@@ -3637,7 +3648,7 @@ impl App {
                 let mark = if p.pinned { "▴ " } else { "" };
                 Some(format!("{mark}{}", p.name))
             }
-            "forget" | "talk" | "trace" | "peek" => self
+            "forget" | "talk" | "trace" | "peek" | "why" => self
                 .agent_at_hand()
                 .map(|id| self.world.agents[id].name.clone()),
             "next" | "waiting" => {
@@ -4031,6 +4042,12 @@ impl App {
             "peek" => {
                 if let Some(id) = self.agent_named(arg) {
                     self.peek = Some(id);
+                }
+            }
+            "why" => {
+                if let Some(id) = self.agent_named(arg) {
+                    let said = ui::words::why(self.lang, &self.world, id, self.why(id));
+                    self.flash(said);
                 }
             }
             "hints" => self.open_hints(),
@@ -11572,10 +11589,104 @@ mod tests {
         let name = app.world.agents[2].name.clone();
         assert_eq!(app.command_note("settle"), format!("({name})"));
         assert_eq!(app.command_note("peek"), format!("({name})"));
+        assert_eq!(app.command_note("why"), format!("({name})"));
         app.selected = Sel::Project(0);
         let project = app.world.projects[0].name.clone();
         assert_eq!(app.command_note("settle"), format!("({project})"));
         assert_eq!(app.command_note("unsettle"), "(0)");
+    }
+
+    #[test]
+    fn colon_why_says_the_rung_since_when_and_the_journal_line_that_put_it_there() {
+        use crate::model::clock;
+        let mut app = quiet();
+        let (a, b) = (2, 3);
+        let name = app.world.agents[a].name.clone();
+        app.world.journal.clear();
+        app.world.tick = 20;
+        app.world.agents[a].changed_at = 10;
+        // Nothing in the journal: said so.
+        assert_eq!(app.why(a), (Rung::Idle, 10, None));
+        app.command(&format!("why @{name}"));
+        let unsaid = format!(
+            "{name}: idle · since {} · the journal does not say why",
+            clock(10)
+        );
+        assert_eq!(flashed(&app).unwrap_or_default(), unsaid);
+        // Its newest line from then or before; not a later one, not
+        // another agent's.
+        let stopped = |agent, why: &str| Event::Stopped {
+            agent,
+            why: why.into(),
+        };
+        for (tick, e) in [
+            (4, stopped(a, "old")),
+            (10, stopped(a, "gone")),
+            (11, stopped(b, "other")),
+            (12, stopped(a, "later")),
+        ] {
+            app.world.journal.push(Entry { tick, event: e });
+        }
+        app.world.agents[a].status = Status::Stopped;
+        assert_eq!(app.why(a), (Rung::Stuck, 10, Some(1)), "the line of then");
+        app.world.agents[a].changed_at = 9;
+        assert_eq!(app.why(a), (Rung::Stuck, 9, Some(0)), "the one before");
+        app.world.agents[a].changed_at = 10;
+        app.selected = Sel::Agent(a);
+        app.command("why");
+        let line = ui::words::event(Lang::En, &app.world, &app.world.journal[1].event);
+        let said = format!("{name}: stuck · since {} · {line}", clock(10));
+        assert_eq!(flashed(&app).unwrap_or_default(), said, "the agent at hand");
+        // Waiting: since its oldest open item.
+        app.world.agents[a].status = Status::Idle;
+        app.world.inbox.push(InboxItem {
+            kind: InboxKind::Question,
+            agent: a,
+            detail: "which?".into(),
+            researcher: None,
+            open: true,
+            tick: 8,
+            card: None,
+        });
+        assert_eq!(app.why(a), (Rung::Waiting, 8, Some(0)));
+        // In Turkish; a name nobody has.
+        app.lang = Lang::Tr;
+        app.command(&format!("why {name}"));
+        let line = ui::words::event(Lang::Tr, &app.world, &app.world.journal[0].event);
+        let said = format!(
+            "{name}: onayını bekliyor · {} itibarıyla · {line}",
+            clock(8)
+        );
+        assert_eq!(flashed(&app).unwrap_or_default(), said);
+        app.command("why nobody");
+        assert_eq!(
+            flashed(&app).unwrap_or_default(),
+            "\"nobody\" adında bir agent yok"
+        );
+    }
+
+    #[test]
+    fn every_rung_has_its_words_in_both_languages() {
+        let app = quiet();
+        let name = &app.world.agents[0].name;
+        for (rung, en, tr) in [
+            (Rung::Idle, "idle", "boşta"),
+            (Rung::Done, "done, not seen", "bitti, bakılmadı"),
+            (Rung::Starting, "starting", "başlıyor"),
+            (Rung::Working, "working", "çalışıyor"),
+            (Rung::Waiting, "waiting for you", "onayını bekliyor"),
+            (Rung::Stuck, "stuck", "takıldı"),
+        ] {
+            let said = |lang| ui::words::why(lang, &app.world, 0, (rung, 0, None));
+            assert!(
+                said(Lang::En).starts_with(&format!("{name}: {en} · ")),
+                "{rung:?}"
+            );
+            assert!(
+                said(Lang::Tr).starts_with(&format!("{name}: {tr} · ")),
+                "{rung:?}"
+            );
+        }
     }
 
     #[test]
