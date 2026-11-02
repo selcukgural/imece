@@ -82,7 +82,7 @@ Ekranda bir yanıt türünden sonra `↩` taşır; bir konuşmada başının alt
 | bir `run` komut satırı | 1000 karakter | `run` |
 | bir çalıştırmanın süresi | `--run-timeout`, varsayılan 600 sn (10-3600) | süreç grubu öldürülür |
 | ajana dönen çalıştırma çıktısı | 48 KiB, ortası kesilir | `run` |
-| bir araç çağrısının imece'yi beklemesi | 30 sn (bir run: zaman aşımı + 30 sn; bir onay: 24 sa) | `imece did not answer in time; try again` |
+| bir araç çağrısının imece'yi beklemesi | 30 sn (bir run: zaman aşımı + 30 sn; bir onay: 24 sa) | `imece did not answer in time; try again`, ve çağrı düşürülür, asla geç yapılmaz (yeniden denenen bir `hire` tek işçi yapar); imece'nin aldığı ama geç yanıtladığı bir çağrı: `it was done, do not make it again` |
 | size gösterilen bir değişiklik (yama) | 4 MiB | bir işçinin `done`'ı, üstünde reddedilir |
 | istemdeki depo notları | 16 KiB | `AGENTS.md` / `CLAUDE.md`, kesilir ve günlüğe yazılır |
 | uyanış brifingi | 6000 karakter, satır başına 300 | yeniden başlatma sonrası ilk istem |

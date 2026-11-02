@@ -1071,7 +1071,13 @@ mod tests {
         // read the change.
         let (tx, rx) = mpsc::channel();
         live.calls_tx
-            .send((1, "send".into(), msg("you", "done", "Changed a."), tx))
+            .send((
+                1,
+                "send".into(),
+                msg("you", "done", "Changed a."),
+                tx,
+                Default::default(),
+            ))
             .unwrap();
         let got = (0..500)
             .find_map(|_| {

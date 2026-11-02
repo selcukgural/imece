@@ -113,7 +113,7 @@ record in the same PR.
 
 - 01 `researchers`: optional researcher layer, graded taint, trusted sources (not built).
 - 02 `live`: one long-lived `claude -p` session per agent, worktrees, the one budget pot, `:budget`.
-- 03 `message-bus`: `send(to, type, body)` over imece's own MCP server, a socket per agent, mail caps.
+- 03 `message-bus`: `send(to, type, body)` over imece's own MCP server, a socket per agent, mail caps; a call is taken by imece or given up by its caller, never both (`live::answer_of`), so a retry is not done twice.
 - 04 `board`: `post`/`board`/`claim`, one offer per idle worker, card caps.
 - 05 `hiring`: the leader hires workers with `hire`, `--agents`, tiers per vendor, model fallback.
 - 06 `codex`: Codex app-server adapter, sandbox, overrides, fail-closed checks, efforts as tiers.
