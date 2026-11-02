@@ -1191,6 +1191,24 @@ mod tests {
     }
 
     #[test]
+    fn a_folded_projects_member_is_its_own_loudest_not_anothers() {
+        let mut app = App::new(2, 1, 0, 1, crate::i18n::Lang::En);
+        for a in &mut app.world.agents {
+            a.status = Status::Idle;
+            a.starting = false;
+        }
+        // The loudest of all is in project 1.
+        let other = app.world.projects[1].leader;
+        app.world.agents[other].status = Status::Blocked;
+        assert_eq!(project_member(&app, 0), None, "open: none");
+        app.collapsed[0] = true;
+        let loud = project_member(&app, 0).expect("a member");
+        assert_eq!(app.world.agents[loud].project, 0);
+        app.collapsed[1] = true;
+        assert_eq!(project_member(&app, 1), Some(other));
+    }
+
+    #[test]
     fn the_first_shown_row_leaves_room_for_the_day_rows_above_the_selection() {
         let (mut w, _) = crate::sim::world(1, 2, 0, 1, crate::i18n::Lang::En);
         w.journal.clear();
