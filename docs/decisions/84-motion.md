@@ -97,4 +97,5 @@ late is drawn at the next look (the loop's poll at most a tick).
 used: one attribute, every theme, mono too). Nothing animates on the
 board or the code map. No reduced-motion hint is read from the system
 (a terminal does not pass one); `:motion off` is the person's switch.
-The activity bar per row is part 5 of #200.
+The activity bar per row is part 5 of #200, in the activity bar below;
+`off` leaves it out too.

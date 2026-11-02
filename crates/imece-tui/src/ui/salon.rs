@@ -13,6 +13,7 @@ use ratatui::widgets::{Block, Paragraph};
 
 use super::*;
 use crate::app::{App, Need, Pane, Rung, Sel, Target};
+use crate::motion::Motion;
 
 /// Drawn before an agent's name in its speaker colour.
 pub(crate) const SPEAKER_MARK: &str = "▎";
@@ -505,21 +506,18 @@ pub(super) fn agent_line(
     tail.extend(local_spans(a));
 
     // What is new on the row gives way to what was there: the context
-    // warning, the to-do mark, the time, then the quote, take only what
-    // the row has left once the rest is on it.
+    // warning, the to-do mark, the time, then the quote, then the
+    // activity bar, take only what the row has left once the rest is on
+    // it.
     let mut room = width.saturating_sub(columns(&spans) + columns(&tail));
-    let mut fits = |part: Vec<Span<'static>>| {
-        if columns(&part) <= room {
-            room -= columns(&part);
-            part
-        } else {
-            Vec::new()
-        }
-    };
-    let context = fits(context_spans(a));
-    let plan = fits(plan_spans(a));
-    let since = fits(since);
-    spans.extend(quote_spans(app, a, used, room));
+    let context = fits(&mut room, context_spans(a));
+    let plan = fits(&mut room, plan_spans(a));
+    let since = fits(&mut room, since);
+    let quote = quote_spans(app, a, used, room);
+    room = room.saturating_sub(columns(&quote));
+    let stirs = fits(&mut room, stir_spans(app, a));
+    spans.extend(quote);
+    spans.extend(stirs);
     spans.extend(since);
     spans.extend(plan);
     spans.extend(context);
@@ -539,6 +537,17 @@ pub(super) fn agent_line(
     }
 }
 
+/// `part` when it fits in `room` columns, which it then takes; else
+/// nothing.
+fn fits(room: &mut usize, part: Vec<Span<'static>>) -> Vec<Span<'static>> {
+    if columns(&part) <= *room {
+        *room -= columns(&part);
+        part
+    } else {
+        Vec::new()
+    }
+}
+
 /// A status that says `starting…`, its dots counting while motion moves.
 fn dotted(app: &App, mut status: Vec<Span<'static>>) -> Vec<Span<'static>> {
     let starting = app.lang.text().starting;
@@ -548,6 +557,37 @@ fn dotted(app: &App, mut status: Vec<Span<'static>>) -> Vec<Span<'static>> {
         }
     }
     status
+}
+
+/// The agent's activity bar, `▁▃▅▂▁`: its trace lines in each of the last
+/// [`STIR_TICKS`] ticks, the oldest first, while any of them has one and
+/// motion is not off. It changes with what the agent does and as the
+/// ticks pass, never on a timer of its own.
+pub(super) fn stir_spans(app: &App, a: &Agent) -> Vec<Span<'static>> {
+    if app.motion == Motion::Off {
+        return Vec::new();
+    }
+    let counts = a.stirs.at(app.world.tick);
+    if counts.iter().all(|&n| n == 0) {
+        return Vec::new();
+    }
+    let bar: String = counts.iter().map(|&n| stir_glyph(n)).collect();
+    vec![Span::styled(format!("  {bar}"), dim())]
+}
+
+/// A column of the activity bar for `n` lines in a tick: the same scale on
+/// every row, so rows compare; `▁` is a tick with none.
+pub(super) fn stir_glyph(n: u16) -> char {
+    match n {
+        0 => '▁',
+        1 => '▂',
+        2 => '▃',
+        3..=4 => '▄',
+        5..=6 => '▅',
+        7..=9 => '▆',
+        10..=14 => '▇',
+        _ => '█',
+    }
 }
 
 /// How full the agent's context window is, `◔ 72%`, from `CONTEXT_SHOWN`
