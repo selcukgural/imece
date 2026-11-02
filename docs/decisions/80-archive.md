@@ -212,7 +212,7 @@ archived flashes `no_archives`. An `:archive` counting down acts first
 
 **Help.** One row, `A  :archives`, after `esc u`: 57 key rows make 29
 in two columns, so the help fills the 40-row screen with none to spare.
-The next help row has to merge two.
+A row more scrolls it there (record 40), so no rows need merging.
 
 **Not done (the second half):** `enter` on an archive opening it
 read-only (`App` nested with `Engine::View`, its journal read from the
