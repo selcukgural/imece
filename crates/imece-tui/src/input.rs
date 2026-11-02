@@ -108,17 +108,13 @@ impl Guard {
     }
 }
 
-/// The bytes waiting to be read on `fd`; 0 when it can not say (a
-/// terminal hung up answers EIO).
+/// The bytes waiting to be read on `fd`; 0 when it can not say: a
+/// failed ask (EIO on a terminal hung up) leaves the count as it was.
 fn waiting(fd: RawFd) -> usize {
     let mut n: libc::c_int = 0;
-    // SAFETY: FIONREAD writes one int.
-    let asked = unsafe { libc::ioctl(fd, libc::FIONREAD, &mut n) };
-    if asked < 0 {
-        0
-    } else {
-        usize::try_from(n).unwrap_or(0)
-    }
+    // SAFETY: FIONREAD writes one int, and nothing when it fails.
+    unsafe { libc::ioctl(fd, libc::FIONREAD, &mut n) };
+    usize::try_from(n).unwrap_or(0)
 }
 
 #[cfg(test)]
@@ -167,10 +163,14 @@ mod tests {
     #[test]
     fn a_key_is_ready() {
         let (mut master, slave) = pty();
-        master.write_all(b"j").unwrap();
+        master.write_all(b"jk").unwrap();
         let got = wait(slave.as_raw_fd(), Duration::from_secs(2)).unwrap();
         assert_eq!(got, Wait::Ready);
-        assert_eq!(waiting(slave.as_raw_fd()), 1);
+        // Both keys, not just "something".
+        let start = Instant::now();
+        while waiting(slave.as_raw_fd()) < 2 && start.elapsed() < Duration::from_secs(2) {}
+        assert_eq!(waiting(slave.as_raw_fd()), 2);
+        assert_eq!(waiting(-1), 0, "a descriptor that is none");
     }
 
     #[test]
