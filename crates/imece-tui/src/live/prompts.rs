@@ -306,11 +306,6 @@ pub(super) fn repo_notes(repo: &Path, vendor: Vendor) -> Option<Notes> {
 /// configuration directory (`keys::config_file`).
 pub(crate) const INSTRUCTIONS: &str = "instructions.md";
 
-/// The most of the person's instructions file that is read: the cap and
-/// three bytes, as a character may straddle the cap. A constant, so the
-/// read's bound is not an expression a mutant could widen unseen.
-const PERSONAL_READ: u64 = MAX_NOTES as u64 + 3;
-
 /// The person's own instructions for every project (the file at `path`),
 /// to put in every agent's instructions before the repository's notes;
 /// none when it is not there, not a plain file (a pipe, a device) or
@@ -328,20 +323,21 @@ pub(super) fn personal_notes(path: &Path) -> Option<Notes> {
         .ok()?;
     let size = file.metadata().ok().filter(|m| m.is_file())?.len();
     let size = usize::try_from(size).unwrap_or(usize::MAX);
+    // No more than the cap is read; a character the cap cuts in two is
+    // left out whole, any other byte that is not UTF-8 is replaced.
     let mut head = Vec::new();
-    file.take(PERSONAL_READ).read_to_end(&mut head).ok()?;
-    let text = String::from_utf8_lossy(&head);
-    let mut body = text.trim().to_string();
+    file.take(MAX_NOTES as u64).read_to_end(&mut head).ok()?;
+    if let Err(e) = std::str::from_utf8(&head)
+        && e.error_len().is_none()
+    {
+        head.truncate(e.valid_up_to());
+    }
+    let mut body = String::from_utf8_lossy(&head).trim().to_string();
     if body.is_empty() {
         return None;
     }
     let cut = size > MAX_NOTES;
     if cut {
-        let at = (0..=MAX_NOTES.min(body.len()))
-            .rev()
-            .find(|&i| body.is_char_boundary(i))
-            .unwrap_or(0);
-        body.truncate(at);
         body.push_str("\n[cut: the file goes on]");
     }
     Some(Notes {
@@ -492,7 +488,12 @@ mod tests {
             !n.text.contains('ş') && !n.text.contains("xy"),
             "cut before the letter"
         );
+        assert!(!n.text.contains('\u{FFFD}'), "not a broken letter either");
         assert_eq!(n.text.matches('x').count(), MAX_NOTES - 1);
+        // A byte that is not UTF-8 inside is replaced, and the rest kept.
+        std::fs::write(&file, b"be \xff kind").unwrap();
+        let n = personal_notes(&file).unwrap();
+        assert!(n.text.ends_with("be \u{FFFD} kind"), "{}", n.text);
         // Not a plain file: a device that never ends, a pipe nobody
         // writes to (never waited on).
         assert!(personal_notes(Path::new("/dev/zero")).is_none());

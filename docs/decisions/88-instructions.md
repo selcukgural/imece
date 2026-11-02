@@ -24,7 +24,7 @@ to every vendor (none of them reads it itself). The repository's notes
 come after it, so a project's own rule is the later word.
 
 Bounds, as for the repository's notes: at most `MAX_NOTES` (16 KiB) goes
-in; a longer file goes in as its head, cut at a character's start, with
+in; a longer file goes in as its head, with
 `[cut: the file goes on]`, and the start journals
 `Event::InstructionsCut { agent, path, size }` (an assumption, as
 `NotesCut`), worded `claude-1: your instructions file PATH is 20 KiB;
