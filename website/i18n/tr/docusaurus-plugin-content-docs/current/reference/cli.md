@@ -46,7 +46,7 @@ imece --demo --lang tr                             # ya da IMECE_LANG=tr
 
 | Kod | Ne zaman | Ne görürsünüz |
 | --- | --- | --- |
-| 0 | `--version`, ya da olağan bir çıkış (`q q`, `:quit`, ya da dışarıdan SIGTERM, SIGHUP ve SIGINT; imece bunları olağan bir çıkışa çevirir ki oturumlar dursun ve veriyolunun soketleri kaldırılsın) | kabuğunuzun başlığı geri gelir |
+| 0 | `--version`, ya da olağan bir çıkış (`q q`, `:quit`, ya da dışarıdan SIGTERM, SIGHUP ve SIGINT; imece bunları olağan bir çıkışa çevirir ki oturumlar dursun ve veriyolunun soketleri kaldırılsın; terminalin kendisi gidince de aynısı: sekmesi ya da penceresi kapandığında, tmux sunucusu bittiğinde) | kabuğunuzun başlığı geri gelir |
 | 1 | Bayraklar okunduktan sonra başlangıç başarısız oldu: PATH'te kodlama ajanı yok, `--repo` bir git çalışma kopyası değil, depoyu başka bir imece tutuyor, depo okunamıyor, bir satıcının oturumu başlatılamadı | ekran geri getirildikten sonra stderr'de `imece: <neden>` |
 | 2 | Bir bayrak yanlış, ya da `--help` | stderr'de mesaj; eksik değerde, bilinmeyen seçenekte ve canlıda verilen demo bayrağında ardından kullanım metni |
 

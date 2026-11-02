@@ -23,7 +23,7 @@ Dört sütun, her biri sayısıyla başlıklı:
 | Sütun | İçindeki kartlar |
 | --- | --- |
 | BEKLİYOR | asılmış, henüz alınmamış: liderin `post`'u ya da liderin henüz boşta olmayan bir işçi için yazdığı kart |
-| ÜZERİNDE | alınmış: lider görev vermiş ya da boşta bir işçi panodan almış. Başlığın altında sahibi, sahibinin durum işaretiyle ve bir ilerleme çubuğuyla |
+| ÜZERİNDE | alınmış: lider görev vermiş ya da boşta bir işçi panodan almış. Başlığın altında sahibi, sahibinin durum işaretiyle ve bir ilerleme çubuğuyla; çalışan bir sahibin işareti salondaki gibi nefes alır (`:motion`) |
 | DOĞRULANIYOR | canlıda hiçbir şey doldurmaz. Demonun merge queue'su kullanıyordu; canlıda biten bir kart doğrudan BİTTİ'ye geçer ve değişikliği onun yerine SENİ BEKLEYEN'de bekler |
 | BİTTİ | bir `done` ile bitmiş, en yeni önce, bitiren sahibiyle |
 

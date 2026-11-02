@@ -46,7 +46,8 @@ happened).
 something shown changes its look, none when motion is off, the terminal
 has no focus, an archive's view is open, or nothing on the screen moves
 (breath and dots only on the salon's screen, for agents not gone or put
-away; the spinner only while the bottom line is free: no flash, no
+away, and the breath on the board for the owners of the cards taken
+(in progress, verifying, done) in sight; the spinner only while the bottom line is free: no flash, no
 countdown, not writing; the header's only in full and while someone is
 mid-turn; each glow to its end). `App::drawn` keeps it as
 `drawn_motion`; `App::draw_due` draws when the clock passes it;
@@ -130,8 +131,24 @@ late is drawn at the next look (the loop's poll at most a tick).
 **Not done.** The design's breathing in RGB tones of the theme (DIM is
 used: one attribute, every theme, mono too). Glows and dots patched
 like the breath (a lit row drawn again alone): the demo's speed would
-then meet the 10 %. Nothing animates on the
-board or the code map. No reduced-motion hint is read from the system
+then meet the 10 %. Nothing animates on the code map. A spinner while a
+change loads was looked at (2026-11-02) and is not needed: a change is
+read on the git thread when its worker says `done`, before its Δ is in
+WAITING FOR YOU, so opening it never waits; an apply says so at once
+(`applying …`, the flash) and the journal when it is in. No reduced-motion hint is read from the system
 (a terminal does not pass one); `:motion off` is the person's switch.
 The activity bar per row is part 5 of #200, in the activity bar below;
 `off` leaves it out too.
+
+**On the board** (2026-11-02, item 5 of the motion talk). A card's owner
+under its title (every column but WAITING, which shows none) wears the
+same glyph as before, now styled by `ui::glyph_style`: it breathes when
+`ui::breathes` says so on the salon (rung working, not a leader), so the
+two screens agree on who is at work. `ui::note_glyph` (moved from the
+salon, shared) records where it is, so a frame where only the breath
+changed is patched on the board too; a card below the column's foot is
+not noted. `App::moving_parts` gives the breath on the board when a card
+in sight (`shown_cards`), not waiting, has an owner not gone who
+breathes; under a zoom or on the code map nothing breathes. The demo
+draws the same board, so it shows it (record 31). Read cost: the rungs
+once per frame and the cards in sight, as the board already read them.
