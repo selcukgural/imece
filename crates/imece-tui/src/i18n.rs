@@ -1365,6 +1365,15 @@ pub const EN: Text = Text {
     news_close: " any key: close · :news shows this again",
     news: &[
         (
+            "0.1.202611030053",
+            &[
+                ":archive puts a finished project away, :restore brings it back; A lists them.",
+                "The tab shows progress; notices come your terminal's way, a kitty click opens.",
+                ":motion calm|full|off: working rows breathe, a bar shows what each one did.",
+                "A closed tab or a killed tmux quits imece; the help scrolls on a short screen.",
+            ],
+        ),
+        (
             "0.1.1",
             &[
                 "A turn a busy vendor failed is tried again; a refused key waits for you as ✕.",
@@ -2037,6 +2046,15 @@ pub const TR: Text = Text {
     news_title: " IMECE {} SÜRÜMÜNDE YENİ OLANLAR ",
     news_close: " herhangi bir tuş: kapat · :news bunu yine gösterir",
     news: &[
+        (
+            "0.1.202611030053",
+            &[
+                ":archive biten projeyi kaldırır, :restore geri getirir; A hepsini listeler.",
+                "Sekme ilerlemeyi gösterir; bildirim terminalin kendi yoluyla, kitty'de tıklanır.",
+                ":motion calm|full|off: çalışan satırlar nefes alır, çubuk ne yaptığını gösterir.",
+                "Kapanan sekme ya da öldürülen tmux imece'yi kapatır; yardım kısa ekranda kayar.",
+            ],
+        ),
         (
             "0.1.1",
             &[

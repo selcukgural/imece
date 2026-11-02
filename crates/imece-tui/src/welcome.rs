@@ -44,8 +44,8 @@ pub fn sign_in(v: Vendor) -> &'static str {
 
 /// A version `MAJOR.MINOR.PATCH`, compared as numbers; anything else
 /// (a pre-release suffix too) is none.
-pub fn parse_version(s: &str) -> Option<(u32, u32, u32)> {
-    let mut parts = s.trim().split('.').map(|p| p.parse::<u32>().ok());
+pub fn parse_version(s: &str) -> Option<(u64, u64, u64)> {
+    let mut parts = s.trim().split('.').map(|p| p.parse::<u64>().ok());
     let v = (parts.next()??, parts.next()??, parts.next()??);
     parts.next().is_none().then_some(v)
 }
@@ -90,6 +90,12 @@ mod tests {
     fn a_version_is_three_numbers() {
         assert_eq!(parse_version("0.1.0"), Some((0, 1, 0)));
         assert_eq!(parse_version(" 12.3.45\n"), Some((12, 3, 45)));
+        // A patch that is a date and time (0.1.YYYYMMDDHHMM) is past u32.
+        assert_eq!(
+            parse_version("0.1.202611030053"),
+            Some((0, 1, 202_611_030_053))
+        );
+        assert!(parse_version("0.1.202611030053") > parse_version("0.1.1"));
         assert_eq!(parse_version("0.1"), None);
         assert_eq!(parse_version("0.1.0.1"), None);
         assert_eq!(parse_version("0.1.0-rc1"), None);
