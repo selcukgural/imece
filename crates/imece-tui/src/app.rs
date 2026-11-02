@@ -12390,6 +12390,7 @@ mod tests {
         app.world.agents[w].starting = true;
         app.watch_glows(e + ms(4000));
         assert_eq!(app.glows.len(), 2, "idle to starting lights nothing");
+        assert_eq!(app.glows[1], (me, Glow::Settle, e + ms(2100)), "as it was");
         app.world.agents[w].starting = false;
         app.watch_glows(e + ms(4200));
         assert_eq!(
@@ -12402,6 +12403,7 @@ mod tests {
         app.world.agents[w].status = Status::Idle;
         app.watch_glows(e + ms(5000));
         assert_eq!(app.glows.len(), 2);
+        assert_eq!(app.glows[1], (me, Glow::Settle, e + ms(4200)), "as it was");
         // Motion off, or another window: nothing lights, and what changed
         // meanwhile does not light later.
         app.motion = Motion::Off;
