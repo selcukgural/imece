@@ -3,6 +3,7 @@
 
 use crate::i18n::{Lang, fill};
 use crate::model::*;
+use crate::screen::Progress;
 use crate::shell::Output;
 
 /// The name of the project agent `id` belongs to.
@@ -463,12 +464,21 @@ pub fn said_in_story(me: AgentId, e: &StoryEvent) -> Option<Said<'_>> {
 /// hours and minutes under a day, days and hours from then on.
 /// The terminal's title: what a tab in the background shows, `waiting`
 /// being the count of open inbox items (the header's).
-pub fn title(lang: Lang, waiting: usize) -> String {
-    if waiting == 0 {
+pub fn title(lang: Lang, waiting: usize, progress: Progress) -> String {
+    let words = if waiting == 0 {
         "imece".to_string()
     } else {
         fill(lang.text().title_waiting, &[&waiting.to_string()])
-    }
+    };
+    // The ladder's top first, in the glyphs of the header's fleet and the
+    // rows, so a tab in the background says it.
+    let glyph = match progress {
+        Progress::Stuck => "✕ ",
+        Progress::Waiting => "! ",
+        Progress::Working => "● ",
+        Progress::Calm => "",
+    };
+    format!("{glyph}{words}")
 }
 
 pub fn ago(lang: Lang, seconds: u64) -> String {
@@ -659,11 +669,14 @@ mod tests {
 
     #[test]
     fn the_title_names_imece_and_counts_what_waits_in_both_languages() {
-        assert_eq!(title(Lang::En, 0), "imece");
-        assert_eq!(title(Lang::Tr, 0), "imece");
-        assert_eq!(title(Lang::En, 1), "imece · 1 waiting");
-        assert_eq!(title(Lang::En, 12), "imece · 12 waiting");
-        assert_eq!(title(Lang::Tr, 3), "imece · 3 seni bekliyor");
+        assert_eq!(title(Lang::En, 0, Progress::Calm), "imece");
+        assert_eq!(title(Lang::Tr, 0, Progress::Calm), "imece");
+        assert_eq!(title(Lang::En, 1, Progress::Calm), "imece · 1 waiting");
+        assert_eq!(title(Lang::En, 12, Progress::Calm), "imece · 12 waiting");
+        assert_eq!(
+            title(Lang::Tr, 3, Progress::Calm),
+            "imece · 3 seni bekliyor"
+        );
     }
 
     #[test]

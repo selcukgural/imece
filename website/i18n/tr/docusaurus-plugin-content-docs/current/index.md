@@ -43,7 +43,7 @@ imece, Rust ile yazılmış bir terminal programıdır: satıcıların kendi kom
 3. Her işçi kendi worktree'sinde, varsayılan `--confine standard` altında satıcısının tam kodlama araç setiyle (okuma, yazma, kabuk, web) çalışır. Satıcısının izin soracağı şey size `⚑` olarak gelir.
 4. Bir işçinin `done` demesi SENİ BEKLEYEN'de bir değişiklik `Δ` olur; yanında imece'nin tam o ağaçta gördüğü çalıştırmalar (`✓ bu ağaçta temiz geçti: cargo test` ya da `bu ağaçta çalıştırma yok`).
 5. Açarsınız (`enter` ya da `W`), diff'i okursunuz ve yanıt verirsiniz: `a` checkout'unuza stage'e uygular ve worktree'yi işaretler, sonraki `done` yalnız sonrasını gösterir; `r` reddeder ve nedenini yazmanız için yazma satırını açar; `c` ve `n` yerine satırlara not gönderir; `x` kısmi uygulama için hunk seçer. Checkout'unuza uymayan bir değişiklik git'in sözleriyle reddedilir ve hiçbir şey yarım uygulanmaz.
-6. Günlük ne olduğunu söyler; terminalin başlığı bekleyenleri sayar (`imece · 2 seni bekliyor`).
+6. Günlük ne olduğunu söyler; terminalin başlığı bekleyenleri sayar (`! imece · 2 seni bekliyor`).
 
 ## Üç derinlik
 

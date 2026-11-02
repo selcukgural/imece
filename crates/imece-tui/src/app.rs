@@ -18,6 +18,7 @@ use crate::live::{self, Live, Open, Refusal};
 use crate::model::*;
 use crate::notify::{self, Note, Notify};
 use crate::prefs::{SIDE_DEFAULT, SIDE_MAX, SIDE_MIN};
+use crate::screen::Progress;
 use crate::shell::{Caught, Output, Ran};
 use crate::sim::{self, Sim};
 use crate::theme;
@@ -1146,6 +1147,27 @@ impl App {
                 }
             })
             .collect()
+    }
+
+    /// What the tab's progress and the title's glyph say: the top of the
+    /// ladder over the agents of the projects that are open (a closed or
+    /// archived one is not on the screen), waiting also when anything is
+    /// in WAITING FOR YOU, as the title counts it. Done, not seen, is calm:
+    /// the person sees it when back.
+    pub fn progress(&self) -> Progress {
+        let w = &self.world;
+        let rungs = self.rungs();
+        let top = (w.agents.iter())
+            .filter(|a| !w.put_away(a.id))
+            .map(|a| rungs[a.id])
+            .max();
+        match top {
+            Some(Rung::Stuck) => Progress::Stuck,
+            _ if !w.open_inbox().is_empty() => Progress::Waiting,
+            Some(Rung::Waiting) => Progress::Waiting,
+            Some(Rung::Working | Rung::Starting) => Progress::Working,
+            _ => Progress::Calm,
+        }
     }
 
     /// The loudest of `members`: the one on the highest rung, the first
@@ -8260,6 +8282,54 @@ mod tests {
         assert_eq!(app.loudest([1, 4, 2]), Some(4), "waiting over working");
         app.world.agents[2].status = Status::Stopped;
         assert_eq!(app.loudest([1, 4, 2]), Some(2), "stuck over waiting");
+    }
+
+    #[test]
+    fn the_tab_and_the_title_say_the_top_of_the_open_projects_ladder() {
+        let mut app = quiet();
+        assert_eq!(app.progress(), Progress::Calm);
+        app.unseen.insert(4);
+        assert_eq!(app.progress(), Progress::Calm, "done, not seen, is calm");
+        app.world.agents[3].starting = true;
+        assert_eq!(app.progress(), Progress::Working, "starting");
+        app.world.agents[3].starting = false;
+        app.world.agents[2].status = Status::Working;
+        assert_eq!(app.progress(), Progress::Working);
+        app.world.agents[1].status = Status::WaitingHuman;
+        assert_eq!(app.progress(), Progress::Waiting);
+        app.world.agents[0].status = Status::Blocked;
+        assert_eq!(app.progress(), Progress::Stuck, "stuck over all");
+        app.world.agents[0].status = Status::Stopped;
+        assert_eq!(app.progress(), Progress::Stuck);
+        app.world.agents[0].gone = true;
+        assert_eq!(app.progress(), Progress::Waiting, "gone is not stuck");
+        // An item waiting is waiting, whoever it is of, as the title counts.
+        let mut app = quiet();
+        app.world.agents[2].status = Status::Working;
+        app.world.inbox.push(item(4, true));
+        app.world.agents[4].gone = true;
+        assert_eq!(app.progress(), Progress::Waiting);
+        app.world.agents[0].status = Status::Stopped;
+        assert_eq!(app.progress(), Progress::Stuck, "stuck over waiting");
+        // A closed project's agents are not on the screen.
+        let (mut app, [a, _, other]) = two_quiet_projects();
+        app.world.agents[other].status = Status::Blocked;
+        assert_eq!(app.progress(), Progress::Stuck);
+        let p = app.world.agents[other].project;
+        app.world.projects[p].closed = true;
+        assert_eq!(app.progress(), Progress::Calm, "closed");
+        app.world.agents[a].status = Status::Working;
+        assert_eq!(app.progress(), Progress::Working);
+        // The title starts with its glyph.
+        let title = |w, p| ui::words::title(Lang::En, w, p);
+        assert_eq!(title(0, Progress::Calm), "imece");
+        assert_eq!(title(0, Progress::Working), "● imece");
+        assert_eq!(title(2, Progress::Waiting), "! imece · 2 waiting");
+        assert_eq!(title(1, Progress::Stuck), "✕ imece · 1 waiting");
+        assert_eq!(
+            ui::words::title(Lang::Tr, 3, Progress::Waiting),
+            "! imece · 3 seni bekliyor"
+        );
     }
 
     /// The salon's selectable rows.

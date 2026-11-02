@@ -150,7 +150,7 @@ Satırda `enter` işçinin odağını açar: kartının hikâyesi (niyet, varsay
 
 ## Değişiklik (Δ)
 
-İşçi `done` gönderince imece onun worktree'sini tek yama olarak okur ve SENİ BEKLEYEN'e koyar. Günlük `claude-1 bitirdi: 2 dosya, +31 −4 → seni bekliyor` der, başlık `! 1 seni bekliyor`, terminalin başlığı `imece · 1 seni bekliyor` olur.
+İşçi `done` gönderince imece onun worktree'sini tek yama olarak okur ve SENİ BEKLEYEN'e koyar. Günlük `claude-1 bitirdi: 2 dosya, +31 −4 → seni bekliyor` der, başlık `! 1 seni bekliyor`, terminalin başlığı `! imece · 1 seni bekliyor` olur.
 
 ```text
  SENİ BEKLEYEN (1) ──────────────────────────────────────────────────────
