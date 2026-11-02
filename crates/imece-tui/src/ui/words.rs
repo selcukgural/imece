@@ -1,6 +1,7 @@
 //! Events, card stories and inbox items worded in the person's language.
 //! Every argument goes through `fill`, which cleans agent-written text.
 
+use crate::app::Rung;
 use crate::i18n::{Lang, fill};
 use crate::model::*;
 use crate::screen::Progress;
@@ -488,6 +489,24 @@ pub fn title(lang: Lang, waiting: usize, progress: Progress) -> String {
         Progress::Calm => "",
     };
     format!("{glyph}{words}")
+}
+
+/// `:why`'s line about agent `id`: its rung, since when and the
+/// journal's line that put it there (`App::why`), in the journal's words.
+pub fn why(
+    lang: Lang,
+    w: &World,
+    id: AgentId,
+    (rung, since, line): (Rung, u64, Option<usize>),
+) -> String {
+    let t = lang.text();
+    let state = t.rungs[rung as usize];
+    let at = crate::model::when(since, crate::model::day(w.tick));
+    let cause = line.map_or_else(
+        || t.why_unsaid.to_string(),
+        |i| event(lang, w, &w.journal[i].event),
+    );
+    fill(t.why, &[&w.agents[id].name, state, &at, &cause])
 }
 
 pub fn ago(lang: Lang, seconds: u64) -> String {
