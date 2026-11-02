@@ -1,7 +1,7 @@
 ---
 title: Video turları
 sidebar_label: Video turları
-description: imece'nin gerçek ekranından, simülasyon üzerinde kaydedilmiş üç kısa tur; bölümleri ve altyazısıyla.
+description: imece'nin gerçek ekranından, simülasyon üzerinde kaydedilmiş dört kısa tur; bölümleri ve altyazısıyla.
 ---
 
 import useBaseUrl from '@docusaurus/useBaseUrl';
@@ -9,7 +9,7 @@ import useBaseUrl from '@docusaurus/useBaseUrl';
 # Video turları
 
 imece'nin gerçek ekranından, [simülasyon](getting-started/demo.md) çalışırken
-kaydedilmiş üç kısa tur; gördüğünüz ekranların aynısını, düzenli bir tempoda
+kaydedilmiş dört kısa tur; gördüğünüz ekranların aynısını, düzenli bir tempoda
 gösterirler. Videolar İngilizcedir; altyazı oynatıcıdan açılabilir ve her
 bölüm, onu anlatan sayfaya bağlanır.
 
@@ -87,6 +87,31 @@ yardım penceresi ve süzgeci.
 | `:` komutları ve değerleri | [`:` komutları](reference/commands.md) |
 | Temalar ve dil | [Temalar ve dil](screen/themes-and-language.md) |
 | Yardım penceresi | [Tuşlar](screen/keyboard.md) |
+
+## 4 · Yolunu bulmak
+
+Atlama satırı, yapılacaklar listesiyle bir ajanın ekranı, salonun üstünde bir
+göz atma, ipucu harfleri, yoldan kaldırılan bir satır, bir konuşmanın seçilip
+kopyalanan satırları, bir işaret; arşivlenen, salt okunur açılan ve geri
+getirilen bir proje.
+
+<video
+  controls
+  preload="metadata"
+  playsInline
+  poster={useBaseUrl('/video/imece-find.jpg')}
+  style={{ width: '100%', borderRadius: '12px', background: '#000' }}>
+  <source src={useBaseUrl('/video/imece-find.mp4')} type="video/mp4" />
+  <track kind="captions" srcLang="en" label="English" src={useBaseUrl('/video/imece-find.vtt')} default />
+</video>
+
+| Bölüm | Nerede okunur |
+| --- | --- |
+| Atlama satırı (`&`) | [Tuşlar](screen/keyboard.md) |
+| Bir ajanın ekranı: bağlam, hareket, yapılacaklar | [Salon](screen/salon.md) |
+| Göz atma (`K`), ipucu harfleri (`F`), satır kaldırmak (`s`) | [Salon](screen/salon.md) |
+| Satır seçip kopyalamak, işaretler | [Konuşmalar](screen/conversations.md) |
+| `:archive`, arşivler (`A`), birini geri getirmek | [Oturumlar ve kalıcılık](concepts/sessions.md) |
 
 :::note
 

@@ -16,9 +16,8 @@
   },
   "music": { "generate": "ambient", "volume": 0.15 },
   "pronounce": {
-    "imece's": "ee-meh-jeh's",
-    "imece": "ee-meh-jeh",
-    "selcukgural.github.io/imece": "selcuk gural dot github dot I O slash ee-meh-jeh",
+    "imece's": "imeje's",
+    "imece": "imeje",
     "codex-1": "codex one",
     "worktree": "work-tree",
     "worktrees": "work-trees"
@@ -64,17 +63,27 @@
     {
       "id": "reply",
       "chapter": "A reply and its question",
-      "narration": "Every message on the bus has a number, and a reply names the one it answers. v opens the conversation with the agent at hand, here the leader; the arrow shows what its reply answers, and the percent key goes there and back. The brackets go from turn to turn: the lines one side says before the other answers.",
+      "narration": "v opens your conversation with the agent at hand, here the leader. Every message on the bus has a number, and a reply names the one it answers. Enter on a line of the journal opens the conversation it belongs to; a reply is marked with an arrow, and the percent key goes to what it answers and back. The brackets go from turn to turn: the lines one side says before the other answers.",
       "steps": [
         { "action": "type", "target": "#corner", "text": "ggjv", "delayMs": 300 },
         { "action": "wait", "seconds": 6 },
-        { "action": "type", "target": "#corner", "text": "%", "delayMs": 0 },
+        { "action": "press", "key": "Escape" },
+        { "action": "type", "target": "#corner", "text": " ", "delayMs": 0 },
+        { "action": "press", "key": "Tab" },
+        { "action": "press", "key": "Tab" },
+        { "action": "type", "target": "#corner", "text": "j", "delayMs": 0 },
+        { "action": "wait", "seconds": 1 },
+        { "action": "press", "key": "Enter" },
         { "action": "wait", "seconds": 4 },
         { "action": "type", "target": "#corner", "text": "%", "delayMs": 0 },
         { "action": "wait", "seconds": 3 },
-        { "action": "type", "target": "#corner", "text": "[", "delayMs": 0 },
+        { "action": "type", "target": "#corner", "text": "%", "delayMs": 0 },
         { "action": "wait", "seconds": 3 },
-        { "action": "press", "key": "Escape" }
+        { "action": "type", "target": "#corner", "text": "[", "delayMs": 0 },
+        { "action": "wait", "seconds": 2 },
+        { "action": "press", "key": "Escape" },
+        { "action": "type", "target": "#corner", "text": " ", "delayMs": 0 },
+        { "action": "press", "key": "Tab" }
       ]
     },
     {
@@ -172,10 +181,10 @@
     {
       "id": "closing",
       "chapter": "Learn more",
-      "narration": "Every key, every command and every scenario: selcukgural.github.io/imece.",
+      "narration": "One line to the leader, and a key for everything else.",
       "tail": 1.5,
       "steps": [
-        { "action": "card", "title": "imece", "text": "selcukgural.github.io/imece" },
+        { "action": "card", "title": "imece", "text": "github.com/selcukgural/imece" },
         { "action": "wait", "seconds": 3 }
       ]
     }

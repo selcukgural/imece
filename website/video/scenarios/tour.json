@@ -23,9 +23,8 @@
   },
   "music": { "generate": "ambient", "volume": 0.15 },
   "pronounce": {
-    "imece's": "ee-meh-jeh's",
-    "imece": "ee-meh-jeh",
-    "selcukgural.github.io/imece": "selcuk gural dot github dot I O slash ee-meh-jeh",
+    "imece's": "imeje's",
+    "imece": "imeje",
     "worktree": "work-tree",
     "worktrees": "work-trees"
   },
@@ -55,19 +54,21 @@
     {
       "id": "salon",
       "chapter": "The salon",
-      "narration": "This is the salon. Each project is a group with its own leader. A worker's row shows its card, what it is doing right now, what it has cost so far, and where its worktree stands. The journal on the right keeps every message and every event, with the time.",
+      "narration": "This is the salon. Each project is a group with its own leader. A worker's row shows its card and what it is doing right now; the mark in front says where it stands: working, starting, waiting for you, stuck. The small bars show how busy it was in the last half minute, the three lines how far it is through its own to-do list, then what it has cost. The journal on the right keeps every message and every event, with the time.",
       "steps": [
         { "action": "type", "target": "#corner", "text": "j", "delayMs": 0 },
-        { "action": "wait", "seconds": 6 },
+        { "action": "wait", "seconds": 7 },
         { "action": "type", "target": "#corner", "text": "j", "delayMs": 0 },
-        { "action": "wait", "seconds": 6 },
+        { "action": "wait", "seconds": 7 },
+        { "action": "type", "target": "#corner", "text": "j", "delayMs": 0 },
+        { "action": "wait", "seconds": 7 },
         { "action": "type", "target": "#corner", "text": "j", "delayMs": 0 }
       ]
     },
     {
       "id": "deeper",
       "chapter": "Three depths",
-      "narration": "Enter looks deeper: an agent's screen, with its card's story and its conversations. Enter again shows the raw stream from the vendor's own CLI. Escape goes back. Three depths, everywhere: the guild, one card's story, the raw stream.",
+      "narration": "Enter looks deeper: an agent's screen, with how full its context is, its to-do list step by step, and its card's story. Enter again shows the raw stream from the vendor's own CLI. Escape goes back. Three depths, everywhere: the guild, one card's story, the raw stream.",
       "steps": [
         { "action": "press", "key": "Enter" },
         { "action": "wait", "seconds": 5 },
@@ -96,7 +97,7 @@
     {
       "id": "waiting",
       "chapter": "Waiting for you",
-      "narration": "Everything that needs you lands in one place: WAITING FOR YOU. A change a worker has finished, a shell command a vendor would have asked you about, a question for you. The terminal's title counts them, so a tab in the background shows it too.",
+      "narration": "Everything that needs you lands in one place: WAITING FOR YOU. A change a worker has finished, a command or an edit a vendor would have asked you about, a question for you. The terminal's title counts them, so a tab in the background shows it too.",
       "steps": [
         { "action": "type", "target": "#corner", "text": "w", "delayMs": 0 },
         { "action": "wait", "seconds": 5 },
@@ -183,10 +184,10 @@
     {
       "id": "closing",
       "chapter": "Learn more",
-      "narration": "imece is open source. Install it from source, try the simulation for free, and read every key and every scenario at selcukgural.github.io/imece.",
+      "narration": "imece is open source. Install it with one line, and try the simulation for free.",
       "tail": 1.5,
       "steps": [
-        { "action": "card", "title": "imece", "text": "selcukgural.github.io/imece" },
+        { "action": "card", "title": "imece", "text": "github.com/selcukgural/imece" },
         { "action": "wait", "seconds": 3 }
       ]
     }
