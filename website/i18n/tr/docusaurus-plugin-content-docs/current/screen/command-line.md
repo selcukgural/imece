@@ -108,7 +108,7 @@ Satır bir kabuğun satırı gibi düzenlenir, readline'ın emacs takımı:
 | `^y` | son kesileni imleçte geri koy |
 | `^d`, delete | imlecin altındaki karakter; `^d` boş satırdan çıkmaz (`esc` çıkar) |
 
-Tek bir kesik vardır, halka değil: bir şey alan her kesme öncekinin yerini alır. İmlecin altındaki karakter ters renkte çizilir, `█` bloğu sonu gösterir. macOS'ta alt tuşları için terminalin Option'ı Meta olarak göndermesi gerekir (iTerm2: Profiles → Keys → Left Option key: Esc+; Terminal.app: Use Option as Meta key); yoksa Option-b `∫` yazar. Burada olmayanlar: kill-ring döngüsü, geri alma, yer değiştirme, vim'in normal kipi.
+Tek bir kesik vardır, halka değil: bir şey alan her kesme öncekinin yerini alır. İmleç terminalin kendi imlecidir, bir sonraki karakterin geleceği yerde durur ve şekli ne yazdığınızı söyler: mesaj ya da `!` komutu için yanıp sönen çubuk, `:` komutu için temanın vurgu renginde sabit çubuk, bir şey bulan sözcükler için yanıp sönen alt çizgi (`#`, `&`, `^r`, yardımın ve arşivlerin `/` süzgeci). Yanıp sönmeyi terminal yapar, imece'ye çizim maliyeti yoktur; imleç şeklini değiştirmeyen bir terminal kendi şeklini korur. imece terminali geri verdiğinde (sonunda ya da bir `!` komutuna) imleç terminalinizin ayarlarındaki gibidir. Her kare terminale tek bir senkron güncelleme olarak gider, bu yüzden bunu destekleyen bir terminal hiçbir zaman yarım kare göstermez. macOS'ta alt tuşları için terminalin Option'ı Meta olarak göndermesi gerekir (iTerm2: Profiles → Keys → Left Option key: Esc+; Terminal.app: Use Option as Meta key); yoksa Option-b `∫` yazar. Burada olmayanlar: kill-ring döngüsü, geri alma, yer değiştirme, vim'in normal kipi.
 
 ## Birkaç satır
 

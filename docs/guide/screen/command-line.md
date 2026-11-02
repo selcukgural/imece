@@ -108,7 +108,7 @@ The line edits as a shell's does, readline's emacs set:
 | `^y` | put the last cut back at the cursor |
 | `^d`, delete | the character under the cursor; `^d` does not leave an empty line (`esc` does) |
 
-There is one cut, not a ring: each cut that takes something replaces it. The character under the cursor is drawn reversed, the block `█` stands for the end. On macOS the alt keys need the terminal to send Option as Meta (iTerm2: Profiles → Keys → Left Option key: Esc+; Terminal.app: Use Option as Meta key); without it Option-b types `∫`. Not here: kill-ring cycling, undo, transposing, vim's normal mode.
+There is one cut, not a ring: each cut that takes something replaces it. The cursor is your terminal's own, standing where the next character goes, and its shape says what you are writing: a blinking bar for a message or a `!` command, a steady bar in the theme's accent for a `:` command, a blinking underline for words that find something (`#`, `&`, `^r`, and the `/` filter of the help and the archives). The terminal blinks it, so it costs imece no drawing; a terminal that does not change cursor shapes keeps its own, and when imece hands the terminal back (at the end or to a `!` command) the cursor is as your terminal's settings have it. Each frame reaches the terminal as one synchronized update, so a terminal that supports it never shows half of one. On macOS the alt keys need the terminal to send Option as Meta (iTerm2: Profiles → Keys → Left Option key: Esc+; Terminal.app: Use Option as Meta key); without it Option-b types `∫`. Not here: kill-ring cycling, undo, transposing, vim's normal mode.
 
 ## Several lines
 
