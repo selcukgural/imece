@@ -46,3 +46,21 @@ be offered it`, `delivered as message 8; claude-1 starts on it now`,
 be hired`, a claimed card's `When it is done, send lead a done
 message`). The demo has no bus, so there is nothing for it to show.
 
+**Group addresses (backlog F12 in #59, 2026-11-03).** The leader may
+`send` to a group of its project's workers instead of one: `workers`
+(every one not gone), `idle` (idle with no turn under way), or a vendor
+it leads with (`claude`, `codex`, `gemini`: its workers of that vendor),
+`bus::Group::parse`. Only `inform` and `notice` go to a group (work goes
+to one worker with `assign`, or onto the board), and no `re`. Each
+worker gets its own message through `Live::message`, so every cap and
+check of a message to one holds per worker (stopped, the unread cap,
+the budget); the answer lists who got it with its number and who did
+not with why, and is an error only when nobody got it. A teammate whose
+name is a group's word is written to as itself: a name comes first. The
+caps: a group is at most the team (`--agents`), each worker's unread
+cap (`MAX_MAIL`) holds, and nothing in a group wakes anyone, so it
+starts no turn and costs nothing until the next turn reads it. Other
+roles are refused (`only the leader writes to a group`). The demo's
+leader tells the other workers, one inform each, when the person applies
+a change (`Sim::tell_the_others`).
+

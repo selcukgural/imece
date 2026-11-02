@@ -390,7 +390,13 @@ pub(super) fn send_tool() -> Tool {
         input: json!({
             "type": "object",
             "properties": {
-                "to": { "type": "string", "description": "The teammate's name, or you for the person." },
+                "to": {
+                    "type": "string",
+                    "description": "The teammate's name, or you for the person. The \
+                                    leader may also write an inform or a notice to a group \
+                                    of its workers: workers (all), idle, or a vendor \
+                                    (claude, codex, gemini); each gets it as its own message.",
+                },
                 "type": { "type": "string", "enum": kinds },
                 "body": {
                     "type": "string",

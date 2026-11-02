@@ -11,6 +11,8 @@ Veriyolu (bus) ajanların birbirine ve size ulaştığı yoldur: tek bir araç, 
 
 `send` şunları alır: `to` (bir takım arkadaşının adı, ya da kişi için `you`), `type` (aşağıdaki ondan biri), `body` (en çok 4000 karakter) ve isteğe bağlı `re` (bu mesajın yanıtladığı mesajın numarası). Gönderen, çağrının geldiği sokettir; ajanın söylediği bir şey asla değil. Bir mesaj yalnızca aynı projenin bir takım arkadaşına gider; `no teammate is called "codex-9"; the team is lead, claude-1, claude-2` takımı sayar.
 
+Lider, işçilerinden bir gruba da yazabilir: `to: workers` (hepsi), `to: idle` (boşta olup turu sürmeyenler) ya da bir satıcı (`to: codex`: o satıcıdan işçileri). Bir gruba yalnızca `inform` ya da `notice` gider, `re` olmadan; her işçi onu kendi mesajı olarak, tek başına ona gönderilmiş bir mesajın kontrollerinden geçerek alır ve yanıt kimin alıp kimin almadığını söyler: `sent to claude-1 (message 5), claude-2 (message 6); not to codex-1: codex-1 has stopped; …`. `workers` adlı bir takım arkadaşına kendisi olarak yazılır: ad gruptan önce gelir.
+
 | Tür | Alıcıyı uyandırır | Olağan gönderen → alıcı | imece'nin yaptığı |
 | --- | --- | --- | --- |
 | `assign` | evet | lider → işçi, işçi → yardımcı | ilk satır kartın başlığı olur; boşta bir işçi yeni bir kart alır ve ona başlar; `you`'ya reddedilir |
@@ -108,7 +110,7 @@ imece'nin MCP sunucusunun adı `imece`'dir; araçları bir Claude oturumuna `mcp
 
 | Alan | Tür | Zorunlu | Anlamı |
 | --- | --- | --- | --- |
-| `to` | dize | evet | takım arkadaşının adı, ya da kişi için `you` |
+| `to` | dize | evet | takım arkadaşının adı, ya da kişi için `you`; lider için ayrıca `workers`, `idle` ya da bir satıcı, bir inform ya da notice için |
 | `type` | dize, ondan biri | evet | zarf |
 | `body` | dize, en çok 4000 | evet | `assign` için: ilk satır kartın başlığı olur (ekran ilk 20 karakterini işçinin yanında gösterir, bu yüzden her görevin paylaştığı bir fiille değil, onu öteki kartlardan ayıranla başlamalı); sonra görev, dokunduğu dosyalar ve ne zaman bittiği |
 | `re` | tam sayı ≥ 1 | hayır | yanıtladığı mesajın numarası |

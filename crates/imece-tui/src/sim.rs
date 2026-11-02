@@ -248,6 +248,9 @@ struct Content {
     assume: &'static str,
     /// A helper's done to its worker.
     helper_done: &'static str,
+    /// The leader's inform to its other workers when the person applied
+    /// a change, sent to the group `workers` as live's leader may.
+    moved: &'static str,
     tests: &'static str,
     docs: &'static str,
     /// A worker's own to-do list for a card, as its planning tool would
@@ -342,6 +345,7 @@ const EN: Content = Content {
     posted: "Posted {} cards for it: {}. The workers take them from the board.",
     assume: "Assuming {}.",
     helper_done: "Tests written; they pass.",
+    moved: "A change was applied: the checkout moved; your worktree follows it when clean.",
     tests: "tests",
     docs: "docs",
     steps: [
@@ -437,6 +441,7 @@ const TR: Content = Content {
     posted: "Bunun için {} kart açtım: {}. İşçiler panodan alıyor.",
     assume: "Varsayım: {}.",
     helper_done: "Testler yazıldı, geçiyor.",
+    moved: "Bir değişiklik uygulandı: checkout ilerledi; worktree'n temizken onu izler.",
     tests: "testler",
     docs: "doküman",
     steps: [
@@ -1150,6 +1155,7 @@ impl Sim {
         let mark = sha(&mut self.rng);
         w.change_applied(id, mark);
         let p = w.agents[id].project;
+        self.tell_the_others(w, id);
         self.extras
             .staged
             .entry(p)
@@ -1968,6 +1974,23 @@ impl Sim {
             Taken::Told => {}
         }
         self.start(w, agent);
+    }
+
+    /// Worker `id`'s change was applied: its leader tells its other
+    /// workers, an inform to the group `workers` (each its own message,
+    /// as live sends one to a group), but those that stopped.
+    fn tell_the_others(&mut self, w: &mut World, id: AgentId) {
+        let p = w.agents[id].project;
+        let others: Vec<AgentId> = (w.agents.iter())
+            .filter(|a| a.project == p && a.role == Role::Worker && !a.gone)
+            .filter(|a| a.id != id && a.status != Status::Stopped)
+            .map(|a| a.id)
+            .collect();
+        let leader = w.projects[p].leader;
+        let moved = self.content.moved;
+        for o in others {
+            self.send(w, leader, o, MsgKind::Inform, moved, None);
+        }
     }
 
     /// Agent `from` sends `to` a typed message over the bus, a reply to
@@ -3236,6 +3259,41 @@ mod tests {
             e.event,
             Event::Applied { agent, .. } | Event::ApplyFailed { agent, .. } if agent == worker
         )));
+    }
+
+    #[test]
+    fn an_applied_change_is_told_by_the_leader_to_the_other_workers_one_message_each() {
+        let (mut w, mut s) = world(1, 4, 0, 3, Lang::En);
+        let ws = workers_of(&w, 0);
+        let (worker, idle, stopped) = (ws[0], ws[1], ws[2]);
+        w.agents[ws[3]].gone = true;
+        let card = (w.cards.iter())
+            .position(|c| c.column == Column::Waiting)
+            .unwrap();
+        s.take(&mut w, worker, card, Taken::Claimed);
+        s.test(&mut w, worker);
+        s.tested(&mut w, worker, 0);
+        w.agents[stopped].status = Status::Stopped;
+        let lead = w.projects[0].leader;
+        let n = w.journal.len();
+        s.applied(&mut w, worker, false, &[]);
+        let informs = |w: &World| -> Vec<AgentId> {
+            (w.journal[n..].iter())
+                .filter_map(|e| match &e.event {
+                    Event::Sent {
+                        from,
+                        to,
+                        kind: MsgKind::Inform,
+                        text,
+                        ..
+                    } if *from == lead && text == EN.moved => Some(*to),
+                    _ => None,
+                })
+                .collect()
+        };
+        assert!(informs(&w).is_empty(), "nothing applied, nothing told");
+        s.applied(&mut w, worker, true, &[]);
+        assert_eq!(informs(&w), [idle], "not its own, not one stopped or gone");
     }
 
     #[test]

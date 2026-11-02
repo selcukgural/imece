@@ -11,6 +11,8 @@ The bus is how agents reach each other and you: one tool, `send(to, type, body)`
 
 `send` takes `to` (a teammate's name, or `you` for the person), `type` (one of the ten below), `body` (at most 4000 characters) and an optional `re` (the number of the message this one answers). The sender is the socket the call came through, never something the agent says. A message goes only to a teammate of the same project; `no teammate is called "codex-9"; the team is lead, claude-1, claude-2` names the team.
 
+The leader may also write to a group of its workers: `to: workers` (every one), `to: idle` (those idle with no turn under way) or a vendor (`to: codex`: its workers of that vendor). Only an `inform` or a `notice` goes to a group, without `re`; each worker gets it as a message of its own, through the same checks as one sent to it alone, and the answer names who got it and who did not: `sent to claude-1 (message 5), claude-2 (message 6); not to codex-1: codex-1 has stopped; …`. A teammate called `workers` is written to as itself: a name comes before a group.
+
 | Type | Wakes the receiver | Usual sender → receiver | What imece does |
 | --- | --- | --- | --- |
 | `assign` | yes | leader → worker, worker → helper | the first line becomes the card's title; an idle worker gets a new card and starts on it; refused to `you` |
@@ -108,7 +110,7 @@ imece's MCP server is called `imece`; its tools reach a Claude session as `mcp__
 
 | Field | Type | Required | Meaning |
 | --- | --- | --- | --- |
-| `to` | string | yes | the teammate's name, or `you` for the person |
+| `to` | string | yes | the teammate's name, or `you` for the person; the leader also `workers`, `idle` or a vendor, for an inform or a notice |
 | `type` | string, one of the ten | yes | the envelope |
 | `body` | string, at most 4000 | yes | for `assign`: the first line becomes the card's title (the screen shows its first 20 characters next to the worker, so it should start with what tells it from the other cards, not a verb every task shares); then the task, the files it touches and when it is done |
 | `re` | integer ≥ 1 | no | the number of the message this replies to |
