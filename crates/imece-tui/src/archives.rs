@@ -40,6 +40,9 @@ pub enum Row {
 pub enum Act {
     Close,
     Restore(ProjectId),
+    /// Open the archive's read-only view, the agent selected when `enter`
+    /// was on one.
+    View(ProjectId, Option<AgentId>),
 }
 
 /// The archives grouped by checkout: the checkout of `first` first (the
@@ -228,8 +231,8 @@ impl Browser {
         self.select(w, to);
     }
 
-    /// `za` (and `enter`): the row at hand's checkout or archive folds
-    /// if open, opens if folded.
+    /// `za` (and `enter` on a checkout): the row at hand's checkout or
+    /// archive folds if open, opens if folded.
     fn toggle(&mut self, w: &World) {
         let open = match self.at(w) {
             Some(Row::Checkout(i)) => !self.folded.contains(&i),
@@ -259,7 +262,11 @@ impl Browser {
             (None, KeyCode::Down | KeyCode::Char('j')) => self.sel = (self.sel + 1).min(last),
             (None, KeyCode::Left | KeyCode::Char('h')) => self.fold_at(w, true),
             (None, KeyCode::Right | KeyCode::Char('l')) => self.fold_at(w, false),
-            (None, KeyCode::Enter) => self.toggle(w),
+            (None, KeyCode::Enter) => match self.at(w) {
+                Some(Row::Archive(p)) => return Some(Act::View(p, None)),
+                Some(Row::Agent(a)) => return Some(Act::View(w.agents[a].project, Some(a))),
+                Some(Row::Checkout(_) | Row::Open(_)) | None => self.toggle(w),
+            },
             (None, KeyCode::Char('/')) => self.typing = true,
             (None, KeyCode::Char('r')) => {
                 return self
@@ -467,18 +474,53 @@ mod tests {
         b.on_key(&w, key(KeyCode::Char('h')));
         assert_eq!(b.at(&w), Some(Row::Checkout(1)));
         assert_eq!(b.rows(&w).len(), 4);
-        // On an agent, enter folds its archive; `l` on an agent does nothing.
+        // On an agent, `h` folds its archive; `l` on an agent does nothing.
         b.on_key(&w, key(KeyCode::Char('l')));
         b.sel = 5;
-        b.on_key(&w, key(KeyCode::Enter));
+        b.on_key(&w, key(KeyCode::Char('l')));
         b.on_key(&w, key(KeyCode::Char('j')));
         let here = b.at(&w);
         assert!(matches!(here, Some(Row::Agent(_))), "{here:?}");
         b.on_key(&w, key(KeyCode::Char('l')));
         assert_eq!(b.at(&w), here);
-        b.on_key(&w, key(KeyCode::Enter));
+        b.on_key(&w, key(KeyCode::Char('h')));
         assert_eq!(b.at(&w), Some(Row::Archive(second)));
         assert_eq!(b.rows(&w), rows);
+    }
+
+    #[test]
+    fn enter_on_an_archive_or_its_agent_asks_for_its_view_and_folds_nothing() {
+        let (w, ids) = archived();
+        // Project 0's archive: a leader and its workers.
+        let second = ids[3];
+        let mut b = Browser::new(&w, groups(&w, &by_name(&w), None));
+        b.select(&w, Row::Archive(second));
+        let rows = b.rows(&w);
+        assert_eq!(
+            b.on_key(&w, key(KeyCode::Enter)),
+            Some(Act::View(second, None))
+        );
+        assert_eq!(b.rows(&w), rows, "nothing folded or unfolded");
+        b.on_key(&w, key(KeyCode::Char('l')));
+        b.on_key(&w, key(KeyCode::Char('j')));
+        b.on_key(&w, key(KeyCode::Char('j')));
+        let Some(Row::Agent(a)) = b.at(&w) else {
+            panic!("an agent: {:?}", b.at(&w))
+        };
+        assert_ne!(
+            a, w.projects[second].leader,
+            "the second agent, not the head"
+        );
+        assert_eq!(
+            b.on_key(&w, key(KeyCode::Enter)),
+            Some(Act::View(second, Some(a)))
+        );
+        // On a checkout and an open project, it is no view.
+        b.sel = 0;
+        assert_eq!(b.on_key(&w, key(KeyCode::Enter)), None);
+        b.on_key(&w, key(KeyCode::Enter));
+        b.select(&w, Row::Open(ids[2]));
+        assert_eq!(b.on_key(&w, key(KeyCode::Enter)), None);
     }
 
     #[test]

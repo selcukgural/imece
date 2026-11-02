@@ -428,6 +428,7 @@ pub struct Archived {
     pub title: String,
 }
 
+#[derive(Clone, Debug)]
 pub struct Project {
     pub id: ProjectId,
     pub name: String,
@@ -1940,6 +1941,71 @@ impl World {
         newest(&|_, a| a.title == arg).or_else(|| newest(&|q, _| q.name == arg))
     }
 
+    /// Project `p`'s journal lines (its agents'), oldest first, and which
+    /// of them are marked, by their index in what is returned: the demo's
+    /// archive view reads them from memory (live reads them from the
+    /// store, which keeps more).
+    pub fn journal_of(&self, p: ProjectId) -> (Vec<Entry>, BTreeSet<usize>) {
+        let mut lines = Vec::new();
+        let mut marks = BTreeSet::new();
+        for (i, e) in self.journal.iter().enumerate() {
+            if self.agents[e.event.agent()].project != p {
+                continue;
+            }
+            if self.marks.contains(&i) {
+                marks.insert(lines.len());
+            }
+            lines.push(e.clone());
+        }
+        (lines, marks)
+    }
+
+    /// The world archive `p`'s read-only view shows: `p` open as it was
+    /// when it was put away, with `journal` (its lines, oldest first) and
+    /// `marks` (indexes in `journal`); every other project put away as an
+    /// archive is, so the salon, the board, the journal, WAITING FOR YOU
+    /// and the names hold only `p`'s. Every project, agent and card is
+    /// kept (the journal's events name them by id); the pot and the
+    /// clock are this world's. Nothing in it runs: no limits, no queue,
+    /// no suggestion.
+    pub fn view_of(&self, p: ProjectId, journal: Vec<Entry>, marks: BTreeSet<usize>) -> World {
+        let mut projects = self.projects.clone();
+        for q in &mut projects {
+            if q.id == p {
+                q.closed = false;
+                q.archived = None;
+            } else {
+                q.closed = true;
+                q.archived.get_or_insert(Archived {
+                    at: 0,
+                    title: String::new(),
+                });
+            }
+        }
+        World {
+            tick: self.tick,
+            started_at: self.started_at,
+            run_spent: self.run_spent,
+            spending: self.spending.clone(),
+            projects,
+            agents: self.agents.clone(),
+            cards: self.cards.clone(),
+            journal,
+            inbox: self.inbox.clone(),
+            budget: self.budget,
+            max_researchers: self.max_researchers,
+            research_queue: VecDeque::new(),
+            plans: self.plans.clone(),
+            changes: self.changes.clone(),
+            marks,
+            limits: Vec::new(),
+            paid: self.paid,
+            suggested: None,
+            messages: self.messages,
+            sent: self.sent.clone(),
+        }
+    }
+
     /// The archives, newest first (as [`archive_named`](Self::archive_named)
     /// orders them).
     pub fn archives(&self) -> Vec<ProjectId> {
@@ -2883,6 +2949,114 @@ mod tests {
             messages: 0,
             plans: Vec::new(),
         }
+    }
+
+    #[test]
+    fn an_archive_view_holds_its_lines_and_puts_every_other_project_away() {
+        let mut w = world(vec![
+            agent(0, Role::Leader, Status::Asleep),
+            agent(1, Role::Worker, Status::Asleep),
+            agent(2, Role::Leader, Status::Idle),
+            agent(3, Role::Leader, Status::Asleep),
+        ]);
+        let project = |id, leader| Project {
+            id,
+            leader,
+            ..w.projects[0].clone()
+        };
+        let (one, two) = (project(1, 2), project(2, 3));
+        w.projects.extend([one, two]);
+        w.agents[2].project = 1;
+        w.agents[3].project = 2;
+        let archived = |at, title: &str| Archived {
+            at,
+            title: title.into(),
+        };
+        w.projects[0].closed = true;
+        w.projects[0].archived = Some(archived(7, "epic"));
+        w.projects[2].closed = true;
+        w.projects[2].archived = Some(archived(3, "old"));
+        (
+            w.tick,
+            w.started_at,
+            w.run_spent,
+            w.paid,
+            w.messages,
+            w.budget,
+        ) = (40, 9, 11, 13, 5, 99);
+        w.spending.warned = true;
+        w.research_queue.push_back(2);
+        w.sent.push(Sent {
+            tick: 1,
+            text: "hi".into(),
+        });
+        w.limits.push(Limit {
+            vendor: Vendor::Claude,
+            minutes: 300,
+            used: 50,
+            resets_at: None,
+        });
+        w.suggested = Some(Suggestion {
+            project: 1,
+            text: "x".into(),
+        });
+        for agent in [0, 2, 1, 2] {
+            w.tick += 1;
+            w.note(Event::Failed { agent });
+        }
+        w.marks = [1, 2].into();
+        for agent in [0, 2] {
+            w.inbox.push(InboxItem {
+                kind: InboxKind::Question,
+                agent,
+                detail: "q".into(),
+                researcher: None,
+                open: true,
+                tick: 0,
+                card: None,
+            });
+        }
+        // Each project's lines, its marks counted in them.
+        let (lines, marks) = w.journal_of(0);
+        assert_eq!(lines, [w.journal[0].clone(), w.journal[2].clone()]);
+        assert_eq!(marks, [1].into());
+        let (theirs, their_marks) = w.journal_of(1);
+        assert_eq!(theirs, [w.journal[1].clone(), w.journal[3].clone()]);
+        assert_eq!(their_marks, [0].into());
+        let v = w.view_of(0, lines.clone(), marks.clone());
+        assert!(!v.projects[0].closed && v.projects[0].archived.is_none());
+        assert!(v.projects[1].closed);
+        assert_eq!(v.projects[1].archived, Some(archived(0, "")));
+        assert_eq!(
+            v.projects[2].archived,
+            Some(archived(3, "old")),
+            "its own kept"
+        );
+        assert_eq!((&v.journal, &v.marks), (&lines, &marks));
+        assert_eq!(v.agents.len(), 4);
+        assert_eq!(v.inbox.len(), 2);
+        assert_eq!(v.open_inbox(), [0], "only the archive's waits");
+        assert_eq!(v.agent_by_name("a2"), None);
+        assert_eq!(v.agent_by_name("a0"), Some(0));
+        assert_eq!(
+            (
+                v.tick,
+                v.started_at,
+                v.run_spent,
+                v.paid,
+                v.messages,
+                v.budget
+            ),
+            (44, 9, 11, 13, 5, 99)
+        );
+        assert!(v.spending.warned);
+        assert_eq!(v.sent, w.sent);
+        assert_eq!(v.max_researchers, w.max_researchers);
+        assert!(v.research_queue.is_empty() && v.limits.is_empty() && v.suggested.is_none());
+        assert_eq!(
+            (v.cards.len(), v.plans.len()),
+            (w.cards.len(), w.plans.len())
+        );
     }
 
     #[test]

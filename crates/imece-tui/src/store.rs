@@ -1032,6 +1032,35 @@ impl Store {
         plan
     }
 
+    /// Project `p`'s journal lines, oldest first (read by the project's
+    /// index), and which are marked, by their index in what is returned:
+    /// what an archive's read-only view shows. A line that does not read
+    /// (written by a later imece) is left out.
+    pub fn project_journal(&self, p: ProjectId) -> rusqlite::Result<(Vec<Entry>, BTreeSet<usize>)> {
+        let mut st = self.conn.prepare(
+            "SELECT seq, tick, data, marked FROM journal WHERE project = ?1 ORDER BY seq",
+        )?;
+        let mut lines = Vec::new();
+        let mut marks = BTreeSet::new();
+        for row in st.query_map(params![n(p)], |r| {
+            Ok((
+                ubig(r.get(1)?),
+                r.get::<_, String>(2)?,
+                r.get::<_, bool>(3)?,
+            ))
+        })? {
+            let (tick, data, marked) = row?;
+            let Ok(event) = serde_json::from_str(&data) else {
+                continue;
+            };
+            if marked {
+                marks.insert(lines.len());
+            }
+            lines.push(Entry { tick, event });
+        }
+        Ok((lines, marks))
+    }
+
     /// The world as it was saved, or none when the file holds no world yet.
     /// Every agent comes back asleep (gone ones idle), with nothing in
     /// hand; the journal's newest `journal_keep` lines come.
@@ -3022,6 +3051,45 @@ mod tests {
         assert!(needs_vacuum(3, 12));
         assert!(!needs_vacuum(2, 9));
         assert!(needs_vacuum(9, 9), "all air");
+    }
+
+    #[test]
+    fn a_project_journal_is_its_lines_in_order_with_their_marks() {
+        let (w, k) = (world(), kept());
+        let mut store = Store::in_memory();
+        store.save(&w, &k.kept()).unwrap();
+        store.raw().execute("DELETE FROM journal", []).unwrap();
+        // Written out of order, two projects, one line no imece reads.
+        let rows = [
+            (30, 1, 5, false, "{\"Failed\":{\"agent\":1}}"),
+            (10, 1, 3, true, "{\"Failed\":{\"agent\":2}}"),
+            (20, 0, 4, true, "{\"Failed\":{\"agent\":0}}"),
+            (25, 1, 6, false, "{\"Future\":{}}"),
+            (40, 1, 7, true, "{\"Failed\":{\"agent\":3}}"),
+        ];
+        for (seq, project, tick, marked, data) in rows {
+            store
+                .raw()
+                .execute(
+                    "INSERT INTO journal (seq, tick, project, agent, kind, data, marked) \
+                     VALUES (?1, ?2, ?3, 0, 'Failed', ?4, ?5)",
+                    params![seq, tick, project, data, marked],
+                )
+                .unwrap();
+        }
+        let failed = |tick, agent| Entry {
+            tick,
+            event: Event::Failed { agent },
+        };
+        let (lines, marks) = store.project_journal(1).unwrap();
+        assert_eq!(lines, [failed(3, 2), failed(5, 1), failed(7, 3)]);
+        assert_eq!(marks, [0, 2].into(), "by their place in the lines");
+        let (lines, marks) = store.project_journal(0).unwrap();
+        assert_eq!((lines, marks), (vec![failed(4, 0)], [0].into()));
+        assert_eq!(
+            store.project_journal(9).unwrap(),
+            (Vec::new(), BTreeSet::new())
+        );
     }
 
     #[test]

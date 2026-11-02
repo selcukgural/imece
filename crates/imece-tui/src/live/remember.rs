@@ -36,6 +36,21 @@ impl Live {
         })
     }
 
+    /// Project `p`'s journal lines, oldest first, and which are marked
+    /// (by index in them), for an archive's read-only view: all the store
+    /// keeps of it, which is more than the newest lines `w` loaded;
+    /// without a store, `w`'s.
+    pub fn project_journal(
+        &self,
+        w: &World,
+        p: ProjectId,
+    ) -> Result<(Vec<Entry>, std::collections::BTreeSet<usize>), String> {
+        match &self.store {
+            Some(s) => s.project_journal(p).map_err(|e| e.to_string()),
+            None => Ok(w.journal_of(p)),
+        }
+    }
+
     /// A store in memory, for tests of what saving does on the screen.
     #[cfg(test)]
     pub(crate) fn store_in_memory(&mut self) {
@@ -46,7 +61,9 @@ impl Live {
     #[cfg(test)]
     pub(crate) fn break_store(&mut self) {
         if let Some(s) = &self.store {
-            s.raw().execute_batch("DROP TABLE agents").unwrap();
+            s.raw()
+                .execute_batch("DROP TABLE agents; DROP TABLE journal")
+                .unwrap();
         }
     }
 
@@ -1007,6 +1024,24 @@ mod tests {
             text.contains("new card") && !text.contains("old card"),
             "{text}"
         );
+    }
+
+    #[test]
+    fn an_archives_journal_is_read_from_the_store_else_from_the_world() {
+        let mut w = team(1);
+        let mut live = idle_live(2);
+        w.note(Event::Failed { agent: 1 });
+        assert_eq!(live.project_journal(&w, 0), Ok(w.journal_of(0)));
+        live.store_in_memory();
+        live.persist(&w).unwrap();
+        let saved = w.journal_of(0);
+        assert!(!saved.0.is_empty());
+        // What only the world has is not the store's.
+        w.note(Event::Failed { agent: 0 });
+        assert_eq!(live.project_journal(&w, 0), Ok(saved));
+        live.break_store();
+        let e = live.project_journal(&w, 0).unwrap_err();
+        assert!(e.contains("no such table"), "{e}");
     }
 
     #[test]

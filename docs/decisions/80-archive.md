@@ -12,7 +12,7 @@ conversations), not the whole screen; the other projects go on. One
 pot stays: archiving spends nothing and resets nothing, and the daily caps
 of imece's own paid calls stay global (record 56). Bringing it back (`:restore`, its agents go on
 in their vendor sessions) is the second step, below; looking at one
-read-only in the `A` browser is the third.
+read-only from the `A` browser is the third.
 
 **`:archive [TITLE]`** puts the project at hand away as TITLE (its first
 line, trimmed, at most `ARCHIVE_TITLE_MAX` 60 characters; else
@@ -200,8 +200,9 @@ pick does; no `keys::Scope` of its own, so the key file does not reach
 into it): `j k ↑ ↓`, `gg G home end`, `l →` unfold (a checkout's
 archives, an archive's agents), `h ←` fold (on an agent: its archive,
 selected; on a folded archive or an open project: its checkout,
-selected), `za` and `enter` toggle the row at hand (enter will open the
-read-only view in the second half), `/` filters (`overlay::fold`: every
+selected), `za` toggles the row at hand, and so does `enter` on a
+checkout; `enter` on an archive or one of its agents opens its read-only
+view (below, `Act::View`, the agent selected), `/` filters (`overlay::fold`: every
 word in the title, project name, checkout or an agent's name; `enter`
 keeps, `esc` drops, `backspace` on nothing stops typing; a paste goes in
 only while typing), `r` on an archive or one of its agents restores it
@@ -214,6 +215,51 @@ archived flashes `no_archives`. An `:archive` counting down acts first
 in two columns, so the help fills the 40-row screen with none to spare.
 A row more scrolls it there (record 40), so no rows need merging.
 
-**Not done (the second half):** `enter` on an archive opening it
-read-only (`App` nested with `Engine::View`, its journal read from the
-store by project); deleting an archive, renaming one.
+**The read-only view.** `enter` on an archive opens it over the screen
+as a screen of its own: `App.viewing: Option<Box<App>>`, an `App::with`
+of `World::view_of(p, journal, marks)` and `Engine::View(Viewed { project,
+title, at })`, which never steps. `view_of` keeps every project, agent
+and card (the journal's events name them by id), opens `p` (not closed,
+not archived, so the salon, the journal and the names show it) and puts
+every other project away as an archive is (closed, `archived` set: the
+salon, the board, the journal, WAITING FOR YOU and `agent_by_name` leave
+them out); the pot, the clock and the lines sent are this world's; no
+limits, queue or suggestion. Its journal is all the store keeps of `p`
+(`Store::project_journal`: `WHERE project = ?1 ORDER BY seq` through the
+`journal_project` index, a mark by its place in the lines, a line no
+imece reads left out; `Live::project_journal`, the world's without a
+store), more than the newest lines the start loaded; the demo's comes
+from memory (`World::journal_of`). A store that fails says so
+(`view_failed`) and opens nothing. The view takes the person's keys,
+side, shift-enter, home and fold choice; its language starts as the
+screen's (`L` there changes only the view's).
+
+Keys and drawing go to the view; the screen behind goes on stepping and
+saving. `esc` or `q` (plain) where nothing is open in it (`App::at_rest`:
+not writing, no help, chord, held key, hints, note, card, zoom, window,
+peek or conversation) closes it; `:quit` and its `q` close it too
+(the view's `quit`); `ctrl-c` quits imece. What the view copies goes to
+the clipboard through the screen behind (`after_view`), a paste and a
+held key (`keys_due`) go to it, its flash is the screen's clock, and the
+away digest does not open over it (`focus`). The top row is a banner in
+place of its header (`ui::view_banner`): `ARCHIVE · name “title” ·
+archived day · N waiting for you now · esc back`, N from the world behind.
+
+**What it refuses.** Deny by default: of the `:` commands only those in
+`VIEW_COMMANDS` run (they look, go, or change how the screen looks:
+`goto history export salon board code lang theme help quit next defer
+waiting needs fold unfold trace peek hints news settle unsettle talk`);
+every other known command flashes `read_only` (`an archive is read-only ·
+:restore brings it back · esc goes back`), an unknown one is still
+`no_command`, and a command added later is refused there until it is
+listed. `:restore` asks the screen behind to bring the archive back
+(`restore_asked`, then `restore_at`) and closes the view. A message, an
+`!cmd`, `m`, `A`, `a`/`r` in WAITING FOR YOU and every `match` on the
+engine (tell, apply, reject, notes, decide, copy, commit, open, solo,
+re-choose, close, archive, restore, forget, rename) refuse the same and
+call no engine; `space + -` are the demo's only (`App::demo`).
+`:export`, `v` copying, conversations, the card screen, the focus, the
+board and the code map work as anywhere.
+
+**Not done:** deleting an archive, renaming one. The view is the
+archive as it was when it opened; it is not built again while open.

@@ -1,6 +1,6 @@
 ---
 title: "Yeni bir epic"
-description: "Bir işi bitirip sonrakine temiz bir ekranda başlamak: :archive, beklemesi ve u, arşivin sakladıkları, yeni projenin neyle başladığı, :restore ile geri getirmek ve ortak kalanlar."
+description: "Bir işi bitirip sonrakine temiz bir ekranda başlamak: :archive, beklemesi ve u, arşivin sakladıkları ve ona salt okunur bakmak, yeni projenin neyle başladığı, :restore ile geri getirmek ve ortak kalanlar."
 ---
 
 # Yeni bir epic
@@ -55,6 +55,14 @@ Arşivden hiçbir şey atılmadı:
 - kartları öyküleriyle, günlük satırları (temizlik onları yaşları ne olursa olsun saklar), sizi bekleyen kalemleri.
 
 Hiçbiri uyanmaz, hiçbir şey harcamaz: işçilerine kart sunulmaz, onlara adla ulaşılmaz. `imece --fresh` oturumlarına dokunmaz. Oturumları satıcılar saklar ve Claude Code eski transkriptleri bir süre sonra siler (varsayılan 30 gün); o zamana dek gitmiş bir oturum, kaldığı yer anlatılarak yeniden başlar.
+
+Geri getirmeden yeniden bakmak için `A`'ya basın ve `▸ v1 fixes` üstünde `enter`: arşiv salt okunur açılır, ekranda kaldırıldığı gibi tek başına, bütün günlüğüyle, şunun altında
+
+```text
+ ARŞİV · kule “v1 fixes” · 2026-11-02 arşivlendi · şu an seni 0 şey bekliyor · esc geri
+```
+
+Konuşmaları, kartları ve değişiklikleri her yerdeki gibi açılır, `:export` birini dosyaya yazar; ajanlarına yazmak `arşiv salt okunur · :restore geri getirir · esc geri döner` der. `esc` bu arada sürmüş olan yeni `kule`'ye döner.
 
 ## 4. Geri getirmek
 
