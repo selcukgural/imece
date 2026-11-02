@@ -54,6 +54,20 @@ makes many rows show `█`, which says "busy" and nothing finer: the scale
 is fixed on purpose, so it does not rescale to the busiest agent and
 make a quiet row look loud.
 
-**Not done.** The focus has no bar of its own (its trace lines are
-there); the bar does not tell kinds of lines apart (tool calls from
-notes), which would need the trace typed.
+**On the focus** (2026-11-02, item 7 of the motion talk). `Stirs`
+keeps `STIR_LONG` (24) columns, two minutes live; `Stirs::long(tick)`
+gives them all, `Stirs::at(tick)` the row's last five as before, so the
+row did not change. The focus (and the peek, which draws it) has a line
+after the context line, `activity: ▁▁▂▄▁…█▃ · trace lines in 2 min:
+21`, dim, on the row's scale (`salon::stir_glyph`) so the two read
+alike, the count summed in `u32` (24 saturated columns pass `u16`);
+none while every column is empty or `:motion off`, as on the row
+(`focus::activity_line`). Growth: 48 bytes and a tick per agent in
+memory, as before not saved. Read cost: one copy of 24 counts per
+focus drawn.
+
+**Not done.** The bar does not tell kinds of lines apart (tool calls
+from notes), which would need the trace typed: every `Agent::trace`
+caller (live's sessions, the demo, imece's own notes) says what a line
+is, a change across both engines for a distinction the trace view
+(`enter` twice) already shows line by line.

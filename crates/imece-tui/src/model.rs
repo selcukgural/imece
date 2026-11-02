@@ -488,8 +488,9 @@ pub struct Agent {
     /// Trace lines ever written, the kept ones being the last of them; the
     /// store numbers lines by it.
     pub traced: u64,
-    /// Its trace lines in each of the last [`STIR_TICKS`] ticks: the
-    /// activity bar on its row (`▁▃▅▂▁`). Memory only.
+    /// Its trace lines in each of the last [`STIR_LONG`] ticks: the
+    /// activity bar on its row (`▁▃▅▂▁`, the last [`STIR_TICKS`]) and on
+    /// its focus (all of them). Memory only.
     pub stirs: Stirs,
     /// What a live agent is doing right now (`Edit src/main.rs`), drawn
     /// instead of the progress bar; empty while it thinks.
@@ -683,33 +684,45 @@ impl Agent {
     }
 }
 
-/// The ticks an agent's activity bar covers, one column each: 25 s live.
+/// The ticks an agent's activity bar covers on its row, one column each:
+/// 25 s live.
 pub const STIR_TICKS: usize = 5;
 
-/// How many trace lines an agent wrote in each of the [`STIR_TICKS`]
-/// ticks up to `at`, the oldest first.
+/// The ticks its longer bar covers on its focus: two minutes live.
+pub const STIR_LONG: usize = 24;
+
+/// How many trace lines an agent wrote in each of the [`STIR_LONG`]
+/// ticks up to `at`, the oldest first; its row shows the last
+/// [`STIR_TICKS`] of them.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Stirs {
     at: u64,
-    counts: [u16; STIR_TICKS],
+    counts: [u16; STIR_LONG],
 }
 
 impl Stirs {
     /// A line was written at `tick`; one from before the newest tick it
     /// has counts as the newest.
     pub fn add(&mut self, tick: u64) {
-        self.counts = self.at(tick);
+        self.counts = self.long(tick);
         self.at = self.at.max(tick);
-        let last = &mut self.counts[STIR_TICKS - 1];
+        let last = &mut self.counts[STIR_LONG - 1];
         *last = last.saturating_add(1);
     }
 
-    /// The counts as they stand at `tick`, the oldest first: the ticks
-    /// since the newest line are empty columns.
+    /// The row's columns as they stand at `tick`, the oldest first: the
+    /// ticks since the newest line are empty columns.
     pub fn at(&self, tick: u64) -> [u16; STIR_TICKS] {
-        let gone = tick.saturating_sub(self.at).min(STIR_TICKS as u64) as usize;
         let mut counts = [0; STIR_TICKS];
-        counts[..STIR_TICKS - gone].copy_from_slice(&self.counts[gone..]);
+        counts.copy_from_slice(&self.long(tick)[STIR_LONG - STIR_TICKS..]);
+        counts
+    }
+
+    /// The focus's columns as they stand at `tick`, the oldest first.
+    pub fn long(&self, tick: u64) -> [u16; STIR_LONG] {
+        let gone = tick.saturating_sub(self.at).min(STIR_LONG as u64) as usize;
+        let mut counts = [0; STIR_LONG];
+        counts[..STIR_LONG - gone].copy_from_slice(&self.counts[gone..]);
         counts
     }
 }
@@ -3897,6 +3910,32 @@ mod tests {
             s.add(1);
         }
         assert_eq!(s.at(1), [0, 0, 0, 0, u16::MAX]);
+        // The focus's bar keeps two minutes: the row's five are its end.
+        // Lines at ticks 1, 1, 4 and 20; at tick `t` the line of tick
+        // `k` is in column 23 - (t - k).
+        let mut s = Stirs::default();
+        for tick in [1, 1, 4, 20] {
+            s.add(tick);
+        }
+        let cols = |pairs: &[(usize, u16)]| {
+            let mut c = [0; STIR_LONG];
+            for &(i, n) in pairs {
+                c[i] = n;
+            }
+            c
+        };
+        assert_eq!(s.long(20), cols(&[(4, 2), (7, 1), (23, 1)]));
+        assert_eq!(s.at(20), [0, 0, 0, 0, 1]);
+        assert_eq!(
+            s.long(24),
+            cols(&[(0, 2), (3, 1), (19, 1)]),
+            "tick 1 the oldest"
+        );
+        assert_eq!(s.at(24), [1, 0, 0, 0, 0], "tick 20 the row's oldest");
+        assert_eq!(s.at(25), [0; STIR_TICKS], "gone from the row");
+        assert_eq!(s.long(25), cols(&[(2, 1), (18, 1)]), "still on the focus");
+        assert_eq!(s.long(43), cols(&[(0, 1)]));
+        assert_eq!(s.long(44), [0; STIR_LONG], "two minutes on: all gone");
         // Every trace line is counted at its tick.
         let mut a = agent(1, Role::Worker, Status::Working);
         a.trace(8, "tool_use Read");
