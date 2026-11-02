@@ -1279,15 +1279,26 @@ pub const EN: Text = Text {
     not_signed_in: "{} is not signed in: :welcome says how",
     news_title: " WHAT'S NEW IN IMECE {} ",
     news_close: " any key: close · :news shows this again",
-    news: &[(
-        "0.1.0",
-        &[
-            "The first release, for macOS and Linux: one curl line installs and updates it.",
-            "A leader hires workers from Claude Code, Codex and Gemini CLI, each in a worktree.",
-            "A worker's change waits for your yes in WAITING FOR YOU: all of it or some hunks.",
-            ":solo opens a session you drive alone, beside the teams.",
-        ],
-    )],
+    news: &[
+        (
+            "0.1.1",
+            &[
+                "A turn a busy vendor failed is tried again; a refused key waits for you as ✕.",
+                "Your own keys: a key file remaps imece's keys, per place, read again on change.",
+                "v chooses lines or words in a conversation or a change, y copies; K peeks.",
+                "F puts hint letters on rows; :close and :forget wait 10 s, u takes them back.",
+            ],
+        ),
+        (
+            "0.1.0",
+            &[
+                "The first release, for macOS and Linux: one curl line installs and updates it.",
+                "A leader hires workers from Claude Code, Codex and Gemini CLI, each in a worktree.",
+                "A worker's change waits for your yes in WAITING FOR YOU: all of it or some hunks.",
+                ":solo opens a session you drive alone, beside the teams.",
+            ],
+        ),
+    ],
 };
 
 pub const TR: Text = Text {
@@ -1906,15 +1917,26 @@ pub const TR: Text = Text {
     not_signed_in: "{} giriş yapmamış: :welcome nasıl yapılacağını söyler",
     news_title: " IMECE {} SÜRÜMÜNDE YENİ OLANLAR ",
     news_close: " herhangi bir tuş: kapat · :news bunu yine gösterir",
-    news: &[(
-        "0.1.0",
-        &[
-            "İlk sürüm, macOS ve Linux için: tek bir curl satırı kurar ve günceller.",
-            "Lider Claude Code, Codex ve Gemini CLI'dan worker tutar; her biri bir worktree'de.",
-            "Bir worker'ın değişikliği SENİ BEKLEYEN'de onayını bekler: tamamı ya da bazı parçaları.",
-            ":solo, takımların yanında yalnız senin sürdüğün bir oturum açar.",
-        ],
-    )],
+    news: &[
+        (
+            "0.1.1",
+            &[
+                "Meşgul satıcıda düşen tur yeniden denenir; reddedilen anahtar ✕ olarak bekler.",
+                "Kendi tuşların: bir tuş dosyası imece'nin tuşlarını yerine göre değiştirir.",
+                "v konuşmada ya da değişiklikte satır veya sözcük seçer, y kopyalar; K göz atar.",
+                "F satırlara ipucu harfi koyar; :close ve :forget 10 sn bekler, u geri alır.",
+            ],
+        ),
+        (
+            "0.1.0",
+            &[
+                "İlk sürüm, macOS ve Linux için: tek bir curl satırı kurar ve günceller.",
+                "Lider Claude Code, Codex ve Gemini CLI'dan worker tutar; her biri bir worktree'de.",
+                "Bir worker'ın değişikliği SENİ BEKLEYEN'de onayını bekler: tamamı ya da bazı parçaları.",
+                ":solo, takımların yanında yalnız senin sürdüğün bir oturum açar.",
+            ],
+        ),
+    ],
 };
 
 #[cfg(test)]
