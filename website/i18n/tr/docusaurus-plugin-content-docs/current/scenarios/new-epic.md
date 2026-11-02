@@ -64,7 +64,7 @@ Bir ay sonra eski işte bir hata çıkar ve o kodu `kule`'nin eski takımı bili
 :restore v1 fixes
 ```
 
-(`:restore ` ve `tab` arşivleri listeler, en yenisi önce: `v1 fixes   kule · 2026-11-02`.) Arşiv kaldırıldığı gibi yeniden açılır; `lead`'i seçilir, kartları, günlük satırları ve bekleyen kalemleri ekrana döner:
+(`:restore ` ve `tab` arşivleri listeler, en yenisi önce: `v1 fixes   kule · 2026-11-02`. Ya da `A`'ya basın: arşivler bir ağaç olarak, önce `kule`'nin çalışma kopyası, `▸ v1 fixes · $6.10 · 4 kart bitti · 3 agent · 2026-11-02 arşivlendi` satırının üstünde `● kule · şu an açık`; `l` ajanlarını gösterir, `/fix` süzer, `r` eldekini geri getirir.) Arşiv kaldırıldığı gibi yeniden açılır; `lead`'i seçilir, kartları, günlük satırları ve bekleyen kalemleri ekrana döner:
 
 ```text
  kule “v1 fixes” geri geldi: agent'ları sen yazana kadar uyuyor
