@@ -306,6 +306,11 @@ pub(super) fn repo_notes(repo: &Path, vendor: Vendor) -> Option<Notes> {
 /// configuration directory (`keys::config_file`).
 pub(crate) const INSTRUCTIONS: &str = "instructions.md";
 
+/// The most of the person's instructions file that is read: the cap and
+/// three bytes, as a character may straddle the cap. A constant, so the
+/// read's bound is not an expression a mutant could widen unseen.
+const PERSONAL_READ: u64 = MAX_NOTES as u64 + 3;
+
 /// The person's own instructions for every project (the file at `path`),
 /// to put in every agent's instructions before the repository's notes;
 /// none when it is not there, not a plain file (a pipe, a device) or
@@ -324,9 +329,7 @@ pub(super) fn personal_notes(path: &Path) -> Option<Notes> {
     let size = file.metadata().ok().filter(|m| m.is_file())?.len();
     let size = usize::try_from(size).unwrap_or(usize::MAX);
     let mut head = Vec::new();
-    // A character may straddle the cap: three bytes more finish it.
-    let room = u64::try_from(MAX_NOTES + 3).unwrap_or(u64::MAX);
-    file.take(room).read_to_end(&mut head).ok()?;
+    file.take(PERSONAL_READ).read_to_end(&mut head).ok()?;
     let text = String::from_utf8_lossy(&head);
     let mut body = text.trim().to_string();
     if body.is_empty() {
