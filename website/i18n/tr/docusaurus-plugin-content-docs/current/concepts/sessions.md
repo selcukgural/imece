@@ -24,7 +24,7 @@ imece kapanırken yarıda olan bir tur günlüğe `yarım kaldı` yazılır ve k
 
 ## Satıcı başına devam
 
-Uyanan bir ajanın eski oturumunda devam mı edeceği yoksa yeni mi başlayacağı satıcısının neyi tuttuğuna bağlıdır. Günlük hangisi olduğunu söyler: `bildiği her şeyle, eski oturumunda devam ediyor` ya da `yeni bir oturumla başlıyor, kaldığı yer anlatıldı`.
+Uyanan bir ajanın eski oturumunda devam mı edeceği yoksa yeni mi başlayacağı satıcısının neyi tuttuğuna bağlıdır. Günlük hangisi olduğunu söyler: `bildiği her şeyle, eski oturumunda devam ediyor` ya da `yeni bir oturumla başlıyor, kaldığı yer anlatıldı`, bir oturumu varsa nedeniyle: `son oturumu bulunamadı` ya da satıcının sözleriyle `son oturumu sürdürülemedi (…)`.
 
 | Satıcı | Ne zaman devam eder | Nasıl |
 | --- | --- | --- |

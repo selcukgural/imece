@@ -87,11 +87,14 @@ A resumed Claude session reports the whole session's cost, so imece starts count
 
 **Gemini.** `session/load` with the session id replays the chat Gemini kept under `~/.gemini/tmp/`; the history streams back before the first turn (at most 50 messages, so a long session resumes with its tail).
 
-**When a resume is not possible** (no transcript, a rollout gone, an id of another shape, or `--fresh`), the agent starts a new session and is told where it left off:
+**When a resume is not possible** (no transcript, a rollout gone, an id of another shape, or `--fresh`), the agent starts a new session and is told where it left off. The journal says why: no session to go on with (it never had one, or it was forgotten or cleared), the old one not found where its vendor keeps it, or the vendor's own words when it refused to resume (its first line, 160 characters at most):
 
 ```text
- 09:02 ⚑ codex-1 starts a new session, told where it left off
+ 09:02 ⚑ codex-1 starts a new session, told where it left off: its last one could not be resumed (stopped: the session refused Thread: no rollout found for thread id 686c…)
+ 09:02 ⚑ claude-2 starts a new session, told where it left off: its last one was not found
 ```
+
+The demo shows it too: every second resume of a demo run is refused the way a vendor that lost the session would refuse it.
 
 The wake briefing goes ahead of the first prompt as a note from imece: "imece started again since your last turn, so this is a new session that remembers nothing of the old one. Where you left off:", then its card ("Your task: #5 config: defaults (not finished). Its story, latest last:" with the last 12 story lines), the cut turn's prompt, how many messages wait, its worktree's uncommitted changes ("Your worktree holds changes the person has not applied: 2 files, +12 −3: src/a.rs, src/b.rs"), and the board's open cards. Every line is cleaned and cut (300 characters a line, 6000 in all). A worker told again goes on with its unfinished card.
 

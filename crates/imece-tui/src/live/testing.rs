@@ -418,6 +418,16 @@ pub(super) fn item(kind: InboxKind, agent: AgentId, detail: &str) -> InboxItem {
 
 pub(super) const UUID: &str = "686c6d27-d50b-4ae2-ad6a-159bf2984671";
 
+/// Why agent `id` woke in a new session, each time it did.
+pub(super) fn restarted(w: &World, id: AgentId) -> Vec<Fresh> {
+    (w.journal.iter())
+        .filter_map(|j| match &j.event {
+            Event::Restarted { agent, why } if *agent == id => Some(why.clone()),
+            _ => None,
+        })
+        .collect()
+}
+
 pub(super) fn journaled(w: &World, e: &Event) -> usize {
     w.journal.iter().filter(|j| j.event == *e).count()
 }
