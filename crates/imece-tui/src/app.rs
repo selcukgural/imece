@@ -4612,6 +4612,19 @@ impl App {
                 parts.push((Moves::Dots, motion::DOTS));
             }
         }
+        // The board shows the owners of the cards taken.
+        if self.zoom == Zoom::None && self.view == View::Board {
+            let rungs = self.rungs();
+            let owners = (w.shown_cards())
+                .filter(|c| c.column != Column::Waiting)
+                .filter_map(|c| c.owner);
+            if owners
+                .map(|id| &w.agents[id])
+                .any(|a| !a.gone && ui::breathes(a, rungs[a.id]))
+            {
+                parts.push((Moves::Breath, motion::BREATH));
+            }
+        }
         let checking = self.welcome && self.vendors.iter().any(|(_, s)| *s == Seen::Checking);
         if let Some(spin) = moving.spin()
             && (self.footer_spins(now) || checking)
@@ -12507,7 +12520,47 @@ mod tests {
         assert_eq!(app.next_motion(now), Some(e + ms(600)), "it breathes");
         assert_eq!(app.next_motion(e + ms(600)), Some(e + ms(1200)));
         app.view = View::Board;
+        app.world.cards.clear();
         assert_eq!(app.next_motion(now), None, "not on the screen");
+        // On the board, the owner of a card taken breathes.
+        app.world.cards.push(Card {
+            id: 0,
+            project: 0,
+            title: "t".into(),
+            owner: Some(w),
+            column: Column::Working,
+            story: Vec::new(),
+            symbols: Vec::new(),
+            started: 0,
+            finished: 0,
+        });
+        assert_eq!(app.next_motion(now), Some(e + ms(600)), "its card's owner");
+        app.world.cards[0].column = Column::Done;
+        assert_eq!(
+            app.next_motion(now),
+            Some(e + ms(600)),
+            "done, still at work"
+        );
+        app.world.cards[0].column = Column::Waiting;
+        assert_eq!(app.next_motion(now), None, "no owner shown");
+        app.world.cards[0].column = Column::Working;
+        app.world.cards[0].owner = None;
+        assert_eq!(app.next_motion(now), None, "nobody's");
+        app.world.cards[0].owner = Some(w);
+        app.world.agents[w].gone = true;
+        assert_eq!(app.next_motion(now), None, "its owner gone");
+        app.world.agents[w].gone = false;
+        app.world.projects[0].archived = Some(Archived {
+            at: 0,
+            title: "t".into(),
+        });
+        assert_eq!(app.next_motion(now), None, "in its archive");
+        app.world.projects[0].archived = None;
+        app.zoom = Zoom::Focus(w);
+        assert_eq!(app.next_motion(now), None, "the board under a zoom");
+        app.zoom = Zoom::None;
+        app.view = View::Code;
+        assert_eq!(app.next_motion(now), None, "the code map");
         app.view = View::Salon;
         app.zoom = Zoom::Focus(w);
         assert_eq!(app.next_motion(now), None);

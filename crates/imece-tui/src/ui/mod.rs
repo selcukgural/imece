@@ -161,6 +161,29 @@ pub fn patch(f: &mut Frame, app: &App, last: &Buffer) -> bool {
     true
 }
 
+/// Span `at` of `line`, drawn on row `i` of `list`, is a glyph that
+/// breathes: where it is goes to [`App::breathing`]. One cut by the
+/// list's right edge leaves the drawing unpatched; one below its foot is
+/// not on the screen.
+pub(super) fn note_glyph(app: &App, line: &Line, at: usize, list: Rect, i: usize) {
+    let y = list.y + i as u16;
+    if y >= list.bottom() {
+        return;
+    }
+    let before: usize = line.spans[..at].iter().map(Span::width).sum();
+    let x = list.x as usize + before;
+    let width = line.spans[at].width();
+    let mut breathing = app.breathing.borrow_mut();
+    match breathing.as_mut() {
+        Some(glyphs) if x + width <= usize::from(list.right()) => glyphs.push(Glyph {
+            x: x as u16,
+            y,
+            width: width as u16,
+        }),
+        _ => *breathing = None,
+    }
+}
+
 /// Whether agent `a`'s glyph breathes on rung `rung` while motion moves:
 /// a working row's, not a leader's.
 pub(crate) fn breathes(a: &Agent, rung: Rung) -> bool {
@@ -2849,6 +2872,94 @@ mod tests {
         // Enough of each: the demo lights rows and starts sessions often.
         assert!(checked > 40, "{checked} patched, {refused} not");
         assert!(refused > 20, "{checked} patched, {refused} not");
+    }
+
+    #[test]
+    fn a_working_owner_breathes_on_the_board_and_its_frame_is_patched() {
+        use crate::motion::Motion;
+        let ms = std::time::Duration::from_millis;
+        let (mut app, w, _) = calm_team();
+        app.motion = Motion::Calm;
+        app.view = View::Board;
+        let card = |id, owner, column| Card {
+            id,
+            project: 0,
+            title: format!("card {id}"),
+            owner,
+            column,
+            story: Vec::new(),
+            symbols: Vec::new(),
+            started: 0,
+            finished: 0,
+        };
+        app.world.cards = vec![
+            card(0, Some(w[0]), Column::Working),
+            card(1, Some(w[1]), Column::Working),
+            card(2, Some(w[2]), Column::Waiting),
+            card(3, Some(w[3]), Column::Done),
+            card(5, None, Column::Waiting),
+        ];
+        app.world.agents[w[1]].status = Status::Idle;
+        app.world.agents[w[3]].status = Status::Working;
+        let width = 160;
+        // In progress: the second column, its border at 40, its rows from
+        // the header's and its own border's below (y 2); the glyph after
+        // four cells, two wide.
+        app.frame_after(ms(600));
+        let (first, _) = whole(&app, width);
+        let known = app.breathing.borrow().clone().unwrap();
+        assert_eq!(
+            known,
+            [
+                Glyph {
+                    x: 45,
+                    y: 3,
+                    width: 2
+                },
+                Glyph {
+                    x: 125,
+                    y: 3,
+                    width: 2
+                },
+            ],
+            "the working owners in progress and done, not the idle one nor a waiting card's"
+        );
+        assert_eq!(first[(45, 3)].symbol(), "●");
+        assert!(
+            first[(45, 3)].modifier.contains(Modifier::DIM),
+            "the second tone"
+        );
+        assert_eq!(first[(45, 5)].symbol(), "○", "the idle owner");
+        // A waiting card shows no owner and takes one row: the next
+        // card's title right under it.
+        assert_eq!(first[(1, 2)].symbol(), "#");
+        assert_eq!(first[(2, 2)].symbol(), "3");
+        assert_eq!(first[(1, 3)].symbol(), "#");
+        assert_eq!(first[(2, 3)].symbol(), "6");
+        assert!(!first[(45, 5)].modifier.contains(Modifier::DIM));
+        app.drawn(app.after(ms(600)));
+        assert!(app.patch_due(app.after(ms(1200))));
+        app.frame_after(ms(1200));
+        let got = patched(&app, &first, width).expect("patched");
+        let want = whole(&app, width);
+        assert_eq!(got, want);
+        assert!(
+            !want.0[(45, 3)].modifier.contains(Modifier::DIM),
+            "the first tone"
+        );
+        // A card past the column's foot is not on the screen.
+        let mut t = Terminal::new(TestBackend::new(width, 6)).unwrap();
+        app.world.cards.insert(0, card(4, None, Column::Working));
+        t.draw(|f| draw(f, &app)).unwrap();
+        assert_eq!(
+            *app.breathing.borrow(),
+            Some(vec![Glyph {
+                x: 125,
+                y: 3,
+                width: 2
+            }]),
+            "row 5 of the column is past a 6-row screen's body"
+        );
     }
 
     #[test]

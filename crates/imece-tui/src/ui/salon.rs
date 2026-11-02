@@ -336,29 +336,6 @@ fn salon(f: &mut Frame, area: Rect, app: &App) {
     f.render_widget(Paragraph::new(queue_line(app)), queue);
 }
 
-/// Span `at` of `line`, drawn on row `i` of `list`, is a glyph that
-/// breathes: where it is goes to [`App::breathing`]. One cut by the
-/// list's right edge leaves the drawing unpatched; one below its foot is
-/// not on the screen.
-fn note_glyph(app: &App, line: &Line, at: usize, list: Rect, i: usize) {
-    let y = list.y + i as u16;
-    if y >= list.bottom() {
-        return;
-    }
-    let before: usize = line.spans[..at].iter().map(Span::width).sum();
-    let x = list.x as usize + before;
-    let width = line.spans[at].width();
-    let mut breathing = app.breathing.borrow_mut();
-    match breathing.as_mut() {
-        Some(glyphs) if x + width <= usize::from(list.right()) => glyphs.push(super::Glyph {
-            x: x as u16,
-            y,
-            width: width as u16,
-        }),
-        _ => *breathing = None,
-    }
-}
-
 /// `  ◌ claude-2`: the loudest member of a folded group, its rung's glyph
 /// (its own colour) and its name.
 fn member(app: &App, id: AgentId, rungs: &[Rung]) -> Vec<Span<'static>> {
