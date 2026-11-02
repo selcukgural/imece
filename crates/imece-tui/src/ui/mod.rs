@@ -1125,10 +1125,11 @@ fn header(f: &mut Frame, area: Rect, app: &App) {
     let open = w.open_inbox().len();
     let mut spans = vec![Span::styled(" imece ", brand()), Span::raw(" ")];
     // Live work starts without cards and without researchers: no "0/0".
-    if !w.cards.is_empty() {
+    let cards = w.shown_cards().count();
+    if cards > 0 {
         spans.push(Span::raw(fill(
             t.cards,
-            &[&w.cards_done().to_string(), &w.cards.len().to_string()],
+            &[&w.cards_done().to_string(), &cards.to_string()],
         )));
         spans.push(sep());
     }
@@ -1340,6 +1341,19 @@ fn footer(f: &mut Frame, area: Rect, app: &App) {
         let said = match what {
             Undoable::Close(p) => fill(t.grace_close, &[&app.world.projects[p].name, &left]),
             Undoable::Forget(id) => fill(t.grace_forget, &[&app.world.agents[id].name, &left]),
+            Undoable::Archive(p) => {
+                let name = &app.world.projects[p].name;
+                let cut = (app.world.mid_turn().into_iter())
+                    .filter(|&a| app.world.agents[a].project == p)
+                    .count();
+                match cut {
+                    0 => fill(t.grace_archive, &[name, &app.archive_title, &left]),
+                    n => fill(
+                        t.grace_archive_cut,
+                        &[name, &app.archive_title, &left, &n.to_string()],
+                    ),
+                }
+            }
         };
         Line::from(Span::styled(format!(" {said}"), fg(pal().warn)))
     } else {
@@ -5255,6 +5269,168 @@ mod tests {
             let shown = render(&app, 140, 40);
             assert!(shown.contains(&forget.replace("{}", &lead)), "{shown}");
         }
+    }
+
+    #[test]
+    fn archiving_puts_a_project_away_after_its_grace_and_a_fresh_one_opens() {
+        let typed = |app: &mut App, line: &str| {
+            for c in line.chars() {
+                key(app, KeyCode::Char(c));
+            }
+            app.menu = None;
+            key(app, KeyCode::Enter);
+        };
+        let flashed = |app: &App| app.flash.as_ref().map(|f| f.0.clone()).unwrap_or_default();
+        for (lang, grace, cut, undone, done, line) in [
+            (
+                Lang::En,
+                "◷ archiving shop as “first epic” in 10 s · u keeps it",
+                "◷ archiving shop as “first epic” in 10 s, cutting 1 turns short · u keeps it",
+                "shop stays as it is",
+                "archived shop as “first epic”: its agents sleep with all they had; a fresh \
+                 one opens",
+                "you archived shop as “first epic”; a fresh shop takes its place",
+            ),
+            (
+                Lang::Tr,
+                "◷ shop “first epic” adıyla arşivleniyor, 10 sn sonra · u tutar",
+                "◷ shop “first epic” adıyla arşivleniyor, 10 sn sonra; 1 tur yarıda kesilecek · \
+                 u tutar",
+                "shop olduğu gibi kalıyor",
+                "shop “first epic” adıyla arşivlendi: agent'ları her şeyiyle uyuyor; yerine \
+                 yenisi açıldı",
+                "shop projesini “first epic” adıyla arşivledin; yerine yeni bir shop açıldı",
+            ),
+        ] {
+            let mut app = app_after(1, 1, 0, lang);
+            app.home = None;
+            typed(&mut app, ":open ~/work/shop");
+            let ours: Vec<AgentId> = (app.world.agents.iter())
+                .filter(|a| a.project == 1)
+                .map(|a| a.id)
+                .collect();
+            let worker = ours[1];
+            let t = app.world.tick;
+            for &id in &ours {
+                app.world.agents[id].set_status(Status::Idle, t);
+            }
+            // Another project's turns are not this archive's to cut.
+            for id in 0..ours[0] {
+                app.world.agents[id].set_status(Status::Working, t);
+            }
+            app.selected = Sel::Agent(worker);
+            typed(&mut app, ":archive first epic");
+            assert_eq!(app.grace.map(|g| g.0), Some(Undoable::Archive(1)));
+            assert_eq!(app.archive_title, "first epic");
+            assert!(render(&app, 160, 40).contains(grace), "{lang:?}");
+            app.world.agents[worker].set_status(Status::Working, t);
+            assert!(render(&app, 160, 40).contains(cut), "{lang:?}");
+            key(&mut app, KeyCode::Char('u'));
+            assert!(app.grace.is_none());
+            assert_eq!(flashed(&app), undone);
+            assert!(app.world.projects[1].archived.is_none());
+
+            app.world.agents[worker].set_status(Status::Idle, t);
+            app.unseen.insert(worker);
+            app.settled.insert(worker);
+            app.zoom = Zoom::Focus(worker);
+            app.inbox_sel = 5;
+            app.card = app.world.cards.iter().position(|c| c.project == 1);
+            assert!(app.card.is_some());
+            let theirs = |app: &App| {
+                (journal_rows(&app.world).iter())
+                    .filter(|&&(i, _)| {
+                        app.world.agents[app.world.journal[i].event.agent()].project == 1
+                    })
+                    .count()
+            };
+            assert!(theirs(&app) > 0, "its lines are in sight before");
+            typed(&mut app, ":archive first epic");
+            app.end_grace();
+            let w = &app.world;
+            assert_eq!(
+                w.projects[1].archived.as_ref().map(|a| a.title.as_str()),
+                Some("first epic")
+            );
+            assert_eq!(w.projects.len(), 3);
+            assert_eq!(
+                (w.projects[2].name.as_str(), w.projects[2].closed),
+                ("shop", false)
+            );
+            assert_eq!(app.selected, Sel::Agent(w.projects[2].leader));
+            assert_eq!((app.zoom, app.card), (Zoom::None, None));
+            assert_eq!(app.inbox_sel, app.inbox_rows().len().saturating_sub(1));
+            assert_eq!(app.collapsed.len(), 3);
+            assert!(!app.unseen.contains(&worker) && !app.settled.contains(&worker));
+            assert_eq!(flashed(&app), done);
+            assert_eq!(theirs(&app), 0, "its lines wait in the archive");
+            assert!(w.shown_cards().all(|c| c.project != 1));
+            assert!(render(&app, 300, 40).contains(line), "{lang:?}");
+            // Its agents sleep: the demo's steps leave them be.
+            let before: Vec<(u8, u64)> = (ours.iter())
+                .map(|&id| (app.world.agents[id].progress, app.world.agents[id].cost))
+                .collect();
+            for _ in 0..30 {
+                app.step();
+            }
+            let after: Vec<(u8, u64)> = (ours.iter())
+                .map(|&id| (app.world.agents[id].progress, app.world.agents[id].cost))
+                .collect();
+            assert_eq!(before, after);
+            assert!(
+                ours.iter()
+                    .all(|&id| app.world.agents[id].status == Status::Asleep)
+            );
+            // Without a title: its name and days; a long one is cut.
+            typed(&mut app, ":archive");
+            assert_eq!(app.archive_title, app.world.archive_title(2));
+            typed(&mut app, &format!(":archive {}", "x".repeat(70)));
+            assert_eq!(app.archive_title, "x".repeat(60));
+        }
+    }
+
+    #[test]
+    fn an_archive_s_cards_leave_the_board_the_queue_and_the_header() {
+        let mut app = app_after(1, 2, 0, Lang::En);
+        let name = app.world.projects[0].name.clone();
+        let theirs: Vec<String> = (app.world.cards.iter()).map(|c| c.title.clone()).collect();
+        assert!(theirs.len() >= 2, "the demo has cards");
+        app.world.cards[0].column = Column::Done;
+        app.world.cards[1].column = Column::Verifying;
+        app.view = View::Board;
+        let before = render(&app, 200, 40);
+        assert!(before.contains(&theirs[0]));
+        let fresh = app.world.archive_project(0, "x".into());
+        app.collapsed.push(false);
+        let lead = app.world.projects[fresh].leader;
+        let c = app.world.cards.len();
+        app.world.cards.push(Card {
+            id: c,
+            project: fresh,
+            title: "the next epic".into(),
+            owner: Some(lead),
+            column: Column::Working,
+            story: Vec::new(),
+            symbols: Vec::new(),
+            started: 0,
+            finished: 0,
+        });
+        let board = render(&app, 200, 40);
+        for title in &theirs {
+            assert!(!board.contains(title.as_str()), "{title}: {board}");
+        }
+        assert!(board.contains("the next epic"));
+        // One project in sight: the cards do not name it.
+        let row = (board.lines())
+            .skip_while(|l| !l.contains("the next epic"))
+            .nth(1)
+            .unwrap();
+        assert!(!row.contains(&name), "{row}");
+        assert!(board.contains(" 0/1 cards"), "{board}");
+        app.view = View::Salon;
+        let salon = render(&app, 200, 40);
+        let queue = salon.lines().find(|l| l.contains("QUEUE")).unwrap();
+        assert!(!queue.contains("#1") && !queue.contains("#2"), "{queue}");
     }
 
     #[test]

@@ -20,6 +20,7 @@ A line that starts with `:` is a command to imece, not a message to an agent. Yo
 
 | Command | Key | Short | Demo only | `$` | Menu note |
 | --- | --- | --- | --- | --- | --- |
+| `:archive [TITLE]` | — | | | | |
 | `:awake` | — | | | | on / off |
 | `:board` | `2` | | | | |
 | `:budget USD` | — | `:b` | | | spent X of Y |
@@ -70,6 +71,12 @@ A line that starts with `:` is a command to imece, not a message to an agent. Yo
 Live, `:pause`, `:faster` and `:slower` are left out of the menu. Keys that move (`j k`, `gg G`, `enter`, `esc`, `tab`) and keys that act on the selected row (`a r c n x`) have no `:` name: typing them would be slower than the key, and the row would have to be named.
 
 ## The commands
+
+### `:archive [TITLE]`
+
+Puts the project at hand away as `TITLE` and opens a fresh one in its place, ten seconds after it is asked: the bottom line counts down (`◷ archiving kule as “first epic” in 7 s · u keeps it`, and when agents of it are mid-turn `…, cutting 2 turns short …`), and `u` ([`:undo`](#undo)) leaves it as it is. Without a title it is called by its name and its days (`kule 2026-10-30 → 2026-11-02`); a title is one line, at most 60 characters.
+
+The archived project's agents stop as at a quit (a turn under way is cut short and its prompt kept) and sleep with all they had: their vendor sessions, mail, notes, changes, cards and items in WAITING FOR YOU. All of it leaves the screen: the salon, WAITING FOR YOU, the journal, the board and the queue show only the fresh project, which has the same name, pin and `:copy` list, and a head of the same name, vendor and model. Nothing is spent, and the pot is the same one. The flash: `archived kule as “first epic”: its agents sleep with all they had; a fresh one opens`; the journal: `you archived kule as “first epic”; a fresh kule takes its place`. `--fresh` leaves an archive's sessions alone. The demo archives the same way. See [sessions](../concepts/sessions.md#archives) and the scenario [a new epic](../scenarios/new-epic.md).
 
 ### `:awake`
 
@@ -245,7 +252,7 @@ The raw stream of the agent, as `t`: every line its session said, as data, up to
 
 ### `:undo`
 
-Keeps a `:close` or `:forget` from happening, as `u`. Both wait ten seconds before they act, and the bottom line counts down meanwhile: `◷ closing kule in 7 s · u keeps it open`, `◷ claude-2 forgets its session in 7 s · u keeps it`. `u` in that time leaves everything as it was (`kule stays open`, `claude-2 keeps its session`); with nothing counting down it says `nothing to undo`. One waits at a time: another `:close` or `:forget` makes the one waiting act first. Quitting while one counts down lets it act. A refusal (the last open project, no session to forget, a name nobody has) is said at once and waits for nothing. Both the demo and live sessions wait.
+Keeps a `:close`, `:forget` or `:archive` from happening, as `u`. Both wait ten seconds before they act, and the bottom line counts down meanwhile: `◷ closing kule in 7 s · u keeps it open`, `◷ claude-2 forgets its session in 7 s · u keeps it`. `u` in that time leaves everything as it was (`kule stays open`, `claude-2 keeps its session`); with nothing counting down it says `nothing to undo`. One waits at a time: another `:close` or `:forget` makes the one waiting act first. Quitting while one counts down lets it act. A refusal (the last open project, no session to forget, a name nobody has) is said at once and waits for nothing. Both the demo and live sessions wait.
 
 ### `:unfold`
 

@@ -1,6 +1,6 @@
 ---
 title: Scenarios
-description: Seven step-by-step walks through imece, each key and command named with what the screen shows in reply.
+description: Eight step-by-step walks through imece, each key and command named with what the screen shows in reply.
 ---
 
 # Scenarios
@@ -9,7 +9,7 @@ The concept and screen pages say what each part of imece is. The scenarios put t
 
 Every scenario is true of the real imece: the keys are the ones the `?` help lists, the journal lines are the words the screen uses, the numbers (caps, prices, defaults) are the ones in the code. Drawn screens are short and plausible, not a transcript of a real run.
 
-## The seven
+## The eight
 
 | Scenario | One line |
 | --- | --- |
@@ -19,6 +19,7 @@ Every scenario is true of the real imece: the keys are the ones the `?` help lis
 | [Three checkouts, one screen](many-projects.md) | `:open`, folding, `:pin`, `f`, `:rename`, `:copy .env`, `:close`, and the one pot every project draws from. |
 | [A solo beside the team](solo-beside-the-team.md) | `:solo claude:opus@xhigh`, a session you drive yourself with no leader, the `Δ` after every answer, a second solo on Codex, `--solo` the next morning. |
 | [Coming back](next-morning.md) | Quitting mid-turn, the "where you left off" window, agents asleep, how each vendor resumes, `:forget`, the away digest, `:notify`, marks, `:export`. |
+| [A new epic](new-epic.md) | `:archive v1 fixes`, its grace and `u`, a clean project of the same name, what the archive keeps, the one pot. |
 | [Your shell next to the team](own-shell-and-commit.md) | `!cargo test`, `!vim`, ctrl-c, `:commit` and its ceilings, `:awake`, `:budget 80`, `:theme nord`, `L`. |
 
 ## Trying them for free
@@ -34,6 +35,7 @@ Everything a scenario does on the screen can be tried with `imece --demo`: fake 
 5. [Three checkouts, one screen](many-projects.md): when more than one project is open.
 6. [A solo beside the team](solo-beside-the-team.md): when you want to drive one agent yourself.
 7. [Coming back](next-morning.md): the second day.
+8. [A new epic](new-epic.md): when a piece of work is done.
 
 ## See also
 

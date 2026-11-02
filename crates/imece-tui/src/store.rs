@@ -52,7 +52,10 @@ use crate::model::*;
 /// 13 (2026-11-01): the lines the person sent, for recall (`sent`).
 /// 14 (2026-11-02): the `Fault` inbox kind and the `Retrying` events (no
 /// table changed; an older imece would not know the tags).
-pub const SCHEMA_VERSION: i64 = 14;
+/// 15 (2026-11-02): archived projects (`projects.archived_at`,
+/// `projects.archived_title`), read by project (`journal_project`), and
+/// the `Archived` events.
+pub const SCHEMA_VERSION: i64 = 15;
 /// Trace lines kept per agent, as the world keeps them.
 const TRACE_KEEP: usize = 200;
 /// The file's name under the state directory.
@@ -428,11 +431,21 @@ impl Store {
                 "ALTER TABLE journal ADD COLUMN marked INTEGER NOT NULL DEFAULT 0;",
             )?;
         }
+        if !self.has_column("projects", "archived_at")? {
+            self.conn.execute_batch(
+                "ALTER TABLE projects ADD COLUMN archived_at INTEGER;
+                 ALTER TABLE projects ADD COLUMN archived_title TEXT;",
+            )?;
+        }
         // The few marked lines, without reading the many others (`load`);
         // after the column, which an older file gets just above.
         self.conn.execute_batch(
             "CREATE INDEX IF NOT EXISTS journal_marked ON journal (seq) WHERE marked = 1;",
         )?;
+        // One archive's lines, without reading the others' (the seq is the
+        // rowid, so the index keeps them in order).
+        self.conn
+            .execute_batch("CREATE INDEX IF NOT EXISTS journal_project ON journal (project);")?;
         let version: i64 = self
             .conn
             .query_row(
@@ -486,9 +499,11 @@ impl Store {
                 })?;
         // `seq <= ?1` walks the primary key up to there: the newer lines,
         // the bulk of a file that is tidied every start, are not read. A
-        // line the person marked stays.
+        // line the person marked stays, and so does an archive's: it grows
+        // no more, and is kept to be looked at.
         let journal = self.conn.execute(
-            "DELETE FROM journal WHERE seq <= ?1 AND tick < ?2 AND marked = 0",
+            "DELETE FROM journal WHERE seq <= ?1 AND tick < ?2 AND marked = 0 \
+             AND project NOT IN (SELECT id FROM projects WHERE archived_at IS NOT NULL)",
             params![newest - n(journal_keep), big(cutoff)],
         )?;
         let free: i64 = self
@@ -554,7 +569,8 @@ impl Store {
             let q = &w.projects[p];
             tx.execute(
                 "INSERT OR REPLACE INTO projects (id, name, leader, closed, repo, pinned, \
-                 copies) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                 copies, archived_at, archived_title) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, \
+                 ?9)",
                 params![
                     n(q.id),
                     q.name,
@@ -565,6 +581,8 @@ impl Store {
                         .map_or(String::new(), |r| r.display().to_string()),
                     q.pinned,
                     serde_json::to_string(&q.copies).unwrap_or_else(|_| "[]".into()),
+                    q.archived.as_ref().map(|a| big(a.at)),
+                    q.archived.as_ref().map(|a| a.title.as_str()),
                 ],
             )?;
         }
@@ -871,6 +889,7 @@ impl Store {
                 k.repos.get(p).map(|r| r.as_os_str()),
                 q.pinned,
                 &q.copies,
+                &q.archived,
             ));
             if s.projects.get(p) != Some(&h) {
                 plan.projects.push(p);
@@ -1055,7 +1074,8 @@ impl Store {
         let mut skipped = 0;
         let conn = &self.conn;
         let mut st = conn.prepare(
-            "SELECT id, name, leader, closed, repo, pinned, copies FROM projects ORDER BY id",
+            "SELECT id, name, leader, closed, repo, pinned, copies, archived_at, archived_title \
+             FROM projects ORDER BY id",
         )?;
         for row in st.query_map([], |r| {
             Ok((
@@ -1066,9 +1086,15 @@ impl Store {
                 r.get::<_, String>(4)?,
                 r.get::<_, bool>(5)?,
                 r.get::<_, String>(6)?,
+                r.get::<_, Option<i64>>(7)?,
+                r.get::<_, Option<String>>(8)?,
             ))
         })? {
-            let (id, name, leader, closed, repo, pinned, copies) = row?;
+            let (id, name, leader, closed, repo, pinned, copies, at, title) = row?;
+            let archived = at.map(|at| Archived {
+                at: ubig(at),
+                title: title.unwrap_or_default(),
+            });
             let copies: Vec<String> = serde_json::from_str(&copies)
                 .map_err(|e| bad(format!("project {id}'s copies: {e}")))?;
             if id != w.projects.len() {
@@ -1085,6 +1111,7 @@ impl Store {
                 pinned,
                 copies,
                 no_git: false,
+                archived,
             });
             found.repos.push(PathBuf::from(repo));
         }
@@ -1385,7 +1412,9 @@ impl Store {
             "SELECT card, tick, data FROM story ORDER BY card, seq",
             "SELECT seq, tick, data, marked FROM journal ORDER BY seq DESC LIMIT 5000",
             "SELECT id, kind, agent, detail, researcher, open, tick, card FROM inbox ORDER BY id",
-            "DELETE FROM journal WHERE seq <= 10 AND tick < 20 AND marked = 0",
+            "DELETE FROM journal WHERE seq <= 10 AND tick < 20 AND marked = 0 \
+             AND project NOT IN (SELECT id FROM projects WHERE archived_at IS NOT NULL)",
+            "SELECT seq, tick, data, marked FROM journal WHERE project = 1 ORDER BY seq",
             "SELECT seq, tick, data FROM journal WHERE marked = 1 AND seq < 10 ORDER BY seq",
             "SELECT seq, tick, text FROM sent ORDER BY seq DESC LIMIT 500",
             "DELETE FROM sent WHERE seq <= (SELECT COALESCE(MAX(seq), 0) FROM sent) - 500",
@@ -1610,6 +1639,7 @@ mod tests {
                     pinned: false,
                     copies: Vec::new(),
                     no_git: false,
+                    archived: None,
                 },
                 Project {
                     id: 1,
@@ -1622,6 +1652,7 @@ mod tests {
                     pinned: false,
                     copies: Vec::new(),
                     no_git: false,
+                    archived: None,
                 },
             ],
             agents: vec![
@@ -3000,9 +3031,13 @@ mod tests {
             assert!(!plan.contains("TEMP B-TREE"), "{query}: {plan}");
             // The marked lines have an index of their own, which holds
             // only them.
-            let key = match query.contains("marked = 1") {
-                true => "USING INDEX journal_marked",
-                false => "PRIMARY KEY",
+            // An archive's lines too.
+            let key = if query.contains("marked = 1") {
+                "USING INDEX journal_marked"
+            } else if query.contains("project = 1") {
+                "USING INDEX journal_project"
+            } else {
+                "PRIMARY KEY"
             };
             if query.contains("WHERE") {
                 assert!(
@@ -3094,10 +3129,10 @@ mod tests {
                 )
                 .unwrap();
             assert_eq!(
-                version, "14",
-                "the sent table, the Fault kind: an older imece knows neither"
+                version, "15",
+                "the sent table, the Fault kind, archives: an older imece knows none"
             );
-            assert_eq!(SCHEMA_VERSION, 14);
+            assert_eq!(SCHEMA_VERSION, 15);
         }
         let back = Store::open(&path)
             .unwrap()
@@ -3187,6 +3222,80 @@ mod tests {
             .unwrap();
         let e = store.load(100).err().expect("refused").to_string();
         assert!(e.contains("project 1's copies"), "{e}");
+    }
+
+    #[test]
+    fn an_archive_is_saved_on_its_own_kept_by_a_tidy_and_schema_14_gets_the_columns() {
+        let d = dir("schema14");
+        std::fs::create_dir_all(&d).unwrap();
+        let path = d.join(FILE);
+        let mut w = world();
+        let archived = Some(Archived {
+            at: 12,
+            title: "first epic".into(),
+        });
+        {
+            let mut store = Store::open(&path).unwrap();
+            assert!(store.save(&w, &kept().kept()).unwrap());
+            // An archive alone is something to save.
+            w.projects[1].archived = archived.clone();
+            assert!(store.save(&w, &kept().kept()).unwrap());
+            assert!(!store.save(&w, &kept().kept()).unwrap(), "nothing new");
+            let back = store.load(100).unwrap().unwrap();
+            assert_eq!(back.world.projects[0].archived, None);
+            assert_eq!(back.world.projects[1].archived, archived);
+            // A tidy keeps an archive's lines, however old.
+            store.raw().execute("DELETE FROM journal", []).unwrap();
+            let now = w.started_at + 100 * 86_400;
+            let cutoff = 10 * 86_400 / SECONDS_PER_TICK;
+            for (seq, tick, project) in
+                [(1, 0, 1), (2, 0, 0), (3, cutoff - 1, 0), (4, cutoff - 1, 1)]
+            {
+                store
+                    .raw()
+                    .execute(
+                        "INSERT INTO journal (seq, tick, project, agent, kind, data) \
+                         VALUES (?1, ?2, ?3, 0, 'Failed', '{\"Failed\":{\"agent\":0}}')",
+                        params![seq, big(tick), project],
+                    )
+                    .unwrap();
+            }
+            assert_eq!(store.tidy(now, 0).unwrap().journal, 2);
+            let left: Vec<i64> = store
+                .raw()
+                .prepare("SELECT seq FROM journal ORDER BY seq")
+                .unwrap()
+                .query_map([], |r| r.get(0))
+                .unwrap()
+                .map(Result::unwrap)
+                .collect();
+            assert_eq!(left, [1, 4]);
+            // As schema 14 wrote it: no archives.
+            store
+                .raw()
+                .execute_batch(
+                    "DROP INDEX journal_project;
+                     ALTER TABLE projects DROP COLUMN archived_at;
+                     ALTER TABLE projects DROP COLUMN archived_title;
+                     UPDATE meta SET value = '14' WHERE key = 'schema_version';",
+                )
+                .unwrap();
+        }
+        let mut store = Store::open(&path).unwrap();
+        let back = store.load(100).unwrap().expect("a world");
+        assert!(back.world.projects.iter().all(|p| p.archived.is_none()));
+        let index: i64 = store
+            .raw()
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE name = 'journal_project'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(index, 1, "made again");
+        assert!(store.save(&w, &kept().kept()).unwrap());
+        let back = store.load(100).unwrap().unwrap();
+        assert_eq!(back.world.projects[1].archived, archived);
     }
 
     #[test]

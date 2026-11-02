@@ -39,4 +39,6 @@ agent that is not gone. Known gaps: a Claude session's other traces
 imece session of 2026-10-28 had only the transcript); Codex's delete
 takes a process (~1 s) per thread, `--fresh` with many Codex agents
 starts them all at once; a session stopped for a mismatch is still
-the one remembered (and forgotten only by these paths).
+the one remembered (and forgotten only by these paths). Since record 80
+`--fresh` leaves an archived project's sessions alone: they are what
+bringing it back goes on with.

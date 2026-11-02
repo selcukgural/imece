@@ -20,6 +20,7 @@ description: imece'nin aldığı her `:` komutu; argümanları, karşılığı o
 
 | Komut | Tuş | Kısa | Yalnız demo | `$` | Menü notu |
 | --- | --- | --- | --- | --- | --- |
+| `:archive [TITLE]` | — | | | | |
 | `:awake` | — | | | | açık / kapalı |
 | `:board` | `2` | | | | |
 | `:budget USD` | — | `:b` | | | harcanan / bütçe |
@@ -70,6 +71,12 @@ description: imece'nin aldığı her `:` komutu; argümanları, karşılığı o
 Canlıda `:pause`, `:faster` ve `:slower` menüde yer almaz. Hareket eden tuşların (`j k`, `gg G`, `enter`, `esc`, `tab`) ve seçili satıra etki eden tuşların (`a r c n x`) `:` adı yoktur: yazmak tuştan yavaş olurdu ve satırın adlandırılması gerekirdi.
 
 ## Komutlar
+
+### `:archive [TITLE]`
+
+Eldeki projeyi `TITLE` adıyla kaldırır ve yerine yenisini açar, istendikten on saniye sonra: alt satır geri sayar (`◷ kule “first epic” adıyla arşivleniyor, 7 sn sonra · u tutar`; ajanlarından biri tur ortasındaysa `…; 2 tur yarıda kesilecek …`), `u` ([`:undo`](#undo)) olduğu gibi bırakır. Başlıksız, adı ve günleriyle anılır (`kule 2026-10-30 → 2026-11-02`); başlık tek satırdır, en çok 60 karakter.
+
+Arşivlenen projenin ajanları çıkışta olduğu gibi durur (süren bir tur yarıda kesilir, istemi saklanır) ve her şeyiyle uyur: satıcı oturumları, postaları, notları, değişiklikleri, kartları ve SENİ BEKLEYEN'deki kalemleri. Hepsi ekrandan çıkar: salon, SENİ BEKLEYEN, günlük, pano ve kuyruk yalnız yeni projeyi gösterir; yenisinin adı, iğnesi ve `:copy` listesi aynıdır, başındaki ajanın adı, satıcısı ve modeli de. Hiçbir şey harcanmaz, bütçe aynı bütçedir. Flaş: `kule “first epic” adıyla arşivlendi: agent'ları her şeyiyle uyuyor; yerine yenisi açıldı`; günlük: `kule projesini “first epic” adıyla arşivledin; yerine yeni bir kule açıldı`. `--fresh` arşivin oturumlarına dokunmaz. Demo da aynı biçimde arşivler. Bkz. [oturumlar](../concepts/sessions.md#arşivler) ve [yeni bir epic](../scenarios/new-epic.md) senaryosu.
 
 ### `:awake`
 
@@ -245,7 +252,7 @@ Ajanın ham akışı, `t` gibi: oturumunun söylediği her satır, veri olarak, 
 
 ### `:undo`
 
-Bir `:close` ya da `:forget`'in olmasını önler, `u` gibi. İkisi de iş görmeden önce on saniye bekler, bu arada alt satır geri sayar: `◷ kule 7 sn sonra kapanıyor · u açık tutar`, `◷ claude-2 7 sn sonra oturumunu unutuyor · u tutar`. O sürede `u` her şeyi olduğu gibi bırakır (`kule açık kalıyor`, `claude-2 oturumunu tutuyor`); geri sayan bir şey yoksa `geri alınacak bir şey yok` der. Bir seferde biri bekler: başka bir `:close` ya da `:forget`, bekleyeni önce uygular. Biri geri sayarken çıkmak onu uygular. Bir ret (son açık proje, unutulacak oturum yok, kimsenin taşımadığı bir ad) hemen söylenir, hiçbir şey beklemez. Demo da canlı oturumlar da bekler.
+Bir `:close`, `:forget` ya da `:archive`'ın olmasını önler, `u` gibi. İkisi de iş görmeden önce on saniye bekler, bu arada alt satır geri sayar: `◷ kule 7 sn sonra kapanıyor · u açık tutar`, `◷ claude-2 7 sn sonra oturumunu unutuyor · u tutar`. O sürede `u` her şeyi olduğu gibi bırakır (`kule açık kalıyor`, `claude-2 oturumunu tutuyor`); geri sayan bir şey yoksa `geri alınacak bir şey yok` der. Bir seferde biri bekler: başka bir `:close` ya da `:forget`, bekleyeni önce uygular. Biri geri sayarken çıkmak onu uygular. Bir ret (son açık proje, unutulacak oturum yok, kimsenin taşımadığı bir ad) hemen söylenir, hiçbir şey beklemez. Demo da canlı oturumlar da bekler.
 
 ### `:unfold`
 

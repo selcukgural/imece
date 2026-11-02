@@ -84,7 +84,8 @@ as a project of its own, with its own leader, and :solo [PATH] [CHOICE]
   --fresh           forget every agent's remembered session: each wakes in a
                     new one, told where it left off, and what the vendors
                     kept of the old ones is removed (:forget @NAME does it
-                    for one agent while imece runs)
+                    for one agent while imece runs); an archived project's
+                    are kept
   --awake           keep the machine from sleeping while an agent is
                     mid-turn (caffeinate on macOS, systemd-inhibit on
                     Linux); :awake turns it on or off while imece runs

@@ -143,6 +143,10 @@ pub fn event(lang: Lang, w: &World, e: &Event) -> String {
         Event::Opened { leader, path } => fill(t.ev_opened, &[project(w, *leader), path]),
         Event::NoGit { leader, path } => fill(t.ev_no_git, &[name(w, *leader), path]),
         Event::Closed { leader } => fill(t.ev_closed, &[project(w, *leader)]),
+        Event::Archived { leader, title, .. } => fill(
+            t.ev_archived,
+            &[project(w, *leader), title, project(w, *leader)],
+        ),
         Event::Renamed { from, to, .. } => fill(t.ev_renamed, &[from, to]),
         Event::Forgotten { agent } => fill(t.ev_forgotten, &[name(w, *agent)]),
         Event::Chose { agent, choice } => fill(t.ev_chose, &[name(w, *agent), choice]),

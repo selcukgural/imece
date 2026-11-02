@@ -721,8 +721,7 @@ fn queue_line(app: &App) -> Line<'static> {
     let t = app.lang.text();
     let mut spans = vec![Span::styled(t.queue, bold(pal().strong))];
     let verifying: Vec<&Card> = w
-        .cards
-        .iter()
+        .shown_cards()
         .filter(|c| c.column == Column::Verifying)
         .collect();
     if verifying.is_empty() {
@@ -732,8 +731,7 @@ fn queue_line(app: &App) -> Line<'static> {
         spans.push(Span::styled(format!(" #{} ◌", c.id + 1), fg(pal().info)));
     }
     let mut done: Vec<&Card> = w
-        .cards
-        .iter()
+        .shown_cards()
         .filter(|c| c.column == Column::Done)
         .collect();
     done.sort_by_key(|c| std::cmp::Reverse(c.finished));
@@ -912,14 +910,16 @@ fn first_shown(
 /// The journal as the screen shows it, newest first: (journal index, how
 /// many older lines of the same conversation fold under it). The journal
 /// keeps every event; the screen shows the meaningful ones. Routine
-/// assignments are visible on the board and in the leader's trace.
+/// assignments are visible on the board and in the leader's trace; an
+/// archived project's lines wait in its archive.
 pub(crate) fn journal_rows(w: &World) -> Vec<(usize, usize)> {
     let shown = w
         .journal
         .iter()
         .enumerate()
         .rev()
-        .filter(|(_, e)| e.event.kind() != EntryKind::Assign);
+        .filter(|(_, e)| e.event.kind() != EntryKind::Assign)
+        .filter(|(_, e)| !w.in_archive(e.event.agent()));
     fold_threads(shown, &w.marks).collect()
 }
 

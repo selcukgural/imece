@@ -340,7 +340,7 @@ impl Live {
         };
         let name = (next..)
             .map(|n| format!("{stem}{n}"))
-            .find(|name| w.agent_by_name(name).is_none())
+            .find(|name| !w.name_taken(name))
             .expect("some number is free");
         let id = w.agents.len();
         // The socket first: an agent without one could never start.

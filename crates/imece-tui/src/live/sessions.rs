@@ -581,7 +581,7 @@ impl Live {
         let tree = Self::tree_of(w, id);
         let (repo, root) = (place.repo.clone(), place.root.clone());
         let copies = w.projects[a.project].copies.clone();
-        let home = self.gemini_home(a.project, a.role, &tree);
+        let home = self.gemini_home(w, a.project, a.role, &tree);
         let (tx, ready) = (self.tx.clone(), self.ready_tx.clone());
         thread::spawn(move || {
             let started = (|| {
@@ -755,7 +755,7 @@ mod tests {
             "a leader: the checkout"
         );
         assert!(
-            live.gemini_home(1, Role::Solo, "solo-1")
+            live.gemini_home(&w, 1, Role::Solo, "solo-1")
                 .ends_with("solo-1")
         );
     }
@@ -1796,19 +1796,69 @@ mod tests {
         assert_eq!(w.agents[2].vendor, Vendor::Codex);
         assert_eq!(live.places.len(), 3);
         assert_eq!(
-            live.gemini_home(2, Role::Leader, "lead-api"),
+            live.gemini_home(&w, 2, Role::Leader, "lead-api"),
             PathBuf::from(format!("{}-gemini/lead", live.places[2].root.display()))
         );
         assert_ne!(
-            live.gemini_home(1, Role::Worker, "x"),
-            live.gemini_home(2, Role::Worker, "x")
+            live.gemini_home(&w, 1, Role::Worker, "x"),
+            live.gemini_home(&w, 2, Role::Worker, "x")
         );
         assert!(
-            live.gemini_home(1, Role::Worker, "x").ends_with("x"),
+            live.gemini_home(&w, 1, Role::Worker, "x").ends_with("x"),
             "a worker's is named after it"
         );
-        assert!(live.gemini_home(1, Role::Helper, "x.1").ends_with("x.1"));
+        assert!(
+            live.gemini_home(&w, 1, Role::Helper, "x.1")
+                .ends_with("x.1")
+        );
         let _ = std::fs::remove_dir_all(&repo);
         let _ = std::fs::remove_dir_all(&other);
+    }
+
+    #[test]
+    fn a_team_after_another_on_its_checkout_has_a_gemini_leader_directory_of_its_own() {
+        let mut w = team(0);
+        let mut live = idle_live(1);
+        let here = live.places[0].root.clone();
+        let (there, elsewhere) = (PathBuf::from("/there"), PathBuf::from("/elsewhere"));
+        // 1 a solo here, 2 and 3 teams here (an archived one's fresh
+        // ones), 4 a team elsewhere, 5 a solo there and 6 the first team
+        // there.
+        for (role, root) in [
+            (Role::Solo, &here),
+            (Role::Leader, &here),
+            (Role::Leader, &here),
+            (Role::Leader, &elsewhere),
+            (Role::Solo, &there),
+            (Role::Leader, &there),
+        ] {
+            let p = w.projects.len();
+            w.open_project(None, format!("p{p}"), "/p".into(), Vendor::Gemini, role);
+            live.grow(None, false);
+            live.places.push(Place {
+                repo: root.clone(),
+                root: root.clone(),
+                git: true,
+            });
+        }
+        let dir = |p: ProjectId| {
+            let home = live.gemini_home(&w, p, Role::Leader, "lead-x");
+            assert_eq!(
+                home.parent(),
+                Some(PathBuf::from(format!("{}-gemini", live.places[p].root.display())).as_path())
+            );
+            home.file_name().unwrap().to_string_lossy().into_owned()
+        };
+        assert_eq!(dir(0), "lead", "the first team on its checkout");
+        assert_eq!(dir(2), "lead-p2", "a solo before it is no team");
+        assert_eq!(dir(3), "lead-p3");
+        assert_eq!(dir(4), "lead", "another checkout");
+        assert_eq!(dir(6), "lead", "only a solo before it there");
+        assert_eq!(
+            live.gemini_home(&w, 3, Role::Worker, "gemini-2")
+                .file_name(),
+            Some(std::ffi::OsStr::new("gemini-2")),
+            "a worker's is its own whatever came before"
+        );
     }
 }

@@ -986,12 +986,24 @@ impl Live {
     /// The private directory a Gemini session of agent `name` of project
     /// `project` runs in: a sibling of the worktrees, kept between runs
     /// like them. A leader's is `lead` whatever the project is called, so
-    /// a rename (`lead-NAME`) does not leave its session behind.
-    fn gemini_home(&self, project: ProjectId, role: Role, name: &str) -> PathBuf {
-        let mut dir = self.places[project].root.clone().into_os_string();
+    /// a rename (`lead-NAME`) does not leave its session behind; a team's
+    /// on a checkout that had a team before (one archived, or closed) is
+    /// `lead-p<project id>`, so the two never share one.
+    fn gemini_home(&self, w: &World, project: ProjectId, role: Role, name: &str) -> PathBuf {
+        let root = &self.places[project].root;
+        let mut dir = root.clone().into_os_string();
         dir.push("-gemini");
-        let name = if role == Role::Leader { "lead" } else { name };
-        PathBuf::from(dir).join(name)
+        let dir = PathBuf::from(dir);
+        if role != Role::Leader {
+            return dir.join(name);
+        }
+        let before = (0..project)
+            .any(|q| self.places.get(q).is_some_and(|pl| pl.root == *root) && !w.is_solo(q));
+        if before {
+            dir.join(format!("lead-p{project}"))
+        } else {
+            dir.join("lead")
+        }
     }
 
     /// Gives every agent a socket for imece's tools. Sessions started
@@ -1219,6 +1231,13 @@ impl Live {
                 // Its caller gave up on it and was told to try again.
                 let late = format!("{tool}: given up before imece got to it, not done");
                 w.agents[from].trace(w.tick, late);
+                continue;
+            }
+            if w.put_away(from) {
+                // Asked before its project was archived or closed: what it
+                // asked for would land where nobody looks.
+                w.agents[from].trace(w.tick, format!("{tool}: its project is put away, not done"));
+                let _ = reply.send(Err("your project was put away; nothing was done".into()));
                 continue;
             }
             if tool == "run" {

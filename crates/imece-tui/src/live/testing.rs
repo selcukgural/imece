@@ -27,6 +27,7 @@ pub(crate) fn team(workers: usize) -> World {
             pinned: false,
             copies: Vec::new(),
             no_git: false,
+            archived: None,
         }],
         agents: Vec::new(),
         cards: Vec::new(),
