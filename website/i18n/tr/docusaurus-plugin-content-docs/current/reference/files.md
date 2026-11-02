@@ -92,6 +92,13 @@ Her başlangıçta imece `$TMPDIR/imece-<pid>-<hex>/` yapar (0700; var olan bir 
 
 `:export [PATH]` açık konuşmayı ya da kartın ekranını Markdown olarak yazar: `imece-conversation-YYYYMMDD-HHMM.md` ya da `imece-card-N-YYYYMMDD-HHMM.md`; `PATH` yoksa imece'nin başlatıldığı dizine, `PATH` bir dizinse içine, yoksa `PATH` adlı dosya olarak. Orada olan bir dosyanın üstüne asla yazılmaz. İçindeki her saatin günü vardır; her satır ekranla aynı temizlikten geçmiştir (denetim karakterleri silinmiş, gizli görünen belirteçler gizlenmiş). Bkz. [komutlar](commands.md).
 
+## imece'nin yapılandırmanızdan okuduğu
+
+`$XDG_CONFIG_HOME/imece/` içinde, ya da `~/.config/imece/` (göreli bir `XDG_CONFIG_HOME` yok sayılır):
+
+- `keys`: kendi tuşlarınız, açılışta ve değiştikçe yeniden okunur. Bkz. [klavye](../screen/keyboard.md).
+- `instructions.md`: her proje için kendi talimatlarınız; her ajanın oturumu başlarken okunur ve deponun notlarından önce talimatlarına konur, en çok 16 KiB: daha uzun bir dosya kesilerek girer ve günlük bunu söyler (`claude-1: talimat dosyan … 20 KiB; talimatlara yalnızca ilk 16 KiB girdi`). Yalnız düz bir dosya okunur: bir boru ya da aygıt atlanır. Bir değişiklik her ajanın bir sonraki başlangıcında okunur.
+
 ## imece'nin depodan okuduğu
 
 - Çalışma kopyasının tepesindeki `AGENTS.md`, yoksa `CLAUDE.md`: kodlama ajanları için notlar, en çok 16 KiB, her ajana talimatlarıyla geçirilir (Codex `AGENTS.md`'yi kendi okur). Bkz. [mesaj türleri](message-types.md).

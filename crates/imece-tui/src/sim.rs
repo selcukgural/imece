@@ -610,6 +610,9 @@ pub struct Sim {
     /// A session started with the head of long repository notes; said once
     /// a run.
     notes_cut: bool,
+    /// A session started with the head of the person's long instructions
+    /// file; said once a run.
+    instructions_cut: bool,
     /// A Gemini session listed no command line this run (said once).
     unlisted: bool,
     /// What the person's rarer commands keep, boxed: the engine stays
@@ -716,6 +719,7 @@ pub fn world(
         models: HashMap::new(),
         applying: Vec::new(),
         notes_cut: false,
+        instructions_cut: false,
         unlisted: false,
         extras: Box::default(),
     };
@@ -1484,8 +1488,8 @@ impl Sim {
 
     /// What a worker's worktree says as its session starts, by `roll`: it
     /// was moved to the checkout's HEAD, or kept where its own work is, or
-    /// the repository's notes were too long (said once a run); mostly
-    /// nothing.
+    /// the repository's notes or the person's own instructions were too
+    /// long (each said once a run); mostly nothing.
     fn worktree(&mut self, w: &mut World, id: AgentId, roll: u64) {
         match roll {
             0 => {
@@ -1518,6 +1522,15 @@ impl Sim {
                 w.note(Event::NotesCut {
                     agent: id,
                     file: file.into(),
+                    size,
+                });
+            }
+            4 if !self.instructions_cut => {
+                self.instructions_cut = true;
+                let size = self.rng.range(20_000, 60_000) as usize;
+                w.note(Event::InstructionsCut {
+                    agent: id,
+                    path: "~/.config/imece/instructions.md".into(),
                     size,
                 });
             }
@@ -4300,6 +4313,14 @@ diff --git a/b.rs b/b.rs
             n + 3,
             "notes are cut once a run; 3 says nothing"
         );
+        // Said once a run, maybe already as the worker started.
+        s.instructions_cut = false;
+        s.worktree(&mut w, worker, 4);
+        assert!(
+            matches!(&w.journal[n + 3].event, Event::InstructionsCut { agent, path, size } if *agent == worker && path == "~/.config/imece/instructions.md" && (20_000..=60_000).contains(size))
+        );
+        s.worktree(&mut w, worker, 4);
+        assert_eq!(w.journal.len(), n + 4, "the person's file too, once a run");
         let (mut w, mut s, worker, _) = one_at_work();
         w.agents[worker].vendor = Vendor::Claude;
         s.worktree(&mut w, worker, 2);
@@ -5330,8 +5351,14 @@ diff --git a/b.rs b/b.rs
         s.take(&mut w, worker, card, Taken::Assigned);
         let assign = w.messages;
         assert_eq!(s.mind(worker).assigned, Some(assign));
+        // The newest message; the start may say more after it.
+        let sent = w
+            .journal
+            .iter()
+            .rev()
+            .find(|e| matches!(e.event, Event::Sent { .. }));
         assert!(matches!(
-            &w.journal.last().unwrap().event,
+            &sent.unwrap().event,
             Event::Sent { from, to, kind: MsgKind::Assign, id, re: None, .. }
                 if *from == lead && *to == worker && *id == assign
         ));

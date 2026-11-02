@@ -41,17 +41,24 @@ const USED_CTRL: &str = "bdforu";
 /// `$XDG_CONFIG_HOME/imece/keys`, or `~/.config/imece/keys`; none
 /// without a home.
 pub fn file() -> Option<PathBuf> {
+    config_file(NAME)
+}
+
+/// The file `name` in imece's own configuration directory,
+/// `$XDG_CONFIG_HOME/imece` or `~/.config/imece`; none without a home.
+pub fn config_file(name: &str) -> Option<PathBuf> {
     file_in(
         std::env::var_os("XDG_CONFIG_HOME").map(PathBuf::from),
         std::env::var_os("HOME").map(PathBuf::from),
+        name,
     )
 }
 
-fn file_in(config: Option<PathBuf>, home: Option<PathBuf>) -> Option<PathBuf> {
+fn file_in(config: Option<PathBuf>, home: Option<PathBuf>, name: &str) -> Option<PathBuf> {
     config
         .filter(|p| p.is_absolute())
         .or_else(|| home.map(|h| h.join(".config")))
-        .map(|d| d.join("imece").join(NAME))
+        .map(|d| d.join("imece").join(name))
 }
 
 /// The modifiers imece tells keys apart by. Joined with `union`, not
@@ -816,25 +823,29 @@ mod tests {
         let abs = PathBuf::from("/cfg");
         let home = PathBuf::from("/home/me");
         assert_eq!(
-            file_in(Some(abs), Some(home.clone())),
+            file_in(Some(abs), Some(home.clone()), NAME),
             Some(PathBuf::from("/cfg/imece/keys"))
         );
         assert_eq!(
-            file_in(Some(PathBuf::from("rel")), Some(home.clone())),
+            file_in(Some(PathBuf::from("rel")), Some(home.clone()), NAME),
             Some(PathBuf::from("/home/me/.config/imece/keys")),
             "a relative XDG_CONFIG_HOME is ignored, as the spec says"
         );
         assert_eq!(
-            file_in(None, Some(home)),
+            file_in(None, Some(home), NAME),
             Some(PathBuf::from("/home/me/.config/imece/keys"))
         );
-        assert_eq!(file_in(None, None), None);
+        assert_eq!(file_in(None, None, NAME), None);
     }
 
     #[test]
     fn the_file_is_found_from_the_environment() {
         let env = |name| std::env::var_os(name).map(PathBuf::from);
-        assert_eq!(file(), file_in(env("XDG_CONFIG_HOME"), env("HOME")));
+        assert_eq!(file(), file_in(env("XDG_CONFIG_HOME"), env("HOME"), NAME));
+        assert_eq!(
+            config_file("instructions.md"),
+            file_in(env("XDG_CONFIG_HOME"), env("HOME"), "instructions.md")
+        );
         assert!(
             file().is_some() || env("HOME").is_none(),
             "a home has a key file"

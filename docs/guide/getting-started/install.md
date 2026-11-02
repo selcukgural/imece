@@ -64,7 +64,7 @@ imece looks for three programs on PATH when it starts (`looking for coding agent
 
 Each vendor's session is started so that nothing of your own vendor setup loads (no hooks, no MCP servers but imece's own, no repository settings) under the default `--confine standard` and under `strict`; `--confine open` runs the vendor as you have it set up. In every case the leader never writes and the vendor's own sub-agent tool stays off. What a session reports it runs with is checked, fail closed; see [vendors](../concepts/vendors.md) and [security](../concepts/security.md).
 
-Every agent also gets your repository's notes for coding agents, its `AGENTS.md` or else `CLAUDE.md`, up to 16 KiB; a longer file goes in cut and the journal says so.
+Every agent also gets your repository's notes for coding agents, its `AGENTS.md` or else `CLAUDE.md`, up to 16 KiB; a longer file goes in cut and the journal says so. Instructions of your own for every project go in `~/.config/imece/instructions.md` (or under `$XDG_CONFIG_HOME/imece/`), up to 16 KiB as well; they come before the repository's notes. See [files](../reference/files.md).
 
 ## Who leads
 
