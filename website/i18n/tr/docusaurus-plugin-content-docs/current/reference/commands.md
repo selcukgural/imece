@@ -12,7 +12,7 @@ description: imece'nin aldığı her `:` komutu; argümanları, karşılığı o
 - `:` sonra `tab` komutları listeler. Menü her komutun ardında şu an ne durumda olduğunu ya da neye etki edeceğini ayraç içinde gösterir: `budget (spent $3.10 of $20.00)`, `theme (dark)`, `lead (claude)`, `close (kule)`, `forget (claude-2)`, `next (2 waiting)`, `needs (off)`. Not çizilir, asla satıra eklenmez.
 - Bir komutun ardındaki `$` sonraki faturayı büyütenleri işaretler: `:open` (yeni bir lider oturumu), `:solo` (yeni bir oturum), `:forget` (bütün brifingi önbelleksiz yeniden ödeyen yeni bir oturum) ve `:commit` (ücretli bir çağrı). Hiçbir `:` komutu kendi başına ücretli bir tur başlatmaz; `:budget` işaret yerine değerini gösterir.
 - Kısa adlar: `:b` budget, `:c` close, `:f` forget, `:o` open, `:q` quit, `:t` theme. Bütünüyle yazılan kısa ad zaten bir komuttur; menü bir şey sunmaz ve `enter` çalıştırır (`:q` sonra `enter` hemen sorar).
-- Argümanlar da tamamlanır: `:lang` sonra diller, `:lead` sonra satıcılar, `:notify` sonra üç kelimesi, `:theme` sonra yerleşik adlar, `:close` ve `:pin` sonra açık projeler, `:goto` sonra hiçbir şey (`&` satırının kendi menüsü var), `:history` sonra gönderilen satırlar, `:forget`, `:talk`, `:trace` ve `:peek` sonra açık projelerin ajanları (`@` ile ya da onsuz), `:open` ve `:export` sonra dizinler (`~` ev dizininiz, gizli olanlar yalnızca bir `.` sonrası, `tab` seçilenin içine adım atar).
+- Argümanlar da tamamlanır: `:lang` sonra diller, `:lead` sonra satıcılar, `:notify` sonra üç kelimesi, `:theme` sonra yerleşik adlar, `:close` ve `:pin` sonra açık projeler, `:restore` sonra arşivlerin başlıkları (en yenisi önce, her biri projesinin adı ve arşivlendiği günle), `:goto` sonra hiçbir şey (`&` satırının kendi menüsü var), `:history` sonra gönderilen satırlar, `:forget`, `:talk`, `:trace` ve `:peek` sonra açık projelerin ajanları (`@` ile ya da onsuz), `:open` ve `:export` sonra dizinler (`~` ev dizininiz, gizli olanlar yalnızca bir `.` sonrası, `tab` seçilenin içine adım atar).
 - imece'nin bilmediği bir ad: `no command xyz; : and tab list them`. Canlıda yazılan yalnızca demoya ait bir komut: `:pause is for the demo: live agents run in real time`.
 - `!cmd` kendi kabuğunuzda bir komut çalıştırır, `/cmd` ajanın kendi komut satırıdır; ikisi de `:` komutu değildir ([komut satırı](../screen/command-line.md)).
 
@@ -55,6 +55,7 @@ description: imece'nin aldığı her `:` komutu; argümanları, karşılığı o
 | `:pin [NAME]` | — | | | | eldeki proje, sabitse `▴` |
 | `:quit` | `q` | `:q` | | | |
 | `:rename NAME` | — | | | | eldeki proje |
+| `:restore [NAME]` | — | | | | |
 | `:salon` | `1` | | | | |
 | `:settle` | `s` | | | | seçili satırın ajanı ya da projesi |
 | `:slower` | `-` | | evet | | hız, `×2` |
@@ -221,6 +222,16 @@ Ajanın odağı görünümün üstünde bir pencerede, `K` gibi; ad yoksa eldeki
 ### `:rename NAME`
 
 Eldeki projeyi ve liderini `lead-NAME` olarak adlandırır (0 numaralı projenin `lead`'i de). Oturumlar sürer; projenin her canlı ajanı sonraki isteminde bir not alır ve eski ada bir `send` takım listesiyle yanıtlanır. `:open` ile aynı ad kuralı. Flaş: `kule artık k2; lead-k2 adına yaz`.
+
+### `:restore [NAME]`
+
+Bir arşivi geri getirir: `NAME` başlıklı en yenisini, yoksa `NAME` adlı projenin en yeni arşivini; ad verilmezse eldeki projenin adını taşıyan en yeni arşivi (yani bir `:archive`'ın hemen ardından `:restore`, bekleme bittikten sonra onu geri alır). `:restore ` sonrasındaki menü arşivlerin başlıklarını sunar, en yenisi önce, her biri projesinin adı ve arşivlendiği günle (`first epic   kule · 2026-11-02`).
+
+Arşiv kaldırıldığı gibi yeniden açılır: ajanları satıcı oturumları, postaları, notları ve değişiklikleriyle uykuda; kartları, SENİ BEKLEYEN'deki kalemleri ve günlük satırları yeniden görünür; başı seçilir. Siz yazana dek hiçbir şey uyanmaz, hiçbir şey harcanmaz: o zaman her ajan sahip olduğu oturumda sürer (satıcı onu hâlâ saklıyorsa; yoksa kaldığı yer anlatılarak yeni bir oturumda), önce projenin kaldırılıp geri getirildiği, arşivin yarıda kestiği tur da (yeniden çalıştırılmaz) ona söylenir.
+
+Bir çalışma kopyasında tek bir açık takım olur; bu yüzden arşivin çalışma kopyasında açık olan takım yer açar (solo bir arşiv için: onun adındaki açık solo). Bir şey yaptıysa (bir kart, işe alınmış bir ajan, harcanan ya da söylenen bir şey, bir oturum) sırası gelince adı ve günleriyle arşivlenir, yapmadıysa kapatılır; böylece boş arşivler birikmez. Flaş: `kule “first epic” geri geldi: agent'ları sen yazana kadar uyuyor`; günlük: `kule projesinin “first epic” arşivini geri getirdin; orada açık olan “kule 2026-11-02” adıyla arşivlendi` (ya da önünde bir `kule projesini kapattın` satırı).
+
+Hiçbir şey değişmeden reddedilir: o başlıkta ya da adda arşiv yoksa (`x başlıklı ya da adlı arşiv yok`, `kule projesinin arşivi yok`), klasörü gitmişse (`/src/kule is not there any more`), bir takımın klasörü artık ilk commit'i olan bir git çalışma kopyası değilse ya da adını başka bir açık proje taşıyorsa (`a project named kule is open already`: önce onu yeniden adlandırın ya da kapatın). Geri getirilip sonra yeniden arşivlenen bir arşiv yeni bir başlık alır. Demo da aynı biçimde geri getirir (klasörleri kendisinindir, asla gitmez). Bkz. [oturumlar](../concepts/sessions.md#arşivler) ve [yeni bir epic](../scenarios/new-epic.md) senaryosu.
 
 ### `:salon`
 

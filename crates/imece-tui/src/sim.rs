@@ -1678,12 +1678,19 @@ impl Sim {
         if w.open_projects().count() <= 1 {
             return Err(ProjectRefusal::Last);
         }
+        self.leave_be(w, p);
+        w.close_project(p);
+        Ok(())
+    }
+
+    /// What was to come of project `p` goes: its plans, research
+    /// requests, replies and hunks being applied.
+    fn leave_be(&mut self, w: &mut World, p: ProjectId) {
         w.plans.retain(|plan| plan.project != p);
         let agents = &w.agents;
         w.research_queue.retain(|&id| agents[id].project != p);
         self.replies.retain(|r| agents[r.agent].project != p);
-        w.close_project(p);
-        Ok(())
+        self.applying.retain(|(id, _)| agents[*id].project != p);
     }
 
     /// `:archive` in the demo: the project's plans, research requests,
@@ -1695,11 +1702,7 @@ impl Sim {
         p: ProjectId,
         title: String,
     ) -> Result<ProjectId, ProjectRefusal> {
-        w.plans.retain(|plan| plan.project != p);
-        let agents = &w.agents;
-        w.research_queue.retain(|&id| agents[id].project != p);
-        self.replies.retain(|r| agents[r.agent].project != p);
-        self.applying.retain(|(id, _)| agents[*id].project != p);
+        self.leave_be(w, p);
         let model = self.models.get(&w.projects[p].leader).cloned();
         let (repo, no_git) = (w.projects[p].repo, w.projects[p].no_git);
         let fresh = w.archive_project(p, title);
@@ -1709,6 +1712,38 @@ impl Sim {
             self.models.insert(w.projects[fresh].leader, m);
         }
         Ok(fresh)
+    }
+
+    /// `:restore` in the demo: the archive `p` comes back, and the open
+    /// project of its name and kind (the demo's stand-in for its
+    /// checkout's team) gives way: archived under its name and days, or
+    /// closed when it did nothing. Refused when an open project of
+    /// another kind has its name. Its folder is the demo's own, never
+    /// gone nor without git. Returns the project that gave way.
+    pub fn restore_project(
+        &mut self,
+        w: &mut World,
+        p: ProjectId,
+    ) -> Result<Option<ProjectId>, ProjectRefusal> {
+        let name = w.projects[p].name.clone();
+        let solo = w.is_solo(p);
+        let open = w.project_by_name(&name);
+        if open.is_some_and(|q| w.is_solo(q) != solo) {
+            return Err(ProjectRefusal::NameTaken(name));
+        }
+        let mut swapped = None;
+        if let Some(q) = open {
+            self.leave_be(w, q);
+            if w.did_anything(q) {
+                let title = w.archive_title(q);
+                w.shelve(q, title.clone());
+                swapped = Some(title);
+            } else {
+                w.close_project(q);
+            }
+        }
+        w.restore_project(p, swapped);
+        Ok(open)
     }
 
     /// `:rename` in the demo.
@@ -4687,6 +4722,51 @@ diff --git a/b.rs b/b.rs
             Ok(fresh_solo)
         );
         assert!(w.projects[solo].closed, "the archived solo stays put away");
+    }
+
+    #[test]
+    fn the_demo_restores_an_archive_and_the_project_of_its_name_and_kind_gives_way() {
+        let (mut w, mut s) = world(2, 2, 0, 1, Lang::En);
+        let name = w.projects[1].name.clone();
+        let fresh = s.archive_project(&mut w, 1, "done".into()).unwrap();
+        // The fresh one has a card of its own, and hunks being applied.
+        s.post(&mut w, fresh, "next".into());
+        let head = w.projects[fresh].leader;
+        s.applying = vec![(head, vec![0])];
+        let title = w.archive_title(fresh);
+        assert_eq!(s.restore_project(&mut w, 1), Ok(Some(fresh)));
+        assert!(!w.projects[1].closed && w.projects[1].archived.is_none());
+        assert_eq!(
+            w.projects[fresh].archived.as_ref().map(|a| a.title.clone()),
+            Some(title.clone())
+        );
+        assert!(s.applying.is_empty(), "what was to come of it goes");
+        assert_eq!(
+            w.journal.last().map(|e| e.event.clone()),
+            Some(Event::Restored {
+                leader: w.projects[1].leader,
+                title: "done".into(),
+                swapped: Some(title),
+            })
+        );
+        // A fresh one that did nothing is closed instead.
+        let fresh = s.archive_project(&mut w, 1, "again".into()).unwrap();
+        assert!(!w.did_anything(fresh));
+        assert_eq!(s.restore_project(&mut w, 1), Ok(Some(fresh)));
+        assert!(w.projects[fresh].closed && w.projects[fresh].archived.is_none());
+        // A solo of the name is not the team's to swap: refused.
+        let fresh = s.archive_project(&mut w, 1, "third".into()).unwrap();
+        assert_eq!(s.close_project(&mut w, fresh), Ok(()));
+        let solo = s.open_solo(&mut w, "/s", None, None, Some(&name)).unwrap();
+        assert_eq!(
+            s.restore_project(&mut w, 1),
+            Err(ProjectRefusal::NameTaken(name.clone()))
+        );
+        assert!(w.projects[1].archived.is_some() && !w.projects[solo].closed);
+        // Nothing of its name open: nothing gives way.
+        assert_eq!(s.close_project(&mut w, solo), Ok(()));
+        assert_eq!(s.restore_project(&mut w, 1), Ok(None));
+        assert!(!w.projects[1].closed);
     }
 
     #[test]

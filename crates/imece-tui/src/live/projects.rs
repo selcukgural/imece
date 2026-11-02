@@ -137,6 +137,12 @@ impl Live {
         if w.open_projects().count() <= 1 {
             return Err(ProjectRefusal::Last);
         }
+        self.shut(w, p);
+        Ok(())
+    }
+
+    /// [`close_project`](Self::close_project) whatever else is open.
+    fn shut(&mut self, w: &mut World, p: ProjectId) {
         let ids: Vec<AgentId> = w
             .agents
             .iter()
@@ -151,7 +157,6 @@ impl Live {
         self.filed_at.remove(&p);
         self.files_cut.remove(&p);
         w.close_project(p);
-        Ok(())
     }
 
     /// Archives project `p` as `title` (`:archive`): each agent's runs and
@@ -171,6 +176,24 @@ impl Live {
         // The socket first: an agent without one could never start.
         self.bind(w.agents.len(), role, vendor)
             .map_err(|e| ProjectRefusal::Bus(e.to_string()))?;
+        self.put_away(w, p);
+        self.grow(self.models[was].clone(), self.tiered[was]);
+        let place = &self.places[p];
+        let (repo, root, git) = (place.repo.clone(), place.root.clone(), place.git);
+        let folder = (!git).then(|| repo.display().to_string());
+        self.places.push(Place { repo, root, git });
+        let fresh = w.archive_project(p, title);
+        w.set_no_git(fresh, folder.as_deref());
+        if self.home == p {
+            self.home = fresh;
+        }
+        Ok(fresh)
+    }
+
+    /// Each agent of project `p` ends as at a quit, what it had kept:
+    /// its session remembered to go on with, and the prompts a turn was
+    /// cut short in, told when it is brought back.
+    fn put_away(&mut self, w: &mut World, p: ProjectId) {
         let ids: Vec<AgentId> = (w.agents.iter())
             .filter(|a| a.project == p && !a.gone)
             .map(|a| a.id)
@@ -191,17 +214,84 @@ impl Live {
         }
         self.filed_at.remove(&p);
         self.files_cut.remove(&p);
-        self.grow(self.models[was].clone(), self.tiered[was]);
-        let place = &self.places[p];
-        let (repo, root, git) = (place.repo.clone(), place.root.clone(), place.git);
-        let folder = (!git).then(|| repo.display().to_string());
-        self.places.push(Place { repo, root, git });
-        let fresh = w.archive_project(p, title);
-        w.set_no_git(fresh, folder.as_deref());
-        if self.home == p {
-            self.home = fresh;
+    }
+
+    /// Brings the archive `p` back (`:restore`): its agents go on in the
+    /// sessions they had when they are next written to, each told it was
+    /// put away and, when a turn of it was cut short, which. On its
+    /// checkout the open team (for a solo archive: the open solo of its
+    /// name) gives way: archived under its name and days, or closed when
+    /// it did nothing. Refused when the folder is gone, when a team's
+    /// folder is no git checkout any more, or when another open project
+    /// has its name. Returns the project that gave way.
+    pub fn restore_project(
+        &mut self,
+        w: &mut World,
+        p: ProjectId,
+    ) -> Result<Option<ProjectId>, ProjectRefusal> {
+        let repo = self.places[p].repo.clone();
+        let folder = repo.display().to_string();
+        if !repo.is_dir() {
+            return Err(ProjectRefusal::Gone(folder));
         }
-        Ok(fresh)
+        let git = own_git(&repo);
+        let solo = w.is_solo(p);
+        if !solo && !git {
+            return Err(ProjectRefusal::NoGit(folder));
+        }
+        let name = w.projects[p].name.clone();
+        let swap = (w.open_projects())
+            .filter(|q| self.places.get(q.id).is_some_and(|pl| pl.repo == repo))
+            .find(|q| w.is_solo(q.id) == solo && (!solo || q.name == name))
+            .map(|q| q.id);
+        if w.project_by_name(&name).is_some_and(|q| Some(q) != swap) {
+            return Err(ProjectRefusal::NameTaken(name));
+        }
+        let mut swapped = None;
+        if let Some(q) = swap {
+            if self.did_anything(w, q) {
+                let title = w.archive_title(q);
+                self.put_away(w, q);
+                w.shelve(q, title.clone());
+                swapped = Some(title);
+            } else {
+                self.shut(w, q);
+            }
+            if self.home == q {
+                self.home = p;
+            }
+        }
+        self.places[p].git = git;
+        let title = w.projects[p].archived.as_ref().map(|a| a.title.clone());
+        let ids: Vec<AgentId> = (w.agents.iter())
+            .filter(|a| a.project == p && !a.gone)
+            .map(|a| a.id)
+            .collect();
+        for id in ids {
+            // The person saw how many turns the archive cut short; the
+            // agent hears of them at its wake.
+            let cut = std::mem::take(&mut self.inflight[id]);
+            if !cut.is_empty() {
+                self.interrupted[id] = cut;
+                w.agents[id].trace(w.tick, "turn cut short when its project was archived");
+            }
+            self.notes[id].push(format!(
+                "The person had put this project away (archived as \"{}\") and has brought \
+                 it back now; what you had is as you left it.",
+                title.as_deref().unwrap_or_default()
+            ));
+        }
+        w.restore_project(p, swapped);
+        w.set_no_git(p, (!git).then_some(folder.as_str()));
+        self.filed_at.remove(&p);
+        Ok(swap)
+    }
+
+    /// Whether project `p` did anything: what the world shows of it, or a
+    /// session one of its agents had.
+    fn did_anything(&self, w: &World, p: ProjectId) -> bool {
+        w.did_anything(p)
+            || (w.agents.iter()).any(|a| a.project == p && self.sessions[a.id].is_some())
     }
 
     /// Project `p` is called `name` from now on, its head `lead-NAME`
@@ -334,6 +424,7 @@ mod tests {
             ProjectRefusal::Vendor("gemini".into()),
             ProjectRefusal::Choice("gemini has no effort setting".into()),
             ProjectRefusal::NoGit("/n".into()),
+            ProjectRefusal::Gone("/gone/x".into()),
         ] {
             let said = r.describe();
             let arg = match &r {
@@ -344,7 +435,8 @@ mod tests {
                 | ProjectRefusal::Bus(s)
                 | ProjectRefusal::Vendor(s)
                 | ProjectRefusal::Choice(s)
-                | ProjectRefusal::NoGit(s) => s.clone(),
+                | ProjectRefusal::NoGit(s)
+                | ProjectRefusal::Gone(s) => s.clone(),
                 ProjectRefusal::Last => unreachable!(),
             };
             assert!(said.contains(&arg), "{said}");
@@ -1109,6 +1201,211 @@ mod tests {
         assert_eq!(live.open_project(&mut w, &repo, None, Open::Team), Ok(2));
         assert!(w.projects[1].archived.is_some() && w.projects[1].closed);
         let _ = std::fs::remove_dir_all(&repo);
+    }
+
+    #[test]
+    fn a_restore_goes_on_with_what_the_archive_had_and_archives_the_busy_team_in_its_place() {
+        let repo = checkout("restore-repo");
+        let mut w = team(0);
+        let mut live = idle_live(1);
+        assert_eq!(
+            live.open_project(&mut w, &repo, Some("api"), Open::Team),
+            Ok(1)
+        );
+        live.hire(&mut w, 1, &json!({})).unwrap();
+        let session = |s: &str| {
+            Some(Resumable {
+                session: s.into(),
+                spent: 7,
+            })
+        };
+        live.sessions[1] = session("s-lead");
+        live.sessions[2] = session("s-worker");
+        live.inflight[2] = vec!["working on it".into()];
+        w.inbox.push(item(InboxKind::Reply, 2, "done?"));
+        let waiting = w.inbox.len() - 1;
+        w.tick = 40;
+        assert_eq!(live.archive_project(&mut w, 1, "first epic".into()), Ok(2));
+        assert!(!w.open_inbox().contains(&waiting));
+        // The fresh team had a session: it did something.
+        live.sessions[3] = session("s-fresh");
+        live.home = 2;
+        // A solo on the same checkout is no team: it stays.
+        let solo = Open::Solo {
+            vendor: None,
+            choice: None,
+        };
+        assert_eq!(live.open_project(&mut w, &repo, Some("notes"), solo), Ok(3));
+        w.tick = 60;
+        let title = w.archive_title(2);
+        let lines = w.journal.len();
+
+        assert_eq!(live.restore_project(&mut w, 1), Ok(Some(2)));
+        // The fresh team is put away under its name and days, its
+        // session kept to go on with.
+        assert!(w.projects[2].closed);
+        assert_eq!(
+            w.projects[2].archived,
+            Some(Archived {
+                at: 60,
+                title: title.clone()
+            })
+        );
+        assert_eq!(live.sessions[3], session("s-fresh"));
+        assert!(live.remembered[3] && matches!(live.slots[3], Slot::None));
+        assert_eq!(
+            (w.agents[3].status, w.agents[3].gone),
+            (Status::Asleep, false)
+        );
+        assert!(!w.projects[3].closed, "the solo stays");
+        // The archive is open again and goes on in its sessions.
+        assert!(!w.projects[1].closed && w.projects[1].archived.is_none());
+        assert!(!w.projects[1].no_git && live.places[1].git);
+        assert_eq!(live.sessions[1], session("s-lead"));
+        assert_eq!(live.sessions[2], session("s-worker"));
+        assert_eq!(live.interrupted[2], ["working on it"], "told at its wake");
+        assert!(live.inflight[2].is_empty() && live.interrupted[1].is_empty());
+        for id in [1, 2] {
+            assert!(
+                live.notes[id]
+                    .last()
+                    .is_some_and(|n| n.contains("archived as \"first epic\"")),
+                "{id}: {:?}",
+                live.notes[id]
+            );
+            assert_eq!(w.agents[id].status, Status::Asleep, "nothing wakes");
+        }
+        assert!(live.notes[3].is_empty());
+        assert_eq!(live.home, 1, "home comes with it");
+        assert_eq!(w.agent_by_name(&w.agents[1].name), Some(1));
+        assert!(w.open_inbox().contains(&waiting), "what waited is in sight");
+        assert_eq!(
+            w.journal[lines..]
+                .iter()
+                .map(|e| e.event.clone())
+                .collect::<Vec<_>>(),
+            [Event::Restored {
+                leader: 1,
+                title: "first epic".into(),
+                swapped: Some(title),
+            }]
+        );
+        let _ = std::fs::remove_dir_all(&repo);
+    }
+
+    #[test]
+    fn a_restore_closes_the_team_that_did_nothing_and_a_solo_gives_way_only_to_its_own_name() {
+        let repo = checkout("restore-idle");
+        let mut w = team(0);
+        let mut live = idle_live(1);
+        // Another project's session is not this team's.
+        live.sessions[0] = Some(Resumable {
+            session: "s0".into(),
+            spent: 0,
+        });
+        assert_eq!(
+            live.open_project(&mut w, &repo, Some("api"), Open::Team),
+            Ok(1)
+        );
+        assert_eq!(live.archive_project(&mut w, 1, "first".into()), Ok(2));
+        // Renamed, it is still the team on the checkout.
+        live.rename_project(&mut w, 2, "api2").unwrap();
+        live.home = 0;
+        let lines = w.journal.len();
+        assert_eq!(live.restore_project(&mut w, 1), Ok(Some(2)));
+        assert!(w.projects[2].closed && w.projects[2].archived.is_none());
+        assert!(w.agents[2].gone);
+        assert_eq!(
+            w.journal[lines..]
+                .iter()
+                .map(|e| e.event.clone())
+                .collect::<Vec<_>>(),
+            [
+                Event::Closed { leader: 2 },
+                Event::Restored {
+                    leader: 1,
+                    title: "first".into(),
+                    swapped: None,
+                }
+            ]
+        );
+        assert_eq!(live.home, 0, "home was elsewhere");
+
+        // Solos in a folder without git: the one of its name gives way.
+        let folder = plain_folder("restore-solo", false);
+        let solo = || Open::Solo {
+            vendor: None,
+            choice: None,
+        };
+        assert_eq!(
+            live.open_project(&mut w, &folder, Some("notes"), solo()),
+            Ok(3)
+        );
+        assert_eq!(
+            live.open_project(&mut w, &folder, Some("other"), solo()),
+            Ok(4)
+        );
+        assert_eq!(live.archive_project(&mut w, 3, "s".into()), Ok(5));
+        w.agents[5].cost = 1;
+        assert_eq!(live.restore_project(&mut w, 3), Ok(Some(5)));
+        assert!(w.projects[5].archived.is_some(), "it spent: archived");
+        assert!(!w.projects[4].closed && !w.projects[1].closed);
+        assert!(w.projects[3].no_git && !live.places[3].git);
+        // With no solo of its name open, nothing gives way.
+        assert_eq!(live.archive_project(&mut w, 3, "s2".into()), Ok(6));
+        assert_eq!(live.close_project(&mut w, 6), Ok(()));
+        assert_eq!(live.restore_project(&mut w, 3), Ok(None));
+        assert!(!w.projects[3].closed && !w.projects[4].closed);
+        let _ = std::fs::remove_dir_all(&repo);
+        let _ = std::fs::remove_dir_all(&folder);
+    }
+
+    #[test]
+    fn a_restore_is_refused_when_its_name_is_open_its_git_or_its_folder_is_gone() {
+        let repo = checkout("restore-refused");
+        let other = plain_folder("restore-refused-other", false);
+        let mut w = team(0);
+        let mut live = idle_live(1);
+        assert_eq!(
+            live.open_project(&mut w, &repo, Some("api"), Open::Team),
+            Ok(1)
+        );
+        assert_eq!(live.archive_project(&mut w, 1, "a".into()), Ok(2));
+        live.rename_project(&mut w, 2, "api2").unwrap();
+        let solo = Open::Solo {
+            vendor: None,
+            choice: None,
+        };
+        assert_eq!(live.open_project(&mut w, &other, Some("api"), solo), Ok(3));
+        let lines = w.journal.len();
+        let unchanged = |w: &World| {
+            w.projects[1].archived.is_some()
+                && w.projects[1].closed
+                && !w.projects[2].closed
+                && w.projects[2].archived.is_none()
+        };
+        assert_eq!(
+            live.restore_project(&mut w, 1),
+            Err(ProjectRefusal::NameTaken("api".into()))
+        );
+        assert!(unchanged(&w));
+        assert_eq!(live.close_project(&mut w, 3), Ok(()));
+        let lines = lines + 1;
+        let folder = live.places[1].repo.display().to_string();
+        std::fs::remove_dir_all(repo.join(".git")).unwrap();
+        assert_eq!(
+            live.restore_project(&mut w, 1),
+            Err(ProjectRefusal::NoGit(folder.clone()))
+        );
+        assert!(unchanged(&w));
+        std::fs::remove_dir_all(&repo).unwrap();
+        assert_eq!(
+            live.restore_project(&mut w, 1),
+            Err(ProjectRefusal::Gone(folder))
+        );
+        assert!(unchanged(&w));
+        assert_eq!(w.journal.len(), lines, "nothing said");
+        let _ = std::fs::remove_dir_all(&other);
     }
 
     #[test]

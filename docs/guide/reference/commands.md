@@ -12,7 +12,7 @@ A line that starts with `:` is a command to imece, not a message to an agent. Yo
 - `:` then `tab` lists the commands. The menu shows after each command what it stands at now or would act on, in brackets: `budget (spent $3.10 of $20.00)`, `theme (dark)`, `lead (claude)`, `close (kule)`, `forget (claude-2)`, `next (2 waiting)`, `needs (off)`. The note is drawn, never inserted.
 - `$` after a command marks one that raises the next bill: `:open` (a new leader session), `:solo` (a new session), `:forget` (a new session that pays the whole briefing again, without the cache) and `:commit` (a paid call). No `:` command starts a paid turn by itself; `:budget` shows its value instead of a mark.
 - Short names: `:b` budget, `:c` close, `:f` forget, `:o` open, `:q` quit, `:t` theme. A short name typed whole is a command already, so the menu offers nothing and `enter` runs it (`:q` then `enter` asks at once).
-- Arguments complete too: after `:lang` the languages, after `:lead` the vendors, after `:notify` its three words, after `:theme` the built-in names, after `:close` and `:pin` the open projects, after `:goto` nothing (the `&` line has its own menu), after `:history` the lines sent, after `:forget`, `:talk`, `:trace` and `:peek` the agents of open projects (`@` or not), after `:open` and `:export` directories (`~` for your home, hidden ones only after a `.`, `tab` steps into the chosen one).
+- Arguments complete too: after `:lang` the languages, after `:lead` the vendors, after `:notify` its three words, after `:theme` the built-in names, after `:close` and `:pin` the open projects, after `:restore` the archives' titles (newest first, each noted with its project's name and the day it was archived), after `:goto` nothing (the `&` line has its own menu), after `:history` the lines sent, after `:forget`, `:talk`, `:trace` and `:peek` the agents of open projects (`@` or not), after `:open` and `:export` directories (`~` for your home, hidden ones only after a `.`, `tab` steps into the chosen one).
 - A name imece does not know: `no command xyz; : and tab list them`. A demo-only command typed live: `:pause is for the demo: live agents run in real time`.
 - `!cmd` runs a command in your own shell and `/cmd` is the agent's own command line; neither is a `:` command ([command line](../screen/command-line.md)).
 
@@ -55,6 +55,7 @@ A line that starts with `:` is a command to imece, not a message to an agent. Yo
 | `:pin [NAME]` | — | | | | the project at hand, `▴` when pinned |
 | `:quit` | `q` | `:q` | | | |
 | `:rename NAME` | — | | | | the project at hand |
+| `:restore [NAME]` | — | | | | |
 | `:salon` | `1` | | | | |
 | `:settle` | `s` | | | | the selected row's agent or project |
 | `:slower` | `-` | | yes | | the speed, `×2` |
@@ -221,6 +222,16 @@ Quits, as `q` (`:q`): it asks first (`quit imece? q again to quit · any other k
 ### `:rename NAME`
 
 Renames the project at hand and its leader to `lead-NAME` (project 0's `lead` too). Sessions go on; every live agent of the project gets a note at its next prompt, and a `send` to the old name answers with the team list. The same name rule as `:open`. The flash: `kule is now k2; write to lead-k2`.
+
+### `:restore [NAME]`
+
+Brings an archive back: the newest one titled `NAME`, else the newest archive of the project called `NAME`; without a name, the newest archive of the project at hand's name (so `:restore` right after an `:archive` takes it back once the grace is over). The menu after `:restore ` offers the archives' titles, newest first, each noted with its project's name and the day it was archived (`first epic   kule · 2026-11-02`).
+
+The archive opens again as it was put away: its agents asleep with their vendor sessions, mail, notes and changes, its cards, items in WAITING FOR YOU and journal lines back in sight, its head selected. Nothing wakes and nothing is spent until you write: each agent then goes on in the session it had (when the vendor still keeps it, else a new one, told where it left off), told first that the project was put away and brought back, and of the turn the archive cut short, which is not run again.
+
+A checkout holds one open team, so the team open on the archive's checkout gives way (for a solo archive: the open solo of its name). It is archived in its turn under its name and days when it did anything (a card, a hired agent, something spent or said, a session), or closed when it did not, so empty archives do not pile up. The flash: `brought kule “first epic” back: its agents sleep until you write to them`; the journal: `you brought back kule “first epic”; the one open there is archived as “kule 2026-11-02”` (or a `you closed kule` line before it).
+
+Refused, with nothing changed: no archive of that title or name (`no archive is titled or named x`, `kule has no archive`), its folder is gone (`/src/kule is not there any more`), a team's folder is no git checkout with a first commit any more, or another open project has its name (`a project named kule is open already`: rename or close that one first). An archive brought back and later archived again takes a new title. The demo brings back the same way (its folders are its own, never gone). See [sessions](../concepts/sessions.md#archives) and the scenario [a new epic](../scenarios/new-epic.md).
 
 ### `:salon`
 

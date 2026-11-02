@@ -8,17 +8,17 @@
 
 use std::path::Path;
 
-use crate::model::{Agent, CardId, ProjectId, Sent, Vendor, World};
+use crate::model::{Agent, CardId, ProjectId, Sent, Vendor, World, date, day};
 use crate::ui::fold;
 
 /// The commands imece itself takes after `:`: its own, and a name for
 /// every key that acts (not the ones that move).
-pub const COMMANDS: [&str; 47] = [
+pub const COMMANDS: [&str; 48] = [
     "archive", "awake", "board", "budget", "close", "code", "commit", "copy", "defer", "effort",
     "export", "faster", "fold", "forget", "goto", "help", "hints", "history", "keys", "lang",
     "lead", "mark", "model", "needs", "news", "next", "notify", "open", "output", "pause", "peek",
-    "pending", "pin", "quit", "rename", "salon", "settle", "slower", "solo", "talk", "theme",
-    "trace", "undo", "unfold", "unsettle", "waiting", "welcome",
+    "pending", "pin", "quit", "rename", "restore", "salon", "settle", "slower", "solo", "talk",
+    "theme", "trace", "undo", "unfold", "unsettle", "waiting", "welcome",
 ];
 
 /// The word for a vendor's own model or effort after `:model`, `:effort`
@@ -440,10 +440,28 @@ pub fn suggest(input: &str, w: &World, project: ProjectId, home: Option<&Path>) 
                 menu(start, word, matching(word, names), "")
             }
             Some(("open" | "export", arg)) => dirs(input.len() - arg.len(), arg, home, &list_dirs),
+            Some(("restore", arg)) => archives(input.len() - arg.len(), arg, w),
             Some(_) => None,
         };
     }
     None
+}
+
+/// The archives' titles for what follows `:restore`, newest first, each
+/// noted with its project's name and the day it was archived.
+fn archives(start: usize, arg: &str, w: &World) -> Option<Menu> {
+    let found: Vec<(String, String)> = (w.archives().into_iter())
+        .filter_map(|p| {
+            let q = &w.projects[p];
+            let a = q.archived.as_ref()?;
+            let title = a.title.to_lowercase().starts_with(&arg.to_lowercase());
+            title.then(|| (a.title.clone(), format!("{} · {}", q.name, date(day(a.at)))))
+        })
+        .collect();
+    let (items, notes): (Vec<String>, Vec<String>) = found.into_iter().unzip();
+    let mut m = menu(start, arg, items, "")?;
+    m.notes = notes;
+    Some(m)
 }
 
 /// Directories for the path being typed after `:open`: the ones in its

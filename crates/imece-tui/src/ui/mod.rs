@@ -5400,6 +5400,115 @@ mod tests {
     }
 
     #[test]
+    fn restore_brings_an_archive_back_selects_its_head_and_says_what_was_missing() {
+        let typed = |app: &mut App, line: &str| {
+            for c in line.chars() {
+                key(app, KeyCode::Char(c));
+            }
+            app.menu = None;
+            key(app, KeyCode::Enter);
+        };
+        let flashed = |app: &App| app.flash.as_ref().map(|f| f.0.clone()).unwrap_or_default();
+        for (lang, done, line, none, none_of) in [
+            (
+                Lang::En,
+                "brought shop “first epic” back: its agents sleep until you write to them",
+                "you brought back shop “first epic”",
+                "no archive is titled or named nothing",
+                "shop has no archive",
+            ),
+            (
+                Lang::Tr,
+                "shop “first epic” geri geldi: agent'ları sen yazana kadar uyuyor",
+                "shop projesinin “first epic” arşivini geri getirdin",
+                "nothing başlıklı ya da adlı arşiv yok",
+                "shop projesinin arşivi yok",
+            ),
+        ] {
+            let mut app = app_after(1, 1, 0, lang);
+            app.home = None;
+            typed(&mut app, ":open ~/work/shop");
+            app.selected = Sel::Agent(app.world.projects[1].leader);
+            typed(&mut app, ":restore");
+            assert_eq!(flashed(&app), none_of, "{lang:?}");
+            typed(&mut app, ":restore nothing");
+            assert_eq!(flashed(&app), none, "{lang:?}");
+            typed(&mut app, ":archive first epic");
+            app.end_grace();
+            let fresh = 2;
+            let head = app.world.projects[fresh].leader;
+            app.zoom = Zoom::Focus(head);
+            app.unseen.insert(head);
+            // An `:archive` waiting acts first.
+            typed(&mut app, ":archive x");
+            assert!(app.grace.is_some());
+            typed(&mut app, ":restore first epic");
+            assert!(app.grace.is_none());
+            let w = &app.world;
+            assert!(
+                w.projects[fresh].archived.is_some(),
+                "the `:archive x` acted"
+            );
+            // `x` took 2's place as 3; it did nothing, so it is closed.
+            assert!(w.projects[3].closed && w.projects[3].archived.is_none());
+            assert!(!w.projects[1].closed && w.projects[1].archived.is_none());
+            assert_eq!(app.selected, Sel::Agent(w.projects[1].leader));
+            assert_eq!(flashed(&app), done, "{lang:?}");
+            assert!(render(&app, 300, 40).contains(line), "{lang:?}");
+            // What gave way leaves the screen: its focus and its unseen.
+            assert_eq!(app.zoom, Zoom::None);
+            assert!(!app.unseen.contains(&head));
+            // A bare `:restore` brings back the newest of the name at hand.
+            typed(&mut app, ":restore");
+            assert!(app.world.projects[fresh].archived.is_none());
+            assert!(app.world.projects[1].archived.is_some(), "it was swapped");
+            assert_eq!(app.selected, Sel::Agent(app.world.projects[fresh].leader));
+            // A refusal is said: a solo has the name, the team is renamed.
+            app.world.projects[fresh].name = "shop3".into();
+            (app.world).open_project(None, "shop".into(), "/s".into(), Vendor::Claude, Role::Solo);
+            let selected = app.selected;
+            typed(&mut app, ":restore shop");
+            assert_eq!(flashed(&app), "a project named shop is open already");
+            assert!(app.world.projects[1].archived.is_some());
+            assert_eq!(app.selected, selected);
+        }
+    }
+
+    #[test]
+    fn restore_completes_the_archives_titles_newest_first_with_name_and_day() {
+        let mut app = app_after(1, 1, 0, Lang::En);
+        app.world.tick = 10;
+        app.world.archive_project(0, "first epic".into());
+        app.world.tick = 20;
+        app.world.archive_project(1, "second".into());
+        let day = crate::model::date(crate::model::day(20));
+        let menu = |input: &str| {
+            crate::complete::suggest(input, &app.world, 2, None)
+                .map(|m| (m.start, m.items, m.notes))
+        };
+        let name = app.world.projects[0].name.clone();
+        let then = crate::model::date(crate::model::day(10));
+        assert_eq!(
+            menu(":restore "),
+            Some((
+                9,
+                vec!["second".to_string(), "first epic".to_string()],
+                vec![format!("{name} · {day}"), format!("{name} · {then}")]
+            ))
+        );
+        assert_eq!(
+            menu(":restore FI"),
+            Some((
+                9,
+                vec!["first epic".to_string()],
+                vec![format!("{name} · {then}")]
+            ))
+        );
+        assert_eq!(menu(":restore first epic"), None, "typed whole");
+        assert_eq!(menu(":restore z"), None);
+    }
+
+    #[test]
     fn an_archive_s_cards_leave_the_board_the_queue_and_the_header() {
         let mut app = app_after(1, 2, 0, Lang::En);
         let name = app.world.projects[0].name.clone();

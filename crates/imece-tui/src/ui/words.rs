@@ -147,6 +147,16 @@ pub fn event(lang: Lang, w: &World, e: &Event) -> String {
             t.ev_archived,
             &[project(w, *leader), title, project(w, *leader)],
         ),
+        Event::Restored {
+            leader,
+            title,
+            swapped: None,
+        } => fill(t.ev_restored, &[project(w, *leader), title]),
+        Event::Restored {
+            leader,
+            title,
+            swapped: Some(was),
+        } => fill(t.ev_restored_swapped, &[project(w, *leader), title, was]),
         Event::Renamed { from, to, .. } => fill(t.ev_renamed, &[from, to]),
         Event::Forgotten { agent } => fill(t.ev_forgotten, &[name(w, *agent)]),
         Event::Chose { agent, choice } => fill(t.ev_chose, &[name(w, *agent), choice]),

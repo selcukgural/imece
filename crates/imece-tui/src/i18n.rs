@@ -293,6 +293,12 @@ pub struct Text {
     pub closed: &'static str,
     /// `:archive` done: the project and its title.
     pub archived: &'static str,
+    /// `:restore` done: the project and the archive's title.
+    pub restored: &'static str,
+    /// `:restore NAME` named no archive: what was typed.
+    pub no_archive: &'static str,
+    /// A bare `:restore`: the project at hand has no archive.
+    pub no_archive_of: &'static str,
     pub no_project: &'static str,
     pub last_project: &'static str,
     pub renamed: &'static str,
@@ -552,6 +558,10 @@ pub struct Text {
     pub ev_closed: &'static str,
     /// The project archived, its title, and the fresh one in its place.
     pub ev_archived: &'static str,
+    /// The project brought back and its archive's title.
+    pub ev_restored: &'static str,
+    /// The same, and the title the one open in its place was archived as.
+    pub ev_restored_swapped: &'static str,
     pub ev_renamed: &'static str,
     pub ev_forgotten: &'static str,
     /// `:effort` / `:model`: the agent, what it runs on now.
@@ -841,6 +851,9 @@ pub const EN: Text = Text {
     bad_project_name: "\"{}\" can not name a project: 1-24 of letters, digits, . _ -",
     closed: "closed {}: its agents left; their worktrees stay on disk",
     archived: "archived {} as “{}”: its agents sleep with all they had; a fresh one opens",
+    restored: "brought {} “{}” back: its agents sleep until you write to them",
+    no_archive: "no archive is titled or named {}",
+    no_archive_of: "{} has no archive",
     no_project: "no open project named {}",
     last_project: "{} is the last open project; q q quits",
     renamed: "{} is now {}; write to {}",
@@ -1073,6 +1086,8 @@ pub const EN: Text = Text {
     no_git: "no git",
     ev_closed: "you closed {}",
     ev_archived: "you archived {} as “{}”; a fresh {} takes its place",
+    ev_restored: "you brought back {} “{}”",
+    ev_restored_swapped: "you brought back {} “{}”; the one open there is archived as “{}”",
     ev_renamed: "you renamed {} to {}",
     ev_forgotten: "you made {} forget its session; it starts a new one, told where it left off",
     ev_chose: "you set {} to run on {}",
@@ -1485,6 +1500,9 @@ pub const TR: Text = Text {
     bad_project_name: "\"{}\" proje adı olamaz: 1-24 harf, rakam, . _ -",
     closed: "{} kapatıldı: agent'ları ayrıldı; worktree'leri diskte kaldı",
     archived: "{} “{}” adıyla arşivlendi: agent'ları her şeyiyle uyuyor; yerine yenisi açıldı",
+    restored: "{} “{}” geri geldi: agent'ları sen yazana kadar uyuyor",
+    no_archive: "{} başlıklı ya da adlı arşiv yok",
+    no_archive_of: "{} projesinin arşivi yok",
     no_project: "{} adında açık proje yok",
     last_project: "{} son açık proje; q q çıkar",
     renamed: "{} artık {}; {} adına yaz",
@@ -1717,6 +1735,8 @@ pub const TR: Text = Text {
     no_git: "git yok",
     ev_closed: "{} projesini kapattın",
     ev_archived: "{} projesini “{}” adıyla arşivledin; yerine yeni bir {} açıldı",
+    ev_restored: "{} projesinin “{}” arşivini geri getirdin",
+    ev_restored_swapped: "{} projesinin “{}” arşivini geri getirdin; orada açık olan “{}” adıyla arşivlendi",
     ev_renamed: "{} projesine {} adını verdin",
     ev_forgotten: "{} oturumunu unutturdun; yeni bir oturumla başlıyor, kaldığı yer anlatılacak",
     ev_chose: "{} artık {} üzerinde çalışıyor",
@@ -2111,6 +2131,11 @@ mod tests {
             (e.grace_archive_cut, t.grace_archive_cut),
             (e.undone_archive, t.undone_archive),
             (e.ev_archived, t.ev_archived),
+            (e.ev_restored, t.ev_restored),
+            (e.ev_restored_swapped, t.ev_restored_swapped),
+            (e.restored, t.restored),
+            (e.no_archive, t.no_archive),
+            (e.no_archive_of, t.no_archive_of),
             (e.no_project, t.no_project),
             (e.last_project, t.last_project),
             (e.renamed, t.renamed),
