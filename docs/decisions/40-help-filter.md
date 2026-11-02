@@ -48,3 +48,25 @@ shows it from the top. At least one line is in sight on any screen.
 
 So the 40-row test now only says the help fits 40 rows whole on a wide
 screen; a row more makes it scroll there instead of being cut.
+
+## Rows drawn whole (2026-11-03, #148)
+
+The help fitted every key into 13 columns and every text into 44 and cut
+the rest with `…`: more than twenty rows in each language lost their end
+(`:copy YOL` is 74 long). Of the issue's three ways (a wider column,
+wrapping, shortening every text) it now does the first two: a text longer
+than its column goes on under its key, broken between words
+(`overlay::wrap_words`; a word longer than a line is cut where the line
+ends), and the columns grow with the screen (`overlay::help_widths`): the
+text from 44 up to 74, then the key from 13 up to 16. A key longer than
+its column (`/cmd  @name /cmd`) takes a line of its own above its text,
+and a key of the whole column keeps a blank before its text. In two
+columns the first takes rows until it is at least as long as the second
+(`overlay::help_columns`), so the two end together.
+
+So the help fits 40 rows whole where every row is one line, from 188
+columns; on 140 its long texts take two lines and it scrolls a few. The
+test that every row fits its cell is now one for every row, both
+languages, both new-line keys and four screen widths: each line as wide
+as its cell, the words of key and text all there, in order.
+
