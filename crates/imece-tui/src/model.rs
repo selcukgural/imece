@@ -902,6 +902,19 @@ impl Card {
     }
 }
 
+/// Why a remembered agent woke in a new session, not the one it had.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Fresh {
+    /// It had none to go on with: never one, or forgotten, or cleared.
+    #[default]
+    NoSession,
+    /// Its session was not where its vendor keeps it (a Claude transcript
+    /// gone, an id that is no session's).
+    Missing,
+    /// Its vendor would not go on with it; the vendor's words, cut.
+    Refused(String),
+}
+
 /// An event of the whole guild, for the journal.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Event {
@@ -1048,9 +1061,12 @@ pub enum Event {
     Resumed {
         agent: AgentId,
     },
-    /// A remembered agent woke in a new session, told where it left off.
+    /// A remembered agent woke in a new session, told where it left off,
+    /// and why not in its old one.
     Restarted {
         agent: AgentId,
+        #[serde(default)]
+        why: Fresh,
     },
     /// The person changed the budget (`:budget`), in ten-thousandths of a
     /// dollar; `leader` is the one of the project they were looking at.
@@ -1329,7 +1345,7 @@ impl Event {
             | Event::Chose { agent, .. }
             | Event::Fallback { agent, .. }
             | Event::Resumed { agent }
-            | Event::Restarted { agent }
+            | Event::Restarted { agent, .. }
             | Event::NotesCut { agent, .. }
             | Event::CommandsMissing { agent }
             | Event::WorktreeMoved { agent, .. }

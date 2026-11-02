@@ -526,6 +526,8 @@ struct Mind {
     started: bool,
     /// The person made it forget its session: the next one is new.
     forgot: bool,
+    /// Its vendor would not resume its session: the next one is new.
+    refused: bool,
     /// When its tests end, while they run.
     testing: Option<u64>,
     /// When a helper's task ends.
@@ -648,7 +650,12 @@ struct Extras {
     told: u32,
     /// No vendor errors: a test that counts answers.
     calm: bool,
+    /// Sessions resumed this run, refused ones included.
+    resumes: u32,
 }
+
+/// What a vendor says in the demo when it would not resume a session.
+const REFUSED: &str = "the session could not resume session 5f1c… (error_during_execution)";
 
 /// The demo's vendors as the first-run window (`:welcome`) lists them:
 /// all three there, Claude Code and Codex signed in, Gemini CLI's sign-in
@@ -872,9 +879,17 @@ impl Sim {
         let t = w.tick;
         let stopped = w.agents[id].status == Status::Stopped;
         let had = self.mind(id).started;
+        // Every second resume of a run is refused, as a vendor that lost
+        // the session says: a new one starts, and the journal says why.
+        let refused = stopped && had && self.refuses();
+        if refused {
+            let m = self.mind(id);
+            m.started = false;
+            m.refused = true;
+        }
         self.start(w, id);
         self.mind(id).compacted = false;
-        if stopped && had {
+        if stopped && had && !refused {
             w.agents[id].trace(t, "session resumed");
             w.note(Event::Resumed { agent: id });
         }
@@ -1374,6 +1389,12 @@ impl Sim {
         }
     }
 
+    /// Whether the resume asked for now is refused: every second one.
+    fn refuses(&mut self) -> bool {
+        self.extras.resumes += 1;
+        self.extras.resumes.is_multiple_of(2)
+    }
+
     /// Agent `id`'s session starts, if it has none: its command line comes
     /// with it, and a worker's worktree may say something.
     fn start(&mut self, w: &mut World, id: AgentId) {
@@ -1384,6 +1405,7 @@ impl Sim {
         }
         m.started = true;
         let forgot = std::mem::take(&mut m.forgot);
+        let refused = std::mem::take(&mut m.refused);
         // The first Gemini session of a run lists no command line, as a
         // changed format would leave it (#53): only imece's /clear.
         let gemini = w.agents[id].vendor == Vendor::Gemini;
@@ -1400,8 +1422,18 @@ impl Sim {
         } else {
             a.commands = commands_of(a.vendor);
         }
-        if forgot {
-            w.note(Event::Restarted { agent: id });
+        if refused {
+            let line = format!("session could not be resumed ({REFUSED})");
+            w.agents[id].trace(t, line);
+            w.note(Event::Restarted {
+                agent: id,
+                why: Fresh::Refused(REFUSED.into()),
+            });
+        } else if forgot {
+            w.note(Event::Restarted {
+                agent: id,
+                why: Fresh::NoSession,
+            });
         }
         if w.agents[id].role != Role::Worker {
             return;
@@ -3873,6 +3905,30 @@ diff --git a/b.rs b/b.rs
         let n = w.journal.len();
         s.told(&mut w, worker, "more").unwrap();
         assert_eq!(w.journal.len(), n);
+        // The second resume of the run is refused: a new session, and why;
+        // the third goes on again.
+        let resume = |w: &mut World, s: &mut Sim| {
+            s.stop(w, worker);
+            let n = w.journal.len();
+            s.told(w, worker, "go on").unwrap();
+            let got: Vec<Event> = w.journal[n..].iter().map(|e| e.event.clone()).collect();
+            got
+        };
+        let got = resume(&mut w, &mut s);
+        let refused = Event::Restarted {
+            agent: worker,
+            why: Fresh::Refused(REFUSED.into()),
+        };
+        assert!(got.contains(&refused), "{got:?}");
+        assert!(!got.contains(&Event::Resumed { agent: worker }), "{got:?}");
+        assert!(
+            (w.agents[worker].trace.iter()).any(|l| l.ends_with("session/new")),
+            "a new session"
+        );
+        assert_eq!(w.agents[worker].card, Some(card), "on the same card");
+        let got = resume(&mut w, &mut s);
+        assert!(got.contains(&Event::Resumed { agent: worker }), "{got:?}");
+        assert!(!got.contains(&refused), "{got:?}");
         // Stopped without a session (it never took a turn): a new one.
         let (mut w, mut s) = world(1, 1, 0, 1, Lang::En);
         let worker = workers_of(&w, 0)[0];
@@ -3913,11 +3969,11 @@ diff --git a/b.rs b/b.rs
         });
         s.forget(&mut w, lead).unwrap_err();
         s.told(&mut w, lead, "again").unwrap();
-        assert!(
-            w.journal
-                .iter()
-                .any(|e| e.event == Event::Restarted { agent: lead })
-        );
+        assert!(w.journal.iter().any(|e| e.event
+            == Event::Restarted {
+                agent: lead,
+                why: Fresh::NoSession
+            }));
         assert!(!s.mind(lead).forgot);
         assert_eq!(s.forget(&mut w, lead), Ok(()));
         assert!(s.replies.iter().all(|r| r.agent != lead));

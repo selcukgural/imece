@@ -485,6 +485,9 @@ pub struct Live {
     /// Agents remembered from an earlier run that have not started this
     /// run: the first prompt tells them where they left off.
     remembered: Vec<bool>,
+    /// What the vendor said when it would not go on with an agent's old
+    /// session, for the journal's line on the new one.
+    refused: Vec<Option<String>>,
     /// The prompts an earlier run's turn did not finish, for that briefing.
     interrupted: Vec<Vec<String>>,
     /// The vendor session each agent had last, to go on with at its wake;
@@ -913,6 +916,7 @@ impl Live {
             home: 0,
             loaded_cards: 0,
             remembered: Vec::new(),
+            refused: Vec::new(),
             interrupted: Vec::new(),
             sessions: Vec::new(),
             floor: Vec::new(),

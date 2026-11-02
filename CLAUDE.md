@@ -130,7 +130,7 @@ record in the same PR.
 - 17 `code-map`: one row per file, fixed lease columns, a legend of the glyphs shown.
 - 18 `projects`: `:open`/`:close`/`:rename`, places per project, the demo's copies.
 - 19 `persistence`: `store.rs`, one SQLite file, what is saved and how, the wake briefing.
-- 20 `claude-resume`: `--resume`, transcript check, cost floor, `Live::restart`.
+- 20 `claude-resume`: `--resume`, transcript check, cost floor, `Live::restart`; why a wake is not a resume (`Event::Restarted.why`: `Fresh::NoSession`/`Missing`/`Refused(words)`), the demo refuses every second resume.
 - 21 `codex-resume`: non-ephemeral threads, `thread/resume`.
 - 22 `gemini-resume`: `session/load`, history replay handling.
 - 23 `hygiene`: `Live::forget`, removing vendor sessions, `:forget`, `--fresh`.

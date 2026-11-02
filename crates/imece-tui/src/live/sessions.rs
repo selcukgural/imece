@@ -159,6 +159,18 @@ pub fn apply(w: &mut World, id: AgentId, e: AgentEvent, before: u64) {
     }
 }
 
+/// How much of a vendor's words on a session it would not resume the
+/// journal keeps.
+const REFUSAL_KEPT: usize = 160;
+
+/// A vendor's words on a session it would not resume, as the journal
+/// keeps them: the first line, at most [`REFUSAL_KEPT`] characters
+/// (cleaned when drawn, as all an agent's text is).
+fn refusal(why: &str) -> String {
+    let line = why.lines().next().unwrap_or_default();
+    line.chars().take(REFUSAL_KEPT).collect()
+}
+
 impl Live {
     /// A session ended: the next message starts a new one.
     pub(super) fn end(&mut self, w: &mut World, id: AgentId) {
@@ -227,6 +239,7 @@ impl Live {
         self.sessions[id] = None;
         self.notes[id] = a.notes;
         self.remembered[id] = true;
+        self.refused[id] = Some(refusal(why));
         if let Some(first) = texts.first_mut() {
             *first = a.text;
         }
@@ -404,6 +417,7 @@ impl Live {
         // Where the line on what its worktree holds goes in the prompt.
         let mut held = None;
         if std::mem::take(&mut self.remembered[id]) {
+            let had = self.sessions[id].is_some();
             let resumed = self.resumable(w, id);
             if let Some(r) = &resumed {
                 self.floor[id] = r.spent;
@@ -413,7 +427,12 @@ impl Live {
                     notes: self.notes[id].clone(),
                 });
             } else {
-                w.note(Event::Restarted { agent: id });
+                let why = match self.refused[id].take() {
+                    Some(said) => Fresh::Refused(said),
+                    None if had => Fresh::Missing,
+                    None => Fresh::NoSession,
+                };
+                w.note(Event::Restarted { agent: id, why });
             }
             let (briefing, at) = self.brief(w, id, resumed.is_some());
             held = at.map(|at| FROM_IMECE.len() + at);
@@ -667,6 +686,33 @@ impl Live {
 mod tests {
     use super::*;
     use crate::live::testing::*;
+
+    #[test]
+    fn a_vendor_s_refusal_is_kept_as_its_first_line_cut() {
+        assert_eq!(refusal("no rollout\nstack trace"), "no rollout");
+        let long = "x".repeat(REFUSAL_KEPT + 40);
+        assert_eq!(refusal(&long).chars().count(), REFUSAL_KEPT);
+        assert_eq!(refusal("é".repeat(161).as_str()), "é".repeat(160));
+        assert_eq!(refusal(""), "");
+    }
+
+    #[test]
+    fn an_old_journal_line_of_a_new_session_reads_as_having_had_none() {
+        let old: Event = serde_json::from_str(r#"{"Restarted":{"agent":1}}"#).unwrap();
+        assert_eq!(
+            old,
+            Event::Restarted {
+                agent: 1,
+                why: Fresh::NoSession
+            }
+        );
+        let e = Event::Restarted {
+            agent: 1,
+            why: Fresh::Refused("gone".into()),
+        };
+        let back: Event = serde_json::from_str(&serde_json::to_string(&e).unwrap()).unwrap();
+        assert_eq!(back, e);
+    }
 
     #[test]
     fn a_solo_s_worktree_is_named_after_its_project_so_a_rename_keeps_it() {

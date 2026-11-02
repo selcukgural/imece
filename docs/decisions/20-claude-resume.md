@@ -32,7 +32,19 @@ imece's own `/clear` forgets the session. The restart is one attempt,
 never a loop, so there is no crash count to cap (user, 2026-10-31, #58
 E3 closed as not mapping; E9 too: sessions start at their own wake,
 never all at once); an automatic restart, if one is ever added, comes
-with a cap and the vendor's last stderr lines. Known gaps: `renew` and
+with a cap and the vendor's last stderr lines. Why a wake is not a resume is journaled (backlog E10 in #58,
+2026-11-02): `Event::Restarted { agent, why: Fresh }`, `Fresh::NoSession`
+(none remembered: never one, `:forget`, `/clear`, `--fresh`),
+`Fresh::Missing` (one remembered that `Live::resumable` turned down: not
+a UUID, no Claude transcript) or `Fresh::Refused(words)` (the vendor
+stopped the resume: `Live::restart` keeps its `why` in `Live.refused`,
+first line, `REFUSAL_KEPT` 160 characters, cleaned when drawn by
+`fill`); `why` is `#[serde(default)]`, so a stored line from before
+reads as `NoSession`. The demo refuses every second resume of a run
+(`Sim::refuses`, `REFUSED`) so the line shows there too; it has no
+`Missing` (it keeps no transcripts). Restoring without resuming (E10's
+second half) is not built: `--fresh` and `:forget` start anew but also
+remove what the vendor kept. Known gaps: `renew` and
 `fall_back` start fresh (no resume mid-run), the `/clear` inside a
 resumed session leaves `spent` as a guess (Claude's counter resets, the
 floor does not), a stopped session (tools differ etc.) is still the one

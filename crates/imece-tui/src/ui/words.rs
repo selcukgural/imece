@@ -125,7 +125,11 @@ pub fn event(lang: Lang, w: &World, e: &Event) -> String {
         Event::Left { agent } => fill(t.ev_left, &[name(w, *agent)]),
         Event::Fallback { agent, model } => fill(t.ev_fallback, &[name(w, *agent), model]),
         Event::Resumed { agent } => fill(t.ev_resumed, &[name(w, *agent)]),
-        Event::Restarted { agent } => fill(t.ev_restarted, &[name(w, *agent)]),
+        Event::Restarted { agent, why } => match why {
+            Fresh::NoSession => fill(t.ev_restarted, &[name(w, *agent)]),
+            Fresh::Missing => fill(t.ev_restarted_missing, &[name(w, *agent)]),
+            Fresh::Refused(said) => fill(t.ev_restarted_refused, &[name(w, *agent), said]),
+        },
         Event::Budget { from, to, .. } => fill(t.ev_budget, &[&dollars(*to), &dollars(*from)]),
         Event::PotLow { rate, minutes, .. } => {
             fill(t.ev_pot_low, &[&dollars(*rate), &ago(lang, minutes * 60)])
@@ -646,6 +650,34 @@ mod tests {
         assert_eq!(title(Lang::En, 1), "imece · 1 waiting");
         assert_eq!(title(Lang::En, 12), "imece · 12 waiting");
         assert_eq!(title(Lang::Tr, 3), "imece · 3 seni bekliyor");
+    }
+
+    #[test]
+    fn a_new_session_says_why_the_old_one_was_not_resumed() {
+        let w = crate::live::testing::team(1);
+        let said = |lang, why| event(lang, &w, &Event::Restarted { agent: 1, why });
+        assert_eq!(
+            said(Lang::En, Fresh::NoSession),
+            "claude-1 starts a new session, told where it left off"
+        );
+        assert_eq!(
+            said(Lang::En, Fresh::Missing),
+            "claude-1 starts a new session, told where it left off: its last one was not found"
+        );
+        assert_eq!(
+            said(Lang::En, Fresh::Refused("no rollout\x1b[2J found".into())),
+            "claude-1 starts a new session, told where it left off: its last one could not \
+             be resumed (no rollout [2J found)"
+        );
+        assert_eq!(
+            said(Lang::Tr, Fresh::Missing),
+            "claude-1 yeni bir oturumla başlıyor, kaldığı yer anlatıldı: son oturumu bulunamadı"
+        );
+        assert_eq!(
+            said(Lang::Tr, Fresh::Refused("x".into())),
+            "claude-1 yeni bir oturumla başlıyor, kaldığı yer anlatıldı: son oturumu \
+             sürdürülemedi (x)"
+        );
     }
 
     #[test]
