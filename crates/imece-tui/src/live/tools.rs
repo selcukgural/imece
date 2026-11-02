@@ -773,7 +773,7 @@ mod tests {
             "tool_use_id": "toolu_1",
         });
         live.calls_tx
-            .send((from, APPROVE_TOOL.into(), args, tx))
+            .send((from, APPROVE_TOOL.into(), args, tx, Default::default()))
             .unwrap();
         rx
     }

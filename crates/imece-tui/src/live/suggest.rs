@@ -295,8 +295,11 @@ impl Live {
     /// The suggestions that answered: each settles its cost; a message
     /// waits for the screen (`World::suggested`) and is kept for its
     /// tree, the others are journaled with why.
-    pub(super) fn take_said(&mut self, w: &mut World) {
+    /// Whether any answered.
+    pub(super) fn take_said(&mut self, w: &mut World) -> bool {
+        let mut any = false;
         while let Ok(s) = self.said_rx.try_recv() {
+            any = true;
             self.suggesting = None;
             // Millionths of a dollar to the pot's ten-thousandths; a call
             // that never said keeps its cap.
@@ -336,6 +339,7 @@ impl Live {
                 cost,
             });
         }
+        any
     }
 }
 

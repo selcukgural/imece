@@ -82,7 +82,7 @@ On the screen a reply has `↩` after its type; in a conversation it shows the f
 | a `run` command line | 1000 characters | `run` |
 | a run's time | `--run-timeout`, default 600 s (10-3600) | the process group is killed |
 | a run's output back to the agent | 48 KiB, the middle cut | `run` |
-| a tool call's wait for imece | 30 s (a run: its timeout + 30 s; an approval: 24 h) | `imece did not answer in time; try again` |
+| a tool call's wait for imece | 30 s (a run: its timeout + 30 s; an approval: 24 h) | `imece did not answer in time; try again`, and the call is dropped, never done late (a retried `hire` makes one worker); a call imece took but answers late: `it was done, do not make it again` |
 | a change (patch) shown to you | 4 MiB | a worker's `done`, refused over it |
 | the repository's notes in a prompt | 16 KiB | `AGENTS.md` / `CLAUDE.md`, cut and journaled |
 | the wake briefing | 6000 characters, 300 a line | the first prompt after a restart |

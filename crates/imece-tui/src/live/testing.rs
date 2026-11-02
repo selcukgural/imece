@@ -90,6 +90,11 @@ pub(crate) fn idle_live_in(repo: &Path, agents: usize) -> Live {
     live
 }
 
+/// `e` as session `id`'s report, for the tests of the screen.
+pub(crate) fn hear(live: &Live, id: AgentId, e: AgentEvent) {
+    live.tx.send((id, live.generation[id], e)).unwrap();
+}
+
 /// A fresh git checkout with one commit, under the temp dir.
 pub(crate) fn checkout(name: &str) -> std::path::PathBuf {
     let dir = std::env::temp_dir().join(format!("imece-{name}-{}", std::process::id()));
@@ -273,7 +278,10 @@ pub(super) fn call(
     args: Value,
 ) -> Answer {
     let (tx, rx) = std::sync::mpsc::channel();
-    live.calls_tx.send((from, tool.into(), args, tx)).unwrap();
+    let taken = Default::default();
+    live.calls_tx
+        .send((from, tool.into(), args, tx, taken))
+        .unwrap();
     live.step(w);
     rx.recv_timeout(std::time::Duration::from_secs(5)).unwrap()
 }

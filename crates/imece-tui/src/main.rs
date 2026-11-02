@@ -561,18 +561,27 @@ fn ask(
     pick: &mut ui::pick::Pick,
     keys: &keys::Keymap,
 ) -> std::io::Result<Option<ui::pick::Picked>> {
+    // Nothing on it moves by itself: drawn first and after what came from
+    // the terminal (a key, a resize), never on a timer.
+    let mut due = true;
     loop {
         if SIGNALLED.load(Ordering::SeqCst) {
             return Ok(None);
         }
-        terminal.draw(|f| ui::pick::draw(f, pick))?;
+        if std::mem::take(&mut due) {
+            terminal.draw(|f| ui::pick::draw(f, pick))?;
+        }
+        // The wait only bounds how late a signal is seen.
         let ready = match event::poll(std::time::Duration::from_millis(200)) {
             Ok(ready) => ready,
             Err(e) if e.kind() == ErrorKind::Interrupted => continue,
             Err(e) => return Err(e),
         };
-        if ready
-            && let Event::Key(k) = event::read()?
+        if !ready {
+            continue;
+        }
+        due = true;
+        if let Event::Key(k) = event::read()?
             && k.kind == KeyEventKind::Press
             && let Some(picked) = (keys.alone(k).iter()).find_map(|k| pick.on_key(k.code))
         {
@@ -608,7 +617,7 @@ fn run(
     let mut title = screen::Title::default();
     while !app.quit && !SIGNALLED.load(Ordering::SeqCst) {
         app.looked();
-        // In another window, the screen is drawn less often.
+        // Drawn when something changed; in another window, less often.
         let now = Instant::now();
         if app.draw_due(now) {
             terminal.draw(|f| ui::draw(f, app))?;

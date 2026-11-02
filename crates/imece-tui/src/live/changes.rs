@@ -133,10 +133,12 @@ impl Live {
     }
 
     /// What the git thread finished since the last step, and the runs that
-    /// ended.
-    pub(super) fn take_git(&mut self, w: &mut World) {
+    /// ended; whether git finished anything (a run's end shows nowhere).
+    pub(super) fn take_git(&mut self, w: &mut World) -> bool {
         self.take_ran();
+        let mut done_any = false;
         while let Ok(done) = self.git_back.try_recv() {
+            done_any = true;
             match done {
                 GitDone::Read {
                     agent,
@@ -169,6 +171,7 @@ impl Live {
                 GitDone::Files { project, files } => self.filed(w, project, files),
             }
         }
+        done_any
     }
 
     /// Has git list project `p`'s files, for completion in a message;
@@ -1068,7 +1071,13 @@ mod tests {
         // read the change.
         let (tx, rx) = mpsc::channel();
         live.calls_tx
-            .send((1, "send".into(), msg("you", "done", "Changed a."), tx))
+            .send((
+                1,
+                "send".into(),
+                msg("you", "done", "Changed a."),
+                tx,
+                Default::default(),
+            ))
             .unwrap();
         let got = (0..500)
             .find_map(|_| {
