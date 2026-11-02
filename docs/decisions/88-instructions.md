@@ -29,7 +29,9 @@ in; a longer file goes in as its head, with
 `Event::InstructionsCut { agent, path, size }` (an assumption, as
 `NotesCut`), worded `claude-1: your instructions file PATH is 20 KiB;
 only its first 16 KiB went into the instructions`. No more than the cap
-and three bytes is read, whatever the file's size. The file is opened
+is read, whatever the file's size; a character the cap cuts in two is
+left out whole (`from_utf8`'s error for an end cut short), any other
+byte that is not UTF-8 is replaced. The file is opened
 without waiting (`O_NONBLOCK`) and looked at as opened: only a plain file
 is read, so a pipe nobody writes to never holds a start and a device
 (`/dev/zero`) is passed over. Missing, not a plain file, or empty: nothing
