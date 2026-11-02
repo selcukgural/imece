@@ -566,7 +566,18 @@ struct Due {
     /// The turn failed, `text` says why (as a refused `/compact` of a
     /// live Codex session does).
     failed: bool,
+    /// The vendor's fault it failed on, as live's vendors say one.
+    fault: Option<Fault>,
 }
+
+/// Of the person's messages a demo agent answers with a turn, every
+/// `PASSING_EVERY`th fails on an overloaded vendor (and is tried again),
+/// every `ACCOUNT_EVERY`th on a refused key (and waits for the person).
+const PASSING_EVERY: u32 = 3;
+const ACCOUNT_EVERY: u32 = 7;
+/// What the demo's vendors say when they fail, as Claude Code does.
+const OVERLOADED: &str = "API Error: Repeated 529 Overloaded errors. The API is at capacity.";
+const BAD_KEY: &str = "Invalid API key · Fix external API key";
 
 /// How a worker comes to its card.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -606,6 +617,18 @@ pub struct Sim {
     extras: Box<Extras>,
 }
 
+/// The fault the `n`th message of the person's that a demo agent answers
+/// fails on, if any: an account's before a passing one.
+fn fault_of(n: u32) -> Option<Fault> {
+    if n.is_multiple_of(ACCOUNT_EVERY) {
+        Some(Fault::Account)
+    } else if n.is_multiple_of(PASSING_EVERY) {
+        Some(Fault::Passing)
+    } else {
+        None
+    }
+}
+
 /// What the demo keeps for `:commit` and `:copy`.
 #[derive(Default)]
 struct Extras {
@@ -623,6 +646,10 @@ struct Extras {
     /// The suggestions of this run and what they cost, for the day's
     /// ceilings (the demo's day is its run).
     paid_calls: (u32, u64),
+    /// The person's messages answered with a turn this run.
+    told: u32,
+    /// No vendor errors: a test that counts answers.
+    calm: bool,
     /// Sessions resumed this run, refused ones included.
     resumes: u32,
 }
@@ -893,6 +920,44 @@ impl Sim {
             // A researcher answers and goes on with its research.
             _ => {}
         }
+        self.extras.told += 1;
+        let fault = fault_of(self.extras.told).filter(|_| !self.extras.calm);
+        let text = match fault {
+            Some(Fault::Passing) => OVERLOADED.to_string(),
+            Some(Fault::Account) => BAD_KEY.to_string(),
+            None => (*self.rng.pick(self.content.acks)).to_string(),
+        };
+        let at = t + self.rng.range(2, 5);
+        self.replies.push(Due {
+            agent: id,
+            at,
+            text,
+            failed: fault.is_some(),
+            fault,
+        });
+        Ok(())
+    }
+
+    /// A failed turn of agent `id` is tried again, as live tells its
+    /// session to go on: it works again and answers.
+    fn retry(&mut self, w: &mut World, id: AgentId) {
+        let t = w.tick;
+        let Some(r) = w.agents[id].retry.take() else {
+            return;
+        };
+        let a = &mut w.agents[id];
+        a.trace(
+            t,
+            format!(
+                "retry {}/{} after a vendor error",
+                r.attempt,
+                RETRY_TICKS.len()
+            ),
+        );
+        a.set_status(Status::Working, t);
+        if a.activity.is_none() {
+            a.activity = Some(String::new());
+        }
         let text = (*self.rng.pick(self.content.acks)).to_string();
         let at = t + self.rng.range(2, 5);
         self.replies.push(Due {
@@ -900,8 +965,8 @@ impl Sim {
             at,
             text,
             failed: false,
+            fault: None,
         });
-        Ok(())
     }
 
     /// A line of the agent's own command line (`/compact`), as its
@@ -951,6 +1016,7 @@ impl Sim {
             at: t + 1,
             text,
             failed,
+            fault: None,
         });
         Ok(())
     }
@@ -1215,9 +1281,12 @@ impl Sim {
         self.replies = later;
         for r in due {
             match r.failed {
-                true => self.failed(w, r.agent, &r.text),
+                true => self.failed(w, r.agent, &r.text, r.fault),
                 false => self.answer(w, r.agent, &r.text),
             }
+        }
+        for id in w.retries_due() {
+            self.retry(w, id);
         }
         for p in 0..w.projects.len() {
             if !w.projects[p].closed {
@@ -1281,6 +1350,7 @@ impl Sim {
         w.replied(id, text);
         let a = &mut w.agents[id];
         a.trace(t, format!("result ok {}", dollars(a.cost)));
+        a.tries = 0;
         a.talk = Some(Talk {
             with: Party::Person,
             mine: true,
@@ -2102,10 +2172,11 @@ impl Sim {
         a.set_status(Status::Idle, t);
     }
 
-    /// A turn of agent `id` failed, `why` says why; its session goes on.
-    /// As live takes a failed turn: idle again, the story and the journal
-    /// say why.
-    fn failed(&mut self, w: &mut World, id: AgentId, why: &str) {
+    /// A turn of agent `id` failed, `why` says why, `fault` the vendor's
+    /// kind of it; its session goes on. As live takes a failed turn: idle
+    /// again, the story says why, and the journal, a retry or the inbox
+    /// as `World::turn_failed` decides.
+    fn failed(&mut self, w: &mut World, id: AgentId, why: &str, fault: Option<Fault>) {
         if w.agents[id].gone {
             return;
         }
@@ -2116,10 +2187,7 @@ impl Sim {
         a.trace(t, format!("result ✕ {} denied 0", dollars(a.cost)));
         a.set_status(Status::Idle, t);
         w.story(card, StoryEvent::Stopped(why.into()));
-        w.note(Event::Stopped {
-            agent: id,
-            why: why.into(),
-        });
+        w.turn_failed(id, why, fault);
     }
 
     /// Worker `id`'s session ends under it; the person's next message
@@ -2129,8 +2197,10 @@ impl Sim {
         let card = w.agents[id].card;
         let a = &mut w.agents[id];
         a.activity = None;
-        // What it served, its to-do list and its context went with its
-        // session.
+        // What it served, its to-do list, its context and a retry went
+        // with its session.
+        a.retry = None;
+        a.tries = 0;
         a.local = None;
         a.plan.clear();
         a.context = None;
@@ -2529,7 +2599,10 @@ mod tests {
                     let _ = s.apply_change(w, a, Vec::new());
                 }
                 InboxKind::Approval => w.decided(i, true),
-                InboxKind::Question => {
+                InboxKind::Question | InboxKind::Fault => {
+                    // Closed here, once: a run's length never hangs on
+                    // `said` closing it.
+                    w.inbox[i].open = false;
                     if s.told(w, a, "yes").is_ok() {
                         w.said(a, "yes");
                     }
@@ -3895,6 +3968,7 @@ diff --git a/b.rs b/b.rs
             at: w.tick + 1,
             text: "x".into(),
             failed: false,
+            fault: None,
         });
         s.forget(&mut w, lead).unwrap_err();
         s.told(&mut w, lead, "again").unwrap();
@@ -4104,7 +4178,7 @@ diff --git a/b.rs b/b.rs
         let (mut w, mut s, worker, card) = one_at_work();
         w.agents[worker].set_status(Status::Working, w.tick);
         w.agents[worker].activity = Some("Read x".into());
-        s.failed(&mut w, worker, "no");
+        s.failed(&mut w, worker, "no", None);
         let a = &w.agents[worker];
         assert_eq!(a.status, Status::Idle);
         assert_eq!(a.activity, None);
@@ -4121,7 +4195,7 @@ diff --git a/b.rs b/b.rs
         // One that is gone says nothing.
         w.agents[worker].gone = true;
         let n = w.journal.len();
-        s.failed(&mut w, worker, "no");
+        s.failed(&mut w, worker, "no", None);
         assert_eq!(w.journal.len(), n);
     }
 
@@ -4526,12 +4600,14 @@ diff --git a/b.rs b/b.rs
                 at: 99,
                 text: "a".into(),
                 failed: false,
+                fault: None,
             },
             Due {
                 agent: b,
                 at: 99,
                 text: "b".into(),
                 failed: false,
+                fault: None,
             },
         ];
         s.close_project(&mut w, 1).unwrap();
@@ -4598,6 +4674,7 @@ diff --git a/b.rs b/b.rs
         );
         // Told something, it works and answers; about every other answer
         // shows a change of its worktree, as live reads one at a turn end.
+        s.extras.calm = true;
         let mut changes = 0;
         let mut answers = 0;
         for i in 0..40 {
@@ -4655,6 +4732,77 @@ diff --git a/b.rs b/b.rs
     }
 
     #[test]
+    fn the_demo_fails_now_and_then_as_live_vendors_do_and_tries_again_as_live_does() {
+        let got: Vec<Option<Fault>> = (1..=21).map(fault_of).collect();
+        let p = Some(Fault::Passing);
+        let a = Some(Fault::Account);
+        assert_eq!(
+            got,
+            [
+                None, None, p, None, None, p, a, None, p, None, None, p, None, a, p, None, None, p,
+                None, None, a
+            ]
+        );
+        let (mut w, mut s) = world(1, 2, 4, 7, Lang::En);
+        let solo = s.open_solo(&mut w, "/x", None, None, None).unwrap();
+        let head = w.projects[solo].leader;
+        let answer = |w: &mut World, s: &mut Sim, text: &str| {
+            s.told(w, head, text).unwrap();
+            for _ in 0..5 {
+                s.step(w);
+            }
+        };
+        answer(&mut w, &mut s, "one");
+        answer(&mut w, &mut s, "two");
+        assert_eq!(w.agents[head].retry, None);
+        // The third fails on an overloaded vendor and waits to be tried.
+        answer(&mut w, &mut s, "three");
+        let r = w.agents[head].retry.expect("a retry waits");
+        assert_eq!(r.attempt, 1);
+        assert_eq!(w.agents[head].status, Status::Idle);
+        assert!(w.journal.iter().any(|e| matches!(
+            &e.event,
+            Event::Retrying { agent, why, attempt: 1, seconds: 30 } if *agent == head && why == OVERLOADED
+        )));
+        while w.tick < r.at {
+            s.step(&mut w);
+        }
+        assert_eq!(w.agents[head].retry, None, "tried at its tick");
+        assert_eq!(w.agents[head].status, Status::Working);
+        assert!(
+            w.agents[head]
+                .trace
+                .iter()
+                .any(|l| l.ends_with("retry 1/3 after a vendor error"))
+        );
+        for _ in 0..5 {
+            s.step(&mut w);
+        }
+        assert_eq!(w.agents[head].status, Status::Idle, "and it answered");
+        assert_eq!(w.agents[head].tries, 0, "a good turn counts from nothing");
+        for text in ["four", "five", "six"] {
+            answer(&mut w, &mut s, text);
+            w.agents[head].retry = None;
+        }
+        // The seventh: a refused key, the person's at once.
+        answer(&mut w, &mut s, "seven");
+        assert_eq!(w.agents[head].retry, None);
+        assert_eq!(
+            w.open_item(head, InboxKind::Fault)
+                .map(|i| i.detail.as_str()),
+            Some(BAD_KEY)
+        );
+        // A session that stops takes a retry and its count with it.
+        w.agents[head].retry = Some(Retry {
+            attempt: 1,
+            at: 999,
+        });
+        w.agents[head].tries = 1;
+        s.stop(&mut w, head);
+        assert_eq!((w.agents[head].retry, w.agents[head].tries), (None, 0));
+    }
+
+    #[test]
     fn the_demo_opens_a_solo_in_a_folder_without_git_as_live_does() {
         let (mut w, mut s) = world(1, 2, 4, 7, Lang::En);
         let plain = crate::live::testing::plain_folder("demo-nogit", false);
@@ -4670,6 +4818,7 @@ diff --git a/b.rs b/b.rs
             }
         );
         // Its answers come without a change: it wrote in the folder.
+        s.extras.calm = true;
         for i in 0..20 {
             s.told(&mut w, head, &format!("task {i}")).unwrap();
             for _ in 0..8 {

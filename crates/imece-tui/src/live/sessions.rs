@@ -100,6 +100,13 @@ pub fn apply(w: &mut World, id: AgentId, e: AgentEvent, before: u64) {
         }
         // `Live::step` takes these to the person before anything is applied.
         AgentEvent::Asks { .. } | AgentEvent::Withdrawn { .. } => {}
+        // What the turn's end does with its failure.
+        AgentEvent::Failed(f) => {
+            w.agents[id].fault = Some(match f {
+                imece_agent::Fault::Passing => Fault::Passing,
+                imece_agent::Fault::Account => Fault::Account,
+            });
+        }
         AgentEvent::TurnDone {
             ok,
             text,
@@ -109,6 +116,7 @@ pub fn apply(w: &mut World, id: AgentId, e: AgentEvent, before: u64) {
             let a = &mut w.agents[id];
             a.cost = before + cost / 100;
             a.activity = None;
+            let fault = a.fault.take();
             a.wrote(&text);
             a.trace(
                 t,
@@ -120,6 +128,7 @@ pub fn apply(w: &mut World, id: AgentId, e: AgentEvent, before: u64) {
             );
             a.set_status(Status::Idle, t);
             if ok {
+                a.tries = 0;
                 a.talk = Some(Talk {
                     with: Party::Person,
                     mine: true,
@@ -135,10 +144,7 @@ pub fn apply(w: &mut World, id: AgentId, e: AgentEvent, before: u64) {
                 }
             } else {
                 w.story(card, StoryEvent::Stopped(text.clone()));
-                w.note(Event::Stopped {
-                    agent: id,
-                    why: text,
-                });
+                w.turn_failed(id, &text, fault);
             }
         }
         AgentEvent::Stopped(why) => {
@@ -181,6 +187,10 @@ impl Live {
         w.agents[id].plan.clear();
         w.agents[id].context = None;
         w.agents[id].starting = false;
+        // A failed turn is not tried again in a session gone.
+        w.agents[id].retry = None;
+        w.agents[id].tries = 0;
+        w.agents[id].fault = None;
         self.spent_before[id] = w.agents[id].cost;
         self.slots[id] = Slot::None;
         self.cwds[id] = None;
@@ -401,6 +411,8 @@ impl Live {
         title: Option<&str>,
     ) -> Result<(), String> {
         let t = w.tick;
+        // Whatever goes in now is the next try: no retry waits beside it.
+        w.agents[id].retry = None;
         self.follow(w, id);
         // Where the line on what its worktree holds goes in the prompt.
         let mut held = None;
@@ -1108,6 +1120,130 @@ mod tests {
             0,
         );
         assert_eq!(w.agents[1].topic, "first line", "the first line only");
+    }
+
+    #[test]
+    fn a_passing_vendor_error_is_tried_again_when_due_with_a_word_to_go_on() {
+        let mut w = team(1);
+        let mut live = idle_live(2);
+        let heard = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let tmp = std::env::temp_dir();
+        live.ready(
+            &mut w,
+            0,
+            Ok((
+                Box::new(Heard(heard.clone(), false)),
+                tmp,
+                None,
+                None,
+                Vec::new(),
+            )),
+        );
+        live.prompt(&mut w, 0, "fix it".into(), None).unwrap();
+        assert_eq!(live.turns[0], 1);
+        let fail = |live: &mut Live, w: &mut World, f: imece_agent::Fault| {
+            hear(live, 0, AgentEvent::Failed(f));
+            hear(
+                live,
+                0,
+                AgentEvent::TurnDone {
+                    ok: false,
+                    text: "API Error: overloaded".into(),
+                    cost: 0,
+                    denied: 0,
+                },
+            );
+            live.step(w);
+        };
+        fail(&mut live, &mut w, imece_agent::Fault::Passing);
+        assert_eq!(w.tick, 0);
+        assert_eq!(w.agents[0].retry, Some(Retry { attempt: 1, at: 6 }));
+        assert_eq!(w.agents[0].fault, None, "taken by the turn's end");
+        assert_eq!(w.agents[0].status, Status::Idle);
+        assert_eq!(live.turns[0], 0);
+        let at = |live: &mut Live, w: &mut World, tick: u64| {
+            w.started_at = now() - tick * SECONDS_PER_TICK;
+            live.step(w);
+            assert_eq!(w.tick, tick);
+        };
+        at(&mut live, &mut w, 5);
+        assert_eq!(heard.lock().unwrap().len(), 1, "not due yet");
+        at(&mut live, &mut w, 6);
+        assert_eq!(heard.lock().unwrap()[1], RETRY_PROMPT);
+        assert_eq!(w.agents[0].retry, None);
+        assert_eq!(live.turns[0], 1);
+        assert!(
+            w.agents[0]
+                .trace
+                .iter()
+                .any(|l| l.ends_with("retry 1/3 after a vendor error"))
+        );
+        // It fails again: the next try is further off; over budget it
+        // waits.
+        fail(&mut live, &mut w, imece_agent::Fault::Passing);
+        assert_eq!(w.agents[0].retry, Some(Retry { attempt: 2, at: 30 }));
+        w.agents[0].cost = w.budget;
+        at(&mut live, &mut w, 30);
+        assert_eq!(heard.lock().unwrap().len(), 2, "the pot is spent");
+        w.agents[0].cost = 0;
+        // Mail goes in first: it is the next try, none waits beside it.
+        live.prompt(&mut w, 0, "mail".into(), None).unwrap();
+        assert_eq!(w.agents[0].retry, None);
+        assert_eq!(heard.lock().unwrap()[2], "mail");
+        // A good turn counts from nothing again.
+        hear(
+            &live,
+            0,
+            AgentEvent::TurnDone {
+                ok: true,
+                text: "done".into(),
+                cost: 0,
+                denied: 0,
+            },
+        );
+        live.step(&mut w);
+        assert_eq!(w.agents[0].tries, 0);
+        // The account's fault waits for the person.
+        live.prompt(&mut w, 0, "again".into(), None).unwrap();
+        fail(&mut live, &mut w, imece_agent::Fault::Account);
+        assert_eq!(w.agents[0].retry, None);
+        assert_eq!(
+            w.open_item(0, InboxKind::Fault).unwrap().detail,
+            "API Error: overloaded"
+        );
+        // A session that ends takes its retry and its count with it.
+        w.agents[0].retry = Some(Retry { attempt: 1, at: 99 });
+        w.agents[0].tries = 1;
+        w.agents[0].fault = Some(Fault::Passing);
+        live.end(&mut w, 0);
+        assert_eq!(
+            (w.agents[0].retry, w.agents[0].tries, w.agents[0].fault),
+            (None, 0, None)
+        );
+    }
+
+    #[test]
+    fn a_vendor_fault_on_a_first_turn_is_tried_again_not_taken_for_a_missing_model() {
+        let mut w = team(0);
+        let mut live = idle_live(1);
+        live.vendors[0].ladder.standard = Some("sonnet".into());
+        live.hire(&mut w, 0, &json!({ "tier": "strong" })).unwrap();
+        live.turns[1] = 1;
+        hear(&live, 1, AgentEvent::Failed(imece_agent::Fault::Passing));
+        hear(
+            &live,
+            1,
+            AgentEvent::TurnDone {
+                ok: false,
+                text: "overloaded".into(),
+                cost: 0,
+                denied: 0,
+            },
+        );
+        live.step(&mut w);
+        assert_eq!(live.models[1].as_deref(), Some("opus"), "no fallback");
+        assert!(live.tiered[1]);
+        assert_eq!(w.agents[1].retry.map(|r| r.attempt), Some(1));
     }
 
     #[test]

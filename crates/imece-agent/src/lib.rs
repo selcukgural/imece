@@ -267,6 +267,34 @@ mod tests {
     use super::*;
 
     #[test]
+    fn an_api_error_is_a_passing_fault_an_account_fault_or_neither_by_status_and_words() {
+        let of = Fault::of_status;
+        assert_eq!(of(None, "connection refused"), Some(Fault::Passing));
+        for s in [401, 402, 403] {
+            assert_eq!(of(Some(s), "no"), Some(Fault::Account), "{s}");
+        }
+        for s in [408, 429, 500, 503, 529, 599] {
+            assert_eq!(of(Some(s), "slow down"), Some(Fault::Passing), "{s}");
+        }
+        for s in [400, 404, 407, 409, 413, 499, 600, 200] {
+            assert_eq!(of(Some(s), "bad request"), None, "{s}");
+        }
+        for w in [
+            "You exceeded your current QUOTA",
+            "check your billing details",
+            "Credit balance is too low",
+            "Claude usage limit reached",
+            "You've hit your limit · resets 3pm",
+            "5-hour limit reached",
+        ] {
+            assert_eq!(of(Some(429), w), Some(Fault::Account), "{w}");
+            assert_eq!(of(Some(400), w), Some(Fault::Account), "{w}");
+            assert_eq!(of(Some(500), w), Some(Fault::Passing), "{w}: a 5xx passes");
+            assert_eq!(of(Some(404), w), None, "{w}");
+        }
+    }
+
+    #[test]
     fn a_version_is_the_first_line_said_cut_and_only_when_it_answers() {
         assert_eq!(
             first_line("\n  2.1.3 (Claude Code)  \nmore\n"),
@@ -418,6 +446,47 @@ pub struct Limit {
     pub resets_at: Option<u64>,
 }
 
+/// Why a turn failed on the vendor's side, as far as imece acts on it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Fault {
+    /// Overloaded, a server error, a lost connection, a short rate
+    /// limit: the same turn may go through a little later.
+    Passing,
+    /// The account: signed out, a key refused, a quota or a bill. Only
+    /// the person mends it.
+    Account,
+}
+
+impl Fault {
+    /// The fault an API error with HTTP `status` (none: no answer came,
+    /// the connection failed) and `text` is, if it is one of the two.
+    pub fn of_status(status: Option<u16>, text: &str) -> Option<Fault> {
+        let account = || {
+            let t = text.to_lowercase();
+            ACCOUNT_WORDS.iter().any(|w| t.contains(w))
+        };
+        match status {
+            None => Some(Fault::Passing),
+            Some(401..=403) => Some(Fault::Account),
+            Some(429) if account() => Some(Fault::Account),
+            Some(408 | 429 | 500..=599) => Some(Fault::Passing),
+            Some(400) if account() => Some(Fault::Account),
+            Some(_) => None,
+        }
+    }
+}
+
+/// Words in an error that make a rate limit or a refused request the
+/// account's: a quota used up, a bill unpaid, a plan's limit reached.
+const ACCOUNT_WORDS: [&str; 6] = [
+    "quota",
+    "billing",
+    "credit",
+    "usage limit",
+    "hit your limit",
+    "limit reached",
+];
+
 /// Minutes in the windows the vendors name.
 pub const FIVE_HOURS: u32 = 5 * 60;
 pub const WEEK: u32 = 7 * 24 * 60;
@@ -478,6 +547,11 @@ pub enum Event {
     /// Something the vendor said about the session that the person may
     /// want in the trace: what a turn cost in tokens, whose plan pays.
     Note(String),
+    /// The turn about to end failed on the vendor's side, of a kind
+    /// imece acts on (after the vendor's own retries gave up); the
+    /// [`Event::TurnDone`] with `ok: false` follows at once. A failure of
+    /// another kind (a refused request, a full context) comes without it.
+    Failed(Fault),
     /// A turn ended. `cost` is the session's total so far, in millionths of
     /// a dollar; `denied` counts tool calls the vendor refused.
     TurnDone {

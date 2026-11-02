@@ -264,6 +264,12 @@ const MAX_BRIEFING_LINE: usize = 300;
 /// What imece's notes to an agent start with, ahead of the first.
 const FROM_IMECE: &str = "From imece (not from the person or a teammate):\n- ";
 
+/// What a failed turn tried again says: the failed prompt is still in
+/// the session (every vendor keeps it), so it is not sent again.
+pub(super) const RETRY_PROMPT: &str = "From imece (not from the person or a teammate): your \
+     last turn stopped on an error at your vendor's API (overloaded, a server error or a lost \
+     connection). Carry on from where you stopped.";
+
 /// The longest message body, in characters.
 const MAX_BODY: usize = 4000;
 
@@ -1082,6 +1088,9 @@ impl Live {
             };
             let turn_done = matches!(e, AgentEvent::TurnDone { .. });
             if turn_done {
+                // What the vendor said the turn failed on: back on the
+                // agent for its end below, unless the turn runs again.
+                let fault = w.agents[id].fault.take();
                 // A tier model that is not available here fails the first
                 // turn before anything is spent: the standard model gets
                 // the same prompts.
@@ -1093,7 +1102,8 @@ impl Live {
                         ..
                     }
                 );
-                if failed && !self.turned[id] && self.tiered[id] {
+                // A vendor's fault is no missing model: it is tried again.
+                if failed && !self.turned[id] && self.tiered[id] && fault.is_none() {
                     self.fall_back(w, id);
                     continue;
                 }
@@ -1120,6 +1130,7 @@ impl Live {
                 if !self.inflight[id].is_empty() {
                     self.inflight[id].remove(0);
                 }
+                w.agents[id].fault = fault;
             }
             let answer = match &e {
                 AgentEvent::TurnDone { ok: true, text, .. } => Some(text.clone()),
@@ -1242,8 +1253,32 @@ impl Live {
                 self.deliver(w, id);
             }
         }
+        for id in w.retries_due() {
+            if self.turns[id] == 0 && !self.over_budget(w) {
+                self.retry(w, id);
+            }
+        }
         self.offer(w);
         moved || started || git || said || heard || called
+    }
+
+    /// Tries agent `id`'s failed turn again: its session is told to go on.
+    fn retry(&mut self, w: &mut World, id: AgentId) {
+        let Some(r) = w.agents[id].retry else {
+            return;
+        };
+        let t = w.tick;
+        w.agents[id].trace(
+            t,
+            format!(
+                "retry {}/{} after a vendor error",
+                r.attempt,
+                RETRY_TICKS.len()
+            ),
+        );
+        if let Err(why) = self.prompt(w, id, RETRY_PROMPT.into(), None) {
+            apply(w, id, AgentEvent::Stopped(why), self.spent_before[id]);
+        }
     }
 
     /// Whether a leader's finished turn is its report to the person: the

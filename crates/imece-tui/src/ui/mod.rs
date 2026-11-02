@@ -391,6 +391,7 @@ pub(crate) fn inbox_line(app: &App, i: usize) -> Line<'static> {
         InboxKind::Change => ("Δ", bold(pal().strong)),
         InboxKind::Question => ("?", bold(pal().warn)),
         InboxKind::Approval => ("⚑", bold(pal().warn)),
+        InboxKind::Fault => ("✕", bold(pal().bad)),
     };
     let mut spans = vec![
         Span::styled(format!("{icon} "), style),
@@ -975,6 +976,25 @@ pub(crate) fn status_spans(lang: Lang, w: &World, a: &Agent) -> Vec<Span<'static
             let mut spans = vec![Span::styled(t.answered, fg(pal().warn))];
             add_quote(&mut spans, &it.detail, fg(pal().warn));
             spans
+        }
+        Status::Idle if let Some(it) = w.open_item(a.id, InboxKind::Fault) => {
+            let mut spans = vec![Span::styled(t.fault_row, bold(pal().bad))];
+            add_quote(&mut spans, &it.detail, fg(pal().bad));
+            spans
+        }
+        Status::Idle if let Some(r) = a.retry => {
+            let left = r.at.saturating_sub(w.tick) * SECONDS_PER_TICK;
+            vec![Span::styled(
+                fill(
+                    t.retry_row,
+                    &[
+                        &r.attempt.to_string(),
+                        &RETRY_TICKS.len().to_string(),
+                        &words::took_words(lang, left * 1000),
+                    ],
+                ),
+                fg(pal().warn),
+            )]
         }
         Status::Idle if let Some(it) = w.open_item(a.id, InboxKind::Question) => {
             let mut spans = vec![
@@ -2913,6 +2933,88 @@ mod tests {
                 .iter()
                 .all(|&i| app.world.inbox[i].kind != InboxKind::Reply)
         );
+    }
+
+    #[test]
+    fn a_vendor_error_shows_its_retry_on_the_row_then_waits_for_the_person_in_the_inbox() {
+        let mut app = app_after(1, 4, 50, Lang::En);
+        let worker = app
+            .world
+            .agents
+            .iter()
+            .find(|a| a.role == Role::Worker)
+            .unwrap()
+            .id;
+        let name = app.world.agents[worker].name.clone();
+        app.world.agents[worker].status = Status::Idle;
+        let words = |app: &App, lang| {
+            status_spans(lang, &app.world, &app.world.agents[worker])
+                .iter()
+                .map(|s| s.content.to_string())
+                .collect::<String>()
+        };
+        // A retry 2 of 3, five ticks (25 s) and then 25 ticks off.
+        let now = app.world.tick;
+        app.world.agents[worker].retry = Some(Retry {
+            attempt: 2,
+            at: now + 5,
+        });
+        assert_eq!(words(&app, Lang::En), "↻ 2/3 in 25 s");
+        assert_eq!(words(&app, Lang::Tr), "↻ 2/3 · 25 sn sonra");
+        app.world.agents[worker].retry = Some(Retry {
+            attempt: 3,
+            at: now + 25,
+        });
+        assert_eq!(words(&app, Lang::En), "↻ 3/3 in 2 min 5 s");
+        app.world.agents[worker].retry = Some(Retry {
+            attempt: 1,
+            at: now.saturating_sub(1),
+        });
+        assert!(
+            words(&app, Lang::En).starts_with("↻ 1/3 in 0"),
+            "{}",
+            words(&app, Lang::En)
+        );
+        // A mid-turn agent's row is its work, a retry or not.
+        app.world.agents[worker].status = Status::Working;
+        assert!(!words(&app, Lang::En).contains('↻'));
+        app.world.agents[worker].status = Status::Idle;
+        // Then the person's: on the row, in the inbox, its keys write to it.
+        app.world.agents[worker].retry = None;
+        app.world.turn_failed(
+            worker,
+            "Invalid API key · Fix external API key",
+            Some(Fault::Account),
+        );
+        assert_eq!(
+            words(&app, Lang::En),
+            "✕ vendor error \"Invalid API key · Fix …\"",
+            "cut to the status's width"
+        );
+        assert!(words(&app, Lang::Tr).starts_with("✕ satıcı hatası \"Invalid"));
+        let i = *app.world.open_inbox().last().unwrap();
+        assert_eq!(inbox_line(&app, i).spans[0].content, "✕ ");
+        assert_eq!(
+            words::inbox(Lang::En, &app.world, &app.world.inbox[i]),
+            format!(
+                "{name} vendor error, write to it once mended: Invalid API key · Fix external API key"
+            )
+        );
+        app.pane = Pane::Inbox;
+        app.inbox_sel = app.world.open_inbox().len() - 1;
+        for k in ['a', 'r'] {
+            key(&mut app, KeyCode::Char(k));
+            assert!(
+                app.typing && app.input == format!("@{name} "),
+                "{k}: {:?}",
+                app.input
+            );
+            app.typing = false;
+            app.input.clear();
+        }
+        assert!(app.world.open_item(worker, InboxKind::Fault).is_some());
+        app.world.said(worker, "Mended.");
+        assert!(app.world.open_item(worker, InboxKind::Fault).is_none());
     }
 
     #[test]

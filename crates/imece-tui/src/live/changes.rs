@@ -1238,24 +1238,6 @@ mod tests {
         let _ = std::fs::remove_dir_all(&repo);
     }
 
-    /// A session that keeps what it is prompted with; one that fails
-    /// refuses every prompt.
-    struct Heard(Arc<Mutex<Vec<String>>>, bool);
-
-    impl imece_agent::Agent for Heard {
-        fn prompt(&mut self, text: &str) -> io::Result<()> {
-            if self.1 {
-                return Err(io::Error::new(io::ErrorKind::BrokenPipe, "gone"));
-            }
-            self.0.lock().unwrap().push(text.to_string());
-            Ok(())
-        }
-        fn command(&mut self, _: &str) -> io::Result<()> {
-            Ok(())
-        }
-        fn terminate(&mut self) {}
-    }
-
     #[test]
     fn prompts_wait_while_git_moves_the_worktree_and_go_in_order() {
         let repo = checkout("placing-repo");

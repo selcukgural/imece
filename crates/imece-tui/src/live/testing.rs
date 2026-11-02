@@ -190,6 +190,27 @@ pub(super) fn wait_for(live: &mut Live, w: &mut World, done: impl Fn(&World) -> 
     }
 }
 
+/// A session that keeps what it is prompted with; one that fails
+/// refuses every prompt.
+pub(super) struct Heard(
+    pub(super) Arc<std::sync::Mutex<Vec<String>>>,
+    pub(super) bool,
+);
+
+impl imece_agent::Agent for Heard {
+    fn prompt(&mut self, text: &str) -> io::Result<()> {
+        if self.1 {
+            return Err(io::Error::new(io::ErrorKind::BrokenPipe, "gone"));
+        }
+        self.0.lock().unwrap().push(text.to_string());
+        Ok(())
+    }
+    fn command(&mut self, _: &str) -> io::Result<()> {
+        Ok(())
+    }
+    fn terminate(&mut self) {}
+}
+
 /// A session that takes prompts and does nothing with them.
 pub(super) struct Stub;
 

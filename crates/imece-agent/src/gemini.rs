@@ -57,7 +57,7 @@ use std::time::{Duration, Instant};
 use serde_json::{Value, json};
 
 use crate::child::{self, Child, Out};
-use crate::{Ask, Confine, Event, MCP_SERVER, Mcp, mcp_tool};
+use crate::{Ask, Confine, Event, Fault, MCP_SERVER, Mcp, mcp_tool};
 
 /// Variables Gemini CLI may need besides [`child::BASE_ENV`]: an API key
 /// (a key entered in the CLI lives in the keychain), its config home, and
@@ -754,7 +754,13 @@ impl Protocol {
                 _ => msg.to_string(),
             };
             if wait == Wait::Turn {
-                return Ok(self.turn_failed(msg));
+                // Gemini answers a failed API call with its HTTP status
+                // as the error's code.
+                let fault = e["code"]
+                    .as_u64()
+                    .and_then(|c| u16::try_from(c).ok())
+                    .and_then(|c| Fault::of_status(Some(c), &msg));
+                return Ok(self.turn_failed(msg, fault));
             }
             return Err(format!("refused {wait:?}: {msg}"));
         }
@@ -907,10 +913,11 @@ impl Protocol {
     }
 
     /// A turn Gemini refused outright (a model it lacks, a rate limit).
-    fn turn_failed(&mut self, why: String) -> Vec<Act> {
+    fn turn_failed(&mut self, why: String, fault: Option<Fault>) -> Vec<Act> {
         self.busy = false;
         let mut acts = self.withdraw_all();
         acts.extend(self.unlisted());
+        acts.extend(fault.map(|f| Act::Event(Event::Failed(f))));
         acts.push(Act::Event(Event::TurnDone {
             ok: false,
             text: why,
@@ -2713,13 +2720,72 @@ mod tests {
     }
 
     #[test]
+    fn a_refused_turn_says_its_fault_by_the_status_gemini_gives_as_its_code() {
+        // Shapes as Gemini CLI 0.65.0 answered `session/prompt` against a
+        // stub API, after its own retries.
+        let s = spec(false);
+        let failed = |code: Value, message: &str| {
+            let mut p = started(&s);
+            p.line(&commands_listed(&[])).unwrap();
+            p.prompt("hello");
+            let acts = p
+                .line(&json!({ "jsonrpc": "2.0", "id": 6, "error": { "code": code, "message": message } }).to_string())
+                .unwrap();
+            events(&acts)
+        };
+        let done = |text: &str| Event::TurnDone {
+            ok: false,
+            text: text.into(),
+            cost: 0,
+            denied: 0,
+        };
+        for (code, message, fault) in [
+            (
+                json!(503),
+                "The model is overloaded. Please try again later.",
+                Some(Fault::Passing),
+            ),
+            (
+                json!(429),
+                "Resource has been exhausted (e.g. check quota).",
+                Some(Fault::Account),
+            ),
+            (json!(429), "Too many requests", Some(Fault::Passing)),
+            (
+                json!(429),
+                "You have exhausted your daily quota on this model.",
+                Some(Fault::Account),
+            ),
+            (
+                json!(401),
+                r#"{"error":{"code":401,"message":"API key not valid."}}"#,
+                Some(Fault::Account),
+            ),
+            (json!(599), "x", Some(Fault::Passing)),
+            (json!(600), "x", None),
+            (json!(99), "x", None),
+            (json!(100), "x", None),
+            (json!(-32603), "Internal error", None),
+            (json!(70_000), "x", None),
+            (json!("503"), "x", None),
+        ] {
+            let want: Vec<Event> = fault
+                .map(Event::Failed)
+                .into_iter()
+                .chain([done(message)])
+                .collect();
+            assert_eq!(failed(code.clone(), message), want, "{code} {message}");
+        }
+    }
+
+    #[test]
     fn a_turn_that_fails_or_stops_early_says_so_and_the_session_goes_on() {
         let s = spec(false);
         let mut p = started(&s);
         p.prompt("hello");
         p.prompt("then");
         let acts = p
-            .line(&json!({ "jsonrpc": "2.0", "id": 6, "error": { "code": 500, "message": "This model is no longer available" } }).to_string())
+            .line(&json!({ "jsonrpc": "2.0", "id": 6, "error": { "code": 404, "message": "This model is no longer available" } }).to_string())
             .unwrap();
         assert_eq!(
             events(&acts),
@@ -3277,7 +3343,8 @@ mod tests {
                 request: "73".into()
             }
         );
-        assert!(matches!(e[1], Event::TurnDone { ok: false, .. }), "{e:?}");
+        assert_eq!(e[1], Event::Failed(Fault::Passing));
+        assert!(matches!(e[2], Event::TurnDone { ok: false, .. }), "{e:?}");
         assert!(p.decide("73", true).is_empty());
     }
 
@@ -4072,8 +4139,9 @@ done"#;
                 .to_string(),
             )
             .unwrap();
+        assert_eq!(events(&acts)[0], Event::Failed(Fault::Account));
         assert_eq!(
-            events(&acts)[0],
+            events(&acts)[1],
             Event::TurnDone {
                 ok: false,
                 text: "You have exhausted your daily quota on this model. (Try again tomorrow.)"

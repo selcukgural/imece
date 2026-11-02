@@ -24,6 +24,7 @@ SENİ BEKLEYEN (İngilizce ekranda WAITING FOR YOU) salonun üst yan panelidir. 
 | `⚑` | bir izin isteği | agent'ın kendi satıcısının izin soracağı bir araç çağrısı: Claude Code'un soracağı bir kabuk komutu, bir Codex `on-request` isteği, bir Gemini kabuğu. Olağan komutlar (derleme, testler, git'in okuma komutları) kendiliğinden çalışır ve buraya hiç gelmez. Seçili istek satırının altında bütünüyle gösterilir, satırları ` ↵ ` ile birleştirilmiş, asla Markdown olarak okunmaz: izin verdiğiniz şey çalışan şeydir. | izin ver | reddet; agent'a bunun sizin kararınız olduğu söylenir |
 | `?` | bir soru | bir agent'ın `send(to: "you", type: ask)` çağrısı. Aynı agent'ın yeni sorusu eskisinin yerini alır. | ikisi de yazma satırını `@agent ` ile açar; yanıtınız gidince öge kapanır | |
 | `»` | bir yanıt | bir agent size yanıt verdi ve okumanızı bekliyor | `enter` okur (konuşma açılır) ve kapatır; `r` kapatır | |
+| `✕` | bir satıcı hatası | bir tur yalnız sizin giderebileceğiniz bir hatayla bitti: hesap (oturum kapalı, reddedilen bir anahtar, bir kota ya da fatura) ya da imece'nin üç denemesi tükendikten sonra geçici bir hata (aşırı yük, bir sunucu hatası, kopan bir bağlantı) (bkz. [satıcının API'si hata verince](../concepts/sessions.md#satıcının-apisi-hata-verince)). Satırda satıcının kendi sözleri yazar. | ikisi de yazma satırını `@agent ` ile açar; mesajınız gidince öge kapanır ve o mesaj agent'ın bir sonraki denemesidir | |
 
 Satır saati taşır, ertelediyseniz `sonra ·`, birden çok proje açıksa projenin adını. Başka bir günün ögesi tarihini de taşır.
 
@@ -54,7 +55,7 @@ Seçili ögenin altında soluk bir satır tuşlarını söyler (`enter diff'i g�
 
 ## Satırdaki `!`
 
-Ögesi bekleyen bir agent bunu kendi salon satırında gösterir: bir soru beklerken `? → sen`, bir istek beklerken `⚑ onayını bekliyor`, bir yanıt beklerken `sana yanıt verdi`; durumu "onayını bekliyor" olan bir agent işaret olarak `!` taşır. Proje başlığı bunları dikkat renginde sayar, `! 2 bekliyor`, proje katlıyken bile. Salonda `f` yalnız sizi bekleyen agent'ları gösterir, bunlar en önde.
+Ögesi bekleyen bir agent bunu kendi salon satırında gösterir: bir soru beklerken `? → sen`, bir istek beklerken `⚑ onayını bekliyor`, bir yanıt beklerken `sana yanıt verdi`, bir satıcı hatası beklerken `✕ satıcı hatası`; durumu "onayını bekliyor" olan bir agent işaret olarak `!` taşır. Proje başlığı bunları dikkat renginde sayar, `! 2 bekliyor`, proje katlıyken bile. Salonda `f` yalnız sizi bekleyen agent'ları gösterir, bunlar en önde.
 
 ## Ögeler açıkken çıkmak
 

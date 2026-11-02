@@ -91,6 +91,21 @@ pub fn event(lang: Lang, w: &World, e: &Event) -> String {
         ),
         Event::Stopped { agent, why } => fill(t.ev_stopped, &[name(w, *agent), why]),
         Event::Interrupted { agent } => fill(t.ev_interrupted, &[name(w, *agent)]),
+        Event::Retrying {
+            agent,
+            why,
+            attempt,
+            seconds,
+        } => fill(
+            t.ev_retrying,
+            &[
+                name(w, *agent),
+                &one_line(why),
+                &took_words(lang, seconds * 1000),
+                &attempt.to_string(),
+                &RETRY_TICKS.len().to_string(),
+            ],
+        ),
         Event::Posted { agent, card } => fill(
             t.ev_posted,
             &[name(w, *agent), &card_ref(*card), &w.cards[*card].title],
@@ -503,6 +518,7 @@ pub fn notice(lang: Lang, w: &World, note: crate::notify::Note) -> String {
                 InboxKind::Question => t.notice_question,
                 InboxKind::Reply => t.notice_reply,
                 InboxKind::Approval => t.notice_approval,
+                InboxKind::Fault => t.notice_fault,
                 InboxKind::Sensitive | InboxKind::Research => t.notice_sensitive,
             };
             (text, item.agent)
@@ -527,6 +543,7 @@ pub fn inbox(lang: Lang, w: &World, item: &InboxItem) -> String {
             t.in_approval,
             &[name(w, item.agent), &one_line(&item.detail)],
         ),
+        (InboxKind::Fault, _) => fill(t.in_fault, &[name(w, item.agent), &item.detail]),
         (InboxKind::Change, _) => {
             let (files, added, removed) = w.change_of(item.agent).map_or((0, 0, 0), |c| {
                 let (a, r) = c.counts();
@@ -1010,6 +1027,39 @@ mod tests {
         assert_eq!(
             event(Lang::Tr, &w, &no),
             format!("{who} için reddettin: Bash: curl x")
+        );
+    }
+
+    #[test]
+    fn a_retry_and_a_vendor_error_are_worded_in_the_journal_and_in_another_window() {
+        let mut w = crate::live::testing::team(1);
+        let e = Event::Retrying {
+            agent: 1,
+            why: "API Error:\noverloaded".into(),
+            attempt: 2,
+            seconds: 120,
+        };
+        assert_eq!(
+            event(Lang::En, &w, &e),
+            "claude-1 hit a vendor error: API Error: ↵ overloaded · imece tries again in 2 min 0 s (2/3)"
+        );
+        assert_eq!(
+            event(Lang::Tr, &w, &e),
+            "claude-1 satıcı hatası aldı: API Error: ↵ overloaded · imece 2 dk 0 sn sonra yeniden deniyor (2/3)"
+        );
+        w.turn_failed(1, "Invalid API key", Some(Fault::Account));
+        let i = w.open_inbox()[0];
+        assert_eq!(
+            notice(Lang::En, &w, crate::notify::Note::Item(i)),
+            "imece · claude-1 hit a vendor error that needs you"
+        );
+        assert_eq!(
+            notice(Lang::Tr, &w, crate::notify::Note::Item(i)),
+            "imece · claude-1 senin çözmen gereken bir satıcı hatası aldı"
+        );
+        assert_eq!(
+            inbox(Lang::Tr, &w, &w.inbox[i]),
+            "claude-1 satıcı hatası, giderince ona yaz: Invalid API key"
         );
     }
 

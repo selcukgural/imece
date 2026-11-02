@@ -50,7 +50,7 @@ use std::time::{Duration, Instant};
 use serde_json::{Value, json};
 
 use crate::child::{self, Child, Out};
-use crate::{Ask, Confine, Event, Limit, MCP_SERVER, Mcp, Step, StepState, mcp_tool};
+use crate::{Ask, Confine, Event, Fault, Limit, MCP_SERVER, Mcp, Step, StepState, mcp_tool};
 
 /// Variables Codex may need besides [`child::BASE_ENV`]: its home (login,
 /// config), an API key, and proxy and CA settings of corporate networks.
@@ -283,6 +283,34 @@ fn toml_key(s: &str) -> String {
         s.to_string()
     } else {
         toml_str(s)
+    }
+}
+
+/// The fault a failed turn's `codexErrorInfo` names: a kind, or a
+/// connection's failure with the HTTP status it got (none: no answer).
+fn fault(info: &Value) -> Option<Fault> {
+    if let Some(kind) = info.as_str() {
+        return match kind {
+            "serverOverloaded"
+            | "internalServerError"
+            | "rateLimitExceeded"
+            | "flexUnavailable" => Some(Fault::Passing),
+            "usageLimitExceeded" | "unauthorized" => Some(Fault::Account),
+            _ => None,
+        };
+    }
+    let (kind, v) = info.as_object()?.iter().next()?;
+    match kind.as_str() {
+        "httpConnectionFailed"
+        | "responseStreamConnectionFailed"
+        | "responseStreamDisconnected"
+        | "responseTooManyFailedAttempts" => {
+            let status = v["httpStatusCode"]
+                .as_u64()
+                .map(|s| u16::try_from(s).unwrap_or(u16::MAX));
+            Fault::of_status(status, "")
+        }
+        _ => None,
     }
 }
 
@@ -1016,9 +1044,15 @@ impl Protocol {
             "item/started" => self.item(&p["item"], false),
             "item/completed" => self.item(&p["item"], true),
             "error" => {
-                if p["willRetry"] != true
-                    && let Some(m) = p["error"]["message"].as_str()
-                {
+                let m = p["error"]["message"].as_str();
+                if p["willRetry"] == true {
+                    // Codex tries again by itself ("Reconnecting... 2/5").
+                    return Ok(m
+                        .map(|m| Act::Event(Event::Note(format!("api error: {m}"))))
+                        .into_iter()
+                        .collect());
+                }
+                if let Some(m) = m {
                     self.error = Some(m.to_string());
                 }
                 Ok(Vec::new())
@@ -1068,6 +1102,12 @@ impl Protocol {
                 let asked: Vec<String> = self.asks.iter().map(|(r, ..)| r.clone()).collect();
                 let mut acts: Vec<Act> = asked.iter().flat_map(|r| self.withdraw(r)).collect();
                 self.changes.clear();
+                if status == "failed" {
+                    acts.extend(
+                        fault(&p["turn"]["error"]["codexErrorInfo"])
+                            .map(|f| Act::Event(Event::Failed(f))),
+                    );
+                }
                 acts.push(Act::Event(Event::TurnDone {
                     ok,
                     text,
@@ -3038,6 +3078,89 @@ mod tests {
                 denied: 2
             }]
         );
+    }
+
+    #[test]
+    fn a_failed_turn_says_its_fault_first_and_a_retry_codex_makes_is_a_note() {
+        // Shapes as Codex 0.165.0's app-server wrote them against a stub.
+        let mut p = in_turn(&spec(false));
+        let acts = p
+            .line(&notify(
+                "error",
+                json!({ "error": { "message": "Reconnecting... 2/5", "codexErrorInfo": { "responseStreamDisconnected": { "httpStatusCode": null } } }, "willRetry": true }),
+            ))
+            .unwrap();
+        assert_eq!(
+            events(&acts),
+            [Event::Note("api error: Reconnecting... 2/5".into())]
+        );
+        let failed = |info: Value| {
+            let mut p = in_turn(&spec(false));
+            let acts = p
+                .line(&notify(
+                    "turn/completed",
+                    json!({ "turn": { "id": "u1", "status": "failed", "error": { "message": "m", "codexErrorInfo": info } } }),
+                ))
+                .unwrap();
+            events(&acts)
+        };
+        let done = Event::TurnDone {
+            ok: false,
+            text: "m".into(),
+            cost: 0,
+            denied: 0,
+        };
+        let conn = |kind: &str, status: Value| json!({ kind: { "httpStatusCode": status } });
+        for (info, fault) in [
+            (json!("serverOverloaded"), Some(Fault::Passing)),
+            (json!("internalServerError"), Some(Fault::Passing)),
+            (json!("rateLimitExceeded"), Some(Fault::Passing)),
+            (json!("flexUnavailable"), Some(Fault::Passing)),
+            (json!("usageLimitExceeded"), Some(Fault::Account)),
+            (json!("unauthorized"), Some(Fault::Account)),
+            (json!("contextWindowExceeded"), None),
+            (json!("badRequest"), None),
+            (
+                conn("httpConnectionFailed", json!(401)),
+                Some(Fault::Account),
+            ),
+            (conn("httpConnectionFailed", json!(404)), None),
+            (
+                conn("responseStreamConnectionFailed", json!(503)),
+                Some(Fault::Passing),
+            ),
+            (
+                conn("responseStreamDisconnected", Value::Null),
+                Some(Fault::Passing),
+            ),
+            (
+                conn("responseTooManyFailedAttempts", json!(429)),
+                Some(Fault::Passing),
+            ),
+            (conn("responseTooManyFailedAttempts", json!(70_000)), None),
+            (conn("activeTurnNotSteerable", json!(503)), None),
+            (json!({}), None),
+            (Value::Null, None),
+        ] {
+            let want: Vec<Event> = fault
+                .map(Event::Failed)
+                .into_iter()
+                .chain([done.clone()])
+                .collect();
+            assert_eq!(failed(info.clone()), want, "{info}");
+        }
+        // Only a failed turn has a fault, whatever its error says.
+        let mut p = in_turn(&spec(false));
+        let acts = p
+            .line(&notify(
+                "turn/completed",
+                json!({ "turn": { "id": "u1", "status": "interrupted", "error": { "message": "m", "codexErrorInfo": "serverOverloaded" } } }),
+            ))
+            .unwrap();
+        assert!(matches!(
+            events(&acts)[..],
+            [Event::TurnDone { ok: false, .. }]
+        ));
     }
 
     #[test]

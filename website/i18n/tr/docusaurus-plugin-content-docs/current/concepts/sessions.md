@@ -34,6 +34,18 @@ Uyanan bir ajanın eski oturumunda devam mı edeceği yoksa yeni mi başlayacağ
 
 Başarısız bir devam (satıcı oturumun gittiğini söyler ya da başka bir kimlik bildirir) tam uyanış özetiyle ([mesajlar](../concepts/messages-and-board.md)) tek bir yeniden başlatmadır, asla döngü değil. Codex thread'leri bunun için saklanır (`ephemeral: false`); Codex'in küresel mesaj günlüğü kapalı kalır.
 
+## Satıcının API'si hata verince
+
+Her satıcı başarısız bir API çağrısını önce kendisi yeniden dener: Claude Code on kereye kadar (API aşırı yüklüyse üç), Codex beş, Gemini CLI on kez; Claude Code'un ve Codex'in her denemesi agent'ın izinde bir satırdır (`api error 529 overloaded: retry 2/10 in 1163 ms`). Tur ancak satıcı pes edince başarısız olur ve imece nedenine bakar:
+
+| Satıcı ne diyor | imece |
+| --- | --- |
+| aşırı yük, bir sunucu hatası (5xx), kopan bir bağlantı, bir hız sınırı | geçici bir hata: günlük `claude-1 satıcı hatası aldı: … · imece 30 sn sonra yeniden deniyor (1/3)` der, satır geri sayar `↻ 1/3 · 25 sn sonra`, zamanı gelince oturuma kaldığı yerden devam etmesi söylenir. İkinci deneme bir sonraki hatadan 2 dk sonra, üçüncüsü ondan 8 dk sonradır. Üçüncüden sonra sizi bekler. |
+| oturum kapalı, reddedilen bir anahtar, biten bir kota, bir fatura, bir planın kullanım sınırı | hesabın işi: hemen sizi bekler, [SENİ BEKLEYEN](../screen/waiting.md)'de `✕` olarak. |
+| başka her şey (reddedilen bir istek, dolu bir bağlam) | günlük, önceden olduğu gibi turun durduğunu söyler. |
+
+Oturum başarısız bir turdan sonra da yaşar ve her satıcı başarısız istemi içinde tutar; bu yüzden bir deneme istemi yeniden göndermez, kısa bir "devam et" gönderir. İyi bir tur, sizin mesajınız ya da agent'a gelen posta sayımı sıfırlar; biten bir oturum bekleyen denemeyi de götürür. Demoda bir agent'a söylediğiniz her üçüncü şey aşırı yüklü bir satıcı yüzünden başarısız olur ve yeniden denenir, her yedinci şey reddedilen bir anahtar yüzünden.
+
 ## `:forget` ve `--fresh`
 
 imece'nin unuttuğu bir oturum satıcısında hiçbir şey bırakmaz:
