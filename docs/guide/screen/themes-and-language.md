@@ -18,7 +18,7 @@ The screen speaks English and Turkish and wears your terminal's own colours unle
 
 English is the default. The language is not saved between runs: set `IMECE_LANG` or `--lang` for a lasting choice.
 
-Every word on the screen lives in one place in both languages, with the same placeholders, so nothing is English-only: the help, the legend, the pane titles (WAITING FOR YOU is SENİ BEKLEYEN, JOURNAL is DEFTER, SALON stays SALON), the journal's lines, the flashes, the terminal's title (`imece · 2 seni bekliyor`), the exported Markdown's headings. The model stores events as data and words them at draw time, so `L` rewrites the whole journal, not only new lines. Keys and `:` commands are the same in both languages. The `?` help's `/` filter folds Turkish letters, so `calis` finds `çalış` from a keyboard without them.
+Every word on the screen lives in one place in both languages, with the same placeholders, so nothing is English-only: the help, the legend, the pane titles (WAITING FOR YOU is SENİ BEKLEYEN, JOURNAL is DEFTER, SALON stays SALON), the journal's lines, the flashes, the terminal's title (`! imece · 2 seni bekliyor`), the exported Markdown's headings. The model stores events as data and words them at draw time, so `L` rewrites the whole journal, not only new lines. Keys and `:` commands are the same in both languages. The `?` help's `/` filter folds Turkish letters, so `calis` finds `çalış` from a keyboard without them.
 
 What the agents say is in whatever language they write; imece never translates it. The raw stream (the trace) stays as the vendor sends it.
 

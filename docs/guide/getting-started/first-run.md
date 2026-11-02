@@ -150,7 +150,7 @@ From left to right: the glyph (`●` working, `○` idle, `◐` asking a teammat
 
 ## The change (Δ)
 
-When the worker sends its `done`, imece reads its worktree as one patch and puts it in WAITING FOR YOU. The journal says `claude-1 finished: 2 files, +31 −4 → waits for you`, the header says `! 1 waiting for you`, the terminal's title becomes `imece · 1 waiting`.
+When the worker sends its `done`, imece reads its worktree as one patch and puts it in WAITING FOR YOU. The journal says `claude-1 finished: 2 files, +31 −4 → waits for you`, the header says `! 1 waiting for you`, the terminal's title becomes `! imece · 1 waiting`.
 
 ```text
  WAITING FOR YOU (1) ───────────────────────────────────────────────────

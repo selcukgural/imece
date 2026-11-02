@@ -18,7 +18,7 @@ Ekran İngilizce ve Türkçe konuşur ve siz başka bir şey seçmedikçe termin
 
 Varsayılan İngilizce. Dil çalıştırmalar arasında saklanmaz: kalıcı bir seçim için `IMECE_LANG` ya da `--lang` kullanın.
 
-Ekrandaki her sözcük tek bir yerde, iki dilde ve aynı yer tutucularla yaşar, böylece hiçbir şey yalnız İngilizce değildir: yardım, lejant, panel başlıkları (WAITING FOR YOU → SENİ BEKLEYEN, JOURNAL → DEFTER, SALON → SALON), günlüğün satırları, flaşlar, terminalin başlığı (`imece · 2 seni bekliyor`), dışa aktarılan Markdown'ın başlıkları. Model olayları veri olarak saklar ve çizim anında sözcüğe döker, bu yüzden `L` yalnız yeni satırları değil bütün günlüğü yeniden yazar. Tuşlar ve `:` komutları iki dilde aynıdır. `?` yardımının `/` süzgeci Türkçe harfleri katlar, böylece `calis`, onlar olmayan bir klavyeden `çalış`'ı bulur.
+Ekrandaki her sözcük tek bir yerde, iki dilde ve aynı yer tutucularla yaşar, böylece hiçbir şey yalnız İngilizce değildir: yardım, lejant, panel başlıkları (WAITING FOR YOU → SENİ BEKLEYEN, JOURNAL → DEFTER, SALON → SALON), günlüğün satırları, flaşlar, terminalin başlığı (`! imece · 2 seni bekliyor`), dışa aktarılan Markdown'ın başlıkları. Model olayları veri olarak saklar ve çizim anında sözcüğe döker, bu yüzden `L` yalnız yeni satırları değil bütün günlüğü yeniden yazar. Tuşlar ve `:` komutları iki dilde aynıdır. `?` yardımının `/` süzgeci Türkçe harfleri katlar, böylece `calis`, onlar olmayan bir klavyeden `çalış`'ı bulur.
 
 Agent'ların söylediği hangi dilde yazdıklarıysa odur; imece asla çevirmez. Ham akış (iz) satıcının gönderdiği gibi kalır.
 

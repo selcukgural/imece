@@ -37,3 +37,7 @@ WezTerm, Ghostty) gets the shell's title back, one without it shows its
 own default instead of a stale count. After a `!` command the title is
 written again, since the shell had the terminal. The demo runs through
 the same loop, so it shows the title as live does.
+
+Since record 82 (the tab's progress) the title starts with the top of
+the open projects' state ladder, `✕ ` stuck, `! ` waiting, `● ` working
+or starting, nothing when calm: `! imece · 2 waiting`.

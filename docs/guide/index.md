@@ -43,7 +43,7 @@ imece is a terminal program, written in Rust, that drives the vendors' own comma
 3. Each worker works in its own worktree with its vendor's full coding toolset (read, write, shell, web) under the default `--confine standard`. What its vendor would ask permission for comes to you as `⚑`.
 4. A worker's `done` becomes a change `Δ` in WAITING FOR YOU, with the runs imece saw on exactly that tree (`✓ ran clean on this tree: cargo test`, or `no run on this tree`).
 5. You open it (`enter` or `W`), read the diff, and answer: `a` applies it to your checkout, staged, and marks the worktree so the next `done` shows only what came after; `r` rejects it and opens the composer so you say why; `c` and `n` send notes on lines instead; `x` chooses hunks for a partial apply. A change that does not fit your checkout is refused with git's words and nothing is half applied.
-6. The journal says what happened; the terminal's title counts what waits (`imece · 2 waiting`).
+6. The journal says what happened; the terminal's title counts what waits (`! imece · 2 waiting`).
 
 ## Three depths
 

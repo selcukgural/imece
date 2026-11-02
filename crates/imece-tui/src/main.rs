@@ -444,7 +444,8 @@ fn main() -> std::io::Result<()> {
         said.back,
         theme::truecolor(std::env::var("COLORTERM").ok().as_deref()),
     );
-    let mut terminal = screen::init(said.keys).inspect_err(|_| screen::restore())?;
+    let progress = screen::shows_progress(|k| std::env::var(k).ok());
+    let mut terminal = screen::init(said.keys, progress).inspect_err(|_| screen::restore())?;
     let mut app = if args.demo {
         // The simulation's clock says 14:00 at its start, on today's date.
         model::start_clock_at(14 * 3600, live::today());
@@ -547,7 +548,7 @@ fn main() -> std::io::Result<()> {
     app.primary = saved.lead;
     app.notify = saved.notify.unwrap_or_default();
     app.awake.on = args.awake;
-    let result = run(&mut terminal, &mut app, &state);
+    let result = run(&mut terminal, &mut app, &state, progress);
     // A :close or :forget still counting down was asked for: it happens.
     app.end_grace();
     // The last word before the sessions end: what every agent had in hand,
@@ -617,10 +618,12 @@ fn run(
     terminal: &mut screen::Screen,
     app: &mut app::App,
     state: &std::path::Path,
+    progress: bool,
 ) -> std::io::Result<()> {
     let mut last = Instant::now();
     let mut title = screen::Title::default();
     let mut cursor = screen::Cursor::default();
+    let mut tab = screen::Tab::new(progress);
     while !app.quit && !SIGNALLED.load(Ordering::SeqCst) {
         app.looked();
         // Drawn when something changed; in another window, less often.
@@ -633,8 +636,14 @@ fn run(
             })?;
             app.drawn(now);
         }
+        // The ladder's top on the tab and in the title.
         let waiting = app.world.open_inbox().len();
-        title.show(&mut std::io::stdout(), &ui::words::title(app.lang, waiting))?;
+        let ladder = app.progress();
+        title.show(
+            &mut std::io::stdout(),
+            &ui::words::title(app.lang, waiting, ladder),
+        )?;
+        tab.show(&mut std::io::stdout(), ladder)?;
         let timeout = app.tick_interval().saturating_sub(last.elapsed());
         let ready = match event::poll(timeout) {
             Ok(ready) => ready,
@@ -689,6 +698,7 @@ fn run(
                 // The shell had the terminal, its title and cursor back.
                 title.forget();
                 cursor.forget();
+                tab.forget();
             }
         }
         // The key file changed (`:keys` or an edit): kept for the next start.

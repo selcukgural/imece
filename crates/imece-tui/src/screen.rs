@@ -63,12 +63,17 @@ pub type Screen = Terminal<Quiet<Stdout>>;
 /// it is given back.
 static KEYS: AtomicBool = AtomicBool::new(false);
 
+/// Whether the terminal shows a tab's progress (`shows_progress`): the
+/// progress is cleared when the terminal is given back.
+static PROGRESS: AtomicBool = AtomicBool::new(false);
+
 /// Takes the terminal (raw mode, alternate screen without auto-wrap, a
 /// panic hook that gives it back) and returns the screen to draw on.
-/// `keys`: the terminal speaks the kitty keyboard protocol. `restore`
-/// undoes it.
-pub fn init(keys: bool) -> io::Result<Screen> {
+/// `keys`: the terminal speaks the kitty keyboard protocol; `progress`:
+/// it shows a tab's progress. `restore` undoes it.
+pub fn init(keys: bool, progress: bool) -> io::Result<Screen> {
     KEYS.store(keys, Ordering::SeqCst);
+    PROGRESS.store(progress, Ordering::SeqCst);
     let hook = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
         restore();
@@ -96,7 +101,11 @@ pub fn take_over(out: &mut impl Write) -> io::Result<()> {
 /// Keys as the shell knows them, auto-wrap on again, the main screen,
 /// then the shell's title back.
 pub fn give_back(out: &mut impl Write) -> io::Result<()> {
-    giving(out, KEYS.load(Ordering::SeqCst))
+    giving(
+        out,
+        KEYS.load(Ordering::SeqCst),
+        PROGRESS.load(Ordering::SeqCst),
+    )
 }
 
 /// `take_over`, with `keys` saying whether the kitty flags are pushed.
@@ -118,12 +127,18 @@ fn taking(out: &mut impl Write, keys: bool) -> io::Result<()> {
     Ok(())
 }
 
-/// `give_back`, with `keys` saying whether the kitty flags are popped.
-fn giving(out: &mut impl Write, keys: bool) -> io::Result<()> {
+/// `give_back`, with `keys` saying whether the kitty flags are popped and
+/// `progress` whether the tab's progress is cleared (never sent to a
+/// terminal not known to show it: one that takes OSC 9 for a notice would
+/// show `4;0` as one).
+fn giving(out: &mut impl Write, keys: bool, progress: bool) -> io::Result<()> {
     // A frame cut short (a panic while drawing) no longer holds what
     // follows; the cursor as the terminal's settings have it, shown.
     out.write_all(SYNC_END)?;
     out.write_all(CURSOR_BACK)?;
+    if progress {
+        out.write_all(Progress::Calm.osc())?;
+    }
     if keys {
         execute!(out, PopKeyboardEnhancementFlags)?;
     }
@@ -222,6 +237,118 @@ impl Cursor {
     /// `show` writes whatever it is given.
     pub fn forget(&mut self) {
         self.0 = None;
+    }
+}
+
+/// What the tab's progress (OSC 9;4, ConEmu's, shown by Windows Terminal,
+/// Ghostty and iTerm2 on the tab or the task bar) says: the top of the
+/// state ladder of the open projects' agents, so a tab in the background
+/// tells whether anything is stuck, waits for the person, or works.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Progress {
+    /// Nothing: no bar.
+    Calm,
+    /// An agent works or starts: a bar that moves by itself.
+    Working,
+    /// Something waits for the person: a full bar, paused (yellow).
+    Waiting,
+    /// An agent is stuck: a full bar, in error (red).
+    Stuck,
+}
+
+impl Progress {
+    /// The sequence that shows it.
+    fn osc(self) -> &'static [u8] {
+        match self {
+            Progress::Calm => b"\x1b]9;4;0\x07",
+            Progress::Working => b"\x1b]9;4;3\x07",
+            Progress::Waiting => b"\x1b]9;4;4;100\x07",
+            Progress::Stuck => b"\x1b]9;4;2;100\x07",
+        }
+    }
+}
+
+/// Whether the terminal is known to show a tab's progress, from what
+/// `var` (the environment) says. OSC 9 is a notice in older terminals, so
+/// only an allow-list gets it: Windows Terminal (`WT_SESSION`), Ghostty
+/// from 1.2 and iTerm2 from 3.6.6 (`TERM_PROGRAM` and its version, or
+/// `LC_TERMINAL`, which iTerm2 also sends over ssh). Never inside tmux,
+/// which would not pass it on. `IMECE_PROGRESS=on|off` says it outright.
+pub fn shows_progress(var: impl Fn(&str) -> Option<String>) -> bool {
+    match var("IMECE_PROGRESS").as_deref() {
+        Some("on") => return true,
+        Some("off") => return false,
+        _ => {}
+    }
+    if var("TMUX").is_some() {
+        return false;
+    }
+    if var("WT_SESSION").is_some() {
+        return true;
+    }
+    let (program, version) = match var("TERM_PROGRAM") {
+        Some(p) => (p, var("TERM_PROGRAM_VERSION")),
+        None => match var("LC_TERMINAL") {
+            Some(p) => (p, var("LC_TERMINAL_VERSION")),
+            None => return false,
+        },
+    };
+    let least = match program.as_str() {
+        "ghostty" => [1, 2, 0],
+        "iTerm.app" | "iTerm2" => [3, 6, 6],
+        _ => return false,
+    };
+    version
+        .as_deref()
+        .and_then(version_of)
+        .is_some_and(|v| v >= least)
+}
+
+/// `3.6.6` (or `1.2.0-main+abc`, `3.6.6beta1`) as three numbers, a part
+/// not there as 0; none when it does not start with a number.
+fn version_of(text: &str) -> Option<[u32; 3]> {
+    let mut parts = text.split('.');
+    let mut out = [0; 3];
+    for (n, slot) in out.iter_mut().enumerate() {
+        let Some(part) = parts.next() else { break };
+        let digits: String = part.chars().take_while(char::is_ascii_digit).collect();
+        match digits.parse() {
+            Ok(v) => *slot = v,
+            Err(_) if n == 0 => return None,
+            Err(_) => break,
+        }
+    }
+    Some(out)
+}
+
+/// The tab's progress as last written, written only when it changes and
+/// only to a terminal known to show it.
+pub struct Tab {
+    shows: bool,
+    last: Option<Progress>,
+}
+
+impl Tab {
+    /// `shows`: the terminal shows a tab's progress (`shows_progress`).
+    pub fn new(shows: bool) -> Self {
+        Self { shows, last: None }
+    }
+
+    /// Makes the tab show `p`, unless it already does.
+    pub fn show(&mut self, out: &mut impl Write, p: Progress) -> io::Result<()> {
+        if !self.shows || self.last == Some(p) {
+            return Ok(());
+        }
+        out.write_all(p.osc())?;
+        out.flush()?;
+        self.last = Some(p);
+        Ok(())
+    }
+
+    /// The terminal was handed back (the progress cleared): the next
+    /// `show` writes whatever it is given.
+    pub fn forget(&mut self) {
+        self.last = None;
     }
 }
 
@@ -420,12 +547,120 @@ mod tests {
             "pushed on the alternate screen, disambiguate only"
         );
         let mut given = Vec::new();
-        giving(&mut given, true).unwrap();
+        giving(&mut given, true, false).unwrap();
         assert_eq!(
             String::from_utf8(given).unwrap(),
             "\x1b[?2026l\x1b[0 q\x1b]112\x07\x1b[?25h\x1b[<1u\x1b[?1004l\x1b[?2004l\x1b[?7h\x1b[?1049l\x1b]2;\x07\x1b[23;0t",
             "popped before the alternate screen is left"
         );
+    }
+
+    #[test]
+    fn a_terminal_that_shows_progress_has_it_cleared_when_given_back() {
+        let mut given = Vec::new();
+        giving(&mut given, false, true).unwrap();
+        let text = String::from_utf8(given).unwrap();
+        assert!(
+            text.starts_with("\x1b[?2026l\x1b[0 q\x1b]112\x07\x1b[?25h\x1b]9;4;0\x07\x1b[?1004l"),
+            "{text:?}"
+        );
+        let mut given = Vec::new();
+        giving(&mut given, false, false).unwrap();
+        assert!(!String::from_utf8(given).unwrap().contains("]9;"));
+    }
+
+    #[test]
+    fn the_tab_shows_the_ladder_s_top_only_on_a_change_and_only_where_it_is_shown() {
+        let mut tab = Tab::new(true);
+        let mut out = Vec::new();
+        for (p, osc) in [
+            (Progress::Calm, "\x1b]9;4;0\x07"),
+            (Progress::Working, "\x1b]9;4;3\x07"),
+            (Progress::Waiting, "\x1b]9;4;4;100\x07"),
+            (Progress::Stuck, "\x1b]9;4;2;100\x07"),
+        ] {
+            out.clear();
+            tab.show(&mut out, p).unwrap();
+            assert_eq!(String::from_utf8(out.clone()).unwrap(), osc);
+            out.clear();
+            tab.show(&mut out, p).unwrap();
+            assert!(out.is_empty(), "{p:?} is not written twice");
+        }
+        tab.forget();
+        tab.show(&mut out, Progress::Stuck).unwrap();
+        assert_eq!(out, b"\x1b]9;4;2;100\x07", "after the terminal came back");
+        let mut never = Tab::new(false);
+        let mut out = Vec::new();
+        never.show(&mut out, Progress::Stuck).unwrap();
+        never.show(&mut out, Progress::Calm).unwrap();
+        assert!(out.is_empty(), "not to a terminal not known to show it");
+        assert!(Progress::Stuck > Progress::Waiting);
+        assert!(Progress::Waiting > Progress::Working);
+        assert!(Progress::Working > Progress::Calm);
+    }
+
+    #[test]
+    fn only_terminals_known_to_show_a_tab_s_progress_are_sent_it() {
+        let shows = |pairs: &[(&str, &str)]| {
+            let pairs: Vec<(String, String)> = (pairs.iter())
+                .map(|(k, v)| (k.to_string(), v.to_string()))
+                .collect();
+            shows_progress(|k| pairs.iter().find(|(n, _)| n == k).map(|(_, v)| v.clone()))
+        };
+        assert!(!shows(&[]), "nothing known");
+        assert!(shows(&[("WT_SESSION", "x")]));
+        assert!(!shows(&[("WT_SESSION", "x"), ("TMUX", "/tmp/t")]), "tmux");
+        let ghostty = |v: &str| shows(&[("TERM_PROGRAM", "ghostty"), ("TERM_PROGRAM_VERSION", v)]);
+        assert!(ghostty("1.2.0"));
+        assert!(ghostty("1.2.0-main+abc"));
+        assert!(ghostty("1.10"));
+        assert!(ghostty("2"));
+        assert!(!ghostty("1.1.9"));
+        assert!(!ghostty("main"));
+        assert!(!shows(&[("TERM_PROGRAM", "ghostty")]), "no version");
+        let iterm = |v: &str| shows(&[("TERM_PROGRAM", "iTerm.app"), ("TERM_PROGRAM_VERSION", v)]);
+        assert!(iterm("3.6.6"));
+        assert!(iterm("3.6.6beta1"));
+        assert!(iterm("3.7"));
+        assert!(!iterm("3.6.5"));
+        assert!(!iterm("3.5.14"));
+        // iTerm2 says so over ssh too.
+        assert!(shows(&[
+            ("LC_TERMINAL", "iTerm2"),
+            ("LC_TERMINAL_VERSION", "3.6.7")
+        ]));
+        assert!(!shows(&[
+            ("LC_TERMINAL", "iTerm2"),
+            ("LC_TERMINAL_VERSION", "3.4")
+        ]));
+        // The terminal at hand says first.
+        assert!(!shows(&[
+            ("TERM_PROGRAM", "WezTerm"),
+            ("TERM_PROGRAM_VERSION", "20240203"),
+            ("LC_TERMINAL", "iTerm2"),
+            ("LC_TERMINAL_VERSION", "3.6.7"),
+        ]));
+        assert!(!shows(&[
+            ("TERM_PROGRAM", "Apple_Terminal"),
+            ("TERM_PROGRAM_VERSION", "455")
+        ]));
+        // The person says outright, over everything.
+        assert!(shows(&[("IMECE_PROGRESS", "on"), ("TMUX", "/tmp/t")]));
+        assert!(!shows(&[("IMECE_PROGRESS", "off"), ("WT_SESSION", "x")]));
+        assert!(shows(&[("IMECE_PROGRESS", "maybe"), ("WT_SESSION", "x")]));
+        assert!(!shows(&[("IMECE_PROGRESS", "maybe")]));
+    }
+
+    #[test]
+    fn a_version_is_three_numbers_from_its_start() {
+        assert_eq!(version_of("3.6.6"), Some([3, 6, 6]));
+        assert_eq!(version_of("1.2"), Some([1, 2, 0]));
+        assert_eq!(version_of("10"), Some([10, 0, 0]));
+        assert_eq!(version_of("1.2.0-main+abc"), Some([1, 2, 0]));
+        assert_eq!(version_of("1.x.3"), Some([1, 0, 0]), "stops at a word");
+        assert_eq!(version_of("1.2.3.4"), Some([1, 2, 3]));
+        assert_eq!(version_of("x1"), None);
+        assert_eq!(version_of(""), None);
     }
 
     #[test]
