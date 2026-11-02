@@ -12,7 +12,7 @@ A line that starts with `:` is a command to imece, not a message to an agent. Yo
 - `:` then `tab` lists the commands. The menu shows after each command what it stands at now or would act on, in brackets: `budget (spent $3.10 of $20.00)`, `theme (dark)`, `lead (claude)`, `close (kule)`, `forget (claude-2)`, `next (2 waiting)`, `needs (off)`. The note is drawn, never inserted.
 - `$` after a command marks one that raises the next bill: `:open` (a new leader session), `:solo` (a new session), `:forget` (a new session that pays the whole briefing again, without the cache) and `:commit` (a paid call). No `:` command starts a paid turn by itself; `:budget` shows its value instead of a mark.
 - Short names: `:b` budget, `:c` close, `:f` forget, `:o` open, `:q` quit, `:t` theme. A short name typed whole is a command already, so the menu offers nothing and `enter` runs it (`:q` then `enter` asks at once).
-- Arguments complete too: after `:lang` the languages, after `:lead` the vendors, after `:notify` its three words, after `:theme` the built-in names, after `:close` and `:pin` the open projects, after `:restore` the archives' titles (newest first, each noted with its project's name and the day it was archived), after `:goto` nothing (the `&` line has its own menu), after `:history` the lines sent, after `:forget`, `:talk`, `:trace` and `:peek` the agents of open projects (`@` or not), after `:open` and `:export` directories (`~` for your home, hidden ones only after a `.`, `tab` steps into the chosen one).
+- Arguments complete too: after `:lang` the languages, after `:lead` the vendors, after `:notify` and `:motion` their three words, after `:theme` the built-in names, after `:close` and `:pin` the open projects, after `:restore` the archives' titles (newest first, each noted with its project's name and the day it was archived), after `:goto` nothing (the `&` line has its own menu), after `:history` the lines sent, after `:forget`, `:talk`, `:trace` and `:peek` the agents of open projects (`@` or not), after `:open` and `:export` directories (`~` for your home, hidden ones only after a `.`, `tab` steps into the chosen one).
 - A name imece does not know: `no command xyz; : and tab list them`. A demo-only command typed live: `:pause is for the demo: live agents run in real time`.
 - `!cmd` runs a command in your own shell and `/cmd` is the agent's own command line; neither is a `:` command ([command line](../screen/command-line.md)).
 
@@ -44,6 +44,7 @@ A line that starts with `:` is a command to imece, not a message to an agent. Yo
 | `:lead VENDOR` | — | | | | the primary vendor, or `ask` |
 | `:mark` | `m` | | | | |
 | `:model NAME` | — | | | | the solo at hand's model, or `default` |
+| `:motion [off\|calm\|full]` | — | | | | off / calm / full |
 | `:needs` | `f` | | | | on / off |
 | `:news` | — | | | | this version |
 | `:next` | `W` | | | | N waiting |
@@ -181,6 +182,10 @@ Marks the line at hand to come back to, as `m`: in the open conversation, else i
 ### `:model NAME`
 
 Sets the model the solo session at hand runs on, from its next turn: an alias (`opus`, `sonnet`, `haiku`, `fable` for Claude Code; `auto`, `pro`, `flash`, `flash-lite` for Gemini CLI) or a full name as the vendor takes it (`gpt-5.6-terra`), or `default` for the vendor's own. The same rules, refusals, flash and journal line as `:effort`; a name that is not a model name (`a b`, `-x`) is refused. After `:model ` the aliases complete; a full name is typed. The effort part of the choice stays.
+
+### `:motion [off|calm|full]`
+
+How much moves on the screen. `calm` (the default): a working row's glyph breathes, its colour dimmed every other 0.6 s, never its shape; `starting` counts its dots; the bottom line shows a spinner while imece waits for an answer (`:commit`), and so does a vendor still being checked in the first-run window; a row or an item that comes to wait for you blinks three times; a row whose turn is done, or whose session started, settles from a green background to its own colours (a theme of the terminal's own colours: reversed, then the changed rows' look). `full` adds a spinner by the header's fleet while anyone works, and spins faster; over SSH it runs as calm (every frame crosses the network). `off`: nothing moves, the screen as it was before. Nothing moves in another window, and what happens there does not blink when you come back; everything falls on one beat (0.3 s), so several things moving cost no more frames than one, and a frame is drawn only when what it shows moves (see [the decision](https://github.com/selcukgural/imece/blob/main/docs/decisions/84-motion.md)). Bare `:motion` goes to the next one round: off, calm, full, off. The flash says what the new one does (`calm motion: a working row breathes, what comes to wait blinks`, `full motion: spinners too, and faster`, `full motion runs as calm over SSH`, `nothing moves on the screen`); another word: `wild is not off, calm or full`. The menu note shows the value; it is remembered in the store.
 
 ### `:needs`
 

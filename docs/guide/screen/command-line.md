@@ -49,6 +49,7 @@ A message can run over lines; the first line of one that opens a card is the car
 | `:pin [NAME]` | | pin a project to the top of the salon; again unpins |
 | `:awake` | | keep the machine awake while an agent is mid-turn; again turns it off |
 | `:notify [off\|bell\|text]` | | in another window, a bell or a desktop note when something comes to wait for you; bare, the next one round |
+| `:motion [off\|calm\|full]` | | what moves on the screen: a working row breathes, what comes to wait blinks; full adds spinners; bare, the next one round |
 | `:salon` `:board` `:code` | `1` `2` `3` | the three views |
 | `:lang [en\|tr]` | `L` | the other language, or the one named |
 | `:theme [NAME\|FILE]` (`:t`) | `T` | the next built-in theme, or the one named |

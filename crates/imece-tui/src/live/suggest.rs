@@ -125,6 +125,11 @@ pub(super) fn suggest_spec(program: String, cwd: PathBuf, model: &str) -> claude
 }
 
 impl Live {
+    /// Whether a commit message is asked for and has not come yet.
+    pub fn asking(&self) -> bool {
+        self.suggesting.is_some()
+    }
+
     /// The person asks for a commit message for what is staged in project
     /// `p`'s checkout: refused at once when one is under way, when Claude
     /// Code is not here (the one vendor whose call takes a hard spending
@@ -460,7 +465,9 @@ mod tests {
     fn a_suggestion_is_refused_while_one_is_under_way_or_without_claude() {
         let w = team(0);
         let mut live = idle_live(1);
+        assert!(!live.asking());
         live.suggesting = Some(0);
+        assert!(live.asking(), "the bottom line spins meanwhile");
         assert_eq!(live.suggest(&w, 0), Err("a suggestion is under way".into()));
         let mut live = idle_live(1);
         live.vendors = vec![Hireable::codex("/bin/codex", &[])];

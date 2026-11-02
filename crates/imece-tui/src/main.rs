@@ -12,6 +12,7 @@ mod i18n;
 mod keys;
 mod live;
 mod model;
+mod motion;
 mod notify;
 mod prefs;
 mod probe;
@@ -550,6 +551,8 @@ fn main() -> std::io::Result<()> {
     }
     app.primary = saved.lead;
     app.notify = saved.notify.unwrap_or_default();
+    app.motion = saved.motion.unwrap_or_default();
+    app.ssh = motion::over_ssh(var);
     app.awake.on = args.awake;
     let result = run(&mut terminal, &mut app, &state, progress, style);
     // A :close or :forget still counting down was asked for: it happens.
@@ -639,6 +642,7 @@ fn run(
         // Drawn when something changed; in another window, less often.
         let now = Instant::now();
         if app.draw_due(now) {
+            app.frame = now;
             // One frame, the cursor's look with it.
             screen::synced(&mut std::io::stdout(), || {
                 terminal.draw(|f| ui::draw(f, app))?;
@@ -654,7 +658,12 @@ fn run(
             &ui::words::title(app.lang, waiting, ladder),
         )?;
         tab.show(&mut std::io::stdout(), ladder)?;
-        let timeout = app.tick_interval().saturating_sub(last.elapsed());
+        // Woken for the next tick, or sooner for the next frame of what
+        // moves on the screen.
+        let tick = app.tick_interval().saturating_sub(last.elapsed());
+        let timeout = app
+            .motion_wait(Instant::now())
+            .map_or(tick, |m| m.min(tick));
         let event = match queued.pop_front() {
             Some(e) => Some(e),
             None => {
@@ -716,8 +725,13 @@ fn run(
         if let Some(Event::Key(k)) = event
             && k.kind == KeyEventKind::Press
         {
-            let (side, theme, primary, notify) =
-                (app.side, app.theme(), app.primary.clone(), app.notify);
+            let (side, theme, primary, notify, moves) = (
+                app.side,
+                app.theme(),
+                app.primary.clone(),
+                app.notify,
+                app.motion,
+            );
             app.on_key(k);
             if app.side != side
                 || app.theme() != theme
@@ -732,6 +746,9 @@ fn run(
                     app.primary.as_deref(),
                     app.notify,
                 );
+            }
+            if app.motion != moves {
+                let _ = prefs::keep_motion(state, app.motion);
             }
             if let Some(text) = app.copy.take() {
                 app.copied(clip::copy(&text));

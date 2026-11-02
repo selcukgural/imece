@@ -330,7 +330,7 @@ fn member(app: &App, id: AgentId, rungs: &[Rung]) -> Vec<Span<'static>> {
     let a = &app.world.agents[id];
     let (g, color) = rung_glyph(a, rungs[id]);
     vec![
-        Span::styled(format!("  {g} "), fg(color)),
+        Span::styled(format!("  {g} "), glyph_style(app, a, rungs[id], color)),
         Span::styled(clean(&a.name), fg(vendor_color(a.vendor))),
     ]
 }
@@ -437,7 +437,7 @@ pub(super) fn agent_line(
     let (g, color) = rung_glyph(a, rungs[a.id]);
     let mut spans = vec![
         Span::styled(prefix, dim()),
-        Span::styled(format!("{g} "), fg(color)),
+        Span::styled(format!("{g} "), glyph_style(app, a, rungs[a.id], color)),
         // The speaker's colour, so this row and its conversations are seen
         // as one agent; the name keeps its vendor's colour.
         Span::styled(SPEAKER_MARK, fg(speaker_color(a.id))),
@@ -471,7 +471,7 @@ pub(super) fn agent_line(
     let status = if done {
         vec![Span::styled(app.lang.text().done_unseen, fg(pal().ok))]
     } else {
-        status_spans(app.lang, w, a)
+        dotted(app, status_spans(app.lang, w, a))
     };
     let used = chars(&status);
     spans.extend(status);
@@ -529,12 +529,25 @@ pub(super) fn agent_line(
     let recent = w.tick > 4 && w.tick.saturating_sub(a.changed_at) <= 4;
     if app.pane == Pane::Salon && app.selected == Sel::Agent(a.id) {
         line.style(Style::new().add_modifier(Modifier::REVERSED))
+    } else if let Some(lit) = app.lit(GlowOn::Agent(a.id)) {
+        line.style(lit_style(lit))
     } else if recent {
         // A change is a signal: it stands out for a moment, then calms down.
         line.style(changed())
     } else {
         line
     }
+}
+
+/// A status that says `starting…`, its dots counting while motion moves.
+fn dotted(app: &App, mut status: Vec<Span<'static>>) -> Vec<Span<'static>> {
+    let starting = app.lang.text().starting;
+    if let Some(dots) = app.dots() {
+        for span in status.iter_mut().filter(|s| s.content == starting) {
+            span.content = format!("{}{dots}", starting.trim_end_matches('…')).into();
+        }
+    }
+    status
 }
 
 /// How full the agent's context window is, `◔ 72%`, from `CONTEXT_SHOWN`
@@ -815,7 +828,7 @@ fn side(f: &mut Frame, area: Rect, app: &App) {
             };
             lines.push(Line::from(Span::styled(keys, dim())));
         } else {
-            lines.push(line);
+            lines.push(lit_line(app, GlowOn::Item(i), line));
         }
     }
     f.render_widget(Paragraph::new(lines), inner);

@@ -451,6 +451,13 @@ pub struct Text {
     pub notify_bell: &'static str,
     pub notify_text: &'static str,
     pub bad_notify: &'static str,
+    /// `:motion` off, calm, full, full over SSH; with a word that is none
+    /// of them.
+    pub motion_off: &'static str,
+    pub motion_calm: &'static str,
+    pub motion_full: &'static str,
+    pub motion_ssh: &'static str,
+    pub bad_motion: &'static str,
     /// What rings in another window: one item by its kind, with the
     /// agent's name; an agent stuck; several at once.
     pub notice_change: &'static str,
@@ -645,7 +652,7 @@ pub struct Text {
     pub waiting_yes: &'static str,
     // Overlays
     pub help_title: &'static str,
-    pub help_keys: [(&'static str, &'static str); 56],
+    pub help_keys: [(&'static str, &'static str); 57],
     /// The help's line for a new line in the writing, put after the
     /// writing keys: where the terminal tells shift-enter apart, and
     /// where it does not.
@@ -1003,6 +1010,11 @@ pub const EN: Text = Text {
     notify_bell: "the bell rings when something waits and you are in another window",
     notify_text: "a desktop note when something waits and you are in another window",
     bad_notify: "{} is not off, bell or text",
+    motion_off: "nothing moves on the screen",
+    motion_calm: "calm motion: a working row breathes, what comes to wait blinks",
+    motion_full: "full motion: spinners too, and faster",
+    motion_ssh: "full motion runs as calm over SSH",
+    bad_motion: "{} is not off, calm or full",
     notice_change: "imece · {} finished: a change waits for you",
     notice_question: "imece · {} asks you",
     notice_reply: "imece · {} answered you",
@@ -1271,6 +1283,7 @@ pub const EN: Text = Text {
             ":awake  :notify",
             "awake mid-turn · a word in another window",
         ),
+        (":motion", "what moves: off, calm, full"),
         ("q q  :quit", "quit (q or :quit asks first)"),
         ("q s  :pending", "before quitting: mid-turn, not reviewed"),
         (
@@ -1670,6 +1683,11 @@ pub const TR: Text = Text {
     notify_bell: "başka penceredeyken bir şey beklerse zil çalar",
     notify_text: "başka penceredeyken bir şey beklerse masaüstü bildirimi gelir",
     bad_notify: "{} off, bell ya da text değil",
+    motion_off: "ekranda hiçbir şey hareket etmez",
+    motion_calm: "sakin hareket: çalışan satır nefes alır, seni bekleyen yanıp söner",
+    motion_full: "tam hareket: dönücüler de, daha hızlı",
+    motion_ssh: "SSH üzerinde tam hareket sakin çalışır",
+    bad_motion: "{} off, calm ya da full değil",
     notice_change: "imece · {} bitirdi: bir değişiklik seni bekliyor",
     notice_question: "imece · {} sana soruyor",
     notice_reply: "imece · {} sana cevap verdi",
@@ -1937,6 +1955,7 @@ pub const TR: Text = Text {
             ":awake  :notify",
             "turda uyanık tut · başka pencerede haber",
         ),
+        (":motion", "ne hareket eder: off, calm, full"),
         ("q q  :quit", "çık (q ya da :quit önce sorar)"),
         ("q s  :pending", "çıkmadan önce: tur ortası, incelenmemiş"),
         (

@@ -8,6 +8,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use crate::motion::Motion;
 use crate::notify::Notify;
 use crate::store;
 
@@ -31,6 +32,7 @@ const SIDE: &str = "side";
 const THEME: &str = "theme";
 const LEAD: &str = "lead";
 const NOTIFY: &str = "notify";
+const MOTION: &str = "motion";
 /// The newest version whose "what's new" a start showed (or that started
 /// first): the next start of a newer one shows what is new since.
 const SEEN: &str = "seen";
@@ -49,6 +51,8 @@ pub struct Prefs {
     pub notify: Option<Notify>,
     /// The version that started last (`0.2.0`).
     pub seen: Option<String>,
+    /// How much moves on the screen (`:motion`).
+    pub motion: Option<Motion>,
 }
 
 impl Prefs {
@@ -70,6 +74,7 @@ impl Prefs {
                 .filter(|l| !l.is_empty() && l.chars().all(|c| c.is_ascii_lowercase())),
             notify: notify.and_then(|n| Notify::parse(&n)),
             seen: seen.filter(|v| crate::welcome::parse_version(v).is_some()),
+            motion: None,
         }
     }
 
@@ -119,13 +124,17 @@ pub fn load(dir: &Path) -> Prefs {
             let _ = fs::remove_file(legacy(dir));
         }
     }
-    match store::settings(&file(dir), &[SIDE, THEME, LEAD, NOTIFY, SEEN]) {
+    match store::settings(&file(dir), &[SIDE, THEME, LEAD, NOTIFY, SEEN, MOTION]) {
         Ok(mut v) => {
+            let motion = v.pop().flatten().and_then(|m| Motion::parse(&m));
             let seen = v.pop().flatten();
             let notify = v.pop().flatten();
             let lead = v.pop().flatten();
             let theme = v.pop().flatten();
-            Prefs::checked(v.pop().flatten(), theme, lead, notify, seen)
+            Prefs {
+                motion,
+                ..Prefs::checked(v.pop().flatten(), theme, lead, notify, seen)
+            }
         }
         Err(_) => Prefs::default(),
     }
@@ -168,6 +177,11 @@ pub fn keep_keys(dir: &Path, text: Option<&str>) -> Result<(), String> {
     }
 }
 
+/// Keeps how much moves on the screen in `dir`.
+pub fn keep_motion(dir: &Path, motion: Motion) -> Result<(), String> {
+    store::set_settings(&file(dir), &[(MOTION, motion.name())], &[])
+}
+
 /// Keeps `version` as the one that started last in `dir`.
 pub fn seen(dir: &Path, version: &str) -> Result<(), String> {
     store::set_settings(&file(dir), &[(SEEN, version)], &[])
@@ -199,6 +213,7 @@ mod tests {
                 lead: None,
                 notify: Some(Notify::Off),
                 seen: None,
+                motion: None,
             }
         );
         let mode = fs::metadata(file(&dir)).unwrap().permissions().mode();
@@ -231,6 +246,7 @@ mod tests {
                 lead: Some("codex".into()),
                 notify: Some(Notify::Text),
                 seen: None,
+                motion: None,
             }
         );
         set(&[("side", "70"), ("theme", "/home/me/Dracula.conf")]);
@@ -249,6 +265,16 @@ mod tests {
         assert_eq!(load(&dir).seen.as_deref(), Some("0.2.0"), "kept by a save");
         set(&[("seen", "v1")]);
         assert_eq!(load(&dir).seen, None);
+        // How much moves, on its own, kept by a save of the rest.
+        keep_motion(&dir, Motion::Full).unwrap();
+        assert_eq!(load(&dir).motion, Some(Motion::Full));
+        save(&dir, 40, "light", None, Notify::Off).unwrap();
+        assert_eq!(load(&dir).motion, Some(Motion::Full), "kept by a save");
+        keep_motion(&dir, Motion::Off).unwrap();
+        assert_eq!(load(&dir).motion, Some(Motion::Off));
+        assert_eq!(load(&dir).side, Some(40), "nothing else written");
+        set(&[("motion", "wild")]);
+        assert_eq!(load(&dir).motion, None);
         fs::remove_dir_all(&dir).unwrap();
     }
 
@@ -265,6 +291,7 @@ mod tests {
                 lead: Some("gemini".into()),
                 notify: None,
                 seen: None,
+                motion: None,
             }
         );
         assert!(!legacy(&dir).exists(), "moved, so gone");

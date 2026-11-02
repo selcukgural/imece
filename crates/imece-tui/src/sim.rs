@@ -1180,6 +1180,11 @@ impl Sim {
         }
     }
 
+    /// Whether a commit message is asked for and has not come yet.
+    pub fn asking(&self) -> bool {
+        self.extras.suggesting.is_some()
+    }
+
     /// `:commit` in the demo, as live does it: one at a time, refused
     /// when the pot or the run (the demo's day) has no room, reserved at
     /// its cap; two ticks later a made-up message for what was applied to

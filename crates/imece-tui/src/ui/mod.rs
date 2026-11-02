@@ -26,6 +26,7 @@ use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 use crate::app::{App, Caret, FLASH, Field, Hints, Noting, Rung, Target, Undoable, View, Zoom};
 use crate::i18n::{Lang, clean, fill};
 use crate::model::*;
+use crate::motion::{GlowOn, Lit};
 use crate::screen::{Look, Shape};
 pub(crate) use crate::theme::pal;
 pub(crate) use diff::{
@@ -341,6 +342,51 @@ pub(crate) fn rung_glyph(a: &Agent, rung: Rung) -> (&'static str, Color) {
         Rung::Done => ("✓", pal().ok),
         Rung::Starting => ("◌", pal().ok),
         Rung::Stuck | Rung::Working | Rung::Idle => glyph(a),
+    }
+}
+
+/// The style of agent `a`'s glyph in colour `color` on rung `rung`: a
+/// working row's glyph (not a leader's) breathes, its second tone dimmed
+/// in every other beat while motion moves (record 84); never its shape.
+pub(crate) fn glyph_style(app: &App, a: &Agent, rung: Rung, color: Color) -> Style {
+    let style = fg(color);
+    if rung == Rung::Working && a.role != Role::Leader && app.breath() {
+        style.add_modifier(Modifier::DIM)
+    } else {
+        style
+    }
+}
+
+/// How a row lit for a moment looks: reversed for a blink; settling, a
+/// background from the theme's own `ok` toward its background in three
+/// steps where both are RGB, else reversed, then the changed rows' look.
+pub(crate) fn lit_style(lit: Lit) -> Style {
+    let step = match lit {
+        Lit::Reversed => return Style::new().add_modifier(Modifier::REVERSED),
+        Lit::Settle(step) => step,
+    };
+    let p = pal();
+    match (p.ok, p.bg) {
+        (Color::Rgb(r, g, b), Color::Rgb(br, bg, bb)) => {
+            let percent = SETTLE_SHADES[usize::from(step).min(SETTLE_SHADES.len() - 1)];
+            let c = crate::theme::Rgb(br, bg, bb).blend(crate::theme::Rgb(r, g, b), percent);
+            Style::new().bg(Color::Rgb(c.0, c.1, c.2))
+        }
+        _ if step == 0 => Style::new().add_modifier(Modifier::REVERSED),
+        _ => changed(),
+    }
+}
+
+/// How much of the theme's `ok` a settling row's background has, step by
+/// step.
+const SETTLE_SHADES: [u8; 3] = [35, 20, 8];
+
+/// `line` as row `on` shows it: lit for a moment when it is, else as it
+/// was.
+pub(crate) fn lit_line(app: &App, on: GlowOn, line: Line<'static>) -> Line<'static> {
+    match app.lit(on) {
+        Some(lit) => line.style(lit_style(lit)),
+        None => line,
     }
 }
 
@@ -1179,6 +1225,9 @@ fn header(f: &mut Frame, area: Rect, app: &App) {
         )));
         spans.push(sep());
     }
+    if let Some(spin) = app.head_spin() {
+        spans.push(Span::styled(format!("{spin} "), fg(pal().ok)));
+    }
     spans.extend(fleet(app));
     spans.push(sep());
     let mut rate = fill(t.per_hour, &[&dollars(w.rate_per_hour())]);
@@ -1406,6 +1455,12 @@ fn footer(f: &mut Frame, area: Rect, app: &App) -> Option<Position> {
             }
         };
         Line::from(Span::styled(format!(" {said}"), fg(pal().warn)))
+    } else if let Some(asking) = app.asking() {
+        // Waiting for an answer: the spinner turns while motion moves.
+        Line::from(vec![
+            Span::styled(format!(" {} ", app.spin().unwrap_or("…")), fg(pal().info)),
+            Span::styled(asking.to_string(), dim()),
+        ])
     } else {
         let hints: Vec<(&str, &str)> = match app.zoom {
             _ if app.hints.is_some() => vec![
@@ -2669,6 +2724,200 @@ mod tests {
         let lead = app.world.projects[0].leader;
         waiting(&mut app, lead);
         assert_eq!(row(&app, lead).spans[1].content, "◆ ");
+    }
+
+    #[test]
+    fn a_working_row_breathes_in_its_colour_never_its_shape() {
+        use crate::motion::Motion;
+        let ms = std::time::Duration::from_millis;
+        let (mut app, w, _) = calm_team();
+        let lead = app.world.projects[0].leader;
+        let glyph = |app: &App, id: AgentId| {
+            let line = salon::agent_line(app, &app.world.agents[id], "", &app.rungs(), 200);
+            (line.spans[1].content.to_string(), line.spans[1].style)
+        };
+        let ok = fg(pal().ok);
+        let out = ok.add_modifier(Modifier::DIM);
+        assert_eq!(glyph(&app, w[0]), ("● ".into(), ok), "off: still");
+        app.motion = Motion::Calm;
+        app.frame_after(ms(600));
+        assert_eq!(glyph(&app, w[0]), ("● ".into(), out), "the second tone");
+        assert_eq!(glyph(&app, lead).1, fg(pal().plan), "a leader's ◆ does not");
+        app.frame_after(ms(1200));
+        assert_eq!(glyph(&app, w[0]), ("● ".into(), ok));
+        app.frame_after(ms(600));
+        app.world.agents[w[1]].status = Status::Idle;
+        assert_eq!(glyph(&app, w[1]), ("○ ".into(), fg(pal().dim)), "idle");
+        waiting(&mut app, w[2]);
+        assert_eq!(glyph(&app, w[2]), ("! ".into(), fg(pal().warn)), "waiting");
+        // A folded project's loudest member breathes with it.
+        app.world.inbox.clear();
+        app.world.agents[lead].status = Status::Idle;
+        app.collapsed[0] = true;
+        let header = salon::project_line(&app, 0, &app.rungs());
+        let member = &header.spans[header.spans.len() - 2];
+        assert_eq!((member.content.as_ref(), member.style), ("  ● ", out));
+        app.frame_after(ms(0));
+        let header = salon::project_line(&app, 0, &app.rungs());
+        assert_eq!(header.spans[header.spans.len() - 2].style, ok);
+    }
+
+    #[test]
+    fn a_lit_row_blinks_or_settles_and_the_selection_stays_reversed() {
+        use crate::motion::{Glow, GlowOn, Lit, Motion};
+        let ms = std::time::Duration::from_millis;
+        let reversed = Style::new().add_modifier(Modifier::REVERSED);
+        assert_eq!(lit_style(Lit::Reversed), reversed);
+        // Settling: the theme's `ok` toward its background, step by step.
+        assert!(crate::theme::set("gruvbox-dark-medium"));
+        let (Color::Rgb(r, g, b), Color::Rgb(br, bg, bb)) = (pal().ok, pal().bg) else {
+            panic!("an RGB theme");
+        };
+        let shade = |percent| {
+            let c = crate::theme::Rgb(br, bg, bb).blend(crate::theme::Rgb(r, g, b), percent);
+            Style::new().bg(Color::Rgb(c.0, c.1, c.2))
+        };
+        assert_eq!(lit_style(Lit::Settle(0)), shade(35));
+        assert_eq!(lit_style(Lit::Settle(1)), shade(20));
+        assert_eq!(lit_style(Lit::Settle(2)), shade(8));
+        assert_eq!(lit_style(Lit::Settle(9)), shade(8), "no step past the last");
+        assert_ne!(shade(35), shade(20));
+        // A theme of the terminal's own colours: reversed, then calmer.
+        assert!(crate::theme::set("terminal"));
+        assert_eq!(lit_style(Lit::Settle(0)), reversed);
+        assert_eq!(lit_style(Lit::Settle(1)), changed());
+        assert_eq!(lit_style(Lit::Settle(2)), changed());
+        let (mut app, w, _) = calm_team();
+        let row = |app: &App, id: AgentId| {
+            salon::agent_line(app, &app.world.agents[id], "", &app.rungs(), 200).style
+        };
+        app.motion = Motion::Calm;
+        app.frame_after(ms(0));
+        app.light_now(GlowOn::Agent(w[0]), Glow::Arrive);
+        app.light_now(GlowOn::Agent(w[1]), Glow::Settle);
+        assert_eq!(row(&app, w[0]), reversed, "a blink");
+        assert_eq!(row(&app, w[1]), lit_style(Lit::Settle(0)));
+        assert_eq!(row(&app, w[2]), Style::default());
+        app.frame_after(ms(300));
+        assert_eq!(row(&app, w[0]), Style::default(), "between blinks");
+        assert_eq!(row(&app, w[1]), lit_style(Lit::Settle(1)));
+        app.world.agents[w[0]].changed_at = app.world.tick;
+        assert_eq!(row(&app, w[0]), changed(), "a change shows as before");
+        app.frame_after(ms(600));
+        assert_eq!(row(&app, w[0]), reversed, "lit over a change");
+        app.pane = Pane::Salon;
+        app.selected = Sel::Agent(w[0]);
+        app.frame_after(ms(300));
+        assert_eq!(row(&app, w[0]), reversed, "the selection, not a blink");
+        app.motion = Motion::Off;
+        app.frame_after(ms(0));
+        assert_eq!(row(&app, w[1]), Style::default(), "off: nothing lit");
+    }
+
+    #[test]
+    fn a_new_item_in_waiting_for_you_blinks() {
+        use crate::motion::{Glow, GlowOn, Motion};
+        let ms = std::time::Duration::from_millis;
+        let (mut app, w, _) = calm_team();
+        app.world.inbox.clear();
+        waiting(&mut app, w[0]);
+        waiting(&mut app, w[1]);
+        app.motion = Motion::Calm;
+        app.frame_after(ms(0));
+        app.light_now(GlowOn::Item(1), Glow::Arrive);
+        let modifier = |app: &App, n: usize| {
+            let screen = render(app, 160, 40);
+            let y = (screen.lines().enumerate())
+                .filter(|(_, l)| l.contains("an answer"))
+                .nth(n)
+                .unwrap()
+                .0;
+            let x = screen
+                .lines()
+                .nth(y)
+                .unwrap()
+                .chars()
+                .position(|c| c == '»')
+                .unwrap();
+            buffer(app, 160, 40)[(x as u16, y as u16)].modifier
+        };
+        assert!(
+            modifier(&app, 1).contains(Modifier::REVERSED),
+            "the new one"
+        );
+        assert!(!modifier(&app, 0).contains(Modifier::REVERSED));
+        app.frame_after(ms(300));
+        assert!(
+            !modifier(&app, 1).contains(Modifier::REVERSED),
+            "between blinks"
+        );
+    }
+
+    #[test]
+    fn starting_counts_its_dots_while_motion_moves() {
+        use crate::motion::Motion;
+        let ms = std::time::Duration::from_millis;
+        let (mut app, w, _) = calm_team();
+        app.world.agents[w[0]].starting = true;
+        let row = |app: &App| {
+            let line = salon::agent_line(app, &app.world.agents[w[0]], "", &app.rungs(), 200);
+            text(&[line]).remove(0)
+        };
+        let name = app.world.agents[w[0]].name.clone();
+        assert!(row(&app).contains(" starting…"), "{}", row(&app));
+        app.motion = Motion::Calm;
+        for (at, dots) in [(0, "   "), (600, ".  "), (1200, ".. "), (1800, "...")] {
+            app.frame_after(ms(at));
+            let r = row(&app);
+            assert!(r.contains(&format!(" starting{dots}")), "{at}: {r}");
+            assert!(!r.contains('…') && r.contains(&name), "{at}: {r}");
+        }
+        app.world.agents[w[0]].starting = false;
+        assert!(!row(&app).contains("starting"));
+    }
+
+    #[test]
+    fn the_bottom_line_spins_while_an_answer_is_waited_for_and_full_spins_by_the_fleet() {
+        use crate::motion::{Motion, SPIN};
+        let ms = std::time::Duration::from_millis;
+        let (mut app, _, _) = calm_team();
+        let foot = |app: &App| render(app, 160, 30).lines().last().unwrap().to_string();
+        let head = |app: &App| render(app, 160, 30).lines().next().unwrap().to_string();
+        app.asking = Some("asking claude for a commit message".into());
+        assert!(foot(&app).starts_with(" … asking claude"), "{}", foot(&app));
+        app.motion = Motion::Calm;
+        app.frame_after(ms(300));
+        assert!(foot(&app).starts_with(&format!(" {} asking claude", SPIN[1])));
+        app.flash = Some(("said".into(), std::time::Instant::now()));
+        assert!(foot(&app).starts_with(" said"), "a flash first");
+        app.flash = None;
+        app.asking = None;
+        assert!(!foot(&app).contains("asking"));
+        // Full: by the fleet while anyone works.
+        assert!(!head(&app).contains(SPIN[1]), "calm: none");
+        app.motion = Motion::Full;
+        app.frame_after(ms(100));
+        assert!(
+            head(&app).contains(&format!("{} ", SPIN[1])),
+            "{}",
+            head(&app)
+        );
+        let at = head(&app).find(SPIN[1]).unwrap();
+        assert!(head(&app)[at..].contains("working"), "before the fleet");
+    }
+
+    #[test]
+    fn the_first_run_window_spins_by_a_vendor_still_checked() {
+        use crate::motion::{Motion, SPIN};
+        use crate::welcome::Seen;
+        let mut app = App::new(1, 1, 0, 1, Lang::En);
+        app.vendors = vec![(Vendor::Claude, Seen::Checking)];
+        app.welcome = true;
+        assert!(render(&app, 120, 40).contains("… claude"));
+        app.motion = Motion::Calm;
+        app.frame_after(std::time::Duration::from_millis(600));
+        let screen = render(&app, 120, 40);
+        assert!(screen.contains(&format!("{} claude", SPIN[2])), "{screen}");
     }
 
     #[test]
