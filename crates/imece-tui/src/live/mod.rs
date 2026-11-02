@@ -29,7 +29,9 @@
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::io;
 use std::path::{Path, PathBuf};
-use std::sync::mpsc::{self, Receiver, Sender};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -217,9 +219,34 @@ type Ready = Result<
     String,
 >;
 
-/// A tool call of an agent (tool name, arguments), and where its answer
-/// goes.
-type Call = (AgentId, String, Value, Sender<Answer>);
+/// A tool call of an agent (tool name, arguments), where its answer goes,
+/// and who has it: see [`answer_of`].
+type Call = (AgentId, String, Value, Sender<Answer>, Arc<AtomicBool>);
+
+/// The answer to a call on the bus, waited for `wait`. Either imece takes
+/// the call or the caller gives up on it, never both: whichever turns
+/// `taken` first. A caller that gave up hears "try again" and imece drops
+/// the call when it gets to it (it was busy: a `!cmd` holds the screen),
+/// so a call tried again is not done twice (two workers hired, a message
+/// sent twice). A call imece took is waited for once more: it was done,
+/// and the caller must not do it again.
+fn answer_of(answer: &Receiver<Answer>, taken: &AtomicBool, wait: Duration) -> Answer {
+    let late = match answer.recv_timeout(wait) {
+        Ok(a) => return a,
+        Err(RecvTimeoutError::Disconnected) => return Err("imece is closing".into()),
+        Err(RecvTimeoutError::Timeout) => wait,
+    };
+    if !taken.swap(true, Ordering::SeqCst) {
+        return Err("imece did not answer in time; try again".into());
+    }
+    match answer.recv_timeout(late) {
+        Ok(a) => a,
+        Err(RecvTimeoutError::Disconnected) => Err("imece is closing".into()),
+        Err(RecvTimeoutError::Timeout) => Err("imece took this call but its answer is late: \
+                                               it was done, do not make it again"
+            .into()),
+    }
+}
 
 /// What all agents together may spend until the person says otherwise,
 /// in ten-thousandths of a dollar.
@@ -1003,11 +1030,10 @@ impl Live {
         let server = Server::bind(&bus.dir.join(format!("a{id}.sock")), tools, {
             move |name, args| {
                 let (reply, answer) = mpsc::channel();
-                tx.send((id, name.to_string(), args.clone(), reply))
+                let taken = Arc::new(AtomicBool::new(false));
+                tx.send((id, name.to_string(), args.clone(), reply, taken.clone()))
                     .map_err(|_| "imece is closing".to_string())?;
-                answer
-                    .recv_timeout(call_wait(name, run_timeout))
-                    .map_err(|_| "imece did not answer in time; try again".to_string())?
+                answer_of(&answer, &taken, call_wait(name, run_timeout))
             }
         })?;
         bus.servers.push(server);
@@ -1172,8 +1198,14 @@ impl Live {
             }
         }
         let mut called = false;
-        while let Ok((from, tool, args, reply)) = self.calls_rx.try_recv() {
+        while let Ok((from, tool, args, reply, taken)) = self.calls_rx.try_recv() {
             called = true;
+            if taken.swap(true, Ordering::SeqCst) {
+                // Its caller gave up on it and was told to try again.
+                let late = format!("{tool}: given up before imece got to it, not done");
+                w.agents[from].trace(w.tick, late);
+                continue;
+            }
             if tool == "run" {
                 self.run(w, from, &args, reply);
                 continue;
@@ -1329,6 +1361,73 @@ mod tests {
     }
 
     #[test]
+    fn a_call_is_taken_by_imece_or_given_up_by_its_caller_never_both() {
+        let ms = Duration::from_millis;
+        // Answered in time.
+        let (reply, answer) = mpsc::channel();
+        let taken = AtomicBool::new(false);
+        reply.send(Ok("joined".into())).unwrap();
+        assert_eq!(answer_of(&answer, &taken, ms(10)), Ok("joined".into()));
+        assert!(!taken.load(Ordering::SeqCst));
+        // Not taken in time: given up, and imece will drop it.
+        let got = answer_of(&answer, &taken, ms(10)).unwrap_err();
+        assert!(got.contains("try again"), "{got}");
+        assert!(taken.load(Ordering::SeqCst), "given up");
+        // Taken by imece, answered late: the answer is waited for.
+        let (reply, answer) = mpsc::channel();
+        let taken = AtomicBool::new(true);
+        let late = thread::spawn(move || {
+            thread::sleep(ms(750));
+            reply.send(Ok("joined".into())).unwrap();
+            reply
+        });
+        assert_eq!(answer_of(&answer, &taken, ms(500)), Ok("joined".into()));
+        // Taken and never answered: done, not to be made again.
+        let _reply = late.join().unwrap();
+        let got = answer_of(&answer, &taken, ms(10)).unwrap_err();
+        assert!(got.contains("do not make it again"), "{got}");
+        // imece going away.
+        let (reply, answer) = mpsc::channel::<Answer>();
+        drop(reply);
+        let got = answer_of(&answer, &AtomicBool::new(false), ms(10));
+        assert_eq!(got, Err("imece is closing".into()));
+    }
+
+    #[test]
+    fn a_call_its_caller_gave_up_on_is_not_done_when_imece_gets_to_it() {
+        let mut w = team(1);
+        let mut live = idle_live(2);
+        let hire = |live: &mut Live, gave_up: bool| {
+            let (reply, answer) = mpsc::channel();
+            let taken = Arc::new(AtomicBool::new(gave_up));
+            let call = (0, "hire".into(), json!({}), reply, taken.clone());
+            live.calls_tx.send(call).unwrap();
+            (answer, taken)
+        };
+        let (answer, _) = hire(&mut live, true);
+        live.step(&mut w);
+        assert_eq!(w.agents.len(), 2, "nobody hired");
+        assert!(answer.try_recv().is_err(), "nobody to answer");
+        let said = w.agents[0].trace.back().unwrap();
+        assert!(
+            said.ends_with(" hire: given up before imece got to it, not done"),
+            "{said}"
+        );
+        // Tried again: done once, and taken, so its caller waits for it.
+        let (answer, taken) = hire(&mut live, false);
+        live.step(&mut w);
+        assert_eq!(w.agents.len(), 3);
+        assert!(
+            answer
+                .try_recv()
+                .unwrap()
+                .unwrap()
+                .starts_with("claude-2 joined")
+        );
+        assert!(taken.load(Ordering::SeqCst));
+    }
+
+    #[test]
     fn a_step_says_whether_anything_came_the_screen_may_show() {
         let mut w = team(1);
         let mut live = idle_live(2);
@@ -1377,7 +1476,13 @@ mod tests {
         // A call on the bus.
         let (reply, answer) = mpsc::channel();
         let came = says(&mut live, &mut w, |live| {
-            let call = (1, "board".into(), json!({}), reply.clone());
+            let call = (
+                1,
+                "board".into(),
+                json!({}),
+                reply.clone(),
+                Default::default(),
+            );
             live.calls_tx.send(call).unwrap();
         });
         assert!(came, "a call");

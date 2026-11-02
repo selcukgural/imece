@@ -278,7 +278,10 @@ pub(super) fn call(
     args: Value,
 ) -> Answer {
     let (tx, rx) = std::sync::mpsc::channel();
-    live.calls_tx.send((from, tool.into(), args, tx)).unwrap();
+    let taken = Default::default();
+    live.calls_tx
+        .send((from, tool.into(), args, tx, taken))
+        .unwrap();
     live.step(w);
     rx.recv_timeout(std::time::Duration::from_secs(5)).unwrap()
 }
