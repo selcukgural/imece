@@ -64,7 +64,7 @@ imece başlarken PATH'te üç programı arar (`PATH'te kodlama ajanları aranıy
 
 Varsayılan `--confine standard` ve `strict` altında her satıcının oturumu, kendi satıcı kurulumunuzdan hiçbir şey yüklenmeyecek şekilde başlatılır (hook yok, imece'ninki dışında MCP sunucusu yok, depo ayarı yok); `--confine open` satıcıyı sizin kurduğunuz gibi çalıştırır. Her durumda lider hiç yazmaz ve satıcının kendi alt ajan aracı kapalı kalır. Bir oturumun neyle çalıştığını bildirdiği, kapalı düşerek denetlenir; bkz. [satıcılar](../concepts/vendors.md) ve [güvenlik](../concepts/security.md).
 
-Her ajan deponuzun kodlama ajanları için notlarını da alır: `AGENTS.md`, yoksa `CLAUDE.md`, en çok 16 KiB; daha uzun bir dosya kesilerek girer ve günlük bunu söyler.
+Her ajan deponuzun kodlama ajanları için notlarını da alır: `AGENTS.md`, yoksa `CLAUDE.md`, en çok 16 KiB; daha uzun bir dosya kesilerek girer ve günlük bunu söyler. Her proje için kendi talimatlarınız `~/.config/imece/instructions.md` dosyasına (ya da `$XDG_CONFIG_HOME/imece/` altına) gider, yine en çok 16 KiB; deponun notlarından önce gelir. Bkz. [dosyalar](../reference/files.md).
 
 ## Kim lider
 

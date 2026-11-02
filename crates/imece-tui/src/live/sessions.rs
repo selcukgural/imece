@@ -566,8 +566,9 @@ impl Live {
         });
         let place = &self.places[a.project];
         let mut system = system_prompt(w, id, self.max_workers, self.max_helpers, confine);
+        let personal = (self.instructions.as_deref()).and_then(personal_notes);
         let notes = repo_notes(&place.repo, a.vendor);
-        if let Some(n) = &notes {
+        for n in personal.iter().chain(&notes) {
             system.push_str(&n.text);
         }
         let (program, model) = (vendor.program.clone(), self.models[id].clone());
@@ -666,6 +667,19 @@ impl Live {
             // Nobody to take it (imece is closing): dropping it stops it.
             let _ = ready.send((id, generation, started));
         });
+        if let (
+            Some(path),
+            Some(Notes {
+                size, cut: true, ..
+            }),
+        ) = (&self.instructions, personal)
+        {
+            w.note(Event::InstructionsCut {
+                agent: id,
+                path: path.display().to_string(),
+                size,
+            });
+        }
         if let Some(Notes {
             file,
             size,

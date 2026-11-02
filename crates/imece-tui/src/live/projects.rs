@@ -919,6 +919,7 @@ mod tests {
             fresh: false,
             run_programs: Vec::new(),
             run_timeout: DEFAULT_RUN_TIMEOUT,
+            instructions: None,
             confine: Confine::Standard,
             solo: solo.map(|v| (v, None)),
         };
@@ -956,6 +957,7 @@ mod tests {
             fresh: false,
             run_programs: Vec::new(),
             run_timeout: DEFAULT_RUN_TIMEOUT,
+            instructions: None,
             confine: Confine::Standard,
             solo: solo.map(|(v, c)| (v, c.map(str::to_string))),
         };

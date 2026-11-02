@@ -92,6 +92,13 @@ At each start imece makes `$TMPDIR/imece-<pid>-<hex>/` (0700; an existing direct
 
 `:export [PATH]` writes the open conversation or the card's screen as Markdown: `imece-conversation-YYYYMMDD-HHMM.md` or `imece-card-N-YYYYMMDD-HHMM.md`, in the directory imece was started from when no `PATH`, in `PATH` when it is a directory, else as the file `PATH`. A file that is there is never written over. Every time in it has its day; every line went through the same cleaning as the screen (control characters removed, secret-looking tokens hidden). See [commands](commands.md).
 
+## What imece reads from your configuration
+
+In `$XDG_CONFIG_HOME/imece/`, or `~/.config/imece/` (a relative `XDG_CONFIG_HOME` is ignored):
+
+- `keys`: your own keys, read at start and again when it changes. See [keyboard](../screen/keyboard.md).
+- `instructions.md`: your own instructions for every project, read when each agent's session starts and put in its instructions before the repository's notes, at most 16 KiB: a longer file goes in cut and the journal says so (`claude-1: your instructions file … is 20 KiB; only its first 16 KiB went into the instructions`). Only a plain file is read: a pipe or a device is passed over. A change is read at each agent's next start.
+
 ## What imece reads from the repository
 
 - `AGENTS.md`, else `CLAUDE.md`, at the checkout's top: the notes for coding agents, at most 16 KiB, passed to every agent with its instructions (Codex reads `AGENTS.md` itself). See [message types](message-types.md).

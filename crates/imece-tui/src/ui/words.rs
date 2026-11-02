@@ -173,6 +173,15 @@ pub fn event(lang: Lang, w: &World, e: &Event) -> String {
             let vendor = w.agents[*agent].vendor.label();
             fill(t.ev_commands_missing, &[name(w, *agent), vendor])
         }
+        Event::InstructionsCut { agent, path, size } => fill(
+            t.ev_instructions_cut,
+            &[
+                name(w, *agent),
+                path,
+                &size.div_ceil(1024).to_string(),
+                &crate::live::MAX_NOTES_KIB.to_string(),
+            ],
+        ),
         Event::NotesCut { agent, file, size } => fill(
             t.ev_notes_cut,
             &[
@@ -939,6 +948,25 @@ mod tests {
             size: 17 * 1024,
         };
         assert!(event(Lang::En, &w, &exact).contains("AGENTS.md is 17 KiB;"));
+        let mine = Event::InstructionsCut {
+            agent: 1,
+            path: "/home/me/.config/imece/instructions.md".into(),
+            size: 17 * 1024 + 1,
+        };
+        assert_eq!(
+            event(Lang::En, &w, &mine),
+            format!(
+                "{who}: your instructions file /home/me/.config/imece/instructions.md is 18 \
+                 KiB; only its first 16 KiB went into the instructions"
+            )
+        );
+        assert_eq!(
+            event(Lang::Tr, &w, &mine),
+            format!(
+                "{who}: talimat dosyan /home/me/.config/imece/instructions.md 18 KiB; \
+                 talimatlara yalnızca ilk 16 KiB girdi"
+            )
+        );
     }
 
     #[test]

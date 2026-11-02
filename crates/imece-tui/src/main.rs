@@ -517,6 +517,7 @@ fn main() -> std::io::Result<()> {
             fresh: args.fresh,
             run_programs: args.run_programs,
             run_timeout: args.run_timeout,
+            instructions: keys::config_file(live::INSTRUCTIONS),
             confine: args.confine,
             solo: args.solo,
         };

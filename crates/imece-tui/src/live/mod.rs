@@ -62,7 +62,7 @@ mod tools;
 
 pub(crate) use self::bus::numbers;
 pub use self::projects::Open;
-pub(crate) use self::prompts::MAX_NOTES_KIB;
+pub(crate) use self::prompts::{INSTRUCTIONS, MAX_NOTES_KIB};
 pub use self::sessions::apply;
 pub(crate) use self::suggest::{SUGGEST_CAP, SUGGEST_DAY_CALLS, SUGGEST_DAY_COST};
 use self::{changes::*, hiring::*, projects::*, prompts::*, suggest::*, tools::*};
@@ -93,6 +93,9 @@ pub struct Options {
     pub run_programs: Vec<String>,
     /// How long one run may take.
     pub run_timeout: Duration,
+    /// The person's own instructions for every project, put in every
+    /// agent's instructions when the file is there (`keys::config_file`).
+    pub instructions: Option<PathBuf>,
     /// How much of its vendor each agent's session gets (`--confine`).
     pub confine: Confine,
     /// `--solo`: start with a solo session on the checkout, on this vendor
@@ -622,6 +625,8 @@ pub struct Live {
     /// Programs workers and helpers may run, next to cargo and git.
     run_programs: Vec<String>,
     run_timeout: Duration,
+    /// The person's own instructions file; see [`Options::instructions`].
+    instructions: Option<PathBuf>,
     /// How much of its vendor each session gets; see [`Confine`].
     confine: Confine,
     /// What each agent's session waits on the person's yes for, in the
@@ -764,6 +769,7 @@ pub fn world(o: Options, present: &[(Vendor, bool)]) -> Result<(World, Live), St
     live.max_helpers = o.max_helpers;
     live.run_programs = o.run_programs;
     live.run_timeout = o.run_timeout;
+    live.instructions = o.instructions;
     live.confine = o.confine;
     live.fresh = o.fresh;
     live.left_off = left_off;
@@ -981,6 +987,7 @@ impl Live {
             running: Vec::new(),
             run_programs: Vec::new(),
             run_timeout: DEFAULT_RUN_TIMEOUT,
+            instructions: None,
             confine: Confine::default(),
             pending: Vec::new(),
             suggesting: None,

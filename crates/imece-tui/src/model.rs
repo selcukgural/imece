@@ -1238,6 +1238,14 @@ pub enum Event {
         file: String,
         size: usize,
     },
+    /// The person's own instructions for every project (`path`, `size`
+    /// bytes) were longer than what goes into an agent's instructions,
+    /// so the agent's session started with the file's head only.
+    InstructionsCut {
+        agent: AgentId,
+        path: String,
+        size: usize,
+    },
     /// A live agent's worktree was clean at an older commit and was moved
     /// to the checkout's HEAD when its session started.
     WorktreeMoved {
@@ -1343,6 +1351,7 @@ impl Event {
             | Event::Resumed { .. }
             | Event::Restarted { .. }
             | Event::NotesCut { .. }
+            | Event::InstructionsCut { .. }
             | Event::CommandsMissing { .. }
             | Event::Confine { .. }
             | Event::WorktreeMoved { .. }
@@ -1435,6 +1444,7 @@ impl Event {
             | Event::Resumed { agent }
             | Event::Restarted { agent, .. }
             | Event::NotesCut { agent, .. }
+            | Event::InstructionsCut { agent, .. }
             | Event::CommandsMissing { agent }
             | Event::WorktreeMoved { agent, .. }
             | Event::WorktreeKept { agent, .. }
@@ -3359,6 +3369,12 @@ mod tests {
             size: 1,
         };
         assert_eq!((cut.agent(), cut.kind()), (10, EntryKind::Assumption));
+        let mine = Event::InstructionsCut {
+            agent: 12,
+            path: "/x".into(),
+            size: 1,
+        };
+        assert_eq!((mine.agent(), mine.kind()), (12, EntryKind::Assumption));
         let unlisted = Event::CommandsMissing { agent: 11 };
         assert_eq!(
             (unlisted.agent(), unlisted.kind()),

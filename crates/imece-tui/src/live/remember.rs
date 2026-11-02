@@ -1076,6 +1076,7 @@ mod tests {
             fresh: false,
             run_programs: Vec::new(),
             run_timeout: DEFAULT_RUN_TIMEOUT,
+            instructions: None,
             confine: Confine::Standard,
             solo: None,
         };
@@ -2433,6 +2434,7 @@ mod tests {
             fresh: false,
             run_programs: Vec::new(),
             run_timeout: DEFAULT_RUN_TIMEOUT,
+            instructions: None,
             confine: Confine::Standard,
             solo: None,
         };
@@ -2483,6 +2485,7 @@ mod tests {
             fresh,
             run_programs: Vec::new(),
             run_timeout: DEFAULT_RUN_TIMEOUT,
+            instructions: None,
             confine: Confine::Strict,
             solo: None,
         };
