@@ -1,4 +1,4 @@
-# Archived sessions: :archive and :restore
+# Archived sessions: :archive, :restore and the A browser
 
 The person's ask (2026-11-02): a finished epic's project should go out of
 sight with all it had, a clean one should take its place, and the old one
@@ -175,5 +175,45 @@ never without git.
 **Known gap.** A project brought back and archived again (by `:archive`
 or by giving way) takes a new title: the old one is not kept.
 
-**Not done (the next step):** looking at an archive read-only and the `A`
-browser; deleting an archive, renaming one.
+## `A` / `:archives`: the browser (the third step, first half)
+
+**What it lists.** `archives::groups` groups `World::archives` (newest
+first) by checkout: live `Live::repo_of` written with `~` for the home
+(`App::checkout_shown`), the demo's the project's name (its stand-in
+for a checkout, as its `:restore` swap uses). The checkout of the
+project at hand goes first, the others in the order of their newest
+archive. Each group has the projects open on it now (`● … open now`,
+by id) above its archives. A checkout with no archive is left out. The
+groups are frozen when the browser opens: only a restore changes an
+archive, and a restore closes the browser.
+
+**Rows** (`archives::Browser::rows`): checkout, open projects, archives,
+and under an unfolded archive its agents that are not gone
+(`archives::agents_of`; a helper that finished is gone). An archive's
+row: its title, what all its agents spent (gone ones too), its cards in
+Done, its agents, the day it was archived. Titles, names and checkouts
+go through `clean`. The rows scroll to keep the selected one in sight;
+at least one row is drawn on any screen.
+
+**Keys** (`Browser::on_key`, the browser takes every key, as the solo
+pick does; no `keys::Scope` of its own, so the key file does not reach
+into it): `j k ↑ ↓`, `gg G home end`, `l →` unfold (a checkout's
+archives, an archive's agents), `h ←` fold (on an agent: its archive,
+selected; on a folded archive or an open project: its checkout,
+selected), `za` and `enter` toggle the row at hand (enter will open the
+read-only view in the second half), `/` filters (`overlay::fold`: every
+word in the title, project name, checkout or an agent's name; `enter`
+keeps, `esc` drops, `backspace` on nothing stops typing; a paste goes in
+only while typing), `r` on an archive or one of its agents restores it
+through the same path as `:restore` (`App::restore_at`) and closes,
+`esc q A` close (`esc` drops a kept filter first). `A` with nothing
+archived flashes `no_archives`. An `:archive` counting down acts first
+(`end_grace`), so it is listed.
+
+**Help.** One row, `A  :archives`, after `esc u`: 57 key rows make 29
+in two columns, so the help fills the 40-row screen with none to spare.
+The next help row has to merge two.
+
+**Not done (the second half):** `enter` on an archive opening it
+read-only (`App` nested with `Engine::View`, its journal read from the
+store by project); deleting an archive, renaming one.

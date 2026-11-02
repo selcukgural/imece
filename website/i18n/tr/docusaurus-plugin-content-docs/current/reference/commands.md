@@ -21,6 +21,7 @@ description: imece'nin aldığı her `:` komutu; argümanları, karşılığı o
 | Komut | Tuş | Kısa | Yalnız demo | `$` | Menü notu |
 | --- | --- | --- | --- | --- | --- |
 | `:archive [TITLE]` | — | | | | |
+| `:archives` | `A` | | | | |
 | `:awake` | — | | | | açık / kapalı |
 | `:board` | `2` | | | | |
 | `:budget USD` | — | `:b` | | | harcanan / bütçe |
@@ -78,6 +79,12 @@ Canlıda `:pause`, `:faster` ve `:slower` menüde yer almaz. Hareket eden tuşla
 Eldeki projeyi `TITLE` adıyla kaldırır ve yerine yenisini açar, istendikten on saniye sonra: alt satır geri sayar (`◷ kule “first epic” adıyla arşivleniyor, 7 sn sonra · u tutar`; ajanlarından biri tur ortasındaysa `…; 2 tur yarıda kesilecek …`), `u` ([`:undo`](#undo)) olduğu gibi bırakır. Başlıksız, adı ve günleriyle anılır (`kule 2026-10-30 → 2026-11-02`); başlık tek satırdır, en çok 60 karakter.
 
 Arşivlenen projenin ajanları çıkışta olduğu gibi durur (süren bir tur yarıda kesilir, istemi saklanır) ve her şeyiyle uyur: satıcı oturumları, postaları, notları, değişiklikleri, kartları ve SENİ BEKLEYEN'deki kalemleri. Hepsi ekrandan çıkar: salon, SENİ BEKLEYEN, günlük, pano ve kuyruk yalnız yeni projeyi gösterir; yenisinin adı, iğnesi ve `:copy` listesi aynıdır, başındaki ajanın adı, satıcısı ve modeli de. Hiçbir şey harcanmaz, bütçe aynı bütçedir. Flaş: `kule “first epic” adıyla arşivlendi: agent'ları her şeyiyle uyuyor; yerine yenisi açıldı`; günlük: `kule projesini “first epic” adıyla arşivledin; yerine yeni bir kule açıldı`. `--fresh` arşivin oturumlarına dokunmaz. Demo da aynı biçimde arşivler. Bkz. [oturumlar](../concepts/sessions.md#arşivler) ve [yeni bir epic](../scenarios/new-epic.md) senaryosu.
+
+### `:archives`
+
+Arşivleri bir ağaç olarak açar, `A` gibi: arşivi olan her çalışma kopyası (eldeki önce, sonra en yeni arşivine göre), altında şu an onda açık projeler (`● kule · şu an açık · 1 agent`), sonra arşivleri, en yenisi önce; her biri ajanlarının harcadığı, biten kartları, ajanları ve arşivlendiği günle (`▸ first epic · $4.20 · 3 kart bitti · 4 agent · 2026-11-02 arşivlendi`). İçinde hiçbir şey uyanmaz, hiçbir şey harcanmaz.
+
+İçinde `j` `k` gezer, `gg` `G` ilk / son satıra gider, `l` (ya da `→`) bir arşivin ajanlarını gösterir (her biri satıcısı ve harcadığıyla, başı `◆` ile işaretli) ve katlanmış bir çalışma kopyasını açar, `h` (ya da `←`) onları yeniden katlar (zaten katlı bir arşivde, çalışma kopyasını), `za` ve `enter` eldeki satırı katlar ya da açar. `/` süzer: yalnızca başlığında, proje adında, çalışma kopyasında ya da bir ajanının adında yazılan her kelime olan arşivler kalır, büyük/küçük harf ve Türkçe harfler katlanır; `enter` süzgeci tutar, `esc` bırakır. Bir arşivde ya da ajanlarından birinde `r` onu geri getirir, [`:restore`](#restore-name) gibi, ve pencereyi kapatır; `esc`, `q` ya da `A` kapatır (`esc` önce süzgeci bırakır). Hiç arşiv yoksa: `henüz arşiv yok; :archive elindeki projeyi kaldırır`. Geri sayan bir `:archive` önce olur, böylece listede yer alır. Demo da arşivlerini aynı biçimde, her birini projesinin adı altında listeler. Bir arşive geri getirmeden, salt okunur bakmak henüz yapılmadı.
 
 ### `:awake`
 

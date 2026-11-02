@@ -64,7 +64,9 @@ Bir epic bitince `:archive [BAŞLIK]` eldeki projeyi kaldırır ve yerine, aynı
 
 Bir arşivden hiçbir şey uyanmaz, hiçbir şey harcanmaz: işçilerine kart sunulmaz, ajanlarına adla ulaşılmaz (yeni başın adı aynı olabilir) ve birinin arşivden önce yaptığı bir araç çağrısı `your project was put away; nothing was done` diye yanıtlanır. `--fresh` oturumlarına dokunmaz, temizlik de günlük satırlarını yaşları ne olursa olsun saklar. Satıcı oturumlarını satıcılar saklar: örneğin Claude Code eski transkriptleri bir süre sonra kendiliğinden siler (varsayılan 30 gün); o zamana dek gitmiş bir oturum, kaldığı yer anlatılarak yeniden başlar.
 
-`:restore [AD]` birini geri getirir ([`:restore`](../reference/commands.md#restore-name)): kaldırıldığı gibi yeniden açılır, başı seçilir, hiçbir şey uyanmaz. Her ajan, ona bir sonraki yazışınızda satıcı oturumunda sürer (satıcı hâlâ saklıyorsa sürdürülür); önce projenin kaldırıldığı ve arşivin yarıda kestiği tur ona söylenir. Çalışma kopyasında açık olan takım yer açar: bir şey yaptıysa sırası gelince arşivlenir, yapmadıysa kapatılır. Bir arşive geri getirmeden bakmak sonraki adımdır.
+`:restore [AD]` birini geri getirir ([`:restore`](../reference/commands.md#restore-name)): kaldırıldığı gibi yeniden açılır, başı seçilir, hiçbir şey uyanmaz. Her ajan, ona bir sonraki yazışınızda satıcı oturumunda sürer (satıcı hâlâ saklıyorsa sürdürülür); önce projenin kaldırıldığı ve arşivin yarıda kestiği tur ona söylenir. Çalışma kopyasında açık olan takım yer açar: bir şey yaptıysa sırası gelince arşivlenir, yapmadıysa kapatılır.
+
+`A` ([`:archives`](../reference/commands.md#archives)) arşivleri bir ağaç olarak listeler: her çalışma kopyası, şu an onda açık projeler, arşivleri en yenisi önce, harcadıkları, biten kartları ve ajanlarıyla; `/` onları süzer, `r` eldekini geri getirir. Bir arşive geri getirmeden, salt okunur bakmak sonraki adımdır.
 
 ## Kalanlar: günler, saklama, tercihler
 
