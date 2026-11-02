@@ -8,6 +8,7 @@ use ratatui::widgets::{Block, Paragraph};
 
 use super::*;
 use crate::app::{App, Digest, LeftOff, PickStep, SoloPick, TalkNote, Thread};
+use crate::archives::{self, Browser, Row};
 use crate::keys::{Keymap, Scope};
 use crate::welcome::{self, Seen};
 use imece_agent::Login;
@@ -257,6 +258,120 @@ pub fn solo_pick(f: &mut Frame, app: &App, p: &SoloPick) {
     }
     lines.push(Line::from(Span::styled(t.solo_pick_keys, dim())));
     window(f, t.solo_pick_title.into(), lines, 64);
+}
+
+/// The archives browser: the filter while there is one, the rows that fit
+/// with the selected one reversed and in sight, and the keys.
+pub fn archives(f: &mut Frame, app: &App, b: &Browser) {
+    let t = app.lang.text();
+    let w = &app.world;
+    let mut lines: Vec<Line> = Vec::new();
+    if b.typing || !b.find.is_empty() {
+        let mut spans = vec![
+            Span::styled(" /", fg(pal().accent)),
+            Span::styled(clean(&b.find), bold(pal().strong)),
+        ];
+        if b.typing {
+            spans.push(Span::styled("▏", fg(pal().accent)));
+        }
+        lines.push(Line::from(spans));
+    }
+    lines.push(Line::raw(""));
+    let rows = b.rows(w);
+    if rows.is_empty() {
+        lines.push(Line::from(Span::styled(t.help_none, dim())));
+    }
+    // The frame, the lines around the rows and the keys take their part
+    // of the screen; the rows scroll in the rest.
+    let room = usize::from(f.area().height)
+        .saturating_sub(lines.len() + 4)
+        .max(1);
+    let from = (b.sel + 1).saturating_sub(room);
+    for (n, &row) in rows.iter().enumerate().skip(from).take(room) {
+        let line = archive_row(app, b, row);
+        lines.push(if n == b.sel {
+            line.style(Style::new().add_modifier(Modifier::REVERSED))
+        } else {
+            line
+        });
+    }
+    lines.push(Line::raw(""));
+    lines.push(Line::from(Span::styled(t.archives_keys, dim())));
+    window(f, t.archives_title.into(), lines, 96);
+}
+
+/// One row of the archives browser: a checkout and how many archives it
+/// has; a project open on it now; an archive with its cost, cards done,
+/// agents and day; an agent with its vendor and what it spent.
+fn archive_row(app: &App, b: &Browser, row: Row) -> Line<'static> {
+    let t = app.lang.text();
+    let w = &app.world;
+    let mark = |open: bool| if open { "▾" } else { "▸" };
+    let agents = |p: ProjectId| archives::agents_of(w, p).count().to_string();
+    match row {
+        Row::Checkout(i) => {
+            let g = &b.groups[i];
+            Line::from(vec![
+                Span::styled(format!(" {} ", mark(!b.folded.contains(&i))), dim()),
+                Span::styled(clean(&g.checkout), bold(pal().strong)),
+                Span::styled(
+                    format!(
+                        " · {}",
+                        fill(t.archives_count, &[&g.archives.len().to_string()])
+                    ),
+                    dim(),
+                ),
+            ])
+        }
+        Row::Open(p) => Line::from(vec![
+            Span::styled("   ● ", fg(pal().ok)),
+            Span::styled(clean(&w.projects[p].name), fg(pal().strong)),
+            Span::styled(
+                format!(" · {}", fill(t.archives_open, &[&agents(p)])),
+                dim(),
+            ),
+        ]),
+        Row::Archive(p) => {
+            let cost: u64 = (w.agents.iter().filter(|a| a.project == p))
+                .map(|a| a.cost)
+                .sum();
+            let done = (w.cards.iter())
+                .filter(|c| c.project == p && c.column == Column::Done)
+                .count();
+            let at = w.projects[p].archived.as_ref().map_or(0, |a| a.at);
+            let what = fill(
+                t.archives_row,
+                &[
+                    &dollars(cost),
+                    &done.to_string(),
+                    &agents(p),
+                    &date(day(at)),
+                ],
+            );
+            Line::from(vec![
+                Span::styled(format!("   {} ", mark(b.unfolded.contains(&p))), dim()),
+                Span::styled(clean(archives::title(w, p)), bold(pal().strong)),
+                Span::styled(format!(" · {what}"), dim()),
+            ])
+        }
+        Row::Agent(id) => {
+            let a = &w.agents[id];
+            let lead = matches!(a.role, Role::Leader | Role::Solo);
+            let indent = if a.role == Role::Helper {
+                "         "
+            } else {
+                "       "
+            };
+            Line::from(vec![
+                Span::raw(indent),
+                Span::styled(if lead { "◆ " } else { "  " }, fg(pal().accent)),
+                Span::styled(clean(&a.name), fg(pal().strong)),
+                Span::raw("  "),
+                Span::styled(a.vendor.label(), fg(vendor_color(a.vendor))),
+                Span::styled(format!(" · {}", dollars(a.cost)), dim()),
+            ])
+        }
+    }
 }
 
 pub fn digest(f: &mut Frame, app: &App, d: &Digest) {

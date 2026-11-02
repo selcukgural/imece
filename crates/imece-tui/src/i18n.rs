@@ -299,6 +299,16 @@ pub struct Text {
     pub no_archive: &'static str,
     /// A bare `:restore`: the project at hand has no archive.
     pub no_archive_of: &'static str,
+    /// `A` with nothing archived.
+    pub no_archives: &'static str,
+    /// The archives browser: its title; a checkout's count; a project
+    /// open there now (its agents); an archive (its cost, cards done,
+    /// agents and the day it was archived); its keys.
+    pub archives_title: &'static str,
+    pub archives_count: &'static str,
+    pub archives_open: &'static str,
+    pub archives_row: &'static str,
+    pub archives_keys: &'static str,
     pub no_project: &'static str,
     pub last_project: &'static str,
     pub renamed: &'static str,
@@ -629,7 +639,7 @@ pub struct Text {
     pub waiting_yes: &'static str,
     // Overlays
     pub help_title: &'static str,
-    pub help_keys: [(&'static str, &'static str); 55],
+    pub help_keys: [(&'static str, &'static str); 56],
     /// The help's line for a new line in the writing, put after the
     /// writing keys: where the terminal tells shift-enter apart, and
     /// where it does not.
@@ -858,6 +868,12 @@ pub const EN: Text = Text {
     restored: "brought {} “{}” back: its agents sleep until you write to them",
     no_archive: "no archive is titled or named {}",
     no_archive_of: "{} has no archive",
+    no_archives: "nothing is archived yet; :archive puts the project at hand away",
+    archives_title: " ARCHIVES ",
+    archives_count: "{} archived",
+    archives_open: "open now · {} agents",
+    archives_row: "{} · {} cards done · {} agents · archived {}",
+    archives_keys: " j k move · h l za fold · / filter · r restore · esc close",
     no_project: "no open project named {}",
     last_project: "{} is the last open project; q q quits",
     renamed: "{} is now {}; write to {}",
@@ -1208,6 +1224,10 @@ pub const EN: Text = Text {
         ("t  :trace", "the raw stream of the agent at hand"),
         ("v  :talk", "its conversation with you"),
         ("esc  u", "go back · u :undo a :close or :forget"),
+        (
+            "A  :archives",
+            "the archives, r restores · :archive puts away",
+        ),
         ("tab ⇧tab [ ]", "next / previous panel"),
         ("w  :waiting", "straight to waiting for you"),
         ("W  S", ":next waiting, from anywhere · :defer this"),
@@ -1512,6 +1532,12 @@ pub const TR: Text = Text {
     restored: "{} “{}” geri geldi: agent'ları sen yazana kadar uyuyor",
     no_archive: "{} başlıklı ya da adlı arşiv yok",
     no_archive_of: "{} projesinin arşivi yok",
+    no_archives: "henüz arşiv yok; :archive elindeki projeyi kaldırır",
+    archives_title: " ARŞİVLER ",
+    archives_count: "{} arşiv",
+    archives_open: "şu an açık · {} agent",
+    archives_row: "{} · {} kart bitti · {} agent · {} arşivlendi",
+    archives_keys: " j k gez · h l za katla · / süz · r geri getir · esc kapat",
     no_project: "{} adında açık proje yok",
     last_project: "{} son açık proje; q q çıkar",
     renamed: "{} artık {}; {} adına yaz",
@@ -1861,6 +1887,10 @@ pub const TR: Text = Text {
         ("t  :trace", "eldeki agent'ın ham akışı"),
         ("v  :talk", "onun seninle konuşması"),
         ("esc  u", "yukarı çık · u :undo, :close ya da :forget'i"),
+        (
+            "A  :archives",
+            "arşivler, r geri getirir · :archive kaldırır",
+        ),
         ("tab ⇧tab [ ]", "sonraki / önceki panel"),
         ("w  :waiting", "doğrudan seni bekleyenlere"),
         ("W  S", ":next bekleyen, her yerden · :defer ertele"),

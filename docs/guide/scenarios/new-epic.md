@@ -64,7 +64,7 @@ A month later a bug in the old work turns up, and `kule`'s old team knew that co
 :restore v1 fixes
 ```
 
-(`:restore ` and `tab` list the archives, newest first: `v1 fixes   kule · 2026-11-02`.) The archive opens again as it was put away, its `lead` selected, its cards, journal lines and waiting items back on the screen:
+(`:restore ` and `tab` list the archives, newest first: `v1 fixes   kule · 2026-11-02`. Or press `A`: the archives as a tree, `kule`'s checkout first, with `● kule · open now` above `▸ v1 fixes · $6.10 · 4 cards done · 3 agents · archived 2026-11-02`; `l` shows its agents, `/fix` filters, `r` brings the one at hand back.) The archive opens again as it was put away, its `lead` selected, its cards, journal lines and waiting items back on the screen:
 
 ```text
  brought kule “v1 fixes” back: its agents sleep until you write to them

@@ -64,6 +64,7 @@ The conventions are vim's: `h` `j` `k` `l` move and fold, `gg` and `G` go to the
 | `v`  `:talk` | its conversation with you |
 | `esc` | go back |
 | `u`  `:undo` | keep a `:close` or `:forget` from happening while the bottom line counts its ten seconds down |
+| `A`  `:archives` | the archives as a tree (checkout → archive → its agents); in it `j` `k` `gg` `G` move, `h` `l` `za` fold, `/` filters, `r` brings the one at hand back (`:restore`), `esc` closes; `:archive` puts the project at hand away |
 | `tab` `⇧tab` `[` `]` | next / previous panel |
 | `,`  `.`  `<`  `>` | wider / narrower side panel |
 
@@ -173,11 +174,12 @@ The conventions are vim's: `h` `j` `k` `l` move and fold, `gg` and `G` go to the
 | `:settle` | `s` |
 | `:peek` | `K` |
 | `:hints` | `F` |
+| `:archives` | `A` |
 | `:fold` / `:unfold` | `zM` / `zR` |
 | `:trace` / `:talk` | `t` / `v` |
 | `:mark` | `m` |
 | `:pause`, `:faster`, `:slower` | `space`, `+`, `-` (demo) |
-| `:budget` (`:b`), `:lead`, `:open` (`:o`), `:close` (`:c`), `:rename`, `:solo`, `:effort`, `:model`, `:forget` (`:f`), `:export`, `:commit`, `:copy`, `:pin`, `:awake`, `:notify`, `:unsettle`, `:keys` | no key: typed after `:` |
+| `:budget` (`:b`), `:lead`, `:open` (`:o`), `:close` (`:c`), `:rename`, `:solo`, `:effort`, `:model`, `:forget` (`:f`), `:export`, `:commit`, `:copy`, `:pin`, `:archive`, `:restore`, `:awake`, `:notify`, `:unsettle`, `:keys` | no key: typed after `:` |
 
 The full list of what each command takes is in the [commands reference](../reference/commands.md).
 

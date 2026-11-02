@@ -9,6 +9,7 @@ use std::time::{Duration, Instant};
 
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
+use crate::archives::{self, Browser};
 use crate::complete::{self, Jump, Menu};
 use crate::edit;
 use crate::i18n::{Lang, fill};
@@ -771,6 +772,8 @@ pub struct App {
     /// A bare `:solo` asks the vendor, the model and the effort on a
     /// screen of its own; the words it came with wait in it.
     pub solo_pick: Option<SoloPick>,
+    /// The archives browser (`A`, `:archives`), while it is open.
+    pub archives: Option<Browser>,
     /// The vendor that leads from the next start on without being asked
     /// (`claude`), as the preferences keep it; none asks when there is a
     /// choice.
@@ -926,6 +929,7 @@ impl App {
             keys_held: None,
             keys_looked: None,
             solo_pick: None,
+            archives: None,
             primary: None,
             digest: None,
             left_off,
@@ -1764,6 +1768,7 @@ impl App {
             || self.digest.is_some()
             || self.left_off.is_some()
             || self.solo_pick.is_some()
+            || self.archives.is_some()
         {
             return None;
         }
@@ -1815,6 +1820,10 @@ impl App {
         }
         if self.solo_pick.is_some() {
             self.solo_pick_key(k.code);
+            return;
+        }
+        if self.archives.is_some() {
+            self.archives_key(k);
             return;
         }
         if self.help {
@@ -1907,6 +1916,7 @@ impl App {
             }
             KeyCode::Char('K') => self.peek = self.agent_at_hand(),
             KeyCode::Char('F') => self.open_hints(),
+            KeyCode::Char('A') => self.open_archives(),
             KeyCode::Char('v') => {
                 if let Some(id) = self.agent_at_hand() {
                     self.open_talk_with(id);
@@ -3239,6 +3249,12 @@ impl App {
             let text = pasted(text).replace(['\n', '\t'], " ");
             return self.help_find.push_str(&text);
         }
+        if let Some(b) = &mut self.archives {
+            if !b.paste(&self.world, &pasted(text)) {
+                self.flash(self.lang.text().paste_not_writing);
+            }
+            return;
+        }
         let open = self.help || self.solo_pick.is_some() || self.window_open() || self.leaving;
         if !self.typing || open {
             return self.flash(self.lang.text().paste_not_writing);
@@ -3611,6 +3627,7 @@ impl App {
             "close" => self.close_project(arg),
             "archive" => self.archive_project(arg),
             "restore" => self.restore_project(arg),
+            "archives" => self.open_archives(),
             "undo" => self.undo(),
             "rename" => self.rename_project(arg),
             "forget" => self.forget_agent(arg),
@@ -4105,6 +4122,7 @@ impl App {
         let busy = self.typing
             || self.help
             || self.solo_pick.is_some()
+            || self.archives.is_some()
             || self.leaving
             || self.window_open();
         if busy || now.duration_since(at) < FOCUS_AWAY {
@@ -4780,6 +4798,13 @@ impl App {
                 fill(t.no_archive, &[arg])
             });
         };
+        self.restore_at(p);
+    }
+
+    /// Archive `p` comes back, its head selected; the project open in its
+    /// place gives way.
+    fn restore_at(&mut self, p: ProjectId) {
+        let t = self.lang.text();
         let title = (self.world.projects[p].archived.as_ref())
             .map(|a| a.title.clone())
             .unwrap_or_default();
@@ -4797,6 +4822,49 @@ impl App {
         self.selected = Sel::Agent(self.world.projects[p].leader);
         let name = &self.world.projects[p].name;
         self.flash(fill(t.restored, &[name, &title]));
+    }
+
+    /// `A`, `:archives`: the archives as a tree, the checkout at hand's
+    /// first; nothing archived says so.
+    fn open_archives(&mut self) {
+        self.end_grace();
+        if self.world.archives().is_empty() {
+            return self.flash(self.lang.text().no_archives);
+        }
+        let at = self.current_project();
+        let groups = archives::groups(&self.world, &|p| self.checkout_shown(p), Some(at));
+        self.archives = Some(Browser::new(&self.world, groups));
+    }
+
+    /// Project `p`'s checkout as the archives browser writes it: live, its
+    /// folder with `~` for the home; the demo's, the project's name (its
+    /// stand-in for a checkout).
+    fn checkout_shown(&self, p: ProjectId) -> String {
+        match &self.engine {
+            Engine::Live(live) => {
+                let repo = live.repo_of(p);
+                match self.home.as_deref().and_then(|h| repo.strip_prefix(h).ok()) {
+                    Some(rest) => format!("~/{}", rest.display()),
+                    None => repo.display().to_string(),
+                }
+            }
+            Engine::Sim(_) => self.world.projects[p].name.clone(),
+        }
+    }
+
+    /// A key in the archives browser.
+    fn archives_key(&mut self, k: KeyEvent) {
+        let Some(b) = &mut self.archives else {
+            return;
+        };
+        match b.on_key(&self.world, k) {
+            None => {}
+            Some(archives::Act::Close) => self.archives = None,
+            Some(archives::Act::Restore(p)) => {
+                self.archives = None;
+                self.restore_at(p);
+            }
+        }
     }
 
     /// `:forget [@NAME]`: the agent (named, else the one at hand) forgets
@@ -9438,6 +9506,8 @@ mod tests {
             |a: &mut App| a.help = true,
             |a: &mut App| a.leaving = true,
             |a: &mut App| a.left_off = Some(LeftOff::default()),
+            |a: &mut App| a.solo_pick = Some(SoloPick::new(None, None, Vec::new())),
+            |a: &mut App| a.archives = Some(Browser::new(&a.world, Vec::new())),
         ] {
             let mut app = App::new(1, 1, 0, 1, Lang::En);
             busy(&mut app);
@@ -10776,6 +10846,7 @@ mod tests {
             |a: &mut App| a.digest = Some(Digest::default()),
             |a: &mut App| a.left_off = Some(LeftOff::default()),
             |a: &mut App| a.solo_pick = Some(SoloPick::new(None, None, Vec::new())),
+            |a: &mut App| a.archives = Some(Browser::new(&a.world, Vec::new())),
         ] {
             let mut app = App::new(1, 1, 0, 1, Lang::En);
             over(&mut app);

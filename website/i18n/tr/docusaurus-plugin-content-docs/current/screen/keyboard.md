@@ -64,6 +64,7 @@ Gelenekler vim'inkidir: `h` `j` `k` `l` hareket ve katlama, `gg` ve `G` uçlara,
 | `v`  `:talk` | onun sizinle konuşması |
 | `esc` | geri |
 | `u`  `:undo` | alt satır on saniyesini geri sayarken bir `:close` ya da `:forget`'in olmasını önle |
+| `A`  `:archives` | arşivler bir ağaç olarak (çalışma kopyası → arşiv → ajanları); içinde `j` `k` `gg` `G` gezer, `h` `l` `za` katlar, `/` süzer, `r` eldekini geri getirir (`:restore`), `esc` kapatır; `:archive` eldeki projeyi kaldırır |
 | `tab` `⇧tab` `[` `]` | sonraki / önceki panel |
 | `,`  `.`  `<`  `>` | yan paneli genişlet / daralt |
 
@@ -173,11 +174,12 @@ Gelenekler vim'inkidir: `h` `j` `k` `l` hareket ve katlama, `gg` ve `G` uçlara,
 | `:settle` | `s` |
 | `:peek` | `K` |
 | `:hints` | `F` |
+| `:archives` | `A` |
 | `:fold` / `:unfold` | `zM` / `zR` |
 | `:trace` / `:talk` | `t` / `v` |
 | `:mark` | `m` |
 | `:pause`, `:faster`, `:slower` | `space`, `+`, `-` (demo) |
-| `:budget` (`:b`), `:lead`, `:open` (`:o`), `:close` (`:c`), `:rename`, `:solo`, `:effort`, `:model`, `:forget` (`:f`), `:export`, `:commit`, `:copy`, `:pin`, `:awake`, `:notify`, `:unsettle`, `:keys` | tuşu yok: `:` ardından yazılır |
+| `:budget` (`:b`), `:lead`, `:open` (`:o`), `:close` (`:c`), `:rename`, `:solo`, `:effort`, `:model`, `:forget` (`:f`), `:export`, `:commit`, `:copy`, `:pin`, `:archive`, `:restore`, `:awake`, `:notify`, `:unsettle`, `:keys` | tuşu yok: `:` ardından yazılır |
 
 Her komutun ne aldığının tam listesi [komutlar başvurusunda](../reference/commands.md).
 
