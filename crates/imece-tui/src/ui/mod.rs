@@ -2897,6 +2897,7 @@ mod tests {
             card(1, Some(w[1]), Column::Working),
             card(2, Some(w[2]), Column::Waiting),
             card(3, Some(w[3]), Column::Done),
+            card(5, None, Column::Waiting),
         ];
         app.world.agents[w[1]].status = Status::Idle;
         app.world.agents[w[3]].status = Status::Working;
@@ -2929,6 +2930,12 @@ mod tests {
             "the second tone"
         );
         assert_eq!(first[(45, 5)].symbol(), "○", "the idle owner");
+        // A waiting card shows no owner and takes one row: the next
+        // card's title right under it.
+        assert_eq!(first[(1, 2)].symbol(), "#");
+        assert_eq!(first[(2, 2)].symbol(), "3");
+        assert_eq!(first[(1, 3)].symbol(), "#");
+        assert_eq!(first[(2, 3)].symbol(), "6");
         assert!(!first[(45, 5)].modifier.contains(Modifier::DIM));
         app.drawn(app.after(ms(600)));
         assert!(app.patch_due(app.after(ms(1200))));
