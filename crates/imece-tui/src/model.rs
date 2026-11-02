@@ -2020,7 +2020,8 @@ impl World {
         self.inbox
             .iter()
             .enumerate()
-            .filter(|(_, i)| i.open && !self.in_archive(i.agent))
+            .filter(|(_, i)| i.open)
+            .filter(|(_, i)| !self.in_archive(i.agent))
             .map(|(n, _)| n)
             .collect()
     }

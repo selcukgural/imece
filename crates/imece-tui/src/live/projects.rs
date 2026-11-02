@@ -1052,6 +1052,9 @@ mod tests {
         assert!(live.interrupted[2].is_empty() && live.inflight[1].is_empty());
         assert!(live.remembered[1] && live.remembered[2]);
         assert!(!live.leaving[2]);
+        // The other project's head is not touched.
+        assert_eq!((live.generation[0], live.remembered[0]), (0, false));
+        assert_eq!(w.agents[0].status, Status::Idle);
         assert_eq!(live.filed_at.keys().collect::<Vec<_>>(), [&0]);
         assert_eq!(live.files_cut.iter().collect::<Vec<_>>(), [&0]);
         for id in [1, 2] {

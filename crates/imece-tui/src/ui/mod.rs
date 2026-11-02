@@ -5333,6 +5333,9 @@ mod tests {
             app.world.agents[worker].set_status(Status::Idle, t);
             app.unseen.insert(worker);
             app.settled.insert(worker);
+            // Another project's stay.
+            app.unseen.insert(0);
+            app.settled.insert(0);
             app.zoom = Zoom::Focus(worker);
             app.inbox_sel = 5;
             app.card = app.world.cards.iter().position(|c| c.project == 1);
@@ -5362,6 +5365,7 @@ mod tests {
             assert_eq!(app.inbox_sel, app.inbox_rows().len().saturating_sub(1));
             assert_eq!(app.collapsed.len(), 3);
             assert!(!app.unseen.contains(&worker) && !app.settled.contains(&worker));
+            assert!(app.unseen.contains(&0) && app.settled.contains(&0));
             assert_eq!(flashed(&app), done);
             assert_eq!(theirs(&app), 0, "its lines wait in the archive");
             assert!(w.shown_cards().all(|c| c.project != 1));
@@ -5381,9 +5385,15 @@ mod tests {
                 ours.iter()
                     .all(|&id| app.world.agents[id].status == Status::Asleep)
             );
+            // A selected header moves to the fresh head too.
+            app.selected = Sel::Project(2);
+            typed(&mut app, ":archive again");
+            app.end_grace();
+            assert!(app.world.projects[2].archived.is_some());
+            assert_eq!(app.selected, Sel::Agent(app.world.projects[3].leader));
             // Without a title: its name and days; a long one is cut.
             typed(&mut app, ":archive");
-            assert_eq!(app.archive_title, app.world.archive_title(2));
+            assert_eq!(app.archive_title, app.world.archive_title(3));
             typed(&mut app, &format!(":archive {}", "x".repeat(70)));
             assert_eq!(app.archive_title, "x".repeat(60));
         }
@@ -5427,10 +5437,23 @@ mod tests {
             .unwrap();
         assert!(!row.contains(&name), "{row}");
         assert!(board.contains(" 0/1 cards"), "{board}");
+        assert!(
+            board.contains("IN PROGRESS (1)") && board.contains("DONE (0)"),
+            "{board}"
+        );
         app.view = View::Salon;
         let salon = render(&app, 200, 40);
         let queue = salon.lines().find(|l| l.contains("QUEUE")).unwrap();
         assert!(!queue.contains("#1") && !queue.contains("#2"), "{queue}");
+        // Two projects in sight: each card names its own.
+        app.world.projects[0].archived = None;
+        app.view = View::Board;
+        let board = render(&app, 200, 40);
+        let row = (board.lines())
+            .skip_while(|l| !l.contains("the next epic"))
+            .nth(1)
+            .unwrap();
+        assert!(row.contains(&name), "{row}");
     }
 
     #[test]

@@ -338,7 +338,9 @@ impl Live {
                 .count();
             (format!("{}.", w.agents[from].name), n + 1)
         };
-        let name = (next..)
+        // A bounded search: there are fewer agents than the numbers it
+        // tries, so one is free.
+        let name = (next..=next + w.agents.len())
             .map(|n| format!("{stem}{n}"))
             .find(|name| !w.name_taken(name))
             .expect("some number is free");
