@@ -375,6 +375,9 @@ pub struct Text {
     pub context_line: &'static str,
     /// The same when the vendor does not say the window's size: tokens.
     pub context_tokens: &'static str,
+    /// The focus's activity bar (`STIR_LONG` ticks), `{}` the bar and
+    /// how many trace lines it counts.
+    pub activity_line: &'static str,
     pub queue: &'static str,
     pub queue_empty: &'static str,
     pub latest: &'static str,
@@ -933,6 +936,7 @@ pub const EN: Text = Text {
     plan_more: "… {} more",
     context_line: "context:  {}% · {} of {}",
     context_tokens: "context:  {} tokens",
+    activity_line: "activity: {} · trace lines in 2 min: {}",
     queue: "QUEUE ",
     queue_empty: " empty",
     latest: "  │ latest:",
@@ -1606,6 +1610,7 @@ pub const TR: Text = Text {
     plan_more: "… {} daha",
     context_line: "bağlam:   %{} · {} / {}",
     context_tokens: "bağlam:   {} token",
+    activity_line: "etkinlik: {} · 2 dakikada iz satırı: {}",
     queue: "KUYRUK ",
     queue_empty: " boş",
     latest: "  │ son:",
@@ -2117,6 +2122,7 @@ mod tests {
             (e.plan_more, t.plan_more),
             (e.context_line, t.context_line),
             (e.context_tokens, t.context_tokens),
+            (e.activity_line, t.activity_line),
             (e.ev_interrupted, t.ev_interrupted),
             (e.store_failed, t.store_failed),
             (e.st_touched, t.st_touched),

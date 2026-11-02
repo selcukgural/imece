@@ -103,6 +103,7 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App, id: AgentId) {
         };
         head.push(Line::from(Span::styled(line, style)));
     }
+    head.extend(activity_line(app, a));
     if !a.plan.is_empty() {
         let (done, all) = a.plan_count();
         head.push(Line::from(Span::styled(
@@ -124,6 +125,26 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App, id: AgentId) {
         None => vec![Line::from(Span::styled(t.no_story, dim()))],
     };
     tail(f, body, story);
+}
+
+/// The focus's activity bar: the agent's trace lines in each of the last
+/// [`STIR_LONG`] ticks on the row's scale, and how many in all; none
+/// while they are all empty or motion is off, as on the row.
+pub(super) fn activity_line(app: &App, a: &Agent) -> Option<Line<'static>> {
+    if app.motion == crate::motion::Motion::Off {
+        return None;
+    }
+    let counts = a.stirs.long(app.world.tick);
+    let all: u32 = counts.iter().map(|&n| u32::from(n)).sum();
+    if all == 0 {
+        return None;
+    }
+    let bar: String = counts
+        .iter()
+        .map(|&n| super::salon::stir_glyph(n))
+        .collect();
+    let text = fill(app.lang.text().activity_line, &[&bar, &all.to_string()]);
+    Some(Line::from(Span::styled(text, dim())))
 }
 
 /// Rows the agent's to-do list may take on its focus, the title not
@@ -356,6 +377,83 @@ mod tests {
                 ("Δ", 5),
                 ("›", 6)
             ]
+        );
+    }
+
+    #[test]
+    fn the_focus_shows_two_minutes_of_activity_on_the_rows_scale() {
+        use crate::i18n::Lang;
+        use crate::motion::Motion;
+        use ratatui::{Terminal, backend::TestBackend};
+        let mut app = App::new(1, 1, 0, 1, Lang::En);
+        app.motion = Motion::Calm;
+        let id = (app.world.agents.iter())
+            .find(|a| a.role == Role::Worker)
+            .unwrap()
+            .id;
+        app.world.tick = 100;
+        app.world.agents[id].stirs = Stirs::default();
+        assert_eq!(
+            activity_line(&app, &app.world.agents[id]),
+            None,
+            "nothing done"
+        );
+        // Two minutes, the row's five ticks at its end.
+        assert_eq!(STIR_LONG as u64 * SECONDS_PER_TICK, 120);
+        let a = &mut app.world.agents[id];
+        for (tick, n) in [(77, 1), (80, 3), (99, 15), (100, 2)] {
+            for _ in 0..n {
+                a.stirs.add(tick);
+            }
+        }
+        let text = |app: &App| {
+            let line = activity_line(app, &app.world.agents[id]).expect("shown");
+            assert_eq!(line.spans[0].style, dim());
+            line.spans
+                .iter()
+                .map(|s| s.content.as_ref())
+                .collect::<String>()
+        };
+        assert_eq!(
+            text(&app),
+            "activity: ▂▁▁▄▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁█▃ · trace lines in 2 min: 21"
+        );
+        app.lang = Lang::Tr;
+        assert_eq!(
+            text(&app),
+            "etkinlik: ▂▁▁▄▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁█▃ · 2 dakikada iz satırı: 21"
+        );
+        app.lang = Lang::En;
+        // A tick on, the oldest line has gone off its start.
+        app.world.tick = 101;
+        assert!(text(&app).starts_with("activity: ▁▁▄▁"), "{}", text(&app));
+        assert!(text(&app).ends_with(": 20"));
+        // Columns past what a u16 holds still add up.
+        app.world.agents[id].stirs = Stirs::default();
+        for tick in [100, 101] {
+            for _ in 0..u16::MAX {
+                app.world.agents[id].stirs.add(tick);
+            }
+        }
+        assert!(text(&app).ends_with(&format!(": {}", 2 * u32::from(u16::MAX))));
+        // Off: the screen as it was before motion, on the focus too.
+        app.motion = Motion::Off;
+        assert_eq!(activity_line(&app, &app.world.agents[id]), None);
+        app.motion = Motion::Calm;
+        // Drawn on the focus, between the status lines and the story.
+        let mut t = Terminal::new(TestBackend::new(100, 20)).unwrap();
+        t.draw(|f| draw(f, f.area(), &app, id)).unwrap();
+        let rows: Vec<String> = (0..20)
+            .map(|y| {
+                (0..100)
+                    .map(|x| t.backend().buffer()[(x, y)].symbol().to_string())
+                    .collect()
+            })
+            .collect();
+        assert!(
+            rows.iter()
+                .any(|r| r.contains("activity: ▁") && r.contains(": 131070")),
+            "{rows:#?}"
         );
     }
 
