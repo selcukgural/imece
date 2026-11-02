@@ -462,9 +462,10 @@ fn main() -> std::io::Result<()> {
             std::process::exit(1);
         };
         // Running every vendor's --version takes a moment: say so.
-        terminal
-            .draw(|f| ui::pick::probing(f, args.lang))
-            .unwrap_or_else(|e| fail(e.to_string()));
+        screen::synced(&mut std::io::stdout(), || {
+            terminal.draw(|f| ui::pick::probing(f, args.lang))
+        })
+        .unwrap_or_else(|e| fail(e.to_string()));
         let present = live::probe(&args.repo, live::KNOWN).unwrap_or_else(|e| fail(e));
         let candidates = live::leaders(&present);
         let primary = saved.lead.as_deref().and_then(Vendor::parse);
@@ -571,7 +572,9 @@ fn ask(
             return Ok(None);
         }
         if std::mem::take(&mut due) {
-            terminal.draw(|f| ui::pick::draw(f, pick))?;
+            screen::synced(&mut std::io::stdout(), || {
+                terminal.draw(|f| ui::pick::draw(f, pick))
+            })?;
         }
         // The wait only bounds how late a signal is seen.
         let ready = match event::poll(std::time::Duration::from_millis(200)) {
@@ -617,12 +620,17 @@ fn run(
 ) -> std::io::Result<()> {
     let mut last = Instant::now();
     let mut title = screen::Title::default();
+    let mut cursor = screen::Cursor::default();
     while !app.quit && !SIGNALLED.load(Ordering::SeqCst) {
         app.looked();
         // Drawn when something changed; in another window, less often.
         let now = Instant::now();
         if app.draw_due(now) {
-            terminal.draw(|f| ui::draw(f, app))?;
+            // One frame, the cursor's look with it.
+            screen::synced(&mut std::io::stdout(), || {
+                terminal.draw(|f| ui::draw(f, app))?;
+                cursor.show(&mut std::io::stdout(), ui::look(app))
+            })?;
             app.drawn(now);
         }
         let waiting = app.world.open_inbox().len();
@@ -678,8 +686,9 @@ fn run(
                 let cwd = app.cwd();
                 let how = shell::run(terminal, &cwd, &command, |ended| app.shell_back(ended));
                 app.ran(&command, how);
-                // The shell had the terminal, and its title back.
+                // The shell had the terminal, its title and cursor back.
                 title.forget();
+                cursor.forget();
             }
         }
         // The key file changed (`:keys` or an edit): kept for the next start.

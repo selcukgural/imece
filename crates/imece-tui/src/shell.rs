@@ -532,12 +532,11 @@ pub fn run(
     Ok(caught)
 }
 
-/// Leaves the alternate screen (auto-wrap on again) and raw mode: the
-/// terminal is the shell's.
+/// Leaves the alternate screen (auto-wrap on again, the cursor shown as
+/// the terminal has it) and raw mode: the terminal is the shell's.
 fn step_aside() -> io::Result<()> {
     disable_raw_mode()?;
-    screen::give_back(&mut io::stdout())?;
-    execute!(io::stdout(), cursor::Show)
+    screen::give_back(&mut io::stdout())
 }
 
 /// Raw mode for one key press (so no newline is echoed and ctrl-c is a

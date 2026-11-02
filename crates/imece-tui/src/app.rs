@@ -217,6 +217,28 @@ pub struct TalkNote {
     pub text: String,
 }
 
+/// Where the person types, so where the terminal's cursor stands
+/// ([`App::caret`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Field {
+    /// The command line at the foot.
+    Line,
+    /// The help's `/` filter.
+    Help,
+    /// The archives' `/` filter.
+    Archives,
+}
+
+/// What is typed, which the cursor's shape says: a message or a `!`
+/// command, a `:` command to imece, or words that find something (a
+/// filter, `^r`, `#`, `&`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Caret {
+    Write,
+    Command,
+    Find,
+}
+
 /// What the note being written goes on: a line of worker `.0`'s change,
 /// or words of a conversation (a [`TalkNote`] with no text yet).
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -3598,6 +3620,49 @@ impl App {
         };
         let symbols: Vec<(&str, &str)> = held.iter().map(|h| (h.0, h.1)).collect();
         complete::files(start, word, forced, &paths, &symbols, note)
+    }
+
+    /// Where the terminal's own cursor stands and what it looks like, while
+    /// the person types: the window on top takes it (the help's or the
+    /// archives' `/` filter), a window on top that takes no text hides it,
+    /// else the command line has it while it is open. `None`: hidden.
+    pub fn caret(&self) -> Option<(Field, Caret)> {
+        if let Some(v) = &self.viewing {
+            return v.caret();
+        }
+        if self.solo_pick.is_some() {
+            return None;
+        }
+        if let Some(b) = &self.archives {
+            return b.typing.then_some((Field::Archives, Caret::Find));
+        }
+        if self.help {
+            return self.help_typing.then_some((Field::Help, Caret::Find));
+        }
+        let window = !self.news.is_empty()
+            || self.welcome
+            || self.digest.is_some()
+            || self.left_off.is_some()
+            || self.leaving;
+        if window || !self.typing {
+            return None;
+        }
+        // In the order the line's heading names what is written
+        // (`ui::writing`).
+        let caret = if self.noting.is_some() {
+            Caret::Write
+        } else if self.searching {
+            Caret::Find
+        } else if self.typing_shell() {
+            Caret::Write
+        } else if self.typing_card() || self.typing_jump() {
+            Caret::Find
+        } else if self.typing_command() {
+            Caret::Command
+        } else {
+            Caret::Write
+        };
+        Some((Field::Line, caret))
     }
 
     /// Whether what is being typed is a command to imece (`:budget 80`),
@@ -9836,6 +9901,88 @@ mod tests {
             busy(&mut a);
             assert!(!a.at_rest(), "{i}");
         }
+    }
+
+    #[test]
+    fn the_cursor_stands_where_the_person_types_and_its_shape_says_what() {
+        let typed = |input: &str, set: fn(&mut App)| {
+            let mut a = App::new(1, 1, 0, 1, Lang::En);
+            a.typing = true;
+            a.input = input.into();
+            set(&mut a);
+            a.caret()
+        };
+        let line = |c| Some((Field::Line, c));
+        let as_is = |_: &mut App| {};
+        assert_eq!(typed("", |a| a.typing = false), None, "nothing typed");
+        assert_eq!(typed("hello", as_is), line(Caret::Write));
+        assert_eq!(typed("@lead hi", as_is), line(Caret::Write));
+        assert_eq!(typed(":budget 80", as_is), line(Caret::Command));
+        assert_eq!(typed("!cargo test", as_is), line(Caret::Write));
+        assert_eq!(typed("#323", as_is), line(Caret::Find));
+        assert_eq!(typed("&claude-1", as_is), line(Caret::Find));
+        // The heading's order: a note, then `^r`, then `!`, `#` `&`, `:`.
+        let note = |a: &mut App| a.noting = Some(Noting::Line(0, 0));
+        let search = |a: &mut App| a.searching = true;
+        assert_eq!(typed(":x", note), line(Caret::Write));
+        assert_eq!(typed("#x", note), line(Caret::Write));
+        assert_eq!(typed(":x", search), line(Caret::Find));
+        assert_eq!(typed("!x", search), line(Caret::Find));
+        assert_eq!(typed("x", search), line(Caret::Find));
+        // A window on top that takes no text hides it, each on its own.
+        let windows: [fn(&mut App); 7] = [
+            |a| a.news = vec!["x"],
+            |a| a.welcome = true,
+            |a| {
+                a.digest = Some(Digest {
+                    minutes: 4,
+                    merged: 0,
+                    blocked: 0,
+                    assumptions: 0,
+                    talks: 0,
+                    waiting: 0,
+                    highlights: Vec::new(),
+                })
+            },
+            |a| a.left_off = Some(LeftOff::default()),
+            |a| a.leaving = true,
+            |a| a.solo_pick = Some(SoloPick::new(None, None, Vec::new())),
+            |a| a.help = true,
+        ];
+        for (i, window) in windows.iter().enumerate() {
+            assert_eq!(typed("hello", *window), None, "{i}");
+        }
+        // The filters of the help and the archives take it while typed.
+        let help = |a: &mut App| {
+            a.help = true;
+            a.help_typing = true;
+        };
+        assert_eq!(typed("hello", help), Some((Field::Help, Caret::Find)));
+        let browsing = |a: &mut App| a.archives = Some(Browser::new(&a.world, Vec::new()));
+        assert_eq!(typed("hello", browsing), None, "browsing, not filtering");
+        let filtering = |a: &mut App| {
+            let mut b = Browser::new(&a.world, Vec::new());
+            b.typing = true;
+            a.archives = Some(b);
+            a.help = true;
+            a.help_typing = true;
+        };
+        assert_eq!(
+            typed("", filtering),
+            Some((Field::Archives, Caret::Find)),
+            "the archives' window is over the help's"
+        );
+        // An archive's view has the cursor of its own line.
+        let mut app = App::new(1, 1, 0, 1, Lang::En);
+        app.typing = true;
+        app.input = "hello".into();
+        let mut v = App::new(1, 1, 0, 1, Lang::En);
+        v.typing = true;
+        v.input = ":quit".into();
+        app.viewing = Some(Box::new(v));
+        assert_eq!(app.caret(), line(Caret::Command));
+        app.viewing.as_mut().unwrap().typing = false;
+        assert_eq!(app.caret(), None, "the view types nothing");
     }
 
     #[test]

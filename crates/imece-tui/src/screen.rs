@@ -29,6 +29,13 @@
 //! not as enter). Both are switched off whenever the terminal is handed
 //! back, the protocol's flags popped before the alternate screen is
 //! left, so the shell gets the keys it knows.
+//!
+//! Each frame is drawn as one synchronized update (mode 2026, `synced`),
+//! so a terminal that has the mode never shows half of one. While the
+//! person types, the terminal's own cursor stands where the text goes, in
+//! a shape that says what is typed (`Cursor`, `Look`); the terminal
+//! blinks it. Its shape and colour go back to the terminal's own, and it
+//! is shown, whenever the terminal is handed back, a panic included.
 
 use std::io::{self, Stdout, Write};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -113,6 +120,10 @@ fn taking(out: &mut impl Write, keys: bool) -> io::Result<()> {
 
 /// `give_back`, with `keys` saying whether the kitty flags are popped.
 fn giving(out: &mut impl Write, keys: bool) -> io::Result<()> {
+    // A frame cut short (a panic while drawing) no longer holds what
+    // follows; the cursor as the terminal's settings have it, shown.
+    out.write_all(SYNC_END)?;
+    out.write_all(CURSOR_BACK)?;
     if keys {
         execute!(out, PopKeyboardEnhancementFlags)?;
     }
@@ -131,6 +142,88 @@ fn giving(out: &mut impl Write, keys: bool) -> io::Result<()> {
 /// xterm's window ops: save the title on the stack, take it back.
 const PUSH_TITLE: &[u8] = b"\x1b[22;0t";
 const POP_TITLE: &[u8] = b"\x1b[23;0t";
+
+/// The terminal's own cursor shape (`CSI 0 q`), its own colour (`OSC
+/// 112`), and shown (`CSI ?25h`).
+const CURSOR_BACK: &[u8] = b"\x1b[0 q\x1b]112\x07\x1b[?25h";
+
+/// Synchronized output (mode 2026): the terminal holds what comes between
+/// these two and shows it at once, so a frame is never seen half drawn.
+/// A terminal without the mode ignores both.
+const SYNC_BEGIN: &[u8] = b"\x1b[?2026h";
+const SYNC_END: &[u8] = b"\x1b[?2026l";
+
+/// Runs `draw` as one synchronized frame: begun before it, ended after it
+/// whatever it returned, so a failed draw never leaves the terminal
+/// holding everything after it.
+pub fn synced<T>(out: &mut impl Write, draw: impl FnOnce() -> io::Result<T>) -> io::Result<T> {
+    out.write_all(SYNC_BEGIN)?;
+    let drawn = draw();
+    out.write_all(SYNC_END)?;
+    out.flush()?;
+    drawn
+}
+
+/// The cursor's shape (DECSCUSR, `CSI n q`); the terminal blinks it, so a
+/// blinking cursor costs imece no frame.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Shape {
+    BlinkingBar,
+    SteadyBar,
+    BlinkingUnderline,
+}
+
+impl Shape {
+    /// DECSCUSR's number for it.
+    fn code(self) -> u8 {
+        match self {
+            Shape::BlinkingUnderline => 3,
+            Shape::BlinkingBar => 5,
+            Shape::SteadyBar => 6,
+        }
+    }
+}
+
+/// How the cursor looks while it is shown: its shape, and a colour of its
+/// own (`OSC 12`) or the terminal's.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Look {
+    pub shape: Shape,
+    pub colour: Option<[u8; 3]>,
+}
+
+/// The cursor's look as last written, so it is written only when it
+/// changes.
+#[derive(Default)]
+pub struct Cursor(Option<Look>);
+
+impl Cursor {
+    /// Makes the cursor look like `look`, unless it already does. `None`:
+    /// the cursor is hidden, and how it looks does not matter until it is
+    /// shown again.
+    pub fn show(&mut self, out: &mut impl Write, look: Option<Look>) -> io::Result<()> {
+        let Some(look) = look else {
+            return Ok(());
+        };
+        if self.0 == Some(look) {
+            return Ok(());
+        }
+        write!(out, "\x1b[{} q", look.shape.code())?;
+        match look.colour {
+            Some([r, g, b]) => write!(out, "\x1b]12;#{r:02x}{g:02x}{b:02x}\x07")?,
+            None => out.write_all(b"\x1b]112\x07")?,
+        }
+        out.flush()?;
+        self.0 = Some(look);
+        Ok(())
+    }
+
+    /// The terminal was handed back (its own cursor again): the next
+    /// `show` writes whatever it is given.
+    pub fn forget(&mut self) {
+        self.0 = None;
+    }
+}
 
 /// The terminal's title (OSC 2), written only when it changes.
 #[derive(Default)]
@@ -312,8 +405,8 @@ mod tests {
         give_back(&mut given).unwrap();
         assert_eq!(
             String::from_utf8(given).unwrap(),
-            "\x1b[?1004l\x1b[?2004l\x1b[?7h\x1b[?1049l\x1b]2;\x07\x1b[23;0t",
-            "emptied, then the shell's title back"
+            "\x1b[?2026l\x1b[0 q\x1b]112\x07\x1b[?25h\x1b[?1004l\x1b[?2004l\x1b[?7h\x1b[?1049l\x1b]2;\x07\x1b[23;0t",
+            "the terminal's own cursor, shown; the title emptied, then the shell's back"
         );
     }
 
@@ -330,8 +423,78 @@ mod tests {
         giving(&mut given, true).unwrap();
         assert_eq!(
             String::from_utf8(given).unwrap(),
-            "\x1b[<1u\x1b[?1004l\x1b[?2004l\x1b[?7h\x1b[?1049l\x1b]2;\x07\x1b[23;0t",
+            "\x1b[?2026l\x1b[0 q\x1b]112\x07\x1b[?25h\x1b[<1u\x1b[?1004l\x1b[?2004l\x1b[?7h\x1b[?1049l\x1b]2;\x07\x1b[23;0t",
             "popped before the alternate screen is left"
+        );
+    }
+
+    #[test]
+    fn a_frame_is_one_synchronized_update_even_when_drawing_it_fails() {
+        let mut out = Vec::new();
+        let drawn = synced(&mut out, || Ok(7)).unwrap();
+        assert_eq!(drawn, 7, "what the drawing returned");
+        assert_eq!(out, b"\x1b[?2026h\x1b[?2026l");
+        let mut out = Vec::new();
+        let failed = synced(&mut out, || -> io::Result<()> {
+            Err(io::Error::other("gone"))
+        });
+        assert_eq!(failed.unwrap_err().to_string(), "gone");
+        assert_eq!(out, b"\x1b[?2026h\x1b[?2026l", "ended all the same");
+        // What the drawing writes lands between the two.
+        let shared = Shared::default();
+        let mut inner = shared.clone();
+        synced(&mut shared.clone(), || inner.write_all(b"frame")).unwrap();
+        assert_eq!(written(&shared), "\x1b[?2026hframe\x1b[?2026l");
+        assert_eq!(shared.0.borrow().1, 1, "flushed once the frame is whole");
+    }
+
+    #[test]
+    fn the_cursor_s_look_is_written_only_when_it_changes_and_again_after_a_forget() {
+        let bar = Look {
+            shape: Shape::BlinkingBar,
+            colour: None,
+        };
+        let command = Look {
+            shape: Shape::SteadyBar,
+            colour: Some([0x1a, 0x2b, 0xff]),
+        };
+        let find = Look {
+            shape: Shape::BlinkingUnderline,
+            colour: None,
+        };
+        let mut cursor = Cursor::default();
+        let mut out = Vec::new();
+        cursor.show(&mut out, Some(bar)).unwrap();
+        assert_eq!(out, b"\x1b[5 q\x1b]112\x07", "the terminal's own colour");
+        out.clear();
+        cursor.show(&mut out, Some(bar)).unwrap();
+        assert!(out.is_empty(), "the same look is not written twice");
+        cursor.show(&mut out, None).unwrap();
+        assert!(out.is_empty(), "hidden: nothing to write");
+        cursor.show(&mut out, Some(bar)).unwrap();
+        assert!(out.is_empty(), "a hidden cursor kept its look");
+        cursor.show(&mut out, Some(command)).unwrap();
+        assert_eq!(
+            String::from_utf8(out.clone()).unwrap(),
+            "\x1b[6 q\x1b]12;#1a2bff\x07"
+        );
+        out.clear();
+        cursor.show(&mut out, Some(find)).unwrap();
+        assert_eq!(out, b"\x1b[3 q\x1b]112\x07");
+        out.clear();
+        // The same shape in another colour is another look.
+        let tinted = Look {
+            colour: Some([1, 2, 3]),
+            ..find
+        };
+        cursor.show(&mut out, Some(tinted)).unwrap();
+        assert_eq!(out, b"\x1b[3 q\x1b]12;#010203\x07");
+        out.clear();
+        cursor.forget();
+        cursor.show(&mut out, Some(tinted)).unwrap();
+        assert_eq!(
+            out, b"\x1b[3 q\x1b]12;#010203\x07",
+            "after the terminal came back"
         );
     }
 

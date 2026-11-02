@@ -17,15 +17,16 @@ use std::num::NonZeroU16;
 
 use ratatui::Frame;
 use ratatui::buffer::{Buffer, CellDiffOption};
-use ratatui::layout::{Constraint, Layout, Rect};
+use ratatui::layout::{Constraint, Layout, Position, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Clear, Paragraph, Wrap};
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
-use crate::app::{App, FLASH, Hints, Noting, Rung, Target, Undoable, View, Zoom};
+use crate::app::{App, Caret, FLASH, Field, Hints, Noting, Rung, Target, Undoable, View, Zoom};
 use crate::i18n::{Lang, clean, fill};
 use crate::model::*;
+use crate::screen::{Look, Shape};
 pub(crate) use crate::theme::pal;
 pub(crate) use diff::{
     QUOTE_LINES, Shown, copy_patch, file_of, file_starts, hunk_at, notes_message, place, quote,
@@ -68,22 +69,26 @@ pub fn draw(f: &mut Frame, app: &App) {
     {
         completions(f, menu, m);
     }
-    footer(f, foot, app);
+    let line = footer(f, foot, app);
+    // Windows drawn over the footer: the cursor is not shown under them.
+    let mut over = Vec::new();
     if let Some(h) = &app.hints {
         hint_labels(f, app, h);
     }
     if let Some(th) = &app.thread {
-        overlay::thread(f, app, th);
+        over.push(overlay::thread(f, app, th));
     }
     if let Some(id) = app.peek {
-        overlay::peek(f, app, id);
+        over.push(overlay::peek(f, app, id));
     }
+    let line = line.filter(|&at| !over.iter().any(|r| r.contains(at)));
+    let mut filter = None;
     if let Some(p) = &app.solo_pick {
         overlay::solo_pick(f, app, p);
     } else if let Some(b) = &app.archives {
-        overlay::archives(f, app, b);
+        filter = overlay::archives(f, app, b);
     } else if app.help {
-        overlay::help(f, app);
+        filter = overlay::help(f, app);
     } else if !app.news.is_empty() {
         overlay::news(f, app);
     } else if app.welcome {
@@ -94,6 +99,15 @@ pub fn draw(f: &mut Frame, app: &App) {
         overlay::left_off(f, app, l);
     } else if app.leaving {
         overlay::leaving(f, app);
+    }
+    // The terminal's own cursor, where the person types; hidden otherwise.
+    let at = match app.caret() {
+        Some((Field::Line, _)) => line,
+        Some((Field::Help | Field::Archives, _)) => filter,
+        None => None,
+    };
+    if let Some(at) = at {
+        f.set_cursor_position(at);
     }
 }
 
@@ -1250,21 +1264,18 @@ fn completions(f: &mut Frame, area: Rect, m: &crate::complete::Menu) {
     f.render_widget(Paragraph::new(Line::from(spans)), area);
 }
 
-/// The line being written with its cursor: the character under it in
-/// reverse, or a block at the end. A line `clean` would change (a pasted
-/// token) is drawn cleaned whole with the block at the end, so moving
-/// into it does not split the token past hiding.
-fn cursor_spans(input: &str, at: usize) -> Vec<Span<'static>> {
+/// The line being written, and how many columns of it come before the
+/// cursor. A line `clean` would change (a pasted token) is drawn cleaned
+/// whole with the cursor at its end, so moving into it does not split the
+/// token past hiding.
+fn caret_line(input: &str, at: usize) -> (String, usize) {
     let whole = clean(input);
-    let under = input[at..].chars().next();
-    match under {
-        Some(c) if whole == input => vec![
-            Span::raw(input[..at].to_string()),
-            Span::styled(c.to_string(), Style::new().add_modifier(Modifier::REVERSED)),
-            Span::raw(input[at + c.len_utf8()..].to_string()),
-        ],
-        _ => vec![Span::raw(whole), Span::styled("█", dim())],
-    }
+    let before = if whole == input {
+        input[..at].width()
+    } else {
+        whole.width()
+    };
+    (whole, before)
 }
 
 /// The most rows the line being written takes.
@@ -1284,8 +1295,9 @@ fn input_rows(app: &App, height: u16) -> u16 {
 /// The text being written, a row per line of it, under who it goes to:
 /// the cursor's line always shown (the rows above it go out of view
 /// first), the keys to send or cancel after the last row shown, with
-/// where the cursor is (`3/12`) when not all lines fit.
-fn writing(app: &App, rows: usize) -> Vec<Line<'static>> {
+/// where the cursor is (`3/12`) when not all lines fit. With the rows, the
+/// cursor's row among them and its column.
+fn writing(app: &App, rows: usize) -> (Vec<Line<'static>>, (usize, usize)) {
     let t = app.lang.text();
     let to = Span::styled(
         if let Some(Noting::Line(id, line)) = app.noting {
@@ -1316,6 +1328,7 @@ fn writing(app: &App, rows: usize) -> Vec<Line<'static>> {
     let first = (here + 1).saturating_sub(rows);
     let mut start = 0;
     let mut out = Vec::new();
+    let mut caret = (0, 0);
     for (n, line) in app.input.split('\n').enumerate() {
         let from = start;
         start += line.len() + 1;
@@ -1328,11 +1341,13 @@ fn writing(app: &App, rows: usize) -> Vec<Line<'static>> {
             indent.clone()
         };
         let text = if n == here {
-            cursor_spans(line, at - from)
+            let (text, before) = caret_line(line, at - from);
+            caret = (out.len(), lead.width() + before);
+            text
         } else {
-            vec![Span::raw(clean(line))]
+            clean(line)
         };
-        out.push(Line::from([vec![lead], text].concat()));
+        out.push(Line::from(vec![lead, Span::raw(text)]));
     }
     let mut hint = Vec::new();
     if total > out.len() {
@@ -1354,15 +1369,18 @@ fn writing(app: &App, rows: usize) -> Vec<Line<'static>> {
     if let Some(last) = out.last_mut() {
         last.spans.extend(hint);
     }
-    out
+    (out, caret)
 }
 
-fn footer(f: &mut Frame, area: Rect, app: &App) {
+/// The footer: what is being written, else the keys or a word for a
+/// moment. While writing, where the cursor goes.
+fn footer(f: &mut Frame, area: Rect, app: &App) -> Option<Position> {
     let t = app.lang.text();
     let key = key_style;
     if app.typing {
-        let lines = writing(app, usize::from(area.height));
-        return f.render_widget(Paragraph::new(lines), area);
+        let (lines, (row, column)) = writing(app, usize::from(area.height));
+        f.render_widget(Paragraph::new(lines), area);
+        return caret_in(area, row, column);
     }
     let line = if let Some((msg, at)) = &app.flash
         && at.elapsed() < FLASH
@@ -1470,6 +1488,49 @@ fn footer(f: &mut Frame, area: Rect, app: &App) {
         Line::from(spans)
     };
     f.render_widget(Paragraph::new(line), area);
+    None
+}
+
+/// The cell `column` columns into row `row` of `area`, where the cursor
+/// goes: on the area's last column when the text runs past its edge (the
+/// line is cut there), none on a row the area does not have.
+pub(crate) fn caret_in(area: Rect, row: usize, column: usize) -> Option<Position> {
+    let row = u16::try_from(row).ok().filter(|&r| r < area.height)?;
+    let room = usize::from(area.width.checked_sub(1)?);
+    let column = u16::try_from(column.min(room)).ok()?;
+    Some(Position::new(area.x + column, area.y + row))
+}
+
+/// How the terminal's cursor looks while the person types (`App::caret`):
+/// a blinking bar for a message or a `!` command, a steady bar in the
+/// theme's accent for a `:` command, a blinking underline for words that
+/// find something. `None` while it is hidden.
+pub fn look(app: &App) -> Option<Look> {
+    let (_, caret) = app.caret()?;
+    Some(match caret {
+        Caret::Write => Look {
+            shape: Shape::BlinkingBar,
+            colour: None,
+        },
+        Caret::Command => Look {
+            shape: Shape::SteadyBar,
+            colour: rgb(pal().accent),
+        },
+        Caret::Find => Look {
+            shape: Shape::BlinkingUnderline,
+            colour: None,
+        },
+    })
+}
+
+/// A colour the terminal can be told as `#rrggbb`: only one given as
+/// such. A palette colour is the terminal's own to choose, so the cursor
+/// keeps the terminal's colour then.
+fn rgb(c: Color) -> Option<[u8; 3]> {
+    match c {
+        Color::Rgb(r, g, b) => Some([r, g, b]),
+        _ => None,
+    }
 }
 
 #[cfg(test)]
@@ -4638,58 +4699,205 @@ mod tests {
         assert!(!s.lines().nth(38).unwrap().contains("line"));
     }
 
-    #[test]
-    fn the_cursor_is_drawn_on_its_own_line_at_its_own_character() {
-        let mut app = app_after(1, 3, 0, Lang::En);
-        key(&mut app, KeyCode::Char('/'));
-        app.input = "one\ntwo\nthree".into();
-        app.after = 4; // under the h of three
-        let buf = buffer(&app, 140, 40);
-        let reversed: Vec<(u16, u16, String)> = (37..40)
-            .flat_map(|y| (0..140).map(move |x| (x, y)))
-            .filter(|&(x, y)| buf[(x, y)].modifier.contains(Modifier::REVERSED))
-            .map(|(x, y)| (x, y, buf[(x, y)].symbol().to_string()))
-            .collect();
-        assert_eq!(reversed.len(), 1, "{reversed:?}");
-        assert_eq!((reversed[0].1, reversed[0].2.as_str()), (39, "h"));
-        app.after = 8; // under the w of two
-        let buf = buffer(&app, 140, 40);
-        let under: Vec<(u16, String)> = (37..40)
-            .flat_map(|y| (0..140).map(move |x| (x, y)))
-            .filter(|&(x, y)| buf[(x, y)].modifier.contains(Modifier::REVERSED))
-            .map(|(x, y)| (y, buf[(x, y)].symbol().to_string()))
-            .collect();
-        assert_eq!(under, vec![(38, "w".to_string())]);
+    /// Where the terminal's cursor is after `app` is drawn on a screen of
+    /// `width` by `height`; none when it is hidden.
+    fn caret_of(app: &App, width: u16, height: u16) -> Option<(u16, u16)> {
+        let mut t = Terminal::new(TestBackend::new(width, height)).unwrap();
+        t.draw(|f| draw(f, app)).unwrap();
+        let b = t.backend();
+        b.cursor_visible()
+            .then(|| (b.cursor_position().x, b.cursor_position().y))
+    }
+
+    /// The column `needle` starts at on row `y` of `app` drawn 140 by 40;
+    /// every character here is one cell wide.
+    fn column_of(app: &App, y: usize, needle: &str) -> u16 {
+        let screen = render(app, 140, 40);
+        let row = screen.lines().nth(y).unwrap();
+        let at = row
+            .find(needle)
+            .unwrap_or_else(|| panic!("{needle} in {row}"));
+        u16::try_from(row[..at].chars().count()).unwrap()
     }
 
     #[test]
-    fn the_character_under_the_cursor_is_drawn_in_reverse() {
-        let texts = |spans: &[Span]| {
-            spans
-                .iter()
-                .map(|s| s.content.to_string())
-                .collect::<Vec<_>>()
-        };
-        let reversed = |s: &Span| s.style.add_modifier.contains(Modifier::REVERSED);
-        let spans = cursor_spans("açb", 1);
-        assert_eq!(texts(&spans), ["a", "ç", "b"]);
-        assert_eq!(
-            spans.iter().map(reversed).collect::<Vec<_>>(),
-            [false, true, false]
-        );
-        let spans = cursor_spans("ab", 2);
-        assert_eq!(texts(&spans), ["ab", "█"]);
-        assert!(!reversed(&spans[1]));
-        // A line `clean` changes is drawn cleaned, with the block at the
-        // end, wherever the cursor is.
-        assert_eq!(texts(&cursor_spans("x sk-abc", 3)), ["x [***]", "█"]);
-        // On screen: the footer has the line and the reversed letter.
+    fn the_terminal_s_cursor_stands_on_its_own_line_at_its_own_character() {
         let mut app = app_after(1, 3, 0, Lang::En);
+        assert_eq!(
+            caret_of(&app, 140, 40),
+            None,
+            "hidden while nothing is typed"
+        );
         key(&mut app, KeyCode::Char('/'));
-        write(&mut app, "hello");
-        key(&mut app, KeyCode::Home);
-        assert!(render(&app, 140, 40).contains("hello"));
-        assert!(!render(&app, 140, 40).contains("hello█"));
+        app.input = "one\ntwo\nthree".into();
+        app.after = 4; // before the h of three
+        assert_eq!(
+            caret_of(&app, 140, 40),
+            Some((column_of(&app, 39, "three") + 1, 39))
+        );
+        app.after = 8; // before the w of two
+        assert_eq!(
+            caret_of(&app, 140, 40),
+            Some((column_of(&app, 38, "two") + 1, 38))
+        );
+        app.after = 0; // the end
+        assert_eq!(
+            caret_of(&app, 140, 40),
+            Some((column_of(&app, 39, "three") + 5, 39))
+        );
+        // No reversed letter or block of imece's own any more.
+        let buf = buffer(&app, 140, 40);
+        let reversed = (37..40)
+            .flat_map(|y| (0..140).map(move |x| (x, y)))
+            .filter(|&(x, y)| buf[(x, y)].modifier.contains(Modifier::REVERSED))
+            .count();
+        assert_eq!(reversed, 0);
+        assert!(!render(&app, 140, 40).contains('█'));
+    }
+
+    #[test]
+    fn the_cursor_counts_cells_and_stands_after_a_hidden_token() {
+        assert_eq!(caret_line("açb", 1), ("açb".to_string(), 1));
+        assert_eq!(
+            caret_line("açb", 3),
+            ("açb".to_string(), 2),
+            "ç is two bytes"
+        );
+        assert_eq!(
+            caret_line("a中b", 4),
+            ("a中b".to_string(), 3),
+            "中 is two cells"
+        );
+        assert_eq!(caret_line("ab", 2), ("ab".to_string(), 2));
+        assert_eq!(caret_line("ab", 0), ("ab".to_string(), 0));
+        // A line `clean` changes is drawn cleaned, the cursor at its end
+        // wherever it is.
+        assert_eq!(caret_line("x sk-abc", 3), ("x [***]".to_string(), 7));
+        assert_eq!(caret_line("x sk-abc", 0), ("x [***]".to_string(), 7));
+    }
+
+    #[test]
+    fn a_cursor_past_the_edge_stays_on_the_last_column_and_none_is_off_the_area() {
+        let area = Rect::new(2, 3, 5, 2);
+        assert_eq!(caret_in(area, 0, 0), Some(Position::new(2, 3)));
+        assert_eq!(caret_in(area, 1, 4), Some(Position::new(6, 4)));
+        assert_eq!(caret_in(area, 1, 5), Some(Position::new(6, 4)), "cut there");
+        assert_eq!(caret_in(area, 0, 99), Some(Position::new(6, 3)));
+        assert_eq!(caret_in(area, 2, 0), None, "a row it does not have");
+        assert_eq!(caret_in(Rect::new(2, 3, 0, 2), 0, 0), None, "no column");
+        assert_eq!(caret_in(Rect::new(2, 3, 5, 0), 0, 0), None, "no row");
+    }
+
+    #[test]
+    fn the_cursor_s_look_says_what_is_typed() {
+        let mut app = app_after(1, 3, 0, Lang::En);
+        assert_eq!(look(&app), None);
+        app.typing = true;
+        app.input = "hello".into();
+        let bar = Look {
+            shape: Shape::BlinkingBar,
+            colour: None,
+        };
+        assert_eq!(look(&app), Some(bar));
+        app.input = ":theme".into();
+        assert_eq!(
+            look(&app),
+            Some(Look {
+                shape: Shape::SteadyBar,
+                colour: rgb(pal().accent),
+            })
+        );
+        app.input = "#3".into();
+        assert_eq!(
+            look(&app),
+            Some(Look {
+                shape: Shape::BlinkingUnderline,
+                colour: None,
+            })
+        );
+        assert_eq!(rgb(Color::Rgb(1, 2, 3)), Some([1, 2, 3]));
+        assert_eq!(rgb(Color::Indexed(4)), None, "the terminal's own");
+        assert_eq!(rgb(Color::Cyan), None);
+        assert_eq!(rgb(Color::Reset), None);
+    }
+
+    #[test]
+    fn the_filters_of_the_help_and_the_archives_have_the_cursor_after_them() {
+        let mut app = app_after(1, 3, 0, Lang::En);
+        key(&mut app, KeyCode::Char('?'));
+        key(&mut app, KeyCode::Char('/'));
+        write(&mut app, "esc");
+        let screen = render(&app, 140, 40);
+        let (y, row) = (screen.lines().enumerate())
+            .find(|(_, r)| r.contains(" /esc"))
+            .unwrap_or_else(|| panic!("{screen}"));
+        let at = row.find(" /esc").unwrap();
+        let x = u16::try_from(row[..at].chars().count() + 5).unwrap();
+        let y = u16::try_from(y).unwrap();
+        assert_eq!(caret_of(&app, 140, 40), Some((x, y)));
+        assert!(!screen.contains('▏'), "no bar of imece's own");
+        key(&mut app, KeyCode::Enter);
+        assert!(!app.help_typing);
+        assert_eq!(caret_of(&app, 140, 40), None, "kept, not typed");
+        // A short screen: the line saying how much is below comes first.
+        let mut app = app_after(1, 3, 0, Lang::En);
+        key(&mut app, KeyCode::Char('?'));
+        key(&mut app, KeyCode::Char('/'));
+        let screen = render(&app, 70, 20);
+        let (y, row) = (screen.lines().enumerate())
+            .find(|(_, r)| r.contains(" more · "))
+            .unwrap_or_else(|| panic!("{screen}"));
+        let at = row.find(" more · ").unwrap();
+        let at = at + row[at..].find(" /").unwrap();
+        let x = u16::try_from(row[..at].chars().count() + 2).unwrap();
+        assert_eq!(caret_of(&app, 70, 20), Some((x, u16::try_from(y).unwrap())));
+        // The archives.
+        let mut app = app_after(1, 3, 0, Lang::En);
+        let mut b = crate::archives::Browser::new(&app.world, Vec::new());
+        b.typing = true;
+        b.find = "ab".into();
+        app.archives = Some(b);
+        let screen = render(&app, 140, 40);
+        let (y, row) = (screen.lines().enumerate())
+            .find(|(_, r)| r.contains(" /ab"))
+            .unwrap_or_else(|| panic!("{screen}"));
+        let at = row.find(" /ab").unwrap();
+        let x = u16::try_from(row[..at].chars().count() + 4).unwrap();
+        assert_eq!(
+            caret_of(&app, 140, 40),
+            Some((x, u16::try_from(y).unwrap()))
+        );
+        assert!(!screen.contains('▏'));
+        app.archives.as_mut().unwrap().typing = false;
+        assert_eq!(caret_of(&app, 140, 40), None);
+    }
+
+    #[test]
+    fn the_cursor_is_not_shown_under_a_conversation_or_a_peek() {
+        let mut app = app_after(1, 4, 50, Lang::En);
+        app.open_thread(4);
+        assert!(app.thread.is_some());
+        app.typing = true;
+        app.input = "one".into();
+        assert_eq!(
+            caret_of(&app, 140, 40).map(|(_, y)| y),
+            Some(39),
+            "the foot is clear of the window"
+        );
+        app.input = "one\ntwo\nthree".into();
+        app.after = 8; // on the middle line, under the window
+        assert_eq!(caret_of(&app, 140, 40), None);
+        app.thread = None;
+        assert_eq!(caret_of(&app, 140, 40).map(|(_, y)| y), Some(38));
+        app.peek = Some(1);
+        app.after = 0;
+        assert_eq!(caret_of(&app, 140, 40).map(|(_, y)| y), Some(39));
+        // The peek leaves three rows below it: a footer of five lines has
+        // its first under it.
+        app.input = "1\n2\n3\n4\n5".into();
+        app.after = 8; // the first line
+        let rows = caret_of(&app, 140, 40);
+        assert_eq!(rows, None, "under the peek");
     }
 
     /// `completions` alone: a row of `width` cells with `m` drawn in it,
@@ -5621,10 +5829,12 @@ mod tests {
             app.paste("first");
             assert_eq!(app.archives.as_ref().unwrap().find, "first");
             assert_eq!(app.scope_below(), None, "no place's keys in it");
-            assert!(render(&app, 160, 40).contains("│ /first▏"));
+            assert!(render(&app, 160, 40).contains("│ /first "));
+            assert!(caret_of(&app, 160, 40).is_some(), "the cursor after it");
             key(&mut app, KeyCode::Enter);
             let s = render(&app, 160, 40);
             assert!(s.contains("│ /first ") && !s.contains("▏"), "kept: {s}");
+            assert_eq!(caret_of(&app, 160, 40), None, "kept, not typed");
             key(&mut app, KeyCode::Char('/'));
             key(&mut app, KeyCode::Char('%'));
             let s = render(&app, 160, 40);
@@ -6103,13 +6313,15 @@ mod tests {
         key(&mut app, KeyCode::Backspace);
         assert_eq!(app.help_find, "fold");
         let s = render(&app, 140, 40);
-        assert!(s.contains(" /fold▏") && s.contains("enter keep"), "{s}");
+        assert!(s.contains(" /fold ") && s.contains("enter keep"), "{s}");
+        assert!(caret_of(&app, 140, 40).is_some(), "the cursor after it");
         // Enter keeps it; / goes back to it; any other key closes.
         key(&mut app, KeyCode::Enter);
         assert!(app.help && !app.help_typing);
         assert_eq!(app.help_find, "fold");
         let s = render(&app, 140, 40);
         assert!(s.contains(" /fold ") && !s.contains("▏"), "{s}");
+        assert_eq!(caret_of(&app, 140, 40), None, "kept, not typed");
         assert!(s.contains("/ change · any other key: close"), "{s}");
         key(&mut app, KeyCode::Char('/'));
         typed(&mut app, "s");

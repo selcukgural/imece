@@ -2,7 +2,7 @@
 //! and a conversation read whole.
 
 use ratatui::Frame;
-use ratatui::layout::{Constraint, Layout, Rect};
+use ratatui::layout::{Constraint, Layout, Margin, Position, Rect};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Paragraph};
 
@@ -24,7 +24,7 @@ fn centered(area: Rect, width: u16, height: u16) -> Rect {
     }
 }
 
-fn window(f: &mut Frame, title: String, lines: Vec<Line<'static>>, width: u16) {
+fn window(f: &mut Frame, title: String, lines: Vec<Line<'static>>, width: u16) -> Rect {
     let area = centered(f.area(), width, lines.len() as u16 + 2);
     shade(f, area);
     clear(f, area);
@@ -32,11 +32,12 @@ fn window(f: &mut Frame, title: String, lines: Vec<Line<'static>>, width: u16) {
         .title(title)
         .border_style(fg(pal().accent));
     f.render_widget(Paragraph::new(lines).block(block), area);
+    area
 }
 
 /// `K`: agent `id`'s focus in a window over the screen, a little smaller
 /// than it so the view under it, which does not move, shows around it.
-pub fn peek(f: &mut Frame, app: &App, id: AgentId) {
+pub fn peek(f: &mut Frame, app: &App, id: AgentId) -> Rect {
     let full = f.area();
     let area = centered(
         full,
@@ -46,6 +47,7 @@ pub fn peek(f: &mut Frame, app: &App, id: AgentId) {
     shade(f, area);
     clear(f, area);
     super::focus::draw(f, area, app, id);
+    area
 }
 
 /// The keys, two columns on a wide screen, then the legend. The line for
@@ -54,8 +56,9 @@ pub fn peek(f: &mut Frame, app: &App, id: AgentId) {
 /// the keys and legend lines with every word of the filter stay, and the
 /// window keeps its size, so it does not jump while the person types.
 /// On a screen too short for it, its lines scroll (`App::help_scroll`)
-/// above the last line, which says how many are below.
-pub fn help(f: &mut Frame, app: &App) {
+/// above the last line, which says how many are below. While the filter
+/// is typed, where the cursor goes: after it.
+pub fn help(f: &mut Frame, app: &App) -> Option<Position> {
     let t = app.lang.text();
     let key = |(k, what): &(String, String)| {
         vec![
@@ -106,15 +109,15 @@ pub fn help(f: &mut Frame, app: &App) {
     } else {
         String::new()
     };
+    let mut caret = None;
     let mut foot = if app.help_typing || !app.help_find.is_empty() {
         let mut spans = vec![
             Span::styled(" /", fg(pal().accent)),
-            Span::styled(app.help_find.clone(), bold(pal().strong)),
+            Span::styled(clean(&app.help_find), bold(pal().strong)),
         ];
-        if app.help_typing {
-            spans.push(Span::styled("▏", fg(pal().accent)));
-        }
         let hint = if app.help_typing {
+            // The cursor after the filter, on the hint's first blank.
+            caret = Some(Line::from(spans.clone()).width());
             t.help_finding
         } else {
             t.help_found
@@ -125,10 +128,13 @@ pub fn help(f: &mut Frame, app: &App) {
         Line::from(Span::styled(t.help_close, dim()))
     };
     if !more.is_empty() {
+        caret = caret.map(|c| c + more.width());
         foot.spans.insert(0, Span::styled(more, fg(pal().accent)));
     }
     lines.push(foot);
-    window(f, t.help_title.into(), lines, if wide { 118 } else { 60 });
+    let row = lines.len() - 1;
+    let area = window(f, t.help_title.into(), lines, if wide { 118 } else { 60 });
+    caret_in(area.inner(Margin::new(1, 1)), row, caret?)
 }
 
 /// The items whose `text` has every word of `filter`, case and Turkish
@@ -261,20 +267,22 @@ pub fn solo_pick(f: &mut Frame, app: &App, p: &SoloPick) {
 }
 
 /// The archives browser: the filter while there is one, the rows that fit
-/// with the selected one reversed and in sight, and the keys.
-pub fn archives(f: &mut Frame, app: &App, b: &Browser) {
+/// with the selected one reversed and in sight, and the keys. While the
+/// filter is typed, where the cursor goes: after it.
+pub fn archives(f: &mut Frame, app: &App, b: &Browser) -> Option<Position> {
     let t = app.lang.text();
     let w = &app.world;
     let mut lines: Vec<Line> = Vec::new();
+    let mut caret = None;
     if b.typing || !b.find.is_empty() {
-        let mut spans = vec![
+        let line = Line::from(vec![
             Span::styled(" /", fg(pal().accent)),
             Span::styled(clean(&b.find), bold(pal().strong)),
-        ];
+        ]);
         if b.typing {
-            spans.push(Span::styled("▏", fg(pal().accent)));
+            caret = Some(line.width());
         }
-        lines.push(Line::from(spans));
+        lines.push(line);
     }
     lines.push(Line::raw(""));
     let rows = b.rows(w);
@@ -297,7 +305,8 @@ pub fn archives(f: &mut Frame, app: &App, b: &Browser) {
     }
     lines.push(Line::raw(""));
     lines.push(Line::from(Span::styled(t.archives_keys, dim())));
-    window(f, t.archives_title.into(), lines, 96);
+    let area = window(f, t.archives_title.into(), lines, 96);
+    caret_in(area.inner(Margin::new(1, 1)), 0, caret?)
 }
 
 /// One row of the archives browser: a checkout and how many archives it
@@ -1041,7 +1050,7 @@ pub(crate) fn thread_layout(
 
 /// A conversation read whole, oldest first; the selected message is
 /// marked on every row and kept in view.
-pub fn thread(f: &mut Frame, app: &App, th: &Thread) {
+pub fn thread(f: &mut Frame, app: &App, th: &Thread) -> Rect {
     let w = &app.world;
     let t = app.lang.text();
     let screen = f.area();
@@ -1115,6 +1124,7 @@ pub fn thread(f: &mut Frame, app: &App, th: &Thread) {
     for (row, at) in rows.iter().skip(skip).zip(body.rows()) {
         f.render_widget(row, at);
     }
+    area
 }
 
 #[cfg(test)]
