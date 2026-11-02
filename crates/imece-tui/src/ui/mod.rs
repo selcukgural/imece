@@ -5971,6 +5971,20 @@ mod tests {
         // Any other key closes it, ctrl ones too; it opens at the top.
         ctrl(&mut app, 'x');
         assert!(!app.help);
+        // The page keys are ctrl's: the letters alone close it, and ctrl-j
+        // is not j.
+        for close in [
+            KeyEvent::from(KeyCode::Char('d')),
+            KeyEvent::from(KeyCode::Char('u')),
+            KeyEvent::from(KeyCode::Char('f')),
+            KeyEvent::from(KeyCode::Char('b')),
+            KeyEvent::new(KeyCode::Char('j'), KeyModifiers::CONTROL),
+        ] {
+            key(&mut app, KeyCode::Char('?'));
+            app.help_scroll = 2;
+            app.on_key(close);
+            assert!(!app.help, "{close:?}");
+        }
         app.help_scroll = 4;
         key(&mut app, KeyCode::Char('?'));
         assert!(app.help && app.help_scroll == 0);
