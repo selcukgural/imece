@@ -81,6 +81,13 @@ checkout) and is not a sandbox: an agent with a shell can do what your
 account can. Please report security problems privately; see
 [SECURITY.md](SECURITY.md).
 
+## Sponsors
+
+imece is built by one person, in the open. If it helps your team of agents,
+you can help it go on through
+[GitHub Sponsors](https://github.com/sponsors/selcukgural): monthly or once.
+Sponsors who choose it are listed here.
+
 ## License
 
 Licensed under the [Apache License 2.0](LICENSE).
