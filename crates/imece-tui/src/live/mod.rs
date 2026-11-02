@@ -1014,19 +1014,28 @@ impl Live {
         Ok(())
     }
 
-    /// Moves the clock and applies what the sessions reported.
-    pub fn step(&mut self, w: &mut World) {
-        w.tick = now().saturating_sub(w.started_at) / SECONDS_PER_TICK;
+    /// Moves the clock and applies what the sessions reported. Whether
+    /// anything came the screen may show: the clock's step, a session
+    /// starting or saying something, what git finished, a suggestion, a
+    /// call on the bus (the screen is drawn again only then).
+    pub fn step(&mut self, w: &mut World) -> bool {
+        let tick = now().saturating_sub(w.started_at) / SECONDS_PER_TICK;
+        let moved = tick != w.tick;
+        w.tick = tick;
+        let mut started = false;
         while let Ok((id, generation, ready)) = self.ready_rx.try_recv() {
+            started = true;
             if generation == self.generation[id] {
                 self.ready(w, id, ready);
             }
         }
-        self.take_git(w);
-        self.take_said(w);
+        let git = self.take_git(w);
+        let said = self.take_said(w);
         self.stand_busy(w, Instant::now());
         self.files_due(w, Instant::now());
+        let mut heard = false;
         while let Ok((id, generation, e)) = self.rx.try_recv() {
+            heard = true;
             if generation != self.generation[id] {
                 continue;
             }
@@ -1162,7 +1171,9 @@ impl Live {
                 }
             }
         }
+        let mut called = false;
         while let Ok((from, tool, args, reply)) = self.calls_rx.try_recv() {
+            called = true;
             if tool == "run" {
                 self.run(w, from, &args, reply);
                 continue;
@@ -1196,6 +1207,7 @@ impl Live {
             }
         }
         self.offer(w);
+        moved || started || git || said || heard || called
     }
 
     /// Whether a leader's finished turn is its report to the person: the
@@ -1300,6 +1312,78 @@ pub fn today() -> u64 {
 mod tests {
     use super::*;
     use crate::live::testing::*;
+
+    /// What a step says when `put` has put something in, on a step that
+    /// left the clock where it was (the clock moving says so by itself).
+    fn says(live: &mut Live, w: &mut World, put: impl Fn(&mut Live)) -> bool {
+        for _ in 0..3 {
+            live.step(w);
+            let before = w.tick;
+            put(live);
+            let came = live.step(w);
+            if w.tick == before {
+                return came;
+            }
+        }
+        panic!("the clock moved on every try");
+    }
+
+    #[test]
+    fn a_step_says_whether_anything_came_the_screen_may_show() {
+        let mut w = team(1);
+        let mut live = idle_live(2);
+        assert!(!says(&mut live, &mut w, |_| {}), "nothing came");
+        // The clock alone.
+        w.tick = 1_000;
+        assert!(live.step(&mut w), "the clock moved");
+        // A session's report, even of an old generation.
+        let (ready, ready_rx) = mpsc::channel();
+        live.ready_rx = ready_rx;
+        let came = says(&mut live, &mut w, |_| {
+            ready.send((1, 99, Err("old".into()))).unwrap();
+        });
+        assert!(came, "a start");
+        // What git finished.
+        let (git, git_back) = mpsc::channel();
+        live.git_back = git_back;
+        let came = says(&mut live, &mut w, |_| {
+            let files = Ok((vec!["a.rs".into()], false));
+            git.send(GitDone::Files { project: 0, files }).unwrap();
+        });
+        assert!(came, "git");
+        assert_eq!(w.projects[0].files, ["a.rs"]);
+        // A suggestion's answer.
+        let came = says(&mut live, &mut w, |live| {
+            let unsaid = claude::Unsaid {
+                why: "no".into(),
+                cost: None,
+            };
+            (live.said_tx.send(Said {
+                project: 0,
+                day: 5,
+                tree: "t".into(),
+                model: "haiku".into(),
+                said: Err(unsaid),
+            }))
+            .unwrap();
+        });
+        assert!(came, "a suggestion");
+        // A session's word.
+        let came = says(&mut live, &mut w, |live| {
+            let text = AgentEvent::Text("hello".into());
+            live.tx.send((1, 0, text)).unwrap();
+        });
+        assert!(came, "a session's word");
+        // A call on the bus.
+        let (reply, answer) = mpsc::channel();
+        let came = says(&mut live, &mut w, |live| {
+            let call = (1, "board".into(), json!({}), reply.clone());
+            live.calls_tx.send(call).unwrap();
+        });
+        assert!(came, "a call");
+        assert!(answer.try_recv().is_ok(), "answered");
+        assert!(!says(&mut live, &mut w, |_| {}), "and quiet again");
+    }
 
     #[test]
     fn a_look_asks_the_vendors_named_for_their_version_and_sign_in() {

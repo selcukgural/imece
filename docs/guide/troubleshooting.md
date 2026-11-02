@@ -177,9 +177,9 @@ imece fails closed: when a file, a session or a change is not what it expects, i
 
 ### How much of the machine does imece itself use?
 
-**Why.** Little: the screen is drawn every tick (100 ms live) and only the cells that changed are sent. While the terminal does not have the focus (you are in another window; tmux needs `focus-events on`), imece draws once a second unless a key, a paste or a resize comes; the title, the notices and the agents' turns go on as before. A terminal that does not report the focus is drawn every tick.
+**Why.** Little: the screen is drawn only when something on it changed (a key, an agent's word, git's answer, a call on the bus, the clock's five-second step, a notice coming or going), at most a tick (100 ms live) after it, and only the cells that changed are sent; with nothing going on, nothing is drawn. While the terminal does not have the focus (you are in another window; tmux needs `focus-events on`), what changed is drawn at most once a second unless a key, a paste or a resize comes; the title, the notices and the agents' turns go on as before.
 
-**What to do.** To see the figures on your machine, `cargo build --release` and run `python3 -I tools/measure.py --fast`: a demo run focused and one in another window, with the CPU time, the peak memory and the bytes sent to the terminal of each. On an M3 Max MacBook Pro, 15 s at the demo's top speed took 0.55 s of CPU focused and 0.10 s in another window (0.64 against 0.17 MiB drawn), 6 MiB of memory either way.
+**What to do.** To see the figures on your machine, `cargo build --release` and run `python3 -I tools/measure.py --fast`: a demo run focused and one in another window, with the CPU time, the peak memory and the bytes sent to the terminal of each. On an M3 Max MacBook Pro, 15 s at the demo's top speed took 0.35 s of CPU focused and 0.07 s in another window (0.64 against 0.17 MiB drawn), 6 MiB of memory either way. The demo's world moves on every tick; a live team between turns draws far less.
 
 ## See also
 
