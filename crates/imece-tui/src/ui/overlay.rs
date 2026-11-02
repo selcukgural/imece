@@ -60,33 +60,20 @@ pub fn peek(f: &mut Frame, app: &App, id: AgentId) -> Rect {
 /// is typed, where the cursor goes: after it.
 pub fn help(f: &mut Frame, app: &App) -> Option<Position> {
     let t = app.lang.text();
-    let key = |(k, what): &(String, String)| {
-        vec![
-            Span::styled(format!(" {}", fit(k, 13)), bold(pal().strong)),
-            Span::raw(fit(what, 44)),
-        ]
-    };
     // Two columns where the screen is wide enough, so the help fits a
     // short screen too.
     let wide = f.area().width >= 120;
-    let rows = |n: usize| if wide { n.div_ceil(2) } else { n };
     let all = help_rows(app.lang, app.shift_enter, &app.keys, app.scope_below());
     let keys = found(&all, &app.help_find, |k| format!("{} {}", k.0, k.1));
-    let shown = rows(keys.len());
-    let mut lines: Vec<Line> = (0..shown)
-        .map(|r| {
-            let mut spans = key(keys[r]);
-            if wide && let Some(k) = keys.get(r + shown) {
-                spans.extend(key(k));
-            }
-            Line::from(spans)
-        })
-        .collect();
+    let widths = help_widths(f.area().width, wide);
+    let mut lines = help_columns(&keys, wide, widths);
     let legend = found(&t.help_legend, &app.help_find, |l| l.to_string());
     if keys.is_empty() && legend.is_empty() {
         lines.push(Line::from(Span::styled(t.help_none, dim())));
     }
-    lines.resize(rows(all.len()), Line::raw(""));
+    // Filtered, the window keeps the height of the whole list.
+    let whole = help_columns(&all.iter().collect::<Vec<_>>(), wide, widths).len();
+    lines.resize(lines.len().max(whole), Line::raw(""));
     lines.push(Line::raw(""));
     lines.extend(legend.iter().map(|l| Line::from(Span::styled(**l, dim()))));
     lines.resize(
@@ -133,8 +120,128 @@ pub fn help(f: &mut Frame, app: &App) -> Option<Position> {
     }
     lines.push(foot);
     let row = lines.len() - 1;
-    let area = window(f, t.help_title.into(), lines, if wide { 118 } else { 60 });
+    let columns = if wide { 2 } else { 1 };
+    let width = columns * (2 + widths.0 + widths.1) + 2;
+    let area = window(
+        f,
+        t.help_title.into(),
+        lines,
+        u16::try_from(width).unwrap_or(u16::MAX),
+    );
     caret_in(area.inner(Margin::new(1, 1)), row, caret?)
+}
+
+/// The narrowest and the widest key column of the help: a key longer than
+/// the column (`/cmd  @name /cmd`, 16) takes a line of its own above its
+/// text; with room to spare the column grows to the longest.
+pub(crate) const HELP_KEY: (usize, usize) = (13, 16);
+
+/// The narrowest and the widest text column of the help: 44 in the narrow
+/// window (60) and in the wide one on a screen of 120; wider with the
+/// screen until the longest text (74, `:copy YOL`) is on one line.
+pub(crate) const HELP_TEXT: (usize, usize) = (44, 74);
+
+/// The help's key and text columns on a screen `width` wide, in two
+/// columns (`wide`) or one. A column is a blank, the key, a blank and the
+/// text; two of them leave a cell to spare on either side and the frame.
+/// The text gets the room first, the key what is left past its widest.
+pub(crate) fn help_widths(width: u16, wide: bool) -> (usize, usize) {
+    if !wide {
+        return (HELP_KEY.0, HELP_TEXT.0);
+    }
+    let column = (usize::from(width).saturating_sub(4) / 2).saturating_sub(2);
+    let key = column
+        .saturating_sub(HELP_TEXT.1)
+        .clamp(HELP_KEY.0, HELP_KEY.1);
+    let text = column.saturating_sub(key).clamp(HELP_TEXT.0, HELP_TEXT.1);
+    (key, text)
+}
+
+/// The lines of the help's `rows` in columns `(key, text)` wide: each
+/// row its key and its text, the text wrapped onto lines of its own under
+/// it rather than cut. `wide`, in two columns, the first taking the rows
+/// until it is at least as long as the second, so they end together.
+pub(crate) fn help_columns(
+    rows: &[&(String, String)],
+    wide: bool,
+    widths: (usize, usize),
+) -> Vec<Line<'static>> {
+    let cells: Vec<Vec<Vec<Span<'static>>>> = rows.iter().map(|r| help_cell(r, widths)).collect();
+    if !wide {
+        return cells.into_iter().flatten().map(Line::from).collect();
+    }
+    let total: usize = cells.iter().map(Vec::len).sum();
+    let mut left = 0;
+    let split = cells
+        .iter()
+        .position(|c| {
+            let before = left;
+            left += c.len();
+            before * 2 >= total
+        })
+        .unwrap_or(cells.len());
+    let (first, second) = cells.split_at(split);
+    let second: Vec<_> = second.iter().flatten().collect();
+    first
+        .iter()
+        .flatten()
+        .enumerate()
+        .map(|(i, l)| {
+            let mut spans = l.clone();
+            if let Some(r) = second.get(i) {
+                spans.extend(r.iter().cloned());
+            }
+            Line::from(spans)
+        })
+        .collect()
+}
+
+/// One row of the help as its lines, each `2 + key + text` wide: the key
+/// before the text's first line (on a line of its own when it is longer
+/// than `key`), the text wrapped by words.
+fn help_cell((k, what): &(String, String), (key, text): (usize, usize)) -> Vec<Vec<Span<'static>>> {
+    let name = clean(k);
+    let alone = name.chars().count() > key;
+    let line = |name: &str, words: &str| {
+        vec![
+            Span::styled(format!(" {name:<key$} "), bold(pal().strong)),
+            Span::raw(format!("{words:<text$}")),
+        ]
+    };
+    let mut lines = Vec::new();
+    if alone {
+        let rest = (1 + key + text).saturating_sub(name.chars().count());
+        lines.push(vec![
+            Span::styled(format!(" {name}"), bold(pal().strong)),
+            Span::raw(" ".repeat(rest)),
+        ]);
+    }
+    for (i, words) in wrap_words(&clean(what), text).iter().enumerate() {
+        lines.push(line(if i == 0 && !alone { &name } else { "" }, words));
+    }
+    lines
+}
+
+/// `s` in lines of at most `width` characters, broken between words; a
+/// word longer than a line is cut where the line ends. Always one line,
+/// an empty one for an empty `s`.
+pub(crate) fn wrap_words(s: &str, width: usize) -> Vec<String> {
+    let width = width.max(1);
+    let mut lines = vec![String::new()];
+    let words: Vec<Vec<char>> = s.split_whitespace().map(|w| w.chars().collect()).collect();
+    for piece in words.iter().flat_map(|w| w.chunks(width)) {
+        let line = lines.last_mut().expect("one line at least");
+        let used = line.chars().count();
+        if used == 0 {
+            line.extend(piece);
+        } else if used + 1 + piece.len() <= width {
+            line.push(' ');
+            line.extend(piece);
+        } else {
+            lines.push(piece.iter().collect());
+        }
+    }
+    lines
 }
 
 /// The items whose `text` has every word of `filter`, case and Turkish
@@ -1134,7 +1241,142 @@ pub fn thread(f: &mut Frame, app: &App, th: &Thread) -> Rect {
 
 #[cfg(test)]
 mod tests {
-    use super::in_view;
+    use super::{help_columns, help_rows, help_widths, in_view, wrap_words};
+    use crate::i18n::Lang;
+    use ratatui::text::Line;
+
+    fn text(l: &Line) -> String {
+        l.spans.iter().map(|s| s.content.as_ref()).collect()
+    }
+
+    fn row(k: &str, what: &str) -> (String, String) {
+        (k.to_string(), what.to_string())
+    }
+
+    #[test]
+    fn words_wrap_between_words_and_a_long_one_is_cut_where_the_line_ends() {
+        assert_eq!(wrap_words("", 5), [""], "always a line");
+        assert_eq!(wrap_words("  ", 5), [""]);
+        assert_eq!(wrap_words("a bb ccc", 4), ["a bb", "ccc"]);
+        assert_eq!(wrap_words("ab cd", 5), ["ab cd"], "a line just full");
+        assert_eq!(wrap_words("ab cd", 4), ["ab", "cd"]);
+        assert_eq!(wrap_words("a  b\tc", 9), ["a b c"], "one blank between");
+        assert_eq!(wrap_words("abcdefgh", 3), ["abc", "def", "gh"]);
+        assert_eq!(wrap_words("x abcdef", 3), ["x", "abc", "def"]);
+        assert_eq!(
+            wrap_words("çğı şöü", 3),
+            ["çğı", "şöü"],
+            "letters, not bytes"
+        );
+        assert_eq!(wrap_words("ab", 0), ["a", "b"], "a line holds one at least");
+    }
+
+    #[test]
+    fn the_help_s_columns_grow_with_the_screen_the_text_first() {
+        assert_eq!(help_widths(80, false), (13, 44), "one column");
+        assert_eq!(
+            help_widths(300, false),
+            (13, 44),
+            "one column whatever the width"
+        );
+        assert_eq!(help_widths(120, true), (13, 44));
+        assert_eq!(help_widths(140, true), (13, 53));
+        assert_eq!(help_widths(178, true), (13, 72));
+        assert_eq!(
+            help_widths(184, true),
+            (14, 74),
+            "the text whole, the key next"
+        );
+        assert_eq!(help_widths(188, true), (16, 74));
+        assert_eq!(
+            help_widths(240, true),
+            (16, 74),
+            "no wider than the longest"
+        );
+    }
+
+    #[test]
+    fn a_help_row_wraps_its_text_and_a_long_key_has_a_line_of_its_own() {
+        let widths = (13, 10);
+        let lines = |r: &(String, String)| -> Vec<String> {
+            help_columns(&[r], false, widths).iter().map(text).collect()
+        };
+        assert_eq!(
+            lines(&row("gg  G", "first / last line")),
+            [" gg  G         first /   ", "               last line "]
+        );
+        // Thirteen is a key's whole column; fourteen is past it.
+        assert_eq!(
+            lines(&row(":forget @NAME", "forgets")),
+            [" :forget @NAME forgets   "]
+        );
+        assert_eq!(
+            lines(&row(":forget @NAMES", "forgets")),
+            [" :forget @NAMES          ", "               forgets   "]
+        );
+    }
+
+    #[test]
+    fn two_columns_end_together_the_first_never_the_shorter() {
+        let widths = (2, 3);
+        let one = |k: &str| row(k, "one");
+        let two = |k: &str| row(k, "two two");
+        let columns = |rows: &[(String, String)]| -> Vec<String> {
+            let rows: Vec<_> = rows.iter().collect();
+            help_columns(&rows, true, widths).iter().map(text).collect()
+        };
+        // Four of one line: two and two, side by side.
+        let four = [one("a"), one("b"), one("c"), one("d")];
+        assert_eq!(columns(&four), [" a  one c  one", " b  one d  one"]);
+        // Six: three and three.
+        let six = [one("a"), one("b"), one("c"), one("d"), one("e"), one("f")];
+        let got = columns(&six);
+        assert_eq!(got.len(), 3);
+        assert_eq!(got[0], " a  one d  one");
+        // One of two lines first: five lines, three on the left.
+        let rows = [two("a"), one("b"), one("c"), one("d")];
+        let got = columns(&rows);
+        assert_eq!(got.len(), 3);
+        assert_eq!(got[0], " a  two c  one");
+        assert_eq!(got[1], "    two d  one");
+        assert_eq!(got[2], " b  one");
+        assert!(columns(&[]).is_empty());
+        assert_eq!(columns(&[one("a")]), [" a  one"]);
+    }
+
+    #[test]
+    fn every_help_row_is_drawn_whole_in_both_languages_and_on_every_screen() {
+        let keys = crate::keys::Keymap::default();
+        for lang in [Lang::En, Lang::Tr] {
+            for shift_enter in [false, true] {
+                let rows = help_rows(lang, shift_enter, &keys, None);
+                for (width, wide) in [(80, false), (120, true), (140, true), (188, true)] {
+                    let widths = help_widths(width, wide);
+                    for r in &rows {
+                        let lines = help_columns(&[r], false, widths);
+                        let drawn: Vec<String> = lines.iter().map(text).collect();
+                        for l in &drawn {
+                            assert_eq!(
+                                l.chars().count(),
+                                2 + widths.0 + widths.1,
+                                "{lang:?} {width}: every line as wide: {l:?}"
+                            );
+                        }
+                        let words = drawn.join(" ");
+                        let words: Vec<&str> = words.split_whitespace().collect();
+                        let whole = format!("{} {}", r.0, r.1);
+                        let want: Vec<&str> = whole.split_whitespace().collect();
+                        assert_eq!(words, want, "{lang:?} {width}: {r:?}");
+                    }
+                }
+                // Wide enough, every row is one line.
+                let widths = help_widths(188, true);
+                for r in &rows {
+                    assert_eq!(help_columns(&[r], false, widths).len(), 1, "{r:?}");
+                }
+            }
+        }
+    }
 
     #[test]
     fn in_view_moves_the_scroll_as_little_as_it_can() {

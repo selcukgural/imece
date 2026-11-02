@@ -6902,10 +6902,11 @@ mod tests {
         let t = Lang::En.text();
         let mut app = app_after(1, 4, 50, Lang::En);
         app.help = true;
-        // The rows of the frame's top and bottom corners.
+        // The rows of the frame's top and bottom corners, on a screen the
+        // whole help fits.
         let frame = |app: &App, width: u16| {
-            let buf = buffer(app, width, 40);
-            let ys: Vec<u16> = (0..40)
+            let buf = buffer(app, width, 50);
+            let ys: Vec<u16> = (0..50)
                 .filter(|&y| (0..width).any(|x| matches!(buf[(x, y)].symbol(), "┌" | "└")))
                 .collect();
             (ys[0], ys[ys.len() - 1])
@@ -6919,7 +6920,7 @@ mod tests {
             ("", &["gg  G", "za  zM  zR"][..], true, false),
         ] {
             app.help_find = find.into();
-            let s = render(&app, 140, 40);
+            let s = render(&app, 140, 50);
             for k in keys {
                 assert!(s.contains(k), "{find}: {k} {s}");
             }
@@ -6956,9 +6957,14 @@ mod tests {
         let t = Lang::En.text();
         let mut app = app_after(1, 4, 50, Lang::En);
         app.on_key(KeyEvent::from(KeyCode::Char('?')));
-        // One column: the keys, a blank, the legend, a blank: more lines
-        // than twenty rows less the frame and the last line.
-        let lines = overlay::help_keys(Lang::En, false).len() + t.help_legend.len() + 2;
+        // One column: the keys (a long text on two lines), a blank, the
+        // legend, a blank: more lines than twenty rows less the frame and
+        // the last line.
+        let rows = overlay::help_rows(Lang::En, false, &app.keys, None);
+        let rows: Vec<_> = rows.iter().collect();
+        let keys = overlay::help_columns(&rows, false, overlay::help_widths(80, false)).len();
+        assert!(keys > rows.len(), "some wrap");
+        let lines = keys + t.help_legend.len() + 2;
         let room = 20 - 3;
         let first = |app: &App| {
             let s = render(app, 80, 20);
@@ -7065,7 +7071,7 @@ mod tests {
         assert_eq!(app.help_scroll, 1);
         app.help_scroll = 0;
         // A screen it fits: nothing to say, nothing to scroll.
-        let s = render(&app, 80, 80);
+        let s = render(&app, 80, 100);
         assert!(!s.contains("more · j k") && !s.contains("↑ j k"), "{s}");
         assert_eq!(app.help_room.get().1, 0);
         key(&mut app, KeyCode::Char('j'));
@@ -7079,15 +7085,16 @@ mod tests {
         let mut app = app_after(1, 4, 50, Lang::En);
         app.help = true;
         let t = Lang::En.text();
-        // Forty rows: the help must fit a screen that tall, whole.
-        let buf = buffer(&app, 140, 40);
-        let row = |y: u16| -> String { (0..140).map(|x| buf[(x, y)].symbol()).collect() };
+        // Forty rows: the help fits a screen that tall whole where it is
+        // wide enough for every row on one line (188: keys 16, texts 74).
+        let buf = buffer(&app, 188, 40);
+        let row = |y: u16| -> String { (0..188).map(|x| buf[(x, y)].symbol()).collect() };
         let top = (0..40).find(|&y| row(y).contains(t.help_title)).unwrap();
         // Two columns of keys, a blank line, the legend, a blank line, close.
         let keys = overlay::help_keys(Lang::En, false).len();
         assert_eq!(keys, t.help_keys.len() + 1, "and the new-line line");
         let lines = u16::try_from(keys.div_ceil(2) + t.help_legend.len() + 3).unwrap();
-        let x = (140 - 118) / 2;
+        let x = (188 - 186) / 2;
         assert_eq!(buf[(x, top)].symbol(), "┌");
         assert!(
             row(top + lines).contains(t.help_close),
@@ -7109,6 +7116,17 @@ mod tests {
             (top..top + lines).any(|y| row(y).contains("↗ a local address the worker wrote")),
             "and what its link is"
         );
+        // Narrower, its long texts take two lines and it scrolls.
+        let s = render(&app, 140, 40);
+        assert!(s.contains(" more · j k scroll"), "{s}");
+        // One column: a blank, the key, a blank, the text and the frame.
+        let buf = buffer(&app, 80, 100);
+        let line = |y: u16| -> String { (0..80).map(|x| buf[(x, y)].symbol()).collect() };
+        let top = (0..100).find(|&y| line(y).contains(t.help_title)).unwrap();
+        let corners: Vec<u16> = (0..80)
+            .filter(|&x| matches!(buf[(x, top)].symbol(), "┌" | "┐"))
+            .collect();
+        assert_eq!(corners, [9, 9 + (2 + 13 + 44 + 2) - 1], "61 wide");
     }
 
     #[test]
@@ -8590,28 +8608,15 @@ mod tests {
         app.help = true;
         let help = render(&app, 140, 40);
         assert!(
-            help.contains("tab ↑ ↓ ^r   yazarken: tamamla · gönderilenler · :history"),
+            help.contains("tab ↑ ↓ ^r    yazarken: tamamla · gönderilenler · :history"),
             "{help}"
         );
         app.lang = Lang::En;
         let help = render(&app, 140, 40);
         assert!(
-            help.contains("tab ↑ ↓ ^r   writing: complete · sent lines · :history"),
+            help.contains("tab ↑ ↓ ^r    writing: complete · sent lines · :history"),
             "{help}"
         );
-        // Every help row fits its cell: 13 columns of keys, 44 of words.
-        for lang in [Lang::En, Lang::Tr] {
-            let t = lang.text();
-            let (k, what) = t
-                .help_keys
-                .iter()
-                .find(|(k, _)| *k == "tab ↑ ↓ ^r")
-                .expect("the row");
-            assert!(
-                k.chars().count() <= 13 && what.chars().count() <= 44,
-                "{lang:?} {k} {what}"
-            );
-        }
     }
 
     #[test]
