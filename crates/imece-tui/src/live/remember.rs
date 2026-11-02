@@ -1272,7 +1272,7 @@ mod tests {
             ["finish it"],
             "kept until the session confirms"
         );
-        assert_eq!(journaled(&w, &Event::Restarted { agent: 1 }), 0);
+        assert_eq!(restarted(&w, 1).len(), 0);
         assert_eq!(journaled(&w, &Event::Resumed { agent: 1 }), 0);
         // The session confirms it is the old one.
         live.tx
@@ -1408,7 +1408,13 @@ mod tests {
         assert_eq!(live.inflight[1], q);
         assert_eq!(live.turns[1], 1);
         assert_eq!(w.agents[1].status, Status::Working);
-        assert_eq!(journaled(&w, &Event::Restarted { agent: 1 }), 1);
+        assert_eq!(
+            restarted(&w, 1),
+            [Fresh::Refused(
+                "stopped: the session could not resume session 686c… (error_during_execution)"
+                    .into()
+            )]
+        );
         assert_eq!(journaled(&w, &Event::Resumed { agent: 1 }), 0);
         assert!(
             !w.journal
@@ -1487,7 +1493,7 @@ mod tests {
         assert!(text.contains("goes on where it was"), "{text}");
         assert!(text.contains("Its prompt was: finish it"), "{text}");
         assert!(!text.contains("Where you left off"), "{text}");
-        assert_eq!(journaled(&w, &Event::Restarted { agent: 1 }), 0);
+        assert_eq!(restarted(&w, 1).len(), 0);
         // Codex answered with the thread asked for.
         live.tx
             .send((
@@ -1501,7 +1507,7 @@ mod tests {
             .unwrap();
         live.step(&mut w);
         assert_eq!(journaled(&w, &Event::Resumed { agent: 1 }), 1);
-        assert_eq!(journaled(&w, &Event::Restarted { agent: 1 }), 0);
+        assert_eq!(restarted(&w, 1).len(), 0);
         assert!(live.resuming[1].is_none());
         assert!(live.interrupted[1].is_empty());
         assert_eq!(live.generation[1], 0);
@@ -1530,7 +1536,12 @@ mod tests {
         assert_eq!(live.sessions[1], None);
         assert_eq!(live.floor[1], 0);
         assert!(live.resuming[1].is_none());
-        assert_eq!(journaled(&w, &Event::Restarted { agent: 1 }), 1);
+        assert_eq!(
+            restarted(&w, 1),
+            [Fresh::Refused(
+                "stopped: the session refused Thread: no rollout found for thread id 686c…".into()
+            )]
+        );
         assert_eq!(journaled(&w, &Event::Resumed { agent: 1 }), 0);
         assert_eq!(w.agents[1].status, Status::Working);
         let q = queued(&live, 1);
@@ -1572,7 +1583,7 @@ mod tests {
             assert_eq!(live.sessions[1], None, "forgotten");
             assert!(live.resuming[1].is_none());
             assert_eq!(live.resume_of(1), None);
-            assert_eq!(journaled(&w, &Event::Restarted { agent: 1 }), 1);
+            assert_eq!(restarted(&w, 1), [Fresh::Missing]);
             assert!(queued(&live, 1)[0].contains("Where you left off"));
             for d in [repo, root, home] {
                 let _ = std::fs::remove_dir_all(d);
@@ -1603,7 +1614,7 @@ mod tests {
         let text = &queued(&live, 1)[0];
         assert!(text.contains("goes on where it was"), "{text}");
         assert!(!text.contains("Where you left off"), "{text}");
-        assert_eq!(journaled(&w, &Event::Restarted { agent: 1 }), 0);
+        assert_eq!(restarted(&w, 1).len(), 0);
         // Gemini loaded the session asked for; a Gemini process counts
         // only its own cost, so the floor stays under it.
         live.tx
@@ -1630,7 +1641,7 @@ mod tests {
             .unwrap();
         live.step(&mut w);
         assert_eq!(journaled(&w, &Event::Resumed { agent: 1 }), 1);
-        assert_eq!(journaled(&w, &Event::Restarted { agent: 1 }), 0);
+        assert_eq!(restarted(&w, 1).len(), 0);
         assert!(live.resuming[1].is_none());
         assert!(live.interrupted[1].is_empty());
         assert_eq!(live.generation[1], 0);
@@ -1668,7 +1679,13 @@ mod tests {
         assert_eq!(live.sessions[1], None);
         assert_eq!(live.floor[1], 0);
         assert!(live.resuming[1].is_none());
-        assert_eq!(journaled(&w, &Event::Restarted { agent: 1 }), 1);
+        let [Fresh::Refused(said)] = &restarted(&w, 1)[..] else {
+            panic!("{:?}", restarted(&w, 1));
+        };
+        assert!(
+            said.ends_with("(Invalid session identifier \"86935e2a…\".)"),
+            "{said}"
+        );
         assert_eq!(journaled(&w, &Event::Resumed { agent: 1 }), 0);
         assert_eq!(w.agents[1].status, Status::Working);
         let q = queued(&live, 1);
@@ -1705,7 +1722,7 @@ mod tests {
         assert!(live.resuming[1].is_none());
         assert_eq!(live.floor[1], 0);
         assert!(live.interrupted[1].is_empty());
-        assert_eq!(journaled(&w, &Event::Restarted { agent: 1 }), 1);
+        assert_eq!(restarted(&w, 1), [Fresh::Missing]);
         // The new session's id is the one remembered from now on.
         live.tx
             .send((
@@ -1961,7 +1978,7 @@ mod tests {
         assert_eq!(journaled(&w, &Event::Forgotten { agent: 1 }), 1);
         // Its next message starts a new session, briefed in full.
         live.told(&mut w, 1, "go on").unwrap();
-        assert_eq!(journaled(&w, &Event::Restarted { agent: 1 }), 1);
+        assert_eq!(restarted(&w, 1), [Fresh::NoSession]);
         assert_eq!(journaled(&w, &Event::Resumed { agent: 1 }), 0);
         let q = queued(&live, 1);
         assert!(

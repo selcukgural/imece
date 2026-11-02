@@ -166,6 +166,7 @@ impl Live {
     /// tier, so it may fall back).
     pub(super) fn grow(&mut self, model: Option<String>, tiered: bool) {
         self.remembered.push(false);
+        self.refused.push(None);
         self.interrupted.push(Vec::new());
         self.sessions.push(None);
         self.floor.push(0);

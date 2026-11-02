@@ -24,7 +24,7 @@ A turn that was mid-way when imece closed is journaled as `interrupted` and mark
 
 ## Resume per vendor
 
-Whether a woken agent goes on in its old session or starts a new one depends on what its vendor kept. The journal says which: `goes on in the session it had, with all it knew` or `starts a new session, told where it left off`.
+Whether a woken agent goes on in its old session or starts a new one depends on what its vendor kept. The journal says which: `goes on in the session it had, with all it knew` or `starts a new session, told where it left off`, with why when it had one: `its last one was not found` or `its last one could not be resumed (…)` with the vendor's words.
 
 | Vendor | Resumed when | How |
 | --- | --- | --- |

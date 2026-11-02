@@ -87,11 +87,14 @@ Devam eden bir Claude oturumu bütün oturumun maliyetini bildirir, bu yüzden i
 
 **Gemini.** Oturum kimliğiyle `session/load`, Gemini'nin `~/.gemini/tmp/` altında tuttuğu sohbeti yeniden oynatır; geçmiş ilk turdan önce akar (en çok 50 mesaj, uzun bir oturum kuyruğuyla devam eder).
 
-**Devam etmek olmadığında** (kayıt yok, rollout gitmiş, başka biçimde bir kimlik ya da `--fresh`), ajan yeni bir oturum başlatır ve nerede kaldığı ona anlatılır:
+**Devam etmek olmadığında** (kayıt yok, rollout gitmiş, başka biçimde bir kimlik ya da `--fresh`), ajan yeni bir oturum başlatır ve nerede kaldığı ona anlatılır. Günlük nedenini söyler: devam edecek oturum yok (hiç olmadı, ya da unutuldu veya temizlendi), eskisi satıcısının tuttuğu yerde bulunamadı, ya da satıcı sürdürmeyi reddettiğinde kendi sözleri (ilk satırı, en çok 160 karakter):
 
 ```text
- 09:02 ⚑ codex-1 yeni bir oturumla başlıyor, kaldığı yer anlatıldı
+ 09:02 ⚑ codex-1 yeni bir oturumla başlıyor, kaldığı yer anlatıldı: son oturumu sürdürülemedi (stopped: the session refused Thread: no rollout found for thread id 686c…)
+ 09:02 ⚑ claude-2 yeni bir oturumla başlıyor, kaldığı yer anlatıldı: son oturumu bulunamadı
 ```
+
+Demo da bunu gösterir: bir demo çalışmasında her ikinci devam, oturumu kaybetmiş bir satıcının reddettiği gibi reddedilir.
 
 Uyanış özeti ilk istemin önüne imece'den bir not olarak gider: "imece started again since your last turn, so this is a new session that remembers nothing of the old one. Where you left off:", sonra kartı ("Your task: #5 config: defaults (not finished). Its story, latest last:" ile son 12 hikâye satırı), kesilen turun istemi, kaç mesajın beklediği, worktree'sinin commit edilmemiş değişiklikleri ("Your worktree holds changes the person has not applied: 2 files, +12 −3: src/a.rs, src/b.rs") ve panonun açık kartları. Her satır temizlenir ve kesilir (satır başına 300 karakter, toplam 6000). Yeniden anlatılan bir işçi bitmemiş kartıyla sürer.
 
