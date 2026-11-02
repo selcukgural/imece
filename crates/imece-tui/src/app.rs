@@ -105,6 +105,19 @@ pub const ARCHIVE_TITLE_MAX: usize = 60;
 /// How long a short notice stays in the bottom line.
 pub const FLASH: Duration = Duration::from_secs(3);
 
+/// What moves on the screen by itself (record 84).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Moves {
+    /// A working row's glyph.
+    Breath,
+    /// The dots after `starting`.
+    Dots,
+    /// The spinner where imece waits for an answer.
+    Spin,
+    /// The spinner by the header's fleet (full motion).
+    HeadSpin,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum View {
     Salon,
@@ -875,6 +888,13 @@ pub struct App {
     /// The rows the last drawing showed that hint letters can name, in
     /// the order drawn, and where each starts on the screen (column, row).
     pub hintable: RefCell<Vec<(Target, u16, u16)>>,
+    /// Where the last drawing put the glyphs that breathe, every one of
+    /// them, so that a frame where only the breath changed can be drawn
+    /// from that drawing ([`App::patch_due`], `ui::patch`); none when
+    /// that drawing cannot be patched (a window over it, a glyph cut).
+    pub breathing: RefCell<Option<Vec<ui::Glyph>>>,
+    /// Where the last drawing put the terminal's own cursor.
+    pub caret_at: Cell<Option<ratatui::layout::Position>>,
     last_key: Instant,
     last_key_tick: u64,
     /// When the terminal lost the focus, and the tick then.
@@ -1040,6 +1060,8 @@ impl App {
             store_error: None,
             shown: RefCell::new(Vec::new()),
             hintable: RefCell::new(Vec::new()),
+            breathing: RefCell::new(None),
+            caret_at: Cell::new(None),
             last_key: Instant::now(),
             last_key_tick: 0,
             blurred: None,
@@ -4570,53 +4592,91 @@ impl App {
             && self.grace_left(now).is_none()
     }
 
-    /// When what moves on the screen next looks different, after `now`:
-    /// none when nothing moves (motion off, another window, an archive's
-    /// view, nothing on the screen that moves, every glow over).
-    pub fn next_motion(&self, now: Instant) -> Option<Instant> {
+    /// What moves on the screen at `now`, each with how often it moves:
+    /// nothing when nothing moves (motion off, another window, an
+    /// archive's view). Glows are apart ([`App::glows`]).
+    fn moving_parts(&self, now: Instant) -> Vec<(Moves, Duration)> {
         let moving = self.moving();
         if moving == Motion::Off || self.viewing.is_some() {
-            return None;
+            return Vec::new();
         }
         let w = &self.world;
-        let mut periods = Vec::new();
+        let mut parts = Vec::new();
         if self.zoom == Zoom::None && self.view == View::Salon {
             let rungs = self.rungs();
             let shown = |a: &&Agent| !a.gone && !w.put_away(a.id);
-            if (w.agents.iter().filter(shown))
-                .any(|a| a.role != Role::Leader && rungs[a.id] == Rung::Working)
-            {
-                periods.push(motion::BREATH);
+            if (w.agents.iter().filter(shown)).any(|a| ui::breathes(a, rungs[a.id])) {
+                parts.push((Moves::Breath, motion::BREATH));
             }
             if (w.agents.iter().filter(shown)).any(|a| a.starting && a.status == Status::Working) {
-                periods.push(motion::DOTS);
+                parts.push((Moves::Dots, motion::DOTS));
             }
         }
         let checking = self.welcome && self.vendors.iter().any(|(_, s)| *s == Seen::Checking);
         if let Some(spin) = moving.spin()
             && (self.footer_spins(now) || checking)
         {
-            periods.push(spin);
+            parts.push((Moves::Spin, spin));
         }
         if moving == Motion::Full && !w.mid_turn().is_empty() {
-            periods.push(motion::SPIN_FULL);
+            parts.push((Moves::HeadSpin, motion::SPIN_FULL));
         }
+        parts
+    }
+
+    /// When what moves on the screen next looks different, after `now`:
+    /// none when nothing moves (motion off, another window, an archive's
+    /// view, nothing on the screen that moves, every glow over).
+    pub fn next_motion(&self, now: Instant) -> Option<Instant> {
+        if self.moving() == Motion::Off || self.viewing.is_some() {
+            return None;
+        }
+        let parts = self.moving_parts(now);
         let since = now.saturating_duration_since(self.epoch);
         // A glow that starts on the next beat is lit from now until the
         // beat after it.
         let glows = (self.glows.iter()).filter_map(|&(_, glow, at)| {
             (glow.next(now.saturating_duration_since(at))).map(|after| now.max(at) + after)
         });
-        (periods.into_iter())
-            .map(|p| now + motion::next_frame(since, p))
+        (parts.into_iter())
+            .map(|(_, p)| now + motion::next_frame(since, p))
             .chain(glows)
             .min()
+    }
+
+    /// Whether the frame due at `now` may be drawn as the last drawing
+    /// with only its breath changed (`ui::patch`): nothing came from the
+    /// terminal, nothing changed, the clock shows the same, the breath is
+    /// all that moves (no glow, dots or spinner), and that drawing knew
+    /// where every glyph that breathes is.
+    pub fn patch_due(&self, now: Instant) -> bool {
+        !self.stirred
+            && !self.changed
+            && self.drawn_clock == Some(self.clock(now))
+            && self.glows.is_empty()
+            && self.moving_parts(now) == [(Moves::Breath, motion::BREATH)]
+            && self.patchable()
+    }
+
+    /// Whether the last drawing can be patched: it knew where every glyph
+    /// that breathes is, and some do.
+    pub fn patchable(&self) -> bool {
+        self.breathing
+            .borrow()
+            .as_ref()
+            .is_some_and(|b| !b.is_empty())
     }
 
     /// The frame drawn `after` motion's start (tests).
     #[cfg(test)]
     pub fn frame_after(&mut self, after: Duration) {
         self.frame = self.epoch + after;
+    }
+
+    /// The moment `after` motion's start (tests).
+    #[cfg(test)]
+    pub fn after(&self, after: Duration) -> Instant {
+        self.epoch + after
     }
 
     /// `on` lights with `glow` from the frame's beat (tests).
@@ -4629,6 +4689,17 @@ impl App {
     pub fn motion_wait(&self, now: Instant) -> Option<Duration> {
         self.drawn_motion
             .map(|at| at.saturating_duration_since(now))
+    }
+
+    /// How long the main loop waits at `now` when the next tick is
+    /// `tick` away: until the next frame of what moves only when it comes
+    /// more than [`motion::LATE`] before the tick; else the tick's wake
+    /// draws it, a little late, and one frame is drawn, not two.
+    pub fn wait(&self, now: Instant, tick: Duration) -> Duration {
+        match self.motion_wait(now) {
+            Some(frame) if frame + motion::LATE < tick => frame,
+            _ => tick,
+        }
     }
 
     /// What changed since the last step that lights a row for a moment:
@@ -12570,6 +12641,67 @@ mod tests {
         app.focus(true, e + ms(2700));
         app.drawn(e + ms(2700));
         assert_eq!(app.motion_wait(e + ms(2700)), None, "off");
+    }
+
+    #[test]
+    fn a_frame_is_patched_only_when_the_breath_alone_moved() {
+        let (mut app, w) = still(Motion::Calm);
+        let ms = Duration::from_millis;
+        app.world.agents[w].status = Status::Working;
+        let glyph = ui::Glyph {
+            x: 5,
+            y: 4,
+            width: 2,
+        };
+        *app.breathing.borrow_mut() = Some(vec![glyph]);
+        let t0 = app.after(ms(100));
+        app.drawn(t0);
+        let t1 = app.after(ms(600));
+        assert!(app.patchable());
+        assert!(app.patch_due(t1), "the breath alone");
+        app.stirred = true;
+        assert!(!app.patch_due(t1), "a key");
+        app.stirred = false;
+        app.changed = true;
+        assert!(!app.patch_due(t1), "the world");
+        app.changed = false;
+        app.world.tick += 1;
+        assert!(!app.patch_due(t1), "the clock");
+        app.world.tick -= 1;
+        app.light(GlowOn::Agent(w), Glow::Arrive, t0);
+        assert!(!app.patch_due(t1), "a glow");
+        app.glows.clear();
+        app.world.agents[w].starting = true;
+        assert!(!app.patch_due(t1), "dots");
+        app.world.agents[w].starting = false;
+        *app.breathing.borrow_mut() = Some(Vec::new());
+        assert!(!app.patchable());
+        assert!(!app.patch_due(t1), "nothing known breathes");
+        *app.breathing.borrow_mut() = None;
+        assert!(!app.patchable());
+        assert!(!app.patch_due(t1), "not known");
+        *app.breathing.borrow_mut() = Some(vec![glyph]);
+        app.motion = Motion::Off;
+        assert!(!app.patch_due(t1), "off");
+        app.motion = Motion::Calm;
+        assert!(app.patch_due(t1), "again");
+    }
+
+    #[test]
+    fn a_frame_near_the_tick_is_drawn_with_it() {
+        let (mut app, w) = still(Motion::Calm);
+        let ms = Duration::from_millis;
+        let t0 = app.epoch + ms(100);
+        app.world.agents[w].status = Status::Working;
+        app.drawn(t0);
+        // The next tone 500 ms on.
+        assert_eq!(app.wait(t0, ms(601)), ms(500), "far from the tick: its own");
+        assert_eq!(app.wait(t0, ms(600)), ms(600), "100 ms before: the tick's");
+        assert_eq!(app.wait(t0, ms(550)), ms(550));
+        assert_eq!(app.wait(t0, ms(400)), ms(400), "after the tick");
+        app.motion = Motion::Off;
+        app.drawn(t0);
+        assert_eq!(app.wait(t0, ms(700)), ms(700), "nothing moves");
     }
 
     #[test]

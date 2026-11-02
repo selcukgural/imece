@@ -51,7 +51,10 @@ countdown, not writing; the header's only in full and while someone is
 mid-turn; each glow to its end). `App::drawn` keeps it as
 `drawn_motion`; `App::draw_due` draws when the clock passes it;
 `App::motion_wait` shortens the main loop's poll to it, so the demo's
-500 ms tick does not hold a frame back. Losing the focus forgets it, so
+500 ms tick does not hold a frame back, unless the tick comes at most
+`motion::LATE` (100 ms) after it (`App::wait`): then the tick's wake
+draws it, a little late, as one frame, not two. Live ticks every
+100 ms, so there what moves never wakes the loop by itself. Losing the focus forgets it, so
 a blurred loop never spins on a frame that is past. Glows end and go
 (`drawn` keeps a glow until its end, one not yet begun too).
 
@@ -68,33 +71,66 @@ from motion while something glows, 1.7 while only rows breathe. The
 blinks stay under three a second (WCAG's flash threshold). SGR blink is
 never used (it cannot be switched off and terminals differ).
 
-**Measured** (`tools/measure.py --motion off calm full`, 15 s, M3 Max,
-demo on a 160 × 48 pty, two runs each, the level typed 2 s in):
+**A frame of the breath alone is patched.** Most of what calm adds is
+the breath: about 1.7 frames a second, each a whole drawing (1–2 ms on
+the salon) for a change of one attribute on a few cells. The salon
+notes where it put each glyph that breathes (`ui::Glyph`, in
+`App::breathing`, through `salon::note_glyph`: the span's columns from
+the spans before it; the row's own glyph, a folded project's member).
+`ui::draw` empties the note first and drops it (none) when anything
+is drawn over the salon (a window, a conversation, a peek, hint
+letters, an archive's view) or a glyph is cut by the list's right
+edge. While the note holds a glyph, the main loop keeps a copy of what
+it drew (`keep`, 20 µs for 160 × 48, the allocation reused). A frame
+due only for the breath (`App::patch_due`: nothing from the terminal,
+nothing changed, the same clock, no glow, and the breath all that moves:
+`App::moving_parts`, no dots or spinner) is `ui::patch`: the copy with
+DIM set or cleared on each noted glyph's cells and the cursor where it
+was; another size draws whole. The test draws the demo whole in one
+tone, patches it to the other where the main loop would, and compares
+it cell by cell, cursor included, with the frame drawn whole (120 demo
+steps, folded projects, a selected row, the person writing, a narrow
+screen). Glows, dots and spinners are drawn whole.
+
+**Measured** (`tools/measure.py`, 30 s, M3 Max, demo on a 160 × 48 pty,
+the level typed 2 s in, two runs each; CPU seconds; before = main
+before the merging and the patch):
 
 | | off | calm | full |
 |---|---|---|---|
-| demo's speed, focused | 0.03 s CPU, 0.10 MiB | 0.04–0.05 s, 0.12 MiB | 0.09–0.13 s, 0.13 MiB |
-| top speed, focused | 0.13 s, 0.65 MiB | 0.15–0.16 s, 0.71 MiB | 0.18 s, 0.72 MiB |
-| top speed, blurred | 0.03 s, 0.17 MiB | 0.03 s, 0.17 MiB | |
+| demo's speed, before | 0.07–0.12 | 0.18–0.26 | 0.41–0.67 |
+| demo's speed, now | 0.11–0.16 | 0.15–0.21 | 0.44–0.49 |
+| top speed, before | 0.82–1.02 | 0.96–1.04 | 1.27–1.31 |
+| top speed, now | 0.76–0.91 | 0.70–0.79 | 0.84–0.87 |
+| paused 8 s in (`--pause`), before | 0.04 | 0.07–0.10 | 0.37–0.46 |
+| paused 8 s in, now | 0.03–0.04 | 0.05–0.06 | 0.39–0.45 |
+| top speed, blurred, now | 0.06–0.09 | 0.06–0.08 | |
 
-Before the beat, calm at top speed was 0.26 s. The design's mark,
-"focused CPU at most 10 % over off", holds at neither speed in relative
-terms (calm +15–25 % at top speed, +0.01–0.02 s at the demo's own speed,
-where off is 0.2 % of a core); in absolute terms calm is a tenth of a
-percent of one core. Blurred, motion costs nothing. The demo's world
-moves on every step and lights a row every few seconds, so this is the
-upper end; a live team between turns only breathes.
+Run to run, the same build differs by up to a third, so the rows say
+more than any one cell. At top speed calm now costs what off costs:
+each frame of what moves falls on a tick's. Paused (rows still
+working, nothing new: a live team between events) calm's surcharge
+halves, and most of what is left comes before the pause. At the
+demo's own speed calm is still above off by more than the design's
+10 %: the demo lights a row every few seconds and starts sessions
+often, and glows (six frames in 1.8 s) and dots are drawn whole. Full
+spins in the header ten times a second while anyone is mid-turn, drawn
+whole: full is the person's choice of more motion. (Before the beat,
+calm at top speed was 0.26 s in 15 s, against 0.13 off.)
 
 **Points.** Growth: `glows` holds at most one per agent and per item,
 each gone at its end (1.8 s); `glow_rungs` one per agent. Read cost: a
 step computes the rungs once more and walks the inbox from the last
 length seen; a drawn frame computes `next_motion` (the rungs once, the
-agents twice). Ten times the agents: the same per frame, since the
+agents twice) and `patch_due` the same again; the note of glyphs holds
+one per salon row, the kept copy one screen. Ten times the agents: the same per frame, since the
 frames per second do not grow with what moves. Failure: a frame that is
 late is drawn at the next look (the loop's poll at most a tick).
 
 **Not done.** The design's breathing in RGB tones of the theme (DIM is
-used: one attribute, every theme, mono too). Nothing animates on the
+used: one attribute, every theme, mono too). Glows and dots patched
+like the breath (a lit row drawn again alone): the demo's speed would
+then meet the 10 %. Nothing animates on the
 board or the code map. No reduced-motion hint is read from the system
 (a terminal does not pass one); `:motion off` is the person's switch.
 The activity bar per row is part 5 of #200, in the activity bar below;

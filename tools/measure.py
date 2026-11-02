@@ -3,12 +3,15 @@
 
 Runs `imece --demo` on a pseudo-terminal of a fixed size with a fresh
 state and config folder, closes the first-start window, and after
-`--seconds` quits with `q q`. A focused run and a blurred one by default
-(`--focused`, `--blurred` for one): in the blurred one the terminal
-reports the focus lost (`CSI O`) a moment after the start, as a terminal
-does when another window is chosen. `--fast` runs the demo at its top
+`--seconds` quits with `q q` (four of them: past 20 s without a key the
+first opens the away digest and the next closes it). A focused run and
+a blurred one by default (`--focused`, `--blurred` for one): in the
+blurred one the terminal reports the focus lost (`CSI O`) a moment after
+the start, as a terminal does when another window is chosen. `--fast` runs the demo at its top
 speed (`+` three times: a tick of 62 ms, closer to live's 100 ms than the
-demo's 500). `--motion off calm full` runs each of those `:motion`
+demo's 500). `--pause` pauses the demo (space) 8 s after the start,
+when its first sessions have started: its rows go on working and nothing new comes, like a live team
+between events. `--motion off calm full` runs each of those `:motion`
 levels in turn (typed after the start; a fresh state is calm). Prints one
 line per run:
 
@@ -37,7 +40,7 @@ COLUMNS, ROWS = 160, 48
 BLUR = b"\x1b[O"
 
 
-def run(binary, seconds, blurred, fast, motion, extra):
+def run(binary, seconds, blurred, fast, pause, motion, extra):
     """One run; returns (cpu seconds, peak rss bytes, bytes drawn)."""
     with tempfile.TemporaryDirectory(prefix="imece-measure-") as home:
         env = {
@@ -69,7 +72,12 @@ def run(binary, seconds, blurred, fast, motion, extra):
                 plan += [(1.5, b"+"), (1.7, b"+"), (1.9, b"+")]
             if blurred:
                 plan.append((2.2, BLUR))
-            plan += [(seconds, b"q"), (seconds + 0.3, b"q")]
+            if pause:
+                # After the first sessions started (their dots would move).
+                plan.append((8.0, b" "))
+            # Two more: past a while without keys the first key opens the
+            # away digest (record 52) and the next closes it.
+            plan += [(seconds + 0.3 * i, b"q") for i in range(4)]
             ended = None
             while ended is None:
                 now = time.monotonic() - start
@@ -88,7 +96,7 @@ def run(binary, seconds, blurred, fast, motion, extra):
                 if got == pid:
                     ended = (status, usage)
             if ended is None:
-                ended = stop(pid)
+                ended = stop(pid, fd)
             _, usage = ended
         finally:
             os.close(fd)
@@ -96,8 +104,12 @@ def run(binary, seconds, blurred, fast, motion, extra):
         return usage.ru_utime + usage.ru_stime, rss, drawn
 
 
-def stop(pid):
-    """Ends a run that did not quit: TERM, then KILL; returns its wait4."""
+def stop(pid, fd):
+    """Ends a run that did not quit: TERM, then KILL; returns its wait4.
+
+    The terminal is read on while it ends: macOS keeps a process that
+    exits with output not yet read from its terminal from ending (it
+    hung there for half an hour once)."""
     for sig in (signal.SIGTERM, signal.SIGKILL):
         try:
             os.kill(pid, sig)
@@ -109,9 +121,22 @@ def stop(pid):
             if got == pid:
                 print(f"warning: the run did not quit by itself ({sig.name})", file=sys.stderr)
                 return status, usage
+            drain(fd)
+    while True:
+        got, status, usage = os.wait4(pid, os.WNOHANG)
+        if got == pid:
+            return status, usage
+        drain(fd)
+
+
+def drain(fd):
+    """Reads what the terminal has, waiting at most 50 ms."""
+    ready, _, _ = select.select([fd], [], [], 0.05)
+    if ready:
+        try:
+            os.read(fd, 65536)
+        except OSError:
             time.sleep(0.05)
-    _, status, usage = os.wait4(pid, 0)
-    return status, usage
 
 
 def main():
@@ -119,6 +144,11 @@ def main():
     ap.add_argument("--binary", default="target/release/imece")
     ap.add_argument("--seconds", type=float, default=20.0)
     ap.add_argument("--fast", action="store_true", help="the demo at its top speed")
+    ap.add_argument(
+        "--pause",
+        action="store_true",
+        help="the demo paused after the start: rows that work, nothing new",
+    )
     which = ap.add_mutually_exclusive_group()
     which.add_argument("--blurred", action="store_true", help="only a blurred run")
     which.add_argument("--focused", action="store_true", help="only a focused run")
@@ -141,8 +171,11 @@ def main():
 
 def measure(args, blurred, motion):
     """One run, said on one line."""
-    cpu, rss, drawn = run(args.binary, args.seconds, blurred, args.fast, motion, args.extra)
+    cpu, rss, drawn = run(
+        args.binary, args.seconds, blurred, args.fast, args.pause, motion, args.extra
+    )
     name = ("blurred" if blurred else "focused") + (" fast" if args.fast else "")
+    name += " paused" if args.pause else ""
     if motion:
         name += f" {motion}"
     share = 100 * cpu / args.seconds

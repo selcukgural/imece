@@ -311,6 +311,17 @@ fn salon(f: &mut Frame, area: Rect, app: &App) {
                 Line::from(spans)
             }
         };
+        // Where its glyph breathes, if it does.
+        let glyph = match *row {
+            Row::Project(p) => project_member(app, p).map(|m| (m, line.spans.len() - 2)),
+            Row::Agent { id, .. } => Some((id, 1)),
+            Row::Folded { loud, .. } => Some((loud, 2)),
+        };
+        if let Some((id, at)) = glyph
+            && super::breathes(&w.agents[id], rungs[id])
+        {
+            note_glyph(app, &line, at, list, i);
+        }
         lines.push(line);
     }
     if lines.is_empty() && app.needs_only {
@@ -323,6 +334,29 @@ fn salon(f: &mut Frame, area: Rect, app: &App) {
         }
     }
     f.render_widget(Paragraph::new(queue_line(app)), queue);
+}
+
+/// Span `at` of `line`, drawn on row `i` of `list`, is a glyph that
+/// breathes: where it is goes to [`App::breathing`]. One cut by the
+/// list's right edge leaves the drawing unpatched; one below its foot is
+/// not on the screen.
+fn note_glyph(app: &App, line: &Line, at: usize, list: Rect, i: usize) {
+    let y = list.y + i as u16;
+    if y >= list.bottom() {
+        return;
+    }
+    let before: usize = line.spans[..at].iter().map(Span::width).sum();
+    let x = list.x as usize + before;
+    let width = line.spans[at].width();
+    let mut breathing = app.breathing.borrow_mut();
+    match breathing.as_mut() {
+        Some(glyphs) if x + width <= usize::from(list.right()) => glyphs.push(super::Glyph {
+            x: x as u16,
+            y,
+            width: width as u16,
+        }),
+        _ => *breathing = None,
+    }
 }
 
 /// `  ◌ claude-2`: the loudest member of a folded group, its rung's glyph
@@ -411,7 +445,7 @@ pub(super) fn project_line(app: &App, p: ProjectId, rungs: &[Rung]) -> Line<'sta
             attention(),
         ));
     }
-    if !open && let Some(loud) = app.loudest(w.agents.iter().filter(in_project).map(|a| a.id)) {
+    if let Some(loud) = project_member(app, p) {
         spans.extend(member(app, loud, rungs));
     }
     let line = Line::from(spans);
@@ -420,6 +454,16 @@ pub(super) fn project_line(app: &App, p: ProjectId, rungs: &[Rung]) -> Line<'sta
     } else {
         line
     }
+}
+
+/// The member a folded project's header ends with: its loudest; none
+/// while it is open.
+fn project_member(app: &App, p: ProjectId) -> Option<AgentId> {
+    let w = &app.world;
+    let in_project = |a: &&Agent| a.project == p && !a.gone;
+    (app.collapsed[p])
+        .then(|| app.loudest(w.agents.iter().filter(in_project).map(|a| a.id)))
+        .flatten()
 }
 
 /// An agent's row, `width` columns wide: its status, its newest exchange,
@@ -1118,6 +1162,32 @@ mod tests {
                 re: None,
             },
         }
+    }
+
+    #[test]
+    fn a_glyph_is_noted_where_it_is_drawn_or_spoils_the_patch() {
+        let app = App::new(1, 1, 0, 1, crate::i18n::Lang::En);
+        let glyph = |x, y| super::super::Glyph { x, y, width: 2 };
+        let line = Line::from(vec![Span::raw("  ├ "), Span::raw("● "), Span::raw("name")]);
+        let list = Rect::new(3, 2, 10, 4);
+        *app.breathing.borrow_mut() = Some(Vec::new());
+        note_glyph(&app, &line, 1, list, 1);
+        assert_eq!(*app.breathing.borrow(), Some(vec![glyph(7, 3)]));
+        // Below the list's foot: not on the screen.
+        note_glyph(&app, &line, 1, list, 4);
+        assert_eq!(*app.breathing.borrow(), Some(vec![glyph(7, 3)]));
+        // Up to the right edge: noted; a column past it: cut.
+        let edge = Line::from(vec![Span::raw("12345678"), Span::raw("● ")]);
+        note_glyph(&app, &edge, 1, list, 3);
+        assert_eq!(
+            *app.breathing.borrow(),
+            Some(vec![glyph(7, 3), glyph(11, 5)])
+        );
+        let past = Line::from(vec![Span::raw("123456789"), Span::raw("● ")]);
+        note_glyph(&app, &past, 1, list, 0);
+        assert_eq!(*app.breathing.borrow(), None, "cut");
+        note_glyph(&app, &line, 1, list, 1);
+        assert_eq!(*app.breathing.borrow(), None, "spoiled for the drawing");
     }
 
     #[test]
