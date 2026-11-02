@@ -29,3 +29,20 @@ was done and must not be made again. The demo has no bus to wait on, so
 there is nothing for it to show. A model that calls `hire` twice on
 purpose still makes two workers (within `--agents`): that is a choice,
 not a retry.
+
+**whoami (backlog F17 in #59, 2026-11-03).** Every role has a `whoami`
+tool that changes nothing and says, in plain lines, who the caller is in
+imece: its name, its role, its project, who it answers to (a helper the one
+that hired it, a worker or researcher the leader, the leader and a solo the
+person, `send to: you`), what is left of the one pot of the budget and of
+how much, and whether it may hire: `yes, N more workers/helpers (you
+have H of at most C)` or `no:` with the very words `hire` would refuse
+with, since both read `Live::hire_room`. An agent that lost track of its
+place after a compaction, or a model that would guess at the caps, can
+ask instead. The other half of F17 was there already: every tool's answer
+says what it did and what comes next (`posted as #3; an idle worker will
+be offered it`, `delivered as message 8; claude-1 starts on it now`,
+`claude-1.1 joined …; give it work with send (type assign); 1 more may
+be hired`, a claimed card's `When it is done, send lead a done
+message`). The demo has no bus, so there is nothing for it to show.
+

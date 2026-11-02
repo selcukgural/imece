@@ -105,6 +105,7 @@ pub(super) fn tools_of(
             run_tool(role, programs, timeout),
         ],
     };
+    tools.push(whoami_tool());
     match role {
         Role::Worker => {
             tools.push(claim_tool());
@@ -335,6 +336,16 @@ pub(super) fn post_tool() -> Tool {
             "required": ["title", "body"],
             "additionalProperties": false,
         }),
+    }
+}
+
+pub(super) fn whoami_tool() -> Tool {
+    Tool {
+        name: "whoami".into(),
+        description: "Says who you are in imece: your name, role and project, who you \
+                      answer to, what is left of the budget, and whether you may hire."
+            .into(),
+        input: json!({ "type": "object", "properties": {}, "additionalProperties": false }),
     }
 }
 
@@ -1127,18 +1138,24 @@ mod tests {
                 .map(|t| t.name)
                 .collect()
         };
-        assert_eq!(names(Role::Solo), ["send", "run", "hire"]);
+        assert_eq!(names(Role::Solo), ["send", "run", "whoami", "hire"]);
         assert_eq!(
             names(Role::Worker),
-            ["send", "post", "board", "run", "claim", "hire"]
+            ["send", "post", "board", "run", "whoami", "claim", "hire"]
         );
         assert_eq!(
             names(Role::Leader),
-            ["send", "post", "board", "run", "hire"]
+            ["send", "post", "board", "run", "whoami", "hire"]
         );
-        assert_eq!(names(Role::Helper), ["send", "post", "board", "run"]);
-        assert_eq!(names(Role::Researcher), ["send", "post", "board", "run"]);
-        let solo_hire = &tools_of(Role::Solo, &["claude"], &[], Duration::from_secs(5))[2];
+        assert_eq!(
+            names(Role::Helper),
+            ["send", "post", "board", "run", "whoami"]
+        );
+        assert_eq!(
+            names(Role::Researcher),
+            ["send", "post", "board", "run", "whoami"]
+        );
+        let solo_hire = &tools_of(Role::Solo, &["claude"], &[], Duration::from_secs(5))[3];
         assert_eq!(solo_hire.description, HIRE_HELPER, "a solo hires helpers");
     }
 

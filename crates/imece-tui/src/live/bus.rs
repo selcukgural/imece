@@ -1067,10 +1067,13 @@ mod tests {
                 .map(|t| t["name"].as_str().unwrap().to_string())
                 .collect::<Vec<_>>()
         };
-        assert_eq!(list(0), ["send", "post", "board", "run", "hire", "approve"]);
+        assert_eq!(
+            list(0),
+            ["send", "post", "board", "run", "whoami", "hire", "approve"]
+        );
         assert_eq!(
             list(2),
-            ["send", "post", "board", "run", "claim", "hire"],
+            ["send", "post", "board", "run", "whoami", "claim", "hire"],
             "codex asks on its own wire"
         );
         drop(live);
@@ -1236,18 +1239,24 @@ mod tests {
         };
         assert_eq!(
             names(Role::Leader),
-            ["send", "post", "board", "run", "hire"]
+            ["send", "post", "board", "run", "whoami", "hire"]
         );
         assert_eq!(
             names(Role::Worker),
-            ["send", "post", "board", "run", "claim", "hire"]
+            ["send", "post", "board", "run", "whoami", "claim", "hire"]
         );
-        assert_eq!(names(Role::Helper), ["send", "post", "board", "run"]);
-        assert_eq!(names(Role::Researcher), ["send", "post", "board", "run"]);
+        assert_eq!(
+            names(Role::Helper),
+            ["send", "post", "board", "run", "whoami"]
+        );
+        assert_eq!(
+            names(Role::Researcher),
+            ["send", "post", "board", "run", "whoami"]
+        );
         // The same tool, told differently: a worker hires helpers.
-        let worker_hire = &tools_of(Role::Worker, &["claude"], &[], DEFAULT_RUN_TIMEOUT)[5];
+        let worker_hire = &tools_of(Role::Worker, &["claude"], &[], DEFAULT_RUN_TIMEOUT)[6];
         assert!(worker_hire.description.starts_with("Adds a helper"));
-        let hire = &tools_of(Role::Leader, &["claude", "codex"], &[], DEFAULT_RUN_TIMEOUT)[4];
+        let hire = &tools_of(Role::Leader, &["claude", "codex"], &[], DEFAULT_RUN_TIMEOUT)[5];
         assert!(hire.description.starts_with("Adds a worker"));
         assert_eq!(
             hire.input["properties"]["vendor"]["enum"],

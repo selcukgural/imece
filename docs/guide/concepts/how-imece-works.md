@@ -32,7 +32,7 @@ Agents talk to each other and to you through tools imece serves itself over MCP:
 
 - One Unix socket per agent, in a fresh `0700` temporary directory. The vendor's CLI starts `imece mcp-relay <socket>`, imece's own binary, which only copies bytes. The tools run inside imece.
 - The sender is the socket the call came through, never something the agent says. No agent can speak as another or as you.
-- The tools are `send`, `post`, `board`, `run`, and by role `claim` (workers), `hire` (the leader hires workers, a worker hires helpers) and `approve` (a Claude session only; Claude Code calls it itself before a tool call that needs a yes).
+- The tools are `send`, `post`, `board`, `run`, `whoami` (who the agent is in imece: name, role, project, who it answers to, the budget left, whether it may hire), and by role `claim` (workers), `hire` (the leader hires workers, a worker hires helpers) and `approve` (a Claude session only; Claude Code calls it itself before a tool call that needs a yes).
 
 What the tools do is on [messages and the board](../concepts/messages-and-board.md) and [approvals and questions](../concepts/approvals-and-questions.md).
 
