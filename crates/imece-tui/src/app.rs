@@ -749,6 +749,11 @@ pub struct App {
     /// only after `enter` or `esc` ends that).
     pub help_find: String,
     pub help_typing: bool,
+    /// The first of the help's lines in sight when they do not all fit
+    /// (`j k ^d ^u pgup pgdn gg G` in it), and what the last drawing of
+    /// it left room for: lines in sight and the first line at most.
+    pub help_scroll: usize,
+    pub help_room: Cell<(usize, usize)>,
     /// The person's own keys (`keys.rs`): the key file's, else imece's.
     pub keys: Keymap,
     /// Where the key file is; none without a home.
@@ -914,6 +919,8 @@ impl App {
             help: false,
             help_find: String::new(),
             help_typing: false,
+            help_scroll: 0,
+            help_room: Cell::new((1, 0)),
             keys: Keymap::default(),
             keys_file: None,
             keys_good: None,
@@ -2027,6 +2034,7 @@ impl App {
     fn open_help(&mut self) {
         self.help = true;
         self.help_find.clear();
+        self.help_scroll = 0;
     }
 
     /// `T` or `:theme` alone: the next built-in theme.
@@ -3166,16 +3174,44 @@ impl App {
 
     /// A key while the help is open: `/` starts (or goes back to) a
     /// filter, which takes the keys typed until `enter` keeps it or `esc`
-    /// drops it (backspace past its start leaves it too); any other key
-    /// closes the help.
+    /// drops it (backspace past its start leaves it too); the moving keys
+    /// scroll it where it does not fit the screen; any other key closes
+    /// the help.
     fn help_key(&mut self, k: KeyEvent) {
         if !self.help_typing {
-            match k.code {
-                KeyCode::Char('/') => self.help_typing = true,
-                _ => self.help = false,
+            let (room, last) = self.help_room.get();
+            let half = (room / 2).max(1);
+            let ctrl = k.modifiers.contains(KeyModifiers::CONTROL);
+            let at = self.help_scroll.min(last);
+            let g = self.pending.take() == Some('g');
+            self.help_scroll = match k.code {
+                KeyCode::Char('/') => {
+                    self.help_typing = true;
+                    return;
+                }
+                KeyCode::Char('d') if ctrl => at + half,
+                KeyCode::Char('u') if ctrl => at.saturating_sub(half),
+                KeyCode::Char('f') if ctrl => at + room,
+                KeyCode::Char('b') if ctrl => at.saturating_sub(room),
+                _ if ctrl => return self.help = false,
+                KeyCode::Down | KeyCode::Char('j') => at + 1,
+                KeyCode::Up | KeyCode::Char('k') => at.saturating_sub(1),
+                KeyCode::PageDown => at + room,
+                KeyCode::PageUp => at.saturating_sub(room),
+                KeyCode::Char('g') if g => 0,
+                KeyCode::Char('g') => {
+                    self.pending = Some('g');
+                    return;
+                }
+                KeyCode::Home => 0,
+                KeyCode::Char('G') | KeyCode::End => last,
+                _ => return self.help = false,
             }
+            .min(last);
             return;
         }
+        // The filter changes what is shown: from its top again.
+        self.help_scroll = 0;
         let plain = !k.modifiers.contains(KeyModifiers::CONTROL)
             && !k.modifiers.contains(KeyModifiers::ALT);
         match k.code {

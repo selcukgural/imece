@@ -11,7 +11,7 @@ Gelenekler vim'inkidir: `h` `j` `k` `l` hareket ve katlama, `gg` ve `G` uçlara,
 
 ## Yardım penceresi
 
-`?` (`:help`) YARDIM'ı açar: her tuş ne yaptığıyla, geniş ekranda iki sütunda, sonra işaretlerin lejantı, sonra terminalinizin yeni satır tuşu. Herhangi bir tuş kapatır, `/` dışında: o bir süzgeç başlatır, pencerenin son satırında yazılır. Basılan her tuş süzgece girer (`?`, `q` ve `/` de), böylece yazarken yardım açık kalır; backspace bir harf geri alır, `^u` boşaltır. Bir tuş satırı ya da lejant satırı, süzgecin her sözcüğü iki sütundan birinde geçiyorsa kalır: `zM` katlama tuşlarını bulur, `ilk son` `gg` `G`'yi bulur. Büyük küçük harf ve Türkçe harfler düz Latin'e katlanır (`calis` `çalış`'ı bulur, `BÜTÇE` `bütçe`'yi). Hiçbir şey eşleşmezse söyler. `enter` süzgeci tutar ve yazmayı bitirir (sonra `/` değiştirir, başka bir tuş kapatır); `esc` süzgeci bırakır ve bütün yardım geri gelir; boş süzgeçte backspace de bırakır. Pencere süzülürken boyutunu korur, zıplamaz.
+`?` (`:help`) YARDIM'ı açar: her tuş ne yaptığıyla, geniş ekranda iki sütunda, sonra işaretlerin lejantı, sonra terminalinizin yeni satır tuşu. Ona fazla kısa bir ekranda satırları son satırının üstünde kayar; son satır aşağıda kaç satır olduğunu (`↓ 12 daha · j k kaydır`) ya da en altta yukarıda daha fazlası olduğunu söyler: `j` `k` (ya da `↓` `↑`) bir satır, `^d` `^u` yarım sayfa, `^f` `^b` (ya da `pgdn` `pgup`) bir sayfa, `gg` (ya da `home`) en üst, `G` (ya da `end`) en alt. Bu tuşlar sığdığı yerde de yardımı hiç kapatmaz. Başka herhangi bir tuş kapatır, `/` dışında: o bir süzgeç başlatır, pencerenin son satırında yazılır. Basılan her tuş süzgece girer (`?`, `q` ve `/` de), böylece yazarken yardım açık kalır; backspace bir harf geri alır, `^u` boşaltır. Bir tuş satırı ya da lejant satırı, süzgecin her sözcüğü iki sütundan birinde geçiyorsa kalır: `zM` katlama tuşlarını bulur, `ilk son` `gg` `G`'yi bulur. Büyük küçük harf ve Türkçe harfler düz Latin'e katlanır (`calis` `çalış`'ı bulur, `BÜTÇE` `bütçe`'yi). Hiçbir şey eşleşmezse söyler. `enter` süzgeci tutar ve yazmayı bitirir (sonra `/` değiştirir, başka bir tuş kapatır); `esc` süzgeci bırakır ve bütün yardım geri gelir; boş süzgeçte backspace de bırakır. Pencere süzülürken boyutunu korur, zıplamaz; süzgeç değişince en üstten gösterilir. Yardım hep en üstünden açılır.
 
 ## Yazmak
 
@@ -143,7 +143,7 @@ Gelenekler vim'inkidir: `h` `j` `k` `l` hareket ve katlama, `gg` ve `G` uçlara,
 | `:notify` | başka penceredeyken bir şey beklemeye düşerse haber: `:notify off\|bell\|text`; yalın yazılınca sıradaki |
 | `q` `q`  `:quit` | çık (`q` ya da `:quit` önce sorar; `^c` hemen çıkar) |
 | `q` `s`  `:pending` | çıkmadan önce: tur ortası, incelenmemiş |
-| `?`  `:help` | bu yardım; içinde `/` tuşları süzer · `:keys` tuş dosyanızı yeniden okur |
+| `?`  `:help` | bu yardım; içinde sığmadığı yerde `j` `k` kaydırır, `/` tuşları süzer · `:keys` tuş dosyanızı yeniden okur |
 | `W` | bekleyen sıradaki öge, her yerden |
 | `^o` | olduğunuz yere geri |
 
