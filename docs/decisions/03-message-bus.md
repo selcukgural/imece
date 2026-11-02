@@ -32,8 +32,8 @@ not a retry.
 
 **whoami (backlog F17 in #59, 2026-11-03).** Every role has a `whoami`
 tool that changes nothing and says, in plain lines, who the caller is in
-imece: its name, its role, its project, who it answers to (a helper its
-worker, a worker or researcher the leader, the leader and a solo the
+imece: its name, its role, its project, who it answers to (a helper the one
+that hired it, a worker or researcher the leader, the leader and a solo the
 person, `send to: you`), what is left of the one pot of the budget and of
 how much, and whether it may hire: `yes, N more workers/helpers (you
 have H of at most C)` or `no:` with the very words `hire` would refuse

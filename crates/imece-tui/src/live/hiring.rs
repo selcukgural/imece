@@ -310,10 +310,9 @@ impl Live {
             Role::Researcher => "a researcher",
             Role::Solo => "a solo session the person drives",
         };
-        let over = match a.parent {
-            Some(p) if a.role == Role::Helper => format!("your worker {}", w.agents[p].name),
-            _ if a.role == Role::Solo => "the person (send to: you)".to_string(),
-            _ if a.role == Role::Leader => "the person (send to: you)".to_string(),
+        let over = match (a.role, a.parent) {
+            (Role::Helper, Some(p)) => format!("{}, who hired you", w.agents[p].name),
+            (Role::Leader | Role::Solo, _) => "the person (send to: you)".to_string(),
             _ => format!("the leader {}", w.agents[project.leader].name),
         };
         let left = w.budget.saturating_sub(w.spent());
@@ -478,8 +477,8 @@ mod tests {
         assert_eq!(
             live.whoami(&w, helper),
             format!(
-                "name: claude-1.1\nrole: a helper\nproject: repo\nyou answer to: your worker \
-                 claude-1\n{pot}\nmay hire: no: only the leader and workers hire; ask yours \
+                "name: claude-1.1\nrole: a helper\nproject: repo\nyou answer to: claude-1, \
+                 who hired you\n{pot}\nmay hire: no: only the leader and workers hire; ask yours \
                  with send"
             )
         );
