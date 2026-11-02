@@ -71,6 +71,13 @@ the x86_64 macOS cross build run under Rosetta).
 A new version needs its "what's new" lines (`Text::news`, both
 languages, record 75): the tests fail on a version without them.
 
+Version numbers (user, 2026-11-03): from `0.1.202611030053` on, a
+release's patch number is the local date and time it was made,
+`0.1.YYYYMMDDHHMM`; each is still a plain `MAJOR.MINOR.PATCH`, larger
+than the one before, so the tag check, `releases/latest` and the news
+order hold. `welcome::parse_version` reads the numbers as `u64` (a
+stamp is past `u32`).
+
 Gaps. Releases are not signed with a key of the person's own; the
 attestation ties an archive to this repository's workflow and tag. The
 installer trusts the TLS of github.com and github.io, as every `curl |
