@@ -12,6 +12,7 @@ use crate::app::App;
 pub fn draw(f: &mut Frame, area: Rect, app: &App) {
     let w = &app.world;
     let t = app.lang.text();
+    let rungs = app.rungs();
     // An archived project's cards wait in its archive.
     let many = w.projects.iter().filter(|p| p.archived.is_none()).count() > 1;
     let areas: [Rect; 4] = Layout::horizontal([Constraint::Ratio(1, 4); 4]).areas(area);
@@ -45,7 +46,11 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App) {
             {
                 let a = &w.agents[owner];
                 let (g, color) = glyph(a);
-                spans.push(Span::styled(format!("{g} "), fg(color)));
+                // A working owner's glyph breathes as on the salon.
+                spans.push(Span::styled(
+                    format!("{g} "),
+                    glyph_style(app, a, rungs[owner], color),
+                ));
                 spans.push(Span::styled(clean(&a.name), fg(vendor_color(a.vendor))));
                 if column == Column::Working {
                     spans.push(Span::styled(format!(" {}", bar(a.progress)), fg(color)));
@@ -58,7 +63,14 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App) {
                 ));
             }
             if spans.len() > 1 {
-                lines.push(Line::from(spans));
+                let line = Line::from(spans);
+                if let Some(owner) = c.owner
+                    && column != Column::Waiting
+                    && breathes(&w.agents[owner], rungs[owner])
+                {
+                    note_glyph(app, &line, 1, inner, lines.len());
+                }
+                lines.push(line);
             }
         }
         f.render_widget(Paragraph::new(lines), inner);

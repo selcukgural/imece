@@ -23,7 +23,7 @@ Four columns, each titled with its count:
 | Column | Cards in it |
 | --- | --- |
 | WAITING | posted and not yet taken: the leader's `post`, or a card the leader wrote for a worker that is not free yet |
-| IN PROGRESS | taken: assigned by the leader or claimed from the board by an idle worker. Under the title, its owner with the owner's state glyph and a progress bar |
+| IN PROGRESS | taken: assigned by the leader or claimed from the board by an idle worker. Under the title, its owner with the owner's state glyph and a progress bar; a working owner's glyph breathes as on the salon (`:motion`) |
 | VERIFYING | nothing fills it live. The demo's merge queue used it; live, a finished card goes straight to DONE and its change waits for you in WAITING FOR YOU instead |
 | DONE | finished with a `done`, newest first, with the owner that finished it |
 
