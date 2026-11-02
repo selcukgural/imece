@@ -61,3 +61,16 @@ their documentation (Windows Terminal, Ghostty 1.2's release notes,
 iTerm2 3.6.6 per the plan's sources). WezTerm and kitty are left out
 until checked; ConEmu (`ConEmuANSI`) too. tmux passthrough is part 3 of
 the plan. The bar does not show the pot.
+
+**Changed by record 83 (notice styles).** The allow-list goes by the
+terminal's own answer to XTVERSION first (`screen::Who`, asked by
+`probe`): a kitty started from an iTerm2 shell inherited
+`TERM_PROGRAM=iTerm.app` (seen in the probe of 2026-11-02), so the
+environment alone could send the bar to a terminal not on the list. Now
+kitty from 0.39 is on it (its changelog: 0.38 stopped taking `9;4` for a
+notice, 0.39 shows it), and a terminal that answered with another name is
+not; the environment is read only when nothing answered. Inside tmux the
+bar is sent plainly: tmux 3.8 shows it again to Ghostty and iTerm2, which
+it knows by their XTVERSION (`terminal-features` `progressbar`; probed on
+a pty answering as each), and drops it for kitty and WezTerm, as an older
+tmux drops any OSC it does not know.
