@@ -3574,6 +3574,7 @@ impl App {
             "model" => self.rechoose(Part::Model, arg),
             "close" => self.close_project(arg),
             "archive" => self.archive_project(arg),
+            "restore" => self.restore_project(arg),
             "undo" => self.undo(),
             "rename" => self.rename_project(arg),
             "forget" => self.forget_agent(arg),
@@ -4696,6 +4697,13 @@ impl App {
         };
         self.collapsed
             .push(self.collapsed.get(p).copied().unwrap_or(false));
+        self.put_away(p, fresh);
+        self.flash(fill(t.archived, &[&name, &title]));
+    }
+
+    /// Project `p` went out of sight, archived or closed, and `to` is in
+    /// its place: what the screen held of `p` moves to `to`'s head.
+    fn put_away(&mut self, p: ProjectId, to: ProjectId) {
         // What the archive's agents left unseen waits in it.
         let w = &self.world;
         self.unseen.retain(|&a| w.agents[a].project != p);
@@ -4710,14 +4718,49 @@ impl App {
             Sel::Agent(a) => self.world.agents[a].project == p,
         };
         if was_in {
-            self.selected = Sel::Agent(self.world.projects[fresh].leader);
+            self.selected = Sel::Agent(self.world.projects[to].leader);
         }
         if self.card.is_some_and(|c| self.world.cards[c].project == p) {
             self.card = None;
         }
         let open = self.inbox_rows().len();
         self.inbox_sel = self.inbox_sel.min(open.saturating_sub(1));
-        self.flash(fill(t.archived, &[&name, &title]));
+    }
+
+    /// `:restore [NAME]`: the archive titled NAME (else the newest of the
+    /// project called NAME; with no NAME, the newest of the project at
+    /// hand's name) comes back, its head selected; the project open in
+    /// its place gives way.
+    fn restore_project(&mut self, arg: &str) {
+        let t = self.lang.text();
+        // One waits at a time: the one before acts now.
+        self.end_grace();
+        let arg = arg.trim();
+        let at = self.current_project();
+        let Some(p) = self.world.archive_named(arg, at) else {
+            return self.flash(if arg.is_empty() {
+                fill(t.no_archive_of, &[&self.world.projects[at].name])
+            } else {
+                fill(t.no_archive, &[arg])
+            });
+        };
+        let title = (self.world.projects[p].archived.as_ref())
+            .map(|a| a.title.clone())
+            .unwrap_or_default();
+        let restored = match &mut self.engine {
+            Engine::Live(live) => live.restore_project(&mut self.world, p),
+            Engine::Sim(sim) => sim.restore_project(&mut self.world, p),
+        };
+        let gave_way = match restored {
+            Ok(q) => q,
+            Err(why) => return self.flash(why.describe()),
+        };
+        if let Some(q) = gave_way {
+            self.put_away(q, p);
+        }
+        self.selected = Sel::Agent(self.world.projects[p].leader);
+        let name = &self.world.projects[p].name;
+        self.flash(fill(t.restored, &[name, &title]));
     }
 
     /// `:forget [@NAME]`: the agent (named, else the one at hand) forgets

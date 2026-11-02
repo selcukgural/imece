@@ -1,6 +1,6 @@
 ---
 title: "Yeni bir epic"
-description: "Bir işi bitirip sonrakine temiz bir ekranda başlamak: :archive, beklemesi ve u, arşivin sakladıkları, yeni projenin neyle başladığı ve ortak kalanlar."
+description: "Bir işi bitirip sonrakine temiz bir ekranda başlamak: :archive, beklemesi ve u, arşivin sakladıkları, yeni projenin neyle başladığı, :restore ile geri getirmek ve ortak kalanlar."
 ---
 
 # Yeni bir epic
@@ -56,9 +56,25 @@ Arşivden hiçbir şey atılmadı:
 
 Hiçbiri uyanmaz, hiçbir şey harcamaz: işçilerine kart sunulmaz, onlara adla ulaşılmaz. `imece --fresh` oturumlarına dokunmaz. Oturumları satıcılar saklar ve Claude Code eski transkriptleri bir süre sonra siler (varsayılan 30 gün); o zamana dek gitmiş bir oturum, kaldığı yer anlatılarak yeniden başlar.
 
-Şimdilik arşiv saklanır, gösterilmez: ona bakmak ve onu geri getirmek sonraki adımlardır.
+## 4. Geri getirmek
 
-## 4. Ortak kalanlar
+Bir ay sonra eski işte bir hata çıkar ve o kodu `kule`'nin eski takımı bilir. Yazın:
+
+```text
+:restore v1 fixes
+```
+
+(`:restore ` ve `tab` arşivleri listeler, en yenisi önce: `v1 fixes   kule · 2026-11-02`.) Arşiv kaldırıldığı gibi yeniden açılır; `lead`'i seçilir, kartları, günlük satırları ve bekleyen kalemleri ekrana döner:
+
+```text
+ kule “v1 fixes” geri geldi: agent'ları sen yazana kadar uyuyor
+```
+
+Açık olan `kule` yer açar: bir şey yaptı (bir oturumu ve bir kartı vardı), bu yüzden sırası gelince adı ve günleriyle arşivlenir; günlük de bunu söyler: `› kule projesinin “v1 fixes” arşivini geri getirdin; orada açık olan “kule 2026-11-02 → 2026-12-02” adıyla arşivlendi`. Hiçbir şey yapmamış yeni bir `kule` ise kapatılırdı.
+
+Henüz hiçbir şey uyanmadı. Eski lidere yazın; sahip olduğu oturumda sürer, önce projenin kaldırılıp geri getirildiği ve arşivin yarıda kestiği tur (yeniden çalıştırılmaz) ona söylenir. Satıcının bu arada sildiği bir oturum, kaldığı yer anlatılarak yeniden başlar. Daha yeni işe dönmek için onu da aynı biçimde `:restore` edin.
+
+## 5. Ortak kalanlar
 
 Bütçe tektir: arşivlemek hiçbir şey harcamaz, hiçbir şeyi sıfırlamaz. Başlık hâlâ bütün projelerin harcadığını söyler, `:commit`'in günlük tavanları günü saymaya devam eder. Diğer açık projelere dokunulmaz; bir arşiv tek bir projenindir.
 
@@ -66,5 +82,6 @@ Bütçe tektir: arşivlemek hiçbir şey harcamaz, hiçbir şeyi sıfırlamaz. B
 
 - [Oturumlar ve kalıcılık: arşivler](../concepts/sessions.md#arşivler)
 - [`:archive`](../reference/commands.md#archive-title)
+- [`:restore`](../reference/commands.md#restore-name)
 - [Projeler](../concepts/projects.md)
 - [Üç çalışma kopyası, tek ekran](many-projects.md)

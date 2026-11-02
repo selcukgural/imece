@@ -1,4 +1,4 @@
-# Archived sessions: :archive
+# Archived sessions: :archive and :restore
 
 The person's ask (2026-11-02): a finished epic's project should go out of
 sight with all it had, a clean one should take its place, and the old one
@@ -10,10 +10,9 @@ which took every project with it.
 project (its head, workers, helpers, cards, journal lines, inbox items,
 conversations), not the whole screen; the other projects go on. One
 pot stays: archiving spends nothing and resets nothing, and the daily caps
-of imece's own paid calls stay global (record 56). Looking at an archive
-(read-only, nothing wakes) and bringing it back (its agents go on in their
-vendor sessions) are the next two steps of the plan, `:restore` and the `A`
-browser; this entry is the first.
+of imece's own paid calls stay global (record 56). Bringing it back (`:restore`, its agents go on
+in their vendor sessions) is the second step, below; looking at one
+read-only in the `A` browser is the third.
 
 **`:archive [TITLE]`** puts the project at hand away as TITLE (its first
 line, trimmed, at most `ARCHIVE_TITLE_MAX` 60 characters; else
@@ -111,5 +110,70 @@ refuses the archive with nothing changed. A crash between the archive and
 the next save loses the archive (the project is open again at the next
 start, its agents asleep, as after a crash), the safe side.
 
-**Not done (the next steps):** looking at an archive and the `A` browser,
-`:restore`, deleting an archive, renaming one.
+## `:restore [NAME]` (the second step)
+
+**Which archive.** `World::archive_named(arg, at_hand)`: the newest one
+titled `arg` exactly, else the newest archive of the project called
+`arg`; a bare `:restore` takes the newest of the name the project at hand
+has, so it undoes an `:archive` whose grace is over. Newest: archived
+last (`Archived.at`), then the higher id. `World::archives` lists them in
+that order for the menu after `:restore ` (`complete::archives`: the
+titles starting with what is typed, case aside, each noted `kule ·
+2026-11-02`, its project's name and the day it was archived). Nothing
+named: `no archive is titled or named x`, `kule has no archive`.
+
+**Refusals, nothing changed** (`Live::restore_project`): the folder is
+gone (`ProjectRefusal::Gone`); a team's folder is no git checkout with a
+first commit of its own any more (`NoGit`; `own_git`, the same test as a
+start's, now shared with `adopt`); another open project has its name
+(`NameTaken`): the person renames or closes that one first. A solo's
+folder without git is fine: the solo works straight in it, as at a start
+(`set_no_git`).
+
+**What gives way.** One checkout holds one open team, so a team archive
+swaps out the open team on its checkout, whatever it is called; a solo
+archive swaps out the open solo of its own name there (other solos stay).
+The one giving way is archived in its turn under `World::archive_title`
+when it did anything (`World::did_anything`: a card, an agent besides its
+head, a cent spent, an inbox item, or a journal line of its agents other
+than its opening, archiving, bringing back, renaming, closing, `NoGit`
+and `Confine`; live adds a session one of its agents had), else closed
+as `:close` does (`Live::shut`, its own `Closed` line), so empty archives
+do not pile up. Archiving it is `Live::put_away` (the per-agent end of
+`archive_project`) and `World::shelve` (closed, asleep, `archived` set)
+with no fresh project. `home` follows the archive when it was the one
+giving way.
+
+**Coming back.** `World::restore_project` clears `archived` and `closed`
+and notes `Event::Restored { leader, title, swapped }` about the
+archive's head (`you brought back kule “first epic”`, and `; the one open
+there is archived as “…”` when one was): the archive's inbox items,
+cards and journal lines are in sight again by themselves (every filter
+was `in_archive`). Its agents stay `Asleep` and `remembered`: nothing
+wakes or spends until the person writes. Each agent gets a note (`The
+person had put this project away (archived as "…") and has brought it
+back now`) and the prompts the archive cut short move from `inflight` to
+`interrupted`, so its wake briefing says that turn was cut short and is
+not run again; no `Interrupted` line (the person saw the count in the
+grace line). Its vendor sessions are the ones kept (`sessions`), resumed
+at the wake when the vendor still has them (record 20). The screen
+selects the archive's head; what pointed into the one that gave way (its
+focus, card, unseen, settled rows) goes, as after an `:archive`
+(`App::put_away`). No grace: a restore throws nothing away.
+
+**Store (schema 16).** No table changed; the `Restored` events are new,
+which an older imece would not know. A restore saves the project row
+with `archived_at` NULL again.
+
+**The demo** (`Sim::restore_project`) swaps the open project of the
+archive's name and kind (it has no checkouts), refuses when one of the
+other kind has the name, and drops what was to come of the one giving
+way (`Sim::leave_be`, shared with `:close` and `:archive`, which now also
+drops its hunks being applied). Its folders are its own: never gone,
+never without git.
+
+**Known gap.** A project brought back and archived again (by `:archive`
+or by giving way) takes a new title: the old one is not kept.
+
+**Not done (the next step):** looking at an archive read-only and the `A`
+browser; deleting an archive, renaming one.

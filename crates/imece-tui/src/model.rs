@@ -333,6 +333,8 @@ pub enum ProjectRefusal {
     /// A team on a folder that is no git checkout with a first commit:
     /// the folder.
     NoGit(String),
+    /// An archive's folder is not there any more: the folder.
+    Gone(String),
 }
 
 impl ProjectRefusal {
@@ -352,6 +354,7 @@ impl ProjectRefusal {
                 format!("{v} is not on PATH here, or imece does not drive it")
             }
             ProjectRefusal::Choice(why) => why.clone(),
+            ProjectRefusal::Gone(path) => format!("{path} is not there any more"),
         }
     }
 }
@@ -1133,6 +1136,15 @@ pub enum Event {
         was: AgentId,
         title: String,
     },
+    /// The person brought the archive `title` back (`:restore`); `leader`
+    /// heads it. The team (or the solo of its name) open on its checkout
+    /// was archived in its place as `swapped`, or closed (its own line)
+    /// when it had done nothing.
+    Restored {
+        leader: AgentId,
+        title: String,
+        swapped: Option<String>,
+    },
     /// The person renamed a project (`:rename`), `from` to `to`.
     Renamed {
         leader: AgentId,
@@ -1314,6 +1326,7 @@ impl Event {
             | Event::Opened { .. }
             | Event::Closed { .. }
             | Event::Archived { .. }
+            | Event::Restored { .. }
             | Event::Renamed { .. }
             | Event::Forgotten { .. }
             | Event::Chose { .. } => EntryKind::Person,
@@ -1346,6 +1359,7 @@ impl Event {
             | Event::Opened { leader, .. }
             | Event::Closed { leader }
             | Event::Archived { leader, .. }
+            | Event::Restored { leader, .. }
             | Event::Renamed { leader, .. } => leader,
             Event::Assign { agent, .. }
             | Event::Assumption { agent, .. }
@@ -1850,12 +1864,27 @@ impl World {
     /// pin and copies, its head on the same vendor and called the same.
     /// Returns the fresh project's id.
     pub fn archive_project(&mut self, p: ProjectId, title: String) -> ProjectId {
-        let t = self.tick;
         let was = self.projects[p].leader;
         let (vendor, role, head) = {
             let a = &self.agents[was];
             (a.vendor, a.role, a.name.clone())
         };
+        self.shelve(p, title.clone());
+        let q = &self.projects[p];
+        let (name, pinned, copies) = (q.name.clone(), q.pinned, q.copies.clone());
+        let fresh = self.add_project(None, name, vendor, role);
+        let leader = self.projects[fresh].leader;
+        self.agents[leader].name = head;
+        self.projects[fresh].pinned = pinned;
+        self.projects[fresh].copies = copies;
+        self.note(Event::Archived { leader, was, title });
+        fresh
+    }
+
+    /// Project `p` is put away as `title`, with no line and nothing in its
+    /// place: closed, its agents asleep with all they had.
+    pub fn shelve(&mut self, p: ProjectId, title: String) {
+        let t = self.tick;
         for a in self.agents.iter_mut() {
             if a.project == p && !a.gone {
                 a.activity = None;
@@ -1867,18 +1896,85 @@ impl World {
         }
         let q = &mut self.projects[p];
         q.closed = true;
-        q.archived = Some(Archived {
-            at: t,
-            title: title.clone(),
+        q.archived = Some(Archived { at: t, title });
+    }
+
+    /// The archive `p` comes back (`:restore`): open, its agents still
+    /// asleep with all they had, their inbox items, changes and cards in
+    /// sight again. `swapped` is the title the project open in its place
+    /// was archived as, for the line. Nothing happens to a project that is
+    /// no archive.
+    pub fn restore_project(&mut self, p: ProjectId, swapped: Option<String>) {
+        let Some(archived) = self.projects[p].archived.take() else {
+            return;
+        };
+        self.projects[p].closed = false;
+        let leader = self.projects[p].leader;
+        self.note(Event::Restored {
+            leader,
+            title: archived.title,
+            swapped,
         });
-        let (name, pinned, copies) = (q.name.clone(), q.pinned, q.copies.clone());
-        let fresh = self.add_project(None, name, vendor, role);
-        let leader = self.projects[fresh].leader;
-        self.agents[leader].name = head;
-        self.projects[fresh].pinned = pinned;
-        self.projects[fresh].copies = copies;
-        self.note(Event::Archived { leader, was, title });
-        fresh
+    }
+
+    /// The archive `:restore ARG` names: the newest one titled `arg`, else
+    /// the newest of the project called `arg`; with nothing named, the
+    /// newest of the name project `at_hand` has. Newest: archived last,
+    /// then the higher id.
+    pub fn archive_named(&self, arg: &str, at_hand: ProjectId) -> Option<ProjectId> {
+        let newest = |by: &dyn Fn(&Project, &Archived) -> bool| {
+            (self.projects.iter())
+                .filter_map(|q| {
+                    q.archived
+                        .as_ref()
+                        .filter(|a| by(q, a))
+                        .map(|a| (a.at, q.id))
+                })
+                .max()
+                .map(|(_, id)| id)
+        };
+        if arg.is_empty() {
+            let name = &self.projects[at_hand].name;
+            return newest(&|q, _| q.name == *name);
+        }
+        newest(&|_, a| a.title == arg).or_else(|| newest(&|q, _| q.name == arg))
+    }
+
+    /// The archives, newest first (as [`archive_named`](Self::archive_named)
+    /// orders them).
+    pub fn archives(&self) -> Vec<ProjectId> {
+        let mut found: Vec<(u64, ProjectId)> = (self.projects.iter())
+            .filter_map(|q| q.archived.as_ref().map(|a| (a.at, q.id)))
+            .collect();
+        found.sort_unstable_by(|a, b| b.cmp(a));
+        found.into_iter().map(|(_, id)| id).collect()
+    }
+
+    /// Whether project `p` did anything the world shows: a card, an agent
+    /// besides its head, something spent, an inbox item, or a journal
+    /// line of its agents other than the person opening, archiving,
+    /// bringing back, renaming or closing it (and what imece said at its
+    /// opening). A `:restore` closes, rather than archives, the project in
+    /// its place that did nothing.
+    pub fn did_anything(&self, p: ProjectId) -> bool {
+        let head = self.projects[p].leader;
+        let of_p = |id: AgentId| self.agents.get(id).is_some_and(|a| a.project == p);
+        self.cards.iter().any(|c| c.project == p)
+            || (self.agents.iter()).any(|a| a.project == p && (a.id != head || a.cost > 0))
+            || self.inbox.iter().any(|i| of_p(i.agent))
+            || self.journal.iter().any(|e| {
+                of_p(e.event.agent())
+                    && !matches!(
+                        e.event,
+                        Event::Opened { .. }
+                            | Event::NoGit { .. }
+                            | Event::Confine { .. }
+                            | Event::Archived { .. }
+                            | Event::Restored { .. }
+                            | Event::Renamed { .. }
+                            | Event::Closed { .. }
+                    )
+            })
     }
 
     /// What `:archive` calls project `p` when the person gives no title:
@@ -4441,6 +4537,229 @@ mod tests {
         assert!(w.put_away(3) && !w.in_archive(3));
         assert_eq!(w.open_inbox(), [1]);
         assert_eq!(w.agent_by_name("lead-q"), None);
+    }
+
+    #[test]
+    fn an_archive_comes_back_with_all_it_had_and_says_what_gave_way() {
+        let mut w = world(vec![
+            agent(0, Role::Leader, Status::Idle),
+            agent(1, Role::Worker, Status::Idle),
+        ]);
+        w.agents[0].name = "lead".into();
+        w.inbox = vec![item(InboxKind::Reply, 1, true)];
+        w.cards = vec![card(0, Some(1), Vec::new())];
+        w.tick = 10;
+        assert_eq!(w.archive_project(0, "first".into()), 1);
+        assert_eq!(w.agent_by_name("lead"), Some(2));
+        // The fresh one gives way, put away with no line of its own.
+        w.tick = 20;
+        let lines = w.journal.len();
+        w.shelve(1, "later".into());
+        assert_eq!(w.journal.len(), lines);
+        assert!(w.projects[1].closed);
+        assert_eq!(
+            w.projects[1].archived,
+            Some(Archived {
+                at: 20,
+                title: "later".into()
+            })
+        );
+        assert_eq!(w.agents[2].status, Status::Asleep);
+
+        w.restore_project(0, Some("later".into()));
+        let q = &w.projects[0];
+        assert!(!q.closed && q.archived.is_none());
+        assert_eq!(w.agent_by_name("lead"), Some(0), "the archive's head again");
+        for id in 0..2 {
+            assert_eq!(
+                (w.agents[id].status, w.agents[id].gone),
+                (Status::Asleep, false),
+                "asleep until written to"
+            );
+        }
+        assert_eq!(w.open_inbox(), [0]);
+        assert_eq!(w.shown_cards().count(), 1);
+        assert_eq!(
+            w.journal.last().map(|e| &e.event),
+            Some(&Event::Restored {
+                leader: 0,
+                title: "first".into(),
+                swapped: Some("later".into()),
+            })
+        );
+        assert_eq!(w.journal.last().map(|e| e.event.agent()), Some(0));
+        assert_eq!(
+            w.journal.last().map(|e| e.event.kind()),
+            Some(EntryKind::Person)
+        );
+        // Words, both ways.
+        use crate::i18n::Lang;
+        let said =
+            |w: &World, lang| crate::ui::words::event(lang, w, &w.journal.last().unwrap().event);
+        assert_eq!(
+            said(&w, Lang::En),
+            "you brought back p “first”; the one open there is archived as “later”"
+        );
+        assert_eq!(
+            said(&w, Lang::Tr),
+            "p projesinin “first” arşivini geri getirdin; orada açık olan “later” adıyla \
+             arşivlendi"
+        );
+        // What is no archive does not come back: nothing happens.
+        let lines = w.journal.len();
+        w.restore_project(0, None);
+        assert_eq!(w.journal.len(), lines);
+        w.projects[1].archived = None;
+        w.restore_project(1, None);
+        assert!(w.projects[1].closed, "closed, not archived: stays closed");
+        // Brought back with nothing in its place.
+        w.projects[1].archived = Some(Archived {
+            at: 20,
+            title: "later".into(),
+        });
+        w.restore_project(1, None);
+        assert_eq!(said(&w, Lang::En), "you brought back p “later”");
+        assert_eq!(
+            said(&w, Lang::Tr),
+            "p projesinin “later” arşivini geri getirdin"
+        );
+    }
+
+    #[test]
+    fn restore_names_an_archive_by_title_then_by_project_newest_first() {
+        let mut w = world(vec![agent(0, Role::Leader, Status::Idle)]);
+        let put = |w: &mut World, name: &str, at: u64, title: &str| {
+            let id = w.projects.len();
+            w.projects.push(Project {
+                id,
+                name: name.into(),
+                leader: 0,
+                trunk: None,
+                files: Vec::new(),
+                repo: &[],
+                closed: true,
+                pinned: false,
+                copies: Vec::new(),
+                no_git: false,
+                archived: Some(Archived {
+                    at,
+                    title: title.into(),
+                }),
+            });
+        };
+        w.projects[0].name = "kule".into();
+        put(&mut w, "kule", 10, "api");
+        put(&mut w, "kule", 20, "first epic");
+        put(&mut w, "api", 20, "first epic");
+        put(&mut w, "kule", 5, "old");
+        // Newest first; archived at the same tick, the higher id first.
+        assert_eq!(w.archives(), [3, 2, 1, 4]);
+        assert_eq!(w.archive_named("first epic", 0), Some(3), "the higher id");
+        assert_eq!(w.archive_named("old", 0), Some(4));
+        assert_eq!(w.archive_named("kule", 0), Some(2), "archived last");
+        assert_eq!(w.archive_named("api", 0), Some(1), "a title before a name");
+        assert_eq!(w.archive_named("", 0), Some(2), "the project at hand's");
+        assert_eq!(w.archive_named("", 3), Some(3));
+        assert_eq!(w.archive_named("nothing", 0), None);
+        assert_eq!(w.archive_named("First epic", 0), None, "exactly");
+        w.projects[2].archived = None;
+        assert_eq!(w.archive_named("kule", 0), Some(1));
+        assert_eq!(w.archives(), [3, 1, 4]);
+    }
+
+    #[test]
+    fn a_project_did_something_when_the_world_shows_anything_of_it() {
+        let mut w = world(vec![agent(0, Role::Leader, Status::Idle)]);
+        w.projects.push(Project {
+            id: 1,
+            name: "q".into(),
+            leader: 1,
+            trunk: None,
+            files: Vec::new(),
+            repo: &[],
+            closed: false,
+            pinned: false,
+            copies: Vec::new(),
+            no_git: false,
+            archived: None,
+        });
+        w.agents.push(Agent::new(
+            1,
+            1,
+            "lead-q".into(),
+            Vendor::Claude,
+            Role::Leader,
+            Status::Idle,
+            0,
+        ));
+        // Another project's of every kind.
+        w.agents[1].cost = 9;
+        w.agents.push(Agent::new(
+            2,
+            1,
+            "claude-1".into(),
+            Vendor::Claude,
+            Role::Worker,
+            Status::Idle,
+            0,
+        ));
+        w.cards = vec![card(1, None, Vec::new())];
+        w.cards[0].project = 1;
+        w.inbox = vec![item(InboxKind::Reply, 1, true)];
+        // Its opening, archiving, bringing back, renaming and closing.
+        for event in [
+            Event::Failed { agent: 1 },
+            Event::Opened {
+                leader: 0,
+                path: "/p".into(),
+            },
+            Event::NoGit {
+                leader: 0,
+                path: "/p".into(),
+            },
+            Event::Confine {
+                leader: 0,
+                level: "open".into(),
+            },
+            Event::Archived {
+                leader: 0,
+                was: 1,
+                title: "t".into(),
+            },
+            Event::Restored {
+                leader: 0,
+                title: "t".into(),
+                swapped: None,
+            },
+            Event::Renamed {
+                leader: 0,
+                from: "a".into(),
+                to: "b".into(),
+            },
+            Event::Closed { leader: 0 },
+        ] {
+            w.journal.push(Entry { tick: 0, event });
+        }
+        assert!(!w.did_anything(0));
+        assert!(w.did_anything(1));
+        w.agents[0].cost = 1;
+        assert!(w.did_anything(0), "it spent");
+        w.agents[0].cost = 0;
+        w.agents[2].project = 0;
+        assert!(w.did_anything(0), "an agent besides its head");
+        w.agents[2].project = 1;
+        w.cards[0].project = 0;
+        assert!(w.did_anything(0), "a card");
+        w.cards[0].project = 1;
+        w.inbox[0].agent = 0;
+        assert!(w.did_anything(0), "an inbox item");
+        w.inbox[0].agent = 1;
+        assert!(!w.did_anything(0));
+        w.journal.push(Entry {
+            tick: 0,
+            event: Event::Failed { agent: 0 },
+        });
+        assert!(w.did_anything(0), "a line of its own");
     }
 
     #[test]

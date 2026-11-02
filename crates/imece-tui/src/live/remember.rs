@@ -62,10 +62,8 @@ impl Live {
         for repo in &found.repos {
             let root = root_for(&self.state, repo);
             // Found again at each start: a folder may have got its first
-            // commit since, or lost its git. Only the folder's own git
-            // counts, not a checkout around it.
-            let own = repo.canonicalize().unwrap_or_else(|_| repo.clone());
-            let git = checkout_of(repo).is_ok_and(|(top, born)| born && top == own);
+            // commit since, or lost its git.
+            let git = own_git(repo);
             self.places.push(Place {
                 repo: repo.clone(),
                 root,

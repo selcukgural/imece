@@ -19,7 +19,7 @@ Every scenario is true of the real imece: the keys are the ones the `?` help lis
 | [Three checkouts, one screen](many-projects.md) | `:open`, folding, `:pin`, `f`, `:rename`, `:copy .env`, `:close`, and the one pot every project draws from. |
 | [A solo beside the team](solo-beside-the-team.md) | `:solo claude:opus@xhigh`, a session you drive yourself with no leader, the `Δ` after every answer, a second solo on Codex, `--solo` the next morning. |
 | [Coming back](next-morning.md) | Quitting mid-turn, the "where you left off" window, agents asleep, how each vendor resumes, `:forget`, the away digest, `:notify`, marks, `:export`. |
-| [A new epic](new-epic.md) | `:archive v1 fixes`, its grace and `u`, a clean project of the same name, what the archive keeps, the one pot. |
+| [A new epic](new-epic.md) | `:archive v1 fixes`, its grace and `u`, a clean project of the same name, what the archive keeps, `:restore v1 fixes` to bring it back, the one pot. |
 | [Your shell next to the team](own-shell-and-commit.md) | `!cargo test`, `!vim`, ctrl-c, `:commit` and its ceilings, `:awake`, `:budget 80`, `:theme nord`, `L`. |
 
 ## Trying them for free

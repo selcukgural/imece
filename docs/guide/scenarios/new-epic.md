@@ -1,6 +1,6 @@
 ---
 title: "A new epic"
-description: "Finishing a piece of work and starting the next on a clean screen: :archive, its grace and u, what the archive keeps, what the fresh project starts with, and what stays shared."
+description: "Finishing a piece of work and starting the next on a clean screen: :archive, its grace and u, what the archive keeps, what the fresh project starts with, bringing it back with :restore, and what stays shared."
 ---
 
 # A new epic
@@ -56,9 +56,25 @@ Nothing of the archive was thrown away:
 
 None of it wakes or spends: no card is offered to its workers and nobody reaches them by name. `imece --fresh` leaves their sessions alone. The vendors keep the sessions themselves, and Claude Code removes old transcripts after a while (30 days by default); a session gone by then starts anew, told where it left off.
 
-For now the archive is kept, not shown: looking at it and bringing it back are the next steps.
+## 4. Bringing it back
 
-## 4. What stays shared
+A month later a bug in the old work turns up, and `kule`'s old team knew that code. Type:
+
+```text
+:restore v1 fixes
+```
+
+(`:restore ` and `tab` list the archives, newest first: `v1 fixes   kule · 2026-11-02`.) The archive opens again as it was put away, its `lead` selected, its cards, journal lines and waiting items back on the screen:
+
+```text
+ brought kule “v1 fixes” back: its agents sleep until you write to them
+```
+
+The `kule` that was open gives way: it did something (it had a session and a card), so it is archived in its turn under its name and days, and the journal says so: `› you brought back kule “v1 fixes”; the one open there is archived as “kule 2026-11-02 → 2026-12-02”`. A fresh `kule` that had done nothing would have been closed instead.
+
+Nothing woke yet. Write to the old leader and it goes on in the session it had, told first that the project was put away and brought back, and of the turn the archive cut short (not run again). A session the vendor removed meanwhile starts anew, told where it left off. To go back to the newer work, `:restore` it the same way.
+
+## 5. What stays shared
 
 The pot is one: archiving spends nothing and resets nothing. The header still says what all projects spent, and the daily ceilings of `:commit` still count the day. Other open projects are not touched; an archive is one project's.
 
@@ -66,5 +82,6 @@ The pot is one: archiving spends nothing and resets nothing. The header still sa
 
 - [Sessions and persistence: archives](../concepts/sessions.md#archives)
 - [`:archive`](../reference/commands.md#archive-title)
+- [`:restore`](../reference/commands.md#restore-name)
 - [Projects](../concepts/projects.md)
 - [Three checkouts, one screen](many-projects.md)

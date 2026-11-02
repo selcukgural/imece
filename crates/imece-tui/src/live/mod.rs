@@ -194,6 +194,15 @@ pub(crate) fn checkout_of(path: &Path) -> Result<(PathBuf, bool), String> {
     }
 }
 
+/// Whether the folder `repo` a project was kept on is a git checkout
+/// with a first commit of its own (not a folder inside another
+/// checkout): found again at each start and at a `:restore`, since a
+/// folder may have got its first commit since, or lost its git.
+pub(super) fn own_git(repo: &Path) -> bool {
+    let own = repo.canonicalize().unwrap_or_else(|_| repo.to_path_buf());
+    checkout_of(repo).is_ok_and(|(top, born)| born && top == own)
+}
+
 /// An agent's session, if it has one.
 enum Slot {
     None,

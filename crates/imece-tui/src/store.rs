@@ -55,7 +55,9 @@ use crate::model::*;
 /// 15 (2026-11-02): archived projects (`projects.archived_at`,
 /// `projects.archived_title`), read by project (`journal_project`), and
 /// the `Archived` events.
-pub const SCHEMA_VERSION: i64 = 15;
+/// 16 (2026-11-02): the `Restored` events (no table changed; an older
+/// imece would not know the tag).
+pub const SCHEMA_VERSION: i64 = 16;
 /// Trace lines kept per agent, as the world keeps them.
 const TRACE_KEEP: usize = 200;
 /// The file's name under the state directory.
@@ -3129,10 +3131,10 @@ mod tests {
                 )
                 .unwrap();
             assert_eq!(
-                version, "15",
-                "the sent table, the Fault kind, archives: an older imece knows none"
+                version, "16",
+                "the sent table, the Fault kind, archives, restores: an older imece knows none"
             );
-            assert_eq!(SCHEMA_VERSION, 15);
+            assert_eq!(SCHEMA_VERSION, 16);
         }
         let back = Store::open(&path)
             .unwrap()
@@ -3244,6 +3246,24 @@ mod tests {
             let back = store.load(100).unwrap().unwrap();
             assert_eq!(back.world.projects[0].archived, None);
             assert_eq!(back.world.projects[1].archived, archived);
+            // Brought back: saved as no archive, its line kept.
+            w.projects[1].closed = true;
+            w.restore_project(1, Some("x".into()));
+            assert!(store.save(&w, &kept().kept()).unwrap());
+            let back = store.load(100).unwrap().unwrap();
+            assert_eq!(back.world.projects[1].archived, None);
+            assert!(!back.world.projects[1].closed);
+            assert_eq!(
+                back.world.journal.last().map(|e| &e.event),
+                w.journal.last().map(|e| &e.event)
+            );
+            assert!(matches!(
+                back.world.journal.last().map(|e| &e.event),
+                Some(Event::Restored { .. })
+            ));
+            w.projects[1].archived = archived.clone();
+            w.projects[1].closed = false;
+            assert!(store.save(&w, &kept().kept()).unwrap());
             // A tidy keeps an archive's lines, however old.
             store.raw().execute("DELETE FROM journal", []).unwrap();
             let now = w.started_at + 100 * 86_400;
