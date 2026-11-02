@@ -142,7 +142,7 @@ Tüm ajanların birlikte harcayabileceği en çok: bütün takım için tek bir 
 imece --fresh
 ```
 
-Depo alınırken her ajanın hatırlanan satıcı oturumunu unutturur: her ajan yeni bir oturumda uyanır, kaldığı yer anlatılır, ve satıcıların eski oturumlardan tuttuğu silinir (Claude'un transkripti, Codex'in iş parçacığı, Gemini'nin sohbet dosyaları; bkz. [dosyalar](files.md)). Günlük, gitmemiş her ajan için `X oturumunu unutturdun; yeni bir oturumla başlıyor, kaldığı yer anlatılacak` der. `:forget @NAME` aynısını imece çalışırken tek bir ajan için yapar. Yeni oturum bütün brifingi, önbelleksiz, yeniden öder.
+Depo alınırken her ajanın hatırlanan satıcı oturumunu unutturur: her ajan yeni bir oturumda uyanır, kaldığı yer anlatılır, ve satıcıların eski oturumlardan tuttuğu silinir (Claude'un transkripti, Codex'in iş parçacığı, Gemini'nin sohbet dosyaları; bkz. [dosyalar](files.md)). Günlük, gitmemiş her ajan için `X oturumunu unutturdun; yeni bir oturumla başlıyor, kaldığı yer anlatılacak` der. `:forget @NAME` aynısını imece çalışırken tek bir ajan için yapar. Yeni oturum bütün brifingi, önbelleksiz, yeniden öder. Arşivlenmiş bir projenin oturumları saklanır: onu geri getirmek onlarla sürer (bkz. [`:archive`](commands.md#archive-title)).
 
 ### `--awake`
 

@@ -17,7 +17,8 @@ life shifts it by an hour (accepted). The demo runs at 14:00 on today's
 date. RETENTION: `Store::tidy(now, JOURNAL_KEEP)` at every live start
 after the load deletes journal lines older than `JOURNAL_DAYS` (90)
 that lie past the newest 5000 (`seq <= newest - keep AND tick <
-cutoff`, a primary-key range, in the `plans` test), and runs `VACUUM`
+cutoff`, a primary-key range, in the `plans` test; since record 80 an
+archived project's lines are kept whatever their age), and runs `VACUUM`
 when the free pages are a quarter of the file or more (`needs_vacuum`);
 stories and inbox rows stay (numbered by position); a failure is
 ignored and the next start tries again. PREFS: the `screen` file is

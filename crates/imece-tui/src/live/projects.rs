@@ -77,10 +77,11 @@ impl Live {
         if w.project_by_name(&name).is_some() {
             return Err(ProjectRefusal::NameTaken(name));
         }
+        // An archived one stays in its archive.
         let reuse = w
             .projects
             .iter()
-            .find(|q| q.closed && at(q) && w.is_solo(q.id) == solo)
+            .find(|q| q.closed && q.archived.is_none() && at(q) && w.is_solo(q.id) == solo)
             .map(|q| q.id);
         let role = if solo { Role::Solo } else { Role::Leader };
         let id = w.agents.len();
@@ -151,6 +152,56 @@ impl Live {
         self.files_cut.remove(&p);
         w.close_project(p);
         Ok(())
+    }
+
+    /// Archives project `p` as `title` (`:archive`): each agent's runs and
+    /// session end as at a quit, the session remembered to go on with,
+    /// its mail, notes, change and the prompts a turn was cut short in
+    /// kept (told when it is brought back); a fresh project of the same
+    /// kind, name and head takes its place on the checkout. Returns the
+    /// fresh project's id.
+    pub fn archive_project(
+        &mut self,
+        w: &mut World,
+        p: ProjectId,
+        title: String,
+    ) -> Result<ProjectId, ProjectRefusal> {
+        let was = w.projects[p].leader;
+        let (role, vendor) = (w.agents[was].role, w.agents[was].vendor);
+        // The socket first: an agent without one could never start.
+        self.bind(w.agents.len(), role, vendor)
+            .map_err(|e| ProjectRefusal::Bus(e.to_string()))?;
+        let ids: Vec<AgentId> = (w.agents.iter())
+            .filter(|a| a.project == p && !a.gone)
+            .map(|a| a.id)
+            .collect();
+        for id in ids {
+            self.running[id].kill_all();
+            let mut cut = std::mem::take(&mut self.interrupted[id]);
+            cut.append(&mut self.inflight[id]);
+            match std::mem::replace(&mut self.slots[id], Slot::None) {
+                Slot::Running(mut s) => s.terminate(),
+                Slot::Starting(waiting) => cut.extend(waiting),
+                Slot::None => {}
+            }
+            self.end(w, id);
+            self.inflight[id] = cut;
+            self.leaving[id] = false;
+            self.remembered[id] = true;
+        }
+        self.filed_at.remove(&p);
+        self.files_cut.remove(&p);
+        self.grow(self.models[was].clone(), self.tiered[was]);
+        let place = &self.places[p];
+        let (repo, root, git) = (place.repo.clone(), place.root.clone(), place.git);
+        let folder = (!git).then(|| repo.display().to_string());
+        self.places.push(Place { repo, root, git });
+        let fresh = w.archive_project(p, title);
+        w.set_no_git(fresh, folder.as_deref());
+        if self.home == p {
+            self.home = fresh;
+        }
+        Ok(fresh)
     }
 
     /// Project `p` is called `name` from now on, its head `lead-NAME`
@@ -898,6 +949,222 @@ mod tests {
         assert_eq!(live.close_project(&mut w, 1), Err(ProjectRefusal::Last));
         assert!(!w.projects[1].closed && !w.agents[1].gone);
         let _ = std::fs::remove_dir_all(&repo);
+    }
+
+    #[test]
+    fn archiving_a_project_ends_its_sessions_keeps_what_they_had_and_opens_a_fresh_one() {
+        use std::os::unix::process::{CommandExt, ExitStatusExt};
+        let repo = checkout("archive-repo");
+        let mut w = team(0);
+        let mut live = idle_live(1);
+        live.open_bus(&w, "/opt/imece".into()).unwrap();
+        assert_eq!(
+            live.open_project(&mut w, &repo, Some("api"), Open::Team),
+            Ok(1)
+        );
+        live.hire(&mut w, 1, &json!({})).unwrap();
+        let (lead_ended, ended) = (
+            Arc::new(AtomicBool::new(false)),
+            Arc::new(AtomicBool::new(false)),
+        );
+        for (id, flag) in [(1, &lead_ended), (2, &ended)] {
+            live.ready(
+                &mut w,
+                id,
+                Ok((
+                    Box::new(Ends(flag.clone())),
+                    repo.clone(),
+                    None,
+                    None,
+                    Vec::new(),
+                )),
+            );
+        }
+        let session = |s: &str| {
+            Some(Resumable {
+                session: s.into(),
+                spent: 7,
+            })
+        };
+        live.sessions[1] = session("s-lead");
+        live.sessions[2] = session("s-worker");
+        live.mail[2].push(Mail {
+            from: 1,
+            kind: MsgKind::Assign,
+            body: "x".into(),
+            id: 0,
+            re: None,
+        });
+        live.notes[2].push("a note".into());
+        live.leaving[2] = true;
+        live.changes.insert(
+            2,
+            worktree::Change {
+                path: PathBuf::from("/w"),
+                tree: String::new(),
+                files: Vec::new(),
+                patch: String::new(),
+            },
+        );
+        live.post(&mut w, 2, &json!({ "title": "t", "body": "b" }))
+            .unwrap();
+        live.offered.insert(0, vec![2]);
+        live.interrupted[2] = vec!["cut before".into()];
+        live.inflight[2] = vec!["working on it".into()];
+        let t = w.tick;
+        w.agents[2].set_status(Status::Working, t);
+        w.agents[2].retry = Some(Retry {
+            attempt: 1,
+            at: t + 9,
+        });
+        w.projects[1].pinned = true;
+        w.projects[1].copies = vec![".env".into()];
+        live.home = 1;
+        live.filed_at.insert(1, Instant::now());
+        live.filed_at.insert(0, Instant::now());
+        live.files_cut.extend([0, 1]);
+        let mut sleeper = std::process::Command::new("sleep")
+            .arg("30")
+            .process_group(0)
+            .spawn()
+            .unwrap();
+        live.running[2].add(sleeper.id() as i32);
+        let generation = live.generation[2];
+        let lines = w.journal.len();
+        w.tick = 40;
+
+        assert_eq!(live.archive_project(&mut w, 1, "first epic".into()), Ok(2));
+        // Its sessions and runs end as at a quit ...
+        assert!(lead_ended.load(Ordering::SeqCst) && ended.load(Ordering::SeqCst));
+        assert_eq!(live.generation[2], generation + 1);
+        assert!(matches!(live.slots[1], Slot::None) && matches!(live.slots[2], Slot::None));
+        let status = sleeper.wait().unwrap();
+        assert_eq!(status.signal(), Some(libc::SIGKILL), "{status:?}");
+        // ... and what they had is kept, to go on with when it comes back.
+        assert_eq!(live.sessions[1], session("s-lead"));
+        assert_eq!(live.sessions[2], session("s-worker"));
+        assert_eq!(live.mail[2].len(), 1);
+        assert_eq!(live.notes[2], ["a note"]);
+        assert!(live.changes.contains_key(&2));
+        assert_eq!(live.posts.keys().collect::<Vec<_>>(), [&0]);
+        assert_eq!(live.offered[&0], [2]);
+        assert_eq!(live.inflight[2], ["cut before", "working on it"]);
+        assert!(live.interrupted[2].is_empty() && live.inflight[1].is_empty());
+        assert!(live.remembered[1] && live.remembered[2]);
+        assert!(!live.leaving[2]);
+        // The other project's head is not touched.
+        assert_eq!((live.generation[0], live.remembered[0]), (0, false));
+        assert_eq!(w.agents[0].status, Status::Idle);
+        assert_eq!(live.filed_at.keys().collect::<Vec<_>>(), [&0]);
+        assert_eq!(live.files_cut.iter().collect::<Vec<_>>(), [&0]);
+        for id in [1, 2] {
+            let a = &w.agents[id];
+            assert_eq!((a.status, a.gone), (Status::Asleep, false), "{id}");
+            assert!(a.retry.is_none(), "{id}");
+        }
+        assert!(w.projects[1].closed);
+        assert_eq!(
+            w.projects[1].archived,
+            Some(Archived {
+                at: 40,
+                title: "first epic".into()
+            })
+        );
+        // A fresh project of the same kind and name takes its place.
+        assert_eq!((w.projects.len(), live.places.len()), (3, 3));
+        let fresh = &w.projects[2];
+        assert_eq!((fresh.name.as_str(), fresh.leader), ("api", 3));
+        assert!(!fresh.closed && fresh.archived.is_none());
+        assert!(fresh.pinned && fresh.copies == [".env"]);
+        assert_eq!(w.agents[3].name, w.agents[1].name, "the same head name");
+        assert_eq!((w.agents[3].role, w.agents[3].project), (Role::Leader, 2));
+        assert_eq!(live.places[2].repo, live.places[1].repo);
+        assert_eq!(live.places[2].root, live.places[1].root);
+        assert!(live.places[2].git);
+        assert_eq!(live.home, 2, "home moves to the fresh one");
+        assert_eq!(live.models.len(), 4);
+        let bus = live.bus.as_ref().unwrap();
+        assert!(bus.servers[3].path().ends_with("a3.sock"));
+        assert_eq!(
+            w.journal[lines..]
+                .iter()
+                .map(|e| e.event.clone())
+                .collect::<Vec<_>>(),
+            [Event::Archived {
+                leader: 3,
+                was: 1,
+                title: "first epic".into()
+            }],
+            "one line, about the fresh leader"
+        );
+        assert_eq!(w.agent_by_name(&w.agents[1].name), Some(3));
+        assert!(w.open_inbox().is_empty(), "the archive's reply waits in it");
+        // The checkout holds the fresh team now; closed, that one opens
+        // again in place, never the archive.
+        assert_eq!(
+            live.open_project(&mut w, &repo, None, Open::Team),
+            Err(ProjectRefusal::PathOpen("api".into()))
+        );
+        assert_eq!(live.close_project(&mut w, 2), Ok(()));
+        assert_eq!(live.open_project(&mut w, &repo, None, Open::Team), Ok(2));
+        assert!(w.projects[1].archived.is_some() && w.projects[1].closed);
+        let _ = std::fs::remove_dir_all(&repo);
+    }
+
+    #[test]
+    fn a_starting_agent_s_waiting_prompts_are_kept_by_its_archive() {
+        let mut w = team(1);
+        let mut live = idle_live(2);
+        live.places[0].repo = PathBuf::from("/r");
+        live.places[0].git = false;
+        live.slots[1] = Slot::Starting(vec!["first".into(), "second".into()]);
+        assert_eq!(live.archive_project(&mut w, 0, "x".into()), Ok(1));
+        assert_eq!(live.inflight[1], ["first", "second"]);
+        assert!(!live.places[1].git, "no git, as the archive's place");
+        assert!(w.projects[1].no_git);
+        assert!(matches!(
+            w.journal.last().map(|e| &e.event),
+            Some(Event::NoGit { leader: 2, path }) if path == "/r"
+        ));
+    }
+
+    #[test]
+    fn an_archived_worker_is_offered_no_card_and_what_it_asked_is_not_done() {
+        let mut w = team(1);
+        let mut live = idle_live(2);
+        live.post(
+            &mut w,
+            0,
+            &json!({ "title": "Add a test", "body": "Cover it" }),
+        )
+        .unwrap();
+        let t = w.tick;
+        w.agents[1].set_status(Status::Asleep, t);
+        w.projects[0].closed = true;
+        w.projects[0].archived = Some(Archived {
+            at: 0,
+            title: "x".into(),
+        });
+        live.step(&mut w);
+        assert!(queued(&live, 1).is_empty());
+        assert_eq!(live.offered.get(&0), None);
+        assert_eq!(live.woken[1], 0);
+        let agents = w.agents.len();
+        assert_eq!(
+            call(&mut live, &mut w, 1, "hire", json!({})),
+            Err("your project was put away; nothing was done".into())
+        );
+        assert_eq!(w.agents.len(), agents, "nobody hired");
+        assert!(
+            (w.agents[1].trace.iter()).any(|l| l.contains("hire: its project is put away")),
+            "{:?}",
+            w.agents[1].trace
+        );
+        // Brought back (a test's licence): offered.
+        w.projects[0].closed = false;
+        w.projects[0].archived = None;
+        live.step(&mut w);
+        assert_eq!(live.offered[&0], [1]);
     }
 
     #[test]

@@ -1,6 +1,6 @@
 ---
 title: Senaryolar
-description: imece'de adım adım yedi yürüyüş; her adımda basılan tuş ya da komut ve ekranın buna verdiği karşılık.
+description: imece'de adım adım sekiz yürüyüş; her adımda basılan tuş ya da komut ve ekranın buna verdiği karşılık.
 ---
 
 # Senaryolar
@@ -9,7 +9,7 @@ Kavram ve ekran sayfaları imece'nin her parçasının ne olduğunu anlatır. Se
 
 Her senaryo gerçek imece için doğrudur: tuşlar `?` yardımının listelediği tuşlar, günlük satırları ekranın kullandığı sözcükler, sayılar (sınırlar, fiyatlar, varsayılanlar) koddaki sayılardır. Çizili ekranlar kısa ve inandırıcıdır; gerçek bir çalışmanın kaydı değildir.
 
-## Yedi senaryo
+## Sekiz senaryo
 
 | Senaryo | Tek satırla |
 | --- | --- |
@@ -19,6 +19,7 @@ Her senaryo gerçek imece için doğrudur: tuşlar `?` yardımının listelediğ
 | [Üç çalışma kopyası, tek ekran](many-projects.md) | `:open`, katlama, `:pin`, `f`, `:rename`, `:copy .env`, `:close` ve her projenin çektiği tek bütçe. |
 | [Takımın yanında bir solo](solo-beside-the-team.md) | `:solo claude:opus@xhigh`, lidersiz, kendinizin sürdüğü bir oturum, her yanıttan sonra `Δ`, Codex'te ikinci bir solo, ertesi sabah `--solo`. |
 | [Geri dönmek](next-morning.md) | Tur ortasında çıkmak, "nerede kalmıştın" penceresi, uyuyan ajanlar, her satıcının nasıl devam ettiği, `:forget`, uzaktayken özeti, `:notify`, işaretler, `:export`. |
+| [Yeni bir epic](new-epic.md) | `:archive v1 fixes`, beklemesi ve `u`, aynı adla temiz bir proje, arşivin sakladıkları, tek bütçe. |
 | [Takımın yanında kendi kabuğunuz](own-shell-and-commit.md) | `!cargo test`, `!vim`, ctrl-c, `:commit` ve tavanları, `:awake`, `:budget 80`, `:theme nord`, `L`. |
 
 ## Bedavaya denemek
@@ -34,6 +35,7 @@ Bir senaryonun ekranda yaptığı her şey `imece --demo` ile denenebilir: sahte
 5. [Üç çalışma kopyası, tek ekran](many-projects.md): birden fazla proje açıkken.
 6. [Takımın yanında bir solo](solo-beside-the-team.md): tek bir ajanı kendiniz sürmek istediğinizde.
 7. [Geri dönmek](next-morning.md): ikinci gün.
+8. [Yeni bir epic](new-epic.md): bir iş bittiğinde.
 
 ## Ayrıca bakın
 

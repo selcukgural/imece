@@ -55,6 +55,17 @@ A session imece forgets leaves nothing behind at its vendor:
 - What is removed, on a thread of its own: Claude's transcript file; Codex's thread through an app server started for it (`thread/delete`, which also clears Codex's index); Gemini's chat files of that session under `~/.gemini/tmp/<name>/chats/`, and when the agent itself goes (`:close`, a helper leaving), everything under that name plus its private directory. Only a UUID ever reaches a path or a vendor.
 - imece's own `/clear`, a model fallback and a renewed session (after `:budget`) forget the replaced session the same way.
 
+## Archives
+
+When an epic is done, `:archive [TITLE]` puts the project at hand away and opens a fresh one of the same name in its place, on the same checkout ([`:archive`](../reference/commands.md#archive-title)). The archive is kept in the store with everything it had:
+
+- its agents, asleep, each with its remembered vendor session, mail, notes, change and the prompts a turn was cut short in (an archive cuts a turn under way short, as a quit does);
+- its cards, its items in WAITING FOR YOU and its journal lines, out of sight: the screen shows only the fresh project.
+
+Nothing of an archive wakes or spends: no card is offered to its workers, nobody reaches its agents by name (the fresh head may have the same one), and a tool call one of them made before the archive is answered `your project was put away; nothing was done`. `--fresh` leaves its sessions alone, and the tidy keeps its journal lines whatever their age. Its vendor sessions are the vendors' to keep: Claude Code, for one, removes old transcripts by itself after a while (30 days by default), and a session gone by then is started anew, told where it left off.
+
+For now an archive is kept, not shown: looking at one and bringing it back are the next steps.
+
 ## Leftovers: days, retention, preferences
 
 - **Days:** the clock starts at the local time of the world's first start. The journal and a conversation draw a dim `─ 2026-11-01` row above the first line of another day; an item in WAITING FOR YOU from another day carries its date; copied and exported text is always stamped.
@@ -86,4 +97,5 @@ It shows the pot, one line per open project, the oldest open items (6 at most, t
 - [How imece works](../concepts/how-imece-works.md): the store and the git thread.
 - [Files](../reference/files.md): every path imece writes.
 - [Budget and limits](../concepts/budget-and-limits.md): the pot persists.
+- [A new epic](../scenarios/new-epic.md): archiving a finished project.
 - [Troubleshooting](../troubleshooting.md): a store that will not open, a second imece.

@@ -415,6 +415,16 @@ pub fn project_name_of(repo: &Path) -> String {
         .collect()
 }
 
+/// A project the person archived (`:archive`): put away with all it had,
+/// to be looked at again or brought back; a fresh project took its place.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct Archived {
+    /// The tick it was archived at.
+    pub at: u64,
+    /// What the person called it (else its name and its days).
+    pub title: String,
+}
+
 pub struct Project {
     pub id: ProjectId,
     pub name: String,
@@ -442,6 +452,10 @@ pub struct Project {
     /// works straight in it: no worktree, no change to review. Found at
     /// each open and start, not saved.
     pub no_git: bool,
+    /// Archived by the person (`:archive`): closed, but its agents are
+    /// not gone; they sleep with their sessions, mail and changes until
+    /// it is brought back. Never opened again in place.
+    pub archived: Option<Archived>,
 }
 
 #[derive(Clone, Debug)]
@@ -1111,6 +1125,14 @@ pub enum Event {
     Closed {
         leader: AgentId,
     },
+    /// The person archived the project `was` (`:archive`) as `title`;
+    /// `leader` heads the fresh project that took its place, so the line
+    /// stays in sight with it.
+    Archived {
+        leader: AgentId,
+        was: AgentId,
+        title: String,
+    },
     /// The person renamed a project (`:rename`), `from` to `to`.
     Renamed {
         leader: AgentId,
@@ -1291,6 +1313,7 @@ impl Event {
             | Event::Shell { .. }
             | Event::Opened { .. }
             | Event::Closed { .. }
+            | Event::Archived { .. }
             | Event::Renamed { .. }
             | Event::Forgotten { .. }
             | Event::Chose { .. } => EntryKind::Person,
@@ -1322,6 +1345,7 @@ impl Event {
             | Event::Confine { leader, .. }
             | Event::Opened { leader, .. }
             | Event::Closed { leader }
+            | Event::Archived { leader, .. }
             | Event::Renamed { leader, .. } => leader,
             Event::Assign { agent, .. }
             | Event::Assumption { agent, .. }
@@ -1630,11 +1654,21 @@ impl World {
         vendors.into_iter().filter_map(fullest).collect()
     }
 
+    /// The agent called `name` that can be reached: not gone, and not in
+    /// a project closed or archived (an archived one's agents keep their
+    /// names, and a fresh project's may have the same).
     pub fn agent_by_name(&self, name: &str) -> Option<AgentId> {
         self.agents
             .iter()
-            .find(|a| !a.gone && a.name == name)
+            .find(|a| !a.gone && a.name == name && !self.put_away(a.id))
             .map(|a| a.id)
+    }
+
+    /// Whether an agent that is not gone has the name `name`, an archived
+    /// one's too: a new agent's name (and so its worktree's) is never one
+    /// of these.
+    pub fn name_taken(&self, name: &str) -> bool {
+        self.agents.iter().any(|a| !a.gone && a.name == name)
     }
 
     /// Marks journal line `i` to come back to, or takes its mark away;
@@ -1725,6 +1759,20 @@ impl World {
         vendor: Vendor,
         role: Role,
     ) -> ProjectId {
+        let p = self.add_project(reuse, name, vendor, role);
+        let leader = self.projects[p].leader;
+        self.note(Event::Opened { leader, path });
+        p
+    }
+
+    /// [`open_project`](Self::open_project) without the journal's line.
+    fn add_project(
+        &mut self,
+        reuse: Option<ProjectId>,
+        name: String,
+        vendor: Vendor,
+        role: Role,
+    ) -> ProjectId {
         let p = reuse.unwrap_or(self.projects.len());
         let leader = self.agents.len();
         let lead = World::head_name(p, &name, role);
@@ -1755,9 +1803,9 @@ impl World {
                 pinned: false,
                 copies: Vec::new(),
                 no_git: false,
+                archived: None,
             }),
         }
-        self.note(Event::Opened { leader, path });
         p
     }
 
@@ -1794,6 +1842,79 @@ impl World {
         self.projects[p].closed = true;
         let leader = self.projects[p].leader;
         self.note(Event::Closed { leader });
+    }
+
+    /// Project `p` is archived as `title`: closed, its agents asleep with
+    /// all they had (their inbox items, changes and cards wait out of
+    /// sight), and a fresh project takes its place: the same kind, name,
+    /// pin and copies, its head on the same vendor and called the same.
+    /// Returns the fresh project's id.
+    pub fn archive_project(&mut self, p: ProjectId, title: String) -> ProjectId {
+        let t = self.tick;
+        let was = self.projects[p].leader;
+        let (vendor, role, head) = {
+            let a = &self.agents[was];
+            (a.vendor, a.role, a.name.clone())
+        };
+        for a in self.agents.iter_mut() {
+            if a.project == p && !a.gone {
+                a.activity = None;
+                // A failed turn is not tried again in an archive.
+                a.retry = None;
+                a.tries = 0;
+                a.set_status(Status::Asleep, t);
+            }
+        }
+        let q = &mut self.projects[p];
+        q.closed = true;
+        q.archived = Some(Archived {
+            at: t,
+            title: title.clone(),
+        });
+        let (name, pinned, copies) = (q.name.clone(), q.pinned, q.copies.clone());
+        let fresh = self.add_project(None, name, vendor, role);
+        let leader = self.projects[fresh].leader;
+        self.agents[leader].name = head;
+        self.projects[fresh].pinned = pinned;
+        self.projects[fresh].copies = copies;
+        self.note(Event::Archived { leader, was, title });
+        fresh
+    }
+
+    /// What `:archive` calls project `p` when the person gives no title:
+    /// its name and the days its oldest journal line and now fall on.
+    pub fn archive_title(&self, p: ProjectId) -> String {
+        let name = &self.projects[p].name;
+        let to = date(day(self.tick));
+        let from = (self.journal.iter())
+            .find(|e| {
+                self.agents
+                    .get(e.event.agent())
+                    .is_some_and(|a| a.project == p)
+            })
+            .map(|e| date(day(e.tick)));
+        match from {
+            Some(from) if from != to => format!("{name} {from} → {to}"),
+            _ => format!("{name} {to}"),
+        }
+    }
+
+    /// Whether agent `id`'s project is archived: its journal lines are out
+    /// of sight until it is brought back.
+    pub fn in_archive(&self, id: AgentId) -> bool {
+        self.agents
+            .get(id)
+            .and_then(|a| self.projects.get(a.project))
+            .is_some_and(|q| q.archived.is_some())
+    }
+
+    /// Whether agent `id`'s project is closed or archived: out of sight,
+    /// out of reach by name, and acting on nothing.
+    pub fn put_away(&self, id: AgentId) -> bool {
+        self.agents
+            .get(id)
+            .and_then(|a| self.projects.get(a.project))
+            .is_some_and(|q| q.closed)
     }
 
     /// Project `p` is called `name` from now on, and its head `lead-NAME`
@@ -1893,12 +2014,14 @@ impl World {
             .count()
     }
 
-    /// Indexes of the open inbox items, oldest first.
+    /// Indexes of the open inbox items, oldest first; an archived
+    /// project's wait out of sight, open, until it is brought back.
     pub fn open_inbox(&self) -> Vec<usize> {
         self.inbox
             .iter()
             .enumerate()
             .filter(|(_, i)| i.open)
+            .filter(|(_, i)| !self.in_archive(i.agent))
             .map(|(n, _)| n)
             .collect()
     }
@@ -1962,10 +2085,14 @@ impl World {
     }
 
     pub fn cards_done(&self) -> usize {
-        self.cards
-            .iter()
+        self.shown_cards()
             .filter(|c| c.column == Column::Done)
             .count()
+    }
+
+    /// The cards in sight: an archived project's wait in its archive.
+    pub fn shown_cards(&self) -> impl Iterator<Item = &Card> {
+        (self.cards.iter()).filter(|c| self.projects[c.project].archived.is_none())
     }
 
     /// The next message's number on the bus.
@@ -2645,6 +2772,7 @@ mod tests {
                 pinned: false,
                 copies: Vec::new(),
                 no_git: false,
+                archived: None,
             }],
             agents,
             cards: Vec::new(),
@@ -3394,6 +3522,7 @@ mod tests {
             pinned: false,
             copies: Vec::new(),
             no_git: false,
+            archived: None,
         });
         w.projects[0].closed = true;
         w.budget = 400;
@@ -4190,5 +4319,160 @@ mod tests {
             }],
         ));
         assert_eq!(w.card_people(1), [(0, Part::Posted)]);
+    }
+    #[test]
+    fn archiving_a_project_puts_what_it_had_out_of_sight_and_a_fresh_one_in_its_place() {
+        let mut w = world(vec![
+            agent(0, Role::Leader, Status::Idle),
+            agent(1, Role::Worker, Status::Blocked),
+            agent(2, Role::Helper, Status::Working),
+        ]);
+        w.agents[0].name = "lead".into();
+        w.agents[1].name = "claude-1".into();
+        w.agents[1].activity = Some("Edit a.rs".into());
+        w.agents[1].retry = Some(Retry { attempt: 2, at: 9 });
+        w.agents[1].tries = 2;
+        w.projects[0].pinned = true;
+        w.projects[0].copies = vec![".env".into()];
+        w.projects.push(Project {
+            id: 1,
+            name: "q".into(),
+            leader: 3,
+            trunk: None,
+            files: Vec::new(),
+            repo: &[],
+            closed: false,
+            pinned: false,
+            copies: Vec::new(),
+            no_git: false,
+            archived: None,
+        });
+        w.agents.push(Agent::new(
+            3,
+            1,
+            "lead-q".into(),
+            Vendor::Codex,
+            Role::Leader,
+            Status::Idle,
+            0,
+        ));
+        w.inbox = vec![
+            item(InboxKind::Reply, 1, true),
+            item(InboxKind::Reply, 3, true),
+            item(InboxKind::Reply, 1, false),
+        ];
+        w.cards = vec![card(0, Some(1), Vec::new()), card(1, Some(3), Vec::new())];
+        w.cards[1].project = 1;
+        for c in &mut w.cards {
+            c.column = Column::Done;
+        }
+        w.journal.push(Entry {
+            tick: 0,
+            event: Event::Failed { agent: 1 },
+        });
+        w.tick = 50;
+        assert_eq!(w.cards_done(), 2);
+
+        assert_eq!(w.archive_project(0, "first".into()), 2);
+        let was = &w.projects[0];
+        assert!(was.closed);
+        assert_eq!(
+            was.archived,
+            Some(Archived {
+                at: 50,
+                title: "first".into()
+            })
+        );
+        let fresh = &w.projects[2];
+        assert_eq!(
+            (
+                fresh.id,
+                fresh.name.as_str(),
+                fresh.leader,
+                fresh.closed,
+                fresh.pinned
+            ),
+            (2, "p", 4, false, true)
+        );
+        assert_eq!(fresh.copies, [".env"]);
+        assert!(fresh.archived.is_none());
+        let lead = &w.agents[4];
+        assert_eq!(
+            (lead.name.as_str(), lead.project, lead.role, lead.vendor),
+            ("lead", 2, Role::Leader, Vendor::Claude)
+        );
+        for id in 0..3 {
+            assert_eq!(
+                (w.agents[id].status, w.agents[id].gone),
+                (Status::Asleep, false)
+            );
+        }
+        let a = &w.agents[1];
+        assert_eq!((a.activity.as_deref(), a.retry, a.tries), (None, None, 0));
+        assert_eq!(w.agents[3].status, Status::Idle, "the other project's");
+        assert_eq!(w.journal.len(), 2, "one line, none of an opening");
+        assert_eq!(
+            w.journal[1].event,
+            Event::Archived {
+                leader: 4,
+                was: 0,
+                title: "first".into()
+            }
+        );
+        // Out of sight, and out of reach by name.
+        assert_eq!(w.agent_by_name("lead"), Some(4), "not the archive's");
+        assert_eq!(w.agent_by_name("claude-1"), None, "only the archive has it");
+        assert_eq!(w.agent_by_name("lead-q"), Some(3));
+        assert!(
+            w.name_taken("claude-1"),
+            "a new worker is never called that"
+        );
+        assert!(!w.name_taken("claude-9"));
+        assert_eq!(w.open_inbox(), [1]);
+        assert!(w.inbox[0].open, "it waits, open, in the archive");
+        assert_eq!(w.cards_done(), 1);
+        assert_eq!(w.shown_cards().map(|c| c.id).collect::<Vec<_>>(), [1]);
+        assert!(w.in_archive(1) && w.put_away(1));
+        assert!(!w.in_archive(3) && !w.put_away(3) && !w.in_archive(4));
+        assert!(!w.in_archive(99) && !w.put_away(99), "no such agent");
+        // A closed project is put away, not archived: its lines and items
+        // are its own business.
+        w.projects[1].closed = true;
+        assert!(w.put_away(3) && !w.in_archive(3));
+        assert_eq!(w.open_inbox(), [1]);
+        assert_eq!(w.agent_by_name("lead-q"), None);
+    }
+
+    #[test]
+    fn an_archive_without_a_title_is_called_by_its_name_and_its_days() {
+        let mut w = world(vec![agent(0, Role::Leader, Status::Idle)]);
+        let today = date(day(0));
+        assert_eq!(w.archive_title(0), format!("p {today}"), "no line yet");
+        w.journal.push(Entry {
+            tick: 0,
+            event: Event::Failed { agent: 0 },
+        });
+        assert_eq!(w.archive_title(0), format!("p {today}"), "one day");
+        // Two days of five-second ticks on, from its first line.
+        w.tick = 2 * 86_400 / SECONDS_PER_TICK;
+        let then = date(day(w.tick));
+        assert_ne!(then, today);
+        assert_eq!(w.archive_title(0), format!("p {today} → {then}"));
+        // Only its own lines count.
+        w.agents.push(Agent::new(
+            1,
+            1,
+            "x".into(),
+            Vendor::Claude,
+            Role::Leader,
+            Status::Idle,
+            0,
+        ));
+        w.journal[0].event = Event::Failed { agent: 1 };
+        w.journal.push(Entry {
+            tick: w.tick,
+            event: Event::Failed { agent: 0 },
+        });
+        assert_eq!(w.archive_title(0), format!("p {then}"));
     }
 }

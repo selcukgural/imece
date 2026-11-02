@@ -92,6 +92,12 @@ impl Live {
             w.agents[id].set_status(Status::Asleep, t);
             self.remembered[id] = true;
             let cut = found.inflight.get(id).cloned().unwrap_or_default();
+            if w.in_archive(id) {
+                // Kept as it was archived, and said when it is brought
+                // back.
+                self.inflight[id] = cut;
+                continue;
+            }
             if !cut.is_empty() {
                 self.interrupted[id] = cut;
                 let card = w.agents[id].card;
@@ -102,7 +108,9 @@ impl Live {
         }
         if self.fresh {
             for id in 0..w.agents.len() {
-                if self.sessions[id].is_none() {
+                // An archive keeps its sessions to go on with when it is
+                // brought back.
+                if self.sessions[id].is_none() || w.in_archive(id) {
                     continue;
                 }
                 w.agents[id].trace(
@@ -349,7 +357,7 @@ impl Live {
         let cwd = self.cwd_of(w, id);
         let claude_home = self.claude_home.clone();
         let gemini_config = self.gemini_config.clone();
-        let gemini_home = self.gemini_home(a.project, a.role, &a.name);
+        let gemini_home = self.gemini_home(w, a.project, a.role, &a.name);
         let wait = if settle { self.settle } else { Duration::ZERO };
         let tx = self.tx.clone();
         let generation = self.generation[id];
@@ -1899,7 +1907,7 @@ mod tests {
             spent: 1,
         });
         let transcript = transcript_of(&live, &w, 3, UUID);
-        let private = live.gemini_home(1, Role::Worker, "gemini-1");
+        let private = live.gemini_home(&w, 1, Role::Worker, "gemini-1");
         std::fs::create_dir_all(private.join("policy")).unwrap();
         std::fs::write(private.join("GEMINI.md"), "role").unwrap();
         let kept = gemini_kept(
@@ -2082,7 +2090,7 @@ mod tests {
             remembered_vendor_worker("forget-gemini", Vendor::Gemini);
         live.gemini_config = trees("forget-gemini-config");
         let name = w.agents[1].name.clone();
-        let private = live.gemini_home(0, Role::Worker, &name);
+        let private = live.gemini_home(&w, 0, Role::Worker, &name);
         std::fs::create_dir_all(&private).unwrap();
         let header = json!({ "sessionId": UUID, "kind": "main" }).to_string();
         let kept = gemini_kept(
@@ -2171,7 +2179,7 @@ mod tests {
                 remembered_vendor_worker(&format!("forget-whole-{i}"), Vendor::Gemini);
             live.gemini_config = trees(&format!("forget-whole-{i}-config"));
             let name = w.agents[1].name.clone();
-            let home = live.gemini_home(0, Role::Worker, &name);
+            let home = live.gemini_home(&w, 0, Role::Worker, &name);
             let kept_dir = if kept {
                 Some(gemini_kept(
                     &live.gemini_config,
@@ -2306,6 +2314,75 @@ mod tests {
                 let _ = std::fs::remove_dir_all(d);
             }
         }
+    }
+
+    #[test]
+    fn an_archive_is_taken_in_as_it_was_put_away_and_fresh_leaves_its_sessions() {
+        let mut w = team(1);
+        w.projects.push(Project {
+            id: 1,
+            name: "old".into(),
+            leader: 2,
+            trunk: None,
+            files: Vec::new(),
+            repo: &[],
+            closed: true,
+            pinned: false,
+            copies: Vec::new(),
+            no_git: false,
+            archived: Some(Archived {
+                at: 1,
+                title: "old".into(),
+            }),
+        });
+        w.agents.push(Agent::new(
+            2,
+            1,
+            "lead".into(),
+            Vendor::Claude,
+            Role::Leader,
+            Status::Idle,
+            0,
+        ));
+        let mut live = Live::new(
+            0,
+            claude_at("/nonexistent/claude"),
+            PathBuf::from("/nonexistent"),
+            PathBuf::from("/nonexistent-trees"),
+        );
+        live.places.push(Place {
+            repo: PathBuf::from("/nonexistent"),
+            root: PathBuf::from("/nonexistent-trees"),
+            git: true,
+        });
+        live.fresh = true;
+        let found = Found {
+            sessions: vec![
+                None,
+                None,
+                Some(Resumable {
+                    session: UUID.into(),
+                    spent: 3,
+                }),
+            ],
+            inflight: vec![Vec::new(), vec!["cut a".into()], vec!["cut b".into()]],
+            ..Default::default()
+        };
+        live.adopt(&mut w, found, 0);
+        // The open project's cut turn is told at the wake, as ever.
+        assert_eq!(live.interrupted[1], ["cut a"]);
+        assert_eq!(journaled(&w, &Event::Interrupted { agent: 1 }), 1);
+        // The archive's waits as it was put away, said when it comes back.
+        assert_eq!(w.agents[2].status, Status::Asleep);
+        assert!(live.remembered[2]);
+        assert_eq!(live.inflight[2], ["cut b"]);
+        assert!(live.interrupted[2].is_empty());
+        assert_eq!(journaled(&w, &Event::Interrupted { agent: 2 }), 0);
+        // --fresh leaves its session, to go on with when it comes back.
+        assert_eq!(live.sessions[2].as_ref().map(|s| s.spent), Some(3));
+        assert_eq!(journaled(&w, &Event::Forgotten { agent: 2 }), 0);
+        // Kept for the next save as it was found.
+        assert!(w.projects[1].closed, "an archive is not closed as gone");
     }
 
     #[test]

@@ -39,3 +39,7 @@ gaps: a PATH with spaces is not parsed (no quoting), opened projects
 are not remembered across starts (comes with session persistence), the
 project-name prefixes on journal and inbox lines count closed projects,
 the lead vendor can not be chosen per project.
+
+Record 80 adds `:archive [TITLE]`: the project at hand is put away with
+its agents asleep and all they had (closed, but never reopened in place),
+and a fresh project of the same name takes its place.

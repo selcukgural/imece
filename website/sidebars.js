@@ -60,6 +60,7 @@ const sidebars = {
         'scenarios/many-projects',
         'scenarios/solo-beside-the-team',
         'scenarios/next-morning',
+        'scenarios/new-epic',
         'scenarios/own-shell-and-commit',
       ],
     },

@@ -12,7 +12,8 @@ use crate::app::App;
 pub fn draw(f: &mut Frame, area: Rect, app: &App) {
     let w = &app.world;
     let t = app.lang.text();
-    let many = w.projects.len() > 1;
+    // An archived project's cards wait in its archive.
+    let many = w.projects.iter().filter(|p| p.archived.is_none()).count() > 1;
     let areas: [Rect; 4] = Layout::horizontal([Constraint::Ratio(1, 4); 4]).areas(area);
     let columns = [
         Column::Waiting,
@@ -21,7 +22,7 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App) {
         Column::Done,
     ];
     for ((column, title), rect) in columns.into_iter().zip(t.columns).zip(areas) {
-        let mut cards: Vec<&Card> = w.cards.iter().filter(|c| c.column == column).collect();
+        let mut cards: Vec<&Card> = w.shown_cards().filter(|c| c.column == column).collect();
         if column == Column::Done {
             cards.sort_by_key(|c| std::cmp::Reverse(c.finished));
         }

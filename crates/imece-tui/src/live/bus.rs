@@ -395,12 +395,13 @@ impl Live {
     }
 
     /// Offers open cards to idle workers: each card to one worker at a time,
-    /// and to each worker at most once.
+    /// and to each worker at most once; an archived project's sleep on.
     pub(super) fn offer(&mut self, w: &mut World) {
         for id in 0..w.agents.len() {
             let a = &w.agents[id];
             if a.role != Role::Worker
                 || a.gone
+                || w.put_away(id)
                 || a.status == Status::Stopped
                 || self.turns[id] > 0
                 || self.woken[id] >= MAX_WOKEN

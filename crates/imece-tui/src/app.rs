@@ -64,7 +64,12 @@ pub const UNDO_GRACE: Duration = Duration::from_secs(10);
 pub enum Undoable {
     Close(ProjectId),
     Forget(AgentId),
+    /// The title waits in [`App::archive_title`].
+    Archive(ProjectId),
 }
+
+/// The most of a title `:archive` keeps, in characters.
+pub const ARCHIVE_TITLE_MAX: usize = 60;
 
 /// How long a short notice stays in the bottom line.
 pub const FLASH: Duration = Duration::from_secs(3);
@@ -792,6 +797,8 @@ pub struct App {
     /// A `:close` or `:forget` waiting out its [`UNDO_GRACE`], and when
     /// it acts.
     pub grace: Option<(Undoable, Instant)>,
+    /// The title the `:archive` waiting gives its project.
+    pub archive_title: String,
     pub quit: bool,
     /// The store's last failure, flashed once.
     store_error: Option<String>,
@@ -925,6 +932,7 @@ impl App {
             theme_was: None,
             flash: None,
             grace: None,
+            archive_title: String::new(),
             quit: false,
             store_error: None,
             shown: RefCell::new(Vec::new()),
@@ -3565,6 +3573,7 @@ impl App {
             "effort" => self.rechoose(Part::Effort, arg),
             "model" => self.rechoose(Part::Model, arg),
             "close" => self.close_project(arg),
+            "archive" => self.archive_project(arg),
             "undo" => self.undo(),
             "rename" => self.rename_project(arg),
             "forget" => self.forget_agent(arg),
@@ -4587,6 +4596,9 @@ impl App {
             Some((Undoable::Forget(id), _)) => {
                 fill(t.undone_forget, &[&self.world.agents[id].name])
             }
+            Some((Undoable::Archive(p), _)) => {
+                fill(t.undone_archive, &[&self.world.projects[p].name])
+            }
             None => t.nothing_to_undo.to_string(),
         };
         self.flash(said);
@@ -4614,6 +4626,7 @@ impl App {
         match self.grace.take() {
             Some((Undoable::Close(p), _)) => self.close_now(p),
             Some((Undoable::Forget(id), _)) => self.forget_now(id),
+            Some((Undoable::Archive(p), _)) => self.archive_now(p),
             None => {}
         }
     }
@@ -4647,6 +4660,64 @@ impl App {
         let open = self.inbox_rows().len();
         self.inbox_sel = self.inbox_sel.min(open.saturating_sub(1));
         self.flash(fill(t.closed, &[&name]));
+    }
+
+    /// `:archive [TITLE]`: the project at hand is put away as TITLE (else
+    /// its name and days) after the grace, and a fresh one opens in its
+    /// place.
+    fn archive_project(&mut self, arg: &str) {
+        // One waits at a time: the one before acts now.
+        self.end_grace();
+        let p = self.current_project();
+        let title: String = (arg.lines().next().unwrap_or_default().trim())
+            .chars()
+            .take(ARCHIVE_TITLE_MAX)
+            .collect();
+        self.archive_title = match title.is_empty() {
+            true => self.world.archive_title(p),
+            false => title,
+        };
+        self.wait_grace(Undoable::Archive(p));
+    }
+
+    /// Project `p` is archived now and a fresh one takes its place: what
+    /// pointed into it moves to the fresh one.
+    fn archive_now(&mut self, p: ProjectId) {
+        let t = self.lang.text();
+        let name = self.world.projects[p].name.clone();
+        let title = std::mem::take(&mut self.archive_title);
+        let archived = match &mut self.engine {
+            Engine::Live(live) => live.archive_project(&mut self.world, p, title.clone()),
+            Engine::Sim(sim) => sim.archive_project(&mut self.world, p, title.clone()),
+        };
+        let fresh = match archived {
+            Ok(fresh) => fresh,
+            Err(why) => return self.flash(why.describe()),
+        };
+        self.collapsed
+            .push(self.collapsed.get(p).copied().unwrap_or(false));
+        // What the archive's agents left unseen waits in it.
+        let w = &self.world;
+        self.unseen.retain(|&a| w.agents[a].project != p);
+        self.settled.retain(|&a| w.agents[a].project != p);
+        if let Zoom::Focus(a) | Zoom::Trace(a) | Zoom::Diff(a) = self.zoom
+            && self.world.agents[a].project == p
+        {
+            self.zoom = Zoom::None;
+        }
+        let was_in = match self.selected {
+            Sel::Project(q) => q == p,
+            Sel::Agent(a) => self.world.agents[a].project == p,
+        };
+        if was_in {
+            self.selected = Sel::Agent(self.world.projects[fresh].leader);
+        }
+        if self.card.is_some_and(|c| self.world.cards[c].project == p) {
+            self.card = None;
+        }
+        let open = self.inbox_rows().len();
+        self.inbox_sel = self.inbox_sel.min(open.saturating_sub(1));
+        self.flash(fill(t.archived, &[&name, &title]));
     }
 
     /// `:forget [@NAME]`: the agent (named, else the one at hand) forgets

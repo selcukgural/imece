@@ -142,7 +142,7 @@ The most all agents together may spend: one pot for the whole team, kept between
 imece --fresh
 ```
 
-Forgets every agent's remembered vendor session when the store is taken in: each agent wakes in a new session, told where it left off, and what the vendors kept of the old ones is removed (Claude's transcript, Codex's thread, Gemini's chat files; see [files](files.md)). The journal says `you made X forget its session; it starts a new one, told where it left off` for every agent that is not gone. `:forget @NAME` does the same for one agent while imece runs. The next session pays the whole briefing again, without the cache.
+Forgets every agent's remembered vendor session when the store is taken in: each agent wakes in a new session, told where it left off, and what the vendors kept of the old ones is removed (Claude's transcript, Codex's thread, Gemini's chat files; see [files](files.md)). The journal says `you made X forget its session; it starts a new one, told where it left off` for every agent that is not gone. `:forget @NAME` does the same for one agent while imece runs. The next session pays the whole briefing again, without the cache. An archived project's sessions are kept: they are what bringing it back goes on with (see [`:archive`](commands.md#archive-title)).
 
 ### `--awake`
 

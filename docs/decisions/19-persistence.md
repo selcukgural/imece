@@ -57,3 +57,7 @@ in the journal, retention, the prefs file) closed in the entries below.
 
 Record 66 adds the `sent` table (schema 13): the lines the person sent,
 the newest 500 loaded.
+
+Record 80 adds archives (schema 15): `projects.archived_at` and
+`archived_title`, the index `journal_project`; an archived agent loads
+asleep with its cut prompts kept in `inflight`, told when it comes back.

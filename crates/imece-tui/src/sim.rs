@@ -769,6 +769,7 @@ pub fn world(
             pinned: false,
             copies: Vec::new(),
             no_git: false,
+            archived: None,
         });
     }
     // The confine dial's default, said once a start as live does.
@@ -1295,7 +1296,7 @@ impl Sim {
         }
         // Researchers spawned during this tick start on the next one.
         for id in 0..w.agents.len() {
-            if w.agents[id].gone {
+            if w.agents[id].gone || w.put_away(id) {
                 continue;
             }
             match w.agents[id].role {
@@ -1601,7 +1602,7 @@ impl Sim {
         let reuse = w
             .projects
             .iter()
-            .find(|q| q.closed && q.name == name)
+            .find(|q| q.closed && q.archived.is_none() && q.name == name)
             .map(|q| q.id);
         let p = w.open_project(reuse, name, path.to_string(), Vendor::Claude, Role::Leader);
         if reuse.is_none() {
@@ -1644,7 +1645,7 @@ impl Sim {
         let reuse = w
             .projects
             .iter()
-            .find(|q| q.closed && q.name == name && w.is_solo(q.id))
+            .find(|q| q.closed && q.archived.is_none() && q.name == name && w.is_solo(q.id))
             .map(|q| q.id);
         let vendor = vendor.unwrap_or(Vendor::Claude);
         let p = w.open_project(reuse, name, path.to_string(), vendor, Role::Solo);
@@ -1683,6 +1684,31 @@ impl Sim {
         self.replies.retain(|r| agents[r.agent].project != p);
         w.close_project(p);
         Ok(())
+    }
+
+    /// `:archive` in the demo: the project's plans, research requests,
+    /// replies and hunks being applied go, its agents sleep, and a fresh
+    /// project on the same code map takes its place.
+    pub fn archive_project(
+        &mut self,
+        w: &mut World,
+        p: ProjectId,
+        title: String,
+    ) -> Result<ProjectId, ProjectRefusal> {
+        w.plans.retain(|plan| plan.project != p);
+        let agents = &w.agents;
+        w.research_queue.retain(|&id| agents[id].project != p);
+        self.replies.retain(|r| agents[r.agent].project != p);
+        self.applying.retain(|(id, _)| agents[*id].project != p);
+        let model = self.models.get(&w.projects[p].leader).cloned();
+        let (repo, no_git) = (w.projects[p].repo, w.projects[p].no_git);
+        let fresh = w.archive_project(p, title);
+        w.projects[fresh].repo = repo;
+        w.projects[fresh].no_git = no_git;
+        if let Some(m) = model {
+            self.models.insert(w.projects[fresh].leader, m);
+        }
+        Ok(fresh)
     }
 
     /// `:rename` in the demo.
@@ -2580,7 +2606,7 @@ impl Sim {
 fn free_name(w: &World, stem: &str, from: usize) -> String {
     (from..=from + w.agents.len())
         .map(|n| format!("{stem}{n}"))
-        .find(|name| w.agent_by_name(name).is_none())
+        .find(|name| !w.name_taken(name))
         .expect("some number is free")
 }
 
@@ -4613,6 +4639,54 @@ diff --git a/b.rs b/b.rs
         s.close_project(&mut w, 1).unwrap();
         assert_eq!(s.replies.len(), 1);
         assert_eq!(s.replies[0].agent, a);
+    }
+
+    #[test]
+    fn the_demo_archives_a_project_with_what_was_to_come_of_it_and_never_reopens_the_archive() {
+        let (mut w, mut s) = world(2, 2, 0, 1, Lang::En);
+        let (a, b) = (w.projects[0].leader, w.projects[1].leader);
+        let worker = workers_of(&w, 1)[0];
+        let due = |agent| Due {
+            agent,
+            at: 99,
+            text: "x".into(),
+            failed: false,
+            fault: None,
+        };
+        s.replies = vec![due(a), due(b)];
+        s.applying = vec![(worker, vec![0]), (workers_of(&w, 0)[0], vec![1])];
+        let plan = |project| Plan {
+            project,
+            text: String::new(),
+            ready: 0,
+        };
+        w.plans = vec![plan(1), plan(0)];
+        w.research_queue = [worker, a].into();
+        s.models.insert(b, "opus@high".into());
+        let (code, name) = (w.projects[1].repo, w.projects[1].name.clone());
+        let fresh = s.archive_project(&mut w, 1, "done".into()).unwrap();
+        assert_eq!(fresh, 2);
+        assert_eq!(s.replies.iter().map(|r| r.agent).collect::<Vec<_>>(), [a]);
+        assert_eq!(s.applying.len(), 1);
+        assert_ne!(s.applying[0].0, worker);
+        assert_eq!(w.research_queue, [a]);
+        assert_eq!(w.plans.iter().map(|p| p.project).collect::<Vec<_>>(), [0]);
+        assert!(w.projects[1].archived.is_some());
+        assert!(std::ptr::eq(w.projects[2].repo, code), "the same code map");
+        assert_eq!(w.projects[2].name, name);
+        assert_eq!(s.model_of(w.projects[2].leader), Some("opus@high"));
+        // Closed, the fresh one opens again in place; the archive never.
+        assert_eq!(s.close_project(&mut w, 2), Ok(()));
+        assert_eq!(s.open_project(&mut w, "/x", Some(&name)), Ok(2));
+        assert!(w.projects[1].archived.is_some() && w.projects[1].closed);
+        let solo = s.open_solo(&mut w, "/s", None, None, Some("solo")).unwrap();
+        let fresh_solo = s.archive_project(&mut w, solo, "s".into()).unwrap();
+        assert_eq!(s.close_project(&mut w, fresh_solo), Ok(()));
+        assert_eq!(
+            s.open_solo(&mut w, "/s", None, None, Some("solo")),
+            Ok(fresh_solo)
+        );
+        assert!(w.projects[solo].closed, "the archived solo stays put away");
     }
 
     #[test]

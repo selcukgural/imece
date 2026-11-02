@@ -55,6 +55,17 @@ imece'nin unuttuğu bir oturum satıcısında hiçbir şey bırakmaz:
 - Kaldırılan, kendi iş parçacığında: Claude'un transkript dosyası; Codex'in thread'i onun için başlatılan bir app server üzerinden (`thread/delete`, Codex'in dizinini de temizler); Gemini'nin o oturumun sohbet dosyaları `~/.gemini/tmp/<ad>/chats/` altında ve ajanın kendisi gidince (`:close`, bir yardımcının ayrılışı) o ad altındaki her şey artı özel dizini. Bir yola ya da satıcıya yalnız bir UUID ulaşır.
 - imece'nin kendi `/clear`'ı, bir model geri düşmesi ve yenilenen bir oturum (`:budget`'tan sonra) değiştirilen oturumu aynı yolla unutur.
 
+## Arşivler
+
+Bir epic bitince `:archive [BAŞLIK]` eldeki projeyi kaldırır ve yerine, aynı çalışma kopyasında, aynı adlı yeni bir proje açar ([`:archive`](../reference/commands.md#archive-title)). Arşiv depoda, sahip olduğu her şeyle saklanır:
+
+- ajanları uykuda, her biri hatırlanan satıcı oturumu, postası, notları, değişikliği ve yarıda kesilen bir turun istemleriyle (arşiv, süren bir turu çıkışta olduğu gibi yarıda keser);
+- kartları, SENİ BEKLEYEN'deki kalemleri ve günlük satırları, gözden uzakta: ekran yalnız yeni projeyi gösterir.
+
+Bir arşivden hiçbir şey uyanmaz, hiçbir şey harcanmaz: işçilerine kart sunulmaz, ajanlarına adla ulaşılmaz (yeni başın adı aynı olabilir) ve birinin arşivden önce yaptığı bir araç çağrısı `your project was put away; nothing was done` diye yanıtlanır. `--fresh` oturumlarına dokunmaz, temizlik de günlük satırlarını yaşları ne olursa olsun saklar. Satıcı oturumlarını satıcılar saklar: örneğin Claude Code eski transkriptleri bir süre sonra kendiliğinden siler (varsayılan 30 gün); o zamana dek gitmiş bir oturum, kaldığı yer anlatılarak yeniden başlar.
+
+Şimdilik bir arşiv saklanır, gösterilmez: birine bakmak ve onu geri getirmek sonraki adımlardır.
+
 ## Kalanlar: günler, saklama, tercihler
 
 - **Günler:** saat dünyanın ilk başlangıcının yerel saatinde başlar. Günlük ve bir konuşma başka bir günün ilk satırının üstüne soluk bir `─ 2026-11-01` satırı çizer; SENİ BEKLEYEN'de başka bir günden bir öğe tarihini taşır; kopyalanan ve dışa aktarılan metin her zaman damgalıdır.
@@ -86,4 +97,5 @@ Bütçeyi, açık proje başına bir satırı, en eski açık öğeleri (en çok
 - [imece nasıl çalışır](../concepts/how-imece-works.md): depo ve git iş parçacığı.
 - [Dosyalar](../reference/files.md): imece'nin yazdığı her yol.
 - [Bütçe ve limitler](../concepts/budget-and-limits.md): bütçe kalıcıdır.
+- [Yeni bir epic](../scenarios/new-epic.md): biten bir projeyi arşivlemek.
 - [Sorun giderme](../troubleshooting.md): açılmayan bir depo, ikinci bir imece.

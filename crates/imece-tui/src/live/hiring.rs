@@ -338,9 +338,11 @@ impl Live {
                 .count();
             (format!("{}.", w.agents[from].name), n + 1)
         };
-        let name = (next..)
+        // A bounded search: there are fewer agents than the numbers it
+        // tries, so one is free.
+        let name = (next..=next.saturating_add(w.agents.len()))
             .map(|n| format!("{stem}{n}"))
-            .find(|name| w.agent_by_name(name).is_none())
+            .find(|name| !w.name_taken(name))
             .expect("some number is free");
         let id = w.agents.len();
         // The socket first: an agent without one could never start.
