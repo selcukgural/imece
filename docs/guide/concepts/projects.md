@@ -100,6 +100,10 @@ npm run db:migrate
 - **What you see:** the journal says how it ended and its last line (`claude-1: worktree setup ran, exit 0, 4.2 s · migrations: 7 applied`, or `failed`); one that could not be read or started says why (`worktree setup did not run: …`). The worker starts either way.
 - Not done yet: a teardown script before a worktree goes, since imece does not remove worktrees.
 
+## A sparse checkout
+
+On a large repository you may keep only part of the tree checked out (`git sparse-checkout`). A worktree imece makes from such a checkout is as sparse as it: imece adds it with nothing checked out, gives it your checkout's patterns (`git sparse-checkout set`, cone mode or not, as yours is), and only then checks it out, so what you left out is never written into it. The patterns are the worktree's own: changing them there does not change yours, and changing yours later does not change a worktree made before. A worktree that cannot be made as sparse (git older than 2.35) is removed again and the agent does not start; the journal says why, so a monorepo is never written out whole behind your back.
+
 ## The demo's copies
 
 `--demo --projects N` (1-4, default 2) shows several fake projects at once; `:open PATH [NAME]` there adds a fake project with a leader, two workers of random vendors and three cards, `:close` and `:rename` work the same, `:pin` pins without a store, and `:copy` keeps a list that a demo worker's start "copies" with made-up sizes, now and then skipping one as gone. A worker the demo's leader hires gets a new worktree, so the demo's own setup script (`npm ci`, `npm run db:migrate`) is asked about, shown with `enter`, and on a yes "runs" with made-up output, as live does.

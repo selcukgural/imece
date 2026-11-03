@@ -100,6 +100,10 @@ npm run db:migrate
 - **Ne görürsünüz:** günlük nasıl bittiğini ve son satırını söyler (`claude-1: worktree kurulumu çalıştı, exit 0, 4.2 s · migrations: 7 applied`, ya da `başarısız`); okunamayan ya da başlatılamayan bir betik nedenini söyler (`worktree kurulumu çalışmadı: …`). İşçi her durumda başlar.
 - Henüz yok: bir worktree giderken çalışan bir söküm betiği, çünkü imece worktree silmez.
 
+## Seyrek (sparse) checkout
+
+Büyük bir depoda ağacın yalnızca bir kısmını checkout'ta tutabilirsiniz (`git sparse-checkout`). imece'nin böyle bir checkout'tan yaptığı worktree de onun kadar seyrektir: imece onu hiçbir şey checkout etmeden ekler, checkout'unuzun dizgilerini verir (`git sparse-checkout set`, sizinki gibi koni kipinde ya da değil) ve ancak ondan sonra checkout eder; böylece dışarıda bıraktığınız hiçbir şey içine yazılmaz. Dizgiler worktree'nin kendisinindir: orada değiştirmek sizinkini değiştirmez, sizinkini sonradan değiştirmek de önceden yapılmış bir worktree'yi değiştirmez. Aynı seyreklikte yapılamayan bir worktree (2.35'ten eski git) yeniden silinir ve ajan başlamaz; günlük nedenini söyler, böylece bir monorepo arkanızdan bütünüyle yazılmaz.
+
 ## Demonun kopyaları
 
 `--demo --projects N` (1-4, varsayılan 2) aynı anda birkaç sahte proje gösterir; oradaki `:open YOL [AD]` bir lider, rastgele satıcılardan iki işçi ve üç kartla sahte bir proje ekler, `:close` ve `:rename` aynı şekilde çalışır, `:pin` deposuz sabitler ve `:copy` bir liste tutar; demo işçisinin başlangıcı onu uydurma boyutlarla "kopyalar", ara sıra birini checkout'tan gitmiş diye atlar. Demonun liderinin işe aldığı bir işçi yeni bir worktree alır; demonun kendi kurulum betiği (`npm ci`, `npm run db:migrate`) sorulur, `enter` ile gösterilir ve bir evette canlıdaki gibi uydurma çıktıyla "çalışır".

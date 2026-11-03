@@ -24,12 +24,36 @@ const IMECE_EMAIL: &str = "imece@localhost";
 /// Runs git in `dir` with `env` set, and gives its stdout as it is. Git
 /// speaks English here, so its words can be read.
 fn git_bytes(dir: &Path, env: &[(&str, &str)], args: &[&str]) -> io::Result<Vec<u8>> {
+    git_fed(dir, env, args, None)
+}
+
+/// [`git_bytes`] with `input`, when there is one, on git's stdin.
+fn git_fed(
+    dir: &Path,
+    env: &[(&str, &str)],
+    args: &[&str],
+    input: Option<&[u8]>,
+) -> io::Result<Vec<u8>> {
     let mut cmd = child::command("git", dir, &[]);
     cmd.args(args).env("LC_ALL", "C");
     for (k, v) in env {
         cmd.env(k, v);
     }
-    let out = cmd.output()?;
+    let out = match input {
+        None => cmd.output()?,
+        Some(input) => {
+            let mut child = cmd
+                .stdin(Stdio::piped())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .spawn()?;
+            if let Some(mut stdin) = child.stdin.take() {
+                // A closed pipe is git's refusal to report, not ours.
+                let _ = stdin.write_all(input);
+            }
+            child.wait_with_output()?
+        }
+    };
     if !out.status.success() {
         let err = String::from_utf8_lossy(&out.stderr);
         return Err(io::Error::other(format!(
@@ -237,10 +261,14 @@ pub fn ensure(repo: &Path, root: &Path, name: &str, start: Option<&str>) -> io::
     std::fs::create_dir_all(root)?;
     let p = path.to_string_lossy();
     let commit = at.as_deref().unwrap_or("HEAD");
-    if let Err(e) = git(
-        repo,
-        &["worktree", "add", "--quiet", "--detach", &p, commit],
-    ) {
+    // A sparse checkout's worktree is made empty and sparse first, so
+    // what the person left out is never written.
+    let sparse = sparse_of(repo)?;
+    let mut add = vec!["worktree", "add", "--quiet", "--detach"];
+    if sparse.is_some() {
+        add.push("--no-checkout");
+    }
+    if let Err(e) = git(repo, &[add.as_slice(), &[&p, commit]].concat()) {
         // Removed by hand, still on git's list: git's own words say "use
         // add -f", which would throw away what git knows of it. imece
         // leaves that to the person.
@@ -256,6 +284,18 @@ pub fn ensure(repo: &Path, root: &Path, name: &str, start: Option<&str>) -> io::
             e
         });
     }
+    if let Some(sparse) = &sparse
+        && let Err(e) = make_sparse(&path, sparse)
+    {
+        // Made just now with nothing in it: nothing is lost.
+        let _ = git(repo, &["worktree", "remove", "--force", &p]);
+        return Err(io::Error::other(format!(
+            "{} is a sparse checkout, and its worktree {} could not be made one too \
+             (git 2.35 or newer can): {e}",
+            repo.display(),
+            path.display()
+        )));
+    }
     Ok(Worktree {
         path: path.canonicalize()?,
         placed: match at {
@@ -263,6 +303,45 @@ pub fn ensure(repo: &Path, root: &Path, name: &str, start: Option<&str>) -> io::
             None => Placed::Fresh,
         },
     })
+}
+
+/// What a sparse checkout leaves in: its patterns as `git sparse-checkout
+/// list` gives them, and whether they are cone mode's directories.
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct Sparse {
+    cone: bool,
+    patterns: Vec<u8>,
+}
+
+/// Whether `git config` says `key` is true in `dir`; unset is false.
+fn config_true(dir: &Path, key: &str) -> bool {
+    git(dir, &["config", "--type=bool", "--get", key]).is_ok_and(|v| v == "true")
+}
+
+/// How the checkout `repo` is sparse, if it is.
+fn sparse_of(repo: &Path) -> io::Result<Option<Sparse>> {
+    if !config_true(repo, "core.sparseCheckout") {
+        return Ok(None);
+    }
+    Ok(Some(Sparse {
+        cone: config_true(repo, "core.sparseCheckoutCone"),
+        patterns: git_bytes(repo, &[], &["sparse-checkout", "list"])?,
+    }))
+}
+
+/// Makes the worktree at `path`, added with nothing checked out, as
+/// sparse as `sparse` and then checks it out: only what it leaves in is
+/// written. Its own patterns, never the checkout's.
+fn make_sparse(path: &Path, sparse: &Sparse) -> io::Result<()> {
+    let mode = if sparse.cone { "--cone" } else { "--no-cone" };
+    git_fed(
+        path,
+        &[],
+        &["sparse-checkout", "set", mode, "--stdin"],
+        Some(&sparse.patterns),
+    )?;
+    git(path, &["reset", "--quiet", "--hard", "HEAD"])?;
+    Ok(())
 }
 
 /// Whether git lists `path` (which may be gone) as one of `repo`'s
@@ -1057,6 +1136,123 @@ mod tests {
         let e = ensure(r, &root, "claude-2", Some("nowhere")).unwrap_err();
         assert_eq!(e.kind(), io::ErrorKind::NotFound);
         assert!(!root.join("claude-2").exists());
+    }
+
+    /// A checkout `name` with files `a/x`, `b/y` and `t` at its top,
+    /// made sparse by `file` as `.git/info/sparse-checkout`, cone mode or
+    /// not, checked out again under it.
+    fn sparse_repo(name: &str, cone: bool, file: &str) -> Scratch {
+        let s = repo(name);
+        let r = &s.repo;
+        for (dir, f) in [("a", "x"), ("b", "y")] {
+            std::fs::create_dir_all(r.join(dir)).unwrap();
+            std::fs::write(r.join(dir).join(f), f).unwrap();
+        }
+        std::fs::write(r.join("t"), "t").unwrap();
+        commit(r, "tree");
+        git(r, &["config", "core.sparseCheckout", "true"]).unwrap();
+        git(r, &["config", "core.sparseCheckoutCone", &cone.to_string()]).unwrap();
+        std::fs::write(r.join(".git/info/sparse-checkout"), file).unwrap();
+        git(r, &["read-tree", "-m", "-u", "HEAD"]).unwrap();
+        s
+    }
+
+    /// The files under `dir`, `.git` left out, relative and sorted.
+    fn files_under(dir: &Path) -> Vec<String> {
+        let mut out = Vec::new();
+        let mut todo = vec![dir.to_path_buf()];
+        while let Some(d) = todo.pop() {
+            for e in std::fs::read_dir(&d).unwrap() {
+                let p = e.unwrap().path();
+                if p.file_name().is_some_and(|n| n == ".git") {
+                    continue;
+                }
+                if p.is_dir() {
+                    todo.push(p);
+                } else {
+                    let rel = p.strip_prefix(dir).unwrap();
+                    out.push(rel.to_string_lossy().into_owned());
+                }
+            }
+        }
+        out.sort();
+        out
+    }
+
+    #[test]
+    fn a_sparse_checkout_s_worktree_is_as_sparse_and_the_rest_never_written() {
+        // Cone mode: a directory left in, and every file at the top.
+        let s = sparse_repo("sparse-cone", true, "/*\n!/*/\n/a/\n");
+        let r = &s.repo;
+        assert_eq!(files_under(r), ["a.txt", "a/x", "t"]);
+        let list = git(r, &["sparse-checkout", "list"]).unwrap();
+        let w = ensure(r, &s.dir.join("wt"), "claude-1", None).unwrap();
+        assert_eq!(w.placed, Placed::Fresh);
+        assert_eq!(files_under(&w.path), ["a.txt", "a/x", "t"]);
+        assert!(
+            !w.path.join("b").exists(),
+            "a left-out directory was written"
+        );
+        assert_eq!(git(&w.path, &["sparse-checkout", "list"]).unwrap(), "a");
+        assert!(config_true(&w.path, "core.sparseCheckoutCone"));
+        // Nothing to commit: what is left out is not a deletion.
+        assert_eq!(git(&w.path, &["status", "--porcelain"]).unwrap(), "");
+        assert_eq!(change(&w.path, 1 << 20).unwrap(), None);
+        // The person's checkout is as it was.
+        assert_eq!(git(r, &["sparse-checkout", "list"]).unwrap(), list);
+        assert_eq!(files_under(r), ["a.txt", "a/x", "t"]);
+
+        // Not cone mode: the patterns as they are, nothing else at the top.
+        let s = sparse_repo("sparse-patterns", false, "/b/\n");
+        let r = &s.repo;
+        assert_eq!(files_under(r), ["b/y"]);
+        let w = ensure(r, &s.dir.join("wt"), "claude-1", None).unwrap();
+        assert_eq!(files_under(&w.path), ["b/y"]);
+        assert_eq!(git(&w.path, &["sparse-checkout", "list"]).unwrap(), "/b/");
+        assert!(!config_true(&w.path, "core.sparseCheckoutCone"));
+        assert_eq!(git(&w.path, &["status", "--porcelain"]).unwrap(), "");
+        assert_eq!(git(r, &["sparse-checkout", "list"]).unwrap(), "/b/");
+        assert_eq!(files_under(r), ["b/y"]);
+    }
+
+    #[test]
+    fn a_checkout_not_sparse_has_a_whole_worktree() {
+        let s = sparse_repo("sparse-off", true, "/*\n!/*/\n/a/\n");
+        let r = &s.repo;
+        git(r, &["sparse-checkout", "disable"]).unwrap();
+        assert!(!config_true(r, "core.sparseCheckout"));
+        assert_eq!(sparse_of(r).unwrap(), None);
+        let w = ensure(r, &s.dir.join("wt"), "claude-1", None).unwrap();
+        assert_eq!(files_under(&w.path), ["a.txt", "a/x", "b/y", "t"]);
+    }
+
+    #[test]
+    fn a_worktree_that_can_not_be_as_sparse_is_not_left_half_made() {
+        // `set` refuses a directory out of the tree, which `list` gives.
+        let s = sparse_repo("sparse-bad", true, "/*\n!/*/\n/a/\n");
+        let r = &s.repo;
+        std::fs::write(r.join(".git/info/sparse-checkout"), "/*\n!/*/\n/../x/\n").unwrap();
+        let root = s.dir.join("wt");
+        let e = ensure(r, &root, "claude-1", None).unwrap_err().to_string();
+        assert!(e.contains("is a sparse checkout"), "{e}");
+        assert!(e.contains("could not be made one too"), "{e}");
+        assert!(
+            !root.join("claude-1").exists(),
+            "a half-made worktree stays"
+        );
+        let list = git(r, &["worktree", "list", "--porcelain"]).unwrap();
+        assert_eq!(list.matches("worktree ").count(), 1, "{list}");
+    }
+
+    #[test]
+    fn git_takes_what_it_is_fed() {
+        let s = repo("fed");
+        let out = git_fed(&s.repo, &[], &["hash-object", "--stdin"], Some(b"a")).unwrap();
+        // `git hash-object` of the one byte "a", as `a.txt` holds it.
+        let a = git(&s.repo, &["rev-parse", "HEAD:a.txt"]).unwrap();
+        assert_eq!(String::from_utf8_lossy(&out).trim(), a);
+        let err = git_fed(&s.repo, &[], &["no-such-command"], Some(b"a")).unwrap_err();
+        assert!(err.to_string().contains("git no-such-command"), "{err}");
     }
 
     #[test]
