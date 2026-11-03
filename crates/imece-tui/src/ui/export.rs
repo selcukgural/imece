@@ -109,7 +109,7 @@ pub fn card(app: &App, c: CardId) -> String {
     let me = card.owner.or(people.first().map(|&(id, _)| id));
     match me {
         Some(me) if !card.story.is_empty() => {
-            for line in focus::story_lines(app, card, me) {
+            for line in focus::story_lines(app, card, me, usize::MAX) {
                 let text: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
                 // The screen's columns are spaces; one says it here.
                 let words: Vec<&str> = text.split_whitespace().collect();

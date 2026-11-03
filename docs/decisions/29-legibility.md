@@ -41,8 +41,8 @@ lines stay plain. Web addresses (`model::web_url_at`: `http`/`https`
 only, host starting alphanumeric, `url_char` or brackets, sentence
 punctuation and unopened closing brackets off, `WEB_URL_MAX` 2000
 bytes; `ui::linked` takes one only where it starts a word) are spans
-in `link_style`; a markdown link's address too. `ui::tail_linked`
-wraps the lines itself (`rows_of`: an address wider than its row loses
+in `link_style`; a markdown link's address too. The focus and the
+trace (`ui::tail_linked` until record 102 made them scroll) wrap the lines themselves (`rows_of`: an address wider than its row loses
 the link style, so no piece of a cut one links) and `link_rows` makes
 each address shown whole an OSC 8 link (`hyperlink`, `LINK_ID`), the
 text drawn being the address (cleaned first, so a secret-looking one
@@ -54,3 +54,7 @@ key and step): journal lines of its pair that came since are appended;
 the person's own line (written from the window with `@`) is selected,
 as is a line that came while the last one was selected; a selection
 further up stays (was: close and open again to see what was written).
+
+Later (record 102): the focus and the raw stream scroll and the focus's
+entries open whole past `STORY_ROWS`; a table fits the room it is drawn
+in.

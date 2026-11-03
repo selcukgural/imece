@@ -844,16 +844,6 @@ pub(crate) fn link_rows(buf: &mut Buffer, area: Rect, rows: &[Line<'static>]) {
 /// their addresses differ.
 const LINK_ID: AgentId = usize::MAX;
 
-/// [`tail`] with the web addresses shown whole as links ([`link_rows`]):
-/// `lines` wrapped to `area`, scrolled so the newest are in view.
-pub(crate) fn tail_linked(f: &mut Frame, area: Rect, lines: Vec<Line<'static>>) {
-    let rows = rows_of(lines, area.width);
-    let skip = rows.len().saturating_sub(usize::from(area.height));
-    let shown = &rows[skip..];
-    f.render_widget(Paragraph::new(shown.to_vec()), area);
-    link_rows(f.buffer_mut(), area, shown);
-}
-
 /// A Markdown heading's text: `line` starts with one to six `#` and a
 /// space or nothing after them. `#323` names a card, it is no heading.
 fn heading(line: &str) -> Option<&str> {
@@ -917,8 +907,14 @@ fn table_len(lines: &[String], at: usize) -> usize {
 }
 
 /// A table as aligned columns: the header bold, a rule under it, cells
-/// padded to their column's width.
-fn table(lines: &[String], indent: &str) -> Vec<Line<'static>> {
+/// padded to their column's width, each drawn line with what copying it
+/// takes. A table wider than `room` (cells, the indent counted) narrows
+/// its widest columns to the most that lets a row fit ([`column_widths`])
+/// and wraps a cell in its column, so a row may take more lines; a web
+/// address too long for its column is no link then. A table that fits
+/// copies as its source (the rule as the separator), one that wraps as
+/// its lines read.
+fn table(lines: &[String], indent: &str, room: usize) -> Vec<(Line<'static>, String)> {
     let rows: Vec<Vec<Vec<Span<'static>>>> = lines
         .iter()
         .enumerate()
@@ -934,7 +930,7 @@ fn table(lines: &[String], indent: &str) -> Vec<Line<'static>> {
         .collect();
     let columns = rows.iter().map(Vec::len).max().unwrap_or(0);
     let cell_width = |cell: &[Span]| cell.iter().map(Span::width).sum::<usize>();
-    let widths: Vec<usize> = (0..columns)
+    let natural: Vec<usize> = (0..columns)
         .map(|c| {
             rows.iter()
                 .filter_map(|r| r.get(c))
@@ -943,34 +939,98 @@ fn table(lines: &[String], indent: &str) -> Vec<Line<'static>> {
                 .unwrap_or(0)
         })
         .collect();
+    let gaps = 3 * columns.saturating_sub(1);
+    let widths = column_widths(&natural, room.saturating_sub(indent.width() + gaps));
+    let fits = widths == natural;
     let mut out = Vec::new();
+    let mut source = lines.iter();
     for (n, row) in rows.into_iter().enumerate() {
-        let mut spans = vec![Span::raw(indent.to_string())];
-        for (c, width) in widths.iter().enumerate() {
-            if c > 0 {
-                spans.push(Span::styled(" │ ", dim()));
+        // Each cell's lines in its column.
+        let cells: Vec<Vec<Line<'static>>> = widths
+            .iter()
+            .enumerate()
+            .map(|(c, &width)| {
+                let mut cell = row.get(c).cloned().unwrap_or_default();
+                for s in &mut cell {
+                    if s.style == link_style() && s.width() > width {
+                        s.style = fg(pal().info);
+                    }
+                }
+                cell.insert(0, Span::raw(""));
+                wrap(Line::from(cell), width)
+            })
+            .collect();
+        let height = cells.iter().map(Vec::len).max().unwrap_or(1);
+        let from = source.next().cloned().unwrap_or_default();
+        for k in 0..height {
+            let mut spans = vec![Span::raw(indent.to_string())];
+            for (c, width) in widths.iter().enumerate() {
+                if c > 0 {
+                    spans.push(Span::styled(" │ ", dim()));
+                }
+                // The cell's lines without the empty lead that kept its
+                // own marks from being read as a list's.
+                let part: Vec<Span> = (cells[c].get(k).into_iter())
+                    .flat_map(|l| l.spans.iter().filter(|s| !s.content.is_empty()).cloned())
+                    .collect();
+                let pad = width.saturating_sub(cell_width(&part));
+                spans.extend(part);
+                if c + 1 < columns {
+                    spans.push(Span::raw(" ".repeat(pad)));
+                }
             }
-            let cell = row.get(c).cloned().unwrap_or_default();
-            let pad = width - cell_width(&cell);
-            spans.extend(cell);
-            if c + 1 < columns {
-                spans.push(Span::raw(" ".repeat(pad)));
-            }
+            let line = Line::from(spans);
+            let text = match fits {
+                true => from.clone(),
+                false => line_text(&line),
+            };
+            out.push((line, text));
         }
-        out.push(Line::from(spans));
         if n == 0 {
             let rule = widths
                 .iter()
                 .map(|&w| "─".repeat(w))
                 .collect::<Vec<_>>()
                 .join("─┼─");
-            out.push(Line::from(vec![
+            let line = Line::from(vec![
                 Span::raw(indent.to_string()),
                 Span::styled(rule, dim()),
-            ]));
+            ]);
+            let text = match fits {
+                true => source.next().cloned().unwrap_or_default(),
+                false => {
+                    source.next();
+                    line_text(&line)
+                }
+            };
+            out.push((line, text));
         }
     }
     out
+}
+
+/// What a drawn line reads as: its spans' text, the blanks at its ends
+/// dropped.
+pub(crate) fn line_text(line: &Line) -> String {
+    let text: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
+    text.trim().to_string()
+}
+
+/// The widths of a table's columns, `natural` the widest cell of each,
+/// in `free` cells: as they are when they fit; else no column wider than
+/// the most that lets them fit, one cell at least each, so the narrow
+/// columns keep their width and the wide ones give way.
+fn column_widths(natural: &[usize], free: usize) -> Vec<usize> {
+    if natural.iter().sum::<usize>() <= free {
+        return natural.to_vec();
+    }
+    let widest = natural.iter().copied().max().unwrap_or(0);
+    let under = |cap: usize| natural.iter().map(|&w| w.min(cap)).sum::<usize>();
+    let cap = (1..widest)
+        .rev()
+        .find(|&cap| under(cap) <= free)
+        .unwrap_or(1);
+    natural.iter().map(|&w| w.min(cap).max(1)).collect()
 }
 
 /// A list marker at the start of `rest`: `- `, `* `, `+ ` (a bullet) or
@@ -997,7 +1057,7 @@ fn list_marker(rest: &str) -> Option<(String, &str)> {
 /// the inline marks of [`inline`]. Every line is cleaned first.
 #[cfg(test)]
 pub(crate) fn markdown(text: &str, indent: &str) -> Vec<Line<'static>> {
-    markdown_src(text, indent)
+    markdown_src(text, indent, usize::MAX)
         .into_iter()
         .map(|(l, _)| l)
         .collect()
@@ -1006,14 +1066,22 @@ pub(crate) fn markdown(text: &str, indent: &str) -> Vec<Line<'static>> {
 /// [`markdown`], each drawn line with the source line it was drawn from
 /// (cleaned), which is what copying it takes: a fence is never drawn, so
 /// a code block copies as its code; a table's rule copies as the
-/// separator line it stands for.
-pub(crate) fn markdown_src(text: &str, indent: &str) -> Vec<(Line<'static>, String)> {
-    markdown_in(text, indent, Style::new())
+/// separator line it stands for. `room` is how wide the lines may be
+/// (cells, the indent counted), which only a table heeds: a wider one
+/// wraps its cells in their columns ([`table`]); the rest is wrapped
+/// where it is drawn.
+pub(crate) fn markdown_src(text: &str, indent: &str, room: usize) -> Vec<(Line<'static>, String)> {
+    markdown_in(text, indent, Style::new(), room)
 }
 
 /// [`markdown_src`] with its plain words and list items in `base` (an
 /// agent's colour in the trace); headings, code and quotes as ever.
-pub(crate) fn markdown_in(text: &str, indent: &str, base: Style) -> Vec<(Line<'static>, String)> {
+pub(crate) fn markdown_in(
+    text: &str,
+    indent: &str,
+    base: Style,
+    room: usize,
+) -> Vec<(Line<'static>, String)> {
     let lines = body_lines(text);
     let code = fg(pal().code);
     let mut fenced = false;
@@ -1037,8 +1105,7 @@ pub(crate) fn markdown_in(text: &str, indent: &str, base: Style) -> Vec<(Line<'s
         }
         let n = table_len(&lines, at);
         if n > 0 {
-            let source = lines[at..at + n].iter().cloned();
-            out.extend(table(&lines[at..at + n], indent).into_iter().zip(source));
+            out.extend(table(&lines[at..at + n], indent, room));
             skip = n - 1;
             continue;
         }
@@ -1913,12 +1980,19 @@ fn footer(f: &mut Frame, area: Rect, app: &App) -> Option<Position> {
                 ("?", t.help),
             ],
             Zoom::Focus(_) => vec![
+                ("j k", t.entry_step),
+                ("h l", t.cut_whole),
                 ("enter", t.trace),
                 ("esc", t.back),
                 ("@", t.write_this),
                 ("?", t.help),
             ],
-            Zoom::Trace(_) => vec![("esc", t.back), ("@", t.write_this), ("?", t.help)],
+            Zoom::Trace(_) => vec![
+                ("j k", t.scroll),
+                ("esc", t.back),
+                ("@", t.write_this),
+                ("?", t.help),
+            ],
             // Choosing lines to copy: only copy mode's keys work.
             Zoom::Diff(id) if app.diff_copy_of(id).is_some() => {
                 let mut keys = t.copy_hints.to_vec();
@@ -5348,14 +5422,41 @@ mod tests {
         assert!(app.story, "J does nothing on a card's screen");
         key(&mut app, KeyCode::Esc);
         assert_eq!(app.card, None);
-        // enter on a line of no card: the journal, at that line.
+        // enter on a line of no card: the journal, at that line, for now:
+        // the story stays the panel's, what is kept says so.
         app.pane = Pane::Journal;
         render(&app, 200, 50);
         app.story_sel = 2;
         key(&mut app, KeyCode::Enter);
-        assert!(!app.story);
+        assert!(app.story && app.story_away && !app.story_on());
         assert_eq!(app.journal_sel, Some(0));
-        // :story brings it back, J again leaves it.
+        let shown = render(&app, 200, 50);
+        assert!(shown.contains("JOURNAL · esc story"), "{shown}");
+        assert!(shown.contains("the line in the journal · esc: back to the story"));
+        // esc goes back to the story, at the item it left.
+        key(&mut app, KeyCode::Esc);
+        assert!(app.story_on() && !app.story_away);
+        assert_eq!((app.journal_sel, app.story_sel), (None, 2));
+        assert!(render(&app, 200, 50).contains("the side panel tells the story"));
+        // So does J, and it leaves the story on.
+        key(&mut app, KeyCode::Enter);
+        assert!(app.story_away);
+        key(&mut app, KeyCode::Char('J'));
+        assert!(app.story_on() && !app.story_away);
+        // In a focus, esc leaves the focus, not the journal.
+        key(&mut app, KeyCode::Enter);
+        app.zoom = Zoom::Focus(w[0]);
+        key(&mut app, KeyCode::Esc);
+        assert_eq!(app.zoom, Zoom::None);
+        assert!(app.story_away, "the journal still");
+        key(&mut app, KeyCode::Esc);
+        assert!(!app.story_away);
+        // :story turns it off and on.
+        for c in ":story".chars() {
+            key(&mut app, KeyCode::Char(c));
+        }
+        key(&mut app, KeyCode::Enter);
+        assert!(!app.story);
         for c in ":story".chars() {
             key(&mut app, KeyCode::Char(c));
         }
@@ -5372,7 +5473,15 @@ mod tests {
         key(&mut app, KeyCode::Char('j'));
         assert_ne!(app.journal_sel, before);
         assert_eq!(app.story_sel, 0);
-        assert!(render(&app, 200, 50).contains("the side panel shows the journal"));
+        let shown = render(&app, 200, 50);
+        assert!(shown.contains("the side panel shows the journal"));
+        assert!(shown.contains("JOURNAL · J story"), "the key back, off");
+        app.flash = None;
+        // In Turkish too.
+        app.lang = Lang::Tr;
+        assert!(render(&app, 200, 50).contains("DEFTER · J hikâye"));
+        app.story_away = true;
+        assert!(render(&app, 200, 50).contains("DEFTER · esc hikâye"));
     }
 
     #[test]
@@ -6204,7 +6313,7 @@ mod tests {
     }
 
     /// Whether the cell at `(x, y)` links to `url` (the web addresses' id).
-    fn links_to(buf: &Buffer, x: u16, y: u16, url: &str) -> bool {
+    pub(crate) fn links_to(buf: &Buffer, x: u16, y: u16, url: &str) -> bool {
         let open = format!("\x1b]8;id=imece-{LINK_ID};{url}\x1b\\");
         buf[(x, y)].symbol().starts_with(&open)
     }
@@ -6262,27 +6371,6 @@ mod tests {
                 .all(|s| s.style != link_style())
         );
         assert!(rows[0].spans.iter().any(|s| s.style == fg(pal().info)));
-    }
-
-    #[test]
-    fn tail_linked_shows_the_newest_rows_with_their_links() {
-        use ratatui::{Terminal, backend::TestBackend};
-        let url = "https://a.b/c";
-        let lines: Vec<Line<'static>> = (0..5)
-            .map(|i| {
-                Line::from(vec![
-                    Span::raw(format!("{i} ")),
-                    Span::styled(url, link_style()),
-                ])
-            })
-            .collect();
-        let mut t = Terminal::new(TestBackend::new(20, 3)).unwrap();
-        t.draw(|f| tail_linked(f, f.area(), lines.clone())).unwrap();
-        let buf = t.backend().buffer();
-        assert_eq!(buf[(0, 0)].symbol(), "2", "the newest three");
-        assert_eq!(buf[(0, 2)].symbol(), "4");
-        assert!(links_to(buf, 2, 2, url));
-        assert!(!links_to(buf, 1, 2, url));
     }
 
     #[test]
@@ -11420,11 +11508,48 @@ mod tests {
     }
 
     #[test]
+    fn a_table_in_a_conversation_wraps_to_its_width_and_copy_mode_moves_over_what_is_drawn() {
+        let mut app = app_after(1, 4, 0, Lang::En);
+        app.world.journal.clear();
+        let id = app.world.number();
+        let wide = "| # | What |\n|---|---|\n| 1 | a cell of many words that cannot fit in the window at all |";
+        app.world.note(Event::Sent {
+            from: 1,
+            to: 0,
+            kind: MsgKind::Inform,
+            text: wide.into(),
+            id,
+            re: None,
+        });
+        app.open_thread(0);
+        assert_eq!(
+            app.thread.as_ref().unwrap().room.get(),
+            usize::MAX,
+            "not drawn yet"
+        );
+        let s = render(&app, 60, 30);
+        let th = app.thread.as_ref().unwrap();
+        // The window is 56 wide, its border and gutter take 4.
+        assert_eq!(th.room.get(), 52);
+        assert!(
+            s.contains("▌   1 │ a cell of many words that cannot fit in the   │"),
+            "{s}"
+        );
+        assert!(s.contains("▌     │ window at all     "), "{s}");
+        // Copy mode's lines are the drawn ones: one each.
+        let lines = thread_lines(Lang::En, &app.world, &th.entries, th.room.get());
+        let (_, _, drawn) = overlay::thread_layout(Lang::En, &app.world, &[], th, 54);
+        assert_eq!(lines.len(), drawn.len());
+        assert!(drawn.iter().all(|&(a, b)| b == a + 1), "{drawn:?}");
+        assert_eq!(lines.len(), 5, "the head, the header, the rule, two");
+    }
+
+    #[test]
     fn a_conversation_s_copy_lines_are_heads_reply_lines_and_what_was_written() {
         let app = replies();
         let worker = app.world.agents[1].name.clone();
         let th = app.thread.as_ref().unwrap();
-        let lines = thread_lines(Lang::En, &app.world, &th.entries);
+        let lines = thread_lines(Lang::En, &app.world, &th.entries, usize::MAX);
         let entries: Vec<usize> = lines.iter().map(|l| l.entry).collect();
         assert_eq!(entries, [0, 0, 0, 1, 1, 2, 2, 2, 3, 3, 3]);
         let head = &lines[3].text;
@@ -11444,7 +11569,7 @@ mod tests {
             "Which parser?\nThe old one?"
         );
         assert_eq!(overlay::copy_lines(&lines, 7, 7), "The new one.");
-        let tr = thread_lines(Lang::Tr, &app.world, &th.entries);
+        let tr = thread_lines(Lang::Tr, &app.world, &th.entries, usize::MAX);
         assert_eq!(tr[6].text, "↩ 5 yanıtı: Which parser?");
     }
 
@@ -11528,7 +11653,10 @@ mod tests {
     #[test]
     fn markdown_keeps_each_drawn_line_s_source_for_copying() {
         let md = "# Head\n```rust\nlet x = 1;\n```\n| a | b |\n|---|---|\n| 1 | 2 |\n- item **b**";
-        let src: Vec<String> = markdown_src(md, "  ").into_iter().map(|(_, s)| s).collect();
+        let src: Vec<String> = markdown_src(md, "  ", usize::MAX)
+            .into_iter()
+            .map(|(_, s)| s)
+            .collect();
         assert_eq!(
             src,
             [
@@ -11540,7 +11668,10 @@ mod tests {
                 "- item **b**"
             ]
         );
-        assert_eq!(markdown_src(md, "  ").len(), markdown(md, "  ").len());
+        assert_eq!(
+            markdown_src(md, "  ", usize::MAX).len(),
+            markdown(md, "  ").len()
+        );
     }
 
     #[test]
@@ -11965,7 +12096,7 @@ mod tests {
     fn words_chosen_carry_the_background_and_the_cursor_word_is_reversed() {
         let mut app = folding();
         let th = app.thread.as_mut().unwrap();
-        let lines = thread_lines(Lang::En, &app.world, &th.entries);
+        let lines = thread_lines(Lang::En, &app.world, &th.entries, usize::MAX);
         let at = lines
             .iter()
             .position(|l| l.text == "It is one line.")
@@ -12203,6 +12334,95 @@ after | not a table";
         assert_eq!(cells("| a | b |"), ["a", "b"]);
         assert_eq!(cells("a|b"), ["a", "b"]);
         assert_eq!(cells("|"), [""]);
+    }
+
+    #[test]
+    fn a_table_s_columns_give_way_widest_first_to_fit() {
+        // They fit, the equal case too: as they are.
+        assert_eq!(column_widths(&[3, 10, 5], 18), [3, 10, 5]);
+        assert_eq!(column_widths(&[3, 10, 5], 100), [3, 10, 5]);
+        // One cell short: the widest gives one.
+        assert_eq!(column_widths(&[3, 10, 5], 17), [3, 9, 5]);
+        // The widest down to the next, then both.
+        assert_eq!(column_widths(&[3, 10, 5], 13), [3, 5, 5]);
+        assert_eq!(column_widths(&[3, 10, 5], 11), [3, 4, 4]);
+        assert_eq!(column_widths(&[2, 20, 30], 26), [2, 12, 12]);
+        // No room: a cell each, an empty column too.
+        assert_eq!(column_widths(&[3, 10, 0], 2), [1, 1, 1]);
+        assert_eq!(column_widths(&[], 0), Vec::<usize>::new());
+    }
+
+    #[test]
+    fn a_table_wider_than_its_room_wraps_its_cells_in_their_columns() {
+        use unicode_width::UnicodeWidthStr;
+        let line = |l: &Line| {
+            l.spans
+                .iter()
+                .map(|s| s.content.as_ref())
+                .collect::<String>()
+        };
+        let md = "| # | What | Priority |
+|---|---|---|
+| #28 | Config file and a baseline run on both | high |
+| #29 | see https://example.com/a/long/path/here | medium |";
+        // Room for it all: one line a row, copied as written.
+        let wide = markdown_src(md, "  ", 200);
+        assert_eq!(wide.len(), 4);
+        assert_eq!(
+            wide[1].1, "|---|---|---|",
+            "the rule copies as the separator"
+        );
+        assert_eq!(
+            wide[2].1,
+            "| #28 | Config file and a baseline run on both | high |"
+        );
+        // 40 cells, the indent's 2 and the gaps' 6 counted: 32 for the
+        // cells, the narrow columns kept (3 + 8), the widest the 21 left,
+        // wrapped in its own.
+        let lines = markdown_src(md, "  ", 40);
+        let shown: Vec<String> = lines.iter().map(|(l, _)| line(l)).collect();
+        assert_eq!(
+            shown,
+            [
+                "  #   │ What                  │ Priority",
+                "  ────┼───────────────────────┼─────────",
+                "  #28 │ Config file and a     │ high",
+                "      │ baseline run on both  │ ",
+                "  #29 │ see                   │ medium",
+                "      │ https://example.com/a │ ",
+                "      │ /long/path/here       │ ",
+            ]
+        );
+        assert_eq!(shown[0].width(), 40, "just full");
+        // One cell less: the widest gives it.
+        let narrower = markdown_src(md, "  ", 39);
+        assert_eq!(
+            line(&narrower[0].0),
+            "  #   │ What                 │ Priority"
+        );
+        // Copied as read, so a wrapped row copies its lines, not twice.
+        assert_eq!(lines[3].1, "│ baseline run on both  │");
+        assert_eq!(lines[1].1, "────┼───────────────────────┼─────────");
+        assert_eq!(lines[2].1, "#28 │ Config file and a     │ high");
+        // The header still bold, the address too long for its column no
+        // link: a link of part of it would open somewhere else.
+        assert_eq!(lines[0].0.spans[1].style, bold(pal().strong));
+        let parts: Vec<Style> = (lines[5..7].iter())
+            .flat_map(|(l, _)| l.spans.iter())
+            .filter(|s| s.content.contains("example") || s.content.contains("/long"))
+            .map(|s| s.style)
+            .collect();
+        assert_eq!(parts, [fg(pal().info), fg(pal().info)]);
+        // An address that fits its column stays a link.
+        let md = "| a | b |\n|---|---|\n| https://a.b | x y z w v u t |";
+        let lines = markdown_src(md, "", 26);
+        let link = (lines.iter())
+            .flat_map(|(l, _)| l.spans.iter())
+            .find(|s| s.content == "https://a.b")
+            .map(|s| s.style);
+        assert_eq!(link, Some(link_style()));
+        assert_eq!(line(&lines[2].0), "https://a.b │ x y z w v u ");
+        assert_eq!(line(&lines[3].0), "            │ t");
     }
 
     #[test]

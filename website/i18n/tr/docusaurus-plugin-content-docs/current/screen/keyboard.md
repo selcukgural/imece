@@ -107,6 +107,17 @@ Gelenekler vim'inkidir: `h` `j` `k` `l` hareket ve katlama, `gg` ve `G` uçlara,
 | `space`, `pgup` `pgdn` | bir sayfa |
 | `esc` | kapat |
 
+## Bir odak ve ham akış
+
+| Tuş | Ne yapar |
+| --- | --- |
+| `j` `k`  `↑` `↓` | odakta: eldeki hikâye kaydı (`▌` ile işaretli); en yeniden bir öncekinden `j` yine en yeniyi izler · ham akışta: bir satır |
+| `gg` `G`  `home` `end` | ilk kayıt ya da satır · en yeni, yenileri geldikçe izlenir |
+| `pgup` `pgdn`  `^d` `^u` `^f` `^b` | bir sayfa, yarım sayfa (eldeki kayıt yerinde kalır) |
+| `l` `h`  `→` `←` | odakta: eldeki kaydın tamamı · yine ilk sekiz satırına kes (`… +N · l hepsini gösterir` kaç satır daha olduğunu söyler) |
+| `za`  `zM`  `zR` | odakta: kaydı değiştir · hepsini kes · hepsinin tamamı |
+| `enter` `esc` | ham akış · geri |
+
 ## Bir değişiklik
 
 | Tuş | Ne yapar |

@@ -63,7 +63,9 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App, c: CardId) {
     // took yet has only who posted it.
     let me = card.owner.or(people.first().map(|&(id, _)| id));
     let story = match me {
-        Some(me) if !card.story.is_empty() => focus::story_lines(app, card, me),
+        Some(me) if !card.story.is_empty() => {
+            focus::story_lines(app, card, me, usize::from(body.width))
+        }
         _ => vec![Line::from(Span::styled(t.card_no_story, dim()))],
     };
     tail(f, body, story);

@@ -965,7 +965,12 @@ fn side(f: &mut Frame, area: Rect, app: &App) {
                 0 => fill(t.inbox_title, &[&open.len().to_string()]),
                 n => fill(t.inbox_hidden, &[&open.len().to_string(), &n.to_string()]),
             },
-            t.journal.to_string(),
+            // Shown while the story is off or away: the key back to it.
+            match app.story_away {
+                true => t.journal_away,
+                false => t.journal_story,
+            }
+            .to_string(),
         ),
     };
     // The selected ask is shown whole under its row: the person allows

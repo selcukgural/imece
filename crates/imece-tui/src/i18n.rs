@@ -560,7 +560,6 @@ pub struct Text {
     /// how many more wait off it; with none listed, the line in it.
     pub inbox_hidden: &'static str,
     pub inbox_all_hidden: &'static str,
-    pub journal: &'static str,
     /// The story beside the salon (record 99): its title, whom the person
     /// holds up, one held up through another, an ask with no answer, the
     /// owner's line, the lines of no card, a done card, a change waiting,
@@ -577,6 +576,12 @@ pub struct Text {
     pub story_none: &'static str,
     pub story_on: &'static str,
     pub story_off: &'static str,
+    /// The journal in the story's place for now (`enter` on a line of no
+    /// card): the flash, and the journal's title then and while the
+    /// story is off, each saying the key back.
+    pub story_away: &'static str,
+    pub journal_away: &'static str,
+    pub journal_story: &'static str,
     // A card's screen
     pub card_inbox: &'static str,
     pub card_journal: &'static str,
@@ -823,6 +828,14 @@ pub struct Text {
     pub soft: &'static str,
     pub full: &'static str,
     pub no_story: &'static str,
+    /// Under a focus entry cut to its first lines: how many more, and the
+    /// key that shows them.
+    pub story_more: &'static str,
+    /// The focus's and the raw stream's footer: `j k` steps, `h l` cut or
+    /// whole, scrolling.
+    pub entry_step: &'static str,
+    pub cut_whole: &'static str,
+    pub scroll: &'static str,
     pub story_labels: [&'static str; 7],
     pub trace_title: &'static str,
     // Journal
@@ -1314,7 +1327,6 @@ pub const EN: Text = Text {
     inbox_title: " WAITING FOR YOU ({}) ",
     inbox_hidden: " WAITING FOR YOU ({} · +{} hidden) ",
     inbox_all_hidden: "{} hidden by :clear: W opens the next, :unclear lists them",
-    journal: " JOURNAL ",
     story: " STORY · J journal ",
     story_holds: "! you hold up {}: {}",
     story_via: "{} via {}",
@@ -1327,6 +1339,9 @@ pub const EN: Text = Text {
     story_none: "Nothing has happened yet · J the journal",
     story_on: "the side panel tells the story · J: the journal",
     story_off: "the side panel shows the journal · J: the story",
+    story_away: "the line in the journal · esc: back to the story",
+    journal_away: " JOURNAL · esc story ",
+    journal_story: " JOURNAL · J story ",
     card_inbox: " WAITING FOR YOU · {} ({}) ",
     card_journal: " JOURNAL · {} ({}) ",
     card_who: "WHO",
@@ -1559,6 +1574,10 @@ pub const EN: Text = Text {
     soft: "soft-tainted: its sensitive changes come to you",
     full: "tainted: reads the outside world, all its output comes to you",
     no_story: "No story yet. Enter for the raw stream.",
+    story_more: "… +{} · l shows all",
+    entry_step: "step",
+    cut_whole: "cut · whole",
+    scroll: "scroll",
     story_labels: [
         "intent",
         "assumption",
@@ -1737,7 +1756,10 @@ pub const EN: Text = Text {
         ("gg  G", "first / last line"),
         ("^d ^u ^f ^b", "half a page / a page"),
         ("^o", "back where you were: view, panel, focus, card"),
-        ("← →  h l", "fold/unfold: project, helpers, message, file"),
+        (
+            "← →  h l",
+            "fold/unfold: project, helpers, message, entry, file",
+        ),
         ("za  zM  zR", "fold: toggle · all (:fold) · none (:unfold)"),
         ("f  s  F", "only what needs you · s :settle · F :hints"),
         ("enter  K", "focus, then raw stream · K :peek over all"),
@@ -2185,7 +2207,6 @@ pub const TR: Text = Text {
     inbox_title: " SENİ BEKLEYEN ({}) ",
     inbox_hidden: " SENİ BEKLEYEN ({} · +{} gizli) ",
     inbox_all_hidden: "{} tanesi :clear ile gizli: W sıradakini açar, :unclear listeler",
-    journal: " DEFTER ",
     story: " HİKÂYE · J defter ",
     story_holds: "! {} agent'ı sen bekletiyorsun: {}",
     story_via: "{} ({} üzerinden)",
@@ -2198,6 +2219,9 @@ pub const TR: Text = Text {
     story_none: "Henüz bir şey olmadı · J defter",
     story_on: "yan panel hikâyeyi anlatıyor · J: defter",
     story_off: "yan panel defteri gösteriyor · J: hikâye",
+    story_away: "satır defterde · esc: hikâyeye dön",
+    journal_away: " DEFTER · esc hikâye ",
+    journal_story: " DEFTER · J hikâye ",
     card_inbox: " SENİ BEKLEYEN · {} ({}) ",
     card_journal: " DEFTER · {} ({}) ",
     card_who: "KİM",
@@ -2430,6 +2454,10 @@ pub const TR: Text = Text {
     soft: "hafif kirli: hassas değişiklikleri sana gelir",
     full: "kirli: dış dünyayı okuyor, her çıktısı sana gelir",
     no_story: "Hikâye yok. Ham akış için enter.",
+    story_more: "… +{} · l hepsini gösterir",
+    entry_step: "gez",
+    cut_whole: "kes · tamamı",
+    scroll: "kaydır",
     story_labels: [
         "niyet",
         "varsayım",
@@ -2607,7 +2635,10 @@ pub const TR: Text = Text {
         ("gg  G", "ilk / son satır"),
         ("^d ^u ^f ^b", "yarım sayfa / tam sayfa"),
         ("^o", "olduğun yere geri: görünüm, panel, odak, kart"),
-        ("← →  h l", "katla / aç: proje, yardımcılar, mesaj, dosya"),
+        (
+            "← →  h l",
+            "katla / aç: proje, yardımcılar, mesaj, kayıt, dosya",
+        ),
         ("za  zM  zR", "katla: değiştir · hepsi :fold · hiç :unfold"),
         ("f  s  F", "seni bekleyenler · s :settle · F :hints"),
         ("enter  K", "odak, sonra ham akış · K :peek üstte bak"),

@@ -70,7 +70,9 @@ Keys: in the pane (focused with `tab`), `j k gg G` select a card's
 header or a line of elsewhere (`App.story_sel` among `App.story_items`,
 which the drawing leaves); the selected row is reversed and kept in
 view; `enter` on a card opens its screen (`App::open_card`), on a line
-the journal at that line (the story goes off); `#` writes the selected
+the journal at that line, for now (`App.story_away`, not kept: the
+story stays on; `esc` or `J` goes back to the story at the item it
+left, `App::story_back`); `#` writes the selected
 card (`card_at_hand`); the agent at hand is the card's owner or the
 line's agent. Help row `,  .  <  >  J`.
 
@@ -82,3 +84,10 @@ Not done: hint letters (`F`) do not label the story's rows (the journal
 pane's `Target::Line` would select a journal line the story does not
 show); a card's lines older than the 2,000 newest are not told; the
 held line is not selectable (`W` goes to what waits).
+
+Later (2026-11-04, record 102's report): `enter` on a line of
+elsewhere used to turn the story off and keep that, so the person, who
+did not know `J`, found no way back, not even after a restart. Now it
+shows the journal only for now (above), and the journal's title says the
+key back: `JOURNAL · esc story` then, `JOURNAL · J story` while the story
+is off (`Text::journal_away`, `journal_story`).

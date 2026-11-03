@@ -235,6 +235,9 @@ pub struct Thread {
     pub words: Option<(usize, usize)>,
     /// Which messages show as one row.
     pub folds: Folds,
+    /// How wide its text was last drawn, which its lines are as copy mode
+    /// moves over them (a table wraps to it); none drawn yet, unbounded.
+    pub room: Cell<usize>,
 }
 
 impl Thread {
@@ -293,6 +296,95 @@ impl Folds {
         } else {
             self.except.insert(n);
         }
+    }
+}
+
+/// Where the person reads an agent up close (record 102): the story
+/// entry at hand on its focus and how far down the focus and its raw
+/// stream are scrolled, which of the focus's entries are cut, for the
+/// agent of `agent`; another agent starts afresh.
+#[derive(Debug)]
+pub struct Reading {
+    pub agent: Option<AgentId>,
+    /// The focus's story entry at hand; none: the newest, followed as
+    /// more come (`G`).
+    pub sel: Option<usize>,
+    /// The focus's first row shown, as last drawn.
+    pub scroll: Cell<usize>,
+    /// The entry at hand moved: the next drawing scrolls to it.
+    pub follow: Cell<bool>,
+    /// Rows the focus last had room for, for paging.
+    pub page: Cell<usize>,
+    /// Which entries are cut to their first lines (`ui::focus::STORY_ROWS`):
+    /// all at first, `l` opens one whole.
+    pub folds: Folds,
+    /// The raw stream's first row shown; none: the newest in view.
+    pub trace_top: Option<usize>,
+    /// Its first row shown, as last drawn.
+    pub trace_scroll: Cell<usize>,
+    /// Its rows below which nothing more comes, as last drawn: the first
+    /// row of its last page.
+    pub trace_last: Cell<usize>,
+    /// Rows it last had room for.
+    pub trace_page: Cell<usize>,
+}
+
+impl Default for Reading {
+    fn default() -> Self {
+        Reading {
+            agent: None,
+            sel: None,
+            scroll: Cell::new(0),
+            follow: Cell::new(false),
+            page: Cell::new(10),
+            folds: Folds::every(true),
+            trace_top: None,
+            trace_scroll: Cell::new(0),
+            trace_last: Cell::new(0),
+            trace_page: Cell::new(10),
+        }
+    }
+}
+
+impl Reading {
+    /// The focus's entry at hand among `entries`.
+    pub fn at(&self, entries: usize) -> usize {
+        let last = entries.saturating_sub(1);
+        self.sel.map_or(last, |s| s.min(last))
+    }
+
+    /// The focus's first row shown of `rows` in `height`, the entry at
+    /// hand's rows `at`: the last page while the newest is followed, the
+    /// entry kept in view after it moved, else where it was.
+    pub fn focus_top(&self, rows: usize, height: usize, at: (usize, usize)) -> usize {
+        let last = rows.saturating_sub(height);
+        let top = match (self.sel, self.follow.take()) {
+            (None, _) => last,
+            (Some(_), true) => ui::in_view(at.0, at.1, self.scroll.get(), height),
+            (Some(_), false) => self.scroll.get(),
+        };
+        let top = top.min(last);
+        self.scroll.set(top);
+        self.page.set(height.saturating_sub(1).max(1));
+        top
+    }
+
+    /// The raw stream's first row shown of `rows` in `height`: the last
+    /// page while the newest is followed, else where it was put.
+    pub fn trace_top(&self, rows: usize, height: usize) -> usize {
+        let last = rows.saturating_sub(height);
+        let top = self.trace_top.unwrap_or(last).min(last);
+        self.trace_scroll.set(top);
+        self.trace_last.set(last);
+        self.trace_page.set(height.saturating_sub(1).max(1));
+        top
+    }
+
+    /// The raw stream moved `by` rows down (or up): at its last page or
+    /// past it, the newest followed again.
+    pub fn trace_by(&mut self, by: isize) {
+        let at = self.trace_scroll.get().saturating_add_signed(by);
+        self.trace_top = (at < self.trace_last.get()).then_some(at);
     }
 }
 
@@ -817,6 +909,10 @@ pub struct App {
     /// `:story`; record 99). Off in `App::new`; `main` sets the saved one,
     /// on by default.
     pub story: bool,
+    /// The journal shows in the story's place for now: `enter` on a line
+    /// of no card went to it there; `esc` or `J` goes back to the story.
+    /// Not kept, so the story stays the side panel's.
+    pub story_away: bool,
     /// The selected item of the story, among those it shows.
     pub story_sel: usize,
     /// What the story shows that can be selected, as last drawn.
@@ -864,6 +960,8 @@ pub struct App {
     /// The first patch line the open change shows: the line at hand,
     /// which `c` writes a note on and `>` quotes the hunk of.
     pub diff_scroll: usize,
+    /// Where the person reads the agent of the focus or the raw stream.
+    pub reading: Reading,
     /// Whether a change's long lines wrap (`w`) instead of being cut.
     pub diff_wrap: bool,
     /// The person's notes on lines of workers' changes, not sent yet.
@@ -1163,6 +1261,7 @@ impl App {
             hints: None,
             needs_only: false,
             story: false,
+            story_away: false,
             story_sel: 0,
             story_items: RefCell::new(Vec::new()),
             timeline_sel: 0,
@@ -1173,6 +1272,7 @@ impl App {
             deferred: Vec::new(),
             waiting_at: None,
             diff_scroll: 0,
+            reading: Reading::default(),
             diff_wrap: false,
             diff_notes: Vec::new(),
             noting: None,
@@ -1483,11 +1583,15 @@ impl App {
     /// Whether the side panel tells the story now: it is on, and no card's
     /// screen shows its own journal.
     pub fn story_on(&self) -> bool {
-        self.story && self.card.is_none()
+        self.story && !self.story_away && self.card.is_none()
     }
 
-    /// `J`: the side panel tells the story, or shows the journal again.
+    /// `J`: the side panel tells the story, or shows the journal again;
+    /// from a line of the story shown in the journal, back to the story.
     fn toggle_story(&mut self) {
+        if self.story_away {
+            return self.story_back();
+        }
         self.story = !self.story;
         self.story_sel = 0;
         if self.story {
@@ -1513,12 +1617,20 @@ impl App {
         match self.story_item() {
             Some(ui::story::Item::Card(c)) => self.open_card(c),
             Some(ui::story::Item::Line(i)) => {
-                self.story = false;
+                self.story_away = true;
                 self.journal_sel = Some(i);
-                self.flash(self.lang.text().story_off);
+                self.flash(self.lang.text().story_away);
             }
             None => {}
         }
+    }
+
+    /// `esc` (or `J`) in the journal shown in the story's place: the story
+    /// again, its item at hand as it was.
+    fn story_back(&mut self) {
+        self.story_away = false;
+        self.journal_sel = None;
+        self.flash(self.lang.text().story_on);
     }
 
     /// `f`: the salon shows only what needs the person, or everyone again.
@@ -2404,6 +2516,7 @@ impl App {
         {
             self.diff_copy = None;
         }
+        self.keep_reading();
         let back = std::mem::take(&mut self.went_back);
         if !back && self.place() != was {
             self.been.push(was);
@@ -2651,6 +2764,16 @@ impl App {
         if self.thread.is_some() && self.thread_key(k) {
             return;
         }
+        if let Some(id) = self.focus_zoom()
+            && self.focus_key(id, k)
+        {
+            return;
+        }
+        if let (Zoom::Trace(id), None) = (self.zoom, &self.thread)
+            && self.trace_key(id, k)
+        {
+            return;
+        }
         if let Zoom::Diff(id) = self.zoom
             && self.diff_key(id, k)
         {
@@ -2775,6 +2898,7 @@ impl App {
             }
             KeyCode::Enter => self.deeper(),
             KeyCode::Esc if self.on_card() => self.leave_card(),
+            KeyCode::Esc if self.story_away && self.zoom == Zoom::None => self.story_back(),
             KeyCode::Esc => {
                 self.zoom = match self.zoom {
                     Zoom::Trace(id) => Zoom::Focus(id),
@@ -2814,6 +2938,18 @@ impl App {
             }
             ('z', KeyCode::Char('M')) if self.thread.is_some() => self.fold_talk(true),
             ('z', KeyCode::Char('R')) if self.thread.is_some() => self.fold_talk(false),
+            ('z', KeyCode::Char('a')) if self.focus_zoom().is_some() => {
+                if let Some(id) = self.focus_zoom() {
+                    let at = self.focus_at(id);
+                    let r = &mut self.reading;
+                    r.folds.set(at, !r.folds.folded(at));
+                    r.follow.set(true);
+                }
+            }
+            ('z', KeyCode::Char(c @ ('M' | 'R'))) if self.focus_zoom().is_some() => {
+                self.reading.folds = Folds::every(c == 'M');
+                self.reading.follow.set(true);
+            }
             ('z', KeyCode::Char('a')) if self.salon_keys() => {
                 let folded = match self.worker_at_hand() {
                     Some(id) => self.folded_workers.contains(&id),
@@ -3112,6 +3248,17 @@ impl App {
             th.follow.set(true);
             return;
         }
+        if let Some(id) = self.focus_zoom() {
+            self.reading_for(id);
+            self.reading.sel = first.then_some(0);
+            self.reading.follow.set(true);
+            return;
+        }
+        if let Zoom::Trace(id) = self.zoom {
+            self.reading_for(id);
+            self.reading.trace_top = first.then_some(0);
+            return;
+        }
         if self.view == View::Timeline && self.zoom == Zoom::None {
             let n = ui::timeline::agents(self).len();
             self.timeline_sel = if first { 0 } else { n.saturating_sub(1) };
@@ -3178,6 +3325,16 @@ impl App {
             } else {
                 at.saturating_sub(step)
             });
+            return;
+        }
+        if let Some(id) = self.focus_zoom() {
+            self.focus_page(id, down, by(self.reading.page.get()));
+            return;
+        }
+        if let Zoom::Trace(id) = self.zoom {
+            self.reading_for(id);
+            let step = by(self.reading.trace_page.get());
+            self.trace_page(down, step);
             return;
         }
         for _ in 0..if half { 5 } else { 10 } {
@@ -3264,6 +3421,111 @@ impl App {
         true
     }
 
+    /// The agent whose focus is open with nothing over it.
+    fn focus_zoom(&self) -> Option<AgentId> {
+        match self.zoom {
+            Zoom::Focus(id) if self.thread.is_none() => Some(id),
+            _ => None,
+        }
+    }
+
+    /// Where the person reads agent `id`, afresh when it was another's.
+    fn reading_for(&mut self, id: AgentId) {
+        if self.reading.agent != Some(id) {
+            self.reading = Reading {
+                agent: Some(id),
+                ..Reading::default()
+            };
+        }
+    }
+
+    /// What is read follows the agent of the focus or the raw stream:
+    /// another agent's starts afresh, leaving both forgets it.
+    fn keep_reading(&mut self) {
+        match self.zoom {
+            Zoom::Focus(id) | Zoom::Trace(id) => self.reading_for(id),
+            _ if self.reading.agent.is_some() => self.reading = Reading::default(),
+            _ => {}
+        }
+    }
+
+    /// How many entries agent `id`'s focus tells: its card's story.
+    fn story_len(&self, id: AgentId) -> usize {
+        (self.world.agents[id].card).map_or(0, |c| self.world.cards[c].story.len())
+    }
+
+    /// The entry at hand on agent `id`'s focus, read afresh when it was
+    /// another's.
+    fn focus_at(&mut self, id: AgentId) -> usize {
+        self.reading_for(id);
+        self.reading.at(self.story_len(id))
+    }
+
+    /// Agent `id`'s focus scrolled `step` rows down (or up), the entry at
+    /// hand no longer the newest followed.
+    fn focus_page(&mut self, id: AgentId, down: bool, step: usize) {
+        let at = self.focus_at(id);
+        let r = &mut self.reading;
+        r.sel = Some(at);
+        r.follow.set(false);
+        let top = r.scroll.get();
+        r.scroll.set(match down {
+            true => top.saturating_add(step),
+            false => top.saturating_sub(step),
+        });
+    }
+
+    /// The raw stream scrolled `step` rows down (or up).
+    fn trace_page(&mut self, down: bool, step: usize) {
+        let by = isize::try_from(step).unwrap_or(isize::MAX);
+        self.reading.trace_by(if down { by } else { -by });
+    }
+
+    /// A key on agent `id`'s focus (record 102): `j k` the story entry at
+    /// hand, pages scroll, `h l` cut it to its first lines or show it
+    /// whole; `false` leaves the key to the rest of the screen.
+    fn focus_key(&mut self, id: AgentId, k: KeyEvent) -> bool {
+        let entries = self.story_len(id);
+        let at = self.focus_at(id);
+        let page = self.reading.page.get();
+        let r = &mut self.reading;
+        match k.code {
+            KeyCode::Up | KeyCode::Char('k') => r.sel = Some(at.saturating_sub(1)),
+            KeyCode::Down | KeyCode::Char('j') => {
+                r.sel = (at + 1 < entries.saturating_sub(1)).then_some(at + 1)
+            }
+            KeyCode::Home => r.sel = Some(0),
+            KeyCode::End => r.sel = None,
+            KeyCode::Left | KeyCode::Char('h') => r.folds.set(at, true),
+            KeyCode::Right | KeyCode::Char('l') => r.folds.set(at, false),
+            KeyCode::PageUp | KeyCode::PageDown => {
+                self.focus_page(id, k.code == KeyCode::PageDown, page);
+                return true;
+            }
+            _ => return false,
+        }
+        self.reading.follow.set(true);
+        true
+    }
+
+    /// A key on agent `id`'s raw stream: `j k` and pages scroll it, back
+    /// to following the newest at its foot; `false` leaves the key to the
+    /// rest of the screen.
+    fn trace_key(&mut self, id: AgentId, k: KeyEvent) -> bool {
+        self.reading_for(id);
+        let page = self.reading.trace_page.get();
+        match k.code {
+            KeyCode::Up | KeyCode::Char('k') => self.trace_page(false, 1),
+            KeyCode::Down | KeyCode::Char('j') => self.trace_page(true, 1),
+            KeyCode::PageUp => self.trace_page(false, page),
+            KeyCode::PageDown => self.trace_page(true, page),
+            KeyCode::Home => self.reading.trace_top = Some(0),
+            KeyCode::End => self.reading.trace_top = None,
+            _ => return false,
+        }
+        true
+    }
+
     /// A key for the open conversation; `false` leaves it to the rest of
     /// the screen (typing, switching views, quitting).
     fn thread_key(&mut self, k: KeyEvent) -> bool {
@@ -3314,7 +3576,7 @@ impl App {
                 self.copy = Some(ui::copy_text(self.lang, &self.world, &th.entries));
             }
             KeyCode::Char('v') => {
-                let lines = ui::thread_lines(self.lang, &self.world, &th.entries);
+                let lines = ui::thread_lines(self.lang, &self.world, &th.entries, th.room.get());
                 let first = lines.iter().position(|l| l.entry == th.sel);
                 th.copy = Some(Copying::new(first.unwrap_or(0)));
                 th.words = None;
@@ -3439,7 +3701,7 @@ impl App {
             let Some(c) = &mut th.copy else {
                 return false;
             };
-            let lines = ui::thread_lines(self.lang, &self.world, &th.entries);
+            let lines = ui::thread_lines(self.lang, &self.world, &th.entries, th.room.get());
             let last = lines.len().saturating_sub(1);
             c.at = to(c.at, last, usize::from(th.page.get()).max(1)).min(last);
             if let Some(l) = lines.get(c.at) {
@@ -3474,7 +3736,7 @@ impl App {
             if th.copy.is_none() {
                 return;
             }
-            let lines = ui::thread_lines(self.lang, &self.world, &th.entries);
+            let lines = ui::thread_lines(self.lang, &self.world, &th.entries, th.room.get());
             self.copy = Some(ui::chosen_text(&lines, th));
             th.copy = None;
             return;
@@ -3537,7 +3799,7 @@ impl App {
         let Some(c) = &mut th.copy else {
             return;
         };
-        let lines = ui::thread_lines(self.lang, &self.world, &th.entries);
+        let lines = ui::thread_lines(self.lang, &self.world, &th.entries, th.room.get());
         let counts: Vec<usize> = lines.iter().map(|l| l.words.len()).collect();
         let last = |l: usize| counts.get(l).map_or(0, |n| n.saturating_sub(1));
         let (aw, cw) = th.words.unwrap_or(match c.anchor.cmp(&c.at) {
@@ -3579,7 +3841,7 @@ impl App {
         let Some(c) = th.copy else {
             return;
         };
-        let lines = ui::thread_lines(self.lang, &self.world, &th.entries);
+        let lines = ui::thread_lines(self.lang, &self.world, &th.entries, th.room.get());
         let quote = ui::chosen_text(&lines, th);
         if quote.trim().is_empty() {
             return self.flash(self.lang.text().note_blank);
@@ -3676,6 +3938,7 @@ impl App {
             copy: None,
             words: None,
             folds: Folds::every(self.fold_talk),
+            room: Cell::new(usize::MAX),
         });
     }
 
@@ -7207,6 +7470,7 @@ pub(crate) mod tests {
             copy: None,
             words: None,
             folds: Folds::default(),
+            room: Cell::new(usize::MAX),
         });
         assert_eq!(app.diff_zoom(), None);
         app.command("fold");
@@ -7396,7 +7660,7 @@ pub(crate) mod tests {
         app.on_key(key(KeyCode::Char('G')));
         let th = app.thread.as_ref().unwrap();
         assert_eq!((th.entries.len(), th.sel), (3, 2));
-        let lines = ui::thread_lines(app.lang, &app.world, &th.entries);
+        let lines = ui::thread_lines(app.lang, &app.world, &th.entries, th.room.get());
         let texts: Vec<&str> = lines.iter().map(|l| l.text.as_str()).collect();
         assert_eq!(texts.len(), 7, "{texts:?}");
         assert_eq!(
@@ -11249,6 +11513,7 @@ pub(crate) mod tests {
             copy: None,
             words: None,
             folds: Folds::default(),
+            room: Cell::new(usize::MAX),
         });
         assert_eq!(press(&mut app, 'W'), Some(0));
         assert!(app.card.is_none() && app.thread.is_none());
@@ -13257,14 +13522,19 @@ pub(crate) mod tests {
         app.on_key(key(KeyCode::Char('W')));
         assert_eq!(press(&mut app, 'S'), Some(1));
         assert!(app.deferred.is_empty(), "{:?}", app.deferred);
-        // The person picks another row by hand: W goes on from there.
+        // The person picks another row by hand: W goes on from there. The
+        // focus W opened takes `j k gg G` itself: back to the panel first.
         let mut app = waiting(&[Reply, Sensitive, Sensitive, Sensitive]);
         app.on_key(key(KeyCode::Char('W')));
+        app.on_key(key(KeyCode::Char('j')));
+        assert_eq!(app.waiting_at, Some(0), "the focus stepped");
+        app.on_key(key(KeyCode::Esc));
         app.on_key(key(KeyCode::Char('j')));
         assert_eq!(app.waiting_at, None);
         assert_eq!(press(&mut app, 'W'), Some(3), "after the picked 2");
         let mut app = waiting(&[Reply, Sensitive, Sensitive, Sensitive]);
         app.on_key(key(KeyCode::Char('W')));
+        app.on_key(key(KeyCode::Esc));
         app.on_key(key(KeyCode::Char('G')));
         assert_eq!(app.waiting_at, None);
         app.on_key(key(KeyCode::Char('g')));
@@ -13397,6 +13667,7 @@ pub(crate) mod tests {
             copy: None,
             words: None,
             folds: Folds::default(),
+            room: Cell::new(usize::MAX),
         });
         app.inbox_sel = 3;
         app.selected = Sel::Project(0);
