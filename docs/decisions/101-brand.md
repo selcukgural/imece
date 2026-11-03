@@ -109,8 +109,10 @@ is its profile's (`icon` in `settings.json`), so only a profile of
 imece's own could carry it. None per program, and none a program can
 set: Terminal.app, Ghostty, kitty, WezTerm, GNOME Terminal, Ptyxis,
 Tilix, xfce4-terminal, Alacritty, foot. There, and everywhere, the title's
-`⁙` is the mark. Not done: Windows Terminal (a profile of imece's own
-would be a fragment the installer writes from WSL: the person decides), a
+`⁙` is the mark. Windows Terminal stays with the title's `⁙` (the
+person, 2026-11-03): a profile of imece's own, a fragment the installer
+would write from WSL, would wear the mark only in tabs opened from it,
+not where imece is started in the person's own WSL tab. Not done: a
 request to iTerm2 to ship imece in its own table.
 
 Growth: none; three cells and an instant in `App`, nothing saved. Read
