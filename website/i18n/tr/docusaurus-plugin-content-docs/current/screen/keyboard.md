@@ -43,6 +43,7 @@ Gelenekler vim'inkidir: `h` `j` `k` `l` hareket ve katlama, `gg` ve `G` uçlara,
 | `H`  `:recall` | her projenin ve arşivin tüm günlük ve iz satırlarında ara: yazılan her sözcük satırın bir sözcüğünü başlatmalı, en yenisi önce, kim, nerede ve ne zaman ile; `enter` oraya gider (konuşması, bir arşivin görünümü, ajanın ham akışı), `tab` ilerler |
 | `^a` `^e` `⌥b` `⌥f` | yazarken: başa / sona, bir sözcük geri / ileri |
 | `^w` `^u` `^k` `^y` | yazarken: bir sözcük / imleçten öncesini / sonrasını kes; kesileni koy |
+| `^x^e`  `:edit` | yazarken: satır editörünüzde (`$VISUAL`, yoksa `$EDITOR`, yoksa `vi`); kaydettiğiniz satıra döner, gönderilmez |
 | `⇧enter` `⌥enter` | yazarken: yeni satır; `↑` `↓` satırlar arası (terminal kitty klavye protokolünü konuştuğunda) |
 | `\enter` `⌥enter` | yazarken: yeni satır (burada `⇧enter` = `enter`); `\` sonra `enter` her terminalde çalışır |
 | `enter` | gönder; `esc` vazgeçer |

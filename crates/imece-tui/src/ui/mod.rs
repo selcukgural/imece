@@ -6334,12 +6334,12 @@ mod tests {
         for (lang, bang, w) in [
             (
                 Lang::En,
-                "run cmd in your shell; O quotes its output",
+                "cmd in your shell; O quotes it; ^x^e $EDITOR",
                 "straight to waiting for you",
             ),
             (
                 Lang::Tr,
-                "kmt kendi kabuğunda; O çıktısını alıntılar",
+                "kmt kabuğunda; O alıntılar; ^x^e $EDITOR'da",
                 "doğrudan seni bekleyenlere",
             ),
         ] {

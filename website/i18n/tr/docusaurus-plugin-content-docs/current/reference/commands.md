@@ -34,6 +34,7 @@ description: imece'nin aldığı her `:` komutu; argümanları, karşılığı o
 | `:copy [PATH]` | — | | | | liste, varsa |
 | `:defer` | `S` | | | | |
 | `:digest` | — | | | | |
+| `:edit [TEXT]` | `^x^e` (yazarken) | | | | açılacak editör |
 | `:effort LEVEL` | — | | | | eldeki solonun çabası ya da `default` |
 | `:export [PATH]` | — | | | | `konuşma` ya da `#12` |
 | `:faster` | `+` | | evet | | hız, `×2` |
@@ -148,6 +149,10 @@ SENİ BEKLEYEN'deki eldeki kalemi erteler ve sonrakini açar, `S` gibi. Bkz. [se
 ### `:digest`
 
 SEN YOKKEN penceresini şimdi açar: bu çalıştırmada terminalin penceresinden son ayrıldığınızdan, ya da çalıştırma başladığından beri olanlar. Yeni bir şey yoksa: `son ayrılışından beri yeni bir şey yok`. Kendiliğinden açıldığındaki gibi herhangi bir tuş kapatır.
+
+### `:edit [TEXT]`
+
+`TEXT`'i (yalın hâlde boş) editörünüzde açar, `^x ^e`'nin yazmakta olduğunuz satırla yaptığı gibi: `$VISUAL`, yoksa `$EDITOR`, yoksa `vi`. Ekran bir `!` komutundaki gibi kenara çekilir, editör projenin checkout'unda çalışır ve kaydettiğiniz komut satırına döner, imleç sonunda, gönderilmeden. Hatayla çıkan (vim'in `:cq`'su), durdurulan, 1 MiB'tan fazlasını ya da metin olmayan bir şey bırakan bir editör taslağı olduğu gibi geri verir ve terminalde bıraktıklarının altındaki bir satır, bir tuş ekranı geri getirene dek nedenini söyler: `` [imece] `vim` 1 ile bitti: taslak duruyor · herhangi bir tuş: ekrana dön ``; bulunamayan biri `` `nvim` diye bir editör yok: $VISUAL ya da $EDITOR verin; taslak duruyor `` der. Taslak, imece'nin durum dizininde yalnız sizin okuyabildiğiniz kendi dosyasıdır ve editör kapanınca silinir. Menü notu: açılacak editör, `(vim)`. Bir arşivin görünümünde olmaz. Bkz. [komut satırı](../screen/command-line.md#editörünüz).
 
 ### `:effort LEVEL`
 

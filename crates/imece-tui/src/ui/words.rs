@@ -2,6 +2,7 @@
 //! Every argument goes through `fill`, which cleans agent-written text.
 
 use crate::app::Rung;
+use crate::editor::{self, Why};
 use crate::i18n::{Lang, fill};
 use crate::model::*;
 use crate::screen::Progress;
@@ -307,6 +308,22 @@ pub fn shell(lang: Lang, command: &str, ended: Ended, took: Option<u64>) -> Stri
     match took {
         Some(ms) => fill(t.ev_shell_took, &[&said, &took_words(lang, ms)]),
         None => said,
+    }
+}
+
+/// Why the editor gave the draft back as it was (`^x ^e`, `:edit`): an
+/// exit, with 127 (the shell found no such program) said as a missing
+/// editor; a signal; too much or not text; what could not be read or
+/// written.
+pub fn editor_why(lang: Lang, editor: &str, why: &Why) -> String {
+    let t = lang.text();
+    match why {
+        Why::Ended(Ended::Exit(127)) => fill(t.editor_missing, &[editor]),
+        Why::Ended(Ended::Exit(code)) => fill(t.editor_ended, &[editor, &code.to_string()]),
+        Why::Ended(Ended::Signal(sig)) => fill(t.editor_signal, &[editor, &sig.to_string()]),
+        Why::Long => fill(t.editor_long, &[editor, &(editor::MAX / 1024).to_string()]),
+        Why::NotText => fill(t.editor_not_text, &[editor]),
+        Why::Io(e) => fill(t.editor_failed, &[editor, &e.to_string()]),
     }
 }
 

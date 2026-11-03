@@ -534,14 +534,14 @@ pub fn run(
 
 /// Leaves the alternate screen (auto-wrap on again, the cursor shown as
 /// the terminal has it) and raw mode: the terminal is the shell's.
-fn step_aside() -> io::Result<()> {
+pub(crate) fn step_aside() -> io::Result<()> {
     disable_raw_mode()?;
     screen::give_back(&mut io::stdout())
 }
 
 /// Raw mode for one key press (so no newline is echoed and ctrl-c is a
 /// key, not a signal), then back to cooked mode.
-fn wait_for_key() -> io::Result<()> {
+pub(crate) fn wait_for_key() -> io::Result<()> {
     enable_raw_mode()?;
     let pressed = loop {
         match event::read() {
@@ -559,7 +559,7 @@ fn wait_for_key() -> io::Result<()> {
 /// asks the terminal where the cursor is and waits up to two seconds for
 /// an answer that a plain pty never gives.) The screen is wiped row by
 /// row, never with a whole-screen erase: see `screen`.
-fn come_back(terminal: &mut Screen) -> io::Result<()> {
+pub(crate) fn come_back(terminal: &mut Screen) -> io::Result<()> {
     enable_raw_mode()?;
     screen::take_over(&mut io::stdout())?;
     execute!(io::stdout(), cursor::Hide)?;
@@ -570,7 +570,7 @@ fn come_back(terminal: &mut Screen) -> io::Result<()> {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use std::sync::{Mutex, MutexGuard};
 
     use super::*;
@@ -584,9 +584,9 @@ mod tests {
         run_in(shell, dir, command, None, &mut Vec::new())
     }
 
-    /// `run_in` swaps the process's SIGINT handler, so the tests that
-    /// call it take turns.
-    fn one_at_a_time() -> MutexGuard<'static, ()> {
+    /// `run_in` and `editor::edit` swap the process's SIGINT handler, so
+    /// the tests that call them take turns.
+    pub(crate) fn one_at_a_time() -> MutexGuard<'static, ()> {
         static LOCK: Mutex<()> = Mutex::new(());
         LOCK.lock().unwrap_or_else(|e| e.into_inner())
     }

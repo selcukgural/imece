@@ -1,6 +1,6 @@
 ---
 title: "Komut satırı"
-description: "Yazdığınız alt satır - lidere ya da tek bir agent'a, satıcı komutları, imece'nin : komutları ve menüsü, tamamlama, readline tuşları, çok satırlı yazma ve kendi kabuğunuz."
+description: "Yazdığınız alt satır - lidere ya da tek bir agent'a, satıcı komutları, imece'nin : komutları ve menüsü, tamamlama, readline tuşları, çok satırlı yazma, kendi kabuğunuz ve editörünüz."
 ---
 
 # Komut satırı
@@ -108,6 +108,7 @@ Satır bir kabuğun satırı gibi düzenlenir, readline'ın emacs takımı:
 | `^u` / `^k` | bu satırda imleçten öncesini / sonrasını kes |
 | `^y` | son kesileni imleçte geri koy |
 | `^d`, delete | imlecin altındaki karakter; `^d` boş satırdan çıkmaz (`esc` çıkar) |
+| `^x` `^e` | satır editörünüzde ([aşağıda](#editörünüz)) |
 
 Tek bir kesik vardır, halka değil: bir şey alan her kesme öncekinin yerini alır. İmleç terminalin kendi imlecidir, bir sonraki karakterin geleceği yerde durur ve şekli ne yazdığınızı söyler: mesaj ya da `!` komutu için yanıp sönen çubuk, `:` komutu için temanın vurgu renginde sabit çubuk, bir şey bulan sözcükler için yanıp sönen alt çizgi (`#`, `&`, `^r`, yardımın ve arşivlerin `/` süzgeci). Yanıp sönmeyi terminal yapar, imece'ye çizim maliyeti yoktur; imleç şeklini değiştirmeyen bir terminal kendi şeklini korur. imece terminali geri verdiğinde (sonunda ya da bir `!` komutuna) imleç terminalinizin ayarlarındaki gibidir. Her kare terminale tek bir senkron güncelleme olarak gider, bu yüzden bunu destekleyen bir terminal hiçbir zaman yarım kare göstermez. macOS'ta alt tuşları için terminalin Option'ı Meta olarak göndermesi gerekir (iTerm2: Profiles → Keys → Left Option key: Esc+; Terminal.app: Use Option as Meta key); yoksa Option-b `∫` yazar. Burada olmayanlar: kill-ring döngüsü, geri alma, yer değiştirme, vim'in normal kipi.
 
@@ -138,6 +139,10 @@ test result: FAILED. 41 passed; 1 failed
 `enter`a basana kadar hiçbir şey gönderilmez; `esc` bırakır. Her proje yalnızca en yeni çıktısını tutar; başlayamayan bir komut sonuncuyu olduğu gibi bırakır. Projede henüz komut çalışmadıysa: `bu projede henüz !komut çalışmadı`.
 
 `:commit`, düzenleyip bu yolla çalıştırmanız için satıra `!git commit -m '…'` koyar. Bkz. [kendi kabuğu ve commit](../scenarios/own-shell-and-commit.md).
+
+## Editörünüz
+
+`^x` `^e` (bash ve zsh'teki gibi) ya da `:edit` yazmakta olduğunuz satırı editörünüzde açar: `$VISUAL`, yoksa `$EDITOR`, yoksa `vi`; `code --wait` ya da `emacsclient -t` gibi bir satır da olur, kabuğunuzun okuyacağı gibi. Ekran bir `!` komutundaki gibi kenara çekilir ve editör projenin checkout'unda, sizin terminalinizde çalışır. Kaydedip çıkınca metin komut satırına döner, imleç sonunda, sondaki satır sonları alınmış; hiçbir şey gönderilmez: `enter` gönderir, ya da önce değiştirirsiniz. `^x`'ten sonra `^e`'den başka bir tuş, tek başına ne yapıyorsa onu yapar. Taslak, imece'nin durum dizininde yalnız sizin okuyabildiğiniz (0600), yeni yaratılmış kendi dosyasıdır (`.md`, editör Markdown olarak renklendirsin diye) ve editör kapanınca, ne olursa olsun silinir. Hatayla çıkan bir editör (vim'de `:cq` vazgeçmenin yoludur), durdurulan, 1 MiB'tan fazlasını ya da UTF-8 metin olmayanı bırakan bir editör taslağı olduğu gibi bırakır; terminalde bıraktıklarının (kendi şikâyeti de içinde) altındaki bir satır nedenini söyler ve herhangi bir tuş ekranı geri getirir. Editör açıkken ctrl-c editörün, imece'nin değil. `:edit TEXT` editörü `TEXT` ile açar. Bkz. [komutlar](../reference/commands.md).
 
 ## Ayrıca bakınız
 

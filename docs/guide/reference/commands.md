@@ -34,6 +34,7 @@ A line that starts with `:` is a command to imece, not a message to an agent. Yo
 | `:copy [PATH]` | — | | | | the list, when there is one |
 | `:defer` | `S` | | | | |
 | `:digest` | — | | | | |
+| `:edit [TEXT]` | `^x^e` (writing) | | | | the editor that opens |
 | `:effort LEVEL` | — | | | | the solo at hand's effort, or `default` |
 | `:export [PATH]` | — | | | | `the conversation` or `#12` |
 | `:faster` | `+` | | yes | | the speed, `×2` |
@@ -148,6 +149,10 @@ Puts the item at hand in WAITING FOR YOU off and opens the next one, as `S`. See
 ### `:digest`
 
 Opens WHILE YOU WERE AWAY now: what happened since you last left the terminal's window this run, or since the run began. With nothing new: `nothing new since you last left`. Any key closes it, as when it opens by itself.
+
+### `:edit [TEXT]`
+
+Opens `TEXT` (nothing when bare) in your editor, as `^x ^e` does with the line you are writing: `$VISUAL`, else `$EDITOR`, else `vi`. The screen steps aside as for a `!` command, the editor runs in the project's checkout, and what you save comes back on the command line, the cursor at its end, not sent. An editor that exits with an error (vim's `:cq`), is stopped, leaves more than 1 MiB or what is not text gives the draft back as it was, and a line under what it left on the terminal says why until a key brings the screen back: `` [imece] `vim` ended with 1: the draft is kept · any key: back to the screen ``; one not found says `` no editor `nvim`: set $VISUAL or $EDITOR; the draft is kept ``. The draft is a file of its own under imece's state (only you may read it), removed when the editor closes. The menu note: the editor that opens, `(vim)`. Not in an archive's view. See [command line](../screen/command-line.md#your-editor).
 
 ### `:effort LEVEL`
 

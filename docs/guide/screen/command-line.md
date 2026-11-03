@@ -1,6 +1,6 @@
 ---
 title: "The command line"
-description: "The footer line where you write - to the leader or one agent, vendor commands, imece's own : commands and their menu, completion, readline keys, several lines, and your own shell."
+description: "The footer line where you write - to the leader or one agent, vendor commands, imece's own : commands and their menu, completion, readline keys, several lines, your own shell and your editor."
 ---
 
 # The command line
@@ -108,6 +108,7 @@ The line edits as a shell's does, readline's emacs set:
 | `^u` / `^k` | cut what is before / after the cursor on this line |
 | `^y` | put the last cut back at the cursor |
 | `^d`, delete | the character under the cursor; `^d` does not leave an empty line (`esc` does) |
+| `^x` `^e` | the line in your editor ([below](#your-editor)) |
 
 There is one cut, not a ring: each cut that takes something replaces it. The cursor is your terminal's own, standing where the next character goes, and its shape says what you are writing: a blinking bar for a message or a `!` command, a steady bar in the theme's accent for a `:` command, a blinking underline for words that find something (`#`, `&`, `^r`, and the `/` filter of the help and the archives). The terminal blinks it, so it costs imece no drawing; a terminal that does not change cursor shapes keeps its own, and when imece hands the terminal back (at the end or to a `!` command) the cursor is as your terminal's settings have it. Each frame reaches the terminal as one synchronized update, so a terminal that supports it never shows half of one. On macOS the alt keys need the terminal to send Option as Meta (iTerm2: Profiles → Keys → Left Option key: Esc+; Terminal.app: Use Option as Meta key); without it Option-b types `∫`. Not here: kill-ring cycling, undo, transposing, vim's normal mode.
 
@@ -138,6 +139,10 @@ test result: FAILED. 41 passed; 1 failed
 Nothing is sent until you press `enter`; `esc` drops it. Each project keeps only its newest output, and a command that could not start leaves the last one as it was. No command has run in the project yet: `no !command has run in this project yet`.
 
 `:commit` puts `!git commit -m '…'` on the line for you to edit and run this way. See [own shell and commit](../scenarios/own-shell-and-commit.md).
+
+## Your editor
+
+`^x` `^e` (as in bash and zsh) or `:edit` opens the line you are writing in your editor: `$VISUAL`, else `$EDITOR`, else `vi`; a line such as `code --wait` or `emacsclient -t` works too, as your shell would read it. The screen steps aside as for a `!` command and the editor runs in the project's checkout, on your terminal. When you save and quit, the text comes back on the command line, the cursor at its end, the line ends at its end taken off; nothing is sent: `enter` sends it, or you change it first. After `^x`, a key other than `^e` does what it does alone. The draft is a file of its own, made new, under imece's state, that only you may read (0600; `.md`, so the editor colours it as Markdown), removed when the editor closes, whatever happened. An editor that exits with an error (in vim, `:cq` is the way to give up), is stopped, or leaves more than 1 MiB or what is not UTF-8 text leaves the draft as it was; a line under what it left on the terminal (its own complaint among it) says why, and any key brings the screen back. While the editor is open, ctrl-c is the editor's, not imece's. `:edit TEXT` opens the editor on `TEXT`. See [commands](../reference/commands.md).
 
 ## See also
 
