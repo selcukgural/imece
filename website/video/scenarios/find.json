@@ -78,7 +78,7 @@
     {
       "id": "hints",
       "chapter": "A letter on every row",
-      "narration": "Capital F puts a letter on every row you can select: the agents, the items waiting for you, the lines of the journal. Type the letter and you are there. Type it as a capital, and it opens too.",
+      "narration": "Capital F puts a letter on every row you can select: the agents and the items waiting for you. Type the letter and you are there. Type it as a capital, and it opens too.",
       "steps": [
         { "action": "type", "target": "#corner", "text": "F", "delayMs": 0 },
         { "action": "wait", "seconds": 4 },
