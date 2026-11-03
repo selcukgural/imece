@@ -551,11 +551,21 @@ impl Live {
     }
 
     /// Agent `from`'s session asks before it does `what`: a routine
-    /// command is allowed at once, anything else waits in the person's
-    /// inbox and is answered when they decide. The trace says which.
+    /// command is allowed at once, and so is one whose commands the
+    /// person said yes to from now on for its project
+    /// ([`standing::covered`]); anything else waits in the person's inbox
+    /// and is answered when they decide. The trace says which.
     pub(super) fn ask(&mut self, w: &mut World, from: AgentId, what: Ask, reply: Reply) {
         if routine(w.agents[from].role, &what, &self.run_programs) {
             w.agents[from].trace(w.tick, format!("allowed on its own: {}", what.line()));
+            self.reply(from, reply, true);
+            return;
+        }
+        if self.standing_yes(w, from, &what) {
+            w.agents[from].trace(
+                w.tick,
+                format!("allowed by your yes from now on: {}", what.line()),
+            );
             self.reply(from, reply, true);
             return;
         }
@@ -592,25 +602,90 @@ impl Live {
         w.withdrew(id, nth);
     }
 
-    /// The person allowed or refused what inbox item `item` asks: the
-    /// session waiting on it goes on. An item that is not an open
-    /// approval is left alone.
-    pub fn decide(&mut self, w: &mut World, item: usize, allow: bool) {
-        let Some(id) = w
+    /// Whether agent `from`'s project has a standing yes for every
+    /// command `what` runs that is not routine.
+    fn standing_yes(&self, w: &World, from: AgentId, what: &Ask) -> bool {
+        let Ask::Command { command, .. } = what else {
+            return false;
+        };
+        let role = w.agents[from].role;
+        let rules = &w.projects[w.agents[from].project].allowed;
+        standing::covered(
+            command,
+            |argv| allowed(role, argv, &self.run_programs).is_ok(),
+            rules,
+        )
+    }
+
+    /// The person says yes from now on to what inbox item `item` asks: a
+    /// rule for each of its commands not yet allowed goes into its
+    /// project's standing yes ([`standing::needed`]), the ask is allowed,
+    /// and so is every other open ask of the project that the rules now
+    /// cover. The rules added are given back; nothing changes when no
+    /// rule can be made for it.
+    pub fn always(&mut self, w: &mut World, item: usize) -> Result<Vec<Standing>, standing::Why> {
+        let Some((id, nth)) = Self::ask_at(w, item) else {
+            return Err(standing::Why::NotACommand);
+        };
+        let Some(Ask::Command { command, .. }) = self.pending[id].get(nth).map(|p| &p.what) else {
+            return Err(standing::Why::NotACommand);
+        };
+        let role = w.agents[id].role;
+        let p = w.agents[id].project;
+        let rules = standing::needed(
+            command,
+            |argv| allowed(role, argv, &self.run_programs).is_ok(),
+            &w.projects[p].allowed,
+        )?;
+        let added = w.stand(p, &rules);
+        self.decide(w, item, true);
+        self.go_on_allowed(w, p);
+        Ok(added)
+    }
+
+    /// Every open ask of project `p` its standing yes now covers is
+    /// allowed: the person said yes from now on to what it runs.
+    pub fn go_on_allowed(&mut self, w: &mut World, p: ProjectId) {
+        for other in 0..w.inbox.len() {
+            let Some((a, n)) = Self::ask_at(w, other) else {
+                continue;
+            };
+            if w.agents[a].project == p
+                && self.pending[a]
+                    .get(n)
+                    .is_some_and(|pending| self.standing_yes(w, a, &pending.what))
+            {
+                self.decide(w, other, true);
+            }
+        }
+    }
+
+    /// The agent inbox item `item` waits for and which of its waiting
+    /// calls it is, when it is an open approval: an agent's open
+    /// approvals and its waiting calls are in the same order.
+    fn ask_at(w: &World, item: usize) -> Option<(AgentId, usize)> {
+        let id = w
             .inbox
             .get(item)
             .filter(|i| i.open && i.kind == InboxKind::Approval)
-            .map(|i| i.agent)
-        else {
-            return;
-        };
-        // An agent's open approvals and its waiting calls are in the same
-        // order: an ask adds one of each, a decision or the session's end
-        // takes them away together.
+            .map(|i| i.agent)?;
         let nth = w.inbox[..item]
             .iter()
             .filter(|i| i.open && i.kind == InboxKind::Approval && i.agent == id)
             .count();
+        Some((id, nth))
+    }
+
+    /// The person allowed or refused what inbox item `item` asks: the
+    /// session waiting on it goes on. An item that is not an open
+    /// approval is left alone.
+    pub fn decide(&mut self, w: &mut World, item: usize, allow: bool) {
+        // An agent's open approvals and its waiting calls are in the same
+        // order: an ask adds one of each, a decision or the session's end
+        // takes them away together.
+        let Some((id, nth)) = Self::ask_at(w, item) else {
+            return;
+        };
         w.decided(item, allow);
         if nth < self.pending[id].len() {
             let p = self.pending[id].remove(nth);
@@ -849,6 +924,80 @@ mod tests {
     /// What the session reads back from an ask.
     fn verdict(rx: &Receiver<Answer>) -> Value {
         serde_json::from_str(&rx.try_recv().unwrap().unwrap()).unwrap()
+    }
+
+    #[test]
+    fn a_yes_from_now_on_allows_the_ask_its_project_s_others_and_the_next_ones() {
+        let mut w = team(2);
+        let mut live = idle_live(3);
+        let first = ask_to_run(&live, 1, "npm run build && cargo test");
+        let same = ask_to_run(&live, 2, "npm run lint");
+        let other = ask_to_run(&live, 2, "make clean");
+        live.step(&mut w);
+        let open = w.open_inbox();
+        assert_eq!(open.len(), 3);
+        // Not a command, or not plain, or an option first: nothing changes.
+        assert_eq!(live.always(&mut w, 999), Err(standing::Why::NotACommand));
+        w.asked_you(1, "Which API?");
+        let question = *w.open_inbox().last().unwrap();
+        assert_eq!(
+            live.always(&mut w, question),
+            Err(standing::Why::NotACommand)
+        );
+        let added = live.always(&mut w, open[0]).unwrap();
+        let npm = Standing {
+            program: "npm".into(),
+            sub: Some("run".into()),
+        };
+        assert_eq!(
+            added,
+            std::slice::from_ref(&npm),
+            "cargo test is routine: no rule"
+        );
+        assert_eq!(w.projects[0].allowed, std::slice::from_ref(&npm));
+        assert_eq!(verdict(&first)["behavior"], "allow");
+        assert_eq!(verdict(&same)["behavior"], "allow", "covered now");
+        assert!(other.try_recv().is_err(), "make clean still waits");
+        assert!(!w.inbox[open[0]].open && !w.inbox[open[1]].open && w.inbox[open[2]].open);
+        assert!(w.journal.iter().any(|e| matches!(
+            &e.event,
+            Event::Standing { rules, added: true, .. } if rules == &["npm run …".to_string()]
+        )));
+        // The next ask it covers is not asked at all.
+        let next = ask_to_run(&live, 1, "npm run test -- --watch=false");
+        live.step(&mut w);
+        assert_eq!(verdict(&next)["behavior"], "allow");
+        assert!(w.agents[1].trace.iter().any(|l| {
+            l.ends_with(" allowed by your yes from now on: Bash: npm run test -- --watch=false")
+        }));
+        // One it does not cover still asks; one with an option first can
+        // have none.
+        let rm = ask_to_run(&live, 1, "rm -rf target");
+        live.step(&mut w);
+        assert!(rm.try_recv().is_err());
+        let item = *w.open_inbox().last().unwrap();
+        assert_eq!(
+            live.always(&mut w, item),
+            Err(standing::Why::OptionFirst("rm -rf target".into()))
+        );
+        assert!(w.inbox[item].open, "nothing decided");
+        // A rule added by name lets the open ask it covers go on.
+        w.stand(
+            0,
+            &[Standing {
+                program: "make".into(),
+                sub: Some("clean".into()),
+            }],
+        );
+        live.go_on_allowed(&mut w, 0);
+        assert_eq!(verdict(&other)["behavior"], "allow");
+        // Another project's rules are not this one's.
+        let mut w2 = team(1);
+        w2.projects[0].allowed.clear();
+        let mut live2 = idle_live(2);
+        let asked = ask_to_run(&live2, 1, "npm run build");
+        live2.step(&mut w2);
+        assert!(asked.try_recv().is_err(), "no rule in this world");
     }
 
     #[test]

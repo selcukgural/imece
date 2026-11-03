@@ -22,6 +22,7 @@ description: imece'nin aldığı her `:` komutu; argümanları, karşılığı o
 | --- | --- | --- | --- | --- | --- |
 | `:archive [TITLE]` | — | | | | |
 | `:archives` | `A` | | | | |
+| `:allow [PROGRAM [WORD]]` | `A` (bir istekte) | | | | projenin hep eveti, varsa |
 | `:awake` | — | | | | açık / kapalı |
 | `:board` | `2` | | | | |
 | `:budget USD` | — | `:b` | | | harcanan / bütçe |
@@ -115,6 +116,10 @@ Kod haritası, `3` gibi. Canlıda henüz ortak trunk olmadığını söyler (her
 Claude Code'un ucuz kademesine (`haiku`, ya da sizin `--tier claude:cheap=…`) eldeki projenin çalışma kopyasında stage'dekiler için bir commit mesajı sorar ve onu komut satırına `!git commit -m '…'` olarak koyar; düzenleyip `enter` ile kendi kabuğunuzda çalıştırır ya da `esc` ile bırakırsınız. imece hiçbir şey commit'lemez. Flaş `haiku modeline kule içinde stage'dekiler için commit mesajı soruluyor` der; günlük her öneriyi modeli ve maliyetiyle, her başarısızlığı nedeniyle söyler.
 
 Para eder: her çağrı en çok 0,05 $ (çağrının kendi sert sınırı), bir gün (UTC) bütün projeler için en çok 20 çağrı ve 1,00 $; çağrıdan önce bütçeden ayrılır, sonra gerçek değerle kapatılır. Stage'de bir şey yoksa, gün dolmuşsa, bütçede sınırdan az kalmışsa ya da Claude Code PATH'te değilse `commit mesajı yok: …` ile reddedilir (harcama sınırı alan tek satıcı o; Codex ve Gemini liderleri bunun için Claude Code'a gerek duyar). Aynı stage ağacı yeniden sorulursa para etmez: son öneri geri gelir. Çağrı `git diff --cached --stat`'ı, yamayı (en çok 24 KiB) ve en yeni sekiz commit konusunu okur; araçsız, MCP sunucusuz, kendi kısa sistem istemiyle çalışır, hiçbir şey kaydedilmez. Demo, o projede uygulanan değişikliklerin başlıklarından `git commit --dry-run` olarak yanıtlar. Bkz. [kendi kabuğu ve commit](../scenarios/own-shell-and-commit.md).
+
+### `:allow [PROGRAM [WORD]]`
+
+Eldeki projenin hep eveti: ajanlarının size sormadan çalıştırdığı komutlar (bkz. [onaylar](../concepts/approvals-and-questions.md#artık-hep-evet)). Tek başına `:allow` listeyi söyler (`kule: artık hep evet: make, npm run …` ya da `kule: hep evet yok; bir istekte A, ya da :allow PROGRAM [SÖZCÜK]`); `:allow npm run` bir tane ekler (projenin onu kapsayan açık istekleri sürer), aynısı yeniden onu çıkarır (`kule: artık hep evet değil: npm run …`). Bir program ve en çok bir sözcük, önce seçenek değil: `:allow rm -rf` reddedilir. SENİ BEKLEYEN'deki bir istekte `A` o isteğin çalıştırdığını ekler. Çalıştırmalar arasında projeyle saklanır.
 
 ### `:copy [PATH]`
 

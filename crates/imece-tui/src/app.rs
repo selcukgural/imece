@@ -14,7 +14,7 @@ use crate::complete::{self, Jump, Menu};
 use crate::edit;
 use crate::i18n::{Lang, fill};
 use crate::keys::{self, Keymap};
-use crate::live::{self, Live, Open, Refusal};
+use crate::live::{self, Live, Open, Refusal, standing};
 use crate::model::*;
 use crate::motion::{self, Glow, GlowOn, Lit, Motion};
 use crate::notify::{self, Note, Notify};
@@ -2206,6 +2206,11 @@ impl App {
             }
             KeyCode::Char('K') => self.peek = self.agent_at_hand(),
             KeyCode::Char('F') => self.open_hints(),
+            // On an ask in waiting for you: yes from now on; else the
+            // archives.
+            KeyCode::Char('A') if self.pane == Pane::Inbox && self.ask_at_hand().is_some() => {
+                self.answer_always();
+            }
             KeyCode::Char('A') => self.open_archives(),
             KeyCode::Char('v') => {
                 if let Some(id) = self.agent_at_hand() {
@@ -3676,6 +3681,11 @@ impl App {
                 let copies = &self.world.projects[self.current_project()].copies;
                 (!copies.is_empty()).then(|| copies.join(", "))
             }
+            "allow" => {
+                let rules = &self.world.projects[self.current_project()].allowed;
+                let lines: Vec<String> = rules.iter().map(Standing::line).collect();
+                (!lines.is_empty()).then(|| lines.join(", "))
+            }
             // What the solo at hand runs on, the part the command sets.
             "effort" | "model" => self.solo_at_hand().map(|id| {
                 let c = Choice::parse(self.model_of(id).as_deref().unwrap_or_default());
@@ -4001,6 +4011,7 @@ impl App {
             "export" => self.export(arg),
             "commit" => self.suggest_commit(),
             "copy" => self.copy_path(arg),
+            "allow" => self.allow(arg),
             "pin" => self.pin(arg),
             "mark" => self.toggle_mark(),
             "output" => self.quote_output(),
@@ -5806,6 +5817,90 @@ impl App {
         if let Some(z) = zoom {
             self.zoom = z;
         }
+    }
+
+    /// The open approval selected in waiting for you, if that is what
+    /// is selected.
+    fn ask_at_hand(&self) -> Option<usize> {
+        let item = *self.inbox_rows().get(self.inbox_sel)?;
+        (self.world.inbox[item].kind == InboxKind::Approval).then_some(item)
+    }
+
+    /// `A` on an ask: yes from now on to its commands for its project
+    /// (`Live::always`); the ask and the project's others they cover go
+    /// on. What cannot have one is said, and nothing is decided.
+    fn answer_always(&mut self) {
+        if self.viewing_archive() {
+            return self.read_only();
+        }
+        let Some(item) = self.ask_at_hand() else {
+            return;
+        };
+        let t = self.lang.text();
+        let p = self.world.agents[self.world.inbox[item].agent].project;
+        let got = match &mut self.engine {
+            Engine::Live(l) => l.always(&mut self.world, item),
+            Engine::Sim(s) => s.always(&mut self.world, item),
+            Engine::View(_) => return self.read_only(),
+        };
+        let name = self.world.projects[p].name.clone();
+        let said = match got {
+            Ok(added) if added.is_empty() => fill(t.always_had, &[&name]),
+            Ok(added) => {
+                let lines: Vec<String> = added.iter().map(Standing::line).collect();
+                fill(t.always_added, &[&name, &lines.join(", ")])
+            }
+            Err(why) => self.standing_why(&why),
+        };
+        self.flash(said);
+        let open = self.inbox_rows().len();
+        self.inbox_sel = self.inbox_sel.min(open.saturating_sub(1));
+    }
+
+    /// Why no yes from now on could be made, in the person's words.
+    fn standing_why(&self, why: &standing::Why) -> String {
+        let t = self.lang.text();
+        match why {
+            standing::Why::NotACommand => t.always_not_command.to_string(),
+            standing::Why::NotPlain => t.always_not_plain.to_string(),
+            standing::Why::OptionFirst(c) => fill(t.always_option, &[c]),
+        }
+    }
+
+    /// `:allow [PROGRAM [WORD]]`: the project at hand's standing yes, or
+    /// a rule added to it (the project's open asks it covers go on) or,
+    /// named again, taken out.
+    fn allow(&mut self, arg: &str) {
+        let t = self.lang.text();
+        let p = self.current_project();
+        let name = self.world.projects[p].name.clone();
+        if arg.trim().is_empty() {
+            let rules = &self.world.projects[p].allowed;
+            let said = if rules.is_empty() {
+                fill(t.allow_none, &[&name])
+            } else {
+                let lines: Vec<String> = rules.iter().map(Standing::line).collect();
+                fill(t.allow_list, &[&name, &lines.join(", ")])
+            };
+            return self.flash(said);
+        }
+        if self.viewing_archive() {
+            return self.read_only();
+        }
+        let rule = match standing::named(arg) {
+            Ok(rule) => rule,
+            Err(why) => return self.flash(self.standing_why(&why)),
+        };
+        if self.world.unstand(p, &rule) {
+            return self.flash(fill(t.allow_removed, &[&name, &rule.line()]));
+        }
+        self.world.stand(p, std::slice::from_ref(&rule));
+        match &mut self.engine {
+            Engine::Live(l) => l.go_on_allowed(&mut self.world, p),
+            Engine::Sim(s) => s.go_on_allowed(&mut self.world, p),
+            Engine::View(_) => {}
+        }
+        self.flash(fill(t.always_added, &[&name, &rule.line()]));
     }
 
     fn answer(&mut self, approve: bool) {
@@ -8335,6 +8430,115 @@ mod tests {
         app.command("copy .env");
         assert_eq!(flash(&app), ".env is no longer copied");
         assert_eq!(app.world.projects[p].copies, ["target"]);
+    }
+
+    #[test]
+    fn a_on_an_ask_says_yes_from_now_on_and_colon_allow_lists_adds_and_drops() {
+        let mut app = App::new(1, 2, 0, 1, Lang::En);
+        let flash = |app: &App| app.flash.as_ref().map(|(m, _)| m.clone()).unwrap();
+        let p = app.current_project();
+        let name = app.world.projects[p].name.clone();
+        let (one, two) = (
+            app.world.projects[p].leader + 1,
+            app.world.projects[p].leader + 2,
+        );
+        assert_eq!(app.command_note("allow"), "");
+        app.command("allow");
+        assert_eq!(
+            flash(&app),
+            format!("{name}: no yes from now on; A on an ask, or :allow PROGRAM [WORD]")
+        );
+        // Two asks decided before: the open ones are not the first items.
+        for _ in 0..2 {
+            app.world.asks_you(one, "Bash: npm install old");
+            let i = app.world.inbox.len() - 1;
+            app.world.decided(i, false);
+        }
+        app.world.asks_you(one, "Bash: npm install zod@3");
+        app.world.asks_you(two, "Bash: npm install left-pad");
+        app.world.asks_you(two, "Edit: package.json");
+        app.pane = Pane::Inbox;
+        app.inbox_sel = 0;
+        app.on_key(key(KeyCode::Char('A')));
+        assert_eq!(
+            flash(&app),
+            format!("{name}: yes from now on to npm install …")
+        );
+        assert!(app.archives.is_none(), "an ask at hand: not the archives");
+        let open: Vec<String> = (app.world.open_inbox().iter())
+            .map(|&i| app.world.inbox[i].detail.clone())
+            .collect();
+        assert_eq!(
+            open,
+            ["Edit: package.json"],
+            "the other npm install went on too"
+        );
+        assert_eq!(app.command_note("allow"), "(npm install …)");
+        // An edit can have none: said, and nothing decided.
+        app.inbox_sel = 0;
+        app.on_key(key(KeyCode::Char('A')));
+        assert_eq!(
+            flash(&app),
+            "a yes from now on is for commands only: a allows this once"
+        );
+        assert_eq!(app.world.open_inbox().len(), 1);
+        // An ask whose commands have a yes already (added without letting
+        // it go on): allowed, nothing new.
+        app.world.asks_you(one, "Bash: make");
+        app.world.stand(
+            p,
+            &[Standing {
+                program: "make".into(),
+                sub: None,
+            }],
+        );
+        let make = app
+            .inbox_rows()
+            .iter()
+            .position(|&i| app.world.inbox[i].detail == "Bash: make");
+        app.inbox_sel = make.unwrap();
+        app.on_key(key(KeyCode::Char('A')));
+        assert_eq!(
+            flash(&app),
+            format!("{name}: allowed; its commands had a yes from now on already")
+        );
+        app.world.unstand(
+            p,
+            &Standing {
+                program: "make".into(),
+                sub: None,
+            },
+        );
+        // :allow adds by name, again takes it out; a bad name is said.
+        app.command("allow make");
+        assert_eq!(flash(&app), format!("{name}: yes from now on to make"));
+        app.command("allow");
+        assert_eq!(
+            flash(&app),
+            format!("{name}: yes from now on to make, npm install …")
+        );
+        app.command("allow npm install");
+        assert_eq!(
+            flash(&app),
+            format!("{name}: no yes from now on to npm install … any more")
+        );
+        app.command("allow rm -rf");
+        assert_eq!(
+            flash(&app),
+            "`rm -rf` starts with an option: a yes from now on needs what it runs first; a allows this once"
+        );
+        app.command("allow a && b");
+        assert!(flash(&app).starts_with("this line runs more than plain commands"));
+        assert_eq!(app.world.projects[p].allowed.len(), 1);
+        // A in waiting for you on something that is not an ask, or
+        // elsewhere: the archives, as before.
+        app.pane = Pane::Salon;
+        app.on_key(key(KeyCode::Char('A')));
+        assert_eq!(
+            flash(&app),
+            app.lang.text().no_archives,
+            "the archives, as before"
+        );
     }
 
     #[test]

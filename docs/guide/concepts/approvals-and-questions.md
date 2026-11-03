@@ -37,7 +37,11 @@ Anything else is a `⚑` item in WAITING FOR YOU: "claude-1 waits for your yes: 
 - A call waits up to a day. One call at a time per connection, so a waiting ask holds that session's other imece tools (it could not use them mid-ask anyway).
 - When the session ends, every pending ask is answered "the session ended" and its items close. An ask the store kept from an earlier run is closed at the start: the process that asked is gone. Codex and Gemini withdraw an ask when the turn ends; the item closes without a decision.
 
-What an ask shows: for a shell command the command; for another tool what it touches (the path, address, query or pattern), or its input as JSON cut at 200 characters. Codex file changes show the files the item named and `writes under <root>` for a granted root. There is no "allow for the session": every non-routine ask waits.
+What an ask shows: for a shell command the command; for another tool what it touches (the path, address, query or pattern), or its input as JSON cut at 200 characters. Codex file changes show the files the item named and `writes under <root>` for a granted root. A yes holds once; for a yes from now on, see below.
+
+### A yes from now on
+
+`A` on an ask says yes from now on to its commands, for every agent of that project: `npm run build` gives `npm run …` (the program and its first argument), `make` gives `make`. The ask goes on, so does every other open ask of the project it now covers, and a later ask that only runs such commands (and routine ones) goes on without asking you; its trace says `allowed by your yes from now on: Bash: …`. A line of several commands (`&&`, `||`, `;`, `|`) goes on when each is routine or has its yes; a line with `$`, a backtick, a redirection or a glob always asks. A command whose first argument is an option (`rm -rf target`) can have no yes from now on, nor can a file edit or a fetch: `A` says why and `a` allows it once. The list is kept with the project between runs; `:allow` shows it, `:allow npm run` adds one by name (before you step away), and `:allow npm run` again takes it out. The journal says `shop-api: you say yes from now on to npm run …`.
 
 ## Questions (`?`)
 

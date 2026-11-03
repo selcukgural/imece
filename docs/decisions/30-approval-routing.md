@@ -21,7 +21,9 @@ or its input as JSON cut at 200 characters); `claude::decision` answers
 `{"behavior":"deny","message":REFUSED}` ("The person refused this. Do
 not try it another way; if you need it, ask them ...").
 
-A ROUTINE command is allowed at once, with a trace line "allowed on its
+(Since 2026-11-03 a project may also have a standing yes, record 89:
+`A` on an ask, `:allow`; an ask whose commands are all routine or have
+one goes on without the person.) A ROUTINE command is allowed at once, with a trace line "allowed on its
 own": one line (a shell runs each line as a command), that `run::split`
 takes (no pipes, redirections, `&&`, `$`, globs) and that the run tool's
 policy (`allowed`: cargo less the dependency commands, git's reading

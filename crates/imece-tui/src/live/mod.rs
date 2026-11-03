@@ -55,6 +55,7 @@ mod projects;
 mod prompts;
 mod remember;
 mod sessions;
+pub(crate) mod standing;
 mod suggest;
 #[cfg(test)]
 pub(crate) mod testing;

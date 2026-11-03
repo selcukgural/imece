@@ -428,6 +428,29 @@ pub struct Archived {
     pub title: String,
 }
 
+/// A standing yes the person gave a project's agents: a program and, when
+/// the command it was given for had one, its first argument (`npm run`,
+/// `dotnet ef`); `sub` none for the program alone (`make`). A command
+/// matches when it starts with exactly these words; an option before the
+/// first argument never matches one with a `sub`.
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+pub struct Standing {
+    pub program: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sub: Option<String>,
+}
+
+impl Standing {
+    /// How the screen and the journal name it: `npm run …`, or `make`
+    /// (the program with nothing after it).
+    pub fn line(&self) -> String {
+        match &self.sub {
+            Some(sub) => format!("{} {sub} …", self.program),
+            None => self.program.clone(),
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct Project {
     pub id: ProjectId,
@@ -452,6 +475,10 @@ pub struct Project {
     /// Paths git ignores that the person listed (`:copy`) to be copied
     /// from the checkout into each worker's worktree.
     pub copies: Vec<String>,
+    /// The commands the person said yes to from now on for this project
+    /// (`A` on an ask, `:allow`): an agent's ask that only runs these (and
+    /// routine commands) is allowed without them. Sorted, saved.
+    pub allowed: Vec<Standing>,
     /// The folder is not a git checkout with a first commit, so its solo
     /// works straight in it: no worktree, no change to review. Found at
     /// each open and start, not saved.
@@ -1058,6 +1085,13 @@ pub enum Event {
         what: String,
         allowed: bool,
     },
+    /// The person said yes from now on to `rules` for the project
+    /// `leader` heads (`added`), or took them back.
+    Standing {
+        leader: AgentId,
+        rules: Vec<String>,
+        added: bool,
+    },
     /// A live agent sent the person a message over the bus (`to: you`);
     /// an `ask` waits in their inbox, the rest is for the journal.
     ToYou {
@@ -1389,6 +1423,7 @@ impl Event {
             | Event::Rejected { .. }
             | Event::YouSaid { .. }
             | Event::Decided { .. }
+            | Event::Standing { .. }
             | Event::Budget { .. }
             | Event::Shell { .. }
             | Event::Opened { .. }
@@ -1428,6 +1463,7 @@ impl Event {
             | Event::Closed { leader }
             | Event::Archived { leader, .. }
             | Event::Restored { leader, .. }
+            | Event::Standing { leader, .. }
             | Event::Renamed { leader, .. } => leader,
             Event::Assign { agent, .. }
             | Event::Assumption { agent, .. }
@@ -1885,6 +1921,7 @@ impl World {
                 closed: false,
                 pinned: false,
                 copies: Vec::new(),
+                allowed: Vec::new(),
                 no_git: false,
                 archived: None,
             }),
@@ -2610,6 +2647,46 @@ impl World {
         });
     }
 
+    /// Adds `rules` to project `p`'s standing yes, sorted and once each;
+    /// the journal says which were new. The new ones are given back.
+    pub fn stand(&mut self, p: ProjectId, rules: &[Standing]) -> Vec<Standing> {
+        let allowed = &mut self.projects[p].allowed;
+        let mut added: Vec<Standing> = Vec::new();
+        for r in rules {
+            if !allowed.contains(r) && !added.contains(r) {
+                added.push(r.clone());
+            }
+        }
+        if !added.is_empty() {
+            allowed.extend(added.iter().cloned());
+            allowed.sort();
+            let leader = self.projects[p].leader;
+            self.note(Event::Standing {
+                leader,
+                rules: added.iter().map(Standing::line).collect(),
+                added: true,
+            });
+        }
+        added
+    }
+
+    /// Takes `rule` out of project `p`'s standing yes; false when it was
+    /// not there.
+    pub fn unstand(&mut self, p: ProjectId, rule: &Standing) -> bool {
+        let allowed = &mut self.projects[p].allowed;
+        let Some(i) = allowed.iter().position(|r| r == rule) else {
+            return false;
+        };
+        allowed.remove(i);
+        let leader = self.projects[p].leader;
+        self.note(Event::Standing {
+            leader,
+            rules: vec![rule.line()],
+            added: false,
+        });
+        true
+    }
+
     /// The person allowed or refused what open item `item` asks: it
     /// closes and the journal says so. Anything but an open approval is
     /// left alone.
@@ -3001,6 +3078,7 @@ mod tests {
                 closed: false,
                 pinned: false,
                 copies: Vec::new(),
+                allowed: Vec::new(),
                 no_git: false,
                 archived: None,
             }],
@@ -3865,6 +3943,7 @@ mod tests {
             closed: false,
             pinned: false,
             copies: Vec::new(),
+            allowed: Vec::new(),
             no_git: false,
             archived: None,
         });
@@ -4752,6 +4831,7 @@ mod tests {
             closed: false,
             pinned: false,
             copies: Vec::new(),
+            allowed: Vec::new(),
             no_git: false,
             archived: None,
         });
@@ -4952,6 +5032,7 @@ mod tests {
                 closed: true,
                 pinned: false,
                 copies: Vec::new(),
+                allowed: Vec::new(),
                 no_git: false,
                 archived: Some(Archived {
                     at,
@@ -4992,6 +5073,7 @@ mod tests {
             closed: false,
             pinned: false,
             copies: Vec::new(),
+            allowed: Vec::new(),
             no_git: false,
             archived: None,
         });

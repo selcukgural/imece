@@ -59,7 +59,9 @@ use crate::model::*;
 /// imece would not know the tag).
 /// 17 (2026-11-03): the start point a worker was hired from
 /// (`agents.start`, `hire`'s `from`).
-pub const SCHEMA_VERSION: i64 = 17;
+/// 18 (2026-11-03): a project's standing yes (`projects.allowed`) and the
+/// `Standing` events.
+pub const SCHEMA_VERSION: i64 = 18;
 /// Trace lines kept per agent, as the world keeps them.
 const TRACE_KEEP: usize = 200;
 /// The file's name under the state directory.
@@ -406,6 +408,11 @@ impl Store {
                  ALTER TABLE agents ADD COLUMN session_spent INTEGER NOT NULL DEFAULT 0;",
             )?;
         }
+        if !self.has_column("projects", "allowed")? {
+            self.conn.execute_batch(
+                "ALTER TABLE projects ADD COLUMN allowed TEXT NOT NULL DEFAULT '[]';",
+            )?;
+        }
         if !self.has_column("agents", "start")? {
             self.conn
                 .execute_batch("ALTER TABLE agents ADD COLUMN start TEXT;")?;
@@ -577,8 +584,8 @@ impl Store {
             let q = &w.projects[p];
             tx.execute(
                 "INSERT OR REPLACE INTO projects (id, name, leader, closed, repo, pinned, \
-                 copies, archived_at, archived_title) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, \
-                 ?9)",
+                 copies, archived_at, archived_title, allowed) VALUES (?1, ?2, ?3, ?4, ?5, ?6, \
+                 ?7, ?8, ?9, ?10)",
                 params![
                     n(q.id),
                     q.name,
@@ -591,6 +598,7 @@ impl Store {
                     serde_json::to_string(&q.copies).unwrap_or_else(|_| "[]".into()),
                     q.archived.as_ref().map(|a| big(a.at)),
                     q.archived.as_ref().map(|a| a.title.as_str()),
+                    serde_json::to_string(&q.allowed).unwrap_or_else(|_| "[]".into()),
                 ],
             )?;
         }
@@ -899,6 +907,7 @@ impl Store {
                 q.pinned,
                 &q.copies,
                 &q.archived,
+                &q.allowed,
             ));
             if s.projects.get(p) != Some(&h) {
                 plan.projects.push(p);
@@ -1112,8 +1121,8 @@ impl Store {
         let mut skipped = 0;
         let conn = &self.conn;
         let mut st = conn.prepare(
-            "SELECT id, name, leader, closed, repo, pinned, copies, archived_at, archived_title \
-             FROM projects ORDER BY id",
+            "SELECT id, name, leader, closed, repo, pinned, copies, archived_at, archived_title, \
+             allowed FROM projects ORDER BY id",
         )?;
         for row in st.query_map([], |r| {
             Ok((
@@ -1126,15 +1135,18 @@ impl Store {
                 r.get::<_, String>(6)?,
                 r.get::<_, Option<i64>>(7)?,
                 r.get::<_, Option<String>>(8)?,
+                r.get::<_, String>(9)?,
             ))
         })? {
-            let (id, name, leader, closed, repo, pinned, copies, at, title) = row?;
+            let (id, name, leader, closed, repo, pinned, copies, at, title, allowed) = row?;
             let archived = at.map(|at| Archived {
                 at: ubig(at),
                 title: title.unwrap_or_default(),
             });
             let copies: Vec<String> = serde_json::from_str(&copies)
                 .map_err(|e| bad(format!("project {id}'s copies: {e}")))?;
+            let allowed: Vec<Standing> = serde_json::from_str(&allowed)
+                .map_err(|e| bad(format!("project {id}'s standing yes: {e}")))?;
             if id != w.projects.len() {
                 return Err(bad(format!("project {id} is out of order")));
             }
@@ -1148,6 +1160,7 @@ impl Store {
                 closed,
                 pinned,
                 copies,
+                allowed,
                 no_git: false,
                 archived,
             });
@@ -1677,6 +1690,7 @@ mod tests {
                     closed: false,
                     pinned: false,
                     copies: Vec::new(),
+                    allowed: Vec::new(),
                     no_git: false,
                     archived: None,
                 },
@@ -1690,6 +1704,7 @@ mod tests {
                     closed: true,
                     pinned: false,
                     copies: Vec::new(),
+                    allowed: Vec::new(),
                     no_git: false,
                     archived: None,
                 },
@@ -3212,11 +3227,11 @@ mod tests {
                 )
                 .unwrap();
             assert_eq!(
-                version, "17",
-                "the sent table, the Fault kind, archives, restores, start points: an older \
+                version, "18",
+                "the sent table, the Fault kind, archives, restores, start points, standing yes: an older \
                  imece knows none"
             );
-            assert_eq!(SCHEMA_VERSION, 17);
+            assert_eq!(SCHEMA_VERSION, 18);
         }
         let back = Store::open(&path)
             .unwrap()
@@ -3306,6 +3321,49 @@ mod tests {
         assert!(back.world.projects.iter().all(|p| !p.pinned));
         assert!(store.save(&w, &kept().kept()).unwrap());
         assert!(store.load(100).unwrap().unwrap().world.projects[0].pinned);
+    }
+
+    #[test]
+    fn a_standing_yes_is_saved_and_a_file_of_schema_17_gets_the_column() {
+        let d = dir("schema17");
+        std::fs::create_dir_all(&d).unwrap();
+        let path = d.join(FILE);
+        let mut w = world();
+        let npm = Standing {
+            program: "npm".into(),
+            sub: Some("run".into()),
+        };
+        let make = Standing {
+            program: "make".into(),
+            sub: None,
+        };
+        {
+            let mut store = Store::open(&path).unwrap();
+            assert!(store.save(&w, &kept().kept()).unwrap());
+            w.projects[1].allowed = vec![make.clone(), npm.clone()];
+            assert!(store.save(&w, &kept().kept()).unwrap(), "the list alone");
+            assert!(!store.save(&w, &kept().kept()).unwrap());
+            let back = store.load(100).unwrap().unwrap();
+            assert!(back.world.projects[0].allowed.is_empty());
+            assert_eq!(back.world.projects[1].allowed, [make.clone(), npm.clone()]);
+            store
+                .raw()
+                .execute_batch(
+                    "ALTER TABLE projects DROP COLUMN allowed;
+                     UPDATE meta SET value = '17' WHERE key = 'schema_version';",
+                )
+                .unwrap();
+        }
+        let mut store = Store::open(&path).unwrap();
+        let back = store.load(100).unwrap().expect("a world");
+        assert!(back.world.projects.iter().all(|p| p.allowed.is_empty()));
+        store
+            .raw()
+            .execute_batch("UPDATE projects SET allowed = 'x' WHERE id = 1;")
+            .unwrap();
+        let e = store.load(100).err().expect("refused").to_string();
+        assert!(e.contains("project 1's standing yes"), "{e}");
+        let _ = std::fs::remove_dir_all(&d);
     }
 
     #[test]

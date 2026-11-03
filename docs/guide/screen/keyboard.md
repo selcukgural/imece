@@ -84,6 +84,7 @@ The conventions are vim's: `h` `j` `k` `l` move and fold, `gg` and `G` go to the
 | `w`  `:waiting` | straight to waiting for you |
 | `W`  `S` | `:next` waiting, from anywhere · `:defer` this one and open the next |
 | `a`  `r` | approve / apply / allow · reject / refuse (in waiting for you) |
+| `A`  `:allow` | on an ask in waiting for you: yes from now on to its commands for the project (elsewhere `A` is the archives) |
 | `enter` | open the item: a change's diff, a question's conversation, a reply (read by it) |
 
 ## A conversation
@@ -176,6 +177,7 @@ The conventions are vim's: `h` `j` `k` `l` move and fold, `gg` and `G` go to the
 | `:peek` | `K` |
 | `:hints` | `F` |
 | `:archives` | `A` |
+| `:allow` | `A` (on an ask) |
 | `:fold` / `:unfold` | `zM` / `zR` |
 | `:trace` / `:talk` | `t` / `v` |
 | `:mark` | `m` |

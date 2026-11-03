@@ -37,7 +37,11 @@ Başka her şey SENİ BEKLEYEN'de bir `⚑` öğesidir: "claude-1 onayını bekl
 - Bir çağrı en çok bir gün bekler. Bağlantı başına bir anda bir çağrı; bekleyen bir istek o oturumun diğer imece araçlarını tutar (istek ortasında zaten kullanamazdı).
 - Oturum bitince bekleyen her istek "the session ended" ile yanıtlanır ve öğeleri kapanır. Deponun önceki çalıştırmadan tuttuğu bir istek başlangıçta kapatılır: soran süreç gitmiştir. Codex ve Gemini tur bitince isteği geri çeker; öğe kararsız kapanır.
 
-Bir istek ne gösterir: kabuk komutu için komutu; başka bir araç için dokunduğunu (yol, adres, sorgu ya da desen) ya da girdisini 200 karakterde kesilmiş JSON olarak. Codex dosya değişiklikleri öğenin adını verdiği dosyaları ve verilen kök için `writes under <root>`'u gösterir. "Oturum boyunca izin ver" yoktur: rutin olmayan her istek bekler.
+Bir istek ne gösterir: kabuk komutu için komutu; başka bir araç için dokunduğunu (yol, adres, sorgu ya da desen) ya da girdisini 200 karakterde kesilmiş JSON olarak. Codex dosya değişiklikleri öğenin adını verdiği dosyaları ve verilen kök için `writes under <root>`'u gösterir. Bir evet bir kez geçerlidir; artık hep evet için aşağıya bakın.
+
+### Artık hep evet
+
+Bir istekte `A`, o projenin bütün ajanları için isteğin komutlarına artık hep evet der: `npm run build` `npm run …` verir (program ve ilk argümanı), `make` `make` verir. İstek sürer, projenin artık kapsanan diğer açık istekleri de; yalnız böyle komutlar (ve rutin olanlar) çalıştıran sonraki bir istek size sormadan sürer, izi `allowed by your yes from now on: Bash: …` der. Birkaç komutlu bir satır (`&&`, `||`, `;`, `|`) her biri rutinse ya da hep eveti varsa sürer; `$`, ters tırnak, yönlendirme ya da glob içeren bir satır hep sorar. İlk argümanı bir seçenek olan bir komutun (`rm -rf target`) hep eveti olamaz, bir dosya düzenlemenin ya da bir getirmenin de: `A` nedenini söyler, `a` bir kez izin verir. Liste çalıştırmalar arasında projeyle saklanır; `:allow` gösterir, `:allow npm run` adıyla ekler (başından kalkmadan önce), yeniden `:allow npm run` çıkarır. Günlük `shop-api: artık hep evet diyorsun: npm run …` der.
 
 ## Sorular (`?`)
 
