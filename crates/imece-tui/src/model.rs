@@ -691,6 +691,16 @@ impl Agent {
         (done, self.plan.len())
     }
 
+    /// The step of its to-do list it says it is on now (the first one in
+    /// progress), as the agent wrote it; none when no step is.
+    pub fn step(&self) -> Option<&str> {
+        self.plan
+            .iter()
+            .find(|s| s.state == StepState::Doing)
+            .map(|s| s.text.as_str())
+            .filter(|s| !s.trim().is_empty())
+    }
+
     pub fn set_status(&mut self, status: Status, tick: u64) {
         if self.status != status {
             self.status = status;

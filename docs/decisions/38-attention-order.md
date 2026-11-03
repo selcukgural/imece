@@ -39,4 +39,7 @@ stuck > waiting > working > starting > done > idle, a folded group
 showing its loudest member); that record put stuck above waiting, so
 `Need` now ranks `Stuck > Waiting > Done > Nothing` and the ranked
 workers come stuck first. Pure screen logic, so the demo shows
-it exactly as live does.
+it exactly as live does. Since record 97, an open project's workers that
+need the person sit under a header per need (`✕ stuck`, `! waits for
+you`, `✓ done, not seen`, then the rest counted), shown only when every
+row fits with them.

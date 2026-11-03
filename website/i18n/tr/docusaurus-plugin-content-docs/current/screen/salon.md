@@ -50,7 +50,7 @@ Bir proje başlığı: `▾ shop-api  2 çalışıyor  $2.40  ✕1  ■1   ! 2 b
 Bir agent'ın satırı:
 
 ```text
-  ├ ● ▎claude-1 #3   Parse the manifest  testleri yazıyor · 2 dk  $1.10  ⎇ fix-parser ↑2 ↓1 +12 −3  ▾ 1 yardımcı  ↗ localhost:5173/
+  ├ ● ▎claude-1 #3   Parse the manifest  ▸ Write the tests  Edit tests/parse.rs · 2 dk  $1.10  ⎇ fix-parser ↑2 ↓1 +12 −3  ▾ 1 yardımcı  ↗ localhost:5173/
 ```
 
 - Ağaç çizgileri `├ └ │` kimin kimin altında olduğunu gösterir; bir yardımcı işçisinin altındadır ve `claude-1.1` diye adlanır.
@@ -58,11 +58,11 @@ Bir agent'ın satırı:
 - Agent'ın konuşmacı renginde `▎`: günlükte ve bir konuşmada satırlarının taşıdığı renk, böylece satır ve konuşması tek agent olarak okunur.
 - Satıcısının renginde adı; sonra kirliyse `~` ya da `≈` (araştırma kirliliği, yalnız demoda).
 - Bir işçinin kartı: `#3` ve kartın başlığı. Lider yerine satıcısını gösterir.
-- Durumu: oturumu kalkarken (süreç, ilk worktree'nin checkout'u) `başlıyor…`, `düşünüyor…`, yaptığını söylediği şey, bir takım arkadaşının yanıtını beklerken `? → claude-2`, bir sorusu sizi beklerken `? → sen`, bir araç çağrısı SENİ BEKLEYEN'de beklerken `⚑ onayını bekliyor`, yanıtı okunmayı beklerken `sana yanıt verdi`, geçici bir satıcı hatasıyla biten bir turu imece yeniden denemeyi beklerken `↻ 2/3 · 25 sn sonra` (deneme, deneme sayısı, kalan süre), bir satıcı hatası sizi beklerken `✕ satıcı hatası`, işçileri çalışan bir lider için `koordine ediyor`, `BLOKE`, `■ durdu, yazınca yeniden başlar`, `◦ önceki çalışmadan beri uyuyor, yazınca uyanır`. Durumun kendi metni varsa satır onu taşır: `? → sen "hangi index?"`, `sana yanıt verdi "enum kullan"`, `⚑ onayını bekliyor "cargo test"`, `✕ satıcı hatası "Invalid API key"`, `BLOKE "JWT saat kayması" ← researcher-1`, `■ durdu: süreç 1 koduyla çıktı`. Yoksa durum, agent'ın en son alışverişiyle biter; ok kimin söylediğini gösterir: `düşünüyor… ← lead "parser'ı düzelt"`, `boşta → sen "parser düzeldi, testler yeşil"`, `? → claude-2 "hangi parser?"` (beklediği kişiye kendi sorusu, tek başına alıntılanır). Alışveriş bir sonrakine dek kalır; böylece satır agent'ın en son ne yaptığını söyler, durum ve metni kırk sütunu geçmez.
+- Durumu: oturumu kalkarken (süreç, ilk worktree'nin checkout'u) `başlıyor…`, `düşünüyor…`, yaptığını söylediği şey, bir takım arkadaşının yanıtını beklerken `? → claude-2`, bir sorusu sizi beklerken `? → sen`, bir araç çağrısı SENİ BEKLEYEN'de beklerken `⚑ onayını bekliyor`, yanıtı okunmayı beklerken `sana yanıt verdi`, geçici bir satıcı hatasıyla biten bir turu imece yeniden denemeyi beklerken `↻ 2/3 · 25 sn sonra` (deneme, deneme sayısı, kalan süre), bir satıcı hatası sizi beklerken `✕ satıcı hatası`, işçileri çalışan bir lider için `koordine ediyor`, `BLOKE`, `■ durdu, yazınca yeniden başlar`, `◦ önceki çalışmadan beri uyuyor, yazınca uyanır`. Yapılacaklar listesinde devam eden bir adımı olan çalışan bir agent önce o adımı, ardından onun için ne yaptığını soluk renkte söyler: `▸ Write the tests  Edit tests/parse.rs`, `▸ Run the tests  düşünüyor…`; böylece satır yalnız son araç çağrısını değil, agent'ın neyin peşinde olduğunu söyler. Adım en çok 24 sütun alır ve satırın sabit parçalarının bıraktığından fazlasını asla almaz; araç çağrısı adımdan arta kalanı alır (onayınızı bekleyen bir araç çağrısı ya da hâlâ başlayan bir oturum bunun yerine onu söyler). Durumun kendi metni varsa satır onu taşır: `? → sen "hangi index?"`, `sana yanıt verdi "enum kullan"`, `⚑ onayını bekliyor "cargo test"`, `✕ satıcı hatası "Invalid API key"`, `BLOKE "JWT saat kayması" ← researcher-1`, `■ durdu: süreç 1 koduyla çıktı`. Yoksa durum, agent'ın en son alışverişiyle biter; ok kimin söylediğini gösterir: `düşünüyor… ← lead "parser'ı düzelt"`, `boşta → sen "parser düzeldi, testler yeşil"`, `? → claude-2 "hangi parser?"` (beklediği kişiye kendi sorusu, tek başına alıntılanır). Alışveriş bir sonrakine dek kalır; böylece satır agent'ın en son ne yaptığını söyler, durum ve metni kırk sütunu geçmez.
 - `▁▃▅▂▁`: agent'ın son zamanda yaptıkları, son beş tikin her biri için bir sütun (her biri 5 saniye, toplam 25), en eskisi önce: o tikte izine kaç satır düştüğü (bir metin, bir araç çağrısı, bir mesaj, bir not), her satırda aynı ölçekle (`▁` hiç, `▂` bir, `▃` iki, `▄` dörde kadar, `▅` altı, `▆` dokuz, `▇` on dört, `█` daha fazla); böylece yoğun bir satırla sakin bir satır bir bakışta ayrılır. Yalnızca agent bir şey yaptıkça ve tikler geçtikçe değişir, kendi zamanlayıcısıyla asla; beş tik boyunca hiçbir şey yazılmazsa kaybolur. Dar bir satırda alıntıdan da önce, ilk yer veren odur ve [`:motion off`](../reference/commands.md#motion-offcalmfull) onu göstermez. Odakta (`enter`) daha uzunu vardır, iki dakika, aynı ölçekte 24 sütun, saydıkları satır sayısıyla: `etkinlik: ▁▁▂▄▁…█▃ · 2 dakikada iz satırı: 21`. Çalıştırmalar arasında saklanmaz.
 - O durumda ne zamandır olduğu, bir dakikadan başlayarak: `· 3 dk`, `· 1 sa 5 dk`. Sizi bekleyen bir şey için öğe geldiğinden beri.
 - Varsa harcadığı.
-- `≡ 3/7`: kendi yapılacaklar listesinin neresinde olduğu, biten adımlar ve hepsi; planlama aracı bir liste tutuyorsa (Claude Code'un görevleri, Codex'in `update_plan`'i; Gemini'nin `write_todos`'u imece'ye adımları olmadan ulaşır). Odak adımları listeler. Satır darsa işaret alıntıdan ve süreden sonra yer verir. Oturumla birlikte gider.
+- `≡ 3/7`: kendi yapılacaklar listesinin neresinde olduğu, biten adımlar ve hepsi; planlama aracı bir liste tutuyorsa (Claude Code'un görevleri, Codex'in `update_plan`'i; Gemini'nin `write_todos`'u imece'ye adımları olmadan ulaşır). Devam eden adım satırın durumudur (`▸`); odak hepsini listeler. Satır darsa işaret alıntıdan ve süreden sonra yer verir. Oturumla birlikte gider.
 - `◔ %72`: bağlam penceresinin ne kadar dolu olduğu, %70'ten itibaren, %90'dan itibaren dikkat renginde, satıcının son söylediğince (Claude Code'un mesaj kullanımı ve sonucun adlandırdığı pencere, Codex'in token kullanımı güncellemesi, Gemini'nin kullanım sayacı). Odak rakamı her hâlde gösterir, `bağlam: %22 · 45k / 200k`, ya da satıcı pencerenin boyutunu söylemiyorsa yalnız token sayısını. Dar bir satırda yapılacaklar işaretinden daha uzun kalır. Oturumla birlikte gider.
 - Bir işçinin worktree durumu, `⎇ fix-parser ↑2 ↓1 +12 −3`: agent'ın açtığı dal (worktree imece'nin bıraktığı gibi detached iken yok; bir başlangıç noktasından işe alınan işçi onun yerine o noktayı gösterir, `⎇ #41`), checkout'ta olmayan kendi commit'leri (imece'nin uygulanan değişiklik işaretleri sayılmaz), kendisinde olmayan checkout commit'leri ve kendi HEAD'ine göre eklenen ve silinen satırlar, izlenmeyen dosyalar dahil: bir sonraki `done`'un size vereceği şey. Her parça yalnız söyleyecek bir şey varken görünür. imece'nin git iş parçacığında okunur: oturum başlarken, bir tur bitince, bir uygulamadan sonra ve işçi ya da bir yardımcısı tur ortasındayken her 15 saniyede; çalıştırmalar arasında saklanmaz.
 - `▾ 1 yardımcı` ya da `▸ 1 yardımcı`: yardımcıları altında listelenir ya da katlanmıştır.
@@ -70,6 +70,23 @@ Bir agent'ın satırı:
 - Yardımcıları olan bir işçi `▾ 2 yardımcı` ile, katlıysa `▸ 2 yardımcı  ● claude-1.1` ile biter: sayı ve en yüksekleri.
 
 Her agent tek satırdır, ne söylerse söylesin: satırların yüksekliği değişmez. Süre, alıntı ve etkinlik çubuğu yalnız satırda maliyet, worktree durumu, yardımcılar ve bağlantıdan arta kalan yeri alır; dar bir bölme önce çubuğu, sonra alıntıyı, en son süreyi düşürür (`.` yan paneli daraltır). Yeni değişen bir satır bir an öne çıkar, sonra sakinleşir. Seçili satır ters renklidir.
+
+Açık bir projenin bazı işçileri sizi bekliyorsa ve proje birden fazla işçi gösteriyorsa, işçiler neye ihtiyaç duyduklarına göre bir başlığın altında durur, merdivenin sırasıyla; geri kalanlar onları sayan tek bir başlığın altındadır:
+
+```text
+▾ shop-api      7 çalışıyor  $0.45   ! 2 bekliyor
+  ◆ ▎lead-shop-api     claude                     koordine ediyor
+  ✕ takıldı · 1
+  └ ■ ▎qwen-1            #17  Order tests           ■ durdu: oturum bitti
+  ! seni bekliyor · 2
+  ├ ! ▎codex-1           #1   Payment retry policy  ⚑ onayını bekliyor "WebFetch: …"
+  └ ! ▎claude-3          #7   Payment retry policy  ▸ Write it up  düşünüyor…
+  ● 4 çalışıyor  ○ 1 boşta
+  ├ ● ▎codex-2           #2   Price list cache      ▸ Run the tests  Bash: dotnet test
+  └ …
+```
+
+Başlıklar `✕ takıldı`, `! seni bekliyor`, `✓ bitti, bakılmadı` ve geri kalanlar için `● N çalışıyor  ○ N boşta`'dır (sıfır olan sayı yazılmaz); her biri kendi dalını `└` ile kapatır. Sizi bekleyenin nerede bitip sakin kısmın nerede başladığını gösterirler. Bir projenin bütün işçileri sakinse ya da proje tek bir işçi gösteriyorsa başlık yoktur. İlk yer veren onlardır: başlıklarla birlikte satırlar panele sığmazsa hiçbiri gösterilmez ve satırlar aşağıdaki gibi katlanır.
 
 Satırlar panele sığmadığında sakin işçiler (çalışan ya da boşta, son zamanda bir şey dememiş, seçili olmayan) salonun altından yukarıya doğru tek satıra katlanır: `… 2 agent katlı, en yükseği  ● codex-2`, en yükseklerinin adıyla; sabitlenmiş bir proje en son katlanır ve sizi bekleyen hiç katlanmaz. Panelin alt satırı `KUYRUK`, doğrulanan kartları ve son dört biteni (`#2 ✓`) listeler; canlıda doğrulama kısmını hiçbir şey doldurmaz, `boş` yazar.
 
@@ -102,6 +119,7 @@ Her agent tek bir basamakta durur, en yüksekten: takıldı (bloke ya da oturumu
 | `⎇` `↑` `↓` `+N −M` | bir işçinin worktree'si: dal, kendi commit'leri, checkout'un yeni commit'leri, henüz verilmemiş satırlar |
 | `↗` | işçinin yazdığı yerel adres, terminalin açtığı bir bağlantı |
 | `≡ 3/7` | kendi yapılacaklar listesi: biten adımlar ve hepsi |
+| `▸ Run the tests` | çalışan bir satırda: yapılacaklar listesinde devam eden adım |
 | `◔ %72` | bağlam penceresi bu kadar dolu; %70'ten gösterilir, %90'dan yüksek sesle |
 | `✱` | `m` ile işaretlediğiniz satır; `'` sonrakine gider |
 | `▁▃▅` | son zamanda yaptıkları: son beş tikin her birinde izine düşen satırlar, sütun başı 5 sn |

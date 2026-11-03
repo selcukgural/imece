@@ -49,7 +49,7 @@ A project header: `▾ shop-api  2 working  $2.40  ✕1  ■1   ! 2 waiting`. `�
 An agent's row:
 
 ```text
-  ├ ● ▎claude-1 #3   Parse the manifest  writing tests · 2 min  $1.10  ⎇ fix-parser ↑2 ↓1 +12 −3  ▾ 1 helpers  ↗ localhost:5173/
+  ├ ● ▎claude-1 #3   Parse the manifest  ▸ Write the tests  Edit tests/parse.rs · 2 min  $1.10  ⎇ fix-parser ↑2 ↓1 +12 −3  ▾ 1 helpers  ↗ localhost:5173/
 ```
 
 - The tree lines `├ └ │` show who is under whom; a helper is under its worker, named `claude-1.1`.
@@ -57,11 +57,11 @@ An agent's row:
 - `▎` in the agent's speaker colour, the same colour its lines have in the journal and in a conversation, so a row and its talk read as one agent.
 - Its name in its vendor's colour, then `~` or `≈` when it is tainted (research taint, demo only).
 - A worker's card: `#3` and the card's title. A leader shows its vendor instead.
-- Its status: `starting…` while its session comes up (the process, a first worktree's checkout), `thinking…`, what it says it is doing, `? → claude-2` while it waits for a teammate's answer, `? → you` while a question of its waits for you, `⚑ waits for your yes` while a tool call of its waits in WAITING FOR YOU, `answered you` while its answer waits to be read, `↻ 2/3 in 25 s` while imece waits to try a turn that failed on a passing vendor error again (the try, the tries, the time left), `✕ vendor error` while a vendor error waits for you, `coordinating` for a leader whose workers work, `BLOCKED`, `■ stopped, write to it to start again`, `◦ asleep since the last run, write to it to wake it`. Where the status has a text of its own, the row carries it: `? → you "which index?"`, `answered you "use the enum"`, `⚑ waits for your yes "cargo test"`, `✕ vendor error "Invalid API key"`, `BLOCKED "JWT clock skew" ← researcher-1`, `■ stopped: the process exited with code 1`. Otherwise the status ends with the agent's newest exchange, the arrow saying who said it: `thinking… ← lead "fix the parser"`, `idle → you "parser fixed, tests green"`, `? → claude-2 "which parser?"` (its own question to the one it waits for, quoted alone). The exchange stays until the next one replaces it, so a row says what the agent last did, and the status with its text keeps to forty columns.
+- Its status: `starting…` while its session comes up (the process, a first worktree's checkout), `thinking…`, what it says it is doing, `? → claude-2` while it waits for a teammate's answer, `? → you` while a question of its waits for you, `⚑ waits for your yes` while a tool call of its waits in WAITING FOR YOU, `answered you` while its answer waits to be read, `↻ 2/3 in 25 s` while imece waits to try a turn that failed on a passing vendor error again (the try, the tries, the time left), `✕ vendor error` while a vendor error waits for you, `coordinating` for a leader whose workers work, `BLOCKED`, `■ stopped, write to it to start again`, `◦ asleep since the last run, write to it to wake it`. A working agent whose to-do list has a step in progress says that step first and what it does for it after, dim: `▸ Write the tests  Edit tests/parse.rs`, `▸ Run the tests  thinking…`, so the row says what the agent is after rather than only its last tool call; the step takes at most 24 columns and never more than the row's fixed parts leave it, the tool call what is left after the step (a tool call waiting for your yes, or a session still starting, says that instead). Where the status has a text of its own, the row carries it: `? → you "which index?"`, `answered you "use the enum"`, `⚑ waits for your yes "cargo test"`, `✕ vendor error "Invalid API key"`, `BLOCKED "JWT clock skew" ← researcher-1`, `■ stopped: the process exited with code 1`. Otherwise the status ends with the agent's newest exchange, the arrow saying who said it: `thinking… ← lead "fix the parser"`, `idle → you "parser fixed, tests green"`, `? → claude-2 "which parser?"` (its own question to the one it waits for, quoted alone). The exchange stays until the next one replaces it, so a row says what the agent last did, and the status with its text keeps to forty columns.
 - `▁▃▅▂▁`: what the agent did lately, one column for each of the last five ticks (5 seconds each, 25 in all), the oldest first: how many lines its trace got in that tick (a text, a tool call, a message, a note), on one scale for every row (`▁` none, `▂` one, `▃` two, `▄` up to four, `▅` six, `▆` nine, `▇` fourteen, `█` more), so a busy row and a quiet one read apart at a glance. It moves only as the agent does something and as the ticks pass, never on a timer of its own; once nothing has been written for five ticks it is gone. It gives way first on a narrow row, even before the quote, and [`:motion off`](../reference/commands.md#motion-offcalmfull) leaves it out. The focus (`enter`) has a longer one, two minutes, 24 columns on the same scale, with how many lines they count: `activity: ▁▁▂▄▁…█▃ · trace lines in 2 min: 21`. Not kept between runs.
 - How long it has been in that state, from a minute on: `· 3 min`, `· 1 h 5 min`. For something waiting for you, since the item came.
 - What it has cost, when anything.
-- `≡ 3/7`: how far its own to-do list is, the steps done and all of them, when its planning tool keeps one (Claude Code's tasks, Codex's `update_plan`; Gemini's `write_todos` reaches imece without its steps). The focus lists the steps. The mark gives way after the quote and the time when the row is narrow. Gone with the session.
+- `≡ 3/7`: how far its own to-do list is, the steps done and all of them, when its planning tool keeps one (Claude Code's tasks, Codex's `update_plan`; Gemini's `write_todos` reaches imece without its steps). The step in progress is the row's status (`▸`); the focus lists them all. The mark gives way after the quote and the time when the row is narrow. Gone with the session.
 - `◔ 72%`: how full its context window is, from 70% on, in the attention colour from 90%, as its vendor last said (Claude Code's message usage and the window its result names, Codex's token-usage update, Gemini's usage meter). The focus has the figure whatever it is, `context: 22% · 45k of 200k`, or the tokens alone when the vendor does not say the window's size. It stays on a narrow row longer than the to-do mark. Gone with the session.
 - A worker's worktree stand, `⎇ fix-parser ↑2 ↓1 +12 −3`: the branch the agent made (none while the worktree is detached, as imece makes it; a worker hired from a start point shows that point instead, `⎇ #41`), its own commits the checkout does not have (imece's marks of applied changes are not counted), the checkout's commits it does not have, and the lines added and removed against its own HEAD, untracked files included: what its next `done` would hand you. Each part shows only when there is something to say. Read on imece's git thread as the session starts, when a turn ends, after an apply and every 15 seconds while the worker or a helper is mid-turn; not kept between runs.
 - `▾ 1 helpers` or `▸ 1 helpers`: its helpers are listed under it, or folded away.
@@ -69,6 +69,23 @@ An agent's row:
 - A worker with helpers ends with `▾ 2 helpers`, or `▸ 2 helpers  ● claude-1.1` when they are folded away: the count and the loudest of them.
 
 Every agent is one row, whatever it says: rows never change height. The time, the quote and the activity bar take only what the row has left once its cost, stand, helpers and link are on it, so a narrow pane drops the bar first, the quote next and then the time (`.` narrows the side panel). A row that just changed stands out for a moment, then calms down. The selected row is reversed.
+
+When some workers of an open project need you and it shows more than one, they sit under a header for what they need, in the ladder's order, and the rest under one header that counts them:
+
+```text
+▾ shop-api      7 working  $0.45   ! 2 waiting
+  ◆ ▎lead-shop-api     claude                     coordinating
+  ✕ stuck · 1
+  └ ■ ▎qwen-1            #17  Order tests           ■ stopped: the session ended
+  ! waits for you · 2
+  ├ ! ▎codex-1           #1   Payment retry policy  ⚑ waits for your yes "WebFetch: …"
+  └ ! ▎claude-3          #7   Payment retry policy  ▸ Write it up  thinking…
+  ● 4 working  ○ 1 idle
+  ├ ● ▎codex-2           #2   Price list cache      ▸ Run the tests  Bash: dotnet test
+  └ …
+```
+
+The headers are `✕ stuck`, `! waits for you`, `✓ done, not seen` and, for the rest, `● N working  ○ N idle` (a count of none left out); each closes its branch with `└`. They say where what needs you ends and the calm part starts. When all of a project's workers are calm, or it shows only one, there are none. They give way first: when the rows with them do not fit the pane, none is shown and the rows fold as below.
 
 When the rows do not fit the pane, calm workers (working or idle, nothing said lately, not selected) fold from the bottom of the salon up into one line, `… 2 agents folded, loudest  ● codex-2`, which names the loudest of them; a pinned project folds last and what needs you is never folded away. The bottom line of the pane, `QUEUE`, lists cards being verified and the last four done (`#2 ✓`); live, nothing fills the verifying part, so it reads `empty`.
 
@@ -101,6 +118,7 @@ Every glyph the `?` help lists, as the screen draws them:
 | `⎇` `↑` `↓` `+N −M` | a worker's worktree: branch, own commits, the checkout's new commits, lines not yet handed over |
 | `↗` | a local address the worker wrote, a link the terminal opens |
 | `≡ 3/7` | its own to-do list: steps done, and all of them |
+| `▸ Run the tests` | on a working row: the step of its to-do list in progress |
 | `◔ 72%` | its context window, this full; shown from 70%, loud from 90% |
 | `✱` | a line you marked with `m`; `'` goes to the next |
 | `▁▃▅` | what it did lately: its trace lines in each of the last five ticks, 5 s a column |
