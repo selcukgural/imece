@@ -273,8 +273,13 @@ pub fn event(lang: Lang, w: &World, e: &Event) -> String {
             agent,
             paths,
             bytes,
+            included,
         } => fill(
-            t.ev_copied,
+            if *included {
+                t.ev_included
+            } else {
+                t.ev_copied
+            },
             &[&paths.join(", "), name(w, *agent), &size(*bytes)],
         ),
         Event::FilesCut { leader, kept } => fill(
@@ -285,9 +290,26 @@ pub fn event(lang: Lang, w: &World, e: &Event) -> String {
                 &kept.to_string(),
             ],
         ),
-        Event::CopySkipped { agent, path, why } => {
-            fill(t.ev_copy_skipped, &[path, name(w, *agent), why])
-        }
+        Event::CopySkipped {
+            agent,
+            path,
+            why,
+            included,
+        } => fill(
+            if *included {
+                t.ev_include_skipped
+            } else {
+                t.ev_copy_skipped
+            },
+            &[path, name(w, *agent), why],
+        ),
+        Event::IncludeRefused { agent, line, why } => match line {
+            Some((n, text)) => fill(
+                t.ev_include_line_refused,
+                &[&n.to_string(), text, name(w, *agent), why],
+            ),
+            None => fill(t.ev_include_refused, &[name(w, *agent), why]),
+        },
         // Conversations are drawn from `said`, with their speakers coloured.
         Event::Talk { .. }
         | Event::YouSaid { .. }
@@ -935,6 +957,7 @@ mod tests {
             agent: 1,
             paths: vec![".env".into(), "target".into()],
             bytes: 3 << 20,
+            included: false,
         };
         assert_eq!(
             event(Lang::En, &w, &copied),
@@ -948,6 +971,7 @@ mod tests {
             agent: 1,
             path: "node_modules".into(),
             why: "not in the checkout".into(),
+            included: false,
         };
         assert_eq!(
             event(Lang::En, &w, &skipped),
@@ -960,6 +984,67 @@ mod tests {
         assert_eq!(copied.kind(), EntryKind::Assumption);
         assert_eq!(skipped.kind(), EntryKind::Failed);
         assert_eq!((copied.agent(), skipped.agent()), (1, 1));
+    }
+
+    #[test]
+    fn what_a_worktreeinclude_names_is_said_as_its_own() {
+        let w = crate::live::testing::team(1);
+        let copied = Event::Copied {
+            agent: 1,
+            paths: vec!["vendor".into()],
+            bytes: 2 << 20,
+            included: true,
+        };
+        assert_eq!(
+            event(Lang::En, &w, &copied),
+            "copied vendor into claude-1's worktree (2 MiB), as .worktreeinclude names"
+        );
+        assert_eq!(
+            event(Lang::Tr, &w, &copied),
+            "vendor → claude-1 çalışma ağacına kopyalandı (2 MiB), .worktreeinclude'un saydığı"
+        );
+        let skipped = Event::CopySkipped {
+            agent: 1,
+            path: "cache".into(),
+            why: "not in the checkout".into(),
+            included: true,
+        };
+        assert_eq!(
+            event(Lang::En, &w, &skipped),
+            "cache (from .worktreeinclude) was not copied into claude-1's worktree: not in the checkout"
+        );
+        assert_eq!(
+            event(Lang::Tr, &w, &skipped),
+            "cache (.worktreeinclude'dan) → claude-1 çalışma ağacına kopyalanmadı: not in the checkout"
+        );
+        let file = Event::IncludeRefused {
+            agent: 1,
+            line: None,
+            why: "a link: not followed".into(),
+        };
+        assert_eq!(
+            event(Lang::En, &w, &file),
+            ".worktreeinclude was not followed for claude-1's worktree: a link: not followed"
+        );
+        assert_eq!(
+            event(Lang::Tr, &w, &file),
+            ".worktreeinclude, claude-1 çalışma ağacı için uygulanmadı: a link: not followed"
+        );
+        let line = Event::IncludeRefused {
+            agent: 1,
+            line: Some((3, "../x\u{1b}[2J".into())),
+            why: "reaches outside the checkout".into(),
+        };
+        assert_eq!(
+            event(Lang::En, &w, &line),
+            "line 3 of .worktreeinclude (../x [2J) was not followed for claude-1's worktree: reaches outside the checkout"
+        );
+        assert_eq!(
+            event(Lang::Tr, &w, &line),
+            ".worktreeinclude'un 3. satırı (../x [2J), claude-1 çalışma ağacı için uygulanmadı: reaches outside the checkout"
+        );
+        assert_eq!(line.kind(), EntryKind::Failed);
+        assert_eq!(line.agent(), 1);
     }
 
     #[test]

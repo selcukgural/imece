@@ -47,6 +47,58 @@ copies the listed paths it lacks with made-up sizes (small for a
 dotfile, large for a directory), now and then skipping one as gone from
 the checkout.
 
+## `.worktreeinclude` (#244, 2026-11-03)
+
+From the study of agent-deck; the person asked for it. agent-deck and
+Claude Code's desktop app read a `.worktreeinclude` file at the top of
+the repository, in gitignore's syntax, for the same thing. imece reads it
+too (`copy::bring`, on the session's start thread in place of
+`copy::into`): what it names is copied after the list's paths, under the
+same rules and the same budget, the list's own coming first and a path
+in both counting as the list's (`Brought.listed`). It needs no yes: the
+file only names paths of the person's own checkout to copy into imece's
+worktrees, so it can not reach anything the person's `:copy` could not.
+It is not added to the stored list: the file is read at every start, so
+an edit to it counts at the next one and a removed line stops copying.
+
+How a pattern is matched: by git, not by imece (no glob crate, and
+gitignore's rules are git's). `copy::named` runs `git ls-files -z
+--others --ignored --directory --exclude=P…` (patterns given with
+`--exclude=`, so negation works among them and none is read from a file
+git would follow), then keeps only what git ignores (`git check-ignore
+-z --stdin`, one call): a path the file matches that git does not ignore
+is untracked work of the person's, not copied and not said. Probe
+(git 2.56): with `--directory`, a directory the patterns match whole is
+listed alone, but an untracked directory that only *holds* a match is
+listed too, beside the match (`.env` lists `build/sub/` and
+`build/sub/.env`); so `copy::whole` drops a directory with a path under it
+listed (sorted, the next one starts with it), and the rest lose their
+`/`. `--no-empty-directory` is not used: it drops the match instead.
+
+What is refused and said (`Event::IncludeRefused { line, why }`, kind
+Failed, at each start since the file is read at each): the file when it
+is a link (`O_NOFOLLOW`), not a plain file, over `INCLUDE_MAX` 16 KiB or
+not UTF-8; a line over 200 bytes, with a control character, a `..` part
+or a `.git` part (git would match nothing outside, but such a line says
+it wants to; the rest of the file is followed); the whole file when it
+matches more than `INCLUDE_PATHS` 100 paths git ignores, when git's
+answer reaches `child::ANSWER_MAX` (64 KiB, checked before the exit
+status: git ends on the closed pipe), or when git does not answer in
+10 s. Comment and blank lines are skipped; `\r\n` ends are fine.
+
+The journal says the file's copies apart: `Event::Copied` and
+`CopySkipped` carry `included` (`#[serde(default)]`, so older rows read
+as the list's), worded `…, as .worktreeinclude names` and `… (from
+.worktreeinclude) …`. `:copy` alone ends with `; and what its
+.worktreeinclude names` when the checkout has one (`copy::has_include`,
+`Live::includes`); the menu note is the list alone.
+
+The demo: the second project's checkout acts as if it had one
+(`Sim::includes`), naming `node_modules` (copied with a size made up from
+the worker's number, taking nothing of the demo's chance so the second
+project plays as before), with line 2 `../shared/.env` refused at every
+start.
+
 Known gaps: a start whose session then fails to start has copied, but
 the journal does not say so (the next start finds the paths there and
 says nothing); the budget and the entry cap are constants; a file the

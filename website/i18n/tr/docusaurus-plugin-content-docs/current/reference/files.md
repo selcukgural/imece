@@ -73,7 +73,7 @@ Her işçi `worktrees/<dizin>-<hash>/<ad>` alır: çalışma kopyanızın, yapı
 - Uygulanan bir değişiklik worktree'de bir işaret olarak commit'lenir, yazarı `imece <imece@localhost>`; böylece işçinin sonraki `done`'ı yalnızca sonra geleni gösterir ve worktree siz commit'leyince yine HEAD'inizi izler. Satırın `⎇ dal ↑kendi ↓checkout +N −M` kısmı nerede durduğunu söyler.
 - Bir değişikliği okumak, bir worktree'nin nerede durduğu ve bir çalıştırmanın öncesi-sonrası ağacı worktree'nin git dizinindeki özel indeks dosyalarından geçer; adları `imece-index`, `imece-tree-<pid>-N`, `imece-stand-<pid>-N`; ajanın kendi indeksine asla dokunulmaz. Üç yollu bir uygulama yamayı önce çalışma kopyanızın indeksinin bir kopyasında, `<git dir>/imece-apply-index`, dener; sonra silinir.
 - Her worktree kendi `target/`'ında derlenir: ortak bir tane işçilere birbirlerinin değişikliklerini sırayla yeniden derletirdi.
-- `:close` worktree'leri diskte bırakır; hiçbir şey onları silmez. `:copy` listelediğiniz yok sayılan yolları (`.env`, `target`) işçisinin başlangıcında onlardan yoksun bir worktree'ye koyar; birimin elverdiği yerde APFS klonu ya da reflink olarak, asla var olanın üstüne değil, başlangıç başına en çok 2 GiB. Bkz. [değişiklikler](../concepts/changes.md) ve [projeler](../concepts/projects.md).
+- `:close` worktree'leri diskte bırakır; hiçbir şey onları silmez. `:copy` listelediğiniz yok sayılan yolları (`.env`, `target`) işçisinin başlangıcında onlardan yoksun bir worktree'ye koyar; birimin elverdiği yerde APFS klonu ya da reflink olarak, asla var olanın üstüne değil, başlangıç başına en çok 2 GiB; checkout'un `.worktreeinclude` dosyasının git'in yok saydığı yollar arasında saydıkları da öyle (`O_NOFOLLOW` ile, en çok 16 KiB okunur). Bkz. [değişiklikler](../concepts/changes.md) ve [projeler](../concepts/projects.md).
 
 ## Gemini'nin özel dizini
 
@@ -105,7 +105,7 @@ Her başlangıçta imece `$TMPDIR/imece-<pid>-<hex>/` yapar (0700; var olan bir 
 ## imece'nin depodan okuduğu
 
 - Çalışma kopyasının tepesindeki `AGENTS.md`, yoksa `CLAUDE.md`: kodlama ajanları için notlar, en çok 16 KiB, her ajana talimatlarıyla geçirilir (Codex `AGENTS.md`'yi kendi okur). Bkz. [mesaj türleri](message-types.md).
-- Git: çalışma kopyasının tepesi, HEAD, `:copy` için `git check-ignore`, `:commit` için `git diff --cached` ve en yeni sekiz konu (`--no-ext-diff --no-textconv` ile, böylece sizin bir programınız çalışmaz), ve bir mesajda dosya adı tamamlamak için `git ls-files` (izlenenler ve izlenmeyen ama yok sayılmayanlar; ilk 20.000): projenin açılışında, uyguladığınız her değişiklikten sonra ve ajanlarından biri tur ortasındayken her dakika.
+- Git: çalışma kopyasının tepesi, HEAD, `:copy` için `git check-ignore`, `.worktreeinclude`'un neye uyduğu için `git ls-files --others --ignored --directory --exclude=…` (bir işçinin başlangıcında), `:commit` için `git diff --cached` ve en yeni sekiz konu (`--no-ext-diff --no-textconv` ile, böylece sizin bir programınız çalışmaz), ve bir mesajda dosya adı tamamlamak için `git ls-files` (izlenenler ve izlenmeyen ama yok sayılmayanlar; ilk 20.000): projenin açılışında, uyguladığınız her değişiklikten sonra ve ajanlarından biri tur ortasındayken her dakika.
 - `--theme FILE` ya da `:theme FILE` ile adlandırılan, Ghostty ya da Kitty biçiminde bir renk dosyası; mutlak yolu tema olarak hatırlanır.
 
 Başka bir şey yok: deponun hiçbir dosyası imece tarafından yazılmaz ve satıcıların CLI'ları depodan hiçbir şey yüklenmesin diye başlatılır (`standard` ve `strict` altında).

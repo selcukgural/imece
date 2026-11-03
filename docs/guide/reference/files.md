@@ -73,7 +73,7 @@ Each worker gets `worktrees/<dir>-<hash>/<name>`, a git worktree of your checkou
 - An applied change is committed in the worktree as a mark, author `imece <imece@localhost>`, so the worker's next `done` shows only what came after, and the worktree still follows your HEAD once you commit. The row's `⎇ branch ↑own ↓checkout +N −M` says where it stands.
 - Reading a change, where a worktree stands, and a run's before-and-after tree go through private index files in the worktree's git directory, named `imece-index`, `imece-tree-<pid>-N`, `imece-stand-<pid>-N`; the agent's own index is never touched. A three-way apply tries the patch first in a copy of your checkout's index, `<git dir>/imece-apply-index`, removed after.
 - Each worktree builds in its own `target/`: a shared one would make the workers rebuild each other's changes in turn.
-- `:close` leaves the worktrees on disk; nothing removes them. `:copy` puts the ignored paths you list (`.env`, `target`) into a worktree that lacks them at its worker's start, as an APFS clone or reflink where the volume can, never over what is there, at most 2 GiB per start. See [changes](../concepts/changes.md) and [projects](../concepts/projects.md).
+- `:close` leaves the worktrees on disk; nothing removes them. `:copy` puts the ignored paths you list (`.env`, `target`) into a worktree that lacks them at its worker's start, as an APFS clone or reflink where the volume can, never over what is there, at most 2 GiB per start; so does what the checkout's `.worktreeinclude` names among the paths git ignores (read with `O_NOFOLLOW`, at most 16 KiB). See [changes](../concepts/changes.md) and [projects](../concepts/projects.md).
 
 ## Gemini's private directory
 
@@ -105,7 +105,7 @@ In `$XDG_CONFIG_HOME/imece/`, or `~/.config/imece/` (a relative `XDG_CONFIG_HOME
 ## What imece reads from the repository
 
 - `AGENTS.md`, else `CLAUDE.md`, at the checkout's top: the notes for coding agents, at most 16 KiB, passed to every agent with its instructions (Codex reads `AGENTS.md` itself). See [message types](message-types.md).
-- Git: the top of the checkout, HEAD, `git check-ignore` for `:copy`, `git diff --cached` and the eight newest subjects for `:commit` (with `--no-ext-diff --no-textconv`, so no program of yours runs), and `git ls-files` (tracked, and untracked but not ignored; the first 20,000) for completing a file's name in a message: at the project's opening, after each change you apply, and every minute while one of its agents is mid-turn.
+- Git: the top of the checkout, HEAD, `git check-ignore` for `:copy`, `git ls-files --others --ignored --directory --exclude=…` for what `.worktreeinclude` matches (at a worker's start), `git diff --cached` and the eight newest subjects for `:commit` (with `--no-ext-diff --no-textconv`, so no program of yours runs), and `git ls-files` (tracked, and untracked but not ignored; the first 20,000) for completing a file's name in a message: at the project's opening, after each change you apply, and every minute while one of its agents is mid-turn.
 - A colour file named with `--theme FILE` or `:theme FILE`, in Ghostty's or Kitty's format; its absolute path is remembered as the theme.
 
 Nothing else: no file of the repository is written by imece, and the vendors' CLIs are started so that nothing of the repository loads (under `standard` and `strict`).

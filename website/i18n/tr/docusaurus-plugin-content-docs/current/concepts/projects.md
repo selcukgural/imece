@@ -63,7 +63,24 @@ Bir işçinin worktree'si taze bir checkout'tur; git'in yok saydığı orada yok
 - **Nasıl:** worktree'nin zaten sahip olduğu bir yol (dosya, dizin ya da bağlantı) olduğu gibi bırakılır; imece işçinin kopyasının üzerine asla yazmaz, bu yüzden sonraki bir başlangıç yalnız o zamandan beri listeye ekleneni kopyalar. Her yol önce ölçülür (bağlantılar kendileri olarak, asla izlenmez; en çok 100 000 girdi) ve bir başlangıcın bütün yolları birlikte 2 GiB içinde kalır; kalanı aşacak bir yol atlanır. Kopya `cp -R -P -p`'dir: macOS'ta `-c` ile (APFS klonu, neredeyse bedava) ve birim klonlayamıyorsa onsuz yeniden, başka yerde `--reflink=auto` ile. Başarısız bir kopya yarım bir şey bırakmaz; `cp` kabuksuz, imece'nin temizlenmiş ortamıyla çalışır.
 - Günlük kopyalananı tek satırda söyler, `.env, target → claude-1 çalışma ağacına kopyalandı (1.2 GiB)`, ve atlanan her yolu nedeniyle. Zaten orada olan bir yol hiçbir şey söylemez.
 
-Bilinen sınırlar: checkout'ta sonradan değiştirdiğiniz bir dosya yeniden kopyalanmaz (worktree'de vardır); kopyalama işçi başınadır, paylaşılmaz; 2 GiB bütçesi ve girdi tavanı sabittir.
+### `.worktreeinclude`: checkout bunları kendisi sayar
+
+Bir checkout neyin kopyalanacağını kendisi de sayabilir: tepesindeki bir `.worktreeinclude` dosyasında, gitignore sözdizimiyle (agent-deck ve Claude Code'un masaüstü uygulaması da aynı dosyayı okur):
+
+```gitignore
+# imece'nin yaptığı her worktree'ye kopyalanır
+.env*
+node_modules/
+```
+
+imece onu her işçinin başlangıcında `:copy` listesinin yanında okur. Git, desenlerinin izlemediği yollar arasında neye uyduğunu sayar (desenlerin bütünüyle uyduğu bir dizin tek yoldur) ve bunlardan yalnız git'in yok saydığı kopyalanır: listenin yollarından sonra, aynı kurallarla, aynı 2 GiB içinde. Listede zaten olan bir yol listenin sayılır. Sizin evetiniz gerekmez: dosya yalnız kendi checkout'unuzun yollarını imece'nin worktree'lerine kopyalanmak üzere sayar.
+
+- **Reddedilen ve her başlangıçta günlükte söylenen:** bir bağlantı, düz dosya olmayan, 16 KiB'tan büyük ya da metin olmayan dosya; kontrol karakteri olan, 200 bayttan uzun, `..` parçası olan ya da `.git`'i anan bir satır (dosyanın geri kalanı uygulanır); desenleri git'in yok saydığı 100'den fazla yola uyan ya da git'in neye uyduklarını 10 sn'de söylemediği bütün dosya (o zaman ondan hiçbir şey kopyalanmaz).
+- Günlük dosyanın kopyalarını kendi satırında söyler, `node_modules → claude-1 çalışma ağacına kopyalandı (310 MiB), .worktreeinclude'un saydığı`; atlananı `node_modules (.worktreeinclude'dan) → claude-1 çalışma ağacına kopyalanmadı: …` diye; reddedilen bir satırı `.worktreeinclude'un 3. satırı (../shared), claude-1 çalışma ağacı için uygulanmadı: reaches outside the checkout` diye.
+- Checkout'ta böyle bir dosya varsa tek başına `:copy` sonuna `; bir de .worktreeinclude'un saydıkları` ekler; dosyanın neye uyduğunu listelemez.
+- Demoda ikinci projenin checkout'u böyle bir dosyası varmış gibi davranır: `node_modules`'ü sayar ve dışarıya uzanan bir satırı her başlangıçta reddedilir.
+
+Bilinen sınırlar: checkout'ta sonradan değiştirdiğiniz bir dosya yeniden kopyalanmaz (worktree'de vardır); kopyalama işçi başınadır, paylaşılmaz; 2 GiB bütçesi, girdi tavanı ve `.worktreeinclude`'un 100 yolu sabittir; `.worktreeinclude` checkout'tan diskte olduğu gibi okunur, yani commit edilmemiş bir düzenleme de sayılır.
 
 ## Worktree kurulum betiği
 

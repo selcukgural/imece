@@ -40,7 +40,7 @@ Bunların arasında:
 - **Değişiklikler.** `bitirdi … → seni bekliyor`, `… checkout'a uyguladın, stage'de; çalışma ağacı işareti <sha>`, `… uygulanamadı: <git'in sözleri>`, `reddedildi: claude-1`; kısmi bir uygulamadan sonra kalan yeni bir `bitirdi` olarak döner.
 - **Oturumlar.** `bildiği her şeyle, eski oturumunda devam ediyor`, `yeni bir oturumla başlıyor, kaldığı yer anlatıldı`, `claude-1 oturumunu unutturdun`, `durdu: …`, `turu imece kapanınca yarım kaldı; uyanınca öğrenecek`, kendi komutlarını listelemeyen bir oturum, strict olmayan her başlangıçta söylenen confine düzeyi, 16 KiB'de kesilen depo notları.
 - **Worktree'ler.** `çalışma ağacı <sha> yerine HEAD <sha> oldu`, ya da commit edilmemiş değişiklikleri ya da kendi commit'leri olduğu için yerinde kaldı.
-- **Kopyalar.** `.env → claude-1 çalışma ağacına kopyalandı (1.2 KiB)`, ve neyin neden kopyalanmadığı (`:copy`).
+- **Kopyalar.** `.env → claude-1 çalışma ağacına kopyalandı (1.2 KiB)`, ve neyin neden kopyalanmadığı (`:copy`); checkout'un `.worktreeinclude` dosyasının saydıkları kendi satırlarında (`…, .worktreeinclude'un saydığı`), ve onun uygulanmayan bir satırı nedeniyle.
 - **Kabuğunuz.** `` `cargo test` çalıştırdın → çıkış 0 · 12 sn sürdü ``, ya da `2 sinyali durdurdu`, süre onu söyleyen en büyük birimlerle (`40 ms`, `2 sn`, `1 dk 5 sn`).
 - **Bütçe.** `bütçeyi … yaptın`, ve bir kez, bu hızla yarım saatten az kaldığında, `$4.00/sa hızla bütçe yaklaşık 25 dk daha yeter; :budget USD ile artır`.
 - **İstekler.** `codex-2 için izin verdin: npm install left-pad`, `… için reddettin: …`.

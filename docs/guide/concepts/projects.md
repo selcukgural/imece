@@ -63,7 +63,24 @@ A worker's worktree is a fresh checkout, so what git ignores is not there: `.env
 - **How:** a path the worktree already has (file, directory or link) is left as it is; imece never writes over the worker's copy, so a later start copies only what was added to the list since. Each path is measured first (links as themselves, never followed; at most 100 000 entries), and all paths of one start together stay within 2 GiB; a path that would pass what is left is skipped. The copy is `cp -R -P -p`: on macOS with `-c` (an APFS clone, almost free) and again without it where the volume cannot clone, elsewhere with `--reflink=auto`. A copy that fails leaves nothing half done; `cp` runs without a shell, with imece's cleared environment.
 - The journal says what was copied in one line, `copied .env, target into claude-1's worktree (1.2 GiB)`, and each skipped path with why. A path that was there says nothing.
 
-Known limits: a file you change in the checkout later is not copied again (the worktree has it); copying is per worker, not shared; the 2 GiB budget and the entry cap are constants.
+### `.worktreeinclude`: the checkout names them itself
+
+A checkout may name what to copy itself, in a `.worktreeinclude` file at its top, in gitignore's syntax (agent-deck and Claude Code's desktop app read the same file):
+
+```gitignore
+# copied into every worktree imece makes
+.env*
+node_modules/
+```
+
+At each worker's start imece reads it beside the `:copy` list. Git lists what its patterns match among the paths it does not track (a directory they match whole is one path), and of those only what git ignores is copied: after the list's paths, under the same rules, within the same 2 GiB. A path the list has already counts as the list's. Nothing needs your yes: the file only names paths of your own checkout to copy into imece's worktrees.
+
+- **Refused, and said in the journal at each start:** the file when it is a link, not a plain file, larger than 16 KiB or not text; a line with a control character, longer than 200 bytes, with a `..` part or naming `.git` (the rest of the file is followed); the whole file when its patterns match more than 100 paths git ignores, or git does not say in 10 s what they match (then nothing of it is copied).
+- The journal says the file's copies in a line of their own, `copied node_modules into claude-1's worktree (310 MiB), as .worktreeinclude names`; a skipped one as `node_modules (from .worktreeinclude) was not copied into claude-1's worktree: …`; a refused line as `line 3 of .worktreeinclude (../shared) was not followed for claude-1's worktree: reaches outside the checkout`.
+- `:copy` alone ends with `; and what its .worktreeinclude names` when the checkout has one; it does not list what the file matches.
+- In the demo, the second project's checkout acts as if it had one: it names `node_modules`, and a line of it that reaches outside is refused at every start.
+
+Known limits: a file you change in the checkout later is not copied again (the worktree has it); copying is per worker, not shared; the 2 GiB budget, the entry cap and the 100 paths of `.worktreeinclude` are constants; `.worktreeinclude` is read from the checkout as it is on disk, so an edit not committed counts.
 
 ## A worktree setup script
 

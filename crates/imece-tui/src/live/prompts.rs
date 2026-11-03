@@ -603,7 +603,7 @@ mod tests {
                 cwd.clone(),
                 p,
                 None,
-                Vec::new(),
+                imece_agent::copy::Brought::default(),
                 setup::Done::None,
             ))
         };
