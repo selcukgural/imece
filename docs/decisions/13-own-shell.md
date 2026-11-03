@@ -30,3 +30,14 @@ it in a message the person sends; the rest of this record stands.) `w` took over
 waiting for you". The terminal dance is excluded from mutants;
 `run_in` (the spawn, the cwd, exit code vs signal, the SIGINT swap)
 is tested, with the tests that swap the handler taking turns.
+
+## The shell line stands out (2026-11-03, #233)
+
+As in Claude Code's shell mode, a line that starts with `!` is told
+apart from a message and a `:` command: its lead (` › shell: `) is drawn
+as a badge on a theme role of its own, `Theme::shell` (`ui::shell`;
+the terminal's bright magenta, a base16 scheme's base0E, a colour file's
+slots through the terminal's roles, reversed in mono). The command line
+has no border to colour, so the lead carries it; a note or a history
+search keeps its own lead even when its text starts with `!`. Back to
+the usual lead when the `!` is gone. The demo draws the same.
