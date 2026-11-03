@@ -1387,6 +1387,15 @@ pub const EN: Text = Text {
     news_close: " any key: close · :news shows this again",
     news: &[
         (
+            "0.1.202611030725",
+            &[
+                ":why says why an agent is where it is; the help wraps instead of cutting.",
+                "~/.config/imece/instructions.md goes into every agent's instructions.",
+                "The leader can tell all its workers at once; whoami tells agents their place.",
+                "A helper that stops before done is told to its worker, who carries on.",
+            ],
+        ),
+        (
             "0.1.202611030053",
             &[
                 ":archive puts a finished project away, :restore brings it back; A lists them.",
@@ -2079,6 +2088,15 @@ pub const TR: Text = Text {
     news_title: " IMECE {} SÜRÜMÜNDE YENİ OLANLAR ",
     news_close: " herhangi bir tuş: kapat · :news bunu yine gösterir",
     news: &[
+        (
+            "0.1.202611030725",
+            &[
+                ":why agent'ın neden o durumda olduğunu söyler; yardım satırları kesilmez.",
+                "~/.config/imece/instructions.md her agent'ın talimatlarına girer.",
+                "Lider tüm işçilerine tek seferde yazar; whoami agent'a yerini söyler.",
+                "done demeden duran yardımcı işçisine bildirilir, işçi devam eder.",
+            ],
+        ),
         (
             "0.1.202611030053",
             &[
