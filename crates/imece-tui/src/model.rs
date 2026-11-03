@@ -1207,6 +1207,13 @@ pub enum Event {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         from: Option<String>,
     },
+    /// The person forked worker `from` (`:fork`): `agent` is a new worker
+    /// that goes on from `from`'s conversation and uncommitted change, in
+    /// a worktree of its own (record 94).
+    Forked {
+        from: AgentId,
+        agent: AgentId,
+    },
     /// A helper sent done to its worker and left.
     Left {
         agent: AgentId,
@@ -1468,6 +1475,7 @@ impl Event {
             Event::Plan { .. }
             | Event::Posted { .. }
             | Event::Hired { .. }
+            | Event::Forked { .. }
             | Event::Left { .. } => EntryKind::Plan,
             Event::Assign { .. } | Event::Claimed { .. } => EntryKind::Assign,
             Event::Talk { .. }
@@ -1573,6 +1581,7 @@ impl Event {
             | Event::Posted { agent, .. }
             | Event::Claimed { agent, .. }
             | Event::Hired { agent, .. }
+            | Event::Forked { agent, .. }
             | Event::Left { agent }
             | Event::Forgotten { agent }
             | Event::Chose { agent, .. }

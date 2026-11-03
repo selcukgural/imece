@@ -501,6 +501,9 @@ enum Reply {
 /// over with, briefed, if the vendor can not find it.
 struct Attempt {
     session: String,
+    /// A fork's new session (record 94): the id Claude Code is told to
+    /// give it (Codex gives its own); none for a resume.
+    fork: Option<String>,
     /// The first prompt as it was given, without imece's notes.
     text: String,
     /// imece's notes as they waited before the wake.
@@ -539,6 +542,9 @@ pub struct Live {
     /// Wakes that go on with the earlier session, until the vendor
     /// confirms it or fails to find it.
     resuming: Vec<Option<Attempt>>,
+    /// The worker each fork goes on from, until its own session starts
+    /// (`:fork`, record 94).
+    forks: Vec<Option<AgentId>>,
     /// Claude Code's configuration directory, where its transcripts are.
     claude_home: PathBuf,
     /// Gemini CLI's configuration directory, where its chats are.
@@ -979,6 +985,7 @@ impl Live {
             sessions: Vec::new(),
             floor: Vec::new(),
             resuming: Vec::new(),
+            forks: Vec::new(),
             claude_home: claude::config_dir(),
             gemini_config: gemini::config_dir(),
             settle: SETTLE,
@@ -1250,9 +1257,14 @@ impl Live {
                         session: session.clone(),
                         spent: self.floor[id],
                     });
-                    if self.resuming[id].take().is_some() {
+                    if let Some(a) = self.resuming[id].take() {
                         self.interrupted[id].clear();
-                        w.note(Event::Resumed { agent: id });
+                        // A fork was journaled when it was made; its
+                        // session is its own from now on.
+                        if a.fork.is_none() {
+                            w.note(Event::Resumed { agent: id });
+                        }
+                        self.forks[id] = None;
                     }
                 }
                 AgentEvent::TurnDone { cost, .. } => {

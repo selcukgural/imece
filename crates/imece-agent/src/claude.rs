@@ -177,10 +177,19 @@ pub struct Spec {
 /// cost (in millionths of a dollar) when it was last seen. A resumed
 /// session reports the WHOLE session's cost, so the turns of the new
 /// process are what it reports above that.
+///
+/// With `fork`, the session goes on in a new one of that id (a UUID)
+/// and the old one stays as it was: `--fork-session --session-id`. The
+/// probe of 2026-11-03 (Claude Code 2.1.317): a session made in another
+/// directory forks too, `init` reports the new id, the new transcript is
+/// kept for the directory the fork runs in, and the fork reports the
+/// cost of the session it came from as well as its own, so `spent` is
+/// the floor as for a resume.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Resume {
     pub session: String,
     pub spent: u64,
+    pub fork: Option<String>,
 }
 
 /// Whether `id` is a session id as Claude Code gives them (a UUID): the
@@ -296,6 +305,11 @@ pub fn args(spec: &Spec) -> Vec<String> {
     if let Some(r) = &spec.resume {
         a.push("--resume".into());
         a.push(r.session.clone());
+        if let Some(new) = &r.fork {
+            a.push("--fork-session".into());
+            a.push("--session-id".into());
+            a.push(new.clone());
+        }
     }
     // Allowed without a prompt: imece's own tools by exact name (never a
     // pattern), and the built-in tools of the level that would ask.
@@ -425,8 +439,13 @@ pub struct Parser {
     unlisted: bool,
     /// What the resumed session had reported before; see [`Resume`].
     floor: u64,
-    /// The session asked for, until its first `init` confirms it.
+    /// The session asked for (a fork's new one), until its first `init`
+    /// confirms it.
     resuming: Option<String>,
+    /// Whether the session asked for is a fork of the one resumed.
+    forking: bool,
+    /// The session resumed (or forked), as `--resume` names it.
+    resumed: Option<String>,
     /// The session id the last `init` reported: `/clear` starts a new one.
     session: String,
     /// The agent's tasks by Claude Code's number, as its task tools last
@@ -484,7 +503,12 @@ impl Parser {
             // reported before is the floor the new turns count from.
             cost_last: spec.resume.as_ref().map_or(0, |r| r.spent),
             floor: spec.resume.as_ref().map_or(0, |r| r.spent),
-            resuming: spec.resume.as_ref().map(|r| r.session.clone()),
+            resuming: spec
+                .resume
+                .as_ref()
+                .map(|r| r.fork.clone().unwrap_or_else(|| r.session.clone())),
+            forking: spec.resume.as_ref().is_some_and(|r| r.fork.is_some()),
+            resumed: spec.resume.as_ref().map(|r| r.session.clone()),
             session: String::new(),
             tasks: BTreeMap::new(),
             pending: HashMap::new(),
@@ -520,7 +544,7 @@ impl Parser {
         if !self.started && matches!(kind, "assistant" | "user" | "result") {
             // A session that is not there to resume ends with a result
             // before anything else ("No conversation found").
-            if let Some(id) = &self.resuming
+            if let Some(id) = &self.resumed
                 && kind == "result"
             {
                 return Err(format!(
@@ -634,7 +658,8 @@ impl Parser {
         if let Some(asked) = self.resuming.take()
             && session != asked
         {
-            return Err(format!("resumed session {session:?}, not {asked:?}"));
+            let how = if self.forking { "forked" } else { "resumed" };
+            return Err(format!("{how} session {session:?}, not {asked:?}"));
         }
         let mut out = Vec::new();
         // The first `init`, and the one `/clear` brings with a new
@@ -2658,8 +2683,50 @@ sleep 5"#
         s.resume = Some(Resume {
             session: session.into(),
             spent,
+            fork: None,
         });
         s
+    }
+
+    fn forked(session: &str, spent: u64, new: &str) -> Spec {
+        let mut s = resumed(session, spent);
+        s.resume.as_mut().unwrap().fork = Some(new.into());
+        s
+    }
+
+    #[test]
+    fn a_fork_is_asked_for_by_both_ids_and_must_come_back_as_the_new_one() {
+        let (old, new) = (
+            "686c6d27-d50b-4ae2-ad6a-159bf2984671",
+            "7d1c3f2e-5b6a-4c8d-9e0f-1a2b3c4d5e6f",
+        );
+        let a = args(&forked(old, 524, new));
+        let i = a.iter().position(|x| x == "--resume").unwrap();
+        assert_eq!(
+            a[i..i + 5],
+            ["--resume", old, "--fork-session", "--session-id", new]
+        );
+        assert!(!args(&resumed(old, 0)).iter().any(|x| x == "--fork-session"));
+        assert!(!args(&resumed(old, 0)).iter().any(|x| x == "--session-id"));
+        // The new id, not the old one.
+        let mut p = Parser::new(&forked("s1", 0, "s2"));
+        let e = p.line(&init_as("s1")).unwrap_err();
+        assert_eq!(e, "forked session \"s1\", not \"s2\"");
+        let mut p = Parser::new(&forked("s1", 524, "s2"));
+        assert!(matches!(
+            p.line(&init_as("s2")).unwrap().as_slice(),
+            [Event::Started { session, .. }, ..] if session == "s2"
+        ));
+        // The fork reports what the old session cost as well (the probe of
+        // 2026-11-03: $0.01397 before, $0.01537 after one turn of the fork).
+        assert_eq!(cost(&mut p, &done(0.000660)), 136);
+        // The old session not there: said by its id.
+        let gone = r#"{"type":"result","subtype":"error_during_execution","num_turns":0}"#;
+        let mut p = Parser::new(&forked("s9", 0, "s2"));
+        assert_eq!(
+            p.line(gone).unwrap_err(),
+            "could not resume session s9 (error_during_execution)"
+        );
     }
 
     fn done(usd: f64) -> String {
@@ -3017,6 +3084,7 @@ sleep 5"#
         spec.resume = Some(Resume {
             session: session.clone(),
             spent,
+            fork: None,
         });
         let second = turn(
             &spec,
@@ -3039,10 +3107,53 @@ sleep 5"#
             }
             e => panic!("{e:?}"),
         }
+        // A fork in another directory: a new session that remembers, the
+        // old one's cost its floor too.
+        let other = dir.join("fork");
+        std::fs::create_dir_all(&other).unwrap();
+        let new = crate::new_uuid().unwrap();
+        let mut fork = spec.clone();
+        fork.cwd = other.canonicalize().unwrap();
+        let had = match second.last() {
+            Some(Event::TurnDone { cost, .. }) => spent + cost,
+            e => panic!("{e:?}"),
+        };
+        fork.resume = Some(Resume {
+            session: session.clone(),
+            spent: had,
+            fork: Some(new.clone()),
+        });
+        let forked = turn(&fork, "Again: the word only.");
+        assert!(
+            matches!(&forked[0], Event::Started { session: s, .. } if *s == new),
+            "{forked:?}"
+        );
+        assert!(
+            forked
+                .iter()
+                .any(|e| matches!(e, Event::Text(t) if t.to_lowercase().contains("pelican"))),
+            "{forked:?}"
+        );
+        match forked.last() {
+            Some(Event::TurnDone { ok: true, cost, .. }) => {
+                assert!(
+                    *cost > 0 && *cost < had,
+                    "the fork's turn alone: {cost} vs {had}"
+                );
+            }
+            e => panic!("{e:?}"),
+        }
+        assert!(transcript(&config_dir(), &fork.cwd, &new).is_file());
+        assert!(
+            transcript(&config_dir(), &cwd, &session).is_file(),
+            "the old one stays"
+        );
+        let _ = std::fs::remove_file(transcript(&config_dir(), &fork.cwd, &new));
         // A session that is not there: refused before anything counts.
         spec.resume = Some(Resume {
             session: "00000000-0000-4000-8000-000000000000".into(),
             spent: 0,
+            fork: None,
         });
         let third = turn(&spec, "hi");
         assert!(

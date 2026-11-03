@@ -13,13 +13,13 @@ use crate::ui::fold;
 
 /// The commands imece itself takes after `:`: its own, and a name for
 /// every key that acts (not the ones that move).
-pub const COMMANDS: [&str; 57] = [
+pub const COMMANDS: [&str; 58] = [
     "allow", "archive", "archives", "awake", "away", "board", "budget", "clear", "close", "code",
-    "commit", "copy", "defer", "digest", "effort", "export", "faster", "fold", "forget", "goto",
-    "help", "hints", "history", "keys", "lang", "lead", "mark", "model", "motion", "needs", "news",
-    "next", "notify", "open", "output", "pause", "peek", "pending", "pin", "quit", "recall",
-    "rename", "restore", "salon", "settle", "slower", "solo", "talk", "theme", "trace", "unclear",
-    "undo", "unfold", "unsettle", "waiting", "welcome", "why",
+    "commit", "copy", "defer", "digest", "effort", "export", "faster", "fold", "forget", "fork",
+    "goto", "help", "hints", "history", "keys", "lang", "lead", "mark", "model", "motion", "needs",
+    "news", "next", "notify", "open", "output", "pause", "peek", "pending", "pin", "quit",
+    "recall", "rename", "restore", "salon", "settle", "slower", "solo", "talk", "theme", "trace",
+    "unclear", "undo", "unfold", "unsettle", "waiting", "welcome", "why",
 ];
 
 /// The word for a vendor's own model or effort after `:model`, `:effort`
@@ -471,7 +471,7 @@ pub fn suggest(input: &str, w: &World, project: ProjectId, home: Option<&Path>) 
                 menu(start, arg, matching(arg, names), "")
             }
             // Agents of every open project, with or without the `@`.
-            Some(("forget" | "talk" | "trace" | "peek" | "why", arg)) => {
+            Some(("forget" | "fork" | "talk" | "trace" | "peek" | "why", arg)) => {
                 let word = arg.strip_prefix('@').unwrap_or(arg);
                 let start = input.len() - word.len();
                 let names = w
@@ -768,7 +768,10 @@ mod tests {
         assert_eq!(long("quit"), "quit");
         assert_eq!(long("x"), "x");
         assert_eq!(names(&suggest(":qu", &w, 0, None)), ["quit"]);
-        assert_eq!(names(&suggest(":fo", &w, 0, None)), ["fold", "forget"]);
+        assert_eq!(
+            names(&suggest(":fo", &w, 0, None)),
+            ["fold", "forget", "fork"]
+        );
         // Every short name stands for a command, every demo one is one.
         assert!(SHORT.iter().all(|(_, c)| COMMANDS.contains(c)));
         assert!(DEMO_ONLY.iter().all(|c| COMMANDS.contains(c)));
@@ -835,7 +838,7 @@ mod tests {
         }
         let name = &w.agents[1].name;
         let head = &name[..3];
-        for cmd in ["talk", "trace", "forget", "peek", "why"] {
+        for cmd in ["talk", "trace", "forget", "fork", "peek", "why"] {
             let m = suggest(&format!(":{cmd} @{head}"), &w, 0, None).unwrap();
             assert!(m.items.contains(name), "{cmd}");
             assert_eq!(m.start, cmd.len() + 3, "{cmd}: after the @");

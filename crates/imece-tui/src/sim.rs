@@ -1713,6 +1713,56 @@ impl Sim {
         id
     }
 
+    /// `:fork` in the demo, as live does it (record 94): a new worker of
+    /// worker `from`'s vendor goes on from its conversation and its
+    /// change; refused as live refuses: not a worker, a vendor that has
+    /// no fork, no session yet, mid-turn. The demo has no `--agents` cap.
+    pub fn fork(&mut self, w: &mut World, from: AgentId) -> Result<AgentId, String> {
+        let a = &w.agents[from];
+        if a.role != Role::Worker || a.gone {
+            return Err(
+                "only a worker forks: it has a conversation and a worktree of its own".into(),
+            );
+        }
+        if !matches!(a.vendor, Vendor::Claude | Vendor::Codex) {
+            return Err(format!(
+                "{} sessions can not be forked (Gemini CLI 0.65.0's ACP has no fork)",
+                a.vendor.label()
+            ));
+        }
+        if !self.started(from) {
+            return Err("it has no session to fork yet: tell it something first".into());
+        }
+        if a.status == Status::Working {
+            return Err("it is mid-turn: fork it when its turn ends".into());
+        }
+        let (project, v, was) = (a.project, a.vendor, a.name.clone());
+        let so_far = (w.agents.iter())
+            .filter(|o| o.vendor == v && o.role == Role::Worker)
+            .count();
+        let name = free_name(w, &format!("{}-", v.label()), so_far + 1);
+        let id = w.agents.len();
+        let t = w.tick;
+        w.agents.push(Agent::new(
+            id,
+            project,
+            name.clone(),
+            v,
+            Role::Worker,
+            Status::Idle,
+            t,
+        ));
+        // Its session is a copy of the one it came from.
+        self.mind(id).started = true;
+        w.agents[from].trace(t, format!("forked into {name}"));
+        w.agents[id].trace(
+            t,
+            format!("forked from {was} · worktree from its HEAD, with its change"),
+        );
+        w.note(Event::Forked { from, agent: id });
+        Ok(id)
+    }
+
     /// Agent `by` hired agent `id` on a tier of its vendor; a model this
     /// account lacks falls back to the vendor's default, now and then.
     fn hired(&mut self, w: &mut World, by: AgentId, id: AgentId) {

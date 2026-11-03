@@ -143,6 +143,7 @@ pub fn event(lang: Lang, w: &World, e: &Event) -> String {
                 None => fill(t.ev_hired, &[name(w, *by), name(w, *agent), model]),
             }
         }
+        Event::Forked { from, agent } => fill(t.ev_forked, &[name(w, *agent), name(w, *from)]),
         Event::Left { agent } => fill(t.ev_left, &[name(w, *agent)]),
         Event::Fallback { agent, model } => fill(t.ev_fallback, &[name(w, *agent), model]),
         Event::Resumed { agent } => fill(t.ev_resumed, &[name(w, *agent)]),

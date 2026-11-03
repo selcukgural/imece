@@ -237,6 +237,11 @@ pub struct Spec {
     pub mcp: Option<Mcp>,
     /// The thread of an earlier run to go on with, if the agent had one.
     pub resume: Option<String>,
+    /// Whether to go on with `resume` in a new thread (`thread/fork`), the
+    /// old one left as it was. Codex 0.165.0's app-server (the schema it
+    /// generates, 2026-11-03) takes the same settings for a fork as for a
+    /// resume and answers as for a new thread, with the fork's own id.
+    pub fork: bool,
 }
 
 /// What a first start found in the person's config that only a name turns
@@ -449,6 +454,8 @@ pub struct Protocol {
     mcp: Option<Mcp>,
     /// The thread asked for instead of a new one; see [`Spec::resume`].
     resume: Option<String>,
+    /// Whether that thread is forked; see [`Spec::fork`].
+    fork: bool,
     /// Tools imece's server offers, as Codex names them.
     tools: BTreeSet<String>,
     /// What a first start found and this start has named off, if this is
@@ -494,6 +501,7 @@ impl Protocol {
             system: spec.system.clone(),
             mcp: spec.mcp.clone(),
             resume: spec.resume.clone(),
+            fork: spec.fork,
             tools: spec
                 .mcp
                 .iter()
@@ -699,6 +707,13 @@ impl Protocol {
                 // resumed one needs no history sent back (its turns are
                 // in Codex, not on the screen).
                 let method = match &self.resume {
+                    // A fork is a thread of its own, kept as a new one is.
+                    Some(id) if self.fork => {
+                        params["threadId"] = json!(id);
+                        params["excludeTurns"] = json!(true);
+                        params["ephemeral"] = json!(false);
+                        "thread/fork"
+                    }
                     Some(id) => {
                         params["threadId"] = json!(id);
                         params["excludeTurns"] = json!(true);
@@ -714,10 +729,14 @@ impl Protocol {
             Wait::Thread => {
                 self.check_thread(r)?;
                 let id = r["thread"]["id"].as_str().unwrap_or_default();
-                if let Some(asked) = &self.resume
-                    && id != asked
-                {
-                    return Err(format!("resumed thread {id:?}, not {asked:?}"));
+                match &self.resume {
+                    Some(asked) if self.fork && (id == asked || id.is_empty()) => {
+                        return Err(format!("forked {asked:?} into {id:?}, not a new thread"));
+                    }
+                    Some(asked) if !self.fork && id != asked => {
+                        return Err(format!("resumed thread {id:?}, not {asked:?}"));
+                    }
+                    _ => {}
                 }
                 self.thread = Some(id.to_string());
                 self.started = true;
@@ -1729,6 +1748,7 @@ mod tests {
             system: "You are codex-1.".into(),
             mcp: None,
             resume: None,
+            fork: false,
         }
     }
 
@@ -1739,6 +1759,62 @@ mod tests {
         s.choice = Some("gpt-6-luna@high".into());
         s.resume = Some("t1".into());
         s
+    }
+
+    fn forked() -> Spec {
+        let mut s = resumed();
+        s.fork = true;
+        s
+    }
+
+    #[test]
+    fn a_fork_asks_thread_fork_kept_and_must_come_back_as_a_new_thread() {
+        let mut p = Protocol::new(&forked(), None);
+        p.open();
+        let steps = [
+            json!({ "userAgent": "codex" }),
+            json!({ "account": { "type": "chatgpt" } }),
+            json!({ "config": good_config(true, &[], false) }),
+            json!({ "data": [] }),
+            json!({ "marketplaces": [] }),
+            json!({ "data": [] }),
+            servers(false, &[]),
+        ];
+        let mut acts = Vec::new();
+        for (i, r) in steps.into_iter().enumerate() {
+            acts = p.line(&reply(i as u64 + 1, r)).unwrap();
+        }
+        let t = &sent(&acts)[0];
+        assert_eq!(t["method"], "thread/fork");
+        assert_eq!(t["params"]["threadId"], "t1");
+        assert_eq!(t["params"]["cwd"], "/work/w1");
+        assert_eq!(t["params"]["sandbox"], "workspace-write");
+        assert_eq!(t["params"]["approvalPolicy"], "never");
+        assert_eq!(t["params"]["model"], "gpt-6-luna");
+        assert_eq!(t["params"]["excludeTurns"], true);
+        assert_eq!(t["params"]["ephemeral"], false, "kept, to go on with later");
+        let mut back = thread(true, "/work/w1");
+        back["thread"]["id"] = json!("t2");
+        let acts = p.line(&reply(8, back.clone())).unwrap();
+        assert_eq!(
+            events(&acts)[0],
+            Event::Started {
+                session: "t2".into(),
+                model: "gpt-6-luna".into()
+            }
+        );
+        assert_eq!(p.thread.as_deref(), Some("t2"));
+        // The old thread, or none, is no fork.
+        let e = start_until(&forked(), "thread/fork", thread(true, "/work/w1")).unwrap_err();
+        assert_eq!(e, "forked \"t1\" into \"t1\", not a new thread");
+        let mut none = thread(true, "/work/w1");
+        none["thread"]["id"] = json!("");
+        assert!(start_until(&forked(), "thread/fork", none).is_err());
+        // Its settings are checked as a new thread's.
+        let mut elsewhere = thread(true, "/elsewhere");
+        elsewhere["thread"]["id"] = json!("t2");
+        assert!(start_until(&forked(), "thread/fork", elsewhere).is_err());
+        assert!(start_until(&forked(), "thread/fork", back).is_ok());
     }
 
     fn with_bus(write: bool) -> Spec {
@@ -2506,10 +2582,10 @@ mod tests {
             ("hooks/list", json!({ "data": [] })),
             ("mcpServerStatus/list", servers(bus, &[])),
             (
-                if spec.resume.is_some() {
-                    "thread/resume"
-                } else {
-                    "thread/start"
+                match (&spec.resume, spec.fork) {
+                    (Some(_), true) => "thread/fork",
+                    (Some(_), false) => "thread/resume",
+                    _ => "thread/start",
                 },
                 thread_at(spec.write, "/work/w1", spec.confine),
             ),
@@ -4344,6 +4420,7 @@ done"#
                 tools: vec!["send".into()],
             }),
             resume: None,
+            fork: false,
         };
         let (tx, rx) = mpsc::channel();
         let session = Session::start(&s, move |e| {
@@ -4429,6 +4506,7 @@ done"#
             system: "You are solo, a coding agent in imece, working alone with the person.".into(),
             mcp: None,
             resume: None,
+            fork: false,
         };
         let (tx, rx) = mpsc::channel();
         let mut session = Session::start(&s, move |e| {
@@ -4488,6 +4566,7 @@ done"#
             system: "You are codex-1, a coding agent in imece.".into(),
             mcp: None,
             resume: None,
+            fork: false,
         };
         let (tx, rx) = mpsc::channel();
         let mut session = Session::start(&s, move |e| {
@@ -4533,6 +4612,80 @@ done"#
         let _ = std::fs::remove_dir_all(&dir);
     }
 
+    /// `IMECE_LIVE_CODEX=1 cargo test -p imece-agent -- --ignored live_codex_forks --nocapture`
+    ///
+    /// A thread forked into another directory is a new thread that knows
+    /// what the old one was told.
+    #[test]
+    #[ignore = "drives the real codex; set IMECE_LIVE_CODEX=1"]
+    fn live_codex_forks_a_thread_into_another_directory() {
+        if std::env::var_os("IMECE_LIVE_CODEX").is_none() {
+            return;
+        }
+        let dir =
+            std::env::temp_dir().join(format!("imece-live-codex-fork-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("a")).unwrap();
+        std::fs::create_dir_all(dir.join("b")).unwrap();
+        let spec = |sub: &str, resume: Option<String>, fork: bool| Spec {
+            program: PROGRAM.into(),
+            cwd: dir.join(sub).canonicalize().unwrap(),
+            choice: Some("@low".into()),
+            write: false,
+            confine: Confine::Strict,
+            system: "You are codex-1, a coding agent in imece.".into(),
+            mcp: None,
+            resume,
+            fork,
+        };
+        let turn = |s: &Spec, prompt: &str| -> Vec<Event> {
+            let (tx, rx) = mpsc::channel();
+            let mut session = Session::start(s, move |e| {
+                let _ = tx.send(e);
+            })
+            .unwrap();
+            session.prompt(prompt).unwrap();
+            let mut got = Vec::new();
+            loop {
+                let e = rx
+                    .recv_timeout(Duration::from_secs(180))
+                    .expect("codex answers within three minutes");
+                eprintln!("live codex: {e:?}");
+                let end = matches!(e, Event::TurnDone { .. } | Event::Stopped(_));
+                got.push(e);
+                if end {
+                    return got;
+                }
+            }
+        };
+        let started = |got: &[Event]| -> String {
+            got.iter()
+                .find_map(|e| match e {
+                    Event::Started { session, .. } => Some(session.clone()),
+                    _ => None,
+                })
+                .expect("a thread")
+        };
+        let first = turn(
+            &spec("a", None, false),
+            "Remember the word pelican. Reply: ok",
+        );
+        let old = started(&first);
+        let forked = turn(
+            &spec("b", Some(old.clone()), true),
+            "Which word did I ask you to remember? The word only.",
+        );
+        let new = started(&forked);
+        assert_ne!(new, old, "a thread of its own");
+        assert!(
+            forked
+                .iter()
+                .any(|e| matches!(e, Event::Text(t) if t.to_lowercase().contains("pelican"))),
+            "{forked:?}"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     /// `IMECE_LIVE_CODEX=1 cargo test -p imece-agent -- --ignored live_codex_asks --nocapture`
     ///
     /// A worker under standard asks before it writes outside its
@@ -4565,6 +4718,7 @@ done"#
                 .into(),
             mcp: None,
             resume: None,
+            fork: false,
         };
         let (tx, rx) = mpsc::channel();
         let mut session = Session::start(&s, move |e| {
@@ -4639,6 +4793,7 @@ done"#
             system: "You are codex-1, a coding agent in imece. Answer briefly.".into(),
             mcp: None,
             resume: None,
+            fork: false,
         };
         // One process, one prompt: every event until the turn or the
         // session ends.

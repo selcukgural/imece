@@ -33,6 +33,30 @@ pub fn valid_uuid(id: &str) -> bool {
         })
 }
 
+/// A new random (version 4) UUID, from the system's random source: the
+/// id imece gives a session it forks ([`claude::Resume::fork`]).
+pub fn new_uuid() -> std::io::Result<String> {
+    use std::io::Read;
+    let mut b = [0u8; 16];
+    std::fs::File::open("/dev/urandom")?.read_exact(&mut b)?;
+    Ok(uuid_of(b))
+}
+
+/// `b` as a version 4, variant 1 UUID.
+fn uuid_of(mut b: [u8; 16]) -> String {
+    b[6] = (b[6] & 0x0f) | 0x40;
+    b[8] = (b[8] & 0x3f) | 0x80;
+    let hex: String = b.iter().map(|x| format!("{x:02x}")).collect();
+    format!(
+        "{}-{}-{}-{}-{}",
+        &hex[..8],
+        &hex[8..12],
+        &hex[12..16],
+        &hex[16..20],
+        &hex[20..]
+    )
+}
+
 /// Whether a vendor's CLI says it is signed in, asked without the network
 /// and without spending ([`claude::login`], [`codex::login`]).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -271,6 +295,17 @@ impl Confine {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_new_uuid_is_random_version_4_and_valid() {
+        assert_eq!(uuid_of([0; 16]), "00000000-0000-4000-8000-000000000000");
+        assert_eq!(uuid_of([0xff; 16]), "ffffffff-ffff-4fff-bfff-ffffffffffff");
+        let b: [u8; 16] = std::array::from_fn(|i| i as u8 * 17);
+        assert_eq!(uuid_of(b), "00112233-4455-4677-8899-aabbccddeeff");
+        let (a, c) = (new_uuid().unwrap(), new_uuid().unwrap());
+        assert!(valid_uuid(&a) && valid_uuid(&c) && a != c, "{a} {c}");
+        assert_eq!(&a[14..15], "4");
+    }
 
     #[test]
     fn an_api_error_is_a_passing_fault_an_account_fault_or_neither_by_status_and_words() {

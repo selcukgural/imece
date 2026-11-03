@@ -39,6 +39,7 @@ A line that starts with `:` is a command to imece, not a message to an agent. Yo
 | `:faster` | `+` | | yes | | the speed, `×2` |
 | `:fold` | `zM` | | | | |
 | `:forget [@NAME]` | — | `:f` | | `$` | the agent at hand |
+| `:fork [@NAME]` | — | | | `$` | the agent at hand |
 | `:goto [NAME]` | `&` | | | | |
 | `:history [WORDS]` | `^r` | | | | |
 | `:help` | `?` | | | | |
@@ -169,6 +170,10 @@ Folds every project and every worker's helpers in the salon, as `zM`; from anoth
 ### `:forget [@NAME]`
 
 Makes the agent forget its vendor session (`:f`), ten seconds after it is asked: the bottom line counts down, and `u` ([`:undo`](#undo)) keeps it. Then the running session ends (its run killed, an unfinished prompt kept as interrupted, told at the wake and not run again), the remembered session goes with what the vendor kept of it (Claude's transcript, Codex's thread, Gemini's chat files), the agent sleeps until spoken to, and its next message starts a new session with the full briefing. No name is the agent at hand. The flash: `claude-2 forgot its session; the next message starts a new one, told where it left off`; refused for an agent with nothing to forget or one that is gone: `claude-2 keeps its session: it has no session to forget`. The journal: `you made claude-2 forget its session; it starts a new one, told where it left off`. `--fresh` does it for every agent at the start. `$`: the new session pays the whole briefing again. See [sessions](../concepts/sessions.md).
+
+### `:fork [@NAME]`
+
+Makes a new worker that goes on from the worker `NAME` (else the one at hand) to try another way, while that worker goes on in its own: the new one has its conversation (a fork of its vendor session: Claude Code's `--fork-session`, Codex's `thread/fork`) and its uncommitted change, untracked files included, in a worktree of its own made at that worker's HEAD. It is named after its vendor as a hired worker is (`claude-3`), runs on the same model, counts in `--agents`, and its turns come out of the pot (the vendor counts what the first session had cost too; imece counts only the fork's turns). Its row is selected and the command line opens with `@claude-3 `, flashing `claude-3 is a fork of claude-1: write what it should try`; what you write is its first turn, and only then does the fork happen: the session and the change are taken as they are at that moment. The journal says `claude-3 forked from claude-1: …`; its change is a Δ of its own. Refused, with why: anything but a worker, a Gemini worker (its CLI has no fork yet), a worker with no session yet or mid-turn, a full team, or a worktree that is not there. A session that could not be forked goes on as a new one, told where it is; the journal says why. The demo forks too, without the `--agents` cap.
 
 ### `:goto [NAME]`
 

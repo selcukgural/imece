@@ -27,3 +27,7 @@ imece's notes; `thread/resume` with another cwd or sandbox echoes the
 thread's own (the echo check is what refuses it); threads started
 before this change were ephemeral and come back as `Restarted`. Live check:
 `IMECE_LIVE_CODEX=1 cargo test -p imece-agent -- --ignored live_codex_resumes`.
+
+A fork (record 94) asks `thread/fork` instead (`Spec.fork`), kept like a
+new thread (`ephemeral: false`); the thread that comes back must be a new
+one. Live check: `IMECE_LIVE_CODEX=1 cargo test -p imece-agent -- --ignored live_codex_forks`.

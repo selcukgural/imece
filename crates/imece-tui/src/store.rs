@@ -65,7 +65,9 @@ use crate::recall::{Hit, Line};
 /// 19 (2026-11-03): the full-text index of the journal and the traces
 /// (`recall`, `recall_rows`, record 93), filled from what an older file
 /// holds at its first open.
-pub const SCHEMA_VERSION: i64 = 19;
+/// 20 (2026-11-03): the worker a fork goes on from until its session
+/// starts (`agents.fork_of`, record 94), and the `Forked` events.
+pub const SCHEMA_VERSION: i64 = 20;
 /// Trace lines kept per agent, as the world keeps them.
 const TRACE_KEEP: usize = 200;
 /// The file's name under the state directory.
@@ -96,7 +98,7 @@ CREATE TABLE IF NOT EXISTS agents (
     cost INTEGER NOT NULL, taint TEXT NOT NULL, gone INTEGER NOT NULL,
     changed_at INTEGER NOT NULL, traced INTEGER NOT NULL, commands TEXT NOT NULL,
     model TEXT, tiered INTEGER NOT NULL, woken INTEGER NOT NULL, posted INTEGER NOT NULL,
-    session TEXT, session_spent INTEGER NOT NULL DEFAULT 0, start TEXT);
+    session TEXT, session_spent INTEGER NOT NULL DEFAULT 0, start TEXT, fork_of INTEGER);
 CREATE TABLE IF NOT EXISTS cards (
     id INTEGER PRIMARY KEY, project INTEGER NOT NULL, title TEXT NOT NULL,
     owner INTEGER, col TEXT NOT NULL, started INTEGER NOT NULL, finished INTEGER NOT NULL);
@@ -218,6 +220,8 @@ pub struct Kept<'a> {
     pub inflight: &'a [Vec<String>],
     /// The vendor session each agent had last, to go on with.
     pub sessions: &'a [Option<Resumable>],
+    /// The worker each fork goes on from, until its session starts.
+    pub forks: &'a [Option<AgentId>],
     pub posts: &'a HashMap<CardId, Post>,
     pub offered: &'a HashMap<CardId, Vec<AgentId>>,
     pub changes: &'a HashMap<AgentId, worktree::Change>,
@@ -235,6 +239,7 @@ pub struct Found {
     pub notes: Vec<Vec<String>>,
     pub inflight: Vec<Vec<String>>,
     pub sessions: Vec<Option<Resumable>>,
+    pub forks: Vec<Option<AgentId>>,
     pub posts: HashMap<CardId, Post>,
     pub offered: HashMap<CardId, Vec<AgentId>>,
     pub changes: HashMap<AgentId, worktree::Change>,
@@ -494,6 +499,10 @@ impl Store {
             self.conn.execute_batch(
                 "ALTER TABLE projects ADD COLUMN allowed TEXT NOT NULL DEFAULT '[]';",
             )?;
+        }
+        if !self.has_column("agents", "fork_of")? {
+            self.conn
+                .execute_batch("ALTER TABLE agents ADD COLUMN fork_of INTEGER;")?;
         }
         if !self.has_column("agents", "start")? {
             self.conn
@@ -854,9 +863,9 @@ impl Store {
             tx.execute(
                 "INSERT OR REPLACE INTO agents (id, project, name, vendor, role, parent, card, \
                  cost, taint, gone, changed_at, traced, commands, model, tiered, woken, posted, \
-                 session, session_spent, start) \
+                 session, session_spent, start, fork_of) \
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, \
-                 ?17, ?18, ?19, ?20)",
+                 ?17, ?18, ?19, ?20, ?21)",
                 params![
                     n(a.id),
                     n(a.project),
@@ -883,6 +892,7 @@ impl Store {
                         .and_then(|s| s.as_ref().map(|s| big(s.spent)))
                         .unwrap_or(0),
                     a.start,
+                    opt(k.forks.get(id).copied().flatten()),
                 ],
             )?;
         }
@@ -1184,6 +1194,7 @@ impl Store {
                     k.woken.get(id),
                     k.posted.get(id),
                     k.sessions.get(id),
+                    k.forks.get(id),
                 )),
             ));
             if s.agents.get(id) != Some(&h) {
@@ -1437,7 +1448,7 @@ impl Store {
         let mut st = conn.prepare(
             "SELECT id, project, name, vendor, role, parent, card, cost, taint, gone, \
              changed_at, traced, commands, model, tiered, woken, posted, session, session_spent, \
-             start FROM agents ORDER BY id",
+             start, fork_of FROM agents ORDER BY id",
         )?;
         for row in st.query_map([], |r| {
             let id = u(r.get(0)?);
@@ -1471,9 +1482,10 @@ impl Store {
                     session,
                     spent: ubig(r.get(18).unwrap_or(0)),
                 }),
+                uopt(r.get(20)?),
             ))
         })? {
-            let (a, model, tiered, woken, posted, session) = row?;
+            let (a, model, tiered, woken, posted, session, fork) = row?;
             if a.id != w.agents.len() {
                 return Err(bad(format!("agent {} is out of order", a.id)));
             }
@@ -1482,6 +1494,7 @@ impl Store {
             found.tiered.push(tiered);
             found.woken.push(woken);
             found.posted.push(posted);
+            found.forks.push(fork);
             found.sessions.push(session);
         }
         let mut traces =
@@ -1690,6 +1703,7 @@ impl Store {
             notes: &found.notes,
             inflight: &found.inflight,
             sessions: &found.sessions,
+            forks: &found.forks,
             posts: &found.posts,
             offered: &found.offered,
             changes: &found.changes,
@@ -2218,6 +2232,7 @@ mod tests {
         notes: Vec<Vec<String>>,
         inflight: Vec<Vec<String>>,
         sessions: Vec<Option<Resumable>>,
+        forks: Vec<Option<AgentId>>,
         posts: HashMap<CardId, Post>,
         offered: HashMap<CardId, Vec<AgentId>>,
         changes: HashMap<AgentId, worktree::Change>,
@@ -2236,6 +2251,7 @@ mod tests {
                 notes: &self.notes,
                 inflight: &self.inflight,
                 sessions: &self.sessions,
+                forks: &self.forks,
                 posts: &self.posts,
                 offered: &self.offered,
                 changes: &self.changes,
@@ -2253,6 +2269,7 @@ mod tests {
                 notes: self.notes.clone(),
                 inflight: self.inflight.clone(),
                 sessions: self.sessions.clone(),
+                forks: self.forks.clone(),
                 posts: self.posts.clone(),
                 offered: self.offered.clone(),
                 changes: self.changes.clone(),
@@ -2301,6 +2318,7 @@ mod tests {
                 Vec::new(),
                 Vec::new(),
             ],
+            forks: vec![None, None, Some(1), None],
             sessions: vec![
                 Some(Resumable {
                     session: "686c6d27-d50b-4ae2-ad6a-159bf2984671".into(),
@@ -2653,6 +2671,7 @@ mod tests {
                 notes: f.notes.clone(),
                 inflight: f.inflight.clone(),
                 sessions: f.sessions.clone(),
+                forks: f.forks.clone(),
                 posts: f.posts.clone(),
                 offered: f.offered.clone(),
                 changes: f.changes.clone(),
@@ -3311,7 +3330,7 @@ mod tests {
             .execute_batch(
                 "INSERT INTO meta VALUES ('started_at', '1'); \
                  INSERT INTO agents VALUES (0, 0, 'x', 'Clod', 'Leader', NULL, NULL, 0, 'Clean', \
-                 0, 0, 0, '[]', NULL, 0, 0, 0, NULL, 0, NULL);",
+                 0, 0, 0, '[]', NULL, 0, 0, 0, NULL, 0, NULL, NULL);",
             )
             .unwrap();
         let e = store.load(100).err().expect("refused").to_string();
@@ -3405,6 +3424,7 @@ mod tests {
                     notes: &k2.notes,
                     inflight: &k2.inflight,
                     sessions: &k2.sessions,
+                    forks: &k2.forks,
                     posts: &k2.posts,
                     offered: &k2.offered,
                     changes: &k2.changes,
@@ -3751,7 +3771,7 @@ mod tests {
                 |r| r.get(0),
             )
             .unwrap();
-        assert_eq!(version, "19");
+        assert_eq!(version, SCHEMA_VERSION.to_string());
     }
 
     #[test]
@@ -3863,11 +3883,11 @@ mod tests {
                 )
                 .unwrap();
             assert_eq!(
-                version, "19",
+                version, "20",
                 "the sent table, the Fault kind, archives, restores, start points, standing yes, the \
-                 recall index: an older imece knows none"
+                 recall index, forks: an older imece knows none"
             );
-            assert_eq!(SCHEMA_VERSION, 19);
+            assert_eq!(SCHEMA_VERSION, 20);
         }
         let back = Store::open(&path)
             .unwrap()
@@ -3957,6 +3977,42 @@ mod tests {
         assert!(back.world.projects.iter().all(|p| !p.pinned));
         assert!(store.save(&w, &kept().kept()).unwrap());
         assert!(store.load(100).unwrap().unwrap().world.projects[0].pinned);
+    }
+
+    #[test]
+    fn a_fork_s_worker_is_saved_alone_and_a_file_of_schema_19_gets_the_column() {
+        let d = dir("schema19");
+        std::fs::create_dir_all(&d).unwrap();
+        let path = d.join(FILE);
+        let w = world();
+        let mut k = kept();
+        k.forks = vec![None; 4];
+        {
+            let mut store = Store::open(&path).unwrap();
+            assert!(store.save(&w, &k.kept()).unwrap());
+            // A fork's worker alone is something to save, and it goes when
+            // the fork's session starts.
+            k.forks[3] = Some(1);
+            assert!(store.save(&w, &k.kept()).unwrap());
+            assert!(!store.save(&w, &k.kept()).unwrap());
+            assert_eq!(store.load(100).unwrap().unwrap().found.forks, k.forks);
+            k.forks[3] = None;
+            assert!(store.save(&w, &k.kept()).unwrap());
+            assert_eq!(store.load(100).unwrap().unwrap().found.forks, [None; 4]);
+            k.forks[3] = Some(1);
+            store.save(&w, &k.kept()).unwrap();
+            store
+                .raw()
+                .execute_batch(
+                    "ALTER TABLE agents DROP COLUMN fork_of;
+                     UPDATE meta SET value = '19' WHERE key = 'schema_version';",
+                )
+                .unwrap();
+        }
+        let mut store = Store::open(&path).unwrap();
+        let back = store.load(100).unwrap().expect("a world");
+        assert_eq!(back.found.forks, [None; 4], "no forks before 20");
+        let _ = std::fs::remove_dir_all(&d);
     }
 
     #[test]
@@ -4310,6 +4366,7 @@ mod tests {
             notes: &found.notes,
             inflight: &found.inflight,
             sessions: &found.sessions,
+            forks: &found.forks,
             posts: &found.posts,
             offered: &found.offered,
             changes: &found.changes,

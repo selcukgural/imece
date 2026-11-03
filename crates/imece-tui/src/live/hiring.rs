@@ -161,6 +161,24 @@ pub(super) fn hireable(present: &[(Vendor, bool)], lead: Vendor) -> Result<Vec<V
     }
 }
 
+/// A new worker's name after its vendor (`claude-2`): the next number,
+/// counting the workers that left, skipping names taken.
+fn worker_name(w: &World, vendor: Vendor) -> String {
+    let n = (w.agents.iter())
+        .filter(|o| o.vendor == vendor && o.role == Role::Worker)
+        .count();
+    free_name(w, &format!("{}-", vendor.label()), n + 1)
+}
+
+/// `stem` and the first number from `next` on that names nobody. A
+/// bounded search: there are fewer agents than the numbers it tries.
+fn free_name(w: &World, stem: &str, next: usize) -> String {
+    (next..=next.saturating_add(w.agents.len()))
+        .map(|n| format!("{stem}{n}"))
+        .find(|name| !w.name_taken(name))
+        .expect("some number is free")
+}
+
 impl Live {
     /// Makes room for one more agent, on `model` (`tiered`: picked by
     /// tier, so it may fall back).
@@ -171,6 +189,7 @@ impl Live {
         self.sessions.push(None);
         self.floor.push(0);
         self.resuming.push(None);
+        self.forks.push(None);
         self.slots.push(Slot::None);
         self.generation.push(0);
         self.spent_before.push(0);
@@ -387,27 +406,16 @@ impl Live {
         // The next number, skipping names already taken: a worker's after
         // its vendor (`claude-2`), a helper's after its worker
         // (`claude-2.1`), counting the ones that left.
-        let (stem, next) = if role == Role::Worker {
-            let n = w
-                .agents
-                .iter()
-                .filter(|o| o.vendor == vendor.vendor && o.role == Role::Worker)
-                .count();
-            (format!("{}-", vendor.vendor.label()), n + 1)
+        let name = if role == Role::Worker {
+            worker_name(w, vendor.vendor)
         } else {
             let n = w
                 .agents
                 .iter()
                 .filter(|o| o.role == Role::Helper && o.parent == Some(from))
                 .count();
-            (format!("{}.", w.agents[from].name), n + 1)
+            free_name(w, &format!("{}.", w.agents[from].name), n + 1)
         };
-        // A bounded search: there are fewer agents than the numbers it
-        // tries, so one is free.
-        let name = (next..=next.saturating_add(w.agents.len()))
-            .map(|n| format!("{stem}{n}"))
-            .find(|name| !w.name_taken(name))
-            .expect("some number is free");
         let id = w.agents.len();
         // The socket first: an agent without one could never start.
         self.bind(id, role, vendor.vendor)
@@ -451,6 +459,71 @@ impl Live {
         ))
     }
 
+    /// `:fork` (record 94): a new worker that goes on from worker `from`'s
+    /// conversation and uncommitted change, on its model, in a worktree
+    /// of its own made at `from`'s HEAD; asleep until it is told
+    /// something, when its session forks from `from`'s as it is then and
+    /// its worktree takes `from`'s change. Counted in `--agents` as any
+    /// worker, its turns in the pot. Refused, with why, for what has no
+    /// session or worktree to fork, a vendor that cannot (Gemini's ACP
+    /// has no fork), a worker mid-turn, or a full team.
+    pub fn fork(&mut self, w: &mut World, from: AgentId) -> Result<AgentId, String> {
+        let a = &w.agents[from];
+        if a.role != Role::Worker || a.gone {
+            return Err(
+                "only a worker forks: it has a conversation and a worktree of its own".into(),
+            );
+        }
+        if !matches!(a.vendor, Vendor::Claude | Vendor::Codex) {
+            return Err(format!(
+                "{} sessions can not be forked (Gemini CLI 0.65.0's ACP has no fork)",
+                a.vendor.label()
+            ));
+        }
+        if self.sessions[from].is_none() {
+            return Err("it has no session to fork yet: tell it something first".into());
+        }
+        if self.turns[from] > 0 || !matches!(self.slots[from], Slot::None | Slot::Running(_)) {
+            return Err("it is mid-turn: fork it when its turn ends".into());
+        }
+        let (project, vendor) = (a.project, a.vendor);
+        let workers = (w.agents.iter())
+            .filter(|o| o.project == project && o.role == Role::Worker && !o.gone)
+            .count();
+        if workers >= self.max_workers {
+            return Err(format!(
+                "the team has {workers} workers, the most --agents allows ({})",
+                self.max_workers
+            ));
+        }
+        let head = worktree::resolve(&self.cwd_of(w, from), "HEAD")
+            .map_err(|e| format!("its worktree: {e}"))?;
+        let name = worker_name(w, vendor);
+        let id = w.agents.len();
+        self.bind(id, Role::Worker, vendor)
+            .map_err(|e| format!("{name} could not get a socket: {e}"))?;
+        self.grow(self.models[from].clone(), self.tiered[from]);
+        let t = w.tick;
+        let mut agent = Agent::new(
+            id,
+            project,
+            name.clone(),
+            vendor,
+            Role::Worker,
+            Status::Idle,
+            t,
+        );
+        agent.start = Some(head.clone());
+        w.agents.push(agent);
+        self.forks[id] = Some(from);
+        self.remembered[id] = true;
+        let was = w.agents[from].name.clone();
+        w.agents[from].trace(t, format!("forked into {name}"));
+        w.agents[id].trace(t, format!("forked from {was} · worktree from {head}"));
+        w.note(Event::Forked { from, agent: id });
+        Ok(id)
+    }
+
     /// `hire`'s `from` for a worker of `project`, checked: one name, and a
     /// commit the checkout has now (`#N`, a pull request, is fetched when
     /// the worker starts; one that is not there stops it with git's words).
@@ -474,6 +547,361 @@ impl Live {
 mod tests {
     use super::*;
     use crate::live::testing::*;
+
+    /// A stand-in for `claude` that adds its arguments, one per line and
+    /// `---` after them, to `args.txt` where it runs, and exits.
+    fn appending_claude(dir: &Path) -> String {
+        use std::os::unix::fs::PermissionsExt;
+        let path = dir.join("appending-claude");
+        std::fs::write(
+            &path,
+            "#!/bin/sh\nprintf '%s\\n' \"$@\" >> args.txt\necho --- >> args.txt\n",
+        )
+        .unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o700)).unwrap();
+        path.to_string_lossy().into_owned()
+    }
+
+    #[test]
+    fn a_fork_is_refused_for_what_cannot_fork_and_says_why() {
+        let repo = checkout("fork-no");
+        let root = trees("fork-no");
+        let mut w = team(1);
+        w.agents[1].status = Status::Idle;
+        let mut live = Live::new(
+            2,
+            claude_at("/nonexistent/claude"),
+            repo.clone(),
+            root.clone(),
+        );
+        live.max_workers = 2;
+        let no = |live: &mut Live, w: &mut World, id| live.fork(w, id).unwrap_err();
+        let only = "only a worker forks: it has a conversation and a worktree of its own";
+        assert_eq!(no(&mut live, &mut w, 0), only, "the leader");
+        assert_eq!(
+            no(&mut live, &mut w, 1),
+            "it has no session to fork yet: tell it something first"
+        );
+        worker_in(&mut live, &mut w, 1, &repo, &root);
+        live.sessions[1] = Some(Resumable {
+            session: UUID.into(),
+            spent: 0,
+        });
+        live.turns[1] = 1;
+        assert_eq!(
+            no(&mut live, &mut w, 1),
+            "it is mid-turn: fork it when its turn ends"
+        );
+        live.turns[1] = 0;
+        live.slots[1] = Slot::Starting(Vec::new());
+        assert_eq!(
+            no(&mut live, &mut w, 1),
+            "it is mid-turn: fork it when its turn ends"
+        );
+        live.slots[1] = Slot::None;
+        w.agents[1].vendor = Vendor::Gemini;
+        assert_eq!(
+            no(&mut live, &mut w, 1),
+            "gemini sessions can not be forked (Gemini CLI 0.65.0's ACP has no fork)"
+        );
+        w.agents[1].vendor = Vendor::Claude;
+        live.max_workers = 1;
+        assert_eq!(
+            no(&mut live, &mut w, 1),
+            "the team has 1 workers, the most --agents allows (1)"
+        );
+        live.max_workers = 2;
+        w.agents[1].gone = true;
+        assert_eq!(no(&mut live, &mut w, 1), only, "gone");
+        w.agents[1].gone = false;
+        // A worktree that is not there any more.
+        std::fs::remove_dir_all(root.join("claude-1")).unwrap();
+        let e = no(&mut live, &mut w, 1);
+        assert!(e.starts_with("its worktree: "), "{e}");
+        assert_eq!(w.agents.len(), 2, "nobody joined");
+        assert!(
+            !w.journal
+                .iter()
+                .any(|e| matches!(e.event, Event::Forked { .. }))
+        );
+        // A Codex worker forks.
+        git_in(&repo, &["worktree", "prune"]);
+        let tree = worker_in(&mut live, &mut w, 1, &repo, &root);
+        assert!(tree.exists());
+        w.agents[1].vendor = Vendor::Codex;
+        live.vendors
+            .push(Hireable::codex("/nonexistent/codex", &[]));
+        let new = live.fork(&mut w, 1).unwrap();
+        assert_eq!(w.agents[new].name, "codex-2", "the second codex worker");
+        let _ = std::fs::remove_dir_all(&repo);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_fork_goes_on_from_its_workers_session_and_change_in_a_worktree_of_its_own() {
+        let repo = checkout("fork-repo");
+        let root = trees("fork");
+        let dir = std::env::temp_dir().join(format!("imece-fork-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut w = team(1);
+        w.agents[1].status = Status::Idle;
+        let mut live = Live::new(
+            2,
+            claude_at(&appending_claude(&dir)),
+            repo.clone(),
+            root.clone(),
+        );
+        live.max_workers = 2;
+        live.claude_home = trees("fork-home");
+        live.models[1] = Some("haiku@low".into());
+        live.tiered[1] = true;
+        let tree = worker_in(&mut live, &mut w, 1, &repo, &root);
+        live.sessions[1] = Some(Resumable {
+            session: UUID.into(),
+            spent: 700,
+        });
+        transcript_of(&live, &w, 1, UUID);
+        // Its change, and the person's checkout moved on since.
+        std::fs::write(tree.join("a.txt"), "a, the worker's way").unwrap();
+        std::fs::write(tree.join("new.txt"), "new").unwrap();
+        let head = git_in(&tree, &["rev-parse", "HEAD"]);
+        std::fs::write(repo.join("b.txt"), "b").unwrap();
+        commit_all(&repo);
+        live.slots[1] = Slot::None;
+        let new = live.fork(&mut w, 1).unwrap();
+        assert_eq!(new, 2);
+        let a = &w.agents[new];
+        assert_eq!(
+            (a.name.as_str(), a.role, a.vendor, a.project, a.status),
+            ("claude-2", Role::Worker, Vendor::Claude, 0, Status::Idle)
+        );
+        assert_eq!(a.start.as_deref(), Some(head.as_str()), "its worker's HEAD");
+        assert_eq!((live.forks[new], live.remembered[new]), (Some(1), true));
+        assert_eq!(
+            (live.models[new].as_deref(), live.tiered[new]),
+            (Some("haiku@low"), true)
+        );
+        assert_eq!(live.sessions[new], None, "none of its own yet");
+        assert_eq!(
+            journaled(
+                &w,
+                &Event::Forked {
+                    from: 1,
+                    agent: new
+                }
+            ),
+            1
+        );
+        assert!(
+            w.agents[1]
+                .trace
+                .back()
+                .unwrap()
+                .ends_with("forked into claude-2")
+        );
+        assert!(
+            (w.agents[new].trace.back().unwrap())
+                .ends_with(&format!("forked from claude-1 · worktree from {head}"))
+        );
+        // Its wake forks the worker's session as it is then, from the floor
+        // of what that had cost, and takes its worktree as it is then: the
+        // worker committed and changed more since the fork was asked for.
+        live.sessions[1].as_mut().unwrap().spent = 900;
+        std::fs::write(tree.join("committed.txt"), "c").unwrap();
+        git_in(&tree, &["add", "committed.txt"]);
+        git_in(
+            &tree,
+            &[
+                "-c",
+                "user.name=t",
+                "-c",
+                "user.email=t@t",
+                "-c",
+                "commit.gpgsign=false",
+                "commit",
+                "-q",
+                "-m",
+                "more",
+            ],
+        );
+        let head = git_in(&tree, &["rev-parse", "HEAD"]);
+        std::fs::write(tree.join("later.txt"), "later").unwrap();
+        live.told(&mut w, new, "try it with a cache").unwrap();
+        let a = live.resuming[new].as_ref().unwrap();
+        assert_eq!(a.session, UUID);
+        let fork = a.fork.clone().unwrap();
+        assert!(imece_agent::valid_uuid(&fork) && fork != UUID, "{fork}");
+        assert_eq!(live.floor[new], 900);
+        assert_eq!(restarted(&w, new).len(), 0, "a fork, not a new session");
+        // The stand-in exits: no session came, so it goes on as a new one.
+        wait_for(&mut live, &mut w, |w| {
+            w.agents[new].status == Status::Stopped
+        });
+        assert_eq!(live.forks[new], None);
+        let fork_tree = root.join("claude-2");
+        let args = std::fs::read_to_string(fork_tree.join("args.txt")).unwrap();
+        let first: Vec<&str> = args.lines().take_while(|l| *l != "---").collect();
+        let at = first.iter().position(|a| *a == "--resume").unwrap();
+        assert_eq!(
+            first[at..at + 5],
+            [
+                "--resume",
+                UUID,
+                "--fork-session",
+                "--session-id",
+                fork.as_str()
+            ]
+        );
+        let after = |f: &str| first[first.iter().position(|a| *a == f).unwrap() + 1];
+        assert_eq!(after("--name"), "imece claude-2");
+        assert_eq!(after("--model"), "haiku");
+        assert!(after("--append-system-prompt").starts_with("You are claude-2"));
+        // Its worktree: at its worker's HEAD, with its worker's change.
+        assert_eq!(git_in(&fork_tree, &["rev-parse", "HEAD"]), head);
+        let read = |p: &str| std::fs::read_to_string(fork_tree.join(p)).ok();
+        assert_eq!(read("a.txt").as_deref(), Some("a, the worker's way"));
+        assert_eq!(read("new.txt").as_deref(), Some("new"));
+        assert_eq!(read("b.txt"), None, "not the person's later commit");
+        assert_eq!(read("committed.txt").as_deref(), Some("c"), "in its HEAD");
+        assert_eq!(read("later.txt").as_deref(), Some("later"));
+        let status = git_in(&fork_tree, &["status", "--porcelain"]);
+        assert!(
+            !status.contains("committed.txt"),
+            "not a change of its own: {status}"
+        );
+        assert_eq!(
+            std::fs::read_to_string(tree.join("a.txt")).unwrap(),
+            "a, the worker's way",
+            "the worker's is as it was"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+        let _ = std::fs::remove_dir_all(&repo);
+        let _ = std::fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&live.claude_home);
+    }
+
+    #[test]
+    fn a_fork_is_briefed_as_one_and_its_session_once_started_is_its_own() {
+        let mut w = team(1);
+        let mut live = idle_live(2);
+        live.grow(None, false);
+        w.agents.push(Agent::new(
+            2,
+            0,
+            "claude-2".into(),
+            Vendor::Claude,
+            Role::Worker,
+            Status::Idle,
+            0,
+        ));
+        live.forks[2] = Some(1);
+        let (text, at) = live.brief(&w, 2, true);
+        assert_eq!(at, None);
+        assert!(
+            text.starts_with(
+                "You are claude-2, a fork of claude-1: this session goes on from claude-1's"
+            ),
+            "{text}"
+        );
+        assert!(
+            text.contains("which started with claude-1's uncommitted change"),
+            "{text}"
+        );
+        let (fresh, _) = live.brief(&w, 2, false);
+        assert!(
+            !fresh.contains("a fork of"),
+            "a new session is briefed in full: {fresh}"
+        );
+        // Its session starts: its own from now on; no resume is journaled.
+        live.resuming[2] = Some(Attempt {
+            session: UUID.into(),
+            fork: Some("7d1c3f2e-5b6a-4c8d-9e0f-1a2b3c4d5e6f".into()),
+            text: "try".into(),
+            notes: Vec::new(),
+        });
+        live.floor[2] = 900;
+        hear(
+            &live,
+            2,
+            AgentEvent::Started {
+                session: "7d1c3f2e-5b6a-4c8d-9e0f-1a2b3c4d5e6f".into(),
+                model: "m".into(),
+            },
+        );
+        live.step(&mut w);
+        assert_eq!(live.forks[2], None);
+        assert!(live.resuming[2].is_none());
+        assert_eq!(
+            live.sessions[2],
+            Some(Resumable {
+                session: "7d1c3f2e-5b6a-4c8d-9e0f-1a2b3c4d5e6f".into(),
+                spent: 900,
+            })
+        );
+        assert_eq!(journaled(&w, &Event::Resumed { agent: 2 }), 0);
+    }
+
+    #[test]
+    fn a_fork_whose_workers_session_is_gone_starts_as_a_new_session() {
+        let mut w = team(1);
+        let mut live = idle_live(2);
+        live.claude_home = trees("fork-gone-home");
+        live.grow(None, false);
+        w.agents.push(Agent::new(
+            2,
+            0,
+            "claude-2".into(),
+            Vendor::Claude,
+            Role::Worker,
+            Status::Idle,
+            0,
+        ));
+        live.forks[2] = Some(1);
+        // No session of its worker: no fork.
+        assert_eq!(live.resumable(&w, 2), None);
+        assert_eq!(live.forks[2], None);
+        // One whose transcript is not where its worker runs: no fork.
+        live.forks[2] = Some(1);
+        live.sessions[1] = Some(Resumable {
+            session: UUID.into(),
+            spent: 5,
+        });
+        assert_eq!(live.resumable(&w, 2), None);
+        assert_eq!(live.forks[2], None);
+        // There: the worker's session, which stays the worker's.
+        live.forks[2] = Some(1);
+        let file = transcript_of(&live, &w, 1, UUID);
+        assert_eq!(live.resumable(&w, 2), live.sessions[1].clone());
+        assert_eq!(live.forks[2], Some(1));
+        // A Codex fork needs no file; any other vendor has none.
+        std::fs::remove_file(&file).unwrap();
+        w.agents[2].vendor = Vendor::Codex;
+        assert_eq!(live.resumable(&w, 2), live.sessions[1].clone());
+        for v in [Vendor::Gemini, Vendor::Qwen, Vendor::Local] {
+            w.agents[2].vendor = v;
+            live.forks[2] = Some(1);
+            assert_eq!(live.resumable(&w, 2), None, "{v:?}");
+        }
+        // Not a UUID: no fork.
+        w.agents[2].vendor = Vendor::Codex;
+        live.forks[2] = Some(1);
+        live.sessions[1].as_mut().unwrap().session = "not-one".into();
+        assert_eq!(live.resumable(&w, 2), None);
+        // Its wake then journals why it is a new session.
+        live.vendors
+            .push(Hireable::codex("/nonexistent/codex", &[]));
+        live.forks[2] = Some(1);
+        live.remembered[2] = true;
+        live.told(&mut w, 2, "go").unwrap();
+        assert_eq!(restarted(&w, 2), [Fresh::Missing]);
+        assert_eq!(
+            live.sessions[1].as_ref().unwrap().session,
+            "not-one",
+            "the worker's stays"
+        );
+        let _ = std::fs::remove_dir_all(&live.claude_home);
+    }
 
     #[test]
     fn a_new_worker_s_name_skips_the_ones_taken() {

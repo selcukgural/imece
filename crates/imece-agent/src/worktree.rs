@@ -447,6 +447,19 @@ pub fn tree(path: &Path) -> io::Result<String> {
     staged(path, &own_index("tree"), |_, tree| Ok(tree))
 }
 
+/// Makes the worktree at `to` hold what the one at `from` holds as it is
+/// now (its change against its HEAD, untracked files included, ignored
+/// ones not), as a change of its own against its own HEAD, which a fork
+/// starts at `from`'s: its files become `from`'s tree, its index stays at
+/// its HEAD, so what was untracked is untracked again. The two share
+/// their repository's objects. `to` must be clean (one made just now).
+pub fn carry(from: &Path, to: &Path) -> io::Result<()> {
+    let tree = tree(from)?;
+    git(to, &["read-tree", "-m", "-u", "HEAD", &tree])?;
+    git(to, &["reset", "--quiet"])?;
+    Ok(())
+}
+
 /// A name for an index file of imece's own no other call uses: reads of
 /// trees and stands run on several threads at once.
 fn own_index(what: &str) -> String {
@@ -791,6 +804,55 @@ mod tests {
         assert!(!born(&empty), "git init, nothing committed");
         commit(&empty, "first");
         assert!(born(&empty));
+    }
+
+    #[test]
+    fn a_worktree_carries_another_s_change_as_its_own_against_the_same_head() {
+        let s = repo("carry");
+        std::fs::write(s.repo.join("b.txt"), "b").unwrap();
+        std::fs::write(s.repo.join(".gitignore"), "secret\n").unwrap();
+        commit(&s.repo, "more");
+        let root = s.dir.join("trees");
+        let from = ensure(&s.repo, &root, "one", None).unwrap().path;
+        // Changed, deleted, new, new in a new directory, binary, ignored.
+        std::fs::write(from.join("a.txt"), "a changed").unwrap();
+        std::fs::remove_file(from.join("b.txt")).unwrap();
+        std::fs::write(from.join("c.txt"), "c").unwrap();
+        std::fs::create_dir_all(from.join("d")).unwrap();
+        std::fs::write(from.join("d/e.bin"), [0u8, 159, 146, 150]).unwrap();
+        std::fs::write(from.join("secret"), "s").unwrap();
+        let head = resolve(&from, "HEAD").unwrap();
+        let to = ensure(&s.repo, &root, "two", Some(&head)).unwrap().path;
+        carry(&from, &to).unwrap();
+        let read = |p: &str| std::fs::read(to.join(p)).ok();
+        assert_eq!(read("a.txt").as_deref(), Some(&b"a changed"[..]));
+        assert_eq!(read("b.txt"), None, "deleted there, deleted here");
+        assert_eq!(read("c.txt").as_deref(), Some(&b"c"[..]));
+        assert_eq!(read("d/e.bin").as_deref(), Some(&[0u8, 159, 146, 150][..]));
+        assert_eq!(read("secret"), None, "an ignored file is :copy's");
+        // A change of its own, the same one, the index left at HEAD.
+        let (one, two) = (
+            change(&from, 1 << 20).unwrap().unwrap(),
+            change(&to, 1 << 20).unwrap().unwrap(),
+        );
+        assert_eq!(
+            (two.tree.as_str(), two.patch.as_str()),
+            (one.tree.as_str(), one.patch.as_str())
+        );
+        assert_eq!(git(&to, &["diff", "--cached", "--name-only"]).unwrap(), "");
+        let status = git(&to, &["status", "--porcelain"]).unwrap();
+        assert!(
+            status.contains("?? c.txt") && status.contains(" D b.txt"),
+            "{status}"
+        );
+        assert_eq!(resolve(&to, "HEAD").unwrap(), head);
+        // The one it came from is as it was.
+        assert_eq!(change(&from, 1 << 20).unwrap().unwrap(), one);
+        // Nothing to carry: nothing changes.
+        let three = ensure(&s.repo, &root, "three", Some(&head)).unwrap().path;
+        let four = ensure(&s.repo, &root, "four", Some(&head)).unwrap().path;
+        carry(&three, &four).unwrap();
+        assert_eq!(change(&four, 1 << 20).unwrap(), None);
     }
 
     #[test]
