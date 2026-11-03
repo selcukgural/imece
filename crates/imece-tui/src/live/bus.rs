@@ -1508,6 +1508,18 @@ mod tests {
             hire.input["properties"]["tier"]["enum"],
             json!(["cheap", "standard", "strong"])
         );
+        // A start point for a worker; a helper works in its worker's tree.
+        assert_eq!(hire.input["properties"]["from"]["maxLength"], 200);
+        assert!(
+            hire.input["properties"]["from"]["description"]
+                .as_str()
+                .unwrap()
+                .starts_with("Where the worker's worktree starts")
+        );
+        assert!(worker_hire.input["properties"].get("from").is_none());
+        let solo_hire = tools_of(Role::Solo, &["claude"], &[], DEFAULT_RUN_TIMEOUT);
+        let solo_hire = solo_hire.iter().find(|t| t.name == "hire").unwrap();
+        assert!(solo_hire.input["properties"].get("from").is_none());
     }
 
     #[test]

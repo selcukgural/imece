@@ -127,10 +127,10 @@ pub(super) fn tools_of(
     match role {
         Role::Worker => {
             tools.push(claim_tool());
-            tools.push(hire_tool(vendors, HIRE_HELPER));
+            tools.push(hire_tool(vendors, HIRE_HELPER, false));
         }
-        Role::Solo => tools.push(hire_tool(vendors, HIRE_HELPER)),
-        Role::Leader => tools.push(hire_tool(vendors, HIRE_WORKER)),
+        Role::Solo => tools.push(hire_tool(vendors, HIRE_HELPER, false)),
+        Role::Leader => tools.push(hire_tool(vendors, HIRE_WORKER, true)),
         Role::Helper | Role::Researcher => {}
     }
     tools
@@ -298,30 +298,47 @@ const HIRE_HELPER: &str = "Adds a helper of your own in imece: a coding agent in
                            when it is done. It sends you done and leaves. Hire for a part that \
                            can run beside your own work, in files you are not changing.";
 
-fn hire_tool(vendors: &[&str], description: &str) -> Tool {
+/// What `hire`'s `from` says, for a leader: a worker's start point.
+const HIRE_FROM: &str = "Where the worker's worktree starts (default: the checkout's HEAD): a \
+                         branch, tag or commit of the checkout, or #N for pull request N of \
+                         origin. Only when the work is on that point (the person asked for \
+                         it): the worker's change is against it, and its worktree never moves \
+                         to HEAD.";
+
+/// The hire tool, with `from` for a leader (`start`): a helper works in
+/// its worker's worktree, wherever that started.
+fn hire_tool(vendors: &[&str], description: &str, start: bool) -> Tool {
     let tiers: Vec<&str> = Tier::ALL.iter().map(|t| t.wire()).collect();
+    let mut input = json!({
+        "type": "object",
+        "properties": {
+            "tier": {
+                "type": "string",
+                "enum": tiers,
+                "description": "cheap: small, well-specified mechanical work (renames, \
+                                tests of known behaviour, docs). standard (default): \
+                                ordinary fixes and features. strong: design that cuts \
+                                across the code, hard debugging, review.",
+            },
+            "vendor": {
+                "type": "string",
+                "enum": vendors,
+                "description": "Which coding agent (default: your own).",
+            },
+        },
+        "additionalProperties": false,
+    });
+    if start {
+        input["properties"]["from"] = json!({
+            "type": "string",
+            "maxLength": worktree::START_MAX,
+            "description": HIRE_FROM,
+        });
+    }
     Tool {
         name: "hire".into(),
         description: description.into(),
-        input: json!({
-            "type": "object",
-            "properties": {
-                "tier": {
-                    "type": "string",
-                    "enum": tiers,
-                    "description": "cheap: small, well-specified mechanical work (renames, \
-                                    tests of known behaviour, docs). standard (default): \
-                                    ordinary fixes and features. strong: design that cuts \
-                                    across the code, hard debugging, review.",
-                },
-                "vendor": {
-                    "type": "string",
-                    "enum": vendors,
-                    "description": "Which coding agent (default: your own).",
-                },
-            },
-            "additionalProperties": false,
-        }),
+        input,
     }
 }
 

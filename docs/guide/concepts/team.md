@@ -34,6 +34,7 @@ imece --agents 8 --helpers 3       # caps: workers per team, helpers per worker
 
 - Bare `imece` starts the leader alone. It hires workers with the `hire` tool as the work needs them, up to `--agents` (0-16, default 4). A worker hires helpers the same way, up to `--helpers` (0-8, default 2) at once.
 - `hire` takes a `tier` and a `vendor`. The vendor defaults to the hirer's own; the leader may hire from any vendor imece found on PATH (`claude`, `codex`, `gemini`). Only vendors imece has an adapter for are hireable.
+- **Where a worker starts.** A worker's worktree starts at your HEAD and follows it. Ask the leader for work on another point ("review PR 41", "fix this on release-0.2") and it hires with `from`: a branch, tag or commit of your checkout, or `#41` for a pull request of `origin` (fetched when the worker starts). That worktree starts there and stays there: it never follows your HEAD, its change is against that point, and you apply it to your checkout as any other (three-way when it does not fit cleanly). The journal says `lead hired claude-2 (haiku), starting from #41`, the row `⎇ #41`, and the point is kept between runs. Its helpers work in the same worktree.
 - A socket on the bus is bound for the new agent before it exists. Hiring is for work that can run at once, not in advance: one worker takes several tasks in turn.
 - There is no budget share per agent; the whole team spends from one pot ([budget](../concepts/budget-and-limits.md)).
 

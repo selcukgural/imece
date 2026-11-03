@@ -442,7 +442,7 @@ pub(super) fn worker_in(
     root: &Path,
 ) -> PathBuf {
     let name = w.agents[id].name.clone();
-    let tree = worktree::ensure(repo, root, &name).unwrap().path;
+    let tree = worktree::ensure(repo, root, &name, None).unwrap().path;
     live.ready(
         w,
         id,

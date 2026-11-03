@@ -17,3 +17,27 @@ a model the account lacks: init still succeeds, the first result is an
 prompts, journaled as `Fallback`. Vendors are probed on PATH at start
 (`claude`, `codex`, `gemini`); only vendors imece has an adapter for are
 hireable, others give an honest error.
+
+**A worker's start point (backlog E12 in #58, user's decision
+2026-11-03).** The leader's `hire` takes `from`: a branch, tag or commit
+of the checkout, or `#N` for pull request N of `origin`
+(`worktree::valid_start`: one word, no option, no range, at most
+`START_MAX` 200; `#` and 1–9 digits). A branch, tag or commit is resolved
+at once in the checkout (`worktree::resolve`: `rev-parse --verify
+--end-of-options X^{commit}`), so a wrong name is refused before anyone
+joins; `#N` is fetched when the worker starts (`git fetch --no-tags
+origin refs/pull/N/head`, `GIT_TERMINAL_PROMPT=0`, then `FETCH_HEAD`),
+and a failed fetch stops the worker with git's words. A helper's `hire`
+has no `from`: it works in its worker's worktree. `Agent.start` keeps
+the point as asked (schema 17, `agents.start`); `worktree::ensure` makes
+such a worktree at that commit (`Placed::From`, traced `worktree made
+at abc1234`) and on later starts leaves it where it is (`Placed::Own`);
+`Live::follow` skips it. Its Δ is what it holds against its own HEAD, as
+any worker's, and applying it stays the three-way apply. The journal
+says `lead hired claude-2 (haiku), starting from #41` (`Event::Hired`'s
+`from`), the row `⎇ #41` when the agent made no branch (`stand_spans`;
+`↑ ↓` still count against the checkout's HEAD), and the worker's
+instructions say where it started. The demo's second worker of a
+project starts from `#41` and is never moved. Not done: a solo's start
+point, choosing it from imece's command line, other forges' pull
+request refs (GitLab's `merge-requests/N/head`).

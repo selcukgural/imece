@@ -57,7 +57,9 @@ use crate::model::*;
 /// the `Archived` events.
 /// 16 (2026-11-02): the `Restored` events (no table changed; an older
 /// imece would not know the tag).
-pub const SCHEMA_VERSION: i64 = 16;
+/// 17 (2026-11-03): the start point a worker was hired from
+/// (`agents.start`, `hire`'s `from`).
+pub const SCHEMA_VERSION: i64 = 17;
 /// Trace lines kept per agent, as the world keeps them.
 const TRACE_KEEP: usize = 200;
 /// The file's name under the state directory.
@@ -85,7 +87,7 @@ CREATE TABLE IF NOT EXISTS agents (
     cost INTEGER NOT NULL, taint TEXT NOT NULL, gone INTEGER NOT NULL,
     changed_at INTEGER NOT NULL, traced INTEGER NOT NULL, commands TEXT NOT NULL,
     model TEXT, tiered INTEGER NOT NULL, woken INTEGER NOT NULL, posted INTEGER NOT NULL,
-    session TEXT, session_spent INTEGER NOT NULL DEFAULT 0);
+    session TEXT, session_spent INTEGER NOT NULL DEFAULT 0, start TEXT);
 CREATE TABLE IF NOT EXISTS cards (
     id INTEGER PRIMARY KEY, project INTEGER NOT NULL, title TEXT NOT NULL,
     owner INTEGER, col TEXT NOT NULL, started INTEGER NOT NULL, finished INTEGER NOT NULL);
@@ -404,6 +406,10 @@ impl Store {
                  ALTER TABLE agents ADD COLUMN session_spent INTEGER NOT NULL DEFAULT 0;",
             )?;
         }
+        if !self.has_column("agents", "start")? {
+            self.conn
+                .execute_batch("ALTER TABLE agents ADD COLUMN start TEXT;")?;
+        }
         if !self.has_column("changes", "runs")? {
             self.conn
                 .execute_batch("ALTER TABLE changes ADD COLUMN runs TEXT NOT NULL DEFAULT '[]';")?;
@@ -593,9 +599,9 @@ impl Store {
             tx.execute(
                 "INSERT OR REPLACE INTO agents (id, project, name, vendor, role, parent, card, \
                  cost, taint, gone, changed_at, traced, commands, model, tiered, woken, posted, \
-                 session, session_spent) \
+                 session, session_spent, start) \
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, \
-                 ?17, ?18, ?19)",
+                 ?17, ?18, ?19, ?20)",
                 params![
                     n(a.id),
                     n(a.project),
@@ -621,6 +627,7 @@ impl Store {
                         .get(id)
                         .and_then(|s| s.as_ref().map(|s| big(s.spent)))
                         .unwrap_or(0),
+                    a.start,
                 ],
             )?;
         }
@@ -903,7 +910,7 @@ impl Store {
                 hash(&(
                     a.project, &a.name, a.vendor, a.role, a.parent, a.card, a.cost, a.taint,
                 )),
-                hash(&(a.gone, a.changed_at, a.traced, &a.commands)),
+                hash(&(a.gone, a.changed_at, a.traced, &a.commands, &a.start)),
                 hash(&(
                     k.models.get(id),
                     k.tiered.get(id),
@@ -1148,8 +1155,8 @@ impl Store {
         }
         let mut st = conn.prepare(
             "SELECT id, project, name, vendor, role, parent, card, cost, taint, gone, \
-             changed_at, traced, commands, model, tiered, woken, posted, session, session_spent \
-             FROM agents ORDER BY id",
+             changed_at, traced, commands, model, tiered, woken, posted, session, session_spent, \
+             start FROM agents ORDER BY id",
         )?;
         for row in st.query_map([], |r| {
             let id = u(r.get(0)?);
@@ -1169,6 +1176,7 @@ impl Store {
             a.gone = r.get(9)?;
             a.traced = ubig(r.get(11)?);
             a.commands = serde_json::from_str(&r.get::<_, String>(12)?).unwrap_or_default();
+            a.start = r.get(19)?;
             if a.gone {
                 a.status = Status::Idle;
             }
@@ -1767,6 +1775,7 @@ mod tests {
                         by: 0,
                         agent: 1,
                         model: Some("gpt".into()),
+                        from: Some("#41".into()),
                     },
                 },
                 Entry {
@@ -2324,6 +2333,10 @@ mod tests {
             ("agent tiered", Box::new(|_, k| k.tiered[3] = true)),
             ("agent woken", Box::new(|_, k| k.woken[3] += 1)),
             ("agent posted", Box::new(|_, k| k.posted[3] += 1)),
+            (
+                "agent start",
+                Box::new(|w, _| w.agents[3].start = Some("#41".into())),
+            ),
             ("trace", Box::new(|w, _| w.agents[3].trace(80, "again"))),
             (
                 "trace past the cap",
@@ -2893,7 +2906,7 @@ mod tests {
             .execute_batch(
                 "INSERT INTO meta VALUES ('started_at', '1'); \
                  INSERT INTO agents VALUES (0, 0, 'x', 'Clod', 'Leader', NULL, NULL, 0, 'Clean', \
-                 0, 0, 0, '[]', NULL, 0, 0, 0, NULL, 0);",
+                 0, 0, 0, '[]', NULL, 0, 0, 0, NULL, 0, NULL);",
             )
             .unwrap();
         let e = store.load(100).err().expect("refused").to_string();
@@ -3199,10 +3212,11 @@ mod tests {
                 )
                 .unwrap();
             assert_eq!(
-                version, "16",
-                "the sent table, the Fault kind, archives, restores: an older imece knows none"
+                version, "17",
+                "the sent table, the Fault kind, archives, restores, start points: an older \
+                 imece knows none"
             );
-            assert_eq!(SCHEMA_VERSION, 16);
+            assert_eq!(SCHEMA_VERSION, 17);
         }
         let back = Store::open(&path)
             .unwrap()
@@ -3222,6 +3236,43 @@ mod tests {
         );
         assert_eq!(tag(&Role::Solo), "Solo");
         assert_eq!(untag::<Role>("Solo").unwrap(), Role::Solo);
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn a_start_point_comes_back_and_a_file_of_schema_16_gets_the_column() {
+        let d = dir("schema16");
+        std::fs::create_dir_all(&d).unwrap();
+        let path = d.join(FILE);
+        let mut w = world();
+        w.agents[1].start = Some("#41".into());
+        w.agents[2].start = Some("release-0.2".into());
+        {
+            let mut store = Store::open(&path).unwrap();
+            assert!(store.save(&w, &kept().kept()).unwrap());
+            let back = store.load(100).unwrap().unwrap();
+            let starts: Vec<Option<&str>> = back
+                .world
+                .agents
+                .iter()
+                .map(|a| a.start.as_deref())
+                .collect();
+            assert_eq!(starts[..3], [None, Some("#41"), Some("release-0.2")]);
+            // As schema 16 wrote it: no start points.
+            store
+                .raw()
+                .execute_batch(
+                    "ALTER TABLE agents DROP COLUMN start;
+                     UPDATE meta SET value = '16' WHERE key = 'schema_version';",
+                )
+                .unwrap();
+        }
+        let mut store = Store::open(&path).unwrap();
+        let back = store.load(100).unwrap().expect("a world");
+        assert!(back.world.agents.iter().all(|a| a.start.is_none()));
+        assert!(store.save(&w, &kept().kept()).unwrap());
+        let back = store.load(100).unwrap().unwrap();
+        assert_eq!(back.world.agents[1].start.as_deref(), Some("#41"));
         let _ = std::fs::remove_dir_all(&d);
     }
 

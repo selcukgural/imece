@@ -16,6 +16,9 @@ use crate::rng::Rng;
 
 type Repo = &'static [(&'static str, &'static [&'static str])];
 
+/// The start point the demo's second worker of a project is hired from.
+const DEMO_START: &str = "#41";
+
 const SHOP: Repo = &[
     (
         "src/Orders/OrderService.cs",
@@ -1498,7 +1501,8 @@ impl Sim {
     /// long (each said once a run); mostly nothing.
     fn worktree(&mut self, w: &mut World, id: AgentId, roll: u64) {
         match roll {
-            0 => {
+            // One started from a point of its own stays there, as live's.
+            0 if w.agents[id].start.is_none() => {
                 let (from, to) = (sha(&mut self.rng), sha(&mut self.rng));
                 w.agents[id].stand = Stand::default();
                 w.note(Event::WorktreeMoved {
@@ -1589,12 +1593,26 @@ impl Sim {
         let model = models[self.rng.below(3) as usize].map(str::to_string);
         let shown = model.clone().unwrap_or_else(|| "the default model".into());
         let (hirer, name) = (w.agents[by].name.clone(), w.agents[id].name.clone());
+        // A project's second worker starts from a pull request, as a
+        // leader asked with `hire`'s `from`: its worktree stays there.
+        let a = &w.agents[id];
+        let second = a.role == Role::Worker
+            && (w.agents.iter())
+                .filter(|o| o.project == a.project && o.role == Role::Worker)
+                .count()
+                == 2;
+        let from = second.then(|| DEMO_START.to_string());
         w.agents[by].trace(t, format!("hire {name} {shown}"));
         w.agents[id].trace(t, format!("hired by {hirer} · {shown}"));
+        if let Some(f) = &from {
+            w.agents[id].trace(t, format!("worktree from {f}"));
+        }
+        w.agents[id].start.clone_from(&from);
         w.note(Event::Hired {
             by,
             agent: id,
             model: model.clone(),
+            from,
         });
         if let Some(model) = model
             && self.rng.one_in(5)
@@ -3801,7 +3819,10 @@ diff --git a/b.rs b/b.rs
             for _ in 0..60 {
                 let n = w.journal.len();
                 s.hired(&mut w, 0, worker);
-                let Event::Hired { by, agent, model } = &w.journal[n].event else {
+                let Event::Hired {
+                    by, agent, model, ..
+                } = &w.journal[n].event
+                else {
                     panic!("{:?}", w.journal[n].event);
                 };
                 assert_eq!((*by, *agent), (0, worker));
@@ -4463,6 +4484,72 @@ diff --git a/b.rs b/b.rs
         assert_eq!(both.len(), 2);
         s.worktree(&mut w, worker, 0);
         assert_eq!(w.agents[worker].stand, Stand::default());
+        // One hired from a start point of its own is never moved.
+        w.agents[worker].start = Some(DEMO_START.into());
+        w.agents[worker].stand.behind = 3;
+        let n = w.journal.len();
+        s.worktree(&mut w, worker, 0);
+        assert_eq!(w.journal.len(), n, "nothing said");
+        assert_eq!(w.agents[worker].stand.behind, 3, "nor moved");
+    }
+
+    #[test]
+    fn a_project_s_second_worker_starts_from_a_pull_request() {
+        let (mut w, mut s) = world(1, 1, 0, 5, Lang::En);
+        let lead = w.projects[0].leader;
+        let first = workers_of(&w, 0)[0];
+        assert_eq!(w.agents[first].start, None);
+        let id = w.agents.len();
+        w.agents.push(Agent::new(
+            id,
+            0,
+            "claude-9".into(),
+            Vendor::Claude,
+            Role::Worker,
+            Status::Idle,
+            0,
+        ));
+        s.hired(&mut w, lead, id);
+        assert_eq!(w.agents[id].start.as_deref(), Some(DEMO_START));
+        assert!(w.journal.iter().any(|e| matches!(
+            &e.event,
+            Event::Hired { agent, from: Some(f), .. } if *agent == id && f == DEMO_START
+        )));
+        assert!(
+            w.agents[id]
+                .trace
+                .iter()
+                .any(|l| l.ends_with("worktree from #41"))
+        );
+        // Its helper starts nowhere of its own (it works in its worker's
+        // tree), while the project has two workers; the third worker
+        // starts at HEAD again.
+        let helper = w.agents.len();
+        let mut h = Agent::new(
+            helper,
+            0,
+            "claude-9.1".into(),
+            Vendor::Claude,
+            Role::Helper,
+            Status::Idle,
+            0,
+        );
+        h.parent = Some(id);
+        w.agents.push(h);
+        s.hired(&mut w, id, helper);
+        assert_eq!(w.agents[helper].start, None);
+        let third = w.agents.len();
+        w.agents.push(Agent::new(
+            third,
+            0,
+            "claude-10".into(),
+            Vendor::Claude,
+            Role::Worker,
+            Status::Idle,
+            0,
+        ));
+        s.hired(&mut w, lead, third);
+        assert_eq!(w.agents[third].start, None);
     }
 
     #[test]

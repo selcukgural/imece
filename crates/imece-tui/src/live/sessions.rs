@@ -323,7 +323,13 @@ impl Live {
                             commits: why == worktree::Why::Commits,
                         });
                     }
-                    Some(worktree::Placed::Fresh | worktree::Placed::AtHead) | None => {}
+                    Some(worktree::Placed::From { at }) => {
+                        w.agents[id].trace(w.tick, format!("worktree made at {at}"));
+                    }
+                    Some(
+                        worktree::Placed::Fresh | worktree::Placed::AtHead | worktree::Placed::Own,
+                    )
+                    | None => {}
                 }
                 session
             }
@@ -612,6 +618,8 @@ impl Live {
         let generation = self.generation[id];
         // A helper changes the same files as its worker: its worktree.
         let tree = Self::tree_of(w, id);
+        // A helper's tree is its worker's, started where the worker's was.
+        let start = w.agents[a.parent.unwrap_or(id)].start.clone();
         let (repo, root) = (place.repo.clone(), place.root.clone());
         let copies = w.projects[a.project].copies.clone();
         let home = self.gemini_home(w, a.project, a.role, &tree);
@@ -621,7 +629,8 @@ impl Live {
                 let (cwd, placed, copied) = if direct {
                     (repo, None, Vec::new())
                 } else {
-                    let w = worktree::ensure(&repo, &root, &tree).map_err(|e| e.to_string())?;
+                    let w = worktree::ensure(&repo, &root, &tree, start.as_deref())
+                        .map_err(|e| e.to_string())?;
                     let copied = copy::into(&repo, &w.path, &copies, COPY_BUDGET);
                     (w.path, Some(w.placed), copied)
                 };
@@ -1959,6 +1968,94 @@ mod tests {
             "no tree of its own"
         );
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_worker_hired_from_a_start_point_works_there() {
+        let repo = checkout("from-repo");
+        let root = trees("from");
+        let old = git_in(&repo, &["rev-parse", "HEAD"]);
+        git_in(&repo, &["branch", "old"]);
+        std::fs::write(repo.join("b.txt"), "b").unwrap();
+        git_in(&repo, &["add", "."]);
+        git_in(
+            &repo,
+            &[
+                "-c",
+                "user.name=t",
+                "-c",
+                "user.email=t@t",
+                "-c",
+                "commit.gpgsign=false",
+                "commit",
+                "-q",
+                "-m",
+                "second",
+            ],
+        );
+        let dir = std::env::temp_dir().join(format!("imece-from-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut w = team(1);
+        let mut live = Live::new(2, claude_at(&fake_claude(&dir)), repo.clone(), root.clone());
+        // Refused before anyone is hired: not one name, not a commit, or
+        // asked by a worker for its helper.
+        for (from, said) in [
+            (
+                "-x",
+                "from must be one branch, tag or commit of the checkout",
+            ),
+            ("a b", "from must be one branch"),
+            ("nowhere", "nowhere names no commit in "),
+        ] {
+            let e = live.hire(&mut w, 0, &json!({ "from": from })).unwrap_err();
+            assert!(e.contains(said), "{from:?}: {e}");
+        }
+        let e = live.hire(&mut w, 1, &json!({ "from": "old" })).unwrap_err();
+        assert!(e.starts_with("from is for the leader's workers"), "{e}");
+        assert_eq!(w.agents.len(), 2, "nobody joined");
+        let got = live.hire(&mut w, 0, &json!({ "from": " old " })).unwrap();
+        assert!(
+            got.contains("), its worktree from old. Give it work"),
+            "{got}"
+        );
+        let id = w.agents.len() - 1;
+        assert_eq!(w.agents[id].start.as_deref(), Some("old"));
+        assert!(w.journal.iter().any(|e| matches!(
+            &e.event,
+            Event::Hired { agent, from: Some(f), .. } if *agent == id && f == "old"
+        )));
+        // A pull request is fetched when the worker starts, not now.
+        let pr = live.hire(&mut w, 0, &json!({ "from": "#41" })).unwrap();
+        assert!(pr.contains("its worktree from #41."), "{pr}");
+        live.told(&mut w, id, "hello").unwrap();
+        wait_for(&mut live, &mut w, |w| {
+            w.agents[id].status == Status::Stopped
+        });
+        let tree = root.join(&w.agents[id].name);
+        assert_eq!(git_in(&tree, &["rev-parse", "HEAD"]), old);
+        assert!(!tree.join("b.txt").exists(), "the start point's files");
+        assert!(
+            w.agents[id]
+                .trace
+                .iter()
+                .any(|l| l.ends_with(&format!("worktree made at {}", &old[..7]))),
+            "{:?}",
+            w.agents[id].trace
+        );
+        // Its pull request is not there: the worker stops with git's words.
+        let pr = w.agents.len() - 1;
+        live.told(&mut w, pr, "hello").unwrap();
+        wait_for(&mut live, &mut w, |w| {
+            w.agents[pr].status == Status::Stopped
+        });
+        assert!(
+            w.agents[pr].topic.contains("pull request #41 of origin"),
+            "{}",
+            w.agents[pr].topic
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+        let _ = std::fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&repo);
     }
 
     #[test]

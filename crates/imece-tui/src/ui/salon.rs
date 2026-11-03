@@ -504,7 +504,7 @@ pub(super) fn agent_line(
         tail.push(Span::styled(format!("  {}", dollars(a.cost)), dim()));
     }
     if matches!(a.role, Role::Worker | Role::Solo) {
-        tail.extend(stand_spans(&a.stand));
+        tail.extend(stand_spans(&a.stand, a.start.as_deref()));
     }
     let helpers = w.helpers_of(a.id).count();
     if helpers > 0 {
@@ -725,13 +725,14 @@ pub(super) fn since_spans(app: &App, a: &Agent) -> Vec<Span<'static>> {
 }
 
 /// Where a worker's worktree stands, `  ⎇ fix-parser ↑2 ↓1 +12 −3`: the
-/// branch an agent put it on, its own commits the checkout lacks, the
+/// branch an agent put it on (else the `start` point it was hired from,
+/// `⎇ #41`), its own commits the checkout lacks, the
 /// checkout's it lacks, and the lines a done would hand over now. Each
 /// part only when there is something to say; nothing for a worktree at
 /// the checkout's HEAD with nothing written.
-pub(super) fn stand_spans(s: &Stand) -> Vec<Span<'static>> {
+pub(super) fn stand_spans(s: &Stand, start: Option<&str>) -> Vec<Span<'static>> {
     let mut parts = Vec::new();
-    if let Some(b) = &s.branch {
+    if let Some(b) = s.branch.as_deref().or(start) {
         // The agent named it: cleaned, and cut where it would push the
         // rest off the row.
         parts.push(Span::styled(format!("⎇ {}", fit(b, 16).trim_end()), dim()));

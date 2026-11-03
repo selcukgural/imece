@@ -474,7 +474,9 @@ impl Live {
     pub(super) fn follow(&mut self, w: &mut World, id: AgentId) {
         let a = &w.agents[id];
         let busy = self.turns[id] > 0 || w.helpers_of(id).any(|h| self.turns[h.id] > 0);
+        // One hired from a start point of its own stays there.
         if !matches!(a.role, Role::Worker | Role::Solo)
+            || a.start.is_some()
             || busy
             || self.placing[id].is_some()
             || !matches!(self.slots[id], Slot::Running(_))
@@ -951,7 +953,7 @@ mod tests {
             root: root.clone(),
             git: true,
         });
-        let tree = worktree::ensure(&repo, &root, "solo-1").unwrap().path;
+        let tree = worktree::ensure(&repo, &root, "solo-1", None).unwrap().path;
         live.ready(
             &mut w,
             solo,
@@ -1249,7 +1251,9 @@ mod tests {
             repo.clone(),
             root.clone(),
         );
-        let tree = worktree::ensure(&repo, &root, "claude-1").unwrap().path;
+        let tree = worktree::ensure(&repo, &root, "claude-1", None)
+            .unwrap()
+            .path;
         let heard = Arc::new(Mutex::new(Vec::new()));
         let session = |fails| Box::new(Heard(heard.clone(), fails));
         live.ready(
@@ -1584,6 +1588,11 @@ mod tests {
             Ok((Box::new(Stub), repo.clone(), None, None, Vec::new())),
         );
         live.follow(&mut w, 0);
+        // A worker hired from a start point of its own stays there.
+        w.agents[1].start = Some("main".into());
+        live.follow(&mut w, 1);
+        assert_eq!(live.placing[1], None, "it stays where it started");
+        w.agents[1].start = None;
         // Between turns: the next prompt finds the worktree at HEAD.
         live.told(&mut w, 1, "go").unwrap();
         settle(&mut live, &mut w);

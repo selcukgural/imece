@@ -61,3 +61,5 @@ the newest 500 loaded.
 Record 80 adds archives (schema 15) and the `Restored` events (schema 16): `projects.archived_at` and
 `archived_title`, the index `journal_project`; an archived agent loads
 asleep with its cut prompts kept in `inflight`, told when it comes back.
+Schema 17 (2026-11-03) adds `agents.start`, the start point a worker was
+hired from (record 05); a file of 16 gets the column empty.

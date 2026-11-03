@@ -3919,8 +3919,8 @@ mod tests {
             added,
             removed,
         };
-        assert!(salon::stand_spans(&Stand::default()).is_empty());
-        let all = salon::stand_spans(&stand(Some("fix-parser"), 2, 1, 12, 3));
+        assert!(salon::stand_spans(&Stand::default(), None).is_empty());
+        let all = salon::stand_spans(&stand(Some("fix-parser"), 2, 1, 12, 3), None);
         assert_eq!(text(&all), "  ⎇ fix-parser ↑2 ↓1 +12 −3");
         let styles: Vec<Style> = all.iter().skip(1).step_by(2).map(|s| s.style).collect();
         assert_eq!(
@@ -3934,17 +3934,38 @@ mod tests {
             ]
         );
         // Each part alone, the first after two spaces.
-        assert_eq!(text(&salon::stand_spans(&stand(None, 1, 0, 0, 0))), "  ↑1");
-        assert_eq!(text(&salon::stand_spans(&stand(None, 0, 4, 0, 0))), "  ↓4");
-        assert_eq!(text(&salon::stand_spans(&stand(None, 0, 0, 5, 0))), "  +5");
-        assert_eq!(text(&salon::stand_spans(&stand(None, 0, 0, 0, 6))), "  −6");
         assert_eq!(
-            text(&salon::stand_spans(&stand(None, 0, 0, 5, 6))),
+            text(&salon::stand_spans(&stand(None, 1, 0, 0, 0), None)),
+            "  ↑1"
+        );
+        assert_eq!(
+            text(&salon::stand_spans(&stand(None, 0, 4, 0, 0), None)),
+            "  ↓4"
+        );
+        assert_eq!(
+            text(&salon::stand_spans(&stand(None, 0, 0, 5, 0), None)),
+            "  +5"
+        );
+        assert_eq!(
+            text(&salon::stand_spans(&stand(None, 0, 0, 0, 6), None)),
+            "  −6"
+        );
+        assert_eq!(
+            text(&salon::stand_spans(&stand(None, 0, 0, 5, 6), None)),
             "  +5 −6"
         );
         // An agent's branch name is cleaned and cut.
-        let long = salon::stand_spans(&stand(Some("a-very-long-branch-name\u{1b}[2J"), 0, 0, 0, 0));
+        let long = salon::stand_spans(
+            &stand(Some("a-very-long-branch-name\u{1b}[2J"), 0, 0, 0, 0),
+            None,
+        );
         assert_eq!(text(&long), "  ⎇ a-very-long-bra…");
+        // The start point it was hired from, when no branch is named; a
+        // branch the agent made wins.
+        let from = salon::stand_spans(&stand(None, 0, 3, 0, 0), Some("#41"));
+        assert_eq!(text(&from), "  ⎇ #41 ↓3");
+        let both = salon::stand_spans(&stand(Some("wip"), 0, 0, 0, 0), Some("#41"));
+        assert_eq!(text(&both), "  ⎇ wip");
 
         // On a worker's row, after its cost; never on a leader's.
         let mut app = idle_team(Lang::En);
