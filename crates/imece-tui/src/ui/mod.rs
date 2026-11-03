@@ -5420,6 +5420,8 @@ mod tests {
         let last = s.lines().nth(29).unwrap();
         assert!(last.contains("11/11"), "{last}");
         assert_eq!(input_rows(&app, 60, 30), 8);
+        // The rows above went out of view: the cursor is on the last row.
+        assert_eq!(caret_of(&app, 60, 30).map(|(_, y)| y), Some(29));
     }
 
     /// Where the terminal's cursor is after `app` is drawn on a screen of
