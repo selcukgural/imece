@@ -1731,15 +1731,20 @@ fn completions(f: &mut Frame, area: Rect, m: &crate::complete::Menu, lang: Lang)
     // All when they fit; else the window starts at the highlighted item,
     // is pulled back while earlier items still fit, then filled on, the
     // marks for what stays out counted in.
+    // Ranges searched, never a loop a changed operator could make endless.
+    let fits = |first: usize, last: usize| sum(first, last) + marks(first, last) <= width;
     let (mut first, mut last) = (0, n);
     if sum(0, n) > width {
-        (first, last) = (m.chosen, m.chosen + 1);
-        while first > 0 && sum(first - 1, last) + marks(first - 1, last) <= width {
-            first -= 1;
-        }
-        while last < n && sum(first, last + 1) + marks(first, last + 1) <= width {
-            last += 1;
-        }
+        let end = m.chosen + 1;
+        first = (0..m.chosen)
+            .rev()
+            .take_while(|&f| fits(f, end))
+            .last()
+            .unwrap_or(m.chosen);
+        last = (end + 1..=n)
+            .take_while(|&l| fits(first, l))
+            .last()
+            .unwrap_or(end);
     }
     let mut spans = Vec::new();
     if first > 0 {
@@ -8286,6 +8291,19 @@ mod tests {
         let (row, out) = completion_row(&menu_of(&["xxxxxxxx", "a"], 1), 12);
         assert_eq!(row, " ‹ 1  a     ");
         assert!(out[5] && out[6] && out[7] && !out[4] && !out[8]);
+        // The marks' widths are those of their counts: a count of two
+        // digits takes a cell more (7 items, 4 after: one digit).
+        let (row, _) = completion_row(&menu_of(&seven, 0), 23);
+        assert_eq!(row, " x1  x2  x3  +4 more › ");
+        let twelve: Vec<String> = (1..=12).map(|i| format!("y{i}")).collect();
+        let twelve: Vec<&str> = twelve.iter().map(String::as_str).collect();
+        let (row, _) = completion_row(&menu_of(&twelve, 0), 19);
+        assert_eq!(row, " y1  +11 more ›    ", "10 after would not fit");
+        let (row, _) = completion_row(&menu_of(&twelve, 0), 20);
+        assert_eq!(row, " y1  y2  +10 more › ");
+        // Pulled back to the first: no mark before, its room is the items'.
+        let (row, _) = completion_row(&menu_of(&seven, 1), 19);
+        assert_eq!(row, " x1  x2  +5 more › ");
         // Turkish says it in its words.
         let mut t = Terminal::new(TestBackend::new(21, 1)).unwrap();
         t.draw(|f| completions(f, f.area(), &menu_of(&items, 0), Lang::Tr))
