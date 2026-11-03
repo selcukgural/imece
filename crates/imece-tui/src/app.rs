@@ -8561,6 +8561,14 @@ pub(crate) mod tests {
         app.on_key(key(KeyCode::Char('A')));
         assert_eq!(flash(&app), Some(t.no_archives.to_string()));
         assert!(app.world.change_of(1).is_some());
+        // A change is no ask: `e` and `:yes` give no yes for the turn.
+        app.on_key(key(KeyCode::Char('e')));
+        assert_eq!(flash(&app), Some(fill(t.turn_yes_none, &["claude-1"])));
+        app.flash = None;
+        app.command("yes @claude-1");
+        assert_eq!(flash(&app), Some(fill(t.turn_yes_none, &["claude-1"])));
+        assert_eq!(app.world.agents[1].turn_yes, None);
+        assert!(app.world.change_of(1).is_some());
         app.on_key(key(KeyCode::Char('a')));
         assert_eq!(flash(&app), Some(fill(t.applying, &["claude-1"])));
         assert_eq!(app.zoom, Zoom::Focus(1), "the focus stays open");
