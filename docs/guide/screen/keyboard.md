@@ -43,6 +43,7 @@ The conventions are vim's: `h` `j` `k` `l` move and fold, `gg` and `G` go to the
 | `H`  `:recall` | search every journal and trace line of every project and archive: each word typed must start a word of the line, newest first with who, where and when; `enter` goes there (its conversation, an archive's view, the agent's raw stream), `tab` steps |
 | `^a` `^e` `⌥b` `⌥f` | writing: to the start / end, a word back / on |
 | `^w` `^u` `^k` `^y` | writing: cut a word / before / after the cursor; paste the cut back |
+| `^x^e`  `:edit` | writing: the line in your editor (`$VISUAL`, else `$EDITOR`, else `vi`); what you save comes back on the line, not sent |
 | `⇧enter` `⌥enter` | writing: a new line; `↑` `↓` between lines (where the terminal speaks the kitty keyboard protocol) |
 | `\enter` `⌥enter` | writing: a new line (here `⇧enter` is `enter`); `\` then `enter` works in every terminal |
 | `enter` | send; `esc` cancels |

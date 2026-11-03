@@ -9,6 +9,7 @@ mod away;
 mod clip;
 mod complete;
 mod edit;
+mod editor;
 mod i18n;
 mod input;
 mod keys;
@@ -816,6 +817,17 @@ fn run(
                 let how = shell::run(terminal, &cwd, &command, |ended| app.shell_back(ended));
                 app.ran(&command, how);
                 // The shell had the terminal, its title and cursor back.
+                title.forget();
+                cursor.forget();
+                tab.forget();
+            }
+            if let Some(draft) = app.editor.take() {
+                let (cwd, editor) = (app.cwd(), editor::of_env());
+                let back = editor::run(terminal, state, &cwd, &editor, &draft, |why| {
+                    app.editor_back(&editor, why)
+                });
+                app.edited(&draft, back);
+                // The editor had the terminal, its title and cursor too.
                 title.forget();
                 cursor.forget();
                 tab.forget();

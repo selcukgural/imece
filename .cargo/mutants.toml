@@ -7,7 +7,8 @@
 # handlers, which descriptor is the terminal (`input::terminal`, stdin
 # when it is one; the waiting on it is tested), the clipboard tools, the
 # screen stepping aside for a `!` command (`run_in`, which runs the
-# command, is tested), the question to
+# command, is tested) or for the editor (`editor::run`; `edit`, which
+# runs it, is tested), the question to
 # the terminal about its colours (`probe`; the parsing is tested), the
 # screen's take-over and what asks the terminal its size or cursor
 # (`screen`; the row-by-row erase is tested).
@@ -37,6 +38,8 @@ exclude_re = [
     "src/clip.rs:.*: replace .* in (copy|tools|pipe|osc52)$",
     "src/shell.rs:.*: replace (run|step_aside|wait_for_key|come_back) ",
     "src/shell.rs:.*: (replace|delete) .* in (run|step_aside|wait_for_key|come_back)$",
+    "src/editor.rs:.*: replace run ",
+    "src/editor.rs:.*: (replace|delete) .* in run$",
     "src/probe.rs:.*: replace (terminal|ask|asked|colours_again|readable) ",
     "src/probe.rs:.*: (replace|delete) .* in (terminal|ask|asked|colours_again|readable)$",
     "src/screen.rs:.*: replace (init|restore|terminal_rows|<impl Backend for Quiet<W>>::(size|window_size|get_cursor_position)) ",

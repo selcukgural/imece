@@ -13,6 +13,7 @@ use crate::archives::{self, Browser};
 use crate::away::Away;
 use crate::complete::{self, Jump, Menu};
 use crate::edit;
+use crate::editor;
 use crate::i18n::{Lang, clean, fill};
 use crate::keys::{self, Keymap};
 use crate::live::{self, Live, Open, Refusal, standing};
@@ -843,6 +844,11 @@ pub struct App {
     /// A command the person typed after `!`; the main loop steps the
     /// screen aside and runs it in their shell, then calls `ran`.
     pub shell: Option<String>,
+    /// The draft `^x ^e` or `:edit` opens in the person's editor; the main
+    /// loop steps the screen aside, runs it and calls `edited`.
+    pub editor: Option<String>,
+    /// The last key while writing was `^x`: a `^e` now opens the editor.
+    ctrl_x: bool,
     /// The person's home directory, for `~` in a path they type.
     pub home: Option<PathBuf>,
     /// The first key of a two-key chord (`g`, `z`), waiting for the second.
@@ -1093,6 +1099,8 @@ impl App {
             side: SIDE_DEFAULT,
             copy: None,
             shell: None,
+            editor: None,
+            ctrl_x: false,
             home: std::env::var_os("HOME").map(PathBuf::from),
             pending: None,
             typing: false,
@@ -3388,6 +3396,41 @@ impl App {
         self.menu = None;
     }
 
+    /// `^x ^e`, `:edit`: `draft` goes to the person's editor; the main
+    /// loop takes it from `editor`. Not in an archive's view, whose line
+    /// sends nothing.
+    fn open_editor(&mut self, draft: String) {
+        if self.viewing_archive() {
+            return self.read_only();
+        }
+        self.menu = None;
+        self.editor = Some(draft);
+    }
+
+    /// The line under what an editor that gave the draft back left on the
+    /// screen, before the screen comes back.
+    pub fn editor_back(&self, editor: &str, why: &editor::Why) -> String {
+        let why = ui::words::editor_why(self.lang, editor, why);
+        fill(self.lang.text().editor_back, &[&why])
+    }
+
+    /// The editor closed on `draft`: what it left is the line now, the
+    /// cursor at its end, to send with `enter` or change first; nothing is
+    /// sent. When it failed (`editor_back` said why) the draft is the line
+    /// again, as it was.
+    pub fn edited(&mut self, draft: &str, back: Result<String, editor::Why>) {
+        self.typing = true;
+        self.input = match back {
+            Ok(text) => pasted(&text),
+            Err(_) => draft.to_string(),
+        };
+        self.after = 0;
+        self.recall = None;
+        self.searching = false;
+        self.recalling = false;
+        self.menu = self.suggest();
+    }
+
     /// The line under a `!` command's output, before the screen comes
     /// back.
     pub fn shell_back(&self, ran: Ran) -> String {
@@ -3502,7 +3545,12 @@ impl App {
         let ctrl = k.modifiers.contains(KeyModifiers::CONTROL);
         let newline =
             k.modifiers.contains(KeyModifiers::SHIFT) || k.modifiers.contains(KeyModifiers::ALT);
+        // `^x ^e`, as bash and zsh have it: the line in the editor. Any
+        // other key after `^x` does what it does alone.
+        let after_x = std::mem::take(&mut self.ctrl_x);
         match k.code {
+            KeyCode::Char('e') if ctrl && after_x => self.open_editor(self.input.clone()),
+            KeyCode::Char('x') if ctrl => self.ctrl_x = true,
             KeyCode::Char('n') if ctrl => self.pick(true),
             KeyCode::Char('p') if ctrl => self.pick(false),
             KeyCode::Char('r') if ctrl => {
@@ -3799,6 +3847,7 @@ impl App {
                 &[&dollars(self.world.spent()), &dollars(self.world.budget)],
             )),
             "lead" => Some(self.primary.clone().unwrap_or_else(|| "ask".to_string())),
+            "edit" => Some(editor::of_env()),
             "theme" => Some(theme::pal().name.clone()),
             "lang" => Some(t.language.to_string()),
             "close" | "rename" => Some(self.world.projects[self.current_project()].name.clone()),
@@ -4174,6 +4223,7 @@ impl App {
             "pin" => self.pin(arg),
             "mark" => self.toggle_mark(),
             "output" => self.quote_output(),
+            "edit" => self.open_editor(arg.to_string()),
             "salon" => self.show(View::Salon),
             "board" => self.show(View::Board),
             "code" => self.show(View::Code),
@@ -8404,6 +8454,121 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn ctrl_x_ctrl_e_hands_the_line_to_the_editor_and_its_text_comes_back_unsent() {
+        let (mut app, _) = four_idle();
+        app.on_key(key(KeyCode::Char('i')));
+        type_in(&mut app, "@claude-1 a long");
+        app.after = 5;
+        app.on_key(ctrl('x'));
+        assert!(app.editor.is_none(), "^x alone waits");
+        app.on_key(ctrl('e'));
+        assert_eq!(
+            app.editor.as_deref(),
+            Some("@claude-1 a long"),
+            "the whole line"
+        );
+        assert!(app.menu.is_none());
+        let draft = app.editor.take().unwrap();
+        // What the editor left is the line, cleaned, the cursor at its end;
+        // nothing is sent and nothing is kept as sent.
+        let sent = app.world.sent.len();
+        app.edited(&draft, Ok("@claude-1 a long\nmessage\t\u{1b}[2J".into()));
+        assert!(app.typing && app.editor.is_none());
+        assert_eq!(app.input, "@claude-1 a long\nmessage\t[2J");
+        assert_eq!(app.after, 0);
+        assert_eq!(app.world.sent.len(), sent);
+        // An editor that failed gives the draft back as it was; why was
+        // said on the terminal before the screen came back.
+        app.input = "changed".into();
+        app.after = 2;
+        let why = editor::Why::Ended(Ended::Exit(1));
+        assert_eq!(
+            app.editor_back("vim", &why),
+            "[imece] `vim` ended with 1: the draft is kept · any key: back to the screen\n"
+        );
+        app.edited("the draft", Err(why));
+        assert_eq!((app.input.as_str(), app.after), ("the draft", 0));
+        assert!(app.typing);
+        app.lang = Lang::Tr;
+        assert_eq!(
+            app.editor_back("vim", &editor::Why::NotText),
+            "[imece] `vim` UTF-8 metin olmayan bir şey bıraktı: taslak duruyor · herhangi bir tuş: ekrana dön\n"
+        );
+    }
+
+    #[test]
+    fn ctrl_x_then_another_key_does_what_that_key_does_alone() {
+        let (mut app, _) = four_idle();
+        app.on_key(key(KeyCode::Char('i')));
+        type_in(&mut app, "ab");
+        app.on_key(ctrl('x'));
+        app.on_key(ctrl('a'));
+        assert_eq!(app.cursor(), 0, "^a went to the start");
+        // The chord is gone: a later ^e is only the end of the line.
+        app.on_key(ctrl('e'));
+        assert!(app.editor.is_none());
+        assert_eq!(app.cursor(), 2);
+        // A plain e after ^x is a letter, and the chord goes with it.
+        app.on_key(ctrl('x'));
+        app.on_key(key(KeyCode::Char('e')));
+        assert_eq!(app.input, "abe");
+        app.on_key(ctrl('e'));
+        assert!(app.editor.is_none());
+        // ^e without ^x before it never opens the editor, and x without
+        // ctrl is a letter, no chord.
+        app.on_key(ctrl('e'));
+        assert!(app.editor.is_none());
+        app.on_key(key(KeyCode::Char('x')));
+        assert_eq!(app.input, "abex");
+        app.on_key(ctrl('e'));
+        assert!(app.editor.is_none());
+    }
+
+    #[test]
+    fn edit_opens_the_editor_on_what_follows_it_and_its_menu_names_the_editor() {
+        let (mut app, _) = four_idle();
+        app.command("edit");
+        assert_eq!(app.editor.as_deref(), Some(""));
+        app.editor = None;
+        app.command("edit dear leader");
+        assert_eq!(app.editor.as_deref(), Some("dear leader"));
+        assert!(complete::COMMANDS.contains(&"edit"));
+        assert_eq!(app.command_note("edit"), format!("({})", editor::of_env()));
+        assert!(!VIEW_COMMANDS.contains(&"edit"));
+        // Every way it fails is worded, in both languages.
+        let t = |lang, why| ui::words::editor_why(lang, "ed", &why);
+        assert_eq!(
+            t(Lang::En, editor::Why::Ended(Ended::Exit(127))),
+            "no editor `ed`: set $VISUAL or $EDITOR; the draft is kept"
+        );
+        assert_eq!(
+            t(Lang::En, editor::Why::Ended(Ended::Exit(126))),
+            "`ed` ended with 126: the draft is kept"
+        );
+        assert_eq!(
+            t(Lang::En, editor::Why::Ended(Ended::Signal(9))),
+            "`ed` was stopped by signal 9: the draft is kept"
+        );
+        assert_eq!(
+            t(Lang::En, editor::Why::Long),
+            "`ed` left more than 1024 KiB: the draft is kept"
+        );
+        assert_eq!(
+            t(Lang::En, editor::Why::NotText),
+            "`ed` left what is not UTF-8 text: the draft is kept"
+        );
+        let io = io::Error::other("disk full");
+        assert_eq!(
+            t(Lang::En, editor::Why::Io(io)),
+            "could not open the draft in `ed`: disk full; it is kept"
+        );
+        assert_eq!(
+            t(Lang::Tr, editor::Why::Ended(Ended::Exit(2))),
+            "`ed` 2 ile bitti: taslak duruyor"
+        );
+    }
+
+    #[test]
     fn ctrl_r_searches_the_lines_sent_and_enter_takes_one_to_the_line() {
         let (mut app, _) = four_idle();
         let said = |app: &mut App| app.flash.take().map(|f| f.0).unwrap_or_default();
@@ -11725,6 +11890,17 @@ pub(crate) mod tests {
 
     fn said(app: &App) -> &str {
         app.flash.as_ref().map_or("", |f| f.0.as_str())
+    }
+
+    #[test]
+    fn an_archive_s_view_opens_no_editor() {
+        let mut app = viewing();
+        app.on_key(key(KeyCode::Char('i')));
+        app.on_key(key(KeyCode::Char('a')));
+        app.on_key(ctrl('x'));
+        app.on_key(ctrl('e'));
+        assert!(view(&app).editor.is_none() && app.editor.is_none());
+        assert_eq!(said(view(&app)), Lang::En.text().read_only);
     }
 
     #[test]
