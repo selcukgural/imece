@@ -840,6 +840,30 @@ mod tests {
             })
         );
         assert_eq!(journaled(&w, &Event::Resumed { agent: 2 }), 0);
+        // A fork whose process is gone at its first prompt (before any
+        // `init`) is no fork any more: never its worker's session again.
+        live.forks[2] = Some(1);
+        live.resuming[2] = Some(Attempt {
+            session: UUID.into(),
+            fork: Some("7d1c3f2e-5b6a-4c8d-9e0f-1a2b3c4d5e6f".into()),
+            text: "try".into(),
+            notes: Vec::new(),
+        });
+        live.slots[2] = Slot::Starting(vec!["try".into()]);
+        live.ready(
+            &mut w,
+            2,
+            Ok((
+                Box::new(Heard(Default::default(), true)),
+                std::env::temp_dir(),
+                None,
+                None,
+                Vec::new(),
+                setup::Done::None,
+            )),
+        );
+        assert_eq!(w.agents[2].status, Status::Stopped);
+        assert_eq!((live.forks[2], live.resuming[2].is_none()), (None, true));
     }
 
     #[test]

@@ -200,6 +200,10 @@ impl Live {
         self.inflight[id].clear();
         self.floor[id] = 0;
         self.resuming[id] = None;
+        // A fork whose session ended before it started (a refusal, a
+        // process gone at its first prompt) goes on as a new session in
+        // the worktree it has, never forking its worker again later.
+        self.forks[id] = None;
         self.placing[id] = None;
     }
 
@@ -237,8 +241,6 @@ impl Live {
         let mut texts = std::mem::take(&mut self.inflight[id]);
         self.end(w, id);
         self.sessions[id] = None;
-        // A fork that did not start goes on as a new session.
-        self.forks[id] = None;
         self.notes[id] = a.notes;
         self.remembered[id] = true;
         self.refused[id] = Some(refusal(why));

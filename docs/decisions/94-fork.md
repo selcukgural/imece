@@ -80,9 +80,11 @@ Claude the transcript where the worker runs). Taken at the wake, not at
   that started with that worker's change, and that the person forked it
   to try another way; the person's words follow.
 - `Started` makes the session its own: `forks[new]` cleared, no
-  `Resumed` journaled. A session that could not fork (`Stopped` before
-  `init`) goes on as a new one (`Live::restart`, `forks` cleared): the
-  journal says why, the worktree keeps what it carried.
+  `Resumed` journaled. Any end before that clears it too (`Live::end`):
+  a session that could not fork (`Stopped` before `init`) goes on as a
+  new one (`Live::restart`, the journal says why), and so does a process
+  gone at its first prompt; the worktree keeps what it carried and the
+  worker is never forked again behind its back.
 
 Its Δ (record 11) is its own: against its HEAD, which is the worker's,
 so the change it carried is in its Δ until the worker's is applied.
