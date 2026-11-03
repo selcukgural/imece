@@ -814,7 +814,10 @@ mod tests {
                 )
             );
             let m = suggest(&format!(":{cmd} j"), &w, 0, None).unwrap();
-            assert_eq!(m.items, ["journal"]);
+            assert_eq!(
+                (m.items, m.start),
+                (vec!["journal".to_string()], cmd.len() + 2)
+            );
         }
         let name = &w.agents[1].name;
         let head = &name[..3];
