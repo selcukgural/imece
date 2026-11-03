@@ -221,6 +221,18 @@ impl Live {
         path.canonicalize().unwrap_or(path)
     }
 
+    /// The folder agent `id` works in, as [`cwd_of`](Self::cwd_of) but
+    /// not looked up on the disk (the screen draws it), and the checkout
+    /// when that is a worktree of it.
+    pub fn folder_of(&self, w: &World, id: AgentId) -> (PathBuf, Option<&Path>) {
+        let a = &w.agents[id];
+        let place = &self.places[a.project];
+        if a.role == Role::Leader || !place.git {
+            return (place.repo.clone(), None);
+        }
+        (place.root.join(Self::tree_of(w, id)), Some(&place.repo))
+    }
+
     /// The name of the worktree agent `id` works in: a worker's own name,
     /// a helper's worker's; a solo's is `solo-<project id>`, so a renamed
     /// solo project (which renames the agent) keeps its worktree.

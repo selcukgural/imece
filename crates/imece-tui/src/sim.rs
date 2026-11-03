@@ -684,6 +684,9 @@ struct Extras {
     tidy_due: Option<Option<Tidied>>,
     /// The teardown scripts the person said no to this run.
     teardown_refused: Vec<String>,
+    /// The folder `:open` or `:solo` was given, by project: what the
+    /// screen says it works in.
+    folders: HashMap<ProjectId, String>,
 }
 
 /// The demo's worktree teardown script, the same in every checkout.
@@ -2015,6 +2018,7 @@ impl Sim {
             .find(|q| q.closed && q.archived.is_none() && q.name == name)
             .map(|q| q.id);
         let p = w.open_project(reuse, name, path.to_string(), Vendor::Claude, Role::Leader);
+        self.extras.folders.insert(p, path.to_string());
         if reuse.is_none() {
             w.projects[p].repo = PROJECTS[p % PROJECTS.len()].1;
         }
@@ -2059,6 +2063,7 @@ impl Sim {
             .map(|q| q.id);
         let vendor = vendor.unwrap_or(Vendor::Claude);
         let p = w.open_project(reuse, name, path.to_string(), vendor, Role::Solo);
+        self.extras.folders.insert(p, path.to_string());
         if reuse.is_none() {
             w.projects[p].repo = PROJECTS[p % PROJECTS.len()].1;
         }
@@ -2074,6 +2079,12 @@ impl Sim {
             self.models.insert(w.projects[p].leader, c);
         }
         Ok(p)
+    }
+
+    /// The folder project `p` was opened at with `:open` or `:solo`; none
+    /// for the demo's own projects.
+    pub fn folder_of(&self, p: ProjectId) -> Option<&str> {
+        self.extras.folders.get(&p).map(String::as_str)
     }
 
     /// The `[MODEL][@EFFORT]` choice agent `id` runs on, when the person

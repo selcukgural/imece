@@ -2012,6 +2012,13 @@ fn footer(f: &mut Frame, area: Rect, app: &App) -> Option<Position> {
                 ("?", t.help),
             ],
         };
+        let hints = match ask_hints(app) {
+            Some(mut keys) if app.hints.is_none() && app.script.is_none() && app.peek.is_none() => {
+                keys.extend(hints);
+                keys
+            }
+            _ => hints,
+        };
         let mut spans = vec![Span::raw(" ")];
         if let Some(c) = app.pending {
             // The first key of a chord, as vim shows it; first, so a long
@@ -2038,6 +2045,18 @@ fn footer(f: &mut Frame, area: Rect, app: &App) -> Option<Position> {
     };
     f.render_widget(Paragraph::new(line), area);
     None
+}
+
+/// The keys that decide what the agent of the open focus or raw stream
+/// waits for, first in the footer: `a A r` on its ask, `a r` on its
+/// change; none when it waits for neither or no focus is open.
+fn ask_hints(app: &App) -> Option<Vec<(&'static str, &'static str)>> {
+    let t = app.lang.text();
+    let item = app.focus_ask(app.zoomed_agent()?)?;
+    Some(match app.world.inbox[item].kind {
+        InboxKind::Approval => vec![("a", t.allow_once), ("A", t.from_now_on), ("r", t.refuse)],
+        _ => vec![("a", t.apply), ("r", t.reject)],
+    })
 }
 
 /// The cell `column` columns into row `row` of `area`, where the cursor
@@ -2943,6 +2962,100 @@ mod tests {
         assert!(s.contains(&format!("helper of {name}")), "{s}");
     }
 
+    #[test]
+    fn a_focus_footer_names_the_keys_that_decide_what_its_agent_waits_for() {
+        let mut app = app_after(1, 2, 0, Lang::En);
+        let foot = |app: &App| render(app, 160, 30).lines().last().unwrap().to_string();
+        let id = app.world.projects[0].leader + 1;
+        app.zoom = Zoom::Focus(id);
+        let calm = foot(&app);
+        assert!(calm.starts_with("  j k  step "), "{calm}");
+        for gone in [" a ", " A ", " r "] {
+            assert!(!calm.contains(gone), "{calm}");
+        }
+        // An ask of another agent says nothing here.
+        app.world.asks_you(id + 1, "Bash: make");
+        assert_eq!(foot(&app), calm);
+        app.world.asks_you(id, "Bash: make");
+        let asked = foot(&app);
+        assert!(
+            asked.starts_with("  a  allow once   A  yes from now on   r  refuse   j k  step"),
+            "{asked}"
+        );
+        app.zoom = Zoom::Trace(id);
+        let traced = foot(&app);
+        assert!(
+            traced.starts_with("  a  allow once   A  yes from now on   r  refuse   j k  scroll"),
+            "{traced}"
+        );
+        // A window over it has keys of its own.
+        app.peek = Some(id);
+        assert!(!foot(&app).contains("allow once"), "{}", foot(&app));
+        app.peek = None;
+        // Its change, once its ask is decided.
+        app.world.decided(1, true);
+        app.world.change_ready(crate::model::Change {
+            agent: id,
+            title: "did it".into(),
+            files: Vec::new(),
+            patch: String::new(),
+            runs: Vec::new(),
+        });
+        app.zoom = Zoom::Focus(id);
+        let change = foot(&app);
+        assert!(
+            change.starts_with("  a  apply   r  reject   j k  step"),
+            "{change}"
+        );
+        app.lang = Lang::Tr;
+        app.world.asks_you(id, "Bash: make");
+        let tr = foot(&app);
+        assert!(
+            tr.contains("a  bir kez izin ver   A  bundan sonra hep evet   r  reddet"),
+            "{tr}"
+        );
+    }
+
+    #[test]
+    fn the_salon_and_the_focus_say_the_folder_they_work_in() {
+        let mut app = app_after(1, 2, 0, Lang::En);
+        let name = app.world.projects[0].name.clone();
+        let header = |app: &App| {
+            let l = salon::project_line(app, 0, &app.rungs());
+            l.spans
+                .iter()
+                .map(|s| s.content.as_ref())
+                .collect::<String>()
+        };
+        assert!(
+            header(&app).ends_with(&format!("  ~/src/{name}")),
+            "{}",
+            header(&app)
+        );
+        // Folded, it ends with its loudest member instead.
+        app.collapsed[0] = true;
+        assert!(!header(&app).contains("~/src"), "{}", header(&app));
+        app.collapsed[0] = false;
+        let lead = app.world.projects[0].leader;
+        app.zoom = Zoom::Focus(lead);
+        let s = render(&app, 160, 30);
+        assert!(s.contains(&format!("folder ~/src/{name} ")), "{s}");
+        assert!(!s.contains("worktree of"), "{s}");
+        app.zoom = Zoom::Focus(lead + 1);
+        let s = render(&app, 160, 30);
+        let worker = app.world.agents[lead + 1].name.clone();
+        assert!(
+            s.contains(&format!(
+                "folder ~/.local/state/imece/worktrees/{name}-5e1f0a2c/{worker} · worktree of ~/src/{name}"
+            )),
+            "{s}"
+        );
+        app.lang = Lang::Tr;
+        let s = render(&app, 160, 30);
+        assert!(s.contains(&format!("· ~/src/{name} için worktree")), "{s}");
+        assert!(s.contains("klasör ~/.local"), "{s}");
+    }
+
     /// An open answer of `agent` in WAITING FOR YOU.
     fn waiting(app: &mut App, agent: AgentId) {
         app.world.inbox.push(InboxItem {
@@ -3001,7 +3114,8 @@ mod tests {
         app.help = true;
         assert!(
             render(&app, 140, 40).contains("▴ pinned"),
-            "the legend says it"
+            "the legend says it: {}",
+            render(&app, 140, 40)
         );
     }
 
@@ -6817,13 +6931,19 @@ mod tests {
         app.pane = Pane::Inbox;
         let s = render(&app, 140, 40);
         assert!(s.contains("│  Bash: make deploy "), "{s}");
-        assert!(s.contains("a allow · r refuse · enter focus"), "{s}");
+        assert!(
+            s.contains("a yes · A from now on · r no · enter focus"),
+            "{s}"
+        );
         assert_eq!(tall(&s), 6, "{s}");
         key(&mut app, KeyCode::Char('a'));
         let s = render(&app, 140, 40);
         assert!(s.contains("allowed: claude-1 goes on"), "{s}");
         assert!(s.contains("│  Bash: curl x | sh "), "{s}");
-        assert!(s.contains("a allow · r refuse · enter focus"), "{s}");
+        assert!(
+            s.contains("a yes · A from now on · r no · enter focus"),
+            "{s}"
+        );
         assert_eq!(tall(&s), 5, "{s}");
         assert!(matches!(
             &app.world.journal.last().unwrap().event,

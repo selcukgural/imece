@@ -55,6 +55,7 @@ description: imece'nin aldığı her `:` komutu; argümanları, karşılığı o
 | `:news` | — | | | | bu sürüm |
 | `:next` | `W` | | | | N bekliyor |
 | `:notify [off\|bell\|text\|push]` | — | | | | off / bell / text / push |
+| `:now` | `U` | | | | |
 | `:open PATH [NAME]` | — | `:o` | | `$` | |
 | `:output` | `O` | | | | çıktısını alıntıladığı komut |
 | `:pause` | `space` | | evet | | açık / kapalı |
@@ -252,6 +253,10 @@ topic = imece-alerts-7f3k9q2m
 
 `server` yazılmazsa herkese açık `https://ntfy.sh` olur; kendi sunucunuz `https` olmalı (`http` yalnız bu makinede), kullanıcı, sorgu ya da parça içermemeli. `topic` harf, rakam, `-` ve `_` olur, en çok 64; herkese açık sunucuda bir topic'i bilen onu okur, bu yüzden 16'dan kısa ya da rakamsız bir topic reddedilir. `token`, kendi sunucunuzun istediği token'ı tutan bir dosyayı adlandırır: başka kimsenin okuyup yazamadığı (`chmod 600`) size ait düz bir dosya, tek sözcük; `Authorization` başlığı olarak gider, URL'de, komut satırında ya da bir günlükte asla. Bir bildirim `curl`'dür (kurulu olmalı): nereye gideceğini, sözleri ve token'ı stdin'den okur, sizin `.curlrc`'nizden hiçbir şey almaz, yönlendirme izlemez, en çok on saniye sürer. Bir notun söylediğini ve projeyi söyler, bir ajanın sözlerini ya da bir komutu asla: `imece · codex-2 sana soruyor · shop`, `imece · 3 şey seni bekliyor`; takılan bir şey yüksek öncelikle gider. Her şey bir kez gönderilir; günlük her bildirimi söyler (`telefonuna bildirim gitti: …`); başarısız olan bir kez söylenir (`telefonuna bildirim gitmedi: …`) ve yeniden denenmez, bekleyen bir sonraki şey kendi başına gönderilir. Flaş `uzaktayken bir şey beklerse https://ntfy.sh üzerinden telefonuna bildirim gider` ya da ayarlarda neyin yanlış olduğunu (`bildirim ayarı: ntfy.sh'te topic en az 16 karakter ve bir rakamlı olmalı, …`) söyler; ayarlar her başlangıçta yeniden okunur ve artık geçerli değilse hiçbir şey gönderilmez (`:notify off`). Demo ayar okumaz, bir şey göndermez: her bildirim bir günlük satırıdır, `telefonuna bildirim şunu derdi (demo bir şey göndermez): …`.
 
+### `:now`
+
+Geri sayan `:close`, `:forget`, `:archive` ya da `:clear`'ı on saniyesini beklemeden hemen yapar, `U` gibi: süresi dolduğunda olanın aynısı. Geri sayarken alt satır bunu söyler (`◷ kule 7 sn sonra kapanıyor · u açık tutar · U hemen`); geri sayan bir şey yoksa `geri sayan bir şey yok` der. Geri dönüş yolu hâlâ `u`dur ([`:undo`](#undo)). Demo da canlı oturumlar da.
+
 ### `:open PATH [NAME]`
 
 `PATH`'teki git çalışma kopyasını kendi başına bir proje olarak açar (`:o`), takımın lider satıcısında (aynı model ve kademelerle) `lead-NAME` adlı yeni bir liderle. `NAME` varsayılan olarak dizinin adının güvenli hali: harf, rakam, `.`, `_`, `-` ile 1-24 karakter (kalanlar `-` olur); yanlış bir ad reddedilir: `"x y" proje adı olamaz: 1-24 harf, rakam, . _ -`. `~` ev dizininizdir; boşluklu bir yol ayrıştırılmaz. Flaş: `kule açıldı (/Users/me/src/kule); lead-kule adına yaz`. Redler: `:open YOL [AD], YOL'daki git çalışma kopyasını proje olarak açar` (yol yok), `kule adında açık bir proje var`, `kule zaten açık, adı k2`, `açılamadı: …` (çalışma kopyası değil). Aynı çalışma kopyasıyla kapalı bir proje yerinde yeniden açılır. Açılan projeler çalıştırmalar arasında hatırlanır; başka bir çalışma kopyasında ikinci bir imece'ye ilkinden `:open` kullanması söylenir. `$`: yeni bir lider oturumu. Demo bir liderle, iki işçiyle ve üç kartla sahte bir proje ekler. Bkz. [projeler](../concepts/projects.md). Commit'i olan bir git checkout'u olmayan bir klasör reddedilir: `… is not a git checkout with a commit: a team works in git worktrees …`; orada `:solo` açılır.
@@ -344,7 +349,7 @@ Ajanın ham akışı, `t` gibi: oturumunun söylediği her satır, veri olarak, 
 
 ### `:undo`
 
-Bir `:close`, `:forget`, `:archive` ya da `:clear`'ın olmasını önler, `u` gibi. İkisi de iş görmeden önce on saniye bekler, bu arada alt satır geri sayar: `◷ kule 7 sn sonra kapanıyor · u açık tutar`, `◷ claude-2 7 sn sonra oturumunu unutuyor · u tutar`. O sürede `u` her şeyi olduğu gibi bırakır (`kule açık kalıyor`, `claude-2 oturumunu tutuyor`); geri sayan bir şey yoksa `geri alınacak bir şey yok` der. Bir seferde biri bekler: başka bir `:close` ya da `:forget`, bekleyeni önce uygular. Biri geri sayarken çıkmak onu uygular. Bir ret (son açık proje, unutulacak oturum yok, kimsenin taşımadığı bir ad) hemen söylenir, hiçbir şey beklemez. Demo da canlı oturumlar da bekler.
+Bir `:close`, `:forget`, `:archive` ya da `:clear`'ın olmasını önler, `u` gibi; `U` ([`:now`](#now)) ise hemen yapar. İkisi de iş görmeden önce on saniye bekler, bu arada alt satır geri sayar: `◷ kule 7 sn sonra kapanıyor · u açık tutar`, `◷ claude-2 7 sn sonra oturumunu unutuyor · u tutar`. O sürede `u` her şeyi olduğu gibi bırakır (`kule açık kalıyor`, `claude-2 oturumunu tutuyor`); geri sayan bir şey yoksa `geri alınacak bir şey yok` der. Bir seferde biri bekler: başka bir `:close` ya da `:forget`, bekleyeni önce uygular. Biri geri sayarken çıkmak onu uygular. Bir ret (son açık proje, unutulacak oturum yok, kimsenin taşımadığı bir ad) hemen söylenir, hiçbir şey beklemez. Demo da canlı oturumlar da bekler.
 
 ### `:unfold`
 
