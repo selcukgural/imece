@@ -116,7 +116,7 @@ Ters gitmiş (ya da uzamış) bir oturum düşürülebilir. `:forget @claude-1` 
 
 ## 5. Uzaktayken özeti
 
-Bir süre başka pencereye geçin. Terminal odağı üç dakika ya da daha uzun süre sonra geri aldığında, olanların özeti tuşsuz hemen açılır:
+Bir süre başka pencereye geçin. Terminal odağı yarım saat ya da daha uzun süre sonra geri aldığında (süreyi `:away` ayarlar), olanların özeti tuşsuz hemen açılır:
 
 ```text
  SEN YOKKEN · son 12 dk
@@ -130,7 +130,7 @@ Bir süre başka pencereye geçin. Terminal odağı üç dakika ya da daha uzun 
  herhangi bir tuş: kapat
 ```
 
-Sayılar türe göre yeni günlük satırları ve şu an sizi bekleyenlerdir; altlarında o zamandan beri önemli satırlar (uygulamalar, hazır değişiklikler, blokajlar, hatalar, varsayımlar; son sekizi). Odağın gittiği andan bu yana günlükten kurulur, modele sorulmaz. Yazdığınız bir şeyin, yardımın, çıkış sorusunun ya da başka bir pencerenin üstüne açılmaz; daha kısa bir yokluk hiçbir şey göstermez ve tuşsuz geçen yirmi saniyeden sonraki ilk tuş hâlâ tuşla gelen özeti getirir. Terminal odağı bildirmeli (tmux'ta `focus-events on` gerekir).
+Sayılar türe göre yeni günlük satırları ve şu an sizi bekleyenlerdir; altlarında o zamandan beri önemli satırlar (uygulamalar, hazır değişiklikler, blokajlar, hatalar, varsayımlar; son sekizi). Odağın gittiği andan bu yana günlükten kurulur, modele sorulmaz. Yazdığınız bir şeyin, yardımın, çıkış sorusunun ya da başka bir pencerenin üstüne açılmaz; daha kısa bir yokluk hiçbir şey göstermez ve tuşsuz geçen aynı süreden sonraki ilk tuş hâlâ tuşla gelen özeti getirir; `:digest` ne zaman isterseniz açar. Terminal odağı bildirmeli (tmux'ta `focus-events on` gerekir).
 
 Özet döndüğünüzde anlatır; `:notify` sizi çağırır. `:notify bell` terminalin zilini çalar, `:notify text` masaüstü bildirimi gönderir: siz başka penceredeyken sizi bekleyen bir şey geldiyse ve beş saniye sonra hâlâ oradaysa; bir değişiklik, bir soru, bir onay isteği, takılan bir ajan, her biri bir kez. Siz ayrılırken ekranda olan sessiz kalır, bekleme süresi içinde gelip giden de.
 

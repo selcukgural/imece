@@ -12,7 +12,7 @@ description: imece'nin aldığı her `:` komutu; argümanları, karşılığı o
 - `:` sonra `tab` komutları listeler. Menü her komutun ardında şu an ne durumda olduğunu ya da neye etki edeceğini ayraç içinde gösterir: `budget (spent $3.10 of $20.00)`, `theme (dark)`, `lead (claude)`, `close (kule)`, `forget (claude-2)`, `next (2 waiting)`, `needs (off)`. Not çizilir, asla satıra eklenmez.
 - Bir komutun ardındaki `$` sonraki faturayı büyütenleri işaretler: `:open` (yeni bir lider oturumu), `:solo` (yeni bir oturum), `:forget` (bütün brifingi önbelleksiz yeniden ödeyen yeni bir oturum) ve `:commit` (ücretli bir çağrı). Hiçbir `:` komutu kendi başına ücretli bir tur başlatmaz; `:budget` işaret yerine değerini gösterir.
 - Kısa adlar: `:b` budget, `:c` close, `:f` forget, `:o` open, `:q` quit, `:t` theme. Bütünüyle yazılan kısa ad zaten bir komuttur; menü bir şey sunmaz ve `enter` çalıştırır (`:q` sonra `enter` hemen sorar).
-- Argümanlar da tamamlanır: `:lang` sonra diller, `:lead` sonra satıcılar, `:notify` ve `:motion` sonra üç kelimesi, `:theme` sonra yerleşik adlar, `:close` ve `:pin` sonra açık projeler, `:restore` sonra arşivlerin başlıkları (en yenisi önce, her biri projesinin adı ve arşivlendiği günle), `:goto` sonra hiçbir şey (`&` satırının kendi menüsü var), `:history` sonra gönderilen satırlar, `:forget`, `:talk`, `:trace` ve `:peek` sonra açık projelerin ajanları (`@` ile ya da onsuz), `:open` ve `:export` sonra dizinler (`~` ev dizininiz, gizli olanlar yalnızca bir `.` sonrası, `tab` seçilenin içine adım atar).
+- Argümanlar da tamamlanır: `:lang` sonra diller, `:lead` sonra satıcılar, `:notify` ve `:motion` sonra üç kelimesi, `:away` sonra `15m 30m 1h off`, `:theme` sonra yerleşik adlar, `:close` ve `:pin` sonra açık projeler, `:restore` sonra arşivlerin başlıkları (en yenisi önce, her biri projesinin adı ve arşivlendiği günle), `:goto` sonra hiçbir şey (`&` satırının kendi menüsü var), `:history` sonra gönderilen satırlar, `:forget`, `:talk`, `:trace` ve `:peek` sonra açık projelerin ajanları (`@` ile ya da onsuz), `:open` ve `:export` sonra dizinler (`~` ev dizininiz, gizli olanlar yalnızca bir `.` sonrası, `tab` seçilenin içine adım atar).
 - imece'nin bilmediği bir ad: `no command xyz; : and tab list them`. Canlıda yazılan yalnızca demoya ait bir komut: `:pause is for the demo: live agents run in real time`.
 - `!cmd` kendi kabuğunuzda bir komut çalıştırır, `/cmd` ajanın kendi komut satırıdır; ikisi de `:` komutu değildir ([komut satırı](../screen/command-line.md)).
 
@@ -24,6 +24,7 @@ description: imece'nin aldığı her `:` komutu; argümanları, karşılığı o
 | `:archives` | `A` | | | | |
 | `:allow [PROGRAM [WORD]]` | `A` (bir istekte) | | | | projenin hep eveti, varsa |
 | `:awake` | — | | | | açık / kapalı |
+| `:away [TIME\|off]` | — | | | | `30m` / `1h` / `off` |
 | `:board` | `2` | | | | |
 | `:budget USD` | — | `:b` | | | harcanan / bütçe |
 | `:close [NAME]` | — | `:c` | | | eldeki proje |
@@ -31,6 +32,7 @@ description: imece'nin aldığı her `:` komutu; argümanları, karşılığı o
 | `:commit` | — | | | `$` | |
 | `:copy [PATH]` | — | | | | liste, varsa |
 | `:defer` | `S` | | | | |
+| `:digest` | — | | | | |
 | `:effort LEVEL` | — | | | | eldeki solonun çabası ya da `default` |
 | `:export [PATH]` | — | | | | `konuşma` ya da `#12` |
 | `:faster` | `+` | | evet | | hız, `×2` |
@@ -95,6 +97,10 @@ Bir arşivde (ya da ajanlarından birinde, o zaman o seçili) `enter` onu geri g
 
 Makineyi uyanık tutmayı açar ya da kapar (`--awake` ile aynı). Açıkken ve herhangi bir ajan tur ortasındayken imece `caffeinate` (macOS) ya da `systemd-inhibit` (Linux) aracını çocuk olarak çalıştırır, hiçbir şey tur ortasında olmayınca bırakır. Flaş `bir ajan turdayken makine uyanık kalır` ya da `makine yeniden uyuyabilir` der; başlayamayan bir araç bir kez söylenir: `makine uyanık tutulamadı: …`. Çalıştırmalar arasında hatırlanmaz.
 
+### `:away [TIME|off]`
+
+SEN YOKKEN penceresinin kendiliğinden açılması için ne kadar uzakta kalmanız gerektiği: başka bir pencerede bu kadar kaldıktan sonra terminale dönünce ya da bu kadar tuşsuz geçen süreden sonraki ilk tuşta. Dakika (`45m` ya da `45`) veya saat (`2h`), bir dakikadan bir güne kadar; `off` hiç açmaz (`:digest` yine açar). Varsayılan yarım saat. Yalın `:away` sıradakine geçer: 15m, 30m, 1h, off; size ait bir süre bir sonraki daha uzun olana geçer. Flaş: `30m ya da daha uzun yokken olanlar dönünce hemen gösterilir`, `olanlar kendiliğinden gösterilmez; :digest gösterir`; başka bir kelime: `3s off, dakika (30m) ya da saat (1h) değil; en çok bir gün`. Menü notu değeri gösterir; depoda hatırlanır. Bkz. [günlük](../screen/journal.md#sen-yokken).
+
 ### `:board`
 
 Pano görünümü, `2` gibi. Bkz. [pano ve kod haritası](../screen/board-and-code-map.md).
@@ -130,6 +136,10 @@ Yol göreli, düz (glob yok, `..` yok, `.git` içinde değil, en çok 200 bayt),
 ### `:defer`
 
 SENİ BEKLEYEN'deki eldeki kalemi erteler ve sonrakini açar, `S` gibi. Bkz. [seni bekleyenler](../screen/waiting.md).
+
+### `:digest`
+
+SEN YOKKEN penceresini şimdi açar: bu çalıştırmada terminalin penceresinden son ayrıldığınızdan, ya da çalıştırma başladığından beri olanlar. Yeni bir şey yoksa: `son ayrılışından beri yeni bir şey yok`. Kendiliğinden açıldığındaki gibi herhangi bir tuş kapatır.
 
 ### `:effort LEVEL`
 

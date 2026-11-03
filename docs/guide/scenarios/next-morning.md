@@ -116,7 +116,7 @@ The running session ends (its run killed, unfinished prompts kept as cut-short),
 
 ## 5. The away digest
 
-Switch to another window for a while. When the terminal gets the focus back after three minutes or more, the digest of what happened opens at once, without a key:
+Switch to another window for a while. When the terminal gets the focus back after half an hour or more (`:away` sets the time), the digest of what happened opens at once, without a key:
 
 ```text
  WHILE YOU WERE AWAY · last 12 min
@@ -130,7 +130,7 @@ Switch to another window for a while. When the terminal gets the focus back afte
  any key: close
 ```
 
-The counts are the new journal lines by kind and what waits for you now; under them the important lines since (applies, changes ready, blocks, failures, assumptions; the last eight). It is built from the journal since the focus went, no model asked. It does not open over what you are writing, the help, the quit question or another window; a shorter absence shows nothing, and the first key after twenty seconds without one still brings the key-driven digest. The terminal must report focus (tmux needs `focus-events on`).
+The counts are the new journal lines by kind and what waits for you now; under them the important lines since (applies, changes ready, blocks, failures, assumptions; the last eight). It is built from the journal since the focus went, no model asked. It does not open over what you are writing, the help, the quit question or another window; a shorter absence shows nothing, and the first key after as long without one still brings the key-driven digest; `:digest` opens it whenever you ask. The terminal must report focus (tmux needs `focus-events on`).
 
 The digest tells you when you are back; `:notify` fetches you. `:notify bell` rings the terminal's bell, `:notify text` sends a desktop notification, when something came to wait for you while you were in another window and is still there five seconds later: a change, a question, an ask for your yes, an agent stuck, each once. What was on screen when you left stays quiet, and so does whatever came and went within the wait.
 

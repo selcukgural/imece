@@ -8,6 +8,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use crate::away::Away;
 use crate::motion::Motion;
 use crate::notify::Notify;
 use crate::store;
@@ -33,6 +34,7 @@ const THEME: &str = "theme";
 const LEAD: &str = "lead";
 const NOTIFY: &str = "notify";
 const MOTION: &str = "motion";
+const AWAY: &str = "away";
 /// The newest version whose "what's new" a start showed (or that started
 /// first): the next start of a newer one shows what is new since.
 const SEEN: &str = "seen";
@@ -53,6 +55,8 @@ pub struct Prefs {
     pub seen: Option<String>,
     /// How much moves on the screen (`:motion`).
     pub motion: Option<Motion>,
+    /// How long away opens the digest by itself (`:away`).
+    pub away: Option<Away>,
 }
 
 impl Prefs {
@@ -75,6 +79,7 @@ impl Prefs {
             notify: notify.and_then(|n| Notify::parse(&n)),
             seen: seen.filter(|v| crate::welcome::parse_version(v).is_some()),
             motion: None,
+            away: None,
         }
     }
 
@@ -124,8 +129,9 @@ pub fn load(dir: &Path) -> Prefs {
             let _ = fs::remove_file(legacy(dir));
         }
     }
-    match store::settings(&file(dir), &[SIDE, THEME, LEAD, NOTIFY, SEEN, MOTION]) {
+    match store::settings(&file(dir), &[SIDE, THEME, LEAD, NOTIFY, SEEN, MOTION, AWAY]) {
         Ok(mut v) => {
+            let away = v.pop().flatten().and_then(|a| Away::parse(&a));
             let motion = v.pop().flatten().and_then(|m| Motion::parse(&m));
             let seen = v.pop().flatten();
             let notify = v.pop().flatten();
@@ -133,6 +139,7 @@ pub fn load(dir: &Path) -> Prefs {
             let theme = v.pop().flatten();
             Prefs {
                 motion,
+                away,
                 ..Prefs::checked(v.pop().flatten(), theme, lead, notify, seen)
             }
         }
@@ -182,6 +189,11 @@ pub fn keep_motion(dir: &Path, motion: Motion) -> Result<(), String> {
     store::set_settings(&file(dir), &[(MOTION, motion.name())], &[])
 }
 
+/// Keeps how long away opens the digest in `dir`.
+pub fn keep_away(dir: &Path, away: Away) -> Result<(), String> {
+    store::set_settings(&file(dir), &[(AWAY, &away.name())], &[])
+}
+
 /// Keeps `version` as the one that started last in `dir`.
 pub fn seen(dir: &Path, version: &str) -> Result<(), String> {
     store::set_settings(&file(dir), &[(SEEN, version)], &[])
@@ -214,6 +226,7 @@ mod tests {
                 notify: Some(Notify::Off),
                 seen: None,
                 motion: None,
+                away: None,
             }
         );
         let mode = fs::metadata(file(&dir)).unwrap().permissions().mode();
@@ -247,6 +260,7 @@ mod tests {
                 notify: Some(Notify::Text),
                 seen: None,
                 motion: None,
+                away: None,
             }
         );
         set(&[("side", "70"), ("theme", "/home/me/Dracula.conf")]);
@@ -275,6 +289,21 @@ mod tests {
         assert_eq!(load(&dir).side, Some(40), "nothing else written");
         set(&[("motion", "wild")]);
         assert_eq!(load(&dir).motion, None);
+        // How long away, on its own too, kept by a save of the rest.
+        keep_away(&dir, Away::parse("1h").unwrap()).unwrap();
+        assert_eq!(load(&dir).away, Away::parse("60m"));
+        save(&dir, 40, "light", None, Notify::Off).unwrap();
+        keep_motion(&dir, Motion::Calm).unwrap();
+        assert_eq!(load(&dir).away, Away::parse("1h"), "kept by the others");
+        keep_away(&dir, Away::parse("off").unwrap()).unwrap();
+        assert_eq!(load(&dir).away, Away::parse("off"));
+        assert_eq!(
+            load(&dir).motion,
+            Some(Motion::Calm),
+            "nothing else written"
+        );
+        set(&[("away", "3s")]);
+        assert_eq!(load(&dir).away, None);
         fs::remove_dir_all(&dir).unwrap();
     }
 
@@ -292,6 +321,7 @@ mod tests {
                 notify: None,
                 seen: None,
                 motion: None,
+                away: None,
             }
         );
         assert!(!legacy(&dir).exists(), "moved, so gone");

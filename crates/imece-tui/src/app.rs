@@ -10,6 +10,7 @@ use std::time::{Duration, Instant};
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use crate::archives::{self, Browser};
+use crate::away::Away;
 use crate::complete::{self, Jump, Menu};
 use crate::edit;
 use crate::i18n::{Lang, fill};
@@ -58,9 +59,6 @@ const VIEW_COMMANDS: &[&str] = &[
     "unsettle", "talk", "why",
 ];
 
-/// After this long without a key, the next key first shows what happened.
-const AWAY: Duration = Duration::from_secs(20);
-
 /// Whether a line sent is one `↑` and `^r` bring back: a message, a
 /// command or a shell line; not the lines that only go somewhere (`#12`,
 /// `&3`, `:goto`, `:history`).
@@ -70,9 +68,6 @@ fn recalled(text: &str) -> bool {
         .map(|r| r.split_whitespace().next().unwrap_or_default());
     !text.starts_with('#') && !text.starts_with('&') && !matches!(word, Some("goto" | "history"))
 }
-/// After this long in another window, coming back shows what happened at
-/// once, without waiting for a key.
-pub const FOCUS_AWAY: Duration = Duration::from_secs(180);
 /// While the terminal does not have the focus, what changed is drawn at
 /// most this often unless the person did something: ten times less often
 /// than live's tick.
@@ -899,6 +894,11 @@ pub struct App {
     last_key_tick: u64,
     /// When the terminal lost the focus, and the tick then.
     blurred: Option<(Instant, u64)>,
+    /// The tick the person last left the window at, else the run's first:
+    /// where `:digest` starts.
+    left_tick: u64,
+    /// How long away opens "while you were away" by itself (`:away`).
+    pub away: Away,
     /// When the screen was last drawn and what its clock showed then;
     /// whether something came from the terminal since (a key, a paste, a
     /// resize, the focus), and whether something else the screen shows
@@ -974,6 +974,7 @@ impl App {
             Engine::Sim(_) => sim::vendors(),
             Engine::View(_) => Vec::new(),
         };
+        let begun = world.tick;
         App {
             world,
             engine,
@@ -1065,6 +1066,8 @@ impl App {
             last_key: Instant::now(),
             last_key_tick: 0,
             blurred: None,
+            left_tick: begun,
+            away: Away::default(),
             drawn_at: None,
             drawn_clock: None,
             changed: false,
@@ -2007,7 +2010,7 @@ impl App {
     }
 
     fn key(&mut self, k: KeyEvent) {
-        let away = (self.last_key.elapsed() >= AWAY).then_some(self.last_key_tick);
+        let away = (self.away.over(self.last_key.elapsed())).then_some(self.last_key_tick);
         self.last_key = Instant::now();
         self.last_key_tick = self.world.tick;
 
@@ -3670,6 +3673,7 @@ impl App {
             "awake" => Some(on_off(self.awake.on)),
             "notify" => Some(self.notify.name().to_string()),
             "motion" => Some(self.motion.name().to_string()),
+            "away" => Some(self.away.name()),
             "keys" => Some(self.keys.len().to_string()),
             "pause" => Some(on_off(self.paused)),
             "faster" | "slower" => Some(format!("×{}", self.speed)),
@@ -4099,6 +4103,12 @@ impl App {
                 (_, Some(how)) => self.set_motion(how),
                 (_, None) => self.flash(fill(t.bad_motion, &[arg])),
             },
+            "away" => match (arg, Away::parse(arg)) {
+                ("", _) => self.set_away(self.away.next()),
+                (_, Some(away)) => self.set_away(away),
+                (_, None) => self.flash(fill(t.bad_away, &[arg])),
+            },
+            "digest" => self.open_digest(),
             _ => self.flash(fill(t.no_command, &[name])),
         }
     }
@@ -4501,15 +4511,16 @@ impl App {
     }
 
     /// The terminal lost the focus (`gained` false) at `now`, or got it
-    /// back: after [`FOCUS_AWAY`] or more, what happened meanwhile shows
-    /// at once, as after a key past [`AWAY`] (built from the journal, no
-    /// model asked). Not over what the person is writing or another
-    /// window.
+    /// back: after `:away`'s time or more, what happened meanwhile shows
+    /// at once, as after a key that long after the last (built from the
+    /// journal, no model asked). Not over what the person is writing or
+    /// another window.
     pub fn focus(&mut self, gained: bool, now: Instant) {
         // Back from the editor: the key file is looked at at once.
         self.keys_looked = None;
         if !gained {
             self.blurred = Some((now, self.world.tick));
+            self.left_tick = self.world.tick;
             // Nothing moves in another window: no frame is waited for.
             self.drawn_motion = None;
             return;
@@ -4524,7 +4535,7 @@ impl App {
             || self.viewing.is_some()
             || self.leaving
             || self.window_open();
-        if busy || now.duration_since(at) < FOCUS_AWAY {
+        if busy || !self.away.over(now.duration_since(at)) {
             return;
         }
         self.digest = Digest::since(&self.world, tick);
@@ -4543,6 +4554,25 @@ impl App {
 
     /// `:motion`: how much moves on the screen. Full over SSH says it
     /// runs as calm.
+    /// `:away`: how long away opens the digest by itself.
+    fn set_away(&mut self, away: Away) {
+        self.away = away;
+        let t = self.lang.text();
+        match away.time() {
+            Some(_) => self.flash(fill(t.away_set, &[&away.name()])),
+            None => self.flash(t.away_off),
+        }
+    }
+
+    /// `:digest`: what happened since the person last left the window, or
+    /// since the run began.
+    fn open_digest(&mut self) {
+        self.digest = Digest::since(&self.world, self.left_tick);
+        if self.digest.is_none() {
+            self.flash(self.lang.text().digest_none);
+        }
+    }
+
     fn set_motion(&mut self, how: Motion) {
         self.motion = how;
         let t = self.lang.text();
@@ -10920,7 +10950,7 @@ mod tests {
     }
 
     #[test]
-    fn coming_back_after_minutes_away_shows_what_happened_at_once() {
+    fn coming_back_after_half_an_hour_away_shows_what_happened_at_once() {
         let mut app = App::new(1, 1, 0, 1, Lang::En);
         let t0 = Instant::now();
         let away = |app: &mut App, secs: u64| {
@@ -10930,18 +10960,18 @@ mod tests {
             app.focus(true, t0 + Duration::from_secs(secs));
         };
         // Not long enough: nothing, and the blur is forgotten.
-        away(&mut app, 179);
+        away(&mut app, 1799);
         assert!(app.digest.is_none() && app.blurred.is_none());
-        // Three minutes: what happened since the blur.
-        away(&mut app, 180);
+        // Half an hour: what happened since the blur.
+        away(&mut app, 1800);
         let d = app.digest.take().expect("a digest");
         assert_eq!(d.highlights.len(), 1, "only what came after leaving");
         // Focus back without a blur first: nothing.
-        app.focus(true, t0 + Duration::from_secs(999));
+        app.focus(true, t0 + Duration::from_secs(3600));
         assert!(app.digest.is_none());
         // Nothing new: nothing to tell.
         app.focus(false, t0);
-        app.focus(true, t0 + Duration::from_secs(999));
+        app.focus(true, t0 + Duration::from_secs(3600));
         assert!(app.digest.is_none());
         // Not over writing or another window.
         for busy in [
@@ -10955,7 +10985,7 @@ mod tests {
         ] {
             let mut app = App::new(1, 1, 0, 1, Lang::En);
             busy(&mut app);
-            away(&mut app, 999);
+            away(&mut app, 3600);
             assert!(app.digest.is_none());
         }
         let mut app = App::new(1, 1, 0, 1, Lang::En);
@@ -10963,12 +10993,104 @@ mod tests {
             minutes: 42,
             ..Digest::default()
         });
-        away(&mut app, 999);
+        away(&mut app, 3600);
         assert_eq!(
             app.digest.as_ref().unwrap().minutes,
             42,
             "the one open stays"
         );
+    }
+
+    #[test]
+    fn away_sets_how_long_until_what_happened_shows_and_off_never() {
+        let mut app = App::new(1, 1, 0, 1, Lang::En);
+        let t0 = Instant::now();
+        let away = |app: &mut App, secs: u64| {
+            app.focus(false, t0);
+            app.world.tick += 1;
+            app.world.note(Event::Failed { agent: 0 });
+            app.focus(true, t0 + Duration::from_secs(secs));
+            app.digest.take().is_some()
+        };
+        assert_eq!(app.command_note("away"), "(30m)");
+        app.command("away 5m");
+        assert_eq!(
+            said(&app),
+            "back after 5m or more away, what happened shows at once"
+        );
+        assert_eq!(app.command_note("away"), "(5m)");
+        assert!(!away(&mut app, 299));
+        assert!(away(&mut app, 300));
+        // Bare: the next one round.
+        app.command("away");
+        assert_eq!(app.away, Away::parse("15m").unwrap());
+        app.command("away 1h");
+        app.command("away");
+        assert_eq!(app.away, Away::parse("off").unwrap());
+        assert_eq!(
+            said(&app),
+            "what happened never shows by itself; :digest shows it"
+        );
+        assert!(!away(&mut app, 86_400 * 7), "off: never");
+        app.command("away soon");
+        assert_eq!(
+            said(&app),
+            "soon is not off, minutes (30m) or hours (1h), up to a day"
+        );
+        assert_eq!(app.away, Away::parse("off").unwrap(), "kept");
+    }
+
+    #[test]
+    fn a_key_after_half_an_hour_without_one_shows_what_happened_first() {
+        let mut app = App::new(1, 1, 0, 1, Lang::En);
+        let ago = |secs| {
+            Instant::now()
+                .checked_sub(Duration::from_secs(secs))
+                .unwrap()
+        };
+        let idle = |app: &mut App, secs: u64| {
+            app.last_key = ago(secs);
+            app.last_key_tick = app.world.tick;
+            app.world.tick += 1;
+            app.world.note(Event::Failed { agent: 0 });
+            app.on_key(key(KeyCode::Char('j')));
+            app.digest.take().is_some()
+        };
+        assert!(!idle(&mut app, 1790), "under half an hour");
+        assert!(idle(&mut app, 1801));
+        // The key that opened it did nothing else; the next acts.
+        assert!(!idle(&mut app, 0));
+        app.command("away 2m");
+        assert!(!idle(&mut app, 110));
+        assert!(idle(&mut app, 130));
+        app.command("away off");
+        assert!(!idle(&mut app, 86_400));
+    }
+
+    #[test]
+    fn digest_shows_what_happened_since_the_person_last_left() {
+        let mut app = App::new(1, 1, 0, 1, Lang::En);
+        // Nothing yet this run.
+        app.command("digest");
+        assert!(app.digest.is_none());
+        assert_eq!(said(&app), "nothing new since you last left");
+        app.world.tick += 1;
+        app.world.note(Event::Failed { agent: 0 });
+        app.command("digest");
+        let d = app.digest.take().expect("since the run began");
+        assert_eq!(d.highlights.len(), 1);
+        // Left and back at once: since leaving, not since the start.
+        let t0 = Instant::now();
+        app.focus(false, t0);
+        app.world.tick += 1;
+        app.world.note(Event::Failed { agent: 0 });
+        app.world.note(Event::Failed { agent: 0 });
+        app.focus(true, t0 + Duration::from_secs(1));
+        assert!(app.digest.is_none(), "too short to open by itself");
+        app.command("digest");
+        let d = app.digest.take().expect("since leaving");
+        assert_eq!(d.highlights.len(), 2);
+        assert_eq!(d.minutes, SECONDS_PER_TICK / 60);
     }
 
     #[test]

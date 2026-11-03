@@ -143,6 +143,7 @@ Gelenekler vim'inkidir: `h` `j` `k` `l` hareket ve katlama, `gg` ve `G` uçlara,
 | `:awake` | tur ortasında makineyi uyanık tut; yine: kapat |
 | `:notify` | başka penceredeyken bir şey beklemeye düşerse haber: `:notify off\|bell\|text`; yalın yazılınca sıradaki |
 | `:motion` | ekranda ne hareket eder: `:motion off\|calm\|full` (varsayılan calm); yalın yazılınca sıradaki |
+| `:away`  `:digest` | olanlar kendiliğinden gösterilmeden önce ne kadar uzakta kalınır: `:away 30m\|1h\|off` (varsayılan yarım saat) · şimdi göster |
 | `q` `q`  `:quit` | çık (`q` ya da `:quit` önce sorar; `^c` hemen çıkar) |
 | `q` `s`  `:pending` | çıkmadan önce: tur ortası, incelenmemiş |
 | `?`  `:help` | bu yardım; içinde sığmadığı yerde `j` `k` kaydırır, `/` tuşları süzer · `:keys` tuş dosyanızı yeniden okur |
@@ -182,7 +183,7 @@ Gelenekler vim'inkidir: `h` `j` `k` `l` hareket ve katlama, `gg` ve `G` uçlara,
 | `:trace` / `:talk` | `t` / `v` |
 | `:mark` | `m` |
 | `:pause`, `:faster`, `:slower` | `space`, `+`, `-` (demo) |
-| `:budget` (`:b`), `:lead`, `:open` (`:o`), `:close` (`:c`), `:rename`, `:solo`, `:effort`, `:model`, `:forget` (`:f`), `:export`, `:commit`, `:copy`, `:pin`, `:archive`, `:restore`, `:awake`, `:notify`, `:motion`, `:unsettle`, `:keys` | tuşu yok: `:` ardından yazılır |
+| `:budget` (`:b`), `:lead`, `:open` (`:o`), `:close` (`:c`), `:rename`, `:solo`, `:effort`, `:model`, `:forget` (`:f`), `:export`, `:commit`, `:copy`, `:pin`, `:archive`, `:restore`, `:awake`, `:notify`, `:motion`, `:away`, `:digest`, `:unsettle`, `:keys` | tuşu yok: `:` ardından yazılır |
 
 Her komutun ne aldığının tam listesi [komutlar başvurusunda](../reference/commands.md).
 

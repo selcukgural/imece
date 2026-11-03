@@ -12,7 +12,7 @@ A line that starts with `:` is a command to imece, not a message to an agent. Yo
 - `:` then `tab` lists the commands. The menu shows after each command what it stands at now or would act on, in brackets: `budget (spent $3.10 of $20.00)`, `theme (dark)`, `lead (claude)`, `close (kule)`, `forget (claude-2)`, `next (2 waiting)`, `needs (off)`. The note is drawn, never inserted.
 - `$` after a command marks one that raises the next bill: `:open` (a new leader session), `:solo` (a new session), `:forget` (a new session that pays the whole briefing again, without the cache) and `:commit` (a paid call). No `:` command starts a paid turn by itself; `:budget` shows its value instead of a mark.
 - Short names: `:b` budget, `:c` close, `:f` forget, `:o` open, `:q` quit, `:t` theme. A short name typed whole is a command already, so the menu offers nothing and `enter` runs it (`:q` then `enter` asks at once).
-- Arguments complete too: after `:lang` the languages, after `:lead` the vendors, after `:notify` and `:motion` their three words, after `:theme` the built-in names, after `:close` and `:pin` the open projects, after `:restore` the archives' titles (newest first, each noted with its project's name and the day it was archived), after `:goto` nothing (the `&` line has its own menu), after `:history` the lines sent, after `:forget`, `:talk`, `:trace` and `:peek` the agents of open projects (`@` or not), after `:open` and `:export` directories (`~` for your home, hidden ones only after a `.`, `tab` steps into the chosen one).
+- Arguments complete too: after `:lang` the languages, after `:lead` the vendors, after `:notify` and `:motion` their three words, after `:away` `15m 30m 1h off`, after `:theme` the built-in names, after `:close` and `:pin` the open projects, after `:restore` the archives' titles (newest first, each noted with its project's name and the day it was archived), after `:goto` nothing (the `&` line has its own menu), after `:history` the lines sent, after `:forget`, `:talk`, `:trace` and `:peek` the agents of open projects (`@` or not), after `:open` and `:export` directories (`~` for your home, hidden ones only after a `.`, `tab` steps into the chosen one).
 - A name imece does not know: `no command xyz; : and tab list them`. A demo-only command typed live: `:pause is for the demo: live agents run in real time`.
 - `!cmd` runs a command in your own shell and `/cmd` is the agent's own command line; neither is a `:` command ([command line](../screen/command-line.md)).
 
@@ -24,6 +24,7 @@ A line that starts with `:` is a command to imece, not a message to an agent. Yo
 | `:archives` | `A` | | | | |
 | `:allow [PROGRAM [WORD]]` | `A` (on an ask) | | | | the project's yes from now on, when there is one |
 | `:awake` | — | | | | on / off |
+| `:away [TIME\|off]` | — | | | | `30m` / `1h` / `off` |
 | `:board` | `2` | | | | |
 | `:budget USD` | — | `:b` | | | spent X of Y |
 | `:close [NAME]` | — | `:c` | | | the project at hand |
@@ -31,6 +32,7 @@ A line that starts with `:` is a command to imece, not a message to an agent. Yo
 | `:commit` | — | | | `$` | |
 | `:copy [PATH]` | — | | | | the list, when there is one |
 | `:defer` | `S` | | | | |
+| `:digest` | — | | | | |
 | `:effort LEVEL` | — | | | | the solo at hand's effort, or `default` |
 | `:export [PATH]` | — | | | | `the conversation` or `#12` |
 | `:faster` | `+` | | yes | | the speed, `×2` |
@@ -95,6 +97,10 @@ In it `j` `k` move, `gg` `G` go to the first / last row, `l` (or `→`) shows an
 
 Turns keeping the machine awake on or off (the same as `--awake`). While it is on and any agent is mid-turn, imece runs `caffeinate` (macOS) or `systemd-inhibit` (Linux) as a child and lets it go when nothing is mid-turn. The flash says `the machine stays awake while an agent is mid-turn` or `the machine may sleep again`; a tool that cannot start is said once: `could not keep the machine awake: …`. Not remembered between runs.
 
+### `:away [TIME|off]`
+
+How long you are away before WHILE YOU WERE AWAY opens by itself: back in the terminal after that long in another window, or the first key after that long without one. Minutes (`45m`, or `45`) or hours (`2h`), from one minute to a day; `off` never opens it (`:digest` still does). Half an hour by default. Bare `:away` goes to the next one round: 15m, 30m, 1h, off; a time of your own goes to the next longer one. The flash: `back after 30m or more away, what happened shows at once`, `what happened never shows by itself; :digest shows it`; another word: `3s is not off, minutes (30m) or hours (1h), up to a day`. The menu note shows the value; it is remembered in the store. See [journal](../screen/journal.md#while-you-were-away).
+
 ### `:board`
 
 The board view, as `2`. See [board and code map](../screen/board-and-code-map.md).
@@ -130,6 +136,10 @@ A path must be relative, literal (no glob, no `..`, not in `.git`, at most 200 b
 ### `:defer`
 
 Puts the item at hand in WAITING FOR YOU off and opens the next one, as `S`. See [waiting for you](../screen/waiting.md).
+
+### `:digest`
+
+Opens WHILE YOU WERE AWAY now: what happened since you last left the terminal's window this run, or since the run began. With nothing new: `nothing new since you last left`. Any key closes it, as when it opens by itself.
 
 ### `:effort LEVEL`
 

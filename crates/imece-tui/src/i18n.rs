@@ -605,6 +605,12 @@ pub struct Text {
     pub motion_full: &'static str,
     pub motion_ssh: &'static str,
     pub bad_motion: &'static str,
+    /// `:away` with a time, off, a word that is neither; `:digest` with
+    /// nothing new since the person left.
+    pub away_set: &'static str,
+    pub away_off: &'static str,
+    pub bad_away: &'static str,
+    pub digest_none: &'static str,
     /// What rings in another window: one item by its kind, with the
     /// agent's name; an agent stuck; several at once.
     pub notice_change: &'static str,
@@ -1187,6 +1193,10 @@ pub const EN: Text = Text {
     motion_full: "full motion: spinners too, and faster",
     motion_ssh: "full motion runs as calm over SSH",
     bad_motion: "{} is not off, calm or full",
+    away_set: "back after {} or more away, what happened shows at once",
+    away_off: "what happened never shows by itself; :digest shows it",
+    bad_away: "{} is not off, minutes (30m) or hours (1h), up to a day",
+    digest_none: "nothing new since you last left",
     notice_change: "imece · {} finished: a change waits for you",
     notice_question: "imece · {} asks you",
     notice_reply: "imece · {} answered you",
@@ -1459,7 +1469,10 @@ pub const EN: Text = Text {
             ":awake  :notify",
             "awake mid-turn · a word in another window",
         ),
-        (":motion", "what moves: off, calm, full"),
+        (
+            ":motion :away",
+            "what moves · how long away opens the digest; :digest",
+        ),
         ("q q  :quit", "quit (q or :quit asks first)"),
         ("q s  :pending", "before quitting: mid-turn, not reviewed"),
         (
@@ -1901,6 +1914,10 @@ pub const TR: Text = Text {
     motion_full: "tam hareket: dönücüler de, daha hızlı",
     motion_ssh: "SSH üzerinde tam hareket sakin çalışır",
     bad_motion: "{} off, calm ya da full değil",
+    away_set: "{} ya da daha uzun yokken olanlar dönünce hemen gösterilir",
+    away_off: "olanlar kendiliğinden gösterilmez; :digest gösterir",
+    bad_away: "{} off, dakika (30m) ya da saat (1h) değil; en çok bir gün",
+    digest_none: "son ayrılışından beri yeni bir şey yok",
     notice_change: "imece · {} bitirdi: bir değişiklik seni bekliyor",
     notice_question: "imece · {} sana soruyor",
     notice_reply: "imece · {} sana cevap verdi",
@@ -2172,7 +2189,10 @@ pub const TR: Text = Text {
             ":awake  :notify",
             "turda uyanık tut · başka pencerede haber",
         ),
-        (":motion", "ne hareket eder: off, calm, full"),
+        (
+            ":motion :away",
+            "ne hareket eder · özetin bekleme süresi; :digest",
+        ),
         ("q q  :quit", "çık (q ya da :quit önce sorar)"),
         ("q s  :pending", "çıkmadan önce: tur ortası, incelenmemiş"),
         (

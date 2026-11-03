@@ -74,9 +74,11 @@ Seçili satırın altında soluk bir satır tuşlarını söyler: `enter konuşm
 
 ## Sen yokken
 
-Yirmi saniye tuşa basılmazsa bastığınız ilk tuş iş yapmak yerine SEN YOKKEN · son N dk penceresini açar: birleşen kartlar, sizi bekleyen kararlar, blokeler, yapılan varsayımlar, konuşmalar, her biri sayılmış, sonra o zamandan beri önemli satırlar. Günlükten kurulur, model sorulmaz. Herhangi bir tuş kapatır.
+Yarım saat tuşa basılmazsa bastığınız ilk tuş iş yapmak yerine SEN YOKKEN · son N dk penceresini açar: birleşen kartlar, sizi bekleyen kararlar, blokeler, yapılan varsayımlar, konuşmalar, her biri sayılmış, sonra o zamandan beri önemli satırlar. Günlükten kurulur, model sorulmaz. Herhangi bir tuş kapatır.
 
-Başka bir pencerede üç dakika ya da daha uzun kaldıktan sonra terminale döndüğünüzde aynı özet tuş beklemeden hemen açılır: terminal odağı ne zaman kaybettiğini ve geri aldığını bildirir. Daha kısa uzaklıklar bir şey göstermez. Yazdığınızın, yardımın, çıkış sorusunun ya da başka bir pencerenin üstünde açılmaz ve günlükte yeni bir şey yoksa gösterilecek bir şey yoktur. Odak bildirmeyen bir terminal ya da çoklayıcı (`focus-events on` olmayan tmux) yalnız tuşla geleni alır.
+Başka bir pencerede yarım saat ya da daha uzun kaldıktan sonra terminale döndüğünüzde aynı özet tuş beklemeden hemen açılır: terminal odağı ne zaman kaybettiğini ve geri aldığını bildirir. Daha kısa uzaklıklar bir şey göstermez. Yazdığınızın, yardımın, çıkış sorusunun ya da başka bir pencerenin üstünde açılmaz ve günlükte yeni bir şey yoksa gösterilecek bir şey yoktur. Odak bildirmeyen bir terminal ya da çoklayıcı (`focus-events on` olmayan tmux) yalnız tuşla geleni alır.
+
+`:away` ikisinin de süresini ayarlar: `:away 10m`, `:away 2h`, bir dakikadan bir güne; `:away off` hiç kendiliğinden açmaz. Depoda hatırlanır. `:digest` ne zaman isterseniz açar: pencereden son ayrıldığınızdan, ya da çalıştırma başladığından beri olanlar.
 
 ## Nerede kalmıştın
 
