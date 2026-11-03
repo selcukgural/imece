@@ -312,6 +312,33 @@ mod tests {
     }
 
     #[test]
+    fn a_step_that_takes_a_look_s_answer_says_something_came() {
+        let (dir, _repo, mut live, mut w) = state("came-step", 0);
+        // The clock's first step and git's first read of the files
+        // answered: then nothing moves but the look.
+        let start = Instant::now();
+        let mut quiet = 0;
+        while quiet < 20 {
+            quiet = if live.step(&mut w) { 0 } else { quiet + 1 };
+            assert!(start.elapsed() < Duration::from_secs(10), "never quiet");
+            thread::sleep(Duration::from_millis(10));
+        }
+        live.look_orphans(&mut w);
+        let start = Instant::now();
+        loop {
+            let tick = w.tick;
+            let came = live.step(&mut w);
+            if !w.orphans.busy {
+                assert!(came, "the answer was not said to have come (tick {tick})");
+                break;
+            }
+            assert!(start.elapsed() < Duration::from_secs(10), "timed out");
+            thread::sleep(Duration::from_millis(10));
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn a_look_while_one_is_under_way_waits_for_its_answer() {
         let (dir, _repo, mut live, mut w) = state("busy", 0);
         w.orphans.busy = true;

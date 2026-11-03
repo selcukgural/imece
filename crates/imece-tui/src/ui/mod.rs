@@ -1938,6 +1938,21 @@ mod tests {
         let s = render(&app, 120, 16);
         assert!(s.contains("▶ claude-31"), "{s}");
         assert!(s.contains("under imece's state"), "{s}");
+        // While a removal runs, its line is above the rows: the row at
+        // hand, the last, still shows, the one above it too.
+        app.world.orphans.busy = true;
+        app.tidy = Some(crate::app::TidyWin {
+            at: 31,
+            sure: false,
+        });
+        let s = render(&app, 120, 16);
+        assert!(s.contains("▶ w-29"), "{s}");
+        assert!(s.contains("  w-28 "), "{s}");
+        assert!(!s.contains("removing…"), "scrolled away: {s}");
+        // Scrolled exactly: the row at hand is the last the window shows.
+        let shown: Vec<&str> = s.lines().filter(|l| l.contains("w-2")).collect();
+        assert!(shown.last().unwrap().contains("▶ w-29"), "{s}");
+        assert!(!s.contains(" w-19 "), "one row too few scrolled: {s}");
     }
 
     #[test]
