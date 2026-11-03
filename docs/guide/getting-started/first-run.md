@@ -40,6 +40,12 @@ On the first start ever (the store remembers no earlier run), a window opens bef
 
 ```text
 ┌ WELCOME TO IMECE 0.1.0 ──────────────────────────────────────────────────────────┐
+│                                                                                  │
+│       ██        imece v0.1.0                                                     │
+│   ██  ▄▄  ██    one terminal, many agents, one leader                            │
+│     ▄▄▀▀▄▄      your-checkout · claude leads                                     │
+│     ▀▀  ▀▀                                                                       │
+│                                                                                  │
 │ One terminal for many coding agents. A leader hires workers; each works          │
 │ in a worktree of its own, and what it changes waits for your yes.                │
 │                                                                                  │
@@ -56,6 +62,8 @@ On the first start ever (the store remembers no earlier run), a window opens bef
 │ any key: close · :welcome shows this again                                       │
 └──────────────────────────────────────────────────────────────────────────────────┘
 ```
+
+At the top is imece's mark, five hands round one job, beside its version, what it is and the project at hand with who heads it. Where it comes on the screen its dots come one a beat, the job last (under two seconds); any key shows it whole at once, and so do [`:motion off`](../reference/commands.md#motion-offcalmfull), another window and SSH. On a screen too narrow for it the words stand alone, and on one too short the window goes without them. The salon shows the same mark in its free rows while no project has a worker yet. The terminal's title carries the mark too, `⁙ imece`, while all is calm.
 
 Each vendor's line says its version and whether it is signed in, or how to sign in: `claude auth login`, `codex login`. imece asks the CLIs themselves (`claude auth status`, `codex login status`), on a thread of its own, without the network and without spending; a line says `checking…` until its answer comes, `not on PATH` when the program is not there. Gemini CLI has no such question: its sign-in is checked when its first session starts, and a missing one stops that session with the reason.
 
@@ -202,6 +210,14 @@ Then commit as you always do: `!git commit` runs in your own shell with the scre
 ```
 
 `q` again quits; `s` opens BEFORE YOU GO, which lists the agents mid-turn (quitting cuts their turns short) and the changes not reviewed; there `q` quits at once, `W` opens the next waiting item, any other key goes back. `:q` and `:quit` ask the same way.
+
+Once the screen is gone, imece leaves one line in your terminal, what waits for you first:
+
+```text
+⁙ imece · 1 waiting for you · 3 agents asleep · $2.40 spent this run · resume: imece
+```
+
+A part with nothing to say is left out; the demo's line ends `the demo keeps nothing`.
 
 ## The next `imece`
 

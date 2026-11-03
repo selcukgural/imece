@@ -32,7 +32,7 @@ mod theme;
 mod ui;
 mod welcome;
 
-use std::io::ErrorKind;
+use std::io::{ErrorKind, Write as _};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
@@ -571,8 +571,14 @@ fn main() -> std::io::Result<()> {
     // The last word before the sessions end: what every agent had in hand,
     // and when this run ended.
     app.persist();
+    // What is left in the terminal once the screen is gone (record 101),
+    // read before the sessions end.
+    let spent = app.world.spent().saturating_sub(app.spent_at_start);
+    let bye = ui::words::farewell(app.lang, &app.world, spent, app.demo());
     app.leave();
     screen::restore();
+    // A terminal gone away takes nothing; that is no error of the run's.
+    let _ = writeln!(std::io::stdout(), "{bye}");
     result
 }
 

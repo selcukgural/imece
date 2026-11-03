@@ -378,7 +378,20 @@ fn salon(f: &mut Frame, area: Rect, app: &App) {
     if lines.is_empty() && app.needs_only {
         lines.push(Line::from(Span::styled(t.salon_none, dim())));
     }
+    // While no project has a worker, imece's mark in the rows left free
+    // (record 101).
+    let leaders_only =
+        (rows.iter()).all(|r| matches!(r, Row::Project(_) | Row::Agent { depth: 1, .. }));
+    let used = lines.len() as u16;
     f.render_widget(Paragraph::new(lines), list);
+    if leaders_only && !app.needs_only {
+        let free = Rect {
+            y: list.y + used.min(list.height),
+            height: list.height.saturating_sub(used),
+            ..list
+        };
+        super::brand::salon(f, free, app);
+    }
     for (i, x, width, url, id) in links {
         if let Some(cells) = link_cells(list, i, x, width) {
             hyperlink(f.buffer_mut(), cells, url, id);

@@ -3,6 +3,7 @@
 //! never relies on colour alone (every one has its own glyph or word).
 
 mod board;
+pub(crate) mod brand;
 mod card;
 mod code;
 mod diff;
@@ -42,6 +43,8 @@ pub fn draw(f: &mut Frame, app: &App) {
     // over it takes them away again (`patch` is then not used).
     *app.breathing.borrow_mut() = Some(Vec::new());
     app.caret_at.set(None);
+    app.mark_before.set(app.mark_drawn.get());
+    app.mark_drawn.set(false);
     // An archive's view is a screen of its own, its banner in place of
     // its header.
     if let Some(v) = &app.viewing {
@@ -5782,6 +5785,114 @@ mod tests {
     }
 
     #[test]
+    fn the_salon_shows_imece_s_mark_while_no_project_has_a_worker() {
+        let mut app = App::new(1, 0, 4, 7, Lang::En);
+        let screen = render(&app, 120, 30);
+        assert!(app.mark_drawn.get());
+        let at = screen.lines().position(|l| l.contains("imece v")).unwrap();
+        let rows: Vec<&str> = screen.lines().skip(at).take(4).collect();
+        assert!(rows[0].contains("     ██        imece v"), "{screen}");
+        assert!(rows[1].contains(" ██  ▄▄  ██    one terminal, many agents, one leader"));
+        assert!(rows[2].contains("   ▄▄▀▀▄▄      shop-api · claude leads"));
+        assert!(rows[3].contains("   ▀▀  ▀▀   "));
+        // In the middle of the free rows: the header, the border and the
+        // two rows above them, 23 of the list's 25 rows free.
+        assert_eq!(at, 4 + (23 - 4) / 2, "{screen}");
+        let chars: Vec<char> = rows[0].chars().collect();
+        let block = chars.iter().position(|&c| c == '█').unwrap();
+        // 72 columns inside, 52 for the mark (12), gap (3) and the
+        // longest words (37); the mark's top dot 5 columns into it.
+        assert_eq!(block - 1 - 5, (72 - 52) / 2, "{screen}");
+        // Drawn again, later: it goes on coming from where it began.
+        let from = app.mark_from.get();
+        assert!(from.is_some());
+        app.frame_after(std::time::Duration::from_millis(900));
+        render(&app, 120, 30);
+        assert_eq!(app.mark_from.get(), from, "not begun again");
+        // `f`: what needs the person, and nothing else.
+        app.needs_only = true;
+        assert!(!render(&app, 120, 30).contains("imece v"));
+        assert!(!app.mark_drawn.get());
+        app.needs_only = false;
+        // Too few free rows: none.
+        // 13 rows: 8 in the list, 6 free under its two, four and one each
+        // side.
+        assert!(!render(&app, 120, 12).contains("imece v"));
+        assert!(
+            render(&app, 120, 13).contains("imece v"),
+            "four and one each side"
+        );
+        // Narrow: the words alone, cut to the room.
+        let narrow = render(&app, 50, 30);
+        assert!(
+            narrow.contains("imece v") && !narrow.contains("▀▀"),
+            "{narrow}"
+        );
+        assert!(!app.mark_drawn.get(), "no mark, nothing moves");
+        // A worker: the salon is the team's.
+        let app = App::new(1, 1, 4, 7, Lang::En);
+        assert!(!render(&app, 120, 30).contains("imece v"));
+        // Turkish, a solo.
+        let mut app = App::new(1, 0, 4, 7, Lang::Tr);
+        let lead = app.world.projects[0].leader;
+        app.world.agents[lead].role = Role::Solo;
+        let screen = render(&app, 120, 30);
+        assert!(
+            screen.contains("tek terminal, birçok agent, bir lider"),
+            "{screen}"
+        );
+        assert!(screen.contains("shop-api · claude tek başına"), "{screen}");
+        app.world.agents[lead].role = Role::Leader;
+        assert!(render(&app, 120, 30).contains("shop-api · lider claude"));
+    }
+
+    #[test]
+    fn the_welcome_and_news_windows_open_under_imece_s_mark_when_it_fits() {
+        let mut app = App::new(1, 2, 4, 7, Lang::En);
+        app.welcome = true;
+        let screen = render(&app, 120, 40);
+        let at = screen
+            .lines()
+            .position(|l| l.contains("WELCOME TO IMECE"))
+            .unwrap();
+        let rows: Vec<&str> = screen.lines().collect();
+        assert!(
+            rows[at + 2].contains("│       ██        imece v"),
+            "{screen}"
+        );
+        assert!(rows[at + 5].contains("│     ▀▀  ▀▀   "), "{screen}");
+        assert!(
+            rows[at + 7].contains("One terminal for many coding agents."),
+            "{screen}"
+        );
+        assert!(app.mark_drawn.get());
+        // The rows the window needs and the mark's six: 21 + 6 + 2.
+        let lines = 2 + 2 + 3 + 1 + 1 + 9 + 2;
+        assert!(render(&app, 120, lines + 6 + 2).contains("imece v"));
+        let short = render(&app, 120, lines + 6 + 1);
+        assert!(
+            !short.contains("imece v") && short.contains("WELCOME TO IMECE"),
+            "{short}"
+        );
+        // A narrow screen narrows the window: 53 inside, a column short of
+        // the mark's 2 + 52, the words alone; 54, the mark.
+        let narrow = render(&app, 55, 40);
+        assert!(
+            narrow.contains("imece v") && !narrow.contains("▀▀"),
+            "{narrow}"
+        );
+        assert!(render(&app, 56, 40).contains("▀▀"));
+        // What is new, under it too.
+        app.welcome = false;
+        app.news = vec![crate::welcome::VERSION];
+        let screen = render(&app, 120, 40);
+        assert!(
+            screen.contains("imece v") && screen.contains("one terminal, many agents"),
+            "{screen}"
+        );
+    }
+
+    #[test]
     fn the_axis_says_when_its_first_and_middle_columns_were_and_now() {
         let t = 1000;
         let row = timeline::axis(Lang::En, t, 40, 1);
@@ -9935,10 +10046,12 @@ mod tests {
         ] {
             assert!(screen.contains(want), "{want} missing:\n{screen}");
         }
-        // The first version right under the title, no blank line above.
+        // The first version right under imece's mark (a blank row, four,
+        // a blank row), no blank line more.
         let lines: Vec<&str> = screen.lines().collect();
         let top = lines.iter().position(|l| l.contains("WHAT'S NEW")).unwrap();
-        assert!(lines[top + 1].contains("│ 0.1.0"), "{screen}");
+        assert!(lines[top + 2].contains("imece v"), "{screen}");
+        assert!(lines[top + 7].contains("│ 0.1.0"), "{screen}");
         // The news come before the welcome, which comes before where the
         // person left off.
         app.welcome = true;
