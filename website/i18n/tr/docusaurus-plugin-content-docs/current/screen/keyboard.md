@@ -236,7 +236,7 @@ x = gg
 g enter = ^o
 ```
 
-İki düz tuş tek sözcükte yazılır (`gt`, `zM`); bir tuşun adı olan sözcük o tuştur (`f1`, `up`), iki tuş için `f 1` ya da `u p` yazın. ctrl'li, alt'lı ya da adı olan tuşlar ayrı yazılır (`g enter`, `^x j`). İki tuşun ilki, vim'deki gibi, ikincisini en çok bir saniye bekler; başka bir tuş gelirse ya da zamanında hiçbiri gelmezse kendisi olarak geçer, yani `g` sonra `g` yine imece'nin `gg`'sidir. Tek başına verilen bir tuş aynı zamanda iki tuşun ilki olamaz (`g hem tek başına hem iki tuşun ilki olarak verilmiş (2. satır)`), bir yanda en çok iki tuş olur. Çıkan tuşlar bir daha çevrilmez; ikincisi, ilkinin ekranı bıraktığı yere gider (`y = :q` komut satırını açar ve `q` yazar).
+İki düz tuş tek sözcükte yazılır (`gt`, `zM`); bir tuşun adı olan sözcük o tuştur (`f1`, `up`), iki tuş için `f 1` ya da `u p` yazın. ctrl'li, alt'lı ya da adı olan tuşlar ayrı yazılır (`g enter`, `^x j`). İki tuşun ilki, vim'deki gibi, ikincisini en çok bir saniye bekler; başka bir tuş gelirse ya da zamanında hiçbiri gelmezse kendisi olarak geçer, yani `g` sonra `g` yine imece'nin `gg`'sidir. Beklerken, imece'nin kendi `g…`'si gibi, alt satırın başında görünür (`^o…`). Tek başına verilen bir tuş aynı zamanda iki tuşun ilki olamaz (`g hem tek başına hem iki tuşun ilki olarak verilmiş (2. satır)`), bir yanda en çok iki tuş olur. Çıkan tuşlar bir daha çevrilmez; ikincisi, ilkinin ekranı bıraktığı yere gider (`y = :q` komut satırını açar ve `q` yazar).
 
 Bir `[yer]` satırı, altındaki satırları bir sonraki `[yer]`e kadar yalnız orada geçerli kılar; ilk yerin üstündeki satırlar her yerde geçerlidir, bir yerin yeniden verdiği tuş dışında:
 

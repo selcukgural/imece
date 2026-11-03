@@ -3155,15 +3155,30 @@ impl App {
             (t.quit_mid_turn, self.world.mid_turn().len()),
             (t.quit_changes, self.world.open_changes().len()),
         ];
-        let said: Vec<String> = counts
+        let mut said: Vec<String> = counts
             .iter()
             .filter(|(_, n)| *n > 0)
             .map(|(words, n)| fill(words, &[&n.to_string()]))
             .collect();
-        if said.is_empty() {
-            t.quit_ask.to_string()
-        } else {
-            fill(t.quit_ask_busy, &[&said.join(", ")])
+        // `s` shows the counted ones; what counts down is only said.
+        let shown = !said.is_empty();
+        if let Some((what, _)) = self.grace {
+            said.push(fill(t.quit_grace, &[&self.undoable_command(what)]));
+        }
+        match (said.is_empty(), shown) {
+            (true, _) => t.quit_ask.to_string(),
+            (false, true) => fill(t.quit_ask_busy, &[&said.join(", ")]),
+            (false, false) => fill(t.quit_ask_said, &[&said.join(", ")]),
+        }
+    }
+
+    /// The command that asked for what counts down, as written.
+    fn undoable_command(&self, what: Undoable) -> String {
+        match what {
+            Undoable::Close(p) => format!(":close {}", self.world.projects[p].name),
+            Undoable::Forget(id) => format!(":forget {}", self.world.agents[id].name),
+            Undoable::Archive(p) => format!(":archive {}", self.world.projects[p].name),
+            Undoable::Clear(c) => [":clear", ":clear inbox", ":clear journal"][c.index()].into(),
         }
     }
 
@@ -11828,6 +11843,47 @@ pub(crate) mod tests {
         app.on_key(key(KeyCode::Char('q')));
         app.on_key(key(KeyCode::Char('x')));
         assert!(!app.quit && app.pending.is_none());
+    }
+
+    #[test]
+    fn the_quit_question_says_what_counts_down_happens_now() {
+        let mut app = quiet();
+        let later = Instant::now() + UNDO_GRACE;
+        let project = app.world.projects[0].name.clone();
+        let agent = app.world.agents[2].name.clone();
+        app.grace = Some((Undoable::Close(0), later));
+        assert_eq!(
+            asked(&mut app),
+            format!(
+                "quit imece? :close {project} happens now · q again quits · any other key stays"
+            ),
+            "nothing for s to show"
+        );
+        for (what, said) in [
+            (Undoable::Forget(2), format!(":forget {agent}")),
+            (Undoable::Archive(0), format!(":archive {project}")),
+            (Undoable::Clear(Clear::All), ":clear".into()),
+            (Undoable::Clear(Clear::Inbox), ":clear inbox".into()),
+            (Undoable::Clear(Clear::Journal), ":clear journal".into()),
+        ] {
+            app.grace = Some((what, later));
+            assert!(asked(&mut app).contains(&format!("? {said} happens now ·")));
+        }
+        app.world.agents[1].status = Status::Working;
+        assert_eq!(
+            asked(&mut app),
+            "quit imece? agents mid-turn: 1, :clear journal happens now · q again quits · s shows them · any other key stays"
+        );
+        app.lang = Lang::Tr;
+        app.world.agents[1].status = Status::Idle;
+        assert_eq!(
+            asked(&mut app),
+            "imece kapatılsın mı? :clear journal şimdi yapılır · bir daha q çıkar · başka bir tuş kalır"
+        );
+        // q q still quits; the main loop lets it act (record 78).
+        app.on_key(key(KeyCode::Char('q')));
+        app.on_key(key(KeyCode::Char('q')));
+        assert!(app.quit && app.grace.is_some());
     }
 
     #[test]

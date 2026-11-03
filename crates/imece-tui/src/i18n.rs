@@ -655,6 +655,8 @@ pub struct Text {
     /// counts, joined.
     pub quit_ask_busy: &'static str,
     pub quit_mid_turn: &'static str,
+    pub quit_ask_said: &'static str,
+    pub quit_grace: &'static str,
     pub quit_changes: &'static str,
     /// The window `q s` opens.
     pub leaving_title: &'static str,
@@ -1557,6 +1559,8 @@ pub const EN: Text = Text {
     quit_ask: "quit imece? q again to quit · any other key to stay",
     quit_ask_busy: "quit imece? {} · q again quits · s shows them · any other key stays",
     quit_mid_turn: "agents mid-turn: {}",
+    quit_ask_said: "quit imece? {} · q again quits · any other key stays",
+    quit_grace: "{} happens now",
     quit_changes: "changes not reviewed: {}",
     leaving_title: " BEFORE YOU GO ",
     leaving_mid_turn: "Mid-turn: quitting cuts these turns short",
@@ -2585,6 +2589,8 @@ pub const TR: Text = Text {
     quit_ask: "imece kapatılsın mı? bir daha q çıkar · başka bir tuş kalır",
     quit_ask_busy: "imece kapatılsın mı? {} · bir daha q çıkar · s gösterir · başka bir tuş kalır",
     quit_mid_turn: "tur ortasındaki agent: {}",
+    quit_ask_said: "imece kapatılsın mı? {} · bir daha q çıkar · başka bir tuş kalır",
+    quit_grace: "{} şimdi yapılır",
     quit_changes: "incelenmemiş değişiklik: {}",
     leaving_title: " ÇIKMADAN ÖNCE ",
     leaving_mid_turn: "Tur ortasında: çıkmak bu turları yarıda keser",

@@ -236,7 +236,7 @@ x = gg
 g enter = ^o
 ```
 
-Two plain keys go in one word (`gt`, `zM`); a word that is a key's name is that key (`f1`, `up`), so write `f 1` or `u p` for two. Keys with ctrl, alt or a name are written apart (`g enter`, `^x j`). The first key of two waits for the second, as in vim, for a second at most; another key, or none in time, lets it through as itself, so `g` then `g` is still imece's `gg`. A key given alone cannot also be the first of two (`g is given alone and as the first of two keys (line 2)`), and a side has two keys at most. The keys that come out are not turned again; the second goes where the first left the screen (`y = :q` opens the command line and writes `q`).
+Two plain keys go in one word (`gt`, `zM`); a word that is a key's name is that key (`f1`, `up`), so write `f 1` or `u p` for two. Keys with ctrl, alt or a name are written apart (`g enter`, `^x j`). The first key of two waits for the second, as in vim, for a second at most; another key, or none in time, lets it through as itself, so `g` then `g` is still imece's `gg`. While it waits it shows first on the bottom line (`^o…`), as imece's own `g…` does. A key given alone cannot also be the first of two (`g is given alone and as the first of two keys (line 2)`), and a side has two keys at most. The keys that come out are not turned again; the second goes where the first left the screen (`y = :q` opens the command line and writes `q`).
 
 A line `[place]` makes the lines below it hold only there, until the next `[place]`; the lines above the first hold everywhere, except for a key a place gives again:
 
