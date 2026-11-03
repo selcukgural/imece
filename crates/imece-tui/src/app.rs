@@ -8176,6 +8176,25 @@ pub(crate) mod tests {
         let thread = app.thread.as_ref().expect("its conversation");
         assert_eq!(thread.entries[thread.sel], line);
         assert_eq!((app.pane, app.journal_sel), (Pane::Journal, Some(line)));
+        // A line `:clear` took off the journal: its conversation, nothing
+        // selected in the journal that does not show it.
+        app.thread = None;
+        app.pane = Pane::Salon;
+        app.journal_sel = None;
+        app.world.journal.push(Entry {
+            tick: 4,
+            event: Event::Stopped {
+                agent: other,
+                why: "later".into(),
+            },
+        });
+        app.world.cleared.journal = line + 1;
+        app.command("recall deploy the site");
+        app.on_key(key(KeyCode::Enter));
+        let thread = app.thread.as_ref().expect("its conversation");
+        assert_eq!(thread.entries[thread.sel], line);
+        assert_eq!((app.pane, app.journal_sel), (Pane::Salon, None));
+        app.world.cleared.journal = 0;
         // Tab to the trace line: its agent's raw stream.
         app.thread = None;
         app.on_key(key(KeyCode::Char('H')));
