@@ -13,7 +13,7 @@ The standing rules: deny by default, nothing weakens silently, every boundary ha
 
 ### Who may call which tool on the bus
 
-- The bus is imece's own MCP server, one Unix socket per agent in a fresh `0700` directory. **The sender is the socket**, never a name the agent gives: no agent can speak as another, or as you.
+- The bus is imece's own MCP server, one Unix socket per agent in a fresh `0700` directory. **The sender is the socket**, never a name the agent gives: no agent can speak as another, or as you. A socket takes calls only from the processes of its own agent's session (the vendor's process and what it started); a call from anywhere else is refused and written on the agent's trace.
 - Each socket offers only its role's tools: `claim` to workers alone, `hire` to the leader (workers) and to workers (helpers), `approve` only to a Claude session, which calls it itself. A helper hires nobody. A session's `init` must report exactly imece's server and exactly its tools.
 - `re` on a reply is checked deny by default: a message that exists, sent to the sender, by the one the reply goes to. Messages to you are refused for the types that would assign you work.
 - Caps on every write: body size, unread mail, message-driven turns and posts per agent until you speak again, open cards per project ([messages](../concepts/messages-and-board.md)).
