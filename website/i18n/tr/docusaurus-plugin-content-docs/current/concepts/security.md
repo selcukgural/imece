@@ -20,7 +20,7 @@ Yerleşik kurallar: varsayılan ret, hiçbir şey sessizce zayıflamaz, her sın
 
 ### Ekranda ajan metni
 
-Bir ajanın yazdığı her şey terminale yalnız `i18n::fill` ya da `i18n::clean` üzerinden ulaşır: kontrol karakterleri değiştirilir (bir kaçış dizisi ekranı yeniden çizemez, pencereyi yeniden adlandıramaz ya da bir satırı taklit edemez) ve gizli anahtara benzeyen sözcükler `[***]` olarak saklanır (`sk-…`, `ghp_…`, `github_pat_…`, `API_KEY=`, `TOKEN=`, `SECRET=`, `PASSWORD=`). Kural diff'ler, alıntılanan parçalar, notlar, dışa aktarılan Markdown, uyanış özeti ve `:commit` önerisi için de geçerlidir. Bir onay isteği bütünüyle gösterilir ve asla markdown olarak okunmaz: izin verdiğiniz, çalışandır.
+Bir ajanın yazdığı her şey terminale yalnız `i18n::fill` ya da `i18n::clean` üzerinden ulaşır: kontrol karakterleri değiştirilir (bir kaçış dizisi ekranı yeniden çizemez, pencereyi yeniden adlandıramaz ya da bir satırı taklit edemez) ve gizli anahtara benzeyen sözcükler `[***]` olarak saklanır (satıcıların `sk-…`, `ghp_…`, `glpat-…`, `xoxb-…`, `AKIA…`, `AIza…` gibi token'ları; adında `KEY`, `TOKEN`, `SECRET`, `PASSWORD`, `PASSWD` ya da `CREDENTIAL` geçen bir `AD=değer` ya da `AD:değer`; `Bearer` ya da `Basic` sonrasındaki sözcük; bir URL'deki parola; bir JSON Web Token; bir anahtar dosyasının satırı gibi harf ve rakam karışık uzun bir base64 dizisi). Kural diff'ler, alıntılanan parçalar, notlar, dışa aktarılan Markdown, uyanış özeti ve `:commit` önerisi için de geçerlidir. Bir onay isteği bütünüyle gösterilir ve asla markdown olarak okunmaz: izin verdiğiniz, çalışandır.
 
 ### Fail-closed oturum denetimleri
 
