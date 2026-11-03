@@ -11,6 +11,7 @@ mod focus;
 mod overlay;
 pub mod pick;
 pub(crate) mod salon;
+pub(crate) mod story;
 pub(crate) mod words;
 
 use std::num::NonZeroU16;
@@ -4864,6 +4865,511 @@ mod tests {
             spans_text(&pulse_spans(Lang::Tr, p(1, 2, 3))),
             "10 dk: 1 kart bitti · 2 Δ · 3 mesaj"
         );
+    }
+
+    fn a_card(id: CardId, project: ProjectId, owner: Option<AgentId>, column: Column) -> Card {
+        Card {
+            id,
+            project,
+            title: format!("card {}", id + 1),
+            owner,
+            column,
+            story: Vec::new(),
+            symbols: Vec::new(),
+            started: 0,
+            finished: 0,
+        }
+    }
+
+    fn sent(from: AgentId, to: AgentId, kind: MsgKind, id: MsgId, re: Option<MsgId>) -> Event {
+        Event::Sent {
+            from,
+            to,
+            kind,
+            text: format!("m{id}"),
+            id,
+            re,
+        }
+    }
+
+    /// A calm team with no journal, no inbox, no cards, at tick 1000.
+    fn story_team() -> (App, Vec<AgentId>) {
+        let (mut app, w, _) = calm_team();
+        app.world.journal.clear();
+        app.world.inbox.clear();
+        app.world.cards.clear();
+        app.world.tick = 1000;
+        for &a in &w {
+            app.world.agents[a].card = None;
+            app.world.agents[a].plan.clear();
+        }
+        (app, w)
+    }
+
+    #[test]
+    fn a_line_belongs_to_the_card_its_agent_was_on_then() {
+        let (mut app, w) = story_team();
+        let mut a = a_card(0, 0, Some(w[0]), Column::Done);
+        a.finished = 10;
+        let mut b = a_card(1, 0, Some(w[0]), Column::Done);
+        b.finished = 20;
+        let c = a_card(2, 0, Some(w[0]), Column::Working);
+        let waiting = a_card(3, 0, Some(w[0]), Column::Waiting);
+        let other = a_card(4, 0, Some(w[1]), Column::Working);
+        app.world.cards = vec![a, b, c, waiting, other];
+        let held = story::Held::of(&app.world);
+        let at = |tick| held.at(&app.world, w[0], tick);
+        assert_eq!(
+            [at(5), at(10), at(11), at(20), at(21)],
+            [Some(0), Some(0), Some(1), Some(1), Some(2)]
+        );
+        assert_eq!(held.at(&app.world, w[1], 5), Some(4));
+        assert_eq!(held.at(&app.world, w[2], 5), None);
+        // A helper's is its worker's.
+        let (worker, [h, _]) = with_helpers(&mut app);
+        let held = story::Held::of(&app.world);
+        assert!(held.at(&app.world, worker, 5).is_some());
+        assert_eq!(held.at(&app.world, h, 5), held.at(&app.world, worker, 5));
+    }
+
+    #[test]
+    fn what_was_said_goes_to_the_asker_s_card_and_setting_up_to_none() {
+        let (mut app, w) = story_team();
+        app.world.cards = vec![
+            a_card(0, 0, Some(w[0]), Column::Working),
+            a_card(1, 0, Some(w[1]), Column::Working),
+        ];
+        let held = story::Held::of(&app.world);
+        let lead = app.world.projects[0].leader;
+        let of = |event: Event| story::card_for(&app.world, &held, &Entry { tick: 1000, event });
+        assert_eq!(
+            of(Event::Claimed {
+                agent: w[1],
+                card: 0
+            }),
+            Some(0),
+            "named"
+        );
+        assert_eq!(of(sent(w[0], w[1], MsgKind::Ask, 3, None)), Some(0));
+        assert_eq!(of(sent(w[1], w[0], MsgKind::Answer, 4, Some(3))), Some(0));
+        assert_eq!(of(sent(lead, w[1], MsgKind::Inform, 5, None)), Some(1));
+        assert_eq!(of(sent(w[1], lead, MsgKind::Answer, 6, Some(5))), Some(1));
+        assert_eq!(of(sent(lead, w[3], MsgKind::Inform, 7, None)), None);
+        assert_eq!(
+            of(Event::Replied {
+                agent: w[1],
+                text: "x".into()
+            }),
+            Some(1),
+            "to the person"
+        );
+        assert_eq!(
+            of(Event::ChangeReady {
+                agent: w[1],
+                files: 1,
+                added: 1,
+                removed: 0
+            }),
+            Some(1)
+        );
+        assert_eq!(
+            of(Event::Stopped {
+                agent: w[0],
+                why: "x".into()
+            }),
+            Some(0)
+        );
+        assert_eq!(of(Event::Failed { agent: w[0] }), Some(0));
+        assert_eq!(
+            of(Event::Copied {
+                agent: w[0],
+                paths: vec![".env".into()],
+                bytes: 1,
+                included: false
+            }),
+            None
+        );
+        assert_eq!(
+            of(Event::CopySkipped {
+                agent: w[0],
+                path: ".env".into(),
+                why: "x".into(),
+                included: false
+            }),
+            None,
+            "a failure of setting up is no card's"
+        );
+    }
+
+    #[test]
+    fn the_person_holds_up_who_waits_for_them_and_who_waits_for_those() {
+        let (mut app, w) = story_team();
+        assert!(story::held(&app.world).is_empty());
+        waiting(&mut app, w[2]);
+        waiting(&mut app, w[2]);
+        app.world.agents[w[3]].status = Status::WaitingHuman;
+        app.world.agents[w[0]].status = Status::Asking { to: w[1], until: 0 };
+        app.world.agents[w[1]].status = Status::Asking { to: w[2], until: 0 };
+        assert_eq!(
+            story::held(&app.world),
+            [
+                (w[2], None),
+                (w[3], None),
+                (w[1], Some(w[2])),
+                (w[0], Some(w[1]))
+            ]
+        );
+        app.world.agents[w[3]].gone = true;
+        assert!(!story::held(&app.world).contains(&(w[3], None)));
+        // Asking one nobody holds up holds nobody up.
+        let lead = app.world.projects[0].leader;
+        app.world.agents[lead].status = Status::Asking { to: w[3], until: 0 };
+        assert!(story::held(&app.world).iter().all(|&(a, _)| a != lead));
+        app.story = true;
+        let s = render_story(&app);
+        assert!(
+            s.contains(&format!(
+                "! you hold up 3: {}, {} via {}, {} via {}",
+                app.world.agents[w[2]].name,
+                app.world.agents[w[1]].name,
+                app.world.agents[w[2]].name,
+                app.world.agents[w[0]].name,
+                app.world.agents[w[1]].name
+            )),
+            "{s}"
+        );
+    }
+
+    /// The screen with the story in the side panel, wide enough for its lines.
+    fn render_story(app: &App) -> String {
+        assert!(app.story_on());
+        render(app, 200, 50)
+    }
+
+    #[test]
+    fn the_story_tells_each_card_newest_first_and_folds_the_rest_by_kind() {
+        let (mut app, w) = story_team();
+        app.story = true;
+        let mut done = a_card(0, 0, Some(w[0]), Column::Done);
+        done.finished = 995;
+        app.world.cards = vec![done, a_card(1, 0, Some(w[1]), Column::Working)];
+        app.world.agents[w[1]].card = Some(1);
+        plan_of(&mut app, w[1]);
+        let lead = app.world.projects[0].leader;
+        let at = |tick, event| Entry { tick, event };
+        let copied = |agent| Event::Copied {
+            agent,
+            paths: vec!["node_modules".into()],
+            bytes: 1,
+            included: false,
+        };
+        app.world.journal = vec![
+            at(900, sent(w[0], lead, MsgKind::Progress, 1, None)),
+            at(950, sent(w[0], lead, MsgKind::Progress, 2, None)),
+            at(960, sent(w[0], lead, MsgKind::Progress, 3, None)),
+            at(990, sent(w[0], lead, MsgKind::Done, 4, None)),
+            at(991, copied(w[2])),
+            at(992, copied(w[3])),
+            at(976, sent(w[1], w[3], MsgKind::Ask, 6, None)),
+            at(999, sent(w[1], w[2], MsgKind::Ask, 7, None)),
+            at(1000, sent(w[2], w[1], MsgKind::Answer, 8, Some(7))),
+        ];
+        // The journal is in time order; the asks of card 2 came last.
+        app.world.journal.sort_by_key(|e| e.tick);
+        let s = render_story(&app);
+        let at_line = |words: &str| s.lines().position(|l| l.contains(words));
+        let two = at_line("#2 card 2").expect("card 2");
+        let one = at_line("#1 card 1").expect("card 1");
+        assert!(two < one, "newest first: {s}");
+        assert!(s.contains("#1 card 1 ·") && s.contains("✓ done"), "{s}");
+        // Three newest lines, oldest first; the oldest left out.
+        assert!(!s.contains("[progress]: m1"), "{s}");
+        let m2 = at_line("[progress]: m2").unwrap();
+        let m4 = at_line("[done]: m4").unwrap();
+        assert!(one < m2 && m2 < m4, "{s}");
+        // An ask answered says nothing more; one not: since when.
+        let ask = |id: &str| {
+            s.lines()
+                .find(|l| l.contains(&format!("[ask]: {id}")))
+                .unwrap_or("")
+                .to_string()
+        };
+        assert!(!ask("m7").contains("no answer"), "{s}");
+        assert!(ask("m6").contains("no answer · 2 min"), "{s}");
+        // Its owner now, and how far its list is.
+        assert!(s.contains("#2 card 2 ·") && s.contains("≡ 1/4"), "{s}");
+        assert!(s.contains("now ▸ Run the tests"), "{s}");
+        // The rest by kind, the newest of each with how many.
+        let elsewhere = at_line("elsewhere").expect("elsewhere");
+        assert!(elsewhere > one, "{s}");
+        assert!(
+            s.lines()
+                .any(|l| l.contains(&app.world.agents[w[3]].name) && l.contains("×2")),
+            "{s}"
+        );
+        // A change waiting on a done card says both.
+        app.world.inbox.push(InboxItem {
+            kind: InboxKind::Change,
+            agent: w[0],
+            detail: "x".into(),
+            researcher: None,
+            open: true,
+            tick: 0,
+            card: Some(0),
+        });
+        assert!(render_story(&app).contains("✓ done · Δ waits for you"));
+        // Cleared lines are not told, a marked one still is.
+        app.world.inbox.clear();
+        app.world.cleared.journal = app.world.journal.len();
+        let s = render_story(&app);
+        assert!(s.contains("Nothing has happened yet"), "{s}");
+        app.world.marks.insert(app.world.journal.len() - 1);
+        assert!(render_story(&app).contains("[answer]"));
+        // Cleared up to the last line: the last is still told.
+        app.world.marks.clear();
+        app.world.cleared.journal = app.world.journal.len() - 1;
+        let s = render_story(&app);
+        assert!(
+            s.contains("[answer] ↩: m8") && !s.contains("[ask]: m7"),
+            "{s}"
+        );
+        app.world.cleared.journal = 0;
+        // An archived project's lines are its archive's.
+        app.world.projects[0].archived = Some(Archived {
+            at: 0,
+            title: "old".into(),
+        });
+        assert!(render_story(&app).contains("Nothing has happened yet"));
+    }
+
+    #[test]
+    fn the_story_marks_only_numbered_asks_folds_four_kinds_and_says_a_change() {
+        let (mut app, w) = story_team();
+        app.story = true;
+        app.world.cards = vec![a_card(0, 0, Some(w[0]), Column::Working)];
+        app.world.agents[w[0]].card = Some(0);
+        let lead = app.world.projects[0].leader;
+        let at = |tick, event| Entry { tick, event };
+        app.world.journal = vec![
+            // An ask from before numbers (0) is not one that waits.
+            at(990, sent(w[0], w[1], MsgKind::Ask, 0, None)),
+            at(991, Event::Failed { agent: lead }),
+            at(
+                992,
+                Event::Stopped {
+                    agent: lead,
+                    why: "x".into(),
+                },
+            ),
+            at(
+                993,
+                Event::Copied {
+                    agent: w[2],
+                    paths: vec!["x".into()],
+                    bytes: 1,
+                    included: false,
+                },
+            ),
+            at(
+                994,
+                Event::Hired {
+                    by: lead,
+                    agent: w[3],
+                    model: None,
+                    from: None,
+                },
+            ),
+            at(
+                995,
+                Event::Retrying {
+                    agent: w[2],
+                    why: "x".into(),
+                    attempt: 1,
+                    seconds: 30,
+                },
+            ),
+        ];
+        let s = render_story(&app);
+        let ask = s.lines().find(|l| l.contains("[ask]: m0")).unwrap();
+        assert!(!ask.contains("no answer"), "{s}");
+        let start = s.lines().position(|l| l.contains("elsewhere")).unwrap();
+        let folded = (s.lines().skip(start + 1))
+            .take_while(|l| l.contains(":") && l.contains("│  1"))
+            .count();
+        assert_eq!(folded, story::STORY_OTHER, "{s}");
+        assert!(!s.contains("×1"), "{s}");
+        // A change waiting on a card not done: that, not its list; the
+        // owner off the card has no line of now.
+        plan_of(&mut app, w[0]);
+        app.world.inbox.push(InboxItem {
+            kind: InboxKind::Change,
+            agent: w[0],
+            detail: "x".into(),
+            researcher: None,
+            open: true,
+            tick: 0,
+            card: Some(0),
+        });
+        let s = render_story(&app);
+        let head = s.lines().find(|l| l.contains("#1 card 1")).unwrap();
+        assert!(
+            head.contains(" ·  Δ waits for you") || head.contains("  Δ waits for you"),
+            "{head}"
+        );
+        assert!(!head.contains('≡') && !head.contains("✓ done"), "{head}");
+        assert!(s.contains("now ▸ Run the tests"), "{s}");
+        app.world.agents[w[0]].card = None;
+        assert!(!render_story(&app).contains("now ▸"));
+    }
+
+    #[test]
+    fn j_tells_the_story_and_its_keys_move_and_open_what_it_shows() {
+        let (mut app, w) = story_team();
+        app.world.cards = vec![
+            a_card(0, 0, Some(w[0]), Column::Working),
+            a_card(1, 0, Some(w[1]), Column::Working),
+        ];
+        app.world.agents[w[0]].card = Some(0);
+        app.world.agents[w[1]].card = Some(1);
+        let at = |tick, event| Entry { tick, event };
+        app.world.journal = vec![
+            at(
+                990,
+                Event::Copied {
+                    agent: w[2],
+                    paths: vec!["x".into()],
+                    bytes: 1,
+                    included: false,
+                },
+            ),
+            at(995, sent(w[0], w[1], MsgKind::Inform, 1, None)),
+            at(999, sent(w[1], w[0], MsgKind::Inform, 2, None)),
+        ];
+        assert!(!app.story);
+        key(&mut app, KeyCode::Char('J'));
+        assert!(app.story);
+        let s = render(&app, 200, 50);
+        assert!(s.contains("STORY · J journal"), "{s}");
+        assert!(s.contains("the side panel tells the story"), "{s}");
+        // Into the pane with tab: no journal line is selected under it.
+        app.pane = Pane::Inbox;
+        app.journal_sel = None;
+        key(&mut app, KeyCode::Tab);
+        assert_eq!((app.pane, app.journal_sel), (Pane::Journal, None));
+        // Card 2, card 1, then the line of no card.
+        render(&app, 200, 50);
+        assert_eq!(app.story_items.borrow().len(), 3);
+        key(&mut app, KeyCode::Char('j'));
+        key(&mut app, KeyCode::Char('j'));
+        key(&mut app, KeyCode::Char('j'));
+        assert_eq!(app.story_sel, 2, "the last stays the last");
+        key(&mut app, KeyCode::Char('k'));
+        assert_eq!(app.story_sel, 1);
+        let s = render(&app, 200, 50);
+        let cell = |words: &str| {
+            let y = s.lines().position(|l| l.contains(words)).unwrap();
+            let x = s
+                .lines()
+                .nth(y)
+                .unwrap()
+                .chars()
+                .position(|c| c == '#')
+                .unwrap();
+            buffer(&app, 200, 50)[(x as u16, y as u16)].modifier
+        };
+        assert!(cell("#1 card 1").contains(Modifier::REVERSED), "{s}");
+        assert!(!cell("#2 card 2").contains(Modifier::REVERSED), "{s}");
+        key(&mut app, KeyCode::Char('g'));
+        key(&mut app, KeyCode::Char('g'));
+        assert_eq!(app.story_sel, 0);
+        key(&mut app, KeyCode::Char('G'));
+        assert_eq!(app.story_sel, 2);
+        key(&mut app, KeyCode::Char('k'));
+        // The agent at hand is the card's owner, or the line's agent.
+        key(&mut app, KeyCode::Char('K'));
+        assert_eq!(app.peek, Some(w[0]));
+        app.peek = None;
+        app.story_sel = 2;
+        key(&mut app, KeyCode::Char('K'));
+        assert_eq!(app.peek, Some(w[2]));
+        app.peek = None;
+        app.story_sel = 1;
+        // `#` writes the card at hand.
+        key(&mut app, KeyCode::Char('#'));
+        assert_eq!(app.input, "#1");
+        key(&mut app, KeyCode::Esc);
+        key(&mut app, KeyCode::Esc);
+        assert!(!app.typing);
+        // enter on a card: its screen, with its own journal.
+        key(&mut app, KeyCode::Enter);
+        assert_eq!(app.card, Some(0));
+        assert!(!app.story_on(), "a card's screen shows its journal");
+        key(&mut app, KeyCode::Char('J'));
+        assert!(app.story, "J does nothing on a card's screen");
+        key(&mut app, KeyCode::Esc);
+        assert_eq!(app.card, None);
+        // enter on a line of no card: the journal, at that line.
+        app.pane = Pane::Journal;
+        render(&app, 200, 50);
+        app.story_sel = 2;
+        key(&mut app, KeyCode::Enter);
+        assert!(!app.story);
+        assert_eq!(app.journal_sel, Some(0));
+        // :story brings it back, J again leaves it.
+        for c in ":story".chars() {
+            key(&mut app, KeyCode::Char(c));
+        }
+        key(&mut app, KeyCode::Enter);
+        assert!(app.story);
+        assert_eq!((app.journal_sel, app.story_sel), (None, 0));
+        // Off again in the pane: a journal line is selected.
+        app.pane = Pane::Journal;
+        key(&mut app, KeyCode::Char('J'));
+        assert!(!app.story);
+        assert!(app.journal_sel.is_some());
+        assert!(render(&app, 200, 50).contains("the side panel shows the journal"));
+    }
+
+    #[test]
+    fn the_story_keeps_the_selected_card_in_view() {
+        let (mut app, w) = story_team();
+        app.story = true;
+        app.pane = Pane::Journal;
+        let n = 20;
+        app.world.cards = (0..n)
+            .map(|c| a_card(c, 0, Some(w[c % 4]), Column::Done))
+            .collect();
+        // Two lines a card: a block takes three rows.
+        app.world.journal = (0..n)
+            .flat_map(|c| {
+                let (tick, agent) = (900 + c as u64, w[c % 4]);
+                [
+                    Entry {
+                        tick,
+                        event: Event::Claimed { agent, card: c },
+                    },
+                    Entry {
+                        tick,
+                        event: Event::Merged { agent, card: c },
+                    },
+                ]
+            })
+            .collect();
+        render(&app, 200, 30);
+        let shown = app.story_items.borrow().len();
+        // The pane's 23 rows hold half as many cards and one more.
+        assert_eq!(shown, 23 / 2 + 1);
+        app.story_sel = shown - 1;
+        let s = render(&app, 200, 30);
+        let last = match app.story_items.borrow()[shown - 1] {
+            story::Item::Card(c) => c,
+            story::Item::Line(_) => unreachable!(),
+        };
+        assert!(
+            s.contains(&format!("#{} card {}", last + 1, last + 1)),
+            "{s}"
+        );
+        assert!(!s.contains("#20 card 20 ·"), "the first scrolled off: {s}");
     }
 
     #[test]

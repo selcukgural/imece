@@ -5,7 +5,7 @@ description: Günlük paneli - imece'nin neyi yazdığı, satırların nasıl ka
 
 # Günlük
 
-Günlük (ekrandaki panelin adı DEFTER) salonun alt yan panelidir: ne olduğu, en yeni önce, olay başına bir satır. Bir agent'ın ya da sizin yaptığınız anlamlı her şey oradadır; olağan görev dağıtımları panoya ve liderin izine bırakılır. Depoda saklanır, böylece sonraki `imece` aynı günlükle açılır; uzaktayken özeti ve "nerede kalmıştın" penceresi ondan kurulur.
+Günlük (ekrandaki panelin adı DEFTER) salonun alt yan panelidir (varsayılan olarak [hikâye](#hikâye) olarak anlatılır): ne olduğu, en yeni önce, olay başına bir satır. Bir agent'ın ya da sizin yaptığınız anlamlı her şey oradadır; olağan görev dağıtımları panoya ve liderin izine bırakılır. Depoda saklanır, böylece sonraki `imece` aynı günlükle açılır; uzaktayken özeti ve "nerede kalmıştın" penceresi ondan kurulur.
 
 ```text
 ┌ DEFTER ─────────────────────────────────────────────────┐
@@ -19,6 +19,38 @@ Günlük (ekrandaki panelin adı DEFTER) salonun alt yan panelidir: ne olduğu, 
 │18:12 ◆ lead işe aldı: claude-1 (varsayılan model)        │
 └──────────────────────────────────────────────────────────┘
 ```
+
+## Hikâye
+
+Alt yan panel varsayılan olarak günlüğü satır satır göstermez, hikâyeyi anlatır: aynı satırları karta göre gruplar. `J` (ya da `:story`) ikisi arasında geçer; seçim hatırlanır. Bir kartın ekranında panel her zaman o kartın günlüğüdür.
+
+```text
+┌ HİKÂYE · J defter ─────────────────────────────────────────┐
+│! 3 agent'ı sen bekletiyorsun: codex-1, claude-3, claude-1 (codex-1 üzerinden)
+│#1 Payment retry policy · codex-1  ≡ 4/5                    │
+│  14:00 ⇄ lead-shop-api → codex-1 [assign]: #1 Payment re…  │
+│  14:01 ⇄ codex-2 → codex-1 [ask]: Zone codes an enum?      │
+│  14:06 ⇄ claude-1 → codex-1 [ask]: Retry count from config?  yanıt yok · 2 dk
+│  şimdi ⚑ onayını bekliyor "WebFetch: https://…" · 4 dk     │
+│#7 Payment retry policy · claude-3  ✓ bitti · Δ seni bekliyor│
+│  14:05 ⇄ claude-3 → lead-shop-api [done]: Backoff capped…  │
+│başka                                                       │
+│  14:00 ⚑ node_modules qwen-7'nin worktree'sine kopyalandı  ×12
+└────────────────────────────────────────────────────────────┘
+```
+
+- **Kimi bekletiyorsunuz**, biri varsa en üstte: bir şeyi sizi bekleyen her agent (SENİ BEKLEYEN'de bir öge ya da size bir soru), ardından zaten bekleyen birine soru soran her agent, beklediğiyle birlikte (`claude-1 (codex-1 üzerinden)`). İlkini yanıtlamak diğerlerini de serbest bırakır.
+- **Kart başına bir blok**, günlüğün son zamanda sözünü ettiği her kart için; en yeni satırı olan kart önce. Başlığı: numara ve başlık, sahibi, sonra ne kadar ilerlediği (`≡ 4/5` yapılacaklar listesi, `✓ bitti`, o kartın bir değişikliği bekliyorsa `Δ seni bekliyor`). Altında kartın en yeni üç satırı, en eskisi önce: onunla ilgili söylenenler, sahibinin değişikliği, bir durma, bir hata, bir uygulama. Bir satır, agent'ının yazıldığı anda üzerinde olduğu karta aittir; başka karta geçen bir işçi eski satırlarını yanında götürmez; söylenen bir şey soranın kartına aittir. Yanıt almamış bir soru bunu söyler: `henüz yanıt yok`, sonra `yanıt yok · 2 dk`. En sonda, kart bitmemişken, `şimdi` ve sahibinin şu an yaptığı: adımı ve ne kadar süredir.
+- **Başka**: hiçbir karta ait olmayan satırlar (liderin işe alması, bir worktree'nin kurulması, bir satıcının yeniden denemesi); her tür bir kez, en yeni satırıyla ve kaç tane olduğuyla (`×12`). Liderin olağan görev dağıtımları günlükteki gibi dışarıda kalır.
+
+Hikâye her karede en çok en yeni 2.000 günlük satırını okur ve paneli dolduracak kadar kart gösterir; daha eskiler için `J` ve günlük. `:clear`'ın kaldırdığı satırlar anlatılmaz (işaretli olan anlatılır) ve bir arşivin satırları arşivde bekler.
+
+| Tuş | Ne yapar |
+| --- | --- |
+| `j` `k`  `gg` `G` | bir kartın başlığını ya da başka'daki bir satırı seç |
+| `enter` | bir kart: ekranı ([kartlar](cards.md)) · başka'daki bir satır: günlük, o satırda |
+| `#` | seçili kartın numarasını yaz |
+| `J` | günlük |
 
 ## Neler günlüğe geçer
 

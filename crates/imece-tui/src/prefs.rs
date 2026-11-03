@@ -35,6 +35,7 @@ const LEAD: &str = "lead";
 const NOTIFY: &str = "notify";
 const MOTION: &str = "motion";
 const AWAY: &str = "away";
+const STORY: &str = "story";
 /// The newest version whose "what's new" a start showed (or that started
 /// first): the next start of a newer one shows what is new since.
 const SEEN: &str = "seen";
@@ -57,6 +58,8 @@ pub struct Prefs {
     pub motion: Option<Motion>,
     /// How long away opens the digest by itself (`:away`).
     pub away: Option<Away>,
+    /// Whether the side panel tells the story (`J`, `:story`).
+    pub story: Option<bool>,
 }
 
 impl Prefs {
@@ -80,6 +83,7 @@ impl Prefs {
             seen: seen.filter(|v| crate::welcome::parse_version(v).is_some()),
             motion: None,
             away: None,
+            story: None,
         }
     }
 
@@ -129,8 +133,16 @@ pub fn load(dir: &Path) -> Prefs {
             let _ = fs::remove_file(legacy(dir));
         }
     }
-    match store::settings(&file(dir), &[SIDE, THEME, LEAD, NOTIFY, SEEN, MOTION, AWAY]) {
+    match store::settings(
+        &file(dir),
+        &[SIDE, THEME, LEAD, NOTIFY, SEEN, MOTION, AWAY, STORY],
+    ) {
         Ok(mut v) => {
+            let story = v.pop().flatten().and_then(|s| match s.as_str() {
+                "on" => Some(true),
+                "off" => Some(false),
+                _ => None,
+            });
             let away = v.pop().flatten().and_then(|a| Away::parse(&a));
             let motion = v.pop().flatten().and_then(|m| Motion::parse(&m));
             let seen = v.pop().flatten();
@@ -140,6 +152,7 @@ pub fn load(dir: &Path) -> Prefs {
             Prefs {
                 motion,
                 away,
+                story,
                 ..Prefs::checked(v.pop().flatten(), theme, lead, notify, seen)
             }
         }
@@ -189,6 +202,12 @@ pub fn keep_motion(dir: &Path, motion: Motion) -> Result<(), String> {
     store::set_settings(&file(dir), &[(MOTION, motion.name())], &[])
 }
 
+/// Keeps whether the side panel tells the story in `dir`.
+pub fn keep_story(dir: &Path, story: bool) -> Result<(), String> {
+    let on = if story { "on" } else { "off" };
+    store::set_settings(&file(dir), &[(STORY, on)], &[])
+}
+
 /// Keeps how long away opens the digest in `dir`.
 pub fn keep_away(dir: &Path, away: Away) -> Result<(), String> {
     store::set_settings(&file(dir), &[(AWAY, &away.name())], &[])
@@ -227,6 +246,7 @@ mod tests {
                 seen: None,
                 motion: None,
                 away: None,
+                story: None,
             }
         );
         let mode = fs::metadata(file(&dir)).unwrap().permissions().mode();
@@ -261,6 +281,7 @@ mod tests {
                 seen: None,
                 motion: None,
                 away: None,
+                story: None,
             }
         );
         set(&[("side", "70"), ("theme", "/home/me/Dracula.conf")]);
@@ -289,6 +310,17 @@ mod tests {
         assert_eq!(load(&dir).side, Some(40), "nothing else written");
         set(&[("motion", "wild")]);
         assert_eq!(load(&dir).motion, None);
+        // Whether the side panel tells the story, on its own too.
+        assert_eq!(load(&dir).story, None);
+        keep_story(&dir, false).unwrap();
+        assert_eq!(load(&dir).story, Some(false));
+        save(&dir, 40, "light", None, Notify::Off).unwrap();
+        assert_eq!(load(&dir).story, Some(false), "kept by a save");
+        keep_story(&dir, true).unwrap();
+        assert_eq!(load(&dir).story, Some(true));
+        assert_eq!(load(&dir).side, Some(40), "nothing else written");
+        set(&[("story", "yes")]);
+        assert_eq!(load(&dir).story, None);
         // How long away, on its own too, kept by a save of the rest.
         keep_away(&dir, Away::parse("1h").unwrap()).unwrap();
         assert_eq!(load(&dir).away, Away::parse("60m"));
@@ -322,6 +354,7 @@ mod tests {
                 seen: None,
                 motion: None,
                 away: None,
+                story: None,
             }
         );
         assert!(!legacy(&dir).exists(), "moved, so gone");

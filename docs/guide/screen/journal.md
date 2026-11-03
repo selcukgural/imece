@@ -5,7 +5,7 @@ description: The journal pane - what imece writes down, how lines fold and carry
 
 # The journal
 
-The journal is the lower side panel of the salon: what happened, newest first, one line per event. Everything meaningful an agent or you did is there; routine assignments are left to the board and the leader's trace. It is kept in the store, so the next `imece` opens with the same journal, and the away digest and the "where you left off" window are built from it.
+The journal is the lower side panel of the salon (told as [the story](#the-story) by default): what happened, newest first, one line per event. Everything meaningful an agent or you did is there; routine assignments are left to the board and the leader's trace. It is kept in the store, so the next `imece` opens with the same journal, and the away digest and the "where you left off" window are built from it.
 
 ```text
 ┌ JOURNAL ────────────────────────────────────────────────┐
@@ -19,6 +19,38 @@ The journal is the lower side panel of the salon: what happened, newest first, o
 │18:12 ◆ lead hired claude-1 (default model)               │
 └──────────────────────────────────────────────────────────┘
 ```
+
+## The story
+
+By default the lower side panel does not show the journal line by line: it tells the story, the same lines grouped by card. `J` (or `:story`) switches between the two; the choice is remembered. On a card's screen the panel is always that card's journal.
+
+```text
+┌ STORY · J journal ─────────────────────────────────────────┐
+│! you hold up 3: codex-1, claude-3, claude-1 via codex-1    │
+│#1 Payment retry policy · codex-1  ≡ 4/5                    │
+│  14:00 ⇄ lead-shop-api → codex-1 [assign]: #1 Payment re…  │
+│  14:01 ⇄ codex-2 → codex-1 [ask]: Zone codes an enum?      │
+│  14:06 ⇄ claude-1 → codex-1 [ask]: Retry count from config?  no answer · 2 min
+│  now ⚑ waits for your yes "WebFetch: https://…" · 4 min    │
+│#7 Payment retry policy · claude-3  ✓ done · Δ waits for you│
+│  14:05 ⇄ claude-3 → lead-shop-api [done]: Backoff capped…  │
+│elsewhere                                                   │
+│  14:00 ⚑ copied node_modules into qwen-7's worktree  ×12   │
+└────────────────────────────────────────────────────────────┘
+```
+
+- **Whom you hold up**, on top when anyone: every agent something of which waits for you (an item in WAITING FOR YOU, or a question to you), then every agent asking a teammate already held up, with the one it waits for (`claude-1 via codex-1`). Answering the first frees the rest.
+- **A block per card** the journal lately spoke of, the card with the newest line first. Its header: the number and title, its owner, then how far it is (`≡ 4/5` its to-do list, `✓ done`, `Δ waits for you` when a change of that card waits). Under it the card's three newest lines, oldest first: what was said about it, its owner's change, a stop, a failure, an apply. A line belongs to the card its agent was on when it was written, so a worker that moved on to another card does not take its old lines along; something said belongs to the card of whoever asked. An ask that got no reply says so: `no answer yet`, then `no answer · 2 min`. Last, `now` and what the owner does now, its step and how long, while the card is not done.
+- **Elsewhere**: lines of no card (the leader hiring, a worktree being set up, a vendor retrying), each kind once, its newest line, with how many there were (`×12`). The leader's routine assignments are left out, as in the journal.
+
+The story reads at most the 2,000 newest journal lines per frame and shows as many cards as fill the panel; for older ones, `J` and the journal. Lines `:clear` took off are not told (a marked one is), and an archive's lines wait in the archive.
+
+| Key | What it does |
+| --- | --- |
+| `j` `k`  `gg` `G` | select a card's header or a line of elsewhere |
+| `enter` | a card: its screen ([cards](cards.md)) · a line of elsewhere: the journal, at that line |
+| `#` | write the selected card's number |
+| `J` | the journal |
 
 ## What is journaled
 

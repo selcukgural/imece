@@ -69,6 +69,7 @@ Gelenekler vim'inkidir: `h` `j` `k` `l` hareket ve katlama, `gg` ve `G` uçlara,
 | `A`  `:archives` | arşivler bir ağaç olarak (çalışma kopyası → arşiv → ajanları); içinde `j` `k` `gg` `G` gezer, `h` `l` `za` katlar, `enter` bir arşivi salt okunur açar (`esc` ya da `q` geri), `/` süzer, `r` eldekini geri getirir (`:restore`), `esc` kapatır; `:archive` eldeki projeyi kaldırır |
 | `tab` `⇧tab` `[` `]` | sonraki / önceki panel |
 | `,`  `.`  `<`  `>` | yan paneli genişlet / daralt |
+| `J`  `:story` | alt yan panel: karta göre hikâye · defter |
 
 ## Salon
 
@@ -176,6 +177,7 @@ Gelenekler vim'inkidir: `h` `j` `k` `l` hareket ve katlama, `gg` ve `G` uçlara,
 | `:next` / `:defer` | `W` / `S` |
 | `:waiting` | `w` |
 | `:needs` | `f` |
+| `:story` | `J` |
 | `:settle` | `s` |
 | `:peek` | `K` |
 | `:hints` | `F` |

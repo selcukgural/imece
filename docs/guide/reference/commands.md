@@ -69,6 +69,7 @@ A line that starts with `:` is a command to imece, not a message to an agent. Yo
 | `:settle` | `s` | | | | the selected row's agent or project |
 | `:slower` | `-` | | yes | | the speed, `×2` |
 | `:solo [PATH] [CHOICE] [NAME]` | — | | | `$` | |
+| `:story` | `J` | | | | on / off |
 | `:talk [@NAME]` | `v` | | | | the agent at hand |
 | `:theme [NAME\|FILE]` | `T` | `:t` | | | the theme in use |
 | `:tidy` | — | | | | |
@@ -311,6 +312,10 @@ Demo only, as `-`: the simulation runs slower.
 ### `:solo [PATH] [CHOICE] [NAME]`
 
 Opens a solo session: one agent you drive yourself, with no leader and no team, as a project of its own ([solo sessions](../concepts/solo.md)). The three words may come in any order: a word with a `/`, or starting with `~` or `.`, is the PATH of the checkout (default: the project at hand's); a word that starts with a vendor's name is the CHOICE, `VENDOR[:MODEL][@EFFORT]` (`claude`, `claude:opus@xhigh`, `codex@high`, `gemini:pro`); the word left is the NAME (default: the directory's name, numbered `-2`, `-3` when taken). The agent is `solo-NAME`, writes in its own worktree, and every turn that ends with an answer shows you its worktree's diff as a `Δ`. Any number of solos may share a checkout with its team. The flash: `opened notes at ~/src/kule as a solo session; write to solo-notes (claude opus@xhigh)`. Refusals: the usage line when two words want the same place, `a project named notes is open already`, `"a:b" can not name a project: …`, `could not open: codex is not on PATH here, or imece does not drive it`, `could not open: claude has no effort "bogus"; one of low, medium, high, xhigh, max`. `$`: a new session. Without a CHOICE, a screen asks first: the vendor (the ones imece can run here, the lead vendor first), then the model (`default`, the vendor's own, or one of its aliases; a full name is typed after `:solo VENDOR:`), then the effort (`default` or one of the vendor's levels; skipped for Gemini, which has none); `j k` and `1`-`9` choose, `enter` goes on, `esc` back a step (at the first, it gives up), `q` gives up. A PATH or NAME typed with the bare `:solo` waits for the choice. After `:solo ` the completion offers the vendors, then, after `claude@`, that vendor's efforts, and directories for a word that looks like a path. The demo opens a fake solo that answers and shows a change now and then. In a folder that is not a git checkout with a commit, the solo works straight in the folder, with no worktree and no `Δ`, and its header says `⌀ no git` ([in a folder without git](../concepts/solo.md#in-a-folder-without-git)).
+
+### `:story`
+
+The lower side panel tells the story, as `J`: what happened, by card, newest first, with whom you hold up on top (see [the story](../screen/journal.md#the-story)); again, the journal. Goes to the salon first. The menu note: `(on)` / `(off)`; remembered in the store, on by default.
 
 ### `:talk [@NAME]`
 

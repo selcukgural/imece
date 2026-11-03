@@ -77,7 +77,7 @@ pub struct Viewed {
 const VIEW_COMMANDS: &[&str] = &[
     "goto", "history", "export", "salon", "board", "code", "lang", "theme", "help", "quit", "next",
     "defer", "waiting", "needs", "fold", "unfold", "trace", "peek", "hints", "news", "settle",
-    "unsettle", "talk", "why",
+    "unsettle", "talk", "why", "story",
 ];
 
 /// Whether a line sent is one `↑` and `^r` bring back: a message, a
@@ -775,6 +775,14 @@ pub struct App {
     /// The salon shows only the agents that need the person (`f`). Kept
     /// for this run only.
     pub needs_only: bool,
+    /// The side panel tells the story in the journal's place (`J`,
+    /// `:story`; record 99). Off in `App::new`; `main` sets the saved one,
+    /// on by default.
+    pub story: bool,
+    /// The selected item of the story, among those it shows.
+    pub story_sel: usize,
+    /// What the story shows that can be selected, as last drawn.
+    pub story_items: RefCell<Vec<ui::story::Item>>,
     /// Agents that finished a turn since the person last opened them.
     pub unseen: BTreeSet<AgentId>,
     /// Agents (`s` on a worker's row) and projects (on a header or its
@@ -1102,6 +1110,9 @@ impl App {
             tidy_start: false,
             hints: None,
             needs_only: false,
+            story: false,
+            story_sel: 0,
+            story_items: RefCell::new(Vec::new()),
             unseen: BTreeSet::new(),
             turning: BTreeSet::new(),
             inbox_sel: 0,
@@ -1390,6 +1401,47 @@ impl App {
             }
         }
         loud
+    }
+
+    /// Whether the side panel tells the story now: it is on, and no card's
+    /// screen shows its own journal.
+    pub fn story_on(&self) -> bool {
+        self.story && self.card.is_none()
+    }
+
+    /// `J`: the side panel tells the story, or shows the journal again.
+    fn toggle_story(&mut self) {
+        self.story = !self.story;
+        self.story_sel = 0;
+        if self.story {
+            self.journal_sel = None;
+        } else if self.pane == Pane::Journal {
+            self.select_journal(None);
+        }
+        let t = self.lang.text();
+        self.flash(if self.story { t.story_on } else { t.story_off });
+    }
+
+    /// The story's selected item, while it is shown.
+    fn story_item(&self) -> Option<ui::story::Item> {
+        if !self.story_on() {
+            return None;
+        }
+        self.story_items.borrow().get(self.story_sel).copied()
+    }
+
+    /// `enter` on the story: a card opens its screen, a line of no card is
+    /// shown in the journal.
+    fn open_story_item(&mut self) {
+        match self.story_item() {
+            Some(ui::story::Item::Card(c)) => self.open_card(c),
+            Some(ui::story::Item::Line(i)) => {
+                self.story = false;
+                self.journal_sel = Some(i);
+                self.flash(self.lang.text().story_off);
+            }
+            None => {}
+        }
     }
 
     /// `f`: the salon shows only what needs the person, or everyone again.
@@ -2603,6 +2655,9 @@ impl App {
             // From anywhere: what waits for the person, one item after
             // the other; `S` puts this one off first.
             KeyCode::Char('W') => self.next_waiting(false),
+            KeyCode::Char('J') if self.view == View::Salon && self.card.is_none() => {
+                self.toggle_story()
+            }
             KeyCode::Char('S') => self.next_waiting(true),
             // `,` and `.` are the same keys without shift.
             KeyCode::Char('<') | KeyCode::Char(',') => self.resize(true),
@@ -2624,6 +2679,9 @@ impl App {
             KeyCode::Right | KeyCode::Char('l') if self.salon_keys() => self.fold(false),
             KeyCode::Char('f') if self.salon_keys() => self.toggle_needs(),
             KeyCode::Char('s') if self.salon_keys() => self.settle_at_hand(),
+            KeyCode::Enter if self.pane == Pane::Journal && self.story_on() => {
+                self.open_story_item()
+            }
             KeyCode::Enter => self.deeper(),
             KeyCode::Esc if self.on_card() => self.leave_card(),
             KeyCode::Esc => {
@@ -2883,7 +2941,7 @@ impl App {
             at + ORDER.len() - 1
         } % ORDER.len();
         self.pane = ORDER[next];
-        if self.pane == Pane::Journal {
+        if self.pane == Pane::Journal && !self.story_on() {
             self.select_journal(None);
         }
     }
@@ -2904,6 +2962,10 @@ impl App {
                 .inbox_rows()
                 .get(self.inbox_sel)
                 .map(|&i| self.world.inbox[i].agent),
+            Pane::Journal if self.story_on() => match self.story_item()? {
+                ui::story::Item::Card(c) => self.world.cards[c].owner,
+                ui::story::Item::Line(i) => Some(self.world.journal[i].event.agent()),
+            },
             Pane::Journal => self
                 .journal_sel
                 .map(|i| self.world.journal[i].event.agent()),
@@ -2960,6 +3022,10 @@ impl App {
                 self.waiting_at = None;
                 let n = self.inbox_rows().len();
                 self.inbox_sel = if first { 0 } else { n.saturating_sub(1) };
+            }
+            Pane::Journal if self.story_on() => {
+                let n = self.story_items.borrow().len();
+                self.story_sel = if first { 0 } else { n.saturating_sub(1) };
             }
             Pane::Journal => {
                 let rows = self.journal_rows();
@@ -4079,6 +4145,7 @@ impl App {
                 Some(fill(t.value_waiting, &[&open]))
             }
             "needs" => Some(on_off(self.needs_only)),
+            "story" => Some(on_off(self.story)),
             "news" => Some(welcome::VERSION.to_string()),
             "settle" => Some(match self.selected {
                 Sel::Agent(id) => self.world.agents[id].name.clone(),
@@ -4454,6 +4521,10 @@ impl App {
             "needs" => {
                 self.go_salon();
                 self.toggle_needs();
+            }
+            "story" => {
+                self.show(View::Salon);
+                self.toggle_story();
             }
             which @ ("fold" | "unfold") if self.thread.is_none() && self.diff_zoom().is_some() => {
                 if let Some(id) = self.diff_zoom() {
@@ -6494,6 +6565,10 @@ impl App {
                 .inbox_rows()
                 .get(self.inbox_sel)
                 .and_then(|&i| w.inbox[i].card),
+            Pane::Journal if self.story_on() => match self.story_item()? {
+                ui::story::Item::Card(c) => Some(c),
+                ui::story::Item::Line(_) => None,
+            },
             Pane::Journal => {
                 let e = &w.journal[self.journal_sel?].event;
                 e.card().or_else(|| {
@@ -6507,6 +6582,13 @@ impl App {
 
     fn move_selection(&mut self, down: bool) {
         match self.pane {
+            Pane::Journal if self.story_on() => {
+                let n = self.story_items.borrow().len();
+                self.story_sel = match down {
+                    true => (self.story_sel + 1).min(n.saturating_sub(1)),
+                    false => self.story_sel.saturating_sub(1),
+                };
+            }
             Pane::Journal => self.select_journal(Some(down)),
             Pane::Inbox => {
                 // The person picks: `W` goes on from what they picked.
@@ -7816,6 +7898,10 @@ pub(crate) mod tests {
         app.world.asks_you(1, "Bash: make test");
         assert_eq!(app.command_note("next"), "(2 waiting)");
         assert_eq!(app.command_note("waiting"), "(2 waiting)");
+        assert_eq!(app.command_note("story"), "(off)");
+        app.story = true;
+        assert_eq!(app.command_note("story"), "(on)");
+        app.story = false;
         assert_eq!(app.command_note("needs"), "(off)");
         app.needs_only = true;
         assert_eq!(app.command_note("needs"), "(on)");
