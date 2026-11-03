@@ -95,6 +95,17 @@ pub(crate) fn idle_live_in(repo: &Path, agents: usize) -> Live {
     live
 }
 
+/// Whether nothing asked of git waits for its answer: a step after this
+/// brings nothing from git (the project's file list the first step asks
+/// for came back late and made a "nothing came" step say something).
+pub(crate) fn git_quiet(live: &Live) -> bool {
+    live.filing.is_empty()
+        && live.reading.iter().all(|&n| n == 0)
+        && !live.applying.contains(&true)
+        && live.placing.iter().all(Option::is_none)
+        && live.standing.iter().all(Option::is_none)
+}
+
 /// `e` as session `id`'s report, for the tests of the screen.
 pub(crate) fn hear(live: &Live, id: AgentId, e: AgentEvent) {
     live.tx.send((id, live.generation[id], e)).unwrap();
@@ -353,13 +364,12 @@ pub(crate) fn as_if_applying(live: &mut Live, id: AgentId) {
 
 /// What the git thread was given, done and taken in; a bounded wait.
 pub(super) fn settle(live: &mut Live, w: &mut World) {
-    for _ in 0..500 {
+    // As long as git takes: a loaded machine running the whole suite
+    // made a few seconds too short (it returns as soon as git is done).
+    let deadline = std::time::Instant::now() + Duration::from_secs(60);
+    while std::time::Instant::now() < deadline {
         live.take_git(w);
-        if live.reading.iter().all(|&n| n == 0)
-            && !live.applying.contains(&true)
-            && live.placing.iter().all(Option::is_none)
-            && live.standing.iter().all(Option::is_none)
-        {
+        if git_quiet(live) {
             return;
         }
         thread::sleep(Duration::from_millis(10));

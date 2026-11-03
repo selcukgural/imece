@@ -1365,6 +1365,17 @@ mod tests {
         settle(&mut live, &mut w);
         assert_eq!(heard.lock().unwrap().len(), 2);
         assert_eq!(moved(&w), 1);
+        // git still moves the tree for the session that ended (its answer
+        // is dropped); wait for it, else it may move the tree past d.txt
+        // below before the next session's move does, which then finds
+        // nothing to move.
+        let deadline = Instant::now() + Duration::from_secs(60);
+        while !tree.join("c.txt").exists() {
+            assert!(Instant::now() < deadline, "git never moved the tree");
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        settle(&mut live, &mut w);
+        assert_eq!(moved(&w), 1, "the ended session's move is not told");
         // A session that refuses the prompt that waited is stopped.
         live.ready(
             &mut w,

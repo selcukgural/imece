@@ -70,7 +70,13 @@ pub enum Login {
 }
 
 /// How long a vendor's CLI has to answer a question about itself.
+#[cfg(not(test))]
 pub const ASK_WAIT: Duration = Duration::from_secs(5);
+/// The tests' fake CLIs answer at once, but a loaded machine running
+/// the whole suite can take seconds to start a shell: a wait that ran
+/// out made them flaky. None of them waits for it to run out.
+#[cfg(test)]
+pub const ASK_WAIT: Duration = Duration::from_secs(60);
 
 /// The longest version line kept.
 const VERSION_MAX: usize = 60;
