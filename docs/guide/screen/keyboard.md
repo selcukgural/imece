@@ -183,7 +183,7 @@ The conventions are vim's: `h` `j` `k` `l` move and fold, `gg` and `G` go to the
 | `:trace` / `:talk` | `t` / `v` |
 | `:mark` | `m` |
 | `:pause`, `:faster`, `:slower` | `space`, `+`, `-` (demo) |
-| `:budget` (`:b`), `:lead`, `:open` (`:o`), `:close` (`:c`), `:rename`, `:solo`, `:effort`, `:model`, `:forget` (`:f`), `:export`, `:commit`, `:copy`, `:pin`, `:archive`, `:restore`, `:awake`, `:notify`, `:motion`, `:away`, `:digest`, `:unsettle`, `:keys` | no key: typed after `:` |
+| `:budget` (`:b`), `:lead`, `:open` (`:o`), `:close` (`:c`), `:rename`, `:solo`, `:effort`, `:model`, `:forget` (`:f`), `:export`, `:commit`, `:copy`, `:pin`, `:archive`, `:restore`, `:awake`, `:notify`, `:motion`, `:away`, `:digest`, `:clear`, `:unclear`, `:unsettle`, `:keys` | no key: typed after `:` |
 
 The full list of what each command takes is in the [commands reference](../reference/commands.md).
 

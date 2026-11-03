@@ -1583,6 +1583,7 @@ fn footer(f: &mut Frame, area: Rect, app: &App) -> Option<Position> {
                     ),
                 }
             }
+            Undoable::Clear(what) => fill(t.grace_clear[what.index()], &[&left]),
         };
         Line::from(Span::styled(format!(" {said}"), fg(pal().warn)))
     } else if let Some(asking) = app.asking() {
@@ -1746,6 +1747,61 @@ mod tests {
             app.step();
         }
         app
+    }
+
+    #[test]
+    fn waiting_cleared_off_the_screen_is_counted_in_its_title() {
+        let mut app = app_after(1, 4, 0, Lang::En);
+        app.world.inbox.clear();
+        for agent in [1, 2, 3] {
+            app.world.inbox.push(crate::model::InboxItem {
+                kind: InboxKind::Question,
+                agent,
+                detail: "x".into(),
+                researcher: None,
+                open: true,
+                tick: 0,
+                card: None,
+            });
+        }
+        app.world.cleared.inbox = [0, 1].into();
+        let s = render(&app, 140, 40);
+        assert!(s.contains("WAITING FOR YOU (1 · +2 hidden)"), "{s}");
+        app.world.cleared.inbox.insert(2);
+        let s = render(&app, 140, 40);
+        assert!(s.contains("WAITING FOR YOU (0 · +3 hidden)"), "{s}");
+        assert!(s.contains("3 hidden by :clear: W opens the next"), "{s}");
+        // A card's screen lists them, so says nothing of it.
+        app.world.inbox[0].card = Some(0);
+        app.card = Some(0);
+        let s = render(&app, 140, 40);
+        assert!(!s.contains("hidden"), "{s}");
+        app.card = None;
+        app.world.inbox[1].card = Some(0);
+        app.world.inbox.iter_mut().for_each(|i| i.open = false);
+        let s = render(&app, 140, 40);
+        assert!(s.contains("WAITING FOR YOU (0)"), "{s}");
+        assert!(s.contains("Nothing needs you right now."), "{s}");
+        // The grace counts down in the bottom line, for each kind.
+        let at = std::time::Instant::now() + crate::app::UNDO_GRACE;
+        for (what, words) in [
+            (
+                crate::app::Clear::All,
+                "clearing WAITING FOR YOU and the journal off the screen in 10 s",
+            ),
+            (
+                crate::app::Clear::Inbox,
+                "clearing WAITING FOR YOU off the screen in 10 s",
+            ),
+            (
+                crate::app::Clear::Journal,
+                "clearing the journal off the screen in 10 s",
+            ),
+        ] {
+            app.grace = Some((crate::app::Undoable::Clear(what), at));
+            let s = render(&app, 140, 40);
+            assert!(s.contains(words), "{s}");
+        }
     }
 
     #[test]

@@ -12,7 +12,7 @@ A line that starts with `:` is a command to imece, not a message to an agent. Yo
 - `:` then `tab` lists the commands. The menu shows after each command what it stands at now or would act on, in brackets: `budget (spent $3.10 of $20.00)`, `theme (dark)`, `lead (claude)`, `close (kule)`, `forget (claude-2)`, `next (2 waiting)`, `needs (off)`. The note is drawn, never inserted.
 - `$` after a command marks one that raises the next bill: `:open` (a new leader session), `:solo` (a new session), `:forget` (a new session that pays the whole briefing again, without the cache) and `:commit` (a paid call). No `:` command starts a paid turn by itself; `:budget` shows its value instead of a mark.
 - Short names: `:b` budget, `:c` close, `:f` forget, `:o` open, `:q` quit, `:t` theme. A short name typed whole is a command already, so the menu offers nothing and `enter` runs it (`:q` then `enter` asks at once).
-- Arguments complete too: after `:lang` the languages, after `:lead` the vendors, after `:notify` and `:motion` their three words, after `:away` `15m 30m 1h off`, after `:theme` the built-in names, after `:close` and `:pin` the open projects, after `:restore` the archives' titles (newest first, each noted with its project's name and the day it was archived), after `:goto` nothing (the `&` line has its own menu), after `:history` the lines sent, after `:forget`, `:talk`, `:trace` and `:peek` the agents of open projects (`@` or not), after `:open` and `:export` directories (`~` for your home, hidden ones only after a `.`, `tab` steps into the chosen one).
+- Arguments complete too: after `:lang` the languages, after `:lead` the vendors, after `:notify` and `:motion` their three words, after `:away` `15m 30m 1h off`, after `:clear` and `:unclear` `inbox journal`, after `:theme` the built-in names, after `:close` and `:pin` the open projects, after `:restore` the archives' titles (newest first, each noted with its project's name and the day it was archived), after `:goto` nothing (the `&` line has its own menu), after `:history` the lines sent, after `:forget`, `:talk`, `:trace` and `:peek` the agents of open projects (`@` or not), after `:open` and `:export` directories (`~` for your home, hidden ones only after a `.`, `tab` steps into the chosen one).
 - A name imece does not know: `no command xyz; : and tab list them`. A demo-only command typed live: `:pause is for the demo: live agents run in real time`.
 - `!cmd` runs a command in your own shell and `/cmd` is the agent's own command line; neither is a `:` command ([command line](../screen/command-line.md)).
 
@@ -27,6 +27,7 @@ A line that starts with `:` is a command to imece, not a message to an agent. Yo
 | `:away [TIME\|off]` | — | | | | `30m` / `1h` / `off` |
 | `:board` | `2` | | | | |
 | `:budget USD` | — | `:b` | | | spent X of Y |
+| `:clear [inbox\|journal]` | — | | | | |
 | `:close [NAME]` | — | `:c` | | | the project at hand |
 | `:code` | `3` | | | | |
 | `:commit` | — | | | `$` | |
@@ -68,6 +69,7 @@ A line that starts with `:` is a command to imece, not a message to an agent. Yo
 | `:talk [@NAME]` | `v` | | | | the agent at hand |
 | `:theme [NAME\|FILE]` | `T` | `:t` | | | the theme in use |
 | `:trace [@NAME]` | `t` | | | | the agent at hand |
+| `:unclear [inbox\|journal]` | — | | | | |
 | `:undo` | `u` | | | | |
 | `:unfold` | `zR` | | | | |
 | `:unsettle` | — | | | | how many are settled |
@@ -108,6 +110,10 @@ The board view, as `2`. See [board and code map](../screen/board-and-code-map.md
 ### `:budget USD`
 
 Raises or lowers the pot while agents run (`:b 80`). The value is dollars with at most two decimals, up to four digits before the point (`80`, `2.50`); anything else: `80$ is not dollars like 80 or 2.50`. The flash says `the budget is $80.00 now`, the journal `you set the budget to $80.00 (was $50.00)`, and the warning that the pot runs low may sound again. A turn under way finishes on its old cap; the next starts on the new remainder, in a new session if the old one had hit its cap. The pot is one for all projects and is kept between runs. The menu note: `(spent $3.10 of $20.00)`. See [budget and limits](../concepts/budget-and-limits.md).
+
+### `:clear [inbox|journal]`
+
+Takes what WAITING FOR YOU lists and the journal's lines off the salon's screen: bare both, `inbox` or `journal` one. Nothing is deleted: the store keeps it all, and `:export`, a card's screen and the archives still show it. It waits ten seconds first, as `:close` does (`◷ clearing WAITING FOR YOU and the journal off the screen in 7 s · u keeps them`; `u` leaves the screen as it is), then says what went: `2 waiting and 40 journal lines off the screen; :unclear brings them back`. What still waits for you is not lost: it stays open, its agent still waits, the title counts it (`WAITING FOR YOU (0 · +2 hidden)`), the terminal's title and tab count it too, and `W` opens the next one and puts it back on the list. A marked line (`m`) stays in the journal. What comes after shows as usual. The clear is kept in the store, so the next start begins clean too. With nothing to clear it says `nothing on the screen to clear`; another word: `all is not inbox or journal`. See [journal](../screen/journal.md#clearing-the-screen).
 
 ### `:close [NAME]`
 
@@ -291,9 +297,13 @@ The theme, as `T` (`:t`). Alone: the next built-in one, around the end. With a n
 
 The raw stream of the agent, as `t`: every line its session said, as data, up to 200 lines kept. No name is the agent at hand.
 
+### `:unclear [inbox|journal]`
+
+Brings back what `:clear` took off the screen: bare both, `inbox` or `journal` one. It says how much came back (`back on the screen: 2 waiting, 40 journal lines`), or `nothing is cleared off the screen`.
+
 ### `:undo`
 
-Keeps a `:close`, `:forget` or `:archive` from happening, as `u`. Both wait ten seconds before they act, and the bottom line counts down meanwhile: `◷ closing kule in 7 s · u keeps it open`, `◷ claude-2 forgets its session in 7 s · u keeps it`. `u` in that time leaves everything as it was (`kule stays open`, `claude-2 keeps its session`); with nothing counting down it says `nothing to undo`. One waits at a time: another `:close` or `:forget` makes the one waiting act first. Quitting while one counts down lets it act. A refusal (the last open project, no session to forget, a name nobody has) is said at once and waits for nothing. Both the demo and live sessions wait.
+Keeps a `:close`, `:forget`, `:archive` or `:clear` from happening, as `u`. Both wait ten seconds before they act, and the bottom line counts down meanwhile: `◷ closing kule in 7 s · u keeps it open`, `◷ claude-2 forgets its session in 7 s · u keeps it`. `u` in that time leaves everything as it was (`kule stays open`, `claude-2 keeps its session`); with nothing counting down it says `nothing to undo`. One waits at a time: another `:close` or `:forget` makes the one waiting act first. Quitting while one counts down lets it act. A refusal (the last open project, no session to forget, a name nobody has) is said at once and waits for nothing. Both the demo and live sessions wait.
 
 ### `:unfold`
 

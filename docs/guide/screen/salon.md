@@ -150,7 +150,7 @@ What waits for you or is stuck is never settled: `not settled: claude-2 needs yo
 
 ## The side panels
 
-To the right, WAITING FOR YOU on top and the JOURNAL under it. `tab` and `⇧tab` (or `]` and `[`) cycle salon → waiting → journal; `w` (`:waiting`) goes straight to the waiting panel. The waiting panel takes as many rows as its items need, up to half the side, and its border turns the warning colour when items wait and the panel is not focused.
+To the right, WAITING FOR YOU on top and the JOURNAL under it. `tab` and `⇧tab` (or `]` and `[`) cycle salon → waiting → journal; `w` (`:waiting`) goes straight to the waiting panel. The waiting panel takes as many rows as its items need, up to half the side, and its border turns the warning colour when items wait and the panel is not focused. `:clear` takes both panels' contents off the screen without deleting anything; see [journal](journal.md#clearing-the-screen).
 
 `,` and `.` (or `<` and `>`) make the side panel wider or narrower by four columns, between 20 and 70 percent of the screen; the flash says `side panel 38% (, . or < >)` and the width is saved for the next run. In a change's view `>` quotes a hunk instead, and `.` still narrows.
 

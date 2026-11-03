@@ -80,6 +80,10 @@ Back in the terminal after half an hour or more in another window, the same dige
 
 `:away` sets the time for both: `:away 10m`, `:away 2h`, from a minute to a day; `:away off` never opens it by itself. It is remembered in the store. `:digest` opens it whenever you ask: what happened since you last left the window, or since the run began.
 
+## Clearing the screen
+
+`:clear` takes the journal's lines and what WAITING FOR YOU lists off the salon's screen; `:clear journal` and `:clear inbox` take one. It waits ten seconds first, and `u` keeps the screen as it is. Nothing is deleted: the store keeps every line, `:export`, a card's screen and the archives still show them, and the clear itself is kept, so the next start begins clean too. A marked line stays. What still waits for you stays open and counted in the title, `WAITING FOR YOU (0 · +2 hidden)`, and `W` opens the next one, back on the list. `:unclear` (or `:unclear journal`, `:unclear inbox`) brings it all back.
+
 ## Where you left off
 
 A live start that remembers an earlier run opens WHERE YOU LEFT OFF · 2 h 10 min ago before anything moves: the pot (`$3.10 of $20.00 spent; every agent sleeps until spoken to`), one line per open project (agents, open cards), the oldest items waiting for you as the panel lists them (six at most, then `… and N more`), the turns the earlier run cut short, and the earlier run's last six journal lines with a day row where the day changes. Any key closes it and does nothing else. With nothing to tell there is no window; the demo never has one.

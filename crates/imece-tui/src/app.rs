@@ -92,7 +92,49 @@ pub enum Undoable {
     Forget(AgentId),
     /// The title waits in [`App::archive_title`].
     Archive(ProjectId),
+    Clear(Clear),
 }
+
+/// What `:clear` takes off the salon's screen (record 90).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Clear {
+    /// WAITING FOR YOU and the journal.
+    All,
+    Inbox,
+    Journal,
+}
+
+impl Clear {
+    /// Nothing for both, `inbox` or `journal`.
+    pub fn parse(s: &str) -> Option<Clear> {
+        match s.trim().to_lowercase().as_str() {
+            "" => Some(Clear::All),
+            "inbox" => Some(Clear::Inbox),
+            "journal" => Some(Clear::Journal),
+            _ => None,
+        }
+    }
+
+    fn inbox(self) -> bool {
+        self != Clear::Journal
+    }
+
+    fn journal(self) -> bool {
+        self != Clear::Inbox
+    }
+
+    /// Its place in the words' lists: both, the inbox, the journal.
+    pub fn index(self) -> usize {
+        match self {
+            Clear::All => 0,
+            Clear::Inbox => 1,
+            Clear::Journal => 2,
+        }
+    }
+}
+
+/// What `:clear` and `:unclear` take: the words their menus offer.
+pub const CLEARS: [&str; 2] = ["inbox", "journal"];
 
 /// The most of a title `:archive` keeps, in characters.
 pub const ARCHIVE_TITLE_MAX: usize = 60;
@@ -2476,6 +2518,8 @@ impl App {
     /// Item `i` waiting for the person, selected in the salon's waiting
     /// panel and opened as `enter` opens it.
     fn open_waiting(&mut self, i: usize) {
+        // Cleared off the list: back on it, as it is dealt with.
+        self.world.cleared.inbox.remove(&i);
         self.card = None;
         self.thread = None;
         self.view = View::Salon;
@@ -4073,6 +4117,8 @@ impl App {
                 self.settle_at_hand();
             }
             "unsettle" => self.unsettle(),
+            "clear" => self.clear(arg),
+            "unclear" => self.unclear(arg),
             "talk" => {
                 if let Some(id) = self.agent_named(arg) {
                     self.open_talk_with(id);
@@ -5371,6 +5417,7 @@ impl App {
             Some((Undoable::Archive(p), _)) => {
                 fill(t.undone_archive, &[&self.world.projects[p].name])
             }
+            Some((Undoable::Clear(_), _)) => t.undone_clear.to_string(),
             None => t.nothing_to_undo.to_string(),
         };
         self.flash(said);
@@ -5399,8 +5446,89 @@ impl App {
             Some((Undoable::Close(p), _)) => self.close_now(p),
             Some((Undoable::Forget(id), _)) => self.forget_now(id),
             Some((Undoable::Archive(p), _)) => self.archive_now(p),
+            Some((Undoable::Clear(what), _)) => self.clear_now(what),
             None => {}
         }
+    }
+
+    /// `:clear [inbox|journal]`: what WAITING FOR YOU lists and the
+    /// journal's lines go off the salon's screen after the grace, both
+    /// without a word. Nothing is deleted; what still waits is counted.
+    fn clear(&mut self, arg: &str) {
+        let t = self.lang.text();
+        let Some(what) = Clear::parse(arg) else {
+            return self.flash(fill(t.bad_clear, &[arg]));
+        };
+        // One waits at a time: the one before acts now.
+        self.end_grace();
+        if self.clearable(what) == (0, 0) {
+            return self.flash(t.nothing_to_clear);
+        }
+        self.wait_grace(Undoable::Clear(what));
+    }
+
+    /// What `what` takes off now: the items WAITING FOR YOU lists and the
+    /// journal's rows not marked.
+    fn clearable(&self, what: Clear) -> (usize, usize) {
+        let w = &self.world;
+        let inbox = match what.inbox() {
+            true => w.shown_inbox().len(),
+            false => 0,
+        };
+        let lines = match what.journal() {
+            true => (ui::journal_rows(w).iter())
+                .filter(|(i, _)| !w.marks.contains(i))
+                .count(),
+            false => 0,
+        };
+        (inbox, lines)
+    }
+
+    /// `:clear`'s grace ran out: off the screen now.
+    fn clear_now(&mut self, what: Clear) {
+        let t = self.lang.text();
+        let (inbox, lines) = self.clearable(what);
+        if what.inbox() {
+            let shown = self.world.shown_inbox();
+            self.world.cleared.inbox.extend(shown);
+            self.inbox_sel = 0;
+        }
+        if what.journal() {
+            self.world.cleared.journal = self.world.journal.len();
+            let shown = self.journal_rows();
+            self.journal_sel = self
+                .journal_sel
+                .filter(|i| shown.iter().any(|(r, _)| r == i));
+        }
+        let (inbox, lines) = (inbox.to_string(), lines.to_string());
+        let said = match what {
+            Clear::All => fill(t.cleared[0], &[&inbox, &lines]),
+            Clear::Inbox => fill(t.cleared[1], &[&inbox]),
+            Clear::Journal => fill(t.cleared[2], &[&lines]),
+        };
+        self.flash(said);
+    }
+
+    /// `:unclear [inbox|journal]`: what `:clear` took off comes back.
+    fn unclear(&mut self, arg: &str) {
+        let t = self.lang.text();
+        let Some(what) = Clear::parse(arg) else {
+            return self.flash(fill(t.bad_clear, &[arg]));
+        };
+        let (inbox, lines) = (self.world.shown_inbox().len(), self.journal_rows().len());
+        if what.inbox() {
+            self.world.cleared.inbox.clear();
+        }
+        if what.journal() {
+            self.world.cleared.journal = 0;
+        }
+        let inbox = self.world.shown_inbox().len() - inbox;
+        let lines = self.journal_rows().len() - lines;
+        if inbox + lines == 0 {
+            return self.flash(t.nothing_cleared);
+        }
+        self.flash(fill(t.uncleared, &[&inbox.to_string(), &lines.to_string()]));
+        self.persist();
     }
 
     /// Project `p` closes: its agents leave, what pointed into it moves.
@@ -5673,7 +5801,7 @@ impl App {
     pub fn inbox_rows(&self) -> Vec<usize> {
         match self.card {
             Some(c) => self.world.card_inbox(c),
-            None => self.world.open_inbox(),
+            None => self.world.shown_inbox(),
         }
     }
 
@@ -11065,6 +11193,152 @@ mod tests {
         assert!(idle(&mut app, 130));
         app.command("away off");
         assert!(!idle(&mut app, 86_400));
+    }
+
+    #[test]
+    fn clear_takes_waiting_and_the_journal_off_the_screen_after_the_grace() {
+        let mut app = waiting(&[InboxKind::Change, InboxKind::Question]);
+        for _ in 0..3 {
+            app.world.tick += 1;
+            app.world.note(Event::Failed { agent: 0 });
+        }
+        let marked = app.world.journal.len() - 2;
+        app.world.marks.insert(marked);
+        let rows = app.journal_rows().len();
+        assert!(rows >= 3);
+        // A line of the journal at hand, and the marked one.
+        let first = app.journal_rows()[0].0;
+        assert_ne!(first, marked);
+        app.journal_sel = Some(first);
+        app.inbox_sel = 1;
+        app.command("clear");
+        assert!(matches!(app.grace, Some((Undoable::Clear(Clear::All), _))));
+        assert_eq!(app.inbox_rows().len(), 2, "not before the grace");
+        app.grace_due(Instant::now() + UNDO_GRACE);
+        assert!(app.grace.is_none());
+        assert_eq!(
+            said(&app),
+            format!(
+                "2 waiting and {} journal lines off the screen; :unclear brings them back",
+                rows - 1
+            )
+        );
+        assert!(app.inbox_rows().is_empty());
+        assert_eq!((app.inbox_sel, app.world.hidden_inbox()), (0, 2));
+        assert_eq!(app.world.open_inbox(), [0, 1], "nothing closed");
+        assert_eq!(app.journal_rows(), [(marked, 0)], "a mark stays");
+        assert_eq!(app.journal_sel, None, "its line went");
+        app.journal_sel = Some(marked);
+        // What comes after shows.
+        app.world.inbox.push(InboxItem {
+            kind: InboxKind::Reply,
+            agent: 3,
+            detail: "new".into(),
+            researcher: None,
+            open: true,
+            tick: 9,
+            card: None,
+        });
+        app.world.note(Event::Failed { agent: 0 });
+        assert_eq!(app.inbox_rows(), [2]);
+        let newest = app.world.journal.len() - 1;
+        assert_eq!(app.journal_rows(), [(newest, 0), (marked, 0)]);
+        assert_eq!(app.world.hidden_inbox(), 2);
+        // A card's screen still lists what was cleared.
+        app.world.inbox[0].card = Some(0);
+        app.card = Some(0);
+        assert_eq!(app.inbox_rows(), [0]);
+        app.card = None;
+        // A closed one is not counted.
+        app.world.inbox[1].open = false;
+        assert_eq!(app.world.hidden_inbox(), 1);
+        app.world.inbox[1].open = true;
+        // `W` opens a cleared one and puts it back on the list.
+        app.on_key(key(KeyCode::Char('W')));
+        let at = app.waiting_at.expect("W opened one");
+        assert!(!app.world.cleared.inbox.contains(&at));
+        assert_eq!(app.inbox_rows()[app.inbox_sel], at);
+        assert_eq!(app.world.hidden_inbox(), 1);
+    }
+
+    #[test]
+    fn clear_one_side_undo_and_unclear_say_what_they_did() {
+        let mut app = waiting(&[InboxKind::Reply]);
+        app.world.tick += 1;
+        app.world.note(Event::Failed { agent: 0 });
+        let lines = app.journal_rows().len();
+        app.command("clear inbox");
+        app.command("undo");
+        assert_eq!(said(&app), "the screen stays as it is");
+        assert!(app.grace.is_none());
+        assert_eq!(app.world.cleared, Cleared::default());
+        app.command("clear INBOX");
+        assert!(matches!(
+            app.grace,
+            Some((Undoable::Clear(Clear::Inbox), _))
+        ));
+        app.grace_due(Instant::now() + UNDO_GRACE);
+        assert_eq!(
+            said(&app),
+            "1 waiting off the screen, still counted; :unclear brings them back"
+        );
+        assert_eq!(app.journal_rows().len(), lines, "the journal stays");
+        app.command("clear inbox");
+        assert_eq!(said(&app), "nothing on the screen to clear");
+        assert!(app.grace.is_none());
+        app.command("clear journal");
+        assert!(matches!(
+            app.grace,
+            Some((Undoable::Clear(Clear::Journal), _))
+        ));
+        // Another clear acts on the one waiting first.
+        app.command("clear");
+        assert_eq!(said(&app), "nothing on the screen to clear");
+        assert!(app.journal_rows().is_empty());
+        assert_eq!(app.world.cleared.inbox, [0].into());
+        app.command("clear everything");
+        assert_eq!(said(&app), "everything is not inbox or journal");
+        app.command("unclear journal");
+        assert_eq!(
+            said(&app),
+            format!("back on the screen: 0 waiting, {lines} journal lines")
+        );
+        assert!(app.inbox_rows().is_empty(), "the inbox stays cleared");
+        app.command("clear journal");
+        app.grace_due(Instant::now() + UNDO_GRACE);
+        assert_eq!(
+            said(&app),
+            format!("{lines} journal lines off the screen; :unclear brings them back")
+        );
+        app.command("unclear inbox");
+        assert_eq!(said(&app), "back on the screen: 1 waiting, 0 journal lines");
+        assert!(app.journal_rows().is_empty(), "the journal stays cleared");
+        app.command("unclear");
+        assert_eq!(
+            said(&app),
+            format!("back on the screen: 0 waiting, {lines} journal lines")
+        );
+        app.command("unclear");
+        assert_eq!(said(&app), "nothing is cleared off the screen");
+        app.command("unclear x");
+        assert_eq!(said(&app), "x is not inbox or journal");
+        assert_eq!(app.world.cleared, Cleared::default());
+    }
+
+    #[test]
+    fn clears_words_are_read_and_each_has_its_place() {
+        assert_eq!(Clear::parse(""), Some(Clear::All));
+        assert_eq!(Clear::parse(" Journal "), Some(Clear::Journal));
+        assert_eq!(Clear::parse("inbox"), Some(Clear::Inbox));
+        assert_eq!(Clear::parse("all"), None);
+        for (c, i, inbox, journal) in [
+            (Clear::All, 0, true, true),
+            (Clear::Inbox, 1, true, false),
+            (Clear::Journal, 2, false, true),
+        ] {
+            assert_eq!((c.index(), c.inbox(), c.journal()), (i, inbox, journal));
+        }
+        assert!(CLEARS.iter().all(|w| Clear::parse(w).is_some()));
     }
 
     #[test]

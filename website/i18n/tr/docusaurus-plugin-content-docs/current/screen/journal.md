@@ -80,6 +80,10 @@ Başka bir pencerede yarım saat ya da daha uzun kaldıktan sonra terminale dön
 
 `:away` ikisinin de süresini ayarlar: `:away 10m`, `:away 2h`, bir dakikadan bir güne; `:away off` hiç kendiliğinden açmaz. Depoda hatırlanır. `:digest` ne zaman isterseniz açar: pencereden son ayrıldığınızdan, ya da çalıştırma başladığından beri olanlar.
 
+## Ekranı temizlemek
+
+`:clear` günlüğün satırlarını ve SENİ BEKLEYEN'in listelediklerini salonun ekranından kaldırır; `:clear journal` ve `:clear inbox` birini. Önce on saniye bekler, `u` ekranı olduğu gibi bırakır. Hiçbir şey silinmez: depo her satırı tutar, `:export`, bir kartın ekranı ve arşivler hâlâ gösterir, temizlemenin kendisi de saklanır, böylece sonraki açılış da temiz başlar. İşaretli bir satır kalır. Sizi hâlâ bekleyen açık kalır ve başlıkta sayılır, `SENİ BEKLEYEN (0 · +2 gizli)`, `W` sıradakini açar ve listeye geri koyar. `:unclear` (ya da `:unclear journal`, `:unclear inbox`) hepsini geri getirir.
+
 ## Nerede kalmıştın
 
 Önceki bir çalıştırmayı hatırlayan canlı bir başlangıç, bir şey kımıldamadan önce NEREDE KALMIŞTIN · 2 sa 10 dk önce penceresini açar: bütçe (`$3.10 harcandı, bütçe $20.00; her agent kendisiyle konuşulana dek uyur`), açık proje başına bir satır (agent'lar, açık kartlar), panelin listelediği gibi sizi bekleyen en eski ögeler (en çok altı, sonra `… ve N daha`), önceki çalıştırmanın yarıda kestiği turlar ve önceki çalıştırmanın son altı günlük satırı, gün değiştiği yerde bir gün satırıyla. Herhangi bir tuş kapatır ve başka bir şey yapmaz. Anlatılacak bir şey yoksa pencere açılmaz; demoda hiç olmaz.

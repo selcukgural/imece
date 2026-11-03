@@ -183,7 +183,7 @@ Gelenekler vim'inkidir: `h` `j` `k` `l` hareket ve katlama, `gg` ve `G` uçlara,
 | `:trace` / `:talk` | `t` / `v` |
 | `:mark` | `m` |
 | `:pause`, `:faster`, `:slower` | `space`, `+`, `-` (demo) |
-| `:budget` (`:b`), `:lead`, `:open` (`:o`), `:close` (`:c`), `:rename`, `:solo`, `:effort`, `:model`, `:forget` (`:f`), `:export`, `:commit`, `:copy`, `:pin`, `:archive`, `:restore`, `:awake`, `:notify`, `:motion`, `:away`, `:digest`, `:unsettle`, `:keys` | tuşu yok: `:` ardından yazılır |
+| `:budget` (`:b`), `:lead`, `:open` (`:o`), `:close` (`:c`), `:rename`, `:solo`, `:effort`, `:model`, `:forget` (`:f`), `:export`, `:commit`, `:copy`, `:pin`, `:archive`, `:restore`, `:awake`, `:notify`, `:motion`, `:away`, `:digest`, `:clear`, `:unclear`, `:unsettle`, `:keys` | tuşu yok: `:` ardından yazılır |
 
 Her komutun ne aldığının tam listesi [komutlar başvurusunda](../reference/commands.md).
 

@@ -342,6 +342,19 @@ pub struct Text {
     pub undone_archive: &'static str,
     pub undone_forget: &'static str,
     pub nothing_to_undo: &'static str,
+    /// `:clear`: the bottom line while it waits (the seconds left) and the
+    /// flash once done (how many waiting, how many journal lines), each
+    /// for both, WAITING FOR YOU, the journal; `u` meanwhile; nothing on
+    /// the screen to clear; a word that is not inbox or journal.
+    pub grace_clear: [&'static str; 3],
+    pub cleared: [&'static str; 3],
+    pub undone_clear: &'static str,
+    pub nothing_to_clear: &'static str,
+    pub bad_clear: &'static str,
+    /// `:unclear`: how many came back (waiting, journal lines); nothing
+    /// was cleared.
+    pub uncleared: &'static str,
+    pub nothing_cleared: &'static str,
     pub forget_refused: &'static str,
     pub empty_message: &'static str,
     pub command_refused: &'static str,
@@ -501,6 +514,10 @@ pub struct Text {
     pub hint_pick: &'static str,
     pub hint_open: &'static str,
     pub inbox_title: &'static str,
+    /// WAITING FOR YOU with items `:clear` took off it: how many listed,
+    /// how many more wait off it; with none listed, the line in it.
+    pub inbox_hidden: &'static str,
+    pub inbox_all_hidden: &'static str,
     pub journal: &'static str,
     // A card's screen
     pub card_inbox: &'static str,
@@ -989,6 +1006,21 @@ pub const EN: Text = Text {
     undone_archive: "{} stays as it is",
     undone_forget: "{} keeps its session",
     nothing_to_undo: "nothing to undo: u keeps a :close or :forget from happening while it counts down",
+    grace_clear: [
+        "◷ clearing WAITING FOR YOU and the journal off the screen in {} s · u keeps them",
+        "◷ clearing WAITING FOR YOU off the screen in {} s · u keeps it",
+        "◷ clearing the journal off the screen in {} s · u keeps it",
+    ],
+    cleared: [
+        "{} waiting and {} journal lines off the screen; :unclear brings them back",
+        "{} waiting off the screen, still counted; :unclear brings them back",
+        "{} journal lines off the screen; :unclear brings them back",
+    ],
+    undone_clear: "the screen stays as it is",
+    nothing_to_clear: "nothing on the screen to clear",
+    bad_clear: "{} is not inbox or journal",
+    uncleared: "back on the screen: {} waiting, {} journal lines",
+    nothing_cleared: "nothing is cleared off the screen",
     forget_refused: "{} keeps its session: {}",
     empty_message: "the message is empty",
     command_refused: "{} took no command: {}",
@@ -1098,6 +1130,8 @@ pub const EN: Text = Text {
     hint_pick: "a label selects",
     hint_open: "its last letter in capitals opens",
     inbox_title: " WAITING FOR YOU ({}) ",
+    inbox_hidden: " WAITING FOR YOU ({} · +{} hidden) ",
+    inbox_all_hidden: "{} hidden by :clear: W opens the next, :unclear lists them",
     journal: " JOURNAL ",
     card_inbox: " WAITING FOR YOU · {} ({}) ",
     card_journal: " JOURNAL · {} ({}) ",
@@ -1710,6 +1744,21 @@ pub const TR: Text = Text {
     undone_archive: "{} olduğu gibi kalıyor",
     undone_forget: "{} oturumunu tutuyor",
     nothing_to_undo: "geri alınacak bir şey yok: u, geri sayan bir :close ya da :forget'i durdurur",
+    grace_clear: [
+        "◷ SENİ BEKLEYEN ve günlük {} sn sonra ekrandan kalkıyor · u tutar",
+        "◷ SENİ BEKLEYEN {} sn sonra ekrandan kalkıyor · u tutar",
+        "◷ günlük {} sn sonra ekrandan kalkıyor · u tutar",
+    ],
+    cleared: [
+        "{} bekleyen ve {} günlük satırı ekrandan kalktı; :unclear geri getirir",
+        "{} bekleyen ekrandan kalktı, hâlâ sayılıyor; :unclear geri getirir",
+        "{} günlük satırı ekrandan kalktı; :unclear geri getirir",
+    ],
+    undone_clear: "ekran olduğu gibi kalıyor",
+    nothing_to_clear: "ekranda temizlenecek bir şey yok",
+    bad_clear: "{} inbox ya da journal değil",
+    uncleared: "ekrana geri geldi: {} bekleyen, {} günlük satırı",
+    nothing_cleared: "ekrandan kaldırılmış bir şey yok",
     forget_refused: "{} oturumunu koruyor: {}",
     empty_message: "mesaj boş",
     command_refused: "{} komutu almadı: {}",
@@ -1819,6 +1868,8 @@ pub const TR: Text = Text {
     hint_pick: "bir etiket seçer",
     hint_open: "son harfi büyük yazılırsa açar",
     inbox_title: " SENİ BEKLEYEN ({}) ",
+    inbox_hidden: " SENİ BEKLEYEN ({} · +{} gizli) ",
+    inbox_all_hidden: "{} tanesi :clear ile gizli: W sıradakini açar, :unclear listeler",
     journal: " DEFTER ",
     card_inbox: " SENİ BEKLEYEN · {} ({}) ",
     card_journal: " DEFTER · {} ({}) ",
@@ -2633,6 +2684,18 @@ mod tests {
             (e.no_card_found, t.no_card_found),
             (e.card_inbox, t.card_inbox),
             (e.card_journal, t.card_journal),
+            (e.away_set, t.away_set),
+            (e.bad_away, t.bad_away),
+            (e.grace_clear[0], t.grace_clear[0]),
+            (e.grace_clear[1], t.grace_clear[1]),
+            (e.grace_clear[2], t.grace_clear[2]),
+            (e.cleared[0], t.cleared[0]),
+            (e.cleared[1], t.cleared[1]),
+            (e.cleared[2], t.cleared[2]),
+            (e.bad_clear, t.bad_clear),
+            (e.uncleared, t.uncleared),
+            (e.inbox_hidden, t.inbox_hidden),
+            (e.inbox_all_hidden, t.inbox_all_hidden),
         ];
         for (en, tr) in pairs {
             assert_eq!(count(en), count(tr), "{en} / {tr}");

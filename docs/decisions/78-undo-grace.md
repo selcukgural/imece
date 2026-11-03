@@ -52,3 +52,5 @@ both engines.
 
 **Not done.** No grace for other actions that drop something (`r` on a
 change, `:copy` off); no setting for the length.
+
+`:clear` (record 90) waits the same grace (`Undoable::Clear`).
