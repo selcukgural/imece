@@ -20,7 +20,7 @@ The standing rules: deny by default, nothing weakens silently, every boundary ha
 
 ### Agent text on the screen
 
-Everything an agent wrote reaches the terminal only through `i18n::fill` or `i18n::clean`: control characters are replaced (an escape sequence cannot redraw the screen, retitle the window or spoof a row), and words that look like secrets are hidden as `[***]` (`sk-…`, `ghp_…`, `github_pat_…`, `API_KEY=`, `TOKEN=`, `SECRET=`, `PASSWORD=`). The rule holds for diffs, quoted hunks, notes, exported Markdown, the wake briefing and the `:commit` suggestion. An approval ask is shown whole and never read as markdown: what you allow is what runs.
+Everything an agent wrote reaches the terminal only through `i18n::fill` or `i18n::clean`: control characters are replaced (an escape sequence cannot redraw the screen, retitle the window or spoof a row), and words that look like secrets are hidden as `[***]` (vendors' tokens such as `sk-…`, `ghp_…`, `glpat-…`, `xoxb-…`, `AKIA…`, `AIza…`; a `NAME=value` or `NAME:value` whose name has `KEY`, `TOKEN`, `SECRET`, `PASSWORD`, `PASSWD` or `CREDENTIAL` in it; the word after `Bearer` or `Basic`; a password in a URL; a JSON Web Token; a long run of base64 that mixes letters and digits, like a line of a key file). The rule holds for diffs, quoted hunks, notes, exported Markdown, the wake briefing and the `:commit` suggestion. An approval ask is shown whole and never read as markdown: what you allow is what runs.
 
 ### Fail-closed session checks
 

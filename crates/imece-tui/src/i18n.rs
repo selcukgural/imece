@@ -33,27 +33,151 @@ impl Lang {
 }
 
 /// Removes control characters (an agent's text must not drive the terminal)
-/// and hides tokens that look like secrets.
+/// and hides words that look like secrets (see [`secret`]). A control
+/// character becomes a space and parts words like one, so a tab or a
+/// line break never glues a secret to the word before it.
 pub fn clean(s: &str) -> String {
+    let s: String = s
+        .chars()
+        .map(|c| if c.is_control() { ' ' } else { c })
+        .collect();
     let mut out = String::with_capacity(s.len());
+    // The word after `Bearer` or `Basic` is a credential whatever it is.
+    let mut after_scheme = false;
     for (i, word) in s.split(' ').enumerate() {
         if i > 0 {
             out.push(' ');
         }
-        let word: String = word
-            .chars()
-            .map(|c| if c.is_control() { ' ' } else { c })
-            .collect();
-        let upper = word.to_ascii_uppercase();
-        let secret = ["API_KEY=", "TOKEN=", "SECRET=", "PASSWORD="]
-            .iter()
-            .any(|k| upper.contains(k))
-            || word.starts_with("sk-")
-            || word.starts_with("ghp_")
-            || word.starts_with("github_pat_");
-        out.push_str(if secret { "[***]" } else { &word });
+        let hide = secret(word) || (after_scheme && !word.is_empty());
+        if !word.is_empty() {
+            after_scheme = AUTH_SCHEMES.contains(&core(word));
+        }
+        out.push_str(if hide { "[***]" } else { word });
     }
     out
+}
+
+/// HTTP authorization schemes whose next word is a credential.
+const AUTH_SCHEMES: &[&str] = &["Bearer", "Basic", "bearer", "basic"];
+
+/// Names that make a `NAME=value` or `NAME:value` a secret, upper case:
+/// `AWS_SECRET_ACCESS_KEY=…`, `"password":"…"`, `db_passwd=…`.
+const SECRET_NAMES: &[&str] = &["KEY", "TOKEN", "SECRET", "PASSWORD", "PASSWD", "CREDENTIAL"];
+
+/// Starts of tokens that vendors issue (OpenAI and Anthropic `sk-`,
+/// Stripe, GitHub, GitLab, Slack, AWS, Google, npm, Hugging Face).
+const SECRET_STARTS: &[&str] = &[
+    "sk-",
+    "ghp_",
+    "github_pat_",
+    "sk_live_",
+    "sk_test_",
+    "rk_live_",
+    "gho_",
+    "ghu_",
+    "ghs_",
+    "ghr_",
+    "glpat-",
+    "xoxb-",
+    "xoxp-",
+    "xoxa-",
+    "xoxs-",
+    "xapp-",
+    "AKIA",
+    "ASIA",
+    "AIza",
+    "npm_",
+    "hf_",
+    "ya29.",
+];
+
+/// The first [`SECRET_STARTS`] are hidden at any length; the rest from
+/// [`VENDOR_TOKEN_MIN`] characters on (`AKIA` alone is a word).
+const ALWAYS_HIDDEN: usize = 3;
+const VENDOR_TOKEN_MIN: usize = 16;
+
+/// The shortest run of base64 letters hidden for its look alone (a key,
+/// a line of a PEM block); it must mix upper, lower case and digits and
+/// not be hex (a commit's 40 hex digits stay).
+const OPAQUE_MIN: usize = 40;
+
+/// `word` without the quotes, brackets and punctuation around it.
+fn core(word: &str) -> &str {
+    word.trim_matches(|c: char| "\"'`()[]{}<>,;.!?".contains(c))
+}
+
+/// Whether one word looks like a secret: a vendor's token (also as the
+/// value of `NAME=` or `NAME:`), a secret-named assignment, a URL with a
+/// password, a JSON Web Token, or a long opaque run of base64.
+fn secret(word: &str) -> bool {
+    let w = core(word);
+    if w.is_empty() {
+        return false;
+    }
+    // A URL's parts: `?token=…`, `/API_KEY=…/`.
+    if w.contains("://") {
+        let part = |p: &str| {
+            assignment(p)
+                || vendor_token(p)
+                || p.split_once('=').is_some_and(|(_, v)| vendor_token(v))
+        };
+        return w.split(['/', '?', '&', '#', ';']).any(part) || url_password(w);
+    }
+    // `NAME=value`, `NAME:value`: the value is looked at too; not a path
+    // in code (`keys::Keymap`).
+    let split = w.find(['=', ':']).filter(|&i| !w[i..].starts_with("::"));
+    let value = split.map_or(w, |i| core(&w[i + 1..]));
+    assignment(w) || vendor_token(w) || vendor_token(value) || jwt(w) || opaque(w)
+}
+
+/// `NAME=value` or `NAME:value` with a secret's name: `=` hides even an
+/// empty value (`API_KEY=`); `:` wants one, so `token: &str` in code
+/// stays, and `::` is a path (`keys::Keymap`).
+fn assignment(w: &str) -> bool {
+    let Some(i) = w.find(['=', ':']) else {
+        return false;
+    };
+    if w[i..].starts_with("::") {
+        return false;
+    }
+    let name = core(&w[..i]).to_ascii_uppercase();
+    let named = SECRET_NAMES.iter().any(|n| name.contains(n));
+    named && (w[i..].starts_with('=') || !core(&w[i + 1..]).is_empty())
+}
+
+fn vendor_token(w: &str) -> bool {
+    SECRET_STARTS.iter().enumerate().any(|(i, start)| {
+        w.starts_with(start) && (i < ALWAYS_HIDDEN || w.chars().count() >= VENDOR_TOKEN_MIN)
+    })
+}
+
+/// `scheme://user:password@host`: a password in the URL's user part.
+fn url_password(w: &str) -> bool {
+    let Some(i) = w.find("://") else {
+        return false;
+    };
+    let rest = &w[i + 3..];
+    let host_end = rest.find(['/', '?', '#']).unwrap_or(rest.len());
+    rest[..host_end]
+        .rsplit_once('@')
+        .is_some_and(|(user, _)| user.contains(':'))
+}
+
+/// A JSON Web Token: `eyJ…` header, then two more parts after dots.
+fn jwt(w: &str) -> bool {
+    w.starts_with("eyJ") && w.split('.').filter(|p| !p.is_empty()).count() >= 3
+}
+
+/// A path (`/var/…`, `~/…`, `./…`) is never opaque, however long.
+fn opaque(w: &str) -> bool {
+    !w.starts_with(['/', '~', '.'])
+        && w.len() >= OPAQUE_MIN
+        && w.chars()
+            .all(|c| c.is_ascii_alphanumeric() || "+/=_-".contains(c))
+        && w.chars().any(|c| c.is_ascii_uppercase())
+        && w.chars().any(|c| c.is_ascii_lowercase())
+        && w.chars().any(|c| c.is_ascii_digit())
+        && !w.chars().all(|c| c.is_ascii_hexdigit())
 }
 
 /// `template` with each `{}` replaced by the next argument, cleaned.
@@ -2146,6 +2270,108 @@ mod tests {
             "{s}"
         );
         assert!(s.contains("please"));
+    }
+
+    #[test]
+    fn a_secret_is_hidden_however_it_is_written() {
+        let hidden = |s: &str| clean(s) == "[***]";
+        for s in [
+            // Vendors' tokens.
+            "sk-a",
+            "ghp_x",
+            "github_pat_x",
+            "sk_live_0123456789ab",
+            "rk_live_0123456789ab",
+            "gho_0123456789abcd",
+            "ghs_0123456789abcd",
+            "glpat-0123456789ab",
+            "xoxb-0123456789ab",
+            "AKIAIOSFODNN7EXAMPLE",
+            "AIzaSyA0123456789abc",
+            "npm_0123456789abcd",
+            "ya29.0123456789abcd",
+            // In quotes, brackets, at a sentence's end.
+            "\"sk-abc\"",
+            "(ghp_456)",
+            "sk-abc.",
+            // As a value.
+            "key=sk-abc",
+            "auth:ghp_x",
+            // Named assignments.
+            "AWS_SECRET_ACCESS_KEY=abc",
+            "db_passwd=hunter2",
+            "\"password\":\"hunter2\"",
+            "token:abc",
+            "API_KEY=",
+            "GOOGLE_CREDENTIALS=x",
+            // A password in a URL.
+            "postgres://me:hunter2@db.example/app",
+            "https://u:p@host",
+            "http://localhost:1/TOKEN=abc",
+            "https://h/x?a=1&access_token=abc",
+            "https://h/x#api_key=abc",
+            "https://h/ghp_x",
+            "https://h/x?x=ghp_y",
+            // A JSON Web Token.
+            "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.c2ln",
+            // A long opaque run: a key, a PEM line.
+            "MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQC7",
+        ] {
+            assert!(hidden(s), "{s} shows: {}", clean(s));
+        }
+        for s in [
+            "AKIA",
+            "gho_short",
+            "sk_live_short",
+            "gho_0123456789a",
+            "token:",
+            "token: &str",
+            "keys::Keymap",
+            "HEAD:src/x.rs",
+            "12:30",
+            "https://example.com/a:b",
+            "https://user@host/x",
+            "eyJ.only",
+            "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0",
+            "0123456789abcdefABCDEF0123456789abcdefAB",
+            "AbcdefghijAbcdefghijAbcdefghijAbcdefghij",
+            "abcdefghij0123456789abcdefghij0123456789",
+            "ABCDEFGHIJ0123456789ABCDEFGHIJ0123456789",
+            "MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggS",
+            "/var/folders/5_/559ls9q145ndr1jh184kr6yh0000gn/T/imece-x-1/keys",
+            "~/folders/5_/559ls9q145ndr1jh184kr6yh0000gn/T/imece-x-1/keys",
+            "./folders/5_/559ls9q145ndr1jh184kr6yh0000gn/T/imece-x-1/keys",
+            "http://localhost:1/ok?page=2&q=x",
+            "MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwgg.Sj",
+            "please",
+        ] {
+            assert!(!hidden(s), "{s} hidden");
+        }
+        // Exactly the minimum lengths.
+        assert!(hidden("gho_0123456789ab"), "16 characters");
+        assert!(!hidden("gho_0123456789a"), "15 characters");
+        assert!(hidden(&format!("Ab1{}", "x".repeat(OPAQUE_MIN - 3))));
+        assert!(!hidden(&format!("Ab1{}", "x".repeat(OPAQUE_MIN - 4))));
+    }
+
+    #[test]
+    fn a_tab_or_a_line_break_parts_words() {
+        assert_eq!(clean("a\tsk-abc"), "a [***]");
+        assert_eq!(clean("a\nsk-abc b"), "a [***] b");
+        assert_eq!(clean("x\r\nTOKEN=1"), "x  [***]");
+    }
+
+    #[test]
+    fn the_word_after_an_auth_scheme_is_hidden() {
+        assert_eq!(
+            clean("Authorization: Bearer abc.def"),
+            "Authorization: Bearer [***]"
+        );
+        assert_eq!(clean("-H \"Basic dXNlcjpw\" x"), "-H \"Basic [***] x");
+        assert_eq!(clean("bearer  abc"), "bearer  [***]");
+        assert_eq!(clean("Bearer"), "Bearer");
+        assert_eq!(clean("a Bearer"), "a Bearer");
+        assert_eq!(clean("Bearer x y"), "Bearer [***] y");
     }
 
     #[test]
