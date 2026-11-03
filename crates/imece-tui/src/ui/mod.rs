@@ -2086,9 +2086,13 @@ fn footer(f: &mut Frame, area: Rect, app: &App) -> Option<Position> {
             _ => hints,
         };
         let mut spans = vec![Span::raw(" ")];
-        if let Some(c) = app.pending {
-            // The first key of a chord, as vim shows it; first, so a long
-            // footer never cuts it off.
+        // The first key of a chord, imece's own or the key file's while it
+        // waits for its second, as vim shows it; first, so a long footer
+        // never cuts it off.
+        let held = (app.keys_held.as_ref())
+            .map(|(k, _)| crate::keys::Key::of(k).name())
+            .or_else(|| app.pending.map(String::from));
+        if let Some(c) = held {
             spans.push(Span::styled(format!("{c}…   "), bold(pal().warn)));
         }
         spans.extend(hint_spans(&hints));
@@ -8491,6 +8495,24 @@ mod tests {
             KeyCode::Char(c),
             ratatui::crossterm::event::KeyModifiers::CONTROL,
         ));
+    }
+
+    #[test]
+    fn the_key_file_s_first_key_shows_while_it_waits_for_its_second() {
+        let mut app = app_after(2, 12, 300, Lang::En);
+        app.keys_held = Some((
+            KeyEvent::new(
+                KeyCode::Char('o'),
+                ratatui::crossterm::event::KeyModifiers::CONTROL,
+            ),
+            std::time::Instant::now(),
+        ));
+        let s = render(&app, 140, 40);
+        let foot = s.lines().last().unwrap();
+        assert!(foot.starts_with(" ^o…   "), "{foot}");
+        app.keys_held = None;
+        let s = render(&app, 140, 40);
+        assert!(!s.lines().last().unwrap().contains('…'), "nothing held");
     }
 
     #[test]

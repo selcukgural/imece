@@ -60,7 +60,7 @@ An agent whose item waits shows it on its own salon row: `? → you` while a que
 
 ## Quitting with items open
 
-`q` asks before quitting and counts what quitting now would leave: `quit imece? agents mid-turn: 2, changes not reviewed: 1 · q again quits · s shows them · any other key stays`. Agents mid-turn are the ones spending tokens; changes not reviewed are the open `Δ` items. Asks and questions are not counted here: they are in the title and the header already, and quitting cuts none of them. `q` `s` (`:pending`) opens BEFORE YOU GO with the agents mid-turn, each with what its row says it does, and the changes as the panel shows them; there `q` quits at once, `W` opens the next item waiting, any other key goes back. With nothing in flight the question is the plain one.
+`q` asks before quitting and counts what quitting now would leave: `quit imece? agents mid-turn: 2, changes not reviewed: 1 · q again quits · s shows them · any other key stays`. Agents mid-turn are the ones spending tokens; changes not reviewed are the open `Δ` items. Asks and questions are not counted here: they are in the title and the header already, and quitting cuts none of them. `q` `s` (`:pending`) opens BEFORE YOU GO with the agents mid-turn, each with what its row says it does, and the changes as the panel shows them; there `q` quits at once, `W` opens the next item waiting, any other key goes back. With nothing in flight the question is the plain one. A `:close`, `:forget`, `:archive` or `:clear` still counting down is said too (`:close kule happens now`): quitting lets it act, as its time running out would.
 
 ## See also
 

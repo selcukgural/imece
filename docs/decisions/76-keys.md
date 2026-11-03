@@ -92,7 +92,9 @@ made while the person was away and to go over together:
   main loop's `App::keys_due` lets it through alone when the time is up,
   through the same `around` as a key (the place left is recorded). The
   loop wakes every tick (100 ms live, 500 ms in the demo), so the wait is
-  up to half a second longer in the demo.
+  up to half a second longer in the demo. While held it is shown first
+  on the bottom line (`^o…`, `keys::Key::name`), where imece's own
+  pending `g…` is (vim's `showcmd`; 2026-11-04).
 - A second key that does not make a line with it lets the first act
   alone first, then the second is taken afresh (it may start a hold of
   its own, as in vim). It is taken where the first left the screen: a
@@ -165,7 +167,6 @@ the `?  :help` row's text.
 **The demo.** The keymap is screen logic: the demo reads the same file
 the same way, so there is nothing to fake.
 
-**Gaps.** Three keys or more on a side cannot be given. A held key is
-not shown anywhere while it waits (vim's `showcmd`). A place cannot name
+**Gaps.** Three keys or more on a side cannot be given. A place cannot name
 an agent or a project (`[talk @api]`), and the windows have no place of
 their own.

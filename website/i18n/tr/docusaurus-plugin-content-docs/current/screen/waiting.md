@@ -60,7 +60,7 @@ Seçili ögenin altında soluk bir satır tuşlarını söyler (`enter diff'i g�
 
 ## Ögeler açıkken çıkmak
 
-`q` çıkmadan önce sorar ve şimdi çıkmanın neyi geride bırakacağını sayar: `imece kapatılsın mı? tur ortasındaki agent: 2, incelenmemiş değişiklik: 1 · bir daha q çıkar · s gösterir · başka bir tuş kalır`. Tur ortasındaki agent'lar token harcayanlardır; incelenmemiş değişiklikler açık `Δ` ögeleridir. İstekler ve sorular burada sayılmaz: zaten başlıkta ve terminal başlığındadır ve çıkmak hiçbirini kesmez. `q` `s` (`:pending`) ÇIKMADAN ÖNCE penceresini açar: tur ortasındaki agent'lar, her biri satırının söylediği işle, ve değişiklikler panelin gösterdiği gibi; orada `q` hemen çıkar, `W` bekleyen sıradakini açar, başka bir tuş geri döner. Hiçbir şey yolda değilse soru düz sorudur.
+`q` çıkmadan önce sorar ve şimdi çıkmanın neyi geride bırakacağını sayar: `imece kapatılsın mı? tur ortasındaki agent: 2, incelenmemiş değişiklik: 1 · bir daha q çıkar · s gösterir · başka bir tuş kalır`. Tur ortasındaki agent'lar token harcayanlardır; incelenmemiş değişiklikler açık `Δ` ögeleridir. İstekler ve sorular burada sayılmaz: zaten başlıkta ve terminal başlığındadır ve çıkmak hiçbirini kesmez. `q` `s` (`:pending`) ÇIKMADAN ÖNCE penceresini açar: tur ortasındaki agent'lar, her biri satırının söylediği işle, ve değişiklikler panelin gösterdiği gibi; orada `q` hemen çıkar, `W` bekleyen sıradakini açar, başka bir tuş geri döner. Hiçbir şey yolda değilse soru düz sorudur. Geri sayımı süren bir `:close`, `:forget`, `:archive` ya da `:clear` da söylenir (`:close kule şimdi yapılır`): çıkmak, süresinin dolması gibi onu yapar.
 
 ## Ayrıca bakınız
 

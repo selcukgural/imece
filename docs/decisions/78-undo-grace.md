@@ -45,7 +45,11 @@ refusal waits for nothing.
 `App::end_grace` before the last `persist`): the person asked for it and
 did not take it back (a SIGTERM or SIGHUP quits the same way). A crash or a
 SIGKILL loses it, so the project stays
-open and the session kept, the safe side.
+open and the session kept, the safe side. The quit question says it
+(`quit imece? :close kule happens now · q again quits · any other key
+stays`, `App::undoable_command`; after the counts when there are any,
+`s` showing only those), since the question's flash hides the count-down
+line.
 
 **The demo** waits the same way: the grace lives in `App`, in front of
 both engines.
@@ -57,7 +61,10 @@ as when its time is up); with nothing counting down it says so
 (`nothing_now`). Every count-down line ends `· U now`; the help's
 `esc  u  U` row says it. `u` is still the way back.
 
-**Not done.** No grace for other actions that drop something (`r` on a
-change, `:copy` off); no setting for the length.
+**Not done.** No grace for `:copy` off; no setting for the length. `r` on
+a change gets none, by choice (2026-11-04): it drops nothing (the change
+stays in the worker's worktree and comes back with its next `done`), and
+it opens `@worker ` for the reasons at once, which a count-down beside
+the writing would only crowd.
 
 `:clear` (record 90) waits the same grace (`Undoable::Clear`).
