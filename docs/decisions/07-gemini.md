@@ -62,3 +62,5 @@ off in settings files imece can not write); the free tier's rate limits
 (5 requests/min) make turns slow and retried. An ignored test
 (`IMECE_LIVE_GEMINI=1 cargo test -p imece-agent -- --ignored live_gemini`)
 runs one real turn with `send` over `nc -U`.
+
+Record 105 (2026-11-04) gives a writing agent a second `--include-directories`, its scratch directory; ACP reports nothing of it to check.

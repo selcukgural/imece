@@ -157,6 +157,7 @@ impl Live {
                      it left off",
                 );
                 self.forget(w, id, false, false);
+                self.drop_scratch(w, id);
                 if !w.agents[id].gone {
                     w.note(Event::Forgotten { agent: id });
                 }
@@ -482,6 +483,7 @@ impl Live {
         let cut = std::mem::take(&mut self.inflight[id]);
         self.end(w, id);
         self.forget(w, id, false, running);
+        self.drop_scratch(w, id);
         if !cut.is_empty() {
             self.interrupted[id] = cut;
         }
@@ -2220,6 +2222,56 @@ mod tests {
     }
 
     #[test]
+    fn forgetting_removes_the_scratch_directory_and_nothing_is_said_without_one() {
+        let (mut w, mut live, repo, root) = remembered_worker("forget-scratch", false);
+        let dir = live.scratch_of(&w, 1).unwrap();
+        std::fs::create_dir_all(dir.join("logs")).unwrap();
+        std::fs::write(dir.join("logs/run.txt"), "x").unwrap();
+        assert_eq!(live.forget_agent(&mut w, 1), Ok(()));
+        assert!(!dir.exists(), "moved aside at once");
+        assert!(traced_soon(
+            &mut live,
+            &mut w,
+            1,
+            "its scratch directory was removed"
+        ));
+        let parent = dir.parent().unwrap();
+        assert_eq!(
+            std::fs::read_dir(parent).unwrap().count(),
+            0,
+            "none left aside"
+        );
+        // Nothing there: nothing said.
+        let before = w.agents[1].trace.len();
+        live.drop_scratch(&w, 1);
+        thread::sleep(Duration::from_millis(50));
+        live.step(&mut w);
+        assert!(
+            !(w.agents[1].trace.iter().skip(before)).any(|l| l.contains("scratch")),
+            "{:?}",
+            w.agents[1].trace
+        );
+        // One that cannot be moved aside is said, and stays.
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::set_permissions(parent, std::fs::Permissions::from_mode(0o500)).unwrap();
+        live.drop_scratch(&w, 1);
+        let said = traced_soon(
+            &mut live,
+            &mut w,
+            1,
+            "could not remove its scratch directory",
+        );
+        std::fs::set_permissions(parent, std::fs::Permissions::from_mode(0o700)).unwrap();
+        assert!(said && dir.exists());
+        // A leader has none to drop.
+        live.drop_scratch(&w, 0);
+        for d in [repo, root, live.claude_home.clone(), parent.to_path_buf()] {
+            let _ = std::fs::remove_dir_all(d);
+        }
+    }
+
+    #[test]
     fn forgetting_a_codex_or_gemini_agent_takes_what_its_vendor_kept() {
         let (mut w, mut live, repo, root) = remembered_vendor_worker("forget-codex", Vendor::Codex);
         assert_eq!(live.forget_agent(&mut w, 1), Ok(()));
@@ -2435,7 +2487,10 @@ mod tests {
                 ],
                 ..Default::default()
             };
+            let scratch = live.scratch_of(&w, 1).unwrap();
+            std::fs::create_dir_all(&scratch).unwrap();
             live.adopt(&mut w, found, 0);
+            assert_eq!(scratch.exists(), !fresh, "--fresh drops the scratch too");
             assert_eq!(w.agents[1].status, Status::Asleep);
             assert!(live.remembered[1]);
             if fresh {
@@ -2467,7 +2522,8 @@ mod tests {
                 assert_eq!(journaled(&w, &Event::Forgotten { agent: 1 }), 0);
             }
             let home = live.claude_home.clone();
-            for d in [repo, root, home] {
+            let scratch = scratch.parent().unwrap().to_path_buf();
+            for d in [repo, root, home, scratch] {
                 let _ = std::fs::remove_dir_all(d);
             }
         }

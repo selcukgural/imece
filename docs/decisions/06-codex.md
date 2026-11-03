@@ -71,3 +71,5 @@ for Codex (the pot still stops new turns). An ignored test
 runs one real turn with `send` over `nc -U`.
 
 Record 63 (2026-11-01) adds one override to every session: `tools.update_plan.enabled=true`, Codex's `update_plan` tool for the agent's own to-do list, off in an app-server thread unless asked for; `config/read` does not echo it, so `check_config` leaves it unchecked (it changes no file).
+
+Record 105 (2026-11-04) adds `sandbox_workspace_write.writable_roots` = exactly the agent's scratch directory (none for a reader), replacing the person's own roots; `config/read` and the started thread's `sandbox.writableRoots` must echo it for a writer, or the session stops.

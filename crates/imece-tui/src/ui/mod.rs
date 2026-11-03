@@ -3145,6 +3145,7 @@ mod tests {
         let s = render(&app, 160, 30);
         assert!(s.contains(&format!("folder ~/src/{name} ")), "{s}");
         assert!(!s.contains("worktree of"), "{s}");
+        assert!(!s.contains("scratch "), "a leader writes nothing: {s}");
         app.zoom = Zoom::Focus(lead + 1);
         let s = render(&app, 160, 30);
         let worker = app.world.agents[lead + 1].name.clone();
@@ -3154,10 +3155,25 @@ mod tests {
             )),
             "{s}"
         );
+        assert!(
+            s.contains(&format!(
+                "scratch ~/.local/state/imece/worktrees/{name}-5e1f0a2c-scratch/{worker} "
+            )),
+            "{s}"
+        );
         app.lang = Lang::Tr;
         let s = render(&app, 160, 30);
         assert!(s.contains(&format!("· ~/src/{name} için worktree")), "{s}");
         assert!(s.contains("klasör ~/.local"), "{s}");
+        assert!(s.contains("karalama ~/.local"), "{s}");
+        // A solo's goes by its project, as live's does.
+        app.world.agents[lead + 1].role = Role::Solo;
+        assert_eq!(
+            app.scratch_of(lead + 1),
+            Some(format!(
+                "~/.local/state/imece/worktrees/{name}-5e1f0a2c-scratch/solo-0"
+            ))
+        );
     }
 
     /// An open answer of `agent` in WAITING FOR YOU.

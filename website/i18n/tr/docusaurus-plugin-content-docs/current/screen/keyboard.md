@@ -121,7 +121,7 @@ Gelenekler vim'inkidir: `h` `j` `k` `l` hareket ve katlama, `gg` ve `G` uçlara,
 | `enter` `esc` | ham akış · geri |
 | `a`  `e`  `A`  `r` | odakta ya da ham akışta, ajanı sizi beklerken: isteğinde (durumunun alıntıladığı), bir kez izin ver · bu tur ne isterse evet · bundan sonra hep evet · reddet; değişikliğinde, uygula · reddet. Asla sizi bekleyenlerde seçili olanı değil. Karar verilecek bir şey varken alt satır bu tuşları önce gösterir; yoksa `a` ve `r` bunu söyler, `A` arşivlerdir |
 
-Odağın `klasör` satırı ajanın nerede çalıştığını söyler: lider için çalışma kopyası, işçi, yardımcı ya da solo için worktree'si (`· ~/src/kule için worktree`), git yoksa klasörün kendisi. Salonda açık bir projenin satırı da klasörüyle biter.
+Odağın `klasör` satırı ajanın nerede çalıştığını söyler: lider için çalışma kopyası, işçi, yardımcı ya da solo için worktree'si (`· ~/src/kule için worktree`), git yoksa klasörün kendisi. Altında, yazan bir ajanın `karalama` satırı karalama dizinini gösterir; notları ve günlükleri değişikliğine değil oraya gider. Salonda açık bir projenin satırı da klasörüyle biter.
 
 ## Bir değişiklik
 

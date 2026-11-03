@@ -109,6 +109,7 @@ pub(super) fn commit_message(text: &str) -> String {
 /// spec counts millionths of a dollar, the pot ten-thousandths).
 pub(super) fn suggest_spec(program: String, cwd: PathBuf, model: &str) -> claude::Spec {
     claude::Spec {
+        scratch: None,
         program,
         cwd,
         name: "imece-commit".into(),

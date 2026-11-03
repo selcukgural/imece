@@ -52,7 +52,7 @@ imece'nin unuttuğu bir oturum satıcısında hiçbir şey bırakmaz:
 
 - `:forget [@AD]` (`:f`): çalışan oturum biter (çalıştırması öldürülür, bitmemiş istemler yarım kaldı diye tutulur ve uyanışta anlatılır), hatırlanan oturum gider, ajan kendisiyle konuşulana dek uyur ve sonraki mesajı tam özetle yeni bir oturum başlatır. Unutacak bir şeyi olmayan ya da gitmiş bir ajan için reddedilir. Günlük: `claude-1 oturumunu unutturdun`. `:` menüsü `$` ile işaretler: yeni oturum bütün özeti yeniden öder.
 - `--fresh` depo okunurken hatırlanan her ajan için bunu yapar, ajan başına günlüğe yazılır.
-- Kaldırılan, kendi iş parçacığında: Claude'un transkript dosyası; Codex'in thread'i onun için başlatılan bir app server üzerinden (`thread/delete`, Codex'in dizinini de temizler); Gemini'nin o oturumun sohbet dosyaları `~/.gemini/tmp/<ad>/chats/` altında ve ajanın kendisi gidince (`:close`, bir yardımcının ayrılışı) o ad altındaki her şey artı özel dizini. Bir yola ya da satıcıya yalnız bir UUID ulaşır.
+- Kaldırılan, kendi iş parçacığında: Claude'un transkript dosyası; Codex'in thread'i onun için başlatılan bir app server üzerinden (`thread/delete`, Codex'in dizinini de temizler); Gemini'nin o oturumun sohbet dosyaları `~/.gemini/tmp/<ad>/chats/` altında ve ajanın kendisi gidince (`:close`, bir yardımcının ayrılışı) o ad altındaki her şey artı özel dizini. Ajanın karalama dizini de gider (bkz. [dosyalar](../reference/files.md)). Bir yola ya da satıcıya yalnız bir UUID ulaşır.
 - imece'nin kendi `/clear`'ı, bir model geri düşmesi ve yenilenen bir oturum (`:budget`'tan sonra) değiştirilen oturumu aynı yolla unutur.
 
 ## Arşivler

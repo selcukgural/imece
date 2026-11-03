@@ -829,6 +829,7 @@ pub struct Text {
     /// The focus's line of the folder the agent works in, and whose
     /// checkout a worktree is.
     pub folder: &'static str,
+    pub scratch: &'static str,
     pub worktree_of: &'static str,
     pub lease: &'static str,
     pub clean: &'static str,
@@ -1718,6 +1719,7 @@ pub const EN: Text = Text {
     status: "status ",
     origin: "origin ",
     folder: "folder ",
+    scratch: "scratch ",
     worktree_of: " · worktree of {}",
     lease: "lease  ",
     clean: "clean",
@@ -2748,6 +2750,7 @@ pub const TR: Text = Text {
     status: "durum  ",
     origin: "köken  ",
     folder: "klasör ",
+    scratch: "karalama ",
     worktree_of: " · {} için worktree",
     lease: "lease  ",
     clean: "temiz",

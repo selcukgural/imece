@@ -313,6 +313,17 @@ pub(super) fn repo_notes(repo: &Path, vendor: Vendor) -> Option<Notes> {
     })
 }
 
+/// What an agent with a scratch directory (record 105) is told of it.
+pub(super) fn scratch_note(dir: &Path) -> String {
+    format!(
+        "\n\nYour scratch directory is {}: yours alone, outside the files you change. \
+         Put notes, logs, downloads and whatever else is no part of your change there, \
+         never among your files. It stays from session to session until the person makes \
+         you forget your session.",
+        dir.display()
+    )
+}
+
 /// The person's own instructions for every project, in imece's
 /// configuration directory (`keys::config_file`).
 pub(crate) const INSTRUCTIONS: &str = "instructions.md";

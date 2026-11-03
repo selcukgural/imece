@@ -242,6 +242,11 @@ pub struct Spec {
     /// generates, 2026-11-03) takes the same settings for a fork as for a
     /// resume and answers as for a new thread, with the fork's own id.
     pub fork: bool,
+    /// A directory of the agent's own outside its files, for what is no
+    /// part of its change (record 105): a writer's sandbox's only writable
+    /// root besides the workspace (`sandbox_workspace_write.writable_roots`,
+    /// the person's own roots replaced, checked as Codex echoes it).
+    pub scratch: Option<PathBuf>,
 }
 
 /// What a first start found in the person's config that only a name turns
@@ -256,6 +261,18 @@ impl Off {
     fn is_empty(&self) -> bool {
         self.servers.is_empty() && self.skills.is_empty()
     }
+}
+
+/// The writable roots a session's sandbox has besides its workspace:
+/// the scratch directory, or none; as `config/read` and the thread echo
+/// them.
+fn roots(scratch: Option<&Path>) -> Value {
+    json!(
+        scratch
+            .map(|d| d.to_string_lossy())
+            .into_iter()
+            .collect::<Vec<_>>()
+    )
 }
 
 fn sandbox(write: bool) -> &'static str {
@@ -343,6 +360,18 @@ pub fn args(spec: &Spec, off: &Off) -> Vec<String> {
     set(
         "sandbox_workspace_write.network_access".into(),
         spec.confine.full().to_string(),
+    );
+    // Replaces the person's own roots: only the scratch directory.
+    set(
+        "sandbox_workspace_write.writable_roots".into(),
+        format!(
+            "[{}]",
+            spec.scratch
+                .iter()
+                .map(|d| toml_str(&d.to_string_lossy()))
+                .collect::<Vec<_>>()
+                .join(",")
+        ),
     );
     for f in features_off(spec.confine) {
         set(format!("features.{f}"), "false".into());
@@ -456,6 +485,9 @@ pub struct Protocol {
     resume: Option<String>,
     /// Whether that thread is forked; see [`Spec::fork`].
     fork: bool,
+    /// The sandbox's writable roots, as Codex must echo them; see
+    /// [`Spec::scratch`].
+    roots: Value,
     /// Tools imece's server offers, as Codex names them.
     tools: BTreeSet<String>,
     /// What a first start found and this start has named off, if this is
@@ -502,6 +534,7 @@ impl Protocol {
             mcp: spec.mcp.clone(),
             resume: spec.resume.clone(),
             fork: spec.fork,
+            roots: roots(spec.scratch.as_deref()),
             tools: spec
                 .mcp
                 .iter()
@@ -816,6 +849,10 @@ impl Protocol {
                 c["history"]["persistence"]
             ));
         }
+        let set = &c["sandbox_workspace_write"]["writable_roots"];
+        if self.write && *set != self.roots {
+            return Err(format!("runs with writable roots {set}"));
+        }
         let network = self.confine.full();
         if self.write && c["sandbox_workspace_write"]["network_access"] != network {
             return Err(format!(
@@ -910,6 +947,12 @@ impl Protocol {
             return Err(format!(
                 "started a thread {} network access",
                 if network { "without" } else { "with" }
+            ));
+        }
+        if self.write && r["sandbox"]["writableRoots"] != self.roots {
+            return Err(format!(
+                "started a thread with writable roots {}",
+                r["sandbox"]["writableRoots"]
             ));
         }
         if r["cwd"].as_str().map(Path::new) != Some(self.cwd.as_path()) {
@@ -1740,6 +1783,7 @@ mod tests {
 
     fn spec(write: bool) -> Spec {
         Spec {
+            scratch: None,
             program: "codex".into(),
             cwd: PathBuf::from("/work/w1"),
             choice: None,
@@ -2438,7 +2482,7 @@ mod tests {
             "notify": [],
             "check_for_update_on_startup": false,
             "sandbox_mode": sandbox(write),
-            "sandbox_workspace_write": { "network_access": confine.full() },
+            "sandbox_workspace_write": { "network_access": confine.full(), "writable_roots": [] },
             "history": { "persistence": "none" },
             "features": features,
             "mcp_servers": mcp,
@@ -2564,6 +2608,17 @@ mod tests {
     /// Answers the start up to `upto` (the method whose answer `result`
     /// stands in for), returning what the protocol made of it.
     fn start_until(spec: &Spec, upto: &str, result: Value) -> Result<Vec<Act>, String> {
+        let config = config_at(spec.write, &[], spec.mcp.is_some(), spec.confine);
+        start_until_with(spec, &config, upto, result)
+    }
+
+    /// [`start_until`] with `config` as `config/read`'s good answer.
+    fn start_until_with(
+        spec: &Spec,
+        config: &Value,
+        upto: &str,
+        result: Value,
+    ) -> Result<Vec<Act>, String> {
         let mut p = Protocol::new(spec, None);
         p.open();
         let bus = spec.mcp.is_some();
@@ -2573,10 +2628,7 @@ mod tests {
                 "account/read",
                 json!({ "account": { "type": "chatgpt", "planType": "go" } }),
             ),
-            (
-                "config/read",
-                json!({ "config": config_at(spec.write, &[], bus, spec.confine) }),
-            ),
+            ("config/read", json!({ "config": config })),
             ("skills/list", json!({ "data": [] })),
             ("plugin/installed", json!({ "marketplaces": [] })),
             ("hooks/list", json!({ "data": [] })),
@@ -2703,6 +2755,58 @@ mod tests {
         // Without the bus, a connected imece server is as unwelcome as any.
         let e = start_until(&spec(true), "mcpServerStatus/list", servers(true, &[]));
         assert!(e.is_err());
+    }
+
+    #[test]
+    fn a_scratch_directory_is_the_sandbox_s_only_writable_root_and_must_be_echoed() {
+        let mut s = spec(true);
+        assert_eq!(
+            after(
+                &args(&s, &Off::default()),
+                "sandbox_workspace_write.writable_roots"
+            ),
+            Some("[]"),
+            "the person's own roots are replaced by none"
+        );
+        s.scratch = Some(PathBuf::from("/state/w1-scratch/codex-1"));
+        assert_eq!(
+            after(
+                &args(&s, &Off::default()),
+                "sandbox_workspace_write.writable_roots"
+            ),
+            Some("[\"/state/w1-scratch/codex-1\"]")
+        );
+        let roots = json!(["/state/w1-scratch/codex-1"]);
+        let mut c = good_config(true, &[], false);
+        c["sandbox_workspace_write"]["writable_roots"] = roots.clone();
+        let mut t = thread(true, "/work/w1");
+        t["sandbox"]["writableRoots"] = roots.clone();
+        assert!(
+            start_until_with(&s, &c, "thread/start", t.clone()).is_ok(),
+            "echoed as asked"
+        );
+        // Without it, or with another root, in either echo: stopped.
+        for other in [
+            json!([]),
+            json!(["/state/w1-scratch/codex-1", "/home"]),
+            json!(["/"]),
+        ] {
+            let mut bad = c.clone();
+            bad["sandbox_workspace_write"]["writable_roots"] = other.clone();
+            let e = start_until(&s, "config/read", json!({ "config": bad })).unwrap_err();
+            assert!(e.contains("writable roots"), "{e}");
+            let mut bad = t.clone();
+            bad["sandbox"]["writableRoots"] = other.clone();
+            let e = start_until_with(&s, &c, "thread/start", bad).unwrap_err();
+            assert!(e.contains("writable roots"), "{e}");
+        }
+        // A writer with none must have none.
+        let mut bad = good_config(true, &[], false);
+        bad["sandbox_workspace_write"]["writable_roots"] = roots.clone();
+        assert!(start_until(&spec(true), "config/read", json!({ "config": bad })).is_err());
+        let mut bad = thread(true, "/work/w1");
+        bad["sandbox"]["writableRoots"] = roots;
+        assert!(start_until(&spec(true), "thread/start", bad).is_err());
     }
 
     #[test]
@@ -4406,6 +4510,7 @@ done"#
         )
         .unwrap();
         let s = Spec {
+            scratch: None,
             program: PROGRAM.into(),
             cwd: cwd.clone(),
             choice: Some("@low".into()),
@@ -4498,6 +4603,7 @@ done"#
         std::fs::create_dir_all(&dir).unwrap();
         let cwd = dir.canonicalize().unwrap();
         let s = Spec {
+            scratch: None,
             program: PROGRAM.into(),
             cwd: cwd.clone(),
             choice: Some("@low".into()),
@@ -4558,6 +4664,7 @@ done"#
         std::fs::create_dir_all(&dir).unwrap();
         let cwd = dir.canonicalize().unwrap();
         let s = Spec {
+            scratch: None,
             program: PROGRAM.into(),
             cwd: cwd.clone(),
             choice: Some("@low".into()),
@@ -4628,6 +4735,7 @@ done"#
         std::fs::create_dir_all(dir.join("a")).unwrap();
         std::fs::create_dir_all(dir.join("b")).unwrap();
         let spec = |sub: &str, resume: Option<String>, fork: bool| Spec {
+            scratch: None,
             program: PROGRAM.into(),
             cwd: dir.join(sub).canonicalize().unwrap(),
             choice: Some("@low".into()),
@@ -4707,6 +4815,7 @@ done"#
             .join(format!(".imece-live-codex-{}", std::process::id()));
         std::fs::create_dir_all(&outside).unwrap();
         let s = Spec {
+            scratch: None,
             program: PROGRAM.into(),
             cwd: cwd.clone(),
             choice: Some("@low".into()),
@@ -4785,6 +4894,7 @@ done"#
         std::fs::create_dir_all(&dir).unwrap();
         let cwd = dir.canonicalize().unwrap();
         let mut spec = Spec {
+            scratch: None,
             program: PROGRAM.into(),
             cwd: cwd.clone(),
             choice: Some("@low".into()),

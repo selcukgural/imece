@@ -235,6 +235,54 @@ impl Live {
         (place.root.join(Self::tree_of(w, id)), Some(&place.repo))
     }
 
+    /// Agent `id`'s scratch directory (record 105): its own, outside the
+    /// files it changes, for notes, logs and downloads that are no part
+    /// of its change; `<worktrees>-scratch/<name>` beside Gemini's private
+    /// ones; a solo's by its project's id, as its worktree, since an
+    /// archived solo and the fresh one after it share a name. None for a
+    /// leader, which writes nothing.
+    pub fn scratch_of(&self, w: &World, id: AgentId) -> Option<PathBuf> {
+        let a = &w.agents[id];
+        let name = match a.role {
+            Role::Leader => return None,
+            Role::Solo => format!("solo-{}", a.project),
+            _ => a.name.clone(),
+        };
+        let mut dir = self.places[a.project].root.clone().into_os_string();
+        dir.push("-scratch");
+        Some(PathBuf::from(dir).join(name))
+    }
+
+    /// Agent `id`'s scratch directory goes (record 105): `:forget`,
+    /// `--fresh`, an agent that leaves; not a new session that goes on
+    /// with the same work (a fallback, a renewal, `/clear`). Moved aside at
+    /// once, so a session started right after makes a new one, and removed
+    /// on a thread of its own; the trace says so when there was one.
+    pub(super) fn drop_scratch(&self, w: &World, id: AgentId) {
+        let Some(dir) = self.scratch_of(w, id) else {
+            return;
+        };
+        let mut aside = dir.clone().into_os_string();
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_or(0, |d| d.as_nanos());
+        aside.push(format!(".gone-{nanos:x}"));
+        let aside = PathBuf::from(aside);
+        let note = match std::fs::rename(&dir, &aside) {
+            Ok(()) => None,
+            Err(e) if e.kind() == io::ErrorKind::NotFound => return,
+            Err(e) => Some(format!("could not remove its scratch directory: {e}")),
+        };
+        let (tx, generation) = (self.tx.clone(), self.generation[id]);
+        thread::spawn(move || {
+            let note = note.unwrap_or_else(|| match std::fs::remove_dir_all(&aside) {
+                Ok(()) => "its scratch directory was removed".into(),
+                Err(e) => format!("could not remove its scratch directory: {e}"),
+            });
+            let _ = tx.send((id, generation, AgentEvent::Note(note)));
+        });
+    }
+
     /// The name of the worktree agent `id` works in: a worker's own name,
     /// a helper's worker's; a solo's is `solo-<project id>`, so a renamed
     /// solo project (which renames the agent) keeps its worktree.
@@ -293,6 +341,7 @@ impl Live {
         }
         self.end(w, id);
         self.forget(w, id, true, true);
+        self.drop_scratch(w, id);
         self.leaving[id] = false;
         self.lost[id] = false;
         self.mail[id].clear();
@@ -679,6 +728,7 @@ impl Live {
         let (repo, root) = (place.repo.clone(), place.root.clone());
         let copies = w.projects[a.project].copies.clone();
         let home = self.gemini_home(w, a.project, a.role, &tree);
+        let scratch = self.scratch_of(w, id);
         let plan = if direct {
             setup::Plan::None
         } else {
@@ -724,6 +774,15 @@ impl Live {
                     Ok(Some(c)) => Some((at, remember::holds(&c))),
                     _ => None,
                 });
+                let scratch = match scratch {
+                    Some(dir) => {
+                        let dir = make_scratch(&dir)
+                            .map_err(|e| format!("its scratch directory {}: {e}", dir.display()))?;
+                        system.push_str(&scratch_note(&dir));
+                        Some(dir)
+                    }
+                    None => None,
+                };
                 let on = move |e| {
                     let _ = tx.send((id, generation, e));
                 };
@@ -731,6 +790,7 @@ impl Live {
                     Vendor::Gemini => Box::new(
                         gemini::Session::start(
                             &gemini::Spec {
+                                scratch: scratch.clone(),
                                 program: program.clone(),
                                 cwd: cwd.clone(),
                                 home,
@@ -748,6 +808,7 @@ impl Live {
                     Vendor::Codex => Box::new(
                         codex::Session::start(
                             &codex::Spec {
+                                scratch: scratch.clone(),
                                 program: program.clone(),
                                 cwd: cwd.clone(),
                                 choice: model,
@@ -768,6 +829,7 @@ impl Live {
                         Box::new(
                             claude::Session::start(
                                 &claude::Spec {
+                                    scratch: scratch.clone(),
                                     program: program.clone(),
                                     cwd: cwd.clone(),
                                     name,
@@ -823,6 +885,27 @@ impl Live {
             });
         }
     }
+}
+
+/// Makes an agent's scratch directory (record 105) when it is not there,
+/// private (0700), its parents too; one that is there must be a
+/// directory, not a link to one. Its canonical path, the one the
+/// vendors are given and Codex echoes.
+pub(super) fn make_scratch(dir: &Path) -> io::Result<PathBuf> {
+    use std::os::unix::fs::DirBuilderExt;
+    if let Some(parent) = dir.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    match std::fs::DirBuilder::new().mode(0o700).create(dir) {
+        Ok(()) => {}
+        Err(e) if e.kind() == io::ErrorKind::AlreadyExists => {
+            if !std::fs::symlink_metadata(dir)?.is_dir() {
+                return Err(io::Error::other("it is there and is not a directory"));
+            }
+        }
+        Err(e) => return Err(e),
+    }
+    dir.canonicalize()
 }
 
 #[cfg(test)]
@@ -2141,7 +2224,86 @@ mod tests {
             !dir.join("worktrees").join("claude-1.1").exists(),
             "no tree of its own"
         );
+        // A scratch directory of its own, private, for its file tools and
+        // named in its instructions.
+        let scratch = dir.join("worktrees-scratch").join("claude-1.1");
+        let scratch = scratch.canonicalize().unwrap();
+        assert_eq!(after("--add-dir"), scratch.to_string_lossy());
+        let mode = std::fs::metadata(&scratch).unwrap().permissions().mode();
+        assert_eq!(mode & 0o777, 0o700);
+        // The instructions go on over several lines.
+        let note = format!("Your scratch directory is {}: ", scratch.display());
+        assert!(args.iter().any(|l| l.contains(&note)), "{args:?}");
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_scratch_directory_is_each_writer_s_own_and_a_leader_has_none() {
+        let mut w = team(2);
+        let live = Live::new(
+            3,
+            claude_at("/nonexistent/claude"),
+            PathBuf::from("/r"),
+            PathBuf::from("/state/worktrees/r-1"),
+        );
+        let root = Path::new("/state/worktrees/r-1-scratch");
+        assert_eq!(live.scratch_of(&w, 0), None, "the leader writes nothing");
+        assert_eq!(live.scratch_of(&w, 1), Some(root.join("claude-1")));
+        assert_eq!(live.scratch_of(&w, 2), Some(root.join("claude-2")));
+        // A helper has its own, not its worker's; a solo's goes by its
+        // project, as its worktree does.
+        w.agents[2].role = Role::Helper;
+        w.agents[2].parent = Some(1);
+        assert_eq!(live.scratch_of(&w, 2), Some(root.join("claude-2")));
+        w.agents[1].role = Role::Solo;
+        assert_eq!(live.scratch_of(&w, 1), Some(root.join("solo-0")));
+    }
+
+    #[test]
+    fn a_scratch_directory_is_made_private_once_and_must_be_a_directory() {
+        use std::os::unix::fs::PermissionsExt;
+        let base = trees("scratch-make");
+        let dir = base.join("a").join("claude-1");
+        let made = make_scratch(&dir).unwrap();
+        assert_eq!(made, dir.canonicalize().unwrap());
+        let mode = std::fs::metadata(&dir).unwrap().permissions().mode();
+        assert_eq!(mode & 0o777, 0o700);
+        std::fs::write(dir.join("notes.md"), "kept").unwrap();
+        assert_eq!(make_scratch(&dir).unwrap(), made, "there already");
+        assert!(dir.join("notes.md").exists());
+        let file = base.join("a").join("file");
+        std::fs::write(&file, "").unwrap();
+        assert!(make_scratch(&file).is_err(), "a file");
+        let link = base.join("a").join("link");
+        std::os::unix::fs::symlink(&dir, &link).unwrap();
+        assert!(make_scratch(&link).is_err(), "a link to a directory");
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn a_leaving_agent_s_scratch_directory_goes_with_it() {
+        let repo = checkout("scratch-leave");
+        let root = trees("scratch-leave");
+        let mut w = team(1);
+        let mut live = Live::new(
+            2,
+            claude_at("/nonexistent/claude"),
+            repo.clone(),
+            root.clone(),
+        );
+        let dir = live.scratch_of(&w, 1).unwrap();
+        std::fs::create_dir_all(&dir).unwrap();
+        live.dismiss(&mut w, 1);
+        assert!(!dir.exists());
+        assert!(traced_soon(
+            &mut live,
+            &mut w,
+            1,
+            "its scratch directory was removed"
+        ));
+        for d in [repo, root, dir.parent().unwrap().to_path_buf()] {
+            let _ = std::fs::remove_dir_all(d);
+        }
     }
 
     #[test]
