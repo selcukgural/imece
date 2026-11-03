@@ -1,0 +1,32 @@
+# The paths whose mutants hold a pull request (`changed` in
+# .github/workflows/mutants.yml); the rest of a change's mutants are
+# reported by `report` and do not hold it (user, 2026-11-03). One git
+# pathspec a line; `#` starts a comment. These are imece's own boundaries
+# (CLAUDE.md, Security): every one has a test that fails without it.
+
+# The vendor adapters and their fail-closed checks, the bus's socket and
+# who may call it, child processes, worktrees, copying into them.
+crates/imece-agent/
+# Who may call which tool, and what a call does.
+crates/imece-tui/src/live/bus.rs
+crates/imece-tui/src/live/tools.rs
+# The Δ gate between a worktree and the person's checkout.
+crates/imece-tui/src/live/changes.rs
+# What runs only once the person said yes: setup and teardown scripts,
+# standing yeses.
+crates/imece-tui/src/live/setup.rs
+crates/imece-tui/src/live/standing.rs
+crates/imece-tui/src/sha.rs
+# A session runs with what was asked, or it stops.
+crates/imece-tui/src/live/sessions.rs
+# The pot and the caps on hiring.
+crates/imece-tui/src/live/hiring.rs
+# Removing worktrees nobody owns.
+crates/imece-tui/src/live/tidy.rs
+# Agent text reaches the terminal only cleaned.
+crates/imece-tui/src/i18n.rs
+# What is kept on disk, a push token, the editor's draft, the pty.
+crates/imece-tui/src/store.rs
+crates/imece-tui/src/push.rs
+crates/imece-tui/src/editor.rs
+crates/imece-tui/src/shell.rs
