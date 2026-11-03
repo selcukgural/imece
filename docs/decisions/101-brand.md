@@ -64,6 +64,36 @@ demo keeps nothing`). It is read after `persist` and before `leave`. A
 failed write (the terminal went away, record 86) is let go: it is no fault
 of the run's.
 
+The tab's icon (the person, the same day: in iTerm2 Claude Code's tab
+shows a crab, imece's a letter, and the icon must come with `install.sh`,
+nothing by hand). iTerm2 draws the icon of a tab's program from its own
+table (`graphic_icons.json`, an icon name and the programs that show it,
+`claude` → `claude_code`; `graphic_colors.json`, its tint, `#CC7C5E`),
+merged under two tables of the person's of the same names in
+`~/Library/Application Support/iTerm2` and a `graphic_NAME.png` there,
+read when it starts (3.5.0 on; 3.7.6 checked in its source); a program
+not in it gets the first letter of its name in a circle. No escape
+sequence sets it, and kitty, Ghostty and WezTerm show no icon per
+program, so it is iTerm2's alone. `install.sh` on macOS, when that folder
+is there (`iterm_icon`; `IMECE_NO_ITERM_ICON=1` skips it): the mark as a
+32 × 32 black silhouette iTerm2 tints (`tools/tab_icon.py` →
+`website/static/img/imece-tab.png`, the same bytes as base64 in the
+script) written beside and moved over `graphic_imece.png` (over a link,
+never through it), then `imece` → `["imece"]` and `imece` → `#E3A93F` in
+the two tables (`iterm_table`): a table that already names imece is not
+touched; one that is a link, not a plain file or not a JSON object is
+left and said; a new or the person's table goes through a plist
+(`plutil -convert xml1`, `-insert`, `-convert json -r`: plutil takes a
+bare `{}` for OpenStep and cannot write it, and a `null` stops it, the
+table then left) next to the table and moved over it, the person's
+entries kept. `website/test-install.sh` runs every case on macOS (a
+second run changes nothing, an empty table, a `null`, a link to a
+dotfile and to elsewhere for the icon, the opt-out, no iTerm2 folder)
+and on Linux checks the folder is left alone; it also checks the
+script's bytes are the PNG's. It shows from iTerm2's next start, where
+the profile's Icon setting is not *No icon*. Not done: an icon for
+another terminal, a request to iTerm2 to ship imece in its own table.
+
 Growth: none; three cells and an instant in `App`, nothing saved. Read
 cost: the salon tests the rows it already built; the words read the
 project at hand's head, one agent. Failure: the farewell's write is the

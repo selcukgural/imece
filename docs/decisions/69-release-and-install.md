@@ -52,8 +52,8 @@ line to run now. When the directory is on PATH but another `imece`
 comes first (a `cargo install` in `~/.cargo/bin`), it says so. It ends
 with the coding agents it found on PATH, or how to get one. Settings:
 `IMECE_VERSION`, `IMECE_INSTALL_DIR`, `IMECE_NO_MODIFY_PATH=1`,
-`IMECE_DOWNLOAD_URL` (a mirror; it alone also allows `file://`, which
-the test uses). Running it again updates; uninstalling is removing the
+`IMECE_NO_ITERM_ICON=1` (record 101's tab icon), `IMECE_DOWNLOAD_URL` (a
+mirror; it alone also allows `file://`, which the test uses). Running it again updates; uninstalling is removing the
 file and the lines.
 
 Tests. `website/test-install.sh BINARY` makes a release from the binary
@@ -62,7 +62,8 @@ the installer against it with a clean `HOME` and `PATH`: bash (the line
 once after two runs, no `.imece.new` left), zsh, fish, any other shell,
 `IMECE_INSTALL_DIR` with `IMECE_NO_MODIFY_PATH=1`, a directory already on
 PATH, a wrong sum, a `SHA256SUMS` without the archive, a missing release;
-nothing is installed in the last three. CI's `installer` job runs it on
+nothing is installed in the last three; on macOS the iTerm2 icon (record
+101), on Linux that iTerm2's folder is left alone. CI's `installer` job runs it on
 ubuntu and macOS against that run's debug build, after shellcheck. The
 release workflow itself only runs on a tag: its build steps were checked
 by hand (the aarch64 musl build in a container, static, its tests green;

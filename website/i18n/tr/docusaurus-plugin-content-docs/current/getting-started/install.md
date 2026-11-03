@@ -13,13 +13,14 @@ imece macOS ve Linux'ta, x86_64 ve arm64 üzerinde çalışır (Windows'ta: WSL 
 curl -fsSL https://selcukgural.github.io/imece/install.sh | sh
 ```
 
-Betik sisteminiz için önceden derlenmiş imece'yi [sürümlerden](https://github.com/selcukgural/imece/releases) indirir (Linux derlemeleri statiktir, her dağıtımda çalışır) ve sürümün `SHA256SUMS` dosyasıyla karşılaştırır: uyuşmazsa hiçbir şey kurulmaz. `imece`'yi `~/.local/bin`'e koyar; orası henüz PATH'te değilse kabuğunuzun başlangıç dosyasına bir kez, bir `# imece` satırının altına ekler: `~/.zshrc`, `~/.bashrc` (macOS'ta `~/.bash_profile`), fish'in `conf.d/imece.fish` dosyası, yoksa `~/.profile`. Yeni bir terminal açın ya da yazdığı satırı çalıştırın; `imece --version` cevap verir. Sonunda PATH'te hangi kodlama ajanlarını bulduğunu söyler. Yeniden çalıştırmak imece'yi günceller; çalışan bir imece bitene kadar kendi dosyasını tutar.
+Betik sisteminiz için önceden derlenmiş imece'yi [sürümlerden](https://github.com/selcukgural/imece/releases) indirir (Linux derlemeleri statiktir, her dağıtımda çalışır) ve sürümün `SHA256SUMS` dosyasıyla karşılaştırır: uyuşmazsa hiçbir şey kurulmaz. `imece`'yi `~/.local/bin`'e koyar; orası henüz PATH'te değilse kabuğunuzun başlangıç dosyasına bir kez, bir `# imece` satırının altına ekler: `~/.zshrc`, `~/.bashrc` (macOS'ta `~/.bash_profile`), fish'in `conf.d/imece.fish` dosyası, yoksa `~/.profile`. Yeni bir terminal açın ya da yazdığı satırı çalıştırın; `imece --version` cevap verir. macOS'ta iTerm2 varsa imece'nin sekmesine de işaretini verir, iTerm2'nin Claude Code'unkini gösterdiği gibi: iTerm2 bir sekmedeki programın ikonunu kendi program tablosundan çizer, imece onun getirdiği tabloda olmadığı için sekmesinde daire içinde bir harf görünürdü. Betik işareti (`graphic_imece.png`) ve bir `imece` girdisini iTerm2'nin kendi tablolarına (`~/Library/Application Support/iTerm2` içindeki `graphic_icons.json`, `graphic_colors.json`) koyar; iTerm2'nin bir sonraki açılışından itibaren görünür. Sekme ikonu *Settings → Profiles → General → Icon* *No icon* değilken çizilir. Bu tablolardaki sizin girdileriniz olduğu gibi kalır; imece'yi zaten anan bir tabloya dokunulmaz, JSON nesnesi olmayan (ya da bir bağlantı olan) bir tablo bırakılır ve söylenir. Sonunda PATH'te hangi kodlama ajanlarını bulduğunu söyler. Yeniden çalıştırmak imece'yi günceller; çalışan bir imece bitene kadar kendi dosyasını tutar.
 
 | Değişken | Etkisi |
 | --- | --- |
 | `IMECE_VERSION=0.1.0` | en yenisi yerine o sürüm |
 | `IMECE_INSTALL_DIR=DIZIN` | imece'nin gideceği yer (varsayılan `~/.local/bin`) |
 | `IMECE_NO_MODIFY_PATH=1` | hiçbir başlangıç dosyasına dokunulmaz |
+| `IMECE_NO_ITERM_ICON=1` | iTerm2'nin sekme ikonlarına dokunulmaz |
 | `IMECE_DOWNLOAD_URL=URL` | sürüm dosyalarının yeri, bir yansı için |
 
 ```sh
@@ -28,7 +29,7 @@ curl -fsSL https://selcukgural.github.io/imece/install.sh | IMECE_VERSION=0.1.0 
 
 Betiği çalışmadan önce okumak için: `curl -fsSL https://selcukgural.github.io/imece/install.sh -o install.sh`, okuyun, sonra `sh install.sh`. Her arşiv ayrıca bir derleme kökeni onayı (build provenance attestation) taşır; `gh attestation verify imece-aarch64-apple-darwin.tar.gz --repo selcukgural/imece` onu bu deponun sürüm iş akışının kendi etiketinden derlediğini denetler.
 
-Kaldırmak için: `rm ~/.local/bin/imece` ve başlangıç dosyasındaki `# imece` altındaki satırlar. Durum dizini (aşağıda) siz silene kadar kalır.
+Kaldırmak için: `rm ~/.local/bin/imece` ve başlangıç dosyasındaki `# imece` altındaki satırlar; iTerm2 ikonu için `graphic_imece.png` ve iki tablodaki `imece` girdileri. Durum dizini (aşağıda) siz silene kadar kalır.
 
 ## Kaynaktan
 
@@ -77,6 +78,7 @@ imece alternatif ekranda çizer ve tuşları crossterm ile okur; her terminal ç
 - **Yazarken yeni satır için `⇧enter`**, imece'nin başta istediği kitty klavye protokolünü gerektirir. Konuşan terminaller: kitty, Ghostty, WezTerm (`enable_kitty_keyboard` ile), foot, Alacritty, iTerm2. Başka yerde `⇧enter` düz `enter`dır ve gönderir; yeni satır için `\` sonra `enter` yazın (her yerde çalışır) ya da Option'ın Meta olduğu yerde `⌥enter`. `?` yardımı ve alt satır terminalinizde hangisinin çalıştığını söyler. Sorguyu yanıtlamayan bir terminal çoğullayıcısı (tmux, screen), çevresindeki terminal daha fazlasını yapabilse de `\` `enter` yoluna düşer.
 - **macOS'ta alt tuşları** (`⌥b` `⌥f` `⌥d` `⌥backspace` `⌥enter`) terminalin Option'ı Meta olarak göndermesini gerektirir: iTerm2 → Profiles → Keys → Left Option key: *Esc+*; Terminal.app → *Use Option as Meta key*. Yoksa `⌥b` `∫` yazar.
 - **`terminal` teması** (varsayılan) terminalinizin kendi 16 rengini kullanır ve ekran başlamadan önce koyu mu açık mı olduğunu bilmek için arka ve ön planını sorar (OSC 11 / OSC 10); iTerm2, Ghostty, kitty, WezTerm, Alacritty, foot ve tmux yanıtlar. Yanıtlamayan bir terminal koyu sayılır ya da `COLORFGBG` ne derse. `COLORTERM=truecolor` (ya da `24bit`) yoksa bir şemanın RGB renkleri 256 renk küpüne yuvarlanır. Tema, pencere yeniden odaklanınca terminalinizin açığa ya da koyuya dönmesini izler; tmux altında bunun için `focus-events on` gerekir. Bkz. [temalar ve dil](../screen/themes-and-language.md).
+- **Sekmenin ikonu** yalnızca iTerm2'de var (kurulum betiği verir, yukarıda); kitty, Ghostty ve WezTerm programa göre ikon göstermez. Her şey sakinken başlık `⁙` ile başlar.
 - **Başlık** (`imece · 2 seni bekliyor`) xterm'in başlık yığınını kullanır; xterm, iTerm2, kitty, WezTerm ve Ghostty imece bitince kabuğunuzun başlığını geri verir; yığını olmayan bir terminal kendi varsayılanını gösterir.
 
 Fare hiç gerekmez ve hiç yakalanmaz; terminalinizin kendi metin seçimi çalışmayı sürdürür.
