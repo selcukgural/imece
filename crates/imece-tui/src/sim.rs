@@ -10,7 +10,7 @@ use std::collections::{HashMap, VecDeque};
 use std::path::Path;
 
 use crate::i18n::Lang;
-use crate::live::{Refusal, SUGGEST_CAP, SUGGEST_DAY_CALLS, SUGGEST_DAY_COST, numbers};
+use crate::live::{Refusal, SUGGEST_CAP, SUGGEST_DAY_CALLS, SUGGEST_DAY_COST, numbers, standing};
 use crate::model::*;
 use crate::rng::Rng;
 
@@ -780,6 +780,7 @@ pub fn world(
             closed: false,
             pinned: false,
             copies: Vec::new(),
+            allowed: Vec::new(),
             no_git: false,
             archived: None,
         });
@@ -819,6 +820,12 @@ pub fn held_symbols(w: &World, project: ProjectId) -> Vec<Symbol> {
         .filter(|c| c.project == project && c.holds_leases())
         .flat_map(|c| c.symbols.iter().copied())
         .collect()
+}
+
+/// The command a demo ask runs (`Bash: npm install zod@3`); none for one
+/// that is not a command (an edit, a fetch).
+fn demo_command(what: &str) -> Option<&str> {
+    what.strip_prefix("Bash: ")
 }
 
 /// A short commit id.
@@ -2271,13 +2278,54 @@ impl Sim {
 
     /// Worker `id`'s session asks the person's yes for one of its
     /// project's sensitive steps.
+    /// One the person said yes to from now on for the project goes on
+    /// without asking, as live's does.
     fn approval(&mut self, w: &mut World, id: AgentId) {
         let t = w.tick;
         let what = *self.rng.pick(kit(w.agents[id].project).asks);
-        w.asks_you(id, what);
+        let rules = &w.projects[w.agents[id].project].allowed;
+        let said = demo_command(what).is_some_and(|c| standing::covered(c, |_| false, rules));
         let a = &mut w.agents[id];
         a.activity = Some(what.into());
-        a.trace(t, format!("approve? {what}"));
+        if said {
+            a.trace(t, format!("allowed by your yes from now on: {what}"));
+            return;
+        }
+        w.asks_you(id, what);
+        w.agents[id].trace(t, format!("approve? {what}"));
+    }
+
+    /// The person says yes from now on to what open item `item` asks, as
+    /// live's [`crate::live::Live::always`]: its commands' rules go into
+    /// the project's standing yes, it is allowed, and so is every other
+    /// open ask of the project they cover.
+    pub fn always(&mut self, w: &mut World, item: usize) -> Result<Vec<Standing>, standing::Why> {
+        let Some(it) = (w.inbox.get(item)).filter(|i| i.open && i.kind == InboxKind::Approval)
+        else {
+            return Err(standing::Why::NotACommand);
+        };
+        let command = demo_command(&it.detail).ok_or(standing::Why::NotACommand)?;
+        let p = w.agents[it.agent].project;
+        let rules = standing::needed(command, |_| false, &w.projects[p].allowed)?;
+        let added = w.stand(p, &rules);
+        w.decided(item, true);
+        self.go_on_allowed(w, p);
+        Ok(added)
+    }
+
+    /// Every open ask of project `p` its standing yes now covers is
+    /// allowed, as live's.
+    pub fn go_on_allowed(&mut self, w: &mut World, p: ProjectId) {
+        for other in 0..w.inbox.len() {
+            // `decided` leaves alone what is not an open approval.
+            let i = &w.inbox[other];
+            let covered = w.agents[i.agent].project == p
+                && demo_command(&i.detail)
+                    .is_some_and(|c| standing::covered(c, |_| false, &w.projects[p].allowed));
+            if covered {
+                w.decided(other, true);
+            }
+        }
     }
 
     /// Worker `id` asks the person and ends its turn; it waits for the
@@ -4491,6 +4539,33 @@ diff --git a/b.rs b/b.rs
         s.worktree(&mut w, worker, 0);
         assert_eq!(w.journal.len(), n, "nothing said");
         assert_eq!(w.agents[worker].stand.behind, 3, "nor moved");
+    }
+
+    #[test]
+    fn an_ask_the_person_said_yes_to_from_now_on_is_not_asked() {
+        let (mut w, mut s, worker, _) = one_at_work();
+        let p = w.agents[worker].project;
+        for rule in kit(p).asks.iter().filter_map(|a| demo_command(a)) {
+            let added = standing::needed(rule, |_| false, &w.projects[p].allowed).unwrap();
+            w.stand(p, &added);
+        }
+        let open = w.open_inbox().len();
+        for _ in 0..40 {
+            s.approval(&mut w, worker);
+        }
+        let asked: Vec<String> = (w.open_inbox().iter().skip(open))
+            .map(|&i| w.inbox[i].detail.clone())
+            .collect();
+        assert!(!asked.is_empty(), "edits and fetches still ask");
+        assert!(asked.iter().all(|d| demo_command(d).is_none()), "{asked:?}");
+        assert!(
+            w.agents[worker]
+                .trace
+                .iter()
+                .any(|l| l.contains("allowed by your yes from now on: Bash: "))
+        );
+        assert_eq!(demo_command("Edit: x"), None);
+        assert_eq!(demo_command("Bash: make"), Some("make"));
     }
 
     #[test]

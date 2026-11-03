@@ -84,6 +84,7 @@ Gelenekler vim'inkidir: `h` `j` `k` `l` hareket ve katlama, `gg` ve `G` uçlara,
 | `w`  `:waiting` | doğrudan sizi bekleyenlere |
 | `W`  `S` | `:next` bekleyen, her yerden · `:defer` bunu ertele ve sıradakini aç |
 | `a`  `r` | onayla / uygula / izin ver · reddet (sizi bekleyenlerde) |
+| `A`  `:allow` | sizi bekleyenlerdeki bir istekte: proje için komutlarına artık hep evet (başka yerde `A` arşivlerdir) |
 | `enter` | ögeyi aç: bir değişikliğin diff'i, bir sorunun konuşması, bir yanıt (bununla okunur) |
 
 ## Bir konuşma
@@ -176,6 +177,7 @@ Gelenekler vim'inkidir: `h` `j` `k` `l` hareket ve katlama, `gg` ve `G` uçlara,
 | `:peek` | `K` |
 | `:hints` | `F` |
 | `:archives` | `A` |
+| `:allow` | `A` (bir istekte) |
 | `:fold` / `:unfold` | `zM` / `zR` |
 | `:trace` / `:talk` | `t` / `v` |
 | `:mark` | `m` |

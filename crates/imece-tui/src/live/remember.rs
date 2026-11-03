@@ -2365,6 +2365,7 @@ mod tests {
             closed: true,
             pinned: false,
             copies: Vec::new(),
+            allowed: Vec::new(),
             no_git: false,
             archived: Some(Archived {
                 at: 1,

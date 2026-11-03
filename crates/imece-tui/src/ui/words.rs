@@ -91,6 +91,21 @@ pub fn event(lang: Lang, w: &World, e: &Event) -> String {
             if *allowed { t.ev_allowed } else { t.ev_refused },
             &[name(w, *agent), &one_line(what)],
         ),
+        Event::Standing {
+            leader,
+            rules,
+            added,
+        } => fill(
+            if *added {
+                t.ev_standing
+            } else {
+                t.ev_unstanding
+            },
+            &[
+                &w.projects[w.agents[*leader].project].name,
+                &rules.join(", "),
+            ],
+        ),
         Event::Stopped { agent, why } => fill(t.ev_stopped, &[name(w, *agent), why]),
         Event::Interrupted { agent } => fill(t.ev_interrupted, &[name(w, *agent)]),
         Event::Retrying {
@@ -1056,6 +1071,47 @@ mod tests {
             inbox(Lang::Tr, &w, &item),
             format!("{who} sana soruyor: Which?")
         );
+    }
+
+    #[test]
+    fn a_standing_yes_is_worded_in_both_languages_and_said_once_a_rule() {
+        let mut w = crate::live::testing::team(1);
+        let npm = Standing {
+            program: "npm".into(),
+            sub: Some("run".into()),
+        };
+        let make = Standing {
+            program: "make".into(),
+            sub: None,
+        };
+        let added = w.stand(0, &[npm.clone(), make.clone(), npm.clone()]);
+        assert_eq!(added, [npm.clone(), make.clone()], "once each");
+        assert_eq!(w.projects[0].allowed, [make.clone(), npm.clone()], "sorted");
+        let n = w.journal.len();
+        assert!(w.stand(0, std::slice::from_ref(&npm)).is_empty());
+        assert_eq!(w.journal.len(), n, "nothing new, nothing said");
+        let name = w.projects[0].name.clone();
+        let said = &w.journal[n - 1].event;
+        assert_eq!(
+            event(Lang::En, &w, said),
+            format!("{name}: you say yes from now on to npm run …, make")
+        );
+        assert_eq!(
+            event(Lang::Tr, &w, said),
+            format!("{name}: artık hep evet diyorsun: npm run …, make")
+        );
+        assert!(w.unstand(0, &npm));
+        assert!(!w.unstand(0, &npm), "not there any more");
+        let gone = &w.journal.last().unwrap().event;
+        assert_eq!(
+            event(Lang::En, &w, gone),
+            format!("{name}: no standing yes any more to npm run …")
+        );
+        assert_eq!(
+            event(Lang::Tr, &w, gone),
+            format!("{name}: artık hep evet yok: npm run …")
+        );
+        assert_eq!(w.projects[0].allowed, [make]);
     }
 
     #[test]

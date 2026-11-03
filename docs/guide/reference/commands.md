@@ -22,6 +22,7 @@ A line that starts with `:` is a command to imece, not a message to an agent. Yo
 | --- | --- | --- | --- | --- | --- |
 | `:archive [TITLE]` | — | | | | |
 | `:archives` | `A` | | | | |
+| `:allow [PROGRAM [WORD]]` | `A` (on an ask) | | | | the project's yes from now on, when there is one |
 | `:awake` | — | | | | on / off |
 | `:board` | `2` | | | | |
 | `:budget USD` | — | `:b` | | | spent X of Y |
@@ -115,6 +116,10 @@ The code map, as `3`. Live it says there is no shared trunk yet (each agent work
 Asks Claude Code's cheap tier (`haiku`, or your `--tier claude:cheap=…`) for a commit message for what is staged in the project at hand's checkout, and puts it on the command line as `!git commit -m '…'` for you to edit and run with `enter` in your own shell, or drop with `esc`. imece commits nothing. The flash says `asking haiku for a commit message for what is staged in kule`; the journal says each suggestion with its model and cost, and each failure with why.
 
 It costs: each call at most $0.05 (the call's own hard cap), a day (UTC) at most 20 calls and $1.00 over all projects, reserved from the pot before the call and settled after. Refused with `no commit message: …` when nothing is staged, the day is full, the pot has less than the cap, or Claude Code is not on PATH (it is the one vendor whose call takes a spending cap; Codex and Gemini leads need Claude Code for this). The same staged tree asked again costs nothing: the last suggestion comes back. The call reads `git diff --cached --stat`, the patch (at most 24 KiB) and the eight newest commit subjects; it runs with no tools, no MCP server, its own short system prompt, nothing saved. The demo answers from the titles of the changes applied in that project, as `git commit --dry-run`. See [own shell and commit](../scenarios/own-shell-and-commit.md).
+
+### `:allow [PROGRAM [WORD]]`
+
+The project at hand's yes from now on: commands its agents run without asking you (see [approvals](../concepts/approvals-and-questions.md#a-yes-from-now-on)). `:allow` alone says the list (`kule: yes from now on to make, npm run …`, or `kule: no yes from now on; A on an ask, or :allow PROGRAM [WORD]`); `:allow npm run` adds one (the project's open asks it covers go on), and the same again takes it out (`kule: no yes from now on to npm run … any more`). A program and at most one word, not an option first: `:allow rm -rf` is refused. `A` on an ask in WAITING FOR YOU adds what that ask runs. Kept with the project between runs.
 
 ### `:copy [PATH]`
 
