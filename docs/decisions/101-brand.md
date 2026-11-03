@@ -73,9 +73,8 @@ merged under two tables of the person's of the same names in
 `~/Library/Application Support/iTerm2` and a `graphic_NAME.png` there,
 read when it starts (3.5.0 on; 3.7.6 checked in its source); a program
 not in it gets the first letter of its name in a circle. No escape
-sequence sets it, and kitty, Ghostty and WezTerm show no icon per
-program, so it is iTerm2's alone. `install.sh` on macOS, when that folder
-is there (`iterm_icon`; `IMECE_NO_ITERM_ICON=1` skips it): the mark as a
+sequence sets it. `install.sh` on macOS, when that folder is there
+(`iterm_icon`; `IMECE_NO_ICON=1` skips it and the Linux one): the mark as a
 32 × 32 black silhouette iTerm2 tints (`tools/tab_icon.py` →
 `website/static/img/imece-tab.png`, the same bytes as base64 in the
 script) written beside and moved over `graphic_imece.png` (over a link,
@@ -91,8 +90,28 @@ second run changes nothing, an empty table, a `null`, a link to a
 dotfile and to elsewhere for the icon, the opt-out, no iTerm2 folder)
 and on Linux checks the folder is left alone; it also checks the
 script's bytes are the PNG's. It shows from iTerm2's next start, where
-the profile's Icon setting is not *No icon*. Not done: an icon for
-another terminal, a request to iTerm2 to ship imece in its own table.
+the profile's Icon setting is not *No icon*. Then (the person: every terminal people use on Linux, macOS and Windows,
+not iTerm2 alone) the rest, read in their sources and docs. Konsole takes
+a tab icon by name (`OSC 32;NAME`, `Session::setSessionAttribute`
+`SessionIcon`, `QIcon::fromTheme`; `utilities-terminal`, the default
+profile's, is drawn as no icon). imece sends `\e]32;imece\a` when it takes
+the screen and `\e]32;utilities-terminal\a` when it gives it back
+(`screen::ICON_ON`/`ICON_OFF`, `taking`/`giving`, so a `!cmd` gives it
+back too), where `screen::shows_icon`: `IMECE_TAB_ICON=on|off`, never in
+tmux, else Konsole's XTVERSION answer (`Konsole 24.08.3`), else
+`KONSOLE_VERSION`. The person's own profile icon cannot be asked for; it
+gets the default back (a gap). `install.sh` on Linux (`theme_icon`) puts
+`website/static/img/imece-mark.svg` as `imece.svg` in
+`${XDG_DATA_HOME:-~/.local/share}/icons/hicolor/scalable/apps` (hicolor,
+the theme every one falls back to; next to it and moved over it, a link
+replaced, a directory left). Windows Terminal: no sequence; a tab's icon
+is its profile's (`icon` in `settings.json`), so only a profile of
+imece's own could carry it. None per program, and none a program can
+set: Terminal.app, Ghostty, kitty, WezTerm, GNOME Terminal, Ptyxis,
+Tilix, xfce4-terminal, Alacritty, foot. There, and everywhere, the title's
+`⁙` is the mark. Not done: Windows Terminal (a profile of imece's own
+would be a fragment the installer writes from WSL: the person decides), a
+request to iTerm2 to ship imece in its own table.
 
 Growth: none; three cells and an instant in `App`, nothing saved. Read
 cost: the salon tests the rows it already built; the words read the

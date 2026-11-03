@@ -13,17 +13,18 @@
 #   IMECE_VERSION=0.1.0      a version instead of the latest
 #   IMECE_INSTALL_DIR=DIR    where imece goes (default: ~/.local/bin)
 #   IMECE_NO_MODIFY_PATH=1   never touch a startup file
-#   IMECE_NO_ITERM_ICON=1    leave iTerm2's tab icons alone
+#   IMECE_NO_ICON=1          no icon for imece's tab (iTerm2, Konsole)
 #   IMECE_DOWNLOAD_URL=URL   where the release files are (a mirror; the
 #                            tests give a file:// directory)
 #
-# On macOS with iTerm2 it also gives imece's tab its mark as iTerm2 gives
-# other programs theirs (see iterm_icon below).
+# It also gives imece's tab its mark where a terminal shows a program's
+# icon: iTerm2 on macOS (iterm_icon), Konsole on Linux (theme_icon).
 #
 # Uninstall: rm ~/.local/bin/imece (and the "# imece" lines it added; the
-# iTerm2 icon: graphic_imece.png and the "imece" entries in
+# icon: on macOS graphic_imece.png and the "imece" entries in
 # ~/Library/Application Support/iTerm2/graphic_icons.json and
-# graphic_colors.json).
+# graphic_colors.json, on Linux
+# ~/.local/share/icons/hicolor/scalable/apps/imece.svg).
 #
 # Everything runs from `main` at the very end, so a download cut short
 # runs nothing.
@@ -141,8 +142,6 @@ ICON_PNG='iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAA7klEQVR42u1W2w3DIAzMBo
 # imece is not touched, and one that is not a JSON object, or is a link, is
 # left as it is and said.
 iterm_icon() {
-    [ "$(uname -s)" = Darwin ] || return 0
-    [ "${IMECE_NO_ITERM_ICON:-}" = 1 ] && return 0
     support="$HOME/Library/Application Support/iTerm2"
     [ -d "$support" ] || return 0
     if ! has plutil || ! has base64; then
@@ -196,6 +195,45 @@ iterm_table() {
     fi
     chmod 644 "$new"
     mv -f "$new" "$1"
+}
+
+# imece's mark as an icon of the person's icon theme, `imece` in hicolor,
+# the theme every other falls back to: imece names it to Konsole for its
+# tab (OSC 32) while it runs. The same bytes as
+# website/static/img/imece-mark.svg (website/test-install.sh checks).
+theme_icon() {
+    apps="${XDG_DATA_HOME:-$HOME/.local/share}/icons/hicolor/scalable/apps"
+    if [ -d "$apps/imece.svg" ] && [ ! -L "$apps/imece.svg" ]; then
+        say "$apps/imece.svg is a directory; imece's tab icon left out"
+        return 0
+    fi
+    mkdir -p "$apps" 2>/dev/null || { say "could not make $apps; imece's tab icon left out"; return 0; }
+    cat >"$apps/.imece.svg.new" <<'SVG' || { rm -f "$apps/.imece.svg.new"; return 0; }
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="imece">
+  <!-- Five hands round one job: a ring of five dots on a dark ground. -->
+  <rect width="64" height="64" rx="14" fill="#15161b"/>
+  <g fill="#e3a93f">
+    <circle cx="32" cy="14" r="6"/>
+    <circle cx="49.1" cy="26.4" r="6"/>
+    <circle cx="42.6" cy="46.6" r="6"/>
+    <circle cx="21.4" cy="46.6" r="6"/>
+    <circle cx="14.9" cy="26.4" r="6"/>
+  </g>
+  <circle cx="32" cy="33" r="5" fill="#f4f4f6"/>
+</svg>
+SVG
+    chmod 644 "$apps/.imece.svg.new"
+    mv -f "$apps/.imece.svg.new" "$apps/imece.svg"
+    say "icon: $apps/imece.svg (Konsole shows it on imece's tab)"
+}
+
+# The tab's icon where the terminal shows one per program.
+tab_icon() {
+    [ "${IMECE_NO_ICON:-}" = 1 ] && return 0
+    case "$(uname -s)" in
+        Darwin) iterm_icon ;;
+        Linux) theme_icon ;;
+    esac
 }
 
 main() {
@@ -261,7 +299,7 @@ main() {
             ;;
     esac
 
-    iterm_icon
+    tab_icon
 
     found=""
     for agent in claude codex gemini; do

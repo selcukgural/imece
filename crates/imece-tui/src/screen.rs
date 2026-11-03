@@ -67,13 +67,19 @@ static KEYS: AtomicBool = AtomicBool::new(false);
 /// progress is cleared when the terminal is given back.
 static PROGRESS: AtomicBool = AtomicBool::new(false);
 
+/// Whether the terminal takes a tab icon from imece (`shows_icon`): the
+/// icon is put on the tab when the screen is taken and given back with it.
+static ICON: AtomicBool = AtomicBool::new(false);
+
 /// Takes the terminal (raw mode, alternate screen without auto-wrap, a
 /// panic hook that gives it back) and returns the screen to draw on.
 /// `keys`: the terminal speaks the kitty keyboard protocol; `progress`:
-/// it shows a tab's progress. `restore` undoes it.
-pub fn init(keys: bool, progress: bool) -> io::Result<Screen> {
+/// it shows a tab's progress; `icon`: it takes a tab icon (Konsole).
+/// `restore` undoes it.
+pub fn init(keys: bool, progress: bool, icon: bool) -> io::Result<Screen> {
     KEYS.store(keys, Ordering::SeqCst);
     PROGRESS.store(progress, Ordering::SeqCst);
+    ICON.store(icon, Ordering::SeqCst);
     let hook = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
         restore();
@@ -95,7 +101,11 @@ pub fn restore() {
 /// The shell's title saved, then the alternate screen, with auto-wrap off,
 /// pastes bracketed and, where the terminal has them, keys told apart.
 pub fn take_over(out: &mut impl Write) -> io::Result<()> {
-    taking(out, KEYS.load(Ordering::SeqCst))
+    taking(
+        out,
+        KEYS.load(Ordering::SeqCst),
+        ICON.load(Ordering::SeqCst),
+    )
 }
 
 /// Keys as the shell knows them, auto-wrap on again, the main screen,
@@ -105,12 +115,17 @@ pub fn give_back(out: &mut impl Write) -> io::Result<()> {
         out,
         KEYS.load(Ordering::SeqCst),
         PROGRESS.load(Ordering::SeqCst),
+        ICON.load(Ordering::SeqCst),
     )
 }
 
-/// `take_over`, with `keys` saying whether the kitty flags are pushed.
-fn taking(out: &mut impl Write, keys: bool) -> io::Result<()> {
+/// `take_over`, with `keys` saying whether the kitty flags are pushed and
+/// `icon` whether imece's icon goes on the tab.
+fn taking(out: &mut impl Write, keys: bool, icon: bool) -> io::Result<()> {
     out.write_all(PUSH_TITLE)?;
+    if icon {
+        out.write_all(ICON_ON)?;
+    }
     execute!(
         out,
         EnterAlternateScreen,
@@ -130,8 +145,8 @@ fn taking(out: &mut impl Write, keys: bool) -> io::Result<()> {
 /// `give_back`, with `keys` saying whether the kitty flags are popped and
 /// `progress` whether the tab's progress is cleared (never sent to a
 /// terminal not known to show it: one that takes OSC 9 for a notice would
-/// show `4;0` as one).
-fn giving(out: &mut impl Write, keys: bool, progress: bool) -> io::Result<()> {
+/// show `4;0` as one), and `icon` whether the tab's icon goes back.
+fn giving(out: &mut impl Write, keys: bool, progress: bool, icon: bool) -> io::Result<()> {
     // A frame cut short (a panic while drawing) no longer holds what
     // follows; the cursor as the terminal's settings have it, shown.
     out.write_all(SYNC_END)?;
@@ -151,7 +166,40 @@ fn giving(out: &mut impl Write, keys: bool, progress: bool) -> io::Result<()> {
     )?;
     out.write_all(b"\x1b]2;\x07")?;
     out.write_all(POP_TITLE)?;
+    if icon {
+        out.write_all(ICON_OFF)?;
+    }
     out.flush()
+}
+
+/// Konsole's tab icon (`OSC 32`, a name of the icon theme, record 101):
+/// imece's mark (`imece`, the `imece.svg` `install.sh` puts in the user's
+/// hicolor theme), then `utilities-terminal`, the default profile's icon,
+/// which Konsole shows as no icon at all. What a profile of the person's
+/// own had cannot be asked for, so one with an icon of its own gets the
+/// default back.
+const ICON_ON: &[u8] = b"\x1b]32;imece\x07";
+const ICON_OFF: &[u8] = b"\x1b]32;utilities-terminal\x07";
+
+/// Whether the terminal takes a tab icon by name (`OSC 32`): Konsole (and
+/// what embeds it, Yakuake and Dolphin's panel), by its answer to
+/// XTVERSION or, without one, `KONSOLE_VERSION`, which it sets.
+/// `IMECE_TAB_ICON=on|off` says it outright. Never inside tmux, which
+/// drops an OSC it does not know. No other terminal lets a program set a
+/// tab's icon; iTerm2 takes it from its own table (`install.sh`).
+pub fn shows_icon(who: Option<&Who>, var: impl Fn(&str) -> Option<String>) -> bool {
+    match var("IMECE_TAB_ICON").as_deref() {
+        Some("on") => return true,
+        Some("off") => return false,
+        _ => {}
+    }
+    if in_tmux(who, &var) {
+        return false;
+    }
+    match who {
+        Some(w) => w.name == "konsole",
+        None => var("KONSOLE_VERSION").is_some_and(|v| !v.is_empty()),
+    }
 }
 
 /// xterm's window ops: save the title on the stack, take it back.
@@ -589,14 +637,14 @@ mod tests {
     #[test]
     fn a_terminal_with_the_kitty_protocol_tells_keys_apart_only_while_imece_has_it() {
         let mut taken = Vec::new();
-        taking(&mut taken, true).unwrap();
+        taking(&mut taken, true, false).unwrap();
         assert_eq!(
             String::from_utf8(taken).unwrap(),
             "\x1b[22;0t\x1b[?1049h\x1b[?7l\x1b[?2004h\x1b[?1004h\x1b[>1u",
             "pushed on the alternate screen, disambiguate only"
         );
         let mut given = Vec::new();
-        giving(&mut given, true, false).unwrap();
+        giving(&mut given, true, false, false).unwrap();
         assert_eq!(
             String::from_utf8(given).unwrap(),
             "\x1b[?2026l\x1b[0 q\x1b]112\x07\x1b[?25h\x1b[<1u\x1b[?1004l\x1b[?2004l\x1b[?7h\x1b[?1049l\x1b]2;\x07\x1b[23;0t",
@@ -607,15 +655,84 @@ mod tests {
     #[test]
     fn a_terminal_that_shows_progress_has_it_cleared_when_given_back() {
         let mut given = Vec::new();
-        giving(&mut given, false, true).unwrap();
+        giving(&mut given, false, true, false).unwrap();
         let text = String::from_utf8(given).unwrap();
         assert!(
             text.starts_with("\x1b[?2026l\x1b[0 q\x1b]112\x07\x1b[?25h\x1b]9;4;0\x07\x1b[?1004l"),
             "{text:?}"
         );
         let mut given = Vec::new();
-        giving(&mut given, false, false).unwrap();
+        giving(&mut given, false, false, false).unwrap();
         assert!(!String::from_utf8(given).unwrap().contains("]9;"));
+    }
+
+    #[test]
+    fn konsole_s_tab_wears_imece_s_icon_while_imece_has_the_screen_and_gets_its_own_back() {
+        let mut taken = Vec::new();
+        taking(&mut taken, false, true).unwrap();
+        let text = String::from_utf8(taken).unwrap();
+        assert_eq!(
+            text, "\x1b[22;0t\x1b]32;imece\x07\x1b[?1049h\x1b[?7l\x1b[?2004h\x1b[?1004h",
+            "with the title saved"
+        );
+        let mut given = Vec::new();
+        giving(&mut given, false, false, true).unwrap();
+        let text = String::from_utf8(given).unwrap();
+        assert!(
+            text.ends_with("\x1b]2;\x07\x1b[23;0t\x1b]32;utilities-terminal\x07"),
+            "{text:?}"
+        );
+        let mut plain = Vec::new();
+        taking(&mut plain, false, false).unwrap();
+        giving(&mut plain, false, false, false).unwrap();
+        assert!(!String::from_utf8(plain).unwrap().contains("]32;"));
+    }
+
+    #[test]
+    fn only_konsole_is_sent_a_tab_icon_by_its_answer_else_its_variable() {
+        let env = |pairs: &'static [(&'static str, &'static str)]| {
+            move |k: &str| {
+                pairs
+                    .iter()
+                    .find(|(n, _)| *n == k)
+                    .map(|(_, v)| v.to_string())
+            }
+        };
+        let who = |t: &str| Who::parse(t).unwrap();
+        assert!(shows_icon(Some(&who("Konsole 24.08.3")), env(&[])));
+        assert!(
+            !shows_icon(
+                Some(&who("kitty(0.49.2)")),
+                env(&[("KONSOLE_VERSION", "240803")])
+            ),
+            "the answer decides"
+        );
+        assert!(shows_icon(None, env(&[("KONSOLE_VERSION", "240803")])));
+        assert!(!shows_icon(None, env(&[("KONSOLE_VERSION", "")])));
+        assert!(!shows_icon(None, env(&[("TERM_PROGRAM", "iTerm.app")])));
+        assert!(!shows_icon(None, env(&[])));
+        // tmux drops it.
+        assert!(!shows_icon(
+            Some(&who("tmux 3.8")),
+            env(&[("KONSOLE_VERSION", "240803")])
+        ));
+        assert!(!shows_icon(
+            None,
+            env(&[("KONSOLE_VERSION", "240803"), ("TMUX", "/t")])
+        ));
+        // The person says outright.
+        assert!(shows_icon(
+            None,
+            env(&[("IMECE_TAB_ICON", "on"), ("TMUX", "/t")])
+        ));
+        assert!(!shows_icon(
+            Some(&who("Konsole 24.08.3")),
+            env(&[("IMECE_TAB_ICON", "off")])
+        ));
+        assert!(shows_icon(
+            Some(&who("Konsole 24.08.3")),
+            env(&[("IMECE_TAB_ICON", "maybe")])
+        ));
     }
 
     #[test]

@@ -133,8 +133,9 @@ if env -i HOME="$h" PATH="/usr/bin:/bin" SHELL=/bin/bash \
 fi
 [ ! -e "$h/.local/bin/imece" ] || fail "a missing release left an imece"
 
-# 8. iTerm2's tab icon (macOS, iTerm2's folder there): the mark and imece
-# in both tables, what the person wrote kept; elsewhere nothing.
+# 8. The tab's icon. macOS, iTerm2's folder there: the mark and imece in
+# both of iTerm2's tables, what the person wrote kept. Linux: the mark in
+# the icon theme, for Konsole. IMECE_NO_ICON=1: nothing.
 icon="$here/static/img/imece-tab.png"
 it() {
     printf '%s/Library/Application Support/iTerm2' "$1"
@@ -220,15 +221,36 @@ if [ "$(uname -s)" = Darwin ]; then
     h="$work/iterm-no"
     d=$(it "$h")
     mkdir -p "$d"
-    run "$h" SHELL=/bin/zsh IMECE_NO_ITERM_ICON=1 >/dev/null || fail "install with IMECE_NO_ITERM_ICON failed"
-    [ -z "$(ls -A "$d")" ] || fail "IMECE_NO_ITERM_ICON=1 wrote $(ls -A "$d")"
+    run "$h" SHELL=/bin/zsh IMECE_NO_ICON=1 >/dev/null || fail "install with IMECE_NO_ICON failed"
+    [ -z "$(ls -A "$d")" ] || fail "IMECE_NO_ICON=1 wrote $(ls -A "$d")"
     h="$work/no-iterm"
     mkdir -p "$h"
     run "$h" SHELL=/bin/zsh >/dev/null || fail "install without iTerm2 failed"
     [ ! -e "$h/Library" ] || fail "an iTerm2 folder was made where there was none"
+    [ ! -e "$h/.local/share/icons" ] || fail "a theme icon was put on macOS"
 else
     [ -z "$(ls -A "$(it "$h")")" ] || fail "iTerm2's folder was written on $(uname -s)"
     printf '%s\n' "$out" | grep -q iTerm2 && fail "iTerm2 said on $(uname -s): $out"
+    apps="$h/.local/share/icons/hicolor/scalable/apps"
+    cmp -s "$here/static/img/imece-mark.svg" "$apps/imece.svg" || fail "no imece.svg in the icon theme"
+    printf '%s\n' "$out" | grep -qF "icon: $apps/imece.svg (Konsole shows it on imece's tab)" ||
+        fail "the theme icon not said: $out"
+    [ ! -e "$apps/.imece.svg.new" ] || fail "a half-written icon is left"
+    # XDG_DATA_HOME is where it goes when set; a link in its place is
+    # replaced, not written through.
+    h="$work/xdg"
+    mkdir -p "$h/data/icons/hicolor/scalable/apps"
+    printf 'theirs' >"$work/elsewhere.svg"
+    ln -s "$work/elsewhere.svg" "$h/data/icons/hicolor/scalable/apps/imece.svg"
+    run "$h" SHELL=/bin/zsh XDG_DATA_HOME="$h/data" >/dev/null || fail "install with XDG_DATA_HOME failed"
+    cmp -s "$here/static/img/imece-mark.svg" "$h/data/icons/hicolor/scalable/apps/imece.svg" ||
+        fail "no imece.svg under XDG_DATA_HOME"
+    [ "$(cat "$work/elsewhere.svg")" = theirs ] || fail "the icon was written through a link"
+    [ ! -e "$h/.local/share/icons" ] || fail "HOME/.local/share used though XDG_DATA_HOME is set"
+    h="$work/noicon"
+    mkdir -p "$h"
+    run "$h" SHELL=/bin/zsh IMECE_NO_ICON=1 >/dev/null || fail "install with IMECE_NO_ICON failed"
+    [ ! -e "$h/.local/share/icons" ] || fail "IMECE_NO_ICON=1 put a theme icon"
 fi
 # The icon install.sh carries is the one in the repository.
 grep -q "^ICON_PNG='$(base64 <"$icon" | tr -d '\n')'\$" "$installer" ||
