@@ -980,6 +980,54 @@ fn local_url_at(s: &str) -> Option<String> {
     (url.len() <= LOCAL_URL_MAX).then(|| url.to_string())
 }
 
+/// The longest web address the screen makes a link of, in bytes.
+pub const WEB_URL_MAX: usize = 2000;
+
+/// The web address `s` starts with (`https://example.com/a?b=1`), or
+/// nothing. Strict, as it becomes a link the person clicks: the scheme is
+/// `http` or `https` and nothing else, the host starts with a letter, a
+/// digit, every character is one [`url_char`] allows or a bracket
+/// (ASCII, no quotes, spaces, `;`, `\` or control characters), at most
+/// [`WEB_URL_MAX`] bytes; sentence punctuation after it is not part of it,
+/// nor a closing bracket it did not open.
+pub fn web_url_at(s: &str) -> Option<&str> {
+    let rest = s
+        .strip_prefix("http://")
+        .or_else(|| s.strip_prefix("https://"))?;
+    if !rest.starts_with(|c: char| c.is_ascii_alphanumeric()) {
+        return None;
+    }
+    let end = rest
+        .find(|c: char| !url_char(c) && c != '(' && c != ')')
+        .unwrap_or(rest.len());
+    let mut url = &s[..s.len() - rest.len() + end];
+    // Bounded whatever a mutant does to the steps: each round that goes
+    // on takes a byte off.
+    for _ in 0..s.len() {
+        let trimmed = url.trim_end_matches(['.', ',', ':', '!', '?', '*']);
+        let more = |close, open| trimmed.matches(close).count() > trimmed.matches(open).count();
+        let cut = match trimmed.chars().last() {
+            Some(')') => more(')', '('),
+            Some(']') => more(']', '['),
+            _ => false,
+        };
+        url = if cut {
+            &trimmed[..trimmed.len() - 1]
+        } else {
+            trimmed
+        };
+        if !cut {
+            break;
+        }
+    }
+    (url.len() <= WEB_URL_MAX).then_some(url)
+}
+
+/// Whether `s` is one web address whole, as [`web_url_at`] takes it.
+pub fn is_web_url(s: &str) -> bool {
+    web_url_at(s) == Some(s)
+}
+
 /// A character a loopback URL's port and path may have: ASCII letters,
 /// digits and `-._~:/?#[]@!$&*+,=%`; no quotes, brackets, `;`, `\` or
 /// anything that could end the terminal's link sequence.
@@ -3011,6 +3059,50 @@ mod tests {
             url("http://localhost:3000/a b"),
             some("http://localhost:3000/a")
         );
+    }
+
+    #[test]
+    fn a_web_address_is_strict_and_leaves_the_sentence_out() {
+        let at = |s: &str| web_url_at(s).map(str::to_string);
+        for (text, url) in [
+            ("https://a.b/c d", "https://a.b/c"),
+            ("http://a.b/c.", "http://a.b/c"),
+            ("https://a.b/c?x=1&y=2#z,", "https://a.b/c?x=1&y=2#z"),
+            ("https://a.b/c!?:*", "https://a.b/c"),
+            (
+                "https://en.x.org/wiki/A_(b))",
+                "https://en.x.org/wiki/A_(b)",
+            ),
+            ("https://a.b/c)", "https://a.b/c"),
+            ("https://a.b/c).", "https://a.b/c"),
+            ("https://a.b/[1]]", "https://a.b/[1]"),
+            ("https://a.b/c]", "https://a.b/c"),
+            ("https://a.b/c\"x", "https://a.b/c"),
+            ("https://a.b/c;x", "https://a.b/c"),
+            ("https://a.b/c\u{7}x", "https://a.b/c"),
+            ("https://a.b/çx", "https://a.b/"),
+            ("http://9.9.9.9:80/", "http://9.9.9.9:80/"),
+        ] {
+            assert_eq!(at(text).as_deref(), Some(url), "{text}");
+            assert!(is_web_url(url), "{url}");
+        }
+        for text in [
+            "ftp://a.b",
+            "javascript:x",
+            "http://",
+            "https:// a",
+            "http:///a",
+            "http://-a",
+            "x https://a.b",
+        ] {
+            assert_eq!(at(text), None, "{text}");
+        }
+        let long = format!("https://a.b/{}", "x".repeat(WEB_URL_MAX - 12));
+        assert_eq!(long.len(), WEB_URL_MAX);
+        assert_eq!(at(&long), Some(long.clone()));
+        assert_eq!(at(&format!("{long}x")), None);
+        assert!(!is_web_url("https://a.b/c."));
+        assert!(!is_web_url("see https://a.b"));
     }
 
     #[test]

@@ -2197,7 +2197,7 @@ impl Sim {
         m.filled = m.filled.max(FRESH_CONTEXT) + tokens;
         if m.filled > AUTO_COMPACT {
             m.filled = FRESH_CONTEXT;
-            w.agents[id].trace(t, "context compacted by the session");
+            w.agents[id].trace(t, "note context compacted by the session");
         }
         let used = self.mind(id).filled;
         w.agents[id].context = Some(Fill {
@@ -2256,7 +2256,7 @@ impl Sim {
         a.activity = Some(doing);
         if let Some(url) = serves {
             // Built, it runs: its address goes on the row as a link.
-            let text = format!("It builds; the app runs at {url}.");
+            let text = format!("It **builds**; the app runs at {url}.");
             a.wrote(&text);
             a.trace(t, format!("text {text:?}"));
         }
@@ -2463,7 +2463,7 @@ impl Sim {
         let until = t + self.rng.range(3, 8);
         self.mind(id).testing = Some(until);
         let a = &mut w.agents[id];
-        a.trace(t, format!("run {} → exit 0", kit.build));
+        a.trace(t, format!("run: {}: exit 0", kit.build));
         a.trace(t, format!("tool_use run {}", kit.test));
         a.activity = Some(format!("run {}", kit.test));
     }
@@ -2475,7 +2475,7 @@ impl Sim {
         self.mind(id).testing = None;
         let test = kit(w.agents[id].project).test;
         self.ran(id, test, code);
-        w.agents[id].trace(t, format!("run {test} → exit {code}"));
+        w.agents[id].trace(t, format!("run: {test}: exit {code}"));
         if code != 0 {
             let a = &mut w.agents[id];
             a.progress = 85;
@@ -4883,7 +4883,9 @@ diff --git a/b.rs b/b.rs
         );
         let said = w.agents[worker].trace.back().unwrap();
         assert!(
-            said.ends_with(r#"text "It builds; the app runs at http://localhost:5080/swagger.""#),
+            said.ends_with(
+                r#"text "It **builds**; the app runs at http://localhost:5080/swagger.""#
+            ),
             "{said}"
         );
         s.stop(&mut w, worker);

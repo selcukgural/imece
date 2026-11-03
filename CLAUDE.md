@@ -139,7 +139,7 @@ record in the same PR.
 - 26 `posture-change`: the plan from restricted tools to full capability, (a)–(d) and what is done.
 - 27 `ask-the-person`: `send(to: "you")`, questions in WAITING FOR YOU.
 - 28 `confine-dial`: `--confine open|standard|strict` per vendor.
-- 29 `legibility`: dimmed backdrop, plain rows, the coloured trace, a conversation that follows.
+- 29 `legibility`: dimmed backdrop, plain rows, the trace by kind (`focus::TraceKind` glyphs, text as Markdown, vendor notes `note …`), the focus story's agent text as Markdown (`STORY_ROWS`), web addresses as OSC 8 links shown whole (`model::web_url_at`, `ui::linked`, `tail_linked`), a conversation that follows.
 - 30 `approval-routing`: Claude's permission prompts to `approve`, Codex's `on-request` asks, Gemini's `ask_user` shell, routine commands, `⚑` asks in WAITING FOR YOU.
 - 31 `demo-mirrors-live`: the demo shows what live does (Δ, `⚑`, questions, hiring, helpers, sessions); the merge queue left it.
 - 32 `card-screen`: `#323` or `#word` opens a card's screen (who, story, its inbox and journal lines), `n p`, `inbox.card`, the `#N` heading fix.

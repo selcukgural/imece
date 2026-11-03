@@ -25,7 +25,7 @@ pub fn apply(w: &mut World, id: AgentId, e: AgentEvent, before: u64) {
             a.wrote(&text);
             a.trace(t, format!("text {text:?}"));
         }
-        AgentEvent::Note(text) => w.agents[id].trace(t, text),
+        AgentEvent::Note(text) => w.agents[id].trace(t, format!("note {text}")),
         // The account's windows, not the agent's: kept by vendor.
         AgentEvent::Limits(limits) => {
             let vendor = w.agents[id].vendor;
