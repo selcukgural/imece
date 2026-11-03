@@ -682,6 +682,26 @@ struct Extras {
     /// end.
     orphans: Option<Vec<Orphan>>,
     tidy_due: Option<(u64, Option<Tidied>)>,
+    /// The teardown scripts the person said no to this run.
+    teardown_refused: Vec<String>,
+}
+
+/// The demo's worktree teardown script, the same in every checkout.
+const DEMO_TEARDOWN: &str = "#!/bin/sh\n\
+# Tears down a worktree before it goes: its database.\n\
+set -e\n\
+cd \"$IMECE_WORKTREE\"\n\
+npm run db:drop\n";
+
+/// The demo's teardown script as live reads it from `checkout`.
+pub(crate) fn teardown_script(checkout: &Path) -> setup::Script {
+    let bytes = DEMO_TEARDOWN.as_bytes().to_vec();
+    setup::Script {
+        kind: setup::Kind::Teardown,
+        real: checkout.join(setup::TEARDOWN_FILE),
+        sha: crate::sha::hex(&bytes),
+        bytes,
+    }
 }
 
 /// The demo's worktrees no agent owns, of its first project's checkout:
@@ -1279,9 +1299,26 @@ impl Sim {
         if asked.is_empty() {
             return Err(TidyRefusal::Nothing);
         }
+        // Every demo checkout has the teardown script: asked about first.
+        let script = teardown_script(&asked[0].checkout);
+        let key = script.key();
+        let refused = self.extras.teardown_refused.contains(&key);
+        if !refused && !w.setup_approved.contains(&key) {
+            return Err(TidyRefusal::Asks(Box::new(script)));
+        }
         let mut tidied = Tidied::default();
         let mut gone = Vec::new();
         for o in asked {
+            let torn = if refused {
+                TornDown::Refused
+            } else {
+                TornDown::Ran {
+                    ok: true,
+                    end: "exit 0, 0.4 s".into(),
+                    last: Some(format!("dropped database {}", o.name)),
+                }
+            };
+            tidied.torn.push((o.name.clone(), torn));
             if force || o.clean() {
                 tidied.removed.push(o.name.clone());
                 gone.push(o.path.clone());
@@ -1307,6 +1344,16 @@ impl Sim {
     #[cfg(test)]
     pub fn forget_orphans(&mut self) {
         self.extras.orphans = Some(Vec::new());
+    }
+
+    /// The person's answer to the demo's teardown script, kept as live
+    /// keeps it.
+    pub fn decide_teardown(&mut self, w: &mut World, script: &setup::Script, yes: bool) {
+        if yes {
+            w.approve_setup(script.key());
+        } else {
+            self.extras.teardown_refused.push(script.key());
+        }
     }
 
     /// A look or a removal of the demo's that is due answers.
@@ -1611,6 +1658,7 @@ impl Sim {
     fn setup_script(w: &World, p: ProjectId) -> setup::Script {
         let bytes = DEMO_SETUP.as_bytes().to_vec();
         setup::Script {
+            kind: setup::Kind::Setup,
             real: std::path::Path::new("/demo")
                 .join(&w.projects[p].name)
                 .join(setup::FILE),

@@ -93,6 +93,9 @@ pub fn draw(f: &mut Frame, app: &App) {
     if let Some(win) = app.tidy {
         over.push(overlay::tidy(f, app, win));
     }
+    if let Some(ask) = &app.teardown {
+        over.push(overlay::teardown(f, app, ask));
+    }
     let line = line.filter(|&at| !over.iter().any(|r| r.contains(at)));
     let mut filter = None;
     let mut window = true;
@@ -1913,6 +1916,45 @@ mod tests {
             "{s}"
         );
         assert!(!s.contains("removing…"), "{s}");
+    }
+
+    #[test]
+    fn a_teardown_script_asked_about_shows_its_bytes_over_the_tidy_window() {
+        let mut app = app_after(1, 1, 0, Lang::En);
+        app.open_tidy();
+        app.step();
+        let checkout = std::path::PathBuf::from("/src/shop");
+        let script = crate::sim::teardown_script(&checkout);
+        let sha: String = script.sha.chars().take(16).collect();
+        app.teardown = Some(crate::app::TeardownAsk {
+            script: script.clone(),
+            scroll: 0,
+            at: vec![0],
+            force: false,
+        });
+        let s = render(&app, 160, 30);
+        assert!(
+            s.contains(&format!("TEARDOWN SCRIPT · shop · sha256 {sha} ")),
+            "{s}"
+        );
+        assert!(s.contains("before :tidy removes it"), "{s}");
+        assert!(
+            s.contains("file: /src/shop/.imece/worktree-teardown.sh"),
+            "{s}"
+        );
+        assert!(s.contains("1 #!/bin/sh"), "{s}");
+        assert!(s.contains("5 npm run db:drop"), "{s}");
+        assert!(s.contains("yes, then remove"), "{s}");
+        assert!(s.contains("remove nothing"), "{s}");
+        app.teardown.as_mut().unwrap().scroll = 4;
+        let s = render(&app, 160, 30);
+        assert!(!s.contains("1 #!/bin/sh"), "{s}");
+        assert!(s.contains("5 npm run db:drop"), "{s}");
+        app.lang = Lang::Tr;
+        let s = render(&app, 160, 30);
+        assert!(s.contains("SÖKÜM BETİĞİ · shop"), "{s}");
+        assert!(s.contains("dosya: /src/shop/"), "{s}");
+        assert!(s.contains("evet, sonra sil"), "{s}");
     }
 
     #[test]

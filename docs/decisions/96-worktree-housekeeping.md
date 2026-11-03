@@ -120,6 +120,48 @@ Failure: a removal that fails says git's words and leaves the rest of
 its list going; a look that fails on a directory passes over it. The
 demo has two made-up ones of its first project (`demo_orphans`, one
 clean, one with work), answered on the next step, removed as live
-removes them. Not done: the teardown script before a removal (#248),
-`git worktree prune` for ones removed by hand (record 02's message
-says what to run).
+removes them. Not done: `git worktree prune` for ones removed by hand
+(record 02's message says what to run).
+
+## The teardown script before a removal
+
+Issue #248, its second half (the person, 2026-11-03: "your
+recommendation"): `.imece/worktree-teardown.sh` of the worktree's
+checkout runs in it before `:tidy` removes it. Its first half, imece
+removing a worker's own worktree (`:forget` of one with no change),
+is not done: it needs its own decisions (what becomes of the agent, of
+a Δ not reviewed), so a teardown runs only before a `:tidy` removal.
+
+The same terms as setup's (record 92), the same code: `setup::Kind`
+(`Setup`/`Teardown`: the file, the key's first word), `Script.kind`,
+`setup::look_for(checkout, Kind::Teardown)`; the approval key is
+`teardown /bin/sh SHA REALPATH`, kept with the setup keys in
+`World.setup_approved` (meta, the newest 64); what runs is the private
+copy `state/scripts/<sha>.sh` (`copy_of`), through `setup::run_in` in
+the worktree with `IMECE_REPO` = the checkout git names
+(`worktree::held`) and `IMECE_WORKTREE`, its own group, 60 s, killed
+with imece (`Tidy.running`, in `Live`'s `Drop`).
+
+When: `Live::tidy` reads each checkout's script once, on the main
+thread, before anything starts (`teardown_plan`: none, `Run(copy)`,
+`Refused` after a no this run (`Tidy.refused`), `Failed(why)` when it
+can not be read or copied). One not answered refuses the whole removal
+with `Refusal::Asks(script)`; nothing goes, nothing is busy. The
+screen keeps the removal asked (`App.teardown: TeardownAsk { script,
+scroll, at, force }`) and shows the bytes in a window over `:tidy`'s
+(`overlay::teardown`, the setup window's body shared as
+`script_body`): `a` yes (`Live::decide_teardown` → `approve_setup`),
+`r` no for the run, and the removal is asked again with the same rows
+(the next checkout's script, if another is unanswered, asks next);
+`esc`/`q` remove nothing (`teardown_held`). No inbox item: an orphan
+has no agent to hang one on, and the person is at the window anyway.
+
+The removal thread runs the plan in each worktree just before
+`worktree::remove`; how it went (`TornDown::Ran { ok, end, last }`,
+`Failed`, `Refused`) is in `Tidied.torn` and flashed by
+`words::tidied` after what was removed. A teardown that fails is said
+and the removal decides on its own: a clean removal reads the worktree
+again, so one the script left a file in stays (`not removed: … holds
+work`). The demo's checkouts have a teardown (`sim::DEMO_TEARDOWN`,
+`npm run db:drop`), asked at the first removal, its run made up
+(`dropped database NAME`).

@@ -4,10 +4,17 @@
 //! it. An agent's worktree is never removed: ownership is read from the
 //! world when the look starts, again when it answers and again when a
 //! removal is asked, and a start that would make or reuse a worktree
-//! being removed waits until it is gone.
+//! being removed waits until it is gone. Before a removal the teardown
+//! script of the worktree's checkout runs in it (record 96), on the same
+//! terms as the setup script: only bytes the person said yes to, as a
+//! private copy; a no removes without it, a failure is said and the
+//! removal decides on its own.
 
 use std::sync::{Condvar, Mutex};
 
+use imece_agent::run::Running;
+
+use super::setup::{self, Kind, Script};
 use super::*;
 
 /// What a look or a removal sends back.
@@ -53,6 +60,10 @@ pub(super) struct Tidy {
     tx: Sender<Back>,
     rx: Receiver<Back>,
     pub(super) removing: Removing,
+    /// The teardown scripts the person said no to this run, by key.
+    refused: HashSet<String>,
+    /// The teardown runs under way, killed with imece.
+    pub(super) running: Running,
 }
 
 impl Default for Tidy {
@@ -62,7 +73,38 @@ impl Default for Tidy {
             tx,
             rx,
             removing: Removing::default(),
+            refused: HashSet::new(),
+            running: Running::default(),
         }
+    }
+}
+
+/// What a removal does about a checkout's teardown script, decided
+/// before its thread.
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum Plan {
+    /// None there.
+    None,
+    /// Run this private copy first.
+    Run(PathBuf),
+    /// Said no to this run.
+    Refused,
+    /// Could not be read or copied: why.
+    Failed(String),
+}
+
+/// A run's end as the flash says it.
+fn torn(ran: Result<run::Outcome, String>) -> TornDown {
+    match ran {
+        Ok(o) => {
+            let (ok, end) = setup::ended(&o);
+            TornDown::Ran {
+                ok,
+                end,
+                last: setup::last_lines(&o.output).pop(),
+            }
+        }
+        Err(why) => TornDown::Failed(clean(&why)),
     }
 }
 
@@ -159,17 +201,38 @@ impl Live {
         let owned = self.owned(w);
         let (mine, theirs): (Vec<Orphan>, Vec<Orphan>) =
             asked.into_iter().partition(|o| !owned.contains(&o.path));
+        // Each checkout's teardown script, read once now: one not yet
+        // answered is asked about first, and nothing goes meanwhile.
+        let mut plans: HashMap<PathBuf, Plan> = HashMap::new();
+        for o in &mine {
+            if !plans.contains_key(&o.checkout) {
+                let plan = self.teardown_plan(w, &o.checkout)?;
+                plans.insert(o.checkout.clone(), plan);
+            }
+        }
         let mut tidied = Tidied {
-            removed: Vec::new(),
             kept: (theirs.into_iter()).map(|o| (o.name, None)).collect(),
+            ..Tidied::default()
         };
         w.orphans.busy = true;
         let paths: Vec<PathBuf> = mine.iter().map(|o| o.path.clone()).collect();
         let removing = self.tidy.removing.clone();
         removing.hold(&paths);
         let (dir, tx) = (self.worktrees(), self.tidy.tx.clone());
+        let running = self.tidy.running.clone();
         thread::spawn(move || {
             for o in mine {
+                let ran = match &plans[&o.checkout] {
+                    Plan::None => None,
+                    Plan::Run(copy) => {
+                        Some(torn(setup::run_in(copy, &o.checkout, &o.path, &running)))
+                    }
+                    Plan::Refused => Some(TornDown::Refused),
+                    Plan::Failed(why) => Some(TornDown::Failed(why.clone())),
+                };
+                if let Some(ran) = ran {
+                    tidied.torn.push((o.name.clone(), ran));
+                }
                 match worktree::remove(&o.path, force) {
                     Ok(()) => tidied.removed.push(o.name),
                     Err(e) => tidied.kept.push((o.name, Some(e.to_string()))),
@@ -179,6 +242,40 @@ impl Live {
             let _ = tx.send(Back::Tidied(tidied, orphans_under(&dir, &owned)));
         });
         Ok(())
+    }
+
+    /// What a removal does about the teardown script of `checkout`: none
+    /// there; run the private copy of bytes the person said yes to;
+    /// nothing after a no this run; why it can not be read. One not yet
+    /// answered is refused with it, for the person to read.
+    fn teardown_plan(&self, w: &World, checkout: &Path) -> Result<Plan, Refusal> {
+        let script = match setup::look_for(checkout, Kind::Teardown) {
+            Ok(Some(s)) => s,
+            Ok(None) => return Ok(Plan::None),
+            Err(why) => return Ok(Plan::Failed(clean(&why))),
+        };
+        let key = script.key();
+        if self.tidy.refused.contains(&key) {
+            return Ok(Plan::Refused);
+        }
+        if !w.setup_approved.contains(&key) {
+            return Err(Refusal::Asks(Box::new(script)));
+        }
+        Ok(match setup::copy_of(&self.setup_dir(), &script) {
+            Ok(copy) => Plan::Run(copy),
+            Err(e) => Plan::Failed(e.to_string()),
+        })
+    }
+
+    /// The person's answer to a teardown script a removal asked about:
+    /// yes is kept with the setup scripts' (in the store), no for the run.
+    /// The removal is asked again after.
+    pub fn decide_teardown(&mut self, w: &mut World, script: &Script, yes: bool) {
+        if yes {
+            w.approve_setup(script.key());
+        } else {
+            self.tidy.refused.insert(script.key());
+        }
     }
 
     /// What a look or a removal answered, put in the world; a worktree an
@@ -205,12 +302,15 @@ impl Live {
 }
 
 /// Why a removal was not done.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Refusal {
     /// A look or a removal is under way.
     Busy,
     /// Nothing found is asked.
     Nothing,
+    /// The teardown script of a checkout among them waits for the
+    /// person's yes or no: these bytes.
+    Asks(Box<Script>),
 }
 
 #[cfg(test)]
@@ -447,5 +547,149 @@ mod tests {
         wait_for(&mut live, &mut w, |w| w.agents[1].status == Status::Stopped);
         assert!(path.join("args.txt").exists());
         let _ = (std::fs::remove_dir_all(&dir), repo);
+    }
+
+    /// Writes `body` as the checkout's teardown script and says yes to it
+    /// when `yes`.
+    fn teardown(repo: &Path, w: &mut World, body: &str, yes: bool) -> Script {
+        std::fs::create_dir_all(repo.join(".imece")).unwrap();
+        std::fs::write(repo.join(setup::TEARDOWN_FILE), body).unwrap();
+        let s = setup::look_for(repo, Kind::Teardown).unwrap().unwrap();
+        if yes {
+            w.approve_setup(s.key());
+        }
+        s
+    }
+
+    #[test]
+    fn a_teardown_script_not_answered_is_asked_about_and_nothing_goes() {
+        let (dir, repo, mut live, mut w) = state("td-ask", 0);
+        let path = tree(&live, &repo, "claude-3");
+        let s = teardown(&repo, &mut w, "echo bye\n", false);
+        assert!(s.key().starts_with("teardown /bin/sh "), "{}", s.key());
+        live.look_orphans(&mut w);
+        answered(&mut live, &mut w);
+        assert_eq!(
+            live.tidy(&mut w, &[0], false),
+            Err(Refusal::Asks(Box::new(s.clone())))
+        );
+        assert!(!w.orphans.busy);
+        assert!(path.exists());
+        // A no holds for the run: removed without it.
+        live.decide_teardown(&mut w, &s, false);
+        assert!(w.setup_approved.is_empty());
+        live.tidy(&mut w, &[0], false).unwrap();
+        answered(&mut live, &mut w);
+        assert!(!path.exists());
+        let tidied = w.orphans.tidied.clone().unwrap();
+        assert_eq!(tidied.torn, [("claude-3".to_string(), TornDown::Refused)]);
+        assert_eq!(tidied.removed, ["claude-3"]);
+        // A yes is kept with the setup scripts'.
+        live.decide_teardown(&mut w, &s, true);
+        assert_eq!(w.setup_approved, [s.key()]);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_teardown_said_yes_to_runs_in_each_worktree_before_it_goes_and_a_failure_is_said() {
+        let (dir, repo, mut live, mut w) = state("td-run", 0);
+        let a = tree(&live, &repo, "claude-3");
+        let b = tree(&live, &repo, "claude-4");
+        let marks = dir.join("torn.txt");
+        let body = format!(
+            "printf '%s %s\\n' \"$IMECE_REPO\" \"$IMECE_WORKTREE\" >> {}\n\
+             test -e \"$IMECE_WORKTREE/a.txt\" || exit 9\n\
+             echo\necho \"dropped $(basename \"$IMECE_WORKTREE\")\"\n\
+             case \"$IMECE_WORKTREE\" in *claude-4) exit 3;; esac\n",
+            marks.display()
+        );
+        teardown(&repo, &mut w, &body, true);
+        live.look_orphans(&mut w);
+        answered(&mut live, &mut w);
+        live.tidy(&mut w, &[0, 1], false).unwrap();
+        answered(&mut live, &mut w);
+        // It ran in each, while it was still there, with the checkout named.
+        let checkout = repo.canonicalize().unwrap();
+        let said = std::fs::read_to_string(&marks).unwrap();
+        assert_eq!(
+            said,
+            format!(
+                "{} {}\n{} {}\n",
+                checkout.display(),
+                a.display(),
+                checkout.display(),
+                b.display()
+            )
+        );
+        let tidied = w.orphans.tidied.clone().unwrap();
+        // A failed teardown is said; the removal still goes.
+        assert_eq!(tidied.removed, ["claude-3", "claude-4"]);
+        assert!(!a.exists() && !b.exists());
+        let [(n1, t1), (n2, t2)] = tidied.torn.as_slice() else {
+            panic!("{:?}", tidied.torn);
+        };
+        assert_eq!((n1.as_str(), n2.as_str()), ("claude-3", "claude-4"));
+        let TornDown::Ran { ok, end, last } = t1 else {
+            panic!("{t1:?}");
+        };
+        assert!(*ok, "{end}");
+        assert!(end.starts_with("exit 0, "), "{end}");
+        assert_eq!(last.as_deref(), Some("dropped claude-3"));
+        let TornDown::Ran { ok, end, last } = t2 else {
+            panic!("{t2:?}");
+        };
+        assert!(!ok);
+        assert!(end.starts_with("exit 3, "), "{end}");
+        assert_eq!(last.as_deref(), Some("dropped claude-4"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_worktree_a_teardown_left_work_in_stays_and_one_that_can_not_be_read_is_said() {
+        let (dir, repo, mut live, mut w) = state("td-left", 0);
+        let path = tree(&live, &repo, "claude-3");
+        teardown(
+            &repo,
+            &mut w,
+            "echo left > \"$IMECE_WORKTREE/left.txt\"\n",
+            true,
+        );
+        live.look_orphans(&mut w);
+        answered(&mut live, &mut w);
+        live.tidy(&mut w, &[0], false).unwrap();
+        answered(&mut live, &mut w);
+        // The removal decides on its own: work is never thrown away.
+        assert!(path.join("left.txt").exists());
+        let tidied = w.orphans.tidied.clone().unwrap();
+        assert_eq!(tidied.removed, Vec::<String>::new());
+        assert_eq!(tidied.kept[0].0, "claude-3");
+        // A script that is not a plain file: said, and the removal goes.
+        std::fs::remove_file(path.join("left.txt")).unwrap();
+        std::fs::remove_file(repo.join(setup::TEARDOWN_FILE)).unwrap();
+        std::fs::create_dir_all(repo.join(setup::TEARDOWN_FILE)).unwrap();
+        live.tidy(&mut w, &[0], false).unwrap();
+        answered(&mut live, &mut w);
+        assert!(!path.exists());
+        let tidied = w.orphans.tidied.clone().unwrap();
+        let [(name, TornDown::Failed(why))] = tidied.torn.as_slice() else {
+            panic!("{:?}", tidied.torn);
+        };
+        assert_eq!(name, "claude-3");
+        assert_eq!(why, &format!("{}: not a plain file", setup::TEARDOWN_FILE));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_removal_runs_no_teardown_where_the_checkout_has_none() {
+        let (dir, repo, mut live, mut w) = state("td-none", 0);
+        tree(&live, &repo, "claude-3");
+        live.look_orphans(&mut w);
+        answered(&mut live, &mut w);
+        live.tidy(&mut w, &[0], false).unwrap();
+        answered(&mut live, &mut w);
+        let tidied = w.orphans.tidied.clone().unwrap();
+        assert_eq!(tidied.torn, Vec::new());
+        assert_eq!(tidied.removed, ["claude-3"]);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

@@ -600,6 +600,20 @@ pub fn tidied(lang: Lang, done: &Tidied) -> String {
             .collect();
         parts.push(fill(t.tidy_kept, &[&kept.join(", ")]));
     }
+    for (name, how) in &done.torn {
+        parts.push(match how {
+            TornDown::Ran { ok, end, last } => {
+                let said = match last {
+                    Some(l) => format!("{end} · {l}"),
+                    None => end.clone(),
+                };
+                let words = if *ok { t.torn_ran } else { t.torn_bad };
+                fill(words, &[name, &said])
+            }
+            TornDown::Failed(why) => fill(t.torn_failed, &[name, why]),
+            TornDown::Refused => fill(t.torn_refused, &[name]),
+        });
+    }
     parts.join(" · ")
 }
 
@@ -1485,6 +1499,7 @@ mod tests {
         let done = Tidied {
             removed: vec!["claude-3".into(), "codex-4".into()],
             kept: Vec::new(),
+            torn: Vec::new(),
         };
         assert_eq!(tidied(Lang::En, &done), "removed claude-3, codex-4");
         let done = Tidied {
@@ -1493,6 +1508,7 @@ mod tests {
                 ("claude-1".into(), None),
                 ("x\u{1b}[2J".into(), Some("holds work".into())),
             ],
+            torn: Vec::new(),
         };
         // A name from the disk is cleaned.
         assert_eq!(
@@ -1502,10 +1518,39 @@ mod tests {
         let done = Tidied {
             removed: vec!["a".into()],
             kept: vec![("b".into(), None)],
+            torn: Vec::new(),
         };
         assert_eq!(
             tidied(Lang::Tr, &done),
             "silindi: a · silinmedi: b (şimdi bir ajan içinde çalışıyor)"
+        );
+        let ran = |ok, last: Option<&str>| TornDown::Ran {
+            ok,
+            end: "exit 0, 0.4 s".into(),
+            last: last.map(str::to_string),
+        };
+        let done = Tidied {
+            removed: vec!["a".into()],
+            kept: Vec::new(),
+            torn: vec![
+                ("a".into(), ran(true, Some("dropped"))),
+                ("b".into(), ran(true, None)),
+                ("c".into(), ran(false, Some("no db"))),
+                ("d".into(), TornDown::Failed("not a plain file".into())),
+                ("e".into(), TornDown::Refused),
+            ],
+        };
+        assert_eq!(
+            tidied(Lang::En, &done),
+            "removed a · teardown in a: exit 0, 0.4 s · dropped · teardown in b: exit 0, 0.4 s · \
+             teardown failed in c: exit 0, 0.4 s · no db · teardown did not run in d: not a plain \
+             file · teardown not run in e: you said no"
+        );
+        assert_eq!(
+            tidied(Lang::Tr, &done),
+            "silindi: a · a söküldü: exit 0, 0.4 s · dropped · b söküldü: exit 0, 0.4 s · \
+             c sökümü başarısız: exit 0, 0.4 s · no db · d sökümü çalışmadı: not a plain file · \
+             e sökümü çalışmadı: hayır dedin"
         );
     }
 }
