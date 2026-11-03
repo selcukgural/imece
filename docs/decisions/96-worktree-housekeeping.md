@@ -125,12 +125,14 @@ removes them. Not done: `git worktree prune` for ones removed by hand
 
 ## The teardown script before a removal
 
-Issue #248, its second half (the person, 2026-11-03: "your
-recommendation"): `.imece/worktree-teardown.sh` of the worktree's
-checkout runs in it before `:tidy` removes it. Its first half, imece
-removing a worker's own worktree (`:forget` of one with no change),
-is not done: it needs its own decisions (what becomes of the agent, of
-a Δ not reviewed), so a teardown runs only before a `:tidy` removal.
+Issue #248 (the person, 2026-11-03: "your recommendation"):
+`.imece/worktree-teardown.sh` of the worktree's checkout runs in it
+before `:tidy` removes it. Its other half, imece removing a worker's
+own worktree (`:forget` of one with no change, or letting a worker
+go), is not done, by the person's choice the same day: a clean
+worktree costs only disk, `:tidy` takes the ones left behind, and
+letting a worker go gets an issue of its own if it is ever needed. So
+a teardown runs only before a `:tidy` removal.
 
 The same terms as setup's (record 92), the same code: `setup::Kind`
 (`Setup`/`Teardown`: the file, the key's first word), `Script.kind`,
