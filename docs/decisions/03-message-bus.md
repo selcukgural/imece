@@ -13,6 +13,24 @@ a stopped agent gets no waking mail, nobody does once the budget is spent.
 Each message gets a number, and a reply may name the one it answers
 (`re`): see Reply-to numbers (record 58).
 
+**A socket serves its own session (2026-11-03).** The sender is the
+socket, so a socket must take calls only from its agent: each call's
+peer (`mcp::peer_pid`: macOS `LOCAL_PEERPID`, Linux `SO_PEERCRED`) must
+be the process imece started for the session (`Agent::pid`: Claude's and
+Gemini's CLI, Codex's app-server, followed across a Codex restart) or
+one of its descendants (`child::descends`, at most `PARENTS_MAX` 64
+parents up, a process gone or a parent untold is a no). Anything else is
+refused with `this socket takes calls from its own agent's session only`
+and a trace line on the agent (`send: called on this socket from outside
+its session, refused`); nothing of it runs or reaches the journal.
+`Bus.owners` holds each socket's session pid, updated every step
+(`own_sockets`); an agent with no session yet (pid 0) takes no call.
+Probe facts: Claude's and Codex's `mcp-relay` are direct children of
+the vendor process; the live Codex test passes with the check, the live
+Gemini test could not finish on a free-tier key that day (not verified
+live; its unit tests check the pid). The demo has no sockets: nothing to
+show.
+
 **A call is done once (backlog F18 in #59, 2026-11-02).** A tool call
 waits for imece's answer (`call_wait`: 30 s, a run its timeout + 30 s, an
 approval 24 h), and imece answers when its main loop steps. While a

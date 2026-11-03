@@ -62,7 +62,7 @@ Every agent has a `run` tool on the bus: one program and its arguments, no shell
 | | Allowed |
 | --- | --- |
 | `cargo` | every command except the ones that change dependencies or reach outside the project: `add`, `remove`, `rm`, `install`, `uninstall`, `publish`, `login`, `logout`, `owner`, `yank`. A leader also without the ones that change files (`fmt` without `--check`, `fix`, `clean`, `init`, `new`). |
-| `git` | reading commands only: `blame`, `diff`, `grep`, `log`, `ls-files`, `rev-parse`, `show`, `status`. No option before the command (`-c`, `-C`, `--git-dir`), none that starts a pager or writes a file (`-O…`, `--open-files-in-pager…`, `--output…`). |
+| `git` | reading commands only: `blame`, `diff`, `grep`, `log`, `ls-files`, `rev-parse`, `show`, `status`. No option before the command (`-c`, `-C`, `--git-dir`), none that starts a pager or writes a file (`-O…`, `--open-files-in-pager…`, `--output…`), also when short options go together (`-iO…`) or a long name is cut short (`--open=…`). |
 | `--run PROG[,..]` | the programs you name (`--run npm,make`), for workers and helpers only; repeatable. |
 | anything else | refused, with the list of what is allowed and how you add to it. |
 

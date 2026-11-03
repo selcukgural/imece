@@ -62,7 +62,7 @@ Her ajanın bus'ta bir `run` aracı vardır: argümanlarıyla tek bir program, k
 | | İzinli |
 | --- | --- |
 | `cargo` | bağımlılıkları değiştiren ya da projenin dışına uzanan komutlar dışında hepsi: `add`, `remove`, `rm`, `install`, `uninstall`, `publish`, `login`, `logout`, `owner`, `yank` yok. Lider için dosya değiştirenler de yok (`--check`'siz `fmt`, `fix`, `clean`, `init`, `new`). |
-| `git` | yalnız okuma komutları: `blame`, `diff`, `grep`, `log`, `ls-files`, `rev-parse`, `show`, `status`. Komuttan önce seçenek yok (`-c`, `-C`, `--git-dir`), pager başlatan ya da dosya yazan yok (`-O…`, `--open-files-in-pager…`, `--output…`). |
+| `git` | yalnız okuma komutları: `blame`, `diff`, `grep`, `log`, `ls-files`, `rev-parse`, `show`, `status`. Komuttan önce seçenek yok (`-c`, `-C`, `--git-dir`), pager başlatan ya da dosya yazan yok (`-O…`, `--open-files-in-pager…`, `--output…`); kısa seçenekler birleşik yazılsa da (`-iO…`), uzun ad kısaltılsa da (`--open=…`). |
 | `--run PROG[,..]` | adını verdiğiniz programlar (`--run npm,make`), yalnız işçiler ve yardımcılar için; yinelenebilir. |
 | başka her şey | reddedilir; izinli olanların listesi ve nasıl ekleneceğiyle. |
 

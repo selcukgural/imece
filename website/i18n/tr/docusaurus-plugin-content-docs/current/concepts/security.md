@@ -13,7 +13,7 @@ Yerleşik kurallar: varsayılan ret, hiçbir şey sessizce zayıflamaz, her sın
 
 ### Bus'ta kim hangi aracı çağırabilir
 
-- Bus imece'nin kendi MCP sunucusudur; taze `0700` bir dizinde ajan başına bir Unix soketi. **Gönderen sokettir**, ajanın verdiği bir ad asla: hiçbir ajan bir başkası ya da siz gibi konuşamaz.
+- Bus imece'nin kendi MCP sunucusudur; taze `0700` bir dizinde ajan başına bir Unix soketi. **Gönderen sokettir**, ajanın verdiği bir ad asla: hiçbir ajan bir başkası ya da siz gibi konuşamaz. Bir soket yalnız kendi ajanının oturumundaki süreçlerden (satıcının süreci ve onun başlattıkları) çağrı alır; başka yerden gelen bir çağrı reddedilir ve ajanın izine yazılır.
 - Her soket yalnız rolünün araçlarını sunar: `claim` yalnız işçilere, `hire` lidere (işçiler) ve işçilere (yardımcılar), `approve` yalnız bir Claude oturumuna, o da kendisi çağırır. Bir yardımcı kimseyi işe almaz. Bir oturumun `init`'i tam imece'nin sunucusunu ve tam araçlarını bildirmelidir.
 - Bir yanıttaki `re` varsayılan retle denetlenir: var olan, gönderene gönderilmiş, yanıtın gittiği kişinin yazdığı bir mesaj. Size iş verecek türlerde size mesaj reddedilir.
 - Her yazmada sınır: gövde boyutu, okunmamış posta, siz yeniden konuşana dek ajan başına mesajla başlayan tur ve asma, proje başına açık kart ([mesajlar](../concepts/messages-and-board.md)).

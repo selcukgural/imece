@@ -51,7 +51,11 @@ With it, git through imece (the run tool and the routine rule) takes no
 option before its command (`-c`, `-C`, `--git-dir` change what it runs
 and where) and none that starts a pager or writes a file (`-O…`,
 `--open-files-in-pager…`, `--output…`; `-O<orderfile>` of diff and log
-goes with them).
+goes with them). git reads short options together and a long option by
+any start that names it alone, so a group of short options with an `O`
+in it (`-iOvim`, and a value like `-SFOO`: apart, `-S FOO`, it runs) and
+a long name that starts one of the two (`--open=vim`, `--o`) are refused
+too (`tools::git_denied`, 2026-11-03).
 
 Probe facts (Claude Code 2.1.314, haiku, the ignored test
 `live_claude_asks_imece_before_a_command_and_does_what_it_hears`): the
