@@ -67,6 +67,7 @@ The conventions are vim's: `h` `j` `k` `l` move and fold, `gg` and `G` go to the
 | `v`  `:talk` | its conversation with you |
 | `esc` | go back |
 | `u`  `:undo` | keep a `:close` or `:forget` from happening while the bottom line counts its ten seconds down |
+| `U`  `:now` | do the `:close`, `:forget`, `:archive` or `:clear` counting down at once, without waiting its ten seconds |
 | `A`  `:archives` | the archives as a tree (checkout → archive → its agents); in it `j` `k` `gg` `G` move, `h` `l` `za` fold, `enter` opens an archive read-only (`esc` or `q` back), `/` filters, `r` brings the one at hand back (`:restore`), `esc` closes; `:archive` puts the project at hand away |
 | `tab` `⇧tab` `[` `]` | next / previous panel |
 | `,`  `.`  `<`  `>` | wider / narrower side panel |
@@ -87,8 +88,8 @@ The conventions are vim's: `h` `j` `k` `l` move and fold, `gg` and `G` go to the
 | --- | --- |
 | `w`  `:waiting` | straight to waiting for you |
 | `W`  `S` | `:next` waiting, from anywhere · `:defer` this one and open the next |
-| `a`  `r` | approve / apply / allow · reject / refuse (in waiting for you) |
-| `A`  `:allow` | on an ask in waiting for you: yes from now on to its commands for the project (elsewhere `A` is the archives) |
+| `a`  `r` | approve / apply / allow once · reject / refuse (in waiting for you, and on a focus: below) |
+| `A`  `:allow` | on an ask in waiting for you or on its agent's focus: yes from now on to its commands for the project (elsewhere `A` is the archives) |
 | `enter` | open the item: a change's diff, a question's conversation, a reply (read by it) |
 
 ## A conversation
@@ -117,6 +118,9 @@ The conventions are vim's: `h` `j` `k` `l` move and fold, `gg` and `G` go to the
 | `l` `h`  `→` `←` | in a focus: the entry at hand whole · cut to its first eight lines again (`… +N · l shows all` says how many more) |
 | `za`  `zM`  `zR` | in a focus: the entry toggled · all cut · all whole |
 | `enter` `esc` | the raw stream · back |
+| `a`  `A`  `r` | in a focus or the raw stream, when its agent waits for you: on its ask (the one its status quotes), allow once · yes from now on · refuse; on its change, apply · reject. Never what is selected in waiting for you. The footer shows these keys first while there is something to decide; with nothing, `a` and `r` say so and `A` is the archives |
+
+The focus's `folder` line says where the agent works: the checkout for a leader, its worktree for a worker, a helper or a solo (`· worktree of ~/src/kule`), the folder itself without git. The salon's line of an open project ends with its folder too.
 
 ## A change
 
@@ -194,6 +198,7 @@ The conventions are vim's: `h` `j` `k` `l` move and fold, `gg` and `G` go to the
 | `:peek` | `K` |
 | `:hints` | `F` |
 | `:archives` | `A` |
+| `:now` | `U` |
 | `:recall` | `H` |
 | `:allow` | `A` (on an ask) |
 | `:fold` / `:unfold` | `zM` / `zR` |

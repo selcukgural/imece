@@ -50,6 +50,13 @@ open and the session kept, the safe side.
 **The demo** waits the same way: the grace lives in `App`, in front of
 both engines.
 
+**`U` and `:now` (the person, 2026-11-04: "I should not have to wait
+the whole ten seconds").** `U` (free until now) or `:now` makes what
+counts down act at once (`App::grace_now` = `end_grace` + `persist`,
+as when its time is up); with nothing counting down it says so
+(`nothing_now`). Every count-down line ends `· U now`; the help's
+`esc  u  U` row says it. `u` is still the way back.
+
 **Not done.** No grace for other actions that drop something (`r` on a
 change, `:copy` off); no setting for the length.
 

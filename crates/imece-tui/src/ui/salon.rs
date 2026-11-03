@@ -520,6 +520,11 @@ pub(super) fn project_line(app: &App, p: ProjectId, rungs: &[Rung]) -> Line<'sta
     if let Some(loud) = project_member(app, p) {
         spans.extend(member(app, loud, rungs));
     }
+    // Where it is on the disk, last, while open: the row's other parts
+    // come first, and a folded one ends with its loudest member.
+    if let Some(folder) = app.project_folder(p).filter(|_| open) {
+        spans.push(Span::styled(format!("  {folder}"), dim()));
+    }
     let line = Line::from(spans);
     if app.pane == Pane::Salon && app.selected == Sel::Project(p) {
         line.style(Style::new().add_modifier(Modifier::REVERSED))

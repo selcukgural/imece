@@ -132,6 +132,11 @@ pub(crate) fn checkout(name: &str) -> std::path::PathBuf {
 }
 
 impl Live {
+    /// Whether project `p`'s checkout is under git, as a start found it.
+    pub(crate) fn set_git(&mut self, p: ProjectId, git: bool) {
+        self.places[p].git = git;
+    }
+
     /// `agents` places to begin with, all on their vendor's default model,
     /// in one project whose checkout is `repo` and whose worktrees go
     /// under `root`. `vendors` must hold every vendor an agent has; the

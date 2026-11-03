@@ -34,7 +34,7 @@ const SAID: usize = 24;
 
 /// The plain keys imece does something with somewhere outside writing:
 /// the salon, a conversation, a change, the windows and the pickers.
-const USED: &str = "abcfghijklmnpqrstuvwxyzACFGHKLMORSTWY123456789!#%&'+,-./:<=>?@[] ";
+const USED: &str = "abcfghijklmnpqrstuvwxyzACFGHKLMORSTUWY123456789!#%&'+,-./:<=>?@[] ";
 /// The keys with ctrl imece does something with outside writing.
 const USED_CTRL: &str = "bdforu";
 

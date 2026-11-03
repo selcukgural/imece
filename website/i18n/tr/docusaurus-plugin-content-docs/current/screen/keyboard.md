@@ -67,6 +67,7 @@ Gelenekler vim'inkidir: `h` `j` `k` `l` hareket ve katlama, `gg` ve `G` uçlara,
 | `v`  `:talk` | onun sizinle konuşması |
 | `esc` | geri |
 | `u`  `:undo` | alt satır on saniyesini geri sayarken bir `:close` ya da `:forget`'in olmasını önle |
+| `U`  `:now` | geri sayan `:close`, `:forget`, `:archive` ya da `:clear`'ı on saniyeyi beklemeden hemen yap |
 | `A`  `:archives` | arşivler bir ağaç olarak (çalışma kopyası → arşiv → ajanları); içinde `j` `k` `gg` `G` gezer, `h` `l` `za` katlar, `enter` bir arşivi salt okunur açar (`esc` ya da `q` geri), `/` süzer, `r` eldekini geri getirir (`:restore`), `esc` kapatır; `:archive` eldeki projeyi kaldırır |
 | `tab` `⇧tab` `[` `]` | sonraki / önceki panel |
 | `,`  `.`  `<`  `>` | yan paneli genişlet / daralt |
@@ -87,8 +88,8 @@ Gelenekler vim'inkidir: `h` `j` `k` `l` hareket ve katlama, `gg` ve `G` uçlara,
 | --- | --- |
 | `w`  `:waiting` | doğrudan sizi bekleyenlere |
 | `W`  `S` | `:next` bekleyen, her yerden · `:defer` bunu ertele ve sıradakini aç |
-| `a`  `r` | onayla / uygula / izin ver · reddet (sizi bekleyenlerde) |
-| `A`  `:allow` | sizi bekleyenlerdeki bir istekte: proje için komutlarına artık hep evet (başka yerde `A` arşivlerdir) |
+| `a`  `r` | onayla / uygula / bir kez izin ver · reddet (sizi bekleyenlerde, bir de odakta: aşağıda) |
+| `A`  `:allow` | sizi bekleyenlerdeki bir istekte ya da ajanının odağında: proje için komutlarına artık hep evet (başka yerde `A` arşivlerdir) |
 | `enter` | ögeyi aç: bir değişikliğin diff'i, bir sorunun konuşması, bir yanıt (bununla okunur) |
 
 ## Bir konuşma
@@ -117,6 +118,9 @@ Gelenekler vim'inkidir: `h` `j` `k` `l` hareket ve katlama, `gg` ve `G` uçlara,
 | `l` `h`  `→` `←` | odakta: eldeki kaydın tamamı · yine ilk sekiz satırına kes (`… +N · l hepsini gösterir` kaç satır daha olduğunu söyler) |
 | `za`  `zM`  `zR` | odakta: kaydı değiştir · hepsini kes · hepsinin tamamı |
 | `enter` `esc` | ham akış · geri |
+| `a`  `A`  `r` | odakta ya da ham akışta, ajanı sizi beklerken: isteğinde (durumunun alıntıladığı), bir kez izin ver · bundan sonra hep evet · reddet; değişikliğinde, uygula · reddet. Asla sizi bekleyenlerde seçili olanı değil. Karar verilecek bir şey varken alt satır bu tuşları önce gösterir; yoksa `a` ve `r` bunu söyler, `A` arşivlerdir |
+
+Odağın `klasör` satırı ajanın nerede çalıştığını söyler: lider için çalışma kopyası, işçi, yardımcı ya da solo için worktree'si (`· ~/src/kule için worktree`), git yoksa klasörün kendisi. Salonda açık bir projenin satırı da klasörüyle biter.
 
 ## Bir değişiklik
 
@@ -194,6 +198,7 @@ Gelenekler vim'inkidir: `h` `j` `k` `l` hareket ve katlama, `gg` ve `G` uçlara,
 | `:peek` | `K` |
 | `:hints` | `F` |
 | `:archives` | `A` |
+| `:now` | `U` |
 | `:recall` | `H` |
 | `:allow` | `A` (bir istekte) |
 | `:fold` / `:unfold` | `zM` / `zR` |

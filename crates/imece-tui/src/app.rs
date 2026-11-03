@@ -2764,6 +2764,11 @@ impl App {
         if self.thread.is_some() && self.thread_key(k) {
             return;
         }
+        if let Some(id) = self.zoomed_agent()
+            && self.zoom_answer_key(id, k)
+        {
+            return;
+        }
         if let Some(id) = self.focus_zoom()
             && self.focus_key(id, k)
         {
@@ -2885,6 +2890,7 @@ impl App {
             }
             KeyCode::Char('m') => self.toggle_mark(),
             KeyCode::Char('u') => self.undo(),
+            KeyCode::Char('U') => self.grace_now(),
             KeyCode::Char('\'') => self.next_mark(),
             KeyCode::Char('O') => self.quote_output(),
             KeyCode::Up | KeyCode::Char('k') => self.move_selection(false),
@@ -4859,6 +4865,7 @@ impl App {
             "restore" => self.restore_project(arg),
             "archives" => self.open_archives(),
             "undo" => self.undo(),
+            "now" => self.grace_now(),
             "rename" => self.rename_project(arg),
             "forget" => self.forget_agent(arg),
             "fork" => self.fork_agent(arg),
@@ -6492,6 +6499,16 @@ impl App {
         self.flash(said);
     }
 
+    /// `U` or `:now`: what counts down acts at once, as when its time is
+    /// up; the person need not wait it out.
+    fn grace_now(&mut self) {
+        if self.grace.is_none() {
+            return self.flash(self.lang.text().nothing_now);
+        }
+        self.end_grace();
+        self.persist();
+    }
+
     /// What waits out its grace at `now`, and the seconds it has left,
     /// rounded up.
     pub fn grace_left(&self, now: Instant) -> Option<(Undoable, u64)> {
@@ -6770,6 +6787,60 @@ impl App {
                 }
             }
             Engine::Sim(_) | Engine::View(_) => self.world.projects[p].name.clone(),
+        }
+    }
+
+    /// `path` as the screen shows it: `~` for the home, cleaned.
+    fn shown_path(&self, path: &Path) -> String {
+        let said = match self.home.as_deref().and_then(|h| path.strip_prefix(h).ok()) {
+            Some(rest) if rest.as_os_str().is_empty() => "~".to_string(),
+            Some(rest) => format!("~/{}", rest.display()),
+            None => path.display().to_string(),
+        };
+        clean(&said)
+    }
+
+    /// The folder project `p` is, as the salon's project line ends: live,
+    /// its checkout (the folder itself without git); the demo's, the one
+    /// `:open` or `:solo` was given, else `~/src/NAME`. None in an
+    /// archive's view.
+    pub fn project_folder(&self, p: ProjectId) -> Option<String> {
+        match &self.engine {
+            Engine::Live(live) => Some(self.shown_path(live.repo_of(p))),
+            Engine::Sim(sim) => Some(match sim.folder_of(p) {
+                Some(path) => clean(path),
+                None => format!("~/src/{}", clean(&self.world.projects[p].name)),
+            }),
+            Engine::View(_) => None,
+        }
+    }
+
+    /// The folder agent `id` works in, as its focus says it, and the
+    /// checkout when that is a worktree of it: a leader works in the
+    /// checkout, a worker, its helpers and a solo in their worktree, and
+    /// all of them in the folder itself without git.
+    pub fn folder_of(&self, id: AgentId) -> Option<(String, Option<String>)> {
+        match &self.engine {
+            Engine::Live(live) => {
+                let (folder, of) = live.folder_of(&self.world, id);
+                Some((self.shown_path(&folder), of.map(|c| self.shown_path(c))))
+            }
+            Engine::Sim(_) => {
+                let a = &self.world.agents[id];
+                let checkout = self.project_folder(a.project)?;
+                if a.role == Role::Leader || self.world.projects[a.project].no_git {
+                    return Some((checkout, None));
+                }
+                let owner = a.parent.map_or(a, |p| &self.world.agents[p]);
+                let tree = match owner.role {
+                    Role::Solo => format!("solo-{}", owner.project),
+                    _ => clean(&owner.name),
+                };
+                let name = clean(&self.world.projects[a.project].name);
+                let folder = format!("~/.local/state/imece/worktrees/{name}-5e1f0a2c/{tree}");
+                Some((folder, Some(checkout)))
+            }
+            Engine::View(_) => None,
         }
     }
 
@@ -7107,6 +7178,59 @@ impl App {
         }
     }
 
+    /// What agent `id` waits for the person to decide, as its focus
+    /// shows it: its oldest open ask (the one its status quotes), else
+    /// its change; an index into `World.inbox`.
+    pub fn focus_ask(&self, id: AgentId) -> Option<usize> {
+        let w = &self.world;
+        let first = |kind| {
+            w.inbox
+                .iter()
+                .position(|i| i.open && i.kind == kind && i.agent == id)
+        };
+        first(InboxKind::Approval).or_else(|| first(InboxKind::Change))
+    }
+
+    /// The agent whose focus or raw stream is open with no conversation
+    /// over it: the one `a`, `r` and `A` decide for there.
+    pub fn zoomed_agent(&self) -> Option<AgentId> {
+        match self.zoom {
+            Zoom::Focus(id) | Zoom::Trace(id) if self.thread.is_none() => Some(id),
+            _ => None,
+        }
+    }
+
+    /// `a`, `r` or `A` on agent `id`'s focus or raw stream: they decide
+    /// what that agent waits for (`focus_ask`), never what happens to be
+    /// selected in waiting for you, which the person does not see from
+    /// here; `A` with no ask opens the archives, as anywhere. `false`
+    /// leaves another key to the rest of the screen.
+    fn zoom_answer_key(&mut self, id: AgentId, k: KeyEvent) -> bool {
+        let approve = match k.code {
+            KeyCode::Char('a') => true,
+            KeyCode::Char('r') => false,
+            KeyCode::Char('A') => {
+                match self.focus_ask(id) {
+                    Some(item) if self.world.inbox[item].kind == InboxKind::Approval => {
+                        self.answer_always_to(item)
+                    }
+                    // Not the selection in waiting for you either.
+                    _ => self.open_archives(),
+                }
+                return true;
+            }
+            _ => return false,
+        };
+        match self.focus_ask(id) {
+            Some(item) => self.answer_item(item, approve),
+            None => {
+                let t = self.lang.text();
+                self.flash(fill(t.focus_no_ask, &[&self.world.agents[id].name]));
+            }
+        }
+        true
+    }
+
     /// The open approval selected in waiting for you, if that is what
     /// is selected.
     fn ask_at_hand(&self) -> Option<usize> {
@@ -7118,12 +7242,17 @@ impl App {
     /// (`Live::always`); the ask and the project's others they cover go
     /// on. What cannot have one is said, and nothing is decided.
     fn answer_always(&mut self) {
+        if let Some(item) = self.ask_at_hand() {
+            self.answer_always_to(item);
+        }
+    }
+
+    /// `A` on approval `item` (an index into `World.inbox`), in waiting
+    /// for you or on its agent's focus.
+    fn answer_always_to(&mut self, item: usize) {
         if self.viewing_archive() {
             return self.read_only();
         }
-        let Some(item) = self.ask_at_hand() else {
-            return;
-        };
         let t = self.lang.text();
         let p = self.world.agents[self.world.inbox[item].agent].project;
         let got = match &mut self.engine {
@@ -7192,13 +7321,19 @@ impl App {
     }
 
     fn answer(&mut self, approve: bool) {
+        if let Some(&item) = self.inbox_rows().get(self.inbox_sel) {
+            self.answer_item(item, approve);
+        }
+    }
+
+    /// `a` or `r` on inbox item `item` (an index into `World.inbox`),
+    /// wherever the person decided it: in waiting for you or on its
+    /// agent's focus.
+    fn answer_item(&mut self, item: usize, approve: bool) {
         if self.viewing_archive() {
             return self.read_only();
         }
         let open = self.inbox_rows();
-        let Some(&item) = open.get(self.inbox_sel) else {
-            return;
-        };
         let t = self.lang.text();
         if self.world.inbox[item].kind == InboxKind::Change {
             return self.decide_change(self.world.inbox[item].agent, approve);
@@ -8170,6 +8305,252 @@ pub(crate) mod tests {
                 assert_eq!(app.input, format!("@{name} "));
             }
         }
+    }
+
+    #[test]
+    fn a_r_and_capital_a_on_a_focus_decide_what_its_agent_waits_for() {
+        let mut app = App::new(1, 2, 0, 1, Lang::En);
+        let t = Lang::En.text();
+        let flash = |app: &App| app.flash.as_ref().map(|(m, _)| m.clone());
+        let p = app.current_project();
+        let (one, two) = (
+            app.world.projects[p].leader + 1,
+            app.world.projects[p].leader + 2,
+        );
+        let name = app.world.agents[one].name.clone();
+        // An ask decided before: the open ones are not the first items.
+        app.world.asks_you(one, "Bash: npm install old");
+        app.world.decided(0, false);
+        app.world.asks_you(two, "Bash: make other");
+        app.world.asks_you(one, "Bash: make first");
+        app.world.asks_you(one, "Bash: make second");
+        app.world.asks_you(one, "Bash: npm install zod@3");
+        // Waiting for you has the other agent's ask selected: the focus
+        // never decides that one, which it does not show.
+        app.pane = Pane::Inbox;
+        app.inbox_sel = 0;
+        app.zoom = Zoom::Focus(one);
+        assert_eq!(app.zoomed_agent(), Some(one));
+        assert_eq!(app.focus_ask(one), Some(2), "its oldest open ask");
+        assert_eq!(app.focus_ask(two), Some(1));
+        let open = |app: &App| -> Vec<String> {
+            (app.world.open_inbox().iter())
+                .map(|&i| app.world.inbox[i].detail.clone())
+                .collect()
+        };
+        app.on_key(key(KeyCode::Char('a')));
+        assert_eq!(flash(&app), Some(fill(t.allowed, &[&name])));
+        assert_eq!(
+            open(&app),
+            [
+                "Bash: make other",
+                "Bash: make second",
+                "Bash: npm install zod@3"
+            ]
+        );
+        assert!(app.world.journal.iter().any(|e| matches!(
+            &e.event,
+            Event::Decided { agent, allowed: true, what } if *agent == one && what == "Bash: make first"
+        )));
+        // On its raw stream too; `r` refuses.
+        app.zoom = Zoom::Trace(one);
+        app.on_key(key(KeyCode::Char('r')));
+        assert_eq!(flash(&app), Some(fill(t.refused, &[&name])));
+        assert!(app.world.journal.iter().any(|e| matches!(
+            &e.event,
+            Event::Decided { agent, allowed: false, what } if *agent == one && what == "Bash: make second"
+        )));
+        assert_eq!(open(&app), ["Bash: make other", "Bash: npm install zod@3"]);
+        // `A`: yes from now on to it, not the archives.
+        app.zoom = Zoom::Focus(one);
+        app.on_key(key(KeyCode::Char('A')));
+        assert!(app.archives.is_none());
+        assert_eq!(
+            flash(&app),
+            Some(format!(
+                "{}: yes from now on to npm install …",
+                app.world.projects[p].name
+            ))
+        );
+        assert_eq!(open(&app), ["Bash: make other"]);
+        assert_eq!(app.focus_ask(one), None);
+        // Nothing of its own waits: said, and the other agent's ask stays.
+        app.flash = None;
+        app.on_key(key(KeyCode::Char('a')));
+        assert_eq!(flash(&app), Some(fill(t.focus_no_ask, &[&name])));
+        app.flash = None;
+        app.on_key(key(KeyCode::Char('r')));
+        assert_eq!(flash(&app), Some(fill(t.focus_no_ask, &[&name])));
+        assert_eq!(open(&app), ["Bash: make other"]);
+        // `A` with no ask is the archives, as anywhere (none here).
+        app.on_key(key(KeyCode::Char('A')));
+        assert_eq!(flash(&app), Some(t.no_archives.to_string()));
+        // A conversation over the focus takes the keys: nothing decided.
+        app.zoom = Zoom::Focus(two);
+        app.open_thread(0);
+        assert!(app.thread.is_some());
+        assert_eq!(app.zoomed_agent(), None);
+        app.thread = None;
+        assert_eq!(app.zoomed_agent(), Some(two));
+        app.zoom = Zoom::Diff(two);
+        assert_eq!(app.zoomed_agent(), None);
+        app.zoom = Zoom::None;
+        assert_eq!(app.zoomed_agent(), None);
+        // An edit can have no yes from now on: said, nothing decided.
+        app.world.asks_you(one, "Edit: package.json");
+        app.zoom = Zoom::Focus(one);
+        app.on_key(key(KeyCode::Char('A')));
+        assert!(app.archives.is_none());
+        assert_eq!(flash(&app), Some(t.always_not_command.to_string()));
+        assert_eq!(open(&app).len(), 2);
+    }
+
+    #[test]
+    fn a_and_r_on_a_focus_decide_its_workers_change_after_its_asks() {
+        use crate::live::testing::{hold_change, idle_live, team};
+        let t = Lang::En.text();
+        let flash = |app: &App| app.flash.as_ref().map(|(m, _)| m.clone());
+        let mut w = team(1);
+        w.change_ready(Change {
+            agent: 1,
+            title: "did it".into(),
+            files: Vec::new(),
+            patch: String::new(),
+            runs: Vec::new(),
+        });
+        w.asks_you(1, "Bash: make");
+        let mut live = idle_live(2);
+        hold_change(&mut live, 1);
+        let mut app = App::with(w, Engine::Live(Box::new(live)), Lang::En);
+        app.zoom = Zoom::Focus(1);
+        let change = app
+            .world
+            .inbox
+            .iter()
+            .position(|i| i.kind == InboxKind::Change);
+        let ask = app
+            .world
+            .inbox
+            .iter()
+            .position(|i| i.kind == InboxKind::Approval);
+        assert_eq!(app.focus_ask(1), ask, "the ask first, though it came later");
+        // `A` on a change is not a yes from now on: the archives.
+        app.world.inbox[ask.unwrap()].open = false;
+        assert_eq!(app.focus_ask(1), change);
+        app.on_key(key(KeyCode::Char('A')));
+        assert_eq!(flash(&app), Some(t.no_archives.to_string()));
+        assert!(app.world.change_of(1).is_some());
+        app.on_key(key(KeyCode::Char('a')));
+        assert_eq!(flash(&app), Some(fill(t.applying, &["claude-1"])));
+        assert_eq!(app.zoom, Zoom::Focus(1), "the focus stays open");
+        let mut live = idle_live(2);
+        hold_change(&mut live, 1);
+        let mut w = team(1);
+        w.change_ready(Change {
+            agent: 1,
+            title: "did it".into(),
+            files: Vec::new(),
+            patch: String::new(),
+            runs: Vec::new(),
+        });
+        let mut app = App::with(w, Engine::Live(Box::new(live)), Lang::En);
+        app.zoom = Zoom::Trace(1);
+        app.on_key(key(KeyCode::Char('r')));
+        assert_eq!(flash(&app), Some(fill(t.rejected_change, &["claude-1"])));
+        assert!(app.world.change_of(1).is_none());
+    }
+
+    #[test]
+    fn the_folder_an_agent_works_in_is_its_checkout_or_its_worktree_with_home_as_tilde() {
+        use crate::live::testing::{idle_live_in, team};
+        let mut w = team(1);
+        w.agents.push(Agent::new(
+            2,
+            0,
+            "claude-1.1".into(),
+            Vendor::Claude,
+            Role::Helper,
+            Status::Working,
+            0,
+        ));
+        w.agents[2].parent = Some(1);
+        let live = idle_live_in(Path::new("/home/me/src/repo"), 3);
+        let mut app = App::with(w, Engine::Live(Box::new(live)), Lang::En);
+        app.home = Some(PathBuf::from("/home/me"));
+        assert_eq!(app.project_folder(0).as_deref(), Some("~/src/repo"));
+        assert_eq!(
+            app.folder_of(0),
+            Some(("~/src/repo".into(), None)),
+            "the lead"
+        );
+        let tree = Some(("/nonexistent/claude-1".into(), Some("~/src/repo".into())));
+        assert_eq!(app.folder_of(1), tree);
+        assert_eq!(app.folder_of(2), tree, "a helper works in its worker's");
+        // Not under the home: as it is; the home itself is `~`.
+        app.home = Some(PathBuf::from("/home/other"));
+        assert_eq!(app.project_folder(0).as_deref(), Some("/home/me/src/repo"));
+        app.home = Some(PathBuf::from("/home/me/src/repo"));
+        assert_eq!(app.project_folder(0).as_deref(), Some("~"));
+        app.home = None;
+        assert_eq!(app.project_folder(0).as_deref(), Some("/home/me/src/repo"));
+        // Without git, everyone works in the folder itself.
+        if let Engine::Live(l) = &mut app.engine {
+            l.set_git(0, false);
+        }
+        assert_eq!(app.folder_of(1), Some(("/home/me/src/repo".into(), None)));
+        // A control character in a path is never drawn.
+        let live = idle_live_in(Path::new("/x/\x1b[31mred"), 1);
+        let app = App::with(team(0), Engine::Live(Box::new(live)), Lang::En);
+        assert!(!app.project_folder(0).unwrap().contains('\x1b'));
+    }
+
+    #[test]
+    fn the_demo_says_the_folders_as_live_does() {
+        let mut app = App::new(1, 2, 0, 1, Lang::En);
+        let lead = app.world.projects[0].leader;
+        let name = app.world.projects[0].name.clone();
+        let checkout = format!("~/src/{name}");
+        assert_eq!(app.project_folder(0), Some(checkout.clone()));
+        assert_eq!(app.folder_of(lead), Some((checkout.clone(), None)));
+        let worker = lead + 1;
+        let worker_name = app.world.agents[worker].name.clone();
+        assert_eq!(
+            app.folder_of(worker),
+            Some((
+                format!("~/.local/state/imece/worktrees/{name}-5e1f0a2c/{worker_name}"),
+                Some(checkout.clone())
+            ))
+        );
+        // A helper works in its worker's tree.
+        app.world.agents[worker + 1].parent = Some(worker);
+        assert_eq!(app.folder_of(worker + 1), app.folder_of(worker));
+        // A project opened at a path is there.
+        app.home = None;
+        app.command("open ~/work/shop");
+        let p = app.world.project_by_name("shop").unwrap();
+        assert_eq!(app.project_folder(p).as_deref(), Some("~/work/shop"));
+        // A solo's own tree; without git, the folder itself.
+        app.command("solo ~/work/alone claude");
+        let solo = app
+            .world
+            .agents
+            .iter()
+            .rfind(|a| a.role == Role::Solo)
+            .unwrap()
+            .id;
+        let sp = app.world.agents[solo].project;
+        assert_eq!(
+            app.folder_of(solo),
+            Some((
+                format!(
+                    "~/.local/state/imece/worktrees/{}-5e1f0a2c/solo-{sp}",
+                    app.world.projects[sp].name
+                ),
+                Some("~/work/alone".into())
+            ))
+        );
+        app.world.projects[sp].no_git = true;
+        assert_eq!(app.folder_of(solo), Some(("~/work/alone".into(), None)));
     }
 
     #[test]
@@ -9910,6 +10291,32 @@ pub(crate) mod tests {
         assert_eq!(app.grace, None);
         app.end_grace();
         assert_eq!(app.grace, None, "nothing waits, nothing happens");
+    }
+
+    #[test]
+    fn capital_u_and_colon_now_do_what_counts_down_at_once() {
+        let mut app = three_projects();
+        let said = |app: &mut App| app.flash.take().map(|f| f.0).unwrap_or_default();
+        app.command("close shop");
+        app.on_key(key(KeyCode::Char('U')));
+        assert!(app.world.projects[1].closed, "no wait");
+        assert_eq!(app.grace, None);
+        assert_eq!(
+            said(&mut app),
+            "closed shop: its agents left; their worktrees stay on disk"
+        );
+        app.command("close more");
+        assert_eq!(app.grace.map(|g| g.0), Some(Undoable::Close(2)));
+        app.command("now");
+        assert_eq!(app.grace, None);
+        assert!(app.world.projects[2].closed);
+        // Nothing counts down: said, nothing happens.
+        app.flash = None;
+        app.on_key(key(KeyCode::Char('U')));
+        assert_eq!(said(&mut app), Lang::En.text().nothing_now);
+        app.command("now");
+        assert_eq!(said(&mut app), Lang::En.text().nothing_now);
+        assert!(!app.world.projects[0].closed);
     }
 
     #[test]

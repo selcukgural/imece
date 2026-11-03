@@ -55,6 +55,7 @@ A line that starts with `:` is a command to imece, not a message to an agent. Yo
 | `:news` | — | | | | this version |
 | `:next` | `W` | | | | N waiting |
 | `:notify [off\|bell\|text\|push]` | — | | | | off / bell / text / push |
+| `:now` | `U` | | | | |
 | `:open PATH [NAME]` | — | `:o` | | `$` | |
 | `:output` | `O` | | | | the command whose output it quotes |
 | `:pause` | `space` | | yes | | on / off |
@@ -252,6 +253,10 @@ topic = imece-alerts-7f3k9q2m
 
 `server` is the public `https://ntfy.sh` when left out; one of your own must be `https` (`http` only on this machine), without a user, a query or a fragment. `topic` is letters, digits, `-` and `_`, at most 64; on the public server anyone who knows a topic reads it, so one shorter than 16 or without a digit is refused. `token` names a file holding the token your own server wants: a plain file of yours that no one else may read or write (`chmod 600`), one word; it is sent as an `Authorization` header, never in the URL, on a command line or in a log. A push is `curl` (it must be installed) reading where, the words and the token on its stdin, nothing of your own `.curlrc`, no redirect followed, ten seconds at most. It says what a note says and the project, never an agent's words or a command: `imece · codex-2 asks you · shop`, `imece · 3 things wait for you`; something stuck goes at high priority. Each thing is pushed once; the journal says each push (`pushed to your phone: …`); one that fails is said once (`the push to your phone did not go: …`) and not tried again, and the next thing that waits is pushed as its own. The flash says `a push to your phone through https://ntfy.sh when something waits and you are away`, or what is wrong with the settings (`push settings: on ntfy.sh a topic of at least 16 with a digit, …`); the settings are read again at each start, and when they no longer hold nothing is pushed (`:notify off`). The demo reads no settings and sends nothing: each push is a journal line, `a push to your phone would say (the demo sends nothing): …`.
 
+### `:now`
+
+Does the `:close`, `:forget`, `:archive` or `:clear` counting down at once, as `U`, instead of after its ten seconds: the same as when its time is up. The bottom line says so while it counts (`◷ closing kule in 7 s · u keeps it open · U now`); with nothing counting down it says `nothing counts down`. `u` ([`:undo`](#undo)) is still the way back. Both the demo and live sessions.
+
 ### `:open PATH [NAME]`
 
 Opens the git checkout at `PATH` as a project of its own (`:o`), with a new leader named `lead-NAME` on the team's lead vendor (same model and tiers). `NAME` defaults to the directory's name made safe: 1-24 of letters, digits, `.`, `_`, `-` (the rest become `-`); a wrong name is refused: `"x y" can not name a project: 1-24 of letters, digits, . _ -`. `~` stands for your home; a path with spaces is not parsed. The flash: `opened kule at /Users/me/src/kule; write to lead-kule`. Refusals: `:open PATH [NAME] opens the git checkout at PATH as a project` (no path), `a project named kule is open already`, `kule is open already, as k2`, `could not open: …` (not a checkout). A closed project with the same checkout opens again in its place. Opened projects are remembered between runs; a second imece on another checkout is told to use `:open` from the first. `$`: a new leader session. The demo adds a fake project with a leader, two workers and three cards. See [projects](../concepts/projects.md). A folder that is not a git checkout with a commit is refused: `… is not a git checkout with a commit: a team works in git worktrees …`; `:solo` opens there.
@@ -344,7 +349,7 @@ Brings back what `:clear` took off the screen: bare both, `inbox` or `journal` o
 
 ### `:undo`
 
-Keeps a `:close`, `:forget`, `:archive` or `:clear` from happening, as `u`. Both wait ten seconds before they act, and the bottom line counts down meanwhile: `◷ closing kule in 7 s · u keeps it open`, `◷ claude-2 forgets its session in 7 s · u keeps it`. `u` in that time leaves everything as it was (`kule stays open`, `claude-2 keeps its session`); with nothing counting down it says `nothing to undo`. One waits at a time: another `:close` or `:forget` makes the one waiting act first. Quitting while one counts down lets it act. A refusal (the last open project, no session to forget, a name nobody has) is said at once and waits for nothing. Both the demo and live sessions wait.
+Keeps a `:close`, `:forget`, `:archive` or `:clear` from happening, as `u`; `U` ([`:now`](#now)) does it at once instead. Both wait ten seconds before they act, and the bottom line counts down meanwhile: `◷ closing kule in 7 s · u keeps it open`, `◷ claude-2 forgets its session in 7 s · u keeps it`. `u` in that time leaves everything as it was (`kule stays open`, `claude-2 keeps its session`); with nothing counting down it says `nothing to undo`. One waits at a time: another `:close` or `:forget` makes the one waiting act first. Quitting while one counts down lets it act. A refusal (the last open project, no session to forget, a name nobody has) is said at once and waits for nothing. Both the demo and live sessions wait.
 
 ### `:unfold`
 
