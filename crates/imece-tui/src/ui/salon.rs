@@ -835,7 +835,10 @@ fn side(f: &mut Frame, area: Rect, app: &App) {
             )
         }
         None => (
-            fill(t.inbox_title, &[&open.len().to_string()]),
+            match w.hidden_inbox() {
+                0 => fill(t.inbox_title, &[&open.len().to_string()]),
+                n => fill(t.inbox_hidden, &[&open.len().to_string(), &n.to_string()]),
+            },
             t.journal.to_string(),
         ),
     };
@@ -867,7 +870,15 @@ fn side(f: &mut Frame, area: Rect, app: &App) {
     f.render_widget(block, top);
     let mut lines = Vec::new();
     if open.is_empty() {
-        lines.push(Line::from(Span::styled(t.nothing_needed, dim())));
+        let hidden = match app.card {
+            Some(_) => 0,
+            None => w.hidden_inbox(),
+        };
+        let said = match hidden {
+            0 => t.nothing_needed.to_string(),
+            n => fill(t.inbox_all_hidden, &[&n.to_string()]),
+        };
+        lines.push(Line::from(Span::styled(said, dim())));
     }
     for (n, &i) in open.iter().enumerate() {
         let item = &w.inbox[i];
@@ -986,7 +997,8 @@ fn first_shown(
 /// many older lines of the same conversation fold under it). The journal
 /// keeps every event; the screen shows the meaningful ones. Routine
 /// assignments are visible on the board and in the leader's trace; an
-/// archived project's lines wait in its archive.
+/// archived project's lines wait in its archive; the lines `:clear` took
+/// off are not listed, but for the marked ones.
 pub(crate) fn journal_rows(w: &World) -> Vec<(usize, usize)> {
     let shown = w
         .journal
@@ -994,7 +1006,8 @@ pub(crate) fn journal_rows(w: &World) -> Vec<(usize, usize)> {
         .enumerate()
         .rev()
         .filter(|(_, e)| e.event.kind() != EntryKind::Assign)
-        .filter(|(_, e)| !w.in_archive(e.event.agent()));
+        .filter(|(_, e)| !w.in_archive(e.event.agent()))
+        .filter(|(i, _)| *i >= w.cleared.journal || w.marks.contains(i));
     fold_threads(shown, &w.marks).collect()
 }
 

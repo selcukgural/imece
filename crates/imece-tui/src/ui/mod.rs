@@ -298,6 +298,11 @@ pub(crate) fn border() -> Style {
 }
 
 /// Bold text on a coloured badge: the brand, or what waits for the person.
+/// The command line's lead while it holds a `!` command.
+fn shell() -> Style {
+    badge(pal().shell)
+}
+
 fn badge(bg: Color) -> Style {
     let p = pal();
     if p.mono {
@@ -1436,6 +1441,11 @@ fn wrap_cells(text: &str, room: usize, caret: Option<usize>) -> (Vec<String>, (u
 /// after it start under it.
 fn writing_to(app: &App) -> Span<'static> {
     let t = app.lang.text();
+    // A command for the person's own shell stands out from a message or
+    // a `:` command: its lead on the theme's shell colour.
+    if app.noting.is_none() && !app.searching && app.typing_shell() {
+        return Span::styled(t.typing_shell, shell());
+    }
     Span::styled(
         if let Some(Noting::Line(id, line)) = app.noting {
             let patch = app.world.change_of(id).map(|c| c.patch.as_str());
@@ -1445,8 +1455,6 @@ fn writing_to(app: &App) -> Span<'static> {
             fill(t.typing_words_note, &[&brief(&note.quote, NOTE_QUOTE)])
         } else if app.searching {
             t.typing_history.to_string()
-        } else if app.typing_shell() {
-            t.typing_shell.to_string()
         } else if app.typing_card() {
             t.typing_card.to_string()
         } else if app.typing_jump() {
@@ -1583,6 +1591,7 @@ fn footer(f: &mut Frame, area: Rect, app: &App) -> Option<Position> {
                     ),
                 }
             }
+            Undoable::Clear(what) => fill(t.grace_clear[what.index()], &[&left]),
         };
         Line::from(Span::styled(format!(" {said}"), fg(pal().warn)))
     } else if let Some(asking) = app.asking() {
@@ -1746,6 +1755,61 @@ mod tests {
             app.step();
         }
         app
+    }
+
+    #[test]
+    fn waiting_cleared_off_the_screen_is_counted_in_its_title() {
+        let mut app = app_after(1, 4, 0, Lang::En);
+        app.world.inbox.clear();
+        for agent in [1, 2, 3] {
+            app.world.inbox.push(crate::model::InboxItem {
+                kind: InboxKind::Question,
+                agent,
+                detail: "x".into(),
+                researcher: None,
+                open: true,
+                tick: 0,
+                card: None,
+            });
+        }
+        app.world.cleared.inbox = [0, 1].into();
+        let s = render(&app, 140, 40);
+        assert!(s.contains("WAITING FOR YOU (1 · +2 hidden)"), "{s}");
+        app.world.cleared.inbox.insert(2);
+        let s = render(&app, 140, 40);
+        assert!(s.contains("WAITING FOR YOU (0 · +3 hidden)"), "{s}");
+        assert!(s.contains("3 hidden by :clear: W opens the next"), "{s}");
+        // A card's screen lists them, so says nothing of it.
+        app.world.inbox[0].card = Some(0);
+        app.card = Some(0);
+        let s = render(&app, 140, 40);
+        assert!(!s.contains("hidden"), "{s}");
+        app.card = None;
+        app.world.inbox[1].card = Some(0);
+        app.world.inbox.iter_mut().for_each(|i| i.open = false);
+        let s = render(&app, 140, 40);
+        assert!(s.contains("WAITING FOR YOU (0)"), "{s}");
+        assert!(s.contains("Nothing needs you right now."), "{s}");
+        // The grace counts down in the bottom line, for each kind.
+        let at = std::time::Instant::now() + crate::app::UNDO_GRACE;
+        for (what, words) in [
+            (
+                crate::app::Clear::All,
+                "clearing WAITING FOR YOU and the journal off the screen in 10 s",
+            ),
+            (
+                crate::app::Clear::Inbox,
+                "clearing WAITING FOR YOU off the screen in 10 s",
+            ),
+            (
+                crate::app::Clear::Journal,
+                "clearing the journal off the screen in 10 s",
+            ),
+        ] {
+            app.grace = Some((crate::app::Undoable::Clear(what), at));
+            let s = render(&app, 140, 40);
+            assert!(s.contains(words), "{s}");
+        }
     }
 
     #[test]
@@ -5909,6 +5973,23 @@ mod tests {
     }
 
     #[test]
+    fn a_note_or_a_search_that_starts_with_a_bang_keeps_its_own_lead() {
+        let mut app = app_after(1, 2, 0, Lang::En);
+        let t = Lang::En.text();
+        app.typing = true;
+        app.input = "!ls".into();
+        assert_eq!(writing_to(&app).content, t.typing_shell);
+        assert_eq!(writing_to(&app).style, shell());
+        app.searching = true;
+        assert_eq!(writing_to(&app).content, t.typing_history);
+        assert_ne!(writing_to(&app).style, shell());
+        app.searching = false;
+        app.noting = Some(Noting::Line(0, 0));
+        assert_eq!(writing_to(&app).content, fill(t.typing_note, &[""]));
+        assert_ne!(writing_to(&app).style, shell());
+    }
+
+    #[test]
     fn a_bang_opens_the_shell_line_and_enter_hands_the_command_to_the_main_loop() {
         let mut app = app_after(1, 2, 0, Lang::En);
         key(&mut app, KeyCode::Char('!'));
@@ -5919,6 +6000,24 @@ mod tests {
         let s = render(&app, 140, 40);
         assert!(s.contains("› shell:"), "{s}");
         assert!(!s.contains("› command:"), "{s}");
+        // Its lead on the shell colour, the text after it plain; gone with
+        // the `!`.
+        let lead = |app: &App| {
+            let buf = buffer(app, 140, 40);
+            let at = |x: u16| buf[(x, 39)].style();
+            (
+                at(2),
+                at(u16::try_from(" › shell: ".chars().count()).unwrap() + 1),
+            )
+        };
+        let (on, text) = lead(&app);
+        assert_eq!((on.bg, on.fg), (Some(pal().shell), Some(pal().on_badge)));
+        assert!(on.add_modifier.contains(Modifier::BOLD));
+        assert_ne!(text.bg, Some(pal().shell), "only the lead");
+        key(&mut app, KeyCode::Backspace);
+        assert!(app.typing && !app.typing_shell());
+        assert_ne!(lead(&app).0.bg, Some(pal().shell), "a message again");
+        key(&mut app, KeyCode::Char('!'));
         for c in "  cargo test -- --nocapture  ".chars() {
             key(&mut app, KeyCode::Char(c));
         }
@@ -7349,6 +7448,13 @@ mod tests {
         );
         assert_eq!(key_style(), Style::new().fg(p.on_key).bg(p.key));
         assert_eq!(changed(), Style::new().bg(p.selection));
+        assert_eq!(
+            shell(),
+            Style::new()
+                .fg(p.on_badge)
+                .bg(p.shell)
+                .add_modifier(Modifier::BOLD)
+        );
         assert_eq!(vendor_color(Vendor::Claude), p.vendors[0]);
         assert_eq!(vendor_color(Vendor::Codex), p.vendors[1]);
         assert_eq!(speaker_color(0), p.speakers[0]);
@@ -7360,6 +7466,7 @@ mod tests {
             Style::new().add_modifier(Modifier::REVERSED | Modifier::BOLD)
         );
         assert_eq!(attention(), brand());
+        assert_eq!(shell(), brand(), "reversed: plain without colour");
         assert_eq!(key_style(), Style::new().add_modifier(Modifier::REVERSED));
         assert_eq!(changed(), Style::new().add_modifier(Modifier::BOLD));
         assert_eq!(border(), dim());

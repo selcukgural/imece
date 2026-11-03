@@ -64,6 +64,9 @@ pub struct Theme {
     pub info: Color,
     /// Leaders and plans.
     pub plan: Color,
+    /// The command line while it holds a `!` command for the person's
+    /// shell: pink, as Claude Code's shell mode.
+    pub shell: Color,
     pub research: Color,
     /// Claude, Codex, Gemini, Qwen, local.
     pub vendors: [Color; 5],
@@ -454,6 +457,7 @@ fn from_slots(name: String, ansi: [Color; 16]) -> Theme {
         stopped: s(9),
         info: s(6),
         plan: s(5),
+        shell: s(13),
         research: s(12),
         vendors: [s(3), s(2), s(12), s(5), s(8)],
         speakers: [
@@ -573,6 +577,7 @@ fn scheme(s: &Scheme, paint: Paint) -> Theme {
         stopped: paint.c(b[8].blend(b[5], 40)),
         info: c(0xC),
         plan: c(0xE),
+        shell: c(0xE),
         research: c(0xD),
         vendors: [c(9), c(0xB), c(0xD), c(0xE), c(4)],
         speakers: speakers.map(|s| paint.c(s)),
@@ -599,6 +604,7 @@ const MONO: Theme = Theme {
     stopped: Color::Reset,
     info: Color::Reset,
     plan: Color::Reset,
+    shell: Color::Reset,
     research: Color::Reset,
     vendors: [Color::Reset; 5],
     speakers: [Color::Reset; 12],

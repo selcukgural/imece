@@ -733,6 +733,7 @@ pub fn world(
     };
     let mut w = World {
         marks: Default::default(),
+        cleared: Default::default(),
         sent: Vec::new(),
         limits: Vec::new(),
         tick: 0,

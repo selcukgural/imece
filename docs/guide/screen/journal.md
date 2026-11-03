@@ -74,9 +74,15 @@ Under the selected line a dim row names its keys: `enter open the conversation �
 
 ## While you were away
 
-Twenty seconds without a key, and the first key you press opens WHILE YOU WERE AWAY · last N min instead of acting: cards merged, decisions that wait for you, blocks, assumptions made, conversations, each counted, then the important lines since. Built from the journal, no model asked. Any key closes it.
+Half an hour without a key, and the first key you press opens WHILE YOU WERE AWAY · last N min instead of acting: cards merged, decisions that wait for you, blocks, assumptions made, conversations, each counted, then the important lines since. Built from the journal, no model asked. Any key closes it.
 
-Back in the terminal after three minutes or more in another window, the same digest opens at once, without a key: the terminal reports when it loses and regains the focus. Shorter absences show nothing. It does not open over what you are writing, the help, the quit question or another window, and with nothing new in the journal there is nothing to show. A terminal or multiplexer that does not report focus (tmux without `focus-events on`) gets only the key-driven one.
+Back in the terminal after half an hour or more in another window, the same digest opens at once, without a key: the terminal reports when it loses and regains the focus. Shorter absences show nothing. It does not open over what you are writing, the help, the quit question or another window, and with nothing new in the journal there is nothing to show. A terminal or multiplexer that does not report focus (tmux without `focus-events on`) gets only the key-driven one.
+
+`:away` sets the time for both: `:away 10m`, `:away 2h`, from a minute to a day; `:away off` never opens it by itself. It is remembered in the store. `:digest` opens it whenever you ask: what happened since you last left the window, or since the run began.
+
+## Clearing the screen
+
+`:clear` takes the journal's lines and what WAITING FOR YOU lists off the salon's screen; `:clear journal` and `:clear inbox` take one. It waits ten seconds first, and `u` keeps the screen as it is. Nothing is deleted: the store keeps every line, `:export`, a card's screen and the archives still show them, and the clear itself is kept, so the next start begins clean too. A marked line stays. What still waits for you stays open and counted in the title, `WAITING FOR YOU (0 · +2 hidden)`, and `W` opens the next one, back on the list. `:unclear` (or `:unclear journal`, `:unclear inbox`) brings it all back.
 
 ## Where you left off
 

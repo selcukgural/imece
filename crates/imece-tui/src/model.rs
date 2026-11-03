@@ -1550,6 +1550,19 @@ pub enum InboxKind {
     Fault,
 }
 
+/// What the person cleared off the salon's screen (`:clear`, record 90):
+/// nothing is deleted, and a card's screen, `:export`, the archives and
+/// `W` still see it all.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
+pub struct Cleared {
+    /// The journal lines before this index are not listed, but for the
+    /// marked ones.
+    pub journal: usize,
+    /// The inbox items not listed in WAITING FOR YOU; while open they are
+    /// counted in its title, and `W` brings one back as it opens it.
+    pub inbox: BTreeSet<usize>,
+}
+
 #[derive(Clone, Debug)]
 pub struct InboxItem {
     pub kind: InboxKind,
@@ -1663,6 +1676,8 @@ pub struct World {
     pub changes: Vec<Change>,
     /// The journal lines the person marked to come back to (`m`), by index.
     pub marks: BTreeSet<usize>,
+    /// What the person cleared off the salon's screen (`:clear`).
+    pub cleared: Cleared,
     /// What the vendors last said of their plans' usage windows, one
     /// entry per vendor and window. Not kept between runs: a session
     /// says it again.
@@ -2103,6 +2118,7 @@ impl World {
             plans: self.plans.clone(),
             changes: self.changes.clone(),
             marks,
+            cleared: Cleared::default(),
             limits: Vec::new(),
             paid: self.paid,
             suggested: None,
@@ -2301,6 +2317,22 @@ impl World {
             Some(p) if a.role == Role::Helper => self.agents[p].card,
             _ => a.card,
         }
+    }
+
+    /// The open inbox items WAITING FOR YOU lists, oldest first: those
+    /// not cleared off it.
+    pub fn shown_inbox(&self) -> Vec<usize> {
+        let mut open = self.open_inbox();
+        open.retain(|i| !self.cleared.inbox.contains(i));
+        open
+    }
+
+    /// How many open inbox items are cleared off WAITING FOR YOU.
+    pub fn hidden_inbox(&self) -> usize {
+        self.open_inbox()
+            .iter()
+            .filter(|i| self.cleared.inbox.contains(i))
+            .count()
     }
 
     /// The open inbox items of card `c`, oldest first: what came from the
@@ -3062,6 +3094,7 @@ mod tests {
     fn world(agents: Vec<Agent>) -> World {
         World {
             marks: Default::default(),
+            cleared: Default::default(),
             sent: Vec::new(),
             limits: Vec::new(),
             tick: 0,

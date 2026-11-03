@@ -70,12 +70,14 @@ pub const FILE: &str = "imece.sqlite";
 /// ones a load takes, which stay whatever their age.
 pub const JOURNAL_DAYS: u64 = 90;
 /// Keys of `meta` that are the world's, not the person's settings.
-const WORLD_KEYS: [&str; 5] = [
+const WORLD_KEYS: [&str; 7] = [
     "schema_version",
     "started_at",
     "budget",
     "saved_at",
     "messages",
+    "cleared_journal",
+    "cleared_inbox",
 ];
 
 const SCHEMA: &str = "
@@ -259,6 +261,12 @@ impl Seqs {
             None => self.last + n(i - self.loaded.len()) + 1,
         }
     }
+}
+
+/// The inbox items `:clear` took off, as `meta` keeps them: `3,7,12`.
+fn cleared_ids(ids: &BTreeSet<usize>) -> String {
+    let ids: Vec<String> = ids.iter().map(usize::to_string).collect();
+    ids.join(",")
 }
 
 /// Seconds since the Unix epoch.
@@ -573,6 +581,17 @@ impl Store {
                 ("started_at", w.started_at.to_string()),
                 ("budget", w.budget.to_string()),
                 ("messages", w.messages.to_string()),
+                // The journal's by the last line taken off, which stays
+                // put in the file however many a load brings back.
+                (
+                    "cleared_journal",
+                    match w.cleared.journal {
+                        0 => 0,
+                        i => self.seqs.of(i - 1),
+                    }
+                    .to_string(),
+                ),
+                ("cleared_inbox", cleared_ids(&w.cleared.inbox)),
             ] {
                 tx.execute(
                     "INSERT OR REPLACE INTO meta (key, value) VALUES (?1, ?2)",
@@ -895,7 +914,7 @@ impl Store {
         let s = &self.saved;
         let mut plan = Plan::default();
         let mut after = Saved::default();
-        let meta = hash(&(w.started_at, w.budget, w.messages));
+        let meta = hash(&(w.started_at, w.budget, w.messages, &w.cleared));
         plan.meta = s.meta != Some(meta);
         after.meta = Some(meta);
         for (p, q) in w.projects.iter().enumerate() {
@@ -1093,9 +1112,14 @@ impl Store {
         };
         let budget = meta("budget")?.and_then(|v| v.parse().ok()).unwrap_or(0);
         let messages = meta("messages")?.and_then(|v| v.parse().ok()).unwrap_or(0);
+        let cleared_seq: i64 = (meta("cleared_journal")?)
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(0);
+        let cleared_inbox = meta("cleared_inbox")?.unwrap_or_default();
         let saved_at = meta("saved_at")?.and_then(|v| v.parse().ok());
         let mut w = World {
             marks: Default::default(),
+            cleared: Default::default(),
             sent: Vec::new(),
             limits: Vec::new(),
             tick: 0,
@@ -1438,6 +1462,12 @@ impl Store {
         }
         sent.reverse();
         w.sent = sent;
+        // What `:clear` took off stays off: the lines up to its last.
+        w.cleared.journal = seqs.partition_point(|&seq| seq <= cleared_seq);
+        w.cleared.inbox = (cleared_inbox.split(','))
+            .filter_map(|id| id.parse().ok())
+            .filter(|&id: &usize| id < w.inbox.len())
+            .collect();
         let mut after = self.plan(&w, &kept).after;
         after.journal_seq = saved.journal_seq;
         after.sent_seq = saved.sent_seq;
@@ -1673,6 +1703,7 @@ mod tests {
     fn world() -> World {
         let mut w = World {
             marks: Default::default(),
+            cleared: Default::default(),
             sent: Vec::new(),
             limits: Vec::new(),
             tick: 77,
@@ -2141,6 +2172,67 @@ mod tests {
             w.inbox.iter().map(inbox_view).collect::<Vec<_>>()
         );
         assert_eq!(back.sent, w.sent);
+        assert_eq!(back.cleared, w.cleared);
+    }
+
+    /// `:clear`'s marks come back as they were: the journal's by its last
+    /// line taken off, however many lines a load brings, a line of the
+    /// same tick after it still shown; the inbox's by item.
+    #[test]
+    fn what_was_cleared_off_the_screen_stays_off_after_a_load() {
+        let (mut w, k) = (world(), kept());
+        let line = |tick| Entry {
+            tick,
+            event: Event::Left { agent: 2 },
+        };
+        w.journal = (0..6).map(|i| line(10 + i / 2)).collect();
+        let mut store = Store::in_memory();
+        store.save(&w, &k.kept()).unwrap();
+        // Off: up to the fourth line, the second of tick 11.
+        w.cleared.journal = 4;
+        w.cleared.inbox = [1].into();
+        store.save(&w, &k.kept()).unwrap();
+        let back = store.load(100).unwrap().unwrap().world;
+        assert_eq!(back.cleared, w.cleared);
+        // A load of the newest three: one of them was cleared.
+        let back = store.load(3).unwrap().unwrap().world;
+        assert_eq!(back.journal.len(), 3);
+        assert_eq!(back.cleared.journal, 1);
+        // New lines after the clear, one of its tick: none taken off.
+        let mut w = store.load(100).unwrap().unwrap().world;
+        w.journal.push(line(12));
+        w.cleared.inbox.insert(0);
+        store.save(&w, &k.kept()).unwrap();
+        let back = store.load(100).unwrap().unwrap().world;
+        assert_eq!(back.cleared.journal, 4);
+        assert_eq!(back.cleared.inbox, [0, 1].into());
+        // Cleared again past them, then back: nothing taken off.
+        let mut w = back;
+        w.cleared.journal = w.journal.len();
+        store.save(&w, &k.kept()).unwrap();
+        assert_eq!(store.load(100).unwrap().unwrap().world.cleared.journal, 7);
+        w.cleared = Cleared::default();
+        store.save(&w, &k.kept()).unwrap();
+        assert_eq!(
+            store.load(100).unwrap().unwrap().world.cleared,
+            Cleared::default()
+        );
+        // An item the file does not have, or nonsense, is not taken off.
+        let items = w.inbox.len();
+        assert!(items > 1);
+        store
+            .raw()
+            .execute(
+                "INSERT OR REPLACE INTO meta (key, value) VALUES ('cleared_inbox', ?1)",
+                params![format!("1,x,{items},99")],
+            )
+            .unwrap();
+        assert_eq!(
+            store.load(100).unwrap().unwrap().world.cleared.inbox,
+            [1].into()
+        );
+        assert_eq!(cleared_ids(&[3, 7, 12].into()), "3,7,12");
+        assert_eq!(cleared_ids(&BTreeSet::new()), "");
     }
 
     fn sent_rows(store: &Store) -> Vec<(i64, u64, String)> {
@@ -2409,6 +2501,14 @@ mod tests {
                         event: Event::Left { agent: 2 },
                     })
                 }),
+            ),
+            (
+                "cleared journal",
+                Box::new(|w, _| w.cleared.journal = w.journal.len()),
+            ),
+            (
+                "cleared inbox",
+                Box::new(|w, _| _ = w.cleared.inbox.insert(0)),
             ),
             ("inbox open", Box::new(|w, _| w.inbox[1].open = false)),
             (
@@ -3713,8 +3813,19 @@ mod tests {
             .query_row("SELECT count(*) FROM meta", [], |r| r.get(0))
             .unwrap();
         assert_eq!(
-            rows, 5,
-            "schema_version, started_at, budget, saved_at, messages"
+            rows, 7,
+            "schema_version, started_at, budget, saved_at, messages, cleared_journal, cleared_inbox"
+        );
+        // The world's keys are not settings.
+        let refused = set_settings(Path::new("/nonexistent/x"), &[("cleared_inbox", "1")], &[]);
+        assert_eq!(
+            refused,
+            Err("cleared_inbox is the world's, not a setting".into())
+        );
+        let refused = set_settings(Path::new("/nonexistent/x"), &[], &["cleared_journal"]);
+        assert_eq!(
+            refused,
+            Err("cleared_journal is the world's, not a setting".into())
         );
         // `save` takes the time from the clock (the clock itself, not what
         // the store thinks it is).

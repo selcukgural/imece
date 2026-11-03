@@ -151,7 +151,7 @@ Sizi bekleyen ya da takılmış bir şey hiç kaldırılmaz: `kaldırılmadı: c
 
 ## Yan paneller
 
-Sağda üstte SENİ BEKLEYEN, altında DEFTER. `tab` ve `⇧tab` (ya da `]` ve `[`) panelleri döndürür: salon → bekleyenler → günlük; `w` (`:waiting`) doğrudan bekleyenler paneline gider. Bekleyenler paneli ögelerinin gerektiği kadar satır alır, en çok yan tarafın yarısı; ögeler beklerken ve panel odakta değilken çerçevesi uyarı rengine döner.
+Sağda üstte SENİ BEKLEYEN, altında DEFTER. `tab` ve `⇧tab` (ya da `]` ve `[`) panelleri döndürür: salon → bekleyenler → günlük; `w` (`:waiting`) doğrudan bekleyenler paneline gider. Bekleyenler paneli ögelerinin gerektiği kadar satır alır, en çok yan tarafın yarısı; ögeler beklerken ve panel odakta değilken çerçevesi uyarı rengine döner. `:clear` iki panelin içeriğini hiçbir şey silmeden ekrandan kaldırır; bkz. [günlük](journal.md#ekranı-temizlemek).
 
 `,` ve `.` (ya da `<` ve `>`) yan paneli dört sütun genişletir ya da daraltır, ekranın %20'si ile %70'i arasında; flaş `yan panel %38 (, . ya da < >)` der ve genişlik sonraki çalıştırma için saklanır. Bir değişikliğin görünümünde `>` bunun yerine bir parçayı alıntılar; `.` yine daraltır.
 

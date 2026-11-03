@@ -5,6 +5,7 @@
 mod app;
 mod archives;
 mod awake;
+mod away;
 mod clip;
 mod complete;
 mod edit;
@@ -554,6 +555,7 @@ fn main() -> std::io::Result<()> {
     app.primary = saved.lead;
     app.notify = saved.notify.unwrap_or_default();
     app.motion = saved.motion.unwrap_or_default();
+    app.away = saved.away.unwrap_or_default();
     app.ssh = motion::over_ssh(var);
     app.awake.on = args.awake;
     let result = run(&mut terminal, &mut app, &state, progress, style);
@@ -773,12 +775,13 @@ fn run(
         if let Some(Event::Key(k)) = event
             && k.kind == KeyEventKind::Press
         {
-            let (side, theme, primary, notify, moves) = (
+            let (side, theme, primary, notify, moves, away) = (
                 app.side,
                 app.theme(),
                 app.primary.clone(),
                 app.notify,
                 app.motion,
+                app.away,
             );
             app.on_key(k);
             if app.side != side
@@ -797,6 +800,9 @@ fn run(
             }
             if app.motion != moves {
                 let _ = prefs::keep_motion(state, app.motion);
+            }
+            if app.away != away {
+                let _ = prefs::keep_away(state, app.away);
             }
             if let Some(text) = app.copy.take() {
                 app.copied(clip::copy(&text));

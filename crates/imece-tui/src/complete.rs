@@ -13,13 +13,13 @@ use crate::ui::fold;
 
 /// The commands imece itself takes after `:`: its own, and a name for
 /// every key that acts (not the ones that move).
-pub const COMMANDS: [&str; 52] = [
-    "allow", "archive", "archives", "awake", "board", "budget", "close", "code", "commit", "copy",
-    "defer", "effort", "export", "faster", "fold", "forget", "goto", "help", "hints", "history",
-    "keys", "lang", "lead", "mark", "model", "motion", "needs", "news", "next", "notify", "open",
-    "output", "pause", "peek", "pending", "pin", "quit", "rename", "restore", "salon", "settle",
-    "slower", "solo", "talk", "theme", "trace", "undo", "unfold", "unsettle", "waiting", "welcome",
-    "why",
+pub const COMMANDS: [&str; 56] = [
+    "allow", "archive", "archives", "awake", "away", "board", "budget", "clear", "close", "code",
+    "commit", "copy", "defer", "digest", "effort", "export", "faster", "fold", "forget", "goto",
+    "help", "hints", "history", "keys", "lang", "lead", "mark", "model", "motion", "needs", "news",
+    "next", "notify", "open", "output", "pause", "peek", "pending", "pin", "quit", "rename",
+    "restore", "salon", "settle", "slower", "solo", "talk", "theme", "trace", "unclear", "undo",
+    "unfold", "unsettle", "waiting", "welcome", "why",
 ];
 
 /// The word for a vendor's own model or effort after `:model`, `:effort`
@@ -410,6 +410,24 @@ pub fn suggest(input: &str, w: &World, project: ProjectId, home: Option<&Path>) 
                 let start = input.len() - arg.len();
                 menu(start, arg, matching(arg, LEADS.into_iter()), "")
             }
+            Some(("clear" | "unclear", arg)) => {
+                let start = input.len() - arg.len();
+                menu(
+                    start,
+                    arg,
+                    matching(arg, crate::app::CLEARS.into_iter()),
+                    "",
+                )
+            }
+            Some(("away", arg)) => {
+                let start = input.len() - arg.len();
+                menu(
+                    start,
+                    arg,
+                    matching(arg, crate::away::NAMES.into_iter()),
+                    "",
+                )
+            }
             Some(("motion", arg)) => {
                 let start = input.len() - arg.len();
                 menu(
@@ -775,6 +793,32 @@ mod tests {
         let m = suggest(":motion f", &w, 0, None).unwrap();
         assert_eq!((m.items, m.start), (vec!["full".to_string()], 8));
         assert_eq!(suggest(":motion calm", &w, 0, None), None);
+        let m = suggest(":away ", &w, 0, None).unwrap();
+        assert_eq!(
+            (m.items, m.start, m.tail),
+            (crate::away::NAMES.map(String::from).to_vec(), 6, "")
+        );
+        let m = suggest(":away 1", &w, 0, None).unwrap();
+        assert_eq!(
+            (m.items, m.start),
+            (vec!["15m".to_string(), "1h".to_string()], 6)
+        );
+        assert_eq!(suggest(":away off", &w, 0, None), None);
+        for cmd in ["clear", "unclear"] {
+            let m = suggest(&format!(":{cmd} "), &w, 0, None).unwrap();
+            assert_eq!(
+                (m.items, m.start),
+                (
+                    vec!["inbox".to_string(), "journal".to_string()],
+                    cmd.len() + 2
+                )
+            );
+            let m = suggest(&format!(":{cmd} j"), &w, 0, None).unwrap();
+            assert_eq!(
+                (m.items, m.start),
+                (vec!["journal".to_string()], cmd.len() + 2)
+            );
+        }
         let name = &w.agents[1].name;
         let head = &name[..3];
         for cmd in ["talk", "trace", "forget", "peek", "why"] {

@@ -12,7 +12,7 @@ description: imece'nin aldığı her `:` komutu; argümanları, karşılığı o
 - `:` sonra `tab` komutları listeler. Menü her komutun ardında şu an ne durumda olduğunu ya da neye etki edeceğini ayraç içinde gösterir: `budget (spent $3.10 of $20.00)`, `theme (dark)`, `lead (claude)`, `close (kule)`, `forget (claude-2)`, `next (2 waiting)`, `needs (off)`. Not çizilir, asla satıra eklenmez.
 - Bir komutun ardındaki `$` sonraki faturayı büyütenleri işaretler: `:open` (yeni bir lider oturumu), `:solo` (yeni bir oturum), `:forget` (bütün brifingi önbelleksiz yeniden ödeyen yeni bir oturum) ve `:commit` (ücretli bir çağrı). Hiçbir `:` komutu kendi başına ücretli bir tur başlatmaz; `:budget` işaret yerine değerini gösterir.
 - Kısa adlar: `:b` budget, `:c` close, `:f` forget, `:o` open, `:q` quit, `:t` theme. Bütünüyle yazılan kısa ad zaten bir komuttur; menü bir şey sunmaz ve `enter` çalıştırır (`:q` sonra `enter` hemen sorar).
-- Argümanlar da tamamlanır: `:lang` sonra diller, `:lead` sonra satıcılar, `:notify` ve `:motion` sonra üç kelimesi, `:theme` sonra yerleşik adlar, `:close` ve `:pin` sonra açık projeler, `:restore` sonra arşivlerin başlıkları (en yenisi önce, her biri projesinin adı ve arşivlendiği günle), `:goto` sonra hiçbir şey (`&` satırının kendi menüsü var), `:history` sonra gönderilen satırlar, `:forget`, `:talk`, `:trace` ve `:peek` sonra açık projelerin ajanları (`@` ile ya da onsuz), `:open` ve `:export` sonra dizinler (`~` ev dizininiz, gizli olanlar yalnızca bir `.` sonrası, `tab` seçilenin içine adım atar).
+- Argümanlar da tamamlanır: `:lang` sonra diller, `:lead` sonra satıcılar, `:notify` ve `:motion` sonra üç kelimesi, `:away` sonra `15m 30m 1h off`, `:clear` ve `:unclear` sonra `inbox journal`, `:theme` sonra yerleşik adlar, `:close` ve `:pin` sonra açık projeler, `:restore` sonra arşivlerin başlıkları (en yenisi önce, her biri projesinin adı ve arşivlendiği günle), `:goto` sonra hiçbir şey (`&` satırının kendi menüsü var), `:history` sonra gönderilen satırlar, `:forget`, `:talk`, `:trace` ve `:peek` sonra açık projelerin ajanları (`@` ile ya da onsuz), `:open` ve `:export` sonra dizinler (`~` ev dizininiz, gizli olanlar yalnızca bir `.` sonrası, `tab` seçilenin içine adım atar).
 - imece'nin bilmediği bir ad: `no command xyz; : and tab list them`. Canlıda yazılan yalnızca demoya ait bir komut: `:pause is for the demo: live agents run in real time`.
 - `!cmd` kendi kabuğunuzda bir komut çalıştırır, `/cmd` ajanın kendi komut satırıdır; ikisi de `:` komutu değildir ([komut satırı](../screen/command-line.md)).
 
@@ -24,13 +24,16 @@ description: imece'nin aldığı her `:` komutu; argümanları, karşılığı o
 | `:archives` | `A` | | | | |
 | `:allow [PROGRAM [WORD]]` | `A` (bir istekte) | | | | projenin hep eveti, varsa |
 | `:awake` | — | | | | açık / kapalı |
+| `:away [TIME\|off]` | — | | | | `30m` / `1h` / `off` |
 | `:board` | `2` | | | | |
 | `:budget USD` | — | `:b` | | | harcanan / bütçe |
+| `:clear [inbox\|journal]` | — | | | | |
 | `:close [NAME]` | — | `:c` | | | eldeki proje |
 | `:code` | `3` | | | | |
 | `:commit` | — | | | `$` | |
 | `:copy [PATH]` | — | | | | liste, varsa |
 | `:defer` | `S` | | | | |
+| `:digest` | — | | | | |
 | `:effort LEVEL` | — | | | | eldeki solonun çabası ya da `default` |
 | `:export [PATH]` | — | | | | `konuşma` ya da `#12` |
 | `:faster` | `+` | | evet | | hız, `×2` |
@@ -66,6 +69,7 @@ description: imece'nin aldığı her `:` komutu; argümanları, karşılığı o
 | `:talk [@NAME]` | `v` | | | | eldeki ajan |
 | `:theme [NAME\|FILE]` | `T` | `:t` | | | kullanılan tema |
 | `:trace [@NAME]` | `t` | | | | eldeki ajan |
+| `:unclear [inbox\|journal]` | — | | | | |
 | `:undo` | `u` | | | | |
 | `:unfold` | `zR` | | | | |
 | `:unsettle` | — | | | | kaç şeyin kaldırıldığı |
@@ -95,6 +99,10 @@ Bir arşivde (ya da ajanlarından birinde, o zaman o seçili) `enter` onu geri g
 
 Makineyi uyanık tutmayı açar ya da kapar (`--awake` ile aynı). Açıkken ve herhangi bir ajan tur ortasındayken imece `caffeinate` (macOS) ya da `systemd-inhibit` (Linux) aracını çocuk olarak çalıştırır, hiçbir şey tur ortasında olmayınca bırakır. Flaş `bir ajan turdayken makine uyanık kalır` ya da `makine yeniden uyuyabilir` der; başlayamayan bir araç bir kez söylenir: `makine uyanık tutulamadı: …`. Çalıştırmalar arasında hatırlanmaz.
 
+### `:away [TIME|off]`
+
+SEN YOKKEN penceresinin kendiliğinden açılması için ne kadar uzakta kalmanız gerektiği: başka bir pencerede bu kadar kaldıktan sonra terminale dönünce ya da bu kadar tuşsuz geçen süreden sonraki ilk tuşta. Dakika (`45m` ya da `45`) veya saat (`2h`), bir dakikadan bir güne kadar; `off` hiç açmaz (`:digest` yine açar). Varsayılan yarım saat. Yalın `:away` sıradakine geçer: 15m, 30m, 1h, off; size ait bir süre bir sonraki daha uzun olana geçer. Flaş: `30m ya da daha uzun yokken olanlar dönünce hemen gösterilir`, `olanlar kendiliğinden gösterilmez; :digest gösterir`; başka bir kelime: `3s off, dakika (30m) ya da saat (1h) değil; en çok bir gün`. Menü notu değeri gösterir; depoda hatırlanır. Bkz. [günlük](../screen/journal.md#sen-yokken).
+
 ### `:board`
 
 Pano görünümü, `2` gibi. Bkz. [pano ve kod haritası](../screen/board-and-code-map.md).
@@ -102,6 +110,10 @@ Pano görünümü, `2` gibi. Bkz. [pano ve kod haritası](../screen/board-and-co
 ### `:budget USD`
 
 Ajanlar çalışırken bütçeyi artırır ya da azaltır (`:b 80`). Değer, noktadan önce en çok dört rakam ve en çok iki ondalıkla dolardır (`80`, `2.50`); başkası: `80$ dolar değil; 80 ya da 2.50 gibi yaz`. Flaş `bütçe artık $80.00` der, günlük `bütçeyi $80.00 yaptın (önce $50.00)`, ve bütçenin azaldığı uyarısı yeniden çalabilir. Süren bir tur eski sınırında biter; sonraki yeni kalanla başlar, eskisi sınırına çarpmışsa yeni bir oturumda. Bütçe bütün projeler için tektir ve çalıştırmalar arasında saklanır. Menü notu: `(spent $3.10 of $20.00)`. Bkz. [bütçe ve sınırlar](../concepts/budget-and-limits.md).
+
+### `:clear [inbox|journal]`
+
+SENİ BEKLEYEN'in listelediklerini ve günlüğün satırlarını salonun ekranından kaldırır: yalın ikisini, `inbox` ya da `journal` birini. Hiçbir şey silinmez: depo hepsini tutar, `:export`, bir kartın ekranı ve arşivler hâlâ gösterir. `:close` gibi önce on saniye bekler (`◷ SENİ BEKLEYEN ve günlük 7 sn sonra ekrandan kalkıyor · u tutar`; `u` ekranı olduğu gibi bırakır), sonra neyin gittiğini söyler: `2 bekleyen ve 40 günlük satırı ekrandan kalktı; :unclear geri getirir`. Sizi hâlâ bekleyen bir şey kaybolmaz: açık kalır, ajanı hâlâ bekler, başlık onu sayar (`SENİ BEKLEYEN (0 · +2 gizli)`), terminalin başlığı ve sekmesi de sayar, `W` sıradakini açar ve onu listeye geri koyar. İşaretli bir satır (`m`) günlükte kalır. Sonra gelenler her zamanki gibi görünür. Temizleme depoda saklanır, böylece sonraki açılış da temiz başlar. Temizlenecek bir şey yoksa `ekranda temizlenecek bir şey yok` der; başka bir kelime: `all inbox ya da journal değil`. Bkz. [günlük](../screen/journal.md#ekranı-temizlemek).
 
 ### `:close [NAME]`
 
@@ -130,6 +142,10 @@ Yol göreli, düz (glob yok, `..` yok, `.git` içinde değil, en çok 200 bayt),
 ### `:defer`
 
 SENİ BEKLEYEN'deki eldeki kalemi erteler ve sonrakini açar, `S` gibi. Bkz. [seni bekleyenler](../screen/waiting.md).
+
+### `:digest`
+
+SEN YOKKEN penceresini şimdi açar: bu çalıştırmada terminalin penceresinden son ayrıldığınızdan, ya da çalıştırma başladığından beri olanlar. Yeni bir şey yoksa: `son ayrılışından beri yeni bir şey yok`. Kendiliğinden açıldığındaki gibi herhangi bir tuş kapatır.
 
 ### `:effort LEVEL`
 
@@ -281,9 +297,13 @@ Tema, `T` gibi (`:t`). Tek başına: sonraki yerleşik tema, sondan başa döner
 
 Ajanın ham akışı, `t` gibi: oturumunun söylediği her satır, veri olarak, en çok 200 satır tutulur. Ad yoksa eldeki ajan.
 
+### `:unclear [inbox|journal]`
+
+`:clear`'ın ekrandan kaldırdığını geri getirir: yalın ikisini, `inbox` ya da `journal` birini. Ne kadarının geri geldiğini söyler (`ekrana geri geldi: 2 bekleyen, 40 günlük satırı`) ya da `ekrandan kaldırılmış bir şey yok`.
+
 ### `:undo`
 
-Bir `:close`, `:forget` ya da `:archive`'ın olmasını önler, `u` gibi. İkisi de iş görmeden önce on saniye bekler, bu arada alt satır geri sayar: `◷ kule 7 sn sonra kapanıyor · u açık tutar`, `◷ claude-2 7 sn sonra oturumunu unutuyor · u tutar`. O sürede `u` her şeyi olduğu gibi bırakır (`kule açık kalıyor`, `claude-2 oturumunu tutuyor`); geri sayan bir şey yoksa `geri alınacak bir şey yok` der. Bir seferde biri bekler: başka bir `:close` ya da `:forget`, bekleyeni önce uygular. Biri geri sayarken çıkmak onu uygular. Bir ret (son açık proje, unutulacak oturum yok, kimsenin taşımadığı bir ad) hemen söylenir, hiçbir şey beklemez. Demo da canlı oturumlar da bekler.
+Bir `:close`, `:forget`, `:archive` ya da `:clear`'ın olmasını önler, `u` gibi. İkisi de iş görmeden önce on saniye bekler, bu arada alt satır geri sayar: `◷ kule 7 sn sonra kapanıyor · u açık tutar`, `◷ claude-2 7 sn sonra oturumunu unutuyor · u tutar`. O sürede `u` her şeyi olduğu gibi bırakır (`kule açık kalıyor`, `claude-2 oturumunu tutuyor`); geri sayan bir şey yoksa `geri alınacak bir şey yok` der. Bir seferde biri bekler: başka bir `:close` ya da `:forget`, bekleyeni önce uygular. Biri geri sayarken çıkmak onu uygular. Bir ret (son açık proje, unutulacak oturum yok, kimsenin taşımadığı bir ad) hemen söylenir, hiçbir şey beklemez. Demo da canlı oturumlar da bekler.
 
 ### `:unfold`
 

@@ -143,6 +143,7 @@ The conventions are vim's: `h` `j` `k` `l` move and fold, `gg` and `G` go to the
 | `:awake` | keep the machine awake mid-turn; again: off |
 | `:notify` | in another window, a word when something comes to wait: `:notify off\|bell\|text`; bare, the next one round |
 | `:motion` | what moves on the screen: `:motion off\|calm\|full` (calm by default); bare, the next one round |
+| `:away`  `:digest` | how long away before what happened shows by itself: `:away 30m\|1h\|off` (half an hour by default) · show it now |
 | `q` `q`  `:quit` | quit (`q` or `:quit` asks first; `^c` quits at once) |
 | `q` `s`  `:pending` | before quitting: mid-turn, not reviewed |
 | `?`  `:help` | this help; in it `j` `k` scroll where it does not fit, `/` filters the keys · `:keys` reads your key file again |
@@ -182,7 +183,7 @@ The conventions are vim's: `h` `j` `k` `l` move and fold, `gg` and `G` go to the
 | `:trace` / `:talk` | `t` / `v` |
 | `:mark` | `m` |
 | `:pause`, `:faster`, `:slower` | `space`, `+`, `-` (demo) |
-| `:budget` (`:b`), `:lead`, `:open` (`:o`), `:close` (`:c`), `:rename`, `:solo`, `:effort`, `:model`, `:forget` (`:f`), `:export`, `:commit`, `:copy`, `:pin`, `:archive`, `:restore`, `:awake`, `:notify`, `:motion`, `:unsettle`, `:keys` | no key: typed after `:` |
+| `:budget` (`:b`), `:lead`, `:open` (`:o`), `:close` (`:c`), `:rename`, `:solo`, `:effort`, `:model`, `:forget` (`:f`), `:export`, `:commit`, `:copy`, `:pin`, `:archive`, `:restore`, `:awake`, `:notify`, `:motion`, `:away`, `:digest`, `:clear`, `:unclear`, `:unsettle`, `:keys` | no key: typed after `:` |
 
 The full list of what each command takes is in the [commands reference](../reference/commands.md).
 
