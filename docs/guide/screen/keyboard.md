@@ -107,6 +107,17 @@ The conventions are vim's: `h` `j` `k` `l` move and fold, `gg` and `G` go to the
 | `space`, `pgup` `pgdn` | a page |
 | `esc` | close |
 
+## A focus and the raw stream
+
+| Key | What it does |
+| --- | --- |
+| `j` `k`  `↑` `↓` | in a focus: the story entry at hand (marked `▌`); from the one before the newest, `j` follows the newest again · in the raw stream: a row |
+| `gg` `G`  `home` `end` | the first entry or row · the newest, followed as more come |
+| `pgup` `pgdn`  `^d` `^u` `^f` `^b` | a page, half a page (the entry at hand stays) |
+| `l` `h`  `→` `←` | in a focus: the entry at hand whole · cut to its first eight lines again (`… +N · l shows all` says how many more) |
+| `za`  `zM`  `zR` | in a focus: the entry toggled · all cut · all whole |
+| `enter` `esc` | the raw stream · back |
+
 ## A change
 
 | Key | What it does |

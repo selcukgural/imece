@@ -22,7 +22,7 @@ The journal is the lower side panel of the salon (told as [the story](#the-story
 
 ## The story
 
-By default the lower side panel does not show the journal line by line: it tells the story, the same lines grouped by card. `J` (or `:story`) switches between the two; the choice is remembered. On a card's screen the panel is always that card's journal.
+By default the lower side panel does not show the journal line by line: it tells the story, the same lines grouped by card. `J` (or `:story`) switches between the two; the choice is remembered, and the journal's title then says the key back, `JOURNAL · J story`. On a card's screen the panel is always that card's journal.
 
 ```text
 ┌ STORY · J journal ─────────────────────────────────────────┐
@@ -48,7 +48,7 @@ The story reads at most the 2,000 newest journal lines per frame and shows as ma
 | Key | What it does |
 | --- | --- |
 | `j` `k`  `gg` `G` | select a card's header or a line of elsewhere |
-| `enter` | a card: its screen ([cards](cards.md)) · a line of elsewhere: the journal, at that line |
+| `enter` | a card: its screen ([cards](cards.md)) · a line of elsewhere: the journal, at that line, for now (`JOURNAL · esc story`; `esc` or `J` back to the story) |
 | `#` | write the selected card's number |
 | `J` | the journal |
 

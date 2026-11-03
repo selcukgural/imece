@@ -125,11 +125,58 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App, id: AgentId) {
     .areas(inner);
     f.render_widget(Paragraph::new(head), top);
 
-    let story: Vec<Line> = match card {
-        Some(c) => story_lines(app, c, id),
-        None => vec![Line::from(Span::styled(t.no_story, dim()))],
+    match card {
+        Some(c) => story_view(f, body, app, c, id),
+        None => f.render_widget(Paragraph::new(Span::styled(t.no_story, dim())), body),
+    }
+}
+
+/// The cells left of the focus's story: the bar of the entry at hand.
+const GUTTER: u16 = 2;
+
+/// Card `c`'s story on agent `id`'s focus, where the person reads it
+/// (`App::reading`, record 102): the entry at hand marked in the gutter
+/// and on the selection's background, each entry cut to its first
+/// [`STORY_ROWS`] lines unless opened, the newest at the foot while it
+/// is followed.
+fn story_view(f: &mut Frame, area: Rect, app: &App, c: &Card, id: AgentId) {
+    let t = app.lang.text();
+    let room = area.width.saturating_sub(GUTTER);
+    let told = story_told(app, c, id, usize::from(room));
+    let fresh;
+    let r = match app.reading.agent == Some(id) {
+        true => &app.reading,
+        false => {
+            fresh = crate::app::Reading::default();
+            &fresh
+        }
     };
-    tail_linked(f, body, story);
+    let at = r.at(told.len());
+    let mut rows = Vec::new();
+    let mut range = (0, 0);
+    for (n, entry) in told.into_iter().enumerate() {
+        let start = rows.len();
+        let lines = entry.shown(r.folds.folded(n), |more| {
+            fill(t.story_more, &[&more.to_string()])
+        });
+        for mut row in rows_of(lines, room) {
+            if n == at {
+                row.spans.insert(0, Span::styled("▌ ", fg(pal().accent)));
+                row = row.style(changed());
+            } else {
+                row.spans.insert(0, Span::raw("  "));
+            }
+            rows.push(row);
+        }
+        if n == at {
+            range = (start, rows.len());
+        }
+    }
+    let height = usize::from(area.height);
+    let top = r.focus_top(rows.len(), height, range);
+    let shown = &rows[top..rows.len().min(top + height)];
+    f.render_widget(Paragraph::new(shown.to_vec()), area);
+    link_rows(f.buffer_mut(), area, shown);
 }
 
 /// The focus's activity bar: the agent's trace lines in each of the last
@@ -202,16 +249,52 @@ pub(crate) fn plan_lines(t: &Text, plan: &[Step]) -> Vec<Line<'static>> {
     lines
 }
 
-/// Card `c`'s story, an event a line, oldest first; conversation lines
+/// One entry of a card's story as drawn: its head line and, for a
+/// message of more lines, the text under it.
+pub(super) struct Told {
+    head: Line<'static>,
+    body: Vec<Line<'static>>,
+    indent: String,
+}
+
+impl Told {
+    /// Its lines: the text under the head whole, or, `cut`, its first
+    /// [`STORY_ROWS`] and a line of `more` for how many are left.
+    pub(super) fn shown(self, cut: bool, more: impl Fn(usize) -> String) -> Vec<Line<'static>> {
+        let mut out = vec![self.head];
+        match cut {
+            true => out.extend(capped(self.body, &self.indent, more)),
+            false => out.extend(self.body),
+        }
+        out
+    }
+}
+
+/// Card `c`'s story, cut as a card's screen and an export show it:
+/// [`story_told`], each entry's text its first [`STORY_ROWS`] lines and
+/// how many more.
+pub(super) fn story_lines(app: &App, c: &Card, me: AgentId, room: usize) -> Vec<Line<'static>> {
+    story_told(app, c, me, room)
+        .into_iter()
+        .flat_map(|e| e.shown(true, |more| format!("… +{more}")))
+        .collect()
+}
+
+/// Card `c`'s story, an event an entry, oldest first; conversation lines
 /// are told as agent `me` (the card's owner) had them. What an agent
 /// wrote is drawn as the conversation draws it: a one-line message and a
 /// decision or an assumption with their inline marks on their line; a
 /// message of more lines (or a list, a heading, code) under its head, as
-/// Markdown, its first [`STORY_ROWS`] lines and how many more. imece's own
-/// lines are plain.
-pub(super) fn story_lines(app: &App, c: &Card, me: AgentId) -> Vec<Line<'static>> {
+/// Markdown `room` cells wide (a table fits it). imece's own lines are
+/// plain.
+pub(super) fn story_told(app: &App, c: &Card, me: AgentId, room: usize) -> Vec<Told> {
     let t = app.lang.text();
     let mut out = Vec::new();
+    let one = |head| Told {
+        head,
+        body: Vec::new(),
+        indent: String::new(),
+    };
     for s in &c.story {
         let (icon, label, color) = story_icon(s.event.kind());
         let when = clock(s.tick);
@@ -233,13 +316,17 @@ pub(super) fn story_lines(app: &App, c: &Card, me: AgentId) -> Vec<Line<'static>
                 {
                     spans.push(Span::raw(": "));
                     spans.extend(inline(line, Style::new()));
-                    out.push(Line::from(spans));
+                    out.push(one(Line::from(spans)));
                     continue;
                 }
                 spans.push(Span::raw(":"));
-                out.push(Line::from(spans));
                 let indent = " ".repeat(when.width() + 1);
-                out.extend(capped(markdown_src(said.text, &indent), &indent));
+                let body = markdown_src(said.text, &indent, room);
+                out.push(Told {
+                    head: Line::from(spans),
+                    body: body.into_iter().map(|(l, _)| l).collect(),
+                    indent,
+                });
                 continue;
             }
             (None, StoryEvent::Decision(text) | StoryEvent::Assumption(text)) => {
@@ -247,7 +334,7 @@ pub(super) fn story_lines(app: &App, c: &Card, me: AgentId) -> Vec<Line<'static>
             }
             (None, e) => spans.push(Span::raw(words::story(app.lang, &app.world, c, e))),
         }
-        out.push(Line::from(spans));
+        out.push(one(Line::from(spans)));
     }
     out
 }
@@ -255,14 +342,19 @@ pub(super) fn story_lines(app: &App, c: &Card, me: AgentId) -> Vec<Line<'static>
 /// Lines of a message the focus shows under its head; the rest counted.
 pub(crate) const STORY_ROWS: usize = 8;
 
-/// `lines` drawn, up to [`STORY_ROWS`] of them, then `… +N` for the rest.
-fn capped(lines: Vec<(Line<'static>, String)>, indent: &str) -> Vec<Line<'static>> {
-    let more = lines.len().saturating_sub(STORY_ROWS);
-    let mut out: Vec<Line> = lines.into_iter().take(STORY_ROWS).map(|(l, _)| l).collect();
-    if more > 0 {
+/// `lines` drawn, up to [`STORY_ROWS`] of them, then `more` of how many
+/// are left (`… +N`).
+fn capped(
+    lines: Vec<Line<'static>>,
+    indent: &str,
+    more: impl Fn(usize) -> String,
+) -> Vec<Line<'static>> {
+    let left = lines.len().saturating_sub(STORY_ROWS);
+    let mut out: Vec<Line> = lines.into_iter().take(STORY_ROWS).collect();
+    if left > 0 {
         out.push(Line::from(vec![
             Span::raw(indent.to_string()),
-            Span::styled(format!("… +{more}"), dim()),
+            Span::styled(more(left), dim()),
         ]));
     }
     out
@@ -289,9 +381,21 @@ pub fn trace(f: &mut Frame, area: Rect, app: &App, id: AgentId) {
     let lines: Vec<Line> = a
         .trace
         .iter()
-        .flat_map(|l| trace_lines(l, vendor_color(a.vendor)))
+        .flat_map(|l| trace_lines(l, vendor_color(a.vendor), usize::from(inner.width)))
         .collect();
-    tail_linked(f, inner, lines);
+    let rows = rows_of(lines, inner.width);
+    let fresh;
+    let r = match app.reading.agent == Some(id) {
+        true => &app.reading,
+        false => {
+            fresh = crate::app::Reading::default();
+            &fresh
+        }
+    };
+    let top = r.trace_top(rows.len(), usize::from(inner.height));
+    let shown = &rows[top..rows.len().min(top + usize::from(inner.height))];
+    f.render_widget(Paragraph::new(shown.to_vec()), inner);
+    link_rows(f.buffer_mut(), inner, shown);
 }
 
 /// What a trace line is, read from its first word: the trace producers'
@@ -352,8 +456,9 @@ impl TraceKind {
 /// lines as written. Web addresses in any of them are drawn as links
 /// ([`linked`]). A line that matches no word is still shown whole. A line
 /// that runs over rows (a command with a heredoc) keeps them: the first
-/// [`TRACE_ROWS`] under it, indented, then how many more.
-pub(crate) fn trace_lines(raw: &str, vendor: Color) -> Vec<Line<'static>> {
+/// [`TRACE_ROWS`] under it, indented, then how many more. `room` is how
+/// wide the lines may be, which a table in the agent's words fits.
+pub(crate) fn trace_lines(raw: &str, vendor: Color, room: usize) -> Vec<Line<'static>> {
     let mut raw_rows = raw.lines();
     let line = clean(raw_rows.next().unwrap_or_default());
     let (clock, rest) = line.split_once(' ').unwrap_or((&line, ""));
@@ -367,7 +472,7 @@ pub(crate) fn trace_lines(raw: &str, vendor: Color) -> Vec<Line<'static>> {
     ];
     if kind == TraceKind::Words {
         let text = unquote(arg).unwrap_or_else(|| arg.to_string());
-        let mut rows = markdown_in(&text, &indent, fg(vendor)).into_iter();
+        let mut rows = markdown_in(&text, &indent, fg(vendor), room).into_iter();
         if let Some((first, _)) = rows.next() {
             spans.extend(first.spans.into_iter().skip(1));
         }
@@ -604,6 +709,7 @@ mod tests {
         let lines = trace_lines(
             "12:00:01 text \"Four pass.\\n- **All** green \\\"now\\\"\\n```\\ncode\\n```\"",
             v,
+            usize::MAX,
         );
         assert_eq!(
             texts(&lines),
@@ -621,16 +727,16 @@ mod tests {
         assert!(all.style.add_modifier.contains(Modifier::BOLD));
         assert_eq!(colour_of(&lines[2], "code"), Some(pal().code));
         assert_eq!(
-            texts(&trace_lines("12:00:01 text not quoted", v)),
+            texts(&trace_lines("12:00:01 text not quoted", v, usize::MAX)),
             ["12:00:01 › not quoted"],
             "a text that is not one quoted string shows as written"
         );
         assert_eq!(
-            texts(&trace_lines("12:00:01 text \"\"", v)),
+            texts(&trace_lines("12:00:01 text \"\"", v, usize::MAX)),
             ["12:00:01 › "]
         );
         // A web address in its words is a link's span.
-        let l = trace_lines("12:00:01 text \"see https://a.b/c.\"", v).remove(0);
+        let l = trace_lines("12:00:01 text \"see https://a.b/c.\"", v, usize::MAX).remove(0);
         assert_eq!(style_of(&l, "https://a.b/c"), Some(link_style()));
         assert_eq!(colour_of(&l, "."), Some(v));
     }
@@ -640,7 +746,7 @@ mod tests {
         let v = Color::Indexed(9);
         let body = |n: usize| (1..=n).map(|i| format!("\nline {i}")).collect::<String>();
         let six = format!("12:00:02 tool_use Bash cat > a.txt <<EOF{}", body(6));
-        let lines = trace_lines(&six, v);
+        let lines = trace_lines(&six, v, usize::MAX);
         assert_eq!(
             texts(&lines),
             [
@@ -655,7 +761,7 @@ mod tests {
         );
         assert_eq!(colour_of(&lines[1], "line 1"), Some(pal().code));
         let nine = format!("12:00:02 tool_use Bash cat > a.txt <<EOF{}\n", body(9));
-        let lines = trace_lines(&nine, v);
+        let lines = trace_lines(&nine, v, usize::MAX);
         assert_eq!(lines.len(), 8, "{:?}", texts(&lines));
         assert_eq!(texts(&lines[6..]), ["           line 6", "           … +3"]);
         assert_eq!(colour_of(&lines[7], "… +3"), Some(pal().dim));
@@ -665,12 +771,13 @@ mod tests {
         assert_eq!(
             texts(&trace_lines(
                 "12:00:02 tool_use Bash x\nTOKEN=abc \u{1b}[2J",
-                v
+                v,
+                usize::MAX
             ))[1],
             "           [***]  [2J"
         );
         // The rows of anything but a tool are as written.
-        let lines = trace_lines("12:00:02 worktree: x\nmore", v);
+        let lines = trace_lines("12:00:02 worktree: x\nmore", v, usize::MAX);
         assert_eq!(texts(&lines), ["12:00:02 · worktree: x", "           more"]);
         assert_eq!(style_of(&lines[1], "more"), Some(Style::new()));
     }
@@ -720,7 +827,7 @@ mod tests {
         let v = Color::Indexed(9);
         let p = pal();
         let code = fg(p.code);
-        let one = |raw: &str| trace_lines(raw, v).remove(0);
+        let one = |raw: &str| trace_lines(raw, v, usize::MAX).remove(0);
         let text = |l: &Line<'static>| texts(std::slice::from_ref(l)).remove(0);
         let l = one("12:00:02 tool_use Edit src/a.rs b");
         assert_eq!(text(&l), "12:00:02 ▸ Edit src/a.rs b");
@@ -798,7 +905,7 @@ mod tests {
             .story(card, StoryEvent::Decision("use `serde`\nnot *json*".into()));
         app.world
             .story(card, StoryEvent::Touched("src/*a*.rs".into()));
-        let lines = story_lines(&app, &app.world.cards[c], me);
+        let lines = story_lines(&app, &app.world.cards[c], me, usize::MAX);
         let all = texts(&lines);
         let when = clock(app.world.tick);
         let indent = " ".repeat(when.len() + 1);
@@ -854,16 +961,329 @@ mod tests {
 
     #[test]
     fn capped_draws_up_to_the_room_and_counts_the_rest() {
-        let lines = |n: usize| -> Vec<(Line<'static>, String)> {
-            (0..n)
-                .map(|i| (Line::from(i.to_string()), i.to_string()))
-                .collect()
+        let lines = |n: usize| -> Vec<Line<'static>> {
+            (0..n).map(|i| Line::from(i.to_string())).collect()
         };
-        assert_eq!(capped(lines(STORY_ROWS), "  ").len(), STORY_ROWS);
-        let out = capped(lines(STORY_ROWS + 1), "  ");
+        let more = |n: usize| format!("… +{n} more");
+        assert_eq!(capped(lines(STORY_ROWS), "  ", more).len(), STORY_ROWS);
+        let out = capped(lines(STORY_ROWS + 3), "  ", more);
         assert_eq!(out.len(), STORY_ROWS + 1);
-        assert_eq!(texts(&out[STORY_ROWS..]), ["  … +1"]);
+        assert_eq!(texts(&out[STORY_ROWS - 1..]), ["7", "  … +3 more"]);
+        assert_eq!(out[STORY_ROWS].spans[1].style, dim());
         assert_eq!(STORY_ROWS, 8);
+    }
+
+    /// An app whose worker reads card 0 on its focus: one message of 20
+    /// list lines, then five of one line each.
+    fn reading_app() -> (App, AgentId) {
+        use crate::app::Zoom;
+        use crate::i18n::Lang;
+        let mut app = App::new(1, 1, 0, 1, Lang::En);
+        let id = (app.world.agents.iter())
+            .find(|a| a.role == Role::Worker)
+            .unwrap()
+            .id;
+        let c = app.world.cards[0].id;
+        app.world.agents[id].card = Some(c);
+        app.world.agents[id].plan.clear();
+        app.world.cards[c].owner = Some(id);
+        app.world.cards[c].story.clear();
+        let steps: String = (1..=20).map(|i| format!("- step {i}\n")).collect();
+        app.world
+            .story(Some(c), StoryEvent::Replied(format!("Done:\n{steps}")));
+        for n in 1..=5 {
+            app.world
+                .story(Some(c), StoryEvent::Replied(format!("line {n}")));
+        }
+        app.zoom = Zoom::Focus(id);
+        (app, id)
+    }
+
+    /// The focus of agent `id` drawn `height` rows high, a string a row.
+    fn focus_rows(app: &App, id: AgentId, height: u16) -> Vec<String> {
+        use ratatui::{Terminal, backend::TestBackend};
+        let mut t = Terminal::new(TestBackend::new(80, height)).unwrap();
+        t.draw(|f| draw(f, f.area(), app, id)).unwrap();
+        (0..height)
+            .map(|y| {
+                (0..80)
+                    .map(|x| t.backend().buffer()[(x, y)].symbol().to_string())
+                    .collect::<String>()
+                    .trim_end()
+                    .to_string()
+            })
+            .collect()
+    }
+
+    fn press(app: &mut App, code: ratatui::crossterm::event::KeyCode) {
+        use ratatui::crossterm::event::{KeyEvent, KeyModifiers};
+        app.on_key(KeyEvent::new(code, KeyModifiers::NONE));
+    }
+
+    fn keys(app: &mut App, typed: &str) {
+        for c in typed.chars() {
+            press(app, ratatui::crossterm::event::KeyCode::Char(c));
+        }
+    }
+
+    /// The row that says `what`, from the left border on.
+    fn row_of<'a>(rows: &'a [String], what: &str) -> &'a str {
+        let row = rows.iter().find(|r| r.contains(what));
+        let row = row.unwrap_or_else(|| panic!("{what} not shown: {rows:#?}"));
+        row.strip_prefix('│').unwrap_or(row)
+    }
+
+    #[test]
+    fn the_focus_cuts_an_entry_to_its_first_lines_and_opens_it_whole() {
+        let (mut app, id) = reading_app();
+        let rows = focus_rows(&app, id, 50);
+        // The newest at hand, its bar in the gutter; the long one cut.
+        assert!(row_of(&rows, "line 5").starts_with("▌ "), "{rows:#?}");
+        assert!(row_of(&rows, "line 4").starts_with("  "));
+        assert!(rows.iter().any(|r| r.contains("… +13 · l shows all")));
+        assert!(!rows.iter().any(|r| r.contains("step 20")));
+        // `l` opens the one at hand: the newest is one line already.
+        keys(&mut app, "l");
+        assert_eq!(focus_rows(&app, id, 50), rows);
+        // To the first, every row of it marked; `l` opens it whole.
+        keys(&mut app, "gg");
+        let rows = focus_rows(&app, id, 50);
+        assert!(row_of(&rows, "step 1").starts_with("▌ "));
+        assert!(row_of(&rows, "line 5").starts_with("  "));
+        keys(&mut app, "l");
+        let rows = focus_rows(&app, id, 50);
+        assert!(row_of(&rows, "step 20").starts_with("▌ "));
+        assert!(!rows.iter().any(|r| r.contains("… +")));
+        // `h` cuts it again, `za` toggles, `zR` opens all, `zM` cuts all.
+        let open = |app: &App| {
+            focus_rows(app, id, 50)
+                .iter()
+                .any(|r| r.contains("step 20"))
+        };
+        keys(&mut app, "h");
+        assert!(!open(&app));
+        keys(&mut app, "za");
+        assert!(open(&app));
+        keys(&mut app, "za");
+        assert!(!open(&app));
+        keys(&mut app, "zR");
+        assert!(open(&app));
+        keys(&mut app, "zM");
+        assert!(!open(&app));
+        press(&mut app, ratatui::crossterm::event::KeyCode::Right);
+        assert!(open(&app), "the arrows as h l");
+        press(&mut app, ratatui::crossterm::event::KeyCode::Left);
+        assert!(!open(&app));
+        // In Turkish too.
+        app.lang = crate::i18n::Lang::Tr;
+        let rows = focus_rows(&app, id, 50);
+        assert!(
+            rows.iter()
+                .any(|r| r.contains("… +13 · l hepsini gösterir"))
+        );
+    }
+
+    #[test]
+    fn the_entry_at_hand_is_the_newest_unless_one_was_chosen_and_is_still_there() {
+        use crate::app::Reading;
+        let mut r = Reading::default();
+        assert_eq!((r.at(6), r.at(1), r.at(0)), (5, 0, 0));
+        r.sel = Some(2);
+        assert_eq!((r.at(6), r.at(3), r.at(2)), (2, 2, 1));
+        assert!(r.folds.folded(0) && r.folds.folded(9), "all cut at first");
+        // A page is the rows less one, one row at least; fewer rows than
+        // the room start at the top.
+        let r = Reading::default();
+        assert_eq!(r.focus_top(30, 1, (0, 1)), 29);
+        assert_eq!(r.page.get(), 1);
+        assert_eq!(r.focus_top(5, 10, (0, 1)), 0);
+        assert_eq!(r.trace_top(30, 1), 29);
+        assert_eq!((r.trace_page.get(), r.trace_last.get()), (1, 29));
+        assert_eq!(r.trace_top(30, 2), 28);
+        assert_eq!(r.trace_page.get(), 1);
+        assert_eq!(r.trace_top(5, 10), 0);
+    }
+
+    #[test]
+    fn the_focus_steps_through_its_story_and_follows_the_newest_at_its_foot() {
+        use crate::app::Zoom;
+        use ratatui::crossterm::event::KeyCode;
+        let (mut app, id) = reading_app();
+        let bar = |app: &App, what: &str| row_of(&focus_rows(app, id, 50), what).starts_with("▌ ");
+        keys(&mut app, "k");
+        assert_eq!(app.reading.sel, Some(4));
+        assert!(bar(&app, "line 4") && !bar(&app, "line 5"));
+        keys(&mut app, "kkkk");
+        assert_eq!(app.reading.sel, Some(0));
+        keys(&mut app, "k");
+        assert_eq!(app.reading.sel, Some(0), "the first stays");
+        keys(&mut app, "j");
+        assert_eq!(app.reading.sel, Some(1));
+        assert!(bar(&app, "line 1"));
+        keys(&mut app, "jjj");
+        assert_eq!(app.reading.sel, Some(4));
+        // The one before the newest steps on to the newest followed.
+        keys(&mut app, "j");
+        assert_eq!(app.reading.sel, None);
+        assert!(bar(&app, "line 5"));
+        keys(&mut app, "j");
+        assert_eq!(app.reading.sel, None);
+        press(&mut app, KeyCode::Home);
+        assert_eq!(app.reading.sel, Some(0));
+        press(&mut app, KeyCode::End);
+        assert_eq!(app.reading.sel, None);
+        keys(&mut app, "gg");
+        assert_eq!(app.reading.sel, Some(0));
+        keys(&mut app, "G");
+        assert_eq!(app.reading.sel, None);
+        // The newest followed: a new entry is at hand as it comes.
+        let c = app.world.cards[0].id;
+        app.world
+            .story(Some(c), StoryEvent::Replied("line 6".into()));
+        assert!(bar(&app, "line 6") && !bar(&app, "line 5"));
+        // Another agent's focus starts afresh; leaving forgets it.
+        keys(&mut app, "kl");
+        assert_eq!((app.reading.sel, app.reading.agent), (Some(5), Some(id)));
+        assert!(!app.reading.folds.folded(5));
+        press(&mut app, KeyCode::Esc);
+        assert_eq!(app.zoom, Zoom::None);
+        assert_eq!(app.reading.agent, None);
+        assert!(app.reading.folds.folded(5), "cut again");
+        app.zoom = Zoom::Focus(id);
+        keys(&mut app, "k");
+        assert_eq!(app.reading.sel, Some(5));
+        let other = (app.world.agents.iter()).find(|a| a.id != id).unwrap().id;
+        app.zoom = Zoom::Focus(other);
+        keys(&mut app, "?");
+        assert_eq!((app.reading.agent, app.reading.sel), (Some(other), None));
+        // The raw stream of the same agent keeps where its focus was.
+        app.help = false;
+        app.zoom = Zoom::Focus(id);
+        keys(&mut app, "kk");
+        press(&mut app, KeyCode::Enter);
+        assert_eq!(app.zoom, Zoom::Trace(id));
+        press(&mut app, KeyCode::Esc);
+        assert_eq!((app.zoom, app.reading.sel), (Zoom::Focus(id), Some(4)));
+    }
+
+    #[test]
+    fn the_focus_scrolls_by_pages_and_keeps_the_entry_at_hand_in_view() {
+        use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+        let (mut app, id) = reading_app();
+        keys(&mut app, "gg");
+        keys(&mut app, "l");
+        // 16 rows: the border's 2 and the head's 4 leave 10 for the story,
+        // whose first entry is 22 rows open.
+        let rows = focus_rows(&app, id, 16);
+        assert!(row_of(&rows, "Done:").starts_with("▌ "));
+        assert!(!rows.iter().any(|r| r.contains("line 5")));
+        assert_eq!(app.reading.scroll.get(), 0);
+        assert_eq!(app.reading.page.get(), 9, "a row kept from the last page");
+        press(&mut app, KeyCode::PageDown);
+        focus_rows(&app, id, 16);
+        assert_eq!(app.reading.scroll.get(), 9);
+        assert_eq!(app.reading.sel, Some(0), "paging moves no entry");
+        let ctrl =
+            |app: &mut App, c| app.on_key(KeyEvent::new(KeyCode::Char(c), KeyModifiers::CONTROL));
+        ctrl(&mut app, 'd');
+        focus_rows(&app, id, 16);
+        assert_eq!(app.reading.scroll.get(), 13, "half a page");
+        ctrl(&mut app, 'f');
+        let rows = focus_rows(&app, id, 16);
+        assert_eq!(
+            app.reading.scroll.get(),
+            17,
+            "no further than the last page"
+        );
+        assert!(rows.iter().any(|r| r.contains("line 5")));
+        ctrl(&mut app, 'u');
+        focus_rows(&app, id, 16);
+        assert_eq!(app.reading.scroll.get(), 13);
+        ctrl(&mut app, 'b');
+        focus_rows(&app, id, 16);
+        assert_eq!(app.reading.scroll.get(), 4);
+        press(&mut app, KeyCode::PageUp);
+        focus_rows(&app, id, 16);
+        assert_eq!(app.reading.scroll.get(), 0);
+        // A step brings the entry at hand into view, as little as it can.
+        keys(&mut app, "j");
+        focus_rows(&app, id, 16);
+        assert_eq!(app.reading.scroll.get(), 13, "line 1 on the last row");
+        // From the newest followed, a page up stays where it was put.
+        keys(&mut app, "G");
+        focus_rows(&app, id, 16);
+        assert_eq!(app.reading.scroll.get(), 17);
+        press(&mut app, KeyCode::PageUp);
+        assert_eq!(app.reading.sel, Some(5));
+        focus_rows(&app, id, 16);
+        assert_eq!(app.reading.scroll.get(), 8);
+        let c = app.world.cards[0].id;
+        app.world
+            .story(Some(c), StoryEvent::Replied("line 6".into()));
+        focus_rows(&app, id, 16);
+        assert_eq!(app.reading.scroll.get(), 8, "what comes does not move it");
+    }
+
+    #[test]
+    fn the_raw_stream_scrolls_and_follows_the_newest_at_its_foot() {
+        use crate::app::Zoom;
+        use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+        use ratatui::{Terminal, backend::TestBackend};
+        let (mut app, id) = reading_app();
+        let url = "https://a.b/c";
+        app.world.agents[id].trace = (0..30)
+            .map(|i| format!("12:00:{i:02} note {i} {url}"))
+            .collect();
+        press(&mut app, KeyCode::Enter);
+        assert_eq!(app.zoom, Zoom::Trace(id));
+        let draw_it = |app: &App| {
+            let mut t = Terminal::new(TestBackend::new(40, 12)).unwrap();
+            t.draw(|f| trace(f, f.area(), app, id)).unwrap();
+            t
+        };
+        let first = |t: &Terminal<TestBackend>| {
+            (1..40)
+                .map(|x| t.backend().buffer()[(x, 1)].symbol().to_string())
+                .collect::<String>()
+        };
+        // 10 rows inside the border: the newest ten, their links whole.
+        let t = draw_it(&app);
+        assert!(first(&t).contains("• 20 "), "{}", first(&t));
+        assert_eq!(app.reading.trace_last.get(), 20);
+        let linked = |t: &Terminal<TestBackend>, y| {
+            (1..40).any(|x| crate::ui::tests::links_to(t.backend().buffer(), x, y, url))
+        };
+        assert!(linked(&t, 1) && linked(&t, 10));
+        keys(&mut app, "k");
+        assert!(first(&draw_it(&app)).contains("• 19 "));
+        assert_eq!(app.reading.trace_top, Some(19));
+        // Back at the last page, the newest is followed again.
+        keys(&mut app, "j");
+        assert_eq!(app.reading.trace_top, None);
+        keys(&mut app, "j");
+        assert_eq!(app.reading.trace_top, None);
+        app.world.agents[id]
+            .trace
+            .push_back(format!("12:01:00 note 30 {url}"));
+        assert!(first(&draw_it(&app)).contains("• 21 "));
+        press(&mut app, KeyCode::PageUp);
+        assert_eq!(app.reading.trace_top, Some(12), "a page less a row");
+        keys(&mut app, "gg");
+        assert!(first(&draw_it(&app)).contains("• 0 "));
+        app.on_key(KeyEvent::new(KeyCode::Char('d'), KeyModifiers::CONTROL));
+        assert_eq!(app.reading.trace_top, Some(4), "half a page");
+        draw_it(&app);
+        press(&mut app, KeyCode::PageDown);
+        assert_eq!(app.reading.trace_top, Some(13));
+        draw_it(&app);
+        app.on_key(KeyEvent::new(KeyCode::Char('u'), KeyModifiers::CONTROL));
+        assert_eq!(app.reading.trace_top, Some(9));
+        press(&mut app, KeyCode::End);
+        assert_eq!(app.reading.trace_top, None);
+        press(&mut app, KeyCode::Home);
+        assert_eq!(app.reading.trace_top, Some(0));
+        keys(&mut app, "G");
+        assert_eq!(app.reading.trace_top, None);
     }
 
     #[test]

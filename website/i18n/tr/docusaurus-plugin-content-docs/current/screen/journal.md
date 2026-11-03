@@ -22,7 +22,7 @@ Günlük (ekrandaki panelin adı DEFTER) salonun alt yan panelidir (varsayılan 
 
 ## Hikâye
 
-Alt yan panel varsayılan olarak günlüğü satır satır göstermez, hikâyeyi anlatır: aynı satırları karta göre gruplar. `J` (ya da `:story`) ikisi arasında geçer; seçim hatırlanır. Bir kartın ekranında panel her zaman o kartın günlüğüdür.
+Alt yan panel varsayılan olarak günlüğü satır satır göstermez, hikâyeyi anlatır: aynı satırları karta göre gruplar. `J` (ya da `:story`) ikisi arasında geçer; seçim hatırlanır ve defterin başlığı o zaman geri dönüş tuşunu söyler: `DEFTER · J hikâye`. Bir kartın ekranında panel her zaman o kartın günlüğüdür.
 
 ```text
 ┌ HİKÂYE · J defter ─────────────────────────────────────────┐
@@ -48,7 +48,7 @@ Hikâye her karede en çok en yeni 2.000 günlük satırını okur ve paneli dol
 | Tuş | Ne yapar |
 | --- | --- |
 | `j` `k`  `gg` `G` | bir kartın başlığını ya da başka'daki bir satırı seç |
-| `enter` | bir kart: ekranı ([kartlar](cards.md)) · başka'daki bir satır: günlük, o satırda |
+| `enter` | bir kart: ekranı ([kartlar](cards.md)) · başka'daki bir satır: günlük, o satırda, şimdilik (`DEFTER · esc hikâye`; `esc` ya da `J` hikâyeye döner) |
 | `#` | seçili kartın numarasını yaz |
 | `J` | günlük |
 

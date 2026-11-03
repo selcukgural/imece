@@ -1137,16 +1137,10 @@ pub(crate) fn talk_notes_message(w: &World, notes: &[&TalkNote]) -> String {
     out
 }
 
-/// What a drawn line reads as: its spans' text, trailing blanks dropped.
-fn line_text(line: &Line) -> String {
-    let text: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
-    text.trim().to_string()
-}
-
 /// A message's lines before wrapping, each with what copying it takes:
 /// its head (when, who to whom, the kind) and the line it answers as
-/// read, its text as written ([`markdown_src`]).
-fn message_lines(lang: Lang, w: &World, i: usize) -> Vec<(Line<'static>, String)> {
+/// read, its text as written ([`markdown_src`]), `room` cells wide.
+fn message_lines(lang: Lang, w: &World, i: usize, room: usize) -> Vec<(Line<'static>, String)> {
     let e = &w.journal[i];
     let mut head = Line::from(vec![Span::styled(format!("{} ", clock(e.tick)), dim())]);
     let mut rest = Vec::new();
@@ -1159,7 +1153,7 @@ fn message_lines(lang: Lang, w: &World, i: usize) -> Vec<(Line<'static>, String)
                 let text = line_text(&l);
                 (l, text)
             }));
-            rest.extend(markdown_src(s.text, "  "));
+            rest.extend(markdown_src(s.text, "  ", room));
         }
         None => head.spans.push(Span::raw(words::event(lang, w, &e.event))),
     }
@@ -1169,12 +1163,13 @@ fn message_lines(lang: Lang, w: &World, i: usize) -> Vec<(Line<'static>, String)
     lines
 }
 
-/// The lines of a conversation copy mode moves over, in order.
-pub(crate) fn thread_lines(lang: Lang, w: &World, entries: &[usize]) -> Vec<CopyLine> {
+/// The lines of a conversation copy mode moves over, in order, `room`
+/// cells wide as it was drawn (`Thread::room`).
+pub(crate) fn thread_lines(lang: Lang, w: &World, entries: &[usize], room: usize) -> Vec<CopyLine> {
     let mut out = Vec::new();
     for (n, &i) in entries.iter().enumerate() {
         out.extend(
-            message_lines(lang, w, i)
+            message_lines(lang, w, i, room)
                 .into_iter()
                 .map(|(line, text)| CopyLine {
                     entry: n,
@@ -1213,6 +1208,9 @@ fn join_lines(parts: impl Iterator<Item = (usize, String)>) -> String {
     out
 }
 
+/// The cells left of a conversation's text: its mark and the bar.
+const GUTTER: usize = 2;
+
 /// The rows of a conversation `width` cells wide, oldest first: each
 /// message is a head (when, who to whom, the kind) and its text as
 /// Markdown, wrapped, then a blank row; a day row stands before the first
@@ -1250,7 +1248,6 @@ pub(crate) fn thread_layout(
     th: &Thread,
     width: u16,
 ) -> (Vec<Line<'static>>, Vec<(usize, usize)>, Vec<(usize, usize)>) {
-    const GUTTER: usize = 2;
     let t = lang.text();
     let text_width = usize::from(width).saturating_sub(GUTTER);
     let mut rows: Vec<Line> = Vec::new();
@@ -1281,7 +1278,7 @@ pub(crate) fn thread_layout(
             row.spans.insert(0, first);
             row.spans.insert(1, second);
         };
-        let lines = message_lines(lang, w, i);
+        let lines = message_lines(lang, w, i, text_width);
         let notes: Vec<&TalkNote> = talk_notes.iter().filter(|n| n.entry == i).collect();
         let said = words::said(&e.event);
         if th.copy.is_none()
@@ -1419,6 +1416,7 @@ pub fn thread(f: &mut Frame, app: &App, th: &Thread) -> Rect {
     f.render_widget(Paragraph::new(Line::from(hint_spans(hints))), keys);
 
     let (rows, ranges, lines) = thread_layout(app.lang, w, &app.talk_notes, th, body.width);
+    th.room.set(usize::from(body.width).saturating_sub(GUTTER));
     let height = usize::from(body.height);
     let max = rows.len().saturating_sub(height);
     // The cursor's line is kept in view while copying, else the message.
