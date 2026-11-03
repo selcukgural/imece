@@ -79,7 +79,7 @@ pub fn draw(f: &mut Frame, app: &App) {
     if let Some(m) = &app.menu
         && app.typing
     {
-        completions(f, menu, m);
+        completions(f, menu, m, app.lang);
     }
     let line = footer(f, foot, app);
     // Windows drawn over the footer: the cursor is not shown under them.
@@ -1696,9 +1696,12 @@ pub(crate) fn pulse_spans(lang: Lang, p: Pulse) -> Vec<Span<'static>> {
     ]
 }
 
-/// The matches for the word being typed, the highlighted one standing
-/// out, in a window that always holds it when they do not all fit.
-fn completions(f: &mut Frame, area: Rect, m: &crate::complete::Menu) {
+/// The completion menu's row: the items with their notes, the highlighted
+/// one reversed, in a window that always holds it. When not all fit,
+/// `‹ N` before says how many are out of view before the window and
+/// `+N more ›` after how many after it, so the person knows `tab` has
+/// more to show.
+fn completions(f: &mut Frame, area: Rect, m: &crate::complete::Menu, lang: Lang) {
     let width = area.width as usize;
     // An item with its note (a command's value, `$`), a space either side.
     let cells: Vec<String> = (m.items.iter().enumerate())
@@ -1708,27 +1711,50 @@ fn completions(f: &mut Frame, area: Rect, m: &crate::complete::Menu) {
         })
         .collect();
     let cell = |i: usize| cells[i].chars().count();
-    // Start the window at the highlighted item and pull it back while
-    // earlier items still fit.
-    let mut first = m.chosen;
-    let mut used = cell(m.chosen);
-    while first > 0 && used + cell(first - 1) <= width {
-        first -= 1;
-        used += cell(first);
+    let n = cells.len();
+    let before = |k: usize| format!(" ‹ {k} ");
+    let after = |k: usize| fill(lang.text().menu_more, &[&k.to_string()]);
+    let marks = |first: usize, last: usize| {
+        let b = if first > 0 {
+            before(first).chars().count()
+        } else {
+            0
+        };
+        let a = if last < n {
+            after(n - last).chars().count()
+        } else {
+            0
+        };
+        a + b
+    };
+    let sum = |from: usize, to: usize| (from..to).map(cell).sum::<usize>();
+    // All when they fit; else the window starts at the highlighted item,
+    // is pulled back while earlier items still fit, then filled on, the
+    // marks for what stays out counted in.
+    let (mut first, mut last) = (0, n);
+    if sum(0, n) > width {
+        (first, last) = (m.chosen, m.chosen + 1);
+        while first > 0 && sum(first - 1, last) + marks(first - 1, last) <= width {
+            first -= 1;
+        }
+        while last < n && sum(first, last + 1) + marks(first, last + 1) <= width {
+            last += 1;
+        }
     }
     let mut spans = Vec::new();
-    let mut taken = 0;
-    for (i, text) in cells.iter().enumerate().skip(first) {
-        if taken + cell(i) > width {
-            break;
-        }
-        taken += cell(i);
+    if first > 0 {
+        spans.push(Span::styled(before(first), bold(pal().info)));
+    }
+    for (i, text) in cells.iter().enumerate().take(last).skip(first) {
         let style = if i == m.chosen {
             Style::new().add_modifier(Modifier::REVERSED)
         } else {
             dim()
         };
         spans.push(Span::styled(text.clone(), style));
+    }
+    if last < n {
+        spans.push(Span::styled(after(n - last), bold(pal().info)));
     }
     f.render_widget(Paragraph::new(Line::from(spans)), area);
 }
@@ -1885,16 +1911,40 @@ fn writing(app: &App, rows: usize, width: usize) -> (Vec<Line<'static>>, (usize,
     // The menu's keys while it is open; the keys to send only until
     // something is written.
     let keys = match (&app.menu, &app.noting) {
+        (Some(m), _) if m.items.len() > 1 => Some(format!(
+            "{}{}",
+            t.pick_cancel,
+            fill(
+                t.menu_at,
+                &[&(m.chosen + 1).to_string(), &m.items.len().to_string()]
+            )
+        )),
         (Some(_), _) => Some(t.pick_cancel.to_string()),
         _ if !app.input.is_empty() => None,
         (None, Some(_)) => Some(fill(t.keep_cancel, &[newline])),
         (None, None) => Some(fill(t.send_cancel, &[newline])),
     };
     hint.extend(keys.map(|k| Span::styled(k, dim())));
+    if let Some(what) = command_hint(app) {
+        hint.push(Span::styled(format!("   {what}"), fg(pal().info)));
+    }
     if let Some(last) = out.last_mut() {
         last.spans.extend(hint);
     }
     (out, caret)
+}
+
+/// What the `:` command `tab` just put on the line does, in a line: shown
+/// after the menu's keys until the person writes on (the menu is made
+/// again then, with nothing put in).
+fn command_hint(app: &App) -> Option<&'static str> {
+    let m = app.menu.as_ref().filter(|m| m.inserted && m.start == 1)?;
+    if !app.input.starts_with(':') {
+        return None;
+    }
+    let name = m.items.get(m.chosen)?;
+    let hints = app.lang.text().command_hints;
+    hints.iter().find(|(c, _)| c == name).map(|(_, what)| *what)
 }
 
 /// The footer: what is being written, else the keys or a word for a
@@ -7245,6 +7295,103 @@ mod tests {
     }
 
     #[test]
+    fn every_command_says_what_it_does_in_both_languages_in_the_menus_order() {
+        for lang in [Lang::En, Lang::Tr] {
+            let names: Vec<&str> = lang.text().command_hints.iter().map(|(c, _)| *c).collect();
+            assert_eq!(names, crate::complete::COMMANDS, "{lang:?}");
+            for (c, what) in lang.text().command_hints {
+                assert!(
+                    !what.is_empty() && what.chars().count() <= 80,
+                    "{c}: {what}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn the_colon_menu_says_how_many_are_out_of_view_and_what_the_one_put_in_does() {
+        let mut app = app_after(1, 1, 0, Lang::En);
+        let foot = |app: &App| render(app, 140, 40).lines().last().unwrap().to_string();
+        let n = crate::complete::COMMANDS.len();
+        key(&mut app, KeyCode::Char(':'));
+        let row = menu_row(&app, 140);
+        assert!(row.contains(" more › "), "more than fit, said: {row}");
+        assert!(!row.contains("‹"), "{row}");
+        let f = foot(&app);
+        assert!(
+            f.contains(&format!("tab next · enter take · esc hide · 1 of {n}")),
+            "{f}"
+        );
+        assert!(!f.contains("yes from now on"), "nothing put in yet: {f}");
+        // tab puts the first one in: what it does follows the keys.
+        key(&mut app, KeyCode::Tab);
+        assert_eq!(app.input, ":allow ");
+        let f = foot(&app);
+        assert!(
+            f.contains(&format!(
+                "esc hide · 1 of {n}   the project's yes from now on; PROGRAM [WORD] adds or drops one"
+            )),
+            "{f}"
+        );
+        key(&mut app, KeyCode::Tab);
+        let f = foot(&app);
+        assert!(
+            f.contains(&format!("2 of {n}   put the project at hand away")),
+            "{f}"
+        );
+        // Far on, the ones before are counted too.
+        for _ in 0..40 {
+            key(&mut app, KeyCode::Tab);
+        }
+        let row = menu_row(&app, 140);
+        assert!(row.starts_with(" ‹ "), "{row}");
+        // In Turkish.
+        app.lang = Lang::Tr;
+        let f = foot(&app);
+        let (c, what) = Lang::Tr.text().command_hints[41];
+        assert_eq!(app.input, format!(":{c} "));
+        assert!(f.contains(&format!("42/{n}   {what}")), "{f}");
+        app.lang = Lang::En;
+        // Writing on: gone.
+        key(&mut app, KeyCode::Char('x'));
+        assert!(
+            !foot(&app).contains(Lang::En.text().command_hints[41].1),
+            "{}",
+            foot(&app)
+        );
+        // One item: no count.
+        app.input.clear();
+        app.after = 0;
+        for c in ":unse".chars() {
+            key(&mut app, KeyCode::Char(c));
+        }
+        assert_eq!(app.menu.as_ref().map(|m| m.items.len()), Some(1));
+        let f = foot(&app);
+        assert!(f.contains("esc hide") && !f.contains(" of 1"), "{f}");
+        // An argument's menu and an @ menu are not commands.
+        app.input.clear();
+        app.after = 0;
+        for c in ":lead ".chars() {
+            key(&mut app, KeyCode::Char(c));
+        }
+        key(&mut app, KeyCode::Tab);
+        assert_eq!(app.input, ":lead claude");
+        assert!(!foot(&app).contains("which vendor leads"), "{}", foot(&app));
+        key(&mut app, KeyCode::Esc);
+        key(&mut app, KeyCode::Esc);
+        key(&mut app, KeyCode::Char('@'));
+        key(&mut app, KeyCode::Tab);
+        assert!(
+            app.menu
+                .as_ref()
+                .is_some_and(|m| m.inserted && m.start == 1)
+        );
+        let f = foot(&app);
+        assert!(f.contains("esc hide · 1 of "), "{f}");
+        assert!(!f.contains("   the "), "{f}");
+    }
+
+    #[test]
     fn an_at_offers_the_agents_and_tab_steps_through_them_with_the_text_following() {
         let mut app = app_after(1, 3, 0, Lang::En);
         let names: Vec<String> = app.world.agents.iter().map(|a| a.name.clone()).collect();
@@ -7374,9 +7521,10 @@ mod tests {
             "the note stands out too"
         );
         assert!(!out[open + 8], "{row}");
-        // The window counts the notes: the highlighted item stays in view.
-        let (row, _) = completion_row(&m, 14);
-        assert!(row.starts_with(" open $  help"), "{row}");
+        // The window counts the notes: the highlighted item stays in view,
+        // the one before it out, and said.
+        let (row, _) = completion_row(&m, 19);
+        assert_eq!(row, " ‹ 1  open $  help ", "an exact fit");
     }
 
     #[test]
@@ -8082,7 +8230,7 @@ mod tests {
     /// and whether the cell at `x` stands out.
     fn completion_row(m: &crate::complete::Menu, width: u16) -> (String, Vec<bool>) {
         let mut t = Terminal::new(TestBackend::new(width, 1)).unwrap();
-        t.draw(|f| completions(f, f.area(), m)).unwrap();
+        t.draw(|f| completions(f, f.area(), m, Lang::En)).unwrap();
         let buf = t.backend().buffer();
         let row = (0..width)
             .map(|x| buf[(x, 0)].symbol().to_string())
@@ -8109,23 +8257,43 @@ mod tests {
         // Each item takes its letters and a space either side: 4 5 6 4 3.
         let items = ["aa", "bbb", "cccc", "dd", "e"];
         let (row, out) = completion_row(&menu_of(&items, 0), 22);
-        assert_eq!(row, " aa  bbb  cccc  dd  e ", "an exact fit shows all");
+        assert_eq!(
+            row, " aa  bbb  cccc  dd  e ",
+            "an exact fit shows all, no marks"
+        );
         assert!(out[1] && out[2], "the highlighted one stands out");
         assert!(out[..4].iter().all(|&o| o));
         assert!(out[4..].iter().all(|&o| !o), "{out:?}");
-        // One cell short: the last item is left out, nothing is cut.
+        // One cell short: what does not fit is counted, never cut.
         let (row, _) = completion_row(&menu_of(&items, 0), 21);
-        assert_eq!(row, " aa  bbb  cccc  dd   ");
+        assert_eq!(row, " aa  bbb  +3 more ›  ");
+        let (row, _) = completion_row(&menu_of(&items, 0), 20);
+        assert_eq!(row, " aa  bbb  +3 more › ", "the mark fits exactly");
+        let (row, _) = completion_row(&menu_of(&items, 0), 19);
+        assert_eq!(row, " aa  +4 more ›     ", "one cell short of it");
         // The last one highlighted: the window starts where the earlier
-        // ones still fit before it.
+        // ones still fit before it, the ones before counted.
         let (row, out) = completion_row(&menu_of(&items, 4), 21);
-        assert_eq!(row, " bbb  cccc  dd  e    ");
+        assert_eq!(row, " ‹ 2  cccc  dd  e    ");
         assert!(out[15] && out[16] && out[17] && !out[14] && !out[18]);
+        // In the middle: both marks.
+        let seven = ["x1", "x2", "x3", "x4", "x5", "x6", "x7"];
+        let (row, out) = completion_row(&menu_of(&seven, 3), 20);
+        assert_eq!(row, " ‹ 3  x4  +3 more › ");
+        assert!(out[5] && out[8] && !out[4] && !out[9]);
         // Pulling the window back looks at the item before, not the one
         // counted already: a big one before a small highlighted one.
         let (row, out) = completion_row(&menu_of(&["xxxxxxxx", "a"], 1), 12);
-        assert_eq!(row, " a          ");
-        assert!(out[0] && out[1] && out[2] && !out[3]);
+        assert_eq!(row, " ‹ 1  a     ");
+        assert!(out[5] && out[6] && out[7] && !out[4] && !out[8]);
+        // Turkish says it in its words.
+        let mut t = Terminal::new(TestBackend::new(21, 1)).unwrap();
+        t.draw(|f| completions(f, f.area(), &menu_of(&items, 0), Lang::Tr))
+            .unwrap();
+        let row: String = (0..21)
+            .map(|x| t.backend().buffer()[(x, 0)].symbol().to_string())
+            .collect();
+        assert_eq!(row, " aa  +4 tane daha ›  ");
     }
 
     #[test]

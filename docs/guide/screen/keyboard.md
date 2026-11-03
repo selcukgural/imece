@@ -20,7 +20,7 @@ The conventions are vim's: `h` `j` `k` `l` move and fold, `gg` and `G` go to the
 | `/`  `i` | write to the lead of the selected project |
 | `@name text` | write to one agent: `@name` is the agent, `text` the message |
 | `/cmd`  `@name /cmd` | the agent's own command line (`/clear`, `/compact`, `/cost` …) |
-| `:` | a command to imece; `tab` opens a menu with the commands' values |
+| `:` | a command to imece; the menu lists them all with their values: `‹ 12` and `+40 more ›` count the ones out of view, the line under it says where you are (`3 of 63`), and once `tab` puts one on the line, what it does follows the keys until you write on |
 | `$` | in the `:` menu: this command raises the next bill |
 | `:budget USD` | raise or lower the budget while agents run; `USD` is dollars like `80` or `2.50` |
 | `:lead VENDOR` | who leads from the next start on; `VENDOR` is `claude`, `codex`, `gemini` or `ask` |

@@ -48,3 +48,21 @@ Record 65 adds `&` = `:goto [NAME]`.
 Record 66 adds `^r` = `:history [WORDS]`.
 
 Record 76 adds `:keys`.
+
+**What is out of view, and what a command does (the person, 2026-11-04:
+"there are many `:` commands and not all show; one does not know the
+others are there unless tabbing on by chance"; and "after `tab`, let one
+see what the command does, as a hint, gone once one writes").** The
+menu's row (`ui::completions`) shows every item when all fit, else a
+window around the highlighted one with `‹ N` before it (how many are
+before the window) and `+N more ›` after it (`menu_more`, `+N tane daha
+›`), both counted into the room so nothing is cut; the line under it
+adds where the highlight is, `· 3 of 63` (`menu_at`, `3/63`), for every
+menu of more than one item. Once `tab` (or a step) put a `:` command on
+the line (`Menu.inserted`, `start == 1`, the line starts with `:`), what
+it does follows the keys in the info colour (`ui::command_hint` from
+`Text::command_hints`, one line per command of `complete::COMMANDS` in
+its order, both languages, a test holds the order and that none is
+missing); writing on makes the menu again with nothing put in, so it
+goes. An argument's menu, `@` and the rest have no such line. Pure
+screen logic: the demo shows it as live does.
