@@ -24,7 +24,7 @@ Everything an agent wrote reaches the terminal only through `i18n::fill` or `i18
 
 ### Fail-closed session checks
 
-imece switches on each vendor's own restrictions for the role and `--confine` level and verifies what the session reports it runs with: Claude's `init` on every turn, Codex's config echo, plugins, hooks, MCP servers (again before every turn) and thread, Gemini's mode, model, `/about`, `/extensions list` and `/memory list`. Anything other than what was asked, a tool, a server, a hook, a sandbox, stops the session; nothing is downgraded quietly. The sub-agent tools are off at every level ([vendors](../concepts/vendors.md)).
+imece switches on each vendor's own restrictions for the role and `--confine` level and verifies what the session reports it runs with: Claude's `init` on every turn, Codex's config echo, plugins, hooks, MCP servers (again before every turn) and thread, Gemini's mode, model, `/about`, `/extensions list` and `/memory list`. Anything other than what was asked, a tool, a server, a hook, a sandbox, stops the session; nothing is downgraded quietly. Under strict and standard a Codex session does not start while a Codex rules file is there, since Codex does not report what its rules allow. The sub-agent tools are off at every level ([vendors](../concepts/vendors.md)).
 
 ### The pot
 

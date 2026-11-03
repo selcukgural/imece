@@ -116,7 +116,7 @@ record in the same PR.
 - 03 `message-bus`: `send(to, type, body)` over imece's own MCP server, a socket per agent that takes calls only from its agent's session (`mcp::peer_pid`, `child::descends` of `Agent::pid`), mail caps; a call is taken by imece or given up by its caller, never both (`live::answer_of`), so a retry is not done twice. `whoami` (every role) says name, role, project, who it answers to, the pot left and `may hire` from `Live::hire_room`, the same words `hire` refuses with. The leader may send an inform or notice to a group (`workers`, `idle`, a vendor: `bus::Group`), one message per worker through `Live::message`; a name comes first.
 - 04 `board`: `post`/`board`/`claim`, one offer per idle worker, card caps.
 - 05 `hiring`: the leader hires workers with `hire`, `--agents`, tiers per vendor, model fallback.
-- 06 `codex`: Codex app-server adapter, sandbox, overrides, fail-closed checks, efforts as tiers.
+- 06 `codex`: Codex app-server adapter, sandbox, overrides, fail-closed checks, efforts as tiers; no rules file under strict/standard (`codex::rules_files`).
 - 07 `gemini`: Gemini ACP adapter, private directory, policy file, checks, price table.
 - 08 `who-leads`: `--lead`, the primary vendor, the question screen, `choose_lead`.
 - 09 `helpers`: workers hire helpers in their worktree, `--helpers`, salon folding; a helper that stops or fails its last turn before `done` is told to its worker (`Live::helper_lost`, a note; an idle worker woken with `GO_ON` via `Live::lost`, counted in `MAX_WOKEN`); the demo mirrors it.

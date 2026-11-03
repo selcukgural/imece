@@ -21,7 +21,25 @@ so MCP servers and skills that config brings can only be turned off BY
 NAME: a first start reads them (`config/read`, `skills/list`) and, if
 any are on, the process is started again with
 `mcp_servers.<n>.enabled=false` / `skills.config=[{path,enabled=false}]`,
-once; still on → stop. Checked before the thread starts, fail closed:
+once; still on → stop. Before Codex starts at all, under strict and
+standard: no execpolicy rules file (`codex::rules_files`: any `*.rules`
+in `$CODEX_HOME/rules`, else `~/.codex/rules`, and in the `.codex/rules`
+of the session's folder and every folder above it; a `rules` folder
+imece cannot read counts as one), else the session is refused with the
+file's name (`codex::rules_refusal`, 2026-11-03). Probe facts (codex-cli
+0.165.0): a `prefix_rule(..., decision="allow")` runs the command it
+matches outside the sandbox and without asking, read-only and
+`approval_policy="never"` too; a project's rules load when the person
+trusts the project in their `config.toml`, and a git worktree of a
+trusted checkout is trusted too; `workspace-write` cannot write
+`.codex/`, so a worker cannot add one; nothing in `config/read` or the
+thread says what rules there are, and app-server has no way to turn
+them off (`codex exec --ignore-rules` exists, `-c ignore_rules=true`
+does nothing). A private CODEX_HOME was rejected again: the login's
+refresh token rotates, so a copy of `auth.json` would sign the person
+out. imece never answers an approval with an execpolicy amendment
+(only accept or decline). Under open the person's rules stand, like the
+rest of their setup. Checked before the thread starts, fail closed:
 `account/read` (ChatGPT login only; an API key is refused because Codex
 reports tokens, not dollars, and imece can not price them yet),
 `config/read` echoes every override, `plugin/installed` none enabled,
