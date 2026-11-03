@@ -695,7 +695,7 @@ mod tests {
         std::fs::write(r.join("untracked.txt"), "u").unwrap();
         include(
             &s,
-            "# ../old\n\n.env*\r\nnode_modules/\nuntracked.txt\n../shared\na/.git/x\n!a/.. \n   \n",
+            "#\t../old\n\n.env*\r\nnode_modules/\nuntracked.txt\n../shared\na/.git/x\n!a/.. \n   \n",
         );
         let got = included(r);
         // `build/sub/` holds only what `.env*` matches, so git lists it as
@@ -782,6 +782,9 @@ mod tests {
         std::fs::create_dir(r.join(INCLUDE)).unwrap();
         assert_eq!(read_include(r), Err("not a plain file".into()));
         assert!(!has_include(r));
+        // Neither missing nor a link: a checkout that is a file.
+        let e = read_include(&r.join("a.txt")).unwrap_err();
+        assert!(e.starts_with("could not be read: "), "{e}");
     }
 
     #[test]
