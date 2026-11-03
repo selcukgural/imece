@@ -738,6 +738,12 @@ pub struct Text {
     pub folded: &'static str,
     /// After a worker's name: how many helpers it has (folded or not).
     pub helpers: &'static str,
+    /// The header's last ten minutes: its label, then cards done, changes
+    /// that came for review, messages on the bus.
+    pub pulse: &'static str,
+    pub pulse_done: &'static str,
+    pub pulse_changes: &'static str,
+    pub pulse_messages: &'static str,
     pub group_working: &'static str,
     pub group_waiting: &'static str,
     /// Headers over an open project's workers when some need the person:
@@ -1441,6 +1447,10 @@ pub const EN: Text = Text {
     theme_is: "theme: {}",
     folded: "… {} agents folded, loudest",
     helpers: "{} helpers",
+    pulse: "10 min:",
+    pulse_done: "{} cards done",
+    pulse_changes: "{} Δ",
+    pulse_messages: "{} messages",
     group_working: "{} working",
     group_waiting: " ! {} waiting ",
     need_stuck: "✕ stuck · {}",
@@ -2279,6 +2289,10 @@ pub const TR: Text = Text {
     theme_is: "tema: {}",
     folded: "… {} agent katlı, en yükseği",
     helpers: "{} yardımcı",
+    pulse: "10 dk:",
+    pulse_done: "{} kart bitti",
+    pulse_changes: "{} Δ",
+    pulse_messages: "{} mesaj",
     group_working: "{} çalışıyor",
     group_waiting: " ! {} bekliyor ",
     need_stuck: "✕ takıldı · {}",

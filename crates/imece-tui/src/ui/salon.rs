@@ -474,6 +474,13 @@ pub(super) fn project_line(app: &App, p: ProjectId, rungs: &[Rung]) -> Line<'sta
         spans.push(Span::styled(format!(" trunk #{trunk} "), dim()));
         spans.push(Span::styled("✓", fg(pal().ok)));
     }
+    let (done, all) = w
+        .shown_cards()
+        .filter(|c| c.project == p)
+        .fold((0, 0), |(d, a), c| {
+            (d + usize::from(c.column == Column::Done), a + 1)
+        });
+    spans.extend(cards_spans(done, all));
     // Its solo writes straight in the folder: nothing comes as a Δ.
     if project.no_git {
         spans.push(Span::styled(format!("  ⌀ {}", t.no_git), fg(pal().warn)));
@@ -506,6 +513,25 @@ pub(super) fn project_line(app: &App, p: ProjectId, rungs: &[Rung]) -> Line<'sta
     } else {
         line
     }
+}
+
+/// Cells of a project's card bar.
+pub(crate) const BAR_CELLS: usize = 8;
+
+/// How far a project's cards are, `  ▓▓▓░░░░░ 3/8`: its cards done of all,
+/// the done share of `BAR_CELLS` filled, down to the cell; nothing without
+/// cards (a live team before its leader posts).
+pub(super) fn cards_spans(done: usize, all: usize) -> Vec<Span<'static>> {
+    if all == 0 {
+        return Vec::new();
+    }
+    let filled = done * BAR_CELLS / all;
+    vec![
+        Span::raw("  "),
+        Span::styled("▓".repeat(filled), fg(pal().ok)),
+        Span::styled("░".repeat(BAR_CELLS - filled), dim()),
+        Span::styled(format!(" {done}/{all}"), dim()),
+    ]
 }
 
 /// The member a folded project's header ends with: its loudest; none
