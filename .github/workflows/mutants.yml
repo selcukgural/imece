@@ -55,7 +55,8 @@ jobs:
           else
             git diff "$BASE"...HEAD -- . "${paths[@]/#/:(exclude)}" > change.diff
           fi
-          if [ -s change.diff ]; then echo "any=yes" >> "$GITHUB_OUTPUT"; fi
+          # Mutants live in Rust: a part that touches none has nothing to try.
+          if grep -q '^+++ b/.*\.rs$' change.diff; then echo "any=yes" >> "$GITHUB_OUTPUT"; fi
       - name: What earlier rounds of this pull request caught
         # `--iterate` skips the mutants an earlier round of the same pull
         # request caught (or found unviable), so a round after a fix tries
@@ -155,7 +156,8 @@ jobs:
           else
             git diff "$BASE"...HEAD -- . "${paths[@]/#/:(exclude)}" > change.diff
           fi
-          if [ -s change.diff ]; then echo "any=yes" >> "$GITHUB_OUTPUT"; fi
+          # Mutants live in Rust: a part that touches none has nothing to try.
+          if grep -q '^+++ b/.*\.rs$' change.diff; then echo "any=yes" >> "$GITHUB_OUTPUT"; fi
       - name: What earlier rounds of this pull request caught
         # `--iterate` skips the mutants an earlier round of the same pull
         # request caught (or found unviable), so a round after a fix tries
