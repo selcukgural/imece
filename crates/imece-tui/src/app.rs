@@ -16,7 +16,7 @@ use crate::edit;
 use crate::editor;
 use crate::i18n::{Lang, clean, fill};
 use crate::keys::{self, Keymap};
-use crate::live::{self, Live, Open, Refusal, standing};
+use crate::live::{self, Live, Open, Refusal, TidyRefusal, standing};
 use crate::model::*;
 use crate::motion::{self, Glow, GlowOn, Lit, Motion};
 use crate::notify::{self, Note, Notify};
@@ -40,6 +40,14 @@ pub enum Engine {
     /// would act on an agent, a project or the store refuses
     /// ([`App::read_only`]).
     View(Viewed),
+}
+
+/// The `:tidy` window: the row at hand, and whether a `y` is asked for
+/// removing it with what it holds.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct TidyWin {
+    pub at: usize,
+    pub sure: bool,
 }
 
 /// The archive a read-only view shows.
@@ -770,6 +778,12 @@ pub struct App {
     /// screen (`enter` on the ask, record 92): its inbox item and how far
     /// down it is scrolled.
     pub script: Option<(usize, usize)>,
+    /// The worktrees no agent owns, in a window over the screen (`:tidy`,
+    /// record 96).
+    pub tidy: Option<TidyWin>,
+    /// The start's look for worktrees no agent owns, until it answered
+    /// and its count was said.
+    tidy_start: bool,
     /// The hint letters, while they are on the screen (`F`).
     pub hints: Option<Hints>,
     /// The agents that were mid-turn at the last step.
@@ -1069,6 +1083,8 @@ impl App {
             settled_projects: BTreeSet::new(),
             peek: None,
             script: None,
+            tidy: None,
+            tidy_start: false,
             hints: None,
             needs_only: false,
             unseen: BTreeSet::new(),
@@ -1190,6 +1206,7 @@ impl App {
         };
         self.changed |= came;
         self.show_suggestion();
+        self.watch_tidy();
         self.world.watch_spending();
         self.watch_turns();
         self.watch_glows(Instant::now());
@@ -1586,6 +1603,112 @@ impl App {
         });
         let open = self.inbox_rows().len();
         self.inbox_sel = self.inbox_sel.min(open.saturating_sub(1));
+    }
+
+    /// At a start: the engine looks for worktrees no agent owns, and a
+    /// flash says how many when it found any ([`App::watch_tidy`]).
+    pub fn start_tidy(&mut self) {
+        self.tidy_start = true;
+        self.look_orphans();
+    }
+
+    fn look_orphans(&mut self) {
+        match &mut self.engine {
+            Engine::Live(l) => l.look_orphans(&mut self.world),
+            Engine::Sim(s) => s.look_orphans(&mut self.world),
+            Engine::View(_) => {}
+        }
+    }
+
+    /// `:tidy`: the worktrees no agent owns in a window, looked for again.
+    pub(crate) fn open_tidy(&mut self) {
+        self.tidy = Some(TidyWin::default());
+        self.look_orphans();
+    }
+
+    /// What a look or a removal answered: a removal's end is said once;
+    /// the start's look says how many it found, unless the window shows
+    /// them. The selection stays on the list.
+    fn watch_tidy(&mut self) {
+        let t = self.lang.text();
+        if let Some(tidied) = self.world.orphans.tidied.take() {
+            self.flash(ui::words::tidied(self.lang, &tidied));
+        }
+        let Some(found) = self.world.orphans.found.as_ref() else {
+            return;
+        };
+        let n = found.len();
+        if let Some(win) = &mut self.tidy {
+            win.at = win.at.min(n.saturating_sub(1));
+        }
+        if self.tidy_start && !self.world.orphans.busy {
+            self.tidy_start = false;
+            if n > 0 && self.tidy.is_none() {
+                self.flash(fill(t.tidy_found, &[&n.to_string()]));
+            }
+        }
+    }
+
+    /// A key while the `:tidy` window is open: `j k` (the arrows), `g G`
+    /// move, `a` removes the clean ones, `d` the one at hand (one that
+    /// holds work after a `y` for it: any other key keeps it), `esc` or
+    /// `q` close, `?` the help; the rest do nothing.
+    fn tidy_key(&mut self, win: TidyWin, k: KeyEvent) {
+        let found = self.world.orphans.found.clone().unwrap_or_default();
+        if win.sure {
+            self.tidy = Some(TidyWin { sure: false, ..win });
+            if k.code == KeyCode::Char('y') {
+                self.tidy_remove(vec![win.at], true);
+            }
+            return;
+        }
+        let last = found.len().saturating_sub(1);
+        let at = match k.code {
+            KeyCode::Down | KeyCode::Char('j') => (win.at + 1).min(last),
+            KeyCode::Up | KeyCode::Char('k') => win.at.saturating_sub(1),
+            KeyCode::Char('g') | KeyCode::Home => 0,
+            KeyCode::Char('G') | KeyCode::End => last,
+            KeyCode::Char('a') => {
+                let clean: Vec<usize> = (0..found.len()).filter(|&i| found[i].clean()).collect();
+                if clean.is_empty() {
+                    return self.flash(self.lang.text().tidy_no_clean);
+                }
+                return self.tidy_remove(clean, false);
+            }
+            KeyCode::Char('d') => {
+                let Some(o) = found.get(win.at) else {
+                    return;
+                };
+                if o.clean() {
+                    return self.tidy_remove(vec![win.at], false);
+                }
+                self.tidy = Some(TidyWin { sure: true, ..win });
+                return;
+            }
+            KeyCode::Esc | KeyCode::Char('q') => {
+                self.tidy = None;
+                return;
+            }
+            KeyCode::Char('?') => return self.open_help(),
+            _ => return,
+        };
+        self.tidy = Some(TidyWin { at, ..win });
+    }
+
+    /// The worktrees at `at` of the list go, those that hold work only
+    /// when `force`; a refusal is said.
+    fn tidy_remove(&mut self, at: Vec<usize>, force: bool) {
+        let t = self.lang.text();
+        let done = match &mut self.engine {
+            Engine::Live(l) => l.tidy(&mut self.world, &at, force),
+            Engine::Sim(s) => s.tidy(&mut self.world, &at, force),
+            Engine::View(_) => return self.read_only(),
+        };
+        match done {
+            Ok(()) => {}
+            Err(TidyRefusal::Busy) => self.flash(t.tidy_busy),
+            Err(TidyRefusal::Nothing) => self.flash(t.tidy_none),
+        }
     }
 
     /// `F` or `:hints`: a label on every row the salon's screen showed
@@ -2289,6 +2412,10 @@ impl App {
         }
         if let Some((item, at)) = self.script {
             self.script_key(item, at, k);
+            return;
+        }
+        if let Some(win) = self.tidy {
+            self.tidy_key(win, k);
             return;
         }
         if self.hints.is_some() {
@@ -4282,6 +4409,7 @@ impl App {
                 }
             }
             "hints" => self.open_hints(),
+            "tidy" => self.open_tidy(),
             "welcome" => self.open_welcome(),
             "news" => self.open_news(),
             "settle" => {
@@ -14662,5 +14790,152 @@ pub(crate) mod tests {
         app.world.budget = app.world.spent();
         app.command("commit");
         assert_eq!(app.asking(), None);
+    }
+
+    /// The demo with its look for worktrees no agent owns answered.
+    fn tidied_demo() -> App {
+        let mut app = App::new(1, 1, 0, 1, Lang::En);
+        app.command("tidy");
+        app.step();
+        app
+    }
+
+    fn orphan_names(app: &App) -> Vec<String> {
+        let found = app.world.orphans.found.as_deref().unwrap_or_default();
+        found.iter().map(|o| o.name.clone()).collect()
+    }
+
+    #[test]
+    fn tidy_opens_the_worktrees_no_agent_owns_and_its_keys_move_on_them() {
+        let mut app = App::new(1, 1, 0, 1, Lang::En);
+        app.command("tidy");
+        assert_eq!(app.tidy, Some(TidyWin::default()));
+        assert!(app.world.orphans.busy, "no look asked");
+        assert_eq!(app.world.orphans.found, None);
+        app.step();
+        assert!(!app.world.orphans.busy);
+        assert_eq!(orphan_names(&app), ["claude-31", "codex-32"]);
+        let at = |app: &App| app.tidy.unwrap().at;
+        app.key(key(KeyCode::Char('j')));
+        assert_eq!(at(&app), 1);
+        app.key(key(KeyCode::Down));
+        assert_eq!(at(&app), 1, "past the last");
+        app.key(key(KeyCode::Char('k')));
+        assert_eq!(at(&app), 0);
+        app.key(key(KeyCode::Up));
+        assert_eq!(at(&app), 0);
+        app.key(key(KeyCode::Char('G')));
+        assert_eq!(at(&app), 1);
+        app.key(key(KeyCode::Char('g')));
+        assert_eq!(at(&app), 0);
+        app.key(key(KeyCode::End));
+        assert_eq!(at(&app), 1);
+        app.key(key(KeyCode::Home));
+        assert_eq!(at(&app), 0);
+        // A key it does not take does nothing, and the view stays.
+        let view = app.view;
+        app.key(key(KeyCode::Char('b')));
+        assert_eq!((app.tidy, app.view), (Some(TidyWin::default()), view));
+        app.key(key(KeyCode::Char('?')));
+        assert!(app.help);
+        app.help = false;
+        app.key(key(KeyCode::Esc));
+        assert_eq!(app.tidy, None);
+        app.command("tidy");
+        app.key(key(KeyCode::Char('q')));
+        assert_eq!(app.tidy, None);
+    }
+
+    #[test]
+    fn a_removes_the_clean_worktrees_and_d_one_with_work_only_after_a_y() {
+        let mut app = tidied_demo();
+        let t = app.lang.text();
+        app.key(key(KeyCode::Char('a')));
+        assert!(app.world.orphans.busy);
+        // While it goes, another is refused.
+        app.key(key(KeyCode::Char('a')));
+        assert_eq!(flashed(&app).as_deref(), Some(t.tidy_busy));
+        app.step();
+        assert_eq!(flashed(&app).as_deref(), Some("removed claude-31"));
+        assert_eq!(app.world.orphans.tidied, None, "said once");
+        assert_eq!(orphan_names(&app), ["codex-32"]);
+        app.key(key(KeyCode::Char('a')));
+        assert_eq!(flashed(&app).as_deref(), Some(t.tidy_no_clean));
+        assert!(!app.world.orphans.busy);
+        // `d` on one with work asks first; any key but `y` keeps it.
+        app.key(key(KeyCode::Char('d')));
+        assert_eq!(app.tidy, Some(TidyWin { at: 0, sure: true }));
+        app.key(key(KeyCode::Char('n')));
+        assert_eq!(app.tidy, Some(TidyWin { at: 0, sure: false }));
+        assert!(!app.world.orphans.busy, "removed without a y");
+        app.key(key(KeyCode::Char('d')));
+        app.key(key(KeyCode::Char('y')));
+        assert!(app.world.orphans.busy);
+        app.step();
+        assert_eq!(flashed(&app).as_deref(), Some("removed codex-32"));
+        assert_eq!(orphan_names(&app), Vec::<String>::new());
+        // Nothing left: `d` does nothing, `y` alone removes nothing.
+        app.flash = None;
+        app.key(key(KeyCode::Char('d')));
+        app.key(key(KeyCode::Char('y')));
+        assert_eq!(
+            (app.tidy, app.world.orphans.busy),
+            (Some(TidyWin::default()), false)
+        );
+        assert_eq!(flashed(&app), None);
+        // An index not in the list is refused.
+        app.tidy_remove(vec![4], false);
+        assert_eq!(flashed(&app).as_deref(), Some(t.tidy_none));
+    }
+
+    #[test]
+    fn d_removes_a_clean_worktree_at_once_and_the_selection_stays_on_the_list() {
+        let mut app = tidied_demo();
+        app.key(key(KeyCode::Char('G')));
+        app.key(key(KeyCode::Char('k')));
+        app.key(key(KeyCode::Char('d')));
+        assert_eq!(app.tidy, Some(TidyWin { at: 0, sure: false }));
+        assert!(app.world.orphans.busy);
+        app.step();
+        assert_eq!(orphan_names(&app), ["codex-32"]);
+        // Rows gone, the one at hand moves up onto the list.
+        app.command("tidy");
+        assert_eq!(app.tidy, Some(TidyWin::default()));
+        app.tidy = Some(TidyWin { at: 3, sure: false });
+        app.step();
+        assert_eq!(app.tidy.unwrap().at, 0);
+    }
+
+    #[test]
+    fn a_start_says_how_many_worktrees_no_agent_owns_once_unless_shown() {
+        let mut app = App::new(1, 1, 0, 1, Lang::En);
+        app.start_tidy();
+        app.step();
+        assert_eq!(
+            flashed(&app).as_deref(),
+            Some("2 worktrees no agent owns: :tidy lists them")
+        );
+        // Said once: a later look says nothing at the start's place.
+        app.flash = None;
+        app.command("tidy");
+        app.tidy = None;
+        app.step();
+        assert_eq!(flashed(&app), None);
+        // The window open: it shows them, no flash.
+        let mut app = App::new(1, 1, 0, 1, Lang::En);
+        app.start_tidy();
+        app.tidy = Some(TidyWin::default());
+        app.step();
+        assert_eq!(flashed(&app), None);
+        assert!(!app.tidy_start);
+        // None found: nothing said.
+        let mut app = App::new(1, 1, 0, 1, Lang::En);
+        app.start_tidy();
+        if let Engine::Sim(s) = &mut app.engine {
+            s.forget_orphans();
+        }
+        app.step();
+        assert_eq!(flashed(&app), None);
+        assert!(!app.tidy_start);
     }
 }

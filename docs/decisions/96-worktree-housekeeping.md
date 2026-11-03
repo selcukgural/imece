@@ -1,6 +1,10 @@
-# Worktree housekeeping: sparse checkouts
+# Worktree housekeeping: sparse checkouts, worktrees no agent owns
 
-Issue #245 (from the study of agent-deck), its first half. On a large
+Issue #245 (from the study of agent-deck), in two parts.
+
+## Sparse checkouts
+
+On a large
 monorepo the person keeps part of the tree checked out
 (`git sparse-checkout`); a worker's worktree that checks out everything
 writes what they left out, often gigabytes, for every worker.
@@ -40,3 +44,82 @@ Migration: none; worktrees made before stay as they are.
 
 The demo shows nothing of it: there is no git under the demo, and a
 sparse worktree looks like any other on the screen.
+
+## Worktrees no agent owns
+
+A worker's worktree is kept between runs (record 02) and imece removed
+none (record 92). One whose agent imece no longer knows stays for ever:
+after a crash between `ensure` and the save, a store the person removed
+(`--fresh` keeps worktrees; a removed `imece.sqlite` forgets every
+agent), a fork that never started. agent-deck lists and prunes such
+orphans; imece does it on the person's word only.
+
+What is one (`live::tidy::orphans_under`): a directory
+`state/worktrees/<checkout>-<hash>/<name>` (links, files left out) that
+`worktree::held` takes, i.e. git's top directory there and a worktree
+added to a checkout (`--absolute-git-dir` is not `--git-common-dir`),
+whose path is not in `Live::owned`: `places[project].root.join(
+Live::tree_of(agent))` for every agent of every project, open, closed
+or archived (a helper's is its worker's, a solo's `solo-<id>`; a
+leader's and a git-less solo's count too: owning too much only keeps a
+directory). Both sides are built from `Live.state` by the same joins, so
+no path is canonicalised to compare. Gemini's private directories
+(`<root>-gemini/…`) and anything git does not know are passed over. The
+store's lock (one imece per state directory) makes the world the whole
+truth of who owns what.
+
+What it holds (`worktree::Held`): `git status --porcelain` lines
+(ignored files not counted; they go with the worktree) and the authors
+of `git log HEAD --not --branches --tags --remotes` that are not
+imece's own `imece@localhost` (applied changes: in the checkout already,
+as record 11 has it for following HEAD). Clean is neither. Removing
+(`worktree::remove`) reads it again: without `force` only a clean one,
+with `git worktree remove` (which refuses an untracked file itself);
+with `force`, the person's yes to that row, `--force`. git removes a
+worktree it runs in.
+
+The screen: `:tidy` (no key; record 41's names are for keys that act,
+and this is rare) opens `App.tidy: TidyWin { at, sure }` over the view
+(`overlay::tidy`, after the setup script's window in `ui::draw`) and asks
+the engine to look (`Live::look_orphans` / `Sim::look_orphans`): a
+thread lists them and `Live::take_tidy` in `step` puts them in
+`World.orphans: Orphans { found, busy, tidied }` (memory only, nothing
+saved, no journal line: no agent is in it, and every `Event` is about
+one). `j k g G` (and the arrows, home, end) move, `a` removes the clean
+ones (none: `tidy_no_clean`), `d` the one at hand, at once when clean,
+else `sure` and the foot asks `y` (any other key keeps it), `esc`/`q`
+close, `?` the help. `Live::tidy(at, force)` takes indexes into the
+last look's list, never a path from the screen; refused while a look or
+a removal runs (`Refusal::Busy`) and for nothing asked (`Nothing`). The
+removal thread looks again after, and `App::watch_tidy` flashes
+`words::tidied` once (`removed …`, `not removed: name (why)`) and keeps
+the selection on the list. At each start (`App::start_tidy`, from
+`main` for live and demo) the engine looks once, and when it found any
+and the window is not open the flash says how many (`tidy_found`);
+imece removes nothing by itself.
+
+An agent's worktree is never removed. Ownership is read when the look
+starts, again when it answers (`take_tidy` drops what an agent came to
+own meanwhile), and again when a removal is asked: one owned by then
+stays with no why of git's (`tidy_owned`). That matters because
+`worktree::ensure` reuses a worktree that is there: the next hire's
+name in a fresh store is the old one's, and it takes the old worktree
+over, its work too. A start that comes after the check while the
+removal runs waits for it: `Live.tidy.removing` (`tidy::Removing`, a
+set of paths under a mutex with a condvar) holds the paths being
+removed, and a start's thread calls `wait` on its tree's path before
+`ensure`, so it makes the worktree anew once it is gone instead of
+reusing one being deleted under it.
+
+Growth: the list is what is on disk and shrinks with each removal;
+nothing kept. Read cost: one look at start and per `:tidy` on a thread,
+five git calls per directory; the window draws the list it has.
+Concurrency: the removal thread and the start threads meet only in
+`Removing`; another imece cannot use the same state (the store's lock).
+Failure: a removal that fails says git's words and leaves the rest of
+its list going; a look that fails on a directory passes over it. The
+demo has two made-up ones of its first project (`demo_orphans`, one
+clean, one with work), answered on the next step, removed as live
+removes them. Not done: the teardown script before a removal (#248),
+`git worktree prune` for ones removed by hand (record 02's message
+says what to run).

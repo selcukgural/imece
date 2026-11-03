@@ -1393,6 +1393,7 @@ impl Store {
             changes: Vec::new(),
             paid: 0,
             suggested: None,
+            orphans: crate::model::Orphans::default(),
             messages,
         };
         let mut found = Found::default();
@@ -2166,6 +2167,7 @@ mod tests {
             changes: Vec::new(),
             paid: 0,
             suggested: None,
+            orphans: crate::model::Orphans::default(),
             messages: 12,
         };
         w.agents[1].cost = 4_321;

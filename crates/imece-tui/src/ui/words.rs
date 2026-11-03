@@ -569,6 +569,40 @@ pub fn title(lang: Lang, waiting: usize, progress: Progress) -> String {
     format!("{glyph}{words}")
 }
 
+/// What a worktree no agent owns holds, as its row in `:tidy` says it:
+/// clean, else its files changed and its own commits, the ones it has.
+pub fn held(lang: Lang, o: &Orphan) -> String {
+    let t = lang.text();
+    if o.clean() {
+        return t.tidy_clean.to_string();
+    }
+    let mut parts = Vec::new();
+    if o.changes > 0 {
+        parts.push(fill(t.tidy_changes, &[&o.changes.to_string()]));
+    }
+    if o.commits > 0 {
+        parts.push(fill(t.tidy_commits, &[&o.commits.to_string()]));
+    }
+    parts.join(" · ")
+}
+
+/// A removal's end in one line: the names removed, then those kept with
+/// why (git's words, or that an agent works in it now).
+pub fn tidied(lang: Lang, done: &Tidied) -> String {
+    let t = lang.text();
+    let mut parts = Vec::new();
+    if !done.removed.is_empty() {
+        parts.push(fill(t.tidy_removed, &[&done.removed.join(", ")]));
+    }
+    if !done.kept.is_empty() {
+        let kept: Vec<String> = (done.kept.iter())
+            .map(|(name, why)| format!("{name} ({})", why.as_deref().unwrap_or(t.tidy_owned)))
+            .collect();
+        parts.push(fill(t.tidy_kept, &[&kept.join(", ")]));
+    }
+    parts.join(" · ")
+}
+
 /// `:why`'s line about agent `id`: its rung, since when and the
 /// journal's line that put it there (`App::why`), in the journal's words.
 pub fn why(
@@ -1424,6 +1458,54 @@ mod tests {
         assert_eq!(
             inbox(Lang::En, &w, &item),
             format!("{} asks you: Which one?", w.agents[1].name)
+        );
+    }
+
+    #[test]
+    fn a_worktree_no_agent_owns_says_what_it_holds_and_a_removal_how_it_ended() {
+        let o = |changes, commits| Orphan {
+            name: "claude-7".into(),
+            path: "/s/claude-7".into(),
+            checkout: "/r".into(),
+            changes,
+            commits,
+        };
+        assert_eq!(held(Lang::En, &o(0, 0)), "clean");
+        assert_eq!(held(Lang::En, &o(3, 0)), "files changed: 3");
+        assert_eq!(held(Lang::En, &o(0, 2)), "commits of its own: 2");
+        assert_eq!(
+            held(Lang::En, &o(3, 2)),
+            "files changed: 3 · commits of its own: 2"
+        );
+        assert_eq!(
+            held(Lang::Tr, &o(1, 1)),
+            "değişen dosya: 1 · kendi commit'i: 1"
+        );
+        assert_eq!(held(Lang::Tr, &o(0, 0)), "temiz");
+        let done = Tidied {
+            removed: vec!["claude-3".into(), "codex-4".into()],
+            kept: Vec::new(),
+        };
+        assert_eq!(tidied(Lang::En, &done), "removed claude-3, codex-4");
+        let done = Tidied {
+            removed: Vec::new(),
+            kept: vec![
+                ("claude-1".into(), None),
+                ("x\u{1b}[2J".into(), Some("holds work".into())),
+            ],
+        };
+        // A name from the disk is cleaned.
+        assert_eq!(
+            tidied(Lang::En, &done),
+            "not removed: claude-1 (an agent works in it now), x [2J (holds work)"
+        );
+        let done = Tidied {
+            removed: vec!["a".into()],
+            kept: vec![("b".into(), None)],
+        };
+        assert_eq!(
+            tidied(Lang::Tr, &done),
+            "silindi: a · silinmedi: b (şimdi bir ajan içinde çalışıyor)"
         );
     }
 }

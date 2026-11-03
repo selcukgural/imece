@@ -361,6 +361,82 @@ fn registered(repo: &Path, path: &Path) -> bool {
     })
 }
 
+/// What a worktree holds that would be lost with it: files changed or
+/// not tracked (one line of `git status --porcelain` each; what git
+/// ignores is not counted), and commits of its own no branch, tag or
+/// remote has, imece's for applied changes left out.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Held {
+    pub changes: usize,
+    pub commits: usize,
+}
+
+impl Held {
+    /// Whether removing it loses nothing.
+    pub fn clean(&self) -> bool {
+        self.changes == 0 && self.commits == 0
+    }
+}
+
+/// The checkout the worktree at `path` belongs to, and what it holds.
+/// Refused for what is not a worktree's top directory, and for a
+/// checkout's own: only a worktree added to one.
+pub fn held(path: &Path) -> io::Result<(PathBuf, Held)> {
+    let path = path.canonicalize()?;
+    let own = git(&path, &["rev-parse", "--absolute-git-dir"])?;
+    if top(&path)? != path || Path::new(&own).canonicalize()? == common_dir(&path)? {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!("{} is not a worktree added to a checkout", path.display()),
+        ));
+    }
+    let list = git(&path, &["worktree", "list", "--porcelain"])?;
+    let checkout = list
+        .lines()
+        .find_map(|l| l.strip_prefix("worktree "))
+        .map(PathBuf::from)
+        .ok_or_else(|| io::Error::other("git lists no checkout"))?;
+    let changes = git(&path, &["status", "--porcelain"])?.lines().count();
+    let authors = git(
+        &path,
+        &[
+            "log",
+            "--format=%ae",
+            "HEAD",
+            "--not",
+            "--branches",
+            "--tags",
+            "--remotes",
+        ],
+    )?;
+    let commits = authors.lines().filter(|a| *a != IMECE_EMAIL).count();
+    Ok((checkout, Held { changes, commits }))
+}
+
+/// Removes the worktree at `path` from its checkout, and its directory
+/// with what git ignores in it. Without `force` only a clean one
+/// ([`Held::clean`], read again now), which git checks once more;
+/// `force` is the person's yes to losing what it holds.
+pub fn remove(path: &Path, force: bool) -> io::Result<()> {
+    let (_, held) = held(path)?;
+    if !force && !held.clean() {
+        return Err(io::Error::other(format!(
+            "{} holds work: {} files changed, {} commits of its own",
+            path.display(),
+            held.changes,
+            held.commits
+        )));
+    }
+    let p = path.canonicalize()?;
+    let p = p.to_string_lossy();
+    let mut args = vec!["worktree", "remove"];
+    if force {
+        args.push("--force");
+    }
+    git(path, &[args.as_slice(), &[&p]].concat())?;
+    Ok(())
+}
+
 /// Moves the worktree at `path` to `repo`'s HEAD if it is clean and behind
 /// it; says where it stands otherwise. Commits imece made for applied
 /// changes do not hold it back: they are in the checkout already (or the
@@ -1253,6 +1329,145 @@ mod tests {
         assert_eq!(String::from_utf8_lossy(&out).trim(), a);
         let err = git_fed(&s.repo, &[], &["no-such-command"], Some(b"a")).unwrap_err();
         assert!(err.to_string().contains("git no-such-command"), "{err}");
+    }
+
+    #[test]
+    fn a_worktree_holds_its_changes_and_its_own_commits() {
+        let s = repo("held");
+        let r = &s.repo;
+        let w = ensure(r, &s.dir.join("wt"), "claude-1", None).unwrap().path;
+        assert_eq!(held(&w).unwrap(), (r.clone(), Held::default()));
+        assert!(Held::default().clean());
+        // What git ignores is not held; a file not tracked is.
+        std::fs::write(w.join(".gitignore"), "target\n").unwrap();
+        commit(&w, "ignore");
+        // Its own commit, on no branch.
+        assert_eq!(
+            held(&w).unwrap().1,
+            Held {
+                changes: 0,
+                commits: 1
+            }
+        );
+        std::fs::create_dir_all(w.join("target")).unwrap();
+        std::fs::write(w.join("target/x"), "x").unwrap();
+        assert_eq!(held(&w).unwrap().1.changes, 0);
+        std::fs::write(w.join("new.txt"), "n").unwrap();
+        std::fs::write(w.join("a.txt"), "changed").unwrap();
+        let h = held(&w).unwrap().1;
+        assert_eq!(
+            h,
+            Held {
+                changes: 2,
+                commits: 1
+            }
+        );
+        assert!(!h.clean());
+        assert!(
+            !Held {
+                changes: 1,
+                commits: 0
+            }
+            .clean()
+        );
+        assert!(
+            !Held {
+                changes: 0,
+                commits: 1
+            }
+            .clean()
+        );
+        // On a branch, its commits are kept by the branch.
+        git(&w, &["checkout", "--quiet", "-b", "kept"]).unwrap();
+        assert_eq!(
+            held(&w).unwrap().1,
+            Held {
+                changes: 2,
+                commits: 0
+            }
+        );
+        git(&w, &["checkout", "--quiet", "--detach"]).unwrap();
+        // imece's own commits are in the checkout already.
+        git(&w, &["checkout", "--quiet", "."]).unwrap();
+        std::fs::remove_file(w.join("new.txt")).unwrap();
+        git(&w, &["branch", "--quiet", "-D", "kept"]).unwrap();
+        std::fs::write(w.join("a.txt"), "applied").unwrap();
+        git(&w, &["add", "a.txt"]).unwrap();
+        git_env(
+            &w,
+            &[],
+            &[
+                "-c",
+                "user.name=imece",
+                "-c",
+                &format!("user.email={IMECE_EMAIL}"),
+                "-c",
+                "commit.gpgsign=false",
+                "commit",
+                "--quiet",
+                "-m",
+                "applied",
+            ],
+        )
+        .unwrap();
+        assert_eq!(
+            held(&w).unwrap().1,
+            Held {
+                changes: 0,
+                commits: 1
+            }
+        );
+    }
+
+    #[test]
+    fn only_a_worktree_added_to_a_checkout_is_held() {
+        let s = repo("held-not");
+        let r = &s.repo;
+        let e = held(r).unwrap_err();
+        assert_eq!(e.kind(), io::ErrorKind::InvalidInput, "{e}");
+        let w = ensure(r, &s.dir.join("wt"), "claude-1", None).unwrap().path;
+        std::fs::create_dir_all(w.join("sub")).unwrap();
+        let e = held(&w.join("sub")).unwrap_err();
+        assert_eq!(e.kind(), io::ErrorKind::InvalidInput, "{e}");
+        assert!(held(&s.dir.join("nothing")).is_err());
+        let plain = s.dir.join("plain");
+        std::fs::create_dir_all(&plain).unwrap();
+        assert!(held(&plain).is_err());
+    }
+
+    #[test]
+    fn a_clean_worktree_is_removed_and_one_with_work_only_when_forced() {
+        let s = repo("remove");
+        let r = &s.repo;
+        let root = s.dir.join("wt");
+        let w = ensure(r, &root, "claude-1", None).unwrap().path;
+        std::fs::write(w.join("new.txt"), "n").unwrap();
+        let e = remove(&w, false).unwrap_err().to_string();
+        assert!(e.contains("holds work: 1 files changed, 0 commits"), "{e}");
+        assert!(w.join("new.txt").exists());
+        std::fs::remove_file(w.join("new.txt")).unwrap();
+        commit(&w, "own");
+        let e = remove(&w, false).unwrap_err().to_string();
+        assert!(e.contains("0 files changed, 1 commits"), "{e}");
+        assert!(w.exists());
+        remove(&w, true).unwrap();
+        assert!(!w.exists());
+        let list = git(r, &["worktree", "list", "--porcelain"]).unwrap();
+        assert_eq!(list.matches("worktree ").count(), 1, "{list}");
+        // A clean one goes without force; git's ignored files with it.
+        let w = ensure(r, &root, "claude-2", None).unwrap().path;
+        std::fs::write(w.join(".git-ignored-by-info"), "").unwrap();
+        let info = common_dir(r).unwrap().join("info");
+        std::fs::create_dir_all(&info).unwrap();
+        std::fs::write(info.join("exclude"), ".git-ignored-by-info\n").unwrap();
+        remove(&w, false).unwrap();
+        assert!(!w.exists());
+        // And it is made anew, with no prune.
+        let again = ensure(r, &root, "claude-2", None).unwrap();
+        assert_eq!(again.placed, Placed::Fresh);
+        // A checkout is never removed.
+        assert!(remove(r, true).is_err());
+        assert!(r.join("a.txt").exists());
     }
 
     #[test]

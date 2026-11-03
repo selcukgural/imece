@@ -98,11 +98,29 @@ npm run db:migrate
 - **What the yes is bound to:** the bytes' SHA-256, the file's real path (links resolved) and how it runs (`/bin/sh`), kept in imece's store, never in the repository. A changed byte is a new script and is asked about again. What runs is a private copy of the bytes you read, written into imece's state directory (`0700`, the copy `0600`), never the file again, so nothing can change it between your yes and the run.
 - **How it runs:** `/bin/sh` on that copy in the new worktree, with imece's cleared environment plus `IMECE_REPO` (your checkout) and `IMECE_WORKTREE` (the worktree), in a process group of its own, at most 60 seconds (then the group is killed). At most 64 KiB of script.
 - **What you see:** the journal says how it ended and its last line (`claude-1: worktree setup ran, exit 0, 4.2 s · migrations: 7 applied`, or `failed`); one that could not be read or started says why (`worktree setup did not run: …`). The worker starts either way.
-- Not done yet: a teardown script before a worktree goes, since imece does not remove worktrees.
+- Not done yet: a teardown script before a worktree goes; imece removes only worktrees no agent owns (`:tidy`, below), and runs no script then.
 
 ## A sparse checkout
 
 On a large repository you may keep only part of the tree checked out (`git sparse-checkout`). A worktree imece makes from such a checkout is as sparse as it: imece adds it with nothing checked out, gives it your checkout's patterns (`git sparse-checkout set`, cone mode or not, as yours is), and only then checks it out, so what you left out is never written into it. The patterns are the worktree's own: changing them there does not change yours, and changing yours later does not change a worktree made before. A worktree that cannot be made as sparse (git older than 2.35) is removed again and the agent does not start; the journal says why, so a monorepo is never written out whole behind your back.
+
+## Worktrees no agent owns
+
+Each worker's worktree stays on disk between runs, so its work is never thrown away. One whose agent imece no longer knows stays too: after a crash, a removed store, a fork that never started. `:tidy` lists them in a window, each with its checkout and what it holds:
+
+```text
+ WORKTREES NO AGENT OWNS · 2
+▶ claude-31  ~/src/shop  clean
+  codex-32   ~/src/shop  files changed: 3 · commits of its own: 1
+ a remove the clean ones   d remove this one   j k move   esc back
+```
+
+- **What counts:** a directory under imece's state (`worktrees/<checkout>-<hash>/<name>`) that git knows as a worktree added to a checkout, and that no agent of any project has: open, closed or archived; a helper's is its worker's. Links, files, Gemini's private directories and what git does not know are passed over.
+- **What it holds:** files changed or not tracked (`git status`; what git ignores, such as `target/`, is not counted and goes with it), and commits of its own that no branch, tag or remote has (imece's own commits for changes you applied are in your checkout already and are not counted). Clean means neither.
+- **Removing:** `a` removes the clean ones, `d` the one at hand. One that holds work goes only after a `y` for it, with `git worktree remove --force`; a clean one with `git worktree remove`, which refuses again if something changed meanwhile. Removal runs off the screen, and the window looks again after it.
+- **Never an agent's:** who owns what is read again when a removal is asked; a worker hired since, whose name is the old worktree's (it would take it over), keeps it (`not removed: claude-1 (an agent works in it now)`). A worker that starts while its worktree is being removed waits for it to go and gets a new one.
+- **At start:** imece looks once, off the screen, and says `2 worktrees no agent owns: :tidy lists them` when it found any; it removes nothing by itself.
+- The demo has two made-up ones, one clean and one with work, which `:tidy` removes as live does.
 
 ## The demo's copies
 

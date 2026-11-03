@@ -60,6 +60,7 @@ pub(crate) mod standing;
 mod suggest;
 #[cfg(test)]
 pub(crate) mod testing;
+mod tidy;
 mod tools;
 
 pub(crate) use self::bus::numbers;
@@ -67,6 +68,7 @@ pub use self::projects::Open;
 pub(crate) use self::prompts::{INSTRUCTIONS, MAX_NOTES_KIB};
 pub use self::sessions::apply;
 pub(crate) use self::suggest::{SUGGEST_CAP, SUGGEST_DAY_CALLS, SUGGEST_DAY_COST};
+pub use self::tidy::Refusal as TidyRefusal;
 use self::{changes::*, hiring::*, projects::*, prompts::*, suggest::*, tools::*};
 
 pub struct Options {
@@ -690,6 +692,8 @@ pub struct Live {
     paid_day: (u64, u32, u64),
     said_tx: Sender<Said>,
     said_rx: Receiver<Said>,
+    /// Looks for worktrees no agent owns and their removals (`:tidy`).
+    tidy: tidy::Tidy,
 }
 
 /// The coding agents among `known` (see [`KNOWN`]) on PATH, run from the
@@ -798,6 +802,7 @@ pub fn world(o: Options, present: &[(Vendor, bool)]) -> Result<(World, Live), St
                 changes: Vec::new(),
                 paid: 0,
                 suggested: None,
+                orphans: crate::model::Orphans::default(),
                 messages: 0,
             },
             None,
@@ -1052,6 +1057,7 @@ impl Live {
             paid_day: (u64::MAX, 0, 0),
             said_tx,
             said_rx,
+            tidy: tidy::Tidy::default(),
         }
     }
 
@@ -1180,6 +1186,7 @@ impl Live {
         self.own_sockets();
         let git = self.take_git(w);
         let said = self.take_said(w);
+        let tidied = self.take_tidy(w);
         let set_up = self.take_setups(w);
         self.stand_busy(w, Instant::now());
         self.files_due(w, Instant::now());
@@ -1422,7 +1429,7 @@ impl Live {
             }
         }
         self.offer(w);
-        moved || started || git || said || set_up || heard || called
+        moved || started || git || said || tidied || set_up || heard || called
     }
 
     /// Tries agent `id`'s failed turn again: its session is told to go on.

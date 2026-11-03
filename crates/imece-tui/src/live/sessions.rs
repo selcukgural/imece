@@ -671,12 +671,16 @@ impl Live {
             self.setup_plan(w, id)
         };
         let running = self.running[id].clone();
+        let removing = self.tidy.removing.clone();
         let (tx, ready) = (self.tx.clone(), self.ready_tx.clone());
         thread::spawn(move || {
             let started = (|| {
                 let (cwd, placed, copied, set_up) = if direct {
                     (repo, None, copy::Brought::default(), setup::Done::None)
                 } else {
+                    // A worktree `:tidy` removes is made anew once it is
+                    // gone, never reused while it goes.
+                    removing.wait(&root.join(&tree));
                     // A fork's is made where its worker's HEAD is now, the
                     // change it takes being of now too.
                     let start = match &carry {
