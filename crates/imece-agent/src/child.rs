@@ -387,8 +387,18 @@ pub fn descends(pid: u32, root: u32) -> bool {
 }
 
 /// The parent of process `pid`, if the system tells it.
-#[cfg(target_os = "macos")]
 pub fn parent_of(pid: u32) -> Option<u32> {
+    #[cfg(target_os = "macos")]
+    return bsd_parent(pid);
+    #[cfg(target_os = "linux")]
+    return proc_parent(pid);
+}
+
+/// The parent macOS tells for `pid` (`proc_pidinfo`). Only built on
+/// macOS: the mutation run (Linux) never sees it, the macOS test job
+/// runs [`parent_of`]'s test on it.
+#[cfg(target_os = "macos")]
+fn bsd_parent(pid: u32) -> Option<u32> {
     let mut info: libc::proc_bsdinfo = unsafe { std::mem::zeroed() };
     let size = std::mem::size_of::<libc::proc_bsdinfo>() as i32;
     let got = unsafe {
@@ -403,11 +413,11 @@ pub fn parent_of(pid: u32) -> Option<u32> {
     (got == size).then_some(info.pbi_ppid)
 }
 
-/// The parent of process `pid`, if the system tells it: the fourth field
+/// The parent Linux tells for `pid`: the fourth field
 /// of `/proc/PID/stat`, after the name in brackets (which may hold
 /// anything, brackets and spaces too, so it is passed by its last `)`).
 #[cfg(target_os = "linux")]
-pub fn parent_of(pid: u32) -> Option<u32> {
+fn proc_parent(pid: u32) -> Option<u32> {
     let stat = std::fs::read_to_string(format!("/proc/{pid}/stat")).ok()?;
     stat_parent(&stat)
 }

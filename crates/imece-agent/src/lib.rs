@@ -437,6 +437,7 @@ mod tests {
         }
         let e = Plain.decide("1", true).unwrap_err();
         assert_eq!(e.kind(), io::ErrorKind::Unsupported);
+        assert_eq!(Plain.pid(), None, "no process said, none trusted");
     }
 }
 

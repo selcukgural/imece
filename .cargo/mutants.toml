@@ -17,10 +17,15 @@
 # `child::ENDED` joins waitid's flags, distinct bits, with `|`: `^` gives
 # the same number, so no test can tell them apart (`&` is caught); so do
 # `input::seen`'s poll flags.
+# `child::bsd_parent` is built on macOS only and the mutation run is on
+# Linux, where nothing of it compiles; its test (`parent_of`'s) runs in the
+# macOS test job.
 # A pattern matches the mutant's full name, `path:line:col: replace fn ...`.
 exclude_re = [
     "src/model.rs:.*: replace \\+ with \\* in free_project_name",
     "src/child.rs:.*: replace \\| with \\^$",
+    "src/child.rs:.*: replace bsd_parent ",
+    "src/child.rs:.*: (replace|delete) .* in bsd_parent$",
     "src/main.rs:.*: replace (main|run|ask|catch_signals|on_signal|poll_terminal) ",
     "src/main.rs:.*: (replace|delete) .* in (main|run|ask|catch_signals|on_signal|poll_terminal)$",
     "src/input.rs:.*: replace terminal ",

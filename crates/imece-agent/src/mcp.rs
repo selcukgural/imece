@@ -142,6 +142,12 @@ pub fn peer_pid(conn: &UnixStream) -> Option<u32> {
     let got = unsafe { libc::getsockopt(conn.as_raw_fd(), level, name, ptr, &raw mut len) };
     #[cfg(target_os = "linux")]
     let pid = cred.pid;
+    peer_told(got, pid)
+}
+
+/// The peer `getsockopt` told, when it answered `got`: none on an error
+/// or a pid no process has.
+fn peer_told(got: libc::c_int, pid: libc::pid_t) -> Option<u32> {
     (got == 0 && pid > 0).then(|| pid.cast_unsigned())
 }
 
@@ -309,6 +315,11 @@ mod tests {
         let (a, b) = UnixStream::pair().unwrap();
         assert_eq!(peer_pid(&a), Some(std::process::id()));
         assert_eq!(peer_pid(&b), Some(std::process::id()));
+        assert_eq!(peer_told(0, 7), Some(7));
+        assert_eq!(peer_told(0, 1), Some(1));
+        assert_eq!(peer_told(0, 0), None, "no process is 0");
+        assert_eq!(peer_told(-1, 7), None, "an error tells nothing");
+        assert_eq!(peer_told(-1, 0), None);
     }
 
     #[test]
