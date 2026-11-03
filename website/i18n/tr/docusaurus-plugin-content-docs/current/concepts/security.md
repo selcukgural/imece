@@ -24,7 +24,7 @@ Bir ajanın yazdığı her şey terminale yalnız `i18n::fill` ya da `i18n::clea
 
 ### Fail-closed oturum denetimleri
 
-imece her satıcının kendi kısıtlamalarını rol ve `--confine` düzeyi için açar ve oturumun neyle çalıştığını bildirdiğini doğrular: Claude'un `init`'i her turda; Codex'in yapılandırma yansıması, eklentileri, hook'ları, MCP sunucuları (her turdan önce yeniden) ve thread'i; Gemini'nin modu, modeli, `/about`, `/extensions list` ve `/memory list`'i. İstenenden başka her şey, bir araç, bir sunucu, bir hook, bir sandbox, oturumu durdurur; hiçbir şey sessizce düşürülmez. Alt ajan araçları her düzeyde kapalıdır ([satıcılar](../concepts/vendors.md)).
+imece her satıcının kendi kısıtlamalarını rol ve `--confine` düzeyi için açar ve oturumun neyle çalıştığını bildirdiğini doğrular: Claude'un `init`'i her turda; Codex'in yapılandırma yansıması, eklentileri, hook'ları, MCP sunucuları (her turdan önce yeniden) ve thread'i; Gemini'nin modu, modeli, `/about`, `/extensions list` ve `/memory list`'i. İstenenden başka her şey, bir araç, bir sunucu, bir hook, bir sandbox, oturumu durdurur; hiçbir şey sessizce düşürülmez. Strict ve standard altında bir Codex kural dosyası varken Codex oturumu başlamaz, çünkü Codex kurallarının neye izin verdiğini bildirmez. Alt ajan araçları her düzeyde kapalıdır ([satıcılar](../concepts/vendors.md)).
 
 ### Bütçe
 
