@@ -353,7 +353,10 @@ pub(crate) fn as_if_applying(live: &mut Live, id: AgentId) {
 
 /// What the git thread was given, done and taken in; a bounded wait.
 pub(super) fn settle(live: &mut Live, w: &mut World) {
-    for _ in 0..500 {
+    // As long as git takes: a loaded machine running the whole suite
+    // made a few seconds too short (it returns as soon as git is done).
+    let deadline = std::time::Instant::now() + Duration::from_secs(60);
+    while std::time::Instant::now() < deadline {
         live.take_git(w);
         if live.reading.iter().all(|&n| n == 0)
             && !live.applying.contains(&true)
