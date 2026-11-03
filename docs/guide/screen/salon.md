@@ -5,7 +5,7 @@ description: The default screen of imece - the header, the guild tree grouped by
 
 # The salon
 
-The salon is the screen imece opens on and the one you come back to with `1` or `:salon`. It shows the whole team at a glance: a header with the pot and the fleet, the guild tree on the left (every project, its leader, its workers and their helpers), and on the right the two side panels, WAITING FOR YOU and the journal. The board and the code map are one key away (`2`, `3`); everything else opens over the salon and `esc` brings it back.
+The salon is the screen imece opens on and the one you come back to with `1` or `:salon`. It shows the whole team at a glance: a header with the pot and the fleet, the guild tree on the left (every project, its leader, its workers and their helpers), and on the right the two side panels, WAITING FOR YOU and the [story](journal.md#the-story) (what happened, by card; `J` shows the journal line by line). The board and the code map are one key away (`2`, `3`); everything else opens over the salon and `esc` brings it back.
 
 ```text
  imece   ! 2 waiting for you  │ ● 2 working  ✓ 1 done │ 10 min: 1 cards done · 1 Δ · 6 messages │ 3/9 cards │ spent $3.10 of $20.00 ($1.80/h, ~9 h left) │ claude 5h: 48% left, resets in 1 h 59 min  14:02

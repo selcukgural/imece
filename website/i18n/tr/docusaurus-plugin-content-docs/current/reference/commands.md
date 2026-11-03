@@ -69,6 +69,7 @@ description: imece'nin aldığı her `:` komutu; argümanları, karşılığı o
 | `:settle` | `s` | | | | seçili satırın ajanı ya da projesi |
 | `:slower` | `-` | | evet | | hız, `×2` |
 | `:solo [PATH] [CHOICE] [NAME]` | — | | | `$` | |
+| `:story` | `J` | | | | açık / kapalı |
 | `:talk [@NAME]` | `v` | | | | eldeki ajan |
 | `:theme [NAME\|FILE]` | `T` | `:t` | | | kullanılan tema |
 | `:tidy` | — | | | | |
@@ -311,6 +312,10 @@ Yalnız demo, `-` gibi: simülasyon yavaşlar.
 ### `:solo [PATH] [CHOICE] [NAME]`
 
 Bir solo oturum açar: lideri ve takımı olmayan, kendinizin sürdüğü tek bir ajan, kendi başına bir proje olarak ([solo oturumlar](../concepts/solo.md)). Üç sözcük herhangi bir sırada gelebilir: içinde `/` olan ya da `~` veya `.` ile başlayan sözcük checkout'un PATH'idir (varsayılan: eldeki projeninki); bir satıcı adıyla başlayan sözcük CHOICE'tur, `SATICI[:MODEL][@ÇABA]` (`claude`, `claude:opus@xhigh`, `codex@high`, `gemini:pro`); kalan sözcük NAME'dir (varsayılan: dizinin adı, alınmışsa `-2`, `-3` ile numaralı). Ajan `solo-NAME`'dir, kendi worktree'sinde yazar ve bir yanıtla biten her turda worktree'sinin diff'ini size `Δ` olarak gösterir. Bir checkout'ta takımının yanında istendiği kadar solo olabilir. Flaş: `notes solo oturum olarak açıldı (~/src/kule); solo-notes adına yaz (claude opus@xhigh)`. Redler: iki sözcük aynı yeri isteyince kullanım satırı, `notes adında açık bir proje var`, `"a:b" proje adı olamaz: …`, `açılamadı: codex is not on PATH here, or imece does not drive it`, `açılamadı: claude has no effort "bogus"; one of low, medium, high, xhigh, max`. `$`: yeni bir oturum. CHOICE yoksa önce bir ekran sorar: satıcı (imece'nin burada çalıştırabildikleri, lider satıcı önce), sonra model (`default`, satıcının kendisi, ya da takma adlarından biri; tam bir ad `:solo SATICI:` ardına yazılır), sonra çaba (`default` ya da satıcının düzeylerinden biri; çabası olmayan Gemini'de atlanır); `j k` ve `1`-`9` seçer, `enter` ileri gider, `esc` bir adım geri (ilkinde vazgeçer), `q` vazgeçer. Çıplak `:solo` ile yazılan bir PATH ya da NAME seçimi bekler. `:solo ` ardından tamamlama satıcıları, sonra `claude@` ardından o satıcının çabalarını ve yola benzeyen bir sözcük için dizinleri önerir. Demo, yanıt veren ve ara sıra bir değişiklik gösteren sahte bir solo açar. Commit'i olan bir git checkout'u olmayan bir klasörde solo doğrudan klasörde çalışır, worktree ve `Δ` olmadan, ve başlığı `⌀ git yok` der ([git'siz bir klasörde](../concepts/solo.md#gitsiz-bir-klasörde)).
+
+### `:story`
+
+Alt yan panel, `J` gibi, hikâyeyi anlatır: ne olduğunu, karta göre, en yeni önce, en üstte kimi bekletiyor olduğunuzla (bkz. [hikâye](../screen/journal.md#hikâye)); yeniden: defter. Önce salona gider. Menü notu: `(açık)` / `(kapalı)`; depoda hatırlanır, varsayılan olarak açıktır.
 
 ### `:talk [@NAME]`
 

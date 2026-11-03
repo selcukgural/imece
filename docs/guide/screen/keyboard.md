@@ -69,6 +69,7 @@ The conventions are vim's: `h` `j` `k` `l` move and fold, `gg` and `G` go to the
 | `A`  `:archives` | the archives as a tree (checkout → archive → its agents); in it `j` `k` `gg` `G` move, `h` `l` `za` fold, `enter` opens an archive read-only (`esc` or `q` back), `/` filters, `r` brings the one at hand back (`:restore`), `esc` closes; `:archive` puts the project at hand away |
 | `tab` `⇧tab` `[` `]` | next / previous panel |
 | `,`  `.`  `<`  `>` | wider / narrower side panel |
+| `J`  `:story` | the lower side panel: the story, by card · the journal |
 
 ## The salon
 
@@ -176,6 +177,7 @@ The conventions are vim's: `h` `j` `k` `l` move and fold, `gg` and `G` go to the
 | `:next` / `:defer` | `W` / `S` |
 | `:waiting` | `w` |
 | `:needs` | `f` |
+| `:story` | `J` |
 | `:settle` | `s` |
 | `:peek` | `K` |
 | `:hints` | `F` |

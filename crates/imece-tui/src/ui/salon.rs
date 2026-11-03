@@ -1020,6 +1020,11 @@ fn side(f: &mut Frame, area: Rect, app: &App) {
     }
     f.render_widget(Paragraph::new(lines), inner);
 
+    // The story in the journal's place, but on a card's screen.
+    if app.story_on() {
+        super::story::draw(f, bottom, app);
+        return;
+    }
     let focused = app.pane == Pane::Journal;
     let block = pane_block(journal_title, focused);
     let inner = block.inner(bottom);
