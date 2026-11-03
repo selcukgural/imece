@@ -40,6 +40,12 @@ PATH'te tek satıcı varsa o liderdir ve salon açılır. Birden çoksa, `--lead
 
 ```text
 ┌ IMECE 0.1.0 SÜRÜMÜNE HOŞ GELDİN ─────────────────────────────────────────────────┐
+│                                                                                  │
+│       ██        imece v0.1.0                                                     │
+│   ██  ▄▄  ██    tek terminal, birçok agent, bir lider                            │
+│     ▄▄▀▀▄▄      checkout'un · lider claude                                       │
+│     ▀▀  ▀▀                                                                       │
+│                                                                                  │
 │ Birçok kodlama agent'ı için tek terminal. Lider worker tutar; her biri kendi      │
 │ worktree'sinde çalışır, değiştirdiği şey senin onayını bekler.                    │
 │                                                                                  │
@@ -56,6 +62,8 @@ PATH'te tek satıcı varsa o liderdir ve salon açılır. Birden çoksa, `--lead
 │ herhangi bir tuş: kapat · :welcome bunu yine gösterir                            │
 └──────────────────────────────────────────────────────────────────────────────────┘
 ```
+
+En üstte imece'nin işareti durur: bir işin etrafında beş el; yanında sürümü, ne olduğu ve eldeki proje ile başında kimin olduğu. Ekrana geldiği yerde noktaları birer vuruşta gelir, iş en son (iki saniyeden kısa); herhangi bir tuş onu hemen bütün gösterir, [`:motion off`](../reference/commands.md#motion-offcalmfull), başka bir pencere ve SSH de öyle. Ona dar gelen bir ekranda yazılar tek başına kalır, fazla kısa bir ekranda pencere onlarsız açılır. Salon da, henüz hiçbir projede işçi yokken boş satırlarında aynı işareti gösterir. Terminalin başlığı da her şey sakinken işareti taşır: `⁙ imece`.
 
 Her satıcının satırı sürümünü ve giriş yapılmış olup olmadığını, ya da nasıl giriş yapılacağını söyler: `claude auth login`, `codex login`. imece bunu CLI'ların kendisine sorar (`claude auth status`, `codex login status`), kendi iş parçacığında, ağa çıkmadan ve para harcamadan; cevabı gelene dek satırda `bakılıyor…`, program yoksa `PATH'te yok` yazar. Gemini CLI'ın böyle bir sorusu yoktur: girişi ilk oturumu açılırken denetlenir, eksikse o oturum nedeniyle durur.
 
@@ -202,6 +210,14 @@ Sonra her zamanki gibi commit atın: `!git commit` kendi kabuğunuzda, ekran ken
 ```
 
 Bir `q` daha çıkar; `s` ÇIKMADAN ÖNCE penceresini açar: tur ortasındaki ajanlar (çıkmak turlarını yarıda keser) ve incelenmemiş değişiklikler; orada `q` hemen çıkar, `W` sıradaki bekleyeni açar, başka bir tuş geri döner. `:q` ve `:quit` aynı şekilde sorar.
+
+Ekran kapanınca imece terminalinde tek bir satır bırakır, önce seni bekleyeni:
+
+```text
+⁙ imece · 1 seni bekliyor · 3 agent uykuda · bu oturumda $2.40 · devam: imece
+```
+
+Söyleyecek bir şeyi olmayan parça yazılmaz; demonun satırı `demo hiçbir şey saklamaz` ile biter.
 
 ## Sonraki `imece`
 

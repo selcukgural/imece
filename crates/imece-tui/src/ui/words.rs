@@ -559,14 +559,42 @@ pub fn title(lang: Lang, waiting: usize, progress: Progress) -> String {
         fill(lang.text().title_waiting, &[&waiting.to_string()])
     };
     // The ladder's top first, in the glyphs of the header's fleet and the
-    // rows, so a tab in the background says it.
+    // rows, so a tab in the background says it; calm, imece's mark
+    // (record 101: five dots, as the mark's hands).
     let glyph = match progress {
         Progress::Stuck => "✕ ",
         Progress::Waiting => "! ",
         Progress::Working => "● ",
-        Progress::Calm => "",
+        Progress::Calm => "⁙ ",
     };
     format!("{glyph}{words}")
+}
+
+/// The line imece leaves in the terminal when it quits (record 101):
+/// imece's mark and name, what waits for the person, the agents that
+/// sleep until the next start (the demo keeps none), what this run spent,
+/// and how to go on.
+pub fn farewell(lang: Lang, w: &World, spent: u64, demo: bool) -> String {
+    let t = lang.text();
+    let mut parts = vec!["⁙ imece".to_string()];
+    let waiting = w.open_inbox().len();
+    if waiting > 0 {
+        parts.push(fill(t.bye_waiting, &[&waiting.to_string()]));
+    }
+    let asleep = (w.agents.iter())
+        .filter(|a| !a.gone && !w.put_away(a.id))
+        .count();
+    if !demo && asleep > 0 {
+        parts.push(match asleep {
+            1 => t.bye_asleep_one.to_string(),
+            n => fill(t.bye_asleep, &[&n.to_string()]),
+        });
+    }
+    if spent > 0 {
+        parts.push(fill(t.bye_spent, &[&crate::model::dollars(spent)]));
+    }
+    parts.push(if demo { t.bye_demo } else { t.bye_resume }.to_string());
+    parts.join(" · ")
 }
 
 /// What a worktree no agent owns holds, as its row in `:tidy` says it:
@@ -913,13 +941,65 @@ mod tests {
 
     #[test]
     fn the_title_names_imece_and_counts_what_waits_in_both_languages() {
-        assert_eq!(title(Lang::En, 0, Progress::Calm), "imece");
-        assert_eq!(title(Lang::Tr, 0, Progress::Calm), "imece");
-        assert_eq!(title(Lang::En, 1, Progress::Calm), "imece · 1 waiting");
-        assert_eq!(title(Lang::En, 12, Progress::Calm), "imece · 12 waiting");
+        assert_eq!(title(Lang::En, 0, Progress::Calm), "⁙ imece");
+        assert_eq!(title(Lang::Tr, 0, Progress::Calm), "⁙ imece");
+        assert_eq!(title(Lang::En, 1, Progress::Calm), "⁙ imece · 1 waiting");
+        assert_eq!(title(Lang::En, 12, Progress::Calm), "⁙ imece · 12 waiting");
         assert_eq!(
             title(Lang::Tr, 3, Progress::Calm),
-            "imece · 3 seni bekliyor"
+            "⁙ imece · 3 seni bekliyor"
+        );
+    }
+
+    #[test]
+    fn the_farewell_says_what_waits_who_sleeps_what_the_run_spent_and_how_to_go_on() {
+        let mut w = crate::live::testing::team(2);
+        assert_eq!(
+            farewell(Lang::En, &w, 0, false),
+            "⁙ imece · 3 agents asleep · resume: imece"
+        );
+        assert_eq!(
+            farewell(Lang::Tr, &w, 24_000, false),
+            "⁙ imece · 3 agent uykuda · bu oturumda $2.40 · devam: imece"
+        );
+        w.agents[1].gone = true;
+        w.agents[2].gone = true;
+        assert_eq!(
+            farewell(Lang::En, &w, 1, false),
+            "⁙ imece · 1 agent asleep · <$0.01 spent this run · resume: imece"
+        );
+        w.agents[0].gone = true;
+        assert_eq!(farewell(Lang::En, &w, 0, false), "⁙ imece · resume: imece");
+        w.agents[0].gone = false;
+        w.projects[0].closed = true;
+        assert_eq!(
+            farewell(Lang::En, &w, 0, false),
+            "⁙ imece · resume: imece",
+            "a closed project's agents are not this run's"
+        );
+        w.projects[0].closed = false;
+        for detail in ["which?", "and?"] {
+            w.inbox.push(InboxItem {
+                kind: InboxKind::Question,
+                agent: 0,
+                detail: detail.into(),
+                researcher: None,
+                open: true,
+                tick: 0,
+                card: None,
+            });
+        }
+        assert_eq!(
+            farewell(Lang::Tr, &w, 0, false),
+            "⁙ imece · 2 seni bekliyor · 1 agent uykuda · devam: imece"
+        );
+        assert_eq!(
+            farewell(Lang::En, &w, 8_500, true),
+            "⁙ imece · 2 waiting for you · $0.85 spent this run · the demo keeps nothing"
+        );
+        assert_eq!(
+            farewell(Lang::Tr, &w, 0, true),
+            "⁙ imece · 2 seni bekliyor · demo hiçbir şey saklamaz"
         );
     }
 

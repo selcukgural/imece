@@ -184,6 +184,8 @@ pub enum Moves {
     Spin,
     /// The spinner by the header's fleet (full motion).
     HeadSpin,
+    /// imece's mark at the start, a dot a beat (`App::mark_dots`).
+    Mark,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -1097,6 +1099,15 @@ pub struct App {
     /// What imece waits for an answer to (`:commit`), said on the bottom
     /// line with a spinner until it comes.
     pub asking: Option<String>,
+    /// Whether the drawing being made and the one before it showed
+    /// imece's mark (`ui::brand`), and the beat its dots started coming
+    /// on, the first drawing of it after one without; none: whole (a key).
+    pub mark_drawn: Cell<bool>,
+    pub mark_before: Cell<bool>,
+    pub mark_from: Cell<Option<Instant>>,
+    /// What the pot had paid when this run began: the farewell says what
+    /// the run spent.
+    pub spent_at_start: u64,
 }
 
 impl App {
@@ -1131,6 +1142,7 @@ impl App {
             Engine::View(_) => Vec::new(),
         };
         let begun = world.tick;
+        let spent_at_start = world.spent();
         App {
             world,
             engine,
@@ -1258,6 +1270,10 @@ impl App {
             glow_items,
             drawn_motion: None,
             asking: None,
+            mark_drawn: Cell::new(false),
+            mark_before: Cell::new(false),
+            mark_from: Cell::new(None),
+            spent_at_start,
         }
     }
 
@@ -2231,7 +2247,7 @@ impl App {
 
     /// The project the zoom, the inbox or journal selection, or the salon
     /// selection points at.
-    fn project_at_hand(&self) -> ProjectId {
+    pub(crate) fn project_at_hand(&self) -> ProjectId {
         if let Zoom::Focus(id) | Zoom::Trace(id) | Zoom::Diff(id) = self.zoom {
             return self.world.agents[id].project;
         }
@@ -2256,6 +2272,8 @@ impl App {
         if self.viewing.is_some() && !ctrl_c {
             return self.view_key(k);
         }
+        // The mark's coming never holds a key up.
+        self.mark_from.set(None);
         self.around(|app| app.key(k));
     }
 
@@ -5395,6 +5413,31 @@ impl App {
         })
     }
 
+    /// The mark is in the drawing being made: when the one before had
+    /// none, its dots start coming on the next beat.
+    pub fn mark_shown(&self) {
+        if !self.mark_before.get() && !self.mark_drawn.get() {
+            let since = self.frame.saturating_duration_since(self.epoch);
+            self.mark_from
+                .set(Some(self.epoch + motion::on_beat(since)));
+        }
+        self.mark_drawn.set(true);
+    }
+
+    /// How many of the mark's dots this frame shows: one more each beat
+    /// from when it came on the screen until all are there; all at once
+    /// after a key, with motion off, in another window or over SSH.
+    pub fn mark_dots(&self) -> usize {
+        let Some(from) = self.mark_from.get() else {
+            return ui::brand::DOTS;
+        };
+        if self.ssh || self.moving() == Motion::Off {
+            return ui::brand::DOTS;
+        }
+        let beats = self.frame.saturating_duration_since(from).as_nanos() / motion::BEAT.as_nanos();
+        usize::try_from(beats).map_or(ui::brand::DOTS, |b| b.min(ui::brand::DOTS))
+    }
+
     /// The spinner's frame where imece waits for an answer; none when
     /// nothing moves.
     pub fn spin(&self) -> Option<&'static str> {
@@ -5475,6 +5518,15 @@ impl App {
         }
         if moving == Motion::Full && !w.mid_turn().is_empty() {
             parts.push((Moves::HeadSpin, motion::SPIN_FULL));
+        }
+        // The mark still coming, where the last drawing showed it; as
+        // `mark_dots` counts at `now` (its start on a beat).
+        if let Some(from) = self.mark_from.get()
+            && self.mark_drawn.get()
+            && !self.ssh
+            && now < from + motion::BEAT * ui::brand::DOTS as u32
+        {
+            parts.push((Moves::Mark, motion::BEAT));
         }
         parts
     }
@@ -10284,7 +10336,7 @@ pub(crate) mod tests {
         assert_eq!(app.progress(), Progress::Working);
         // The title starts with its glyph.
         let title = |w, p| ui::words::title(Lang::En, w, p);
-        assert_eq!(title(0, Progress::Calm), "imece");
+        assert_eq!(title(0, Progress::Calm), "⁙ imece");
         assert_eq!(title(0, Progress::Working), "● imece");
         assert_eq!(title(2, Progress::Waiting), "! imece · 2 waiting");
         assert_eq!(title(1, Progress::Stuck), "✕ imece · 1 waiting");
@@ -14643,6 +14695,102 @@ pub(crate) mod tests {
         app.motion = Motion::Full;
         app.focus(false, Instant::now());
         assert_eq!(app.moving(), Motion::Off, "nothing moves in another window");
+    }
+
+    #[test]
+    fn the_mark_comes_a_dot_a_beat_from_when_it_shows_and_whole_when_nothing_moves() {
+        let (mut app, _) = still(Motion::Calm);
+        let ms = Duration::from_millis;
+        let all = ui::brand::DOTS;
+        assert_eq!(app.mark_dots(), all, "never shown: whole");
+        // First drawn 100 ms in: its dots count from the next beat.
+        app.frame_after(ms(100));
+        app.mark_shown();
+        assert_eq!(app.mark_from.get(), Some(app.after(ms(300))));
+        assert!(app.mark_drawn.get());
+        for (at, dots) in [
+            (100, 0),
+            (299, 0),
+            (300, 0),
+            (599, 0),
+            (600, 1),
+            (1199, 2),
+            (1800, 5),
+            (2099, 5),
+            (2100, 6),
+            (9000, 6),
+        ] {
+            app.frame_after(ms(at));
+            assert_eq!(app.mark_dots(), dots, "at {at} ms");
+        }
+        // Drawn again in the same drawing, or the next: still coming.
+        app.frame_after(ms(900));
+        app.mark_shown();
+        app.mark_before.set(true);
+        app.mark_drawn.set(false);
+        app.mark_shown();
+        assert_eq!(app.mark_from.get(), Some(app.after(ms(300))), "kept");
+        // Gone for a drawing, then back: it comes again.
+        app.mark_before.set(false);
+        app.mark_drawn.set(false);
+        app.frame_after(ms(1200));
+        app.mark_shown();
+        assert_eq!(
+            app.mark_from.get(),
+            Some(app.after(ms(1200))),
+            "on the beat itself"
+        );
+        app.frame_after(ms(1800));
+        assert_eq!(app.mark_dots(), 2);
+        app.motion = Motion::Full;
+        assert_eq!(app.mark_dots(), 2, "full comes as calm");
+        app.motion = Motion::Off;
+        assert_eq!(app.mark_dots(), all, "off: whole");
+        app.motion = Motion::Calm;
+        app.ssh = true;
+        assert_eq!(app.mark_dots(), all, "over SSH: whole");
+        app.ssh = false;
+        app.focus(false, Instant::now());
+        assert_eq!(app.mark_dots(), all, "another window: whole");
+        app.focus(true, Instant::now());
+        assert_eq!(app.mark_dots(), 2);
+        app.on_key(KeyEvent::from(KeyCode::Char('j')));
+        assert_eq!(app.mark_dots(), all, "a key: whole");
+        assert_eq!(app.mark_from.get(), None);
+    }
+
+    #[test]
+    fn the_mark_moves_only_where_it_was_drawn_and_until_it_is_whole() {
+        let (app, _) = still(Motion::Calm);
+        let ms = Duration::from_millis;
+        app.mark_from.set(Some(app.after(ms(300))));
+        assert_eq!(app.next_motion(app.after(ms(0))), None, "not drawn");
+        app.mark_drawn.set(true);
+        assert_eq!(
+            app.moving_parts(app.after(ms(0))),
+            [(Moves::Mark, motion::BEAT)]
+        );
+        assert_eq!(app.next_motion(app.after(ms(0))), Some(app.after(ms(300))));
+        assert_eq!(
+            app.next_motion(app.after(ms(1800))),
+            Some(app.after(ms(2100))),
+            "the last dot"
+        );
+        assert_eq!(
+            app.next_motion(app.after(ms(2099))),
+            Some(app.after(ms(2100)))
+        );
+        assert_eq!(app.next_motion(app.after(ms(2100))), None, "whole");
+        app.mark_from.set(None);
+        assert_eq!(
+            app.next_motion(app.after(ms(0))),
+            None,
+            "a key made it whole"
+        );
+        app.mark_from.set(Some(app.after(ms(300))));
+        let mut app = app;
+        app.ssh = true;
+        assert_eq!(app.next_motion(app.after(ms(0))), None, "SSH");
     }
 
     #[test]

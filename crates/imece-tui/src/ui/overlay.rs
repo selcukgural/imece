@@ -808,9 +808,7 @@ pub fn left_off(f: &mut Frame, app: &App, l: &LeftOff) {
 /// they answer), and the keys to start with.
 pub fn welcome(f: &mut Frame, app: &App) {
     let t = app.lang.text();
-    let mut lines: Vec<Line> = t
-        .welcome_about
-        .iter()
+    let mut lines: Vec<Line> = (t.welcome_about.iter())
         .map(|l| Line::raw(format!(" {l}")))
         .collect();
     lines.push(Line::raw(""));
@@ -834,7 +832,24 @@ pub fn welcome(f: &mut Frame, app: &App) {
     }
     lines.push(Line::raw(""));
     lines.push(Line::from(Span::styled(t.welcome_close, dim())));
+    let lines = branded(f, app, 84, lines);
     window(f, fill(t.welcome_title, &[welcome::VERSION]), lines, 84);
+}
+
+/// A window's `lines` under imece's mark and words, a blank row above and
+/// below them, when the screen has the rows for all of it; else the
+/// lines alone. The window is `width` wide, borders inside.
+fn branded(f: &Frame, app: &App, width: u16, lines: Vec<Line<'static>>) -> Vec<Line<'static>> {
+    let full = f.area();
+    if lines.len() + super::brand::ROWS + 2 + 2 > usize::from(full.height) {
+        return lines;
+    }
+    let inside = usize::from(width.min(full.width).saturating_sub(2));
+    let mut out = vec![Line::raw("")];
+    out.extend(super::brand::lines(app, inside, 2));
+    out.push(Line::raw(""));
+    out.extend(lines);
+    out
 }
 
 /// One vendor's line in the first-run window: a mark, its name, the
@@ -893,6 +908,7 @@ pub fn news(f: &mut Frame, app: &App) {
     }
     lines.push(Line::raw(""));
     lines.push(Line::from(Span::styled(t.news_close, dim())));
+    let lines = branded(f, app, 92, lines);
     window(f, fill(t.news_title, &[welcome::VERSION]), lines, 92);
 }
 
