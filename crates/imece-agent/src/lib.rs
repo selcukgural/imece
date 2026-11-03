@@ -42,10 +42,11 @@ pub fn new_uuid() -> std::io::Result<String> {
     Ok(uuid_of(b))
 }
 
-/// `b` as a version 4, variant 1 UUID.
+/// `b` as a version 4, variant 1 UUID: the version's and the variant's
+/// bits put over the random ones (added: they do not overlap).
 fn uuid_of(mut b: [u8; 16]) -> String {
-    b[6] = (b[6] & 0x0f) | 0x40;
-    b[8] = (b[8] & 0x3f) | 0x80;
+    b[6] = 0x40 + (b[6] & 0x0f);
+    b[8] = 0x80 + (b[8] & 0x3f);
     let hex: String = b.iter().map(|x| format!("{x:02x}")).collect();
     format!(
         "{}-{}-{}-{}-{}",

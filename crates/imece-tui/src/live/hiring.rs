@@ -624,8 +624,11 @@ mod tests {
                 .iter()
                 .any(|e| matches!(e.event, Event::Forked { .. }))
         );
-        // A Codex worker forks.
+        // A Codex worker forks, its team at the cap but for the fork: a
+        // helper is not a worker.
         git_in(&repo, &["worktree", "prune"]);
+        with_helper(&mut w, 1);
+        live.grow(None, false);
         let tree = worker_in(&mut live, &mut w, 1, &repo, &root);
         assert!(tree.exists());
         w.agents[1].vendor = Vendor::Codex;

@@ -8175,6 +8175,9 @@ pub(crate) mod tests {
         }
         app.world.agents[id].vendor = Vendor::Claude;
         app.world.agents[id].name = "claude-7".into();
+        // Workers are counted, not the rest: none of them is Claude.
+        let lead = app.world.projects[0].leader;
+        app.world.agents[lead].vendor = Vendor::Codex;
         let name = app.world.agents[id].name.clone();
         let lead = app.world.projects[0].leader;
         app.command(&format!("fork @{}", app.world.agents[lead].name));
