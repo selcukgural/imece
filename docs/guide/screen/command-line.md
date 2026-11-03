@@ -5,10 +5,10 @@ description: "The footer line where you write - to the leader or one agent, vend
 
 # The command line
 
-The footer is where you write. `/` (or `i`, as in vim) opens it to the leader of the selected project, `@` to one agent, `:` to imece, `!` to your own shell, `#` to a card. The hint that follows the line says what `enter` does and how to add a line; `esc` cancels.
+The footer is where you write. `/` (or `i`, as in vim) opens it to the leader of the selected project, `@` to one agent, `:` to imece, `!` to your own shell, `#` to a card. Until you type, a hint says what `enter` does and how to add a line, and that `esc` cancels; it goes away with the first character and comes back when the line is empty again.
 
 ```text
- › to lead: fix the parser crash on empty files█     enter send · ⇧enter new line · esc cancel
+ › to lead: █   enter send · ⇧enter new line · esc cancel
 ```
 
 ```text
@@ -115,7 +115,7 @@ There is one cut, not a ring: each cut that takes something replaces it. The cur
 
 `⇧enter` starts a new line, as in Claude Code, where the terminal can tell it from `enter`: it speaks the kitty keyboard protocol (kitty, Ghostty, WezTerm with `enable_kitty_keyboard`, foot, Alacritty, iTerm2), which imece asks for at start. Everywhere, `\` then `enter` turns the `\` into a new line instead of sending, and `⌥enter` does too where Option is Meta. The `?` help and the footer's hint name the one your terminal has: `⇧enter new line` or `\ enter new line`. A multiplexer (tmux, screen) that does not answer the query gets the fallback.
 
-The footer takes one row per line, at most eight and a third of the screen; the first row carries who the text goes to, the others are indented under it. When not all lines fit, the cursor's line stays in view and the hint starts with where it is, `3/12`. `^a` `^e`, home/end and `^u` `^k` keep to the line the cursor is on; `↑` `↓` go between lines, keeping the column (while the menu is shown they step through it instead); backspace at a line's start joins it to the one above. `@name` ends at a space or a new line, so `@name` `⇧enter` text goes to that agent.
+The footer takes one row per row of text, at most eight and a third of the screen: a line too long for the screen goes on in the next row (cut cell by cell; a wide character that does not fit moves down whole), so what you type is always in sight. The first row carries who the text goes to, the others are indented under it. When not all rows fit, the cursor's row stays in view and the last row says where it is, `3/12`. `^a` `^e`, home/end and `^u` `^k` keep to the line the cursor is on; `↑` `↓` go between lines, keeping the column (while the menu is shown they step through it instead); backspace at a line's start joins it to the one above. `@name` ends at a space or a new line, so `@name` `⇧enter` text goes to that agent.
 
 A paste goes into the line whole (bracketed paste): line ends become new lines, tabs are kept, other control characters are left out, and nothing is sent by it. Before this a paste's first line end sent half a request. A paste while not writing is left out, and the footer says to start writing first. The journal and the salon show a message of several lines on one line; the conversation shows its lines.
 

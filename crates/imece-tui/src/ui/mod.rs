@@ -56,7 +56,7 @@ pub fn draw(f: &mut Frame, app: &App) {
         Constraint::Length(1),
         Constraint::Min(0),
         Constraint::Length(menu_rows),
-        Constraint::Length(input_rows(app, f.area().height)),
+        Constraint::Length(input_rows(app, f.area().width, f.area().height)),
     ])
     .areas(f.area());
     header(f, head, app);
@@ -1391,42 +1391,52 @@ fn completions(f: &mut Frame, area: Rect, m: &crate::complete::Menu) {
     f.render_widget(Paragraph::new(Line::from(spans)), area);
 }
 
-/// The line being written, and how many columns of it come before the
-/// cursor. A line `clean` would change (a pasted token) is drawn cleaned
-/// whole with the cursor at its end, so moving into it does not split the
-/// token past hiding.
+/// The line being written as it is drawn, and the byte of it the cursor
+/// stands before. A line `clean` would change (a pasted token) is drawn
+/// cleaned whole with the cursor at its end, so moving into it does not
+/// split the token past hiding.
 fn caret_line(input: &str, at: usize) -> (String, usize) {
     let whole = clean(input);
-    let before = if whole == input {
-        input[..at].width()
-    } else {
-        whole.width()
-    };
+    let before = if whole == input { at } else { whole.len() };
     (whole, before)
 }
 
-/// The most rows the line being written takes.
-const INPUT_ROWS: u16 = 8;
-
-/// How many rows the footer takes: one, or while writing one per line of
-/// the text, at most [`INPUT_ROWS`] and a third of the screen.
-fn input_rows(app: &App, height: u16) -> u16 {
-    if !app.typing {
-        return 1;
+/// `text` cut into rows of at most `room` cells, cell by cell (a wide
+/// character that does not fit goes on to the next row), with the row and
+/// column the cursor stands at when it is before byte `caret`. A cursor
+/// at the end of a full row stands at the start of the next, which is
+/// there for it; an empty text is one empty row.
+fn wrap_cells(text: &str, room: usize, caret: Option<usize>) -> (Vec<String>, (usize, usize)) {
+    let room = room.max(1);
+    let mut rows = vec![String::new()];
+    let (mut used, mut at) = (0, (0, 0));
+    for (i, c) in text.char_indices() {
+        let w = c.width().unwrap_or(0);
+        if used + w > room && used > 0 {
+            rows.push(String::new());
+            used = 0;
+        }
+        if caret == Some(i) {
+            at = (rows.len() - 1, used);
+        }
+        rows.last_mut().expect("a row").push(c);
+        used += w;
     }
-    let lines = app.input.split('\n').count();
-    let most = (height / 3).clamp(1, INPUT_ROWS);
-    u16::try_from(lines).unwrap_or(u16::MAX).min(most)
+    if caret.is_some_and(|c| c >= text.len()) {
+        if used >= room {
+            rows.push(String::new());
+            used = 0;
+        }
+        at = (rows.len() - 1, used);
+    }
+    (rows, at)
 }
 
-/// The text being written, a row per line of it, under who it goes to:
-/// the cursor's line always shown (the rows above it go out of view
-/// first), the keys to send or cancel after the last row shown, with
-/// where the cursor is (`3/12`) when not all lines fit. With the rows, the
-/// cursor's row among them and its column.
-fn writing(app: &App, rows: usize) -> (Vec<Line<'static>>, (usize, usize)) {
+/// Who the text being written goes to, before its first row; the rows
+/// after it start under it.
+fn writing_to(app: &App) -> Span<'static> {
     let t = app.lang.text();
-    let to = Span::styled(
+    Span::styled(
         if let Some(Noting::Line(id, line)) = app.noting {
             let patch = app.world.change_of(id).map(|c| c.patch.as_str());
             let place = patch.and_then(|p| place(p, line)).unwrap_or_default();
@@ -1447,52 +1457,93 @@ fn writing(app: &App, rows: usize) -> (Vec<Line<'static>>, (usize, usize)) {
             fill(t.typing_to, &[&app.typing_target()])
         },
         bold(pal().strong),
-    );
-    let indent = Span::raw(" ".repeat(to.width()));
+    )
+}
+
+/// The text being written in rows `width` cells wide after its lead
+/// ([`writing_to`]): each line cut where it reaches the edge
+/// ([`wrap_cells`]), cleaned. With the row and column (in the text) of
+/// the cursor.
+fn written_rows(app: &App, width: usize) -> (Vec<String>, (usize, usize)) {
+    let room = width.saturating_sub(writing_to(app).width());
     let at = app.cursor();
-    let here = app.input[..at].matches('\n').count();
-    let total = app.input.split('\n').count();
-    let first = (here + 1).saturating_sub(rows);
     let mut start = 0;
-    let mut out = Vec::new();
+    let mut rows = Vec::new();
     let mut caret = (0, 0);
-    for (n, line) in app.input.split('\n').enumerate() {
+    for line in app.input.split('\n') {
         let from = start;
         start += line.len() + 1;
-        if n < first || out.len() == rows {
-            continue;
-        }
-        let lead = if out.is_empty() {
-            to.clone()
-        } else {
-            indent.clone()
-        };
-        let text = if n == here {
+        let (text, here) = if (from..start).contains(&at) {
             let (text, before) = caret_line(line, at - from);
-            caret = (out.len(), lead.width() + before);
-            text
+            (text, Some(before))
         } else {
-            clean(line)
+            (clean(line), None)
         };
-        out.push(Line::from(vec![lead, Span::raw(text)]));
+        let (cut, (row, column)) = wrap_cells(&text, room, here);
+        if here.is_some() {
+            caret = (rows.len() + row, column);
+        }
+        rows.extend(cut);
     }
+    (rows, caret)
+}
+
+/// The most rows the line being written takes.
+const INPUT_ROWS: u16 = 8;
+
+/// How many rows the footer takes: one, or while writing one per row of
+/// the text in a footer `width` wide ([`written_rows`]), at most
+/// [`INPUT_ROWS`] and a third of the screen.
+fn input_rows(app: &App, width: u16, height: u16) -> u16 {
+    if !app.typing {
+        return 1;
+    }
+    let rows = written_rows(app, usize::from(width)).0.len();
+    let most = (height / 3).clamp(1, INPUT_ROWS);
+    u16::try_from(rows).unwrap_or(u16::MAX).min(most)
+}
+
+/// The text being written, `rows` rows of a footer `width` wide under who
+/// it goes to: a line too long for a row goes on in the next, the
+/// cursor's row always shown (the rows above it go out of view first),
+/// where the cursor is (`3/12`) when not all rows fit, and the keys to
+/// send or cancel only while nothing is written yet. With the rows, the
+/// cursor's row among them and its column.
+fn writing(app: &App, rows: usize, width: usize) -> (Vec<Line<'static>>, (usize, usize)) {
+    let t = app.lang.text();
+    let to = writing_to(app);
+    let indent = Span::raw(" ".repeat(to.width()));
+    let (all, (row, column)) = written_rows(app, width);
+    let first = (row + 1).saturating_sub(rows);
+    let mut out: Vec<Line<'static>> = (all.iter().enumerate().skip(first).take(rows.max(1)))
+        .map(|(n, text)| {
+            let lead = if n == first {
+                to.clone()
+            } else {
+                indent.clone()
+            };
+            Line::from(vec![lead, Span::raw(text.clone())])
+        })
+        .collect();
+    let caret = (row - first, to.width() + column);
     let mut hint = Vec::new();
-    if total > out.len() {
-        hint.push(Span::styled(format!("   {}/{total}", here + 1), dim()));
+    if all.len() > out.len() {
+        hint.push(Span::styled(format!("   {}/{}", row + 1, all.len()), dim()));
     }
     let newline = if app.shift_enter {
         t.newline_shift
     } else {
         t.newline_plain
     };
-    hint.push(Span::styled(
-        match (&app.menu, &app.noting) {
-            (Some(_), _) => t.pick_cancel.to_string(),
-            (None, Some(_)) => fill(t.keep_cancel, &[newline]),
-            (None, None) => fill(t.send_cancel, &[newline]),
-        },
-        dim(),
-    ));
+    // The menu's keys while it is open; the keys to send only until
+    // something is written.
+    let keys = match (&app.menu, &app.noting) {
+        (Some(_), _) => Some(t.pick_cancel.to_string()),
+        _ if !app.input.is_empty() => None,
+        (None, Some(_)) => Some(fill(t.keep_cancel, &[newline])),
+        (None, None) => Some(fill(t.send_cancel, &[newline])),
+    };
+    hint.extend(keys.map(|k| Span::styled(k, dim())));
     if let Some(last) = out.last_mut() {
         last.spans.extend(hint);
     }
@@ -1505,7 +1556,8 @@ fn footer(f: &mut Frame, area: Rect, app: &App) -> Option<Position> {
     let t = app.lang.text();
     let key = key_style;
     if app.typing {
-        let (lines, (row, column)) = writing(app, usize::from(area.height));
+        let (lines, (row, column)) =
+            writing(app, usize::from(area.height), usize::from(area.width));
         f.render_widget(Paragraph::new(lines), area);
         return caret_in(area, row, column);
     }
@@ -4778,7 +4830,10 @@ mod tests {
             key(&mut app, KeyCode::Char(c));
         }
         assert_eq!(app.menu, None);
-        assert!(render(&app, 140, 40).contains("enter send · \\ enter new line · esc cancel"));
+        assert!(
+            !render(&app, 140, 40).contains("enter send"),
+            "the keys to send go once something is written"
+        );
         key(&mut app, KeyCode::Enter);
         assert!(!app.typing);
         assert!(
@@ -5214,6 +5269,18 @@ mod tests {
         let lead = app.world.agents[app.world.projects[0].leader].name.clone();
         let to = format!(" › to {lead}: ");
         key(&mut app, KeyCode::Char('/'));
+        // Nothing written yet: the keys to send, after who it goes to.
+        let empty = render(&app, 140, 40);
+        let row = empty.lines().nth(39).unwrap();
+        assert!(
+            row.starts_with(&format!(
+                "{to}   enter send · \\ enter new line · esc cancel"
+            )),
+            "{row}"
+        );
+        app.shift_enter = true;
+        assert!(render(&app, 140, 40).contains("enter send · ⇧enter new line · esc cancel"));
+        app.shift_enter = false;
         write(&mut app, "one");
         with(&mut app, KeyCode::Enter, KeyModifiers::SHIFT);
         write(&mut app, "two");
@@ -5223,11 +5290,8 @@ mod tests {
         assert!(first.starts_with(&format!("{to}one")), "{first}");
         let indent = " ".repeat(to.chars().count());
         assert!(last.starts_with(&format!("{indent}two")), "{last}");
-        assert!(last.contains("enter send · \\ enter new line · esc cancel"));
-        assert!(!first.contains("enter send"), "the hint ends the last row");
+        assert!(!s.contains("enter send"), "gone once something is written");
         assert!(!s.contains("/2"), "all lines fit: no count");
-        app.shift_enter = true;
-        assert!(render(&app, 140, 40).contains("enter send · ⇧enter new line · esc cancel"));
 
         // Twelve lines: eight rows on a tall screen, four on a short one.
         for n in 3..=12 {
@@ -5266,6 +5330,96 @@ mod tests {
         key(&mut app, KeyCode::Esc);
         let s = render(&app, 140, 40);
         assert!(!s.lines().nth(38).unwrap().contains("line"));
+    }
+
+    #[test]
+    fn a_row_is_cut_cell_by_cell_and_the_cursor_found_in_it() {
+        let cut = |t: &str, room, caret| wrap_cells(t, room, caret);
+        assert_eq!(cut("", 4, Some(0)), (vec![String::new()], (0, 0)));
+        assert_eq!(cut("", 4, None), (vec![String::new()], (0, 0)));
+        assert_eq!(cut("abc", 4, Some(3)), (vec!["abc".into()], (0, 3)));
+        assert_eq!(cut("abcd", 4, None), (vec!["abcd".into()], (0, 0)));
+        // At the end of a full row the cursor is on the next, made for it.
+        assert_eq!(
+            cut("abcd", 4, Some(4)),
+            (vec!["abcd".into(), String::new()], (1, 0))
+        );
+        assert_eq!(
+            cut("abcdefghij", 4, Some(5)),
+            (vec!["abcd".into(), "efgh".into(), "ij".into()], (1, 1))
+        );
+        assert_eq!(
+            cut("abcdefgh", 4, Some(4)),
+            (vec!["abcd".into(), "efgh".into()], (1, 0)),
+            "before e: the start of its row"
+        );
+        assert_eq!(cut("abcde", 4, Some(3)).1, (0, 3));
+        // A wide character that does not fit goes on to the next row.
+        assert_eq!(
+            cut("abc中d", 4, Some(3)),
+            (vec!["abc".into(), "中d".into()], (1, 0))
+        );
+        assert_eq!(
+            cut("中中中", 4, Some(9)),
+            (vec!["中中".into(), "中".into()], (1, 2))
+        );
+        // Too narrow for one: one character a row, never none.
+        assert_eq!(cut("中a", 1, None).0, ["中", "a"]);
+        assert_eq!(
+            cut("ab", 0, Some(1)),
+            (vec!["a".into(), "b".into()], (1, 0))
+        );
+    }
+
+    #[test]
+    fn a_long_line_goes_on_in_the_next_row_and_the_footer_grows() {
+        let mut app = app_after(1, 3, 0, Lang::En);
+        let lead = app.world.agents[app.world.projects[0].leader].name.clone();
+        let to = format!(" › to {lead}: ");
+        let indent = " ".repeat(to.chars().count());
+        let room = 60 - to.chars().count();
+        key(&mut app, KeyCode::Char('/'));
+        let long: String = (0..room * 2 + 5)
+            .map(|i| char::from(b'a' + (i % 26) as u8))
+            .collect();
+        write(&mut app, &long);
+        let s = render(&app, 60, 30);
+        let rows: Vec<&str> = s.lines().collect();
+        assert_eq!(rows[27], format!("{to}{}", &long[..room]));
+        assert_eq!(
+            rows[28].trim_end(),
+            format!("{indent}{}", &long[room..room * 2])
+        );
+        assert_eq!(
+            rows[29].trim_end(),
+            format!("{indent}{}", &long[room * 2..])
+        );
+        assert_eq!(
+            caret_of(&app, 60, 30),
+            Some((u16::try_from(to.chars().count() + 5).unwrap(), 29))
+        );
+        assert_eq!(input_rows(&app, 60, 30), 3);
+        // The body gave the rows up: the salon's foot is higher.
+        assert!(rows[26].starts_with('└'), "{}", rows[26]);
+        // A row exactly full puts the cursor on a new one below it.
+        let mut app = app_after(1, 3, 0, Lang::En);
+        key(&mut app, KeyCode::Char('/'));
+        write(&mut app, &long[..room]);
+        assert_eq!(input_rows(&app, 60, 30), 2);
+        assert_eq!(
+            caret_of(&app, 60, 30),
+            Some((u16::try_from(to.chars().count()).unwrap(), 29))
+        );
+        key(&mut app, KeyCode::Left);
+        assert_eq!(input_rows(&app, 60, 30), 1, "not at its end: one row");
+        // More rows than the footer has: the cursor's stays, counted.
+        let mut app = app_after(1, 3, 0, Lang::En);
+        key(&mut app, KeyCode::Char('/'));
+        write(&mut app, &long.repeat(5));
+        let s = render(&app, 60, 30);
+        let last = s.lines().nth(29).unwrap();
+        assert!(last.contains("11/11"), "{last}");
+        assert_eq!(input_rows(&app, 60, 30), 8);
     }
 
     /// Where the terminal's cursor is after `app` is drawn on a screen of
@@ -5325,17 +5479,17 @@ mod tests {
     }
 
     #[test]
-    fn the_cursor_counts_cells_and_stands_after_a_hidden_token() {
+    fn the_cursor_stands_before_its_byte_and_after_a_hidden_token() {
         assert_eq!(caret_line("açb", 1), ("açb".to_string(), 1));
         assert_eq!(
             caret_line("açb", 3),
-            ("açb".to_string(), 2),
+            ("açb".to_string(), 3),
             "ç is two bytes"
         );
         assert_eq!(
             caret_line("a中b", 4),
-            ("a中b".to_string(), 3),
-            "中 is two cells"
+            ("a中b".to_string(), 4),
+            "中 is three bytes"
         );
         assert_eq!(caret_line("ab", 2), ("ab".to_string(), 2));
         assert_eq!(caret_line("ab", 0), ("ab".to_string(), 0));

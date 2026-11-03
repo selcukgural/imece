@@ -43,12 +43,18 @@ is offered for a text of one line only: names and commands are on one.
 `@name` ends at a space or a new line, so `@name` shift-enter text goes
 to that agent.
 
-Drawing: the footer takes one row per line of the text, at most eight
-and a third of the screen. The first row carries who the text goes to,
-the others are indented under it, and the send / cancel hint follows
-the last row shown. When not all lines fit, the cursor's line is kept
-in view (rows above it go out of view first) and the hint starts with
-where the cursor is, `3/12`. Each line is drawn through `clean` with
+Drawing: the footer takes one row per row of the text, at most eight
+and a third of the screen. A line longer than the room after who it goes
+to goes on in the next row (#230, 2026-11-03: it was cut at the edge and
+what was typed went out of sight): `ui::wrap_cells` cuts cell by cell,
+a wide character that does not fit moves down whole, and a cursor at the
+end of a full row stands at the start of a new one; `ui::written_rows`
+does it for every line, and `input_rows` counts the same rows. The first
+row carries who the text goes to, the others are indented under it. The
+send / cancel hint follows the last row only while nothing is written
+(#231; the menu's keys stay while it is open). When not all rows fit,
+the cursor's row is kept in view (rows above it go out of view first)
+and the last row says where the cursor is, `3/12` in rows. Each line is drawn through `clean` with
 the cursor as before (record 37).
 
 Paste: bracketed paste is on while imece has the screen (`CSI ? 2004 h`,

@@ -119,9 +119,11 @@ Takım yalnız liderdir (`◆ lead`). Günlüğün ilk satırı, `--confine stri
 `/` (ya da `i`) tuşuna basın. Alt satır yazma satırına dönüşür: ` › lead için: `. İstediğinizi yazın ve `enter` basın:
 
 ```text
- › lead için: CSV ayrıştırıcı son sütundaki sondaki virgülü reddediyor; kabul etsin, testiyle
-   enter gönder · ⇧enter yeni satır · esc vazgeç
+ › lead için: CSV ayrıştırıcı son sütundaki sondaki virgülü reddediyor; kabul
+              etsin, testiyle
 ```
+
+Ekrandan uzun bir satır sonraki sırada sürer. Siz yazmadan önce alt satır `enter gönder · ⇧enter yeni satır · esc vazgeç` der.
 
 Düz metin seçili projenin liderine gider. `@claude-1 metin` tek bir ajana giderdi. İstemden sonra `/` ile başlayan bir satır bir mesaj değil, ajanın kendi komutudur (`/cost`, `/compact`, `/clear`). `⇧enter` (ya da `\` `enter`) uzun bir istekte yeni satır başlatır; alt satır terminalinizde hangisinin çalıştığını söyler. `tab`, `@` sonrasında adları, `:` sonrasında komutları tamamlar.
 
