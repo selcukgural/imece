@@ -42,6 +42,7 @@ const sidebars = {
         'screen/conversations',
         'screen/cards',
         'screen/board-and-code-map',
+        'screen/timeline',
         'screen/changes',
         'screen/command-line',
         'screen/journal',

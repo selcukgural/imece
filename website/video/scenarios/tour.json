@@ -54,7 +54,7 @@
     {
       "id": "salon",
       "chapter": "The salon",
-      "narration": "This is the salon. Each project is a group with its own leader. A worker's row shows its card and what it is doing right now; the mark in front says where it stands: working, starting, waiting for you, stuck. The small bars show how busy it was in the last half minute, the three lines how far it is through its own to-do list, then what it has cost. The journal on the right keeps every message and every event, with the time.",
+      "narration": "This is the salon. Each project is a group with its own leader. A worker's row shows its card, the step of its own to-do list it is on, and dimmer, the tool call it is making; the mark in front says where it stands: working, starting, waiting for you, stuck. When some need you, they sit under a header of their own. The small bars show how busy it was in the last half minute. On the right, the story: what happened, card by card, and whom you hold up. Capital J shows the journal, line by line.",
       "steps": [
         { "action": "type", "target": "#corner", "text": "j", "delayMs": 0 },
         { "action": "wait", "seconds": 7 },
@@ -134,7 +134,7 @@
     {
       "id": "pot",
       "chapter": "One pot",
-      "narration": "Let the simulation run again. One pot for the whole team, kept between runs. The header shows what was spent, what the last ten minutes cost per hour, and how long the pot lasts at that rate. Beside it, each vendor plan's usage window nearest to full, and the fleet: working, done, stuck.",
+      "narration": "Let the simulation run again. The header starts with what waits for you and the fleet: working, done, stuck. Then what happened in the last ten minutes: cards done, changes, messages. Then one pot for the whole team, kept between runs: what was spent, what the last ten minutes cost per hour, and how long it lasts at that rate. On a narrow screen, the least wanted parts give way first.",
       "steps": [
         { "action": "type", "target": "#corner", "text": " ", "delayMs": 0 },
         { "action": "wait", "seconds": 1 },
@@ -146,12 +146,16 @@
     },
     {
       "id": "board",
-      "chapter": "The board and the code map",
-      "narration": "Two is the board: the cards the leaders posted, who claimed which, what is done. An idle worker may claim a card on its own. Three is the code map: one row per file, and who holds which symbols. One brings the salon back.",
+      "chapter": "The board, the code map, the timeline",
+      "narration": "Two is the board: the cards the leaders posted, who claimed which, what is done. An idle worker may claim a card on its own. Three is the code map: one row per file, and who holds which symbols. Four is the timeline: one lane per agent over the last hour, each column what it did then: writing, reading, thinking, asking a teammate, waiting for you, stuck. The brackets make a column five seconds, half a minute or a minute. One brings the salon back.",
       "steps": [
         { "action": "type", "target": "#corner", "text": "2", "delayMs": 0 },
         { "action": "wait", "seconds": 7 },
         { "action": "type", "target": "#corner", "text": "3", "delayMs": 0 },
+        { "action": "wait", "seconds": 6 },
+        { "action": "type", "target": "#corner", "text": "4", "delayMs": 0 },
+        { "action": "wait", "seconds": 9 },
+        { "action": "type", "target": "#corner", "text": "]", "delayMs": 0 },
         { "action": "wait", "seconds": 6 },
         { "action": "type", "target": "#corner", "text": "1", "delayMs": 0 },
         { "action": "wait", "seconds": 1 }

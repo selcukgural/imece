@@ -75,9 +75,9 @@ pub struct Viewed {
 /// a new command is refused in the view until it is listed here);
 /// `:restore` asks the screen behind to bring the archive back.
 const VIEW_COMMANDS: &[&str] = &[
-    "goto", "history", "export", "salon", "board", "code", "lang", "theme", "help", "quit", "next",
-    "defer", "waiting", "needs", "fold", "unfold", "trace", "peek", "hints", "news", "settle",
-    "unsettle", "talk", "why", "story",
+    "goto", "history", "export", "salon", "board", "code", "timeline", "lang", "theme", "help",
+    "quit", "next", "defer", "waiting", "needs", "fold", "unfold", "trace", "peek", "hints",
+    "news", "settle", "unsettle", "talk", "why", "story",
 ];
 
 /// Whether a line sent is one `↑` and `^r` bring back: a message, a
@@ -191,6 +191,8 @@ pub enum View {
     Salon,
     Board,
     Code,
+    /// One lane per agent over time (record 100).
+    Timeline,
 }
 
 /// How deep the person looks: the whole guild, one agent's card, the
@@ -629,6 +631,40 @@ pub enum Rung {
     Stuck,
 }
 
+/// What agent `a` is doing for its lane on the timeline (record 100),
+/// `waits` whether something of it waits for the person: stuck; in a turn,
+/// what it does there (waiting for a yes to a tool call, starting,
+/// writing files, reading or running something, thinking, asking a
+/// teammate, researching), even while an older item of it waits; out of
+/// one, waiting for the person when something does, else the tick its turn
+/// ended (its lane says it was busy) or idle.
+pub(crate) fn cell_of(w: &World, a: &Agent, waits: bool) -> LaneCell {
+    match a.status {
+        Status::Blocked | Status::Stopped => LaneCell::Stuck,
+        Status::WaitingHuman => LaneCell::Waiting,
+        Status::Working if w.open_item(a.id, InboxKind::Approval).is_some() => LaneCell::Waiting,
+        Status::Working if a.starting => LaneCell::Starting,
+        Status::Working => match a.activity.as_deref() {
+            None | Some("") => LaneCell::Thinking,
+            Some(doing) if writes(doing) => LaneCell::Writing,
+            Some(_) => LaneCell::Reading,
+        },
+        Status::Asking { .. } => LaneCell::Asking,
+        Status::Researching { .. } => LaneCell::Reading,
+        Status::Idle | Status::Asleep if waits => LaneCell::Waiting,
+        Status::Idle | Status::Asleep if a.lane.last().busy() => LaneCell::Done,
+        Status::Idle | Status::Asleep => LaneCell::Idle,
+    }
+}
+
+/// Whether a tool call, as a row says it (`Edit src/x.rs`), writes files.
+pub(crate) fn writes(doing: &str) -> bool {
+    matches!(
+        doing.split_whitespace().next(),
+        Some("Edit" | "Write" | "MultiEdit" | "NotebookEdit" | imece_agent::codex::PATCH)
+    )
+}
+
 impl Rung {
     /// What the rung needs of the person.
     pub fn need(self) -> Need {
@@ -783,6 +819,10 @@ pub struct App {
     pub story_sel: usize,
     /// What the story shows that can be selected, as last drawn.
     pub story_items: RefCell<Vec<ui::story::Item>>,
+    /// The timeline's selected agent, among those it shows, and its scale
+    /// (an index into `ui::timeline::SCALES`).
+    pub timeline_sel: usize,
+    pub timeline_scale: usize,
     /// Agents that finished a turn since the person last opened them.
     pub unseen: BTreeSet<AgentId>,
     /// Agents (`s` on a worker's row) and projects (on a header or its
@@ -1113,6 +1153,8 @@ impl App {
             story: false,
             story_sel: 0,
             story_items: RefCell::new(Vec::new()),
+            timeline_sel: 0,
+            timeline_scale: 0,
             unseen: BTreeSet::new(),
             turning: BTreeSet::new(),
             inbox_sel: 0,
@@ -1235,6 +1277,7 @@ impl App {
         self.watch_tidy();
         self.world.watch_spending();
         self.watch_turns();
+        self.watch_lanes();
         self.watch_glows(Instant::now());
         let asking = match &self.engine {
             Engine::Live(l) => l.asking(),
@@ -1254,6 +1297,24 @@ impl App {
     /// Marks the agents whose turn ended in this step, idle now, as done
     /// and not yet seen; one that is mid-turn again is not, and neither is
     /// one the person has open.
+    /// Notes in every agent's lane what it does now, at every step: the
+    /// demo and live alike. A gone agent's lane stops.
+    pub(crate) fn watch_lanes(&mut self) {
+        let w = &self.world;
+        let t = w.tick;
+        let waiting: BTreeSet<AgentId> = (w.open_inbox().into_iter())
+            .map(|i| w.inbox[i].agent)
+            .collect();
+        let cells: Vec<Option<LaneCell>> = (w.agents.iter())
+            .map(|a| (!a.gone).then(|| cell_of(w, a, waiting.contains(&a.id))))
+            .collect();
+        for (a, cell) in self.world.agents.iter_mut().zip(cells) {
+            if let Some(cell) = cell {
+                a.lane.mark(t, cell);
+            }
+        }
+    }
+
     fn watch_turns(&mut self) {
         let now: BTreeSet<AgentId> = self.world.mid_turn().into_iter().collect();
         for &id in self.turning.difference(&now) {
@@ -2249,7 +2310,7 @@ impl App {
             && self.zoom == Zoom::None
             && matches!(
                 self.scope_below(),
-                Some(Scope::Salon | Scope::Board | Scope::Code)
+                Some(Scope::Salon | Scope::Board | Scope::Code | Scope::Timeline)
             )
     }
 
@@ -2474,6 +2535,7 @@ impl App {
                 View::Salon => Scope::Salon,
                 View::Board => Scope::Board,
                 View::Code => Scope::Code,
+                View::Timeline => Scope::Timeline,
             }
         })
     }
@@ -2642,6 +2704,17 @@ impl App {
             KeyCode::Char('1') => self.show(View::Salon),
             KeyCode::Char('2') => self.show(View::Board),
             KeyCode::Char('3') => self.show(View::Code),
+            KeyCode::Char('4') => self.show(View::Timeline),
+            // The timeline's scale: a column of 5 s, 30 s, a minute.
+            KeyCode::Char(c @ ('[' | ']'))
+                if self.view == View::Timeline && self.zoom == Zoom::None =>
+            {
+                let last = ui::timeline::SCALES.len() - 1;
+                self.timeline_scale = match c {
+                    ']' => (self.timeline_scale + 1).min(last),
+                    _ => self.timeline_scale.saturating_sub(1),
+                };
+            }
             KeyCode::Char('T') => self.next_theme(),
             KeyCode::Char('L') => self.set_lang(self.lang.other()),
             // Live agents run in real time: nothing to pause or speed up.
@@ -2946,12 +3019,22 @@ impl App {
         }
     }
 
+    /// The timeline's selected agent.
+    fn timeline_agent(&self) -> Option<AgentId> {
+        let shown = ui::timeline::agents(self);
+        let at = self.timeline_sel.min(shown.len().saturating_sub(1));
+        shown.get(at).map(|&(id, _)| id)
+    }
+
     /// The agent the person is looking at: focused, selected in the salon,
     /// or the one behind the selected inbox item.
     fn agent_at_hand(&self) -> Option<AgentId> {
         match self.zoom {
             Zoom::Focus(id) | Zoom::Trace(id) | Zoom::Diff(id) => return Some(id),
             Zoom::None => {}
+        }
+        if self.view == View::Timeline {
+            return self.timeline_agent();
         }
         match self.pane {
             Pane::Salon => match self.selected {
@@ -3009,6 +3092,11 @@ impl App {
                 th.entries.len().saturating_sub(1)
             };
             th.follow.set(true);
+            return;
+        }
+        if self.view == View::Timeline && self.zoom == Zoom::None {
+            let n = ui::timeline::agents(self).len();
+            self.timeline_sel = if first { 0 } else { n.saturating_sub(1) };
             return;
         }
         match self.pane {
@@ -4507,6 +4595,7 @@ impl App {
             "salon" => self.show(View::Salon),
             "board" => self.show(View::Board),
             "code" => self.show(View::Code),
+            "timeline" => self.show(View::Timeline),
             "lang" if arg.is_empty() => self.set_lang(self.lang.other()),
             "lang" => match Lang::parse(arg) {
                 Some(lang) => self.set_lang(lang),
@@ -6581,6 +6670,14 @@ impl App {
     }
 
     fn move_selection(&mut self, down: bool) {
+        if self.view == View::Timeline {
+            let n = ui::timeline::agents(self).len();
+            self.timeline_sel = match down {
+                true => (self.timeline_sel + 1).min(n.saturating_sub(1)),
+                false => self.timeline_sel.saturating_sub(1),
+            };
+            return;
+        }
         match self.pane {
             Pane::Journal if self.story_on() => {
                 let n = self.story_items.borrow().len();
@@ -6622,6 +6719,12 @@ impl App {
     }
 
     fn deeper(&mut self) {
+        if self.view == View::Timeline && self.zoom == Zoom::None {
+            if let Some(id) = self.timeline_agent() {
+                self.zoom = Zoom::Focus(id);
+            }
+            return;
+        }
         let zoom = match self.zoom {
             Zoom::None => match (self.pane, self.selected) {
                 (Pane::Inbox, _) => {

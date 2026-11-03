@@ -54,7 +54,8 @@ The conventions are vim's: `h` `j` `k` `l` move and fold, `gg` and `G` go to the
 | --- | --- |
 | `#N`  `#word`  `n` `p` | a card by number or title, all of it on one screen; on it `n` `p`: next / previous card |
 | `&`  `:goto` | go to an agent or a project: type a name, `1`-`9` the nth on the list, `!` keeps only what needs you; `&#` turns to the cards |
-| `1` `2` `3` | `:salon` · `:board` · `:code` map |
+| `1` `2` `3` `4` | `:salon` · `:board` · `:code` map · `:timeline` |
+| `[`  `]` | on the timeline: a column of 5 s · 30 s · 1 min |
 | `↑` `↓`  `j` `k` | select |
 | `gg`  `G` | first / last line |
 | `^d` `^u` `^f` `^b` | half a page / a page |
@@ -168,7 +169,7 @@ The conventions are vim's: `h` `j` `k` `l` move and fold, `gg` and `G` go to the
 
 | Command | Key |
 | --- | --- |
-| `:salon` `:board` `:code` | `1` `2` `3` |
+| `:salon` `:board` `:code` `:timeline` | `1` `2` `3` `4` |
 | `:lang` | `L` |
 | `:theme` | `T` |
 | `:help` | `?` |
@@ -230,7 +231,7 @@ x = j
 X = x
 ```
 
-The places are `salon`, `board`, `code` (the code map), `talk` (a conversation), `change` (a change open), `choose` (lines being chosen to copy, in a conversation or a change), `peek` and `help`. The place is where the keys go: a conversation open over a change is `talk`, choosing lines inside it is `choose`. The windows that close on any key (what's new, welcome, the away digest, where you left off), the quit question and the solo pick take only the lines that hold everywhere. A place may come again further down; a key given twice in one place is refused, and a key given alone in one place cannot start two keys in the same place or everywhere.
+The places are `salon`, `board`, `code` (the code map), `timeline`, `talk` (a conversation), `change` (a change open), `choose` (lines being chosen to copy, in a conversation or a change), `peek` and `help`. The place is where the keys go: a conversation open over a change is `talk`, choosing lines inside it is `choose`. The windows that close on any key (what's new, welcome, the away digest, where you left off), the quit question and the solo pick take only the lines that hold everywhere. A place may come again further down; a key given twice in one place is refused, and a key given alone in one place cannot start two keys in the same place or everywhere.
 
 imece reads the file at start, on `:keys`, and again when you save it: it looks every two seconds, and at once when you come back to its window, and says what came of it as `:keys` does. A file it cannot take whole is refused, and the keys you had stay: a line that is not `KEY = KEY` (`line 3: write it as KEY = KEY`), a name that is no key (`` `nope` is not a key ``), a key imece does nothing with on the right (`imece does nothing with d`), a key given twice (`^n is given on line 1 already`), three keys on a side, a place that is none of these (`` `[nope]` is no place ``), `^c` on either side, more than 200 keys, a file over 64 KiB or not text. The last good file is kept in the store, so a start with a file refused still has your keys and says why. A bad edit is said once and leaves the keys you had. With no file, imece's own keys are back.
 
