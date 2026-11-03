@@ -106,3 +106,27 @@ what of it is built (the decision records say how):
 
 What the backlog left out on purpose is crossed out there with the
 person's reason (E3, E9).
+
+## agent-deck (2026-11-03)
+
+- **agent-deck** (github.com/asheshgoplani/agent-deck, MIT, Go on tmux):
+  a session manager for many coding-agent CLIs (Claude Code, Codex,
+  Gemini CLI, OpenCode, Copilot, Cursor and more), each run in its own
+  tmux pane and attached to with its own interface; status is read from
+  the screen and the tools' hooks. It is a deck of sessions, not a team:
+  no leader that hires, no bus between agents, no Δ gate, no one pot.
+  Around that: a "conductor" agent that watches the others and answers
+  what it is sure of, bridges to Telegram, Slack and Discord, watchers
+  that turn GitHub webhooks and ntfy pushes into events, worktree setup
+  and teardown scripts run only after a consent bound to their sha256,
+  `.worktreeinclude`, sparse checkouts, forking a session, a full-text
+  search of every conversation (Recall), a cost dashboard with budgets,
+  provider quotas, a Docker sandbox, a web view and remote decks over SSH.
+  Taken as issues: a push to the phone for what waits (#239), the
+  worktree setup and teardown script with its consent (#240), Recall
+  (#241), forking a session (#242), writing in `$EDITOR` (#243),
+  `.worktreeinclude` (#244), orphaned worktrees and sparse checkouts
+  (#245). Not taken: the conductor answering for the person (the person
+  is the last gate), the Docker sandbox (a container's or Kule's job, as
+  the posture says), the web view and remote decks (not now), the cost
+  dashboard (G3 was dropped), the mouse capture (keyboard first).
