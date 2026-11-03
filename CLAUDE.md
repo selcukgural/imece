@@ -20,7 +20,7 @@
 cargo fmt --all
 cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
-cargo mutants --in-diff <(git diff main...HEAD)   # what the change touched; CI does this on every PR
+cargo mutants --in-diff <(git diff main...HEAD)   # what the change touched; CI does this on every PR (below)
 cargo mutants                                      # everything (slow); CI does this nightly
 ```
 
@@ -42,6 +42,17 @@ cargo mutants                                      # everything (slow); CI does 
   the variants apart. The full run is nightly only.
   The PR job also fails on a timeout, so never write
   a loop a mutated operator could make endless (search a range instead).
+  What holds a PR (user, 2026-11-03): only the mutants in the paths
+  `.cargo/mutants-boundary` lists, imece's own boundaries (the vendor
+  adapters, the bus and its tools, the Δ gate, approved scripts and
+  standing yeses, session checks, the pot, worktree removal, `clean`, the
+  store, push, the editor's draft, the pty). Those run as `boundary` and
+  `changed` waits for them; the rest of a change's mutants run as
+  `report`, red on a miss, and nothing waits for them: merge on green
+  tests, fmt, clippy and `changed`, then fix a `report` miss in a
+  follow-up PR the same day. A file that becomes a boundary goes on the
+  list in the PR that makes it one. The tests are still written with the
+  mutants in mind before the push, everywhere.
 
 - Keyboard first (user, 2026-10-29): everything is done with keys, vim
   style (hjkl, g/G, PgUp/PgDn, Esc back, / to type) next to the arrows; a

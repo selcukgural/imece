@@ -1,7 +1,8 @@
 name: mutants
 
 # Mutation testing: cargo-mutants plants a bug and sees whether a test
-# catches it. A pull request is held to the code it touches; the whole
+# catches it. A pull request is held to the code it touches in imece's
+# boundaries and told about the rest (below); the whole
 # workspace runs every night, so a gap anywhere shows within a day. Both
 # are split over several runners (cargo-mutants `--shard k/n`: every
 # runner lists the same mutants and takes every n-th), so the wall-clock
@@ -17,12 +18,13 @@ permissions:
   contents: read
 
 jobs:
-  # A pull request's mutants are split over four runners (cargo-mutants
-  # `--shard`), so a big change takes minutes of wall-clock, not half an
-  # hour; `changed` below gathers them into the one check the branch
-  # rules require.
-  shard:
-    name: changed (shard ${{ matrix.shard }})
+  # A pull request's mutants, in two parts (user, 2026-11-03): those in
+  # the paths `.cargo/mutants-boundary` lists (imece's own boundaries)
+  # hold the pull request; the rest are reported and do not, a miss among
+  # them fixed in a follow-up. Each part is split over four runners
+  # (cargo-mutants `--shard`). The two jobs are the same but for `PART`.
+  boundary:
+    name: boundary (shard ${{ matrix.shard }})
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 45
@@ -30,28 +32,45 @@ jobs:
       fail-fast: false
       matrix:
         shard: [0, 1, 2, 3]
+    env:
+      PART: boundary
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           # The diff against the base needs its history.
           fetch-depth: 0
-      - name: Rust toolchain (rust-toolchain.toml)
-        run: rustup toolchain install
-      - name: cargo-mutants (pinned)
-        run: cargo install cargo-mutants --version 27.1.0 --locked
-      - name: Mutants in the change
+      - name: The part of the change
+        id: diff
         env:
           BASE: ${{ github.event.pull_request.base.sha }}
+        run: |
+          mapfile -t paths < <(grep -v -e '^#' -e '^$' .cargo/mutants-boundary)
+          if [ "$PART" = boundary ]; then
+            git diff "$BASE"...HEAD -- "${paths[@]}" > change.diff
+          else
+            git diff "$BASE"...HEAD -- . "${paths[@]/#/:(exclude)}" > change.diff
+          fi
+          if [ -s change.diff ]; then echo "any=yes" >> "$GITHUB_OUTPUT"; fi
+      - name: Rust toolchain (rust-toolchain.toml)
+        if: steps.diff.outputs.any == 'yes'
+        run: rustup toolchain install
+      - name: cargo-mutants (pinned)
+        if: steps.diff.outputs.any == 'yes'
+        run: cargo install cargo-mutants --version 27.1.0 --locked
+      - name: Mutants in the change
+        if: steps.diff.outputs.any == 'yes'
+        env:
           SHARD: ${{ matrix.shard }}
         run: |
-          git diff "$BASE"...HEAD > change.diff
-          cargo mutants --in-diff change.diff --shard "$SHARD/4" --jobs 2 --timeout 180
+          cargo mutants --in-diff change.diff --shard "$SHARD/4" --jobs 2 --timeout 90
       - name: Summary
         if: always()
+        env:
+          SHARD: ${{ matrix.shard }}
         run: |
           {
-            echo "## Mutants (shard $SHARD of 4)"
+            echo "## Mutants: $PART (shard $SHARD of 4)"
             echo
             for f in caught missed timeout unviable; do
               n=0
@@ -62,31 +81,101 @@ jobs:
             echo "### Missed"
             echo
             echo '```'
-            # A change without Rust in it has no mutants and no files.
+            # A part without Rust in it has no mutants and no files.
             cat mutants.out/missed.txt mutants.out/timeout.txt 2>/dev/null || true
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
-        env:
-          SHARD: ${{ matrix.shard }}
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
-          name: mutants-in-change-${{ matrix.shard }}
+          name: mutants-boundary-${{ matrix.shard }}
           path: mutants.out
           if-no-files-found: ignore
 
-  # The one check the branch rules ask for: green when every shard is.
+  # The rest of the change's mutants: a miss makes this red on the pull
+  # request, and nothing waits for it.
+  report:
+    name: report (shard ${{ matrix.shard }})
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3]
+    env:
+      PART: report
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          # The diff against the base needs its history.
+          fetch-depth: 0
+      - name: The part of the change
+        id: diff
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+        run: |
+          mapfile -t paths < <(grep -v -e '^#' -e '^$' .cargo/mutants-boundary)
+          if [ "$PART" = boundary ]; then
+            git diff "$BASE"...HEAD -- "${paths[@]}" > change.diff
+          else
+            git diff "$BASE"...HEAD -- . "${paths[@]/#/:(exclude)}" > change.diff
+          fi
+          if [ -s change.diff ]; then echo "any=yes" >> "$GITHUB_OUTPUT"; fi
+      - name: Rust toolchain (rust-toolchain.toml)
+        if: steps.diff.outputs.any == 'yes'
+        run: rustup toolchain install
+      - name: cargo-mutants (pinned)
+        if: steps.diff.outputs.any == 'yes'
+        run: cargo install cargo-mutants --version 27.1.0 --locked
+      - name: Mutants in the change
+        if: steps.diff.outputs.any == 'yes'
+        env:
+          SHARD: ${{ matrix.shard }}
+        run: |
+          cargo mutants --in-diff change.diff --shard "$SHARD/4" --jobs 2 --timeout 90
+      - name: Summary
+        if: always()
+        env:
+          SHARD: ${{ matrix.shard }}
+        run: |
+          {
+            echo "## Mutants: $PART (shard $SHARD of 4)"
+            echo
+            for f in caught missed timeout unviable; do
+              n=0
+              [ -f "mutants.out/$f.txt" ] && n=$(wc -l < "mutants.out/$f.txt")
+              echo "- $f: $n"
+            done
+            echo
+            echo "### Missed"
+            echo
+            echo '```'
+            # A part without Rust in it has no mutants and no files.
+            cat mutants.out/missed.txt mutants.out/timeout.txt 2>/dev/null || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: mutants-report-${{ matrix.shard }}
+          path: mutants.out
+          if-no-files-found: ignore
+
+  # The one check the branch rules ask for: green when every boundary
+  # shard is; it does not wait for the report.
   changed:
     if: always() && github.event_name == 'pull_request'
-    needs: shard
+    needs: boundary
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Every shard passed
+      - name: Every boundary shard passed
         env:
-          RESULT: ${{ needs.shard.result }}
+          RESULT: ${{ needs.boundary.result }}
         run: |
-          echo "shards: $RESULT"
+          echo "boundary shards: $RESULT"
           test "$RESULT" = "success"
 
   # The whole workspace, nightly, over six runners the same way; a shard
@@ -116,7 +205,7 @@ jobs:
           SHARD: ${{ matrix.shard }}
         run: |
           set +e
-          cargo mutants --shard "$SHARD/6" --jobs 2 --timeout 180
+          cargo mutants --shard "$SHARD/6" --jobs 2 --timeout 90
           code=$?
           case $code in 0|2|3) ;; *) exit $code ;; esac
       - name: Summary
