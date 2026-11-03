@@ -87,6 +87,9 @@ pub fn draw(f: &mut Frame, app: &App) {
     if let Some(id) = app.peek {
         over.push(overlay::peek(f, app, id));
     }
+    if let Some((item, at)) = app.script {
+        over.push(overlay::script(f, app, item, at));
+    }
     let line = line.filter(|&at| !over.iter().any(|r| r.contains(at)));
     let mut filter = None;
     let mut window = true;
@@ -567,6 +570,7 @@ pub(crate) fn inbox_line(app: &App, i: usize) -> Line<'static> {
         InboxKind::Question => ("?", bold(pal().warn)),
         InboxKind::Approval => ("⚑", bold(pal().warn)),
         InboxKind::Fault => ("✕", bold(pal().bad)),
+        InboxKind::Script => ("▶", bold(pal().warn)),
     };
     let mut spans = vec![
         Span::styled(format!("{icon} "), style),
@@ -1703,6 +1707,7 @@ fn footer(f: &mut Frame, area: Rect, app: &App) -> Option<Position> {
                 ("esc", t.back),
                 ("?", t.help),
             ],
+            _ if app.script.is_some() => t.setup_hints.to_vec(),
             _ if app.peek.is_some() => vec![
                 ("j k", t.peek_next),
                 ("enter", t.focus),
@@ -4201,6 +4206,52 @@ mod tests {
 
     const OPEN_1: &str = "\x1b]8;id=imece-3;http://localhost:1/\x1b\\";
     const CLOSE: &str = "\x1b]8;;\x1b\\";
+
+    #[test]
+    fn a_setup_ask_s_window_shows_how_it_runs_and_its_bytes_from_the_line_scrolled_to() {
+        let (mut app, item, id) = crate::app::tests::asking_setup();
+        let text = app.script_text(item).unwrap().text();
+        let sha = crate::sha::hex(text.as_bytes());
+        app.pane = crate::app::Pane::Inbox;
+        let row = render(&app, 240, 30);
+        let name = app.world.agents[id].name.clone();
+        assert!(
+            row.contains(&format!(
+                "▶ 14:00 {name}: run the worktree setup script .imece/worktree-setup.sh in its new"
+            )),
+            "{row}"
+        );
+        assert!(
+            row.contains("enter shows the script · a yes · r no"),
+            "{row}"
+        );
+        app.script = Some((item, 0));
+        let s = render(&app, 140, 30);
+        assert!(
+            s.contains(&format!("SETUP SCRIPT · {name} · sha256 {} ", &sha[..16])),
+            "{s}"
+        );
+        assert!(!s.contains(&sha[..17]), "the hash's head only");
+        assert!(s.contains("runs as /bin/sh in each new worktree"), "{s}");
+        assert!(
+            s.contains("file: /demo/shop-api/.imece/worktree-setup.sh"),
+            "{s}"
+        );
+        assert!(s.contains("1 #!/bin/sh"), "{s}");
+        assert!(s.contains("5 npm ci --no-audit"), "{s}");
+        assert!(s.contains(" a  yes "), "{s}");
+        // Scrolled: from that line on.
+        app.script = Some((item, 4));
+        let s = render(&app, 140, 30);
+        assert!(!s.contains("1 #!/bin/sh"), "{s}");
+        assert!(s.contains("5 npm ci --no-audit"), "{s}");
+        // Answered: the window says it is no longer asked about.
+        app.script = None;
+        use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+        app.on_key(KeyEvent::new(KeyCode::Char('r'), KeyModifiers::NONE));
+        app.script = Some((item, 0));
+        assert!(render(&app, 140, 30).contains("that setup script is no longer asked about"));
+    }
 
     #[test]
     fn a_link_cell_opens_and_closes_its_own_link_and_keeps_its_width() {

@@ -488,6 +488,7 @@ mod tests {
                 None,
                 None,
                 Vec::new(),
+                setup::Done::None,
             )),
         );
         let ended = Arc::new(AtomicBool::new(false));
@@ -500,6 +501,7 @@ mod tests {
                 None,
                 None,
                 Vec::new(),
+                setup::Done::None,
             )),
         );
         live.mail[2].push(Mail {
@@ -775,6 +777,7 @@ mod tests {
                 None,
                 None,
                 Vec::new(),
+                setup::Done::None,
             )),
         );
         live.sessions[solo] = Some(Resumable {
@@ -1071,6 +1074,7 @@ mod tests {
                     None,
                     None,
                     Vec::new(),
+                    setup::Done::None,
                 )),
             );
         }

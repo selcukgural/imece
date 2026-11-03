@@ -50,6 +50,56 @@ pub fn peek(f: &mut Frame, app: &App, id: AgentId) -> Rect {
     area
 }
 
+/// A worktree setup script's ask (record 92): what runs and how, its
+/// file, then its bytes as read and hashed, a numbered line each (each
+/// cleaned, in the code colour; never read as Markdown), from line `at`
+/// on, and the keys. What the person reads here is what runs.
+pub fn script(f: &mut Frame, app: &App, item: usize, at: usize) -> Rect {
+    let t = app.lang.text();
+    let full = f.area();
+    let area = centered(
+        full,
+        full.width.saturating_sub(8),
+        full.height.saturating_sub(4),
+    );
+    shade(f, area);
+    clear(f, area);
+    let agent = &app.world.agents[app.world.inbox[item].agent];
+    let Some(s) = app.script_text(item) else {
+        let block = Block::bordered().border_style(fg(pal().accent));
+        let gone = Line::from(Span::styled(t.setup_gone, dim()));
+        f.render_widget(Paragraph::new(gone).block(block), area);
+        return area;
+    };
+    let sha: String = s.sha.chars().take(16).collect();
+    let block = Block::bordered()
+        .title(fill(t.setup_title, &[&agent.name, &sha]))
+        .border_style(fg(pal().accent));
+    let inner = block.inner(area);
+    f.render_widget(block, area);
+    let mut lines = vec![
+        Line::from(Span::styled(t.setup_head, fg(pal().warn))),
+        Line::from(Span::styled(
+            fill(t.setup_file, &[&s.real.display().to_string()]),
+            dim(),
+        )),
+        Line::default(),
+    ];
+    let text = s.text();
+    let numbers = text.lines().count().to_string().len();
+    // As many as the window holds: the rest is cut at its foot.
+    for (n, line) in text.lines().enumerate().skip(at) {
+        lines.push(Line::from(vec![
+            Span::styled(format!("{:>numbers$} ", n + 1), dim()),
+            Span::styled(clean(line), fg(pal().code)),
+        ]));
+    }
+    let [body, keys] = Layout::vertical([Constraint::Min(0), Constraint::Length(1)]).areas(inner);
+    f.render_widget(Paragraph::new(lines), body);
+    f.render_widget(Paragraph::new(Line::from(hint_spans(&t.setup_hints))), keys);
+    area
+}
+
 /// The keys, two columns on a wide screen, then the legend. The line for
 /// a new line in the writing names the key this terminal has for it
 /// (`shift_enter`: it tells shift-enter from enter). Filtered (`/`), only

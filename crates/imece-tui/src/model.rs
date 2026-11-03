@@ -980,6 +980,9 @@ fn local_url_at(s: &str) -> Option<String> {
     (url.len() <= LOCAL_URL_MAX).then(|| url.to_string())
 }
 
+/// The most setup script approvals kept; the oldest go first.
+pub const SETUP_KEPT: usize = 64;
+
 /// The longest web address the screen makes a link of, in bytes.
 pub const WEB_URL_MAX: usize = 2000;
 
@@ -1337,6 +1340,26 @@ pub enum Event {
         path: String,
         size: usize,
     },
+    /// The worktree setup script ran in agent `agent`'s new worktree:
+    /// whether it went well, how it ended (`exit 0, 3.2 s`), its last
+    /// lines (cleaned when drawn).
+    SetupRan {
+        agent: AgentId,
+        ok: bool,
+        end: String,
+        lines: Vec<String>,
+    },
+    /// The setup script could not be read or started for agent `agent`.
+    SetupFailed {
+        agent: AgentId,
+        why: String,
+    },
+    /// The person said yes (or no) to the setup script asked about for
+    /// agent `agent`.
+    SetupAnswered {
+        agent: AgentId,
+        yes: bool,
+    },
     /// What waits went to the person's phone (`:notify push`) in these
     /// words, `agent` being who the first of it is about; in the demo it
     /// was only shown (`sent` false).
@@ -1458,6 +1481,7 @@ impl Event {
             | Event::NotesCut { .. }
             | Event::InstructionsCut { .. }
             | Event::Pushed { .. }
+            | Event::SetupRan { ok: true, .. }
             | Event::CommandsMissing { .. }
             | Event::Confine { .. }
             | Event::WorktreeMoved { .. }
@@ -1482,11 +1506,14 @@ impl Event {
             | Event::SuggestFailed { .. }
             | Event::CopySkipped { .. }
             | Event::PushFailed { .. }
+            | Event::SetupRan { ok: false, .. }
+            | Event::SetupFailed { .. }
             | Event::ApplyFailed { .. } => EntryKind::Failed,
             Event::Approved { .. }
             | Event::Rejected { .. }
             | Event::YouSaid { .. }
             | Event::Decided { .. }
+            | Event::SetupAnswered { .. }
             | Event::Standing { .. }
             | Event::Budget { .. }
             | Event::Shell { .. }
@@ -1556,6 +1583,9 @@ impl Event {
             | Event::InstructionsCut { agent, .. }
             | Event::Pushed { agent, .. }
             | Event::PushFailed { agent, .. }
+            | Event::SetupRan { agent, .. }
+            | Event::SetupFailed { agent, .. }
+            | Event::SetupAnswered { agent, .. }
             | Event::CommandsMissing { agent }
             | Event::WorktreeMoved { agent, .. }
             | Event::WorktreeKept { agent, .. }
@@ -1614,6 +1644,12 @@ pub enum InboxKind {
     /// one imece tried again until its tries ran out; the detail is the
     /// vendor's words. Closes when the person writes to the agent.
     Fault,
+    /// The checkout's worktree setup script (record 92) waits for the
+    /// person's yes to its exact bytes before it runs in a new worktree;
+    /// the agent is the one whose worktree it would run in first, the
+    /// detail the script's path in the checkout. Closes with the answer,
+    /// and at the next start.
+    Script,
 }
 
 /// What the person cleared off the salon's screen (`:clear`, record 90):
@@ -1744,6 +1780,10 @@ pub struct World {
     pub marks: BTreeSet<usize>,
     /// What the person cleared off the salon's screen (`:clear`).
     pub cleared: Cleared,
+    /// The worktree setup scripts the person said yes to, each by what
+    /// runs (`setup::Script::key`: how, the bytes' hash, the real path),
+    /// oldest first, at most [`SETUP_KEPT`].
+    pub setup_approved: Vec<String>,
     /// What the vendors last said of their plans' usage windows, one
     /// entry per vendor and window. Not kept between runs: a session
     /// says it again.
@@ -2185,6 +2225,7 @@ impl World {
             changes: self.changes.clone(),
             marks,
             cleared: Cleared::default(),
+            setup_approved: Vec::new(),
             limits: Vec::new(),
             paid: self.paid,
             suggested: None,
@@ -2819,6 +2860,25 @@ impl World {
     }
 
     /// Agent `id`'s session is over: what it asked waits for nobody.
+    /// The person said yes to the setup script `key`: kept, the newest
+    /// last, the oldest let go past [`SETUP_KEPT`].
+    pub fn approve_setup(&mut self, key: String) {
+        self.setup_approved.retain(|k| *k != key);
+        self.setup_approved.push(key);
+        let over = self.setup_approved.len().saturating_sub(SETUP_KEPT);
+        self.setup_approved.drain(..over);
+    }
+
+    /// Setup script asks are of the run that made them: its bytes are not
+    /// kept, so a start closes them; the next new worktree asks again.
+    pub fn close_scripts(&mut self) {
+        for i in &mut self.inbox {
+            if i.kind == InboxKind::Script {
+                i.open = false;
+            }
+        }
+    }
+
     pub fn close_approvals(&mut self, id: AgentId) {
         for i in &mut self.inbox {
             if i.kind == InboxKind::Approval && i.agent == id {
@@ -3205,6 +3265,7 @@ mod tests {
         World {
             marks: Default::default(),
             cleared: Default::default(),
+            setup_approved: Vec::new(),
             sent: Vec::new(),
             limits: Vec::new(),
             tick: 0,
@@ -4524,6 +4585,43 @@ mod tests {
             .kind(),
             StoryKind::Talk
         );
+    }
+
+    #[test]
+    fn a_setup_yes_is_kept_once_the_newest_last_and_the_oldest_go_past_the_cap() {
+        let mut w = world(vec![]);
+        w.approve_setup("a".into());
+        w.approve_setup("b".into());
+        w.approve_setup("a".into());
+        assert_eq!(w.setup_approved, ["b", "a"]);
+        for n in 0..SETUP_KEPT {
+            w.approve_setup(n.to_string());
+        }
+        assert_eq!(w.setup_approved.len(), SETUP_KEPT);
+        assert_eq!(w.setup_approved[0], "0");
+        assert_eq!(
+            w.setup_approved.last().unwrap(),
+            &(SETUP_KEPT - 1).to_string()
+        );
+        assert_eq!(SETUP_KEPT, 64);
+        // Asks are the run's: a start closes them, and only them.
+        let item = |kind| InboxItem {
+            kind,
+            agent: 0,
+            detail: String::new(),
+            researcher: None,
+            open: true,
+            tick: 0,
+            card: None,
+        };
+        w.inbox = vec![
+            item(InboxKind::Script),
+            item(InboxKind::Question),
+            item(InboxKind::Script),
+        ];
+        w.close_scripts();
+        let open: Vec<bool> = w.inbox.iter().map(|i| i.open).collect();
+        assert_eq!(open, [false, true, false]);
     }
 
     #[test]

@@ -25,6 +25,7 @@ WAITING FOR YOU is the top side panel of the salon. Only decisions that need you
 | `?` | a question | an agent's `send(to: "you", type: ask)`. A newer question of the same agent takes the older's place. | both open the composer `@agent `; the item closes when your answer goes | |
 | `»` | a reply | an agent answered you and waits for you to read it | `enter` reads it (the conversation opens) and closes it; `r` dismisses it | |
 | `✕` | a vendor error | a turn failed on an error only you can mend: the account (signed out, a refused key, a quota or a bill), or a passing one (overloaded, a server error, a lost connection) after imece's three tries ran out (see [when the vendor's API fails](../concepts/sessions.md#when-the-vendors-api-fails)). The row has the vendor's words. | both open the composer `@agent `; the item closes when your message goes, and that message is the agent's next try | |
+| `▶` | a setup script | a new worktree found `.imece/worktree-setup.sh` in your checkout with bytes you have not said yes to; the worker started without it. See [a worktree setup script](../concepts/projects.md#a-worktree-setup-script). | yes: it runs now where it was missed, then in each new worktree; `enter` shows its bytes first | no, for this run |
 
 The row carries the time, `later ·` when you put it off, and the project's name when several are open. An item of another day carries its date.
 
@@ -37,13 +38,13 @@ A change (`Δ`) can also go back to its worker with notes (`n` in the diff) or b
 | `tab` `⇧tab` | cycle the panels: salon, waiting, journal |
 | `w` (`:waiting`) | straight to the waiting panel, from any panel of the salon |
 | `↑` `↓` / `j` `k`, `gg` `G` | select an item |
-| `enter` | open the item: a change's diff, a question's or reply's conversation, an agent's focus for the rest |
+| `enter` | open the item: a change's diff, a question's or reply's conversation, a setup script's bytes, an agent's focus for the rest |
 | `a` / `r` | approve / apply / allow · reject / refuse the selected item, as the table above says |
 | `W` (`:next`) | from anywhere: open the next item waiting |
 | `S` (`:defer`) | put this item off and open the next |
 | `esc` | from the diff back to the panel |
 
-Under the selected item a dim row names its keys (`enter see the diff · a apply to the checkout · r reject`; `a allow · r refuse · enter focus` for an ask; `enter read all · r dismiss · or just write back` for a reply).
+Under the selected item a dim row names its keys (`enter see the diff · a apply to the checkout · r reject`; `a allow · r refuse · enter focus` for an ask; `enter read all · r dismiss · or just write back` for a reply; `enter shows the script · a yes · r no` for a setup script).
 
 ## `W` and `S`: one after the other
 

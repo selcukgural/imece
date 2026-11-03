@@ -10,6 +10,7 @@ pub(crate) fn team(workers: usize) -> World {
     let mut w = World {
         marks: Default::default(),
         cleared: Default::default(),
+        setup_approved: Vec::new(),
         sent: Vec::new(),
         limits: Vec::new(),
         tick: 3,
@@ -448,7 +449,14 @@ pub(super) fn worker_in(
     live.ready(
         w,
         id,
-        Ok((Box::new(Stub), tree.clone(), None, None, Vec::new())),
+        Ok((
+            Box::new(Stub),
+            tree.clone(),
+            None,
+            None,
+            Vec::new(),
+            setup::Done::None,
+        )),
     );
     tree
 }

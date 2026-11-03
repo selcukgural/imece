@@ -75,6 +75,10 @@ pub const BLURRED_DRAW: Duration = Duration::from_secs(1);
 
 /// How many notifications sent are remembered for a click on one: more
 /// than can pile up in a desktop's list in a sitting away.
+/// How many lines `ctrl-d`/`ctrl-u` (page keys) move a setup script's
+/// window.
+pub const SCRIPT_PAGE: usize = 10;
+
 /// A push that ended: the agent it was about, its words, and whether it
 /// went (else why not).
 type Pushed = (AgentId, String, Result<(), String>);
@@ -758,6 +762,10 @@ pub struct App {
     pub settled_projects: BTreeSet<ProjectId>,
     /// The agent whose focus is open in a window over the view (`K`).
     pub peek: Option<AgentId>,
+    /// The worktree setup script an ask is about, in a window over the
+    /// screen (`enter` on the ask, record 92): its inbox item and how far
+    /// down it is scrolled.
+    pub script: Option<(usize, usize)>,
     /// The hint letters, while they are on the screen (`F`).
     pub hints: Option<Hints>,
     /// The agents that were mid-turn at the last step.
@@ -1048,6 +1056,7 @@ impl App {
             settled: BTreeSet::new(),
             settled_projects: BTreeSet::new(),
             peek: None,
+            script: None,
             hints: None,
             needs_only: false,
             unseen: BTreeSet::new(),
@@ -1500,6 +1509,68 @@ impl App {
             KeyCode::Char('?') => self.open_help(),
             _ => {}
         }
+    }
+
+    /// A key while a setup script's window is open: `j k` (the arrows),
+    /// `ctrl-d ctrl-u` (page keys) and `g G` move through it, `a` says yes
+    /// and `r` no to it, `esc` or `q` close it, `?` the help; the rest do
+    /// nothing.
+    fn script_key(&mut self, item: usize, at: usize, k: KeyEvent) {
+        let ctrl = k.modifiers.contains(KeyModifiers::CONTROL);
+        let page = SCRIPT_PAGE;
+        let to = match k.code {
+            KeyCode::Down | KeyCode::Char('j') => at + 1,
+            KeyCode::Up | KeyCode::Char('k') => at.saturating_sub(1),
+            KeyCode::PageDown => at + page,
+            KeyCode::Char('d') if ctrl => at + page,
+            KeyCode::PageUp => at.saturating_sub(page),
+            KeyCode::Char('u') if ctrl => at.saturating_sub(page),
+            KeyCode::Char('g') => 0,
+            KeyCode::Char('G') => usize::MAX,
+            KeyCode::Char('a') => return self.answer_script(item, true),
+            KeyCode::Char('r') => return self.answer_script(item, false),
+            KeyCode::Esc | KeyCode::Char('q') => {
+                self.script = None;
+                return;
+            }
+            KeyCode::Char('?') => return self.open_help(),
+            _ => return,
+        };
+        // Never past the last line's being the top one.
+        let last = self
+            .script_text(item)
+            .map_or(0, |s| s.text().lines().count());
+        self.script = Some((item, to.min(last.saturating_sub(1))));
+    }
+
+    /// The script setup ask `item` is about, as the engine read it.
+    pub fn script_text(&self, item: usize) -> Option<crate::live::setup::Script> {
+        match &self.engine {
+            Engine::Live(l) => l.setup_asked(item).cloned(),
+            Engine::Sim(s) => s.setup_asked(&self.world, item),
+            Engine::View(_) => None,
+        }
+    }
+
+    /// The person's answer to setup script ask `item`: the engine keeps a
+    /// yes and runs the bytes asked about, or holds a no for the run; the
+    /// window closes and the flash says which. An ask no longer there
+    /// (its run ended) is said so.
+    fn answer_script(&mut self, item: usize, yes: bool) {
+        let t = self.lang.text();
+        let took = match &mut self.engine {
+            Engine::Live(l) => l.decide_setup(&mut self.world, item, yes),
+            Engine::Sim(s) => s.decide_setup(&mut self.world, item, yes),
+            Engine::View(_) => return self.read_only(),
+        };
+        self.script = None;
+        self.flash(match (took, yes) {
+            (false, _) => t.setup_gone,
+            (true, true) => t.setup_yes,
+            (true, false) => t.setup_no,
+        });
+        let open = self.inbox_rows().len();
+        self.inbox_sel = self.inbox_sel.min(open.saturating_sub(1));
     }
 
     /// `F` or `:hints`: a label on every row the salon's screen showed
@@ -2199,6 +2270,10 @@ impl App {
         }
         if let Some(id) = self.peek {
             self.peek_key(id, k);
+            return;
+        }
+        if let Some((item, at)) = self.script {
+            self.script_key(item, at, k);
             return;
         }
         if self.hints.is_some() {
@@ -6042,6 +6117,13 @@ impl App {
             Zoom::None => match (self.pane, self.selected) {
                 (Pane::Inbox, _) => {
                     let open = self.inbox_rows();
+                    // A setup script's ask: its bytes in a window.
+                    if let Some(&i) = open.get(self.inbox_sel)
+                        && self.world.inbox[i].kind == InboxKind::Script
+                    {
+                        self.script = Some((i, 0));
+                        return;
+                    }
                     let item = open.get(self.inbox_sel).map(|&i| &self.world.inbox[i]);
                     match item {
                         Some(item) if item.kind == InboxKind::Change => {
@@ -6194,6 +6276,9 @@ impl App {
         if self.world.inbox[item].kind == InboxKind::Change {
             return self.decide_change(self.world.inbox[item].agent, approve);
         }
+        if self.world.inbox[item].kind == InboxKind::Script {
+            return self.answer_script(item, approve);
+        }
         if self.world.inbox[item].kind == InboxKind::Approval {
             let name = self.world.agents[self.world.inbox[item].agent].name.clone();
             match &mut self.engine {
@@ -6331,7 +6416,7 @@ pub fn expand_tilde(path: &str, home: Option<&Path>) -> PathBuf {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
 
     fn key(code: KeyCode) -> KeyEvent {
@@ -10881,6 +10966,95 @@ mod tests {
         app.start_push();
         assert_eq!((app.notify, flashed(&app)), (Notify::Bell, None));
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A demo app whose hired worker's new worktree asks about the setup
+    /// script, the ask selected in WAITING FOR YOU.
+    pub(crate) fn asking_setup() -> (App, usize, AgentId) {
+        let mut app = waiting(&[]);
+        let Engine::Sim(s) = &mut app.engine else {
+            unreachable!()
+        };
+        let id = s.hire_for_test(&mut app.world, 0);
+        let item = (app.world.inbox.iter())
+            .position(|i| i.kind == InboxKind::Script)
+            .expect("asked");
+        app.pane = Pane::Inbox;
+        app.inbox_sel = app.inbox_rows().iter().position(|&i| i == item).unwrap();
+        (app, item, id)
+    }
+
+    #[test]
+    fn enter_on_a_setup_ask_shows_its_bytes_and_a_or_r_answer_there() {
+        let (mut app, item, id) = asking_setup();
+        app.on_key(key(KeyCode::Enter));
+        assert_eq!(app.script, Some((item, 0)));
+        let text = app.script_text(item).unwrap().text();
+        let lines = text.lines().count();
+        assert_eq!(lines, 6);
+        // Moving: never past the last line's being the top one.
+        for (k, at) in [
+            (key(KeyCode::Char('j')), 1),
+            (key(KeyCode::Down), 2),
+            (key(KeyCode::Char('k')), 1),
+            (key(KeyCode::Up), 0),
+            (key(KeyCode::Up), 0),
+            (key(KeyCode::Char('G')), lines - 1),
+            (key(KeyCode::Char('j')), lines - 1),
+            (key(KeyCode::Char('g')), 0),
+            (key(KeyCode::PageDown), lines - 1),
+            (key(KeyCode::PageUp), 0),
+            (ctrl('d'), lines - 1),
+            (ctrl('u'), 0),
+            (key(KeyCode::Char('d')), 0),
+            (key(KeyCode::Char('x')), 0),
+            (key(KeyCode::Char('j')), 1),
+            (key(KeyCode::Char('u')), 1),
+        ] {
+            app.on_key(k);
+            assert_eq!(app.script, Some((item, at)), "{k:?}");
+        }
+        assert_eq!(SCRIPT_PAGE, 10);
+        // `?` opens the help over it; esc closes the window.
+        app.on_key(key(KeyCode::Char('?')));
+        assert!(app.help);
+        app.help = false;
+        app.on_key(key(KeyCode::Esc));
+        assert_eq!(app.script, None);
+        app.on_key(key(KeyCode::Enter));
+        app.on_key(key(KeyCode::Char('q')));
+        assert_eq!(app.script, None);
+        // `a` in the window: yes, it ran, the window closed.
+        app.on_key(key(KeyCode::Enter));
+        app.on_key(key(KeyCode::Char('a')));
+        assert_eq!(app.script, None);
+        assert!(!app.world.inbox[item].open);
+        assert_eq!(flashed(&app).as_deref(), Some(app.lang.text().setup_yes));
+        assert!(
+            app.world
+                .journal
+                .iter()
+                .any(|e| matches!(e.event, Event::SetupRan { agent, .. } if agent == id))
+        );
+        // Answered already: said so.
+        app.script = Some((item, 0));
+        app.on_key(key(KeyCode::Char('r')));
+        assert_eq!(flashed(&app).as_deref(), Some(app.lang.text().setup_gone));
+        assert_eq!(app.script, None);
+    }
+
+    #[test]
+    fn r_on_a_setup_ask_in_waiting_for_you_says_no() {
+        let (mut app, item, _) = asking_setup();
+        app.on_key(key(KeyCode::Char('r')));
+        assert!(!app.world.inbox[item].open);
+        assert_eq!(flashed(&app).as_deref(), Some(app.lang.text().setup_no));
+        assert!(app.world.setup_approved.is_empty());
+        let (mut app, item, _) = asking_setup();
+        app.on_key(key(KeyCode::Char('a')));
+        assert!(!app.world.inbox[item].open);
+        assert_eq!(app.world.setup_approved.len(), 1);
+        assert_eq!(app.inbox_sel, 0);
     }
 
     #[test]

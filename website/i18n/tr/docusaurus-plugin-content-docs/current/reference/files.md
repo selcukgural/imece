@@ -19,6 +19,7 @@ Değişken ayarlı ve mutlaksa `$XDG_STATE_HOME/imece`, yoksa `~/.local/state/im
 | `screen` | imece'nin 2026-10-30'dan önce ekran seçimlerini tuttuğu dosya; ilk görüldüğünde depoya taşınır ve silinir |
 | `worktrees/<dizin>-<hash>/<ajan>` | işçi başına bir git worktree'si; `<dizin>` çalışma kopyasının dizin adı, `<hash>` yolunun sekiz onaltılık hanesi (`worktrees/kule-3f2a9c01/claude-1`) |
 | `worktrees/<dizin>-<hash>-gemini/<ajan>` | bir Gemini ajanının özel dizini (projenin lideri için, proje ne adlandırılsa da `lead`); `GEMINI.md` ve `policy/imece.toml` tutar |
+| `scripts/<sha256>.sh` | evet dediğiniz bir worktree kurulum betiğinin özel kopyası, okuduğunuz baytlar (dizin 0700, dosya 0600): çalışan budur. Bkz. [worktree kurulum betiği](../concepts/projects.md#worktree-kurulum-betiği) |
 
 ## Depo
 
@@ -37,7 +38,7 @@ imece okuyamadığı bir dosyayı asla taşımaz, onarmaz ya da üstüne yazmaz:
 
 | Tablo | Tuttuğu |
 | --- | --- |
-| `meta` | anahtar-değer: `schema_version`, `started_at` (dünyanın ilk başlangıcı; saat ve tikler oradan sayar), `budget` (bütçe), `saved_at` (son kayıt, "NEREDE KALMIŞTIN · 2 sa önce" için), `messages` (verilen son mesaj numarası), ve ayarlarınız `side` (yan panelin genişliği), `theme`, `lead` (birincil satıcı), `notify`, `motion`, `seen` (en son başlayan sürüm, yeni olanlar için) |
+| `meta` | anahtar-değer: `schema_version`, `started_at` (dünyanın ilk başlangıcı; saat ve tikler oradan sayar), `budget` (bütçe), `saved_at` (son kayıt, "NEREDE KALMIŞTIN · 2 sa önce" için), `messages` (verilen son mesaj numarası), `setup_approved` (evet dediğiniz worktree kurulum betikleri: her birinin nasıl çalıştığı, baytlarının SHA-256'sı ve gerçek yolu), ve ayarlarınız `side` (yan panelin genişliği), `theme`, `lead` (birincil satıcı), `notify`, `motion`, `seen` (en son başlayan sürüm, yeni olanlar için) |
 | `projects` | her projenin adı, lideri, kapalı olup olmadığı, çalışma kopyası yolu, sabit olup olmadığı ve `:copy`'nin listelediği yollar (`copies`, JSON) |
 | `agents` | her ajanın projesi, adı, satıcısı, rolü, ebeveyni (yardımcının işçisi), kartı, maliyeti, kirliliği, gitmiş olup olmadığı, modeli ve bir kademenin seçip seçmediği, siz son konuştuğunuzdan beri mesaj kaynaklı turları ve kart asmaları, kendi komut listesi, ve son satıcı oturumuyla o oturumun harcadığı |
 | `cards` | her kartın projesi, başlığı, sahibi, sütunu ve ne zaman başlayıp bittiği |

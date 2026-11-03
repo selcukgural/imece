@@ -87,6 +87,7 @@ impl Live {
                 git,
             });
         }
+        w.close_scripts();
         for id in 0..w.agents.len() {
             self.grow(
                 found.models.get(id).cloned().flatten(),
@@ -898,7 +899,14 @@ mod tests {
         live.ready(
             &mut w,
             1,
-            Ok((Box::new(Stub), PathBuf::from("/w"), None, held, Vec::new())),
+            Ok((
+                Box::new(Stub),
+                PathBuf::from("/w"),
+                None,
+                held,
+                Vec::new(),
+                setup::Done::None,
+            )),
         );
         assert_eq!(live.inflight[1], ["a\n- holds\nb", "cd"]);
         // Not at a character's boundary: left out rather than broken.
@@ -908,7 +916,14 @@ mod tests {
         live.ready(
             &mut w,
             1,
-            Ok((Box::new(Stub), PathBuf::from("/w"), None, held, Vec::new())),
+            Ok((
+                Box::new(Stub),
+                PathBuf::from("/w"),
+                None,
+                held,
+                Vec::new(),
+                setup::Done::None,
+            )),
         );
         assert!(matches!(live.slots[1], Slot::Running(_)));
     }
@@ -1876,7 +1891,14 @@ mod tests {
         live.ready(
             &mut w,
             1,
-            Ok((Box::new(Stub), PathBuf::from("/w"), None, None, Vec::new())),
+            Ok((
+                Box::new(Stub),
+                PathBuf::from("/w"),
+                None,
+                None,
+                Vec::new(),
+                setup::Done::None,
+            )),
         );
         live.told(&mut w, 1, "go").unwrap();
         live.claude_home = trees("renew-home");
@@ -2059,6 +2081,7 @@ mod tests {
                 None,
                 None,
                 Vec::new(),
+                setup::Done::None,
             )),
         );
         live.told(&mut w, 1, "do x").unwrap();
@@ -2167,7 +2190,14 @@ mod tests {
         live.ready(
             &mut w,
             1,
-            Ok((Box::new(Stub), private.clone(), None, None, Vec::new())),
+            Ok((
+                Box::new(Stub),
+                private.clone(),
+                None,
+                None,
+                Vec::new(),
+                setup::Done::None,
+            )),
         );
         assert_eq!(live.sessions[1], None);
         live.command(&mut w, 1, "/clear").unwrap();

@@ -192,6 +192,21 @@ pub fn event(lang: Lang, w: &World, e: &Event) -> String {
             let vendor = w.agents[*agent].vendor.label();
             fill(t.ev_commands_missing, &[name(w, *agent), vendor])
         }
+        Event::SetupRan {
+            agent,
+            ok,
+            end,
+            lines,
+        } => {
+            let last = lines.last().map_or(t.setup_no_output, String::as_str);
+            let text = if *ok { t.ev_setup_ran } else { t.ev_setup_bad };
+            fill(text, &[name(w, *agent), end, last])
+        }
+        Event::SetupFailed { agent, why } => fill(t.ev_setup_failed, &[name(w, *agent), why]),
+        Event::SetupAnswered { agent, yes } => {
+            let text = if *yes { t.ev_setup_yes } else { t.ev_setup_no };
+            fill(text, &[name(w, *agent)])
+        }
         Event::Pushed { words, sent, .. } => {
             fill(if *sent { t.ev_pushed } else { t.ev_pushed_demo }, &[words])
         }
@@ -594,6 +609,7 @@ pub fn notice(lang: Lang, w: &World, note: crate::notify::Note) -> String {
                 InboxKind::Reply => t.notice_reply,
                 InboxKind::Approval => t.notice_approval,
                 InboxKind::Fault => t.notice_fault,
+                InboxKind::Script => t.notice_script,
                 InboxKind::Sensitive | InboxKind::Research => t.notice_sensitive,
             };
             (text, item.agent)
@@ -646,6 +662,7 @@ pub fn inbox(lang: Lang, w: &World, item: &InboxItem) -> String {
             &[name(w, item.agent), &one_line(&item.detail)],
         ),
         (InboxKind::Fault, _) => fill(t.in_fault, &[name(w, item.agent), &item.detail]),
+        (InboxKind::Script, _) => fill(t.in_script, &[name(w, item.agent), &item.detail]),
         (InboxKind::Change, _) => {
             let (files, added, removed) = w.change_of(item.agent).map_or((0, 0, 0), |c| {
                 let (a, r) = c.counts();
@@ -725,6 +742,67 @@ pub(crate) fn fill_words(f: &Fill) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_setup_script_s_lines_say_who_how_it_ended_and_its_last_words() {
+        let w = crate::live::testing::team(1);
+        let say = |e: Event| event(Lang::En, &w, &e);
+        let ran = |ok, lines: &[&str]| Event::SetupRan {
+            agent: 1,
+            ok,
+            end: "exit 0, 1.5 s".into(),
+            lines: lines.iter().map(|l| l.to_string()).collect(),
+        };
+        assert_eq!(
+            say(ran(true, &["a", "b"])),
+            "claude-1: worktree setup ran, exit 0, 1.5 s · b"
+        );
+        assert_eq!(
+            say(ran(false, &[])),
+            "claude-1: worktree setup failed, exit 0, 1.5 s · no output"
+        );
+        assert_eq!(
+            say(Event::SetupFailed {
+                agent: 1,
+                why: "x".into()
+            }),
+            "claude-1: worktree setup did not run: x"
+        );
+        assert!(
+            say(Event::SetupAnswered {
+                agent: 1,
+                yes: true
+            })
+            .starts_with("you said yes")
+        );
+        assert!(
+            say(Event::SetupAnswered {
+                agent: 1,
+                yes: false
+            })
+            .starts_with("you said no")
+        );
+        assert_eq!(ran(true, &[]).kind(), EntryKind::Assumption);
+        assert_eq!(ran(false, &[]).kind(), EntryKind::Failed);
+        assert_eq!(
+            event(Lang::Tr, &w, &ran(true, &[])),
+            "claude-1: worktree kurulumu çalıştı, exit 0, 1.5 s · çıktı yok"
+        );
+        let mut w = w;
+        w.inbox.push(InboxItem {
+            kind: InboxKind::Script,
+            agent: 1,
+            detail: ".imece/worktree-setup.sh".into(),
+            researcher: None,
+            open: true,
+            tick: 0,
+            card: None,
+        });
+        assert_eq!(
+            notice(Lang::En, &w, crate::notify::Note::Item(0)),
+            "imece · claude-1: a worktree setup script waits for your yes"
+        );
+    }
 
     #[test]
     fn a_runs_time_is_said_in_the_largest_units_that_say_it() {

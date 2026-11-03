@@ -22,6 +22,7 @@ mod push;
 mod rng;
 mod schemes;
 mod screen;
+mod sha;
 mod shell;
 mod sim;
 mod store;

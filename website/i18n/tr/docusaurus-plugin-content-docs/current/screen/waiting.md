@@ -25,6 +25,7 @@ SENİ BEKLEYEN (İngilizce ekranda WAITING FOR YOU) salonun üst yan panelidir. 
 | `?` | bir soru | bir agent'ın `send(to: "you", type: ask)` çağrısı. Aynı agent'ın yeni sorusu eskisinin yerini alır. | ikisi de yazma satırını `@agent ` ile açar; yanıtınız gidince öge kapanır | |
 | `»` | bir yanıt | bir agent size yanıt verdi ve okumanızı bekliyor | `enter` okur (konuşma açılır) ve kapatır; `r` kapatır | |
 | `✕` | bir satıcı hatası | bir tur yalnız sizin giderebileceğiniz bir hatayla bitti: hesap (oturum kapalı, reddedilen bir anahtar, bir kota ya da fatura) ya da imece'nin üç denemesi tükendikten sonra geçici bir hata (aşırı yük, bir sunucu hatası, kopan bir bağlantı) (bkz. [satıcının API'si hata verince](../concepts/sessions.md#satıcının-apisi-hata-verince)). Satırda satıcının kendi sözleri yazar. | ikisi de yazma satırını `@agent ` ile açar; mesajınız gidince öge kapanır ve o mesaj agent'ın bir sonraki denemesidir | |
+| `▶` | bir kurulum betiği | yeni bir worktree checkout'unuzda evet demediğiniz baytlarla `.imece/worktree-setup.sh` buldu; işçi onsuz başladı. Bkz. [worktree kurulum betiği](../concepts/projects.md#worktree-kurulum-betiği). | evet: kaçırıldığı yerde hemen, sonra her yeni worktree'de çalışır; `enter` önce baytlarını gösterir | hayır, bu çalıştırma için |
 
 Satır saati taşır, ertelediyseniz `sonra ·`, birden çok proje açıksa projenin adını. Başka bir günün ögesi tarihini de taşır.
 
@@ -37,13 +38,13 @@ Bir değişiklik (`Δ`) işçisine notlarla da geri gönderilebilir (diff'te `n`
 | `tab` `⇧tab` | panelleri döndür: salon, bekleyenler, günlük |
 | `w` (`:waiting`) | salonun herhangi bir panelinden doğrudan bekleyenler paneline |
 | `↑` `↓` / `j` `k`, `gg` `G` | bir öge seç |
-| `enter` | ögeyi aç: bir değişikliğin diff'i, bir sorunun ya da yanıtın konuşması, geri kalanı için agent'ın odağı |
+| `enter` | ögeyi aç: bir değişikliğin diff'i, bir sorunun ya da yanıtın konuşması, bir kurulum betiğinin baytları, geri kalanı için agent'ın odağı |
 | `a` / `r` | seçili ögeyi onayla / uygula / izin ver · reddet, yukarıdaki tablonun dediği gibi |
 | `W` (`:next`) | her yerden: bekleyen sıradaki ögeyi aç |
 | `S` (`:defer`) | bu ögeyi ertele ve sıradakini aç |
 | `esc` | diff'ten panele geri |
 
-Seçili ögenin altında soluk bir satır tuşlarını söyler (`enter diff'i gör · a checkout'a uygula · r reddet`; bir istek için `a izin ver · r reddet · enter odak`; bir yanıt için `enter tamamını oku · r kapat · ya da doğrudan yanıt yaz`).
+Seçili ögenin altında soluk bir satır tuşlarını söyler (`enter diff'i gör · a checkout'a uygula · r reddet`; bir istek için `a izin ver · r reddet · enter odak`; bir yanıt için `enter tamamını oku · r kapat · ya da doğrudan yanıt yaz`; bir kurulum betiği için `enter betiği gösterir · a evet · r hayır`).
 
 ## `W` ve `S`: birbiri ardına
 

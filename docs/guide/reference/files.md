@@ -19,6 +19,7 @@ imece keeps what it remembers in one directory, the state directory, and leaves 
 | `screen` | the file imece kept its screen choices in before 2026-10-30; moved into the store and removed the first time it is seen |
 | `worktrees/<dir>-<hash>/<agent>` | one git worktree per worker, `<dir>` the checkout's directory name and `<hash>` eight hex digits of its path (`worktrees/kule-3f2a9c01/claude-1`) |
 | `worktrees/<dir>-<hash>-gemini/<agent>` | a Gemini agent's private directory (`lead` for the project's leader, whatever the project is called); holds `GEMINI.md` and `policy/imece.toml` |
+| `scripts/<sha256>.sh` | the private copy of a worktree setup script you said yes to, the bytes you read (0700 directory, 0600 file): what runs. See [a worktree setup script](../concepts/projects.md#a-worktree-setup-script) |
 
 ## The store
 
@@ -37,7 +38,7 @@ imece never moves, mends or writes over a file it cannot read: a newer imece may
 
 | Table | Holds |
 | --- | --- |
-| `meta` | key-value: `schema_version`, `started_at` (the world's first start, which the clock and the ticks count from), `budget` (the pot), `saved_at` (the last save, for "WHERE YOU LEFT OFF · 2 h ago"), `messages` (the last message number given), and your settings `side` (the side panel's width), `theme`, `lead` (the primary vendor), `notify`, `motion`, `seen` (the version that started last, for what is new) |
+| `meta` | key-value: `schema_version`, `started_at` (the world's first start, which the clock and the ticks count from), `budget` (the pot), `saved_at` (the last save, for "WHERE YOU LEFT OFF · 2 h ago"), `messages` (the last message number given), `setup_approved` (the worktree setup scripts you said yes to: how each runs, its bytes' SHA-256 and its real path), and your settings `side` (the side panel's width), `theme`, `lead` (the primary vendor), `notify`, `motion`, `seen` (the version that started last, for what is new) |
 | `projects` | each project's name, leader, whether it is closed, its checkout path, whether it is pinned, and the paths `:copy` lists (`copies`, JSON) |
 | `agents` | each agent's project, name, vendor, role, parent (a helper's worker), card, cost, taint, whether it is gone, its model and whether a tier chose it, the message-driven turns and posts since you last spoke, its own command list, and its last vendor session with what that session had spent |
 | `cards` | each card's project, title, owner, column and when it started and finished |

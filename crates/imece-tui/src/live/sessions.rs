@@ -290,7 +290,7 @@ impl Live {
         };
         w.agents[id].starting = false;
         let mut session = match ready {
-            Ok((session, cwd, placed, held, copied)) => {
+            Ok((session, cwd, placed, held, copied, set_up)) => {
                 self.copied(w, id, copied);
                 // The briefing's line on the worktree, in the first prompt
                 // as it is given and as it is remembered.
@@ -306,6 +306,7 @@ impl Live {
                 }
                 w.agents[id].trace(w.tick, format!("session in {}", cwd.display()));
                 self.cwds[id] = Some(cwd);
+                self.setup_done(w, id, set_up);
                 self.stand(w, id);
                 match placed {
                     Some(worktree::Placed::Moved { from, to }) => {
@@ -623,16 +624,29 @@ impl Live {
         let (repo, root) = (place.repo.clone(), place.root.clone());
         let copies = w.projects[a.project].copies.clone();
         let home = self.gemini_home(w, a.project, a.role, &tree);
+        let plan = if direct {
+            setup::Plan::None
+        } else {
+            self.setup_plan(w, id)
+        };
+        let running = self.running[id].clone();
         let (tx, ready) = (self.tx.clone(), self.ready_tx.clone());
         thread::spawn(move || {
             let started = (|| {
-                let (cwd, placed, copied) = if direct {
-                    (repo, None, Vec::new())
+                let (cwd, placed, copied, set_up) = if direct {
+                    (repo, None, Vec::new(), setup::Done::None)
                 } else {
                     let w = worktree::ensure(&repo, &root, &tree, start.as_deref())
                         .map_err(|e| e.to_string())?;
                     let copied = copy::into(&repo, &w.path, &copies, COPY_BUDGET);
-                    (w.path, Some(w.placed), copied)
+                    // A worktree made just now is set up before the
+                    // session starts in it, after its copies.
+                    let made = matches!(
+                        w.placed,
+                        worktree::Placed::Fresh | worktree::Placed::From { .. }
+                    );
+                    let set_up = plan.carry_out(made, &repo, &w.path, &running);
+                    (w.path, Some(w.placed), copied, set_up)
                 };
                 let held = held.and_then(|at| match worktree::change(&cwd, MAX_PATCH) {
                     Ok(Some(c)) => Some((at, remember::holds(&c))),
@@ -703,7 +717,7 @@ impl Live {
                         )
                     }
                 };
-                Ok((session, cwd, placed, held, copied))
+                Ok((session, cwd, placed, held, copied, set_up))
             })();
             // Nobody to take it (imece is closing): dropping it stops it.
             let _ = ready.send((id, generation, started));
@@ -1190,7 +1204,14 @@ mod tests {
         live.ready(
             &mut w,
             1,
-            Ok((session, std::env::temp_dir(), None, None, Vec::new())),
+            Ok((
+                session,
+                std::env::temp_dir(),
+                None,
+                None,
+                Vec::new(),
+                setup::Done::None,
+            )),
         );
         w.agents[1].status = Status::Idle;
         (w, live, helper, heard)
@@ -1370,6 +1391,7 @@ mod tests {
                 None,
                 None,
                 Vec::new(),
+                setup::Done::None,
             )),
         );
         live.prompt(&mut w, 0, "fix it".into(), None).unwrap();
@@ -1642,7 +1664,14 @@ mod tests {
         live.ready(
             &mut w,
             1,
-            Ok((Box::new(Stub), cwd.clone(), None, None, Vec::new())),
+            Ok((
+                Box::new(Stub),
+                cwd.clone(),
+                None,
+                None,
+                Vec::new(),
+                setup::Done::None,
+            )),
         );
         assert!(!w.agents[1].starting, "up: not starting any more");
         live.command(&mut w, 1, " /known ").unwrap();
@@ -1722,7 +1751,18 @@ mod tests {
         ));
         let _ = std::fs::remove_dir_all(&live.claude_home);
         // Over budget nothing runs, a clear included.
-        live.ready(&mut w, 1, Ok((Box::new(Stub), cwd, None, None, Vec::new())));
+        live.ready(
+            &mut w,
+            1,
+            Ok((
+                Box::new(Stub),
+                cwd,
+                None,
+                None,
+                Vec::new(),
+                setup::Done::None,
+            )),
+        );
         w.agents[1].cost = w.budget;
         assert_eq!(live.command(&mut w, 1, "/clear"), Err(Refusal::Budget));
     }
