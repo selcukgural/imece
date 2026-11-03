@@ -40,6 +40,7 @@ Gelenekler vim'inkidir: `h` `j` `k` `l` hareket ve katlama, `gg` ve `G` uçlara,
 | `tab` `⇧tab` `↑` `↓` | yazarken: ad ve komut tamamla (`^n` `^p` de ilerler); `tab` bir mesajın ya da `!kmt` satırının herhangi bir sözcüğünü projenin bir dosyasına da tamamlar (`/` içeren bir sözcük menüyü kendiliğinden açar), ya da kod haritasında kiralanmış bir sembole, `dosya::ad` olarak |
 | `↑` `↓` | yazarken, metnin ilk / son satırında: önce gönderilenler, en yenisi önce; en yeninin ötesinde yazmakta olduğunuz geri gelir |
 | `^r`  `:history` | gönderilenleri ara: yazılan her sözcük satırda geçmeli, `enter` seçili olanı satıra koyar, `tab` ilerler |
+| `H`  `:recall` | her projenin ve arşivin tüm günlük ve iz satırlarında ara: yazılan her sözcük satırın bir sözcüğünü başlatmalı, en yenisi önce, kim, nerede ve ne zaman ile; `enter` oraya gider (konuşması, bir arşivin görünümü, ajanın ham akışı), `tab` ilerler |
 | `^a` `^e` `⌥b` `⌥f` | yazarken: başa / sona, bir sözcük geri / ileri |
 | `^w` `^u` `^k` `^y` | yazarken: bir sözcük / imleçten öncesini / sonrasını kes; kesileni koy |
 | `⇧enter` `⌥enter` | yazarken: yeni satır; `↑` `↓` satırlar arası (terminal kitty klavye protokolünü konuştuğunda) |
@@ -178,6 +179,7 @@ Gelenekler vim'inkidir: `h` `j` `k` `l` hareket ve katlama, `gg` ve `G` uçlara,
 | `:peek` | `K` |
 | `:hints` | `F` |
 | `:archives` | `A` |
+| `:recall` | `H` |
 | `:allow` | `A` (bir istekte) |
 | `:fold` / `:unfold` | `zM` / `zR` |
 | `:trace` / `:talk` | `t` / `v` |

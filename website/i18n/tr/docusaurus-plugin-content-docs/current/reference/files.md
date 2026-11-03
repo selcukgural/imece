@@ -54,6 +54,7 @@ imece okuyamadığı bir dosyayı asla taşımaz, onarmaz ya da üstüne yazmaz:
 | `changes` | her işçinin sizi bekleyen değişikliği: worktree yolu, ağacı, dosyaları, yaması ve o ağaçtaki çalıştırmalar |
 | `paid` | imece'nin kendi ücretli çağrıları, güne (UTC) göre: kaç tane ve ne kadar (`:commit`) |
 | `sent` | gönderdiğiniz satırlar, tick'iyle, `↑` `↓` ve `^r` (`:history`) için; en yeni 500'ü yüklenir |
+| `recall`, `recall_rows` | `H` ve `:recall`'un aradığı tam metin dizini: her günlük ve iz satırının katlanmış sözcükleri (metnin kopyası olmadan), her satırın nerede olduğu ve ne zaman yazıldığı; silinen bir satır kendi satırlarını da götürür, bundan önceki bir dosya ilk açılışında bir kez dizinlenir |
 
 Bir kayıt her adımdan ve her tuştan sonra ve çıkışta bir kez daha çalışır ve yalnızca değişeni yazar: günlük, hikâye ve iz satırları eklenir, büyüyen bir tablonun satırı yalnızca hash'i değişince yeniden yazılır. Kaydedilemeyen bir kez flaşlanır: `sonraki çalışma için kaydedilemedi: …`.
 

@@ -13,13 +13,13 @@ use crate::ui::fold;
 
 /// The commands imece itself takes after `:`: its own, and a name for
 /// every key that acts (not the ones that move).
-pub const COMMANDS: [&str; 56] = [
+pub const COMMANDS: [&str; 57] = [
     "allow", "archive", "archives", "awake", "away", "board", "budget", "clear", "close", "code",
     "commit", "copy", "defer", "digest", "effort", "export", "faster", "fold", "forget", "goto",
     "help", "hints", "history", "keys", "lang", "lead", "mark", "model", "motion", "needs", "news",
-    "next", "notify", "open", "output", "pause", "peek", "pending", "pin", "quit", "rename",
-    "restore", "salon", "settle", "slower", "solo", "talk", "theme", "trace", "unclear", "undo",
-    "unfold", "unsettle", "waiting", "welcome", "why",
+    "next", "notify", "open", "output", "pause", "peek", "pending", "pin", "quit", "recall",
+    "rename", "restore", "salon", "settle", "slower", "solo", "talk", "theme", "trace", "unclear",
+    "undo", "unfold", "unsettle", "waiting", "welcome", "why",
 ];
 
 /// The word for a vendor's own model or effort after `:model`, `:effort`
@@ -308,6 +308,20 @@ pub fn history(rest: &str, sent: &[Sent], when: impl Fn(&Sent) -> String) -> Opt
     let items = picks.iter().map(|&i| one_line(&sent[i].text)).collect();
     let mut m = Menu::new(0, items, "")?;
     m.notes = picks.iter().map(|&i| when(&sent[i])).collect();
+    Some(m)
+}
+
+/// The `:recall` menu over `hits`, in their order: each one's line as
+/// `line` words it, on one line, with the note `note` gives it (who,
+/// where, when); none when nothing was found.
+pub fn recall(
+    hits: &[crate::recall::Hit],
+    line: impl Fn(&crate::recall::Hit) -> String,
+    note: impl Fn(&crate::recall::Hit) -> String,
+) -> Option<Menu> {
+    let items = hits.iter().map(|h| one_line(&line(h))).collect();
+    let mut m = Menu::new(0, items, "")?;
+    m.notes = hits.iter().map(note).collect();
     Some(m)
 }
 

@@ -13,13 +13,14 @@ use crate::archives::{self, Browser};
 use crate::away::Away;
 use crate::complete::{self, Jump, Menu};
 use crate::edit;
-use crate::i18n::{Lang, fill};
+use crate::i18n::{Lang, clean, fill};
 use crate::keys::{self, Keymap};
 use crate::live::{self, Live, Open, Refusal, standing};
 use crate::model::*;
 use crate::motion::{self, Glow, GlowOn, Lit, Motion};
 use crate::notify::{self, Note, Notify};
 use crate::prefs::{SIDE_DEFAULT, SIDE_MAX, SIDE_MIN};
+use crate::recall;
 use crate::screen::Progress;
 use crate::shell::{Caught, Output, Ran};
 use crate::sim::{self, Sim};
@@ -61,12 +62,14 @@ const VIEW_COMMANDS: &[&str] = &[
 
 /// Whether a line sent is one `↑` and `^r` bring back: a message, a
 /// command or a shell line; not the lines that only go somewhere (`#12`,
-/// `&3`, `:goto`, `:history`).
+/// `&3`, `:goto`, `:history`, `:recall`).
 fn recalled(text: &str) -> bool {
     let word = text
         .strip_prefix(':')
         .map(|r| r.split_whitespace().next().unwrap_or_default());
-    !text.starts_with('#') && !text.starts_with('&') && !matches!(word, Some("goto" | "history"))
+    !text.starts_with('#')
+        && !text.starts_with('&')
+        && !matches!(word, Some("goto" | "history" | "recall"))
 }
 /// While the terminal does not have the focus, what changed is drawn at
 /// most this often unless the person did something: ten times less often
@@ -827,6 +830,9 @@ pub struct App {
     recall: Option<(usize, String)>,
     /// `^r`: the menu lists the lines sent that have the words typed.
     pub searching: bool,
+    /// `H`, `:recall`: while searching, the menu lists the journal and
+    /// trace lines of every project and archive instead (record 93).
+    pub recalling: bool,
     /// The last key was `^o`: the place it left is not one to go back to.
     went_back: bool,
     /// The side panel's width, in percent.
@@ -1082,6 +1088,7 @@ impl App {
             jumps: Vec::new(),
             recall: None,
             searching: false,
+            recalling: false,
             went_back: false,
             side: SIDE_DEFAULT,
             copy: None,
@@ -2354,6 +2361,7 @@ impl App {
                 self.answer_always();
             }
             KeyCode::Char('A') => self.open_archives(),
+            KeyCode::Char('H') => self.search_all(""),
             KeyCode::Char('v') => {
                 if let Some(id) = self.agent_at_hand() {
                     self.open_talk_with(id);
@@ -3506,6 +3514,7 @@ impl App {
             }
             // Searching: enter takes the line under the highlight (the words
             // typed stay when nothing has them), tab steps on.
+            KeyCode::Enter if self.searching && self.recalling => self.take_recall(),
             KeyCode::Enter if self.searching => self.take_sent(),
             KeyCode::Tab if self.searching => {
                 if let Some(m) = &mut self.menu {
@@ -3737,6 +3746,9 @@ impl App {
     fn suggest_with(&self, forced: bool) -> Option<Menu> {
         if self.input.contains('\n') || self.noting.is_some() {
             return None;
+        }
+        if self.searching && self.recalling {
+            return self.recall_menu();
         }
         if self.searching {
             let w = &self.world;
@@ -4153,6 +4165,7 @@ impl App {
             "forget" => self.forget_agent(arg),
             "goto" => self.goto(arg),
             "history" => self.search_history(arg),
+            "recall" => self.search_all(arg),
             "export" => self.export(arg),
             "commit" => self.suggest_commit(),
             "copy" => self.copy_path(arg),
@@ -4402,10 +4415,130 @@ impl App {
         self.typing = true;
         self.noting = None;
         self.searching = true;
+        self.recalling = false;
         self.recall = None;
         self.input = words.trim().to_string();
         self.after = 0;
         self.menu = self.suggest();
+    }
+
+    /// `H`, `:recall WORDS`: the line open with `words`, the menu listing
+    /// the journal and trace lines of every project and archive that
+    /// have them, the newest first (record 93). An archive's view only
+    /// looks at its own.
+    fn search_all(&mut self, words: &str) {
+        if matches!(self.engine, Engine::View(_)) {
+            return self.read_only();
+        }
+        self.typing = true;
+        self.noting = None;
+        self.searching = true;
+        self.recalling = true;
+        self.recall = None;
+        self.input = words.trim().to_string();
+        self.after = 0;
+        self.menu = self.suggest();
+    }
+
+    /// The lines that have the terms of `words`: the store's (live), what
+    /// the world holds (the demo). The store's name agents and projects
+    /// by the world's ids: both are saved together and never shrink.
+    fn recall_hits(&self, words: &str) -> Result<Vec<recall::Hit>, String> {
+        match &self.engine {
+            Engine::Live(l) => l.recall(&self.world, words, recall::SHOWN),
+            Engine::Sim(_) => Ok(recall::in_world(&self.world, words, recall::SHOWN)),
+            Engine::View(_) => Ok(Vec::new()),
+        }
+    }
+
+    /// The `:recall` menu for what is typed: each line as the journal
+    /// words it (a trace line cleaned), and who, where and when.
+    fn recall_menu(&self) -> Option<Menu> {
+        let hits = self.recall_hits(&self.input).ok()?;
+        let (w, t) = (&self.world, self.lang.text());
+        let today = day(w.tick);
+        complete::recall(
+            &hits,
+            |h| match &h.line {
+                recall::Line::Journal { entry, .. } => ui::words::event(self.lang, w, &entry.event),
+                recall::Line::Trace(text) => clean(text),
+            },
+            |h| {
+                let (who, place) = (&w.agents[h.agent].name, &w.projects[h.project].name);
+                match h.tick {
+                    Some(tick) => fill(t.recall_note, &[who, place, &when(tick, today)]),
+                    None => fill(t.recall_note_untimed, &[who, place]),
+                }
+            },
+        )
+    }
+
+    /// Enter while recalling: to the line under the highlight; said when
+    /// nothing has the words.
+    fn take_recall(&mut self) {
+        let chosen = self.menu.as_ref().map(|m| m.chosen);
+        let words = std::mem::take(&mut self.input);
+        let hits = self.recall_hits(&words);
+        self.typing = false;
+        self.searching = false;
+        self.recalling = false;
+        self.menu = None;
+        self.after = 0;
+        let t = self.lang.text();
+        match hits {
+            Err(why) => self.flash(fill(t.recall_failed, &[&why])),
+            Ok(hits) => match chosen.and_then(|c| hits.into_iter().nth(c)) {
+                Some(hit) => self.go_recalled(hit),
+                None => self.flash(fill(t.recall_none, &[words.trim()])),
+            },
+        }
+    }
+
+    /// To a line `:recall` found: a journal line's conversation (its
+    /// line selected in the journal when it shows there), a trace line's
+    /// agent's raw stream; in an archive's view when its project is put
+    /// away. A line the screen does not hold (older than what was loaded,
+    /// or of a closed project) is said instead.
+    fn go_recalled(&mut self, hit: recall::Hit) {
+        let p = hit.project;
+        if self.world.projects[p].archived.is_some() {
+            self.view_archive(p, Some(hit.agent));
+            if let Some(v) = &mut self.viewing {
+                match hit.line {
+                    recall::Line::Journal { entry, .. } => {
+                        if let Some(i) = v.world.journal.iter().rposition(|e| *e == entry) {
+                            v.show_line(i);
+                        }
+                    }
+                    recall::Line::Trace(_) => v.trace(hit.agent),
+                }
+            }
+            return;
+        }
+        match hit.line {
+            recall::Line::Journal { at: Some(i), .. } => self.show_line(i),
+            recall::Line::Trace(_) if !self.world.projects[p].closed => {
+                self.go_agent(hit.agent);
+                self.trace(hit.agent);
+            }
+            _ => {
+                let t = self.lang.text();
+                self.flash(t.recall_away);
+            }
+        }
+    }
+
+    /// Journal line `i` in its conversation, selected in the salon's
+    /// journal when it shows there.
+    fn show_line(&mut self, i: usize) {
+        self.leave_card();
+        self.go_salon();
+        self.zoom = Zoom::None;
+        if self.journal_rows().iter().any(|&(r, _)| r == i) {
+            self.pane = Pane::Journal;
+            self.journal_sel = Some(i);
+        }
+        self.open_thread(i);
     }
 
     /// Enter while searching: the line under the highlight becomes the
@@ -7997,6 +8130,152 @@ pub(crate) mod tests {
         up(&mut app);
         app.on_key(KeyEvent::from(KeyCode::Esc));
         assert!(!app.typing && app.recall.is_none() && app.input.is_empty());
+    }
+
+    #[test]
+    fn capital_h_recalls_every_journal_and_trace_line_and_enter_goes_there() {
+        let (mut app, w) = four_idle();
+        let said = |app: &mut App| app.flash.take().map(|f| f.0).unwrap_or_default();
+        let lead = app.world.projects[0].leader;
+        let (worker, other) = (w[0], w[1]);
+        app.world.tick = 20;
+        app.world.journal.push(Entry {
+            tick: 3,
+            event: Event::Talk {
+                from: worker,
+                to: lead,
+                text: "Deploy the site".into(),
+            },
+        });
+        let line = app.world.journal.len() - 1;
+        app.world.agents[other].trace(9, "run: deploy.sh");
+        app.on_key(key(KeyCode::Char('H')));
+        assert!(app.typing && app.searching && app.recalling);
+        assert!(app.input.is_empty() && app.menu.is_none(), "nothing typed");
+        type_in(&mut app, "DEPLO");
+        let m = app.menu.clone().expect("two lines have it");
+        let event = ui::words::event(Lang::En, &app.world, &app.world.journal[line].event);
+        let trace = app.world.agents[other].trace.back().unwrap().clone();
+        assert_eq!(m.items, [complete::one_line(&event), trace]);
+        let (wn, on) = (
+            &app.world.agents[worker].name,
+            &app.world.agents[other].name,
+        );
+        let project = &app.world.projects[0].name;
+        assert_eq!(
+            m.notes,
+            [
+                format!("{wn} · {project} · {}", clock(3)),
+                format!("{on} · {project}")
+            ]
+        );
+        // Enter: the journal line's conversation, the line selected.
+        app.on_key(key(KeyCode::Enter));
+        assert!(!app.typing && !app.searching && !app.recalling);
+        assert!(app.input.is_empty() && app.menu.is_none());
+        let thread = app.thread.as_ref().expect("its conversation");
+        assert_eq!(thread.entries[thread.sel], line);
+        assert_eq!((app.pane, app.journal_sel), (Pane::Journal, Some(line)));
+        // A line `:clear` took off the journal: its conversation, nothing
+        // selected in the journal that does not show it.
+        app.thread = None;
+        app.pane = Pane::Salon;
+        app.journal_sel = None;
+        app.world.journal.push(Entry {
+            tick: 4,
+            event: Event::Stopped {
+                agent: other,
+                why: "later".into(),
+            },
+        });
+        app.world.cleared.journal = line + 1;
+        app.command("recall deploy the site");
+        app.on_key(key(KeyCode::Enter));
+        let thread = app.thread.as_ref().expect("its conversation");
+        assert_eq!(thread.entries[thread.sel], line);
+        assert_eq!((app.pane, app.journal_sel), (Pane::Salon, None));
+        app.world.cleared.journal = 0;
+        // Tab to the trace line: its agent's raw stream.
+        app.thread = None;
+        app.on_key(key(KeyCode::Char('H')));
+        type_in(&mut app, "deploy");
+        app.on_key(key(KeyCode::Tab));
+        app.on_key(key(KeyCode::Enter));
+        assert_eq!(app.zoom, Zoom::Trace(other));
+        assert_eq!(app.selected, Sel::Agent(other));
+        // Of a closed project: said, not gone to.
+        app.zoom = Zoom::None;
+        app.world.projects[0].closed = true;
+        app.command("recall deploy.sh");
+        assert!(app.recalling && app.input == "deploy.sh");
+        app.on_key(key(KeyCode::Enter));
+        assert_eq!(app.zoom, Zoom::None);
+        assert_eq!(
+            said(&mut app),
+            "that line is not on the screen: its project is closed, or it is older than \
+             what was loaded"
+        );
+        app.world.projects[0].closed = false;
+        // Nothing has the words: said.
+        app.on_key(key(KeyCode::Char('H')));
+        type_in(&mut app, "zebra ");
+        app.on_key(key(KeyCode::Enter));
+        assert_eq!(said(&mut app), "no journal or trace line has zebra");
+        assert!(!app.typing && !app.recalling);
+        // ^r is the lines sent again; esc leaves.
+        app.world.recall_line("deploy it");
+        app.on_key(key(KeyCode::Char('H')));
+        app.on_key(KeyCode::Esc.into());
+        assert!(!app.typing && !app.searching);
+        app.on_key(ctrl('r'));
+        assert!(app.searching && !app.recalling);
+        // `:recall` is no line to bring back.
+        assert!(!recalled(":recall deploy") && recalled(":budget 80"));
+    }
+
+    #[test]
+    fn a_line_recalled_of_an_archive_opens_in_its_view() {
+        let mut app = App::new(2, 2, 0, 7, Lang::En);
+        let worker = (app.world.agents.iter())
+            .find(|a| a.project == 1 && a.role == Role::Worker)
+            .map(|a| a.id)
+            .unwrap();
+        let lead = app.world.projects[1].leader;
+        app.world.journal.push(Entry {
+            tick: 1,
+            event: Event::Talk {
+                from: worker,
+                to: lead,
+                text: "the zebra crossing".into(),
+            },
+        });
+        app.world.agents[worker].trace(1, "zebra stripes");
+        app.selected = Sel::Agent(lead);
+        app.command("archive epic");
+        app.end_grace();
+        assert!(app.world.projects[1].archived.is_some());
+        app.command("recall zebra crossing");
+        app.on_key(key(KeyCode::Enter));
+        let v = view(&app);
+        let thread = v.thread.as_ref().expect("its conversation, in the view");
+        let at = thread.entries[thread.sel];
+        assert!(
+            matches!(&v.world.journal[at].event, Event::Talk { text, .. } if text == "the zebra crossing")
+        );
+        assert_eq!(app.thread.as_ref().map(|t| t.sel), None, "not behind it");
+        // In the view, recall is the screen behind's.
+        app.on_key(key(KeyCode::Esc));
+        app.on_key(key(KeyCode::Char('H')));
+        assert!(!view(&app).typing);
+        assert_eq!(
+            view(&app).flash.as_ref().map(|f| f.0.as_str()),
+            Some(Lang::En.text().read_only)
+        );
+        app.viewing = None;
+        // A trace line of the archive: its agent's stream, in the view.
+        app.command("recall zebra stripes");
+        app.on_key(key(KeyCode::Enter));
+        assert_eq!(view(&app).zoom, Zoom::Trace(worker));
     }
 
     #[test]

@@ -33,6 +33,7 @@ use rusqlite::{Connection, OptionalExtension, params};
 use serde::{Serialize, de::DeserializeOwned};
 
 use crate::model::*;
+use crate::recall::{Hit, Line};
 
 /// The file's layout; a file from a newer imece is refused.
 /// 3 (2026-10-30): the `Question` inbox kind and the `ToYou` events (no
@@ -61,7 +62,10 @@ use crate::model::*;
 /// (`agents.start`, `hire`'s `from`).
 /// 18 (2026-11-03): a project's standing yes (`projects.allowed`) and the
 /// `Standing` events.
-pub const SCHEMA_VERSION: i64 = 18;
+/// 19 (2026-11-03): the full-text index of the journal and the traces
+/// (`recall`, `recall_rows`, record 93), filled from what an older file
+/// holds at its first open.
+pub const SCHEMA_VERSION: i64 = 19;
 /// Trace lines kept per agent, as the world keeps them.
 const TRACE_KEEP: usize = 200;
 /// The file's name under the state directory.
@@ -135,6 +139,64 @@ CREATE TABLE IF NOT EXISTS paid (
     day INTEGER PRIMARY KEY, calls INTEGER NOT NULL, cost INTEGER NOT NULL) WITHOUT ROWID;
 CREATE TABLE IF NOT EXISTS sent (seq INTEGER PRIMARY KEY, tick INTEGER NOT NULL, text TEXT NOT NULL);
 ";
+
+/// The full-text index `:recall` searches (record 93): one row per journal
+/// line (`kind` 0, by its `seq`) and trace line (`kind` 1, by its agent
+/// and `seq`), the words folded (`recall::words_of`). The index keeps no
+/// copy of the text (`content=''`), only its terms; `recall_rows` says
+/// where each row's line is, and when it was written (a trace line: the
+/// save that wrote it). Both are written as the lines are, and a line
+/// deleted (a tidy, a trace past its cap) takes its rows with it.
+const RECALL: &str = "
+CREATE VIRTUAL TABLE IF NOT EXISTS recall USING fts5(
+    words, content='', contentless_delete=1, tokenize='unicode61 remove_diacritics 2');
+CREATE TABLE IF NOT EXISTS recall_rows (
+    id INTEGER PRIMARY KEY, kind INTEGER NOT NULL, agent INTEGER NOT NULL,
+    seq INTEGER NOT NULL, tick INTEGER NOT NULL);
+CREATE UNIQUE INDEX IF NOT EXISTS recall_source ON recall_rows (kind, agent, seq);
+CREATE TRIGGER IF NOT EXISTS journal_unrecalled AFTER DELETE ON journal BEGIN
+    DELETE FROM recall WHERE rowid IN
+        (SELECT id FROM recall_rows WHERE kind = 0 AND agent = old.agent AND seq = old.seq);
+    DELETE FROM recall_rows WHERE kind = 0 AND agent = old.agent AND seq = old.seq;
+END;
+CREATE TRIGGER IF NOT EXISTS trace_unrecalled AFTER DELETE ON trace BEGIN
+    DELETE FROM recall WHERE rowid IN
+        (SELECT id FROM recall_rows WHERE kind = 1 AND agent = old.agent AND seq = old.seq);
+    DELETE FROM recall_rows WHERE kind = 1 AND agent = old.agent AND seq = old.seq;
+END;
+";
+
+/// A row of the index for a journal line, and for a trace line.
+const JOURNAL_ROW: i64 = 0;
+const TRACE_ROW: i64 = 1;
+
+/// Puts a line in the index: `words` (folded) for the line of `kind`
+/// at (`agent`, `seq`), written at `tick`. A line in it already stays as
+/// it is.
+fn index(
+    conn: &Connection,
+    kind: i64,
+    agent: usize,
+    seq: i64,
+    tick: u64,
+    words: &str,
+) -> rusqlite::Result<()> {
+    let id: Option<i64> = conn
+        .query_row(
+            "INSERT INTO recall_rows (kind, agent, seq, tick) VALUES (?1, ?2, ?3, ?4) \
+             ON CONFLICT DO NOTHING RETURNING id",
+            params![kind, n(agent), seq, big(tick)],
+            |r| r.get(0),
+        )
+        .optional()?;
+    if let Some(id) = id {
+        conn.execute(
+            "INSERT INTO recall (rowid, words) VALUES (?1, ?2)",
+            params![id, words],
+        )?;
+    }
+    Ok(())
+}
 
 /// What the engine keeps beside the world, borrowed for a save: by
 /// project, by agent, and by card.
@@ -260,6 +322,17 @@ impl Seqs {
         match self.loaded.get(i) {
             Some(&seq) => seq,
             None => self.last + n(i - self.loaded.len()) + 1,
+        }
+    }
+
+    /// Where the line at `seq` is in the world's journal: among the lines
+    /// the load brought, or after them when this run wrote it; none for
+    /// a line the load left in the file.
+    fn index(&self, seq: i64) -> Option<usize> {
+        match self.loaded.binary_search(&seq) {
+            Ok(i) => Some(i),
+            Err(_) if seq > self.last => Some(self.loaded.len() + u(seq - self.last - 1)),
+            Err(_) => None,
         }
     }
 }
@@ -470,6 +543,12 @@ impl Store {
         // rowid, so the index keeps them in order).
         self.conn
             .execute_batch("CREATE INDEX IF NOT EXISTS journal_project ON journal (project);")?;
+        // Schema 19 (2026-11-03): the index of what an older file holds.
+        let fresh = !self.has_table("recall")?;
+        self.conn.execute_batch(RECALL)?;
+        if fresh {
+            self.fill_recall()?;
+        }
         let version: i64 = self
             .conn
             .query_row(
@@ -549,6 +628,149 @@ impl Store {
             sent,
             vacuumed,
         })
+    }
+
+    fn has_table(&self, name: &str) -> rusqlite::Result<bool> {
+        self.conn.query_row(
+            "SELECT EXISTS (SELECT 1 FROM sqlite_master WHERE name = ?1)",
+            params![name],
+            |r| r.get(0),
+        )
+    }
+
+    /// Indexes every journal and trace line the file holds, once, when
+    /// the index is new: in the order they were written (a trace line by
+    /// its agent's last change, the closest the file knows), so the
+    /// newest come first in a search as they would have. A line that
+    /// does not read (written by a later imece) is left out.
+    fn fill_recall(&mut self) -> rusqlite::Result<()> {
+        let tx = self.conn.transaction()?;
+        let mut names = HashMap::new();
+        let mut at = HashMap::new();
+        {
+            let mut st = tx.prepare("SELECT id, name, changed_at FROM agents")?;
+            for row in st.query_map([], |r| {
+                Ok((u(r.get(0)?), r.get::<_, String>(1)?, ubig(r.get(2)?)))
+            })? {
+                let (id, name, changed) = row?;
+                names.insert(id, name);
+                at.insert(id, changed);
+            }
+        }
+        let name = |id: usize| names.get(&id).map_or("", String::as_str);
+        // (tick, kind, agent, seq, words), sorted before they go in.
+        let mut lines: Vec<(u64, i64, usize, i64, String)> = Vec::new();
+        {
+            let mut st = tx.prepare("SELECT seq, tick, agent, data FROM journal ORDER BY seq")?;
+            for row in st.query_map([], |r| {
+                Ok((
+                    r.get::<_, i64>(0)?,
+                    ubig(r.get(1)?),
+                    u(r.get(2)?),
+                    r.get::<_, String>(3)?,
+                ))
+            })? {
+                let (seq, tick, agent, data) = row?;
+                if let Ok(event) = serde_json::from_str::<Event>(&data) {
+                    let words = crate::recall::words_of(name(agent), &event);
+                    lines.push((tick, JOURNAL_ROW, agent, seq, words));
+                }
+            }
+            let mut st = tx.prepare("SELECT agent, seq, line FROM trace ORDER BY agent, seq")?;
+            for row in st.query_map([], |r| {
+                Ok((u(r.get(0)?), r.get::<_, i64>(1)?, r.get::<_, String>(2)?))
+            })? {
+                let (agent, seq, line) = row?;
+                let words = crate::recall::trace_words(name(agent), &line);
+                let tick = at.get(&agent).copied().unwrap_or(0);
+                lines.push((tick, TRACE_ROW, agent, seq, words));
+            }
+        }
+        lines.sort_by_key(|&(tick, kind, agent, seq, _)| (tick, kind, agent, seq));
+        for (tick, kind, agent, seq, words) in &lines {
+            index(&tx, *kind, *agent, *seq, *tick, words)?;
+        }
+        tx.commit()
+    }
+
+    /// The journal and trace lines the file holds that have every term
+    /// of `words` (`recall::terms`), the newest first and at most `cap`;
+    /// a journal line with where it is in the world's journal, when this
+    /// run's world holds it. Nothing for no terms.
+    pub fn recall(&self, words: &str, cap: usize) -> rusqlite::Result<Vec<Hit>> {
+        let terms = crate::recall::terms(words);
+        if terms.is_empty() {
+            return Ok(Vec::new());
+        }
+        let mut st = self.conn.prepare(
+            "SELECT rowid FROM recall WHERE recall MATCH ?1 ORDER BY rowid DESC LIMIT ?2",
+        )?;
+        let ids: Vec<i64> = st
+            .query_map(params![crate::recall::query(&terms), n(cap)], |r| r.get(0))?
+            .collect::<Result<_, _>>()?;
+        let mut row = self
+            .conn
+            .prepare("SELECT kind, agent, seq, tick FROM recall_rows WHERE id = ?1")?;
+        let mut line = self
+            .conn
+            .prepare("SELECT project, data FROM journal WHERE seq = ?1")?;
+        let mut trace = self.conn.prepare(
+            "SELECT t.line, a.project FROM trace t JOIN agents a ON a.id = t.agent \
+             WHERE t.agent = ?1 AND t.seq = ?2",
+        )?;
+        let mut hits = Vec::new();
+        for id in ids {
+            let Some((kind, agent, seq, tick)) = row
+                .query_row(params![id], |r| {
+                    Ok((
+                        r.get::<_, i64>(0)?,
+                        u(r.get(1)?),
+                        r.get::<_, i64>(2)?,
+                        ubig(r.get(3)?),
+                    ))
+                })
+                .optional()?
+            else {
+                continue;
+            };
+            let hit = if kind == JOURNAL_ROW {
+                let read = line
+                    .query_row(params![seq], |r| Ok((u(r.get(0)?), r.get::<_, String>(1)?)))
+                    .optional()?;
+                let Some((project, data)) = read else {
+                    continue;
+                };
+                let Ok(event) = serde_json::from_str(&data) else {
+                    continue;
+                };
+                Hit {
+                    tick: Some(tick),
+                    agent,
+                    project,
+                    line: Line::Journal {
+                        entry: Entry { tick, event },
+                        at: self.seqs.index(seq),
+                    },
+                }
+            } else {
+                let read = trace
+                    .query_row(params![n(agent), seq], |r| {
+                        Ok((r.get::<_, String>(0)?, u(r.get(1)?)))
+                    })
+                    .optional()?;
+                let Some((text, project)) = read else {
+                    continue;
+                };
+                Hit {
+                    tick: Some(tick),
+                    agent,
+                    project,
+                    line: Line::Trace(text),
+                }
+            };
+            hits.push(hit);
+        }
+        Ok(hits)
     }
 
     fn has_column(&self, table: &str, column: &str) -> rusqlite::Result<bool> {
@@ -708,6 +930,9 @@ impl Store {
                     w.marks.contains(&i)
                 ],
             )?;
+            let name = w.agents.get(agent).map_or("", |a| a.name.as_str());
+            let words = crate::recall::words_of(name, &e.event);
+            index(&tx, JOURNAL_ROW, agent, self.seqs.of(i), e.tick, &words)?;
         }
         for &(i, marked) in &plan.marks {
             tx.execute(
@@ -744,6 +969,8 @@ impl Store {
                         "INSERT OR REPLACE INTO trace (agent, seq, line) VALUES (?1, ?2, ?3)",
                         params![n(id), big(seq), line],
                     )?;
+                    let words = crate::recall::trace_words(&a.name, line);
+                    index(&tx, TRACE_ROW, id, big(seq), w.tick, &words)?;
                 }
             }
             tx.execute(
@@ -1517,6 +1744,11 @@ impl Store {
             "SELECT seq, tick, data FROM journal WHERE marked = 1 AND seq < 10 ORDER BY seq",
             "SELECT seq, tick, text FROM sent ORDER BY seq DESC LIMIT 500",
             "DELETE FROM sent WHERE seq <= (SELECT COALESCE(MAX(seq), 0) FROM sent) - 500",
+            "SELECT kind, agent, seq, tick FROM recall_rows WHERE id = 3",
+            "SELECT project, data FROM journal WHERE seq = 3",
+            "SELECT t.line, a.project FROM trace t JOIN agents a ON a.id = t.agent \
+             WHERE t.agent = 1 AND t.seq = 3",
+            "DELETE FROM recall_rows WHERE kind = 1 AND agent = 1 AND seq = 3",
         ]
         .iter()
         .map(|q| {
@@ -3278,6 +3510,250 @@ mod tests {
         );
     }
 
+    /// What `recall` found for `words`: (tick, agent, project, where in
+    /// the journal or the trace line's text).
+    fn recalled(
+        store: &Store,
+        words: &str,
+        cap: usize,
+    ) -> Vec<(Option<u64>, usize, usize, String)> {
+        let hits = store.recall(words, cap).unwrap();
+        hits.into_iter()
+            .map(|h| {
+                let what = match h.line {
+                    Line::Journal { entry, at } => format!("{} at {at:?}", entry.tick),
+                    Line::Trace(text) => text,
+                };
+                (h.tick, h.agent, h.project, what)
+            })
+            .collect()
+    }
+
+    fn recall_rows(store: &Store, kind: i64) -> i64 {
+        store
+            .raw()
+            .query_row(
+                "SELECT count(*) FROM recall_rows WHERE kind = ?1",
+                params![kind],
+                |r| r.get(0),
+            )
+            .unwrap()
+    }
+
+    #[test]
+    fn a_save_indexes_its_journal_and_trace_lines_and_recall_finds_them_newest_first() {
+        let (w, k) = (world(), kept());
+        let mut store = Store::in_memory();
+        store.save(&w, &k.kept()).unwrap();
+        // The journal's six and the trace's kept 200 + 1.
+        assert_eq!((recall_rows(&store, 0), recall_rows(&store, 1)), (6, 201));
+        assert_eq!(
+            recalled(&store, "PARS fix", 10),
+            [(Some(3), 0, 0, "3 at Some(2)".to_string())],
+            "a message, by the start of its words, folded"
+        );
+        assert_eq!(recalled(&store, "parser nothing", 10), [], "every term");
+        // Lines 240 to 249 (50 to 249 are kept); the trace's lines take
+        // the save's tick, and the newest written comes first.
+        let lines = recalled(&store, "line 24", 3);
+        let texts: Vec<&str> = lines.iter().map(|l| &l.3[9..]).collect();
+        assert_eq!(texts, ["line 249", "line 248", "line 247"]);
+        assert!(lines.iter().all(|l| (l.0, l.1, l.2) == (Some(77), 1, 0)));
+        assert_eq!(recalled(&store, "line 24", 50).len(), 10, "the cap");
+        // (The clock's words are seconds in fives and minutes up to 21.)
+        assert_eq!(
+            recalled(&store, "line 41", 50).len(),
+            0,
+            "past the kept 200"
+        );
+        // An agent's name finds its lines; one of project two.
+        let lead_two = recalled(&store, "lead-two", 10);
+        assert_eq!(lead_two, [], "lead-two wrote nothing");
+        let which = recalled(&store, "codex which", 10);
+        assert_eq!(which, [(Some(6), 1, 0, "6 at Some(5)".to_string())]);
+        assert_eq!(recalled(&store, "token", 10)[0].1, 0);
+        assert_eq!(recalled(&store, " :-) ", 10), [], "no terms, no lines");
+        // A save with nothing new indexes nothing again.
+        store.save(&w, &k.kept()).unwrap();
+        assert_eq!((recall_rows(&store, 0), recall_rows(&store, 1)), (6, 201));
+    }
+
+    #[test]
+    fn a_line_already_in_the_index_keeps_its_words() {
+        let store = Store::in_memory();
+        index(&store.conn, TRACE_ROW, 4, 9, 1, "first words").unwrap();
+        index(&store.conn, TRACE_ROW, 4, 9, 2, "second words").unwrap();
+        index(&store.conn, JOURNAL_ROW, 4, 9, 3, "third words").unwrap();
+        let found = |q: &str| -> i64 {
+            store
+                .raw()
+                .query_row(
+                    "SELECT count(*) FROM recall WHERE recall MATCH ?1",
+                    params![q],
+                    |r| r.get(0),
+                )
+                .unwrap()
+        };
+        assert_eq!((found("first"), found("second"), found("third")), (1, 0, 1));
+        assert_eq!(recall_rows(&store, TRACE_ROW), 1);
+    }
+
+    #[test]
+    fn lines_that_go_take_their_index_rows_with_them() {
+        let (mut w, k) = (world(), kept());
+        let mut store = Store::in_memory();
+        store.save(&w, &k.kept()).unwrap();
+        assert_eq!(recalled(&store, "line 51", 50).len(), 1);
+        // Ten more trace lines push 50 to 59 out of the kept 200.
+        for i in 250..260 {
+            w.agents[1].trace(i, format!("line {i}"));
+        }
+        store.save(&w, &k.kept()).unwrap();
+        assert_eq!(recall_rows(&store, TRACE_ROW), 201);
+        assert_eq!(
+            recalled(&store, "line 51", 50).len(),
+            0,
+            "gone with the line"
+        );
+        assert_eq!(recalled(&store, "line 255", 50).len(), 1, "250 to 259 came");
+        // A tidy a hundred days on lets the old journal lines go, all but
+        // the newest two, and their index rows go too.
+        let tidied = store.tidy(w.started_at + 100 * 86_400, 2).unwrap();
+        assert_eq!(tidied.journal, 4);
+        assert_eq!(recall_rows(&store, JOURNAL_ROW), 2);
+        assert_eq!(recalled(&store, "parser", 10), []);
+        assert_eq!(recalled(&store, "which", 10).len(), 1);
+        let terms: i64 = store
+            .raw()
+            .query_row(
+                "SELECT count(*) FROM recall WHERE recall MATCH 'parser'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(terms, 0, "out of the full-text index too");
+    }
+
+    #[test]
+    fn a_seq_is_a_loaded_lines_place_or_one_this_run_wrote_after_them() {
+        // The load brought 1, 2 and 4; 5, the file's last, did not read.
+        let seqs = Seqs {
+            loaded: vec![1, 2, 4],
+            last: 5,
+        };
+        let at: Vec<Option<usize>> = (0..=8).map(|seq| seqs.index(seq)).collect();
+        assert_eq!(
+            at,
+            [
+                None,
+                Some(0),
+                Some(1),
+                None,
+                Some(2),
+                None,
+                Some(3),
+                Some(4),
+                Some(5)
+            ]
+        );
+        // And back: each place's seq.
+        assert_eq!(
+            (0..6).map(|i| seqs.of(i)).collect::<Vec<_>>(),
+            [1, 2, 4, 6, 7, 8]
+        );
+    }
+
+    #[test]
+    fn a_journal_line_found_says_where_it_is_in_the_world_loaded() {
+        let (w, k) = (world(), kept());
+        let mut store = Store::in_memory();
+        store.save(&w, &k.kept()).unwrap();
+        let mut back = store.load(2).unwrap().unwrap().world;
+        assert_eq!(recalled(&store, "which", 10)[0].3, "6 at Some(1)");
+        assert_eq!(
+            recalled(&store, "parser", 10)[0].3,
+            "3 at None",
+            "left in the file by the load"
+        );
+        // Lines this run writes follow the loaded ones.
+        for tick in [80, 81] {
+            back.journal.push(Entry {
+                tick,
+                event: Event::Stopped {
+                    agent: 3,
+                    why: format!("quota {tick}"),
+                },
+            });
+            store.save(&back, &k.kept()).unwrap();
+        }
+        assert_eq!(
+            recalled(&store, "quota", 10),
+            [
+                (Some(81), 3, 1, "81 at Some(3)".to_string()),
+                (Some(80), 3, 1, "80 at Some(2)".to_string())
+            ]
+        );
+    }
+
+    #[test]
+    fn a_file_of_schema_18_gets_its_lines_indexed_at_its_first_open() {
+        let d = dir("schema18");
+        std::fs::create_dir_all(&d).unwrap();
+        let path = d.join(FILE);
+        let (w, k) = (world(), kept());
+        {
+            let mut store = Store::open(&path).unwrap();
+            store.save(&w, &k.kept()).unwrap();
+            // As schema 18 wrote it: no index; and a line a later imece
+            // wrote.
+            store
+                .raw()
+                .execute_batch(
+                    "DROP TRIGGER journal_unrecalled; DROP TRIGGER trace_unrecalled;
+                     DROP TABLE recall; DROP TABLE recall_rows;
+                     UPDATE journal SET data = '{\"Later\":{}}' WHERE seq = 4;
+                     UPDATE meta SET value = '18' WHERE key = 'schema_version';",
+                )
+                .unwrap();
+        }
+        let store = Store::open(&path).unwrap();
+        assert_eq!((recall_rows(&store, 0), recall_rows(&store, 1)), (5, 201));
+        assert_eq!(recalled(&store, "parser", 10)[0].0, Some(3));
+        assert_eq!(
+            recalled(&store, "ls", 10),
+            [],
+            "the line that does not read"
+        );
+        // In the order they were written: the trace lines by their
+        // agent's last change (66 for codex-1, 0 for lead).
+        let lead = recalled(&store, "lead", 10);
+        assert_eq!(lead.first().map(|l| l.0), Some(Some(3)), "{lead:?}");
+        assert_eq!(
+            lead.last().map(|l| (l.0, l.3.ends_with("TOKEN=abc"))),
+            Some((Some(0), true))
+        );
+        let lines = recalled(&store, "line 249", 1);
+        assert_eq!(lines[0].0, Some(66));
+        // Filled once: a later open does not read the file through again
+        // (a row taken out stays out).
+        store
+            .raw()
+            .execute("DELETE FROM recall_rows WHERE kind = 0 AND seq = 1", [])
+            .unwrap();
+        drop(store);
+        let store = Store::open(&path).unwrap();
+        assert_eq!((recall_rows(&store, 0), recall_rows(&store, 1)), (4, 201));
+        let version: String = store
+            .raw()
+            .query_row(
+                "SELECT value FROM meta WHERE key = 'schema_version'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(version, "19");
+    }
+
     #[test]
     fn the_growing_tables_are_read_by_their_keys() {
         let (w, k) = (world(), kept());
@@ -3292,6 +3768,8 @@ mod tests {
                 "USING INDEX journal_marked"
             } else if query.contains("project = 1") {
                 "USING INDEX journal_project"
+            } else if query.contains("kind = 1") {
+                "USING INDEX recall_source"
             } else {
                 "PRIMARY KEY"
             };
@@ -3385,11 +3863,11 @@ mod tests {
                 )
                 .unwrap();
             assert_eq!(
-                version, "18",
-                "the sent table, the Fault kind, archives, restores, start points, standing yes: an older \
-                 imece knows none"
+                version, "19",
+                "the sent table, the Fault kind, archives, restores, start points, standing yes, the \
+                 recall index: an older imece knows none"
             );
-            assert_eq!(SCHEMA_VERSION, 18);
+            assert_eq!(SCHEMA_VERSION, 19);
         }
         let back = Store::open(&path)
             .unwrap()

@@ -40,6 +40,7 @@ The conventions are vim's: `h` `j` `k` `l` move and fold, `gg` and `G` go to the
 | `tab` `⇧tab` `↑` `↓` | while writing: complete names and commands (`^n` `^p` step too); `tab` also completes any word of a message or a `!cmd` line to a file of the project (a word with a `/` opens the menu by itself), or to a symbol leased on the code map as `file::name` |
 | `↑` `↓` | writing, at the text's first / last line: the lines sent before, newest first; past the newest, what you were writing comes back |
 | `^r`  `:history` | search the lines sent: every word typed must be in the line, `enter` puts the one highlighted on the line, `tab` steps |
+| `H`  `:recall` | search every journal and trace line of every project and archive: each word typed must start a word of the line, newest first with who, where and when; `enter` goes there (its conversation, an archive's view, the agent's raw stream), `tab` steps |
 | `^a` `^e` `⌥b` `⌥f` | writing: to the start / end, a word back / on |
 | `^w` `^u` `^k` `^y` | writing: cut a word / before / after the cursor; paste the cut back |
 | `⇧enter` `⌥enter` | writing: a new line; `↑` `↓` between lines (where the terminal speaks the kitty keyboard protocol) |
@@ -178,6 +179,7 @@ The conventions are vim's: `h` `j` `k` `l` move and fold, `gg` and `G` go to the
 | `:peek` | `K` |
 | `:hints` | `F` |
 | `:archives` | `A` |
+| `:recall` | `H` |
 | `:allow` | `A` (on an ask) |
 | `:fold` / `:unfold` | `zM` / `zR` |
 | `:trace` / `:talk` | `t` / `v` |
