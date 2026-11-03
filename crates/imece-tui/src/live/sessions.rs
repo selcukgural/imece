@@ -1923,10 +1923,20 @@ mod tests {
             "-m",
             "init",
         ]);
+        use std::os::unix::fs::PermissionsExt;
+        // The helper's stand-in alone writes its arguments: once it stops,
+        // its worker is woken (record 09) and runs in the same tree.
+        let fake = dir.join("fake-helper");
+        std::fs::write(
+            &fake,
+            "#!/bin/sh\ncase \"$*\" in *'imece claude-1.1'*) printf '%s\\n' \"$@\" > helper-args.txt;; esac\n",
+        )
+        .unwrap();
+        std::fs::set_permissions(&fake, std::fs::Permissions::from_mode(0o700)).unwrap();
         let mut w = team(1);
         let mut live = Live::new(
             2,
-            claude_at(&fake_claude(&dir)),
+            claude_at(&fake.to_string_lossy()),
             repo.clone(),
             dir.join("worktrees"),
         );
@@ -1935,7 +1945,7 @@ mod tests {
         wait_for(&mut live, &mut w, |w| w.agents[2].status == Status::Stopped);
         // The stand-in wrote its arguments where it ran: the worker's tree.
         let tree = dir.join("worktrees").join("claude-1");
-        let args = std::fs::read_to_string(tree.join("args.txt")).unwrap();
+        let args = std::fs::read_to_string(tree.join("helper-args.txt")).unwrap();
         let args: Vec<&str> = args.lines().collect();
         let after = |f: &str| args[args.iter().position(|a| *a == f).unwrap() + 1];
         assert_eq!(
