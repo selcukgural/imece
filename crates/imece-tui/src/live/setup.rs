@@ -1,6 +1,8 @@
 //! A worktree setup script (record 92): `.imece/worktree-setup.sh` of the
 //! person's checkout, run in each new worktree after `:copy`, before the
-//! agent's session starts, once the person approved its exact bytes.
+//! agent's session starts, once the person approved its exact bytes; and
+//! its teardown script, `.imece/worktree-teardown.sh`, run the same way
+//! in a worktree before `:tidy` removes it (record 96).
 //!
 //! The script is the repository's code and runs as the person, so it
 //! never runs unapproved. The approval is bound to what runs: the bytes'
@@ -28,6 +30,34 @@ use crate::model::*;
 /// Where the script is, in the person's checkout.
 pub const FILE: &str = ".imece/worktree-setup.sh";
 
+/// Where the teardown script is, in the person's checkout.
+pub const TEARDOWN_FILE: &str = ".imece/worktree-teardown.sh";
+
+/// Which of the two scripts: what it is approved as and where it is.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Kind {
+    Setup,
+    Teardown,
+}
+
+impl Kind {
+    /// Where it is, in the person's checkout.
+    pub fn file(self) -> &'static str {
+        match self {
+            Kind::Setup => FILE,
+            Kind::Teardown => TEARDOWN_FILE,
+        }
+    }
+
+    /// The first word of its approval's key.
+    fn word(self) -> &'static str {
+        match self {
+            Kind::Setup => "setup",
+            Kind::Teardown => "teardown",
+        }
+    }
+}
+
 /// How it runs: the bytes given to this shell as a file.
 pub const RUNNER: &str = "/bin/sh";
 
@@ -46,6 +76,7 @@ pub const OUTPUT_LINES: usize = 6;
 /// The script as read once: where it really is, its bytes and their hash.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Script {
+    pub kind: Kind,
     pub real: PathBuf,
     pub bytes: Vec<u8>,
     pub sha: String,
@@ -54,7 +85,8 @@ pub struct Script {
 impl Script {
     /// What the approval is of: how it runs, the bytes' hash, where.
     pub fn key(&self) -> String {
-        format!("setup {RUNNER} {} {}", self.sha, self.real.display())
+        let word = self.kind.word();
+        format!("{word} {RUNNER} {} {}", self.sha, self.real.display())
     }
 
     /// Its text as the person reads it before saying yes (bytes that are
@@ -64,17 +96,24 @@ impl Script {
     }
 }
 
-/// The setup script of the checkout at `repo`, read once: none when there
-/// is none; an error (in words) when it is there but can not be taken: not
-/// a plain file once links are followed, bigger than [`SCRIPT_MAX`], or
-/// unreadable.
+/// The setup script of the checkout at `repo`, read once (see
+/// [`look_for`]).
 pub fn look(repo: &Path) -> Result<Option<Script>, String> {
+    look_for(repo, Kind::Setup)
+}
+
+/// The script of `kind` of the checkout at `repo`, read once: none when
+/// there is none; an error (in words) when it is there but can not be
+/// taken: not a plain file once links are followed, bigger than
+/// [`SCRIPT_MAX`], or unreadable.
+pub fn look_for(repo: &Path, kind: Kind) -> Result<Option<Script>, String> {
     use std::io::Read;
-    let path = repo.join(FILE);
+    let file_name = kind.file();
+    let path = repo.join(file_name);
     let real = match std::fs::canonicalize(&path) {
         Ok(real) => real,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-        Err(e) => return Err(format!("{FILE}: {e}")),
+        Err(e) => return Err(format!("{file_name}: {e}")),
     };
     // The real path, opened without following a link put there since,
     // and without waiting on a pipe; looked at as opened.
@@ -82,20 +121,25 @@ pub fn look(repo: &Path) -> Result<Option<Script>, String> {
         .read(true)
         .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
         .open(&real)
-        .map_err(|e| format!("{FILE}: {e}"))?;
-    let meta = file.metadata().map_err(|e| format!("{FILE}: {e}"))?;
+        .map_err(|e| format!("{file_name}: {e}"))?;
+    let meta = file.metadata().map_err(|e| format!("{file_name}: {e}"))?;
     if !meta.is_file() {
-        return Err(format!("{FILE}: not a plain file"));
+        return Err(format!("{file_name}: not a plain file"));
     }
     if meta.len() > SCRIPT_MAX {
-        return Err(format!("{FILE}: bigger than {} KiB", SCRIPT_MAX >> 10));
+        return Err(format!("{file_name}: bigger than {} KiB", SCRIPT_MAX >> 10));
     }
     let mut bytes = Vec::new();
     file.take(SCRIPT_MAX)
         .read_to_end(&mut bytes)
-        .map_err(|e| format!("{FILE}: {e}"))?;
+        .map_err(|e| format!("{file_name}: {e}"))?;
     let sha = crate::sha::hex(&bytes);
-    Ok(Some(Script { real, bytes, sha }))
+    Ok(Some(Script {
+        kind,
+        real,
+        bytes,
+        sha,
+    }))
 }
 
 /// Writes the script's bytes, the ones hashed, to a private copy in `dir`

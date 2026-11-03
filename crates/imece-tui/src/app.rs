@@ -50,6 +50,17 @@ pub struct TidyWin {
     pub sure: bool,
 }
 
+/// A teardown script a removal waits on the person's answer to: its
+/// bytes, how far down they are scrolled, and the removal asked (its
+/// rows of the list, with work or not).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TeardownAsk {
+    pub script: crate::live::setup::Script,
+    pub scroll: usize,
+    pub at: Vec<usize>,
+    pub force: bool,
+}
+
 /// The archive a read-only view shows.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Viewed {
@@ -781,6 +792,9 @@ pub struct App {
     /// The worktrees no agent owns, in a window over the screen (`:tidy`,
     /// record 96).
     pub tidy: Option<TidyWin>,
+    /// A checkout's teardown script a removal asked about, in a window
+    /// over the `:tidy` one.
+    pub teardown: Option<TeardownAsk>,
     /// The start's look for worktrees no agent owns, until it answered
     /// and its count was said.
     tidy_start: bool,
@@ -1084,6 +1098,7 @@ impl App {
             peek: None,
             script: None,
             tidy: None,
+            teardown: None,
             tidy_start: false,
             hints: None,
             needs_only: false,
@@ -1708,7 +1723,63 @@ impl App {
             Ok(()) => {}
             Err(TidyRefusal::Busy) => self.flash(t.tidy_busy),
             Err(TidyRefusal::Nothing) => self.flash(t.tidy_none),
+            Err(TidyRefusal::Asks(script)) => {
+                self.teardown = Some(TeardownAsk {
+                    script: *script,
+                    scroll: 0,
+                    at,
+                    force,
+                })
+            }
         }
+    }
+
+    /// A key while a teardown script is asked about: `j k` (the arrows),
+    /// `ctrl-d ctrl-u` (page keys) and `g G` move through it, `a` says
+    /// yes and `r` no to it and the removal asked goes on, `esc` or `q`
+    /// close it and nothing is removed, `?` the help; the rest do nothing.
+    fn teardown_key(&mut self, k: KeyEvent) {
+        let Some(ask) = self.teardown.as_mut() else {
+            return;
+        };
+        let ctrl = k.modifiers.contains(KeyModifiers::CONTROL);
+        let (at, page) = (ask.scroll, SCRIPT_PAGE);
+        let to = match k.code {
+            KeyCode::Down | KeyCode::Char('j') => at + 1,
+            KeyCode::Up | KeyCode::Char('k') => at.saturating_sub(1),
+            KeyCode::PageDown => at + page,
+            KeyCode::Char('d') if ctrl => at + page,
+            KeyCode::PageUp => at.saturating_sub(page),
+            KeyCode::Char('u') if ctrl => at.saturating_sub(page),
+            KeyCode::Char('g') => 0,
+            KeyCode::Char('G') => usize::MAX,
+            KeyCode::Char('a') => return self.answer_teardown(true),
+            KeyCode::Char('r') => return self.answer_teardown(false),
+            KeyCode::Esc | KeyCode::Char('q') => {
+                self.teardown = None;
+                return self.flash(self.lang.text().teardown_held);
+            }
+            KeyCode::Char('?') => return self.open_help(),
+            _ => return,
+        };
+        // Never past the last line's being the top one.
+        let last = ask.script.text().lines().count();
+        ask.scroll = to.min(last.saturating_sub(1));
+    }
+
+    /// The person's answer to the teardown script asked about: the
+    /// engine keeps it, and the removal it held goes on (asking about the
+    /// next checkout's, if another has one).
+    fn answer_teardown(&mut self, yes: bool) {
+        let Some(ask) = self.teardown.take() else {
+            return;
+        };
+        match &mut self.engine {
+            Engine::Live(l) => l.decide_teardown(&mut self.world, &ask.script, yes),
+            Engine::Sim(s) => s.decide_teardown(&mut self.world, &ask.script, yes),
+            Engine::View(_) => return self.read_only(),
+        }
+        self.tidy_remove(ask.at, ask.force);
     }
 
     /// `F` or `:hints`: a label on every row the salon's screen showed
@@ -2412,6 +2483,10 @@ impl App {
         }
         if let Some((item, at)) = self.script {
             self.script_key(item, at, k);
+            return;
+        }
+        if self.teardown.is_some() {
+            self.teardown_key(k);
             return;
         }
         if let Some(win) = self.tidy {
@@ -14792,12 +14867,23 @@ pub(crate) mod tests {
         assert_eq!(app.asking(), None);
     }
 
-    /// The demo with its look for worktrees no agent owns answered.
+    /// The demo with its look for worktrees no agent owns answered, its
+    /// teardown script said yes to.
     fn tidied_demo() -> App {
         let mut app = App::new(1, 1, 0, 1, Lang::En);
         app.command("tidy");
         app.step();
+        let checkout = app.world.orphans.found.as_ref().unwrap()[0]
+            .checkout
+            .clone();
+        app.world
+            .approve_setup(sim::teardown_script(&checkout).key());
         app
+    }
+
+    /// The flash of a removal of `name` after the demo's teardown ran.
+    fn removed(name: &str) -> String {
+        format!("removed {name} · teardown in {name}: exit 0, 0.4 s · dropped database {name}")
     }
 
     fn orphan_names(app: &App) -> Vec<String> {
@@ -14856,7 +14942,7 @@ pub(crate) mod tests {
         app.key(key(KeyCode::Char('a')));
         assert_eq!(flashed(&app).as_deref(), Some(t.tidy_busy));
         app.step();
-        assert_eq!(flashed(&app).as_deref(), Some("removed claude-31"));
+        assert_eq!(flashed(&app), Some(removed("claude-31")));
         assert_eq!(app.world.orphans.tidied, None, "said once");
         assert_eq!(orphan_names(&app), ["codex-32"]);
         app.key(key(KeyCode::Char('a')));
@@ -14872,7 +14958,7 @@ pub(crate) mod tests {
         app.key(key(KeyCode::Char('y')));
         assert!(app.world.orphans.busy);
         app.step();
-        assert_eq!(flashed(&app).as_deref(), Some("removed codex-32"));
+        assert_eq!(flashed(&app), Some(removed("codex-32")));
         assert_eq!(orphan_names(&app), Vec::<String>::new());
         // Nothing left: `d` does nothing, `y` alone removes nothing.
         app.flash = None;
@@ -14886,6 +14972,95 @@ pub(crate) mod tests {
         // An index not in the list is refused.
         app.tidy_remove(vec![4], false);
         assert_eq!(flashed(&app).as_deref(), Some(t.tidy_none));
+    }
+
+    #[test]
+    fn a_removal_asks_about_the_teardown_script_first_and_goes_on_with_the_answer() {
+        let mut app = App::new(1, 1, 0, 1, Lang::En);
+        let t = app.lang.text();
+        app.command("tidy");
+        app.step();
+        // Asked: the script's bytes in a window, nothing removed yet.
+        app.key(key(KeyCode::Char('a')));
+        let ask = app
+            .teardown
+            .clone()
+            .expect("the teardown script is asked about");
+        assert_eq!((ask.at.clone(), ask.force, ask.scroll), (vec![0], false, 0));
+        assert_eq!(ask.script.kind, crate::live::setup::Kind::Teardown);
+        assert!(ask.script.text().contains("db:drop"));
+        assert!(!app.world.orphans.busy);
+        // It scrolls, never past its last line being the top one.
+        let lines = ask.script.text().lines().count();
+        let scroll = |app: &App| app.teardown.as_ref().unwrap().scroll;
+        app.key(key(KeyCode::Char('j')));
+        assert_eq!(scroll(&app), 1);
+        app.key(key(KeyCode::Char('k')));
+        app.key(key(KeyCode::Up));
+        assert_eq!(scroll(&app), 0);
+        app.key(key(KeyCode::Down));
+        assert_eq!(scroll(&app), 1);
+        app.key(key(KeyCode::Char('G')));
+        assert_eq!(scroll(&app), lines - 1);
+        app.key(key(KeyCode::Char('g')));
+        assert_eq!(scroll(&app), 0);
+        app.key(key(KeyCode::PageDown));
+        assert_eq!(scroll(&app), lines - 1);
+        app.key(key(KeyCode::PageUp));
+        assert_eq!(scroll(&app), 0);
+        app.key(ctrl('d'));
+        assert_eq!(scroll(&app), lines - 1);
+        app.key(ctrl('u'));
+        assert_eq!(scroll(&app), 0);
+        // Without ctrl, d and u do nothing here.
+        app.key(key(KeyCode::Char('d')));
+        assert_eq!(scroll(&app), 0);
+        app.key(key(KeyCode::Char('j')));
+        app.key(key(KeyCode::Char('u')));
+        assert_eq!(scroll(&app), 1);
+        app.key(key(KeyCode::Char('k')));
+        app.key(key(KeyCode::Char('x')));
+        assert_eq!(app.teardown, Some(ask.clone()));
+        app.key(key(KeyCode::Char('?')));
+        assert!(app.help);
+        app.help = false;
+        // esc: nothing removed, said so; the list window stays.
+        app.key(key(KeyCode::Esc));
+        assert_eq!(app.teardown, None);
+        assert_eq!(flashed(&app).as_deref(), Some(t.teardown_held));
+        assert!(app.tidy.is_some());
+        assert!(!app.world.orphans.busy);
+        app.key(key(KeyCode::Char('a')));
+        app.key(key(KeyCode::Char('q')));
+        assert_eq!(app.teardown, None);
+        // `r`: no for the run, removed without it, not asked again.
+        app.key(key(KeyCode::Char('a')));
+        app.key(key(KeyCode::Char('r')));
+        assert_eq!(app.teardown, None);
+        assert!(app.world.orphans.busy);
+        app.step();
+        assert_eq!(
+            flashed(&app).as_deref(),
+            Some("removed claude-31 · teardown not run in claude-31: you said no")
+        );
+        assert!(app.world.setup_approved.is_empty());
+        app.key(key(KeyCode::Char('d')));
+        app.key(key(KeyCode::Char('y')));
+        assert_eq!(app.teardown, None, "asked again after a no");
+        app.step();
+        // `a` in another run: yes is kept, and the removal it held goes on.
+        let mut app = App::new(1, 1, 0, 1, Lang::En);
+        app.command("tidy");
+        app.step();
+        app.key(key(KeyCode::Char('d')));
+        app.key(key(KeyCode::Char('y')));
+        assert_eq!(app.teardown.as_ref().map(|a| a.at.clone()), Some(vec![0]));
+        app.key(key(KeyCode::Char('a')));
+        assert_eq!(app.world.setup_approved.len(), 1);
+        assert!(app.world.setup_approved[0].starts_with("teardown /bin/sh "));
+        assert!(app.world.orphans.busy);
+        app.step();
+        assert_eq!(flashed(&app), Some(removed("claude-31")));
     }
 
     #[test]

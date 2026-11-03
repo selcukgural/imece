@@ -1473,6 +1473,7 @@ impl Drop for Live {
         for running in &self.running {
             running.kill_all();
         }
+        self.tidy.running.kill_all();
         // Ask every session to stop first, so they wind down together.
         for s in &mut self.slots {
             if let Slot::Running(s) = s {

@@ -1883,11 +1883,29 @@ pub struct Orphans {
 }
 
 /// What a removal came to: the names removed, and the ones not with
-/// why: git's words, or none when an agent owns it again.
+/// why: git's words, or none when an agent owns it again; and the
+/// teardown script before each, where its checkout has one.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Tidied {
     pub removed: Vec<String>,
     pub kept: Vec<(String, Option<String>)>,
+    pub torn: Vec<(String, TornDown)>,
+}
+
+/// How a worktree's teardown script went before its removal.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum TornDown {
+    /// It ran: whether it went well, how it ended (`exit 0, 0.4 s`), its
+    /// last line that says something, cleaned.
+    Ran {
+        ok: bool,
+        end: String,
+        last: Option<String>,
+    },
+    /// It could not be read or started: why.
+    Failed(String),
+    /// The person said no to it this run.
+    Refused,
 }
 
 /// One window of a vendor plan's usage limit, as the vendor last said it

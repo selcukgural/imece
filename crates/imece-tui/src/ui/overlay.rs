@@ -7,7 +7,9 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Paragraph};
 
 use super::*;
-use crate::app::{App, Digest, LeftOff, PickStep, SoloPick, TalkNote, Thread, TidyWin};
+use crate::app::{
+    App, Digest, LeftOff, PickStep, SoloPick, TalkNote, TeardownAsk, Thread, TidyWin,
+};
 use crate::archives::{self, Browser, Row};
 use crate::keys::{Keymap, Scope};
 use crate::welcome::{self, Seen};
@@ -72,15 +74,69 @@ pub fn script(f: &mut Frame, app: &App, item: usize, at: usize) -> Rect {
         return area;
     };
     let sha: String = s.sha.chars().take(16).collect();
+    let title = fill(t.setup_title, &[&agent.name, &sha]);
+    let shown = Shown {
+        title,
+        head: t.setup_head,
+        file: t.setup_file,
+        hints: &t.setup_hints,
+    };
+    script_body(f, area, shown, &s, at);
+    area
+}
+
+/// A teardown script a `:tidy` removal asks about (record 96), in a
+/// window over the screen as a setup script is: what runs and how, its
+/// file, its bytes numbered, scrolled to `ask.scroll`.
+pub fn teardown(f: &mut Frame, app: &App, ask: &TeardownAsk) -> Rect {
+    let t = app.lang.text();
+    let full = f.area();
+    let area = centered(
+        full,
+        full.width.saturating_sub(8),
+        full.height.saturating_sub(4),
+    );
+    shade(f, area);
+    clear(f, area);
+    let s = &ask.script;
+    let sha: String = s.sha.chars().take(16).collect();
+    // The checkout's directory, the script's file in it.
+    let checkout = (s.real.parent().and_then(std::path::Path::parent))
+        .and_then(std::path::Path::file_name)
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let title = fill(t.teardown_title, &[&checkout, &sha]);
+    let shown = Shown {
+        title,
+        head: t.teardown_head,
+        file: t.setup_file,
+        hints: &t.teardown_hints,
+    };
+    script_body(f, area, shown, s, ask.scroll);
+    area
+}
+
+/// The words of a script's window: its title, what runs and how, how
+/// its file is named, its keys.
+struct Shown<'a> {
+    title: String,
+    head: &'a str,
+    file: &'a str,
+    hints: &'a [(&'a str, &'a str)],
+}
+
+/// A script's window in `area`: its words, the script's file and its
+/// bytes numbered from line `at` (the rest cut at the foot).
+fn script_body(f: &mut Frame, area: Rect, shown: Shown, s: &crate::live::setup::Script, at: usize) {
     let block = Block::bordered()
-        .title(fill(t.setup_title, &[&agent.name, &sha]))
+        .title(shown.title)
         .border_style(fg(pal().accent));
     let inner = block.inner(area);
     f.render_widget(block, area);
     let mut lines = vec![
-        Line::from(Span::styled(t.setup_head, fg(pal().warn))),
+        Line::from(Span::styled(shown.head.to_string(), fg(pal().warn))),
         Line::from(Span::styled(
-            fill(t.setup_file, &[&s.real.display().to_string()]),
+            fill(shown.file, &[&s.real.display().to_string()]),
             dim(),
         )),
         Line::default(),
@@ -96,8 +152,7 @@ pub fn script(f: &mut Frame, app: &App, item: usize, at: usize) -> Rect {
     }
     let [body, keys] = Layout::vertical([Constraint::Min(0), Constraint::Length(1)]).areas(inner);
     f.render_widget(Paragraph::new(lines), body);
-    f.render_widget(Paragraph::new(Line::from(hint_spans(&t.setup_hints))), keys);
-    area
+    f.render_widget(Paragraph::new(Line::from(hint_spans(shown.hints))), keys);
 }
 
 /// The `:tidy` window (record 96): the worktrees no agent owns, a row
