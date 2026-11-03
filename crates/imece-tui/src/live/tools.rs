@@ -34,10 +34,28 @@ pub(super) const GIT_READ: &[&str] = &[
     "status",
 ];
 
-/// git options that run a program (a pager: `-O`, `--open-files-in-pager`)
-/// or write a file (`--output`), by their start: `-Ovim` and
-/// `--output=x` too. `-O<orderfile>` of diff and log goes with them.
-pub(super) const GIT_DENIED_OPTIONS: &[&str] = &["-O", "--open-files-in-pager", "--output"];
+/// git's long options that run a program (a pager) or write a file.
+/// git takes a long option by any start that names one alone, so a
+/// name that starts one of these is refused (`--open=vim`, `--o`).
+pub(super) const GIT_DENIED_LONG: &[&str] = &["open-files-in-pager", "output"];
+
+/// git's short option that runs a pager (`-O`, grep). Short options go
+/// together (`-iOvim`), so a group with an `O` anywhere is refused;
+/// `-O<orderfile>` of diff and log, and a value with an `O` in it
+/// (`-SFOO`), go with them: spelled apart (`-S FOO`) they run.
+pub(super) const GIT_DENIED_SHORT: char = 'O';
+
+/// Whether `arg` is, or may be read by git as, an option that runs a
+/// program or writes a file.
+pub(super) fn git_denied(arg: &str) -> bool {
+    if let Some(long) = arg.strip_prefix("--") {
+        let name = long.split('=').next().unwrap_or_default();
+        !name.is_empty() && GIT_DENIED_LONG.iter().any(|o| o.starts_with(name))
+    } else {
+        arg.strip_prefix('-')
+            .is_some_and(|short| short.contains(GIT_DENIED_SHORT))
+    }
+}
 
 /// How long a tool call waits for imece's answer: a run is answered when
 /// the program ends, not by the screen's loop, so it waits for the run's
@@ -200,10 +218,7 @@ pub(super) fn allowed(role: Role, argv: &[String], programs: &[String]) -> Resul
                         .to_string(),
                 );
             }
-            if let Some(a) = argv
-                .iter()
-                .find(|a| GIT_DENIED_OPTIONS.iter().any(|o| a.starts_with(o)))
-            {
+            if let Some(a) = argv.iter().find(|a| git_denied(a)) {
                 return Err(format!(
                     "git {sub} {a}: a pager or an output file is not run through imece"
                 ));
@@ -716,6 +731,16 @@ mod tests {
             "git diff --output=/tmp/x",
             "git log --output /tmp/x",
             "git show HEAD --output=x",
+            // Together with other short options, and by a start of the
+            // long name: git takes both.
+            "git grep -iOvim x",
+            "git grep -lO vim x",
+            "git grep --open=vim x",
+            "git grep --open-f vim x",
+            "git grep --o=vim x",
+            "git log --outp=/tmp/x",
+            "git diff --out /tmp/x",
+            "git diff -RO/tmp/order",
         ] {
             let e = allowed(Role::Leader, &argv(runs), &[]).unwrap_err();
             assert!(
@@ -725,8 +750,15 @@ mod tests {
         }
         let e = allowed(Role::Worker, &argv("git diff -Oorder"), &[]).unwrap_err();
         assert!(e.starts_with("git diff -Oorder:"), "{e}");
+        // A value with an O in it is refused with them; apart it runs.
+        assert!(allowed(Role::Leader, &argv("git log -SFOO"), &[]).is_err());
+        allowed(Role::Leader, &argv("git log -S FOO"), &[]).unwrap();
         for reads in [
             "git log --oneline -5",
+            "git log --no-merges --",
+            "git grep -o -n foo",
+            "git grep -e FOO -- src",
+            "git diff HEAD -- OLD.md",
             "git diff --stat HEAD~1",
             "git grep -n foo",
             "git show HEAD:src/x.rs",
@@ -763,6 +795,8 @@ mod tests {
             "cargo publish",
             "git push",
             "git -c x=y log",
+            "git grep -lOsh x",
+            "git grep --open=sh x",
             "ls",
             "",
         ] {
