@@ -8,9 +8,9 @@ description: The default screen of imece - the header, the guild tree grouped by
 The salon is the screen imece opens on and the one you come back to with `1` or `:salon`. It shows the whole team at a glance: a header with the pot and the fleet, the guild tree on the left (every project, its leader, its workers and their helpers), and on the right the two side panels, WAITING FOR YOU and the journal. The board and the code map are one key away (`2`, `3`); everything else opens over the salon and `esc` brings it back.
 
 ```text
- imece  3/9 cards │ ● 2 working  ✓ 1 done │ spent $3.10 of $20.00 ($1.80/h, ~9 h left) │ claude 5h: 48% left, resets in 1 h 59 min │  ! 2 waiting for you   14:02
+ imece   ! 2 waiting for you  │ ● 2 working  ✓ 1 done │ 10 min: 1 cards done · 1 Δ · 6 messages │ 3/9 cards │ spent $3.10 of $20.00 ($1.80/h, ~9 h left) │ claude 5h: 48% left, resets in 1 h 59 min  14:02
 ┌ SALON ──────────────────────────────────────────┐┌ WAITING FOR YOU (2) ───────────────────┐
-│▾ ▴ shop-api  2 working  $2.40   ! 2 waiting     ││Δ 13:58 claude-1 finished: parser (3 files, +41 −6) · ✓ ran clean on this tree: cargo test
+│▾ ▴ shop-api  ▓▓▓░░░░░ 3/8  2 working  $2.40  ! 2││Δ 13:58 claude-1 finished: parser (3 files, +41 −6) · ✓ ran clean on this tree: cargo test
 │  ◆ ▎lead      claude                coordinating ││⚑ 14:01 codex-2 waits for your yes: Bash: npm install left-pad
 │  ├ ● ▎claude-1 #3   Parse the manifest  writing tests · 2 min  $1.10  ⎇ fix-parser ↑2 +12
 │  │ └ ● ▎claude-1.1                      thinking… ← claude-1 "add the tests"   ⎇          │
@@ -26,16 +26,17 @@ The salon is the screen imece opens on and the one you come back to with `1` or 
 
 ## The header
 
-One line, left to right, parts separated by `│`:
+One line, parts separated by `│`, the most wanted first. When the screen is narrower than the line, the least wanted part goes first, so its edge never cuts off what waits for you: the researchers and the vendors' windows (one nearly full stays), then the pot's rate, the clock, the pot, the cards, the last ten minutes and the fleet. What waits for you, the pause and a pot running low always stay.
 
 | Part | What it says |
 | --- | --- |
-| `3/9 cards` | cards done out of all cards; left out while there are no cards (a live start has none until the leader posts). |
+| `! 2 waiting for you` | open items in WAITING FOR YOU, in the attention colour. The terminal's title carries the same count, `! imece · 2 waiting`, so a tab in the background shows it, after the top of the ladder of the open projects: `✕` something is stuck, `!` something waits for you, `●` something works or starts, nothing when all is calm (a turn done, not seen, is calm). Windows Terminal, kitty 0.39+, Ghostty 1.2+ and iTerm2 3.6.6+ also show it as the tab's progress bar (OSC 9;4): red full when stuck, yellow full when waiting, moving while working, none when calm. imece asks the terminal its name at start (XTVERSION) and goes by its answer, not by `TERM_PROGRAM`, which a terminal started from another inherits; other terminals are not sent it, since some take that sequence for a notice. Inside tmux it is sent: tmux 3.8 passes it on to Ghostty and iTerm2, an older tmux drops it. `IMECE_PROGRESS=on` or `off` decides it yourself. Your shell's title comes back, and the bar goes, when imece ends or hands the terminal to a `!` command. |
 | `● 2 working  ✓ 1 done  ✕ 1 stuck` | the fleet: agents mid-turn (spending tokens), agents that finished a turn you have not opened since, agents blocked or whose session stopped. A count of zero is left out; with none at all it says `all idle`. What waits for you is not in the fleet: it has its own count. |
+| `10 min: 3 cards done · 2 Δ · 14 messages` | what happened in the last ten minutes: cards done, changes that came for your review, messages the agents sent each other on the bus; a count of none is left out, and nothing shows when nothing happened. Read from the journal's newest lines back to ten minutes ago only. |
+| `3/9 cards` | cards done out of all cards; left out while there are no cards (a live start has none until the leader posts). |
 | `spent $3.10 of $20.00 ($1.80/h, ~9 h left)` | the pot: what all agents together have spent of the budget, what the last ten minutes cost per hour, and how long the pot lasts at that rate. With under half an hour left the whole part turns the attention colour and the journal says so once. |
 | `claude 5h: 48% left, resets in 1 h 59 min` | each vendor plan's usage window nearest to full, as Claude and Codex sessions report them (Gemini reports none); loud from 90% used. A subscription's limit can stop the team before the pot does. Not kept between runs: a session says them again on its first turn. |
 | `researchers 1/4` | researchers running out of the cap, only when there is a cap (`--demo --researchers N`; researchers are not built live). |
-| `! 2 waiting for you` | open items in WAITING FOR YOU, in the attention colour. The terminal's title carries the same count, `! imece · 2 waiting`, so a tab in the background shows it, after the top of the ladder of the open projects: `✕` something is stuck, `!` something waits for you, `●` something works or starts, nothing when all is calm (a turn done, not seen, is calm). Windows Terminal, kitty 0.39+, Ghostty 1.2+ and iTerm2 3.6.6+ also show it as the tab's progress bar (OSC 9;4): red full when stuck, yellow full when waiting, moving while working, none when calm. imece asks the terminal its name at start (XTVERSION) and goes by its answer, not by `TERM_PROGRAM`, which a terminal started from another inherits; other terminals are not sent it, since some take that sequence for a notice. Inside tmux it is sent: tmux 3.8 passes it on to Ghostty and iTerm2, an older tmux drops it. `IMECE_PROGRESS=on` or `off` decides it yourself. Your shell's title comes back, and the bar goes, when imece ends or hands the terminal to a `!` command. |
 | `14:02` | the clock. |
 
 See [budget and limits](../concepts/budget-and-limits.md) for how the pot and the windows are counted.
@@ -44,7 +45,7 @@ See [budget and limits](../concepts/budget-and-limits.md) for how the pot and th
 
 Agents are grouped by project. Each project is a header row, then its leader, then its workers, each worker's helpers under it. Projects come in the order they were opened, pinned ones first.
 
-A project header: `▾ shop-api  2 working  $2.40  ✕1  ■1   ! 2 waiting`. `▾` is open, `▸` folded. After the name: how many workers and helpers are not idle, what the project's agents have cost, `✕N` blocked and `■N` stopped agents when there are any, and, in the attention colour, how many items of this project wait for you. A folded project is one line, that line still shows what waits (quiet, not deaf) and ends with its loudest member, `▸ shop-api  2 working  $2.40   ! 1 waiting  ! codex-2`: the agent highest on the state ladder below, the first in order among equals. A pinned project (`:pin`) wears `▴` before its name and keeps the top of the salon; the pin is saved between runs.
+A project header: `▾ shop-api  ▓▓▓░░░░░ 3/8  2 working  $2.40  ✕1  ■1   ! 2 waiting`. `▾` is open, `▸` folded. After the name: how far its cards are (eight cells, the done share filled down to the cell, then done of all; none before its leader posts a card), how many workers and helpers are not idle, what the project's agents have cost, `✕N` blocked and `■N` stopped agents when there are any, and, in the attention colour, how many items of this project wait for you. A folded project is one line, that line still shows what waits (quiet, not deaf) and ends with its loudest member, `▸ shop-api  2 working  $2.40   ! 1 waiting  ! codex-2`: the agent highest on the state ladder below, the first in order among equals. A pinned project (`:pin`) wears `▴` before its name and keeps the top of the salon; the pin is saved between runs.
 
 An agent's row:
 

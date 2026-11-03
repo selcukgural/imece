@@ -1450,26 +1450,73 @@ fn limit_span(lang: Lang, l: &Limit, now: u64) -> Span<'static> {
     }
 }
 
+/// A part of the header: what it says, whether it follows the one before
+/// without a `│` (the pot's rate, the clock), and how long it stays when
+/// the line is wider than the screen: the lowest `keep` goes first, the
+/// last of equals first; `KEEP` parts never go.
+pub(crate) struct HeadPart {
+    pub spans: Vec<Span<'static>>,
+    pub glued: bool,
+    pub keep: u8,
+}
+
+/// A header part that never goes: what waits for the person, the pause, a
+/// pot or a window running out.
+pub(crate) const KEEP: u8 = u8::MAX;
+
 fn header(f: &mut Frame, area: Rect, app: &App) {
+    let line = fit_header(header_parts(app), usize::from(area.width));
+    f.render_widget(Paragraph::new(line), area);
+}
+
+/// The header's parts, most wanted first: what waits for the person, the
+/// fleet, what happened in the last ten minutes, the cards, the pot, each
+/// vendor's tightest window, the researchers, the clock.
+pub(crate) fn header_parts(app: &App) -> Vec<HeadPart> {
     let w = &app.world;
     let t = app.lang.text();
-    let sep = || Span::styled(" │ ", dim());
+    let part = |spans: Vec<Span<'static>>, keep: u8| HeadPart {
+        spans,
+        glued: false,
+        keep,
+    };
+    let glued = |spans: Vec<Span<'static>>, keep: u8| HeadPart {
+        spans,
+        glued: true,
+        keep,
+    };
+    let mut parts = Vec::new();
     let open = w.open_inbox().len();
-    let mut spans = vec![Span::styled(" imece ", brand()), Span::raw(" ")];
+    if open > 0 {
+        parts.push(part(
+            vec![Span::styled(
+                fill(t.waiting_for_you, &[&open.to_string()]),
+                attention(),
+            )],
+            KEEP,
+        ));
+    }
+    let mut fleet_spans = Vec::new();
+    if let Some(spin) = app.head_spin() {
+        fleet_spans.push(Span::styled(format!("{spin} "), fg(pal().ok)));
+    }
+    fleet_spans.extend(fleet(app));
+    parts.push(part(fleet_spans, 8));
+    let pulse = pulse_spans(app.lang, w.pulse());
+    if !pulse.is_empty() {
+        parts.push(part(pulse, 6));
+    }
     // Live work starts without cards and without researchers: no "0/0".
     let cards = w.shown_cards().count();
     if cards > 0 {
-        spans.push(Span::raw(fill(
-            t.cards,
-            &[&w.cards_done().to_string(), &cards.to_string()],
-        )));
-        spans.push(sep());
+        parts.push(part(
+            vec![Span::raw(fill(
+                t.cards,
+                &[&w.cards_done().to_string(), &cards.to_string()],
+            ))],
+            5,
+        ));
     }
-    if let Some(spin) = app.head_spin() {
-        spans.push(Span::styled(format!("{spin} "), fg(pal().ok)));
-    }
-    spans.extend(fleet(app));
-    spans.push(sep());
     let mut rate = fill(t.per_hour, &[&dollars(w.rate_per_hour())]);
     if let Some(minutes) = w.pot_lasts() {
         rate += ", ";
@@ -1477,43 +1524,103 @@ fn header(f: &mut Frame, area: Rect, app: &App) {
     }
     let spent = fill(t.budget, &[&dollars(w.spent()), &dollars(w.budget)]);
     if w.pot_low() {
-        spans.push(Span::styled(format!("{spent} ({rate})"), attention()));
+        parts.push(part(
+            vec![Span::styled(format!("{spent} ({rate})"), attention())],
+            KEEP,
+        ));
     } else {
-        spans.push(Span::raw(spent));
-        spans.push(Span::styled(format!(" ({rate})"), dim()));
+        parts.push(part(vec![Span::raw(spent)], 4));
+        parts.push(glued(vec![Span::styled(format!(" ({rate})"), dim())], 2));
     }
-    // Each vendor's window nearest to full, loud when little is left.
+    // Each vendor's window nearest to full, kept when little is left.
     for l in w.tightest() {
-        spans.push(sep());
-        spans.push(limit_span(app.lang, &l, w.now()));
+        let keep = if l.used >= LIMIT_LOUD { KEEP } else { 1 };
+        parts.push(part(vec![limit_span(app.lang, &l, w.now())], keep));
     }
     if w.max_researchers > 0 {
-        spans.push(sep());
-        spans.push(Span::raw(fill(
-            t.researchers,
-            &[
-                &w.active_researchers().to_string(),
-                &w.max_researchers.to_string(),
-            ],
-        )));
-    }
-    if open > 0 {
-        spans.push(sep());
-        spans.push(Span::styled(
-            fill(t.waiting_for_you, &[&open.to_string()]),
-            attention(),
+        parts.push(part(
+            vec![Span::raw(fill(
+                t.researchers,
+                &[
+                    &w.active_researchers().to_string(),
+                    &w.max_researchers.to_string(),
+                ],
+            ))],
+            1,
         ));
     }
-    spans.push(Span::styled(format!("  {}", clock(w.tick)), dim()));
+    parts.push(glued(
+        vec![Span::styled(format!("  {}", clock(w.tick)), dim())],
+        3,
+    ));
     if app.paused {
-        spans.push(Span::styled(
-            t.paused,
-            Style::new().add_modifier(Modifier::REVERSED),
+        parts.push(glued(
+            vec![Span::styled(
+                t.paused,
+                Style::new().add_modifier(Modifier::REVERSED),
+            )],
+            KEEP,
         ));
     } else if app.speed > 1 {
-        spans.push(Span::styled(format!(" ×{}", app.speed), dim()));
+        parts.push(glued(
+            vec![Span::styled(format!(" ×{}", app.speed), dim())],
+            3,
+        ));
     }
-    f.render_widget(Paragraph::new(Line::from(spans)), area);
+    parts
+}
+
+/// The header in `width` columns: ` imece `, then the parts, a `│`
+/// before each that is not glued to the one before; while the line is
+/// wider, the part with the lowest `keep` goes, the last of equals first,
+/// so what matters most is never what the screen's edge cuts off.
+pub(crate) fn fit_header(mut parts: Vec<HeadPart>, width: usize) -> Line<'static> {
+    const BRAND: usize = 8;
+    const SEP: usize = 3;
+    let columns = |parts: &[HeadPart]| -> usize {
+        let text: usize = parts.iter().flat_map(|p| &p.spans).map(Span::width).sum();
+        let seps = parts.iter().skip(1).filter(|p| !p.glued).count();
+        BRAND + text + SEP * seps
+    };
+    while columns(&parts) > width {
+        let Some(i) = (0..parts.len())
+            .filter(|&i| parts[i].keep < KEEP)
+            .min_by_key(|&i| (parts[i].keep, std::cmp::Reverse(i)))
+        else {
+            break;
+        };
+        parts.remove(i);
+    }
+    let mut spans = vec![Span::styled(" imece ", brand()), Span::raw(" ")];
+    for (i, p) in parts.into_iter().enumerate() {
+        if i > 0 && !p.glued {
+            spans.push(Span::styled(" │ ", dim()));
+        }
+        spans.extend(p.spans);
+    }
+    Line::from(spans)
+}
+
+/// What happened in the last ten minutes, `10 min: 3 cards done · 2 Δ ·
+/// 14 messages`, a count of none left out; nothing when nothing did.
+pub(crate) fn pulse_spans(lang: Lang, p: Pulse) -> Vec<Span<'static>> {
+    let t = lang.text();
+    let said: Vec<String> = [
+        (t.pulse_done, p.done),
+        (t.pulse_changes, p.changes),
+        (t.pulse_messages, p.messages),
+    ]
+    .iter()
+    .filter(|(_, n)| *n > 0)
+    .map(|(words, n)| fill(words, &[&n.to_string()]))
+    .collect();
+    if said.is_empty() {
+        return Vec::new();
+    }
+    vec![
+        Span::styled(format!("{} ", t.pulse), dim()),
+        Span::raw(said.join(" · ")),
+    ]
 }
 
 /// The matches for the word being typed, the highlighted one standing
@@ -4540,6 +4647,264 @@ mod tests {
             a.status = Status::Idle;
         }
         app
+    }
+
+    fn spans_text(spans: &[Span<'_>]) -> String {
+        spans.iter().map(|s| s.content.as_ref()).collect()
+    }
+
+    #[test]
+    fn the_header_lets_the_least_wanted_part_go_first_and_never_a_kept_one() {
+        let part = |text: &str, glued: bool, keep: u8| HeadPart {
+            spans: vec![Span::raw(text.to_string())],
+            glued,
+            keep,
+        };
+        let parts = || {
+            vec![
+                part("AAAA", false, KEEP),
+                part("BB", false, 2),
+                part("CCC", false, 5),
+                part("dd", true, 2),
+                part("E", false, 1),
+            ]
+        };
+        let text = |width: usize| spans_text(&fit_header(parts(), width).spans);
+        // The brand's eight, twelve of text, three separators of three.
+        assert_eq!(text(29), " imece  AAAA │ BB │ CCCdd │ E");
+        assert_eq!(text(28), " imece  AAAA │ BB │ CCCdd", "the lowest goes");
+        assert_eq!(text(25), " imece  AAAA │ BB │ CCCdd");
+        assert_eq!(text(24), " imece  AAAA │ BB │ CCC", "of equals the last");
+        assert_eq!(text(23), " imece  AAAA │ BB │ CCC");
+        assert_eq!(text(22), " imece  AAAA │ CCC", "with its separator");
+        assert_eq!(text(18), " imece  AAAA │ CCC");
+        assert_eq!(text(17), " imece  AAAA");
+        assert_eq!(text(3), " imece  AAAA", "a kept part never goes");
+    }
+
+    #[test]
+    fn the_header_puts_what_waits_first_and_keeps_a_low_pot_and_a_full_window() {
+        let mut app = app_after(1, 2, 0, Lang::En);
+        let keeps = |app: &App, words: &str| -> Option<(usize, u8)> {
+            let parts = header_parts(app);
+            (parts.iter().enumerate())
+                .find(|(_, p)| spans_text(&p.spans).contains(words))
+                .map(|(i, p)| (i, p.keep))
+        };
+        // Nothing waits, nothing happened, no cards, no researchers, the
+        // demo's clock at its own speed: none of them is a part.
+        app.world.inbox.clear();
+        app.world.journal.clear();
+        app.world.cards.clear();
+        app.world.max_researchers = 0;
+        app.speed = 1;
+        for words in ["waiting for you", "10 min:", "cards", "researchers", "×"] {
+            assert_eq!(keeps(&app, words), None, "{words}");
+        }
+        app.world.max_researchers = 2;
+        assert_eq!(keeps(&app, "researchers").map(|k| k.1), Some(1));
+        app.speed = 2;
+        assert_eq!(keeps(&app, "×2").map(|k| k.1), Some(3));
+        let to = app.world.agents[0].id;
+        app.world.journal.push(Entry {
+            tick: app.world.tick,
+            event: Event::Sent {
+                from: 1,
+                to,
+                kind: MsgKind::Inform,
+                text: "x".into(),
+                id: 1,
+                re: None,
+            },
+        });
+        assert_eq!(keeps(&app, "10 min: 1 messages").map(|k| k.1), Some(6));
+        waiting(&mut app, 1);
+        assert_eq!(keeps(&app, "waiting for you"), Some((0, KEEP)));
+        assert_eq!(header_parts(&app)[1].keep, 8, "the fleet");
+        assert_eq!(keeps(&app, "spent").map(|k| k.1), Some(4));
+        assert_eq!(keeps(&app, "/h").map(|k| k.1), Some(2));
+        app.world.limits = vec![
+            Limit {
+                vendor: Vendor::Claude,
+                minutes: 300,
+                used: LIMIT_LOUD - 1,
+                resets_at: None,
+            },
+            Limit {
+                vendor: Vendor::Codex,
+                minutes: 300,
+                used: LIMIT_LOUD,
+                resets_at: None,
+            },
+        ];
+        assert_eq!(keeps(&app, "claude").map(|k| k.1), Some(1));
+        assert_eq!(keeps(&app, "codex").map(|k| k.1), Some(KEEP));
+        // A pot running low stays, its rate with it.
+        for a in &mut app.world.agents {
+            a.cost = 0;
+        }
+        app.world.tick = 1;
+        app.world.agents[0].cost = 100;
+        app.world.watch_spending();
+        app.world.budget = 100 + 299;
+        assert!(app.world.pot_low());
+        assert_eq!(keeps(&app, "spent").map(|k| k.1), Some(KEEP));
+        assert!(
+            spans_text(
+                &header_parts(&app)
+                    .iter()
+                    .find(|p| p.keep == KEEP && spans_text(&p.spans).contains("spent"))
+                    .unwrap()
+                    .spans
+            )
+            .contains("/h")
+        );
+        // On a narrow screen what waits and the fleet are still there.
+        let s = render(&app, 70, 20);
+        let top = s.lines().next().unwrap();
+        assert!(top.starts_with(" imece   ! 1 waiting for you"), "{top}");
+        assert!(top.contains("spent"), "{top}");
+    }
+
+    #[test]
+    fn the_pulse_counts_the_last_ten_minutes_of_cards_changes_and_messages() {
+        let mut app = app_after(2, 2, 0, Lang::En);
+        let w = &mut app.world;
+        let a0 = (w.agents.iter())
+            .find(|a| a.project == 0 && a.role == Role::Worker)
+            .unwrap()
+            .id;
+        let a1 = (w.agents.iter())
+            .find(|a| a.project == 1 && a.role == Role::Worker)
+            .unwrap()
+            .id;
+        let now = 1000;
+        w.tick = now;
+        let change = |agent| Event::ChangeReady {
+            agent,
+            files: 1,
+            added: 1,
+            removed: 0,
+        };
+        let sent = |from, to| Event::Sent {
+            from,
+            to,
+            kind: MsgKind::Ask,
+            text: "q".into(),
+            id: 1,
+            re: None,
+        };
+        let at = |tick, event| Entry { tick, event };
+        w.journal = vec![
+            at(now - RATE_WINDOW, change(a0)),
+            at(now - RATE_WINDOW, sent(a0, a1)),
+            at(now - RATE_WINDOW + 1, change(a0)),
+            at(now - RATE_WINDOW + 1, change(a1)),
+            at(now, sent(a0, a1)),
+            at(now, sent(a1, a0)),
+            at(now, Event::Failed { agent: a0 }),
+        ];
+        let card = |project, column, finished| Card {
+            id: 0,
+            project,
+            title: "c".into(),
+            owner: None,
+            column,
+            story: Vec::new(),
+            symbols: Vec::new(),
+            started: 0,
+            finished,
+        };
+        w.cards = vec![
+            card(0, Column::Done, now - RATE_WINDOW + 1),
+            card(0, Column::Done, now - RATE_WINDOW),
+            card(0, Column::Working, now),
+            card(1, Column::Done, now),
+        ];
+        assert_eq!(
+            w.pulse(),
+            Pulse {
+                done: 2,
+                changes: 2,
+                messages: 2
+            }
+        );
+        // A project put away counts for nothing.
+        w.projects[1].archived = Some(Archived {
+            at: now,
+            title: "old".into(),
+        });
+        assert_eq!(
+            w.pulse(),
+            Pulse {
+                done: 1,
+                changes: 1,
+                messages: 1
+            }
+        );
+    }
+
+    #[test]
+    fn the_pulse_says_only_what_happened() {
+        let p = |done, changes, messages| Pulse {
+            done,
+            changes,
+            messages,
+        };
+        assert!(pulse_spans(Lang::En, p(0, 0, 0)).is_empty());
+        assert_eq!(
+            spans_text(&pulse_spans(Lang::En, p(3, 0, 14))),
+            "10 min: 3 cards done · 14 messages"
+        );
+        assert_eq!(
+            spans_text(&pulse_spans(Lang::En, p(0, 2, 0))),
+            "10 min: 2 Δ"
+        );
+        assert_eq!(
+            spans_text(&pulse_spans(Lang::Tr, p(1, 2, 3))),
+            "10 dk: 1 kart bitti · 2 Δ · 3 mesaj"
+        );
+    }
+
+    #[test]
+    fn a_project_header_shows_how_far_its_own_cards_are() {
+        assert!(salon::cards_spans(0, 0).is_empty());
+        let bar = |done, all| spans_text(&salon::cards_spans(done, all));
+        assert_eq!(bar(3, 8), "  ▓▓▓░░░░░ 3/8");
+        assert_eq!(bar(1, 9), "  ░░░░░░░░ 1/9", "down to the cell");
+        assert_eq!(bar(7, 7), "  ▓▓▓▓▓▓▓▓ 7/7");
+        let mut app = app_after(2, 2, 0, Lang::En);
+        let card = |project, column| Card {
+            id: 0,
+            project,
+            title: "c".into(),
+            owner: None,
+            column,
+            story: Vec::new(),
+            symbols: Vec::new(),
+            started: 0,
+            finished: 0,
+        };
+        app.world.cards = vec![
+            card(0, Column::Done),
+            card(0, Column::Working),
+            card(0, Column::Waiting),
+            card(1, Column::Done),
+        ];
+        let rungs = app.rungs();
+        let line = |app: &App, p| spans_text(&salon::project_line(app, p, &rungs).spans);
+        assert!(
+            line(&app, 0).contains("  ▓▓░░░░░░ 1/3  "),
+            "{}",
+            line(&app, 0)
+        );
+        assert!(
+            line(&app, 1).contains("  ▓▓▓▓▓▓▓▓ 1/1  "),
+            "{}",
+            line(&app, 1)
+        );
+        app.world.cards.clear();
+        assert!(!line(&app, 0).contains('░'), "{}", line(&app, 0));
     }
 
     #[test]

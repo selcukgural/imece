@@ -8,9 +8,9 @@ description: imece'nin varsayılan ekranı - başlık satırı, projeye göre gr
 Salon, imece'nin açıldığı ve `1` ya da `:salon` ile geri döndüğünüz ekrandır. Bütün takımı bir bakışta gösterir: üstte bütçe ve filoyu sayan başlık satırı, solda lonca ağacı (her proje, lideri, işçileri ve yardımcıları), sağda iki yan panel: SENİ BEKLEYEN ve DEFTER (günlük). Pano ve kod haritası bir tuş uzakta (`2`, `3`); geri kalan her şey salonun üstünde açılır ve `esc` salonu geri getirir.
 
 ```text
- imece  3/9 kart │ ● 2 çalışıyor  ✓ 1 bitti │ $3.10 / $20.00 harcandı ($1.80/sa, ~9 sa kaldı) │ claude 5 sa: %48 kaldı, 1 sa 59 dk sonra yenilenir │  ! 2 seni bekliyor   14:02
+ imece   ! 2 seni bekliyor  │ ● 2 çalışıyor  ✓ 1 bitti │ 10 dk: 1 kart bitti · 1 Δ · 6 mesaj │ 3/9 kart │ $3.10 / $20.00 harcandı ($1.80/sa, ~9 sa kaldı) │ claude 5 sa: %48 kaldı, 1 sa 59 dk sonra yenilenir  14:02
 ┌ SALON ──────────────────────────────────────────┐┌ SENİ BEKLEYEN (2) ─────────────────────┐
-│▾ ▴ shop-api  2 çalışıyor  $2.40   ! 2 bekliyor  ││Δ 13:58 claude-1 bitirdi: parser (3 dosya, +41 −6) · ✓ bu ağaçta temiz geçti: cargo test
+│▾ ▴ shop-api  ▓▓▓░░░░░ 3/8  2 çalışıyor  $2.40 ! 2││Δ 13:58 claude-1 bitirdi: parser (3 dosya, +41 −6) · ✓ bu ağaçta temiz geçti: cargo test
 │  ◆ ▎lead      claude             koordine ediyor││⚑ 14:01 codex-2 onayını bekliyor: Bash: npm install left-pad
 │  ├ ● ▎claude-1 #3   Parse the manifest  testleri yazıyor · 2 dk  $1.10  ⎇ fix-parser ↑2 +12
 │  │ └ ● ▎claude-1.1                      düşünüyor… ← claude-1 "testleri ekle"   ⎇         │
@@ -27,16 +27,17 @@ Salon, imece'nin açıldığı ve `1` ya da `:salon` ile geri döndüğünüz ek
 
 ## Başlık satırı
 
-Tek satır, soldan sağa, parçalar `│` ile ayrılmış:
+Tek satır, parçalar `│` ile ayrılmış, en çok istenen önce. Ekran satırdan darsa önce en az istenen parça düşer; böylece ekranın kenarı sizi bekleyeni asla kesmez: önce araştırmacılar ve satıcıların pencereleri (dolmak üzere olan kalır), sonra bütçenin hızı, saat, bütçe, kartlar, son on dakika ve filo. Sizi bekleyenler, duraklatma ve azalan bir bütçe her zaman kalır.
 
 | Parça | Ne söyler |
 | --- | --- |
-| `3/9 kart` | biten kartlar / bütün kartlar; kart yokken gösterilmez (canlı bir başlangıçta lider kart asana dek yoktur). |
+| `! 2 seni bekliyor` | SENİ BEKLEYEN'deki açık ögeler, dikkat renginde. Terminalin başlığı aynı sayıyı taşır, `! imece · 2 seni bekliyor`, böylece arkadaki bir sekme de gösterir; başında açık projelerin durum merdiveninin tepesi vardır: `✕` takılan var, `!` sizi bekleyen var, `●` çalışan ya da başlayan var, her şey sakinse hiçbiri (bitmiş ama görülmemiş bir tur sakindir). Windows Terminal, kitty 0.39+, Ghostty 1.2+ ve iTerm2 3.6.6+ bunu sekmenin ilerleme çubuğu olarak da gösterir (OSC 9;4): takılınca dolu kırmızı, beklerken dolu sarı, çalışırken hareketli, sakinken yok. imece başlarken terminale adını sorar (XTVERSION) ve `TERM_PROGRAM`'a değil onun cevabına bakar, çünkü başka bir terminalden açılan terminal onu miras alır; bazı terminaller bu diziyi bildirim sandığı için başkalarına gönderilmez. tmux içinde gönderilir: tmux 3.8 onu Ghostty ve iTerm2'ye iletir, daha eski bir tmux düşürür. `IMECE_PROGRESS=on` ya da `off` ile kendiniz karar verirsiniz. imece bitince ya da terminali bir `!` komutuna bırakınca kabuğunuzun başlığı geri gelir, çubuk kalkar. |
 | `● 2 çalışıyor  ✓ 1 bitti  ✕ 1 takıldı` | filo: tur ortasındaki (token harcayan) agent'lar, bir turu bitirmiş ama o zamandan beri açmadığınız agent'lar, bloke olan ya da oturumu duran agent'lar. Sıfır olan sayı yazılmaz; hiçbiri yoksa `hepsi boşta` der. Sizi bekleyenler filoda değildir: kendi sayısı vardır. |
+| `10 dk: 3 kart bitti · 2 Δ · 14 mesaj` | son on dakikada olanlar: biten kartlar, incelemenize gelen değişiklikler, agent'ların bus üzerinden birbirine gönderdiği mesajlar; sıfır olan sayı yazılmaz, hiçbir şey olmadıysa hiç görünmez. Defterin yalnız en yeni satırlarından on dakika öncesine kadar okunur. |
+| `3/9 kart` | biten kartlar / bütün kartlar; kart yokken gösterilmez (canlı bir başlangıçta lider kart asana dek yoktur). |
 | `$3.10 / $20.00 harcandı ($1.80/sa, ~9 sa kaldı)` | kese (bütçe): bütün agent'ların birlikte harcadığı, son on dakikanın saat başına maliyeti ve bu hızla bütçenin ne kadar dayanacağı. Yarım saatten az kaldığında parçanın tamamı dikkat rengine döner ve günlük bunu bir kez söyler. |
 | `claude 5 sa: %48 kaldı, 1 sa 59 dk sonra yenilenir` | her satıcı planının dolmaya en yakın kullanım penceresi, Claude ve Codex oturumlarının bildirdiği gibi (Gemini bildirmez); %90'dan itibaren dikkat renginde. Bir aboneliğin sınırı takımı bütçeden önce durdurabilir. Çalıştırmalar arasında saklanmaz: oturum ilk turunda yeniden söyler. |
 | `araştırmacı 1/4` | çalışan araştırmacılar / üst sınır; yalnız bir üst sınır varken (`--demo --researchers N`; araştırmacılar canlıda yapılmadı). |
-| `! 2 seni bekliyor` | SENİ BEKLEYEN'deki açık ögeler, dikkat renginde. Terminalin başlığı aynı sayıyı taşır, `! imece · 2 seni bekliyor`, böylece arkadaki bir sekme de gösterir; başında açık projelerin durum merdiveninin tepesi vardır: `✕` takılan var, `!` sizi bekleyen var, `●` çalışan ya da başlayan var, her şey sakinse hiçbiri (bitmiş ama görülmemiş bir tur sakindir). Windows Terminal, kitty 0.39+, Ghostty 1.2+ ve iTerm2 3.6.6+ bunu sekmenin ilerleme çubuğu olarak da gösterir (OSC 9;4): takılınca dolu kırmızı, beklerken dolu sarı, çalışırken hareketli, sakinken yok. imece başlarken terminale adını sorar (XTVERSION) ve `TERM_PROGRAM`'a değil onun cevabına bakar, çünkü başka bir terminalden açılan terminal onu miras alır; bazı terminaller bu diziyi bildirim sandığı için başkalarına gönderilmez. tmux içinde gönderilir: tmux 3.8 onu Ghostty ve iTerm2'ye iletir, daha eski bir tmux düşürür. `IMECE_PROGRESS=on` ya da `off` ile kendiniz karar verirsiniz. imece bitince ya da terminali bir `!` komutuna bırakınca kabuğunuzun başlığı geri gelir, çubuk kalkar. |
 | `14:02` | saat. |
 
 Bütçenin ve pencerelerin nasıl sayıldığı [bütçe ve sınırlar](../concepts/budget-and-limits.md) sayfasında.
@@ -45,7 +46,7 @@ Bütçenin ve pencerelerin nasıl sayıldığı [bütçe ve sınırlar](../conce
 
 Agent'lar projeye göre gruplanır. Her proje bir başlık satırıdır; altında lideri, sonra işçileri, her işçinin altında yardımcıları. Projeler açıldıkları sırayla gelir, sabitlenenler önce.
 
-Bir proje başlığı: `▾ shop-api  2 çalışıyor  $2.40  ✕1  ■1   ! 2 bekliyor`. `▾` açık, `▸` katlı. Adın ardından: boşta olmayan işçi ve yardımcı sayısı, projenin agent'larının harcadığı, varsa `✕N` bloke ve `■N` durmuş agent ve dikkat renginde bu projenin sizi bekleyen öge sayısı. Katlı bir proje tek satırdır, o satır da bekleyenleri gösterir (sessiz ama sağır değil) ve en yüksek üyesiyle biter, `▸ shop-api  2 çalışıyor  $2.40   ! 1 bekliyor  ! codex-2`: aşağıdaki durum merdiveninde en üstteki agent, eşitler arasında sıradaki ilk. Sabitlenmiş bir proje (`:pin`) adının önünde `▴` taşır ve salonun en üstünde kalır; sabitleme çalıştırmalar arasında saklanır.
+Bir proje başlığı: `▾ shop-api  ▓▓▓░░░░░ 3/8  2 çalışıyor  $2.40  ✕1  ■1   ! 2 bekliyor`. `▾` açık, `▸` katlı. Adın ardından: kartlarının ne kadar ilerlediği (sekiz hücre, biten payı aşağı yuvarlanarak dolu, ardından biten / hepsi; lideri kart asmadan önce yok), boşta olmayan işçi ve yardımcı sayısı, projenin agent'larının harcadığı, varsa `✕N` bloke ve `■N` durmuş agent ve dikkat renginde bu projenin sizi bekleyen öge sayısı. Katlı bir proje tek satırdır, o satır da bekleyenleri gösterir (sessiz ama sağır değil) ve en yüksek üyesiyle biter, `▸ shop-api  2 çalışıyor  $2.40   ! 1 bekliyor  ! codex-2`: aşağıdaki durum merdiveninde en üstteki agent, eşitler arasında sıradaki ilk. Sabitlenmiş bir proje (`:pin`) adının önünde `▴` taşır ve salonun en üstünde kalır; sabitleme çalıştırmalar arasında saklanır.
 
 Bir agent'ın satırı:
 

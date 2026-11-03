@@ -1076,6 +1076,15 @@ pub enum Fresh {
     Refused(String),
 }
 
+/// What happened lately ([`World::pulse`]): cards done, changes that came
+/// for review, messages on the bus.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Pulse {
+    pub done: usize,
+    pub changes: usize,
+    pub messages: usize,
+}
+
 /// An event of the whole guild, for the journal.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Event {
@@ -2426,6 +2435,28 @@ impl World {
             .find(|s| s.0 <= from)
             .map_or(self.run_spent, |s| s.1);
         self.spent().saturating_sub(then) * 3600 / (RATE_WINDOW * SECONDS_PER_TICK)
+    }
+
+    /// What happened in the last [`RATE_WINDOW`]: the cards done, the
+    /// changes that came for review and the messages on the bus, of the
+    /// projects not put away. It reads the journal from its newest line
+    /// back to the window's start only, so a long journal costs nothing.
+    pub fn pulse(&self) -> Pulse {
+        let recent = |tick: u64| tick + RATE_WINDOW > self.tick;
+        let here = |a: AgentId| self.projects[self.agents[a].project].archived.is_none();
+        let mut p = Pulse::default();
+        for e in self.journal.iter().rev().take_while(|e| recent(e.tick)) {
+            match e.event {
+                Event::ChangeReady { agent, .. } if here(agent) => p.changes += 1,
+                Event::Sent { from, .. } if here(from) => p.messages += 1,
+                _ => {}
+            }
+        }
+        p.done = self
+            .shown_cards()
+            .filter(|c| c.column == Column::Done && recent(c.finished))
+            .count();
+        p
     }
 
     /// How many minutes the pot lasts at [`World::rate_per_hour`]; none

@@ -31,3 +31,5 @@ mostly end a card with an item for the person, so the first plain
 to it). B1, the full state ladder with a folded group showing its loudest
 member, is record 61; the `✓` of a done, not seen row is its rung's
 glyph there (`rung_glyph`).
+Since record 98 the header puts what waits for the person first and the
+fleet second, and lets the least wanted parts go on a narrow screen.
