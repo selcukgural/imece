@@ -90,6 +90,7 @@ Gelenekler vim'inkidir: `h` `j` `k` `l` hareket ve katlama, `gg` ve `G` uçlara,
 | `W`  `S` | `:next` bekleyen, her yerden · `:defer` bunu ertele ve sıradakini aç |
 | `a`  `r` | onayla / uygula / bir kez izin ver · reddet (sizi bekleyenlerde, bir de odakta: aşağıda) |
 | `A`  `:allow` | sizi bekleyenlerdeki bir istekte ya da ajanının odağında: proje için komutlarına artık hep evet (başka yerde `A` arşivlerdir) |
+| `e`  `:yes` | sizi bekleyenlerdeki bir istekte ya da ajanının odağında: o ajan turunu bitirene dek ne isterse evet; bu arada satırında `✓ tur` yazar |
 | `enter` | ögeyi aç: bir değişikliğin diff'i, bir sorunun konuşması, bir yanıt (bununla okunur) |
 
 ## Bir konuşma
@@ -118,7 +119,7 @@ Gelenekler vim'inkidir: `h` `j` `k` `l` hareket ve katlama, `gg` ve `G` uçlara,
 | `l` `h`  `→` `←` | odakta: eldeki kaydın tamamı · yine ilk sekiz satırına kes (`… +N · l hepsini gösterir` kaç satır daha olduğunu söyler) |
 | `za`  `zM`  `zR` | odakta: kaydı değiştir · hepsini kes · hepsinin tamamı |
 | `enter` `esc` | ham akış · geri |
-| `a`  `A`  `r` | odakta ya da ham akışta, ajanı sizi beklerken: isteğinde (durumunun alıntıladığı), bir kez izin ver · bundan sonra hep evet · reddet; değişikliğinde, uygula · reddet. Asla sizi bekleyenlerde seçili olanı değil. Karar verilecek bir şey varken alt satır bu tuşları önce gösterir; yoksa `a` ve `r` bunu söyler, `A` arşivlerdir |
+| `a`  `e`  `A`  `r` | odakta ya da ham akışta, ajanı sizi beklerken: isteğinde (durumunun alıntıladığı), bir kez izin ver · bu tur ne isterse evet · bundan sonra hep evet · reddet; değişikliğinde, uygula · reddet. Asla sizi bekleyenlerde seçili olanı değil. Karar verilecek bir şey varken alt satır bu tuşları önce gösterir; yoksa `a` ve `r` bunu söyler, `A` arşivlerdir |
 
 Odağın `klasör` satırı ajanın nerede çalıştığını söyler: lider için çalışma kopyası, işçi, yardımcı ya da solo için worktree'si (`· ~/src/kule için worktree`), git yoksa klasörün kendisi. Salonda açık bir projenin satırı da klasörüyle biter.
 
@@ -201,6 +202,7 @@ Odağın `klasör` satırı ajanın nerede çalıştığını söyler: lider iç
 | `:now` | `U` |
 | `:recall` | `H` |
 | `:allow` | `A` (bir istekte) |
+| `:yes` | `e` (bir istekte) |
 | `:fold` / `:unfold` | `zM` / `zR` |
 | `:trace` / `:talk` | `t` / `v` |
 | `:mark` | `m` |

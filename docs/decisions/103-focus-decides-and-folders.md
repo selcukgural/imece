@@ -33,8 +33,8 @@ allow`, so `A` was never seen, which is why the asks "kept coming").
 **Why asks still repeat.** `a` is a yes for one call, by design. The
 asks in the person's report could not have had a rule either:
 `sqlite3 -readonly …` starts with an option and `gh issue list --repo
-"$(git … )"` has a `$(…)`, both refused by record 89 on purpose. Whether
-to widen that is the person's call (asked on 2026-11-04).
+"$(git … )"` has a `$(…)`, both refused by record 89 on purpose. The person
+chose a yes for one agent until its turn ends: record 104.
 
 **The folder.** The focus has a `folder` line under the status
 (`App::folder_of`): a leader works in the checkout, a worker, its

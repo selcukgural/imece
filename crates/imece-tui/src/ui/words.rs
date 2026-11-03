@@ -92,6 +92,11 @@ pub fn event(lang: Lang, w: &World, e: &Event) -> String {
             if *allowed { t.ev_allowed } else { t.ev_refused },
             &[name(w, *agent), &one_line(what)],
         ),
+        Event::TurnYes { agent } => fill(t.ev_turn_yes, &[name(w, *agent)]),
+        Event::TurnYesEnded { agent, allowed } => fill(
+            t.ev_turn_yes_ended,
+            &[name(w, *agent), &allowed.to_string()],
+        ),
         Event::Standing {
             leader,
             rules,
@@ -1452,6 +1457,29 @@ mod tests {
             format!("{name}: artık hep evet yok: npm run …")
         );
         assert_eq!(w.projects[0].allowed, [make]);
+    }
+
+    #[test]
+    fn a_yes_for_a_turn_is_journaled_in_both_languages() {
+        let w = crate::live::testing::team(1);
+        let given = Event::TurnYes { agent: 1 };
+        let ended = Event::TurnYesEnded {
+            agent: 1,
+            allowed: 7,
+        };
+        assert_eq!(
+            event(Lang::En, &w, &given),
+            "you say yes to everything claude-1 asks until its turn ends"
+        );
+        assert_eq!(
+            event(Lang::En, &w, &ended),
+            "claude-1's turn ended, and your yes for it: it let 7 asks go on"
+        );
+        assert_eq!(
+            event(Lang::Tr, &w, &ended),
+            "claude-1 turunu bitirdi, onun için evetin de bitti: 7 isteğe sormadan izin verdi"
+        );
+        assert!(event(Lang::Tr, &w, &given).starts_with("claude-1 turu bitene dek"));
     }
 
     #[test]

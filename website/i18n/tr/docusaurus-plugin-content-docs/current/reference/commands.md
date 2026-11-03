@@ -83,6 +83,7 @@ description: imece'nin aldığı her `:` komutu; argümanları, karşılığı o
 | `:waiting` | `w` | | | | N bekliyor |
 | `:welcome` | — | | | | |
 | `:why [@NAME]` | — | | | | eldeki ajan |
+| `:yes [@NAME]` | `e` | | | | eldeki ajan |
 
 Canlıda `:pause`, `:faster` ve `:slower` menüde yer almaz. Hareket eden tuşların (`j k`, `gg G`, `enter`, `esc`, `tab`) ve seçili satıra etki eden tuşların (`a r c n x`) `:` adı yoktur: yazmak tuştan yavaş olurdu ve satırın adlandırılması gerekirdi.
 
@@ -371,6 +372,10 @@ Doğrudan SENİ BEKLEYEN'e, `w` gibi. Menü notu kaç kalemin beklediğini söyl
 
 Ajanı bu duruma neyin getirdiği, alt satırda: merdivendeki basamağı (boşta, bitti ve bakılmadı, başlıyor, çalışıyor, onayını bekliyor, takıldı), ne zamandan beri ve onu oraya getiren günlük satırı, günlüğün kendi sözcükleriyle: `claude-1: takıldı · 14:02 itibarıyla · claude-1 durdu: oturum bitti`. Ad yoksa `:peek`'teki gibi eldeki ajan. "İtibarıyla", en eski kaleminin seni beklemeye başladığı an, yoksa durumunun son değiştiği andır; satır o andan ya da öncesinden en yeni günlük satırıdır. Günlükte artık yoksa (toplanmış, ya da ajan önceki bir çalışmadan gelmiş) bunu söyler. Yalnız baktığı için bir arşivin görünümünde de çalışır.
 
+
+### `:yes [@NAME]`
+
+Ajan turunu bitirene dek ne isterse evet der, sizi bekleyenlerdeki ya da odağındaki isteğinde `e` gibi; ad yoksa eldeki ajan. Beklediği istek ve diğer açık istekleri şimdi sürer, o ajanın turu (ya da oturumu) bitene dek sonraki her isteği de: komutlar, düzenlemeler, getirmeler, satıcısının sorduğu ne varsa. İzi `allowed by your yes for this turn: Bash: …` der, evet sürdükçe satırı ve odağı `✓ tur` der, günlük de ne zaman verildiğini ve kaç isteğe sormadan izin verip bittiğini söyler (`claude-1 turunu bitirdi, onun için evetin de bitti: 7 isteğe sormadan izin verdi`). Başka bir ajanın istekleri sizi beklemeye devam eder. Ajanın bekleyen bir isteği yoksa bunu söyler (`claude-1 şimdi bir evet istemiyor: …`). Demo da canlı oturumlar da. Bkz. [onaylar](../concepts/approvals-and-questions.md#bu-tur-evet).
 ## Ayrıca bkz.
 
 - [Komut satırı](cli.md): aynı şeylerin başlangıçtaki bayrakları

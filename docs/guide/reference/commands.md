@@ -83,6 +83,7 @@ A line that starts with `:` is a command to imece, not a message to an agent. Yo
 | `:waiting` | `w` | | | | N waiting |
 | `:welcome` | — | | | | |
 | `:why [@NAME]` | — | | | | the agent at hand |
+| `:yes [@NAME]` | `e` | | | | the agent at hand |
 
 Live, `:pause`, `:faster` and `:slower` are left out of the menu. Keys that move (`j k`, `gg G`, `enter`, `esc`, `tab`) and keys that act on the selected row (`a r c n x`) have no `:` name: typing them would be slower than the key, and the row would have to be named.
 
@@ -370,6 +371,10 @@ The first-run window: what imece is, the coding agents on this machine with thei
 ### `:why [@NAME]`
 
 What put the agent in its state, on the bottom line: its rung of the ladder (idle, done and not seen, starting, working, waiting for you, stuck), since when, and the journal's line that put it there, in the journal's words: `claude-1: stuck · since 14:02 · claude-1 stopped: the session ended`. No name is the agent at hand, as for `:peek`. "Since" is when its oldest item began waiting for you, or else when its state last changed; the line is its newest journal line from then or before. When the journal no longer has one (tidied, or the agent came from an earlier run), it says so. It only looks, so it runs in an archive's view too.
+
+### `:yes [@NAME]`
+
+Says yes to everything the agent asks until its turn ends, as `e` on its ask in waiting for you or on its focus; no name is the agent at hand. The ask it waits on and its other open ones go on now, and so does every later ask of that agent until its turn ends (or its session does): commands, edits, fetches, whatever its vendor asks about. Its trace says `allowed by your yes for this turn: Bash: …`, its row and focus say `✓ turn` while the yes holds, and the journal says when it was given and when it ended, with how many asks it let go on (`claude-1's turn ended, and your yes for it: it let 7 asks go on`). Another agent's asks still wait for you. With no ask of the agent waiting it says so (`claude-1 asks for no yes now: …`). Both the demo and live sessions. See [approvals](../concepts/approvals-and-questions.md#a-yes-for-this-turn).
 
 ## See also
 

@@ -66,6 +66,8 @@ On a focus `a`, `r` and `A` decide that agent's own ask (record 103),
 and waiting for you's row now names `A` (`a yes · A from now on · r
 no`).
 
+A yes for one agent until its turn ends is record 104 (`e`, `:yes`).
+
 Not done: a rule for one agent or for this run only, an expiry, a rule
 for a file edit or a fetch, rules across projects, a wider match than
 program + first argument.

@@ -1504,6 +1504,14 @@ impl Sim {
                 Role::Leader | Role::Solo => {}
             }
         }
+        // A yes for a turn ends when the agent's work stops, as live's
+        // ends with the turn.
+        for id in 0..w.agents.len() {
+            let a = &w.agents[id];
+            if a.turn_yes.is_some() && (a.gone || !a.status.busy()) {
+                w.turn_over(id);
+            }
+        }
     }
 
     /// The usage windows of the plans whose sessions run, as live Claude
@@ -2663,6 +2671,11 @@ impl Sim {
             a.trace(t, format!("allowed by your yes from now on: {what}"));
             return;
         }
+        if w.allowed_this_turn(id) {
+            let a = &mut w.agents[id];
+            a.trace(t, format!("allowed by your yes for this turn: {what}"));
+            return;
+        }
         w.asks_you(id, what);
         w.agents[id].trace(t, format!("approve? {what}"));
     }
@@ -2683,6 +2696,27 @@ impl Sim {
         w.decided(item, true);
         self.go_on_allowed(w, p);
         Ok(added)
+    }
+
+    /// The person says yes to everything the agent of approval `item`
+    /// asks until its turn ends, as live's [`crate::live::Live::yes_turn`]:
+    /// the ask is allowed, the agent's other open asks too (counted).
+    pub fn yes_turn(&mut self, w: &mut World, item: usize) -> bool {
+        let Some(id) = (w.inbox.get(item))
+            .filter(|i| i.open && i.kind == InboxKind::Approval)
+            .map(|i| i.agent)
+        else {
+            return false;
+        };
+        w.yes_this_turn(id);
+        w.decided(item, true);
+        for other in 0..w.inbox.len() {
+            let i = &w.inbox[other];
+            if i.open && i.kind == InboxKind::Approval && i.agent == id && w.allowed_this_turn(id) {
+                w.decided(other, true);
+            }
+        }
+        true
     }
 
     /// Every open ask of project `p` its standing yes now covers is
@@ -4989,6 +5023,60 @@ diff --git a/b.rs b/b.rs
         s.worktree(&mut w, worker, 0);
         assert_eq!(w.journal.len(), n, "nothing said");
         assert_eq!(w.agents[worker].stand.behind, 3, "nor moved");
+    }
+
+    #[test]
+    fn a_yes_for_the_turn_lets_the_demo_agents_asks_go_until_its_work_stops() {
+        let (mut w, mut s, worker, _) = one_at_work();
+        let lead = w.projects[0].leader;
+        w.asks_you(worker, "Bash: npm run a");
+        w.asks_you(lead, "Bash: make lead");
+        w.asks_you(worker, "Edit: src/x.ts");
+        let first = w.inbox.len() - 3;
+        // Not an open approval: nothing.
+        assert!(!s.yes_turn(&mut w, 999));
+        w.asked_you(worker, "Which?");
+        let question = w.inbox.len() - 1;
+        assert!(!s.yes_turn(&mut w, question));
+        assert_eq!(w.agents[worker].turn_yes, None);
+        assert!(s.yes_turn(&mut w, first));
+        let open: Vec<String> = (w.open_inbox().iter())
+            .map(|&i| w.inbox[i].detail.clone())
+            .collect();
+        assert_eq!(open, ["Bash: make lead", "Which?"]);
+        assert_eq!(w.agents[worker].turn_yes, Some(1));
+        // Its next asks go on, counted, whatever they are.
+        let asks = w.inbox.len();
+        for _ in 0..5 {
+            s.approval(&mut w, worker);
+        }
+        assert_eq!(w.inbox.len(), asks, "none asked");
+        assert_eq!(w.agents[worker].turn_yes, Some(6));
+        assert!(
+            w.agents[worker]
+                .trace
+                .iter()
+                .any(|l| l.contains("allowed by your yes for this turn: "))
+        );
+        // Its work stops: the yes ends, said.
+        w.agents[worker].status = Status::Idle;
+        s.step(&mut w);
+        assert_eq!(w.agents[worker].turn_yes, None);
+        assert!(w.journal.iter().any(|e| e.event
+            == Event::TurnYesEnded {
+                agent: worker,
+                allowed: 6
+            }));
+        // A busy one keeps it; a gone one does not.
+        w.agents[worker].turn_yes = Some(0);
+        w.agents[worker].status = Status::Working;
+        s.step(&mut w);
+        assert!(w.agents[worker].turn_yes.is_some() || !w.agents[worker].status.busy());
+        w.agents[worker].turn_yes = Some(0);
+        w.agents[worker].gone = true;
+        w.agents[worker].status = Status::Working;
+        s.step(&mut w);
+        assert_eq!(w.agents[worker].turn_yes, None);
     }
 
     #[test]

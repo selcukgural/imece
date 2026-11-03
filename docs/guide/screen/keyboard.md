@@ -90,6 +90,7 @@ The conventions are vim's: `h` `j` `k` `l` move and fold, `gg` and `G` go to the
 | `W`  `S` | `:next` waiting, from anywhere · `:defer` this one and open the next |
 | `a`  `r` | approve / apply / allow once · reject / refuse (in waiting for you, and on a focus: below) |
 | `A`  `:allow` | on an ask in waiting for you or on its agent's focus: yes from now on to its commands for the project (elsewhere `A` is the archives) |
+| `e`  `:yes` | on an ask in waiting for you or on its agent's focus: yes to everything that agent asks until its turn ends; its row says `✓ turn` meanwhile |
 | `enter` | open the item: a change's diff, a question's conversation, a reply (read by it) |
 
 ## A conversation
@@ -118,7 +119,7 @@ The conventions are vim's: `h` `j` `k` `l` move and fold, `gg` and `G` go to the
 | `l` `h`  `→` `←` | in a focus: the entry at hand whole · cut to its first eight lines again (`… +N · l shows all` says how many more) |
 | `za`  `zM`  `zR` | in a focus: the entry toggled · all cut · all whole |
 | `enter` `esc` | the raw stream · back |
-| `a`  `A`  `r` | in a focus or the raw stream, when its agent waits for you: on its ask (the one its status quotes), allow once · yes from now on · refuse; on its change, apply · reject. Never what is selected in waiting for you. The footer shows these keys first while there is something to decide; with nothing, `a` and `r` say so and `A` is the archives |
+| `a`  `e`  `A`  `r` | in a focus or the raw stream, when its agent waits for you: on its ask (the one its status quotes), allow once · yes to all it asks this turn · yes from now on · refuse; on its change, apply · reject. Never what is selected in waiting for you. The footer shows these keys first while there is something to decide; with nothing, `a` and `r` say so and `A` is the archives |
 
 The focus's `folder` line says where the agent works: the checkout for a leader, its worktree for a worker, a helper or a solo (`· worktree of ~/src/kule`), the folder itself without git. The salon's line of an open project ends with its folder too.
 
@@ -201,6 +202,7 @@ The focus's `folder` line says where the agent works: the checkout for a leader,
 | `:now` | `U` |
 | `:recall` | `H` |
 | `:allow` | `A` (on an ask) |
+| `:yes` | `e` (on an ask) |
 | `:fold` / `:unfold` | `zM` / `zR` |
 | `:trace` / `:talk` | `t` / `v` |
 | `:mark` | `m` |
