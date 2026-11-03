@@ -120,6 +120,7 @@ impl Live {
             self.woken[id] = found.woken.get(id).copied().unwrap_or(0);
             self.posted[id] = found.posted.get(id).copied().unwrap_or(0);
             self.sessions[id] = found.sessions.get(id).cloned().flatten();
+            self.forks[id] = found.forks.get(id).copied().flatten();
             // The session that asked is gone with the process before.
             w.close_approvals(id);
             if w.agents[id].gone {
@@ -240,6 +241,7 @@ impl Live {
             notes: &self.notes,
             inflight: &self.inflight,
             sessions: &self.sessions,
+            forks: &self.forks,
             posts: &self.posts,
             offered: &self.offered,
             changes: &self.changes,
@@ -263,6 +265,17 @@ impl Live {
         resumed: bool,
     ) -> (String, Option<usize>) {
         let a = &w.agents[id];
+        if let Some(from) = self.forks[id].filter(|_| resumed) {
+            let (me, from) = (&a.name, &w.agents[from].name);
+            let text = format!(
+                "You are {me}, a fork of {from}: this session goes on from {from}'s, so you \
+                 remember everything {from} did and was told. From now on you are {me}, a \
+                 worker of your own: you work in a worktree of your own, which started with \
+                 {from}'s uncommitted change, and {from} goes on in its own. The person forked \
+                 you to try another way; what follows says which."
+            );
+            return (cut(&text, MAX_BRIEFING).to_string(), None);
+        }
         let mut lines = vec![if resumed {
             "imece started again since your last turn; this session goes on where it was, \
              so you remember everything up to then. Since then:"
@@ -493,6 +506,26 @@ impl Live {
     /// themselves when one is gone, before any turn). Said once, at the
     /// wake; a session that is gone is forgotten.
     pub(super) fn resumable(&mut self, w: &World, id: AgentId) -> Option<Resumable> {
+        // A fork goes on from its worker's session as it is at the wake,
+        // found where that worker runs; one that is gone is no fork.
+        if let Some(from) = self.forks[id] {
+            let r = self.sessions[from].clone();
+            let there = r.as_ref().is_some_and(|r| {
+                imece_agent::valid_uuid(&r.session)
+                    && match w.agents[id].vendor {
+                        Vendor::Claude => {
+                            claude::transcript(&self.claude_home, &self.cwd_of(w, from), &r.session)
+                                .is_file()
+                        }
+                        Vendor::Codex => true,
+                        Vendor::Gemini | Vendor::Qwen | Vendor::Local => false,
+                    }
+            });
+            if !there {
+                self.forks[id] = None;
+            }
+            return r.filter(|_| there);
+        }
         let r = self.sessions[id].clone()?;
         let there = imece_agent::valid_uuid(&r.session)
             && match w.agents[id].vendor {
@@ -622,6 +655,7 @@ mod tests {
                 Vec::new(),
             ],
             notes: vec![vec!["a note".into()], Vec::new(), Vec::new(), Vec::new()],
+            forks: Vec::new(),
             sessions: vec![
                 Some(Resumable {
                     session: "686c6d27-d50b-4ae2-ad6a-159bf2984671".into(),

@@ -41,3 +41,7 @@ instructions say where it started. The demo's second worker of a
 project starts from `#41` and is never moved. Not done: a solo's start
 point, choosing it from imece's command line, other forges' pull
 request refs (GitLab's `merge-requests/N/head`).
+
+The person makes a worker too, from a worker: `:fork` (record 94) adds
+one named as `hire` names workers (`worker_name`, shared), counted in
+`--agents`, its start point the forked worker's HEAD.

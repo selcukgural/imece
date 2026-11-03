@@ -39,6 +39,7 @@ description: imece'nin aldığı her `:` komutu; argümanları, karşılığı o
 | `:faster` | `+` | | evet | | hız, `×2` |
 | `:fold` | `zM` | | | | |
 | `:forget [@NAME]` | — | `:f` | | `$` | eldeki ajan |
+| `:fork [@NAME]` | — | | | `$` | eldeki ajan |
 | `:goto [NAME]` | `&` | | | | |
 | `:history [WORDS]` | `^r` | | | | |
 | `:help` | `?` | | | | |
@@ -169,6 +170,10 @@ Salonda her projeyi ve her işçinin yardımcılarını katlar, `zM` gibi; başk
 ### `:forget [@NAME]`
 
 Ajana satıcı oturumunu unutturur (`:f`), istendikten on saniye sonra: alt satır geri sayar, `u` ([`:undo`](#undo)) tutar. Sonra: çalışan oturum biter (çalıştırması öldürülür, bitmemiş bir istem kesilmiş olarak tutulur, uyanışta anlatılır ve yeniden çalıştırılmaz), hatırlanan oturum satıcının ondan tuttuğuyla gider (Claude'un transkripti, Codex'in iş parçacığı, Gemini'nin sohbet dosyaları), ajan kendisiyle konuşulana dek uyur ve sonraki mesajı tam brifingle yeni bir oturum başlatır. Ad yoksa eldeki ajan. Flaş: `claude-2 oturumunu unuttu; sonraki mesaj yeni bir oturum başlatır, kaldığı yer anlatılır`; unutacak şeyi olmayan ya da gitmiş bir ajan için reddedilir: `claude-2 oturumunu koruyor: it has no session to forget`. Günlük: `claude-2 oturumunu unutturdun; yeni bir oturumla başlıyor, kaldığı yer anlatılacak`. `--fresh` başlangıçta her ajan için yapar. `$`: yeni oturum bütün brifingi yeniden öder. Bkz. [oturumlar](../concepts/sessions.md).
+
+### `:fork [@NAME]`
+
+`NAME` işçisinden (yoksa eldekinden) başka bir yolu denemek için devam eden yeni bir işçi yapar, o işçi kendi yolunda sürerken: yenisi onun konuşmasına (satıcı oturumunun bir çatalı: Claude Code'un `--fork-session`'ı, Codex'in `thread/fork`'u) ve işlenmemiş değişikliğine, izlenmeyen dosyalar dahil, o işçinin HEAD'inde yapılan kendi çalışma ağacında sahip olur. İşe alınan bir işçi gibi satıcısının adıyla adlandırılır (`claude-3`), aynı modelde çalışır, `--agents` içinde sayılır ve turları ortak kasadan çıkar (satıcı ilk oturumun maliyetini de sayar; imece yalnız çatalın turlarını sayar). Satırı seçilir ve komut satırı `@claude-3 ` ile açılır, `claude-3, claude-1 ajanının çatalı: ne denemesi gerektiğini yazın` flaşıyla; yazdığınız ilk turudur ve çatal ancak o zaman olur: oturum ve değişiklik o anki halleriyle alınır. Günlük `claude-3, claude-1 ajanından çatallandı: …` der; değişikliği kendi Δ'sıdır. Nedeniyle reddedilir: işçi olmayan her şey, bir Gemini işçisi (CLI'ının henüz çatalı yok), henüz oturumu olmayan ya da tur ortasındaki bir işçi, dolu bir ekip, ya da yerinde olmayan bir çalışma ağacı. Çatallanamayan bir oturum yeni bir oturum olarak sürer, nerede olduğu söylenerek; günlük nedenini söyler. Demo da çatallar, `--agents` sınırı olmadan.
 
 ### `:goto [NAME]`
 

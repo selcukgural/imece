@@ -200,6 +200,10 @@ impl Live {
         self.inflight[id].clear();
         self.floor[id] = 0;
         self.resuming[id] = None;
+        // A fork whose session ended before it started (a refusal, a
+        // process gone at its first prompt) goes on as a new session in
+        // the worktree it has, never forking its worker again later.
+        self.forks[id] = None;
         self.placing[id] = None;
     }
 
@@ -425,12 +429,25 @@ impl Live {
         // Where the line on what its worktree holds goes in the prompt.
         let mut held = None;
         if std::mem::take(&mut self.remembered[id]) {
-            let had = self.sessions[id].is_some();
-            let resumed = self.resumable(w, id);
+            let had = self.sessions[id].is_some() || self.forks[id].is_some();
+            let mut resumed = self.resumable(w, id);
+            // A fork's new session gets an id of imece's choosing, checked
+            // when it starts; without one there is no fork.
+            let fork = match self.forks[id] {
+                Some(_) => imece_agent::new_uuid().ok(),
+                None => None,
+            };
+            if self.forks[id].is_some() && fork.is_none() {
+                self.forks[id] = None;
+                resumed = None;
+            }
             if let Some(r) = &resumed {
+                // A fork reports what its worker's session had cost as
+                // well (record 94): the floor as for a resume.
                 self.floor[id] = r.spent;
                 self.resuming[id] = Some(Attempt {
                     session: r.session.clone(),
+                    fork,
                     text: text.clone(),
                     notes: self.notes[id].clone(),
                 });
@@ -613,6 +630,9 @@ impl Live {
         let (program, model) = (vendor.program.clone(), self.models[id].clone());
         let name = format!("imece {}", a.name);
         let resume = self.resume_of(id);
+        let fork = self.resuming[id].as_ref().and_then(|r| r.fork.clone());
+        // A fork's worktree, made now, starts with its worker's change.
+        let carry = self.forks[id].map(|from| (w.agents[from].name.clone(), self.cwd_of(w, from)));
         // In millionths of a dollar: what is left of the budget.
         let budget = w.budget.saturating_sub(w.spent()) * 100;
         let kind = a.vendor;
@@ -636,6 +656,15 @@ impl Live {
                 let (cwd, placed, copied, set_up) = if direct {
                     (repo, None, Vec::new(), setup::Done::None)
                 } else {
+                    // A fork's is made where its worker's HEAD is now, the
+                    // change it takes being of now too.
+                    let start = match &carry {
+                        Some((from, path)) => Some(
+                            worktree::resolve(path, "HEAD")
+                                .map_err(|e| format!("{from}'s worktree: {e}"))?,
+                        ),
+                        None => start,
+                    };
                     let w = worktree::ensure(&repo, &root, &tree, start.as_deref())
                         .map_err(|e| e.to_string())?;
                     let copied = copy::into(&repo, &w.path, &copies, COPY_BUDGET);
@@ -645,6 +674,10 @@ impl Live {
                         w.placed,
                         worktree::Placed::Fresh | worktree::Placed::From { .. }
                     );
+                    if let (true, Some((from, path))) = (made, &carry) {
+                        worktree::carry(path, &w.path)
+                            .map_err(|e| format!("could not carry {from}'s change: {e}"))?;
+                    }
                     let set_up = plan.carry_out(made, &repo, &w.path, &running);
                     (w.path, Some(w.placed), copied, set_up)
                 };
@@ -684,6 +717,7 @@ impl Live {
                                 system,
                                 mcp,
                                 resume: resume.map(|r| r.session),
+                                fork: fork.is_some(),
                             },
                             on,
                         )
@@ -709,6 +743,7 @@ impl Live {
                                     resume: resume.map(|r| claude::Resume {
                                         session: r.session,
                                         spent: r.spent,
+                                        fork,
                                     }),
                                 },
                                 on,

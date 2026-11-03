@@ -50,3 +50,8 @@ resumed session leaves `spent` as a guess (Claude's counter resets, the
 floor does not), a stopped session (tools differ etc.) is still the one
 resumed at the next start. Live check:
 `IMECE_LIVE_CLAUDE=1 cargo test -p imece-agent -- --ignored live_claude`.
+
+A fork (record 94) resumes another agent's session into a new one:
+`Resume.fork` adds `--fork-session --session-id NEW`; the transcript is
+checked where that agent runs, the floor is its spent (a fork reports the
+old session's cost too, probe of 2026-11-03), and `init` must say NEW.

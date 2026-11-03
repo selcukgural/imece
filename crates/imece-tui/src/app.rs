@@ -3809,7 +3809,7 @@ impl App {
                 let mark = if p.pinned { "▴ " } else { "" };
                 Some(format!("{mark}{}", p.name))
             }
-            "forget" | "talk" | "trace" | "peek" | "why" => self
+            "forget" | "fork" | "talk" | "trace" | "peek" | "why" => self
                 .agent_at_hand()
                 .map(|id| self.world.agents[id].name.clone()),
             "next" | "waiting" => {
@@ -3851,7 +3851,7 @@ impl App {
             }),
             _ => None,
         };
-        let bill = matches!(name, "forget" | "open" | "solo" | "commit");
+        let bill = matches!(name, "forget" | "fork" | "open" | "solo" | "commit");
         match (value, bill) {
             (Some(v), true) => format!("({v}) $"),
             (Some(v), false) => format!("({v})"),
@@ -4163,6 +4163,7 @@ impl App {
             "undo" => self.undo(),
             "rename" => self.rename_project(arg),
             "forget" => self.forget_agent(arg),
+            "fork" => self.fork_agent(arg),
             "goto" => self.goto(arg),
             "history" => self.search_history(arg),
             "recall" => self.search_all(arg),
@@ -6069,6 +6070,35 @@ impl App {
         match can {
             Ok(()) => self.wait_grace(Undoable::Forget(id)),
             Err(why) => self.forget_refused(id, why),
+        }
+    }
+
+    /// `:fork [@NAME]` (record 94): a new worker goes on from the one
+    /// named, else the one at hand, to try another way; its row selected
+    /// and the line opened to it, to say what. Refused with why.
+    fn fork_agent(&mut self, arg: &str) {
+        let Some(id) = self.agent_named(arg) else {
+            return;
+        };
+        let forked = match &mut self.engine {
+            Engine::Live(live) => live.fork(&mut self.world, id),
+            Engine::Sim(sim) => sim.fork(&mut self.world, id),
+            Engine::View(_) => return self.read_only(),
+        };
+        let t = self.lang.text();
+        let was = self.world.agents[id].name.clone();
+        match forked {
+            Ok(new) => {
+                let name = self.world.agents[new].name.clone();
+                self.go_agent(new);
+                self.typing = true;
+                self.noting = None;
+                self.input = format!("@{name} ");
+                self.after = 0;
+                self.menu = None;
+                self.flash(fill(t.forked, &[&name, &was]));
+            }
+            Err(why) => self.flash(fill(t.fork_refused, &[&was, &why])),
         }
     }
 
@@ -8130,6 +8160,101 @@ pub(crate) mod tests {
         up(&mut app);
         app.on_key(KeyEvent::from(KeyCode::Esc));
         assert!(!app.typing && app.recall.is_none() && app.input.is_empty());
+    }
+
+    #[test]
+    fn fork_makes_a_new_worker_from_the_one_at_hand_and_opens_the_line_to_it() {
+        let (mut app, w) = four_idle();
+        let said = |app: &mut App| app.flash.take().map(|f| f.0).unwrap_or_default();
+        let id = w[0];
+        // The one Claude worker, numbered past its count: a fork is
+        // claude-2, counted, not claude-1, the first name free.
+        for (i, &o) in w.iter().enumerate() {
+            app.world.agents[o].vendor = Vendor::Codex;
+            app.world.agents[o].name = format!("codex-{}", i + 1);
+        }
+        app.world.agents[id].vendor = Vendor::Claude;
+        app.world.agents[id].name = "claude-7".into();
+        // Workers are counted, not the rest: none of them is Claude.
+        let lead = app.world.projects[0].leader;
+        app.world.agents[lead].vendor = Vendor::Codex;
+        let name = app.world.agents[id].name.clone();
+        let lead = app.world.projects[0].leader;
+        app.command(&format!("fork @{}", app.world.agents[lead].name));
+        assert_eq!(
+            said(&mut app),
+            format!(
+                "{} does not fork: only a worker forks: it has a conversation and a worktree \
+                 of its own",
+                app.world.agents[lead].name
+            )
+        );
+        app.selected = Sel::Agent(id);
+        assert_eq!(app.command_note("fork"), format!("({name}) $"));
+        app.command("fork");
+        assert_eq!(
+            said(&mut app),
+            format!("{name} does not fork: it has no session to fork yet: tell it something first")
+        );
+        let Engine::Sim(sim) = &mut app.engine else {
+            unreachable!()
+        };
+        sim.told(&mut app.world, id, "make it fast").unwrap();
+        app.command("fork");
+        assert_eq!(
+            said(&mut app),
+            format!("{name} does not fork: it is mid-turn: fork it when its turn ends")
+        );
+        app.world.agents[id].status = Status::Idle;
+        app.world.agents[id].vendor = Vendor::Gemini;
+        app.command("fork");
+        assert_eq!(
+            said(&mut app),
+            format!(
+                "{name} does not fork: gemini sessions can not be forked (Gemini CLI 0.65.0's \
+                 ACP has no fork)"
+            )
+        );
+        app.world.agents[id].vendor = Vendor::Claude;
+        let before = app.world.agents.len();
+        app.command("fork");
+        assert_eq!(app.world.agents.len(), before + 1);
+        let new = before;
+        let fork = app.world.agents[new].name.clone();
+        assert_eq!(fork, "claude-2");
+        let a = &app.world.agents[new];
+        assert_eq!(
+            (a.role, a.vendor, a.project, a.status),
+            (Role::Worker, Vendor::Claude, 0, Status::Idle)
+        );
+        assert_eq!(
+            said(&mut app),
+            format!("{fork} is a fork of {name}: write what it should try")
+        );
+        assert!(app.typing && app.menu.is_none());
+        assert_eq!(app.input, format!("@{fork} "));
+        assert_eq!(app.selected, Sel::Agent(new));
+        assert!(app.world.journal.iter().any(|e| e.event
+            == Event::Forked {
+                from: id,
+                agent: new
+            }));
+        assert!(
+            app.world.agents[new]
+                .trace
+                .back()
+                .unwrap()
+                .contains(&format!("forked from {name}"))
+        );
+        // What it is told goes on in its own session, as a copy.
+        type_in(&mut app, "use a cache");
+        app.on_key(key(KeyCode::Enter));
+        assert_eq!(app.world.agents[new].status, Status::Working);
+        assert!(!app.world.journal.iter().any(|e| e.event
+            == Event::Restarted {
+                agent: new,
+                why: Fresh::NoSession
+            }));
     }
 
     #[test]
