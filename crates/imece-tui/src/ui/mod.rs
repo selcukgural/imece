@@ -5657,6 +5657,19 @@ mod tests {
                 .all(|&(id, _)| app.world.agents[id].project == p)
         );
         app.world.projects[other].closed = false;
+        // A project put out of the salon is not there either, open as it is.
+        app.settled_projects.insert(other);
+        assert!(
+            timeline::agents(&app)
+                .iter()
+                .all(|&(id, _)| app.world.agents[id].project == p)
+        );
+        app.settled_projects.clear();
+        assert!(
+            timeline::agents(&app)
+                .iter()
+                .any(|&(id, _)| app.world.agents[id].project == other)
+        );
         app.settled.clear();
         app.world.agents[h2].gone = false;
         // `]` in the salon is a panel, not the scale.
@@ -5776,6 +5789,9 @@ mod tests {
         assert!(row.starts_with(&clock(t - 39)), "{row}");
         assert_eq!(&row[18..23], clock(t - 21));
         assert!(row.ends_with("now"), "{row}");
+        // Five minutes a column: the middle clock is 21 columns back, not 17.
+        let row = timeline::axis(Lang::En, 10_000, 40, 60);
+        assert_eq!(&row[18..23], clock(10_000 - 21 * 60), "{row}");
         let row = timeline::axis(Lang::Tr, t, 40, 6);
         assert!(
             row.starts_with(&clock(t - 39 * 6)) && row.ends_with("şimdi"),
