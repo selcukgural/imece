@@ -13871,6 +13871,13 @@ pub(crate) mod tests {
         let t0 = Instant::now();
         app.step();
         assert!(app.changed, "the clock moved");
+        // The file list the first step asked git for comes back first.
+        let deadline = t0 + Duration::from_secs(60);
+        while !matches!(&app.engine, Engine::Live(l) if crate::live::testing::git_quiet(l)) {
+            assert!(Instant::now() < deadline, "git never answered");
+            std::thread::sleep(Duration::from_millis(10));
+            app.step();
+        }
         // A step that leaves the clock where it was says what came.
         let step = |app: &mut App, said: Option<&str>| {
             for _ in 0..3 {
