@@ -41,6 +41,7 @@
 //! instructions it was started with; the ones passed again are not taken.
 
 use std::collections::{BTreeSet, HashMap, VecDeque};
+use std::ffi::OsString;
 use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -1344,13 +1345,92 @@ fn spawn(spec: &Spec, off: &Off, tx: Sender<Msg>, generation: u64) -> io::Result
     })
 }
 
+/// Codex's home as Codex finds it: `CODEX_HOME`, else `~/.codex`.
+fn home_of(codex_home: Option<OsString>, home: Option<OsString>) -> Option<PathBuf> {
+    codex_home
+        .filter(|h| !h.is_empty())
+        .map(PathBuf::from)
+        .or_else(|| {
+            home.filter(|h| !h.is_empty())
+                .map(|h| Path::new(&h).join(".codex"))
+        })
+}
+
+/// Codex's home for the sessions imece starts, which get its environment.
+fn codex_home() -> Option<PathBuf> {
+    home_of(std::env::var_os("CODEX_HOME"), std::env::var_os("HOME"))
+}
+
+/// The rules files Codex may load for a session in `cwd`: its home's
+/// `rules/` and the `.codex/rules/` of `cwd` and every folder above it
+/// (a project's, when the person trusts it; a worktree of a trusted
+/// checkout is trusted too). What rules allow is not in what Codex
+/// reports about a session, so every `*.rules` entry counts, whatever it
+/// holds, and a `rules` folder imece cannot read counts as one.
+fn rules_files(home: Option<&Path>, cwd: &Path) -> Vec<PathBuf> {
+    let dirs = home
+        .map(|h| h.join("rules"))
+        .into_iter()
+        .chain(cwd.ancestors().map(|d| d.join(".codex").join("rules")))
+        .collect::<BTreeSet<_>>();
+    let mut found = BTreeSet::new();
+    for dir in dirs {
+        if std::fs::symlink_metadata(&dir).is_err() {
+            continue;
+        }
+        let Ok(entries) = std::fs::read_dir(&dir) else {
+            found.insert(dir);
+            continue;
+        };
+        for e in entries {
+            let Ok(e) = e else {
+                found.insert(dir.clone());
+                continue;
+            };
+            let name = e.file_name().to_string_lossy().to_lowercase();
+            if name.ends_with(".rules") {
+                found.insert(e.path());
+            }
+        }
+    }
+    found.into_iter().collect()
+}
+
+/// Why a session at `spec` may not start with the rules files Codex
+/// would load from `home` and its folder: under strict and standard
+/// imece answers for what the session runs with, and rules are not part
+/// of what it checks; under open the person's own setup stands.
+fn rules_refusal(spec: &Spec, home: Option<&Path>) -> Option<String> {
+    if spec.confine == Confine::Open {
+        return None;
+    }
+    let found = rules_files(home, &spec.cwd);
+    let first = found.first()?;
+    let more = match found.len() - 1 {
+        0 => String::new(),
+        n => format!(" (and {n} more)"),
+    };
+    Some(format!(
+        "{}{more}: Codex rules are not part of what \
+         imece checks under --confine {}; remove the file, or start with \
+         --confine open",
+        first.display(),
+        spec.confine.wire()
+    ))
+}
+
 impl Session {
     /// Starts the session. `on` gets its events on the driver thread; the
     /// last one is [`Event::Stopped`], unless the session was terminated.
+    /// Refused before Codex starts when its choice is unknown, or when
+    /// rules files are there under strict or standard ([`rules_files`]).
     pub fn start(spec: &Spec, on: impl FnMut(Event) + Send + 'static) -> io::Result<Session> {
         let choice = spec.choice.as_deref().map(crate::Choice::parse);
         if let Err(why) = choice.unwrap_or_default().check(PROGRAM, EFFORTS) {
             return Err(io::Error::new(io::ErrorKind::InvalidInput, why));
+        }
+        if let Some(why) = rules_refusal(spec, codex_home().as_deref()) {
+            return Err(io::Error::new(io::ErrorKind::PermissionDenied, why));
         }
         let (tx, rx) = mpsc::channel();
         let child = spawn(spec, &Off::default(), tx.clone(), 0)?;
@@ -1754,6 +1834,135 @@ mod tests {
             let e = Session::start(&s, |_| {}).err().expect("refused");
             assert_ne!(e.kind(), io::ErrorKind::InvalidInput, "{fine:?}: {e}");
         }
+    }
+
+    #[test]
+    fn codex_s_home_is_codex_home_else_dot_codex_in_home() {
+        let some = |s: &str| Some(OsString::from(s));
+        assert_eq!(home_of(some("/c"), some("/h")), Some(PathBuf::from("/c")));
+        assert_eq!(home_of(None, some("/h")), Some(PathBuf::from("/h/.codex")));
+        assert_eq!(
+            home_of(some(""), some("/h")),
+            Some(PathBuf::from("/h/.codex"))
+        );
+        assert_eq!(home_of(None, some("")), None);
+        assert_eq!(home_of(None, None), None);
+        // What the sessions get: this process's own.
+        assert_eq!(
+            codex_home(),
+            home_of(std::env::var_os("CODEX_HOME"), std::env::var_os("HOME"))
+        );
+        assert!(codex_home().is_some_and(|h| h.is_absolute()));
+    }
+
+    /// A fresh folder for one test, under the temp directory.
+    fn fresh(name: &str) -> PathBuf {
+        let d = std::env::temp_dir().join(format!("imece-codex-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        d
+    }
+
+    #[test]
+    fn rules_files_are_looked_for_in_codex_s_home_and_above_the_folder() {
+        let d = fresh("rules");
+        let (home, repo) = (d.join("home"), d.join("repo"));
+        let cwd = repo.join("src").join("deep");
+        std::fs::create_dir_all(&cwd).unwrap();
+        assert!(rules_files(Some(&home), &cwd).is_empty(), "none anywhere");
+        std::fs::create_dir_all(home.join("rules")).unwrap();
+        std::fs::create_dir_all(repo.join(".codex/rules")).unwrap();
+        std::fs::write(home.join("rules/README.md"), "notes").unwrap();
+        assert!(
+            rules_files(Some(&home), &cwd).is_empty(),
+            "empty folders and other files are nothing"
+        );
+        std::fs::write(home.join("rules/default.rules"), "").unwrap();
+        std::fs::write(repo.join(".codex/rules/Team.RULES"), "").unwrap();
+        std::fs::create_dir_all(cwd.join(".codex/rules")).unwrap();
+        std::fs::write(cwd.join(".codex/rules/x.rules"), "").unwrap();
+        assert_eq!(
+            rules_files(Some(&home), &cwd),
+            [
+                home.join("rules/default.rules"),
+                repo.join(".codex/rules/Team.RULES"),
+                cwd.join(".codex/rules/x.rules"),
+            ]
+        );
+        assert_eq!(
+            rules_files(None, &repo),
+            [repo.join(".codex/rules/Team.RULES")],
+            "no home: the folders alone, and nothing below the folder"
+        );
+        // The home met again above the folder is looked at once.
+        assert_eq!(
+            rules_files(Some(&cwd.join(".codex")), &cwd).len(),
+            2,
+            "x.rules once, Team.RULES"
+        );
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn a_rules_folder_imece_cannot_read_counts_as_rules() {
+        use std::os::unix::fs::PermissionsExt;
+        let d = fresh("unread");
+        let rules = d.join("home/rules");
+        std::fs::create_dir_all(&rules).unwrap();
+        std::fs::set_permissions(&rules, std::fs::Permissions::from_mode(0o000)).unwrap();
+        let readable = std::fs::read_dir(&rules).is_ok(); // root reads anything
+        let found = rules_files(Some(&d.join("home")), &d);
+        std::fs::set_permissions(&rules, std::fs::Permissions::from_mode(0o700)).unwrap();
+        if !readable {
+            assert_eq!(found, [rules]);
+        }
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn rules_files_stop_a_session_under_strict_and_standard_not_open() {
+        let d = fresh("refuse");
+        let home = d.join("home");
+        let mut s = at(Confine::Standard, true);
+        s.cwd = d.join("repo");
+        std::fs::create_dir_all(&s.cwd).unwrap();
+        assert_eq!(rules_refusal(&s, Some(&home)), None, "nothing there");
+        std::fs::create_dir_all(home.join("rules")).unwrap();
+        std::fs::write(home.join("rules/default.rules"), "").unwrap();
+        let why = rules_refusal(&s, Some(&home)).expect("refused");
+        assert_eq!(
+            why,
+            format!(
+                "{}: Codex rules are not part of what imece checks under --confine \
+                 standard; remove the file, or start with --confine open",
+                home.join("rules/default.rules").display()
+            )
+        );
+        std::fs::create_dir_all(s.cwd.join(".codex/rules")).unwrap();
+        std::fs::write(s.cwd.join(".codex/rules/a.rules"), "").unwrap();
+        std::fs::write(s.cwd.join(".codex/rules/b.rules"), "").unwrap();
+        let why = rules_refusal(&s, Some(&home)).expect("refused");
+        assert!(why.contains("default.rules (and 2 more): "), "{why}");
+        s.confine = Confine::Strict;
+        let why = rules_refusal(&s, Some(&home)).expect("refused");
+        assert!(why.contains("under --confine strict;"), "{why}");
+        s.confine = Confine::Open;
+        assert_eq!(
+            rules_refusal(&s, Some(&home)),
+            None,
+            "the person's setup stands"
+        );
+
+        // Before Codex starts: the program is not even looked for.
+        s.program = "/nonexistent/codex".into();
+        s.confine = Confine::Standard;
+        let e = Session::start(&s, |_| {}).err().expect("refused");
+        assert_eq!(e.kind(), io::ErrorKind::PermissionDenied, "{e}");
+        assert!(e.to_string().contains("a.rules (and 1 more): "), "{e}");
+        s.confine = Confine::Open;
+        let e = Session::start(&s, |_| {}).err().expect("no program");
+        assert_ne!(e.kind(), io::ErrorKind::PermissionDenied, "{e}");
+        let _ = std::fs::remove_dir_all(&d);
     }
 
     #[test]
