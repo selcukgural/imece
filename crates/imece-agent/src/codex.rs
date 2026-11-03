@@ -43,6 +43,8 @@
 use std::collections::{BTreeSet, HashMap, VecDeque};
 use std::io;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -1325,6 +1327,9 @@ enum Msg {
 /// A running Codex session.
 pub struct Session {
     tx: Sender<Msg>,
+    /// Codex's process now: a second start (to turn off what it found)
+    /// is a new one.
+    pid: Arc<AtomicU32>,
 }
 
 fn spawn(spec: &Spec, off: &Off, tx: Sender<Msg>, generation: u64) -> io::Result<Child> {
@@ -1349,10 +1354,11 @@ impl Session {
         }
         let (tx, rx) = mpsc::channel();
         let child = spawn(spec, &Off::default(), tx.clone(), 0)?;
+        let pid = Arc::new(AtomicU32::new(child.pid()));
         let spec = spec.clone();
-        let driver = tx.clone();
+        let driver = (tx.clone(), Arc::clone(&pid));
         thread::spawn(move || drive(spec, child, rx, driver, on));
-        Ok(Session { tx })
+        Ok(Session { tx, pid })
     }
 
     /// Gives the agent a prompt. A busy thread takes it after the running
@@ -1413,6 +1419,10 @@ impl crate::Agent for Session {
 
     fn decide(&mut self, request: &str, allow: bool) -> io::Result<()> {
         Session::decide(self, request, allow)
+    }
+
+    fn pid(&self) -> Option<u32> {
+        Some(self.pid.load(Ordering::SeqCst))
     }
 }
 
@@ -1511,7 +1521,13 @@ fn refused(rx: &Receiver<Msg>, generation: u64, e: &io::Error) -> String {
 
 /// Runs the protocol against the Codex process, starting it a second time
 /// when the first start found things to name off.
-fn drive(spec: Spec, child: Child, rx: Receiver<Msg>, tx: Sender<Msg>, mut on: impl FnMut(Event)) {
+fn drive(
+    spec: Spec,
+    child: Child,
+    rx: Receiver<Msg>,
+    (tx, pid): (Sender<Msg>, Arc<AtomicU32>),
+    mut on: impl FnMut(Event),
+) {
     // A local drops before the parameters: the commands' receiver goes
     // before the events' sender, so once the events end a command finds
     // nobody to take it (#74).
@@ -1542,7 +1558,10 @@ fn drive(spec: Spec, child: Child, rx: Receiver<Msg>, tx: Sender<Msg>, mut on: i
                     protocol = Protocol::new(&spec, Some(off.clone()));
                     protocol.queue = queue;
                     match spawn(&spec, &off, tx.clone(), generation) {
-                        Ok(c) => child = Some(c),
+                        Ok(c) => {
+                            pid.store(c.pid(), Ordering::SeqCst);
+                            child = Some(c);
+                        }
                         Err(e) => {
                             on(Event::Stopped(format!("{}: {e}", spec.program)));
                             return;
@@ -2870,7 +2889,12 @@ mod tests {
     fn compact_is_the_one_command_a_session_takes_and_the_rest_is_refused() {
         let (tx, rx) = mpsc::channel();
         // Through the trait, as the screen drives every vendor.
-        let mut s: Box<dyn crate::Agent> = Box::new(Session { tx });
+        let mut s: Box<dyn crate::Agent> = Box::new(Session {
+            tx,
+            pid: Arc::new(AtomicU32::new(7)),
+        });
+        // The process it runs in, through the trait too.
+        assert_eq!(s.pid(), Some(7));
         s.command(" /compact ").unwrap();
         assert!(matches!(rx.try_recv(), Ok(Msg::Compact)));
         for line in ["/clear", "/cost", "compact", ""] {
@@ -3856,11 +3880,36 @@ done"#
             "turn/completed",
             json!({ "turn": { "id": "u1", "status": "completed" } }),
         )];
-        fake(&dir, "fake-codex.second", &fake_body(&on, &turn));
+        // The second start says its process's number.
+        let second = format!("echo $$ > pid.txt\n{}", fake_body(&on, &turn));
+        fake(&dir, "fake-codex.second", &second);
         let mut s = spec(false);
         s.cwd = cwd;
         s.program = program;
-        let got = run(&s, &["ping"]);
+        let (tx, rx) = mpsc::channel();
+        let mut session: Box<dyn crate::Agent> = Box::new(
+            Session::start(&s, move |e| {
+                let _ = tx.send(e);
+            })
+            .unwrap(),
+        );
+        let first_pid = session.pid();
+        session.prompt("ping").unwrap();
+        let mut got = Vec::new();
+        loop {
+            let e = rx.recv_timeout(Duration::from_secs(20)).expect("in time");
+            if matches!(e, Event::Started { .. }) {
+                // The session is the second process now, not the first.
+                let said = std::fs::read_to_string(dir.join("pid.txt")).unwrap();
+                assert_eq!(session.pid(), said.trim().parse().ok());
+                assert_ne!(session.pid(), first_pid);
+            }
+            let end = matches!(e, Event::Stopped(_));
+            got.push(e);
+            if end {
+                break;
+            }
+        }
         assert!(
             matches!(&got[0], Event::Started { .. }),
             "the second start succeeded: {got:?}"
@@ -4041,6 +4090,9 @@ done"#
         let calls: Arc<Mutex<Vec<Value>>> = Arc::default();
         let seen = Arc::clone(&calls);
         let sock = cwd.join("a.sock");
+        let owner = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0));
+        let kin: std::sync::Arc<std::sync::Mutex<Vec<bool>>> = Default::default();
+        let (owner_of, kin_of) = (std::sync::Arc::clone(&owner), std::sync::Arc::clone(&kin));
         let _server = crate::mcp::Server::bind(
             &sock,
             vec![crate::mcp::Tool {
@@ -4056,7 +4108,13 @@ done"#
                     "required": ["to", "type", "body"],
                 }),
             }],
-            move |_, args| {
+            move |_, args, peer| {
+                // The caller is of the session's process, as imece's bus
+                // takes it: the relay its vendor started.
+                let root = owner.load(std::sync::atomic::Ordering::SeqCst);
+                kin.lock()
+                    .unwrap()
+                    .push(peer.is_some_and(|p| crate::child::descends(p, root)));
                 seen.lock().unwrap().push(args.clone());
                 Ok("delivered".into())
             },
@@ -4083,6 +4141,10 @@ done"#
             let _ = tx.send(e);
         })
         .unwrap();
+        owner_of.store(
+            crate::Agent::pid(&session).unwrap(),
+            std::sync::atomic::Ordering::SeqCst,
+        );
         let mut session = session;
         session
             .prompt(
@@ -4096,6 +4158,10 @@ done"#
                 .recv_timeout(Duration::from_secs(180))
                 .expect("codex answers within three minutes");
             eprintln!("live codex: {e:?}");
+            // A second start is a new process: before its turn calls.
+            if let Some(pid) = crate::Agent::pid(&session) {
+                owner_of.store(pid, std::sync::atomic::Ordering::SeqCst);
+            }
             let end = matches!(e, Event::TurnDone { .. } | Event::Stopped(_));
             got.push(e);
             if end {
@@ -4103,6 +4169,11 @@ done"#
             }
         }
         drop(session);
+        let kin = kin_of.lock().unwrap().clone();
+        assert!(
+            !kin.is_empty() && kin.iter().all(|k| *k),
+            "every call came from the session's process: {kin:?}"
+        );
         assert!(
             matches!(&got[0], Event::Started { .. }),
             "the checks passed: {got:?}"

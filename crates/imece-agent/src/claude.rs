@@ -984,6 +984,10 @@ impl crate::Agent for Session {
         Session::prompt(self, text)
     }
 
+    fn pid(&self) -> Option<u32> {
+        Some(self.child.pid())
+    }
+
     fn command(&mut self, line: &str) -> io::Result<()> {
         Session::command(self, line)
     }
@@ -2236,6 +2240,9 @@ mod tests {
             })
             .unwrap(),
         );
+        // The process imece started, a child of this one.
+        let pid = s.pid().expect("a process");
+        assert_eq!(crate::child::parent_of(pid), Some(std::process::id()));
         s.prompt(prompt).unwrap();
         let mut out = Vec::new();
         loop {
@@ -2860,7 +2867,7 @@ sleep 5"#
         let _server = Server::bind(
             &sock,
             vec![tool("send"), tool(APPROVE_TOOL)],
-            move |name, args| {
+            move |name, args, _| {
                 if name != APPROVE_TOOL {
                     return Ok("sent".into());
                 }

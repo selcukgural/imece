@@ -118,6 +118,39 @@ fn error(id: Value, code: i64, message: &str) -> Value {
     json!({ "jsonrpc": "2.0", "id": id, "error": { "code": code, "message": message } })
 }
 
+/// The process on the other end of `conn`, as the system tells it when
+/// it connected (macOS `LOCAL_PEERPID`, Linux `SO_PEERCRED`).
+pub fn peer_pid(conn: &UnixStream) -> Option<u32> {
+    use std::os::fd::AsRawFd;
+    #[cfg(target_os = "macos")]
+    let (level, name, mut pid) = (libc::SOL_LOCAL, libc::LOCAL_PEERPID, 0 as libc::pid_t);
+    #[cfg(target_os = "linux")]
+    let (level, name, mut cred) = (
+        libc::SOL_SOCKET,
+        libc::SO_PEERCRED,
+        libc::ucred {
+            pid: 0,
+            uid: 0,
+            gid: 0,
+        },
+    );
+    #[cfg(target_os = "macos")]
+    let (ptr, size) = ((&raw mut pid).cast(), std::mem::size_of::<libc::pid_t>());
+    #[cfg(target_os = "linux")]
+    let (ptr, size) = ((&raw mut cred).cast(), std::mem::size_of::<libc::ucred>());
+    let mut len = libc::socklen_t::try_from(size).ok()?;
+    let got = unsafe { libc::getsockopt(conn.as_raw_fd(), level, name, ptr, &raw mut len) };
+    #[cfg(target_os = "linux")]
+    let pid = cred.pid;
+    peer_told(got, pid)
+}
+
+/// The peer `getsockopt` told, when it answered `got`: none on an error
+/// or a pid no process has.
+fn peer_told(got: libc::c_int, pid: libc::pid_t) -> Option<u32> {
+    (got == 0 && pid > 0).then(|| pid.cast_unsigned())
+}
+
 /// Serves tools on a Unix socket until dropped.
 pub struct Server {
     path: PathBuf,
@@ -126,11 +159,13 @@ pub struct Server {
 
 impl Server {
     /// Listens on `path`, which must not exist yet. Every connection is
-    /// served on its own thread with `call`.
+    /// served on its own thread with `call`, which also gets the process
+    /// on the other end ([`peer_pid`]; none when the system will not
+    /// say), for the caller to decide whose it is.
     pub fn bind(
         path: &Path,
         tools: Vec<Tool>,
-        call: impl Fn(&str, &Value) -> Answer + Send + Sync + 'static,
+        call: impl Fn(&str, &Value, Option<u32>) -> Answer + Send + Sync + 'static,
     ) -> io::Result<Server> {
         let listener = UnixListener::bind(path)?;
         let closing = Arc::new(AtomicBool::new(false));
@@ -150,8 +185,9 @@ impl Server {
                 let (tools, call, open) =
                     (Arc::clone(&tools), Arc::clone(&call), Arc::clone(&open));
                 thread::spawn(move || {
+                    let peer = peer_pid(&conn);
                     if let Ok(w) = conn.try_clone() {
-                        serve(&conn, w, &tools, |name, args| call(name, args));
+                        serve(&conn, w, &tools, |name, args| call(name, args, peer));
                     }
                     let _ = conn.shutdown(Shutdown::Both);
                     open.fetch_sub(1, Ordering::SeqCst);
@@ -275,16 +311,32 @@ mod tests {
     }
 
     #[test]
+    fn the_process_on_the_other_end_is_told() {
+        let (a, b) = UnixStream::pair().unwrap();
+        assert_eq!(peer_pid(&a), Some(std::process::id()));
+        assert_eq!(peer_pid(&b), Some(std::process::id()));
+        assert_eq!(peer_told(0, 7), Some(7));
+        assert_eq!(peer_told(0, 1), Some(1));
+        assert_eq!(peer_told(0, 0), None, "no process is 0");
+        assert_eq!(peer_told(-1, 7), None, "an error tells nothing");
+        assert_eq!(peer_told(-1, 0), None);
+    }
+
+    #[test]
     fn the_socket_serves_calls_and_goes_away_when_dropped() {
         let dir = std::env::temp_dir().join(format!("imece-mcp-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join("a1.sock");
         let _ = std::fs::remove_file(&path);
-        let server = Server::bind(&path, tools(), |_, args| {
+        let server = Server::bind(&path, tools(), |_, args, peer| {
+            // The caller is this test's own process.
+            if peer != Some(std::process::id()) {
+                return Err(format!("called from {peer:?}"));
+            }
             Ok(format!("hi {}", args["to"].as_str().unwrap_or_default()))
         })
         .unwrap();
-        assert!(Server::bind(&path, tools(), |_, _| Ok(String::new())).is_err());
+        assert!(Server::bind(&path, tools(), |_, _, _| Ok(String::new())).is_err());
 
         let mut sock = UnixStream::connect(&path).unwrap();
         writeln!(

@@ -1241,19 +1241,52 @@ mod tests {
             std::fs::metadata(&dir).unwrap().permissions().mode() & 0o777,
             0o700
         );
-        let path = live.bus.as_ref().unwrap().servers[1].path().to_path_buf();
-        let caller = thread::spawn(move || {
-            let mut sock = UnixStream::connect(path).unwrap();
-            let call = json!({"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"send",
-                "arguments":{"to":"lead","type":"inform","body":"from the socket"}}});
-            writeln!(sock, "{call}").unwrap();
-            let mut line = String::new();
-            BufReader::new(&sock).read_line(&mut line).unwrap();
-            line
-        });
+        // Agent 1's session runs in this test's process: its socket takes
+        // the test's calls. Agent 2's runs in another process, and agent
+        // 0 has none: theirs refuse them, and say so in their trace.
+        let other = std::process::Command::new("sleep")
+            .arg("5")
+            .spawn()
+            .unwrap();
+        live.slots[1] = Slot::Running(Box::new(Runs(std::process::id())));
+        live.slots[2] = Slot::Running(Box::new(Runs(other.id())));
+        let call = |live: &Live, n: usize| {
+            let path = live.bus.as_ref().unwrap().servers[n].path().to_path_buf();
+            thread::spawn(move || {
+                let mut sock = UnixStream::connect(path).unwrap();
+                let call = json!({"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"send",
+                    "arguments":{"to":"lead","type":"inform","body":"from the socket"}}});
+                writeln!(sock, "{call}").unwrap();
+                let mut line = String::new();
+                BufReader::new(&sock).read_line(&mut line).unwrap();
+                serde_json::from_str::<Value>(&line).unwrap()
+            })
+        };
+        live.step(&mut w);
+        for n in [0, 2] {
+            let reply = call(&live, n).join().unwrap();
+            assert_eq!(reply["result"]["isError"], true, "{n}: {reply}");
+            assert_eq!(
+                reply["result"]["content"][0]["text"], NOT_ITS_SESSION_SAID,
+                "{n}"
+            );
+        }
+        let caller = call(&live, 1);
         wait_for(&mut live, &mut w, |w| !w.journal.is_empty());
-        let reply: Value = serde_json::from_str(&caller.join().unwrap()).unwrap();
+        let reply = caller.join().unwrap();
         assert_eq!(reply["result"]["isError"], false, "{reply}");
+        let mut other = other;
+        other.kill().unwrap();
+        other.wait().unwrap();
+        for n in [0, 2] {
+            assert!(
+                w.agents[n].trace.iter().any(|l| l
+                    .ends_with("send: called on this socket from outside its session, refused")),
+                "{n}: {:?}",
+                w.agents[n].trace
+            );
+        }
+        assert_eq!(w.journal.len(), 1, "only agent 1's message went");
         // The sender is whose socket it was.
         assert!(matches!(
             w.journal[0].event,
