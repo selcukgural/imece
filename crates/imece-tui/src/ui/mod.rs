@@ -1302,6 +1302,7 @@ pub(crate) fn status_spans(lang: Lang, w: &World, a: &Agent) -> Vec<Span<'static
             spans
         }
         Status::Working if a.starting => vec![Span::styled(t.starting, fg(pal().ok))],
+        Status::Working if let Some(step) = on_step(w, a) => vec![step_span(step, STEP_WIDTH)],
         Status::Working => match a.activity.as_deref() {
             Some("") => vec![Span::styled(t.thinking, fg(pal().ok))],
             Some(doing) => vec![Span::styled(
@@ -1348,6 +1349,57 @@ pub(crate) fn status_spans(lang: Lang, w: &World, a: &Agent) -> Vec<Span<'static
         Status::Stopped => vec![Span::styled(t.stopped, bold(pal().stopped))],
         Status::Asleep => vec![Span::styled(t.asleep, dim())],
     }
+}
+
+/// Columns of a working row's step, `▸` not counted: what the agent does
+/// for it keeps the rest of `STATUS_WIDTH`.
+pub(crate) const STEP_WIDTH: usize = 24;
+
+/// A step is never cut to fewer columns than this, `▸` not counted.
+pub(crate) const STEP_MIN: usize = 8;
+
+/// `▸ Run the tests`: the step a working agent is on, cleaned and cut to
+/// `n` columns.
+pub(crate) fn step_span(step: &str, n: usize) -> Span<'static> {
+    Span::styled(format!("▸ {}", fit(step, n).trim_end()), fg(pal().ok))
+}
+
+/// What the agent does cut to fewer columns than this says nothing and is
+/// left off the row.
+pub(crate) const DOING_MIN: usize = 8;
+
+/// The step a working row says the agent is on, `▸ Run the tests`: the
+/// step of its to-do list in progress, unless a tool call of it waits for
+/// the person or its session is still starting, which the row says
+/// instead.
+pub(crate) fn on_step<'a>(w: &World, a: &'a Agent) -> Option<&'a str> {
+    let free = a.status == Status::Working
+        && !a.starting
+        && w.open_item(a.id, InboxKind::Approval).is_none();
+    free.then(|| a.step()).flatten()
+}
+
+/// After a step, what the agent does for it now, dim: its tool call, or
+/// `thinking…`; what it is after comes first, how it goes about it
+/// second. It takes what `STATUS_WIDTH` leaves after the step's `used`
+/// characters and never more than `room`; nothing in fewer than
+/// `DOING_MIN` columns.
+pub(crate) fn doing_spans(lang: Lang, a: &Agent, used: usize, room: usize) -> Vec<Span<'static>> {
+    let doing = match a.activity.as_deref() {
+        Some("") => lang.text().thinking,
+        Some(d) => d,
+        None => return Vec::new(),
+    };
+    let room = STATUS_WIDTH
+        .saturating_sub(used + 2)
+        .min(room.saturating_sub(2));
+    if room < DOING_MIN {
+        return Vec::new();
+    }
+    vec![Span::styled(
+        format!("  {}", fit(doing, room).trim_end()),
+        dim(),
+    )]
 }
 
 /// The fleet at a glance: how many agents are mid-turn, done and not
@@ -1767,6 +1819,11 @@ fn footer(f: &mut Frame, area: Rect, app: &App) -> Option<Position> {
             ],
         };
         let mut spans = vec![Span::raw(" ")];
+        if let Some(c) = app.pending {
+            // The first key of a chord, as vim shows it; first, so a long
+            // footer never cuts it off.
+            spans.push(Span::styled(format!("{c}…   "), bold(pal().warn)));
+        }
         spans.extend(hint_spans(&hints));
         if app.zoom == Zoom::None && app.demo() {
             spans.push(Span::styled(" space ", key()));
@@ -1782,10 +1839,6 @@ fn footer(f: &mut Frame, area: Rect, app: &App) -> Option<Position> {
                 dim()
             };
             spans.push(Span::styled(format!(" {} {}", i + 1, t.views[i]), style));
-        }
-        if let Some(c) = app.pending {
-            // The first key of a chord, as vim shows it.
-            spans.push(Span::styled(format!("   {c}…"), bold(pal().warn)));
         }
         Line::from(spans)
     };
@@ -2808,6 +2861,295 @@ mod tests {
         assert!(app.world.projects[1].pinned, "nothing else changed");
     }
 
+    fn is_header(r: &salon::Row) -> bool {
+        matches!(r, salon::Row::Group { .. })
+    }
+
+    #[test]
+    fn headers_sit_over_an_open_project_s_workers_by_need_when_some_need_you() {
+        let (mut app, w, _) = calm_team();
+        app.world.inbox.clear();
+        let lead = app.world.projects[0].leader;
+        // Nobody needs the person: no header.
+        assert!(!salon::rows(&app, 100).iter().any(is_header));
+
+        app.world.agents[w[0]].status = Status::Asleep;
+        app.world.agents[w[1]].status = Status::Blocked;
+        waiting(&mut app, w[3]);
+        let rows = salon::rows(&app, 100);
+        assert_eq!(
+            rows,
+            [
+                salon::Row::Project(0),
+                salon::Row::Agent { id: lead, depth: 1 },
+                salon::Row::Group {
+                    need: Need::Stuck,
+                    n: 1,
+                    idle: 0
+                },
+                salon::Row::Agent { id: w[1], depth: 2 },
+                salon::Row::Group {
+                    need: Need::Waiting,
+                    n: 1,
+                    idle: 0
+                },
+                salon::Row::Agent { id: w[3], depth: 2 },
+                salon::Row::Group {
+                    need: Need::Nothing,
+                    n: 2,
+                    idle: 1
+                },
+                salon::Row::Agent { id: w[0], depth: 2 },
+                salon::Row::Agent { id: w[2], depth: 2 },
+            ]
+        );
+        // Idle counts as asleep does.
+        app.world.agents[w[2]].status = Status::Idle;
+        assert!(salon::rows(&app, 100).contains(&salon::Row::Group {
+            need: Need::Nothing,
+            n: 2,
+            idle: 2
+        }));
+
+        // The headers give way first: in one line less than all of them
+        // need, none is shown and nothing folds.
+        assert_eq!(salon::rows(&app, 9), salon::rows(&app, 100));
+        let tight = salon::rows(&app, 8);
+        assert!(!tight.iter().any(is_header), "{tight:?}");
+        assert!(
+            !tight.iter().any(|r| matches!(r, salon::Row::Folded { .. })),
+            "{tight:?}"
+        );
+        assert_eq!(tight.len(), 6, "{tight:?}");
+
+        // One worker shown says what it needs on its own row: no header.
+        for &o in &[w[0], w[2], w[3]] {
+            app.settled.insert(o);
+        }
+        assert!(!salon::rows(&app, 100).iter().any(is_header));
+        app.settled.remove(&w[2]);
+        assert!(salon::rows(&app, 100).iter().any(is_header));
+    }
+
+    #[test]
+    fn a_need_s_header_says_it_in_words_and_its_last_worker_closes_the_branch() {
+        let (mut app, w, _) = calm_team();
+        app.world.inbox.clear();
+        app.world.agents[w[1]].status = Status::Blocked;
+        app.world.agents[w[3]].status = Status::Idle;
+        app.unseen.insert(w[3]);
+        app.world.agents[w[2]].status = Status::Idle;
+        let s = render(&app, 160, 40);
+        let line = |s: &str, words: &str| {
+            s.lines()
+                .find(|l| l.contains(words))
+                .map(str::to_string)
+                .unwrap_or_default()
+        };
+        let row = |s: &str, id: AgentId| line(s, &format!("▎{} ", app.world.agents[id].name));
+        assert!(line(&s, "│  ✕ stuck · 1").contains("✕ stuck · 1"), "{s}");
+        assert!(line(&s, "│  ✓ done, not seen · 1").contains("done"), "{s}");
+        // The rest: who works and who is idle, a count of none left out.
+        let rest = line(&s, "│  ● 1 working  ○ 1 idle");
+        assert!(!rest.is_empty(), "{s}");
+        // Each need's last worker closes its branch.
+        assert!(row(&s, w[1]).contains("└ "), "{s}");
+        assert!(row(&s, w[3]).contains("└ "), "{s}");
+        assert!(row(&s, w[0]).contains("├ "), "{s}");
+        assert!(row(&s, w[2]).contains("└ "), "{s}");
+
+        app.world.agents[w[2]].status = Status::Working;
+        let s = render(&app, 160, 40);
+        let rest = line(&s, "│  ● 2 working");
+        assert!(!rest.is_empty() && !rest.contains("idle"), "{s}");
+        app.world.agents[w[0]].status = Status::Idle;
+        app.world.agents[w[2]].status = Status::Idle;
+        let s = render(&app, 160, 40);
+        let rest = line(&s, "│  ○ 2 idle");
+        assert!(!rest.is_empty() && !rest.contains('●'), "{s}");
+        // Waiting for the person, in Turkish too.
+        waiting(&mut app, w[0]);
+        app.lang = Lang::Tr;
+        let s = render(&app, 160, 40);
+        assert!(s.contains("│  ! seni bekliyor · 1"), "{s}");
+        assert!(s.contains("│  ✕ takıldı · 1"), "{s}");
+    }
+
+    fn plan_of(app: &mut App, a: AgentId) {
+        app.world.agents[a].plan = vec![
+            Step {
+                text: "Read the code".into(),
+                state: StepState::Done,
+            },
+            Step {
+                text: "Run the tests".into(),
+                state: StepState::Doing,
+            },
+            Step {
+                text: "Write it up".into(),
+                state: StepState::Doing,
+            },
+            Step {
+                text: "Ship".into(),
+                state: StepState::Todo,
+            },
+        ];
+    }
+
+    #[test]
+    fn the_step_is_the_first_in_progress_and_none_without_one() {
+        let (mut app, w, _) = calm_team();
+        let a = w[0];
+        assert_eq!(app.world.agents[a].step(), None);
+        plan_of(&mut app, a);
+        assert_eq!(app.world.agents[a].step(), Some("Run the tests"));
+        app.world.agents[a].plan[1].text = "  ".into();
+        app.world.agents[a].plan.remove(2);
+        assert_eq!(
+            app.world.agents[a].step(),
+            None,
+            "a blank step says nothing"
+        );
+        for s in &mut app.world.agents[a].plan {
+            s.state = StepState::Done;
+        }
+        assert_eq!(app.world.agents[a].step(), None);
+    }
+
+    #[test]
+    fn a_working_row_says_its_step_then_what_it_does_for_it() {
+        let (mut app, w, _) = calm_team();
+        app.world.inbox.clear();
+        let a = w[0];
+        plan_of(&mut app, a);
+        app.world.agents[a].activity = Some("Grep Charge".into());
+        app.world.agents[a].talk = Some(Talk {
+            with: Party::Person,
+            mine: false,
+            text: "quote me".into(),
+            until: 0,
+        });
+        let name = app.world.agents[a].name.clone();
+        let row = |app: &App| {
+            render(app, 160, 40)
+                .lines()
+                .find(|l| l.contains(&format!("▎{name} ")))
+                .map(str::to_string)
+                .unwrap_or_default()
+        };
+        let r = row(&app);
+        assert!(r.contains("▸ Run the tests  Grep Charge"), "{r}");
+        assert!(
+            !r.contains("quote me"),
+            "the step is a text of its own: {r}"
+        );
+        assert!(!r.contains("Write it up"), "{r}");
+        app.world.agents[a].activity = Some(String::new());
+        assert!(row(&app).contains("▸ Run the tests  thinking…"));
+        app.world.agents[a].activity = None;
+        let r = row(&app);
+        assert!(
+            r.contains("▸ Run the tests") && !r.contains("quote me"),
+            "{r}"
+        );
+
+        // Its focus says both.
+        app.world.agents[a].activity = Some("Grep Charge".into());
+        app.zoom = Zoom::Focus(a);
+        let s = render(&app, 160, 40);
+        assert!(s.contains("▸ Run the tests  Grep Charge"), "{s}");
+        app.zoom = Zoom::None;
+
+        // Not a step: idle, starting, or a tool call waiting for a yes.
+        app.world.agents[a].status = Status::Idle;
+        assert!(!row(&app).contains('▸'));
+        app.world.agents[a].status = Status::Working;
+        app.world.agents[a].starting = true;
+        assert!(!row(&app).contains('▸'));
+        app.world.agents[a].starting = false;
+        app.world.inbox.push(InboxItem {
+            kind: InboxKind::Approval,
+            agent: a,
+            detail: "cargo test".into(),
+            researcher: None,
+            open: true,
+            tick: 0,
+            card: None,
+        });
+        let r = row(&app);
+        assert!(!r.contains('▸') && r.contains("cargo test"), "{r}");
+    }
+
+    #[test]
+    fn a_step_is_cut_to_what_the_row_leaves_it_between_its_bounds() {
+        let (mut app, w, _) = calm_team();
+        app.world.inbox.clear();
+        let a = w[0];
+        plan_of(&mut app, a);
+        app.world.agents[a].plan[1].text = "Run the tests with coverage on".into();
+        app.world.agents[a].cost = 20_000;
+        app.world.agents[a].stand = Stand::default();
+        let rungs = app.rungs();
+        let line = |app: &App, width: usize| {
+            salon::agent_line(app, &app.world.agents[a], "", &rungs, width)
+        };
+        let full = line(&app, 1000);
+        let at = (full.spans.iter())
+            .position(|s| s.content.starts_with("▸ "))
+            .expect("a step");
+        let base: usize = full.spans[..at].iter().map(Span::width).sum();
+        let tail = 2 + dollars(20_000).chars().count();
+        let step = |app: &App, width: usize| {
+            line(app, width)
+                .spans
+                .iter()
+                .find(|s| s.content.starts_with("▸ "))
+                .map(|s| s.content.to_string())
+                .unwrap_or_default()
+        };
+        assert_eq!(step(&app, 1000), "▸ Run the tests with cove…");
+        assert_eq!(step(&app, base + tail + 2 + 12), "▸ Run the tes…");
+        assert_eq!(step(&app, base + tail + 2 + 3), "▸ Run the…");
+        assert_eq!(
+            status_spans(Lang::En, &app.world, &app.world.agents[a])[0].content,
+            "▸ Run the tests with cove…"
+        );
+    }
+
+    #[test]
+    fn what_a_step_does_takes_what_the_status_and_row_leave_or_nothing() {
+        let mut a = Agent::new(
+            0,
+            0,
+            "w".into(),
+            Vendor::Claude,
+            Role::Worker,
+            Status::Working,
+            0,
+        );
+        let text = |s: Vec<Span>| s.iter().map(|s| s.content.to_string()).collect::<String>();
+        a.activity = Some("x".repeat(50));
+        let x = |n: usize| "x".repeat(n);
+        assert_eq!(
+            text(doing_spans(Lang::En, &a, 0, usize::MAX)),
+            format!("  {}…", x(37))
+        );
+        assert_eq!(
+            text(doing_spans(Lang::En, &a, 30, usize::MAX)),
+            format!("  {}…", x(7))
+        );
+        assert!(doing_spans(Lang::En, &a, 31, usize::MAX).is_empty());
+        assert_eq!(
+            text(doing_spans(Lang::En, &a, 0, 10)),
+            format!("  {}…", x(7))
+        );
+        assert!(doing_spans(Lang::En, &a, 0, 9).is_empty());
+        a.activity = Some(String::new());
+        assert_eq!(text(doing_spans(Lang::Tr, &a, 0, 80)), "  düşünüyor…");
+        a.activity = None;
+        assert!(doing_spans(Lang::En, &a, 0, 80).is_empty());
+    }
+
     #[test]
     fn workers_that_need_the_person_more_come_first_and_fold_last() {
         let (mut app, w, _) = calm_team();
@@ -2963,8 +3305,18 @@ mod tests {
             ]
         );
         // What needs the person is never folded away, nor the worker a
-        // helper hangs under.
-        assert_eq!(salon::rows(&app, 1), all(&app));
+        // helper hangs under; the headers over them give way first.
+        let plain = |rows: Vec<salon::Row>| -> Vec<salon::Row> {
+            rows.into_iter()
+                .filter(|r| !matches!(r, salon::Row::Group { .. }))
+                .collect()
+        };
+        assert!(
+            all(&app)
+                .iter()
+                .any(|r| matches!(r, salon::Row::Group { .. }))
+        );
+        assert_eq!(salon::rows(&app, 1), plain(all(&app)));
         let s = render(&app, 140, 45);
         assert!(!s.contains(t.salon_none), "{s}");
 
@@ -6286,9 +6638,11 @@ mod tests {
         let mut app = app_after(2, 12, 300, Lang::En);
         render(&app, 140, 40);
         key(&mut app, KeyCode::Char('g'));
+        let s = render(&app, 140, 40);
+        let foot = s.lines().last().unwrap();
         assert!(
-            render(&app, 140, 40).contains("g…"),
-            "the pending key shows"
+            foot.starts_with(" g…   "),
+            "the pending key shows first, never cut off: {foot}"
         );
         key(&mut app, KeyCode::Char('g'));
         assert_eq!(app.selected, Sel::Project(0));
@@ -9015,12 +9369,13 @@ mod tests {
         assert_eq!((tr[0].as_str(), tr[7].as_str()), ("✓ 4 bitti", "… 2 daha"));
         // The legend names the mark in both languages.
         assert!(
-            t.help_legend[4].ends_with("  ≡ 3/7 its to-do steps done"),
+            t.help_legend[4].ends_with("  ≡ 3/7 its to-do steps done, ▸ the one in progress"),
             "{}",
             t.help_legend[4]
         );
         assert!(
-            Lang::Tr.text().help_legend[4].ends_with("  ≡ 3/7 yapılacaklarından biten"),
+            Lang::Tr.text().help_legend[4]
+                .ends_with("  ≡ 3/7 yapılacaklarından biten, ▸ şu an yaptığı"),
             "{}",
             Lang::Tr.text().help_legend[4]
         );
@@ -10493,8 +10848,12 @@ after | not a table";
             "{open:?}"
         );
         // The closed project takes no lines: with room for the open one
-        // alone nothing folds; one line less, something does.
-        let n = open.len();
+        // alone nothing folds; one line less, something does (the headers
+        // over its workers by need gave way first).
+        let n = open
+            .iter()
+            .filter(|r| !matches!(r, Row::Group { .. }))
+            .count();
         let tight = of(&app, n);
         assert!(
             !tight.iter().any(|r| matches!(r, Row::Folded { .. })),
@@ -10931,10 +11290,24 @@ after | not a table";
         let screen = render(&app, 140, 30);
         let rows = screen_rows(&screen);
         let at = app.hintable.borrow().clone();
-        // The salon's rows first, as shown, at the list's left edge.
-        let salon: Vec<(Target, u16, u16)> = (app.shown.borrow().iter().zip(2..))
-            .map(|(&s, y)| (Target::Row(s), 1, y))
+        // The salon's rows first, as shown, at the list's left edge; a
+        // header over a need's workers is not one a label names. The list
+        // is the screen less its top line, the panel's borders, the queue
+        // line and the footer.
+        let drawn = salon::rows(&app, 30 - 5);
+        assert!(
+            drawn.iter().any(|r| matches!(r, salon::Row::Group { .. })),
+            "headers among them: {drawn:?}"
+        );
+        let salon: Vec<(Target, u16, u16)> = (drawn.iter().zip(2..))
+            .filter_map(|(r, y)| r.sel().map(|s| (Target::Row(s), 1, y)))
             .collect();
+        assert_eq!(
+            salon.iter().map(|&(t, ..)| t).collect::<Vec<_>>(),
+            (app.shown.borrow().iter())
+                .map(|&s| Target::Row(s))
+                .collect::<Vec<_>>()
+        );
         assert!(salon.len() > 4, "both projects' rows");
         assert_eq!(at[..salon.len()], salon[..]);
         for &(t, _, y) in &salon {

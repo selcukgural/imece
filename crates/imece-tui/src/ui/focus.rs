@@ -72,6 +72,9 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App, id: AgentId) {
 
     let mut status = vec![Span::styled(t.status, dim())];
     status.extend(status_spans(app.lang, w, a));
+    if on_step(w, a).is_some() {
+        status.extend(doing_spans(app.lang, a, 0, usize::MAX));
+    }
     head.push(Line::from(status));
     let taint = match a.taint {
         Taint::Clean => Span::styled(t.clean, fg(pal().ok)),

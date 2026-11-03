@@ -31,6 +31,14 @@ pub enum Row {
         n: usize,
         loud: AgentId,
     },
+    /// The header over an open project's workers of one need, when some
+    /// of its workers need the person and it shows more than one: how many
+    /// it heads, folded ones too, and how many of those are idle.
+    Group {
+        need: Need,
+        n: usize,
+        idle: usize,
+    },
 }
 
 impl Row {
@@ -51,6 +59,11 @@ impl Row {
 /// jump. When the rows do not fit, calm workers (working or idle, not
 /// talking, nothing new) fold into one line per project, from the bottom
 /// up: those that need the person more fold last.
+/// When some workers of an open project need the person and it shows
+/// more than one, each need's workers sit under a header (`Row::Group`):
+/// the stuck, those waiting for the person, those done and not seen, then
+/// the rest, so the eye finds the edge between what needs the person and
+/// what does not.
 /// With `needs_only` (`f`), only agents that need the person are shown,
 /// under their project's header, a worker also for a helper or
 /// researcher of its that does; a project with none is left out.
@@ -118,6 +131,19 @@ pub fn rows(app: &App, capacity: usize) -> Vec<Row> {
         })
         .collect();
 
+    // Which projects head their workers by need, and with how many
+    // headers (the workers are sorted by need, so each need is one run).
+    let headers: Vec<usize> = order
+        .iter()
+        .map(|o| {
+            if o.len() > 1 && o.iter().any(|a| need[a.id] > Need::Nothing) {
+                o.chunk_by(|a, b| need[a.id] == need[b.id]).count()
+            } else {
+                0
+            }
+        })
+        .collect();
+
     let leads = |p: &Project| kept(&w.agents[p.leader]);
     let mut total: usize = w
         .projects
@@ -139,6 +165,13 @@ pub fn rows(app: &App, capacity: usize) -> Vec<Row> {
             1 + lead + order[p.id].iter().map(|a| lines(a)).sum::<usize>()
         })
         .sum();
+    // The headers give way first: shown only when every row fits with
+    // them, so a crowded salon folds as it did without them.
+    let grouped: Vec<bool> = if total + headers.iter().sum::<usize>() <= capacity {
+        headers.iter().map(|&n| n > 0).collect()
+    } else {
+        vec![false; w.projects.len()]
+    };
     let mut folded = vec![false; w.agents.len()];
     let mut nfolded = vec![0usize; w.projects.len()];
     // What needs the person is never folded away; a worker shown for its
@@ -179,7 +212,23 @@ pub fn rows(app: &App, capacity: usize) -> Vec<Row> {
                 out.push(Row::Agent { id: h, depth: 2 });
             }
         }
+        let header = |g: Need| {
+            let of = order[p.id].iter().filter(|a| need[a.id] == g);
+            Row::Group {
+                need: g,
+                n: of.clone().count(),
+                idle: of
+                    .filter(|a| matches!(a.status, Status::Idle | Status::Asleep))
+                    .count(),
+            }
+        };
+        let mut headed = None;
         for a in order[p.id].iter().filter(|a| !folded[a.id]) {
+            let g = need[a.id];
+            if grouped[p.id] && headed != Some(g) {
+                out.push(header(g));
+                headed = Some(g);
+            }
             out.push(Row::Agent { id: a.id, depth: 2 });
             for h in helpers_of(a) {
                 out.push(Row::Agent { id: h, depth: 3 });
@@ -256,7 +305,7 @@ fn salon(f: &mut Frame, area: Rect, app: &App) {
     let mut seen = false;
     for (i, row) in rows.iter().enumerate().rev() {
         match row {
-            Row::Project(_) => seen = false,
+            Row::Project(_) | Row::Group { .. } => seen = false,
             Row::Agent { depth: 2, .. } | Row::Folded { .. } if !seen => {
                 last[i] = true;
                 seen = true;
@@ -302,6 +351,7 @@ fn salon(f: &mut Frame, area: Rect, app: &App) {
                 }
                 line
             }
+            Row::Group { need, n, idle } => group_line(app, need, n, idle),
             Row::Folded { n, loud } => {
                 let mut spans = vec![
                     Span::styled("  └ ", dim()),
@@ -316,6 +366,7 @@ fn salon(f: &mut Frame, area: Rect, app: &App) {
             Row::Project(p) => project_member(app, p).map(|m| (m, line.spans.len() - 2)),
             Row::Agent { id, .. } => Some((id, 1)),
             Row::Folded { loud, .. } => Some((loud, 2)),
+            Row::Group { .. } => None,
         };
         if let Some((id, at)) = glyph
             && super::breathes(&w.agents[id], rungs[id])
@@ -334,6 +385,30 @@ fn salon(f: &mut Frame, area: Rect, app: &App) {
         }
     }
     f.render_widget(Paragraph::new(queue_line(app)), queue);
+}
+
+/// The header over an open project's workers of one need: `✕ stuck · 1`,
+/// `! waits for you · 2`, `✓ done, not seen · 1` in their rung's colour,
+/// the rest dim and counted as working and idle (`● 8 working  ○ 1 idle`,
+/// a count of none left out).
+fn group_line(app: &App, need: Need, n: usize, idle: usize) -> Line<'static> {
+    let t = app.lang.text();
+    let count = n.to_string();
+    let (words, style) = match need {
+        Need::Stuck => (fill(t.need_stuck, &[&count]), bold(pal().bad)),
+        Need::Waiting => (fill(t.need_waiting, &[&count]), attention()),
+        Need::Done => (fill(t.need_done, &[&count]), fg(pal().ok)),
+        Need::Nothing => {
+            let parts = [(t.need_working, n - idle), (t.need_idle, idle)];
+            let words: Vec<String> = parts
+                .iter()
+                .filter(|(_, k)| *k > 0)
+                .map(|(words, k)| fill(words, &[&k.to_string()]))
+                .collect();
+            (words.join("  "), dim())
+        }
+    };
+    Line::from(vec![Span::raw("  "), Span::styled(words, style)])
 }
 
 /// `  ◌ claude-2`: the loudest member of a folded group, its rung's glyph
@@ -490,13 +565,6 @@ pub(super) fn agent_line(
         }
     }
     spans.push(Span::raw(" "));
-    let status = if done {
-        vec![Span::styled(app.lang.text().done_unseen, fg(pal().ok))]
-    } else {
-        dotted(app, status_spans(app.lang, w, a))
-    };
-    let used = chars(&status);
-    spans.extend(status);
     let since = since_spans(app, a);
 
     let mut tail = Vec::new();
@@ -526,6 +594,19 @@ pub(super) fn agent_line(
     // Last, so the screen knows where the text it links starts.
     tail.extend(local_spans(a));
 
+    let status = if done {
+        vec![Span::styled(app.lang.text().done_unseen, fg(pal().ok))]
+    } else if let Some(step) = on_step(w, a) {
+        // The step takes what the row's fixed parts leave it, at most
+        // `STEP_WIDTH`, so it never pushes them off the row.
+        let free = width.saturating_sub(columns(&spans) + columns(&tail) + 2);
+        vec![step_span(step, free.clamp(STEP_MIN, STEP_WIDTH))]
+    } else {
+        dotted(app, status_spans(app.lang, w, a))
+    };
+    let used = chars(&status);
+    spans.extend(status);
+
     // What is new on the row gives way to what was there: the context
     // warning, the to-do mark, the time, then the quote, then the
     // activity bar, take only what the row has left once the rest is on
@@ -534,7 +615,13 @@ pub(super) fn agent_line(
     let context = fits(&mut room, context_spans(a));
     let plan = fits(&mut room, plan_spans(a));
     let since = fits(&mut room, since);
-    let quote = quote_spans(app, a, used, room);
+    // A row that says its step says what the agent does for it in the
+    // quote's place.
+    let quote = if on_step(w, a).is_some() {
+        doing_spans(app.lang, a, used, room)
+    } else {
+        quote_spans(app, a, used, room)
+    };
     room = room.saturating_sub(columns(&quote));
     let stirs = fits(&mut room, stir_spans(app, a));
     spans.extend(quote);
@@ -650,6 +737,7 @@ fn status_says(w: &World, a: &Agent) -> bool {
         }
         Status::Working => {
             w.open_item(a.id, InboxKind::Approval).is_some()
+                || on_step(w, a).is_some()
                 || a.activity.as_deref().is_some_and(|d| !d.is_empty())
         }
         Status::Blocked | Status::Researching { .. } => true,
