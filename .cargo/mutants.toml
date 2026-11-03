@@ -17,8 +17,9 @@
 # (`+` → `*`) changes nothing a test can see; a smaller one is caught.
 # `child::ENDED` joins waitid's flags, distinct bits, with `|`: `^` gives
 # the same number, so no test can tell them apart (`&` is caught); so do
-# `input::seen`'s poll flags, and `live::setup::look`'s open flags
-# (`&` is caught by a pipe in the script's place).
+# `input::seen`'s poll flags, `live::setup::look`'s open flags
+# (`&` is caught by a pipe in the script's place) and
+# `copy::read_include`'s (`&` is caught by a link in the file's place).
 # `child::bsd_parent` is built on macOS only and the mutation run is on
 # Linux, where nothing of it compiles; its test (`parent_of`'s) runs in the
 # macOS test job.
@@ -34,6 +35,7 @@ exclude_re = [
     "src/input.rs:.*: (replace|delete) .* in terminal$",
     "src/input.rs:.*: replace \\| with \\^ in seen$",
     "src/live/setup.rs:.*: replace \\| with \\^ in look$",
+    "src/copy.rs:.*: replace \\| with \\^ in read_include$",
     "src/clip.rs:.*: replace (copy|tools|pipe|osc52) ",
     "src/clip.rs:.*: replace .* in (copy|tools|pipe|osc52)$",
     "src/shell.rs:.*: replace (run|step_aside|wait_for_key|come_back) ",

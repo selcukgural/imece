@@ -1433,13 +1433,16 @@ pub enum Event {
         why: String,
         cost: u64,
     },
-    /// The paths the person listed (`:copy`) that worker `agent`'s
-    /// worktree lacked were copied into it from the checkout, `bytes` in
-    /// all.
+    /// The paths the person listed (`:copy`), or else those the
+    /// checkout's `.worktreeinclude` names (`included`), that worker
+    /// `agent`'s worktree lacked were copied into it from the checkout,
+    /// `bytes` in all.
     Copied {
         agent: AgentId,
         paths: Vec<String>,
         bytes: u64,
+        #[serde(default)]
+        included: bool,
     },
     /// The checkout of `leader`'s project lists more files than imece
     /// keeps for completion: the first `kept` complete.
@@ -1447,10 +1450,21 @@ pub enum Event {
         leader: AgentId,
         kept: usize,
     },
-    /// A listed path was not copied into worker `agent`'s worktree: why.
+    /// A listed path, or one the checkout's `.worktreeinclude` names
+    /// (`included`), was not copied into worker `agent`'s worktree: why.
     CopySkipped {
         agent: AgentId,
         path: String,
+        why: String,
+        #[serde(default)]
+        included: bool,
+    },
+    /// A part of the checkout's `.worktreeinclude` was not followed at
+    /// worker `agent`'s start: one of its lines (its number, its text),
+    /// or the whole file (`line` none); why.
+    IncludeRefused {
+        agent: AgentId,
+        line: Option<(usize, String)>,
         why: String,
     },
 }
@@ -1513,6 +1527,7 @@ impl Event {
             | Event::Interrupted { .. }
             | Event::SuggestFailed { .. }
             | Event::CopySkipped { .. }
+            | Event::IncludeRefused { .. }
             | Event::PushFailed { .. }
             | Event::SetupRan { ok: false, .. }
             | Event::SetupFailed { .. }
@@ -1600,6 +1615,7 @@ impl Event {
             | Event::WorktreeKept { agent, .. }
             | Event::Copied { agent, .. }
             | Event::CopySkipped { agent, .. }
+            | Event::IncludeRefused { agent, .. }
             | Event::ChangeReady { agent, .. }
             | Event::Applied { agent, .. }
             | Event::ApplyFailed { agent, .. } => agent,

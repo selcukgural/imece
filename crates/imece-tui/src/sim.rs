@@ -725,6 +725,12 @@ pub fn vendors() -> Vec<(Vendor, crate::welcome::Seen)> {
 /// The size the demo gives a copied path, from `roll`: a dotfile is a
 /// few KiB at most (100 to 3 999 bytes), anything else a directory of
 /// 1 to 400 MiB.
+/// What the second demo project's `.worktreeinclude` names.
+const INCLUDED: &str = "node_modules";
+
+/// The line of that file that reaches outside its checkout.
+const REFUSED_LINE: (usize, &str) = (2, "../shared/.env");
+
 fn made_up_size(path: &str, roll: u64) -> u64 {
     match path.starts_with('.') {
         true => 100 + roll % 3_900,
@@ -1595,37 +1601,75 @@ impl Sim {
         true
     }
 
-    /// The paths the person listed (`:copy`) that worker `id`'s worktree
-    /// lacks, copied as its session starts, as live does: made-up sizes,
-    /// small for a dotfile and large for a directory, and now and then
-    /// one gone from the checkout since it was listed.
+    /// The paths the person listed (`:copy`), and then what the
+    /// checkout's `.worktreeinclude` names ([`INCLUDED`]; the second
+    /// project's checkout acts as if it had one, see [`Sim::includes`]),
+    /// that worker `id`'s worktree lacks, copied as its session starts, as
+    /// live does: made-up sizes, small for a dotfile and large for a
+    /// directory, and now and then a listed one gone from the checkout
+    /// since. What the file names takes nothing of the demo's chance (its
+    /// size is made up from `id`), so a second project plays as before.
+    /// That file has a line that reaches outside too, refused at every
+    /// start.
     fn copy_in(&mut self, w: &mut World, id: AgentId) {
-        let listed = w.projects[w.agents[id].project].copies.clone();
+        let p = w.agents[id].project;
+        let includes = self.includes(p);
+        if includes {
+            w.note(Event::IncludeRefused {
+                agent: id,
+                line: Some((REFUSED_LINE.0, REFUSED_LINE.1.into())),
+                why: "reaches outside the checkout".into(),
+            });
+        }
+        let mut wanted = w.projects[p].copies.clone();
+        let listed = wanted.len();
+        if includes && !wanted.iter().any(|c| c == INCLUDED) {
+            wanted.push(INCLUDED.into());
+        }
         let had = self.extras.copied.entry(id).or_default();
-        let lacks: Vec<String> = listed.into_iter().filter(|p| !had.contains(p)).collect();
-        let (mut paths, mut bytes) = (Vec::new(), 0);
-        for path in lacks {
+        let lacks: Vec<(String, bool)> = (wanted.into_iter().enumerate())
+            .filter(|(_, p)| !had.contains(p))
+            .map(|(i, p)| (p, i >= listed))
+            .collect();
+        // The list's, then the file's.
+        let mut copied = [(Vec::new(), 0), (Vec::new(), 0)];
+        for (path, included) in lacks {
+            if included {
+                copied[1].1 += made_up_size(&path, id as u64);
+                copied[1].0.push(path);
+                continue;
+            }
             if self.rng.one_in(8) {
                 w.note(Event::CopySkipped {
                     agent: id,
                     path,
                     why: "not in the checkout".into(),
+                    included,
                 });
                 continue;
             }
-            bytes += made_up_size(&path, self.rng.below(u64::MAX));
-            paths.push(path);
+            copied[0].1 += made_up_size(&path, self.rng.below(u64::MAX));
+            copied[0].0.push(path);
         }
-        if paths.is_empty() {
-            return;
+        for (included, (paths, bytes)) in [false, true].into_iter().zip(copied) {
+            if paths.is_empty() {
+                continue;
+            }
+            let had = self.extras.copied.entry(id).or_default();
+            had.extend(paths.iter().cloned());
+            w.note(Event::Copied {
+                agent: id,
+                paths,
+                bytes,
+                included,
+            });
         }
-        let had = self.extras.copied.entry(id).or_default();
-        had.extend(paths.iter().cloned());
-        w.note(Event::Copied {
-            agent: id,
-            paths,
-            bytes,
-        });
+    }
+
+    /// Whether project `p`'s checkout has a `.worktreeinclude`: the second
+    /// demo project's acts as if it had one.
+    pub fn includes(&self, p: ProjectId) -> bool {
+        p == 1
     }
 
     /// What a worker's worktree says as its session starts, by `roll`: it
@@ -3584,13 +3628,19 @@ mod tests {
                         agent,
                         paths,
                         bytes,
+                        included: false,
                     } => {
                         assert_eq!(*agent, worker);
                         assert!(paths.iter().all(|p| !had.contains(p)), "copied once");
                         assert!(*bytes >= 100, "{paths:?} {bytes}");
                         had.extend(paths.iter().cloned());
                     }
-                    Event::CopySkipped { agent, why, .. } => {
+                    Event::CopySkipped {
+                        agent,
+                        why,
+                        included: false,
+                        ..
+                    } => {
                         assert_eq!((*agent, why.as_str()), (worker, "not in the checkout"));
                     }
                     other => panic!("{other:?}"),
@@ -3603,6 +3653,75 @@ mod tests {
         // All there: nothing said.
         let lines = w.journal.len();
         s.copy_in(&mut w, worker);
+        assert_eq!(w.journal.len(), lines);
+        assert!(!s.includes(p));
+    }
+
+    #[test]
+    fn the_second_demo_projects_include_file_names_a_path_and_refuses_a_line() {
+        let (mut w, mut s) = world(2, 12, 0, 3, Lang::En);
+        let worker = workers_of(&w, 1)[0];
+        w.projects[1].copies = vec![".env".into()];
+        assert!(s.includes(1));
+        let mut had: Vec<String> = Vec::new();
+        for _ in 0..30 {
+            let lines = w.journal.len();
+            s.copy_in(&mut w, worker);
+            // Said at every start, first.
+            assert_eq!(
+                w.journal[lines].event,
+                Event::IncludeRefused {
+                    agent: worker,
+                    line: Some((2, "../shared/.env".into())),
+                    why: "reaches outside the checkout".into()
+                }
+            );
+            for e in &w.journal[lines + 1..] {
+                match &e.event {
+                    Event::Copied {
+                        paths, included, ..
+                    } => {
+                        // Only what the list lacks comes from the file.
+                        assert_eq!(*included, paths == &["node_modules"], "{paths:?}");
+                        had.extend(paths.iter().cloned());
+                    }
+                    Event::CopySkipped { path, included, .. } => {
+                        assert_eq!((*included, path.as_str()), (false, ".env"));
+                    }
+                    other => panic!("{other:?}"),
+                }
+            }
+        }
+        had.sort();
+        assert_eq!(had, [".env", "node_modules"]);
+        let size = |e: &crate::model::Entry| match &e.event {
+            Event::Copied {
+                included: true,
+                bytes,
+                ..
+            } => Some(*bytes),
+            _ => None,
+        };
+        let sizes: Vec<u64> = w.journal.iter().filter_map(size).collect();
+        assert_eq!(sizes, [made_up_size("node_modules", worker as u64)]);
+        // Listed by the person, it is the list's.
+        let (mut w, mut s) = world(2, 12, 0, 3, Lang::En);
+        let worker = workers_of(&w, 1)[0];
+        w.projects[1].copies = vec!["node_modules".into()];
+        for _ in 0..50 {
+            s.copy_in(&mut w, worker);
+            if s.extras.copied.get(&worker).is_some_and(|c| !c.is_empty()) {
+                break;
+            }
+        }
+        assert!(matches!(
+            &w.journal.last().unwrap().event,
+            Event::Copied { included: false, paths, .. } if paths == &["node_modules"]
+        ));
+        // The first project has no such file.
+        let first = workers_of(&w, 0)[0];
+        let lines = w.journal.len();
+        s.copy_in(&mut w, first);
         assert_eq!(w.journal.len(), lines);
     }
 

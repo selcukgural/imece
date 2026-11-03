@@ -426,6 +426,17 @@ pub struct Text {
     /// A checkout with more files than completion keeps: how many, kept.
     pub ev_files_cut: &'static str,
     pub ev_copy_skipped: &'static str,
+    /// The journal, for what a checkout's `.worktreeinclude` names:
+    /// copied (paths, agent, size), skipped (path, agent, why), the
+    /// file not followed (agent, why), one of its lines not followed
+    /// (line number, its text, agent, why); `:copy` when there is such
+    /// a file: the list said (the list's words), nothing listed (project).
+    pub ev_included: &'static str,
+    pub ev_include_skipped: &'static str,
+    pub ev_include_refused: &'static str,
+    pub ev_include_line_refused: &'static str,
+    pub copy_also: &'static str,
+    pub copy_file: &'static str,
     /// `:pin`: a project pinned, unpinned.
     pub pinned: &'static str,
     pub unpinned: &'static str,
@@ -1131,6 +1142,12 @@ pub const EN: Text = Text {
     ev_copied: "copied {} into {}'s worktree ({})",
     ev_files_cut: "{}'s checkout lists more than {} files; only the first {} complete in a message",
     ev_copy_skipped: "{} was not copied into {}'s worktree: {}",
+    ev_included: "copied {} into {}'s worktree ({}), as .worktreeinclude names",
+    ev_include_skipped: "{} (from .worktreeinclude) was not copied into {}'s worktree: {}",
+    ev_include_refused: ".worktreeinclude was not followed for {}'s worktree: {}",
+    ev_include_line_refused: "line {} of .worktreeinclude ({}) was not followed for {}'s worktree: {}",
+    copy_also: "{}; and what its .worktreeinclude names",
+    copy_file: "{}'s .worktreeinclude names what is copied into its worktrees; :copy PATH adds a path git ignores",
     demo_only: ":{} is for the demo: live agents run in real time",
     value_on: "on",
     value_off: "off",
@@ -1923,6 +1940,12 @@ pub const TR: Text = Text {
     ev_copied: "{} → {} çalışma ağacına kopyalandı ({})",
     ev_files_cut: "{} projesinin çalışma kopyasında {} dosyadan fazlası var; mesajda yalnız ilk {} tamamlanır",
     ev_copy_skipped: "{} → {} çalışma ağacına kopyalanmadı: {}",
+    ev_included: "{} → {} çalışma ağacına kopyalandı ({}), .worktreeinclude'un saydığı",
+    ev_include_skipped: "{} (.worktreeinclude'dan) → {} çalışma ağacına kopyalanmadı: {}",
+    ev_include_refused: ".worktreeinclude, {} çalışma ağacı için uygulanmadı: {}",
+    ev_include_line_refused: ".worktreeinclude'un {}. satırı ({}), {} çalışma ağacı için uygulanmadı: {}",
+    copy_also: "{}; bir de .worktreeinclude'un saydıkları",
+    copy_file: "{} çalışma ağaçlarına kopyalananları .worktreeinclude sayıyor; :copy YOL git'in yok saydığı bir yolu ekler",
     demo_only: ":{} demo için: canlı agent'lar gerçek zamanda çalışır",
     value_on: "açık",
     value_off: "kapalı",
@@ -2759,6 +2782,12 @@ mod tests {
             (e.ev_copied, t.ev_copied),
             (e.ev_files_cut, t.ev_files_cut),
             (e.ev_copy_skipped, t.ev_copy_skipped),
+            (e.ev_included, t.ev_included),
+            (e.ev_include_skipped, t.ev_include_skipped),
+            (e.ev_include_refused, t.ev_include_refused),
+            (e.ev_include_line_refused, t.ev_include_line_refused),
+            (e.copy_also, t.copy_also),
+            (e.copy_file, t.copy_file),
             (e.ev_pot_low, t.ev_pot_low),
             (e.pot_lasts, t.pot_lasts),
             (e.ev_shell, t.ev_shell),

@@ -40,7 +40,7 @@ Among them:
 - **Changes.** `finished … → waits for you`, `you applied …, staged; worktree mark <sha>`, `… did not apply: <git's words>`, `rejected: claude-1`; after a partial apply the rest comes back as a new `finished`.
 - **Sessions.** `goes on in the session it had`, `starts a new session, told where it left off`, `you made claude-1 forget its session`, `stopped: …`, `'s turn was cut short when imece closed; it hears of it when it wakes`, a session that listed no commands of its own, the confine level said at every start that is not strict, the repository notes cut at 16 KiB.
 - **Worktrees.** `worktree moved from <sha> to HEAD <sha>`, or kept where it is because it has uncommitted changes or commits of its own.
-- **Copies.** `copied .env into claude-1's worktree (1.2 KiB)`, and what was not copied and why (`:copy`).
+- **Copies.** `copied .env into claude-1's worktree (1.2 KiB)`, and what was not copied and why (`:copy`); what the checkout's `.worktreeinclude` names in lines of its own (`…, as .worktreeinclude names`), and a line of it not followed with why.
 - **Your shell.** `` you ran `cargo test` → exit 0 · 12 s ``, or `stopped by signal 2`, with the time in the largest units that say it (`40 ms`, `2 s`, `1 min 5 s`).
 - **The pot.** `you set the budget to …`, and once, when under half an hour is left at the current rate, `at $4.00/h the budget lasts about 25 min more; :budget USD raises it`.
 - **Asks.** `you allowed codex-2: npm install left-pad`, `you refused …`.

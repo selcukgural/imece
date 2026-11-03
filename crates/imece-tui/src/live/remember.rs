@@ -959,7 +959,7 @@ mod tests {
                 PathBuf::from("/w"),
                 None,
                 held,
-                Vec::new(),
+                imece_agent::copy::Brought::default(),
                 setup::Done::None,
             )),
         );
@@ -976,7 +976,7 @@ mod tests {
                 PathBuf::from("/w"),
                 None,
                 held,
-                Vec::new(),
+                imece_agent::copy::Brought::default(),
                 setup::Done::None,
             )),
         );
@@ -1987,7 +1987,7 @@ mod tests {
                 PathBuf::from("/w"),
                 None,
                 None,
-                Vec::new(),
+                imece_agent::copy::Brought::default(),
                 setup::Done::None,
             )),
         );
@@ -2171,7 +2171,7 @@ mod tests {
                 PathBuf::from("/w"),
                 None,
                 None,
-                Vec::new(),
+                imece_agent::copy::Brought::default(),
                 setup::Done::None,
             )),
         );
@@ -2286,7 +2286,7 @@ mod tests {
                 private.clone(),
                 None,
                 None,
-                Vec::new(),
+                imece_agent::copy::Brought::default(),
                 setup::Done::None,
             )),
         );

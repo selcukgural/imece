@@ -221,14 +221,15 @@ enum Slot {
 /// why it could not start. Then, for a woken worker's first prompt: the
 /// line saying what its worktree holds and where it goes in the prompt,
 /// read on the session's thread (see [`Live::brief`]). Last, what became
-/// of the paths the person listed to copy into the worktree.
+/// of the paths the person listed to copy into the worktree, and of those
+/// the checkout's `.worktreeinclude` names.
 type Ready = Result<
     (
         Box<dyn Session>,
         PathBuf,
         Option<worktree::Placed>,
         Option<(usize, String)>,
-        Vec<copy::Copied>,
+        copy::Brought,
         setup::Done,
     ),
     String,

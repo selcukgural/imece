@@ -454,7 +454,7 @@ pub(super) fn worker_in(
             tree.clone(),
             None,
             None,
-            Vec::new(),
+            imece_agent::copy::Brought::default(),
             setup::Done::None,
         )),
     );

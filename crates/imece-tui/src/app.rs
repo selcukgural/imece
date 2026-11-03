@@ -3316,7 +3316,8 @@ impl App {
 
     /// `:copy [PATH]`: the paths git ignores that are copied from the
     /// project at hand's checkout into its workers' worktrees at their
-    /// start (said when none is given), one more (checked: literal,
+    /// start (said when none is given, with a word on its
+    /// `.worktreeinclude` when it has one), one more (checked: literal,
     /// inside, ignored; the demo checks only the first), or one fewer
     /// when it is listed already. A trailing `/` is the same path.
     fn copy_path(&mut self, arg: &str) {
@@ -3324,10 +3325,20 @@ impl App {
         let p = self.current_project();
         let name = self.world.projects[p].name.clone();
         if arg.is_empty() {
+            let includes = match &self.engine {
+                Engine::Live(l) => l.includes(p),
+                Engine::Sim(s) => s.includes(p),
+                Engine::View(_) => false,
+            };
             let copies = &self.world.projects[p].copies;
-            let said = match copies.is_empty() {
-                true => fill(t.copy_none, &[&name]),
-                false => fill(t.copy_list, &[&name, &copies.join(", ")]),
+            let said = match (copies.is_empty(), includes) {
+                (true, false) => fill(t.copy_none, &[&name]),
+                (true, true) => fill(t.copy_file, &[&name]),
+                (false, false) => fill(t.copy_list, &[&name, &copies.join(", ")]),
+                (false, true) => fill(
+                    t.copy_also,
+                    &[&fill(t.copy_list, &[&name, &copies.join(", ")])],
+                ),
             };
             return self.flash(said);
         }
@@ -9363,6 +9374,37 @@ pub(crate) mod tests {
         app.command("copy .env");
         assert_eq!(flash(&app), ".env is no longer copied");
         assert_eq!(app.world.projects[p].copies, ["target"]);
+    }
+
+    #[test]
+    fn colon_copy_says_so_when_the_checkout_has_a_worktreeinclude() {
+        // The second demo project's checkout acts as if it had one.
+        let mut app = App::new(2, 2, 0, 1, Lang::En);
+        let flash = |app: &App| app.flash.as_ref().map(|(m, _)| m.clone()).unwrap();
+        app.selected = Sel::Agent(app.world.projects[1].leader);
+        assert_eq!(app.current_project(), 1);
+        let name = app.world.projects[1].name.clone();
+        app.command("copy");
+        assert_eq!(
+            flash(&app),
+            format!(
+                "{name}'s .worktreeinclude names what is copied into its worktrees; :copy PATH adds a path git ignores"
+            )
+        );
+        app.command("copy .env");
+        app.command("copy");
+        assert_eq!(
+            flash(&app),
+            format!("copied into {name}'s worktrees: .env; and what its .worktreeinclude names")
+        );
+        app.lang = Lang::Tr;
+        app.command("copy");
+        assert_eq!(
+            flash(&app),
+            format!(
+                "{name} çalışma ağaçlarına kopyalananlar: .env; bir de .worktreeinclude'un saydıkları"
+            )
+        );
     }
 
     #[test]

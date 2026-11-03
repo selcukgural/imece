@@ -514,34 +514,55 @@ impl Live {
         Ok(())
     }
 
-    /// What became of the listed paths at agent `id`'s start, in the
-    /// journal: the ones copied in one line, each skipped one with why;
-    /// the ones the worktree had say nothing.
-    pub(super) fn copied(&self, w: &mut World, id: AgentId, copied: Vec<copy::Copied>) {
-        let (mut paths, mut bytes) = (Vec::new(), 0);
-        for c in copied {
+    /// What became of the listed paths at agent `id`'s start, and of
+    /// those the checkout's `.worktreeinclude` names, in the journal: what
+    /// of the file was not followed, each skipped path with why, the ones
+    /// copied in one line for the list and one for the file; the ones the
+    /// worktree had say nothing.
+    pub(super) fn copied(&self, w: &mut World, id: AgentId, brought: copy::Brought) {
+        for r in brought.refused {
+            w.note(Event::IncludeRefused {
+                agent: id,
+                line: r.line,
+                why: r.why,
+            });
+        }
+        // The list's, then the file's.
+        let mut copied = [(Vec::new(), 0), (Vec::new(), 0)];
+        for (i, c) in brought.copied.into_iter().enumerate() {
+            let included = i >= brought.listed;
             match c {
-                copy::Copied::Copied { path, bytes: b } => {
+                copy::Copied::Copied { path, bytes } => {
+                    let (paths, all) = &mut copied[usize::from(included)];
                     paths.push(path);
-                    bytes += b;
+                    *all += bytes;
                 }
                 copy::Copied::Skipped { path, why } => {
                     w.note(Event::CopySkipped {
                         agent: id,
                         path,
                         why,
+                        included,
                     });
                 }
                 copy::Copied::There { .. } => {}
             }
         }
-        if !paths.is_empty() {
-            w.note(Event::Copied {
-                agent: id,
-                paths,
-                bytes,
-            });
+        for (included, (paths, bytes)) in [false, true].into_iter().zip(copied) {
+            if !paths.is_empty() {
+                w.note(Event::Copied {
+                    agent: id,
+                    paths,
+                    bytes,
+                    included,
+                });
+            }
         }
+    }
+
+    /// Whether project `p`'s checkout has a `.worktreeinclude`.
+    pub fn includes(&self, p: ProjectId) -> bool {
+        copy::has_include(&self.places[p].repo)
     }
 
     /// Whether `path` may be copied into project `p`'s worktrees (see
@@ -654,7 +675,7 @@ impl Live {
         thread::spawn(move || {
             let started = (|| {
                 let (cwd, placed, copied, set_up) = if direct {
-                    (repo, None, Vec::new(), setup::Done::None)
+                    (repo, None, copy::Brought::default(), setup::Done::None)
                 } else {
                     // A fork's is made where its worker's HEAD is now, the
                     // change it takes being of now too.
@@ -667,7 +688,7 @@ impl Live {
                     };
                     let w = worktree::ensure(&repo, &root, &tree, start.as_deref())
                         .map_err(|e| e.to_string())?;
-                    let copied = copy::into(&repo, &w.path, &copies, COPY_BUDGET);
+                    let copied = copy::bring(&repo, &w.path, &copies, COPY_BUDGET);
                     // A worktree made just now is set up before the
                     // session starts in it, after its copies.
                     let made = matches!(
@@ -868,57 +889,108 @@ mod tests {
     fn what_was_copied_is_one_line_and_each_skip_another() {
         let mut w = team(1);
         let live = idle_live(2);
+        assert!(!live.includes(0), "no .worktreeinclude in the temp dir");
+        let copied = |path: &str, bytes| copy::Copied::Copied {
+            path: path.into(),
+            bytes,
+        };
+        let skipped = |path: &str| copy::Copied::Skipped {
+            path: path.into(),
+            why: "not in the checkout".into(),
+        };
+        let there = |path: &str| copy::Copied::There { path: path.into() };
         live.copied(
             &mut w,
             1,
-            vec![
-                copy::Copied::Copied {
-                    path: ".env".into(),
-                    bytes: 5,
-                },
-                copy::Copied::There {
-                    path: "target".into(),
-                },
-                copy::Copied::Skipped {
-                    path: "dist".into(),
-                    why: "not in the checkout".into(),
-                },
-                copy::Copied::Copied {
-                    path: "node_modules".into(),
-                    bytes: 7,
-                },
-            ],
+            copy::Brought {
+                copied: vec![
+                    copied(".env", 5),
+                    there("target"),
+                    skipped("dist"),
+                    copied("node_modules", 7),
+                    // From here what only the file names.
+                    copied("vendor", 11),
+                    skipped("cache"),
+                    there("build"),
+                    copied(".env.local", 13),
+                ],
+                listed: 4,
+                refused: vec![
+                    copy::Refused {
+                        line: Some((3, "../x".into())),
+                        why: "reaches outside the checkout".into(),
+                    },
+                    copy::Refused {
+                        line: None,
+                        why: "matches more than 100 paths".into(),
+                    },
+                ],
+            },
         );
         let events: Vec<&Event> = w.journal.iter().map(|e| &e.event).collect();
+        let skip = |path: &str, included| Event::CopySkipped {
+            agent: 1,
+            path: path.into(),
+            why: "not in the checkout".into(),
+            included,
+        };
         assert_eq!(
             events,
             [
-                &Event::CopySkipped {
+                &Event::IncludeRefused {
                     agent: 1,
-                    path: "dist".into(),
-                    why: "not in the checkout".into()
+                    line: Some((3, "../x".into())),
+                    why: "reaches outside the checkout".into()
                 },
+                &Event::IncludeRefused {
+                    agent: 1,
+                    line: None,
+                    why: "matches more than 100 paths".into()
+                },
+                &skip("dist", false),
+                &skip("cache", true),
                 &Event::Copied {
                     agent: 1,
                     paths: vec![".env".into(), "node_modules".into()],
-                    bytes: 12
+                    bytes: 12,
+                    included: false
+                },
+                &Event::Copied {
+                    agent: 1,
+                    paths: vec!["vendor".into(), ".env.local".into()],
+                    bytes: 24,
+                    included: true
                 },
             ]
         );
-        // What the worktree had says nothing.
+        // What the worktree had says nothing; only the file's: one line.
         let mut w = team(1);
-        let there = copy::Copied::There {
-            path: ".env".into(),
+        let brought = copy::Brought {
+            copied: vec![there(".env"), copied("vendor", 2)],
+            listed: 1,
+            refused: Vec::new(),
         };
-        live.copied(&mut w, 1, vec![there]);
-        assert!(w.journal.is_empty());
+        live.copied(&mut w, 1, brought);
+        let events: Vec<&Event> = w.journal.iter().map(|e| &e.event).collect();
+        assert_eq!(
+            events,
+            [&Event::Copied {
+                agent: 1,
+                paths: vec!["vendor".into()],
+                bytes: 2,
+                included: true
+            }]
+        );
     }
 
     #[test]
     fn a_workers_start_copies_the_listed_paths_into_its_worktree() {
         let repo = checkout("copy-start");
-        std::fs::write(repo.join(".gitignore"), ".env\n").unwrap();
+        std::fs::write(repo.join(".gitignore"), ".env\n.env.local\n").unwrap();
         std::fs::write(repo.join(".env"), "KEY=1").unwrap();
+        // And what the checkout's own file names.
+        std::fs::write(repo.join(".env.local"), "LOCAL=1").unwrap();
+        std::fs::write(repo.join(".worktreeinclude"), ".env.local\n").unwrap();
         let root = repo.with_extension("trees");
         let mut w = team(1);
         w.projects[0].copies = vec![".env".into()];
@@ -940,6 +1012,15 @@ mod tests {
             thread::sleep(Duration::from_millis(10));
         }
         assert_eq!(std::fs::read_to_string(&copied).unwrap(), "KEY=1");
+        let local = root.join("claude-1/.env.local");
+        for _ in 0..500 {
+            if std::fs::read_to_string(&local).is_ok_and(|s| s == "LOCAL=1") {
+                break;
+            }
+            thread::sleep(Duration::from_millis(10));
+        }
+        assert_eq!(std::fs::read_to_string(&local).unwrap(), "LOCAL=1");
+        assert!(live.includes(0));
         let _ = std::fs::remove_dir_all(&repo);
         let _ = std::fs::remove_dir_all(&root);
     }
@@ -1244,7 +1325,7 @@ mod tests {
                 std::env::temp_dir(),
                 None,
                 None,
-                Vec::new(),
+                imece_agent::copy::Brought::default(),
                 setup::Done::None,
             )),
         );
@@ -1425,7 +1506,7 @@ mod tests {
                 tmp,
                 None,
                 None,
-                Vec::new(),
+                imece_agent::copy::Brought::default(),
                 setup::Done::None,
             )),
         );
@@ -1704,7 +1785,7 @@ mod tests {
                 cwd.clone(),
                 None,
                 None,
-                Vec::new(),
+                imece_agent::copy::Brought::default(),
                 setup::Done::None,
             )),
         );
@@ -1794,7 +1875,7 @@ mod tests {
                 cwd,
                 None,
                 None,
-                Vec::new(),
+                imece_agent::copy::Brought::default(),
                 setup::Done::None,
             )),
         );

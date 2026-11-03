@@ -800,7 +800,7 @@ mod tests {
                 tree.clone(),
                 None,
                 None,
-                Vec::new(),
+                imece_agent::copy::Brought::default(),
                 setup::Done::None,
             )),
         );
@@ -812,7 +812,7 @@ mod tests {
                 repo.clone(),
                 None,
                 None,
-                Vec::new(),
+                imece_agent::copy::Brought::default(),
                 setup::Done::None,
             )),
         );
@@ -976,7 +976,7 @@ mod tests {
                 tree.clone(),
                 None,
                 None,
-                Vec::new(),
+                imece_agent::copy::Brought::default(),
                 setup::Done::None,
             )),
         );
@@ -1080,7 +1080,7 @@ mod tests {
                 tree.clone(),
                 None,
                 None,
-                Vec::new(),
+                imece_agent::copy::Brought::default(),
                 setup::Done::None,
             )),
         );
@@ -1092,7 +1092,7 @@ mod tests {
                 repo.clone(),
                 None,
                 None,
-                Vec::new(),
+                imece_agent::copy::Brought::default(),
                 setup::Done::None,
             )),
         );
@@ -1242,7 +1242,7 @@ mod tests {
                 tree.clone(),
                 None,
                 None,
-                Vec::new(),
+                imece_agent::copy::Brought::default(),
                 setup::Done::None,
             )),
         );
@@ -1254,7 +1254,7 @@ mod tests {
                 repo.clone(),
                 None,
                 None,
-                Vec::new(),
+                imece_agent::copy::Brought::default(),
                 setup::Done::None,
             )),
         );
@@ -1313,7 +1313,7 @@ mod tests {
                 tree.clone(),
                 None,
                 None,
-                Vec::new(),
+                imece_agent::copy::Brought::default(),
                 setup::Done::None,
             )),
         );
@@ -1374,7 +1374,7 @@ mod tests {
                 tree.clone(),
                 None,
                 None,
-                Vec::new(),
+                imece_agent::copy::Brought::default(),
                 setup::Done::None,
             )),
         );
@@ -1653,7 +1653,7 @@ mod tests {
                 repo.clone(),
                 None,
                 None,
-                Vec::new(),
+                imece_agent::copy::Brought::default(),
                 setup::Done::None,
             )),
         );
@@ -1773,7 +1773,7 @@ mod tests {
                 folder.clone(),
                 None,
                 None,
-                Vec::new(),
+                imece_agent::copy::Brought::default(),
                 setup::Done::None,
             )),
         );

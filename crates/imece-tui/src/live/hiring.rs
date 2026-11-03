@@ -861,7 +861,7 @@ mod tests {
                 std::env::temp_dir(),
                 None,
                 None,
-                Vec::new(),
+                imece_agent::copy::Brought::default(),
                 setup::Done::None,
             )),
         );
