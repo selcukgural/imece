@@ -5829,6 +5829,11 @@ mod tests {
             "{narrow}"
         );
         assert!(!app.mark_drawn.get(), "no mark, nothing moves");
+        // Two projects, four rows: the free rows start under all four.
+        let two = App::new(2, 0, 4, 7, Lang::En);
+        let screen = render(&two, 120, 30);
+        let at = screen.lines().position(|l| l.contains("imece v")).unwrap();
+        assert_eq!(at, 2 + 4 + (21 - 4) / 2, "{screen}");
         // A worker: the salon is the team's.
         let app = App::new(1, 1, 4, 7, Lang::En);
         assert!(!render(&app, 120, 30).contains("imece v"));
