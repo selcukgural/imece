@@ -559,6 +559,11 @@ pub struct Agent {
     /// The tries of a turn that keeps failing on passing vendor errors:
     /// none after a good turn or the person's word. Memory only.
     pub tries: u8,
+    /// The person said yes to everything this agent asks until its turn
+    /// ends (`e` on an ask), and how many asks that yes let go on since;
+    /// none otherwise. The turn's end or the session's takes it away.
+    /// Memory only.
+    pub turn_yes: Option<u32>,
     /// The fault its vendor said the turn now ending failed on, taken by
     /// that turn's end (`imece_agent::Event::Failed`). Memory only.
     pub fault: Option<Fault>,
@@ -680,6 +685,7 @@ impl Agent {
             context: None,
             retry: None,
             tries: 0,
+            turn_yes: None,
             fault: None,
             gone: false,
         }
@@ -1274,6 +1280,17 @@ pub enum Event {
         what: String,
         allowed: bool,
     },
+    /// The person said yes to everything `agent` asks until its turn
+    /// ends.
+    TurnYes {
+        agent: AgentId,
+    },
+    /// `agent`'s turn (or session) ended with the person's yes for it,
+    /// which let `allowed` of its asks go on without asking.
+    TurnYesEnded {
+        agent: AgentId,
+        allowed: u32,
+    },
     /// The person said yes from now on to `rules` for the project
     /// `leader` heads (`added`), or took them back.
     Standing {
@@ -1674,6 +1691,8 @@ impl Event {
             | Event::Rejected { .. }
             | Event::YouSaid { .. }
             | Event::Decided { .. }
+            | Event::TurnYes { .. }
+            | Event::TurnYesEnded { .. }
             | Event::SetupAnswered { .. }
             | Event::Standing { .. }
             | Event::Budget { .. }
@@ -1727,6 +1746,8 @@ impl Event {
             | Event::Approved { agent, .. }
             | Event::Rejected { agent }
             | Event::Decided { agent, .. }
+            | Event::TurnYes { agent }
+            | Event::TurnYesEnded { agent, .. }
             | Event::Replied { agent, .. }
             | Event::Stopped { agent, .. }
             | Event::Retrying { agent, .. }
@@ -3033,6 +3054,35 @@ impl World {
         });
     }
 
+    /// The person says yes to everything agent `id` asks until its turn
+    /// ends; the journal says so.
+    pub fn yes_this_turn(&mut self, id: AgentId) {
+        if self.agents[id].turn_yes.is_none() {
+            self.agents[id].turn_yes = Some(0);
+            self.note(Event::TurnYes { agent: id });
+        }
+    }
+
+    /// Whether agent `id`'s ask goes on by the person's yes for its turn;
+    /// counted when it does.
+    pub fn allowed_this_turn(&mut self, id: AgentId) -> bool {
+        match &mut self.agents[id].turn_yes {
+            Some(n) => {
+                *n = n.saturating_add(1);
+                true
+            }
+            None => false,
+        }
+    }
+
+    /// Agent `id`'s turn or session ended: a yes for it ends too, and the
+    /// journal says how many asks it let go on.
+    pub fn turn_over(&mut self, id: AgentId) {
+        if let Some(allowed) = self.agents[id].turn_yes.take() {
+            self.note(Event::TurnYesEnded { agent: id, allowed });
+        }
+    }
+
     /// Adds `rules` to project `p`'s standing yes, sorted and once each;
     /// the journal says which were new. The new ones are given back.
     pub fn stand(&mut self, p: ProjectId, rules: &[Standing]) -> Vec<Standing> {
@@ -3256,6 +3306,44 @@ pub fn dollars(cost: u64) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_yes_for_a_turn_is_given_once_counts_what_it_lets_go_and_ends_said() {
+        let mut w = crate::live::testing::team(2);
+        let journal = w.journal.len();
+        assert!(!w.allowed_this_turn(1), "none given");
+        assert_eq!(w.agents[1].turn_yes, None);
+        w.turn_over(1);
+        assert_eq!(w.journal.len(), journal, "no yes, nothing to say");
+        w.yes_this_turn(1);
+        assert_eq!(w.agents[1].turn_yes, Some(0));
+        assert_eq!(w.journal.last().unwrap().event, Event::TurnYes { agent: 1 });
+        assert_eq!(w.journal.last().unwrap().event.agent(), 1);
+        assert_eq!(w.journal.last().unwrap().event.kind(), EntryKind::Person);
+        assert!(w.allowed_this_turn(1) && w.allowed_this_turn(1));
+        assert_eq!(w.agents[1].turn_yes, Some(2));
+        assert!(!w.allowed_this_turn(2), "another agent's is its own");
+        // Given again while it holds: the count stays, said once.
+        w.yes_this_turn(1);
+        assert_eq!(w.agents[1].turn_yes, Some(2));
+        assert_eq!(w.journal.len(), journal + 1);
+        w.agents[2].turn_yes = Some(u32::MAX);
+        assert!(w.allowed_this_turn(2));
+        assert_eq!(w.agents[2].turn_yes, Some(u32::MAX), "saturates");
+        w.turn_over(1);
+        assert_eq!(w.agents[1].turn_yes, None);
+        let ended = &w.journal.last().unwrap().event;
+        assert_eq!(
+            *ended,
+            Event::TurnYesEnded {
+                agent: 1,
+                allowed: 2
+            }
+        );
+        assert_eq!((ended.agent(), ended.kind()), (1, EntryKind::Person));
+        w.turn_over(1);
+        assert_eq!(w.journal.len(), journal + 2, "said once");
+    }
 
     #[test]
     fn a_fill_s_percent_needs_a_size_and_stops_at_a_hundred() {

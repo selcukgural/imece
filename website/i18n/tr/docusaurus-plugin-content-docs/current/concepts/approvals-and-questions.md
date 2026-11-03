@@ -43,6 +43,10 @@ Bir istek ne gösterir: kabuk komutu için komutu; başka bir araç için dokund
 
 Bir istekte `A`, o projenin bütün ajanları için isteğin komutlarına artık hep evet der: `npm run build` `npm run …` verir (program ve ilk argümanı), `make` `make` verir. İstek sürer, projenin artık kapsanan diğer açık istekleri de; yalnız böyle komutlar (ve rutin olanlar) çalıştıran sonraki bir istek size sormadan sürer, izi `allowed by your yes from now on: Bash: …` der. Birkaç komutlu bir satır (`&&`, `||`, `;`, `|`) her biri rutinse ya da hep eveti varsa sürer; `$`, ters tırnak, yönlendirme ya da glob içeren bir satır hep sorar. İlk argümanı bir seçenek olan bir komutun (`rm -rf target`) hep eveti olamaz, bir dosya düzenlemenin ya da bir getirmenin de: `A` nedenini söyler, `a` bir kez izin verir. Liste çalıştırmalar arasında projeyle saklanır; `:allow` gösterir, `:allow npm run` adıyla ekler (başından kalkmadan önce), yeniden `:allow npm run` çıkarır. Günlük `shop-api: artık hep evet diyorsun: npm run …` der.
 
+### Bu tur evet
+
+Bir istekte `e` (sizi bekleyenlerde ya da ajanının odağında) ya da `:yes [@NAME]`, o ajan turunu bitirene dek ne isterse evet der: istek sürer, diğer açık istekleri de, o ajanın turu (ya da oturumu) bitene dek sonraki her isteği de size sormadan sürer, ne olursa olsun: `$(…)` içeren ya da bir seçenekle başlayan bir komut, bir düzenleme, bir getirme. Başlattığınız bir işte çalışan tek bir ajan için, istekler çok olduğunda ve siz başındayken; artık hep evet (`A`) bir projenin hep çalıştırdığı komutlar içindir. İzi `allowed by your yes for this turn: …` der, sürdükçe satırı ve odağı `✓ tur` der, günlük de ne zaman verdiğinizi ve tur bitince kaç isteğe sormadan izin verdiğini söyler. Başka bir ajanın istekleri sizi beklemeye devam eder. Yeni bir tur yine sorar.
+
 ## Sorular (`?`)
 
 Bir ajan size `send(to: "you", type: "ask", body)` ile sorar. Bir `?` öğesi olur, "codex-1 sana soruyor: eski CLI bayrağı kalsın mı?", ve soru açıkken ajan boştaysa salon satırı `? → you` okunur. Aynı ajandan daha yeni bir soru eskisinin yerini alır.

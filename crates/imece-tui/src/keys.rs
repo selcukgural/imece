@@ -34,7 +34,7 @@ const SAID: usize = 24;
 
 /// The plain keys imece does something with somewhere outside writing:
 /// the salon, a conversation, a change, the windows and the pickers.
-const USED: &str = "abcfghijklmnpqrstuvwxyzACFGHKLMORSTUWY123456789!#%&'+,-./:<=>?@[] ";
+const USED: &str = "abcefghijklmnpqrstuvwxyzACFGHKLMORSTUWY123456789!#%&'+,-./:<=>?@[] ";
 /// The keys with ctrl imece does something with outside writing.
 const USED_CTRL: &str = "bdforu";
 
@@ -988,15 +988,14 @@ mod tests {
     #[test]
     fn what_imece_uses_outside_writing() {
         for used in [
-            "a", "j", "u", "A", "G", "Y", "1", "9", "?", "'", "#", "space", "^d", "^u", "^f", "^b",
-            "^o", "^r", "enter", "esc", "tab", "⇧tab", "home", "end", "pgup", "pgdn", "↑", "↓",
-            "←", "→",
+            "a", "e", "j", "u", "A", "G", "Y", "1", "9", "?", "'", "#", "space", "^d", "^u", "^f",
+            "^b", "^o", "^r", "enter", "esc", "tab", "⇧tab", "home", "end", "pgup", "pgdn", "↑",
+            "↓", "←", "→",
         ] {
             assert!(key(used).used(), "{used}");
         }
         for unused in [
             "d",
-            "e",
             "o",
             "N",
             "0",

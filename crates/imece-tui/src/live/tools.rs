@@ -553,8 +553,10 @@ impl Live {
     /// Agent `from`'s session asks before it does `what`: a routine
     /// command is allowed at once, and so is one whose commands the
     /// person said yes to from now on for its project
-    /// ([`standing::covered`]); anything else waits in the person's inbox
-    /// and is answered when they decide. The trace says which.
+    /// ([`standing::covered`]), and anything while the person's yes for
+    /// the agent's turn holds ([`World::allowed_this_turn`], counted);
+    /// anything else waits in the person's inbox and is answered when
+    /// they decide. The trace says which.
     pub(super) fn ask(&mut self, w: &mut World, from: AgentId, what: Ask, reply: Reply) {
         if routine(w.agents[from].role, &what, &self.run_programs) {
             w.agents[from].trace(w.tick, format!("allowed on its own: {}", what.line()));
@@ -565,6 +567,14 @@ impl Live {
             w.agents[from].trace(
                 w.tick,
                 format!("allowed by your yes from now on: {}", what.line()),
+            );
+            self.reply(from, reply, true);
+            return;
+        }
+        if w.allowed_this_turn(from) {
+            w.agents[from].trace(
+                w.tick,
+                format!("allowed by your yes for this turn: {}", what.line()),
             );
             self.reply(from, reply, true);
             return;
@@ -641,6 +651,25 @@ impl Live {
         self.decide(w, item, true);
         self.go_on_allowed(w, p);
         Ok(added)
+    }
+
+    /// The person says yes to everything the agent of approval `item`
+    /// asks until its turn ends: the ask is allowed, so is every other
+    /// open ask of that agent (counted), and its next asks go on in
+    /// [`ask`](Self::ask) until the turn or the session ends. `false`,
+    /// and nothing changes, when `item` is not an open approval.
+    pub fn yes_turn(&mut self, w: &mut World, item: usize) -> bool {
+        let Some((id, _)) = Self::ask_at(w, item) else {
+            return false;
+        };
+        w.yes_this_turn(id);
+        self.decide(w, item, true);
+        for other in 0..w.inbox.len() {
+            if Self::ask_at(w, other).is_some_and(|(a, _)| a == id) && w.allowed_this_turn(id) {
+                self.decide(w, other, true);
+            }
+        }
+        true
     }
 
     /// Every open ask of project `p` its standing yes now covers is
@@ -1159,7 +1188,7 @@ mod tests {
     /// A live screen whose agent 1 runs a [`Decides`] session; what it
     /// was answered.
     fn deciding(w: &mut World) -> (Live, Answers) {
-        let mut live = idle_live(2);
+        let mut live = idle_live(w.agents.len());
         let answers = Arc::new(Mutex::new(Vec::new()));
         live.ready(
             w,
@@ -1247,6 +1276,111 @@ mod tests {
             .unwrap();
         live.step(&mut w);
         assert!(!w.has_approval(1));
+    }
+
+    #[test]
+    fn a_yes_for_the_turn_allows_the_agents_asks_until_its_turn_or_session_ends() {
+        let mut w = team(2);
+        let (mut live, answers) = deciding(&mut w);
+        let said = |answers: &Answers| answers.lock().unwrap().clone();
+        codex_asks(&live, 1, "1", "make a");
+        codex_asks(&live, 1, "2", "make b");
+        let other = ask_to_run(&live, 2, "make other");
+        let lead = ask_to_run(&live, 0, "make lead");
+        live.step(&mut w);
+        let open = w.open_inbox();
+        assert_eq!(open.len(), 4);
+        // Not an open approval: nothing changes.
+        assert!(!live.yes_turn(&mut w, 999));
+        w.asked_you(1, "Which API?");
+        let question = w.inbox.len() - 1;
+        assert!(!live.yes_turn(&mut w, question));
+        assert_eq!(w.agents[1].turn_yes, None);
+        assert!(said(&answers).is_empty());
+        // The first ask of worker 1: it and worker 1's other open one go
+        // on; the others' asks wait.
+        assert!(live.yes_turn(&mut w, open[0]));
+        assert_eq!(
+            said(&answers),
+            [("1".to_string(), true), ("2".to_string(), true)]
+        );
+        assert_eq!(w.agents[1].turn_yes, Some(1), "the other open one counted");
+        assert!(live.pending[1].is_empty());
+        let still: Vec<_> = (w.open_inbox().iter())
+            .map(|&i| w.inbox[i].detail.clone())
+            .collect();
+        assert_eq!(still, ["Bash: make other", "Bash: make lead", "Which API?"]);
+        assert!(other.try_recv().is_err() && lead.try_recv().is_err());
+        assert!(
+            w.journal
+                .iter()
+                .any(|e| e.event == Event::TurnYes { agent: 1 })
+        );
+        // Its next asks go on at once, counted; a routine one is no yes of
+        // the person's and is not.
+        codex_asks(&live, 1, "3", "rm -rf build");
+        codex_asks(&live, 1, "4", "cargo test");
+        live.step(&mut w);
+        assert_eq!(
+            said(&answers)[2..],
+            [("3".to_string(), true), ("4".to_string(), true)]
+        );
+        assert_eq!(w.agents[1].turn_yes, Some(2));
+        assert!(!w.has_approval(1));
+        assert!(
+            w.agents[1]
+                .trace
+                .iter()
+                .any(|l| l.ends_with(" allowed by your yes for this turn: shell: rm -rf build"))
+        );
+        // Another agent's ask still waits for the person.
+        let again = ask_to_run(&live, 2, "make again");
+        live.step(&mut w);
+        assert!(again.try_recv().is_err());
+        assert_eq!(w.agents[2].turn_yes, None);
+        // The turn ends: so does the yes, said with its count; the next
+        // ask waits again.
+        let done = AgentEvent::TurnDone {
+            ok: true,
+            text: "done".into(),
+            cost: 0,
+            denied: 0,
+        };
+        live.tx.send((1, live.generation[1], done)).unwrap();
+        live.step(&mut w);
+        assert_eq!(w.agents[1].turn_yes, None);
+        let ended = |w: &World| {
+            (w.journal.iter())
+                .filter(|e| matches!(e.event, Event::TurnYesEnded { agent: 1, .. }))
+                .map(|e| e.event.clone())
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(
+            ended(&w),
+            [Event::TurnYesEnded {
+                agent: 1,
+                allowed: 2
+            }]
+        );
+        codex_asks(&live, 1, "5", "make c");
+        live.step(&mut w);
+        assert_eq!(said(&answers).len(), 4, "asked again");
+        assert!(w.has_approval(1));
+        // Given again, the session's end takes it.
+        let item = (w.open_inbox().into_iter())
+            .find(|&i| w.inbox[i].agent == 1 && w.inbox[i].kind == InboxKind::Approval);
+        assert!(live.yes_turn(&mut w, item.unwrap()));
+        assert_eq!(w.agents[1].turn_yes, Some(0));
+        live.end(&mut w, 1);
+        assert_eq!(w.agents[1].turn_yes, None);
+        assert_eq!(ended(&w).len(), 2);
+        assert_eq!(
+            ended(&w)[1],
+            Event::TurnYesEnded {
+                agent: 1,
+                allowed: 0
+            }
+        );
     }
 
     #[test]

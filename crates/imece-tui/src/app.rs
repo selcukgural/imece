@@ -2830,6 +2830,13 @@ impl App {
             KeyCode::Char('A') if self.pane == Pane::Inbox && self.ask_at_hand().is_some() => {
                 self.answer_always();
             }
+            // On an ask in waiting for you: yes to all its agent asks
+            // until its turn ends.
+            KeyCode::Char('e') if self.pane == Pane::Inbox => {
+                if let Some(item) = self.ask_at_hand() {
+                    self.answer_turn(item);
+                }
+            }
             KeyCode::Char('A') => self.open_archives(),
             KeyCode::Char('H') => self.search_all(""),
             KeyCode::Char('v') => {
@@ -4512,7 +4519,7 @@ impl App {
                 let mark = if p.pinned { "▴ " } else { "" };
                 Some(format!("{mark}{}", p.name))
             }
-            "forget" | "fork" | "talk" | "trace" | "peek" | "why" => self
+            "forget" | "fork" | "talk" | "trace" | "peek" | "why" | "yes" => self
                 .agent_at_hand()
                 .map(|id| self.world.agents[id].name.clone()),
             "next" | "waiting" => {
@@ -4923,6 +4930,19 @@ impl App {
             "peek" => {
                 if let Some(id) = self.agent_named(arg) {
                     self.peek = Some(id);
+                }
+            }
+            "yes" => {
+                if let Some(id) = self.agent_named(arg) {
+                    match self.focus_ask(id) {
+                        Some(item) if self.world.inbox[item].kind == InboxKind::Approval => {
+                            self.answer_turn(item)
+                        }
+                        _ => {
+                            let t = self.lang.text();
+                            self.flash(fill(t.turn_yes_none, &[&self.world.agents[id].name]));
+                        }
+                    }
                 }
             }
             "why" => {
@@ -7209,6 +7229,18 @@ impl App {
         let approve = match k.code {
             KeyCode::Char('a') => true,
             KeyCode::Char('r') => false,
+            KeyCode::Char('e') => {
+                match self.focus_ask(id) {
+                    Some(item) if self.world.inbox[item].kind == InboxKind::Approval => {
+                        self.answer_turn(item)
+                    }
+                    _ => {
+                        let t = self.lang.text();
+                        self.flash(fill(t.turn_yes_none, &[&self.world.agents[id].name]));
+                    }
+                }
+                return true;
+            }
             KeyCode::Char('A') => {
                 match self.focus_ask(id) {
                     Some(item) if self.world.inbox[item].kind == InboxKind::Approval => {
@@ -7245,6 +7277,27 @@ impl App {
         if let Some(item) = self.ask_at_hand() {
             self.answer_always_to(item);
         }
+    }
+
+    /// `e` or `:yes` on approval `item` (an index into `World.inbox`):
+    /// yes to everything its agent asks until its turn ends (record 104);
+    /// the ask and the agent's other open ones go on now.
+    fn answer_turn(&mut self, item: usize) {
+        if self.viewing_archive() {
+            return self.read_only();
+        }
+        let id = self.world.inbox[item].agent;
+        let done = match &mut self.engine {
+            Engine::Live(l) => l.yes_turn(&mut self.world, item),
+            Engine::Sim(s) => s.yes_turn(&mut self.world, item),
+            Engine::View(_) => return self.read_only(),
+        };
+        if done {
+            let t = self.lang.text();
+            self.flash(fill(t.turn_yes_said, &[&self.world.agents[id].name]));
+        }
+        let open = self.inbox_rows().len();
+        self.inbox_sel = self.inbox_sel.min(open.saturating_sub(1));
     }
 
     /// `A` on approval `item` (an index into `World.inbox`), in waiting
@@ -8403,6 +8456,74 @@ pub(crate) mod tests {
         assert!(app.archives.is_none());
         assert_eq!(flash(&app), Some(t.always_not_command.to_string()));
         assert_eq!(open(&app).len(), 2);
+    }
+
+    #[test]
+    fn e_says_yes_to_all_an_agent_asks_until_its_turn_ends_from_the_inbox_a_focus_or_colon_yes() {
+        let mut app = App::new(1, 2, 0, 1, Lang::En);
+        let t = Lang::En.text();
+        let flash = |app: &App| app.flash.as_ref().map(|(m, _)| m.clone());
+        let p = app.current_project();
+        let (one, two) = (
+            app.world.projects[p].leader + 1,
+            app.world.projects[p].leader + 2,
+        );
+        let (n1, n2) = (
+            app.world.agents[one].name.clone(),
+            app.world.agents[two].name.clone(),
+        );
+        let open = |app: &App| -> Vec<String> {
+            (app.world.open_inbox().iter())
+                .map(|&i| app.world.inbox[i].detail.clone())
+                .collect()
+        };
+        app.world.asks_you(two, "Bash: make other");
+        app.world.asks_you(one, "Bash: make a");
+        app.world.asks_you(one, "Edit: x");
+        // In waiting for you, on the second row: agent one's.
+        app.pane = Pane::Inbox;
+        app.inbox_sel = 1;
+        app.on_key(key(KeyCode::Char('e')));
+        assert_eq!(flash(&app), Some(fill(t.turn_yes_said, &[&n1])));
+        assert_eq!(open(&app), ["Bash: make other"]);
+        assert_eq!(app.world.agents[one].turn_yes, Some(1));
+        assert_eq!(app.inbox_sel, 0, "the selection stays on a row");
+        // Not on an ask: nothing.
+        app.world.asked_you(two, "Which?");
+        app.inbox_sel = 1;
+        app.flash = None;
+        app.on_key(key(KeyCode::Char('e')));
+        assert_eq!(flash(&app), None);
+        assert_eq!(app.world.agents[two].turn_yes, None);
+        // Nor off waiting for you.
+        app.pane = Pane::Salon;
+        app.inbox_sel = 0;
+        app.on_key(key(KeyCode::Char('e')));
+        assert_eq!(app.world.agents[two].turn_yes, None);
+        // On a focus: its own agent's, whatever is selected elsewhere.
+        app.zoom = Zoom::Focus(one);
+        app.flash = None;
+        app.on_key(key(KeyCode::Char('e')));
+        assert_eq!(flash(&app), Some(fill(t.turn_yes_none, &[&n1])));
+        app.zoom = Zoom::Trace(two);
+        app.on_key(key(KeyCode::Char('e')));
+        assert_eq!(flash(&app), Some(fill(t.turn_yes_said, &[&n2])));
+        assert_eq!(open(&app), ["Which?"]);
+        assert_eq!(app.world.agents[two].turn_yes, Some(0));
+        app.zoom = Zoom::None;
+        // `:yes @NAME`, and the agent at hand.
+        app.world.agents[two].turn_yes = None;
+        app.world.asks_you(two, "Bash: make b");
+        app.command(&format!("yes @{n1}"));
+        assert_eq!(flash(&app), Some(fill(t.turn_yes_none, &[&n1])));
+        app.command(&format!("yes @{n2}"));
+        assert_eq!(flash(&app), Some(fill(t.turn_yes_said, &[&n2])));
+        assert_eq!(open(&app), ["Which?"]);
+        app.selected = Sel::Agent(two);
+        app.pane = Pane::Salon;
+        assert_eq!(app.command_note("yes"), format!("({n2})"));
+        app.command("yes");
+        assert_eq!(flash(&app), Some(fill(t.turn_yes_none, &[&n2])));
     }
 
     #[test]

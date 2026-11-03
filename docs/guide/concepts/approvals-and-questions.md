@@ -43,6 +43,10 @@ What an ask shows: for a shell command the command; for another tool what it tou
 
 `A` on an ask says yes from now on to its commands, for every agent of that project: `npm run build` gives `npm run …` (the program and its first argument), `make` gives `make`. The ask goes on, so does every other open ask of the project it now covers, and a later ask that only runs such commands (and routine ones) goes on without asking you; its trace says `allowed by your yes from now on: Bash: …`. A line of several commands (`&&`, `||`, `;`, `|`) goes on when each is routine or has its yes; a line with `$`, a backtick, a redirection or a glob always asks. A command whose first argument is an option (`rm -rf target`) can have no yes from now on, nor can a file edit or a fetch: `A` says why and `a` allows it once. The list is kept with the project between runs; `:allow` shows it, `:allow npm run` adds one by name (before you step away), and `:allow npm run` again takes it out. The journal says `shop-api: you say yes from now on to npm run …`.
 
+### A yes for this turn
+
+`e` on an ask (in waiting for you, or on its agent's focus), or `:yes [@NAME]`, says yes to everything that agent asks until its turn ends: the ask goes on, so do its other open ones, and every later ask of that agent goes on without asking you until its turn (or its session) ends, whatever it is: a command with a `$(…)` or an option first, an edit, a fetch. It is for one agent at work on something you started, when the asks are many and you are watching; a yes from now on (`A`) is for the commands a project always runs. Its trace says `allowed by your yes for this turn: …`, its row and focus say `✓ turn` while it holds, and the journal says when you gave it and, at the turn's end, how many asks it let go on. Another agent's asks still wait for you. A new turn asks again.
+
 ## Questions (`?`)
 
 An agent asks you with `send(to: "you", type: "ask", body)`. It becomes a `?` item, "codex-1 asks you: keep the old CLI flag?", and the agent's salon line reads `? → you` while it is idle with the question open. A newer question from the same agent replaces the older.

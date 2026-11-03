@@ -181,6 +181,8 @@ impl Live {
             }
         }
         w.close_approvals(id);
+        // A yes for its turn ends with the session.
+        w.turn_over(id);
         // What it served, its to-do list and its context went with its
         // session.
         w.agents[id].local = None;

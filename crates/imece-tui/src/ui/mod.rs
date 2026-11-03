@@ -1323,6 +1323,17 @@ fn add_quote(spans: &mut Vec<Span<'static>>, text: &str, style: Style) {
 /// read, what a tool call waits to do, what a blocked worker waits for,
 /// why a stopped session stopped.
 pub(crate) fn status_spans(lang: Lang, w: &World, a: &Agent) -> Vec<Span<'static>> {
+    let mut spans = doing_status(lang, w, a);
+    // The person's yes for its turn holds: said first, so it is never
+    // cut off the row.
+    if a.turn_yes.is_some() {
+        spans.insert(0, Span::styled(lang.text().turn_yes_mark, bold(pal().warn)));
+    }
+    spans
+}
+
+/// [`status_spans`] without the mark of a yes for the turn.
+fn doing_status(lang: Lang, w: &World, a: &Agent) -> Vec<Span<'static>> {
     let t = lang.text();
     match a.status {
         Status::Idle if let Some(it) = w.open_item(a.id, InboxKind::Reply) => {
@@ -2109,7 +2120,12 @@ fn ask_hints(app: &App) -> Option<Vec<(&'static str, &'static str)>> {
     let t = app.lang.text();
     let item = app.focus_ask(app.zoomed_agent()?)?;
     Some(match app.world.inbox[item].kind {
-        InboxKind::Approval => vec![("a", t.allow_once), ("A", t.from_now_on), ("r", t.refuse)],
+        InboxKind::Approval => vec![
+            ("a", t.allow_once),
+            ("e", t.this_turn),
+            ("A", t.from_now_on),
+            ("r", t.refuse),
+        ],
         _ => vec![("a", t.apply), ("r", t.reject)],
     })
 }
@@ -3034,13 +3050,17 @@ mod tests {
         app.world.asks_you(id, "Bash: make");
         let asked = foot(&app);
         assert!(
-            asked.starts_with("  a  allow once   A  yes from now on   r  refuse   j k  step"),
+            asked.starts_with(
+                "  a  allow once   e  yes this turn   A  yes from now on   r  refuse   j k  step"
+            ),
             "{asked}"
         );
         app.zoom = Zoom::Trace(id);
         let traced = foot(&app);
         assert!(
-            traced.starts_with("  a  allow once   A  yes from now on   r  refuse   j k  scroll"),
+            traced.starts_with(
+                "  a  allow once   e  yes this turn   A  yes from now on   r  refuse   j k  scroll"
+            ),
             "{traced}"
         );
         // A window over it has keys of its own.
@@ -3066,9 +3086,34 @@ mod tests {
         app.world.asks_you(id, "Bash: make");
         let tr = foot(&app);
         assert!(
-            tr.contains("a  bir kez izin ver   A  bundan sonra hep evet   r  reddet"),
+            tr.contains(
+                "a  bir kez izin ver   e  bu tur evet   A  bundan sonra hep evet   r  reddet"
+            ),
             "{tr}"
         );
+    }
+
+    #[test]
+    fn a_yes_for_the_turn_shows_first_on_the_agents_status_while_it_holds() {
+        let mut app = app_after(1, 2, 0, Lang::En);
+        let id = app.world.projects[0].leader + 1;
+        let text = |app: &App| {
+            status_spans(app.lang, &app.world, &app.world.agents[id])
+                .iter()
+                .map(|s| s.content.to_string())
+                .collect::<String>()
+        };
+        let plain = text(&app);
+        assert!(!plain.contains("✓ turn"), "{plain}");
+        app.world.agents[id].turn_yes = Some(3);
+        let spans = status_spans(app.lang, &app.world, &app.world.agents[id]);
+        assert_eq!(spans[0].content, "✓ turn ");
+        assert_eq!(spans[0].style, bold(pal().warn));
+        assert_eq!(text(&app), format!("✓ turn {plain}"));
+        app.zoom = Zoom::Focus(id);
+        assert!(render(&app, 160, 30).contains("status ✓ turn "));
+        app.lang = Lang::Tr;
+        assert!(text(&app).starts_with("✓ tur "));
     }
 
     #[test]
@@ -6987,7 +7032,7 @@ mod tests {
         let s = render(&app, 140, 40);
         assert!(s.contains("│  Bash: make deploy "), "{s}");
         assert!(
-            s.contains("a yes · A from now on · r no · enter focus"),
+            s.contains("a yes · e this turn · A from now on · r no"),
             "{s}"
         );
         assert_eq!(tall(&s), 6, "{s}");
@@ -6996,7 +7041,7 @@ mod tests {
         assert!(s.contains("allowed: claude-1 goes on"), "{s}");
         assert!(s.contains("│  Bash: curl x | sh "), "{s}");
         assert!(
-            s.contains("a yes · A from now on · r no · enter focus"),
+            s.contains("a yes · e this turn · A from now on · r no"),
             "{s}"
         );
         assert_eq!(tall(&s), 5, "{s}");

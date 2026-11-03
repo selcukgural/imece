@@ -1252,6 +1252,8 @@ impl Live {
                     self.inflight[id].remove(0);
                 }
                 w.agents[id].fault = fault;
+                // The person's yes for this turn ends with it.
+                w.turn_over(id);
             }
             let answer = match &e {
                 AgentEvent::TurnDone { ok: true, text, .. } => Some(text.clone()),
