@@ -75,6 +75,14 @@ pub const BLURRED_DRAW: Duration = Duration::from_secs(1);
 
 /// How many notifications sent are remembered for a click on one: more
 /// than can pile up in a desktop's list in a sitting away.
+/// How many lines `ctrl-d`/`ctrl-u` (page keys) move a setup script's
+/// window.
+pub const SCRIPT_PAGE: usize = 10;
+
+/// A push that ended: the agent it was about, its words, and whether it
+/// went (else why not).
+type Pushed = (AgentId, String, Result<(), String>);
+
 pub const NOTICED: usize = 16;
 
 /// What the screen shows of time: the world's clock, the flash on show
@@ -754,6 +762,10 @@ pub struct App {
     pub settled_projects: BTreeSet<ProjectId>,
     /// The agent whose focus is open in a window over the view (`K`).
     pub peek: Option<AgentId>,
+    /// The worktree setup script an ask is about, in a window over the
+    /// screen (`enter` on the ask, record 92): its inbox item and how far
+    /// down it is scrolled.
+    pub script: Option<(usize, usize)>,
     /// The hint letters, while they are on the screen (`F`).
     pub hints: Option<Hints>,
     /// The agents that were mid-turn at the last step.
@@ -963,6 +975,20 @@ pub struct App {
     /// gets.
     noticed: Vec<(u64, Vec<Note>)>,
     notice_count: u64,
+    /// Where `:notify push` sends, as read from the person's `push` file
+    /// (none in the demo, which only shows its pushes), and the pushes on
+    /// their way: each is sent on a thread of its own and says here how it
+    /// went ([`App::pushed`]).
+    pub push: Option<crate::push::Push>,
+    /// Where the push settings are read from (`push::file`).
+    pub push_file: Option<PathBuf>,
+    pushes: (
+        std::sync::mpsc::Sender<Pushed>,
+        std::sync::mpsc::Receiver<Pushed>,
+    ),
+    /// The last push failed and that was said: the next failures are
+    /// not, until one goes.
+    push_failing: bool,
     /// How much moves on the screen (`:motion`), whether imece runs over
     /// SSH (full is calm there), and when motion's frames count from.
     pub motion: Motion,
@@ -1030,6 +1056,7 @@ impl App {
             settled: BTreeSet::new(),
             settled_projects: BTreeSet::new(),
             peek: None,
+            script: None,
             hints: None,
             needs_only: false,
             unseen: BTreeSet::new(),
@@ -1119,6 +1146,10 @@ impl App {
             notices: notify::Notices::default(),
             noticed: Vec::new(),
             notice_count: 0,
+            push: None,
+            push_file: crate::push::file(),
+            pushes: std::sync::mpsc::channel(),
+            push_failing: false,
             motion: Motion::Off,
             ssh: false,
             epoch: Instant::now(),
@@ -1478,6 +1509,68 @@ impl App {
             KeyCode::Char('?') => self.open_help(),
             _ => {}
         }
+    }
+
+    /// A key while a setup script's window is open: `j k` (the arrows),
+    /// `ctrl-d ctrl-u` (page keys) and `g G` move through it, `a` says yes
+    /// and `r` no to it, `esc` or `q` close it, `?` the help; the rest do
+    /// nothing.
+    fn script_key(&mut self, item: usize, at: usize, k: KeyEvent) {
+        let ctrl = k.modifiers.contains(KeyModifiers::CONTROL);
+        let page = SCRIPT_PAGE;
+        let to = match k.code {
+            KeyCode::Down | KeyCode::Char('j') => at + 1,
+            KeyCode::Up | KeyCode::Char('k') => at.saturating_sub(1),
+            KeyCode::PageDown => at + page,
+            KeyCode::Char('d') if ctrl => at + page,
+            KeyCode::PageUp => at.saturating_sub(page),
+            KeyCode::Char('u') if ctrl => at.saturating_sub(page),
+            KeyCode::Char('g') => 0,
+            KeyCode::Char('G') => usize::MAX,
+            KeyCode::Char('a') => return self.answer_script(item, true),
+            KeyCode::Char('r') => return self.answer_script(item, false),
+            KeyCode::Esc | KeyCode::Char('q') => {
+                self.script = None;
+                return;
+            }
+            KeyCode::Char('?') => return self.open_help(),
+            _ => return,
+        };
+        // Never past the last line's being the top one.
+        let last = self
+            .script_text(item)
+            .map_or(0, |s| s.text().lines().count());
+        self.script = Some((item, to.min(last.saturating_sub(1))));
+    }
+
+    /// The script setup ask `item` is about, as the engine read it.
+    pub fn script_text(&self, item: usize) -> Option<crate::live::setup::Script> {
+        match &self.engine {
+            Engine::Live(l) => l.setup_asked(item).cloned(),
+            Engine::Sim(s) => s.setup_asked(&self.world, item),
+            Engine::View(_) => None,
+        }
+    }
+
+    /// The person's answer to setup script ask `item`: the engine keeps a
+    /// yes and runs the bytes asked about, or holds a no for the run; the
+    /// window closes and the flash says which. An ask no longer there
+    /// (its run ended) is said so.
+    fn answer_script(&mut self, item: usize, yes: bool) {
+        let t = self.lang.text();
+        let took = match &mut self.engine {
+            Engine::Live(l) => l.decide_setup(&mut self.world, item, yes),
+            Engine::Sim(s) => s.decide_setup(&mut self.world, item, yes),
+            Engine::View(_) => return self.read_only(),
+        };
+        self.script = None;
+        self.flash(match (took, yes) {
+            (false, _) => t.setup_gone,
+            (true, true) => t.setup_yes,
+            (true, false) => t.setup_no,
+        });
+        let open = self.inbox_rows().len();
+        self.inbox_sel = self.inbox_sel.min(open.saturating_sub(1));
     }
 
     /// `F` or `:hints`: a label on every row the salon's screen showed
@@ -2177,6 +2270,10 @@ impl App {
         }
         if let Some(id) = self.peek {
             self.peek_key(id, k);
+            return;
+        }
+        if let Some((item, at)) = self.script {
+            self.script_key(item, at, k);
             return;
         }
         if self.hints.is_some() {
@@ -4589,13 +4686,96 @@ impl App {
 
     /// `:notify`: how the person is told in another window.
     fn set_notify(&mut self, how: Notify) {
-        self.notify = how;
         let t = self.lang.text();
-        self.flash(match how {
-            Notify::Off => t.notify_off,
-            Notify::Bell => t.notify_bell,
-            Notify::Text => t.notify_text,
+        let said = match how {
+            Notify::Off => t.notify_off.to_string(),
+            Notify::Bell => t.notify_bell.to_string(),
+            Notify::Text => t.notify_text.to_string(),
+            Notify::Push if self.demo() => t.notify_push_demo.to_string(),
+            Notify::Push => match self.read_push() {
+                Ok(server) => fill(t.notify_push, &[&server]),
+                Err(why) => return self.flash(why),
+            },
+        };
+        self.notify = how;
+        self.flash(said);
+    }
+
+    /// Reads the person's push settings for `:notify push`: the server
+    /// they go to, or why not (the settings as they were are kept then).
+    fn read_push(&mut self) -> Result<String, String> {
+        match crate::push::read(self.push_file.as_deref()) {
+            Ok(p) => {
+                let server = p.server.clone();
+                self.push = Some(p);
+                self.push_failing = false;
+                Ok(server)
+            }
+            Err(why) => Err(ui::words::push_why(self.lang, &why)),
+        }
+    }
+
+    /// At start, `:notify push` kept from the last run: its settings read
+    /// again; when they no longer hold, nothing is pushed (`:notify off`)
+    /// and the flash says why.
+    pub fn start_push(&mut self) {
+        if self.notify != Notify::Push || self.demo() {
+            return;
+        }
+        if let Err(why) = self.read_push() {
+            self.notify = Notify::Off;
+            self.flash(why);
+        }
+    }
+
+    /// Sends `word` to the person's phone when `:notify push` is on: on a
+    /// thread of its own, its end told to [`App::pushed`]; the demo only
+    /// shows it in the journal.
+    pub fn push_word(&mut self, word: &notify::Word) {
+        if self.notify != Notify::Push {
+            return;
+        }
+        let Some(agent) = word.agent else {
+            return;
+        };
+        if self.demo() {
+            self.world.note(Event::Pushed {
+                agent,
+                words: word.body.clone(),
+                sent: false,
+            });
+            self.changed = true;
+            return;
+        }
+        let Some(p) = self.push.clone() else {
+            return;
+        };
+        let (tx, body, loud) = (self.pushes.0.clone(), word.body.clone(), word.loud);
+        std::thread::spawn(move || {
+            let went = crate::push::send(&p, &body, loud);
+            let _ = tx.send((agent, body, went));
         });
+    }
+
+    /// The pushes that ended since last time, in the journal: each that
+    /// went; one that failed only when the one before did not, so a server
+    /// that is down is said once, not at every push.
+    pub fn pushed(&mut self) {
+        while let Ok((agent, words, went)) = self.pushes.1.try_recv() {
+            match went {
+                Ok(()) => {
+                    self.push_failing = false;
+                    let sent = true;
+                    self.world.note(Event::Pushed { agent, words, sent });
+                }
+                Err(_) if self.push_failing => continue,
+                Err(why) => {
+                    self.push_failing = true;
+                    self.world.note(Event::PushFailed { agent, why });
+                }
+            }
+            self.changed = true;
+        }
     }
 
     /// `:motion`: how much moves on the screen. Full over SSH says it
@@ -4884,13 +5064,24 @@ impl App {
                     .map(Note::Stuck),
             )
             .collect();
-        let due = self.notices.due(&waiting, self.blurred.is_some(), now);
+        // Away from the machine the terminal may still have the focus: a
+        // push also counts the keys' quiet, as long as `:away` says.
+        let idle = self.notify == Notify::Push
+            && self.away.over(now.saturating_duration_since(self.last_key));
+        let due = self
+            .notices
+            .due(&waiting, self.blurred.is_some() || idle, now);
         let t = self.lang.text();
         let body = match due[..] {
             [] => return None,
+            [one] if self.notify == Notify::Push => ui::words::pushed(self.lang, &self.world, one),
             [one] => ui::words::notice(self.lang, &self.world, one),
             _ => fill(t.notify_many, &[&due.len().to_string()]),
         };
+        let agent = due.first().map(|&n| match n {
+            Note::Stuck(id) => id,
+            Note::Item(i) => self.world.inbox[i].agent,
+        });
         // Louder for what is stuck or failed.
         let loud = due.iter().any(|&n| match n {
             Note::Stuck(_) => true,
@@ -4901,7 +5092,12 @@ impl App {
         self.noticed.push((id, due));
         let over = self.noticed.len().saturating_sub(NOTICED);
         self.noticed.drain(..over);
-        Some(notify::Word { body, id, loud })
+        Some(notify::Word {
+            body,
+            id,
+            loud,
+            agent,
+        })
     }
 
     /// kitty reported notification `id` clicked: what it was about opens,
@@ -5921,6 +6117,13 @@ impl App {
             Zoom::None => match (self.pane, self.selected) {
                 (Pane::Inbox, _) => {
                     let open = self.inbox_rows();
+                    // A setup script's ask: its bytes in a window.
+                    if let Some(&i) = open.get(self.inbox_sel)
+                        && self.world.inbox[i].kind == InboxKind::Script
+                    {
+                        self.script = Some((i, 0));
+                        return;
+                    }
                     let item = open.get(self.inbox_sel).map(|&i| &self.world.inbox[i]);
                     match item {
                         Some(item) if item.kind == InboxKind::Change => {
@@ -6073,6 +6276,9 @@ impl App {
         if self.world.inbox[item].kind == InboxKind::Change {
             return self.decide_change(self.world.inbox[item].agent, approve);
         }
+        if self.world.inbox[item].kind == InboxKind::Script {
+            return self.answer_script(item, approve);
+        }
         if self.world.inbox[item].kind == InboxKind::Approval {
             let name = self.world.agents[self.world.inbox[item].agent].name.clone();
             match &mut self.engine {
@@ -6210,7 +6416,7 @@ pub fn expand_tilde(path: &str, home: Option<&Path>) -> PathBuf {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
 
     fn key(code: KeyCode) -> KeyEvent {
@@ -10463,7 +10669,7 @@ mod tests {
         assert_eq!(app.notify, Notify::Text, "as it was");
         assert_eq!(
             flashed(&app).as_deref(),
-            Some("beep is not off, bell or text")
+            Some("beep is not off, bell, text or push")
         );
     }
 
@@ -10503,6 +10709,7 @@ mod tests {
                 body: format!("imece · {name} asks you"),
                 id: 1,
                 loud: false,
+                agent: Some(3),
             }),
             "numbered from 1; a question is not loud"
         );
@@ -10530,6 +10737,7 @@ mod tests {
                 body: "imece · 2 things wait for you".into(),
                 id: 2,
                 loud: true,
+                agent: Some(4),
             }),
             "an agent stuck among them: loud"
         );
@@ -10545,6 +10753,317 @@ mod tests {
         assert_eq!(app.notices(at(600)), None);
         app.world.inbox.last_mut().unwrap().open = false;
         assert_eq!(app.notices(at(700)), None);
+    }
+
+    #[test]
+    fn a_push_says_the_kind_the_agent_and_the_project_and_the_demo_only_shows_it() {
+        let mut app = waiting(&[InboxKind::Change]);
+        let t0 = Instant::now();
+        let at = |s: u64| t0 + Duration::from_secs(s);
+        app.command("notify");
+        app.command("notify");
+        app.command("notify");
+        assert_eq!(app.notify, Notify::Off, "push is never in the round");
+        app.command("notify push");
+        assert_eq!(app.notify, Notify::Push);
+        assert_eq!(
+            flashed(&app).as_deref(),
+            Some(app.lang.text().notify_push_demo)
+        );
+        assert_eq!(app.push, None, "the demo reads no settings");
+        app.focus(true, at(0));
+        app.last_key = at(0);
+        assert_eq!(app.notices(at(1)), None);
+        // Away from the machine, its terminal still focused: the keys'
+        // quiet counts, as long as `:away` says (30 min).
+        let away = 30 * 60;
+        assert_eq!(app.notices(at(away - 1)), None, "not away yet");
+        app.world.inbox.push(InboxItem {
+            kind: InboxKind::Question,
+            agent: 3,
+            detail: "the secret plan".into(),
+            researcher: None,
+            open: true,
+            tick: 0,
+            card: None,
+        });
+        assert_eq!(app.notices(at(away)), None, "away from now");
+        assert_eq!(app.notices(at(away + 4)), None, "under the wait");
+        let word = app.notices(at(away + 5)).expect("pushed");
+        let (name, project) = (
+            app.world.agents[3].name.clone(),
+            app.world.projects[app.world.agents[3].project].name.clone(),
+        );
+        assert_eq!(word.body, format!("imece · {name} asks you · {project}"));
+        assert!(!word.body.contains("secret"), "never what an agent wrote");
+        assert_eq!(word.agent, Some(3));
+        let before = app.world.journal.len();
+        app.push_word(&word);
+        assert_eq!(app.world.journal.len(), before + 1);
+        assert_eq!(
+            app.world.journal[before].event,
+            Event::Pushed {
+                agent: 3,
+                words: word.body.clone(),
+                sent: false
+            }
+        );
+        let line = ui::words::event(Lang::En, &app.world, &app.world.journal[before].event);
+        assert_eq!(
+            line,
+            format!(
+                "a push to your phone would say (the demo sends nothing): {}",
+                word.body
+            )
+        );
+        // Not pushed: with another way, or a word about no one.
+        app.notify = Notify::Text;
+        app.push_word(&word);
+        app.notify = Notify::Push;
+        app.push_word(&notify::Word {
+            agent: None,
+            ..word
+        });
+        assert_eq!(app.world.journal.len(), before + 1);
+        // The keys' quiet counts only for a push.
+        app.notify = Notify::Text;
+        app.world.inbox.push(InboxItem {
+            kind: InboxKind::Reply,
+            agent: 2,
+            detail: "x".into(),
+            researcher: None,
+            open: true,
+            tick: 0,
+            card: None,
+        });
+        assert_eq!(app.notices(at(away + 100)), None);
+        assert_eq!(app.notices(at(away + 200)), None, "in the window");
+        // `:away off`: only another window.
+        app.notify = Notify::Push;
+        app.away = Away::parse("off").unwrap();
+        app.world.inbox.push(InboxItem {
+            kind: InboxKind::Change,
+            agent: 4,
+            detail: "x".into(),
+            researcher: None,
+            open: true,
+            tick: 0,
+            card: None,
+        });
+        assert_eq!(app.notices(at(away + 300)), None);
+        assert_eq!(app.notices(at(away * 3)), None, "never away by the keys");
+    }
+
+    #[test]
+    fn live_push_settings_are_read_at_push_and_a_failure_is_said_once() {
+        let dir = std::env::temp_dir().join(format!("imece-app-push-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("push");
+        let w = crate::live::testing::team(1);
+        let live = crate::live::testing::idle_live(2);
+        let mut app = App::with(w, Engine::Live(Box::new(live)), Lang::En);
+        app.push_file = Some(file.clone());
+        // No settings: refused, as it was.
+        app.command("notify push");
+        assert_eq!(app.notify, Notify::Off);
+        assert_eq!(
+            flashed(&app),
+            Some(format!(
+                "no push settings: write {} (server, topic, token)",
+                file.display()
+            ))
+        );
+        std::fs::write(&file, "topic = short\n").unwrap();
+        app.command("notify push");
+        assert_eq!(app.notify, Notify::Off);
+        assert!(
+            flashed(&app)
+                .unwrap()
+                .contains("on ntfy.sh a topic of at least 16")
+        );
+        std::fs::write(&file, "server = http://127.0.0.1:9\ntopic = t\n").unwrap();
+        app.command("notify push");
+        assert_eq!(app.notify, Notify::Push);
+        assert_eq!(
+            flashed(&app).as_deref(),
+            Some(
+                "a push to your phone through http://127.0.0.1:9 when something waits and you are away"
+            )
+        );
+        assert_eq!(app.push.as_ref().map(|p| p.topic.as_str()), Some("t"));
+        // How pushes end, in the journal: a failure once until one goes.
+        let tx = app.pushes.0.clone();
+        let before = app.world.journal.len();
+        let ends: [Result<(), String>; 5] = [
+            Ok(()),
+            Err("down".into()),
+            Err("down".into()),
+            Ok(()),
+            Err("refused".into()),
+        ];
+        for end in ends {
+            tx.send((1, "imece · w".into(), end)).unwrap();
+        }
+        app.changed = false;
+        app.pushed();
+        assert!(app.changed);
+        let got: Vec<Event> = app.world.journal[before..]
+            .iter()
+            .map(|e| e.event.clone())
+            .collect();
+        let sent = |agent| Event::Pushed {
+            agent,
+            words: "imece · w".into(),
+            sent: true,
+        };
+        let failed = |why: &str| Event::PushFailed {
+            agent: 1,
+            why: why.into(),
+        };
+        assert_eq!(got, [sent(1), failed("down"), sent(1), failed("refused")]);
+        app.changed = false;
+        app.pushed();
+        assert!(!app.changed, "nothing new");
+        // A push sent for real: curl to a port no one listens on fails.
+        app.push_failing = false;
+        let word = notify::Word {
+            body: "imece · x".into(),
+            id: 1,
+            loud: true,
+            agent: Some(0),
+        };
+        app.push_word(&word);
+        let before = app.world.journal.len();
+        for _ in 0..300 {
+            app.pushed();
+            if app.world.journal.len() > before {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        assert!(
+            matches!(
+                &app.world.journal[before].event,
+                Event::PushFailed { agent: 0, .. }
+            ),
+            "{:?}",
+            app.world.journal.get(before)
+        );
+        // The settings read again at the next start: gone, nothing pushed.
+        std::fs::remove_file(&file).unwrap();
+        app.start_push();
+        assert_eq!(app.notify, Notify::Off);
+        assert!(flashed(&app).unwrap().starts_with("no push settings"));
+        // Kept and still good: as it was, said nothing.
+        std::fs::write(&file, "server = http://127.0.0.1:9\ntopic = t\n").unwrap();
+        app.notify = Notify::Push;
+        app.flash = None;
+        app.start_push();
+        assert_eq!((app.notify, flashed(&app)), (Notify::Push, None));
+        // Another way kept: nothing read.
+        std::fs::remove_file(&file).unwrap();
+        app.notify = Notify::Bell;
+        app.start_push();
+        assert_eq!((app.notify, flashed(&app)), (Notify::Bell, None));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A demo app whose hired worker's new worktree asks about the setup
+    /// script, the ask selected in WAITING FOR YOU.
+    pub(crate) fn asking_setup() -> (App, usize, AgentId) {
+        let mut app = waiting(&[]);
+        let Engine::Sim(s) = &mut app.engine else {
+            unreachable!()
+        };
+        let id = s.hire_for_test(&mut app.world, 0);
+        let item = (app.world.inbox.iter())
+            .position(|i| i.kind == InboxKind::Script)
+            .expect("asked");
+        app.pane = Pane::Inbox;
+        app.inbox_sel = app.inbox_rows().iter().position(|&i| i == item).unwrap();
+        (app, item, id)
+    }
+
+    #[test]
+    fn enter_on_a_setup_ask_shows_its_bytes_and_a_or_r_answer_there() {
+        let (mut app, item, id) = asking_setup();
+        app.on_key(key(KeyCode::Enter));
+        assert_eq!(app.script, Some((item, 0)));
+        let text = app.script_text(item).unwrap().text();
+        let lines = text.lines().count();
+        assert_eq!(lines, 6);
+        // Moving: never past the last line's being the top one.
+        for (k, at) in [
+            (key(KeyCode::Char('j')), 1),
+            (key(KeyCode::Down), 2),
+            (key(KeyCode::Char('k')), 1),
+            (key(KeyCode::Up), 0),
+            (key(KeyCode::Up), 0),
+            (key(KeyCode::Char('G')), lines - 1),
+            (key(KeyCode::Char('j')), lines - 1),
+            (key(KeyCode::Char('g')), 0),
+            (key(KeyCode::PageDown), lines - 1),
+            (key(KeyCode::PageUp), 0),
+            (ctrl('d'), lines - 1),
+            (ctrl('u'), 0),
+            (key(KeyCode::Char('d')), 0),
+            (key(KeyCode::Char('x')), 0),
+            (key(KeyCode::Char('j')), 1),
+            (key(KeyCode::Char('u')), 1),
+        ] {
+            app.on_key(k);
+            assert_eq!(app.script, Some((item, at)), "{k:?}");
+        }
+        assert_eq!(SCRIPT_PAGE, 10);
+        // `?` opens the help over it; esc closes the window.
+        app.on_key(key(KeyCode::Char('?')));
+        assert!(app.help);
+        app.help = false;
+        app.on_key(key(KeyCode::Esc));
+        assert_eq!(app.script, None);
+        app.on_key(key(KeyCode::Enter));
+        app.on_key(key(KeyCode::Char('q')));
+        assert_eq!(app.script, None);
+        // `a` in the window: yes, it ran, the window closed.
+        app.on_key(key(KeyCode::Enter));
+        app.on_key(key(KeyCode::Char('a')));
+        assert_eq!(app.script, None);
+        assert!(!app.world.inbox[item].open);
+        assert_eq!(flashed(&app).as_deref(), Some(app.lang.text().setup_yes));
+        assert!(
+            app.world
+                .journal
+                .iter()
+                .any(|e| matches!(e.event, Event::SetupRan { agent, .. } if agent == id))
+        );
+        // Answered already: said so.
+        app.script = Some((item, 0));
+        app.on_key(key(KeyCode::Char('r')));
+        assert_eq!(flashed(&app).as_deref(), Some(app.lang.text().setup_gone));
+        assert_eq!(app.script, None);
+    }
+
+    #[test]
+    fn r_on_a_setup_ask_in_waiting_for_you_says_no() {
+        let (mut app, item, _) = asking_setup();
+        app.on_key(key(KeyCode::Char('r')));
+        assert!(!app.world.inbox[item].open);
+        assert_eq!(flashed(&app).as_deref(), Some(app.lang.text().setup_no));
+        assert!(app.world.setup_approved.is_empty());
+        let (mut app, item, _) = asking_setup();
+        app.on_key(key(KeyCode::Char('a')));
+        assert!(!app.world.inbox[item].open);
+        assert_eq!(app.world.setup_approved.len(), 1);
+        assert_eq!(app.inbox_sel, 0);
+    }
+
+    #[test]
+    fn the_demo_keeps_push_as_it_was_at_start() {
+        let mut app = waiting(&[]);
+        app.push_file = None;
+        app.notify = Notify::Push;
+        app.start_push();
+        assert_eq!((app.notify, flashed(&app)), (Notify::Push, None));
     }
 
     #[test]
@@ -10689,6 +11208,42 @@ mod tests {
             ui::words::notice(Lang::Tr, w, Note::Stuck(2)),
             format!("imece · {} takıldı", name(2))
         );
+        // A push adds the project of whom it is about.
+        let project = |id: AgentId| w.projects[w.agents[id].project].name.clone();
+        assert_eq!(
+            ui::words::pushed(Lang::En, w, Note::Stuck(2)),
+            format!("imece · {} is stuck · {}", name(2), project(2))
+        );
+        assert_eq!(
+            ui::words::pushed(Lang::En, w, Note::Item(3)),
+            format!("imece · {} asks you · {}", name(4), project(4))
+        );
+    }
+
+    #[test]
+    fn each_refusal_of_push_settings_says_what_to_mend() {
+        use crate::push::Why;
+        let say = |why: Why| ui::words::push_why(Lang::En, &why);
+        assert_eq!(
+            say(Why::NoFile("/c/push".into())),
+            "no push settings: write /c/push (server, topic, token)"
+        );
+        assert_eq!(
+            say(Why::Unreadable("not text".into())),
+            "push settings: not text"
+        );
+        assert!(say(Why::Line(3)).starts_with("push settings, line 3: "));
+        assert_eq!(say(Why::NoTopic), "push settings: no topic");
+        assert!(
+            say(Why::Server("http://a.b".into())).starts_with("push settings: http://a.b is not")
+        );
+        assert!(say(Why::Topic).ends_with("at most 64"));
+        assert!(say(Why::Guessable).contains("at least 16 with a digit"));
+        assert_eq!(
+            say(Why::Token("/t: not one token".into())),
+            "push settings: the token file /t: not one token"
+        );
+        assert!(ui::words::push_why(Lang::Tr, &Why::NoTopic).contains("topic yok"));
     }
 
     #[test]

@@ -10,6 +10,7 @@ use std::collections::{HashMap, VecDeque};
 use std::path::Path;
 
 use crate::i18n::Lang;
+use crate::live::setup;
 use crate::live::{Refusal, SUGGEST_CAP, SUGGEST_DAY_CALLS, SUGGEST_DAY_COST, numbers, standing};
 use crate::model::*;
 use crate::rng::Rng;
@@ -663,7 +664,29 @@ struct Extras {
     calm: bool,
     /// Sessions resumed this run, refused ones included.
     resumes: u32,
+    /// The workers whose worktree the setup script was run in or asked
+    /// about (once each, at its first start).
+    set_up: std::collections::HashSet<AgentId>,
+    /// Workers hired this run: their worktrees are new, as live's made
+    /// at a hire (the demo's first workers' are as old as the demo).
+    hired: std::collections::HashSet<AgentId>,
+    /// The setup asks open: the item, the script's key, the workers that
+    /// went without it meanwhile.
+    setup_asks: Vec<(usize, String, Vec<AgentId>)>,
+    /// The setup scripts the person said no to this run.
+    setup_refused: Vec<String>,
 }
+
+/// The demo's worktree setup script, the same in every project.
+const DEMO_SETUP: &str = "#!/bin/sh\n\
+# Sets up a new worktree: its dependencies and its database.\n\
+set -e\n\
+cd \"$IMECE_WORKTREE\"\n\
+npm ci --no-audit\n\
+npm run db:migrate\n";
+
+/// What the demo's setup script says as it ends.
+const DEMO_SETUP_SAYS: [&str; 2] = ["added 412 packages in 3s", "migrations: 7 applied"];
 
 /// What a vendor says in the demo when it would not resume a session.
 const REFUSED: &str = "the session could not resume session 5f1c… (error_during_execution)";
@@ -734,6 +757,7 @@ pub fn world(
     let mut w = World {
         marks: Default::default(),
         cleared: Default::default(),
+        setup_approved: Vec::new(),
         sent: Vec::new(),
         limits: Vec::new(),
         tick: 0,
@@ -1466,8 +1490,109 @@ impl Sim {
             return;
         }
         self.copy_in(w, id);
+        self.set_up(w, id);
         let roll = self.rng.below(12);
         self.worktree(w, id, roll);
+    }
+
+    /// A worker hired into project `p` and started, as the demo's
+    /// leader hires one.
+    #[cfg(test)]
+    pub fn hire_for_test(&mut self, w: &mut World, p: ProjectId) -> AgentId {
+        let id = self.hire(w, p);
+        self.hired(w, w.projects[p].leader, id);
+        self.start(w, id);
+        id
+    }
+
+    /// The demo's setup script as live reads it from project `p`'s
+    /// checkout.
+    fn setup_script(w: &World, p: ProjectId) -> setup::Script {
+        let bytes = DEMO_SETUP.as_bytes().to_vec();
+        setup::Script {
+            real: std::path::Path::new("/demo")
+                .join(&w.projects[p].name)
+                .join(setup::FILE),
+            sha: crate::sha::hex(&bytes),
+            bytes,
+        }
+    }
+
+    /// Worker `id`'s worktree, new at its first start, set up as live
+    /// does: the script runs when the person said yes to it, else it is
+    /// asked about (one ask per script, the workers that go without it
+    /// counted on it); nothing after a no this run.
+    fn set_up(&mut self, w: &mut World, id: AgentId) {
+        if !self.extras.hired.contains(&id) || !self.extras.set_up.insert(id) {
+            return;
+        }
+        let key = Self::setup_script(w, w.agents[id].project).key();
+        if self.extras.setup_refused.contains(&key) {
+            return;
+        }
+        if w.setup_approved.contains(&key) {
+            return Self::setup_ran(w, id);
+        }
+        let open =
+            |(item, k, _): &&mut (usize, String, Vec<AgentId>)| *k == key && w.inbox[*item].open;
+        if let Some((_, _, agents)) = self.extras.setup_asks.iter_mut().find(open) {
+            agents.push(id);
+            return;
+        }
+        self.extras.setup_asks.push((w.inbox.len(), key, vec![id]));
+        w.inbox.push(InboxItem {
+            kind: InboxKind::Script,
+            agent: id,
+            detail: setup::FILE.to_string(),
+            researcher: None,
+            open: true,
+            tick: w.tick,
+            card: None,
+        });
+    }
+
+    /// The demo's setup script ran in worker `id`'s worktree.
+    fn setup_ran(w: &mut World, id: AgentId) {
+        w.agents[id].trace(w.tick, "worktree setup: exit 0, 4.2 s");
+        w.note(Event::SetupRan {
+            agent: id,
+            ok: true,
+            end: "exit 0, 4.2 s".into(),
+            lines: DEMO_SETUP_SAYS.map(String::from).to_vec(),
+        });
+    }
+
+    /// The script setup ask `item` is about, for the window that shows it.
+    pub fn setup_asked(&self, w: &World, item: usize) -> Option<setup::Script> {
+        self.extras.setup_asks.iter().find(|(i, _, _)| *i == item)?;
+        Some(Self::setup_script(w, w.agents[w.inbox[item].agent].project))
+    }
+
+    /// The person's answer to setup ask `item`, as live's
+    /// (`Live::decide_setup`): yes keeps it and runs it in the worktrees
+    /// that went without; no holds for the run. False when nothing is
+    /// asked there.
+    pub fn decide_setup(&mut self, w: &mut World, item: usize, yes: bool) -> bool {
+        let asks = &mut self.extras.setup_asks;
+        let Some(at) = asks
+            .iter()
+            .position(|(i, _, _)| *i == item && w.inbox[item].open)
+        else {
+            return false;
+        };
+        let (_, key, agents) = asks.remove(at);
+        w.inbox[item].open = false;
+        let agent = w.inbox[item].agent;
+        w.note(Event::SetupAnswered { agent, yes });
+        if !yes {
+            self.extras.setup_refused.push(key);
+            return true;
+        }
+        w.approve_setup(key);
+        for id in agents {
+            Self::setup_ran(w, id);
+        }
+        true
     }
 
     /// The paths the person listed (`:copy`) that worker `id`'s worktree
@@ -1616,6 +1741,7 @@ impl Sim {
             w.agents[id].trace(t, format!("worktree from {f}"));
         }
         w.agents[id].start.clone_from(&from);
+        self.extras.hired.insert(id);
         w.note(Event::Hired {
             by,
             agent: id,
@@ -2197,7 +2323,7 @@ impl Sim {
         m.filled = m.filled.max(FRESH_CONTEXT) + tokens;
         if m.filled > AUTO_COMPACT {
             m.filled = FRESH_CONTEXT;
-            w.agents[id].trace(t, "context compacted by the session");
+            w.agents[id].trace(t, "note context compacted by the session");
         }
         let used = self.mind(id).filled;
         w.agents[id].context = Some(Fill {
@@ -2256,7 +2382,7 @@ impl Sim {
         a.activity = Some(doing);
         if let Some(url) = serves {
             // Built, it runs: its address goes on the row as a link.
-            let text = format!("It builds; the app runs at {url}.");
+            let text = format!("It **builds**; the app runs at {url}.");
             a.wrote(&text);
             a.trace(t, format!("text {text:?}"));
         }
@@ -2463,7 +2589,7 @@ impl Sim {
         let until = t + self.rng.range(3, 8);
         self.mind(id).testing = Some(until);
         let a = &mut w.agents[id];
-        a.trace(t, format!("run {} → exit 0", kit.build));
+        a.trace(t, format!("run: {}: exit 0", kit.build));
         a.trace(t, format!("tool_use run {}", kit.test));
         a.activity = Some(format!("run {}", kit.test));
     }
@@ -2475,7 +2601,7 @@ impl Sim {
         self.mind(id).testing = None;
         let test = kit(w.agents[id].project).test;
         self.ran(id, test, code);
-        w.agents[id].trace(t, format!("run {test} → exit {code}"));
+        w.agents[id].trace(t, format!("run: {test}: exit {code}"));
         if code != 0 {
             let a = &mut w.agents[id];
             a.progress = 85;
@@ -2792,6 +2918,9 @@ mod tests {
                     let _ = s.apply_change(w, a, Vec::new());
                 }
                 InboxKind::Approval => w.decided(i, true),
+                InboxKind::Script => {
+                    s.decide_setup(w, i, true);
+                }
                 InboxKind::Question | InboxKind::Fault => {
                     // Closed here, once: a run's length never hangs on
                     // `said` closing it.
@@ -4688,6 +4817,135 @@ diff --git a/b.rs b/b.rs
     }
 
     #[test]
+    fn a_hired_worker_s_new_worktree_asks_for_the_setup_script_and_a_yes_runs_it() {
+        let (mut w, mut s) = world(1, 1, 0, 1, Lang::En);
+        let lead = w.projects[0].leader;
+        // The demo's first worker: its worktree is as old as the demo.
+        let old = workers_of(&w, 0)[0];
+        s.start(&mut w, old);
+        assert!(w.inbox.iter().all(|i| i.kind != InboxKind::Script));
+        let hire = |w: &mut World, s: &mut Sim| {
+            let id = s.hire(w, 0);
+            s.hired(w, lead, id);
+            s.start(w, id);
+            id
+        };
+        let a = hire(&mut w, &mut s);
+        let item = (w.inbox.iter())
+            .position(|i| i.kind == InboxKind::Script)
+            .expect("asked");
+        let it = &w.inbox[item];
+        assert_eq!(
+            (it.agent, it.card, it.detail.as_str()),
+            (a, None, setup::FILE)
+        );
+        let script = s.setup_asked(&w, item).unwrap();
+        assert_eq!(script.text(), DEMO_SETUP);
+        assert_eq!(script.sha, crate::sha::hex(DEMO_SETUP.as_bytes()));
+        assert_eq!(
+            script.real,
+            std::path::Path::new("/demo/shop-api/.imece/worktree-setup.sh")
+        );
+        assert_eq!(s.setup_asked(&w, item + 1), None);
+        // The next one goes without it too: counted on the same ask.
+        let b = hire(&mut w, &mut s);
+        let asks = w
+            .inbox
+            .iter()
+            .filter(|i| i.kind == InboxKind::Script)
+            .count();
+        assert_eq!(asks, 1);
+        assert!(
+            !s.decide_setup(&mut w, item + 1, true),
+            "nothing asked there"
+        );
+        assert!(s.decide_setup(&mut w, item, true));
+        assert!(!w.inbox[item].open);
+        assert_eq!(w.setup_approved, [script.key()]);
+        let ran: Vec<AgentId> = (w.journal.iter())
+            .filter_map(|e| match &e.event {
+                Event::SetupRan {
+                    agent,
+                    ok: true,
+                    lines,
+                    ..
+                } if *lines == DEMO_SETUP_SAYS => Some(*agent),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(ran, [a, b]);
+        assert!(w.journal.iter().any(|e| e.event
+            == Event::SetupAnswered {
+                agent: a,
+                yes: true
+            }));
+        assert!(!s.decide_setup(&mut w, item, true), "answered already");
+        // Said yes to: the next new worktree runs it, once.
+        let c = hire(&mut w, &mut s);
+        let ran_in = |w: &World, id| {
+            (w.journal.iter())
+                .any(|e| matches!(e.event, Event::SetupRan { agent, .. } if agent == id))
+        };
+        assert!(ran_in(&w, c));
+        let runs = |w: &World| {
+            w.journal
+                .iter()
+                .filter(|e| matches!(e.event, Event::SetupRan { .. }))
+                .count()
+        };
+        let before = runs(&w);
+        s.minds[c].started = false;
+        s.start(&mut w, c);
+        assert_eq!(runs(&w), before, "a worktree is set up once");
+        assert_eq!(
+            w.inbox
+                .iter()
+                .filter(|i| i.kind == InboxKind::Script)
+                .count(),
+            1
+        );
+    }
+
+    #[test]
+    fn a_no_to_the_demo_s_setup_script_holds_for_the_run() {
+        let (mut w, mut s) = world(1, 1, 0, 1, Lang::En);
+        let lead = w.projects[0].leader;
+        let hire = |w: &mut World, s: &mut Sim| {
+            let id = s.hire(w, 0);
+            s.hired(w, lead, id);
+            s.start(w, id);
+            id
+        };
+        let a = hire(&mut w, &mut s);
+        let item = w
+            .inbox
+            .iter()
+            .position(|i| i.kind == InboxKind::Script)
+            .unwrap();
+        assert!(s.decide_setup(&mut w, item, false));
+        assert!(w.setup_approved.is_empty());
+        assert!(w.journal.iter().any(|e| e.event
+            == Event::SetupAnswered {
+                agent: a,
+                yes: false
+            }));
+        hire(&mut w, &mut s);
+        assert_eq!(
+            w.inbox
+                .iter()
+                .filter(|i| i.kind == InboxKind::Script)
+                .count(),
+            1,
+            "not asked again"
+        );
+        assert!(
+            !w.journal
+                .iter()
+                .any(|e| matches!(e.event, Event::SetupRan { .. }))
+        );
+    }
+
+    #[test]
     fn each_worker_serves_on_its_own_port_after_the_ones_before_it() {
         let (mut w, mut s) = world(2, 2, 0, 3, Lang::En);
         // The second shop worker comes after the mobile one.
@@ -4883,7 +5141,9 @@ diff --git a/b.rs b/b.rs
         );
         let said = w.agents[worker].trace.back().unwrap();
         assert!(
-            said.ends_with(r#"text "It builds; the app runs at http://localhost:5080/swagger.""#),
+            said.ends_with(
+                r#"text "It **builds**; the app runs at http://localhost:5080/swagger.""#
+            ),
             "{said}"
         );
         s.stop(&mut w, worker);

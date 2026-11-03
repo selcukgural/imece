@@ -42,6 +42,8 @@ No agent writes in your checkout. The leader works there read only; workers work
 - `:export` never writes over an existing file; `:copy` refuses paths that leave the checkout or are links.
 - The store is `0600`; a file imece cannot read is refused, not overwritten.
 - The repository's `AGENTS.md`/`CLAUDE.md` goes to agents cut at 16 KiB, and the journal says when it was cut.
+- A worktree setup script (`.imece/worktree-setup.sh`) never runs until you said yes to its exact bytes (SHA-256, real path, `/bin/sh`), kept in imece's store; a changed byte asks again; what runs is a private copy of the bytes you read, with the cleared environment, in its own process group, for at most 60 seconds.
+- A push to your phone (`:notify push`) carries imece's words, an agent's name and a project's, never what an agent wrote or a command; a topic on the public ntfy server must not be one to guess; a token comes only from a `0600` file of yours and goes to `curl` on its stdin, never in a URL, on a command line or in a log; a failed push is said once, not retried.
 
 ## What imece does not do
 

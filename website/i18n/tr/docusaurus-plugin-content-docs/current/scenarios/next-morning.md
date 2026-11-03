@@ -140,6 +140,8 @@ Sayılar türe göre yeni günlük satırları ve şu an sizi bekleyenlerdir; al
 
 Aynı anda birkaçı tek zil ya da sayıyla tek bildirimdir. Yalın `:notify` sırayla döner: off, bell, text, off; seçim hatırlanır. Özetle aynı odak bildirimlerini ister, metin için de bildirim gösteren bir terminal (iTerm2, WezTerm, Ghostty, kitty; başka yerde `bell`). kitty'de bildirime tıklayınca neyle ilgiliyse o açılır.
 
+Makineden tümüyle uzaktayken `:notify push` aynı sözleri, projeyle birlikte, ntfy üzerinden telefonunuza gönderir; terminal odağını korusa da `:away` süresince hiçbir tuşa basılmadıysa da. Topic'inizi içeren bir `push` ayar dosyası ister; bkz. [`:notify`](../reference/commands.md#notify-offbelltextpush).
+
 ## 6. İşaretlerle yer tutun
 
 Günlükte (ya da açık bir konuşmada) yeniden isteyeceğiniz bir satırı seçin, diyelim planı taşıyan mesajı, ve `m`ye basın: `işaretlendi: ' ona geri getirir`. Satır saatinden sonra `✱` taşır. `'` sonraki işaretli satırı seçer, başa dönerek: açık konuşmada, yoksa günlükte; başka her yerden önce salonun günlüğüne gider. `m` yine işareti kaldırır (`işaret kaldırıldı`).

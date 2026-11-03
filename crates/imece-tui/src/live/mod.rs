@@ -55,6 +55,7 @@ mod projects;
 mod prompts;
 mod remember;
 mod sessions;
+pub(crate) mod setup;
 pub(crate) mod standing;
 mod suggest;
 #[cfg(test)]
@@ -228,6 +229,7 @@ type Ready = Result<
         Option<worktree::Placed>,
         Option<(usize, String)>,
         Vec<copy::Copied>,
+        setup::Done,
     ),
     String,
 >;
@@ -651,6 +653,15 @@ pub struct Live {
     cwds: Vec<Option<PathBuf>>,
     /// Each agent's runs under way, killed with its project or with imece.
     running: Vec<run::Running>,
+    /// Worktree setup scripts asked about (record 92), by their inbox
+    /// item: the bytes asked about and the agents whose new worktrees
+    /// went without them while the ask waited.
+    setup_asks: Vec<setup::Ask>,
+    /// The setup scripts the person said no to this run, by key.
+    setup_refused: HashSet<String>,
+    /// Setup runs after a yes, each on a thread of its own, ending here.
+    setup_tx: Sender<(AgentId, Result<run::Outcome, String>)>,
+    setup_rx: Receiver<(AgentId, Result<run::Outcome, String>)>,
     /// Programs workers and helpers may run, next to cargo and git.
     run_programs: Vec<String>,
     run_timeout: Duration,
@@ -761,6 +772,7 @@ pub fn world(o: Options, present: &[(Vendor, bool)]) -> Result<(World, Live), St
             World {
                 marks: Default::default(),
                 cleared: Default::default(),
+                setup_approved: Vec::new(),
                 sent: Vec::new(),
                 limits: Vec::new(),
                 tick: 0,
@@ -953,6 +965,7 @@ impl Live {
         let (done, git_back) = mpsc::channel();
         let (ran_tx, ran_back) = mpsc::channel();
         let (said_tx, said_rx) = mpsc::channel();
+        let (setup_tx, setup_rx) = mpsc::channel();
         thread::spawn(move || git_thread(jobs, done));
         Live {
             state: std::env::temp_dir(),
@@ -1016,6 +1029,10 @@ impl Live {
             posted: Vec::new(),
             cwds: Vec::new(),
             running: Vec::new(),
+            setup_asks: Vec::new(),
+            setup_refused: HashSet::new(),
+            setup_tx,
+            setup_rx,
             run_programs: Vec::new(),
             run_timeout: DEFAULT_RUN_TIMEOUT,
             instructions: None,
@@ -1155,6 +1172,7 @@ impl Live {
         self.own_sockets();
         let git = self.take_git(w);
         let said = self.take_said(w);
+        let set_up = self.take_setups(w);
         self.stand_busy(w, Instant::now());
         self.files_due(w, Instant::now());
         let mut heard = false;
@@ -1391,7 +1409,7 @@ impl Live {
             }
         }
         self.offer(w);
-        moved || started || git || said || heard || called
+        moved || started || git || said || set_up || heard || called
     }
 
     /// Tries agent `id`'s failed turn again: its session is told to go on.

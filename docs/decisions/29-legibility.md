@@ -22,8 +22,33 @@ that runs over rows (a Bash heredoc in a `tool_use`) keeps them: each
 cleaned on its own, indented under the first, at most `TRACE_ROWS` (6),
 then `… +N` dim; before, `clean` made the newlines spaces and the
 heredoc wrapped as one long paragraph. Known gap: the trace's
-vocabulary is read back from strings, a new producer word is plain
-until named in `trace_lines`. An open
+vocabulary is read back from strings, a new producer word is imece's
+own (`·`) until named in `TraceKind::of`.
+
+Focus and trace formatting (2026-11-03, #235 #236): each trace line
+gets a glyph for its kind (`focus::TraceKind`): `›` words (`text`, as
+Markdown through `markdown_in` with the vendor colour as base), `▸`
+tool (`tool_use`, `tool_result`, `run:`; the name bold info, the target
+and a heredoc's rows in the code colour), `⇄` bus (`send mail woken
+hire hired post claim told:`), `•` the vendor's note (`AgentEvent::Note`
+is now traced as `note …`; the demo's compaction too), `✕` wrong
+(`stopped`, `run refused`, `result ✕`), `·` imece's own; continuation
+rows indent under the text after the glyph. The focus's story draws
+agent text (a conversation line, a decision, an assumption) with
+`inline` when it is one line of words, else under its head through
+`markdown_src`, `STORY_ROWS` (8) lines and `… +N`; imece's own story
+lines stay plain. Web addresses (`model::web_url_at`: `http`/`https`
+only, host starting alphanumeric, `url_char` or brackets, sentence
+punctuation and unopened closing brackets off, `WEB_URL_MAX` 2000
+bytes; `ui::linked` takes one only where it starts a word) are spans
+in `link_style`; a markdown link's address too. `ui::tail_linked`
+wraps the lines itself (`rows_of`: an address wider than its row loses
+the link style, so no piece of a cut one links) and `link_rows` makes
+each address shown whole an OSC 8 link (`hyperlink`, `LINK_ID`), the
+text drawn being the address (cleaned first, so a secret-looking one
+is `[***]` and no address). The conversation draws addresses in the
+link style but does not link them yet. Neither screen has a copy mode;
+the terminal's own selection copies what is drawn. An open
 conversation window FOLLOWS the talk (`App::follow_thread`, after every
 key and step): journal lines of its pair that came since are appended;
 the person's own line (written from the window with `@`) is selected,

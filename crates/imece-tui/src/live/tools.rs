@@ -1170,6 +1170,7 @@ mod tests {
                 None,
                 None,
                 Vec::new(),
+                setup::Done::None,
             )),
         );
         (live, answers)
@@ -1314,6 +1315,7 @@ mod tests {
                 None,
                 None,
                 Vec::new(),
+                setup::Done::None,
             )),
         );
         let mut sleeper = std::process::Command::new("sleep")

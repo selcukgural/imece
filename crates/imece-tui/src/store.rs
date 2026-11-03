@@ -70,7 +70,7 @@ pub const FILE: &str = "imece.sqlite";
 /// ones a load takes, which stay whatever their age.
 pub const JOURNAL_DAYS: u64 = 90;
 /// Keys of `meta` that are the world's, not the person's settings.
-const WORLD_KEYS: [&str; 7] = [
+const WORLD_KEYS: [&str; 8] = [
     "schema_version",
     "started_at",
     "budget",
@@ -78,6 +78,7 @@ const WORLD_KEYS: [&str; 7] = [
     "messages",
     "cleared_journal",
     "cleared_inbox",
+    "setup_approved",
 ];
 
 const SCHEMA: &str = "
@@ -592,6 +593,11 @@ impl Store {
                     .to_string(),
                 ),
                 ("cleared_inbox", cleared_ids(&w.cleared.inbox)),
+                // What the person said yes to, by what runs (record 92).
+                (
+                    "setup_approved",
+                    serde_json::to_string(&w.setup_approved).unwrap_or_default(),
+                ),
             ] {
                 tx.execute(
                     "INSERT OR REPLACE INTO meta (key, value) VALUES (?1, ?2)",
@@ -914,7 +920,13 @@ impl Store {
         let s = &self.saved;
         let mut plan = Plan::default();
         let mut after = Saved::default();
-        let meta = hash(&(w.started_at, w.budget, w.messages, &w.cleared));
+        let meta = hash(&(
+            w.started_at,
+            w.budget,
+            w.messages,
+            &w.cleared,
+            &w.setup_approved,
+        ));
         plan.meta = s.meta != Some(meta);
         after.meta = Some(meta);
         for (p, q) in w.projects.iter().enumerate() {
@@ -1116,10 +1128,15 @@ impl Store {
             .and_then(|v| v.parse().ok())
             .unwrap_or(0);
         let cleared_inbox = meta("cleared_inbox")?.unwrap_or_default();
+        // A value another version wrote that does not read is no yes.
+        let setup_approved: Vec<String> = (meta("setup_approved")?)
+            .and_then(|v| serde_json::from_str(&v).ok())
+            .unwrap_or_default();
         let saved_at = meta("saved_at")?.and_then(|v| v.parse().ok());
         let mut w = World {
             marks: Default::default(),
             cleared: Default::default(),
+            setup_approved,
             sent: Vec::new(),
             limits: Vec::new(),
             tick: 0,
@@ -1704,6 +1721,7 @@ mod tests {
         let mut w = World {
             marks: Default::default(),
             cleared: Default::default(),
+            setup_approved: Vec::new(),
             sent: Vec::new(),
             limits: Vec::new(),
             tick: 77,
@@ -2178,6 +2196,46 @@ mod tests {
     /// `:clear`'s marks come back as they were: the journal's by its last
     /// line taken off, however many lines a load brings, a line of the
     /// same tick after it still shown; the inbox's by item.
+    #[test]
+    fn the_setup_scripts_said_yes_to_are_kept_and_a_value_that_does_not_read_is_none() {
+        let (mut w, k) = (world(), kept());
+        let mut store = Store::in_memory();
+        store.save(&w, &k.kept()).unwrap();
+        assert!(
+            store
+                .load(100)
+                .unwrap()
+                .unwrap()
+                .world
+                .setup_approved
+                .is_empty()
+        );
+        w.approve_setup("setup /bin/sh aa /r/.imece/worktree-setup.sh".into());
+        w.approve_setup("setup /bin/sh bb /r/.imece/worktree-setup.sh".into());
+        assert!(
+            store.save(&w, &k.kept()).unwrap(),
+            "a yes is a change to save"
+        );
+        let back = store.load(100).unwrap().unwrap().world;
+        assert_eq!(back.setup_approved, w.setup_approved);
+        store
+            .raw()
+            .execute(
+                "UPDATE meta SET value = 'x' WHERE key = 'setup_approved'",
+                [],
+            )
+            .unwrap();
+        assert!(
+            store
+                .load(100)
+                .unwrap()
+                .unwrap()
+                .world
+                .setup_approved
+                .is_empty()
+        );
+    }
+
     #[test]
     fn what_was_cleared_off_the_screen_stays_off_after_a_load() {
         let (mut w, k) = (world(), kept());
@@ -3813,8 +3871,9 @@ mod tests {
             .query_row("SELECT count(*) FROM meta", [], |r| r.get(0))
             .unwrap();
         assert_eq!(
-            rows, 7,
-            "schema_version, started_at, budget, saved_at, messages, cleared_journal, cleared_inbox"
+            rows, 8,
+            "schema_version, started_at, budget, saved_at, messages, cleared_journal, \
+             cleared_inbox, setup_approved"
         );
         // The world's keys are not settings.
         let refused = set_settings(Path::new("/nonexistent/x"), &[("cleared_inbox", "1")], &[]);

@@ -65,9 +65,27 @@ Bir işçinin worktree'si taze bir checkout'tur; git'in yok saydığı orada yok
 
 Bilinen sınırlar: checkout'ta sonradan değiştirdiğiniz bir dosya yeniden kopyalanmaz (worktree'de vardır); kopyalama işçi başınadır, paylaşılmaz; 2 GiB bütçesi ve girdi tavanı sabittir.
 
+## Worktree kurulum betiği
+
+Bir worktree'de iş yapılması gerektiğinde kopya yetmez: bağımlılıkları kurmak, migration çalıştırmak. Checkout'unuzda `.imece/worktree-setup.sh` yoluna bir kabuk betiği koyun; imece onu her yeni worktree'de, kopyalardan sonra ve ajanın oturumu başlamadan önce çalıştırır, **tam baytlarına evet dediğinizde**:
+
+```sh
+#!/bin/sh
+set -e
+npm ci --no-audit
+npm run db:migrate
+```
+
+- **Ne zaman:** bir işçinin ya da bir solonun az önce yapılan worktree'sinde (bir yardımcı işçisininkinde, bir lider checkout'unuzda çalışır; zaten orada olan bir worktree yeniden kurulmaz). Git yoksa worktree yoktur, dolayısıyla betik de yoktur.
+- **Evetiniz:** evet demediğiniz bir betiği bulan ilk yeni worktree SENİ BEKLEYEN'e bir soru koyar (`▶ claude-1: worktree kurulum betiği .imece/worktree-setup.sh yeni worktree'sinde çalışsın mı? enter gösterir`); işçi beklemez, betiksiz başlar. `enter` betiği imece'nin okuduğu ve hash'lediği haliyle, her satırı numaralı, neyin nasıl çalışacağıyla açar (`KURULUM BETİĞİ · claude-1 · sha256 1a2b…`); `j` `k`, `ctrl-d` `ctrl-u`, `g` `G` gezinir, `a` evet, `r` hayır der, `esc` kapatır. `a` ve `r` seçili soruda da çalışır. Bir evet betiği onsuz kalan worktree'lerde hemen, sonra her yenisinde oturumdan önce çalıştırır; bir hayır bu çalıştırma boyunca geçerlidir (sonraki bir başlangıç yine sorar). Soru beklerken başlayan işçiler aynı soruya sayılır.
+- **Evetin neye bağlı olduğu:** baytların SHA-256'sı, dosyanın gerçek yolu (bağlar çözülmüş) ve nasıl çalıştığı (`/bin/sh`); deposunda değil, imece'nin deposunda saklanır. Değişen bir bayt yeni bir betiktir ve yeniden sorulur. Çalışan, okuduğunuz baytların imece'nin durum dizinine yazılmış özel bir kopyasıdır (`0700`, kopya `0600`), dosyanın kendisi asla; böylece evetinizle çalışma arasında hiçbir şey onu değiştiremez.
+- **Nasıl çalışır:** o kopya üzerinde `/bin/sh`, yeni worktree'de, imece'nin temizlenmiş ortamı ve `IMECE_REPO` (checkout'unuz) ile `IMECE_WORKTREE` (worktree) ile, kendi süreç grubunda, en çok 60 saniye (sonra grup öldürülür). Betik en çok 64 KiB.
+- **Ne görürsünüz:** günlük nasıl bittiğini ve son satırını söyler (`claude-1: worktree kurulumu çalıştı, exit 0, 4.2 s · migrations: 7 applied`, ya da `başarısız`); okunamayan ya da başlatılamayan bir betik nedenini söyler (`worktree kurulumu çalışmadı: …`). İşçi her durumda başlar.
+- Henüz yok: bir worktree giderken çalışan bir söküm betiği, çünkü imece worktree silmez.
+
 ## Demonun kopyaları
 
-`--demo --projects N` (1-4, varsayılan 2) aynı anda birkaç sahte proje gösterir; oradaki `:open YOL [AD]` bir lider, rastgele satıcılardan iki işçi ve üç kartla sahte bir proje ekler, `:close` ve `:rename` aynı şekilde çalışır, `:pin` deposuz sabitler ve `:copy` bir liste tutar; demo işçisinin başlangıcı onu uydurma boyutlarla "kopyalar", ara sıra birini checkout'tan gitmiş diye atlar.
+`--demo --projects N` (1-4, varsayılan 2) aynı anda birkaç sahte proje gösterir; oradaki `:open YOL [AD]` bir lider, rastgele satıcılardan iki işçi ve üç kartla sahte bir proje ekler, `:close` ve `:rename` aynı şekilde çalışır, `:pin` deposuz sabitler ve `:copy` bir liste tutar; demo işçisinin başlangıcı onu uydurma boyutlarla "kopyalar", ara sıra birini checkout'tan gitmiş diye atlar. Demonun liderinin işe aldığı bir işçi yeni bir worktree alır; demonun kendi kurulum betiği (`npm ci`, `npm run db:migrate`) sorulur, `enter` ile gösterilir ve bir evette canlıdaki gibi uydurma çıktıyla "çalışır".
 
 ## Ayrıca bakınız
 

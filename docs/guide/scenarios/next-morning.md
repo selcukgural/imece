@@ -140,6 +140,8 @@ The digest tells you when you are back; `:notify` fetches you. `:notify bell` ri
 
 Several at once are one bell, or one note with the count. `:notify` bare goes round: off, bell, text, off; the choice is remembered. It needs the same focus reports as the digest, and a terminal that shows notifications for the text (iTerm2, WezTerm, Ghostty, kitty; elsewhere `bell`). In kitty a click on the note opens what it was about.
 
+Away from the machine altogether, `:notify push` sends the same words, with the project, to your phone through ntfy, also when the terminal kept its focus but no key was pressed for `:away`'s time. It needs a `push` settings file with your topic; see [`:notify`](../reference/commands.md#notify-offbelltextpush).
+
 ## 6. Keep a place with marks
 
 In the journal (or an open conversation) select a line you will want again, the message with the plan say, and press `m`: `marked: ' comes back to it`. The line wears `✱` after its clock. `'` selects the next marked line, round to the first: in the open conversation, else in the journal; from anywhere else it goes to the salon's journal first. `m` again takes the mark away (`mark taken away`).

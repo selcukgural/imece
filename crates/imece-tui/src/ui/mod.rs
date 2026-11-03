@@ -87,6 +87,9 @@ pub fn draw(f: &mut Frame, app: &App) {
     if let Some(id) = app.peek {
         over.push(overlay::peek(f, app, id));
     }
+    if let Some((item, at)) = app.script {
+        over.push(overlay::script(f, app, item, at));
+    }
     let line = line.filter(|&at| !over.iter().any(|r| r.contains(at)));
     let mut filter = None;
     let mut window = true;
@@ -567,6 +570,7 @@ pub(crate) fn inbox_line(app: &App, i: usize) -> Line<'static> {
         InboxKind::Question => ("?", bold(pal().warn)),
         InboxKind::Approval => ("⚑", bold(pal().warn)),
         InboxKind::Fault => ("✕", bold(pal().bad)),
+        InboxKind::Script => ("▶", bold(pal().warn)),
     };
     let mut spans = vec![
         Span::styled(format!("{icon} "), style),
@@ -734,7 +738,7 @@ pub(crate) fn inline(text: &str, base: Style) -> Vec<Span<'static>> {
     let mut spans: Vec<Span<'static>> = Vec::new();
     for mark in marks(text) {
         match mark {
-            Mark::Text(t) => spans.push(Span::styled(t, base)),
+            Mark::Text(t) => spans.extend(linked(&t, base)),
             Mark::Code(t) => spans.push(Span::styled(t, code)),
             Mark::Bold(t) => spans.push(Span::styled(t, base.add_modifier(Modifier::BOLD))),
             Mark::Italic(t) => {
@@ -742,11 +746,100 @@ pub(crate) fn inline(text: &str, base: Style) -> Vec<Span<'static>> {
             }
             Mark::Link { label, url } => {
                 spans.push(Span::styled(label, base.add_modifier(Modifier::UNDERLINED)));
-                spans.push(Span::styled(format!(" ({url})"), dim()));
+                spans.push(Span::styled(" (", dim()));
+                spans.extend(linked(&url, dim()));
+                spans.push(Span::styled(")", dim()));
             }
         }
     }
     spans
+}
+
+/// How a web address the terminal can open looks.
+pub(crate) fn link_style() -> Style {
+    fg(pal().info).add_modifier(Modifier::UNDERLINED)
+}
+
+/// `text` in `base`, each web address in it ([`web_url_at`], one that
+/// starts a word) a span of its own in [`link_style`]: what
+/// [`link_rows`] makes a link of. `text` is cleaned already.
+pub(crate) fn linked(text: &str, base: Style) -> Vec<Span<'static>> {
+    let mut spans = Vec::new();
+    let mut from = 0;
+    for (at, _) in text.match_indices("http") {
+        let starts_word = !text[..at]
+            .chars()
+            .next_back()
+            .is_some_and(|c| c.is_alphanumeric());
+        let url = web_url_at(&text[at..]).filter(|_| at >= from && starts_word);
+        if let Some(url) = url {
+            if at > from {
+                spans.push(Span::styled(text[from..at].to_string(), base));
+            }
+            spans.push(Span::styled(url.to_string(), link_style()));
+            from = at + url.len();
+        }
+    }
+    if from < text.len() {
+        spans.push(Span::styled(text[from..].to_string(), base));
+    }
+    spans
+}
+
+/// `lines` as rows `width` cells wide ([`wrap`]). A web address too wide
+/// for a row is cut by the wrapping, so it is drawn in the link's colour
+/// without the underline, and [`link_rows`] links none of its pieces.
+pub(crate) fn rows_of(lines: Vec<Line<'static>>, width: u16) -> Vec<Line<'static>> {
+    let width = usize::from(width);
+    let mut rows = Vec::new();
+    for mut line in lines {
+        let leads = line.spans.iter().take_while(|s| is_lead(s)).count();
+        let lead: usize = line.spans[..leads].iter().map(Span::width).sum();
+        for s in &mut line.spans[leads..] {
+            if s.style == link_style() && s.width() > width.saturating_sub(lead) {
+                s.style = fg(pal().info);
+            }
+        }
+        rows.extend(wrap(line, width));
+    }
+    rows
+}
+
+/// Makes each web address `rows` show whole (a span in [`link_style`]
+/// that is one address, its cells inside `area`) a link the terminal
+/// opens, `rows` drawn from `area`'s top: what is clicked is what is
+/// read, cleaned as it was drawn.
+pub(crate) fn link_rows(buf: &mut Buffer, area: Rect, rows: &[Line<'static>]) {
+    for (y, row) in (0..area.height).zip(rows) {
+        let mut x = 0usize;
+        for s in &row.spans {
+            let width = s.width();
+            if s.style == link_style()
+                && is_web_url(&s.content)
+                && x + width <= usize::from(area.width)
+                && let (Ok(x), Ok(w)) = (u16::try_from(x), u16::try_from(width))
+            {
+                let cells = Rect::new(area.x + x, area.y + y, w, 1);
+                hyperlink(buf, cells, &s.content, LINK_ID);
+            }
+            x += width;
+        }
+    }
+}
+
+/// The link id of web addresses in agent text ([`hyperlink`]'s `id`):
+/// cells of one address light up together, those of another do not, as
+/// their addresses differ.
+const LINK_ID: AgentId = usize::MAX;
+
+/// [`tail`] with the web addresses shown whole as links ([`link_rows`]):
+/// `lines` wrapped to `area`, scrolled so the newest are in view.
+pub(crate) fn tail_linked(f: &mut Frame, area: Rect, lines: Vec<Line<'static>>) {
+    let rows = rows_of(lines, area.width);
+    let skip = rows.len().saturating_sub(usize::from(area.height));
+    let shown = &rows[skip..];
+    f.render_widget(Paragraph::new(shown.to_vec()), area);
+    link_rows(f.buffer_mut(), area, shown);
 }
 
 /// A Markdown heading's text: `line` starts with one to six `#` and a
@@ -903,6 +996,12 @@ pub(crate) fn markdown(text: &str, indent: &str) -> Vec<Line<'static>> {
 /// a code block copies as its code; a table's rule copies as the
 /// separator line it stands for.
 pub(crate) fn markdown_src(text: &str, indent: &str) -> Vec<(Line<'static>, String)> {
+    markdown_in(text, indent, Style::new())
+}
+
+/// [`markdown_src`] with its plain words and list items in `base` (an
+/// agent's colour in the trace); headings, code and quotes as ever.
+pub(crate) fn markdown_in(text: &str, indent: &str, base: Style) -> Vec<(Line<'static>, String)> {
     let lines = body_lines(text);
     let code = fg(pal().code);
     let mut fenced = false;
@@ -951,7 +1050,7 @@ pub(crate) fn markdown_src(text: &str, indent: &str) -> Vec<(Line<'static>, Stri
                 }
                 None => spans.push(Span::raw(lead)),
             }
-            spans.extend(inline(rest, Style::new()));
+            spans.extend(inline(rest, base));
         }
         out.push((Line::from(spans), line.clone()));
     }
@@ -1608,6 +1707,7 @@ fn footer(f: &mut Frame, area: Rect, app: &App) -> Option<Position> {
                 ("esc", t.back),
                 ("?", t.help),
             ],
+            _ if app.script.is_some() => t.setup_hints.to_vec(),
             _ if app.peek.is_some() => vec![
                 ("j k", t.peek_next),
                 ("enter", t.focus),
@@ -4108,6 +4208,52 @@ mod tests {
     const CLOSE: &str = "\x1b]8;;\x1b\\";
 
     #[test]
+    fn a_setup_ask_s_window_shows_how_it_runs_and_its_bytes_from_the_line_scrolled_to() {
+        let (mut app, item, id) = crate::app::tests::asking_setup();
+        let text = app.script_text(item).unwrap().text();
+        let sha = crate::sha::hex(text.as_bytes());
+        app.pane = crate::app::Pane::Inbox;
+        let row = render(&app, 240, 30);
+        let name = app.world.agents[id].name.clone();
+        assert!(
+            row.contains(&format!(
+                "▶ 14:00 {name}: run the worktree setup script .imece/worktree-setup.sh in its new"
+            )),
+            "{row}"
+        );
+        assert!(
+            row.contains("enter shows the script · a yes · r no"),
+            "{row}"
+        );
+        app.script = Some((item, 0));
+        let s = render(&app, 140, 30);
+        assert!(
+            s.contains(&format!("SETUP SCRIPT · {name} · sha256 {} ", &sha[..16])),
+            "{s}"
+        );
+        assert!(!s.contains(&sha[..17]), "the hash's head only");
+        assert!(s.contains("runs as /bin/sh in each new worktree"), "{s}");
+        assert!(
+            s.contains("file: /demo/shop-api/.imece/worktree-setup.sh"),
+            "{s}"
+        );
+        assert!(s.contains("1 #!/bin/sh"), "{s}");
+        assert!(s.contains("5 npm ci --no-audit"), "{s}");
+        assert!(s.contains(" a  yes "), "{s}");
+        // Scrolled: from that line on.
+        app.script = Some((item, 4));
+        let s = render(&app, 140, 30);
+        assert!(!s.contains("1 #!/bin/sh"), "{s}");
+        assert!(s.contains("5 npm ci --no-audit"), "{s}");
+        // Answered: the window says it is no longer asked about.
+        app.script = None;
+        use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+        app.on_key(KeyEvent::new(KeyCode::Char('r'), KeyModifiers::NONE));
+        app.script = Some((item, 0));
+        assert!(render(&app, 140, 30).contains("that setup script is no longer asked about"));
+    }
+
+    #[test]
     fn a_link_cell_opens_and_closes_its_own_link_and_keeps_its_width() {
         let url = "http://localhost:1/";
         let mut buf = Buffer::with_lines(["abcd"]);
@@ -4142,6 +4288,128 @@ mod tests {
             3,
         );
         assert_eq!(buf, before);
+    }
+
+    /// Whether the cell at `(x, y)` links to `url` (the web addresses' id).
+    fn links_to(buf: &Buffer, x: u16, y: u16, url: &str) -> bool {
+        let open = format!("\x1b]8;id=imece-{LINK_ID};{url}\x1b\\");
+        buf[(x, y)].symbol().starts_with(&open)
+    }
+
+    #[test]
+    fn web_addresses_shown_whole_are_links_and_no_others() {
+        let url = "https://a.b/c";
+        let n = url.len() as u16;
+        // At 3 on the first row; up to the area's last cell.
+        let rows = vec![
+            Line::from(vec![Span::raw("ab "), Span::styled(url, link_style())]),
+            Line::from(vec![Span::raw("abcd"), Span::styled(url, link_style())]),
+            Line::from(vec![Span::raw("x"), Span::styled(url, fg(pal().info))]),
+            Line::from(vec![Span::styled("not a url", link_style())]),
+            Line::from(vec![Span::styled(url, link_style())]),
+        ];
+        let area = Rect::new(2, 1, 3 + n, 4);
+        let mut buf = Buffer::empty(Rect::new(0, 0, 40, 8));
+        ratatui::widgets::Widget::render(Paragraph::new(rows.clone()), area, &mut buf);
+        link_rows(&mut buf, area, &rows);
+        assert!(!links_to(&buf, 4, 1, url), "before it");
+        assert!(links_to(&buf, 5, 1, url), "its first cell");
+        assert!(
+            links_to(&buf, 4 + n, 1, url),
+            "its last cell, the area's last"
+        );
+        assert!(!links_to(&buf, 6, 2, url), "one cell past the area: none");
+        assert!(!links_to(&buf, 3, 3, url), "not in a link's style");
+        assert!(!buf[(2, 4)].symbol().starts_with("\x1b"), "not an address");
+        // A row below the area is not drawn there, nor linked.
+        assert!(!links_to(&buf, 2, 5, url));
+        // Drawn from the area's top row on: the second row on the area's
+        // second.
+        let mut buf = Buffer::empty(Rect::new(0, 0, 40, 8));
+        link_rows(&mut buf, Rect::new(0, 1, 40, 2), &rows[3..]);
+        assert!(links_to(&buf, 0, 2, url) && links_to(&buf, n - 1, 2, url));
+        assert!(!links_to(&buf, n, 2, url));
+        assert!(!links_to(&buf, 0, 1, url) && !links_to(&buf, 0, 0, url));
+    }
+
+    #[test]
+    fn an_address_wider_than_a_row_is_cut_and_never_a_link() {
+        let url = "https://a.b/cdef"; // 16 cells
+        let line = || Line::from(vec![Span::raw("  "), Span::styled(url, link_style())]);
+        // Room for it after the indent: one row, still a link.
+        let rows = rows_of(vec![line()], 18);
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].spans[1].style, link_style());
+        // One cell short: cut, in the link's colour without the underline.
+        let rows = rows_of(vec![line()], 17);
+        assert!(rows.len() > 1);
+        assert!(
+            rows.iter()
+                .flat_map(|r| &r.spans)
+                .all(|s| s.style != link_style())
+        );
+        assert!(rows[0].spans.iter().any(|s| s.style == fg(pal().info)));
+    }
+
+    #[test]
+    fn tail_linked_shows_the_newest_rows_with_their_links() {
+        use ratatui::{Terminal, backend::TestBackend};
+        let url = "https://a.b/c";
+        let lines: Vec<Line<'static>> = (0..5)
+            .map(|i| {
+                Line::from(vec![
+                    Span::raw(format!("{i} ")),
+                    Span::styled(url, link_style()),
+                ])
+            })
+            .collect();
+        let mut t = Terminal::new(TestBackend::new(20, 3)).unwrap();
+        t.draw(|f| tail_linked(f, f.area(), lines.clone())).unwrap();
+        let buf = t.backend().buffer();
+        assert_eq!(buf[(0, 0)].symbol(), "2", "the newest three");
+        assert_eq!(buf[(0, 2)].symbol(), "4");
+        assert!(links_to(buf, 2, 2, url));
+        assert!(!links_to(buf, 1, 2, url));
+    }
+
+    #[test]
+    fn linked_takes_each_address_that_starts_a_word() {
+        let base = fg(pal().ok);
+        assert_eq!(
+            parts(&linked("a http://x.y b https://z.w", base)),
+            [
+                ("a ".into(), base),
+                ("http://x.y".into(), link_style()),
+                (" b ".into(), base),
+                ("https://z.w".into(), link_style()),
+            ]
+        );
+        assert_eq!(
+            parts(&linked("xhttp://x.y httpd http://", base)),
+            [("xhttp://x.y httpd http://".into(), base)],
+            "inside a word, no address, nothing after the scheme"
+        );
+        assert_eq!(
+            parts(&linked("(http://x.y)", base)),
+            [
+                ("(".into(), base),
+                ("http://x.y".into(), link_style()),
+                (")".into(), base),
+            ]
+        );
+        assert_eq!(
+            parts(&linked("http://x.y", base)),
+            [("http://x.y".into(), link_style())]
+        );
+        assert_eq!(
+            parts(&linked("http://a.b/?u=http://c.d z", base)),
+            [
+                ("http://a.b/?u=http://c.d".into(), link_style()),
+                (" z".into(), base),
+            ],
+            "an address inside one is part of it"
+        );
+        assert!(linked("", base).is_empty());
     }
 
     #[test]
@@ -9888,8 +10156,39 @@ mod tests {
                 ("e".into(), italic),
                 (" ".into(), base),
                 ("f".into(), under),
-                (" (http://x)".into(), dim()),
+                (" (".into(), dim()),
+                ("http://x".into(), link_style()),
+                (")".into(), dim()),
                 (" g".into(), base),
+            ]
+        );
+        // A link without its words is text, its address still an address.
+        assert_eq!(
+            parts(&inline("[](http://x)", base)),
+            [
+                ("[](".into(), base),
+                ("http://x".into(), link_style()),
+                (")".into(), base),
+            ]
+        );
+        // A link's address that is no web address stays dim.
+        assert_eq!(
+            parts(&inline("[f](ftp://x)", base)),
+            [
+                ("f".into(), under),
+                (" (".into(), dim()),
+                ("ftp://x".into(), dim()),
+                (")".into(), dim()),
+            ]
+        );
+        // A bare address is a span of its own; in code it is code.
+        assert_eq!(
+            parts(&inline("see https://a.b/c. `http://d.e`", base)),
+            [
+                ("see ".into(), base),
+                ("https://a.b/c".into(), link_style()),
+                (". ".into(), base),
+                ("http://d.e".into(), code),
             ]
         );
         for plain in [
@@ -9900,7 +10199,6 @@ mod tests {
             "snake_case_name",
             "`open",
             "[x](",
-            "[](http://x)",
             "[x]()",
             "*",
             "* x",
@@ -9922,7 +10220,9 @@ mod tests {
             parts(&inline("[the docs](http://x/y) tail", base)),
             [
                 ("the docs".into(), under),
-                (" (http://x/y)".into(), dim()),
+                (" (".into(), dim()),
+                ("http://x/y".into(), link_style()),
+                (")".into(), dim()),
                 (" tail".into(), base),
             ],
             "a label longer than one character"

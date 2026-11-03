@@ -604,6 +604,7 @@ mod tests {
                 p,
                 None,
                 Vec::new(),
+                setup::Done::None,
             ))
         };
         live.ready(&mut w, 1, placed(Some(worktree::Placed::Fresh)));

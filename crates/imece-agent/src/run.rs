@@ -139,8 +139,22 @@ pub fn run(
     max: usize,
     running: &Running,
 ) -> io::Result<Outcome> {
+    run_env(argv, cwd, &[], timeout, max, running)
+}
+
+/// [`run`] with `env` set on top of the cleared environment (a worktree
+/// setup script's `IMECE_REPO` and `IMECE_WORKTREE`).
+pub fn run_env(
+    argv: &[String],
+    cwd: &Path,
+    env: &[(&str, &Path)],
+    timeout: Duration,
+    max: usize,
+    running: &Running,
+) -> io::Result<Outcome> {
     let (program, args) = argv.split_first().expect("split gives a program");
     let mut cmd = child::command(program, cwd, BUILD_ENV);
+    cmd.envs(env.iter().copied());
     cmd.args(args)
         .env("NO_COLOR", "1")
         .env("CARGO_TERM_COLOR", "never")
@@ -396,6 +410,24 @@ mod tests {
             assert!(split(bad).is_err(), "{bad:?}");
         }
         assert!(split("a | b").unwrap_err().contains("no shell"));
+    }
+
+    #[test]
+    fn a_run_with_env_sees_it_on_top_of_a_cleared_environment() {
+        let dir = std::env::temp_dir();
+        let argv = ["sh", "-c", "echo \"$IMECE_A|$IMECE_B|${IMECE_NONE-unset}\""].map(String::from);
+        let a = Path::new("/a dir");
+        let o = run_env(
+            &argv,
+            &dir,
+            &[("IMECE_A", a), ("IMECE_B", Path::new("b"))],
+            Duration::from_secs(10),
+            1000,
+            &Running::default(),
+        )
+        .unwrap();
+        assert!(o.ok(), "{o:?}");
+        assert_eq!(o.output, "/a dir|b|unset");
     }
 
     #[test]

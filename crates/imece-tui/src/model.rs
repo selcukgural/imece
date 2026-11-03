@@ -980,6 +980,57 @@ fn local_url_at(s: &str) -> Option<String> {
     (url.len() <= LOCAL_URL_MAX).then(|| url.to_string())
 }
 
+/// The most setup script approvals kept; the oldest go first.
+pub const SETUP_KEPT: usize = 64;
+
+/// The longest web address the screen makes a link of, in bytes.
+pub const WEB_URL_MAX: usize = 2000;
+
+/// The web address `s` starts with (`https://example.com/a?b=1`), or
+/// nothing. Strict, as it becomes a link the person clicks: the scheme is
+/// `http` or `https` and nothing else, the host starts with a letter, a
+/// digit, every character is one [`url_char`] allows or a bracket
+/// (ASCII, no quotes, spaces, `;`, `\` or control characters), at most
+/// [`WEB_URL_MAX`] bytes; sentence punctuation after it is not part of it,
+/// nor a closing bracket it did not open.
+pub fn web_url_at(s: &str) -> Option<&str> {
+    let rest = s
+        .strip_prefix("http://")
+        .or_else(|| s.strip_prefix("https://"))?;
+    if !rest.starts_with(|c: char| c.is_ascii_alphanumeric()) {
+        return None;
+    }
+    let end = rest
+        .find(|c: char| !url_char(c) && c != '(' && c != ')')
+        .unwrap_or(rest.len());
+    let mut url = &s[..s.len() - rest.len() + end];
+    // Bounded whatever a mutant does to the steps: each round that goes
+    // on takes a byte off.
+    for _ in 0..s.len() {
+        let trimmed = url.trim_end_matches(['.', ',', ':', '!', '?', '*']);
+        let more = |close, open| trimmed.matches(close).count() > trimmed.matches(open).count();
+        let cut = match trimmed.chars().last() {
+            Some(')') => more(')', '('),
+            Some(']') => more(']', '['),
+            _ => false,
+        };
+        url = if cut {
+            &trimmed[..trimmed.len() - 1]
+        } else {
+            trimmed
+        };
+        if !cut {
+            break;
+        }
+    }
+    (url.len() <= WEB_URL_MAX).then_some(url)
+}
+
+/// Whether `s` is one web address whole, as [`web_url_at`] takes it.
+pub fn is_web_url(s: &str) -> bool {
+    web_url_at(s) == Some(s)
+}
+
 /// A character a loopback URL's port and path may have: ASCII letters,
 /// digits and `-._~:/?#[]@!$&*+,=%`; no quotes, brackets, `;`, `\` or
 /// anything that could end the terminal's link sequence.
@@ -1289,6 +1340,40 @@ pub enum Event {
         path: String,
         size: usize,
     },
+    /// The worktree setup script ran in agent `agent`'s new worktree:
+    /// whether it went well, how it ended (`exit 0, 3.2 s`), its last
+    /// lines (cleaned when drawn).
+    SetupRan {
+        agent: AgentId,
+        ok: bool,
+        end: String,
+        lines: Vec<String>,
+    },
+    /// The setup script could not be read or started for agent `agent`.
+    SetupFailed {
+        agent: AgentId,
+        why: String,
+    },
+    /// The person said yes (or no) to the setup script asked about for
+    /// agent `agent`.
+    SetupAnswered {
+        agent: AgentId,
+        yes: bool,
+    },
+    /// What waits went to the person's phone (`:notify push`) in these
+    /// words, `agent` being who the first of it is about; in the demo it
+    /// was only shown (`sent` false).
+    Pushed {
+        agent: AgentId,
+        words: String,
+        sent: bool,
+    },
+    /// A push did not go: why (curl's own first line, cleaned). Said
+    /// once until one goes again.
+    PushFailed {
+        agent: AgentId,
+        why: String,
+    },
     /// A live agent's worktree was clean at an older commit and was moved
     /// to the checkout's HEAD when its session started.
     WorktreeMoved {
@@ -1395,6 +1480,8 @@ impl Event {
             | Event::Restarted { .. }
             | Event::NotesCut { .. }
             | Event::InstructionsCut { .. }
+            | Event::Pushed { .. }
+            | Event::SetupRan { ok: true, .. }
             | Event::CommandsMissing { .. }
             | Event::Confine { .. }
             | Event::WorktreeMoved { .. }
@@ -1418,11 +1505,15 @@ impl Event {
             | Event::Interrupted { .. }
             | Event::SuggestFailed { .. }
             | Event::CopySkipped { .. }
+            | Event::PushFailed { .. }
+            | Event::SetupRan { ok: false, .. }
+            | Event::SetupFailed { .. }
             | Event::ApplyFailed { .. } => EntryKind::Failed,
             Event::Approved { .. }
             | Event::Rejected { .. }
             | Event::YouSaid { .. }
             | Event::Decided { .. }
+            | Event::SetupAnswered { .. }
             | Event::Standing { .. }
             | Event::Budget { .. }
             | Event::Shell { .. }
@@ -1490,6 +1581,11 @@ impl Event {
             | Event::Restarted { agent, .. }
             | Event::NotesCut { agent, .. }
             | Event::InstructionsCut { agent, .. }
+            | Event::Pushed { agent, .. }
+            | Event::PushFailed { agent, .. }
+            | Event::SetupRan { agent, .. }
+            | Event::SetupFailed { agent, .. }
+            | Event::SetupAnswered { agent, .. }
             | Event::CommandsMissing { agent }
             | Event::WorktreeMoved { agent, .. }
             | Event::WorktreeKept { agent, .. }
@@ -1548,6 +1644,12 @@ pub enum InboxKind {
     /// one imece tried again until its tries ran out; the detail is the
     /// vendor's words. Closes when the person writes to the agent.
     Fault,
+    /// The checkout's worktree setup script (record 92) waits for the
+    /// person's yes to its exact bytes before it runs in a new worktree;
+    /// the agent is the one whose worktree it would run in first, the
+    /// detail the script's path in the checkout. Closes with the answer,
+    /// and at the next start.
+    Script,
 }
 
 /// What the person cleared off the salon's screen (`:clear`, record 90):
@@ -1678,6 +1780,10 @@ pub struct World {
     pub marks: BTreeSet<usize>,
     /// What the person cleared off the salon's screen (`:clear`).
     pub cleared: Cleared,
+    /// The worktree setup scripts the person said yes to, each by what
+    /// runs (`setup::Script::key`: how, the bytes' hash, the real path),
+    /// oldest first, at most [`SETUP_KEPT`].
+    pub setup_approved: Vec<String>,
     /// What the vendors last said of their plans' usage windows, one
     /// entry per vendor and window. Not kept between runs: a session
     /// says it again.
@@ -2119,6 +2225,7 @@ impl World {
             changes: self.changes.clone(),
             marks,
             cleared: Cleared::default(),
+            setup_approved: Vec::new(),
             limits: Vec::new(),
             paid: self.paid,
             suggested: None,
@@ -2753,6 +2860,25 @@ impl World {
     }
 
     /// Agent `id`'s session is over: what it asked waits for nobody.
+    /// The person said yes to the setup script `key`: kept, the newest
+    /// last, the oldest let go past [`SETUP_KEPT`].
+    pub fn approve_setup(&mut self, key: String) {
+        self.setup_approved.retain(|k| *k != key);
+        self.setup_approved.push(key);
+        let over = self.setup_approved.len().saturating_sub(SETUP_KEPT);
+        self.setup_approved.drain(..over);
+    }
+
+    /// Setup script asks are of the run that made them: its bytes are not
+    /// kept, so a start closes them; the next new worktree asks again.
+    pub fn close_scripts(&mut self) {
+        for i in &mut self.inbox {
+            if i.kind == InboxKind::Script {
+                i.open = false;
+            }
+        }
+    }
+
     pub fn close_approvals(&mut self, id: AgentId) {
         for i in &mut self.inbox {
             if i.kind == InboxKind::Approval && i.agent == id {
@@ -3014,6 +3140,50 @@ mod tests {
     }
 
     #[test]
+    fn a_web_address_is_strict_and_leaves_the_sentence_out() {
+        let at = |s: &str| web_url_at(s).map(str::to_string);
+        for (text, url) in [
+            ("https://a.b/c d", "https://a.b/c"),
+            ("http://a.b/c.", "http://a.b/c"),
+            ("https://a.b/c?x=1&y=2#z,", "https://a.b/c?x=1&y=2#z"),
+            ("https://a.b/c!?:*", "https://a.b/c"),
+            (
+                "https://en.x.org/wiki/A_(b))",
+                "https://en.x.org/wiki/A_(b)",
+            ),
+            ("https://a.b/c)", "https://a.b/c"),
+            ("https://a.b/c).", "https://a.b/c"),
+            ("https://a.b/[1]]", "https://a.b/[1]"),
+            ("https://a.b/c]", "https://a.b/c"),
+            ("https://a.b/c\"x", "https://a.b/c"),
+            ("https://a.b/c;x", "https://a.b/c"),
+            ("https://a.b/c\u{7}x", "https://a.b/c"),
+            ("https://a.b/çx", "https://a.b/"),
+            ("http://9.9.9.9:80/", "http://9.9.9.9:80/"),
+        ] {
+            assert_eq!(at(text).as_deref(), Some(url), "{text}");
+            assert!(is_web_url(url), "{url}");
+        }
+        for text in [
+            "ftp://a.b",
+            "javascript:x",
+            "http://",
+            "https:// a",
+            "http:///a",
+            "http://-a",
+            "x https://a.b",
+        ] {
+            assert_eq!(at(text), None, "{text}");
+        }
+        let long = format!("https://a.b/{}", "x".repeat(WEB_URL_MAX - 12));
+        assert_eq!(long.len(), WEB_URL_MAX);
+        assert_eq!(at(&long), Some(long.clone()));
+        assert_eq!(at(&format!("{long}x")), None);
+        assert!(!is_web_url("https://a.b/c."));
+        assert!(!is_web_url("see https://a.b"));
+    }
+
+    #[test]
     fn only_a_loopback_host_and_a_real_port_make_a_url_and_a_long_one_is_left_out() {
         for text in [
             "no url here",
@@ -3095,6 +3265,7 @@ mod tests {
         World {
             marks: Default::default(),
             cleared: Default::default(),
+            setup_approved: Vec::new(),
             sent: Vec::new(),
             limits: Vec::new(),
             tick: 0,
@@ -4414,6 +4585,43 @@ mod tests {
             .kind(),
             StoryKind::Talk
         );
+    }
+
+    #[test]
+    fn a_setup_yes_is_kept_once_the_newest_last_and_the_oldest_go_past_the_cap() {
+        let mut w = world(vec![]);
+        w.approve_setup("a".into());
+        w.approve_setup("b".into());
+        w.approve_setup("a".into());
+        assert_eq!(w.setup_approved, ["b", "a"]);
+        for n in 0..SETUP_KEPT {
+            w.approve_setup(n.to_string());
+        }
+        assert_eq!(w.setup_approved.len(), SETUP_KEPT);
+        assert_eq!(w.setup_approved[0], "0");
+        assert_eq!(
+            w.setup_approved.last().unwrap(),
+            &(SETUP_KEPT - 1).to_string()
+        );
+        assert_eq!(SETUP_KEPT, 64);
+        // Asks are the run's: a start closes them, and only them.
+        let item = |kind| InboxItem {
+            kind,
+            agent: 0,
+            detail: String::new(),
+            researcher: None,
+            open: true,
+            tick: 0,
+            card: None,
+        };
+        w.inbox = vec![
+            item(InboxKind::Script),
+            item(InboxKind::Question),
+            item(InboxKind::Script),
+        ];
+        w.close_scripts();
+        let open: Vec<bool> = w.inbox.iter().map(|i| i.open).collect();
+        assert_eq!(open, [false, true, false]);
     }
 
     #[test]

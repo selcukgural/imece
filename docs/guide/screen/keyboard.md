@@ -141,7 +141,7 @@ The conventions are vim's: `h` `j` `k` `l` move and fold, `gg` and `G` go to the
 | `L`  `:lang` | Türkçe / English; `:lang en\|tr` |
 | `T`  `:theme` | next theme · `:theme NAME` or `FILE` |
 | `:awake` | keep the machine awake mid-turn; again: off |
-| `:notify` | in another window, a word when something comes to wait: `:notify off\|bell\|text`; bare, the next one round |
+| `:notify` | in another window, a word when something comes to wait: `:notify off\|bell\|text\|push`; bare, the next one round |
 | `:motion` | what moves on the screen: `:motion off\|calm\|full` (calm by default); bare, the next one round |
 | `:away`  `:digest` | how long away before what happened shows by itself: `:away 30m\|1h\|off` (half an hour by default) · show it now |
 | `q` `q`  `:quit` | quit (`q` or `:quit` asks first; `^c` quits at once) |

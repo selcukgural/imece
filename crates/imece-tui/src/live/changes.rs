@@ -795,12 +795,26 @@ mod tests {
         live.ready(
             &mut w,
             helper,
-            Ok((Box::new(Stub), tree.clone(), None, None, Vec::new())),
+            Ok((
+                Box::new(Stub),
+                tree.clone(),
+                None,
+                None,
+                Vec::new(),
+                setup::Done::None,
+            )),
         );
         live.ready(
             &mut w,
             0,
-            Ok((Box::new(Stub), repo.clone(), None, None, Vec::new())),
+            Ok((
+                Box::new(Stub),
+                repo.clone(),
+                None,
+                None,
+                Vec::new(),
+                setup::Done::None,
+            )),
         );
         live.run_programs.push("sh".into());
         // A script outside the worktree, so changing it changes no tree.
@@ -957,7 +971,14 @@ mod tests {
         live.ready(
             &mut w,
             solo,
-            Ok((Box::new(Stub), tree.clone(), None, None, Vec::new())),
+            Ok((
+                Box::new(Stub),
+                tree.clone(),
+                None,
+                None,
+                Vec::new(),
+                setup::Done::None,
+            )),
         );
         assert_eq!(
             live.standing[solo],
@@ -1054,12 +1075,26 @@ mod tests {
         live.ready(
             &mut w,
             helper,
-            Ok((Box::new(Stub), tree.clone(), None, None, Vec::new())),
+            Ok((
+                Box::new(Stub),
+                tree.clone(),
+                None,
+                None,
+                Vec::new(),
+                setup::Done::None,
+            )),
         );
         live.ready(
             &mut w,
             0,
-            Ok((Box::new(Stub), repo.clone(), None, None, Vec::new())),
+            Ok((
+                Box::new(Stub),
+                repo.clone(),
+                None,
+                None,
+                Vec::new(),
+                setup::Done::None,
+            )),
         );
         std::fs::write(tree.join("a.txt"), "changed").unwrap();
         // Only a worker's done: not its inform, not a helper's or the
@@ -1202,12 +1237,26 @@ mod tests {
         live.ready(
             &mut w,
             2,
-            Ok((Box::new(Stub), tree.clone(), None, None, Vec::new())),
+            Ok((
+                Box::new(Stub),
+                tree.clone(),
+                None,
+                None,
+                Vec::new(),
+                setup::Done::None,
+            )),
         );
         live.ready(
             &mut w,
             0,
-            Ok((Box::new(Stub), repo.clone(), None, None, Vec::new())),
+            Ok((
+                Box::new(Stub),
+                repo.clone(),
+                None,
+                None,
+                Vec::new(),
+                setup::Done::None,
+            )),
         );
         std::fs::write(tree.join("a.txt"), "changed").unwrap();
         std::fs::write(repo.join("b.txt"), "b").unwrap();
@@ -1259,7 +1308,14 @@ mod tests {
         live.ready(
             &mut w,
             1,
-            Ok((session(false), tree.clone(), None, None, Vec::new())),
+            Ok((
+                session(false),
+                tree.clone(),
+                None,
+                None,
+                Vec::new(),
+                setup::Done::None,
+            )),
         );
         let commit = |name: &str| {
             std::fs::write(repo.join(name), name).unwrap();
@@ -1313,7 +1369,14 @@ mod tests {
         live.ready(
             &mut w,
             1,
-            Ok((session(true), tree.clone(), None, None, Vec::new())),
+            Ok((
+                session(true),
+                tree.clone(),
+                None,
+                None,
+                Vec::new(),
+                setup::Done::None,
+            )),
         );
         commit("d.txt");
         live.told(&mut w, 1, "refused").unwrap();
@@ -1585,7 +1648,14 @@ mod tests {
         live.ready(
             &mut w,
             0,
-            Ok((Box::new(Stub), repo.clone(), None, None, Vec::new())),
+            Ok((
+                Box::new(Stub),
+                repo.clone(),
+                None,
+                None,
+                Vec::new(),
+                setup::Done::None,
+            )),
         );
         live.follow(&mut w, 0);
         // A worker hired from a start point of its own stays there.
@@ -1698,7 +1768,14 @@ mod tests {
         live.ready(
             &mut w,
             solo,
-            Ok((Box::new(Stub), folder.clone(), None, None, Vec::new())),
+            Ok((
+                Box::new(Stub),
+                folder.clone(),
+                None,
+                None,
+                Vec::new(),
+                setup::Done::None,
+            )),
         );
         assert_eq!(live.standing[solo], None, "no worktree to read");
         live.follow(&mut w, solo);

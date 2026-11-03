@@ -42,6 +42,8 @@ Hiçbir ajan checkout'unuza yazmaz. Lider orada yalnız okur; işçiler worktree
 - `:export` var olan bir dosyanın üzerine asla yazmaz; `:copy` checkout'tan çıkan ya da bağlantı olan yolları reddeder.
 - Depo `0600`'dür; imece'nin okuyamadığı bir dosya reddedilir, üzerine yazılmaz.
 - Deponun `AGENTS.md`/`CLAUDE.md`'si ajanlara 16 KiB'da kesilerek gider ve günlük kesildiğinde söyler.
+- Bir worktree kurulum betiği (`.imece/worktree-setup.sh`) tam baytlarına (SHA-256, gerçek yol, `/bin/sh`) evet demeden asla çalışmaz; evet imece'nin deposunda saklanır; değişen bir bayt yeniden sorar; çalışan, okuduğunuz baytların özel bir kopyasıdır, temizlenmiş ortamla, kendi süreç grubunda, en çok 60 saniye.
+- Telefonunuza giden bir bildirim (`:notify push`) imece'nin sözlerini, bir ajanın ve bir projenin adını taşır; bir ajanın yazdığını ya da bir komutu asla; herkese açık ntfy sunucusunda topic tahmin edilebilir olmamalı; token yalnız size ait `0600` bir dosyadan gelir ve `curl`'e stdin'den gider, URL'de, komut satırında ya da bir günlükte asla; başarısız bir bildirim bir kez söylenir, yeniden denenmez.
 
 ## imece neyi yapmaz
 
