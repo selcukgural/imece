@@ -32,6 +32,10 @@ jobs:
       fail-fast: false
       matrix:
         shard: [0, 1, 2, 3]
+    permissions:
+      contents: read
+      # To read what earlier rounds of this pull request caught.
+      actions: read
     env:
       PART: boundary
     steps:
@@ -52,6 +56,31 @@ jobs:
             git diff "$BASE"...HEAD -- . "${paths[@]/#/:(exclude)}" > change.diff
           fi
           if [ -s change.diff ]; then echo "any=yes" >> "$GITHUB_OUTPUT"; fi
+      - name: What earlier rounds of this pull request caught
+        # `--iterate` skips the mutants an earlier round of the same pull
+        # request caught (or found unviable), so a round after a fix tries
+        # only what was missed and what changed. A mutant whose line moved
+        # has a new name and is tried again; the nightly run tries them all.
+        if: steps.diff.outputs.any == 'yes'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          BRANCH: ${{ github.head_ref }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          RUN: ${{ github.run_id }}
+        run: |
+          earlier=$(gh api "repos/$REPO/actions/workflows/mutants.yml/runs?event=pull_request&status=completed&per_page=20" \
+            -f branch="$BRANCH" -X GET \
+            --jq "[.workflow_runs[] | select(.id != $RUN and .head_repository.full_name == \"$HEAD_REPO\")][0].id // empty" \
+            || true)
+          if [ -n "$earlier" ] && gh run download "$earlier" -R "$REPO" -p "mutants-$PART-*" -D "$RUNNER_TEMP/earlier"; then
+            mkdir -p mutants.out
+            cat "$RUNNER_TEMP"/earlier/*/{caught,unviable,previously_caught}.txt 2>/dev/null \
+              | sort -u > mutants.out/previously_caught.txt
+            echo "run $earlier caught $(wc -l < mutants.out/previously_caught.txt)"
+          else
+            echo "no earlier round"
+          fi
       - name: Rust toolchain (rust-toolchain.toml)
         if: steps.diff.outputs.any == 'yes'
         run: rustup toolchain install
@@ -63,7 +92,7 @@ jobs:
         env:
           SHARD: ${{ matrix.shard }}
         run: |
-          cargo mutants --in-diff change.diff --shard "$SHARD/4" --jobs 2 --timeout 90
+          cargo mutants --in-diff change.diff --shard "$SHARD/4" --jobs 2 --timeout 90 --iterate
       - name: Summary
         if: always()
         env:
@@ -103,6 +132,10 @@ jobs:
       fail-fast: false
       matrix:
         shard: [0, 1, 2, 3]
+    permissions:
+      contents: read
+      # To read what earlier rounds of this pull request caught.
+      actions: read
     env:
       PART: report
     steps:
@@ -123,6 +156,31 @@ jobs:
             git diff "$BASE"...HEAD -- . "${paths[@]/#/:(exclude)}" > change.diff
           fi
           if [ -s change.diff ]; then echo "any=yes" >> "$GITHUB_OUTPUT"; fi
+      - name: What earlier rounds of this pull request caught
+        # `--iterate` skips the mutants an earlier round of the same pull
+        # request caught (or found unviable), so a round after a fix tries
+        # only what was missed and what changed. A mutant whose line moved
+        # has a new name and is tried again; the nightly run tries them all.
+        if: steps.diff.outputs.any == 'yes'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          BRANCH: ${{ github.head_ref }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          RUN: ${{ github.run_id }}
+        run: |
+          earlier=$(gh api "repos/$REPO/actions/workflows/mutants.yml/runs?event=pull_request&status=completed&per_page=20" \
+            -f branch="$BRANCH" -X GET \
+            --jq "[.workflow_runs[] | select(.id != $RUN and .head_repository.full_name == \"$HEAD_REPO\")][0].id // empty" \
+            || true)
+          if [ -n "$earlier" ] && gh run download "$earlier" -R "$REPO" -p "mutants-$PART-*" -D "$RUNNER_TEMP/earlier"; then
+            mkdir -p mutants.out
+            cat "$RUNNER_TEMP"/earlier/*/{caught,unviable,previously_caught}.txt 2>/dev/null \
+              | sort -u > mutants.out/previously_caught.txt
+            echo "run $earlier caught $(wc -l < mutants.out/previously_caught.txt)"
+          else
+            echo "no earlier round"
+          fi
       - name: Rust toolchain (rust-toolchain.toml)
         if: steps.diff.outputs.any == 'yes'
         run: rustup toolchain install
@@ -134,7 +192,7 @@ jobs:
         env:
           SHARD: ${{ matrix.shard }}
         run: |
-          cargo mutants --in-diff change.diff --shard "$SHARD/4" --jobs 2 --timeout 90
+          cargo mutants --in-diff change.diff --shard "$SHARD/4" --jobs 2 --timeout 90 --iterate
       - name: Summary
         if: always()
         env:

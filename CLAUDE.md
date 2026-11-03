@@ -50,7 +50,10 @@ cargo mutants                                      # everything (slow); CI does 
   `changed` waits for them; the rest of a change's mutants run as
   `report`, red on a miss, and nothing waits for them: merge on green
   tests, fmt, clippy and `changed`, then fix a `report` miss in a
-  follow-up PR the same day. A file that becomes a boundary goes on the
+  follow-up PR the same day. A round after the first runs with
+  `--iterate` over what the earlier round of the same PR caught (its
+  artifacts), so it tries only what was missed and what changed. A file
+  that becomes a boundary goes on the
   list in the PR that makes it one. The tests are still written with the
   mutants in mind before the push, everywhere.
 
