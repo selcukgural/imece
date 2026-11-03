@@ -192,6 +192,10 @@ pub fn event(lang: Lang, w: &World, e: &Event) -> String {
             let vendor = w.agents[*agent].vendor.label();
             fill(t.ev_commands_missing, &[name(w, *agent), vendor])
         }
+        Event::Pushed { words, sent, .. } => {
+            fill(if *sent { t.ev_pushed } else { t.ev_pushed_demo }, &[words])
+        }
+        Event::PushFailed { why, .. } => fill(t.ev_push_failed, &[why]),
         Event::InstructionsCut { agent, path, size } => fill(
             t.ev_instructions_cut,
             &[
@@ -596,6 +600,33 @@ pub fn notice(lang: Lang, w: &World, note: crate::notify::Note) -> String {
         }
     };
     fill(text, &[name(w, agent)])
+}
+
+/// What a push to the person's phone says of `note`: [`notice`]'s words
+/// and the project, nothing an agent wrote.
+pub fn pushed(lang: Lang, w: &World, note: crate::notify::Note) -> String {
+    let agent = match note {
+        crate::notify::Note::Stuck(id) => id,
+        crate::notify::Note::Item(i) => w.inbox[i].agent,
+    };
+    let project = &w.projects[w.agents[agent].project].name;
+    fill(lang.text().push_one, &[&notice(lang, w, note), project])
+}
+
+/// Why `:notify push` was refused, in the person's language.
+pub fn push_why(lang: Lang, why: &crate::push::Why) -> String {
+    use crate::push::Why;
+    let t = lang.text();
+    match why {
+        Why::NoFile(path) => fill(t.push_no_file, &[path]),
+        Why::Unreadable(e) => fill(t.push_unreadable, &[e]),
+        Why::Line(n) => fill(t.push_line, &[&n.to_string()]),
+        Why::NoTopic => t.push_no_topic.to_string(),
+        Why::Server(s) => fill(t.push_server, &[s]),
+        Why::Topic => fill(t.push_topic, &[&crate::push::TOPIC_MAX.to_string()]),
+        Why::Guessable => fill(t.push_guessable, &[&crate::push::TOPIC_MIN.to_string()]),
+        Why::Token(e) => fill(t.push_token, &[e]),
+    }
 }
 
 pub fn inbox(lang: Lang, w: &World, item: &InboxItem) -> String {

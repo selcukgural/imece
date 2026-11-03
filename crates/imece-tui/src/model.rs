@@ -1337,6 +1337,20 @@ pub enum Event {
         path: String,
         size: usize,
     },
+    /// What waits went to the person's phone (`:notify push`) in these
+    /// words, `agent` being who the first of it is about; in the demo it
+    /// was only shown (`sent` false).
+    Pushed {
+        agent: AgentId,
+        words: String,
+        sent: bool,
+    },
+    /// A push did not go: why (curl's own first line, cleaned). Said
+    /// once until one goes again.
+    PushFailed {
+        agent: AgentId,
+        why: String,
+    },
     /// A live agent's worktree was clean at an older commit and was moved
     /// to the checkout's HEAD when its session started.
     WorktreeMoved {
@@ -1443,6 +1457,7 @@ impl Event {
             | Event::Restarted { .. }
             | Event::NotesCut { .. }
             | Event::InstructionsCut { .. }
+            | Event::Pushed { .. }
             | Event::CommandsMissing { .. }
             | Event::Confine { .. }
             | Event::WorktreeMoved { .. }
@@ -1466,6 +1481,7 @@ impl Event {
             | Event::Interrupted { .. }
             | Event::SuggestFailed { .. }
             | Event::CopySkipped { .. }
+            | Event::PushFailed { .. }
             | Event::ApplyFailed { .. } => EntryKind::Failed,
             Event::Approved { .. }
             | Event::Rejected { .. }
@@ -1538,6 +1554,8 @@ impl Event {
             | Event::Restarted { agent, .. }
             | Event::NotesCut { agent, .. }
             | Event::InstructionsCut { agent, .. }
+            | Event::Pushed { agent, .. }
+            | Event::PushFailed { agent, .. }
             | Event::CommandsMissing { agent }
             | Event::WorktreeMoved { agent, .. }
             | Event::WorktreeKept { agent, .. }

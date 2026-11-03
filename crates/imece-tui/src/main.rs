@@ -18,6 +18,7 @@ mod motion;
 mod notify;
 mod prefs;
 mod probe;
+mod push;
 mod rng;
 mod schemes;
 mod screen;
@@ -554,6 +555,7 @@ fn main() -> std::io::Result<()> {
     }
     app.primary = saved.lead;
     app.notify = saved.notify.unwrap_or_default();
+    app.start_push();
     app.motion = saved.motion.unwrap_or_default();
     app.away = saved.away.unwrap_or_default();
     app.ssh = motion::over_ssh(var);
@@ -833,7 +835,9 @@ fn run(
         // In another window: a word when something came to wait.
         if let Some(word) = app.notices(Instant::now()) {
             notify::ring(&mut std::io::stdout(), app.notify, style, &word)?;
+            app.push_word(&word);
         }
+        app.pushed();
     }
     Ok(())
 }

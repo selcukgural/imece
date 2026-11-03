@@ -48,7 +48,7 @@ Bir mesaj birkaç satıra yayılabilir; kart açan bir mesajın ilk satırı kar
 | `:copy PATH` | | git'in yok saydığı bir yolu (`.env`, `target`) işçilerin worktree'lerine başlarken kopyala; yine basılınca bırakır (`:copy YOL`) |
 | `:pin [NAME]` | | projeyi salonun en üstüne sabitle; yine basılınca bırakır (`:pin AD`) |
 | `:awake` | | bir agent tur ortasındayken makineyi uyanık tut; yine basılınca kapatır |
-| `:notify [off\|bell\|text]` | | başka penceredeyken sizi bekleyen bir şey gelirse zil ya da masaüstü bildirimi; yalın yazılınca sıradaki |
+| `:notify [off\|bell\|text\|push]` | | başka penceredeyken sizi bekleyen bir şey gelirse zil ya da masaüstü bildirimi; `push`: uzaktayken ntfy üzerinden telefonunuza; yalın yazılınca sıradaki |
 | `:motion [off\|calm\|full]` | | ekranda ne hareket eder: çalışan satır nefes alır, bekleyen yanıp söner; full dönücüleri de ekler; yalın yazılınca sıradaki |
 | `:salon` `:board` `:code` | `1` `2` `3` | üç görünüm |
 | `:lang [en\|tr]` | `L` | diğer dil, ya da adı verilen |

@@ -141,7 +141,7 @@ Gelenekler vim'inkidir: `h` `j` `k` `l` hareket ve katlama, `gg` ve `G` uçlara,
 | `L`  `:lang` | English / Türkçe; `:lang en\|tr` |
 | `T`  `:theme` | sonraki tema · `:theme NAME` ya da `FILE` |
 | `:awake` | tur ortasında makineyi uyanık tut; yine: kapat |
-| `:notify` | başka penceredeyken bir şey beklemeye düşerse haber: `:notify off\|bell\|text`; yalın yazılınca sıradaki |
+| `:notify` | başka penceredeyken bir şey beklemeye düşerse haber: `:notify off\|bell\|text\|push`; yalın yazılınca sıradaki |
 | `:motion` | ekranda ne hareket eder: `:motion off\|calm\|full` (varsayılan calm); yalın yazılınca sıradaki |
 | `:away`  `:digest` | olanlar kendiliğinden gösterilmeden önce ne kadar uzakta kalınır: `:away 30m\|1h\|off` (varsayılan yarım saat) · şimdi göster |
 | `q` `q`  `:quit` | çık (`q` ya da `:quit` önce sorar; `^c` hemen çıkar) |

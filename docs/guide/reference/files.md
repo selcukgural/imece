@@ -97,6 +97,7 @@ At each start imece makes `$TMPDIR/imece-<pid>-<hex>/` (0700; an existing direct
 In `$XDG_CONFIG_HOME/imece/`, or `~/.config/imece/` (a relative `XDG_CONFIG_HOME` is ignored):
 
 - `keys`: your own keys, read at start and again when it changes. See [keyboard](../screen/keyboard.md).
+- `push`: where `:notify push` sends what waits (ntfy's server, topic and the file of a token), read when push is chosen and at each start. See [`:notify`](commands.md#notify-offbelltextpush).
 - `instructions.md`: your own instructions for every project, read when each agent's session starts and put in its instructions before the repository's notes, at most 16 KiB: a longer file goes in cut and the journal says so (`claude-1: your instructions file … is 20 KiB; only its first 16 KiB went into the instructions`). Only a plain file is read: a pipe or a device is passed over. A change is read at each agent's next start.
 
 ## What imece reads from the repository

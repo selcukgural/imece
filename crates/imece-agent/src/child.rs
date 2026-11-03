@@ -211,12 +211,33 @@ pub const ANSWER_MAX: u64 = 64 << 10;
 /// their own, so an answer bigger than a pipe holds does not stall the
 /// program, and one a process outside the group keeps open does not stall
 /// the caller.
-pub fn ask(mut cmd: Command, wait: Duration) -> Option<(ExitStatus, String)> {
-    cmd.stdin(Stdio::null())
+pub fn ask(cmd: Command, wait: Duration) -> Option<(ExitStatus, String)> {
+    ask_fed(cmd, None, wait)
+}
+
+/// [`ask`] with `input` on its stdin (then closed), written on a thread of
+/// its own so a program that does not read it does not stall the caller:
+/// what must not be on its command line (a token in a config) goes there.
+pub fn ask_fed(
+    mut cmd: Command,
+    input: Option<Vec<u8>>,
+    wait: Duration,
+) -> Option<(ExitStatus, String)> {
+    let stdin = match input {
+        Some(_) => Stdio::piped(),
+        None => Stdio::null(),
+    };
+    cmd.stdin(stdin)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .process_group(0);
     let mut proc = retry_busy(|| cmd.spawn()).ok()?;
+    if let (Some(mut pipe), Some(input)) = (proc.stdin.take(), input) {
+        thread::spawn(move || {
+            use std::io::Write;
+            let _ = pipe.write_all(&input);
+        });
+    }
     let pgid = proc.id() as i32;
     let deadline = Instant::now() + wait;
     let (out, err) = (proc.stdout.take(), proc.stderr.take());
@@ -512,6 +533,24 @@ mod tests {
         let (status, said) = ask(sh("cat; echo done"), Duration::from_secs(10)).unwrap();
         assert!(status.success());
         assert_eq!(said, "done\n");
+    }
+
+    #[test]
+    fn a_fed_question_reads_its_input_on_stdin_and_one_not_read_does_not_stall() {
+        let input = Some(b"url = x\nsecret\n".to_vec());
+        let (status, said) = ask_fed(sh("cat; echo done"), input, Duration::from_secs(10)).unwrap();
+        assert!(status.success());
+        assert_eq!(said, "url = x\nsecret\ndone\n");
+        // More than a pipe holds, never read: the answer still comes.
+        let big = Some(vec![b'a'; 1 << 20]);
+        let start = Instant::now();
+        let (_, said) = ask_fed(sh("echo hi"), big, Duration::from_secs(5)).expect("answered");
+        assert_eq!(said, "hi\n");
+        assert!(
+            start.elapsed() < Duration::from_secs(4),
+            "{:?}",
+            start.elapsed()
+        );
     }
 
     #[test]

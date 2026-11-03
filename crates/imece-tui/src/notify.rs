@@ -41,6 +41,9 @@ pub enum Notify {
     Bell,
     /// A desktop notification with the words (OSC 9).
     Text,
+    /// A push to the person's phone through ntfy ([`crate::push`]); the
+    /// terminal says nothing. Only by name, never in the round.
+    Push,
 }
 
 impl Notify {
@@ -49,6 +52,7 @@ impl Notify {
             "off" => Some(Notify::Off),
             "bell" => Some(Notify::Bell),
             "text" => Some(Notify::Text),
+            "push" => Some(Notify::Push),
             _ => None,
         }
     }
@@ -59,21 +63,23 @@ impl Notify {
             Notify::Off => "off",
             Notify::Bell => "bell",
             Notify::Text => "text",
+            Notify::Push => "push",
         }
     }
 
-    /// The next one round: off, bell, text, off.
+    /// The next one round: off, bell, text, off; from push, off (a push
+    /// needs settings, so it is only taken by name).
     pub fn next(self) -> Notify {
         match self {
             Notify::Off => Notify::Bell,
             Notify::Bell => Notify::Text,
-            Notify::Text => Notify::Off,
+            Notify::Text | Notify::Push => Notify::Off,
         }
     }
 }
 
 /// What `:notify` takes.
-pub const NAMES: [&str; 3] = ["off", "bell", "text"];
+pub const NAMES: [&str; 4] = ["off", "bell", "text", "push"];
 
 /// How a notification is sent, by the terminal it goes to.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -113,6 +119,9 @@ pub struct Word {
     pub body: String,
     pub id: u64,
     pub loud: bool,
+    /// The agent the first of what it says is about (the journal's line
+    /// of a push is put under its project).
+    pub agent: Option<AgentId>,
 }
 
 /// The words of every notice start with this; a style with a title of
@@ -135,7 +144,7 @@ pub fn ring(out: &mut impl Write, how: Notify, style: Style, word: &Word) -> io:
         .and_then(|r| r.strip_prefix(" · "))
         .unwrap_or(&body);
     match (how, style) {
-        (Notify::Off, _) => return Ok(()),
+        (Notify::Off | Notify::Push, _) => return Ok(()),
         (Notify::Bell, _) => out.write_all(b"\x07")?,
         (Notify::Text, Style::Osc9) => write!(out, "\x1b]9;{body}\x07")?,
         (Notify::Text, Style::Tmux) => {
@@ -294,6 +303,7 @@ mod tests {
             ("off", Notify::Off),
             ("bell", Notify::Bell),
             ("text", Notify::Text),
+            ("push", Notify::Push),
         ] {
             assert_eq!(Notify::parse(word), Some(how));
             assert_eq!(
@@ -308,9 +318,10 @@ mod tests {
         assert_eq!(Notify::Off.next(), Notify::Bell);
         assert_eq!(Notify::Bell.next(), Notify::Text);
         assert_eq!(Notify::Text.next(), Notify::Off);
+        assert_eq!(Notify::Push.next(), Notify::Off);
         assert_eq!(
             NAMES.map(|n| Notify::parse(n).unwrap()).to_vec(),
-            [Notify::Off, Notify::Bell, Notify::Text]
+            [Notify::Off, Notify::Bell, Notify::Text, Notify::Push]
         );
     }
 
@@ -319,6 +330,7 @@ mod tests {
             body: body.into(),
             id,
             loud,
+            agent: None,
         }
     }
 
@@ -333,6 +345,7 @@ mod tests {
         let w = word("imece · a change waits", 3, false);
         for style in [Style::Osc9, Style::Osc777, Style::Kitty, Style::Tmux] {
             assert_eq!(rung(Notify::Off, style, &w), "", "{style:?}");
+            assert_eq!(rung(Notify::Push, style, &w), "", "the phone's");
             assert_eq!(rung(Notify::Bell, style, &w), "\x07", "{style:?}");
         }
         assert_eq!(
