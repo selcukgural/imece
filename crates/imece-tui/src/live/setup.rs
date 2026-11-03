@@ -680,6 +680,17 @@ mod tests {
     }
 
     #[test]
+    fn a_script_path_that_can_not_be_resolved_is_said_not_taken_for_none() {
+        let repo = temp("notdir");
+        std::fs::remove_dir_all(repo.join(".imece")).unwrap();
+        // `.imece` a file: the path fails other than by not being there.
+        std::fs::write(repo.join(".imece"), "x").unwrap();
+        let why = look(&repo).unwrap_err();
+        assert!(why.starts_with(&format!("{FILE}: ")), "{why}");
+        let _ = std::fs::remove_dir_all(&repo);
+    }
+
+    #[test]
     fn a_pipe_where_the_script_goes_is_refused_without_waiting_for_a_writer() {
         let repo = temp("fifo");
         let path = repo.join(FILE).into_os_string().into_encoded_bytes();
