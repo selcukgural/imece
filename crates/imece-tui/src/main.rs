@@ -455,7 +455,9 @@ fn main() -> std::io::Result<()> {
     let var = |k: &str| std::env::var(k).ok();
     let progress = screen::shows_progress(said.who.as_ref(), var);
     let style = notify::Style::of(said.who.as_ref(), var);
-    let mut terminal = screen::init(said.keys, progress).inspect_err(|_| screen::restore())?;
+    let icon = screen::shows_icon(said.who.as_ref(), var);
+    let mut terminal =
+        screen::init(said.keys, progress, icon).inspect_err(|_| screen::restore())?;
     let mut app = if args.demo {
         // The simulation's clock says 14:00 at its start, on today's date.
         model::start_clock_at(14 * 3600, live::today());
