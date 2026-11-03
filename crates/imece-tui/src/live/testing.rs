@@ -236,6 +236,23 @@ pub(super) fn argv(line: &str) -> Vec<String> {
     run::split(line).unwrap()
 }
 
+/// A session whose vendor runs as process `0`: this test's own, so its
+/// socket takes this test's calls, or another one, so it refuses them.
+pub(super) struct Runs(pub(super) u32);
+
+impl imece_agent::Agent for Runs {
+    fn prompt(&mut self, _: &str) -> io::Result<()> {
+        Ok(())
+    }
+    fn command(&mut self, _: &str) -> io::Result<()> {
+        Ok(())
+    }
+    fn terminate(&mut self) {}
+    fn pid(&self) -> Option<u32> {
+        Some(self.0)
+    }
+}
+
 /// A session that says when it was ended.
 pub(super) struct Ends(pub(super) Arc<AtomicBool>);
 

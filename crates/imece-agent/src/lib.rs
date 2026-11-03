@@ -117,6 +117,12 @@ pub trait Agent: Send {
     fn command(&mut self, line: &str) -> io::Result<()>;
     /// Asks the session to stop without waiting.
     fn terminate(&mut self);
+    /// The process imece started for the session now (the vendor's CLI):
+    /// it and its descendants are the session's, and imece's socket
+    /// takes a tool call from them alone. None when there is none.
+    fn pid(&self) -> Option<u32> {
+        None
+    }
     /// Answers what the session asked in an [`Event::Asks`] with
     /// `request`: `allow` lets it run, else it is refused and the turn
     /// goes on. An ask already gone is answered by nobody. A vendor that

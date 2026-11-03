@@ -1408,6 +1408,8 @@ enum Queued {
 /// A running Gemini session.
 pub struct Session {
     tx: Sender<Msg>,
+    /// Gemini CLI's process: one per session.
+    pid: u32,
 }
 
 fn spawn(spec: &Spec, tx: Sender<Msg>) -> io::Result<Child> {
@@ -1437,9 +1439,10 @@ impl Session {
         }
         let (tx, rx) = mpsc::channel();
         let child = spawn(spec, tx.clone())?;
+        let pid = child.pid();
         let spec = spec.clone();
         thread::spawn(move || drive(spec, child, rx, on));
-        Ok(Session { tx })
+        Ok(Session { tx, pid })
     }
 
     /// Gives the agent a prompt. A busy session takes it after the running
@@ -1499,6 +1502,10 @@ impl crate::Agent for Session {
 
     fn decide(&mut self, request: &str, allow: bool) -> io::Result<()> {
         Session::decide(self, request, allow)
+    }
+
+    fn pid(&self) -> Option<u32> {
+        Some(self.pid)
     }
 }
 
@@ -2840,7 +2847,9 @@ mod tests {
     fn a_session_takes_a_command_as_typed_and_refuses_what_is_not_one() {
         let (tx, rx) = mpsc::channel();
         // Through the trait, as the screen drives every vendor.
-        let mut s: Box<dyn crate::Agent> = Box::new(Session { tx });
+        let mut s: Box<dyn crate::Agent> = Box::new(Session { tx, pid: 7 });
+        // The process it runs in, through the trait too.
+        assert_eq!(s.pid(), Some(7));
         s.command(" /clear ").unwrap();
         assert!(matches!(rx.try_recv(), Ok(Msg::Command(l)) if l == " /clear "));
         for line in ["clear", "", "fix a/b"] {
@@ -3566,6 +3575,9 @@ done"#;
             })
             .unwrap(),
         );
+        // The process imece started, a child of this one.
+        let pid = s.pid().expect("a process");
+        assert_eq!(crate::child::parent_of(pid), Some(std::process::id()));
         for p in prompts {
             s.prompt(p).unwrap();
         }
@@ -4337,6 +4349,9 @@ done"#;
         let sock = dir.join("a.sock");
         let calls = Arc::new(Mutex::new(Vec::<Value>::new()));
         let seen = Arc::clone(&calls);
+        let owner = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0));
+        let kin: std::sync::Arc<std::sync::Mutex<Vec<bool>>> = Default::default();
+        let (owner_of, kin_of) = (std::sync::Arc::clone(&owner), std::sync::Arc::clone(&kin));
         let _server = crate::mcp::Server::bind(
             &sock,
             vec![crate::mcp::Tool {
@@ -4352,7 +4367,13 @@ done"#;
                     "required": ["to", "type", "body"],
                 }),
             }],
-            move |_, args| {
+            move |_, args, peer| {
+                // The caller is of the session's process, as imece's bus
+                // takes it: the relay its vendor started.
+                let root = owner.load(std::sync::atomic::Ordering::SeqCst);
+                kin.lock()
+                    .unwrap()
+                    .push(peer.is_some_and(|p| crate::child::descends(p, root)));
                 seen.lock().unwrap().push(args.clone());
                 Ok("delivered".into())
             },
@@ -4380,6 +4401,10 @@ done"#;
             let _ = tx.send(e);
         })
         .unwrap();
+        owner_of.store(
+            crate::Agent::pid(&session).unwrap(),
+            std::sync::atomic::Ordering::SeqCst,
+        );
         session
             .prompt(
                 "With the send tool, send lead an inform message whose body is the \
@@ -4399,6 +4424,11 @@ done"#;
             }
         }
         drop(session);
+        let kin = kin_of.lock().unwrap().clone();
+        assert!(
+            !kin.is_empty() && kin.iter().all(|k| *k),
+            "every call came from the session's process: {kin:?}"
+        );
         assert!(
             matches!(&got[0], Event::Started { .. }),
             "the checks passed: {got:?}"

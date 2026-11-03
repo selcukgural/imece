@@ -106,6 +106,11 @@ fn signal(proc: &Mutex<Proc>, sig: i32) -> bool {
 }
 
 impl Child {
+    /// The process's number (its group's too).
+    pub fn pid(&self) -> u32 {
+        self.proc.lock().map_or(0, |p| p.child.id())
+    }
+
     /// Starts `cmd` in a new process group with all three pipes. `on` gets
     /// every stdout line on a reader thread, then one `Out::End`; returning
     /// `false` from a line kills the group.
@@ -360,10 +365,90 @@ fn read_tail(mut r: impl Read, keep: usize) -> String {
     String::from_utf8_lossy(&tail).into_owned()
 }
 
+/// How many parents [`descends`] climbs at most: a process tree is far
+/// less deep, and a bound keeps the walk finite whatever the system says.
+pub const PARENTS_MAX: usize = 64;
+
+/// Whether process `pid` is `root` or one of its descendants, by its
+/// parents as the system tells them now. A process gone, a parent the
+/// system will not tell, or the top of the tree reached is a no.
+pub fn descends(pid: u32, root: u32) -> bool {
+    let mut at = pid;
+    for _ in 0..PARENTS_MAX {
+        if at == root {
+            return true;
+        }
+        match parent_of(at) {
+            Some(p) if p > 1 && p != at => at = p,
+            _ => return false,
+        }
+    }
+    false
+}
+
+/// The parent of process `pid`, if the system tells it.
+#[cfg(target_os = "macos")]
+pub fn parent_of(pid: u32) -> Option<u32> {
+    let mut info: libc::proc_bsdinfo = unsafe { std::mem::zeroed() };
+    let size = std::mem::size_of::<libc::proc_bsdinfo>() as i32;
+    let got = unsafe {
+        libc::proc_pidinfo(
+            i32::try_from(pid).ok()?,
+            libc::PROC_PIDTBSDINFO,
+            0,
+            (&raw mut info).cast(),
+            size,
+        )
+    };
+    (got == size).then_some(info.pbi_ppid)
+}
+
+/// The parent of process `pid`, if the system tells it: the fourth field
+/// of `/proc/PID/stat`, after the name in brackets (which may hold
+/// anything, brackets and spaces too, so it is passed by its last `)`).
+#[cfg(target_os = "linux")]
+pub fn parent_of(pid: u32) -> Option<u32> {
+    let stat = std::fs::read_to_string(format!("/proc/{pid}/stat")).ok()?;
+    stat_parent(&stat)
+}
+
+/// The parent in a `/proc/PID/stat` line.
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+fn stat_parent(stat: &str) -> Option<u32> {
+    let (_, rest) = stat.rsplit_once(')')?;
+    rest.split_whitespace().nth(1)?.parse().ok()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::sync::mpsc;
+
+    #[test]
+    fn a_process_descends_from_itself_and_its_parents_not_from_its_child() {
+        let me = std::process::id();
+        assert_eq!(parent_of(me), Some(std::os::unix::process::parent_id()));
+        assert!(descends(me, me));
+        assert!(descends(me, std::os::unix::process::parent_id()));
+        let mut kid = Command::new("sleep").arg("5").spawn().unwrap();
+        let k = kid.id();
+        assert!(descends(k, me), "a child descends from its parent");
+        assert!(!descends(me, k), "a parent does not descend from its child");
+        assert!(!descends(1, me), "the top of the tree is no one's");
+        assert!(!descends(me, 1), "and no one's root");
+        kid.kill().unwrap();
+        kid.wait().unwrap();
+        assert_eq!(parent_of(k), None, "a process gone has no parent");
+        assert!(!descends(k, me), "nor descends from anyone");
+    }
+
+    #[test]
+    fn a_stat_line_s_parent_comes_after_the_last_bracket() {
+        assert_eq!(stat_parent("42 (sh) S 7 42 42 0"), Some(7));
+        assert_eq!(stat_parent("42 (a) b) 9 S) R 13 42"), Some(13));
+        assert_eq!(stat_parent("42 (sh) S x"), None);
+        assert_eq!(stat_parent("42 sh S 7"), None);
+    }
 
     fn lines(input: &[u8], max: usize) -> Vec<Option<String>> {
         let mut out = Vec::new();

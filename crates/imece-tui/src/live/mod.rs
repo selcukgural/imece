@@ -30,7 +30,7 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -241,6 +241,20 @@ type Call = (AgentId, String, Value, Sender<Answer>, Arc<AtomicBool>);
 /// the call when it gets to it (it was busy: a `!cmd` holds the screen),
 /// so a call tried again is not done twice (two workers hired, a message
 /// sent twice). A call imece took is waited for once more: it was done,
+/// What a socket's call from outside its agent's session is passed on
+/// as, to be said in that agent's trace; no tool has the name.
+const NOT_ITS_SESSION: &str = "(outside its session)";
+
+/// What the caller from outside hears.
+const NOT_ITS_SESSION_SAID: &str = "this socket takes calls from its own agent's session only";
+
+/// Whether the process `peer` that called on a socket is the session's
+/// process `owner` or one it started. None running (0), or a caller the
+/// system will not name, is a no.
+fn its_session(peer: Option<u32>, owner: u32) -> bool {
+    owner != 0 && peer.is_some_and(|p| imece_agent::child::descends(p, owner))
+}
+
 /// and the caller must not do it again.
 fn answer_of(answer: &Receiver<Answer>, taken: &AtomicBool, wait: Duration) -> Answer {
     let late = match answer.recv_timeout(wait) {
@@ -355,6 +369,10 @@ struct Bus {
     /// imece's own binary; sessions start it as `mcp-relay <socket>`.
     relay: String,
     servers: Vec<Server>,
+    /// Each socket's session process now (0: none running), by agent:
+    /// a tool call is taken only from it or a process it started
+    /// (`imece_agent::child::descends`), never from another agent's.
+    owners: Vec<Arc<AtomicU32>>,
 }
 
 impl Drop for Bus {
@@ -1048,6 +1066,7 @@ impl Live {
             dir,
             relay,
             servers: Vec::new(),
+            owners: Vec::new(),
         });
         for id in 0..self.slots.len() {
             self.bind(id, w.agents[id].role, w.agents[id].vendor)?;
@@ -1076,8 +1095,17 @@ impl Live {
         assert_eq!(bus.servers.len(), id, "sockets are bound in agent order");
         let tx = self.calls_tx.clone();
         let run_timeout = self.run_timeout;
+        let owner = Arc::new(AtomicU32::new(0));
+        let mine = Arc::clone(&owner);
         let server = Server::bind(&bus.dir.join(format!("a{id}.sock")), tools, {
-            move |name, args| {
+            move |name, args, peer| {
+                if !its_session(peer, mine.load(Ordering::SeqCst)) {
+                    // Said in the trace of the agent whose socket it is.
+                    let (reply, _) = mpsc::channel();
+                    let said = json!({ "tool": name });
+                    let _ = tx.send((id, NOT_ITS_SESSION.into(), said, reply, Default::default()));
+                    return Err(NOT_ITS_SESSION_SAID.into());
+                }
                 let (reply, answer) = mpsc::channel();
                 let taken = Arc::new(AtomicBool::new(false));
                 tx.send((id, name.to_string(), args.clone(), reply, taken.clone()))
@@ -1086,7 +1114,23 @@ impl Live {
             }
         })?;
         bus.servers.push(server);
+        bus.owners.push(owner);
         Ok(())
+    }
+
+    /// Tells each socket which process its agent's session runs in now:
+    /// a session started, ended, or started its vendor again.
+    fn own_sockets(&self) {
+        let Some(bus) = &self.bus else {
+            return;
+        };
+        for (slot, owner) in self.slots.iter().zip(&bus.owners) {
+            let pid = match slot {
+                Slot::Running(s) => s.pid().unwrap_or(0),
+                _ => 0,
+            };
+            owner.store(pid, Ordering::SeqCst);
+        }
     }
 
     /// Moves the clock and applies what the sessions reported. Whether
@@ -1104,6 +1148,9 @@ impl Live {
                 self.ready(w, id, ready);
             }
         }
+        // Before any call is taken: a session that just started answers
+        // on its socket from now on.
+        self.own_sockets();
         let git = self.take_git(w);
         let said = self.take_said(w);
         self.stand_busy(w, Instant::now());
@@ -1268,6 +1315,13 @@ impl Live {
         let mut called = false;
         while let Ok((from, tool, args, reply, taken)) = self.calls_rx.try_recv() {
             called = true;
+            if tool == NOT_ITS_SESSION {
+                let tool = clean(args["tool"].as_str().unwrap_or_default());
+                let said =
+                    format!("{tool}: called on this socket from outside its session, refused");
+                w.agents[from].trace(w.tick, said);
+                continue;
+            }
             if taken.swap(true, Ordering::SeqCst) {
                 // Its caller gave up on it and was told to try again.
                 let late = format!("{tool}: given up before imece got to it, not done");
