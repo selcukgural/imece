@@ -678,10 +678,10 @@ struct Extras {
     /// The setup scripts the person said no to this run.
     setup_refused: Vec<String>,
     /// The demo's worktrees no agent owns (`:tidy`), made up at the first
-    /// look; the step a look or a removal answers at, with the removal's
-    /// end.
+    /// look; a look or a removal under way, answered at the next step,
+    /// with the removal's end.
     orphans: Option<Vec<Orphan>>,
-    tidy_due: Option<(u64, Option<Tidied>)>,
+    tidy_due: Option<Option<Tidied>>,
     /// The teardown scripts the person said no to this run.
     teardown_refused: Vec<String>,
 }
@@ -1284,7 +1284,7 @@ impl Sim {
             return;
         }
         w.orphans.busy = true;
-        self.extras.tidy_due = Some((w.tick + 1, None));
+        self.extras.tidy_due = Some(None);
     }
 
     /// The demo's worktrees at `at` of the list go on the next step, as
@@ -1336,7 +1336,7 @@ impl Sim {
             list.retain(|o| !gone.contains(&o.path));
         }
         w.orphans.busy = true;
-        self.extras.tidy_due = Some((w.tick + 1, Some(tidied)));
+        self.extras.tidy_due = Some(Some(tidied));
         Ok(())
     }
 
@@ -1356,12 +1356,9 @@ impl Sim {
         }
     }
 
-    /// A look or a removal of the demo's that is due answers.
+    /// A look or a removal of the demo's under way answers.
     fn tidy_answers(&mut self, w: &mut World) {
-        if !(self.extras.tidy_due.as_ref()).is_some_and(|(at, _)| *at <= w.tick) {
-            return;
-        }
-        let Some((_, tidied)) = self.extras.tidy_due.take() else {
+        let Some(tidied) = self.extras.tidy_due.take() else {
             return;
         };
         let found = self.extras.orphans.get_or_insert_with(|| demo_orphans(w));
