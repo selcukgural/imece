@@ -3,7 +3,7 @@
 //! away. Each card the journal lately spoke of is a block: its header
 //! (number, title, owner, how far it is), its newest lines (an ask that
 //! got no answer says so) and what its owner does now. Lines of no card
-//! (the leader's planning, a worktree's setup) are folded by kind under
+//! (the leader's hiring, a worktree's setup) are folded by kind under
 //! `elsewhere`, each kind once with how many times it happened. Above
 //! all, whom the person holds up: every agent that waits for them, and
 //! every agent that waits for one of those.
@@ -227,7 +227,6 @@ pub(crate) fn rows(app: &App, height: usize) -> Vec<Row> {
                 }),
                 None => {}
             },
-            None if e.event.kind() == EntryKind::Assign => {}
             None => {
                 let d = std::mem::discriminant(&e.event);
                 match kinds.iter().position(|k| *k == d) {

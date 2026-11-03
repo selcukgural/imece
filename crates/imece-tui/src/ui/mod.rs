@@ -5153,6 +5153,8 @@ mod tests {
         app.world.journal = vec![
             // An ask from before numbers (0) is not one that waits.
             at(990, sent(w[0], w[1], MsgKind::Ask, 0, None)),
+            // One under a minute old waits "yet".
+            at(996, sent(w[0], w[1], MsgKind::Ask, 9, None)),
             at(991, Event::Failed { agent: lead }),
             at(
                 992,
@@ -5192,15 +5194,41 @@ mod tests {
         let s = render_story(&app);
         let ask = s.lines().find(|l| l.contains("[ask]: m0")).unwrap();
         assert!(!ask.contains("no answer"), "{s}");
+        let ask = s.lines().find(|l| l.contains("[ask]: m9")).unwrap();
+        assert!(ask.contains("no answer yet"), "{s}");
         let start = s.lines().position(|l| l.contains("elsewhere")).unwrap();
         let folded = (s.lines().skip(start + 1))
             .take_while(|l| l.contains(":") && l.contains("│  1"))
             .count();
         assert_eq!(folded, story::STORY_OTHER, "{s}");
         assert!(!s.contains("×1"), "{s}");
+        // Another card's change, or this card's item that is no change,
+        // says nothing on its header.
+        plan_of(&mut app, w[0]);
+        for (kind, card) in [(InboxKind::Change, Some(1)), (InboxKind::Reply, Some(0))] {
+            app.world.inbox = vec![InboxItem {
+                kind,
+                agent: w[0],
+                detail: "x".into(),
+                researcher: None,
+                open: true,
+                tick: 0,
+                card,
+            }];
+            let s = render_story(&app);
+            let head = s.lines().find(|l| l.contains("#1 card 1")).unwrap();
+            assert!(!head.contains("Δ") && head.contains('≡'), "{head}");
+        }
+        // A done card says done, not its owner's list.
+        app.world.inbox.clear();
+        app.world.cards[0].column = Column::Done;
+        app.world.cards[0].finished = 1000;
+        let s = render_story(&app);
+        let head = s.lines().find(|l| l.contains("#1 card 1")).unwrap();
+        assert!(head.contains("✓ done") && !head.contains('≡'), "{head}");
+        app.world.cards[0].column = Column::Working;
         // A change waiting on a card not done: that, not its list; the
         // owner off the card has no line of now.
-        plan_of(&mut app, w[0]);
         app.world.inbox.push(InboxItem {
             kind: InboxKind::Change,
             agent: w[0],
@@ -5322,11 +5350,16 @@ mod tests {
         key(&mut app, KeyCode::Enter);
         assert!(app.story);
         assert_eq!((app.journal_sel, app.story_sel), (None, 0));
-        // Off again in the pane: a journal line is selected.
+        // Off again in the pane: a journal line is selected, and j k move
+        // it, not the story's.
         app.pane = Pane::Journal;
         key(&mut app, KeyCode::Char('J'));
         assert!(!app.story);
         assert!(app.journal_sel.is_some());
+        let before = app.journal_sel;
+        key(&mut app, KeyCode::Char('j'));
+        assert_ne!(app.journal_sel, before);
+        assert_eq!(app.story_sel, 0);
         assert!(render(&app, 200, 50).contains("the side panel shows the journal"));
     }
 

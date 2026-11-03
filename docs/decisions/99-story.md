@@ -33,8 +33,10 @@ What it shows, top down:
   done and the owner is on it.
 - `elsewhere`: lines of no card, folded by event kind
   (`std::mem::discriminant`), `STORY_OTHER` (4) kinds at most, each its
-  newest line and `×N`; routine `Assign` lines of no card are left out,
-  as the journal leaves assignments out.
+  newest line and `×N`. An assignment always names its card, so it is
+  told in that card's block (the journal pane leaves assignments out; the
+  story tells them where they belong). The first build had an arm for
+  assignments of no card; there are none, and the mutation run said so.
 
 Which card a line belongs to (`story::card_for`): the card it names
 (`Event::card`); for something said (`words::said`), the card of whoever
