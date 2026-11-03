@@ -8448,6 +8448,12 @@ mod tests {
             flash(&app),
             format!("{name}: no yes from now on; A on an ask, or :allow PROGRAM [WORD]")
         );
+        // Two asks decided before: the open ones are not the first items.
+        for _ in 0..2 {
+            app.world.asks_you(one, "Bash: npm install old");
+            let i = app.world.inbox.len() - 1;
+            app.world.decided(i, false);
+        }
         app.world.asks_you(one, "Bash: npm install zod@3");
         app.world.asks_you(two, "Bash: npm install left-pad");
         app.world.asks_you(two, "Edit: package.json");
@@ -8476,6 +8482,33 @@ mod tests {
             "a yes from now on is for commands only: a allows this once"
         );
         assert_eq!(app.world.open_inbox().len(), 1);
+        // An ask whose commands have a yes already (added without letting
+        // it go on): allowed, nothing new.
+        app.world.asks_you(one, "Bash: make");
+        app.world.stand(
+            p,
+            &[Standing {
+                program: "make".into(),
+                sub: None,
+            }],
+        );
+        let make = app
+            .inbox_rows()
+            .iter()
+            .position(|&i| app.world.inbox[i].detail == "Bash: make");
+        app.inbox_sel = make.unwrap();
+        app.on_key(key(KeyCode::Char('A')));
+        assert_eq!(
+            flash(&app),
+            format!("{name}: allowed; its commands had a yes from now on already")
+        );
+        app.world.unstand(
+            p,
+            &Standing {
+                program: "make".into(),
+                sub: None,
+            },
+        );
         // :allow adds by name, again takes it out; a bad name is said.
         app.command("allow make");
         assert_eq!(flash(&app), format!("{name}: yes from now on to make"));

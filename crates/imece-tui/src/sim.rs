@@ -4566,6 +4566,20 @@ diff --git a/b.rs b/b.rs
         );
         assert_eq!(demo_command("Edit: x"), None);
         assert_eq!(demo_command("Bash: make"), Some("make"));
+        // Only an open approval gets a yes from now on: not one decided
+        // already, nor an open item of another kind.
+        let (mut w, mut s, worker, _) = one_at_work();
+        w.asks_you(worker, "Bash: npm run x");
+        let asked = w.inbox.len() - 1;
+        w.decided(asked, false);
+        assert_eq!(s.always(&mut w, asked), Err(standing::Why::NotACommand));
+        w.asked_you(worker, "Bash: npm run y");
+        let question = w.inbox.len() - 1;
+        assert_eq!(s.always(&mut w, question), Err(standing::Why::NotACommand));
+        assert!(w.projects[w.agents[worker].project].allowed.is_empty());
+        w.asks_you(worker, "Bash: npm run z");
+        let open = w.inbox.len() - 1;
+        assert_eq!(s.always(&mut w, open).unwrap().len(), 1);
     }
 
     #[test]
