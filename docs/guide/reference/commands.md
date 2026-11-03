@@ -73,6 +73,7 @@ A line that starts with `:` is a command to imece, not a message to an agent. Yo
 | `:talk [@NAME]` | `v` | | | | the agent at hand |
 | `:theme [NAME\|FILE]` | `T` | `:t` | | | the theme in use |
 | `:tidy` | — | | | | |
+| `:timeline` | `4` | | | | |
 | `:trace [@NAME]` | `t` | | | | the agent at hand |
 | `:unclear [inbox\|journal]` | — | | | | |
 | `:undo` | `u` | | | | |
@@ -328,6 +329,10 @@ The theme, as `T` (`:t`). Alone: the next built-in one, around the end. With a n
 ### `:tidy`
 
 The worktrees under imece's state that no agent owns (a crash, a removed store, a fork that never started), in a window: `WORKTREES NO AGENT OWNS · 2`, a row each with its name, its checkout and what it holds (`clean`, or `files changed: 3 · commits of its own: 1`). `j` `k` `g` `G` move, `a` removes the clean ones, `d` the one at hand (one that holds work asks first: `y` removes it, any other key keeps it), `esc` closes. When the worktree's checkout has a teardown script (`.imece/worktree-teardown.sh`), it runs in the worktree first; one not yet answered opens over the window (`a` yes, `r` no for the run, `esc` removes nothing). The flash says how it went: `removed claude-31`, `not removed: codex-32 (…)`. An agent's worktree is never listed or removed. At each start imece looks once and says `2 worktrees no agent owns: :tidy lists them` when it finds any. See [projects](../concepts/projects.md#worktrees-no-agent-owns).
+
+### `:timeline`
+
+The timeline, as `4`: one lane per agent of the open projects over the last hour, each column what it was doing, the messages under each project; `[` `]` change a column's length. See [the timeline](../screen/timeline.md).
 
 ### `:trace [@NAME]`
 

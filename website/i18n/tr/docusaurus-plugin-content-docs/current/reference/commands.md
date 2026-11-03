@@ -73,6 +73,7 @@ description: imece'nin aldığı her `:` komutu; argümanları, karşılığı o
 | `:talk [@NAME]` | `v` | | | | eldeki ajan |
 | `:theme [NAME\|FILE]` | `T` | `:t` | | | kullanılan tema |
 | `:tidy` | — | | | | |
+| `:timeline` | `4` | | | | |
 | `:trace [@NAME]` | `t` | | | | eldeki ajan |
 | `:unclear [inbox\|journal]` | — | | | | |
 | `:undo` | `u` | | | | |
@@ -328,6 +329,10 @@ Tema, `T` gibi (`:t`). Tek başına: sonraki yerleşik tema, sondan başa döner
 ### `:tidy`
 
 imece'nin durum dizininde hiçbir ajanın sahip olmadığı worktree'ler (bir çökme, silinen bir depo, hiç başlamamış bir çatal), bir pencerede: `SAHİBİ OLMAYAN WORKTREE'LER · 2`, her biri için adı, checkout'u ve tuttukları (`temiz`, ya da `değişen dosya: 3 · kendi commit'i: 1`) ile bir satır. `j` `k` `g` `G` gezinir, `a` temiz olanları siler, `d` eldekini (iş tutan biri önce sorar: `y` siler, başka her tuş bırakır), `esc` kapatır. Worktree'nin checkout'unda bir söküm betiği (`.imece/worktree-teardown.sh`) varsa önce worktree'de çalışır; henüz yanıtlanmamışsa pencerenin üstünde açılır (`a` evet, `r` bu çalıştırma için hayır, `esc` hiçbir şey silmez). Flaş nasıl gittiğini söyler: `silindi: claude-31`, `silinmedi: codex-32 (…)`. Bir ajanın worktree'si asla listelenmez, asla silinmez. imece her başlangıçta bir kez bakar ve bulursa `sahibi olmayan 2 worktree var: :tidy listeler` der. Bkz. [projeler](../concepts/projects.md#sahibi-olmayan-worktreeler).
+
+### `:timeline`
+
+Zaman şeridi, `4` gibi: açık projelerin her agent'ı için son bir saatte bir şerit, her sütun ne yaptığı, her projenin altında mesajlar; `[` `]` bir sütunun uzunluğunu değiştirir. Bkz. [zaman şeridi](../screen/timeline.md).
 
 ### `:trace [@NAME]`
 

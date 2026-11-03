@@ -519,6 +519,9 @@ pub struct Agent {
     /// activity bar on its row (`▁▃▅▂▁`, the last [`STIR_TICKS`]) and on
     /// its focus (all of them). Memory only.
     pub stirs: Stirs,
+    /// What it was doing in each of the last [`LANE_TICKS`] ticks: its
+    /// lane on the timeline (record 100). Memory only.
+    pub lane: Lane,
     /// What a live agent is doing right now (`Edit src/main.rs`), drawn
     /// instead of the progress bar; empty while it thinks.
     pub activity: Option<String>,
@@ -666,6 +669,7 @@ impl Agent {
             trace: VecDeque::new(),
             traced: 0,
             stirs: Stirs::default(),
+            lane: Lane::default(),
             activity: None,
             starting: false,
             commands: Vec::new(),
@@ -733,6 +737,121 @@ pub const STIR_TICKS: usize = 5;
 
 /// The ticks its longer bar covers on its focus: two minutes live.
 pub const STIR_LONG: usize = 24;
+
+/// Ticks a lane keeps: an hour.
+pub const LANE_TICKS: usize = 720;
+
+/// What an agent was doing in a tick, for its lane on the timeline, the
+/// least first: when several are seen in one tick the lane keeps the
+/// most (a short edit in a tick of reading shows as writing).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
+pub enum LaneCell {
+    /// Nothing known: before it was first seen.
+    #[default]
+    Gap,
+    Idle,
+    Starting,
+    Thinking,
+    /// A tool call that changes nothing: reading, searching, running.
+    Reading,
+    /// A tool call that writes files.
+    Writing,
+    /// Waiting for a teammate's answer.
+    Asking,
+    /// The tick a turn ended.
+    Done,
+    /// Something of it waits for the person.
+    Waiting,
+    /// Blocked, or its session stopped.
+    Stuck,
+}
+
+impl LaneCell {
+    /// Whether the agent was in a turn.
+    pub fn busy(self) -> bool {
+        matches!(
+            self,
+            LaneCell::Starting
+                | LaneCell::Thinking
+                | LaneCell::Reading
+                | LaneCell::Writing
+                | LaneCell::Asking
+        )
+    }
+}
+
+/// An agent's lane: one [`LaneCell`] per tick for the last [`LANE_TICKS`],
+/// the newest at `at`.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Lane {
+    at: u64,
+    cells: VecDeque<LaneCell>,
+}
+
+impl Lane {
+    /// The agent was seen doing `cell` at `tick`. The ticks between the
+    /// last one seen and this one (live's clock can jump) take the last
+    /// cell seen; within one tick the most is kept; a tick older than the
+    /// newest counts as the newest.
+    pub fn mark(&mut self, tick: u64, cell: LaneCell) {
+        if self.cells.is_empty() {
+            self.at = tick;
+            self.cells.push_back(cell);
+            return;
+        }
+        let last = *self.cells.back().expect("not empty");
+        let gone = tick.saturating_sub(self.at).min(LANE_TICKS as u64);
+        for n in 0..gone {
+            // The tick a turn ended is one tick, not the ones after it.
+            let fill = if n + 1 == gone { cell } else { last.after() };
+            self.cells.push_back(fill);
+            if self.cells.len() > LANE_TICKS {
+                self.cells.pop_front();
+            }
+        }
+        self.at = self.at.max(tick);
+        if gone == 0 {
+            let newest = self.cells.back_mut().expect("not empty");
+            *newest = (*newest).max(cell);
+        }
+    }
+
+    /// The newest cell seen; a gap when none was.
+    pub fn last(&self) -> LaneCell {
+        self.cells.back().copied().unwrap_or_default()
+    }
+
+    /// The `n` ticks up to `tick`, the oldest first: a gap before the
+    /// lane began and for the ticks since it was last seen.
+    pub fn at(&self, tick: u64, n: usize) -> Vec<LaneCell> {
+        let mut out = vec![LaneCell::Gap; n];
+        for (k, slot) in out.iter_mut().enumerate() {
+            // The tick this slot stands for, `n - 1 - k` before `tick`.
+            let Some(t) = tick.checked_sub((n - 1 - k) as u64) else {
+                continue;
+            };
+            if t > self.at {
+                continue;
+            }
+            let back = (self.at - t) as usize;
+            if let Some(i) = self.cells.len().checked_sub(back + 1) {
+                *slot = self.cells[i];
+            }
+        }
+        out
+    }
+}
+
+impl LaneCell {
+    /// What the ticks after this one were, until the next is seen: the
+    /// same, but a turn's end is over at once.
+    fn after(self) -> LaneCell {
+        match self {
+            LaneCell::Done => LaneCell::Idle,
+            c => c,
+        }
+    }
+}
 
 /// How many trace lines an agent wrote in each of the [`STIR_LONG`]
 /// ticks up to `at`, the oldest first; its row shows the last

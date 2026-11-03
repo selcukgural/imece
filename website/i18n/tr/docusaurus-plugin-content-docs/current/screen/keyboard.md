@@ -54,7 +54,8 @@ Gelenekler vim'inkidir: `h` `j` `k` `l` hareket ve katlama, `gg` ve `G` uçlara,
 | --- | --- |
 | `#N`  `#word`  `n` `p` | numara ya da başlıkla bir kart, hepsi tek ekranda; o ekranda `n` `p`: sonraki / önceki kart |
 | `&`  `:goto` | bir agent'a ya da projeye git: bir ad yazın, `1`-`9` listedeki n'inci, `!` yalnız sizi bekleyenleri tutar; `&#` kartlara döner |
-| `1` `2` `3` | `:salon` · `:board` pano · `:code` harita |
+| `1` `2` `3` `4` | `:salon` · `:board` pano · `:code` harita · `:timeline` zaman şeridi |
+| `[`  `]` | zaman şeridinde: bir sütun 5 sn · 30 sn · 1 dk |
 | `↑` `↓`  `j` `k` | seç |
 | `gg`  `G` | ilk / son satır |
 | `^d` `^u` `^f` `^b` | yarım sayfa / tam sayfa |
@@ -168,7 +169,7 @@ Gelenekler vim'inkidir: `h` `j` `k` `l` hareket ve katlama, `gg` ve `G` uçlara,
 
 | Komut | Tuş |
 | --- | --- |
-| `:salon` `:board` `:code` | `1` `2` `3` |
+| `:salon` `:board` `:code` `:timeline` | `1` `2` `3` `4` |
 | `:lang` | `L` |
 | `:theme` | `T` |
 | `:help` | `?` |
@@ -230,7 +231,7 @@ x = j
 X = x
 ```
 
-Yerler `salon`, `board` (pano), `code` (kod haritası), `talk` (bir konuşma), `change` (açık bir değişiklik), `choose` (bir konuşmada ya da değişiklikte kopyalamak için satır seçerken), `peek` ve `help`'tir (yerlerin adları İngilizce yazılır). Yer, tuşların gittiği yerdir: bir değişikliğin üstünde açık bir konuşma `talk`'tır, içinde satır seçmek `choose`'dur. Herhangi bir tuşla kapanan pencereler (yenilikler, hoş geldin, uzaktayken özeti, kaldığın yer), çıkış sorusu ve solo seçimi yalnız her yerde geçerli satırları alır. Bir yer aşağıda yeniden gelebilir; bir yerde iki kez verilen tuş reddedilir, bir yerde tek başına verilen tuş da aynı yerde ya da her yerde iki tuşun ilki olamaz.
+Yerler `salon`, `board` (pano), `code` (kod haritası), `timeline` (zaman şeridi), `talk` (bir konuşma), `change` (açık bir değişiklik), `choose` (bir konuşmada ya da değişiklikte kopyalamak için satır seçerken), `peek` ve `help`'tir (yerlerin adları İngilizce yazılır). Yer, tuşların gittiği yerdir: bir değişikliğin üstünde açık bir konuşma `talk`'tır, içinde satır seçmek `choose`'dur. Herhangi bir tuşla kapanan pencereler (yenilikler, hoş geldin, uzaktayken özeti, kaldığın yer), çıkış sorusu ve solo seçimi yalnız her yerde geçerli satırları alır. Bir yer aşağıda yeniden gelebilir; bir yerde iki kez verilen tuş reddedilir, bir yerde tek başına verilen tuş da aynı yerde ya da her yerde iki tuşun ilki olamaz.
 
 imece dosyayı başta, `:keys` ile ve siz kaydettiğinizde yeniden okur: iki saniyede bir bakar, penceresine döndüğünüzde de hemen; ne çıktığını `:keys` gibi söyler. Bütünüyle alamadığı bir dosyayı reddeder ve elinizdeki tuşlar kalır: `TUŞ = TUŞ` olmayan bir satır (`satır 3: TUŞ = TUŞ diye yaz`), tuş olmayan bir ad (`` `nope` bir tuş değil ``), sağda imece'nin bir şey yapmadığı bir tuş (`imece d ile bir şey yapmıyor`), iki kez verilen bir tuş (`^n 1. satırda zaten verilmiş`), bir yanda üç tuş, bunlardan biri olmayan bir yer (`` `[nope]` bir yer değil ``), iki yanda da `^c`, 200'den fazla tuş, 64 KiB'tan büyük ya da metin olmayan bir dosya. Son iyi dosya store'da tutulur; böylece dosyası reddedilen bir başlangıç da tuşlarınızla açılır ve nedenini söyler. Hatalı bir düzenleme bir kez söylenir ve elinizdeki tuşları bırakır. Dosya yoksa imece'nin kendi tuşları geri gelir.
 

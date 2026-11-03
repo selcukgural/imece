@@ -305,6 +305,7 @@ pub enum Scope {
     Salon,
     Board,
     Code,
+    Timeline,
     /// A conversation.
     Talk,
     /// A change (Δ) open.
@@ -317,10 +318,11 @@ pub enum Scope {
 
 impl Scope {
     /// Every place, in the order the file's names are listed.
-    pub const ALL: [Scope; 8] = [
+    pub const ALL: [Scope; 9] = [
         Scope::Salon,
         Scope::Board,
         Scope::Code,
+        Scope::Timeline,
         Scope::Talk,
         Scope::Change,
         Scope::Choose,
@@ -334,6 +336,7 @@ impl Scope {
             Scope::Salon => "salon",
             Scope::Board => "board",
             Scope::Code => "code",
+            Scope::Timeline => "timeline",
             Scope::Talk => "talk",
             Scope::Change => "change",
             Scope::Choose => "choose",
@@ -1572,11 +1575,11 @@ mod tests {
         );
         assert_eq!(
             say(Lang::En, Why::Place(3, "nope".into())),
-            "/c/imece/keys: line 3: `[nope]` is no place; the places are salon board code talk change choose peek help; the keys you had stay"
+            "/c/imece/keys: line 3: `[nope]` is no place; the places are salon board code timeline talk change choose peek help; the keys you had stay"
         );
         assert_eq!(
             say(Lang::Tr, Why::Place(3, "nope".into())),
-            "/c/imece/keys: satır 3: `[nope]` bir yer değil; yerler: salon board code talk change choose peek help; elindeki tuşlar kalıyor"
+            "/c/imece/keys: satır 3: `[nope]` bir yer değil; yerler: salon board code timeline talk change choose peek help; elindeki tuşlar kalıyor"
         );
         assert_eq!(
             taken(Lang::En, path, &map("^n = j\n[change]\nx = j")),
