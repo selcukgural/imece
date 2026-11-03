@@ -5,10 +5,10 @@ description: "Yazdığınız alt satır - lidere ya da tek bir agent'a, satıcı
 
 # Komut satırı
 
-Alt satır yazdığınız yerdir. `/` (ya da vim'deki gibi `i`) onu seçili projenin liderine açar, `@` tek bir agent'a, `:` imece'ye, `!` kendi kabuğunuza, `#` bir karta. Satırı izleyen ipucu `enter`'ın ne yaptığını ve satır nasıl ekleneceğini söyler; `esc` vazgeçer.
+Alt satır yazdığınız yerdir. `/` (ya da vim'deki gibi `i`) onu seçili projenin liderine açar, `@` tek bir agent'a, `:` imece'ye, `!` kendi kabuğunuza, `#` bir karta. Siz yazana dek bir ipucu `enter`'ın ne yaptığını, satır nasıl ekleneceğini ve `esc`'in vazgeçtiğini söyler; ilk karakterle kaybolur, satır yeniden boşalınca geri gelir.
 
 ```text
- › lead için: boş dosyadaki parser çökmesini düzelt█     enter gönder · ⇧enter yeni satır · esc vazgeç
+ › lead için: █   enter gönder · ⇧enter yeni satır · esc vazgeç
 ```
 
 ```text
@@ -115,7 +115,7 @@ Tek bir kesik vardır, halka değil: bir şey alan her kesme öncekinin yerini a
 
 `⇧enter` yeni satır başlatır, Claude Code'daki gibi, terminal onu `enter`'dan ayırabildiğinde: kitty klavye protokolünü konuşuyorsa (kitty, Ghostty, `enable_kitty_keyboard` ile WezTerm, foot, Alacritty, iTerm2), imece bunu başlangıçta sorar. Her yerde `\` sonra `enter`, `\`'i göndermek yerine yeni satıra çevirir; Option Meta olduğu yerde `⌥enter` da. `?` yardımı ve alt satırın ipucu terminalinizdekini adlandırır: `⇧enter yeni satır` ya da `\ enter yeni satır`. Sorguya yanıt vermeyen bir çoklayıcı (tmux, screen) yedeği alır.
 
-Alt satır metnin her satırı için bir sıra alır, en çok sekiz ve ekranın üçte biri; ilk sıra metnin kime gittiğini taşır, diğerleri altında içeriden gelir. Bütün satırlar sığmadığında imlecin satırı görünür kalır ve ipucu nerede olduğuyla başlar, `3/12`. `^a` `^e`, home/end ve `^u` `^k` imlecin olduğu satırda kalır; `↑` `↓` satırlar arasında gider, sütunu koruyarak (menü gösterilirken onun yerine menüde ilerler); satır başında backspace üsttekiyle birleştirir. `@name` bir boşlukta ya da yeni satırda biter, yani `@name` `⇧enter` metin o agent'a gider.
+Alt satır metnin her sırası için bir sıra alır, en çok sekiz ve ekranın üçte biri: ekrana sığmayacak kadar uzun bir satır sonraki sırada sürer (hücre hücre kesilir; sığmayan geniş bir karakter bütün olarak aşağı iner), yani yazdığınız hep görünür. İlk sıra metnin kime gittiğini taşır, diğerleri altında içeriden gelir. Bütün sıralar sığmadığında imlecin sırası görünür kalır ve son sıra nerede olduğunu söyler, `3/12`. `^a` `^e`, home/end ve `^u` `^k` imlecin olduğu satırda kalır; `↑` `↓` satırlar arasında gider, sütunu koruyarak (menü gösterilirken onun yerine menüde ilerler); satır başında backspace üsttekiyle birleştirir. `@name` bir boşlukta ya da yeni satırda biter, yani `@name` `⇧enter` metin o agent'a gider.
 
 Yapıştırılan satıra bütünüyle girer (bracketed paste): satır sonları yeni satır olur, sekmeler korunur, diğer kontrol karakterleri atılır ve hiçbir şey onunla gönderilmez. Bundan önce bir yapıştırmanın ilk satır sonu yarım bir isteği gönderiyordu. Yazmıyorken yapıştırılan atılır ve alt satır önce yazmaya başlamanızı söyler. Günlük ve salon çok satırlı bir mesajı tek satırda gösterir; konuşma satırlarıyla.
 
