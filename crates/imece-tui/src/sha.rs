@@ -57,14 +57,17 @@ fn compress(h: &mut [u32; 8], block: &[u8; 64]) {
     let [mut a, mut b, mut c, mut d, mut e, mut f, mut g, mut hh] = *h;
     for i in 0..64 {
         let s1 = e.rotate_right(6) ^ e.rotate_right(11) ^ e.rotate_right(25);
-        let ch = (e & f) ^ (!e & g);
+        // `ch` and `maj` in forms where every operator counts: the
+        // textbook `(e & f) ^ (!e & g)` and `(a & b) ^ (a & c) ^ (b & c)`
+        // give the same with `|` for `^`, which no test could tell apart.
+        let ch = g ^ (e & (f ^ g));
         let t1 = hh
             .wrapping_add(s1)
             .wrapping_add(ch)
             .wrapping_add(K[i])
             .wrapping_add(w[i]);
         let s0 = a.rotate_right(2) ^ a.rotate_right(13) ^ a.rotate_right(22);
-        let maj = (a & b) ^ (a & c) ^ (b & c);
+        let maj = b ^ ((a ^ b) & (b ^ c));
         let t2 = s0.wrapping_add(maj);
         hh = g;
         g = f;

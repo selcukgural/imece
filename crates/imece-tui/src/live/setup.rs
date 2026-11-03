@@ -680,6 +680,23 @@ mod tests {
     }
 
     #[test]
+    fn a_pipe_where_the_script_goes_is_refused_without_waiting_for_a_writer() {
+        let repo = temp("fifo");
+        let path = repo.join(FILE).into_os_string().into_encoded_bytes();
+        let path = std::ffi::CString::new(path).unwrap();
+        // SAFETY: a valid C string; mkfifo only makes the node.
+        assert_eq!(unsafe { libc::mkfifo(path.as_ptr(), 0o600) }, 0);
+        let (tx, rx) = std::sync::mpsc::channel();
+        let at = repo.clone();
+        std::thread::spawn(move || {
+            let _ = tx.send(look(&at));
+        });
+        let got = (rx.recv_timeout(Duration::from_secs(5))).expect("not stuck on the pipe");
+        assert!(got.unwrap_err().ends_with("not a plain file"));
+        let _ = std::fs::remove_dir_all(&repo);
+    }
+
+    #[test]
     fn the_copy_is_private_and_what_runs_is_it_with_the_two_places_set() {
         let repo = temp("run");
         let state = repo.join("state").join("scripts");
