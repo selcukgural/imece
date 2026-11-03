@@ -119,9 +119,11 @@ The team is the leader alone (`◆ lead`). The journal's first line says, once p
 Press `/` (or `i`). The footer becomes the composer, ` › to lead: `. Type what you want and press `enter`:
 
 ```text
- › to lead: the CSV parser rejects a trailing comma on the last column; make it accept one, with a test
-   enter send · ⇧enter new line · esc cancel
+ › to lead: the CSV parser rejects a trailing comma on the last column; make it
+            accept one, with a test
 ```
+
+A line longer than the screen goes on in the next row. Before you type, the footer says `enter send · ⇧enter new line · esc cancel`.
 
 Plain text goes to the leader of the selected project. `@claude-1 text` would go to one agent. A line that starts with `/` after the prompt is the agent's own command (`/cost`, `/compact`, `/clear`), not a message. `⇧enter` (or `\` `enter`) starts a new line in a longer request; the footer says which works in your terminal. `tab` completes names after `@` and commands after `:`.
 
