@@ -71,6 +71,7 @@ A line that starts with `:` is a command to imece, not a message to an agent. Yo
 | `:solo [PATH] [CHOICE] [NAME]` | — | | | `$` | |
 | `:talk [@NAME]` | `v` | | | | the agent at hand |
 | `:theme [NAME\|FILE]` | `T` | `:t` | | | the theme in use |
+| `:tidy` | — | | | | |
 | `:trace [@NAME]` | `t` | | | | the agent at hand |
 | `:unclear [inbox\|journal]` | — | | | | |
 | `:undo` | `u` | | | | |
@@ -318,6 +319,10 @@ The agent's conversation with you, as `v`; no name is the agent at hand (`no con
 ### `:theme [NAME|FILE]`
 
 The theme, as `T` (`:t`). Alone: the next built-in one, around the end. With a name: one of `terminal`, `dark`, `light`, `mono`, `dracula`, `nord`, `gruvbox-dark-medium`, `gruvbox-light-medium`, `catppuccin-mocha`, `catppuccin-latte`, `tokyo-night-dark`, `solarized-dark`, `solarized-light`, `onedark`, `rose-pine`, `everforest`, `kanagawa`, `github`, `monokai`, or a colour file in Ghostty's or Kitty's format (anything with a `/`, or that is a file). While a name is written or stepped to with `tab`, the screen wears it; `enter` keeps it, `esc` gives it up. The flash: `theme: nord`; a wrong one: `theme solar: not one of terminal|dark|… and no such file`. Remembered for the next run. See [themes and language](../screen/themes-and-language.md).
+
+### `:tidy`
+
+The worktrees under imece's state that no agent owns (a crash, a removed store, a fork that never started), in a window: `WORKTREES NO AGENT OWNS · 2`, a row each with its name, its checkout and what it holds (`clean`, or `files changed: 3 · commits of its own: 1`). `j` `k` `g` `G` move, `a` removes the clean ones, `d` the one at hand (one that holds work asks first: `y` removes it, any other key keeps it), `esc` closes. The flash says how it went: `removed claude-31`, `not removed: codex-32 (…)`. An agent's worktree is never listed or removed. At each start imece looks once and says `2 worktrees no agent owns: :tidy lists them` when it finds any. See [projects](../concepts/projects.md#worktrees-no-agent-owns).
 
 ### `:trace [@NAME]`
 

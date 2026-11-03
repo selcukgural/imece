@@ -90,6 +90,9 @@ pub fn draw(f: &mut Frame, app: &App) {
     if let Some((item, at)) = app.script {
         over.push(overlay::script(f, app, item, at));
     }
+    if let Some(win) = app.tidy {
+        over.push(overlay::tidy(f, app, win));
+    }
     let line = line.filter(|&at| !over.iter().any(|r| r.contains(at)));
     let mut filter = None;
     let mut window = true;
@@ -1857,6 +1860,99 @@ mod tests {
             app.step();
         }
         app
+    }
+
+    #[test]
+    fn the_tidy_window_lists_the_worktrees_no_agent_owns_and_asks_before_work_goes() {
+        let mut app = app_after(1, 1, 0, Lang::En);
+        app.open_tidy();
+        let s = render(&app, 120, 30);
+        assert!(s.contains("WORKTREES NO AGENT OWNS · 0"), "{s}");
+        assert!(s.contains("looking…"), "{s}");
+        app.step();
+        let s = render(&app, 120, 30);
+        assert!(s.contains("WORKTREES NO AGENT OWNS · 2"), "{s}");
+        assert!(!s.contains("looking…"), "{s}");
+        let row = |s: &str, name: &str| {
+            s.lines()
+                .find(|l| l.contains(name))
+                .map(str::to_string)
+                .unwrap_or_default()
+        };
+        let first = row(&s, "claude-31");
+        assert!(first.contains("▶ claude-31"), "{first}");
+        assert!(first.contains("~/src/"), "{first}");
+        assert!(first.contains("clean"), "{first}");
+        let second = row(&s, "codex-32");
+        assert!(second.contains("  codex-32 "), "{second}");
+        assert!(!second.contains('▶'), "{second}");
+        assert!(
+            second.contains("files changed: 3 · commits of its own: 1"),
+            "{second}"
+        );
+        assert!(s.contains("remove the clean ones"), "{s}");
+        app.tidy = Some(crate::app::TidyWin { at: 1, sure: true });
+        let s = render(&app, 140, 30);
+        assert!(row(&s, "▶").contains("codex-32"), "{s}");
+        assert!(
+            s.contains("remove codex-32 with what it holds (files changed: 3 · commits of its own: 1)? y removes it"),
+            "{s}"
+        );
+        assert!(!s.contains("remove the clean ones"), "{s}");
+        // Going: said; all gone: said so.
+        app.tidy = Some(crate::app::TidyWin::default());
+        app.world.orphans.busy = true;
+        assert!(render(&app, 120, 30).contains("removing…"));
+        app.world.orphans = crate::model::Orphans {
+            found: Some(Vec::new()),
+            ..Default::default()
+        };
+        let s = render(&app, 120, 30);
+        assert!(
+            s.contains("none: every worktree under imece's state has its agent"),
+            "{s}"
+        );
+        assert!(!s.contains("removing…"), "{s}");
+    }
+
+    #[test]
+    fn the_tidy_window_keeps_the_row_at_hand_on_a_short_screen() {
+        let mut app = app_after(1, 1, 0, Lang::En);
+        app.open_tidy();
+        app.step();
+        let mut found = app.world.orphans.found.clone().unwrap();
+        for i in 0..30 {
+            let mut o = found[0].clone();
+            o.name = format!("w-{i:02}");
+            found.push(o);
+        }
+        app.world.orphans.found = Some(found);
+        app.tidy = Some(crate::app::TidyWin {
+            at: 31,
+            sure: false,
+        });
+        let s = render(&app, 120, 16);
+        assert!(s.contains("▶ w-29"), "{s}");
+        assert!(!s.contains("claude-31"), "{s}");
+        app.tidy = Some(crate::app::TidyWin { at: 0, sure: false });
+        let s = render(&app, 120, 16);
+        assert!(s.contains("▶ claude-31"), "{s}");
+        assert!(s.contains("under imece's state"), "{s}");
+        // While a removal runs, its line is above the rows: the row at
+        // hand, the last, still shows, the one above it too.
+        app.world.orphans.busy = true;
+        app.tidy = Some(crate::app::TidyWin {
+            at: 31,
+            sure: false,
+        });
+        let s = render(&app, 120, 16);
+        assert!(s.contains("▶ w-29"), "{s}");
+        assert!(s.contains("  w-28 "), "{s}");
+        assert!(!s.contains("removing…"), "scrolled away: {s}");
+        // Scrolled exactly: the row at hand is the last the window shows.
+        let shown: Vec<&str> = s.lines().filter(|l| l.contains("w-2")).collect();
+        assert!(shown.last().unwrap().contains("▶ w-29"), "{s}");
+        assert!(!s.contains(" w-19 "), "one row too few scrolled: {s}");
     }
 
     #[test]

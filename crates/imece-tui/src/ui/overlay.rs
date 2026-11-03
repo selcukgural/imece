@@ -7,7 +7,7 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Paragraph};
 
 use super::*;
-use crate::app::{App, Digest, LeftOff, PickStep, SoloPick, TalkNote, Thread};
+use crate::app::{App, Digest, LeftOff, PickStep, SoloPick, TalkNote, Thread, TidyWin};
 use crate::archives::{self, Browser, Row};
 use crate::keys::{Keymap, Scope};
 use crate::welcome::{self, Seen};
@@ -97,6 +97,88 @@ pub fn script(f: &mut Frame, app: &App, item: usize, at: usize) -> Rect {
     let [body, keys] = Layout::vertical([Constraint::Min(0), Constraint::Length(1)]).areas(inner);
     f.render_widget(Paragraph::new(lines), body);
     f.render_widget(Paragraph::new(Line::from(hint_spans(&t.setup_hints))), keys);
+    area
+}
+
+/// The `:tidy` window (record 96): the worktrees no agent owns, a row
+/// each (its name, its checkout, what it holds), the one at hand marked;
+/// while a look or a removal is under way, a line says so. At its foot
+/// its keys, or the `y` it asks for removing one that holds work.
+pub fn tidy(f: &mut Frame, app: &App, win: TidyWin) -> Rect {
+    let t = app.lang.text();
+    let full = f.area();
+    let area = centered(
+        full,
+        full.width.saturating_sub(8),
+        full.height.saturating_sub(4),
+    );
+    shade(f, area);
+    clear(f, area);
+    let o = &app.world.orphans;
+    let found = o.found.as_deref().unwrap_or_default();
+    let block = Block::bordered()
+        .title(fill(t.tidy_title, &[&found.len().to_string()]))
+        .border_style(fg(pal().accent));
+    let inner = block.inner(area);
+    f.render_widget(block, area);
+    let mut lines = vec![
+        Line::from(Span::styled(t.tidy_head, dim())),
+        Line::default(),
+    ];
+    if o.busy {
+        let busy = if o.found.is_some() {
+            t.tidy_removing
+        } else {
+            t.tidy_looking
+        };
+        lines.push(Line::from(Span::styled(busy, fg(pal().warn))));
+    } else if found.is_empty() {
+        lines.push(Line::from(Span::styled(t.tidy_empty, dim())));
+    }
+    let width = found
+        .iter()
+        .map(|o| o.name.chars().count())
+        .max()
+        .unwrap_or(0);
+    for (i, orphan) in found.iter().enumerate() {
+        let at = i == win.at;
+        let held = words::held(app.lang, orphan);
+        let style = if orphan.clean() {
+            fg(pal().ok)
+        } else {
+            fg(pal().warn)
+        };
+        let mark = if at { "▶ " } else { "  " };
+        let name = clean(&orphan.name);
+        let name = if at {
+            Span::styled(format!("{name:<width$}"), bold(pal().fg))
+        } else {
+            Span::raw(format!("{name:<width$}"))
+        };
+        lines.push(Line::from(vec![
+            Span::raw(mark),
+            name,
+            Span::styled(
+                format!("  {}  ", clean(&orphan.checkout.display().to_string())),
+                dim(),
+            ),
+            Span::styled(held, style),
+        ]));
+    }
+    let [body, keys] = Layout::vertical([Constraint::Min(0), Constraint::Length(1)]).areas(inner);
+    // The row at hand stays on the window: the rows above it scroll away.
+    let room = usize::from(body.height).max(1);
+    let row = 2 + usize::from(o.busy || found.is_empty()) + win.at;
+    let skip = (row + 1).saturating_sub(room);
+    f.render_widget(Paragraph::new(lines).scroll((skip as u16, 0)), body);
+    let foot = match found.get(win.at) {
+        Some(orphan) if win.sure => Line::from(Span::styled(
+            fill(t.tidy_sure, &[&orphan.name, &words::held(app.lang, orphan)]),
+            fg(pal().warn),
+        )),
+        _ => Line::from(hint_spans(&t.tidy_hints)),
+    };
+    f.render_widget(Paragraph::new(foot), keys);
     area
 }
 

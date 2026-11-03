@@ -71,6 +71,7 @@ description: imece'nin aldığı her `:` komutu; argümanları, karşılığı o
 | `:solo [PATH] [CHOICE] [NAME]` | — | | | `$` | |
 | `:talk [@NAME]` | `v` | | | | eldeki ajan |
 | `:theme [NAME\|FILE]` | `T` | `:t` | | | kullanılan tema |
+| `:tidy` | — | | | | |
 | `:trace [@NAME]` | `t` | | | | eldeki ajan |
 | `:unclear [inbox\|journal]` | — | | | | |
 | `:undo` | `u` | | | | |
@@ -318,6 +319,10 @@ Ajanın sizinle konuşması, `v` gibi; ad yoksa eldeki ajan (henüz yoksa `claud
 ### `:theme [NAME|FILE]`
 
 Tema, `T` gibi (`:t`). Tek başına: sonraki yerleşik tema, sondan başa dönerek. Bir adla: `terminal`, `dark`, `light`, `mono`, `dracula`, `nord`, `gruvbox-dark-medium`, `gruvbox-light-medium`, `catppuccin-mocha`, `catppuccin-latte`, `tokyo-night-dark`, `solarized-dark`, `solarized-light`, `onedark`, `rose-pine`, `everforest`, `kanagawa`, `github`, `monokai`'den biri, ya da Ghostty veya Kitty biçiminde bir renk dosyası (içinde `/` olan ya da bir dosya olan her şey). Bir ad yazılırken ya da `tab` ile üstüne gelinirken ekran onu giyer; `enter` tutar, `esc` bırakır. Flaş: `tema: nord`; yanlış biri: `tema solar: not one of terminal|dark|… and no such file`. Sonraki çalıştırma için hatırlanır. Bkz. [temalar ve dil](../screen/themes-and-language.md).
+
+### `:tidy`
+
+imece'nin durum dizininde hiçbir ajanın sahip olmadığı worktree'ler (bir çökme, silinen bir depo, hiç başlamamış bir çatal), bir pencerede: `SAHİBİ OLMAYAN WORKTREE'LER · 2`, her biri için adı, checkout'u ve tuttukları (`temiz`, ya da `değişen dosya: 3 · kendi commit'i: 1`) ile bir satır. `j` `k` `g` `G` gezinir, `a` temiz olanları siler, `d` eldekini (iş tutan biri önce sorar: `y` siler, başka her tuş bırakır), `esc` kapatır. Flaş nasıl gittiğini söyler: `silindi: claude-31`, `silinmedi: codex-32 (…)`. Bir ajanın worktree'si asla listelenmez, asla silinmez. imece her başlangıçta bir kez bakar ve bulursa `sahibi olmayan 2 worktree var: :tidy listeler` der. Bkz. [projeler](../concepts/projects.md#sahibi-olmayan-worktreeler).
 
 ### `:trace [@NAME]`
 

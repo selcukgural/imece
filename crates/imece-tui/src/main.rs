@@ -559,6 +559,7 @@ fn main() -> std::io::Result<()> {
     app.primary = saved.lead;
     app.notify = saved.notify.unwrap_or_default();
     app.start_push();
+    app.start_tidy();
     app.motion = saved.motion.unwrap_or_default();
     app.away = saved.away.unwrap_or_default();
     app.ssh = motion::over_ssh(var);

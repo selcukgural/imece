@@ -6,7 +6,8 @@ after `:copy` (record 57) and before the session starts, once the person
 said yes to its exact bytes. The person's answers (2026-11-03): setup
 only (imece never removes a worktree, `:forget` forgets a session, so a
 teardown script has nothing to run before; it waits for worktree removal,
-its own issue); a worker never waits for the yes; `enter` on the ask shows
+its own issue, #248; since record 96 `:tidy` removes worktrees no agent
+owns, with no script); a worker never waits for the yes; `enter` on the ask shows
 the bytes that were hashed.
 
 Reading (`live/setup.rs`, `look`): `canonicalize` of `repo/FILE` (missing:

@@ -1821,6 +1821,8 @@ pub struct World {
     /// A commit message suggested for a project's staged changes, until
     /// the screen puts it on the command line.
     pub suggested: Option<Suggestion>,
+    /// The worktrees no agent owns, as the engine last looked (`:tidy`).
+    pub orphans: Orphans,
     /// The number the last message on the bus was given ([`MsgId`]).
     pub messages: MsgId,
     /// The lines the person sent, oldest first, for `↑` `↓` and `^r` on
@@ -1845,6 +1847,47 @@ pub const SENT_KEEP: usize = 500;
 pub struct Suggestion {
     pub project: ProjectId,
     pub text: String,
+}
+
+/// A worktree under imece's state that no agent owns (`:tidy`, record
+/// 96): left by a crash, a store removed or a fork never started.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Orphan {
+    /// Its directory's name: the agent's it was made for.
+    pub name: String,
+    pub path: std::path::PathBuf,
+    /// The checkout it was added to.
+    pub checkout: std::path::PathBuf,
+    /// Files changed or not tracked in it.
+    pub changes: usize,
+    /// Commits of its own no branch, tag or remote has.
+    pub commits: usize,
+}
+
+impl Orphan {
+    /// Whether removing it loses nothing.
+    pub fn clean(&self) -> bool {
+        self.changes == 0 && self.commits == 0
+    }
+}
+
+/// What the engine knows of the worktrees no agent owns.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Orphans {
+    /// What the last look found, by path; none before one answered.
+    pub found: Option<Vec<Orphan>>,
+    /// A look or a removal is under way.
+    pub busy: bool,
+    /// What the last removal came to, until the screen says it.
+    pub tidied: Option<Tidied>,
+}
+
+/// What a removal came to: the names removed, and the ones not with
+/// why: git's words, or none when an agent owns it again.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Tidied {
+    pub removed: Vec<String>,
+    pub kept: Vec<(String, Option<String>)>,
 }
 
 /// One window of a vendor plan's usage limit, as the vendor last said it
@@ -2254,6 +2297,7 @@ impl World {
             limits: Vec::new(),
             paid: self.paid,
             suggested: None,
+            orphans: crate::model::Orphans::default(),
             messages: self.messages,
             sent: self.sent.clone(),
         }
@@ -3321,6 +3365,7 @@ mod tests {
             changes: Vec::new(),
             paid: 0,
             suggested: None,
+            orphans: crate::model::Orphans::default(),
             messages: 0,
             plans: Vec::new(),
         }

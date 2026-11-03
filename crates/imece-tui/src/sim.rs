@@ -7,11 +7,13 @@
 //! A seed replays the same scenario.
 
 use std::collections::{HashMap, VecDeque};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use crate::i18n::Lang;
 use crate::live::setup;
-use crate::live::{Refusal, SUGGEST_CAP, SUGGEST_DAY_CALLS, SUGGEST_DAY_COST, numbers, standing};
+use crate::live::{
+    Refusal, SUGGEST_CAP, SUGGEST_DAY_CALLS, SUGGEST_DAY_COST, TidyRefusal, numbers, standing,
+};
 use crate::model::*;
 use crate::rng::Rng;
 
@@ -675,6 +677,29 @@ struct Extras {
     setup_asks: Vec<(usize, String, Vec<AgentId>)>,
     /// The setup scripts the person said no to this run.
     setup_refused: Vec<String>,
+    /// The demo's worktrees no agent owns (`:tidy`), made up at the first
+    /// look; a look or a removal under way, answered at the next step,
+    /// with the removal's end.
+    orphans: Option<Vec<Orphan>>,
+    tidy_due: Option<Option<Tidied>>,
+}
+
+/// The demo's worktrees no agent owns, of its first project's checkout:
+/// one clean, one with work of its own, as a crash would leave them.
+fn demo_orphans(w: &World) -> Vec<Orphan> {
+    let name = &w.projects[0].name;
+    let checkout = PathBuf::from(format!("~/src/{name}"));
+    let root = PathBuf::from(format!("~/.local/state/imece/worktrees/{name}-5e1f0a2c"));
+    [("claude-31", 0, 0), ("codex-32", 3, 1)]
+        .into_iter()
+        .map(|(agent, changes, commits)| Orphan {
+            name: agent.to_string(),
+            path: root.join(agent),
+            checkout: checkout.clone(),
+            changes,
+            commits,
+        })
+        .collect()
 }
 
 /// The demo's worktree setup script, the same in every project.
@@ -781,6 +806,7 @@ pub fn world(
         changes: Vec::new(),
         paid: 0,
         suggested: None,
+        orphans: crate::model::Orphans::default(),
         messages: 0,
         plans: Vec::new(),
     };
@@ -1231,6 +1257,71 @@ impl Sim {
         }
     }
 
+    /// `:tidy` in the demo, as live does it: the next step answers with
+    /// what is left of the made-up worktrees no agent owns.
+    pub fn look_orphans(&mut self, w: &mut World) {
+        if w.orphans.busy {
+            return;
+        }
+        w.orphans.busy = true;
+        self.extras.tidy_due = Some(None);
+    }
+
+    /// The demo's worktrees at `at` of the list go on the next step, as
+    /// live's thread removes them: one that holds work only when `force`,
+    /// else it stays with git's words for why. Refused as live refuses.
+    pub fn tidy(&mut self, w: &mut World, at: &[usize], force: bool) -> Result<(), TidyRefusal> {
+        if w.orphans.busy {
+            return Err(TidyRefusal::Busy);
+        }
+        let found = w.orphans.found.as_deref().unwrap_or_default();
+        let asked: Vec<&Orphan> = at.iter().filter_map(|&i| found.get(i)).collect();
+        if asked.is_empty() {
+            return Err(TidyRefusal::Nothing);
+        }
+        let mut tidied = Tidied::default();
+        let mut gone = Vec::new();
+        for o in asked {
+            if force || o.clean() {
+                tidied.removed.push(o.name.clone());
+                gone.push(o.path.clone());
+            } else {
+                let why = format!(
+                    "{} holds work: {} files changed, {} commits of its own",
+                    o.path.display(),
+                    o.changes,
+                    o.commits
+                );
+                tidied.kept.push((o.name.clone(), Some(why)));
+            }
+        }
+        if let Some(list) = &mut self.extras.orphans {
+            list.retain(|o| !gone.contains(&o.path));
+        }
+        w.orphans.busy = true;
+        self.extras.tidy_due = Some(Some(tidied));
+        Ok(())
+    }
+
+    /// No made-up worktrees no agent owns: a test of none found.
+    #[cfg(test)]
+    pub fn forget_orphans(&mut self) {
+        self.extras.orphans = Some(Vec::new());
+    }
+
+    /// A look or a removal of the demo's under way answers.
+    fn tidy_answers(&mut self, w: &mut World) {
+        let Some(tidied) = self.extras.tidy_due.take() else {
+            return;
+        };
+        let found = self.extras.orphans.get_or_insert_with(|| demo_orphans(w));
+        w.orphans = Orphans {
+            found: Some(found.clone()),
+            busy: false,
+            tidied,
+        };
+    }
+
     /// Whether a commit message is asked for and has not come yet.
     pub fn asking(&self) -> bool {
         self.extras.suggesting.is_some()
@@ -1328,6 +1419,7 @@ impl Sim {
             self.applied(w, id, fits, &hunks);
         }
         self.suggested(w);
+        self.tidy_answers(w);
         // Live sessions report their plan's windows now and then.
         if t.is_multiple_of(12) {
             self.limits(w);

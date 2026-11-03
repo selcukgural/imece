@@ -98,11 +98,29 @@ npm run db:migrate
 - **Evetin neye bağlı olduğu:** baytların SHA-256'sı, dosyanın gerçek yolu (bağlar çözülmüş) ve nasıl çalıştığı (`/bin/sh`); deposunda değil, imece'nin deposunda saklanır. Değişen bir bayt yeni bir betiktir ve yeniden sorulur. Çalışan, okuduğunuz baytların imece'nin durum dizinine yazılmış özel bir kopyasıdır (`0700`, kopya `0600`), dosyanın kendisi asla; böylece evetinizle çalışma arasında hiçbir şey onu değiştiremez.
 - **Nasıl çalışır:** o kopya üzerinde `/bin/sh`, yeni worktree'de, imece'nin temizlenmiş ortamı ve `IMECE_REPO` (checkout'unuz) ile `IMECE_WORKTREE` (worktree) ile, kendi süreç grubunda, en çok 60 saniye (sonra grup öldürülür). Betik en çok 64 KiB.
 - **Ne görürsünüz:** günlük nasıl bittiğini ve son satırını söyler (`claude-1: worktree kurulumu çalıştı, exit 0, 4.2 s · migrations: 7 applied`, ya da `başarısız`); okunamayan ya da başlatılamayan bir betik nedenini söyler (`worktree kurulumu çalışmadı: …`). İşçi her durumda başlar.
-- Henüz yok: bir worktree giderken çalışan bir söküm betiği, çünkü imece worktree silmez.
+- Henüz yok: bir worktree giderken çalışan bir söküm betiği; imece yalnızca hiçbir ajanın sahip olmadığı worktree'leri siler (`:tidy`, aşağıda) ve o zaman betik çalıştırmaz.
 
 ## Seyrek (sparse) checkout
 
 Büyük bir depoda ağacın yalnızca bir kısmını checkout'ta tutabilirsiniz (`git sparse-checkout`). imece'nin böyle bir checkout'tan yaptığı worktree de onun kadar seyrektir: imece onu hiçbir şey checkout etmeden ekler, checkout'unuzun dizgilerini verir (`git sparse-checkout set`, sizinki gibi koni kipinde ya da değil) ve ancak ondan sonra checkout eder; böylece dışarıda bıraktığınız hiçbir şey içine yazılmaz. Dizgiler worktree'nin kendisinindir: orada değiştirmek sizinkini değiştirmez, sizinkini sonradan değiştirmek de önceden yapılmış bir worktree'yi değiştirmez. Aynı seyreklikte yapılamayan bir worktree (2.35'ten eski git) yeniden silinir ve ajan başlamaz; günlük nedenini söyler, böylece bir monorepo arkanızdan bütünüyle yazılmaz.
+
+## Sahibi olmayan worktree'ler
+
+Her işçinin worktree'si çalıştırmalar arasında diskte kalır, böylece işi asla atılmaz. imece'nin artık tanımadığı bir ajanınki de kalır: bir çökmeden, silinen bir depodan, hiç başlamamış bir çataldan sonra. `:tidy` onları bir pencerede, her birini checkout'u ve tuttuklarıyla listeler:
+
+```text
+ SAHİBİ OLMAYAN WORKTREE'LER · 2
+▶ claude-31  ~/src/shop  temiz
+  codex-32   ~/src/shop  değişen dosya: 3 · kendi commit'i: 1
+ a temizleri sil   d bunu sil   j k gez   esc geri
+```
+
+- **Ne sayılır:** imece'nin durum dizininde (`worktrees/<checkout>-<hash>/<ad>`) git'in bir checkout'a eklenmiş worktree olarak bildiği ve hiçbir projenin hiçbir ajanının (açık, kapalı ya da arşivlenmiş) sahip olmadığı bir dizin; bir yardımcınınki işçisinindir. Bağlar, dosyalar, Gemini'nin özel dizinleri ve git'in bilmedikleri atlanır.
+- **Ne tutar:** değişen ya da izlenmeyen dosyalar (`git status`; git'in yok saydıkları, `target/` gibi, sayılmaz ve onunla gider) ve hiçbir dalın, etiketin ya da uzak deponun sahip olmadığı kendi commit'leri (imece'nin uyguladığınız değişiklikler için yaptığı commit'ler zaten checkout'unuzdadır ve sayılmaz). Temiz, ikisi de yok demektir.
+- **Silmek:** `a` temiz olanları, `d` eldekini siler. İş tutan biri ancak onun için bir `y`'den sonra, `git worktree remove --force` ile gider; temiz olan `git worktree remove` ile, ki arada bir şey değiştiyse yine reddeder. Silme ekranın dışında çalışır ve pencere ardından yeniden bakar.
+- **Asla bir ajanınki değil:** kimin neye sahip olduğu bir silme istendiğinde yeniden okunur; o arada işe alınan ve adı eski worktree'ninki olan bir işçi (onu devralırdı) onu tutar (`silinmedi: claude-1 (şimdi bir ajan içinde çalışıyor)`). Worktree'si silinirken başlayan bir işçi gitmesini bekler ve yenisini alır.
+- **Başlangıçta:** imece ekranın dışında bir kez bakar ve bulduysa `sahibi olmayan 2 worktree var: :tidy listeler` der; kendiliğinden bir şey silmez.
+- Demoda biri temiz, biri iş tutan iki uydurma worktree vardır; `:tidy` onları canlıdaki gibi siler.
 
 ## Demonun kopyaları
 
