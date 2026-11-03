@@ -23,7 +23,7 @@ columns and never more than the row's fixed parts (cost, stand, helpers,
 link) leave it, but at least `STEP_MIN` (8): the first build gave it a
 fixed width and the tail of a narrow row went off its edge. The tool
 call takes what `STATUS_WIDTH` and the row leave after the step, nothing
-under `DOING_MIN` (8). A step row quotes no exchange (`status_says`).
+under `DOING_MIN` (8). A step row quotes no exchange: its tool call has the quote's place.
 The focus's status line has both, the tool call in up to the 38 columns
 the status leaves. Without a step (Gemini's `write_todos` carries none;
 a list all done; no list) the row is as before. `▸` was already the

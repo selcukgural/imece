@@ -737,7 +737,6 @@ fn status_says(w: &World, a: &Agent) -> bool {
         }
         Status::Working => {
             w.open_item(a.id, InboxKind::Approval).is_some()
-                || on_step(w, a).is_some()
                 || a.activity.as_deref().is_some_and(|d| !d.is_empty())
         }
         Status::Blocked | Status::Researching { .. } => true,
