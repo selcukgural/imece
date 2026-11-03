@@ -3635,6 +3635,35 @@ mod tests {
     }
 
     #[test]
+    fn a_seq_is_a_loaded_lines_place_or_one_this_run_wrote_after_them() {
+        // The load brought 1, 2 and 4; 5, the file's last, did not read.
+        let seqs = Seqs {
+            loaded: vec![1, 2, 4],
+            last: 5,
+        };
+        let at: Vec<Option<usize>> = (0..=8).map(|seq| seqs.index(seq)).collect();
+        assert_eq!(
+            at,
+            [
+                None,
+                Some(0),
+                Some(1),
+                None,
+                Some(2),
+                None,
+                Some(3),
+                Some(4),
+                Some(5)
+            ]
+        );
+        // And back: each place's seq.
+        assert_eq!(
+            (0..6).map(|i| seqs.of(i)).collect::<Vec<_>>(),
+            [1, 2, 4, 6, 7, 8]
+        );
+    }
+
+    #[test]
     fn a_journal_line_found_says_where_it_is_in_the_world_loaded() {
         let (w, k) = (world(), kept());
         let mut store = Store::in_memory();
