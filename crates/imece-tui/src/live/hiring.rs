@@ -371,6 +371,15 @@ impl Live {
             "" => Tier::Standard,
             t => Tier::from_wire(t).ok_or("tier must be cheap, standard or strong")?,
         };
+        let start = match arg("from") {
+            "" => None,
+            _ if role != Role::Worker => {
+                return Err("from is for the leader's workers: a helper works in your \
+                            worktree, wherever it started"
+                    .into());
+            }
+            f => Some(self.start_point(project, f)?),
+        };
         let model = vendor.ladder.model(tier).map(str::to_string);
         // Only a model other than the standard one has something to fall
         // back to.
@@ -415,22 +424,49 @@ impl Live {
             t,
         );
         agent.parent = (role == Role::Helper).then_some(from);
+        agent.start.clone_from(&start);
         w.agents.push(agent);
         let shown = model.clone().unwrap_or_else(|| "the default model".into());
         let by = w.agents[from].name.clone();
         w.agents[from].trace(t, format!("hire {name} {} {shown}", tier.wire()));
         w.agents[id].trace(t, format!("hired by {by} · {shown}"));
+        let starting = match &start {
+            Some(s) => {
+                w.agents[id].trace(t, format!("worktree from {s}"));
+                format!(", its worktree from {s}")
+            }
+            None => String::new(),
+        };
         w.note(Event::Hired {
             by: from,
             agent: id,
             model,
+            from: start,
         });
         Ok(format!(
-            "{name} joined ({}, {shown}). Give it work with send (type assign). \
+            "{name} joined ({}, {shown}){starting}. Give it work with send (type assign). \
              {} more may be hired.",
             vendor.vendor.label(),
             cap - so_far - 1
         ))
+    }
+
+    /// `hire`'s `from` for a worker of `project`, checked: one name, and a
+    /// commit the checkout has now (`#N`, a pull request, is fetched when
+    /// the worker starts; one that is not there stops it with git's words).
+    fn start_point(&self, project: ProjectId, from: &str) -> Result<String, String> {
+        if !worktree::valid_start(from) {
+            return Err(format!(
+                "from must be one branch, tag or commit of the checkout, or #N for pull \
+                 request N of origin; {from:?} is not"
+            ));
+        }
+        if !from.starts_with('#') {
+            worktree::resolve(&self.places[project].repo, from).map_err(|e| {
+                format!("{e}; give a branch, tag or commit the checkout has, or #N")
+            })?;
+        }
+        Ok(from.to_string())
     }
 }
 
@@ -588,7 +624,7 @@ mod tests {
         assert_eq!(live.models[3].as_deref(), Some("haiku"));
         assert!(matches!(
             w.journal.last().map(|e| &e.event),
-            Some(Event::Hired { by: 1, agent: 3, model: Some(m) }) if m == "haiku"
+            Some(Event::Hired { by: 1, agent: 3, model: Some(m), .. }) if m == "haiku"
         ));
         let got = live.hire(&mut w, 1, &json!({})).unwrap();
         assert!(
@@ -1312,6 +1348,20 @@ mod tests {
         assert_eq!(
             event(Lang::Tr, &w, hired[1]),
             "lead işe aldı: claude-2 (varsayılan model)"
+        );
+        let from = Event::Hired {
+            by: 0,
+            agent: 1,
+            model: None,
+            from: Some("#41".into()),
+        };
+        assert_eq!(
+            event(Lang::En, &w, &from),
+            "lead hired claude-1 (default model), starting from #41"
+        );
+        assert_eq!(
+            event(Lang::Tr, &w, &from),
+            "lead işe aldı: claude-1 (varsayılan model), başlangıç noktası #41"
         );
         let fell = Event::Fallback {
             agent: 1,

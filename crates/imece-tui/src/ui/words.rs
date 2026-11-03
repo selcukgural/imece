@@ -116,14 +116,18 @@ pub fn event(lang: Lang, w: &World, e: &Event) -> String {
             t.ev_claimed,
             &[name(w, *agent), &card_ref(*card), &w.cards[*card].title],
         ),
-        Event::Hired { by, agent, model } => fill(
-            t.ev_hired,
-            &[
-                name(w, *by),
-                name(w, *agent),
-                model.as_deref().unwrap_or(t.default_model),
-            ],
-        ),
+        Event::Hired {
+            by,
+            agent,
+            model,
+            from,
+        } => {
+            let model = model.as_deref().unwrap_or(t.default_model);
+            match from {
+                Some(f) => fill(t.ev_hired_from, &[name(w, *by), name(w, *agent), model, f]),
+                None => fill(t.ev_hired, &[name(w, *by), name(w, *agent), model]),
+            }
+        }
         Event::Left { agent } => fill(t.ev_left, &[name(w, *agent)]),
         Event::Fallback { agent, model } => fill(t.ev_fallback, &[name(w, *agent), model]),
         Event::Resumed { agent } => fill(t.ev_resumed, &[name(w, *agent)]),

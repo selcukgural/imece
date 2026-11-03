@@ -839,7 +839,9 @@ mod tests {
             repo.clone(),
             root.clone(),
         );
-        let tree = worktree::ensure(&repo, &root, "claude-1").unwrap().path;
+        let tree = worktree::ensure(&repo, &root, "claude-1", None)
+            .unwrap()
+            .path;
         std::fs::write(tree.join("a.txt"), "changed\n").unwrap();
         std::fs::write(tree.join("b.txt"), "new\n").unwrap();
         live.post(&mut w, 0, &json!({"title": "write docs", "body": "b"}))
@@ -1245,7 +1247,7 @@ mod tests {
         );
         live.claude_home = trees(&format!("{name}-home"));
         // Made first, so its path is the canonical one the session has.
-        worktree::ensure(&repo, &root, "claude-1").unwrap();
+        worktree::ensure(&repo, &root, "claude-1", None).unwrap();
         live.sessions[1] = Some(Resumable {
             session: UUID.into(),
             spent: 524,

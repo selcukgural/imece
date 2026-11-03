@@ -34,6 +34,7 @@ imece --agents 8 --helpers 3       # sınırlar: ekip başına işçi, işçi ba
 
 - Yalın `imece` lideri tek başına başlatır. Lider, iş gerektirdikçe `hire` aracıyla işçi alır, en çok `--agents` kadar (0-16, varsayılan 4). Bir işçi aynı yolla yardımcı alır, bir anda en çok `--helpers` kadar (0-8, varsayılan 2).
 - `hire` bir `tier` ve bir `vendor` alır. Satıcı, işe alanın kendisininkidir; lider PATH'te bulunan her satıcıdan (`claude`, `codex`, `gemini`) işçi alabilir. Yalnız imece'nin adaptörü olan satıcılar işe alınabilir.
+- **Bir işçinin başladığı yer.** Bir işçinin worktree'si HEAD'inizde başlar ve onu izler. Liderden başka bir noktada iş isteyin ("PR 41'i incele", "bunu release-0.2'de düzelt"), `from` ile işe alır: checkout'unuzun bir dalı, etiketi ya da commit'i, ya da `origin`'in bir pull request'i için `#41` (işçi başlarken çekilir). O worktree orada başlar ve orada kalır: HEAD'inizi asla izlemez, değişikliği o noktaya göredir ve onu checkout'unuza her değişiklik gibi uygularsınız (temiz oturmazsa üç yollu). Günlük `lead işe aldı: claude-2 (haiku), başlangıç noktası #41` der, satır `⎇ #41` gösterir ve nokta çalıştırmalar arasında saklanır. Yardımcıları aynı worktree'de çalışır.
 - Yeni ajan var olmadan önce bus'ta ona bir soket bağlanır. İşe alma, hemen yürüyebilecek iş içindir, önceden değil: bir işçi birçok görevi sırayla alır.
 - Ajan başına bütçe payı yoktur; bütün ekip tek bütçeden harcar ([bütçe](../concepts/budget-and-limits.md)).
 

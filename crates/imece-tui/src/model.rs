@@ -505,6 +505,11 @@ pub struct Agent {
     /// Where a worker's worktree stands next to its project's checkout, as
     /// git last read it; nothing to show until it is read.
     pub stand: Stand,
+    /// The start point a worker was hired from (`hire`'s `from`: a branch,
+    /// tag or commit of the checkout, or `#N`, a pull request), as asked;
+    /// none for one made at the checkout's HEAD. Such a worktree is made
+    /// there and never follows HEAD; its Δ is against that point. Saved.
+    pub start: Option<String>,
     /// The newest loopback URL the agent wrote in its text this session
     /// (`local_url`), drawn on its row as a link the terminal opens.
     pub local: Option<String>,
@@ -638,6 +643,7 @@ impl Agent {
             starting: false,
             commands: Vec::new(),
             stand: Stand::default(),
+            start: None,
             local: None,
             plan: Vec::new(),
             context: None,
@@ -1107,11 +1113,14 @@ pub enum Event {
         card: CardId,
     },
     /// A live leader hired a worker; `model` is the one it was given, or
-    /// none for the vendor's own default.
+    /// none for the vendor's own default; `from` the start point its
+    /// worktree was asked to start from, none for the checkout's HEAD.
     Hired {
         by: AgentId,
         agent: AgentId,
         model: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        from: Option<String>,
     },
     /// A helper sent done to its worker and left.
     Left {

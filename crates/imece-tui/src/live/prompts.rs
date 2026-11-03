@@ -103,8 +103,11 @@ pub(super) fn system_prompt(
                      pick up may go on the board instead (post); idle workers take it \
                      themselves. A worker's done shows the person its change (its \
                      worktree's diff); they apply it to their checkout or reject it, and \
-                     only an applied change is in the checkout you read. Workers answer \
-                     with done, blocked or ask; their \
+                     only an applied change is in the checkout you read. A worker \
+                     starts at the checkout's HEAD; when the person wants work on another \
+                     branch, a tag, a commit or a pull request, hire with from (#N for a \
+                     pull request) and that worker's worktree starts there and stays. \
+                     Workers answer with done, blocked or ask; their \
                      messages start your next turn."
                 )
             };
@@ -231,6 +234,14 @@ pub(super) fn system_prompt(
                      own work, not for the whole task and not in advance."
                 )
             };
+            let start = match &a.start {
+                Some(s) => format!(
+                    " Your worktree started from {s}, not from the checkout's HEAD, and \
+                     stays there: your change is against {s}, and the checkout you are \
+                     told about may be elsewhere."
+                ),
+                None => String::new(),
+            };
             format!(
                 "You are {}, a coding agent in imece, a team led by {leader}. You work \
                  in your own git worktree of the repository (your current \
@@ -250,7 +261,7 @@ pub(super) fn system_prompt(
                  it a done message when it is done. Work you find outside your \
                  task goes on the board (post), not into your change; so do files \
                  your task does not name that every task touches (a changelog): \
-                 say in your done what they should get.{helpers} Use \
+                 say in your done what they should get.{helpers}{start} Use \
                  these tools only for that, not for chatter.",
                 a.name,
                 abilities(a.vendor, Role::Worker, confine)
@@ -658,7 +669,7 @@ mod tests {
         assert_eq!(live.mail.len(), 2);
         assert!(matches!(
             &w.journal.last().unwrap().event,
-            Event::Hired { by: 0, agent: 1, model: Some(m) } if m == "haiku"
+            Event::Hired { by: 0, agent: 1, model: Some(m), .. } if m == "haiku"
         ));
         assert!(
             w.agents[0]
@@ -691,6 +702,29 @@ mod tests {
             &msg("claude-2", "assign", "Add a test"),
         )
         .unwrap();
+    }
+
+    #[test]
+    fn a_worker_from_a_start_point_is_told_where_it_started_and_the_leader_how() {
+        let mut w = team(2);
+        let lead = system_prompt(&w, 0, 4, 2, Confine::Standard);
+        assert!(
+            lead.contains("hire with from (#N for a pull request)"),
+            "{lead}"
+        );
+        let plain = system_prompt(&w, 1, 4, 2, Confine::Standard);
+        assert!(!plain.contains("started from"), "{plain}");
+        w.agents[1].start = Some("#41".into());
+        let from = system_prompt(&w, 1, 4, 2, Confine::Standard);
+        assert!(
+            from.contains(
+                " Your worktree started from #41, not from the checkout's HEAD, and stays \
+                 there: your change is against #41, and the checkout you are told about may \
+                 be elsewhere. Use these tools"
+            ),
+            "{from}"
+        );
+        assert!(!system_prompt(&w, 2, 4, 2, Confine::Standard).contains("started from"));
     }
 
     #[test]

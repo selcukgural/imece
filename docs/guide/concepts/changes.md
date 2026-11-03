@@ -77,7 +77,7 @@ The choice is kept against the patch's hash for this run only. Single lines insi
 ## The worktree meanwhile
 
 - A worker's row says where its worktree stands: `⎇ fix-parser ↑2 ↓1 +12 −3`. `⎇ name` is a branch the agent made (none while detached), `↑N` its own commits your HEAD lacks (imece's marks not counted), `↓N` your HEAD's commits it lacks, `+N −M` the lines its next `done` would hand you, untracked files included. Each part shows only when there is something to say; read as the session starts, when a turn ends, after an apply, after a move, and every 15 s while mid-turn. Not kept between runs.
-- **Following HEAD:** a clean worktree whose own commits are all imece's is moved to your HEAD before every prompt of a worker that is between turns (helpers too), journaled `worktree moved from … to HEAD …`. One with uncommitted changes or commits of its own is kept, and the journal says so. So once you commit what you applied, the workers go on from your new HEAD.
+- **Following HEAD:** a clean worktree whose own commits are all imece's is moved to your HEAD before every prompt of a worker that is between turns (helpers too), journaled `worktree moved from … to HEAD …`. One with uncommitted changes or commits of its own is kept, and the journal says so. So once you commit what you applied, the workers go on from your new HEAD. A worker hired from a start point of its own (`hire`'s `from`: a branch, a tag, a commit, `#N` a pull request) never follows: its worktree stays where it started, its change is against that point, and applying it is the same three-way apply ([team](team.md)).
 - A worktree removed by hand that git still lists is refused with what was lost and `git worktree prune`, and the agent stops with that reason.
 
 ## Committing
