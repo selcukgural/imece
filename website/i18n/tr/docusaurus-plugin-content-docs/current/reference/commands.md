@@ -60,6 +60,7 @@ description: imece'nin aldığı her `:` komutu; argümanları, karşılığı o
 | `:pending` | `q s` | | | | |
 | `:pin [NAME]` | — | | | | eldeki proje, sabitse `▴` |
 | `:quit` | `q` | `:q` | | | |
+| `:recall [WORDS]` | `H` | | | | |
 | `:rename NAME` | — | | | | eldeki proje |
 | `:restore [NAME]` | — | | | | |
 | `:salon` | `1` | | | | |
@@ -265,6 +266,10 @@ Ajanın odağı görünümün üstünde bir pencerede, `K` gibi; ad yoksa eldeki
 ### `:quit`
 
 Çıkar, `q` gibi (`:q`): önce sorar (`imece kapatılsın mı? bir daha q çıkar · başka bir tuş kalır`), varsa tur ortasındaki ajanları ve incelenmemiş değişiklikleri sayarak; `s` listeler.
+
+### `:recall [WORDS]`
+
+Herkesin yaptığını arar, `H` gibi: imece'nin tuttuğu her günlük satırı ve her iz satırı, her projenin ve arşivin, önceki çalıştırmalar da. Komut satırı üstünde `WORDS` ile açılır (başında `› hatırla:`) ve tamamlama menüsü yazılan her sözcüğün satırın bir sözcüğünü başlattığı satırları listeler (büyük küçük harf ve Türkçe harfler fark etmez: `deploy fix` `fixed the deploy script` satırını bulur, `ploy` bulmaz), en yenisi önce, en çok 50, her biri günlüğün söylediği gibi tek satırda, ajan, proje ve ne zaman notuyla (bugünse saat, değilse tarih). Bir günlük satırı taşıdığı metinlerle (bir mesajın ilk satırı, bir neden, bir komut, bir yol) ve ajanının adıyla bulunur; bir iz satırı kendisiyle ve ajanının adıyla. `tab`, `↑` ve `↓` ilerler; `enter` seçili satıra gider: bir günlük satırının konuşmasına, satır günlükte seçili; bir arşivin satırı arşivin salt okunur görünümünde; bir iz satırının ajanına, ham akışı açık. Ekranın tutmadığı bir satır (bir açılışın yüklediği günlük satırlarından eski, ya da kapalı bir projenin izi) yerine söylenir: `o satır ekranda değil: …`. Hiçbir şey bulunmazsa: `WORDS geçen bir günlük ya da iz satırı yok`. `esc` önce menüyü, sonra satırı kapatır. Bir arşivin görünümünde yoktur, o yalnız kendi arşivine bakar. Demo bellekte tuttuğunda arar. Deponun tam metin dizininde tutulur ([dosyalar](files.md)); satır gidince dizin de onu unutur (90 gün, ajan başına 200 iz satırı).
 
 ### `:rename NAME`
 

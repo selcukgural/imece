@@ -60,6 +60,7 @@ A line that starts with `:` is a command to imece, not a message to an agent. Yo
 | `:pending` | `q s` | | | | |
 | `:pin [NAME]` | — | | | | the project at hand, `▴` when pinned |
 | `:quit` | `q` | `:q` | | | |
+| `:recall [WORDS]` | `H` | | | | |
 | `:rename NAME` | — | | | | the project at hand |
 | `:restore [NAME]` | — | | | | |
 | `:salon` | `1` | | | | |
@@ -265,6 +266,10 @@ Pins the project `NAME`, or the one at hand, to the top of the salon; again unpi
 ### `:quit`
 
 Quits, as `q` (`:q`): it asks first (`quit imece? q again to quit · any other key to stay`), counting the agents mid-turn and the changes not reviewed when there are any; `s` lists them.
+
+### `:recall [WORDS]`
+
+Searches what everyone did, as `H` does: every journal line and every trace line imece keeps, of every project and archive, earlier runs too. The command line opens with `WORDS` on it (lead `› recall:`) and the completion menu lists the lines that have every word typed at the start of one of their words (case and Turkish letters aside: `deploy fix` finds `fixed the deploy script`, `ploy` does not), the newest first, at most 50, each on one line as the journal words it, noted with the agent, the project and when (the clock today, the date before). A journal line is found by the texts it carries (a message's first line, a reason, a command, a path) and its agent's name; a trace line by itself and its agent's name. `tab`, `↑` and `↓` step; `enter` goes to the highlighted line: a journal line's conversation, the line selected in the journal; a line of an archive in the archive's read-only view; a trace line's agent, its raw stream open. A line the screen does not hold (older than the journal lines a start loads, or a closed project's trace) is said instead: `that line is not on the screen: …`. Nothing found: `no journal or trace line has WORDS`. `esc` closes the menu, then the line. Not in an archive's view, which looks at its archive only. The demo searches what it holds in memory. Kept in the store's full-text index ([files](files.md)), which forgets a line when the line goes (90 days, 200 trace lines per agent).
 
 ### `:rename NAME`
 

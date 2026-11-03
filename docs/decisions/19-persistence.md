@@ -63,3 +63,7 @@ Record 80 adds archives (schema 15) and the `Restored` events (schema 16): `proj
 asleep with its cut prompts kept in `inflight`, told when it comes back.
 Schema 17 (2026-11-03) adds `agents.start`, the start point a worker was
 hired from (record 05); a file of 16 gets the column empty.
+Schema 18 (2026-11-03) adds `projects.allowed`, the standing yes (record
+89). Schema 19 (2026-11-03) adds the full-text index `recall` and its
+`recall_rows` (record 93), kept with every save and emptied with the
+lines by triggers; a file of 18 is indexed once at its first open.

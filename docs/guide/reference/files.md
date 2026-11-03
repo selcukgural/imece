@@ -54,6 +54,7 @@ imece never moves, mends or writes over a file it cannot read: a newer imece may
 | `changes` | each worker's change waiting for you: its worktree path, tree, files, patch and the runs on that tree |
 | `paid` | imece's own paid calls by day (UTC): how many and what they cost (`:commit`) |
 | `sent` | the lines you sent, with their tick, for `↑` `↓` and `^r` (`:history`); the newest 500 load |
+| `recall`, `recall_rows` | the full-text index `H` and `:recall` search: the folded words of every journal and trace line (no copy of the text), and where each line is and when it was written; a line deleted takes its rows with it, and a file from before it is indexed once at its first open |
 
 A save runs after every step and every key and once more at quit, and writes only what moved: journal, story and trace lines are appended, a row of a growing table is written again only when its hash changed. A failure to save is flashed once: `not saved for the next run: …`.
 

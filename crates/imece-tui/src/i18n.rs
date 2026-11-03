@@ -271,6 +271,16 @@ pub struct Text {
     pub typing_history: &'static str,
     /// `^r` or `:history` with nothing sent yet.
     pub no_history: &'static str,
+    /// `H` or `:recall` (record 93): the line's lead; a line found's note
+    /// (agent, project, when; a trace line the demo holds has no time);
+    /// nothing has the words; the store could not be read; the line is
+    /// not on the screen.
+    pub typing_recall: &'static str,
+    pub recall_note: &'static str,
+    pub recall_note_untimed: &'static str,
+    pub recall_none: &'static str,
+    pub recall_failed: &'static str,
+    pub recall_away: &'static str,
     /// `&` or `:goto` found neither an agent nor a project of the name.
     pub no_jump: &'static str,
     /// The `&` menu's note after a project.
@@ -970,6 +980,13 @@ pub const EN: Text = Text {
     typing_jump: " › go to: ",
     typing_history: " › history: ",
     no_history: "nothing sent yet to bring back",
+    typing_recall: " › recall: ",
+    recall_note: "{} · {} · {}",
+    recall_note_untimed: "{} · {}",
+    recall_none: "no journal or trace line has {}",
+    recall_failed: "recall could not read the store: {}",
+    recall_away: "that line is not on the screen: its project is closed, or it is older than \
+                  what was loaded",
     no_jump: "nothing called \"{}\" to go to: an agent or a project",
     jump_project: "project",
     find_card: "card",
@@ -1531,8 +1548,8 @@ pub const EN: Text = Text {
         ("v  :talk", "its conversation with you"),
         ("esc  u", "go back · u :undo a :close or :forget"),
         (
-            "A  :archives",
-            "the archives, r restores · :archive puts away",
+            "A  H  :recall",
+            ":archives, r restores · H searches every line",
         ),
         ("tab ⇧tab [ ]", "next / previous panel"),
         ("w  :waiting", "straight to waiting for you"),
@@ -1743,6 +1760,12 @@ pub const TR: Text = Text {
     typing_jump: " › git: ",
     typing_history: " › geçmiş: ",
     no_history: "geri getirilecek bir şey gönderilmedi henüz",
+    typing_recall: " › hatırla: ",
+    recall_note: "{} · {} · {}",
+    recall_note_untimed: "{} · {}",
+    recall_none: "{} geçen bir günlük ya da iz satırı yok",
+    recall_failed: "hatırlama kaydı okuyamadı: {}",
+    recall_away: "o satır ekranda değil: projesi kapalı ya da yüklenenden daha eski",
     no_jump: "\"{}\" adında gidilecek bir yer yok: bir agent ya da proje",
     jump_project: "proje",
     find_card: "iş",
@@ -2303,8 +2326,8 @@ pub const TR: Text = Text {
         ("v  :talk", "onun seninle konuşması"),
         ("esc  u", "yukarı çık · u :undo, :close ya da :forget'i"),
         (
-            "A  :archives",
-            "arşivler, r geri getirir · :archive kaldırır",
+            "A  H  :recall",
+            ":archives, r geri getirir · H her satırda arar",
         ),
         ("tab ⇧tab [ ]", "sonraki / önceki panel"),
         ("w  :waiting", "doğrudan seni bekleyenlere"),

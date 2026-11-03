@@ -19,6 +19,7 @@ mod notify;
 mod prefs;
 mod probe;
 mod push;
+mod recall;
 mod rng;
 mod schemes;
 mod screen;

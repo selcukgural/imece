@@ -41,7 +41,8 @@ the line not opened. The help row `tab ↑ ↓ ^r` carries it (the `⇧tab`
 of the old row dropped from the key column to fit the thirteen columns;
 `⇧tab` still steps back).
 
-Not done: a search over what agents said (that is C13, full-text search);
+Not done: a search over what agents said (C13, full-text search: done as
+`:recall`, record 93);
 a per-agent history (`@name` is a word to search for); the time of a
 line in the menu as a clock rather than an age; the age on a line from
 an earlier run is measured in the world's ticks, which stand still while

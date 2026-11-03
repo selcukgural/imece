@@ -2,6 +2,7 @@
 //! resuming sessions, and forgetting them.
 
 use super::*;
+use crate::recall::{Hit, Line};
 
 impl Live {
     /// What earlier runs left in the store, if anything was remembered.
@@ -49,6 +50,26 @@ impl Live {
             Some(s) => s.project_journal(p).map_err(|e| e.to_string()),
             None => Ok(w.journal_of(p)),
         }
+    }
+
+    /// `:recall`: the journal and trace lines of every project and
+    /// archive that have the terms of `words`, the newest first and at
+    /// most `cap`, from the store's index (record 93); a journal line
+    /// says where it is in `w`'s journal only when the line there is the
+    /// one found. Without a store, what `w` holds.
+    pub fn recall(&self, w: &World, words: &str, cap: usize) -> Result<Vec<Hit>, String> {
+        let Some(store) = &self.store else {
+            return Ok(crate::recall::in_world(w, words, cap));
+        };
+        let mut hits = store.recall(words, cap).map_err(|e| e.to_string())?;
+        for h in &mut hits {
+            if let Line::Journal { entry, at } = &mut h.line
+                && at.is_some_and(|i| w.journal.get(i) != Some(&*entry))
+            {
+                *at = None;
+            }
+        }
+        Ok(hits)
     }
 
     /// A store in memory, for tests of what saving does on the screen.
@@ -1059,6 +1080,42 @@ mod tests {
         live.break_store();
         let e = live.project_journal(&w, 0).unwrap_err();
         assert!(e.contains("no such table"), "{e}");
+    }
+
+    #[test]
+    fn recall_reads_the_store_and_says_where_a_line_is_only_when_it_is_that_line() {
+        let mut w = team(1);
+        let mut live = idle_live(2);
+        let said = |text: &str| Event::Replied {
+            agent: 1,
+            text: text.into(),
+        };
+        w.journal.push(Entry {
+            tick: 4,
+            event: said("the parser is fixed"),
+        });
+        let at = w.journal.len() - 1;
+        // No store: what the world holds.
+        let hits = live.recall(&w, "parser", 10).unwrap();
+        assert_eq!(hits, crate::recall::in_world(&w, "parser", 10));
+        assert_eq!(hits.len(), 1);
+        live.store_in_memory();
+        live.persist(&w).unwrap();
+        // Only in the store: what the world does not hold any more.
+        let journal = std::mem::take(&mut w.journal);
+        let hits = live.recall(&w, "parser", 10).unwrap();
+        assert_eq!(hits.len(), 1, "from the store");
+        assert!(matches!(hits[0].line, Line::Journal { at: None, .. }));
+        w.journal = journal;
+        let hits = live.recall(&w, "parser", 10).unwrap();
+        assert!(matches!(hits[0].line, Line::Journal { at: Some(i), .. } if i == at));
+        // Another line where the found one should be: not that line.
+        w.journal[at].event = said("something else");
+        let hits = live.recall(&w, "parser", 10).unwrap();
+        assert!(matches!(hits[0].line, Line::Journal { at: None, .. }));
+        assert_eq!(live.recall(&w, "parser", 0).unwrap(), [], "the cap");
+        live.break_store();
+        assert!(live.recall(&w, "parser", 10).is_err());
     }
 
     #[test]

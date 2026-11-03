@@ -1552,6 +1552,8 @@ fn writing_to(app: &App) -> Span<'static> {
             fill(t.typing_note, &[&place])
         } else if let Some(Noting::Words(note)) = &app.noting {
             fill(t.typing_words_note, &[&brief(&note.quote, NOTE_QUOTE)])
+        } else if app.searching && app.recalling {
+            t.typing_recall.to_string()
         } else if app.searching {
             t.typing_history.to_string()
         } else if app.typing_card() {
@@ -6251,7 +6253,15 @@ mod tests {
         app.searching = true;
         assert_eq!(writing_to(&app).content, t.typing_history);
         assert_ne!(writing_to(&app).style, shell());
+        app.recalling = true;
+        assert_eq!(writing_to(&app).content, t.typing_recall);
         app.searching = false;
+        assert_eq!(
+            writing_to(&app).content,
+            t.typing_shell,
+            "recalling alone is no search"
+        );
+        app.recalling = false;
         app.noting = Some(Noting::Line(0, 0));
         assert_eq!(writing_to(&app).content, fill(t.typing_note, &[""]));
         assert_ne!(writing_to(&app).style, shell());
