@@ -15012,6 +15012,13 @@ pub(crate) mod tests {
         assert_eq!(scroll(&app), lines - 1);
         app.key(ctrl('u'));
         assert_eq!(scroll(&app), 0);
+        // Without ctrl, d and u do nothing here.
+        app.key(key(KeyCode::Char('d')));
+        assert_eq!(scroll(&app), 0);
+        app.key(key(KeyCode::Char('j')));
+        app.key(key(KeyCode::Char('u')));
+        assert_eq!(scroll(&app), 1);
+        app.key(key(KeyCode::Char('k')));
         app.key(key(KeyCode::Char('x')));
         assert_eq!(app.teardown, Some(ask.clone()));
         app.key(key(KeyCode::Char('?')));
