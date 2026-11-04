@@ -1030,23 +1030,7 @@ impl crate::Agent for Session {
     }
 }
 
-/// What one call of [`once`] said, and what it cost (millionths of a
-/// dollar).
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Said {
-    pub text: String,
-    pub cost: u64,
-}
-
-/// Why a call of [`once`] said nothing, and what it cost when that is
-/// known: nothing when it could not start, Claude Code's total when it
-/// ended its turn in an error, unknown when it stopped or ran out of time
-/// before reporting one (the caller keeps what it reserved).
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Unsaid {
-    pub why: String,
-    pub cost: Option<u64>,
-}
+pub use crate::{Said, Unsaid};
 
 /// The command line of a [`once`] call: a session's ([`args`]) whose
 /// system prompt replaces Claude Code's own (a few lines instead of its

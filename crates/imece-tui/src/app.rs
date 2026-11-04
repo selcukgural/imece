@@ -909,6 +909,14 @@ pub struct App {
     /// `:story`; record 99). Off in `App::new`; `main` sets the saved one,
     /// on by default.
     pub story: bool,
+    /// Every change that comes to wait gets a review from another vendor
+    /// (`:review on|off`; record 106). Off in `App::new`; `main` sets the
+    /// saved one, off by default.
+    pub review: bool,
+    /// The inbox items seen by `:review on`: the ones past it are new.
+    review_items: usize,
+    /// A change's review shown whole, not its first lines (`R`).
+    pub review_whole: bool,
     /// The journal shows in the story's place for now: `enter` on a line
     /// of no card went to it there; `esc` or `J` goes back to the story.
     /// Not kept, so the story stays the side panel's.
@@ -1368,6 +1376,9 @@ impl App {
             glows: Vec::new(),
             glow_rungs: Vec::new(),
             glow_items,
+            review: false,
+            review_items: glow_items,
+            review_whole: false,
             drawn_motion: None,
             asking: None,
             mark_drawn: Cell::new(false),
@@ -1390,6 +1401,7 @@ impl App {
         };
         self.changed |= came;
         self.show_suggestion();
+        self.watch_reviews();
         self.watch_tidy();
         self.world.watch_spending();
         self.watch_turns();
@@ -3434,6 +3446,7 @@ impl App {
             KeyCode::Char('c') => self.note_line(id),
             KeyCode::Char('x') => self.choose_hunk(id),
             KeyCode::Char('w') => self.diff_wrap = !self.diff_wrap,
+            KeyCode::Char('R') => self.review_whole = !self.review_whole,
             KeyCode::Char('n') => self.send_notes(id),
             KeyCode::Char('v') => {
                 // Lines are chosen from the whole patch: its files open.
@@ -4049,6 +4062,87 @@ impl App {
         }
     }
 
+    /// Asks the engine for a review of worker `agent`'s change.
+    fn ask_review(&mut self, agent: AgentId) -> Result<Vendor, String> {
+        match &mut self.engine {
+            Engine::Live(l) => l.review(&self.world, agent),
+            Engine::Sim(s) => s.review(&self.world, agent),
+            Engine::View(_) => Err("an archive is read only".into()),
+        }
+    }
+
+    /// The vendor reviewing worker `agent`'s change, or about to.
+    pub fn reviewing(&self, agent: AgentId) -> Option<Vendor> {
+        match &self.engine {
+            Engine::Live(l) => l.review_of(agent),
+            Engine::Sim(s) => s.review_of(agent),
+            Engine::View(_) => None,
+        }
+    }
+
+    /// `:review on`: each change that came to wait since the last step
+    /// is asked a review; a refusal is journaled, as nobody asked by hand
+    /// to be told at once.
+    fn watch_reviews(&mut self) {
+        let new = self.review_items;
+        self.review_items = self.world.inbox.len();
+        if !self.review {
+            return;
+        }
+        let came: Vec<AgentId> = (self.world.inbox.iter().enumerate())
+            .filter(|(i, it)| *i >= new && it.open && it.kind == InboxKind::Change)
+            .map(|(_, it)| it.agent)
+            .collect();
+        for agent in came {
+            if let Err(why) = self.ask_review(agent) {
+                self.world.note(Event::ReviewFailed {
+                    agent,
+                    why,
+                    cost: 0,
+                });
+            }
+        }
+    }
+
+    /// `:review [on|off]`: `on` and `off` set whether every change gets
+    /// a review as it comes; bare, the change at hand (the one open, else
+    /// the selected waiting item) is asked one now, and with no change at
+    /// hand the setting is said.
+    fn review_command(&mut self, arg: &str) {
+        let t = self.lang.text();
+        match arg {
+            "on" | "off" => {
+                self.review = arg == "on";
+                return self.flash(if self.review {
+                    t.review_on
+                } else {
+                    t.review_off
+                });
+            }
+            "" => {}
+            _ => return self.flash(fill(t.review_refused, &["on | off"])),
+        }
+        let at_hand = self.diff_zoom().or_else(|| {
+            let i = self.waiting_at_hand()?;
+            let it = &self.world.inbox[i];
+            (it.open && it.kind == InboxKind::Change).then_some(it.agent)
+        });
+        let Some(agent) = at_hand else {
+            return self.flash(if self.review {
+                t.review_on
+            } else {
+                t.review_off
+            });
+        };
+        match self.ask_review(agent) {
+            Ok(by) => {
+                let name = self.world.agents[agent].name.clone();
+                self.flash(fill(t.reviewing, &[by.label(), &name]));
+            }
+            Err(why) => self.flash(fill(t.review_refused, &[&why])),
+        }
+    }
+
     /// A suggested commit message, once the command line is free: it
     /// opens as a `!git commit` of the message to edit and run, in the
     /// project's checkout (`-C` when that is not the one at hand). The
@@ -4543,6 +4637,7 @@ impl App {
             }
             "needs" => Some(on_off(self.needs_only)),
             "story" => Some(on_off(self.story)),
+            "review" => Some(on_off(self.review)),
             "news" => Some(welcome::VERSION.to_string()),
             "settle" => Some(match self.selected {
                 Sel::Agent(id) => self.world.agents[id].name.clone(),
@@ -4577,7 +4672,10 @@ impl App {
             }),
             _ => None,
         };
-        let bill = matches!(name, "forget" | "fork" | "open" | "solo" | "commit");
+        let bill = matches!(
+            name,
+            "forget" | "fork" | "open" | "solo" | "commit" | "review"
+        );
         match (value, bill) {
             (Some(v), true) => format!("({v}) $"),
             (Some(v), false) => format!("({v})"),
@@ -4896,6 +4994,7 @@ impl App {
             "recall" => self.search_all(arg),
             "export" => self.export(arg),
             "commit" => self.suggest_commit(),
+            "review" => self.review_command(arg),
             "copy" => self.copy_path(arg),
             "allow" => self.allow(arg),
             "pin" => self.pin(arg),
@@ -10812,6 +10911,125 @@ pub(crate) mod tests {
         app.command("copy .env");
         assert_eq!(app.world.projects[0].copies, [".env"]);
         let _ = std::fs::remove_dir_all(&repo);
+    }
+
+    #[test]
+    fn colon_review_turns_on_and_off_and_asks_for_the_change_at_hand() {
+        let (mut app, worker) = with_change("+x\n");
+        let flash = |app: &App| {
+            app.flash
+                .as_ref()
+                .map(|(m, _)| m.clone())
+                .unwrap_or_default()
+        };
+        let t = Lang::En.text();
+        let name = app.world.agents[worker].name.clone();
+        assert!(!app.review, "off by default");
+        assert_eq!(app.command_note("review"), "(off) $");
+        app.command("review on");
+        assert!(app.review);
+        assert_eq!(flash(&app), t.review_on);
+        assert_eq!(app.command_note("review"), "(on) $");
+        app.command("review off");
+        assert!(!app.review);
+        assert_eq!(flash(&app), t.review_off);
+        app.command("review maybe");
+        assert!(!app.review);
+        assert_eq!(flash(&app), "no review: on | off");
+        // Bare, with the change open: asked now, whatever the setting.
+        assert_eq!(app.reviewing(worker), None);
+        app.command("review");
+        let by = app.reviewing(worker).expect("asked");
+        assert_ne!(by, app.world.agents[worker].vendor, "another vendor");
+        assert_eq!(
+            flash(&app),
+            format!("{} reads {name}'s change for a review", by.label())
+        );
+        app.command("review");
+        assert_eq!(
+            flash(&app),
+            format!("no review: a review of {name}'s change is under way")
+        );
+        // No change at hand: the setting is said.
+        app.zoom = Zoom::None;
+        app.pane = Pane::Salon;
+        app.command("review on");
+        app.command("review");
+        assert_eq!(flash(&app), t.review_on);
+        // The change selected in waiting for you is at hand too.
+        let (mut app, worker) = with_change("+x\n");
+        app.zoom = Zoom::None;
+        app.pane = Pane::Inbox;
+        app.inbox_sel = 0;
+        app.command("review");
+        assert!(app.reviewing(worker).is_some(), "{}", flash(&app));
+        // Not a change: nothing asked.
+        let (mut app, worker) = with_change("+x\n");
+        app.world.replied(worker, "hi");
+        app.zoom = Zoom::None;
+        app.pane = Pane::Inbox;
+        app.inbox_sel = app
+            .inbox_rows()
+            .iter()
+            .position(|&i| app.world.inbox[i].kind == InboxKind::Reply)
+            .unwrap();
+        app.command("review");
+        assert_eq!(app.reviewing(worker), None);
+        assert_eq!(flash(&app), t.review_off);
+    }
+
+    #[test]
+    fn review_on_asks_for_each_change_as_it_comes_and_journals_a_refusal() {
+        let (mut app, worker) = with_change("+x\n");
+        let name = app.world.agents[worker].name.clone();
+        // What waited before it was on is not asked.
+        app.step();
+        app.review = true;
+        app.step();
+        assert_eq!(app.reviewing(worker), None);
+        // A change that comes is.
+        app.world.change_rejected(worker);
+        app.world.change_ready(a_change(worker));
+        app.step();
+        assert!(app.reviewing(worker).is_some());
+        // A newer one while that is asked: refused, journaled.
+        app.world.change_ready(a_change(worker));
+        app.step();
+        assert!(
+            app.world.journal.iter().any(|e| e.event
+                == Event::ReviewFailed {
+                    agent: worker,
+                    why: format!("a review of {name}'s change is under way"),
+                    cost: 0,
+                }),
+            "journaled"
+        );
+        // Off, a change that comes is not asked.
+        let (mut app, worker) = with_change("+x\n");
+        app.step();
+        app.world.change_rejected(worker);
+        app.world.change_ready(a_change(worker));
+        app.step();
+        assert_eq!(app.reviewing(worker), None);
+        // A change gone before the step is not asked either.
+        app.review = true;
+        app.world.change_rejected(worker);
+        app.world.change_ready(a_change(worker));
+        app.world.change_rejected(worker);
+        let lines = app.world.journal.len();
+        app.watch_reviews();
+        assert_eq!(app.reviewing(worker), None);
+        assert_eq!(app.world.journal.len(), lines, "nothing refused");
+    }
+
+    #[test]
+    fn capital_r_in_a_change_shows_its_review_whole_or_folded() {
+        let (mut app, _) = with_change("+x\n");
+        assert!(!app.review_whole);
+        app.on_key(key(KeyCode::Char('R')));
+        assert!(app.review_whole);
+        app.on_key(key(KeyCode::Char('R')));
+        assert!(!app.review_whole);
     }
 
     #[test]

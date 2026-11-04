@@ -1,6 +1,6 @@
 ---
 title: Budget and limits
-description: "The one pot the whole team spends from, how it is set and changed, what the header says about the burn rate, the vendors' usage windows, what costs money in the : menu, and :commit's own ceilings."
+description: "The one pot the whole team spends from, how it is set and changed, what the header says about the burn rate, the vendors' usage windows, what costs money in the : menu, and the ceilings of :commit and :review."
 ---
 
 # Budget and limits
@@ -10,7 +10,7 @@ The budget is one pot for the whole team: once all agents together have spent it
 ## The pot
 
 - `--budget USD` sets it; the first time it is $50. The pot is **kept between runs**: a start without `--budget` goes on with what was left. `--budget` on a later start sets it anew.
-- Every agent's turns, of every project, come out of it, and so do imece's own paid calls (`:commit`). There is no share per agent.
+- Every agent's turns, of every project, come out of it, and so do imece's own paid calls (`:commit`, `:review`). There is no share per agent.
 - When it is spent, no agent gets a waking message and no card is offered; a `send` that would wake someone is refused with "the budget is spent".
 - **A per-session hard cap:** each Claude Code session also gets what was left of the pot when it started as its own `--max-budget-usd`, so a session running away on its own cannot pass it either. It is a last stop, not a share. Codex and Gemini have no such cap; the pot still stops their next turn.
 
@@ -48,7 +48,7 @@ The `:` menu shows each command's value after it, `budget (spent $3.10 of $20.00
 
 - `:open` starts a new leader session.
 - `:forget` makes the next message start a new session that pays the whole briefing again, without the cache.
-- `:commit` is a paid model call.
+- `:commit` and `:review` are paid model calls.
 
 No `:` command starts a paid turn by itself; `:budget` shows its value instead of a mark.
 
@@ -64,9 +64,22 @@ No `:` command starts a paid turn by itself; `:budget` shows its value instead o
 
 Before the call the store counts it at its cap in one transaction and the pot holds the cap; it is refused when the pot has less than the cap or the day is full. When the call ends, what it reported replaces the cap; one that could not start cost nothing; one that stopped without reporting keeps its cap. The same staged tree asked again costs nothing: the last suggestion per project is kept. The journal says each suggestion with its model and cost, and each failure with why. Only Claude Code: it is the one vendor whose call takes a hard spending cap; without it on PATH `:commit` is refused.
 
+## `:review` and its ceilings
+
+`:review` has a vendor other than the worker's read a change and say what it finds ([changes](changes.md#a-review-by-another-vendor)). Its ceilings are its own, apart from `:commit`'s, and are kept the same way: counted in the store by kind and day, reserved before the call, settled after.
+
+| Ceiling | Value |
+| --- | --- |
+| One review by Claude Code | at most $0.10 (the call's own `--max-budget-usd`) |
+| One review by Codex | nothing from the pot (your ChatGPT plan) |
+| One day (UTC), every project together | 20 reviews and $2.00 |
+| Running at once | one; the rest wait their turn |
+
+A change that has its review, or one asked for, is not reviewed again.
+
 ## The demo
 
-`--demo` spends a made-up pot the same way: the header, the rate, the low-pot line, `:budget`, the usage windows (filled from spending) and `:commit`'s few cents all show as live does.
+`--demo` spends a made-up pot the same way: the header, the rate, the low-pot line, `:budget`, the usage windows (filled from spending) and the few cents of `:commit` and `:review` all show as live does.
 
 ## See also
 

@@ -73,3 +73,5 @@ runs one real turn with `send` over `nc -U`.
 Record 63 (2026-11-01) adds one override to every session: `tools.update_plan.enabled=true`, Codex's `update_plan` tool for the agent's own to-do list, off in an app-server thread unless asked for; `config/read` does not echo it, so `check_config` leaves it unchecked (it changes no file).
 
 Record 105 (2026-11-04) adds `sandbox_workspace_write.writable_roots` = exactly the agent's scratch directory (none for a reader), replacing the person's own roots; `config/read` and the started thread's `sandbox.writableRoots` must echo it for a writer, or the session stops.
+
+Record 106 (2026-11-04) adds a one-shot call, `codex::once`: a session on a `Spec` whose `ephemeral` asks `thread/start` for a thread left off the disk, checked as Codex echoes it (`thread.ephemeral`; a session that is not one-shot still must be kept). The probe of that day (codex-cli 0.165.0) found `ephemeral: true`, `path: null` and no rollout under `~/.codex/sessions`. A resumed or forked thread is never ephemeral. Every answer and failure of it costs nothing (the ChatGPT plan).

@@ -67,7 +67,10 @@ use crate::recall::{Hit, Line};
 /// holds at its first open.
 /// 20 (2026-11-03): the worker a fork goes on from until its session
 /// starts (`agents.fork_of`, record 94), and the `Forked` events.
-pub const SCHEMA_VERSION: i64 = 20;
+/// 21 (2026-11-04): paid calls by kind as well as by day (`paid.kind`:
+/// commit messages and reviews have ceilings of their own, record 106),
+/// and the `Reviewed`/`ReviewFailed` events.
+pub const SCHEMA_VERSION: i64 = 21;
 /// Trace lines kept per agent, as the world keeps them.
 const TRACE_KEEP: usize = 200;
 /// The file's name under the state directory.
@@ -138,7 +141,8 @@ CREATE TABLE IF NOT EXISTS changes (
     agent INTEGER PRIMARY KEY, path TEXT NOT NULL, tree TEXT NOT NULL,
     files TEXT NOT NULL, patch TEXT NOT NULL, runs TEXT NOT NULL DEFAULT '[]');
 CREATE TABLE IF NOT EXISTS paid (
-    day INTEGER PRIMARY KEY, calls INTEGER NOT NULL, cost INTEGER NOT NULL) WITHOUT ROWID;
+    kind INTEGER NOT NULL, day INTEGER NOT NULL, calls INTEGER NOT NULL, cost INTEGER NOT NULL,
+    PRIMARY KEY (kind, day)) WITHOUT ROWID;
 CREATE TABLE IF NOT EXISTS sent (seq INTEGER PRIMARY KEY, tick INTEGER NOT NULL, text TEXT NOT NULL);
 ";
 
@@ -245,6 +249,16 @@ pub struct Found {
     pub changes: HashMap<AgentId, worktree::Change>,
     /// The runs on each change's tree, as the world had them.
     pub runs: HashMap<AgentId, Vec<Ran>>,
+}
+
+/// What a paid call of imece's own is for: each kind counts against
+/// ceilings of its own (`paid.kind`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Paid {
+    /// A commit message (`:commit`, record 56).
+    Commit = 0,
+    /// A review of a change (`:review`, record 106).
+    Review = 1,
 }
 
 /// What a tidy let go of.
@@ -493,6 +507,22 @@ impl Store {
             self.conn.execute_batch(
                 "ALTER TABLE agents ADD COLUMN session TEXT;
                  ALTER TABLE agents ADD COLUMN session_spent INTEGER NOT NULL DEFAULT 0;",
+            )?;
+        }
+        // Schema 21 (2026-11-04): a kind beside the day, which is part of
+        // the key, so the table is made again with the calls so far as
+        // commit messages' (the one kind there was).
+        if !self.has_column("paid", "kind")? {
+            self.conn.execute_batch(
+                "BEGIN;
+                 CREATE TABLE paid_kind (
+                     kind INTEGER NOT NULL, day INTEGER NOT NULL, calls INTEGER NOT NULL,
+                     cost INTEGER NOT NULL, PRIMARY KEY (kind, day)) WITHOUT ROWID;
+                 INSERT INTO paid_kind (kind, day, calls, cost)
+                     SELECT 0, day, calls, cost FROM paid;
+                 DROP TABLE paid;
+                 ALTER TABLE paid_kind RENAME TO paid;
+                 COMMIT;",
             )?;
         }
         if !self.has_column("projects", "allowed")? {
@@ -1092,14 +1122,14 @@ impl Store {
         Ok(())
     }
 
-    /// imece's own paid calls on `day` (days since the epoch, UTC): how
-    /// many, and what they cost or hold reserved, in ten-thousandths of a
-    /// dollar.
-    pub fn paid_on(&self, day: u64) -> rusqlite::Result<(u32, u64)> {
+    /// imece's own paid calls of `kind` on `day` (days since the epoch,
+    /// UTC): how many, and what they cost or hold reserved, in
+    /// ten-thousandths of a dollar.
+    pub fn paid_on(&self, kind: Paid, day: u64) -> rusqlite::Result<(u32, u64)> {
         self.conn
             .query_row(
-                "SELECT calls, cost FROM paid WHERE day = ?1",
-                params![big(day)],
+                "SELECT calls, cost FROM paid WHERE kind = ?1 AND day = ?2",
+                params![kind as i64, big(day)],
                 |r| Ok((r.get::<_, u32>(0)?, ubig(r.get(1)?))),
             )
             .optional()
@@ -1115,18 +1145,25 @@ impl Store {
             })
     }
 
-    /// Reserves one paid call on `day` that may cost up to `cap`, before
-    /// it is made, when the day's calls stay at most `calls` and their
-    /// cost at most `cost` with it; whether it did. One transaction: what
-    /// is counted is what was checked.
-    pub fn reserve(&mut self, day: u64, cap: u64, calls: u32, cost: u64) -> rusqlite::Result<bool> {
+    /// Reserves one paid call of `kind` on `day` that may cost up to
+    /// `cap`, before it is made, when the day's calls of the kind stay at
+    /// most `calls` and their cost at most `cost` with it; whether it did.
+    /// One transaction: what is counted is what was checked.
+    pub fn reserve(
+        &mut self,
+        kind: Paid,
+        day: u64,
+        cap: u64,
+        calls: u32,
+        cost: u64,
+    ) -> rusqlite::Result<bool> {
         let tx = self
             .conn
             .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
         let (had_calls, had_cost): (u32, u64) = tx
             .query_row(
-                "SELECT calls, cost FROM paid WHERE day = ?1",
-                params![big(day)],
+                "SELECT calls, cost FROM paid WHERE kind = ?1 AND day = ?2",
+                params![kind as i64, big(day)],
                 |r| Ok((r.get(0)?, ubig(r.get(1)?))),
             )
             .optional()?
@@ -1135,19 +1172,19 @@ impl Store {
             return Ok(false);
         }
         tx.execute(
-            "INSERT OR REPLACE INTO paid (day, calls, cost) VALUES (?1, ?2, ?3)",
-            params![big(day), had_calls + 1, big(had_cost + cap)],
+            "INSERT OR REPLACE INTO paid (kind, day, calls, cost) VALUES (?1, ?2, ?3, ?4)",
+            params![kind as i64, big(day), had_calls + 1, big(had_cost + cap)],
         )?;
         tx.commit()?;
         Ok(true)
     }
 
-    /// A call reserved on `day` with `cap` cost `spent`: the day keeps
-    /// that instead of the cap.
-    pub fn settle(&mut self, day: u64, cap: u64, spent: u64) -> rusqlite::Result<()> {
+    /// A call of `kind` reserved on `day` with `cap` cost `spent`: the
+    /// day keeps that instead of the cap.
+    pub fn settle(&mut self, kind: Paid, day: u64, cap: u64, spent: u64) -> rusqlite::Result<()> {
         self.conn.execute(
-            "UPDATE paid SET cost = MAX(cost - ?2, 0) + ?3 WHERE day = ?1",
-            params![big(day), big(cap), big(spent)],
+            "UPDATE paid SET cost = MAX(cost - ?3, 0) + ?4 WHERE kind = ?1 AND day = ?2",
+            params![kind as i64, big(day), big(cap), big(spent)],
         )?;
         Ok(())
     }
@@ -1393,6 +1430,7 @@ impl Store {
             changes: Vec::new(),
             paid: 0,
             suggested: None,
+            reviews: Default::default(),
             orphans: crate::model::Orphans::default(),
             messages,
         };
@@ -2167,6 +2205,7 @@ mod tests {
             changes: Vec::new(),
             paid: 0,
             suggested: None,
+            reviews: Default::default(),
             orphans: crate::model::Orphans::default(),
             messages: 12,
         };
@@ -3885,11 +3924,11 @@ mod tests {
                 )
                 .unwrap();
             assert_eq!(
-                version, "20",
+                version, "21",
                 "the sent table, the Fault kind, archives, restores, start points, standing yes, the \
-                 recall index, forks: an older imece knows none"
+                 recall index, forks, paid kinds and reviews: an older imece knows none"
             );
-            assert_eq!(SCHEMA_VERSION, 20);
+            assert_eq!(SCHEMA_VERSION, 21);
         }
         let back = Store::open(&path)
             .unwrap()
@@ -4438,22 +4477,25 @@ mod tests {
     #[test]
     fn a_paid_call_is_reserved_only_under_both_of_the_days_ceilings() {
         let mut st = Store::in_memory();
-        assert_eq!(st.paid_on(7).unwrap(), (0, 0));
+        assert_eq!(st.paid_on(Paid::Commit, 7).unwrap(), (0, 0));
         // Two calls a day, 0.10 a day; each may cost 0.04.
-        assert!(st.reserve(7, 400, 2, 1_000).unwrap());
-        assert_eq!(st.paid_on(7).unwrap(), (1, 400));
-        assert!(st.reserve(7, 400, 2, 1_000).unwrap());
-        assert_eq!(st.paid_on(7).unwrap(), (2, 800));
+        assert!(st.reserve(Paid::Commit, 7, 400, 2, 1_000).unwrap());
+        assert_eq!(st.paid_on(Paid::Commit, 7).unwrap(), (1, 400));
+        assert!(st.reserve(Paid::Commit, 7, 400, 2, 1_000).unwrap());
+        assert_eq!(st.paid_on(Paid::Commit, 7).unwrap(), (2, 800));
         // The count is full: refused, nothing counted.
-        assert!(!st.reserve(7, 100, 2, 1_000).unwrap());
-        assert_eq!(st.paid_on(7).unwrap(), (2, 800));
+        assert!(!st.reserve(Paid::Commit, 7, 100, 2, 1_000).unwrap());
+        assert_eq!(st.paid_on(Paid::Commit, 7).unwrap(), (2, 800));
         // Another day starts from nothing.
         assert!(
-            st.reserve(8, 1_000, 3, 1_000).unwrap(),
+            st.reserve(Paid::Commit, 8, 1_000, 3, 1_000).unwrap(),
             "up to the cost is room"
         );
-        assert!(!st.reserve(8, 1, 3, 1_000).unwrap(), "one more is past it");
-        assert_eq!(st.paid_on(8).unwrap(), (1, 1_000));
+        assert!(
+            !st.reserve(Paid::Commit, 8, 1, 3, 1_000).unwrap(),
+            "one more is past it"
+        );
+        assert_eq!(st.paid_on(Paid::Commit, 8).unwrap(), (1, 1_000));
         assert_eq!(st.paid_total().unwrap(), 1_800);
     }
 
@@ -4461,14 +4503,76 @@ mod tests {
     fn a_settled_call_keeps_what_it_cost_instead_of_its_cap() {
         let mut st = Store::in_memory();
         assert_eq!(st.paid_total().unwrap(), 0);
-        assert!(st.reserve(3, 500, 9, 9_000).unwrap());
-        assert!(st.reserve(3, 500, 9, 9_000).unwrap());
-        st.settle(3, 500, 37).unwrap();
-        assert_eq!(st.paid_on(3).unwrap(), (2, 537));
+        assert!(st.reserve(Paid::Commit, 3, 500, 9, 9_000).unwrap());
+        assert!(st.reserve(Paid::Commit, 3, 500, 9, 9_000).unwrap());
+        st.settle(Paid::Commit, 3, 500, 37).unwrap();
+        assert_eq!(st.paid_on(Paid::Commit, 3).unwrap(), (2, 537));
         // A day that is not there takes nothing.
-        st.settle(4, 500, 37).unwrap();
-        assert_eq!(st.paid_on(4).unwrap(), (0, 0));
+        st.settle(Paid::Commit, 4, 500, 37).unwrap();
+        assert_eq!(st.paid_on(Paid::Commit, 4).unwrap(), (0, 0));
         assert_eq!(st.paid_total().unwrap(), 537);
+    }
+
+    #[test]
+    fn each_kind_of_paid_call_has_its_own_ceilings_and_the_pot_counts_both() {
+        let mut st = Store::in_memory();
+        assert!(st.reserve(Paid::Commit, 3, 500, 1, 9_000).unwrap());
+        assert!(
+            !st.reserve(Paid::Commit, 3, 500, 1, 9_000).unwrap(),
+            "the day's one commit message was made"
+        );
+        assert!(
+            st.reserve(Paid::Review, 3, 1_000, 1, 9_000).unwrap(),
+            "a review counts apart"
+        );
+        st.settle(Paid::Review, 3, 1_000, 70).unwrap();
+        assert_eq!(st.paid_on(Paid::Commit, 3).unwrap(), (1, 500));
+        assert_eq!(st.paid_on(Paid::Review, 3).unwrap(), (1, 70));
+        st.settle(Paid::Commit, 3, 500, 20).unwrap();
+        assert_eq!(
+            st.paid_on(Paid::Review, 3).unwrap(),
+            (1, 70),
+            "a commit's settling leaves reviews alone"
+        );
+        assert_eq!(st.paid_total().unwrap(), 90);
+    }
+
+    #[test]
+    fn a_file_of_schema_20_keeps_its_paid_calls_as_commit_messages() {
+        let d = dir("schema20");
+        std::fs::create_dir_all(&d).unwrap();
+        let path = d.join(FILE);
+        {
+            let store = Store::open(&path).unwrap();
+            // As schema 20 wrote it: by day alone.
+            store
+                .raw()
+                .execute_batch(
+                    "DROP TABLE paid;
+                     CREATE TABLE paid (day INTEGER PRIMARY KEY, calls INTEGER NOT NULL,
+                         cost INTEGER NOT NULL) WITHOUT ROWID;
+                     INSERT INTO paid VALUES (9, 2, 640);
+                     UPDATE meta SET value = '20' WHERE key = 'schema_version';",
+                )
+                .unwrap();
+        }
+        let mut st = Store::open(&path).unwrap();
+        assert!(st.has_column("paid", "kind").unwrap());
+        assert_eq!(st.paid_on(Paid::Commit, 9).unwrap(), (2, 640));
+        assert_eq!(st.paid_on(Paid::Review, 9).unwrap(), (0, 0));
+        assert_eq!(st.paid_total().unwrap(), 640);
+        assert!(st.reserve(Paid::Review, 9, 1_000, 20, 20_000).unwrap());
+        let version: String = st
+            .raw()
+            .query_row(
+                "SELECT value FROM meta WHERE key = 'schema_version'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(version, "21");
+        drop(st);
+        let _ = std::fs::remove_dir_all(&d);
     }
 
     #[test]
@@ -4478,13 +4582,13 @@ mod tests {
         let path = dir.join(FILE);
         {
             let mut st = Store::open(&path).unwrap();
-            assert!(st.reserve(5, 200, 1, 1_000).unwrap());
-            st.settle(5, 200, 12).unwrap();
+            assert!(st.reserve(Paid::Commit, 5, 200, 1, 1_000).unwrap());
+            st.settle(Paid::Commit, 5, 200, 12).unwrap();
         }
         let mut st = Store::open(&path).unwrap();
-        assert_eq!(st.paid_on(5).unwrap(), (1, 12));
+        assert_eq!(st.paid_on(Paid::Commit, 5).unwrap(), (1, 12));
         assert!(
-            !st.reserve(5, 1, 1, 1_000).unwrap(),
+            !st.reserve(Paid::Commit, 5, 1, 1, 1_000).unwrap(),
             "the day's one call was made"
         );
         drop(st);

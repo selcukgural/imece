@@ -9,9 +9,11 @@
   reviews every patch and command. imece differs on purpose: real agent
   sessions over ACP with a message bus between peers, symbol leases in the
   same file, the person's review of each worker's diff as the last gate
-  (no model reviews patches or commands, and imece sandboxes nothing: the
-  vendor's own restrictions, checked fail closed, and a container when
-  isolation is wanted), many projects at once, a calm screen.
+  (no model gates patches or commands; since record 106 another vendor
+  may read a patch when the person asks, `:review`, as a note that never
+  holds it back; and imece sandboxes nothing: the vendor's own
+  restrictions, checked fail closed, and a container when isolation is
+  wanted), many projects at once, a calm screen.
 - Taken from voff (deep review 2026-10-28, be322a2), to build when the
   matching part exists:
   - Done needs evidence: one entry per acceptance criterion citing what

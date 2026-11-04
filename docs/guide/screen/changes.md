@@ -47,6 +47,7 @@ The title: the worker, the files and lines, the done's first line. The border is
 | `^f` `^b`, `pgdn` `pgup`, `space` | a page down / up |
 | `[` `]` | previous / next file: the `diff --git` headers |
 | `w` | wrap long lines under themselves (a minified file, a long string); again cuts them at the edge. The scroll still counts patch lines, so `j` moves a whole line however many rows it takes. On for every change until turned off; not kept between runs |
+| `R` | another vendor's review (`:review`), above the file list: its first six rows, or all of it ([changes](../concepts/changes.md#a-review-by-another-vendor)) |
 | `v` | choose lines to copy (below) |
 | `esc` | back to WAITING FOR YOU |
 

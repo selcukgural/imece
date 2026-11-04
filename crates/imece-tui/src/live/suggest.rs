@@ -4,7 +4,9 @@
 //! is counted against the day's ceilings and reserved in the pot at its cap
 //! before it is made; what it really cost replaces the cap when it answers.
 
+use super::paid::{self, Ceiling, today};
 use super::*;
+use crate::store::Paid;
 
 /// The most one suggestion may cost, in ten-thousandths of a dollar: the
 /// call's `--max-budget-usd`, and what the pot and the day hold for it
@@ -44,13 +46,16 @@ pub(super) struct Said {
     /// The staged tree it was asked for.
     pub tree: String,
     pub model: String,
-    pub said: Result<claude::Said, claude::Unsaid>,
+    pub said: Result<imece_agent::Said, imece_agent::Unsaid>,
 }
 
-/// Today, as the day ceilings count: days since the epoch, UTC.
-fn today() -> u64 {
-    now() / 86_400
-}
+/// A day's suggestions: [`SUGGEST_DAY_CALLS`] and [`SUGGEST_DAY_COST`].
+const SUGGESTIONS: Ceiling = Ceiling {
+    kind: Paid::Commit,
+    calls: SUGGEST_DAY_CALLS,
+    cost: SUGGEST_DAY_COST,
+    noun: "suggestions",
+};
 
 /// What the model is asked: the recent subjects, the stat and the patch
 /// (cut, and said so, past [`SUGGEST_PATCH`]).
@@ -170,59 +175,23 @@ impl Live {
     /// Whether the pot and `day` have room for one more suggestion at its
     /// cap; why not.
     fn room(&mut self, w: &World, day: u64) -> Result<(), String> {
-        if w.budget.saturating_sub(w.spent()) < SUGGEST_CAP {
-            return Err(format!(
-                "the pot has less than {} left",
-                dollars(SUGGEST_CAP)
-            ));
-        }
-        if self.paid_day.0 != day {
-            let had = (self.store.as_ref()).map_or(Ok((0, 0)), |s| s.paid_on(day));
-            let (calls, cost) = had.map_err(|e| format!("its count could not be read: {e}"))?;
-            self.paid_day = (day, calls, cost);
-        }
-        let (_, calls, cost) = self.paid_day;
-        if calls >= SUGGEST_DAY_CALLS {
-            return Err(format!("today's {SUGGEST_DAY_CALLS} suggestions were made"));
-        }
-        if cost + SUGGEST_CAP > SUGGEST_DAY_COST {
-            return Err(format!(
-                "today's {} for suggestions is spent",
-                dollars(SUGGEST_DAY_COST)
-            ));
-        }
-        Ok(())
+        let store = self.store.as_ref();
+        paid::room(store, w, &mut self.paid_day, &SUGGESTIONS, SUGGEST_CAP, day)
     }
 
     /// Counts one suggestion on `day` at its cap, in the store first (one
     /// transaction checks and counts) and in the pot, before it is made.
     fn reserve(&mut self, w: &mut World, day: u64) -> Result<(), String> {
-        self.room(w, day)?;
-        if let Some(store) = &mut self.store {
-            let counted = store
-                .reserve(day, SUGGEST_CAP, SUGGEST_DAY_CALLS, SUGGEST_DAY_COST)
-                .map_err(|e| format!("it could not be counted: {e}"))?;
-            if !counted {
-                return Err("the day's ceiling is reached".into());
-            }
-        }
-        self.paid_day.1 += 1;
-        self.paid_day.2 += SUGGEST_CAP;
-        w.paid += SUGGEST_CAP;
-        Ok(())
+        let store = self.store.as_mut();
+        paid::reserve(store, w, &mut self.paid_day, &SUGGESTIONS, SUGGEST_CAP, day)
     }
 
     /// A suggestion counted on `day` cost `cost`: the pot and the day keep
     /// that instead of its cap.
     fn settle(&mut self, w: &mut World, day: u64, cost: u64) {
-        w.paid = w.paid.saturating_sub(SUGGEST_CAP) + cost;
-        if self.paid_day.0 == day {
-            self.paid_day.2 = self.paid_day.2.saturating_sub(SUGGEST_CAP) + cost;
-        }
-        if let Some(store) = &mut self.store {
-            // A failed write leaves the cap counted: more, never less.
-            let _ = store.settle(day, SUGGEST_CAP, cost);
-        }
+        let store = self.store.as_mut();
+        let count = &mut self.paid_day;
+        paid::settle(store, w, count, Paid::Commit, day, SUGGEST_CAP, cost);
     }
 
     /// Git read what is staged in project `p`'s checkout: nothing, or the
@@ -294,7 +263,7 @@ impl Live {
 
     /// Where a suggestion's call runs: a directory of imece's own with
     /// nothing in it to read (the bus's, private), else the state's.
-    fn quiet_dir(&self) -> PathBuf {
+    pub(super) fn quiet_dir(&self) -> PathBuf {
         (self.bus.as_ref()).map_or_else(|| self.state.clone(), |b| b.dir.clone())
     }
 
@@ -517,7 +486,7 @@ mod tests {
         assert_eq!(live.paid_day, (9, 0, 0));
         // With a store, what it counted.
         let mut store = Store::in_memory();
-        assert!(store.reserve(10, 300, 99, 99_999).unwrap());
+        assert!(store.reserve(Paid::Commit, 10, 300, 99, 99_999).unwrap());
         live.store = Some(store);
         assert_eq!(live.room(&w, 10), Ok(()));
         assert_eq!(live.paid_day, (10, 1, 300));
@@ -533,13 +502,13 @@ mod tests {
         assert_eq!(live.paid_day, (5, 3, 100 + SUGGEST_CAP));
         assert_eq!(w.paid, SUGGEST_CAP);
         let store = live.store.as_ref().unwrap();
-        assert_eq!(store.paid_on(5).unwrap(), (1, SUGGEST_CAP));
+        assert_eq!(store.paid_on(Paid::Commit, 5).unwrap(), (1, SUGGEST_CAP));
         // The store has the last word: full there, refused here.
         let mut store = Store::in_memory();
         for _ in 0..SUGGEST_DAY_CALLS {
             assert!(
                 store
-                    .reserve(6, 1, SUGGEST_DAY_CALLS, SUGGEST_DAY_COST)
+                    .reserve(Paid::Commit, 6, 1, SUGGEST_DAY_CALLS, SUGGEST_DAY_COST)
                     .unwrap()
             );
         }
@@ -558,7 +527,11 @@ mod tests {
         let mut w = team(0);
         let mut live = idle_live(1);
         let mut store = Store::in_memory();
-        assert!(store.reserve(5, SUGGEST_CAP, 9, 99_999).unwrap());
+        assert!(
+            store
+                .reserve(Paid::Commit, 5, SUGGEST_CAP, 9, 99_999)
+                .unwrap()
+        );
         live.store = Some(store);
         live.paid_day = (5, 1, SUGGEST_CAP + 7);
         w.paid = SUGGEST_CAP + 30;
@@ -566,7 +539,7 @@ mod tests {
         assert_eq!(w.paid, 72);
         assert_eq!(live.paid_day, (5, 1, 49));
         let store = live.store.as_ref().unwrap();
-        assert_eq!(store.paid_on(5).unwrap(), (1, 42));
+        assert_eq!(store.paid_on(Paid::Commit, 5).unwrap(), (1, 42));
         // Counted on another day than the one at hand: that day settles.
         live.paid_day = (6, 1, 600);
         w.paid = SUGGEST_CAP;
@@ -656,7 +629,7 @@ mod tests {
         );
     }
 
-    fn said(live: &Live, said: Result<claude::Said, claude::Unsaid>) {
+    fn said(live: &Live, said: Result<imece_agent::Said, imece_agent::Unsaid>) {
         live.said_tx
             .send(Said {
                 project: 0,
@@ -677,7 +650,7 @@ mod tests {
         w.paid = SUGGEST_CAP;
         said(
             &live,
-            Ok(claude::Said {
+            Ok(imece_agent::Said {
                 text: "```\nFix it\n```".into(),
                 cost: 4_299,
             }),
@@ -712,7 +685,7 @@ mod tests {
         let mut w = team(0);
         let mut live = idle_live(1);
         w.paid = SUGGEST_CAP;
-        let unsaid = |cost| claude::Unsaid {
+        let unsaid = |cost| imece_agent::Unsaid {
             why: "error_max_budget_usd".into(),
             cost,
         };
@@ -734,7 +707,7 @@ mod tests {
         assert!(matches!(last(&w), Event::SuggestFailed { cost, .. } if *cost == SUGGEST_CAP));
         // An answer with nothing in it.
         w.paid = SUGGEST_CAP;
-        let empty = claude::Said {
+        let empty = imece_agent::Said {
             text: "```\n```".into(),
             cost: 1_000,
         };

@@ -6880,6 +6880,53 @@ mod tests {
     }
 
     #[test]
+    fn a_change_shows_its_review_above_its_files_or_who_reads_it() {
+        let mut app = app_after(1, 4, 50, Lang::En);
+        app.world.inbox.clear();
+        app.world.change_ready(a_change(1));
+        app.zoom = Zoom::Diff(1);
+        let s = render(&app, 140, 40);
+        assert!(!s.contains("✎"), "{s}");
+        for c in ":review".chars() {
+            key(&mut app, KeyCode::Char(c));
+        }
+        key(&mut app, KeyCode::Enter);
+        let by = app.reviewing(1).expect("asked");
+        let s = render(&app, 140, 40);
+        assert!(
+            s.contains(&format!("✎ {} reads this change…", by.label())),
+            "{s}"
+        );
+        let patch = crate::model::patch_sum(&app.world.change_of(1).unwrap().patch);
+        app.world.reviewed(
+            1,
+            Review {
+                patch,
+                by,
+                model: "m1".into(),
+                text: "1. parse.rs: no test".into(),
+                cost: 420,
+            },
+        );
+        let s = render(&app, 140, 40);
+        let head = format!("✎ review · {} · m1 · $0.04", by.label());
+        assert!(
+            s.contains(&head) && s.contains("1. parse.rs: no test"),
+            "{s}"
+        );
+        let (review, files) = (s.find(&head).unwrap(), s.find("2 files").unwrap_or(0));
+        assert!(review > files, "under the title, above the list: {s}");
+
+        // Whole, it takes up to half the screen and counts the rest.
+        let long: Vec<String> = (1..=40).map(|i| format!("point-{i:02}")).collect();
+        app.world.reviews.get_mut(&1).unwrap().text = long.join("\n");
+        app.review_whole = true;
+        let s = render(&app, 140, 40);
+        assert!(s.contains("point-10") && !s.contains("point-40"), "{s}");
+        assert!(s.contains("lines · R shows all"), "{s}");
+    }
+
+    #[test]
     fn a_change_waits_in_the_inbox_and_enter_shows_its_diff() {
         let mut app = app_after(1, 4, 50, Lang::En);
         app.world.inbox.clear();

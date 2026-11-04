@@ -37,6 +37,18 @@ A run of the worker or a helper through imece's `run` tool is tied to the tree i
 
 `h` (or `←`) folds the file of the line at hand to its `diff --git` header, which then says how many lines it hides (`▸ 42 lines`); `l` (or `→`) opens it, `za` turns it, `zM` (`:fold`) folds every file and `zR` (`:unfold`) opens them all. `j` `k`, the pages and `G` go over the lines shown, so a folded file is one line to step over; `[` `]` still go from header to header. Folding the file of a hidden line puts the line at hand on its header. `v` opens every file first, since lines are chosen from the whole patch. The folds hold for that patch: a new one from the worker starts open.
 
+## A review by another vendor
+
+`:review` has a vendor other than the worker's read the change at hand and say what it finds; `:review on` asks for one for every change as it comes (off by default, remembered). The reviewer is the project's leader's vendor when that is not the worker's, else Claude Code, else Codex; it gets what the worker said it did, the file list and the patch (64 KiB at most), and no tools. Its answer stands above the file list:
+
+```
+✎ review · codex · default · $0.00
+1. src/parse.rs:41: an empty input returns Ok(()) without a test for it.
+2. The title says the lexer is fixed too; the patch does not touch it.
+```
+
+six rows of it, `… +N lines · R shows all` when there is more; `R` shows it whole. Until it comes, `✎ codex reads this change…` stands there. It is advice and nothing more: no change waits for it, `a` applies with or without it, and the worker is not told (quote it with `>`, or note its lines with `c`). A Claude Code review costs at most $0.10 from the pot, a Codex one nothing (your ChatGPT plan); 20 reviews and $2.00 a day; a change that has its review is not paid for twice. The review is kept in the journal and comes back with its change after a restart. See [`:review`](../reference/commands.md#review-onoff) and [budget and limits](budget-and-limits.md).
+
 ## Apply
 
 `a` starts the apply on the git thread; the flash says it is under way and the journal says how it went.

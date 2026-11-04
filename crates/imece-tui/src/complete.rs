@@ -13,14 +13,14 @@ use crate::ui::fold;
 
 /// The commands imece itself takes after `:`: its own, and a name for
 /// every key that acts (not the ones that move).
-pub const COMMANDS: [&str; 64] = [
+pub const COMMANDS: [&str; 65] = [
     "allow", "archive", "archives", "awake", "away", "board", "budget", "clear", "close", "code",
     "commit", "copy", "defer", "digest", "edit", "effort", "export", "faster", "fold", "forget",
     "fork", "goto", "help", "hints", "history", "keys", "lang", "lead", "mark", "model", "motion",
     "needs", "news", "next", "notify", "now", "open", "output", "pause", "peek", "pending", "pin",
-    "quit", "recall", "rename", "restore", "salon", "settle", "slower", "solo", "story", "talk",
-    "theme", "tidy", "timeline", "trace", "unclear", "undo", "unfold", "unsettle", "waiting",
-    "welcome", "why", "yes",
+    "quit", "recall", "rename", "restore", "review", "salon", "settle", "slower", "solo", "story",
+    "talk", "theme", "tidy", "timeline", "trace", "unclear", "undo", "unfold", "unsettle",
+    "waiting", "welcome", "why", "yes",
 ];
 
 /// The word for a vendor's own model or effort after `:model`, `:effort`
@@ -452,6 +452,10 @@ pub fn suggest(input: &str, w: &World, project: ProjectId, home: Option<&Path>) 
                     "",
                 )
             }
+            Some(("review", arg)) => {
+                let start = input.len() - arg.len();
+                menu(start, arg, matching(arg, ["on", "off"].into_iter()), "")
+            }
             Some(("notify", arg)) => {
                 let start = input.len() - arg.len();
                 menu(
@@ -822,6 +826,14 @@ mod tests {
             (vec!["15m".to_string(), "1h".to_string()], 6)
         );
         assert_eq!(suggest(":away off", &w, 0, None), None);
+        let m = suggest(":review ", &w, 0, None).unwrap();
+        assert_eq!(
+            (m.items, m.start, m.tail),
+            (vec!["on".to_string(), "off".to_string()], 8, "")
+        );
+        let m = suggest(":review of", &w, 0, None).unwrap();
+        assert_eq!((m.items, m.start), (vec!["off".to_string()], 8));
+        assert_eq!(suggest(":review on", &w, 0, None), None);
         for cmd in ["clear", "unclear"] {
             let m = suggest(&format!(":{cmd} "), &w, 0, None).unwrap();
             assert_eq!(

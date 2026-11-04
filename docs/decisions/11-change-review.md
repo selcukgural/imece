@@ -118,3 +118,9 @@ reject, `c` notes lines of the change and `n` sends the notes to the
 worker in one message; the change goes back as a rejection does
 (`reject_change`, the item closes, it stays in the worktree), and the
 worker's next `done` is a new Δ.
+
+A second vendor's read as a note (2026-11-04, record 106): `:review`
+(or `:review on`, for every change as it comes) has a vendor other than
+the worker's read the change and say what it finds, shown above its
+file list. It is advice, never a gate: apply and reject are as they
+were, with or without it.

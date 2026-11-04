@@ -47,6 +47,7 @@ Başlık: işçi, dosyalar ve satırlar, done'un ilk satırı. Çerçeve işçin
 | `^f` `^b`, `pgdn` `pgup`, `space` | bir sayfa aşağı / yukarı |
 | `[` `]` | önceki / sonraki dosya: `diff --git` başlıkları |
 | `w` | uzun satırları alt alta sar (küçültülmüş bir dosya, uzun bir dize); yine basılınca kenarda keser. Kaydırma yine yama satırlarını sayar, böylece `j` kaç satır kaplasa da bütün bir satır gider. Kapatılana dek her değişiklik için açık; çalıştırmalar arasında saklanmaz |
+| `R` | başka bir satıcının incelemesi (`:review`), dosya listesinin üstünde: ilk altı satırı ya da tamamı ([değişiklikler](../concepts/changes.md#başka-bir-satıcının-incelemesi)) |
 | `v` | kopyalanacak satırları seç (aşağıda) |
 | `esc` | SENİ BEKLEYEN'e geri |
 
