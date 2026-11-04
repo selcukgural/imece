@@ -33,10 +33,15 @@
 # answer_says_something_came`; 16 s locally, 2026-11-04), but the last one
 # waits its ten seconds for a quiet step first and the run outlasted its
 # timeout on CI (#277), so it is left out the same way.
+# `Live::take_git` the same (`-> bool with false` or `true`): with its body
+# gone git's answers are never taken, every live test that waits for one
+# waits its ten seconds, and the run reports a timeout for what is caught
+# (#280). It is a boundary path, so its timeout held the PR.
 # A pattern matches the mutant's full name, `path:line:col: replace fn ...`.
 exclude_re = [
     "src/model.rs:.*: replace \\+ with \\* in free_project_name",
     "src/live/mod.rs:.*: replace Live::step -> bool with (false|true)$",
+    "src/live/changes.rs:.*: replace Live::take_git -> bool with (false|true)$",
     "src/child.rs:.*: replace \\| with \\^$",
     "src/child.rs:.*: replace bsd_parent ",
     "src/child.rs:.*: (replace|delete) .* in bsd_parent$",

@@ -414,8 +414,9 @@ pub(super) fn send_tool() -> Tool {
         description: "Sends a message to a teammate in imece, or to the person (to: you). \
                       To a teammate it arrives as the start of their next turn: assign, \
                       ask, answer, handoff, done, blocked and cancel start that turn as \
-                      soon as they are free; inform, progress and notice wait until \
-                      something else does. To the person, an ask waits on their screen \
+                      soon as they are free (while they wait on the person's answer, \
+                      only cancel does; the rest waits for it); inform, progress and \
+                      notice wait until something else does. To the person, an ask waits on their screen \
                       until they answer (which starts your next turn); the rest only \
                       informs them."
             .into(),

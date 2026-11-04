@@ -377,7 +377,7 @@ The first-run window: what imece is, the coding agents on this machine with thei
 
 ### `:why [@NAME]`
 
-What put the agent in its state, on the bottom line: its rung of the ladder (idle, done and not seen, starting, working, waiting for you, stuck), since when, and the journal's line that put it there, in the journal's words: `claude-1: stuck · since 14:02 · claude-1 stopped: the session ended`. No name is the agent at hand, as for `:peek`. "Since" is when its oldest item began waiting for you, or else when its state last changed; the line is its newest journal line from then or before. When the journal no longer has one (tidied, or the agent came from an earlier run), it says so. It only looks, so it runs in an archive's view too.
+What put the agent in its state, on the bottom line: its rung of the ladder (idle, done and not seen, starting, working, waiting for you, stuck), since when, and the journal's line that put it there, in the journal's words: `claude-1: stuck · since 14:02 · claude-1 stopped: the session ended`. An agent with mail waiting on you ends with how many: `· messages held until you answer: 2`. No name is the agent at hand, as for `:peek`. "Since" is when its oldest item began waiting for you, or else when its state last changed; the line is its newest journal line from then or before. When the journal no longer has one (tidied, or the agent came from an earlier run), it says so. It only looks, so it runs in an archive's view too.
 
 ### `:yes [@NAME]`
 

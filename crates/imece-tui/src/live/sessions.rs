@@ -421,7 +421,8 @@ impl Live {
     }
 
     /// Gives agent `id` the person's message, starting its session first
-    /// if it has none. An idle worker gets a new card for it.
+    /// if it has none. An idle worker gets a new card for it. Mail that
+    /// waited for this word goes with it (record 107).
     pub fn told(&mut self, w: &mut World, id: AgentId, text: &str) -> Result<(), Refusal> {
         if self.over_budget(w) {
             return Err(Refusal::Budget);
@@ -430,8 +431,20 @@ impl Live {
         self.woken.iter_mut().for_each(|n| *n = 0);
         self.posted.iter_mut().for_each(|n| *n = 0);
         let title = text.lines().next().unwrap_or_default().to_string();
-        self.prompt(w, id, text.to_string(), Some(&title))
-            .map_err(Refusal::Start)?;
+        let mail = if self.turns[id] == 0 && w.word_frees(id) {
+            std::mem::take(&mut self.mail[id])
+        } else {
+            Vec::new()
+        };
+        let prompt = if mail.is_empty() {
+            text.to_string()
+        } else {
+            format!("{text}\n\n{}", mail_prompt(w, &mail))
+        };
+        if let Err(why) = self.prompt(w, id, prompt, Some(&title)) {
+            self.mail[id] = mail;
+            return Err(Refusal::Start(why));
+        }
         self.asked[id] = true;
         Ok(())
     }
@@ -1479,6 +1492,18 @@ mod tests {
             said.contains(&format!("({})", "é".repeat(LOST_SAID))),
             "{said}"
         );
+    }
+
+    #[test]
+    fn a_worker_that_waits_on_the_person_hears_of_its_helper_when_that_ends() {
+        let (mut w, mut live, helper, heard) = helped();
+        w.inbox.push(item(InboxKind::Question, 1, "Which?"));
+        hear(&live, helper, AgentEvent::Stopped("gone".into()));
+        live.step(&mut w);
+        assert!(heard.lock().unwrap().is_empty() && live.lost[1]);
+        w.inbox[0].open = false;
+        live.step(&mut w);
+        assert_eq!(heard.lock().unwrap().len(), 1);
     }
 
     #[test]

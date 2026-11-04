@@ -693,7 +693,11 @@ pub fn why(
         || t.why_unsaid.to_string(),
         |i| event(lang, w, &w.journal[i].event),
     );
-    fill(t.why, &[&w.agents[id].name, state, &at, &cause])
+    let said = fill(t.why, &[&w.agents[id].name, state, &at, &cause]);
+    match w.agents[id].held_mail {
+        0 => said,
+        n => format!("{said} · {}", fill(t.why_held, &[&n.to_string()])),
+    }
 }
 
 pub fn ago(lang: Lang, seconds: u64) -> String {

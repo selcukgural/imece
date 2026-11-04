@@ -579,6 +579,10 @@ pub struct Agent {
     /// none otherwise. The turn's end or the session's takes it away.
     /// Memory only.
     pub turn_yes: Option<u32>,
+    /// The messages that wait with it while it waits on the person
+    /// (record 107), for its row and `:why`. Memory only: whoever drives
+    /// the agent sets it again.
+    pub held_mail: usize,
     /// The fault its vendor said the turn now ending failed on, taken by
     /// that turn's end (`imece_agent::Event::Failed`). Memory only.
     pub fault: Option<Fault>,
@@ -701,6 +705,7 @@ impl Agent {
             retry: None,
             tries: 0,
             turn_yes: None,
+            held_mail: 0,
             fault: None,
             gone: false,
         }
@@ -1872,6 +1877,29 @@ pub enum InboxKind {
     /// detail the script's path in the checkout. Closes with the answer,
     /// and at the next start.
     Script,
+}
+
+impl InboxKind {
+    /// Whether an open item of this kind means its agent waits on the
+    /// person, so that its mail waits too (record 107). A [`Reply`] does
+    /// not, it is only to be read; nor does a [`Change`]: its worker is
+    /// finished and needs no answer to go on, and a team must not move at
+    /// the speed of the review.
+    ///
+    /// [`Reply`]: InboxKind::Reply
+    /// [`Change`]: InboxKind::Change
+    pub fn holds_mail(self) -> bool {
+        !matches!(self, InboxKind::Reply | InboxKind::Change)
+    }
+
+    /// Whether the person's word to its agent closes an item of this kind
+    /// ([`World::said`]).
+    pub fn closes_on_word(self) -> bool {
+        matches!(
+            self,
+            InboxKind::Reply | InboxKind::Question | InboxKind::Fault
+        )
+    }
 }
 
 /// What the person cleared off the salon's screen (`:clear`, record 90):
@@ -3173,6 +3201,26 @@ impl World {
     /// Whether agent `id` waits for the person's answer to a question.
     pub fn has_question(&self, id: AgentId) -> bool {
         self.open_item(id, InboxKind::Question).is_some()
+    }
+
+    /// The kinds of the open items that hold agent `id`'s mail.
+    fn holding(&self, id: AgentId) -> impl Iterator<Item = InboxKind> + '_ {
+        (self.inbox.iter())
+            .filter(move |i| i.open && i.agent == id && i.kind.holds_mail())
+            .map(|i| i.kind)
+    }
+
+    /// Whether agent `id` waits on the person: what comes for it stays
+    /// queued and starts no turn, but for a cancel (record 107).
+    pub fn waits_on_person(&self, id: AgentId) -> bool {
+        self.agents[id].status == Status::WaitingHuman || self.holding(id).next().is_some()
+    }
+
+    /// Whether the person's word to agent `id` ends what it waits on: then
+    /// the mail that waited goes with that word, not after it.
+    pub fn word_frees(&self, id: AgentId) -> bool {
+        let mut open = self.holding(id).peekable();
+        open.peek().is_some() && open.all(InboxKind::closes_on_word)
     }
 
     /// The oldest open item of `kind` that agent `id` waits on: the one its
@@ -4731,6 +4779,54 @@ mod tests {
         a.trace(9, "text \"hm\"");
         a.trace(9, "tool_use Edit");
         assert_eq!(a.stirs.at(9), [0, 0, 0, 1, 2]);
+    }
+
+    #[test]
+    fn what_waits_on_the_person_holds_mail_and_what_a_word_ends() {
+        use InboxKind::*;
+        for (kind, holds, word) in [
+            (Sensitive, true, false),
+            (Research, true, false),
+            (Reply, false, true),
+            (Change, false, false),
+            (Question, true, true),
+            (Approval, true, false),
+            (Fault, true, true),
+            (Script, true, false),
+        ] {
+            assert_eq!(kind.holds_mail(), holds, "{kind:?}");
+            assert_eq!(kind.closes_on_word(), word, "{kind:?}");
+        }
+    }
+
+    #[test]
+    fn an_agent_waits_on_the_person_on_an_open_item_of_its_own_or_its_status() {
+        let mut w = world(vec![
+            agent(0, Role::Worker, Status::Idle),
+            agent(1, Role::Worker, Status::Idle),
+        ]);
+        assert!(!w.waits_on_person(0) && !w.word_frees(0));
+        w.inbox = vec![
+            item(InboxKind::Reply, 0, true),
+            item(InboxKind::Question, 0, false),
+            item(InboxKind::Change, 0, true),
+            item(InboxKind::Sensitive, 1, true),
+        ];
+        assert!(!w.waits_on_person(0) && !w.word_frees(0), "nothing of its");
+        assert!(
+            w.waits_on_person(1) && !w.word_frees(1),
+            "a word leaves this"
+        );
+        w.agents[0].status = Status::WaitingHuman;
+        assert!(w.waits_on_person(0));
+        w.agents[0].status = Status::Idle;
+        // A word frees it only when it ends all that holds it.
+        w.inbox.push(item(InboxKind::Question, 0, true));
+        assert!(w.waits_on_person(0) && w.word_frees(0));
+        w.inbox.push(item(InboxKind::Fault, 0, true));
+        assert!(w.word_frees(0));
+        w.inbox.push(item(InboxKind::Approval, 0, true));
+        assert!(!w.word_frees(0), "the last one too");
     }
 
     #[test]

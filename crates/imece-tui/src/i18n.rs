@@ -365,6 +365,7 @@ pub struct Text {
     pub why: &'static str,
     /// `:why` when the journal has no line of the agent before its state.
     pub why_unsaid: &'static str,
+    pub why_held: &'static str,
     /// The rungs of the state ladder in words, lowest first: idle, done
     /// and not seen, starting, working, waiting for the person, stuck.
     pub rungs: [&'static str; 6],
@@ -1019,6 +1020,7 @@ pub struct Text {
     pub turn_yes_none: &'static str,
     pub this_turn: &'static str,
     pub turn_yes_mark: &'static str,
+    pub held_mail_mark: &'static str,
     pub script_keys: &'static str,
     pub ev_allowed: &'static str,
     pub ev_standing: &'static str,
@@ -1357,6 +1359,7 @@ pub const EN: Text = Text {
     no_agent: "no agent named \"{}\"",
     why: "{}: {} · since {} · {}",
     why_unsaid: "the journal does not say why",
+    why_held: "messages held until you answer: {}",
     rungs: [
         "idle",
         "done, not seen",
@@ -1899,6 +1902,7 @@ pub const EN: Text = Text {
     turn_yes_none: "{} asks for no yes now: e says yes to all it asks while one waits",
     this_turn: "yes this turn",
     turn_yes_mark: "✓ turn ",
+    held_mail_mark: "✉ {} held ",
     script_keys: "  enter shows the script · a yes · r no",
     ev_allowed: "you allowed {}: {}",
     ev_standing: "{}: you say yes from now on to {}",
@@ -2409,6 +2413,7 @@ pub const TR: Text = Text {
     no_agent: "\"{}\" adında bir agent yok",
     why: "{}: {} · {} itibarıyla · {}",
     why_unsaid: "günlük nedenini söylemiyor",
+    why_held: "sen yanıtlayana dek bekleyen mesaj: {}",
     rungs: [
         "boşta",
         "bitti, bakılmadı",
@@ -2959,6 +2964,7 @@ pub const TR: Text = Text {
     turn_yes_none: "{} şimdi bir evet istemiyor: e, biri beklerken ne isterse evet der",
     this_turn: "bu tur evet",
     turn_yes_mark: "✓ tur ",
+    held_mail_mark: "✉ {} bekliyor ",
     script_keys: "  enter betiği gösterir · a evet · r hayır",
     ev_allowed: "{} için izin verdin: {}",
     ev_standing: "{}: artık hep evet diyorsun: {}",

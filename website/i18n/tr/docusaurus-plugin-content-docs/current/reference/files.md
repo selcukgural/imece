@@ -121,7 +121,7 @@ Bir oturum, satıcısının tuttuğundan sürdürülür; imece yalnızca kimliğ
 | Codex | `$CODEX_HOME` ya da `~/.codex`, `sessions/YYYY/MM/DD/rollout-<zaman>-<id>.jsonl` | iş parçacığının rollout'u; imece iş parçacıklarını kalıcı (non-ephemeral) başlattığı için tutulur; `history.persistence="none"` imece'nin turlarını Codex'in küresel mesaj günlüğünün dışında tutar. Codex sizin kendi `~/.codex` yapılandırmanızı yükler (özel bir ev reddedildi: oturum açılamıyordu) |
 | Gemini CLI | `$GEMINI_CLI_HOME` ya da `~/.gemini`, `tmp/<ad>/chats/session-<zaman>-<id8>.jsonl` | `<ad>` Gemini'nin özel dizinle anahtarlanan `projects.json` kaydından gelir; başlangıç başına ikinci, boş bir `session-*.jsonl` Gemini'nin kendi artığıdır; sohbet dosyası başına en çok 50 geçmiş mesajı |
 
-Kendi `~/.claude/CLAUDE.md`'niz, `~/.gemini/GEMINI.md`'niz ve kullanıcı düzeyi hook'larınız, satıcının dizin ne olsun yüklediği yerde yine geçerlidir; `--confine open` bütün kurulumunuzu yükler.
+Oturumun kendi dosyalarınızdan hangilerini okuduğu satıcıya göre değişir. Claude Code, standard ve strict altında hiçbirini okumaz: `--restricted`, deponun dosyalarıyla birlikte `~/.claude/CLAUDE.md`'nizi, komutlarınızı ve ayarlarınızı da düşürür; imece yalnızca yukarıdaki depo notlarını iletir. Codex `~/.codex/AGENTS.md`'yi, Gemini `~/.gemini/GEMINI.md`'yi her seviyede okur; Gemini'nin kullanıcı düzeyi hook'ları da geçerli kalır. `--confine open` bütün kurulumunuzu yükler. Her satıcıya her seviyede ulaşması gerekenler, imece'nin yapılandırma dizinindeki kendi `instructions.md` dosyasına yazılır.
 
 ## `--fresh` ve `:forget`'in sildiği
 

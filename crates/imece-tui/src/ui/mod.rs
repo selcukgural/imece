@@ -1325,6 +1325,11 @@ fn add_quote(spans: &mut Vec<Span<'static>>, text: &str, style: Style) {
 /// why a stopped session stopped.
 pub(crate) fn status_spans(lang: Lang, w: &World, a: &Agent) -> Vec<Span<'static>> {
     let mut spans = doing_status(lang, w, a);
+    // Mail that waits with it: nothing else on the row says so.
+    if a.held_mail > 0 {
+        let held = fill(lang.text().held_mail_mark, &[&a.held_mail.to_string()]);
+        spans.insert(0, Span::styled(held, fg(pal().warn)));
+    }
     // The person's yes for its turn holds: said first, so it is never
     // cut off the row.
     if a.turn_yes.is_some() {
@@ -2741,7 +2746,7 @@ mod tests {
         app.on_key(KeyEvent::from(KeyCode::Char('#')));
         let s = render(&app, 140, 36);
         assert!(s.contains(" › card: #"), "{s}");
-        assert!(s.contains("#10 "), "the menu offers the cards:\n{s}");
+        assert!(s.contains("#5 "), "the menu offers the cards:\n{s}");
     }
 
     #[test]
@@ -3102,6 +3107,28 @@ mod tests {
             ),
             "{tr}"
         );
+    }
+
+    #[test]
+    fn mail_that_waits_with_an_agent_shows_on_its_row_in_both_languages() {
+        let mut app = app_after(1, 2, 0, Lang::En);
+        let id = app.world.projects[0].leader + 1;
+        let text = |app: &App| {
+            status_spans(app.lang, &app.world, &app.world.agents[id])
+                .iter()
+                .map(|s| s.content.to_string())
+                .collect::<String>()
+        };
+        let plain = text(&app);
+        app.world.agents[id].held_mail = 2;
+        assert_eq!(text(&app), format!("✉ 2 held {plain}"));
+        let spans = status_spans(app.lang, &app.world, &app.world.agents[id]);
+        assert_eq!(spans[0].style, fg(pal().warn));
+        app.world.agents[id].turn_yes = Some(0);
+        assert_eq!(text(&app), format!("✓ turn ✉ 2 held {plain}"));
+        app.world.agents[id].turn_yes = None;
+        app.lang = Lang::Tr;
+        assert!(text(&app).starts_with("✉ 2 bekliyor "));
     }
 
     #[test]
