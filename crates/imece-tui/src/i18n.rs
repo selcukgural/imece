@@ -246,6 +246,14 @@ pub struct Text {
     pub note_dropped: &'static str,
     pub no_notes: &'static str,
     pub notes_sent: &'static str,
+    /// `b` in a change that clashes with the checkout (record 108): the
+    /// hint, none to send back, a worker that can not hear it, the flash
+    /// when it went, the line above the change (HEAD, files, worker).
+    pub send_back: &'static str,
+    pub no_clash: &'static str,
+    pub back_gone: &'static str,
+    pub sent_back: &'static str,
+    pub clash_line: &'static str,
     /// `x` in a change: how many hunks are chosen of how many, none any
     /// more; the footer's `a x`.
     pub chosen: &'static str,
@@ -952,6 +960,8 @@ pub struct Text {
     pub ev_change_ready: &'static str,
     pub ev_applied: &'static str,
     pub ev_apply_failed: &'static str,
+    /// The same while what clashes can go back to the worker.
+    pub ev_apply_failed_back: &'static str,
     /// What stands for a model when the vendor's own default is used.
     pub default_model: &'static str,
     /// Message types, in `MsgKind::ALL` order.
@@ -1139,6 +1149,11 @@ pub const EN: Text = Text {
     note_dropped: "note taken away",
     no_notes: "no notes on this change yet: c writes one on the top line",
     notes_sent: "{} notes went to {}; the change went back to them",
+    send_back: "send back",
+    no_clash: "nothing to send back: git found no clash with your checkout (your own unstaged edits are yours to settle)",
+    back_gone: "{} has stopped: the change stays here",
+    sent_back: "the change went back to {} with what clashes",
+    clash_line: "✗ does not fit your checkout at {}: {} · b sends it back to {}",
     chosen: "{} of {} hunks chosen; a applies only them, the rest waits",
     unchosen: "no hunk chosen; a applies the whole change",
     apply_part: "apply · choose a hunk",
@@ -1838,6 +1853,7 @@ pub const EN: Text = Text {
     ev_change_ready: "{} finished: {} files, +{} −{} → waits for you",
     ev_applied: "you applied {}'s change ({} files) to the checkout, staged; worktree mark {}",
     ev_apply_failed: "{}'s change did not apply: {}",
+    ev_apply_failed_back: "{}'s change did not apply: {} · b in the change sends it back",
     default_model: "default model",
     kinds: [
         "assign", "ask", "answer", "inform", "handoff", "done", "blocked", "progress", "notice",
@@ -1988,8 +2004,8 @@ pub const EN: Text = Text {
         ),
         ("c  n", "note: a change's line, chosen words · send"),
         (
-            "x",
-            "in a change: choose the hunk at the top; a applies only the chosen",
+            "x  b",
+            "in a change: choose the top hunk for a · b: send back what clashed",
         ),
         ("w  R", "in a change: wrap long lines · R whole review"),
         ("space", ":pause / resume"),
@@ -2167,6 +2183,11 @@ pub const TR: Text = Text {
     note_dropped: "not kaldırıldı",
     no_notes: "bu değişiklikte henüz not yok: c en üstteki satıra bir tane yazar",
     notes_sent: "{} not {} adlı ajana gitti; değişiklik ona geri döndü",
+    send_back: "geri gönder",
+    no_clash: "geri gönderilecek bir şey yok: git checkout ile çakışma bulmadı (sahnelenmemiş kendi düzenlemelerin sana kalır)",
+    back_gone: "{} durdu: değişiklik burada kalıyor",
+    sent_back: "değişiklik, çakışan yerleriyle {} adlı ajana geri döndü",
+    clash_line: "✗ checkout'a ({}) uymuyor: {} · b onu {} adlı ajana geri gönderir",
     chosen: "{} / {} parça seçili; a yalnız onları uygular, kalanı bekler",
     unchosen: "seçili parça yok; a değişikliğin tamamını uygular",
     apply_part: "uygula · parça seç",
@@ -2886,6 +2907,7 @@ pub const TR: Text = Text {
     ev_change_ready: "{} bitirdi: {} dosya, +{} −{} → seni bekliyor",
     ev_applied: "{} değişikliğini ({} dosya) checkout'a uyguladın, stage'de; çalışma ağacı işareti {}",
     ev_apply_failed: "{} değişikliği uygulanamadı: {}",
+    ev_apply_failed_back: "{} değişikliği uygulanamadı: {} · değişiklikte b onu geri gönderir",
     default_model: "varsayılan model",
     kinds: [
         "görev",
@@ -3035,8 +3057,8 @@ pub const TR: Text = Text {
         ),
         ("c  n", "not: değişiklik satırı, kelimeler · gönder"),
         (
-            "x",
-            "değişiklikte: üstteki parçayı seç; a yalnız seçilenleri uygular",
+            "x  b",
+            "değişiklikte: a için üstteki parçayı seç · b: çakışanı geri gönder",
         ),
         ("w  R", "değişiklikte: satırları sar · R tüm inceleme"),
         ("space", ":pause durdur / devam"),
@@ -3540,6 +3562,10 @@ mod tests {
             (e.ev_change_ready, t.ev_change_ready),
             (e.ev_applied, t.ev_applied),
             (e.ev_apply_failed, t.ev_apply_failed),
+            (e.ev_apply_failed_back, t.ev_apply_failed_back),
+            (e.back_gone, t.back_gone),
+            (e.sent_back, t.sent_back),
+            (e.clash_line, t.clash_line),
             (e.in_change, t.in_change),
             (e.ran_clean, t.ran_clean),
             (e.ran_failed, t.ran_failed),

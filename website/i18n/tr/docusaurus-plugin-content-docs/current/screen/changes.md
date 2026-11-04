@@ -5,7 +5,7 @@ description: Bir işçinin değişikliğini (Δ) okumak - diff, dosyaları ve t�
 
 # Değişiklik görünümü
 
-Bir işçi `done` gönderdiğinde imece worktree'sini okur ve değişiklik SENİ BEKLEYEN'de `Δ` olarak sizi bekler. Onda `enter` (ya da sıradaki öge oysa `W`) değişiklik görünümünü salonun yerinde açar: bütün diff, üstünde o ağaçta ne çalıştığı. Kararı burada verirsiniz: `a` checkout'unuza uygular, stage'de; `r` geri gönderir; `n` satırlarındaki notlarınızla geri gönderir; `x` ve `a` yalnız seçtiğiniz parçaları uygular.
+Bir işçi `done` gönderdiğinde imece worktree'sini okur ve değişiklik SENİ BEKLEYEN'de `Δ` olarak sizi bekler. Onda `enter` (ya da sıradaki öge oysa `W`) değişiklik görünümünü salonun yerinde açar: bütün diff, üstünde o ağaçta ne çalıştığı. Kararı burada verirsiniz: `a` checkout'unuza uygular, stage'de; `r` geri gönderir; `n` satırlarındaki notlarınızla geri gönderir; `x` ve `a` yalnız seçtiğiniz parçaları uygular; `b` checkout'unuzla çakışanı geri gönderir.
 
 ```text
 ┌ DEĞİŞİKLİK · claude-1 · 3 dosya +41 −6 · parser boş dosyada hata döndürür ─────────────────┐
@@ -63,10 +63,23 @@ Eklenen ve silinen satırların kendi renkleri vardır; başlıklar öne çıkar
 | `n` | notları işçiye tek mesajda gönder; değişiklik geri döner |
 | `x` | en üstteki parçayı seç; `a` sonra yalnız seçili parçaları uygular |
 | `>` | en üstteki parçayı alıntılayarak işçiye yaz |
+| `b` | reddedilen bir uygulamadan sonra: değişikliği çakışan yerleriyle geri gönder; `r`'deki gibi geri döner |
 
 ### Uygulamak
 
 `a` uygulamayı yalnız başlatır: flaş sürdüğünü söyler, günlük nasıl bittiğini. Git imece'nin kendi iş parçacığında çalışır, ekran hiç beklemez. Yama `update-index --refresh` ardından `git apply --index` ile girer; bu, kendi stage'lenmemiş düzenlemeleriniz dışında bir nedenle başarısız olursa önce index'in bir kopyasına üç yönlü birleştirilir ve yalnız kopya temizse gerçekten uygulanır; böylece bir çakışma `checkout ile a, b dosyalarında çakışıyor` diye reddedilir ve hiçbir şey yarım uygulanmaz. Değişikliğin dokunduğu bir dosyadaki kendi stage'lenmemiş düzenlemeniz git'in sözleriyle reddedilir (`does not match index`): hiçbir birleştirme işinizin üstünden geçmez. Uygulamadan sonra worktree bir işaret olarak commit'lenir (yazar `imece`), böylece işçinin sonraki `done`'u yalnız ondan sonra geleni gösterir ve temiz bir worktree commit ettiğinizde HEAD'inizi izler. İşçi bunu sonraki prompt'unda öğrenir.
+
+### Bir çakışmayı geri göndermek
+
+Git bir değişikliği reddettiğinde imece parçalarından hangilerinin checkout'unuza uymadığını da bulur: index'inizin bir kopyası, uygulamadaki düz ve üç yönlü denemelerin aynısı, sizin hiçbir şeyinize dokunulmaz. Günlük satırı o zaman `· değişiklikte b onu geri gönderir` ile biter, değişiklik kırmızı bir satırın altında açılır ve altbilgide `b  geri gönder` görünür:
+
+```text
+ ✗ checkout'a (4f3a2c1) uymuyor: CHANGELOG.md · b onu claude-1 adlı ajana geri gönderir
+```
+
+`b` işçiye tek mesaj gönderir: HEAD'in kısa kimliği, ne yapacağı (worktree'sini değişikliği üstünde, commit'lenmemiş olarak o commit'e getirmek, çözmek, yeniden `done` göndermek) ve her çakışma dosyasının altında, `@@` satırı ve git'in sözleriyle. Checkout'unuzda stage'de olup commit edilmemiş bir dosya, onu gösteren komutla birlikte anılır. Öge `r`'deki gibi kapanır, günlük reddedildi der, worktree değişikliği tutar ve işçinin sonraki `done`'u yeni bir `Δ` olur. imece kendisi hiçbir şeyi çözmez ve worktree'yi taşımaz.
+
+Hiçbir şey çakışmıyorsa (kendi stage'lenmemiş düzenlemeleriniz bir uygulamayı durdurur ama hiçbir parçayla çakışmaz: commit'leyin ya da stash'leyin ve `a` tuşuna basın), işçi gitmiş ya da durmuşsa veya bütçe bitmişse `b` nedenini söyler ve `Δ`'yı olduğu gibi bırakır. Giden, son `a`'nın bulduğudur: checkout'unuz o zamandan beri ilerlediyse `a` tuşuna yeniden basın. En çok 200 parça dener, sonra bunu söyler.
 
 Reddedilir: o değişiklik uygulanırken ya da aynı işçinin daha yeni bir `done`'u hâlâ okunurken `a`.
 
@@ -115,7 +128,7 @@ Bir `done`, `claude-1 bitirdi: 3 dosya, +41 −6 → seni bekliyor` diye gelir; 
 
 ## Demo
 
-`--demo` aynı değişiklikleri kartlarından ve çalıştırmalarından yapar ve `a`, `r`, `n`, `x`, `>` ve `v` tuşlarını aynı şekilde alır (başarısızlığı göstermek için orada sekiz uygulamadan biri başarısız olur).
+`--demo` aynı değişiklikleri kartlarından ve çalıştırmalarından yapar ve `a`, `r`, `n`, `x`, `b`, `>` ve `v` tuşlarını aynı şekilde alır (başarısızlığı göstermek için orada sekiz uygulamadan biri başarısız olur).
 
 ## Ayrıca bakınız
 

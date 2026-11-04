@@ -97,7 +97,7 @@ imece kapalı düşer (fail closed): bir dosya, bir oturum ya da bir değişikli
 
 **Neden.** `a` checkout'unuzda `git apply --index` çalıştırır. Checkout'unuz yamanın altında ilerlediyse imece önce yamayı index'in bir kopyasına üç yollu birleştirir ve çakışırsa reddeder (`conflicts with the checkout in a, b`); aynı dosyada stage'lenmemiş düzenlemeleriniz varsa git'in kendi `does not match index` sözü olduğu gibi döner ve hiçbir birleştirme işinizin üstünden geçmez. Hiçbir şey asla yarım uygulanmaz: git'in çakışmadaki üç yollusu dosyalarda işaretler bırakırdı, bu yüzden denetimsiz hiç çalışmaz.
 
-**Ne yapmalı.** Dosyadaki kendi düzenlemelerinizi commit'leyin ya da stash'leyin ve `a` tuşuna yeniden basın; ya da bir notla `r` (`checkout src/csv.rs içinde ilerledi; worktree'ni rebase et`): temiz bir worktree işçinin sonraki isteminden önce HEAD'inizi izler, bu yüzden parçayı yeniden yapması söylenen bir işçi genellikle uyan bir yamayla döner. `x` uyan hunk'ları uygulamanıza ve kalanı geri göndermenize izin verir.
+**Ne yapmalı.** Dosyadaki kendi düzenlemelerinizi commit'leyin ya da stash'leyin ve `a` tuşuna yeniden basın. Commit'lerinizle ya da stage'dekilerle çakışıyorsa değişiklikte `b` onu uymayan parçalar ve git'in sözleriyle geri gönderir; ya da bir notla `r` (`checkout src/csv.rs içinde ilerledi; worktree'ni rebase et`): temiz bir worktree işçinin sonraki isteminden önce HEAD'inizi izler, bu yüzden parçayı yeniden yapması söylenen bir işçi genellikle uyan bir yamayla döner. `x` uyan hunk'ları uygulamanıza ve kalanı geri göndermenize izin verir.
 
 ### `a`, `reading` ya da `applying` ile reddedildi
 

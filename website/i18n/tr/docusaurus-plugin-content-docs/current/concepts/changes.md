@@ -60,6 +60,10 @@ altı satırı, fazlası varsa `… +N satır · R hepsini gösterir`; `R` tamam
 
 `a`, o değişiklik uygulanırken ya da işçinin daha yeni bir `done`'ı hâlâ okunurken reddedilir; `r`, uygulanırken reddedilir.
 
+## Bir çakışmayı geri göndermek
+
+Git bir değişikliği reddettiğinde imece hangi dosya ve parçaların uymadığını da bulur (index'inizin bir kopyasında, uygulamadaki düz ve üç yollu denemelerin aynısıyla). Değişiklik görünümünde `b` bunları işçiye tek mesajda gönderir: HEAD'in kısa kimliği, her biri için git'in sözleri ve ne yapacağı: worktree'sini değişikliği üstünde, commit'lenmemiş olarak o commit'e getirmek, çözmek, yeniden `done` göndermek. Değişiklik bir ret gibi geri döner: öge kapanır, worktree onu tutar, sonraki `done` yeni bir Δ olur. imece hiçbir şeyi çözmez. Kendi stage'lenmemiş düzenlemeleriniz hiçbir parçayla çakışmaz, bu yüzden onlar için hiçbir şey geri gitmez; işçi gitmiş ya da durmuşsa veya bütçe bitmişse Δ olduğu gibi kalır. Bkz. [değişiklik görünümü](../screen/changes.md).
+
 ## Reddetmek
 
 `r` öğeyi kapatır; değişiklik worktree'de kalır ve yazma satırı nedenini söylemeniz için `@claude-1 ` ile açılır. İşçi sonraki isteminde değişikliğin uygulanmadığını öğrenir.

@@ -8,6 +8,7 @@ use std::collections::{BTreeSet, HashMap, VecDeque};
 use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
 
+pub use imece_agent::worktree::{Clash, Clashes};
 use serde::{Deserialize, Serialize};
 
 pub type AgentId = usize;
@@ -2070,6 +2071,9 @@ pub struct World {
     /// What another vendor said of each waiting change, by worker
     /// (`:review`): only of the change that waits now.
     pub reviews: HashMap<AgentId, Review>,
+    /// What of a worker's waiting change did not fit the checkout, when
+    /// git last refused it (record 108). Memory only: `a` finds it again.
+    pub clashes: HashMap<AgentId, Clashes>,
     /// The worktrees no agent owns, as the engine last looked (`:tidy`).
     pub orphans: Orphans,
     /// The number the last message on the bus was given ([`MsgId`]).
@@ -2565,6 +2569,7 @@ impl World {
             paid: self.paid,
             suggested: None,
             reviews: Default::default(),
+            clashes: Default::default(),
             orphans: crate::model::Orphans::default(),
             messages: self.messages,
             sent: self.sent.clone(),
@@ -3001,6 +3006,22 @@ impl World {
         self.note(Event::ApplyFailed { agent: id, why });
     }
 
+    /// What git found of worker `id`'s change that does not fit the
+    /// checkout: kept while there is any, else what was kept goes. Nothing
+    /// clashing means nothing the worker can resolve.
+    pub fn change_clashed(&mut self, id: AgentId, clashes: Clashes) {
+        match clashes.hunks.is_empty() {
+            true => self.clashes.remove(&id),
+            false => self.clashes.insert(id, clashes),
+        };
+    }
+
+    /// What of worker `id`'s waiting change does not fit the checkout.
+    pub fn clashes_of(&self, id: AgentId) -> Option<&Clashes> {
+        self.change_of(id)?;
+        self.clashes.get(&id)
+    }
+
     /// The review of worker `id`'s change that waits, if one came.
     pub fn review_of(&self, id: AgentId) -> Option<&Review> {
         self.change_of(id)?;
@@ -3060,6 +3081,7 @@ impl World {
 
     fn forget_change(&mut self, id: AgentId) {
         self.reviews.remove(&id);
+        self.clashes.remove(&id);
         self.changes.retain(|c| c.agent != id);
         for i in &mut self.inbox {
             if i.kind == InboxKind::Change && i.agent == id {
@@ -3801,6 +3823,7 @@ mod tests {
             paid: 0,
             suggested: None,
             reviews: Default::default(),
+            clashes: Default::default(),
             orphans: crate::model::Orphans::default(),
             messages: 0,
             plans: Vec::new(),
@@ -5443,6 +5466,47 @@ mod tests {
             w.journal.last().unwrap().event,
             Event::Rejected { agent: 2 }
         ));
+    }
+
+    #[test]
+    fn what_clashes_is_kept_with_its_change_and_goes_with_it() {
+        let clashes = |files: &[&str]| Clashes {
+            hunks: (files.iter())
+                .map(|f| Clash {
+                    file: f.to_string(),
+                    ..Clash::default()
+                })
+                .collect(),
+            ..Clashes::default()
+        };
+        let mut w = crate::live::testing::team(2);
+        // No change waits: nothing to say, whatever was found.
+        w.change_clashed(1, clashes(&["a"]));
+        assert_eq!(w.clashes_of(1), None);
+        w.change_ready(change(1, "Fix", &[("a", 1, 0)]));
+        assert_eq!(w.clashes_of(1), None, "of the older change, if any");
+        w.change_clashed(1, clashes(&["a"]));
+        assert_eq!(w.clashes_of(1), Some(&clashes(&["a"])));
+        assert_eq!(w.clashes_of(2), None);
+        // Found again, it is what was found last; nothing found: none.
+        w.change_clashed(1, clashes(&["b"]));
+        assert_eq!(w.clashes_of(1), Some(&clashes(&["b"])));
+        w.change_clashed(1, Clashes::default());
+        assert_eq!(w.clashes_of(1), None);
+        assert!(w.clashes.is_empty());
+        // What was found goes with its change: rejected, applied, or
+        // when a newer one takes its place.
+        let gone: [fn(&mut World); 3] = [
+            |w| w.change_rejected(1),
+            |w| w.change_applied(1, "abc".into()),
+            |w| w.change_ready(change(1, "Again", &[("a", 2, 0)])),
+        ];
+        for gone in gone {
+            w.change_ready(change(1, "Fix", &[("a", 1, 0)]));
+            w.change_clashed(1, clashes(&["a"]));
+            gone(&mut w);
+            assert!(w.clashes.is_empty());
+        }
     }
 
     #[test]

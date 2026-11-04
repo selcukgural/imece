@@ -29,7 +29,7 @@ WAITING FOR YOU is the top side panel of the salon. Only decisions that need you
 
 The row carries the time, `later ·` when you put it off, and the project's name when several are open. An item of another day carries its date.
 
-A change (`Δ`) can also go back to its worker with notes (`n` in the diff) or be applied in part (`x` then `a`); see [the change view](changes.md). An item keeps the card its agent worked on when it came, so it shows on that [card's screen](cards.md) too.
+A change (`Δ`) can also go back to its worker with notes (`n` in the diff), with what clashes after a refused apply (`b`), or be applied in part (`x` then `a`); see [the change view](changes.md). An item keeps the card its agent worked on when it came, so it shows on that [card's screen](cards.md) too.
 
 ## Keys
 

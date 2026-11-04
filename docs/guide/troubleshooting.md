@@ -97,7 +97,7 @@ imece fails closed: when a file, a session or a change is not what it expects, i
 
 **Why.** `a` runs `git apply --index` in your checkout. When your checkout moved on under the patch, imece merges it three-way into a copy of the index first and refuses when that conflicts (`conflicts with the checkout in a, b`); when you have unstaged edits in the same file, git's own `does not match index` is returned as it is and no merge goes over your work. Nothing is half applied, ever: git's three-way on a conflict would leave markers in files, so it never runs unchecked.
 
-**What to do.** Commit or stash your own edits to the file and press `a` again; or `r` with a note (`the checkout moved on in src/csv.rs; rebase your worktree`): a clean worktree follows your HEAD before the worker's next prompt, so a worker told to redo the part usually comes back with a patch that fits. `x` lets you apply the hunks that do fit and send the rest back.
+**What to do.** Commit or stash your own edits to the file and press `a` again. When it clashes with your commits or what is staged, `b` in the change sends it back with the hunks that do not fit and git's words; or `r` with a note (`the checkout moved on in src/csv.rs; rebase your worktree`): a clean worktree follows your HEAD before the worker's next prompt, so a worker told to redo the part usually comes back with a patch that fits. `x` lets you apply the hunks that do fit and send the rest back.
 
 ### `a` refused with `reading` or `applying`
 

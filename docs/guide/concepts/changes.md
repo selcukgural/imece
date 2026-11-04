@@ -60,6 +60,10 @@ six rows of it, `… +N lines · R shows all` when there is more; `R` shows it w
 
 `a` is refused while that change is being applied, or while a newer `done` of the worker is still being read; `r` is refused while it is being applied.
 
+## Send a clash back
+
+When git refuses a change, imece also finds which files and hunks do not fit (on a copy of your index, the same plain and three-way tries as the apply). `b` in the change view sends them to the worker in one message, with HEAD's short id, git's words on each, and what to do: bring its worktree up to that commit with its change on top, still not committed, resolve, send `done` again. The change goes back as a reject does: the item closes, the worktree keeps it, the next `done` is a new Δ. imece resolves nothing. Your own unstaged edits clash with no hunk, so nothing goes back for them; a worker that has gone or stopped, or a spent budget, leaves the Δ as it is. See [the change view](../screen/changes.md).
+
 ## Reject
 
 `r` closes the item; the change stays in the worktree, and the composer opens `@claude-1 ` for you to say why. The worker hears at its next prompt that the change was not applied.

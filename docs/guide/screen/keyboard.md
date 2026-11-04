@@ -130,7 +130,7 @@ The focus's `folder` line says where the agent works: the checkout for a leader,
 | `[`  `]` | in a change: previous / next file · in a conversation: turn |
 | `>` | in a change: the hunk at the top, quoted in a message to its worker |
 | `c`  `n` | in a change: a note on the top line · send the notes, it goes back (in a conversation: on the words chosen, above) |
-| `x` | in a change: choose the hunk at the top; `a` applies only the chosen |
+| `x`  `b` | in a change: choose the hunk at the top; `a` applies only the chosen · one git refused: `b` sends it back with what clashes |
 | `w` | in a change: wrap long lines · cut them again |
 | `R` | in a change: its review whole · its first rows again ([`:review`](../reference/commands.md#review-onoff)) |
 | `h` `l`  `←` `→` | in a change: fold the file at hand to its header · open it |

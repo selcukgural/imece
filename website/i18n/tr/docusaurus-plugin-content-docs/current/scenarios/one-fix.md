@@ -137,7 +137,7 @@ Boru komutu rutin olmaktan çıkarır. Komut bütünüyle gösterilir, asla mark
  14:13 ✓ claude-1 değişikliğini (1 dosya) checkout'a uyguladın, stage'de; çalışma ağacı işareti 3f2a9c1
 ```
 
-Uygulamak, çalışma kopyanızda `git apply --index` demektir: dosyalar değişir ve stage'e girer, hiçbir şey commit edilmez. Aynı satırları siz de düzenlemiş olsaydınız uygulama git'in sözleriyle reddedilir ve hiçbir şey yarım kalmaz; çalışma kopyanız yalnızca ilerlemiş olsaydı yama önce indeksin bir kopyasında üç yollu birleştirilir ve yalnızca temiz çıkarsa uygulanır.
+Uygulamak, çalışma kopyanızda `git apply --index` demektir: dosyalar değişir ve stage'e girer, hiçbir şey commit edilmez. Aynı satırları siz de düzenlemiş olsaydınız uygulama git'in sözleriyle reddedilir ve hiçbir şey yarım kalmaz; çalışma kopyanız yalnızca ilerlemiş olsaydı yama önce indeksin bir kopyasında üç yollu birleştirilir ve yalnızca temiz çıkarsa uygulanır. Çakıştığında reddedilen değişiklik kırmızı bir satırla açılır ve `b` onu uymayan parçalar ve git'in sözleriyle işçiye geri gönderir; işçi worktree'sini günceller, çözer ve yeniden `done` gönderir ([değişiklik görünümü](../screen/changes.md)).
 
 İşaret: işçinin worktree'si `3f2a9c1`de `imece <imece@localhost>` olarak commit edilir, dosyalar olduğu gibi bırakılır. Böylece işçinin sonraki `done`u yalnızca sonrasında geleni gösterir ve satırdaki `+14 −3` sıfırlanır. Sonraki isteminde işçiye şu söylenir: "The person applied your change (parse() returns Ok(Tree::empty()) on no tokens) to their checkout. Your worktree is committed at 3f2a9c1 as a mark of that; your files are as you left them. Go on from here with the next task."
 

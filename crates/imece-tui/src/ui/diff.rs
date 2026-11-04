@@ -2,6 +2,7 @@
 //! for the person to read before they apply it to their checkout, under
 //! the runs that ran on exactly it.
 
+use imece_agent::worktree::CLASH_TRIES;
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::text::{Line, Span};
@@ -211,6 +212,56 @@ pub fn notes_message(patch: &str, notes: &[(usize, &str)]) -> String {
     out
 }
 
+/// The message a change that clashes with the checkout goes back to its
+/// worker in: what to do, then each part that does not fit with git's
+/// words on it, cleaned. `solo`: nobody sends a solo's `done`, its turn's
+/// end shows what it holds.
+pub fn clash_message(c: &Clashes, solo: bool) -> String {
+    let again = if solo {
+        "end your turn"
+    } else {
+        "send done again"
+    };
+    let mut out = format!(
+        "Your change does not apply to the checkout, whose HEAD is {}.\n\nNothing of it reached \
+         the checkout, and it stays in your worktree. Bring your worktree up to that commit with \
+         your change on top, still not committed (imece reads your change against your HEAD), \
+         resolve what is listed here and {again}.",
+        clean(&c.head)
+    );
+    if !c.staged.is_empty() {
+        out.push_str(&format!(
+            "\n\nThe checkout has changes staged and not committed, which that commit does not \
+             show, in {}. Read them with `git -C {} diff --cached` and fit yours to them.",
+            clean(&c.staged.join(", ")),
+            clean(&c.checkout)
+        ));
+    }
+    for clash in &c.hunks {
+        let file = clean(&clash.file);
+        let why = clean(&clash.why);
+        out.push_str(&match &clash.hunk {
+            Some(hunk) => format!("\n\n{file}\n```diff\n{}\n```\n{why}", clean(hunk)),
+            None => format!("\n\n{file}\n{why}"),
+        });
+    }
+    if c.cut {
+        out.push_str(&format!(
+            "\n\nimece stopped looking after {CLASH_TRIES} hunks: there may be more."
+        ));
+    }
+    out
+}
+
+/// The line above a change that clashes with the checkout: where, and
+/// that `b` sends it back to `name`.
+fn clash_line(lang: Lang, c: &Clashes, name: &str) -> Line<'static> {
+    let mut files: Vec<&str> = c.hunks.iter().map(|h| h.file.as_str()).collect();
+    files.dedup();
+    let said = fill(lang.text().clash_line, &[&c.head, &files.join(", "), name]);
+    Line::from(Span::styled(format!(" {said}"), fg(pal().bad)))
+}
+
 fn line_style(l: &str) -> Style {
     if l.starts_with("diff --git ") {
         bold(pal().strong)
@@ -267,7 +318,10 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App, id: AgentId) {
         .border_style(fg(vendor_color(a.vendor)));
     let inner = block.inner(area);
     f.render_widget(block, area);
-    let ran = run_lines(app.lang, &c.runs);
+    let mut ran = run_lines(app.lang, &c.runs);
+    if let Some(clashes) = w.clashes_of(id) {
+        ran.insert(0, clash_line(app.lang, clashes, &a.name));
+    }
     let review = review_lines(
         app.lang,
         w.review_of(id),
@@ -615,6 +669,111 @@ mod tests {
             text: text.into(),
             cost: 0,
         }
+    }
+
+    fn clashes() -> Clashes {
+        let clash = |file: &str, hunk: Option<&str>, why: &str| Clash {
+            file: file.into(),
+            hunk: hunk.map(str::to_string),
+            why: why.into(),
+        };
+        Clashes {
+            checkout: "/home/me/repo".into(),
+            head: "abc1234".into(),
+            hunks: vec![
+                clash("a.rs", Some("@@ -1 +1 @@ fn a"), "patch failed: a.rs:1"),
+                clash("a.rs", Some("@@ -9 +9 @@"), "patch failed: a.rs:9"),
+                clash("b.png", None, "b.png: patch does not apply"),
+            ],
+            staged: Vec::new(),
+            cut: false,
+        }
+    }
+
+    #[test]
+    fn the_message_says_what_to_do_and_what_does_not_fit() {
+        let got = clash_message(&clashes(), false);
+        let (head, rest) = got.split_once("\n\n").unwrap();
+        assert_eq!(
+            head,
+            "Your change does not apply to the checkout, whose HEAD is abc1234."
+        );
+        assert!(
+            rest.starts_with(
+                "Nothing of it reached the checkout, and it stays in your worktree. Bring your \
+                 worktree up to that commit with your change on top, still not committed (imece \
+                 reads your change against your HEAD), resolve what is listed here and send done \
+                 again.\n\n"
+            ),
+            "{rest}"
+        );
+        assert!(
+            got.ends_with(
+                "\n\na.rs\n```diff\n@@ -1 +1 @@ fn a\n```\npatch failed: a.rs:1\
+                 \n\na.rs\n```diff\n@@ -9 +9 @@\n```\npatch failed: a.rs:9\
+                 \n\nb.png\nb.png: patch does not apply"
+            ),
+            "{got}"
+        );
+        assert!(!got.contains("staged") && !got.contains("stopped looking"));
+        // A solo is not told to send done.
+        let solo = clash_message(&clashes(), true);
+        assert!(solo.contains("listed here and end your turn."), "{solo}");
+        assert!(!solo.contains("send done"), "{solo}");
+    }
+
+    #[test]
+    fn the_message_says_what_is_staged_and_where_it_stopped_looking() {
+        let got = clash_message(
+            &Clashes {
+                staged: vec!["a.rs".into(), "c.rs".into()],
+                cut: true,
+                ..clashes()
+            },
+            false,
+        );
+        assert!(
+            got.contains(
+                "\n\nThe checkout has changes staged and not committed, which that commit does \
+                 not show, in a.rs, c.rs. Read them with `git -C /home/me/repo diff --cached` and \
+                 fit yours to them.\n\n"
+            ),
+            "{got}"
+        );
+        assert!(
+            got.ends_with("\n\nimece stopped looking after 200 hunks: there may be more."),
+            "{got}"
+        );
+    }
+
+    #[test]
+    fn what_git_or_an_agent_wrote_reaches_the_message_and_the_line_cleaned() {
+        let bad = "x\u{1b}[31my";
+        let c = Clashes {
+            checkout: bad.into(),
+            head: bad.into(),
+            hunks: vec![Clash {
+                file: bad.into(),
+                hunk: Some(bad.into()),
+                why: bad.into(),
+            }],
+            staged: vec![bad.into()],
+            cut: false,
+        };
+        let got = clash_message(&c, false);
+        assert!(!got.contains('\u{1b}'), "{got:?}");
+        assert_eq!(got.matches(&clean(bad)).count(), 6, "{got:?}");
+        let line = super::super::line_text(&clash_line(Lang::En, &c, bad));
+        assert!(!line.contains('\u{1b}'), "{line:?}");
+    }
+
+    #[test]
+    fn the_line_above_a_clash_names_each_file_once() {
+        let line = super::super::line_text(&clash_line(Lang::En, &clashes(), "claude-2"));
+        assert_eq!(
+            line,
+            "✗ does not fit your checkout at abc1234: a.rs, b.png · b sends it back to claude-2"
+        );
     }
 
     #[test]

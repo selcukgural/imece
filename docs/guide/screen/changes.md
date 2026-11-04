@@ -5,7 +5,7 @@ description: Reading a worker's change (Δ) - the diff, its files and kinds, mov
 
 # The change view
 
-When a worker sends `done`, imece reads its worktree and the change waits for you as `Δ` in WAITING FOR YOU. `enter` on it (or `W` when it is the next item) opens the change view in the salon's place: the whole diff, with what ran on that tree above it. You decide here: `a` applies it to your checkout, staged; `r` sends it back; `n` sends it back with your notes on its lines; `x` and `a` apply only the hunks you chose.
+When a worker sends `done`, imece reads its worktree and the change waits for you as `Δ` in WAITING FOR YOU. `enter` on it (or `W` when it is the next item) opens the change view in the salon's place: the whole diff, with what ran on that tree above it. You decide here: `a` applies it to your checkout, staged; `r` sends it back; `n` sends it back with your notes on its lines; `x` and `a` apply only the hunks you chose; `b` sends back one that clashed with your checkout.
 
 ```text
 ┌ CHANGE · claude-1 · 3 files +41 −6 · parser returns an error on an empty file ─────────────┐
@@ -63,10 +63,23 @@ Added and removed lines have their own colours; headers stand out. Every line go
 | `n` | send the notes to the worker in one message; the change goes back |
 | `x` | choose the hunk at the top; `a` then applies only the chosen hunks |
 | `>` | write to the worker with the hunk at the top quoted |
+| `b` | after a refused apply: send the change back with what clashes; it goes back as with `r` |
 
 ### Applying
 
 `a` only starts the apply: the flash says it is under way and the journal says how it went. Git runs on a thread of imece's own, so the screen never waits. The patch goes in with `git apply --index` after `update-index --refresh`; when that fails for a reason other than your own unstaged edits, it is merged three-way into a copy of the index first and applied for real only when the copy is clean, so a conflict is refused as `conflicts with the checkout in a, b` and nothing is half applied. Your own unstaged edit to a file the change touches is refused with git's words (`does not match index`): no merge goes over your work. After the apply the worktree is committed as a mark (author `imece`), so the worker's next `done` shows only what came after, and a clean worktree follows your HEAD once you commit. The worker hears of it at its next prompt.
+
+### Sending a clash back
+
+When git refuses a change, imece also finds which of its hunks do not fit your checkout: a copy of your index, the same plain and three-way tries as the apply, nothing of yours touched. The journal line then ends `· b in the change sends it back`, the change opens under a red line, and the footer has `b  send back`:
+
+```text
+ ✗ does not fit your checkout at 4f3a2c1: CHANGELOG.md · b sends it back to claude-1
+```
+
+`b` sends the worker one message: HEAD's short id, what to do (bring its worktree up to that commit with its change on top, still not committed, resolve, send `done` again), and each clash under its file, with its `@@` line and git's words. A file staged in your checkout and not committed is named, with the command that shows it. The item closes as with `r`, the journal says rejected, the worktree keeps the change, and the worker's next `done` is a new `Δ`. imece resolves nothing itself and does not move the worktree.
+
+`b` says why and leaves the `Δ` as it is when nothing clashes (your own unstaged edits stop an apply and clash with no hunk: commit or stash them and press `a`), when the worker has gone or stopped, or when the budget is spent. What goes is what the last `a` found: press `a` again if your checkout has moved since. It tries at most 200 hunks and then says so.
 
 Refused: `a` while that change is being applied, or while a newer `done` of the same worker is still being read.
 
@@ -115,7 +128,7 @@ A `done` arrives as `claude-1 finished: 3 files, +41 −6 → waits for you`; an
 
 ## Demo
 
-`--demo` makes the same changes from its cards and runs, and takes `a`, `r`, `n`, `x`, `>` and `v` the same way (one apply in eight fails there, to show the failure).
+`--demo` makes the same changes from its cards and runs, and takes `a`, `r`, `n`, `x`, `b`, `>` and `v` the same way (one apply in eight fails there, to show the failure).
 
 ## See also
 

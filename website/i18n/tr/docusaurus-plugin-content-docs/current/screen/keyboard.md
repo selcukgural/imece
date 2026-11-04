@@ -130,7 +130,7 @@ Odağın `klasör` satırı ajanın nerede çalıştığını söyler: lider iç
 | `[`  `]` | değişiklikte: önceki / sonraki dosya · konuşmada: söz sırası |
 | `>` | değişiklikte: üstteki parça, işçisine bir mesajda alıntı |
 | `c`  `n` | değişiklikte: üstteki satıra not · notları gönder, geri döner |
-| `x` | değişiklikte: üstteki parçayı seç; `a` yalnız seçilenleri uygular |
+| `x`  `b` | değişiklikte: üstteki parçayı seç; `a` yalnız seçilenleri uygular · git'in reddettiği değişiklik: `b` çakışan yerleriyle geri gönderir |
 | `w` | değişiklikte: uzun satırları sar · yine kes |
 | `R` | değişiklikte: incelemesinin tamamı · yine ilk satırları ([`:review`](../reference/commands.md#review-onoff)) |
 | `h` `l`  `←` `→` | değişiklikte: eldeki dosyayı başlığına katla · aç |

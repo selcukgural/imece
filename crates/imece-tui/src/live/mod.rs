@@ -465,6 +465,8 @@ enum GitDone {
         mark: io::Result<String>,
         /// How many hunks were applied, when only some were.
         part: Option<usize>,
+        /// What of the change does not fit, when `applied` failed.
+        clashes: Option<io::Result<worktree::Clashes>>,
     },
     Placed {
         agent: AgentId,
@@ -814,6 +816,7 @@ pub fn world(o: Options, present: &[(Vendor, bool)]) -> Result<(World, Live), St
                 research_queue: Default::default(),
                 plans: Vec::new(),
                 changes: Vec::new(),
+                clashes: Default::default(),
                 paid: 0,
                 suggested: None,
                 reviews: Default::default(),
