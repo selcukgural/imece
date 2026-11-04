@@ -5,7 +5,13 @@ own for a person's instructions (Claude Code's `~/.claude/CLAUDE.md`,
 Codex's `~/.codex/AGENTS.md`, Gemini's `~/.gemini/GEMINI.md`), and
 imece's starts promise none of them: Claude runs `--restricted` (no user
 settings), Gemini in imece's private directory, Codex on the person's own
-`~/.codex`; whether each vendor still reads its own file was not probed.
+`~/.codex`. Whether each vendor still reads its own file was probed on
+2026-11-04 (Claude Code 2.1.318, Codex 0.165.0, Gemini CLI 0.65.0):
+Claude under `--restricted` does not, neither `~/.claude/CLAUDE.md` nor a
+project's (and `--setting-sources` does not bring them back); Codex reads
+`~/.codex/AGENTS.md` and Gemini `~/.gemini/GEMINI.md` under standard and
+open alike, and Gemini also a `GEMINI.md` at the top of its included
+directory.
 A person with three vendors would keep three files in step anyway. So
 imece reads one of its own, the same for every vendor:
 `instructions.md` in its configuration directory, where the key file

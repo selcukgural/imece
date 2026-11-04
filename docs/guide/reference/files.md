@@ -121,7 +121,7 @@ A session is resumed from what its vendor kept; imece only remembers the id (`ag
 | Codex | `$CODEX_HOME` or `~/.codex`, `sessions/YYYY/MM/DD/rollout-<time>-<id>.jsonl` | the thread's rollout, kept because imece starts threads non-ephemeral; `history.persistence="none"` keeps imece's turns out of Codex's global message log. Codex loads your own `~/.codex` config (a private home was rejected: no login) |
 | Gemini CLI | `$GEMINI_CLI_HOME` or `~/.gemini`, `tmp/<name>/chats/session-<time>-<id8>.jsonl` | `<name>` comes from Gemini's registry `projects.json`, keyed by the private directory; a second, empty `session-*.jsonl` per start is Gemini's own stray; at most 50 history messages per chat |
 
-Your own `~/.claude/CLAUDE.md`, `~/.gemini/GEMINI.md` and user-level hooks still apply where the vendor loads them whatever the directory; `--confine open` loads your whole setup.
+Which of your own files a session reads depends on the vendor. Claude Code under standard and strict reads none: `--restricted` drops `~/.claude/CLAUDE.md`, your commands and your settings along with the repository's files, and imece passes on only the repository's notes above. Codex reads `~/.codex/AGENTS.md` and Gemini reads `~/.gemini/GEMINI.md` at every level, and Gemini's user-level hooks still apply. `--confine open` loads your whole setup. What should reach every vendor at every level goes in imece's own `instructions.md`, in its configuration directory.
 
 ## What `--fresh` and `:forget` remove
 
