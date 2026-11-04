@@ -7409,7 +7409,7 @@ impl App {
 
     /// `A` on an ask: yes from now on to its commands for its project
     /// (`Live::always`); the ask and the project's others they cover go
-    /// on. What cannot have one is said, and nothing is decided.
+    /// on. What is not a command is said, and nothing is decided.
     fn answer_always(&mut self) {
         if let Some(item) = self.ask_at_hand() {
             self.answer_always_to(item);
@@ -7476,7 +7476,8 @@ impl App {
 
     /// `:allow [PROGRAM [WORD]]`: the project at hand's standing yes, or
     /// a rule added to it (the project's open asks it covers go on) or,
-    /// named again, taken out.
+    /// named again, taken out; a yes to one whole line (`A`) is named by
+    /// that line, and only taken out.
     fn allow(&mut self, arg: &str) {
         let t = self.lang.text();
         let p = self.current_project();
@@ -7494,7 +7495,15 @@ impl App {
         if self.viewing_archive() {
             return self.read_only();
         }
-        let rule = match standing::named(arg) {
+        // A line as it is, or as the list shows it.
+        let arg = arg.trim();
+        let shown = (arg.strip_prefix('`')).and_then(|a| a.strip_suffix('`'));
+        let line = [Some(arg), shown]
+            .into_iter()
+            .flatten()
+            .map(Standing::exactly)
+            .find(|r| self.world.projects[p].allowed.contains(r));
+        let rule = match line.map_or_else(|| standing::named(arg), Ok) {
             Ok(rule) => rule,
             Err(why) => return self.flash(self.standing_why(&why)),
         };
@@ -8586,6 +8595,19 @@ pub(crate) mod tests {
         assert_eq!(app.zoomed_agent(), None);
         app.zoom = Zoom::None;
         assert_eq!(app.zoomed_agent(), None);
+        // What a shell reads more of: a yes to that line, on a focus too.
+        app.world.asks_you(one, "Bash: rm -rf dist > log");
+        app.zoom = Zoom::Focus(one);
+        app.on_key(key(KeyCode::Char('A')));
+        assert!(app.archives.is_none());
+        assert_eq!(
+            flash(&app),
+            Some(format!(
+                "{}: yes from now on to `rm -rf dist > log`",
+                app.world.projects[p].name
+            ))
+        );
+        assert_eq!(app.focus_ask(one), None);
         // An edit can have no yes from now on: said, nothing decided.
         app.world.asks_you(one, "Edit: package.json");
         app.zoom = Zoom::Focus(one);
@@ -10846,6 +10868,7 @@ pub(crate) mod tests {
             &[Standing {
                 program: "make".into(),
                 sub: None,
+                whole: false,
             }],
         );
         let make = app
@@ -10863,6 +10886,7 @@ pub(crate) mod tests {
             &Standing {
                 program: "make".into(),
                 sub: None,
+                whole: false,
             },
         );
         // :allow adds by name, again takes it out; a bad name is said.
@@ -10886,6 +10910,35 @@ pub(crate) mod tests {
         app.command("allow a && b");
         assert!(flash(&app).starts_with("this line runs more than plain commands"));
         assert_eq!(app.world.projects[p].allowed.len(), 1);
+        // A in waiting for you on a line no rule can hold: that line alone,
+        // its ask goes on; `:allow` with the line, as listed or bare, takes
+        // it back, and never adds one.
+        app.world.asks_you(one, "Bash: echo `id`");
+        app.pane = Pane::Inbox;
+        let at = |app: &App| {
+            (app.inbox_rows().iter()).position(|&i| app.world.inbox[i].detail == "Bash: echo `id`")
+        };
+        app.inbox_sel = at(&app).unwrap();
+        app.on_key(key(KeyCode::Char('A')));
+        assert_eq!(
+            flash(&app),
+            format!("{name}: yes from now on to `echo `id``")
+        );
+        assert_eq!(at(&app), None, "it went on");
+        let line = Standing::exactly("echo `id`");
+        assert!(app.world.projects[p].allowed.contains(&line));
+        app.command("allow echo `id`");
+        assert_eq!(
+            flash(&app),
+            format!("{name}: no yes from now on to `echo `id`` any more")
+        );
+        assert!(!app.world.projects[p].allowed.contains(&line));
+        app.command("allow echo `id`");
+        assert!(flash(&app).starts_with("this line runs more than plain commands"));
+        assert!(!app.world.projects[p].allowed.contains(&line));
+        app.world.stand(p, std::slice::from_ref(&line));
+        app.command("allow `echo `id``");
+        assert!(!app.world.projects[p].allowed.contains(&line), "as listed");
         // A in waiting for you on something that is not an ask, or
         // elsewhere: the archives, as before.
         app.pane = Pane::Salon;
