@@ -1597,6 +1597,20 @@ mod tests {
         });
         assert!(came, "a call");
         assert!(answer.try_recv().is_ok(), "answered");
+        // A check's end by itself, and with a setup's at once.
+        let came = says(&mut live, &mut w, |live| {
+            live.check_tx
+                .send((1, "t".into(), Err("no".into())))
+                .unwrap();
+        });
+        assert!(came, "a check");
+        let came = says(&mut live, &mut w, |live| {
+            live.setup_tx.send((1, Err("no".into()))).unwrap();
+            live.check_tx
+                .send((1, "t".into(), Err("no".into())))
+                .unwrap();
+        });
+        assert!(came, "a setup and a check");
         assert!(!says(&mut live, &mut w, |_| {}), "and quiet again");
     }
 
