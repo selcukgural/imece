@@ -385,7 +385,7 @@ pub(super) fn sent(live: &mut Live, w: &mut World, from: AgentId, args: &Value) 
 }
 
 /// A helper of worker `parent`, as `hire` would add it; its id.
-pub(super) fn with_helper(w: &mut World, parent: AgentId) -> AgentId {
+pub(crate) fn with_helper(w: &mut World, parent: AgentId) -> AgentId {
     let id = w.agents.len();
     let name = format!(
         "{}.{}",

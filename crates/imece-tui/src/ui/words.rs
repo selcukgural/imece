@@ -1732,6 +1732,77 @@ mod tests {
     }
 
     #[test]
+    fn what_a_change_cost_is_said_in_dollars_time_and_rounds() {
+        let w = crate::live::testing::team(1);
+        let s = |cost, ticks, rounds| Spend {
+            cost,
+            ticks,
+            rounds,
+        };
+        assert_eq!(spend(Lang::En, &s(8_400, 144, 1)), "$0.84 · 12 min");
+        assert_eq!(
+            spend(Lang::En, &s(12_000, 300, 3)),
+            "$1.20 · 25 min · 3 rounds"
+        );
+        assert_eq!(
+            spend(Lang::En, &s(100, 5, 1)),
+            "$0.01 · 25 s",
+            "seconds under a minute"
+        );
+        assert_eq!(spend(Lang::En, &s(100, 11, 1)), "$0.01 · 55 s");
+        assert_eq!(
+            spend(Lang::En, &s(100, 12, 1)),
+            "$0.01 · 1 min",
+            "from a minute"
+        );
+        assert_eq!(
+            spend(Lang::En, &s(0, 1_500, 2)),
+            "$0.00 · 2 h 5 min · 2 rounds"
+        );
+        assert_eq!(spend(Lang::Tr, &s(12_000, 300, 3)), "$1.20 · 25 dk · 3 tur");
+        assert_eq!(spend(Lang::Tr, &s(100, 5, 1)), "$0.01 · 25 sn");
+        let say = |e: Event| event(Lang::En, &w, &e);
+        assert_eq!(
+            say(Event::ChangeReady {
+                agent: 1,
+                files: 2,
+                added: 3,
+                removed: 1,
+                spend: Some(s(8_400, 144, 1)),
+            }),
+            "claude-1 finished: 2 files, +3 −1 · $0.84 · 12 min → waits for you"
+        );
+        assert_eq!(
+            say(Event::ChangeReady {
+                agent: 1,
+                files: 2,
+                added: 3,
+                removed: 1,
+                spend: None,
+            }),
+            "claude-1 finished: 2 files, +3 −1 → waits for you"
+        );
+        assert_eq!(
+            say(Event::ChangeCost {
+                agent: 1,
+                spend: s(8_400, 144, 2),
+            }),
+            "claude-1's change cost $0.84 · 12 min · 2 rounds"
+        );
+        assert_eq!(
+            event(
+                Lang::Tr,
+                &w,
+                &Event::ChangeCost {
+                    agent: 1,
+                    spend: s(8_400, 144, 1),
+                }
+            ),
+            "claude-1 değişikliği $0.84 · 12 dk tuttu"
+        );
+    }
+
+    #[test]
     fn the_check_s_lines_say_how_it_went_and_mark_the_change_s_row() {
         let w = crate::live::testing::team(1);
         let say = |e: Event| event(Lang::En, &w, &e);

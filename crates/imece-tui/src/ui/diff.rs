@@ -1401,6 +1401,24 @@ diff --git a/c.rs b/c.rs
     }
 
     #[test]
+    fn what_the_change_cost_stands_dim_above_its_files_once_known() {
+        assert!(spend_line(Lang::En, None).is_none());
+        let s = Spend {
+            cost: 8_400,
+            ticks: 144,
+            rounds: 1,
+        };
+        let line = spend_line(Lang::En, Some(s)).unwrap();
+        assert_eq!(
+            texts(std::slice::from_ref(&line)),
+            ["cost · $0.84 · 12 min"]
+        );
+        assert_eq!(line.spans[0].style, dim());
+        let line = spend_line(Lang::Tr, Some(s)).unwrap();
+        assert_eq!(texts(&[line]), ["maliyet · $0.84 · 12 dk"]);
+    }
+
+    #[test]
     fn the_check_s_lines_say_how_it_stands_in_its_colour() {
         let lines = |check: &Check| check_lines(Lang::En, check);
         let ran = |ok: bool, lines: &[&str]| {

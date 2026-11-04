@@ -5019,6 +5019,26 @@ mod tests {
     }
 
     #[test]
+    fn a_change_s_line_ends_with_what_it_cost_once_known() {
+        let mut app = app_after(1, 4, 50, Lang::En);
+        app.world.inbox.clear();
+        app.world.change_ready(a_change(1));
+        let open = app.world.open_inbox();
+        let line = inbox_line(&app, *open.last().unwrap());
+        let last = line.spans.last().unwrap();
+        assert!(!last.content.contains('$'), "unsettled: {}", last.content);
+        app.world.changes[0].spend = Some(Spend {
+            cost: 8_400,
+            ticks: 144,
+            rounds: 2,
+        });
+        let line = inbox_line(&app, *open.last().unwrap());
+        let last = line.spans.last().unwrap();
+        assert_eq!(last.content, " · $0.84 · 12 min · 2 rounds");
+        assert_eq!(last.style, dim());
+    }
+
+    #[test]
     fn a_change_s_line_starts_with_how_the_check_stands() {
         let mut app = app_after(1, 4, 50, Lang::En);
         app.world.inbox.clear();

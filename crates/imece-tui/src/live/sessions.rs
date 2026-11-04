@@ -1395,6 +1395,79 @@ mod tests {
         (w, live, helper, heard)
     }
 
+    #[test]
+    fn a_prompt_opens_the_round_a_change_is_costed_by_and_the_turn_s_end_settles_it() {
+        let (mut w, mut live, helper, _) = helped();
+        w.tick = 40;
+        w.agents[1].cost = 700;
+        live.prompt(&mut w, 1, "fix it".into(), None).unwrap();
+        assert_eq!(w.agents[1].task.round, Some((700, 40)));
+        assert_eq!(
+            w.agents[helper].task.round, None,
+            "its own prompt opens its own"
+        );
+        // Its done mid-turn: the change waits unsettled; the turn's end
+        // (Claude Code's cost in millionths of a dollar) settles it. The
+        // step reads the clock: 12 ticks on, or 13 across a boundary.
+        w.started_at = crate::live::now() - 52 * SECONDS_PER_TICK;
+        w.change_ready(Change {
+            agent: 1,
+            title: "fix".into(),
+            files: Vec::new(),
+            patch: String::new(),
+            runs: Vec::new(),
+            check: Check::None,
+            spend: None,
+        });
+        assert_eq!(w.change_of(1).unwrap().spend, None);
+        hear(
+            &live,
+            1,
+            AgentEvent::TurnDone {
+                ok: true,
+                text: "done".into(),
+                cost: 250_000,
+                denied: 0,
+            },
+        );
+        live.step(&mut w);
+        assert_eq!(w.agents[1].cost, 2_500);
+        let s = w.change_of(1).unwrap().spend.unwrap();
+        assert_eq!((s.cost, s.rounds), (1_800, 1));
+        assert!((12..=13).contains(&s.ticks), "{s:?}");
+        assert_eq!(w.agents[1].task.round, None);
+        // A failed turn's end settles too: what it cost is spent.
+        live.prompt(&mut w, 1, "again".into(), None).unwrap();
+        w.change_ready(Change {
+            agent: 1,
+            title: "fix".into(),
+            files: Vec::new(),
+            patch: String::new(),
+            runs: Vec::new(),
+            check: Check::None,
+            spend: None,
+        });
+        hear(
+            &live,
+            1,
+            AgentEvent::TurnDone {
+                ok: false,
+                text: "x".into(),
+                cost: 300_000,
+                denied: 0,
+            },
+        );
+        live.step(&mut w);
+        assert!(matches!(
+            w.change_of(1).unwrap().spend,
+            Some(Spend {
+                cost: 2_300,
+                rounds: 2,
+                ..
+            })
+        ));
+    }
+
     fn lost_note(helper: &str, said: &str) -> String {
         format!(
             "From imece (not from the person or a teammate):\n- Your helper {helper} stopped \

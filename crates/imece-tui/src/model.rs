@@ -4936,6 +4936,130 @@ mod tests {
         assert_eq!(open, [false, true, true]);
     }
 
+    #[test]
+    fn a_change_s_cost_is_settled_at_the_turn_s_end_carried_unapplied_and_dropped_once_applied() {
+        use crate::live::testing::{team, with_helper};
+        let mut w = team(1);
+        let h = with_helper(&mut w, 1);
+        // A leader's spend is nobody's change.
+        w.round_opens(0);
+        assert_eq!(w.agents[0].task.round, None);
+        // A round opens at the first prompt, once: a later one keeps it.
+        w.tick = 10;
+        w.agents[1].cost = 1_000;
+        w.round_opens(1);
+        assert_eq!(w.agents[1].task.round, Some((1_000, 10)));
+        w.tick = 12;
+        w.agents[1].cost = 1_500;
+        w.round_opens(1);
+        assert_eq!(w.agents[1].task.round, Some((1_000, 10)), "kept");
+        // The helper's own round, from its cost then.
+        w.tick = 20;
+        w.agents[h].cost = 200;
+        w.round_opens(h);
+        w.agents[h].cost = 500;
+        // Read mid-turn: what it cost is not known yet.
+        w.tick = 50;
+        w.agents[1].cost = 9_400;
+        w.change_ready(change(1, "Fix", &[("a.rs", 1, 0)]));
+        assert_eq!(w.change_of(1).unwrap().spend, None);
+        assert!(matches!(
+            w.journal.last().unwrap().event,
+            Event::ChangeReady {
+                agent: 1,
+                spend: None,
+                ..
+            }
+        ));
+        // The turn ends: the worker's cost since its round opened, its
+        // helper's since its own, the worker's ticks, one round.
+        w.tick = 70;
+        w.agents[1].cost = 10_000;
+        assert!(w.settle_change(1));
+        let s = Spend {
+            cost: 9_000 + 300,
+            ticks: 60,
+            rounds: 1,
+        };
+        assert_eq!(w.change_of(1).unwrap().spend, Some(s));
+        let last = w.journal.last().unwrap();
+        assert_eq!(last.event, Event::ChangeCost { agent: 1, spend: s });
+        assert_eq!(last.event.kind(), EntryKind::Assumption);
+        assert_eq!(last.event.agent(), 1);
+        assert_eq!(w.agents[1].task.round, None, "closed");
+        assert_eq!(w.agents[h].task.round, None, "the helper's too");
+        assert_eq!(w.agents[1].task.last, Some(s));
+        assert!(!w.settle_change(1), "settled once");
+        // Rejected: carried into the next change, which adds its round.
+        w.change_rejected(1);
+        assert_eq!(w.agents[1].task.carried, s);
+        w.tick = 100;
+        w.round_opens(1);
+        w.tick = 130;
+        w.agents[1].cost = 10_500;
+        // Read with the turn over: settled as it is read, in one line.
+        w.agents[1].status = Status::Idle;
+        let journaled = w.journal.len();
+        w.change_ready(change(1, "Fix, again", &[("a.rs", 2, 0)]));
+        let again = Spend {
+            cost: 9_800,
+            ticks: 90,
+            rounds: 2,
+        };
+        assert_eq!(w.change_of(1).unwrap().spend, Some(again));
+        assert_eq!(w.journal.len(), journaled + 1);
+        assert!(matches!(
+            w.journal.last().unwrap().event,
+            Event::ChangeReady { agent: 1, spend: Some(x), .. } if x == again
+        ));
+        // A newer change takes the older's place and its cost along.
+        w.tick = 131;
+        w.round_opens(1);
+        w.tick = 133;
+        w.agents[1].cost = 10_600;
+        w.change_ready(change(1, "Fix, more", &[("a.rs", 3, 0)]));
+        let more = Spend {
+            cost: 9_900,
+            ticks: 92,
+            rounds: 3,
+        };
+        assert_eq!(w.change_of(1).unwrap().spend, Some(more));
+        // Part applied: the rest, read again, costs what the whole did.
+        w.change_applied(1, "m1".into(), false);
+        assert_eq!(w.agents[1].task.carried, more);
+        w.change_ready(change(1, "Fix, more", &[("a.rs", 1, 0)]));
+        assert_eq!(w.change_of(1).unwrap().spend, Some(more), "no round open");
+        // Applied whole: nothing carried on.
+        w.change_applied(1, "m2".into(), true);
+        assert_eq!(w.agents[1].task.carried, Spend::default());
+        assert_eq!(
+            w.agents[1].task.last,
+            Some(more),
+            "the leader's mail still says"
+        );
+        // The worktree holds nothing: nothing carried, no figure for the mail.
+        w.agents[1].task.carried = s;
+        w.change_none(1);
+        assert_eq!(w.agents[1].task, Task::default());
+        assert_eq!(
+            Spend {
+                cost: 1,
+                ticks: 2,
+                rounds: 3
+            }
+            .plus(Spend {
+                cost: 10,
+                ticks: 20,
+                rounds: 30
+            }),
+            Spend {
+                cost: 11,
+                ticks: 22,
+                rounds: 33
+            }
+        );
+    }
+
     fn change(agent: AgentId, title: &str, files: &[(&str, u32, u32)]) -> Change {
         Change {
             agent,

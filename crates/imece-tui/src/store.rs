@@ -2292,6 +2292,15 @@ mod tests {
         };
         w.agents[1].cost = 4_321;
         w.agents[1].card = Some(0);
+        w.agents[1].task = Task {
+            round: Some((4_000, 70)),
+            carried: Spend {
+                cost: 500,
+                ticks: 20,
+                rounds: 1,
+            },
+            last: Some(spend()),
+        };
         w.agents[1].taint = Taint::Soft;
         w.agents[1].commands = vec!["/compact".into(), "/clear".into()];
         w.agents[1].changed_at = 66;
@@ -2513,6 +2522,7 @@ mod tests {
             (a.id, a.project, a.name.clone(), a.role, a.parent, a.card),
             (a.cost, a.taint, a.gone, a.changed_at, a.traced),
             (a.commands.clone(), a.trace.clone()),
+            a.task,
         )
     }
 
@@ -2839,6 +2849,22 @@ mod tests {
         type Move = Box<dyn Fn(&mut World, &mut Owned)>;
         let moves: Vec<(&str, Move)> = vec![
             ("budget", Box::new(|w, _| w.budget += 1)),
+            (
+                "a round opened",
+                Box::new(|w, _| w.agents[1].task.round = Some((4_321, 77))),
+            ),
+            (
+                "a change settled",
+                Box::new(|w, k| {
+                    let s = Spend {
+                        cost: 9_900,
+                        ticks: 92,
+                        rounds: 3,
+                    };
+                    w.changes[0].spend = Some(s);
+                    k.spends.insert(1, s);
+                }),
+            ),
             ("messages", Box::new(|w, _| w.messages += 1)),
             ("started_at", Box::new(|w, _| w.started_at += 1)),
             (
@@ -4900,6 +4926,69 @@ mod tests {
         assert!(store.save(&w, &k.kept()).unwrap());
         let back = store.load(100).unwrap().expect("a world");
         assert_eq!(back.found.checks, HashMap::from([(1, check())]));
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn a_file_of_schema_23_gets_the_spend_and_task_columns() {
+        let d = dir("schema23");
+        std::fs::create_dir_all(&d).unwrap();
+        let path = d.join(FILE);
+        {
+            // A whole file as schema 23 wrote it: no change costed, no round.
+            let mut store = Store::open(&path).unwrap();
+            assert!(store.save(&world(), &kept().kept()).unwrap());
+            store
+                .raw()
+                .execute_batch(
+                    "ALTER TABLE changes DROP COLUMN spend;
+                     ALTER TABLE agents DROP COLUMN task;
+                     UPDATE meta SET value = '23' WHERE key = 'schema_version';",
+                )
+                .unwrap();
+        }
+        let mut store = Store::open(&path).unwrap();
+        let back = store.load(100).unwrap().expect("a world");
+        assert_eq!(back.found.changes, kept().changes);
+        assert_eq!(back.found.spends, HashMap::new(), "no cost was kept");
+        assert_eq!(
+            back.world.agents[1].task,
+            Task::default(),
+            "no round, nothing carried"
+        );
+        let (spend_col, task_col): (String, String) = store
+            .raw()
+            .query_row(
+                "SELECT c.spend, a.task FROM changes c JOIN agents a ON a.id = c.agent \
+                 WHERE c.agent = 1",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!((spend_col.as_str(), task_col.as_str()), ("", ""));
+        // The next save writes what the world has of both.
+        let mut k = back.found();
+        let mut w = back.world;
+        w.changes.push(Change {
+            agent: 1,
+            title: "done".into(),
+            files: Vec::new(),
+            patch: String::new(),
+            runs: runs(),
+            check: check(),
+            spend: Some(spend()),
+        });
+        k.spends.insert(1, spend());
+        w.agents[1].task = Task {
+            round: Some((4_000, 70)),
+            carried: Spend::default(),
+            last: Some(spend()),
+        };
+        assert!(store.save(&w, &k.kept()).unwrap());
+        let back = store.load(100).unwrap().expect("a world");
+        assert_eq!(back.found.spends, HashMap::from([(1, spend())]));
+        assert_eq!(back.world.agents[1].task, w.agents[1].task);
+        assert!(!store.save(&w, &k.kept()).unwrap(), "nothing moved");
         let _ = std::fs::remove_dir_all(&d);
     }
 }
