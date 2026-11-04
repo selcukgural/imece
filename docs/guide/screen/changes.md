@@ -33,9 +33,10 @@ The title: the worker, the files and lines, the done's first line.
 
 ## What is above the patch
 
-1. **The runs on this tree.** Every `run` the worker made through imece's `run` tool on exactly this change, each with how it ended: `✓ cargo test`, `✗ cargo clippy: exit 1`, killed at the deadline, killed. With none it says, in the warning colour, that no imece run was made on exactly this change, so whether it builds and passes its tests is not known. The same evidence follows the item's row in WAITING FOR YOU.
-2. **The lines by kind**, when the files are of more than one kind: `source +23 −6 (2) · tests +18 −0 (1) · generated +7 −5 (1)`. A file is sorted by its path alone: generated when it is a lock file (`Cargo.lock`, `package-lock.json`, `yarn.lock`, `pnpm-lock.yaml`, `go.sum`, `poetry.lock`, `Gemfile.lock`, `composer.lock`), minified or generated code (`.min.js`, `.min.css`, `.pb.go`, `_pb2.py`, `.g.dart`, `.Designer.cs`) or under `generated/`, `dist/` or `vendor/`; tests when under `tests/`, `test/`, `__tests__/` or `spec/`, named `test_*` or ending in a test suffix (`_test.go`, `_test.rs`, `_test.py`, `.test.ts`, `.spec.ts`, `Tests.cs`, `Test.java`, …); source otherwise. Generated wins over tests. Nothing is read from the files. A change of `+400 −20` that is twenty lines of code and a regenerated lock file says so here.
-3. **The file list**, for a change of two files or more: each file with `+N −M` or `binary`, six at most and the rest counted (`… 2 more files`). A change of one file shows no list; its title says it.
+1. **The repository's check**, when your checkout has `.imece/check` ([changes](../concepts/changes.md#the-repositorys-check)): `✓ check · exit 0, 41.2 s` in the ok colour; `✗ check · exit 1, 38.7 s` in the bad colour, the last lines of its output under it; `◌ the check runs on this change…` while it runs; `▶ the repository's check waits for your yes in WAITING FOR YOU` until you answer its ask; or why it could not run. Its mark also starts the item's evidence in WAITING FOR YOU (`✓ check ·`, `✗ check ·`, `◌ check ·`, `▶ check ·`).
+2. **The runs on this tree.** Every `run` the worker made through imece's `run` tool on exactly this change, each with how it ended: `✓ cargo test`, `✗ cargo clippy: exit 1`, killed at the deadline, killed. With none it says, in the warning colour, that no imece run was made on exactly this change, so whether it builds and passes its tests is not known. The same evidence follows the item's row in WAITING FOR YOU.
+3. **The lines by kind**, when the files are of more than one kind: `source +23 −6 (2) · tests +18 −0 (1) · generated +7 −5 (1)`. A file is sorted by its path alone: generated when it is a lock file (`Cargo.lock`, `package-lock.json`, `yarn.lock`, `pnpm-lock.yaml`, `go.sum`, `poetry.lock`, `Gemfile.lock`, `composer.lock`), minified or generated code (`.min.js`, `.min.css`, `.pb.go`, `_pb2.py`, `.g.dart`, `.Designer.cs`) or under `generated/`, `dist/` or `vendor/`; tests when under `tests/`, `test/`, `__tests__/` or `spec/`, named `test_*` or ending in a test suffix (`_test.go`, `_test.rs`, `_test.py`, `.test.ts`, `.spec.ts`, `Tests.cs`, `Test.java`, …); source otherwise. Generated wins over tests. Nothing is read from the files. A change of `+400 −20` that is twenty lines of code and a regenerated lock file says so here.
+4. **The file list**, for a change of two files or more: each file with `+N −M` or `binary`, six at most and the rest counted (`… 2 more files`). A change of one file shows no list; its title says it.
 
 ## Moving
 
@@ -128,7 +129,7 @@ A `done` arrives as `claude-1 finished: 3 files, +41 −6 → waits for you`; an
 
 ## Demo
 
-`--demo` makes the same changes from its cards and runs, and takes `a`, `r`, `n`, `x`, `b`, `>` and `v` the same way (one apply in eight fails there, to show the failure).
+`--demo` makes the same changes from its cards and runs, and takes `a`, `r`, `n`, `x`, `b`, `>` and `v` the same way (one apply in eight fails there, to show the failure). Every demo checkout has a `.imece/check`, asked about at the first change and failing on every third.
 
 ## See also
 

@@ -668,8 +668,13 @@ struct Extras {
     /// The setup asks open: the item, the script's key, the workers that
     /// went without it meanwhile.
     setup_asks: Vec<(usize, String, Vec<AgentId>)>,
-    /// The setup scripts the person said no to this run.
+    /// The setup scripts and the check the person said no to this run.
     setup_refused: Vec<String>,
+    /// The demo's checks under way (record 112): the worker whose change
+    /// it runs on and the tick it ends at.
+    checks_due: Vec<(AgentId, u64)>,
+    /// Checks that ended this run: every third fails.
+    checks_ran: u32,
     /// The demo's worktrees no agent owns (`:tidy`), made up at the first
     /// look; a look or a removal under way, answered at the next step,
     /// with the removal's end.
@@ -728,6 +733,25 @@ npm run db:migrate\n";
 
 /// What the demo's setup script says as it ends.
 const DEMO_SETUP_SAYS: [&str; 2] = ["added 412 packages in 3s", "migrations: 7 applied"];
+
+/// The repository's check every demo checkout has (`.imece/check`,
+/// record 112), run on each change as live runs it.
+const DEMO_CHECK: &str = "#!/bin/sh\n\
+# Builds and tests the change in the worktree.\n\
+set -e\n\
+cd \"$IMECE_WORKTREE\"\n\
+npm run build\n\
+npm test -- --silent\n";
+
+/// What a failed demo check says last.
+const DEMO_CHECK_SAYS: [&str; 3] = [
+    "FAIL src/parser.test.ts",
+    "  ● parses a nested list › keeps the indentation",
+    "Tests: 1 failed, 211 passed",
+];
+
+/// How long the demo's check takes, in ticks.
+const CHECK_TICKS: u64 = 2;
 
 /// What the demo says when it would not resume a session.
 const REFUSED: &str = "the session could not resume session 5f1c… (error_during_execution)";
@@ -1255,6 +1279,7 @@ impl Sim {
                 files,
                 patch,
                 runs: Vec::new(),
+                check: Check::None,
                 ..change
             });
         }
@@ -1518,6 +1543,7 @@ impl Sim {
     }
 
     pub fn step(&mut self, w: &mut World) {
+        self.checks_due(w);
         w.tick += 1;
         let t = w.tick;
         for a in &mut w.agents {
@@ -1649,11 +1675,13 @@ impl Sim {
                 files,
                 patch,
                 runs: Vec::new(),
+                check: Check::None,
             };
             let (added, removed) = change.counts();
             let n = change.files.len();
             w.change_ready(change);
             w.agents[id].trace(t, format!("change: {n} files +{added} −{removed}"));
+            self.check(w, id);
         }
     }
 
@@ -1736,6 +1764,101 @@ impl Sim {
         }
     }
 
+    /// The demo's check as live reads it from project `p`'s checkout.
+    pub(crate) fn check_script(w: &World, p: ProjectId) -> setup::Script {
+        let bytes = DEMO_CHECK.as_bytes().to_vec();
+        setup::Script {
+            kind: setup::Kind::Check,
+            real: std::path::Path::new("/demo")
+                .join(&w.projects[p].name)
+                .join(setup::CHECK_FILE),
+            sha: crate::sha::hex(&bytes),
+            bytes,
+        }
+    }
+
+    /// The repository's check on the change worker `id` just handed in,
+    /// as live runs it (record 112): it runs when the person said yes to
+    /// it (two ticks, every third fails), is asked about when not (one ask
+    /// per script, the changes that wait for it counted on it), nothing
+    /// after a no this run.
+    pub(crate) fn check(&mut self, w: &mut World, id: AgentId) {
+        let key = Self::check_script(w, w.agents[id].project).key();
+        if self.extras.setup_refused.contains(&key) {
+            return;
+        }
+        if w.setup_approved.contains(&key) {
+            return self.check_runs(w, id);
+        }
+        w.checked(id, Check::Asked);
+        let open =
+            |(item, k, _): &&mut (usize, String, Vec<AgentId>)| *k == key && w.inbox[*item].open;
+        if let Some((_, _, agents)) = self.extras.setup_asks.iter_mut().find(open) {
+            agents.push(id);
+            return;
+        }
+        self.extras.setup_asks.push((w.inbox.len(), key, vec![id]));
+        w.inbox.push(InboxItem {
+            kind: InboxKind::Check,
+            agent: id,
+            detail: setup::CHECK_FILE.to_string(),
+            researcher: None,
+            open: true,
+            tick: w.tick,
+            card: None,
+        });
+    }
+
+    /// The demo's check starts on worker `id`'s waiting change.
+    fn check_runs(&mut self, w: &mut World, id: AgentId) {
+        if w.checked(id, Check::Running) {
+            w.agents[id].trace(w.tick, "check: runs on the change");
+            self.extras.checks_due.push((id, w.tick + CHECK_TICKS));
+        }
+    }
+
+    /// The demo's checks that end at this tick: on the change when it
+    /// still waits, in the journal; every third fails.
+    fn checks_due(&mut self, w: &mut World) {
+        let due: Vec<AgentId> = (self.extras.checks_due.iter())
+            .filter(|(_, at)| *at <= w.tick)
+            .map(|(id, _)| *id)
+            .collect();
+        self.extras.checks_due.retain(|(_, at)| *at > w.tick);
+        for id in due {
+            if !matches!(w.change_of(id).map(|c| &c.check), Some(Check::Running)) {
+                continue;
+            }
+            self.extras.checks_ran += 1;
+            let ok = !self.extras.checks_ran.is_multiple_of(3);
+            let end = if ok {
+                "exit 0, 41.2 s"
+            } else {
+                "exit 1, 38.7 s"
+            };
+            let lines = if ok {
+                Vec::new()
+            } else {
+                DEMO_CHECK_SAYS.map(String::from).to_vec()
+            };
+            w.agents[id].trace(w.tick, format!("check: {end}"));
+            w.checked(
+                id,
+                Check::Ran(Checked {
+                    ok,
+                    end: end.into(),
+                    lines: lines.clone(),
+                }),
+            );
+            w.note(Event::Checked {
+                agent: id,
+                ok,
+                end: end.into(),
+                lines,
+            });
+        }
+    }
+
     /// Worker `id`'s worktree, new at its first start, set up as live
     /// does: the script runs when the person said yes to it, else it is
     /// asked about (one ask per script, the workers that go without it
@@ -1780,10 +1903,15 @@ impl Sim {
         });
     }
 
-    /// The script setup ask `item` is about, for the window that shows it.
+    /// The script the ask `item` is about (a setup script or the check),
+    /// for the window that shows it.
     pub fn setup_asked(&self, w: &World, item: usize) -> Option<setup::Script> {
         self.extras.setup_asks.iter().find(|(i, _, _)| *i == item)?;
-        Some(Self::setup_script(w, w.agents[w.inbox[item].agent].project))
+        let p = w.agents[w.inbox[item].agent].project;
+        Some(match w.inbox[item].kind {
+            InboxKind::Check => Self::check_script(w, p),
+            _ => Self::setup_script(w, p),
+        })
     }
 
     /// The person's answer to setup ask `item`, as live's
@@ -1801,14 +1929,26 @@ impl Sim {
         let (_, key, agents) = asks.remove(at);
         w.inbox[item].open = false;
         let agent = w.inbox[item].agent;
-        w.note(Event::SetupAnswered { agent, yes });
+        let check = w.inbox[item].kind == InboxKind::Check;
+        w.note(match check {
+            true => Event::CheckAnswered { agent, yes },
+            false => Event::SetupAnswered { agent, yes },
+        });
         if !yes {
             self.extras.setup_refused.push(key);
+            if check {
+                for id in agents {
+                    w.checked(id, Check::None);
+                }
+            }
             return true;
         }
         w.approve_setup(key);
         for id in agents {
-            Self::setup_ran(w, id);
+            match check {
+                true => self.check_runs(w, id),
+                false => Self::setup_ran(w, id),
+            }
         }
         true
     }
@@ -2937,10 +3077,12 @@ impl Sim {
             files,
             patch,
             runs,
+            check: Check::None,
         };
         let (added, removed) = change.counts();
         let n = change.files.len();
         w.change_ready(change);
+        self.check(w, id);
         let c = &mut w.cards[card];
         c.column = Column::Done;
         c.finished = t;
@@ -3212,7 +3354,7 @@ mod tests {
                     let _ = s.apply_change(w, a, Vec::new());
                 }
                 InboxKind::Approval => w.decided(i, true),
-                InboxKind::Script => {
+                InboxKind::Script | InboxKind::Check => {
                     s.decide_setup(w, i, true);
                 }
                 InboxKind::Question | InboxKind::Fault => {
@@ -4028,6 +4170,7 @@ mod tests {
             }],
             patch: TWO_FILES.into(),
             runs: Vec::new(),
+            check: Check::None,
         });
         (w, s, id)
     }
@@ -4200,6 +4343,7 @@ diff --git a/b.rs b/b.rs
                     code: Some(0),
                     timed_out: false,
                 }],
+                check: Check::None,
             })
         };
         ready(&mut w);
@@ -6511,6 +6655,132 @@ diff --git a/b.rs b/b.rs
                 .back()
                 .unwrap()
                 .ends_with("send to=you type=inform")
+        );
+    }
+
+    #[test]
+    fn a_change_asks_for_the_check_and_a_yes_runs_it_on_each_the_third_failing() {
+        let (mut w, mut s, worker, _) = one_at_work();
+        let change = |w: &mut World| {
+            w.change_ready(Change {
+                agent: worker,
+                title: "t".into(),
+                files: Vec::new(),
+                patch: String::new(),
+                runs: Vec::new(),
+                check: Check::None,
+            })
+        };
+        let check_of = |w: &World| w.change_of(worker).unwrap().check.clone();
+        change(&mut w);
+        s.check(&mut w, worker);
+        assert_eq!(check_of(&w), Check::Asked);
+        let item = (w.inbox.iter())
+            .position(|i| i.kind == InboxKind::Check)
+            .expect("asked");
+        assert_eq!(w.inbox[item].detail, setup::CHECK_FILE);
+        let script = s.setup_asked(&w, item).unwrap();
+        assert_eq!(script.kind, setup::Kind::Check);
+        assert_eq!(script.bytes, DEMO_CHECK.as_bytes());
+        assert_eq!(
+            script.real.to_string_lossy(),
+            format!("/demo/{}/.imece/check", w.projects[0].name)
+        );
+        // A second change while the ask waits counts on it.
+        change(&mut w);
+        s.check(&mut w, worker);
+        assert_eq!(check_of(&w), Check::Asked);
+        assert_eq!(
+            (w.inbox.iter())
+                .filter(|i| i.kind == InboxKind::Check)
+                .count(),
+            1
+        );
+        assert!(s.decide_setup(&mut w, item, true));
+        assert!(!w.inbox[item].open);
+        assert_eq!(
+            w.journal.last().unwrap().event,
+            Event::CheckAnswered {
+                agent: worker,
+                yes: true
+            }
+        );
+        assert_eq!(check_of(&w), Check::Running);
+        assert!(
+            (w.agents[worker].trace.back().unwrap()).ends_with("check: runs on the change"),
+            "{:?}",
+            w.agents[worker].trace.back()
+        );
+        // Two ticks: the first passes.
+        s.checks_due(&mut w);
+        assert_eq!(check_of(&w), Check::Running, "not due yet");
+        w.tick += CHECK_TICKS;
+        s.checks_due(&mut w);
+        assert_eq!(
+            check_of(&w),
+            Check::Ran(Checked {
+                ok: true,
+                end: "exit 0, 41.2 s".into(),
+                lines: Vec::new()
+            })
+        );
+        assert!(matches!(
+            w.journal.last().unwrap().event,
+            Event::Checked { agent, ok: true, .. } if agent == worker
+        ));
+        assert_eq!(CHECK_TICKS, 2);
+        // Approved now: the next changes run at once; every third fails.
+        for n in 2..=4 {
+            change(&mut w);
+            s.check(&mut w, worker);
+            assert_eq!(check_of(&w), Check::Running, "change {n}");
+            w.tick += CHECK_TICKS;
+            s.checks_due(&mut w);
+            let Check::Ran(d) = check_of(&w) else {
+                panic!("change {n}: {:?}", check_of(&w));
+            };
+            assert_eq!(d.ok, n != 3, "change {n}");
+            if n == 3 {
+                assert_eq!(d.end, "exit 1, 38.7 s");
+                assert_eq!(d.lines, DEMO_CHECK_SAYS);
+                assert!(matches!(
+                    &w.journal.last().unwrap().event,
+                    Event::Checked { ok: false, lines, .. } if lines.len() == 3
+                ));
+            }
+        }
+        // A change gone before its check ends: nothing said.
+        change(&mut w);
+        s.check(&mut w, worker);
+        w.change_rejected(worker);
+        w.tick += CHECK_TICKS;
+        let journaled = w.journal.len();
+        s.checks_due(&mut w);
+        assert_eq!(w.journal.len(), journaled);
+        assert!(s.extras.checks_due.is_empty());
+        // A no: nothing on the change, not asked again this run.
+        let (mut w, mut s, worker, _) = one_at_work();
+        change(&mut w);
+        s.check(&mut w, worker);
+        let item = (w.inbox.iter())
+            .position(|i| i.kind == InboxKind::Check)
+            .expect("asked");
+        assert!(s.decide_setup(&mut w, item, false));
+        assert_eq!(
+            w.journal.last().unwrap().event,
+            Event::CheckAnswered {
+                agent: worker,
+                yes: false
+            }
+        );
+        assert_eq!(check_of(&w), Check::None);
+        change(&mut w);
+        s.check(&mut w, worker);
+        assert_eq!(check_of(&w), Check::None);
+        assert!(
+            w.inbox
+                .iter()
+                .all(|i| i.kind != InboxKind::Check || !i.open)
         );
     }
 }

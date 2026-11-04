@@ -25,10 +25,21 @@ Bir değişiklik (`Δ`), bir işçi `done` dediğinde worktree'sinin tuttuğu ş
 
 İşçinin ya da bir yardımcının imece'nin `run` aracıyla yaptığı bir çalıştırma, üzerinde koştuğu ağaca bağlanır (worktree öncesinde ve sonrasında okunur; ağacı değiştiren bir çalıştırma hiçbirine sayılmaz). Bir `done` okununca, tam o ağaçtaki çalıştırmalar onunla gelir: `Δ` satırı `✓ bu ağaçta temiz geçti: …`, `✗ bu ağaçta başarısız: …` ya da `bu ağaçta çalıştırma yok` ile biter ve diff her çalıştırma için bir satırla başlar. Gösterilir, asla kapı değildir: çalıştırması olmayan bir değişiklik yine uygulanabilir; karar sizin. Claude Code'un kendi kabuğu sayılmaz; imece onun hangi ağaçta koştuğunu görmez.
 
+### Deponun kontrolü {#deponun-kontrolü}
+
+Checkout'unuzda `.imece/check` yoluna bir betik koyun ([worktree kurulum betiği](projects.md#worktree-kurulum-betiği) gibi onaylanan bir kabuk betiği); imece onu, oradan her değişiklik okunduğunda işçinin worktree'sinde çalıştırır, **tam baytlarına evet dediğinizde**: okuduğunuz baytların özel bir kopyası üzerinde `/bin/sh`, temizlenmiş ortam ve `IMECE_REPO` ile `IMECE_WORKTREE`, kendi süreç grubunda, `run` aracının süresince (`--run-timeout`, varsayılan on dakika). Vardığı sonuç değişikliğin üstüne gider: `✓ kontrol · exit 0, 41.2 s` ya da çıktısının son satırlarıyla `✗ kontrol · exit 1, 38.7 s`, SENİ BEKLEYEN'de `Δ` satırında kanıtın önünde bir işaret (`✓ kontrol ·`, `✗ kontrol ·`, çalışırken `◌ kontrol ·`) ve bir günlük satırı (`claude-1: kontrol değişikliğinde başarısız, exit 1, 38.7 s · Tests: 1 failed, 211 passed`). Bir nottur, asla kapı değil: `a` kırmızı bir değişikliği de her değişiklik gibi uygular; karar sizin.
+
+- **Evetiniz:** evet demediğiniz bir kontrolü bulan ilk değişiklik SENİ BEKLEYEN'e bir soru koyar (`▶ claude-1: deponun kontrolü .imece/check değişikliklerinde çalışsın mı? enter gösterir`); değişiklik bu arada kontrolsüz bekler ve yamasının üstünde bunu söyler. `enter` baytları gösterir, `a` evet der (bekleyen her değişiklikte hemen, sonra okunan her birinde çalışır), `r` bu çalıştırma için hayır. Evet, baytların SHA-256'sına, dosyanın gerçek yoluna ve `/bin/sh`'ye bağlıdır, imece'nin deposunda saklanır; değişen bir bayt yeniden sorar. Sorular sonraki başlangıçta kapanır; sonraki değişiklik yeniden sorar.
+- **Ağaç başına bir kez:** aynı ağaçla yeniden okunan bir değişiklik (geri gönderilip olduğu gibi yeniden gönderilen) eski sonucunu alır, çalıştırma olmaz; değişen ağaç yeniden çalıştırır. imece kapanırken çalışan ya da sorulan bir kontrol sonraki başlangıçta yeniden çalışır ya da sorulur.
+- **Yapmaması gereken:** izlenen dosyaları değiştirmek. Değişiklik kontrol çalışmadan önce okunur; kontrolün yazdığı ona dahil değildir ve işçinin sonraki `done`'unda ortaya çıkar; git'in yok saydığı yollardaki derleme çıktısı sorun değil.
+- **İşçiye söylenmez.** Sonuç sizindir: `n` notlarınızı geri gönderir; başarısız kontrolün son satırları ilk not olur. Kırmızı bir kontrolün değişikliği bir tur alıkoyup önce işçiye söylemesi gerekir mi, sonraki bir kaydın sorusu.
+- Depoda kontrol yoksa hiçbir şey çalışmaz ve görünmez; okunamayan (düz dosya olmayan, 64 KiB'den büyük) biri değişikliğin üstünde ve günlükte bunu söyler.
+
 ## Okumak
 
 `enter` diff'in tamamını açar: `j k` kaydırır, `^d ^u ^f ^b` sayfalar, `gg G`, `[ ]` dosyadan dosyaya. Her satır çizilmeden önce temizlenir. Yamanın üstünde:
 
+- deponun [kontrolü](#deponun-kontrolü), varsa: nasıl bittiği, çalıştığı ya da onayınızı beklediği;
 - ağacındaki çalıştırmalar (ya da derlenip testleri geçtiğinin bilinmediği);
 - dosyalar birden çok türdense türe göre satırlar: `kaynak +20 −1 (2) · testler +18 −0 (1) · üretilmiş +7 −5 (1)`. Türler yalnız yola göredir: lock dosyaları, minified ve üretilmiş kod ile `generated/`, `dist/`, `vendor/` dizinleri üretilmiş; `tests/`, `test/`, `__tests__/`, `spec/`, `test_*` ve alışılmış test sonekleri test; kalanı kaynak. Üretilmiş, testi yener;
 - iki ya da daha çok dosyalı bir değişiklik için her birinin `+N −M`'si (ya da `ikili`) ile dosya listesi, en çok altı, kalanı sayılır.

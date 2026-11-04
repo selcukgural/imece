@@ -33,9 +33,10 @@ Başlık: işçi, dosyalar ve satırlar, done'un ilk satırı.
 
 ## Yamanın üstündekiler
 
-1. **Bu ağaçtaki çalıştırmalar.** İşçinin imece'nin `run` aracıyla tam bu değişiklik üzerinde yaptığı her `run`, nasıl bittiğiyle: `✓ cargo test`, `✗ cargo clippy: exit 1`, süre dolunca durduruldu, durduruldu. Hiç yoksa uyarı renginde, tam bu değişiklik üzerinde imece çalıştırması olmadığını, derlenip derlenmediğinin ve testlerinin geçip geçmediğinin bilinmediğini söyler. Aynı kanıt SENİ BEKLEYEN'de ögenin satırını izler.
-2. **Türe göre satırlar**, dosyalar birden çok türdense: `kaynak +23 −6 (2) · testler +18 −0 (1) · üretilmiş +7 −5 (1)`. Bir dosya yalnız yoluna göre sınıflanır: bir lock dosyasıysa (`Cargo.lock`, `package-lock.json`, `yarn.lock`, `pnpm-lock.yaml`, `go.sum`, `poetry.lock`, `Gemfile.lock`, `composer.lock`), küçültülmüş ya da üretilmiş kodsa (`.min.js`, `.min.css`, `.pb.go`, `_pb2.py`, `.g.dart`, `.Designer.cs`) ya da `generated/`, `dist/` ya da `vendor/` altındaysa üretilmiş; `tests/`, `test/`, `__tests__/` ya da `spec/` altındaysa, `test_*` adlıysa ya da bir test sonekiyle bitiyorsa (`_test.go`, `_test.rs`, `_test.py`, `.test.ts`, `.spec.ts`, `Tests.cs`, `Test.java`, …) test; yoksa kaynak. Üretilmiş, teste baskındır. Dosyalardan hiçbir şey okunmaz. Yirmi satır kod ve yeniden üretilmiş bir lock dosyası olan bir `+400 −20` değişikliği bunu burada söyler.
-3. **Dosya listesi**, iki ya da daha çok dosyalı bir değişiklik için: her dosya `+N −M` ya da `ikili` ile, en çok altı, kalanı sayılmış (`… 2 dosya daha`). Tek dosyalı değişiklik liste göstermez; başlığı söyler.
+1. **Deponun kontrolü**, checkout'unuzda `.imece/check` varsa ([değişiklikler](../concepts/changes.md#deponun-kontrolü)): tamam renginde `✓ kontrol · exit 0, 41.2 s`; kötü renginde, çıktısının son satırları altında, `✗ kontrol · exit 1, 38.7 s`; çalışırken `◌ kontrol bu değişiklikte çalışıyor…`; sorusunu yanıtlayana dek `▶ deponun kontrolü SENİ BEKLEYEN'de onayını bekliyor`; ya da neden çalışamadığı. İşareti SENİ BEKLEYEN'de ögenin kanıtını da başlatır (`✓ kontrol ·`, `✗ kontrol ·`, `◌ kontrol ·`, `▶ kontrol ·`).
+2. **Bu ağaçtaki çalıştırmalar.** İşçinin imece'nin `run` aracıyla tam bu değişiklik üzerinde yaptığı her `run`, nasıl bittiğiyle: `✓ cargo test`, `✗ cargo clippy: exit 1`, süre dolunca durduruldu, durduruldu. Hiç yoksa uyarı renginde, tam bu değişiklik üzerinde imece çalıştırması olmadığını, derlenip derlenmediğinin ve testlerinin geçip geçmediğinin bilinmediğini söyler. Aynı kanıt SENİ BEKLEYEN'de ögenin satırını izler.
+3. **Türe göre satırlar**, dosyalar birden çok türdense: `kaynak +23 −6 (2) · testler +18 −0 (1) · üretilmiş +7 −5 (1)`. Bir dosya yalnız yoluna göre sınıflanır: bir lock dosyasıysa (`Cargo.lock`, `package-lock.json`, `yarn.lock`, `pnpm-lock.yaml`, `go.sum`, `poetry.lock`, `Gemfile.lock`, `composer.lock`), küçültülmüş ya da üretilmiş kodsa (`.min.js`, `.min.css`, `.pb.go`, `_pb2.py`, `.g.dart`, `.Designer.cs`) ya da `generated/`, `dist/` ya da `vendor/` altındaysa üretilmiş; `tests/`, `test/`, `__tests__/` ya da `spec/` altındaysa, `test_*` adlıysa ya da bir test sonekiyle bitiyorsa (`_test.go`, `_test.rs`, `_test.py`, `.test.ts`, `.spec.ts`, `Tests.cs`, `Test.java`, …) test; yoksa kaynak. Üretilmiş, teste baskındır. Dosyalardan hiçbir şey okunmaz. Yirmi satır kod ve yeniden üretilmiş bir lock dosyası olan bir `+400 −20` değişikliği bunu burada söyler.
+4. **Dosya listesi**, iki ya da daha çok dosyalı bir değişiklik için: her dosya `+N −M` ya da `ikili` ile, en çok altı, kalanı sayılmış (`… 2 dosya daha`). Tek dosyalı değişiklik liste göstermez; başlığı söyler.
 
 ## Hareket
 
@@ -128,7 +129,7 @@ Bir `done`, `claude-1 bitirdi: 3 dosya, +41 −6 → seni bekliyor` diye gelir; 
 
 ## Demo
 
-`--demo` aynı değişiklikleri kartlarından ve çalıştırmalarından yapar ve `a`, `r`, `n`, `x`, `b`, `>` ve `v` tuşlarını aynı şekilde alır (başarısızlığı göstermek için orada sekiz uygulamadan biri başarısız olur).
+`--demo` aynı değişiklikleri kartlarından ve çalıştırmalarından yapar ve `a`, `r`, `n`, `x`, `b`, `>` ve `v` tuşlarını aynı şekilde alır (başarısızlığı göstermek için orada sekiz uygulamadan biri başarısız olur). Her demo checkout'unun bir `.imece/check`'i vardır; ilk değişiklikte sorulur ve her üçüncüde başarısız olur.
 
 ## Ayrıca bakınız
 

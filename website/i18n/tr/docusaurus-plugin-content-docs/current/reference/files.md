@@ -20,7 +20,7 @@ Değişken ayarlı ve mutlaksa `$XDG_STATE_HOME/imece`, yoksa `~/.local/state/im
 | `worktrees/<dizin>-<hash>/<ajan>` | işçi başına bir git worktree'si; `<dizin>` çalışma kopyasının dizin adı, `<hash>` yolunun sekiz onaltılık hanesi (`worktrees/kule-3f2a9c01/claude-1`) |
 | `worktrees/<dizin>-<hash>-notes/<ajan>` | `CLAUDE.md` (0600, dizin 0700): ajanın Claude Code'unun kendi dizinindeki dosyadan başka okuduğu, her başlangıçta yeniden yazılır. Bkz. [aşağısı](#what-an-agent-reads) |
 | `worktrees/<dizin>-<hash>-scratch/<ajan>` | yazan bir ajanın karalama dizini (0700; bir solonunki `solo-<proje numarası>`): değişikliğinin parçası olmayan notlar, günlükler ve indirilenler için. Dosya araçları oraya yazabilir (`--add-dir`), talimatları onu adlandırır, odağı gösterir. Çalıştırmalar arasında kalır; `:forget`, `--fresh` ve ajan ayrılınca (`:close`, bir yardımcının `done`'ı) silinir, aynı işe devam eden yeni bir oturumda (model geri dönüşü, yenilenen sınır, `/clear`) silinmez |
-| `scripts/<sha256>.sh` | evet dediğiniz bir worktree kurulum betiğinin özel kopyası, okuduğunuz baytlar (dizin 0700, dosya 0600): çalışan budur. Bkz. [worktree kurulum betiği](../concepts/projects.md#worktree-kurulum-betiği) |
+| `scripts/<sha256>.sh` | evet dediğiniz bir worktree kurulum ya da söküm betiğinin, ya da deponun kontrolünün özel kopyası, okuduğunuz baytlar (dizin 0700, dosya 0600): çalışan budur. Bkz. [worktree kurulum betiği](../concepts/projects.md#worktree-kurulum-betiği) ve [deponun kontrolü](../concepts/changes.md#deponun-kontrolü) |
 
 ## Depo
 
@@ -39,7 +39,7 @@ imece okuyamadığı bir dosyayı asla taşımaz, onarmaz ya da üstüne yazmaz:
 
 | Tablo | Tuttuğu |
 | --- | --- |
-| `meta` | anahtar-değer: `schema_version`, `started_at` (dünyanın ilk başlangıcı; saat ve tikler oradan sayar), `budget` (bütçe), `saved_at` (son kayıt, "NEREDE KALMIŞTIN · 2 sa önce" için), `messages` (verilen son mesaj numarası), `setup_approved` (evet dediğiniz worktree kurulum betikleri: her birinin nasıl çalıştığı, baytlarının SHA-256'sı ve gerçek yolu), ve ayarlarınız `side` (yan panelin genişliği), `theme`, `notify`, `motion`, `seen` (en son başlayan sürüm, yeni olanlar için) |
+| `meta` | anahtar-değer: `schema_version`, `started_at` (dünyanın ilk başlangıcı; saat ve tikler oradan sayar), `budget` (bütçe), `saved_at` (son kayıt, "NEREDE KALMIŞTIN · 2 sa önce" için), `messages` (verilen son mesaj numarası), `setup_approved` (evet dediğiniz worktree kurulum ve söküm betikleri ile deponun kontrolü: her birinin nasıl çalıştığı, baytlarının SHA-256'sı ve gerçek yolu), ve ayarlarınız `side` (yan panelin genişliği), `theme`, `notify`, `motion`, `seen` (en son başlayan sürüm, yeni olanlar için) |
 | `projects` | her projenin adı, lideri, kapalı olup olmadığı, çalışma kopyası yolu, sabit olup olmadığı ve `:copy`'nin listelediği yollar (`copies`, JSON) |
 | `agents` | her ajanın projesi, adı, rolü, ebeveyni (yardımcının işçisi), kartı, maliyeti, kirliliği, gitmiş olup olmadığı, modeli ve bir kademenin seçip seçmediği, siz son konuştuğunuzdan beri mesaj kaynaklı turları ve kart asmaları, kendi komut listesi, son oturumuyla o oturumun harcadığı, başlangıç noktası, ve henüz başlamamış bir çatal için devam ettiği işçi (`fork_of`) |
 | `cards` | her kartın projesi, başlığı, sahibi, sütunu ve ne zaman başlayıp bittiği |
@@ -95,6 +95,7 @@ Her başlangıçta imece `$TMPDIR/imece-<pid>-<hex>/` yapar (0700; var olan bir 
 ## imece'nin depodan okuduğu
 
 - Ajanın kendi dizininde `CLAUDE.md` yoksa çalışma kopyasının tepesindeki `CLAUDE.md`, o da yoksa `AGENTS.md`. Bkz. [aşağısı](#what-an-agent-reads).
+- `.imece/check`: deponun kontrolü; baytlarına evet dediğinizde bir işçinin worktree'sinde oradan okunan her değişiklikte çalışır; `.imece/worktree-setup.sh` ve `.imece/worktree-teardown.sh` aynı yolla, worktree yapılırken ve kaldırılmadan önce. Bkz. [değişiklikler](../concepts/changes.md#deponun-kontrolü) ve [projeler](../concepts/projects.md#worktree-kurulum-betiği).
 - Git: çalışma kopyasının tepesi, HEAD, `:copy` için `git check-ignore`, `.worktreeinclude`'un neye uyduğu için `git ls-files --others --ignored --directory --exclude=…` (bir işçinin başlangıcında), `:commit` için `git diff --cached` ve en yeni sekiz konu (`--no-ext-diff --no-textconv` ile, böylece sizin bir programınız çalışmaz), ve bir mesajda dosya adı tamamlamak için `git ls-files` (izlenenler ve izlenmeyen ama yok sayılmayanlar; ilk 20.000): projenin açılışında, uyguladığınız her değişiklikten sonra ve ajanlarından biri tur ortasındayken her dakika.
 - `--theme FILE` ya da `:theme FILE` ile adlandırılan, Ghostty ya da Kitty biçiminde bir renk dosyası; mutlak yolu tema olarak hatırlanır.
 

@@ -320,6 +320,7 @@ mod tests {
             }],
             patch: patch.into(),
             runs: Vec::new(),
+            check: Check::None,
         }
     }
 

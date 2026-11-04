@@ -20,7 +20,7 @@ imece keeps what it remembers in one directory, the state directory, and leaves 
 | `worktrees/<dir>-<hash>/<agent>` | one git worktree per worker, `<dir>` the checkout's directory name and `<hash>` eight hex digits of its path (`worktrees/kule-3f2a9c01/claude-1`) |
 | `worktrees/<dir>-<hash>-notes/<agent>` | `CLAUDE.md` (0600, the directory 0700): what the agent's Claude Code reads besides the file of its own directory, rewritten at every start. See [below](#what-an-agent-reads) |
 | `worktrees/<dir>-<hash>-scratch/<agent>` | a writing agent's scratch directory (0700; a solo's is `solo-<project number>`): for notes, logs and downloads that are no part of its change. Its file tools may write there (`--add-dir`), its instructions name it, and its focus shows it. Kept between runs; removed by `:forget`, `--fresh` and when the agent leaves (`:close`, a helper's `done`), not when a new session goes on with the same work (a model fallback, a renewed cap, `/clear`) |
-| `scripts/<sha256>.sh` | the private copy of a worktree setup script you said yes to, the bytes you read (0700 directory, 0600 file): what runs. See [a worktree setup script](../concepts/projects.md#a-worktree-setup-script) |
+| `scripts/<sha256>.sh` | the private copy of a worktree setup or teardown script, or of the repository's check, you said yes to, the bytes you read (0700 directory, 0600 file): what runs. See [a worktree setup script](../concepts/projects.md#a-worktree-setup-script) and [the repository's check](../concepts/changes.md#the-repositorys-check) |
 
 ## The store
 
@@ -39,7 +39,7 @@ imece never moves, mends or writes over a file it cannot read: a newer imece may
 
 | Table | Holds |
 | --- | --- |
-| `meta` | key-value: `schema_version`, `started_at` (the world's first start, which the clock and the ticks count from), `budget` (the pot), `saved_at` (the last save, for "WHERE YOU LEFT OFF · 2 h ago"), `messages` (the last message number given), `setup_approved` (the worktree setup scripts you said yes to: how each runs, its bytes' SHA-256 and its real path), and your settings `side` (the side panel's width), `theme`, `notify`, `motion`, `seen` (the version that started last, for what is new) |
+| `meta` | key-value: `schema_version`, `started_at` (the world's first start, which the clock and the ticks count from), `budget` (the pot), `saved_at` (the last save, for "WHERE YOU LEFT OFF · 2 h ago"), `messages` (the last message number given), `setup_approved` (the worktree setup and teardown scripts and the repository's check you said yes to: how each runs, its bytes' SHA-256 and its real path), and your settings `side` (the side panel's width), `theme`, `notify`, `motion`, `seen` (the version that started last, for what is new) |
 | `projects` | each project's name, leader, whether it is closed, its checkout path, whether it is pinned, and the paths `:copy` lists (`copies`, JSON) |
 | `agents` | each agent's project, name, role, parent (a helper's worker), card, cost, taint, whether it is gone, its model and whether a tier chose it, the message-driven turns and posts since you last spoke, its own command list, its last session with what that session had spent, its start point, and for a fork not yet started the worker it goes on from (`fork_of`) |
 | `cards` | each card's project, title, owner, column and when it started and finished |
@@ -95,6 +95,7 @@ In `$XDG_CONFIG_HOME/imece/`, or `~/.config/imece/` (a relative `XDG_CONFIG_HOME
 ## What imece reads from the repository
 
 - `CLAUDE.md`, else `AGENTS.md`, at the checkout's top, when the agent's own directory has no `CLAUDE.md`. See [below](#what-an-agent-reads).
+- `.imece/check`: the repository's check, run in a worker's worktree on each change read from it once you said yes to its bytes; `.imece/worktree-setup.sh` and `.imece/worktree-teardown.sh` the same way, at a worktree's making and before its removal. See [changes](../concepts/changes.md#the-repositorys-check) and [projects](../concepts/projects.md#a-worktree-setup-script).
 - Git: the top of the checkout, HEAD, `git check-ignore` for `:copy`, `git ls-files --others --ignored --directory --exclude=…` for what `.worktreeinclude` matches (at a worker's start), `git diff --cached` and the eight newest subjects for `:commit` (with `--no-ext-diff --no-textconv`, so no program of yours runs), and `git ls-files` (tracked, and untracked but not ignored; the first 20,000) for completing a file's name in a message: at the project's opening, after each change you apply, and every minute while one of its agents is mid-turn.
 - A colour file named with `--theme FILE` or `:theme FILE`, in Ghostty's or Kitty's format; its absolute path is remembered as the theme.
 

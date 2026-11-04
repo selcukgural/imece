@@ -70,7 +70,11 @@ use crate::recall::{Hit, Line};
 /// 21 (2026-11-04): paid calls by kind as well as by day (`paid.kind`:
 /// commit messages and reviews have ceilings of their own, record 106),
 /// and the `Reviewed`/`ReviewFailed` events.
-pub const SCHEMA_VERSION: i64 = 22;
+/// 22 (2026-11-04): Claude Code alone (`agents.vendor` dropped, record 109).
+/// 23 (2026-11-04): the repository's check on a change (`changes.checked`,
+/// record 112), the `Check` inbox kind and the `Checked`/`CheckFailed`/
+/// `CheckAnswered` events.
+pub const SCHEMA_VERSION: i64 = 23;
 /// Trace lines kept per agent, as the world keeps them.
 const TRACE_KEEP: usize = 200;
 /// The file's name under the state directory.
@@ -139,7 +143,8 @@ CREATE TABLE IF NOT EXISTS offers (
     PRIMARY KEY (card, seq)) WITHOUT ROWID;
 CREATE TABLE IF NOT EXISTS changes (
     agent INTEGER PRIMARY KEY, path TEXT NOT NULL, tree TEXT NOT NULL,
-    files TEXT NOT NULL, patch TEXT NOT NULL, runs TEXT NOT NULL DEFAULT '[]');
+    files TEXT NOT NULL, patch TEXT NOT NULL, runs TEXT NOT NULL DEFAULT '[]',
+    checked TEXT NOT NULL DEFAULT '');
 CREATE TABLE IF NOT EXISTS paid (
     kind INTEGER NOT NULL, day INTEGER NOT NULL, calls INTEGER NOT NULL, cost INTEGER NOT NULL,
     PRIMARY KEY (kind, day)) WITHOUT ROWID;
@@ -229,6 +234,10 @@ pub struct Kept<'a> {
     pub posts: &'a HashMap<CardId, Post>,
     pub offered: &'a HashMap<CardId, Vec<AgentId>>,
     pub changes: &'a HashMap<AgentId, worktree::Change>,
+    /// Where the repository's check stands on each change (none means
+    /// [`Check::None`]): the world's at a save, the file's at a load, so
+    /// the two agree on what is saved.
+    pub checks: HashMap<AgentId, Check>,
 }
 
 /// What the engine kept, as it comes back from the file.
@@ -249,6 +258,9 @@ pub struct Found {
     pub changes: HashMap<AgentId, worktree::Change>,
     /// The runs on each change's tree, as the world had them.
     pub runs: HashMap<AgentId, Vec<Ran>>,
+    /// Where the repository's check stood on each change; none means
+    /// [`Check::None`].
+    pub checks: HashMap<AgentId, Check>,
 }
 
 /// What a paid call of imece's own is for: each kind counts against
@@ -541,6 +553,11 @@ impl Store {
         if !self.has_column("changes", "runs")? {
             self.conn
                 .execute_batch("ALTER TABLE changes ADD COLUMN runs TEXT NOT NULL DEFAULT '[]';")?;
+        }
+        if !self.has_column("changes", "checked")? {
+            self.conn.execute_batch(
+                "ALTER TABLE changes ADD COLUMN checked TEXT NOT NULL DEFAULT '';",
+            )?;
         }
         if !self.has_column("inbox", "card")? {
             self.conn
@@ -1084,6 +1101,7 @@ impl Store {
         for &id in &plan.changes {
             let c = &k.changes[&id];
             let runs = w.change_of(id).map_or(&[][..], |c| &c.runs);
+            let check = k.checks.get(&id).cloned().unwrap_or_default();
             let files: Vec<serde_json::Value> = c
                 .files
                 .iter()
@@ -1094,15 +1112,16 @@ impl Store {
                 })
                 .collect();
             tx.execute(
-                "INSERT OR REPLACE INTO changes (agent, path, tree, files, patch, runs) \
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                "INSERT OR REPLACE INTO changes (agent, path, tree, files, patch, runs, checked) \
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
                 params![
                     n(id),
                     c.path.display().to_string(),
                     c.tree,
                     serde_json::Value::Array(files).to_string(),
                     c.patch,
-                    serde_json::to_string(runs).unwrap_or_default()
+                    serde_json::to_string(runs).unwrap_or_default(),
+                    serde_json::to_string(&check).unwrap_or_default()
                 ],
             )?;
         }
@@ -1345,11 +1364,15 @@ impl Store {
             .filter(|c| !after.offered.contains_key(c))
             .copied()
             .collect();
+        // The row holds the tree and where the check stands on it: a
+        // check that ends later moves the row too.
         for (&id, c) in k.changes {
-            if s.changes.get(&id) != Some(&c.tree) {
+            let check = k.checks.get(&id).cloned().unwrap_or_default();
+            let key = format!("{} {}", c.tree, hash(&check));
+            if s.changes.get(&id) != Some(&key) {
                 plan.changes.push(id);
             }
-            after.changes.insert(id, c.tree.clone());
+            after.changes.insert(id, key);
         }
         plan.changes_gone = s
             .changes
@@ -1706,7 +1729,8 @@ impl Store {
             let (c, agent) = row?;
             found.offered.entry(c).or_default().push(agent);
         }
-        let mut st = conn.prepare("SELECT agent, path, tree, files, patch, runs FROM changes")?;
+        let mut st =
+            conn.prepare("SELECT agent, path, tree, files, patch, runs, checked FROM changes")?;
         for row in st.query_map([], |r| {
             Ok((
                 u(r.get(0)?),
@@ -1715,12 +1739,18 @@ impl Store {
                 r.get::<_, String>(3)?,
                 r.get::<_, String>(4)?,
                 r.get::<_, String>(5)?,
+                r.get::<_, String>(6)?,
             ))
         })? {
-            let (agent, path, tree, files, patch, runs) = row?;
+            let (agent, path, tree, files, patch, runs, check) = row?;
             let runs: Vec<Ran> = serde_json::from_str(&runs).unwrap_or_default();
             if !runs.is_empty() {
                 found.runs.insert(agent, runs);
+            }
+            // An older file has no column: no check.
+            let check: Check = serde_json::from_str(&check).unwrap_or_default();
+            if check != Check::None {
+                found.checks.insert(agent, check);
             }
             let files: Vec<serde_json::Value> = serde_json::from_str(&files).unwrap_or_default();
             let files = files
@@ -1757,6 +1787,7 @@ impl Store {
             posts: &found.posts,
             offered: &found.offered,
             changes: &found.changes,
+            checks: found.checks.clone(),
         };
         // The newest sent lines, oldest first.
         let mut st = conn.prepare("SELECT seq, tick, text FROM sent ORDER BY seq DESC LIMIT ?1")?;
@@ -2240,6 +2271,7 @@ mod tests {
             files: Vec::new(),
             patch: String::new(),
             runs: runs(),
+            check: check(),
         });
         w.sent.push(Sent {
             tick: 70,
@@ -2250,6 +2282,15 @@ mod tests {
             text: ":budget 80\nsecond line".into(),
         });
         w
+    }
+
+    /// The check on agent 1's change in [`world`]: it failed.
+    fn check() -> Check {
+        Check::Ran(Checked {
+            ok: false,
+            end: "exit 1, 2.0 s".into(),
+            lines: vec!["FAIL a.rs".into()],
+        })
     }
 
     /// The runs on agent 1's change in [`world`]: one clean, one failed,
@@ -2290,6 +2331,7 @@ mod tests {
         offered: HashMap<CardId, Vec<AgentId>>,
         changes: HashMap<AgentId, worktree::Change>,
         runs: HashMap<AgentId, Vec<Ran>>,
+        checks: HashMap<AgentId, Check>,
     }
 
     impl Owned {
@@ -2308,6 +2350,7 @@ mod tests {
                 posts: &self.posts,
                 offered: &self.offered,
                 changes: &self.changes,
+                checks: self.checks.clone(),
             }
         }
 
@@ -2327,6 +2370,7 @@ mod tests {
                 offered: self.offered.clone(),
                 changes: self.changes.clone(),
                 runs: self.runs.clone(),
+                checks: self.checks.clone(),
             }
         }
     }
@@ -2407,6 +2451,7 @@ mod tests {
                 },
             )]),
             runs: HashMap::from([(1, runs())]),
+            checks: HashMap::from([(1, check())]),
         }
     }
 
@@ -2721,6 +2766,7 @@ mod tests {
                 offered: f.offered.clone(),
                 changes: f.changes.clone(),
                 runs: f.runs.clone(),
+                checks: f.checks.clone(),
             }
         }
     }
@@ -2939,6 +2985,20 @@ mod tests {
                 }),
             ),
             (
+                "check moved",
+                Box::new(|w, k| {
+                    w.changes[0].check = Check::Running;
+                    k.checks.insert(1, Check::Running);
+                }),
+            ),
+            (
+                "check gone",
+                Box::new(|w, k| {
+                    w.changes[0].check = Check::None;
+                    k.checks.remove(&1);
+                }),
+            ),
+            (
                 "change replaced",
                 Box::new(|w, k| {
                     let runs = vec![runs()[1].clone()];
@@ -2958,6 +3018,7 @@ mod tests {
                     w.changes.clear();
                     k.changes.remove(&1);
                     k.runs.remove(&1);
+                    k.checks.remove(&1);
                 }),
             ),
         ];
@@ -3469,6 +3530,7 @@ mod tests {
                     posts: &k2.posts,
                     offered: &k2.offered,
                     changes: &k2.changes,
+                    checks: k2.checks.clone(),
                 },
             )
             .unwrap();
@@ -3924,11 +3986,12 @@ mod tests {
                 )
                 .unwrap();
             assert_eq!(
-                version, "22",
+                version, "23",
                 "the sent table, the Fault kind, archives, restores, start points, standing yes, the \
-                 recall index, forks, paid kinds, reviews and no vendor: an older imece knows none"
+                 recall index, forks, paid kinds, reviews, no vendor and the check on a change: an \
+                 older imece knows none"
             );
-            assert_eq!(SCHEMA_VERSION, 22);
+            assert_eq!(SCHEMA_VERSION, 23);
         }
         let back = Store::open(&path)
             .unwrap()
@@ -4552,6 +4615,7 @@ mod tests {
             posts: &found.posts,
             offered: &found.offered,
             changes: &found.changes,
+            checks: found.checks.clone(),
         };
         assert!(store.save(&w, &kept).unwrap());
         drop(store);
@@ -4734,5 +4798,51 @@ mod tests {
         );
         drop(st);
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_file_of_schema_22_gets_the_checked_column() {
+        let d = dir("schema22");
+        std::fs::create_dir_all(&d).unwrap();
+        let path = d.join(FILE);
+        {
+            // A whole file as schema 22 wrote it, its change unchecked.
+            let mut store = Store::open(&path).unwrap();
+            assert!(store.save(&world(), &kept().kept()).unwrap());
+            store
+                .raw()
+                .execute_batch(
+                    "ALTER TABLE changes DROP COLUMN checked;
+                     UPDATE meta SET value = '22' WHERE key = 'schema_version';",
+                )
+                .unwrap();
+        }
+        let mut store = Store::open(&path).unwrap();
+        let back = store.load(100).unwrap().expect("a world");
+        assert_eq!(back.found.changes, kept().changes);
+        assert_eq!(back.found.checks, HashMap::new(), "no check was kept");
+        let checked: String = store
+            .raw()
+            .query_row("SELECT checked FROM changes WHERE agent = 1", [], |r| {
+                r.get(0)
+            })
+            .unwrap();
+        assert_eq!(checked, "");
+        // The next save writes the check the world has.
+        let mut k = back.found();
+        let mut w = back.world;
+        w.changes.push(Change {
+            agent: 1,
+            title: "done".into(),
+            files: Vec::new(),
+            patch: String::new(),
+            runs: runs(),
+            check: check(),
+        });
+        k.checks.insert(1, check());
+        assert!(store.save(&w, &k.kept()).unwrap());
+        let back = store.load(100).unwrap().expect("a world");
+        assert_eq!(back.found.checks, HashMap::from([(1, check())]));
+        let _ = std::fs::remove_dir_all(&d);
     }
 }

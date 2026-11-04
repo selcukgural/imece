@@ -25,10 +25,21 @@ A change (`Δ`) is what a worker's worktree holds when the worker says `done`. I
 
 A run of the worker or a helper through imece's `run` tool is tied to the tree it ran on (the worktree is read before and after; a run that changed the tree counts for none). When a `done` is read, the runs on exactly its tree go with it: the `Δ` line ends with `✓ ran clean on this tree: …`, `✗ failed on this tree: …` or `no run on this tree`, and the diff starts with one line per run. It is shown, never a gate: a change with no run can still be applied; you decide. Claude Code's own shell does not count, since imece does not see what tree it ran on.
 
+### The repository's check
+
+Put a script at `.imece/check` in your checkout (a shell script, approved like the [worktree setup script](projects.md#a-worktree-setup-script)) and imece runs it in the worker's worktree every time a change is read from it, **once you said yes to its exact bytes**: `/bin/sh` on a private copy of the bytes you read, with the cleared environment plus `IMECE_REPO` and `IMECE_WORKTREE`, in its own process group, for the `run` tool's deadline (`--run-timeout`, ten minutes by default). What it came to goes on the change: `✓ check · exit 0, 41.2 s` or `✗ check · exit 1, 38.7 s` with the last lines of its output, a mark before the evidence on the `Δ` row in WAITING FOR YOU (`✓ check ·`, `✗ check ·`, `◌ check ·` while it runs), and a journal line (`claude-1: check failed on its change, exit 1, 38.7 s · Tests: 1 failed, 211 passed`). It is a note, never a gate: `a` applies a red change as it applies any other; you decide.
+
+- **Your yes:** the first change that finds a check you have not said yes to puts an ask in WAITING FOR YOU (`▶ claude-1: run the repository's check .imece/check on its changes? enter shows it`); the change waits unchecked meanwhile and says so above its patch. `enter` shows the bytes, `a` says yes (it runs at once on every change that waited, then on each one read), `r` no for this run. The yes is bound to the bytes' SHA-256, the file's real path and `/bin/sh`, kept in imece's store; a changed byte asks again. Asks close at the next start; the next change asks again.
+- **Once per tree:** a change read again with the same tree (sent back and sent again as it is) gets the result it had, without a run; a changed tree runs again. A check that was running, or asked about, when imece ended runs or asks again at the next start.
+- **What it must not do:** change tracked files. The change is read before the check runs, so what the check writes is no part of it and would show up in the worker's next `done`; build output under paths git ignores is fine.
+- **The worker is not told.** The result is yours: `n` sends your notes back, and a failed check's last lines make a first note. Whether a red check should hold a change back for one round, with the worker told first, is a question for a later record.
+- Without a check in the repository nothing runs and nothing shows; one that cannot be read (not a plain file, over 64 KiB) says so on the change and in the journal.
+
 ## Reading it
 
 `enter` opens the whole diff: `j k` scroll, `^d ^u ^f ^b` pages, `gg G`, `[ ]` file to file. Every line is cleaned before it is drawn. Above the patch:
 
+- the repository's [check](#the-repositorys-check), when it has one: how it ended, that it runs, or that it waits for your yes;
 - the runs on its tree (or that whether it builds and passes is not known);
 - when the files are of more than one kind, the lines per kind: `source +20 −1 (2) · tests +18 −0 (1) · generated +7 −5 (1)`. Kinds are by path alone: lock files, minified and generated code and `generated/`, `dist/`, `vendor/` directories are generated; `tests/`, `test/`, `__tests__/`, `spec/`, `test_*` and the usual test suffixes are tests; the rest is source. Generated wins over tests;
 - for a change of two files or more, the file list with `+N −M` each (or `binary`), six at most, the rest counted.

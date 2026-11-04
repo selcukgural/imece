@@ -7218,7 +7218,10 @@ impl App {
                     let open = self.inbox_rows();
                     // A setup script's ask: its bytes in a window.
                     if let Some(&i) = open.get(self.inbox_sel)
-                        && self.world.inbox[i].kind == InboxKind::Script
+                        && matches!(
+                            self.world.inbox[i].kind,
+                            InboxKind::Script | InboxKind::Check
+                        )
                     {
                         self.script = Some((i, 0));
                         return;
@@ -7481,7 +7484,10 @@ impl App {
         if self.world.inbox[item].kind == InboxKind::Change {
             return self.decide_change(self.world.inbox[item].agent, approve);
         }
-        if self.world.inbox[item].kind == InboxKind::Script {
+        if matches!(
+            self.world.inbox[item].kind,
+            InboxKind::Script | InboxKind::Check
+        ) {
             return self.answer_script(item, approve);
         }
         if self.world.inbox[item].kind == InboxKind::Approval {
@@ -7654,6 +7660,7 @@ pub(crate) mod tests {
             }],
             patch: patch.into(),
             runs: Vec::new(),
+            check: Check::None,
         });
         app.zoom = Zoom::Diff(worker);
         app.pane = Pane::Inbox;
@@ -8641,6 +8648,7 @@ pub(crate) mod tests {
             files: Vec::new(),
             patch: String::new(),
             runs: Vec::new(),
+            check: Check::None,
         });
         w.asks_you(1, "Bash: make");
         let mut live = idle_live(2);
@@ -8684,6 +8692,7 @@ pub(crate) mod tests {
             files: Vec::new(),
             patch: String::new(),
             runs: Vec::new(),
+            check: Check::None,
         });
         let mut app = App::with(w, Engine::Live(Box::new(live)), Lang::En);
         app.zoom = Zoom::Trace(1);
@@ -8796,6 +8805,7 @@ pub(crate) mod tests {
                 files: Vec::new(),
                 patch: String::new(),
                 runs: Vec::new(),
+                check: Check::None,
             });
             let mut app = App::with(w, Engine::Live(Box::new(live)), Lang::En);
             app.zoom = Zoom::Diff(1);
@@ -11955,6 +11965,7 @@ pub(crate) mod tests {
             files: Vec::new(),
             patch: "+x\n".into(),
             runs: Vec::new(),
+            check: Check::None,
         }
     }
 
@@ -16647,5 +16658,58 @@ pub(crate) mod tests {
         app.step();
         assert_eq!(flashed(&app), None);
         assert!(!app.tidy_start);
+    }
+
+    #[test]
+    fn enter_on_a_check_ask_shows_its_bytes_and_a_says_yes_there() {
+        let mut app = waiting(&[]);
+        let Engine::Sim(s) = &mut app.engine else {
+            unreachable!()
+        };
+        let id = s.hire_for_test(&mut app.world, 0);
+        app.world.change_ready(Change {
+            agent: id,
+            title: "a change".into(),
+            files: Vec::new(),
+            patch: String::new(),
+            runs: Vec::new(),
+            check: Check::None,
+        });
+        s.check(&mut app.world, id);
+        let item = (app.world.inbox.iter())
+            .position(|i| i.kind == InboxKind::Check)
+            .expect("asked");
+        app.pane = Pane::Inbox;
+        app.inbox_sel = app.inbox_rows().iter().position(|&i| i == item).unwrap();
+        app.on_key(key(KeyCode::Enter));
+        assert_eq!(app.script, Some((item, 0)));
+        let script = app.script_text(item).unwrap();
+        assert_eq!(script.kind, crate::live::setup::Kind::Check);
+        app.on_key(key(KeyCode::Char('a')));
+        assert_eq!(app.script, None);
+        assert!(!app.world.inbox[item].open);
+        assert_eq!(flashed(&app).as_deref(), Some(app.lang.text().setup_yes));
+        assert_eq!(app.world.change_of(id).unwrap().check, Check::Running);
+        // `r` on the selected ask answers it too.
+        let Engine::Sim(s) = &mut app.engine else {
+            unreachable!()
+        };
+        app.world.setup_approved.clear();
+        app.world.change_ready(Change {
+            agent: id,
+            title: "another".into(),
+            files: Vec::new(),
+            patch: String::new(),
+            runs: Vec::new(),
+            check: Check::None,
+        });
+        s.check(&mut app.world, id);
+        let item = (app.world.inbox.iter())
+            .position(|i| i.kind == InboxKind::Check && i.open)
+            .expect("asked again");
+        app.inbox_sel = app.inbox_rows().iter().position(|&i| i == item).unwrap();
+        app.on_key(key(KeyCode::Char('r')));
+        assert!(!app.world.inbox[item].open);
+        assert_eq!(app.world.change_of(id).unwrap().check, Check::None);
     }
 }

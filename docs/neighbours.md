@@ -18,7 +18,9 @@
   matching part exists:
   - Done needs evidence: one entry per acceptance criterion citing what
     proves it, and a passing check after the last change; a later change
-    voids the check.
+    voids the check. (Record 112: the repository's `.imece/check` runs on
+    each change read and its result is a note on the Δ, a changed tree runs
+    it again; evidence per criterion is not built.)
   - Rejections say whether new evidence or a different action is needed;
     an identical action after a rejection is refused without a model call.
   - Repeated unchanged reads (path + range + file digest) are caught; the

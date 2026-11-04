@@ -316,7 +316,8 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App, id: AgentId) {
     let block = Block::bordered().title(title).border_style(fg(pal().agent));
     let inner = block.inner(area);
     f.render_widget(block, area);
-    let mut ran = run_lines(app.lang, &c.runs);
+    let mut ran = check_lines(app.lang, &c.check);
+    ran.extend(run_lines(app.lang, &c.runs));
     if let Some(clashes) = w.clashes_of(id) {
         ran.insert(0, clash_line(app.lang, clashes, &a.name));
     }
@@ -634,6 +635,41 @@ pub(crate) fn review_lines(
         out.push(Line::from(Span::styled(more, dim())));
     }
     out
+}
+
+/// Where the repository's check (record 112) stands on the change, above
+/// the runs: how it ended (a failed one with the last lines of its
+/// output, dim), that it runs, that it waits for the person's yes, or why
+/// it could not run; nothing when there is none.
+pub(crate) fn check_lines(lang: Lang, check: &Check) -> Vec<Line<'static>> {
+    let t = lang.text();
+    match check {
+        Check::None => Vec::new(),
+        Check::Ran(d) if d.ok => vec![Line::from(Span::styled(
+            fill(t.check_ok, &[&d.end]),
+            fg(pal().ok),
+        ))],
+        Check::Ran(d) => {
+            let mut out = vec![Line::from(Span::styled(
+                fill(t.check_bad, &[&d.end]),
+                fg(pal().bad),
+            ))];
+            out.extend(
+                (d.lines.iter())
+                    .map(|l| Line::from(Span::styled(format!("  {}", clean(l)), dim()))),
+            );
+            out
+        }
+        Check::Running => vec![Line::from(Span::styled(t.check_running.to_string(), dim()))],
+        Check::Asked => vec![Line::from(Span::styled(
+            t.check_asked.to_string(),
+            fg(pal().warn),
+        ))],
+        Check::Failed(why) => vec![Line::from(Span::styled(
+            fill(t.check_failed, &[&clean(why)]),
+            fg(pal().warn),
+        ))],
+    }
 }
 
 fn run_lines(lang: Lang, runs: &[Ran]) -> Vec<Line<'static>> {
@@ -1346,5 +1382,47 @@ diff --git a/c.rs b/c.rs
         assert_eq!(line_style("--- a/x"), dim());
         assert_eq!(line_style("index 1..2 100644"), dim());
         assert_eq!(line_style(" same"), Style::new());
+    }
+
+    #[test]
+    fn the_check_s_lines_say_how_it_stands_in_its_colour() {
+        let lines = |check: &Check| check_lines(Lang::En, check);
+        let ran = |ok: bool, lines: &[&str]| {
+            Check::Ran(Checked {
+                ok,
+                end: if ok {
+                    "exit 0, 41.2 s"
+                } else {
+                    "exit 1, 3.0 s"
+                }
+                .into(),
+                lines: lines.iter().map(|l| l.to_string()).collect(),
+            })
+        };
+        assert!(lines(&Check::None).is_empty());
+        let ok = lines(&ran(true, &[]));
+        assert_eq!(texts(&ok), ["✓ check · exit 0, 41.2 s"]);
+        assert_eq!(ok[0].spans[0].style, fg(pal().ok));
+        let bad = lines(&ran(false, &["a", "TOKEN=abc b"]));
+        assert_eq!(texts(&bad), ["✗ check · exit 1, 3.0 s", "a", "[***] b"]);
+        assert_eq!(bad[0].spans[0].style, fg(pal().bad));
+        assert_eq!(bad[1].spans[0].content, "  a", "the output lines stand in");
+        assert_eq!(bad[1].spans[0].style, dim());
+        let running = lines(&Check::Running);
+        assert_eq!(texts(&running), ["◌ the check runs on this change…"]);
+        assert_eq!(running[0].spans[0].style, dim());
+        let asked = lines(&Check::Asked);
+        assert_eq!(
+            texts(&asked),
+            ["▶ the repository's check waits for your yes in WAITING FOR YOU"]
+        );
+        assert_eq!(asked[0].spans[0].style, fg(pal().warn));
+        let failed = lines(&Check::Failed("TOKEN=abc gone".into()));
+        assert_eq!(texts(&failed), ["check did not run: [***] gone"]);
+        assert_eq!(failed[0].spans[0].style, fg(pal().warn));
+        assert_eq!(
+            texts(&check_lines(Lang::Tr, &ran(true, &[]))),
+            ["✓ kontrol · exit 0, 41.2 s"]
+        );
     }
 }

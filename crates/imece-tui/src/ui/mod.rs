@@ -577,7 +577,7 @@ pub(crate) fn inbox_line(app: &App, i: usize) -> Line<'static> {
         InboxKind::Question => ("?", bold(pal().warn)),
         InboxKind::Approval => ("⚑", bold(pal().warn)),
         InboxKind::Fault => ("✕", bold(pal().bad)),
-        InboxKind::Script => ("▶", bold(pal().warn)),
+        InboxKind::Script | InboxKind::Check => ("▶", bold(pal().warn)),
     };
     let mut spans = vec![
         Span::styled(format!("{icon} "), style),
@@ -595,6 +595,14 @@ pub(crate) fn inbox_line(app: &App, i: usize) -> Line<'static> {
     if item.kind == InboxKind::Change
         && let Some(c) = w.change_of(item.agent)
     {
+        if let Some((mark, good)) = words::check_mark(app.lang, &c.check) {
+            let style = match good {
+                Some(true) => fg(pal().ok),
+                Some(false) => fg(pal().bad),
+                None => dim(),
+            };
+            spans.push(Span::styled(mark, style));
+        }
         let colour = if c.runs.is_empty() {
             pal().warn
         } else if c.runs.iter().all(Ran::ok) {
@@ -3086,6 +3094,7 @@ mod tests {
             files: Vec::new(),
             patch: String::new(),
             runs: Vec::new(),
+            check: Check::None,
         });
         app.zoom = Zoom::Focus(id);
         let change = foot(&app);
@@ -4997,6 +5006,50 @@ mod tests {
                     @@ -1 +1,2 @@\n q\n+Q-LINE\x07\n"
                 .into(),
             runs: Vec::new(),
+            check: Check::None,
+        }
+    }
+
+    #[test]
+    fn a_change_s_line_starts_with_how_the_check_stands() {
+        let mut app = app_after(1, 4, 50, Lang::En);
+        app.world.inbox.clear();
+        // The repository's check stands before the runs, in its colour;
+        // none, or one that could not run, puts nothing there.
+        let checked = |ok| {
+            Check::Ran(Checked {
+                ok,
+                end: "exit 0, 1.0 s".into(),
+                lines: Vec::new(),
+            })
+        };
+        for (check, mark, style) in [
+            (checked(true), "✓ check · ", fg(pal().ok)),
+            (checked(false), "✗ check · ", fg(pal().bad)),
+            (Check::Running, "◌ check · ", dim()),
+            (Check::Asked, "▶ check · ", dim()),
+        ] {
+            app.world.change_ready(Change {
+                check,
+                ..a_change(1)
+            });
+            let open = app.world.open_inbox();
+            let line = inbox_line(&app, *open.last().unwrap());
+            let before_last = &line.spans[line.spans.len() - 2];
+            assert_eq!(
+                (before_last.content.as_ref(), before_last.style),
+                (mark, style)
+            );
+        }
+        for check in [Check::None, Check::Failed("x".into())] {
+            app.world.change_ready(Change {
+                check,
+                ..a_change(1)
+            });
+            let open = app.world.open_inbox();
+            let line = inbox_line(&app, *open.last().unwrap());
+            let before_last = &line.spans[line.spans.len() - 2];
+            assert!(!before_last.content.contains("check"), "{:?}", line.spans);
         }
     }
 
@@ -5028,6 +5081,7 @@ mod tests {
         ] {
             app.world.change_ready(Change {
                 runs,
+                check: Check::None,
                 ..a_change(1)
             });
             let open = app.world.open_inbox();
@@ -11932,6 +11986,7 @@ mod tests {
             files: Vec::new(),
             patch: "diff --git a/x b/x\n@@ -1 +1 @@\n-a\n+b\n".into(),
             runs: Vec::new(),
+            check: Check::None,
         });
         app.zoom = Zoom::Diff(worker);
         app.diff_scroll = 3;
@@ -13516,6 +13571,12 @@ after | not a table";
     #[test]
     fn an_item_under_the_selected_one_starts_below_its_keys_and_a_row_not_drawn_has_no_place() {
         let mut app = App::new(2, 6, 4, 12, Lang::En);
+        // The checks run without asking: the items counted are the demo's
+        // as they were before the check (record 112).
+        for p in 0..app.world.projects.len() {
+            let key = crate::sim::Sim::check_script(&app.world, p).key();
+            app.world.approve_setup(key);
+        }
         for _ in 0..300 {
             app.step();
         }

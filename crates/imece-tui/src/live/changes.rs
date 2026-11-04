@@ -349,8 +349,10 @@ impl Live {
                         .collect(),
                     patch: c.patch.clone(),
                     runs,
+                    check: Check::None,
                 });
                 self.changes.insert(id, c);
+                self.check_change(w, id);
                 format!(
                     "; the person sees your change ({files} files, +{added} −{removed}) and \
                      applies it to their checkout or rejects it; it stays in your worktree \
@@ -1938,5 +1940,65 @@ mod tests {
         let _ = std::fs::remove_dir_all(&folder);
         let _ = std::fs::remove_dir_all(&root);
         let _ = std::fs::remove_dir_all(&repo);
+    }
+
+    #[test]
+    fn a_done_s_change_is_checked_by_the_repository_s_check_in_its_worktree() {
+        let repo = checkout("check-repo");
+        let root = trees("check");
+        let mut w = team(1);
+        let mut live = Live::new(
+            3,
+            claude_at("/nonexistent/claude"),
+            repo.clone(),
+            root.clone(),
+        );
+        let tree = worker_in(&mut live, &mut w, 1, &repo, &root);
+        let helper = with_helper(&mut w, 1);
+        for (id, dir) in [(helper, tree.clone()), (0, repo.clone())] {
+            live.ready(
+                &mut w,
+                id,
+                Ok((
+                    Box::new(Stub),
+                    dir,
+                    None,
+                    None,
+                    imece_agent::copy::Brought::default(),
+                    setup::Done::None,
+                )),
+            );
+        }
+        std::fs::create_dir_all(repo.join(".imece")).unwrap();
+        std::fs::write(
+            repo.join(setup::CHECK_FILE),
+            "wc -l < \"$IMECE_WORKTREE/a.txt\" | tr -d ' '\n",
+        )
+        .unwrap();
+        let script = setup::look_for(&repo, setup::Kind::Check).unwrap().unwrap();
+        w.approve_setup(script.key());
+        std::fs::write(tree.join("a.txt"), "a\nb\n").unwrap();
+        sent(&mut live, &mut w, 1, &msg("lead", "done", "b")).unwrap();
+        assert_eq!(w.change_of(1).unwrap().check, Check::Running);
+        let until = Instant::now() + Duration::from_secs(10);
+        let checked = loop {
+            live.step(&mut w);
+            match w.change_of(1).map(|c| c.check.clone()) {
+                Some(Check::Ran(d)) => break d,
+                other => assert!(Instant::now() < until, "{other:?}"),
+            }
+            std::thread::sleep(Duration::from_millis(20));
+        };
+        assert!(checked.ok, "{checked:?}");
+        assert_eq!(checked.lines, ["2"]);
+        assert!(w.journal.iter().any(|e| matches!(
+            e.event,
+            Event::Checked {
+                agent: 1,
+                ok: true,
+                ..
+            }
+        )));
+        let _ = std::fs::remove_dir_all(&root);
     }
 }

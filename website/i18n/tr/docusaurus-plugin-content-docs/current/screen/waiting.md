@@ -26,6 +26,7 @@ SENİ BEKLEYEN (İngilizce ekranda WAITING FOR YOU) salonun üst yan panelidir. 
 | `»` | bir yanıt | bir agent size yanıt verdi ve okumanızı bekliyor | `enter` okur (konuşma açılır) ve kapatır; `r` kapatır | |
 | `✕` | bir API hatası | bir tur yalnız sizin giderebileceğiniz bir hatayla bitti: hesap (oturum kapalı, reddedilen bir anahtar, bir kota ya da fatura) ya da imece'nin üç denemesi tükendikten sonra geçici bir hata (aşırı yük, bir sunucu hatası, kopan bir bağlantı) (bkz. [API hata verince](../concepts/sessions.md#api-hata-verince)). Satırda Claude Code'un kendi sözleri yazar. | ikisi de yazma satırını `@agent ` ile açar; mesajınız gidince öge kapanır ve o mesaj agent'ın bir sonraki denemesidir | |
 | `▶` | bir kurulum betiği | yeni bir worktree checkout'unuzda evet demediğiniz baytlarla `.imece/worktree-setup.sh` buldu; işçi onsuz başladı. Bkz. [worktree kurulum betiği](../concepts/projects.md#worktree-kurulum-betiği). | evet: kaçırıldığı yerde hemen, sonra her yeni worktree'de çalışır; `enter` önce baytlarını gösterir | hayır, bu çalıştırma için |
+| `▶` | deponun kontrolü | bir işçinin değişikliği okundu ve checkout'unuzda evet demediğiniz baytlarla `.imece/check` var; değişiklik bu arada kontrolsüz bekler. Bkz. [deponun kontrolü](../concepts/changes.md#deponun-kontrolü). | evet: önce onu bekleyen değişikliklerde, sonra okunan her değişiklikte çalışır; `enter` önce baytlarını gösterir | hayır, bu çalıştırma için |
 
 Satır saati taşır, ertelediyseniz `sonra ·`, birden çok proje açıksa projenin adını. Başka bir günün ögesi tarihini de taşır.
 
