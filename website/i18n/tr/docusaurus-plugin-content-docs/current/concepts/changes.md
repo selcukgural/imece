@@ -37,7 +37,7 @@ Bir değişiklik (`Δ`), bir işçi `done` dediğinde worktree'sinin tuttuğu ş
 
 `h` (ya da `←`) eldeki satırın dosyasını `diff --git` başlığına katlar; başlık kaç satır gizlediğini söyler (`▸ 42 satır`). `l` (ya da `→`) açar, `za` çevirir, `zM` (`:fold`) her dosyayı katlar, `zR` (`:unfold`) hepsini açar. `j` `k`, sayfalar ve `G` gösterilen satırlar üzerinde gider, yani katlı bir dosya üstünden geçilecek tek satırdır; `[` `]` yine başlıktan başlığa gider. Gizli bir satırın dosyasını katlamak eldeki satırı başlığına koyar. `v` önce her dosyayı açar, çünkü satırlar bütün yamadan seçilir. Katlar o yama için geçerlidir: işçiden gelen yeni bir yama açık başlar.
 
-## İkinci bir okuma
+## İkinci bir okuma {#ikinci-bir-okuma}
 
 `:review` eldeki değişikliği taze bir Claude Code oturumuna okutur ve bulduğunu söyletir; `:review on` gelen her değişiklik için ister (varsayılan kapalı, hatırlanır). Okuyan işçinin oturumundan hiçbir şey bilmez; işçinin ne yaptığını söylediğini, dosya listesini ve yamayı (en çok 64 KiB) alır, aracı yoktur. Yanıtı dosya listesinin üstünde durur:
 
