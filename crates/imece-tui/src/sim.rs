@@ -972,7 +972,11 @@ impl Sim {
     /// Whether worker `id` can take a card: idle and between cards.
     fn free(w: &World, id: AgentId) -> bool {
         let a = &w.agents[id];
-        a.role == Role::Worker && !a.gone && a.status == Status::Idle && !Self::unfinished(w, id)
+        a.role == Role::Worker
+            && !a.gone
+            && a.status == Status::Idle
+            && !Self::unfinished(w, id)
+            && !w.waits_on_person(id)
     }
 
     /// The person told agent `id` something, as live's sessions take it:
@@ -1620,6 +1624,11 @@ impl Sim {
             let a = &w.agents[id];
             if a.turn_yes.is_some() && (a.gone || !a.status.busy()) {
                 w.turn_over(id);
+            }
+            if w.agents[id].held_mail > 0 && !w.waits_on_person(id) {
+                let a = &mut w.agents[id];
+                a.held_mail = 0;
+                a.trace(t, "takes the mail that waited on the person");
             }
         }
     }
@@ -2549,6 +2558,12 @@ impl Sim {
             t,
             format!("mail from={sender} type={}{numbers}", kind.wire()),
         );
+        // As live's: what comes for an agent that waits on the person
+        // waits with it, but for a cancel.
+        if kind != MsgKind::Cancel && w.waits_on_person(to) {
+            w.agents[to].held_mail += 1;
+            w.agents[to].trace(t, format!("held until the person answers: message {id}"));
+        }
         for (a, other) in [(from, to), (to, from)] {
             w.agents[a].talk = Some(Talk {
                 with: Party::Agent(other),
@@ -4769,6 +4784,48 @@ diff --git a/b.rs b/b.rs
     }
 
     #[test]
+    fn mail_waits_with_an_agent_that_waits_on_the_person_as_it_does_live() {
+        let (mut w, mut s, worker, card) = one_at_work();
+        let lead = w.projects[0].leader;
+        w.agents[worker].status = Status::Idle;
+        w.cards[card].column = Column::Done;
+        assert!(Sim::free(&w, worker));
+        // A question open: no card comes, and mail waits on its row.
+        w.asked_you(worker, "Which?");
+        assert!(!Sim::free(&w, worker), "as a board offer waits");
+        s.send(&mut w, lead, worker, MsgKind::Cancel, "Drop it", None);
+        assert_eq!(w.agents[worker].held_mail, 0, "a cancel is never held");
+        s.send(&mut w, lead, worker, MsgKind::Assign, "One", None);
+        s.send(&mut w, lead, worker, MsgKind::Inform, "Two", None);
+        assert_eq!(w.agents[worker].held_mail, 2);
+        assert!(
+            w.agents[worker]
+                .trace
+                .back()
+                .unwrap()
+                .ends_with("held until the person answers: message 3")
+        );
+        s.step(&mut w);
+        assert_eq!(w.agents[worker].held_mail, 2, "still waiting");
+        // Answered: it takes it, and the trace says so.
+        w.close_questions(worker);
+        s.step(&mut w);
+        assert_eq!(w.agents[worker].held_mail, 0);
+        assert!(
+            (w.agents[worker].trace.iter())
+                .any(|l| l.ends_with("takes the mail that waited on the person"))
+        );
+    }
+
+    #[test]
+    fn mail_to_an_agent_nobody_keeps_waiting_is_not_held() {
+        let (mut w, mut s, worker, _) = one_at_work();
+        let lead = w.projects[0].leader;
+        s.send(&mut w, lead, worker, MsgKind::Assign, "One", None);
+        assert_eq!(w.agents[worker].held_mail, 0);
+    }
+
+    #[test]
     fn free_names_skip_the_taken_and_stay_bounded() {
         let (w, _) = world(1, 0, 0, 1, Lang::En);
         assert_eq!(free_name(&w, "lea", 1), "lea1");
@@ -4862,10 +4919,13 @@ diff --git a/b.rs b/b.rs
         w.said(worker, "store credit");
         assert_eq!(w.agents[worker].status, Status::Working);
         assert!(!w.has_question(worker));
-        // Between cards, a question still open does not hold it back.
+        // Between cards, a question still open holds it back; its answer
+        // sets it free.
         s.ask_you(&mut w, worker);
         w.cards[card].column = Column::Done;
-        assert!(w.has_question(worker) && Sim::free(&w, worker));
+        assert!(w.has_question(worker) && !Sim::free(&w, worker));
+        w.close_questions(worker);
+        assert!(Sim::free(&w, worker));
     }
 
     #[test]

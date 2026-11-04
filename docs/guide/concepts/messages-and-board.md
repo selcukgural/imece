@@ -72,6 +72,14 @@ The bus reaches you as `you`: `send(to: "you", type, body)`.
 
 The prompts say when to ask: the leader may ask you mid-task; a worker asks its leader first and sends you only what only you can decide; a helper only what no teammate can answer. More on [approvals and questions](../concepts/approvals-and-questions.md).
 
+## Mail waits with an agent that waits on you
+
+An agent with something open that only you can settle does not go on because a teammate wrote: a question of its in WAITING FOR YOU, a tool call waiting for your yes, a vendor error, a setup script, a sensitive change or a research report. Its mail stays queued and starts no turn, and no board card is offered to it. The sender hears `held as message 7; …`, and the agent's row and `:why` say how many messages wait: `✉ 2 held`.
+
+When you write to the agent, the mail goes in that same turn, after your words, if your word ends the wait. When you settle it another way, the mail starts a turn of its own. A `cancel` is never held: it starts a turn at once, and the mail that waited goes with it, in order. The mail caps count held mail as any other.
+
+Two things in WAITING FOR YOU hold nothing: an answer waiting to be read, and a worker's change. A worker with a change waiting is finished and needs no answer to go on, so it can take the next card while you review.
+
 ## You on the bus
 
 Plain text in the command line goes to the selected project's leader; `@name text` goes to one agent. A message to an idle worker opens a card; its answer closes it. Your messages have no number. An agent's answer to you waits in WAITING FOR YOU ("claude-1 answered you: …") until you open it (`enter`), dismiss it (`r`) or just write back.

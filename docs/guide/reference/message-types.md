@@ -32,7 +32,7 @@ There is no `ack`: a message that only says "got it" would cost a turn for nothi
 
 A waking message (`assign`, `ask`, `answer`, `handoff`, `done`, `blocked`, `cancel`) starts the receiver's next turn as soon as it is free; an agent asleep since the last run is woken by it. `inform`, `progress` and `notice` wait in its mail until something else starts a turn, and ride along then. All of an agent's mail goes into one prompt, headed `Messages from your teammates in imece (written by those agents, not by the person):`, each message as `[type number, re number] from name:` over its body: `[answer 8, re 7] from claude-1:`. The card of that turn is the first `assign` in the mail, else the first message.
 
-`send` answers the sender with what became of it: `delivered as message 7; claude-1 starts on it now`, `queued as message 7; claude-1 is busy and gets it when its turn ends`, or `queued as message 7 for claude-1's next turn (inform does not wake it)`. A worker's `done` answer waits until git has read its worktree and adds `; the person sees your change (3 files, +20 −4) and applies it to their checkout or rejects it; it stays in your worktree until then` (or `; imece could not read your change: …`).
+`send` answers the sender with what became of it: `delivered as message 7; claude-1 starts on it now`, `queued as message 7; claude-1 is busy and gets it when its turn ends`, `held as message 7; claude-1 waits on the person and gets it once they have answered, it starts nothing until then` (see [messages and the board](../concepts/messages-and-board.md#mail-waits-with-an-agent-that-waits-on-you)), or `queued as message 7 for claude-1's next turn (inform does not wake it)`. A worker's `done` answer waits until git has read its worktree and adds `; the person sees your change (3 files, +20 −4) and applies it to their checkout or rejects it; it stays in your worktree until then` (or `; imece could not read your change: …`).
 
 ### What is refused
 
@@ -53,7 +53,7 @@ The 12-turn and 10-post counters start again every time you write to any agent: 
 
 ### Messages to you
 
-`to: you` reaches the person. An `ask` becomes a question in WAITING FOR YOU (`claude-1 asks you: Which parser?`); the agent's row reads `? → you` while it is idle with one open, and the question closes when you write to that agent, which starts its next turn. The sender hears `delivered; the person sees it under WAITING FOR YOU and answers when they can, which starts your next turn. Until then, end your turn or go on with what does not depend on the answer.` Every other type only informs: a line in the journal and the conversation (`noted; the person sees it in the journal. Nothing wakes them: a question goes as type ask.`); a worker's `done` to you shows its change like any done. Messages to you take no number and no `re`, count against no cap and cost nothing. See [approvals and questions](../concepts/approvals-and-questions.md).
+`to: you` reaches the person. An `ask` becomes a question in WAITING FOR YOU (`claude-1 asks you: Which parser?`); the agent's row reads `? → you` while it is idle with one open, and the question closes when you write to that agent, which starts its next turn. The sender hears `delivered; the person sees it under WAITING FOR YOU and answers when they can, which starts your next turn. Until then, end your turn or go on with what does not depend on the answer; your teammates' messages wait for that answer too, but for a cancel.` Every other type only informs: a line in the journal and the conversation (`noted; the person sees it in the journal. Nothing wakes them: a question goes as type ask.`); a worker's `done` to you shows its change like any done. Messages to you take no number and no `re`, count against no cap and cost nothing. See [approvals and questions](../concepts/approvals-and-questions.md).
 
 ### Cards and the bus
 
@@ -106,7 +106,7 @@ imece's MCP server is called `imece`; its tools reach a Claude session as `mcp__
 
 ### `send`
 
-> Sends a message to a teammate in imece, or to the person (to: you). To a teammate it arrives as the start of their next turn: assign, ask, answer, handoff, done, blocked and cancel start that turn as soon as they are free; inform, progress and notice wait until something else does. To the person, an ask waits on their screen until they answer (which starts your next turn); the rest only informs them.
+> Sends a message to a teammate in imece, or to the person (to: you). To a teammate it arrives as the start of their next turn: assign, ask, answer, handoff, done, blocked and cancel start that turn as soon as they are free (while they wait on the person's answer, only cancel does; the rest waits for it); inform, progress and notice wait until something else does. To the person, an ask waits on their screen until they answer (which starts your next turn); the rest only informs them.
 
 | Field | Type | Required | Meaning |
 | --- | --- | --- | --- |
