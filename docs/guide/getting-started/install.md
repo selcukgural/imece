@@ -59,9 +59,9 @@ imece looks for `claude` on PATH when it starts and drives it. Without it, it st
 
 It runs one long-lived `claude -p` stream-json session per agent, under `--restricted` unless `--confine open`. It needs a login; costs are reported in dollars and go to the pot. Probed on Claude Code 2.1.314.
 
-Each session is started so that nothing of your own Claude Code setup loads (no hooks, no MCP servers but imece's own, no repository settings) under the default `--confine standard` and under `strict`; `--confine open` runs Claude Code as you have it set up. In every case the leader never writes and Claude Code's own sub-agent tool stays off. What a session reports it runs with is checked, fail closed; see [Claude Code](../concepts/claude-code.md) and [security](../concepts/security.md).
+Each session is started so that your Claude Code setup does not load (no hooks, no MCP servers but imece's own, no settings, no commands of yours), only the notes below, under the default `--confine standard` and under `strict`; `--confine open` runs Claude Code as you have it set up. In every case the leader never writes and Claude Code's own sub-agent tool stays off. What a session reports it runs with is checked, fail closed; see [Claude Code](../concepts/claude-code.md) and [security](../concepts/security.md).
 
-Every agent also gets your repository's notes for coding agents, its `AGENTS.md` or else `CLAUDE.md`, up to 16 KiB; a longer file goes in cut and the journal says so. Instructions of your own for every project go in `~/.config/imece/instructions.md` (or under `$XDG_CONFIG_HOME/imece/`), up to 16 KiB as well; they come before the repository's notes. See [files](../reference/files.md).
+Every agent reads the repository's `CLAUDE.md` and your `~/.claude/CLAUDE.md` whole, through Claude Code's own loader; a repository with only an `AGENTS.md` has that read instead. Instructions for imece's agents alone go in `~/.config/imece/instructions.md` (or under `$XDG_CONFIG_HOME/imece/`). See [files](../reference/files.md).
 
 ## Terminals
 

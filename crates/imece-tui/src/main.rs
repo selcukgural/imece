@@ -409,6 +409,7 @@ fn main() -> std::io::Result<()> {
             run_programs: args.run_programs,
             run_timeout: args.run_timeout,
             instructions: keys::config_file(live::INSTRUCTIONS),
+            own_notes: imece_agent::claude::own_notes(),
             confine: args.confine,
             solo: args.solo,
         };

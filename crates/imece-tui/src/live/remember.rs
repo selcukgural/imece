@@ -1139,6 +1139,7 @@ mod tests {
             run_programs: Vec::new(),
             run_timeout: DEFAULT_RUN_TIMEOUT,
             instructions: None,
+            own_notes: None,
             confine: Confine::Standard,
             solo: None,
         };
@@ -2076,6 +2077,7 @@ mod tests {
             run_programs: Vec::new(),
             run_timeout: DEFAULT_RUN_TIMEOUT,
             instructions: None,
+            own_notes: None,
             confine: Confine::Standard,
             solo: None,
         };
@@ -2125,6 +2127,7 @@ mod tests {
             run_programs: Vec::new(),
             run_timeout: DEFAULT_RUN_TIMEOUT,
             instructions: None,
+            own_notes: None,
             confine: Confine::Strict,
             solo: None,
         };

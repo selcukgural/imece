@@ -115,6 +115,7 @@ pub(super) fn commit_message(text: &str) -> String {
 pub(super) fn suggest_spec(program: String, cwd: PathBuf, model: &str) -> claude::Spec {
     claude::Spec {
         scratch: None,
+        notes: None,
         program,
         cwd,
         name: "imece-commit".into(),

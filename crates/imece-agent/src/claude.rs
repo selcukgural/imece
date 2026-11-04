@@ -18,6 +18,7 @@
 //! the session.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::ffi::OsString;
 use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc;
@@ -44,6 +45,27 @@ pub const ENV: &[&str] = &[
     "NODE_EXTRA_CA_CERTS",
     "SSL_CERT_FILE",
 ];
+
+/// What makes Claude Code's own loader read the `CLAUDE.md` of a directory
+/// it is given with `--add-dir` (record 110); under `--restricted` it
+/// reads none otherwise. Not in [`ENV`]: imece sets it, from nobody's.
+const NOTES_ENV: &str = "CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD";
+
+/// The person's own `CLAUDE.md`, where Claude Code keeps it: in
+/// `CLAUDE_CONFIG_DIR` when that is set, else in `~/.claude`.
+pub fn own_notes() -> Option<PathBuf> {
+    own_notes_in(
+        std::env::var_os("CLAUDE_CONFIG_DIR"),
+        std::env::var_os("HOME"),
+    )
+}
+
+/// [`own_notes`], with the environment's two values given.
+fn own_notes_in(config: Option<OsString>, home: Option<OsString>) -> Option<PathBuf> {
+    let some = |v: Option<OsString>| v.filter(|v| !v.is_empty()).map(PathBuf::from);
+    let dir = some(config).or_else(|| Some(some(home)?.join(".claude")))?;
+    Some(dir.join("CLAUDE.md"))
+}
 
 /// Whether Claude Code is signed in, a subscription or an API key: `claude
 /// auth status --json` answers offline with `loggedIn`.
@@ -174,6 +196,30 @@ pub struct Spec {
     /// part of its change (record 105): its file tools may write there too
     /// (`--add-dir`).
     pub scratch: Option<PathBuf>,
+    /// imece's directory of notes for this agent (record 110), whose
+    /// `CLAUDE.md` Claude Code's own loader reads; none when there is
+    /// nothing to say there.
+    pub notes: Option<PathBuf>,
+}
+
+/// The command line of a session that stays: [`args`] and the directories
+/// Claude Code's own loader reads the notes of (record 110). Under
+/// `--restricted` the agent's own directory is added for its notes alone:
+/// its file tools reach it already. A [`once`] call reads none.
+pub fn session_args(spec: &Spec) -> Vec<String> {
+    let mut a = args(spec);
+    let own = (spec.confine != Confine::Open).then_some(&spec.cwd);
+    for dir in [own, spec.notes.as_ref()].into_iter().flatten() {
+        a.push("--add-dir".into());
+        a.push(dir.to_string_lossy().into_owned());
+    }
+    a
+}
+
+/// Whether a session needs [`NOTES_ENV`]: every one under `--restricted`,
+/// which reads no `CLAUDE.md` without it, and one given notes of imece's.
+fn loads_notes(spec: &Spec) -> bool {
+    spec.confine != Confine::Open || spec.notes.is_some()
 }
 
 /// A session Claude Code saved (`~/.claude/projects/<cwd>/<id>.jsonl`),
@@ -940,14 +986,15 @@ impl Session {
     /// Starts the session. `on` gets its events on a reader thread; the
     /// last one is always [`Event::Stopped`].
     pub fn start(spec: &Spec, on: impl FnMut(Event) + Send + 'static) -> io::Result<Session> {
-        Session::start_with(spec, args(spec), on)
+        Session::start_with(spec, session_args(spec), loads_notes(spec), on)
     }
 
     /// [`Session::start`] on command line `argv`, the settings checked
-    /// against `spec` all the same.
+    /// against `spec` all the same; `notes`: with [`NOTES_ENV`] set.
     fn start_with(
         spec: &Spec,
         argv: Vec<String>,
+        notes: bool,
         mut on: impl FnMut(Event) + Send + 'static,
     ) -> io::Result<Session> {
         // Claude Code would run at its default effort and only warn.
@@ -960,6 +1007,9 @@ impl Session {
         }
         let mut cmd = child::command(&spec.program, &spec.cwd, ENV);
         cmd.args(argv);
+        if notes {
+            cmd.env(NOTES_ENV, "1");
+        }
         let mut parser = Parser::new(spec);
         let mut stopped = false;
         let child = Child::spawn(cmd, move |out| match out {
@@ -1054,7 +1104,7 @@ pub fn once_args(spec: &Spec) -> Vec<String> {
 /// before it answers); its budget is the call's cap.
 pub fn once(spec: &Spec, prompt: &str, deadline: Duration) -> Result<Said, Unsaid> {
     let (tx, rx) = mpsc::channel();
-    let started = Session::start_with(spec, once_args(spec), move |e| {
+    let started = Session::start_with(spec, once_args(spec), false, move |e| {
         let _ = tx.send(e);
     });
     let mut session = started.map_err(|e| Unsaid {
@@ -1135,6 +1185,7 @@ mod tests {
     fn spec(tools: &[&str]) -> Spec {
         Spec {
             scratch: None,
+            notes: None,
             program: "claude".into(),
             cwd: PathBuf::from("/work/w1"),
             name: "claude-1".into(),
@@ -1294,14 +1345,70 @@ mod tests {
     #[test]
     fn a_scratch_directory_is_added_for_the_file_tools() {
         let mut s = spec(&["Read", "Write"]);
-        assert_eq!(after(&args(&s), "--add-dir"), None);
         s.scratch = Some(PathBuf::from("/state/w1-scratch/claude-1"));
-        let a = args(&s);
         assert_eq!(
-            after(&a, "--add-dir").as_deref(),
+            after(&args(&s), "--add-dir").as_deref(),
             Some("/state/w1-scratch/claude-1")
         );
-        assert_eq!(a.iter().filter(|x| *x == "--add-dir").count(), 1);
+    }
+
+    /// The directories a session is given, in order.
+    fn added(s: &Spec) -> Vec<String> {
+        let a = session_args(s);
+        let at = a.iter().enumerate().filter(|(_, x)| *x == "--add-dir");
+        at.map(|(i, _)| a[i + 1].clone()).collect()
+    }
+
+    #[test]
+    fn claude_code_s_own_loader_reads_the_notes_at_every_level_but_open() {
+        for level in [Confine::Strict, Confine::Standard] {
+            let mut s = at(level, true);
+            s.cwd = PathBuf::from("/w/tree");
+            assert_eq!(added(&s), ["/w/tree"], "the agent's own directory");
+            assert!(loads_notes(&s), "at {level:?}");
+            s.scratch = Some(PathBuf::from("/s/claude-1"));
+            s.notes = Some(PathBuf::from("/n/claude-1"));
+            assert_eq!(added(&s), ["/s/claude-1", "/w/tree", "/n/claude-1"]);
+            assert!(loads_notes(&s), "at {level:?}");
+            // A one-shot call pays for no notes.
+            let once = once_args(&s);
+            let dirs = once.iter().filter(|x| *x == "--add-dir").count();
+            assert_eq!(dirs, 1, "its scratch alone: {once:?}");
+        }
+        // Open: Claude Code reads the person's files itself; imece's
+        // directory only when imece has something to say there.
+        let mut s = at(Confine::Open, true);
+        s.cwd = PathBuf::from("/w/tree");
+        assert!(added(&s).is_empty());
+        assert!(!loads_notes(&s));
+        s.notes = Some(PathBuf::from("/n/claude-1"));
+        assert_eq!(added(&s), ["/n/claude-1"]);
+        assert!(loads_notes(&s));
+    }
+
+    #[test]
+    fn the_person_s_own_notes_are_where_claude_code_keeps_them() {
+        let os = |v: &str| Some(OsString::from(v));
+        let file = |c, h| own_notes_in(c, h).map(|p: PathBuf| p.display().to_string());
+        assert_eq!(
+            file(None, os("/home/me")).as_deref(),
+            Some("/home/me/.claude/CLAUDE.md")
+        );
+        assert_eq!(
+            file(os("/conf"), os("/home/me")).as_deref(),
+            Some("/conf/CLAUDE.md")
+        );
+        assert_eq!(
+            file(os(""), os("/h")).as_deref(),
+            Some("/h/.claude/CLAUDE.md")
+        );
+        assert_eq!(file(os("/conf"), None).as_deref(), Some("/conf/CLAUDE.md"));
+        assert_eq!(file(None, os("")), None);
+        assert_eq!(file(None, None), None);
+        assert!(
+            own_notes().unwrap().ends_with("CLAUDE.md"),
+            "this machine's"
+        );
     }
 
     #[test]
@@ -2954,6 +3061,7 @@ sleep 5"#
         .unwrap();
         let spec = Spec {
             scratch: None,
+            notes: None,
             program: "claude".into(),
             cwd: cwd.clone(),
             name: "imece probe".into(),
@@ -3045,6 +3153,7 @@ sleep 5"#
         let cwd = dir.canonicalize().unwrap();
         let mut spec = Spec {
             scratch: None,
+            notes: None,
             program: "claude".into(),
             cwd: cwd.clone(),
             name: "imece probe".into(),

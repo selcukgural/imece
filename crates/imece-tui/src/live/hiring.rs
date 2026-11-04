@@ -1322,9 +1322,16 @@ mod tests {
         // The prompt spans lines; the stand-in wrote one argument per line.
         let raw = std::fs::read_to_string(dir.join("args.txt")).unwrap();
         assert!(
-            raw.contains("from its CLAUDE.md:\n\nRun cargo fmt before you finish.\n--model\n"),
-            "the repository's notes end the prompt: {raw}"
+            !raw.contains("Run cargo fmt"),
+            "Claude Code reads them: {raw}"
         );
+        assert_eq!(
+            after("--add-dir"),
+            dir.to_str().unwrap(),
+            "from its own place"
+        );
+        let dirs = args.iter().filter(|a| **a == "--add-dir").count();
+        assert_eq!(dirs, 1, "imece has nothing to add to them");
         assert!(!args.contains(&"--mcp-config"), "no bus, no MCP server");
         let _ = std::fs::remove_dir_all(&dir);
     }

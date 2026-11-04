@@ -59,9 +59,9 @@ imece başlarken PATH'te `claude`'u arar ve onu sürer. Yoksa durur ve Claude Co
 
 Ajan başına uzun ömürlü bir `claude -p` stream-json oturumu çalıştırır; `--confine open` değilse `--restricted` altında. Oturum açılmış olmalıdır; maliyetler dolar olarak bildirilir ve keseye yazılır. Claude Code 2.1.314 üzerinde sondalandı.
 
-Varsayılan `--confine standard` ve `strict` altında her oturum, kendi Claude Code kurulumunuzdan hiçbir şey yüklenmeyecek şekilde başlatılır (hook yok, imece'ninki dışında MCP sunucusu yok, depo ayarı yok); `--confine open` Claude Code'u sizin kurduğunuz gibi çalıştırır. Her durumda lider hiç yazmaz ve Claude Code'un kendi alt ajan aracı kapalı kalır. Bir oturumun neyle çalıştığını bildirdiği, kapalı düşerek denetlenir; bkz. [Claude Code](../concepts/claude-code.md) ve [güvenlik](../concepts/security.md).
+Varsayılan `--confine standard` ve `strict` altında her oturum, Claude Code kurulumunuz yüklenmeyecek şekilde başlatılır (hook yok, imece'ninki dışında MCP sunucusu yok, ayar yok, sizin komutlarınız yok), yalnızca aşağıdaki notlar yüklenir; `--confine open` Claude Code'u sizin kurduğunuz gibi çalıştırır. Her durumda lider hiç yazmaz ve Claude Code'un kendi alt ajan aracı kapalı kalır. Bir oturumun neyle çalıştığını bildirdiği, kapalı düşerek denetlenir; bkz. [Claude Code](../concepts/claude-code.md) ve [güvenlik](../concepts/security.md).
 
-Her ajan deponuzun kodlama ajanları için notlarını da alır: `AGENTS.md`, yoksa `CLAUDE.md`, en çok 16 KiB; daha uzun bir dosya kesilerek girer ve günlük bunu söyler. Her proje için kendi talimatlarınız `~/.config/imece/instructions.md` dosyasına (ya da `$XDG_CONFIG_HOME/imece/` altına) gider, yine en çok 16 KiB; deponun notlarından önce gelir. Bkz. [dosyalar](../reference/files.md).
+Her ajan deponun `CLAUDE.md`'sini ve `~/.claude/CLAUDE.md`'nizi, Claude Code'un kendi yükleyicisiyle, tümüyle okur; yalnızca `AGENTS.md`'si olan bir depoda onun yerine o okunur. Yalnızca imece'nin ajanlarına yönelik talimatlar `~/.config/imece/instructions.md` dosyasına (ya da `$XDG_CONFIG_HOME/imece/` altına) gider. Bkz. [dosyalar](../reference/files.md).
 
 ## Terminaller
 

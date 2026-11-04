@@ -215,24 +215,6 @@ pub fn event(lang: Lang, w: &World, e: &Event) -> String {
             fill(if *sent { t.ev_pushed } else { t.ev_pushed_demo }, &[words])
         }
         Event::PushFailed { why, .. } => fill(t.ev_push_failed, &[why]),
-        Event::InstructionsCut { agent, path, size } => fill(
-            t.ev_instructions_cut,
-            &[
-                name(w, *agent),
-                path,
-                &size.div_ceil(1024).to_string(),
-                &crate::live::MAX_NOTES_KIB.to_string(),
-            ],
-        ),
-        Event::NotesCut { agent, file, size } => fill(
-            t.ev_notes_cut,
-            &[
-                name(w, *agent),
-                file,
-                &size.div_ceil(1024).to_string(),
-                &crate::live::MAX_NOTES_KIB.to_string(),
-            ],
-        ),
         Event::WorktreeMoved { agent, from, to } => {
             fill(t.ev_worktree_moved, &[name(w, *agent), from, to])
         }
@@ -1341,54 +1323,6 @@ mod tests {
             event(Lang::Tr, &w, &e),
             format!(
                 "{who} oturumu kendi komutlarını listelemedi; claude biçimi değişmiş olabilir, yalnızca /clear tamamlanır"
-            )
-        );
-    }
-
-    #[test]
-    fn a_cut_notes_file_is_worded_in_kib_rounded_up() {
-        let w = crate::live::testing::team(1);
-        let e = Event::NotesCut {
-            agent: 1,
-            file: "CLAUDE.md".into(),
-            size: 50_649,
-        };
-        let who = &w.agents[1].name;
-        assert_eq!(
-            event(Lang::En, &w, &e),
-            format!(
-                "{who}: the repository's CLAUDE.md is 50 KiB; only its first 16 KiB went into the instructions"
-            )
-        );
-        assert_eq!(
-            event(Lang::Tr, &w, &e),
-            format!(
-                "{who}: deponun CLAUDE.md dosyası 50 KiB; talimatlara yalnızca ilk 16 KiB girdi"
-            )
-        );
-        let exact = Event::NotesCut {
-            agent: 1,
-            file: "AGENTS.md".into(),
-            size: 17 * 1024,
-        };
-        assert!(event(Lang::En, &w, &exact).contains("AGENTS.md is 17 KiB;"));
-        let mine = Event::InstructionsCut {
-            agent: 1,
-            path: "/home/me/.config/imece/instructions.md".into(),
-            size: 17 * 1024 + 1,
-        };
-        assert_eq!(
-            event(Lang::En, &w, &mine),
-            format!(
-                "{who}: your instructions file /home/me/.config/imece/instructions.md is 18 \
-                 KiB; only its first 16 KiB went into the instructions"
-            )
-        );
-        assert_eq!(
-            event(Lang::Tr, &w, &mine),
-            format!(
-                "{who}: talimat dosyan /home/me/.config/imece/instructions.md 18 KiB; \
-                 talimatlara yalnızca ilk 16 KiB girdi"
             )
         );
     }

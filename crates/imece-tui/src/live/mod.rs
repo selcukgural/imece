@@ -67,7 +67,7 @@ mod tools;
 
 pub(crate) use self::bus::numbers;
 pub use self::projects::Open;
-pub(crate) use self::prompts::{INSTRUCTIONS, MAX_NOTES_KIB};
+pub(crate) use self::prompts::INSTRUCTIONS;
 pub(crate) use self::review::{REVIEW_CAP, REVIEW_DAY_CALLS, REVIEW_DAY_COST};
 pub use self::sessions::apply;
 pub(crate) use self::suggest::{SUGGEST_CAP, SUGGEST_DAY_CALLS, SUGGEST_DAY_COST};
@@ -98,9 +98,12 @@ pub struct Options {
     pub run_programs: Vec<String>,
     /// How long one run may take.
     pub run_timeout: Duration,
-    /// The person's own instructions for every project, put in every
-    /// agent's instructions when the file is there (`keys::config_file`).
+    /// The person's own instructions for every project, in every agent's
+    /// notes when the file is there (`keys::config_file`).
     pub instructions: Option<PathBuf>,
+    /// The person's own `CLAUDE.md` (`claude::own_notes`), in every
+    /// agent's notes when the file is there, but under open (record 110).
+    pub own_notes: Option<PathBuf>,
     /// How much of Claude Code each agent's session gets (`--confine`).
     pub confine: Confine,
     /// `--solo`: start with a solo session on the checkout, on this
@@ -652,6 +655,8 @@ pub struct Live {
     run_timeout: Duration,
     /// The person's own instructions file; see [`Options::instructions`].
     instructions: Option<PathBuf>,
+    /// The person's own `CLAUDE.md`; see [`Options::own_notes`].
+    own_notes: Option<PathBuf>,
     /// How much of Claude Code each session gets; see [`Confine`].
     confine: Confine,
     /// What each agent's session waits on the person's yes for, in the
@@ -784,6 +789,7 @@ pub fn world(o: Options) -> Result<(World, Live), String> {
     live.run_programs = o.run_programs;
     live.run_timeout = o.run_timeout;
     live.instructions = o.instructions;
+    live.own_notes = o.own_notes;
     live.confine = o.confine;
     live.fresh = o.fresh;
     live.left_off = left_off;
@@ -986,6 +992,7 @@ impl Live {
             run_programs: Vec::new(),
             run_timeout: DEFAULT_RUN_TIMEOUT,
             instructions: None,
+            own_notes: None,
             confine: Confine::default(),
             pending: Vec::new(),
             suggesting: None,
@@ -1382,22 +1389,6 @@ impl Drop for Live {
 
 /// The name an agent writes to on the bus to reach the person.
 pub(crate) const YOU: &str = "you";
-
-/// A repository's notes for coding agents, as they go into an agent's
-/// instructions.
-#[derive(Debug, PartialEq)]
-struct Notes {
-    /// The text to append to the instructions.
-    text: String,
-    /// The file the notes came from (`AGENTS.md` or `CLAUDE.md`).
-    file: &'static str,
-    /// The file's size in bytes, trimmed.
-    size: usize,
-    /// Whether the file was longer than [`MAX_NOTES`] and only its head
-    /// went in; the journal says so, since the agent reads a file the
-    /// person believes it has whole.
-    cut: bool,
-}
 
 /// FNV-1a: tells checkouts with the same name apart. Not for security.
 fn fnv(bytes: &[u8]) -> u32 {

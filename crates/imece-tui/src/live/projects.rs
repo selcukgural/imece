@@ -838,6 +838,7 @@ mod tests {
             run_programs: Vec::new(),
             run_timeout: DEFAULT_RUN_TIMEOUT,
             instructions: None,
+            own_notes: None,
             confine: Confine::Standard,
             solo: solo.then_some(None),
         };
@@ -874,6 +875,7 @@ mod tests {
             run_programs: Vec::new(),
             run_timeout: DEFAULT_RUN_TIMEOUT,
             instructions: None,
+            own_notes: None,
             confine: Confine::Standard,
             solo: solo.map(|c| c.map(str::to_string)),
         };
@@ -1397,8 +1399,9 @@ mod tests {
         live.told(&mut w, 1, "hello").unwrap();
         wait_for(&mut live, &mut w, |w| w.agents[1].status == Status::Stopped);
         let raw = std::fs::read_to_string(two.join("args.txt")).unwrap();
-        assert!(raw.contains("Notes two."), "{raw}");
-        assert!(!raw.contains("Notes one."), "{raw}");
+        let added = |c: &Path| format!("--add-dir\n{}\n", c.canonicalize().unwrap().display());
+        assert!(raw.contains(&added(&two)), "{raw}");
+        assert!(!raw.contains(&added(&one)), "{raw}");
         assert!(raw.contains("--name\nimece lead-two\n"), "{raw}");
         assert!(!one.join("args.txt").exists(), "ran in its own checkout");
         let _ = std::fs::remove_dir_all(&one);

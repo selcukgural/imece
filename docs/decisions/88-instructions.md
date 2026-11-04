@@ -1,5 +1,7 @@
 # The person's own instructions for every project
 
+**Changed by [record 110](110-claude-s-own-loader.md): the notes go through Claude Code's own loader, whole; what is below about the 16 KiB cap and `InstructionsCut` is history.**
+
 Backlog F22 (#59, after Terax and cmux). Each vendor has a file of its
 own for a person's instructions (Claude Code's `~/.claude/CLAUDE.md`,
 Codex's `~/.codex/AGENTS.md`, Gemini's `~/.gemini/GEMINI.md`), and

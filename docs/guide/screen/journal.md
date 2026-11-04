@@ -62,7 +62,7 @@ Each line has the time, a glyph for its kind, the project's name when several ar
 | `◆` | the leader's acts: a card posted, a worker hired (`lead hired claude-1 (default model)`), a worker that finished and left. Assignments and claims are not shown in the pane (the board and the card's screen have them) |
 | `!` | something for you: a worker finished (`claude-1 finished: 3 files, +41 −6 → waits for you`), `:commit`'s suggestion came, the pot runs low |
 | `✓` | you applied a change: `you applied claude-1's change (3 files) to the checkout, staged; worktree mark 7f3a2c1` |
-| `⚑` | what an agent assumed, and the session's notes: `goes on in the session it had`, `starts a new session, told where it left off`, a model that was not available (`using the default`), the confine level, a worktree moved to your HEAD or kept where it is, a path copied into a worktree, the repository notes cut at 16 KiB, a session that listed no commands |
+| `⚑` | what an agent assumed, and the session's notes: `goes on in the session it had`, `starts a new session, told where it left off`, a model that was not available (`using the default`), the confine level, a worktree moved to your HEAD or kept where it is, a path copied into a worktree, a session that listed no commands |
 | `✕` | blocked, stopped (`claude-1 stopped: <why>`), a change that did not apply, a turn cut short when imece closed, a copy that was skipped, no commit message |
 | `›` | you: what you said, ran, approved, rejected, allowed or refused, set (`you set the budget to $80.00 (was $50.00)`), opened, closed, renamed, made forget |
 
@@ -70,7 +70,7 @@ Among them:
 
 - **Replied.** A turn's closing text is journaled as `answered you` only when it reaches you: when you asked, or a leader's report once the team is quiet. The closing text of a turn that mail or a board offer started restates what the agent sent, which the journal has already as the message; it stays in the card's story and the trace. Without this rule conversations read as repeating themselves.
 - **Changes.** `finished … → waits for you`, `you applied …, staged; worktree mark <sha>`, `… did not apply: <git's words>`, `rejected: claude-1`; after a partial apply the rest comes back as a new `finished`.
-- **Sessions.** `goes on in the session it had`, `starts a new session, told where it left off`, `you made claude-1 forget its session`, `stopped: …`, `'s turn was cut short when imece closed; it hears of it when it wakes`, a session that listed no commands of its own, the confine level said at every start that is not strict, the repository notes cut at 16 KiB.
+- **Sessions.** `goes on in the session it had`, `starts a new session, told where it left off`, `you made claude-1 forget its session`, `stopped: …`, `'s turn was cut short when imece closed; it hears of it when it wakes`, a session that listed no commands of its own, the confine level said at every start that is not strict.
 - **Worktrees.** `worktree moved from <sha> to HEAD <sha>`, or kept where it is because it has uncommitted changes or commits of its own.
 - **Copies.** `copied .env into claude-1's worktree (1.2 KiB)`, and what was not copied and why (`:copy`); what the checkout's `.worktreeinclude` names in lines of its own (`…, as .worktreeinclude names`), and a line of it not followed with why.
 - **Your shell.** `` you ran `cargo test` → exit 0 · 12 s ``, or `stopped by signal 2`, with the time in the largest units that say it (`40 ms`, `2 s`, `1 min 5 s`).

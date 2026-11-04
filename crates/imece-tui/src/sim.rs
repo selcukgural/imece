@@ -611,12 +611,6 @@ pub struct Sim {
     /// next step, as it does from live's git thread.
     /// Changes being applied, with the hunks chosen (none: all).
     applying: Vec<(AgentId, Vec<usize>)>,
-    /// A session started with the head of long repository notes; said once
-    /// a run.
-    notes_cut: bool,
-    /// A session started with the head of the person's long instructions
-    /// file; said once a run.
-    instructions_cut: bool,
     /// A helper's session listed no command line this run (said once).
     unlisted: bool,
     /// What the person's rarer commands keep, boxed: the engine stays
@@ -780,8 +774,6 @@ pub fn world(
         replies: Vec::new(),
         models: HashMap::new(),
         applying: Vec::new(),
-        notes_cut: false,
-        instructions_cut: false,
         unlisted: false,
         extras: Box::default(),
     };
@@ -1893,9 +1885,8 @@ impl Sim {
     }
 
     /// What a worker's worktree says as its session starts, by `roll`: it
-    /// was moved to the checkout's HEAD, or kept where its own work is, or
-    /// the repository's notes or the person's own instructions were too
-    /// long (each said once a run); mostly nothing.
+    /// was moved to the checkout's HEAD, or kept where its own work is;
+    /// mostly nothing.
     fn worktree(&mut self, w: &mut World, id: AgentId, roll: u64) {
         match roll {
             // One started from a point of its own stays there, as live's.
@@ -1917,25 +1908,6 @@ impl Sim {
                     at,
                     head,
                     commits,
-                });
-            }
-            2 if !self.notes_cut => {
-                self.notes_cut = true;
-                let file = "CLAUDE.md";
-                let size = self.rng.range(20_000, 60_000) as usize;
-                w.note(Event::NotesCut {
-                    agent: id,
-                    file: file.into(),
-                    size,
-                });
-            }
-            4 if !self.instructions_cut => {
-                self.instructions_cut = true;
-                let size = self.rng.range(20_000, 60_000) as usize;
-                w.note(Event::InstructionsCut {
-                    agent: id,
-                    path: "~/.config/imece/instructions.md".into(),
-                    size,
                 });
             }
             _ => {}
@@ -5175,29 +5147,7 @@ diff --git a/b.rs b/b.rs
             matches!(&w.journal[n + 1].event, Event::WorktreeKept { agent, at, head, .. } if *agent == worker && at.len() == 7 && head.len() == 7)
         );
         s.worktree(&mut w, worker, 2);
-        assert!(
-            matches!(&w.journal[n + 2].event, Event::NotesCut { agent, file, size } if *agent == worker && file == "CLAUDE.md" && (20_000..=60_000).contains(size))
-        );
-        s.worktree(&mut w, worker, 2);
-        s.worktree(&mut w, worker, 3);
-        assert_eq!(
-            w.journal.len(),
-            n + 3,
-            "notes are cut once a run; 3 says nothing"
-        );
-        // Said once a run, maybe already as the worker started.
-        s.instructions_cut = false;
-        s.worktree(&mut w, worker, 4);
-        assert!(
-            matches!(&w.journal[n + 3].event, Event::InstructionsCut { agent, path, size } if *agent == worker && path == "~/.config/imece/instructions.md" && (20_000..=60_000).contains(size))
-        );
-        s.worktree(&mut w, worker, 4);
-        assert_eq!(w.journal.len(), n + 4, "the person's file too, once a run");
-        let (mut w, mut s, worker, _) = one_at_work();
-        s.worktree(&mut w, worker, 2);
-        assert!(
-            matches!(&w.journal.last().unwrap().event, Event::NotesCut { file, .. } if file == "CLAUDE.md")
-        );
+        assert_eq!(w.journal.len(), n + 2, "2 says nothing");
         // Kept with commits, or with changes only: both come up, and the
         // row says which; moved, it says nothing.
         let mut both = std::collections::BTreeSet::new();

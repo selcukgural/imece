@@ -270,45 +270,74 @@ pub(super) fn system_prompt(
     }
 }
 
-/// The files a repository keeps its notes for coding agents in, in the
-/// order they are looked for; the first one there is used.
-pub(super) const NOTES_FILES: &[&str] = &["AGENTS.md", "CLAUDE.md"];
+/// The file Claude Code's own loader reads in a directory it is given
+/// (record 110).
+pub(super) const NOTES_FILE: &str = "CLAUDE.md";
 
-/// The most of a notes file that goes into a prompt, in KiB.
-pub(crate) const MAX_NOTES_KIB: usize = 16;
+/// The file of a repository's notes Claude Code does not read by itself.
+const AGENTS_FILE: &str = "AGENTS.md";
 
-/// [`MAX_NOTES_KIB`] in bytes.
-pub(super) const MAX_NOTES: usize = MAX_NOTES_KIB << 10;
+/// What is in the file at `path`, whole; none when it is not there, not a
+/// plain file (a pipe, a device) or empty.
+fn text_of(path: &Path) -> Option<String> {
+    use std::io::Read;
+    use std::os::unix::fs::OpenOptionsExt;
+    // Opened without waiting (a pipe would wait for a writer), and looked
+    // at as opened, so what is read is what was looked at.
+    let mut file = std::fs::OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_NONBLOCK)
+        .open(path)
+        .ok()?;
+    file.metadata().ok().filter(|m| m.is_file())?;
+    let mut bytes = Vec::new();
+    file.read_to_end(&mut bytes).ok()?;
+    let text = String::from_utf8_lossy(&bytes);
+    Some(text.trim().to_string()).filter(|t| !t.is_empty())
+}
 
-/// The repository's notes for coding agents (its `AGENTS.md` or
-/// `CLAUDE.md`), to append to an agent's instructions. Claude Code is
-/// started so that it loads nothing from the repository (no hooks, no
-/// settings), which drops these notes too; imece passes them itself.
-pub(super) fn repo_notes(repo: &Path) -> Option<Notes> {
-    let (file, text) = NOTES_FILES
-        .iter()
-        .find_map(|f| std::fs::read_to_string(repo.join(f)).ok().map(|t| (*f, t)))?;
-    if text.trim().is_empty() {
+/// The repository's notes for coding agents that Claude Code's loader
+/// will not find in the agent's directory `cwd`: the checkout's
+/// `CLAUDE.md` (git ignores it, or a worker started where it is not),
+/// else its `AGENTS.md`. Only a file inside the checkout: a link out of
+/// it is the repository asking for a file of the person's.
+fn repo_notes(cwd: &Path, checkout: &Path) -> Option<String> {
+    let found = [cwd.join(NOTES_FILE), cwd.join(".claude").join(NOTES_FILE)];
+    if found.iter().any(|f| text_of(f).is_some()) {
         return None;
     }
-    let mut body = text.trim().to_string();
-    let size = body.len();
-    let cut = size > MAX_NOTES;
-    if cut {
-        // The last character boundary at or before the cap.
-        let at = (0..=MAX_NOTES)
-            .rev()
-            .find(|&i| body.is_char_boundary(i))
-            .unwrap_or(0);
-        body.truncate(at);
-        body.push_str("\n[cut: the file goes on]");
-    }
-    Some(Notes {
-        text: format!("\n\nThe repository's notes for coding agents, from its {file}:\n\n{body}"),
-        file,
-        size,
-        cut,
+    let top = checkout.canonicalize().ok()?;
+    [NOTES_FILE, AGENTS_FILE].iter().find_map(|f| {
+        let file = checkout.join(f).canonicalize().ok()?;
+        let text = text_of(&file).filter(|_| file.starts_with(&top))?;
+        Some(format!(
+            "The repository's notes for coding agents, from its {f}:\n\n{text}"
+        ))
     })
+}
+
+/// What goes in an agent's notes directory (record 110): the person's own
+/// `CLAUDE.md` (Claude Code reads that itself only without `--restricted`,
+/// so not under open), their instructions for imece, then what
+/// [`repo_notes`] finds. None when none of them has anything to say.
+pub(super) fn notes_text(
+    own: Option<&Path>,
+    instructions: Option<&Path>,
+    cwd: &Path,
+    checkout: &Path,
+    confine: Confine,
+) -> Option<String> {
+    let mine = |path: &Path| {
+        Some(format!(
+            "The person's own instructions for every project, from {}:\n\n{}",
+            path.display(),
+            text_of(path)?
+        ))
+    };
+    let own = own.filter(|_| confine != Confine::Open).and_then(mine);
+    let parts = [own, instructions.and_then(mine), repo_notes(cwd, checkout)];
+    let parts: Vec<String> = parts.into_iter().flatten().collect();
+    (!parts.is_empty()).then(|| parts.join("\n\n"))
 }
 
 /// What an agent with a scratch directory (record 105) is told of it.
@@ -325,51 +354,6 @@ pub(super) fn scratch_note(dir: &Path) -> String {
 /// The person's own instructions for every project, in imece's
 /// configuration directory (`keys::config_file`).
 pub(crate) const INSTRUCTIONS: &str = "instructions.md";
-
-/// The person's own instructions for every project (the file at `path`),
-/// to put in every agent's instructions before the repository's notes;
-/// none when it is not there, not a plain file (a pipe, a device) or
-/// empty. As much of it as the repository's notes may have, its head
-/// when longer: `size` is the file's on disk, `cut` that it was longer.
-pub(super) fn personal_notes(path: &Path) -> Option<Notes> {
-    use std::io::Read;
-    use std::os::unix::fs::OpenOptionsExt;
-    // Opened without waiting (a pipe would wait for a writer), and looked
-    // at as opened, so what is read is what was looked at.
-    let file = std::fs::OpenOptions::new()
-        .read(true)
-        .custom_flags(libc::O_NONBLOCK)
-        .open(path)
-        .ok()?;
-    let size = file.metadata().ok().filter(|m| m.is_file())?.len();
-    let size = usize::try_from(size).unwrap_or(usize::MAX);
-    // No more than the cap is read; a character the cap cuts in two is
-    // left out whole, any other byte that is not UTF-8 is replaced.
-    let mut head = Vec::new();
-    file.take(MAX_NOTES as u64).read_to_end(&mut head).ok()?;
-    if let Err(e) = std::str::from_utf8(&head)
-        && e.error_len().is_none()
-    {
-        head.truncate(e.valid_up_to());
-    }
-    let mut body = String::from_utf8_lossy(&head).trim().to_string();
-    if body.is_empty() {
-        return None;
-    }
-    let cut = size > MAX_NOTES;
-    if cut {
-        body.push_str("\n[cut: the file goes on]");
-    }
-    Some(Notes {
-        text: format!(
-            "\n\nThe person's own instructions for every project, from {}:\n\n{body}",
-            path.display()
-        ),
-        file: INSTRUCTIONS,
-        size,
-        cut,
-    })
-}
 
 /// What an agent in `role` can do to the files and the world outside, as
 /// its session is set up at `confine`. Under strict it gets file tools and
@@ -426,75 +410,116 @@ mod tests {
     }
 
     #[test]
-    fn the_person_s_own_instructions_are_read_whole_or_their_head_or_not_at_all() {
-        let dir = std::env::temp_dir().join(format!("imece-personal-{}", std::process::id()));
+    fn a_file_of_notes_is_read_whole_or_not_at_all() {
+        let dir = std::env::temp_dir().join(format!("imece-text-of-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let file = dir.join(INSTRUCTIONS);
-        assert!(personal_notes(&file).is_none(), "not there");
-        assert!(personal_notes(&dir).is_none(), "a directory");
+        assert_eq!(text_of(&file), None, "not there");
+        assert_eq!(text_of(&dir), None, "a directory");
         std::fs::write(&file, " \n\t\n").unwrap();
-        assert!(personal_notes(&file).is_none(), "nothing in it");
+        assert_eq!(text_of(&file), None, "nothing in it");
         std::fs::write(&file, "\nAnswer in Turkish.\n").unwrap();
-        let n = personal_notes(&file).unwrap();
-        assert_eq!(
-            n.text,
-            format!(
-                "\n\nThe person's own instructions for every project, from {}:\n\nAnswer in \
-                 Turkish.",
-                file.display()
-            )
-        );
-        assert_eq!((n.file, n.size, n.cut), (INSTRUCTIONS, 20, false));
-        // The cap whole, one over: its head and a mark.
-        std::fs::write(&file, "x".repeat(MAX_NOTES)).unwrap();
-        let n = personal_notes(&file).unwrap();
-        assert_eq!((n.size, n.cut), (MAX_NOTES, false));
-        assert_eq!(n.text.matches('x').count(), MAX_NOTES);
-        std::fs::write(&file, "x".repeat(MAX_NOTES + 1)).unwrap();
-        let n = personal_notes(&file).unwrap();
-        assert_eq!((n.size, n.cut), (MAX_NOTES + 1, true));
-        assert_eq!(n.text.matches('x').count(), MAX_NOTES);
-        assert!(
-            n.text.ends_with("x\n[cut: the file goes on]"),
-            "{}",
-            &n.text[n.text.len() - 40..]
-        );
-        // A letter across the cap is left out whole; much more is not
-        // read past the cap.
-        let text = format!("{}ş{}", "x".repeat(MAX_NOTES - 1), "y".repeat(1 << 20));
-        std::fs::write(&file, &text).unwrap();
-        let n = personal_notes(&file).unwrap();
-        assert_eq!(n.size, text.len());
-        assert!(
-            !n.text.contains('ş') && !n.text.contains("xy"),
-            "cut before the letter"
-        );
-        assert!(!n.text.contains('\u{FFFD}'), "not a broken letter either");
-        assert_eq!(n.text.matches('x').count(), MAX_NOTES - 1);
+        assert_eq!(text_of(&file).as_deref(), Some("Answer in Turkish."));
+        // No cap: the last of a long file is there.
+        let long = format!("{}the end", "x".repeat(1 << 20));
+        std::fs::write(&file, &long).unwrap();
+        assert_eq!(text_of(&file).as_deref(), Some(long.as_str()));
         // A byte that is not UTF-8 inside is replaced, and the rest kept.
         std::fs::write(&file, b"be \xff kind").unwrap();
-        let n = personal_notes(&file).unwrap();
-        assert!(n.text.ends_with("be \u{FFFD} kind"), "{}", n.text);
+        assert_eq!(text_of(&file).as_deref(), Some("be \u{FFFD} kind"));
         // Not a plain file: a device that never ends, a pipe nobody
         // writes to (never waited on).
-        assert!(personal_notes(Path::new("/dev/zero")).is_none());
+        assert_eq!(text_of(Path::new("/dev/zero")), None);
         let fifo = dir.join("fifo");
         let c = std::ffi::CString::new(fifo.to_string_lossy().as_bytes()).unwrap();
         assert_eq!(unsafe { libc::mkfifo(c.as_ptr(), 0o600) }, 0);
-        assert!(personal_notes(&fifo).is_none());
+        assert_eq!(text_of(&fifo), None);
         let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
-    fn the_person_s_instructions_come_before_the_repository_s_and_a_cut_is_journaled() {
-        let dir = std::env::temp_dir().join(format!("imece-personal-run-{}", std::process::id()));
+    fn an_agent_s_notes_are_the_person_s_then_imece_s_then_the_repository_s() {
+        let dir = std::env::temp_dir().join(format!("imece-notes-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let (tree, repo) = (dir.join("tree"), dir.join("repo"));
+        std::fs::create_dir_all(tree.join(".claude")).unwrap();
+        std::fs::create_dir_all(&repo).unwrap();
+        let (own, mine) = (dir.join("own.md"), dir.join("mine.md"));
+        let (o, m) = (Some(own.as_path()), Some(mine.as_path()));
+        let text = |c| notes_text(o, m, &tree, &repo, c);
+        assert_eq!(text(Confine::Standard), None, "nothing says anything");
+        std::fs::write(repo.join("AGENTS.md"), "agents").unwrap();
+        let agents = "The repository's notes for coding agents, from its AGENTS.md:\n\nagents";
+        assert_eq!(text(Confine::Strict).as_deref(), Some(agents));
+        std::fs::write(repo.join("CLAUDE.md"), "claude").unwrap();
+        let claude = "The repository's notes for coding agents, from its CLAUDE.md:\n\nclaude";
+        assert_eq!(
+            text(Confine::Standard).as_deref(),
+            Some(claude),
+            "a CLAUDE.md first, as the tree lacks it"
+        );
+        std::fs::write(&own, "own").unwrap();
+        std::fs::write(&mine, "mine").unwrap();
+        let head = "The person's own instructions for every project, from";
+        let first = format!("{head} {}:\n\nown", own.display());
+        let second = format!("{head} {}:\n\nmine", mine.display());
+        assert_eq!(
+            text(Confine::Standard).unwrap(),
+            format!("{first}\n\n{second}\n\n{claude}")
+        );
+        // Open: Claude Code reads the person's file itself.
+        assert_eq!(
+            text(Confine::Open).unwrap(),
+            format!("{second}\n\n{claude}")
+        );
+        // What the tree holds its loader finds; said twice it costs twice.
+        std::fs::write(tree.join("CLAUDE.md"), "the tree's").unwrap();
+        assert_eq!(
+            text(Confine::Standard).unwrap(),
+            format!("{first}\n\n{second}")
+        );
+        std::fs::remove_file(tree.join("CLAUDE.md")).unwrap();
+        std::fs::write(tree.join(".claude/CLAUDE.md"), "the tree's").unwrap();
+        assert_eq!(
+            text(Confine::Standard).unwrap(),
+            format!("{first}\n\n{second}")
+        );
+        // An empty one is none, as Claude Code finds nothing in it.
+        std::fs::write(tree.join(".claude/CLAUDE.md"), " \n").unwrap();
+        assert!(text(Confine::Standard).unwrap().ends_with(claude));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_link_out_of_the_checkout_is_no_notes_of_its() {
+        let dir = std::env::temp_dir().join(format!("imece-notes-link-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let (tree, repo) = (dir.join("tree"), dir.join("repo"));
+        std::fs::create_dir_all(&tree).unwrap();
+        std::fs::create_dir_all(repo.join("docs")).unwrap();
+        let secret = dir.join("secret");
+        std::fs::write(&secret, "a key").unwrap();
+        std::os::unix::fs::symlink(&secret, repo.join("AGENTS.md")).unwrap();
+        assert_eq!(repo_notes(&tree, &repo), None);
+        // One inside it is the repository's own way of keeping them.
+        std::fs::remove_file(repo.join("AGENTS.md")).unwrap();
+        std::fs::write(repo.join("docs/agents.md"), "inside").unwrap();
+        std::os::unix::fs::symlink("docs/agents.md", repo.join("AGENTS.md")).unwrap();
+        assert!(repo_notes(&tree, &repo).unwrap().ends_with("inside"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_session_starts_with_its_notes_where_claude_code_s_loader_finds_them() {
+        let dir = std::env::temp_dir().join(format!("imece-notes-run-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
-        let repo = checkout("personal-repo");
-        std::fs::write(repo.join("CLAUDE.md"), "The repo says so.").unwrap();
-        let mine = dir.join(INSTRUCTIONS);
-        std::fs::write(&mine, "I say so.").unwrap();
+        let repo = checkout("notes-repo");
+        std::fs::write(repo.join("AGENTS.md"), "The repo says so.").unwrap();
+        let (own, mine) = (dir.join("CLAUDE.md"), dir.join(INSTRUCTIONS));
+        std::fs::write(&own, "I always say so.").unwrap();
+        std::fs::write(&mine, "I say so here.").unwrap();
         let mut w = team(1);
         let mut live = Live::new(
             2,
@@ -502,65 +527,20 @@ mod tests {
             repo.clone(),
             dir.join("worktrees"),
         );
-        live.instructions = Some(mine.clone());
+        (live.own_notes, live.instructions) = (Some(own), Some(mine));
         live.told(&mut w, 0, "hello").unwrap();
         wait_for(&mut live, &mut w, |w| w.agents[0].status == Status::Stopped);
         let args = std::fs::read_to_string(repo.join("args.txt")).unwrap();
-        let (me, it) = (
-            args.find("I say so.").unwrap(),
-            args.find("The repo says so.").unwrap(),
-        );
-        assert!(me < it, "the person's first: {args}");
-        assert!(
-            !w.journal
-                .iter()
-                .any(|e| matches!(e.event, Event::InstructionsCut { .. })),
-            "within the cap"
-        );
-        // Too long: the start journals it, with the path and the size.
-        std::fs::write(&mine, "x".repeat(MAX_NOTES + 1)).unwrap();
-        live.told(&mut w, 1, "go").unwrap();
-        let path = mine.display().to_string();
-        assert!(
-            w.journal.iter().any(|e| matches!(&e.event,
-                Event::InstructionsCut { agent: 1, path: p, size } if *p == path && *size == MAX_NOTES + 1)),
-            "{:?}",
-            w.journal
-        );
+        let notes = live.notes_of(&w, 0);
+        let text = std::fs::read_to_string(notes.join(NOTES_FILE)).unwrap();
+        for said in ["I always say so.", "I say so here.", "The repo says so."] {
+            assert!(text.contains(said), "{text}");
+            assert!(!args.contains(said), "{args}");
+        }
+        let notes = notes.canonicalize().unwrap();
+        assert!(args.contains(&notes.display().to_string()), "{args}");
         let _ = std::fs::remove_dir_all(&dir);
         let _ = std::fs::remove_dir_all(&repo);
-    }
-
-    #[test]
-    fn a_cut_notes_file_goes_into_the_journal_when_the_session_starts() {
-        let dir = std::env::temp_dir().join(format!("imece-notes-cut-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
-        let mut w = team(1);
-        let mut live = idle_live_in(&dir, 2);
-        // A file within the cap: nothing in the journal about it.
-        std::fs::write(dir.join("CLAUDE.md"), "x".repeat(MAX_NOTES)).unwrap();
-        live.told(&mut w, 0, "go").unwrap();
-        assert!(
-            !w.journal
-                .iter()
-                .any(|e| matches!(e.event, Event::NotesCut { .. })),
-            "{:?}",
-            w.journal
-        );
-        // One over: the start journals the file and its whole size, for
-        // the agent that starts.
-        std::fs::write(dir.join("CLAUDE.md"), "x".repeat(MAX_NOTES + 1)).unwrap();
-        live.told(&mut w, 1, "go").unwrap();
-        assert!(matches!(
-            &w.journal.last().unwrap().event,
-            Event::NotesCut { agent: 1, file, size } if file == "CLAUDE.md" && *size == MAX_NOTES + 1
-        ));
-        assert_eq!(
-            w.journal.last().unwrap().event.kind(),
-            EntryKind::Assumption
-        );
-        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
