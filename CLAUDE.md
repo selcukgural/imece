@@ -64,11 +64,14 @@ cargo mutants                                      # everything (slow); CI does 
   selection keeps working. Add a shortcut wherever it makes something
   easier; every key is listed in the `?` help in both languages.
 
-## Code from Lonca and Kule
+## Lonca and Kule
 
 imece never changes Lonca or Kule (they move together and must stay in
-sync), and does not depend on them. Code that helps is **copied** into imece
-and owned here from then on:
+sync). Since record 115 imece's repository layer is Lonca's: imece depends
+on a running `lonca` daemon as a **client** of its socket protocol, never
+on Lonca's crates as libraries, and never writes to the store itself (the
+daemon is the only writer). It does not depend on Kule. Code that helps is
+**copied** into imece and owned here from then on:
 
 - Every copied file starts with `Copied from <repo>@<sha> <path>`.
 - `VENDORED.md` lists source, commit, date and local changes.
@@ -248,6 +251,7 @@ record in the same PR.
 - 112 `check`: the repository's `.imece/check` runs in the worker's worktree on each change read (`Live::check_change` from `changes::read`; `setup::Kind::Check` on the setup script's terms: key `check /bin/sh SHA REAL` in `setup_approved`, private copy, `run_in` with the `run` tool's deadline; `InboxKind::Check` ask `▶`, holds no mail, `decide_setup` answers both kinds); `Change.check: Check` (None/Asked/Running/Ran(Checked)/Failed), `World::checked`, `Live.checks` the last `CHECKED_KEEP` 32 trees' results (the same tree runs nothing), a result for a change gone is traced only; `Event::Checked`/`CheckFailed`/`CheckAnswered`; `changes.checked` (schema 23; the save plan keys the row on tree + check); `ui::diff::check_lines` above the runs, `words::check_mark` on the Δ row; a note, never a gate, the worker not told; demo: every checkout's check, asked at the first change, fails every third (`CHECK_TICKS` 2).
 - 113 `change-cost`: every Δ says what the worker spent on it (`Spend { cost, ticks, rounds }`; `Agent.task`: a round opens at a prompt (`World::round_opens`, not the leader), closes when a change is settled (`spend_of`: cost since, the worker's ticks, helpers' open rounds); `Change.spend` filled at the worker's `TurnDone` (`settle_change`, `Event::ChangeCost`) or in `change_ready` with the turn over (`ChangeReady.spend`); carried when a change leaves unapplied (reject, replaced, part applied), dropped once applied whole or the worktree holds nothing (`change_none`)); ` · $0.84 · 12 min` on the Δ row, `cost · …` above the diff, ` · N rounds`; the leader's `done` headed `[done 12 · $0.84]` (`Task.last`), delivered once the worker's turn ended (`post_office` `settling`); schema 24 (`changes.spend`, `agents.task`); the demo at the first busy tick.
 - 114 `plan-and-paths`: paths a card owns (F16): `paths` on `assign`/`post` (`paths.rs`: ≤ 20 git pathspecs, `*`, ` shared`; `parse`, `strays`, `overlap`), `Card.paths`/`Mail.paths` (schema 25), refused when an open card of the project owns one (`Live::owned_elsewhere`, the receiver's own card not counted), the worker's task ends with `owns` (`bus::owns`), `claim` too; a write outside (Edit/Write/MultiEdit: `sessions::writes`) once per file → `StoryEvent::Strayed`, `Event::Strayed`, a note in the next prompt (`Live::strayed`, `World::strayed`), the Δ header's `N outside #12: …` (`diff::outside_line`), the card screen's `owns`; the demo's cards own their leases' files, every fourth strays once (`Sim::stray`). Plan gate (F20): the leader's `plan(cards, cost)` tool (`Live::plan`, cards checked as assigns, no two owning a path) → `World::propose` → `InboxKind::Plan` `▤` (holds mail), `Project.plan: PlanGate { on, approved, proposal }` (schema 26, `:plan on|off`); `World::plan_hold` (NoPlan / Reading / Unanswered) refused by `hire_room` after the cap, when a worker is there and no yes since the last plan; `a`/`r` → `decide_plan` (`PLAN_YES`/`PLAN_NO` note + `lost` wake), `n` writes to the leader (the word closes the plan unanswered), `enter` → `overlay::plan` window; a solo never plans; the demo's leader proposes before its second worker (`Sim::propose`).
+- 115 `lonca-store`: the repository layer goes to Lonca (user, 2026-11-04): workers in Lonca workspaces, `done` a proposal, the Δ a pending proposal, `a` the approval, merge/rebase/conflict/verification the merge queue's, the checkout a client of the store; imece a client of the daemon's socket (never its crates, never a second writer), no second backend (the git path goes once a team runs on Lonca); probe facts (workspace = plain copy, 96 MiB tree cap, stale base merges itself, `conflicted` + `sync` `.trunk`, seatbelt verification needs the toolchain homes, `lonca mcp` 9 tools, `lonca hook` taint) and the 7-PR plan; replaces record 111's git items.
 
 `docs/neighbours.md`: voff, what was taken from it and the rules that come
 from what it lacks. Read it before building a part it names.
@@ -258,8 +262,10 @@ Same standing rules as Kule: deny by default, nothing weakens silently, every
 boundary has a test that fails without it. What imece guards is its own
 boundaries: who may call which tool on the bus, what an agent's text may do
 on the screen, what a session reports it runs with against what was asked
-(a mismatch stops it), the pot, and the Δ gate between a worker's worktree
-and the person's checkout. imece is not a sandbox and never calls itself
+(a mismatch stops it), the pot, and the Δ gate between a worker's work and
+trunk (a worktree and the person's checkout today; a Lonca workspace and
+Lonca's store once record 115 is built, where the daemon keeps the gate
+and imece asks the person). imece is not a sandbox and never calls itself
 one: an agent with a shell can do what the person's account can, and
 Claude Code's own restrictions (`--restricted`) are what imece switches on
 and verifies, not something it provides.
