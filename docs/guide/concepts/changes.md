@@ -16,7 +16,7 @@ A change (`Δ`) is what a worker's worktree holds when the worker says `done`. I
 
 ```text
  WAITING FOR YOU (2)
- Δ 14:02 claude-1 finished: parser tokens (3 files, +34 −8) · ✓ ran clean on this tree: cargo test -p parser
+ Δ 14:02 claude-1 finished: parser tokens (3 files, +34 −8) · ✓ ran clean on this tree: cargo test -p parser · $0.84 · 12 min
  ? 14:05 claude-2 asks you: keep the old CLI flag?
   enter see the diff · a apply to the checkout · r reject
 ```
@@ -34,6 +34,10 @@ Put a script at `.imece/check` in your checkout (a shell script, approved like t
 - **What it must not do:** change tracked files. The change is read before the check runs, so what the check writes is no part of it and would show up in the worker's next `done`; build output under paths git ignores is fine.
 - **The worker is not told.** The result is yours: `n` sends your notes back, and a failed check's last lines make a first note. Whether a red check should hold a change back for one round, with the worker told first, is a question for a later record.
 - Without a check in the repository nothing runs and nothing shows; one that cannot be read (not a plain file, over 64 KiB) says so on the change and in the journal.
+
+### What it cost
+
+Every change says what the worker spent on it, so you can judge the leader's hiring (a strong-tier worker on a rename) or a worker that burnt $4 on a one-line fix: `$0.84 · 12 min` on the `Δ` row in WAITING FOR YOU, `cost · $0.84 · 12 min` above the diff, in the journal (`claude-1's change cost $0.84 · 12 min`) and so on the card's screen and in `:why`. The figure is the worker's spend, its helpers' counted in, from its first prompt after its last change to this `done`, and the time it worked (not the time the change waited for you); a `done` comes mid-turn, so the figure appears a moment later, when the turn's cost is known. A change sent back (`r`, `n`, `b`) and sent again adds up: `$1.20 · 25 min · 3 rounds`; a newer `done` that takes an older change's place carries its cost too, and so does the rest of a change you applied in part. Once a change is applied whole, the next one starts from nothing. The leader hears it in the worker's `done`, which it gets once the worker's turn ended, headed `[done 12 · $0.84]`, so it learns what its tiers cost. A solo's change at each turn's end says the same. What subscriptions would have cost at API prices, and a price per applied change across a project, are not here.
 
 ## Reading it
 

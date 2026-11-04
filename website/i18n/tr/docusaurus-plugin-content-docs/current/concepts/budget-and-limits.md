@@ -72,9 +72,13 @@ Hiçbir `:` komutu kendi başına ücretli bir tur başlatmaz; `:budget` işaret
 
 İncelemesi olan ya da istenmiş bir değişiklik yeniden incelenmez.
 
+## Bir değişikliğin maliyeti
+
+Bütçe takımın ne harcadığını söyler; her değişiklik tek başına neye mal olduğunu söyler ([değişiklikler](changes.md#maliyeti)): işçinin, yardımcıları dahil, son değişikliğinden sonraki ilk isteminden `done`'una harcadığı, çalıştığı süreyle ve geri gönderilip yeniden gönderilen bir değişiklik için turlarıyla: `$0.84 · 12 dk`, `$1.20 · 25 dk · 3 tur`. `Δ` satırında, diff'in üstünde, günlükte ve liderin aldığı `done`'da (`[done 12 · $0.84]`) durur; böylece lider katmanlarının neye mal olduğunu öğrenir. Bütçenin saydığı harcamanın aynısıdır, değişikliğe göre bölünmüş; hiçbir şey iki kez ödenmez.
+
 ## Demo
 
-`--demo` uydurma bir bütçeyi aynı yolla harcar: başlık, hız, azalan bütçe satırı, `:budget`, kullanım pencereleri (harcamadan doldurulur) ve `:commit` ile `:review`'un birkaç kuruşu canlıdaki gibi görünür.
+`--demo` uydurma bir bütçeyi aynı yolla harcar: başlık, hız, azalan bütçe satırı, `:budget`, kullanım pencereleri (harcamadan doldurulur), her değişikliğin maliyeti ve `:commit` ile `:review`'un birkaç kuruşu canlıdaki gibi görünür.
 
 ## Ayrıca bakınız
 

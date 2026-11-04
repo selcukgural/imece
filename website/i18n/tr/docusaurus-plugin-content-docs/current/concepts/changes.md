@@ -16,7 +16,7 @@ Bir değişiklik (`Δ`), bir işçi `done` dediğinde worktree'sinin tuttuğu ş
 
 ```text
  SENİ BEKLEYEN (2)
- Δ 14:02 claude-1 bitirdi: parser tokens (3 dosya, +34 −8) · ✓ bu ağaçta temiz geçti: cargo test -p parser
+ Δ 14:02 claude-1 bitirdi: parser tokens (3 dosya, +34 −8) · ✓ bu ağaçta temiz geçti: cargo test -p parser · $0.84 · 12 dk
  ? 14:05 claude-2 sana soruyor: eski CLI bayrağı kalsın mı?
   enter diff'i gör · a checkout'a uygula · r reddet
 ```
@@ -34,6 +34,10 @@ Checkout'unuzda `.imece/check` yoluna bir betik koyun ([worktree kurulum betiği
 - **Yapmaması gereken:** izlenen dosyaları değiştirmek. Değişiklik kontrol çalışmadan önce okunur; kontrolün yazdığı ona dahil değildir ve işçinin sonraki `done`'unda ortaya çıkar; git'in yok saydığı yollardaki derleme çıktısı sorun değil.
 - **İşçiye söylenmez.** Sonuç sizindir: `n` notlarınızı geri gönderir; başarısız kontrolün son satırları ilk not olur. Kırmızı bir kontrolün değişikliği bir tur alıkoyup önce işçiye söylemesi gerekir mi, sonraki bir kaydın sorusu.
 - Depoda kontrol yoksa hiçbir şey çalışmaz ve görünmez; okunamayan (düz dosya olmayan, 64 KiB'den büyük) biri değişikliğin üstünde ve günlükte bunu söyler.
+
+### Maliyeti {#maliyeti}
+
+Her değişiklik işçinin ona ne harcadığını söyler; böylece liderin işe alımını (bir yeniden adlandırmaya güçlü katmandan işçi) ya da tek satırlık bir düzeltmeye 4 $ yakan bir işçiyi değerlendirebilirsiniz: SENİ BEKLEYEN'de `Δ` satırında `$0.84 · 12 dk`, diff'in üstünde `maliyet · $0.84 · 12 dk`, günlükte (`claude-1 değişikliği $0.84 · 12 dk tuttu`) ve dolayısıyla kartın ekranında ve `:why`'da. Rakam işçinin, yardımcıları dahil, son değişikliğinden sonraki ilk isteminden bu `done`'a harcadığı ve çalıştığı süredir (değişikliğin sizi beklediği süre değil); `done` tur ortasında gelir, bu yüzden rakam bir an sonra, turun maliyeti bilinince görünür. Geri gönderilip (`r`, `n`, `b`) yeniden gönderilen bir değişiklik toplanır: `$1.20 · 25 dk · 3 tur`; eski bir değişikliğin yerine geçen daha yeni bir `done` onun maliyetini de taşır, kısmen uyguladığınız bir değişikliğin kalanı da. Bir değişiklik bütünüyle uygulanınca sonraki sıfırdan başlar. Lider bunu işçinin `done`'unda duyar; onu işçinin turu bitince, `[done 12 · $0.84]` başlığıyla alır, böylece katmanlarının neye mal olduğunu öğrenir. Bir solonun her tur sonundaki değişikliği aynısını söyler. Aboneliklerin API fiyatıyla neye geleceği ve bir projede uygulanan değişiklik başına fiyat burada yok.
 
 ## Okumak
 
