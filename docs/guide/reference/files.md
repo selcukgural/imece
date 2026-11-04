@@ -1,11 +1,11 @@
 ---
 title: Files
-description: Everything imece writes or reads on disk - the SQLite store and its schema, the worktrees, Gemini's private directory, the bus's sockets, exports, the copy list, what the vendors keep of a session, the lock, and what --fresh and :forget remove.
+description: Everything imece writes or reads on disk - the SQLite store and its schema, the worktrees, the bus's sockets, exports, the copy list, what Claude Code keeps of a session, the lock, and what --fresh and :forget remove.
 ---
 
 # Files
 
-imece keeps what it remembers in one directory, the state directory, and leaves the rest where the vendors keep it. You meet these paths when you want to know what a worktree holds, where an export went, what a second imece complains about, or what `--fresh` removes. Nothing here is written to the repository you work on; your checkout is touched only when you press `a` on a change.
+imece keeps what it remembers in one directory, the state directory, and leaves the rest where Claude Code keeps it. You meet these paths when you want to know what a worktree holds, where an export went, what a second imece complains about, or what `--fresh` removes. Nothing here is written to the repository you work on; your checkout is touched only when you press `a` on a change.
 
 ## The state directory
 
@@ -18,8 +18,7 @@ imece keeps what it remembers in one directory, the state directory, and leaves 
 | `imece.sqlite.lock` | the lock one imece holds while it runs (0600, `flock`) |
 | `screen` | the file imece kept its screen choices in before 2026-10-30; moved into the store and removed the first time it is seen |
 | `worktrees/<dir>-<hash>/<agent>` | one git worktree per worker, `<dir>` the checkout's directory name and `<hash>` eight hex digits of its path (`worktrees/kule-3f2a9c01/claude-1`) |
-| `worktrees/<dir>-<hash>-gemini/<agent>` | a Gemini agent's private directory (`lead` for the project's leader, whatever the project is called); holds `GEMINI.md` and `policy/imece.toml` |
-| `worktrees/<dir>-<hash>-scratch/<agent>` | a writing agent's scratch directory (0700; a solo's is `solo-<project number>`): for notes, logs and downloads that are no part of its change. Its file tools may write there (Claude `--add-dir`, Codex's only writable root besides the worktree, Gemini an included directory), its instructions name it, and its focus shows it. Kept between runs; removed by `:forget`, `--fresh` and when the agent leaves (`:close`, a helper's `done`), not when a new session goes on with the same work (a model fallback, a renewed cap, `/clear`) |
+| `worktrees/<dir>-<hash>-scratch/<agent>` | a writing agent's scratch directory (0700; a solo's is `solo-<project number>`): for notes, logs and downloads that are no part of its change. Its file tools may write there (`--add-dir`), its instructions name it, and its focus shows it. Kept between runs; removed by `:forget`, `--fresh` and when the agent leaves (`:close`, a helper's `done`), not when a new session goes on with the same work (a model fallback, a renewed cap, `/clear`) |
 | `scripts/<sha256>.sh` | the private copy of a worktree setup script you said yes to, the bytes you read (0700 directory, 0600 file): what runs. See [a worktree setup script](../concepts/projects.md#a-worktree-setup-script) |
 
 ## The store
@@ -39,9 +38,9 @@ imece never moves, mends or writes over a file it cannot read: a newer imece may
 
 | Table | Holds |
 | --- | --- |
-| `meta` | key-value: `schema_version`, `started_at` (the world's first start, which the clock and the ticks count from), `budget` (the pot), `saved_at` (the last save, for "WHERE YOU LEFT OFF · 2 h ago"), `messages` (the last message number given), `setup_approved` (the worktree setup scripts you said yes to: how each runs, its bytes' SHA-256 and its real path), and your settings `side` (the side panel's width), `theme`, `lead` (the primary vendor), `notify`, `motion`, `seen` (the version that started last, for what is new) |
+| `meta` | key-value: `schema_version`, `started_at` (the world's first start, which the clock and the ticks count from), `budget` (the pot), `saved_at` (the last save, for "WHERE YOU LEFT OFF · 2 h ago"), `messages` (the last message number given), `setup_approved` (the worktree setup scripts you said yes to: how each runs, its bytes' SHA-256 and its real path), and your settings `side` (the side panel's width), `theme`, `notify`, `motion`, `seen` (the version that started last, for what is new) |
 | `projects` | each project's name, leader, whether it is closed, its checkout path, whether it is pinned, and the paths `:copy` lists (`copies`, JSON) |
-| `agents` | each agent's project, name, vendor, role, parent (a helper's worker), card, cost, taint, whether it is gone, its model and whether a tier chose it, the message-driven turns and posts since you last spoke, its own command list, its last vendor session with what that session had spent, its start point, and for a fork not yet started the worker it goes on from (`fork_of`) |
+| `agents` | each agent's project, name, role, parent (a helper's worker), card, cost, taint, whether it is gone, its model and whether a tier chose it, the message-driven turns and posts since you last spoke, its own command list, its last session with what that session had spent, its start point, and for a fork not yet started the worker it goes on from (`fork_of`) |
 | `cards` | each card's project, title, owner, column and when it started and finished |
 | `story` | a card's story lines, as JSON events with their kind |
 | `journal` | every journal line (tick, project, agent, kind, the event as JSON) and whether you marked it (`marked`, with a partial index so marked lines are found whatever their age) |
@@ -76,20 +75,9 @@ Each worker gets `worktrees/<dir>-<hash>/<name>`, a git worktree of your checkou
 - Each worktree builds in its own `target/`: a shared one would make the workers rebuild each other's changes in turn.
 - `:close` leaves the worktrees on disk; nothing removes them. `:copy` puts the ignored paths you list (`.env`, `target`) into a worktree that lacks them at its worker's start, as an APFS clone or reflink where the volume can, never over what is there, at most 2 GiB per start; so does what the checkout's `.worktreeinclude` names among the paths git ignores (read with `O_NOFOLLOW`, at most 16 KiB). See [changes](../concepts/changes.md) and [projects](../concepts/projects.md).
 
-## Gemini's private directory
-
-Gemini CLI has nothing like Claude Code's `--restricted` and takes settings from `~/.gemini` and from the `.gemini` directory of the folder it runs in, so imece runs each Gemini agent in a directory of its own, `worktrees/<dir>-<hash>-gemini/<agent>` (0700, next to the worktrees, kept between runs so the session can be resumed), and gives it the checkout or worktree as an included directory. Written fresh at every start:
-
-| File | What it is |
-| --- | --- |
-| `GEMINI.md` | the agent's instructions (its role, then a line naming its files' directory), the only way ACP has to give them; Gemini's `/memory list` must show it |
-| `policy/imece.toml` | the policy that allows exactly the tools of the role and the `--confine` level and imece's own tools by name, and under `strict` and `standard` denies every other tool (a denied tool is not even shown to the model); `--policy` names the directory |
-
-The repository's `.gemini` settings, hooks and `.env` never reach the session. The directory goes when the agent leaves whole (`:close`, a helper's `done`); `:forget` removes only the chat files. See [vendors](../concepts/vendors.md).
-
 ## The bus's sockets
 
-At each start imece makes `$TMPDIR/imece-<pid>-<hex>/` (0700; an existing directory is refused, not reused) and binds one Unix socket per agent in it, `a0.sock`, `a1.sock`, …, in agent order, at hire time. A vendor's CLI connects through `imece mcp-relay <socket>`. The directory and its sockets are removed when imece ends, also on SIGTERM, SIGHUP and SIGINT. `:commit`'s one-off Claude call runs in this directory, where there is nothing to read.
+At each start imece makes `$TMPDIR/imece-<pid>-<hex>/` (0700; an existing directory is refused, not reused) and binds one Unix socket per agent in it, `a0.sock`, `a1.sock`, …, in agent order, at hire time. Claude Code connects through `imece mcp-relay <socket>`. The directory and its sockets are removed when imece ends, also on SIGTERM, SIGHUP and SIGINT. `:commit`'s one-off Claude call runs in this directory, where there is nothing to read.
 
 ## Exports
 
@@ -105,35 +93,29 @@ In `$XDG_CONFIG_HOME/imece/`, or `~/.config/imece/` (a relative `XDG_CONFIG_HOME
 
 ## What imece reads from the repository
 
-- `AGENTS.md`, else `CLAUDE.md`, at the checkout's top: the notes for coding agents, at most 16 KiB, passed to every agent with its instructions (Codex reads `AGENTS.md` itself). See [message types](message-types.md).
+- `AGENTS.md`, else `CLAUDE.md`, at the checkout's top: the notes for coding agents, at most 16 KiB, passed to every agent with its instructions. See [message types](message-types.md).
 - Git: the top of the checkout, HEAD, `git check-ignore` for `:copy`, `git ls-files --others --ignored --directory --exclude=…` for what `.worktreeinclude` matches (at a worker's start), `git diff --cached` and the eight newest subjects for `:commit` (with `--no-ext-diff --no-textconv`, so no program of yours runs), and `git ls-files` (tracked, and untracked but not ignored; the first 20,000) for completing a file's name in a message: at the project's opening, after each change you apply, and every minute while one of its agents is mid-turn.
 - A colour file named with `--theme FILE` or `:theme FILE`, in Ghostty's or Kitty's format; its absolute path is remembered as the theme.
 
-Nothing else: no file of the repository is written by imece, and the vendors' CLIs are started so that nothing of the repository loads (under `standard` and `strict`).
+Nothing else: no file of the repository is written by imece, and Claude Code is started so that nothing of the repository loads (under `standard` and `strict`).
 
-## What the vendors keep
+## What Claude Code keeps
 
-A session is resumed from what its vendor kept; imece only remembers the id (`agents.session`). These are the vendors' files, not imece's.
+A session is resumed from what Claude Code kept; imece only remembers the id (`agents.session`). These are Claude Code's files, not imece's.
 
-| Vendor | Where | Notes |
-| --- | --- | --- |
-| Claude Code | `$CLAUDE_CONFIG_DIR` or `~/.claude`, `projects/<slug>/<id>.jsonl`, the slug being the agent's directory with every character that is not a letter or a digit as `-` | the transcript; a session is resumable while the file is there, from the same directory. Other traces (`debug`, `file-history`, `todos`) are not looked for |
-| Codex | `$CODEX_HOME` or `~/.codex`, `sessions/YYYY/MM/DD/rollout-<time>-<id>.jsonl` | the thread's rollout, kept because imece starts threads non-ephemeral; `history.persistence="none"` keeps imece's turns out of Codex's global message log. Codex loads your own `~/.codex` config (a private home was rejected: no login) |
-| Gemini CLI | `$GEMINI_CLI_HOME` or `~/.gemini`, `tmp/<name>/chats/session-<time>-<id8>.jsonl` | `<name>` comes from Gemini's registry `projects.json`, keyed by the private directory; a second, empty `session-*.jsonl` per start is Gemini's own stray; at most 50 history messages per chat |
+| Where | Notes |
+| --- | --- |
+| `$CLAUDE_CONFIG_DIR` or `~/.claude`, `projects/<slug>/<id>.jsonl`, the slug being the agent's directory with every character that is not a letter or a digit as `-` | the transcript; a session is resumable while the file is there, from the same directory. Other traces (`debug`, `file-history`, `todos`) are not looked for |
 
-Which of your own files a session reads depends on the vendor. Claude Code under standard and strict reads none: `--restricted` drops `~/.claude/CLAUDE.md`, your commands and your settings along with the repository's files, and imece passes on only the repository's notes above. Codex reads `~/.codex/AGENTS.md` and Gemini reads `~/.gemini/GEMINI.md` at every level, and Gemini's user-level hooks still apply. `--confine open` loads your whole setup. What should reach every vendor at every level goes in imece's own `instructions.md`, in its configuration directory.
+Claude Code under standard and strict reads none of your own files: `--restricted` drops `~/.claude/CLAUDE.md`, your commands and your settings along with the repository's files, and imece passes on only the repository's notes above. `--confine open` loads your whole setup. What should reach every agent at every level goes in imece's own `instructions.md`, in its configuration directory.
 
 ## What `--fresh` and `:forget` remove
 
-Both make an agent forget its vendor session so the next message starts a new one, told where it left off; `--fresh` does it for every remembered agent at the start, `:forget @NAME` for one. What goes, on a thread of its own (the trace says how it went: `forgot session <id>: its transcript was removed`):
+Both make an agent forget its session so the next message starts a new one, told where it left off; `--fresh` does it for every remembered agent at the start, `:forget @NAME` for one. What goes, on a thread of its own (the trace says how it went: `forgot session <id>: its transcript was removed`):
 
-| Vendor | Removed |
-| --- | --- |
-| Claude Code | the transcript file above (`it had no transcript left` when it was gone already) |
-| Codex | the thread, through an app server started for it (`thread/delete`, 30 s cap), which also takes it out of Codex's own index; deleting the rollout file by hand would not |
-| Gemini CLI | the chat files of that session under `tmp/<name>/chats/` (`N chat files were removed`), and 0-byte strays; when the agent leaves whole, everything under that name plus the private directory |
+What goes: the transcript file above (`it had no transcript left` when it was gone already).
 
-Only an id shaped like a UUID ever reaches a path or a vendor. A session that was just asked to stop is given 4 s to be gone first. The agent's scratch directory goes too, moved aside at once so a session started right after gets a new one (`its scratch directory was removed`). Nothing else of imece's own is removed: the agent, its cards, the journal and the worktree stay. Also removed when a session is replaced: imece's `/clear` on a vendor without one of its own, a model fallback, a session renewed after it hit its cap. See [sessions](../concepts/sessions.md).
+Only an id shaped like a UUID ever reaches a path or Claude Code. A session that was just asked to stop is given 4 s to be gone first. The agent's scratch directory goes too, moved aside at once so a session started right after gets a new one (`its scratch directory was removed`). Nothing else of imece's own is removed: the agent, its cards, the journal and the worktree stay. Also removed when a session is replaced: a model fallback, a session renewed after it hit its cap. See [sessions](../concepts/sessions.md).
 
 ## What is not written
 
@@ -141,7 +123,7 @@ Only an id shaped like a UUID ever reaches a path or a vendor. A session that wa
 - `!cmd` output stays on your terminal's main screen; its end (the last 64 KiB per project, for `O`) is kept in memory only and gone when imece ends.
 - `:commit`'s call runs with `--no-session-persistence`: nothing under `~/.claude/projects`, nothing to resume.
 - The demo writes nothing but your screen settings (`side`, `theme`, `lead`) into the store.
-- The vendors' rate-limit windows shown in the header are not kept; a session says them again on its first turn.
+- Claude Code's rate-limit windows shown in the header are not kept; a session says them again on its first turn.
 
 ## See also
 

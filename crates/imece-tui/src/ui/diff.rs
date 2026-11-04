@@ -285,7 +285,7 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App, id: AgentId) {
     let Some(c) = w.change_of(id) else {
         let block = Block::bordered()
             .title(fill(t.diff_title, &[&a.name, "", "", "", ""]))
-            .border_style(fg(vendor_color(a.vendor)));
+            .border_style(fg(pal().agent));
         let inner = block.inner(area);
         f.render_widget(block, area);
         f.render_widget(
@@ -313,9 +313,7 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App, id: AgentId) {
             ],
         ),
     };
-    let block = Block::bordered()
-        .title(title)
-        .border_style(fg(vendor_color(a.vendor)));
+    let block = Block::bordered().title(title).border_style(fg(pal().agent));
     let inner = block.inner(area);
     f.render_widget(block, area);
     let mut ran = run_lines(app.lang, &c.runs);
@@ -598,7 +596,7 @@ fn file_lines(lang: Lang, files: &[ChangedFile]) -> Vec<Line<'static>> {
 /// The rows a folded review takes under its head (`R` shows it whole).
 pub(crate) const REVIEW_ROWS: usize = 6;
 
-/// What another vendor said of the change (`:review`, record 106), above
+/// What a fresh session said of the change (`:review`, record 106), above
 /// its file list: a head (who, on what model, for how much), then its
 /// lines cleaned and wrapped at `width`: the first [`REVIEW_ROWS`], or
 /// `whole` as many as `room` leaves, the rest counted. While one is on
@@ -606,22 +604,20 @@ pub(crate) const REVIEW_ROWS: usize = 6;
 pub(crate) fn review_lines(
     lang: Lang,
     review: Option<&Review>,
-    under_way: Option<Vendor>,
+    under_way: bool,
     whole: bool,
     width: usize,
     room: usize,
 ) -> Vec<Line<'static>> {
     let t = lang.text();
     let Some(r) = review else {
-        return under_way
-            .map(|by| {
-                let said = fill(t.review_under_way, &[by.label()]);
-                Line::from(Span::styled(said, dim()))
-            })
-            .into_iter()
-            .collect();
+        if !under_way {
+            return Vec::new();
+        }
+        let said = fill(t.review_under_way, &[CLAUDE]);
+        return vec![Line::from(Span::styled(said, dim()))];
     };
-    let head = fill(t.review_head, &[r.by.label(), &r.model, &dollars(r.cost)]);
+    let head = fill(t.review_head, &[CLAUDE, &r.model, &dollars(r.cost)]);
     let mut out = vec![Line::from(Span::styled(head, bold(pal().accent)))];
     let body: Vec<Line<'static>> = (r.text.lines())
         .flat_map(|l| super::wrap(Line::from(clean(l)), width.max(1)))
@@ -664,7 +660,6 @@ mod tests {
     fn a_review(text: &str) -> Review {
         Review {
             patch: "p".into(),
-            by: Vendor::Codex,
             model: "default".into(),
             text: text.into(),
             cost: 0,
@@ -778,9 +773,9 @@ mod tests {
 
     #[test]
     fn a_review_shows_its_head_and_first_rows_and_counts_the_rest() {
-        let none = review_lines(Lang::En, None, None, false, 40, 30);
+        let none = review_lines(Lang::En, None, false, false, 40, 30);
         assert!(none.is_empty(), "nothing asked: nothing");
-        let asked = review_lines(Lang::En, None, Some(Vendor::Claude), false, 40, 30);
+        let asked = review_lines(Lang::En, None, true, false, 40, 30);
         assert_eq!(texts(&asked), ["✎ claude reads this change…"]);
         let lines = |n: usize| {
             (1..=n)
@@ -789,33 +784,26 @@ mod tests {
                 .join("\n")
         };
         let six = a_review(&lines(REVIEW_ROWS));
-        let got = texts(&review_lines(Lang::En, Some(&six), None, false, 40, 30));
-        assert_eq!(got[0], "✎ review · codex · default · $0.00");
+        let got = texts(&review_lines(Lang::En, Some(&six), false, false, 40, 30));
+        assert_eq!(got[0], "✎ review · claude · default · $0.00");
         assert_eq!(got.len(), 1 + REVIEW_ROWS, "all of it, nothing counted");
         assert_eq!(got[REVIEW_ROWS], "l6");
         let nine = a_review(&lines(REVIEW_ROWS + 3));
-        let got = texts(&review_lines(
-            Lang::En,
-            Some(&nine),
-            Some(Vendor::Claude),
-            false,
-            40,
-            30,
-        ));
+        let got = texts(&review_lines(Lang::En, Some(&nine), true, false, 40, 30));
         assert_eq!(got.len(), 2 + REVIEW_ROWS, "{got:?}");
         assert_eq!(got.last().unwrap(), "… +3 lines · R shows all");
         // Whole: as many as the room leaves (its head and the count line
         // aside), never fewer than folded.
-        let got = texts(&review_lines(Lang::En, Some(&nine), None, true, 40, 30));
+        let got = texts(&review_lines(Lang::En, Some(&nine), false, true, 40, 30));
         assert_eq!(got.len(), 1 + REVIEW_ROWS + 3, "all of it");
-        let got = texts(&review_lines(Lang::En, Some(&nine), None, true, 40, 10));
+        let got = texts(&review_lines(Lang::En, Some(&nine), false, true, 40, 10));
         assert_eq!(got.len(), 1 + 8 + 1, "{got:?}");
         assert_eq!(got.last().unwrap(), "… +1 lines · R shows all");
-        let got = texts(&review_lines(Lang::En, Some(&nine), None, true, 40, 4));
+        let got = texts(&review_lines(Lang::En, Some(&nine), false, true, 40, 4));
         assert_eq!(got.len(), 2 + REVIEW_ROWS, "folded at least");
         // Long lines wrap at the width and count as rows; text is cleaned.
         let long = a_review("abcdefghij klmnopqrst\u{1b}[2J");
-        let got = texts(&review_lines(Lang::En, Some(&long), None, false, 11, 30));
+        let got = texts(&review_lines(Lang::En, Some(&long), false, false, 11, 30));
         assert_eq!(&got[1..], ["abcdefghij", "klmnopqrst", "[2J"], "{got:?}");
     }
 

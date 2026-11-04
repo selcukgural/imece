@@ -1,11 +1,11 @@
 ---
 title: Install
-description: Install imece with one line (or build it from source), put the vendor CLIs on PATH, and know where it keeps its state.
+description: Install imece with one line (or build it from source), put Claude Code on PATH, and know where it keeps its state.
 ---
 
 # Install
 
-imece runs on macOS and Linux, x86_64 and arm64 (on Windows: inside WSL). It needs git (a solo also runs without it, in a folder that is no checkout) and at least one vendor's command-line agent on PATH, logged in. This page is what to have in place before the [first run](first-run.md).
+imece runs on macOS and Linux, x86_64 and arm64 (on Windows: inside WSL). It needs git (a solo also runs without it, in a folder that is no checkout) and Claude Code on PATH, logged in. This page is what to have in place before the [first run](first-run.md).
 
 ## With the installer
 
@@ -53,23 +53,15 @@ An imece put in `~/.cargo/bin` this way and one the installer put in `~/.local/b
 
 The crate is `imece-tui`; its binary is `imece`. SQLite is bundled into the build, so no system library is needed for the store. Git must be on PATH: imece reads and applies changes with git itself, and the three-way apply was probed on git 2.56.
 
-## The vendor CLIs
+## Claude Code
 
-imece looks for three programs on PATH when it starts (`looking for coding agents on PATH…`) and drives whichever are there: `claude`, `codex` and `gemini`. One is enough. With none, it stops with `no coding agent on PATH (looked for claude, codex, gemini); install Claude Code (https://claude.com/claude-code) and log in`.
+imece looks for `claude` on PATH when it starts and drives it. Without it, it stops and says to install Claude Code (https://claude.com/claude-code) and log in.
 
-| Program | What imece runs | What it must have |
-| --- | --- | --- |
-| `claude` (Claude Code) | one long-lived `claude -p` stream-json session per agent, under `--restricted` unless `--confine open` | a login; costs are reported in dollars and go to the pot. Probed on Claude Code 2.1.314 |
-| `codex` (Codex CLI) | one long-lived `codex app-server` (JSON-RPC on stdio) per agent | a **ChatGPT login** (`codex login`). An API-key login is refused: Codex reports tokens, not dollars, and imece cannot price them yet. On a ChatGPT plan a Codex turn costs the pot nothing; the trace says so and shows the tokens. Probed on Codex 0.165.0 |
-| `gemini` (Gemini CLI) | one long-lived `gemini --acp` (Agent Client Protocol) per agent, in a private directory imece owns | an API key or a Google login. With an API key, turns are booked from the list prices imece carries (a model it cannot price stops the session; name one it knows with `--model` or `--tier`). With a Google login they cost the pot nothing. Vertex AI and gateway logins are refused. Probed on Gemini CLI 0.65.0 |
+It runs one long-lived `claude -p` stream-json session per agent, under `--restricted` unless `--confine open`. It needs a login; costs are reported in dollars and go to the pot. Probed on Claude Code 2.1.314.
 
-Each vendor's session is started so that nothing of your own vendor setup loads (no hooks, no MCP servers but imece's own, no repository settings) under the default `--confine standard` and under `strict`; `--confine open` runs the vendor as you have it set up. In every case the leader never writes and the vendor's own sub-agent tool stays off. What a session reports it runs with is checked, fail closed; see [vendors](../concepts/vendors.md) and [security](../concepts/security.md).
+Each session is started so that nothing of your own Claude Code setup loads (no hooks, no MCP servers but imece's own, no repository settings) under the default `--confine standard` and under `strict`; `--confine open` runs Claude Code as you have it set up. In every case the leader never writes and Claude Code's own sub-agent tool stays off. What a session reports it runs with is checked, fail closed; see [Claude Code](../concepts/claude-code.md) and [security](../concepts/security.md).
 
 Every agent also gets your repository's notes for coding agents, its `AGENTS.md` or else `CLAUDE.md`, up to 16 KiB; a longer file goes in cut and the journal says so. Instructions of your own for every project go in `~/.config/imece/instructions.md` (or under `$XDG_CONFIG_HOME/imece/`), up to 16 KiB as well; they come before the repository's notes. See [files](../reference/files.md).
-
-## Who leads
-
-With one vendor on PATH it leads. With more than one, imece asks at the start (the `WHO LEADS?` screen) unless `--lead claude|codex|gemini` says, or you answered the question with `p` once, which makes that vendor the primary from then on. `--lead ask` asks anyway. Details on the [first run](first-run.md) page.
 
 ## Terminals
 
@@ -89,12 +81,11 @@ Everything imece remembers is yours alone (files are made `0600`) and lives unde
 
 | Path | What it is |
 | --- | --- |
-| `<state>/imece.sqlite` | the store: projects, agents, cards and their stories, the journal, the inbox, mail, the board, the pot, your screen preferences (side panel width, theme, primary vendor). WAL mode, so `imece.sqlite-wal` and `imece.sqlite-shm` sit next to it while it is open |
+| `<state>/imece.sqlite` | the store: projects, agents, cards and their stories, the journal, the inbox, mail, the board, the pot, your screen preferences (side panel width, theme). WAL mode, so `imece.sqlite-wal` and `imece.sqlite-shm` sit next to it while it is open |
 | `<state>/imece.sqlite.lock` | held with `flock` while an imece runs; a second imece on the same file is refused and told to use `:open` from the first |
-| `<state>/worktrees/<dir>-<hash>/<agent>` | one git worktree per worker (`claude-1`, `codex-2`, …), detached at your HEAD, under a directory per project (the checkout's directory name and an 8-digit hash of its path). Kept between runs. Each has its own `target/` |
-| `<state>/worktrees/<dir>-<hash>-gemini/<agent>` | the private directory a Gemini session runs in (its policy file and `GEMINI.md`); a leader's is `lead` whatever the project is called |
+| `<state>/worktrees/<dir>-<hash>/<agent>` | one git worktree per worker (`claude-1`, `claude-2`, …), detached at your HEAD, under a directory per project (the checkout's directory name and an 8-digit hash of its path). Kept between runs. Each has its own `target/` |
 
-Outside that directory, the vendors keep what they always keep: Claude Code its transcripts under `~/.claude/projects/`, Codex its thread rollouts under `~/.codex`, Gemini its chat files under `~/.gemini/tmp`. `--fresh` and `:forget` remove those for the sessions imece forgets; see [sessions](../concepts/sessions.md). imece's MCP sockets, one per agent, live in a private directory under the system's temporary directory for the run.
+Outside that directory, Claude Code keeps what it always keeps: its transcripts under `~/.claude/projects/`. `--fresh` and `:forget` remove those for the sessions imece forgets; see [sessions](../concepts/sessions.md). imece's MCP sockets, one per agent, live in a private directory under the system's temporary directory for the run.
 
 Your checkout itself gets nothing but the changes you apply, staged, and a private index file under its `.git` while a three-way apply is checked.
 

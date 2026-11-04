@@ -5,7 +5,7 @@ description: "imece neyi korur - bus'ta kim hangi aracı çağırabilir, ekranda
 
 # Güvenlik
 
-imece, Claude Code, Codex ve Gemini CLI'yi kendi makinenizde kendi hesaplarınızla sürer. Kendi sınırlarını korur ve sahip olmadığı sınır konusunda dürüsttür: bir sandbox değildir. Bu sayfa onu nerede çalıştıracağınıza ve ne bekleyeceğinize karar vermeniz içindir.
+imece, Claude Code'u kendi makinenizde kendi hesaplarınızla sürer. Kendi sınırlarını korur ve sahip olmadığı sınır konusunda dürüsttür: bir sandbox değildir. Bu sayfa onu nerede çalıştıracağınıza ve ne bekleyeceğinize karar vermeniz içindir.
 
 ## imece neyi korur
 
@@ -13,18 +13,18 @@ Yerleşik kurallar: varsayılan ret, hiçbir şey sessizce zayıflamaz, her sın
 
 ### Bus'ta kim hangi aracı çağırabilir
 
-- Bus imece'nin kendi MCP sunucusudur; taze `0700` bir dizinde ajan başına bir Unix soketi. **Gönderen sokettir**, ajanın verdiği bir ad asla: hiçbir ajan bir başkası ya da siz gibi konuşamaz. Bir soket yalnız kendi ajanının oturumundaki süreçlerden (satıcının süreci ve onun başlattıkları) çağrı alır; başka yerden gelen bir çağrı reddedilir ve ajanın izine yazılır.
+- Bus imece'nin kendi MCP sunucusudur; taze `0700` bir dizinde ajan başına bir Unix soketi. **Gönderen sokettir**, ajanın verdiği bir ad asla: hiçbir ajan bir başkası ya da siz gibi konuşamaz. Bir soket yalnız kendi ajanının oturumundaki süreçlerden (Claude Code'un süreci ve onun başlattıkları) çağrı alır; başka yerden gelen bir çağrı reddedilir ve ajanın izine yazılır.
 - Her soket yalnız rolünün araçlarını sunar: `claim` yalnız işçilere, `hire` lidere (işçiler) ve işçilere (yardımcılar), `approve` yalnız bir Claude oturumuna, o da kendisi çağırır. Bir yardımcı kimseyi işe almaz. Bir oturumun `init`'i tam imece'nin sunucusunu ve tam araçlarını bildirmelidir.
 - Bir yanıttaki `re` varsayılan retle denetlenir: var olan, gönderene gönderilmiş, yanıtın gittiği kişinin yazdığı bir mesaj. Size iş verecek türlerde size mesaj reddedilir.
 - Her yazmada sınır: gövde boyutu, okunmamış posta, siz yeniden konuşana dek ajan başına mesajla başlayan tur ve asma, proje başına açık kart ([mesajlar](../concepts/messages-and-board.md)).
 
 ### Ekranda ajan metni
 
-Bir ajanın yazdığı her şey terminale yalnız `i18n::fill` ya da `i18n::clean` üzerinden ulaşır: kontrol karakterleri değiştirilir (bir kaçış dizisi ekranı yeniden çizemez, pencereyi yeniden adlandıramaz ya da bir satırı taklit edemez) ve gizli anahtara benzeyen sözcükler `[***]` olarak saklanır (satıcıların `sk-…`, `ghp_…`, `glpat-…`, `xoxb-…`, `AKIA…`, `AIza…` gibi token'ları; adında `KEY`, `TOKEN`, `SECRET`, `PASSWORD`, `PASSWD` ya da `CREDENTIAL` geçen bir `AD=değer` ya da `AD:değer`; `Bearer` ya da `Basic` sonrasındaki sözcük; bir URL'deki parola; bir JSON Web Token; bir anahtar dosyasının satırı gibi harf ve rakam karışık uzun bir base64 dizisi). Kural diff'ler, alıntılanan parçalar, notlar, dışa aktarılan Markdown, uyanış özeti ve `:commit` önerisi için de geçerlidir. Bir onay isteği bütünüyle gösterilir ve asla markdown olarak okunmaz: izin verdiğiniz, çalışandır.
+Bir ajanın yazdığı her şey terminale yalnız `i18n::fill` ya da `i18n::clean` üzerinden ulaşır: kontrol karakterleri değiştirilir (bir kaçış dizisi ekranı yeniden çizemez, pencereyi yeniden adlandıramaz ya da bir satırı taklit edemez) ve gizli anahtara benzeyen sözcükler `[***]` olarak saklanır (servislerin `sk-…`, `ghp_…`, `glpat-…`, `xoxb-…`, `AKIA…`, `AIza…` gibi token'ları; adında `KEY`, `TOKEN`, `SECRET`, `PASSWORD`, `PASSWD` ya da `CREDENTIAL` geçen bir `AD=değer` ya da `AD:değer`; `Bearer` ya da `Basic` sonrasındaki sözcük; bir URL'deki parola; bir JSON Web Token; bir anahtar dosyasının satırı gibi harf ve rakam karışık uzun bir base64 dizisi). Kural diff'ler, alıntılanan parçalar, notlar, dışa aktarılan Markdown, uyanış özeti ve `:commit` önerisi için de geçerlidir. Bir onay isteği bütünüyle gösterilir ve asla markdown olarak okunmaz: izin verdiğiniz, çalışandır.
 
 ### Fail-closed oturum denetimleri
 
-imece her satıcının kendi kısıtlamalarını rol ve `--confine` düzeyi için açar ve oturumun neyle çalıştığını bildirdiğini doğrular: Claude'un `init`'i her turda; Codex'in yapılandırma yansıması, eklentileri, hook'ları, MCP sunucuları (her turdan önce yeniden) ve thread'i; Gemini'nin modu, modeli, `/about`, `/extensions list` ve `/memory list`'i. İstenenden başka her şey, bir araç, bir sunucu, bir hook, bir sandbox, oturumu durdurur; hiçbir şey sessizce düşürülmez. Strict ve standard altında bir Codex kural dosyası varken Codex oturumu başlamaz, çünkü Codex kurallarının neye izin verdiğini bildirmez. Alt ajan araçları her düzeyde kapalıdır ([satıcılar](../concepts/vendors.md)).
+imece Claude Code'un kendi kısıtlamalarını rol ve `--confine` düzeyi için açar ve oturumun neyle çalıştığını bildirdiğini doğrular: her turda `init`'i. İstenenden başka her şey, bir araç, bir sunucu, bir hook, bir sandbox, oturumu durdurur; hiçbir şey sessizce düşürülmez. Alt ajan araçları her düzeyde kapalıdır ([Claude Code](../concepts/claude-code.md)).
 
 ### Bütçe
 
@@ -36,9 +36,9 @@ Hiçbir ajan checkout'unuza yazmaz. Lider orada yalnız okur; işçiler worktree
 
 ### Daha küçük kurallar
 
-- Alt süreçler temizlenmiş bir ortam (satıcının oturum açmak için gerekenleri artı), kendi süreç grubunu ve sınırlı borular alır.
+- Alt süreçler temizlenmiş bir ortam (Claude Code'un oturum açmak için gerekenleri artı), kendi süreç grubunu ve sınırlı borular alır.
 - `run` aracı argümanlarıyla tek bir program alır, asla kabuk değil; ondan geçen git komuttan önce seçenek, pager, çıktı dosyası almaz.
-- Bir oturum devam ettirilir ya da unutulurken bir yola ya da satıcıya yalnız bir UUID ulaşır.
+- Bir oturum devam ettirilir ya da unutulurken bir yola ya da Claude Code'a yalnız bir UUID ulaşır.
 - `:export` var olan bir dosyanın üzerine asla yazmaz; `:copy` checkout'tan çıkan ya da bağlantı olan yolları reddeder.
 - Depo `0600`'dür; imece'nin okuyamadığı bir dosya reddedilir, üzerine yazılmaz.
 - Deponun `AGENTS.md`/`CLAUDE.md`'si ajanlara 16 KiB'da kesilerek gider ve günlük kesildiğinde söyler.
@@ -49,15 +49,15 @@ Hiçbir ajan checkout'unuza yazmaz. Lider orada yalnız okur; işçiler worktree
 
 :::warning
 
-imece **bir sandbox değildir** ve kendisine asla öyle demez. `--confine standard` (varsayılan) altında bir işçinin satıcısının kabuğu vardır ve kabuğu olan bir ajan hesabınızın yapabildiğini yapabilir: ev dizininizi okur, ağa ulaşır, sizin çalıştırabileceğiniz her şeyi çalıştırır. Onu sınırlayan, satıcının kendi kısıtlamasıdır (Claude'un `--restricted`'ı ve izin istemleri, Codex'in sandbox'ı, Gemini'nin politika dosyası); imece bunları açar ve doğrular. Bunun ötesinde yalıtım bir konteynerin işidir. Kod ya da görev güvenebileceğiniz bir şey değilse imece'yi bir konteynerin içinde çalıştırın.
+imece **bir sandbox değildir** ve kendisine asla öyle demez. `--confine standard` (varsayılan) altında bir işçinin Claude Code'un kabuğu vardır ve kabuğu olan bir ajan hesabınızın yapabildiğini yapabilir: ev dizininizi okur, ağa ulaşır, sizin çalıştırabileceğiniz her şeyi çalıştırır. Onu sınırlayan, Claude Code'un kendi kısıtlamasıdır (`--restricted` ve izin istemleri); imece bunları açar ve doğrular. Bunun ötesinde yalıtım bir konteynerin işidir. Kod ya da görev güvenebileceğiniz bir şey değilse imece'yi bir konteynerin içinde çalıştırın.
 
 :::
 
 - **Liderin yazmaması bir roldür, güvenlik değil.** Checkout'unuzda çalışır çünkü oraya bir yazma Δ kapısını atlar ve çalışma kopyanızla çakışır; fail closed doğrulanan bir istem ve araç listesidir, bir işletim sistemi sınırı değil.
 - **Son kapı sizsiniz**, bir model ya da araç listesi değil: Δ incelemesi, `⚑` istekleri ve SENİ BEKLEYEN'deki `?` soruları kararların verildiği yerdir.
-- `open` altında kendi ayarlarınız, hook'larınız, MCP sunucularınız ve uzantılarınız yüklenir; imece orada tasarım gereği daha az denetler.
-- `run`'ın kendi ağ engeli yoktur. Salt okunur sandbox bir Codex liderinin bütün diski okumasına izin verir. `~/.gemini/GEMINI.md`'niz ve kullanıcı düzeyi hook'larınız Gemini için yine geçerlidir. Claude Code'un kendi salt okunur kuralları neyin imece'ye istek olarak hiç ulaşmayacağına karar verir.
-- Bir ajanın bağlamındaki sırlar satıcının ve modelindir; imece ekranında ve yazdıklarında sır gibi görüneni saklar, daha fazlasını değil.
+- `open` altında kendi ayarlarınız, hook'larınız ve MCP sunucularınız yüklenir; imece orada tasarım gereği daha az denetler.
+- `run`'ın kendi ağ engeli yoktur. Claude Code'un kendi salt okunur kuralları neyin imece'ye istek olarak hiç ulaşmayacağına karar verir.
+- Bir ajanın bağlamındaki sırlar Claude Code'un ve modelindir; imece ekranında ve yazdıklarında sır gibi görüneni saklar, daha fazlasını değil.
 
 ## Bir sorunu bildirmek
 
@@ -68,6 +68,6 @@ Lütfen bir güvenlik sorunu için herkese açık issue, pull request ya da tart
 ## Ayrıca bakınız
 
 - [imece nasıl çalışır](../concepts/how-imece-works.md)
-- [Satıcılar](../concepts/vendors.md): confine kadranı ve satıcı başına denetimler.
+- [Claude Code](../concepts/claude-code.md): confine kadranı ve denetimler.
 - [Onaylar ve sorular](../concepts/approvals-and-questions.md)
 - [Değişiklikler](../concepts/changes.md)

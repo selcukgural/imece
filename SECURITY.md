@@ -1,9 +1,8 @@
 # Security policy
 
-imece is an early prototype. It drives Claude Code, Codex and Gemini CLI
-sessions on your own machine with your own accounts, switching on each
-vendor's own tool restrictions and checking what the session reports it
-runs with; it is not a sandbox, and an agent with a shell can do what your
+imece is an early prototype. It drives Claude Code sessions on your own
+machine with your own account, switching on Claude Code's own tool
+restrictions and checking what the session reports it runs with; it is not a sandbox, and an agent with a shell can do what your
 account can. Security fixes go to the latest commit on `main`; there are
 no releases or maintained branches yet.
 

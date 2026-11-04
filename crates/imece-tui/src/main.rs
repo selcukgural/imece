@@ -1,4 +1,4 @@
-//! imece: one terminal for many coding agents from many vendors. The agents
+//! imece: one terminal for a team of Claude Code agents. The agents
 //! are real coding-agent sessions (`live`), or fake ones with `--demo`
 //! (`sim`).
 
@@ -41,10 +41,10 @@ use imece_agent::{Confine, Tier};
 use ratatui::crossterm::event::{self, Event, KeyEventKind};
 
 use crate::i18n::Lang;
-use crate::model::{Vendor, parse_dollars, valid_model, vendor_choice};
+use crate::model::{parse_dollars, solo_choice, valid_model};
 
-const USAGE: &str = "usage: imece [--repo DIR] [--agents N] [--helpers N] [--lead VENDOR]
-             [--solo V[:MODEL][@EFFORT]] [--model [V:]NAME]... [--tier [V:]T=NAME]...
+const USAGE: &str = "usage: imece [--repo DIR] [--agents N] [--helpers N]
+             [--solo claude[:MODEL][@EFFORT]] [--model NAME]... [--tier T=NAME]...
              [--budget USD] [--fresh] [--awake] [--confine standard|strict|open]
              [--lang en|tr] [--theme NAME|FILE]
        imece --demo [--projects N] [--agents N] [--researchers N] [--seed N]
@@ -53,8 +53,8 @@ const USAGE: &str = "usage: imece [--repo DIR] [--agents N] [--helpers N] [--lea
 imece runs coding agents on the checkout DIR is in: a leader that reads it
 and talks to you, and workers it hires as the work needs them, each changing
 its own git worktree; a worker may hire helpers for parts of its task. With
---solo, one agent you drive yourself instead, on the vendor, model and
-effort you name, in a worktree of its own; what it changes waits for you
+--solo, one agent you drive yourself instead, on the model and effort
+you name, in a worktree of its own; what it changes waits for you
 after every turn. In a folder that is not a git checkout with a commit, a
 solo works straight in the folder (no worktree, nothing to review) and a
 team does not start. While it runs, :open PATH [NAME] opens another checkout
@@ -65,49 +65,38 @@ as a project of its own, with its own leader, and :solo [PATH] [CHOICE]
   --repo DIR        the checkout (default: the current directory)
   --agents N        workers the leader may hire, at most (0-16, default 4)
   --helpers N       helpers a worker may have at once, at most (0-8, default 2)
-  --lead VENDOR     the leader's coding agent: claude, codex or gemini; ask
-                    asks at the start. Without it: your primary vendor (set
-                    with p in that question, or with :lead VENDOR), else the
-                    only one on PATH, else the question
-  --solo V[:MODEL][@EFFORT]
-                    start with a solo session instead of a team: V (claude,
-                    codex, gemini) on MODEL (default: its own, or --model's)
-                    at EFFORT; claude@xhigh, codex:gpt-5.6-terra@high. An open
-                    solo of the same vendor and choice on this checkout is
-                    gone on with; a team open here stays. V leads the teams
-                    :open adds unless --lead says who
-  --model [V:]NAME  the model agents of vendor V run on (default: the
-                    vendor's own); without V, the leader's vendor. NAME is
-                    [MODEL][@EFFORT]: opus, opus@xhigh, @high; the efforts
-                    are claude's low, medium, high, xhigh, max and codex's
-                    low, medium, high, xhigh; gemini has none
-  --tier [V:]T=NAME the model a tier stands for, T being cheap, standard or
-                    strong (claude: haiku, the vendor's own, opus; codex:
-                    an effort on its default model, @low, the default,
-                    @high; gemini: flash, auto, pro); without V, the
-                    leader's vendor
+  --solo claude[:MODEL][@EFFORT]
+                    start with a solo session instead of a team: Claude Code
+                    on MODEL (default: its own, or --model's) at EFFORT;
+                    claude@xhigh, claude:opus@high. An open solo of the same
+                    choice on this checkout is gone on with; a team open
+                    here stays
+  --model NAME      the model agents run on (default: Claude Code's own).
+                    NAME is [MODEL][@EFFORT]: opus, opus@xhigh, @high; the
+                    efforts are low, medium, high, xhigh, max
+  --tier T=NAME     the model a tier stands for, T being cheap, standard or
+                    strong (haiku, Claude Code's own, opus)
   --budget USD      the most all agents together may spend; one pot, kept
                     between runs (50 the first time); :budget USD changes
                     it while agents run
   --fresh           forget every agent's remembered session: each wakes in a
-                    new one, told where it left off, and what the vendors
-                    kept of the old ones is removed (:forget @NAME does it
+                    new one, told where it left off, and the transcripts
+                    of the old ones are removed (:forget @NAME does it
                     for one agent while imece runs); an archived project's
                     are kept
   --awake           keep the machine from sleeping while an agent is
                     mid-turn (caffeinate on macOS, systemd-inhibit on
                     Linux); :awake turns it on or off while imece runs
-  --confine LEVEL   how much of its vendor each agent gets: standard (the
-                    default) gives workers and helpers the vendor's full
-                    coding toolset (read, write, shell, web search and
-                    fetch) and the leader the web, with nothing of your own
-                    vendor setup loaded; strict gives file tools only, with
-                    commands through imece's run tool; open runs the vendor
-                    as you have it set up (your settings, hooks, MCP
-                    servers, skills, extensions). The leader never writes
-                    and the vendor's own sub-agent tool stays off at every
-                    level; imece sandboxes nothing, isolation is a
-                    container's job
+  --confine LEVEL   how much of Claude Code each agent gets: standard (the
+                    default) gives workers and helpers its full coding
+                    toolset (read, write, shell, web search and fetch) and
+                    the leader the web, with nothing of your own setup
+                    loaded; strict gives file tools only, with commands
+                    through imece's run tool; open runs it as you have it
+                    set up (your settings, hooks, MCP servers, skills).
+                    The leader never writes and the sub-agent tool stays
+                    off at every level; imece sandboxes nothing, isolation
+                    is a container's job
   --run PROG[,..]   programs workers may run with their run tool, next to
                     cargo and git's reading commands (repeatable)
   --run-timeout S   seconds one run may take (10-3600, default 600)
@@ -137,52 +126,16 @@ struct Args {
     fresh: bool,
     awake: bool,
     repo: PathBuf,
-    lead: Option<Lead>,
-    /// `--solo`: the vendor and its `[MODEL][@EFFORT]` choice.
-    solo: Option<(Vendor, Option<String>)>,
-    /// Stand-ins for the vendors' own models, by vendor (none: the
-    /// leader's) and tier; `--model` is the standard tier.
-    tiers: Vec<(Option<Vendor>, Tier, String)>,
+    /// `--solo`: its `[MODEL][@EFFORT]` choice, none for Claude Code's own.
+    solo: Option<Option<String>>,
+    /// Stand-ins for Claude Code's own models, by tier; `--model` is the
+    /// standard tier.
+    tiers: Vec<(Tier, String)>,
     /// Ten-thousandths of a dollar; none keeps the pot as it was left.
     budget: Option<u64>,
     run_programs: Vec<String>,
     run_timeout: Duration,
     confine: Confine,
-}
-
-/// What `--lead` asks for.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Lead {
-    Vendor(Vendor),
-    /// Ask at the start, whatever the primary vendor is.
-    Ask,
-}
-
-/// Who leads, from the flag, the primary vendor `primary` and the vendors
-/// on PATH that imece drives, `candidates`: `None` is a question for the
-/// person. A flag names a vendor even when it is not here (the honest error
-/// comes when the team is built); a primary vendor that is not here is
-/// skipped, and the chooser says so.
-fn choose_lead(
-    flag: Option<Lead>,
-    primary: Option<Vendor>,
-    candidates: &[Vendor],
-) -> Option<Vendor> {
-    match flag {
-        Some(Lead::Vendor(v)) => return Some(v),
-        Some(Lead::Ask) => {}
-        None => {
-            if let Some(p) = primary.filter(|p| candidates.contains(p)) {
-                return Some(p);
-            }
-        }
-    }
-    match candidates {
-        // Nothing to choose from: the team's own error says what is missing.
-        [] => Some(primary.unwrap_or(Vendor::Claude)),
-        [only] => Some(*only),
-        _ => None,
-    }
 }
 
 /// Workers a leader may hire, at most.
@@ -225,7 +178,6 @@ fn parse(
         fresh: false,
         awake: false,
         repo: PathBuf::from("."),
-        lead: None,
         solo: None,
         tiers: Vec::new(),
         budget: None,
@@ -275,12 +227,6 @@ fn parse(
             "--helpers" => args.helpers = number(0, MAX_HELPERS)? as usize,
             "--researchers" => args.researchers = number(1, 32)? as usize,
             "--seed" => args.seed = number(0, u64::MAX)?,
-            "--lead" if value == "ask" => args.lead = Some(Lead::Ask),
-            "--lead" => {
-                args.lead = Some(Lead::Vendor(Vendor::parse(&value).ok_or_else(|| {
-                    format!("--lead: {value:?} is not claude, codex, gemini or ask")
-                })?))
-            }
             "--solo" => args.solo = Some(parse_solo(&value)?),
             "--tier" => args.tiers.push(parse_tier(&value)?),
             "--theme" => match theme::choose(&value) {
@@ -333,65 +279,42 @@ fn parse(
     Ok(args)
 }
 
-/// `[VENDOR:]REST`: the vendor a `--model` or `--tier` value names, if
-/// any, and the rest. A model name holds no colon, so a colon is a vendor.
-fn split_vendor<'a>(flag: &str, s: &'a str) -> Result<(Option<Vendor>, &'a str), String> {
-    match s.split_once(':') {
-        None => Ok((None, s)),
-        Some((v, rest)) => Vendor::parse(v)
-            .filter(|v| live::KNOWN.iter().any(|k| k.0 == *v && k.2))
-            .map(|v| (Some(v), rest))
-            .ok_or_else(|| {
-                format!("{flag}: {v:?} is not a vendor imece drives (claude, codex, gemini)")
-            }),
-    }
-}
-
-/// `VENDOR[:MODEL][@EFFORT]`, as `--solo` takes it: a vendor imece drives,
-/// asked only for an effort it has.
-fn parse_solo(s: &str) -> Result<(Vendor, Option<String>), String> {
-    // `vendor_choice` takes only the vendors imece leads with, which are
-    // the ones it drives.
-    let (vendor, choice) = vendor_choice(s).ok_or_else(|| {
-        format!("--solo: {s:?} is not VENDOR[:MODEL][@EFFORT], like claude:opus@xhigh")
+/// `claude[:MODEL][@EFFORT]`, as `--solo` takes it: asked only for an
+/// effort Claude Code has.
+fn parse_solo(s: &str) -> Result<Option<String>, String> {
+    let choice = solo_choice(s).ok_or_else(|| {
+        format!("--solo: {s:?} is not claude[:MODEL][@EFFORT], like claude:opus@xhigh")
     })?;
     if let Some(c) = &choice {
-        live::valid_choice(vendor, c).map_err(|why| format!("--solo: {why}"))?;
+        live::valid_choice(c).map_err(|why| format!("--solo: {why}"))?;
     }
-    Ok((vendor, choice))
+    Ok(choice)
 }
 
-/// `[VENDOR:]TIER=MODEL`, as `--tier` takes it.
-fn parse_tier(s: &str) -> Result<(Option<Vendor>, Tier, String), String> {
-    let (vendor, s) = split_vendor("--tier", s)?;
+/// `TIER=MODEL`, as `--tier` takes it.
+fn parse_tier(s: &str) -> Result<(Tier, String), String> {
     let (tier, model) = s
         .split_once('=')
         .ok_or_else(|| format!("--tier: {s:?} is not TIER=MODEL, like strong=opus"))?;
     let tier = Tier::from_wire(tier)
         .ok_or_else(|| format!("--tier: {tier:?} is not cheap, standard or strong"))?;
-    checked("--tier", vendor, model)?;
-    Ok((vendor, tier, model.to_string()))
+    checked("--tier", model)?;
+    Ok((tier, model.to_string()))
 }
 
-/// `[VENDOR:]MODEL`, as `--model` takes it: the standard tier.
-fn parse_model(s: &str) -> Result<(Option<Vendor>, Tier, String), String> {
-    let (vendor, model) = split_vendor("--model", s)?;
-    checked("--model", vendor, model)?;
-    Ok((vendor, Tier::Standard, model.to_string()))
+/// `MODEL`, as `--model` takes it: the standard tier.
+fn parse_model(s: &str) -> Result<(Tier, String), String> {
+    checked("--model", s)?;
+    Ok((Tier::Standard, s.to_string()))
 }
 
 /// `model` (`[MODEL][@EFFORT]`) as `flag` took it: a model name, asking
-/// `vendor` only for an effort it has. A bare value's vendor is the
-/// leader's, known only once the team is built: its effort is checked
-/// there (`live::world`).
-fn checked(flag: &str, vendor: Option<Vendor>, model: &str) -> Result<(), String> {
+/// Claude Code only for an effort it has.
+fn checked(flag: &str, model: &str) -> Result<(), String> {
     if !valid_model(model) {
         return Err(format!("{flag}: {model:?} is not a model name"));
     }
-    if let Some(v) = vendor {
-        live::valid_choice(v, model).map_err(|why| format!("{flag}: {why}"))?;
-    }
-    Ok(())
+    live::valid_choice(model).map_err(|why| format!("{flag}: {why}"))
 }
 
 /// What `imece --version` (or `-V`) prints.
@@ -430,7 +353,7 @@ fn main() -> std::io::Result<()> {
         }
     };
     let state = prefs::state_dir();
-    let mut saved = prefs::load(&state);
+    let saved = prefs::load(&state);
     // The person's own keys, or the last good ones when their file is
     // refused; the lead question already takes them.
     let keys_file = keys::file();
@@ -474,51 +397,12 @@ fn main() -> std::io::Result<()> {
             eprintln!("imece: {msg}");
             std::process::exit(1);
         };
-        // Running every vendor's --version takes a moment: say so.
-        screen::synced(&mut std::io::stdout(), || {
-            terminal.draw(|f| ui::pick::probing(f, args.lang))
-        })
-        .unwrap_or_else(|e| fail(e.to_string()));
-        let present = live::probe(&args.repo, live::KNOWN).unwrap_or_else(|e| fail(e));
-        let candidates = live::leaders(&present);
-        let primary = saved.lead.as_deref().and_then(Vendor::parse);
-        // A solo start leads the teams `:open` adds with its own vendor,
-        // unless --lead says who: no question for a session with no leader.
-        let asked = args
-            .lead
-            .or(args.solo.as_ref().map(|(v, _)| Lead::Vendor(*v)));
-        let lead = match choose_lead(asked, primary, &candidates) {
-            Some(v) => v,
-            None => {
-                let mut pick = ui::pick::Pick::new(candidates, primary, args.lang);
-                match ask(&mut terminal, &mut pick, &keys_start.map) {
-                    Ok(Some(ui::pick::Picked::Lead { vendor, remember })) => {
-                        if remember {
-                            saved.lead = Some(vendor.label().to_string());
-                            let _ = prefs::save(
-                                &state,
-                                saved.side.unwrap_or(prefs::SIDE_DEFAULT),
-                                &theme::chosen(),
-                                saved.lead.as_deref(),
-                                saved.notify.unwrap_or_default(),
-                            );
-                        }
-                        vendor
-                    }
-                    Ok(_) => {
-                        screen::restore();
-                        return Ok(());
-                    }
-                    Err(e) => fail(e.to_string()),
-                }
-            }
-        };
+        live::probe(&args.repo, imece_agent::claude::PROGRAM).unwrap_or_else(|e| fail(e));
         let options = live::Options {
             repo: args.repo,
             state: state.clone(),
             max_workers: args.agents.unwrap_or(DEFAULT_WORKERS),
             max_helpers: args.helpers,
-            lead,
             tiers: args.tiers,
             budget: args.budget,
             fresh: args.fresh,
@@ -528,7 +412,7 @@ fn main() -> std::io::Result<()> {
             confine: args.confine,
             solo: args.solo,
         };
-        match live::world(options, &present) {
+        match live::world(options) {
             Ok((world, live)) => {
                 // The screen's clock counts from when the world began,
                 // which may be an earlier run.
@@ -537,7 +421,7 @@ fn main() -> std::io::Result<()> {
                 // Nothing remembered: the first start ever.
                 let first = live.left_off().is_none();
                 let mut app = app::App::with(world, app::Engine::Live(Box::new(live)), args.lang);
-                app.look = Some(|which| live::look(live::KNOWN, which));
+                app.look = Some(|| live::look(imece_agent::claude::PROGRAM));
                 app.start_welcome(first);
                 // What is new since the version that started last, once.
                 let versions: Vec<&str> = app.lang.text().news.iter().map(|n| n.0).collect();
@@ -558,7 +442,6 @@ fn main() -> std::io::Result<()> {
         // Kept for the next start; a failure only costs that.
         let _ = prefs::keep_keys(&state, app.keys_good.as_deref());
     }
-    app.primary = saved.lead;
     app.notify = saved.notify.unwrap_or_default();
     app.start_push();
     app.start_tidy();
@@ -583,46 +466,6 @@ fn main() -> std::io::Result<()> {
     // A terminal gone away takes nothing; that is no error of the run's.
     let _ = writeln!(std::io::stdout(), "{bye}");
     result
-}
-
-/// Asks who leads, until the person answers or quits (also by signal).
-fn ask(
-    terminal: &mut screen::Screen,
-    pick: &mut ui::pick::Pick,
-    keys: &keys::Keymap,
-) -> std::io::Result<Option<ui::pick::Picked>> {
-    // Nothing on it moves by itself: drawn first and after what came from
-    // the terminal (a key, a resize), never on a timer.
-    let mut due = true;
-    let mut guard = input::Guard::default();
-    loop {
-        if SIGNALLED.load(Ordering::SeqCst) {
-            return Ok(None);
-        }
-        if std::mem::take(&mut due) {
-            screen::synced(&mut std::io::stdout(), || {
-                terminal.draw(|f| ui::pick::draw(f, pick))
-            })?;
-        }
-        // The wait only bounds how late a signal is seen.
-        let ready = match poll_terminal(&mut guard, Duration::from_millis(200)) {
-            Ok(Some(ready)) => ready,
-            // The terminal went away: nobody is there to answer.
-            Ok(None) => return Ok(None),
-            Err(e) if e.kind() == ErrorKind::Interrupted => continue,
-            Err(e) => return Err(e),
-        };
-        if !ready {
-            continue;
-        }
-        due = true;
-        if let Event::Key(k) = event::read()?
-            && k.kind == KeyEventKind::Press
-            && let Some(picked) = (keys.alone(k).iter()).find_map(|k| pick.on_key(k.code))
-        {
-            return Ok(Some(picked));
-        }
-    }
 }
 
 /// Whether the terminal has an event within `timeout`; `None` when it
@@ -791,10 +634,9 @@ fn run(
         if let Some(Event::Key(k)) = event
             && k.kind == KeyEventKind::Press
         {
-            let (side, theme, primary, notify, moves, away, story, review) = (
+            let (side, theme, notify, moves, away, story, review) = (
                 app.side,
                 app.theme(),
-                app.primary.clone(),
                 app.notify,
                 app.motion,
                 app.away,
@@ -802,19 +644,9 @@ fn run(
                 app.review,
             );
             app.on_key(k);
-            if app.side != side
-                || app.theme() != theme
-                || app.primary != primary
-                || app.notify != notify
-            {
+            if app.side != side || app.theme() != theme || app.notify != notify {
                 // Remembered for the next run; a failure only costs that.
-                let _ = prefs::save(
-                    state,
-                    app.side,
-                    &app.theme(),
-                    app.primary.as_deref(),
-                    app.notify,
-                );
+                let _ = prefs::save(state, app.side, &app.theme(), app.notify);
             }
             if app.motion != moves {
                 let _ = prefs::keep_motion(state, app.motion);
@@ -970,7 +802,6 @@ mod tests {
             a.agents, None,
             "the leader's cap comes from DEFAULT_WORKERS"
         );
-        assert_eq!(a.lead, None, "who leads is decided at the start");
         assert!(a.tiers.is_empty());
         assert_eq!(a.budget, None, "the pot is kept between runs");
         assert!(!a.fresh, "sessions are remembered unless --fresh says");
@@ -1002,34 +833,6 @@ mod tests {
         assert!(a.demo);
         assert_eq!((a.seed, a.agents), (3, Some(30)));
         assert_eq!(DEFAULT_WORKERS, 4);
-    }
-
-    #[test]
-    fn who_leads_is_the_flag_else_the_primary_else_the_only_one_else_a_question() {
-        use Vendor::{Claude, Codex, Gemini};
-        let both = [Claude, Codex];
-        // The flag wins, even over a primary vendor, even when not here.
-        assert_eq!(
-            choose_lead(Some(Lead::Vendor(Gemini)), Some(Claude), &both),
-            Some(Gemini)
-        );
-        // The primary vendor answers when it is here.
-        assert_eq!(choose_lead(None, Some(Codex), &both), Some(Codex));
-        // Not here: a question, like no primary at all.
-        assert_eq!(choose_lead(None, Some(Gemini), &both), None);
-        assert_eq!(choose_lead(None, None, &both), None);
-        // One candidate is no question, whatever the primary.
-        assert_eq!(choose_lead(None, Some(Gemini), &[Codex]), Some(Codex));
-        assert_eq!(
-            choose_lead(Some(Lead::Ask), Some(Claude), &[Codex]),
-            Some(Codex)
-        );
-        // ask asks even with a primary vendor here.
-        assert_eq!(choose_lead(Some(Lead::Ask), Some(Claude), &both), None);
-        // Nobody here: no question; the team's error names what is missing.
-        assert_eq!(choose_lead(None, None, &[]), Some(Claude));
-        assert_eq!(choose_lead(None, Some(Codex), &[]), Some(Codex));
-        assert_eq!(choose_lead(Some(Lead::Ask), None, &[]), Some(Claude));
     }
 
     #[test]
@@ -1089,7 +892,7 @@ mod tests {
             ":close NAME",
             ":rename NAME",
             ":solo [PATH] [CHOICE]",
-            "--solo V[:MODEL][@EFFORT]",
+            "--solo claude[:MODEL][@EFFORT]",
         ] {
             assert!(USAGE.contains(cmd), "{cmd}");
         }
@@ -1125,21 +928,9 @@ mod tests {
     }
 
     #[test]
-    fn the_leader_s_vendor_is_one_imece_knows() {
-        assert_eq!(
-            args(&["--lead", "codex"], &[]).unwrap().lead,
-            Some(Lead::Vendor(Vendor::Codex))
-        );
-        assert_eq!(
-            args(&["--lead", "gemini"], &[]).unwrap().lead,
-            Some(Lead::Vendor(Vendor::Gemini))
-        );
-        assert_eq!(args(&["--lead", "ask"], &[]).unwrap().lead, Some(Lead::Ask));
-        let e = args(&["--lead", "qwen"], &[]).unwrap_err();
-        assert!(
-            e.contains("--lead") && e.contains("claude, codex, gemini or ask"),
-            "{e}"
-        );
+    fn who_leads_is_no_flag_any_more() {
+        let e = args(&["--lead", "claude"], &[]).unwrap_err();
+        assert!(e.starts_with("unknown option --lead"), "{e}");
     }
 
     #[test]
@@ -1149,11 +940,9 @@ mod tests {
                 "--tier",
                 "strong=opus[1m]",
                 "--tier",
-                "codex:cheap=gpt-5.6-luna@low",
+                "cheap=haiku@low",
                 "--model",
                 "sonnet",
-                "--model",
-                "codex:gpt-5.6-terra",
             ],
             &[],
         )
@@ -1161,27 +950,14 @@ mod tests {
         assert_eq!(
             a.tiers,
             [
-                (None, Tier::Strong, "opus[1m]".to_string()),
-                (
-                    Some(Vendor::Codex),
-                    Tier::Cheap,
-                    "gpt-5.6-luna@low".to_string()
-                ),
-                (None, Tier::Standard, "sonnet".to_string()),
-                (
-                    Some(Vendor::Codex),
-                    Tier::Standard,
-                    "gpt-5.6-terra".to_string()
-                ),
+                (Tier::Strong, "opus[1m]".to_string()),
+                (Tier::Cheap, "haiku@low".to_string()),
+                (Tier::Standard, "sonnet".to_string()),
             ]
         );
         assert_eq!(
             parse_tier("standard=sonnet"),
-            Ok((None, Tier::Standard, "sonnet".to_string()))
-        );
-        assert_eq!(
-            parse_tier("claude:strong=opus"),
-            Ok((Some(Vendor::Claude), Tier::Strong, "opus".to_string()))
+            Ok((Tier::Standard, "sonnet".to_string()))
         );
         for (bad, why) in [
             ("opus", "TIER=MODEL"),
@@ -1189,7 +965,7 @@ mod tests {
             ("strong=", "not a model name"),
             ("strong=--dangerously-skip-permissions", "not a model name"),
             ("=opus", "cheap, standard or strong"),
-            ("qwen:strong=big", "not a vendor imece drives"),
+            ("claude:strong=big", "cheap, standard or strong"),
         ] {
             let e = parse_tier(bad).unwrap_err();
             assert!(e.starts_with("--tier") && e.contains(why), "{bad}: {e}");
@@ -1199,8 +975,7 @@ mod tests {
         for (bad, why) in [
             ("", "not a model name"),
             ("--x", "not a model name"),
-            ("qwen:pro", "not a vendor imece drives"),
-            ("codex:", "not a model name"),
+            ("claude:opus", "not a model name"),
         ] {
             let e = parse_model(bad).unwrap_err();
             assert!(e.starts_with("--model") && e.contains(why), "{bad}: {e}");
@@ -1208,70 +983,41 @@ mod tests {
     }
 
     #[test]
-    fn solo_takes_a_vendor_with_a_model_and_or_an_effort_it_has() {
+    fn solo_takes_claude_with_a_model_and_or_an_effort_it_has() {
         let some = |s: &str| Some(s.to_string());
-        assert_eq!(parse_solo("claude"), Ok((Vendor::Claude, None)));
-        assert_eq!(
-            parse_solo("claude:opus@xhigh"),
-            Ok((Vendor::Claude, some("opus@xhigh")))
-        );
-        assert_eq!(parse_solo("codex@high"), Ok((Vendor::Codex, some("@high"))));
-        assert_eq!(parse_solo("gemini:pro"), Ok((Vendor::Gemini, some("pro"))));
+        assert_eq!(parse_solo("claude"), Ok(None));
+        assert_eq!(parse_solo("claude:opus@xhigh"), Ok(some("opus@xhigh")));
+        assert_eq!(parse_solo("claude@high"), Ok(some("@high")));
+        assert_eq!(parse_solo("claude:sonnet"), Ok(some("sonnet")));
         for (bad, why) in [
-            ("", "not VENDOR[:MODEL][@EFFORT]"),
-            ("qwen", "not VENDOR[:MODEL][@EFFORT]"),
-            ("claude:-x", "not VENDOR[:MODEL][@EFFORT]"),
+            ("", "not claude[:MODEL][@EFFORT]"),
+            ("opus", "not claude[:MODEL][@EFFORT]"),
+            ("codex:gpt", "not claude[:MODEL][@EFFORT]"),
+            ("claude:-x", "not claude[:MODEL][@EFFORT]"),
             ("claude@bogus", "claude has no effort \"bogus\""),
-            ("gemini:pro@high", "gemini has no effort setting"),
         ] {
             let e = parse_solo(bad).unwrap_err();
             assert!(e.starts_with("--solo: ") && e.contains(why), "{bad:?}: {e}");
         }
-        let a = args(&["--solo", "codex:gpt-5.6-terra@xhigh"], &[]).unwrap();
-        assert_eq!(a.solo, Some((Vendor::Codex, some("gpt-5.6-terra@xhigh"))));
-        assert_eq!(
-            a.lead, None,
-            "the start makes the solo's vendor lead unless --lead"
-        );
+        let a = args(&["--solo", "claude:opus@xhigh"], &[]).unwrap();
+        assert_eq!(a.solo, Some(some("opus@xhigh")));
         assert_eq!(args(&[], &[]).unwrap().solo, None);
         let e = args(&["--solo", "x"], &[]).unwrap_err();
         assert!(e.starts_with("--solo:"), "{e}");
     }
 
     #[test]
-    fn an_effort_is_checked_against_its_vendor_when_the_vendor_is_named() {
+    fn an_effort_is_checked_on_the_command_line() {
         let ok = |s: &str| parse_model(s).is_ok();
-        assert!(ok("claude:opus@xhigh") && ok("claude:@max") && ok("codex:@xhigh"));
-        assert!(ok("gemini:pro"));
-        assert!(
-            ok("opus@bogus") && parse_tier("strong=pro@low").is_ok(),
-            "bare: the leader's vendor, checked when the team is built"
+        assert!(ok("opus@xhigh") && ok("@max") && ok("sonnet"));
+        let why = "claude has no effort \"bogus\"; one of low, medium, high, xhigh, max";
+        assert_eq!(parse_model("opus@bogus"), Err(format!("--model: {why}")));
+        assert_eq!(
+            parse_tier("strong=opus@bogus"),
+            Err(format!("--tier: {why}"))
         );
-        for (bad, why) in [
-            (
-                "claude:opus@bogus",
-                "claude has no effort \"bogus\"; one of low, medium, high, xhigh, max",
-            ),
-            (
-                "codex:@max",
-                "codex has no effort \"max\"; one of low, medium, high, xhigh",
-            ),
-            (
-                "gemini:pro@high",
-                "gemini has no effort setting; name only a model, not @high",
-            ),
-        ] {
-            assert_eq!(parse_model(bad), Err(format!("--model: {why}")), "{bad}");
-            let e = parse_tier(&format!(
-                "{}:strong={}",
-                &bad[..bad.find(':').unwrap()],
-                &bad[bad.find(':').unwrap() + 1..]
-            ))
-            .unwrap_err();
-            assert_eq!(e, format!("--tier: {why}"), "{bad}");
-        }
-        let e = args(&["--model", "codex:@max"], &[]).unwrap_err();
-        assert!(e.starts_with("--model: codex has no effort"), "{e}");
+        let e = args(&["--model", "@bogus"], &[]).unwrap_err();
+        assert!(e.starts_with("--model: claude has no effort"), "{e}");
     }
 
     #[test]

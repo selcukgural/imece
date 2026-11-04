@@ -509,22 +509,20 @@ impl Live {
 }
 
 /// Whom a leader's message to a group goes to: every worker of its
-/// project, the idle ones, or those of one vendor.
+/// project, or the idle ones.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum Group {
     Workers,
     Idle,
-    Vendor(Vendor),
 }
 
 impl Group {
-    /// The group `to` names: `workers`, `idle`, or a vendor's label; none
-    /// for anything else.
+    /// The group `to` names: `workers` or `idle`; none for anything else.
     pub(super) fn parse(to: &str) -> Option<Group> {
         match to {
             "workers" => Some(Group::Workers),
             "idle" => Some(Group::Idle),
-            v => Vendor::parse(v).map(Group::Vendor),
+            _ => None,
         }
     }
 }
@@ -558,7 +556,6 @@ impl Live {
             .filter(|a| match group {
                 Group::Workers => true,
                 Group::Idle => a.status == Status::Idle && self.turns[a.id] == 0,
-                Group::Vendor(v) => a.vendor == v,
             })
             .map(|a| a.name.clone())
             .collect();
@@ -665,19 +662,13 @@ mod tests {
         live.turns[3] = 1;
         let got = send(&mut live, &mut w, 0, "idle", "notice").unwrap();
         assert_eq!(got, "sent to claude-2 (message 4)");
-        // A vendor's.
-        w.agents[3].vendor = Vendor::Codex;
-        let got = send(&mut live, &mut w, 0, "codex", "inform").unwrap();
-        assert_eq!(got, "sent to claude-3 (message 5)");
-        let err = send(&mut live, &mut w, 0, "gemini", "inform").unwrap_err();
-        assert_eq!(err, "no worker of yours is in that group");
         // One that may not get it is said, the rest get it; none, an error.
         w.agents[1].status = Status::Stopped;
         w.agents[2].gone = true;
         let got = send(&mut live, &mut w, 0, "workers", "inform").unwrap();
         assert_eq!(
             got,
-            "sent to claude-3 (message 6); not to claude-1: claude-1 has stopped; it runs \
+            "sent to claude-3 (message 5); not to claude-1: claude-1 has stopped; it runs \
              again when the person talks to it"
         );
         w.agents[3].status = Status::Stopped;
@@ -744,12 +735,7 @@ mod tests {
             })
             .collect();
         assert_eq!(to, [2], "the one called so");
-        assert_eq!(Group::parse("claude"), Some(Group::Vendor(Vendor::Claude)));
-        assert_eq!(
-            Group::parse("qwen"),
-            None,
-            "only the vendors imece leads with"
-        );
+        assert_eq!(Group::parse("claude"), None);
         assert_eq!(Group::parse("Workers"), None);
     }
 
@@ -1271,7 +1257,6 @@ mod tests {
         use std::io::{BufRead, BufReader, Write};
         use std::os::unix::net::UnixStream;
         let mut w = team(2);
-        w.agents[2].vendor = Vendor::Codex;
         let mut live = idle_live(3);
         live.open_bus(&w, "/opt/imece".into()).unwrap();
         let dir = live.bus.as_ref().unwrap().dir.clone();
@@ -1332,8 +1317,7 @@ mod tests {
             Event::Sent { from: 1, to: 0, .. }
         ));
         // The leader's socket does not even offer claim; it alone offers
-        // hire. A Claude session's socket offers approve, which Claude
-        // Code asks through; another vendor's does not.
+        // hire. Every socket offers approve, which Claude Code asks through.
         let list = |n: usize| {
             let path = live.bus.as_ref().unwrap().servers[n].path().to_path_buf();
             let mut sock = UnixStream::connect(path).unwrap();
@@ -1354,8 +1338,9 @@ mod tests {
         );
         assert_eq!(
             list(2),
-            ["send", "post", "board", "run", "whoami", "claim", "hire"],
-            "codex asks on its own wire"
+            [
+                "send", "post", "board", "run", "whoami", "claim", "hire", "approve"
+            ]
         );
         drop(live);
         assert!(!dir.exists());
@@ -1513,7 +1498,7 @@ mod tests {
     #[test]
     fn only_workers_get_the_claim_tool_and_only_the_leader_and_workers_hire() {
         let names = |r: Role| -> Vec<String> {
-            tools_of(r, &["claude"], &[], DEFAULT_RUN_TIMEOUT)
+            tools_of(r, &[], DEFAULT_RUN_TIMEOUT)
                 .into_iter()
                 .map(|t| t.name)
                 .collect()
@@ -1535,14 +1520,11 @@ mod tests {
             ["send", "post", "board", "run", "whoami"]
         );
         // The same tool, told differently: a worker hires helpers.
-        let worker_hire = &tools_of(Role::Worker, &["claude"], &[], DEFAULT_RUN_TIMEOUT)[6];
+        let worker_hire = &tools_of(Role::Worker, &[], DEFAULT_RUN_TIMEOUT)[6];
         assert!(worker_hire.description.starts_with("Adds a helper"));
-        let hire = &tools_of(Role::Leader, &["claude", "codex"], &[], DEFAULT_RUN_TIMEOUT)[5];
+        let hire = &tools_of(Role::Leader, &[], DEFAULT_RUN_TIMEOUT)[5];
         assert!(hire.description.starts_with("Adds a worker"));
-        assert_eq!(
-            hire.input["properties"]["vendor"]["enum"],
-            json!(["claude", "codex"])
-        );
+        assert!(hire.input["properties"]["vendor"].is_null());
         assert_eq!(
             hire.input["properties"]["tier"]["enum"],
             json!(["cheap", "standard", "strong"])
@@ -1556,7 +1538,7 @@ mod tests {
                 .starts_with("Where the worker's worktree starts")
         );
         assert!(worker_hire.input["properties"].get("from").is_none());
-        let solo_hire = tools_of(Role::Solo, &["claude"], &[], DEFAULT_RUN_TIMEOUT);
+        let solo_hire = tools_of(Role::Solo, &[], DEFAULT_RUN_TIMEOUT);
         let solo_hire = solo_hire.iter().find(|t| t.name == "hire").unwrap();
         assert!(solo_hire.input["properties"].get("from").is_none());
     }

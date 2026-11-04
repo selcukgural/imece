@@ -11,10 +11,10 @@ Zaman şeridi takımı zaman içinde gösterir: açık projelerin her agent'ı i
 ┌ ZAMAN ŞERİDİ · bir sütun 5 sn · [ ] ölçek ──────────────────────────────────────────┐
 │shop-api            14:00                    14:04                   şimdi           │
 │◆ lead-shop-api     ··········································  koordine ediyor      │
-│! codex-1           ◌◌◌░░✕✕✕✕✕✕✕✕✕✕✕✕✕✕⚑⚑⚑⚑⚑⚑⚑⚑⚑⚑⚑⚑⚑⚑⚑⚑⚑⚑⚑⚑  onayını bekliyor     │
-│● codex-2           ◌◌◌░░░░░░░▒▒▒▒▒▒▒▒▒▒░░░░▒▒▒⚑░░░░░░▒▒▒▒▒▒▒██  ▸ Run the tests      │
-│●   codex-2.1                       ▒▒▒▒████▒▒✓·············  boşta                │
-│! qwen-2            ·◌◌◌░░⚑⚑⚑⚑⚑⚑▒▒▒▒▒░░░░???░░░░░░░░▒▒▒▒⚑⚑░░?  ▓░░░░ ? → codex-2    │
+│! claude-1          ◌◌◌░░✕✕✕✕✕✕✕✕✕✕✕✕✕✕⚑⚑⚑⚑⚑⚑⚑⚑⚑⚑⚑⚑⚑⚑⚑⚑⚑⚑⚑⚑  onayını bekliyor     │
+│● claude-2          ◌◌◌░░░░░░░▒▒▒▒▒▒▒▒▒▒░░░░▒▒▒⚑░░░░░░▒▒▒▒▒▒▒██  ▸ Run the tests      │
+│●   claude-2.1                       ▒▒▒▒████▒▒✓·············  boşta               │
+│! claude-3          ·◌◌◌░░⚑⚑⚑⚑⚑⚑▒▒▒▒▒░░░░???░░░░░░░░▒▒▒▒⚑⚑░░?  ▓░░░░ ? → claude-2   │
 │  mesajlar          ▁▁▂▁▂▁▁▁▁▁▁▁▁▁▁▂▁▁▂▁▁▁▁▂▂▁▁▁▁▁▁▁▂▁▁▁▁▁▁▂▁                        │
 │ █ yazıyor  ▒ okuyor, çalıştırıyor  ░ düşünüyor  ◌ başlıyor  ? arkadaşına soruyor  ⚑ seni bekliyor  ✕ takıldı  ✓ tur bitti  · boşta
 └─────────────────────────────────────────────────────────────────────────────────────┘

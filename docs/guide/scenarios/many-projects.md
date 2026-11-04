@@ -21,18 +21,18 @@ Type `:open ~/code/api api` and press `enter`. The flash says `opened api at /Us
  15:00 › you opened web at /Users/you/code/web
 ```
 
-`:open PATH [NAME]` opens the git checkout at PATH; NAME defaults to the directory's name made safe (1 to 24 of letters, digits, `.`, `_`, `-`). The new project's leader is `lead-NAME`, on the team's lead vendor with the same model and tiers (the lead vendor cannot be chosen per project). `:open ` completes directories as you type (hidden ones after a `.`, `~` works). The `:` menu marks `:open` with `$`: a new leader is a new session that costs when you first write to it. A path that is not a checkout, a name taken or a checkout already open is refused with why (`api is open already, as api`). `:o` is short for it.
+`:open PATH [NAME]` opens the git checkout at PATH; NAME defaults to the directory's name made safe (1 to 24 of letters, digits, `.`, `_`, `-`). The new project's leader is `lead-NAME`, with the same model and tiers. `:open ` completes directories as you type (hidden ones after a `.`, `~` works). The `:` menu marks `:open` with `$`: a new leader is a new session that costs when you first write to it. A path that is not a checkout, a name taken or a checkout already open is refused with why (`api is open already, as api`). `:o` is short for it.
 
 The salon now groups agents by project, with a header line each; inbox and journal lines carry the project's name when there is more than one:
 
 ```text
  ▾ cli                        1 working  $2.10
-   ◆ lead       claude          coordinating                      $0.40
+   ◆ lead       coordinating                                      $0.40
    ● claude-1   #2   docs: man page       writing docs/imece.1     $1.70
  ▾ api                        0 working  $0.00
-   ◆ lead-api   claude          idle
+   ◆ lead-api   idle
  ▾ web                        0 working  $0.00
-   ◆ lead-web   claude          idle
+   ◆ lead-web   idle
 ```
 
 `/` writes to the leader of the selected project, so select a row in `api` first (`j k`), then `/`. `@lead-web text` writes to one leader from anywhere.

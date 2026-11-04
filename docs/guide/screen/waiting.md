@@ -11,8 +11,8 @@ WAITING FOR YOU is the top side panel of the salon. Only decisions that need you
 ┌ WAITING FOR YOU (3) ───────────────────────────────────────────────┐
 │Δ 13:58 claude-1 finished: parser (3 files, +41 −6) · ✓ ran clean on this tree: cargo test
 │  enter see the diff · a apply to the checkout · r reject            │
-│⚑ 14:01 codex-2 waits for your yes: Bash: npm install left-pad       │
-│? 14:03 later · gemini-3 asks you: Keep the old CLI flag or drop it? │
+│⚑ 14:01 claude-2 waits for your yes: Bash: npm install left-pad      │
+│? 14:03 later · claude-3 asks you: Keep the old CLI flag or drop it? │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -21,10 +21,10 @@ WAITING FOR YOU is the top side panel of the salon. Only decisions that need you
 | Mark | Item | Where it comes from | `a` | `r` |
 | --- | --- | --- | --- | --- |
 | `Δ` | a change | a worker's `done`: its worktree's whole change against your HEAD, read by imece. The row says the done's first line, the files and lines, and what imece's `run` tool ran on exactly that tree (`✓ ran clean`, `✗ failed`, or `no run on this tree`). | apply it to your checkout, staged | reject it; the composer opens `@worker ` so you say why |
-| `⚑` | an ask | a tool call the agent's own vendor would ask permission for: a shell command Claude Code would ask about, a Codex `on-request` ask, a Gemini shell. Routine commands (the build, the tests, git's reading commands) run on their own and never get here. The selected ask is shown whole under its row, its lines joined with ` ↵ `, never read as Markdown: what you allow is what runs. | allow | refuse; the agent is told it was your decision |
+| `⚑` | an ask | a tool call Claude Code would ask permission for. Routine commands (the build, the tests, git's reading commands) run on their own and never get here. The selected ask is shown whole under its row, its lines joined with ` ↵ `, never read as Markdown: what you allow is what runs. | allow | refuse; the agent is told it was your decision |
 | `?` | a question | an agent's `send(to: "you", type: ask)`. A newer question of the same agent takes the older's place. | both open the composer `@agent `; the item closes when your answer goes | |
 | `»` | a reply | an agent answered you and waits for you to read it | `enter` reads it (the conversation opens) and closes it; `r` dismisses it | |
-| `✕` | a vendor error | a turn failed on an error only you can mend: the account (signed out, a refused key, a quota or a bill), or a passing one (overloaded, a server error, a lost connection) after imece's three tries ran out (see [when the vendor's API fails](../concepts/sessions.md#when-the-vendors-api-fails)). The row has the vendor's words. | both open the composer `@agent `; the item closes when your message goes, and that message is the agent's next try | |
+| `✕` | an API error | a turn failed on an error only you can mend: the account (signed out, a refused key, a quota or a bill), or a passing one (overloaded, a server error, a lost connection) after imece's three tries ran out (see [when the API fails](../concepts/sessions.md#when-the-api-fails)). The row has Claude Code's words. | both open the composer `@agent `; the item closes when your message goes, and that message is the agent's next try | |
 | `▶` | a setup script | a new worktree found `.imece/worktree-setup.sh` in your checkout with bytes you have not said yes to; the worker started without it. See [a worktree setup script](../concepts/projects.md#a-worktree-setup-script). | yes: it runs now where it was missed, then in each new worktree; `enter` shows its bytes first | no, for this run |
 
 The row carries the time, `later ·` when you put it off, and the project's name when several are open. An item of another day carries its date.
@@ -56,7 +56,7 @@ Under the selected item a dim row names its keys (`enter see the diff · a apply
 
 ## The `!` on a row
 
-An agent whose item waits shows it on its own salon row: `? → you` while a question waits, `⚑ waits for your yes` while an ask does, `answered you` while a reply does, `✕ vendor error` while a vendor error does; an agent with the status "waiting for you" wears `!` as its glyph. The project header counts them in the attention colour, `! 2 waiting`, even when the project is folded. `f` in the salon shows only the agents that need you, these first.
+An agent whose item waits shows it on its own salon row: `? → you` while a question waits, `⚑ waits for your yes` while an ask does, `answered you` while a reply does, `✕ API error` while an API error does; an agent with the status "waiting for you" wears `!` as its glyph. The project header counts them in the attention colour, `! 2 waiting`, even when the project is folded. `f` in the salon shows only the agents that need you, these first.
 
 ## Quitting with items open
 

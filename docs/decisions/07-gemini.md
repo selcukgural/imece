@@ -1,5 +1,7 @@
 # Gemini v0
 
+**Replaced by [record 109](109-claude-only.md): imece runs Claude Code only; this is history, and the code is on the branch `multi-vendor`.**
+
 Gemini v0 (2026-10-29): `crates/imece-agent/src/gemini.rs` drives Gemini
 CLI (tested against 0.65.0) as one long-lived `gemini --acp` (Agent
 Client Protocol v1, JSON-RPC over stdio) per agent. Gemini has no

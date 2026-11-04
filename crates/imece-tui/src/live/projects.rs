@@ -14,26 +14,22 @@ pub(super) fn root_for(state: &Path, repo: &Path) -> PathBuf {
     ))
 }
 
-/// What a project opens as: a team (a leader on the lead vendor, which
-/// hires), or a solo session the person drives themselves, on the vendor
-/// (none: the lead vendor) and the `[MODEL][@EFFORT]` choice (none: the
-/// vendor's standard rung) they named.
+/// What a project opens as: a team (a leader, which hires), or a solo
+/// session the person drives themselves, on the `[MODEL][@EFFORT]` choice
+/// (none: the standard rung) they named.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Open {
     Team,
-    Solo {
-        vendor: Option<Vendor>,
-        choice: Option<String>,
-    },
+    Solo { choice: Option<String> },
 }
 
 impl Live {
     /// Opens the checkout `path` is in as a project named `name` (else
     /// after its directory; a solo's default name takes the next free
-    /// `-N` when it is taken). A team is led by a new agent on the lead
-    /// vendor, and one checkout holds at most one open team; a solo is a
-    /// new agent of role `Solo` on the vendor chosen, and a checkout may
-    /// hold any number of solos next to its team. A closed project of the
+    /// `-N` when it is taken). A team is led by a new agent, and one
+    /// checkout holds at most one open team; a solo is a new agent of role
+    /// `Solo` on the choice made, and a checkout may hold any number of
+    /// solos next to its team. A closed project of the
     /// same kind on the same checkout opens again in its place.
     pub fn open_project(
         &mut self,
@@ -47,17 +43,15 @@ impl Live {
         if !solo && !git {
             return Err(ProjectRefusal::NoGit(repo.display().to_string()));
         }
-        let (vendor, model) = match &kind {
-            Open::Team => (self.lead, self.of(self.lead).ladder.standard.clone()),
-            Open::Solo { vendor, choice } => {
-                let v = vendor.unwrap_or(self.lead);
-                let Some(h) = self.vendors.iter().find(|h| h.vendor == v) else {
-                    return Err(ProjectRefusal::Vendor(v.label().to_string()));
-                };
+        let model = match &kind {
+            Open::Team => self.claude.ladder.standard.clone(),
+            Open::Solo { choice } => {
                 if let Some(c) = choice {
-                    valid_choice(v, c).map_err(ProjectRefusal::Choice)?;
+                    valid_choice(c).map_err(ProjectRefusal::Choice)?;
                 }
-                (v, choice.clone().or_else(|| h.ladder.standard.clone()))
+                choice
+                    .clone()
+                    .or_else(|| self.claude.ladder.standard.clone())
             }
         };
         let at = |q: &Project| self.places.get(q.id).is_some_and(|pl| pl.repo == repo);
@@ -86,7 +80,7 @@ impl Live {
         let role = if solo { Role::Solo } else { Role::Leader };
         let id = w.agents.len();
         // The socket first: an agent without one could never start.
-        self.bind(id, role, vendor)
+        self.bind(id, role)
             .map_err(|e| ProjectRefusal::Bus(e.to_string()))?;
         self.grow(model, false);
         match reuse {
@@ -101,20 +95,19 @@ impl Live {
             }
         }
         let folder = repo.display().to_string();
-        let p = w.open_project(reuse, name, folder.clone(), vendor, role);
+        let p = w.open_project(reuse, name, folder.clone(), role);
         w.set_no_git(p, (!git).then_some(folder.as_str()));
         self.filed_at.remove(&p);
         Ok(p)
     }
 
     /// The open solo project on the checkout `repo` whose agent runs on
-    /// `vendor` and `model` (the `[MODEL][@EFFORT]` choice as the ladder
+    /// `model` (the `[MODEL][@EFFORT]` choice as the ladder
     /// resolved it), if there is one: what `--solo` goes on with.
     pub(super) fn solo_at(
         &self,
         w: &World,
         repo: &Path,
-        vendor: Vendor,
         model: &Option<String>,
     ) -> Option<ProjectId> {
         // As the places keep it: git's idea of the checkout's path, else
@@ -123,10 +116,7 @@ impl Live {
         w.open_projects()
             .filter(|q| self.places.get(q.id).is_some_and(|pl| pl.repo == repo))
             .filter(|q| w.is_solo(q.id))
-            .find(|q| {
-                let a = &w.agents[q.leader];
-                a.vendor == vendor && self.models[q.leader] == *model
-            })
+            .find(|q| self.models[q.leader] == *model)
             .map(|q| q.id)
     }
 
@@ -172,9 +162,9 @@ impl Live {
         title: String,
     ) -> Result<ProjectId, ProjectRefusal> {
         let was = w.projects[p].leader;
-        let (role, vendor) = (w.agents[was].role, w.agents[was].vendor);
+        let role = w.agents[was].role;
         // The socket first: an agent without one could never start.
-        self.bind(w.agents.len(), role, vendor)
+        self.bind(w.agents.len(), role)
             .map_err(|e| ProjectRefusal::Bus(e.to_string()))?;
         self.put_away(w, p);
         self.grow(self.models[was].clone(), self.tiered[was]);
@@ -382,7 +372,7 @@ mod tests {
             err.describe()
                 .starts_with(&format!("{folder} is not a git checkout"))
         );
-        assert!(err.describe().contains("--solo VENDOR, :solo"));
+        assert!(err.describe().contains("--solo claude, :solo"));
         let _ = std::fs::remove_dir_all(&nowhere);
         assert_eq!(
             live.open_project(&mut w, &repo, Some("a b"), Open::Team),
@@ -421,8 +411,7 @@ mod tests {
             ProjectRefusal::PathOpen("api".into()),
             ProjectRefusal::BadName("a b".into()),
             ProjectRefusal::Bus("no socket".into()),
-            ProjectRefusal::Vendor("gemini".into()),
-            ProjectRefusal::Choice("gemini has no effort setting".into()),
+            ProjectRefusal::Choice("claude has no effort \"x\"".into()),
             ProjectRefusal::NoGit("/n".into()),
             ProjectRefusal::Gone("/gone/x".into()),
         ] {
@@ -433,7 +422,6 @@ mod tests {
                 | ProjectRefusal::PathOpen(s)
                 | ProjectRefusal::BadName(s)
                 | ProjectRefusal::Bus(s)
-                | ProjectRefusal::Vendor(s)
                 | ProjectRefusal::Choice(s)
                 | ProjectRefusal::NoGit(s)
                 | ProjectRefusal::Gone(s) => s.clone(),
@@ -571,14 +559,8 @@ mod tests {
         // A closed project is reused only for its own checkout: another
         // checkout, with one closed, is a new project.
         let other = checkout("close-other");
-        w.open_project(
-            None,
-            "third".into(),
-            "/t".into(),
-            Vendor::Claude,
-            Role::Leader,
-        );
-        live.bind(4, Role::Leader, Vendor::Claude).unwrap();
+        w.open_project(None, "third".into(), "/t".into(), Role::Leader);
+        live.bind(4, Role::Leader).unwrap();
         live.grow(None, false);
         live.places.push(Place {
             repo: PathBuf::from("/t"),
@@ -602,7 +584,6 @@ mod tests {
         let mut w = team(0);
         let mut live = idle_live(1);
         let solo = |choice: Option<&str>| Open::Solo {
-            vendor: None,
             choice: choice.map(str::to_string),
         };
         // A team first, then a solo on the same checkout: allowed, named
@@ -619,13 +600,8 @@ mod tests {
         let a = &w.agents[2];
         assert_eq!(w.projects[2].name, name);
         assert_eq!(
-            (a.name.as_str(), a.role, a.vendor, a.project),
-            (
-                format!("solo-{name}").as_str(),
-                Role::Solo,
-                Vendor::Claude,
-                2
-            )
+            (a.name.as_str(), a.role, a.project),
+            (format!("solo-{name}").as_str(), Role::Solo, 2)
         );
         assert_eq!(live.models[2].as_deref(), Some("opus@xhigh"));
         assert!(!live.tiered[2], "a choice is nobody's tier: no fallback");
@@ -633,54 +609,32 @@ mod tests {
         assert_eq!(live.places.len(), 3, "a place of its own, the same root");
         assert_eq!(live.places[2].repo, live.places[1].repo);
         assert_eq!(live.places[2].root, live.places[1].root);
-        // A second solo: `-2`; without a choice, the vendor's standard rung.
+        // A second solo: `-2`; without a choice, Claude Code's standard rung.
         assert_eq!(live.open_project(&mut w, &repo, None, solo(None)), Ok(3));
         assert_eq!(w.projects[3].name, format!("{name}-2"));
         assert_eq!(live.models[3], None);
-        live.vendors[0].ladder.standard = Some("sonnet".into());
+        live.claude.ladder.standard = Some("sonnet".into());
         assert_eq!(live.open_project(&mut w, &repo, None, solo(None)), Ok(4));
         assert_eq!(
             live.models[4].as_deref(),
             Some("sonnet"),
             "--model's stand-in"
         );
-        assert_eq!(
-            live.solo_at(&w, &repo, Vendor::Claude, &Some("sonnet".into())),
-            Some(4)
-        );
-        live.vendors[0].ladder.standard = None;
-        // Found by vendor and choice, for --solo.
-        assert_eq!(
-            live.solo_at(&w, &repo, Vendor::Claude, &Some("opus@xhigh".into())),
-            Some(2)
-        );
-        assert_eq!(live.solo_at(&w, &repo, Vendor::Claude, &None), Some(3));
-        assert_eq!(
-            live.solo_at(&w, &repo, Vendor::Claude, &Some("@max".into())),
-            None
-        );
-        assert_eq!(live.solo_at(&w, &repo, Vendor::Codex, &None), None);
+        assert_eq!(live.solo_at(&w, &repo, &Some("sonnet".into())), Some(4));
+        live.claude.ladder.standard = None;
+        // Found by choice, for --solo.
+        assert_eq!(live.solo_at(&w, &repo, &Some("opus@xhigh".into())), Some(2));
+        assert_eq!(live.solo_at(&w, &repo, &None), Some(3));
+        assert_eq!(live.solo_at(&w, &repo, &Some("@max".into())), None);
         // A second team on the checkout is still refused; solos do not
         // stand in for it.
         assert_eq!(
             live.open_project(&mut w, &repo, Some("other"), Open::Team),
             Err(ProjectRefusal::PathOpen("api".into()))
         );
-        // Refusals: a vendor that is not here, an effort it lacks, a name
-        // taken; nothing is added.
+        // Refusals: an effort Claude Code lacks, a name taken; nothing is
+        // added.
         let before = (w.projects.len(), w.agents.len(), live.places.len());
-        assert_eq!(
-            live.open_project(
-                &mut w,
-                &repo,
-                None,
-                Open::Solo {
-                    vendor: Some(Vendor::Codex),
-                    choice: None,
-                }
-            ),
-            Err(ProjectRefusal::Vendor("codex".into()))
-        );
         let e = live
             .open_project(&mut w, &repo, None, solo(Some("opus@bogus")))
             .unwrap_err();
@@ -715,13 +669,7 @@ mod tests {
     fn rechoosing_a_solo_ends_its_session_keeps_the_transcript_and_says_what_it_runs_on() {
         let mut w = team(1);
         let mut live = idle_live(2);
-        w.open_project(
-            None,
-            "notes".into(),
-            "/n".into(),
-            Vendor::Claude,
-            Role::Solo,
-        );
+        w.open_project(None, "notes".into(), "/n".into(), Role::Solo);
         let solo = w.projects[1].leader;
         live.grow(Some("opus@high".into()), false);
         live.places.push(Place {
@@ -729,15 +677,13 @@ mod tests {
             root: PathBuf::from("/n-trees"),
             git: true,
         });
-        // The vendors here, the lead vendor first.
-        assert_eq!(live.vendors(), [Vendor::Claude]);
         // Not a solo: refused, nothing changes.
         assert_eq!(
             live.rechoose(&mut w, 1, Some("opus".into())),
             Err("claude-1 is not a solo session".into())
         );
         assert_eq!(live.models[1], None);
-        // An effort the vendor lacks: refused in the vendor's words.
+        // An effort Claude Code lacks: refused in Claude Code's words.
         let e = live
             .rechoose(&mut w, solo, Some("opus@turbo".into()))
             .unwrap_err();
@@ -787,7 +733,7 @@ mod tests {
         live.tiered[solo] = true;
         assert!(matches!(live.slots[solo], Slot::Running(_)));
         assert_eq!(live.rechoose(&mut w, solo, None), Ok("claude".into()));
-        assert_eq!(live.models[solo], None, "the vendor's own");
+        assert_eq!(live.models[solo], None, "Claude Code's own");
         assert!(!live.tiered[solo], "a choice is nobody's tier");
         assert!(
             !matches!(live.slots[solo], Slot::Running(_)),
@@ -821,44 +767,14 @@ mod tests {
             words::event(Lang::Tr, &w, &e),
             "solo-notes artık claude üzerinde çalışıyor"
         );
-        // Two vendors: the lead vendor comes first whatever the order.
-        let live = Live::new(
-            0,
-            two_vendors(&std::env::temp_dir()),
-            PathBuf::from("/r"),
-            PathBuf::from("/t"),
-        );
-        assert_eq!(live.vendors(), [Vendor::Claude, Vendor::Codex]);
-        let mut live = Live::new(
-            0,
-            two_vendors(&std::env::temp_dir()),
-            PathBuf::from("/r"),
-            PathBuf::from("/t"),
-        );
-        live.lead = Vendor::Codex;
-        assert_eq!(live.vendors(), [Vendor::Codex, Vendor::Claude]);
-        assert_eq!(
-            aliases(Vendor::Claude),
-            ["fable", "opus", "sonnet", "haiku"]
-        );
-        assert!(aliases(Vendor::Codex).is_empty());
-        assert_eq!(
-            aliases(Vendor::Gemini),
-            ["auto", "pro", "flash", "flash-lite"]
-        );
+        assert_eq!(aliases(), ["fable", "opus", "sonnet", "haiku"]);
     }
 
     #[test]
     fn renaming_a_solo_project_renames_the_solo_and_tells_it_and_its_helper_so() {
         let mut w = team(0);
         let mut live = idle_live(1);
-        w.open_project(
-            None,
-            "notes".into(),
-            "/n".into(),
-            Vendor::Claude,
-            Role::Solo,
-        );
+        w.open_project(None, "notes".into(), "/n".into(), Role::Solo);
         live.grow(None, false);
         let helper = with_helper(&mut w, 1);
         w.agents[helper].project = 1;
@@ -911,12 +827,11 @@ mod tests {
     fn a_start_in_a_folder_without_git_opens_a_solo_and_refuses_a_team() {
         let folder = plain_folder("nogit-start", false);
         let state = trees("nogit-start-state");
-        let options = |solo: Option<Vendor>| Options {
+        let options = |solo: bool| Options {
             repo: folder.clone(),
             state: state.clone(),
             max_workers: 2,
             max_helpers: 1,
-            lead: Vendor::Claude,
             tiers: Vec::new(),
             budget: None,
             fresh: false,
@@ -924,19 +839,18 @@ mod tests {
             run_timeout: DEFAULT_RUN_TIMEOUT,
             instructions: None,
             confine: Confine::Standard,
-            solo: solo.map(|v| (v, None)),
+            solo: solo.then_some(None),
         };
         assert_eq!(
             // A program every runner has that answers `--version` (dash's
             // `sh` does not).
-            probe(&folder, &[(Vendor::Claude, "git", true)]),
-            Ok(vec![(Vendor::Claude, true)]),
-            "the vendors are looked for from the folder"
+            probe(&folder, "git"),
+            Ok(()),
+            "Claude Code is looked for from the folder"
         );
-        let present = [(Vendor::Claude, true)];
-        let e = world(options(None), &present).err().expect("refused");
+        let e = world(options(false)).err().expect("refused");
         assert_eq!(e, no_git_team(&folder.display().to_string()));
-        let (w, live) = world(options(Some(Vendor::Claude)), &present).unwrap();
+        let (w, live) = world(options(true)).unwrap();
         assert_eq!(w.agents[0].role, Role::Solo);
         assert!(w.projects[0].no_git && !live.places[0].git);
         assert_eq!(live.places[0].repo, folder);
@@ -949,12 +863,11 @@ mod tests {
     fn a_solo_start_goes_on_with_its_solo_and_a_bare_start_adds_the_team() {
         let repo = checkout("solo-start");
         let state = trees("solo-start-state");
-        let options = |solo: Option<(Vendor, Option<&str>)>| Options {
+        let options = |solo: Option<Option<&str>>| Options {
             repo: repo.clone(),
             state: state.clone(),
             max_workers: 2,
             max_helpers: 1,
-            lead: Vendor::Claude,
             tiers: Vec::new(),
             budget: None,
             fresh: false,
@@ -962,16 +875,11 @@ mod tests {
             run_timeout: DEFAULT_RUN_TIMEOUT,
             instructions: None,
             confine: Confine::Standard,
-            solo: solo.map(|(v, c)| (v, c.map(str::to_string))),
+            solo: solo.map(|c| c.map(str::to_string)),
         };
-        let present = [(Vendor::Claude, true)];
         let name = project_name_of(&repo);
         // A solo start on a fresh checkout: the solo is project 0, `solo`.
-        let (w, mut live) = world(
-            options(Some((Vendor::Claude, Some("opus@xhigh")))),
-            &present,
-        )
-        .unwrap();
+        let (w, mut live) = world(options(Some(Some("opus@xhigh")))).unwrap();
         assert_eq!(w.projects.len(), 1);
         assert_eq!(
             (w.projects[0].name.as_str(), live.home()),
@@ -985,16 +893,12 @@ mod tests {
         assert!(live.persist(&w).is_ok());
         drop(live);
         // The same start again: the same solo, nothing new.
-        let (w, mut live) = world(
-            options(Some((Vendor::Claude, Some("opus@xhigh")))),
-            &present,
-        )
-        .unwrap();
+        let (w, mut live) = world(options(Some(Some("opus@xhigh")))).unwrap();
         assert_eq!((w.projects.len(), live.home()), (1, 0));
         assert!(live.persist(&w).is_ok());
         drop(live);
         // Another choice: a second solo, `-2`, which is home.
-        let (w, mut live) = world(options(Some((Vendor::Claude, None))), &present).unwrap();
+        let (w, mut live) = world(options(Some(None))).unwrap();
         assert_eq!((w.projects.len(), live.home()), (2, 1));
         assert_eq!(w.projects[1].name, format!("{name}-2"));
         assert_eq!(w.agents[1].name, format!("solo-{name}-2"));
@@ -1003,24 +907,17 @@ mod tests {
         drop(live);
         // A bare start: solos alone do not stand for the team, which opens
         // and is home; the solos stay, asleep.
-        let (w, mut live) = world(options(None), &present).unwrap();
+        let (w, mut live) = world(options(None)).unwrap();
         assert_eq!((w.projects.len(), live.home()), (3, 2));
         assert_eq!(w.agents[2].role, Role::Leader);
         assert_eq!(w.agents[0].status, Status::Asleep);
         assert!(live.persist(&w).is_ok());
         drop(live);
         // Started again bare: the team is home, nothing new.
-        let (w, live) = world(options(None), &present).unwrap();
+        let (w, live) = world(options(None)).unwrap();
         assert_eq!((w.projects.len(), live.home()), (3, 2));
         drop(live);
-        // A vendor that is not here is said, with the flag.
-        let e = world(options(Some((Vendor::Codex, None))), &present)
-            .err()
-            .expect("refused");
-        assert!(e.starts_with("--solo: codex is not on PATH here"), "{e}");
-        let e = world(options(Some((Vendor::Claude, Some("@bogus")))), &present)
-            .err()
-            .expect("refused");
+        let e = world(options(Some(Some("@bogus")))).err().expect("refused");
         assert!(
             e.starts_with("--solo: claude has no effort \"bogus\""),
             "{e}"
@@ -1237,10 +1134,7 @@ mod tests {
         live.sessions[3] = session("s-fresh");
         live.home = 2;
         // A solo on the same checkout is no team: it stays.
-        let solo = Open::Solo {
-            vendor: None,
-            choice: None,
-        };
+        let solo = Open::Solo { choice: None };
         assert_eq!(live.open_project(&mut w, &repo, Some("notes"), solo), Ok(3));
         w.tick = 60;
         let title = w.archive_title(2);
@@ -1339,10 +1233,7 @@ mod tests {
 
         // Solos in a folder without git: the one of its name gives way.
         let folder = plain_folder("restore-solo", false);
-        let solo = || Open::Solo {
-            vendor: None,
-            choice: None,
-        };
+        let solo = || Open::Solo { choice: None };
         assert_eq!(
             live.open_project(&mut w, &folder, Some("notes"), solo()),
             Ok(3)
@@ -1378,10 +1269,7 @@ mod tests {
         );
         assert_eq!(live.archive_project(&mut w, 1, "a".into()), Ok(2));
         live.rename_project(&mut w, 2, "api2").unwrap();
-        let solo = Open::Solo {
-            vendor: None,
-            choice: None,
-        };
+        let solo = Open::Solo { choice: None };
         assert_eq!(live.open_project(&mut w, &other, Some("api"), solo), Ok(3));
         let lines = w.journal.len();
         let unchanged = |w: &World| {
@@ -1606,13 +1494,7 @@ mod tests {
     #[test]
     fn a_leader_s_prompt_names_only_its_own_project_s_workers() {
         let mut w = team(1);
-        w.open_project(
-            None,
-            "api".into(),
-            "/a".into(),
-            Vendor::Claude,
-            Role::Leader,
-        );
+        w.open_project(None, "api".into(), "/a".into(), Role::Leader);
         let p1 = system_prompt(&w, 2, 4, 2, Confine::Strict);
         assert!(p1.contains("You have no workers yet."), "{p1}");
         assert!(!p1.contains("claude-1"), "{p1}");
@@ -1620,7 +1502,6 @@ mod tests {
             3,
             1,
             "claude-2".into(),
-            Vendor::Claude,
             Role::Worker,
             Status::Idle,
             0,
@@ -1702,13 +1583,7 @@ mod tests {
     fn renaming_a_project_renames_its_leader_and_tells_its_agents() {
         let mut w = team(1);
         let mut live = idle_live(2);
-        w.open_project(
-            None,
-            "api".into(),
-            "/a".into(),
-            Vendor::Claude,
-            Role::Leader,
-        );
+        w.open_project(None, "api".into(), "/a".into(), Role::Leader);
         live.grow(None, false);
         assert_eq!(
             live.rename_project(&mut w, 0, "a b"),

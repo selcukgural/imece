@@ -52,7 +52,6 @@ pub(crate) fn team(workers: usize) -> World {
         0,
         0,
         "lead".into(),
-        Vendor::Claude,
         Role::Leader,
         Status::Idle,
         0,
@@ -62,7 +61,6 @@ pub(crate) fn team(workers: usize) -> World {
             i,
             0,
             format!("claude-{i}"),
-            Vendor::Claude,
             Role::Worker,
             Status::Working,
             0,
@@ -71,8 +69,8 @@ pub(crate) fn team(workers: usize) -> World {
     w
 }
 
-pub(super) fn claude_at(program: &str) -> Vec<Hireable> {
-    vec![Hireable::claude(program, &[])]
+pub(super) fn claude_at(program: &str) -> Hireable {
+    Hireable::new(program, &[])
 }
 
 /// A live team whose sessions never start: what counts is what was
@@ -150,13 +148,11 @@ impl Live {
         self.places[p].git = git;
     }
 
-    /// `agents` places to begin with, all on their vendor's default model,
+    /// `agents` places to begin with, all on the default model,
     /// in one project whose checkout is `repo` and whose worktrees go
-    /// under `root`. `vendors` must hold every vendor an agent has; the
-    /// first leads.
-    pub(super) fn new(agents: usize, vendors: Vec<Hireable>, repo: PathBuf, root: PathBuf) -> Live {
-        let lead = vendors.first().map_or(Vendor::Claude, |h| h.vendor);
-        let mut live = Live::bare(vendors, lead);
+    /// under `root`.
+    pub(super) fn new(agents: usize, claude: Hireable, repo: PathBuf, root: PathBuf) -> Live {
+        let mut live = Live::bare(claude);
         live.settle = Duration::ZERO;
         live.places.push(Place {
             repo,
@@ -258,7 +254,7 @@ pub(super) fn argv(line: &str) -> Vec<String> {
     run::split(line).unwrap()
 }
 
-/// A session whose vendor runs as process `0`: this test's own, so its
+/// A session whose CLI runs as process `0`: this test's own, so its
 /// socket takes this test's calls, or another one, so it refuses them.
 pub(super) struct Runs(pub(super) u32);
 
@@ -396,27 +392,10 @@ pub(super) fn with_helper(w: &mut World, parent: AgentId) -> AgentId {
         w.agents[parent].name,
         w.helpers_of(parent).count() + 1
     );
-    let mut a = Agent::new(id, 0, name, Vendor::Claude, Role::Helper, Status::Idle, 0);
+    let mut a = Agent::new(id, 0, name, Role::Helper, Status::Idle, 0);
     a.parent = Some(parent);
     w.agents.push(a);
     id
-}
-
-pub(super) fn two_vendors(dir: &Path) -> Vec<Hireable> {
-    vec![
-        Hireable::claude(&fake_claude(dir), &[]),
-        Hireable::codex(&fake_codex(dir), &[]),
-    ]
-}
-
-/// A stand-in for `codex` that writes its arguments where it runs and
-/// exits, which ends the session.
-pub(super) fn fake_codex(dir: &Path) -> String {
-    use std::os::unix::fs::PermissionsExt;
-    let path = dir.join("fake-codex");
-    std::fs::write(&path, "#!/bin/sh\nprintf '%s\\n' \"$@\" > args.txt\n").unwrap();
-    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o700)).unwrap();
-    path.to_string_lossy().into_owned()
 }
 
 /// A stand-in for `claude` that writes its arguments, one per line, to

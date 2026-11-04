@@ -17,13 +17,13 @@ A change (`Δ`) is what a worker's worktree holds when the worker says `done`. I
 ```text
  WAITING FOR YOU (2)
  Δ 14:02 claude-1 finished: parser tokens (3 files, +34 −8) · ✓ ran clean on this tree: cargo test -p parser
- ? 14:05 codex-1 asks you: keep the old CLI flag?
+ ? 14:05 claude-2 asks you: keep the old CLI flag?
   enter see the diff · a apply to the checkout · r reject
 ```
 
 ### Evidence on the line
 
-A run of the worker or a helper through imece's `run` tool is tied to the tree it ran on (the worktree is read before and after; a run that changed the tree counts for none). When a `done` is read, the runs on exactly its tree go with it: the `Δ` line ends with `✓ ran clean on this tree: …`, `✗ failed on this tree: …` or `no run on this tree`, and the diff starts with one line per run. It is shown, never a gate: a change with no run can still be applied; you decide. A vendor's own shell does not count, since imece does not see what tree it ran on.
+A run of the worker or a helper through imece's `run` tool is tied to the tree it ran on (the worktree is read before and after; a run that changed the tree counts for none). When a `done` is read, the runs on exactly its tree go with it: the `Δ` line ends with `✓ ran clean on this tree: …`, `✗ failed on this tree: …` or `no run on this tree`, and the diff starts with one line per run. It is shown, never a gate: a change with no run can still be applied; you decide. Claude Code's own shell does not count, since imece does not see what tree it ran on.
 
 ## Reading it
 
@@ -37,17 +37,17 @@ A run of the worker or a helper through imece's `run` tool is tied to the tree i
 
 `h` (or `←`) folds the file of the line at hand to its `diff --git` header, which then says how many lines it hides (`▸ 42 lines`); `l` (or `→`) opens it, `za` turns it, `zM` (`:fold`) folds every file and `zR` (`:unfold`) opens them all. `j` `k`, the pages and `G` go over the lines shown, so a folded file is one line to step over; `[` `]` still go from header to header. Folding the file of a hidden line puts the line at hand on its header. `v` opens every file first, since lines are chosen from the whole patch. The folds hold for that patch: a new one from the worker starts open.
 
-## A review by another vendor
+## A second reading
 
-`:review` has a vendor other than the worker's read the change at hand and say what it finds; `:review on` asks for one for every change as it comes (off by default, remembered). The reviewer is the project's leader's vendor when that is not the worker's, else Claude Code, else Codex; it gets what the worker said it did, the file list and the patch (64 KiB at most), and no tools. Its answer stands above the file list:
+`:review` has a fresh Claude Code session read the change at hand and say what it finds; `:review on` asks for one for every change as it comes (off by default, remembered). The reader knows nothing of the worker's session; it gets what the worker said it did, the file list and the patch (64 KiB at most), and no tools. Its answer stands above the file list:
 
 ```
-✎ review · codex · default · $0.00
+✎ review · sonnet · $0.04
 1. src/parse.rs:41: an empty input returns Ok(()) without a test for it.
 2. The title says the lexer is fixed too; the patch does not touch it.
 ```
 
-six rows of it, `… +N lines · R shows all` when there is more; `R` shows it whole. Until it comes, `✎ codex reads this change…` stands there. It is advice and nothing more: no change waits for it, `a` applies with or without it, and the worker is not told (quote it with `>`, or note its lines with `c`). A Claude Code review costs at most $0.10 from the pot, a Codex one nothing (your ChatGPT plan); 20 reviews and $2.00 a day; a change that has its review is not paid for twice. The review is kept in the journal and comes back with its change after a restart. See [`:review`](../reference/commands.md#review-onoff) and [budget and limits](budget-and-limits.md).
+six rows of it, `… +N lines · R shows all` when there is more; `R` shows it whole. Until it comes, a line says it is being read. It is advice and nothing more: no change waits for it, `a` applies with or without it, and the worker is not told (quote it with `>`, or note its lines with `c`). A review costs at most $0.10 from the pot; 20 reviews and $2.00 a day; a change that has its review is not paid for twice. The review is kept in the journal and comes back with its change after a restart. See [`:review`](../reference/commands.md#review-onoff) and [budget and limits](budget-and-limits.md).
 
 ## Apply
 

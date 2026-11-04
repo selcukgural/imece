@@ -1,4 +1,4 @@
-//! Hiring: the vendors a team may use, their tier ladders, `hire`,
+//! Hiring: Claude Code's tier ladder, `hire`,
 //! and the fall-back to a default model.
 
 use super::*;
@@ -23,17 +23,10 @@ impl Ladder {
 }
 
 impl Hireable {
-    /// `vendor` at `program`, on its own ladder, with the person's
-    /// stand-ins `tiers` (for this vendor) on top.
-    pub(super) fn new(vendor: Vendor, program: &str, tiers: &[(Tier, String)]) -> Hireable {
-        let own = |tier| {
-            match vendor {
-                Vendor::Codex => codex::model(tier),
-                Vendor::Gemini => gemini::model(tier),
-                _ => claude::model(tier),
-            }
-            .map(String::from)
-        };
+    /// Claude Code at `program`, on its own ladder, with the person's
+    /// stand-ins `tiers` on top.
+    pub(super) fn new(program: &str, tiers: &[(Tier, String)]) -> Hireable {
+        let own = |tier| claude::model(tier).map(String::from);
         let mut ladder = Ladder {
             cheap: own(Tier::Cheap),
             standard: own(Tier::Standard),
@@ -43,66 +36,10 @@ impl Hireable {
             ladder.set(*tier, model.clone());
         }
         Hireable {
-            vendor,
             program: program.to_string(),
             ladder,
         }
     }
-
-    /// Claude Code at `program`, with `tiers` on top of its own ladder.
-    #[cfg(test)]
-    pub(super) fn claude(program: &str, tiers: &[(Tier, String)]) -> Hireable {
-        Hireable::new(Vendor::Claude, program, tiers)
-    }
-
-    /// Codex at `program`, with `tiers` on top of its own ladder.
-    #[cfg(test)]
-    pub(super) fn codex(program: &str, tiers: &[(Tier, String)]) -> Hireable {
-        Hireable::new(Vendor::Codex, program, tiers)
-    }
-
-    /// Gemini CLI at `program`, with `tiers` on top of its own ladder.
-    #[cfg(test)]
-    pub(super) fn gemini(program: &str, tiers: &[(Tier, String)]) -> Hireable {
-        Hireable::new(Vendor::Gemini, program, tiers)
-    }
-}
-
-/// The hireable `vendors`, each at its program from [`KNOWN`] on its own
-/// ladder, with the person's stand-ins `tiers` on top: the ones named for
-/// the vendor, and the bare ones for the leader's vendor `lead`.
-pub(super) fn team_vendors(
-    vendors: Vec<Vendor>,
-    lead: Vendor,
-    tiers: &[(Option<Vendor>, Tier, String)],
-) -> Vec<Hireable> {
-    vendors
-        .into_iter()
-        .map(|v| {
-            let program = KNOWN.iter().find(|k| k.0 == v).map_or("", |k| k.1);
-            let own: Vec<(Tier, String)> = tiers
-                .iter()
-                .filter(|(for_, _, _)| for_.map_or(v == lead, |f| f == v))
-                .map(|(_, t, m)| (*t, m.clone()))
-                .collect();
-            Hireable::new(v, program, &own)
-        })
-        .collect()
-}
-
-/// Every rung of every ladder asks its vendor only for an effort it has;
-/// else which does not, and why. The bare `--model` and `--tier` values
-/// are checked here, once the leader's vendor is known; the ones with a
-/// vendor prefix were checked on the command line.
-pub(super) fn check_ladders(vendors: &[Hireable]) -> Result<(), String> {
-    for h in vendors {
-        for tier in Tier::ALL {
-            if let Some(m) = h.ladder.model(tier) {
-                valid_choice(h.vendor, m).map_err(|why| format!("--model/--tier {m:?}: {why}"))?;
-            }
-        }
-    }
-    Ok(())
 }
 
 /// Whether `program` runs from `repo` with a cleared environment.
@@ -113,61 +50,11 @@ pub(super) fn on_path(program: &str, repo: &Path) -> bool {
         .is_ok_and(|o| o.status.success())
 }
 
-/// Which of the vendors `present` on PATH (with whether imece drives them)
-/// may be hired, given the leader must be `lead`; or why the team can not
-/// start.
-pub(super) fn hireable(present: &[(Vendor, bool)], lead: Vendor) -> Result<Vec<Vendor>, String> {
-    let names = |v: &[(Vendor, bool)]| {
-        v.iter()
-            .map(|(v, _)| v.label())
-            .collect::<Vec<_>>()
-            .join(", ")
-    };
-    if present.is_empty() {
-        let known: Vec<&str> = KNOWN.iter().map(|k| k.1).collect();
-        return Err(format!(
-            "no coding agent on PATH (looked for {}); install Claude Code \
-             (https://claude.com/claude-code) and log in",
-            known.join(", ")
-        ));
-    }
-    match present.iter().find(|(v, _)| *v == lead) {
-        None => Err(format!(
-            "{} is not on PATH (found {}); install it, or pick the leader with --lead",
-            lead.label(),
-            names(present)
-        )),
-        Some((_, false)) => {
-            let could: Vec<&str> = present
-                .iter()
-                .filter(|(_, drives)| *drives)
-                .map(|(v, _)| v.label())
-                .collect();
-            Err(format!(
-                "{} is on PATH, but imece can not drive it yet; start with --lead {}",
-                lead.label(),
-                if could.is_empty() {
-                    "claude".to_string()
-                } else {
-                    could.join(" or --lead ")
-                }
-            ))
-        }
-        Some((_, true)) => Ok(present
-            .iter()
-            .filter(|(_, drives)| *drives)
-            .map(|(v, _)| *v)
-            .collect()),
-    }
-}
-
-/// A new worker's name after its vendor (`claude-2`): the next number,
-/// counting the workers that left, skipping names taken.
-fn worker_name(w: &World, vendor: Vendor) -> String {
-    let n = (w.agents.iter())
-        .filter(|o| o.vendor == vendor && o.role == Role::Worker)
-        .count();
-    free_name(w, &format!("{}-", vendor.label()), n + 1)
+/// A new worker's name (`claude-2`): the next number, counting the workers
+/// that left, skipping names taken.
+fn worker_name(w: &World) -> String {
+    let n = (w.agents.iter()).filter(|o| o.role == Role::Worker).count();
+    free_name(w, &format!("{CLAUDE}-"), n + 1)
 }
 
 /// `stem` and the first number from `next` on that names nobody. A
@@ -216,29 +103,16 @@ impl Live {
         self.stood_at.push(None);
     }
 
-    /// The vendor `v` as imece drives it. Every agent's vendor is one.
-    pub(super) fn of(&self, v: Vendor) -> &Hireable {
-        self.vendors
-            .iter()
-            .find(|h| h.vendor == v)
-            .unwrap_or_else(|| panic!("{} is not a vendor imece drives", v.label()))
-    }
-
-    /// The vendors' names, for the hire tool.
-    pub(super) fn vendor_names(&self) -> Vec<&str> {
-        self.vendors.iter().map(|h| h.vendor.label()).collect()
-    }
-
     /// Agent `id`'s tier model is not available here: its session ends and
-    /// a new one on its vendor's standard model gets the prompts the old
+    /// a new one on the standard model gets the prompts the old
     /// one had.
     pub(super) fn fall_back(&mut self, w: &mut World, id: AgentId) {
         let model = self.models[id].take().unwrap_or_default();
-        self.models[id] = self.of(w.agents[id].vendor).ladder.standard.clone();
+        self.models[id] = self.claude.ladder.standard.clone();
         self.tiered[id] = false;
         let texts = std::mem::take(&mut self.inflight[id]);
         self.end(w, id);
-        self.forget(w, id, false, true);
+        self.forget(w, id, true);
         w.agents[id].trace(
             w.tick,
             format!("model {model} not available here; falling back to the default"),
@@ -257,7 +131,7 @@ impl Live {
     pub(super) fn renew(&mut self, w: &mut World, id: AgentId) {
         let texts = std::mem::take(&mut self.inflight[id]);
         self.end(w, id);
-        self.forget(w, id, false, true);
+        self.forget(w, id, true);
         self.renewed[id] = true;
         w.agents[id].trace(
             w.tick,
@@ -364,7 +238,7 @@ impl Live {
     /// (the `hire` tool's arguments). The answer names it.
     pub(super) fn hire(&mut self, w: &mut World, from: AgentId, args: &Value) -> Answer {
         let hirer = &w.agents[from];
-        let (project, own) = (hirer.project, hirer.vendor);
+        let project = hirer.project;
         let role = match hirer.role {
             Role::Leader => Role::Worker,
             Role::Worker | Role::Solo => Role::Helper,
@@ -372,20 +246,6 @@ impl Live {
         };
         let (so_far, cap) = self.hire_room(w, from)?;
         let arg = |k: &str| args[k].as_str().map(str::trim).unwrap_or_default();
-        let vendor = match arg("vendor") {
-            "" => self.of(own).clone(),
-            v => self
-                .vendors
-                .iter()
-                .find(|h| h.vendor.label() == v)
-                .cloned()
-                .ok_or_else(|| {
-                    format!(
-                        "there is no vendor {v:?} here; you can hire {}",
-                        self.vendor_names().join(", ")
-                    )
-                })?,
-        };
         let tier = match arg("tier") {
             "" => Tier::Standard,
             t => Tier::from_wire(t).ok_or("tier must be cheap, standard or strong")?,
@@ -399,15 +259,15 @@ impl Live {
             }
             f => Some(self.start_point(project, f)?),
         };
-        let model = vendor.ladder.model(tier).map(str::to_string);
+        let model = self.claude.ladder.model(tier).map(str::to_string);
         // Only a model other than the standard one has something to fall
         // back to.
-        let tiered = model != vendor.ladder.standard;
-        // The next number, skipping names already taken: a worker's after
-        // its vendor (`claude-2`), a helper's after its worker
+        let tiered = model != self.claude.ladder.standard;
+        // The next number, skipping names already taken: a worker's
+        // `claude-2`, a helper's after its worker
         // (`claude-2.1`), counting the ones that left.
         let name = if role == Role::Worker {
-            worker_name(w, vendor.vendor)
+            worker_name(w)
         } else {
             let n = w
                 .agents
@@ -418,19 +278,11 @@ impl Live {
         };
         let id = w.agents.len();
         // The socket first: an agent without one could never start.
-        self.bind(id, role, vendor.vendor)
+        self.bind(id, role)
             .map_err(|e| format!("{name} could not get a socket: {e}"))?;
         self.grow(model.clone(), tiered);
         let t = w.tick;
-        let mut agent = Agent::new(
-            id,
-            project,
-            name.clone(),
-            vendor.vendor,
-            role,
-            Status::Idle,
-            t,
-        );
+        let mut agent = Agent::new(id, project, name.clone(), role, Status::Idle, t);
         agent.parent = (role == Role::Helper).then_some(from);
         agent.start.clone_from(&start);
         w.agents.push(agent);
@@ -454,7 +306,7 @@ impl Live {
         Ok(format!(
             "{name} joined ({}, {shown}){starting}. Give it work with send (type assign). \
              {} more may be hired.",
-            vendor.vendor.label(),
+            CLAUDE,
             cap - so_far - 1
         ))
     }
@@ -465,8 +317,7 @@ impl Live {
     /// something, when its session forks from `from`'s as it is then and
     /// its worktree takes `from`'s change. Counted in `--agents` as any
     /// worker, its turns in the pot. Refused, with why, for what has no
-    /// session or worktree to fork, a vendor that cannot (Gemini's ACP
-    /// has no fork), a worker mid-turn, or a full team.
+    /// session or worktree to fork, a worker mid-turn, or a full team.
     pub fn fork(&mut self, w: &mut World, from: AgentId) -> Result<AgentId, String> {
         let a = &w.agents[from];
         if a.role != Role::Worker || a.gone {
@@ -474,19 +325,13 @@ impl Live {
                 "only a worker forks: it has a conversation and a worktree of its own".into(),
             );
         }
-        if !matches!(a.vendor, Vendor::Claude | Vendor::Codex) {
-            return Err(format!(
-                "{} sessions can not be forked (Gemini CLI 0.65.0's ACP has no fork)",
-                a.vendor.label()
-            ));
-        }
         if self.sessions[from].is_none() {
             return Err("it has no session to fork yet: tell it something first".into());
         }
         if self.turns[from] > 0 || !matches!(self.slots[from], Slot::None | Slot::Running(_)) {
             return Err("it is mid-turn: fork it when its turn ends".into());
         }
-        let (project, vendor) = (a.project, a.vendor);
+        let project = a.project;
         let workers = (w.agents.iter())
             .filter(|o| o.project == project && o.role == Role::Worker && !o.gone)
             .count();
@@ -498,21 +343,13 @@ impl Live {
         }
         let head = worktree::resolve(&self.cwd_of(w, from), "HEAD")
             .map_err(|e| format!("its worktree: {e}"))?;
-        let name = worker_name(w, vendor);
+        let name = worker_name(w);
         let id = w.agents.len();
-        self.bind(id, Role::Worker, vendor)
+        self.bind(id, Role::Worker)
             .map_err(|e| format!("{name} could not get a socket: {e}"))?;
         self.grow(self.models[from].clone(), self.tiered[from]);
         let t = w.tick;
-        let mut agent = Agent::new(
-            id,
-            project,
-            name.clone(),
-            vendor,
-            Role::Worker,
-            Status::Idle,
-            t,
-        );
+        let mut agent = Agent::new(id, project, name.clone(), Role::Worker, Status::Idle, t);
         agent.start = Some(head.clone());
         w.agents.push(agent);
         self.forks[id] = Some(from);
@@ -599,12 +436,6 @@ mod tests {
             "it is mid-turn: fork it when its turn ends"
         );
         live.slots[1] = Slot::None;
-        w.agents[1].vendor = Vendor::Gemini;
-        assert_eq!(
-            no(&mut live, &mut w, 1),
-            "gemini sessions can not be forked (Gemini CLI 0.65.0's ACP has no fork)"
-        );
-        w.agents[1].vendor = Vendor::Claude;
         live.max_workers = 1;
         assert_eq!(
             no(&mut live, &mut w, 1),
@@ -624,18 +455,15 @@ mod tests {
                 .iter()
                 .any(|e| matches!(e.event, Event::Forked { .. }))
         );
-        // A Codex worker forks, its team at the cap but for the fork: a
-        // helper is not a worker.
+        // A worker forks, its team at the cap but for the fork: a helper
+        // is not a worker.
         git_in(&repo, &["worktree", "prune"]);
         with_helper(&mut w, 1);
         live.grow(None, false);
         let tree = worker_in(&mut live, &mut w, 1, &repo, &root);
         assert!(tree.exists());
-        w.agents[1].vendor = Vendor::Codex;
-        live.vendors
-            .push(Hireable::codex("/nonexistent/codex", &[]));
         let new = live.fork(&mut w, 1).unwrap();
-        assert_eq!(w.agents[new].name, "codex-2", "the second codex worker");
+        assert_eq!(w.agents[new].name, "claude-2", "the second worker");
         let _ = std::fs::remove_dir_all(&repo);
         let _ = std::fs::remove_dir_all(&root);
     }
@@ -676,8 +504,8 @@ mod tests {
         assert_eq!(new, 2);
         let a = &w.agents[new];
         assert_eq!(
-            (a.name.as_str(), a.role, a.vendor, a.project, a.status),
-            ("claude-2", Role::Worker, Vendor::Claude, 0, Status::Idle)
+            (a.name.as_str(), a.role, a.project, a.status),
+            ("claude-2", Role::Worker, 0, Status::Idle)
         );
         assert_eq!(a.start.as_deref(), Some(head.as_str()), "its worker's HEAD");
         assert_eq!((live.forks[new], live.remembered[new]), (Some(1), true));
@@ -793,7 +621,6 @@ mod tests {
             2,
             0,
             "claude-2".into(),
-            Vendor::Claude,
             Role::Worker,
             Status::Idle,
             0,
@@ -879,7 +706,6 @@ mod tests {
             2,
             0,
             "claude-2".into(),
-            Vendor::Claude,
             Role::Worker,
             Status::Idle,
             0,
@@ -901,23 +727,12 @@ mod tests {
         let file = transcript_of(&live, &w, 1, UUID);
         assert_eq!(live.resumable(&w, 2), live.sessions[1].clone());
         assert_eq!(live.forks[2], Some(1));
-        // A Codex fork needs no file; any other vendor has none.
         std::fs::remove_file(&file).unwrap();
-        w.agents[2].vendor = Vendor::Codex;
-        assert_eq!(live.resumable(&w, 2), live.sessions[1].clone());
-        for v in [Vendor::Gemini, Vendor::Qwen, Vendor::Local] {
-            w.agents[2].vendor = v;
-            live.forks[2] = Some(1);
-            assert_eq!(live.resumable(&w, 2), None, "{v:?}");
-        }
         // Not a UUID: no fork.
-        w.agents[2].vendor = Vendor::Codex;
         live.forks[2] = Some(1);
         live.sessions[1].as_mut().unwrap().session = "not-one".into();
         assert_eq!(live.resumable(&w, 2), None);
         // Its wake then journals why it is a new session.
-        live.vendors
-            .push(Hireable::codex("/nonexistent/codex", &[]));
         live.forks[2] = Some(1);
         live.remembered[2] = true;
         live.told(&mut w, 2, "go").unwrap();
@@ -1045,13 +860,6 @@ mod tests {
             .hire(&mut w, 0, &json!({ "tier": "huge" }))
             .unwrap_err();
         assert!(err.contains("cheap, standard or strong"), "{err}");
-        let err = live
-            .hire(&mut w, 0, &json!({ "vendor": "codex" }))
-            .unwrap_err();
-        assert!(
-            err.contains("no vendor \"codex\"") && err.contains("hire claude"),
-            "{err}"
-        );
         live.max_workers = 0;
         let err = live.hire(&mut w, 0, &json!({})).unwrap_err();
         assert!(err.contains("without workers"), "{err}");
@@ -1225,7 +1033,7 @@ mod tests {
     fn a_tier_model_that_fails_its_first_turn_gives_way_to_the_standard_one() {
         let mut w = team(0);
         let mut live = idle_live(1);
-        live.vendors[0].ladder.standard = Some("sonnet".into());
+        live.claude.ladder.standard = Some("sonnet".into());
         live.hire(&mut w, 0, &json!({ "tier": "strong" })).unwrap();
         assert_eq!(live.models[1].as_deref(), Some("opus"));
         sent(&mut live, &mut w, 0, &msg("claude-1", "assign", "Fix it")).unwrap();
@@ -1357,14 +1165,13 @@ mod tests {
     }
 
     #[test]
-    fn the_ladder_is_the_vendor_s_unless_the_person_says_otherwise() {
-        let h = Hireable::claude("claude", &[]);
+    fn the_ladder_is_claude_code_s_unless_the_person_says_otherwise() {
+        let h = Hireable::new("claude", &[]);
         assert_eq!(h.ladder.model(Tier::Cheap), Some("haiku"));
         assert_eq!(h.ladder.model(Tier::Standard), None);
         assert_eq!(h.ladder.model(Tier::Strong), Some("opus"));
         assert_eq!(h.program, "claude");
-        assert_eq!(h.vendor, Vendor::Claude);
-        let h = Hireable::claude(
+        let h = Hireable::new(
             "claude",
             &[
                 (Tier::Strong, "opus[1m]".into()),
@@ -1375,383 +1182,27 @@ mod tests {
         assert_eq!(h.ladder.model(Tier::Cheap), Some("sonnet"));
         assert_eq!(h.ladder.model(Tier::Standard), Some("sonnet"));
         assert_eq!(h.ladder.model(Tier::Strong), Some("opus[1m]"));
-        let h = Hireable::claude("claude", &[(Tier::Standard, "opus".into())]);
+        let h = Hireable::new("claude", &[(Tier::Standard, "opus".into())]);
         assert_eq!(h.ladder.model(Tier::Standard), Some("opus"));
-        // Codex's ladder is efforts on its default model.
-        let h = Hireable::codex("codex", &[]);
-        assert_eq!(h.ladder.model(Tier::Cheap), Some("@low"));
-        assert_eq!(h.ladder.model(Tier::Standard), None);
-        assert_eq!(h.ladder.model(Tier::Strong), Some("@high"));
-        assert_eq!((h.program.as_str(), h.vendor), ("codex", Vendor::Codex));
-        // Gemini's ladder is its own model aliases.
-        let h = Hireable::gemini("gemini", &[(Tier::Strong, "gemini-2.5-pro".into())]);
-        assert_eq!(h.ladder.model(Tier::Cheap), Some("flash"));
-        assert_eq!(h.ladder.model(Tier::Standard), None);
-        assert_eq!(h.ladder.model(Tier::Strong), Some("gemini-2.5-pro"));
-        assert_eq!((h.program.as_str(), h.vendor), ("gemini", Vendor::Gemini));
     }
 
     #[test]
-    fn a_ladder_may_ask_a_vendor_only_for_an_effort_it_has() {
+    fn a_choice_may_ask_only_for_an_effort_claude_code_has() {
+        assert_eq!(efforts(), ["low", "medium", "high", "xhigh", "max"]);
+        assert_eq!(valid_choice("opus@max"), Ok(()));
+        assert_eq!(valid_choice("@xhigh"), Ok(()));
+        assert_eq!(valid_choice("sonnet"), Ok(()));
         assert_eq!(
-            efforts(Vendor::Claude),
-            ["low", "medium", "high", "xhigh", "max"]
+            valid_choice("opus@bogus"),
+            Err("claude has no effort \"bogus\"; one of low, medium, high, xhigh, max".into())
         );
-        assert_eq!(efforts(Vendor::Codex), ["low", "medium", "high", "xhigh"]);
-        assert!(efforts(Vendor::Gemini).is_empty());
-        assert_eq!(valid_choice(Vendor::Claude, "opus@max"), Ok(()));
-        assert_eq!(valid_choice(Vendor::Codex, "@xhigh"), Ok(()));
-        assert_eq!(valid_choice(Vendor::Gemini, "pro"), Ok(()));
-        assert_eq!(
-            valid_choice(Vendor::Codex, "@max"),
-            Err("codex has no effort \"max\"; one of low, medium, high, xhigh".into())
-        );
-        assert_eq!(
-            valid_choice(Vendor::Gemini, "pro@high"),
-            Err("gemini has no effort setting; name only a model, not @high".into())
-        );
-        // Every rung, every vendor: a bare `--tier` rides on the leader's.
-        let fine = team_vendors(
-            vec![Vendor::Claude, Vendor::Codex],
-            Vendor::Claude,
-            &[(None, Tier::Strong, "opus@xhigh".into())],
-        );
-        assert_eq!(check_ladders(&fine), Ok(()));
-        for (lead, tier, bad, why) in [
-            (
-                Vendor::Claude,
-                Tier::Strong,
-                "opus@bogus",
-                "claude has no effort \"bogus\"",
-            ),
-            (
-                Vendor::Codex,
-                Tier::Cheap,
-                "@max",
-                "codex has no effort \"max\"",
-            ),
-            (
-                Vendor::Gemini,
-                Tier::Standard,
-                "pro@low",
-                "gemini has no effort setting",
-            ),
-        ] {
-            let team = team_vendors(
-                vec![Vendor::Claude, Vendor::Codex, Vendor::Gemini],
-                lead,
-                &[(None, tier, bad.into())],
-            );
-            let e = check_ladders(&team).unwrap_err();
-            assert!(
-                e.starts_with(&format!("--model/--tier {bad:?}: {why}")),
-                "{e}"
-            );
-        }
-    }
-
-    #[test]
-    fn the_person_s_stand_ins_go_to_their_vendor_and_bare_ones_to_the_leader_s() {
-        let tiers = vec![
-            (None, Tier::Strong, "opus[1m]".to_string()),
-            (
-                Some(Vendor::Codex),
-                Tier::Cheap,
-                "gpt-5.6-luna@low".to_string(),
-            ),
-            (Some(Vendor::Claude), Tier::Standard, "sonnet".to_string()),
-        ];
-        let team = team_vendors(vec![Vendor::Claude, Vendor::Codex], Vendor::Claude, &tiers);
-        assert_eq!(team.len(), 2);
-        let (claude, codex) = (&team[0], &team[1]);
-        assert_eq!(
-            (claude.vendor, claude.program.as_str()),
-            (Vendor::Claude, "claude")
-        );
-        assert_eq!(
-            claude.ladder.model(Tier::Strong),
-            Some("opus[1m]"),
-            "bare: the leader's"
-        );
-        assert_eq!(claude.ladder.model(Tier::Standard), Some("sonnet"));
-        assert_eq!(claude.ladder.model(Tier::Cheap), Some("haiku"));
-        assert_eq!(
-            (codex.vendor, codex.program.as_str()),
-            (Vendor::Codex, "codex")
-        );
-        assert_eq!(codex.ladder.model(Tier::Cheap), Some("gpt-5.6-luna@low"));
-        assert_eq!(
-            codex.ladder.model(Tier::Strong),
-            Some("@high"),
-            "not the bare one"
-        );
-        // With codex leading, the bare stand-in is codex's.
-        let team = team_vendors(vec![Vendor::Claude, Vendor::Codex], Vendor::Codex, &tiers);
-        assert_eq!(team[1].ladder.model(Tier::Strong), Some("opus[1m]"));
-        assert_eq!(team[0].ladder.model(Tier::Strong), Some("opus"));
-        assert!(team_vendors(vec![], Vendor::Claude, &tiers).is_empty());
-    }
-
-    #[test]
-    fn only_vendors_imece_drives_could_lead() {
-        assert_eq!(
-            leaders(&[
-                (Vendor::Codex, false),
-                (Vendor::Claude, true),
-                (Vendor::Gemini, true)
-            ]),
-            [Vendor::Claude, Vendor::Gemini]
-        );
-        assert!(leaders(&[]).is_empty());
-        assert!(leaders(&[(Vendor::Codex, false)]).is_empty());
-    }
-
-    #[test]
-    fn the_team_needs_a_leader_imece_can_drive() {
-        let err = hireable(&[], Vendor::Claude).unwrap_err();
-        assert!(
-            err.contains("no coding agent") && err.contains("claude, codex, gemini"),
-            "{err}"
-        );
-        let err = hireable(&[(Vendor::Gemini, false)], Vendor::Claude).unwrap_err();
-        assert!(
-            err.contains("claude is not on PATH (found gemini)") && err.contains("--lead"),
-            "{err}"
-        );
-        let err = hireable(
-            &[(Vendor::Claude, true), (Vendor::Gemini, false)],
-            Vendor::Gemini,
-        )
-        .unwrap_err();
-        assert!(
-            err.contains("gemini is on PATH, but") && err.contains("--lead claude"),
-            "{err}"
-        );
-        let err = hireable(
-            &[
-                (Vendor::Claude, true),
-                (Vendor::Codex, true),
-                (Vendor::Gemini, false),
-            ],
-            Vendor::Gemini,
-        )
-        .unwrap_err();
-        assert!(err.contains("--lead claude or --lead codex"), "{err}");
-        let err = hireable(&[(Vendor::Gemini, false)], Vendor::Gemini).unwrap_err();
-        assert!(err.contains("--lead claude"), "{err}");
-        let ok = hireable(
-            &[
-                (Vendor::Claude, true),
-                (Vendor::Codex, true),
-                (Vendor::Gemini, false),
-            ],
-            Vendor::Codex,
-        )
-        .unwrap();
-        assert_eq!(
-            ok,
-            [Vendor::Claude, Vendor::Codex],
-            "only vendors imece drives are hireable"
-        );
-    }
-
-    #[test]
-    fn the_leader_hires_a_codex_worker_named_after_codex_on_an_effort() {
-        let mut w = team(0);
-        let mut live = Live::new(
-            1,
-            two_vendors(&std::env::temp_dir()),
-            std::env::temp_dir(),
-            PathBuf::from("/nonexistent"),
-        );
-        let got = live
-            .hire(&mut w, 0, &json!({ "vendor": "codex", "tier": "cheap" }))
-            .unwrap();
-        assert!(got.starts_with("codex-1 joined (codex, @low)."), "{got}");
-        assert_eq!(w.agents[1].vendor, Vendor::Codex);
-        assert_eq!(live.models[1].as_deref(), Some("@low"));
-        assert!(live.tiered[1]);
-        let got = live.hire(&mut w, 0, &json!({ "vendor": "codex" })).unwrap();
-        assert!(
-            got.starts_with("codex-2 joined (codex, the default model)."),
-            "{got}"
-        );
-        assert!(!live.tiered[2]);
-        // A claude worker counts its own.
-        let got = live.hire(&mut w, 0, &json!({})).unwrap();
-        assert!(got.starts_with("claude-1 joined"), "{got}");
-        // The hire tool offers both.
-        let hire = &tools_of(Role::Leader, &live.vendor_names(), &[], DEFAULT_RUN_TIMEOUT)[5];
-        assert_eq!(
-            hire.input["properties"]["vendor"]["enum"],
-            json!(["claude", "codex"])
-        );
-        // A codex worker's prompt says what it can do.
-        let worker = system_prompt(&w, 1, 4, 2, Confine::Strict);
-        assert!(
-            worker.contains("run commands; the sandbox keeps writes inside"),
-            "{worker}"
-        );
-        let claude = system_prompt(&w, 3, 4, 2, Confine::Strict);
-        assert!(
-            claude.contains("the run tool runs the build, the tests"),
-            "{claude}"
-        );
-    }
-
-    #[test]
-    fn a_codex_leader_s_session_reads_only_and_a_worker_s_writes_its_worktree() {
-        let dir = std::env::temp_dir().join(format!("imece-codex-lead-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
-        let repo = checkout("codex-repo");
-        let mut w = team(0);
-        w.agents[0].vendor = Vendor::Codex;
-        let mut live = Live::new(1, two_vendors(&dir), repo.clone(), dir.join("worktrees"));
-        live.models[0] = Some("gpt-5.6-terra@high".into());
-        live.told(&mut w, 0, "hello").unwrap();
-        wait_for(&mut live, &mut w, |w| w.agents[0].status == Status::Stopped);
-        let args = std::fs::read_to_string(repo.join("args.txt")).unwrap();
-        assert!(args.starts_with("app-server\n"), "{args}");
-        assert!(args.contains("sandbox_mode=\"read-only\""), "{args}");
-        assert!(args.contains("approval_policy=\"never\""), "{args}");
-        assert!(
-            !args.contains("hello") && !args.contains("You are"),
-            "no prompt in argv"
-        );
-        assert!(
-            !args.contains("--model"),
-            "the model goes to the thread, not argv"
-        );
-        let _ = std::fs::remove_file(repo.join("args.txt"));
-
-        live.hire(&mut w, 0, &json!({ "vendor": "codex" })).unwrap();
-        live.told(&mut w, 1, "hello").unwrap();
-        wait_for(&mut live, &mut w, |w| w.agents[1].status == Status::Stopped);
-        let tree = dir.join("worktrees").join("codex-1");
-        let args = std::fs::read_to_string(tree.join("args.txt")).unwrap();
-        assert!(args.contains("sandbox_mode=\"workspace-write\""), "{args}");
-        // The standard level: a worker's sandbox reaches the network and
-        // web search is live.
-        assert!(
-            args.contains("sandbox_workspace_write.network_access=true"),
-            "{args}"
-        );
-        assert!(args.contains("web_search=\"live\""), "{args}");
-        let _ = std::fs::remove_dir_all(&dir);
-        let _ = std::fs::remove_dir_all(&repo);
-    }
-
-    fn fake_gemini(dir: &Path) -> String {
-        use std::os::unix::fs::PermissionsExt;
-        let path = dir.join("fake-gemini");
-        std::fs::write(&path, "#!/bin/sh\nprintf '%s\\n' \"$@\" > args.txt\n").unwrap();
-        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o700)).unwrap();
-        path.to_string_lossy().into_owned()
-    }
-
-    #[test]
-    fn a_gemini_session_runs_in_a_private_directory_with_the_agent_s_files_included() {
-        let dir = std::env::temp_dir().join(format!("imece-gemini-lead-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
-        let repo = checkout("gemini-repo");
-        let mut w = team(0);
-        w.agents[0].vendor = Vendor::Gemini;
-        let vendors = vec![
-            Hireable::claude(&fake_claude(&dir), &[]),
-            Hireable::gemini(&fake_gemini(&dir), &[]),
-        ];
-        let mut live = Live::new(1, vendors, repo.clone(), dir.join("worktrees"));
-        live.open_bus(&w, "/opt/imece".into()).unwrap();
-        live.models[0] = Some("pro".into());
-        live.told(&mut w, 0, "hello").unwrap();
-        wait_for(&mut live, &mut w, |w| w.agents[0].status == Status::Stopped);
-        // Gemini ran in the private directory, not in the checkout.
-        assert!(!repo.join("args.txt").exists());
-        let home = dir.join("worktrees-gemini").join("lead");
-        // Seen missing once under load; the trace says why it stopped.
-        let args = std::fs::read_to_string(home.join("args.txt"))
-            .unwrap_or_else(|e| panic!("{e}: {:?}", w.agents[0].trace));
-        assert!(args.starts_with("--acp\n"), "{args}");
-        assert!(
-            args.contains(&format!("--include-directories\n{}\n", repo.display())),
-            "{args}"
-        );
-        assert!(
-            args.contains(&format!("--policy\n{}\n", home.join("policy").display())),
-            "{args}"
-        );
-        assert!(args.contains("-m\npro\n"), "{args}");
-        assert!(
-            !args.contains("hello") && !args.contains("You are"),
-            "no prompt in argv"
-        );
-        let policy = std::fs::read_to_string(home.join("policy/imece.toml")).unwrap();
-        assert!(
-            policy.contains("\"read_file\"") && !policy.contains("write_file"),
-            "{policy}"
-        );
-        // The standard level: the web for a leader, never a shell.
-        assert!(
-            policy.contains("\"google_web_search\", \"web_fetch\"")
-                && !policy.contains("run_shell_command"),
-            "{policy}"
-        );
-        assert!(
-            policy.contains("toolName = \"*\"\ndecision = \"deny\""),
-            "{policy}"
-        );
-        assert!(
-            policy.contains("\"mcp_imece_hire\"") && !policy.contains("claim"),
-            "{policy}"
-        );
-        let instructions = std::fs::read_to_string(home.join("GEMINI.md")).unwrap();
-        assert!(
-            instructions.contains("You are lead")
-                && instructions.contains(&repo.display().to_string()),
-            "{instructions}"
-        );
-
-        live.hire(&mut w, 0, &json!({ "vendor": "gemini" }))
-            .unwrap();
-        live.told(&mut w, 1, "hello").unwrap();
-        wait_for(&mut live, &mut w, |w| w.agents[1].status == Status::Stopped);
-        let tree = dir.join("worktrees").join("gemini-1");
-        let home = dir.join("worktrees-gemini").join("gemini-1");
-        let args = std::fs::read_to_string(home.join("args.txt"))
-            .unwrap_or_else(|e| panic!("{e}: {:?}", w.agents[1].trace));
-        assert!(
-            args.contains(&format!(
-                "--include-directories\n{}\n",
-                tree.canonicalize().unwrap().display()
-            )),
-            "{args}"
-        );
-        let policy = std::fs::read_to_string(home.join("policy/imece.toml")).unwrap();
-        assert!(
-            policy.contains("\"write_file\"") && policy.contains("\"mcp_imece_claim\""),
-            "{policy}"
-        );
-        assert!(
-            policy.contains("\"run_shell_command\""),
-            "a worker's shell: {policy}"
-        );
-        let _ = std::fs::remove_dir_all(&dir);
-        let _ = std::fs::remove_dir_all(&repo);
     }
 
     #[test]
     fn a_solo_hires_helpers_named_after_it_and_a_helper_hires_nobody() {
         let mut w = team(0);
         let mut live = idle_live(1);
-        w.open_project(
-            None,
-            "notes".into(),
-            "/n".into(),
-            Vendor::Claude,
-            Role::Solo,
-        );
+        w.open_project(None, "notes".into(), "/n".into(), Role::Solo);
         live.grow(None, false);
         live.max_helpers = 1;
         let got = live.hire(&mut w, 1, &json!({ "tier": "cheap" })).unwrap();

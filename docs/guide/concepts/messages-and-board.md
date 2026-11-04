@@ -74,7 +74,7 @@ The prompts say when to ask: the leader may ask you mid-task; a worker asks its 
 
 ## Mail waits with an agent that waits on you
 
-An agent with something open that only you can settle does not go on because a teammate wrote: a question of its in WAITING FOR YOU, a tool call waiting for your yes, a vendor error, a setup script, a sensitive change or a research report. Its mail stays queued and starts no turn, and no board card is offered to it. The sender hears `held as message 7; …`, and the agent's row and `:why` say how many messages wait: `✉ 2 held`.
+An agent with something open that only you can settle does not go on because a teammate wrote: a question of its in WAITING FOR YOU, a tool call waiting for your yes, an API error, a setup script, a sensitive change or a research report. Its mail stays queued and starts no turn, and no board card is offered to it. The sender hears `held as message 7; …`, and the agent's row and `:why` say how many messages wait: `✉ 2 held`.
 
 When you write to the agent, the mail goes in that same turn, after your words, if your word ends the wait. When you settle it another way, the mail starts a turn of its own. A `cancel` is never held: it starts a turn at once, and the mail that waited goes with it, in order. The mail caps count held mail as any other.
 
@@ -106,7 +106,7 @@ A card is a unit of work with a story: `intent`, `assumption`, `decision`, `talk
 
 ## The wake briefing
 
-An agent asleep since the last run wakes on your message, a teammate's waking message or a card posted in this run. Unless its vendor session resumes with its memory intact ([sessions](../concepts/sessions.md)), imece briefs the new session ahead of the first prompt: the card and its last 12 story lines, the prompt that was cut short (not run again), how many messages wait, the worktree's uncommitted changes, and the board's open cards. Every line goes through `clean`; a line is at most 300 characters, the briefing 6000.
+An agent asleep since the last run wakes on your message, a teammate's waking message or a card posted in this run. Unless its session resumes with its memory intact ([sessions](../concepts/sessions.md)), imece briefs the new session ahead of the first prompt: the card and its last 12 story lines, the prompt that was cut short (not run again), how many messages wait, the worktree's uncommitted changes, and the board's open cards. Every line goes through `clean`; a line is at most 300 characters, the briefing 6000.
 
 ## See also
 

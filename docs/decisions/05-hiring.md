@@ -1,5 +1,7 @@
 # Hiring
 
+**Changed by [record 109](109-claude-only.md): Claude Code only; what is below about choosing a vendor is history.**
+
 Hiring (2026-10-29, user's decisions): bare `imece` is live and the team
 starts as the leader alone; the leader hires workers with the `hire`
 tool (leader's socket only) as the work needs them, `--agents` is the

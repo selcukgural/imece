@@ -11,8 +11,8 @@ A project is one git checkout with its own leader and workers. imece starts with
 
 | Command | What it does |
 | --- | --- |
-| `:open PATH [NAME]` (`:o`) | opens the git checkout at PATH as a project of its own, with a new leader `lead-NAME` on the team's lead vendor (same model and tiers). NAME defaults to the directory's name made safe: 1-24 of letters, digits, `.`, `_`, `-`, the rest replaced by `-`. The `:` menu marks it `$`: a new leader session. |
-| `:solo [PATH] [CHOICE] [NAME]` | opens a solo session as a project of its own: one agent, `solo-NAME`, that you drive yourself, on the vendor, model and effort you name, with no leader ([solo sessions](solo.md)). Any number may share a checkout with its team. `$`: a new session. |
+| `:open PATH [NAME]` (`:o`) | opens the git checkout at PATH as a project of its own, with a new leader `lead-NAME` (same model and tiers). NAME defaults to the directory's name made safe: 1-24 of letters, digits, `.`, `_`, `-`, the rest replaced by `-`. The `:` menu marks it `$`: a new leader session. |
+| `:solo [PATH] [CHOICE] [NAME]` | opens a solo session as a project of its own: one agent, `solo-NAME`, that you drive yourself, on the model and effort you name, with no leader ([solo sessions](solo.md)). Any number may share a checkout with its team. `$`: a new session. |
 | `:close [NAME]` (`:c`) | ends the project's agents' sessions and runs, drops their mail, notes, offers and changes, closes their inbox items, marks the project closed. Worktrees stay on disk. No name: the project at hand. The last open project refuses to close (`q q` quits). |
 | `:archive [TITLE]` | puts the project at hand away with its agents asleep and all they had (sessions, mail, changes, cards, journal lines), out of sight, and opens a fresh project of the same name, head and `:copy` list in its place. Ten seconds of grace, `u` keeps it. See [archives](sessions.md#archives). |
 | `:restore [NAME]` | brings an archive back as it was put away, its agents asleep until written to; the team open on its checkout gives way (archived, or closed when it did nothing). See [archives](sessions.md#archives). |
@@ -26,7 +26,7 @@ A project is one git checkout with its own leader and workers. imece starts with
 - The journal: `you opened api at /src/api`, `you closed api`, `you renamed api to gateway`, `you archived api as “v1”; a fresh api takes its place`, `you brought back api “v1”; the one open there is archived as “api 2026-11-02”`.
 - Projects are remembered in the store; a remembered project whose checkout is gone loads closed.
 
-The lead vendor cannot be chosen per project: every leader runs on the team's lead vendor. A solo's vendor, model and effort are yours to pick, per solo.
+A solo's model and effort are yours to pick, per solo.
 
 ## Groups in the salon
 
@@ -38,7 +38,7 @@ The lead vendor cannot be chosen per project: every leader runs on the team's le
  ▸ shop       ● 2 working
  ▾ imece
    ◆ lead            idle
-   ✓ codex-1         done, not seen yet
+   ✓ claude-2         done, not seen yet
 ```
 
 - Each project is a group with its own leader. `h` `l` (or `←` `→`, `enter` on the header) fold and unfold a group; `za` toggles, `zM` folds every worker, `zR` unfolds all (`:fold`, `:unfold`).
@@ -111,11 +111,11 @@ Each worker's worktree stays on disk between runs, so its work is never thrown a
 ```text
  WORKTREES NO AGENT OWNS · 2
 ▶ claude-31  ~/src/shop  clean
-  codex-32   ~/src/shop  files changed: 3 · commits of its own: 1
+  claude-32  ~/src/shop  files changed: 3 · commits of its own: 1
  a remove the clean ones   d remove this one   j k move   esc back
 ```
 
-- **What counts:** a directory under imece's state (`worktrees/<checkout>-<hash>/<name>`) that git knows as a worktree added to a checkout, and that no agent of any project has: open, closed or archived; a helper's is its worker's. Links, files, Gemini's private directories and what git does not know are passed over.
+- **What counts:** a directory under imece's state (`worktrees/<checkout>-<hash>/<name>`) that git knows as a worktree added to a checkout, and that no agent of any project has: open, closed or archived; a helper's is its worker's. Links, files and what git does not know are passed over.
 - **What it holds:** files changed or not tracked (`git status`; what git ignores, such as `target/`, is not counted and goes with it), and commits of its own that no branch, tag or remote has (imece's own commits for changes you applied are in your checkout already and are not counted). Clean means neither.
 - **Removing:** `a` removes the clean ones, `d` the one at hand. One that holds work goes only after a `y` for it, with `git worktree remove --force`; a clean one with `git worktree remove`, which refuses again if something changed meanwhile. Removal runs off the screen, and the window looks again after it.
 - **The teardown script first:** when the worktree's checkout has `.imece/worktree-teardown.sh`, it runs in the worktree just before the removal. One you have not answered opens over the window first, as the setup script's does (`TEARDOWN SCRIPT · shop · sha256 1a2b…`, its lines numbered, `j` `k` `ctrl-d` `ctrl-u` `g` `G` scroll): `a` says yes (kept in imece's store with the setup scripts' yeses, so a changed byte asks again) and the removal goes on, `r` says no for this run and removes without it, `esc` removes nothing. The flash says how it went (`removed claude-31 · teardown in claude-31: exit 0, 0.4 s · dropped database`); a teardown that fails or cannot be read is said, and the removal still decides on its own: one that left a file in the worktree keeps it.
@@ -125,7 +125,7 @@ Each worker's worktree stays on disk between runs, so its work is never thrown a
 
 ## The demo's copies
 
-`--demo --projects N` (1-4, default 2) shows several fake projects at once; `:open PATH [NAME]` there adds a fake project with a leader, two workers of random vendors and three cards, `:close` and `:rename` work the same, `:pin` pins without a store, and `:copy` keeps a list that a demo worker's start "copies" with made-up sizes, now and then skipping one as gone. A worker the demo's leader hires gets a new worktree, so the demo's own setup script (`npm ci`, `npm run db:migrate`) is asked about, shown with `enter`, and on a yes "runs" with made-up output, as live does.
+`--demo --projects N` (1-4, default 2) shows several fake projects at once; `:open PATH [NAME]` there adds a fake project with a leader, two workers and three cards, `:close` and `:rename` work the same, `:pin` pins without a store, and `:copy` keeps a list that a demo worker's start "copies" with made-up sizes, now and then skipping one as gone. A worker the demo's leader hires gets a new worktree, so the demo's own setup script (`npm ci`, `npm run db:migrate`) is asked about, shown with `enter`, and on a yes "runs" with made-up output, as live does.
 
 ## See also
 

@@ -26,22 +26,22 @@ By default the lower side panel does not show the journal line by line: it tells
 
 ```text
 ┌ STORY · J journal ─────────────────────────────────────────┐
-│! you hold up 3: codex-1, claude-3, claude-1 via codex-1    │
-│#1 Payment retry policy · codex-1  ≡ 4/5                    │
-│  14:00 ⇄ lead-shop-api → codex-1 [assign]: #1 Payment re…  │
-│  14:01 ⇄ codex-2 → codex-1 [ask]: Zone codes an enum?      │
-│  14:06 ⇄ claude-1 → codex-1 [ask]: Retry count from config?  no answer · 2 min
+│! you hold up 3: claude-2, claude-3, claude-1 via claude-2  │
+│#1 Payment retry policy · claude-2 ≡ 4/5                    │
+│  14:00 ⇄ lead-shop-api → claude-2 [assign]: #1 Payment re… │
+│  14:01 ⇄ claude-4 → claude-2 [ask]: Zone codes an enum?    │
+│  14:06 ⇄ claude-1 → claude-2 [ask]: Retry count from config?  no answer · 2 min
 │  now ⚑ waits for your yes "WebFetch: https://…" · 4 min    │
 │#7 Payment retry policy · claude-3  ✓ done · Δ waits for you│
 │  14:05 ⇄ claude-3 → lead-shop-api [done]: Backoff capped…  │
 │elsewhere                                                   │
-│  14:00 ⚑ copied node_modules into qwen-7's worktree  ×12   │
+│  14:00 ⚑ copied node_modules into claude-5's worktree  ×12 │
 └────────────────────────────────────────────────────────────┘
 ```
 
-- **Whom you hold up**, on top when anyone: every agent something of which waits for you (an item in WAITING FOR YOU, or a question to you), then every agent asking a teammate already held up, with the one it waits for (`claude-1 via codex-1`). Answering the first frees the rest.
+- **Whom you hold up**, on top when anyone: every agent something of which waits for you (an item in WAITING FOR YOU, or a question to you), then every agent asking a teammate already held up, with the one it waits for (`claude-1 via claude-2`). Answering the first frees the rest.
 - **A block per card** the journal lately spoke of, the card with the newest line first. Its header: the number and title, its owner, then how far it is (`≡ 4/5` its to-do list, `✓ done`, `Δ waits for you` when a change of that card waits). Under it the card's three newest lines, oldest first: what was said about it, its owner's change, a stop, a failure, an apply. A line belongs to the card its agent was on when it was written, so a worker that moved on to another card does not take its old lines along; something said belongs to the card of whoever asked. An ask that got no reply says so: `no answer yet`, then `no answer · 2 min`. Last, `now` and what the owner does now, its step and how long, while the card is not done.
-- **Elsewhere**: lines of no card (the leader hiring, a worktree being set up, a vendor retrying), each kind once, its newest line, with how many there were (`×12`). An assignment names its card, so it is told in that card's block.
+- **Elsewhere**: lines of no card (the leader hiring, a worktree being set up, an API call retrying), each kind once, its newest line, with how many there were (`×12`). An assignment names its card, so it is told in that card's block.
 
 The story reads at most the 2,000 newest journal lines per frame and shows as many cards as fill the panel; for older ones, `J` and the journal. Lines `:clear` took off are not told (a marked one is), and an archive's lines wait in the archive.
 
@@ -75,7 +75,7 @@ Among them:
 - **Copies.** `copied .env into claude-1's worktree (1.2 KiB)`, and what was not copied and why (`:copy`); what the checkout's `.worktreeinclude` names in lines of its own (`…, as .worktreeinclude names`), and a line of it not followed with why.
 - **Your shell.** `` you ran `cargo test` → exit 0 · 12 s ``, or `stopped by signal 2`, with the time in the largest units that say it (`40 ms`, `2 s`, `1 min 5 s`).
 - **The pot.** `you set the budget to …`, and once, when under half an hour is left at the current rate, `at $4.00/h the budget lasts about 25 min more; :budget USD raises it`.
-- **Asks.** `you allowed codex-2: npm install left-pad`, `you refused …`.
+- **Asks.** `you allowed claude-4: npm install left-pad`, `you refused …`.
 - **Commit messages.** `:commit`'s suggestion and the model that made it, or why none came.
 
 ### Folding and days

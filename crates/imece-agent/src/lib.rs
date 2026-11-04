@@ -1,12 +1,10 @@
-//! Drives coding agents from vendor CLIs as child processes and reports what
-//! they do as vendor-neutral events. The screen never sees a vendor's wire
-//! format; it sees [`Event`]s.
+//! Drives Claude Code sessions as child processes and reports what they do
+//! as events. The screen never sees Claude Code's wire format; it sees
+//! [`Event`]s.
 
 pub mod child;
 pub mod claude;
-pub mod codex;
 pub mod copy;
-pub mod gemini;
 pub mod mcp;
 pub mod run;
 pub mod worktree;
@@ -15,7 +13,7 @@ use std::io;
 use std::time::Duration;
 
 /// The name imece's MCP server has in every session; its tools are named
-/// `mcp__imece__<tool>` on the screen, whatever the vendor calls them.
+/// `mcp__imece__<tool>` on the screen.
 pub const MCP_SERVER: &str = "imece";
 
 /// The name a tool of imece's MCP server has on the screen.
@@ -23,8 +21,8 @@ pub fn mcp_tool(tool: &str) -> String {
     format!("mcp__{MCP_SERVER}__{tool}")
 }
 
-/// Whether `id` is a UUID as the vendors give their session ids: the only
-/// form that goes on a command line, into a path or back to a vendor.
+/// Whether `id` is a UUID, as Claude Code's session ids are: the only form
+/// that goes on a command line, into a path or back to it.
 pub fn valid_uuid(id: &str) -> bool {
     id.len() == 36
         && id.bytes().enumerate().all(|(i, b)| match i {
@@ -58,18 +56,17 @@ fn uuid_of(mut b: [u8; 16]) -> String {
     )
 }
 
-/// Whether a vendor's CLI says it is signed in, asked without the network
-/// and without spending ([`claude::login`], [`codex::login`]).
+/// Whether Claude Code says it is signed in, asked without the network and
+/// without spending ([`claude::login`]).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Login {
     Yes,
     No,
-    /// It did not say, or has no way to be asked (Gemini CLI): its first
-    /// session tells.
+    /// It did not say: its first session tells.
     Unknown,
 }
 
-/// How long a vendor's CLI has to answer a question about itself.
+/// How long Claude Code has to answer a question about itself.
 #[cfg(not(test))]
 pub const ASK_WAIT: Duration = Duration::from_secs(5);
 /// The tests' fake CLIs answer at once, but a loaded machine running
@@ -134,44 +131,31 @@ impl Ask {
     }
 }
 
-/// A running session of any vendor, as the screen drives it.
+/// A running session, as the screen drives it.
 pub trait Agent: Send {
     /// Gives the agent a prompt. A busy session takes it after the running
     /// turn.
     fn prompt(&mut self, text: &str) -> io::Result<()>;
-    /// Gives the session one line of its vendor's own command line
+    /// Gives the session one line of Claude Code's own command line
     /// (`/clear`, `/compact`, `/cost`, whatever the CLI knows), which runs
     /// as a turn of its own and ends in a [`Event::TurnDone`] like a
-    /// prompt. A vendor without such a line, or one that does not know
-    /// the command, answers [`io::ErrorKind::Unsupported`] and nothing
-    /// runs.
+    /// prompt. What is no such line answers
+    /// [`io::ErrorKind::Unsupported`] and nothing runs.
     fn command(&mut self, line: &str) -> io::Result<()>;
     /// Asks the session to stop without waiting.
     fn terminate(&mut self);
-    /// The process imece started for the session now (the vendor's CLI):
+    /// The process imece started for the session now (Claude Code):
     /// it and its descendants are the session's, and imece's socket
     /// takes a tool call from them alone. None when there is none.
     fn pid(&self) -> Option<u32> {
         None
     }
-    /// Answers what the session asked in an [`Event::Asks`] with
-    /// `request`: `allow` lets it run, else it is refused and the turn
-    /// goes on. An ask already gone is answered by nobody. A vendor that
-    /// asks over imece's socket instead (Claude Code) has nothing to
-    /// answer here: [`io::ErrorKind::Unsupported`].
-    fn decide(&mut self, request: &str, allow: bool) -> io::Result<()> {
-        let _ = (request, allow);
-        Err(io::Error::new(
-            io::ErrorKind::Unsupported,
-            "this session asks through imece's socket",
-        ))
-    }
 }
 
 /// How strong a model an agent gets. Agents choose a tier, never a model
-/// name: names change with every vendor release, tiers do not. Each vendor
-/// maps the tiers to its own models; `Standard` is the vendor's own default
-/// unless the person named a model.
+/// name: names change with every release, tiers do not. Claude Code's
+/// aliases stand for them; `Standard` is its own default unless the person
+/// named a model.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Tier {
     Cheap,
@@ -197,13 +181,11 @@ impl Tier {
 }
 
 /// What an agent runs on, as the person names it: `[MODEL][@EFFORT]`, each
-/// part optional (`opus`, `@xhigh`, `gpt-5.6-terra@high`); nothing is the
-/// vendor's own default model at its own default effort. The same words
-/// for every vendor; which efforts a vendor has is the vendor's
-/// ([`claude::EFFORTS`], [`codex::EFFORTS`]; Gemini CLI has no such
-/// setting, [`gemini::EFFORTS`] is empty), and a choice is checked against
-/// them before a session starts, never passed on unchecked: Claude Code
-/// only warns about an effort it does not know and runs at its default.
+/// part optional (`opus`, `@xhigh`, `claude-opus-5-5@high`); nothing is
+/// Claude Code's own default model at its own default effort. A choice is
+/// checked against [`claude::EFFORTS`] before a session starts, never
+/// passed on unchecked: Claude Code only warns about an effort it does not
+/// know and runs at its default.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Choice {
     pub model: Option<String>,
@@ -232,20 +214,15 @@ impl Choice {
         s
     }
 
-    /// Whether the effort, if any, is one of `efforts`, the ones the
-    /// vendor called `vendor` has; why not, in words for the person.
-    pub fn check(&self, vendor: &str, efforts: &[&str]) -> Result<(), String> {
+    /// Whether the effort, if any, is one of `efforts`; why not, in words
+    /// for the person.
+    pub fn check(&self, efforts: &[&str]) -> Result<(), String> {
         let Some(e) = &self.effort else {
             return Ok(());
         };
-        if efforts.is_empty() {
-            return Err(format!(
-                "{vendor} has no effort setting; name only a model, not @{e}"
-            ));
-        }
         if !efforts.contains(&e.as_str()) {
             return Err(format!(
-                "{vendor} has no effort {e:?}; one of {}",
+                "claude has no effort {e:?}; one of {}",
                 efforts.join(", ")
             ));
         }
@@ -253,12 +230,12 @@ impl Choice {
     }
 }
 
-/// How much of its vendor's capability an agent's session gets: the
+/// How much of Claude Code an agent's session gets: the
 /// confine dial (`--confine`). The leader stays non-writing at every
-/// level (a role, not a restriction), and the vendor's own sub-agent tool
+/// level (a role, not a restriction), and Claude Code's own sub-agent tool
 /// stays off at every level: a sub-agent spawned inside the CLI would
 /// skip the worktree, the budget, the bus and the screen. imece sandboxes
-/// nothing; what each level switches on is the vendor's own restrictions,
+/// nothing; what each level switches on is Claude Code's own restrictions,
 /// checked fail closed against what the session reports.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub enum Confine {
@@ -267,7 +244,7 @@ pub enum Confine {
     /// imece checks only what it still asks for: its own server with its
     /// tools, the role's tools, no sub-agent tool.
     Open,
-    /// The vendor's full coding toolset (read, write, shell, web search
+    /// Claude Code's full coding toolset (read, write, shell, web search
     /// and fetch) for workers and helpers, web for the leader; nothing of
     /// the person's setup loads, no MCP server but imece's.
     #[default]
@@ -362,9 +339,9 @@ mod tests {
         };
         let good = fake(
             "good",
-            r#"[ "$1" = --version ] && echo "codex-cli 0.9" && exit 0; exit 9"#,
+            r#"[ "$1" = --version ] && echo "2.1.3 (Claude Code)" && exit 0; exit 9"#,
         );
-        assert_eq!(version(&good, &[]).as_deref(), Some("codex-cli 0.9"));
+        assert_eq!(version(&good, &[]).as_deref(), Some("2.1.3 (Claude Code)"));
         let bad = fake("bad", "echo 1.0; exit 1");
         assert_eq!(
             version(&bad, &[]),
@@ -411,23 +388,15 @@ mod tests {
     }
 
     #[test]
-    fn a_choice_s_effort_must_be_one_the_vendor_has() {
+    fn a_choice_s_effort_must_be_one_claude_code_has() {
         let efforts = ["low", "high"];
-        assert_eq!(Choice::parse("opus").check("claude", &efforts), Ok(()));
-        assert_eq!(Choice::parse("opus").check("gemini", &[]), Ok(()));
-        assert_eq!(Choice::parse("@high").check("claude", &efforts), Ok(()));
-        assert_eq!(Choice::parse("opus@low").check("claude", &efforts), Ok(()));
-        let e = Choice::parse("opus@max")
-            .check("claude", &efforts)
-            .unwrap_err();
+        assert_eq!(Choice::parse("opus").check(&efforts), Ok(()));
+        assert_eq!(Choice::parse("@high").check(&efforts), Ok(()));
+        assert_eq!(Choice::parse("opus@low").check(&efforts), Ok(()));
+        let e = Choice::parse("opus@max").check(&efforts).unwrap_err();
         assert_eq!(e, "claude has no effort \"max\"; one of low, high");
-        let e = Choice::parse("@High").check("codex", &efforts).unwrap_err();
-        assert!(e.starts_with("codex has no effort \"High\""), "{e}");
-        let e = Choice::parse("pro@high").check("gemini", &[]).unwrap_err();
-        assert_eq!(
-            e,
-            "gemini has no effort setting; name only a model, not @high"
-        );
+        let e = Choice::parse("@High").check(&efforts).unwrap_err();
+        assert!(e.starts_with("claude has no effort \"High\""), "{e}");
     }
 
     #[test]
@@ -477,14 +446,11 @@ mod tests {
             }
             fn terminate(&mut self) {}
         }
-        let e = Plain.decide("1", true).unwrap_err();
-        assert_eq!(e.kind(), io::ErrorKind::Unsupported);
         assert_eq!(Plain.pid(), None, "no process said, none trusted");
     }
 }
 
-/// What a session reports, whatever the vendor.
-/// One window of a vendor plan's usage limit, as its session reports it.
+/// One window of the plan's usage limit, as a session reports it.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Limit {
     /// The window's length in minutes (300: five hours, 10080: a week).
@@ -495,7 +461,7 @@ pub struct Limit {
     pub resets_at: Option<u64>,
 }
 
-/// Why a turn failed on the vendor's side, as far as imece acts on it.
+/// Why a turn failed on Claude Code's side, as far as imece acts on it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Fault {
     /// Overloaded, a server error, a lost connection, a short rate
@@ -536,12 +502,12 @@ const ACCOUNT_WORDS: [&str; 6] = [
     "limit reached",
 ];
 
-/// Minutes in the windows the vendors name.
+/// Minutes in the windows Claude Code names.
 pub const FIVE_HOURS: u32 = 5 * 60;
 pub const WEEK: u32 = 7 * 24 * 60;
 
-/// One step of the agent's own to-do list, as its vendor's planning tool
-/// keeps it (Claude Code's tasks, Codex's `update_plan`).
+/// One step of the agent's own to-do list, as Claude Code's task tools
+/// keep it.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Step {
     pub text: String,
@@ -558,18 +524,18 @@ pub enum StepState {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Event {
-    /// The vendor confirmed the settings it runs with, and they are the ones
+    /// Claude Code confirmed the settings it runs with, and they are the ones
     /// asked for.
     Started { session: String, model: String },
-    /// The vendor's own command line, as it reports it (`/name` each),
+    /// Claude Code's own command line, as it reports it (`/name` each),
     /// when the session starts and again whenever it changes; the screen
-    /// completes with it, so a vendor's new command needs no release.
+    /// completes with it, so a new command needs no release.
     Commands(Vec<String>),
-    /// How much of its plan's usage limits the vendor says is used, one
+    /// How much of its plan's usage limits Claude Code says is used, one
     /// window each (a five-hour one, a weekly one). A window not named
     /// is as it was: an update may be sparse.
     Limits(Vec<Limit>),
-    /// The session said nothing about its command line where its vendor's
+    /// The session said nothing about its command line where Claude Code's
     /// format puts it (a field gone from the start message, a list that
     /// never came), which an empty list is not: the format may have
     /// changed, and only imece's own commands complete. Once a session.
@@ -584,25 +550,19 @@ pub enum Event {
     /// The agent's own to-do list as its planning tool now holds it,
     /// whole, in the agent's order; an empty list is a cleared one.
     Plan(Vec<Step>),
-    /// How full the session's context window is, as the vendor last
+    /// How full the session's context window is, as Claude Code last
     /// said: the tokens in it, and its size when the vendor says.
     Context { used: u64, size: Option<u64> },
-    /// The session waits for the person's yes before it does `what`;
-    /// [`Agent::decide`] with `request` answers it.
-    Asks { request: String, what: Ask },
-    /// What the session asked with `request` waits no more: its vendor
-    /// settled it (the turn ended or was stopped).
-    Withdrawn { request: String },
-    /// Something the vendor said about the session that the person may
+    /// Something Claude Code said about the session that the person may
     /// want in the trace: what a turn cost in tokens, whose plan pays.
     Note(String),
-    /// The turn about to end failed on the vendor's side, of a kind
-    /// imece acts on (after the vendor's own retries gave up); the
+    /// The turn about to end failed on Claude Code's side, of a kind
+    /// imece acts on (after Claude Code's own retries gave up); the
     /// [`Event::TurnDone`] with `ok: false` follows at once. A failure of
     /// another kind (a refused request, a full context) comes without it.
     Failed(Fault),
     /// A turn ended. `cost` is the session's total so far, in millionths of
-    /// a dollar; `denied` counts tool calls the vendor refused.
+    /// a dollar; `denied` counts tool calls Claude Code refused.
     TurnDone {
         ok: bool,
         text: String,
@@ -614,7 +574,7 @@ pub enum Event {
     Stopped(String),
 }
 
-/// What a one-shot call ([`claude::once`], [`codex::once`]) said, and
+/// What a one-shot call ([`claude::once`]) said, and
 /// what it cost (millionths of a dollar).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Said {
@@ -623,9 +583,8 @@ pub struct Said {
 }
 
 /// Why a one-shot call said nothing, and what it cost when that is
-/// known: nothing when it could not start, the vendor's total when it
-/// ended its turn in an error (Codex's is always nothing: it runs on the
-/// person's ChatGPT plan), unknown when it stopped or ran out of time
+/// known: nothing when it could not start, Claude Code's total when it
+/// ended its turn in an error, unknown when it stopped or ran out of time
 /// before reporting one (the caller keeps what it reserved).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Unsaid {

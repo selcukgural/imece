@@ -1,5 +1,7 @@
 # Codex v0
 
+**Replaced by [record 109](109-claude-only.md): imece runs Claude Code only; this is history, and the code is on the branch `multi-vendor`.**
+
 Codex v0 (2026-10-29): `crates/imece-agent/src/codex.rs` drives Codex
 CLI (tested against 0.165.0) as one long-lived `codex app-server`
 (JSON-RPC over stdio) per agent; `imece_agent::Agent` is the trait both

@@ -68,8 +68,8 @@ pub struct Theme {
     /// shell: pink, as Claude Code's shell mode.
     pub shell: Color,
     pub research: Color,
-    /// Claude, Codex, Gemini, Qwen, local.
-    pub vendors: [Color; 5],
+    /// An agent's name.
+    pub agent: Color,
     /// A speaker's own colour in conversations, by agent id.
     pub speakers: [Color; 12],
 }
@@ -459,7 +459,7 @@ fn from_slots(name: String, ansi: [Color; 16]) -> Theme {
         plan: s(5),
         shell: s(13),
         research: s(12),
-        vendors: [s(3), s(2), s(12), s(5), s(8)],
+        agent: s(3),
         speakers: [
             s(4),
             s(3),
@@ -579,7 +579,7 @@ fn scheme(s: &Scheme, paint: Paint) -> Theme {
         plan: c(0xE),
         shell: c(0xE),
         research: c(0xD),
-        vendors: [c(9), c(0xB), c(0xD), c(0xE), c(4)],
+        agent: c(9),
         speakers: speakers.map(|s| paint.c(s)),
     }
 }
@@ -606,7 +606,7 @@ const MONO: Theme = Theme {
     plan: Color::Reset,
     shell: Color::Reset,
     research: Color::Reset,
-    vendors: [Color::Reset; 5],
+    agent: Color::Reset,
     speakers: [Color::Reset; 12],
 };
 
@@ -632,7 +632,7 @@ impl Theme {
             self.plan,
             self.research,
         ];
-        all.extend(self.vendors);
+        all.push(self.agent);
         all.extend(self.speakers);
         all
     }
@@ -769,7 +769,7 @@ selection-foreground = #ffffff
             (t.accent, t.bad, t.ok, t.warn),
             (Color::Blue, Color::Red, Color::Green, Color::Yellow)
         );
-        assert_eq!(t.vendors[0], Color::Yellow);
+        assert_eq!(t.agent, Color::Yellow);
         assert_eq!(
             t.speakers
                 .iter()
@@ -882,7 +882,7 @@ selection-foreground = #ffffff
                 t.fg, t.strong, t.accent, t.code, t.ok, t.warn, t.bad, t.stopped, t.info, t.plan,
                 t.research,
             ];
-            for c in text.iter().chain(&t.vendors).chain(&t.speakers) {
+            for c in text.iter().chain([&t.agent]).chain(&t.speakers) {
                 assert!(apart(*c) >= 40, "{}: {c:?} on {:?}", s.slug, b[0]);
             }
             for c in [t.dim, t.border] {

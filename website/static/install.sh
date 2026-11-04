@@ -301,17 +301,9 @@ main() {
 
     tab_icon
 
-    found=""
-    for agent in claude codex gemini; do
-        if has "$agent"; then
-            found="$found $agent"
-        fi
-    done
-    if [ -n "$found" ]; then
-        say "coding agents on PATH:$found"
-    else
-        say "imece drives Claude Code, Codex or Gemini CLI: install one and log in"
-        say "  (Claude Code: https://claude.com/claude-code)"
+    if ! has claude; then
+        say "imece drives Claude Code: install it and log in"
+        say "  (https://claude.com/claude-code)"
     fi
     say "start it in a git checkout: cd your-project && imece   (or imece --demo)"
 }

@@ -1,5 +1,7 @@
 # Message bus v0
 
+**Changed by [record 109](109-claude-only.md): Claude Code only; what is below about choosing a vendor is history.**
+
 Message bus v0 (2026-10-28): one tool, `send(to, type, body)`, served by
 imece itself over MCP: one Unix socket per agent in a fresh 0700 temp
 directory; the session starts `imece mcp-relay <socket>`, which only

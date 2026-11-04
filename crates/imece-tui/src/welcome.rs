@@ -4,15 +4,13 @@
 
 use imece_agent::Login;
 
-use crate::model::Vendor;
-
 /// This build's version, as Cargo.toml has it.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 /// Versions a "what's new" window shows, at most.
 pub const NEWS_SHOWN: usize = 3;
 
-/// What is known of one vendor's CLI.
+/// What is known of Claude Code here.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Seen {
     /// Asked; no answer yet.
@@ -24,23 +22,14 @@ pub enum Seen {
     Here { version: String, login: Login },
 }
 
-/// The answers of the vendors asked, one by one, as they come.
-pub type Answers = std::sync::mpsc::Receiver<(Vendor, Seen)>;
+/// The answer of Claude Code, when it comes.
+pub type Answers = std::sync::mpsc::Receiver<Seen>;
 
-/// How the vendors named are asked (`live::look` live, a fake in tests).
-pub type Look = fn(&[Vendor]) -> Answers;
+/// How Claude Code is asked (`live::look` live, a fake in tests).
+pub type Look = fn() -> Answers;
 
-/// The vendors the window lists, in this order.
-pub const LISTED: [Vendor; 3] = [Vendor::Claude, Vendor::Codex, Vendor::Gemini];
-
-/// What the person runs to sign vendor `v`'s CLI in.
-pub fn sign_in(v: Vendor) -> &'static str {
-    match v {
-        Vendor::Codex => "codex login",
-        Vendor::Gemini => "gemini",
-        _ => "claude auth login",
-    }
-}
+/// What the person runs to sign Claude Code in.
+pub const SIGN_IN: &str = "claude auth login";
 
 /// A version `MAJOR.MINOR.PATCH`, compared as numbers; anything else
 /// (a pre-release suffix too) is none.
@@ -153,12 +142,5 @@ mod tests {
             .map(|n| parse_version(n.0).unwrap())
             .collect();
         assert!(parsed.windows(2).all(|p| p[0] > p[1]), "newest first");
-    }
-
-    #[test]
-    fn every_vendor_listed_has_its_own_way_to_sign_in() {
-        assert_eq!(sign_in(Vendor::Claude), "claude auth login");
-        assert_eq!(sign_in(Vendor::Codex), "codex login");
-        assert_eq!(sign_in(Vendor::Gemini), "gemini");
     }
 }

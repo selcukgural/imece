@@ -14,25 +14,7 @@ cd your/checkout
 imece
 ```
 
-The directory must be a git checkout with a commit (`--repo DIR` names another); in a folder without git, only a solo starts (`imece --solo claude`, see [solo sessions](../concepts/solo.md#in-a-folder-without-git)). imece first says `looking for coding agents on PATH…` while it runs each vendor's `--version`.
-
-### Who leads
-
-With one vendor on PATH, it leads and the salon opens. With several, and no `--lead` flag and no primary chosen before, a question comes first:
-
-```text
-┌ WHO LEADS? ─────────────────────────────────────────────┐
-│ Several coding agents are on PATH. Which one leads?      │
-│                                                          │
-│ ▸ claude                                                 │
-│   codex                                                  │
-│   gemini                                                 │
-│                                                          │
-│  ↑↓ j k choose · enter this time · p always (primary) · esc quit │
-└──────────────────────────────────────────────────────────┘
-```
-
-`enter` picks for this run; `p` picks and makes that vendor your **primary**, so the next start does not ask. The primary can also be set while imece runs with `:lead claude` (`:lead ask` forgets it, and `--lead ask` on the command line asks anyway). A primary that is no longer on PATH is said on this screen (`claude is your primary, but not on PATH`), never replaced silently. There is no silent default: this is a decision of yours.
+The directory must be a git checkout with a commit (`--repo DIR` names another); in a folder without git, only a solo starts (`imece --solo claude`, see [solo sessions](../concepts/solo.md#in-a-folder-without-git)).
 
 ### The welcome window
 
@@ -51,8 +33,6 @@ On the first start ever (the store remembers no earlier run), a window opens bef
 │                                                                                  │
 │ Coding agents on this machine:                                                   │
 │   ✓ claude  2.1.316 (Claude Code) · signed in                                    │
-│   ✕ codex   codex-cli 0.165.0 · not signed in: run codex login                   │
-│   ? gemini  0.65.0 · its sign-in is checked when it first starts                 │
 │                                                                                  │
 │ Keys to start with:                                                              │
 │   /  i            write to the leader: say what you want built                   │
@@ -65,9 +45,9 @@ On the first start ever (the store remembers no earlier run), a window opens bef
 
 At the top is imece's mark, five hands round one job, beside its version, what it is and the project at hand with who heads it. Where it comes on the screen its dots come one a beat, the job last (under two seconds); any key shows it whole at once, and so do [`:motion off`](../reference/commands.md#motion-offcalmfull), another window and SSH. On a screen too narrow for it the words stand alone, and on one too short the window goes without them. The salon shows the same mark in its free rows while no project has a worker yet. The terminal's title carries the mark too, `⁙ imece`, while all is calm.
 
-Each vendor's line says its version and whether it is signed in, or how to sign in: `claude auth login`, `codex login`. imece asks the CLIs themselves (`claude auth status`, `codex login status`), on a thread of its own, without the network and without spending; a line says `checking…` until its answer comes, `not on PATH` when the program is not there. Gemini CLI has no such question: its sign-in is checked when its first session starts, and a missing one stops that session with the reason.
+The line says Claude Code's version and whether it is signed in, or how to sign in: `claude auth login`. imece asks it itself (`claude auth status`), on a thread of its own, without the network and without spending; it says `checking…` until its answer comes, `not on PATH` when the program is not there.
 
-On every later start imece asks only the leader's vendor, and opens the same window when it says it is not signed in (while you are writing, a line says `codex is not signed in: :welcome says how` instead). `:welcome` opens it any time and asks every vendor again. Any key closes it and does nothing else.
+On every later start imece asks again, and opens the same window when it says it is not signed in (while you are writing, a line says `claude is not signed in: :welcome says how` instead). `:welcome` opens it any time and asks again. Any key closes it and does nothing else.
 
 ### What's new
 
@@ -111,10 +91,10 @@ What opens is the salon: the guild on the left, WAITING FOR YOU and the JOURNAL 
  spent $0.00 of $50.00 · all idle                                    imece
  SALON ──────────────────────────  WAITING FOR YOU (0) ─────────────────
  ▾ imece                           Nothing needs you right now.
-   ◆ lead   claude   idle
+   ◆ lead   idle
                                    JOURNAL ───────────────────────────────
-                                   10:02 confine standard: workers get their
-                                         vendor's shell and web; isolation is
+                                   10:02 confine standard: workers get Claude
+                                         Code's shell and web; isolation is
                                          a container's job, not imece's
 
  / write to the lead · @name to an agent · tab panel · ? help · q quit
@@ -137,10 +117,10 @@ Plain text goes to the leader of the selected project. `@claude-1 text` would go
 
 ## What the leader does
 
-The leader reads the checkout (it has read tools, the web, and read-only commands; it cannot write: it works in your checkout, where a write would skip the review). It splits the request into cards, posts them, and **hires** a worker with its `hire` tool when a card needs hands. It picks a **tier**, not a model: `cheap` for small mechanical work, `standard` (the default) for ordinary fixes, `strong` for cross-cutting design; each vendor maps a tier to its own models (Claude: haiku, its default, opus; Codex: `@low`, its default, `@high`; Gemini: `flash`, `auto`, `pro`). It may hire from any vendor on PATH. Up to `--agents` workers (default 4).
+The leader reads the checkout (it has read tools, the web, and read-only commands; it cannot write: it works in your checkout, where a write would skip the review). It splits the request into cards, posts them, and **hires** a worker with its `hire` tool when a card needs hands. It picks a **tier**, not a model: `cheap` for small mechanical work, `standard` (the default) for ordinary fixes, `strong` for cross-cutting design; they stand for haiku, Claude Code's default and opus. Up to `--agents` workers (default 4).
 
 ```text
-   ◆ lead      claude   coordinating                                $0.08
+   ◆ lead      coordinating                                         $0.08
    ● claude-1  #1   accept a trailing comma   thinking…
 ```
 
@@ -154,9 +134,9 @@ A tier model your account does not have fails its first turn; imece then restart
    ● claude-1  #1   accept a trailing comma   editing src/csv.rs   $0.41  +18 −3
 ```
 
-From left to right: the glyph (`●` working, `○` idle, `◐` asking a teammate, `✕` blocked, `✓` done and not seen yet, `■` stopped, `◦` asleep), the name in its vendor's colour, its card, what it does now, what it has spent, and where its worktree stands: `+18 −3` are the lines its next `done` would hand you, `⎇ name` a branch it made, `↑N` its own commits, `↓N` your checkout's newer commits. A worker with an open permission ask shows `⚑ waits for your yes`, and the ask is an item in WAITING FOR YOU: `a` allows it, `r` refuses it (routine commands, the build, the tests, git's reading commands, run on their own).
+From left to right: the glyph (`●` working, `○` idle, `◐` asking a teammate, `✕` blocked, `✓` done and not seen yet, `■` stopped, `◦` asleep), the name, its card, what it does now, what it has spent, and where its worktree stands: `+18 −3` are the lines its next `done` would hand you, `⎇ name` a branch it made, `↑N` its own commits, `↓N` your checkout's newer commits. A worker with an open permission ask shows `⚑ waits for your yes`, and the ask is an item in WAITING FOR YOU: `a` allows it, `r` refuses it (routine commands, the build, the tests, git's reading commands, run on their own).
 
-`enter` on the row opens the worker's focus: its card's story (intent, assumptions, decisions, talk, evidence, changes). `enter` again (or `t`) opens the trace, the raw stream of the vendor's session. `esc` goes back.
+`enter` on the row opens the worker's focus: its card's story (intent, assumptions, decisions, talk, evidence, changes). `enter` again (or `t`) opens the trace, the raw stream of its session. `esc` goes back.
 
 ## The change (Δ)
 
@@ -221,7 +201,7 @@ A part with nothing to say is left out; the demo's line ends `the demo keeps not
 
 ## The next `imece`
 
-The next start in the same checkout shows the same screen, every agent asleep (`◦ asleep since the last run, write to it to wake it`): no process and no cost until you write to one, or a teammate's message or a new card wakes it. A woken Claude agent goes on in the session it had when Claude Code still has its transcript (`claude-1 goes on in the session it had, with all it knew`); otherwise, and for Codex and Gemini when their thread or session is gone, it starts a fresh one and is told where it left off: its card's story, a turn that was cut short, its worktree's changes, the board (`claude-1 starts a new session, told where it left off`). A worktree found clean at an older commit is moved to your HEAD; one with changes or commits of its own stays, and the journal says which.
+The next start in the same checkout shows the same screen, every agent asleep (`◦ asleep since the last run, write to it to wake it`): no process and no cost until you write to one, or a teammate's message or a new card wakes it. A woken agent goes on in the session it had when Claude Code still has its transcript (`claude-1 goes on in the session it had, with all it knew`); otherwise it starts a fresh one and is told where it left off: its card's story, a turn that was cut short, its worktree's changes, the board (`claude-1 starts a new session, told where it left off`). A worktree found clean at an older commit is moved to your HEAD; one with changes or commits of its own stays, and the journal says which.
 
 ## See also
 

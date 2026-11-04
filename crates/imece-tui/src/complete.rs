@@ -1,6 +1,6 @@
 //! Completion for the composer, the way a shell does it: what is being
 //! typed is matched against what imece knows (agent names after `@`,
-//! imece's own commands after `:`, a vendor's command line after `/`,
+//! imece's own commands after `:`, Claude Code's command line after `/`,
 //! cards after `#`),
 //! the matches are shown while typing, and `tab` (or the arrows) steps
 //! through them with the text following. Pure: the screen asks `suggest`
@@ -8,22 +8,22 @@
 
 use std::path::Path;
 
-use crate::model::{Agent, CardId, ProjectId, Sent, Vendor, World, date, day};
+use crate::model::{Agent, CLAUDE, CardId, ProjectId, Sent, World, date, day};
 use crate::ui::fold;
 
 /// The commands imece itself takes after `:`: its own, and a name for
 /// every key that acts (not the ones that move).
-pub const COMMANDS: [&str; 65] = [
+pub const COMMANDS: [&str; 64] = [
     "allow", "archive", "archives", "awake", "away", "board", "budget", "clear", "close", "code",
     "commit", "copy", "defer", "digest", "edit", "effort", "export", "faster", "fold", "forget",
-    "fork", "goto", "help", "hints", "history", "keys", "lang", "lead", "mark", "model", "motion",
-    "needs", "news", "next", "notify", "now", "open", "output", "pause", "peek", "pending", "pin",
-    "quit", "recall", "rename", "restore", "review", "salon", "settle", "slower", "solo", "story",
-    "talk", "theme", "tidy", "timeline", "trace", "unclear", "undo", "unfold", "unsettle",
-    "waiting", "welcome", "why", "yes",
+    "fork", "goto", "help", "hints", "history", "keys", "lang", "mark", "model", "motion", "needs",
+    "news", "next", "notify", "now", "open", "output", "pause", "peek", "pending", "pin", "quit",
+    "recall", "rename", "restore", "review", "salon", "settle", "slower", "solo", "story", "talk",
+    "theme", "tidy", "timeline", "trace", "unclear", "undo", "unfold", "unsettle", "waiting",
+    "welcome", "why", "yes",
 ];
 
-/// The word for a vendor's own model or effort after `:model`, `:effort`
+/// The word for Claude Code's own model or effort after `:model`, `:effort`
 /// and in a `:solo` choice.
 pub const DEFAULT: &str = "default";
 
@@ -52,9 +52,6 @@ pub fn long(word: &str) -> &str {
 
 /// What `:lang` takes.
 pub const LANGS: [&str; 2] = ["en", "tr"];
-
-/// What `:lead` takes.
-pub const LEADS: [&str; 4] = ["claude", "codex", "gemini", "ask"];
 
 /// The matches for the word being typed.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -350,35 +347,34 @@ pub fn card_named(input: &str, w: &World) -> Option<CardId> {
 }
 
 /// What `:solo` could complete the word `arg` with: a directory when it
-/// looks like a path (`/`, `~`, `.`), else the vendors `vendors` and, once
-/// a vendor and `@` are typed, that vendor's efforts (`efforts`).
+/// looks like a path (`/`, `~`, `.`), else `claude` and, once it and `@`
+/// are typed, the `efforts`.
 pub fn solo_words(
     start: usize,
     arg: &str,
     home: Option<&Path>,
-    vendors: &[Vendor],
-    efforts: &dyn Fn(Vendor) -> Vec<&'static str>,
+    efforts: &[&str],
     list: &dyn Fn(&Path) -> Vec<String>,
 ) -> Option<Menu> {
     if arg.contains('/') || arg.starts_with(['~', '.']) {
         return dirs(start, arg, home, list);
     }
     if let Some((head, after)) = arg.rsplit_once('@') {
-        let vendor = head.split(':').next().unwrap_or_default();
-        let v = vendors.iter().find(|v| v.label() == vendor)?;
-        let items: Vec<String> = efforts(*v)
-            .into_iter()
+        if head.split(':').next() != Some(CLAUDE) {
+            return None;
+        }
+        let items: Vec<String> = efforts
+            .iter()
             .filter(|e| e.starts_with(after))
             .map(|e| format!("{head}@{e}"))
             .collect();
         return menu(start, arg, items, " ");
     }
-    let names = vendors.iter().map(|v| v.label());
-    menu(start, arg, matching(arg, names), "")
+    menu(start, arg, matching(arg, std::iter::once(CLAUDE)), "")
 }
 
 /// What `:effort` or `:model` could complete `arg` with: `default`, then
-/// `items` (a vendor's efforts, or its model aliases).
+/// `items` (the efforts, or the model aliases).
 pub fn choice_words(start: usize, arg: &str, items: &[&str]) -> Option<Menu> {
     let all = std::iter::once(DEFAULT).chain(items.iter().copied());
     menu(start, arg, matching(arg, all), "")
@@ -420,10 +416,6 @@ pub fn suggest(input: &str, w: &World, project: ProjectId, home: Option<&Path>) 
             Some(("lang", arg)) => {
                 let start = input.len() - arg.len();
                 menu(start, arg, matching(arg, LANGS.into_iter()), "")
-            }
-            Some(("lead", arg)) => {
-                let start = input.len() - arg.len();
-                menu(start, arg, matching(arg, LEADS.into_iter()), "")
             }
             Some(("clear" | "unclear", arg)) => {
                 let start = input.len() - arg.len();
@@ -567,75 +559,32 @@ mod tests {
     use super::*;
 
     #[test]
-    fn solo_words_complete_vendors_then_efforts_and_paths_as_directories() {
-        let vendors = [Vendor::Claude, Vendor::Codex];
-        let efforts = |v: Vendor| -> Vec<&'static str> {
-            match v {
-                Vendor::Claude => vec!["low", "high"],
-                _ => vec![],
-            }
-        };
+    fn solo_words_complete_claude_then_efforts_and_paths_as_directories() {
+        let efforts = ["low", "high"];
         let list = |_: &std::path::Path| {
             vec!["src".to_string(), "docs".to_string(), ".hidden".to_string()]
         };
+        let solo = |arg| solo_words(6, arg, None, &efforts, &list);
         let items = |m: Option<Menu>| m.map(|m| m.items).unwrap_or_default();
-        assert_eq!(
-            items(solo_words(6, "", None, &vendors, &efforts, &list)),
-            ["claude", "codex"]
-        );
-        assert_eq!(
-            items(solo_words(6, "cl", None, &vendors, &efforts, &list)),
-            ["claude"]
-        );
-        assert_eq!(
-            items(solo_words(6, "claude@", None, &vendors, &efforts, &list)),
-            ["claude@low", "claude@high"]
-        );
-        assert_eq!(
-            items(solo_words(
-                6,
-                "claude:opus@h",
-                None,
-                &vendors,
-                &efforts,
-                &list
-            )),
-            ["claude:opus@high"]
-        );
-        assert!(
-            solo_words(6, "codex@", None, &vendors, &efforts, &list).is_none(),
-            "no efforts"
-        );
-        assert!(
-            solo_words(6, "gemini@", None, &vendors, &efforts, &list).is_none(),
-            "not here"
-        );
-        let m = solo_words(6, "./s", None, &vendors, &efforts, &list).unwrap();
+        assert_eq!(items(solo("")), ["claude"]);
+        assert_eq!(items(solo("cl")), ["claude"]);
+        assert!(solo("x").is_none());
+        assert_eq!(items(solo("claude@")), ["claude@low", "claude@high"]);
+        assert_eq!(items(solo("claude:opus@h")), ["claude:opus@high"]);
+        assert!(solo("other@").is_none(), "only claude has efforts");
+        let m = solo("./s").unwrap();
         assert_eq!((m.items, m.tail), (vec!["./src".to_string()], "/"));
-        assert_eq!(
-            items(solo_words(6, "~/", None, &vendors, &efforts, &list)).len(),
-            2,
-            "a path"
-        );
-        assert!(
-            solo_words(6, "claude", None, &vendors, &efforts, &list).is_none(),
-            "typed whole"
-        );
-        // A path by a `/` alone, or a `.` alone: directories, not vendors.
-        assert_eq!(
-            items(solo_words(6, "a/d", None, &vendors, &efforts, &list)),
-            ["a/docs"]
-        );
-        assert_eq!(
-            items(solo_words(6, ".", None, &vendors, &efforts, &list)),
-            [".hidden"]
-        );
-        let m = solo_words(6, "c", None, &vendors, &efforts, &list).unwrap();
+        assert_eq!(items(solo("~/")).len(), 2, "a path");
+        assert!(solo("claude").is_none(), "typed whole");
+        // A path by a `/` alone, or a `.` alone: directories.
+        assert_eq!(items(solo("a/d")), ["a/docs"]);
+        assert_eq!(items(solo(".")), [".hidden"]);
+        let m = solo("c").unwrap();
         assert_eq!((m.start, m.tail), (6, ""));
     }
 
     #[test]
-    fn choice_words_offer_default_then_the_vendor_s_own() {
+    fn choice_words_offer_default_then_claude_code_s_own() {
         let m = choice_words(8, "", &["low", "high"]).unwrap();
         assert_eq!(m.items, ["default", "low", "high"]);
         assert_eq!(m.start, 8);
@@ -861,7 +810,7 @@ mod tests {
     }
 
     #[test]
-    fn a_colon_offers_imeces_commands_and_lead_its_vendors() {
+    fn a_colon_offers_imeces_commands() {
         let w = world();
         let m = suggest(":", &w, 0, None).unwrap();
         assert_eq!(m.items, COMMANDS);
@@ -871,15 +820,7 @@ mod tests {
         assert_eq!(suggest(":budget", &w, 0, None), None);
         assert_eq!(suggest(":budget 8", &w, 0, None), None);
         assert_eq!(suggest(":x", &w, 0, None), None);
-        let m = suggest(":lead ", &w, 0, None).unwrap();
-        assert_eq!(m.items, LEADS);
-        assert_eq!((m.start, m.tail), (6, ""));
-        let m = suggest(":lead c", &w, 0, None).unwrap();
-        assert_eq!(m.items, ["claude", "codex"]);
-        assert_eq!(m.start, 6);
-        assert_eq!(suggest(":lead codex", &w, 0, None), None);
-        assert_eq!(suggest(":lead codex ", &w, 0, None), None);
-        assert_eq!(suggest(":lead codex x", &w, 0, None), None);
+        assert_eq!(suggest(":lead ", &w, 0, None), None, "no such command");
         assert_eq!(suggest(":b 80", &w, 0, None), None);
         let m = suggest(":theme ", &w, 0, None).unwrap();
         assert_eq!(m.items, crate::theme::builtins().collect::<Vec<_>>());
@@ -912,7 +853,7 @@ mod tests {
     fn the_jump_menu_numbers_the_list_as_it_stands_and_filters_by_number_need_or_name() {
         let list = [
             jump("claude-1", true),
-            jump("codex-1", false),
+            jump("claude-2", false),
             jump("işler", true),
         ];
         let items = |m: Option<Menu>| m.map(|m| (m.items, m.notes));
@@ -920,30 +861,34 @@ mod tests {
         assert_eq!(
             items(jumps("", &list)),
             Some((
-                vec!["&1 claude-1".into(), "&2 codex-1".into(), "&3 işler".into()],
+                vec![
+                    "&1 claude-1".into(),
+                    "&2 claude-2".into(),
+                    "&3 işler".into()
+                ],
                 vec![
                     "note claude-1".into(),
-                    "note codex-1".into(),
+                    "note claude-2".into(),
                     "note işler".into()
                 ]
             ))
         );
         // Digits: the start of a number; the numbers hold.
-        assert_eq!(items(jumps("2", &list)).unwrap().0, ["&2 codex-1"]);
+        assert_eq!(items(jumps("2", &list)).unwrap().0, ["&2 claude-2"]);
         // `!`: only what needs the person, still by their numbers.
         assert_eq!(
             items(jumps("!", &list)).unwrap().0,
             ["&1 claude-1", "&3 işler"]
         );
         assert_eq!(items(jumps("!3", &list)).unwrap().0, ["&3 işler"]);
-        assert_eq!(items(jumps("!cod", &list)), None);
+        assert_eq!(items(jumps("!claude-2", &list)), None);
         // A name: inside, case and Turkish letters folded, every word.
-        assert_eq!(items(jumps("ODEX", &list)).unwrap().0, ["&2 codex-1"]);
+        assert_eq!(items(jumps("AUDE-2", &list)).unwrap().0, ["&2 claude-2"]);
         assert_eq!(items(jumps("isler", &list)).unwrap().0, ["&3 işler"]);
         assert_eq!(items(jumps("İŞ", &list)).unwrap().0, ["&3 işler"]);
         assert_eq!(
-            items(jumps("-1", &list)).unwrap().0,
-            ["&1 claude-1", "&2 codex-1"]
+            items(jumps("claude", &list)).unwrap().0,
+            ["&1 claude-1", "&2 claude-2"]
         );
         assert_eq!(items(jumps("cla 1", &list)).unwrap().0, ["&1 claude-1"]);
         assert_eq!(items(jumps("cla x", &list)), None);
@@ -952,10 +897,10 @@ mod tests {
 
     #[test]
     fn the_jump_line_names_its_target_by_number_or_by_the_words_typed() {
-        let list = [jump("claude-1", true), jump("codex-1", false)];
+        let list = [jump("claude-1", true), jump("claude-2", false)];
         let named = |input: &str| jump_named(input, &list);
-        assert_eq!(named("&2"), Some("codex-1".into()));
-        assert_eq!(named("&2 codex-1"), Some("codex-1".into()));
+        assert_eq!(named("&2"), Some("claude-2".into()));
+        assert_eq!(named("&2 claude-2"), Some("claude-2".into()));
         assert_eq!(named("&!1"), Some("claude-1".into()));
         assert_eq!(named("&3"), None, "no third");
         assert_eq!(named("&0"), None);
@@ -964,7 +909,7 @@ mod tests {
             Some("CLAUDE-1".into()),
             "as typed: the screen folds it"
         );
-        assert_eq!(named("& codex-1 "), Some("codex-1".into()));
+        assert_eq!(named("& claude-2 "), Some("claude-2".into()));
         assert_eq!(
             named("&12x"),
             Some("12x".into()),
@@ -988,7 +933,7 @@ mod tests {
             sent(1, "@claude-1 fix the clock"),
             sent(2, ":budget 80"),
             sent(3, "@claude-1 fix the clock"),
-            sent(4, "@codex-1 İşler nasıl?\nthe second line"),
+            sent(4, "@claude-2 İşler nasıl?\nthe second line"),
         ];
         // Newest first; the repeated line once, at its newest.
         assert_eq!(history_picks("", &lines), [3, 2, 1]);
@@ -1004,7 +949,7 @@ mod tests {
         assert_eq!(
             m.items,
             [
-                "@codex-1 İşler nasıl? ⏎ the second line",
+                "@claude-2 İşler nasıl? ⏎ the second line",
                 "@claude-1 fix the clock",
                 ":budget 80"
             ]
@@ -1129,7 +1074,7 @@ mod tests {
 
     #[test]
     fn inserting_replaces_the_word_and_stepping_goes_around() {
-        let mut m = Menu::new(1, vec!["claude-1".into(), "codex-1".into()], " ").unwrap();
+        let mut m = Menu::new(1, vec!["claude-1".into(), "claude-2".into()], " ").unwrap();
         let mut input = String::from("@c");
         m.insert(&mut input);
         assert_eq!(input, "@claude-1 ");
@@ -1137,17 +1082,17 @@ mod tests {
         m.step(true);
         assert_eq!(m.chosen, 1);
         m.insert(&mut input);
-        assert_eq!(input, "@codex-1 ");
+        assert_eq!(input, "@claude-2 ");
         m.step(true);
         assert_eq!(m.chosen, 0, "around the end");
         m.step(false);
         assert_eq!(m.chosen, 1, "around the start");
         m.step(false);
         assert_eq!(m.chosen, 0);
-        let mut m = Menu::new(6, vec!["ask".into()], "").unwrap();
-        let mut input = String::from(":lead a");
+        let mut m = Menu::new(6, vec!["en".into()], "").unwrap();
+        let mut input = String::from(":lang e");
         m.insert(&mut input);
-        assert_eq!(input, ":lead ask");
+        assert_eq!(input, ":lang en");
         assert_eq!(Menu::new(0, vec![], " "), None);
     }
 

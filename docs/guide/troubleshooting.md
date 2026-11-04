@@ -25,19 +25,15 @@ imece fails closed: when a file, a session or a change is not what it expects, i
 
 **What to do.** Either build the imece that wrote it (the schema number says it is newer), or move the file and its `-wal` and `-shm` siblings aside to start afresh. Nothing is deleted on its own.
 
-### `no coding agent on PATH (looked for claude, codex, gemini); install Claude Code … and log in`
+### Claude Code is not on PATH
 
-**Why.** imece drives the vendors' own CLIs and found none. Install one and make sure its program is on the PATH of the shell you start imece from.
+**Why.** imece drives Claude Code and did not find it. Install it (https://claude.com/claude-code), log in, and make sure `claude` is on the PATH of the shell you start imece from.
 
-### `codex is not signed in: :welcome says how`
+### `claude is not signed in: :welcome says how`
 
-**Why.** At the start imece asked the leader's vendor whether it is signed in (`codex login status`, `claude auth status`), and it said no; you were writing, so the welcome window did not open over the line.
+**Why.** At the start imece asked Claude Code whether it is signed in (`claude auth status`), and it said no; you were writing, so the welcome window did not open over the line.
 
-**What to do.** `:welcome` shows the command that signs it in (`codex login`, `claude auth login`); run it in a shell (`!codex login` runs it from imece), then write to the leader again.
-
-### `codex is not on PATH (found claude); install it, or pick the leader with --lead`
-
-**Why.** `--lead` (or your primary from an earlier `p`) names a vendor that is not there. A primary that is missing is also said on the WHO LEADS? screen (`codex is your primary, but not on PATH`), never replaced silently. `:lead ask` forgets a primary.
+**What to do.** `:welcome` shows the command that signs it in (`claude auth login`); run it in a shell (`!claude auth login` runs it from imece), then write to the leader again.
 
 ### `--projects is for --demo` / `--agents: a leader hires at most 16`
 
@@ -51,29 +47,13 @@ imece fails closed: when a file, a session or a change is not what it expects, i
 
 ## Sessions
 
-### `codex-1 could not start: is logged in with apikey, whose cost imece can not count yet; log in with ChatGPT (codex login)`
-
-**Why.** Codex reports tokens, not dollars. On a ChatGPT plan a turn costs the pot nothing and imece says so; with an API key it would have to price the tokens, which it cannot yet, so it refuses rather than book zero for a paid call. `is not logged in; run codex login` is the same check with no account.
-
-**What to do.** `codex login` with a ChatGPT account.
-
-### `gemini-1 stopped: ran on gemini-x, whose price imece does not know; name a model it knows with --model or --tier`
-
-**Why.** With an API key, Gemini turns are booked from a list-price table imece carries; a model not in it cannot be booked, so the session stops instead of spending unseen. With a Google login the turn costs the pot nothing and this does not happen.
-
-**What to do.** `--model gemini:NAME` or `--tier gemini:strong=NAME` with a model the table knows (the `pro`, `flash` and `auto` aliases are known); or log in with Google.
-
 ### `claude-1 stopped: tools differ: extra ["WebFetch"], missing []`
 
-**What you see.** The row shows `■ stopped, write to it to start again`; the journal has `claude-1 stopped: tools differ …`, or for Codex and Gemini a line naming what did not match (an MCP server that is not imece's, a hook, a plugin, a sandbox, a mode, a model, an extension).
+**What you see.** The row shows `■ stopped, write to it to start again`; the journal has `claude-1 stopped: tools differ …`.
 
-**Why.** imece asks each vendor for exactly the tools of the role and the confine level, then checks what the session reports it runs with (Claude on every turn, Codex before the thread and its MCP servers before every turn, Gemini before the first turn). Anything else stops the session: a vendor update that adds a tool, a setting that pulls in a server, must be looked at, not worked around.
+**Why.** imece asks Claude Code for exactly the tools of the role and the confine level, then checks what the session reports it runs with on every turn. Anything else stops the session: a Claude Code update that adds a tool, a setting that pulls in a server, must be looked at, not worked around.
 
-**What to do.** Read the trace (`t`) for the whole report. If your own vendor setup is what you want loaded, `--confine open` runs the vendor as you have it (the leader still never writes and the sub-agent tool stays off). Writing to the agent starts it again with the same checks. A session that stopped this way is still the one remembered; `:forget @claude-1` makes the next start a fresh one.
-
-### `codex-1 stopped: refused …` with a Codex approval, elicitation or dynamic tool
-
-**Why.** A Codex request imece has no answer for (an approval from a session that may not ask, such as a leader or anything under `--confine strict`; the old protocol's approvals; an elicitation; a dynamic tool call) stops the session rather than being answered blindly. Under `standard` and `open` a worker's approval requests come to WAITING FOR YOU (`⚑`) instead.
+**What to do.** Read the trace (`t`) for the whole report. If your own Claude Code setup is what you want loaded, `--confine open` runs it as you have it (the leader still never writes and the sub-agent tool stays off). Writing to the agent starts it again with the same checks. A session that stopped this way is still the one remembered; `:forget @claude-1` makes the next start a fresh one.
 
 ### `claude-1: model opus is not available here, using the default`
 
@@ -83,11 +63,7 @@ imece fails closed: when a file, a session or a change is not what it expects, i
 
 ### A session that seems stuck, or a wake that goes wrong
 
-**What to do.** `:forget @NAME` (`:f`): the running session ends (its run killed, unfinished prompts kept as interrupted and told at the wake, not run again), what the vendor kept of it is removed (Claude's transcript, Codex's thread, Gemini's chat files), and the agent sleeps until spoken to; its next message starts a new session with the full briefing (`Restarted`). The `:` menu marks it `$`: the briefing is paid again. `--fresh` does it for every remembered agent at start. Refused for an agent with nothing to forget or one that is gone (`claude-1 keeps its session: …`).
-
-### `lead stopped: …` right after `/clear`
-
-**Why.** `/clear` on a vendor without a command line of its own (Codex) ends the session; the next message starts a fresh one. Codex's app server knows only `/compact`, and a second `/compact` with no turn between is refused as a failed turn, the session going on.
+**What to do.** `:forget @NAME` (`:f`): the running session ends (its run killed, unfinished prompts kept as interrupted and told at the wake, not run again), its transcript is removed, and the agent sleeps until spoken to; its next message starts a new session with the full briefing (`Restarted`). The `:` menu marks it `$`: the briefing is paid again. `--fresh` does it for every remembered agent at start. Refused for an agent with nothing to forget or one that is gone (`claude-1 keeps its session: …`).
 
 ## Changes
 
@@ -105,7 +81,7 @@ imece fails closed: when a file, a session or a change is not what it expects, i
 
 ### `no run on this tree` on every change
 
-**Why.** Only imece's own `run` tool counts as evidence, tied to the exact tree; a vendor's own shell does not show (imece does not see which tree it ran on). Workers are told to check with `run` after their last edit. A run that changed the tree (a formatter) counts for none.
+**Why.** Only imece's own `run` tool counts as evidence, tied to the exact tree; Claude Code's own shell does not show (imece does not see which tree it ran on). Workers are told to check with `run` after their last edit. A run that changed the tree (a formatter) counts for none.
 
 ### A `done` that brings no change: the patch is over 4 MiB
 
@@ -185,7 +161,7 @@ imece fails closed: when a file, a session or a change is not what it expects, i
 
 - [Install](getting-started/install.md)
 - [Sessions](concepts/sessions.md)
-- [Vendors](concepts/vendors.md)
+- [Claude Code](concepts/claude-code.md)
 - [Changes](concepts/changes.md)
 - [Budget and limits](concepts/budget-and-limits.md)
 - [Themes and language](screen/themes-and-language.md)

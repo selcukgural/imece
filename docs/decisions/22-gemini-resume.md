@@ -1,5 +1,7 @@
 # Gemini resume
 
+**Replaced by [record 109](109-claude-only.md): imece runs Claude Code only; this is history, and the code is on the branch `multi-vendor`.**
+
 Gemini resume (2026-10-30, persistence PR 4): Gemini CLI records every
 ACP session's chat under `~/.gemini/tmp/<project short id>/chats/
 session-<time>-<id8>.jsonl` (the short id comes from a registry,

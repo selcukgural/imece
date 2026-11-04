@@ -202,7 +202,7 @@ pub(crate) fn draw(f: &mut Frame, area: Rect, app: &App) {
             Span::styled(format!("{g} "), fg(color)),
             Span::styled(
                 fit(&format!("{indent}{}", clean(&a.name)), NAME - 3),
-                fg(vendor_color(a.vendor)),
+                fg(pal().agent),
             ),
             Span::raw(" "),
         ];

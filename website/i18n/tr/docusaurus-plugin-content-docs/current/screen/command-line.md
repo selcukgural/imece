@@ -1,6 +1,6 @@
 ---
 title: "Komut satırı"
-description: "Yazdığınız alt satır - lidere ya da tek bir agent'a, satıcı komutları, imece'nin : komutları ve menüsü, tamamlama, readline tuşları, çok satırlı yazma, kendi kabuğunuz ve editörünüz."
+description: "Yazdığınız alt satır - lidere ya da tek bir agent'a, Claude Code komutları, imece'nin : komutları ve menüsü, tamamlama, readline tuşları, çok satırlı yazma, kendi kabuğunuz ve editörünüz."
 ---
 
 # Komut satırı
@@ -22,7 +22,7 @@ Alt satır yazdığınız yerdir. `/` (ya da vim'deki gibi `i`) onu seçili proj
 | --- | --- |
 | düz metin | seçili projenin liderine; isteği kartlara böler |
 | `@name text` | tek bir agent'a (Türkçe yardımda `@ad mesaj`). Boşta bir işçiye mesaj onun için bir kart açar; yanıtı kartı kapatır. Bir odakta, izde ya da değişiklikte `@` agent'ın adını doldurur |
-| `/cmd`, `@name /cmd` | agent'ın kendi komut satırı, mesaj değil (Türkçe yardımda `/kmt`): `/clear`, `/compact`, `/cost`, `/context`, satıcının CLI'si ne biliyorsa. Bir tur olarak çalışır ve yanıtı bir cevap gibi döner. Codex'in app server'ında komut satırı yok, orada yalnız `/compact` çalışır; kendi `/clear`'ı olmayan bir satıcıda `/clear` oturumu bitirir, sonraki mesaj yenisini başlatır |
+| `/cmd`, `@name /cmd` | agent'ın kendi komut satırı, mesaj değil (Türkçe yardımda `/kmt`): `/clear`, `/compact`, `/cost`, `/context`, Claude Code ne biliyorsa. Bir tur olarak çalışır ve yanıtı bir cevap gibi döner |
 | `:komut` | imece'nin kendisine; aşağıda |
 | `!cmd` | kendi kabuğunuza (Türkçe yardımda `!kmt`) |
 | `#N`, `#word` | bir kartın ekranı; bkz. [kartlar](cards.md) |
@@ -38,7 +38,6 @@ Bir mesaj birkaç satıra yayılabilir; kart açan bir mesajın ilk satırı kar
 | Komut | Tuş | Ne yapar |
 | --- | --- | --- |
 | `:budget USD` (`:b`) | | agent'lar çalışırken bütçeyi artır ya da azalt; süren bir tur eski sınırında biter |
-| `:lead VENDOR` | | sonraki açılıştan itibaren kim lider: `claude`, `codex`, `gemini`, ya da o zaman sorulması için `ask` |
 | `:open PATH [NAME]` (`:o`) | | PATH'teki çalışma kopyasını kendi lideriyle bir proje olarak aç (Türkçe yardımda `:open YOL`) |
 | `:close NAME` (`:c`) | | bir projeyi kapat: agent'ları ayrılır, worktree'leri diskte kalır (`:close AD`) |
 | `:rename NAME` | | eldeki projeyi adlandır; lideri `lead-NAME` olur (`:rename AD`) |
@@ -71,7 +70,7 @@ Bir salon panelinde çalışan komutlar (`:waiting`, `:needs`, `:fold`, `:unfold
 
 ### Menü ve değerler
 
-Menü her komutun değerini ardında, ayraç içinde gösterir; çizilir, asla eklenmez: `budget ($3.10 / $20.00 harcandı)`, `lead (claude)` ya da `(ask)`, `theme (dark)`, `lang (Türkçe)`, `close` ve `rename` eldeki projeyle, `forget` `talk` `trace` eldeki agent'la, `next` ve `waiting` kaç öge beklediğiyle, `needs` ve `pause` açık ya da kapalı, `faster` `slower` hızla, `pin` projeyle (sabitse `▴` ile), `export` ne yazacağıyla (`konuşma`, `#12`). `$` sonraki faturayı büyüteni işaretler: `:open` (yeni bir lider oturumu), `:forget` (sonraki mesaj, bütün brifingi yeniden ödeyen yeni bir oturum başlatır) ve `:commit` (mesajı bir modele sorar). Başka hiçbir `:` komutu kendi başına ücretli bir tur başlatmaz.
+Menü her komutun değerini ardında, ayraç içinde gösterir; çizilir, asla eklenmez: `budget ($3.10 / $20.00 harcandı)`, `theme (dark)`, `lang (Türkçe)`, `close` ve `rename` eldeki projeyle, `forget` `talk` `trace` eldeki agent'la, `next` ve `waiting` kaç öge beklediğiyle, `needs` ve `pause` açık ya da kapalı, `faster` `slower` hızla, `pin` projeyle (sabitse `▴` ile), `export` ne yazacağıyla (`konuşma`, `#12`). `$` sonraki faturayı büyüteni işaretler: `:open` (yeni bir lider oturumu), `:forget` (sonraki mesaj, bütün brifingi yeniden ödeyen yeni bir oturum başlatır) ve `:commit` (mesajı bir modele sorar). Başka hiçbir `:` komutu kendi başına ücretli bir tur başlatmaz.
 
 ### Kısa adlar
 
@@ -83,7 +82,7 @@ Menü her komutun değerini ardında, ayraç içinde gösterir; çizilir, asla e
 
 ## Tamamlama
 
-Yazmak bir kabuktaki gibi tamamlanır: `@` ardından agent adları (eldeki proje önce, gidenler dışarıda, önek eşleşmesi, büyük küçük harf ayırmadan), `:` ardından imece'nin komutları ve `:lead` ardından satıcılar, `/` ya da `@name /` ardından o agent'ın oturumunun bildirdiği kendi komut satırı (asla sabit bir liste değil, böylece satıcının yeni komutu sürüm gerektirmez; oturum söyleyene dek boş, ve bir oturum hiç komut listelemediğinde günlük yalnız `/clear`'ın tamamlanacağını söyler), `#` ardından kartlar, `:open` ve `:export` ardından dizinler; `:pin` ve `:close` açık projelerin adlarını tamamlar. Eşleşmeler yazarken alt satırın üstünde tek satırda görünür; sözcüğe eşit tek eşleşme menü değildir.
+Yazmak bir kabuktaki gibi tamamlanır: `@` ardından agent adları (eldeki proje önce, gidenler dışarıda, önek eşleşmesi, büyük küçük harf ayırmadan), `:` ardından imece'nin komutları, `/` ya da `@name /` ardından o agent'ın oturumunun bildirdiği kendi komut satırı (asla sabit bir liste değil, böylece Claude Code'un yeni bir komutu sürüm gerektirmez; oturum söyleyene dek boş, ve bir oturum hiç komut listelemediğinde günlük yalnız `/clear`'ın tamamlanacağını söyler), `#` ardından kartlar, `:open` ve `:export` ardından dizinler; `:pin` ve `:close` açık projelerin adlarını tamamlar. Eşleşmeler yazarken alt satırın üstünde tek satırda görünür; sözcüğe eşit tek eşleşme menü değildir.
 
 | Tuş | Ne yapar |
 | --- | --- |

@@ -13,7 +13,7 @@ pub fn apply(w: &mut World, id: AgentId, e: AgentEvent, before: u64) {
             w.agents[id].trace(t, format!("session {session} · {model}"));
         }
         AgentEvent::Commands(mut commands) => {
-            // imece's own /clear ends a session whose vendor has none.
+            // imece's own /clear ends a session whose CLI has none.
             if !commands.iter().any(|c| c == "/clear") {
                 commands.push("/clear".into());
             }
@@ -26,12 +26,10 @@ pub fn apply(w: &mut World, id: AgentId, e: AgentEvent, before: u64) {
             a.trace(t, format!("text {text:?}"));
         }
         AgentEvent::Note(text) => w.agents[id].trace(t, format!("note {text}")),
-        // The account's windows, not the agent's: kept by vendor.
+        // The account's windows, not the agent's.
         AgentEvent::Limits(limits) => {
-            let vendor = w.agents[id].vendor;
             for l in limits {
                 w.limit(Limit {
-                    vendor,
                     minutes: l.minutes,
                     used: l.used,
                     resets_at: l.resets_at,
@@ -41,14 +39,14 @@ pub fn apply(w: &mut World, id: AgentId, e: AgentEvent, before: u64) {
         AgentEvent::CommandsMissing => {
             w.agents[id].trace(
                 t,
-                "commands not listed: the vendor's format may have changed",
+                "commands not listed: Claude Code's format may have changed",
             );
             w.note(Event::CommandsMissing { agent: id });
         }
         AgentEvent::Tool { name, target } => {
             let mcp = imece_agent::mcp_tool("");
             let name = name.strip_prefix(&mcp).map_or(name.clone(), str::to_string);
-            let changes = matches!(name.as_str(), "Edit" | "Write" | codex::PATCH);
+            let changes = matches!(name.as_str(), "Edit" | "Write");
             let a = &mut w.agents[id];
             a.trace(t, format!("tool_use {name} {target}"));
             a.activity = Some(format!("{name} {target}").trim_end().to_string());
@@ -98,8 +96,6 @@ pub fn apply(w: &mut World, id: AgentId, e: AgentEvent, before: u64) {
                 a.trace(t, format!("context {}", words::fill_words(&fill)));
             }
         }
-        // `Live::step` takes these to the person before anything is applied.
-        AgentEvent::Asks { .. } | AgentEvent::Withdrawn { .. } => {}
         // What the turn's end does with its failure.
         AgentEvent::Failed(f) => {
             w.agents[id].fault = Some(match f {
@@ -159,11 +155,11 @@ pub fn apply(w: &mut World, id: AgentId, e: AgentEvent, before: u64) {
     }
 }
 
-/// How much of a vendor's words on a session it would not resume the
+/// How much of Claude Code's words on a session it would not resume the
 /// journal keeps.
 const REFUSAL_KEPT: usize = 160;
 
-/// A vendor's words on a session it would not resume, as the journal
+/// A Claude Code's words on a session it would not resume, as the journal
 /// keeps them: the first line, at most [`REFUSAL_KEPT`] characters
 /// (cleaned when drawn, as all an agent's text is).
 fn refusal(why: &str) -> String {
@@ -176,9 +172,7 @@ impl Live {
     pub(super) fn end(&mut self, w: &mut World, id: AgentId) {
         // What it asked waits for nobody now.
         for p in self.pending[id].drain(..) {
-            if let Reply::Socket { to, .. } = p.reply {
-                let _ = to.send(Err("the session ended".into()));
-            }
+            let _ = p.reply.to.send(Err("the session ended".into()));
         }
         w.close_approvals(id);
         // A yes for its turn ends with the session.
@@ -211,7 +205,7 @@ impl Live {
 
     /// The directory agent `id`'s session runs in: the checkout for a
     /// leader and for everyone of a folder without git, its (or its
-    /// worker's) worktree for the rest, as the vendor sees it (a worktree
+    /// worker's) worktree for the rest, as Claude Code sees it (a worktree
     /// is canonical once it exists).
     pub(super) fn cwd_of(&self, w: &World, id: AgentId) -> PathBuf {
         let a = &w.agents[id];
@@ -237,8 +231,8 @@ impl Live {
 
     /// Agent `id`'s scratch directory (record 105): its own, outside the
     /// files it changes, for notes, logs and downloads that are no part
-    /// of its change; `<worktrees>-scratch/<name>` beside Gemini's private
-    /// ones; a solo's by its project's id, as its worktree, since an
+    /// of its change; `<worktrees>-scratch/<name>`; a solo's by its project's
+    /// id, as its worktree, since an
     /// archived solo and the fresh one after it share a name. None for a
     /// leader, which writes nothing.
     pub fn scratch_of(&self, w: &World, id: AgentId) -> Option<PathBuf> {
@@ -340,7 +334,7 @@ impl Live {
             s.terminate();
         }
         self.end(w, id);
-        self.forget(w, id, true, true);
+        self.forget(w, id, true);
         self.drop_scratch(w, id);
         self.leaving[id] = false;
         self.lost[id] = false;
@@ -449,9 +443,9 @@ impl Live {
         Ok(())
     }
 
-    /// Gives agent `id` one line of its vendor's own command line (`/clear`,
+    /// Gives agent `id` one line of Claude Code's own command line (`/clear`,
     /// `/compact`, `/cost` ...), typed by the person. It runs as a turn and
-    /// its answer reaches the person. A vendor without `/clear` of its own
+    /// its answer reaches the person. A session without `/clear` of its own
     /// gets imece's: the session ends, and the next message starts a new
     /// one.
     pub fn command(&mut self, w: &mut World, id: AgentId, line: &str) -> Result<(), Refusal> {
@@ -478,7 +472,7 @@ impl Live {
             Err(e) if e.kind() == io::ErrorKind::Unsupported && line == "/clear" => {
                 s.terminate();
                 self.end(w, id);
-                self.forget(w, id, false, true);
+                self.forget(w, id, true);
                 w.agents[id].trace(
                     w.tick,
                     "session ended on /clear; the next message starts a new one",
@@ -648,7 +642,7 @@ impl Live {
     }
 
     /// Helper `id`'s session stopped, or its last turn failed for good,
-    /// before it sent done (`why`, the vendor's or imece's words): its
+    /// before it sent done (`why`, Claude Code's or imece's words): its
     /// worker is told, at its next turn, that the part is not done, and
     /// an idle worker is woken for it (`lost`), so it does not wait on a
     /// helper that will not answer. Anyone else's end tells nobody.
@@ -700,31 +694,25 @@ impl Live {
         let leader = a.role == Role::Leader;
         let direct = leader || !self.places[a.project].git;
         let confine = self.confine;
-        let vendor = self.of(a.vendor);
         let mcp = self.bus.as_ref().map(|b| Mcp {
             command: b.relay.clone(),
             args: vec![
                 "mcp-relay".into(),
                 b.servers[id].path().to_string_lossy().into_owned(),
             ],
-            tools: tools_of(
-                a.role,
-                &self.vendor_names(),
-                &self.run_programs,
-                self.run_timeout,
-            )
-            .into_iter()
-            .map(|t| t.name)
-            .collect(),
+            tools: tools_of(a.role, &self.run_programs, self.run_timeout)
+                .into_iter()
+                .map(|t| t.name)
+                .collect(),
         });
         let place = &self.places[a.project];
         let mut system = system_prompt(w, id, self.max_workers, self.max_helpers, confine);
         let personal = (self.instructions.as_deref()).and_then(personal_notes);
-        let notes = repo_notes(&place.repo, a.vendor);
+        let notes = repo_notes(&place.repo);
         for n in personal.iter().chain(&notes) {
             system.push_str(&n.text);
         }
-        let (program, model) = (vendor.program.clone(), self.models[id].clone());
+        let (program, model) = (self.claude.program.clone(), self.models[id].clone());
         let name = format!("imece {}", a.name);
         let resume = self.resume_of(id);
         let fork = self.resuming[id].as_ref().and_then(|r| r.fork.clone());
@@ -732,7 +720,6 @@ impl Live {
         let carry = self.forks[id].map(|from| (w.agents[from].name.clone(), self.cwd_of(w, from)));
         // In millionths of a dollar: what is left of the budget.
         let budget = w.budget.saturating_sub(w.spent()) * 100;
-        let kind = a.vendor;
         let generation = self.generation[id];
         // A helper changes the same files as its worker: its worktree.
         let tree = Self::tree_of(w, id);
@@ -740,7 +727,6 @@ impl Live {
         let start = w.agents[a.parent.unwrap_or(id)].start.clone();
         let (repo, root) = (place.repo.clone(), place.root.clone());
         let copies = w.projects[a.project].copies.clone();
-        let home = self.gemini_home(w, a.project, a.role, &tree);
         let scratch = self.scratch_of(w, id);
         let plan = if direct {
             setup::Plan::None
@@ -799,74 +785,33 @@ impl Live {
                 let on = move |e| {
                     let _ = tx.send((id, generation, e));
                 };
-                let session: Box<dyn Session> = match kind {
-                    Vendor::Gemini => Box::new(
-                        gemini::Session::start(
-                            &gemini::Spec {
-                                scratch: scratch.clone(),
-                                program: program.clone(),
-                                cwd: cwd.clone(),
-                                home,
-                                model,
-                                write: !leader,
-                                confine,
-                                system,
-                                mcp,
-                                resume: resume.map(|r| r.session),
-                            },
-                            on,
-                        )
-                        .map_err(|e| format!("{program}: {e}"))?,
-                    ),
-                    Vendor::Codex => Box::new(
-                        codex::Session::start(
-                            &codex::Spec {
-                                scratch: scratch.clone(),
-                                program: program.clone(),
-                                cwd: cwd.clone(),
-                                choice: model,
-                                write: !leader,
-                                confine,
-                                system,
-                                mcp,
-                                resume: resume.map(|r| r.session),
-                                fork: fork.is_some(),
-                                ephemeral: false,
-                            },
-                            on,
-                        )
-                        .map_err(|e| format!("{program}: {e}"))?,
-                    ),
-                    _ => {
-                        let Choice { model, effort } =
-                            model.as_deref().map(Choice::parse).unwrap_or_default();
-                        Box::new(
-                            claude::Session::start(
-                                &claude::Spec {
-                                    scratch: scratch.clone(),
-                                    program: program.clone(),
-                                    cwd: cwd.clone(),
-                                    name,
-                                    tools: claude::tools(!leader, confine),
-                                    confine,
-                                    write: !leader,
-                                    model,
-                                    effort,
-                                    budget,
-                                    system,
-                                    mcp,
-                                    resume: resume.map(|r| claude::Resume {
-                                        session: r.session,
-                                        spent: r.spent,
-                                        fork,
-                                    }),
-                                },
-                                on,
-                            )
-                            .map_err(|e| format!("{program}: {e}"))?,
-                        )
-                    }
-                };
+                let Choice { model, effort } =
+                    model.as_deref().map(Choice::parse).unwrap_or_default();
+                let session: Box<dyn Session> = Box::new(
+                    claude::Session::start(
+                        &claude::Spec {
+                            scratch: scratch.clone(),
+                            program: program.clone(),
+                            cwd: cwd.clone(),
+                            name,
+                            tools: claude::tools(!leader, confine),
+                            confine,
+                            write: !leader,
+                            model,
+                            effort,
+                            budget,
+                            system,
+                            mcp,
+                            resume: resume.map(|r| claude::Resume {
+                                session: r.session,
+                                spent: r.spent,
+                                fork,
+                            }),
+                        },
+                        on,
+                    )
+                    .map_err(|e| format!("{program}: {e}"))?,
+                );
                 Ok((session, cwd, placed, held, copied, set_up))
             })();
             // Nobody to take it (imece is closing): dropping it stops it.
@@ -903,8 +848,8 @@ impl Live {
 
 /// Makes an agent's scratch directory (record 105) when it is not there,
 /// private (0700), its parents too; one that is there must be a
-/// directory, not a link to one. Its canonical path, the one the
-/// vendors are given and Codex echoes.
+/// directory, not a link to one. Its canonical path, the one Claude Code
+/// is given.
 pub(super) fn make_scratch(dir: &Path) -> io::Result<PathBuf> {
     use std::os::unix::fs::DirBuilderExt;
     if let Some(parent) = dir.parent() {
@@ -958,13 +903,7 @@ mod tests {
     fn a_solo_s_worktree_is_named_after_its_project_so_a_rename_keeps_it() {
         let mut w = team(1);
         let worker_helper = with_helper(&mut w, 1);
-        w.open_project(
-            None,
-            "notes".into(),
-            "/n".into(),
-            Vendor::Claude,
-            Role::Solo,
-        );
+        w.open_project(None, "notes".into(), "/n".into(), Role::Solo);
         let solo = w.projects[1].leader;
         let solo_helper = with_helper(&mut w, solo);
         w.agents[solo_helper].project = 1;
@@ -993,10 +932,6 @@ mod tests {
             live.cwd_of(&w, 0),
             live.places[0].repo,
             "a leader: the checkout"
-        );
-        assert!(
-            live.gemini_home(&w, 1, Role::Solo, "solo-1")
-                .ends_with("solo-1")
         );
     }
 
@@ -1153,7 +1088,7 @@ mod tests {
         live.ready_tx = tx;
         live.start(&mut w, 1, None);
         let (id, _, started) = rx.recv_timeout(Duration::from_secs(10)).unwrap();
-        // No worktree was asked of git: the vendor's program is what failed.
+        // No worktree was asked of git: Claude Code's program is what failed.
         let e = started.err().expect("no such program");
         assert_eq!(id, 1);
         assert!(e.starts_with("/nonexistent/claude"), "{e}");
@@ -1196,7 +1131,7 @@ mod tests {
         apply(&mut w, 1, AgentEvent::CommandsMissing, 0);
         assert!(
             (w.agents[1].trace.back().unwrap())
-                .ends_with(" commands not listed: the vendor's format may have changed")
+                .ends_with(" commands not listed: Claude Code's format may have changed")
         );
         assert_eq!(
             w.journal.last().unwrap().event,
@@ -1206,9 +1141,8 @@ mod tests {
     }
 
     #[test]
-    fn usage_windows_are_kept_by_the_agent_s_vendor() {
+    fn usage_windows_are_kept_by_their_length() {
         let mut w = team(2);
-        w.agents[1].vendor = Vendor::Codex;
         let window = |minutes, used| imece_agent::Limit {
             minutes,
             used,
@@ -1221,20 +1155,12 @@ mod tests {
             0,
         );
         apply(&mut w, 2, AgentEvent::Limits(vec![window(300, 60)]), 0);
-        let kept = |vendor, minutes, used| Limit {
-            vendor,
+        let kept = |minutes, used| Limit {
             minutes,
             used,
             resets_at: Some(7),
         };
-        assert_eq!(
-            w.limits,
-            [
-                kept(Vendor::Codex, 300, 20),
-                kept(Vendor::Codex, 10_080, 5),
-                kept(w.agents[2].vendor, 300, 60),
-            ]
-        );
+        assert_eq!(w.limits, [kept(300, 60), kept(10_080, 5),]);
     }
 
     #[test]
@@ -1674,7 +1600,7 @@ mod tests {
             w.agents[0]
                 .trace
                 .iter()
-                .any(|l| l.ends_with("retry 1/3 after a vendor error"))
+                .any(|l| l.ends_with("retry 1/3 after a API error"))
         );
         // It fails again: the next try is further off; over budget it
         // waits.
@@ -1724,7 +1650,7 @@ mod tests {
     fn a_vendor_fault_on_a_first_turn_is_tried_again_not_taken_for_a_missing_model() {
         let mut w = team(0);
         let mut live = idle_live(1);
-        live.vendors[0].ladder.standard = Some("sonnet".into());
+        live.claude.ladder.standard = Some("sonnet".into());
         live.hire(&mut w, 0, &json!({ "tier": "strong" })).unwrap();
         live.turns[1] = 1;
         hear(&live, 1, AgentEvent::Failed(imece_agent::Fault::Passing));
@@ -1958,7 +1884,7 @@ mod tests {
                 .any(|l| l.ends_with("nothing to say"))
         );
         assert_eq!(live.turns[1], 0);
-        // /clear without one of the vendor's own: the session ends, and
+        // /clear without one of Claude Code's own: the session ends, and
         // is not one to go on with later.
         live.sessions[1] = Some(Resumable {
             session: "686c6d27-d50b-4ae2-ad6a-159bf2984671".into(),
@@ -2443,11 +2369,11 @@ mod tests {
         let mut w = team(0);
         let mut live = Live::new(
             1,
-            two_vendors(&std::env::temp_dir()),
+            claude_at("/nonexistent/claude"),
             std::env::temp_dir(),
             PathBuf::from("/nonexistent"),
         );
-        live.vendors[0].ladder.standard = Some("sonnet".into());
+        live.claude.ladder.standard = Some("sonnet".into());
         assert_eq!(live.open_project(&mut w, &repo, None, Open::Team), Ok(1));
         assert_eq!(w.projects.len(), 2);
         let p = &w.projects[1];
@@ -2458,19 +2384,18 @@ mod tests {
         );
         let a = &w.agents[1];
         assert_eq!(
-            (a.name.as_str(), a.project, a.role, a.vendor, a.status),
+            (a.name.as_str(), a.project, a.role, a.status),
             (
                 format!("lead-{name}").as_str(),
                 1,
                 Role::Leader,
-                Vendor::Claude,
                 Status::Idle
             )
         );
         assert_eq!(
             live.models[1].as_deref(),
             Some("sonnet"),
-            "the lead vendor's standard model"
+            "the standard model"
         );
         assert!(!live.tiered[1]);
         assert_eq!(live.places.len(), 2);
@@ -2485,81 +2410,16 @@ mod tests {
             &w.journal.last().unwrap().event,
             Event::Opened { leader: 1, path } if *path == top.display().to_string()
         ));
-        // A name given, another checkout, another lead vendor.
+        // A name given, another checkout.
         let other = checkout("open-other");
-        live.lead = Vendor::Codex;
         assert_eq!(
             live.open_project(&mut w, &other, Some("api"), Open::Team),
             Ok(2)
         );
         assert_eq!(w.projects[2].name, "api");
         assert_eq!(w.agents[2].name, "lead-api");
-        assert_eq!(w.agents[2].vendor, Vendor::Codex);
         assert_eq!(live.places.len(), 3);
-        assert_eq!(
-            live.gemini_home(&w, 2, Role::Leader, "lead-api"),
-            PathBuf::from(format!("{}-gemini/lead", live.places[2].root.display()))
-        );
-        assert_ne!(
-            live.gemini_home(&w, 1, Role::Worker, "x"),
-            live.gemini_home(&w, 2, Role::Worker, "x")
-        );
-        assert!(
-            live.gemini_home(&w, 1, Role::Worker, "x").ends_with("x"),
-            "a worker's is named after it"
-        );
-        assert!(
-            live.gemini_home(&w, 1, Role::Helper, "x.1")
-                .ends_with("x.1")
-        );
         let _ = std::fs::remove_dir_all(&repo);
         let _ = std::fs::remove_dir_all(&other);
-    }
-
-    #[test]
-    fn a_team_after_another_on_its_checkout_has_a_gemini_leader_directory_of_its_own() {
-        let mut w = team(0);
-        let mut live = idle_live(1);
-        let here = live.places[0].root.clone();
-        let (there, elsewhere) = (PathBuf::from("/there"), PathBuf::from("/elsewhere"));
-        // 1 a solo here, 2 and 3 teams here (an archived one's fresh
-        // ones), 4 a team elsewhere, 5 a solo there and 6 the first team
-        // there.
-        for (role, root) in [
-            (Role::Solo, &here),
-            (Role::Leader, &here),
-            (Role::Leader, &here),
-            (Role::Leader, &elsewhere),
-            (Role::Solo, &there),
-            (Role::Leader, &there),
-        ] {
-            let p = w.projects.len();
-            w.open_project(None, format!("p{p}"), "/p".into(), Vendor::Gemini, role);
-            live.grow(None, false);
-            live.places.push(Place {
-                repo: root.clone(),
-                root: root.clone(),
-                git: true,
-            });
-        }
-        let dir = |p: ProjectId| {
-            let home = live.gemini_home(&w, p, Role::Leader, "lead-x");
-            assert_eq!(
-                home.parent(),
-                Some(PathBuf::from(format!("{}-gemini", live.places[p].root.display())).as_path())
-            );
-            home.file_name().unwrap().to_string_lossy().into_owned()
-        };
-        assert_eq!(dir(0), "lead", "the first team on its checkout");
-        assert_eq!(dir(2), "lead-p2", "a solo before it is no team");
-        assert_eq!(dir(3), "lead-p3");
-        assert_eq!(dir(4), "lead", "another checkout");
-        assert_eq!(dir(6), "lead", "only a solo before it there");
-        assert_eq!(
-            live.gemini_home(&w, 3, Role::Worker, "gemini-2")
-                .file_name(),
-            Some(std::ffi::OsStr::new("gemini-2")),
-            "a worker's is its own whatever came before"
-        );
     }
 }

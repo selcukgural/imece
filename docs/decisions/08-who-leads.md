@@ -1,5 +1,7 @@
 # Who leads
 
+**Replaced by [record 109](109-claude-only.md): imece runs Claude Code only; this is history, and the code is on the branch `multi-vendor`.**
+
 Who leads (2026-10-29, user's decision): no silent default. `--lead
 VENDOR` wins; else the PRIMARY vendor from the preferences (`lead` in
 the store's `meta`, see Leftovers v0) if it is on PATH and driveable; else the only driveable

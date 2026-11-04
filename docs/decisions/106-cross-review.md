@@ -1,5 +1,7 @@
 # A change read by another vendor
 
+**Changed by [record 109](109-claude-only.md): with one vendor, a fresh Claude Code session with no tools reads the change; what is below about another vendor and Codex is history.**
+
 Backlog F24 in #58 (from OpenHands). The frame was decided by the person
 on 2026-11-03: optional, off by default, an advisory note on the Δ that
 never gates it, the person still the last gate, the cost from the pot.

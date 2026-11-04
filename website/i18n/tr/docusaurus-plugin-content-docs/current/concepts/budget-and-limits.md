@@ -1,6 +1,6 @@
 ---
 title: Bütçe ve limitler
-description: "Bütün ekibin harcadığı tek bütçe, nasıl belirlenir ve değiştirilir, başlık yakma hızı hakkında ne der, satıcıların kullanım pencereleri, : menüsünde neye para gider, :commit ve :review'un tavanları."
+description: "Bütün ekibin harcadığı tek bütçe, nasıl belirlenir ve değiştirilir, başlık yakma hızı hakkında ne der, Claude Code'un kullanım pencereleri, : menüsünde neye para gider, :commit ve :review'un tavanları."
 ---
 
 # Bütçe ve limitler
@@ -12,7 +12,7 @@ Bütçe bütün ekip için tek bir kesedir: bütün ajanlar birlikte onu bitirin
 - `--budget USD` belirler; ilk seferinde 50 $. Bütçe **çalıştırmalar arasında saklanır**: `--budget`'sız bir başlangıç kalandan devam eder. Sonraki bir başlangıçta `--budget` yeniden belirler.
 - Her projenin her ajanının turları ondan çıkar; imece'nin kendi ücretli çağrıları da (`:commit`, `:review`). Ajan başına pay yoktur.
 - Bitince hiçbir ajan uyandıran mesaj almaz ve kart teklif edilmez; birini uyandıracak bir `send`, "the budget is spent" ile reddedilir.
-- **Oturum başına sert tavan:** her Claude Code oturumu, başladığında bütçeden kalanı kendi `--max-budget-usd`'si olarak alır; tek başına kaçan bir oturum da onu geçemez. Bu bir pay değil, son duraktır. Codex ve Gemini'de böyle bir tavan yoktur; bütçe yine sonraki turlarını durdurur.
+- **Oturum başına sert tavan:** her Claude Code oturumu, başladığında bütçeden kalanı kendi `--max-budget-usd`'si olarak alır; tek başına kaçan bir oturum da onu geçemez. Bu bir pay değil, son duraktır.
 
 ### `:budget USD`
 
@@ -28,17 +28,13 @@ Bütçe bütün ekip için tek bir kesedir: bütün ajanlar birlikte onu bitirin
 - `~… kaldı`, bütçenin o hızla ne kadar dayanacağıdır. Yarım saatin altında bütün bütçe **dikkat rengine** döner ve günlük bir kez, hız ve dakikalarla, bütçenin azaldığını söyler: `$12.00/sa hızla bütçe yaklaşık 25 dk daha yeter; :budget USD ile artır`. `:budget` yeniden söyletir. Bu bir günlük satırıdır, SENİ BEKLEYEN'de bir öğe değil: içinde yanıt gereken bir şey yoktur ve bütçe turları kendi başına durdurur.
 - Her ajanın kendi toplamı salon satırındadır; ajan başına hız yoktur.
 
-## Satıcı kullanım pencereleri
+## Kullanım pencereleri
 
-Claude ya da ChatGPT aboneliğindeki bir ekip, planın beş saatlik ya da haftalık limitiyle bütçe bitmeden çok önce durabilir. Claude Code ve Codex oturumları hesaplarının pencerelerini bildirir; Gemini bildirmez. imece satıcı ve pencere uzunluğu başına birini tutar ve her satıcının en sıkışık olanını bütçeden sonra gösterir: `codex 7 g: %12 kaldı`, %90 kullanımdan itibaren dikkat renginde, yenilenme ilerideyken ona kalan süreyle. Bir pencere dolmadan önce hiçbir şey turu durdurmaz: satıcı reddeder, imece reddi gösterir. Pencereler çalıştırmalar arasında saklanmaz.
+Claude aboneliğindeki bir ekip, planın beş saatlik ya da haftalık limitiyle bütçe bitmeden çok önce durabilir. Claude Code oturumları hesaplarının pencerelerini bildirir. imece pencere uzunluğu başına birini tutar ve en sıkışık olanını bütçeden sonra gösterir: `claude 7 g: %12 kaldı`, %90 kullanımdan itibaren dikkat renginde, yenilenme ilerideyken ona kalan süreyle. Bir pencere dolmadan önce hiçbir şey turu durdurmaz: Claude Code reddeder, imece reddi gösterir. Pencereler çalıştırmalar arasında saklanmaz.
 
 ## Ne sayılır, nasıl
 
-| Satıcı | Bir tur bütçeye ne yazar |
-| --- | --- |
-| Claude Code | bildirdiği dolarlar (`total_cost_usd`); devam eden bir oturum bütün oturumunkini bildirir ve imece yalnız önceden yazılanın üstünde kalanı sayar |
-| Codex | ChatGPT planında hiçbir şey (token'lar izde gösterilir); API anahtarıyla oturum reddedilir, imece henüz fiyatlandıramaz |
-| Gemini CLI | API anahtarıyla imece'nin taşıdığı liste fiyatları (200K token'a kadar istemler, düşünce token'ları çıktı olarak, önbellekli token'lar önbellek fiyatından, birden çok model en pahalısından); Google oturumuyla hiçbir şey; fiyatlandıramadığı bir model oturumu durdurur |
+Bir tur bütçeye Claude Code'un bildirdiği dolarları yazar (`total_cost_usd`); devam eden bir oturum bütün oturumunkini bildirir ve imece yalnız önceden yazılanın üstünde kalanı sayar.
 
 Harcanan, her başlangıçta depodan geri okunur; ajanlar ve imece'nin kendi çağrıları birlikte.
 
@@ -62,16 +58,15 @@ Hiçbir `:` komutu kendi başına ücretli bir tur başlatmaz; `:budget` işaret
 | Bir gün (UTC), bütün projeler birlikte | 20 öneri ve 1,00 $ |
 | Aynı anda çalışan | bir |
 
-Çağrıdan önce depo onu tek bir işlemde tavanından sayar ve bütçe tavanı tutar; bütçede tavandan az varsa ya da gün dolmuşsa reddedilir. Çağrı bitince bildirdiği, tavanın yerine geçer; başlayamayan hiçbir şey ödemez; bildirmeden duran tavanını korur. Aynı stage'li ağaç yeniden sorulunca hiçbir şey ödenmez: proje başına son öneri saklanır. Günlük her öneriyi modeli ve maliyetiyle, her başarısızlığı nedeniyle söyler. Yalnız Claude Code: çağrısı sert bir harcama tavanı alan tek satıcıdır; PATH'te yoksa `:commit` reddedilir.
+Çağrıdan önce depo onu tek bir işlemde tavanından sayar ve bütçe tavanı tutar; bütçede tavandan az varsa ya da gün dolmuşsa reddedilir. Çağrı bitince bildirdiği, tavanın yerine geçer; başlayamayan hiçbir şey ödemez; bildirmeden duran tavanını korur. Aynı stage'li ağaç yeniden sorulunca hiçbir şey ödenmez: proje başına son öneri saklanır. Günlük her öneriyi modeli ve maliyetiyle, her başarısızlığı nedeniyle söyler.
 
 ## `:review` ve tavanları
 
-`:review` bir değişikliği işçininkinden başka bir satıcıya okutur ve bulduğunu söyletir ([değişiklikler](changes.md#başka-bir-satıcının-incelemesi)). Tavanları `:commit`'inkilerden ayrıdır ve aynı yolla tutulur: depoda tür ve güne göre sayılır, çağrıdan önce ayrılır, sonra kapatılır.
+`:review` bir değişikliği taze bir Claude Code oturumuna okutur ve bulduğunu söyletir ([değişiklikler](changes.md#ikinci-bir-okuma)). Tavanları `:commit`'inkilerden ayrıdır ve aynı yolla tutulur: depoda tür ve güne göre sayılır, çağrıdan önce ayrılır, sonra kapatılır.
 
 | Tavan | Değer |
 | --- | --- |
-| Claude Code ile bir inceleme | en çok 0,10 $ (çağrının kendi `--max-budget-usd`'si) |
-| Codex ile bir inceleme | bütçeden hiçbir şey (ChatGPT planınız) |
+| Bir inceleme | en çok 0,10 $ (çağrının kendi `--max-budget-usd`'si) |
 | Bir gün (UTC), bütün projeler birlikte | 20 inceleme ve 2,00 $ |
 | Aynı anda çalışan | bir; kalanlar sırasını bekler |
 
@@ -83,7 +78,7 @@ Hiçbir `:` komutu kendi başına ücretli bir tur başlatmaz; `:budget` işaret
 
 ## Ayrıca bakınız
 
-- [Satıcılar](../concepts/vendors.md): satıcı başına token mı dolar mı.
+- [Claude Code](../concepts/claude-code.md): confine düzeyleri ve kullanım limitleri.
 - [Oturumlar](../concepts/sessions.md): bütçe depoda.
 - [Kendi kabuğunuz ve commit](../scenarios/own-shell-and-commit.md): `:commit` kullanımda.
 - [Komutlar](../reference/commands.md): `:budget`, `:commit`.

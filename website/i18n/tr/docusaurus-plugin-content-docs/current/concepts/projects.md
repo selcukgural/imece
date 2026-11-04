@@ -11,8 +11,8 @@ Bir proje, kendi lideri ve işçileri olan bir git checkout'udur. imece, içinde
 
 | Komut | Ne yapar |
 | --- | --- |
-| `:open YOL [AD]` (`:o`) | YOL'daki git checkout'unu kendi başına bir proje olarak açar; ekibin lider satıcısında (aynı model ve kademeler) `lead-AD` adlı yeni bir liderle. AD varsayılan olarak dizinin güvenli hale getirilmiş adıdır: 1-24 harf, rakam, `.`, `_`, `-`; kalanı `-` olur. `:` menüsü `$` ile işaretler: yeni bir lider oturumu. |
-| `:solo [YOL] [SEÇİM] [AD]` | kendi başına bir proje olarak bir solo oturum açar: lidersiz, kendinizin sürdüğü, adını verdiğiniz satıcı, model ve çabada tek bir ajan, `solo-AD` ([solo oturumlar](solo.md)). Bir checkout'ta takımının yanında istendiği kadar olabilir. `$`: yeni bir oturum. |
+| `:open YOL [AD]` (`:o`) | YOL'daki git checkout'unu kendi başına bir proje olarak açar; `lead-AD` adlı yeni bir liderle (aynı model ve kademeler). AD varsayılan olarak dizinin güvenli hale getirilmiş adıdır: 1-24 harf, rakam, `.`, `_`, `-`; kalanı `-` olur. `:` menüsü `$` ile işaretler: yeni bir lider oturumu. |
+| `:solo [YOL] [SEÇİM] [AD]` | kendi başına bir proje olarak bir solo oturum açar: lidersiz, kendinizin sürdüğü, adını verdiğiniz model ve çabada tek bir ajan, `solo-AD` ([solo oturumlar](solo.md)). Bir checkout'ta takımının yanında istendiği kadar olabilir. `$`: yeni bir oturum. |
 | `:close [AD]` (`:c`) | projenin ajanlarının oturumlarını ve çalıştırmalarını bitirir, postalarını, notlarını, tekliflerini ve değişikliklerini düşürür, gelen kutusu öğelerini kapatır, projeyi kapalı işaretler. Worktree'ler diskte kalır. Ad yoksa eldeki proje. Son açık proje kapanmayı reddeder (`q q` çıkar). |
 | `:archive [BAŞLIK]` | eldeki projeyi, ajanları uykuda ve her şeyleriyle (oturumlar, posta, değişiklikler, kartlar, günlük satırları) gözden uzağa kaldırır ve yerine aynı ad, baş ve `:copy` listesiyle yeni bir proje açar. On saniyelik bekleme, `u` tutar. Bkz. [arşivler](sessions.md#arşivler). |
 | `:restore [AD]` | bir arşivi kaldırıldığı gibi geri getirir, ajanları kendilerine yazılana dek uykuda; çalışma kopyasında açık olan takım yer açar (arşivlenir, ya da hiçbir şey yapmadıysa kapatılır). Bkz. [arşivler](sessions.md#arşivler). |
@@ -26,7 +26,7 @@ Bir proje, kendi lideri ve işçileri olan bir git checkout'udur. imece, içinde
 - Günlük: `api projesini açtın (/src/api)`, `api projesini kapattın`, `api projesine gateway adını verdin`, `api projesini “v1” adıyla arşivledin; yerine yeni bir api açıldı`, `api projesinin “v1” arşivini geri getirdin; orada açık olan “api 2026-11-02” adıyla arşivlendi`.
 - Projeler depoda hatırlanır; checkout'u gitmiş hatırlanan bir proje kapalı yüklenir.
 
-Lider satıcısı proje başına seçilemez: her lider ekibin lider satıcısında çalışır. Bir solonun satıcısı, modeli ve çabası ise solo başına sizin seçiminizdir.
+Bir solonun modeli ve çabası solo başına sizin seçiminizdir.
 
 ## Salonda gruplar
 
@@ -38,7 +38,7 @@ Lider satıcısı proje başına seçilemez: her lider ekibin lider satıcısın
  ▸ shop       2 çalışıyor
  ▾ imece
    ◆ lead            boşta
-   ✓ codex-1         bitti, henüz bakılmadı
+   ✓ claude-2         bitti, henüz bakılmadı
 ```
 
 - Her proje kendi lideri olan bir gruptur. `h` `l` (ya da `←` `→`, başlıkta `enter`) bir grubu katlar ve açar; `za` değiştirir, `zM` her işçiyi katlar, `zR` hepsini açar (`:fold`, `:unfold`).
@@ -111,11 +111,11 @@ Her işçinin worktree'si çalıştırmalar arasında diskte kalır, böylece i�
 ```text
  SAHİBİ OLMAYAN WORKTREE'LER · 2
 ▶ claude-31  ~/src/shop  temiz
-  codex-32   ~/src/shop  değişen dosya: 3 · kendi commit'i: 1
+  claude-32  ~/src/shop  değişen dosya: 3 · kendi commit'i: 1
  a temizleri sil   d bunu sil   j k gez   esc geri
 ```
 
-- **Ne sayılır:** imece'nin durum dizininde (`worktrees/<checkout>-<hash>/<ad>`) git'in bir checkout'a eklenmiş worktree olarak bildiği ve hiçbir projenin hiçbir ajanının (açık, kapalı ya da arşivlenmiş) sahip olmadığı bir dizin; bir yardımcınınki işçisinindir. Bağlar, dosyalar, Gemini'nin özel dizinleri ve git'in bilmedikleri atlanır.
+- **Ne sayılır:** imece'nin durum dizininde (`worktrees/<checkout>-<hash>/<ad>`) git'in bir checkout'a eklenmiş worktree olarak bildiği ve hiçbir projenin hiçbir ajanının (açık, kapalı ya da arşivlenmiş) sahip olmadığı bir dizin; bir yardımcınınki işçisinindir. Bağlar, dosyalar ve git'in bilmedikleri atlanır.
 - **Ne tutar:** değişen ya da izlenmeyen dosyalar (`git status`; git'in yok saydıkları, `target/` gibi, sayılmaz ve onunla gider) ve hiçbir dalın, etiketin ya da uzak deponun sahip olmadığı kendi commit'leri (imece'nin uyguladığınız değişiklikler için yaptığı commit'ler zaten checkout'unuzdadır ve sayılmaz). Temiz, ikisi de yok demektir.
 - **Silmek:** `a` temiz olanları, `d` eldekini siler. İş tutan biri ancak onun için bir `y`'den sonra, `git worktree remove --force` ile gider; temiz olan `git worktree remove` ile, ki arada bir şey değiştiyse yine reddeder. Silme ekranın dışında çalışır ve pencere ardından yeniden bakar.
 - **Önce söküm betiği:** worktree'nin checkout'unda `.imece/worktree-teardown.sh` varsa silmeden hemen önce worktree'de çalışır. Yanıtlamadığınız bir betik önce pencerenin üstünde, kurulum betiğininki gibi açılır (`SÖKÜM BETİĞİ · shop · sha256 1a2b…`, satırları numaralı, `j` `k` `ctrl-d` `ctrl-u` `g` `G` kaydırır): `a` evet der (imece'nin deposunda kurulum betiklerinin evetleriyle birlikte tutulur, değişen bir bayt yeniden sorar) ve silme sürer, `r` bu çalıştırma için hayır der ve onsuz siler, `esc` hiçbir şey silmez. Flaş nasıl gittiğini söyler (`silindi: claude-31 · claude-31 söküldü: exit 0, 0.4 s · dropped database`); başarısız olan ya da okunamayan bir söküm söylenir, silme yine kendi karar verir: worktree'de bir dosya bırakan bir söküm onu tutar.
@@ -125,7 +125,7 @@ Her işçinin worktree'si çalıştırmalar arasında diskte kalır, böylece i�
 
 ## Demonun kopyaları
 
-`--demo --projects N` (1-4, varsayılan 2) aynı anda birkaç sahte proje gösterir; oradaki `:open YOL [AD]` bir lider, rastgele satıcılardan iki işçi ve üç kartla sahte bir proje ekler, `:close` ve `:rename` aynı şekilde çalışır, `:pin` deposuz sabitler ve `:copy` bir liste tutar; demo işçisinin başlangıcı onu uydurma boyutlarla "kopyalar", ara sıra birini checkout'tan gitmiş diye atlar. Demonun liderinin işe aldığı bir işçi yeni bir worktree alır; demonun kendi kurulum betiği (`npm ci`, `npm run db:migrate`) sorulur, `enter` ile gösterilir ve bir evette canlıdaki gibi uydurma çıktıyla "çalışır".
+`--demo --projects N` (1-4, varsayılan 2) aynı anda birkaç sahte proje gösterir; oradaki `:open YOL [AD]` bir lider, iki işçi ve üç kartla sahte bir proje ekler, `:close` ve `:rename` aynı şekilde çalışır, `:pin` deposuz sabitler ve `:copy` bir liste tutar; demo işçisinin başlangıcı onu uydurma boyutlarla "kopyalar", ara sıra birini checkout'tan gitmiş diye atlar. Demonun liderinin işe aldığı bir işçi yeni bir worktree alır; demonun kendi kurulum betiği (`npm ci`, `npm run db:migrate`) sorulur, `enter` ile gösterilir ve bir evette canlıdaki gibi uydurma çıktıyla "çalışır".
 
 ## Ayrıca bakınız
 

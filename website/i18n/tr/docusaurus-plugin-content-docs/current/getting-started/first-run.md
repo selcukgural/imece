@@ -14,25 +14,7 @@ cd sizin/checkout
 imece
 ```
 
-Dizin commit'i olan bir git checkout'u olmalıdır (`--repo DİZİN` başkasını adlandırır); git'siz bir klasörde yalnız bir solo başlar (`imece --solo claude`, bkz. [solo oturumlar](../concepts/solo.md#gitsiz-bir-klasörde)). imece önce her satıcının `--version` komutunu çalıştırırken `PATH'te kodlama ajanları aranıyor…` der.
-
-### Kim lider
-
-PATH'te tek satıcı varsa o liderdir ve salon açılır. Birden çoksa, `--lead` bayrağı yoksa ve daha önce birincil seçilmemişse, önce bir soru gelir:
-
-```text
-┌ KİM LİDER? ─────────────────────────────────────────────┐
-│ PATH'te birden fazla kodlama ajanı var. Hangisi lider olsun? │
-│                                                          │
-│ ▸ claude                                                 │
-│   codex                                                  │
-│   gemini                                                 │
-│                                                          │
-│  ↑↓ j k seç · enter bu seferlik · p hep (birincil) · esc çık │
-└──────────────────────────────────────────────────────────┘
-```
-
-`enter` bu çalıştırma için seçer; `p` seçer ve o satıcıyı **birincil** yapar, böylece sonraki başlangıç sormaz. Birincil, imece çalışırken `:lead claude` ile de ayarlanır (`:lead ask` unutturur; komut satırında `--lead ask` yine de sorar). Artık PATH'te olmayan bir birincil bu ekranda söylenir (`claude birincil ajanın, ama PATH'te yok`), sessizce değiştirilmez. Sessiz bir varsayılan yoktur: bu sizin kararınızdır.
+Dizin commit'i olan bir git checkout'u olmalıdır (`--repo DİZİN` başkasını adlandırır); git'siz bir klasörde yalnız bir solo başlar (`imece --solo claude`, bkz. [solo oturumlar](../concepts/solo.md#gitsiz-bir-klasörde)).
 
 ### Hoş geldin penceresi
 
@@ -51,8 +33,6 @@ PATH'te tek satıcı varsa o liderdir ve salon açılır. Birden çoksa, `--lead
 │                                                                                  │
 │ Bu makinedeki kodlama agent'ları:                                                │
 │   ✓ claude  2.1.316 (Claude Code) · giriş yapılmış                               │
-│   ✕ codex   codex-cli 0.165.0 · giriş yapılmamış: codex login çalıştır           │
-│   ? gemini  0.65.0 · girişi ilk açıldığında denetlenir                           │
 │                                                                                  │
 │ Başlamak için tuşlar:                                                            │
 │   /  i            lidere yaz: ne yapılmasını istediğini söyle                    │
@@ -65,9 +45,9 @@ PATH'te tek satıcı varsa o liderdir ve salon açılır. Birden çoksa, `--lead
 
 En üstte imece'nin işareti durur: bir işin etrafında beş el; yanında sürümü, ne olduğu ve eldeki proje ile başında kimin olduğu. Ekrana geldiği yerde noktaları birer vuruşta gelir, iş en son (iki saniyeden kısa); herhangi bir tuş onu hemen bütün gösterir, [`:motion off`](../reference/commands.md#motion-offcalmfull), başka bir pencere ve SSH de öyle. Ona dar gelen bir ekranda yazılar tek başına kalır, fazla kısa bir ekranda pencere onlarsız açılır. Salon da, henüz hiçbir projede işçi yokken boş satırlarında aynı işareti gösterir. Terminalin başlığı da her şey sakinken işareti taşır: `⁙ imece`.
 
-Her satıcının satırı sürümünü ve giriş yapılmış olup olmadığını, ya da nasıl giriş yapılacağını söyler: `claude auth login`, `codex login`. imece bunu CLI'ların kendisine sorar (`claude auth status`, `codex login status`), kendi iş parçacığında, ağa çıkmadan ve para harcamadan; cevabı gelene dek satırda `bakılıyor…`, program yoksa `PATH'te yok` yazar. Gemini CLI'ın böyle bir sorusu yoktur: girişi ilk oturumu açılırken denetlenir, eksikse o oturum nedeniyle durur.
+Satır Claude Code'un sürümünü ve giriş yapılmış olup olmadığını, ya da nasıl giriş yapılacağını söyler: `claude auth login`. imece bunu ona sorar (`claude auth status`), kendi iş parçacığında, ağa çıkmadan ve para harcamadan; cevabı gelene dek `bakılıyor…`, program yoksa `PATH'te yok` yazar.
 
-Sonraki her başlangıçta imece yalnızca liderin satıcısına sorar ve giriş yapılmadığını söylerse aynı pencereyi açar (sen yazarken bunun yerine bir satır `codex giriş yapmamış: :welcome nasıl yapılacağını söyler` der). `:welcome` onu her an açar ve her satıcıya yeniden sorar. Herhangi bir tuş onu kapatır ve başka bir şey yapmaz.
+Sonraki her başlangıçta imece yine sorar ve giriş yapılmadığını söylerse aynı pencereyi açar (sen yazarken bunun yerine bir satır `claude giriş yapmamış: :welcome nasıl yapılacağını söyler` der). `:welcome` onu her an açar ve yeniden sorar. Herhangi bir tuş onu kapatır ve başka bir şey yapmaz.
 
 ### Yeni olanlar
 
@@ -111,9 +91,9 @@ Açılan salondur: solda lonca, sağda SENİ BEKLEYEN ve DEFTER (günlük), üst
  $0.00 / $50.00 harcandı · hepsi boşta                               imece
  SALON ──────────────────────────  SENİ BEKLEYEN (0) ───────────────────
  ▾ imece                           Şu an senden bir şey gerekmiyor.
-   ◆ lead   claude   boşta
+   ◆ lead   boşta
                                    DEFTER ────────────────────────────────
-                                   10:02 confine standard: işçiler satıcılarının
+                                   10:02 confine standard: işçiler Claude Code'un
                                          kabuğunu ve web'ini alır; yalıtım bir
                                          konteynerin işi, imece'nin değil
 
@@ -137,10 +117,10 @@ Düz metin seçili projenin liderine gider. `@claude-1 metin` tek bir ajana gide
 
 ## Lider ne yapar
 
-Lider checkout'u okur (okuma araçları, web ve salt okunur komutları vardır; yazamaz: sizin checkout'unuzda çalışır, orada bir yazma incelemeyi atlardı). İsteği kartlara böler, panoya asar ve bir kart el gerektirince `hire` aracıyla bir işçi **tutar**. Model değil **katman** seçer: küçük mekanik iş için `cheap`, sıradan düzeltmeler için `standard` (varsayılan), kesen tasarım için `strong`; her satıcı bir katmanı kendi modellerine eşler (Claude: haiku, varsayılanı, opus; Codex: `@low`, varsayılanı, `@high`; Gemini: `flash`, `auto`, `pro`). PATH'teki herhangi bir satıcıdan tutabilir. En çok `--agents` işçi (varsayılan 4).
+Lider checkout'u okur (okuma araçları, web ve salt okunur komutları vardır; yazamaz: sizin checkout'unuzda çalışır, orada bir yazma incelemeyi atlardı). İsteği kartlara böler, panoya asar ve bir kart el gerektirince `hire` aracıyla bir işçi **tutar**. Model değil **katman** seçer: küçük mekanik iş için `cheap`, sıradan düzeltmeler için `standard` (varsayılan), kesen tasarım için `strong`; bunlar haiku, Claude Code'un varsayılanı ve opus demektir. En çok `--agents` işçi (varsayılan 4).
 
 ```text
-   ◆ lead      claude   koordine ediyor                             $0.08
+   ◆ lead      koordine ediyor                                      $0.08
    ● claude-1  #1   sondaki virgülü kabul et   düşünüyor…
 ```
 
@@ -154,9 +134,9 @@ Hesabınızda olmayan bir katman modeli ilk turunda düşer; imece o işçiyi st
    ● claude-1  #1   sondaki virgülü kabul et   src/csv.rs düzenliyor   $0.41  +18 −3
 ```
 
-Soldan sağa: glif (`●` çalışıyor, `○` boşta, `◐` bir takım arkadaşına soruyor, `✕` bloke, `✓` bitti ve henüz bakılmadı, `■` durdu, `◦` uyuyor), satıcısının renginde adı, kartı, şu an ne yaptığı, ne harcadığı ve worktree'sinin nerede durduğu: `+18 −3` sonraki `done` ile size vereceği satırlar, `⎇ ad` açtığı bir dal, `↑N` kendi commit'leri, `↓N` checkout'unuzun daha yeni commit'leri. Açık bir izin sorusu olan işçi `⚑ onayını bekliyor` gösterir ve soru SENİ BEKLEYEN'de bir öğedir: `a` izin verir, `r` reddeder (rutin komutlar, derleme, testler, git'in okuma komutları kendiliğinden çalışır).
+Soldan sağa: glif (`●` çalışıyor, `○` boşta, `◐` bir takım arkadaşına soruyor, `✕` bloke, `✓` bitti ve henüz bakılmadı, `■` durdu, `◦` uyuyor), adı, kartı, şu an ne yaptığı, ne harcadığı ve worktree'sinin nerede durduğu: `+18 −3` sonraki `done` ile size vereceği satırlar, `⎇ ad` açtığı bir dal, `↑N` kendi commit'leri, `↓N` checkout'unuzun daha yeni commit'leri. Açık bir izin sorusu olan işçi `⚑ onayını bekliyor` gösterir ve soru SENİ BEKLEYEN'de bir öğedir: `a` izin verir, `r` reddeder (rutin komutlar, derleme, testler, git'in okuma komutları kendiliğinden çalışır).
 
-Satırda `enter` işçinin odağını açar: kartının hikâyesi (niyet, varsayımlar, kararlar, konuşma, kanıt, değişiklikler). Bir `enter` daha (ya da `t`) izi açar, satıcı oturumunun ham akışı. `esc` geri döner.
+Satırda `enter` işçinin odağını açar: kartının hikâyesi (niyet, varsayımlar, kararlar, konuşma, kanıt, değişiklikler). Bir `enter` daha (ya da `t`) izi açar, oturumunun ham akışı. `esc` geri döner.
 
 ## Değişiklik (Δ)
 
@@ -221,7 +201,7 @@ Söyleyecek bir şeyi olmayan parça yazılmaz; demonun satırı `demo hiçbir �
 
 ## Sonraki `imece`
 
-Aynı checkout'ta sonraki başlangıç aynı ekranı, her ajan uykuda gösterir (`◦ önceki çalışmadan beri uyuyor, yazınca uyanır`): siz birine yazana, bir takım arkadaşının mesajı ya da yeni bir kart onu uyandırana kadar süreç yok, maliyet yok. Uyandırılan bir Claude ajanı, Claude Code transkriptini hâlâ tutuyorsa eski oturumunda devam eder (`claude-1 bildiği her şeyle, eski oturumunda devam ediyor`); yoksa, ve thread'i ya da oturumu gitmiş Codex ve Gemini için, yeni bir oturum başlatır ve kaldığı yer anlatılır: kartının hikâyesi, yarım kalan tur, worktree'sinin değişiklikleri, pano (`claude-1 yeni bir oturumla başlıyor, kaldığı yer anlatıldı`). Eski bir commit'te temiz bulunan bir worktree HEAD'inize taşınır; değişiklikleri ya da kendi commit'leri olan yerinde kalır ve günlük hangisi olduğunu söyler.
+Aynı checkout'ta sonraki başlangıç aynı ekranı, her ajan uykuda gösterir (`◦ önceki çalışmadan beri uyuyor, yazınca uyanır`): siz birine yazana, bir takım arkadaşının mesajı ya da yeni bir kart onu uyandırana kadar süreç yok, maliyet yok. Uyandırılan bir ajan, Claude Code transkriptini hâlâ tutuyorsa eski oturumunda devam eder (`claude-1 bildiği her şeyle, eski oturumunda devam ediyor`); yoksa yeni bir oturum başlatır ve kaldığı yer anlatılır: kartının hikâyesi, yarım kalan tur, worktree'sinin değişiklikleri, pano (`claude-1 yeni bir oturumla başlıyor, kaldığı yer anlatıldı`). Eski bir commit'te temiz bulunan bir worktree HEAD'inize taşınır; değişiklikleri ya da kendi commit'leri olan yerinde kalır ve günlük hangisi olduğunu söyler.
 
 ## Ayrıca bakınız
 

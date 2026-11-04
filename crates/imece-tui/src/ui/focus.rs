@@ -30,7 +30,7 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App, id: AgentId) {
     let a = &w.agents[id];
     let block = Block::bordered()
         .title(fill(t.focus_title, &[&a.name]))
-        .border_style(fg(vendor_color(a.vendor)));
+        .border_style(fg(pal().agent));
     let inner = block.inner(area);
     f.render_widget(block, area);
 
@@ -64,8 +64,8 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App, id: AgentId) {
         title.push(Span::styled(t.no_card, dim()));
     }
     title.push(Span::styled(
-        format!(" · {} ({})", clean(&a.name), a.vendor.label()),
-        fg(vendor_color(a.vendor)),
+        format!(" · {}", clean(&a.name)),
+        fg(pal().agent),
     ));
     title.push(Span::styled(format!(" · {}", dollars(a.cost)), dim()));
     head.push(Line::from(title));
@@ -394,7 +394,7 @@ pub fn trace(f: &mut Frame, area: Rect, app: &App, id: AgentId) {
     let lines: Vec<Line> = a
         .trace
         .iter()
-        .flat_map(|l| trace_lines(l, vendor_color(a.vendor), usize::from(inner.width)))
+        .flat_map(|l| trace_lines(l, pal().agent, usize::from(inner.width)))
         .collect();
     let rows = rows_of(lines, inner.width);
     let fresh;
@@ -421,7 +421,7 @@ pub(crate) enum TraceKind {
     Tool,
     /// The bus: a message, a wake, a hire, the board.
     Bus,
-    /// The vendor's own note (`note …`): a retry, tokens, a refusal.
+    /// Claude Code's own note (`note …`): a retry, tokens, a refusal.
     Note,
     /// Something went wrong: stopped, a run refused, a turn failed.
     Wrong,
@@ -445,10 +445,10 @@ impl TraceKind {
         }
     }
 
-    /// Its glyph and the glyph's style, `vendor` the agent's colour.
-    pub(crate) fn glyph(self, vendor: Color) -> (&'static str, Style) {
+    /// Its glyph and the glyph's style, `agent` the agent's colour.
+    pub(crate) fn glyph(self, agent: Color) -> (&'static str, Style) {
         match self {
-            TraceKind::Words => ("›", bold(vendor)),
+            TraceKind::Words => ("›", bold(agent)),
             TraceKind::Tool => ("▸", fg(pal().info)),
             TraceKind::Bus => ("⇄", fg(pal().accent)),
             TraceKind::Note => ("•", fg(pal().warn)),
@@ -460,24 +460,24 @@ impl TraceKind {
 
 /// A trace line drawn so the kinds tell apart at a glance: the clock dim,
 /// then the kind's glyph ([`TraceKind`]); the agent's own words
-/// (`text "…"`) unquoted, in its vendor's colour, as Markdown (lists,
+/// (`text "…"`) unquoted, in the agent's colour, as Markdown (lists,
 /// headings, code in the code style, fences never drawn), one row per
 /// line of them; a tool's name in the info colour and its target (a
 /// command, a path) in the code style; `run:` lines with their end
 /// coloured by the exit code; what went wrong in the colour of it; the
-/// bus with its first word in the accent; a vendor's note and imece's own
+/// bus with its first word in the accent; Claude Code's note and imece's own
 /// lines as written. Web addresses in any of them are drawn as links
 /// ([`linked`]). A line that matches no word is still shown whole. A line
 /// that runs over rows (a command with a heredoc) keeps them: the first
 /// [`TRACE_ROWS`] under it, indented, then how many more. `room` is how
 /// wide the lines may be, which a table in the agent's words fits.
-pub(crate) fn trace_lines(raw: &str, vendor: Color, room: usize) -> Vec<Line<'static>> {
+pub(crate) fn trace_lines(raw: &str, agent: Color, room: usize) -> Vec<Line<'static>> {
     let mut raw_rows = raw.lines();
     let line = clean(raw_rows.next().unwrap_or_default());
     let (clock, rest) = line.split_once(' ').unwrap_or((&line, ""));
     let (word, arg) = rest.split_once(' ').unwrap_or((rest, ""));
     let kind = TraceKind::of(word, arg);
-    let (glyph, style) = kind.glyph(vendor);
+    let (glyph, style) = kind.glyph(agent);
     let indent = " ".repeat(clock.width() + 3);
     let mut spans = vec![
         Span::styled(format!("{clock} "), dim()),
@@ -485,7 +485,7 @@ pub(crate) fn trace_lines(raw: &str, vendor: Color, room: usize) -> Vec<Line<'st
     ];
     if kind == TraceKind::Words {
         let text = unquote(arg).unwrap_or_else(|| arg.to_string());
-        let mut rows = markdown_in(&text, &indent, fg(vendor), room).into_iter();
+        let mut rows = markdown_in(&text, &indent, fg(agent), room).into_iter();
         if let Some((first, _)) = rows.next() {
             spans.extend(first.spans.into_iter().skip(1));
         }

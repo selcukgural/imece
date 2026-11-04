@@ -14,7 +14,7 @@ use ratatui::widgets::Paragraph;
 use super::{bold, dim, fg, fit};
 use crate::app::App;
 use crate::i18n::fill;
-use crate::model::Role;
+use crate::model::{CLAUDE, Role};
 use crate::theme::pal;
 use crate::welcome;
 
@@ -118,7 +118,7 @@ pub(crate) fn words(app: &App) -> [Line<'static>; 3] {
         ]),
         Line::from(Span::styled(t.brand_tagline, dim())),
         Line::from(Span::styled(
-            fill(says, &[project.trim_end(), head.vendor.label()]),
+            fill(says, &[project.trim_end(), CLAUDE]),
             dim(),
         )),
     ]

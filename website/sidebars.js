@@ -25,7 +25,7 @@ const sidebars = {
         'concepts/messages-and-board',
         'concepts/changes',
         'concepts/approvals-and-questions',
-        'concepts/vendors',
+        'concepts/claude-code',
         'concepts/budget-and-limits',
         'concepts/projects',
         'concepts/solo',
@@ -56,7 +56,6 @@ const sidebars = {
       link: { type: 'doc', id: 'scenarios/index' },
       items: [
         'scenarios/one-fix',
-        'scenarios/mixed-vendors',
         'scenarios/review-with-notes',
         'scenarios/many-projects',
         'scenarios/solo-beside-the-team',

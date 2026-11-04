@@ -1,5 +1,7 @@
 # Codex resume
 
+**Replaced by [record 109](109-claude-only.md): imece runs Claude Code only; this is history, and the code is on the branch `multi-vendor`.**
+
 Codex resume (2026-10-30, persistence PR 3): a Codex thread is no
 longer `ephemeral` (`thread/start` sends `ephemeral: false`, and the
 answer's `thread.ephemeral` must be false, fail closed), so Codex keeps

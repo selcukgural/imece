@@ -5,21 +5,17 @@ description: What an agent must ask you before doing, how a routine command runs
 
 # Approvals and questions
 
-Two kinds of things stop an agent until you answer: an **approval** (`⚑`), when its vendor would ask before a tool call and imece hands the question to you, and a **question** (`?`), when the agent itself asks you something with `send(to: "you", type: ask)`. Both wait in WAITING FOR YOU; `a` and `r` answer the first, writing back answers the second.
+Two kinds of things stop an agent until you answer: an **approval** (`⚑`), when Claude Code would ask before a tool call and imece hands the question to you, and a **question** (`?`), when the agent itself asks you something with `send(to: "you", type: ask)`. Both wait in WAITING FOR YOU; `a` and `r` answer the first, writing back answers the second.
 
 ## Approvals (`⚑`)
 
 Under `--confine standard` and `open`, what a session would ask before doing goes to you instead of being refused. Under `strict` nothing asks: what would ask is refused, and commands go through imece's `run` tool.
 
-| Vendor | How the ask reaches imece |
-| --- | --- |
-| Claude Code | `--permission-prompts host --permission-prompt-tool mcp__imece__approve`: Claude Code calls imece's `approve` tool itself before a tool call that needs a yes (its own read-only rules decide what never asks). The tool is hidden from the model. |
-| Codex | writers (workers, helpers) run `approval_policy = "on-request"`: what needs more than the sandbox gives (a write outside the directory, a command outside the sandbox) comes as a request. A leader, and everything under strict, stays `never`: what the sandbox refuses simply fails. |
-| Gemini CLI | the policy file makes a writer's `run_shell_command` ask (`ask_user`) before every command; the other tools stay allowed without a prompt. Under open your own policies decide. |
+Claude Code runs `--permission-prompts host --permission-prompt-tool mcp__imece__approve`: it calls imece's `approve` tool itself before a tool call that needs a yes (its own read-only rules decide what never asks). The tool is hidden from the model.
 
 ### Routine commands run at once
 
-A shell command is **routine** when it is one line, one program with its arguments (nothing a shell would read otherwise: no pipes, redirections, `&&`, `$`, globs), and the `run` tool's policy would let the role run it (below). A routine command is allowed on its own, with a trace line "allowed on its own"; the build, the tests and git's reading commands never wait for you. For Codex the shell it wraps a command in (`/bin/zsh -lc '…'`) is taken off first and the inner command judged as it is, so `&&` inside is not routine. For Gemini only a command that runs in the agent's directory may be routine.
+A shell command is **routine** when it is one line, one program with its arguments (nothing a shell would read otherwise: no pipes, redirections, `&&`, `$`, globs), and the `run` tool's policy would let the role run it (below). A routine command is allowed on its own, with a trace line "allowed on its own"; the build, the tests and git's reading commands never wait for you.
 
 ### Everything else waits
 
@@ -35,9 +31,9 @@ Anything else is a `⚑` item in WAITING FOR YOU: "claude-1 waits for your yes: 
 - `a` allows; the call runs as asked and the journal says `you allowed claude-1: Bash: …`.
 - `r` refuses; the agent is told "The person refused this. Do not try it another way; if you need it, ask them (send to you, type ask) and go on with what does not depend on it." and the journal says `you refused …`. A refusal is a decision, not an error; the turn goes on.
 - A call waits up to a day. One call at a time per connection, so a waiting ask holds that session's other imece tools (it could not use them mid-ask anyway).
-- When the session ends, every pending ask is answered "the session ended" and its items close. An ask the store kept from an earlier run is closed at the start: the process that asked is gone. Codex and Gemini withdraw an ask when the turn ends; the item closes without a decision.
+- When the session ends, every pending ask is answered "the session ended" and its items close. An ask the store kept from an earlier run is closed at the start: the process that asked is gone.
 
-What an ask shows: for a shell command the command; for another tool what it touches (the path, address, query or pattern), or its input as JSON cut at 200 characters. Codex file changes show the files the item named and `writes under <root>` for a granted root. A yes holds once; for a yes from now on, see below.
+What an ask shows: for a shell command the command; for another tool what it touches (the path, address, query or pattern), or its input as JSON cut at 200 characters. A yes holds once; for a yes from now on, see below.
 
 ### A yes from now on
 
@@ -49,10 +45,10 @@ What an ask shows: for a shell command the command; for another tool what it tou
 
 ## Questions (`?`)
 
-An agent asks you with `send(to: "you", type: "ask", body)`. It becomes a `?` item, "codex-1 asks you: keep the old CLI flag?", and the agent's salon line reads `? → you` while it is idle with the question open. A newer question from the same agent replaces the older.
+An agent asks you with `send(to: "you", type: "ask", body)`. It becomes a `?` item, "claude-2 asks you: keep the old CLI flag?", and the agent's salon line reads `? → you` while it is idle with the question open. A newer question from the same agent replaces the older.
 
 - `enter` opens the conversation at the question.
-- `a` or `r` open the composer `@codex-1 ` (there is no "answered without words"); anything you write to that agent closes the question and starts its next turn.
+- `a` or `r` open the composer `@claude-2 ` (there is no "answered without words"); anything you write to that agent closes the question and starts its next turn.
 - A question of an agent that is gone or stopped stays open until you write to it.
 
 Who asks when: the leader may ask you mid-task; a worker asks its leader first and sends you only what only you can decide; a helper only what no teammate can answer. Questions cost nothing against the mail caps or the pot ([messages](../concepts/messages-and-board.md)).
@@ -79,11 +75,11 @@ Every agent has a `run` tool on the bus: one program and its arguments, no shell
 - Output comes back tidied: colours stripped, lines of passing tests dropped, repeats collapsed, the middle cut past 48 KiB. Each worktree builds in its own `target/`: a shared one would make the workers rebuild each other's changes in turn.
 - `run` has no network block of its own; cargo may reach the registry when the lockfile is off.
 
-The same policy decides which shell commands are routine, so under `standard` a worker's `cargo test` runs whether it goes through `run` or its vendor's shell; only a `run` ties its result to the tree it ran on and shows on the change ([changes](../concepts/changes.md)).
+The same policy decides which shell commands are routine, so under `standard` a worker's `cargo test` runs whether it goes through `run` or Claude Code's shell; only a `run` ties its result to the tree it ran on and shows on the change ([changes](../concepts/changes.md)).
 
 ## See also
 
-- [Vendors](../concepts/vendors.md): the confine levels and what each vendor asks.
+- [Claude Code](../concepts/claude-code.md): the confine levels.
 - [WAITING FOR YOU](../screen/waiting.md): the panel, `W`, `S`.
 - [Messages and the board](../concepts/messages-and-board.md).
 - [Security](../concepts/security.md): you are the last gate, not a tool list.

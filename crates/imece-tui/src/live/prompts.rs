@@ -121,7 +121,7 @@ pub(super) fn system_prompt(
                  question; mid-task, send it to them (send to you, type ask) and \
                  their answer starts your next turn.",
                 a.name,
-                abilities(a.vendor, Role::Leader, confine)
+                abilities(Role::Leader, confine)
             )
         }
         Role::Solo if w.projects[a.project].no_git => {
@@ -149,7 +149,7 @@ pub(super) fn system_prompt(
                  send it mid-task (send to you, type ask) and their answer starts your next \
                  turn.{helpers} Use these tools only for that, not for chatter.",
                 a.name,
-                abilities(a.vendor, Role::Solo, confine)
+                abilities(Role::Solo, confine)
             )
         }
         Role::Solo => {
@@ -180,7 +180,7 @@ pub(super) fn system_prompt(
                  starts your next turn.{helpers} Use these tools only for that, not for \
                  chatter.",
                 a.name,
-                abilities(a.vendor, Role::Solo, confine)
+                abilities(Role::Solo, confine)
             )
         }
         Role::Helper if w.is_solo(a.project) => {
@@ -202,7 +202,7 @@ pub(super) fn system_prompt(
                  can answer goes to them (send to you, type ask). Use these tools only for \
                  that, not for chatter.",
                 a.name,
-                abilities(a.vendor, Role::Helper, confine)
+                abilities(Role::Helper, confine)
             )
         }
         Role::Helper => {
@@ -218,7 +218,7 @@ pub(super) fn system_prompt(
                  guessing; only what no teammate can answer goes to the person (send \
                  to you, type ask). Use these tools only for that, not for chatter.",
                 a.name,
-                abilities(a.vendor, Role::Helper, confine)
+                abilities(Role::Helper, confine)
             )
         }
         _ => {
@@ -264,7 +264,7 @@ pub(super) fn system_prompt(
                  say in your done what they should get.{helpers}{start} Use \
                  these tools only for that, not for chatter.",
                 a.name,
-                abilities(a.vendor, Role::Worker, confine)
+                abilities(Role::Worker, confine)
             )
         }
     }
@@ -281,16 +281,14 @@ pub(crate) const MAX_NOTES_KIB: usize = 16;
 pub(super) const MAX_NOTES: usize = MAX_NOTES_KIB << 10;
 
 /// The repository's notes for coding agents (its `AGENTS.md` or
-/// `CLAUDE.md`), to append to an agent's instructions. The vendors' CLIs
-/// are started so that they load nothing from the repository (no hooks,
-/// no settings), which drops these notes too; imece passes them itself.
-/// Codex loads `AGENTS.md` from its directory on its own and gets it only
-/// when the notes are in another file.
-pub(super) fn repo_notes(repo: &Path, vendor: Vendor) -> Option<Notes> {
+/// `CLAUDE.md`), to append to an agent's instructions. Claude Code is
+/// started so that it loads nothing from the repository (no hooks, no
+/// settings), which drops these notes too; imece passes them itself.
+pub(super) fn repo_notes(repo: &Path) -> Option<Notes> {
     let (file, text) = NOTES_FILES
         .iter()
         .find_map(|f| std::fs::read_to_string(repo.join(f)).ok().map(|t| (*f, t)))?;
-    if text.trim().is_empty() || (vendor == Vendor::Codex && file == "AGENTS.md") {
+    if text.trim().is_empty() {
         return None;
     }
     let mut body = text.trim().to_string();
@@ -373,48 +371,25 @@ pub(super) fn personal_notes(path: &Path) -> Option<Notes> {
     })
 }
 
-/// What an agent of `vendor` in `role` can do to the files and the world
-/// outside, as its session is set up at `confine`. Under strict Claude
-/// Code and Gemini get file tools and no shell, and Codex (which always
-/// has a shell) a sandbox without the network; from standard on a worker
-/// has its vendor's shell and the web, a leader the web and reading
-/// commands. Codex's sandbox is read-only for a leader and confined to
-/// the agent's directory for the rest at every level.
-pub(super) fn abilities(vendor: Vendor, role: Role, confine: Confine) -> &'static str {
-    match (vendor, role, confine.full()) {
-        (Vendor::Codex, Role::Leader, false) => {
-            "You can read files and run commands that only read; the sandbox refuses \
-             writes and the network."
-        }
-        (Vendor::Codex, Role::Leader, true) => {
-            "You can read files, search the web and run commands that only read; the \
-             sandbox refuses writes and the network."
-        }
-        (Vendor::Codex, _, false) => {
-            "You can read and change files here and run commands; the sandbox keeps \
-             writes inside this directory and refuses the network."
-        }
-        (Vendor::Codex, _, true) => {
-            "You can read and change files here, run commands and reach the web; the \
-             sandbox keeps writes inside this directory. What needs more than the \
-             sandbox gives waits for the person's yes, unless it is one program with its \
-             arguments (no pipes, redirections, && or $, one line) that runs the build, \
-             the tests or git's reading commands. A refusal is the person's decision, \
-             not an error: do not try the same another way."
-        }
-        (_, Role::Leader, false) => {
+/// What an agent in `role` can do to the files and the world outside, as
+/// its session is set up at `confine`. Under strict it gets file tools and
+/// no shell; from standard on a worker has Claude Code's shell and the
+/// web, a leader the web and reading commands.
+pub(super) fn abilities(role: Role, confine: Confine) -> &'static str {
+    match (role, confine.full()) {
+        (Role::Leader, false) => {
             "You can read files but not change them; the run tool runs checks (cargo \
              check, clippy, test; git diff, log) in the checkout."
         }
-        (_, Role::Leader, true) => {
+        (Role::Leader, true) => {
             "You can read files and the web but not change files; the run tool runs \
              checks (cargo check, clippy, test; git diff, log) in the checkout."
         }
-        (_, _, false) => {
+        (_, false) => {
             "You can read and change files here; the run tool runs the build, the \
              tests and git's reading commands, nothing else."
         }
-        (Vendor::Claude, _, true) => {
+        (_, true) => {
             "You can read and change files here, run commands in your shell and reach \
              the web. A command that is one program with its arguments (no pipes, \
              redirections, && or $, one line) and runs the build, the tests or git's \
@@ -422,21 +397,6 @@ pub(super) fn abilities(vendor: Vendor, role: Role, confine: Confine) -> &'stati
              prefer the first kind. A refusal is the person's decision, not an error: \
              do not try the same another way. The run tool runs the build and the \
              tests with their output tidied."
-        }
-        (Vendor::Gemini, _, true) => {
-            "You can read and change files here, run commands in your shell and reach \
-             the web. Give each command your files' directory as its dir_path: one that \
-             runs there and is one program with its arguments (no pipes, redirections, \
-             && or $, one line) running the build, the tests or git's reading commands \
-             runs at once; most others wait for the person's yes, so prefer the first \
-             kind. A refusal is the person's decision, not an error: do not try the same \
-             another way. The run tool runs the build and the tests with their output \
-             tidied."
-        }
-        (_, _, true) => {
-            "You can read and change files here, run commands in your shell and reach \
-             the web; the run tool runs the build and the tests with their output \
-             tidied."
         }
     }
 }
@@ -658,7 +618,7 @@ mod tests {
     }
 
     #[test]
-    fn the_leader_hires_a_worker_named_after_its_vendor_with_the_tier_s_model() {
+    fn the_leader_hires_a_worker_with_the_tier_s_model() {
         let mut w = team(0);
         let mut live = idle_live(1);
         live.max_workers = 2;
@@ -669,10 +629,7 @@ mod tests {
             "{got}"
         );
         let a = &w.agents[1];
-        assert_eq!(
-            (a.name.as_str(), a.vendor, a.role),
-            ("claude-1", Vendor::Claude, Role::Worker)
-        );
+        assert_eq!((a.name.as_str(), a.role), ("claude-1", Role::Worker));
         assert_eq!(a.status, Status::Idle);
         assert_eq!(a.project, 0);
         assert_eq!(live.models[1].as_deref(), Some("haiku"));
@@ -689,7 +646,7 @@ mod tests {
                 .iter()
                 .any(|l| l.contains("hire claude-1 cheap haiku"))
         );
-        // The default tier is the vendor's own model, which has nothing to
+        // The default tier is Claude Code's own model, which has nothing to
         // fall back to.
         let got = live.hire(&mut w, 0, &json!({})).unwrap();
         assert!(
@@ -743,13 +700,7 @@ mod tests {
     fn a_solo_and_its_helper_are_told_they_work_alone_with_the_person() {
         let mut w = team(1);
         let team_helper = with_helper(&mut w, 1);
-        w.open_project(
-            None,
-            "notes".into(),
-            "/n".into(),
-            Vendor::Claude,
-            Role::Solo,
-        );
+        w.open_project(None, "notes".into(), "/n".into(), Role::Solo);
         let solo = w.projects[1].leader;
         let solo_helper = with_helper(&mut w, solo);
         w.agents[solo_helper].project = 1;

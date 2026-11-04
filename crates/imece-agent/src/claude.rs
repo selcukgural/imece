@@ -13,7 +13,7 @@
 //! asks the person about the rest. Open drops
 //! `--restricted` and `--strict-mcp-config`: the person's own settings,
 //! hooks and MCP servers load, and workers get Claude Code's default
-//! toolset less the sub-agent tool. What the vendor reports back in its
+//! toolset less the sub-agent tool. What Claude Code reports back in its
 //! `init` event is checked against that on every turn; anything else stops
 //! the session.
 
@@ -81,7 +81,7 @@ pub const REFUSED: &str = "The person refused this. Do not try it another way; i
      need it, ask them (send to you, type ask) and go on with what does not depend on it.";
 
 /// Claude Code names a tool of an MCP server `mcp__<server>__<tool>`, which
-/// is the name the screen uses for every vendor.
+/// is the name the screen uses.
 pub use crate::{APPROVE_TOOL, Ask, Confine, MCP_SERVER, Mcp, mcp_tool};
 
 /// The program on PATH.
@@ -422,7 +422,7 @@ pub fn prompt_line(text: &str) -> String {
     .to_string()
 }
 
-/// Turns stdout lines into [`Event`]s and checks the settings the vendor
+/// Turns stdout lines into [`Event`]s and checks the settings Claude Code
 /// reports.
 pub struct Parser {
     cwd: PathBuf,
@@ -955,7 +955,7 @@ impl Session {
             model: None,
             effort: spec.effort.clone(),
         };
-        if let Err(why) = choice.check(PROGRAM, EFFORTS) {
+        if let Err(why) = choice.check(EFFORTS) {
             return Err(io::Error::new(io::ErrorKind::InvalidInput, why));
         }
         let mut cmd = child::command(&spec.program, &spec.cwd, ENV);
@@ -2264,7 +2264,7 @@ mod tests {
 
     fn events(spec: &Spec, prompt: &str) -> Vec<Event> {
         let (tx, rx) = mpsc::channel();
-        // Through the trait, as the screen drives every vendor.
+        // Through the trait, as the screen drives it.
         let mut s: Box<dyn crate::Agent> = Box::new(
             Session::start(spec, move |e| {
                 let _ = tx.send(e);

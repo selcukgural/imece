@@ -12,9 +12,9 @@ The salon shows the team; the board shows the work, and the code map shows the f
 ```text
 ┌ WAITING (2) ──────────┐┌ IN PROGRESS (2) ──────┐┌ VERIFYING (0) ───────┐┌ DONE (3) ────────────┐
 │#6  Legacy parser      ││#3  Parse the manifest ││                      ││#2  Money rounding    │
-│#7  Changelog entry    ││    ● claude-1 ▰▰▰▱▱   ││                      ││    ○ codex-2         │
+│#7  Changelog entry    ││    ● claude-1 ▰▰▰▱▱   ││                      ││    ○ claude-2        │
 │                       ││#5  Retry on timeout   ││                      ││#1  CI cache          │
-│                       ││    ● gemini-3 ▰▱▱▱▱   ││                      ││    ○ claude-1        │
+│                       ││    ● claude-3 ▰▱▱▱▱   ││                      ││    ○ claude-1        │
 └───────────────────────┘└───────────────────────┘└──────────────────────┘└──────────────────────┘
 ```
 
@@ -38,8 +38,8 @@ What a card is, how the leader posts and assigns and how a worker claims, is in 
 ```text
 ┌ CODE MAP · shop-api · who works where (leases) ─────────────────────────────┐
 │src/billing/                                                                  │
-│  Money.cs             ● codex-2     Round         ◐ claude-1   Parse   ⇆ 2  │
-│  Invoice.cs           ● codex-2     Total                                   │
+│  Money.cs             ● claude-2    Round         ◐ claude-1   Parse   ⇆ 2  │
+│  Invoice.cs           ● claude-2    Total                                   │
 │src/parser/                                                                   │
 │  Manifest.cs          ● claude-1    Read                                    │
 │  Legacy.cs                                                                  │
@@ -48,7 +48,7 @@ What a card is, how the leader posts and assigns and how a worker claims, is in 
 ```
 
 - Files are grouped under their directory, a dim `dir/` row above each group.
-- A lease cell is the holder's state glyph (the salon's), its name in its vendor colour and the symbol (its last part, `Round` for `Money.Round`). Every cell is padded to the widest name and symbol in the project, capped, so the columns do not jump when a lease comes or goes.
+- A lease cell is the holder's state glyph (the salon's), its name and the symbol (its last part, `Round` for `Money.Round`). Every cell is padded to the widest name and symbol in the project, capped, so the columns do not jump when a lease comes or goes.
 - A file nobody holds is dim with nothing after it. A file several agents hold ends with `⇆ N` in the warning colour.
 - The bottom line counts the leases and the shared files, and words only the glyphs on the map right now: a fixed legend missed the glyphs the map had started to use. `⇆` is explained only when a file is shared.
 

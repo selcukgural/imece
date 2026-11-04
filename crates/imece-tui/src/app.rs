@@ -27,7 +27,7 @@ use crate::shell::{Caught, Output, Ran};
 use crate::sim::{self, Sim};
 use crate::theme;
 use crate::ui;
-use crate::welcome::{self, LISTED, Seen};
+use crate::welcome::{self, Seen};
 use imece_agent::{Choice, Login};
 use std::sync::mpsc::TryRecvError;
 
@@ -504,78 +504,59 @@ pub enum Part {
     Model,
 }
 
-/// The screen a bare `:solo` opens: the vendor, then the model (the
-/// vendor's own or an alias), then the effort (the vendor's own or one of
-/// its levels; skipped for a vendor without any). The path and name typed
-/// with `:solo` wait here for the choice.
+/// The screen a bare `:solo` opens: the model (Claude Code's own or an
+/// alias), then the effort (its own or one of its levels). The path and
+/// name typed with `:solo` wait here for the choice.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SoloPick {
     pub path: Option<String>,
     pub name: Option<String>,
-    pub vendors: Vec<Vendor>,
     pub step: PickStep,
     /// The highlighted row of each step.
-    pub vendor: usize,
     pub model: usize,
     pub effort: usize,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PickStep {
-    Vendor,
     Model,
     Effort,
 }
 
+/// How the solo pick screen ended.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Picked {
+    /// Given up.
+    Nothing,
+    /// The last step answered: the choice, none for Claude Code's own.
+    Choice(Option<String>),
+}
+
 impl SoloPick {
-    pub fn new(path: Option<String>, name: Option<String>, vendors: Vec<Vendor>) -> SoloPick {
+    pub fn new(path: Option<String>, name: Option<String>) -> SoloPick {
         SoloPick {
             path,
             name,
-            vendors,
-            step: PickStep::Vendor,
-            vendor: 0,
+            step: PickStep::Model,
             model: 0,
             effort: 0,
         }
     }
 
-    /// The vendor highlighted.
-    pub fn chosen_vendor(&self) -> Vendor {
-        self.vendors[self.vendor.min(self.vendors.len().saturating_sub(1))]
-    }
-
-    /// The rows of the step at hand: the vendors; `default` and the
-    /// vendor's model aliases; `default` and the vendor's efforts.
+    /// The rows of the step at hand: `default` and the model aliases, or
+    /// `default` and the efforts.
     pub fn items(&self) -> Vec<String> {
-        let own = || vec![complete::DEFAULT.to_string()];
+        let mut items = vec![complete::DEFAULT.to_string()];
         match self.step {
-            PickStep::Vendor => self.vendors.iter().map(|v| v.label().to_string()).collect(),
-            PickStep::Model => {
-                let mut items = own();
-                items.extend(
-                    live::aliases(self.chosen_vendor())
-                        .iter()
-                        .map(|a| a.to_string()),
-                );
-                items
-            }
-            PickStep::Effort => {
-                let mut items = own();
-                items.extend(
-                    live::efforts(self.chosen_vendor())
-                        .iter()
-                        .map(|e| e.to_string()),
-                );
-                items
-            }
+            PickStep::Model => items.extend(live::aliases().iter().map(|a| a.to_string())),
+            PickStep::Effort => items.extend(live::efforts().iter().map(|e| e.to_string())),
         }
+        items
     }
 
     /// The highlighted row of the step at hand.
     pub fn sel(&self) -> usize {
         match self.step {
-            PickStep::Vendor => self.vendor,
             PickStep::Model => self.model,
             PickStep::Effort => self.effort,
         }
@@ -583,28 +564,25 @@ impl SoloPick {
 
     fn sel_mut(&mut self) -> &mut usize {
         match self.step {
-            PickStep::Vendor => &mut self.vendor,
             PickStep::Model => &mut self.model,
             PickStep::Effort => &mut self.effort,
         }
     }
 
-    /// The choice picked so far, as `:solo` would take it: none for the
-    /// vendor's own model and effort.
+    /// The choice picked so far, as `:solo` would take it: none for Claude
+    /// Code's own model and effort.
     pub fn choice(&self) -> Option<String> {
-        let v = self.chosen_vendor();
         let pick = |items: Vec<&str>, i: usize| items.get(i).copied().map(str::to_string);
         let c = Choice {
-            model: pick(live::aliases(v), self.model.saturating_sub(1)).filter(|_| self.model > 0),
-            effort: pick(live::efforts(v).to_vec(), self.effort.saturating_sub(1))
+            model: pick(live::aliases(), self.model.saturating_sub(1)).filter(|_| self.model > 0),
+            effort: pick(live::efforts().to_vec(), self.effort.saturating_sub(1))
                 .filter(|_| self.effort > 0),
         };
         Some(c.wire()).filter(|w| !w.is_empty())
     }
 
-    /// A key: `Some(Some(..))` once the last step is answered (the vendor
-    /// and the choice), `Some(None)` when the screen is given up.
-    pub fn on_key(&mut self, code: KeyCode) -> Option<Option<(Vendor, Option<String>)>> {
+    /// A key: how the screen ended, when it did.
+    pub fn on_key(&mut self, code: KeyCode) -> Option<Picked> {
         let last = self.items().len().saturating_sub(1);
         match code {
             KeyCode::Up | KeyCode::Char('k') => *self.sel_mut() = self.sel().saturating_sub(1),
@@ -618,24 +596,14 @@ impl SoloPick {
                 }
             }
             KeyCode::Enter => match self.step {
-                PickStep::Vendor => {
-                    // Another vendor: its own models and efforts.
-                    self.model = 0;
-                    self.effort = 0;
-                    self.step = PickStep::Model;
-                }
-                PickStep::Model if live::efforts(self.chosen_vendor()).is_empty() => {
-                    return Some(Some((self.chosen_vendor(), self.choice())));
-                }
                 PickStep::Model => self.step = PickStep::Effort,
-                PickStep::Effort => return Some(Some((self.chosen_vendor(), self.choice()))),
+                PickStep::Effort => return Some(Picked::Choice(self.choice())),
             },
             KeyCode::Esc => match self.step {
-                PickStep::Vendor => return Some(None),
-                PickStep::Model => self.step = PickStep::Vendor,
+                PickStep::Model => return Some(Picked::Nothing),
                 PickStep::Effort => self.step = PickStep::Model,
             },
-            KeyCode::Char('q') => return Some(None),
+            KeyCode::Char('q') => return Some(Picked::Nothing),
             _ => {}
         }
         None
@@ -755,7 +723,7 @@ pub(crate) fn cell_of(w: &World, a: &Agent, waits: bool) -> LaneCell {
 pub(crate) fn writes(doing: &str) -> bool {
     matches!(
         doing.split_whitespace().next(),
-        Some("Edit" | "Write" | "MultiEdit" | "NotebookEdit" | imece_agent::codex::PATCH)
+        Some("Edit" | "Write" | "MultiEdit" | "NotebookEdit")
     )
 }
 
@@ -909,7 +877,7 @@ pub struct App {
     /// `:story`; record 99). Off in `App::new`; `main` sets the saved one,
     /// on by default.
     pub story: bool,
-    /// Every change that comes to wait gets a review from another vendor
+    /// Every change that comes to wait gets a review from a fresh session
     /// (`:review on|off`; record 106). Off in `App::new`; `main` sets the
     /// saved one, off by default.
     pub review: bool,
@@ -1079,7 +1047,7 @@ pub struct App {
     /// The first of two keys the key file gives (`gt = G`), waiting for
     /// the second since then; at most [`keys::WAIT`].
     pub keys_held: Option<(KeyEvent, Instant)>,
-    /// A bare `:solo` asks the vendor, the model and the effort on a
+    /// A bare `:solo` asks Claude Code, the model and the effort on a
     /// screen of its own; the words it came with wait in it.
     pub solo_pick: Option<SoloPick>,
     /// The archives browser (`A`, `:archives`), while it is open.
@@ -1091,25 +1059,21 @@ pub struct App {
     /// In a view: `:restore` asked the screen behind to bring the archive
     /// back.
     pub restore_asked: bool,
-    /// The vendor that leads from the next start on without being asked
-    /// (`claude`), as the preferences keep it; none asks when there is a
-    /// choice.
-    pub primary: Option<String>,
     pub digest: Option<Digest>,
     /// What an earlier run left behind, shown once at the start.
     pub left_off: Option<LeftOff>,
     /// The first-run window is open (`:welcome`).
     pub welcome: bool,
-    /// What the window lists of each vendor's CLI, in [`LISTED`]'s order.
-    pub vendors: Vec<(Vendor, Seen)>,
-    /// How a live run asks the vendors' CLIs ([`live::look`]); none in the
-    /// demo, whose vendors are its own.
+    /// What the window says of Claude Code.
+    pub seen: Seen,
+    /// How a live run asks Claude Code ([`live::look`]); none in the demo,
+    /// which says what it says of itself.
     pub look: Option<welcome::Look>,
-    /// The answers still to come.
+    /// The answer still to come.
     looking: Option<welcome::Answers>,
-    /// The leader's vendor, while a start waits to hear whether it is
-    /// signed in: not opens the window.
-    lead_check: Option<Vendor>,
+    /// A start waits to hear whether Claude Code is signed in: not opens
+    /// the window.
+    lead_check: bool,
     /// The versions whose news are open, newest first; none: closed
     /// (`:news`).
     pub news: Vec<&'static str>,
@@ -1152,7 +1116,7 @@ pub struct App {
     /// When the screen was last drawn and what its clock showed then;
     /// whether something came from the terminal since (a key, a paste, a
     /// resize, the focus), and whether something else the screen shows
-    /// changed (an engine's step that brought news, a vendor looked at,
+    /// changed (an engine's step that brought news, Claude Code looked at,
     /// a held key let through).
     drawn_at: Option<Instant>,
     drawn_clock: Option<Clock>,
@@ -1240,12 +1204,11 @@ impl App {
                 .and_then(|left| LeftOff::of(&world, left.journal, left.ago)),
             Engine::Sim(_) | Engine::View(_) => None,
         };
-        // Live, every vendor is asked when the window opens; the demo's
-        // are its own.
-        let vendors = match &engine {
-            Engine::Live(_) => LISTED.map(|v| (v, Seen::Checking)).to_vec(),
-            Engine::Sim(_) => sim::vendors(),
-            Engine::View(_) => Vec::new(),
+        // Live, Claude Code is asked when the window opens; the demo says
+        // what it says of itself.
+        let seen = match &engine {
+            Engine::Sim(_) => sim::seen(),
+            Engine::Live(_) | Engine::View(_) => Seen::Checking,
         };
         let begun = world.tick;
         let spent_at_start = world.spent();
@@ -1331,14 +1294,13 @@ impl App {
             archives: None,
             viewing: None,
             restore_asked: false,
-            primary: None,
             digest: None,
             left_off,
             welcome: false,
-            vendors,
+            seen,
             look: None,
             looking: None,
-            lead_check: None,
+            lead_check: false,
             news: Vec::new(),
             leaving: false,
             theme_was: None,
@@ -2044,87 +2006,67 @@ impl App {
         !self.news.is_empty() || self.welcome || self.digest.is_some() || self.left_off.is_some()
     }
 
-    /// `:welcome`: the first-run window, every vendor asked again (live).
+    /// `:welcome`: the first-run window, Claude Code asked again (live).
     pub fn open_welcome(&mut self) {
         self.welcome = true;
-        self.look_at(&LISTED);
+        self.look_again();
     }
 
-    /// Asks the vendors `which` about themselves again, live: their lines
-    /// say `checking…` until the answers come ([`App::looked`]).
-    fn look_at(&mut self, which: &[Vendor]) {
+    /// Asks Claude Code about itself again, live: its line says `checking…`
+    /// until the answer comes ([`App::looked`]).
+    fn look_again(&mut self) {
         let Some(look) = self.look else {
             return;
         };
-        for (v, seen) in &mut self.vendors {
-            if which.contains(v) {
-                *seen = Seen::Checking;
-            }
-        }
-        self.looking = Some(look(which));
+        self.seen = Seen::Checking;
+        self.looking = Some(look());
     }
 
     /// A live start: the first ever opens the first-run window; any other
-    /// asks only whether the leader's vendor is signed in, and opens it
-    /// when not ([`App::looked`]).
+    /// asks only whether Claude Code is signed in, and opens it when not
+    /// ([`App::looked`]).
     pub fn start_welcome(&mut self, first: bool) {
         if first {
             return self.open_welcome();
         }
-        let p = &self.world.projects[self.current_project()];
-        let lead = self.world.agents[p.leader].vendor;
-        self.lead_check = Some(lead);
-        self.look_at(&[lead]);
+        self.lead_check = true;
+        self.look_again();
     }
 
-    /// The answers the vendors gave since last time, each on its line. The
-    /// leader's vendor not signed in at the start opens the window, the
-    /// others asked then; while the person writes, a line says so instead.
+    /// The answer Claude Code gave since last time, on its line. Not
+    /// signed in at the start opens the window; while the person writes, a
+    /// line says so instead.
     pub fn looked(&mut self) {
-        let (mut got, mut done) = (Vec::new(), false);
-        if let Some(rx) = &self.looking {
-            loop {
-                match rx.try_recv() {
-                    Ok(answer) => got.push(answer),
-                    Err(TryRecvError::Empty) => break,
-                    Err(TryRecvError::Disconnected) => {
-                        done = true;
-                        break;
-                    }
-                }
+        let Some(rx) = &self.looking else {
+            return;
+        };
+        let seen = match rx.try_recv() {
+            Ok(seen) => seen,
+            Err(TryRecvError::Empty) => return,
+            Err(TryRecvError::Disconnected) => {
+                self.looking = None;
+                return;
             }
+        };
+        self.looking = None;
+        // Its line on the welcome window, if open.
+        self.changed = true;
+        let out = matches!(
+            seen,
+            Seen::Here {
+                login: Login::No,
+                ..
+            }
+        );
+        self.seen = seen;
+        if !std::mem::take(&mut self.lead_check) || !out {
+            return;
         }
-        if done {
-            self.looking = None;
-        }
-        // A vendor's line on the welcome window, if open.
-        self.changed |= !got.is_empty();
-        for (v, seen) in got {
-            let out = matches!(
-                seen,
-                Seen::Here {
-                    login: Login::No,
-                    ..
-                }
-            );
-            if let Some(line) = self.vendors.iter_mut().find(|(w, _)| *w == v) {
-                line.1 = seen;
-            }
-            if self.lead_check != Some(v) {
-                continue;
-            }
-            self.lead_check = None;
-            if !out {
-                continue;
-            }
-            if self.typing {
-                let t = self.lang.text();
-                self.flash(fill(t.not_signed_in, &[v.label()]));
-            } else {
-                self.welcome = true;
-                let others: Vec<Vendor> = LISTED.into_iter().filter(|&w| w != v).collect();
-                self.look_at(&others);
-            }
+        if self.typing {
+            let t = self.lang.text();
+            self.flash(fill(t.not_signed_in, &[CLAUDE]));
+        } else {
+            self.welcome = true;
         }
     }
 
@@ -4064,7 +4006,7 @@ impl App {
     }
 
     /// Asks the engine for a review of worker `agent`'s change.
-    fn ask_review(&mut self, agent: AgentId) -> Result<Vendor, String> {
+    fn ask_review(&mut self, agent: AgentId) -> Result<(), String> {
         match &mut self.engine {
             Engine::Live(l) => l.review(&self.world, agent),
             Engine::Sim(s) => s.review(&self.world, agent),
@@ -4072,12 +4014,12 @@ impl App {
         }
     }
 
-    /// The vendor reviewing worker `agent`'s change, or about to.
-    pub fn reviewing(&self, agent: AgentId) -> Option<Vendor> {
+    /// Whether worker `agent`'s change is being reviewed, or is about to.
+    pub fn reviewing(&self, agent: AgentId) -> bool {
         match &self.engine {
             Engine::Live(l) => l.review_of(agent),
             Engine::Sim(s) => s.review_of(agent),
-            Engine::View(_) => None,
+            Engine::View(_) => false,
         }
     }
 
@@ -4136,9 +4078,9 @@ impl App {
             });
         };
         match self.ask_review(agent) {
-            Ok(by) => {
+            Ok(()) => {
                 let name = self.world.agents[agent].name.clone();
-                self.flash(fill(t.reviewing, &[by.label(), &name]));
+                self.flash(fill(t.reviewing, &[CLAUDE, &name]));
             }
             Err(why) => self.flash(fill(t.review_refused, &[&why])),
         }
@@ -4617,7 +4559,6 @@ impl App {
                 t.budget,
                 &[&dollars(self.world.spent()), &dollars(self.world.budget)],
             )),
-            "lead" => Some(self.primary.clone().unwrap_or_else(|| "ask".to_string())),
             "edit" => Some(editor::of_env()),
             "theme" => Some(theme::pal().name.clone()),
             "lang" => Some(t.language.to_string()),
@@ -4925,10 +4866,8 @@ impl App {
 
     /// A command to imece itself, typed after `:`. `budget USD` (or `b`)
     /// sets what all agents together may spend; a running turn finishes
-    /// on its old cap, the next one starts on the new remainder. `lead
-    /// VENDOR` makes that vendor the primary one, leading from the next
-    /// start on without asking; `lead ask` forgets it. `theme NAME` (or
-    /// `t`) switches to a built-in theme or a colour file.
+    /// on its old cap, the next one starts on the new remainder. `theme
+    /// NAME` (or `t`) switches to a built-in theme or a colour file.
     ///
     /// Every key that acts has a name here too (`:salon`, `:lang`,
     /// `:quit` ...; `complete::COMMANDS`), doing what the key does from
@@ -4960,17 +4899,6 @@ impl App {
                     self.flash(fill(t.budget_is, &[&dollars(to)]));
                 }
                 None => self.flash(fill(t.bad_budget, &[arg])),
-            },
-            "lead" => match (arg, Vendor::parse(arg)) {
-                ("ask", _) => {
-                    self.primary = None;
-                    self.flash(t.lead_asks);
-                }
-                (_, Some(v)) => {
-                    self.primary = Some(v.label().to_string());
-                    self.flash(fill(t.lead_is, &[v.label()]));
-                }
-                (_, None) => self.flash(fill(t.bad_lead, &[arg])),
             },
             "theme" if arg.is_empty() => self.next_theme(),
             "theme" => match theme::choose(arg) {
@@ -5952,7 +5880,7 @@ impl App {
                 parts.push((Moves::Breath, motion::BREATH));
             }
         }
-        let checking = self.welcome && self.vendors.iter().any(|(_, s)| *s == Seen::Checking);
+        let checking = self.welcome && self.seen == Seen::Checking;
         if let Some(spin) = moving.spin()
             && (self.footer_spins(now) || checking)
         {
@@ -6401,13 +6329,13 @@ impl App {
         }
     }
 
-    /// `:solo [PATH] [VENDOR[:MODEL][@EFFORT]] [NAME]`, the words in any
+    /// `:solo [PATH] [claude[:MODEL][@EFFORT]] [NAME]`, the words in any
     /// order: a solo session on the checkout at PATH (else the project at
-    /// hand's), on the vendor and choice, as a project named NAME (else
-    /// after the directory, numbered when taken). A word with a `/`, or
-    /// starting with `~` or `.`, is the path; one that starts with a
-    /// vendor's name is the choice; the one left is the name. Without a
-    /// choice, a screen asks the vendor, the model and the effort first.
+    /// hand's), on the choice, as a project named NAME (else after the
+    /// directory, numbered when taken). A word with a `/`, or starting
+    /// with `~` or `.`, is the path; one that starts with `claude` is the
+    /// choice; the one left is the name. Without a choice, a screen asks
+    /// the model and the effort first.
     /// Selected when opened.
     fn solo_project(&mut self, arg: &str) {
         let t = self.lang.text();
@@ -6415,7 +6343,7 @@ impl App {
         for word in arg.split_whitespace() {
             let slot = if word.contains('/') || word.starts_with(['~', '.']) {
                 &mut path
-            } else if let Some(c) = vendor_choice(word) {
+            } else if let Some(c) = solo_choice(word) {
                 if choice.replace(c).is_some() {
                     return self.flash(t.solo_usage);
                 }
@@ -6428,18 +6356,8 @@ impl App {
             }
         }
         match choice {
-            Some((vendor, choice)) => self.open_solo(path, name, Some(vendor), choice),
-            None => self.solo_pick = Some(SoloPick::new(path, name, self.vendors())),
-        }
-    }
-
-    /// The vendors a solo may run on here: the engine's, the lead vendor
-    /// first; the demo's three.
-    fn vendors(&self) -> Vec<Vendor> {
-        match &self.engine {
-            Engine::Live(live) => live.vendors(),
-            Engine::Sim(_) => vec![Vendor::Claude, Vendor::Codex, Vendor::Gemini],
-            Engine::View(_) => Vec::new(),
+            Some(choice) => self.open_solo(path, name, choice),
+            None => self.solo_pick = Some(SoloPick::new(path, name)),
         }
     }
 
@@ -6451,24 +6369,18 @@ impl App {
         };
         match pick.on_key(code) {
             None => {}
-            Some(None) => self.solo_pick = None,
-            Some(Some(picked)) => {
+            Some(Picked::Nothing) => self.solo_pick = None,
+            Some(Picked::Choice(choice)) => {
                 let pick = self.solo_pick.take().expect("open");
-                self.open_solo(pick.path, pick.name, Some(picked.0), picked.1);
+                self.open_solo(pick.path, pick.name, choice);
             }
         }
     }
 
     /// Opens a solo on the checkout at `path` (none: the project at hand's)
-    /// named `name`, on `vendor` (none: the lead vendor) and `choice`;
-    /// selected when opened, the flash says what it runs on.
-    fn open_solo(
-        &mut self,
-        path: Option<String>,
-        name: Option<String>,
-        vendor: Option<Vendor>,
-        choice: Option<String>,
-    ) {
+    /// named `name`, on `choice`; selected when opened, the flash says
+    /// what it runs on.
+    fn open_solo(&mut self, path: Option<String>, name: Option<String>, choice: Option<String>) {
         let t = self.lang.text();
         let here = self.current_project();
         let full = match &path {
@@ -6487,11 +6399,10 @@ impl App {
                 &full,
                 name,
                 Open::Solo {
-                    vendor,
                     choice: choice.clone(),
                 },
             ),
-            Engine::Sim(sim) => sim.open_solo(&mut self.world, &shown, vendor, choice, name),
+            Engine::Sim(sim) => sim.open_solo(&mut self.world, &shown, choice, name),
             Engine::View(_) => return self.read_only(),
         };
         match opened {
@@ -6505,8 +6416,8 @@ impl App {
                 let head = project.leader;
                 let a = &self.world.agents[head];
                 let runs = match self.model_of(head) {
-                    Some(m) => format!("{} {m}", a.vendor.label()),
-                    None => a.vendor.label().to_string(),
+                    Some(m) => format!("{CLAUDE} {m}"),
+                    None => CLAUDE.to_string(),
                 };
                 let said = fill(t.solo_opened, &[&project.name, &shown, &a.name, &runs]);
                 self.zoom = Zoom::None;
@@ -6533,7 +6444,7 @@ impl App {
     }
 
     /// `:effort LEVEL` / `:model NAME`: the solo at hand runs on it from
-    /// its next turn; `default` is the vendor's own. The other part of its
+    /// its next turn; `default` is Claude Code's own. The other part of its
     /// choice stays.
     fn rechoose(&mut self, part: Part, arg: &str) {
         let t = self.lang.text();
@@ -6584,39 +6495,34 @@ impl App {
         }
     }
 
-    /// The menus of `:solo`, `:effort` and `:model`: what the engine can
-    /// run here, by vendor.
+    /// The menus of `:solo`, `:effort` and `:model`.
     fn choice_menu(&self) -> Option<Menu> {
         let rest = self.input.strip_prefix(':')?;
         let (cmd, arg) = rest.split_once(' ')?;
         let word = arg.rsplit(' ').next().unwrap_or_default();
         let start = self.input.len() - word.len();
         match complete::long(cmd) {
-            "solo" => {
-                let vendors = self.vendors();
-                complete::solo_words(
-                    start,
-                    word,
-                    self.home.as_deref(),
-                    &vendors,
-                    &|v| live::efforts(v).to_vec(),
-                    &complete::list_dirs,
-                )
-            }
+            "solo" => complete::solo_words(
+                start,
+                word,
+                self.home.as_deref(),
+                live::efforts(),
+                &complete::list_dirs,
+            ),
             "effort" => {
-                let v = self.world.agents[self.solo_at_hand()?].vendor;
-                complete::choice_words(start, arg, live::efforts(v))
+                self.solo_at_hand()?;
+                complete::choice_words(start, arg, live::efforts())
             }
             "model" => {
-                let v = self.world.agents[self.solo_at_hand()?].vendor;
-                complete::choice_words(start, arg, &live::aliases(v))
+                self.solo_at_hand()?;
+                complete::choice_words(start, arg, &live::aliases())
             }
             _ => None,
         }
     }
 
     /// The `[MODEL][@EFFORT]` choice agent `id` runs on, none for its
-    /// vendor's own default: a solo's row shows it.
+    /// Claude Code's own default: a solo's row shows it.
     pub fn model_of(&self, id: AgentId) -> Option<String> {
         match &self.engine {
             Engine::Live(live) => live.model_of(id).map(str::to_string),
@@ -7595,7 +7501,7 @@ impl App {
             self.world.inbox[item].kind,
             InboxKind::Question | InboxKind::Fault
         ) {
-            // A question is answered by writing back, and a vendor error
+            // A question is answered by writing back, and a API error
             // the person mended is told the same way: the composer opens
             // to the agent, and the item closes when the message goes.
             let name = self.world.agents[self.world.inbox[item].agent].name.clone();
@@ -8794,7 +8700,6 @@ pub(crate) mod tests {
             2,
             0,
             "claude-1.1".into(),
-            Vendor::Claude,
             Role::Helper,
             Status::Working,
             0,
@@ -8996,9 +8901,6 @@ pub(crate) mod tests {
         app.world.agents[0].cost = 31_000;
         app.world.budget = 200_000;
         assert_eq!(app.command_note("budget"), "(spent $3.10 of $20.00)");
-        assert_eq!(app.command_note("lead"), "(ask)");
-        app.primary = Some("codex".into());
-        assert_eq!(app.command_note("lead"), "(codex)");
         theme::choose("light").unwrap();
         assert_eq!(app.command_note("theme"), "(light)");
         assert_eq!(app.command_note("lang"), "(English)");
@@ -9053,9 +8955,9 @@ pub(crate) mod tests {
         assert_eq!(m.items, ["open"]);
         assert_eq!(m.notes, ["$"]);
         // An argument's menu has no notes, nor do names after `@`.
-        app.input = ":lead c".into();
+        app.input = ":lang e".into();
         app.menu = app.suggest();
-        assert_eq!(app.menu.as_ref().unwrap().items, ["claude", "codex"]);
+        assert_eq!(app.menu.as_ref().unwrap().items, ["en"]);
         assert!(app.menu.as_ref().unwrap().notes.is_empty());
         app.input = "@".into();
         app.menu = app.suggest();
@@ -9643,17 +9545,11 @@ pub(crate) mod tests {
         let (mut app, w) = four_idle();
         let said = |app: &mut App| app.flash.take().map(|f| f.0).unwrap_or_default();
         let id = w[0];
-        // The one Claude worker, numbered past its count: a fork is
-        // claude-2, counted, not claude-1, the first name free.
+        // Numbered past their count: a fork is claude-5, counted, not
+        // claude-1, the first name free; the rest are not workers.
         for (i, &o) in w.iter().enumerate() {
-            app.world.agents[o].vendor = Vendor::Codex;
-            app.world.agents[o].name = format!("codex-{}", i + 1);
+            app.world.agents[o].name = format!("claude-{}", i + 7);
         }
-        app.world.agents[id].vendor = Vendor::Claude;
-        app.world.agents[id].name = "claude-7".into();
-        // Workers are counted, not the rest: none of them is Claude.
-        let lead = app.world.projects[0].leader;
-        app.world.agents[lead].vendor = Vendor::Codex;
         let name = app.world.agents[id].name.clone();
         let lead = app.world.projects[0].leader;
         app.command(&format!("fork @{}", app.world.agents[lead].name));
@@ -9682,26 +9578,16 @@ pub(crate) mod tests {
             format!("{name} does not fork: it is mid-turn: fork it when its turn ends")
         );
         app.world.agents[id].status = Status::Idle;
-        app.world.agents[id].vendor = Vendor::Gemini;
-        app.command("fork");
-        assert_eq!(
-            said(&mut app),
-            format!(
-                "{name} does not fork: gemini sessions can not be forked (Gemini CLI 0.65.0's \
-                 ACP has no fork)"
-            )
-        );
-        app.world.agents[id].vendor = Vendor::Claude;
         let before = app.world.agents.len();
         app.command("fork");
         assert_eq!(app.world.agents.len(), before + 1);
         let new = before;
         let fork = app.world.agents[new].name.clone();
-        assert_eq!(fork, "claude-2");
+        assert_eq!(fork, "claude-5");
         let a = &app.world.agents[new];
         assert_eq!(
-            (a.role, a.vendor, a.project, a.status),
-            (Role::Worker, Vendor::Claude, 0, Status::Idle)
+            (a.role, a.project, a.status),
+            (Role::Worker, 0, Status::Idle)
         );
         assert_eq!(
             said(&mut app),
@@ -10006,7 +9892,7 @@ pub(crate) mod tests {
         app.world.recall_line("@claude-1 fix the clock");
         app.world.recall_line(":budget 80");
         app.world.tick = 24;
-        app.world.recall_line("@codex-1 İşler\nnasıl?");
+        app.world.recall_line("@claude-1 İşler\nnasıl?");
         app.world.tick = 36;
         // From the salon: the whole list, newest first, each with its age.
         app.on_key(ctrl('r'));
@@ -10015,7 +9901,7 @@ pub(crate) mod tests {
         assert_eq!(
             m.items,
             [
-                "@codex-1 İşler ⏎ nasıl?",
+                "@claude-1 İşler ⏎ nasıl?",
                 ":budget 80",
                 "@claude-1 fix the clock"
             ]
@@ -10027,7 +9913,7 @@ pub(crate) mod tests {
         type_in(&mut app, "İŞ");
         assert_eq!(app.menu.as_ref().unwrap().items.len(), 1);
         app.on_key(KeyEvent::from(KeyCode::Enter));
-        assert_eq!(app.input, "@codex-1 İşler\nnasıl?");
+        assert_eq!(app.input, "@claude-1 İşler\nnasıl?");
         assert!(app.typing && !app.searching && app.menu.is_none());
         assert_eq!(app.after, 0);
         app.on_key(KeyEvent::from(KeyCode::Esc));
@@ -10207,48 +10093,37 @@ pub(crate) mod tests {
         app.home = None;
         let t = Lang::En.text();
         let said = |app: &mut App| app.flash.take().map(|f| f.0).unwrap_or_default();
-        // The words in any order: a path, a vendor choice, a name.
-        app.command("solo notes codex@high ~/x");
+        // The words in any order: a path, a choice, a name.
+        app.command("solo notes claude@high ~/x");
         assert_eq!(app.world.projects.len(), 2);
         let p = &app.world.projects[1];
         let head = p.leader;
         let a = &app.world.agents[head];
         assert_eq!(p.name, "notes");
-        assert_eq!(
-            (a.name.as_str(), a.role, a.vendor),
-            ("solo-notes", Role::Solo, Vendor::Codex)
-        );
+        assert_eq!((a.name.as_str(), a.role), ("solo-notes", Role::Solo));
         assert_eq!(app.model_of(head).as_deref(), Some("@high"));
         assert_eq!(app.selected, Sel::Agent(head));
         assert_eq!(app.collapsed, [false, false]);
         assert_eq!(
             said(&mut app),
-            "opened notes at ~/x as a solo session; write to solo-notes (codex @high)"
+            "opened notes at ~/x as a solo session; write to solo-notes (claude @high)"
         );
         assert!(app.world.is_solo(1));
         // Typing goes to the solo now, as to a leader.
         assert_eq!(app.typing_target(), "solo-notes");
-        // Bare: the pick screen asks the vendor, the model and the effort;
+        // Bare: the pick screen asks the model and the effort;
         // the project at hand's checkout, named after it with a number (the
         // demo names its path after the project).
         app.command("solo");
         assert_eq!(app.world.projects.len(), 2, "nothing yet");
         let pick = app.solo_pick.as_ref().expect("the pick screen");
         assert_eq!((pick.path.as_deref(), pick.name.as_deref()), (None, None));
-        assert_eq!(
-            pick.vendors,
-            [Vendor::Claude, Vendor::Codex, Vendor::Gemini]
-        );
-        for _ in 0..3 {
+        for _ in 0..2 {
             app.on_key(key(KeyCode::Enter));
         }
         assert!(app.solo_pick.is_none());
         assert_eq!(app.world.projects.len(), 3);
         assert_eq!(app.world.projects[2].name, "notes-2");
-        assert_eq!(
-            app.world.agents[app.world.projects[2].leader].vendor,
-            Vendor::Claude
-        );
         assert_eq!(app.model_of(app.world.projects[2].leader), None);
         assert_eq!(
             said(&mut app),
@@ -10280,7 +10155,7 @@ pub(crate) mod tests {
             "given up"
         );
         // Two names, two paths or two choices: the usage line, nothing opened.
-        for bad in ["solo a b", "solo ~/x ./y", "solo claude codex"] {
+        for bad in ["solo a b", "solo ~/x ./y", "solo claude claude@high"] {
             app.command(bad);
             assert_eq!(said(&mut app), t.solo_usage, "{bad}");
             assert_eq!(app.world.projects.len(), 6, "{bad}");
@@ -10303,36 +10178,31 @@ pub(crate) mod tests {
             app.typing = true;
             app.suggest().map(|m| m.items).unwrap_or_default()
         };
-        assert_eq!(items(&mut app, ":solo "), ["claude", "codex", "gemini"]);
-        assert_eq!(items(&mut app, ":solo co"), ["codex"]);
+        assert_eq!(items(&mut app, ":solo "), ["claude"]);
+        assert_eq!(items(&mut app, ":solo cl"), ["claude"]);
         // The menu replaces the word being typed, where it starts.
-        app.input = ":solo notes co".into();
+        app.input = ":solo notes cl".into();
         assert_eq!(app.suggest().unwrap().start, 12);
-        app.input = ":solo co".into();
+        app.input = ":solo cl".into();
         assert_eq!(app.suggest().unwrap().start, 6);
         assert_eq!(
             items(&mut app, ":solo notes claude:opus@x"),
             ["claude:opus@xhigh"]
         );
         assert_eq!(
-            items(&mut app, ":solo gemini@"),
+            items(&mut app, ":solo other@"),
             Vec::<String>::new(),
-            "no efforts"
+            "no such word"
         );
         // No solo at hand: the effort and model menus have nothing.
         assert!(items(&mut app, ":effort ").is_empty());
-        app.command("solo codex notes");
+        assert!(items(&mut app, ":model ").is_empty());
+        app.command("solo claude notes");
         assert_eq!(
             items(&mut app, ":effort "),
-            ["default", "low", "medium", "high", "xhigh"]
+            ["default", "low", "medium", "high", "xhigh", "max"]
         );
         assert_eq!(items(&mut app, ":effort x"), ["xhigh"]);
-        assert_eq!(
-            items(&mut app, ":model "),
-            ["default"],
-            "Codex names models in full"
-        );
-        app.command("solo claude ideas");
         assert_eq!(
             items(&mut app, ":model "),
             ["default", "fable", "opus", "sonnet", "haiku"]
@@ -10341,40 +10211,36 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn the_solo_pick_screen_walks_vendor_model_effort_and_composes_the_choice() {
-        let vendors = vec![Vendor::Claude, Vendor::Codex, Vendor::Gemini];
-        let mut p = SoloPick::new(Some("~/x".into()), None, vendors.clone());
-        assert_eq!((p.step, p.sel()), (PickStep::Vendor, 0));
-        assert_eq!(p.items(), ["claude", "codex", "gemini"]);
+    fn the_solo_pick_screen_walks_model_effort_and_composes_the_choice() {
+        let mut p = SoloPick::new(Some("~/x".into()), None);
+        assert_eq!((p.step, p.sel()), (PickStep::Model, 0));
+        assert_eq!(p.items(), ["default", "fable", "opus", "sonnet", "haiku"]);
+        assert_eq!(p.choice(), None, "default: Claude Code's own");
         // j k g G and digits move within the step; nothing past its ends.
         assert_eq!(p.on_key(KeyCode::Char('j')), None);
         assert_eq!(p.sel(), 1);
         p.on_key(KeyCode::Char('G'));
-        assert_eq!(p.sel(), 2);
+        assert_eq!(p.sel(), 4);
         p.on_key(KeyCode::Char('j'));
-        assert_eq!(p.sel(), 2, "the last");
+        assert_eq!(p.sel(), 4, "the last");
         p.on_key(KeyCode::Char('k'));
-        assert_eq!(p.sel(), 1, "k goes up one");
+        assert_eq!(p.sel(), 3, "k goes up one");
         p.on_key(KeyCode::Up);
-        assert_eq!(p.sel(), 0);
-        p.on_key(KeyCode::Char('G'));
+        assert_eq!(p.sel(), 2);
+        p.on_key(KeyCode::Down);
+        assert_eq!(p.sel(), 3);
         p.on_key(KeyCode::Char('g'));
         assert_eq!(p.sel(), 0, "g: the first");
         p.on_key(KeyCode::End);
-        assert_eq!(p.sel(), 2);
+        assert_eq!(p.sel(), 4);
         p.on_key(KeyCode::Home);
         assert_eq!(p.sel(), 0, "home: the first");
         p.on_key(KeyCode::Char('k'));
         assert_eq!(p.sel(), 0, "not past the first");
         p.on_key(KeyCode::Char('9'));
         assert_eq!(p.sel(), 0, "no ninth");
-        p.on_key(KeyCode::Char('1'));
-        assert_eq!(p.chosen_vendor(), Vendor::Claude);
-        // Enter: the model step, default then Claude's aliases.
-        assert_eq!(p.on_key(KeyCode::Enter), None);
-        assert_eq!(p.step, PickStep::Model);
-        assert_eq!(p.items(), ["default", "fable", "opus", "sonnet", "haiku"]);
-        assert_eq!(p.choice(), None, "default: the vendor's own");
+        p.on_key(KeyCode::Char('5'));
+        assert_eq!(p.sel(), 4, "the fifth, the last");
         p.on_key(KeyCode::Char('3'));
         assert_eq!(p.choice().as_deref(), Some("opus"));
         // Then the effort step; the choice carries both.
@@ -10392,36 +10258,25 @@ pub(crate) mod tests {
         assert_eq!(p.on_key(KeyCode::Enter), None);
         assert_eq!(
             p.on_key(KeyCode::Enter),
-            Some(Some((Vendor::Claude, Some("opus@xhigh".into()))))
+            Some(Picked::Choice(Some("opus@xhigh".into())))
         );
-        // Another vendor picked: its own lists, from their defaults.
-        let mut p = SoloPick::new(None, None, vendors.clone());
-        p.on_key(KeyCode::Char('3'));
-        assert_eq!(p.on_key(KeyCode::Enter), None);
-        assert_eq!(p.items(), ["default", "auto", "pro", "flash", "flash-lite"]);
-        p.on_key(KeyCode::Char('3'));
-        // Gemini has no efforts: the model step is the last.
-        assert_eq!(
-            p.on_key(KeyCode::Enter),
-            Some(Some((Vendor::Gemini, Some("pro".into()))))
-        );
-        let mut p = SoloPick::new(None, None, vendors.clone());
-        p.on_key(KeyCode::Char('2'));
+        // An effort alone, and neither.
+        let mut p = SoloPick::new(None, None);
         p.on_key(KeyCode::Enter);
-        assert_eq!(p.items(), ["default"], "Codex has no aliases");
-        p.on_key(KeyCode::Enter);
-        assert_eq!(p.items(), ["default", "low", "medium", "high", "xhigh"]);
         p.on_key(KeyCode::Char('2'));
         assert_eq!(
             p.on_key(KeyCode::Enter),
-            Some(Some((Vendor::Codex, Some("@low".into()))))
+            Some(Picked::Choice(Some("@low".into())))
         );
+        let mut p = SoloPick::new(None, None);
+        p.on_key(KeyCode::Enter);
+        assert_eq!(p.on_key(KeyCode::Enter), Some(Picked::Choice(None)));
         // Given up: esc at the first step, q anywhere.
-        let mut p = SoloPick::new(None, None, vendors.clone());
-        assert_eq!(p.on_key(KeyCode::Esc), Some(None));
-        let mut p = SoloPick::new(None, None, vendors);
+        let mut p = SoloPick::new(None, None);
+        assert_eq!(p.on_key(KeyCode::Esc), Some(Picked::Nothing));
+        let mut p = SoloPick::new(None, None);
         p.on_key(KeyCode::Enter);
-        assert_eq!(p.on_key(KeyCode::Char('q')), Some(None));
+        assert_eq!(p.on_key(KeyCode::Char('q')), Some(Picked::Nothing));
         assert_eq!(
             p.on_key(KeyCode::Char('x')),
             None,
@@ -10463,7 +10318,7 @@ pub(crate) mod tests {
         assert!(app.world.journal.iter().any(|e| matches!(
             &e.event, Event::Chose { agent, choice } if *agent == head && choice == "claude"
         )));
-        // Refused: an effort the vendor lacks, a word that is no model name,
+        // Refused: an effort Claude Code lacks, a word that is no model name,
         // a solo mid-turn.
         app.command("effort turbo");
         assert!(
@@ -10495,9 +10350,9 @@ pub(crate) mod tests {
         app.selected = Sel::Agent(head);
         assert_eq!(app.command_note("effort"), "(default)");
         assert_eq!(app.command_note("model"), "(default)");
-        app.command("solo codex:gpt-5.6-terra@xhigh other");
+        app.command("solo claude:opus@xhigh other");
         assert_eq!(app.command_note("effort"), "(xhigh)");
-        assert_eq!(app.command_note("model"), "(gpt-5.6-terra)");
+        assert_eq!(app.command_note("model"), "(opus)");
         app.selected = Sel::Project(0);
         assert_eq!(app.command_note("effort"), "", "no solo at hand");
     }
@@ -11028,13 +10883,12 @@ pub(crate) mod tests {
         assert!(!app.review);
         assert_eq!(flash(&app), "no review: on | off");
         // Bare, with the change open: asked now, whatever the setting.
-        assert_eq!(app.reviewing(worker), None);
+        assert!(!app.reviewing(worker));
         app.command("review");
-        let by = app.reviewing(worker).expect("asked");
-        assert_ne!(by, app.world.agents[worker].vendor, "another vendor");
+        assert!(app.reviewing(worker), "asked");
         assert_eq!(
             flash(&app),
-            format!("{} reads {name}'s change for a review", by.label())
+            format!("claude reads {name}'s change for a review")
         );
         app.command("review");
         assert_eq!(
@@ -11053,7 +10907,7 @@ pub(crate) mod tests {
         app.pane = Pane::Inbox;
         app.inbox_sel = 0;
         app.command("review");
-        assert!(app.reviewing(worker).is_some(), "{}", flash(&app));
+        assert!(app.reviewing(worker), "{}", flash(&app));
         // Not a change: nothing asked.
         let (mut app, worker) = with_change("+x\n");
         app.world.replied(worker, "hi");
@@ -11065,7 +10919,7 @@ pub(crate) mod tests {
             .position(|&i| app.world.inbox[i].kind == InboxKind::Reply)
             .unwrap();
         app.command("review");
-        assert_eq!(app.reviewing(worker), None);
+        assert!(!app.reviewing(worker));
         assert_eq!(flash(&app), t.review_off);
     }
 
@@ -11077,12 +10931,12 @@ pub(crate) mod tests {
         app.step();
         app.review = true;
         app.step();
-        assert_eq!(app.reviewing(worker), None);
+        assert!(!app.reviewing(worker));
         // A change that comes is.
         app.world.change_rejected(worker);
         app.world.change_ready(a_change(worker));
         app.step();
-        assert!(app.reviewing(worker).is_some());
+        assert!(app.reviewing(worker));
         // A newer one while that is asked: refused, journaled.
         app.world.change_ready(a_change(worker));
         app.step();
@@ -11101,7 +10955,7 @@ pub(crate) mod tests {
         app.world.change_rejected(worker);
         app.world.change_ready(a_change(worker));
         app.step();
-        assert_eq!(app.reviewing(worker), None);
+        assert!(!app.reviewing(worker));
         // A change gone before the step is not asked either.
         app.review = true;
         app.world.change_rejected(worker);
@@ -11109,7 +10963,7 @@ pub(crate) mod tests {
         app.world.change_rejected(worker);
         let lines = app.world.journal.len();
         app.watch_reviews();
-        assert_eq!(app.reviewing(worker), None);
+        assert!(!app.reviewing(worker));
         assert_eq!(app.world.journal.len(), lines, "nothing refused");
     }
 
@@ -11740,18 +11594,17 @@ pub(crate) mod tests {
     }
 
     /// What `live::look` would answer, without running anything: Claude
-    /// Code signed in, Codex not, Gemini CLI not there; only the vendors
-    /// asked answer.
-    fn fake_look(which: &[Vendor]) -> welcome::Answers {
+    /// Code signed in.
+    fn fake_look() -> welcome::Answers {
         let (tx, rx) = std::sync::mpsc::channel();
-        for &v in which {
-            let seen = match v {
-                Vendor::Claude => here("2.1.3", Login::Yes),
-                Vendor::Codex => here("0.9", Login::No),
-                _ => Seen::Missing,
-            };
-            tx.send((v, seen)).unwrap();
-        }
+        tx.send(here("2.1.3", Login::Yes)).unwrap();
+        rx
+    }
+
+    /// ... not signed in.
+    fn signed_out() -> welcome::Answers {
+        let (tx, rx) = std::sync::mpsc::channel();
+        tx.send(here("0.9", Login::No)).unwrap();
         rx
     }
 
@@ -11762,120 +11615,94 @@ pub(crate) mod tests {
         }
     }
 
-    /// A live app whose leader is of `lead`, asking the fake vendors.
-    fn live_welcome(lead: Vendor) -> App {
-        let mut w = crate::live::testing::team(1);
-        let leader = w.projects[0].leader;
-        w.agents[leader].vendor = lead;
+    /// A live app asking `look`.
+    fn live_welcome(look: welcome::Look) -> App {
+        let w = crate::live::testing::team(1);
         let live = crate::live::testing::idle_live(2);
         let mut app = App::with(w, Engine::Live(Box::new(live)), Lang::En);
-        app.look = Some(fake_look);
+        app.look = Some(look);
         app
     }
 
     #[test]
-    fn the_first_start_ever_opens_the_welcome_and_asks_every_vendor() {
-        let mut app = live_welcome(Vendor::Claude);
+    fn the_first_start_ever_opens_the_welcome_and_asks_claude_code() {
+        let mut app = live_welcome(fake_look);
         assert!(!app.welcome);
-        assert_eq!(app.vendors.len(), 3);
-        assert!(app.vendors.iter().all(|(_, s)| *s == Seen::Checking));
+        assert_eq!(app.seen, Seen::Checking);
         app.start_welcome(true);
         assert!(app.welcome);
-        assert_eq!(app.lead_check, None, "the window is open already");
+        assert!(!app.lead_check, "the window is open already");
         app.looked();
-        assert_eq!(
-            app.vendors,
-            [
-                (Vendor::Claude, here("2.1.3", Login::Yes)),
-                (Vendor::Codex, here("0.9", Login::No)),
-                (Vendor::Gemini, Seen::Missing),
-            ]
-        );
-        assert!(app.looking.is_none(), "every answer came");
+        assert_eq!(app.seen, here("2.1.3", Login::Yes));
+        assert!(app.looking.is_none(), "the answer came");
         // Any key closes it and does nothing else.
         app.on_key(key(KeyCode::Char('?')));
         assert!(!app.welcome && !app.help);
         // `:welcome` opens it again and asks again.
-        app.vendors[0].1 = Seen::Missing;
+        app.seen = Seen::Missing;
         app.input = ":welcome".into();
         app.typing = true;
         app.on_key(key(KeyCode::Enter));
         assert!(app.welcome);
-        assert_eq!(app.vendors[0].1, Seen::Checking);
+        assert_eq!(app.seen, Seen::Checking);
         app.looked();
-        assert_eq!(app.vendors[0].1, here("2.1.3", Login::Yes));
+        assert_eq!(app.seen, here("2.1.3", Login::Yes));
     }
 
     #[test]
-    fn a_later_start_asks_only_the_leader_s_vendor_and_opens_when_it_is_not_signed_in() {
-        // Signed in: nothing opens, the others are not asked.
-        let mut app = live_welcome(Vendor::Claude);
-        app.vendors[1].1 = Seen::Missing;
+    fn a_later_start_opens_the_welcome_only_when_it_is_not_signed_in() {
+        // Signed in: nothing opens.
+        let mut app = live_welcome(fake_look);
         app.start_welcome(false);
-        assert_eq!(app.lead_check, Some(Vendor::Claude));
+        assert!(app.lead_check);
         assert!(!app.welcome);
         app.looked();
         assert!(!app.welcome);
-        assert_eq!(app.lead_check, None);
-        assert_eq!(app.vendors[0].1, here("2.1.3", Login::Yes));
-        assert_eq!(app.vendors[1].1, Seen::Missing, "not asked");
-        assert_eq!(app.vendors[2].1, Seen::Checking, "not asked");
-        // Not signed in: the window opens and the others are asked.
-        let mut app = live_welcome(Vendor::Codex);
+        assert!(!app.lead_check);
+        assert_eq!(app.seen, here("2.1.3", Login::Yes));
+        // Not signed in: the window opens.
+        let mut app = live_welcome(signed_out);
         app.start_welcome(false);
-        assert_eq!(app.lead_check, Some(Vendor::Codex));
-        assert_eq!(app.vendors[0].1, Seen::Checking);
+        assert!(app.lead_check);
+        assert_eq!(app.seen, Seen::Checking);
         app.looked();
         assert!(app.welcome);
-        assert_eq!(app.lead_check, None);
-        assert_eq!(app.vendors[1].1, here("0.9", Login::No), "its answer stays");
-        app.looked();
-        assert_eq!(app.vendors[0].1, here("2.1.3", Login::Yes));
-        assert_eq!(app.vendors[2].1, Seen::Missing);
+        assert!(!app.lead_check);
+        assert_eq!(app.seen, here("0.9", Login::No), "its answer stays");
         // While the person writes, a line says so instead.
-        let mut app = live_welcome(Vendor::Codex);
+        let mut app = live_welcome(signed_out);
         app.start_welcome(false);
         app.typing = true;
         app.looked();
         assert!(!app.welcome);
         let said = &app.flash.as_ref().expect("said").0;
-        assert_eq!(said, "codex is not signed in: :welcome says how");
+        assert_eq!(said, "claude is not signed in: :welcome says how");
+        // `:welcome` asked by hand opens nothing more, and says nothing.
+        let mut app = live_welcome(signed_out);
+        app.look_again();
+        app.looked();
+        assert!(!app.welcome && app.flash.is_none());
         // Nothing asked, nothing changes.
-        let mut app = live_welcome(Vendor::Codex);
+        let mut app = live_welcome(signed_out);
         app.looked();
         assert!(!app.welcome && app.flash.is_none());
     }
 
     #[test]
-    fn the_demo_s_welcome_lists_its_own_vendors_and_news_shows_the_latest() {
+    fn the_demo_s_welcome_says_what_it_says_of_itself_and_news_shows_the_latest() {
         let mut app = App::new(1, 1, 0, 1, Lang::En);
-        assert_eq!(app.vendors, crate::sim::vendors());
-        // All three there, as live lists them; Gemini's sign-in not asked.
-        let logins: Vec<(Vendor, Option<Login>)> = app
-            .vendors
-            .iter()
-            .map(|(v, seen)| match seen {
-                Seen::Here { version, login } => {
-                    assert!(version.ends_with("· demo"), "{version}");
-                    (*v, Some(*login))
-                }
-                _ => (*v, None),
-            })
-            .collect();
-        assert_eq!(
-            logins,
-            [
-                (Vendor::Claude, Some(Login::Yes)),
-                (Vendor::Codex, Some(Login::Yes)),
-                (Vendor::Gemini, Some(Login::Unknown)),
-            ]
-        );
+        assert_eq!(app.seen, crate::sim::seen());
+        let Seen::Here { version, login } = &app.seen else {
+            panic!("{:?}", app.seen);
+        };
+        assert!(version.ends_with("· demo"), "{version}");
+        assert_eq!(*login, Login::Yes);
         assert!(!app.welcome && app.news.is_empty() && app.look.is_none());
         app.input = ":welcome".into();
         app.typing = true;
         app.on_key(key(KeyCode::Enter));
         assert!(app.welcome);
-        assert_eq!(app.vendors, crate::sim::vendors(), "nothing asked");
+        assert_eq!(app.seen, crate::sim::seen(), "nothing asked");
         app.on_key(key(KeyCode::Char('x')));
         assert!(!app.welcome);
         app.input = ":news".into();
@@ -13826,7 +13653,7 @@ pub(crate) mod tests {
             },
             |a| a.left_off = Some(LeftOff::default()),
             |a| a.leaving = true,
-            |a| a.solo_pick = Some(SoloPick::new(None, None, Vec::new())),
+            |a| a.solo_pick = Some(SoloPick::new(None, None)),
             |a| a.help = true,
         ];
         for (i, window) in windows.iter().enumerate() {
@@ -13999,7 +13826,6 @@ pub(crate) mod tests {
         }
         assert_eq!(look(&app), was);
         assert_eq!(view(&app).model_of(lead), None);
-        assert!(view(&app).vendors().is_empty());
         // An unknown command is one, not a refusal.
         view_typed(&mut app, ":nosuch");
         assert_eq!(said(view(&app)), "no command nosuch; : and tab list them");
@@ -14048,7 +13874,7 @@ pub(crate) mod tests {
             |a: &mut App| a.help = true,
             |a: &mut App| a.leaving = true,
             |a: &mut App| a.left_off = Some(LeftOff::default()),
-            |a: &mut App| a.solo_pick = Some(SoloPick::new(None, None, Vec::new())),
+            |a: &mut App| a.solo_pick = Some(SoloPick::new(None, None)),
             |a: &mut App| a.archives = Some(Browser::new(&a.world, Vec::new())),
             |a: &mut App| a.viewing = Some(Box::new(App::new(1, 1, 0, 1, Lang::En))),
         ] {
@@ -14444,16 +14270,16 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn a_vendor_s_answer_and_a_held_key_let_through_are_drawn() {
-        let mut app = live_welcome(Vendor::Claude);
+    fn an_answer_and_a_held_key_let_through_are_drawn() {
+        let mut app = live_welcome(fake_look);
         app.start_welcome(true);
         app.looked();
-        assert!(app.changed, "the answers");
+        assert!(app.changed, "the answer");
         app.changed = false;
         app.looked();
         assert!(!app.changed, "nothing more came");
         app.changed = true;
-        app.vendors[0].1 = Seen::Missing;
+        app.seen = Seen::Missing;
         app.input = ":welcome".into();
         app.typing = true;
         app.on_key(key(KeyCode::Enter));
@@ -15772,7 +15598,7 @@ pub(crate) mod tests {
             |a: &mut App| a.news = vec!["new"],
             |a: &mut App| a.digest = Some(Digest::default()),
             |a: &mut App| a.left_off = Some(LeftOff::default()),
-            |a: &mut App| a.solo_pick = Some(SoloPick::new(None, None, Vec::new())),
+            |a: &mut App| a.solo_pick = Some(SoloPick::new(None, None)),
             |a: &mut App| a.archives = Some(Browser::new(&a.world, Vec::new())),
         ] {
             let mut app = App::new(1, 1, 0, 1, Lang::En);
@@ -16406,13 +16232,13 @@ pub(crate) mod tests {
         assert_eq!(app.next_motion(now), None, "a countdown");
         app.grace = None;
         app.asking = None;
-        // The first-run window checking a vendor spins.
+        // The first-run window checking Claude Code spins.
         app.welcome = true;
-        app.vendors = vec![(Vendor::Claude, Seen::Checking)];
+        app.seen = Seen::Checking;
         assert_eq!(app.next_motion(now), Some(e + ms(300)));
-        app.vendors = vec![(Vendor::Claude, Seen::Missing)];
+        app.seen = Seen::Missing;
         assert_eq!(app.next_motion(now), None, "checked");
-        app.vendors = vec![(Vendor::Claude, Seen::Checking)];
+        app.seen = Seen::Checking;
         app.welcome = false;
         assert_eq!(app.next_motion(now), None, "not shown");
         // Full: the header spins while anyone works, on any screen.
@@ -16609,7 +16435,7 @@ pub(crate) mod tests {
         assert_eq!(app.world.orphans.found, None);
         app.step();
         assert!(!app.world.orphans.busy);
-        assert_eq!(orphan_names(&app), ["claude-31", "codex-32"]);
+        assert_eq!(orphan_names(&app), ["claude-31", "claude-32"]);
         let at = |app: &App| app.tidy.unwrap().at;
         app.key(key(KeyCode::Char('j')));
         assert_eq!(at(&app), 1);
@@ -16653,7 +16479,7 @@ pub(crate) mod tests {
         app.step();
         assert_eq!(flashed(&app), Some(removed("claude-31")));
         assert_eq!(app.world.orphans.tidied, None, "said once");
-        assert_eq!(orphan_names(&app), ["codex-32"]);
+        assert_eq!(orphan_names(&app), ["claude-32"]);
         app.key(key(KeyCode::Char('a')));
         assert_eq!(flashed(&app).as_deref(), Some(t.tidy_no_clean));
         assert!(!app.world.orphans.busy);
@@ -16667,7 +16493,7 @@ pub(crate) mod tests {
         app.key(key(KeyCode::Char('y')));
         assert!(app.world.orphans.busy);
         app.step();
-        assert_eq!(flashed(&app), Some(removed("codex-32")));
+        assert_eq!(flashed(&app), Some(removed("claude-32")));
         assert_eq!(orphan_names(&app), Vec::<String>::new());
         // Nothing left: `d` does nothing, `y` alone removes nothing.
         app.flash = None;
@@ -16781,7 +16607,7 @@ pub(crate) mod tests {
         assert_eq!(app.tidy, Some(TidyWin { at: 0, sure: false }));
         assert!(app.world.orphans.busy);
         app.step();
-        assert_eq!(orphan_names(&app), ["codex-32"]);
+        assert_eq!(orphan_names(&app), ["claude-32"]);
         // Rows gone, the one at hand moves up onto the list.
         app.command("tidy");
         assert_eq!(app.tidy, Some(TidyWin::default()));

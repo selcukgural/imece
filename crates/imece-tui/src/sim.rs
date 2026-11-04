@@ -1,6 +1,5 @@
 //! Fake events for the screen prototype, shaped as live's: projects, each
-//! with a leader and workers from several vendors that post, claim and
-//! assign cards, talk over the bus in typed messages, ask the person and
+//! with a leader and workers that post, claim and assign cards, talk over the bus in typed messages, ask the person and
 //! wait for their yes, hire workers and helpers, and finish with a change
 //! that waits for the person in WAITING FOR YOU; a capped researcher pool
 //! shared by all projects, and symbol leases, show what is still to come.
@@ -12,8 +11,8 @@ use std::path::{Path, PathBuf};
 use crate::i18n::Lang;
 use crate::live::setup;
 use crate::live::{
-    REVIEW_DAY_CALLS, REVIEW_DAY_COST, Refusal, SUGGEST_CAP, SUGGEST_DAY_CALLS, SUGGEST_DAY_COST,
-    TidyRefusal, numbers, review_cap, reviewer_of, standing,
+    REVIEW_CAP, REVIEW_DAY_CALLS, REVIEW_DAY_COST, Refusal, SUGGEST_CAP, SUGGEST_DAY_CALLS,
+    SUGGEST_DAY_COST, TidyRefusal, numbers, standing,
 };
 use crate::model::*;
 use crate::rng::Rng;
@@ -218,16 +217,17 @@ const PROJECTS: &[(&str, Repo, &Kit)] = &[
 
 pub const MAX_PROJECTS: usize = 4;
 
-/// What a vendor's agents spend in the demo for each percent of its
-/// plan's five-hour window, in ten-thousandths of a dollar.
+/// What the agents spend in the demo for each percent of the plan's
+/// five-hour window, in ten-thousandths of a dollar.
 const LIMIT_COST: u64 = 200;
 const FIVE_HOURS: u32 = imece_agent::FIVE_HOURS;
 const WEEK: u32 = imece_agent::WEEK;
 
 /// The most workers a demo leader has in a project.
 const MAX_WORKERS: usize = 6;
-/// Ticks an approval waits before the session stops waiting, as Claude's
-/// permission prompt does after 100 seconds.
+/// Fake cost of one busy tick, in ten-thousandths of a dollar.
+const COST_PER_TICK: u64 = 8;
+/// Ticks an approval waits before the demo's session gives up on it.
 const APPROVAL_WAIT: u64 = 100 / SECONDS_PER_TICK;
 /// Ticks a worker that asked the person waits before it goes on with what
 /// does not depend on the answer.
@@ -236,7 +236,7 @@ const QUESTION_WAIT: u64 = 40;
 /// checkout), its row saying `◌ starting…` meanwhile; the work under it
 /// goes on as before, so the demo's course is unchanged.
 const STARTING: u64 = 3;
-/// Why a demo session stops, in the words of a vendor's process.
+/// Why a demo session stops, in the words of Claude Code's process.
 const STOPPED: &str = "the session ended: the process exited with code 1";
 
 /// What fake agents say, in the person's language.
@@ -521,16 +521,9 @@ fn serving_before(w: &World, id: AgentId) -> usize {
         .count()
 }
 
-/// The agent's own command line, as a session of its vendor reports it
-/// (imece's `/clear` where the vendor has none).
-fn commands_of(v: Vendor) -> Vec<String> {
-    let words: &[&str] = match v {
-        Vendor::Claude => &["/compact", "/cost", "/clear"],
-        Vendor::Codex => &["/compact", "/clear"],
-        Vendor::Gemini => &["/clear", "/stats"],
-        Vendor::Qwen | Vendor::Local => &["/clear"],
-    };
-    words.iter().map(|w| w.to_string()).collect()
+/// The agent's own command line, as a session reports it.
+fn commands_of() -> Vec<String> {
+    ["/compact", "/cost", "/clear"].map(String::from).into()
 }
 
 /// What the simulation keeps of an agent beyond the world's view of it.
@@ -540,7 +533,7 @@ struct Mind {
     started: bool,
     /// The person made it forget its session: the next one is new.
     forgot: bool,
-    /// Its vendor would not resume its session: the next one is new.
+    /// Claude Code would not resume its session: the next one is new.
     refused: bool,
     /// When its tests end, while they run.
     testing: Option<u64>,
@@ -551,8 +544,6 @@ struct Mind {
     /// imece's runs on its tree since its last change, the last of each
     /// command.
     runs: Vec<Ran>,
-    /// It compacted its session and took no turn since.
-    compacted: bool,
     /// The question it sent a teammate, until the answer, which replies
     /// to it.
     question: Option<MsgId>,
@@ -566,7 +557,7 @@ struct Mind {
 
 /// A demo session's context window, what a request and a compaction leave
 /// in it, and the fill at which the session compacts on its own, as the
-/// vendors' sessions do near their limit.
+/// Claude Code's sessions do near their limit.
 const WINDOW: u64 = 200_000;
 const FRESH_CONTEXT: u64 = 20_000;
 const PER_TICK: u64 = 1_600;
@@ -577,19 +568,18 @@ struct Due {
     agent: AgentId,
     at: u64,
     text: String,
-    /// The turn failed, `text` says why (as a refused `/compact` of a
-    /// live Codex session does).
+    /// The turn failed, `text` says why.
     failed: bool,
-    /// The vendor's fault it failed on, as live's vendors say one.
+    /// The fault it failed on, as Claude Code says one.
     fault: Option<Fault>,
 }
 
 /// Of the person's messages a demo agent answers with a turn, every
-/// `PASSING_EVERY`th fails on an overloaded vendor (and is tried again),
+/// `PASSING_EVERY`th fails on an overloaded API (and is tried again),
 /// every `ACCOUNT_EVERY`th on a refused key (and waits for the person).
 const PASSING_EVERY: u32 = 3;
 const ACCOUNT_EVERY: u32 = 7;
-/// What the demo's vendors say when they fail, as Claude Code does.
+/// What the demo says when a turn fails, as Claude Code does.
 const OVERLOADED: &str = "API Error: Repeated 529 Overloaded errors. The API is at capacity.";
 const BAD_KEY: &str = "Invalid API key · Fix external API key";
 
@@ -627,7 +617,7 @@ pub struct Sim {
     /// A session started with the head of the person's long instructions
     /// file; said once a run.
     instructions_cut: bool,
-    /// A Gemini session listed no command line this run (said once).
+    /// A helper's session listed no command line this run (said once).
     unlisted: bool,
     /// What the person's rarer commands keep, boxed: the engine stays
     /// small.
@@ -663,15 +653,15 @@ struct Extras {
     /// The suggestions of this run and what they cost, for the day's
     /// ceilings (the demo's day is its run).
     paid_calls: (u32, u64),
-    /// The reviews asked for (`:review`), each with its vendor and the
+    /// The reviews asked for (`:review`), each with the
     /// tick it answers on, oldest first: one at a time, as live's.
-    reviews: VecDeque<(AgentId, Vendor, u64)>,
+    reviews: VecDeque<(AgentId, u64)>,
     /// The reviews of this run and what they cost, for the day's
     /// ceilings.
     review_calls: (u32, u64),
     /// The person's messages answered with a turn this run.
     told: u32,
-    /// No vendor errors: a test that counts answers.
+    /// No API errors: a test that counts answers.
     calm: bool,
     /// Sessions resumed this run, refused ones included.
     resumes: u32,
@@ -722,7 +712,7 @@ fn demo_orphans(w: &World) -> Vec<Orphan> {
     let name = &w.projects[0].name;
     let checkout = PathBuf::from(format!("~/src/{name}"));
     let root = PathBuf::from(format!("~/.local/state/imece/worktrees/{name}-5e1f0a2c"));
-    [("claude-31", 0, 0), ("codex-32", 3, 1)]
+    [("claude-31", 0, 0), ("claude-32", 3, 1)]
         .into_iter()
         .map(|(agent, changes, commits)| Orphan {
             name: agent.to_string(),
@@ -745,38 +735,16 @@ npm run db:migrate\n";
 /// What the demo's setup script says as it ends.
 const DEMO_SETUP_SAYS: [&str; 2] = ["added 412 packages in 3s", "migrations: 7 applied"];
 
-/// What a vendor says in the demo when it would not resume a session.
+/// What the demo says when it would not resume a session.
 const REFUSED: &str = "the session could not resume session 5f1c… (error_during_execution)";
 
-/// The demo's vendors as the first-run window (`:welcome`) lists them:
-/// all three there, Claude Code and Codex signed in, Gemini CLI's sign-in
-/// not asked, as live says it.
-pub fn vendors() -> Vec<(Vendor, crate::welcome::Seen)> {
-    use crate::welcome::Seen::Here;
-    use imece_agent::Login;
-    vec![
-        (
-            Vendor::Claude,
-            Here {
-                version: "2.1.0 (Claude Code) · demo".into(),
-                login: Login::Yes,
-            },
-        ),
-        (
-            Vendor::Codex,
-            Here {
-                version: "codex-cli 0.165.0 · demo".into(),
-                login: Login::Yes,
-            },
-        ),
-        (
-            Vendor::Gemini,
-            Here {
-                version: "0.65.0 · demo".into(),
-                login: Login::Unknown,
-            },
-        ),
-    ]
+/// What the first-run window (`:welcome`) says of the demo's Claude Code:
+/// there and signed in.
+pub fn seen() -> crate::welcome::Seen {
+    crate::welcome::Seen::Here {
+        version: "2.1.0 (Claude Code) · demo".into(),
+        login: imece_agent::Login::Yes,
+    }
 }
 
 /// The size the demo gives a copied path, from `roll`: a dotfile is a
@@ -855,7 +823,6 @@ pub fn world(
             leader,
             p,
             lead_name,
-            Vendor::Claude,
             Role::Leader,
             Status::Idle,
             0,
@@ -994,7 +961,7 @@ impl Sim {
         let t = w.tick;
         let stopped = w.agents[id].status == Status::Stopped;
         let had = self.mind(id).started;
-        // Every second resume of a run is refused, as a vendor that lost
+        // Every second resume of a run is refused, as Claude Code that lost
         // the session says: a new one starts, and the journal says why.
         let refused = stopped && had && self.refuses();
         if refused {
@@ -1003,7 +970,6 @@ impl Sim {
             m.refused = true;
         }
         self.start(w, id);
-        self.mind(id).compacted = false;
         if stopped && had && !refused {
             w.agents[id].trace(t, "session resumed");
             w.note(Event::Resumed { agent: id });
@@ -1064,7 +1030,7 @@ impl Sim {
         a.trace(
             t,
             format!(
-                "retry {}/{} after a vendor error",
+                "retry {}/{} after a API error",
                 r.attempt,
                 RETRY_TICKS.len()
             ),
@@ -1110,13 +1076,7 @@ impl Sim {
             );
             return Ok(());
         }
-        // Codex turns a second compaction with nothing new down, and a
-        // refused one is a failed turn, not a stopped session (#52).
-        let codex = w.agents[id].vendor == Vendor::Codex;
-        let again = line == "/compact" && std::mem::replace(&mut self.mind(id).compacted, true);
-        let failed = codex && again;
         let text = match line {
-            _ if failed => "compaction refused: nothing new to compact since the last one".into(),
             "/cost" => format!("Total cost: {}", dollars(w.agents[id].cost)),
             "/compact" => {
                 // A compacted context holds its summary alone.
@@ -1130,7 +1090,7 @@ impl Sim {
             agent: id,
             at: t + 1,
             text,
-            failed,
+            failed: false,
             fault: None,
         });
         Ok(())
@@ -1150,14 +1110,14 @@ impl Sim {
             return Err(format!("{} is not a solo session", a.name));
         }
         if let Some(c) = &choice {
-            crate::live::valid_choice(a.vendor, c)?;
+            crate::live::valid_choice(c)?;
         }
         if a.status == Status::Working {
             return Err(format!("{} is mid-turn; wait for its answer", a.name));
         }
         let runs = match &choice {
-            Some(c) => format!("{} {c}", a.vendor.label()),
-            None => a.vendor.label().to_string(),
+            Some(c) => format!("{CLAUDE} {c}"),
+            None => CLAUDE.to_string(),
         };
         match choice {
             Some(c) => self.models.insert(id, c),
@@ -1485,10 +1445,10 @@ impl Sim {
     }
 
     /// `:review` of worker `agent`'s change, as live takes it: refused
-    /// when none waits, it has its review, one is asked for, no other vendor
-    /// reviews (the demo has Claude Code and Codex) or the pot or the day
-    /// has no room; else it answers three ticks after the one before it.
-    pub fn review(&mut self, w: &World, agent: AgentId) -> Result<Vendor, String> {
+    /// when none waits, it has its review, one is asked for, or the pot or
+    /// the day has no room; else it answers three ticks after the one
+    /// before it.
+    pub fn review(&mut self, w: &World, agent: AgentId) -> Result<(), String> {
         let name = &w.agents[agent].name;
         if w.change_of(agent).is_none() {
             return Err(format!("no change of {name} waits"));
@@ -1496,19 +1456,10 @@ impl Sim {
         if w.review_of(agent).is_some() {
             return Err(format!("{name}'s change has its review already"));
         }
-        if self.review_of(agent).is_some() {
+        if self.review_of(agent) {
             return Err(format!("a review of {name}'s change is under way"));
         }
-        let worker = w.agents[agent].vendor;
-        let leader = w.agents[w.projects[w.agents[agent].project].leader].vendor;
-        let by =
-            reviewer_of(worker, leader, &[Vendor::Claude, Vendor::Codex]).ok_or_else(|| {
-                format!(
-                    "it needs a vendor other than {} that reviews (Claude Code or Codex) on PATH",
-                    worker.label()
-                )
-            })?;
-        let cap = review_cap(by);
+        let cap = REVIEW_CAP;
         if w.budget.saturating_sub(w.spent()) < cap {
             return Err(format!("the pot has less than {} left", dollars(cap)));
         }
@@ -1523,24 +1474,22 @@ impl Sim {
                 dollars(REVIEW_DAY_COST)
             ));
         }
-        let after = self.extras.reviews.back().map_or(w.tick, |r| r.2);
-        self.extras.reviews.push_back((agent, by, after + 3));
-        Ok(by)
+        let after = self.extras.reviews.back().map_or(w.tick, |r| r.1);
+        self.extras.reviews.push_back((agent, after + 3));
+        Ok(())
     }
 
-    /// The vendor reviewing worker `agent`'s change, or about to.
-    pub fn review_of(&self, agent: AgentId) -> Option<Vendor> {
-        (self.extras.reviews.iter())
-            .find(|r| r.0 == agent)
-            .map(|r| r.1)
+    /// Whether worker `agent`'s change is being reviewed, or is about to.
+    pub fn review_of(&self, agent: AgentId) -> bool {
+        self.extras.reviews.iter().any(|r| r.0 == agent)
     }
 
     /// The review due now answers, made up from the change's files: what
-    /// it costs is paid from the pot (Codex's nothing), counted against
+    /// it costs is paid from the pot, counted against
     /// the run's ceilings, and the review is kept on the change; a change
     /// no longer waiting takes none.
     fn reviewed(&mut self, w: &mut World) {
-        let Some(&(agent, by, at)) = self.extras.reviews.front() else {
+        let Some(&(agent, at)) = self.extras.reviews.front() else {
             return;
         };
         if w.tick < at {
@@ -1550,11 +1499,7 @@ impl Sim {
         let Some(c) = w.change_of(agent).cloned() else {
             return;
         };
-        let cost = if by == Vendor::Claude {
-            self.rng.range(30, 90)
-        } else {
-            0
-        };
+        let cost = self.rng.range(30, 90);
         self.extras.review_calls.0 += 1;
         self.extras.review_calls.1 += cost;
         w.paid += cost;
@@ -1567,17 +1512,12 @@ impl Sim {
                 c.files.len()
             )
         };
-        let model = if by == Vendor::Claude {
-            "sonnet"
-        } else {
-            "default"
-        };
+        let model = "sonnet";
         let patch = patch_sum(&c.patch);
         w.reviewed(
             agent,
             Review {
                 patch,
-                by,
                 model: model.into(),
                 text,
                 cost,
@@ -1590,7 +1530,7 @@ impl Sim {
         let t = w.tick;
         for a in &mut w.agents {
             if !a.gone && a.status.busy() {
-                a.cost += a.vendor.cost_per_tick();
+                a.cost += COST_PER_TICK;
             }
         }
         for (id, hunks) in std::mem::take(&mut self.applying) {
@@ -1649,30 +1589,24 @@ impl Sim {
         }
     }
 
-    /// The usage windows of the plans whose sessions run, as live Claude
-    /// and Codex sessions report them: what a vendor's agents spent fills
-    /// its five-hour window, a percent for every [`LIMIT_COST`], and a
-    /// quarter as much of its week; each starts again at the next whole
-    /// window of the world's clock.
+    /// The plan's usage windows, as live sessions report them, once a
+    /// session runs: what the agents spent fills its five-hour window, a
+    /// percent for every [`LIMIT_COST`], and a quarter as much of its week;
+    /// each starts again at the next whole window of the world's clock.
     fn limits(&mut self, w: &mut World) {
         let now = w.now();
-        for v in [Vendor::Claude, Vendor::Codex] {
-            let ours = |a: &&Agent| a.vendor == v;
-            let running = (w.agents.iter().filter(ours)).any(|a| self.started(a.id));
-            if !running {
-                continue;
-            }
-            let spent: u64 = w.agents.iter().filter(ours).map(|a| a.cost).sum();
-            let five = (spent / LIMIT_COST).min(100) as u8;
-            for (minutes, used) in [(FIVE_HOURS, five), (WEEK, five / 4)] {
-                let length = u64::from(minutes) * 60;
-                w.limit(Limit {
-                    vendor: v,
-                    minutes,
-                    used,
-                    resets_at: Some((now / length + 1) * length),
-                });
-            }
+        if !w.agents.iter().any(|a| self.started(a.id)) {
+            return;
+        }
+        let spent: u64 = w.agents.iter().map(|a| a.cost).sum();
+        let five = (spent / LIMIT_COST).min(100) as u8;
+        for (minutes, used) in [(FIVE_HOURS, five), (WEEK, five / 4)] {
+            let length = u64::from(minutes) * 60;
+            w.limit(Limit {
+                minutes,
+                used,
+                resets_at: Some((now / length + 1) * length),
+            });
         }
     }
 
@@ -1748,21 +1682,21 @@ impl Sim {
         m.started = true;
         let forgot = std::mem::take(&mut m.forgot);
         let refused = std::mem::take(&mut m.refused);
-        // The first Gemini session of a run lists no command line, as a
+        // The first helper's session of a run lists no command line, as a
         // changed format would leave it (#53): only imece's /clear.
-        let gemini = w.agents[id].vendor == Vendor::Gemini;
-        let unlisted = gemini && !std::mem::replace(&mut self.unlisted, true);
+        let helper = w.agents[id].role == Role::Helper;
+        let unlisted = helper && !std::mem::replace(&mut self.unlisted, true);
         let a = &mut w.agents[id];
         a.trace(t, "session/new");
         if unlisted {
             a.commands = vec!["/clear".into()];
             a.trace(
                 t,
-                "commands not listed: the vendor's format may have changed",
+                "commands not listed: Claude Code's format may have changed",
             );
             w.note(Event::CommandsMissing { agent: id });
         } else {
-            a.commands = commands_of(a.vendor);
+            a.commands = commands_of();
         }
         if refused {
             let line = format!("session could not be resumed ({REFUSED})");
@@ -1987,10 +1921,7 @@ impl Sim {
             }
             2 if !self.notes_cut => {
                 self.notes_cut = true;
-                let file = match w.agents[id].vendor {
-                    Vendor::Claude => "CLAUDE.md",
-                    _ => "AGENTS.md",
-                };
+                let file = "CLAUDE.md";
                 let size = self.rng.range(20_000, 60_000) as usize;
                 w.note(Event::NotesCut {
                     agent: id,
@@ -2011,31 +1942,20 @@ impl Sim {
         }
     }
 
-    /// A worker of a random vendor joins `project`, named `<vendor>-N`
-    /// with the next free N, idle; as `--agents` starts them, nobody hired
-    /// it.
+    /// A worker joins `project`, named `claude-N` with the next free N,
+    /// idle; as `--agents` starts them, nobody hired it.
     fn hire(&mut self, w: &mut World, project: ProjectId) -> AgentId {
-        let v = *self.rng.pick(&[
-            Vendor::Claude,
-            Vendor::Claude,
-            Vendor::Codex,
-            Vendor::Codex,
-            Vendor::Gemini,
-            Vendor::Qwen,
-            Vendor::Local,
-        ]);
         let so_far = w
             .agents
             .iter()
-            .filter(|a| a.vendor == v && a.role == Role::Worker && !a.gone)
+            .filter(|a| a.role == Role::Worker && !a.gone)
             .count();
-        let name = free_name(w, &format!("{}-", v.label()), so_far + 1);
+        let name = free_name(w, &format!("{CLAUDE}-"), so_far + 1);
         let id = w.agents.len();
         w.agents.push(Agent::new(
             id,
             project,
             name,
-            v,
             Role::Worker,
             Status::Idle,
             w.tick,
@@ -2043,10 +1963,10 @@ impl Sim {
         id
     }
 
-    /// `:fork` in the demo, as live does it (record 94): a new worker of
-    /// worker `from`'s vendor goes on from its conversation and its
-    /// change; refused as live refuses: not a worker, a vendor that has
-    /// no fork, no session yet, mid-turn. The demo has no `--agents` cap.
+    /// `:fork` in the demo, as live does it (record 94): a new worker goes
+    /// on from worker `from`'s conversation and its change; refused as live
+    /// refuses: not a worker, no session yet, mid-turn. The demo has no
+    /// `--agents` cap.
     pub fn fork(&mut self, w: &mut World, from: AgentId) -> Result<AgentId, String> {
         let a = &w.agents[from];
         if a.role != Role::Worker || a.gone {
@@ -2054,30 +1974,21 @@ impl Sim {
                 "only a worker forks: it has a conversation and a worktree of its own".into(),
             );
         }
-        if !matches!(a.vendor, Vendor::Claude | Vendor::Codex) {
-            return Err(format!(
-                "{} sessions can not be forked (Gemini CLI 0.65.0's ACP has no fork)",
-                a.vendor.label()
-            ));
-        }
         if !self.started(from) {
             return Err("it has no session to fork yet: tell it something first".into());
         }
         if a.status == Status::Working {
             return Err("it is mid-turn: fork it when its turn ends".into());
         }
-        let (project, v, was) = (a.project, a.vendor, a.name.clone());
-        let so_far = (w.agents.iter())
-            .filter(|o| o.vendor == v && o.role == Role::Worker)
-            .count();
-        let name = free_name(w, &format!("{}-", v.label()), so_far + 1);
+        let (project, was) = (a.project, a.name.clone());
+        let so_far = (w.agents.iter()).filter(|o| o.role == Role::Worker).count();
+        let name = free_name(w, &format!("{CLAUDE}-"), so_far + 1);
         let id = w.agents.len();
         let t = w.tick;
         w.agents.push(Agent::new(
             id,
             project,
             name.clone(),
-            v,
             Role::Worker,
             Status::Idle,
             t,
@@ -2093,16 +2004,11 @@ impl Sim {
         Ok(id)
     }
 
-    /// Agent `by` hired agent `id` on a tier of its vendor; a model this
-    /// account lacks falls back to the vendor's default, now and then.
+    /// Agent `by` hired agent `id` on a tier; a model this account lacks
+    /// falls back to the default, now and then.
     fn hired(&mut self, w: &mut World, by: AgentId, id: AgentId) {
         let t = w.tick;
-        let models: [Option<&str>; 3] = match w.agents[id].vendor {
-            Vendor::Claude => [Some("haiku"), None, Some("opus")],
-            Vendor::Codex => [Some("@low"), None, Some("@high")],
-            Vendor::Gemini => [Some("flash"), None, Some("pro")],
-            Vendor::Qwen | Vendor::Local => [None; 3],
-        };
+        let models = [Some("haiku"), None, Some("opus")];
         let model = models[self.rng.below(3) as usize].map(str::to_string);
         let shown = model.clone().unwrap_or_else(|| "the default model".into());
         let (hirer, name) = (w.agents[by].name.clone(), w.agents[id].name.clone());
@@ -2160,7 +2066,7 @@ impl Sim {
             .iter()
             .find(|q| q.closed && q.archived.is_none() && q.name == name)
             .map(|q| q.id);
-        let p = w.open_project(reuse, name, path.to_string(), Vendor::Claude, Role::Leader);
+        let p = w.open_project(reuse, name, path.to_string(), Role::Leader);
         self.extras.folders.insert(p, path.to_string());
         if reuse.is_none() {
             w.projects[p].repo = PROJECTS[p % PROJECTS.len()].1;
@@ -2176,7 +2082,7 @@ impl Sim {
     }
 
     /// `:solo [PATH] [CHOICE] [NAME]` in the demo: a fake solo session on
-    /// `vendor` (else Claude) and `choice`, named `name` (else after the
+    /// `choice`, named `name` (else after the
     /// last part of `path`, numbered when taken), alone in a project of
     /// its own on one of the demo's code maps; it answers what the person
     /// writes and, now and then, shows a change. A closed solo of that
@@ -2185,7 +2091,6 @@ impl Sim {
         &mut self,
         w: &mut World,
         path: &str,
-        vendor: Option<Vendor>,
         choice: Option<String>,
         name: Option<&str>,
     ) -> Result<ProjectId, ProjectRefusal> {
@@ -2204,8 +2109,7 @@ impl Sim {
             .iter()
             .find(|q| q.closed && q.archived.is_none() && q.name == name && w.is_solo(q.id))
             .map(|q| q.id);
-        let vendor = vendor.unwrap_or(Vendor::Claude);
-        let p = w.open_project(reuse, name, path.to_string(), vendor, Role::Solo);
+        let p = w.open_project(reuse, name, path.to_string(), Role::Solo);
         self.extras.folders.insert(p, path.to_string());
         if reuse.is_none() {
             w.projects[p].repo = PROJECTS[p % PROJECTS.len()].1;
@@ -2651,14 +2555,13 @@ impl Sim {
         }
         // A session that waits for the person's yes does nothing else,
         // until it stops waiting.
-        if let Some(since) = w
-            .inbox
-            .iter()
-            .find(|i| i.open && i.kind == InboxKind::Approval && i.agent == id)
-            .map(|i| i.tick)
+        if let Some(i) =
+            (w.inbox.iter_mut()).find(|i| i.open && i.kind == InboxKind::Approval && i.agent == id)
         {
-            if t >= since + APPROVAL_WAIT {
-                w.withdrew(id, 0);
+            // The demo does not wait as live does, up to a day: nobody may
+            // be there, and the show goes on.
+            if t >= i.tick + APPROVAL_WAIT {
+                i.open = false;
                 w.agents[id].trace(t, "no answer in time; the tool call was refused");
             }
             return;
@@ -2887,7 +2790,7 @@ impl Sim {
         a.set_status(Status::Idle, t);
     }
 
-    /// A turn of agent `id` failed, `why` says why, `fault` the vendor's
+    /// A turn of agent `id` failed, `why` says why, `fault` Claude Code's
     /// kind of it; its session goes on. As live takes a failed turn: idle
     /// again, the story says why, and the journal, a retry or the inbox
     /// as `World::turn_failed` decides.
@@ -2954,7 +2857,7 @@ impl Sim {
         Self::helper_lost(w, id);
     }
 
-    /// Worker `id` hires a helper of its vendor in its worktree, named
+    /// Worker `id` hires a helper in its worktree, named
     /// after it (`claude-1.1`), for its card's tests.
     fn helper_for(&mut self, w: &mut World, id: AgentId, card: CardId) -> AgentId {
         let t = w.tick;
@@ -2965,8 +2868,8 @@ impl Sim {
             .count();
         let name = free_name(w, &format!("{}.", w.agents[id].name), ever + 1);
         let helper = w.agents.len();
-        let (project, vendor) = (w.agents[id].project, w.agents[id].vendor);
-        let mut a = Agent::new(helper, project, name, vendor, Role::Helper, Status::Idle, t);
+        let project = w.agents[id].project;
+        let mut a = Agent::new(helper, project, name, Role::Helper, Status::Idle, t);
         a.parent = Some(id);
         w.agents.push(a);
         self.hired(w, id, helper);
@@ -3204,7 +3107,6 @@ impl Sim {
             id,
             w.agents[requester].project,
             format!("researcher-{}", self.researchers),
-            Vendor::Gemini,
             Role::Researcher,
             Status::Researching {
                 for_agent: requester,
@@ -4139,14 +4041,10 @@ mod tests {
         assert_eq!(w.suggested.take().map(|g| g.text), Some("Only".into()));
     }
 
-    /// A demo of one project and its worker, whose change waits, on
-    /// `vendor` under a leader on `leader`.
-    fn a_change_waits(vendor: Vendor, leader: Vendor) -> (World, Sim, AgentId) {
+    /// A demo of one project and its worker, whose change waits.
+    fn a_change_waits() -> (World, Sim, AgentId) {
         let (mut w, s) = world(1, 1, 0, 3, Lang::En);
         let id = workers_of(&w, 0)[0];
-        w.agents[id].vendor = vendor;
-        let head = w.projects[0].leader;
-        w.agents[head].vendor = leader;
         w.change_ready(Change {
             agent: id,
             title: "Add the parser".into(),
@@ -4164,7 +4062,7 @@ mod tests {
 
     #[test]
     fn a_demo_review_is_refused_as_live_refuses_one() {
-        let (mut w, mut s, id) = a_change_waits(Vendor::Codex, Vendor::Codex);
+        let (mut w, mut s, id) = a_change_waits();
         let name = w.agents[id].name.clone();
         let lead = w.projects[0].leader;
         assert_eq!(
@@ -4172,28 +4070,25 @@ mod tests {
             Err(format!("no change of {} waits", w.agents[lead].name))
         );
         let spent = w.spent();
-        w.budget = spent + review_cap(Vendor::Claude);
-        assert_eq!(s.review(&w, id), Ok(Vendor::Claude), "just the cap left");
-        assert_eq!(s.review_of(id), Some(Vendor::Claude));
+        w.budget = spent + REVIEW_CAP;
+        assert_eq!(s.review(&w, id), Ok(()), "just the cap left");
+        assert!(s.review_of(id));
         assert_eq!(
             s.review(&w, id),
             Err(format!("a review of {name}'s change is under way"))
         );
         s.extras.reviews.clear();
-        assert_eq!(s.review_of(id), None);
+        assert!(!s.review_of(id));
         w.budget -= 1;
         assert_eq!(
             s.review(&w, id),
             Err("the pot has less than $0.10 left".into())
         );
         w.budget = spent + 1_000_000;
-        s.extras.review_calls = (
-            REVIEW_DAY_CALLS - 1,
-            REVIEW_DAY_COST - review_cap(Vendor::Claude),
-        );
-        assert_eq!(s.review(&w, id), Ok(Vendor::Claude), "the last of the day");
+        s.extras.review_calls = (REVIEW_DAY_CALLS - 1, REVIEW_DAY_COST - REVIEW_CAP);
+        assert_eq!(s.review(&w, id), Ok(()), "the last of the day");
         s.extras.review_calls = (REVIEW_DAY_CALLS - 2, 0);
-        let (mut w2, _, other) = a_change_waits(Vendor::Codex, Vendor::Codex);
+        let (mut w2, _, other) = a_change_waits();
         w2.budget = w.budget;
         assert_eq!(
             s.review(&w2, other),
@@ -4205,29 +4100,31 @@ mod tests {
         s.extras.reviews.clear();
         s.extras.review_calls = (REVIEW_DAY_CALLS, 0);
         assert_eq!(s.review(&w, id), Err("today's 20 reviews were made".into()));
-        s.extras.review_calls = (0, REVIEW_DAY_COST - review_cap(Vendor::Claude) + 1);
+        s.extras.review_calls = (0, REVIEW_DAY_COST - REVIEW_CAP + 1);
         assert_eq!(
             s.review(&w, id),
             Err("today's $2.00 for reviews is spent".into())
         );
         // The asked ones count against the day too.
         s.extras.review_calls = (REVIEW_DAY_CALLS - 1, 0);
-        s.extras.reviews.push_back((lead, Vendor::Codex, 0));
+        s.extras.reviews.push_back((lead, 0));
         assert_eq!(s.review(&w, id), Err("today's 20 reviews were made".into()));
-        // Only Gemini else: none reviews; Codex's own cost nothing.
-        let (mut w, mut s, id) = a_change_waits(Vendor::Claude, Vendor::Claude);
-        w.budget = w.spent();
-        assert_eq!(s.review(&w, id), Ok(Vendor::Codex), "an empty pot will do");
-        let (w, mut s, id) = a_change_waits(Vendor::Gemini, Vendor::Gemini);
-        assert_eq!(s.review(&w, id), Ok(Vendor::Claude));
-        let _ = s;
-        let (mut w, mut s, id) = a_change_waits(Vendor::Codex, Vendor::Codex);
+        // The pot's cap is the review's: without it, none.
+        let (mut w, mut s, id) = a_change_waits();
+        w.budget = w.spent() + REVIEW_CAP - 1;
+        assert_eq!(
+            s.review(&w, id),
+            Err(format!(
+                "the pot has less than {} left",
+                dollars(REVIEW_CAP)
+            ))
+        );
+        let (mut w, mut s, id) = a_change_waits();
         let sum = patch_sum(TWO_FILES);
         w.reviewed(
             id,
             Review {
                 patch: sum,
-                by: Vendor::Claude,
                 model: "sonnet".into(),
                 text: "fine".into(),
                 cost: 4,
@@ -4244,20 +4141,18 @@ mod tests {
 
     #[test]
     fn a_demo_review_answers_three_ticks_after_the_one_before_it() {
-        let (mut w, mut s, id) = a_change_waits(Vendor::Codex, Vendor::Codex);
+        let (mut w, mut s, id) = a_change_waits();
         let at = w.tick;
-        assert_eq!(s.review(&w, id), Ok(Vendor::Claude));
+        assert_eq!(s.review(&w, id), Ok(()));
         let other = w.projects[0].leader;
-        assert_eq!(s.extras.reviews.back(), Some(&(id, Vendor::Claude, at + 3)));
+        assert!(!s.review_of(other), "only the one asked");
+        assert_eq!(s.extras.reviews.back(), Some(&(id, at + 3)));
         // One asked after it waits for it.
         let mut second = w.change_of(id).unwrap().clone();
         second.agent = other;
         w.change_ready(second);
-        assert_eq!(s.review(&w, other), Ok(Vendor::Claude));
-        assert_eq!(
-            s.extras.reviews.back(),
-            Some(&(other, Vendor::Claude, at + 6))
-        );
+        assert_eq!(s.review(&w, other), Ok(()));
+        assert_eq!(s.extras.reviews.back(), Some(&(other, at + 6)));
         w.tick = at + 2;
         s.reviewed(&mut w);
         assert_eq!(w.review_of(id), None, "not yet");
@@ -4265,7 +4160,7 @@ mod tests {
         w.tick = at + 3;
         s.reviewed(&mut w);
         let r = w.review_of(id).expect("kept on the change").clone();
-        assert_eq!((r.by, r.model.as_str()), (Vendor::Claude, "sonnet"));
+        assert_eq!(r.model, "sonnet");
         assert_eq!(r.patch, patch_sum(TWO_FILES));
         assert!((30..=90).contains(&r.cost), "{}", r.cost);
         assert_eq!(w.paid - paid, r.cost);
@@ -4288,19 +4183,6 @@ mod tests {
         assert!(s.extras.reviews.is_empty());
         assert_eq!(w.journal.len(), lines);
         assert_eq!(s.extras.review_calls.0, 1);
-        // Codex's review costs the pot nothing.
-        let (mut w, mut s, id) = a_change_waits(Vendor::Claude, Vendor::Claude);
-        assert_eq!(s.review(&w, id), Ok(Vendor::Codex));
-        let paid = w.paid;
-        w.tick += 3;
-        s.reviewed(&mut w);
-        let r = w.review_of(id).expect("kept");
-        assert_eq!(
-            (r.by, r.model.as_str(), r.cost),
-            (Vendor::Codex, "default", 0)
-        );
-        assert_eq!(w.paid, paid);
-        assert_eq!(s.extras.review_calls, (1, 0));
     }
 
     const TWO_FILES: &str = "\
@@ -4679,48 +4561,32 @@ diff --git a/b.rs b/b.rs
     }
 
     #[test]
-    fn a_hire_gets_a_model_of_its_vendor_and_some_fall_back() {
+    fn a_hire_gets_a_tier_s_model_and_some_fall_back() {
         let (mut w, mut s) = world(1, 1, 0, 1, Lang::En);
         let worker = workers_of(&w, 0)[0];
         let mut models = std::collections::BTreeSet::new();
         let mut fell = 0;
-        for v in [Vendor::Claude, Vendor::Codex, Vendor::Gemini, Vendor::Qwen] {
-            w.agents[worker].vendor = v;
-            for _ in 0..60 {
-                let n = w.journal.len();
-                s.hired(&mut w, 0, worker);
-                let Event::Hired {
-                    by, agent, model, ..
-                } = &w.journal[n].event
-                else {
-                    panic!("{:?}", w.journal[n].event);
-                };
-                assert_eq!((*by, *agent), (0, worker));
-                models.insert((v.label(), model.clone()));
-                if let Some(Event::Fallback { agent, model: m }) =
-                    w.journal.get(n + 1).map(|e| &e.event)
-                {
-                    assert_eq!(*agent, worker);
-                    assert_eq!(Some(m), model.as_ref(), "the model it was given");
-                    fell += 1;
-                }
+        for _ in 0..240 {
+            let n = w.journal.len();
+            s.hired(&mut w, 0, worker);
+            let Event::Hired {
+                by, agent, model, ..
+            } = &w.journal[n].event
+            else {
+                panic!("{:?}", w.journal[n].event);
+            };
+            assert_eq!((*by, *agent), (0, worker));
+            models.insert(model.clone());
+            if let Some(Event::Fallback { agent, model: m }) =
+                w.journal.get(n + 1).map(|e| &e.event)
+            {
+                assert_eq!(*agent, worker);
+                assert_eq!(Some(m), model.as_ref(), "the model it was given");
+                fell += 1;
             }
         }
-        let want: std::collections::BTreeSet<(&str, Option<String>)> = [
-            ("claude", Some("haiku")),
-            ("claude", None),
-            ("claude", Some("opus")),
-            ("codex", Some("@low")),
-            ("codex", None),
-            ("codex", Some("@high")),
-            ("gemini", Some("flash")),
-            ("gemini", None),
-            ("gemini", Some("pro")),
-            ("qwen", None),
-        ]
-        .into_iter()
-        .map(|(v, m)| (v, m.map(str::to_string)))
-        .collect();
+        let want: std::collections::BTreeSet<Option<String>> =
+            [Some("haiku".to_string()), None, Some("opus".to_string())].into();
         assert_eq!(models, want);
         assert!(fell > 0 && fell < 60, "{fell}");
     }
@@ -4740,7 +4606,6 @@ diff --git a/b.rs b/b.rs
             (a.role, a.parent, a.project),
             (Role::Helper, Some(worker), 0)
         );
-        assert_eq!(a.vendor, w.agents[worker].vendor);
         assert_eq!(a.status, Status::Working);
         assert!(s.mind(h).started);
         assert!(w.journal.iter().any(
@@ -4909,7 +4774,7 @@ diff --git a/b.rs b/b.rs
         s.step(&mut w);
         assert!(w.agents[worker].progress > progress, "and goes on");
 
-        // Unanswered: the session gives up after 100 seconds, nobody decided.
+        // Unanswered: the demo's session gives up, nobody decided.
         s.approval(&mut w, worker);
         let item = w.inbox.len() - 1;
         let asked = w.inbox[item].tick;
@@ -4984,18 +4849,17 @@ diff --git a/b.rs b/b.rs
         let lead = w.projects[0].leader;
         w.agents[worker].status = Status::Working;
         w.agents[worker].cost = 100;
-        let per_tick = w.agents[worker].vendor.cost_per_tick();
+        let per_tick = COST_PER_TICK;
         // Here but idle: nothing.
         w.agents[lead].status = Status::Idle;
         w.agents[lead].cost = 20;
-        assert!(per_tick > 0 && w.agents[lead].vendor.cost_per_tick() > 0);
+        assert!(per_tick > 0);
         // Gone, its status still a busy one: nothing.
         let gone = w.agents.len();
         let mut r = Agent::new(
             gone,
             0,
             "researcher-9".into(),
-            Vendor::Claude,
             Role::Researcher,
             Status::Researching {
                 for_agent: worker,
@@ -5153,54 +5017,46 @@ diff --git a/b.rs b/b.rs
     }
 
     #[test]
-    fn the_demo_s_running_vendors_fill_their_windows_with_what_they_spend() {
+    fn the_demo_fills_the_windows_with_what_its_agents_spend() {
         let (mut w, mut s) = world(1, 2, 0, 1, Lang::En);
         let lead = w.projects[0].leader;
         let workers = workers_of(&w, 0);
-        w.agents[lead].vendor = Vendor::Claude;
-        w.agents[workers[0]].vendor = Vendor::Codex;
-        w.agents[workers[1]].vendor = Vendor::Claude;
         // Nobody runs yet: nothing said.
         s.limits(&mut w);
         assert!(w.limits.is_empty());
         s.start(&mut w, lead);
         w.agents[lead].cost = 3_000;
         w.agents[workers[1]].cost = 2_100;
-        w.agents[workers[0]].cost = 99_999;
         w.tick = 4_000;
         s.limits(&mut w);
-        // $0.51 of Claude: 25% of five hours, 6% of the week; Codex has no
-        // session.
+        // $0.51: 25% of five hours, 6% of the week.
         let now = w.now();
         assert_eq!(now, 20_000);
         assert_eq!(
             w.limits,
             [
                 Limit {
-                    vendor: Vendor::Claude,
                     minutes: 300,
                     used: 25,
                     resets_at: Some(36_000)
                 },
                 Limit {
-                    vendor: Vendor::Claude,
                     minutes: 10_080,
                     used: 6,
                     resets_at: Some(604_800)
                 },
             ]
         );
-        // Codex once it runs, full at most.
-        s.start(&mut w, workers[0]);
+        // Full at most.
+        w.agents[workers[0]].cost = 99_999;
         s.limits(&mut w);
         assert_eq!(
-            w.tightest()[1],
-            Limit {
-                vendor: Vendor::Codex,
+            w.tightest(),
+            Some(Limit {
                 minutes: 300,
                 used: 100,
                 resets_at: Some(36_000)
-            }
+            })
         );
         // Said every minute of the demo's clock.
         w.limits.clear();
@@ -5213,16 +5069,53 @@ diff --git a/b.rs b/b.rs
     }
 
     #[test]
-    fn the_first_gemini_session_of_a_run_lists_no_command_line_as_live_says_it() {
+    fn a_session_lists_claude_code_s_own_command_line() {
+        assert_eq!(commands_of(), ["/compact", "/cost", "/clear"]);
+    }
+
+    #[test]
+    fn nothing_held_says_nothing_when_a_step_comes() {
+        let (mut w, mut s) = world(1, 1, 0, 1, Lang::En);
+        let worker = workers_of(&w, 0)[0];
+        assert_eq!(w.agents[worker].held_mail, 0);
+        s.step(&mut w);
+        let said = "takes the mail that waited on the person";
+        assert!(!w.agents[worker].trace.iter().any(|l| l.contains(said)));
+        w.agents[worker].held_mail = 1;
+        s.step(&mut w);
+        assert_eq!(w.agents[worker].held_mail, 0);
+        assert!(w.agents[worker].trace.iter().any(|l| l.contains(said)));
+    }
+
+    /// A helper of `worker` joins the world, asleep to the demo's steps.
+    fn with_helper_of(w: &mut World, worker: AgentId) -> AgentId {
+        let id = w.agents.len();
+        let project = w.agents[worker].project;
+        let mut a = Agent::new(
+            id,
+            project,
+            format!("{}.1", w.agents[worker].name),
+            Role::Helper,
+            Status::Idle,
+            0,
+        );
+        a.parent = Some(worker);
+        w.agents.push(a);
+        id
+    }
+
+    #[test]
+    fn the_first_helper_s_session_of_a_run_lists_no_command_line_as_live_says_it() {
         let (mut w, mut s) = world(1, 2, 0, 1, Lang::En);
         let workers = workers_of(&w, 0);
         let lead = w.projects[0].leader;
-        for &id in &workers {
-            w.agents[id].vendor = Vendor::Gemini;
-        }
-        // A Claude session lists its own.
+        let first = with_helper_of(&mut w, workers[0]);
+        let second = with_helper_of(&mut w, workers[1]);
+        // Others list their own.
         s.start(&mut w, lead);
-        assert_eq!(w.agents[lead].commands, commands_of(Vendor::Claude));
+        assert_eq!(w.agents[lead].commands, commands_of());
+        s.start(&mut w, workers[0]);
+        assert_eq!(w.agents[workers[0]].commands, commands_of());
         let missing = |w: &World| {
             (w.journal.iter())
                 .filter(|e| matches!(e.event, Event::CommandsMissing { .. }))
@@ -5230,78 +5123,17 @@ diff --git a/b.rs b/b.rs
                 .collect::<Vec<_>>()
         };
         assert!(missing(&w).is_empty());
-        s.start(&mut w, workers[0]);
-        assert_eq!(w.agents[workers[0]].commands, ["/clear"]);
+        s.start(&mut w, first);
+        assert_eq!(w.agents[first].commands, ["/clear"]);
         assert!(
-            (w.agents[workers[0]].trace.iter())
-                .any(|l| l.ends_with(" commands not listed: the vendor's format may have changed"))
+            (w.agents[first].trace.iter())
+                .any(|l| l.ends_with(" commands not listed: Claude Code's format may have changed"))
         );
-        assert_eq!(missing(&w), [workers[0]]);
-        // Once a run: the next Gemini session lists its own.
-        s.start(&mut w, workers[1]);
-        assert_eq!(w.agents[workers[1]].commands, ["/clear", "/stats"]);
-        assert_eq!(missing(&w), [workers[0]]);
-    }
-
-    #[test]
-    fn a_codex_compaction_with_nothing_new_is_a_failed_turn_and_the_session_goes_on() {
-        let (mut w, mut s) = world(1, 1, 0, 1, Lang::En);
-        let lead = w.projects[0].leader;
-        w.agents[lead].vendor = Vendor::Codex;
-        s.told(&mut w, lead, "hello").unwrap();
-        s.replies.clear();
-        let due = |s: &Sim| -> Vec<(String, bool)> {
-            s.replies
-                .iter()
-                .map(|r| (r.text.clone(), r.failed))
-                .collect()
-        };
-        assert_eq!(s.command(&mut w, lead, "/compact"), Ok(()));
-        let refused = "compaction refused: nothing new to compact since the last one";
-        assert_eq!(s.command(&mut w, lead, "/compact"), Ok(()));
-        assert_eq!(
-            due(&s),
-            [
-                ("Compacted the conversation.".to_string(), false),
-                (refused.to_string(), true)
-            ]
-        );
-        // Delivered: the journal and the trace say it failed, the session
-        // stays.
-        s.step(&mut w);
-        assert!(w.journal.iter().any(|e| e.event
-            == Event::Stopped {
-                agent: lead,
-                why: refused.into()
-            }));
-        let cost = dollars(w.agents[lead].cost);
-        let line = format!(" result ✕ {cost} denied 0");
-        let trace = &w.agents[lead].trace;
-        assert!(trace.iter().any(|l| l.ends_with(&line)), "{trace:?}");
-        assert!(s.mind(lead).started, "the session goes on");
-        // A turn between: there is something new to compact again.
-        s.replies.clear();
-        s.told(&mut w, lead, "more").unwrap();
-        s.replies.clear();
-        assert_eq!(s.command(&mut w, lead, "/compact"), Ok(()));
-        assert_eq!(
-            due(&s),
-            [("Compacted the conversation.".to_string(), false)]
-        );
-        // Claude compacts as often as it is asked.
-        let (mut w, mut s) = world(1, 1, 0, 1, Lang::En);
-        let lead = w.projects[0].leader;
-        s.told(&mut w, lead, "hello").unwrap();
-        s.replies.clear();
-        for _ in 0..2 {
-            assert_eq!(s.command(&mut w, lead, "/compact"), Ok(()));
-        }
-        assert!(due(&s).iter().all(|(_, failed)| !failed));
-        // Any other command does not count as a compaction.
-        w.agents[lead].vendor = Vendor::Codex;
-        s.mind(lead).compacted = false;
-        assert_eq!(s.command(&mut w, lead, "/cost"), Ok(()));
-        assert!(!s.mind(lead).compacted);
+        assert_eq!(missing(&w), [first]);
+        // Once a run: the next helper lists its own.
+        s.start(&mut w, second);
+        assert_eq!(w.agents[second].commands, commands_of());
+        assert_eq!(missing(&w), [first]);
     }
 
     #[test]
@@ -5331,17 +5163,6 @@ diff --git a/b.rs b/b.rs
     }
 
     #[test]
-    fn each_vendor_has_its_command_line() {
-        let words = |v| commands_of(v);
-        assert_eq!(words(Vendor::Claude), ["/compact", "/cost", "/clear"]);
-        assert_eq!(words(Vendor::Codex), ["/compact", "/clear"]);
-        assert_eq!(words(Vendor::Gemini), ["/clear", "/stats"]);
-        for v in [Vendor::Qwen, Vendor::Local] {
-            assert_eq!(words(v), ["/clear"], "{v:?}");
-        }
-    }
-
-    #[test]
     fn a_workers_first_session_may_say_where_its_worktree_is() {
         let (mut w, mut s, worker, _) = one_at_work();
         let n = w.journal.len();
@@ -5353,10 +5174,9 @@ diff --git a/b.rs b/b.rs
         assert!(
             matches!(&w.journal[n + 1].event, Event::WorktreeKept { agent, at, head, .. } if *agent == worker && at.len() == 7 && head.len() == 7)
         );
-        w.agents[worker].vendor = Vendor::Codex;
         s.worktree(&mut w, worker, 2);
         assert!(
-            matches!(&w.journal[n + 2].event, Event::NotesCut { agent, file, size } if *agent == worker && file == "AGENTS.md" && (20_000..=60_000).contains(size))
+            matches!(&w.journal[n + 2].event, Event::NotesCut { agent, file, size } if *agent == worker && file == "CLAUDE.md" && (20_000..=60_000).contains(size))
         );
         s.worktree(&mut w, worker, 2);
         s.worktree(&mut w, worker, 3);
@@ -5374,7 +5194,6 @@ diff --git a/b.rs b/b.rs
         s.worktree(&mut w, worker, 4);
         assert_eq!(w.journal.len(), n + 4, "the person's file too, once a run");
         let (mut w, mut s, worker, _) = one_at_work();
-        w.agents[worker].vendor = Vendor::Claude;
         s.worktree(&mut w, worker, 2);
         assert!(
             matches!(&w.journal.last().unwrap().event, Event::NotesCut { file, .. } if file == "CLAUDE.md")
@@ -5543,7 +5362,6 @@ diff --git a/b.rs b/b.rs
             id,
             0,
             "claude-9".into(),
-            Vendor::Claude,
             Role::Worker,
             Status::Idle,
             0,
@@ -5568,7 +5386,6 @@ diff --git a/b.rs b/b.rs
             helper,
             0,
             "claude-9.1".into(),
-            Vendor::Claude,
             Role::Helper,
             Status::Idle,
             0,
@@ -5582,7 +5399,6 @@ diff --git a/b.rs b/b.rs
             third,
             0,
             "claude-10".into(),
-            Vendor::Claude,
             Role::Worker,
             Status::Idle,
             0,
@@ -5594,16 +5410,16 @@ diff --git a/b.rs b/b.rs
     #[test]
     fn a_kept_worktree_stands_by_its_ids() {
         assert_eq!(
-            kept("codex-1", "5ab", "6cd", true),
+            kept("claude-1", "5ab", "6cd", true),
             Stand {
-                branch: Some("wip-codex-1".into()),
+                branch: Some("wip-claude-1".into()),
                 ahead: 3,
                 behind: 3,
                 ..Stand::default()
             }
         );
         assert_eq!(
-            kept("codex-1", "7ab", "f00", false),
+            kept("claude-1", "7ab", "f00", false),
             Stand {
                 behind: 4,
                 added: 26,
@@ -5629,7 +5445,7 @@ diff --git a/b.rs b/b.rs
         let n = w.journal.len();
         s.start(&mut w, lead);
         assert!(s.mind(lead).started);
-        assert_eq!(w.agents[lead].commands, commands_of(Vendor::Claude));
+        assert_eq!(w.agents[lead].commands, commands_of());
         assert_eq!(w.journal.len(), n, "a leader has no worktree");
         w.agents[lead].commands.clear();
         s.start(&mut w, lead);
@@ -6113,11 +5929,11 @@ diff --git a/b.rs b/b.rs
         assert_eq!(s.close_project(&mut w, 2), Ok(()));
         assert_eq!(s.open_project(&mut w, "/x", Some(&name)), Ok(2));
         assert!(w.projects[1].archived.is_some() && w.projects[1].closed);
-        let solo = s.open_solo(&mut w, "/s", None, None, Some("solo")).unwrap();
+        let solo = s.open_solo(&mut w, "/s", None, Some("solo")).unwrap();
         let fresh_solo = s.archive_project(&mut w, solo, "s".into()).unwrap();
         assert_eq!(s.close_project(&mut w, fresh_solo), Ok(()));
         assert_eq!(
-            s.open_solo(&mut w, "/s", None, None, Some("solo")),
+            s.open_solo(&mut w, "/s", None, Some("solo")),
             Ok(fresh_solo)
         );
         assert!(w.projects[solo].closed, "the archived solo stays put away");
@@ -6156,7 +5972,7 @@ diff --git a/b.rs b/b.rs
         // A solo of the name is not the team's to swap: refused.
         let fresh = s.archive_project(&mut w, 1, "third".into()).unwrap();
         assert_eq!(s.close_project(&mut w, fresh), Ok(()));
-        let solo = s.open_solo(&mut w, "/s", None, None, Some(&name)).unwrap();
+        let solo = s.open_solo(&mut w, "/s", None, Some(&name)).unwrap();
         assert_eq!(
             s.restore_project(&mut w, 1),
             Err(ProjectRefusal::NameTaken(name.clone()))
@@ -6188,21 +6004,15 @@ diff --git a/b.rs b/b.rs
     fn the_demo_opens_a_solo_that_answers_the_person_and_shows_a_change_now_and_then() {
         let (mut w, mut s) = world(1, 2, 4, 7, Lang::En);
         let p = s
-            .open_solo(
-                &mut w,
-                "~/work/shop",
-                Some(Vendor::Codex),
-                Some("@high".into()),
-                None,
-            )
+            .open_solo(&mut w, "~/work/shop", Some("@high".into()), None)
             .unwrap();
         assert_eq!(p, 1);
         let head = w.projects[1].leader;
         let a = &w.agents[head];
         assert_eq!(w.projects[1].name, "shop");
         assert_eq!(
-            (a.name.as_str(), a.role, a.vendor, a.status),
-            ("solo-shop", Role::Solo, Vendor::Codex, Status::Idle)
+            (a.name.as_str(), a.role, a.status),
+            ("solo-shop", Role::Solo, Status::Idle)
         );
         assert_eq!(s.model_of(head), Some("@high"));
         assert_eq!(w.projects[1].repo, PROJECTS[1].1, "a code map of its own");
@@ -6213,16 +6023,15 @@ diff --git a/b.rs b/b.rs
         );
         assert!(w.cards.iter().all(|c| c.project != 1));
         // The same directory again: numbered; a name of the person's own.
-        assert_eq!(s.open_solo(&mut w, "~/work/shop", None, None, None), Ok(2));
+        assert_eq!(s.open_solo(&mut w, "~/work/shop", None, None), Ok(2));
         assert_eq!(w.projects[2].name, "shop-2");
-        assert_eq!(w.agents[w.projects[2].leader].vendor, Vendor::Claude);
         assert_eq!(s.model_of(w.projects[2].leader), None);
         assert_eq!(
-            s.open_solo(&mut w, "/x", None, None, Some("shop")),
+            s.open_solo(&mut w, "/x", None, Some("shop")),
             Err(ProjectRefusal::NameTaken("shop".into()))
         );
         assert_eq!(
-            s.open_solo(&mut w, "/x", None, None, Some("a b")),
+            s.open_solo(&mut w, "/x", None, Some("a b")),
             Err(ProjectRefusal::BadName("a b".into()))
         );
         // Told something, it works and answers; about every other answer
@@ -6267,17 +6076,17 @@ diff --git a/b.rs b/b.rs
         assert_eq!(s.close_project(&mut w, 1), Ok(()));
         assert_eq!(s.close_project(&mut w, 2), Ok(()));
         assert_eq!(
-            s.open_solo(&mut w, "/z", None, None, Some("third")),
+            s.open_solo(&mut w, "/z", None, Some("third")),
             Ok(3),
             "another name: a project of its own"
         );
-        assert_eq!(s.open_solo(&mut w, "/z", None, None, Some("shop")), Ok(1));
+        assert_eq!(s.open_solo(&mut w, "/z", None, Some("shop")), Ok(1));
         assert!(w.is_solo(1) && !w.projects[1].closed);
         assert!(w.projects[2].closed, "shop-2 stays closed");
         assert_eq!(s.open_project(&mut w, "/t", Some("team")), Ok(4));
         assert_eq!(s.close_project(&mut w, 4), Ok(()));
         assert_eq!(
-            s.open_solo(&mut w, "/t", None, None, Some("team")),
+            s.open_solo(&mut w, "/t", None, Some("team")),
             Ok(5),
             "a closed team of that name is not a solo's place"
         );
@@ -6285,7 +6094,7 @@ diff --git a/b.rs b/b.rs
     }
 
     #[test]
-    fn the_demo_fails_now_and_then_as_live_vendors_do_and_tries_again_as_live_does() {
+    fn the_demo_fails_now_and_then_as_live_does_and_tries_again_as_live_does() {
         let got: Vec<Option<Fault>> = (1..=21).map(fault_of).collect();
         let p = Some(Fault::Passing);
         let a = Some(Fault::Account);
@@ -6297,7 +6106,7 @@ diff --git a/b.rs b/b.rs
             ]
         );
         let (mut w, mut s) = world(1, 2, 4, 7, Lang::En);
-        let solo = s.open_solo(&mut w, "/x", None, None, None).unwrap();
+        let solo = s.open_solo(&mut w, "/x", None, None).unwrap();
         let head = w.projects[solo].leader;
         let answer = |w: &mut World, s: &mut Sim, text: &str| {
             s.told(w, head, text).unwrap();
@@ -6308,7 +6117,7 @@ diff --git a/b.rs b/b.rs
         answer(&mut w, &mut s, "one");
         answer(&mut w, &mut s, "two");
         assert_eq!(w.agents[head].retry, None);
-        // The third fails on an overloaded vendor and waits to be tried.
+        // The third fails on an overloaded API and waits to be tried.
         answer(&mut w, &mut s, "three");
         let r = w.agents[head].retry.expect("a retry waits");
         assert_eq!(r.attempt, 1);
@@ -6326,7 +6135,7 @@ diff --git a/b.rs b/b.rs
             w.agents[head]
                 .trace
                 .iter()
-                .any(|l| l.ends_with("retry 1/3 after a vendor error"))
+                .any(|l| l.ends_with("retry 1/3 after a API error"))
         );
         for _ in 0..5 {
             s.step(&mut w);
@@ -6360,7 +6169,7 @@ diff --git a/b.rs b/b.rs
         let (mut w, mut s) = world(1, 2, 4, 7, Lang::En);
         let plain = crate::live::testing::plain_folder("demo-nogit", false);
         let shown = plain.display().to_string();
-        let p = s.open_solo(&mut w, &shown, None, None, None).unwrap();
+        let p = s.open_solo(&mut w, &shown, None, None).unwrap();
         let head = w.projects[p].leader;
         assert!(w.projects[p].no_git);
         assert_eq!(
@@ -6382,14 +6191,12 @@ diff --git a/b.rs b/b.rs
         }
         // The demo's own paths, and a folder that got git since, are
         // checkouts; closed and opened again, the mark goes.
-        let q = s
-            .open_solo(&mut w, "/x", None, None, Some("made-up"))
-            .unwrap();
+        let q = s.open_solo(&mut w, "/x", None, Some("made-up")).unwrap();
         assert!(!w.projects[q].no_git);
         assert_eq!(s.close_project(&mut w, p), Ok(()));
         crate::live::testing::commit_all(&plain);
         let name = w.projects[p].name.clone();
-        assert_eq!(s.open_solo(&mut w, &shown, None, None, Some(&name)), Ok(p));
+        assert_eq!(s.open_solo(&mut w, &shown, None, Some(&name)), Ok(p));
         assert!(!w.projects[p].no_git);
         let _ = std::fs::remove_dir_all(&plain);
     }
@@ -6398,13 +6205,7 @@ diff --git a/b.rs b/b.rs
     fn the_demo_retunes_a_solo_as_live_does() {
         let (mut w, mut s) = world(1, 1, 4, 7, Lang::En);
         let p = s
-            .open_solo(
-                &mut w,
-                "/x",
-                Some(Vendor::Claude),
-                Some("opus".into()),
-                Some("notes"),
-            )
+            .open_solo(&mut w, "/x", Some("opus".into()), Some("notes"))
             .unwrap();
         let head = w.projects[p].leader;
         let worker = w.agents.iter().find(|a| a.role == Role::Worker).unwrap().id;
@@ -6568,48 +6369,19 @@ diff --git a/b.rs b/b.rs
     }
 
     #[test]
-    fn a_hired_worker_takes_the_next_free_number_of_its_vendor() {
+    fn a_hired_worker_takes_the_next_free_number() {
         let (mut w, mut s) = world(1, 0, 4, 7, Lang::En);
-        // Only workers count: the lead is a Claude too, and the first
-        // Claude worker is still claude-1.
-        assert_eq!(w.agents[0].vendor, Vendor::Claude);
-        let mut claude = None;
-        for _ in 0..64 {
-            let id = s.hire(&mut w, 0);
-            if w.agents[id].vendor == Vendor::Claude {
-                claude = Some(id);
-                break;
-            }
-        }
-        assert_eq!(w.agents[claude.expect("a claude")].name, "claude-1");
-        let (mut w, mut s) = world(1, 0, 4, 7, Lang::En);
+        // Only workers count: the lead does not, and the first worker is
+        // claude-1.
         let first = s.hire(&mut w, 0);
-        let v = w.agents[first].vendor;
-        assert_eq!(w.agents[first].name, format!("{}-1", v.label()));
+        assert_eq!(w.agents[first].name, "claude-1");
         assert_eq!(w.agents[first].project, 0);
         w.agents[first].gone = true;
-        // The number of one that left is free again; a bounded search for
-        // the same vendor (the pick is random).
-        let mut same = None;
-        for _ in 0..64 {
-            let id = s.hire(&mut w, 0);
-            if w.agents[id].vendor == v {
-                same = Some(id);
-                break;
-            }
-        }
-        let same = same.expect("the vendor comes up again");
-        assert_eq!(w.agents[same].name, format!("{}-1", v.label()));
-        let mut again = None;
-        for _ in 0..64 {
-            let id = s.hire(&mut w, 0);
-            if w.agents[id].vendor == v {
-                again = Some(id);
-                break;
-            }
-        }
-        let again = again.expect("and again");
-        assert_eq!(w.agents[again].name, format!("{}-2", v.label()));
+        // The number of one that left is free again.
+        let same = s.hire(&mut w, 0);
+        assert_eq!(w.agents[same].name, "claude-1");
+        let again = s.hire(&mut w, 0);
+        assert_eq!(w.agents[again].name, "claude-2");
     }
 
     #[test]

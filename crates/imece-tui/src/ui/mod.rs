@@ -10,7 +10,6 @@ mod diff;
 pub(crate) mod export;
 mod focus;
 mod overlay;
-pub mod pick;
 pub(crate) mod salon;
 pub(crate) mod story;
 pub(crate) mod timeline;
@@ -369,11 +368,6 @@ pub(crate) fn fg(c: Color) -> Style {
 
 pub(crate) fn bold(c: Color) -> Style {
     Style::new().fg(c).add_modifier(Modifier::BOLD)
-}
-
-/// 256-colour indexes, so terminals without true colour show them too.
-pub(crate) fn vendor_color(v: Vendor) -> Color {
-    pal().vendors[v as usize]
 }
 
 /// An agent's own colour in conversations, fixed by its id so a speaker
@@ -1527,11 +1521,11 @@ pub(crate) fn fleet(app: &App) -> Vec<Span<'static>> {
     spans
 }
 
-/// Percent of a vendor's usage window used from which the header says
+/// Percent of a usage window used from which the header says
 /// it the way it says what waits for the person.
 const LIMIT_LOUD: u8 = 90;
 
-/// A vendor's tightest usage window as the header shows it.
+/// A Claude Code's tightest usage window as the header shows it.
 fn limit_span(lang: Lang, l: &Limit, now: u64) -> Span<'static> {
     let said = words::limit(lang, l, now);
     match l.used >= LIMIT_LOUD {
@@ -1561,7 +1555,7 @@ fn header(f: &mut Frame, area: Rect, app: &App) {
 
 /// The header's parts, most wanted first: what waits for the person, the
 /// fleet, what happened in the last ten minutes, the cards, the pot, each
-/// vendor's tightest window, the researchers, the clock.
+/// Claude Code's tightest window, the researchers, the clock.
 pub(crate) fn header_parts(app: &App) -> Vec<HeadPart> {
     let w = &app.world;
     let t = app.lang.text();
@@ -1622,8 +1616,8 @@ pub(crate) fn header_parts(app: &App) -> Vec<HeadPart> {
         parts.push(part(vec![Span::raw(spent)], 4));
         parts.push(glued(vec![Span::styled(format!(" ({rate})"), dim())], 2));
     }
-    // Each vendor's window nearest to full, kept when little is left.
-    for l in w.tightest() {
+    // The window nearest to full, kept when little is left.
+    if let Some(l) = w.tightest() {
         let keep = if l.used >= LIMIT_LOUD { KEEP } else { 1 };
         parts.push(part(vec![limit_span(app.lang, &l, w.now())], keep));
     }
@@ -2239,8 +2233,8 @@ mod tests {
         assert!(first.contains("▶ claude-31"), "{first}");
         assert!(first.contains("~/src/"), "{first}");
         assert!(first.contains("clean"), "{first}");
-        let second = row(&s, "codex-32");
-        assert!(second.contains("  codex-32 "), "{second}");
+        let second = row(&s, "claude-32");
+        assert!(second.contains("  claude-32 "), "{second}");
         assert!(!second.contains('▶'), "{second}");
         assert!(
             second.contains("files changed: 3 · commits of its own: 1"),
@@ -2249,9 +2243,9 @@ mod tests {
         assert!(s.contains("remove the clean ones"), "{s}");
         app.tidy = Some(crate::app::TidyWin { at: 1, sure: true });
         let s = render(&app, 140, 30);
-        assert!(row(&s, "▶").contains("codex-32"), "{s}");
+        assert!(row(&s, "▶").contains("claude-32"), "{s}");
         assert!(
-            s.contains("remove codex-32 with what it holds (files changed: 3 · commits of its own: 1)? y removes it"),
+            s.contains("remove claude-32 with what it holds (files changed: 3 · commits of its own: 1)? y removes it"),
             "{s}"
         );
         assert!(!s.contains("remove the clean ones"), "{s}");
@@ -2424,7 +2418,10 @@ mod tests {
 
     /// A demo team after a while, card #1's screen opened by typing it.
     fn on_card_one(lang: Lang) -> App {
-        let mut app = app_after(1, 4, 140, lang);
+        let mut app = App::new(1, 4, 4, 2, lang);
+        for _ in 0..140 {
+            app.step();
+        }
         for code in [KeyCode::Char('#'), KeyCode::Char('1'), KeyCode::Enter] {
             app.on_key(KeyEvent::from(code));
         }
@@ -2844,7 +2841,6 @@ mod tests {
                 *id,
                 0,
                 format!("{name}.{}", n + 1),
-                Vendor::Claude,
                 Role::Helper,
                 Status::Working,
                 app.world.tick,
@@ -2875,7 +2871,6 @@ mod tests {
             id,
             0,
             "res-1".into(),
-            Vendor::Claude,
             Role::Researcher,
             Status::Working,
             0,
@@ -3666,15 +3661,7 @@ mod tests {
 
     #[test]
     fn what_a_step_does_takes_what_the_status_and_row_leave_or_nothing() {
-        let mut a = Agent::new(
-            0,
-            0,
-            "w".into(),
-            Vendor::Claude,
-            Role::Worker,
-            Status::Working,
-            0,
-        );
+        let mut a = Agent::new(0, 0, "w".into(), Role::Worker, Status::Working, 0);
         let text = |s: Vec<Span>| s.iter().map(|s| s.content.to_string()).collect::<String>();
         a.activity = Some("x".repeat(50));
         let x = |n: usize| "x".repeat(n);
@@ -4462,11 +4449,11 @@ mod tests {
     }
 
     #[test]
-    fn the_first_run_window_spins_by_a_vendor_still_checked() {
+    fn the_first_run_window_spins_while_claude_code_is_checked() {
         use crate::motion::{Motion, SPIN};
         use crate::welcome::Seen;
         let mut app = App::new(1, 1, 0, 1, Lang::En);
-        app.vendors = vec![(Vendor::Claude, Seen::Checking)];
+        app.seen = Seen::Checking;
         app.welcome = true;
         assert!(render(&app, 120, 40).contains("… claude"));
         app.motion = Motion::Calm;
@@ -4500,7 +4487,7 @@ mod tests {
     }
 
     #[test]
-    fn a_bare_colon_solo_opens_the_pick_screen_which_asks_vendor_model_and_effort() {
+    fn a_bare_colon_solo_opens_the_pick_screen_which_asks_model_and_effort() {
         let mut app = app_after(1, 1, 0, Lang::En);
         app.home = None;
         let t = Lang::En.text();
@@ -4511,11 +4498,11 @@ mod tests {
         let s = render(&app, 140, 40);
         assert!(s.contains(t.solo_pick_title.trim()), "{s}");
         assert!(
-            s.contains("Which coding agent?") && s.contains(" 1 claude"),
+            s.contains("Which model?") && s.contains("default (Claude Code's own)"),
             "{s}"
         );
         assert!(s.contains("esc back"), "{s}");
-        // A vendor's row wears its colour; only the chosen row is reversed.
+        // Only the chosen row is reversed.
         let buf = buffer(&app, 140, 40);
         let row = |y: u16| -> String { (0..140).map(|x| buf[(x, y)].symbol()).collect() };
         let cell = |needle: &str| {
@@ -4526,25 +4513,19 @@ mod tests {
             let x = line[..at].chars().count() + needle.chars().count() - 1;
             buf[(u16::try_from(x).unwrap(), y)].clone()
         };
-        let claude = cell(" 1 claude");
-        assert_eq!(claude.fg, vendor_color(Vendor::Claude));
+        let default = cell(" 1 default");
         assert!(
-            claude.modifier.contains(Modifier::REVERSED),
+            default.modifier.contains(Modifier::REVERSED),
             "the chosen row"
         );
-        let codex = cell(" 2 codex");
-        assert_eq!(codex.fg, vendor_color(Vendor::Codex));
-        assert!(!codex.modifier.contains(Modifier::REVERSED), "not chosen");
+        let fable = cell(" 2 fable");
+        assert_eq!(fable.fg, pal().strong);
+        assert!(!fable.modifier.contains(Modifier::REVERSED), "not chosen");
         // The keys go to the screen, not the salon: j moves its row.
         key(&mut app, KeyCode::Char('j'));
         assert_eq!(app.solo_pick.as_ref().unwrap().sel(), 1);
-        key(&mut app, KeyCode::Enter);
-        let s = render(&app, 140, 40);
-        assert!(
-            s.contains("Which model?") && s.contains("default (the vendor's own)"),
-            "{s}"
-        );
-        assert!(s.contains(" codex"), "what was picked so far: {s}");
+        key(&mut app, KeyCode::Char('k'));
+        assert!(s.contains(" claude"), "what was picked so far: {s}");
         key(&mut app, KeyCode::Enter);
         let s = render(&app, 140, 40);
         assert!(
@@ -4555,7 +4536,6 @@ mod tests {
         key(&mut app, KeyCode::Enter);
         assert!(app.solo_pick.is_none());
         let head = app.world.projects[1].leader;
-        assert_eq!(app.world.agents[head].vendor, Vendor::Codex);
         assert_eq!(app.model_of(head).as_deref(), Some("@high"));
         // Turkish words too.
         app.lang = Lang::Tr;
@@ -4564,7 +4544,7 @@ mod tests {
         }
         key(&mut app, KeyCode::Enter);
         let s = render(&app, 140, 40);
-        assert!(s.contains("Hangi kodlama ajanı?"), "{s}");
+        assert!(s.contains("Hangi model?"), "{s}");
         key(&mut app, KeyCode::Esc);
         assert!(app.solo_pick.is_none());
     }
@@ -4585,7 +4565,6 @@ mod tests {
             helper,
             1,
             "solo-notes.1".into(),
-            Vendor::Claude,
             Role::Helper,
             Status::Working,
             20,
@@ -4690,7 +4669,7 @@ mod tests {
                 continue; // folded away
             };
             assert_eq!(buf[(x, y)].fg, speaker_color(a.id), "{}", a.name);
-            assert_eq!(buf[(x + 1, y)].fg, vendor_color(a.vendor), "{}", a.name);
+            assert_eq!(buf[(x + 1, y)].fg, pal().agent, "{}", a.name);
         }
         let render = render(&app, 140, 40);
         assert!(
@@ -4899,16 +4878,16 @@ mod tests {
         );
         assert_eq!(
             words(&app, Lang::En),
-            "✕ vendor error \"Invalid API key · Fix …\"",
+            "✕ API error \"Invalid API key · Fix ext…\"",
             "cut to the status's width"
         );
-        assert!(words(&app, Lang::Tr).starts_with("✕ satıcı hatası \"Invalid"));
+        assert!(words(&app, Lang::Tr).starts_with("✕ API hatası \"Invalid"));
         let i = *app.world.open_inbox().last().unwrap();
         assert_eq!(inbox_line(&app, i).spans[0].content, "✕ ");
         assert_eq!(
             words::inbox(Lang::En, &app.world, &app.world.inbox[i]),
             format!(
-                "{name} vendor error, write to it once mended: Invalid API key · Fix external API key"
+                "{name} API error, write to it once mended: Invalid API key · Fix external API key"
             )
         );
         app.pane = Pane::Inbox;
@@ -5164,22 +5143,15 @@ mod tests {
         assert_eq!(header_parts(&app)[1].keep, 8, "the fleet");
         assert_eq!(keeps(&app, "spent").map(|k| k.1), Some(4));
         assert_eq!(keeps(&app, "/h").map(|k| k.1), Some(2));
-        app.world.limits = vec![
-            Limit {
-                vendor: Vendor::Claude,
-                minutes: 300,
-                used: LIMIT_LOUD - 1,
-                resets_at: None,
-            },
-            Limit {
-                vendor: Vendor::Codex,
-                minutes: 300,
-                used: LIMIT_LOUD,
-                resets_at: None,
-            },
-        ];
+        let window = |used| Limit {
+            minutes: 300,
+            used,
+            resets_at: None,
+        };
+        app.world.limits = vec![window(LIMIT_LOUD - 1)];
         assert_eq!(keeps(&app, "claude").map(|k| k.1), Some(1));
-        assert_eq!(keeps(&app, "codex").map(|k| k.1), Some(KEEP));
+        app.world.limits = vec![window(LIMIT_LOUD)];
+        assert_eq!(keeps(&app, "claude").map(|k| k.1), Some(KEEP));
         // A pot running low stays, its rate with it.
         for a in &mut app.world.agents {
             a.cost = 0;
@@ -6003,7 +5975,6 @@ mod tests {
             ("Write a", true),
             ("MultiEdit a", true),
             ("NotebookEdit a", true),
-            ("apply_patch", true),
             ("Read a", false),
             ("run cargo test", false),
             ("Editor a", false),
@@ -6330,12 +6301,12 @@ mod tests {
         );
         assert!(rows[at + 5].contains("│     ▀▀  ▀▀   "), "{screen}");
         assert!(
-            rows[at + 7].contains("One terminal for many coding agents."),
+            rows[at + 7].contains("One terminal for a team of Claude Code agents."),
             "{screen}"
         );
         assert!(app.mark_drawn.get());
         // The rows the window needs and the mark's six: 21 + 6 + 2.
-        let lines = 2 + 2 + 3 + 1 + 1 + 9 + 2;
+        let lines = 2 + 2 + 1 + 1 + 1 + 9 + 2;
         assert!(render(&app, 120, lines + 6 + 2).contains("imece v"));
         let short = render(&app, 120, lines + 6 + 1);
         assert!(
@@ -6803,7 +6774,7 @@ mod tests {
         let text =
             |spans: &[Span]| -> String { spans.iter().map(|s| s.content.as_ref()).collect() };
         let agent = |role, url: &str| {
-            let mut a = Agent::new(3, 0, "w".into(), Vendor::Claude, role, Status::Idle, 0);
+            let mut a = Agent::new(3, 0, "w".into(), role, Status::Idle, 0);
             a.local = Some(url.into());
             a
         };
@@ -7011,30 +6982,26 @@ mod tests {
             key(&mut app, KeyCode::Char(c));
         }
         key(&mut app, KeyCode::Enter);
-        let by = app.reviewing(1).expect("asked");
+        assert!(app.reviewing(1), "asked");
         let s = render(&app, 140, 40);
-        assert!(
-            s.contains(&format!("✎ {} reads this change…", by.label())),
-            "{s}"
-        );
+        assert!(s.contains("✎ claude reads this change…"), "{s}");
         let patch = crate::model::patch_sum(&app.world.change_of(1).unwrap().patch);
         app.world.reviewed(
             1,
             Review {
                 patch,
-                by,
                 model: "m1".into(),
                 text: "1. parse.rs: no test".into(),
                 cost: 420,
             },
         );
         let s = render(&app, 140, 40);
-        let head = format!("✎ review · {} · m1 · $0.04", by.label());
+        let head = "✎ review · claude · m1 · $0.04";
         assert!(
-            s.contains(&head) && s.contains("1. parse.rs: no test"),
+            s.contains(head) && s.contains("1. parse.rs: no test"),
             "{s}"
         );
-        let (review, files) = (s.find(&head).unwrap(), s.find("2 files").unwrap_or(0));
+        let (review, files) = (s.find(head).unwrap(), s.find("2 files").unwrap_or(0));
         assert!(review > files, "under the title, above the list: {s}");
 
         // Whole, it takes up to half the screen and counts the rest.
@@ -7474,7 +7441,7 @@ mod tests {
             .position(|l| l.contains("enter open the conversation"))
             .unwrap_or_else(|| panic!("{screen}"));
         assert!(
-            lines[keys - 1].contains("⇄") && lines[keys - 1].contains("codex-1"),
+            lines[keys - 1].contains("⇄") && lines[keys - 1].contains("claude-1"),
             "the keys stand under the talk, the selected line\n{screen}"
         );
     }
@@ -7660,12 +7627,12 @@ mod tests {
         // An argument's menu and an @ menu are not commands.
         app.input.clear();
         app.after = 0;
-        for c in ":lead ".chars() {
+        for c in ":lang ".chars() {
             key(&mut app, KeyCode::Char(c));
         }
         key(&mut app, KeyCode::Tab);
-        assert_eq!(app.input, ":lead claude");
-        assert!(!foot(&app).contains("which vendor leads"), "{}", foot(&app));
+        assert_eq!(app.input, ":lang en");
+        assert!(!foot(&app).contains("Türkçe / English"), "{}", foot(&app));
         key(&mut app, KeyCode::Esc);
         key(&mut app, KeyCode::Esc);
         key(&mut app, KeyCode::Char('@'));
@@ -7854,25 +7821,19 @@ mod tests {
     }
 
     #[test]
-    fn a_colon_offers_the_commands_and_lead_its_vendors_to_the_end() {
+    fn a_colon_offers_the_commands_to_the_end() {
         let mut app = app_after(1, 2, 0, Lang::En);
         key(&mut app, KeyCode::Char(':'));
         // The demo's own commands too.
         assert_eq!(app.menu.as_ref().unwrap().items, crate::complete::COMMANDS);
         let row = menu_row(&app, 140);
         assert!(row.contains("budget") && row.contains("board"), "{row}");
-        key(&mut app, KeyCode::Char('l'));
-        key(&mut app, KeyCode::Char('e'));
+        key(&mut app, KeyCode::Char('b'));
+        key(&mut app, KeyCode::Char('u'));
         key(&mut app, KeyCode::Tab);
-        assert_eq!(app.input, ":lead ");
-        key(&mut app, KeyCode::Char('c'));
-        assert_eq!(app.menu.as_ref().unwrap().items, ["claude", "codex"]);
-        key(&mut app, KeyCode::Tab);
-        key(&mut app, KeyCode::Tab);
-        assert_eq!(app.input, ":lead codex");
+        assert_eq!(app.input, ":budget ");
         key(&mut app, KeyCode::Enter);
         assert!(!app.typing);
-        assert_eq!(app.primary.as_deref(), Some("codex"));
         // Turkish hint too.
         app.lang = Lang::Tr;
         key(&mut app, KeyCode::Char(':'));
@@ -9072,7 +9033,7 @@ mod tests {
     }
 
     #[test]
-    fn a_solo_s_row_names_its_vendor_and_choice_and_its_helpers_hang_under_it() {
+    fn a_solo_s_row_names_its_choice_and_its_helpers_hang_under_it() {
         let mut app = app_after(1, 1, 0, Lang::En);
         app.home = None;
         let typed = |app: &mut App, line: &str| {
@@ -9081,13 +9042,13 @@ mod tests {
             }
             key(app, KeyCode::Enter);
         };
-        typed(&mut app, ":solo codex:gpt-5.6-terra@xhigh notes");
+        typed(&mut app, ":solo claude:opus@xhigh notes");
         let head = app.world.projects[1].leader;
         let text =
             |line: &Line| -> String { line.spans.iter().map(|s| s.content.as_ref()).collect() };
         let line = salon::agent_line(&app, &app.world.agents[head], "", &app.rungs(), 200);
         assert!(
-            text(&line).contains("solo-notes") && text(&line).contains("codex gpt-5.6-terra@xhigh"),
+            text(&line).contains("solo-notes") && text(&line).contains(" opus@xhigh"),
             "{}",
             text(&line)
         );
@@ -9107,7 +9068,7 @@ mod tests {
             line.contains("+3"),
             "a solo's row shows where its worktree stands: {line}"
         );
-        // Without a choice: the vendor alone.
+        // Without a choice: nothing beside its name.
         typed(&mut app, ":solo claude other");
         let other = app.world.projects[2].leader;
         let line = text(&salon::agent_line(
@@ -9118,7 +9079,7 @@ mod tests {
             200,
         ));
         assert!(
-            line.contains(" claude ") && !line.contains("claude @"),
+            line.contains("solo-other") && !line.contains("claude"),
             "{line}"
         );
         // Its helpers are rows under it, as a worker's are.
@@ -9127,7 +9088,6 @@ mod tests {
             helper,
             1,
             "solo-notes.1".into(),
-            Vendor::Codex,
             Role::Helper,
             Status::Working,
             0,
@@ -9160,9 +9120,9 @@ mod tests {
             let t = lang.text();
             for shift_enter in [true, false] {
                 let keys = overlay::help_keys(lang, shift_enter);
-                assert_eq!(keys[18].0, "^w ^u ^k ^y", "{lang:?}");
+                assert_eq!(keys[17].0, "^w ^u ^k ^y", "{lang:?}");
                 let want = t.help_newline[usize::from(!shift_enter)];
-                assert_eq!(keys[19], want, "{lang:?} {shift_enter}");
+                assert_eq!(keys[18], want, "{lang:?} {shift_enter}");
                 assert_eq!(keys.len(), t.help_keys.len() + 1);
             }
         }
@@ -9416,7 +9376,7 @@ mod tests {
             assert_eq!(app.selected, Sel::Agent(app.world.projects[fresh].leader));
             // A refusal is said: a solo has the name, the team is renamed.
             app.world.projects[fresh].name = "shop3".into();
-            (app.world).open_project(None, "shop".into(), "/s".into(), Vendor::Claude, Role::Solo);
+            (app.world).open_project(None, "shop".into(), "/s".into(), Role::Solo);
             let selected = app.selected;
             typed(&mut app, ":restore shop");
             assert_eq!(flashed(&app), "a project named shop is open already");
@@ -9512,16 +9472,10 @@ mod tests {
             key(&mut app, KeyCode::Char('l'));
             let s = render(&app, 160, 40);
             let name = &app.world.agents[lead].name;
-            assert!(
-                s.contains(&format!("│       ◆ {name}  claude · $1.50")),
-                "{s}"
-            );
+            assert!(s.contains(&format!("│       ◆ {name} · $1.50")), "{s}");
             let helper = &app.world.agents[worker];
-            let (name, vendor) = (&helper.name, helper.vendor.label());
-            assert!(
-                s.contains(&format!("│           {name}  {vendor} · $2.50")),
-                "{s}"
-            );
+            let name = &helper.name;
+            assert!(s.contains(&format!("│           {name} · $2.50")), "{s}");
             assert!(!s.contains(&app.world.agents[ours[2]].name), "gone: {s}");
             // `?` is the browser's to keep; esc closes it, `:archives` opens it.
             key(&mut app, KeyCode::Char('?'));
@@ -9927,24 +9881,13 @@ mod tests {
     }
 
     #[test]
-    fn a_colon_lead_command_sets_the_primary_vendor_and_ask_forgets_it() {
+    fn a_colon_lead_is_no_command_any_more() {
         let mut app = app_after(1, 2, 0, Lang::En);
-        let typed = |app: &mut App, line: &str| {
-            for c in line.chars() {
-                key(app, KeyCode::Char(c));
-            }
-            key(app, KeyCode::Enter);
-        };
-        typed(&mut app, ":lead codex");
-        assert_eq!(app.primary.as_deref(), Some("codex"));
-        let s = render(&app, 140, 40);
-        assert!(s.contains("codex leads from the next start on"), "{s}");
-        typed(&mut app, ":lead qwen");
-        assert_eq!(app.primary.as_deref(), Some("codex"), "unchanged");
-        assert!(render(&app, 140, 40).contains("qwen is not claude, codex, gemini or ask"));
-        typed(&mut app, ":lead ask");
-        assert_eq!(app.primary, None);
-        assert!(render(&app, 140, 40).contains("the next start asks who leads"));
+        for c in ":lead claude".chars() {
+            key(&mut app, KeyCode::Char(c));
+        }
+        key(&mut app, KeyCode::Enter);
+        assert!(render(&app, 140, 40).contains("no command lead"));
         assert!(
             !app.world
                 .journal
@@ -10342,8 +10285,6 @@ mod tests {
                 .bg(p.shell)
                 .add_modifier(Modifier::BOLD)
         );
-        assert_eq!(vendor_color(Vendor::Claude), p.vendors[0]);
-        assert_eq!(vendor_color(Vendor::Codex), p.vendors[1]);
         assert_eq!(speaker_color(0), p.speakers[0]);
         assert_eq!(speaker_color(13), speaker_color(1), "colours wrap by id");
         crate::theme::set("mono");
@@ -10362,15 +10303,7 @@ mod tests {
 
     #[test]
     fn every_glyph_icon_and_status_has_its_own_mark() {
-        let mut a = Agent::new(
-            1,
-            0,
-            "w".into(),
-            Vendor::Claude,
-            Role::Worker,
-            Status::Working,
-            0,
-        );
+        let mut a = Agent::new(1, 0, "w".into(), Role::Worker, Status::Working, 0);
         assert_eq!(glyph(&a).0, "●");
         a.role = Role::Leader;
         assert_eq!(glyph(&a), ("◆", pal().plan), "a leader is always a leader");
@@ -10444,15 +10377,7 @@ mod tests {
         assert_eq!(entry_icon(EntryKind::Person).0, "›");
         // Every status says something, in words.
         let w = app_after(1, 4, 50, Lang::En).world;
-        let mut idle = Agent::new(
-            9,
-            0,
-            "w".into(),
-            Vendor::Claude,
-            Role::Worker,
-            Status::Idle,
-            0,
-        );
+        let mut idle = Agent::new(9, 0, "w".into(), Role::Worker, Status::Idle, 0);
         let words = |a: &Agent| {
             status_spans(Lang::En, &w, a)
                 .iter()
@@ -10685,7 +10610,7 @@ mod tests {
     }
 
     #[test]
-    fn the_welcome_window_lists_each_vendor_as_it_answered_and_the_keys() {
+    fn the_welcome_window_says_what_claude_code_answered_and_the_keys() {
         use crate::welcome::Seen;
         use imece_agent::Login;
         let mut app = App::new(1, 1, 0, 1, Lang::En);
@@ -10693,21 +10618,14 @@ mod tests {
             version: version.into(),
             login,
         };
-        app.vendors = vec![
-            (Vendor::Claude, here("2.1.3 (Claude Code)", Login::Yes)),
-            (Vendor::Codex, here("codex-cli \u{1b}[31m0.9", Login::No)),
-            (Vendor::Gemini, here("0.65.0", Login::Unknown)),
-        ];
+        app.seen = here("2.1.3 (Claude Code)", Login::Yes);
         app.welcome = true;
         let screen = render(&app, 120, 40);
         for want in [
             &format!("WELCOME TO IMECE {}", crate::welcome::VERSION),
-            "One terminal for many coding agents.",
-            "Coding agents on this machine:",
+            "One terminal for a team of Claude Code agents.",
+            "Claude Code on this machine:",
             "✓ claude  2.1.3 (Claude Code) · signed in",
-            "✕ codex   codex-cli",
-            "0.9 · not signed in: run codex login",
-            "? gemini  0.65.0 · its sign-in is checked when it first starts",
             "Keys to start with:",
             "   /  i            write to the leader",
             "   ?               every key; / in it filters",
@@ -10715,22 +10633,31 @@ mod tests {
         ] {
             assert!(screen.contains(want), "{want} missing:\n{screen}");
         }
+        // Not signed in, in a CLI's words, cleaned.
+        app.seen = here("2.1.3 \u{1b}[31mred", Login::No);
+        let screen = render(&app, 120, 40);
         assert!(!screen.contains('\u{1b}'), "a CLI's words are cleaned");
-        // Before the answers, and a vendor not there.
-        app.vendors = vec![
-            (Vendor::Claude, Seen::Checking),
-            (Vendor::Codex, Seen::Missing),
-        ];
+        assert!(
+            screen.contains("not signed in: run claude auth login"),
+            "{screen}"
+        );
+        app.seen = here("0.65.0", Login::Unknown);
+        let screen = render(&app, 120, 40);
+        assert!(
+            screen.contains("? claude  0.65.0 · its sign-in is checked when it first starts"),
+            "{screen}"
+        );
+        // Before the answer, and not there.
+        app.seen = Seen::Checking;
         let screen = render(&app, 120, 40);
         assert!(screen.contains("… claude  checking…"), "{screen}");
-        assert!(screen.contains("· codex   not on PATH"), "{screen}");
+        app.seen = Seen::Missing;
+        let screen = render(&app, 120, 40);
+        assert!(screen.contains("· claude  not on PATH"), "{screen}");
         // In Turkish.
         app.lang = Lang::Tr;
         let screen = render(&app, 120, 40);
-        assert!(
-            screen.contains("Bu makinedeki kodlama agent'ları:"),
-            "{screen}"
-        );
+        assert!(screen.contains("Bu makinedeki Claude Code:"), "{screen}");
         assert!(screen.contains("PATH'te yok"), "{screen}");
     }
 
@@ -10837,7 +10764,7 @@ mod tests {
                 .position(|l| l.contains(needle))
                 .unwrap_or_else(|| panic!("{needle} not in the window\n{screen}"))
         };
-        assert_eq!(at("14:00 ⇄ codex-1"), at("─ 1970-01-01") + 1, "{screen}");
+        assert_eq!(at("14:00 ⇄ claude-1"), at("─ 1970-01-01") + 1, "{screen}");
         assert_eq!(at("00:00 › you"), at("─ 1970-01-02") + 1, "{screen}");
         assert_eq!(
             window.iter().filter(|l| l.contains("─ 1970-0")).count(),
@@ -11164,10 +11091,15 @@ mod tests {
             words(&app, Lang::En),
             "BLOCKED \"JWT c…\" in the researcher queue"
         );
-        let r = (app.world.agents.iter())
-            .find(|a| a.role == Role::Researcher)
-            .unwrap()
-            .id;
+        let r = app.world.agents.len();
+        app.world.agents.push(Agent::new(
+            r,
+            0,
+            "researcher-1".into(),
+            Role::Researcher,
+            Status::Idle,
+            0,
+        ));
         app.world.agents[w].researcher = Some(r);
         let name = app.world.agents[r].name.clone();
         assert_eq!(
@@ -11212,6 +11144,7 @@ mod tests {
         let mut app = quiet_rows();
         let (w, other) = (1, 2);
         let lead = app.world.projects[0].leader;
+        app.world.agents[other].name = "bob".into();
         let other_name = app.world.agents[other].name.clone();
         let lead_name = app.world.agents[lead].name.clone();
         // Idle: what it last said.
@@ -12014,30 +11947,22 @@ mod tests {
     }
 
     #[test]
-    fn the_header_shows_each_vendor_s_tightest_window_loud_when_nearly_full() {
+    fn the_header_shows_the_tightest_window_loud_when_nearly_full() {
         let mut app = App::new(1, 1, 0, 1, Lang::En);
-        let at = |vendor, minutes, used| Limit {
-            vendor,
+        let at = |minutes, used| Limit {
             minutes,
             used,
             resets_at: None,
         };
-        app.world.limits = vec![
-            at(Vendor::Claude, 300, 52),
-            at(Vendor::Claude, 10_080, 10),
-            at(Vendor::Codex, 10_080, 90),
-        ];
+        app.world.limits = vec![at(300, 52), at(10_080, 90)];
         let screen = render(&app, 200, 20);
         let top = screen.lines().next().unwrap();
-        assert!(
-            top.contains(" │ claude 5h: 48% left │ codex 7d: 10% left"),
-            "{top}"
-        );
-        assert!(!top.contains("claude 7d"), "{top}");
-        let span = |used| limit_span(Lang::En, &at(Vendor::Codex, 300, used), 0);
+        assert!(top.contains(" │ claude 7d: 10% left"), "{top}");
+        assert!(!top.contains("claude 5h"), "{top}");
+        let span = |used| limit_span(Lang::En, &at(300, used), 0);
         assert_eq!(span(89).style, Style::new());
         assert_eq!(span(90).style, attention());
-        assert_eq!(span(90).content, "codex 5h: 10% left");
+        assert_eq!(span(90).content, "claude 5h: 10% left");
     }
 
     #[test]
@@ -13590,7 +13515,10 @@ after | not a table";
 
     #[test]
     fn an_item_under_the_selected_one_starts_below_its_keys_and_a_row_not_drawn_has_no_place() {
-        let mut app = app_after(2, 6, 300, Lang::En);
+        let mut app = App::new(2, 6, 4, 12, Lang::En);
+        for _ in 0..300 {
+            app.step();
+        }
         app.pane = Pane::Inbox;
         app.inbox_sel = 0;
         render(&app, 140, 30);

@@ -16,11 +16,11 @@ cd ~/code/parser
 imece
 ```
 
-PATH'te tek kodlama ajanı varsa soru sorulmaz; birkaçı varsa KİM LİDER? ekranı sorar (`j k` seç, `enter` bu seferlik, `p` hep). Salon, takım yalnızca liderden ibaretken açılır: `lead`, çalışma kopyanızı okur ve ona asla yazmaz. Günlüğün (ekranda DEFTER) ilk satırı ajanlara ne verildiğini söyler, çünkü varsayılan seviye `standard`:
+Salon, takım yalnızca liderden ibaretken açılır: `lead`, çalışma kopyanızı okur ve ona asla yazmaz. Günlüğün (ekranda DEFTER) ilk satırı ajanlara ne verildiğini söyler, çünkü varsayılan seviye `standard`:
 
 ```text
  DEFTER
- 14:00 ⚑ confine standard: işçiler satıcılarının kabuğunu ve web'ini alır; yalıtım bir konteynerin işi, imece'nin değil
+ 14:00 ⚑ confine standard: işçiler Claude Code'un kabuğunu ve web'ini alır; yalıtım bir konteynerin işi, imece'nin değil
 ```
 
 Henüz hiçbir şey para etmez: ona yazmadığınız sürece `lead`in bir süreci yoktur.
@@ -33,11 +33,11 @@ Henüz hiçbir şey para etmez: ona yazmadığınız sürece `lead`in bir sürec
  › lead için: parser testi boş girdide kırılıyor, düzelt
 ```
 
-Günlük satırınızı gösterir (`›` sizin yaptığınızı işaretler) ve lider ilk turuna başlar: satırı `◆ lead  claude  düşünüyor…` olur, sonra ne yaptığını söyler. Testi okuma araçlarıyla okur, imece'nin `run` aracıyla `cargo test` çalıştırabilir. Dosya değiştirmez: lider her confine seviyesinde yazmaz, çünkü çalışma kopyanızda çalışır ve orada bir yazma incelemeyi atlardı.
+Günlük satırınızı gösterir (`›` sizin yaptığınızı işaretler) ve lider ilk turuna başlar: satırı `◆ lead  düşünüyor…` olur, sonra ne yaptığını söyler. Testi okuma araçlarıyla okur, imece'nin `run` aracıyla `cargo test` çalıştırabilir. Dosya değiştirmez: lider her confine seviyesinde yazmaz, çünkü çalışma kopyanızda çalışır ve orada bir yazma incelemeyi atlardı.
 
 ## 3. Lider işe alır
 
-Lider `hire` aracını bir kademeyle çağırır, asla model adıyla değil: küçük mekanik işler için `cheap`, sıradan düzeltmeler için `standard` (varsayılan), kodu boydan boya kesen tasarım için `strong`. Bu düzeltme için `standard` seçer. İşçi satıcısının adını alır, `claude-1`, ve günlük kimin kimi neyle aldığını söyler:
+Lider `hire` aracını bir kademeyle çağırır, asla model adıyla değil: küçük mekanik işler için `cheap`, sıradan düzeltmeler için `standard` (varsayılan), kodu boydan boya kesen tasarım için `strong`. Bu düzeltme için `standard` seçer. İşçinin adı `claude-1`, ve günlük kimin kimi neyle aldığını söyler:
 
 ```text
  14:01 ◆ lead işe aldı: claude-1 (varsayılan model)
@@ -50,7 +50,7 @@ Lider `hire` aracını bir kademeyle çağırır, asla model adıyla değil: kü
 
 ```text
  ▾ parser                      1 çalışıyor  $0.09
-   ◆ lead       claude          koordine ediyor                    $0.09
+   ◆ lead       koordine ediyor                                    $0.09
    ● claude-1   #1   parser: boş girdi      src/parser.rs okuyor
 ```
 
@@ -60,7 +60,7 @@ Lider `hire` aracını bir kademeyle çağırır, asla model adıyla değil: kü
 
 İşçi ilerlerken satırında iki şey değişir.
 
-Durumu, o an yaptığı şeydir (okuyor, düzenliyor, çalıştırıyor), satıcısının bildirdiği sözcüklerle. İlk araç kullanımından sonra satır worktree'nin durduğu yeri de gösterir; işçi tur ortasındayken her 15 saniyede okunur:
+Durumu, o an yaptığı şeydir (okuyor, düzenliyor, çalıştırıyor), Claude Code'un bildirdiği sözcüklerle. İlk araç kullanımından sonra satır worktree'nin durduğu yeri de gösterir; işçi tur ortasındayken her 15 saniyede okunur:
 
 ```text
    ● claude-1   #1   parser: boş girdi      src/parser.rs düzenliyor   $0.14  +12 −3
@@ -109,7 +109,7 @@ Boru komutu rutin olmaktan çıkarır. Komut bütünüyle gösterilir, asla mark
    enter diff'i gör · a checkout'a uygula · r reddet
 ```
 
-Öğenin metni işçinin `done`unun ilk satırıdır; bundan sonra değişikliğin başlığı odur. `✓ bu ağaçta temiz geçti`, imece'nin tam bu ağaçta yaptığı çalıştırmaları adlandırır. İşçi yalnızca kendi kabuğunda test etseydi satır `bu ağaçta çalıştırma yok` derdi: bir satıcının kabuğu, imece'nin güvenebileceği bir çıkış kodu taşımaz. Çalıştırma yok diye hiçbir şey reddedilmez; karar sizin.
+Öğenin metni işçinin `done`unun ilk satırıdır; bundan sonra değişikliğin başlığı odur. `✓ bu ağaçta temiz geçti`, imece'nin tam bu ağaçta yaptığı çalıştırmaları adlandırır. İşçi yalnızca kendi kabuğunda test etseydi satır `bu ağaçta çalıştırma yok` derdi: Claude Code'un kabuğu, imece'nin güvenebileceği bir çıkış kodu taşımaz. Çalıştırma yok diye hiçbir şey reddedilmez; karar sizin.
 
 ## 7. Diff'i okumak
 

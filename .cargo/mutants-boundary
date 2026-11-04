@@ -4,7 +4,7 @@
 # pathspec a line; `#` starts a comment. These are imece's own boundaries
 # (CLAUDE.md, Security): every one has a test that fails without it.
 
-# The vendor adapters and their fail-closed checks, the bus's socket and
+# The Claude Code adapter and its fail-closed checks, the bus's socket and
 # who may call it, child processes, worktrees, copying into them.
 crates/imece-agent/
 # Who may call which tool, and what a call does.

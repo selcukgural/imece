@@ -23,11 +23,10 @@ Gelenekler vim'inkidir: `h` `j` `k` `l` hareket ve katlama, `gg` ve `G` uçlara,
 | `:` | imece'ye bir komut; menü hepsini değerleriyle listeler: `‹ 12` ve `+40 tane daha ›` görünmeyenleri sayar, altındaki satır nerede olduğunu söyler (`3/63`), `tab` birini satıra koyunca ne yaptığı tuşların ardından görünür, yazmaya devam edince kaybolur |
 | `$` | `:` menüsünde: bu komut sonraki faturayı büyütür |
 | `:budget USD` | agent'lar çalışırken bütçeyi artır ya da azalt; `USD` `80` ya da `2.50` gibi dolar |
-| `:lead VENDOR` | sonraki açılıştan itibaren kim lider; `VENDOR` `claude`, `codex`, `gemini` ya da `ask` |
 | `:open PATH` | `PATH`'teki çalışma kopyasını proje olarak aç; ardına bir `NAME` adlandırır |
-| `:solo CHOICE` | lidersiz, kendin sürdüğün bir solo oturum: `CHOICE` `satıcı[:model][@çaba]`; bir `PATH` ve bir `NAME` de gelebilir; seçimsiz bir ekran sorar |
-| `:effort LEVEL` | eldeki solo sonraki turundan itibaren `LEVEL`'da düşünür (`default`: satıcının kendisi) |
-| `:model NAME` | eldeki solo sonraki turundan itibaren `NAME` üzerinde çalışır (`default`: satıcının kendisi) |
+| `:solo CHOICE` | lidersiz, kendin sürdüğün bir solo oturum: `CHOICE` `claude[:model][@çaba]`; bir `PATH` ve bir `NAME` de gelebilir; seçimsiz bir ekran sorar |
+| `:effort LEVEL` | eldeki solo sonraki turundan itibaren `LEVEL`'da düşünür (`default`: Claude Code'un kendisi) |
+| `:model NAME` | eldeki solo sonraki turundan itibaren `NAME` üzerinde çalışır (`default`: Claude Code'un kendisi) |
 | `:close NAME` | `NAME` projesini kapat: agent'lar ayrılır, worktree'ler kalır |
 | `:rename NAME` | eldeki projeyi adlandır; lideri `lead-NAME` olur |
 | `:forget @NAME` | `@NAME` agent'ı oturumunu unutur; yenisine kaldığı yer anlatılır |
@@ -208,7 +207,7 @@ Odağın `klasör` satırı ajanın nerede çalıştığını söyler: lider iç
 | `:trace` / `:talk` | `t` / `v` |
 | `:mark` | `m` |
 | `:pause`, `:faster`, `:slower` | `space`, `+`, `-` (demo) |
-| `:budget` (`:b`), `:lead`, `:open` (`:o`), `:close` (`:c`), `:rename`, `:solo`, `:effort`, `:model`, `:forget` (`:f`), `:export`, `:commit`, `:copy`, `:pin`, `:archive`, `:restore`, `:awake`, `:notify`, `:motion`, `:away`, `:digest`, `:clear`, `:unclear`, `:unsettle`, `:keys` | tuşu yok: `:` ardından yazılır |
+| `:budget` (`:b`), `:open` (`:o`), `:close` (`:c`), `:rename`, `:solo`, `:effort`, `:model`, `:forget` (`:f`), `:export`, `:commit`, `:copy`, `:pin`, `:archive`, `:restore`, `:awake`, `:notify`, `:motion`, `:away`, `:digest`, `:clear`, `:unclear`, `:unsettle`, `:keys` | tuşu yok: `:` ardından yazılır |
 
 Her komutun ne aldığının tam listesi [komutlar başvurusunda](../reference/commands.md).
 

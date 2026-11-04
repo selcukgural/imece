@@ -1,11 +1,11 @@
 ---
 title: Kurulum
-description: imece'yi tek satırla kurun (ya da kaynaktan derleyin), satıcı CLI'larını PATH'e koyun ve durumunu nerede tuttuğunu bilin.
+description: imece'yi tek satırla kurun (ya da kaynaktan derleyin), Claude Code'u PATH'e koyun ve durumunu nerede tuttuğunu bilin.
 ---
 
 # Kurulum
 
-imece macOS ve Linux'ta, x86_64 ve arm64 üzerinde çalışır (Windows'ta: WSL içinde). Git (bir solo, checkout olmayan bir klasörde git'siz de çalışır) ve PATH'te en az bir satıcının oturum açılmış komut satırı ajanı gerekir. Bu sayfa, [ilk çalıştırma](first-run.md) öncesinde yerinde olması gerekenlerdir.
+imece macOS ve Linux'ta, x86_64 ve arm64 üzerinde çalışır (Windows'ta: WSL içinde). Git (bir solo, checkout olmayan bir klasörde git'siz de çalışır) ve PATH'te oturum açılmış Claude Code gerekir. Bu sayfa, [ilk çalıştırma](first-run.md) öncesinde yerinde olması gerekenlerdir.
 
 ## Kurulum betiğiyle
 
@@ -53,23 +53,15 @@ Bu yolla `~/.cargo/bin`'e konan bir imece ile kurulum betiğinin `~/.local/bin`'
 
 Crate `imece-tui`, ikili dosyası `imece`. SQLite derlemeye gömülür, depo için sistem kütüphanesi gerekmez. Git PATH'te olmalı: imece değişiklikleri git'in kendisiyle okur ve uygular; üç yollu uygulama git 2.56 üzerinde sondalandı.
 
-## Satıcı CLI'ları
+## Claude Code
 
-imece başlarken PATH'te üç programı arar (`PATH'te kodlama ajanları aranıyor…`) ve bulduklarını sürer: `claude`, `codex` ve `gemini`. Biri yeter. Hiçbiri yoksa şu sözle durur: `no coding agent on PATH (looked for claude, codex, gemini); install Claude Code (https://claude.com/claude-code) and log in`.
+imece başlarken PATH'te `claude`'u arar ve onu sürer. Yoksa durur ve Claude Code'u kurup (https://claude.com/claude-code) oturum açmanızı söyler.
 
-| Program | imece ne çalıştırır | Nesi olmalı |
-| --- | --- | --- |
-| `claude` (Claude Code) | ajan başına uzun ömürlü bir `claude -p` stream-json oturumu; `--confine open` değilse `--restricted` altında | bir oturum açma; maliyetler dolar olarak bildirilir ve keseye yazılır. Claude Code 2.1.314 üzerinde sondalandı |
-| `codex` (Codex CLI) | ajan başına uzun ömürlü bir `codex app-server` (stdio üzerinde JSON-RPC) | bir **ChatGPT oturumu** (`codex login`). API anahtarıyla oturum reddedilir: Codex dolar değil token bildirir ve imece bunları henüz fiyatlandıramaz. ChatGPT planında bir Codex turu keseye hiçbir şey yazmaz; iz bunu söyler ve token'ları gösterir. Codex 0.165.0 üzerinde sondalandı |
-| `gemini` (Gemini CLI) | ajan başına uzun ömürlü bir `gemini --acp` (Agent Client Protocol), imece'nin sahip olduğu özel bir dizinde | bir API anahtarı ya da Google oturumu. API anahtarıyla turlar imece'nin taşıdığı liste fiyatlarından yazılır (fiyatlandıramadığı bir model oturumu durdurur; `--model` ya da `--tier` ile bildiği bir model adı verin). Google oturumuyla keseye hiçbir şey yazmaz. Vertex AI ve gateway oturumları reddedilir. Gemini CLI 0.65.0 üzerinde sondalandı |
+Ajan başına uzun ömürlü bir `claude -p` stream-json oturumu çalıştırır; `--confine open` değilse `--restricted` altında. Oturum açılmış olmalıdır; maliyetler dolar olarak bildirilir ve keseye yazılır. Claude Code 2.1.314 üzerinde sondalandı.
 
-Varsayılan `--confine standard` ve `strict` altında her satıcının oturumu, kendi satıcı kurulumunuzdan hiçbir şey yüklenmeyecek şekilde başlatılır (hook yok, imece'ninki dışında MCP sunucusu yok, depo ayarı yok); `--confine open` satıcıyı sizin kurduğunuz gibi çalıştırır. Her durumda lider hiç yazmaz ve satıcının kendi alt ajan aracı kapalı kalır. Bir oturumun neyle çalıştığını bildirdiği, kapalı düşerek denetlenir; bkz. [satıcılar](../concepts/vendors.md) ve [güvenlik](../concepts/security.md).
+Varsayılan `--confine standard` ve `strict` altında her oturum, kendi Claude Code kurulumunuzdan hiçbir şey yüklenmeyecek şekilde başlatılır (hook yok, imece'ninki dışında MCP sunucusu yok, depo ayarı yok); `--confine open` Claude Code'u sizin kurduğunuz gibi çalıştırır. Her durumda lider hiç yazmaz ve Claude Code'un kendi alt ajan aracı kapalı kalır. Bir oturumun neyle çalıştığını bildirdiği, kapalı düşerek denetlenir; bkz. [Claude Code](../concepts/claude-code.md) ve [güvenlik](../concepts/security.md).
 
 Her ajan deponuzun kodlama ajanları için notlarını da alır: `AGENTS.md`, yoksa `CLAUDE.md`, en çok 16 KiB; daha uzun bir dosya kesilerek girer ve günlük bunu söyler. Her proje için kendi talimatlarınız `~/.config/imece/instructions.md` dosyasına (ya da `$XDG_CONFIG_HOME/imece/` altına) gider, yine en çok 16 KiB; deponun notlarından önce gelir. Bkz. [dosyalar](../reference/files.md).
-
-## Kim lider
-
-PATH'te tek satıcı varsa o liderdir. Birden çoksa, `--lead claude|codex|gemini` söylemediyse ya da soruyu bir kez `p` ile yanıtlayıp o satıcıyı birincil yapmadıysanız, imece başta sorar (`KİM LİDER?` ekranı). `--lead ask` yine de sorar. Ayrıntı [ilk çalıştırma](first-run.md) sayfasında.
 
 ## Terminaller
 
@@ -89,12 +81,11 @@ imece'nin hatırladığı her şey yalnız sizindir (dosyalar `0600` yapılır) 
 
 | Yol | Nedir |
 | --- | --- |
-| `<state>/imece.sqlite` | depo: projeler, ajanlar, kartlar ve hikâyeleri, günlük, gelen kutusu, posta, pano, kese, ekran tercihleriniz (yan panel genişliği, tema, birincil satıcı). WAL kipinde; açıkken `imece.sqlite-wal` ve `imece.sqlite-shm` yanında durur |
+| `<state>/imece.sqlite` | depo: projeler, ajanlar, kartlar ve hikâyeleri, günlük, gelen kutusu, posta, pano, kese, ekran tercihleriniz (yan panel genişliği, tema). WAL kipinde; açıkken `imece.sqlite-wal` ve `imece.sqlite-shm` yanında durur |
 | `<state>/imece.sqlite.lock` | bir imece çalışırken `flock` ile tutulur; aynı dosyada ikinci bir imece reddedilir ve ilkinden `:open` kullanması söylenir |
-| `<state>/worktrees/<dizin>-<özet>/<ajan>` | işçi başına bir git worktree (`claude-1`, `codex-2`, …), HEAD'inizde ayrılmış, proje başına bir dizin altında (checkout'un dizin adı ve yolunun 8 haneli özeti). Çalıştırmalar arasında saklanır. Her birinin kendi `target/` dizini var |
-| `<state>/worktrees/<dizin>-<özet>-gemini/<ajan>` | bir Gemini oturumunun çalıştığı özel dizin (policy dosyası ve `GEMINI.md`); liderinki proje ne adlandırılırsa adlandırılsın `lead` |
+| `<state>/worktrees/<dizin>-<özet>/<ajan>` | işçi başına bir git worktree (`claude-1`, `claude-2`, …), HEAD'inizde ayrılmış, proje başına bir dizin altında (checkout'un dizin adı ve yolunun 8 haneli özeti). Çalıştırmalar arasında saklanır. Her birinin kendi `target/` dizini var |
 
-Bu dizinin dışında satıcılar her zaman tuttuklarını tutar: Claude Code transkriptlerini `~/.claude/projects/` altında, Codex thread kayıtlarını `~/.codex` altında, Gemini sohbet dosyalarını `~/.gemini/tmp` altında. `--fresh` ve `:forget` imece'nin unuttuğu oturumlar için bunları kaldırır; bkz. [oturumlar](../concepts/sessions.md). imece'nin MCP soketleri, ajan başına bir tane, çalıştırma süresince sistemin geçici dizini altında özel bir dizinde durur.
+Bu dizinin dışında Claude Code her zaman tuttuğunu tutar: transkriptlerini `~/.claude/projects/` altında. `--fresh` ve `:forget` imece'nin unuttuğu oturumlar için bunları kaldırır; bkz. [oturumlar](../concepts/sessions.md). imece'nin MCP soketleri, ajan başına bir tane, çalıştırma süresince sistemin geçici dizini altında özel bir dizinde durur.
 
 Checkout'unuza, stage'e uyguladığınız değişiklikler ve üç yollu uygulama denetlenirken `.git` altında özel bir index dosyası dışında hiçbir şey girmez.
 

@@ -37,7 +37,7 @@ When the count ends:
  archived kule as “v1 fixes”: its agents sleep with all they had; a fresh one opens
 ```
 
-The salon shows `kule` again, with its `lead` alone and idle: a fresh project on the same checkout, with the same name, the same pin and the same `:copy` list, its leader on the same vendor and model. The journal has one new line, `› you archived kule as “v1 fixes”; a fresh kule takes its place`; the old lines, the old cards on the board and in the queue, the old items in WAITING FOR YOU are gone from the screen. `@lead` reaches the new leader.
+The salon shows `kule` again, with its `lead` alone and idle: a fresh project on the same checkout, with the same name, the same pin and the same `:copy` list, its leader on the same model. The journal has one new line, `› you archived kule as “v1 fixes”; a fresh kule takes its place`; the old lines, the old cards on the board and in the queue, the old items in WAITING FOR YOU are gone from the screen. `@lead` reaches the new leader.
 
 Write to it as on the first day:
 
@@ -51,10 +51,10 @@ The leader starts a new session. Workers it hires are numbered after the old one
 
 Nothing of the archive was thrown away:
 
-- its leader and workers, asleep, each with its vendor session (to go on with), its mail, notes and change;
+- its leader and workers, asleep, each with its session (to go on with), its mail, notes and change;
 - its cards with their stories, its journal lines (the tidy keeps them whatever their age), its items that waited for you.
 
-None of it wakes or spends: no card is offered to its workers and nobody reaches them by name. `imece --fresh` leaves their sessions alone. The vendors keep the sessions themselves, and Claude Code removes old transcripts after a while (30 days by default); a session gone by then starts anew, told where it left off.
+None of it wakes or spends: no card is offered to its workers and nobody reaches them by name. `imece --fresh` leaves their sessions alone. Claude Code keeps the sessions itself, and removes old transcripts after a while (30 days by default); a session gone by then starts anew, told where it left off.
 
 To look at it again without bringing it back, press `A` and `enter` on `▸ v1 fixes`: the archive opens read-only, alone on the screen as it was put away, its whole journal there, under
 
@@ -80,7 +80,7 @@ A month later a bug in the old work turns up, and `kule`'s old team knew that co
 
 The `kule` that was open gives way: it did something (it had a session and a card), so it is archived in its turn under its name and days, and the journal says so: `› you brought back kule “v1 fixes”; the one open there is archived as “kule 2026-11-02 → 2026-12-02”`. A fresh `kule` that had done nothing would have been closed instead.
 
-Nothing woke yet. Write to the old leader and it goes on in the session it had, told first that the project was put away and brought back, and of the turn the archive cut short (not run again). A session the vendor removed meanwhile starts anew, told where it left off. To go back to the newer work, `:restore` it the same way.
+Nothing woke yet. Write to the old leader and it goes on in the session it had, told first that the project was put away and brought back, and of the turn the archive cut short (not run again). A session Claude Code removed meanwhile starts anew, told where it left off. To go back to the newer work, `:restore` it the same way.
 
 ## 5. What stays shared
 
