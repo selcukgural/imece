@@ -1297,4 +1297,54 @@ mod tests {
         assert!(w.journal.is_empty(), "no change waited: nothing said");
         let _ = std::fs::remove_dir_all(&repo);
     }
+
+    #[test]
+    fn a_run_that_could_not_run_is_said_on_the_change_that_still_waits_alone() {
+        let repo = temp("check-run-failed");
+        let tree = repo.join("tree");
+        let (mut w, mut live) = live_on(&repo, 1);
+        let last = |w: &World, id: AgentId| w.agents[id].trace.back().unwrap().clone();
+        // The change it ran on still waits: on the change and in the journal.
+        change_at(&mut w, &mut live, 1, "t1", &tree);
+        live.check_done(&mut w, 1, "t1".into(), Err("no\u{7}shell".into()));
+        assert_eq!(check_of(&w, 1), Check::Failed("no shell".into()), "cleaned");
+        assert_eq!(
+            w.journal.last().unwrap().event,
+            Event::CheckFailed {
+                agent: 1,
+                why: "no shell".into()
+            }
+        );
+        assert!(
+            w.agents[1].trace.is_empty(),
+            "the journal has it, not the trace"
+        );
+        // A newer change waits in its place: the trace alone hears of it.
+        change_at(&mut w, &mut live, 1, "t2", &tree);
+        let journaled = w.journal.len();
+        live.check_done(&mut w, 1, "t1".into(), Err("too late".into()));
+        assert_eq!(check_of(&w, 1), Check::None, "t2 untouched");
+        assert_eq!(w.journal.len(), journaled);
+        assert!(
+            last(&w, 1).ends_with("check: too late, the change is gone"),
+            "{}",
+            last(&w, 1)
+        );
+        // None waits: the same.
+        live.changes.remove(&1);
+        w.change_rejected(1);
+        let journaled = w.journal.len();
+        live.check_done(&mut w, 1, "t2".into(), Err("too late".into()));
+        assert_eq!(w.journal.len(), journaled);
+        assert!(
+            last(&w, 1).ends_with("check: too late, the change is gone"),
+            "{}",
+            last(&w, 1)
+        );
+        assert!(
+            live.checks.is_empty(),
+            "a run that did not run keeps no result"
+        );
+        let _ = std::fs::remove_dir_all(&repo);
+    }
 }
