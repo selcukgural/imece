@@ -83,3 +83,12 @@ what grows on an agent's context, and record 110 made the whole file
 reach agents, so a long index costs tokens every session: when it passes
 what a session can carry, the index moves to a file of its own and
 `CLAUDE.md` keeps the rules.
+
+Changed by "Lonca as the store" (record 115, the same day): the Δ gate's
+mechanics (apply, rebase, conflict, verification) are Lonca's merge
+queue's, so the "after the first round" items that built them in imece (a
+worker told when HEAD moves, the send-back's growth, the check as a gate)
+are replaced by that record's plan; the sentence becomes "the Δ gate is
+Lonca's; imece's product is the team and the person's seat on top of it".
+The rest of the list (F8, F9, F10; F6; the Claude-only probes; the demo on
+the real `Live`; record 01 closed) stands.

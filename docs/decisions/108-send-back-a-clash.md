@@ -81,3 +81,9 @@ change's first file and hunk, a made-up HEAD, and git's words; `b` sends
 it back the same way and the worker takes it as its next card, as a
 rejection's reasons. What it cannot fake: a real merge, and staged files
 (`staged` stays empty there).
+
+Superseded in part by "Lonca as the store" (record 115): on Lonca a change
+that does not merge is `conflicted` in the queue, and the worker's `sync`
+writes trunk's version beside its file; imece's part becomes showing that
+status and telling the worker to sync and propose again. `b` and the
+clash search stay until a team runs on Lonca.

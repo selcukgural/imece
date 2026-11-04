@@ -1,8 +1,8 @@
 # Code copied from elsewhere
 
-imece never changes Lonca or Kule and does not depend on them; what helps
-is copied here and owned here from then on (`CLAUDE.md`, "Code from Lonca
-and Kule"). Every copied file starts with `Copied from <repo>@<sha> <path>`.
+imece never changes Lonca or Kule; it depends on Lonca's daemon as a client
+(record 115) and on Kule not at all; what helps is copied here and owned
+here from then on (`CLAUDE.md`, "Lonca and Kule"). Every copied file starts with `Copied from <repo>@<sha> <path>`.
 A scheduled check will list upstream commits that touched these paths since
 the recorded sha, so a fix upstream is not missed.
 
