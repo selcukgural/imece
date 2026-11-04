@@ -855,10 +855,8 @@ pub(super) fn write_notes(dir: &Path, text: Option<&str>) -> io::Result<Option<P
     };
     let dir = make_private(dir)?;
     let file = dir.join(NOTES_FILE);
-    match std::fs::remove_file(&file) {
-        Err(e) if e.kind() != io::ErrorKind::NotFound => return Err(e),
-        _ => {}
-    }
+    // Whatever cannot go is refused below: `create_new` takes no file there.
+    let _ = std::fs::remove_file(&file);
     (std::fs::OpenOptions::new().write(true).create_new(true))
         .mode(0o600)
         .open(&file)?
