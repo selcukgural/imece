@@ -12,7 +12,7 @@ description: imece'nin aldığı her `:` komutu; argümanları, karşılığı o
 - `:` sonra `tab` komutları listeler. Menü her komutun ardında şu an ne durumda olduğunu ya da neye etki edeceğini ayraç içinde gösterir: `budget (spent $3.10 of $20.00)`, `theme (dark)`, `close (kule)`, `forget (claude-2)`, `next (2 waiting)`, `needs (off)`. Not çizilir, asla satıra eklenmez.
 - Bir komutun ardındaki `$` sonraki faturayı büyütenleri işaretler: `:open` (yeni bir lider oturumu), `:solo` (yeni bir oturum), `:forget` (bütün brifingi önbelleksiz yeniden ödeyen yeni bir oturum), `:commit` ve `:review` (ücretli çağrılar). Hiçbir `:` komutu kendi başına ücretli bir tur başlatmaz; `:budget` işaret yerine değerini gösterir.
 - Kısa adlar: `:b` budget, `:c` close, `:f` forget, `:o` open, `:q` quit, `:t` theme. Bütünüyle yazılan kısa ad zaten bir komuttur; menü bir şey sunmaz ve `enter` çalıştırır (`:q` sonra `enter` hemen sorar).
-- Argümanlar da tamamlanır: `:lang` sonra diller, `:notify` sonra dört kelimesi, `:motion` sonra üç kelimesi, `:review` sonra `on off`, `:away` sonra `15m 30m 1h off`, `:clear` ve `:unclear` sonra `inbox journal`, `:theme` sonra yerleşik adlar, `:close` ve `:pin` sonra açık projeler, `:restore` sonra arşivlerin başlıkları (en yenisi önce, her biri projesinin adı ve arşivlendiği günle), `:goto` sonra hiçbir şey (`&` satırının kendi menüsü var), `:history` sonra gönderilen satırlar, `:forget`, `:talk`, `:trace` ve `:peek` sonra açık projelerin ajanları (`@` ile ya da onsuz), `:open` ve `:export` sonra dizinler (`~` ev dizininiz, gizli olanlar yalnızca bir `.` sonrası, `tab` seçilenin içine adım atar).
+- Argümanlar da tamamlanır: `:lang` sonra diller, `:notify` sonra dört kelimesi, `:motion` sonra üç kelimesi, `:review` ve `:plan` sonra `on off`, `:away` sonra `15m 30m 1h off`, `:clear` ve `:unclear` sonra `inbox journal`, `:theme` sonra yerleşik adlar, `:close` ve `:pin` sonra açık projeler, `:restore` sonra arşivlerin başlıkları (en yenisi önce, her biri projesinin adı ve arşivlendiği günle), `:goto` sonra hiçbir şey (`&` satırının kendi menüsü var), `:history` sonra gönderilen satırlar, `:forget`, `:talk`, `:trace` ve `:peek` sonra açık projelerin ajanları (`@` ile ya da onsuz), `:open` ve `:export` sonra dizinler (`~` ev dizininiz, gizli olanlar yalnızca bir `.` sonrası, `tab` seçilenin içine adım atar).
 - imece'nin bilmediği bir ad: `no command xyz; : and tab list them`. Canlıda yazılan yalnızca demoya ait bir komut: `:pause is for the demo: live agents run in real time`.
 - `!cmd` kendi kabuğunuzda bir komut çalıştırır, `/cmd` ajanın kendi komut satırıdır; ikisi de `:` komutu değildir ([komut satırı](../screen/command-line.md)).
 
@@ -61,6 +61,7 @@ description: imece'nin aldığı her `:` komutu; argümanları, karşılığı o
 | `:peek [@NAME]` | `K` | | | | eldeki ajan |
 | `:pending` | `q s` | | | | |
 | `:pin [NAME]` | — | | | | eldeki proje, sabitse `▴` |
+| `:plan [on\|off]` | — | | | | on / off |
 | `:quit` | `q` | `:q` | | | |
 | `:recall [WORDS]` | `H` | | | | |
 | `:rename NAME` | — | | | | eldeki proje |
@@ -277,6 +278,10 @@ Ajanın odağı görünümün üstünde bir pencerede, `K` gibi; ad yoksa eldeki
 ### `:pin [NAME]`
 
 `NAME` projesini ya da eldekini salonun en üstüne sabitler; yeniden kaldırır. Sabit projeler önce gelir, açıldıkları sırayla, ve salon kısaysa en son katlanır; sabit bir başlık `▴` taşır. Flaş: `kule salonun en üstüne sabitlendi` / `kule artık sabit değil`. Depoda saklanır; kapalı bir proje yeniden açıldığı zaman için sabitini korur. Menü notu etki edeceği projeyi gösterir, zaten sabitse `▴ kule`. Proje başına bir renk yapılmamıştır.
+
+### `:plan [on|off]`
+
+Eldeki projenin plan kapısı ([plan](../concepts/messages-and-board.md#plan)): `on` (varsayılan) lidere ikinci işçiyi almadan önce planını SENİ BEKLEYEN'e `▤` ögesi olarak koydurur; `off` uygun gördüğü gibi işe almasına izin verir, yine de gönderdiği bir plan `the person turned the plan gate off for this project` yanıtını alır ve saklanmaz. Yalın, kapının nerede durduğunu söyler: `kule için plan kapısı açık: ikinci işçiden önce onayınızı alan bir plan` / `kule için plan kapısı kapalı: lider uygun gördüğü gibi işe alır`. Depoda proje başına saklanır. Menü notu on / off gösterir.
 
 ### `:quit`
 

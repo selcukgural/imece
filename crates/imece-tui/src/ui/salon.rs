@@ -1100,6 +1100,7 @@ fn side(f: &mut Frame, area: Rect, app: &App) {
                 InboxKind::Change => t.change_keys,
                 InboxKind::Approval => t.approval_keys,
                 InboxKind::Script | InboxKind::Check => t.script_keys,
+                InboxKind::Plan => t.plan_keys,
                 _ => t.item_keys,
             };
             lines.push(Line::from(Span::styled(keys, dim())));

@@ -911,6 +911,10 @@ pub struct App {
     /// screen (`enter` on the ask, record 92): its inbox item and how far
     /// down it is scrolled.
     pub script: Option<(usize, usize)>,
+    /// The leader's plan an item is about, in a window over the screen
+    /// (`enter` on the item, record 114): the item and how far down its
+    /// cards are scrolled.
+    pub plan_window: Option<(usize, usize)>,
     /// The worktrees no agent owns, in a window over the screen (`:tidy`,
     /// record 96).
     pub tidy: Option<TidyWin>,
@@ -1226,6 +1230,7 @@ impl App {
             settled_projects: BTreeSet::new(),
             peek: None,
             script: None,
+            plan_window: None,
             tidy: None,
             teardown: None,
             tidy_start: false,
@@ -1833,6 +1838,105 @@ impl App {
         });
         let open = self.inbox_rows().len();
         self.inbox_sel = self.inbox_sel.min(open.saturating_sub(1));
+    }
+
+    /// The keys of the plan window (record 114): `j k` and the pages
+    /// scroll its cards, `a` says yes, `r` no, `n` opens the composer to
+    /// the leader (the item closes when the message goes), `esc` closes
+    /// the window.
+    fn plan_key(&mut self, item: usize, at: usize, k: KeyEvent) {
+        let ctrl = k.modifiers.contains(KeyModifiers::CONTROL);
+        let page = SCRIPT_PAGE;
+        let to = match k.code {
+            KeyCode::Down | KeyCode::Char('j') => at + 1,
+            KeyCode::Up | KeyCode::Char('k') => at.saturating_sub(1),
+            KeyCode::PageDown => at + page,
+            KeyCode::Char('d') if ctrl => at + page,
+            KeyCode::PageUp => at.saturating_sub(page),
+            KeyCode::Char('u') if ctrl => at.saturating_sub(page),
+            KeyCode::Char('g') => 0,
+            KeyCode::Char('G') => usize::MAX,
+            KeyCode::Char('a') => return self.answer_plan(item, true),
+            KeyCode::Char('r') => return self.answer_plan(item, false),
+            KeyCode::Char('n') => return self.plan_notes(item),
+            KeyCode::Esc | KeyCode::Char('q') => {
+                self.plan_window = None;
+                return;
+            }
+            KeyCode::Char('?') => return self.open_help(),
+            _ => return,
+        };
+        // Never past the last line's being the top one.
+        let last = self.plan_lines(item);
+        self.plan_window = Some((item, to.min(last.saturating_sub(1))));
+    }
+
+    /// How many lines the plan of item `item` lists (its cards), for the
+    /// window's scroll.
+    fn plan_lines(&self, item: usize) -> usize {
+        let leader = self.world.inbox[item].agent;
+        let p = self.world.agents[leader].project;
+        (self.world.projects[p].plan.proposal.as_ref())
+            .map_or(0, |pr| ui::overlay::plan_lines(self, pr).len())
+    }
+
+    /// The person's answer to plan item `item` (record 114): the engine
+    /// opens the gate on a yes, drops the plan on a no, and the leader
+    /// hears either; the window closes and the flash says which. A plan
+    /// no longer waiting is said so.
+    fn answer_plan(&mut self, item: usize, yes: bool) {
+        let t = self.lang.text();
+        let took = match &mut self.engine {
+            Engine::Live(l) => l.decide_plan(&mut self.world, item, yes),
+            Engine::Sim(s) => s.decide_plan(&mut self.world, item, yes),
+            Engine::View(_) => return self.read_only(),
+        };
+        self.plan_window = None;
+        self.flash(match (took, yes) {
+            (false, _) => t.plan_gone,
+            (true, true) => t.plan_yes,
+            (true, false) => t.plan_no,
+        });
+        let open = self.inbox_rows().len();
+        self.inbox_sel = self.inbox_sel.min(open.saturating_sub(1));
+    }
+
+    /// `n` on a plan: the composer opens to the leader; what the person
+    /// writes closes the plan unanswered and starts the leader's turn,
+    /// which plans again from it.
+    fn plan_notes(&mut self, item: usize) {
+        if self.viewing_archive() {
+            return self.read_only();
+        }
+        let name = self.world.agents[self.world.inbox[item].agent].name.clone();
+        self.plan_window = None;
+        self.typing = true;
+        self.input = format!("@{name} ");
+        self.menu = None;
+    }
+
+    /// `:plan [on|off]` (record 114): the project at hand's plan gate;
+    /// bare, it says where it stands.
+    fn plan_command(&mut self, arg: &str) {
+        let t = self.lang.text();
+        let p = self.current_project();
+        let name = self.world.projects[p].name.clone();
+        match arg.trim() {
+            "" => {}
+            "on" | "off" => {
+                if self.viewing_archive() {
+                    return self.read_only();
+                }
+                self.world.projects[p].plan.on = arg.trim() == "on";
+            }
+            other => return self.flash(fill(t.plan_bad, &[other])),
+        }
+        let text = if self.world.projects[p].plan.on {
+            t.plan_on
+        } else {
+            t.plan_off
+        };
+        self.flash(fill(text, &[&name]));
     }
 
     /// At a start: the engine looks for worktrees no agent owns, and a
@@ -2682,6 +2786,10 @@ impl App {
         }
         if let Some((item, at)) = self.script {
             self.script_key(item, at, k);
+            return;
+        }
+        if let Some((item, at)) = self.plan_window {
+            self.plan_key(item, at, k);
             return;
         }
         if self.teardown.is_some() {
@@ -4580,6 +4688,7 @@ impl App {
             "needs" => Some(on_off(self.needs_only)),
             "story" => Some(on_off(self.story)),
             "review" => Some(on_off(self.review)),
+            "plan" => Some(on_off(self.world.projects[self.current_project()].plan.on)),
             "news" => Some(welcome::VERSION.to_string()),
             "settle" => Some(match self.selected {
                 Sel::Agent(id) => self.world.agents[id].name.clone(),
@@ -4924,6 +5033,7 @@ impl App {
             "export" => self.export(arg),
             "commit" => self.suggest_commit(),
             "review" => self.review_command(arg),
+            "plan" => self.plan_command(arg),
             "copy" => self.copy_path(arg),
             "allow" => self.allow(arg),
             "pin" => self.pin(arg),
@@ -7226,6 +7336,13 @@ impl App {
                         self.script = Some((i, 0));
                         return;
                     }
+                    // The leader's plan: its cards in a window.
+                    if let Some(&i) = open.get(self.inbox_sel)
+                        && self.world.inbox[i].kind == InboxKind::Plan
+                    {
+                        self.plan_window = Some((i, 0));
+                        return;
+                    }
                     let item = open.get(self.inbox_sel).map(|&i| &self.world.inbox[i]);
                     match item {
                         Some(item) if item.kind == InboxKind::Change => {
@@ -7489,6 +7606,9 @@ impl App {
             InboxKind::Script | InboxKind::Check
         ) {
             return self.answer_script(item, approve);
+        }
+        if self.world.inbox[item].kind == InboxKind::Plan {
+            return self.answer_plan(item, approve);
         }
         if self.world.inbox[item].kind == InboxKind::Approval {
             let name = self.world.agents[self.world.inbox[item].agent].name.clone();
@@ -16719,5 +16839,128 @@ pub(crate) mod tests {
         app.on_key(key(KeyCode::Char('r')));
         assert!(!app.world.inbox[item].open);
         assert_eq!(app.world.change_of(id).unwrap().check, Check::None);
+    }
+    /// A demo app whose leader's plan waits in WAITING FOR YOU, selected
+    /// in the inbox pane: the app, the item and the leader.
+    pub(crate) fn asking_plan() -> (App, usize, AgentId) {
+        let mut app = waiting(&[]);
+        let leader = app.world.projects[0].leader;
+        let cards = vec![
+            Planned {
+                title: "Parser".into(),
+                tier: "cheap".into(),
+                paths: vec![Owned::new("src/p.rs"), Owned::shared("docs")],
+                body: "Fix it.\nThen test.".into(),
+            },
+            Planned {
+                title: "Docs".into(),
+                tier: "standard".into(),
+                paths: Vec::new(),
+                body: "Write them.".into(),
+            },
+        ];
+        let item = app.world.propose(
+            0,
+            Proposal {
+                cards,
+                cost: 12_500,
+                tick: 0,
+            },
+        );
+        app.pane = Pane::Inbox;
+        app.inbox_sel = app.inbox_rows().iter().position(|&i| i == item).unwrap();
+        (app, item, leader)
+    }
+
+    #[test]
+    fn enter_on_a_plan_shows_its_cards_and_a_r_n_answer_it_there() {
+        let (mut app, item, leader) = asking_plan();
+        app.on_key(key(KeyCode::Enter));
+        assert_eq!(app.plan_window, Some((item, 0)));
+        // Two cards: a head line, a paths line and two body lines, a
+        // blank; a head line, one body line, a blank.
+        assert_eq!(app.plan_lines(item), 8);
+        for (k, at) in [
+            (key(KeyCode::Char('j')), 1),
+            (key(KeyCode::Down), 2),
+            (key(KeyCode::Char('k')), 1),
+            (key(KeyCode::PageDown), (1 + SCRIPT_PAGE).min(7)),
+            (key(KeyCode::Char('G')), 7),
+            (key(KeyCode::Char('j')), 7),
+            (key(KeyCode::Char('g')), 0),
+            (key(KeyCode::Up), 0),
+            (ctrl('d'), SCRIPT_PAGE.min(7)),
+            (ctrl('u'), 0),
+            (key(KeyCode::Char('x')), 0),
+        ] {
+            app.on_key(k);
+            assert_eq!(app.plan_window, Some((item, at)), "{k:?}");
+        }
+        app.on_key(key(KeyCode::Esc));
+        assert_eq!(app.plan_window, None);
+        assert!(app.world.inbox[item].open, "esc answers nothing");
+        app.on_key(key(KeyCode::Enter));
+        app.on_key(key(KeyCode::Char('q')));
+        assert_eq!(app.plan_window, None);
+        // n: the composer opens to the leader.
+        app.on_key(key(KeyCode::Enter));
+        app.on_key(key(KeyCode::Char('n')));
+        assert_eq!(app.plan_window, None);
+        assert!(app.typing);
+        assert_eq!(app.input, format!("@{} ", app.world.agents[leader].name));
+        app.typing = false;
+        app.input.clear();
+        // a: yes, the window closes, the gate opens.
+        app.on_key(key(KeyCode::Enter));
+        app.on_key(key(KeyCode::Char('a')));
+        assert_eq!(app.plan_window, None);
+        assert!(!app.world.inbox[item].open);
+        assert!(app.world.projects[0].plan.approved);
+        assert_eq!(
+            flashed(&app).as_deref(),
+            Some("yes to the plan: the leader hires and assigns as planned")
+        );
+        // Answered already: said so.
+        app.plan_window = Some((item, 0));
+        app.on_key(key(KeyCode::Char('r')));
+        assert_eq!(
+            flashed(&app).as_deref(),
+            Some("that plan is no longer waiting")
+        );
+        assert!(app.world.projects[0].plan.approved, "nothing changed");
+        // r on the row itself, without the window: no.
+        let (mut app, item, _) = asking_plan();
+        app.on_key(key(KeyCode::Char('r')));
+        assert!(!app.world.inbox[item].open);
+        assert_eq!(app.world.projects[0].plan.proposal, None);
+        assert_eq!(
+            flashed(&app).as_deref(),
+            Some("no to the plan: the leader hears it and asks you, or plans again")
+        );
+    }
+
+    #[test]
+    fn colon_plan_turns_the_gate_on_and_off_for_the_project_at_hand() {
+        let mut app = waiting(&[]);
+        assert!(app.world.projects[0].plan.on);
+        app.command("plan");
+        assert_eq!(
+            flashed(&app).as_deref(),
+            Some("plan gate on for shop-api: a plan with your yes before the second worker")
+        );
+        app.command("plan off");
+        assert!(!app.world.projects[0].plan.on);
+        assert_eq!(
+            flashed(&app).as_deref(),
+            Some("plan gate off for shop-api: the leader hires as it sees fit")
+        );
+        app.command("plan");
+        assert!(flashed(&app).unwrap().starts_with("plan gate off"));
+        app.command("plan maybe");
+        assert_eq!(flashed(&app).as_deref(), Some("maybe is not on or off"));
+        assert!(!app.world.projects[0].plan.on);
+        app.command("plan on");
+        assert!(app.world.projects[0].plan.on);
+        assert!(flashed(&app).unwrap().starts_with("plan gate on"));
     }
 }

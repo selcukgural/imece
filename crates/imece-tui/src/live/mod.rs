@@ -307,6 +307,13 @@ const MAX_WOKEN: u32 = 12;
 
 /// The longest card title, in characters.
 const MAX_TITLE: usize = 120;
+/// How many cards one plan may hold (record 114).
+const MAX_PLANNED: usize = 20;
+/// What a leader is told when its plan is answered (record 114), with
+/// the next prompt.
+const PLAN_YES: &str = "The person said yes to your plan: hire and assign as planned.";
+const PLAN_NO: &str = "The person said no to your plan: ask them what they want (send to: \
+                       you, type ask), or make another plan.";
 
 /// Open cards one project's board may hold; more are refused.
 const MAX_OPEN: usize = 20;
@@ -1325,6 +1332,7 @@ impl Live {
                 "board" => Ok(self.board(w, from)),
                 "claim" => self.claim(w, from, &args),
                 "hire" => self.hire(w, from, &args),
+                "plan" => self.plan(w, from, &args),
                 "whoami" => Ok(self.whoami(w, from)),
                 _ => Err(format!("there is no tool {tool:?}")),
             };

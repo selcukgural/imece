@@ -45,7 +45,7 @@ Ona ilk günkü gibi yazın:
 / sıradaki epic: depoyu kendi crate'ine taşı
 ```
 
-Lider yeni bir oturum başlatır. İşe aldığı işçiler eskilerin ardından numaralanır (`claude-3`, yeniden `claude-1` değil); böylece worktree'leri arşivinkilerle asla karşılaşmaz.
+Lider yeni bir oturum başlatır. İşe aldığı işçiler eskilerin ardından numaralanır (`claude-3`, yeniden `claude-1` değil); böylece worktree'leri arşivinkilerle asla karşılaşmaz. İkincisini almadan önce planı SENİ BEKLEYEN'e `▤` olarak gelir: `enter` kartları ve beklenen maliyeti okur, `a` devam ettirir ([seni bekleyen](../screen/waiting.md)).
 
 ## 3. Arşivin sakladıkları
 

@@ -79,7 +79,9 @@ use crate::recall::{Hit, Line};
 /// `ChangeCost` event (`ChangeReady` carries a `spend`).
 /// 25 (2026-11-04): the paths a card owns (`cards.paths`, record 114), an
 /// assign's until it is delivered (`mail.paths`), and the `Strayed` event.
-pub const SCHEMA_VERSION: i64 = 25;
+/// 26 (2026-11-04): the plan gate (`projects.plan`, record 114), the `Plan`
+/// inbox kind and the `Planned`/`PlanAnswered` events.
+pub const SCHEMA_VERSION: i64 = 26;
 /// Trace lines kept per agent, as the world keeps them.
 const TRACE_KEEP: usize = 200;
 /// The file's name under the state directory.
@@ -605,6 +607,10 @@ impl Store {
                  ALTER TABLE mail ADD COLUMN re INTEGER;",
             )?;
         }
+        if !self.has_column("projects", "plan")? {
+            self.conn
+                .execute_batch("ALTER TABLE projects ADD COLUMN plan TEXT NOT NULL DEFAULT '';")?;
+        }
         if !self.has_column("cards", "paths")? {
             self.conn.execute_batch(
                 "ALTER TABLE cards ADD COLUMN paths TEXT NOT NULL DEFAULT '[]';
@@ -931,8 +937,8 @@ impl Store {
             let q = &w.projects[p];
             tx.execute(
                 "INSERT OR REPLACE INTO projects (id, name, leader, closed, repo, pinned, \
-                 copies, archived_at, archived_title, allowed) VALUES (?1, ?2, ?3, ?4, ?5, ?6, \
-                 ?7, ?8, ?9, ?10)",
+                 copies, archived_at, archived_title, allowed, plan) VALUES (?1, ?2, ?3, ?4, \
+                 ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
                 params![
                     n(q.id),
                     q.name,
@@ -946,6 +952,7 @@ impl Store {
                     q.archived.as_ref().map(|a| big(a.at)),
                     q.archived.as_ref().map(|a| a.title.as_str()),
                     serde_json::to_string(&q.allowed).unwrap_or_else(|_| "[]".into()),
+                    serde_json::to_string(&q.plan).unwrap_or_default(),
                 ],
             )?;
         }
@@ -1290,6 +1297,7 @@ impl Store {
                 &q.copies,
                 &q.archived,
                 &q.allowed,
+                &q.plan,
             ));
             if s.projects.get(p) != Some(&h) {
                 plan.projects.push(p);
@@ -1532,7 +1540,7 @@ impl Store {
         let conn = &self.conn;
         let mut st = conn.prepare(
             "SELECT id, name, leader, closed, repo, pinned, copies, archived_at, archived_title, \
-             allowed FROM projects ORDER BY id",
+             allowed, plan FROM projects ORDER BY id",
         )?;
         for row in st.query_map([], |r| {
             Ok((
@@ -1546,9 +1554,10 @@ impl Store {
                 r.get::<_, Option<i64>>(7)?,
                 r.get::<_, Option<String>>(8)?,
                 r.get::<_, String>(9)?,
+                r.get::<_, String>(10)?,
             ))
         })? {
-            let (id, name, leader, closed, repo, pinned, copies, at, title, allowed) = row?;
+            let (id, name, leader, closed, repo, pinned, copies, at, title, allowed, plan) = row?;
             let archived = at.map(|at| Archived {
                 at: ubig(at),
                 title: title.unwrap_or_default(),
@@ -1557,6 +1566,12 @@ impl Store {
                 .map_err(|e| bad(format!("project {id}'s copies: {e}")))?;
             let allowed: Vec<Standing> = serde_json::from_str(&allowed)
                 .map_err(|e| bad(format!("project {id}'s standing yes: {e}")))?;
+            // A file from before the gate has none: the default, on.
+            let plan: PlanGate = match plan.as_str() {
+                "" => PlanGate::default(),
+                json => serde_json::from_str(json)
+                    .map_err(|e| bad(format!("project {id}'s plan gate: {e}")))?,
+            };
             if id != w.projects.len() {
                 return Err(bad(format!("project {id} is out of order")));
             }
@@ -1571,6 +1586,7 @@ impl Store {
                 pinned,
                 copies,
                 allowed,
+                plan,
                 no_git: false,
                 archived,
             });
@@ -2134,6 +2150,7 @@ mod tests {
                     pinned: false,
                     copies: Vec::new(),
                     allowed: Vec::new(),
+                    plan: PlanGate::default(),
                     no_git: false,
                     archived: None,
                 },
@@ -2148,6 +2165,7 @@ mod tests {
                     pinned: false,
                     copies: Vec::new(),
                     allowed: Vec::new(),
+                    plan: PlanGate::default(),
                     no_git: false,
                     archived: None,
                 },
@@ -4103,12 +4121,12 @@ mod tests {
                 )
                 .unwrap();
             assert_eq!(
-                version, "25",
+                version, "26",
                 "the sent table, the Fault kind, archives, restores, start points, standing yes, the \
                  recall index, forks, paid kinds, reviews, no vendor, the check on a change, what \
-                 it cost and the paths a card owns: an older imece knows none"
+                 it cost, the paths a card owns and the plan gate: an older imece knows none"
             );
-            assert_eq!(SCHEMA_VERSION, 25);
+            assert_eq!(SCHEMA_VERSION, 26);
         }
         let back = Store::open(&path)
             .unwrap()
@@ -5095,6 +5113,71 @@ mod tests {
             Ok(_) => panic!("a file imece did not write loaded"),
         };
         assert!(why.contains("paths \"x\""), "{why}");
+        let _ = std::fs::remove_dir_all(&d);
+    }
+    #[test]
+    fn a_file_of_schema_25_gets_the_plan_column_and_keeps_the_gate_from_then_on() {
+        let d = dir("schema25");
+        std::fs::create_dir_all(&d).unwrap();
+        let path = d.join(FILE);
+        {
+            // A whole file as schema 25 wrote it: no gate known.
+            let mut store = Store::open(&path).unwrap();
+            assert!(store.save(&world(), &kept().kept()).unwrap());
+            store
+                .raw()
+                .execute_batch(
+                    "ALTER TABLE projects DROP COLUMN plan;
+                     UPDATE meta SET value = '25' WHERE key = 'schema_version';",
+                )
+                .unwrap();
+        }
+        let mut store = Store::open(&path).unwrap();
+        let back = store.load(100).unwrap().expect("a world");
+        assert!(
+            back.world
+                .projects
+                .iter()
+                .all(|p| p.plan == PlanGate::default())
+        );
+        let col: String = store
+            .raw()
+            .query_row("SELECT plan FROM projects WHERE id = 0", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(col, "");
+        // The next save writes the gate as it stands.
+        let k = back.found();
+        let mut w = back.world;
+        let gate = PlanGate {
+            on: false,
+            approved: true,
+            proposal: Some(Proposal {
+                cards: vec![Planned {
+                    title: "Parser".into(),
+                    tier: "cheap".into(),
+                    paths: vec![crate::paths::Owned::new("src/p.rs")],
+                    body: "Fix it.".into(),
+                }],
+                cost: 12_500,
+                tick: 7,
+            }),
+        };
+        w.projects[0].plan = gate.clone();
+        assert!(store.save(&w, &k.kept()).unwrap());
+        let back = store.load(100).unwrap().expect("a world");
+        assert_eq!(back.world.projects[0].plan, gate);
+        assert_eq!(back.world.projects[1].plan, PlanGate::default());
+        assert!(!store.save(&w, &k.kept()).unwrap(), "nothing moved");
+        // A column that holds no gate is a file imece did not write.
+        store
+            .raw()
+            .execute_batch("UPDATE projects SET plan = 'x' WHERE id = 0;")
+            .unwrap();
+        let why = match store.load(100) {
+            Err(e) => e.to_string(),
+            Ok(_) => panic!("a file imece did not write loaded"),
+        };
+        assert!(why.contains("project 0's plan gate"), "{why}");
         let _ = std::fs::remove_dir_all(&d);
     }
 }

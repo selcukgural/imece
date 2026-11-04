@@ -458,6 +458,10 @@ pub struct Project {
     /// (`A` on an ask, `:allow`): an agent's ask that only runs these (and
     /// routine commands) is allowed without them. Sorted, saved.
     pub allowed: Vec<Standing>,
+    /// The plan gate (record 114): whether the leader must have the
+    /// person's yes to a plan before it hires a second worker, and where
+    /// that stands. Saved.
+    pub plan: PlanGate,
     /// The folder is not a git checkout with a first commit, so its solo
     /// works straight in it: no worktree, no change to review. Found at
     /// each open and start, not saved.
@@ -1557,6 +1561,19 @@ pub enum Event {
         card: CardId,
         path: String,
     },
+    /// The leader `leader` made a plan of `cards` cards it expects to
+    /// cost `cost` (ten-thousandths of a dollar); the person reads it
+    /// (record 114).
+    Planned {
+        leader: AgentId,
+        cards: usize,
+        cost: u64,
+    },
+    /// The person said yes (or no) to leader `leader`'s plan.
+    PlanAnswered {
+        leader: AgentId,
+        yes: bool,
+    },
     /// The person said yes (or no) to the check asked about for agent
     /// `agent`'s change.
     CheckAnswered {
@@ -1712,6 +1729,7 @@ impl Event {
             | Event::Posted { .. }
             | Event::Hired { .. }
             | Event::Forked { .. }
+            | Event::Planned { .. }
             | Event::Left { .. } => EntryKind::Plan,
             Event::Assign { .. } | Event::Claimed { .. } => EntryKind::Assign,
             Event::Talk { .. }
@@ -1767,6 +1785,7 @@ impl Event {
             | Event::TurnYesEnded { .. }
             | Event::SetupAnswered { .. }
             | Event::CheckAnswered { .. }
+            | Event::PlanAnswered { .. }
             | Event::Standing { .. }
             | Event::Budget { .. }
             | Event::Shell { .. }
@@ -1844,6 +1863,8 @@ impl Event {
             | Event::CheckFailed { agent, .. }
             | Event::CheckAnswered { agent, .. }
             | Event::Strayed { agent, .. }
+            | Event::Planned { leader: agent, .. }
+            | Event::PlanAnswered { leader: agent, .. }
             | Event::CommandsMissing { agent }
             | Event::WorktreeMoved { agent, .. }
             | Event::WorktreeKept { agent, .. }
@@ -1918,6 +1939,11 @@ pub enum InboxKind {
     /// the script's path in the checkout. Closes with the answer, and at
     /// the next start. Its worker waits for nothing: its mail goes on.
     Check,
+    /// The leader's plan (record 114) waits for the person's yes before
+    /// a second worker is hired; the agent is the leader, the detail the
+    /// first card's title. Closes with the answer, or with the person's
+    /// word to the leader.
+    Plan,
 }
 
 impl InboxKind {
@@ -1941,7 +1967,7 @@ impl InboxKind {
     pub fn closes_on_word(self) -> bool {
         matches!(
             self,
-            InboxKind::Reply | InboxKind::Question | InboxKind::Fault
+            InboxKind::Reply | InboxKind::Question | InboxKind::Fault | InboxKind::Plan
         )
     }
 }
@@ -2091,6 +2117,58 @@ pub struct Plan {
     pub project: ProjectId,
     pub text: String,
     pub ready: u64,
+}
+
+/// One card of a leader's plan (record 114): what it means to assign or
+/// post, on which tier, owning which paths.
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct Planned {
+    pub title: String,
+    /// The tier's wire word: `cheap`, `standard` or `strong`.
+    pub tier: String,
+    pub paths: Vec<Owned>,
+    pub body: String,
+}
+
+/// A leader's plan as the person reads it before a second worker is
+/// hired (record 114): the cards, what the leader expects them to cost
+/// (ten-thousandths of a dollar) and when it came.
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct Proposal {
+    pub cards: Vec<Planned>,
+    pub cost: u64,
+    pub tick: u64,
+}
+
+/// A project's plan gate (record 114): on by default; `approved` while
+/// the person's last answer to a plan was yes (a new plan takes it back);
+/// the plan itself while one waits or was approved.
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct PlanGate {
+    pub on: bool,
+    pub approved: bool,
+    pub proposal: Option<Proposal>,
+}
+
+impl Default for PlanGate {
+    fn default() -> PlanGate {
+        PlanGate {
+            on: true,
+            approved: false,
+            proposal: None,
+        }
+    }
+}
+
+/// Why the leader may not hire a second worker now (record 114).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PlanHold {
+    /// No plan was made yet.
+    NoPlan,
+    /// The plan waits for the person in WAITING FOR YOU.
+    Reading,
+    /// The person answered the plan in words, not with a yes.
+    Unanswered,
 }
 
 /// What the team spent lately, for the rate: the total each time it
@@ -2434,6 +2512,7 @@ impl World {
                 pinned: false,
                 copies: Vec::new(),
                 allowed: Vec::new(),
+                plan: PlanGate::default(),
                 no_git: false,
                 archived: None,
             }),
@@ -3352,6 +3431,92 @@ impl World {
         }
     }
 
+    /// The person wrote to leader `id`: a plan of its that waited closes,
+    /// unanswered (record 114); the leader hears what they wrote and
+    /// plans again.
+    pub fn close_plans(&mut self, id: AgentId) {
+        for i in &mut self.inbox {
+            if i.kind == InboxKind::Plan && i.agent == id {
+                i.open = false;
+            }
+        }
+    }
+
+    /// The leader of `project` made `proposal` (record 114): the plan it
+    /// had waiting closes (a new plan replaces it), the gate waits for a
+    /// yes again, and the plan goes to WAITING FOR YOU. The item's index.
+    pub fn propose(&mut self, project: ProjectId, proposal: Proposal) -> usize {
+        let leader = self.projects[project].leader;
+        self.close_plans(leader);
+        let item = self.inbox.len();
+        self.inbox.push(InboxItem {
+            kind: InboxKind::Plan,
+            agent: leader,
+            detail: proposal
+                .cards
+                .first()
+                .map_or(String::new(), |c| c.title.clone()),
+            researcher: None,
+            open: true,
+            tick: self.tick,
+            card: None,
+        });
+        self.note(Event::Planned {
+            leader,
+            cards: proposal.cards.len(),
+            cost: proposal.cost,
+        });
+        let gate = &mut self.projects[project].plan;
+        gate.approved = false;
+        gate.proposal = Some(proposal);
+        item
+    }
+
+    /// The person's answer to plan item `item`: yes opens the gate until
+    /// the next plan; no drops the plan. The leader, or nothing when no
+    /// plan waits there.
+    pub fn decide_plan(&mut self, item: usize, yes: bool) -> Option<AgentId> {
+        let it = self
+            .inbox
+            .get(item)
+            .filter(|i| i.open && i.kind == InboxKind::Plan)?;
+        let leader = it.agent;
+        self.inbox[item].open = false;
+        let gate = &mut self.projects[self.agents[leader].project].plan;
+        gate.approved = yes;
+        if !yes {
+            gate.proposal = None;
+        }
+        self.note(Event::PlanAnswered { leader, yes });
+        Some(leader)
+    }
+
+    /// The plan of `project` the person reads now: its open item.
+    pub fn plan_item(&self, project: ProjectId) -> Option<usize> {
+        let leader = self.projects[project].leader;
+        (self.inbox.iter()).position(|i| i.open && i.kind == InboxKind::Plan && i.agent == leader)
+    }
+
+    /// Why the leader of `project` may not hire a second worker now
+    /// (record 114): the gate is on, a worker is there already, and the
+    /// person's yes to a plan is not; nothing when it may.
+    pub fn plan_hold(&self, project: ProjectId) -> Option<PlanHold> {
+        let gate = &self.projects[project].plan;
+        let workers = (self.agents.iter())
+            .filter(|a| a.project == project && a.role == Role::Worker && !a.gone)
+            .count();
+        if !gate.on || workers == 0 || gate.approved {
+            return None;
+        }
+        Some(
+            match (gate.proposal.is_some(), self.plan_item(project).is_some()) {
+                (false, _) => PlanHold::NoPlan,
+                (true, true) => PlanHold::Reading,
+                (true, false) => PlanHold::Unanswered,
+            },
+        )
+    }
+
     /// Whether agent `id` waits for the person's answer to a question.
     pub fn has_question(&self, id: AgentId) -> bool {
         self.open_item(id, InboxKind::Question).is_some()
@@ -3548,6 +3713,7 @@ impl World {
         self.close_replies(id);
         self.close_questions(id);
         self.close_faults(id);
+        self.close_plans(id);
         // The person's word is the next try: a new count from it.
         self.agents[id].retry = None;
         self.agents[id].tries = 0;
@@ -3937,6 +4103,7 @@ mod tests {
                 pinned: false,
                 copies: Vec::new(),
                 allowed: Vec::new(),
+                plan: PlanGate::default(),
                 no_git: false,
                 archived: None,
             }],
@@ -4739,6 +4906,7 @@ mod tests {
             pinned: false,
             copies: Vec::new(),
             allowed: Vec::new(),
+            plan: PlanGate::default(),
             no_git: false,
             archived: None,
         });
@@ -4855,6 +5023,8 @@ mod tests {
             (Approval, true, false),
             (Fault, true, true),
             (Script, true, false),
+            (Check, false, false),
+            (Plan, true, true),
         ] {
             assert_eq!(kind.holds_mail(), holds, "{kind:?}");
             assert_eq!(kind.closes_on_word(), word, "{kind:?}");
@@ -5930,6 +6100,7 @@ mod tests {
             pinned: false,
             copies: Vec::new(),
             allowed: Vec::new(),
+            plan: PlanGate::default(),
             no_git: false,
             archived: None,
         });
@@ -6130,6 +6301,7 @@ mod tests {
                 pinned: false,
                 copies: Vec::new(),
                 allowed: Vec::new(),
+                plan: PlanGate::default(),
                 no_git: false,
                 archived: Some(Archived {
                     at,
@@ -6171,6 +6343,7 @@ mod tests {
             pinned: false,
             copies: Vec::new(),
             allowed: Vec::new(),
+            plan: PlanGate::default(),
             no_git: false,
             archived: None,
         });
@@ -6275,5 +6448,106 @@ mod tests {
             event: Event::Failed { agent: 0 },
         });
         assert_eq!(w.archive_title(0), format!("p {then}"));
+    }
+    #[test]
+    fn the_plan_gate_holds_a_second_worker_until_a_yes_and_says_where_it_stands() {
+        let mut w = world(vec![
+            agent(0, Role::Leader, Status::Idle),
+            agent(1, Role::Worker, Status::Idle),
+        ]);
+        assert_eq!(w.projects[0].plan, PlanGate::default());
+        assert!(w.projects[0].plan.on, "on by default");
+        assert_eq!(w.plan_hold(0), Some(PlanHold::NoPlan));
+        w.agents[1].gone = true;
+        assert_eq!(w.plan_hold(0), None, "no worker there");
+        w.agents[1].gone = false;
+        w.projects[0].plan.on = false;
+        assert_eq!(w.plan_hold(0), None, "off");
+        w.projects[0].plan.on = true;
+        let plan = |n: usize| Proposal {
+            cards: (0..n)
+                .map(|i| Planned {
+                    title: format!("c{i}"),
+                    tier: "standard".into(),
+                    paths: Vec::new(),
+                    body: "b".into(),
+                })
+                .collect(),
+            cost: 1_234,
+            tick: 0,
+        };
+        let first = w.propose(0, plan(2));
+        assert_eq!(first, 0);
+        let it = &w.inbox[first];
+        assert_eq!(
+            (it.kind, it.agent, it.open, it.detail.as_str()),
+            (InboxKind::Plan, 0, true, "c0")
+        );
+        assert_eq!(w.plan_item(0), Some(first));
+        assert_eq!(w.plan_hold(0), Some(PlanHold::Reading));
+        assert!(matches!(
+            w.journal.last().unwrap().event,
+            Event::Planned {
+                leader: 0,
+                cards: 2,
+                cost: 1_234
+            }
+        ));
+        // A new plan closes the first, unanswered.
+        let second = w.propose(0, plan(1));
+        assert!(!w.inbox[first].open && w.inbox[second].open);
+        assert_eq!(w.plan_item(0), Some(second));
+        assert_eq!(
+            w.projects[0].plan.proposal.as_ref().map(|p| p.cards.len()),
+            Some(1)
+        );
+        // Answered in words: the item closes, the gate stays shut; another
+        // agent's plan and another kind of the leader's stay.
+        w.inbox.push(item(InboxKind::Plan, 1, true));
+        w.inbox.push(item(InboxKind::Approval, 0, true));
+        w.said(0, "hmm");
+        assert!(!w.inbox[second].open);
+        assert!(w.inbox[second + 1].open && w.inbox[second + 2].open);
+        assert_eq!(w.plan_hold(0), Some(PlanHold::Unanswered));
+        assert_eq!(w.decide_plan(second, true), None, "closed already");
+        // A yes, then a no.
+        let third = w.propose(0, plan(3));
+        assert_eq!(w.decide_plan(third, true), Some(0));
+        assert!(w.projects[0].plan.approved);
+        assert_eq!(w.plan_hold(0), None);
+        assert!(w.projects[0].plan.proposal.is_some(), "kept on a yes");
+        assert!(matches!(
+            w.journal.last().unwrap().event,
+            Event::PlanAnswered {
+                leader: 0,
+                yes: true
+            }
+        ));
+        let fourth = w.propose(0, plan(1));
+        assert!(
+            !w.projects[0].plan.approved,
+            "a new plan takes the yes back"
+        );
+        assert_eq!(w.decide_plan(fourth, false), Some(0));
+        assert_eq!(w.projects[0].plan.proposal, None);
+        assert_eq!(w.plan_hold(0), Some(PlanHold::NoPlan));
+        assert_eq!(w.decide_plan(99, true), None, "no such item");
+        // Not a plan: nothing decided.
+        w.inbox.push(item(InboxKind::Question, 0, true));
+        let q = w.inbox.len() - 1;
+        assert_eq!(w.decide_plan(q, true), None);
+        assert!(w.inbox[q].open);
+        // The events' places.
+        let planned = Event::Planned {
+            leader: 0,
+            cards: 1,
+            cost: 0,
+        };
+        assert_eq!((planned.kind(), planned.agent()), (EntryKind::Plan, 0));
+        let answered = Event::PlanAnswered {
+            leader: 0,
+            yes: false,
+        };
+        assert_eq!((answered.kind(), answered.agent()), (EntryKind::Person, 0));
     }
 }

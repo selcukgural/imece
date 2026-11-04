@@ -159,6 +159,82 @@ fn script_body(f: &mut Frame, area: Rect, shown: Shown, s: &crate::live::setup::
     f.render_widget(Paragraph::new(Line::from(hint_spans(shown.hints))), keys);
 }
 
+/// The leader's plan (record 114) as the person reads it before saying
+/// yes: what it means and the pot beside the expected cost, then each
+/// card with its number, title and tier, the paths it owns, and its
+/// body, from line `at` on; the keys at the foot. Every word is the
+/// leader's, cleaned, never read as Markdown.
+pub fn plan(f: &mut Frame, app: &App, item: usize, at: usize) -> Rect {
+    let t = app.lang.text();
+    let full = f.area();
+    let area = centered(
+        full,
+        full.width.saturating_sub(8),
+        full.height.saturating_sub(4),
+    );
+    shade(f, area);
+    clear(f, area);
+    let w = &app.world;
+    let leader = &w.agents[w.inbox[item].agent];
+    let Some(p) = w.projects[leader.project].plan.proposal.as_ref() else {
+        let block = Block::bordered().border_style(fg(pal().accent));
+        let gone = Line::from(Span::styled(t.plan_gone, dim()));
+        f.render_widget(Paragraph::new(gone).block(block), area);
+        return area;
+    };
+    let title = fill(
+        t.plan_win_title,
+        &[&leader.name, &p.cards.len().to_string(), &dollars(p.cost)],
+    );
+    let block = Block::bordered()
+        .title(title)
+        .border_style(fg(pal().accent));
+    let inner = block.inner(area);
+    f.render_widget(block, area);
+    let left = w.budget.saturating_sub(w.spent());
+    let mut lines = vec![
+        Line::from(Span::styled(t.plan_head.to_string(), fg(pal().warn))),
+        Line::from(Span::styled(
+            fill(t.plan_pot, &[&dollars(p.cost), &dollars(left)]),
+            dim(),
+        )),
+        Line::default(),
+    ];
+    lines.extend(plan_lines(app, p).into_iter().skip(at));
+    let [body, keys] = Layout::vertical([Constraint::Min(0), Constraint::Length(1)]).areas(inner);
+    f.render_widget(Paragraph::new(lines), body);
+    f.render_widget(Paragraph::new(Line::from(hint_spans(&t.plan_hints))), keys);
+    area
+}
+
+/// The cards of plan `p`, as the window lists them: a line with number,
+/// title and tier, one with the paths it owns when it has any, its body
+/// line by line, and a blank line after each card. What `j k` scroll.
+pub fn plan_lines(app: &App, p: &Proposal) -> Vec<Line<'static>> {
+    let t = app.lang.text();
+    let mut lines = Vec::new();
+    for (n, c) in p.cards.iter().enumerate() {
+        lines.push(Line::from(Span::styled(
+            fill(
+                t.plan_card,
+                &[&(n + 1).to_string(), &clean(&c.title), &clean(&c.tier)],
+            ),
+            bold(pal().strong),
+        )));
+        if !c.paths.is_empty() {
+            lines.push(Line::from(Span::styled(
+                fill(t.plan_owns, &[&clean(&crate::paths::listed(&c.paths))]),
+                dim(),
+            )));
+        }
+        for line in c.body.lines() {
+            lines.push(Line::raw(format!("   {}", clean(line))));
+        }
+        lines.push(Line::default());
+    }
+    lines
+}
+
 /// The `:tidy` window (record 96): the worktrees no agent owns, a row
 /// each (its name, its checkout, what it holds), the one at hand marked;
 /// while a look or a removal is under way, a line says so. At its foot

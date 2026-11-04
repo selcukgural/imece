@@ -9,7 +9,7 @@ mod code;
 mod diff;
 pub(crate) mod export;
 mod focus;
-mod overlay;
+pub(crate) mod overlay;
 pub(crate) mod salon;
 pub(crate) mod story;
 pub(crate) mod timeline;
@@ -95,6 +95,9 @@ pub fn draw(f: &mut Frame, app: &App) {
     }
     if let Some((item, at)) = app.script {
         over.push(overlay::script(f, app, item, at));
+    }
+    if let Some((item, at)) = app.plan_window {
+        over.push(overlay::plan(f, app, item, at));
     }
     if let Some(win) = app.tidy {
         over.push(overlay::tidy(f, app, win));
@@ -578,6 +581,7 @@ pub(crate) fn inbox_line(app: &App, i: usize) -> Line<'static> {
         InboxKind::Approval => ("⚑", bold(pal().warn)),
         InboxKind::Fault => ("✕", bold(pal().bad)),
         InboxKind::Script | InboxKind::Check => ("▶", bold(pal().warn)),
+        InboxKind::Plan => ("▤", bold(pal().warn)),
     };
     let mut spans = vec![
         Span::styled(format!("{icon} "), style),
@@ -2028,6 +2032,7 @@ fn footer(f: &mut Frame, area: Rect, app: &App) -> Option<Position> {
                 ("?", t.help),
             ],
             _ if app.script.is_some() => t.setup_hints.to_vec(),
+            _ if app.plan_window.is_some() => t.plan_hints.to_vec(),
             _ if app.peek.is_some() => vec![
                 ("j k", t.peek_next),
                 ("enter", t.focus),
@@ -2099,7 +2104,12 @@ fn footer(f: &mut Frame, area: Rect, app: &App) -> Option<Position> {
             }
         };
         let hints = match ask_hints(app) {
-            Some(mut keys) if app.hints.is_none() && app.script.is_none() && app.peek.is_none() => {
+            Some(mut keys)
+                if app.hints.is_none()
+                    && app.script.is_none()
+                    && app.plan_window.is_none()
+                    && app.peek.is_none() =>
+            {
                 keys.extend(hints);
                 keys
             }
@@ -7895,7 +7905,7 @@ mod tests {
         key(&mut app, KeyCode::Char('p'));
         assert_eq!(
             app.menu.as_ref().unwrap().items,
-            ["peek", "pending", "pin"],
+            ["peek", "pending", "pin", "plan"],
             "not pause"
         );
         key(&mut app, KeyCode::Backspace);
@@ -13712,5 +13722,89 @@ after | not a table";
             };
             assert_eq!(rows[y][x..x + label.len()].concat(), want, "{label}");
         }
+    }
+    #[test]
+    fn a_plan_s_window_lists_its_cards_with_tier_paths_and_body_and_the_pot_beside_the_cost() {
+        let (mut app, item, leader) = crate::app::tests::asking_plan();
+        let name = app.world.agents[leader].name.clone();
+        let row = render(&app, 240, 30);
+        assert!(
+            row.contains(&format!(
+                "▤ 14:00 {name}: plans 2 cards for $1.25; enter reads it"
+            )),
+            "{row}"
+        );
+        assert!(
+            row.contains("enter shows the plan · a yes · r no · n notes"),
+            "{row}"
+        );
+        app.plan_window = Some((item, 0));
+        let s = render(&app, 140, 30);
+        assert!(
+            s.contains(&format!(" PLAN · {name} · 2 cards · $1.25 ")),
+            "{s}"
+        );
+        assert!(
+            s.contains("the leader hires a second worker only once you say yes"),
+            "{s}"
+        );
+        let left = dollars(app.world.budget.saturating_sub(app.world.spent()));
+        assert!(
+            s.contains(&format!("expected $1.25 · left in the pot {left}")),
+            "{s}"
+        );
+        assert!(s.contains("1. Parser · cheap"), "{s}");
+        assert!(s.contains("   owns src/p.rs, docs (shared)"), "{s}");
+        assert!(s.contains("   Fix it."), "{s}");
+        assert!(s.contains("   Then test."), "{s}");
+        assert!(s.contains("2. Docs · standard"), "{s}");
+        assert!(s.contains("   Write them."), "{s}");
+        assert!(s.contains(" a  yes ") && s.contains(" n  notes "), "{s}");
+        // Scrolled past the first card.
+        app.plan_window = Some((item, 5));
+        let s = render(&app, 140, 30);
+        assert!(!s.contains("1. Parser"), "{s}");
+        assert!(s.contains("2. Docs · standard"), "{s}");
+        // The plan gone (answered, then the item reopened by hand): said so.
+        app.world.projects[0].plan.proposal = None;
+        let s = render(&app, 140, 30);
+        assert!(s.contains("that plan is no longer waiting"), "{s}");
+        // The lines a card takes.
+        let p = Proposal {
+            cards: vec![
+                Planned {
+                    title: "a".into(),
+                    tier: "cheap".into(),
+                    paths: Vec::new(),
+                    body: "one".into(),
+                },
+                Planned {
+                    title: "b".into(),
+                    tier: "strong".into(),
+                    paths: vec![Owned::new("x")],
+                    body: "one\ntwo\nthree".into(),
+                },
+            ],
+            cost: 0,
+            tick: 0,
+        };
+        let lines = overlay::plan_lines(&app, &p);
+        let texts: Vec<String> = lines.iter().map(|l| l.to_string()).collect();
+        assert_eq!(
+            texts,
+            [
+                "1. a · cheap",
+                "   one",
+                "",
+                "2. b · strong",
+                "   owns x",
+                "   one",
+                "   two",
+                "   three",
+                ""
+            ]
+        );
+        assert_eq!(lines[0].spans[0].style, bold(pal().strong));
+        assert_eq!(lines[4].spans[0].style, dim());
     }
 }

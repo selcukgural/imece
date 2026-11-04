@@ -45,7 +45,7 @@ Write to it as on the first day:
 / the next epic: move the store to its own crate
 ```
 
-The leader starts a new session. Workers it hires are numbered after the old ones (`claude-3`, not `claude-1` again), so their worktrees never meet the archive's.
+The leader starts a new session. Workers it hires are numbered after the old ones (`claude-3`, not `claude-1` again), so their worktrees never meet the archive's. Before it hires a second one its plan comes to WAITING FOR YOU as `▤`: `enter` reads the cards and what they should cost, `a` lets it go on ([waiting for you](../screen/waiting.md)).
 
 ## 3. What the archive keeps
 

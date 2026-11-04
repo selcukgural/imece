@@ -1481,7 +1481,9 @@ mod tests {
         };
         assert_eq!(
             list(0),
-            ["send", "post", "board", "run", "whoami", "hire", "approve"]
+            [
+                "send", "post", "board", "run", "whoami", "plan", "hire", "approve"
+            ]
         );
         assert_eq!(
             list(2),
@@ -1652,7 +1654,7 @@ mod tests {
         };
         assert_eq!(
             names(Role::Leader),
-            ["send", "post", "board", "run", "whoami", "hire"]
+            ["send", "post", "board", "run", "whoami", "plan", "hire"]
         );
         assert_eq!(
             names(Role::Worker),
@@ -1669,7 +1671,7 @@ mod tests {
         // The same tool, told differently: a worker hires helpers.
         let worker_hire = &tools_of(Role::Worker, &[], DEFAULT_RUN_TIMEOUT)[6];
         assert!(worker_hire.description.starts_with("Adds a helper"));
-        let hire = &tools_of(Role::Leader, &[], DEFAULT_RUN_TIMEOUT)[5];
+        let hire = &tools_of(Role::Leader, &[], DEFAULT_RUN_TIMEOUT)[6];
         assert!(hire.description.starts_with("Adds a worker"));
         assert!(hire.input["properties"]["vendor"].is_null());
         assert_eq!(

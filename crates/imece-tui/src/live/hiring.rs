@@ -169,6 +169,26 @@ impl Live {
                         self.max_workers
                     ));
                 }
+                // The plan gate (record 114): a second worker waits for
+                // the person's yes to a plan.
+                match w.plan_hold(hirer.project) {
+                    None => {}
+                    Some(PlanHold::NoPlan) => {
+                        return Err("make a plan first (the plan tool): the person reads it \
+                                    before a second worker is hired"
+                            .into());
+                    }
+                    Some(PlanHold::Reading) => {
+                        return Err("the person is reading your plan; end your turn, their \
+                                    yes starts your next"
+                            .into());
+                    }
+                    Some(PlanHold::Unanswered) => {
+                        return Err("the person answered your plan in words, not with a \
+                                    yes: make a new plan from what they said (the plan tool)"
+                            .into());
+                    }
+                }
                 Ok((workers, self.max_workers))
             }
             Role::Worker | Role::Solo => {
@@ -309,6 +329,115 @@ impl Live {
             CLAUDE,
             cap - so_far - 1
         ))
+    }
+
+    /// The leader `from` puts its plan before the person (the `plan`
+    /// tool's arguments, record 114): the cards it means to assign or
+    /// post, each checked as an assign's would be (a title of one line,
+    /// a body, a tier, paths; no two cards of the plan owning the same
+    /// path), and what it expects them to cost. With the gate off for the
+    /// project, nothing waits: the leader is told to hire as it sees fit.
+    pub(super) fn plan(&mut self, w: &mut World, from: AgentId, args: &Value) -> Answer {
+        let hirer = &w.agents[from];
+        if hirer.role != Role::Leader {
+            return Err("only the leader plans; it hires for the team".into());
+        }
+        let project = hirer.project;
+        let Some(list) = args["cards"].as_array() else {
+            return Err("cards must be an array of cards".into());
+        };
+        if list.is_empty() || list.len() > MAX_PLANNED {
+            return Err(format!("a plan has 1 to {MAX_PLANNED} cards"));
+        }
+        let mut cards: Vec<Planned> = Vec::new();
+        for (n, c) in list.iter().enumerate() {
+            let arg = |k: &str| c[k].as_str().map(str::trim).unwrap_or_default();
+            let (title, body) = (arg("title"), arg("body"));
+            if title.is_empty() || body.is_empty() {
+                return Err(format!("card {} needs a title and a body", n + 1));
+            }
+            if title.contains('\n') || title.chars().count() > MAX_TITLE {
+                return Err(format!(
+                    "card {}'s title must be one line of at most {MAX_TITLE} characters",
+                    n + 1
+                ));
+            }
+            if body.chars().count() > MAX_BODY {
+                return Err(format!(
+                    "card {}'s body is longer than {MAX_BODY} characters",
+                    n + 1
+                ));
+            }
+            let tier = match arg("tier") {
+                "" => Tier::Standard,
+                t => Tier::from_wire(t).ok_or(format!(
+                    "card {}: tier must be cheap, standard or strong",
+                    n + 1
+                ))?,
+            };
+            let paths =
+                paths::parse(&c["paths"]).map_err(|why| format!("card {}: {why}", n + 1))?;
+            for (m, other) in cards.iter().enumerate() {
+                if let Some((theirs, mine)) = paths::overlap(&other.paths, &paths) {
+                    return Err(format!(
+                        "cards {} and {} both own a path: {theirs:?} and {mine:?}; give one \
+                         other paths, or end one with the word shared",
+                        m + 1,
+                        n + 1
+                    ));
+                }
+            }
+            cards.push(Planned {
+                title: title.to_string(),
+                tier: tier.wire().to_string(),
+                paths,
+                body: body.to_string(),
+            });
+        }
+        let Some(cost) = args["cost"].as_f64().filter(|c| c.is_finite() && *c >= 0.0) else {
+            return Err("cost must be a number of dollars, 0 or more".into());
+        };
+        // Ten-thousandths of a dollar, as the pot counts; a figure past
+        // any pot saturates, not refused.
+        let cost = (cost * 10_000.0).round() as u64;
+        if !w.projects[project].plan.on {
+            return Ok(
+                "the person turned the plan gate off for this project: hire as you \
+                       see fit; your plan was not kept"
+                    .into(),
+            );
+        }
+        let n = cards.len();
+        let t = w.tick;
+        let item = w.propose(
+            project,
+            Proposal {
+                cards,
+                cost,
+                tick: t,
+            },
+        );
+        w.agents[from].trace(t, format!("plan {n} cards {} (item {item})", dollars(cost)));
+        Ok(format!(
+            "the person reads your plan ({n} cards, {}) in WAITING FOR YOU; end your turn, \
+             their yes starts your next",
+            dollars(cost)
+        ))
+    }
+
+    /// The person's answer to plan item `item` (record 114): the world
+    /// opens or shuts the gate, and the leader hears it as soon as it is
+    /// free (a note with the next prompt, which comes at once when its
+    /// turn is over). False when no plan waits there.
+    pub fn decide_plan(&mut self, w: &mut World, item: usize, yes: bool) -> bool {
+        let Some(leader) = w.decide_plan(item, yes) else {
+            return false;
+        };
+        let said = if yes { PLAN_YES } else { PLAN_NO };
+        self.notes[leader].push(said.to_string());
+        self.lost[leader] = true;
+        w.agents[leader].trace(w.tick, format!("plan {}", if yes { "yes" } else { "no" }));
+        true
     }
 
     /// `:fork` (record 94): a new worker that goes on from worker `from`'s
@@ -1370,5 +1499,320 @@ mod tests {
         assert_eq!(start("@max"), (None, Some("max".into())), "an effort alone");
         assert_eq!(start("sonnet"), (Some("sonnet".into()), None));
         let _ = std::fs::remove_dir_all(&dir);
+    }
+    fn plan_args(cards: Value, cost: Value) -> Value {
+        json!({ "cards": cards, "cost": cost })
+    }
+
+    fn two_cards() -> Value {
+        json!([
+            { "title": "Parser", "body": "Fix it.", "tier": "cheap", "paths": ["src/p.rs"] },
+            { "title": "Docs", "body": "Write them.\nTwo lines." },
+        ])
+    }
+
+    #[test]
+    fn a_second_worker_waits_for_the_person_s_yes_to_a_plan() {
+        let mut w = team(1);
+        w.projects[0].plan.on = true;
+        let mut live = idle_live(2);
+        let err = live.hire(&mut w, 0, &json!({})).unwrap_err();
+        assert_eq!(
+            err,
+            "make a plan first (the plan tool): the person reads it before a second worker \
+             is hired"
+        );
+        assert!(
+            live.whoami(&w, 0)
+                .contains("may hire: no: make a plan first")
+        );
+        assert_eq!(w.agents.len(), 2, "nobody joined");
+        let got = live
+            .plan(&mut w, 0, &plan_args(two_cards(), json!(1.25)))
+            .unwrap();
+        assert_eq!(
+            got,
+            "the person reads your plan (2 cards, $1.25) in WAITING FOR YOU; end your turn, \
+             their yes starts your next"
+        );
+        let item = w.plan_item(0).expect("it waits");
+        let it = &w.inbox[item];
+        assert_eq!(
+            (it.kind, it.agent, it.detail.as_str(), it.open),
+            (InboxKind::Plan, 0, "Parser", true)
+        );
+        assert_eq!(it.card, None);
+        let gate = &w.projects[0].plan;
+        assert!(!gate.approved);
+        let p = gate.proposal.clone().expect("kept");
+        assert_eq!(p.cost, 12_500);
+        assert_eq!(p.tick, w.tick);
+        assert_eq!(
+            p.cards,
+            [
+                Planned {
+                    title: "Parser".into(),
+                    tier: "cheap".into(),
+                    paths: vec![Owned::new("src/p.rs")],
+                    body: "Fix it.".into(),
+                },
+                Planned {
+                    title: "Docs".into(),
+                    tier: "standard".into(),
+                    paths: Vec::new(),
+                    body: "Write them.\nTwo lines.".into(),
+                },
+            ]
+        );
+        assert_eq!(
+            journaled(
+                &w,
+                &Event::Planned {
+                    leader: 0,
+                    cards: 2,
+                    cost: 12_500
+                }
+            ),
+            1
+        );
+        assert!(
+            w.agents[0]
+                .trace
+                .back()
+                .unwrap()
+                .ends_with(&format!("plan 2 cards $1.25 (item {item})"))
+        );
+        let err = live.hire(&mut w, 0, &json!({})).unwrap_err();
+        assert_eq!(
+            err,
+            "the person is reading your plan; end your turn, their yes starts your next"
+        );
+        // A new plan replaces the one waiting.
+        let one = json!([{ "title": "All", "body": "Everything." }]);
+        live.plan(&mut w, 0, &plan_args(one, json!(0))).unwrap();
+        assert!(!w.inbox[item].open, "the old one closed");
+        let item = w.plan_item(0).expect("the new one waits");
+        assert_eq!(w.projects[0].plan.proposal.as_ref().unwrap().cost, 0);
+        // The yes: the leader hears it and may hire, this time and the next.
+        assert!(live.decide_plan(&mut w, item, true));
+        assert!(!live.decide_plan(&mut w, item, true), "answered already");
+        assert!(!w.inbox[item].open);
+        assert!(w.projects[0].plan.approved);
+        assert_eq!(
+            journaled(
+                &w,
+                &Event::PlanAnswered {
+                    leader: 0,
+                    yes: true
+                }
+            ),
+            1
+        );
+        assert_eq!(live.notes[0], [PLAN_YES]);
+        assert!(live.lost[0], "woken when free");
+        assert!(w.agents[0].trace.back().unwrap().ends_with("plan yes"));
+        assert_eq!(w.plan_hold(0), None);
+        live.notes[0].clear();
+        assert!(live.hire(&mut w, 0, &json!({})).is_ok());
+        assert!(
+            live.hire(&mut w, 0, &json!({})).is_ok(),
+            "the yes holds until the next plan"
+        );
+        assert_eq!(w.agents.len(), 4);
+        // A new plan takes the yes back; a no drops the plan.
+        live.plan(&mut w, 0, &plan_args(two_cards(), json!(2)))
+            .unwrap();
+        assert!(!w.projects[0].plan.approved);
+        assert!(
+            live.hire(&mut w, 0, &json!({}))
+                .unwrap_err()
+                .starts_with("the person is reading")
+        );
+        let item = w.plan_item(0).unwrap();
+        assert!(live.decide_plan(&mut w, item, false));
+        assert_eq!(w.projects[0].plan.proposal, None);
+        assert_eq!(live.notes[0], [PLAN_NO]);
+        assert_eq!(
+            journaled(
+                &w,
+                &Event::PlanAnswered {
+                    leader: 0,
+                    yes: false
+                }
+            ),
+            1
+        );
+        assert!(
+            live.hire(&mut w, 0, &json!({}))
+                .unwrap_err()
+                .starts_with("make a plan first")
+        );
+        // The person's word to the leader closes a plan unanswered.
+        live.plan(&mut w, 0, &plan_args(two_cards(), json!(2)))
+            .unwrap();
+        w.said(0, "hmm");
+        assert_eq!(w.plan_item(0), None);
+        assert_eq!(w.plan_hold(0), Some(PlanHold::Unanswered));
+        let err = live.hire(&mut w, 0, &json!({})).unwrap_err();
+        assert_eq!(
+            err,
+            "the person answered your plan in words, not with a yes: make a new plan from \
+             what they said (the plan tool)"
+        );
+        // The gate off: a plan is not kept, and the hire comes.
+        w.projects[0].plan.on = false;
+        let got = live
+            .plan(&mut w, 0, &plan_args(two_cards(), json!(2)))
+            .unwrap();
+        assert_eq!(
+            got,
+            "the person turned the plan gate off for this project: hire as you see fit; \
+             your plan was not kept"
+        );
+        assert_eq!(w.plan_item(0), None);
+        assert!(live.hire(&mut w, 0, &json!({})).is_ok());
+        // Only the leader plans.
+        let err = live
+            .plan(&mut w, 1, &plan_args(two_cards(), json!(2)))
+            .unwrap_err();
+        assert_eq!(err, "only the leader plans; it hires for the team");
+    }
+
+    #[test]
+    fn the_first_worker_needs_no_plan_and_a_gone_one_does_not_count() {
+        let mut w = team(1);
+        w.projects[0].plan.on = true;
+        w.agents[1].gone = true;
+        let mut live = idle_live(2);
+        assert_eq!(w.plan_hold(0), None);
+        assert!(live.hire(&mut w, 0, &json!({})).is_ok(), "the first worker");
+        assert_eq!(w.plan_hold(0), Some(PlanHold::NoPlan), "the second waits");
+        // The cap comes first: a full team is said so, plan or not.
+        live.max_workers = 1;
+        let err = live.hire(&mut w, 0, &json!({})).unwrap_err();
+        assert!(err.starts_with("the team is full"), "{err}");
+    }
+
+    #[test]
+    fn bad_plans_are_refused_with_why() {
+        let mut w = team(1);
+        w.projects[0].plan.on = true;
+        let mut live = idle_live(2);
+        let refused = |live: &mut Live, w: &mut World, args: Value| {
+            live.plan(w, 0, &args).expect_err("refused")
+        };
+        let card = |title: &str, body: &str| json!({ "title": title, "body": body });
+        assert_eq!(
+            refused(&mut live, &mut w, json!({ "cost": 1 })),
+            "cards must be an array of cards"
+        );
+        assert_eq!(
+            refused(&mut live, &mut w, plan_args(json!([]), json!(1))),
+            "a plan has 1 to 20 cards"
+        );
+        let many: Vec<Value> = (0..21).map(|i| card(&format!("t{i}"), "b")).collect();
+        assert_eq!(
+            refused(&mut live, &mut w, plan_args(json!(many), json!(1))),
+            "a plan has 1 to 20 cards"
+        );
+        let twenty: Vec<Value> = (0..20).map(|i| card(&format!("t{i}"), "b")).collect();
+        assert!(
+            live.plan(&mut w, 0, &plan_args(json!(twenty), json!(1)))
+                .is_ok()
+        );
+        assert_eq!(
+            refused(
+                &mut live,
+                &mut w,
+                plan_args(json!([card("t", "b"), card("", "b")]), json!(1))
+            ),
+            "card 2 needs a title and a body"
+        );
+        assert_eq!(
+            refused(
+                &mut live,
+                &mut w,
+                plan_args(json!([card("t", " ")]), json!(1))
+            ),
+            "card 1 needs a title and a body"
+        );
+        assert_eq!(
+            refused(
+                &mut live,
+                &mut w,
+                plan_args(json!([card("two\nlines", "b")]), json!(1))
+            ),
+            "card 1's title must be one line of at most 120 characters"
+        );
+        let long = "x".repeat(MAX_TITLE + 1);
+        assert_eq!(
+            refused(
+                &mut live,
+                &mut w,
+                plan_args(json!([card(&long, "b")]), json!(1))
+            ),
+            "card 1's title must be one line of at most 120 characters"
+        );
+        let body = "x".repeat(MAX_BODY + 1);
+        assert_eq!(
+            refused(
+                &mut live,
+                &mut w,
+                plan_args(json!([card("t", &body)]), json!(1))
+            ),
+            "card 1's body is longer than 4000 characters"
+        );
+        let tier = json!([{ "title": "t", "body": "b", "tier": "huge" }]);
+        assert_eq!(
+            refused(&mut live, &mut w, plan_args(tier, json!(1))),
+            "card 1: tier must be cheap, standard or strong"
+        );
+        let paths = json!([card("t", "b"), { "title": "u", "body": "b", "paths": ["/x"] }]);
+        assert_eq!(
+            refused(&mut live, &mut w, plan_args(paths, json!(1))),
+            "card 2: paths are relative to the repository; \"/x\" starts with /"
+        );
+        let overlap = json!([
+            { "title": "t", "body": "b", "paths": ["src"] },
+            { "title": "u", "body": "b", "paths": ["docs"] },
+            { "title": "v", "body": "b", "paths": ["src/a.rs"] },
+        ]);
+        assert_eq!(
+            refused(&mut live, &mut w, plan_args(overlap, json!(1))),
+            "cards 1 and 3 both own a path: \"src\" and \"src/a.rs\"; give one other paths, \
+             or end one with the word shared"
+        );
+        let shared = json!([
+            { "title": "t", "body": "b", "paths": ["src shared"] },
+            { "title": "v", "body": "b", "paths": ["src/a.rs"] },
+        ]);
+        assert!(live.plan(&mut w, 0, &plan_args(shared, json!(1))).is_ok());
+        for cost in [json!(null), json!("1"), json!(-0.5)] {
+            assert_eq!(
+                refused(&mut live, &mut w, plan_args(json!([card("t", "b")]), cost)),
+                "cost must be a number of dollars, 0 or more"
+            );
+        }
+        live.plan(
+            &mut w,
+            0,
+            &plan_args(json!([card("t", "b")]), json!(0.0123)),
+        )
+        .unwrap();
+        assert_eq!(
+            w.projects[0].plan.proposal.as_ref().unwrap().cost,
+            123,
+            "ten-thousandths"
+        );
+        live.plan(&mut w, 0, &plan_args(json!([card("t", "b")]), json!(1e300)))
+            .unwrap();
+        assert_eq!(
+            w.projects[0].plan.proposal.as_ref().unwrap().cost,
+            u64::MAX,
+            "saturated, not refused"
+        );
+        // Exactly the caps pass.
+        let exact = json!([card(&"x".repeat(MAX_TITLE), &"y".repeat(MAX_BODY))]);
+        assert!(live.plan(&mut w, 0, &plan_args(exact, json!(1))).is_ok());
     }
 }
