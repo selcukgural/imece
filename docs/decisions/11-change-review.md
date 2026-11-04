@@ -119,6 +119,11 @@ worker in one message; the change goes back as a rejection does
 (`reject_change`, the item closes, it stays in the worktree), and the
 worker's next `done` is a new Δ.
 
+A change that clashes goes back (2026-11-04, record 108): when git
+refuses a Δ, the git thread also finds which hunks do not fit
+(`worktree::clashes`, on a copy of the index) and `b` sends them to the
+worker in one message; the change goes back as a rejection does.
+
 A second vendor's read as a note (2026-11-04, record 106): `:review`
 (or `:review on`, for every change as it comes) has a vendor other than
 the worker's read the change and say what it finds, shown above its

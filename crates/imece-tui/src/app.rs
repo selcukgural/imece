@@ -3448,6 +3448,7 @@ impl App {
             KeyCode::Char('w') => self.diff_wrap = !self.diff_wrap,
             KeyCode::Char('R') => self.review_whole = !self.review_whole,
             KeyCode::Char('n') => self.send_notes(id),
+            KeyCode::Char('b') => self.send_back(id),
             KeyCode::Char('v') => {
                 // Lines are chosen from the whole patch: its files open.
                 self.diff_folds = None;
@@ -5573,23 +5574,60 @@ impl App {
         let name = self.world.agents[id].name.clone();
         let refs: Vec<(usize, &str)> = notes.iter().map(|(l, n)| (*l, n.as_str())).collect();
         let message = ui::notes_message(&patch, &refs);
+        let said = fill(t.notes_sent, &[&notes.len().to_string(), &name]);
+        if self.goes_back(id, &message, said) {
+            self.diff_notes.retain(|n| n.agent != id);
+        }
+    }
+
+    /// `b` in worker `id`'s change: one git refused goes back to it with
+    /// what clashes, for it to bring its worktree up and resolve (record
+    /// 108). A worker that can not hear it leaves the change as it is.
+    fn send_back(&mut self, id: AgentId) {
+        let t = self.lang.text();
+        let Some(clashes) = self.world.clashes_of(id) else {
+            return self.flash(t.no_clash);
+        };
+        let a = &self.world.agents[id];
+        let name = a.name.clone();
+        if a.gone || a.status == Status::Stopped {
+            return self.flash(fill(t.back_gone, &[&name]));
+        }
+        if self.world.spent() >= self.world.budget {
+            return self.flash(fill(t.budget_spent, &[&name]));
+        }
+        let message = ui::clash_message(clashes, a.role == Role::Solo);
+        self.goes_back(id, &message, fill(t.sent_back, &[&name]));
+    }
+
+    /// Worker `id`'s change goes back as a rejection does, `message` is
+    /// its next word from the person, `said` the flash when it went, and
+    /// the change's view closes. Whether the change went back.
+    fn goes_back(&mut self, id: AgentId, message: &str, said: String) -> bool {
+        let t = self.lang.text();
         let returned = match &mut self.engine {
             Engine::Live(l) => l.reject_change(&mut self.world, id),
             Engine::Sim(s) => s.reject_change(&mut self.world, id),
-            Engine::View(_) => return self.read_only(),
+            Engine::View(_) => {
+                self.read_only();
+                return false;
+            }
         };
         if let Err(why) = returned {
-            return self.flash(fill(t.reject_failed, &[&name, &why]));
+            let name = self.world.agents[id].name.clone();
+            self.flash(fill(t.reject_failed, &[&name, &why]));
+            return false;
         }
-        self.diff_notes.retain(|n| n.agent != id);
-        self.tell(id, &message);
-        self.flash(fill(t.notes_sent, &[&notes.len().to_string(), &name]));
+        if self.tell(id, message) {
+            self.flash(said);
+        }
         let open = self.inbox_rows().len();
         if self.zoom == Zoom::Diff(id) {
             self.zoom = Zoom::None;
             self.pane = Pane::Inbox;
         }
         self.inbox_sel = self.inbox_sel.min(open.saturating_sub(1));
+        true
     }
 
     /// Whether the screen is drawn at `now`: on a change, never on a
@@ -12528,6 +12566,137 @@ pub(crate) mod tests {
         assert_eq!(
             said,
             Some(ui::notes_message(patch, &[(4, "why"), (6, "and here")]))
+        );
+    }
+
+    /// `with_change` whose change git refused: `x` clashes with the checkout.
+    fn with_clash() -> (App, AgentId, Clashes) {
+        let (mut app, worker) = with_change("diff --git a/x b/x\n@@ -1 +1 @@\n-a\n+b\n");
+        let clashes = Clashes {
+            head: "abc1234".into(),
+            hunks: vec![Clash {
+                file: "x".into(),
+                hunk: Some("@@ -1 +1 @@".into()),
+                why: "patch failed: x:1".into(),
+            }],
+            ..Clashes::default()
+        };
+        app.world.change_clashed(worker, clashes.clone());
+        (app, worker, clashes)
+    }
+
+    #[test]
+    fn b_sends_a_change_that_clashed_back_with_what_clashes() {
+        let t = Lang::En.text();
+        let (mut app, worker, clashes) = with_clash();
+        let name = app.world.agents[worker].name.clone();
+        app.on_key(key(KeyCode::Char('b')));
+        assert!(app.world.change_of(worker).is_none(), "it went back");
+        assert!(app.world.clashes.is_empty());
+        assert_eq!((app.zoom, app.pane), (Zoom::None, Pane::Inbox));
+        assert!(!app.typing, "the message is the reason: nothing to write");
+        assert_eq!(flashed(&app), Some(fill(t.sent_back, &[&name])));
+        assert!(
+            app.world
+                .journal
+                .iter()
+                .any(|e| matches!(e.event, Event::Rejected { agent } if agent == worker))
+        );
+        let said = app.world.journal.iter().rev().find_map(|e| match &e.event {
+            Event::YouSaid { to, text } if *to == worker => Some(text.clone()),
+            _ => None,
+        });
+        assert_eq!(said, Some(ui::clash_message(&clashes, false)));
+        // A solo is told as a solo.
+        let (mut app, solo, clashes) = with_clash();
+        app.world.agents[solo].role = Role::Solo;
+        app.on_key(key(KeyCode::Char('b')));
+        let said = app.world.journal.iter().rev().find_map(|e| match &e.event {
+            Event::YouSaid { to, text } if *to == solo => Some(text.clone()),
+            _ => None,
+        });
+        assert_eq!(said, Some(ui::clash_message(&clashes, true)));
+    }
+
+    #[test]
+    fn b_leaves_the_change_where_there_is_nothing_to_send_or_nobody_to_hear_it() {
+        let t = Lang::En.text();
+        let stays = |app: &App, worker: AgentId| {
+            assert!(app.world.change_of(worker).is_some());
+            assert_eq!(app.zoom, Zoom::Diff(worker));
+            assert!(
+                app.world
+                    .journal
+                    .iter()
+                    .all(|e| !matches!(e.event, Event::Rejected { .. } | Event::YouSaid { .. }))
+            );
+        };
+        // Git found no clash: nothing for a worker to resolve.
+        let (mut app, worker) = with_change("+x\n");
+        app.on_key(key(KeyCode::Char('b')));
+        assert_eq!(flashed(&app).as_deref(), Some(t.no_clash));
+        stays(&app, worker);
+        // Stopped, or gone: said, and the change waits as it was.
+        for gone in [false, true] {
+            let (mut app, worker, _) = with_clash();
+            let name = app.world.agents[worker].name.clone();
+            match gone {
+                true => app.world.agents[worker].gone = true,
+                false => app.world.agents[worker].status = Status::Stopped,
+            }
+            app.on_key(key(KeyCode::Char('b')));
+            assert_eq!(flashed(&app), Some(fill(t.back_gone, &[&name])));
+            stays(&app, worker);
+            assert!(app.world.clashes_of(worker).is_some());
+        }
+        // The pot is spent, to the last of it: no message would go.
+        let (mut app, worker, _) = with_clash();
+        let name = app.world.agents[worker].name.clone();
+        app.world.budget = app.world.spent();
+        app.on_key(key(KeyCode::Char('b')));
+        assert_eq!(flashed(&app), Some(fill(t.budget_spent, &[&name])));
+        stays(&app, worker);
+        // One ten-thousandth left is enough.
+        app.world.budget = app.world.spent() + 1;
+        app.on_key(key(KeyCode::Char('b')));
+        assert!(app.world.change_of(worker).is_none());
+    }
+
+    #[test]
+    fn notes_stay_when_their_change_can_not_go_back_yet() {
+        let patch = "diff --git a/x b/x\n--- a/x\n+++ b/x\n@@ -1 +1 @@\n-a\n+b\n";
+        let (mut app, worker) = with_change(patch);
+        app.diff_scroll = 4;
+        app.on_key(key(KeyCode::Char('c')));
+        app.on_key(key(KeyCode::Char('y')));
+        app.on_key(key(KeyCode::Enter));
+        app.on_key(key(KeyCode::Char('a')));
+        app.zoom = Zoom::Diff(worker);
+        app.on_key(key(KeyCode::Char('n')));
+        assert_eq!(app.notes_of(worker).len(), 1, "being applied: it stays");
+    }
+
+    #[test]
+    fn b_is_refused_while_the_change_is_being_applied_and_nothing_is_said() {
+        let t = Lang::En.text();
+        let (mut app, worker, _) = with_clash();
+        let name = app.world.agents[worker].name.clone();
+        app.on_key(key(KeyCode::Char('a')));
+        app.zoom = Zoom::Diff(worker);
+        app.on_key(key(KeyCode::Char('b')));
+        assert_eq!(
+            flashed(&app),
+            Some(fill(
+                t.reject_failed,
+                &[&name, "their change is being applied"]
+            ))
+        );
+        assert!(app.world.change_of(worker).is_some());
+        assert!(
+            !app.world
+                .journal
+                .iter()
+                .any(|e| matches!(e.event, Event::YouSaid { .. }))
         );
     }
 

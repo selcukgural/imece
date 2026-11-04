@@ -32,6 +32,7 @@ pub(super) fn git_thread(jobs: Receiver<GitJob>, done: Sender<GitDone>) {
                 // Some hunks only: the part they make is what is applied
                 // and marked; the rest stays in the worktree.
                 let part = (!hunks.is_empty()).then_some(hunks.len());
+                let whole = change.patch.clone();
                 let change = match part {
                     Some(_) => worktree::part(&change, &worktree::subset(&change.patch, &hunks)),
                     None => Ok(change),
@@ -46,12 +47,16 @@ pub(super) fn git_thread(jobs: Receiver<GitJob>, done: Sender<GitDone>) {
                     }
                     _ => Ok(String::new()),
                 };
+                // What did not fit, should the change go back to its
+                // worker: the whole of it, not only the hunks chosen.
+                let clashes = applied.is_err().then(|| worktree::clashes(&repo, &whole));
                 GitDone::Applied {
                     agent,
                     title,
                     applied,
                     mark,
                     part,
+                    clashes,
                 }
             }
             GitJob::Place {
@@ -157,8 +162,17 @@ impl Live {
                     applied,
                     mark,
                     part,
+                    clashes,
                 } => {
                     self.applying[agent] = false;
+                    match clashes {
+                        Some(Ok(found)) => w.change_clashed(agent, found),
+                        Some(Err(e)) => {
+                            w.agents[agent].trace(w.tick, format!("clashes: {e}"));
+                            w.change_clashed(agent, worktree::Clashes::default());
+                        }
+                        None => {}
+                    }
                     self.applied(w, agent, &title, applied, mark, part);
                 }
                 GitDone::Placed {
@@ -775,6 +789,101 @@ mod tests {
         // Nothing waits: applying again is refused, quietly.
         let e = live.apply_change(&w, 1, Vec::new()).unwrap_err();
         assert!(e.contains("no change of theirs waits"), "{e}");
+        let _ = std::fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&repo);
+    }
+
+    #[test]
+    fn a_change_git_refuses_keeps_what_clashes_with_the_checkout() {
+        let repo = checkout("clash-repo");
+        let root = trees("clash");
+        let mut w = team(1);
+        let mut live = Live::new(
+            2,
+            claude_at("/nonexistent/claude"),
+            repo.clone(),
+            root.clone(),
+        );
+        let tree = worker_in(&mut live, &mut w, 1, &repo, &root);
+        std::fs::write(tree.join("a.txt"), "worker\n").unwrap();
+        sent(&mut live, &mut w, 1, &msg("lead", "done", "Changed a.")).unwrap();
+        // The person's own edit stops it, but nothing clashes: not for
+        // the worker to resolve, and nothing is kept.
+        std::fs::write(repo.join("a.txt"), "theirs").unwrap();
+        live.apply_change(&w, 1, Vec::new()).unwrap();
+        settle(&mut live, &mut w);
+        assert!(matches!(
+            w.journal.last().unwrap().event,
+            Event::ApplyFailed { agent: 1, .. }
+        ));
+        assert!(w.clashes_of(1).is_none());
+        // Committed, it clashes: the hunk, git's words, HEAD.
+        std::fs::write(repo.join("a.txt"), "person\n").unwrap();
+        git_in(&repo, &["add", "."]);
+        git_in(
+            &repo,
+            &[
+                "-c",
+                "user.name=t",
+                "-c",
+                "user.email=t@t",
+                "-c",
+                "commit.gpgsign=false",
+                "commit",
+                "-q",
+                "-m",
+                "clash",
+            ],
+        );
+        live.apply_change(&w, 1, Vec::new()).unwrap();
+        settle(&mut live, &mut w);
+        let c = w.clashes_of(1).expect("what clashes is kept").clone();
+        assert_eq!(c.head, git_in(&repo, &["rev-parse", "--short=7", "HEAD"]));
+        assert_eq!(c.hunks.len(), 1, "{:?}", c.hunks);
+        assert_eq!(c.hunks[0].file, "a.txt");
+        assert_eq!(c.hunks[0].hunk.as_deref(), Some("@@ -1 +1 @@"));
+        assert!(c.hunks[0].why.contains("patch does not apply"), "{c:?}");
+        assert!(matches!(
+            &w.journal.last().unwrap().event,
+            Event::ApplyFailed { agent: 1, why } if why.contains("a.txt")
+        ));
+        assert!(w.change_of(1).is_some(), "it still waits");
+        // Some hunks chosen: the change's clashes all the same.
+        let at = w.change_of(1).unwrap().patch.lines();
+        let hunk = at.into_iter().position(|l| l.starts_with("@@")).unwrap();
+        live.apply_change(&w, 1, vec![hunk]).unwrap();
+        settle(&mut live, &mut w);
+        assert_eq!(w.clashes_of(1), Some(&c));
+        // Git can not look (no index to copy): traced, and what was
+        // found before, about a checkout gone by, goes.
+        std::fs::remove_file(repo.join(".git").join("index")).unwrap();
+        live.apply_change(&w, 1, Vec::new()).unwrap();
+        settle(&mut live, &mut w);
+        assert!(w.clashes_of(1).is_none());
+        assert!(
+            w.agents[1].trace.iter().any(|l| l.contains("clashes: ")),
+            "{:?}",
+            w.agents[1].trace
+        );
+        // Nothing clashed, so nothing of it was traced before that.
+        assert_eq!(
+            w.agents[1]
+                .trace
+                .iter()
+                .filter(|l| l.contains("clashes: "))
+                .count(),
+            1
+        );
+        // Nothing of it reached the worker's files or the checkout's.
+        assert_eq!(
+            std::fs::read_to_string(tree.join("a.txt")).unwrap(),
+            "worker\n"
+        );
+        assert_eq!(
+            std::fs::read_to_string(repo.join("a.txt")).unwrap(),
+            "person\n"
+        );
+        assert!(live.notes[1].is_empty());
         let _ = std::fs::remove_dir_all(&root);
         let _ = std::fs::remove_dir_all(&repo);
     }

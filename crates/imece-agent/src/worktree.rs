@@ -765,6 +765,136 @@ fn conflicts(repo: &Path, patch: &str) -> io::Result<Option<Vec<String>>> {
     merged
 }
 
+/// A part of a change that does not go on the checkout as it stands.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Clash {
+    pub file: String,
+    /// The hunk's `@@` line; none when it is the file as a whole that does
+    /// not fit (a binary one, or hunks that fit only one by one).
+    pub hunk: Option<String>,
+    /// Git's words on it.
+    pub why: String,
+}
+
+/// Where a change does not go on the checkout, as [`clashes`] found it.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Clashes {
+    /// The checkout's directory.
+    pub checkout: String,
+    /// The short id of its HEAD.
+    pub head: String,
+    pub hunks: Vec<Clash>,
+    /// Those of their files with changes staged in the checkout: HEAD does
+    /// not show what they clash with.
+    pub staged: Vec<String>,
+    /// [`CLASH_TRIES`] hunks were tried and there are more.
+    pub cut: bool,
+}
+
+/// How many hunks [`clashes`] tries: one that fits costs a process, and
+/// git's thread does nothing else meanwhile.
+pub const CLASH_TRIES: usize = 200;
+
+/// What of `patch` does not go on the checkout `repo`: tried file by file
+/// and, in a file that does not fit, hunk by hunk, plain and then
+/// three-way as [`apply`] does, on a copy of the checkout's index, so the
+/// person's index and files stay as they are and their own unstaged edits
+/// do not count: those are theirs to settle, not a worker's.
+pub fn clashes(repo: &Path, patch: &str) -> io::Result<Clashes> {
+    let index = repo.join(git(repo, &["rev-parse", "--git-path", "index"])?);
+    let git_dir = PathBuf::from(git(repo, &["rev-parse", "--absolute-git-dir"])?);
+    let copy = git_dir.join(own_index("clash"));
+    let env = [("GIT_INDEX_FILE", copy.to_str().unwrap_or_default())];
+    let fresh = || std::fs::copy(&index, &copy).map(|_| ());
+    let found = (|| {
+        fresh()?;
+        let (mut hunks, mut tries, mut cut) = (Vec::new(), 0, false);
+        'files: for section in file_sections(patch) {
+            let Some(whole) = misses(repo, &env, section, &fresh)? else {
+                continue;
+            };
+            let file = section_file(section);
+            let clashed = hunks.len();
+            for (at, line) in section.lines().enumerate() {
+                if !line.starts_with("@@") {
+                    continue;
+                }
+                if tries == CLASH_TRIES {
+                    cut = true;
+                    break 'files;
+                }
+                tries += 1;
+                let hunk = subset(section, &[at]);
+                if let Some(why) = misses(repo, &env, &hunk, &fresh)? {
+                    hunks.push(Clash {
+                        file: file.clone(),
+                        hunk: Some(line.to_string()),
+                        why,
+                    });
+                }
+            }
+            if hunks.len() == clashed {
+                hunks.push(Clash {
+                    file,
+                    hunk: None,
+                    why: whole,
+                });
+            }
+        }
+        Ok::<_, io::Error>((hunks, cut))
+    })();
+    let _ = std::fs::remove_file(&copy);
+    let (hunks, cut) = found?;
+    let staged = git(repo, &["diff", "--cached", "--name-only"])?;
+    let staged = (staged.lines())
+        .filter(|f| hunks.iter().any(|c| c.file == *f))
+        .map(str::to_string)
+        .collect();
+    Ok(Clashes {
+        checkout: repo.display().to_string(),
+        head: short(&git(repo, &["rev-parse", "HEAD"])?),
+        hunks,
+        staged,
+        cut,
+    })
+}
+
+/// Git's words on why `piece` of a patch goes neither plainly nor by a
+/// three-way merge into the index `env` names; none when it goes. `fresh`
+/// puts that index back after a merge wrote in it.
+fn misses(
+    repo: &Path,
+    env: &[(&str, &str)],
+    piece: &str,
+    fresh: &impl Fn() -> io::Result<()>,
+) -> io::Result<Option<String>> {
+    let Err(plain) = git_apply(repo, env, &["--cached", "--check"], piece) else {
+        return Ok(None);
+    };
+    let merged = git_apply(repo, env, &["--cached", "--3way"], piece);
+    fresh()?;
+    Ok(merged.err().map(|_| plain.to_string()))
+}
+
+/// Each file's part of `patch`, its header with it. Only a file's header
+/// starts a line with `diff --git `: a hunk's lines start with their mark.
+fn file_sections(patch: &str) -> Vec<&str> {
+    let starts: Vec<usize> = (patch.match_indices("diff --git "))
+        .map(|(i, _)| i)
+        .filter(|&i| i == 0 || patch.as_bytes()[i - 1] == b'\n')
+        .collect();
+    (starts.iter().enumerate())
+        .map(|(n, &from)| &patch[from..starts.get(n + 1).copied().unwrap_or(patch.len())])
+        .collect()
+}
+
+/// The file's new name in its part of a patch.
+fn section_file(section: &str) -> String {
+    let head = section.lines().next().unwrap_or_default();
+    let name = head.rsplit_once(" b/").map(|(_, name)| name);
+    name.unwrap_or(head).to_string()
+}
+
 /// `git apply ARGS -` in `repo` with `env` set and `patch` on stdin; a
 /// failure carries git's error lines.
 fn git_apply(repo: &Path, env: &[(&str, &str)], args: &[&str], patch: &str) -> io::Result<()> {
@@ -1763,6 +1893,183 @@ mod tests {
         let e = apply(r, &c.patch).unwrap_err().to_string();
         assert_eq!(e, "conflicts with the checkout in log.md, x.md");
         assert_eq!(git(r, &["status", "--porcelain"]).unwrap(), "");
+    }
+
+    /// A checkout and a worker's worktree on it, whose change touches the
+    /// top and the bottom of `log.md` and all of `x.md`.
+    fn at_odds(name: &str) -> (Scratch, PathBuf, String) {
+        let s = repo(name);
+        let r = s.repo.clone();
+        let lines: Vec<String> = (1..=30).map(|n| format!("{n}\n")).collect();
+        std::fs::write(r.join("log.md"), lines.concat()).unwrap();
+        std::fs::write(r.join("x.md"), "x\n").unwrap();
+        commit(&r, "base");
+        let w = ensure(&r, &s.dir.join("wt"), "claude-1", None)
+            .unwrap()
+            .path;
+        let mut ours = lines.clone();
+        ours[1] = "TOP\n".into();
+        ours[28] = "BOTTOM\n".into();
+        std::fs::write(w.join("log.md"), ours.concat()).unwrap();
+        std::fs::write(w.join("x.md"), "x\ny\n").unwrap();
+        let patch = change(&w, 1 << 20).unwrap().unwrap().patch;
+        (s, w, patch)
+    }
+
+    #[test]
+    fn clashes_name_the_hunks_that_do_not_go_on_the_checkout_and_touch_nothing() {
+        let (s, _, patch) = at_odds("clash");
+        let r = &s.repo;
+        // It fits: nothing clashes, whatever HEAD is.
+        let none = clashes(r, &patch).unwrap();
+        assert_eq!(none.hunks, []);
+        assert!(!none.cut && none.staged.is_empty());
+        assert_eq!(none.checkout, r.display().to_string());
+        // The checkout wrote the bottom's line too: that hunk alone, with
+        // git's words on it; the top's hunk and x.md go.
+        let log = std::fs::read_to_string(r.join("log.md")).unwrap();
+        std::fs::write(r.join("log.md"), log.replace("29\n", "PERSON\n")).unwrap();
+        let head = commit(r, "clash");
+        let found = clashes(r, &patch).unwrap();
+        assert_eq!(found.head, short(&head));
+        assert_eq!(found.hunks.len(), 1, "{:?}", found.hunks);
+        let c = &found.hunks[0];
+        assert_eq!(c.file, "log.md");
+        let hunk = c.hunk.as_deref().unwrap();
+        assert!(hunk.starts_with("@@ -26,"), "{hunk}");
+        assert!(c.why.contains("patch failed: log.md:"), "{}", c.why);
+        assert!(c.why.contains("log.md: patch does not apply"), "{}", c.why);
+        assert_eq!(found.staged, Vec::<String>::new());
+        // Nothing of it is left behind: no file, no index, no staging.
+        assert_eq!(git(r, &["status", "--porcelain"]).unwrap(), "");
+        let git_dir = r.join(".git");
+        let left: Vec<_> = (std::fs::read_dir(&git_dir).unwrap())
+            .filter_map(|e| e.ok()?.file_name().into_string().ok())
+            .filter(|n| n.starts_with("imece-"))
+            .collect();
+        assert_eq!(left, Vec::<String>::new());
+        // A merge's stages do not carry over: every hunk is tried on the
+        // checkout's index, so x.md after a clash in log.md still fits.
+        std::fs::write(r.join("x.md"), "x\nz\n").unwrap();
+        commit(r, "clash too");
+        let both = clashes(r, &patch).unwrap();
+        let files: Vec<&str> = both.hunks.iter().map(|c| c.file.as_str()).collect();
+        assert_eq!(files, ["log.md", "x.md"]);
+        assert!(both.hunks[1].why.contains("x.md"), "{:?}", both.hunks);
+    }
+
+    #[test]
+    fn a_line_that_only_moved_merges_and_is_no_clash() {
+        let (s, _, patch) = at_odds("clash-moved");
+        let r = &s.repo;
+        // A line of the top hunk's context changed, not next to its own:
+        // the plain patch does not fit, the three-way does, as `apply`
+        // takes it.
+        let log = std::fs::read_to_string(r.join("log.md")).unwrap();
+        let near = log.replacen("\n5\n", "\nFIVE\n", 1);
+        std::fs::write(r.join("log.md"), near).unwrap();
+        commit(r, "near");
+        assert!(
+            git_apply(r, &[], &["--check"], &patch).is_err(),
+            "not plain"
+        );
+        assert_eq!(clashes(r, &patch).unwrap().hunks, []);
+    }
+
+    #[test]
+    fn staged_changes_clash_too_and_are_named_and_unstaged_edits_do_not() {
+        let (s, _, patch) = at_odds("clash-staged");
+        let r = &s.repo;
+        // Staged and not committed (another worker's change, applied): the
+        // file that clashes is said to be staged; other.md, staged too, is
+        // no clash and is not named.
+        std::fs::write(r.join("x.md"), "x\nz\n").unwrap();
+        std::fs::write(r.join("other.md"), "o\n").unwrap();
+        git(r, &["add", "x.md", "other.md"]).unwrap();
+        let found = clashes(r, &patch).unwrap();
+        let files: Vec<&str> = found.hunks.iter().map(|c| c.file.as_str()).collect();
+        assert_eq!(files, ["x.md"]);
+        assert_eq!(found.staged, ["x.md"]);
+        assert_eq!(
+            git(r, &["diff", "--cached", "--name-only"]).unwrap(),
+            "other.md\nx.md"
+        );
+        git(r, &["reset", "--quiet", "--hard"]).unwrap();
+        // The person's own unstaged edit stops an apply, yet no hunk
+        // clashes: there is nothing for the worker to resolve.
+        std::fs::write(r.join("x.md"), "theirs\n").unwrap();
+        assert!(apply(r, &patch).is_err());
+        assert_eq!(clashes(r, &patch).unwrap().hunks, []);
+        assert_eq!(std::fs::read_to_string(r.join("x.md")).unwrap(), "theirs\n");
+    }
+
+    #[test]
+    fn a_file_without_hunks_or_with_hunks_that_only_clash_together_is_named_whole() {
+        let s = repo("clash-whole");
+        let r = &s.repo;
+        std::fs::write(r.join("b.bin"), [0u8, 1, 2]).unwrap();
+        commit(r, "base");
+        let w = ensure(r, &s.dir.join("wt"), "claude-1", None).unwrap().path;
+        std::fs::write(w.join("b.bin"), [0u8, 3, 4]).unwrap();
+        let patch = change(&w, 1 << 20).unwrap().unwrap().patch;
+        std::fs::write(r.join("b.bin"), [0u8, 5, 6]).unwrap();
+        commit(r, "clash");
+        let found = clashes(r, &patch).unwrap();
+        assert_eq!(found.hunks.len(), 1, "{:?}", found.hunks);
+        assert_eq!(found.hunks[0].file, "b.bin");
+        assert_eq!(found.hunks[0].hunk, None);
+        assert!(!found.hunks[0].why.is_empty());
+    }
+
+    #[test]
+    fn clashes_stop_at_their_tries_and_say_so() {
+        let s = repo("clash-cut");
+        let r = &s.repo;
+        // Hunks far apart, each a change of its own.
+        let lines: Vec<String> = (0..(CLASH_TRIES + 1) * 8)
+            .map(|n| format!("{n}\n"))
+            .collect();
+        std::fs::write(r.join("long.md"), lines.concat()).unwrap();
+        commit(r, "base");
+        let w = ensure(r, &s.dir.join("wt"), "claude-1", None).unwrap().path;
+        let edit = |to: &str| {
+            (lines.iter().enumerate())
+                .map(|(n, l)| {
+                    if n % 8 == 4 {
+                        to.to_string() + "\n"
+                    } else {
+                        l.clone()
+                    }
+                })
+                .collect::<String>()
+        };
+        std::fs::write(w.join("long.md"), edit("WORKER")).unwrap();
+        let patch = change(&w, 1 << 22).unwrap().unwrap().patch;
+        assert_eq!(patch.matches("\n@@").count(), CLASH_TRIES + 1);
+        std::fs::write(r.join("long.md"), edit("PERSON")).unwrap();
+        commit(r, "clash");
+        let found = clashes(r, &patch).unwrap();
+        assert!(found.cut);
+        assert_eq!(found.hunks.len(), CLASH_TRIES);
+    }
+
+    #[test]
+    fn a_patch_splits_at_its_files_headers_only() {
+        let patch =
+            "diff --git a/x b/x\n@@ -1 +1 @@\n-diff --git a/y b/y\n+z\ndiff --git a/b c b/b c\n";
+        assert_eq!(
+            file_sections(patch),
+            [
+                "diff --git a/x b/x\n@@ -1 +1 @@\n-diff --git a/y b/y\n+z\n",
+                "diff --git a/b c b/b c\n"
+            ]
+        );
+        assert_eq!(section_file("diff --git a/b c b/b c\n"), "b c");
+        assert_eq!(
+            section_file("diff --git \"a/\\303\" \"b/\\303\"\n"),
+            "diff --git \"a/\\303\" \"b/\\303\""
+        );
+        assert_eq!(file_sections(""), Vec::<&str>::new());
     }
 
     #[test]

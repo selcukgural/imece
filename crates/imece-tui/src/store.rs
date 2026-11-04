@@ -1431,6 +1431,7 @@ impl Store {
             paid: 0,
             suggested: None,
             reviews: Default::default(),
+            clashes: Default::default(),
             orphans: crate::model::Orphans::default(),
             messages,
         };
@@ -2206,6 +2207,7 @@ mod tests {
             paid: 0,
             suggested: None,
             reviews: Default::default(),
+            clashes: Default::default(),
             orphans: crate::model::Orphans::default(),
             messages: 12,
         };

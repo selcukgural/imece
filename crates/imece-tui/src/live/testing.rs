@@ -41,6 +41,7 @@ pub(crate) fn team(workers: usize) -> World {
         research_queue: Default::default(),
         plans: Vec::new(),
         changes: Vec::new(),
+        clashes: Default::default(),
         paid: 0,
         suggested: None,
         reviews: Default::default(),

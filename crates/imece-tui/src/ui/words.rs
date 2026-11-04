@@ -269,7 +269,13 @@ pub fn event(lang: Lang, w: &World, e: &Event) -> String {
         Event::Applied { agent, files, mark } => {
             fill(t.ev_applied, &[name(w, *agent), &files.to_string(), mark])
         }
-        Event::ApplyFailed { agent, why } => fill(t.ev_apply_failed, &[name(w, *agent), why]),
+        Event::ApplyFailed { agent, why } => {
+            let said = match w.clashes_of(*agent) {
+                Some(_) => t.ev_apply_failed_back,
+                None => t.ev_apply_failed,
+            };
+            fill(said, &[name(w, *agent), why])
+        }
         Event::Suggested { model, cost, .. } => fill(t.ev_suggested, &[model, &dollars(*cost)]),
         Event::SuggestFailed { why, cost, .. } => {
             fill(t.ev_suggest_failed, &[&dollars(*cost), why])

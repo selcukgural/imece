@@ -834,6 +834,7 @@ pub fn world(
         max_researchers,
         research_queue: VecDeque::new(),
         changes: Vec::new(),
+        clashes: Default::default(),
         paid: 0,
         suggested: None,
         reviews: Default::default(),
@@ -1238,7 +1239,8 @@ impl Sim {
     }
 
     /// How applying worker `id`'s change went: it `fits` the checkout and
-    /// is applied with a mark, or git refuses it and it still waits.
+    /// is applied with a mark, or git refuses it and it still waits, its
+    /// first hunk the one that clashes.
     fn applied(&mut self, w: &mut World, id: AgentId, fits: bool, hunks: &[usize]) {
         let Some(change) = w.change_of(id).cloned() else {
             return;
@@ -1247,6 +1249,18 @@ impl Sim {
             return;
         };
         if !fits {
+            let hunk = change.patch.lines().find(|l| l.starts_with("@@"));
+            let clash = Clash {
+                file: file.clone(),
+                hunk: hunk.map(str::to_string),
+                why: format!("patch failed: {file}:1; {file}: patch does not apply"),
+            };
+            let clashes = Clashes {
+                head: sha(&mut self.rng),
+                hunks: vec![clash],
+                ..Clashes::default()
+            };
+            w.change_clashed(id, clashes);
             w.change_failed(id, format!("error: {file}: patch does not apply"));
             return;
         }
@@ -4378,6 +4392,19 @@ diff --git a/b.rs b/b.rs
         );
         assert!(w.change_of(worker).is_some());
         assert_eq!(lines(&w), held, "not applied: still in the worktree");
+        // What clashes is at hand, for the change to go back with it.
+        let hunk = (w.change_of(worker).unwrap().patch.lines())
+            .find(|l| l.starts_with("@@"))
+            .map(str::to_string);
+        let clashes = w.clashes_of(worker).unwrap();
+        assert_eq!(clashes.hunks.len(), 1);
+        assert_eq!(clashes.hunks[0].file, file);
+        assert_eq!(clashes.hunks[0].hunk, hunk);
+        assert_eq!(
+            clashes.hunks[0].why,
+            format!("patch failed: {file}:1; {file}: patch does not apply")
+        );
+        assert_eq!(clashes.head.len(), 7);
         w.agents[worker].stand.ahead = 2;
         s.applied(&mut w, worker, true, &[]);
         assert!(w.change_of(worker).is_none());
@@ -4388,6 +4415,26 @@ diff --git a/b.rs b/b.rs
             Event::Applied { agent, mark, .. } if *agent == worker && mark.len() == 7
                 && mark.chars().all(|c| c.is_ascii_hexdigit())
         ));
+    }
+
+    #[test]
+    fn a_change_that_clashed_goes_back_and_the_worker_takes_it_as_its_next_card() {
+        let (mut w, mut s, worker, _) = one_at_work();
+        s.test(&mut w, worker);
+        s.tested(&mut w, worker, 0);
+        s.applied(&mut w, worker, false, &[]);
+        let message = crate::ui::clash_message(w.clashes_of(worker).unwrap(), false);
+        assert_eq!(s.reject_change(&mut w, worker), Ok(()));
+        assert!(w.clashes.is_empty());
+        let cards = w.cards.len();
+        s.told(&mut w, worker, &message).unwrap();
+        assert_eq!(w.cards.len(), cards + 1, "a card for what it was told");
+        let c = &w.cards[cards];
+        let head = message.lines().next().unwrap();
+        assert!(head.starts_with("Your change does not apply"), "{head}");
+        assert_eq!(c.title, head);
+        assert_eq!((c.owner, c.column), (Some(worker), Column::Working));
+        assert_eq!(w.agents[worker].status, Status::Working);
     }
 
     #[test]

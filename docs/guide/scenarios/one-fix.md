@@ -137,7 +137,7 @@ Press `a`. The flash says `applying claude-1's change to your checkout; the jour
  14:13 ✓ you applied claude-1's change (1 files) to the checkout, staged; worktree mark 3f2a9c1
 ```
 
-Applied means `git apply --index` in your checkout: the files are changed and staged, nothing is committed. If you had edited the same lines, the apply is refused with git's words and nothing is half done; if your checkout only moved on, the patch is merged three-way first into a copy of the index and applied only when that is clean.
+Applied means `git apply --index` in your checkout: the files are changed and staged, nothing is committed. If you had edited the same lines, the apply is refused with git's words and nothing is half done; if your checkout only moved on, the patch is merged three-way first into a copy of the index and applied only when that is clean. When it clashes, the refused change opens with a red line and `b` sends it back to the worker with the hunks that do not fit and git's words, for it to bring its worktree up, resolve and send `done` again ([the change view](../screen/changes.md)).
 
 The mark: the worker's worktree is committed at `3f2a9c1` as `imece <imece@localhost>`, with the files left as they were. So the worker's next `done` shows only what comes after, and the row's `+14 −3` drops to nothing. At its next prompt the worker is told "The person applied your change (parse() returns Ok(Tree::empty()) on no tokens) to their checkout. Your worktree is committed at 3f2a9c1 as a mark of that; your files are as you left them. Go on from here with the next task."
 

@@ -29,7 +29,7 @@ SENİ BEKLEYEN (İngilizce ekranda WAITING FOR YOU) salonun üst yan panelidir. 
 
 Satır saati taşır, ertelediyseniz `sonra ·`, birden çok proje açıksa projenin adını. Başka bir günün ögesi tarihini de taşır.
 
-Bir değişiklik (`Δ`) işçisine notlarla da geri gönderilebilir (diff'te `n`) ya da kısmen uygulanabilir (`x` sonra `a`); bkz. [değişiklik görünümü](changes.md). Bir öge geldiğinde agent'ının üzerinde çalıştığı kartı tutar, böylece o [kartın ekranında](cards.md) da görünür.
+Bir değişiklik (`Δ`) işçisine notlarla (diff'te `n`) ya da reddedilen bir uygulamadan sonra çakışan yerleriyle (`b`) de geri gönderilebilir ya da kısmen uygulanabilir (`x` sonra `a`); bkz. [değişiklik görünümü](changes.md). Bir öge geldiğinde agent'ının üzerinde çalıştığı kartı tutar, böylece o [kartın ekranında](cards.md) da görünür.
 
 ## Tuşlar
 

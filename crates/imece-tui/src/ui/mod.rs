@@ -33,7 +33,8 @@ use crate::motion::{GlowOn, Lit};
 use crate::screen::{Look, Shape};
 pub(crate) use crate::theme::pal;
 pub(crate) use diff::{
-    QUOTE_LINES, Shown, copy_patch, file_of, file_starts, hunk_at, notes_message, place, quote,
+    QUOTE_LINES, Shown, clash_message, copy_patch, file_of, file_starts, hunk_at, notes_message,
+    place, quote,
 };
 pub(crate) use overlay::{chosen_text, fold, in_view, talk_notes_message, thread_lines, word_step};
 pub(crate) use salon::{card_rows, journal_rows, reply_jump, thread_of, turn_starts};
@@ -2066,17 +2067,23 @@ fn footer(f: &mut Frame, area: Rect, app: &App) -> Option<Position> {
                 keys.push(("?", t.help));
                 keys
             }
-            Zoom::Diff(_) => vec![
-                ("j k  w", t.scroll_wrap),
-                ("[ ]", t.file),
-                ("a x", t.apply_part),
-                ("r", t.reject),
-                (">", t.quote),
-                ("c n", t.notes),
-                ("v", t.copy_lines),
-                ("esc", t.back),
-                ("?", t.help),
-            ],
+            Zoom::Diff(id) => {
+                let mut keys = vec![
+                    ("j k  w", t.scroll_wrap),
+                    ("[ ]", t.file),
+                    ("a x", t.apply_part),
+                    ("r", t.reject),
+                    (">", t.quote),
+                    ("c n", t.notes),
+                    ("v", t.copy_lines),
+                    ("esc", t.back),
+                    ("?", t.help),
+                ];
+                if app.world.clashes_of(id).is_some() {
+                    keys.insert(4, ("b", t.send_back));
+                }
+                keys
+            }
         };
         let hints = match ask_hints(app) {
             Some(mut keys) if app.hints.is_none() && app.script.is_none() && app.peek.is_none() => {
@@ -6924,6 +6931,58 @@ mod tests {
         let s = render(&app, 140, 40);
         assert!(s.contains("point-10") && !s.contains("point-40"), "{s}");
         assert!(s.contains("lines · R shows all"), "{s}");
+    }
+
+    #[test]
+    fn a_change_that_clashed_says_b_sends_it_back_in_its_journal_line_view_and_foot() {
+        let t = Lang::En.text();
+        let mut app = app_after(1, 4, 50, Lang::En);
+        app.world.inbox.clear();
+        app.world.change_ready(a_change(1));
+        app.world
+            .change_failed(1, "conflicts with the checkout in x".into());
+        let name = app.world.agents[1].name.clone();
+        let line = |app: &App| {
+            words::event(
+                app.lang,
+                &app.world,
+                &app.world.journal.last().unwrap().event,
+            )
+        };
+        let plain = fill(
+            t.ev_apply_failed,
+            &[&name, "conflicts with the checkout in x"],
+        );
+        assert_eq!(line(&app), plain);
+        app.zoom = Zoom::Diff(1);
+        let s = render(&app, 220, 40);
+        assert!(
+            !s.contains("send back") && !s.contains("sends it back"),
+            "{s}"
+        );
+        app.world.change_clashed(
+            1,
+            Clashes {
+                head: "abc1234".into(),
+                hunks: vec![Clash {
+                    file: "x.rs".into(),
+                    ..Clash::default()
+                }],
+                ..Clashes::default()
+            },
+        );
+        assert_eq!(
+            line(&app),
+            format!("{plain} · b in the change sends it back")
+        );
+        let s = render(&app, 220, 40);
+        assert!(s.contains(" r  reject   b  send back   > "), "{s}");
+        assert!(
+            s.contains(&format!(
+                "✗ does not fit your checkout at abc1234: x.rs · b sends it back to {name}"
+            )),
+            "{s}"
+        );
     }
 
     #[test]
