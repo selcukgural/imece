@@ -176,6 +176,7 @@ pub(super) fn with_card(w: &mut World, id: AgentId) -> CardId {
         column: Column::Working,
         story: Vec::new(),
         symbols: Vec::new(),
+        paths: Vec::new(),
         started: 0,
         finished: 0,
     });

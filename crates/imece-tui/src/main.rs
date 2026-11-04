@@ -17,6 +17,7 @@ mod live;
 mod model;
 mod motion;
 mod notify;
+mod paths;
 mod prefs;
 mod probe;
 mod push;

@@ -31,10 +31,11 @@ pub(super) fn mail_prompt(w: &World, mail: &[Mail]) -> String {
     );
     for m in mail {
         out.push_str(&format!(
-            "\n\n[{}] from {}:\n{}",
+            "\n\n[{}] from {}:\n{}{}",
             heading(w, m),
             w.agents[m.from].name,
-            m.body
+            m.body,
+            owns(&m.paths)
         ));
     }
     out
@@ -104,12 +105,17 @@ pub(super) fn system_prompt(
                      docs), standard (the default) for ordinary fixes and features, \
                      strong for design that cuts across the code, hard debugging and \
                      review. Give each worker its part with the send tool (type \
-                     assign: what to do, which files, when it is done); give different \
-                     workers different files where you can. A file most tasks touch (a \
-                     changelog, a version, a shared list) belongs to one worker at a \
-                     time: tell the others to leave it out and to say in their done what \
+                     assign: what to do, which files, when it is done), and name the \
+                     paths the card owns (paths: files, directories or patterns \
+                     relative to the repository); give different workers different \
+                     paths, since no two open cards may own the same one: the person \
+                     sees a worker's writes outside its card's paths and the worker is \
+                     told of them. A file most tasks touch (a changelog, a version, a \
+                     shared list) belongs to one worker at a time: give it to one card \
+                     and tell the others to leave it out and to say in their done what \
                      it should get, since two changes to the same lines cannot both be \
-                     applied. Work that any worker could \
+                     applied; a file every card must touch ends with the word shared \
+                     (CHANGELOG.md shared). Work that any worker could \
                      pick up may go on the board instead (post); idle workers take it \
                      themselves. A worker's done shows the person its change (its \
                      worktree's diff); they apply it to their checkout or reject it, and \
@@ -263,6 +269,9 @@ pub(super) fn system_prompt(
                  so finish before you send it and check it with the run tool (build, \
                  test) after your last edit: the person sees which runs passed on exactly \
                  the diff you hand in, and a check in your own shell does not show there. \
+                 A card that owns paths is done inside them: a file you change outside \
+                 them is noted on the change the person reads, and you are told; say in \
+                 your done what else needs changing, or ask {leader} to widen the card. \
                  If you are stuck, send blocked \
                  or ask instead of guessing: {leader} first, it knows the plan; what only \
                  the person can decide goes to them (send to you, type ask), and their \
@@ -409,6 +418,7 @@ mod tests {
             body: "Yes.".into(),
             id,
             re,
+            paths: Vec::new(),
         };
         assert_eq!(
             mail_prompt(&w, &[mail(4, Some(3)), mail(5, None), mail(0, None)]),
@@ -763,5 +773,38 @@ mod tests {
         assert_eq!(fnv(b""), 0x811c_9dc5);
         assert_eq!(fnv(b"a"), 0xe40c_292c);
         assert_ne!(fnv(b"a"), fnv(b"b"));
+    }
+    #[test]
+    fn an_assign_s_paths_follow_its_body_and_the_roles_are_told_of_them() {
+        let w = team(1);
+        let mail = Mail {
+            from: 0,
+            kind: MsgKind::Assign,
+            body: "Fix it\nin src".into(),
+            id: 2,
+            re: None,
+            paths: vec![Owned::new("src/a.rs"), Owned::shared("docs")],
+        };
+        let prompt = mail_prompt(&w, &[mail]);
+        assert!(
+            prompt.ends_with(
+                "[assign 2] from lead:\nFix it\nin src\n\nThis card owns src/a.rs, docs \
+                 (shared): stay in them; what else needs changing goes in your done, or ask \
+                 for the card to be widened."
+            ),
+            "{prompt}"
+        );
+        let leader = system_prompt(&w, 0, 4, 0, Confine::Standard);
+        assert!(
+            leader.contains("name the paths the card owns (paths:"),
+            "{leader}"
+        );
+        assert!(leader.contains("(CHANGELOG.md shared)"), "{leader}");
+        let worker = system_prompt(&w, 1, 4, 2, Confine::Standard);
+        assert!(
+            worker.contains("A card that owns paths is done inside them"),
+            "{worker}"
+        );
+        assert!(worker.contains("ask lead to widen the card"), "{worker}");
     }
 }

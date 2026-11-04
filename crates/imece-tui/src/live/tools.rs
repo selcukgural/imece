@@ -354,11 +354,26 @@ pub(super) fn post_tool() -> Tool {
                     "description": "The task: what to do, which files, when it is done.",
                     "maxLength": MAX_BODY,
                 },
+                "paths": paths_schema(),
             },
             "required": ["title", "body"],
             "additionalProperties": false,
         }),
     }
+}
+
+/// The `paths` of an assign or a post: the paths the card owns.
+fn paths_schema() -> Value {
+    json!({
+        "type": "array",
+        "maxItems": paths::MAX_PATHS,
+        "items": { "type": "string", "maxLength": paths::MAX_PATH },
+        "description": "The paths the card owns, relative to the repository, as git \
+                        pathspecs (a file, a directory, or a pattern with *): the \
+                        worker is told when it writes outside them, and no other open \
+                        card may own one of them; a path every card touches ends with \
+                        the word shared (CHANGELOG.md shared). Give them on every card.",
+    })
 }
 
 pub(super) fn whoami_tool() -> Tool {
@@ -440,6 +455,7 @@ pub(super) fn send_tool() -> Tool {
                                     a message sent to you, and the reply goes to its \
                                     sender.",
                 },
+                "paths": paths_schema(),
             },
             "required": ["to", "type", "body"],
             "additionalProperties": false,
@@ -1520,5 +1536,27 @@ mod tests {
             "{got}"
         );
         let _ = std::fs::remove_dir_all(&dir);
+    }
+    #[test]
+    fn an_assign_and_a_post_take_the_paths_the_card_owns_capped() {
+        for tool in [send_tool(), post_tool()] {
+            let paths = &tool.input["properties"]["paths"];
+            assert_eq!(paths["type"], "array", "{}", tool.name);
+            assert_eq!(paths["maxItems"], 20);
+            assert_eq!(paths["items"]["type"], "string");
+            assert_eq!(paths["items"]["maxLength"], 200);
+            assert!(
+                paths["description"].as_str().unwrap().contains("shared"),
+                "{}",
+                tool.name
+            );
+            assert!(
+                !tool.input["required"]
+                    .as_array()
+                    .unwrap()
+                    .contains(&json!("paths"))
+            );
+        }
+        assert!(claim_tool().input["properties"]["paths"].is_null());
     }
 }

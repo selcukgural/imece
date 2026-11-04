@@ -100,6 +100,16 @@ Pano henüz kimsenin olmayan iş içindir. Belli bir ekip arkadaşının yapaca�
 
 Sınırlar: başlık en çok 120 karakterlik tek satır (ekran işçinin yanında ilk 20 karakterini gösterir, bu yüzden onu diğer kartlardan ayıranla başlamalı: bir issue numarası, bir dosya, bir sembol); proje başına 20 açık kart; siz yeniden konuşana dek ajan başına 10 asma.
 
+## Kartın sahip olduğu yollar
+
+Bir `assign` ya da `post`, kartının sahip olduğu yolları adlandırır: `paths`, depoya göre en çok 20 git pathspec'i (`src/parser.rs`, bir dizin `docs`, bir desen `tests/*_test.rs`; `*` her şeyin, `/` dahil, yerine geçer). Kart onları saklar, çalıştırmalar arasında da; işçinin görevi `This card owns src/parser.rs, docs (shared): stay in them; what else needs changing goes in your done, or ask for the card to be widened` ile biter ve kartın ekranı onları listeler (`sahibi`). `paths`'siz bir kartın sınırı yoktur.
+
+- **Bir projenin iki açık kartı aynı yola sahip olamaz.** Yollarına açık bir kartın (bekleyen ya da üzerinde çalışılan) zaten sahip olduğu bir `assign` ya da `post`, hangi kartın neye sahip olduğu söylenerek reddedilir: `#3 Fix the parser owns "src/parser.rs", which "src" names too; give this card other paths, or end one with the word shared (src shared)`. İki karttan birinin ötekini ters yönde adlandırdığı yollar da çakışır (`src` ile `src/a.rs`, `src/*` ile `src/a.rs`). Alıcı işçinin şu an tuttuğu kart sayılmaz: sonraki kartı aynı dosyalarda sürebilir. Bitmiş bir kart artık hiçbir şeye sahip değildir.
+- **Her kartın dokunduğu bir yol `shared`'dır.** `CHANGELOG.md shared` yolu sahiplenmeden adlandırır: başka bir kart da adlandırabilir, işçi de yazabilir. Lidere, çoğu görevin dokunduğu bir dosyayı tek bir karta vermesi ve ötekilere o dosyanın ne alması gerektiğini `done`'larında söylemeleri gerektiğini anlatması söylenir.
+- **Yollarının dışına yazan işçi sapar ve bu ona söylenir.** Oturumunun `Edit`, `Write` ve `MultiEdit` çağrıları dosyayı gösterir; kartın yollarının dışındaki bir dosyaya ilk yazışta kartın hikâyesi `değiştirdi: src/other.rs; kartın yollarının dışında`, defter `claude-1 şunu değiştirdi: src/other.rs; #3 kartının dışında` der ve işçinin sonraki istemi `you changed src/other.rs, which #3 does not own (it owns src/parser.rs); say so in your done, or ask lead to widen the card` ile başlar. Kart başına dosya başına bir kez; asla durdurulmaz, asla reddedilmez: kişi değişikliği, kartın dışındaki dosyalar yamanın üstünde sayılmış olarak okur ([değişiklikler](../screen/changes.md#yamanın-üstündekiler)).
+
+Bu, sembol lease'lerinin ucuz vekilidir (bkz. [kod haritası](../screen/board-and-code-map.md)): yol, liderin planlarken adlandırabildiği ve bir değişikliğin dosyalar okunmadan karşılaştırılabildiği şeydir. Lease'ler ancak yollar yetmezse gelir.
+
 ## Kartlar ve hikâyeleri
 
 Bir kart, hikâyesi olan bir iş birimidir: `niyet`, `varsayım`, `karar`, `konuşma`, `kanıt`, `değişiklik`, `sen` (sizin söylediğiniz ya da karar verdiğiniz). Pano görünümü kartları sütunlarda gösterir (BEKLİYOR, ÜZERİNDE, DOĞRULANIYOR, BİTTİ); `#N` ya da `#kelime` bir kartın kendi ekranını açar: kim üzerinde çalıştı, hikâyesi, kendi gelen kutusu ve günlük satırları ([kartlar](../screen/cards.md)).

@@ -2456,15 +2456,18 @@ mod tests {
     #[test]
     fn a_card_s_screen_shows_where_it_stands_who_had_a_part_and_its_lines() {
         let app = on_card_one(Lang::En);
-        let s = render(&app, 140, 36);
+        let s = render(&app, 140, 38);
         let card = &app.world.cards[0];
         assert!(!card.symbols.is_empty() && card.column == Column::Done);
         let owner = &app.world.agents[card.owner.unwrap()].name;
+        let owns = format!("owns   {}", crate::paths::listed(&card.paths));
+        assert!(!card.paths.is_empty());
         for want in [
             &format!(" #1 {} ", card.title),
             "shop-api · DONE · ",
             " min",
             "lease  ",
+            &owns,
             "WHO",
             "posted    ◆ ▎lead ",
             "owner     ",
@@ -2472,7 +2475,7 @@ mod tests {
             "STORY",
             &format!("◎ intent     {owner}: {}", card.title),
             "WAITING FOR YOU · #1 (1)",
-            &format!("Δ 14:06 {owner} finished: {}", card.title),
+            &format!("{owner} finished: {}", card.title),
             "JOURNAL · #1 (",
             "n p  next / previous card",
             "#  another card",
@@ -4148,6 +4151,7 @@ mod tests {
             column,
             story: Vec::new(),
             symbols: Vec::new(),
+            paths: Vec::new(),
             started: 0,
             finished: 0,
         };
@@ -5308,6 +5312,7 @@ mod tests {
             column,
             story: Vec::new(),
             symbols: Vec::new(),
+            paths: Vec::new(),
             started: 0,
             finished,
         };
@@ -5371,6 +5376,7 @@ mod tests {
             column,
             story: Vec::new(),
             symbols: Vec::new(),
+            paths: Vec::new(),
             started: 0,
             finished: 0,
         }
@@ -6456,6 +6462,7 @@ mod tests {
             column,
             story: Vec::new(),
             symbols: Vec::new(),
+            paths: Vec::new(),
             started: 0,
             finished: 0,
         };
@@ -7180,8 +7187,14 @@ mod tests {
         // patch.
         let row = |needle: &str| s.lines().position(|l| l.contains(needle)).unwrap();
         let ran = row("no imece run on exactly this change");
-        assert_eq!(ran + 1, row("│ src/p.rs +"), "{s}");
-        assert_eq!(ran + 3, row("diff --git a/src/p.rs"), "{s}");
+        // The demo's card owns the files of its leases, which this change
+        // is not of: the line under the runs says so (record 114).
+        let card = app.world.agents[1].card.unwrap();
+        assert!(!app.world.cards[card].paths.is_empty());
+        let outside = format!("2 outside #{}: src/p.rs, src/q.rs", card + 1);
+        assert_eq!(ran + 1, row(&outside), "{s}");
+        assert_eq!(ran + 2, row("│ src/p.rs +"), "{s}");
+        assert_eq!(ran + 4, row("diff --git a/src/p.rs"), "{s}");
         assert!(
             s.contains("+Q-LINE \n") || s.contains("+Q-LINE "),
             "control characters go: {s}"
@@ -9530,6 +9543,7 @@ mod tests {
                 column,
                 story: Vec::new(),
                 symbols: Vec::new(),
+                paths: Vec::new(),
                 started: 0,
                 finished: 0,
             };
@@ -9798,6 +9812,7 @@ mod tests {
             column: Column::Working,
             story: Vec::new(),
             symbols: Vec::new(),
+            paths: Vec::new(),
             started: 0,
             finished: 0,
         });

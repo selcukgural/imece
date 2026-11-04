@@ -48,6 +48,9 @@ Varsayılan ret: uymayan bir mesaj nedeniyle reddedilir ve iz bırakmaz.
 | alıcının 20 okunmamış mesajı var | `claude-1 has 20 unread messages; wait for it` |
 | `you`'ya `assign`, `handoff` ya da `cancel` | `assign is not for the person; ask them, or tell them (inform, done, blocked)` |
 | bozuk bir `re` | aşağıda |
+| `assign` dışında bir türde `paths` | `paths go with an assign: the card it opens owns them` |
+| bozuk `paths` | `paths must be an array of strings`, `a card owns at most 20 paths`, `a path is empty`, `a path is longer than 200 characters`, `"a\tb" has a control character`, `paths are relative to the repository; "/etc" starts with /`, `"src/../x" goes outside the repository (..)`, `paths lists "src" twice` |
+| projenin açık bir kartının sahip olduğu bir yol | `#3 Fix the parser owns "src/parser.rs", which "src" names too; give this card other paths, or end one with the word shared (src shared)` |
 
 12 tur ve 10 kart sayaçları siz herhangi bir ajana her yazdığınızda yeniden başlar: ajanlar sizsiz birbirlerini sonsuza dek meşgul edemez.
 
@@ -57,7 +60,7 @@ Varsayılan ret: uymayan bir mesaj nedeniyle reddedilir ve iz bırakmaz.
 
 ### Kartlar ve veriyolu
 
-Boşta bir işçiye bir mesaj, ilk satırıyla adlandırılmış bir kart açar (varsa bir `assign`'ın ilk satırı); kart, başlattığı tur ajanın yanıtıyla bitince kapanır. Bir işçinin liderine `done`'ı liderin kartını kapatmaz: liderin kendi turu kapatır. Bir yardımcının işçisine `done`'ı ayrılacağını işaretler; o tur bitince ayrılır, böylece turun maliyeti yine bildirilir. Bkz. [mesajlar ve pano](../concepts/messages-and-board.md) ve [kartlar](../screen/cards.md).
+Boşta bir işçiye bir mesaj, ilk satırıyla adlandırılmış ve `assign`'ın `paths`'ine sahip bir kart açar (varsa bir `assign`'ın ilk satırı; [kartın sahip olduğu yollar](../concepts/messages-and-board.md#kartın-sahip-olduğu-yollar)); kart, başlattığı tur ajanın yanıtıyla bitince kapanır. Bir işçinin liderine `done`'ı liderin kartını kapatmaz: liderin kendi turu kapatır. Bir yardımcının işçisine `done`'ı ayrılacağını işaretler; o tur bitince ayrılır, böylece turun maliyeti yine bildirilir. Bkz. [mesajlar ve pano](../concepts/messages-and-board.md) ve [kartlar](../screen/cards.md).
 
 ## Mesaj numaraları ve yanıtlar
 
@@ -113,6 +116,9 @@ imece'nin MCP sunucusunun adı `imece`'dir; araçları bir oturuma `mcp__imece__
 | `type` | dize, ondan biri | evet | zarf |
 | `body` | dize, en çok 4000 | evet | `assign` için: ilk satır kartın başlığı olur (ekran ilk 20 karakterini işçinin yanında gösterir, bu yüzden her görevin paylaştığı bir fiille değil, onu öteki kartlardan ayıranla başlamalı); sonra görev, dokunduğu dosyalar ve ne zaman bittiği |
 | `re` | tam sayı ≥ 1 | hayır | yanıtladığı mesajın numarası |
+| `paths` | en çok 20 dizelik dizi, her biri en çok 200 | hayır | `assign` için: kartın sahip olduğu yollar, depoya göre, git pathspec'i olarak (bir dosya, bir dizin ya da `*`'lı bir desen); `shared` sözcüğüyle biten adlandırılır, sahiplenilmez. Başka her türde reddedilir |
+
+Yollu bir `assign` onlarla teslim edilir: posta `This card owns src/parser.rs, docs (shared): stay in them; what else needs changing goes in your done, or ask for the card to be widened.` ile biter.
 
 ### `post`
 
@@ -122,8 +128,9 @@ imece'nin MCP sunucusunun adı `imece`'dir; araçları bir oturuma `mcp__imece__
 | --- | --- | --- | --- |
 | `title` | dize, tek satır, en çok 120 | evet | ekran ilk 20 karakterini gösterir |
 | `body` | dize, en çok 4000 | evet | görev: ne yapılacak, hangi dosyalar, ne zaman bitti |
+| `paths` | en çok 20 dizelik dizi, her biri en çok 200 | hayır | kartın sahip olduğu yollar, `send`'dekiyle aynı |
 
-`posted as #4; an idle worker will be offered it` diye yanıtlar.
+`posted as #4; an idle worker will be offered it` diye yanıtlar; yollar projenin açık kartlarına karşı bir `assign`'ınki gibi denetlenir.
 
 ### `board`
 
@@ -139,7 +146,7 @@ Alan yok. `Open:` ve `Taken:` listeleriyle yanıtlar (`#4 Add tests (posted by l
 | --- | --- | --- | --- |
 | `card` | tam sayı ≥ 1 | evet | kartın numarası, `#` olmadan |
 
-Yalnızca işçiler (`only workers take cards; assign or post instead`). Redler: `there is no such card on the board; call board to see it`, `#4 was taken by claude-2; pick another`.
+Yalnızca işçiler (`only workers take cards; assign or post instead`). Redler: `there is no such card on the board; call board to see it`, `#4 was taken by claude-2; pick another`. Kartın yolları varsa yanıt onlarla biter (`This card owns tests, lib (shared): stay in them; …`).
 
 ### `hire`
 

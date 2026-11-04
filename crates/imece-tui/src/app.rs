@@ -16173,6 +16173,7 @@ pub(crate) mod tests {
             column: Column::Working,
             story: Vec::new(),
             symbols: Vec::new(),
+            paths: Vec::new(),
             started: 0,
             finished: 0,
         });

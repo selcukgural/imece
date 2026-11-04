@@ -7,9 +7,10 @@
 # The Claude Code adapter and its fail-closed checks, the bus's socket and
 # who may call it, child processes, worktrees, copying into them.
 crates/imece-agent/
-# Who may call which tool, and what a call does.
+# Who may call which tool, and what a call does; the paths a card owns.
 crates/imece-tui/src/live/bus.rs
 crates/imece-tui/src/live/tools.rs
+crates/imece-tui/src/paths.rs
 # The Δ gate between a worktree and the person's checkout.
 crates/imece-tui/src/live/changes.rs
 # What runs only once the person said yes: setup and teardown scripts,

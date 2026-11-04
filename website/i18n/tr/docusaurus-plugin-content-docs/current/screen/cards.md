@@ -39,6 +39,7 @@ Solda, salonun yerinde:
 
 - Başlık satırı: `#3` ve kartın başlığı; sonra projesi, panonun sözcükleriyle sütunu (BEKLİYOR, ÜZERİNDE, DOĞRULANIYOR, BİTTİ) ve dakikaları, bitmişse bitişine kadar.
 - Varsa lease'leri (yalnız demoda; sembol lease'leri canlıda yapılmadı).
+- `assign` ya da `post`'u verdiyse sahip olduğu yollar (`sahibi src/parser.rs, docs (shared)`; [kartın sahip olduğu yollar](../concepts/messages-and-board.md#kartın-sahip-olduğu-yollar)); dışına bir yazma hikâyesinin bir `değişiklik` satırıdır: `değiştirdi: src/other.rs; kartın yollarının dışında`.
 - **KİM**: kim astı, sahibi, hâlâ sahibinin kartıyken sahibinin yardımcıları, sonra hikâyesinin hakkında konuştuğunu söylediği herkes; her biri bir kez, ilk aldığı rolle. Salonun agent satırları gibi çizilirler, böylece durumları canlıdır; `j` `k` aralarında seçer ve `enter` seçilenin odağını salondaki gibi açar.
 - **HİKÂYE**: kartın hikâyesi, olay başına bir satır, eskiden yeniye, sahibinin gördüğü gibi anlatılır. Her satırda bir işaret ve bir etiket vardır: `◎` niyet, `⚑` varsayım, `⚖` karar, `⇄` konuşma (bir mesaj, türüyle), `◌` kanıt (bir çalıştırma ve nasıl bittiği), `Δ` değişiklik, `›` sen (onun hakkında söylediğiniz). Henüz kimsenin almadığı bir kart `Henüz hikâye yok.` der.
 

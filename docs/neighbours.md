@@ -7,8 +7,10 @@
   process per turn, built-in tools off, history re-sent, one tool call per
   turn), splits work by disjoint paths (overlap means serial), and a model
   reviews every patch and command. imece differs on purpose: real agent
-  sessions over ACP with a message bus between peers, symbol leases in the
-  same file, the person's review of each worker's diff as the last gate
+  sessions over ACP with a message bus between peers, paths a card owns
+  (record 114: overlap is refused, a write outside is told and shown, never
+  serialised; symbol leases in the same file only if paths prove not
+  enough), the person's review of each worker's diff as the last gate
   (no model gates patches or commands; since record 106 another vendor
   may read a patch when the person asks, `:review`, as a note that never
   holds it back; and imece sandboxes nothing: the vendor's own
