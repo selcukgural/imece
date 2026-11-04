@@ -16880,22 +16880,35 @@ pub(crate) mod tests {
         // Two cards: a head line, a paths line and two body lines, a
         // blank; a head line, one body line, a blank.
         assert_eq!(app.plan_lines(item), 8);
+        // Eight lines, so a page (10) from anywhere lands on the last,
+        // and a page from the top is a page, not nothing (0 + 10, not
+        // 0 × 10). A plain `d` or `u` (no ctrl) is not a page.
+        const { assert!(SCRIPT_PAGE > 7) };
         for (k, at) in [
             (key(KeyCode::Char('j')), 1),
             (key(KeyCode::Down), 2),
             (key(KeyCode::Char('k')), 1),
-            (key(KeyCode::PageDown), (1 + SCRIPT_PAGE).min(7)),
-            (key(KeyCode::Char('G')), 7),
+            (key(KeyCode::PageDown), 7),
             (key(KeyCode::Char('j')), 7),
             (key(KeyCode::Char('g')), 0),
-            (key(KeyCode::Up), 0),
-            (ctrl('d'), SCRIPT_PAGE.min(7)),
+            (key(KeyCode::Char('G')), 7),
+            (key(KeyCode::Up), 6),
+            (key(KeyCode::Char('u')), 6),
             (ctrl('u'), 0),
-            (key(KeyCode::Char('x')), 0),
+            (key(KeyCode::Char('d')), 0),
+            (ctrl('d'), 7),
+            (key(KeyCode::PageUp), 0),
+            (key(KeyCode::PageDown), 7),
+            (key(KeyCode::Char('x')), 7),
         ] {
             app.on_key(k);
             assert_eq!(app.plan_window, Some((item, at)), "{k:?}");
         }
+        // ?: the help, over the window, which stays.
+        app.on_key(key(KeyCode::Char('?')));
+        assert!(app.help);
+        assert_eq!(app.plan_window, Some((item, 7)));
+        app.help = false;
         app.on_key(key(KeyCode::Esc));
         assert_eq!(app.plan_window, None);
         assert!(app.world.inbox[item].open, "esc answers nothing");
