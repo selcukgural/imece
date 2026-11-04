@@ -107,6 +107,14 @@ and owned here from then on:
 - Projects: the salon groups agents by project, each with its own leader;
   groups fold to one line that still shows what waits for the person. The
   researcher cap is shared by all projects.
+- Direction (user, 2026-11-04): imece's product is the Δ gate, not the
+  screen. Work goes to making a Δ trustworthy before the person reads it
+  (evidence, cost, a plan seen first, owned paths), to the leader as a
+  visible planner, and to code imece's own team can work on. No feature
+  is imported from other programs any more: a new screen feature comes
+  only from a real session's friction, written down in `docs/field/` (one
+  entry per real session, same day). See `docs/decisions/111-deepening.md`
+  and epic #286.
 
 - The site (user, 2026-11-01): `https://selcukgural.github.io/imece/` is built
   from `docs/guide/` (English) and `website/i18n/tr/…/current/` (Turkish) by
@@ -236,6 +244,7 @@ record in the same PR.
 - 108 `send-back-a-clash`: a refused apply also finds what of the change does not fit (`worktree::clashes`: file, then hunk, plain then three-way, on a copy of the checkout's index, `CLASH_TRIES` 200), kept in `World.clashes` while the change waits (memory only); the failure's journal line, a red line above the change and `b  send back` in the footer say so; `b` (`App::send_back`, `ui::clash_message`) sends it in one message and the change goes back as `n`'s does (`App::goes_back`); nothing clashing (own unstaged edits), a worker gone or stopped or a spent pot leaves the Δ as it is; no `:` name, as `a r c n x`.
 - 109 `claude-only`: Claude Code alone (user, 2026-11-04); `Vendor` and every choice of one gone, `--solo claude[:MODEL][@EFFORT]` keeps its word, `:review` a fresh tool-less session; schema 22 drops `agents.vendor`, a head of another vendor goes on as Claude in a new session, others count as gone; the code stays on `multi-vendor` / `multi-vendor-last`.
 - 110 `claude-s-own-loader`: `CLAUDE.md` whole through Claude Code's loader (user, 2026-11-04; the 16 KiB cap and `NotesCut`/`InstructionsCut` gone): `claude::session_args` adds the agent's directory and `<worktrees>-notes/<name>` (`Live::notes_of`, `prompts::notes_text`, `sessions::write_notes`: `~/.claude/CLAUDE.md`, `instructions.md`, a checkout's file the tree lacks, rewritten every start, `create_new`, not through a link), `claude::loads_notes` the variable `child::command` would clear; `claude::once` reads none; `@import`s stop at the added directories (probed).
+- 111 `deepening`: the direction (user, 2026-11-04): the Δ gate is the product; first round = the split of `app.rs`/`ui/mod.rs` (#287, for imece's own workers), evidence on a Δ (`.imece/check` at `done`, #288), cost on a Δ (#289), the plan gate and owned paths (F20 + F16, #290); then early rebase, F8 F9 F10, F6, Claude-only probes (own sandbox, sub-agents, skills), the demo on the real `Live`, record 01 closed; no imports from neighbours, `docs/field/` one entry per real session.
 
 `docs/neighbours.md`: voff, what was taken from it and the rules that come
 from what it lacks. Read it before building a part it names.
