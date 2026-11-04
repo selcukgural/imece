@@ -124,8 +124,10 @@ fn commands_in(line: &str, nested: usize) -> Option<Vec<Vec<String>>> {
     let mut inner = Vec::new();
     let mut part = String::new();
     let mut quote: Option<char> = None;
-    let mut chars = line.trim().chars();
-    loop {
+    let line = line.trim();
+    let mut chars = line.chars();
+    // Each round takes a character at least.
+    for _ in 0..=line.len() {
         let here = chars.as_str();
         let Some(c) = chars.next() else { break };
         let word_starts = !part.ends_with(|c: char| !c.is_whitespace());
