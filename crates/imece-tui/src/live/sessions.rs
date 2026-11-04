@@ -2277,6 +2277,14 @@ mod tests {
         let link = base.join("a").join("link");
         std::os::unix::fs::symlink(&dir, &link).unwrap();
         assert!(make_scratch(&link).is_err(), "a link to a directory");
+        // Any other failure is that failure, not taken for one that is
+        // there: a parent it may not write to.
+        let shut = base.join("shut");
+        std::fs::create_dir_all(&shut).unwrap();
+        std::fs::set_permissions(&shut, std::fs::Permissions::from_mode(0o500)).unwrap();
+        let e = make_scratch(&shut.join("claude-1")).unwrap_err();
+        std::fs::set_permissions(&shut, std::fs::Permissions::from_mode(0o700)).unwrap();
+        assert_eq!(e.kind(), io::ErrorKind::PermissionDenied, "{e}");
         let _ = std::fs::remove_dir_all(&base);
     }
 
