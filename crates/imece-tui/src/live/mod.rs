@@ -1557,6 +1557,34 @@ mod tests {
     }
 
     #[test]
+    fn a_plan_call_on_the_bus_reaches_the_plan_tool() {
+        let mut w = team(1);
+        let mut live = idle_live(2);
+        let call = |live: &mut Live, tool: &str, args: Value| {
+            let (reply, answer) = mpsc::channel();
+            let taken = Arc::new(AtomicBool::new(false));
+            let call = (0, tool.into(), args, reply, taken);
+            live.calls_tx.send(call).unwrap();
+            answer
+        };
+        // The gate is off in the fixture: the plan is taken and answered,
+        // nothing kept; a tool imece has not is said so.
+        let cards = json!([{ "title": "Parser", "body": "Fix it." }]);
+        let answer = call(&mut live, "plan", json!({ "cards": cards, "cost": 0.5 }));
+        live.step(&mut w);
+        let got = answer.try_recv().unwrap();
+        assert!(got.is_ok(), "{got:?}");
+        assert!(!got.unwrap().contains("there is no tool"));
+        assert_eq!(w.projects[0].plan.proposal, None);
+        let answer = call(&mut live, "plot", json!({}));
+        live.step(&mut w);
+        assert_eq!(
+            answer.try_recv().unwrap(),
+            Err("there is no tool \"plot\"".into())
+        );
+    }
+
+    #[test]
     fn a_step_says_whether_anything_came_the_screen_may_show() {
         let mut w = team(1);
         let mut live = idle_live(2);

@@ -7153,6 +7153,60 @@ diff --git a/b.rs b/b.rs
         assert!(strays_now(40));
         assert!(strays_now(41));
         assert!(strays_now(100));
+        // The step itself: before the middle nothing, at it the write,
+        // the story and the note, and not on a card that is not the
+        // fourth.
+        let (mut w, mut s) = world(1, 1, 0, 1, Lang::En);
+        let repo = w.projects[0].repo;
+        let id = (w.agents.iter())
+            .position(|a| a.role == Role::Worker)
+            .expect("a worker");
+        while w.cards.len() <= STRAY_EVERY + 1 {
+            s.new_card(&mut w, 0, "more".into());
+        }
+        let strayed = |w: &World, card: CardId| {
+            (w.cards[card].story.iter())
+                .filter(|s| matches!(s.event, StoryEvent::Strayed(_)))
+                .count()
+        };
+        for card in [1, STRAY_EVERY + 1] {
+            w.cards[card].paths = vec![Owned::new(repo[0].0)];
+            w.agents[id].card = Some(card);
+            w.agents[id].progress = 39;
+            Sim::stray(&mut w, id, card);
+            assert_eq!(strayed(&w, card), 0, "#{} at 39%", card + 1);
+            w.agents[id].progress = 40;
+            Sim::stray(&mut w, id, card);
+            assert_eq!(strayed(&w, card), 1, "#{} at 40%", card + 1);
+            let edit = format!("tool_use Edit {}", repo[1].0);
+            assert!(
+                w.agents[id].trace.iter().any(|l| l.ends_with(&edit)),
+                "{edit}"
+            );
+            let note = format!(
+                "note you changed {}, which #{} does not own; say so in your done",
+                repo[1].0,
+                card + 1
+            );
+            assert!(
+                w.agents[id]
+                    .trace
+                    .back()
+                    .is_some_and(|l| l.ends_with(&note)),
+                "{note}"
+            );
+            assert_eq!(
+                w.agents[id].activity.as_deref(),
+                Some(&*format!("Edit {}", repo[1].0))
+            );
+            w.agents[id].trace.clear();
+        }
+        w.cards[2].paths = vec![Owned::new(repo[0].0)];
+        w.agents[id].card = Some(2);
+        w.agents[id].progress = 100;
+        Sim::stray(&mut w, id, 2);
+        assert_eq!(strayed(&w, 2), 0, "#3 is not a fourth card");
+        assert!(w.agents[id].trace.is_empty());
     }
 
     #[test]

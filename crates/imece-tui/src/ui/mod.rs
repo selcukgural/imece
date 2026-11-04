@@ -13760,6 +13760,13 @@ after | not a table";
         assert!(s.contains("2. Docs · standard"), "{s}");
         assert!(s.contains("   Write them."), "{s}");
         assert!(s.contains(" a  yes ") && s.contains(" n  notes "), "{s}");
+        // The footer says the window's keys too, not the pane's.
+        let foot = s.lines().last().unwrap();
+        assert!(
+            foot.contains("a  yes") && foot.contains("j k  scroll"),
+            "{foot}"
+        );
+        assert!(!foot.contains("enter shows the plan"), "{foot}");
         // Scrolled past the first card.
         app.plan_window = Some((item, 5));
         let s = render(&app, 140, 30);
