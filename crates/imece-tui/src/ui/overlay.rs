@@ -469,12 +469,12 @@ pub(crate) fn fold(s: &str) -> String {
 
 /// How many of `help_keys` come before the help's new-line line: the
 /// writing keys end there.
-const WRITING_KEYS: usize = 19;
+const WRITING_KEYS: usize = 18;
 
 /// The rows of `help_keys` (with the new-line line) whose keys are
 /// written, or none of imece's: the person's key file does not turn
 /// them, so they are shown as they are.
-pub(crate) const TYPED: [usize; 5] = [4, 16, 17, 18, WRITING_KEYS];
+pub(crate) const TYPED: [usize; 5] = [4, 15, 16, 17, WRITING_KEYS];
 
 /// The help's rows with the person's own keys: one for each key the key
 /// file gives first (those of a place say where), then `help_keys` with
@@ -523,7 +523,6 @@ pub(crate) fn help_keys(lang: Lang, shift_enter: bool) -> Vec<(&'static str, &'s
 pub fn solo_pick(f: &mut Frame, app: &App, p: &SoloPick) {
     let t = app.lang.text();
     let question = match p.step {
-        PickStep::Vendor => t.solo_pick_vendor,
         PickStep::Model => t.solo_pick_model,
         PickStep::Effort => t.solo_pick_effort,
     };
@@ -534,13 +533,9 @@ pub fn solo_pick(f: &mut Frame, app: &App, p: &SoloPick) {
         } else {
             item.clone()
         };
-        let style = match p.step {
-            PickStep::Vendor => bold(vendor_color(p.vendors[n])),
-            _ => bold(pal().strong),
-        };
         let line = Line::from(vec![
             Span::styled(format!(" {} ", n + 1), dim()),
-            Span::styled(shown, style),
+            Span::styled(shown, bold(pal().strong)),
         ]);
         lines.push(if n == p.sel() {
             line.style(Style::new().add_modifier(Modifier::REVERSED))
@@ -550,12 +545,10 @@ pub fn solo_pick(f: &mut Frame, app: &App, p: &SoloPick) {
     }
     lines.push(Line::raw(""));
     let so_far = match p.choice() {
-        Some(c) => format!(" {} {c}", p.chosen_vendor().label()),
-        None => format!(" {}", p.chosen_vendor().label()),
+        Some(c) => format!(" {CLAUDE} {c}"),
+        None => format!(" {CLAUDE}"),
     };
-    if p.step != PickStep::Vendor {
-        lines.push(Line::from(Span::styled(so_far, dim())));
-    }
+    lines.push(Line::from(Span::styled(so_far, dim())));
     lines.push(Line::from(Span::styled(t.solo_pick_keys, dim())));
     window(f, t.solo_pick_title.into(), lines, 64);
 }
@@ -605,7 +598,7 @@ pub fn archives(f: &mut Frame, app: &App, b: &Browser) -> Option<Position> {
 
 /// One row of the archives browser: a checkout and how many archives it
 /// has; a project open on it now; an archive with its cost, cards done,
-/// agents and day; an agent with its vendor and what it spent.
+/// agents and day; an agent with what it spent.
 fn archive_row(app: &App, b: &Browser, row: Row) -> Line<'static> {
     let t = app.lang.text();
     let w = &app.world;
@@ -669,8 +662,6 @@ fn archive_row(app: &App, b: &Browser, row: Row) -> Line<'static> {
                 Span::raw(indent),
                 Span::styled(if lead { "◆ " } else { "  " }, fg(pal().accent)),
                 Span::styled(clean(&a.name), fg(pal().strong)),
-                Span::raw("  "),
-                Span::styled(a.vendor.label(), fg(vendor_color(a.vendor))),
                 Span::styled(format!(" · {}", dollars(a.cost)), dim()),
             ])
         }
@@ -813,12 +804,10 @@ pub fn welcome(f: &mut Frame, app: &App) {
         .collect();
     lines.push(Line::raw(""));
     lines.push(Line::from(Span::styled(
-        format!(" {}", t.welcome_vendors),
+        format!(" {}", t.welcome_claude),
         bold(pal().strong),
     )));
-    for (v, seen) in &app.vendors {
-        lines.push(vendor_line(app, *v, seen));
-    }
+    lines.push(seen_line(app));
     lines.push(Line::raw(""));
     lines.push(Line::from(Span::styled(
         format!(" {}", t.welcome_keys_title),
@@ -852,11 +841,11 @@ fn branded(f: &Frame, app: &App, width: u16, lines: Vec<Line<'static>>) -> Vec<L
     out
 }
 
-/// One vendor's line in the first-run window: a mark, its name, the
+/// Claude Code's line in the first-run window: a mark, its name, the
 /// version it gave (cleaned: a CLI's words) and its sign-in.
-fn vendor_line(app: &App, v: Vendor, seen: &Seen) -> Line<'static> {
+fn seen_line(app: &App) -> Line<'static> {
     let t = app.lang.text();
-    let (mark, style, version, what) = match seen {
+    let (mark, style, version, what) = match &app.seen {
         Seen::Checking => (
             app.spin().unwrap_or("…"),
             dim(),
@@ -872,7 +861,7 @@ fn vendor_line(app: &App, v: Vendor, seen: &Seen) -> Line<'static> {
                     "✕",
                     bold(pal().warn),
                     version,
-                    fill(t.login_no, &[welcome::sign_in(v)]),
+                    fill(t.login_no, &[welcome::SIGN_IN]),
                 ),
                 Login::Unknown => ("?", dim(), version, t.login_unknown.to_string()),
             }
@@ -880,7 +869,7 @@ fn vendor_line(app: &App, v: Vendor, seen: &Seen) -> Line<'static> {
     };
     Line::from(vec![
         Span::styled(format!("   {mark} "), style),
-        Span::styled(fit(v.label(), 8), bold(pal().strong)),
+        Span::styled(fit(CLAUDE, 8), bold(pal().strong)),
         Span::styled(version, dim()),
         Span::styled(what, style),
     ])
@@ -927,7 +916,7 @@ pub fn leaving(f: &mut Frame, app: &App) {
             let a = &w.agents[id];
             let mut spans = vec![
                 Span::raw("   "),
-                Span::styled(fit(&a.name, 16), bold(vendor_color(a.vendor))),
+                Span::styled(fit(&a.name, 16), bold(pal().agent)),
             ];
             if w.projects.len() > 1 {
                 spans.push(Span::styled(fit(&w.projects[a.project].name, 12), dim()));

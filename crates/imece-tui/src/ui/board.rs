@@ -51,7 +51,7 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App) {
                     format!("{g} "),
                     glyph_style(app, a, rungs[owner], color),
                 ));
-                spans.push(Span::styled(clean(&a.name), fg(vendor_color(a.vendor))));
+                spans.push(Span::styled(clean(&a.name), fg(pal().agent)));
                 if column == Column::Working {
                     spans.push(Span::styled(format!(" {}", bar(a.progress)), fg(color)));
                 }

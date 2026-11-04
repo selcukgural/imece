@@ -1,6 +1,6 @@
 [package]
 name = "imece-agent"
-description = "Drives coding agents from vendor CLIs as child processes and reports what they do as vendor-neutral events"
+description = "Drives Claude Code sessions as child processes and reports what they do as events"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

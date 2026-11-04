@@ -195,10 +195,7 @@ pub fn event(lang: Lang, w: &World, e: &Event) -> String {
                 t.ev_confine_standard.to_string()
             }
         }
-        Event::CommandsMissing { agent } => {
-            let vendor = w.agents[*agent].vendor.label();
-            fill(t.ev_commands_missing, &[name(w, *agent), vendor])
-        }
+        Event::CommandsMissing { agent } => fill(t.ev_commands_missing, &[name(w, *agent), CLAUDE]),
         Event::SetupRan {
             agent,
             ok,
@@ -282,7 +279,6 @@ pub fn event(lang: Lang, w: &World, e: &Event) -> String {
         }
         Event::Reviewed {
             agent,
-            by,
             model,
             text,
             cost,
@@ -290,7 +286,7 @@ pub fn event(lang: Lang, w: &World, e: &Event) -> String {
         } => fill(
             t.ev_reviewed,
             &[
-                by.label(),
+                CLAUDE,
                 model,
                 name(w, *agent),
                 &dollars(*cost),
@@ -719,8 +715,8 @@ pub fn ago(lang: Lang, seconds: u64) -> String {
     }
 }
 
-/// A vendor plan's usage window `l` as the header says it, `now` being
-/// the world's seconds: the vendor, the window's length, what is left of
+/// The plan's usage window `l` as the header says it, `now` being the
+/// world's seconds: `claude`, the window's length, what is left of
 /// it, and when it starts again (when said and still ahead).
 pub fn limit(lang: Lang, l: &Limit, now: u64) -> String {
     let t = lang.text();
@@ -731,13 +727,12 @@ pub fn limit(lang: Lang, l: &Limit, now: u64) -> String {
         fill(t.window_days, &[&(hours / 24).to_string()])
     };
     let left = (100 - l.used.min(100)).to_string();
-    let vendor = l.vendor.label();
     match l.resets_at.filter(|&r| r > now) {
         Some(r) => fill(
             t.limit_resets,
-            &[vendor, &window, &left, &ago(lang, r - now)],
+            &[CLAUDE, &window, &left, &ago(lang, r - now)],
         ),
-        None => fill(t.limit, &[vendor, &window, &left]),
+        None => fill(t.limit, &[CLAUDE, &window, &left]),
     }
 }
 
@@ -1107,7 +1102,6 @@ mod tests {
         let w = crate::live::testing::team(1);
         let ok = Event::Reviewed {
             agent: 1,
-            by: Vendor::Codex,
             model: "default".into(),
             patch: "p".into(),
             text: "\n  \n1. x: no test\n2. y".into(),
@@ -1115,11 +1109,11 @@ mod tests {
         };
         assert_eq!(
             event(Lang::En, &w, &ok),
-            "codex (default) reviewed claude-1's change, for $0.04: 1. x: no test"
+            "claude (default) reviewed claude-1's change, for $0.04: 1. x: no test"
         );
         assert_eq!(
             event(Lang::Tr, &w, &ok),
-            "codex (default) claude-1 değişikliğini inceledi, $0.04 tuttu: 1. x: no test"
+            "claude (default) claude-1 değişikliğini inceledi, $0.04 tuttu: 1. x: no test"
         );
         let failed = Event::ReviewFailed {
             agent: 1,
@@ -1287,7 +1281,6 @@ mod tests {
     #[test]
     fn a_usage_window_is_worded_with_what_is_left_and_when_it_starts_again() {
         let l = Limit {
-            vendor: Vendor::Claude,
             minutes: 300,
             used: 52,
             resets_at: Some(10_000 + 2 * 3600 + 59 * 60),
@@ -1302,25 +1295,24 @@ mod tests {
         );
         // A week, already past its reset or without one: no time.
         let week = Limit {
-            vendor: Vendor::Codex,
             minutes: 10_080,
             used: 100,
             resets_at: Some(10_000),
         };
-        assert_eq!(limit(Lang::En, &week, 10_000), "codex 7d: 0% left");
-        assert_eq!(limit(Lang::Tr, &week, 10_000), "codex 7 g: %0 kaldı");
+        assert_eq!(limit(Lang::En, &week, 10_000), "claude 7d: 0% left");
+        assert_eq!(limit(Lang::Tr, &week, 10_000), "claude 7 g: %0 kaldı");
         let day = Limit {
             minutes: 24 * 60,
             resets_at: None,
             ..week
         };
-        assert_eq!(limit(Lang::En, &day, 0), "codex 1d: 0% left");
+        assert_eq!(limit(Lang::En, &day, 0), "claude 1d: 0% left");
         let hour = Limit {
             minutes: 23 * 60,
             used: 0,
             ..day
         };
-        assert_eq!(limit(Lang::En, &hour, 0), "codex 23h: 100% left");
+        assert_eq!(limit(Lang::En, &hour, 0), "claude 23h: 100% left");
         assert_eq!(
             limit(
                 Lang::En,
@@ -1330,26 +1322,25 @@ mod tests {
                 },
                 0
             ),
-            "codex 23h: 100% left, resets in 0 min"
+            "claude 23h: 100% left, resets in 0 min"
         );
     }
 
     #[test]
-    fn a_command_line_never_listed_is_worded_with_the_agent_and_its_vendor() {
-        let mut w = crate::live::testing::team(1);
-        w.agents[1].vendor = Vendor::Gemini;
+    fn a_command_line_never_listed_is_worded_with_the_agent() {
+        let w = crate::live::testing::team(1);
         let e = Event::CommandsMissing { agent: 1 };
         let who = &w.agents[1].name;
         assert_eq!(
             event(Lang::En, &w, &e),
             format!(
-                "{who}'s session listed no commands of its own; gemini's format may have changed, so only /clear completes"
+                "{who}'s session listed no commands of its own; claude's format may have changed, so only /clear completes"
             )
         );
         assert_eq!(
             event(Lang::Tr, &w, &e),
             format!(
-                "{who} oturumu kendi komutlarını listelemedi; gemini biçimi değişmiş olabilir, yalnızca /clear tamamlanır"
+                "{who} oturumu kendi komutlarını listelemedi; claude biçimi değişmiş olabilir, yalnızca /clear tamamlanır"
             )
         );
     }
@@ -1614,25 +1605,25 @@ mod tests {
         };
         assert_eq!(
             event(Lang::En, &w, &e),
-            "claude-1 hit a vendor error: API Error: ↵ overloaded · imece tries again in 2 min 0 s (2/3)"
+            "claude-1 hit a API error: API Error: ↵ overloaded · imece tries again in 2 min 0 s (2/3)"
         );
         assert_eq!(
             event(Lang::Tr, &w, &e),
-            "claude-1 satıcı hatası aldı: API Error: ↵ overloaded · imece 2 dk 0 sn sonra yeniden deniyor (2/3)"
+            "claude-1 API hatası aldı: API Error: ↵ overloaded · imece 2 dk 0 sn sonra yeniden deniyor (2/3)"
         );
         w.turn_failed(1, "Invalid API key", Some(Fault::Account));
         let i = w.open_inbox()[0];
         assert_eq!(
             notice(Lang::En, &w, crate::notify::Note::Item(i)),
-            "imece · claude-1 hit a vendor error that needs you"
+            "imece · claude-1 hit a API error that needs you"
         );
         assert_eq!(
             notice(Lang::Tr, &w, crate::notify::Note::Item(i)),
-            "imece · claude-1 senin çözmen gereken bir satıcı hatası aldı"
+            "imece · claude-1 senin çözmen gereken bir API hatası aldı"
         );
         assert_eq!(
             inbox(Lang::Tr, &w, &w.inbox[i]),
-            "claude-1 satıcı hatası, giderince ona yaz: Invalid API key"
+            "claude-1 API hatası, giderince ona yaz: Invalid API key"
         );
     }
 
@@ -1676,11 +1667,11 @@ mod tests {
         );
         assert_eq!(held(Lang::Tr, &o(0, 0)), "temiz");
         let done = Tidied {
-            removed: vec!["claude-3".into(), "codex-4".into()],
+            removed: vec!["claude-3".into(), "claude-4".into()],
             kept: Vec::new(),
             torn: Vec::new(),
         };
-        assert_eq!(tidied(Lang::En, &done), "removed claude-3, codex-4");
+        assert_eq!(tidied(Lang::En, &done), "removed claude-3, claude-4");
         let done = Tidied {
             removed: Vec::new(),
             kept: vec![

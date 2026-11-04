@@ -1,6 +1,6 @@
 [package]
 name = "imece-tui"
-description = "imece's screen: many agents from many vendors in one terminal, on fake events or live agents"
+description = "imece's screen: a team of Claude Code agents in one terminal, on fake events or live agents"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

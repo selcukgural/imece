@@ -1,6 +1,6 @@
 ---
 title: "Coming back"
-description: "Quitting with agents mid-turn and starting again the next day: the left-off window, agents asleep, how each vendor resumes, the wake briefing, forgetting a session, the away digest, a word in another window, marks and export."
+description: "Quitting with agents mid-turn and starting again the next day: the left-off window, agents asleep, how a session resumes, the wake briefing, forgetting a session, the away digest, a word in another window, marks and export."
 ---
 
 # Coming back
@@ -21,9 +21,9 @@ Press `s` to see them:
  BEFORE YOU GO
  Mid-turn: quitting cuts these turns short
     claude-1   editing src/parser.rs
-    codex-1    running cargo test
+    claude-3   running cargo test
  Changes not reviewed
-    Δ 18:40 gemini-1 finished: config loader (2 files, +30 −4)
+    Δ 18:40 claude-4 finished: config loader (2 files, +30 −4)
  q quits · W opens the next waiting · any other key: back
 ```
 
@@ -45,11 +45,11 @@ Before anything moves, one window says where you left off:
  $12.40 of $50.00 spent; every agent sleeps until spoken to
  parser: 4 agents, 2 open cards
  1 wait for you:
-   Δ 18:40 gemini-1 finished: config loader (2 files, +30 −4)
- turns cut short when imece closed: claude-1, codex-1
+   Δ 18:40 claude-4 finished: config loader (2 files, +30 −4)
+ turns cut short when imece closed: claude-1, claude-3
  the last lines before:
    ─ 2026-10-31
-   18:40 ! gemini-1 finished: 2 files, +30 −4 → waits for you
+   18:40 ! claude-4 finished: 2 files, +30 −4 → waits for you
    18:41 › you ran `cargo test` → exit 0 · 12 s
  any key: close
 ```
@@ -60,18 +60,18 @@ The journal has a line for each cut turn, and the salon shows everyone asleep:
 
 ```text
  09:00 ✕ claude-1's turn was cut short when imece closed; it hears of it when it wakes
- 09:00 ✕ codex-1's turn was cut short when imece closed; it hears of it when it wakes
+ 09:00 ✕ claude-3's turn was cut short when imece closed; it hears of it when it wakes
 ```
 
 ```text
    ◦ claude-1   #3   parser: nested lists   ◦ asleep since the last run, write to it to wake it
-   ◦ codex-1    #5   config: defaults       ◦ asleep since the last run, write to it to wake it
-   ◦ gemini-1   #4   config loader          ◦ asleep since the last run, write to it to wake it
+   ◦ claude-3   #5   config: defaults       ◦ asleep since the last run, write to it to wake it
+   ◦ claude-4   #4   config loader          ◦ asleep since the last run, write to it to wake it
 ```
 
 Asleep means no process and no cost. Three things wake an agent: you write to it, a teammate's message of a waking type arrives, or a card posted in this run is offered to it. Mail and cards that waited through the restart wake nobody. A journal line older than today carries a `─ YYYY-MM-DD` row above it, and so does an item in WAITING FOR YOU of another day.
 
-## 3. Writing wakes it: how each vendor resumes
+## 3. Writing wakes it: how a session resumes
 
 Type `@claude-1 go on` and `enter`. imece looks for the session the agent had and resumes it when it can; the journal says which way it went.
 
@@ -83,18 +83,14 @@ Type `@claude-1 go on` and `enter`. imece looks for the session the agent had an
 
 A resumed Claude session reports the whole session's cost, so imece starts counting at what it had already booked (the cost floor) and books only what lies above it. The briefing is short, since the session knows its story: "imece started again since your last turn; this session goes on where it was, so you remember everything up to then. Since then:" then the cut turn's prompt ("A turn of yours was cut short when imece closed, before it ended; it is not run again. Its prompt was: …") and how many messages wait, or "Nothing; go on."
 
-**Codex.** Threads are not ephemeral, so Codex keeps the rollout under `~/.codex/sessions/`; the start sends `thread/resume` with the thread id, and the answer must carry that id. A thread whose rollout is gone is refused by Codex before any turn. A resumed Codex thread keeps the instructions it was started with; what changed since (a rename, new teammates) reaches it only through imece's notes.
-
-**Gemini.** `session/load` with the session id replays the chat Gemini kept under `~/.gemini/tmp/`; the history streams back before the first turn (at most 50 messages, so a long session resumes with its tail).
-
-**When a resume is not possible** (no transcript, a rollout gone, an id of another shape, or `--fresh`), the agent starts a new session and is told where it left off. The journal says why: no session to go on with (it never had one, or it was forgotten or cleared), the old one not found where its vendor keeps it, or the vendor's own words when it refused to resume (its first line, 160 characters at most):
+**When a resume is not possible** (no transcript, an id of another shape, or `--fresh`), the agent starts a new session and is told where it left off. The journal says why: no session to go on with (it never had one, or it was forgotten or cleared), the old one not found where Claude Code keeps it, or Claude Code's own words when it refused to resume (its first line, 160 characters at most):
 
 ```text
- 09:02 ⚑ codex-1 starts a new session, told where it left off: its last one could not be resumed (stopped: the session refused Thread: no rollout found for thread id 686c…)
+ 09:02 ⚑ claude-3 starts a new session, told where it left off: its last one could not be resumed (stopped: No conversation found with session ID 686c…)
  09:02 ⚑ claude-2 starts a new session, told where it left off: its last one was not found
 ```
 
-The demo shows it too: every second resume of a demo run is refused the way a vendor that lost the session would refuse it.
+The demo shows it too: every second resume of a demo run is refused the way Claude Code refuses a session it lost.
 
 The wake briefing goes ahead of the first prompt as a note from imece: "imece started again since your last turn, so this is a new session that remembers nothing of the old one. Where you left off:", then its card ("Your task: #5 config: defaults (not finished). Its story, latest last:" with the last 12 story lines), the cut turn's prompt, how many messages wait, its worktree's uncommitted changes ("Your worktree holds changes the person has not applied: 2 files, +12 −3: src/a.rs, src/b.rs"), and the board's open cards. Every line is cleaned and cut (300 characters a line, 6000 in all). A worker told again goes on with its unfinished card.
 
@@ -112,7 +108,7 @@ A session that has gone wrong (or grown long) can be dropped. `:forget @claude-1
  09:30 › you made claude-1 forget its session; it starts a new one, told where it left off
 ```
 
-The running session ends (its run killed, unfinished prompts kept as cut-short), and what the vendor kept of it is removed on a thread of imece's own: Claude's transcript file, Codex's thread (`thread/delete`), Gemini's chat files. The agent sleeps until spoken to; its next message starts a fresh session with the full briefing (`Restarted`). The `:` menu marks `:forget` with `$`: the new session pays the whole briefing again, without the cache. An agent with nothing to forget is refused (`claude-1 keeps its session: …`). `imece --fresh` does the same for every remembered agent at the start.
+The running session ends (its run killed, unfinished prompts kept as cut-short), and its transcript file is removed on a thread of imece's own. The agent sleeps until spoken to; its next message starts a fresh session with the full briefing (`Restarted`). The `:` menu marks `:forget` with `$`: the new session pays the whole briefing again, without the cache. An agent with nothing to forget is refused (`claude-1 keeps its session: …`). `imece --fresh` does the same for every remembered agent at the start.
 
 ## 5. The away digest
 
@@ -125,8 +121,8 @@ Switch to another window for a while. When the terminal gets the focus back afte
   ✕ 0 blocks
   ⚑ 1 assumptions made
   ⇄ 4 conversations
-  09:33 ⚑ codex-1: worktree moved from 3f2a9c1 to HEAD 9b1d2e0
-  09:41 ! codex-1 finished: 1 files, +18 −2 → waits for you
+  09:33 ⚑ claude-3: worktree moved from 3f2a9c1 to HEAD 9b1d2e0
+  09:41 ! claude-3 finished: 1 files, +18 −2 → waits for you
  any key: close
 ```
 
@@ -135,7 +131,7 @@ The counts are the new journal lines by kind and what waits for you now; under t
 The digest tells you when you are back; `:notify` fetches you. `:notify bell` rings the terminal's bell, `:notify text` sends a desktop notification, when something came to wait for you while you were in another window and is still there five seconds later: a change, a question, an ask for your yes, an agent stuck, each once. What was on screen when you left stays quiet, and so does whatever came and went within the wait.
 
 ```text
- imece · codex-1 finished: a change waits for you
+ imece · claude-3 finished: a change waits for you
 ```
 
 Several at once are one bell, or one note with the count. `:notify` bare goes round: off, bell, text, off; the choice is remembered. It needs the same focus reports as the digest, and a terminal that shows notifications for the text (iTerm2, WezTerm, Ghostty, kitty; elsewhere `bell`). In kitty a click on the note opens what it was about.
@@ -147,24 +143,24 @@ Away from the machine altogether, `:notify push` sends the same words, with the 
 In the journal (or an open conversation) select a line you will want again, the message with the plan say, and press `m`: `marked: ' comes back to it`. The line wears `✱` after its clock. `'` selects the next marked line, round to the first: in the open conversation, else in the journal; from anywhere else it goes to the salon's journal first. `m` again takes the mark away (`mark taken away`).
 
 ```text
- 09:41✱ ⇄ lead → codex-1 [assign]: #5 config: defaults, src/config.rs
+ 09:41✱ ⇄ lead → claude-3 [assign]: #5 config: defaults, src/config.rs
 ```
 
 Marks are yours: kept in the store between runs, never folded under a newer line, and kept by the retention tidy however old (the journal otherwise keeps 90 days past its newest 5000 lines).
 
 ## 7. Take a conversation with you
 
-Open the conversation with `v` on `codex-1`'s row (its talk with you) or `enter` on a journal line (two agents' talk), then `:export`:
+Open the conversation with `v` on `claude-3`'s row (its talk with you) or `enter` on a journal line (two agents' talk), then `:export`:
 
 ```text
  written to /Users/you/code/parser/imece-conversation-20261101-0945.md
 ```
 
-The file is `# Conversation: lead ⇄ codex-1`, each message a heading with its day and time, who to whom and its kind (`### 2026-11-01 09:41 codex-1 → lead [done]`) over its text. With a card's screen open (`#5`) instead, the file is the card: its WHO, STORY, what waits on it and its whole journal, unfolded. `:export ~/notes/` names a file in that directory; `:export ~/notes/config.md` names the file. Nothing is ever written over (`could not write …`). Every line is cleaned as the screen cleans it; the marks do not show in the file.
+The file is `# Conversation: lead ⇄ claude-3`, each message a heading with its day and time, who to whom and its kind (`### 2026-11-01 09:41 claude-3 → lead [done]`) over its text. With a card's screen open (`#5`) instead, the file is the card: its WHO, STORY, what waits on it and its whole journal, unfolded. `:export ~/notes/` names a file in that directory; `:export ~/notes/config.md` names the file. Nothing is ever written over (`could not write …`). Every line is cleaned as the screen cleans it; the marks do not show in the file.
 
 ## See also
 
-- [Sessions](../concepts/sessions.md): the store, resume per vendor, hygiene
+- [Sessions](../concepts/sessions.md): the store, resume, hygiene
 - [The journal](../screen/journal.md): days, marks, retention
-- [Files](../reference/files.md): where the store and the vendors' files live
+- [Files](../reference/files.md): where the store and Claude Code's files live
 - [A failing test, one worker](one-fix.md)

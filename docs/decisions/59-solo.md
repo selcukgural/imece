@@ -1,5 +1,7 @@
 # Solo sessions
 
+**Changed by [record 109](109-claude-only.md): Claude Code only; what is below about choosing a vendor is history.**
+
 Solo sessions (2026-11-01, user's ask and decisions): next to its team
 projects, imece opens LEADERLESS sessions where the person picks the
 vendor, the model and the thinking effort themselves, as many of each kind

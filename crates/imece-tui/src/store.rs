@@ -70,7 +70,7 @@ use crate::recall::{Hit, Line};
 /// 21 (2026-11-04): paid calls by kind as well as by day (`paid.kind`:
 /// commit messages and reviews have ceilings of their own, record 106),
 /// and the `Reviewed`/`ReviewFailed` events.
-pub const SCHEMA_VERSION: i64 = 21;
+pub const SCHEMA_VERSION: i64 = 22;
 /// Trace lines kept per agent, as the world keeps them.
 const TRACE_KEEP: usize = 200;
 /// The file's name under the state directory.
@@ -97,7 +97,7 @@ CREATE TABLE IF NOT EXISTS projects (
     closed INTEGER NOT NULL, repo TEXT NOT NULL, pinned INTEGER NOT NULL DEFAULT 0);
 CREATE TABLE IF NOT EXISTS agents (
     id INTEGER PRIMARY KEY, project INTEGER NOT NULL, name TEXT NOT NULL,
-    vendor TEXT NOT NULL, role TEXT NOT NULL, parent INTEGER, card INTEGER,
+    role TEXT NOT NULL, parent INTEGER, card INTEGER,
     cost INTEGER NOT NULL, taint TEXT NOT NULL, gone INTEGER NOT NULL,
     changed_at INTEGER NOT NULL, traced INTEGER NOT NULL, commands TEXT NOT NULL,
     model TEXT, tiered INTEGER NOT NULL, woken INTEGER NOT NULL, posted INTEGER NOT NULL,
@@ -209,7 +209,7 @@ fn index(
 pub struct Kept<'a> {
     /// Each project's checkout.
     pub repos: Vec<&'a Path>,
-    /// Each agent's model (none: its vendor's default) and whether a tier
+    /// Each agent's model (none: Claude Code's default) and whether a tier
     /// chose it.
     pub models: &'a [Option<String>],
     pub tiered: &'a [bool],
@@ -222,7 +222,7 @@ pub struct Kept<'a> {
     pub notes: &'a [Vec<String>],
     /// Prompts each agent was given and has not finished.
     pub inflight: &'a [Vec<String>],
-    /// The vendor session each agent had last, to go on with.
+    /// The session each agent had last, to go on with.
     pub sessions: &'a [Option<Resumable>],
     /// The worker each fork goes on from, until its session starts.
     pub forks: &'a [Option<AgentId>],
@@ -588,6 +588,18 @@ impl Store {
         if fresh {
             self.fill_recall()?;
         }
+        // Schema 22 (2026-11-04): Claude Code alone. A project's head on
+        // another vendor goes on as a new session on Claude Code's own
+        // model; another vendor's worker or helper has gone.
+        if self.has_column("agents", "vendor")? {
+            self.conn.execute_batch(
+                "UPDATE agents SET model = NULL, tiered = 0, session = NULL, session_spent = 0
+                 WHERE vendor <> 'Claude' AND id IN (SELECT leader FROM projects);
+                 UPDATE agents SET gone = 1, session = NULL, session_spent = 0
+                 WHERE vendor <> 'Claude' AND id NOT IN (SELECT leader FROM projects);
+                 ALTER TABLE agents DROP COLUMN vendor;",
+            )?;
+        }
         let version: i64 = self
             .conn
             .query_row(
@@ -891,16 +903,15 @@ impl Store {
         for &id in &plan.agents {
             let a = &w.agents[id];
             tx.execute(
-                "INSERT OR REPLACE INTO agents (id, project, name, vendor, role, parent, card, \
+                "INSERT OR REPLACE INTO agents (id, project, name, role, parent, card, \
                  cost, taint, gone, changed_at, traced, commands, model, tiered, woken, posted, \
                  session, session_spent, start, fork_of) \
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, \
-                 ?17, ?18, ?19, ?20, ?21)",
+                 ?17, ?18, ?19, ?20)",
                 params![
                     n(a.id),
                     n(a.project),
                     a.name,
-                    tag(&a.vendor),
                     tag(&a.role),
                     opt(a.parent),
                     opt(a.card),
@@ -1222,7 +1233,7 @@ impl Store {
         for (id, a) in w.agents.iter().enumerate() {
             let h = hash(&(
                 hash(&(
-                    a.project, &a.name, a.vendor, a.role, a.parent, a.card, a.cost, a.taint,
+                    a.project, &a.name, a.role, a.parent, a.card, a.cost, a.taint,
                 )),
                 hash(&(a.gone, a.changed_at, a.traced, &a.commands, &a.start)),
                 hash(&(
@@ -1486,7 +1497,7 @@ impl Store {
             found.repos.push(PathBuf::from(repo));
         }
         let mut st = conn.prepare(
-            "SELECT id, project, name, vendor, role, parent, card, cost, taint, gone, \
+            "SELECT id, project, name, role, parent, card, cost, taint, gone, \
              changed_at, traced, commands, model, tiered, woken, posted, session, session_spent, \
              start, fork_of FROM agents ORDER BY id",
         )?;
@@ -1497,32 +1508,31 @@ impl Store {
                 u(r.get(1)?),
                 r.get(2)?,
                 untag(&r.get::<_, String>(3)?)?,
-                untag(&r.get::<_, String>(4)?)?,
                 Status::Asleep,
-                ubig(r.get(10)?),
+                ubig(r.get(9)?),
             );
-            a.parent = uopt(r.get(5)?);
-            a.card = uopt(r.get(6)?);
-            a.cost = ubig(r.get(7)?);
-            a.taint = untag(&r.get::<_, String>(8)?)?;
-            a.gone = r.get(9)?;
-            a.traced = ubig(r.get(11)?);
-            a.commands = serde_json::from_str(&r.get::<_, String>(12)?).unwrap_or_default();
-            a.start = r.get(19)?;
+            a.parent = uopt(r.get(4)?);
+            a.card = uopt(r.get(5)?);
+            a.cost = ubig(r.get(6)?);
+            a.taint = untag(&r.get::<_, String>(7)?)?;
+            a.gone = r.get(8)?;
+            a.traced = ubig(r.get(10)?);
+            a.commands = serde_json::from_str(&r.get::<_, String>(11)?).unwrap_or_default();
+            a.start = r.get(18)?;
             if a.gone {
                 a.status = Status::Idle;
             }
             Ok((
                 a,
-                r.get::<_, Option<String>>(13)?,
-                r.get::<_, bool>(14)?,
+                r.get::<_, Option<String>>(12)?,
+                r.get::<_, bool>(13)?,
+                r.get::<_, u32>(14)?,
                 r.get::<_, u32>(15)?,
-                r.get::<_, u32>(16)?,
-                r.get::<_, Option<String>>(17)?.map(|session| Resumable {
+                r.get::<_, Option<String>>(16)?.map(|session| Resumable {
                     session,
-                    spent: ubig(r.get(18).unwrap_or(0)),
+                    spent: ubig(r.get(17).unwrap_or(0)),
                 }),
-                uopt(r.get(20)?),
+                uopt(r.get(19)?),
             ))
         })? {
             let (a, model, tiered, woken, posted, session, fork) = row?;
@@ -1997,8 +2007,8 @@ mod tests {
         d
     }
 
-    fn agent(id: AgentId, project: ProjectId, name: &str, vendor: Vendor, role: Role) -> Agent {
-        Agent::new(id, project, name.into(), vendor, role, Status::Working, 0)
+    fn agent(id: AgentId, project: ProjectId, name: &str, role: Role) -> Agent {
+        Agent::new(id, project, name.into(), role, Status::Working, 0)
     }
 
     /// A world with something in every table, with values that tell the
@@ -2045,10 +2055,10 @@ mod tests {
                 },
             ],
             agents: vec![
-                agent(0, 0, "lead", Vendor::Claude, Role::Leader),
-                agent(1, 0, "codex-1", Vendor::Codex, Role::Worker),
-                agent(2, 0, "codex-1.1", Vendor::Gemini, Role::Helper),
-                agent(3, 1, "lead-two", Vendor::Claude, Role::Leader),
+                agent(0, 0, "lead", Role::Leader),
+                agent(1, 0, "claude-1", Role::Worker),
+                agent(2, 0, "claude-1.1", Role::Helper),
+                agent(3, 1, "lead-two", Role::Leader),
             ],
             cards: vec![
                 Card {
@@ -2385,7 +2395,7 @@ mod tests {
             changes: HashMap::from([(
                 1,
                 worktree::Change {
-                    path: "/trees/codex-1".into(),
+                    path: "/trees/claude-1".into(),
                     tree: "abc123".into(),
                     files: vec![worktree::FileChange {
                         path: "a.txt".into(),
@@ -2403,15 +2413,7 @@ mod tests {
     /// The fields the store keeps of an agent, side by side.
     fn agent_view(a: &Agent) -> impl PartialEq + std::fmt::Debug {
         (
-            (
-                a.id,
-                a.project,
-                a.name.clone(),
-                a.vendor,
-                a.role,
-                a.parent,
-                a.card,
-            ),
+            (a.id, a.project, a.name.clone(), a.role, a.parent, a.card),
             (a.cost, a.taint, a.gone, a.changed_at, a.traced),
             (a.commands.clone(), a.trace.clone()),
         )
@@ -2629,9 +2631,9 @@ mod tests {
         assert_eq!(back.world.sent, w.sent);
         let mut w2 = back.world;
         w2.tick = 90;
-        w2.recall_line("@codex-1 go");
+        w2.recall_line("@claude-1 go");
         assert!(store.save(&w2, &k.kept()).unwrap());
-        assert_eq!(sent_rows(&store)[4], (5, 90, "@codex-1 go".to_string()));
+        assert_eq!(sent_rows(&store)[4], (5, 90, "@claude-1 go".to_string()));
         // Past SENT_KEEP lines in the file: a load brings the newest, a
         // tidy lets the rest go, once.
         for i in 0..SENT_KEEP {
@@ -2761,10 +2763,6 @@ mod tests {
                 Box::new(|w, _| w.agents[3].name = "lead-three".into()),
             ),
             ("agent project", Box::new(|w, _| w.agents[3].project = 0)),
-            (
-                "agent vendor",
-                Box::new(|w, _| w.agents[3].vendor = Vendor::Gemini),
-            ),
             (
                 "agent role",
                 Box::new(|w, _| w.agents[3].role = Role::Worker),
@@ -3343,9 +3341,9 @@ mod tests {
                 "(5, 'x', 0, 0, '/x')",
             ),
             (
-                "agents (id, project, name, vendor, role, parent, card, cost, taint, gone, \
+                "agents (id, project, name, role, parent, card, cost, taint, gone, \
                  changed_at, traced, commands, model, tiered, woken, posted)",
-                "(5, 0, 'x', 'Claude', 'Leader', NULL, NULL, 0, 'Clean', 0, 0, 0, '[]', NULL, 0, 0, 0)",
+                "(5, 0, 'x', 'Leader', NULL, NULL, 0, 'Clean', 0, 0, 0, '[]', NULL, 0, 0, 0)",
             ),
             (
                 "cards (id, project, title, owner, col, started, finished)",
@@ -3372,7 +3370,7 @@ mod tests {
             .raw()
             .execute_batch(
                 "INSERT INTO meta VALUES ('started_at', '1'); \
-                 INSERT INTO agents VALUES (0, 0, 'x', 'Clod', 'Leader', NULL, NULL, 0, 'Clean', \
+                 INSERT INTO agents VALUES (0, 0, 'x', 'Clod', NULL, NULL, 0, 'Clean', \
                  0, 0, 0, '[]', NULL, 0, 0, 0, NULL, 0, NULL, NULL);",
             )
             .unwrap();
@@ -3632,7 +3630,7 @@ mod tests {
         // An agent's name finds its lines; one of project two.
         let lead_two = recalled(&store, "lead-two", 10);
         assert_eq!(lead_two, [], "lead-two wrote nothing");
-        let which = recalled(&store, "codex which", 10);
+        let which = recalled(&store, "claude which", 10);
         assert_eq!(which, [(Some(6), 1, 0, "6 at Some(5)".to_string())]);
         assert_eq!(recalled(&store, "token", 10)[0].1, 0);
         assert_eq!(recalled(&store, " :-) ", 10), [], "no terms, no lines");
@@ -3788,7 +3786,7 @@ mod tests {
             "the line that does not read"
         );
         // In the order they were written: the trace lines by their
-        // agent's last change (66 for codex-1, 0 for lead).
+        // agent's last change (66 for claude-1, 0 for lead).
         let lead = recalled(&store, "lead", 10);
         assert_eq!(lead.first().map(|l| l.0), Some(Some(3)), "{lead:?}");
         assert_eq!(
@@ -3902,7 +3900,7 @@ mod tests {
         std::fs::create_dir_all(&d).unwrap();
         let path = d.join(FILE);
         let mut w = world();
-        let p = w.open_project(None, "notes".into(), "/n".into(), Vendor::Codex, Role::Solo);
+        let p = w.open_project(None, "notes".into(), "/n".into(), Role::Solo);
         let head = w.projects[p].leader;
         let mut owned = kept();
         owned.repos.push(PathBuf::from("/n"));
@@ -3926,11 +3924,11 @@ mod tests {
                 )
                 .unwrap();
             assert_eq!(
-                version, "21",
+                version, "22",
                 "the sent table, the Fault kind, archives, restores, start points, standing yes, the \
-                 recall index, forks, paid kinds and reviews: an older imece knows none"
+                 recall index, forks, paid kinds, reviews and no vendor: an older imece knows none"
             );
-            assert_eq!(SCHEMA_VERSION, 21);
+            assert_eq!(SCHEMA_VERSION, 22);
         }
         let back = Store::open(&path)
             .unwrap()
@@ -3939,8 +3937,8 @@ mod tests {
             .expect("a world");
         let a = &back.world.agents[head];
         assert_eq!(
-            (a.name.as_str(), a.role, a.vendor, a.project),
-            ("solo-notes", Role::Solo, Vendor::Codex, p)
+            (a.name.as_str(), a.role, a.project),
+            ("solo-notes", Role::Solo, p)
         );
         assert!(back.world.is_solo(p));
         assert_eq!(
@@ -4020,6 +4018,115 @@ mod tests {
         assert!(back.world.projects.iter().all(|p| !p.pinned));
         assert!(store.save(&w, &kept().kept()).unwrap());
         assert!(store.load(100).unwrap().unwrap().world.projects[0].pinned);
+    }
+
+    /// A world of two projects saved by a schema 21 imece, whose agents
+    /// 1 (worker of project 0), 0 and 2 ran on `vendors` in that order.
+    fn of_schema_21(store: &Store, vendors: [&str; 3]) {
+        store
+            .raw()
+            .execute_batch(&format!(
+                "ALTER TABLE agents ADD COLUMN vendor TEXT NOT NULL DEFAULT 'Claude';
+                 UPDATE agents SET model = 'gpt-5.6-terra', tiered = 1,
+                                   session = 'id-' || id, session_spent = 7;
+                 UPDATE agents SET vendor = '{}' WHERE id = 1;
+                 UPDATE agents SET vendor = '{}' WHERE id = 0;
+                 UPDATE agents SET vendor = '{}' WHERE id = 2;
+                 UPDATE meta SET value = '21' WHERE key = 'schema_version';",
+                vendors[0], vendors[1], vendors[2]
+            ))
+            .unwrap();
+    }
+
+    #[test]
+    fn a_file_of_schema_21_loses_its_other_vendors() {
+        let d = dir("schema21");
+        std::fs::create_dir_all(&d).unwrap();
+        let path = d.join(FILE);
+        let w = world();
+        {
+            let mut store = Store::open(&path).unwrap();
+            assert!(store.save(&w, &kept().kept()).unwrap());
+            // Agent 0 leads project 0 on Codex, agent 1 works on Gemini,
+            // agent 2 helps on Claude Code; agent 3 leads on Claude Code.
+            of_schema_21(&store, ["Gemini", "Codex", "Claude"]);
+            store
+                .raw()
+                .execute_batch("UPDATE agents SET gone = 0 WHERE id IN (1, 2);")
+                .unwrap();
+        }
+        // Opened twice: what the first did is not done again, and the
+        // second finds no column to read.
+        for _ in 0..2 {
+            let mut store = Store::open(&path).unwrap();
+            assert!(!store.has_column("agents", "vendor").unwrap());
+            let back = store.load(100).unwrap().expect("a world");
+            let (a, f) = (&back.world.agents, &back.found);
+            // The head goes on, new and on Claude Code's own model: nothing
+            // of the other vendor's is passed to it.
+            assert!(!a[0].gone);
+            assert_eq!(f.sessions[0], None);
+            assert_eq!(f.models[0], None);
+            assert!(!f.tiered[0]);
+            // The worker has gone.
+            assert!(a[1].gone);
+            assert_eq!(f.sessions[1], None);
+            // Claude Code's stay as they were.
+            assert!(!a[2].gone);
+            assert_eq!(
+                f.sessions[2],
+                Some(Resumable {
+                    session: "id-2".into(),
+                    spent: 7
+                })
+            );
+            assert_eq!(f.models[2].as_deref(), Some("gpt-5.6-terra"));
+            assert!(f.tiered[2]);
+            assert_eq!(
+                store
+                    .raw()
+                    .query_row(
+                        "SELECT value FROM meta WHERE key = 'schema_version'",
+                        [],
+                        |r| r.get::<_, String>(0),
+                    )
+                    .unwrap(),
+                SCHEMA_VERSION.to_string()
+            );
+        }
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn a_review_journaled_with_a_vendor_still_loads() {
+        let d = dir("reviewed-by");
+        std::fs::create_dir_all(&d).unwrap();
+        let path = d.join(FILE);
+        let mut w = world();
+        w.note(Event::Reviewed {
+            agent: 1,
+            model: "default".into(),
+            patch: "ab".into(),
+            text: "fine".into(),
+            cost: 0,
+        });
+        let mut store = Store::open(&path).unwrap();
+        store.save(&w, &kept().kept()).unwrap();
+        // As older runs wrote it, with who reviewed.
+        store
+            .raw()
+            .execute(
+                "UPDATE journal SET data = replace(data, '\"Reviewed\":{', \
+                 '\"Reviewed\":{\"by\":\"Codex\",') WHERE data LIKE '%Reviewed%'",
+                [],
+            )
+            .unwrap();
+        let back = store.load(100).unwrap().expect("a world");
+        assert!(matches!(
+            &back.world.journal.last().unwrap().event,
+            Event::Reviewed { agent: 1, model, .. } if model == "default"
+        ));
+        let _ = std::fs::remove_dir_all(&d);
     }
 
     #[test]
@@ -4578,7 +4685,7 @@ mod tests {
                 |r| r.get(0),
             )
             .unwrap();
-        assert_eq!(version, "21");
+        assert_eq!(version, SCHEMA_VERSION.to_string());
         drop(st);
         let _ = std::fs::remove_dir_all(&d);
     }

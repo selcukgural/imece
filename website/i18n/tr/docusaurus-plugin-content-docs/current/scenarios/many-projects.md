@@ -21,18 +21,18 @@ imece `~/code/cli` içinde başlatıldı; projesi dizinin adını aldı, `cli`, 
  15:00 › web projesini açtın (/Users/you/code/web)
 ```
 
-`:open YOL [AD]`, YOL'daki git çalışma kopyasını açar; AD, dizinin güvenli kılınmış adıdır (1-24 harf, rakam, `.`, `_`, `-`). Yeni projenin lideri `lead-AD`dır; takımın lider satıcısında, aynı model ve kademelerle (lider satıcı proje başına seçilemez). `:open ` yazarken dizinleri tamamlar (gizli olanlar bir `.`ten sonra, `~` çalışır). `:` menüsü `:open`ı `$` ile işaretler: yeni bir lider, ilk yazdığınızda para tutan yeni bir oturumdur. Çalışma kopyası olmayan bir yol, alınmış bir ad ya da zaten açık bir çalışma kopyası nedeniyle reddedilir (`api zaten açık, adı api`). `:o` kısaltmasıdır.
+`:open YOL [AD]`, YOL'daki git çalışma kopyasını açar; AD, dizinin güvenli kılınmış adıdır (1-24 harf, rakam, `.`, `_`, `-`). Yeni projenin lideri `lead-AD`dır; aynı model ve kademelerle. `:open ` yazarken dizinleri tamamlar (gizli olanlar bir `.`ten sonra, `~` çalışır). `:` menüsü `:open`ı `$` ile işaretler: yeni bir lider, ilk yazdığınızda para tutan yeni bir oturumdur. Çalışma kopyası olmayan bir yol, alınmış bir ad ya da zaten açık bir çalışma kopyası nedeniyle reddedilir (`api zaten açık, adı api`). `:o` kısaltmasıdır.
 
 Salon artık ajanları projeye göre gruplar, her birinin bir başlık satırı vardır; birden fazla proje varken gelen kutusu ve günlük satırları projenin adını taşır:
 
 ```text
  ▾ cli                        1 çalışıyor  $2.10
-   ◆ lead       claude          koordine ediyor                   $0.40
+   ◆ lead       koordine ediyor                                   $0.40
    ● claude-1   #2   docs: man sayfası    docs/imece.1 yazıyor      $1.70
  ▾ api                        0 çalışıyor  $0.00
-   ◆ lead-api   claude          boşta
+   ◆ lead-api   boşta
  ▾ web                        0 çalışıyor  $0.00
-   ◆ lead-web   claude          boşta
+   ◆ lead-web   boşta
 ```
 
 `/` seçili projenin liderine yazar; önce `api` içinde bir satır seçin (`j k`), sonra `/`. `@lead-web mesaj` her yerden tek bir lidere yazar.

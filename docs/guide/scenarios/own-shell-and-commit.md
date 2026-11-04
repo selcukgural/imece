@@ -69,7 +69,7 @@ For a project other than the one at hand it is `!git -C /path/to/checkout commit
 | A day (UTC), every project together | 20 suggestions and $1.00 |
 | The same staged tree again | nothing: the last suggestion per project is kept and put back on the line |
 
-The reservation is one transaction in the store and the pot holds it; refused when the pot has less than $0.05 or the day is full (`no commit message: today's 20 suggestions were made`). A call that could not start costs nothing; one that ran out of time without reporting keeps its cap. Failures are journaled with why and what they cost: `no commit message came ($0.00): nothing is staged`. Only Claude Code can be asked, because it is the one vendor whose call takes a hard spending cap; a Codex or Gemini lead needs Claude Code on PATH for this, and without it `:commit` is refused. The `:` menu marks `:commit` with `$`.
+The reservation is one transaction in the store and the pot holds it; refused when the pot has less than $0.05 or the day is full (`no commit message: today's 20 suggestions were made`). A call that could not start costs nothing; one that ran out of time without reporting keeps its cap. Failures are journaled with why and what they cost: `no commit message came ($0.00): nothing is staged`. The `:` menu marks `:commit` with `$`.
 
 ## 5. A long night run: `--awake`, `:awake`
 

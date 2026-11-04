@@ -29,7 +29,7 @@ Bir işçi `done` gönderdiğinde imece worktree'sini okur ve değişiklik SENİ
   j k  w kaydır · sar  [ ] dosya  a x uygula · parça seç  r reddet  > ona alıntıla  c n not · notları gönder  v satır kopyala  esc geri  ? yardım
 ```
 
-Başlık: işçi, dosyalar ve satırlar, done'un ilk satırı. Çerçeve işçinin satıcı rengindedir.
+Başlık: işçi, dosyalar ve satırlar, done'un ilk satırı.
 
 ## Yamanın üstündekiler
 
@@ -47,7 +47,7 @@ Başlık: işçi, dosyalar ve satırlar, done'un ilk satırı. Çerçeve işçin
 | `^f` `^b`, `pgdn` `pgup`, `space` | bir sayfa aşağı / yukarı |
 | `[` `]` | önceki / sonraki dosya: `diff --git` başlıkları |
 | `w` | uzun satırları alt alta sar (küçültülmüş bir dosya, uzun bir dize); yine basılınca kenarda keser. Kaydırma yine yama satırlarını sayar, böylece `j` kaç satır kaplasa da bütün bir satır gider. Kapatılana dek her değişiklik için açık; çalıştırmalar arasında saklanmaz |
-| `R` | başka bir satıcının incelemesi (`:review`), dosya listesinin üstünde: ilk altı satırı ya da tamamı ([değişiklikler](../concepts/changes.md#başka-bir-satıcının-incelemesi)) |
+| `R` | ikinci okuma (`:review`), dosya listesinin üstünde: ilk altı satırı ya da tamamı ([değişiklikler](../concepts/changes.md#ikinci-bir-okuma)) |
 | `v` | kopyalanacak satırları seç (aşağıda) |
 | `esc` | SENİ BEKLEYEN'e geri |
 

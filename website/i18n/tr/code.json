@@ -8,9 +8,9 @@
   "home.f.team.text": {
     "message": "Bir lider çalışma kopyanızı okur ve iş gerektirdikçe işçi tutar; her işçinin kendi kartı vardır. İşçiler bir görevin parçaları için yardımcı tutar. Siz otuz ajanla değil, liderle konuşursunuz."
   },
-  "home.f.vendors.title": { "message": "Tek ekranda birçok satıcı" },
-  "home.f.vendors.text": {
-    "message": "Claude Code, Codex ve Gemini CLI uzun ömürlü oturumlar olarak çalışır; ekran hiçbir tel biçimini görmez. Codex liderlik ederken Claude ve Gemini çalışabilir; ucuz, standart ya da güçlü katmanlarda."
+  "home.f.sessions.title": { "message": "Uzun ömürlü Claude Code oturumları" },
+  "home.f.sessions.text": {
+    "message": "Her ajan kendi Claude Code oturumudur ve katmanla tutulur: ucuz, standart ya da güçlü. Claude Code'un kendi kısıtlamaları açılır ve denetlenir; uymayan oturum durdurulur."
   },
   "home.f.gate.title": { "message": "Çalışma kopyanıza dokunulmaz" },
   "home.f.gate.text": {
@@ -22,18 +22,18 @@
   },
   "home.f.pot.title": { "message": "Tek bütçe, tek tavan" },
   "home.f.pot.text": {
-    "message": "Bütün ekip için tek bütçe, çalıştırmalar arasında saklanır; her oturum kalanla sınırlıdır. Başlık yakma hızını, bütçenin ne kadar dayanacağını ve her satıcı planının en dar kullanım penceresini gösterir."
+    "message": "Bütün ekip için tek bütçe, çalıştırmalar arasında saklanır; her oturum kalanla sınırlıdır. Başlık yakma hızını, bütçenin ne kadar dayanacağını ve planınızın en dar kullanım penceresini gösterir."
   },
   "home.f.remember.title": { "message": "Hatırlar, geri dönüş ucuzdur" },
   "home.f.remember.text": {
     "message": "Projeler, kartlar, sohbetler ve günlük tek bir SQLite dosyasında yaşar. Ajanlar siz yazana kadar uyur ve bıraktıkları oturumda uyanır. Başka bir pencereden dönünce uzaktayken olanların özeti hemen görünür."
   },
-  "home.title": { "message": "Birçok kodlama ajanı için tek terminal" },
+  "home.title": { "message": "Bir Claude Code ajanları ekibi için tek terminal" },
   "home.description": {
-    "message": "imece, birçok satıcıdan bir kodlama ajanı ekibini tek kod tabanında, tek ekranda çalıştırır: bir lider işçi tutar, işçiler worktree'lerde çalışır ve her değişiklik çalışma kopyanıza ulaşmadan önce sizden geçer."
+    "message": "imece, bir Claude Code ajanları ekibini tek kod tabanında, tek ekranda çalıştırır: bir lider işçi tutar, işçiler worktree'lerde çalışır ve her değişiklik çalışma kopyanıza ulaşmadan önce sizden geçer."
   },
   "home.hero": {
-    "message": "Birçok satıcıdan birçok kodlama ajanı için tek terminal. Bir lider isteğinizi kartlara böler ve işçi tutar; işçiler birbiriyle konuşur ve kendi worktree'lerinde çalışır; her değişiklik çalışma kopyanıza ulaşmadan önce sizi bekler."
+    "message": "Bir Claude Code ajanları ekibi için tek terminal. Bir lider isteğinizi kartlara böler ve işçi tutar; işçiler birbiriyle konuşur ve kendi worktree'lerinde çalışır; her değişiklik çalışma kopyanıza ulaşmadan önce sizi bekler."
   },
   "home.cta.install": { "message": "Kurulum" },
   "home.install.label": { "message": "macOS ve Linux" },

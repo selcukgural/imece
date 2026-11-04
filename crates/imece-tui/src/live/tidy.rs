@@ -111,7 +111,7 @@ fn torn(ran: Result<run::Outcome, String>) -> TornDown {
 /// The worktrees under `dir` (`state/worktrees`: a directory per
 /// checkout, a worktree per agent in it) that are not in `owned`, sorted
 /// by path. Links and what is not a worktree added to a checkout are
-/// passed over: a Gemini session's private directory, a file.
+/// passed over: another directory, a file.
 pub(super) fn orphans_under(dir: &Path, owned: &HashSet<PathBuf>) -> Vec<Orphan> {
     let mut found = Vec::new();
     for root in dirs_in(dir) {
@@ -381,17 +381,17 @@ mod tests {
         let mine = tree(&live, &repo, "claude-1");
         let lost = tree(&live, &repo, "claude-7");
         std::fs::write(lost.join("new.txt"), "n").unwrap();
-        let other = tree(&live, &repo, "codex-2");
-        // A checkout's worktrees elsewhere under the state, a Gemini
-        // private directory, a file and a link are not worktrees to list.
+        let other = tree(&live, &repo, "claude-2");
+        // A checkout's worktrees elsewhere under the state, a directory
+        // beside them, a file and a link are not worktrees to list.
         let far = root_for(&live.state, &dir.join("gone"));
         let far_tree = worktree::ensure(&repo, &far, "solo-3", None).unwrap().path;
         std::fs::create_dir_all(root(&live).join("not-a-tree")).unwrap();
         std::fs::write(root(&live).join("a-file"), "").unwrap();
         std::os::unix::fs::symlink(&other, root(&live).join("a-link")).unwrap();
-        let mut gemini = root(&live).into_os_string();
-        gemini.push("-gemini");
-        std::fs::create_dir_all(PathBuf::from(gemini).join("claude-9")).unwrap();
+        let mut beside = root(&live).into_os_string();
+        beside.push("-other");
+        std::fs::create_dir_all(PathBuf::from(beside).join("claude-9")).unwrap();
         assert_eq!(w.orphans, Orphans::default());
         live.look_orphans(&mut w);
         assert!(w.orphans.busy);
@@ -406,7 +406,7 @@ mod tests {
         let lost = found.iter().find(|o| o.name == "claude-7").unwrap();
         assert_eq!((lost.changes, lost.commits), (1, 0));
         assert_eq!(lost.checkout, repo.canonicalize().unwrap());
-        assert!(found.iter().find(|o| o.name == "codex-2").unwrap().clean());
+        assert!(found.iter().find(|o| o.name == "claude-2").unwrap().clean());
         assert_eq!(w.orphans.tidied, None);
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -462,7 +462,6 @@ mod tests {
             2,
             0,
             "claude-2".into(),
-            Vendor::Claude,
             Role::Worker,
             Status::Idle,
             0,
@@ -523,7 +522,6 @@ mod tests {
             1,
             0,
             "claude-1".into(),
-            Vendor::Claude,
             Role::Worker,
             Status::Idle,
             0,

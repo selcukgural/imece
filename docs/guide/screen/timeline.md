@@ -11,10 +11,10 @@ The timeline shows the team over time: one lane per agent of the open projects, 
 ┌ TIMELINE · a column is 5 s · [ ] scale ─────────────────────────────────────────────┐
 │shop-api            14:00                    14:04                     now           │
 │◆ lead-shop-api     ··········································  coordinating         │
-│! codex-1           ◌◌◌░░✕✕✕✕✕✕✕✕✕✕✕✕✕✕⚑⚑⚑⚑⚑⚑⚑⚑⚑⚑⚑⚑⚑⚑⚑⚑⚑⚑⚑⚑  waiting for you      │
-│● codex-2           ◌◌◌░░░░░░░▒▒▒▒▒▒▒▒▒▒░░░░▒▒▒⚑░░░░░░▒▒▒▒▒▒▒██  ▸ Run the tests      │
-│●   codex-2.1                       ▒▒▒▒████▒▒✓·············  idle                 │
-│! qwen-2            ·◌◌◌░░⚑⚑⚑⚑⚑⚑▒▒▒▒▒░░░░???░░░░░░░░▒▒▒▒⚑⚑░░?  ▓░░░░ ? → codex-2    │
+│! claude-1          ◌◌◌░░✕✕✕✕✕✕✕✕✕✕✕✕✕✕⚑⚑⚑⚑⚑⚑⚑⚑⚑⚑⚑⚑⚑⚑⚑⚑⚑⚑⚑⚑  waiting for you      │
+│● claude-2          ◌◌◌░░░░░░░▒▒▒▒▒▒▒▒▒▒░░░░▒▒▒⚑░░░░░░▒▒▒▒▒▒▒██  ▸ Run the tests      │
+│●   claude-2.1                       ▒▒▒▒████▒▒✓·············  idle                │
+│! claude-3          ·◌◌◌░░⚑⚑⚑⚑⚑⚑▒▒▒▒▒░░░░???░░░░░░░░▒▒▒▒⚑⚑░░?  ▓░░░░ ? → claude-2   │
 │  messages          ▁▁▂▁▂▁▁▁▁▁▁▁▁▁▁▂▁▁▂▁▁▁▁▂▂▁▁▁▁▁▁▁▂▁▁▁▁▁▁▂▁                        │
 │ █ writing  ▒ reading, running  ░ thinking  ◌ starting  ? asking a teammate  ⚑ waiting for you  ✕ stuck  ✓ turn done  · idle
 └─────────────────────────────────────────────────────────────────────────────────────┘

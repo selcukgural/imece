@@ -11,8 +11,8 @@ SENİ BEKLEYEN (İngilizce ekranda WAITING FOR YOU) salonun üst yan panelidir. 
 ┌ SENİ BEKLEYEN (3) ─────────────────────────────────────────────────┐
 │Δ 13:58 claude-1 bitirdi: parser (3 dosya, +41 −6) · ✓ bu ağaçta temiz geçti: cargo test
 │  enter diff'i gör · a checkout'a uygula · r reddet                   │
-│⚑ 14:01 codex-2 onayını bekliyor: Bash: npm install left-pad         │
-│? 14:03 sonra · gemini-3 sana soruyor: Eski CLI bayrağı kalsın mı?   │
+│⚑ 14:01 claude-2 onayını bekliyor: Bash: npm install left-pad        │
+│? 14:03 sonra · claude-3 sana soruyor: Eski CLI bayrağı kalsın mı?   │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -21,10 +21,10 @@ SENİ BEKLEYEN (İngilizce ekranda WAITING FOR YOU) salonun üst yan panelidir. 
 | İşaret | Öge | Nereden gelir | `a` | `r` |
 | --- | --- | --- | --- | --- |
 | `Δ` | bir değişiklik | bir işçinin `done`'u: worktree'sinin HEAD'inize göre bütün değişikliği, imece okur. Satır done'un ilk satırını, dosya ve satır sayılarını ve imece'nin `run` aracının tam bu ağaçta ne çalıştırdığını söyler (`✓ bu ağaçta temiz geçti`, `✗ başarısız`, ya da `bu ağaçta çalıştırma yok`). | checkout'unuza uygula, stage'de | reddet; nedenini yazmanız için yazma satırı `@worker ` ile açılır |
-| `⚑` | bir izin isteği | agent'ın kendi satıcısının izin soracağı bir araç çağrısı: Claude Code'un soracağı bir kabuk komutu, bir Codex `on-request` isteği, bir Gemini kabuğu. Olağan komutlar (derleme, testler, git'in okuma komutları) kendiliğinden çalışır ve buraya hiç gelmez. Seçili istek satırının altında bütünüyle gösterilir, satırları ` ↵ ` ile birleştirilmiş, asla Markdown olarak okunmaz: izin verdiğiniz şey çalışan şeydir. | izin ver | reddet; agent'a bunun sizin kararınız olduğu söylenir |
+| `⚑` | bir izin isteği | Claude Code'un izin soracağı bir araç çağrısı. Olağan komutlar (derleme, testler, git'in okuma komutları) kendiliğinden çalışır ve buraya hiç gelmez. Seçili istek satırının altında bütünüyle gösterilir, satırları ` ↵ ` ile birleştirilmiş, asla Markdown olarak okunmaz: izin verdiğiniz şey çalışan şeydir. | izin ver | reddet; agent'a bunun sizin kararınız olduğu söylenir |
 | `?` | bir soru | bir agent'ın `send(to: "you", type: ask)` çağrısı. Aynı agent'ın yeni sorusu eskisinin yerini alır. | ikisi de yazma satırını `@agent ` ile açar; yanıtınız gidince öge kapanır | |
 | `»` | bir yanıt | bir agent size yanıt verdi ve okumanızı bekliyor | `enter` okur (konuşma açılır) ve kapatır; `r` kapatır | |
-| `✕` | bir satıcı hatası | bir tur yalnız sizin giderebileceğiniz bir hatayla bitti: hesap (oturum kapalı, reddedilen bir anahtar, bir kota ya da fatura) ya da imece'nin üç denemesi tükendikten sonra geçici bir hata (aşırı yük, bir sunucu hatası, kopan bir bağlantı) (bkz. [satıcının API'si hata verince](../concepts/sessions.md#satıcının-apisi-hata-verince)). Satırda satıcının kendi sözleri yazar. | ikisi de yazma satırını `@agent ` ile açar; mesajınız gidince öge kapanır ve o mesaj agent'ın bir sonraki denemesidir | |
+| `✕` | bir API hatası | bir tur yalnız sizin giderebileceğiniz bir hatayla bitti: hesap (oturum kapalı, reddedilen bir anahtar, bir kota ya da fatura) ya da imece'nin üç denemesi tükendikten sonra geçici bir hata (aşırı yük, bir sunucu hatası, kopan bir bağlantı) (bkz. [API hata verince](../concepts/sessions.md#api-hata-verince)). Satırda Claude Code'un kendi sözleri yazar. | ikisi de yazma satırını `@agent ` ile açar; mesajınız gidince öge kapanır ve o mesaj agent'ın bir sonraki denemesidir | |
 | `▶` | bir kurulum betiği | yeni bir worktree checkout'unuzda evet demediğiniz baytlarla `.imece/worktree-setup.sh` buldu; işçi onsuz başladı. Bkz. [worktree kurulum betiği](../concepts/projects.md#worktree-kurulum-betiği). | evet: kaçırıldığı yerde hemen, sonra her yeni worktree'de çalışır; `enter` önce baytlarını gösterir | hayır, bu çalıştırma için |
 
 Satır saati taşır, ertelediyseniz `sonra ·`, birden çok proje açıksa projenin adını. Başka bir günün ögesi tarihini de taşır.
@@ -56,7 +56,7 @@ Seçili ögenin altında soluk bir satır tuşlarını söyler (`enter diff'i g�
 
 ## Satırdaki `!`
 
-Ögesi bekleyen bir agent bunu kendi salon satırında gösterir: bir soru beklerken `? → sen`, bir istek beklerken `⚑ onayını bekliyor`, bir yanıt beklerken `sana yanıt verdi`, bir satıcı hatası beklerken `✕ satıcı hatası`; durumu "onayını bekliyor" olan bir agent işaret olarak `!` taşır. Proje başlığı bunları dikkat renginde sayar, `! 2 bekliyor`, proje katlıyken bile. Salonda `f` yalnız sizi bekleyen agent'ları gösterir, bunlar en önde.
+Ögesi bekleyen bir agent bunu kendi salon satırında gösterir: bir soru beklerken `? → sen`, bir istek beklerken `⚑ onayını bekliyor`, bir yanıt beklerken `sana yanıt verdi`, bir API hatası beklerken `✕ API hatası`; durumu "onayını bekliyor" olan bir agent işaret olarak `!` taşır. Proje başlığı bunları dikkat renginde sayar, `! 2 bekliyor`, proje katlıyken bile. Salonda `f` yalnız sizi bekleyen agent'ları gösterir, bunlar en önde.
 
 ## Ögeler açıkken çıkmak
 

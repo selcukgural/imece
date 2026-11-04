@@ -5,7 +5,7 @@ description: Bir şey ters gidince ne görürsünüz, imece bunu neden yapar ve 
 
 # Sorun giderme
 
-imece kapalı düşer (fail closed): bir dosya, bir oturum ya da bir değişiklik beklediği gibi değilse onarmak ya da tahmin etmek yerine reddeder ve söyler. Bu sayfa o retleri ve her biri için ne yapılacağını listeler. Mesajlar ekranın ya da terminalin yazdığı gibi alıntılanmıştır; terminalde `imece: …` imece'nin başlamadığı demektir (çıkış kodu 1), flash alt satırın üstündeki tek satırlık mesajdır, günlük ise ne olduğunu saklar. Satıcı katından gelen mesajlar (oturum açma, fiyat, araç listesi, worktree) kaynakta İngilizcedir ve ekrana öyle gelir; burada da öyle alıntılanır.
+imece kapalı düşer (fail closed): bir dosya, bir oturum ya da bir değişiklik beklediği gibi değilse onarmak ya da tahmin etmek yerine reddeder ve söyler. Bu sayfa o retleri ve her biri için ne yapılacağını listeler. Mesajlar ekranın ya da terminalin yazdığı gibi alıntılanmıştır; terminalde `imece: …` imece'nin başlamadığı demektir (çıkış kodu 1), flash alt satırın üstündeki tek satırlık mesajdır, günlük ise ne olduğunu saklar. Oturum katından gelen mesajlar (oturum açma, fiyat, araç listesi, worktree) kaynakta İngilizcedir ve ekrana öyle gelir; burada da öyle alıntılanır.
 
 ## Başlangıç
 
@@ -25,19 +25,15 @@ imece kapalı düşer (fail closed): bir dosya, bir oturum ya da bir değişikli
 
 **Ne yapmalı.** Ya onu yazan imece'yi derleyin (şema numarası daha yeni olduğunu söyler) ya da yeniden başlamak için dosyayı `-wal` ve `-shm` kardeşleriyle kenara taşıyın. Hiçbir şey kendiliğinden silinmez.
 
-### `no coding agent on PATH (looked for claude, codex, gemini); install Claude Code … and log in`
+### Claude Code PATH'te yok
 
-**Neden.** imece satıcıların kendi CLI'larını sürer ve hiçbirini bulamadı. Birini kurun ve programının imece'yi başlattığınız kabuğun PATH'inde olduğundan emin olun.
+**Neden.** imece Claude Code'u sürer ve onu bulamadı. Kurun (https://claude.com/claude-code), oturum açın ve `claude`'un imece'yi başlattığınız kabuğun PATH'inde olduğundan emin olun.
 
-### `codex giriş yapmamış: :welcome nasıl yapılacağını söyler`
+### `claude giriş yapmamış: :welcome nasıl yapılacağını söyler`
 
-**Neden.** Başlangıçta imece liderin satıcısına giriş yapılmış olup olmadığını sordu (`codex login status`, `claude auth status`) ve hayır dedi; sen yazıyordun, bu yüzden hoş geldin penceresi satırın üstüne açılmadı.
+**Neden.** Başlangıçta imece Claude Code'a giriş yapılmış olup olmadığını sordu (`claude auth status`) ve hayır dedi; sen yazıyordun, bu yüzden hoş geldin penceresi satırın üstüne açılmadı.
 
-**Ne yapmalı.** `:welcome` giriş yapan komutu gösterir (`codex login`, `claude auth login`); onu bir kabukta çalıştırın (`!codex login` imece'nin içinden çalıştırır), sonra lidere yeniden yazın.
-
-### `codex is not on PATH (found claude); install it, or pick the leader with --lead`
-
-**Neden.** `--lead` (ya da önceki bir `p` ile birinciliniz) orada olmayan bir satıcıyı adlandırıyor. Eksik bir birincil KİM LİDER? ekranında da söylenir (`codex birincil ajanın, ama PATH'te yok`), sessizce değiştirilmez. `:lead ask` birinciliyi unutturur.
+**Ne yapmalı.** `:welcome` giriş yapan komutu gösterir (`claude auth login`); onu bir kabukta çalıştırın (`!claude auth login` imece'nin içinden çalıştırır), sonra lidere yeniden yazın.
 
 ### `--projects is for --demo` / `--agents: a leader hires at most 16`
 
@@ -51,29 +47,13 @@ imece kapalı düşer (fail closed): bir dosya, bir oturum ya da bir değişikli
 
 ## Oturumlar
 
-### `codex-1 başlatılamadı: is logged in with apikey, whose cost imece can not count yet; log in with ChatGPT (codex login)`
-
-**Neden.** Codex dolar değil token bildirir. ChatGPT planında bir tur keseye hiçbir şey yazmaz ve imece bunu söyler; API anahtarıyla token'ları fiyatlandırması gerekirdi, bunu henüz yapamaz, bu yüzden ücretli bir çağrıya sıfır yazmak yerine reddeder. `is not logged in; run codex login` hesapsız aynı denetimdir.
-
-**Ne yapmalı.** Bir ChatGPT hesabıyla `codex login`.
-
-### `gemini-1 durdu: ran on gemini-x, whose price imece does not know; name a model it knows with --model or --tier`
-
-**Neden.** API anahtarıyla Gemini turları imece'nin taşıdığı liste fiyat tablosundan yazılır; tabloda olmayan bir model yazılamaz, oturum görünmeden harcamak yerine durur. Google oturumuyla tur keseye hiçbir şey yazmaz ve bu olmaz.
-
-**Ne yapmalı.** Tablonun bildiği bir modelle `--model gemini:AD` ya da `--tier gemini:strong=AD` (`pro`, `flash` ve `auto` takma adları bilinir); ya da Google ile oturum açın.
-
 ### `claude-1 durdu: tools differ: extra ["WebFetch"], missing []`
 
-**Ne görürsünüz.** Satır `■ durdu, yazınca yeniden başlar` gösterir; günlükte `claude-1 durdu: tools differ …`, ya da Codex ve Gemini için uymayanı adlandıran bir satır (imece'ninki olmayan bir MCP sunucusu, bir hook, bir eklenti, bir sandbox, bir kip, bir model, bir uzantı).
+**Ne görürsünüz.** Satır `■ durdu, yazınca yeniden başlar` gösterir; günlükte `claude-1 durdu: tools differ …`.
 
-**Neden.** imece her satıcıdan tam olarak rolün ve confine düzeyinin araçlarını ister, sonra oturumun neyle çalıştığını bildirdiğini denetler (Claude her turda, Codex thread'den önce ve MCP sunucularını her turdan önce, Gemini ilk turdan önce). Başka her şey oturumu durdurur: araç ekleyen bir satıcı güncellemesi, sunucu getiren bir ayar, etrafından dolaşılmak yerine bakılmalıdır.
+**Neden.** imece Claude Code'dan tam olarak rolün ve confine düzeyinin araçlarını ister, sonra oturumun neyle çalıştığını bildirdiğini denetler her turda. Başka her şey oturumu durdurur: araç ekleyen bir Claude Code güncellemesi, sunucu getiren bir ayar, etrafından dolaşılmak yerine bakılmalıdır.
 
-**Ne yapmalı.** Raporun tamamı için izi (`t`) okuyun. Yüklenmesini istediğiniz kendi satıcı kurulumunuzsa, `--confine open` satıcıyı sizin kurduğunuz gibi çalıştırır (lider yine yazmaz ve alt ajan aracı kapalı kalır). Ajana yazmak onu aynı denetimlerle yeniden başlatır. Bu yolla duran bir oturum hâlâ hatırlanan oturumdur; `:forget @claude-1` sonraki başlangıcı yeni bir oturum yapar.
-
-### Bir Codex onayı, elicitation ya da dinamik araçla `codex-1 durdu: refused …`
-
-**Neden.** imece'nin yanıtı olmayan bir Codex isteği (soramaması gereken bir oturumdan onay, örneğin bir lider ya da `--confine strict` altındaki her şey; eski protokolün onayları; bir elicitation; dinamik bir araç çağrısı) körce yanıtlanmak yerine oturumu durdurur. `standard` ve `open` altında bir işçinin onay istekleri SENİ BEKLEYEN'e (`⚑`) gelir.
+**Ne yapmalı.** Raporun tamamı için izi (`t`) okuyun. Yüklenmesini istediğiniz kendi Claude Code kurulumunuzsa, `--confine open` onu sizin kurduğunuz gibi çalıştırır (lider yine yazmaz ve alt ajan aracı kapalı kalır). Ajana yazmak onu aynı denetimlerle yeniden başlatır. Bu yolla duran bir oturum hâlâ hatırlanan oturumdur; `:forget @claude-1` sonraki başlangıcı yeni bir oturum yapar.
 
 ### `claude-1: opus modeli burada yok, varsayılanla devam`
 
@@ -83,11 +63,7 @@ imece kapalı düşer (fail closed): bir dosya, bir oturum ya da bir değişikli
 
 ### Takılmış görünen bir oturum ya da ters giden bir uyanış
 
-**Ne yapmalı.** `:forget @AD` (`:f`): çalışan oturum biter (çalıştırması öldürülür, bitmemiş istemler yarım kalmış olarak saklanır ve uyanışta anlatılır, yeniden çalıştırılmaz), satıcının ondan tuttuğu kaldırılır (Claude'un transkripti, Codex'in thread'i, Gemini'nin sohbet dosyaları) ve ajan kendisiyle konuşulana dek uyur; sonraki mesajı tam brifingle yeni bir oturum başlatır (`Restarted`). `:` menüsü bunu `$` ile işaretler: brifing yeniden ödenir. `--fresh` başlangıçta bunu hatırlanan her ajan için yapar. Unutacak bir şeyi olmayan ya da gitmiş bir ajan için reddedilir (`claude-1 oturumunu koruyor: …`).
-
-### `/clear` hemen ardından `lead durdu: …`
-
-**Neden.** Kendi komut satırı olmayan bir satıcıda (Codex) `/clear` oturumu bitirir; sonraki mesaj yenisini başlatır. Codex'in app server'ı yalnız `/compact` bilir ve arada tur olmadan ikinci bir `/compact` düşen bir tur olarak reddedilir, oturum sürer.
+**Ne yapmalı.** `:forget @AD` (`:f`): çalışan oturum biter (çalıştırması öldürülür, bitmemiş istemler yarım kalmış olarak saklanır ve uyanışta anlatılır, yeniden çalıştırılmaz), transkripti kaldırılır ve ajan kendisiyle konuşulana dek uyur; sonraki mesajı tam brifingle yeni bir oturum başlatır (`Restarted`). `:` menüsü bunu `$` ile işaretler: brifing yeniden ödenir. `--fresh` başlangıçta bunu hatırlanan her ajan için yapar. Unutacak bir şeyi olmayan ya da gitmiş bir ajan için reddedilir (`claude-1 oturumunu koruyor: …`).
 
 ## Değişiklikler
 
@@ -105,7 +81,7 @@ imece kapalı düşer (fail closed): bir dosya, bir oturum ya da bir değişikli
 
 ### Her değişiklikte `bu ağaçta çalıştırma yok`
 
-**Neden.** Yalnız imece'nin kendi `run` aracı kanıt sayılır, tam ağaca bağlı; satıcının kendi kabuğu görünmez (imece hangi ağaçta çalıştığını görmez). İşçilere son düzenlemeden sonra `run` ile denetlemeleri söylenir. Ağacı değiştiren bir çalıştırma (bir biçimlendirici) hiçbirine sayılmaz.
+**Neden.** Yalnız imece'nin kendi `run` aracı kanıt sayılır, tam ağaca bağlı; Claude Code'un kendi kabuğu görünmez (imece hangi ağaçta çalıştığını görmez). İşçilere son düzenlemeden sonra `run` ile denetlemeleri söylenir. Ağacı değiştiren bir çalıştırma (bir biçimlendirici) hiçbirine sayılmaz.
 
 ### Değişiklik getirmeyen bir `done`: yama 4 MiB'ın üstünde
 
@@ -185,7 +161,7 @@ imece kapalı düşer (fail closed): bir dosya, bir oturum ya da bir değişikli
 
 - [Kurulum](getting-started/install.md)
 - [Oturumlar](concepts/sessions.md)
-- [Satıcılar](concepts/vendors.md)
+- [Claude Code](concepts/claude-code.md)
 - [Değişiklikler](concepts/changes.md)
 - [Bütçe ve sınırlar](concepts/budget-and-limits.md)
 - [Temalar ve dil](screen/themes-and-language.md)

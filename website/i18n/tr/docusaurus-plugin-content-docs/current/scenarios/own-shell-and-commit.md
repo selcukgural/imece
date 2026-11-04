@@ -69,7 +69,7 @@ Eldeki projeden başka bir proje için `!git -C /path/to/checkout commit -m '…
 | Bir gün (UTC), bütün projeler birlikte | 20 öneri ve $1.00 |
 | Aynı stage'lenmiş ağaç yeniden | hiçbir şey: proje başına son öneri saklanır ve satıra yeniden konur |
 
-Ayırma kayıt dosyasında tek bir işlemdir ve bütçe onu tutar; bütçede $0.05'ten az varken ya da gün dolmuşken reddedilir (`commit mesajı yok: today's 20 suggestions were made`). Başlayamayan bir çağrı hiçbir şey tutmaz; bildirmeden zamanı dolan tavanını tutar. Başarısızlıklar nedeni ve tuttuğuyla günlüğe girer: `commit mesajı gelmedi ($0.00): nothing is staged`. Yalnızca Claude Code'a sorulabilir, çünkü çağrısı sert bir harcama tavanı alan tek satıcı odur; bir Codex ya da Gemini liderinin bunun için PATH'te Claude Code'a ihtiyacı vardır, yoksa `:commit` reddedilir. `:` menüsü `:commit`i `$` ile işaretler.
+Ayırma kayıt dosyasında tek bir işlemdir ve bütçe onu tutar; bütçede $0.05'ten az varken ya da gün dolmuşken reddedilir (`commit mesajı yok: today's 20 suggestions were made`). Başlayamayan bir çağrı hiçbir şey tutmaz; bildirmeden zamanı dolan tavanını tutar. Başarısızlıklar nedeni ve tuttuğuyla günlüğe girer: `commit mesajı gelmedi ($0.00): nothing is staged`. `:` menüsü `:commit`i `$` ile işaretler.
 
 ## 5. Uzun bir gece çalışması: `--awake`, `:awake`
 

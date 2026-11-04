@@ -14,11 +14,10 @@ Every scenario is true of the real imece: the keys are the ones the `?` help lis
 | Scenario | One line |
 | --- | --- |
 | [A failing test, one worker](one-fix.md) | From `/ fix it` to `!git commit`: the leader hires `claude-1`, a `⚑` ask, a `Δ`, apply, a suggested commit message. |
-| [Codex leads, Claude and Gemini work](mixed-vendors.md) | `--lead codex`, hiring across vendors, what a tier means per vendor, tokens against dollars, the header's usage limits, `--confine strict`. |
 | [Sending a change back, then taking half of it](review-with-notes.md) | Notes with `c` and `n`, the worker's answer with `↩` and `%`, hunks chosen with `x`, `>` to quote one, `r` to reject the rest. |
 | [Three checkouts, one screen](many-projects.md) | `:open`, folding, `:pin`, `f`, `:rename`, `:copy .env`, `:close`, and the one pot every project draws from. |
-| [A solo beside the team](solo-beside-the-team.md) | `:solo claude:opus@xhigh`, a session you drive yourself with no leader, the `Δ` after every answer, a second solo on Codex, `--solo` the next morning. |
-| [Coming back](next-morning.md) | Quitting mid-turn, the "where you left off" window, agents asleep, how each vendor resumes, `:forget`, the away digest, `:notify`, marks, `:export`. |
+| [A solo beside the team](solo-beside-the-team.md) | `:solo claude:opus@xhigh`, a session you drive yourself with no leader, the `Δ` after every answer, a second solo on another model, `--solo` the next morning. |
+| [Coming back](next-morning.md) | Quitting mid-turn, the "where you left off" window, agents asleep, how a session resumes, `:forget`, the away digest, `:notify`, marks, `:export`. |
 | [A new epic](new-epic.md) | `:archive v1 fixes`, its grace and `u`, a clean project of the same name, what the archive keeps, `:restore v1 fixes` to bring it back, the one pot. |
 | [Your shell next to the team](own-shell-and-commit.md) | `!cargo test`, `!vim`, ctrl-c, `:commit` and its ceilings, `:awake`, `:budget 80`, `:theme nord`, `L`. |
 
@@ -31,11 +30,10 @@ Everything a scenario does on the screen can be tried with `imece --demo`: fake 
 1. [A failing test, one worker](one-fix.md): the whole loop once, with one agent.
 2. [Sending a change back, then taking half of it](review-with-notes.md): the review keys in depth.
 3. [Your shell next to the team](own-shell-and-commit.md): the person's own tools beside the agents.
-4. [Codex leads, Claude and Gemini work](mixed-vendors.md): when more than one vendor is on PATH.
-5. [Three checkouts, one screen](many-projects.md): when more than one project is open.
-6. [A solo beside the team](solo-beside-the-team.md): when you want to drive one agent yourself.
-7. [Coming back](next-morning.md): the second day.
-8. [A new epic](new-epic.md): when a piece of work is done.
+4. [Three checkouts, one screen](many-projects.md): when more than one project is open.
+5. [A solo beside the team](solo-beside-the-team.md): when you want to drive one agent yourself.
+6. [Coming back](next-morning.md): the second day.
+7. [A new epic](new-epic.md): when a piece of work is done.
 
 ## See also
 

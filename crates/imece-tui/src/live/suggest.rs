@@ -137,10 +137,9 @@ impl Live {
     }
 
     /// The person asks for a commit message for what is staged in project
-    /// `p`'s checkout: refused at once when one is under way, when Claude
-    /// Code is not here (the one vendor whose call takes a hard spending
-    /// cap) or when the pot or the day has no room; else git reads what
-    /// is staged and the call follows (see [`Live::take_staged`]). The
+    /// `p`'s checkout: refused at once when one is under way or when the
+    /// pot or the day has no room; else git reads what is staged and the
+    /// call follows (see [`Live::take_staged`]). The
     /// model it asks.
     pub fn suggest(&mut self, w: &World, p: ProjectId) -> Result<String, String> {
         if self.suggesting.is_some() {
@@ -149,7 +148,7 @@ impl Live {
         if !self.places[p].git {
             return Err("this folder is not a git checkout with a commit".into());
         }
-        let model = self.cheap_claude()?.1;
+        let model = self.cheap_claude().1;
         self.room(w, today())?;
         self.git
             .send(GitJob::Staged {
@@ -162,14 +161,12 @@ impl Live {
     }
 
     /// Claude Code's program and its cheap tier's model.
-    fn cheap_claude(&self) -> Result<(String, String), String> {
-        let h = (self.vendors.iter())
-            .find(|h| h.vendor == Vendor::Claude)
-            .ok_or("it needs Claude Code on PATH, the one vendor whose call has a hard cap")?;
+    fn cheap_claude(&self) -> (String, String) {
+        let h = &self.claude;
         let model = (h.ladder.cheap.clone())
             .or_else(|| claude::model(Tier::Cheap).map(str::to_string))
             .unwrap_or_default();
-        Ok((h.program.clone(), model))
+        (h.program.clone(), model)
     }
 
     /// Whether the pot and `day` have room for one more suggestion at its
@@ -234,17 +231,11 @@ impl Live {
             return;
         }
         let day = today();
-        let program = self.cheap_claude().and_then(|c| {
-            self.reserve(w, day)?;
-            Ok(c)
-        });
-        let (program, model) = match program {
-            Ok(c) => c,
-            Err(why) => {
-                self.suggesting = None;
-                return failed(w, why);
-            }
-        };
+        if let Err(why) = self.reserve(w, day) {
+            self.suggesting = None;
+            return failed(w, why);
+        }
+        let (program, model) = self.cheap_claude();
         let spec = suggest_spec(program, self.quiet_dir(), &model);
         let prompt = suggest_prompt(&staged);
         let tx = self.said_tx.clone();
@@ -417,32 +408,22 @@ mod tests {
     fn the_cheap_model_is_claudes_cheap_tier_or_the_persons_stand_in() {
         let live = idle_live(1);
         assert_eq!(
-            live.cheap_claude().unwrap(),
+            live.cheap_claude(),
             ("/nonexistent/claude".to_string(), "haiku".to_string())
         );
         let mut live = idle_live(1);
-        live.vendors = vec![Hireable::claude(
-            "/bin/claude",
-            &[(Tier::Cheap, "small".into())],
-        )];
-        assert_eq!(live.cheap_claude().unwrap().1, "small");
-        live.vendors = vec![Hireable::codex("/bin/codex", &[])];
-        let e = live.cheap_claude().unwrap_err();
-        assert!(e.contains("needs Claude Code"), "{e}");
+        live.claude = Hireable::new("/bin/claude", &[(Tier::Cheap, "small".into())]);
+        assert_eq!(live.cheap_claude().1, "small");
     }
 
     #[test]
-    fn a_suggestion_is_refused_while_one_is_under_way_or_without_claude() {
+    fn a_suggestion_is_refused_while_one_is_under_way() {
         let w = team(0);
         let mut live = idle_live(1);
         assert!(!live.asking());
         live.suggesting = Some(0);
         assert!(live.asking(), "the bottom line spins meanwhile");
         assert_eq!(live.suggest(&w, 0), Err("a suggestion is under way".into()));
-        let mut live = idle_live(1);
-        live.vendors = vec![Hireable::codex("/bin/codex", &[])];
-        assert!(live.suggest(&w, 0).unwrap_err().contains("Claude Code"));
-        assert_eq!(live.suggesting, None);
     }
 
     #[test]
@@ -764,7 +745,7 @@ mod tests {
         let mut w = team(0);
         let mut live = idle_live_in(&repo, 1);
         live.state = repo.clone();
-        live.vendors = vec![Hireable::claude(&answering(&repo, "Add b", "0.0042"), &[])];
+        live.claude = Hireable::new(&answering(&repo, "Add b", "0.0042"), &[]);
         assert_eq!(live.suggest(&w, 0), Ok("haiku".into()));
         assert_eq!(live.suggesting, Some(0));
         answered(&mut live, &mut w);

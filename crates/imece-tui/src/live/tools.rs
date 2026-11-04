@@ -105,14 +105,9 @@ pub(super) fn routine(role: Role, what: &Ask, programs: &[String]) -> bool {
 }
 
 /// imece's tools for an agent of `role`: workers alone take cards, the
-/// leader hires workers and a worker hires helpers (from `vendors`);
-/// helpers and researchers hire nobody.
-pub(super) fn tools_of(
-    role: Role,
-    vendors: &[&str],
-    programs: &[String],
-    timeout: Duration,
-) -> Vec<Tool> {
+/// leader hires workers and a worker hires helpers; helpers and
+/// researchers hire nobody.
+pub(super) fn tools_of(role: Role, programs: &[String], timeout: Duration) -> Vec<Tool> {
     // The board is the team's: a solo has none.
     let mut tools = match role {
         Role::Solo => vec![send_tool(), run_tool(role, programs, timeout)],
@@ -127,10 +122,10 @@ pub(super) fn tools_of(
     match role {
         Role::Worker => {
             tools.push(claim_tool());
-            tools.push(hire_tool(vendors, HIRE_HELPER, false));
+            tools.push(hire_tool(HIRE_HELPER, false));
         }
-        Role::Solo => tools.push(hire_tool(vendors, HIRE_HELPER, false)),
-        Role::Leader => tools.push(hire_tool(vendors, HIRE_WORKER, true)),
+        Role::Solo => tools.push(hire_tool(HIRE_HELPER, false)),
+        Role::Leader => tools.push(hire_tool(HIRE_WORKER, true)),
         Role::Helper | Role::Researcher => {}
     }
     tools
@@ -307,7 +302,7 @@ const HIRE_FROM: &str = "Where the worker's worktree starts (default: the checko
 
 /// The hire tool, with `from` for a leader (`start`): a helper works in
 /// its worker's worktree, wherever that started.
-fn hire_tool(vendors: &[&str], description: &str, start: bool) -> Tool {
+fn hire_tool(description: &str, start: bool) -> Tool {
     let tiers: Vec<&str> = Tier::ALL.iter().map(|t| t.wire()).collect();
     let mut input = json!({
         "type": "object",
@@ -319,11 +314,6 @@ fn hire_tool(vendors: &[&str], description: &str, start: bool) -> Tool {
                                 tests of known behaviour, docs). standard (default): \
                                 ordinary fixes and features. strong: design that cuts \
                                 across the code, hard debugging, review.",
-            },
-            "vendor": {
-                "type": "string",
-                "enum": vendors,
-                "description": "Which coding agent (default: your own).",
             },
         },
         "additionalProperties": false,
@@ -427,8 +417,8 @@ pub(super) fn send_tool() -> Tool {
                     "type": "string",
                     "description": "The teammate's name, or you for the person. The \
                                     leader may also write an inform or a notice to a group \
-                                    of its workers: workers (all), idle, or a vendor \
-                                    (claude, codex, gemini); each gets it as its own message.",
+                                    of its workers: workers (all) or idle; each gets it as \
+                                    its own message.",
                 },
                 "type": { "type": "string", "enum": kinds },
                 "body": {
@@ -544,7 +534,7 @@ impl Live {
         args: &Value,
         reply: Sender<Answer>,
     ) {
-        let reply = Reply::Socket {
+        let reply = Reply {
             input: args["input"].clone(),
             to: reply,
         };
@@ -561,7 +551,7 @@ impl Live {
     pub(super) fn ask(&mut self, w: &mut World, from: AgentId, what: Ask, reply: Reply) {
         if routine(w.agents[from].role, &what, &self.run_programs) {
             w.agents[from].trace(w.tick, format!("allowed on its own: {}", what.line()));
-            self.reply(from, reply, true);
+            self.reply(reply, true);
             return;
         }
         if self.standing_yes(w, from, &what) {
@@ -569,7 +559,7 @@ impl Live {
                 w.tick,
                 format!("allowed by your yes from now on: {}", what.line()),
             );
-            self.reply(from, reply, true);
+            self.reply(reply, true);
             return;
         }
         if w.allowed_this_turn(from) {
@@ -577,7 +567,7 @@ impl Live {
                 w.tick,
                 format!("allowed by your yes for this turn: {}", what.line()),
             );
-            self.reply(from, reply, true);
+            self.reply(reply, true);
             return;
         }
         w.agents[from].trace(w.tick, format!("asks the person: {}", what.line()));
@@ -585,32 +575,9 @@ impl Live {
         self.pending[from].push(Pending { what, reply });
     }
 
-    /// Gives agent `id`'s session the answer to what it asked.
-    pub(super) fn reply(&mut self, id: AgentId, reply: Reply, allow: bool) {
-        match reply {
-            Reply::Socket { input, to } => {
-                let _ = to.send(Ok(claude::decision(allow, &input)));
-            }
-            Reply::Session(request) => {
-                if let Slot::Running(s) = &mut self.slots[id] {
-                    let _ = s.decide(&request, allow);
-                }
-            }
-        }
-    }
-
-    /// What agent `id`'s session asked with `request` waits no more (its
-    /// vendor settled it): its item closes without a decision.
-    pub(super) fn withdrawn(&mut self, w: &mut World, id: AgentId, request: &str) {
-        let Some(nth) = self.pending[id]
-            .iter()
-            .position(|p| matches!(&p.reply, Reply::Session(r) if r == request))
-        else {
-            return;
-        };
-        let p = self.pending[id].remove(nth);
-        w.agents[id].trace(w.tick, format!("no longer asks: {}", p.what.line()));
-        w.withdrew(id, nth);
+    /// Gives the session that asked the answer.
+    pub(super) fn reply(&self, reply: Reply, allow: bool) {
+        let _ = reply.to.send(Ok(claude::decision(allow, &reply.input)));
     }
 
     /// Whether agent `from`'s project has a standing yes for every
@@ -721,15 +688,15 @@ impl Live {
             let p = self.pending[id].remove(nth);
             let how = if allow { "allowed" } else { "refused" };
             w.agents[id].trace(w.tick, format!("the person {how}: {}", p.what.line()));
-            self.reply(id, p.reply, allow);
+            self.reply(p.reply, allow);
         }
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
     use std::sync::atomic::{AtomicBool, Ordering};
-    use std::sync::{Arc, Mutex};
 
     use super::*;
     use crate::live::testing::*;
@@ -1199,13 +1166,10 @@ mod tests {
         ));
     }
 
-    /// The answers a session was given: request, and whether it runs.
-    type Answers = Arc<Mutex<Vec<(String, bool)>>>;
+    /// A session that does nothing.
+    struct Idle;
 
-    /// A session that keeps the answers it was given.
-    struct Decides(Answers);
-
-    impl imece_agent::Agent for Decides {
+    impl imece_agent::Agent for Idle {
         fn prompt(&mut self, _: &str) -> io::Result<()> {
             Ok(())
         }
@@ -1213,22 +1177,16 @@ mod tests {
             Ok(())
         }
         fn terminate(&mut self) {}
-        fn decide(&mut self, request: &str, allow: bool) -> io::Result<()> {
-            self.0.lock().unwrap().push((request.to_string(), allow));
-            Ok(())
-        }
     }
 
-    /// A live screen whose agent 1 runs a [`Decides`] session; what it
-    /// was answered.
-    fn deciding(w: &mut World) -> (Live, Answers) {
+    /// A live screen whose agent 1 runs an [`Idle`] session.
+    fn running_one(w: &mut World) -> Live {
         let mut live = idle_live(w.agents.len());
-        let answers = Arc::new(Mutex::new(Vec::new()));
         live.ready(
             w,
             1,
             Ok((
-                Box::new(Decides(answers.clone())),
+                Box::new(Idle),
                 PathBuf::from("/w"),
                 None,
                 None,
@@ -1236,89 +1194,20 @@ mod tests {
                 setup::Done::None,
             )),
         );
-        (live, answers)
+        live
     }
 
-    /// Agent `id`'s session asks on its own wire to run `command`.
-    fn codex_asks(live: &Live, id: AgentId, request: &str, command: &str) {
-        let what = Ask::Command {
-            tool: "shell".into(),
-            command: command.into(),
-        };
-        live.tx
-            .send((
-                id,
-                live.generation[id],
-                AgentEvent::Asks {
-                    request: request.into(),
-                    what,
-                },
-            ))
-            .unwrap();
-    }
-
-    #[test]
-    fn what_a_session_asks_on_its_own_wire_is_answered_through_it() {
-        let mut w = team(1);
-        let (mut live, answers) = deciding(&mut w);
-        codex_asks(&live, 1, "5", "cargo test");
-        codex_asks(&live, 1, "6", "make a");
-        codex_asks(&live, 1, "7", "make b");
-        live.step(&mut w);
-        // The routine one at once, the rest when the person says.
-        assert_eq!(*answers.lock().unwrap(), [("5".to_string(), true)]);
-        assert!(
-            w.agents[1]
-                .trace
-                .iter()
-                .any(|l| l.ends_with(" allowed on its own: shell: cargo test"))
-        );
-        let open = w.open_inbox();
-        let shown: Vec<_> = open.iter().map(|&i| w.inbox[i].detail.as_str()).collect();
-        assert_eq!(shown, ["shell: make a", "shell: make b"]);
-        live.decide(&mut w, open[1], false);
-        live.decide(&mut w, open[0], true);
-        assert_eq!(
-            *answers.lock().unwrap(),
-            [
-                ("5".to_string(), true),
-                ("7".to_string(), false),
-                ("6".to_string(), true)
-            ]
-        );
-        assert!(live.pending[1].is_empty() && !w.has_approval(1));
-        // The session's end answers nobody: the session is gone.
-        codex_asks(&live, 1, "8", "make c");
-        live.step(&mut w);
-        assert!(w.has_approval(1));
-        live.end(&mut w, 1);
-        assert!(!w.has_approval(1) && live.pending[1].is_empty());
-        assert_eq!(answers.lock().unwrap().len(), 3);
-        // An ask of an earlier session is dropped with its events.
-        live.tx
-            .send((
-                1,
-                live.generation[1] - 1,
-                AgentEvent::Asks {
-                    request: "9".into(),
-                    what: Ask::Command {
-                        tool: "shell".into(),
-                        command: "make d".into(),
-                    },
-                },
-            ))
-            .unwrap();
-        live.step(&mut w);
-        assert!(!w.has_approval(1));
+    /// Whether the session was let go on.
+    fn allowed_to(rx: &Receiver<Answer>) -> bool {
+        verdict(rx)["behavior"] == "allow"
     }
 
     #[test]
     fn a_yes_for_the_turn_allows_the_agents_asks_until_its_turn_or_session_ends() {
         let mut w = team(2);
-        let (mut live, answers) = deciding(&mut w);
-        let said = |answers: &Answers| answers.lock().unwrap().clone();
-        codex_asks(&live, 1, "1", "make a");
-        codex_asks(&live, 1, "2", "make b");
+        let mut live = running_one(&mut w);
+        let first = ask_to_run(&live, 1, "make a");
+        let second = ask_to_run(&live, 1, "make b");
         let other = ask_to_run(&live, 2, "make other");
         let lead = ask_to_run(&live, 0, "make lead");
         live.step(&mut w);
@@ -1330,14 +1219,11 @@ mod tests {
         let question = w.inbox.len() - 1;
         assert!(!live.yes_turn(&mut w, question));
         assert_eq!(w.agents[1].turn_yes, None);
-        assert!(said(&answers).is_empty());
+        assert!(first.try_recv().is_err() && second.try_recv().is_err());
         // The first ask of worker 1: it and worker 1's other open one go
         // on; the others' asks wait.
         assert!(live.yes_turn(&mut w, open[0]));
-        assert_eq!(
-            said(&answers),
-            [("1".to_string(), true), ("2".to_string(), true)]
-        );
+        assert!(allowed_to(&first) && allowed_to(&second));
         assert_eq!(w.agents[1].turn_yes, Some(1), "the other open one counted");
         assert!(live.pending[1].is_empty());
         let still: Vec<_> = (w.open_inbox().iter())
@@ -1352,20 +1238,17 @@ mod tests {
         );
         // Its next asks go on at once, counted; a routine one is no yes of
         // the person's and is not.
-        codex_asks(&live, 1, "3", "rm -rf build");
-        codex_asks(&live, 1, "4", "cargo test");
+        let third = ask_to_run(&live, 1, "rm -rf build");
+        let routine = ask_to_run(&live, 1, "cargo test");
         live.step(&mut w);
-        assert_eq!(
-            said(&answers)[2..],
-            [("3".to_string(), true), ("4".to_string(), true)]
-        );
+        assert!(allowed_to(&third) && allowed_to(&routine));
         assert_eq!(w.agents[1].turn_yes, Some(2));
         assert!(!w.has_approval(1));
         assert!(
             w.agents[1]
                 .trace
                 .iter()
-                .any(|l| l.ends_with(" allowed by your yes for this turn: shell: rm -rf build"))
+                .any(|l| l.ends_with(" allowed by your yes for this turn: Bash: rm -rf build"))
         );
         // Another agent's ask still waits for the person.
         let again = ask_to_run(&live, 2, "make again");
@@ -1396,9 +1279,9 @@ mod tests {
                 allowed: 2
             }]
         );
-        codex_asks(&live, 1, "5", "make c");
+        let fifth = ask_to_run(&live, 1, "make c");
         live.step(&mut w);
-        assert_eq!(said(&answers).len(), 4, "asked again");
+        assert!(fifth.try_recv().is_err(), "asked again");
         assert!(w.has_approval(1));
         // Given again, the session's end takes it.
         let item = (w.open_inbox().into_iter())
@@ -1415,57 +1298,6 @@ mod tests {
                 allowed: 0
             }
         );
-    }
-
-    #[test]
-    fn an_ask_its_session_settled_closes_without_a_decision() {
-        let mut w = team(1);
-        let (mut live, answers) = deciding(&mut w);
-        for (r, c) in [("1", "make a"), ("2", "make b"), ("3", "make c")] {
-            codex_asks(&live, 1, r, c);
-        }
-        // The leader's ask stays whatever the worker's session settles.
-        let lead = ask_to_run(&live, 0, "make lead");
-        live.step(&mut w);
-        let journal = w.journal.len();
-        let withdraw = |live: &Live, request: &str| {
-            live.tx
-                .send((
-                    1,
-                    live.generation[1],
-                    AgentEvent::Withdrawn {
-                        request: request.into(),
-                    },
-                ))
-                .unwrap();
-        };
-        withdraw(&live, "2");
-        withdraw(&live, "never asked");
-        live.step(&mut w);
-        let open: Vec<_> = w
-            .open_inbox()
-            .iter()
-            .map(|&i| w.inbox[i].detail.clone())
-            .collect();
-        assert_eq!(open, ["shell: make a", "shell: make c", "Bash: make lead"]);
-        assert_eq!(w.journal.len(), journal, "nobody decided");
-        assert!(
-            w.agents[1]
-                .trace
-                .iter()
-                .any(|l| l.ends_with(" no longer asks: shell: make b"))
-        );
-        assert_eq!(live.pending[1].len(), 2);
-        // The rest still pair up with their items.
-        let items = w.open_inbox();
-        live.decide(&mut w, items[1], false);
-        assert_eq!(*answers.lock().unwrap(), [("3".to_string(), false)]);
-        withdraw(&live, "1");
-        live.step(&mut w);
-        assert!(!w.has_approval(1) && w.has_approval(0));
-        assert!(live.pending[1].is_empty());
-        assert!(lead.try_recv().is_err());
-        assert!(answers.lock().unwrap().len() == 1);
     }
 
     #[test]
@@ -1509,7 +1341,7 @@ mod tests {
     #[test]
     fn each_role_gets_its_tools_and_a_solo_has_no_board() {
         let names = |role| -> Vec<String> {
-            tools_of(role, &["claude"], &[], Duration::from_secs(5))
+            tools_of(role, &[], Duration::from_secs(5))
                 .into_iter()
                 .map(|t| t.name)
                 .collect()
@@ -1531,7 +1363,7 @@ mod tests {
             names(Role::Researcher),
             ["send", "post", "board", "run", "whoami"]
         );
-        let solo_hire = &tools_of(Role::Solo, &["claude"], &[], Duration::from_secs(5))[3];
+        let solo_hire = &tools_of(Role::Solo, &[], Duration::from_secs(5))[3];
         assert_eq!(solo_hire.description, HIRE_HELPER, "a solo hires helpers");
     }
 
@@ -1695,15 +1527,11 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("imece-notes-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
-        assert_eq!(repo_notes(&dir, Vendor::Claude), None);
+        assert_eq!(repo_notes(&dir), None);
         std::fs::write(dir.join("CLAUDE.md"), "  \n").unwrap();
-        assert_eq!(
-            repo_notes(&dir, Vendor::Claude),
-            None,
-            "an empty file is none"
-        );
+        assert_eq!(repo_notes(&dir), None, "an empty file is none");
         std::fs::write(dir.join("CLAUDE.md"), "# notes\n\nRun cargo fmt.\n").unwrap();
-        let notes = repo_notes(&dir, Vendor::Claude).unwrap();
+        let notes = repo_notes(&dir).unwrap();
         assert_eq!(
             (notes.file, notes.size, notes.cut),
             ("CLAUDE.md", 23, false)
@@ -1712,31 +1540,26 @@ mod tests {
         assert!(notes.starts_with("\n\nThe repository's notes"), "{notes}");
         assert!(notes.contains("from its CLAUDE.md:\n\n# notes\n\nRun cargo fmt."));
         assert!(notes.ends_with("cargo fmt."), "{notes:?}");
-        // Codex reads AGENTS.md on its own; the others get it from imece.
-        assert_eq!(repo_notes(&dir, Vendor::Codex).unwrap().file, "CLAUDE.md");
         std::fs::write(dir.join("AGENTS.md"), "agents first").unwrap();
-        for v in [Vendor::Claude, Vendor::Gemini] {
-            let notes = repo_notes(&dir, v).unwrap();
-            assert_eq!((notes.file, notes.size), ("AGENTS.md", 12));
-            assert!(
-                notes.text.contains("from its AGENTS.md:\n\nagents first"),
-                "{}",
-                notes.text
-            );
-        }
-        assert_eq!(repo_notes(&dir, Vendor::Codex), None);
+        let notes = repo_notes(&dir).unwrap();
+        assert_eq!((notes.file, notes.size), ("AGENTS.md", 12));
+        assert!(
+            notes.text.contains("from its AGENTS.md:\n\nagents first"),
+            "{}",
+            notes.text
+        );
         // A file of exactly the cap is whole; one byte more is cut at a
         // character boundary, and says so (the size is the file's, not
         // what went in).
         std::fs::write(dir.join("AGENTS.md"), "x".repeat(MAX_NOTES)).unwrap();
-        let notes = repo_notes(&dir, Vendor::Claude).unwrap();
+        let notes = repo_notes(&dir).unwrap();
         assert_eq!((notes.size, notes.cut), (MAX_NOTES, false));
         let notes = notes.text;
         assert!(!notes.contains("[cut"), "{}", &notes[notes.len() - 40..]);
         assert_eq!(notes.matches('x').count(), MAX_NOTES);
         let long = format!("{}é", "x".repeat(MAX_NOTES - 1));
         std::fs::write(dir.join("AGENTS.md"), &long).unwrap();
-        let notes = repo_notes(&dir, Vendor::Claude).unwrap();
+        let notes = repo_notes(&dir).unwrap();
         assert_eq!((notes.size, notes.cut), (MAX_NOTES + 1, true));
         let notes = notes.text;
         assert!(

@@ -2,10 +2,10 @@
 
 [![latest release](https://img.shields.io/github/v/release/selcukgural/imece)](https://github.com/selcukgural/imece/releases/latest)
 
-**One terminal for many coding agents from many vendors.**
+**One terminal for a team of Claude Code agents.**
 
-imece (Turkish: neighbours finishing a job together) runs a team of coding
-agents, Claude Code, Codex and Gemini CLI, on one codebase, on one screen.
+imece (Turkish: neighbours finishing a job together) runs a team of
+Claude Code agents on one codebase, on one screen.
 A leader reads your checkout and hires workers as the work needs them; each
 worker changes a git worktree of its own and the agents talk to each other
 over a bus. Nothing reaches your checkout until you have read the change
@@ -31,18 +31,17 @@ by hand (`imece-<target>.tar.gz`, with `SHA256SUMS`).
 - **A team, not one agent.** The leader splits your request into cards and
   hires workers by tier (cheap, standard, strong), never by model name;
   workers hire helpers for parts of a task. You talk to the leader.
-- **Many vendors.** Claude Code, Codex and Gemini CLI run as long-lived
-  sessions; Codex may lead while Claude and Gemini work. Each vendor's own
-  restrictions are switched on and checked, fail closed.
+- **Long-lived Claude Code sessions.** Each agent is a session of its own.
+  Claude Code's own restrictions are switched on and checked, fail closed.
 - **Your checkout is never touched.** A worker's `done` shows up as a change
   (`Δ`) in WAITING FOR YOU: read the diff, note lines, apply all or only the
   hunks you choose, or send it back with your reasons.
-- **What needs you, in one place.** A shell command a vendor would have
+- **What needs you, in one place.** A shell command Claude Code would have
   asked about (`⚑`), a question from an agent, a finished change: one queue,
   `W` opens the next from anywhere, the terminal's title counts them.
 - **One pot.** One budget for the whole team, kept between runs; the header
-  shows the burn rate, how long the pot lasts, and each vendor plan's
-  tightest usage window.
+  shows the burn rate, how long the pot lasts, and your plan's tightest
+  usage window.
 - **It remembers.** Projects, cards, conversations and the journal live in
   one SQLite file; agents sleep until you write to them and wake in the
   session they had. Several checkouts at once, each with its own leader.
@@ -52,10 +51,10 @@ by hand (`imece-<target>.tar.gz`, with `SHA256SUMS`).
 ## Run it
 
 ```sh
-curl -fsSL https://selcukgural.github.io/imece/install.sh | sh   # macOS, Linux; needs claude, codex or gemini on PATH
+curl -fsSL https://selcukgural.github.io/imece/install.sh | sh   # macOS, Linux; needs claude on PATH
 cd your/checkout
 imece                                      # a leader reads the checkout and waits for you
-imece --agents 8 --budget 10 --lead codex  # up to 8 workers, a $10 pot, Codex leads
+imece --agents 8 --budget 10               # up to 8 workers, a $10 pot
 imece --demo                               # fake agents, to see the screen at work; costs nothing
 ```
 

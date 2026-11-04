@@ -25,11 +25,11 @@ const features = [
     }),
   },
   {
-    title: translate({ id: 'home.f.vendors.title', message: 'Many vendors on one screen' }),
+    title: translate({ id: 'home.f.sessions.title', message: 'Long-lived Claude Code sessions' }),
     text: translate({
-      id: 'home.f.vendors.text',
+      id: 'home.f.sessions.text',
       message:
-        'Claude Code, Codex and Gemini CLI run as long-lived sessions; the screen never sees a wire format. Codex may lead while Claude and Gemini work, in cheap, standard or strong tiers.',
+        'Each agent is a Claude Code session of its own, hired by tier: cheap, standard or strong. Claude Code’s own restrictions are switched on and checked, fail closed.',
     }),
   },
   {
@@ -53,7 +53,7 @@ const features = [
     text: translate({
       id: 'home.f.pot.text',
       message:
-        'One budget for the whole team, kept between runs; each session capped at what is left. The header shows the burn rate, how long the pot lasts, and each vendor plan’s tightest usage window.',
+        'One budget for the whole team, kept between runs; each session capped at what is left. The header shows the burn rate, how long the pot lasts, and your plan’s tightest usage window.',
     }),
   },
   {
@@ -137,23 +137,23 @@ function InstallLine() {
 const session = `cd your/checkout
 imece                                  # a leader reads the checkout and waits for you
 imece --agents 8 --budget 10           # up to 8 workers, a $10 pot
-imece --lead codex --confine strict    # Codex leads; file tools only, commands through run
+imece --confine strict                 # file tools only, commands through run
 imece --demo --projects 3 --agents 30  # fake agents, to see the screen at work`;
 
 export default function Home() {
   return (
     <Layout
-      title={translate({ id: 'home.title', message: 'One terminal for many coding agents' })}
+      title={translate({ id: 'home.title', message: 'One terminal for a team of Claude Code agents' })}
       description={translate({
         id: 'home.description',
         message:
-          'imece runs a team of coding agents from many vendors on one codebase, on one screen: a leader hires workers, they work in worktrees, and you review each change before it reaches your checkout.',
+          'imece runs a team of Claude Code agents on one codebase, on one screen: a leader hires workers, they work in worktrees, and you review each change before it reaches your checkout.',
       })}>
       <header className="imece-hero">
         <h1>imece</h1>
         <p>
           <Translate id="home.hero">
-            One terminal for many coding agents from many vendors. A leader splits your request into
+            One terminal for a team of Claude Code agents. A leader splits your request into
             cards and hires workers; they talk to each other and work in their own worktrees; every
             change waits for you before it reaches your checkout.
           </Translate>

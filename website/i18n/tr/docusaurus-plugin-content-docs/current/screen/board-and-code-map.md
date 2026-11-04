@@ -12,9 +12,9 @@ Salon takımı gösterir; pano işi, kod haritası dosyaları gösterir. `2` (`:
 ```text
 ┌ BEKLİYOR (2) ─────────┐┌ ÜZERİNDE (2) ─────────┐┌ DOĞRULANIYOR (0) ────┐┌ BİTTİ (3) ───────────┐
 │#6  Legacy parser      ││#3  Parse the manifest ││                      ││#2  Money rounding    │
-│#7  Changelog entry    ││    ● claude-1 ▰▰▰▱▱   ││                      ││    ○ codex-2         │
+│#7  Changelog entry    ││    ● claude-1 ▰▰▰▱▱   ││                      ││    ○ claude-2        │
 │                       ││#5  Retry on timeout   ││                      ││#1  CI cache          │
-│                       ││    ● gemini-3 ▰▱▱▱▱   ││                      ││    ○ claude-1        │
+│                       ││    ● claude-3 ▰▱▱▱▱   ││                      ││    ○ claude-1        │
 └───────────────────────┘└───────────────────────┘└──────────────────────┘└──────────────────────┘
 ```
 
@@ -38,8 +38,8 @@ Kartın ne olduğu, liderin nasıl astığı ve görev verdiği, bir işçinin n
 ```text
 ┌ KOD HARİTASI · shop-api · kim nerede çalışıyor (lease'ler) ─────────────────┐
 │src/billing/                                                                  │
-│  Money.cs             ● codex-2     Round         ◐ claude-1   Parse   ⇆ 2  │
-│  Invoice.cs           ● codex-2     Total                                   │
+│  Money.cs             ● claude-2    Round         ◐ claude-1   Parse   ⇆ 2  │
+│  Invoice.cs           ● claude-2    Total                                   │
 │src/parser/                                                                   │
 │  Manifest.cs          ● claude-1    Read                                    │
 │  Legacy.cs                                                                  │
@@ -48,7 +48,7 @@ Kartın ne olduğu, liderin nasıl astığı ve görev verdiği, bir işçinin n
 ```
 
 - Dosyalar dizinlerinin altında gruplanır, her grubun üstünde soluk bir `dizin/` satırı.
-- Bir lease hücresi, tutanın durum işareti (salonun işareti), satıcı renginde adı ve sembol (son parçası, `Money.Round` için `Round`). Her hücre projedeki en geniş ada ve sembole göre doldurulur, bir üst sınırla, böylece bir lease gelip gittiğinde sütunlar zıplamaz.
+- Bir lease hücresi, tutanın durum işareti (salonun işareti), adı ve sembol (son parçası, `Money.Round` için `Round`). Her hücre projedeki en geniş ada ve sembole göre doldurulur, bir üst sınırla, böylece bir lease gelip gittiğinde sütunlar zıplamaz.
 - Kimsenin tutmadığı dosya soluktur, ardında hiçbir şey yok. Birden çok agent'ın tuttuğu dosya uyarı renginde `⇆ N` ile biter.
 - Alt satır lease'leri ve paylaşılan dosyaları sayar ve yalnız o an haritada olan işaretleri sözcüğe döker: sabit bir lejant, haritanın kullanmaya başladığı işaretleri kaçırıyordu. `⇆` yalnız bir dosya paylaşıldığında açıklanır.
 

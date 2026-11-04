@@ -431,7 +431,7 @@ fn member(app: &App, id: AgentId, rungs: &[Rung]) -> Vec<Span<'static>> {
     let (g, color) = rung_glyph(a, rungs[id]);
     vec![
         Span::styled(format!("  {g} "), glyph_style(app, a, rungs[id], color)),
-        Span::styled(clean(&a.name), fg(vendor_color(a.vendor))),
+        Span::styled(clean(&a.name), fg(pal().agent)),
     ]
 }
 
@@ -643,25 +643,20 @@ pub(super) fn agent_line(
         Span::styled(prefix, dim()),
         Span::styled(format!("{g} "), glyph_style(app, a, rungs[a.id], color)),
         // The speaker's colour, so this row and its conversations are seen
-        // as one agent; the name keeps its vendor's colour.
+        // as one agent.
         Span::styled(SPEAKER_MARK, fg(speaker_color(a.id))),
-        Span::styled(fit(&a.name, name_width), bold(vendor_color(a.vendor))),
+        Span::styled(fit(&a.name, name_width), bold(pal().agent)),
         taint_span(a),
     ];
     match a.role {
-        Role::Leader => spans.push(Span::styled(
-            fit(&format!(" {}", a.vendor.label()), 27),
-            dim(),
-        )),
-        // What the person chose to run: the vendor, its model and effort.
+        // What the person chose to run: its model and effort.
         Role::Solo => {
-            let runs = match app.model_of(a.id) {
-                Some(m) => format!(" {} {m}", a.vendor.label()),
-                None => format!(" {}", a.vendor.label()),
-            };
+            let runs = app
+                .model_of(a.id)
+                .map_or(String::new(), |m| format!(" {m}"));
             spans.push(Span::styled(fit(&runs, 27), dim()));
         }
-        Role::Researcher | Role::Helper => spans.push(Span::raw(" ".repeat(27))),
+        Role::Leader | Role::Researcher | Role::Helper => spans.push(Span::raw(" ".repeat(27))),
         Role::Worker => {
             let card = match a.card {
                 Some(c) => format!(" #{:<3} {}", c + 1, fit(&w.cards[c].title, 21)),

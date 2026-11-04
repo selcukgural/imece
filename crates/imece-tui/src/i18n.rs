@@ -209,8 +209,8 @@ pub struct Text {
     pub pot_lasts: &'static str,
     pub budget: &'static str,
     pub researchers: &'static str,
-    /// A vendor plan's tightest usage window in the header: the vendor,
-    /// the window, the percent left, and when it starts again if said;
+    /// The plan's tightest usage window in the header: `claude`, the
+    /// window, the percent left, and when it starts again if said;
     /// the window as hours or days.
     pub limit: &'static str,
     pub limit_resets: &'static str,
@@ -402,9 +402,6 @@ pub struct Text {
     pub budget_spent: &'static str,
     pub budget_is: &'static str,
     pub bad_budget: &'static str,
-    pub lead_is: &'static str,
-    pub lead_asks: &'static str,
-    pub bad_lead: &'static str,
     pub no_command: &'static str,
     /// `:export`: a conversation's heading (who talked), a card's
     /// sections, what was written, what was not, and nothing open.
@@ -422,11 +419,11 @@ pub struct Text {
     pub suggest_refused: &'static str,
     pub ev_suggested: &'static str,
     pub ev_suggest_failed: &'static str,
-    /// `:review` (record 106): asked (vendor, worker), refused (why), the
+    /// `:review` (record 106): asked (`claude`, worker), refused (why), the
     /// setting turned on or off, its value bare away from a change; the
-    /// journal: reviewed (vendor, model, worker, cost, first line), none
-    /// came (worker, cost, why); a change's review: its head (vendor,
-    /// model, cost), what is left out (lines), under way (vendor).
+    /// journal: reviewed (`claude`, model, worker, cost, first line), none
+    /// came (worker, cost, why); a change's review: its head (`claude`,
+    /// model, cost), what is left out (lines), under way (`claude`).
     pub reviewing: &'static str,
     pub review_refused: &'static str,
     pub review_on: &'static str,
@@ -488,8 +485,7 @@ pub struct Text {
     pub open_usage: &'static str,
     /// `:solo` with words it can not place.
     pub solo_usage: &'static str,
-    /// A solo opened: the project, its path, the agent, its vendor and
-    /// choice.
+    /// A solo opened: the project, its path, the agent, what it runs on.
     pub solo_opened: &'static str,
     /// `:effort` / `:model` done: the agent, what it runs on now.
     pub chose: &'static str,
@@ -501,10 +497,9 @@ pub struct Text {
     pub model_usage: &'static str,
     /// No solo to change at hand.
     pub no_solo: &'static str,
-    /// The solo pick screen: its title, the three questions, the word for
-    /// the vendor's own model or effort, its keys.
+    /// The solo pick screen: its title, the two questions, the word for
+    /// Claude Code's own model or effort, its keys.
     pub solo_pick_title: &'static str,
-    pub solo_pick_vendor: &'static str,
     pub solo_pick_model: &'static str,
     pub solo_pick_effort: &'static str,
     pub solo_pick_default: &'static str,
@@ -542,11 +537,6 @@ pub struct Text {
     pub last_project: &'static str,
     pub renamed: &'static str,
     // Who leads (asked before the salon)
-    pub probing: &'static str,
-    pub pick_title: &'static str,
-    pub pick_text: &'static str,
-    pub pick_missing: &'static str,
-    pub pick_keys: &'static str,
     pub cannot_start: &'static str,
     pub approved: &'static str,
     pub rejected: &'static str,
@@ -621,7 +611,7 @@ pub struct Text {
     pub plan_more: &'static str,
     /// The focus's context line: percent, tokens in it, the window's size.
     pub context_line: &'static str,
-    /// The same when the vendor does not say the window's size: tokens.
+    /// The same when the window's size is not said: tokens.
     pub context_tokens: &'static str,
     /// The focus's activity bar (`STIR_LONG` ticks), `{}` the bar and
     /// how many trace lines it counts.
@@ -887,13 +877,13 @@ pub struct Text {
     pub ev_rejected: &'static str,
     pub ev_stopped: &'static str,
     pub ev_interrupted: &'static str,
-    /// A passing vendor error: the agent, the vendor's words, when imece
+    /// A passing API error: the agent, Claude Code's words, when imece
     /// tries again, the try and the tries there are.
     pub ev_retrying: &'static str,
     /// An agent's row while a retry waits: the try, the tries, how long
     /// until it goes.
     pub retry_row: &'static str,
-    /// An agent's row while a vendor error waits for the person.
+    /// An agent's row while a API error waits for the person.
     pub fault_row: &'static str,
     pub ev_posted: &'static str,
     pub ev_claimed: &'static str,
@@ -962,7 +952,7 @@ pub struct Text {
     pub ev_apply_failed: &'static str,
     /// The same while what clashes can go back to the worker.
     pub ev_apply_failed_back: &'static str,
-    /// What stands for a model when the vendor's own default is used.
+    /// What stands for a model when Claude Code's own default is used.
     pub default_model: &'static str,
     /// Message types, in `MsgKind::ALL` order.
     pub kinds: [&'static str; 10],
@@ -1035,10 +1025,10 @@ pub struct Text {
     pub waiting_yes: &'static str,
     // Overlays
     pub help_title: &'static str,
-    pub help_keys: [(&'static str, &'static str); 57],
+    pub help_keys: [(&'static str, &'static str); 56],
     /// What each `:` command does, in a line, in `complete::COMMANDS`'
     /// order: shown after the menu's keys once `tab` put one on the line.
-    pub command_hints: [(&'static str, &'static str); 65],
+    pub command_hints: [(&'static str, &'static str); 64],
     /// The completion menu's mark for the items after the window, and
     /// where the highlighted one is among them all.
     pub menu_more: &'static str,
@@ -1089,19 +1079,19 @@ pub struct Text {
     // The first-run window (`:welcome`) and what is new (`:news`)
     pub welcome_title: &'static str,
     pub welcome_about: [&'static str; 2],
-    pub welcome_vendors: &'static str,
-    /// A vendor asked about itself, no answer yet.
+    pub welcome_claude: &'static str,
+    /// Claude Code asked about itself, no answer yet.
     pub seen_checking: &'static str,
     pub seen_missing: &'static str,
     pub login_yes: &'static str,
     /// The command that signs it in.
     pub login_no: &'static str,
-    /// Gemini CLI, which can not be asked.
+    /// It did not say.
     pub login_unknown: &'static str,
     pub welcome_keys_title: &'static str,
     pub welcome_keys: [(&'static str, &'static str); 9],
     pub welcome_close: &'static str,
-    /// The leader's vendor is not signed in, said while the person writes.
+    /// Claude Code is not signed in, said while the person writes.
     pub not_signed_in: &'static str,
     pub news_title: &'static str,
     pub news_close: &'static str,
@@ -1289,7 +1279,6 @@ pub const EN: Text = Text {
         ("history", "search the lines you sent (^r)"),
         ("keys", "read your key file again"),
         ("lang", "Türkçe / English (L)"),
-        ("lead", "which vendor leads from the next start on"),
         ("mark", "mark the line at hand; ' goes to the next mark (m)"),
         (
             "model",
@@ -1328,7 +1317,7 @@ pub const EN: Text = Text {
         ("restore", "bring an archive back"),
         (
             "review",
-            "another vendor reviews the change at hand; on|off: every change ($)",
+            "a fresh session reviews the change at hand; on|off: every change ($)",
         ),
         ("salon", "the salon (1)"),
         ("settle", "put the selected row out of the salon (s)"),
@@ -1351,7 +1340,7 @@ pub const EN: Text = Text {
         ("unfold", "unfold everything (zR)"),
         ("unsettle", "bring back every settled row"),
         ("waiting", "straight to waiting for you (w)"),
-        ("welcome", "the vendors on this machine and how to sign in"),
+        ("welcome", "Claude Code on this machine and how to sign in"),
         ("why", "what put the agent in its state, and since when"),
         ("yes", "yes to all the agent asks until its turn ends (e)"),
     ],
@@ -1399,9 +1388,6 @@ pub const EN: Text = Text {
     budget_spent: "{} has spent its budget",
     budget_is: "the budget is {} now",
     bad_budget: "{} is not dollars like 80 or 2.50",
-    lead_is: "{} leads from the next start on, without asking",
-    lead_asks: "the next start asks who leads",
-    bad_lead: "{} is not claude, codex, gemini or ask",
     no_command: "no command {}; : and tab list them",
     bad_lang: "{} is not a language: en or tr",
     pinned: "{} is pinned to the top of the salon",
@@ -1419,7 +1405,7 @@ pub const EN: Text = Text {
     ev_suggest_failed: "no commit message came ({}): {}",
     reviewing: "{} reads {}'s change for a review",
     review_refused: "no review: {}",
-    review_on: "every change gets a review from another vendor as it comes, from the pot \
+    review_on: "every change gets a review from a fresh session as it comes, from the pot \
                 ($); :review off stops it",
     review_off: "changes get a review only when asked: :review on a change; :review on \
                  for every change",
@@ -1457,18 +1443,17 @@ pub const EN: Text = Text {
     bad_theme: "theme {}: {}",
     opened: "opened {} at {}; write to {}",
     open_usage: ":open PATH [NAME] opens the git checkout at PATH as a project",
-    solo_usage: ":solo [PATH] [VENDOR[:MODEL][@EFFORT]] [NAME]: a session you drive yourself, no leader",
+    solo_usage: ":solo [PATH] [claude[:MODEL][@EFFORT]] [NAME]: a session you drive yourself, no leader",
     solo_opened: "opened {} at {} as a solo session; write to {} ({})",
     chose: "{} runs on {} from its next turn; its session starts again on it",
     chose_refused: "could not change {}: {}",
-    effort_usage: ":effort LEVEL sets the solo at hand's thinking effort; default for the vendor's own",
-    model_usage: ":model NAME sets the solo at hand's model; default for the vendor's own",
+    effort_usage: ":effort LEVEL sets the solo at hand's thinking effort; default for Claude Code's own",
+    model_usage: ":model NAME sets the solo at hand's model; default for Claude Code's own",
     no_solo: "no solo session at hand: select one, or open one with :solo",
     solo_pick_title: " A SOLO SESSION ",
-    solo_pick_vendor: " Which coding agent?",
-    solo_pick_model: " Which model? A full name can be typed after :solo VENDOR:",
+    solo_pick_model: " Which model? A full name can be typed after :solo claude:",
     solo_pick_effort: " How deep should it think?",
-    solo_pick_default: "the vendor's own",
+    solo_pick_default: "Claude Code's own",
     solo_pick_keys: " ↑↓ j k choose · enter next · esc back · q quit",
     bad_open: "could not open: {}",
     project_exists: "a project named {} is open already",
@@ -1491,11 +1476,6 @@ pub const EN: Text = Text {
     no_project: "no open project named {}",
     last_project: "{} is the last open project; q q quits",
     renamed: "{} is now {}; write to {}",
-    probing: "looking for coding agents on PATH…",
-    pick_title: " WHO LEADS? ",
-    pick_text: " Several coding agents are on PATH. Which one leads?",
-    pick_missing: " {} is your primary, but not on PATH",
-    pick_keys: " ↑↓ j k choose · enter this time · p always (primary) · esc quit",
     cannot_start: "{} could not start: {}",
     approved: "approved",
     rejected: "rejected",
@@ -1711,7 +1691,7 @@ pub const EN: Text = Text {
     notice_approval: "imece · {} waits for your yes",
     notice_sensitive: "imece · {}: something sensitive waits for you",
     notice_stuck: "imece · {} is stuck",
-    notice_fault: "imece · {} hit a vendor error that needs you",
+    notice_fault: "imece · {} hit a API error that needs you",
     notify_many: "imece · {} things wait for you",
     theme_is: "theme: {}",
     folded: "… {} agents folded, loudest",
@@ -1804,9 +1784,9 @@ pub const EN: Text = Text {
     ev_rejected: "rejected: {}",
     ev_stopped: "{} stopped: {}",
     ev_interrupted: "{}'s turn was cut short when imece closed; it hears of it when it wakes",
-    ev_retrying: "{} hit a vendor error: {} · imece tries again in {} ({}/{})",
+    ev_retrying: "{} hit a API error: {} · imece tries again in {} ({}/{})",
     retry_row: "↻ {}/{} in {}",
-    fault_row: "✕ vendor error",
+    fault_row: "✕ API error",
     ev_posted: "{} posted {} {}",
     ev_claimed: "{} took {} {} from the board",
     ev_hired: "{} hired {} ({})",
@@ -1845,8 +1825,8 @@ pub const EN: Text = Text {
     ev_notes_cut: "{}: the repository's {} is {} KiB; only its first {} KiB went into the instructions",
     ev_instructions_cut: "{}: your instructions file {} is {} KiB; only its first {} KiB went into the instructions",
     ev_commands_missing: "{}'s session listed no commands of its own; {}'s format may have changed, so only /clear completes",
-    ev_confine_standard: "confine standard: workers get their vendor's shell and web; isolation is a container's job, not imece's",
-    ev_confine_open: "confine open: agents run with your own vendor setup (settings, hooks, MCP servers); isolation is a container's job, not imece's",
+    ev_confine_standard: "confine standard: workers get Claude Code's shell and web; isolation is a container's job, not imece's",
+    ev_confine_open: "confine open: agents run with your own Claude Code setup (settings, hooks, MCP servers); isolation is a container's job, not imece's",
     ev_worktree_moved: "{}: worktree moved from {} to HEAD {}",
     ev_worktree_changes: "{}: worktree kept at {}, it has uncommitted changes (HEAD is {})",
     ev_worktree_commits: "{}: worktree kept at {}, it has commits of its own (HEAD is {})",
@@ -1891,7 +1871,7 @@ pub const EN: Text = Text {
                     tests is not known",
     in_question: "{} asks you: {}",
     in_approval: "{} waits for your yes: {}",
-    in_fault: "{} vendor error, write to it once mended: {}",
+    in_fault: "{} API error, write to it once mended: {}",
     approval_keys: "  a yes · e this turn · A from now on · r no",
     allow_once: "allow once",
     from_now_on: "yes from now on",
@@ -1924,10 +1904,6 @@ pub const EN: Text = Text {
         (":", "a command to imece; tab: a menu with values"),
         ("$", "in the : menu: raises the next bill"),
         (":budget USD", "raise or lower the budget while agents run"),
-        (
-            ":lead VENDOR",
-            "who leads from the next start on; ask = choose then",
-        ),
         (
             ":open :solo",
             "a checkout as a project, or a solo you drive",
@@ -2079,10 +2055,10 @@ pub const EN: Text = Text {
     bye_demo: "the demo keeps nothing",
     welcome_title: " WELCOME TO IMECE {} ",
     welcome_about: [
-        "One terminal for many coding agents. A leader hires workers; each works",
-        "in a worktree of its own, and what it changes waits for your yes.",
+        "One terminal for a team of Claude Code agents. A leader hires workers;",
+        "each works in a worktree of its own, and what it changes waits for your yes.",
     ],
-    welcome_vendors: "Coding agents on this machine:",
+    welcome_claude: "Claude Code on this machine:",
     seen_checking: "checking…",
     seen_missing: "not on PATH",
     login_yes: "signed in",
@@ -2126,7 +2102,7 @@ pub const EN: Text = Text {
         (
             "0.1.1",
             &[
-                "A turn a busy vendor failed is tried again; a refused key waits for you as ✕.",
+                "A turn that failed on a busy API is tried again; a refused key waits for you as ✕.",
                 "Your own keys: a key file remaps imece's keys, per place, read again on change.",
                 "v chooses lines or words in a conversation or a change, y copies; K peeks.",
                 "F puts hint letters on rows; :close and :forget wait 10 s, u takes them back.",
@@ -2335,10 +2311,6 @@ pub const TR: Text = Text {
         ("keys", "tuş dosyanı yeniden oku"),
         ("lang", "Türkçe / English (L)"),
         (
-            "lead",
-            "sonraki başlangıçtan itibaren hangi satıcı liderlik eder",
-        ),
-        (
             "mark",
             "eldeki satırı işaretle; ' sonraki işarete gider (m)",
         ),
@@ -2379,7 +2351,7 @@ pub const TR: Text = Text {
         ("restore", "bir arşivi geri getir"),
         (
             "review",
-            "başka bir vendor eldeki değişikliği inceler; on|off: her değişiklik ($)",
+            "taze bir oturum eldeki değişikliği inceler; on|off: her değişiklik ($)",
         ),
         ("salon", "salon (1)"),
         ("settle", "seçili satırı salondan çıkar (s)"),
@@ -2405,7 +2377,10 @@ pub const TR: Text = Text {
         ("unfold", "her şeyi aç (zR)"),
         ("unsettle", "salondan çıkarılan her satırı geri getir"),
         ("waiting", "doğrudan seni bekleyenlere (w)"),
-        ("welcome", "bu makinedeki satıcılar ve nasıl oturum açılır"),
+        (
+            "welcome",
+            "bu makinedeki Claude Code ve nasıl oturum açılır",
+        ),
         ("why", "ajanı bu duruma ne getirdi, ne zamandan beri"),
         ("yes", "ajan turunu bitirene dek ne isterse evet (e)"),
     ],
@@ -2453,9 +2428,6 @@ pub const TR: Text = Text {
     budget_spent: "{} bütçesini bitirdi",
     budget_is: "bütçe artık {}",
     bad_budget: "{} dolar değil; 80 ya da 2.50 gibi yaz",
-    lead_is: "bir sonraki açılıştan itibaren {} lider, sorulmadan",
-    lead_asks: "bir sonraki açılışta kimin lider olacağı sorulur",
-    bad_lead: "{} claude, codex, gemini ya da ask değil",
     no_command: "{} diye komut yok; : ve tab hepsini listeler",
     bad_lang: "{} bir dil değil: en ya da tr",
     pinned: "{} salonun en üstüne sabitlendi",
@@ -2473,7 +2445,7 @@ pub const TR: Text = Text {
     ev_suggest_failed: "commit mesajı gelmedi ({}): {}",
     reviewing: "{} inceleme için {} değişikliğini okuyor",
     review_refused: "inceleme yok: {}",
-    review_on: "her değişiklik gelince başka bir vendor'dan inceleme alır, pot'tan ($); \
+    review_on: "her değişiklik gelince taze bir oturumdan inceleme alır, pot'tan ($); \
                 :review off durdurur",
     review_off: "değişiklikler yalnız istenince incelenir: bir değişiklikte :review; her \
                  değişiklik için :review on",
@@ -2511,18 +2483,17 @@ pub const TR: Text = Text {
     bad_theme: "tema {}: {}",
     opened: "{} açıldı ({}); {} adına yaz",
     open_usage: ":open YOL [AD], YOL'daki git çalışma kopyasını proje olarak açar",
-    solo_usage: ":solo [YOL] [SATICI[:MODEL][@ÇABA]] [AD]: lidersiz, kendin sürdüğün bir oturum",
+    solo_usage: ":solo [YOL] [claude[:MODEL][@ÇABA]] [AD]: lidersiz, kendin sürdüğün bir oturum",
     solo_opened: "{} solo oturum olarak açıldı ({}); {} adına yaz ({})",
     chose: "{} sonraki turundan itibaren {} üzerinde; oturumu onunla yeniden başlar",
     chose_refused: "{} değiştirilemedi: {}",
-    effort_usage: ":effort DÜZEY eldeki solonun düşünce çabasını ayarlar; satıcının kendisi için default",
-    model_usage: ":model AD eldeki solonun modelini ayarlar; satıcının kendisi için default",
+    effort_usage: ":effort DÜZEY eldeki solonun düşünce çabasını ayarlar; Claude Code'un kendisi için default",
+    model_usage: ":model AD eldeki solonun modelini ayarlar; Claude Code'un kendisi için default",
     no_solo: "elde solo oturum yok: birini seç ya da :solo ile aç",
     solo_pick_title: " BİR SOLO OTURUM ",
-    solo_pick_vendor: " Hangi kodlama ajanı?",
-    solo_pick_model: " Hangi model? Tam bir ad :solo SATICI: ardına yazılabilir",
+    solo_pick_model: " Hangi model? Tam bir ad :solo claude: ardına yazılabilir",
     solo_pick_effort: " Ne kadar derin düşünsün?",
-    solo_pick_default: "satıcının kendisi",
+    solo_pick_default: "Claude Code'un kendisi",
     solo_pick_keys: " ↑↓ j k seç · enter ileri · esc geri · q çık",
     bad_open: "açılamadı: {}",
     project_exists: "{} adında açık bir proje var",
@@ -2545,11 +2516,6 @@ pub const TR: Text = Text {
     no_project: "{} adında açık proje yok",
     last_project: "{} son açık proje; q q çıkar",
     renamed: "{} artık {}; {} adına yaz",
-    probing: "PATH'te kodlama ajanları aranıyor…",
-    pick_title: " KİM LİDER? ",
-    pick_text: " PATH'te birden fazla kodlama ajanı var. Hangisi lider olsun?",
-    pick_missing: " {} birincil ajanın, ama PATH'te yok",
-    pick_keys: " ↑↓ j k seç · enter bu seferlik · p hep (birincil) · esc çık",
     cannot_start: "{} başlatılamadı: {}",
     approved: "onaylandı",
     rejected: "reddedildi",
@@ -2765,7 +2731,7 @@ pub const TR: Text = Text {
     notice_approval: "imece · {} onayını bekliyor",
     notice_sensitive: "imece · {}: hassas bir şey seni bekliyor",
     notice_stuck: "imece · {} takıldı",
-    notice_fault: "imece · {} senin çözmen gereken bir satıcı hatası aldı",
+    notice_fault: "imece · {} senin çözmen gereken bir API hatası aldı",
     notify_many: "imece · {} şey seni bekliyor",
     theme_is: "tema: {}",
     folded: "… {} agent katlı, en yükseği",
@@ -2858,9 +2824,9 @@ pub const TR: Text = Text {
     ev_rejected: "reddedildi: {}",
     ev_stopped: "{} durdu: {}",
     ev_interrupted: "{} turu imece kapanınca yarım kaldı; uyanınca öğrenecek",
-    ev_retrying: "{} satıcı hatası aldı: {} · imece {} sonra yeniden deniyor ({}/{})",
+    ev_retrying: "{} API hatası aldı: {} · imece {} sonra yeniden deniyor ({}/{})",
     retry_row: "↻ {}/{} · {} sonra",
-    fault_row: "✕ satıcı hatası",
+    fault_row: "✕ API hatası",
     ev_posted: "{} panoya astı: {} {}",
     ev_claimed: "{} panodan aldı: {} {}",
     ev_hired: "{} işe aldı: {} ({})",
@@ -2899,8 +2865,8 @@ pub const TR: Text = Text {
     ev_notes_cut: "{}: deponun {} dosyası {} KiB; talimatlara yalnızca ilk {} KiB girdi",
     ev_instructions_cut: "{}: talimat dosyan {} {} KiB; talimatlara yalnızca ilk {} KiB girdi",
     ev_commands_missing: "{} oturumu kendi komutlarını listelemedi; {} biçimi değişmiş olabilir, yalnızca /clear tamamlanır",
-    ev_confine_standard: "confine standard: işçiler satıcılarının kabuğunu ve web'ini alır; yalıtım bir konteynerin işi, imece'nin değil",
-    ev_confine_open: "confine open: ajanlar senin kendi satıcı kurulumunla çalışır (ayarlar, hook'lar, MCP sunucuları); yalıtım bir konteynerin işi, imece'nin değil",
+    ev_confine_standard: "confine standard: işçiler Claude Code'un kabuğunu ve web'ini alır; yalıtım bir konteynerin işi, imece'nin değil",
+    ev_confine_open: "confine open: ajanlar senin kendi Claude Code kurulumunla çalışır (ayarlar, hook'lar, MCP sunucuları); yalıtım bir konteynerin işi, imece'nin değil",
     ev_worktree_moved: "{}: çalışma ağacı {} yerine HEAD {} oldu",
     ev_worktree_changes: "{}: çalışma ağacı {} noktasında kaldı, commit edilmemiş değişiklikleri var (HEAD {})",
     ev_worktree_commits: "{}: çalışma ağacı {} noktasında kaldı, kendi commit'leri var (HEAD {})",
@@ -2953,7 +2919,7 @@ pub const TR: Text = Text {
                     testlerinin geçip geçmediği bilinmiyor",
     in_question: "{} sana soruyor: {}",
     in_approval: "{} onayını bekliyor: {}",
-    in_fault: "{} satıcı hatası, giderince ona yaz: {}",
+    in_fault: "{} API hatası, giderince ona yaz: {}",
     approval_keys: "  a evet · e bu tur · A hep evet · r hayır",
     allow_once: "bir kez izin ver",
     from_now_on: "bundan sonra hep evet",
@@ -2986,7 +2952,6 @@ pub const TR: Text = Text {
         (":", "imece'ye komut; tab: değerleriyle menü"),
         ("$", ": menüsünde: sonraki faturayı büyütür"),
         (":budget USD", "agent'lar çalışırken bütçeyi artır / azalt"),
-        (":lead VENDOR", "sonraki açılışta lider; ask = o zaman sor"),
         (
             ":open :solo",
             "checkout'u proje olarak, ya da sürdüğün solo",
@@ -3132,10 +3097,10 @@ pub const TR: Text = Text {
     bye_demo: "demo hiçbir şey saklamaz",
     welcome_title: " IMECE {} SÜRÜMÜNE HOŞ GELDİN ",
     welcome_about: [
-        "Birçok kodlama agent'ı için tek terminal. Lider worker tutar; her biri kendi",
-        "worktree'sinde çalışır, değiştirdiği şey senin onayını bekler.",
+        "Bir Claude Code agent ekibi için tek terminal. Lider worker tutar; her biri",
+        "kendi worktree'sinde çalışır, değiştirdiği şey senin onayını bekler.",
     ],
-    welcome_vendors: "Bu makinedeki kodlama agent'ları:",
+    welcome_claude: "Bu makinedeki Claude Code:",
     seen_checking: "bakılıyor…",
     seen_missing: "PATH'te yok",
     login_yes: "giriş yapılmış",
@@ -3179,7 +3144,7 @@ pub const TR: Text = Text {
         (
             "0.1.1",
             &[
-                "Meşgul satıcıda düşen tur yeniden denenir; reddedilen anahtar ✕ olarak bekler.",
+                "API meşgulken düşen tur yeniden denenir; reddedilen anahtar ✕ olarak bekler.",
                 "Kendi tuşların: bir tuş dosyası imece'nin tuşlarını yerine göre değiştirir.",
                 "v konuşmada ya da değişiklikte satır veya sözcük seçer, y kopyalar; K göz atar.",
                 "F satırlara ipucu harfi koyar; :close ve :forget 10 sn bekler, u geri alır.",
@@ -3547,12 +3512,6 @@ mod tests {
             (e.ev_closed, t.ev_closed),
             (e.ev_renamed, t.ev_renamed),
             (e.command_refused, t.command_refused),
-            (e.lead_is, t.lead_is),
-            (e.lead_asks, t.lead_asks),
-            (e.bad_lead, t.bad_lead),
-            (e.pick_text, t.pick_text),
-            (e.pick_missing, t.pick_missing),
-            (e.pick_keys, t.pick_keys),
             (e.applying, t.applying),
             (e.apply_failed, t.apply_failed),
             (e.rejected_change, t.rejected_change),

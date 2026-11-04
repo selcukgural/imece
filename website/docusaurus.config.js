@@ -16,8 +16,8 @@ const tr = process.env.DOCUSAURUS_CURRENT_LOCALE === 'tr';
 const config = {
   title: 'imece',
   tagline: tr
-    ? 'Birçok satıcıdan birçok kodlama ajanı için tek terminal'
-    : 'One terminal for many coding agents from many vendors',
+    ? 'Bir Claude Code ajanları ekibi için tek terminal'
+    : 'One terminal for a team of Claude Code agents',
   favicon: 'img/favicon.svg',
 
   url: 'https://selcukgural.github.io',
@@ -69,8 +69,8 @@ const config = {
         // A new id shows the bar again to those who closed the old one.
         id: 'early-install',
         content: tr
-          ? 'imece <b>erken</b> bir sürümdür: Claude Code, Codex ve Gemini CLI ile çalışır; macOS ve Linux için tek satırla kurulur.'
-          : 'imece is <b>early</b>: it runs Claude Code, Codex and Gemini CLI; one line installs it on macOS and Linux.',
+          ? 'imece <b>erken</b> bir sürümdür: Claude Code ile çalışır; macOS ve Linux için tek satırla kurulur.'
+          : 'imece is <b>early</b>: it runs Claude Code; one line installs it on macOS and Linux.',
         isCloseable: true,
       },
       navbar: {

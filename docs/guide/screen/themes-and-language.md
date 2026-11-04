@@ -20,7 +20,7 @@ English is the default. The language is not saved between runs: set `IMECE_LANG`
 
 Every word on the screen lives in one place in both languages, with the same placeholders, so nothing is English-only: the help, the legend, the pane titles (WAITING FOR YOU is SENİ BEKLEYEN, JOURNAL is DEFTER, SALON stays SALON), the journal's lines, the flashes, the terminal's title (`! imece · 2 seni bekliyor`), the exported Markdown's headings. The model stores events as data and words them at draw time, so `L` rewrites the whole journal, not only new lines. Keys and `:` commands are the same in both languages. The `?` help's `/` filter folds Turkish letters, so `calis` finds `çalış` from a keyboard without them.
 
-What the agents say is in whatever language they write; imece never translates it. The raw stream (the trace) stays as the vendor sends it.
+What the agents say is in whatever language they write; imece never translates it. The raw stream (the trace) stays as Claude Code sends it.
 
 ## Themes
 
@@ -60,7 +60,7 @@ At start the probe waits 200 ms for the colours and then for a cursor position r
 
 ### The dimmed backdrop
 
-Whatever the theme, a window over the salon (a conversation, the help, the digest, where you left off, the quit list) dims everything around it, so the window reads first. Attention is one colour: what waits for you, a pot about to run out, a vendor window from 90% used.
+Whatever the theme, a window over the salon (a conversation, the help, the digest, where you left off, the quit list) dims everything around it, so the window reads first. Attention is one colour: what waits for you, a pot about to run out, a usage window from 90% used.
 
 ## See also
 

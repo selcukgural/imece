@@ -14,11 +14,10 @@ Her senaryo gerçek imece için doğrudur: tuşlar `?` yardımının listelediğ
 | Senaryo | Tek satırla |
 | --- | --- |
 | [Kırık bir test, tek işçi](one-fix.md) | `/ düzelt`ten `!git commit`e: lider `claude-1`i işe alır, bir `⚑` sorusu, bir `Δ`, uygulama, önerilen commit mesajı. |
-| [Codex lider, Claude ve Gemini işçi](mixed-vendors.md) | `--lead codex`, satıcılar arası işe alım, bir kademenin her satıcıda anlamı, dolara karşı token, başlıktaki kullanım sınırları, `--confine strict`. |
 | [Bir değişikliği geri göndermek, sonra yarısını almak](review-with-notes.md) | `c` ve `n` ile notlar, işçinin `↩` ve `%` ile yanıtı, `x` ile seçilen parçalar, birini alıntılayan `>`, kalanı reddeden `r`. |
 | [Üç çalışma kopyası, tek ekran](many-projects.md) | `:open`, katlama, `:pin`, `f`, `:rename`, `:copy .env`, `:close` ve her projenin çektiği tek bütçe. |
-| [Takımın yanında bir solo](solo-beside-the-team.md) | `:solo claude:opus@xhigh`, lidersiz, kendinizin sürdüğü bir oturum, her yanıttan sonra `Δ`, Codex'te ikinci bir solo, ertesi sabah `--solo`. |
-| [Geri dönmek](next-morning.md) | Tur ortasında çıkmak, "nerede kalmıştın" penceresi, uyuyan ajanlar, her satıcının nasıl devam ettiği, `:forget`, uzaktayken özeti, `:notify`, işaretler, `:export`. |
+| [Takımın yanında bir solo](solo-beside-the-team.md) | `:solo claude:opus@xhigh`, lidersiz, kendinizin sürdüğü bir oturum, her yanıttan sonra `Δ`, başka bir modelde ikinci bir solo, ertesi sabah `--solo`. |
+| [Geri dönmek](next-morning.md) | Tur ortasında çıkmak, "nerede kalmıştın" penceresi, uyuyan ajanlar, bir oturumun nasıl devam ettiği, `:forget`, uzaktayken özeti, `:notify`, işaretler, `:export`. |
 | [Yeni bir epic](new-epic.md) | `:archive v1 fixes`, beklemesi ve `u`, aynı adla temiz bir proje, arşivin sakladıkları, geri getirmek için `:restore v1 fixes`, tek bütçe. |
 | [Takımın yanında kendi kabuğunuz](own-shell-and-commit.md) | `!cargo test`, `!vim`, ctrl-c, `:commit` ve tavanları, `:awake`, `:budget 80`, `:theme nord`, `L`. |
 
@@ -31,11 +30,10 @@ Bir senaryonun ekranda yaptığı her şey `imece --demo` ile denenebilir: sahte
 1. [Kırık bir test, tek işçi](one-fix.md): bütün döngü bir kez, tek ajanla.
 2. [Bir değişikliği geri göndermek, sonra yarısını almak](review-with-notes.md): inceleme tuşları derinlemesine.
 3. [Takımın yanında kendi kabuğunuz](own-shell-and-commit.md): ajanların yanında kişinin kendi araçları.
-4. [Codex lider, Claude ve Gemini işçi](mixed-vendors.md): PATH'te birden fazla satıcı varken.
-5. [Üç çalışma kopyası, tek ekran](many-projects.md): birden fazla proje açıkken.
-6. [Takımın yanında bir solo](solo-beside-the-team.md): tek bir ajanı kendiniz sürmek istediğinizde.
-7. [Geri dönmek](next-morning.md): ikinci gün.
-8. [Yeni bir epic](new-epic.md): bir iş bittiğinde.
+4. [Üç çalışma kopyası, tek ekran](many-projects.md): birden fazla proje açıkken.
+5. [Takımın yanında bir solo](solo-beside-the-team.md): tek bir ajanı kendiniz sürmek istediğinizde.
+6. [Geri dönmek](next-morning.md): ikinci gün.
+7. [Yeni bir epic](new-epic.md): bir iş bittiğinde.
 
 ## Ayrıca bakın
 

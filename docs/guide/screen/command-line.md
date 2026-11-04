@@ -1,6 +1,6 @@
 ---
 title: "The command line"
-description: "The footer line where you write - to the leader or one agent, vendor commands, imece's own : commands and their menu, completion, readline keys, several lines, your own shell and your editor."
+description: "The footer line where you write - to the leader or one agent, Claude Code's commands, imece's own : commands and their menu, completion, readline keys, several lines, your own shell and your editor."
 ---
 
 # The command line
@@ -22,7 +22,7 @@ The footer is where you write. `/` (or `i`, as in vim) opens it to the leader of
 | --- | --- |
 | plain text | the leader of the selected project, which splits the request into cards |
 | `@name text` | one agent. A message to an idle worker opens a card for it; its answer closes it. `@` in a focus, a trace or a change fills the agent's name in |
-| `/cmd`, `@name /cmd` | the agent's own command line, not a message: `/clear`, `/compact`, `/cost`, `/context`, whatever the vendor's CLI knows. It runs as a turn and its answer comes back like a reply. Codex's app server has no command line, so only `/compact` works there; `/clear` on a vendor without one of its own ends the session, and the next message starts a fresh one |
+| `/cmd`, `@name /cmd` | the agent's own command line, not a message: `/clear`, `/compact`, `/cost`, `/context`, whatever Claude Code knows. It runs as a turn and its answer comes back like a reply |
 | `:command` | imece itself; see below |
 | `!cmd` | your own shell |
 | `#N`, `#word` | a card's screen; see [cards](cards.md) |
@@ -38,7 +38,6 @@ A message can run over lines; the first line of one that opens a card is the car
 | Command | Key | What it does |
 | --- | --- | --- |
 | `:budget USD` (`:b`) | | raise or lower the pot while agents run; a turn under way finishes on its old cap |
-| `:lead VENDOR` | | who leads from the next start on: `claude`, `codex`, `gemini`, or `ask` to be asked then |
 | `:open PATH [NAME]` (`:o`) | | open the checkout at PATH as a project with its own leader |
 | `:close NAME` (`:c`) | | close a project: its agents leave, their worktrees stay on disk |
 | `:rename NAME` | | rename the project at hand; its leader becomes `lead-NAME` |
@@ -71,7 +70,7 @@ The commands that work in a salon panel (`:waiting`, `:needs`, `:fold`, `:unfold
 
 ### The menu and its values
 
-The menu shows each command's value after it, in brackets, drawn but never inserted: `budget (spent $3.10 of $20.00)`, `lead (claude)` or `(ask)`, `theme (dark)`, `lang (English)`, `close` and `rename` with the project at hand, `forget` `talk` `trace` with the agent at hand, `next` and `waiting` with how many items wait, `needs` and `pause` on or off, `faster` `slower` the speed, `pin` the project (with `▴` when pinned), `export` what it would write (`the conversation`, `#12`). `$` marks what raises the next bill: `:open` (a new leader session), `:forget` (the next message starts a new session that pays the whole briefing again) and `:commit` (it asks a model for the message). No other `:` command starts a paid turn by itself.
+The menu shows each command's value after it, in brackets, drawn but never inserted: `budget (spent $3.10 of $20.00)`, `theme (dark)`, `lang (English)`, `close` and `rename` with the project at hand, `forget` `talk` `trace` with the agent at hand, `next` and `waiting` with how many items wait, `needs` and `pause` on or off, `faster` `slower` the speed, `pin` the project (with `▴` when pinned), `export` what it would write (`the conversation`, `#12`). `$` marks what raises the next bill: `:open` (a new leader session), `:forget` (the next message starts a new session that pays the whole briefing again) and `:commit` (it asks a model for the message). No other `:` command starts a paid turn by itself.
 
 ### Short names
 
@@ -83,7 +82,7 @@ While `:theme NAME` is written with NAME a built-in theme, typed or stepped to w
 
 ## Completion
 
-Writing completes as a shell does: after `@` the agents' names (the project at hand first, gone ones left out, prefix match, case aside), after `:` imece's commands and after `:lead` the vendors, after `/` or `@name /` that agent's own command line as its session reported it (never a static list, so a vendor's new command needs no release; empty until a session says, and the journal says when a session listed none so only `/clear` completes), after `#` the cards, and directories after `:open` and `:export`; `:pin` and `:close` complete the open projects' names. The matches show in one row above the footer as you type; one match equal to the word is no menu.
+Writing completes as a shell does: after `@` the agents' names (the project at hand first, gone ones left out, prefix match, case aside), after `:` imece's commands, after `/` or `@name /` that agent's own command line as its session reported it (never a static list, so a new command of Claude Code's needs no release; empty until a session says, and the journal says when a session listed none so only `/clear` completes), after `#` the cards, and directories after `:open` and `:export`; `:pin` and `:close` complete the open projects' names. The matches show in one row above the footer as you type; one match equal to the word is no menu.
 
 | Key | What it does |
 | --- | --- |

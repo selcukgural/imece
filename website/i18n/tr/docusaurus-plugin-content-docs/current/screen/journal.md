@@ -26,22 +26,22 @@ Alt yan panel varsayılan olarak günlüğü satır satır göstermez, hikâyeyi
 
 ```text
 ┌ HİKÂYE · J defter ─────────────────────────────────────────┐
-│! 3 agent'ı sen bekletiyorsun: codex-1, claude-3, claude-1 (codex-1 üzerinden)
-│#1 Payment retry policy · codex-1  ≡ 4/5                    │
-│  14:00 ⇄ lead-shop-api → codex-1 [assign]: #1 Payment re…  │
-│  14:01 ⇄ codex-2 → codex-1 [ask]: Zone codes an enum?      │
-│  14:06 ⇄ claude-1 → codex-1 [ask]: Retry count from config?  yanıt yok · 2 dk
+│! 3 agent'ı sen bekletiyorsun: claude-2, claude-3, claude-1 (claude-2 üzerinden)
+│#1 Payment retry policy · claude-2 ≡ 4/5                    │
+│  14:00 ⇄ lead-shop-api → claude-2 [assign]: #1 Payment re… │
+│  14:01 ⇄ claude-4 → claude-2 [ask]: Zone codes an enum?    │
+│  14:06 ⇄ claude-1 → claude-2 [ask]: Retry count from config?  yanıt yok · 2 dk
 │  şimdi ⚑ onayını bekliyor "WebFetch: https://…" · 4 dk     │
 │#7 Payment retry policy · claude-3  ✓ bitti · Δ seni bekliyor│
 │  14:05 ⇄ claude-3 → lead-shop-api [done]: Backoff capped…  │
 │başka                                                       │
-│  14:00 ⚑ node_modules qwen-7'nin worktree'sine kopyalandı  ×12
+│  14:00 ⚑ node_modules claude-5'nin worktree'sine kopyalandı  ×12
 └────────────────────────────────────────────────────────────┘
 ```
 
-- **Kimi bekletiyorsunuz**, biri varsa en üstte: bir şeyi sizi bekleyen her agent (SENİ BEKLEYEN'de bir öge ya da size bir soru), ardından zaten bekleyen birine soru soran her agent, beklediğiyle birlikte (`claude-1 (codex-1 üzerinden)`). İlkini yanıtlamak diğerlerini de serbest bırakır.
+- **Kimi bekletiyorsunuz**, biri varsa en üstte: bir şeyi sizi bekleyen her agent (SENİ BEKLEYEN'de bir öge ya da size bir soru), ardından zaten bekleyen birine soru soran her agent, beklediğiyle birlikte (`claude-1 (claude-2 üzerinden)`). İlkini yanıtlamak diğerlerini de serbest bırakır.
 - **Kart başına bir blok**, günlüğün son zamanda sözünü ettiği her kart için; en yeni satırı olan kart önce. Başlığı: numara ve başlık, sahibi, sonra ne kadar ilerlediği (`≡ 4/5` yapılacaklar listesi, `✓ bitti`, o kartın bir değişikliği bekliyorsa `Δ seni bekliyor`). Altında kartın en yeni üç satırı, en eskisi önce: onunla ilgili söylenenler, sahibinin değişikliği, bir durma, bir hata, bir uygulama. Bir satır, agent'ının yazıldığı anda üzerinde olduğu karta aittir; başka karta geçen bir işçi eski satırlarını yanında götürmez; söylenen bir şey soranın kartına aittir. Yanıt almamış bir soru bunu söyler: `henüz yanıt yok`, sonra `yanıt yok · 2 dk`. En sonda, kart bitmemişken, `şimdi` ve sahibinin şu an yaptığı: adımı ve ne kadar süredir.
-- **Başka**: hiçbir karta ait olmayan satırlar (liderin işe alması, bir worktree'nin kurulması, bir satıcının yeniden denemesi); her tür bir kez, en yeni satırıyla ve kaç tane olduğuyla (`×12`). Bir görev ataması kartını adlandırır, bu yüzden o kartın bloğunda anlatılır.
+- **Başka**: hiçbir karta ait olmayan satırlar (liderin işe alması, bir worktree'nin kurulması, bir API çağrısının yeniden denemesi); her tür bir kez, en yeni satırıyla ve kaç tane olduğuyla (`×12`). Bir görev ataması kartını adlandırır, bu yüzden o kartın bloğunda anlatılır.
 
 Hikâye her karede en çok en yeni 2.000 günlük satırını okur ve paneli dolduracak kadar kart gösterir; daha eskiler için `J` ve günlük. `:clear`'ın kaldırdığı satırlar anlatılmaz (işaretli olan anlatılır) ve bir arşivin satırları arşivde bekler.
 
@@ -75,7 +75,7 @@ Bunların arasında:
 - **Kopyalar.** `.env → claude-1 çalışma ağacına kopyalandı (1.2 KiB)`, ve neyin neden kopyalanmadığı (`:copy`); checkout'un `.worktreeinclude` dosyasının saydıkları kendi satırlarında (`…, .worktreeinclude'un saydığı`), ve onun uygulanmayan bir satırı nedeniyle.
 - **Kabuğunuz.** `` `cargo test` çalıştırdın → çıkış 0 · 12 sn sürdü ``, ya da `2 sinyali durdurdu`, süre onu söyleyen en büyük birimlerle (`40 ms`, `2 sn`, `1 dk 5 sn`).
 - **Bütçe.** `bütçeyi … yaptın`, ve bir kez, bu hızla yarım saatten az kaldığında, `$4.00/sa hızla bütçe yaklaşık 25 dk daha yeter; :budget USD ile artır`.
-- **İstekler.** `codex-2 için izin verdin: npm install left-pad`, `… için reddettin: …`.
+- **İstekler.** `claude-4 için izin verdin: npm install left-pad`, `… için reddettin: …`.
 - **Commit mesajları.** `:commit`'in önerisi ve yapan model, ya da neden gelmediği.
 
 ### Katlama ve günler

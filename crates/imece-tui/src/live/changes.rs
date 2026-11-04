@@ -1057,13 +1057,7 @@ mod tests {
         let repo = checkout("solo-turn-repo");
         let root = trees("solo-turn");
         let mut w = team(1);
-        w.open_project(
-            None,
-            "notes".into(),
-            repo.display().to_string(),
-            Vendor::Claude,
-            Role::Solo,
-        );
+        w.open_project(None, "notes".into(), repo.display().to_string(), Role::Solo);
         let solo = w.projects[1].leader;
         let mut live = Live::new(
             3,
@@ -1833,18 +1827,17 @@ mod tests {
     }
 
     #[test]
-    fn probing_finds_the_known_programs_that_run_from_the_checkout() {
+    fn probing_finds_a_program_that_runs_from_the_checkout() {
         let repo = checkout("probe");
-        let known: &[Known] = &[
-            (Vendor::Claude, "true", true),
-            (Vendor::Codex, "false", false),
-            (Vendor::Gemini, "/nonexistent/gemini", false),
-        ];
-        assert_eq!(probe(&repo, known), Ok(vec![(Vendor::Claude, true)]));
-        assert_eq!(probe(&repo, &[]), Ok(vec![]));
+        assert_eq!(probe(&repo, "true"), Ok(()));
+        let err = probe(&repo, "false").unwrap_err();
+        assert!(
+            err.starts_with("false is not on PATH; install Claude Code"),
+            "{err}"
+        );
         // Outside a checkout there is nothing to run from: the error names it.
         let outside = std::env::temp_dir().join("imece-probe-nowhere");
-        let err = probe(&outside, known).unwrap_err();
+        let err = probe(&outside, "true").unwrap_err();
         assert!(err.contains("imece-probe-nowhere"), "{err}");
         let _ = std::fs::remove_dir_all(&repo);
     }
@@ -1861,10 +1854,7 @@ mod tests {
             repo.clone(),
             root.clone(),
         );
-        let solo_open = Open::Solo {
-            vendor: None,
-            choice: None,
-        };
+        let solo_open = Open::Solo { choice: None };
         let p = live
             .open_project(&mut w, &folder, Some("notes"), solo_open.clone())
             .unwrap();

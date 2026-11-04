@@ -1,23 +1,23 @@
 ---
 title: "Takımın yanında bir solo"
-description: "Takımın yanında kendinizin sürdüğü bir oturum açmak: satıcı, model ve çabayla :solo, her yanıttan sonra Δ, Codex'te ikinci bir solo, yardımcılar ve ertesi sabah --solo."
+description: "Takımın yanında kendinizin sürdüğü bir oturum açmak: model ve çabayla :solo, her yanıttan sonra Δ, başka bir modelde ikinci bir solo, yardımcılar ve ertesi sabah --solo."
 ---
 
 # Takımın yanında bir solo
 
-Bazen sizinle iş arasında bir lider istemezsiniz: tek bir ajan, seçtiğiniz model ve düşünce derinliği, ne yapılacağını siz söylersiniz. **Solo** imece'nin içinde tam budur: worktree'yi, `Δ` incelemesini, bütçeyi ve salonu korur; panoyu ve işe almayı dışarıda bırakır. Bu senaryo çalışan bir takımın yanında bir solo, sonra başka bir satıcıda ikincisini açar ve ertesi gün ona geri döner.
+Bazen sizinle iş arasında bir lider istemezsiniz: tek bir ajan, seçtiğiniz model ve düşünce derinliği, ne yapılacağını siz söylersiniz. **Solo** imece'nin içinde tam budur: worktree'yi, `Δ` incelemesini, bütçeyi ve salonu korur; panoyu ve işe almayı dışarıda bırakır. Bu senaryo çalışan bir takımın yanında bir solo, sonra başka bir modelde ikincisini açar ve ertesi gün ona geri döner.
 
-imece her zamanki gibi `~/code/kule` içinde başlatıldı: takım `lead` ve işe aldığı iki işçi. Claude Code ve Codex PATH'te.
+imece her zamanki gibi `~/code/kule` içinde başlatıldı: takım `lead` ve işe aldığı iki işçi.
 
 ## 1. Bir solo aç
 
-Satıcı, model ve çabayı tek sözcükte yazarak komutu verin:
+Model ve çabayı tek sözcükte yazarak komutu verin:
 
 ```text
  › :solo claude:opus@xhigh notes
 ```
 
-Sözcükler herhangi bir sırada gelebilir; imece onları biçimlerinden ayırır. `claude:opus@xhigh` bir satıcı adıyla başlar, bu yüzden seçimdir: Claude Code `opus` takma adında, `xhigh` çabayla düşünerek. `notes` ne bir yol (`/`, `~` ya da `.` yok) ne de bir satıcı, bu yüzden projenin adıdır. Yol yoksa eldeki projenin checkout'u: `kule`. Flaş yanıtlar:
+Sözcükler herhangi bir sırada gelebilir; imece onları biçimlerinden ayırır. `claude:opus@xhigh` `claude` ile başlar, bu yüzden seçimdir: Claude Code `opus` takma adında, `xhigh` çabayla düşünerek. `notes` ne bir yol (`/`, `~` ya da `.` yok) ne de bir seçim, bu yüzden projenin adıdır. Yol yoksa eldeki projenin checkout'u: `kule`. Flaş yanıtlar:
 
 ```text
  notes solo oturum olarak açıldı (/Users/me/code/kule); solo-notes adına yaz (claude opus@xhigh)
@@ -27,14 +27,14 @@ Salon takımın yanında tek ajanlı yeni bir grup gösterir ve o seçilidir:
 
 ```text
  ▾ kule
-   ◆ lead             claude          eşgüdüm                         $0.42
+   ◆ lead             eşgüdüm                                   $0.42
    ● claude-1         #3 limiter: config v2     src/limit.rs düzenliyor
-   ○ codex-1          #4 limiter tests          boşta
+   ○ claude-2         #4 limiter tests          boşta
  ▾ notes
-   ○ solo-notes       claude opus@xhigh         boşta
+   ○ solo-notes       opus@xhigh                boşta
 ```
 
-Liderin satırı satıcısını söylediği yerde solonun satırı satıcısını ve seçimini söyler. Simge durumudur, liderin `◆`si değil: solo çalışır, eşgüdüm yapmaz. Henüz hiçbir şey para etmiyor: her ajan gibi, siz yazana dek süreci yoktur.
+Solonun satırı seçimini söyler. Simge durumudur, liderin `◆`si değil: solo çalışır, eşgüdüm yapmaz. Henüz hiçbir şey para etmiyor: her ajan gibi, siz yazana dek süreci yoktur.
 
 ## 2. Ne yapacağını söyle
 
@@ -47,7 +47,7 @@ Liderin satırı satıcısını söylediği yerde solonun satırı satıcısın�
 İlk turu başlar. Önce imece `solo-notes`a `~/.local/state/imece/worktrees/` altında, projenin kimliğinden `solo-3` adlı, HEAD'inizde detached bir `kule` worktree'si açar. Solo, `--confine standard` altında bir işçinin aldığını alır: Claude Code'un okuma ve düzenleme araçları, kabuğu (soracak olan size `⚑` olarak gelir), web ve imece'nin `run` aracı. Satırı ne yaptığını gösterir:
 
 ```text
-   ● solo-notes       claude opus@xhigh         src/limit.rs okuyor           $0.31
+   ● solo-notes       opus@xhigh                src/limit.rs okuyor           $0.31
 ```
 
 ## 3. Yanıt ve onunla gelen Δ
@@ -70,32 +70,32 @@ Diff'i okur ve uygulamak yerine bir not gönderirsiniz:
 
 Sonraki yanıt, düzeltmeyle sonraki `Δ`yı getirir. `a` uygular. Günlük `solo-notes'un değişikliğini uyguladın` der ve worktree işaretlenir, böylece sonraki değişikliği yalnız sonra geleni tutar.
 
-## 4. Codex'te ikinci bir solo
+## 4. Başka bir modelde ikinci bir solo
 
 Başka bir soru, başka bir model. Bu kez bir yol ve ad yok:
 
 ```text
- › :solo codex:gpt-5.6-terra@high ~/code/kule
+ › :solo claude:sonnet@high ~/code/kule
 ```
 
-`~/code/kule` bir yoldur (içinde `/` var), seçim Codex'i `high` akıl yürütme çabasında adlandırır ve ad varsayılan olarak dizininkidir: `kule` takımda olduğundan proje `kule-2`, ajanı `solo-kule-2` olur:
+`~/code/kule` bir yoldur (içinde `/` var), seçim `sonnet`i `high` çabasında adlandırır ve ad varsayılan olarak dizininkidir: `kule` takımda olduğundan proje `kule-2`, ajanı `solo-kule-2` olur:
 
 ```text
  ▾ kule
-   ◆ lead             claude          boşta
+   ◆ lead             boşta
    ○ claude-1         #3 limiter: config v2     boşta
-   ○ codex-1          #4 limiter tests          boşta
+   ○ claude-2         #4 limiter tests          boşta
  ▾ notes
-   ○ solo-notes       claude opus@xhigh         boşta                         $0.58
+   ○ solo-notes       opus@xhigh                boşta                         $0.58
  ▾ kule-2
-   ○ solo-kule-2      codex gpt-5.6-terra@high  boşta
+   ○ solo-kule-2      sonnet@high               boşta
 ```
 
 Bir checkout'ta üç grup: bir takım ve iki solo, her biri kendi worktree'sinde, checkout'unuza hiçbiri dokunmuyor. Hepsini tek bütçe öder; başlığın `$/h`'si onları birlikte sayar. Aynı checkout'ta ikinci bir *takım* reddedilir (`that checkout is open already, as kule`): checkout başına bir takım, istendiği kadar solo.
 
-Çıplak bir `:solo` tahmin etmez, sorar: bir ekran imece'nin burada çalıştırabildiği satıcıları, sonra modeli, sonra çabayı listeler; `j k` ve `enter` seçer, `esc` bir adım geri gider. Çalışan bir solo da yeniden ayarlanır: `:effort max`, `solo-notes`u sonraki turundan itibaren `max`ta düşündürür (flaş: `solo-notes sonraki turundan itibaren claude opus@max üzerinde; oturumu onunla yeniden başlar`), `:model sonnet` kalan küçük düzeltmeler için onu daha ucuz bir modele taşır; oturum aynı transkript üzerinde yeniden başlar, konuşmadan hiçbir şey yitmez.
+Çıplak bir `:solo` tahmin etmez, sorar: bir ekran modelleri, sonra çabaları listeler; `j k` ve `enter` seçer, `esc` bir adım geri gider. Çalışan bir solo da yeniden ayarlanır: `:effort max`, `solo-notes`u sonraki turundan itibaren `max`ta düşündürür (flaş: `solo-notes sonraki turundan itibaren claude opus@max üzerinde; oturumu onunla yeniden başlar`), `:model sonnet` kalan küçük düzeltmeler için onu daha ucuz bir modele taşır; oturum aynı transkript üzerinde yeniden başlar, konuşmadan hiçbir şey yitmez.
 
-imece'nin yerine getiremeyeceği bir seçim, bir şey başlamadan reddedilir. `:solo gemini:pro@high` `açılamadı: gemini has no effort setting; name only a model, not @high` der, `:solo claude@turbo` ise `açılamadı: claude has no effort "turbo"; one of low, medium, high, xhigh, max`.
+imece'nin yerine getiremeyeceği bir seçim, bir şey başlamadan reddedilir. `:solo claude@turbo` `açılamadı: claude has no effort "turbo"; one of low, medium, high, xhigh, max`.
 
 ## 5. Bir yardımcı
 
@@ -117,16 +117,14 @@ cd ~/code/kule
 imece --solo claude:opus@xhigh
 ```
 
-`--solo` bu checkout'ta aynı satıcı ve seçimle açık bir solo arar, `notes`u bulur ve onu eldeki proje yapar: aynı oturum, nerede kaldığı anlatılarak sürer. Takım ve `kule-2` yanında uykuda geri gelir, siz onlara yazana dek. `--solo claude:sonnet` yazsaydınız üçüncü bir solo açılırdı, `kule-3`. Çıplak `imece` yazsaydınız eldeki proje takım olurdu: sololar onun yerini tutmaz.
-
-`--lead` yoksa `:open`'ın eklediği takımlara solonun satıcısı liderlik eder, salondan önce KİM LİDER? sorusu gelmez.
+`--solo` bu checkout'ta aynı seçimle açık bir solo arar, `notes`u bulur ve onu eldeki proje yapar: aynı oturum, nerede kaldığı anlatılarak sürer. Takım ve `kule-2` yanında uykuda geri gelir, siz onlara yazana dek. `--solo claude:sonnet` yazsaydınız üçüncü bir solo açılırdı, `kule-3`. Çıplak `imece` yazsaydınız eldeki proje takım olurdu: sololar onun yerini tutmaz.
 
 ## Bu senaryonun kullandıkları
 
 | Tuş ya da komut | Ne yaptı |
 | --- | --- |
 | `:solo claude:opus@xhigh notes` | eldeki checkout'ta, Claude'un opus'unda xhigh çabayla, `notes` adlı bir solo |
-| `:solo codex:gpt-5.6-terra@high ~/code/kule` | dizinin adıyla ve bir numarayla ikinci bir solo |
+| `:solo claude:sonnet@high ~/code/kule` | dizinin adıyla ve bir numarayla ikinci bir solo |
 | `/`, `@solo-notes` | soloya yazmak, lidere yazmak gibi |
 | `Δ`, `enter`, `a`, `r`, `c`, `n`, `x` | her yanıttan sonraki değişiklik, bir işçininki gibi incelenir |
 | `imece --solo claude:opus@xhigh` | ertesi sabah: aynı solo, sürdürülür |

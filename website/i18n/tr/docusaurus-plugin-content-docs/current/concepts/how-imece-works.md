@@ -1,18 +1,18 @@
 ---
 title: imece nasıl çalışır
-description: Bir kullanıcının karşılaştığı parçalar - ekran ve modeli, satıcı adaptörleri, ajan başına bir oturum, bus, git iş parçacığı, SQLite deposu ve bir işçinin worktree'si ile checkout'unuz arasındaki kapı.
+description: Bir kullanıcının karşılaştığı parçalar - ekran ve modeli, Claude Code adaptörü, ajan başına bir oturum, bus, git iş parçacığı, SQLite deposu ve bir işçinin worktree'si ile checkout'unuz arasındaki kapı.
 ---
 
 # imece nasıl çalışır
 
-imece, birçok kodlama ajanını (Claude Code, Codex, Gemini CLI) tek bir kod tabanında çalıştıran ve tek ekranda gösteren bir terminal programıdır. Bu sayfa, rehberin kalanını okumak için gereken mimaridir: ne nerede çalışır, dosyalarınıza ne dokunur, ne asla dokunmaz.
+imece, birçok Claude Code ajanını tek bir kod tabanında çalıştıran ve tek ekranda gösteren bir terminal programıdır. Bu sayfa, rehberin kalanını okumak için gereken mimaridir: ne nerede çalışır, dosyalarınıza ne dokunur, ne asla dokunmaz.
 
 ## İki crate
 
 | Crate | Ne tutar |
 | --- | --- |
 | `imece-tui` | Ekran ve modeli. Model (`model.rs`) olanları veri olarak saklar; ekran çizim anında İngilizce ya da Türkçe sözcüklere çevirir. Aynı modeli canlı oturumlar (`live/`, varsayılan) ya da `--demo`'nun sahte ajanları besler. |
-| `imece-agent` | Satıcı adaptörleri. Her biri bir satıcının CLI'sini alt süreç olarak sürer ve çıktısını satıcıdan bağımsız olaylara çevirir (tur başladı, metin, araç çağrısı, maliyet, limit, soru). Ekran hiçbir zaman bir tel biçimi görmez. |
+| `imece-agent` | Claude Code adaptörü. `claude`'u alt süreç olarak sürer ve çıktısını olaylara çevirir (tur başladı, metin, araç çağrısı, maliyet, limit, soru). Ekran hiçbir zaman bir tel biçimi görmez. |
 
 Bir ajanın yazdığı her şey terminale ancak temizlenerek ulaşır: kontrol karakterleri kaldırılır, gizli anahtara benzeyen sözcükler saklanır. Bkz. [güvenlik](../concepts/security.md).
 
@@ -20,9 +20,9 @@ Bir ajanın yazdığı her şey terminale ancak temizlenerek ulaşır: kontrol k
 
 Her ajan, uzun ömürlü tek bir alt süreçtir; tur başına süreç açılmaz:
 
-- Claude Code `claude -p` (stream-json), Codex `codex app-server` (stdio üzerinde JSON-RPC), Gemini CLI `gemini --acp` (Agent Client Protocol) olarak. Her birinin ne olduğu ve imece'nin neyi denetlediği [satıcılar](../concepts/vendors.md) sayfasında.
-- Alt süreç temizlenmiş bir ortam alır (satıcının oturum açmak için gerekenleri artı), kendi süreç grubunu (imece kapanınca öldürülür) ve sınırlı boruları (8 MiB'ı aşan bir satır oturumu bitirir).
-- Oturumlar ekranın döngüsünün dışında başlar; ekran bir satıcının başlamasını asla beklemez.
+- Alt süreç `claude -p`'dir (stream-json). Ne olduğu ve imece'nin neyi denetlediği [Claude Code](../concepts/claude-code.md) sayfasında.
+- Alt süreç temizlenmiş bir ortam alır (Claude Code'un oturum açmak için gerekenleri artı), kendi süreç grubunu (imece kapanınca öldürülür) ve sınırlı boruları (8 MiB'ı aşan bir satır oturumu bitirir).
+- Oturumlar ekranın döngüsünün dışında başlar; ekran bir oturumun başlamasını asla beklemez.
 
 İstenenden başka bir şeyle çalıştığını bildiren bir oturum (başka bir araç, başka bir MCP sunucusu, bir hook, başka bir sandbox) durdurulur: fail closed.
 
@@ -30,7 +30,7 @@ Her ajan, uzun ömürlü tek bir alt süreçtir; tur başına süreç açılmaz:
 
 Ajanlar birbirleriyle ve sizinle, imece'nin kendisinin MCP üzerinden sunduğu araçlarla konuşur:
 
-- Ajan başına bir Unix soketi, yeni açılmış `0700` geçici bir dizinde. Satıcının CLI'si imece'nin kendi ikilisi olan `imece mcp-relay <soket>`'i başlatır; o yalnızca bayt kopyalar. Araçlar imece'nin içinde çalışır.
+- Ajan başına bir Unix soketi, yeni açılmış `0700` geçici bir dizinde. Claude Code imece'nin kendi ikilisi olan `imece mcp-relay <soket>`'i başlatır; o yalnızca bayt kopyalar. Araçlar imece'nin içinde çalışır.
 - Gönderen, çağrının geldiği sokettir; ajanın söylediği bir ad asla değil. Hiçbir ajan bir başkası ya da siz gibi konuşamaz.
 - Araçlar `send`, `post`, `board`, `run`, `whoami` (agent'ın imece'de kim olduğu: adı, rolü, projesi, kime bağlı olduğu, kalan bütçe, işe alıp alamayacağı) ve role göre `claim` (işçiler), `hire` (lider işçi, işçi yardımcı işe alır) ve `approve` (yalnız bir Claude oturumu; Claude Code onay gereken bir araç çağrısından önce bunu kendisi çağırır).
 
@@ -73,7 +73,7 @@ Yalnız bir mesajın zarfı (türü, kime gittiği, hangi mesaja yanıt olduğu)
 ## Ayrıca bakınız
 
 - [Ekip](../concepts/team.md): lider, işçiler, yardımcılar, işe alma.
-- [Satıcılar](../concepts/vendors.md): satıcı başına bir oturum nedir, ne denetlenir.
+- [Claude Code](../concepts/claude-code.md): bir oturum nedir, ne denetlenir.
 - [Değişiklikler](../concepts/changes.md): Δ kapısı uçtan uca.
 - [Oturumlar](../concepts/sessions.md): çalıştırmalar arasında ne saklanır.
 - [Dosyalar](../reference/files.md): imece'nin yazdığı her yol.

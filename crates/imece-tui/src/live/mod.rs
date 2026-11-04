@@ -5,9 +5,9 @@
 //!
 //! The team starts as the leader alone. The leader hires workers as the
 //! work needs them (`hire`), up to the cap the person set, choosing a tier
-//! (cheap, standard, strong) rather than a model name; each vendor maps the
-//! tiers to its models. A worker whose tier model turns out not to be
-//! available here is restarted once on the vendor's default.
+//! (cheap, standard, strong) rather than a model name. A worker whose tier
+//! model turns out not to be available here is restarted once on the
+//! default.
 //!
 //! Money is one pot for the whole team: once what all agents spent reaches
 //! the budget, nobody is prompted again. Each session also gets what was
@@ -37,8 +37,8 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use imece_agent::mcp::{Answer, Server, Tool};
 use imece_agent::{
-    APPROVE_TOOL, Agent as Session, Ask, Choice, Confine, Event as AgentEvent, Login, Mcp, Tier,
-    child, claude, codex, copy, gemini, run, worktree,
+    APPROVE_TOOL, Agent as Session, Ask, Choice, Confine, Event as AgentEvent, Mcp, Tier, child,
+    claude, copy, run, worktree,
 };
 use serde_json::{Value, json};
 
@@ -68,7 +68,7 @@ mod tools;
 pub(crate) use self::bus::numbers;
 pub use self::projects::Open;
 pub(crate) use self::prompts::{INSTRUCTIONS, MAX_NOTES_KIB};
-pub(crate) use self::review::{REVIEW_DAY_CALLS, REVIEW_DAY_COST, review_cap, reviewer_of};
+pub(crate) use self::review::{REVIEW_CAP, REVIEW_DAY_CALLS, REVIEW_DAY_COST};
 pub use self::sessions::apply;
 pub(crate) use self::suggest::{SUGGEST_CAP, SUGGEST_DAY_CALLS, SUGGEST_DAY_COST};
 pub use self::tidy::Refusal as TidyRefusal;
@@ -83,17 +83,15 @@ pub struct Options {
     pub max_workers: usize,
     /// Helpers a worker may have at once, at most.
     pub max_helpers: usize,
-    /// The leader's vendor.
-    pub lead: Vendor,
-    /// Models that stand in for the vendors' own, by vendor and tier; no
-    /// vendor means the leader's. `--model NAME` is the standard tier.
-    pub tiers: Vec<(Option<Vendor>, Tier, String)>,
+    /// Models that stand in for Claude Code's own, by tier. `--model NAME`
+    /// is the standard tier.
+    pub tiers: Vec<(Tier, String)>,
     /// Ten-thousandths of a dollar, for all agents together; none keeps
     /// the pot as it was left, or [`DEFAULT_BUDGET`] the first time.
     pub budget: Option<u64>,
     /// Forget every agent's remembered session at the start (`--fresh`):
-    /// each wakes in a new one, told where it left off, and what the
-    /// vendors kept of the old ones goes.
+    /// each wakes in a new one, told where it left off, and the
+    /// transcripts of the old ones go.
     pub fresh: bool,
     /// Programs workers and helpers may run with the run tool, next to
     /// the built-in cargo and git commands.
@@ -103,52 +101,32 @@ pub struct Options {
     /// The person's own instructions for every project, put in every
     /// agent's instructions when the file is there (`keys::config_file`).
     pub instructions: Option<PathBuf>,
-    /// How much of its vendor each agent's session gets (`--confine`).
+    /// How much of Claude Code each agent's session gets (`--confine`).
     pub confine: Confine,
-    /// `--solo`: start with a solo session on the checkout, on this vendor
-    /// and `[MODEL][@EFFORT]` choice (none: the vendor's standard rung);
-    /// an open one of the same vendor and choice is gone on with.
-    pub solo: Option<(Vendor, Option<String>)>,
+    /// `--solo`: start with a solo session on the checkout, on this
+    /// `[MODEL][@EFFORT]` choice (inner none: the standard rung); an open
+    /// one of the same choice is gone on with.
+    pub solo: Option<Option<String>>,
 }
 
-/// A coding agent imece knows: its program on PATH, and whether imece can
-/// drive it yet.
-pub type Known = (Vendor, &'static str, bool);
-
-/// The coding agents imece knows.
-pub const KNOWN: &[Known] = &[
-    (Vendor::Claude, claude::PROGRAM, true),
-    (Vendor::Codex, codex::PROGRAM, true),
-    (Vendor::Gemini, gemini::PROGRAM, true),
-];
-
-/// The efforts vendor `v`'s CLI can be asked for; none for one with no
-/// such setting.
-pub fn efforts(v: Vendor) -> &'static [&'static str] {
-    match v {
-        Vendor::Codex => codex::EFFORTS,
-        Vendor::Gemini => gemini::EFFORTS,
-        _ => claude::EFFORTS,
-    }
+/// The efforts Claude Code can be asked for.
+pub fn efforts() -> &'static [&'static str] {
+    claude::EFFORTS
 }
 
-/// Whether the choice `s` (`[MODEL][@EFFORT]`) asks vendor `v` only for an
+/// Whether the choice `s` (`[MODEL][@EFFORT]`) asks Claude Code only for an
 /// effort it has; else why not, in words for the person.
-pub fn valid_choice(v: Vendor, s: &str) -> Result<(), String> {
-    Choice::parse(s).check(v.label(), efforts(v))
+pub fn valid_choice(s: &str) -> Result<(), String> {
+    Choice::parse(s).check(efforts())
 }
 
-/// The model aliases vendor `v`'s CLI knows, for a choice screen and the
+/// The model aliases Claude Code knows, for a choice screen and the
 /// completion; a full model name is always taken too.
-pub fn aliases(v: Vendor) -> Vec<&'static str> {
-    match v {
-        Vendor::Codex => codex::ALIASES.to_vec(),
-        Vendor::Gemini => gemini::alias_names().collect(),
-        _ => claude::ALIASES.to_vec(),
-    }
+pub fn aliases() -> Vec<&'static str> {
+    claude::ALIASES.to_vec()
 }
 
-/// The models a vendor's tiers stand for; none is the vendor's own default.
+/// The models the tiers stand for; none is Claude Code's own default.
 #[derive(Clone, Debug, PartialEq)]
 struct Ladder {
     cheap: Option<String>,
@@ -156,10 +134,9 @@ struct Ladder {
     strong: Option<String>,
 }
 
-/// A vendor imece can drive, found on PATH.
+/// Claude Code as imece runs it.
 #[derive(Clone, Debug)]
 struct Hireable {
-    vendor: Vendor,
     program: String,
     ladder: Ladder,
 }
@@ -300,9 +277,9 @@ const MAX_BRIEFING_LINE: usize = 300;
 const FROM_IMECE: &str = "From imece (not from the person or a teammate):\n- ";
 
 /// What a failed turn tried again says: the failed prompt is still in
-/// the session (every vendor keeps it), so it is not sent again.
+/// the session (Claude Code keeps it), so it is not sent again.
 pub(super) const RETRY_PROMPT: &str = "From imece (not from the person or a teammate): your \
-     last turn stopped on an error at your vendor's API (overloaded, a server error or a lost \
+     last turn stopped on an error at Claude's API (overloaded, a server error or a lost \
      connection). Carry on from where you stopped.";
 
 /// What wakes a worker whose helper stopped: the note before it says
@@ -342,7 +319,7 @@ const APPROVE_WAIT: Duration = Duration::from_secs(24 * 3600);
 pub const DEFAULT_RUN_TIMEOUT: Duration = Duration::from_secs(600);
 
 /// How long a session's process is given to be gone after it was asked to
-/// stop, before what its vendor kept of the session is removed: a child
+/// stop, before its transcript is removed: a child
 /// gets two grace periods of 1.5 s before it is killed for good.
 const SETTLE: Duration = Duration::from_secs(4);
 
@@ -495,22 +472,20 @@ struct Pending {
     reply: Reply,
 }
 
-/// How the person's answer reaches the session that asked.
-enum Reply {
-    /// A Claude Code session asked through imece's socket: the call
-    /// waits for its answer, with the tool's input to give back.
-    Socket { input: Value, to: Sender<Answer> },
-    /// The session asked on its vendor's own wire (Codex): answered
-    /// through it, by request.
-    Session(String),
+/// How the person's answer reaches the session that asked, through
+/// imece's socket: the call waits for its answer, with the tool's input to
+/// give back.
+struct Reply {
+    input: Value,
+    to: Sender<Answer>,
 }
 
 /// A wake that goes on with the agent's earlier session: what to start
-/// over with, briefed, if the vendor can not find it.
+/// over with, briefed, if Claude Code can not find it.
 struct Attempt {
     session: String,
     /// A fork's new session (record 94): the id Claude Code is told to
-    /// give it (Codex gives its own); none for a resume.
+    /// give it; none for a resume.
     fork: Option<String>,
     /// The first prompt as it was given, without imece's notes.
     text: String,
@@ -536,18 +511,18 @@ pub struct Live {
     /// Agents remembered from an earlier run that have not started this
     /// run: the first prompt tells them where they left off.
     remembered: Vec<bool>,
-    /// What the vendor said when it would not go on with an agent's old
+    /// What Claude Code said when it would not go on with an agent's old
     /// session, for the journal's line on the new one.
     refused: Vec<Option<String>>,
     /// The prompts an earlier run's turn did not finish, for that briefing.
     interrupted: Vec<Vec<String>>,
-    /// The vendor session each agent had last, to go on with at its wake;
+    /// Claude Code session each agent had last, to go on with at its wake;
     /// kept up to date from what the session reports.
     sessions: Vec<Option<Resumable>>,
     /// What the agent's current session had cost before this run resumed
     /// it (millionths of a dollar); 0 for a new session.
     floor: Vec<u64>,
-    /// Wakes that go on with the earlier session, until the vendor
+    /// Wakes that go on with the earlier session, until Claude Code
     /// confirms it or fails to find it.
     resuming: Vec<Option<Attempt>>,
     /// The worker each fork goes on from, until its own session starts
@@ -555,8 +530,6 @@ pub struct Live {
     forks: Vec<Option<AgentId>>,
     /// Claude Code's configuration directory, where its transcripts are.
     claude_home: PathBuf,
-    /// Gemini CLI's configuration directory, where its chats are.
-    gemini_config: PathBuf,
     /// How long a forgotten session's process, just asked to stop, is
     /// given to be gone before what it kept is removed.
     settle: Duration,
@@ -574,20 +547,18 @@ pub struct Live {
     /// What each agent's earlier sessions cost; a session reports only its
     /// own total.
     spent_before: Vec<u64>,
-    /// The vendors the leader may hire from.
-    vendors: Vec<Hireable>,
+    /// The program agents run on and its tiers.
+    claude: Hireable,
     /// Workers the leader may hire, at most.
     max_workers: usize,
     /// Helpers a worker may have at once, at most.
     max_helpers: usize,
-    /// The vendor every leader runs on.
-    lead: Vendor,
     /// Each project's checkout and worktrees root, by project id.
     places: Vec<Place>,
-    /// The model each agent runs on; none for its vendor's default.
+    /// The model each agent runs on; none for Claude Code's default.
     models: Vec<Option<String>>,
     /// Whether the agent's model came from a tier, so a first turn that
-    /// fails means the model is not available here and the vendor's
+    /// fails means the model is not available here and Claude Code's
     /// standard model is tried instead.
     tiered: Vec<bool>,
     /// Whether the agent's current session has finished a turn.
@@ -681,7 +652,7 @@ pub struct Live {
     run_timeout: Duration,
     /// The person's own instructions file; see [`Options::instructions`].
     instructions: Option<PathBuf>,
-    /// How much of its vendor each session gets; see [`Confine`].
+    /// How much of Claude Code each session gets; see [`Confine`].
     confine: Confine,
     /// What each agent's session waits on the person's yes for, in the
     /// order its approval items are in the inbox.
@@ -697,11 +668,10 @@ pub struct Live {
     paid_day: (u64, u32, u64),
     said_tx: Sender<Said>,
     said_rx: Receiver<Said>,
-    /// The reviews asked for (`:review`) that wait their turn, each with
-    /// the vendor that reviews, and the one under way with the patch it
-    /// reads ([`patch_sum`]): one at a time.
-    reviews_due: VecDeque<(AgentId, Vendor)>,
-    reviewing: Option<(AgentId, Vendor, String)>,
+    /// The reviews asked for (`:review`) that wait their turn, and the one
+    /// under way with the patch it reads ([`patch_sum`]): one at a time.
+    reviews_due: VecDeque<AgentId>,
+    reviewing: Option<(AgentId, String)>,
     /// The day the reviews' ceilings count (see
     /// [`review::REVIEW_DAY_CALLS`]), as [`Live::paid_day`] is for
     /// suggestions.
@@ -712,73 +682,45 @@ pub struct Live {
     tidy: tidy::Tidy,
 }
 
-/// The coding agents among `known` (see [`KNOWN`]) on PATH, run from the
-/// checkout `repo` is in, with whether imece drives them.
-pub fn probe(repo: &Path, known: &[Known]) -> Result<Vec<(Vendor, bool)>, String> {
+/// Whether `program` runs from the checkout `repo` is in; if not, how to
+/// get it.
+pub fn probe(repo: &Path, program: &str) -> Result<(), String> {
     let repo = checkout_of(repo)?.0;
-    Ok(known
-        .iter()
-        .filter(|(_, program, _)| on_path(program, &repo))
-        .map(|&(vendor, _, drives)| (vendor, drives))
-        .collect())
+    if on_path(program, &repo) {
+        return Ok(());
+    }
+    Err(format!(
+        "{program} is not on PATH; install Claude Code \
+         (https://claude.com/claude-code) and log in"
+    ))
 }
 
-/// Asks each of `known`'s CLIs whose vendor is among `which`, each on a
-/// thread of its own, for its version and whether it is signed in, outside
-/// any checkout and without the network; the answers come one by one.
-/// Gemini CLI has no such question: its sign-in is [`Login::Unknown`].
-pub fn look(known: &[Known], which: &[Vendor]) -> Answers {
+/// Asks `program`, on a thread of its own, for its version and whether it
+/// is signed in, outside any checkout and without the network.
+pub fn look(program: &'static str) -> Answers {
     let (tx, rx) = mpsc::channel();
-    for &(vendor, program, _) in known.iter().filter(|k| which.contains(&k.0)) {
-        let tx = tx.clone();
-        thread::spawn(move || {
-            let seen = match imece_agent::version(program, env_of(vendor)) {
-                None => Seen::Missing,
-                Some(version) => Seen::Here {
-                    version,
-                    login: match vendor {
-                        Vendor::Claude => claude::login(program),
-                        Vendor::Codex => codex::login(program),
-                        _ => Login::Unknown,
-                    },
-                },
-            };
-            let _ = tx.send((vendor, seen));
-        });
-    }
+    thread::spawn(move || {
+        let seen = match imece_agent::version(program, claude::ENV) {
+            None => Seen::Missing,
+            Some(version) => Seen::Here {
+                version,
+                login: claude::login(program),
+            },
+        };
+        let _ = tx.send(seen);
+    });
     rx
 }
 
-/// The variables vendor `v`'s CLI gets besides the base ones: its login,
-/// config and proxies.
-fn env_of(v: Vendor) -> &'static [&'static str] {
-    match v {
-        Vendor::Codex => codex::ENV,
-        Vendor::Gemini => gemini::ENV,
-        _ => claude::ENV,
-    }
-}
-
-/// The vendors among `present` that could lead: the ones imece drives.
-pub fn leaders(present: &[(Vendor, bool)]) -> Vec<Vendor> {
-    present
-        .iter()
-        .filter(|(_, drives)| *drives)
-        .map(|(v, _)| *v)
-        .collect()
-}
-
-/// Builds the team for the checkout `repo` is in, from the coding agents
-/// `present` on PATH (see [`probe`]): what the store remembers of earlier
-/// runs (every agent asleep), and the checkout at hand as a project if it
+/// Builds the team for the checkout `repo` is in, Claude Code being on
+/// PATH (see [`probe`]): what the store remembers of earlier runs (every agent asleep), and the checkout at hand as a project if it
 /// is not one yet, led by its leader alone, who hires the rest.
-pub fn world(o: Options, present: &[(Vendor, bool)]) -> Result<(World, Live), String> {
+pub fn world(o: Options) -> Result<(World, Live), String> {
     let (repo, git) = checkout_of(&o.repo)?;
     if !git && o.solo.is_none() {
         return Err(no_git_team(&repo.display().to_string()));
     }
-    let vendors = team_vendors(hireable(present, o.lead)?, o.lead, &o.tiers);
-    check_ladders(&vendors)?;
+    let claude = Hireable::new(claude::PROGRAM, &o.tiers);
     let file = o.state.join(store::FILE);
     let mut store = Store::open(&file)?;
     let loaded = store
@@ -835,7 +777,7 @@ pub fn world(o: Options, present: &[(Vendor, bool)]) -> Result<(World, Live), St
         .paid_total()
         .map_err(|e| store::unreadable(&file, e))?;
     w.run_spent = w.spent();
-    let mut live = Live::bare(vendors, o.lead);
+    let mut live = Live::bare(claude);
     live.state = o.state;
     live.max_workers = o.max_workers;
     live.max_helpers = o.max_helpers;
@@ -849,31 +791,19 @@ pub fn world(o: Options, present: &[(Vendor, bool)]) -> Result<(World, Live), St
         live.adopt(&mut w, found, skipped);
     }
     // The project of the checkout at hand: with `--solo`, the solo on the
-    // asked vendor and choice, opened unless one is open already; else the
+    // asked choice, opened unless one is open already; else the
     // team, opened unless one is open already (a solo alone here does not
     // stand in for it).
     let at = |q: &Project, live: &Live| live.places.get(q.id).is_some_and(|pl| pl.repo == repo);
     live.home = match o.solo {
-        Some((vendor, choice)) => {
-            let Some(h) = live.vendors.iter().find(|h| h.vendor == vendor) else {
-                return Err(format!(
-                    "--solo: {} is not on PATH here, or imece does not drive it",
-                    vendor.label()
-                ));
-            };
-            let model = choice.clone().or_else(|| h.ladder.standard.clone());
-            match live.solo_at(&w, &repo, vendor, &model) {
+        Some(choice) => {
+            let model = choice
+                .clone()
+                .or_else(|| live.claude.ladder.standard.clone());
+            match live.solo_at(&w, &repo, &model) {
                 Some(p) => p,
                 None => live
-                    .open_project(
-                        &mut w,
-                        &repo,
-                        None,
-                        Open::Solo {
-                            vendor: Some(vendor),
-                            choice,
-                        },
-                    )
+                    .open_project(&mut w, &repo, None, Open::Solo { choice })
                     .map_err(|e| format!("--solo: {}", e.describe()))?,
             }
         }
@@ -923,23 +853,13 @@ impl Live {
     }
 
     /// The `[MODEL][@EFFORT]` choice agent `id` runs on, none for its
-    /// vendor's own default; what a solo's row shows.
+    /// Claude Code's own default; what a solo's row shows.
     pub fn model_of(&self, id: AgentId) -> Option<&str> {
         self.models[id].as_deref()
     }
 
-    /// The vendors imece can run here, the lead vendor first: what a solo
-    /// may be opened on.
-    pub fn vendors(&self) -> Vec<Vendor> {
-        let mut v: Vec<Vendor> = self.vendors.iter().map(|h| h.vendor).collect();
-        if let Some(i) = v.iter().position(|&x| x == self.lead) {
-            v.swap(0, i);
-        }
-        v
-    }
-
     /// The person changes what solo `id` runs on (`:model`, `:effort`):
-    /// `choice` is the whole `[MODEL][@EFFORT]`, none for the vendor's own.
+    /// `choice` is the whole `[MODEL][@EFFORT]`, none for Claude Code's own.
     /// Its running session ends (the next message starts a new one on the
     /// same transcript, told where it left off); refused mid-turn, so no
     /// answer is cut, and for anyone but a solo. Says what it runs on now.
@@ -954,7 +874,7 @@ impl Live {
             return Err(format!("{} is not a solo session", a.name));
         }
         if let Some(c) = &choice {
-            valid_choice(a.vendor, c)?;
+            valid_choice(c)?;
         }
         if self.turns[id] > 0 {
             return Err(format!("{} is mid-turn; wait for its answer", a.name));
@@ -962,8 +882,8 @@ impl Live {
         self.models[id] = choice.clone();
         self.tiered[id] = false;
         let runs = match &choice {
-            Some(c) => format!("{} {c}", a.vendor.label()),
-            None => a.vendor.label().to_string(),
+            Some(c) => format!("{CLAUDE} {c}"),
+            None => CLAUDE.to_string(),
         };
         if matches!(self.slots[id], Slot::Running(_)) {
             self.end(w, id);
@@ -986,8 +906,8 @@ impl Live {
         self.home = p;
     }
 
-    /// No projects and no agents yet; every leader will run on `lead`.
-    fn bare(vendors: Vec<Hireable>, lead: Vendor) -> Live {
+    /// No projects and no agents yet.
+    fn bare(claude: Hireable) -> Live {
         let (tx, rx) = mpsc::channel();
         let (ready_tx, ready_rx) = mpsc::channel();
         let (calls_tx, calls_rx) = mpsc::channel();
@@ -1012,7 +932,6 @@ impl Live {
             resuming: Vec::new(),
             forks: Vec::new(),
             claude_home: claude::config_dir(),
-            gemini_config: gemini::config_dir(),
             settle: SETTLE,
             fresh: false,
             tx,
@@ -1022,10 +941,9 @@ impl Live {
             slots: Vec::new(),
             generation: Vec::new(),
             spent_before: Vec::new(),
-            vendors,
+            claude,
             max_workers: usize::MAX,
             max_helpers: usize::MAX,
-            lead,
             places: Vec::new(),
             models: Vec::new(),
             tiered: Vec::new(),
@@ -1085,29 +1003,6 @@ impl Live {
         }
     }
 
-    /// The private directory a Gemini session of agent `name` of project
-    /// `project` runs in: a sibling of the worktrees, kept between runs
-    /// like them. A leader's is `lead` whatever the project is called, so
-    /// a rename (`lead-NAME`) does not leave its session behind; a team's
-    /// on a checkout that had a team before (one archived, or closed) is
-    /// `lead-p<project id>`, so the two never share one.
-    fn gemini_home(&self, w: &World, project: ProjectId, role: Role, name: &str) -> PathBuf {
-        let root = &self.places[project].root;
-        let mut dir = root.clone().into_os_string();
-        dir.push("-gemini");
-        let dir = PathBuf::from(dir);
-        if role != Role::Leader {
-            return dir.join(name);
-        }
-        let before = (0..project)
-            .any(|q| self.places.get(q).is_some_and(|pl| pl.root == *root) && !w.is_solo(q));
-        if before {
-            dir.join(format!("lead-p{project}"))
-        } else {
-            dir.join("lead")
-        }
-    }
-
     /// Gives every agent a socket for imece's tools. Sessions started
     /// before have none.
     fn open_bus(&mut self, w: &World, relay: String) -> io::Result<()> {
@@ -1126,26 +1021,17 @@ impl Live {
             owners: Vec::new(),
         });
         for id in 0..self.slots.len() {
-            self.bind(id, w.agents[id].role, w.agents[id].vendor)?;
+            self.bind(id, w.agents[id].role)?;
         }
         Ok(())
     }
 
     /// Binds the socket of agent `id`, the next one to get a socket, with
-    /// the tools of `role`, and on `vendor` Claude the tool its session
-    /// asks through: the other vendors ask on their own wire, and their
-    /// sessions must report exactly imece's tools. Without a bus (before
-    /// it opens) there is nothing to bind.
-    fn bind(&mut self, id: AgentId, role: Role, vendor: Vendor) -> io::Result<()> {
-        let mut tools = tools_of(
-            role,
-            &self.vendor_names(),
-            &self.run_programs,
-            self.run_timeout,
-        );
-        if vendor == Vendor::Claude {
-            tools.push(approve_tool());
-        }
+    /// the tools of `role` and the tool its session asks through. Without
+    /// a bus (before it opens) there is nothing to bind.
+    fn bind(&mut self, id: AgentId, role: Role) -> io::Result<()> {
+        let mut tools = tools_of(role, &self.run_programs, self.run_timeout);
+        tools.push(approve_tool());
         let Some(bus) = &mut self.bus else {
             return Ok(());
         };
@@ -1176,7 +1062,7 @@ impl Live {
     }
 
     /// Tells each socket which process its agent's session runs in now:
-    /// a session started, ended, or started its vendor again.
+    /// a session started, ended, or started Claude Code again.
     fn own_sockets(&self) {
         let Some(bus) = &self.bus else {
             return;
@@ -1222,20 +1108,9 @@ impl Live {
             if generation != self.generation[id] {
                 continue;
             }
-            let e = match e {
-                AgentEvent::Asks { request, what } => {
-                    self.ask(w, id, what, Reply::Session(request));
-                    continue;
-                }
-                AgentEvent::Withdrawn { request } => {
-                    self.withdrawn(w, id, &request);
-                    continue;
-                }
-                e => e,
-            };
             let turn_done = matches!(e, AgentEvent::TurnDone { .. });
             if turn_done {
-                // What the vendor said the turn failed on: back on the
+                // What Claude Code said the turn failed on: back on the
                 // agent for its end below, unless the turn runs again.
                 let fault = w.agents[id].fault.take();
                 // A tier model that is not available here fails the first
@@ -1249,7 +1124,7 @@ impl Live {
                         ..
                     }
                 );
-                // A vendor's fault is no missing model: it is tried again.
+                // A Claude Code's fault is no missing model: it is tried again.
                 if failed && !self.turned[id] && self.tiered[id] && fault.is_none() {
                     self.fall_back(w, id);
                     continue;
@@ -1286,7 +1161,7 @@ impl Live {
                 _ => None,
             };
             match &e {
-                // The session the vendor runs is the one to go on with
+                // The session Claude Code runs is the one to go on with
                 // next time; a wake that asked for the old one has it.
                 AgentEvent::Started { session, .. } => {
                     self.sessions[id] = Some(Resumable {
@@ -1460,7 +1335,7 @@ impl Live {
         w.agents[id].trace(
             t,
             format!(
-                "retry {}/{} after a vendor error",
+                "retry {}/{} after a API error",
                 r.attempt,
                 RETRY_TICKS.len()
             ),
@@ -1723,180 +1598,68 @@ mod tests {
     }
 
     #[test]
-    fn a_look_asks_the_vendors_named_for_their_version_and_sign_in() {
+    fn a_look_asks_for_the_version_and_sign_in() {
+        use imece_agent::Login;
         let dir = std::env::temp_dir().join(format!("imece-look-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
-        let fake = |name: &str, script: &str| -> &'static str {
-            let path = dir.join(name);
-            std::fs::write(&path, format!("#!/bin/sh\n{script}\n")).unwrap();
+        let fake = |name: &str, body: &str| -> &'static str {
             use std::os::unix::fs::PermissionsExt;
-            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+            let path = dir.join(name);
+            std::fs::write(&path, format!("#!/bin/sh\n{body}\n")).unwrap();
+            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o700)).unwrap();
             Box::leak(path.display().to_string().into_boxed_str())
         };
         let claude = fake(
             "claude",
-            r#"case "$*" in
---version) echo "2.1.3 (Claude Code)";;
-"auth status --json") echo '{"loggedIn": true}';;
-*) exit 9;;
-esac"#,
+            r#"[ "$1" = --version ] && echo "2.1.3 (Claude Code)" && exit 0
+[ "$1 $2" = "auth status" ] && echo '{"loggedIn":true}'"#,
         );
-        let codex = fake(
-            "codex",
-            r#"case "$*" in
---version) echo "codex-cli 0.9.1";;
-"login status") echo "Not logged in" >&2; exit 1;;
-*) exit 9;;
-esac"#,
-        );
-        let gemini = fake("gemini", r#"[ "$1" = --version ] && echo 0.65.0"#);
-        let known = [
-            (Vendor::Claude, claude, true),
-            (Vendor::Codex, codex, true),
-            (Vendor::Gemini, gemini, true),
-        ];
-        let answers = |which: &[Vendor]| {
-            let rx = look(&known, which);
-            let mut got: Vec<_> = rx.iter().collect();
-            got.sort_by_key(|(v, _)| v.label());
-            got
-        };
-        let here = |version: &str, login| Seen::Here {
-            version: version.into(),
-            login,
-        };
         assert_eq!(
-            answers(&[Vendor::Claude, Vendor::Codex, Vendor::Gemini]),
-            [
-                (Vendor::Claude, here("2.1.3 (Claude Code)", Login::Yes)),
-                (Vendor::Codex, here("codex-cli 0.9.1", Login::No)),
-                (Vendor::Gemini, here("0.65.0", Login::Unknown)),
-            ]
+            look(claude).iter().collect::<Vec<_>>(),
+            [Seen::Here {
+                version: "2.1.3 (Claude Code)".into(),
+                login: Login::Yes
+            }]
         );
-        // Only the ones named are asked.
-        assert_eq!(
-            answers(&[Vendor::Codex]),
-            [(Vendor::Codex, here("codex-cli 0.9.1", Login::No))]
-        );
-        // Each CLI gets its own vendor's variables (its login lives there).
-        assert!(env_of(Vendor::Claude).contains(&"ANTHROPIC_API_KEY"));
-        assert!(env_of(Vendor::Codex).contains(&"CODEX_HOME"));
-        assert!(env_of(Vendor::Gemini).contains(&"GEMINI_API_KEY"));
         let gone: &'static str = Box::leak(dir.join("gone").display().to_string().into_boxed_str());
-        let rx = look(&[(Vendor::Claude, gone, true)], &[Vendor::Claude]);
-        assert_eq!(
-            rx.iter().collect::<Vec<_>>(),
-            [(Vendor::Claude, Seen::Missing)]
-        );
+        assert_eq!(look(gone).iter().collect::<Vec<_>>(), [Seen::Missing]);
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]
-    fn the_known_vendors_are_the_ones_the_leader_may_be() {
-        for (vendor, program, _) in KNOWN {
-            assert_eq!(Vendor::parse(program), Some(*vendor));
-            assert_eq!(vendor.label(), *program);
-        }
-        assert_eq!(Vendor::parse("qwen"), None);
-        let drives = |vendor| KNOWN.iter().any(|(v, _, d)| *v == vendor && *d);
-        assert!(drives(Vendor::Claude) && drives(Vendor::Codex));
-        assert!(drives(Vendor::Gemini));
-    }
-
-    #[test]
-    fn what_an_agent_can_do_depends_on_its_vendor_role_and_confine_level() {
+    fn what_an_agent_can_do_depends_on_its_role_and_confine_level() {
         use Confine::*;
-        let strict = |v, r| abilities(v, r, Strict);
-        assert!(
-            strict(Vendor::Claude, Role::Leader)
-                .contains("not change them; the run tool runs checks")
-        );
-        assert!(
-            strict(Vendor::Claude, Role::Worker).contains("the run tool runs the build, the tests")
-        );
-        assert!(
-            strict(Vendor::Claude, Role::Helper).contains("the run tool runs the build, the tests")
-        );
-        assert!(
-            strict(Vendor::Gemini, Role::Worker).contains("the run tool runs the build, the tests")
-        );
-        assert!(strict(Vendor::Codex, Role::Leader).contains("refuses writes and the network"));
-        assert!(!strict(Vendor::Codex, Role::Leader).contains("search the web"));
-        assert!(!strict(Vendor::Claude, Role::Worker).contains("the person's yes"));
-        assert!(!strict(Vendor::Codex, Role::Worker).contains("the person's yes"));
-        assert!(!strict(Vendor::Gemini, Role::Worker).contains("the person's yes"));
-        assert!(
-            strict(Vendor::Codex, Role::Worker)
-                .contains("inside this directory and refuses the network")
-        );
-        assert!(
-            strict(Vendor::Codex, Role::Helper)
-                .contains("inside this directory and refuses the network")
-        );
-        // Standard and open say the same: a shell and the web for workers
-        // and helpers, the web for a leader; Codex's sandbox stays.
-        for level in [Standard, Open] {
-            let full = |v, r| abilities(v, r, level);
+        assert!(abilities(Role::Leader, Strict).contains("not change them; the run tool runs"));
+        assert!(!abilities(Role::Leader, Strict).contains("the web"));
+        for r in [Role::Worker, Role::Helper, Role::Solo] {
+            let strict = abilities(r, Strict);
             assert!(
-                full(Vendor::Claude, Role::Leader)
-                    .contains("read files and the web but not change files")
+                strict.contains("the run tool runs the build, the tests"),
+                "{r:?}"
             );
-            assert!(
-                full(Vendor::Gemini, Role::Leader)
-                    .contains("read files and the web but not change files")
-            );
-            assert!(
-                full(Vendor::Claude, Role::Worker)
-                    .contains("run commands in your shell and reach the web")
-            );
-            assert!(
-                full(Vendor::Gemini, Role::Helper)
-                    .contains("run commands in your shell and reach the web")
-            );
-            assert!(!full(Vendor::Claude, Role::Worker).contains("nothing else"));
-            // Claude's shell asks the person about what is not routine.
-            for r in [Role::Worker, Role::Helper] {
-                assert!(
-                    full(Vendor::Claude, r).contains("most others wait for the person's yes"),
-                    "{r:?}"
-                );
-            }
-            // So does what needs more than Codex's sandbox.
-            for r in [Role::Worker, Role::Helper] {
-                assert!(
-                    full(Vendor::Codex, r).contains("sandbox gives waits for the person's yes"),
-                    "{r:?}"
-                );
-            }
-            // And Gemini's, run in the agent's directory.
-            for r in [Role::Worker, Role::Helper] {
-                let g = full(Vendor::Gemini, r);
-                assert!(g.contains("most others wait for the person's yes"), "{r:?}");
-                assert!(g.contains("your files' directory as its dir_path"), "{r:?}");
-            }
-            assert!(!full(Vendor::Gemini, Role::Leader).contains("the person's yes"));
-            assert!(!full(Vendor::Qwen, Role::Worker).contains("the person's yes"));
-            assert!(
-                full(Vendor::Qwen, Role::Worker)
-                    .contains("run commands in your shell and reach the web")
-            );
-            assert!(!full(Vendor::Claude, Role::Leader).contains("the person's yes"));
-            assert!(!full(Vendor::Codex, Role::Leader).contains("the person's yes"));
-            assert!(
-                full(Vendor::Codex, Role::Leader)
-                    .contains("search the web and run commands that only read")
-            );
-            assert!(full(Vendor::Codex, Role::Leader).contains("refuses writes and the network"));
-            assert!(full(Vendor::Codex, Role::Worker).contains("run commands and reach the web"));
-            assert!(
-                full(Vendor::Codex, Role::Worker).contains("keeps writes inside this directory.")
-            );
-            assert!(!full(Vendor::Codex, Role::Helper).contains("refuses the network"));
+            assert!(strict.contains("nothing else"), "{r:?}");
+            assert!(!strict.contains("the person's yes"), "{r:?}");
         }
-        let mut w = team(0);
-        w.agents[0].vendor = Vendor::Codex;
-        assert!(system_prompt(&w, 0, 4, 2, Strict).contains("run commands that only read"));
-        assert!(system_prompt(&w, 0, 4, 2, Standard).contains("search the web and run commands"));
+        // Standard and open say the same: a shell and the web for workers
+        // and helpers, the web for a leader.
+        for level in [Standard, Open] {
+            let lead = abilities(Role::Leader, level);
+            assert!(lead.contains("read files and the web but not change files"));
+            assert!(!lead.contains("the person's yes"));
+            for r in [Role::Worker, Role::Helper, Role::Solo] {
+                let full = abilities(r, level);
+                assert!(
+                    full.contains("run commands in your shell and reach the web"),
+                    "{r:?}"
+                );
+                assert!(
+                    full.contains("most others wait for the person's yes"),
+                    "{r:?}"
+                );
+                assert!(!full.contains("nothing else"), "{r:?}");
+            }
+        }
     }
 
     #[test]

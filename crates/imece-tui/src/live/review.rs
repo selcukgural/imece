@@ -1,5 +1,5 @@
-//! `:review` (record 106): a vendor other than the worker's reads a
-//! worker's change and says what it finds, as a note above the change.
+//! `:review` (record 106): a fresh Claude Code session reads a worker's
+//! change and says what it finds, as a note above the change.
 //! Advisory only: the person still applies or rejects, and nothing waits
 //! for a review. Each review is a paid call of its own kind, counted
 //! against the day's ceilings and reserved in the pot at its cap before
@@ -11,8 +11,7 @@ use crate::store::Paid;
 
 /// The most one review by Claude Code may cost, in ten-thousandths of a
 /// dollar: the call's `--max-budget-usd`, and what the pot and the day
-/// hold for it until it says what it cost. Codex costs the pot nothing
-/// (the person's ChatGPT plan), so its reviews hold nothing.
+/// hold for it until it says what it cost.
 pub(crate) const REVIEW_CAP: u64 = 1_000;
 
 /// Reviews a day may have, every project together.
@@ -64,7 +63,6 @@ pub(super) struct Reviewed {
     pub cap: u64,
     /// The patch it read ([`patch_sum`]).
     pub patch: String,
-    pub by: Vendor,
     pub model: String,
     pub said: Result<imece_agent::Said, imece_agent::Unsaid>,
 }
@@ -130,22 +128,6 @@ pub(super) fn review_text(text: &str) -> String {
     text.chars().take(REVIEW_CHARS).collect()
 }
 
-/// The vendor that reviews worker `worker`'s change, of those `here`:
-/// one other than the worker's that can (Claude Code, Codex), the
-/// project's leader's first, then Claude Code, then Codex.
-pub(crate) fn reviewer_of(worker: Vendor, leader: Vendor, here: &[Vendor]) -> Option<Vendor> {
-    let reviews = |v: Vendor| v != worker && matches!(v, Vendor::Claude | Vendor::Codex);
-    [leader, Vendor::Claude, Vendor::Codex]
-        .into_iter()
-        .find(|v| reviews(*v) && here.contains(v))
-}
-
-/// The cap a review by `by` holds: Claude Code's [`REVIEW_CAP`]; Codex
-/// costs the pot nothing.
-pub(crate) fn review_cap(by: Vendor) -> u64 {
-    if by == Vendor::Claude { REVIEW_CAP } else { 0 }
-}
-
 /// A review's Claude Code session: `program` in `cwd` on `model`, no
 /// tools, no MCP server, the strict level, `cap` as its spending cap (the
 /// spec counts millionths of a dollar, the pot ten-thousandths).
@@ -167,49 +149,14 @@ pub(super) fn claude_spec(program: String, cwd: PathBuf, model: &str, cap: u64) 
     }
 }
 
-/// A review's Codex session: `program` in `cwd` on `choice` (Codex's
-/// own default when none), a reader (read-only sandbox) at the strict
-/// level (no network, no web search), no MCP server, its thread left off
-/// the disk.
-pub(super) fn codex_spec(program: String, cwd: PathBuf, choice: Option<String>) -> codex::Spec {
-    codex::Spec {
-        program,
-        cwd,
-        choice,
-        write: false,
-        confine: Confine::Strict,
-        system: REVIEW_SYSTEM.into(),
-        mcp: None,
-        resume: None,
-        fork: false,
-        ephemeral: true,
-        scratch: None,
-    }
-}
-
 impl Live {
-    /// The vendor that would review worker `agent`'s change; why none.
-    fn reviewer(&self, w: &World, agent: AgentId) -> Result<&Hireable, String> {
-        let worker = w.agents[agent].vendor;
-        let leader = w.agents[w.projects[w.agents[agent].project].leader].vendor;
-        let here: Vec<Vendor> = self.vendors.iter().map(|h| h.vendor).collect();
-        let by = reviewer_of(worker, leader, &here).ok_or_else(|| {
-            format!(
-                "it needs a vendor other than {} that reviews (Claude Code or Codex) on PATH",
-                worker.label()
-            )
-        })?;
-        Ok(self.vendors.iter().find(|h| h.vendor == by).expect("found"))
-    }
-
     /// The person, or `:review on` as a change came, asks for a review of
     /// worker `agent`'s change: refused at once when none waits, it has
     /// its review already, one of it is asked for or under way (a review
-    /// under way of an older change of the worker's is no reason), no
-    /// other vendor reviews or the pot or the day has no room; else it
-    /// waits its turn (one review runs at a time, see
-    /// [`Live::review_next`]). The vendor that reviews.
-    pub fn review(&mut self, w: &World, agent: AgentId) -> Result<Vendor, String> {
+    /// under way of an older change of the worker's is no reason), or the
+    /// pot or the day has no room; else it waits its turn (one review runs
+    /// at a time, see [`Live::review_next`]).
+    pub fn review(&mut self, w: &World, agent: AgentId) -> Result<(), String> {
         let name = &w.agents[agent].name;
         let Some(c) = w.change_of(agent) else {
             return Err(format!("no change of {name} waits"));
@@ -218,29 +165,27 @@ impl Live {
             return Err(format!("{name}'s change has its review already"));
         }
         let running = (self.reviewing.as_ref())
-            .is_some_and(|(a, _, sum)| *a == agent && *sum == patch_sum(&c.patch));
-        if running || self.reviews_due.iter().any(|(a, _)| *a == agent) {
+            .is_some_and(|(a, sum)| *a == agent && *sum == patch_sum(&c.patch));
+        if running || self.reviews_due.contains(&agent) {
             return Err(format!("a review of {name}'s change is under way"));
         }
-        let by = self.reviewer(w, agent)?.vendor;
         let store = self.store.as_ref();
         paid::room(
             store,
             w,
             &mut self.review_day,
             &REVIEWS,
-            review_cap(by),
+            REVIEW_CAP,
             today(),
         )?;
-        self.reviews_due.push_back((agent, by));
-        Ok(by)
+        self.reviews_due.push_back(agent);
+        Ok(())
     }
 
-    /// The vendor reviewing worker `agent`'s change, or about to.
-    pub fn review_of(&self, agent: AgentId) -> Option<Vendor> {
-        let due = self.reviews_due.iter().find(|(a, _)| *a == agent);
-        let running = self.reviewing.as_ref().filter(|(a, ..)| *a == agent);
-        due.map(|(_, by)| *by).or(running.map(|(_, by, _)| *by))
+    /// Whether worker `agent`'s change is being reviewed, or is about to.
+    pub fn review_of(&self, agent: AgentId) -> bool {
+        self.reviews_due.contains(&agent)
+            || self.reviewing.as_ref().is_some_and(|(a, _)| *a == agent)
     }
 
     /// The next review asked for starts when none runs: its change still
@@ -250,64 +195,38 @@ impl Live {
         if self.reviewing.is_some() {
             return;
         }
-        while let Some((agent, by)) = self.reviews_due.pop_front() {
+        while let Some(agent) = self.reviews_due.pop_front() {
             let Some(c) = w.change_of(agent) else {
                 continue;
             };
             let prompt = review_prompt(c);
             let patch = patch_sum(&c.patch);
             let day = today();
-            let cap = review_cap(by);
-            let h = (self.vendors.iter()).find(|h| h.vendor == by).cloned();
+            let cap = REVIEW_CAP;
             let store = self.store.as_mut();
-            let counted = h
-                .ok_or_else(|| format!("{} is no longer on PATH", by.label()))
-                .and_then(|h| {
-                    paid::reserve(store, w, &mut self.review_day, &REVIEWS, cap, day)?;
-                    Ok(h)
+            if let Err(why) = paid::reserve(store, w, &mut self.review_day, &REVIEWS, cap, day) {
+                w.note(Event::ReviewFailed {
+                    agent,
+                    why,
+                    cost: 0,
                 });
-            let h = match counted {
-                Ok(h) => h,
-                Err(why) => {
-                    w.note(Event::ReviewFailed {
-                        agent,
-                        why,
-                        cost: 0,
-                    });
-                    continue;
-                }
-            };
+                continue;
+            }
             let dir = self.quiet_dir();
             let dir = dir.canonicalize().unwrap_or(dir);
             let tx = self.reviewed_tx.clone();
-            self.reviewing = Some((agent, by, patch.clone()));
-            let (model, call): (String, Box<dyn FnOnce() -> _ + Send>) = match by {
-                Vendor::Codex => {
-                    let spec = codex_spec(h.program, dir, h.ladder.standard);
-                    let model = spec.choice.clone().unwrap_or_else(|| "default".into());
-                    (
-                        model,
-                        Box::new(move || codex::once(&spec, &prompt, REVIEW_WAIT)),
-                    )
-                }
-                _ => {
-                    let model = (h.ladder.standard).unwrap_or_else(|| CLAUDE_REVIEWER.into());
-                    let spec = claude_spec(h.program, dir, &model, cap);
-                    (
-                        model,
-                        Box::new(move || claude::once(&spec, &prompt, REVIEW_WAIT)),
-                    )
-                }
-            };
+            self.reviewing = Some((agent, patch.clone()));
+            let model =
+                (self.claude.ladder.standard.clone()).unwrap_or_else(|| CLAUDE_REVIEWER.into());
+            let spec = claude_spec(self.claude.program.clone(), dir, &model, cap);
             let m = model.clone();
             thread::spawn(move || {
-                let said = call();
+                let said = claude::once(&spec, &prompt, REVIEW_WAIT);
                 let _ = tx.send(Reviewed {
                     agent,
                     day,
                     cap,
                     patch,
-                    by,
                     model: m,
                     said,
                 });
@@ -362,7 +281,6 @@ impl Live {
                 r.agent,
                 Review {
                     patch: r.patch,
-                    by: r.by,
                     model: r.model,
                     text,
                     cost,
@@ -381,18 +299,12 @@ mod tests {
     use super::super::testing::*;
     use super::*;
 
-    /// A team whose worker 1 runs on `worker` and whose change waits, with
-    /// Claude Code and Codex at programs that are not there.
-    fn waiting(worker: Vendor) -> (World, Live) {
+    /// A team whose worker 1's change waits, with Claude Code at a program
+    /// that is not there.
+    fn waiting() -> (World, Live) {
         let mut w = team(2);
-        w.agents[1].vendor = worker;
         w.change_ready(change(1, "diff --git a/x b/x\n+y\n"));
-        let mut live = idle_live(3);
-        live.vendors = vec![
-            Hireable::claude("/nonexistent/claude", &[]),
-            Hireable::codex("/nonexistent/codex", &[]),
-        ];
-        (w, live)
+        (w, idle_live(3))
     }
 
     fn change(agent: AgentId, patch: &str) -> Change {
@@ -414,16 +326,15 @@ mod tests {
         &w.journal.last().expect("journaled").event
     }
 
-    /// `said` comes back for worker `agent`'s review by `by` at `cap`,
+    /// `said` comes back for worker `agent`'s review at `cap`,
     /// counted on day 5, of the patch that waits.
-    fn back(live: &Live, w: &World, agent: AgentId, by: Vendor, cap: u64, said: Said) {
+    fn back(live: &Live, w: &World, agent: AgentId, cap: u64, said: Said) {
         live.reviewed_tx
             .send(Reviewed {
                 agent,
                 day: 5,
                 cap,
                 patch: patch_sum(&w.change_of(agent).unwrap().patch),
-                by,
                 model: "sonnet".into(),
                 said: said.0,
             })
@@ -497,40 +408,6 @@ mod tests {
     }
 
     #[test]
-    fn the_reviewer_is_another_vendor_the_leaders_first() {
-        use Vendor::*;
-        let both = [Claude, Codex];
-        assert_eq!(reviewer_of(Claude, Claude, &both), Some(Codex));
-        assert_eq!(reviewer_of(Codex, Codex, &both), Some(Claude));
-        assert_eq!(
-            reviewer_of(Gemini, Codex, &both),
-            Some(Codex),
-            "the leader's"
-        );
-        assert_eq!(reviewer_of(Gemini, Claude, &both), Some(Claude));
-        assert_eq!(
-            reviewer_of(Gemini, Gemini, &both),
-            Some(Claude),
-            "then Claude"
-        );
-        assert_eq!(
-            reviewer_of(Gemini, Gemini, &[Codex]),
-            Some(Codex),
-            "then Codex"
-        );
-        assert_eq!(reviewer_of(Codex, Claude, &[Codex]), None, "never its own");
-        assert_eq!(
-            reviewer_of(Claude, Gemini, &[Claude, Gemini]),
-            None,
-            "Gemini does not"
-        );
-        assert_eq!(reviewer_of(Claude, Codex, &[Claude]), None, "not here");
-        assert_eq!(review_cap(Claude), REVIEW_CAP);
-        assert_eq!(review_cap(Codex), 0, "the person's ChatGPT plan pays");
-        assert_eq!(review_cap(Gemini), 0);
-    }
-
-    #[test]
     fn a_reviews_call_reads_and_writes_nothing_and_holds_its_cap() {
         let spec = claude_spec("/bin/claude".into(), PathBuf::from("/q"), "sonnet", 1_000);
         assert_eq!(spec.budget, 100_000, "$0.10 in millionths");
@@ -550,36 +427,19 @@ mod tests {
         let args = claude::once_args(&spec);
         let cap = args.iter().position(|a| a == "--max-budget-usd").unwrap();
         assert_eq!(args[cap + 1], "0.100000");
-        let spec = codex_spec(
-            "/bin/codex".into(),
-            PathBuf::from("/q"),
-            Some("@low".into()),
-        );
-        assert_eq!(
-            (spec.program.as_str(), spec.cwd.as_path()),
-            ("/bin/codex", Path::new("/q"))
-        );
-        assert_eq!(spec.choice.as_deref(), Some("@low"));
-        assert!(spec.ephemeral && !spec.write && !spec.fork);
-        assert!(spec.mcp.is_none() && spec.resume.is_none() && spec.scratch.is_none());
-        assert_eq!(spec.confine, Confine::Strict);
-        assert_eq!(spec.system, REVIEW_SYSTEM);
-        let args = codex::args(&spec, &codex::Off::default());
-        assert!(args.contains(&"sandbox_mode=\"read-only\"".to_string()));
-        assert!(args.contains(&"web_search=\"disabled\"".to_string()));
     }
 
     #[test]
-    fn a_review_is_asked_of_another_vendor_and_waits_its_turn() {
-        let (w, mut live) = waiting(Vendor::Claude);
+    fn a_review_is_asked_for_and_waits_its_turn() {
+        let (w, mut live) = waiting();
         assert_eq!(
             live.review(&w, 2),
             Err("no change of claude-2 waits".into())
         );
-        assert_eq!(live.review_of(1), None);
-        assert_eq!(live.review(&w, 1), Ok(Vendor::Codex));
-        assert_eq!(live.review_of(1), Some(Vendor::Codex));
-        assert_eq!(live.review_of(2), None);
+        assert!(!live.review_of(1));
+        assert_eq!(live.review(&w, 1), Ok(()));
+        assert!(live.review_of(1));
+        assert!(!live.review_of(2));
         assert_eq!(
             live.review(&w, 1),
             Err("a review of claude-1's change is under way".into()),
@@ -592,14 +452,13 @@ mod tests {
     }
 
     #[test]
-    fn a_review_is_refused_with_its_own_review_or_without_another_vendor() {
-        let (mut w, mut live) = waiting(Vendor::Claude);
+    fn a_review_is_refused_with_its_own_review() {
+        let (mut w, mut live) = waiting();
         let sum = patch_sum(&w.change_of(1).unwrap().patch);
         w.reviewed(
             1,
             Review {
                 patch: sum,
-                by: Vendor::Codex,
                 model: "default".into(),
                 text: "fine".into(),
                 cost: 0,
@@ -609,76 +468,61 @@ mod tests {
             live.review(&w, 1),
             Err("claude-1's change has its review already".into())
         );
-        let (w, mut live) = waiting(Vendor::Claude);
-        live.vendors.retain(|h| h.vendor == Vendor::Claude);
-        assert_eq!(
-            live.review(&w, 1),
-            Err(
-                "it needs a vendor other than claude that reviews (Claude Code or Codex) on PATH"
-                    .into()
-            )
-        );
     }
 
     #[test]
     fn a_review_under_way_of_an_older_change_lets_the_newer_one_wait_its_turn() {
-        let (mut w, mut live) = waiting(Vendor::Claude);
+        let (mut w, mut live) = waiting();
         let sum = patch_sum(&w.change_of(1).unwrap().patch);
-        live.reviewing = Some((1, Vendor::Codex, sum));
+        live.reviewing = Some((1, sum));
         assert_eq!(
             live.review(&w, 1),
             Err("a review of claude-1's change is under way".into()),
             "this very patch"
         );
-        assert_eq!(live.review_of(1), Some(Vendor::Codex), "the one under way");
+        assert!(live.review_of(1), "the one under way");
         w.change_ready(change(1, "diff --git a/x b/x\n+z\n"));
-        assert_eq!(live.review(&w, 1), Ok(Vendor::Codex));
+        assert_eq!(live.review(&w, 1), Ok(()));
         assert_eq!(live.reviews_due.len(), 1);
-        live.reviewing = Some((2, Vendor::Codex, "other".into()));
+        live.reviewing = Some((2, "other".into()));
         live.reviews_due.clear();
-        assert_eq!(live.review(&w, 1), Ok(Vendor::Codex), "another worker's");
+        assert!(!live.review_of(1), "another worker's is under way");
+        assert_eq!(live.review(&w, 1), Ok(()), "another worker's");
         let sum = patch_sum(&w.change_of(1).unwrap().patch);
-        live.reviewing = Some((2, Vendor::Codex, sum));
+        live.reviewing = Some((2, sum));
         live.reviews_due.clear();
         assert_eq!(
             live.review(&w, 1),
-            Ok(Vendor::Codex),
+            Ok(()),
             "another worker's, of the same patch"
         );
     }
 
     #[test]
     fn a_review_by_claude_needs_its_cap_in_the_pot_and_room_in_the_day() {
-        let (mut w, mut live) = waiting(Vendor::Codex);
+        let (mut w, mut live) = waiting();
         w.budget = REVIEW_CAP;
-        assert_eq!(
-            live.review(&w, 1),
-            Ok(Vendor::Claude),
-            "the whole cap is there"
-        );
+        assert_eq!(live.review(&w, 1), Ok(()), "the whole cap is there");
         live.reviews_due.clear();
         w.budget = REVIEW_CAP - 1;
         assert_eq!(
             live.review(&w, 1),
             Err("the pot has less than $0.10 left".into())
         );
-        // Codex's cost nothing: an empty pot still has room.
-        let (mut w, mut live) = waiting(Vendor::Claude);
-        w.budget = 0;
-        assert_eq!(live.review(&w, 1), Ok(Vendor::Codex));
-        live.reviews_due.clear();
+        let (mut w, mut live) = waiting();
+        w.budget = REVIEW_CAP;
         live.review_day = (today(), REVIEW_DAY_CALLS - 1, 0);
-        assert_eq!(live.review(&w, 1), Ok(Vendor::Codex));
+        assert_eq!(live.review(&w, 1), Ok(()));
         live.reviews_due.clear();
         live.review_day = (today(), REVIEW_DAY_CALLS, 0);
         assert_eq!(
             live.review(&w, 1),
             Err("today's 20 reviews were made".into())
         );
-        let (mut w, mut live) = waiting(Vendor::Codex);
+        let (mut w, mut live) = waiting();
         w.budget = 100_000;
         live.review_day = (today(), 0, REVIEW_DAY_COST - REVIEW_CAP);
-        assert_eq!(live.review(&w, 1), Ok(Vendor::Claude), "up to $2 is room");
+        assert_eq!(live.review(&w, 1), Ok(()), "up to $2 is room");
         live.reviews_due.clear();
         live.review_day = (today(), 0, REVIEW_DAY_COST - REVIEW_CAP + 1);
         assert_eq!(
@@ -689,15 +533,14 @@ mod tests {
 
     #[test]
     fn the_next_review_starts_counted_and_reserved_one_at_a_time() {
-        let (mut w, mut live) = waiting(Vendor::Codex);
+        let (mut w, mut live) = waiting();
         live.store = Some(Store::in_memory());
-        w.agents[2].vendor = Vendor::Codex;
         w.change_ready(change(2, "+q\n"));
         live.review(&w, 1).unwrap();
         live.review(&w, 2).unwrap();
         live.review_next(&mut w);
         let sum = patch_sum(&w.change_of(1).unwrap().patch);
-        assert_eq!(live.reviewing, Some((1, Vendor::Claude, sum)));
+        assert_eq!(live.reviewing, Some((1, sum)));
         assert_eq!(w.paid, REVIEW_CAP, "its cap is in the pot");
         assert_eq!(live.review_day, (today(), 1, REVIEW_CAP));
         let store = live.store.as_ref().unwrap();
@@ -735,7 +578,7 @@ mod tests {
 
     #[test]
     fn a_review_whose_change_went_or_whose_day_filled_does_not_start() {
-        let (mut w, mut live) = waiting(Vendor::Claude);
+        let (mut w, mut live) = waiting();
         live.review(&w, 1).unwrap();
         w.change_rejected(1);
         let journaled = w.journal.len();
@@ -758,44 +601,23 @@ mod tests {
                 cost: 0
             }
         );
-        // A vendor gone from PATH between the ask and the start.
-        live.review_day = (today(), 0, 0);
-        live.review(&w, 1).unwrap();
-        live.vendors.clear();
-        live.review_next(&mut w);
-        assert_eq!(
-            *last(&w),
-            Event::ReviewFailed {
-                agent: 1,
-                why: "codex is no longer on PATH".into(),
-                cost: 0
-            }
-        );
-        assert_eq!(live.review_day.1, 0, "not counted");
     }
 
     #[test]
     fn an_answer_settles_its_cost_and_is_kept_on_its_change() {
-        let (mut w, mut live) = waiting(Vendor::Codex);
-        live.reviewing = Some((1, Vendor::Claude, String::new()));
+        let (mut w, mut live) = waiting();
+        live.reviewing = Some((1, String::new()));
         live.review_day = (5, 1, REVIEW_CAP);
         w.paid = REVIEW_CAP + 3;
-        back(
-            &live,
-            &w,
-            1,
-            Vendor::Claude,
-            REVIEW_CAP,
-            ok("\n1. x: no test\n", 4_299),
-        );
+        back(&live, &w, 1, REVIEW_CAP, ok("\n1. x: no test\n", 4_299));
         assert!(live.take_reviews(&mut w));
         assert_eq!(live.reviewing, None);
         assert_eq!(w.paid, 45, "millionths to ten-thousandths, the cap let go");
         assert_eq!(live.review_day, (5, 1, 42));
         let r = w.review_of(1).expect("kept");
         assert_eq!(
-            (r.by, r.model.as_str(), r.text.as_str(), r.cost),
-            (Vendor::Claude, "sonnet", "1. x: no test", 42)
+            (r.model.as_str(), r.text.as_str(), r.cost),
+            ("sonnet", "1. x: no test", 42)
         );
         assert!(matches!(
             last(&w),
@@ -810,16 +632,9 @@ mod tests {
 
     #[test]
     fn a_failed_review_costs_what_it_said_or_its_cap() {
-        let (mut w, mut live) = waiting(Vendor::Codex);
+        let (mut w, mut live) = waiting();
         w.paid = REVIEW_CAP;
-        back(
-            &live,
-            &w,
-            1,
-            Vendor::Claude,
-            REVIEW_CAP,
-            unsaid("capped", Some(7_700)),
-        );
+        back(&live, &w, 1, REVIEW_CAP, unsaid("capped", Some(7_700)));
         live.take_reviews(&mut w);
         assert_eq!(w.paid, 77);
         assert_eq!(
@@ -831,19 +646,12 @@ mod tests {
             }
         );
         w.paid = REVIEW_CAP;
-        back(
-            &live,
-            &w,
-            1,
-            Vendor::Claude,
-            REVIEW_CAP,
-            unsaid("gone", None),
-        );
+        back(&live, &w, 1, REVIEW_CAP, unsaid("gone", None));
         live.take_reviews(&mut w);
         assert_eq!(w.paid, REVIEW_CAP, "never said: the cap stays");
         assert!(matches!(last(&w), Event::ReviewFailed { cost, .. } if *cost == REVIEW_CAP));
         w.paid = REVIEW_CAP;
-        back(&live, &w, 1, Vendor::Claude, REVIEW_CAP, ok(" \n", 1_000));
+        back(&live, &w, 1, REVIEW_CAP, ok(" \n", 1_000));
         live.take_reviews(&mut w);
         assert_eq!(w.paid, 10);
         assert_eq!(
@@ -858,61 +666,14 @@ mod tests {
     }
 
     #[test]
-    fn a_claude_workers_change_is_reviewed_by_codex_s_app_server() {
-        let dir = std::env::temp_dir().join(format!("imece-review-codex-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
-        let (mut w, mut live) = waiting(Vendor::Claude);
-        live.state = dir.clone();
-        live.vendors = vec![Hireable::codex(&fake_codex(&dir), &[])];
-        assert_eq!(live.review(&w, 1), Ok(Vendor::Codex));
-        live.review_next(&mut w);
-        let deadline = Instant::now() + Duration::from_secs(30);
-        while !live.take_reviews(&mut w) {
-            assert!(Instant::now() < deadline, "no answer in time");
-            thread::sleep(Duration::from_millis(10));
-        }
-        // The stand-in only says how it was run, and ends.
-        assert!(matches!(
-            last(&w),
-            Event::ReviewFailed {
-                agent: 1,
-                cost: 0,
-                ..
-            }
-        ));
-        assert_eq!(w.paid, 0, "Codex holds nothing");
-        let args = std::fs::read_to_string(dir.canonicalize().unwrap().join("args.txt")).unwrap();
-        assert_eq!(args.lines().next(), Some("app-server"), "{args}");
-        assert!(args.contains("sandbox_mode=\"read-only\""), "{args}");
-        let _ = std::fs::remove_dir_all(&dir);
-    }
-
-    /// A stand-in for `claude` that answers `text` for `usd`.
-    fn answering(dir: &Path, text: &str, usd: &str) -> String {
-        use std::os::unix::fs::PermissionsExt;
-        let path = dir.join("answering-claude");
-        let init = r#"{"type":"system","subtype":"init","session_id":"s1","model":"sonnet","tools":[],"permissionMode":"acceptEdits","mcp_servers":[],"slash_commands":[]}"#;
-        let body = format!(
-            "#!/bin/sh\nprintf '%s\\n' \"$@\" > args.txt\nread line\necho '{init}'\necho '{{\"type\":\"result\",\"subtype\":\"success\",\"result\":\"{text}\",\"total_cost_usd\":{usd}}}'\nsleep 5\n"
-        );
-        std::fs::write(&path, body).unwrap();
-        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o700)).unwrap();
-        path.to_string_lossy().into_owned()
-    }
-
-    #[test]
-    fn a_codex_workers_change_is_reviewed_by_claude_where_nothing_is_to_read() {
+    fn a_change_is_reviewed_by_claude_where_nothing_is_to_read() {
         let dir = std::env::temp_dir().join(format!("imece-review-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
-        let (mut w, mut live) = waiting(Vendor::Codex);
+        let (mut w, mut live) = waiting();
         live.state = dir.clone();
-        live.vendors = vec![Hireable::claude(
-            &answering(&dir, "1. x: no test", "0.0042"),
-            &[],
-        )];
-        assert_eq!(live.review(&w, 1), Ok(Vendor::Claude));
+        live.claude = Hireable::new(&answering(&dir, "1. x: no test", "0.0042"), &[]);
+        assert_eq!(live.review(&w, 1), Ok(()));
         live.review_next(&mut w);
         let deadline = Instant::now() + Duration::from_secs(30);
         while !live.take_reviews(&mut w) {
@@ -929,5 +690,18 @@ mod tests {
         assert!(args.contains("--max-budget-usd\n0.100000\n"), "{args}");
         assert!(args.contains("--model\nsonnet\n"), "{args}");
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A stand-in for `claude` that answers `text` for `usd`.
+    fn answering(dir: &Path, text: &str, usd: &str) -> String {
+        use std::os::unix::fs::PermissionsExt;
+        let path = dir.join("answering-claude");
+        let init = r#"{"type":"system","subtype":"init","session_id":"s1","model":"sonnet","tools":[],"permissionMode":"acceptEdits","mcp_servers":[],"slash_commands":[]}"#;
+        let body = format!(
+            "#!/bin/sh\nprintf '%s\\n' \"$@\" > args.txt\nread line\necho '{init}'\necho '{{\"type\":\"result\",\"subtype\":\"success\",\"result\":\"{text}\",\"total_cost_usd\":{usd}}}'\nsleep 5\n"
+        );
+        std::fs::write(&path, body).unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o700)).unwrap();
+        path.to_string_lossy().into_owned()
     }
 }

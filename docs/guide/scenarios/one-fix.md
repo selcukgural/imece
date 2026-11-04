@@ -16,11 +16,11 @@ cd ~/code/parser
 imece
 ```
 
-With one coding agent on PATH there is no question; with several, the WHO LEADS? screen asks (`j k` choose, `enter` this time, `p` always). The salon opens with the team as the leader alone, `lead`, which reads your checkout and never writes to it. The first journal line says what the agents get, because the default level is `standard`:
+The salon opens with the team as the leader alone, `lead`, which reads your checkout and never writes to it. The first journal line says what the agents get, because the default level is `standard`:
 
 ```text
  JOURNAL
- 14:00 ⚑ confine standard: workers get their vendor's shell and web; isolation is a container's job, not imece's
+ 14:00 ⚑ confine standard: workers get Claude Code's shell and web; isolation is a container's job, not imece's
 ```
 
 Nothing costs anything yet: `lead` has no process until you write to it.
@@ -33,11 +33,11 @@ Press `/`. The footer becomes a command line labelled ` › to lead: `. Type the
  › to lead: the parser test fails on empty input, fix it
 ```
 
-The journal shows your line (`›` marks what you did) and the leader starts its first turn: its row reads `◆ lead  claude  thinking…`, then what it does. It reads the test with its read tools and may run `cargo test` through imece's `run` tool. It does not change a file: the leader is non-writing at every confine level, since it works in your checkout where a write would skip the review.
+The journal shows your line (`›` marks what you did) and the leader starts its first turn: its row reads `◆ lead  thinking…`, then what it does. It reads the test with its read tools and may run `cargo test` through imece's `run` tool. It does not change a file: the leader is non-writing at every confine level, since it works in your checkout where a write would skip the review.
 
 ## 3. The leader hires
 
-The leader calls the `hire` tool with a tier, never a model name: `cheap` for small mechanical work, `standard` (the default) for ordinary fixes, `strong` for design that cuts across the code. For this fix it picks `standard`. The worker is named after its vendor, `claude-1`, and the journal says who hired whom and on what:
+The leader calls the `hire` tool with a tier, never a model name: `cheap` for small mechanical work, `standard` (the default) for ordinary fixes, `strong` for design that cuts across the code. For this fix it picks `standard`. The worker is named `claude-1`, and the journal says who hired whom and on what:
 
 ```text
  14:01 ◆ lead hired claude-1 (default model)
@@ -50,7 +50,7 @@ The `assign` message opens a card, `#1`, titled by the message's first line. The
 
 ```text
  ▾ parser                      1 working  $0.09
-   ◆ lead       claude          coordinating                       $0.09
+   ◆ lead       coordinating                                       $0.09
    ● claude-1   #1   parser: empty input    reading src/parser.rs
 ```
 
@@ -60,7 +60,7 @@ Before its first turn imece makes `claude-1` a git worktree under `~/.local/stat
 
 Two things change on the worker's row as it goes.
 
-Its status is what it does right now (reading, editing, running), in the words its vendor reports. After its first tool use the row also shows the worktree's stand, read every 15 s while the worker is mid-turn:
+Its status is what it does right now (reading, editing, running), in the words Claude Code reports. After its first tool use the row also shows the worktree's stand, read every 15 s while the worker is mid-turn:
 
 ```text
    ● claude-1   #1   parser: empty input    editing src/parser.rs   $0.14  +12 −3
@@ -109,7 +109,7 @@ The worker checks its work with the `run` tool (its instructions say to: only im
    enter see the diff · a apply to the checkout · r reject
 ```
 
-The item's text is the first line of the worker's `done`; it is the change's title from here on. `✓ ran clean on this tree` names the runs imece made on exactly this tree. Had the worker tested only in its own shell, the line would say `no run on this tree`: a vendor's shell carries no exit code imece can trust. Nothing is refused for lack of a run; you decide.
+The item's text is the first line of the worker's `done`; it is the change's title from here on. `✓ ran clean on this tree` names the runs imece made on exactly this tree. Had the worker tested only in its own shell, the line would say `no run on this tree`: Claude Code's shell carries no exit code imece can trust. Nothing is refused for lack of a run; you decide.
 
 ## 7. Reading the diff
 

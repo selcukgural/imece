@@ -2,7 +2,7 @@
 //! right now, so the person sees where work happens and where agents share a
 //! file. One row per file, one cell per lease, in columns that stay put:
 //! the cell is the holder's status glyph (the salon's), its name in its
-//! vendor's colour and the symbol, each padded to the widest in the
+//! colour and the symbol, each padded to the widest in the
 //! project, so names and symbols line up down the screen. A file several
 //! agents hold ends with `⇆ N`.
 
@@ -155,7 +155,7 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App) {
             spans.push(Span::styled(mark.to_string(), fg(colour)));
             spans.push(Span::styled(
                 head[mark.len()..].to_string(),
-                fg(vendor_color(a.vendor)),
+                fg(pal().agent),
             ));
             spans.push(Span::styled(tail, dim()));
         }
@@ -203,7 +203,7 @@ mod tests {
     fn columns_are_as_wide_as_the_widest_name_and_no_wider_than_their_cap() {
         let w = Widths::of(
             ["src/a/LongerName.cs", "b.cs"].into_iter(),
-            ["claude-3", "qwen-4"].into_iter(),
+            ["claude-3", "worker"].into_iter(),
             ["OrderService.Calculate", "Money.Round"].into_iter(),
         );
         assert_eq!(
@@ -247,8 +247,8 @@ mod tests {
             name: 8,
             symbol: 9,
         };
-        let (head, tail) = cell("●", "qwen-4", "OrderService.Submit", &w);
-        assert_eq!(head, "● qwen-4  ");
+        let (head, tail) = cell("●", "worker", "OrderService.Submit", &w);
+        assert_eq!(head, "● worker  ");
         assert_eq!(tail, "  Submit      ");
         assert_eq!(head.chars().count() + tail.chars().count(), w.cell());
         let (_, plain) = cell("!", "claude-3", "Round", &w);
@@ -275,7 +275,7 @@ mod tests {
     }
 
     fn demo() -> App {
-        let mut app = App::new(2, 12, 4, 7, Lang::En);
+        let mut app = App::new(2, 12, 4, 2, Lang::En);
         for _ in 0..300 {
             app.step();
         }
@@ -412,15 +412,7 @@ mod tests {
 
     #[test]
     fn the_glyph_table_is_the_salons_in_order() {
-        let mut a = crate::model::Agent::new(
-            1,
-            0,
-            "w".into(),
-            crate::model::Vendor::Claude,
-            Role::Worker,
-            Status::Working,
-            0,
-        );
+        let mut a = crate::model::Agent::new(1, 0, "w".into(), Role::Worker, Status::Working, 0);
         let statuses = [
             Status::Idle,
             Status::Working,

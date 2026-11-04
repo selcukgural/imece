@@ -1,11 +1,11 @@
 ---
 title: Dosyalar
-description: imece'nin diske yazdığı ya da diskten okuduğu her şey - SQLite deposu ve şeması, worktree'ler, Gemini'nin özel dizini, veriyolunun soketleri, dışa aktarmalar, kopya listesi, satıcıların bir oturumdan tuttuğu, kilit, ve --fresh ile :forget'in sildiği.
+description: imece'nin diske yazdığı ya da diskten okuduğu her şey - SQLite deposu ve şeması, worktree'ler, veriyolunun soketleri, dışa aktarmalar, kopya listesi, Claude Code'un bir oturumdan tuttuğu, kilit, ve --fresh ile :forget'in sildiği.
 ---
 
 # Dosyalar
 
-imece hatırladığını tek bir dizinde, durum dizininde tutar; kalanı satıcıların tuttuğu yerde bırakır. Bu yollarla bir worktree'nin ne tuttuğunu, bir dışa aktarmanın nereye gittiğini, ikinci bir imece'nin neden yakındığını ya da `--fresh`'in ne sildiğini bilmek istediğinizde karşılaşırsınız. Buradaki hiçbir şey üzerinde çalıştığınız depoya yazılmaz; çalışma kopyanıza yalnızca bir değişiklikte `a`'ya bastığınızda dokunulur.
+imece hatırladığını tek bir dizinde, durum dizininde tutar; kalanı Claude Code'un tuttuğu yerde bırakır. Bu yollarla bir worktree'nin ne tuttuğunu, bir dışa aktarmanın nereye gittiğini, ikinci bir imece'nin neden yakındığını ya da `--fresh`'in ne sildiğini bilmek istediğinizde karşılaşırsınız. Buradaki hiçbir şey üzerinde çalıştığınız depoya yazılmaz; çalışma kopyanıza yalnızca bir değişiklikte `a`'ya bastığınızda dokunulur.
 
 ## Durum dizini
 
@@ -18,8 +18,7 @@ Değişken ayarlı ve mutlaksa `$XDG_STATE_HOME/imece`, yoksa `~/.local/state/im
 | `imece.sqlite.lock` | bir imece'nin çalışırken tuttuğu kilit (0600, `flock`) |
 | `screen` | imece'nin 2026-10-30'dan önce ekran seçimlerini tuttuğu dosya; ilk görüldüğünde depoya taşınır ve silinir |
 | `worktrees/<dizin>-<hash>/<ajan>` | işçi başına bir git worktree'si; `<dizin>` çalışma kopyasının dizin adı, `<hash>` yolunun sekiz onaltılık hanesi (`worktrees/kule-3f2a9c01/claude-1`) |
-| `worktrees/<dizin>-<hash>-gemini/<ajan>` | bir Gemini ajanının özel dizini (projenin lideri için, proje ne adlandırılsa da `lead`); `GEMINI.md` ve `policy/imece.toml` tutar |
-| `worktrees/<dizin>-<hash>-scratch/<ajan>` | yazan bir ajanın karalama dizini (0700; bir solonunki `solo-<proje numarası>`): değişikliğinin parçası olmayan notlar, günlükler ve indirilenler için. Dosya araçları oraya yazabilir (Claude `--add-dir`, Codex'te worktree dışındaki tek yazılabilir kök, Gemini'de eklenmiş bir dizin), talimatları onu adlandırır, odağı gösterir. Çalıştırmalar arasında kalır; `:forget`, `--fresh` ve ajan ayrılınca (`:close`, bir yardımcının `done`'ı) silinir, aynı işe devam eden yeni bir oturumda (model geri dönüşü, yenilenen sınır, `/clear`) silinmez |
+| `worktrees/<dizin>-<hash>-scratch/<ajan>` | yazan bir ajanın karalama dizini (0700; bir solonunki `solo-<proje numarası>`): değişikliğinin parçası olmayan notlar, günlükler ve indirilenler için. Dosya araçları oraya yazabilir (`--add-dir`), talimatları onu adlandırır, odağı gösterir. Çalıştırmalar arasında kalır; `:forget`, `--fresh` ve ajan ayrılınca (`:close`, bir yardımcının `done`'ı) silinir, aynı işe devam eden yeni bir oturumda (model geri dönüşü, yenilenen sınır, `/clear`) silinmez |
 | `scripts/<sha256>.sh` | evet dediğiniz bir worktree kurulum betiğinin özel kopyası, okuduğunuz baytlar (dizin 0700, dosya 0600): çalışan budur. Bkz. [worktree kurulum betiği](../concepts/projects.md#worktree-kurulum-betiği) |
 
 ## Depo
@@ -39,9 +38,9 @@ imece okuyamadığı bir dosyayı asla taşımaz, onarmaz ya da üstüne yazmaz:
 
 | Tablo | Tuttuğu |
 | --- | --- |
-| `meta` | anahtar-değer: `schema_version`, `started_at` (dünyanın ilk başlangıcı; saat ve tikler oradan sayar), `budget` (bütçe), `saved_at` (son kayıt, "NEREDE KALMIŞTIN · 2 sa önce" için), `messages` (verilen son mesaj numarası), `setup_approved` (evet dediğiniz worktree kurulum betikleri: her birinin nasıl çalıştığı, baytlarının SHA-256'sı ve gerçek yolu), ve ayarlarınız `side` (yan panelin genişliği), `theme`, `lead` (birincil satıcı), `notify`, `motion`, `seen` (en son başlayan sürüm, yeni olanlar için) |
+| `meta` | anahtar-değer: `schema_version`, `started_at` (dünyanın ilk başlangıcı; saat ve tikler oradan sayar), `budget` (bütçe), `saved_at` (son kayıt, "NEREDE KALMIŞTIN · 2 sa önce" için), `messages` (verilen son mesaj numarası), `setup_approved` (evet dediğiniz worktree kurulum betikleri: her birinin nasıl çalıştığı, baytlarının SHA-256'sı ve gerçek yolu), ve ayarlarınız `side` (yan panelin genişliği), `theme`, `notify`, `motion`, `seen` (en son başlayan sürüm, yeni olanlar için) |
 | `projects` | her projenin adı, lideri, kapalı olup olmadığı, çalışma kopyası yolu, sabit olup olmadığı ve `:copy`'nin listelediği yollar (`copies`, JSON) |
-| `agents` | her ajanın projesi, adı, satıcısı, rolü, ebeveyni (yardımcının işçisi), kartı, maliyeti, kirliliği, gitmiş olup olmadığı, modeli ve bir kademenin seçip seçmediği, siz son konuştuğunuzdan beri mesaj kaynaklı turları ve kart asmaları, kendi komut listesi, son satıcı oturumuyla o oturumun harcadığı, başlangıç noktası, ve henüz başlamamış bir çatal için devam ettiği işçi (`fork_of`) |
+| `agents` | her ajanın projesi, adı, rolü, ebeveyni (yardımcının işçisi), kartı, maliyeti, kirliliği, gitmiş olup olmadığı, modeli ve bir kademenin seçip seçmediği, siz son konuştuğunuzdan beri mesaj kaynaklı turları ve kart asmaları, kendi komut listesi, son oturumuyla o oturumun harcadığı, başlangıç noktası, ve henüz başlamamış bir çatal için devam ettiği işçi (`fork_of`) |
 | `cards` | her kartın projesi, başlığı, sahibi, sütunu ve ne zaman başlayıp bittiği |
 | `story` | bir kartın hikâye satırları, türleriyle JSON olaylar olarak |
 | `journal` | her günlük satırı (tik, proje, ajan, tür, olay JSON olarak) ve işaretlediniz mi (`marked`, kısmi bir dizinle; işaretli satırlar yaşı ne olsun bulunur) |
@@ -76,20 +75,9 @@ Her işçi `worktrees/<dizin>-<hash>/<ad>` alır: çalışma kopyanızın, yapı
 - Her worktree kendi `target/`'ında derlenir: ortak bir tane işçilere birbirlerinin değişikliklerini sırayla yeniden derletirdi.
 - `:close` worktree'leri diskte bırakır; hiçbir şey onları silmez. `:copy` listelediğiniz yok sayılan yolları (`.env`, `target`) işçisinin başlangıcında onlardan yoksun bir worktree'ye koyar; birimin elverdiği yerde APFS klonu ya da reflink olarak, asla var olanın üstüne değil, başlangıç başına en çok 2 GiB; checkout'un `.worktreeinclude` dosyasının git'in yok saydığı yollar arasında saydıkları da öyle (`O_NOFOLLOW` ile, en çok 16 KiB okunur). Bkz. [değişiklikler](../concepts/changes.md) ve [projeler](../concepts/projects.md).
 
-## Gemini'nin özel dizini
-
-Gemini CLI'ın Claude Code'un `--restricted`'ı gibi bir şeyi yoktur ve ayarları `~/.gemini`'den ve içinde çalıştığı klasörün `.gemini` dizininden alır; bu yüzden imece her Gemini ajanını kendine ait bir dizinde çalıştırır, `worktrees/<dizin>-<hash>-gemini/<ajan>` (0700, worktree'lerin yanında, oturum sürdürülebilsin diye çalıştırmalar arasında saklanır), ve ona çalışma kopyasını ya da worktree'yi dahil edilen dizin olarak verir. Her başlangıçta yeniden yazılır:
-
-| Dosya | Nedir |
-| --- | --- |
-| `GEMINI.md` | ajanın talimatları (rolü, sonra dosyalarının dizinini adlandıran bir satır); ACP'nin talimat vermenin tek yolu; Gemini'nin `/memory list`'i onu göstermeli |
-| `policy/imece.toml` | rolün ve `--confine` düzeyinin araçlarıyla imece'nin kendi araçlarına tam olarak adla izin veren ve `strict` ile `standard` altında başka her aracı reddeden politika (reddedilen bir araç modele gösterilmez bile); `--policy` dizini adlandırır |
-
-Deponun `.gemini` ayarları, hook'ları ve `.env`'i oturuma asla ulaşmaz. Dizin, ajan bütünüyle ayrılınca gider (`:close`, bir yardımcının `done`'ı); `:forget` yalnızca sohbet dosyalarını siler. Bkz. [satıcılar](../concepts/vendors.md).
-
 ## Veriyolunun soketleri
 
-Her başlangıçta imece `$TMPDIR/imece-<pid>-<hex>/` yapar (0700; var olan bir dizin reddedilir, yeniden kullanılmaz) ve içinde ajan başına bir Unix soketi bağlar, `a0.sock`, `a1.sock`, …, ajan sırasıyla, işe alım anında. Bir satıcının CLI'ı `imece mcp-relay <soket>` üzerinden bağlanır. Dizin ve soketleri imece bitince silinir, SIGTERM, SIGHUP ve SIGINT'te de. `:commit`'in tek seferlik Claude çağrısı, okunacak bir şey olmayan bu dizinde çalışır.
+Her başlangıçta imece `$TMPDIR/imece-<pid>-<hex>/` yapar (0700; var olan bir dizin reddedilir, yeniden kullanılmaz) ve içinde ajan başına bir Unix soketi bağlar, `a0.sock`, `a1.sock`, …, ajan sırasıyla, işe alım anında. Claude Code `imece mcp-relay <soket>` üzerinden bağlanır. Dizin ve soketleri imece bitince silinir, SIGTERM, SIGHUP ve SIGINT'te de. `:commit`'in tek seferlik Claude çağrısı, okunacak bir şey olmayan bu dizinde çalışır.
 
 ## Dışa aktarmalar
 
@@ -105,35 +93,29 @@ Her başlangıçta imece `$TMPDIR/imece-<pid>-<hex>/` yapar (0700; var olan bir 
 
 ## imece'nin depodan okuduğu
 
-- Çalışma kopyasının tepesindeki `AGENTS.md`, yoksa `CLAUDE.md`: kodlama ajanları için notlar, en çok 16 KiB, her ajana talimatlarıyla geçirilir (Codex `AGENTS.md`'yi kendi okur). Bkz. [mesaj türleri](message-types.md).
+- Çalışma kopyasının tepesindeki `AGENTS.md`, yoksa `CLAUDE.md`: kodlama ajanları için notlar, en çok 16 KiB, her ajana talimatlarıyla geçirilir. Bkz. [mesaj türleri](message-types.md).
 - Git: çalışma kopyasının tepesi, HEAD, `:copy` için `git check-ignore`, `.worktreeinclude`'un neye uyduğu için `git ls-files --others --ignored --directory --exclude=…` (bir işçinin başlangıcında), `:commit` için `git diff --cached` ve en yeni sekiz konu (`--no-ext-diff --no-textconv` ile, böylece sizin bir programınız çalışmaz), ve bir mesajda dosya adı tamamlamak için `git ls-files` (izlenenler ve izlenmeyen ama yok sayılmayanlar; ilk 20.000): projenin açılışında, uyguladığınız her değişiklikten sonra ve ajanlarından biri tur ortasındayken her dakika.
 - `--theme FILE` ya da `:theme FILE` ile adlandırılan, Ghostty ya da Kitty biçiminde bir renk dosyası; mutlak yolu tema olarak hatırlanır.
 
-Başka bir şey yok: deponun hiçbir dosyası imece tarafından yazılmaz ve satıcıların CLI'ları depodan hiçbir şey yüklenmesin diye başlatılır (`standard` ve `strict` altında).
+Başka bir şey yok: deponun hiçbir dosyası imece tarafından yazılmaz ve Claude Code depodan hiçbir şey yüklenmesin diye başlatılır (`standard` ve `strict` altında).
 
-## Satıcıların tuttuğu
+## Claude Code'un tuttuğu
 
-Bir oturum, satıcısının tuttuğundan sürdürülür; imece yalnızca kimliği hatırlar (`agents.session`). Bunlar satıcıların dosyalarıdır, imece'nin değil.
+Bir oturum, Claude Code'un tuttuğundan sürdürülür; imece yalnızca kimliği hatırlar (`agents.session`). Bunlar Claude Code'un dosyalarıdır, imece'nin değil.
 
-| Satıcı | Nerede | Notlar |
-| --- | --- | --- |
-| Claude Code | `$CLAUDE_CONFIG_DIR` ya da `~/.claude`, `projects/<slug>/<id>.jsonl`; slug, ajanın dizininin harf ya da rakam olmayan her karakteri `-` yapılmış hali | transkript; dosya oradayken, aynı dizinden, oturum sürdürülebilir. Öteki izler (`debug`, `file-history`, `todos`) aranmaz |
-| Codex | `$CODEX_HOME` ya da `~/.codex`, `sessions/YYYY/MM/DD/rollout-<zaman>-<id>.jsonl` | iş parçacığının rollout'u; imece iş parçacıklarını kalıcı (non-ephemeral) başlattığı için tutulur; `history.persistence="none"` imece'nin turlarını Codex'in küresel mesaj günlüğünün dışında tutar. Codex sizin kendi `~/.codex` yapılandırmanızı yükler (özel bir ev reddedildi: oturum açılamıyordu) |
-| Gemini CLI | `$GEMINI_CLI_HOME` ya da `~/.gemini`, `tmp/<ad>/chats/session-<zaman>-<id8>.jsonl` | `<ad>` Gemini'nin özel dizinle anahtarlanan `projects.json` kaydından gelir; başlangıç başına ikinci, boş bir `session-*.jsonl` Gemini'nin kendi artığıdır; sohbet dosyası başına en çok 50 geçmiş mesajı |
+| Nerede | Notlar |
+| --- | --- |
+| `$CLAUDE_CONFIG_DIR` ya da `~/.claude`, `projects/<slug>/<id>.jsonl`; slug, ajanın dizininin harf ya da rakam olmayan her karakteri `-` yapılmış hali | transkript; dosya oradayken, aynı dizinden, oturum sürdürülebilir. Öteki izler (`debug`, `file-history`, `todos`) aranmaz |
 
-Oturumun kendi dosyalarınızdan hangilerini okuduğu satıcıya göre değişir. Claude Code, standard ve strict altında hiçbirini okumaz: `--restricted`, deponun dosyalarıyla birlikte `~/.claude/CLAUDE.md`'nizi, komutlarınızı ve ayarlarınızı da düşürür; imece yalnızca yukarıdaki depo notlarını iletir. Codex `~/.codex/AGENTS.md`'yi, Gemini `~/.gemini/GEMINI.md`'yi her seviyede okur; Gemini'nin kullanıcı düzeyi hook'ları da geçerli kalır. `--confine open` bütün kurulumunuzu yükler. Her satıcıya her seviyede ulaşması gerekenler, imece'nin yapılandırma dizinindeki kendi `instructions.md` dosyasına yazılır.
+Claude Code, standard ve strict altında kendi dosyalarınızdan hiçbirini okumaz: `--restricted`, deponun dosyalarıyla birlikte `~/.claude/CLAUDE.md`'nizi, komutlarınızı ve ayarlarınızı da düşürür; imece yalnızca yukarıdaki depo notlarını iletir. `--confine open` bütün kurulumunuzu yükler. Her ajana her seviyede ulaşması gerekenler, imece'nin yapılandırma dizinindeki kendi `instructions.md` dosyasına yazılır.
 
 ## `--fresh` ve `:forget`'in sildiği
 
-İkisi de bir ajana satıcı oturumunu unutturur; sonraki mesaj yeni bir oturum başlatır, kaldığı yer anlatılır. `--fresh` başlangıçta hatırlanan her ajan için, `:forget @NAME` biri için yapar. Giden, kendi iş parçacığında (iz nasıl gittiğini söyler: `forgot session <id>: its transcript was removed`):
+İkisi de bir ajana oturumunu unutturur; sonraki mesaj yeni bir oturum başlatır, kaldığı yer anlatılır. `--fresh` başlangıçta hatırlanan her ajan için, `:forget @NAME` biri için yapar. Giden, kendi iş parçacığında (iz nasıl gittiğini söyler: `forgot session <id>: its transcript was removed`):
 
-| Satıcı | Silinen |
-| --- | --- |
-| Claude Code | yukarıdaki transkript dosyası (zaten gitmişse `it had no transcript left`) |
-| Codex | iş parçacığı, onun için başlatılan bir app server üzerinden (`thread/delete`, 30 sn sınır); bu onu Codex'in kendi dizininden de çıkarır, rollout dosyasını elle silmek çıkarmazdı |
-| Gemini CLI | o oturumun `tmp/<ad>/chats/` altındaki sohbet dosyaları (`N chat files were removed`) ve 0 baytlık artıklar; ajan bütünüyle ayrılırken o ad altındaki her şey ve özel dizin |
+Silinen: yukarıdaki transkript dosyası (zaten gitmişse `it had no transcript left`).
 
-Bir yola ya da bir satıcıya yalnızca UUID biçiminde bir kimlik ulaşır. Henüz durması istenmiş bir oturuma önce gitmesi için 4 sn verilir. Ajanın karalama dizini de gider; hemen kenara alınır, böylece hemen ardından başlayan oturum yenisini alır (`its scratch directory was removed`). imece'nin kendisinden başka hiçbir şey silinmez: ajan, kartları, günlük ve worktree kalır. Bir oturum değiştirildiğinde de silinir: kendisininki olmayan bir satıcıda imece'nin `/clear`'ı, bir model geri dönüşü, sınırına çarpınca yenilenen bir oturum. Bkz. [oturumlar](../concepts/sessions.md).
+Bir yola ya da Claude Code'a yalnızca UUID biçiminde bir kimlik ulaşır. Henüz durması istenmiş bir oturuma önce gitmesi için 4 sn verilir. Ajanın karalama dizini de gider; hemen kenara alınır, böylece hemen ardından başlayan oturum yenisini alır (`its scratch directory was removed`). imece'nin kendisinden başka hiçbir şey silinmez: ajan, kartları, günlük ve worktree kalır. Bir oturum değiştirildiğinde de silinir: bir model geri dönüşü, sınırına çarpınca yenilenen bir oturum. Bkz. [oturumlar](../concepts/sessions.md).
 
 ## Yazılmayanlar
 
@@ -141,7 +123,7 @@ Bir yola ya da bir satıcıya yalnızca UUID biçiminde bir kimlik ulaşır. Hen
 - `!cmd` çıktısı terminalinizin ana ekranında kalır; sonu (`O` için, proje başına son 64 KiB) yalnızca bellekte tutulur ve imece bitince gider.
 - `:commit`'in çağrısı `--no-session-persistence` ile çalışır: `~/.claude/projects` altında hiçbir şey, sürdürülecek bir şey yok.
 - Demo, ekran ayarlarınız (`side`, `theme`, `lead`) dışında depoya hiçbir şey yazmaz.
-- Başlıkta gösterilen satıcı kullanım pencereleri saklanmaz; bir oturum ilk turunda yeniden söyler.
+- Başlıkta gösterilen kullanım pencereleri saklanmaz; bir oturum ilk turunda yeniden söyler.
 
 ## Ayrıca bkz.
 

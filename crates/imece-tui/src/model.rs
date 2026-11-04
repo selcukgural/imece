@@ -82,44 +82,8 @@ fn civil_from_days(z: i64) -> (i64, u32, u32) {
 /// Trace lines kept per agent.
 const TRACE_KEEP: usize = 200;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub enum Vendor {
-    Claude,
-    Codex,
-    Gemini,
-    Qwen,
-    Local,
-}
-
-impl Vendor {
-    /// The vendors imece can be asked to lead with, by label.
-    pub fn parse(s: &str) -> Option<Vendor> {
-        [Vendor::Claude, Vendor::Codex, Vendor::Gemini]
-            .into_iter()
-            .find(|v| v.label() == s)
-    }
-
-    pub fn label(self) -> &'static str {
-        match self {
-            Vendor::Claude => "claude",
-            Vendor::Codex => "codex",
-            Vendor::Gemini => "gemini",
-            Vendor::Qwen => "qwen",
-            Vendor::Local => "local",
-        }
-    }
-
-    /// Fake cost of one busy tick, in ten-thousandths of a dollar.
-    pub fn cost_per_tick(self) -> u64 {
-        match self {
-            Vendor::Claude => 8,
-            Vendor::Codex => 7,
-            Vendor::Gemini => 5,
-            Vendor::Qwen => 3,
-            Vendor::Local => 0,
-        }
-    }
-}
+/// The word for Claude Code on the screen and in worker names (`claude-2`).
+pub const CLAUDE: &str = "claude";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Role {
@@ -296,8 +260,8 @@ pub struct Mail {
     pub re: Option<MsgId>,
 }
 
-/// A vendor session an agent had, kept to go on with it after imece
-/// starts again: the vendor's id for it, and what the vendor had reported
+/// A Claude Code session an agent had, kept to go on with it after imece
+/// starts again: Claude Code's id for it, and what Claude Code had reported
 /// as the session's whole cost (millionths of a dollar) when last seen.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Resumable {
@@ -327,9 +291,7 @@ pub enum ProjectRefusal {
     Bus(String),
     /// The last open project stays open.
     Last,
-    /// A solo on a vendor that is not here.
-    Vendor(String),
-    /// A solo's `[MODEL][@EFFORT]` asks for an effort its vendor lacks.
+    /// A solo's `[MODEL][@EFFORT]` asks for an effort Claude Code lacks.
     Choice(String),
     /// A team on a folder that is no git checkout with a first commit:
     /// the folder.
@@ -351,9 +313,6 @@ impl ProjectRefusal {
             }
             ProjectRefusal::Bus(why) => format!("the leader could not get a socket: {why}"),
             ProjectRefusal::Last => "the last open project stays open".into(),
-            ProjectRefusal::Vendor(v) => {
-                format!("{v} is not on PATH here, or imece does not drive it")
-            }
             ProjectRefusal::Choice(why) => why.clone(),
             ProjectRefusal::Gone(path) => format!("{path} is not there any more"),
         }
@@ -367,7 +326,7 @@ impl ProjectRefusal {
 pub fn no_git_team(path: &str) -> String {
     format!(
         "{path} is not a git checkout with a commit: a team works in git worktrees. \
-         A solo works here without git (--solo VENDOR, :solo); or run \
+         A solo works here without git (--solo claude, :solo); or run \
          git init && git commit --allow-empty -m init first"
     )
 }
@@ -509,7 +468,6 @@ pub struct Agent {
     pub id: AgentId,
     pub project: ProjectId,
     pub name: String,
-    pub vendor: Vendor,
     pub role: Role,
     pub status: Status,
     pub card: Option<CardId>,
@@ -544,7 +502,7 @@ pub struct Agent {
     /// checkout) and has not answered yet: `◌ starting…` on its row.
     pub starting: bool,
     /// The agent's own command line as its session reported it (`/clear`,
-    /// `/compact` ...), imece's `/clear` added where the vendor has none;
+    /// `/compact` ...), imece's `/clear` added where Claude Code has none;
     /// empty until a session says. The composer completes with it.
     pub commands: Vec<String>,
     /// Where a worker's worktree stands next to its project's checkout, as
@@ -558,20 +516,20 @@ pub struct Agent {
     /// The newest loopback URL the agent wrote in its text this session
     /// (`local_url`), drawn on its row as a link the terminal opens.
     pub local: Option<String>,
-    /// Its own to-do list, as its vendor's planning tool last set it
+    /// Its own to-do list, as Claude Code's task tools last set it
     /// (`imece_agent::Event::Plan`): `≡ 3/7` on its row, the steps on its
     /// focus. Gone with the session; not kept between runs.
     pub plan: Vec<Step>,
-    /// How full its context window is, as its vendor last said
+    /// How full its context window is, as Claude Code last said
     /// (`imece_agent::Event::Context`): `◔ 72%` on its row from
     /// `CONTEXT_SHOWN`, the figure on its focus. Gone with the session;
     /// not kept between runs.
     pub context: Option<Fill>,
-    /// When imece tries its failed turn again after a passing vendor
+    /// When imece tries its failed turn again after a passing API
     /// error, and which try that is (`↻ 1/3` on its row); none when no
     /// retry waits. Memory only.
     pub retry: Option<Retry>,
-    /// The tries of a turn that keeps failing on passing vendor errors:
+    /// The tries of a turn that keeps failing on passing API errors:
     /// none after a good turn or the person's word. Memory only.
     pub tries: u8,
     /// The person said yes to everything this agent asks until its turn
@@ -583,7 +541,7 @@ pub struct Agent {
     /// (record 107), for its row and `:why`. Memory only: whoever drives
     /// the agent sets it again.
     pub held_mail: usize,
-    /// The fault its vendor said the turn now ending failed on, taken by
+    /// The fault Claude Code said the turn now ending failed on, taken by
     /// that turn's end (`imece_agent::Event::Failed`). Memory only.
     pub fault: Option<Fault>,
     /// A researcher that finished; kept so ids stay stable.
@@ -599,12 +557,12 @@ pub struct Retry {
     pub at: u64,
 }
 
-/// After a passing vendor error, a turn is tried again this many ticks
+/// After a passing API error, a turn is tried again this many ticks
 /// after it failed, one entry per try: 30 s, 2 min, 8 min. When they are
 /// used up the error waits for the person.
 pub const RETRY_TICKS: [u64; 3] = [6, 24, 96];
 
-/// Why a turn failed on the vendor's side, as far as imece acts on it
+/// Why a turn failed on Claude Code's side, as far as imece acts on it
 /// (`imece_agent::Fault`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Fault {
@@ -631,7 +589,7 @@ pub enum StepState {
 }
 
 /// How full an agent's context window is: the tokens in it, and its size
-/// when the vendor says.
+/// when Claude Code says.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Fill {
     pub used: u64,
@@ -669,7 +627,6 @@ impl Agent {
         id: AgentId,
         project: ProjectId,
         name: String,
-        vendor: Vendor,
         role: Role,
         status: Status,
         tick: u64,
@@ -678,7 +635,6 @@ impl Agent {
             id,
             project,
             name,
-            vendor,
             role,
             status,
             card: None,
@@ -1214,10 +1170,10 @@ pub enum Fresh {
     /// It had none to go on with: never one, or forgotten, or cleared.
     #[default]
     NoSession,
-    /// Its session was not where its vendor keeps it (a Claude transcript
+    /// Its session was not where Claude Code keeps it (a transcript
     /// gone, an id that is no session's).
     Missing,
-    /// Its vendor would not go on with it; the vendor's words, cut.
+    /// Claude Code would not go on with it; its words, cut.
     Refused(String),
 }
 
@@ -1335,8 +1291,8 @@ pub enum Event {
         agent: AgentId,
         why: String,
     },
-    /// A live agent's turn failed on a passing vendor error (`why` in the
-    /// vendor's words); imece tries it again `seconds` later, the
+    /// A live agent's turn failed on a passing API error (`why` in the
+    /// Claude Code's words); imece tries it again `seconds` later, the
     /// `attempt`th time.
     Retrying {
         agent: AgentId,
@@ -1373,7 +1329,7 @@ pub enum Event {
         card: CardId,
     },
     /// A live leader hired a worker; `model` is the one it was given, or
-    /// none for the vendor's own default; `from` the start point its
+    /// none for Claude Code's own default; `from` the start point its
     /// worktree was asked to start from, none for the checkout's HEAD.
     Hired {
         by: AgentId,
@@ -1394,7 +1350,7 @@ pub enum Event {
         agent: AgentId,
     },
     /// A live agent's model was not available here; it runs on the
-    /// vendor's default from now on.
+    /// Claude Code's default from now on.
     Fallback {
         agent: AgentId,
         model: String,
@@ -1479,19 +1435,19 @@ pub enum Event {
     },
     /// The person made an agent forget its session (`:forget`, or every
     /// agent's with `--fresh`): the next message starts a new one, told
-    /// where it left off, and what the vendor kept of the old one is gone.
+    /// where it left off, and what Claude Code kept of the old one is gone.
     Forgotten {
         agent: AgentId,
     },
     /// The person changed what a solo runs on (`:model`, `:effort`):
-    /// `choice` is the vendor and the `[MODEL][@EFFORT]`, as the row shows
+    /// `choice` is Claude Code and the `[MODEL][@EFFORT]`, as the row shows
     /// it. Its session starts again on it.
     Chose {
         agent: AgentId,
         choice: String,
     },
     /// Agent `agent`'s session said nothing about its own command line
-    /// where its vendor's format puts it (not an empty list: no list): the
+    /// where Claude Code's format puts it (not an empty list: no list): the
     /// format may have changed, and only imece's `/clear` completes. Once
     /// a session.
     CommandsMissing {
@@ -1499,7 +1455,7 @@ pub enum Event {
     },
     /// imece started with the confine dial at `level` (`standard` or
     /// `open`, never strict: that has nothing to say): the agents' sessions
-    /// get their vendor's shell and web, and isolation is a container's
+    /// get Claude Code's shell and web, and isolation is a container's
     /// job, not imece's. Once per start, on the project imece runs in.
     Confine {
         leader: AgentId,
@@ -1614,7 +1570,6 @@ pub enum Event {
     /// never a gate (`:review`, record 106).
     Reviewed {
         agent: AgentId,
-        by: Vendor,
         model: String,
         patch: String,
         text: String,
@@ -1866,10 +1821,10 @@ pub enum InboxKind {
     /// the person allows or refuses it. Closes with the decision or when
     /// the session ends.
     Approval,
-    /// A live agent's turn failed on a vendor error only the person mends
+    /// A live agent's turn failed on a API error only the person mends
     /// (the account: signed out, a key, a quota, a bill), or on a passing
     /// one imece tried again until its tries ran out; the detail is the
-    /// vendor's words. Closes when the person writes to the agent.
+    /// Claude Code's words. Closes when the person writes to the agent.
     Fault,
     /// The checkout's worktree setup script (record 92) waits for the
     /// person's yes to its exact bytes before it runs in a new worktree;
@@ -1953,7 +1908,7 @@ pub struct Change {
     pub patch: String,
     /// imece's `run`s on exactly the tree the change makes, the last of
     /// each command, oldest first: what says it was built or tested as it
-    /// is. A vendor's own shell does not count; imece can not see what
+    /// is. A Claude Code's own shell does not count; imece can not see what
     /// that ran on, nor always how it ended.
     pub runs: Vec<Ran>,
 }
@@ -1975,14 +1930,13 @@ impl Ran {
     }
 }
 
-/// What a vendor other than the worker's said of its change (`:review`,
+/// What a fresh Claude Code session said of a worker's change (`:review`,
 /// record 106): advisory, never a gate. Kept while the change it read
 /// waits; a newer change of the worker is not the one it read.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Review {
     /// The patch it read, as [`patch_sum`] gives it.
     pub patch: String,
-    pub by: Vendor,
     pub model: String,
     pub text: String,
     /// Ten-thousandths of a dollar, from the pot.
@@ -2056,8 +2010,8 @@ pub struct World {
     /// runs (`setup::Script::key`: how, the bytes' hash, the real path),
     /// oldest first, at most [`SETUP_KEPT`].
     pub setup_approved: Vec<String>,
-    /// What the vendors last said of their plans' usage windows, one
-    /// entry per vendor and window. Not kept between runs: a session
+    /// What Claude Code last said of the plan's usage windows, one entry
+    /// per window. Not kept between runs: a session
     /// says it again.
     pub limits: Vec<Limit>,
     /// What imece's own paid calls cost (the suggested commit messages),
@@ -2068,7 +2022,7 @@ pub struct World {
     /// A commit message suggested for a project's staged changes, until
     /// the screen puts it on the command line.
     pub suggested: Option<Suggestion>,
-    /// What another vendor said of each waiting change, by worker
+    /// What a fresh session said of each waiting change, by worker
     /// (`:review`): only of the change that waits now.
     pub reviews: HashMap<AgentId, Review>,
     /// What of a worker's waiting change did not fit the checkout, when
@@ -2161,11 +2115,10 @@ pub enum TornDown {
     Refused,
 }
 
-/// One window of a vendor plan's usage limit, as the vendor last said it
+/// One window of the plan's usage limit, as Claude Code last said it
 /// (`imece_agent::Limit`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Limit {
-    pub vendor: Vendor,
     /// Its length in minutes (300: five hours).
     pub minutes: u32,
     /// Percent used, at most 100.
@@ -2205,32 +2158,20 @@ impl World {
         });
     }
 
-    /// A vendor said how much of one of its windows is used: that window
-    /// is as it says now; the others stay as they were.
+    /// Claude Code said how much of a window is used: that window is as it
+    /// says now; the others stay as they were.
     pub fn limit(&mut self, l: Limit) {
-        let same = |k: &&mut Limit| k.vendor == l.vendor && k.minutes == l.minutes;
-        match self.limits.iter_mut().find(same) {
+        match self.limits.iter_mut().find(|k| k.minutes == l.minutes) {
             Some(k) => *k = l,
             None => self.limits.push(l),
         }
     }
 
-    /// Each vendor's window nearest to full (the most used; the shorter
-    /// one on a tie), vendors in the order they first said one.
-    pub fn tightest(&self) -> Vec<Limit> {
-        let mut vendors: Vec<Vendor> = Vec::new();
-        for l in &self.limits {
-            if !vendors.contains(&l.vendor) {
-                vendors.push(l.vendor);
-            }
-        }
-        let fullest = |v: Vendor| {
-            (self.limits.iter())
-                .filter(|l| l.vendor == v)
-                .max_by_key(|l| (l.used, std::cmp::Reverse(l.minutes)))
-                .copied()
-        };
-        vendors.into_iter().filter_map(fullest).collect()
+    /// The window nearest to full: the most used, the shorter one on a tie.
+    pub fn tightest(&self) -> Option<Limit> {
+        (self.limits.iter())
+            .max_by_key(|l| (l.used, std::cmp::Reverse(l.minutes)))
+            .copied()
     }
 
     /// The agent called `name` that can be reached: not gone, and not in
@@ -2328,42 +2269,28 @@ impl World {
     }
 
     /// Project `reuse` opens again, else a new project is added, named
-    /// `name`, its checkout at `path`, led by a new agent on `vendor` with
-    /// the next id. Returns the project's id.
+    /// `name`, its checkout at `path`, led by a new agent with the next
+    /// id. Returns the project's id.
     pub fn open_project(
         &mut self,
         reuse: Option<ProjectId>,
         name: String,
         path: String,
-        vendor: Vendor,
         role: Role,
     ) -> ProjectId {
-        let p = self.add_project(reuse, name, vendor, role);
+        let p = self.add_project(reuse, name, role);
         let leader = self.projects[p].leader;
         self.note(Event::Opened { leader, path });
         p
     }
 
     /// [`open_project`](Self::open_project) without the journal's line.
-    fn add_project(
-        &mut self,
-        reuse: Option<ProjectId>,
-        name: String,
-        vendor: Vendor,
-        role: Role,
-    ) -> ProjectId {
+    fn add_project(&mut self, reuse: Option<ProjectId>, name: String, role: Role) -> ProjectId {
         let p = reuse.unwrap_or(self.projects.len());
         let leader = self.agents.len();
         let lead = World::head_name(p, &name, role);
-        self.agents.push(Agent::new(
-            leader,
-            p,
-            lead,
-            vendor,
-            role,
-            Status::Idle,
-            self.tick,
-        ));
+        self.agents
+            .push(Agent::new(leader, p, lead, role, Status::Idle, self.tick));
         match reuse {
             Some(p) => {
                 let project = &mut self.projects[p];
@@ -2427,18 +2354,15 @@ impl World {
     /// Project `p` is archived as `title`: closed, its agents asleep with
     /// all they had (their inbox items, changes and cards wait out of
     /// sight), and a fresh project takes its place: the same kind, name,
-    /// pin and copies, its head on the same vendor and called the same.
+    /// pin and copies, its head called the same.
     /// Returns the fresh project's id.
     pub fn archive_project(&mut self, p: ProjectId, title: String) -> ProjectId {
         let was = self.projects[p].leader;
-        let (vendor, role, head) = {
-            let a = &self.agents[was];
-            (a.vendor, a.role, a.name.clone())
-        };
+        let (role, head) = (self.agents[was].role, self.agents[was].name.clone());
         self.shelve(p, title.clone());
         let q = &self.projects[p];
         let (name, pinned, copies) = (q.name.clone(), q.pinned, q.copies.clone());
-        let fresh = self.add_project(None, name, vendor, role);
+        let fresh = self.add_project(None, name, role);
         let leader = self.projects[fresh].leader;
         self.agents[leader].name = head;
         self.projects[fresh].pinned = pinned;
@@ -3037,7 +2961,6 @@ impl World {
             .is_some_and(|c| patch_sum(&c.patch) == review.patch);
         self.note(Event::Reviewed {
             agent,
-            by: review.by,
             model: review.model.clone(),
             patch: review.patch.clone(),
             text: review.text.clone(),
@@ -3059,14 +2982,12 @@ impl World {
             let found = self.journal.iter().rev().find_map(|e| match &e.event {
                 Event::Reviewed {
                     agent,
-                    by,
                     model,
                     patch,
                     text,
                     cost,
                 } if *agent == c.agent && *patch == sum => Some(Review {
                     patch: patch.clone(),
-                    by: *by,
                     model: model.clone(),
                     text: text.clone(),
                     cost: *cost,
@@ -3127,8 +3048,8 @@ impl World {
         }
     }
 
-    /// A turn of agent `id` failed, `why` in the vendor's words, `fault`
-    /// its kind when the vendor said: a passing one is tried again after
+    /// A turn of agent `id` failed, `why` in Claude Code's words, `fault`
+    /// its kind when Claude Code said: a passing one is tried again after
     /// the next of [`RETRY_TICKS`], until they are used up; that one and
     /// an account's wait for the person in the inbox; any failure else
     /// is said in the journal alone. The caller has made the agent idle.
@@ -3189,7 +3110,7 @@ impl World {
     }
 
     /// The person wrote to agent `id`, or its session ended: what it
-    /// waited on for a vendor error closes.
+    /// waited on for a API error closes.
     pub fn close_faults(&mut self, id: AgentId) {
         for i in &mut self.inbox {
             if i.kind == InboxKind::Fault && i.agent == id {
@@ -3334,19 +3255,6 @@ impl World {
         });
     }
 
-    /// What the `nth` of agent `id`'s open approvals asks waits no more
-    /// (its session settled it): it closes, and nobody decided.
-    pub fn withdrew(&mut self, id: AgentId, nth: usize) {
-        if let Some(i) = self
-            .inbox
-            .iter_mut()
-            .filter(|i| i.open && i.kind == InboxKind::Approval && i.agent == id)
-            .nth(nth)
-        {
-            i.open = false;
-        }
-    }
-
     /// Agent `id`'s session is over: what it asked waits for nobody.
     /// The person said yes to the setup script `key`: kept, the newest
     /// last, the oldest let go past [`SETUP_KEPT`].
@@ -3444,9 +3352,9 @@ fn clock_seconds(tick: u64) -> String {
 
 /// Ten-thousandths of a dollar as `$D.CC`; a cost under a cent that is not
 /// zero reads `<$0.01`, so cheap work never looks free.
-/// Whether `s` may go to a vendor as a model choice (`[MODEL][@EFFORT]`):
+/// Whether `s` may go to Claude Code as a model choice (`[MODEL][@EFFORT]`):
 /// 1-64 of letters, digits and `-._[]@`, not starting with `-`, so it can
-/// never pass as a flag. Model names as the vendors take them: `sonnet`,
+/// never pass as a flag. Model names as Claude Code takes them: `sonnet`,
 /// `claude-opus-5-5`, `opus[1m]`, `gpt-5.6-terra@high`.
 pub fn valid_model(s: &str) -> bool {
     (1..=64).contains(&s.len())
@@ -3455,23 +3363,22 @@ pub fn valid_model(s: &str) -> bool {
             .all(|b| b.is_ascii_alphanumeric() || b"-._[]@".contains(&b))
 }
 
-/// `VENDOR[:MODEL][@EFFORT]` as `--solo` and `:solo` take it: the vendor,
-/// and the `[MODEL][@EFFORT]` choice after it (`claude`, `claude:opus`,
-/// `claude@xhigh`, `codex:gpt-5.6-terra@high`), none for the vendor's
-/// own. None when the vendor is not one imece leads with, or the choice
-/// is not a model choice.
-pub fn vendor_choice(s: &str) -> Option<(Vendor, Option<String>)> {
+/// `claude[:MODEL][@EFFORT]` as `--solo` and `:solo` take it (`claude`,
+/// `claude:opus`, `claude@xhigh`): the `[MODEL][@EFFORT]` choice after the
+/// word, none for Claude Code's own. None when the word is not there, or
+/// the choice is not a model choice: the word keeps a choice apart from a
+/// path or a name.
+pub fn solo_choice(s: &str) -> Option<Option<String>> {
     let cut = s.find([':', '@']).unwrap_or(s.len());
-    let vendor = Vendor::parse(&s[..cut])?;
-    let rest = &s[cut..];
-    let choice = match rest.strip_prefix(':') {
-        Some(c) => c,
-        None => rest,
-    };
-    if choice.is_empty() {
-        return Some((vendor, None));
+    if s[..cut] != *CLAUDE {
+        return None;
     }
-    valid_model(choice).then(|| (vendor, Some(choice.to_string())))
+    let rest = &s[cut..];
+    let choice = rest.strip_prefix(':').unwrap_or(rest);
+    if choice.is_empty() {
+        return Some(None);
+    }
+    valid_model(choice).then(|| Some(choice.to_string()))
 }
 
 /// Dollars as typed (`5`, `2.50`), in ten-thousandths of a dollar.
@@ -3549,15 +3456,7 @@ mod tests {
         assert_eq!(fill(0, Some(200_000)).percent(), Some(0));
         assert_eq!((CONTEXT_SHOWN, CONTEXT_LOUD), (70, 90));
         // Leaving forgets it.
-        let mut a = Agent::new(
-            0,
-            0,
-            "a".into(),
-            Vendor::Claude,
-            Role::Worker,
-            Status::Idle,
-            0,
-        );
+        let mut a = Agent::new(0, 0, "a".into(), Role::Worker, Status::Idle, 0);
         assert_eq!(a.context, None);
         a.context = Some(fill(1, Some(2)));
         let mut w = world(vec![a]);
@@ -3571,15 +3470,7 @@ mod tests {
             text: "s".into(),
             state,
         };
-        let mut a = Agent::new(
-            0,
-            0,
-            "a".into(),
-            Vendor::Claude,
-            Role::Worker,
-            Status::Idle,
-            0,
-        );
+        let mut a = Agent::new(0, 0, "a".into(), Role::Worker, Status::Idle, 0);
         assert_eq!(a.plan_count(), (0, 0));
         a.plan = vec![
             step(StepState::Done),
@@ -3745,15 +3636,7 @@ mod tests {
 
     #[test]
     fn what_an_agent_writes_keeps_its_newest_loopback_url() {
-        let mut a = Agent::new(
-            0,
-            0,
-            "w".into(),
-            Vendor::Claude,
-            Role::Worker,
-            Status::Idle,
-            0,
-        );
+        let mut a = Agent::new(0, 0, "w".into(), Role::Worker, Status::Idle, 0);
         a.wrote("thinking");
         assert_eq!(a.local, None);
         a.wrote("runs at http://localhost:5173/");
@@ -3784,7 +3667,7 @@ mod tests {
     }
 
     fn agent(id: AgentId, role: Role, status: Status) -> Agent {
-        Agent::new(id, 0, format!("a{id}"), Vendor::Claude, role, status, 0)
+        Agent::new(id, 0, format!("a{id}"), role, status, 0)
     }
 
     fn world(agents: Vec<Agent>) -> World {
@@ -3870,7 +3753,6 @@ mod tests {
             text: "hi".into(),
         });
         w.limits.push(Limit {
-            vendor: Vendor::Claude,
             minutes: 300,
             used: 50,
             resets_at: None,
@@ -4026,36 +3908,27 @@ mod tests {
     #[test]
     fn a_window_said_again_replaces_its_old_self_and_the_tightest_shows() {
         let mut w = world(vec![agent(0, Role::Leader, Status::Idle)]);
-        let at = |vendor, minutes, used| Limit {
-            vendor,
+        let at = |minutes, used| Limit {
             minutes,
             used,
             resets_at: Some(u64::from(minutes)),
         };
-        w.limit(at(Vendor::Codex, 300, 10));
-        w.limit(at(Vendor::Claude, 300, 40));
-        w.limit(at(Vendor::Claude, 10_080, 40));
+        assert_eq!(w.tightest(), None);
+        w.limit(at(300, 10));
+        w.limit(at(10_080, 40));
         // The same window again: replaced, not added.
-        w.limit(at(Vendor::Codex, 300, 30));
-        assert_eq!(w.limits.len(), 3);
-        // Codex first (it said one first); Claude's tie goes to the
-        // shorter window.
-        assert_eq!(
-            w.tightest(),
-            [at(Vendor::Codex, 300, 30), at(Vendor::Claude, 300, 40)]
-        );
-        // The week fills up past the five hours: it is the tightest.
-        w.limit(at(Vendor::Claude, 10_080, 41));
-        assert_eq!(w.tightest()[1], at(Vendor::Claude, 10_080, 41));
+        w.limit(at(300, 30));
+        assert_eq!(w.limits.len(), 2);
+        assert_eq!(w.tightest(), Some(at(10_080, 40)));
+        // The five hours fill up past the week: it is the tightest.
+        w.limit(at(300, 41));
+        assert_eq!(w.tightest(), Some(at(300, 41)));
         // A later, emptier window does not take the place.
-        w.limit(at(Vendor::Codex, 10_080, 29));
-        assert_eq!(w.tightest()[0], at(Vendor::Codex, 300, 30));
-        w.limit(at(Vendor::Codex, 60, 30));
-        assert_eq!(
-            w.tightest()[0],
-            at(Vendor::Codex, 60, 30),
-            "a tie: the shorter"
-        );
+        w.limit(at(10_080, 29));
+        assert_eq!(w.tightest(), Some(at(300, 41)));
+        // A tie: the shorter.
+        w.limit(at(60, 41));
+        assert_eq!(w.tightest(), Some(at(60, 41)), "a tie: the shorter");
         // Its clock: the first start and the ticks since.
         w.started_at = 1_000;
         w.tick = 3;
@@ -4216,13 +4089,7 @@ mod tests {
     fn a_folder_without_git_is_marked_and_said() {
         let mut w = world(vec![]);
         w.projects.clear();
-        let p = w.open_project(
-            None,
-            "notes".into(),
-            "/n".into(),
-            Vendor::Claude,
-            Role::Solo,
-        );
+        let p = w.open_project(None, "notes".into(), "/n".into(), Role::Solo);
         let leader = w.projects[p].leader;
         let journal = w.journal.len();
         w.set_no_git(p, None);
@@ -4248,18 +4115,12 @@ mod tests {
         w.projects.clear();
         w.tick = 9;
         assert_eq!(
-            w.open_project(
-                None,
-                "home".into(),
-                "/h".into(),
-                Vendor::Claude,
-                Role::Leader
-            ),
+            w.open_project(None, "home".into(), "/h".into(), Role::Leader),
             0
         );
         assert_eq!(w.agents[0].name, "lead", "the first project's leader");
         assert_eq!(
-            w.open_project(None, "api".into(), "/a".into(), Vendor::Codex, Role::Leader),
+            w.open_project(None, "api".into(), "/a".into(), Role::Leader),
             1
         );
         let a = &w.agents[1];
@@ -4268,20 +4129,11 @@ mod tests {
                 a.id,
                 a.project,
                 a.name.as_str(),
-                a.vendor,
                 a.role,
                 a.status,
                 a.changed_at
             ),
-            (
-                1,
-                1,
-                "lead-api",
-                Vendor::Codex,
-                Role::Leader,
-                Status::Idle,
-                9
-            )
+            (1, 1, "lead-api", Role::Leader, Status::Idle, 9)
         );
         let p = &w.projects[1];
         assert_eq!(
@@ -4301,13 +4153,7 @@ mod tests {
         ));
         w.close_project(1);
         assert_eq!(
-            w.open_project(
-                Some(1),
-                "api2".into(),
-                "/a".into(),
-                Vendor::Claude,
-                Role::Leader
-            ),
+            w.open_project(Some(1), "api2".into(), "/a".into(), Role::Leader),
             1
         );
         assert_eq!(w.projects.len(), 2, "reopened in place");
@@ -4323,13 +4169,7 @@ mod tests {
             agent(0, Role::Leader, Status::Idle),
             agent(1, Role::Worker, Status::Working),
         ]);
-        w.open_project(
-            None,
-            "api".into(),
-            "/a".into(),
-            Vendor::Claude,
-            Role::Leader,
-        );
+        w.open_project(None, "api".into(), "/a".into(), Role::Leader);
         let mut worker = agent(3, Role::Worker, Status::Working);
         worker.project = 1;
         w.agents.push(worker);
@@ -4400,10 +4240,10 @@ mod tests {
         let mut w = world(vec![agent(0, Role::Leader, Status::Idle)]);
         assert_eq!(free_project_name(&w, "shop"), "shop");
         assert_eq!(free_project_name(&w, "p"), "p-2", "p is open");
-        w.open_project(None, "p-2".into(), "/r".into(), Vendor::Claude, Role::Solo);
+        w.open_project(None, "p-2".into(), "/r".into(), Role::Solo);
         assert_eq!(free_project_name(&w, "p"), "p-3");
         let long = "a".repeat(24);
-        w.open_project(None, long.clone(), "/r".into(), Vendor::Claude, Role::Solo);
+        w.open_project(None, long.clone(), "/r".into(), Role::Solo);
         let next = free_project_name(&w, &long);
         assert_eq!(next, format!("{}-2", "a".repeat(22)));
         assert!(valid_project_name(&next));
@@ -4416,54 +4256,39 @@ mod tests {
     }
 
     #[test]
-    fn a_vendor_choice_is_the_vendor_then_a_model_and_or_an_effort() {
-        let some = |s: &str| Some(s.to_string());
-        assert_eq!(vendor_choice("claude"), Some((Vendor::Claude, None)));
-        assert_eq!(vendor_choice("claude:"), Some((Vendor::Claude, None)));
-        assert_eq!(
-            vendor_choice("claude:opus"),
-            Some((Vendor::Claude, some("opus")))
-        );
-        assert_eq!(
-            vendor_choice("claude@xhigh"),
-            Some((Vendor::Claude, some("@xhigh")))
-        );
-        assert_eq!(
-            vendor_choice("claude:@max"),
-            Some((Vendor::Claude, some("@max")))
-        );
-        assert_eq!(
-            vendor_choice("codex:gpt-5.6-terra@high"),
-            Some((Vendor::Codex, some("gpt-5.6-terra@high")))
-        );
-        assert_eq!(
-            vendor_choice("gemini:pro"),
-            Some((Vendor::Gemini, some("pro")))
-        );
+    fn a_solo_choice_is_claude_then_a_model_and_or_an_effort() {
+        let some = |s: &str| Some(Some(s.to_string()));
+        assert_eq!(solo_choice("claude"), Some(None));
+        assert_eq!(solo_choice("claude:"), Some(None));
+        assert_eq!(solo_choice("claude:opus"), some("opus"));
+        assert_eq!(solo_choice("claude@xhigh"), some("@xhigh"));
+        assert_eq!(solo_choice("claude:@max"), some("@max"));
+        assert_eq!(solo_choice("claude:opus@high"), some("opus@high"));
         for bad in [
             "",
-            "qwen",
-            "qwen:big",
+            "codex",
+            "gemini:pro",
             "claude:-x",
             "claude:a b",
             "Claude",
             "notes",
+            "claudes",
         ] {
-            assert_eq!(vendor_choice(bad), None, "{bad:?}");
+            assert_eq!(solo_choice(bad), None, "{bad:?}");
         }
     }
 
     #[test]
     fn a_model_choice_can_not_pass_as_a_flag() {
         assert!(valid_model("sonnet") && valid_model("opus[1m]") && valid_model("claude-opus-5-5"));
-        assert!(valid_model("@low") && valid_model("gpt-5.6-terra@xhigh"));
+        assert!(valid_model("@low") && valid_model("claude-opus-5-5@xhigh"));
         for bad in [
             "",
             "--dangerously-skip-permissions",
             "a b",
             "x;y",
             "m/../n",
-            "codex:x",
+            "claude:x",
         ] {
             assert!(!valid_model(bad), "{bad}");
         }
@@ -4473,13 +4298,13 @@ mod tests {
     #[test]
     fn a_solo_project_s_head_is_the_solo_agent_and_renames_as_one() {
         let mut w = world(vec![agent(0, Role::Leader, Status::Idle)]);
-        let p = w.open_project(None, "notes".into(), "/r".into(), Vendor::Codex, Role::Solo);
+        let p = w.open_project(None, "notes".into(), "/r".into(), Role::Solo);
         assert_eq!(p, 1);
         let head = w.projects[p].leader;
         let a = &w.agents[head];
         assert_eq!(
-            (a.name.as_str(), a.role, a.vendor, a.project, a.status),
-            ("solo-notes", Role::Solo, Vendor::Codex, 1, Status::Idle)
+            (a.name.as_str(), a.role, a.project, a.status),
+            ("solo-notes", Role::Solo, 1, Status::Idle)
         );
         assert!(w.is_solo(1) && !w.is_solo(0));
         w.rename_project(1, "ideas".into());
@@ -4892,20 +4717,6 @@ mod tests {
     }
 
     #[test]
-    fn vendors_cost_what_they_cost() {
-        let costs: Vec<u64> = [
-            Vendor::Claude,
-            Vendor::Codex,
-            Vendor::Gemini,
-            Vendor::Qwen,
-            Vendor::Local,
-        ]
-        .map(Vendor::cost_per_tick)
-        .to_vec();
-        assert_eq!(costs, [8, 7, 5, 3, 0]);
-    }
-
-    #[test]
     fn what_the_person_says_shows_for_a_moment() {
         let mut w = world(vec![agent(0, Role::Leader, Status::Idle)]);
         w.tick = 3;
@@ -4954,7 +4765,6 @@ mod tests {
     fn review(patch: &str, text: &str) -> Review {
         Review {
             patch: patch_sum(patch),
-            by: Vendor::Codex,
             model: "gpt-6-luna".into(),
             text: text.into(),
             cost: 7,
@@ -4983,7 +4793,6 @@ mod tests {
             w.journal.last().unwrap().event,
             Event::Reviewed {
                 agent: 1,
-                by: Vendor::Codex,
                 model: "gpt-6-luna".into(),
                 patch: read.patch.clone(),
                 text: "1. x: no test.".into(),
@@ -5194,7 +5003,7 @@ mod tests {
         assert_eq!(w.retries_due(), [1], "mid-turn, gone, later: not due");
         w.tick = 11;
         assert_eq!(w.retries_due(), [1, 4]);
-        // Only its own vendor errors close for an agent.
+        // Only its own API errors close for an agent.
         w.inbox.push(item(InboxKind::Fault, 1, true));
         w.inbox.push(item(InboxKind::Question, 1, true));
         w.inbox.push(item(InboxKind::Fault, 4, true));
@@ -5367,35 +5176,6 @@ mod tests {
             allowed: true,
         };
         assert_eq!((e.kind(), e.agent()), (EntryKind::Person, 2));
-    }
-
-    #[test]
-    fn a_withdrawn_ask_is_the_nth_open_one_of_its_agent_and_nobody_decided_it() {
-        let mut w = world(vec![
-            agent(0, Role::Leader, Status::Idle),
-            agent(1, Role::Worker, Status::Working),
-        ]);
-        w.asks_you(1, "shell: make a");
-        w.asked_you(1, "Which?");
-        w.asks_you(0, "Bash: make lead");
-        w.asks_you(1, "shell: make b");
-        w.asks_you(1, "shell: make c");
-        w.decided(0, true);
-        let journal = w.journal.len();
-        // The first open one of agent 1 is now `make b`: the decided one,
-        // the question and the leader's ask do not count.
-        w.withdrew(1, 0);
-        let open: Vec<_> = w
-            .open_inbox()
-            .iter()
-            .map(|&i| w.inbox[i].detail.as_str())
-            .collect();
-        assert_eq!(open, ["Which?", "Bash: make lead", "shell: make c"]);
-        assert_eq!(w.journal.len(), journal);
-        w.withdrew(1, 1);
-        assert!(w.has_approval(1), "there is no second one");
-        w.withdrew(1, 0);
-        assert!(!w.has_approval(1) && w.has_approval(0) && w.has_question(1));
     }
 
     #[test]
@@ -5789,7 +5569,6 @@ mod tests {
             3,
             1,
             "lead-q".into(),
-            Vendor::Codex,
             Role::Leader,
             Status::Idle,
             0,
@@ -5836,8 +5615,8 @@ mod tests {
         assert!(fresh.archived.is_none());
         let lead = &w.agents[4];
         assert_eq!(
-            (lead.name.as_str(), lead.project, lead.role, lead.vendor),
-            ("lead", 2, Role::Leader, Vendor::Claude)
+            (lead.name.as_str(), lead.project, lead.role),
+            ("lead", 2, Role::Leader)
         );
         for id in 0..3 {
             assert_eq!(
@@ -6031,7 +5810,6 @@ mod tests {
             1,
             1,
             "lead-q".into(),
-            Vendor::Claude,
             Role::Leader,
             Status::Idle,
             0,
@@ -6042,7 +5820,6 @@ mod tests {
             2,
             1,
             "claude-1".into(),
-            Vendor::Claude,
             Role::Worker,
             Status::Idle,
             0,
@@ -6122,15 +5899,8 @@ mod tests {
         assert_ne!(then, today);
         assert_eq!(w.archive_title(0), format!("p {today} → {then}"));
         // Only its own lines count.
-        w.agents.push(Agent::new(
-            1,
-            1,
-            "x".into(),
-            Vendor::Claude,
-            Role::Leader,
-            Status::Idle,
-            0,
-        ));
+        w.agents
+            .push(Agent::new(1, 1, "x".into(), Role::Leader, Status::Idle, 0));
         w.journal[0].event = Event::Failed { agent: 1 };
         w.journal.push(Entry {
             tick: w.tick,

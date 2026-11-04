@@ -37,7 +37,7 @@ Sayım bitince:
  kule “v1 fixes” adıyla arşivlendi: agent'ları her şeyiyle uyuyor; yerine yenisi açıldı
 ```
 
-Salon yine `kule`'yi gösterir, `lead`'i tek başına ve boşta: aynı çalışma kopyasında, aynı adla, aynı iğneyle ve aynı `:copy` listesiyle yeni bir proje; lideri aynı satıcı ve modelde. Günlükte tek bir yeni satır vardır, `› kule projesini “v1 fixes” adıyla arşivledin; yerine yeni bir kule açıldı`; eski satırlar, panodaki ve kuyruktaki eski kartlar, SENİ BEKLEYEN'deki eski kalemler ekrandan gitmiştir. `@lead` yeni lidere ulaşır.
+Salon yine `kule`'yi gösterir, `lead`'i tek başına ve boşta: aynı çalışma kopyasında, aynı adla, aynı iğneyle ve aynı `:copy` listesiyle yeni bir proje; lideri aynı modelde. Günlükte tek bir yeni satır vardır, `› kule projesini “v1 fixes” adıyla arşivledin; yerine yeni bir kule açıldı`; eski satırlar, panodaki ve kuyruktaki eski kartlar, SENİ BEKLEYEN'deki eski kalemler ekrandan gitmiştir. `@lead` yeni lidere ulaşır.
 
 Ona ilk günkü gibi yazın:
 
@@ -51,10 +51,10 @@ Lider yeni bir oturum başlatır. İşe aldığı işçiler eskilerin ardından 
 
 Arşivden hiçbir şey atılmadı:
 
-- lideri ve işçileri, uykuda, her biri satıcı oturumuyla (sürdürmek için), postası, notları ve değişikliğiyle;
+- lideri ve işçileri, uykuda, her biri oturumuyla (sürdürmek için), postası, notları ve değişikliğiyle;
 - kartları öyküleriyle, günlük satırları (temizlik onları yaşları ne olursa olsun saklar), sizi bekleyen kalemleri.
 
-Hiçbiri uyanmaz, hiçbir şey harcamaz: işçilerine kart sunulmaz, onlara adla ulaşılmaz. `imece --fresh` oturumlarına dokunmaz. Oturumları satıcılar saklar ve Claude Code eski transkriptleri bir süre sonra siler (varsayılan 30 gün); o zamana dek gitmiş bir oturum, kaldığı yer anlatılarak yeniden başlar.
+Hiçbiri uyanmaz, hiçbir şey harcamaz: işçilerine kart sunulmaz, onlara adla ulaşılmaz. `imece --fresh` oturumlarına dokunmaz. Oturumları Claude Code saklar ve eski transkriptleri bir süre sonra siler (varsayılan 30 gün); o zamana dek gitmiş bir oturum, kaldığı yer anlatılarak yeniden başlar.
 
 Geri getirmeden yeniden bakmak için `A`'ya basın ve `▸ v1 fixes` üstünde `enter`: arşiv salt okunur açılır, ekranda kaldırıldığı gibi tek başına, bütün günlüğüyle, şunun altında
 
@@ -80,7 +80,7 @@ Bir ay sonra eski işte bir hata çıkar ve o kodu `kule`'nin eski takımı bili
 
 Açık olan `kule` yer açar: bir şey yaptı (bir oturumu ve bir kartı vardı), bu yüzden sırası gelince adı ve günleriyle arşivlenir; günlük de bunu söyler: `› kule projesinin “v1 fixes” arşivini geri getirdin; orada açık olan “kule 2026-11-02 → 2026-12-02” adıyla arşivlendi`. Hiçbir şey yapmamış yeni bir `kule` ise kapatılırdı.
 
-Henüz hiçbir şey uyanmadı. Eski lidere yazın; sahip olduğu oturumda sürer, önce projenin kaldırılıp geri getirildiği ve arşivin yarıda kestiği tur (yeniden çalıştırılmaz) ona söylenir. Satıcının bu arada sildiği bir oturum, kaldığı yer anlatılarak yeniden başlar. Daha yeni işe dönmek için onu da aynı biçimde `:restore` edin.
+Henüz hiçbir şey uyanmadı. Eski lidere yazın; sahip olduğu oturumda sürer, önce projenin kaldırılıp geri getirildiği ve arşivin yarıda kestiği tur (yeniden çalıştırılmaz) ona söylenir. Claude Code'un bu arada sildiği bir oturum, kaldığı yer anlatılarak yeniden başlar. Daha yeni işe dönmek için onu da aynı biçimde `:restore` edin.
 
 ## 5. Ortak kalanlar
 

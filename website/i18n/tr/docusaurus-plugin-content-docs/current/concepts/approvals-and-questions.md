@@ -5,21 +5,17 @@ description: Bir ajan yapmadan önce size neyi sormalı, rutin bir komut nasıl 
 
 # Onaylar ve sorular
 
-İki tür şey bir ajanı siz yanıtlayana dek durdurur: bir **onay** (`⚑`), satıcısı bir araç çağrısından önce soracakken imece'nin soruyu size vermesi; ve bir **soru** (`?`), ajanın `send(to: "you", type: ask)` ile size kendisinin bir şey sorması. İkisi de SENİ BEKLEYEN'de bekler; ilkini `a` ve `r` yanıtlar, ikincisini ajana yazmak.
+İki tür şey bir ajanı siz yanıtlayana dek durdurur: bir **onay** (`⚑`), Claude Code bir araç çağrısından önce soracakken imece'nin soruyu size vermesi; ve bir **soru** (`?`), ajanın `send(to: "you", type: ask)` ile size kendisinin bir şey sorması. İkisi de SENİ BEKLEYEN'de bekler; ilkini `a` ve `r` yanıtlar, ikincisini ajana yazmak.
 
 ## Onaylar (`⚑`)
 
 `--confine standard` ve `open` altında bir oturumun yapmadan önce soracağı şey, reddedilmek yerine size gelir. `strict` altında hiçbir şey sormaz: soracak olan reddedilir ve komutlar imece'nin `run` aracından geçer.
 
-| Satıcı | İstek imece'ye nasıl ulaşır |
-| --- | --- |
-| Claude Code | `--permission-prompts host --permission-prompt-tool mcp__imece__approve`: Claude Code, onay gereken bir araç çağrısından önce imece'nin `approve` aracını kendisi çağırır (kendi salt okunur kuralları neyin hiç sormayacağına karar verir). Araç modelden gizlidir. |
-| Codex | yazanlar (işçiler, yardımcılar) `approval_policy = "on-request"` ile çalışır: sandbox'ın verdiğinden fazlasını gerektiren (dizin dışına yazma, sandbox dışında komut) bir istek olarak gelir. Lider ve strict altındaki her şey `never`'da kalır: sandbox'ın reddettiği yalnızca başarısız olur. |
-| Gemini CLI | politika dosyası yazanların `run_shell_command`'ını her komuttan önce sorar yapar (`ask_user`); diğer araçları sormadan izinli kalır. Open altında kendi politikalarınız karar verir. |
+Claude Code `--permission-prompts host --permission-prompt-tool mcp__imece__approve` ile çalışır: onay gereken bir araç çağrısından önce imece'nin `approve` aracını kendisi çağırır (kendi salt okunur kuralları neyin hiç sormayacağına karar verir). Araç modelden gizlidir.
 
 ### Rutin komutlar hemen çalışır
 
-Bir kabuk komutu **rutin**dir: tek satırsa, argümanlarıyla tek bir programsa (kabuğun başka türlü okuyacağı hiçbir şey yok: boru, yönlendirme, `&&`, `$`, glob yok) ve `run` aracının politikası role onu çalıştırmaya izin veriyorsa (aşağıda). Rutin bir komuta kendi başına izin verilir, izde "allowed on its own" satırıyla; derleme, testler ve git'in okuma komutları sizi asla beklemez. Codex için komutu sardığı kabuk (`/bin/zsh -lc '…'`) önce soyulur ve içteki komut olduğu gibi yargılanır; içindeki `&&` rutin değildir. Gemini için yalnız ajanın dizininde çalışan bir komut rutin olabilir.
+Bir kabuk komutu **rutin**dir: tek satırsa, argümanlarıyla tek bir programsa (kabuğun başka türlü okuyacağı hiçbir şey yok: boru, yönlendirme, `&&`, `$`, glob yok) ve `run` aracının politikası role onu çalıştırmaya izin veriyorsa (aşağıda). Rutin bir komuta kendi başına izin verilir, izde "allowed on its own" satırıyla; derleme, testler ve git'in okuma komutları sizi asla beklemez.
 
 ### Kalan her şey bekler
 
@@ -35,9 +31,9 @@ Başka her şey SENİ BEKLEYEN'de bir `⚑` öğesidir: "claude-1 onayını bekl
 - `a` izin verir; çağrı istendiği gibi çalışır ve günlük `claude-1 için izin verdin: Bash: …` der.
 - `r` reddeder; ajana "The person refused this. Do not try it another way; if you need it, ask them (send to you, type ask) and go on with what does not depend on it." denir ve günlük `… için reddettin` der. Ret bir karardır, hata değil; tur devam eder.
 - Bir çağrı en çok bir gün bekler. Bağlantı başına bir anda bir çağrı; bekleyen bir istek o oturumun diğer imece araçlarını tutar (istek ortasında zaten kullanamazdı).
-- Oturum bitince bekleyen her istek "the session ended" ile yanıtlanır ve öğeleri kapanır. Deponun önceki çalıştırmadan tuttuğu bir istek başlangıçta kapatılır: soran süreç gitmiştir. Codex ve Gemini tur bitince isteği geri çeker; öğe kararsız kapanır.
+- Oturum bitince bekleyen her istek "the session ended" ile yanıtlanır ve öğeleri kapanır. Deponun önceki çalıştırmadan tuttuğu bir istek başlangıçta kapatılır: soran süreç gitmiştir.
 
-Bir istek ne gösterir: kabuk komutu için komutu; başka bir araç için dokunduğunu (yol, adres, sorgu ya da desen) ya da girdisini 200 karakterde kesilmiş JSON olarak. Codex dosya değişiklikleri öğenin adını verdiği dosyaları ve verilen kök için `writes under <root>`'u gösterir. Bir evet bir kez geçerlidir; artık hep evet için aşağıya bakın.
+Bir istek ne gösterir: kabuk komutu için komutu; başka bir araç için dokunduğunu (yol, adres, sorgu ya da desen) ya da girdisini 200 karakterde kesilmiş JSON olarak. Bir evet bir kez geçerlidir; artık hep evet için aşağıya bakın.
 
 ### Artık hep evet
 
@@ -49,10 +45,10 @@ Bir istekte `e` (sizi bekleyenlerde ya da ajanının odağında) ya da `:yes [@N
 
 ## Sorular (`?`)
 
-Bir ajan size `send(to: "you", type: "ask", body)` ile sorar. Bir `?` öğesi olur, "codex-1 sana soruyor: eski CLI bayrağı kalsın mı?", ve soru açıkken ajan boştaysa salon satırı `? → you` okunur. Aynı ajandan daha yeni bir soru eskisinin yerini alır.
+Bir ajan size `send(to: "you", type: "ask", body)` ile sorar. Bir `?` öğesi olur, "claude-2 sana soruyor: eski CLI bayrağı kalsın mı?", ve soru açıkken ajan boştaysa salon satırı `? → you` okunur. Aynı ajandan daha yeni bir soru eskisinin yerini alır.
 
 - `enter` konuşmayı soruda açar.
-- `a` ya da `r` yazma satırını `@codex-1 ` ile açar ("sözsüz yanıt" yoktur); o ajana yazdığınız her şey soruyu kapatır ve sonraki turunu başlatır.
+- `a` ya da `r` yazma satırını `@claude-2 ` ile açar ("sözsüz yanıt" yoktur); o ajana yazdığınız her şey soruyu kapatır ve sonraki turunu başlatır.
 - Gitmiş ya da durmuş bir ajanın sorusu siz ona yazana dek açık kalır.
 
 Kim ne zaman sorar: lider görev ortasında size sorabilir; bir işçi önce liderine sorar ve size yalnız sizin karar verebileceğinizi gönderir; bir yardımcı yalnız hiçbir ekip arkadaşının yanıtlayamayacağını. Sorular posta sınırlarına ve bütçeye sayılmaz ([mesajlar](../concepts/messages-and-board.md)).
@@ -79,11 +75,11 @@ Her ajanın bus'ta bir `run` aracı vardır: argümanlarıyla tek bir program, k
 - Çıktı derlenip toplanmış döner: renkler soyulur, geçen testlerin satırları atılır, tekrarlar katlanır, 48 KiB'ı aşınca ortası kesilir. Her worktree kendi `target/`'ında derler: ortak olanı işçileri sırayla birbirlerinin değişikliklerini yeniden derletirdi.
 - `run`'ın kendi ağ engeli yoktur; lockfile uygun değilse cargo registry'ye uzanabilir.
 
-Hangi kabuk komutlarının rutin olduğuna aynı politika karar verir; `standard` altında bir işçinin `cargo test`'i `run`'dan da satıcının kabuğundan da geçse çalışır; yalnız bir `run` sonucunu çalıştığı ağaca bağlar ve değişiklikte gösterir ([değişiklikler](../concepts/changes.md)).
+Hangi kabuk komutlarının rutin olduğuna aynı politika karar verir; `standard` altında bir işçinin `cargo test`'i `run`'dan da Claude Code'un kabuğundan da geçse çalışır; yalnız bir `run` sonucunu çalıştığı ağaca bağlar ve değişiklikte gösterir ([değişiklikler](../concepts/changes.md)).
 
 ## Ayrıca bakınız
 
-- [Satıcılar](../concepts/vendors.md): confine düzeyleri ve her satıcının ne sorduğu.
+- [Claude Code](../concepts/claude-code.md): confine düzeyleri.
 - [SENİ BEKLEYEN](../screen/waiting.md): panel, `W`, `S`.
 - [Mesajlar ve pano](../concepts/messages-and-board.md).
 - [Güvenlik](../concepts/security.md): son kapı sizsiniz, bir araç listesi değil.

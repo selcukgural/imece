@@ -311,7 +311,7 @@ fn card_head(app: &App, c: CardId) -> Line<'static> {
     if let Some(o) = card.owner {
         let a = &w.agents[o];
         spans.push(Span::styled(" · ", dim()));
-        spans.push(Span::styled(clean(&a.name), fg(vendor_color(a.vendor))));
+        spans.push(Span::styled(clean(&a.name), fg(pal().agent)));
     }
     let change = (w.open_inbox().into_iter())
         .any(|i| w.inbox[i].kind == InboxKind::Change && w.inbox[i].card == Some(c));
