@@ -562,10 +562,66 @@ fn project_member(app: &App, p: ProjectId) -> Option<AgentId> {
         .flatten()
 }
 
+/// A name's column, on a row alone.
+const NAME_WIDTH: usize = 16;
+
+/// Where a name's column ends on a row of the tree, what stands in front of
+/// it counted: a status starts at the same column however deep its row is
+/// (a helper's name gives way).
+const NAME_END: usize = 20;
+
+/// The columns of the parts of a salon row from its status on, each as wide
+/// as the widest of them on a row, none for a part no row has: they stand
+/// under one another, and take nothing where they are not used. A row
+/// drawn alone (a card's) has none of them.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(super) struct RowColumns {
+    status: usize,
+    stirs: usize,
+    since: usize,
+    plan: usize,
+    context: usize,
+    cost: usize,
+}
+
+impl RowColumns {
+    fn of(app: &App) -> Self {
+        let w = &app.world;
+        let mut c = Self {
+            status: STATUS_WIDTH,
+            ..Self::default()
+        };
+        for a in (w.agents.iter()).filter(|a| !a.gone && !w.put_away(a.id)) {
+            c.stirs = c.stirs.max(columns(&stir_spans(app, a)));
+            c.since = c.since.max(columns(&since_spans(app, a)));
+            c.plan = c.plan.max(columns(&plan_spans(a)));
+            c.context = c.context.max(columns(&context_spans(a)));
+            c.cost = c.cost.max(columns(&cost_spans(a)));
+        }
+        c
+    }
+}
+
+/// Blanks that take what `used` left of a column `width` wide, as far as
+/// `room`, the row's free columns, goes: a narrow row is not pushed off.
+fn padding(room: &mut usize, used: usize, width: usize) -> Span<'static> {
+    let blanks = width.saturating_sub(used).min(*room);
+    *room -= blanks;
+    Span::raw(" ".repeat(blanks))
+}
+
+/// What the agent has spent, `  $2.29`, once it has.
+fn cost_spans(a: &Agent) -> Vec<Span<'static>> {
+    if a.cost == 0 {
+        return Vec::new();
+    }
+    vec![Span::styled(format!("  {}", dollars(a.cost)), dim())]
+}
+
 /// An agent's row, `width` columns wide: its status, its newest exchange,
 /// how long it has been in that state and how far its to-do list is, in
 /// the room the row's fixed parts (cost, stand, helpers, link) leave, then
-/// those parts.
+/// those parts. They go in columns ([`RowColumns`]), in what room is left.
 pub(super) fn agent_line(
     app: &App,
     a: &Agent,
@@ -576,13 +632,20 @@ pub(super) fn agent_line(
     let w = &app.world;
     let done = app.done_unseen(a.id);
     let (g, color) = rung_glyph(a, rungs[a.id]);
+    // A row with no tree in front of it is drawn alone.
+    let (name_width, wide) = if prefix.is_empty() {
+        (NAME_WIDTH, RowColumns::default())
+    } else {
+        let name = NAME_END.saturating_sub(prefix.chars().count());
+        (name, RowColumns::of(app))
+    };
     let mut spans = vec![
         Span::styled(prefix, dim()),
         Span::styled(format!("{g} "), glyph_style(app, a, rungs[a.id], color)),
         // The speaker's colour, so this row and its conversations are seen
         // as one agent; the name keeps its vendor's colour.
         Span::styled(SPEAKER_MARK, fg(speaker_color(a.id))),
-        Span::styled(fit(&a.name, 16), bold(vendor_color(a.vendor))),
+        Span::styled(fit(&a.name, name_width), bold(vendor_color(a.vendor))),
         taint_span(a),
     ];
     match a.role {
@@ -598,8 +661,7 @@ pub(super) fn agent_line(
             };
             spans.push(Span::styled(fit(&runs, 27), dim()));
         }
-        Role::Researcher => {}
-        Role::Helper => spans.push(Span::raw(" ".repeat(27))),
+        Role::Researcher | Role::Helper => spans.push(Span::raw(" ".repeat(27))),
         Role::Worker => {
             let card = match a.card {
                 Some(c) => format!(" #{:<3} {}", c + 1, fit(&w.cards[c].title, 21)),
@@ -611,10 +673,8 @@ pub(super) fn agent_line(
     spans.push(Span::raw(" "));
     let since = since_spans(app, a);
 
+    let cost = cost_spans(a);
     let mut tail = Vec::new();
-    if a.cost > 0 {
-        tail.push(Span::styled(format!("  {}", dollars(a.cost)), dim()));
-    }
     if matches!(a.role, Role::Worker | Role::Solo) {
         tail.extend(stand_spans(&a.stand, a.start.as_deref()));
     }
@@ -643,7 +703,7 @@ pub(super) fn agent_line(
     } else if let Some(step) = on_step(w, a) {
         // The step takes what the row's fixed parts leave it, at most
         // `STEP_WIDTH`, so it never pushes them off the row.
-        let free = width.saturating_sub(columns(&spans) + columns(&tail) + 2);
+        let free = width.saturating_sub(columns(&spans) + columns(&cost) + columns(&tail) + 2);
         vec![step_span(step, free.clamp(STEP_MIN, STEP_WIDTH))]
     } else {
         dotted(app, status_spans(app.lang, w, a))
@@ -655,7 +715,7 @@ pub(super) fn agent_line(
     // warning, the to-do mark, the time, then the quote, then the
     // activity bar, take only what the row has left once the rest is on
     // it.
-    let mut room = width.saturating_sub(columns(&spans) + columns(&tail));
+    let mut room = width.saturating_sub(columns(&spans) + columns(&cost) + columns(&tail));
     let context = fits(&mut room, context_spans(a));
     let plan = fits(&mut room, plan_spans(a));
     let since = fits(&mut room, since);
@@ -668,11 +728,22 @@ pub(super) fn agent_line(
     };
     room = room.saturating_sub(columns(&quote));
     let stirs = fits(&mut room, stir_spans(app, a));
-    spans.extend(quote);
-    spans.extend(stirs);
-    spans.extend(since);
-    spans.extend(plan);
-    spans.extend(context);
+    // What is left goes to the columns, first to last; the money right
+    // aligned, so its digits stand under one another.
+    let parts = [
+        (quote, used, wide.status),
+        (stirs, 0, wide.stirs),
+        (since, 0, wide.since),
+        (plan, 0, wide.plan),
+        (context, 0, wide.context),
+    ];
+    for (part, before, width) in parts {
+        let taken = before + columns(&part);
+        spans.extend(part);
+        spans.push(padding(&mut room, taken, width));
+    }
+    spans.push(padding(&mut room, columns(&cost), wide.cost));
+    spans.extend(cost);
     spans.extend(tail);
 
     let line = Line::from(spans);

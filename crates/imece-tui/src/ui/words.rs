@@ -1489,10 +1489,12 @@ mod tests {
         let npm = Standing {
             program: "npm".into(),
             sub: Some("run".into()),
+            whole: false,
         };
         let make = Standing {
             program: "make".into(),
             sub: None,
+            whole: false,
         };
         let added = w.stand(0, &[npm.clone(), make.clone(), npm.clone()]);
         assert_eq!(added, [npm.clone(), make.clone()], "once each");

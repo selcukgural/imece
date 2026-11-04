@@ -25,13 +25,36 @@ the store, listed and taken back with `:allow`.
   git none of the options that start a program (`tools::git_denied`).
 - **A line of several commands** (`standing::commands`): split outside
   quotes at `&&`, `||`, `;`, `|` and a new line, each part through
-  `run::split`; a line with anything else a shell reads (`$`, a
-  backtick, `<` `>`, a glob, `(`, a lone `&`, an open quote, an empty
-  part) is never covered and can have no rule (`Why::NotPlain`). A line
-  is covered (`standing::covered`) when every command is routine for the
-  role (`tools::allowed`, as the run tool) or has its rule; so a chain of
-  routine commands (`cargo build && cargo test`) now goes on too. `cd` is
-  not special: `cd x && …` asks unless `cd x` has a rule.
+  `run::split`. A line is covered (`standing::covered`) when every command
+  is routine for the role (`tools::allowed`, as the run tool) or has its
+  rule; so a chain of routine commands (`cargo build && cargo test`) goes
+  on too. `cd` is not special: `cd x && …` asks unless `cd x` has a rule.
+- **What a shell reads in a line** (the person, 2026-11-04: `A` refused
+  every such line, so `a` was needed each time). A rule already takes
+  whatever follows its two words, so an expansion there adds nothing to
+  it: `$NAME`, `${NAME}`, an unquoted glob (`*`, `?`, `[`) and `$(…)` are
+  kept in a word as `standing::EXPANDED`, and the commands a `$(…)` runs
+  (at most `MAX_NESTED` 4 deep) count as commands of the line, so they need
+  a rule or to be routine too. Three limits, each because a list of what is
+  denied reads the words and an expansion hides them: never in a rule's
+  own two words (`rule_of`), never for what is routine (`covered`'s
+  `known`: `cargo $X` may be `cargo publish`), never for a rule of git's
+  (`matches`: `git grep $X` may be `-Ovim`, a file too). A redirection that
+  leaves the disk as it was (`2>&1`, `1>&2`, `>&2`, `N>/dev/null`,
+  `&>/dev/null`) is dropped (`past_no_effect`). The rest of what a shell
+  reads (a backtick, a redirection to a file, `<`, `(`, a lone `&`,
+  `${X:-…}`, `$?`, an open quote, an empty part) cannot be parsed:
+- **A yes to one whole line** (`Standing.whole`, `Standing::exactly`):
+  when a command of the line can have no rule that would hold (it cannot
+  be parsed, an option first, an expansion in the two words, git's denied
+  options), `A` says yes to that line alone, byte for byte but for the
+  spaces round it (`needed`), shown `` `rm -rf target` ``. Only that line
+  matches (`said_whole`), never as a command: `'foo bar'` runs another
+  program than the line `foo bar`. It is the person's word on what they
+  read, so it stands for what git's list would refuse as written; what the
+  line does may still change with the files it reads, as `npm run x` does.
+  `program` holds the line, so the field adds no schema: an older imece
+  reads it as a rule no command matches.
 - **`A` on an ask** in WAITING FOR YOU (`App::answer_always`, only on an
   approval at hand; elsewhere `A` still opens the archives): a rule for
   each command of it not yet routine or allowed (`standing::needed`)
@@ -40,9 +63,8 @@ the store, listed and taken back with `:allow`.
   `Event::Standing`), the ask is allowed (`Live::decide`), and so is
   every other open ask of the project the list now covers
   (`Live::go_on_allowed`). An ask that is not a command (an edit, a
-  fetch: `Why::NotACommand`), not plain, or with an option first can
-  have none: the flash says why and that `a` allows it once; nothing is
-  decided.
+  fetch: `Why::NotACommand`) can have none: the flash says why and that
+  `a` allows it once; nothing is decided.
 - **Later asks** (`Live::ask`, after the routine check):
   `Live::standing_yes` lets a covered one go on at once, traced `allowed
   by your yes from now on: Bash: …`; it is not journaled (as a routine
@@ -53,14 +75,16 @@ the store, listed and taken back with `:allow`.
   to add one); with words (`standing::named`: one command of at most two
   words), it is added (the project's open asks it covers go on) or, named
   again, taken out (`World::unstand`, journaled `no standing yes any more
-  to …`). The `:` menu shows the list. In an archive's view the list is
-  read only.
+  to …`); a yes to one whole line is named by that line, as listed or
+  bare, and only taken out. The `:` menu shows the list. In an archive's
+  view the list is read only.
 - **Store** schema 18: `projects.allowed` (JSON, `[]` for older files);
   a list that is not one refuses the file. Part of the project's hash,
   so a change alone is saved.
 - **Demo** (`Sim::always`, `Sim::go_on_allowed`, `Sim::approval`): its
-  asks are `Bash: …` lines of the project's kit; one its list covers is
-  not asked, traced the same way; `A` and `:allow` work as live's.
+  asks are `Bash: …` lines of the project's kit, one with a `$(…)` and one
+  with a redirection to a file among them; one its list covers is not
+  asked, traced the same way; `A` and `:allow` work as live's.
 
 On a focus `a`, `r` and `A` decide that agent's own ask (record 103),
 and waiting for you's row now names `A` (`a yes · A from now on · r

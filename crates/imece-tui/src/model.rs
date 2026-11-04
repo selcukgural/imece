@@ -433,19 +433,33 @@ pub struct Archived {
 /// the command it was given for had one, its first argument (`npm run`,
 /// `dotnet ef`); `sub` none for the program alone (`make`). A command
 /// matches when it starts with exactly these words; an option before the
-/// first argument never matches one with a `sub`.
+/// first argument never matches one with a `sub`. With `whole`, `program`
+/// is one whole line a shell reads, and only those bytes match: what cannot
+/// be said as a program and a word (`live::standing`).
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct Standing {
     pub program: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sub: Option<String>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub whole: bool,
 }
 
 impl Standing {
-    /// How the screen and the journal name it: `npm run …`, or `make`
-    /// (the program with nothing after it).
+    /// The yes from now on to exactly `line`.
+    pub fn exactly(line: &str) -> Self {
+        Standing {
+            program: line.trim().to_string(),
+            sub: None,
+            whole: true,
+        }
+    }
+
+    /// How the screen and the journal name it: `npm run …`, `make` (the
+    /// program with nothing after it), or `` `rm -rf target` `` (that line).
     pub fn line(&self) -> String {
         match &self.sub {
+            _ if self.whole => format!("`{}`", self.program),
             Some(sub) => format!("{} {sub} …", self.program),
             None => self.program.clone(),
         }

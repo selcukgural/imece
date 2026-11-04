@@ -161,6 +161,7 @@ const SHOP_KIT: Kit = Kit {
     asks: &[
         "Bash: dotnet add package Polly --version 8.5.0",
         "Bash: dotnet ef database update",
+        "Bash: dotnet ef migrations script > migrate.sql",
         "WebFetch: https://learn.microsoft.com/dotnet/api/system.text.json",
         "Edit: .github/workflows/ci.yml",
     ],
@@ -187,6 +188,7 @@ const WEB_KIT: Kit = Kit {
     }),
     asks: &[
         "Bash: npm install zod@3",
+        "Bash: gh pr view \"$(git branch --show-current)\" 2>&1",
         "Edit: package.json",
         "WebFetch: https://react.dev/reference/react/useTransition",
     ],
@@ -5439,6 +5441,35 @@ diff --git a/b.rs b/b.rs
         w.asks_you(worker, "Bash: npm run z");
         let open = w.inbox.len() - 1;
         assert_eq!(s.always(&mut w, open).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn a_yes_from_now_on_holds_for_a_line_a_shell_reads_more_of_as_live() {
+        let (mut w, mut s, worker, _) = one_at_work();
+        let p = w.agents[worker].project;
+        let lines: Vec<&str> = (PROJECTS.iter().flat_map(|(_, _, k)| k.asks.iter()))
+            .filter_map(|a| demo_command(a))
+            .collect();
+        assert!(lines.iter().any(|l| l.contains("$(")), "shown in the demo");
+        assert!(lines.iter().any(|l| l.contains('>')), "shown in the demo");
+        // A substitution: its rule and what it runs.
+        w.asks_you(
+            worker,
+            "Bash: gh pr view \"$(git branch --show-current)\" 2>&1",
+        );
+        let item = w.inbox.len() - 1;
+        let added: Vec<String> = (s.always(&mut w, item).unwrap().iter())
+            .map(Standing::line)
+            .collect();
+        assert_eq!(added, ["gh pr …", "git branch …"]);
+        assert!(!w.inbox[item].open);
+        // A redirection to a file: that line alone.
+        let line = "dotnet ef migrations script > migrate.sql";
+        w.asks_you(worker, &format!("Bash: {line}"));
+        let item = w.inbox.len() - 1;
+        assert_eq!(s.always(&mut w, item), Ok(vec![Standing::exactly(line)]));
+        assert!(!w.inbox[item].open);
+        assert!(standing::covered(line, |_| false, &w.projects[p].allowed));
     }
 
     #[test]
