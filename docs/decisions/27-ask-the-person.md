@@ -24,6 +24,7 @@ what only they can decide, a helper only what no teammate can answer;
 the `send` tool's `to` says "or you for the person". Store schema 3 (no
 table changed; the new tags). The demo asks the person too (decision
 31).
+While a question is open the agent's mail and board offers wait (record 107).
 Known gaps: no answer from the screen but a message (there is no
 "answered without words"); a question of an agent that is gone or
 stopped stays open until the person writes to it.

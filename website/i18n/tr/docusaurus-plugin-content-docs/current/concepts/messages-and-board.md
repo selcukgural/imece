@@ -72,6 +72,14 @@ Bus size `you` olarak ulaşır: `send(to: "you", type, body)`.
 
 İstemler ne zaman sorulacağını söyler: lider görev ortasında size sorabilir; bir işçi önce liderine sorar ve size yalnız sizin karar verebileceğinizi gönderir; bir yardımcı yalnız hiçbir ekip arkadaşının yanıtlayamayacağını. Daha fazlası [onaylar ve sorular](../concepts/approvals-and-questions.md) sayfasında.
 
+## Sizi bekleyen ajanın postası da bekler
+
+Yalnız sizin çözebileceğiniz bir şeyi açık olan bir ajan, bir takım arkadaşı yazdı diye devam etmez: SENİ BEKLEYEN'deki bir sorusu, onayınızı bekleyen bir araç çağrısı, bir satıcı hatası, bir kurulum betiği, hassas bir değişiklik ya da bir araştırma raporu. Postası kuyrukta kalır, tur başlatmaz ve ona pano kartı önerilmez. Gönderen `held as message 7; …` yanıtını alır; ajanın satırı ve `:why` kaç mesajın beklediğini söyler: `✉ 2 bekliyor`.
+
+Ajana yazdığınızda, sözünüz beklemeyi bitiriyorsa posta aynı turda, sözlerinizden sonra gider. Başka bir yolla çözerseniz posta kendi turunu başlatır. Bir `cancel` asla tutulmaz: hemen tur başlatır ve bekleyen posta sırasıyla onunla gider. Posta sınırları tutulan postayı da diğerleri gibi sayar.
+
+SENİ BEKLEYEN'de iki şey hiçbir şeyi tutmaz: okunmayı bekleyen bir yanıt ve bir işçinin değişikliği. Değişikliği bekleyen işçi işini bitirmiştir, devam etmek için yanıta ihtiyacı yoktur; siz incelerken sonraki kartı alabilir.
+
 ## Bus'ta siz
 
 Komut satırındaki düz metin seçili projenin liderine gider; `@ad mesaj` tek bir ajana. Boşta bir işçiye mesaj bir kart açar; yanıtı onu kapatır. Mesajlarınızın numarası yoktur. Bir ajanın size yanıtı SENİ BEKLEYEN'de bekler ("claude-1 yanıt verdi: …"); açarsınız (`enter`), kapatırsınız (`r`) ya da doğrudan yanıt yazarsınız.

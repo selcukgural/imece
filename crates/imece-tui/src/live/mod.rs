@@ -1422,17 +1422,7 @@ impl Live {
             };
             let _ = reply.send(answer);
         }
-        for id in 0..self.mail.len() {
-            let waking = self.mail[id].iter().any(|m| m.kind.wakes());
-            let a = &w.agents[id];
-            if waking
-                && self.turns[id] == 0
-                && !matches!(a.status, Status::Stopped | Status::Asleep)
-                && !a.gone
-            {
-                self.deliver(w, id);
-            }
-        }
+        self.post_office(w);
         for id in 0..self.lost.len() {
             let a = &w.agents[id];
             if self.lost[id]
@@ -1441,6 +1431,7 @@ impl Live {
                 && !a.gone
                 && self.woken[id] < MAX_WOKEN
                 && !self.over_budget(w)
+                && !w.waits_on_person(id)
             {
                 self.woken[id] += 1;
                 if let Err(why) = self.prompt(w, id, GO_ON.into(), None) {
@@ -1477,13 +1468,16 @@ impl Live {
     }
 
     /// Whether a leader's finished turn is its report to the person: the
-    /// team's work it led has come back and nobody works or has mail. A
-    /// solo's turn is its report the same way, once its helpers are quiet.
+    /// team's work it led has come back and nobody works or has mail (mail
+    /// that waits on the person moves nothing until they come). A solo's
+    /// turn is its report the same way, once its helpers are quiet.
     fn reports(&self, w: &World, id: AgentId) -> bool {
         let a = &w.agents[id];
         matches!(a.role, Role::Leader | Role::Solo)
             && w.agents.iter().all(|o| {
-                o.project != a.project || (self.turns[o.id] == 0 && self.mail[o.id].is_empty())
+                o.project != a.project
+                    || (self.turns[o.id] == 0
+                        && (self.mail[o.id].is_empty() || w.waits_on_person(o.id)))
             })
     }
 

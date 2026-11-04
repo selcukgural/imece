@@ -15066,6 +15066,30 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn colon_why_says_how_many_messages_wait_with_the_agent() {
+        use crate::model::clock;
+        let mut app = quiet();
+        let a = 2;
+        let name = app.world.agents[a].name.clone();
+        app.world.journal.clear();
+        app.world.tick = 20;
+        app.world.agents[a].changed_at = 10;
+        app.world.agents[a].held_mail = 2;
+        app.command(&format!("why @{name}"));
+        let said = format!(
+            "{name}: idle · since {} · the journal does not say why · messages held until \
+             you answer: 2",
+            clock(10)
+        );
+        assert_eq!(flashed(&app).unwrap_or_default(), said);
+        app.lang = Lang::Tr;
+        app.command(&format!("why @{name}"));
+        assert!(
+            (flashed(&app).unwrap_or_default()).ends_with("sen yanıtlayana dek bekleyen mesaj: 2")
+        );
+    }
+
+    #[test]
     fn every_rung_has_its_words_in_both_languages() {
         let app = quiet();
         let name = &app.world.agents[0].name;

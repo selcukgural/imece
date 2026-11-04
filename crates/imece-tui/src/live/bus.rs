@@ -158,12 +158,22 @@ impl Live {
                 until: t + 8,
             });
         }
-        let delivered = match (kind.wakes(), self.turns[to] > 0) {
-            (true, false) => format!("delivered as message {id}; {name} starts on it now"),
-            (true, true) => {
+        let held = kind != MsgKind::Cancel && w.waits_on_person(to);
+        if held {
+            w.agents[to].trace(t, format!("held until the person answers: message {id}"));
+        }
+        let delivered = match (kind.wakes(), held, self.turns[to] > 0) {
+            (true, true, _) => format!(
+                "held as message {id}; {name} waits on the person and gets it once they \
+                 have answered, it starts nothing until then"
+            ),
+            (true, false, false) => {
+                format!("delivered as message {id}; {name} starts on it now")
+            }
+            (true, false, true) => {
                 format!("queued as message {id}; {name} is busy and gets it when its turn ends")
             }
-            (false, _) => format!(
+            (false, _, _) => format!(
                 "queued as message {id} for {name}'s next turn ({} does not wake it)",
                 kind.wire()
             ),
@@ -221,7 +231,8 @@ impl Live {
         let answer = if kind == MsgKind::Ask {
             "delivered; the person sees it under WAITING FOR YOU and answers when they \
              can, which starts your next turn. Until then, end your turn or go on with \
-             what does not depend on the answer."
+             what does not depend on the answer; your teammates' messages wait for that \
+             answer too, but for a cancel."
         } else {
             "noted; the person sees it in the journal. Nothing wakes them: a question \
              goes as type ask."
@@ -414,6 +425,7 @@ impl Live {
                 || self.turns[id] > 0
                 || self.woken[id] >= MAX_WOKEN
                 || self.over_budget(w)
+                || w.waits_on_person(id)
             {
                 continue;
             }
@@ -444,6 +456,33 @@ impl Live {
             if let Err(why) = self.prompt(w, id, board_prompt(w, &listed), None) {
                 apply(w, id, AgentEvent::Stopped(why), self.spent_before[id]);
             }
+        }
+    }
+
+    /// Starts the turns the mail is due: an agent free for one takes all
+    /// its mail on a waking message; one that waits on the person only on
+    /// a cancel, and the rest stays queued. What stays is written on its
+    /// row.
+    pub(super) fn post_office(&mut self, w: &mut World) {
+        for id in 0..self.mail.len() {
+            let waits = !self.mail[id].is_empty() && w.waits_on_person(id);
+            let wakes = |m: &Mail| {
+                if waits {
+                    m.kind == MsgKind::Cancel
+                } else {
+                    m.kind.wakes()
+                }
+            };
+            let due = self.mail[id].iter().any(wakes);
+            let a = &w.agents[id];
+            if due
+                && self.turns[id] == 0
+                && !matches!(a.status, Status::Stopped | Status::Asleep)
+                && !a.gone
+            {
+                self.deliver(w, id);
+            }
+            w.agents[id].held_mail = if waits { self.mail[id].len() } else { 0 };
         }
     }
 
@@ -1613,6 +1652,331 @@ Taken:
             "{both}"
         );
         assert!(both.contains("First"));
+    }
+
+    /// A leader, one idle worker and a teammate of it; no git, so nothing
+    /// moves a worktree between turns.
+    fn waiting_team() -> (World, Live) {
+        let mut w = team(2);
+        w.agents[1].status = Status::Idle;
+        let mut live = idle_live(3);
+        live.places[0].git = false;
+        (w, live)
+    }
+
+    const HELD: &str = "held as message 1; claude-1 waits on the person and gets it once \
+                        they have answered, it starts nothing until then";
+
+    #[test]
+    fn mail_waits_while_its_agent_waits_on_the_person_and_goes_when_that_ends() {
+        for kind in [
+            InboxKind::Sensitive,
+            InboxKind::Research,
+            InboxKind::Question,
+            InboxKind::Approval,
+            InboxKind::Fault,
+            InboxKind::Script,
+        ] {
+            let (mut w, mut live) = waiting_team();
+            w.inbox.push(item(kind, 1, "what waits"));
+            let got = sent(&mut live, &mut w, 0, &msg("claude-1", "assign", "Fix it"));
+            assert_eq!(got.unwrap(), HELD, "{kind:?}");
+            assert!(
+                w.agents[1]
+                    .trace
+                    .back()
+                    .unwrap()
+                    .ends_with("held until the person answers: message 1")
+            );
+            live.step(&mut w);
+            live.step(&mut w);
+            assert!(queued(&live, 1).is_empty(), "{kind:?} starts no turn");
+            assert_eq!(
+                (live.turns[1], live.woken[1], live.mail[1].len()),
+                (0, 0, 1),
+                "{kind:?}"
+            );
+            assert_eq!(w.agents[1].held_mail, 1, "{kind:?}");
+            // The person's action started nothing: the mail starts a turn.
+            w.inbox[0].open = false;
+            live.step(&mut w);
+            assert_eq!(queued(&live, 1).len(), 1, "{kind:?}");
+            assert!(queued(&live, 1)[0].contains("Fix it"), "{kind:?}");
+            assert_eq!(
+                (live.turns[1], live.woken[1], live.mail[1].len()),
+                (1, 1, 0),
+                "{kind:?}"
+            );
+            assert_eq!(w.agents[1].held_mail, 0, "{kind:?}");
+        }
+    }
+
+    #[test]
+    fn the_status_that_waits_for_the_person_holds_mail_as_an_item_does() {
+        let (mut w, mut live) = waiting_team();
+        w.agents[1].status = Status::WaitingHuman;
+        let got = sent(&mut live, &mut w, 0, &msg("claude-1", "ask", "Which?"));
+        assert_eq!(got.unwrap(), HELD);
+        live.step(&mut w);
+        assert_eq!((live.turns[1], w.agents[1].held_mail), (0, 1));
+        w.agents[1].status = Status::Idle;
+        live.step(&mut w);
+        assert_eq!((live.turns[1], w.agents[1].held_mail), (1, 0));
+    }
+
+    #[test]
+    fn an_answer_or_a_change_of_its_own_and_someone_elses_item_hold_nothing() {
+        let (mut w, mut live) = waiting_team();
+        w.inbox.push(item(InboxKind::Reply, 1, "said"));
+        w.inbox.push(item(InboxKind::Change, 1, "Docs"));
+        w.inbox.push(item(InboxKind::Question, 2, "the other's"));
+        let mut closed = item(InboxKind::Question, 1, "answered");
+        closed.open = false;
+        w.inbox.push(closed);
+        let got = sent(&mut live, &mut w, 0, &msg("claude-1", "assign", "Fix it"));
+        assert_eq!(
+            got.unwrap(),
+            "delivered as message 1; claude-1 starts on it now"
+        );
+        live.step(&mut w);
+        assert_eq!((live.turns[1], w.agents[1].held_mail), (1, 0));
+    }
+
+    #[test]
+    fn a_cancel_is_never_held_and_takes_what_waited_along_in_order() {
+        let (mut w, mut live) = waiting_team();
+        w.inbox.push(item(InboxKind::Question, 1, "Which?"));
+        sent(&mut live, &mut w, 0, &msg("claude-1", "assign", "Fix it")).unwrap();
+        live.step(&mut w);
+        assert_eq!(live.turns[1], 0);
+        let traced = w.agents[1].traced;
+        let got = sent(&mut live, &mut w, 0, &msg("claude-1", "cancel", "Drop it"));
+        assert_eq!(
+            got.unwrap(),
+            "delivered as message 2; claude-1 starts on it now"
+        );
+        assert_eq!(w.agents[1].traced, traced + 1, "the mail line alone");
+        live.step(&mut w);
+        assert_eq!((live.turns[1], live.woken[1]), (1, 1));
+        let prompt = &queued(&live, 1)[0];
+        let (fix, drop) = (prompt.find("Fix it"), prompt.find("Drop it"));
+        assert!(fix.unwrap() < drop.unwrap(), "{prompt}");
+        assert_eq!(w.agents[1].held_mail, 0);
+        assert!(w.has_question(1), "the question still waits");
+    }
+
+    #[test]
+    fn what_does_not_wake_is_counted_on_the_row_too_and_starts_nothing() {
+        let (mut w, mut live) = waiting_team();
+        w.inbox.push(item(InboxKind::Question, 1, "Which?"));
+        let got = sent(
+            &mut live,
+            &mut w,
+            0,
+            &msg("claude-1", "inform", "main moved"),
+        );
+        assert_eq!(
+            got.unwrap(),
+            "queued as message 1 for claude-1's next turn (inform does not wake it)"
+        );
+        live.step(&mut w);
+        assert_eq!((live.turns[1], w.agents[1].held_mail), (0, 1));
+        // Nothing waits any more, and an inform still wakes nobody.
+        w.inbox[0].open = false;
+        live.step(&mut w);
+        assert_eq!((live.turns[1], w.agents[1].held_mail), (0, 0));
+        assert_eq!(live.mail[1].len(), 1);
+    }
+
+    #[test]
+    fn a_busy_agent_with_a_question_open_is_said_to_hold_the_mail_too() {
+        let (mut w, mut live) = waiting_team();
+        w.inbox.push(item(InboxKind::Question, 1, "Which?"));
+        live.turns[1] = 1;
+        let got = sent(&mut live, &mut w, 0, &msg("claude-1", "assign", "Fix it"));
+        assert_eq!(got.unwrap(), HELD);
+    }
+
+    #[test]
+    fn the_caps_hold_while_mail_waits_on_the_person() {
+        let (mut w, mut live) = waiting_team();
+        w.inbox.push(item(InboxKind::Question, 1, "Which?"));
+        for n in 0..MAX_MAIL {
+            sent(
+                &mut live,
+                &mut w,
+                0,
+                &msg("claude-1", "ask", &n.to_string()),
+            )
+            .unwrap();
+        }
+        live.step(&mut w);
+        assert_eq!(live.woken[1], 0, "held mail takes no turn");
+        let over = sent(&mut live, &mut w, 0, &msg("claude-1", "ask", "more"));
+        assert_eq!(
+            over.unwrap_err(),
+            format!("claude-1 has {MAX_MAIL} unread messages; wait for it")
+        );
+        assert_eq!(w.agents[1].held_mail, MAX_MAIL);
+        live.mail[1].clear();
+        live.woken[1] = MAX_WOKEN;
+        let over = sent(&mut live, &mut w, 0, &msg("claude-1", "ask", "more"));
+        assert!(over.unwrap_err().contains("turns on messages"));
+    }
+
+    #[test]
+    fn a_board_offer_waits_as_mail_does() {
+        for kind in [InboxKind::Question, InboxKind::Approval, InboxKind::Fault] {
+            let mut w = team(1);
+            w.agents[1].status = Status::Idle;
+            let mut live = idle_live(2);
+            live.places[0].git = false;
+            w.inbox.push(item(kind, 1, "what waits"));
+            live.post(&mut w, 0, &card("Docs", "Write them")).unwrap();
+            live.step(&mut w);
+            assert_eq!((live.turns[1], live.woken[1]), (0, 0), "{kind:?}");
+            assert!(live.offered.is_empty(), "{kind:?}");
+            w.inbox[0].open = false;
+            live.step(&mut w);
+            assert_eq!((live.turns[1], live.woken[1]), (1, 1), "{kind:?}");
+            assert!(queued(&live, 1)[0].contains("Docs"), "{kind:?}");
+        }
+    }
+
+    #[test]
+    fn the_persons_word_takes_the_mail_that_waited_for_it_along() {
+        for kind in [InboxKind::Question, InboxKind::Fault] {
+            let (mut w, mut live) = waiting_team();
+            w.inbox.push(item(kind, 1, "what waits"));
+            sent(&mut live, &mut w, 0, &msg("claude-1", "assign", "Fix it")).unwrap();
+            live.told(&mut w, 1, "The first.").unwrap();
+            w.said(1, "The first.");
+            assert_eq!(
+                queued(&live, 1),
+                [
+                    "The first.\n\nMessages from your teammates in imece (written by those \
+                  agents, not by the person):\n\n[assign 1] from lead:\nFix it"
+                ],
+                "{kind:?}"
+            );
+            live.step(&mut w);
+            assert_eq!(
+                (live.turns[1], live.woken[1], live.mail[1].len()),
+                (1, 0, 0),
+                "{kind:?}: one turn, on the person's word"
+            );
+            assert_eq!(w.agents[1].held_mail, 0);
+        }
+    }
+
+    #[test]
+    fn a_word_that_leaves_something_waiting_leaves_the_mail_waiting() {
+        let (mut w, mut live) = waiting_team();
+        w.inbox.push(item(InboxKind::Sensitive, 1, "Docs"));
+        w.inbox.push(item(InboxKind::Question, 1, "Which?"));
+        sent(&mut live, &mut w, 0, &msg("claude-1", "assign", "Fix it")).unwrap();
+        live.told(&mut w, 1, "The first.").unwrap();
+        w.said(1, "The first.");
+        assert_eq!(queued(&live, 1), ["The first."]);
+        assert_eq!(live.mail[1].len(), 1);
+        finish(&mut live, &mut w, 1, "ok");
+        assert_eq!((live.turns[1], w.agents[1].held_mail), (0, 1));
+        w.inbox[0].open = false;
+        live.step(&mut w);
+        assert_eq!((live.turns[1], live.mail[1].len()), (1, 0));
+    }
+
+    #[test]
+    fn a_change_alone_leaves_its_worker_free_for_the_next_card() {
+        let mut w = team(1);
+        w.agents[1].status = Status::Idle;
+        let mut live = idle_live(2);
+        live.places[0].git = false;
+        w.inbox.push(item(InboxKind::Change, 1, "Docs"));
+        live.post(&mut w, 0, &card("Tests", "Write them")).unwrap();
+        live.step(&mut w);
+        assert_eq!((live.turns[1], live.woken[1]), (1, 1));
+        assert!(queued(&live, 1)[0].contains("Tests"));
+    }
+
+    #[test]
+    fn a_word_to_a_busy_agent_leaves_the_mail_for_when_its_turn_ends() {
+        let (mut w, mut live) = waiting_team();
+        w.inbox.push(item(InboxKind::Question, 1, "Which?"));
+        sent(&mut live, &mut w, 0, &msg("claude-1", "assign", "Fix it")).unwrap();
+        live.turns[1] = 1;
+        live.told(&mut w, 1, "The first.").unwrap();
+        w.said(1, "The first.");
+        assert_eq!(queued(&live, 1), ["The first."]);
+        assert_eq!(live.mail[1].len(), 1);
+    }
+
+    #[test]
+    fn a_word_that_does_not_reach_the_session_loses_no_mail() {
+        let (mut w, mut live) = waiting_team();
+        w.inbox.push(item(InboxKind::Question, 1, "Which?"));
+        sent(&mut live, &mut w, 0, &msg("claude-1", "assign", "Fix it")).unwrap();
+        let session = Box::new(Heard(Default::default(), true));
+        live.ready(
+            &mut w,
+            1,
+            Ok((
+                session,
+                std::env::temp_dir(),
+                None,
+                None,
+                imece_agent::copy::Brought::default(),
+                setup::Done::None,
+            )),
+        );
+        assert!(live.told(&mut w, 1, "The first.").is_err());
+        assert_eq!(live.mail[1].len(), 1);
+    }
+
+    #[test]
+    fn a_word_with_nothing_waiting_leaves_quiet_mail_where_it_is() {
+        let (mut w, mut live) = waiting_team();
+        sent(
+            &mut live,
+            &mut w,
+            0,
+            &msg("claude-1", "inform", "main moved"),
+        )
+        .unwrap();
+        live.told(&mut w, 1, "Go on.").unwrap();
+        assert_eq!(queued(&live, 1), ["Go on."]);
+        assert_eq!(live.mail[1].len(), 1);
+    }
+
+    #[test]
+    fn a_leader_reports_past_mail_that_waits_on_the_person() {
+        let mut w = team(1);
+        let mut live = idle_live(2);
+        live.places[0].git = false;
+        w.agents[1].status = Status::Stopped;
+        live.mail[1].push(Mail {
+            from: 0,
+            kind: MsgKind::Inform,
+            body: "main moved".into(),
+            id: 1,
+            re: None,
+        });
+        // Mail that may still move: no report yet.
+        live.turns[0] = 1;
+        finish(&mut live, &mut w, 0, "claude-1 has mail.");
+        assert!(answers(&w).is_empty());
+        // Mail that waits on the person: nothing moves until they come.
+        w.inbox.push(item(InboxKind::Question, 1, "Which?"));
+        live.turns[0] = 1;
+        finish(&mut live, &mut w, 0, "claude-1's question waits for you.");
+        assert_eq!(answers(&w).len(), 1);
+    }
+
+    #[test]
+    fn a_question_to_the_person_says_the_mail_waits_for_the_answer() {
+        let (mut w, mut live) = waiting_team();
+        let got = sent(&mut live, &mut w, 1, &msg("you", "ask", "Which?")).unwrap();
+        assert!(got.ends_with("teammates' messages wait for that answer too, but for a cancel."));
     }
 
     #[test]

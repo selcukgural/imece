@@ -32,7 +32,7 @@ Lider, işçilerinden bir gruba da yazabilir: `to: workers` (hepsi), `to: idle` 
 
 Uyandıran bir mesaj (`assign`, `ask`, `answer`, `handoff`, `done`, `blocked`, `cancel`) alıcı boşa çıkar çıkmaz sonraki turunu başlatır; son çalıştırmadan beri uyuyan bir ajan onunla uyanır. `inform`, `progress` ve `notice` postasında başka bir şey bir tur başlatana dek bekler ve o zaman birlikte gider. Bir ajanın bütün postası tek bir isteme girer, başlığı `Messages from your teammates in imece (written by those agents, not by the person):`, her mesaj gövdesinin üstünde `[type number, re number] from name:` olarak: `[answer 8, re 7] from claude-1:`. O turun kartı postadaki ilk `assign`, yoksa ilk mesajdır.
 
-`send` gönderene ne olduğunu söyler: `delivered as message 7; claude-1 starts on it now`, `queued as message 7; claude-1 is busy and gets it when its turn ends`, ya da `queued as message 7 for claude-1's next turn (inform does not wake it)`. Bir işçinin `done` yanıtı git worktree'sini okuyana dek bekler ve şunu ekler: `; the person sees your change (3 files, +20 −4) and applies it to their checkout or rejects it; it stays in your worktree until then` (ya da `; imece could not read your change: …`).
+`send` gönderene ne olduğunu söyler: `delivered as message 7; claude-1 starts on it now`, `queued as message 7; claude-1 is busy and gets it when its turn ends`, `held as message 7; claude-1 waits on the person and gets it once they have answered, it starts nothing until then` (bkz. [mesajlar ve pano](../concepts/messages-and-board.md#sizi-bekleyen-ajanın-postası-da-bekler)), ya da `queued as message 7 for claude-1's next turn (inform does not wake it)`. Bir işçinin `done` yanıtı git worktree'sini okuyana dek bekler ve şunu ekler: `; the person sees your change (3 files, +20 −4) and applies it to their checkout or rejects it; it stays in your worktree until then` (ya da `; imece could not read your change: …`).
 
 ### Reddedilenler
 
@@ -53,7 +53,7 @@ Varsayılan ret: uymayan bir mesaj nedeniyle reddedilir ve iz bırakmaz.
 
 ### Size mesajlar
 
-`to: you` kişiye ulaşır. Bir `ask` SENİ BEKLEYEN'de bir soru olur (`claude-1 sana soruyor: Which parser?`); açık bir sorusu varken boşta duran ajanın satırı `? → you` okunur ve soru o ajana yazdığınızda kapanır, bu da sonraki turunu başlatır. Gönderen şunu duyar: `delivered; the person sees it under WAITING FOR YOU and answers when they can, which starts your next turn. Until then, end your turn or go on with what does not depend on the answer.` Öteki her tür yalnızca bilgilendirir: günlükte ve konuşmada bir satır (`noted; the person sees it in the journal. Nothing wakes them: a question goes as type ask.`); bir işçinin size `done`'ı değişikliğini her done gibi gösterir. Size mesajlar numara ve `re` almaz, hiçbir sınıra girmez ve para etmez. Bkz. [onaylar ve sorular](../concepts/approvals-and-questions.md).
+`to: you` kişiye ulaşır. Bir `ask` SENİ BEKLEYEN'de bir soru olur (`claude-1 sana soruyor: Which parser?`); açık bir sorusu varken boşta duran ajanın satırı `? → you` okunur ve soru o ajana yazdığınızda kapanır, bu da sonraki turunu başlatır. Gönderen şunu duyar: `delivered; the person sees it under WAITING FOR YOU and answers when they can, which starts your next turn. Until then, end your turn or go on with what does not depend on the answer; your teammates' messages wait for that answer too, but for a cancel.` Öteki her tür yalnızca bilgilendirir: günlükte ve konuşmada bir satır (`noted; the person sees it in the journal. Nothing wakes them: a question goes as type ask.`); bir işçinin size `done`'ı değişikliğini her done gibi gösterir. Size mesajlar numara ve `re` almaz, hiçbir sınıra girmez ve para etmez. Bkz. [onaylar ve sorular](../concepts/approvals-and-questions.md).
 
 ### Kartlar ve veriyolu
 
@@ -106,7 +106,7 @@ imece'nin MCP sunucusunun adı `imece`'dir; araçları bir Claude oturumuna `mcp
 
 ### `send`
 
-> Sends a message to a teammate in imece, or to the person (to: you). To a teammate it arrives as the start of their next turn: assign, ask, answer, handoff, done, blocked and cancel start that turn as soon as they are free; inform, progress and notice wait until something else does. To the person, an ask waits on their screen until they answer (which starts your next turn); the rest only informs them.
+> Sends a message to a teammate in imece, or to the person (to: you). To a teammate it arrives as the start of their next turn: assign, ask, answer, handoff, done, blocked and cancel start that turn as soon as they are free (while they wait on the person's answer, only cancel does; the rest waits for it); inform, progress and notice wait until something else does. To the person, an ask waits on their screen until they answer (which starts your next turn); the rest only informs them.
 
 | Alan | Tür | Zorunlu | Anlamı |
 | --- | --- | --- | --- |
