@@ -3536,6 +3536,92 @@ mod tests {
     }
 
     #[test]
+    fn a_salon_s_rows_stand_in_columns_whatever_their_depth_and_parts() {
+        let (mut app, w, _) = calm_team();
+        app.world.inbox.clear();
+        let lead = app.world.projects[app.world.agents[w[0]].project].leader;
+        let rungs = app.rungs();
+        for &id in &[lead, w[0], w[1]] {
+            let a = &mut app.world.agents[id];
+            a.status = Status::Idle;
+            a.talk = None;
+            a.activity = None;
+            a.plan.clear();
+            a.context = None;
+            a.cost = 0;
+            a.stand = Stand::default();
+        }
+        app.world.agents[lead].cost = 550_000;
+        app.world.agents[w[0]].cost = 12_290_000;
+        app.world.agents[w[0]].stand.added = 727;
+        app.world.agents[w[1]].stand.added = 1090;
+        app.world.agents[w[1]].stand.removed = 134;
+        plan_of(&mut app, w[0]);
+        for id in [lead, w[0], w[1]] {
+            app.world.agents[id].status = Status::Idle;
+            app.world.agents[id].changed_at = 0;
+        }
+        app.world.tick = 240;
+        app.world.agents[w[1]].changed_at = 228;
+        let row = |app: &App, id: AgentId, prefix: &'static str, width: usize| -> String {
+            let line = salon::agent_line(app, &app.world.agents[id], prefix, &rungs, width);
+            (line.spans.iter()).map(|s| s.content.as_ref()).collect()
+        };
+        let at = |r: &str, what: &str| {
+            let cut = r.find(what).unwrap_or_else(|| panic!("{what} in {r:?}"));
+            r[..cut].chars().count()
+        };
+        let lead_row = row(&app, lead, "  ", 200);
+        let one = row(&app, w[0], "  ├ ", 200);
+        let two = row(&app, w[1], "  └ ", 200);
+        let helper = row(&app, w[1], "    └ ", 200);
+        for r in [&one, &two, &helper] {
+            assert_eq!(at(r, "idle"), at(&one, "idle"), "the status: {r:?}");
+        }
+        assert_eq!(at(&lead_row, "coordinating"), at(&one, "idle"));
+        // The columns stand under one another, a part a row lacks kept blank.
+        assert_eq!(at(&lead_row, "·"), at(&one, "·"), "{lead_row:?}\n{one:?}");
+        assert_eq!(at(&one, "·"), at(&two, "·"), "{one:?}\n{two:?}");
+        assert_eq!(at(&one, "+727"), at(&two, "+1090"), "{one:?}\n{two:?}");
+        assert_eq!(
+            at(&lead_row, "$") + dollars(550_000).len(),
+            at(&one, "$") + dollars(12_290_000).len(),
+            "the money is right aligned: {lead_row:?}\n{one:?}"
+        );
+        // A narrow screen gives up the blanks, never what the row says.
+        for width in 80..130 {
+            for (id, prefix) in [(lead, "  "), (w[0], "  ├ "), (w[1], "  └ ")] {
+                let r = row(&app, id, prefix, width);
+                assert!(r.chars().count() <= width, "{width}: {r:?}");
+            }
+            let r = row(&app, w[0], "  ├ ", width);
+            assert!(
+                r.contains(&dollars(12_290_000)) && r.contains("+727"),
+                "{r:?}"
+            );
+        }
+        // Who has gone away widens nothing, and a row alone is not padded.
+        app.world.agents[lead].cost = 1_000_000_000;
+        let wider = row(&app, w[0], "  ├ ", 200);
+        assert!(at(&wider, "$") > at(&one, "$"), "{wider:?}");
+        app.world.agents[lead].gone = true;
+        assert_eq!(row(&app, w[0], "  ├ ", 200), one, "gone");
+        app.world.agents[lead].gone = false;
+        app.world.projects[app.world.agents[lead].project].closed = true;
+        assert_eq!(row(&app, w[0], "  ├ ", 200).len(), one.len(), "closed");
+        app.world.projects[app.world.agents[lead].project].closed = false;
+        app.world.agents[lead].cost = 550_000;
+        let alone = row(&app, w[1], "", 200);
+        assert!(alone.chars().count() < two.chars().count(), "{alone:?}");
+        assert!(!alone.contains("  ·"), "{alone:?}");
+        // A helper's name gives way, a shallower one takes the room.
+        app.world.agents[w[1]].name = "a-helper-with-a-long-name".into();
+        assert!(row(&app, w[1], "    └ ", 200).contains("a-helper-with…"));
+        assert!(row(&app, w[1], "  └ ", 200).contains("a-helper-with-a…"));
+        assert!(row(&app, w[1], "  ", 200).contains("a-helper-with-a-l…"));
+    }
+
+    #[test]
     fn a_step_is_cut_to_what_the_row_leaves_it_between_its_bounds() {
         let (mut app, w, _) = calm_team();
         app.world.inbox.clear();

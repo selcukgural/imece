@@ -632,8 +632,8 @@ impl Live {
     /// rule for each of its commands not yet allowed goes into its
     /// project's standing yes ([`standing::needed`]), the ask is allowed,
     /// and so is every other open ask of the project that the rules now
-    /// cover. The rules added are given back; nothing changes when no
-    /// rule can be made for it.
+    /// cover. The rules added are given back; nothing changes for what is
+    /// not a command.
     pub fn always(&mut self, w: &mut World, item: usize) -> Result<Vec<Standing>, standing::Why> {
         let Some((id, nth)) = Self::ask_at(w, item) else {
             return Err(standing::Why::NotACommand);
@@ -978,6 +978,7 @@ mod tests {
         let npm = Standing {
             program: "npm".into(),
             sub: Some("run".into()),
+            whole: false,
         };
         assert_eq!(
             added,
@@ -1000,23 +1001,55 @@ mod tests {
         assert!(w.agents[1].trace.iter().any(|l| {
             l.ends_with(" allowed by your yes from now on: Bash: npm run test -- --watch=false")
         }));
-        // One it does not cover still asks; one with an option first can
-        // have none.
+        // One it does not cover still asks; one with an option first gets
+        // a yes to that line alone: it goes on, the same again too, another
+        // still asks.
         let rm = ask_to_run(&live, 1, "rm -rf target");
         live.step(&mut w);
         assert!(rm.try_recv().is_err());
         let item = *w.open_inbox().last().unwrap();
         assert_eq!(
             live.always(&mut w, item),
-            Err(standing::Why::OptionFirst("rm -rf target".into()))
+            Ok(vec![Standing::exactly("rm -rf target")])
         );
-        assert!(w.inbox[item].open, "nothing decided");
+        assert!(!w.inbox[item].open, "decided");
+        assert_eq!(verdict(&rm)["behavior"], "allow");
+        let again = ask_to_run(&live, 1, "rm -rf target");
+        live.step(&mut w);
+        assert_eq!(verdict(&again)["behavior"], "allow");
+        let wider = ask_to_run(&live, 1, "rm -rf /");
+        live.step(&mut w);
+        assert!(wider.try_recv().is_err());
+        let item = *w.open_inbox().last().unwrap();
+        live.decide(&mut w, item, false);
+        // With a substitution: a rule for it and for what it runs, so the
+        // next one with other words goes on, and one that runs more asks.
+        let gh = ask_to_run(&live, 1, "gh pr view \"$(git branch --show-current)\"");
+        live.step(&mut w);
+        assert!(gh.try_recv().is_err());
+        let item = *w.open_inbox().last().unwrap();
+        let added = live.always(&mut w, item).unwrap();
+        assert_eq!(
+            added.iter().map(Standing::line).collect::<Vec<_>>(),
+            ["gh pr …", "git branch …"],
+            "what it runs asks too"
+        );
+        assert_eq!(verdict(&gh)["behavior"], "allow");
+        let next = ask_to_run(&live, 1, "gh pr checks \"$(git branch)\" 2>&1");
+        live.step(&mut w);
+        assert_eq!(verdict(&next)["behavior"], "allow");
+        let more = ask_to_run(&live, 1, "gh pr view \"$(rm x)\"");
+        live.step(&mut w);
+        assert!(more.try_recv().is_err());
+        let item = *w.open_inbox().last().unwrap();
+        live.decide(&mut w, item, false);
         // A rule added by name lets the open ask it covers go on.
         w.stand(
             0,
             &[Standing {
                 program: "make".into(),
                 sub: Some("clean".into()),
+                whole: false,
             }],
         );
         live.go_on_allowed(&mut w, 0);

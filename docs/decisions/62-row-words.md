@@ -60,5 +60,18 @@ live's do. Done since: the to-do list (B7) is record 63 (`≡ 3/7` on the row, w
 gives way before the time) and the context-window fill (B8) record 64
 (`◔ 72%`, which stays longer than the mark). A working row with a to-do
 step in progress says `▸ the step` and its tool call after it, dim, in the
-quote's place: record 97. Not done: the status
-column's forty columns are a constant, not a share of the pane.
+quote's place: record 97.
+
+A salon's rows stand in columns (the person, 2026-11-04: a status at
+another column on the leader's row, and every part after it where the
+part before it ended, looked bad). `NAME_END` fixes where a status starts
+whatever the tree in front of it (the depth's name column gives way), and
+`salon::RowColumns` makes each part after it as wide as its widest on a
+row of the salon, none for a part no row has, so nothing is reserved for
+a `≡ 3/7` no row shows; the money is right aligned. `padding` takes only
+what room the row has left, after everything that has something to say:
+on a narrow screen the blanks go first and what gives way gives way as
+before. A row drawn alone (a card's, `""` for a prefix) has no columns.
+
+Not done: the status column's forty columns are a constant, not a share
+of the pane.

@@ -72,7 +72,7 @@ Bir agent'ın satırı:
 - `↗ localhost:5173/`: işçi ya da yardımcının kendi metninde yazdığı en yeni yerel adres, terminalin açtığı bir bağlantı olarak (OSC 8). Yalnız `localhost`, `127.0.0.1` ya da `[::1]` üzerinde `http`/`https` sayılır, sorgu ve parça atılır, 60 karakteri aşan bir adres hiç gösterilmez. Oturumla birlikte gider.
 - Yardımcıları olan bir işçi `▾ 2 yardımcı` ile, katlıysa `▸ 2 yardımcı  ● claude-1.1` ile biter: sayı ve en yüksekleri.
 
-Her agent tek satırdır, ne söylerse söylesin: satırların yüksekliği değişmez. Süre, alıntı ve etkinlik çubuğu yalnız satırda maliyet, worktree durumu, yardımcılar ve bağlantıdan arta kalan yeri alır; dar bir bölme önce çubuğu, sonra alıntıyı, en son süreyi düşürür (`.` yan paneli daraltır). Yeni değişen bir satır bir an öne çıkar, sonra sakinleşir. Seçili satır ters renklidir.
+Her agent tek satırdır, ne söylerse söylesin: satırların yüksekliği değişmez, satırın parçaları da sütun sütun durur: her durum, derinlik ne olursa olsun aynı sütunda başlar, ondan sonraki her parça bir satırdaki en geniş hali kadar yer tutar, onu olmayan satırda boş kalır. Dar ekranda önce boşluklar gider. Süre, alıntı ve etkinlik çubuğu yalnız satırda maliyet, worktree durumu, yardımcılar ve bağlantıdan arta kalan yeri alır; dar bir bölme önce çubuğu, sonra alıntıyı, en son süreyi düşürür (`.` yan paneli daraltır). Yeni değişen bir satır bir an öne çıkar, sonra sakinleşir. Seçili satır ters renklidir.
 
 Açık bir projenin bazı işçileri sizi bekliyorsa ve proje birden fazla işçi gösteriyorsa, işçiler neye ihtiyaç duyduklarına göre bir başlığın altında durur, merdivenin sırasıyla; geri kalanlar onları sayan tek bir başlığın altındadır:
 

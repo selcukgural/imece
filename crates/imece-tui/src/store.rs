@@ -4065,20 +4065,26 @@ mod tests {
         let npm = Standing {
             program: "npm".into(),
             sub: Some("run".into()),
+            whole: false,
         };
         let make = Standing {
             program: "make".into(),
             sub: None,
+            whole: false,
         };
         {
             let mut store = Store::open(&path).unwrap();
             assert!(store.save(&w, &kept().kept()).unwrap());
-            w.projects[1].allowed = vec![make.clone(), npm.clone()];
+            let line = Standing::exactly("rm -rf target");
+            w.projects[1].allowed = vec![make.clone(), npm.clone(), line.clone()];
             assert!(store.save(&w, &kept().kept()).unwrap(), "the list alone");
             assert!(!store.save(&w, &kept().kept()).unwrap());
             let back = store.load(100).unwrap().unwrap();
             assert!(back.world.projects[0].allowed.is_empty());
-            assert_eq!(back.world.projects[1].allowed, [make.clone(), npm.clone()]);
+            assert_eq!(
+                back.world.projects[1].allowed,
+                [make.clone(), npm.clone(), line]
+            );
             store
                 .raw()
                 .execute_batch(
