@@ -4355,7 +4355,7 @@ diff --git a/b.rs b/b.rs
                     code: Some(0),
                     timed_out: false,
                 }],
-                check: Check::None,
+                check: Check::Failed("no shell".into()),
                 spend: None,
             })
         };
@@ -4374,6 +4374,7 @@ diff --git a/b.rs b/b.rs
             rest.runs.is_empty(),
             "the rest is another tree: nothing ran on it"
         );
+        assert_eq!(rest.check, Check::None, "nor was it checked");
         assert_eq!(
             rest.patch,
             "diff --git a/b.rs b/b.rs\n--- a/b.rs\n+++ b/b.rs\n@@ -4 +4 @@\n-p\n+q\n"
