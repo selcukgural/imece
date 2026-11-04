@@ -857,6 +857,37 @@ mod tests {
         assert_eq!(w.review_of(1), None);
     }
 
+    #[test]
+    fn a_claude_workers_change_is_reviewed_by_codex_s_app_server() {
+        let dir = std::env::temp_dir().join(format!("imece-review-codex-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let (mut w, mut live) = waiting(Vendor::Claude);
+        live.state = dir.clone();
+        live.vendors = vec![Hireable::codex(&fake_codex(&dir), &[])];
+        assert_eq!(live.review(&w, 1), Ok(Vendor::Codex));
+        live.review_next(&mut w);
+        let deadline = Instant::now() + Duration::from_secs(30);
+        while !live.take_reviews(&mut w) {
+            assert!(Instant::now() < deadline, "no answer in time");
+            thread::sleep(Duration::from_millis(10));
+        }
+        // The stand-in only says how it was run, and ends.
+        assert!(matches!(
+            last(&w),
+            Event::ReviewFailed {
+                agent: 1,
+                cost: 0,
+                ..
+            }
+        ));
+        assert_eq!(w.paid, 0, "Codex holds nothing");
+        let args = std::fs::read_to_string(dir.canonicalize().unwrap().join("args.txt")).unwrap();
+        assert_eq!(args.lines().next(), Some("app-server"), "{args}");
+        assert!(args.contains("sandbox_mode=\"read-only\""), "{args}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     /// A stand-in for `claude` that answers `text` for `usd`.
     fn answering(dir: &Path, text: &str, usd: &str) -> String {
         use std::os::unix::fs::PermissionsExt;

@@ -1589,10 +1589,11 @@ impl crate::Agent for Session {
 /// Codex costs the pot nothing (it runs on the person's ChatGPT plan; an
 /// API key is refused), so every answer, and every failure, cost nothing.
 pub fn once(spec: &Spec, prompt: &str, deadline: Duration) -> Result<crate::Said, crate::Unsaid> {
+    // No thread to go on with, so none to fork either: `fork` asks
+    // nothing without `resume`.
     let spec = Spec {
         ephemeral: true,
         resume: None,
-        fork: false,
         ..spec.clone()
     };
     let unsaid = |why: String| crate::Unsaid { why, cost: Some(0) };
@@ -4219,8 +4220,10 @@ done"#
             ),
         ];
         let mut s = once_codex(&dir, &turn);
-        // Asked to go on with an old thread, `once` still starts a new one.
+        // Asked to go on with an old thread, or to fork it, `once` still
+        // starts a new one.
         s.resume = Some("t9".into());
+        s.fork = true;
         let got = once(&s, "Review this.", Duration::from_secs(20));
         assert_eq!(
             got,
@@ -4237,6 +4240,7 @@ done"#
         assert!(start.contains("\"ephemeral\":true"), "{start}");
         assert!(requests.contains("Review this."), "the prompt went in");
         assert!(!requests.contains("thread/resume"));
+        assert!(!requests.contains("thread/fork"));
         let _ = std::fs::remove_dir_all(&dir);
     }
 
