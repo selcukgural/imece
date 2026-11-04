@@ -39,6 +39,12 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App, c: CardId) {
             Span::raw(leases),
         ]));
     }
+    if !card.paths.is_empty() {
+        head.push(Line::from(vec![
+            Span::styled(t.card_owns, dim()),
+            Span::raw(clean(&crate::paths::listed(&card.paths))),
+        ]));
+    }
     head.push(Line::raw(""));
     head.push(Line::from(Span::styled(t.card_who, bold(pal().strong))));
     let people = w.card_people(c);
@@ -131,6 +137,7 @@ mod tests {
             column: Column::Working,
             story: Vec::new(),
             symbols: Vec::new(),
+            paths: Vec::new(),
             started: 12,
             finished: 24,
         };

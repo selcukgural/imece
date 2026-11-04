@@ -100,6 +100,16 @@ The board is for work nobody has yet. For work one teammate should do, the leade
 
 Caps: a title is one line of at most 120 characters (the screen shows its first 20 next to the worker, so it should start with what tells it from the other cards: an issue number, a file, a symbol); 20 open cards per project; 10 posts per agent until you speak again.
 
+## The paths a card owns
+
+An `assign` or a `post` names the paths its card owns: `paths`, at most 20 git pathspecs relative to the repository (`src/parser.rs`, a directory `docs`, a pattern `tests/*_test.rs`, where `*` stands for anything, `/` included). The card keeps them, between runs too; the worker's task ends with `This card owns src/parser.rs, docs (shared): stay in them; what else needs changing goes in your done, or ask for the card to be widened`, and a card's screen lists them (`owns`). A card without `paths` has no bounds.
+
+- **No two open cards of a project own the same path.** An `assign` or a `post` whose paths an open card (waiting or working) already owns is refused with which card owns what: `#3 Fix the parser owns "src/parser.rs", which "src" names too; give this card other paths, or end one with the word shared (src shared)`. A path either card names the other way round clashes too (`src` and `src/a.rs`, `src/*` and `src/a.rs`). The card the receiving worker holds now is not counted: its next card may go on in the same files. A done card owns nothing any more.
+- **A path every card touches is `shared`.** `CHANGELOG.md shared` names the path without owning it: another card may name it too, and the worker may write it. The leader is told to give a file most tasks touch to one card and tell the others to say in their `done` what it should get.
+- **A worker that writes outside its paths strays, and is told.** Its session's `Edit`, `Write` and `MultiEdit` calls show the file; the first time a file outside the card's paths is written, the card's story says `changed src/other.rs, outside the card's paths`, the journal `claude-1 changed src/other.rs, which #3 does not own`, and the worker's next prompt starts with `you changed src/other.rs, which #3 does not own (it owns src/parser.rs); say so in your done, or ask lead to widen the card`. Once per file per card; never stopped, never refused: the person reads the change with the files outside the card counted above its patch ([changes](../screen/changes.md#what-is-above-the-patch)).
+
+This is the cheap stand-in for symbol leases (see [the code map](../screen/board-and-code-map.md)): a path is what the leader can name when it plans, and what a change can be checked against without reading the files. Leases come only if paths prove not enough.
+
 ## Cards and their stories
 
 A card is a unit of work with a story: `intent`, `assumption`, `decision`, `talk`, `evidence`, `change`, `you` (what you said or decided). The board view shows cards in columns (WAITING, IN PROGRESS, VERIFYING, DONE); `#N` or `#word` opens a card's own screen with who was on it, its story, and its own inbox and journal lines ([cards](../screen/cards.md)).

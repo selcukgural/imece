@@ -570,6 +570,7 @@ mod tests {
             column: Column::Waiting,
             story: Vec::new(),
             symbols: Vec::new(),
+            paths: Vec::new(),
             started: 0,
             finished: 0,
         });
@@ -618,6 +619,7 @@ mod tests {
                     body: "old mail".into(),
                     id: 0,
                     re: None,
+                    paths: Vec::new(),
                 }],
                 Vec::new(),
                 Vec::new(),
@@ -803,6 +805,7 @@ mod tests {
                 body: body.into(),
                 id: 0,
                 re: None,
+                paths: Vec::new(),
             });
         }
         w.agents[1].status = Status::Asleep;
@@ -898,6 +901,7 @@ mod tests {
             body: "x".into(),
             id: 0,
             re: None,
+            paths: Vec::new(),
         });
         live.remembered[1] = true;
         w.agents[1].status = Status::Asleep;
@@ -1039,6 +1043,7 @@ mod tests {
             body: "old".into(),
             id: 0,
             re: None,
+            paths: Vec::new(),
         });
         live.step(&mut w);
         assert_eq!(live.turns[1], 0, "mail that waited through does not wake");
@@ -1353,6 +1358,7 @@ mod tests {
             body: "one".into(),
             id: 0,
             re: None,
+            paths: Vec::new(),
         });
         w.agents[1].status = Status::Asleep;
         if there {
@@ -1877,6 +1883,7 @@ mod tests {
             body: "kept".into(),
             id: 0,
             re: None,
+            paths: Vec::new(),
         });
         assert_eq!(live.mail[1].len(), 1);
     }

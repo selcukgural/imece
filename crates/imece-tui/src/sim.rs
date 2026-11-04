@@ -887,6 +887,20 @@ pub fn world(
     (w, sim)
 }
 
+/// Every this many cards, one's worker strays once (record 114).
+const STRAY_EVERY: usize = 4;
+/// From this far into its work.
+const STRAY_FROM: u8 = 40;
+
+/// A file of `card`'s project that the card's paths do not name, for a
+/// worker that strays: the first in the code map.
+fn outside_file(w: &World, card: CardId) -> Option<&'static str> {
+    let c = &w.cards[card];
+    (w.projects[c.project].repo.iter())
+        .map(|(file, _)| *file)
+        .find(|file| crate::paths::strays(&c.paths, file))
+}
+
 /// Symbols of `project` leased by cards that are not done yet.
 pub fn held_symbols(w: &World, project: ProjectId) -> Vec<Symbol> {
     w.cards
@@ -2362,6 +2376,7 @@ impl Sim {
             column: Column::Waiting,
             story: Vec::new(),
             symbols: Vec::new(),
+            paths: Vec::new(),
             started: 0,
             finished: 0,
         });
@@ -2495,6 +2510,14 @@ impl Sim {
         c.owner = Some(agent);
         c.column = Column::Working;
         c.started = t;
+        // The card owns the files of its leases (record 114), as a live
+        // assign names paths.
+        c.paths = Vec::new();
+        for s in &symbols {
+            if !c.paths.iter().any(|o| o.path == s.file) {
+                c.paths.push(Owned::new(s.file));
+            }
+        }
         c.symbols = symbols;
         let title = c.title.clone();
 
@@ -2701,6 +2724,7 @@ impl Sim {
         let progress = (w.agents[id].progress + self.rng.range(1, 2) as u8).min(100);
         w.agents[id].progress = progress;
         Self::plan_at(w, id, progress);
+        Self::stray(w, id, card);
         self.fill(w, id, PER_TICK);
         if progress >= 100 {
             self.test(w, id);
@@ -2811,14 +2835,49 @@ impl Sim {
             a.stand.removed += (t % 4) as u32;
         }
         if let Some(file) = edits {
-            let seen = w.cards[card]
-                .story
-                .iter()
-                .any(|s| matches!(&s.event, StoryEvent::Touched(f) if f == file));
-            if !seen {
-                w.story(Some(card), StoryEvent::Touched(file.into()));
-            }
+            Self::edited(w, card, file);
         }
+    }
+
+    /// Worker `id` wrote `file` on `card`: the card's story has the file
+    /// once.
+    fn edited(w: &mut World, card: CardId, file: &'static str) {
+        let seen = w.cards[card]
+            .story
+            .iter()
+            .any(|s| matches!(&s.event, StoryEvent::Touched(f) if f == file));
+        if !seen {
+            w.story(Some(card), StoryEvent::Touched(file.into()));
+        }
+    }
+
+    /// Every [`STRAY_EVERY`]th card's worker, [`STRAY_FROM`] percent into
+    /// its work, edits a file its card does not own, once (record 114),
+    /// as a live worker may: the write shows as any edit, the card's
+    /// story and the journal say it strayed, and the trace carries the
+    /// note live puts in the worker's next prompt.
+    fn stray(w: &mut World, id: AgentId, card: CardId) {
+        let t = w.tick;
+        if card % STRAY_EVERY != 1 || w.agents[id].progress < STRAY_FROM {
+            return;
+        }
+        let Some(file) = outside_file(w, card) else {
+            return;
+        };
+        let Some(c) = w.strayed(id, file) else {
+            return;
+        };
+        let a = &mut w.agents[id];
+        a.trace(t, format!("tool_use Edit {file}"));
+        a.activity = Some(format!("Edit {file}"));
+        a.trace(
+            t,
+            format!(
+                "note you changed {file}, which #{} does not own; say so in your done",
+                c + 1
+            ),
+        );
+        Self::edited(w, card, file);
     }
 
     /// Worker `id`'s session asks the person's yes for one of its
@@ -3078,7 +3137,19 @@ impl Sim {
         let leader = w.projects[w.agents[id].project].leader;
         let re = self.mind(id).assigned.take();
         self.send(w, id, leader, MsgKind::Done, &title, re);
-        let (files, patch) = self.patch(&w.cards[card].symbols);
+        // The change holds what the card leased, and the file its worker
+        // strayed into (record 114), so the Δ says what is outside.
+        let mut symbols = w.cards[card].symbols.clone();
+        let repo = w.projects[w.agents[id].project].repo;
+        for s in &w.cards[card].story {
+            if let StoryEvent::Strayed(file) = &s.event
+                && let Some((file, names)) = repo.iter().find(|(f, _)| f == file)
+                && let Some(&name) = names.first()
+            {
+                symbols.push(Symbol { file, name });
+            }
+        }
+        let (files, patch) = self.patch(&symbols);
         let runs = std::mem::take(&mut self.mind(id).runs);
         let change = Change {
             agent: id,
@@ -6865,6 +6936,113 @@ diff --git a/b.rs b/b.rs
             w.inbox
                 .iter()
                 .all(|i| i.kind != InboxKind::Check || !i.open)
+        );
+    }
+    #[test]
+    fn a_taken_card_owns_its_leases_files_and_every_fourth_card_s_worker_strays_once() {
+        let (mut w, mut s) = world(2, 40, 4, 3, Lang::En);
+        // The trace holds the last 200 lines and a change is kept until
+        // the next: both are read as they come.
+        let (mut noted, mut outside) = (0, 0);
+        for _ in 0..2500 {
+            let lines = w.journal.len();
+            run(&mut w, &mut s, 1, true);
+            for e in &w.journal[lines..] {
+                // The change of a worker that strayed holds the file, so
+                // the Δ says what is outside.
+                if let Event::ChangeReady { agent, .. } = &e.event
+                    && let Some(card) = w.agents[*agent].card
+                    && (w.cards[card].story.iter())
+                        .any(|s| matches!(s.event, StoryEvent::Strayed(_)))
+                {
+                    let ch = w.change_of(*agent).expect("the change");
+                    let c = &w.cards[card];
+                    assert!(
+                        (ch.files.iter()).any(|f| crate::paths::strays(&c.paths, &f.path)),
+                        "#{}: {:?} all in {:?}",
+                        card + 1,
+                        ch.files,
+                        c.paths
+                    );
+                    outside += 1;
+                }
+                if let Event::Strayed { agent, card, path } = &e.event {
+                    let trace = &w.agents[*agent].trace;
+                    let note = format!(
+                        "note you changed {path}, which #{} does not own; say so in your done",
+                        card + 1
+                    );
+                    assert!(trace.iter().any(|l| l.ends_with(&note)), "{note}");
+                    let edit = format!("tool_use Edit {path}");
+                    assert!(trace.iter().any(|l| l.ends_with(&edit)), "{edit}");
+                    noted += 1;
+                }
+            }
+        }
+        assert!(
+            noted >= 2 && outside >= 1,
+            "{noted} strayed, {outside} changes"
+        );
+        let taken: Vec<&Card> = w.cards.iter().filter(|c| c.owner.is_some()).collect();
+        assert!(taken.len() > 8, "{} taken", taken.len());
+        for c in &taken {
+            // Each leased file once, in the order first leased.
+            let mut files: Vec<&str> = Vec::new();
+            for s in &c.symbols {
+                if !files.contains(&s.file) {
+                    files.push(s.file);
+                }
+            }
+            let paths: Vec<&str> = c.paths.iter().map(|o| o.path.as_str()).collect();
+            assert_eq!(paths, files, "#{}", c.id + 1);
+            assert!(c.paths.iter().all(|o| !o.shared));
+            let strayed: Vec<&String> = (c.story.iter())
+                .filter_map(|s| match &s.event {
+                    StoryEvent::Strayed(f) => Some(f),
+                    _ => None,
+                })
+                .collect();
+            let can = outside_file(&w, c.id).is_some();
+            if c.id % STRAY_EVERY == 1 && can {
+                // One still at work may not have reached the middle.
+                if c.column != Column::Done {
+                    assert!(strayed.len() <= 1, "#{} strays once", c.id + 1);
+                    continue;
+                }
+                assert_eq!(strayed.len(), 1, "#{} strays once", c.id + 1);
+                assert!(crate::paths::strays(&c.paths, strayed[0]));
+                assert!(
+                    (c.story.iter())
+                        .any(|s| matches!(&s.event, StoryEvent::Touched(f) if f == strayed[0])),
+                    "the write is a change of the card too"
+                );
+                let owner = c.owner.unwrap();
+                let said = Event::Strayed {
+                    agent: owner,
+                    card: c.id,
+                    path: strayed[0].clone(),
+                };
+                assert_eq!(w.journal.iter().filter(|e| e.event == said).count(), 1);
+            } else {
+                assert!(strayed.is_empty(), "#{} stays in its paths", c.id + 1);
+            }
+        }
+    }
+
+    #[test]
+    fn the_file_a_worker_strays_into_is_the_first_of_the_code_map_outside_its_card() {
+        let (mut w, _) = world(1, 2, 0, 1, Lang::En);
+        let repo = w.projects[0].repo;
+        assert!(repo.len() >= 2);
+        w.cards[0].paths = vec![Owned::new(repo[0].0)];
+        assert_eq!(outside_file(&w, 0), Some(repo[1].0));
+        w.cards[0].paths = repo.iter().map(|(f, _)| Owned::new(f)).collect();
+        assert_eq!(outside_file(&w, 0), None, "a card that owns the whole map");
+        w.cards[0].paths = Vec::new();
+        assert_eq!(
+            outside_file(&w, 0),
+            None,
+            "a card without paths has no outside"
         );
     }
 }

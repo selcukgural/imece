@@ -944,6 +944,7 @@ mod tests {
             body: "x".into(),
             id: 0,
             re: None,
+            paths: Vec::new(),
         });
         finish(&mut live, &mut w, 2, "done");
         let h = &w.agents[2];
@@ -969,6 +970,7 @@ mod tests {
             body: "more".into(),
             id: 0,
             re: None,
+            paths: Vec::new(),
         });
         live.step(&mut w);
         assert_eq!(live.turns[2], 0);

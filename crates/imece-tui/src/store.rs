@@ -77,7 +77,9 @@ use crate::recall::{Hit, Line};
 /// 24 (2026-11-04): what a change cost (`changes.spend`, record 113), where
 /// each agent's spend on its change stands (`agents.task`), and the
 /// `ChangeCost` event (`ChangeReady` carries a `spend`).
-pub const SCHEMA_VERSION: i64 = 24;
+/// 25 (2026-11-04): the paths a card owns (`cards.paths`, record 114), an
+/// assign's until it is delivered (`mail.paths`), and the `Strayed` event.
+pub const SCHEMA_VERSION: i64 = 25;
 /// Trace lines kept per agent, as the world keeps them.
 const TRACE_KEEP: usize = 200;
 /// The file's name under the state directory.
@@ -112,7 +114,8 @@ CREATE TABLE IF NOT EXISTS agents (
     task TEXT NOT NULL DEFAULT '');
 CREATE TABLE IF NOT EXISTS cards (
     id INTEGER PRIMARY KEY, project INTEGER NOT NULL, title TEXT NOT NULL,
-    owner INTEGER, col TEXT NOT NULL, started INTEGER NOT NULL, finished INTEGER NOT NULL);
+    owner INTEGER, col TEXT NOT NULL, started INTEGER NOT NULL, finished INTEGER NOT NULL,
+    paths TEXT NOT NULL DEFAULT '[]');
 -- Read whole, in key order (`load`): no index beyond the key.
 CREATE TABLE IF NOT EXISTS story (
     card INTEGER NOT NULL, seq INTEGER NOT NULL, tick INTEGER NOT NULL,
@@ -134,6 +137,7 @@ CREATE TABLE IF NOT EXISTS trace (
 CREATE TABLE IF NOT EXISTS mail (
     agent INTEGER NOT NULL, seq INTEGER NOT NULL, sender INTEGER NOT NULL,
     kind TEXT NOT NULL, body TEXT NOT NULL, number INTEGER NOT NULL DEFAULT 0, re INTEGER,
+    paths TEXT NOT NULL DEFAULT '[]',
     PRIMARY KEY (agent, seq)) WITHOUT ROWID;
 CREATE TABLE IF NOT EXISTS notes (
     agent INTEGER NOT NULL, seq INTEGER NOT NULL, text TEXT NOT NULL,
@@ -408,6 +412,12 @@ fn untag<T: DeserializeOwned>(s: &str) -> rusqlite::Result<T> {
         .map_err(|e| bad(format!("{s:?}: {e}")))
 }
 
+/// The paths a `paths` column holds: JSON of [`Owned`]s, `[]` in a file
+/// from before them.
+fn paths_of(s: &str) -> rusqlite::Result<Vec<Owned>> {
+    serde_json::from_str(s).map_err(|e| bad(format!("paths {s:?}: {e}")))
+}
+
 /// A file that does not hold what imece wrote, as an error.
 fn bad(msg: String) -> rusqlite::Error {
     rusqlite::Error::ToSqlConversionFailure(msg.into())
@@ -593,6 +603,12 @@ impl Store {
             self.conn.execute_batch(
                 "ALTER TABLE mail ADD COLUMN number INTEGER NOT NULL DEFAULT 0;
                  ALTER TABLE mail ADD COLUMN re INTEGER;",
+            )?;
+        }
+        if !self.has_column("cards", "paths")? {
+            self.conn.execute_batch(
+                "ALTER TABLE cards ADD COLUMN paths TEXT NOT NULL DEFAULT '[]';
+                 ALTER TABLE mail ADD COLUMN paths TEXT NOT NULL DEFAULT '[]';",
             )?;
         }
         if !self.has_column("journal", "marked")? {
@@ -974,8 +990,8 @@ impl Store {
         for &c in &plan.cards {
             let card = &w.cards[c];
             tx.execute(
-                "INSERT OR REPLACE INTO cards (id, project, title, owner, col, started, finished) \
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                "INSERT OR REPLACE INTO cards (id, project, title, owner, col, started, finished, \
+                 paths) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
                 params![
                     n(card.id),
                     n(card.project),
@@ -983,7 +999,8 @@ impl Store {
                     opt(card.owner),
                     tag(&card.column),
                     big(card.started),
-                    big(card.finished)
+                    big(card.finished),
+                    serde_json::to_string(&card.paths).unwrap_or_default()
                 ],
             )?;
         }
@@ -1067,9 +1084,18 @@ impl Store {
             tx.execute("DELETE FROM mail WHERE agent = ?1", params![n(id)])?;
             for (seq, m) in k.mail[id].iter().enumerate() {
                 tx.execute(
-                    "INSERT INTO mail (agent, seq, sender, kind, body, number, re) \
-                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-                    params![n(id), n(seq), n(m.from), tag(&m.kind), m.body, m.id, m.re],
+                    "INSERT INTO mail (agent, seq, sender, kind, body, number, re, paths) \
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+                    params![
+                        n(id),
+                        n(seq),
+                        n(m.from),
+                        tag(&m.kind),
+                        m.body,
+                        m.id,
+                        m.re,
+                        serde_json::to_string(&m.paths).unwrap_or_default()
+                    ],
                 )?;
             }
         }
@@ -1336,6 +1362,7 @@ impl Store {
                 card.column,
                 card.started,
                 card.finished,
+                &card.paths,
             ));
             if s.cards.get(c) != Some(&h) {
                 plan.cards.push(c);
@@ -1605,7 +1632,7 @@ impl Store {
         let mut traces =
             conn.prepare("SELECT line FROM trace WHERE agent = ?1 ORDER BY seq DESC LIMIT ?2")?;
         let mut mails = conn.prepare(
-            "SELECT sender, kind, body, number, re FROM mail WHERE agent = ?1 ORDER BY seq",
+            "SELECT sender, kind, body, number, re, paths FROM mail WHERE agent = ?1 ORDER BY seq",
         )?;
         let mut texts = [
             conn.prepare("SELECT text FROM notes WHERE agent = ?1 ORDER BY seq")?,
@@ -1625,6 +1652,7 @@ impl Store {
                     body: r.get(2)?,
                     id: r.get(3)?,
                     re: r.get(4)?,
+                    paths: paths_of(&r.get::<_, String>(5)?)?,
                 })
             })? {
                 mail.push(m?);
@@ -1641,7 +1669,7 @@ impl Store {
             }
         }
         let mut st = conn.prepare(
-            "SELECT id, project, title, owner, col, started, finished FROM cards ORDER BY id",
+            "SELECT id, project, title, owner, col, started, finished, paths FROM cards ORDER BY id",
         )?;
         for row in st.query_map([], |r| {
             Ok(Card {
@@ -1652,6 +1680,7 @@ impl Store {
                 column: untag(&r.get::<_, String>(4)?)?,
                 story: Vec::new(),
                 symbols: Vec::new(),
+                paths: paths_of(&r.get::<_, String>(7)?)?,
                 started: ubig(r.get(5)?),
                 finished: ubig(r.get(6)?),
             })
@@ -2158,6 +2187,7 @@ mod tests {
                         },
                     ],
                     symbols: Vec::new(),
+                    paths: Vec::new(),
                     started: 10,
                     finished: 0,
                 },
@@ -2175,6 +2205,7 @@ mod tests {
                         },
                     }],
                     symbols: Vec::new(),
+                    paths: Vec::new(),
                     started: 20,
                     finished: 0,
                 },
@@ -2186,6 +2217,7 @@ mod tests {
                     column: Column::Done,
                     story: Vec::new(),
                     symbols: Vec::new(),
+                    paths: Vec::new(),
                     started: 5,
                     finished: 9,
                 },
@@ -2442,6 +2474,7 @@ mod tests {
                         body: "fix the parser\nin src".into(),
                         id: 0,
                         re: None,
+                        paths: Vec::new(),
                     },
                     Mail {
                         from: 2,
@@ -2449,6 +2482,7 @@ mod tests {
                         body: "tests pass".into(),
                         id: 12,
                         re: Some(11),
+                        paths: Vec::new(),
                     },
                 ],
                 Vec::new(),
@@ -2963,6 +2997,7 @@ mod tests {
                             event: StoryEvent::Decision("yes".into()),
                         }],
                         symbols: Vec::new(),
+                        paths: Vec::new(),
                         started: 40,
                         finished: 0,
                     })
@@ -3024,6 +3059,7 @@ mod tests {
                         body: "which".into(),
                         id: 0,
                         re: None,
+                        paths: Vec::new(),
                     })
                 }),
             ),
@@ -4067,12 +4103,12 @@ mod tests {
                 )
                 .unwrap();
             assert_eq!(
-                version, "24",
+                version, "25",
                 "the sent table, the Fault kind, archives, restores, start points, standing yes, the \
-                 recall index, forks, paid kinds, reviews, no vendor, the check on a change and \
-                 what it cost: an older imece knows none"
+                 recall index, forks, paid kinds, reviews, no vendor, the check on a change, what \
+                 it cost and the paths a card owns: an older imece knows none"
             );
-            assert_eq!(SCHEMA_VERSION, 24);
+            assert_eq!(SCHEMA_VERSION, 25);
         }
         let back = Store::open(&path)
             .unwrap()
@@ -4989,6 +5025,76 @@ mod tests {
         assert_eq!(back.found.spends, HashMap::from([(1, spend())]));
         assert_eq!(back.world.agents[1].task, w.agents[1].task);
         assert!(!store.save(&w, &k.kept()).unwrap(), "nothing moved");
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn a_file_of_schema_24_gets_the_paths_columns_and_keeps_them_from_then_on() {
+        let d = dir("schema24");
+        std::fs::create_dir_all(&d).unwrap();
+        let path = d.join(FILE);
+        {
+            // A whole file as schema 24 wrote it: no card owns paths.
+            let mut store = Store::open(&path).unwrap();
+            assert!(store.save(&world(), &kept().kept()).unwrap());
+            store
+                .raw()
+                .execute_batch(
+                    "ALTER TABLE cards DROP COLUMN paths;
+                     ALTER TABLE mail DROP COLUMN paths;
+                     UPDATE meta SET value = '24' WHERE key = 'schema_version';",
+                )
+                .unwrap();
+        }
+        let mut store = Store::open(&path).unwrap();
+        let back = store.load(100).unwrap().expect("a world");
+        assert!(back.world.cards.iter().all(|c| c.paths.is_empty()));
+        assert!(back.found.mail.iter().flatten().all(|m| m.paths.is_empty()));
+        let (card_col, mail_col): (String, String) = store
+            .raw()
+            .query_row(
+                "SELECT (SELECT paths FROM cards WHERE id = 0), \
+                 (SELECT paths FROM mail WHERE agent = 1 AND seq = 0)",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!((card_col.as_str(), mail_col.as_str()), ("[]", "[]"));
+        // The next save writes what the world has: a card's paths, and
+        // an assign's that waits in the mail.
+        let mut k = back.found();
+        let mut w = back.world;
+        let paths = vec![
+            crate::paths::Owned::new("src/a.rs"),
+            crate::paths::Owned::shared("docs"),
+        ];
+        w.cards[0].paths = paths.clone();
+        k.mail[1].push(Mail {
+            from: 1,
+            kind: MsgKind::Assign,
+            body: "Own it".into(),
+            id: 9,
+            re: None,
+            paths: vec![crate::paths::Owned::new("src/b.rs")],
+        });
+        assert!(store.save(&w, &k.kept()).unwrap());
+        let back = store.load(100).unwrap().expect("a world");
+        assert_eq!(back.world.cards[0].paths, paths);
+        assert_eq!(
+            back.found.mail[1].last().unwrap().paths,
+            vec![crate::paths::Owned::new("src/b.rs")]
+        );
+        assert!(!store.save(&w, &k.kept()).unwrap(), "nothing moved");
+        // A column that holds no JSON is a file imece did not write.
+        store
+            .raw()
+            .execute_batch("UPDATE cards SET paths = 'x' WHERE id = 0;")
+            .unwrap();
+        let why = match store.load(100) {
+            Err(e) => e.to_string(),
+            Ok(_) => panic!("a file imece did not write loaded"),
+        };
+        assert!(why.contains("paths \"x\""), "{why}");
         let _ = std::fs::remove_dir_all(&d);
     }
 }

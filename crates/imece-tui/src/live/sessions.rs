@@ -3,6 +3,19 @@
 
 use super::*;
 
+/// Whether the tool `name` writes a file: Claude Code's Edit, Write and
+/// MultiEdit (the target is the file).
+pub(super) fn writes(name: &str) -> bool {
+    matches!(name, "Edit" | "Write" | "MultiEdit")
+}
+
+/// What opens a worker's card with a prompt: the card's title, and the
+/// paths it owns (record 114).
+pub(super) struct Opening<'a> {
+    pub title: &'a str,
+    pub paths: &'a [Owned],
+}
+
 /// Applies one event of agent `id`'s session. `before` is what its earlier
 /// sessions cost, in ten-thousandths of a dollar.
 pub fn apply(w: &mut World, id: AgentId, e: AgentEvent, before: u64) {
@@ -46,7 +59,7 @@ pub fn apply(w: &mut World, id: AgentId, e: AgentEvent, before: u64) {
         AgentEvent::Tool { name, target } => {
             let mcp = imece_agent::mcp_tool("");
             let name = name.strip_prefix(&mcp).map_or(name.clone(), str::to_string);
-            let changes = matches!(name.as_str(), "Edit" | "Write");
+            let changes = writes(&name);
             let a = &mut w.agents[id];
             a.trace(t, format!("tool_use {name} {target}"));
             a.activity = Some(format!("{name} {target}").trim_end().to_string());
@@ -451,7 +464,11 @@ impl Live {
         } else {
             format!("{text}\n\n{}", mail_prompt(w, &mail))
         };
-        if let Err(why) = self.prompt(w, id, prompt, Some(&title)) {
+        let opening = Opening {
+            title: &title,
+            paths: &[],
+        };
+        if let Err(why) = self.prompt(w, id, prompt, Some(opening)) {
             self.mail[id] = mail;
             return Err(Refusal::Start(why));
         }
@@ -500,13 +517,13 @@ impl Live {
     }
 
     /// Gives agent `id` a prompt, starting its session first if it has
-    /// none. An idle worker gets a new card titled `title`, if there is one.
+    /// none. An idle worker gets a new card from `opening`, if there is one.
     pub(super) fn prompt(
         &mut self,
         w: &mut World,
         id: AgentId,
         text: String,
-        title: Option<&str>,
+        opening: Option<Opening<'_>>,
     ) -> Result<(), String> {
         let t = w.tick;
         // Whatever goes in now is the next try: no retry waits beside it.
@@ -572,7 +589,7 @@ impl Live {
         // A worker between tasks gets a card for this one; a task it has
         // not finished (its session stopped or slept under it) goes on.
         let unfinished = a.card.is_some_and(|c| w.cards[c].column != Column::Done);
-        if let Some(title) = title
+        if let Some(o) = opening
             && a.role == Role::Worker
             && a.status != Status::Working
             && !unfinished
@@ -581,11 +598,12 @@ impl Live {
             w.cards.push(Card {
                 id: card,
                 project: a.project,
-                title: title.to_string(),
+                title: o.title.to_string(),
                 owner: Some(id),
                 column: Column::Working,
                 story: Vec::new(),
                 symbols: Vec::new(),
+                paths: o.paths.to_vec(),
                 started: t,
                 finished: 0,
             });
@@ -599,6 +617,24 @@ impl Live {
         }
         w.round_opens(id);
         Ok(())
+    }
+
+    /// Worker `id` wrote `target`: when its card owns paths and none names
+    /// the file, the first time for that file, the card's story and the
+    /// journal say so and its next prompt tells it (record 114); never
+    /// stopped. Whether it strayed.
+    pub(super) fn strayed(&mut self, w: &mut World, id: AgentId, target: &str) -> bool {
+        let Some(card) = w.strayed(id, target) else {
+            return false;
+        };
+        let leader = &w.agents[w.projects[w.agents[id].project].leader].name;
+        self.notes[id].push(format!(
+            "you changed {target}, which #{} does not own (it owns {}); say so in your \
+             done, or ask {leader} to widen the card",
+            card + 1,
+            paths::listed(&w.cards[card].paths)
+        ));
+        true
     }
 
     /// What became of the listed paths at agent `id`'s start, and of
@@ -2566,5 +2602,76 @@ mod tests {
         assert_eq!(live.places.len(), 3);
         let _ = std::fs::remove_dir_all(&repo);
         let _ = std::fs::remove_dir_all(&other);
+    }
+    #[test]
+    fn a_write_outside_the_card_s_paths_is_noted_once_a_file_and_told_at_the_next_prompt() {
+        let mut w = team(1);
+        let c = with_card(&mut w, 1);
+        let mut live = idle_live(2);
+        assert!(
+            !live.strayed(&mut w, 1, "src/b.rs"),
+            "a card without paths has no bounds"
+        );
+        w.cards[c].paths = vec![Owned::new("src/a.rs"), Owned::shared("docs")];
+        assert!(!live.strayed(&mut w, 1, "src/a.rs"));
+        assert!(!live.strayed(&mut w, 1, "docs/x.md"));
+        assert!(live.notes[1].is_empty() && w.journal.is_empty());
+        assert!(live.strayed(&mut w, 1, "src/b.rs"));
+        assert_eq!(
+            live.notes[1],
+            [
+                "you changed src/b.rs, which #1 does not own (it owns src/a.rs, docs (shared)); \
+              say so in your done, or ask lead to widen the card"
+            ]
+        );
+        assert!(matches!(
+            w.journal.last().unwrap().event,
+            Event::Strayed { agent: 1, card, ref path } if card == c && path == "src/b.rs"
+        ));
+        assert!(matches!(
+            w.cards[c].story.last().unwrap().event,
+            StoryEvent::Strayed(ref f) if f == "src/b.rs"
+        ));
+        // The same file again says nothing more; another file does.
+        assert!(!live.strayed(&mut w, 1, "src/b.rs"));
+        assert_eq!((live.notes[1].len(), w.journal.len()), (1, 1));
+        assert!(live.strayed(&mut w, 1, "src/c.rs"));
+        assert_eq!((live.notes[1].len(), w.journal.len()), (2, 2));
+        // Only a worker's writes are bounded: the leader and a helper
+        // with a card are not.
+        w.agents[0].card = Some(c);
+        assert!(!live.strayed(&mut w, 0, "src/d.rs"));
+        let mut other = team(1);
+        let h = with_helper(&mut other, 1);
+        let hc = with_card(&mut other, h);
+        other.cards[hc].paths = vec![Owned::new("src/a.rs")];
+        assert!(other.strayed(h, "src/d.rs").is_none());
+        other.agents[h].role = Role::Worker;
+        assert_eq!(other.strayed(h, "src/d.rs"), Some(hc), "a worker's is");
+        other.agents[h].card = None;
+        assert!(other.strayed(h, "src/e.rs").is_none(), "without a card");
+        // The note rides the next prompt.
+        let opening = Opening {
+            title: "next",
+            paths: &[],
+        };
+        live.prompt(&mut w, 1, "go on".into(), Some(opening))
+            .unwrap();
+        let q = queued(&live, 1);
+        assert!(
+            q[0].contains("- you changed src/c.rs, which #1 does not own"),
+            "{q:?}"
+        );
+        assert!(live.notes[1].is_empty());
+    }
+
+    #[test]
+    fn the_tools_that_write_a_file_are_edit_write_and_multiedit() {
+        for name in ["Edit", "Write", "MultiEdit"] {
+            assert!(writes(name), "{name}");
+        }
+        for name in ["Read", "Bash", "NotebookEdit", "Grep", "edit", ""] {
+            assert!(!writes(name), "{name}");
+        }
     }
 }

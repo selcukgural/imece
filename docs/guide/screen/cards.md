@@ -39,6 +39,7 @@ Left, in the salon's place:
 
 - The title row: `#3` and the card's title; then its project, its column in the board's words (WAITING, IN PROGRESS, VERIFYING, DONE) and its minutes, to its end when done.
 - Its leases, when it has any (demo only; symbol leases are not built live).
+- The paths it owns (`owns   src/parser.rs, docs (shared)`), when its `assign` or `post` gave it any ([the paths a card owns](../concepts/messages-and-board.md#the-paths-a-card-owns)); a write outside them is a `change` line of its story, `changed src/other.rs, outside the card's paths`.
 - **WHO**: who posted it, its owner, the owner's helpers while it is still the owner's card, then everyone its story says talked about it, each once with the first part it had. They are drawn as the salon's agent rows, so their state is live; `j` `k` select among them and `enter` opens the selected one's focus as in the salon.
 - **STORY**: the card's story, one line per event, oldest first, told as the owner had it. Each line has a glyph and a label: `◎` intent, `⚑` assumption, `⚖` decision, `⇄` talk (a message, with its type), `◌` evidence (a run and how it ended), `Δ` change, `›` you (what you said about it). A card nobody took yet says `No story yet.`
 

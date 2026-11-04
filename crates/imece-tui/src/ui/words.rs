@@ -17,7 +17,7 @@ fn name(w: &World, id: AgentId) -> &str {
     &w.agents[id].name
 }
 
-fn card_ref(c: CardId) -> String {
+pub(crate) fn card_ref(c: CardId) -> String {
     format!("#{}", c + 1)
 }
 
@@ -225,6 +225,9 @@ pub fn event(lang: Lang, w: &World, e: &Event) -> String {
             }
         }
         Event::CheckFailed { agent, why } => fill(t.ev_check_failed, &[name(w, *agent), why]),
+        Event::Strayed { agent, card, path } => {
+            fill(t.ev_strayed, &[name(w, *agent), path, &card_ref(*card)])
+        }
         Event::CheckAnswered { agent, yes } => {
             let text = if *yes { t.ev_check_yes } else { t.ev_check_no };
             fill(text, &[name(w, *agent)])
@@ -496,6 +499,7 @@ pub fn story(lang: Lang, w: &World, card: &Card, e: &StoryEvent) -> String {
         StoryEvent::YouRejected { research: false } => t.st_you_rejected.to_string(),
         StoryEvent::YouRejected { research: true } => t.st_you_rejected_research.to_string(),
         StoryEvent::Touched(file) => fill(t.st_touched, &[file]),
+        StoryEvent::Strayed(file) => fill(t.st_strayed, &[file]),
         StoryEvent::Stopped(why) => fill(t.st_stopped, &[why]),
         StoryEvent::Interrupted => t.st_interrupted.to_string(),
         StoryEvent::Posted { by, text } => fill(t.st_posted, &[name(w, *by), text]),

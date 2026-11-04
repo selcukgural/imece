@@ -10,6 +10,8 @@ use ratatui::widgets::{Block, Paragraph};
 
 use super::*;
 use crate::app::{App, Copying, DiffNote, Folds};
+use crate::paths;
+use crate::ui::words::card_ref;
 
 /// Line offsets of the file headers (`diff --git`) in `patch`, for
 /// jumping from file to file.
@@ -330,6 +332,11 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App, id: AgentId) {
         usize::from(inner.height / 2),
     );
     let mut files = file_lines(app.lang, &c.files);
+    if let Some(card) = a.card
+        && let Some(outside) = outside_line(app.lang, &c.files, &w.cards[card])
+    {
+        files.insert(0, outside);
+    }
     if let Some(split) = kinds_line(app.lang, &c.files) {
         files.insert(0, split);
     }
@@ -561,6 +568,37 @@ fn kinds_line(lang: Lang, files: &[ChangedFile]) -> Option<Line<'static>> {
     Some(Line::from(Span::styled(
         format!(" {}", words.join(" · ")),
         bold(pal().strong),
+    )))
+}
+
+/// The files of the change its worker's `card` does not own (record
+/// 114), under the kinds line: `2 outside #12: src/b.rs, Cargo.toml`, in
+/// the warning colour; nothing when the card owns no paths or every file
+/// is in them. The card may be done already: it is still the one the
+/// change was made for.
+fn outside_line(lang: Lang, files: &[ChangedFile], card: &Card) -> Option<Line<'static>> {
+    let outside: Vec<&str> = files
+        .iter()
+        .filter(|f| paths::strays(&card.paths, &f.path))
+        .map(|f| f.path.as_str())
+        .collect();
+    if outside.is_empty() {
+        return None;
+    }
+    let t = lang.text();
+    Some(Line::from(Span::styled(
+        format!(
+            " {}",
+            fill(
+                t.diff_outside,
+                &[
+                    &outside.len().to_string(),
+                    &card_ref(card.id),
+                    &clean(&outside.join(", ")),
+                ],
+            )
+        ),
+        fg(pal().warn),
     )))
 }
 
@@ -1457,6 +1495,54 @@ diff --git a/c.rs b/c.rs
         assert_eq!(
             texts(&check_lines(Lang::Tr, &ran(true, &[]))),
             ["✓ kontrol · exit 0, 41.2 s"]
+        );
+    }
+    #[test]
+    fn the_files_a_card_does_not_own_are_counted_and_named_under_the_kinds() {
+        let file = |path: &str| ChangedFile {
+            path: path.into(),
+            added: 1,
+            removed: 0,
+            binary: false,
+        };
+        let files = [file("src/a.rs"), file("src/b.rs"), file("Cargo.toml")];
+        let mut card = Card {
+            id: 11,
+            project: 0,
+            title: "x".into(),
+            owner: Some(1),
+            column: Column::Done,
+            story: Vec::new(),
+            symbols: Vec::new(),
+            paths: Vec::new(),
+            started: 0,
+            finished: 0,
+        };
+        assert!(
+            outside_line(Lang::En, &files, &card).is_none(),
+            "no paths, no bounds"
+        );
+        card.paths = vec![Owned::new("src/a.rs"), Owned::shared("Cargo.toml")];
+        let line = outside_line(Lang::En, &files, &card).unwrap();
+        assert_eq!(line.to_string(), " 1 outside #12: src/b.rs");
+        assert_eq!(line.spans[0].style, fg(pal().warn));
+        card.paths = vec![Owned::new("docs")];
+        assert_eq!(
+            outside_line(Lang::Tr, &files, &card).unwrap().to_string(),
+            " 3 kartın dışında (#12): src/a.rs, src/b.rs, Cargo.toml"
+        );
+        card.paths = vec![Owned::new("src"), Owned::new("Cargo.toml")];
+        assert!(
+            outside_line(Lang::En, &files, &card).is_none(),
+            "all inside"
+        );
+        assert!(outside_line(Lang::En, &[], &card).is_none());
+        // A file name is cleaned on its way to the screen.
+        card.paths = vec![Owned::new("docs")];
+        let odd = [file("src/\u{1b}[31mx.rs")];
+        assert_eq!(
+            outside_line(Lang::En, &odd, &card).unwrap().to_string(),
+            " 1 outside #12: src/ [31mx.rs"
         );
     }
 }

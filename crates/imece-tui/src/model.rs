@@ -11,6 +11,8 @@ use std::sync::atomic::{AtomicU64, Ordering};
 pub use imece_agent::worktree::{Clash, Clashes};
 use serde::{Deserialize, Serialize};
 
+pub use crate::paths::Owned;
+
 pub type AgentId = usize;
 pub type CardId = usize;
 pub type ProjectId = usize;
@@ -258,6 +260,9 @@ pub struct Mail {
     pub body: String,
     pub id: MsgId,
     pub re: Option<MsgId>,
+    /// The paths an `assign` gives its card (record 114); nothing on
+    /// the other types.
+    pub paths: Vec<Owned>,
 }
 
 /// A Claude Code session an agent had, kept to go on with it after imece
@@ -983,6 +988,9 @@ pub enum StoryEvent {
     },
     /// A live agent changed this file.
     Touched(String),
+    /// The owner changed this file, which the card's paths do not name
+    /// (record 114); once per file.
+    Strayed(String),
     /// A live agent's turn or session ended without an answer.
     Stopped(String),
     /// imece was closed while the agent's turn ran; the turn is not run
@@ -1039,9 +1047,10 @@ impl StoryEvent {
             | StoryEvent::QueueFailed
             | StoryEvent::Stopped(_)
             | StoryEvent::Interrupted => StoryKind::Evidence,
-            StoryEvent::Change { .. } | StoryEvent::Sensitive(_) | StoryEvent::Touched(_) => {
-                StoryKind::Change
-            }
+            StoryEvent::Change { .. }
+            | StoryEvent::Sensitive(_)
+            | StoryEvent::Touched(_)
+            | StoryEvent::Strayed(_) => StoryKind::Change,
             StoryEvent::YouApproved { .. }
             | StoryEvent::YouRejected { .. }
             | StoryEvent::YouSaid(_) => StoryKind::Person,
@@ -1065,6 +1074,9 @@ pub struct Card {
     pub story: Vec<Story>,
     /// The symbols the owner leased.
     pub symbols: Vec<Symbol>,
+    /// The paths the card owns (record 114): given with the `assign` or
+    /// `post` that made it; none means no bounds.
+    pub paths: Vec<Owned>,
     pub started: u64,
     pub finished: u64,
 }
@@ -1538,6 +1550,13 @@ pub enum Event {
         agent: AgentId,
         why: String,
     },
+    /// Agent `agent` wrote `path`, which its card `card` does not own
+    /// (record 114); it is told so in its next prompt, never stopped.
+    Strayed {
+        agent: AgentId,
+        card: CardId,
+        path: String,
+    },
     /// The person said yes (or no) to the check asked about for agent
     /// `agent`'s change.
     CheckAnswered {
@@ -1724,6 +1743,7 @@ impl Event {
             | Event::ChangeReady { .. }
             | Event::Suggested { .. }
             | Event::Reviewed { .. }
+            | Event::Strayed { .. }
             | Event::PotLow { .. } => EntryKind::Sensitive,
             Event::Merged { .. } | Event::Applied { .. } => EntryKind::Merged,
             Event::Failed { .. }
@@ -1823,6 +1843,7 @@ impl Event {
             | Event::Checked { agent, .. }
             | Event::CheckFailed { agent, .. }
             | Event::CheckAnswered { agent, .. }
+            | Event::Strayed { agent, .. }
             | Event::CommandsMissing { agent }
             | Event::WorktreeMoved { agent, .. }
             | Event::WorktreeKept { agent, .. }
@@ -2923,6 +2944,28 @@ impl World {
             tick: self.tick,
             event,
         });
+    }
+
+    /// Agent `id` wrote `target`: its card, when it is a worker's whose
+    /// card owns paths none of which names the file, and the file was not
+    /// noted before (record 114); the card's story and the journal get
+    /// it. Else nothing.
+    pub fn strayed(&mut self, id: AgentId, target: &str) -> Option<CardId> {
+        let a = &self.agents[id];
+        let card = a.card.filter(|_| a.role == Role::Worker)?;
+        let c = &self.cards[card];
+        let noted =
+            (c.story.iter()).any(|s| matches!(&s.event, StoryEvent::Strayed(f) if f == target));
+        if noted || !crate::paths::strays(&c.paths, target) {
+            return None;
+        }
+        self.story(Some(card), StoryEvent::Strayed(target.to_string()));
+        self.note(Event::Strayed {
+            agent: id,
+            card,
+            path: target.to_string(),
+        });
+        Some(card)
     }
 
     pub fn story(&mut self, card: Option<CardId>, event: StoryEvent) {
@@ -4212,6 +4255,7 @@ mod tests {
             column: Column::Waiting,
             story: Vec::new(),
             symbols: Vec::new(),
+            paths: Vec::new(),
             started: 0,
             finished: 0,
         };
@@ -4545,6 +4589,7 @@ mod tests {
             column,
             story: Vec::new(),
             symbols: Vec::new(),
+            paths: Vec::new(),
             started: 0,
             finished: 0,
         };
@@ -5184,6 +5229,7 @@ mod tests {
             column: Column::Working,
             story: Vec::new(),
             symbols: Vec::new(),
+            paths: Vec::new(),
             started: 0,
             finished: 0,
         });
@@ -5703,6 +5749,7 @@ mod tests {
                 .map(|event| Story { tick: 0, event })
                 .collect(),
             symbols: Vec::new(),
+            paths: Vec::new(),
             started: 0,
             finished: 0,
         }

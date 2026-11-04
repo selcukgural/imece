@@ -48,6 +48,9 @@ Deny by default: a message that does not fit is refused with the reason and leav
 | the receiver has 20 unread messages | `claude-1 has 20 unread messages; wait for it` |
 | `assign`, `handoff` or `cancel` to `you` | `assign is not for the person; ask them, or tell them (inform, done, blocked)` |
 | a bad `re` | see below |
+| `paths` on anything but an `assign` | `paths go with an assign: the card it opens owns them` |
+| bad `paths` | `paths must be an array of strings`, `a card owns at most 20 paths`, `a path is empty`, `a path is longer than 200 characters`, `"a\tb" has a control character`, `paths are relative to the repository; "/etc" starts with /`, `"src/../x" goes outside the repository (..)`, `paths lists "src" twice` |
+| a path an open card of the project owns | `#3 Fix the parser owns "src/parser.rs", which "src" names too; give this card other paths, or end one with the word shared (src shared)` |
 
 The 12-turn and 10-post counters start again every time you write to any agent: agents cannot keep each other busy forever without you.
 
@@ -57,7 +60,7 @@ The 12-turn and 10-post counters start again every time you write to any agent: 
 
 ### Cards and the bus
 
-A message to an idle worker opens a card titled by its first line (an `assign`'s first line when there is one); the card closes when the turn it started ends with the agent's reply. A worker's `done` to its leader does not close the leader's card: the leader's own turn does. A helper's `done` to its worker marks it leaving; it leaves when that turn ends, so the turn's cost is still reported. See [messages and board](../concepts/messages-and-board.md) and [cards](../screen/cards.md).
+A message to an idle worker opens a card titled by its first line (an `assign`'s first line when there is one), owning the `assign`'s `paths` ([the paths a card owns](../concepts/messages-and-board.md#the-paths-a-card-owns)); the card closes when the turn it started ends with the agent's reply. A worker's `done` to its leader does not close the leader's card: the leader's own turn does. A helper's `done` to its worker marks it leaving; it leaves when that turn ends, so the turn's cost is still reported. See [messages and board](../concepts/messages-and-board.md) and [cards](../screen/cards.md).
 
 ## Message numbers and replies
 
@@ -113,6 +116,9 @@ imece's MCP server is called `imece`; its tools reach a session as `mcp__imece__
 | `type` | string, one of the ten | yes | the envelope |
 | `body` | string, at most 4000 | yes | for `assign`: the first line becomes the card's title (the screen shows its first 20 characters next to the worker, so it should start with what tells it from the other cards, not a verb every task shares); then the task, the files it touches and when it is done |
 | `re` | integer ≥ 1 | no | the number of the message this replies to |
+| `paths` | array of at most 20 strings, each at most 200 | no | for `assign`: the paths the card owns, relative to the repository, as git pathspecs (a file, a directory, or a pattern with `*`); one ending in the word `shared` is named, not owned. Refused on any other type |
+
+An `assign` with paths is delivered with them: the mail ends `This card owns src/parser.rs, docs (shared): stay in them; what else needs changing goes in your done, or ask for the card to be widened.`
 
 ### `post`
 
@@ -122,8 +128,9 @@ imece's MCP server is called `imece`; its tools reach a session as `mcp__imece__
 | --- | --- | --- | --- |
 | `title` | string, one line, at most 120 | yes | the screen shows its first 20 characters |
 | `body` | string, at most 4000 | yes | the task: what to do, which files, when it is done |
+| `paths` | array of at most 20 strings, each at most 200 | no | the paths the card owns, as on `send` |
 
-Answers `posted as #4; an idle worker will be offered it`.
+Answers `posted as #4; an idle worker will be offered it`; the paths are checked against the project's open cards as an `assign`'s are.
 
 ### `board`
 
@@ -139,7 +146,7 @@ No fields. Answers `Open:` and `Taken:` lists (`#4 Add tests (posted by lead)`, 
 | --- | --- | --- | --- |
 | `card` | integer ≥ 1 | yes | the card's number, without `#` |
 
-Workers only (`only workers take cards; assign or post instead`). Refusals: `there is no such card on the board; call board to see it`, `#4 was taken by claude-2; pick another`.
+Workers only (`only workers take cards; assign or post instead`). Refusals: `there is no such card on the board; call board to see it`, `#4 was taken by claude-2; pick another`. The answer ends with the card's paths when it owns any (`This card owns tests, lib (shared): stay in them; …`).
 
 ### `hire`
 

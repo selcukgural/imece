@@ -1975,7 +1975,11 @@ mod tests {
         let (cut, _) = mpsc::channel();
         live.ready_tx = cut;
         // The task's prompt opens the round the change is costed by.
-        live.prompt(&mut w, 1, "Add b".into(), Some("Add b"))
+        let opening = Opening {
+            title: "Add b",
+            paths: &[],
+        };
+        live.prompt(&mut w, 1, "Add b".into(), Some(opening))
             .unwrap();
         assert_eq!(w.agents[1].task.round, Some((0, w.tick)));
         std::fs::write(tree.join("a.txt"), "a\nb\n").unwrap();

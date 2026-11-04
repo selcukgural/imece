@@ -43,6 +43,10 @@ impl Live {
             return Err(format!("the body is longer than {MAX_BODY} characters"));
         }
         let re = reply_to(&args["re"])?;
+        let paths = paths::parse(&args["paths"])?;
+        if !paths.is_empty() && kind != MsgKind::Assign {
+            return Err("paths go with an assign: the card it opens owns them".into());
+        }
         if arg("to") == YOU {
             if re.is_some() {
                 return Err("re is for a teammate's message: the person's have no number".into());
@@ -78,6 +82,7 @@ impl Live {
         if let Some(re) = re {
             replies(w, from, to, re)?;
         }
+        self.owned_elsewhere(w, project, Some(to), &paths)?;
         if w.agents[to].status == Status::Stopped {
             return Err(format!(
                 "{name} has stopped; it runs again when the person talks to it"
@@ -104,6 +109,7 @@ impl Live {
             body: body.to_string(),
             id,
             re,
+            paths,
         });
         if kind.wakes() && w.agents[to].status == Status::Asleep {
             // Something new since the start: a sleeper takes it like any
@@ -259,7 +265,9 @@ impl Live {
         if body.chars().count() > MAX_BODY {
             return Err(format!("the body is longer than {MAX_BODY} characters"));
         }
+        let paths = paths::parse(&args["paths"])?;
         let project = w.agents[from].project;
+        self.owned_elsewhere(w, project, None, &paths)?;
         if self.open(w, project).count() >= MAX_OPEN {
             return Err(format!(
                 "the board has {MAX_OPEN} open cards; wait until workers take some"
@@ -281,6 +289,7 @@ impl Live {
             column: Column::Waiting,
             story: Vec::new(),
             symbols: Vec::new(),
+            paths,
             started: t,
             finished: 0,
         });
@@ -394,11 +403,38 @@ impl Live {
         let by = &w.agents[post.by].name;
         Ok(format!(
             "#{} {} is yours. {by} posted it (written by that agent, not by the person):\n\n{}\n\n\
-             When it is done, send {by} a done message.",
+             When it is done, send {by} a done message.{}",
             card + 1,
             w.cards[card].title,
-            post.body
+            post.body,
+            owns(&w.cards[card].paths)
         ))
+    }
+
+    /// Refuses `paths` when an open card of `project` owns one of them
+    /// (record 114): the one `to` holds now is not counted, since a card
+    /// for `to` opens once that one is done.
+    fn owned_elsewhere(
+        &self,
+        w: &World,
+        project: ProjectId,
+        to: Option<AgentId>,
+        paths: &[Owned],
+    ) -> Result<(), String> {
+        for c in w.cards.iter().filter(|c| c.project == project) {
+            if c.column == Column::Done || (c.owner.is_some() && c.owner == to) {
+                continue;
+            }
+            if let Some((theirs, mine)) = paths::overlap(&c.paths, paths) {
+                return Err(format!(
+                    "#{} {} owns {theirs:?}, which {mine:?} names too; give this card \
+                     other paths, or end one with the word shared ({mine} shared)",
+                    c.id + 1,
+                    c.title
+                ));
+            }
+        }
+        Ok(())
     }
 
     /// The open cards of `project`, oldest first.
@@ -508,19 +544,32 @@ impl Live {
         }
         let mail = std::mem::take(&mut self.mail[id]);
         self.woken[id] += 1;
-        let title = mail
+        let first = mail
             .iter()
             .find(|m| m.kind == MsgKind::Assign)
-            .unwrap_or(&mail[0])
-            .body
-            .lines()
-            .next()
-            .unwrap_or_default()
-            .to_string();
-        if let Err(why) = self.prompt(w, id, mail_prompt(w, &mail), Some(&title)) {
+            .unwrap_or(&mail[0]);
+        let title = first.body.lines().next().unwrap_or_default().to_string();
+        let opening = Opening {
+            title: &title,
+            paths: &first.paths,
+        };
+        if let Err(why) = self.prompt(w, id, mail_prompt(w, &mail), Some(opening)) {
             apply(w, id, AgentEvent::Stopped(why), self.spent_before[id]);
         }
     }
+}
+
+/// What a card's paths add to the task a worker is handed: nothing when
+/// it owns none.
+pub(super) fn owns(paths: &[Owned]) -> String {
+    if paths.is_empty() {
+        return String::new();
+    }
+    format!(
+        "\n\nThis card owns {}: stay in them; what else needs changing goes in your \
+         done, or ask for the card to be widened.",
+        paths::listed(paths)
+    )
 }
 
 /// Whom a leader's message to a group goes to: every worker of its
@@ -964,6 +1013,7 @@ mod tests {
             body: "x".into(),
             id: 2,
             re: None,
+            paths: Vec::new(),
         };
         let helper = with_helper(&mut w, 1);
         live.turns[1] = 1;
@@ -1028,6 +1078,7 @@ mod tests {
             column: Column::Working,
             story: Vec::new(),
             symbols: Vec::new(),
+            paths: Vec::new(),
             started: 0,
             finished: 0,
         });
@@ -1064,6 +1115,7 @@ mod tests {
                 body: "The new one.".into(),
                 id: 8,
                 re: Some(7),
+                paths: Vec::new(),
             }]
         );
         assert_eq!(
@@ -2037,6 +2089,7 @@ Taken:
             body: "main moved".into(),
             id: 1,
             re: None,
+            paths: Vec::new(),
         });
         // Mail that may still move: no report yet.
         live.turns[0] = 1;
@@ -2099,5 +2152,211 @@ in p.rs",
         w.started_at = now() + 60;
         live.step(&mut w);
         assert_eq!(w.tick, 0, "a clock set back does not underflow");
+    }
+    fn with_paths(mut args: Value, paths: Value) -> Value {
+        args["paths"] = paths;
+        args
+    }
+
+    #[test]
+    fn an_assign_with_paths_opens_a_card_that_owns_them_and_the_prompt_names_them() {
+        let mut w = team(2);
+        w.agents[1].status = Status::Idle;
+        let mut live = idle_live(3);
+        let args = with_paths(
+            msg("claude-1", "assign", "Fix the parser\nin src/p.rs"),
+            json!(["src/p.rs", "docs/ shared"]),
+        );
+        let got = sent(&mut live, &mut w, 0, &args).unwrap();
+        assert_eq!(got, "delivered as message 1; claude-1 starts on it now");
+        live.step(&mut w);
+        let q = queued(&live, 1);
+        assert!(
+            q[0].ends_with(
+                "in src/p.rs\n\nThis card owns src/p.rs, docs (shared): stay in them; what \
+                 else needs changing goes in your done, or ask for the card to be widened."
+            ),
+            "{q:?}"
+        );
+        let card = w.agents[1].card.expect("a card");
+        assert_eq!(
+            w.cards[card].paths,
+            [Owned::new("src/p.rs"), Owned::shared("docs")]
+        );
+        // One without paths owns none, and the prompt says nothing of it.
+        w.agents[2].status = Status::Idle;
+        sent(&mut live, &mut w, 0, &msg("claude-2", "assign", "Docs")).unwrap();
+        live.step(&mut w);
+        let q = queued(&live, 2);
+        assert!(q[0].ends_with("from lead:\nDocs"), "{q:?}");
+        assert!(w.cards[w.agents[2].card.unwrap()].paths.is_empty());
+        assert_eq!(owns(&[]), "");
+    }
+
+    #[test]
+    fn paths_go_with_an_assign_only_and_are_checked_before_anything_is_sent() {
+        let mut w = team(1);
+        w.agents[1].status = Status::Idle;
+        let mut live = idle_live(2);
+        let refused = |live: &mut Live, w: &mut World, args: Value| {
+            sent(live, w, 0, &args).expect_err("refused")
+        };
+        let err = refused(
+            &mut live,
+            &mut w,
+            with_paths(msg("claude-1", "ask", "Which?"), json!(["src"])),
+        );
+        assert_eq!(err, "paths go with an assign: the card it opens owns them");
+        let err = refused(
+            &mut live,
+            &mut w,
+            with_paths(msg("claude-1", "assign", "Fix"), json!(["/etc"])),
+        );
+        assert_eq!(
+            err,
+            "paths are relative to the repository; \"/etc\" starts with /"
+        );
+        let err = refused(
+            &mut live,
+            &mut w,
+            with_paths(msg("you", "inform", "Fix"), json!(["src"])),
+        );
+        assert_eq!(err, "paths go with an assign: the card it opens owns them");
+        assert!(live.mail[1].is_empty() && w.messages == 0, "nothing went");
+        // An empty list is no paths.
+        let got = sent(
+            &mut live,
+            &mut w,
+            0,
+            &with_paths(msg("claude-1", "inform", "Hi"), json!([])),
+        );
+        assert!(got.is_ok(), "{got:?}");
+    }
+
+    #[test]
+    fn a_path_an_open_card_owns_is_refused_to_another_unless_shared_or_the_same_worker_s() {
+        let mut w = team(2);
+        w.agents[1].status = Status::Idle;
+        w.agents[2].status = Status::Idle;
+        let mut live = idle_live(3);
+        let assign = |to: &str, paths: Value| {
+            with_paths(msg(to, "assign", &format!("Work for {to}")), paths)
+        };
+        sent(
+            &mut live,
+            &mut w,
+            0,
+            &assign("claude-1", json!(["src/a.rs"])),
+        )
+        .unwrap();
+        live.step(&mut w);
+        let err = sent(&mut live, &mut w, 0, &assign("claude-2", json!(["src"]))).unwrap_err();
+        assert_eq!(
+            err,
+            "#1 Work for claude-1 owns \"src/a.rs\", which \"src\" names too; give this \
+             card other paths, or end one with the word shared (src shared)"
+        );
+        let err = live
+            .post(
+                &mut w,
+                0,
+                &with_paths(card("More", "x"), json!(["src/a.rs"])),
+            )
+            .unwrap_err();
+        assert!(
+            err.starts_with("#1 Work for claude-1 owns \"src/a.rs\""),
+            "{err}"
+        );
+        assert_eq!(w.cards.len(), 1, "nothing posted");
+        // Shared on either side passes; so does a path of its own.
+        let got = sent(
+            &mut live,
+            &mut w,
+            0,
+            &assign("claude-2", json!(["src shared"])),
+        );
+        assert!(got.is_ok(), "{got:?}");
+        live.step(&mut w);
+        assert_eq!(w.cards[1].paths, [Owned::shared("src")]);
+        // A posted card, waiting, owns its paths too; a done card no more.
+        live.post(&mut w, 0, &with_paths(card("Lib", "x"), json!(["lib/*"])))
+            .unwrap();
+        let err = sent(
+            &mut live,
+            &mut w,
+            0,
+            &assign("claude-1", json!(["lib/x.rs"])),
+        )
+        .unwrap_err();
+        assert!(
+            err.starts_with("#3 Lib owns \"lib/*\", which \"lib/x.rs\" names too"),
+            "{err}"
+        );
+        let err = live
+            .post(
+                &mut w,
+                0,
+                &with_paths(card("Lib too", "x"), json!(["lib/y.rs"])),
+            )
+            .unwrap_err();
+        assert!(err.starts_with("#3 Lib owns \"lib/*\""), "{err}");
+        w.cards[2].column = Column::Done;
+        let got = sent(
+            &mut live,
+            &mut w,
+            0,
+            &assign("claude-1", json!(["lib/x.rs"])),
+        );
+        assert!(got.is_ok(), "{got:?}");
+        // The worker's own open card is not counted: its next card may
+        // go on in the same files.
+        let got = sent(
+            &mut live,
+            &mut w,
+            0,
+            &assign("claude-1", json!(["src/a.rs"])),
+        );
+        assert!(got.is_ok(), "{got:?}");
+        // Another project's card is not counted either.
+        w.cards[0].project = 1;
+        let got = sent(
+            &mut live,
+            &mut w,
+            0,
+            &assign("claude-2", json!(["src/a.rs"])),
+        );
+        assert!(got.is_ok(), "{got:?}");
+    }
+
+    #[test]
+    fn a_posted_card_owns_its_paths_and_a_claim_hands_them_over() {
+        let mut w = team(1);
+        let mut live = idle_live(2);
+        live.post(
+            &mut w,
+            0,
+            &with_paths(
+                card("Add a test", "Cover sub()."),
+                json!(["tests/", "lib shared"]),
+            ),
+        )
+        .unwrap();
+        assert_eq!(
+            w.cards[0].paths,
+            [Owned::new("tests"), Owned::shared("lib")]
+        );
+        let got = live.claim(&mut w, 1, &json!({ "card": 1 })).unwrap();
+        assert!(
+            got.ends_with(
+                "send lead a done message.\n\nThis card owns tests, lib (shared): stay in \
+                 them; what else needs changing goes in your done, or ask for the card to \
+                 be widened."
+            ),
+            "{got}"
+        );
+        let err = live
+            .post(&mut w, 0, &with_paths(card("Bad", "x"), json!(["a", "a"])))
+            .unwrap_err();
+        assert_eq!(err, "paths lists \"a\" twice");
     }
 }

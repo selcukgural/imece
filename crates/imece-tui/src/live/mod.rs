@@ -44,6 +44,7 @@ use serde_json::{Value, json};
 
 use crate::i18n::{Lang, clean};
 use crate::model::*;
+use crate::paths;
 use crate::store::{self, Found, Kept, Store};
 use crate::ui::words;
 use crate::welcome::{Answers, Seen};
@@ -72,7 +73,9 @@ pub(crate) use self::review::{REVIEW_CAP, REVIEW_DAY_CALLS, REVIEW_DAY_COST};
 pub use self::sessions::apply;
 pub(crate) use self::suggest::{SUGGEST_CAP, SUGGEST_DAY_CALLS, SUGGEST_DAY_COST};
 pub use self::tidy::Refusal as TidyRefusal;
-use self::{changes::*, hiring::*, projects::*, prompts::*, suggest::*, tools::*};
+use self::{
+    bus::*, changes::*, hiring::*, projects::*, prompts::*, sessions::*, suggest::*, tools::*,
+};
 
 pub struct Options {
     pub repo: PathBuf,
@@ -1223,7 +1226,15 @@ impl Live {
             if stopped {
                 self.end(w, id);
             }
+            // A file written outside the card's paths (record 114).
+            let wrote = match &e {
+                AgentEvent::Tool { name, target } if writes(name) => Some(target.clone()),
+                _ => None,
+            };
             apply(w, id, e, self.spent_before[id]);
+            if let Some(target) = wrote {
+                self.strayed(w, id, &target);
+            }
             if let Some(why) = lost
                 && w.agents[id].retry.is_none()
             {
@@ -1766,5 +1777,50 @@ mod tests {
         live.step(&mut w);
         assert_eq!(w.journal.len(), journal);
         assert_eq!(w.agents[1].cost, 0);
+    }
+    #[test]
+    fn a_session_s_write_outside_its_card_s_paths_is_told_to_it_and_a_read_is_not() {
+        let mut w = team(1);
+        let c = with_card(&mut w, 1);
+        w.cards[c].paths = vec![Owned::new("src/a.rs")];
+        let mut live = idle_live(2);
+        let tool = |name: &str, target: &str| AgentEvent::Tool {
+            name: name.into(),
+            target: target.into(),
+        };
+        for (name, target) in [("Read", "src/b.rs"), ("Edit", "src/a.rs"), ("Grep", "fn")] {
+            live.tx.send((1, 0, tool(name, target))).unwrap();
+            live.step(&mut w);
+        }
+        assert!(live.notes[1].is_empty(), "{:?}", live.notes[1]);
+        live.tx.send((1, 0, tool("Write", "src/b.rs"))).unwrap();
+        live.step(&mut w);
+        assert_eq!(live.notes[1].len(), 1);
+        assert!(live.notes[1][0].starts_with("you changed src/b.rs, which #1 does not own"));
+        assert_eq!(
+            journaled(
+                &w,
+                &Event::Strayed {
+                    agent: 1,
+                    card: c,
+                    path: "src/b.rs".into()
+                }
+            ),
+            1
+        );
+        // The story has the write as a change and as a stray.
+        let story: Vec<String> = w.cards[c]
+            .story
+            .iter()
+            .map(|s| format!("{:?}", s.event))
+            .collect();
+        assert_eq!(
+            story,
+            [
+                "Touched(\"src/a.rs\")",
+                "Touched(\"src/b.rs\")",
+                "Strayed(\"src/b.rs\")"
+            ]
+        );
     }
 }
