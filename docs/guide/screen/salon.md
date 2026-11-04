@@ -71,7 +71,7 @@ An agent's row:
 - `↗ localhost:5173/`: the newest loopback address the worker or helper wrote in its own text, as a link the terminal opens (OSC 8). Only `http`/`https` on `localhost`, `127.0.0.1` or `[::1]` counts, the query and fragment are dropped, and an address over 60 characters is not shown. Gone with the session.
 - A worker with helpers ends with `▾ 2 helpers`, or `▸ 2 helpers  ● claude-1.1` when they are folded away: the count and the loudest of them.
 
-Every agent is one row, whatever it says: rows never change height. The time, the quote and the activity bar take only what the row has left once its cost, stand, helpers and link are on it, so a narrow pane drops the bar first, the quote next and then the time (`.` narrows the side panel). A row that just changed stands out for a moment, then calms down. The selected row is reversed.
+Every agent is one row, whatever it says: rows never change height, and the parts of a row stand in columns: every status starts at one column, whatever the depth, and each part after it is as wide as its widest on a row, blank on a row without it. On a narrow screen the blanks go first. The time, the quote and the activity bar take only what the row has left once its cost, stand, helpers and link are on it, so a narrow pane drops the bar first, the quote next and then the time (`.` narrows the side panel). A row that just changed stands out for a moment, then calms down. The selected row is reversed.
 
 When some workers of an open project need you and it shows more than one, they sit under a header for what they need, in the ladder's order, and the rest under one header that counts them:
 
