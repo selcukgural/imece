@@ -1,6 +1,6 @@
 ---
 title: Bütçe ve limitler
-description: "Bütün ekibin harcadığı tek bütçe, nasıl belirlenir ve değiştirilir, başlık yakma hızı hakkında ne der, satıcıların kullanım pencereleri, : menüsünde neye para gider, :commit'in kendi tavanları."
+description: "Bütün ekibin harcadığı tek bütçe, nasıl belirlenir ve değiştirilir, başlık yakma hızı hakkında ne der, satıcıların kullanım pencereleri, : menüsünde neye para gider, :commit ve :review'un tavanları."
 ---
 
 # Bütçe ve limitler
@@ -10,7 +10,7 @@ Bütçe bütün ekip için tek bir kesedir: bütün ajanlar birlikte onu bitirin
 ## Bütçe
 
 - `--budget USD` belirler; ilk seferinde 50 $. Bütçe **çalıştırmalar arasında saklanır**: `--budget`'sız bir başlangıç kalandan devam eder. Sonraki bir başlangıçta `--budget` yeniden belirler.
-- Her projenin her ajanının turları ondan çıkar; imece'nin kendi ücretli çağrıları da (`:commit`). Ajan başına pay yoktur.
+- Her projenin her ajanının turları ondan çıkar; imece'nin kendi ücretli çağrıları da (`:commit`, `:review`). Ajan başına pay yoktur.
 - Bitince hiçbir ajan uyandıran mesaj almaz ve kart teklif edilmez; birini uyandıracak bir `send`, "the budget is spent" ile reddedilir.
 - **Oturum başına sert tavan:** her Claude Code oturumu, başladığında bütçeden kalanı kendi `--max-budget-usd`'si olarak alır; tek başına kaçan bir oturum da onu geçemez. Bu bir pay değil, son duraktır. Codex ve Gemini'de böyle bir tavan yoktur; bütçe yine sonraki turlarını durdurur.
 
@@ -48,7 +48,7 @@ Harcanan, her başlangıçta depodan geri okunur; ajanlar ve imece'nin kendi ça
 
 - `:open` yeni bir lider oturumu başlatır.
 - `:forget` sonraki mesajın bütün özeti yeniden, önbelleksiz ödeyen yeni bir oturum başlatmasına yol açar.
-- `:commit` ücretli bir model çağrısıdır.
+- `:commit` ve `:review` ücretli model çağrılarıdır.
 
 Hiçbir `:` komutu kendi başına ücretli bir tur başlatmaz; `:budget` işaret yerine değerini gösterir.
 
@@ -64,9 +64,22 @@ Hiçbir `:` komutu kendi başına ücretli bir tur başlatmaz; `:budget` işaret
 
 Çağrıdan önce depo onu tek bir işlemde tavanından sayar ve bütçe tavanı tutar; bütçede tavandan az varsa ya da gün dolmuşsa reddedilir. Çağrı bitince bildirdiği, tavanın yerine geçer; başlayamayan hiçbir şey ödemez; bildirmeden duran tavanını korur. Aynı stage'li ağaç yeniden sorulunca hiçbir şey ödenmez: proje başına son öneri saklanır. Günlük her öneriyi modeli ve maliyetiyle, her başarısızlığı nedeniyle söyler. Yalnız Claude Code: çağrısı sert bir harcama tavanı alan tek satıcıdır; PATH'te yoksa `:commit` reddedilir.
 
+## `:review` ve tavanları
+
+`:review` bir değişikliği işçininkinden başka bir satıcıya okutur ve bulduğunu söyletir ([değişiklikler](changes.md#başka-bir-satıcının-incelemesi)). Tavanları `:commit`'inkilerden ayrıdır ve aynı yolla tutulur: depoda tür ve güne göre sayılır, çağrıdan önce ayrılır, sonra kapatılır.
+
+| Tavan | Değer |
+| --- | --- |
+| Claude Code ile bir inceleme | en çok 0,10 $ (çağrının kendi `--max-budget-usd`'si) |
+| Codex ile bir inceleme | bütçeden hiçbir şey (ChatGPT planınız) |
+| Bir gün (UTC), bütün projeler birlikte | 20 inceleme ve 2,00 $ |
+| Aynı anda çalışan | bir; kalanlar sırasını bekler |
+
+İncelemesi olan ya da istenmiş bir değişiklik yeniden incelenmez.
+
 ## Demo
 
-`--demo` uydurma bir bütçeyi aynı yolla harcar: başlık, hız, azalan bütçe satırı, `:budget`, kullanım pencereleri (harcamadan doldurulur) ve `:commit`'in birkaç kuruşu canlıdaki gibi görünür.
+`--demo` uydurma bir bütçeyi aynı yolla harcar: başlık, hız, azalan bütçe satırı, `:budget`, kullanım pencereleri (harcamadan doldurulur) ve `:commit` ile `:review`'un birkaç kuruşu canlıdaki gibi görünür.
 
 ## Ayrıca bakınız
 

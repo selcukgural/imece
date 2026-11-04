@@ -51,9 +51,11 @@ use crate::welcome::{Answers, Seen};
 mod bus;
 mod changes;
 mod hiring;
+mod paid;
 mod projects;
 mod prompts;
 mod remember;
+mod review;
 mod sessions;
 pub(crate) mod setup;
 pub(crate) mod standing;
@@ -66,6 +68,7 @@ mod tools;
 pub(crate) use self::bus::numbers;
 pub use self::projects::Open;
 pub(crate) use self::prompts::{INSTRUCTIONS, MAX_NOTES_KIB};
+pub(crate) use self::review::{REVIEW_DAY_CALLS, REVIEW_DAY_COST, review_cap, reviewer_of};
 pub use self::sessions::apply;
 pub(crate) use self::suggest::{SUGGEST_CAP, SUGGEST_DAY_CALLS, SUGGEST_DAY_COST};
 pub use self::tidy::Refusal as TidyRefusal;
@@ -692,6 +695,17 @@ pub struct Live {
     paid_day: (u64, u32, u64),
     said_tx: Sender<Said>,
     said_rx: Receiver<Said>,
+    /// The reviews asked for (`:review`) that wait their turn, each with
+    /// the vendor that reviews, and the one under way with the patch it
+    /// reads ([`patch_sum`]): one at a time.
+    reviews_due: VecDeque<(AgentId, Vendor)>,
+    reviewing: Option<(AgentId, Vendor, String)>,
+    /// The day the reviews' ceilings count (see
+    /// [`review::REVIEW_DAY_CALLS`]), as [`Live::paid_day`] is for
+    /// suggestions.
+    review_day: paid::Count,
+    reviewed_tx: Sender<review::Reviewed>,
+    reviewed_rx: Receiver<review::Reviewed>,
     /// Looks for worktrees no agent owns and their removals (`:tidy`).
     tidy: tidy::Tidy,
 }
@@ -802,6 +816,7 @@ pub fn world(o: Options, present: &[(Vendor, bool)]) -> Result<(World, Live), St
                 changes: Vec::new(),
                 paid: 0,
                 suggested: None,
+                reviews: Default::default(),
                 orphans: crate::model::Orphans::default(),
                 messages: 0,
             },
@@ -977,6 +992,7 @@ impl Live {
         let (done, git_back) = mpsc::channel();
         let (ran_tx, ran_back) = mpsc::channel();
         let (said_tx, said_rx) = mpsc::channel();
+        let (reviewed_tx, reviewed_rx) = mpsc::channel();
         let (setup_tx, setup_rx) = mpsc::channel();
         thread::spawn(move || git_thread(jobs, done));
         Live {
@@ -1057,6 +1073,11 @@ impl Live {
             paid_day: (u64::MAX, 0, 0),
             said_tx,
             said_rx,
+            reviews_due: VecDeque::new(),
+            reviewing: None,
+            review_day: (u64::MAX, 0, 0),
+            reviewed_tx,
+            reviewed_rx,
             tidy: tidy::Tidy::default(),
         }
     }
@@ -1186,6 +1207,8 @@ impl Live {
         self.own_sockets();
         let git = self.take_git(w);
         let said = self.take_said(w);
+        let reviewed = self.take_reviews(w);
+        self.review_next(w);
         let tidied = self.take_tidy(w);
         let set_up = self.take_setups(w);
         self.stand_busy(w, Instant::now());
@@ -1431,7 +1454,7 @@ impl Live {
             }
         }
         self.offer(w);
-        moved || started || git || said || tidied || set_up || heard || called
+        moved || started || git || said || reviewed || tidied || set_up || heard || called
     }
 
     /// Tries agent `id`'s failed turn again: its session is told to go on.
@@ -1665,7 +1688,7 @@ mod tests {
         assert_eq!(w.projects[0].files, ["a.rs"]);
         // A suggestion's answer.
         let came = says(&mut live, &mut w, |live| {
-            let unsaid = claude::Unsaid {
+            let unsaid = imece_agent::Unsaid {
                 why: "no".into(),
                 cost: None,
             };

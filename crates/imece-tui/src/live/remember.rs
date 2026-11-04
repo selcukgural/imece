@@ -190,6 +190,8 @@ impl Live {
                 runs: found.runs.get(&id).cloned().unwrap_or_default(),
             });
         }
+        // A waiting change's review, as the journal kept it.
+        w.reviews_from_journal();
         self.changes = found.changes;
         self.loaded_cards = w.cards.len();
         let gone: Vec<ProjectId> = w
@@ -638,6 +640,15 @@ mod tests {
             code: Some(0),
             timed_out: false,
         };
+        // The review of that change, as the journal kept it.
+        w.note(Event::Reviewed {
+            agent: 1,
+            by: Vendor::Codex,
+            model: "default".into(),
+            patch: patch_sum("diff"),
+            text: "1. a.txt: no test".into(),
+            cost: 0,
+        });
         let found = Found {
             repos: vec![repo.clone(), "/nonexistent/gone".into()],
             models: vec![None, Some("haiku".into()), None, None],
@@ -763,6 +774,11 @@ mod tests {
             (1, "Changed a", 2)
         );
         assert_eq!(w.changes[0].runs, [ran]);
+        assert_eq!(
+            w.review_of(1).map(|r| r.text.as_str()),
+            Some("1. a.txt: no test"),
+            "its review back from the journal"
+        );
         assert!(
             w.agents[0].trace.iter().any(|l| l.contains("3 lines")),
             "{:?}",

@@ -242,6 +242,12 @@ pub struct Spec {
     /// generates, 2026-11-03) takes the same settings for a fork as for a
     /// resume and answers as for a new thread, with the fork's own id.
     pub fork: bool,
+    /// Whether the new thread is left off the disk (`ephemeral`): a
+    /// one-shot call's ([`once`]), which nobody goes on with. Codex 0.165.0
+    /// answers such a thread with `ephemeral: true` and `path: null` and
+    /// writes no rollout (probe, 2026-11-04). A resumed or forked thread
+    /// is always kept.
+    pub ephemeral: bool,
     /// A directory of the agent's own outside its files, for what is no
     /// part of its change (record 105): a writer's sandbox's only writable
     /// root besides the workspace (`sandbox_workspace_write.writable_roots`,
@@ -485,6 +491,8 @@ pub struct Protocol {
     resume: Option<String>,
     /// Whether that thread is forked; see [`Spec::fork`].
     fork: bool,
+    /// Whether a new thread is left off the disk; see [`Spec::ephemeral`].
+    ephemeral: bool,
     /// The sandbox's writable roots, as Codex must echo them; see
     /// [`Spec::scratch`].
     roots: Value,
@@ -534,6 +542,7 @@ impl Protocol {
             mcp: spec.mcp.clone(),
             resume: spec.resume.clone(),
             fork: spec.fork,
+            ephemeral: spec.ephemeral && spec.resume.is_none(),
             roots: roots(spec.scratch.as_deref()),
             tools: spec
                 .mcp
@@ -753,7 +762,7 @@ impl Protocol {
                         "thread/resume"
                     }
                     None => {
-                        params["ephemeral"] = json!(false);
+                        params["ephemeral"] = json!(self.ephemeral);
                         "thread/start"
                     }
                 };
@@ -958,9 +967,14 @@ impl Protocol {
         if r["cwd"].as_str().map(Path::new) != Some(self.cwd.as_path()) {
             return Err(format!("started a thread in {}", r["cwd"]));
         }
-        // Kept on disk, or there is nothing to go on with next time.
-        if r["thread"]["ephemeral"] != false {
-            return Err("started a thread that is not kept".into());
+        // Kept on disk, or there is nothing to go on with next time; a
+        // one-shot call's is not, or it would stay there.
+        if r["thread"]["ephemeral"] != self.ephemeral {
+            return Err(if self.ephemeral {
+                "started a thread that is kept".into()
+            } else {
+                "started a thread that is not kept".into()
+            });
         }
         Ok(())
     }
@@ -1568,6 +1582,46 @@ impl crate::Agent for Session {
     }
 }
 
+/// One prompt, one answer, then the process goes: a session on `spec` in
+/// a thread left off the disk ([`Spec::ephemeral`]; never a resumed or
+/// forked one), that takes `prompt` and ends at its first turn's end or
+/// at `deadline`. What it runs with is checked as every session's is.
+/// Codex costs the pot nothing (it runs on the person's ChatGPT plan; an
+/// API key is refused), so every answer, and every failure, cost nothing.
+pub fn once(spec: &Spec, prompt: &str, deadline: Duration) -> Result<crate::Said, crate::Unsaid> {
+    // No thread to go on with, so none to fork either: `fork` asks
+    // nothing without `resume`.
+    let spec = Spec {
+        ephemeral: true,
+        resume: None,
+        ..spec.clone()
+    };
+    let unsaid = |why: String| crate::Unsaid { why, cost: Some(0) };
+    let (tx, rx) = mpsc::channel();
+    let mut session = Session::start(&spec, move |e| {
+        let _ = tx.send(e);
+    })
+    .map_err(|e| unsaid(format!("{} could not start: {e}", spec.program)))?;
+    session
+        .prompt(prompt)
+        .map_err(|e| unsaid(format!("the prompt did not reach it: {e}")))?;
+    let end = Instant::now() + deadline;
+    loop {
+        let left = end.saturating_duration_since(Instant::now());
+        match rx.recv_timeout(left) {
+            Ok(Event::TurnDone { ok: true, text, .. }) => {
+                return Ok(crate::Said { text, cost: 0 });
+            }
+            Ok(Event::TurnDone { text, .. }) => return Err(unsaid(text)),
+            Ok(Event::Stopped(why)) => return Err(unsaid(why)),
+            Ok(_) => {}
+            Err(_) => {
+                return Err(unsaid(format!("no answer in {} s", deadline.as_secs())));
+            }
+        }
+    }
+}
+
 /// How long deleting a thread may take: a process of its own starts.
 const DELETE_WAIT: Duration = Duration::from_secs(30);
 
@@ -1793,6 +1847,7 @@ mod tests {
             mcp: None,
             resume: None,
             fork: false,
+            ephemeral: false,
         }
     }
 
@@ -4081,6 +4136,162 @@ done"#
     }
 
     #[test]
+    fn a_one_shot_thread_is_asked_off_the_disk_and_must_come_back_so() {
+        let mut once = spec(false);
+        once.ephemeral = true;
+        let mut t = thread(false, "/work/w1");
+        t["thread"]["ephemeral"] = json!(true);
+        let acts = start_until(&once, "thread/start", t.clone()).unwrap();
+        assert!(
+            acts.iter()
+                .any(|a| matches!(a, Act::Event(Event::Started { .. }))),
+            "{acts:?}"
+        );
+        // Asked for so.
+        let mut p = Protocol::new(&once, None);
+        p.open();
+        let mut asked = None;
+        for (i, r) in [
+            json!({ "userAgent": "codex" }),
+            json!({ "account": { "type": "chatgpt" } }),
+            json!({ "config": good_config(false, &[], false) }),
+            json!({ "data": [] }),
+            json!({ "marketplaces": [] }),
+            json!({ "data": [] }),
+            servers(false, &[]),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let acts = p.line(&reply(i as u64 + 1, r)).unwrap();
+            asked = sent(&acts).into_iter().last();
+        }
+        let asked = asked.expect("the thread asked for");
+        assert_eq!(asked["method"], "thread/start");
+        assert_eq!(asked["params"]["ephemeral"], true);
+        // One kept on the disk is not what was asked.
+        let mut kept = t.clone();
+        kept["thread"]["ephemeral"] = json!(false);
+        let e = start_until(&once, "thread/start", kept).unwrap_err();
+        assert_eq!(e, "started a thread that is kept");
+        let mut unsaid = t;
+        unsaid["thread"]
+            .as_object_mut()
+            .unwrap()
+            .remove("ephemeral");
+        assert!(start_until(&once, "thread/start", unsaid).is_err());
+        // A thread gone on with is kept, whatever the spec says.
+        let mut resumed = resumed();
+        resumed.ephemeral = true;
+        assert!(!Protocol::new(&resumed, None).ephemeral);
+        assert!(start_until(&resumed, "thread/resume", thread(true, "/work/w1")).is_ok());
+    }
+
+    /// A stand-in Codex for [`once`] in `dir`: a clean start of an
+    /// ephemeral reader's thread, then `turn` played; every request kept
+    /// in `requests.txt`.
+    fn once_codex(dir: &Path, turn: &[String]) -> Spec {
+        let cwd = dir.canonicalize().unwrap();
+        let mut answers = clean_answers(false, &cwd.to_string_lossy());
+        answers[7]["thread"]["ephemeral"] = json!(true);
+        let body = fake_body(&answers, turn).replace(
+            "  n=$((n+1))\n",
+            "  n=$((n+1))\n  printf '%s\\n' \"$line\" >> requests.txt\n",
+        );
+        let mut s = spec(false);
+        s.cwd = cwd;
+        s.program = fake(dir, "fake-codex", &body);
+        s
+    }
+
+    #[test]
+    fn once_answers_with_the_turn_s_text_for_nothing_in_a_thread_off_the_disk() {
+        let dir = std::env::temp_dir().join(format!("imece-codex-once-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let turn = [
+            notify(
+                "item/completed",
+                json!({ "item": { "type": "agentMessage", "text": "One bug: a - b." } }),
+            ),
+            notify(
+                "turn/completed",
+                json!({ "turn": { "id": "u1", "status": "completed" } }),
+            ),
+        ];
+        let mut s = once_codex(&dir, &turn);
+        // Asked to go on with an old thread, or to fork it, `once` still
+        // starts a new one.
+        s.resume = Some("t9".into());
+        s.fork = true;
+        let got = once(&s, "Review this.", Duration::from_secs(20));
+        assert_eq!(
+            got,
+            Ok(crate::Said {
+                text: "One bug: a - b.".into(),
+                cost: 0
+            })
+        );
+        let requests = std::fs::read_to_string(dir.join("requests.txt")).unwrap();
+        let start = requests
+            .lines()
+            .find(|l| l.contains("\"method\":\"thread/start\""))
+            .expect("a new thread");
+        assert!(start.contains("\"ephemeral\":true"), "{start}");
+        assert!(requests.contains("Review this."), "the prompt went in");
+        assert!(!requests.contains("thread/resume"));
+        assert!(!requests.contains("thread/fork"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn once_says_why_it_said_nothing_and_that_it_cost_nothing() {
+        let dir = std::env::temp_dir().join(format!("imece-codex-unsaid-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        // A failed turn.
+        let turn = [notify(
+            "turn/completed",
+            json!({ "turn": { "id": "u1", "status": "failed", "error": { "message": "too big" } } }),
+        )];
+        let got = once(&once_codex(&dir, &turn), "Review.", Duration::from_secs(20));
+        assert_eq!(
+            got,
+            Err(crate::Unsaid {
+                why: "too big".into(),
+                cost: Some(0)
+            })
+        );
+        // A process that ends before its turn does.
+        let mut s = spec(false);
+        s.cwd = dir.canonicalize().unwrap();
+        s.program = fake(&dir, "fake-codex", "exit 3");
+        let e = once(&s, "Review.", Duration::from_secs(20)).unwrap_err();
+        assert_eq!(e.cost, Some(0));
+        assert!(e.why.contains("code 3"), "{e:?}");
+        // One that never answers is given up at the deadline.
+        let e = once(&sleeper(&dir), "Review.", Duration::from_millis(300)).unwrap_err();
+        assert_eq!(
+            e,
+            crate::Unsaid {
+                why: "no answer in 0 s".into(),
+                cost: Some(0)
+            }
+        );
+        // One that can not start.
+        let mut s = spec(false);
+        s.program = dir.join("no-such-codex").to_string_lossy().into_owned();
+        let e = once(&s, "Review.", Duration::from_secs(5)).unwrap_err();
+        assert!(
+            e.why
+                .starts_with(&format!("{} could not start: ", s.program)),
+            "{e:?}"
+        );
+        assert_eq!(e.cost, Some(0));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn a_session_starts_a_thread_runs_a_turn_and_reports_events() {
         let dir = std::env::temp_dir().join(format!("imece-codex-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
@@ -4526,6 +4737,7 @@ done"#
             }),
             resume: None,
             fork: false,
+            ephemeral: false,
         };
         let (tx, rx) = mpsc::channel();
         let session = Session::start(&s, move |e| {
@@ -4613,6 +4825,7 @@ done"#
             mcp: None,
             resume: None,
             fork: false,
+            ephemeral: false,
         };
         let (tx, rx) = mpsc::channel();
         let mut session = Session::start(&s, move |e| {
@@ -4674,6 +4887,7 @@ done"#
             mcp: None,
             resume: None,
             fork: false,
+            ephemeral: false,
         };
         let (tx, rx) = mpsc::channel();
         let mut session = Session::start(&s, move |e| {
@@ -4719,6 +4933,45 @@ done"#
         let _ = std::fs::remove_dir_all(&dir);
     }
 
+    /// `IMECE_LIVE_CODEX=1 cargo test -p imece-agent -- --ignored live_codex_once --nocapture`
+    ///
+    /// A one-shot call (record 106) as a review makes it: a reader at the
+    /// strict level, every check passed, an answer, and no rollout left.
+    #[test]
+    #[ignore = "drives the real codex; set IMECE_LIVE_CODEX=1"]
+    fn live_codex_once_answers_and_leaves_no_rollout() {
+        if std::env::var_os("IMECE_LIVE_CODEX").is_none() {
+            return;
+        }
+        let dir =
+            std::env::temp_dir().join(format!("imece-live-codex-once-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let s = Spec {
+            scratch: None,
+            program: PROGRAM.into(),
+            cwd: dir.canonicalize().unwrap(),
+            choice: Some("@low".into()),
+            write: false,
+            confine: Confine::Strict,
+            system: "You review patches. Answer in one short line.".into(),
+            mcp: None,
+            resume: None,
+            fork: false,
+            ephemeral: true,
+        };
+        let said = once(
+            &s,
+            "Review this patch:\n+fn add(a: i32, b: i32) -> i32 { a - b }",
+            Duration::from_secs(180),
+        );
+        eprintln!("live codex once: {said:?}");
+        let said = said.expect("an answer");
+        assert!(!said.text.trim().is_empty());
+        assert_eq!(said.cost, 0);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     /// `IMECE_LIVE_CODEX=1 cargo test -p imece-agent -- --ignored live_codex_forks --nocapture`
     ///
     /// A thread forked into another directory is a new thread that knows
@@ -4745,6 +4998,7 @@ done"#
             mcp: None,
             resume,
             fork,
+            ephemeral: false,
         };
         let turn = |s: &Spec, prompt: &str| -> Vec<Event> {
             let (tx, rx) = mpsc::channel();
@@ -4828,6 +5082,7 @@ done"#
             mcp: None,
             resume: None,
             fork: false,
+            ephemeral: false,
         };
         let (tx, rx) = mpsc::channel();
         let mut session = Session::start(&s, move |e| {
@@ -4904,6 +5159,7 @@ done"#
             mcp: None,
             resume: None,
             fork: false,
+            ephemeral: false,
         };
         // One process, one prompt: every event until the turn or the
         // session ends.

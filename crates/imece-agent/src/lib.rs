@@ -613,3 +613,22 @@ pub enum Event {
     /// ones asked for, or it broke the protocol. Nothing follows.
     Stopped(String),
 }
+
+/// What a one-shot call ([`claude::once`], [`codex::once`]) said, and
+/// what it cost (millionths of a dollar).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Said {
+    pub text: String,
+    pub cost: u64,
+}
+
+/// Why a one-shot call said nothing, and what it cost when that is
+/// known: nothing when it could not start, the vendor's total when it
+/// ended its turn in an error (Codex's is always nothing: it runs on the
+/// person's ChatGPT plan), unknown when it stopped or ran out of time
+/// before reporting one (the caller keeps what it reserved).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Unsaid {
+    pub why: String,
+    pub cost: Option<u64>,
+}

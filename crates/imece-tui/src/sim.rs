@@ -12,7 +12,8 @@ use std::path::{Path, PathBuf};
 use crate::i18n::Lang;
 use crate::live::setup;
 use crate::live::{
-    Refusal, SUGGEST_CAP, SUGGEST_DAY_CALLS, SUGGEST_DAY_COST, TidyRefusal, numbers, standing,
+    REVIEW_DAY_CALLS, REVIEW_DAY_COST, Refusal, SUGGEST_CAP, SUGGEST_DAY_CALLS, SUGGEST_DAY_COST,
+    TidyRefusal, numbers, review_cap, reviewer_of, standing,
 };
 use crate::model::*;
 use crate::rng::Rng;
@@ -660,6 +661,12 @@ struct Extras {
     /// The suggestions of this run and what they cost, for the day's
     /// ceilings (the demo's day is its run).
     paid_calls: (u32, u64),
+    /// The reviews asked for (`:review`), each with its vendor and the
+    /// tick it answers on, oldest first: one at a time, as live's.
+    reviews: VecDeque<(AgentId, Vendor, u64)>,
+    /// The reviews of this run and what they cost, for the day's
+    /// ceilings.
+    review_calls: (u32, u64),
     /// The person's messages answered with a turn this run.
     told: u32,
     /// No vendor errors: a test that counts answers.
@@ -829,6 +836,7 @@ pub fn world(
         changes: Vec::new(),
         paid: 0,
         suggested: None,
+        reviews: Default::default(),
         orphans: crate::model::Orphans::default(),
         messages: 0,
         plans: Vec::new(),
@@ -1456,6 +1464,107 @@ impl Sim {
         });
     }
 
+    /// `:review` of worker `agent`'s change, as live takes it: refused
+    /// when none waits, it has its review, one is asked for, no other vendor
+    /// reviews (the demo has Claude Code and Codex) or the pot or the day
+    /// has no room; else it answers three ticks after the one before it.
+    pub fn review(&mut self, w: &World, agent: AgentId) -> Result<Vendor, String> {
+        let name = &w.agents[agent].name;
+        if w.change_of(agent).is_none() {
+            return Err(format!("no change of {name} waits"));
+        }
+        if w.review_of(agent).is_some() {
+            return Err(format!("{name}'s change has its review already"));
+        }
+        if self.review_of(agent).is_some() {
+            return Err(format!("a review of {name}'s change is under way"));
+        }
+        let worker = w.agents[agent].vendor;
+        let leader = w.agents[w.projects[w.agents[agent].project].leader].vendor;
+        let by =
+            reviewer_of(worker, leader, &[Vendor::Claude, Vendor::Codex]).ok_or_else(|| {
+                format!(
+                    "it needs a vendor other than {} that reviews (Claude Code or Codex) on PATH",
+                    worker.label()
+                )
+            })?;
+        let cap = review_cap(by);
+        if w.budget.saturating_sub(w.spent()) < cap {
+            return Err(format!("the pot has less than {} left", dollars(cap)));
+        }
+        let (calls, cost) = self.extras.review_calls;
+        let asked = u32::try_from(self.extras.reviews.len()).unwrap_or(u32::MAX);
+        if calls + asked >= REVIEW_DAY_CALLS {
+            return Err(format!("today's {REVIEW_DAY_CALLS} reviews were made"));
+        }
+        if cost + cap > REVIEW_DAY_COST {
+            return Err(format!(
+                "today's {} for reviews is spent",
+                dollars(REVIEW_DAY_COST)
+            ));
+        }
+        let after = self.extras.reviews.back().map_or(w.tick, |r| r.2);
+        self.extras.reviews.push_back((agent, by, after + 3));
+        Ok(by)
+    }
+
+    /// The vendor reviewing worker `agent`'s change, or about to.
+    pub fn review_of(&self, agent: AgentId) -> Option<Vendor> {
+        (self.extras.reviews.iter())
+            .find(|r| r.0 == agent)
+            .map(|r| r.1)
+    }
+
+    /// The review due now answers, made up from the change's files: what
+    /// it costs is paid from the pot (Codex's nothing), counted against
+    /// the run's ceilings, and the review is kept on the change; a change
+    /// no longer waiting takes none.
+    fn reviewed(&mut self, w: &mut World) {
+        let Some(&(agent, by, at)) = self.extras.reviews.front() else {
+            return;
+        };
+        if w.tick < at {
+            return;
+        }
+        self.extras.reviews.pop_front();
+        let Some(c) = w.change_of(agent).cloned() else {
+            return;
+        };
+        let cost = if by == Vendor::Claude {
+            self.rng.range(30, 90)
+        } else {
+            0
+        };
+        self.extras.review_calls.0 += 1;
+        self.extras.review_calls.1 += cost;
+        w.paid += cost;
+        let file = c.files.first().map_or("the patch", |f| f.path.as_str());
+        let text = if self.rng.one_in(3) {
+            "Nothing worth saying: the change does what its title says.".to_string()
+        } else {
+            format!(
+                "1. {file}: the new branch has no test that reaches it.\n                 2. {file}: an empty input is not handled; say what it should do.\n                 3. The title says more than the patch does ({} files).",
+                c.files.len()
+            )
+        };
+        let model = if by == Vendor::Claude {
+            "sonnet"
+        } else {
+            "default"
+        };
+        let patch = patch_sum(&c.patch);
+        w.reviewed(
+            agent,
+            Review {
+                patch,
+                by,
+                model: model.into(),
+                text,
+                cost,
+            },
+        );
+    }
+
     pub fn step(&mut self, w: &mut World) {
         w.tick += 1;
         let t = w.tick;
@@ -1469,6 +1578,7 @@ impl Sim {
             self.applied(w, id, fits, &hunks);
         }
         self.suggested(w);
+        self.reviewed(w);
         self.tidy_answers(w);
         // Live sessions report their plan's windows now and then.
         if t.is_multiple_of(12) {
@@ -3996,6 +4106,170 @@ mod tests {
         w.tick += 2;
         s.suggested(&mut w);
         assert_eq!(w.suggested.take().map(|g| g.text), Some("Only".into()));
+    }
+
+    /// A demo of one project and its worker, whose change waits, on
+    /// `vendor` under a leader on `leader`.
+    fn a_change_waits(vendor: Vendor, leader: Vendor) -> (World, Sim, AgentId) {
+        let (mut w, s) = world(1, 1, 0, 3, Lang::En);
+        let id = workers_of(&w, 0)[0];
+        w.agents[id].vendor = vendor;
+        let head = w.projects[0].leader;
+        w.agents[head].vendor = leader;
+        w.change_ready(Change {
+            agent: id,
+            title: "Add the parser".into(),
+            files: vec![ChangedFile {
+                path: "src/parse.rs".into(),
+                added: 3,
+                removed: 1,
+                binary: false,
+            }],
+            patch: TWO_FILES.into(),
+            runs: Vec::new(),
+        });
+        (w, s, id)
+    }
+
+    #[test]
+    fn a_demo_review_is_refused_as_live_refuses_one() {
+        let (mut w, mut s, id) = a_change_waits(Vendor::Codex, Vendor::Codex);
+        let name = w.agents[id].name.clone();
+        let lead = w.projects[0].leader;
+        assert_eq!(
+            s.review(&w, lead),
+            Err(format!("no change of {} waits", w.agents[lead].name))
+        );
+        let spent = w.spent();
+        w.budget = spent + review_cap(Vendor::Claude);
+        assert_eq!(s.review(&w, id), Ok(Vendor::Claude), "just the cap left");
+        assert_eq!(s.review_of(id), Some(Vendor::Claude));
+        assert_eq!(
+            s.review(&w, id),
+            Err(format!("a review of {name}'s change is under way"))
+        );
+        s.extras.reviews.clear();
+        assert_eq!(s.review_of(id), None);
+        w.budget -= 1;
+        assert_eq!(
+            s.review(&w, id),
+            Err("the pot has less than $0.10 left".into())
+        );
+        w.budget = spent + 1_000_000;
+        s.extras.review_calls = (
+            REVIEW_DAY_CALLS - 1,
+            REVIEW_DAY_COST - review_cap(Vendor::Claude),
+        );
+        assert_eq!(s.review(&w, id), Ok(Vendor::Claude), "the last of the day");
+        s.extras.review_calls = (REVIEW_DAY_CALLS - 2, 0);
+        let (mut w2, _, other) = a_change_waits(Vendor::Codex, Vendor::Codex);
+        w2.budget = w.budget;
+        assert_eq!(
+            s.review(&w2, other),
+            Err(format!(
+                "a review of {}'s change is under way",
+                w2.agents[other].name
+            ))
+        );
+        s.extras.reviews.clear();
+        s.extras.review_calls = (REVIEW_DAY_CALLS, 0);
+        assert_eq!(s.review(&w, id), Err("today's 20 reviews were made".into()));
+        s.extras.review_calls = (0, REVIEW_DAY_COST - review_cap(Vendor::Claude) + 1);
+        assert_eq!(
+            s.review(&w, id),
+            Err("today's $2.00 for reviews is spent".into())
+        );
+        // The asked ones count against the day too.
+        s.extras.review_calls = (REVIEW_DAY_CALLS - 1, 0);
+        s.extras.reviews.push_back((lead, Vendor::Codex, 0));
+        assert_eq!(s.review(&w, id), Err("today's 20 reviews were made".into()));
+        // Only Gemini else: none reviews; Codex's own cost nothing.
+        let (mut w, mut s, id) = a_change_waits(Vendor::Claude, Vendor::Claude);
+        w.budget = w.spent();
+        assert_eq!(s.review(&w, id), Ok(Vendor::Codex), "an empty pot will do");
+        let (w, mut s, id) = a_change_waits(Vendor::Gemini, Vendor::Gemini);
+        assert_eq!(s.review(&w, id), Ok(Vendor::Claude));
+        let _ = s;
+        let (mut w, mut s, id) = a_change_waits(Vendor::Codex, Vendor::Codex);
+        let sum = patch_sum(TWO_FILES);
+        w.reviewed(
+            id,
+            Review {
+                patch: sum,
+                by: Vendor::Claude,
+                model: "sonnet".into(),
+                text: "fine".into(),
+                cost: 4,
+            },
+        );
+        assert_eq!(
+            s.review(&w, id),
+            Err(format!(
+                "{}'s change has its review already",
+                w.agents[id].name
+            ))
+        );
+    }
+
+    #[test]
+    fn a_demo_review_answers_three_ticks_after_the_one_before_it() {
+        let (mut w, mut s, id) = a_change_waits(Vendor::Codex, Vendor::Codex);
+        let at = w.tick;
+        assert_eq!(s.review(&w, id), Ok(Vendor::Claude));
+        let other = w.projects[0].leader;
+        assert_eq!(s.extras.reviews.back(), Some(&(id, Vendor::Claude, at + 3)));
+        // One asked after it waits for it.
+        let mut second = w.change_of(id).unwrap().clone();
+        second.agent = other;
+        w.change_ready(second);
+        assert_eq!(s.review(&w, other), Ok(Vendor::Claude));
+        assert_eq!(
+            s.extras.reviews.back(),
+            Some(&(other, Vendor::Claude, at + 6))
+        );
+        w.tick = at + 2;
+        s.reviewed(&mut w);
+        assert_eq!(w.review_of(id), None, "not yet");
+        let paid = w.paid;
+        w.tick = at + 3;
+        s.reviewed(&mut w);
+        let r = w.review_of(id).expect("kept on the change").clone();
+        assert_eq!((r.by, r.model.as_str()), (Vendor::Claude, "sonnet"));
+        assert_eq!(r.patch, patch_sum(TWO_FILES));
+        assert!((30..=90).contains(&r.cost), "{}", r.cost);
+        assert_eq!(w.paid - paid, r.cost);
+        assert_eq!(s.extras.review_calls, (1, r.cost));
+        assert!(
+            r.text.contains("src/parse.rs") || r.text.starts_with("Nothing"),
+            "{}",
+            r.text
+        );
+        assert!(matches!(
+            w.journal.last().unwrap().event,
+            Event::Reviewed { agent, cost, .. } if agent == id && cost == r.cost
+        ));
+        // The next one is of no waiting change: dropped, nothing paid.
+        assert_eq!(s.extras.reviews.len(), 1);
+        w.change_rejected(other);
+        w.tick = at + 6;
+        let lines = w.journal.len();
+        s.reviewed(&mut w);
+        assert!(s.extras.reviews.is_empty());
+        assert_eq!(w.journal.len(), lines);
+        assert_eq!(s.extras.review_calls.0, 1);
+        // Codex's review costs the pot nothing.
+        let (mut w, mut s, id) = a_change_waits(Vendor::Claude, Vendor::Claude);
+        assert_eq!(s.review(&w, id), Ok(Vendor::Codex));
+        let paid = w.paid;
+        w.tick += 3;
+        s.reviewed(&mut w);
+        let r = w.review_of(id).expect("kept");
+        assert_eq!(
+            (r.by, r.model.as_str(), r.cost),
+            (Vendor::Codex, "default", 0)
+        );
+        assert_eq!(w.paid, paid);
+        assert_eq!(s.extras.review_calls, (1, 0));
     }
 
     const TWO_FILES: &str = "\

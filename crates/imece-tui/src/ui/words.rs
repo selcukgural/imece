@@ -274,6 +274,28 @@ pub fn event(lang: Lang, w: &World, e: &Event) -> String {
         Event::SuggestFailed { why, cost, .. } => {
             fill(t.ev_suggest_failed, &[&dollars(*cost), why])
         }
+        Event::Reviewed {
+            agent,
+            by,
+            model,
+            text,
+            cost,
+            ..
+        } => fill(
+            t.ev_reviewed,
+            &[
+                by.label(),
+                model,
+                name(w, *agent),
+                &dollars(*cost),
+                text.lines()
+                    .find(|l| !l.trim().is_empty())
+                    .unwrap_or_default(),
+            ],
+        ),
+        Event::ReviewFailed { agent, why, cost } => {
+            fill(t.ev_review_failed, &[name(w, *agent), &dollars(*cost), why])
+        }
         Event::Copied {
             agent,
             paths,
@@ -1068,6 +1090,43 @@ mod tests {
         assert_eq!(ok.kind(), EntryKind::Sensitive);
         assert_eq!(failed.kind(), EntryKind::Failed);
         assert_eq!((ok.agent(), failed.agent()), (0, 0));
+    }
+
+    #[test]
+    fn a_review_is_said_with_who_on_what_its_cost_and_its_first_line() {
+        let w = crate::live::testing::team(1);
+        let ok = Event::Reviewed {
+            agent: 1,
+            by: Vendor::Codex,
+            model: "default".into(),
+            patch: "p".into(),
+            text: "\n  \n1. x: no test\n2. y".into(),
+            cost: 420,
+        };
+        assert_eq!(
+            event(Lang::En, &w, &ok),
+            "codex (default) reviewed claude-1's change, for $0.04: 1. x: no test"
+        );
+        assert_eq!(
+            event(Lang::Tr, &w, &ok),
+            "codex (default) claude-1 değişikliğini inceledi, $0.04 tuttu: 1. x: no test"
+        );
+        let failed = Event::ReviewFailed {
+            agent: 1,
+            why: "capped\u{1b}[2J".into(),
+            cost: 120,
+        };
+        assert_eq!(
+            event(Lang::En, &w, &failed),
+            "no review of claude-1's change came ($0.01): capped [2J"
+        );
+        assert_eq!(
+            event(Lang::Tr, &w, &failed),
+            "claude-1 değişikliği için inceleme gelmedi ($0.01): capped [2J"
+        );
+        assert_eq!(ok.kind(), EntryKind::Sensitive);
+        assert_eq!(failed.kind(), EntryKind::Failed);
+        assert_eq!((ok.agent(), failed.agent()), (1, 1));
     }
 
     #[test]

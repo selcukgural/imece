@@ -565,6 +565,7 @@ fn main() -> std::io::Result<()> {
     app.motion = saved.motion.unwrap_or_default();
     app.away = saved.away.unwrap_or_default();
     app.story = saved.story.unwrap_or(true);
+    app.review = saved.review.unwrap_or(false);
     app.ssh = motion::over_ssh(var);
     app.awake.on = args.awake;
     let result = run(&mut terminal, &mut app, &state, progress, style);
@@ -790,7 +791,7 @@ fn run(
         if let Some(Event::Key(k)) = event
             && k.kind == KeyEventKind::Press
         {
-            let (side, theme, primary, notify, moves, away, story) = (
+            let (side, theme, primary, notify, moves, away, story, review) = (
                 app.side,
                 app.theme(),
                 app.primary.clone(),
@@ -798,6 +799,7 @@ fn run(
                 app.motion,
                 app.away,
                 app.story,
+                app.review,
             );
             app.on_key(k);
             if app.side != side
@@ -822,6 +824,9 @@ fn run(
             }
             if app.story != story {
                 let _ = prefs::keep_story(state, app.story);
+            }
+            if app.review != review {
+                let _ = prefs::keep_review(state, app.review);
             }
             if let Some(text) = app.copy.take() {
                 app.copied(clip::copy(&text));

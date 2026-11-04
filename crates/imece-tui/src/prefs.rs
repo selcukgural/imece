@@ -36,6 +36,7 @@ const NOTIFY: &str = "notify";
 const MOTION: &str = "motion";
 const AWAY: &str = "away";
 const STORY: &str = "story";
+const REVIEW: &str = "review";
 /// The newest version whose "what's new" a start showed (or that started
 /// first): the next start of a newer one shows what is new since.
 const SEEN: &str = "seen";
@@ -60,6 +61,8 @@ pub struct Prefs {
     pub away: Option<Away>,
     /// Whether the side panel tells the story (`J`, `:story`).
     pub story: Option<bool>,
+    /// Whether every change gets a review as it comes (`:review`).
+    pub review: Option<bool>,
 }
 
 impl Prefs {
@@ -84,6 +87,7 @@ impl Prefs {
             motion: None,
             away: None,
             story: None,
+            review: None,
         }
     }
 
@@ -135,14 +139,18 @@ pub fn load(dir: &Path) -> Prefs {
     }
     match store::settings(
         &file(dir),
-        &[SIDE, THEME, LEAD, NOTIFY, SEEN, MOTION, AWAY, STORY],
+        &[SIDE, THEME, LEAD, NOTIFY, SEEN, MOTION, AWAY, STORY, REVIEW],
     ) {
         Ok(mut v) => {
-            let story = v.pop().flatten().and_then(|s| match s.as_str() {
-                "on" => Some(true),
-                "off" => Some(false),
-                _ => None,
-            });
+            let mut on_off = || {
+                v.pop().flatten().and_then(|s| match s.as_str() {
+                    "on" => Some(true),
+                    "off" => Some(false),
+                    _ => None,
+                })
+            };
+            let review = on_off();
+            let story = on_off();
             let away = v.pop().flatten().and_then(|a| Away::parse(&a));
             let motion = v.pop().flatten().and_then(|m| Motion::parse(&m));
             let seen = v.pop().flatten();
@@ -153,6 +161,7 @@ pub fn load(dir: &Path) -> Prefs {
                 motion,
                 away,
                 story,
+                review,
                 ..Prefs::checked(v.pop().flatten(), theme, lead, notify, seen)
             }
         }
@@ -208,6 +217,12 @@ pub fn keep_story(dir: &Path, story: bool) -> Result<(), String> {
     store::set_settings(&file(dir), &[(STORY, on)], &[])
 }
 
+/// Keeps whether every change gets a review as it comes in `dir`.
+pub fn keep_review(dir: &Path, review: bool) -> Result<(), String> {
+    let on = if review { "on" } else { "off" };
+    store::set_settings(&file(dir), &[(REVIEW, on)], &[])
+}
+
 /// Keeps how long away opens the digest in `dir`.
 pub fn keep_away(dir: &Path, away: Away) -> Result<(), String> {
     store::set_settings(&file(dir), &[(AWAY, &away.name())], &[])
@@ -247,6 +262,7 @@ mod tests {
                 motion: None,
                 away: None,
                 story: None,
+                review: None,
             }
         );
         let mode = fs::metadata(file(&dir)).unwrap().permissions().mode();
@@ -282,6 +298,7 @@ mod tests {
                 motion: None,
                 away: None,
                 story: None,
+                review: None,
             }
         );
         set(&[("side", "70"), ("theme", "/home/me/Dracula.conf")]);
@@ -321,6 +338,20 @@ mod tests {
         assert_eq!(load(&dir).side, Some(40), "nothing else written");
         set(&[("story", "yes")]);
         assert_eq!(load(&dir).story, None);
+        // Whether every change gets a review, on its own too, apart from
+        // the story read just before it.
+        assert_eq!(load(&dir).review, None);
+        keep_review(&dir, true).unwrap();
+        keep_story(&dir, false).unwrap();
+        assert_eq!(load(&dir).review, Some(true));
+        assert_eq!(load(&dir).story, Some(false));
+        save(&dir, 40, "light", None, Notify::Off).unwrap();
+        assert_eq!(load(&dir).review, Some(true), "kept by a save");
+        keep_review(&dir, false).unwrap();
+        assert_eq!(load(&dir).review, Some(false));
+        assert_eq!(load(&dir).story, Some(false), "nothing else written");
+        set(&[("review", "yes")]);
+        assert_eq!(load(&dir).review, None);
         // How long away, on its own too, kept by a save of the rest.
         keep_away(&dir, Away::parse("1h").unwrap()).unwrap();
         assert_eq!(load(&dir).away, Away::parse("60m"));
@@ -355,6 +386,7 @@ mod tests {
                 motion: None,
                 away: None,
                 story: None,
+                review: None,
             }
         );
         assert!(!legacy(&dir).exists(), "moved, so gone");

@@ -37,6 +37,18 @@ Bir değişiklik (`Δ`), bir işçi `done` dediğinde worktree'sinin tuttuğu ş
 
 `h` (ya da `←`) eldeki satırın dosyasını `diff --git` başlığına katlar; başlık kaç satır gizlediğini söyler (`▸ 42 satır`). `l` (ya da `→`) açar, `za` çevirir, `zM` (`:fold`) her dosyayı katlar, `zR` (`:unfold`) hepsini açar. `j` `k`, sayfalar ve `G` gösterilen satırlar üzerinde gider, yani katlı bir dosya üstünden geçilecek tek satırdır; `[` `]` yine başlıktan başlığa gider. Gizli bir satırın dosyasını katlamak eldeki satırı başlığına koyar. `v` önce her dosyayı açar, çünkü satırlar bütün yamadan seçilir. Katlar o yama için geçerlidir: işçiden gelen yeni bir yama açık başlar.
 
+## Başka bir satıcının incelemesi
+
+`:review` eldeki değişikliği işçininkinden başka bir satıcıya okutur ve bulduğunu söyletir; `:review on` gelen her değişiklik için ister (varsayılan kapalı, hatırlanır). İnceleyen, işçininki değilse projenin liderinin satıcısı, yoksa Claude Code, yoksa Codex'tir; işçinin ne yaptığını söylediğini, dosya listesini ve yamayı (en çok 64 KiB) alır, aracı yoktur. Yanıtı dosya listesinin üstünde durur:
+
+```
+✎ inceleme · codex · default · $0.00
+1. src/parse.rs:41: boş girdi Ok(()) döndürüyor, bunun testi yok.
+2. Başlık lexer'ın da düzeldiğini söylüyor; yama ona dokunmuyor.
+```
+
+altı satırı, fazlası varsa `… +N satır · R hepsini gösterir`; `R` tamamını gösterir. Gelene kadar orada `✎ codex bu değişikliği okuyor…` durur. Bir öneriden fazlası değildir: hiçbir değişiklik onu beklemez, `a` onunla da onsuz da uygular ve işçiye söylenmez (`>` ile alıntılayın ya da satırlarını `c` ile not edin). Bir Claude Code incelemesi bütçeden en çok 0,10 $, bir Codex incelemesi hiçbir şey tutmaz (ChatGPT planınız); günde 20 inceleme ve 2,00 $; incelemesi olan bir değişiklik için iki kez ödenmez. İnceleme günlükte saklanır ve yeniden başlatmadan sonra değişikliğiyle geri gelir. Bkz. [`:review`](../reference/commands.md#review-onoff) ve [bütçe ve sınırlar](budget-and-limits.md).
+
 ## Uygulamak
 
 `a` uygulamayı git iş parçacığında başlatır; anlık ileti sürdüğünü, günlük nasıl gittiğini söyler.

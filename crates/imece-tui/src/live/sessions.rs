@@ -818,6 +818,7 @@ impl Live {
                                 mcp,
                                 resume: resume.map(|r| r.session),
                                 fork: fork.is_some(),
+                                ephemeral: false,
                             },
                             on,
                         )

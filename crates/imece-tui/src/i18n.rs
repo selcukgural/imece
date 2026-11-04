@@ -413,6 +413,20 @@ pub struct Text {
     pub suggest_refused: &'static str,
     pub ev_suggested: &'static str,
     pub ev_suggest_failed: &'static str,
+    /// `:review` (record 106): asked (vendor, worker), refused (why), the
+    /// setting turned on or off, its value bare away from a change; the
+    /// journal: reviewed (vendor, model, worker, cost, first line), none
+    /// came (worker, cost, why); a change's review: its head (vendor,
+    /// model, cost), what is left out (lines), under way (vendor).
+    pub reviewing: &'static str,
+    pub review_refused: &'static str,
+    pub review_on: &'static str,
+    pub review_off: &'static str,
+    pub ev_reviewed: &'static str,
+    pub ev_review_failed: &'static str,
+    pub review_head: &'static str,
+    pub review_more: &'static str,
+    pub review_under_way: &'static str,
     /// `:copy`: added (path, project), removed (path), refused (path,
     /// why), the list (project, paths), nothing listed (project); the
     /// journal: copied (paths, agent, size), skipped (path, agent, why).
@@ -1012,7 +1026,7 @@ pub struct Text {
     pub help_keys: [(&'static str, &'static str); 57],
     /// What each `:` command does, in a line, in `complete::COMMANDS`'
     /// order: shown after the menu's keys once `tab` put one on the line.
-    pub command_hints: [(&'static str, &'static str); 64],
+    pub command_hints: [(&'static str, &'static str); 65],
     /// The completion menu's mark for the items after the window, and
     /// where the highlighted one is among them all.
     pub menu_more: &'static str,
@@ -1295,6 +1309,10 @@ pub const EN: Text = Text {
         ),
         ("rename", "rename the project at hand and its leader"),
         ("restore", "bring an archive back"),
+        (
+            "review",
+            "another vendor reviews the change at hand; on|off: every change ($)",
+        ),
         ("salon", "the salon (1)"),
         ("settle", "put the selected row out of the salon (s)"),
         ("slower", "the demo runs slower (-)"),
@@ -1381,6 +1399,17 @@ pub const EN: Text = Text {
     suggest_refused: "no commit message: {}",
     ev_suggested: "{} suggested a commit message for what is staged, for {}",
     ev_suggest_failed: "no commit message came ({}): {}",
+    reviewing: "{} reads {}'s change for a review",
+    review_refused: "no review: {}",
+    review_on: "every change gets a review from another vendor as it comes, from the pot \
+                ($); :review off stops it",
+    review_off: "changes get a review only when asked: :review on a change; :review on \
+                 for every change",
+    ev_reviewed: "{} ({}) reviewed {}'s change, for {}: {}",
+    ev_review_failed: "no review of {}'s change came ({}): {}",
+    review_head: "✎ review · {} · {} · {}",
+    review_more: "  … +{} lines · R shows all",
+    review_under_way: "✎ {} reads this change…",
     copy_added: "{} is copied into {}'s worktrees that lack it, at a worker's start",
     copy_removed: "{} is no longer copied",
     copy_refused: "{} can not be copied: {}",
@@ -1958,7 +1987,7 @@ pub const EN: Text = Text {
             "x",
             "in a change: choose the hunk at the top; a applies only the chosen",
         ),
-        ("w", "in a change: wrap long lines · cut them again"),
+        ("w  R", "in a change: wrap long lines · R whole review"),
         ("space", ":pause / resume"),
         ("+  -", ":faster / :slower simulation"),
         ("L  :lang", "Türkçe / English; :lang en|tr"),
@@ -2323,6 +2352,10 @@ pub const TR: Text = Text {
         ("recall", "her günlük ve iz satırında ara, arşivler de (H)"),
         ("rename", "eldeki projeyi ve liderini yeniden adlandır"),
         ("restore", "bir arşivi geri getir"),
+        (
+            "review",
+            "başka bir vendor eldeki değişikliği inceler; on|off: her değişiklik ($)",
+        ),
         ("salon", "salon (1)"),
         ("settle", "seçili satırı salondan çıkar (s)"),
         ("slower", "demo yavaşlar (-)"),
@@ -2412,6 +2445,17 @@ pub const TR: Text = Text {
     suggest_refused: "commit mesajı yok: {}",
     ev_suggested: "{} stage'dekiler için bir commit mesajı önerdi, {} tuttu",
     ev_suggest_failed: "commit mesajı gelmedi ({}): {}",
+    reviewing: "{} inceleme için {} değişikliğini okuyor",
+    review_refused: "inceleme yok: {}",
+    review_on: "her değişiklik gelince başka bir vendor'dan inceleme alır, pot'tan ($); \
+                :review off durdurur",
+    review_off: "değişiklikler yalnız istenince incelenir: bir değişiklikte :review; her \
+                 değişiklik için :review on",
+    ev_reviewed: "{} ({}) {} değişikliğini inceledi, {} tuttu: {}",
+    ev_review_failed: "{} değişikliği için inceleme gelmedi ({}): {}",
+    review_head: "✎ inceleme · {} · {} · {}",
+    review_more: "  … +{} satır · R hepsini gösterir",
+    review_under_way: "✎ {} bu değişikliği okuyor…",
     copy_added: "{}, {} çalışma ağaçlarında yoksa çalışan başlarken kopyalanacak",
     copy_removed: "{} artık kopyalanmayacak",
     copy_refused: "{} kopyalanamaz: {}",
@@ -2988,7 +3032,7 @@ pub const TR: Text = Text {
             "x",
             "değişiklikte: üstteki parçayı seç; a yalnız seçilenleri uygular",
         ),
-        ("w", "değişiklikte: uzun satırları sar · yine kes"),
+        ("w  R", "değişiklikte: satırları sar · R tüm inceleme"),
         ("space", ":pause durdur / devam"),
         ("+  -", "simülasyon :faster / :slower"),
         ("L  :lang", "English / Türkçe; :lang en|tr"),
@@ -3356,6 +3400,15 @@ mod tests {
             (e.suggest_refused, t.suggest_refused),
             (e.ev_suggested, t.ev_suggested),
             (e.ev_suggest_failed, t.ev_suggest_failed),
+            (e.reviewing, t.reviewing),
+            (e.review_refused, t.review_refused),
+            (e.review_on, t.review_on),
+            (e.review_off, t.review_off),
+            (e.ev_reviewed, t.ev_reviewed),
+            (e.ev_review_failed, t.ev_review_failed),
+            (e.review_head, t.review_head),
+            (e.review_more, t.review_more),
+            (e.review_under_way, t.review_under_way),
             (e.copy_added, t.copy_added),
             (e.copy_removed, t.copy_removed),
             (e.copy_refused, t.copy_refused),

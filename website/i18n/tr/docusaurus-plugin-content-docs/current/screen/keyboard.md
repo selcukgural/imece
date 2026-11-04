@@ -132,6 +132,7 @@ Odağın `klasör` satırı ajanın nerede çalıştığını söyler: lider iç
 | `c`  `n` | değişiklikte: üstteki satıra not · notları gönder, geri döner |
 | `x` | değişiklikte: üstteki parçayı seç; `a` yalnız seçilenleri uygular |
 | `w` | değişiklikte: uzun satırları sar · yine kes |
+| `R` | değişiklikte: incelemesinin tamamı · yine ilk satırları ([`:review`](../reference/commands.md#review-onoff)) |
 | `h` `l`  `←` `→` | değişiklikte: eldeki dosyayı başlığına katla · aç |
 | `za`  `zM`  `zR` | değişiklikte: eldeki dosyayı çevir · her dosyayı katla (`:fold`) · hepsini aç (`:unfold`) |
 | `v` | değişiklikte: kopyalanacak satırları seç; `y` yazıldığı gibi, `Y` yeni hali |

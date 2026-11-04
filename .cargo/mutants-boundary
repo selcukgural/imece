@@ -30,3 +30,5 @@ crates/imece-tui/src/store.rs
 crates/imece-tui/src/push.rs
 crates/imece-tui/src/editor.rs
 crates/imece-tui/src/shell.rs
+# What imece pays for itself: reserved in the pot and the day before a call.
+crates/imece-tui/src/live/paid.rs

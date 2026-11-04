@@ -4,7 +4,7 @@
 //! Events are stored as data, not sentences: the screen words them in the
 //! person's language when it draws them.
 
-use std::collections::{BTreeSet, VecDeque};
+use std::collections::{BTreeSet, HashMap, VecDeque};
 use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -1588,6 +1588,25 @@ pub enum Event {
         why: String,
         cost: u64,
     },
+    /// `by`'s `model` read worker `agent`'s change (the patch whose
+    /// [`patch_sum`] is `patch`) and said `text`, for `cost`
+    /// (ten-thousandths of a dollar, from the pot): a note on the change,
+    /// never a gate (`:review`, record 106).
+    Reviewed {
+        agent: AgentId,
+        by: Vendor,
+        model: String,
+        patch: String,
+        text: String,
+        cost: u64,
+    },
+    /// No review came for worker `agent`'s change: why, and what the try
+    /// cost.
+    ReviewFailed {
+        agent: AgentId,
+        why: String,
+        cost: u64,
+    },
     /// The paths the person listed (`:copy`), or else those the
     /// checkout's `.worktreeinclude` names (`included`), that worker
     /// `agent`'s worktree lacked were copied into it from the checkout,
@@ -1675,12 +1694,14 @@ impl Event {
             | Event::Sensitive { .. }
             | Event::ChangeReady { .. }
             | Event::Suggested { .. }
+            | Event::Reviewed { .. }
             | Event::PotLow { .. } => EntryKind::Sensitive,
             Event::Merged { .. } | Event::Applied { .. } => EntryKind::Merged,
             Event::Failed { .. }
             | Event::Stopped { .. }
             | Event::Interrupted { .. }
             | Event::SuggestFailed { .. }
+            | Event::ReviewFailed { .. }
             | Event::CopySkipped { .. }
             | Event::IncludeRefused { .. }
             | Event::PushFailed { .. }
@@ -1776,6 +1797,8 @@ impl Event {
             | Event::CopySkipped { agent, .. }
             | Event::IncludeRefused { agent, .. }
             | Event::ChangeReady { agent, .. }
+            | Event::Reviewed { agent, .. }
+            | Event::ReviewFailed { agent, .. }
             | Event::Applied { agent, .. }
             | Event::ApplyFailed { agent, .. } => agent,
             Event::Talk { from, .. } | Event::Sent { from, .. } | Event::ToYou { from, .. } => from,
@@ -1909,6 +1932,28 @@ impl Ran {
     }
 }
 
+/// What a vendor other than the worker's said of its change (`:review`,
+/// record 106): advisory, never a gate. Kept while the change it read
+/// waits; a newer change of the worker is not the one it read.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Review {
+    /// The patch it read, as [`patch_sum`] gives it.
+    pub patch: String,
+    pub by: Vendor,
+    pub model: String,
+    pub text: String,
+    /// Ten-thousandths of a dollar, from the pot.
+    pub cost: u64,
+}
+
+/// A patch's name that stays the same from run to run: the first 16 hex
+/// digits of its SHA-256. A review names the patch it read by it.
+pub fn patch_sum(patch: &str) -> String {
+    let mut sum = crate::sha::hex(patch.as_bytes());
+    sum.truncate(16);
+    sum
+}
+
 impl Change {
     /// Lines added and removed over all files.
     pub fn counts(&self) -> (u32, u32) {
@@ -1980,6 +2025,9 @@ pub struct World {
     /// A commit message suggested for a project's staged changes, until
     /// the screen puts it on the command line.
     pub suggested: Option<Suggestion>,
+    /// What another vendor said of each waiting change, by worker
+    /// (`:review`): only of the change that waits now.
+    pub reviews: HashMap<AgentId, Review>,
     /// The worktrees no agent owns, as the engine last looked (`:tidy`).
     pub orphans: Orphans,
     /// The number the last message on the bus was given ([`MsgId`]).
@@ -2474,6 +2522,7 @@ impl World {
             limits: Vec::new(),
             paid: self.paid,
             suggested: None,
+            reviews: Default::default(),
             orphans: crate::model::Orphans::default(),
             messages: self.messages,
             sent: self.sent.clone(),
@@ -2910,7 +2959,65 @@ impl World {
         self.note(Event::ApplyFailed { agent: id, why });
     }
 
+    /// The review of worker `id`'s change that waits, if one came.
+    pub fn review_of(&self, id: AgentId) -> Option<&Review> {
+        self.change_of(id)?;
+        self.reviews.get(&id)
+    }
+
+    /// `review` of worker `agent`'s change came: journaled, and kept on
+    /// the change when it is still the one that was read (none waits, or
+    /// a newer one, and it is only journaled).
+    pub fn reviewed(&mut self, agent: AgentId, review: Review) {
+        let read = self
+            .change_of(agent)
+            .is_some_and(|c| patch_sum(&c.patch) == review.patch);
+        self.note(Event::Reviewed {
+            agent,
+            by: review.by,
+            model: review.model.clone(),
+            patch: review.patch.clone(),
+            text: review.text.clone(),
+            cost: review.cost,
+        });
+        if read {
+            self.reviews.insert(agent, review);
+        }
+    }
+
+    /// The newest review in the journal of each waiting change it read: a
+    /// world remembered from an earlier run has its changes' reviews back.
+    pub fn reviews_from_journal(&mut self) {
+        for c in &self.changes {
+            if self.reviews.contains_key(&c.agent) {
+                continue;
+            }
+            let sum = patch_sum(&c.patch);
+            let found = self.journal.iter().rev().find_map(|e| match &e.event {
+                Event::Reviewed {
+                    agent,
+                    by,
+                    model,
+                    patch,
+                    text,
+                    cost,
+                } if *agent == c.agent && *patch == sum => Some(Review {
+                    patch: patch.clone(),
+                    by: *by,
+                    model: model.clone(),
+                    text: text.clone(),
+                    cost: *cost,
+                }),
+                _ => None,
+            });
+            if let Some(r) = found {
+                self.reviews.insert(c.agent, r);
+            }
+        }
+    }
+
     fn forget_change(&mut self, id: AgentId) {
+        self.reviews.remove(&id);
         self.changes.retain(|c| c.agent != id);
         for i in &mut self.inbox {
             if i.kind == InboxKind::Change && i.agent == id {
@@ -3631,6 +3738,7 @@ mod tests {
             changes: Vec::new(),
             paid: 0,
             suggested: None,
+            reviews: Default::default(),
             orphans: crate::model::Orphans::default(),
             messages: 0,
             plans: Vec::new(),
@@ -4708,6 +4816,97 @@ mod tests {
             patch: "diff --git a/x b/x\n".into(),
             runs: Vec::new(),
         }
+    }
+
+    fn review(patch: &str, text: &str) -> Review {
+        Review {
+            patch: patch_sum(patch),
+            by: Vendor::Codex,
+            model: "gpt-6-luna".into(),
+            text: text.into(),
+            cost: 7,
+        }
+    }
+
+    #[test]
+    fn a_patch_s_sum_is_the_start_of_its_sha_256() {
+        assert_eq!(patch_sum(""), "e3b0c44298fc1c14");
+        assert_eq!(patch_sum("abc"), "ba7816bf8f01cfea");
+        assert_ne!(patch_sum("abc\n"), patch_sum("abc"));
+    }
+
+    #[test]
+    fn a_review_is_kept_on_the_change_it_read_and_journaled_either_way() {
+        let mut w = world(vec![
+            agent(0, Role::Leader, Status::Idle),
+            agent(1, Role::Worker, Status::Idle),
+            agent(2, Role::Worker, Status::Idle),
+        ]);
+        w.change_ready(change(1, "Fix", &[("x", 1, 0)]));
+        let read = review("diff --git a/x b/x\n", "1. x: no test.");
+        w.reviewed(1, read.clone());
+        assert_eq!(w.review_of(1), Some(&read));
+        assert_eq!(
+            w.journal.last().unwrap().event,
+            Event::Reviewed {
+                agent: 1,
+                by: Vendor::Codex,
+                model: "gpt-6-luna".into(),
+                patch: read.patch.clone(),
+                text: "1. x: no test.".into(),
+                cost: 7,
+            }
+        );
+        // Of another patch (the worker's newer change): journaled, not kept.
+        w.change_ready(change(2, "Add", &[("y", 2, 0)]));
+        w.reviewed(2, review("another patch", "late"));
+        assert_eq!(w.review_of(2), None);
+        assert!(matches!(
+            w.journal.last().unwrap().event,
+            Event::Reviewed { agent: 2, .. }
+        ));
+        // Of no change at all: the same.
+        w.reviewed(0, review("diff --git a/x b/x\n", "none waits"));
+        assert_eq!(w.review_of(0), None);
+        assert!(!w.reviews.contains_key(&0));
+        // A newer change of the worker's drops it, as applying or
+        // rejecting does.
+        w.change_ready(change(1, "Fix again", &[("x", 2, 0)]));
+        assert_eq!(w.review_of(1), None);
+        w.reviewed(1, read.clone());
+        w.change_rejected(1);
+        assert_eq!(w.review_of(1), None);
+        assert!(w.reviews.is_empty());
+        w.change_ready(change(1, "Fix", &[("x", 1, 0)]));
+        w.reviewed(1, read.clone());
+        w.change_applied(1, "abc".into());
+        assert!(w.reviews.is_empty());
+    }
+
+    #[test]
+    fn a_remembered_change_gets_the_newest_review_of_its_own_patch_back() {
+        let mut w = world(vec![
+            agent(0, Role::Leader, Status::Idle),
+            agent(1, Role::Worker, Status::Idle),
+            agent(2, Role::Worker, Status::Idle),
+        ]);
+        w.change_ready(change(1, "Fix", &[("x", 1, 0)]));
+        w.change_ready(change(2, "Add", &[("y", 1, 0)]));
+        let mine = "diff --git a/x b/x\n";
+        w.reviewed(1, review(mine, "older"));
+        w.reviewed(1, review(mine, "newer"));
+        w.reviewed(1, review("not mine", "other patch"));
+        w.reviewed(0, review(mine, "another agent"));
+        // As a load finds it: the journal, no reviews.
+        w.reviews.clear();
+        w.reviews_from_journal();
+        assert_eq!(w.review_of(1).map(|r| r.text.as_str()), Some("newer"));
+        assert_eq!(w.review_of(2), None, "none of its own");
+        assert_eq!(w.reviews.len(), 1);
+        // One kept is not taken over by the journal's.
+        w.reviews.insert(1, review(mine, "kept"));
+        w.reviews_from_journal();
+        assert_eq!(w.review_of(1).map(|r| r.text.as_str()), Some("kept"));
     }
 
     #[test]

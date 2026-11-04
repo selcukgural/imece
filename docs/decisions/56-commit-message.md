@@ -48,7 +48,8 @@ caps held counting), every project together. imece has one person, so
 the day's ceiling is that person's cap; one suggestion runs at a time.
 Before the call, the store counts it at its cap in one immediate
 transaction that checks and counts (`Store::reserve`, table `paid`,
-schema 9) and the pot holds the cap (`World::paid`, part of
+schema 9; by kind since schema 21, record 106, whose reviews have
+ceilings of their own and share the ledger in `live/paid.rs`) and the pot holds the cap (`World::paid`, part of
 `World::spent`); refused when the pot has less than the cap or the day
 is full. When the call ends its turn, what it reported replaces the cap
 (`settle`); one that could not start cost nothing; one that stopped or
