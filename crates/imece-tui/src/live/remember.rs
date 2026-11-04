@@ -189,6 +189,7 @@ impl Live {
                 patch: c.patch.clone(),
                 runs: found.runs.get(&id).cloned().unwrap_or_default(),
                 check: found.checks.get(&id).cloned().unwrap_or_default(),
+                spend: found.spends.get(&id).copied(),
             });
         }
         // A waiting change's review, as the journal kept it.
@@ -261,6 +262,9 @@ impl Live {
             changes: &self.changes,
             checks: (w.changes.iter())
                 .map(|c| (c.agent, c.check.clone()))
+                .collect(),
+            spends: (w.changes.iter())
+                .filter_map(|c| c.spend.map(|s| (c.agent, s)))
                 .collect(),
         };
         store.save(w, &kept).map_err(|e| e.to_string())
@@ -655,6 +659,14 @@ mod tests {
             changes: HashMap::from([(1, change("abc")), (lead_gone, change("def"))]),
             runs: HashMap::from([(1, vec![ran.clone()])]),
             checks: HashMap::from([(1, Check::Running), (lead_gone, Check::Asked)]),
+            spends: HashMap::from([(
+                1,
+                Spend {
+                    cost: 8_400,
+                    ticks: 144,
+                    rounds: 2,
+                },
+            )]),
         };
         let mut live = Live::bare(claude_at("x"));
         live.state = state.clone();

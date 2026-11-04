@@ -74,7 +74,10 @@ use crate::recall::{Hit, Line};
 /// 23 (2026-11-04): the repository's check on a change (`changes.checked`,
 /// record 112), the `Check` inbox kind and the `Checked`/`CheckFailed`/
 /// `CheckAnswered` events.
-pub const SCHEMA_VERSION: i64 = 23;
+/// 24 (2026-11-04): what a change cost (`changes.spend`, record 113), where
+/// each agent's spend on its change stands (`agents.task`), and the
+/// `ChangeCost` event (`ChangeReady` carries a `spend`).
+pub const SCHEMA_VERSION: i64 = 24;
 /// Trace lines kept per agent, as the world keeps them.
 const TRACE_KEEP: usize = 200;
 /// The file's name under the state directory.
@@ -105,7 +108,8 @@ CREATE TABLE IF NOT EXISTS agents (
     cost INTEGER NOT NULL, taint TEXT NOT NULL, gone INTEGER NOT NULL,
     changed_at INTEGER NOT NULL, traced INTEGER NOT NULL, commands TEXT NOT NULL,
     model TEXT, tiered INTEGER NOT NULL, woken INTEGER NOT NULL, posted INTEGER NOT NULL,
-    session TEXT, session_spent INTEGER NOT NULL DEFAULT 0, start TEXT, fork_of INTEGER);
+    session TEXT, session_spent INTEGER NOT NULL DEFAULT 0, start TEXT, fork_of INTEGER,
+    task TEXT NOT NULL DEFAULT '');
 CREATE TABLE IF NOT EXISTS cards (
     id INTEGER PRIMARY KEY, project INTEGER NOT NULL, title TEXT NOT NULL,
     owner INTEGER, col TEXT NOT NULL, started INTEGER NOT NULL, finished INTEGER NOT NULL);
@@ -144,7 +148,7 @@ CREATE TABLE IF NOT EXISTS offers (
 CREATE TABLE IF NOT EXISTS changes (
     agent INTEGER PRIMARY KEY, path TEXT NOT NULL, tree TEXT NOT NULL,
     files TEXT NOT NULL, patch TEXT NOT NULL, runs TEXT NOT NULL DEFAULT '[]',
-    checked TEXT NOT NULL DEFAULT '');
+    checked TEXT NOT NULL DEFAULT '', spend TEXT NOT NULL DEFAULT '');
 CREATE TABLE IF NOT EXISTS paid (
     kind INTEGER NOT NULL, day INTEGER NOT NULL, calls INTEGER NOT NULL, cost INTEGER NOT NULL,
     PRIMARY KEY (kind, day)) WITHOUT ROWID;
@@ -238,6 +242,8 @@ pub struct Kept<'a> {
     /// [`Check::None`]): the world's at a save, the file's at a load, so
     /// the two agree on what is saved.
     pub checks: HashMap<AgentId, Check>,
+    /// What each change cost, where known (record 113), the same way.
+    pub spends: HashMap<AgentId, Spend>,
 }
 
 /// What the engine kept, as it comes back from the file.
@@ -261,6 +267,8 @@ pub struct Found {
     /// Where the repository's check stood on each change; none means
     /// [`Check::None`].
     pub checks: HashMap<AgentId, Check>,
+    /// What each change cost, where its turn had ended (record 113).
+    pub spends: HashMap<AgentId, Spend>,
 }
 
 /// What a paid call of imece's own is for: each kind counts against
@@ -558,6 +566,14 @@ impl Store {
             self.conn.execute_batch(
                 "ALTER TABLE changes ADD COLUMN checked TEXT NOT NULL DEFAULT '';",
             )?;
+        }
+        if !self.has_column("changes", "spend")? {
+            self.conn
+                .execute_batch("ALTER TABLE changes ADD COLUMN spend TEXT NOT NULL DEFAULT '';")?;
+        }
+        if !self.has_column("agents", "task")? {
+            self.conn
+                .execute_batch("ALTER TABLE agents ADD COLUMN task TEXT NOT NULL DEFAULT '';")?;
         }
         if !self.has_column("inbox", "card")? {
             self.conn
@@ -922,9 +938,9 @@ impl Store {
             tx.execute(
                 "INSERT OR REPLACE INTO agents (id, project, name, role, parent, card, \
                  cost, taint, gone, changed_at, traced, commands, model, tiered, woken, posted, \
-                 session, session_spent, start, fork_of) \
+                 session, session_spent, start, fork_of, task) \
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, \
-                 ?17, ?18, ?19, ?20)",
+                 ?17, ?18, ?19, ?20, ?21)",
                 params![
                     n(a.id),
                     n(a.project),
@@ -951,6 +967,7 @@ impl Store {
                         .unwrap_or(0),
                     a.start,
                     opt(k.forks.get(id).copied().flatten()),
+                    serde_json::to_string(&a.task).unwrap_or_default(),
                 ],
             )?;
         }
@@ -1102,6 +1119,7 @@ impl Store {
             let c = &k.changes[&id];
             let runs = w.change_of(id).map_or(&[][..], |c| &c.runs);
             let check = k.checks.get(&id).cloned().unwrap_or_default();
+            let spend = k.spends.get(&id);
             let files: Vec<serde_json::Value> = c
                 .files
                 .iter()
@@ -1112,8 +1130,8 @@ impl Store {
                 })
                 .collect();
             tx.execute(
-                "INSERT OR REPLACE INTO changes (agent, path, tree, files, patch, runs, checked) \
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                "INSERT OR REPLACE INTO changes (agent, path, tree, files, patch, runs, checked, \
+                 spend) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
                 params![
                     n(id),
                     c.path.display().to_string(),
@@ -1121,7 +1139,10 @@ impl Store {
                     serde_json::Value::Array(files).to_string(),
                     c.patch,
                     serde_json::to_string(runs).unwrap_or_default(),
-                    serde_json::to_string(&check).unwrap_or_default()
+                    serde_json::to_string(&check).unwrap_or_default(),
+                    spend
+                        .map(|s| serde_json::to_string(&s).unwrap_or_default())
+                        .unwrap_or_default()
                 ],
             )?;
         }
@@ -1254,7 +1275,14 @@ impl Store {
                 hash(&(
                     a.project, &a.name, a.role, a.parent, a.card, a.cost, a.taint,
                 )),
-                hash(&(a.gone, a.changed_at, a.traced, &a.commands, &a.start)),
+                hash(&(
+                    a.gone,
+                    a.changed_at,
+                    a.traced,
+                    &a.commands,
+                    &a.start,
+                    a.task,
+                )),
                 hash(&(
                     k.models.get(id),
                     k.tiered.get(id),
@@ -1364,11 +1392,13 @@ impl Store {
             .filter(|c| !after.offered.contains_key(c))
             .copied()
             .collect();
-        // The row holds the tree and where the check stands on it: a
-        // check that ends later moves the row too.
+        // The row holds the tree, where the check stands on it and what
+        // it cost: a check that ends later, or a cost settled at the
+        // turn's end, moves the row too.
         for (&id, c) in k.changes {
             let check = k.checks.get(&id).cloned().unwrap_or_default();
-            let key = format!("{} {}", c.tree, hash(&check));
+            let spend = k.spends.get(&id);
+            let key = format!("{} {} {}", c.tree, hash(&check), hash(&spend));
             if s.changes.get(&id) != Some(&key) {
                 plan.changes.push(id);
             }
@@ -1522,7 +1552,7 @@ impl Store {
         let mut st = conn.prepare(
             "SELECT id, project, name, role, parent, card, cost, taint, gone, \
              changed_at, traced, commands, model, tiered, woken, posted, session, session_spent, \
-             start, fork_of FROM agents ORDER BY id",
+             start, fork_of, task FROM agents ORDER BY id",
         )?;
         for row in st.query_map([], |r| {
             let id = u(r.get(0)?);
@@ -1542,6 +1572,8 @@ impl Store {
             a.traced = ubig(r.get(10)?);
             a.commands = serde_json::from_str(&r.get::<_, String>(11)?).unwrap_or_default();
             a.start = r.get(18)?;
+            // An older file has no column: no round open, nothing carried.
+            a.task = serde_json::from_str(&r.get::<_, String>(20)?).unwrap_or_default();
             if a.gone {
                 a.status = Status::Idle;
             }
@@ -1729,8 +1761,8 @@ impl Store {
             let (c, agent) = row?;
             found.offered.entry(c).or_default().push(agent);
         }
-        let mut st =
-            conn.prepare("SELECT agent, path, tree, files, patch, runs, checked FROM changes")?;
+        let mut st = conn
+            .prepare("SELECT agent, path, tree, files, patch, runs, checked, spend FROM changes")?;
         for row in st.query_map([], |r| {
             Ok((
                 u(r.get(0)?),
@@ -1740,9 +1772,14 @@ impl Store {
                 r.get::<_, String>(4)?,
                 r.get::<_, String>(5)?,
                 r.get::<_, String>(6)?,
+                r.get::<_, String>(7)?,
             ))
         })? {
-            let (agent, path, tree, files, patch, runs, check) = row?;
+            let (agent, path, tree, files, patch, runs, check, spend) = row?;
+            // An older file has no column, an unsettled change nothing.
+            if let Ok(spend) = serde_json::from_str::<Spend>(&spend) {
+                found.spends.insert(agent, spend);
+            }
             let runs: Vec<Ran> = serde_json::from_str(&runs).unwrap_or_default();
             if !runs.is_empty() {
                 found.runs.insert(agent, runs);
@@ -1788,6 +1825,7 @@ impl Store {
             offered: &found.offered,
             changes: &found.changes,
             checks: found.checks.clone(),
+            spends: found.spends.clone(),
         };
         // The newest sent lines, oldest first.
         let mut st = conn.prepare("SELECT seq, tick, text FROM sent ORDER BY seq DESC LIMIT ?1")?;
@@ -2254,6 +2292,15 @@ mod tests {
         };
         w.agents[1].cost = 4_321;
         w.agents[1].card = Some(0);
+        w.agents[1].task = Task {
+            round: Some((4_000, 70)),
+            carried: Spend {
+                cost: 500,
+                ticks: 20,
+                rounds: 1,
+            },
+            last: Some(spend()),
+        };
         w.agents[1].taint = Taint::Soft;
         w.agents[1].commands = vec!["/compact".into(), "/clear".into()];
         w.agents[1].changed_at = 66;
@@ -2272,6 +2319,7 @@ mod tests {
             patch: String::new(),
             runs: runs(),
             check: check(),
+            spend: Some(spend()),
         });
         w.sent.push(Sent {
             tick: 70,
@@ -2332,6 +2380,7 @@ mod tests {
         changes: HashMap<AgentId, worktree::Change>,
         runs: HashMap<AgentId, Vec<Ran>>,
         checks: HashMap<AgentId, Check>,
+        spends: HashMap<AgentId, Spend>,
     }
 
     impl Owned {
@@ -2351,6 +2400,7 @@ mod tests {
                 offered: &self.offered,
                 changes: &self.changes,
                 checks: self.checks.clone(),
+                spends: self.spends.clone(),
             }
         }
 
@@ -2371,6 +2421,7 @@ mod tests {
                 changes: self.changes.clone(),
                 runs: self.runs.clone(),
                 checks: self.checks.clone(),
+                spends: self.spends.clone(),
             }
         }
     }
@@ -2452,6 +2503,16 @@ mod tests {
             )]),
             runs: HashMap::from([(1, runs())]),
             checks: HashMap::from([(1, check())]),
+            spends: HashMap::from([(1, spend())]),
+        }
+    }
+
+    /// What the kept change cost.
+    fn spend() -> Spend {
+        Spend {
+            cost: 8_400,
+            ticks: 144,
+            rounds: 2,
         }
     }
 
@@ -2461,6 +2522,7 @@ mod tests {
             (a.id, a.project, a.name.clone(), a.role, a.parent, a.card),
             (a.cost, a.taint, a.gone, a.changed_at, a.traced),
             (a.commands.clone(), a.trace.clone()),
+            a.task,
         )
     }
 
@@ -2767,6 +2829,7 @@ mod tests {
                 changes: f.changes.clone(),
                 runs: f.runs.clone(),
                 checks: f.checks.clone(),
+                spends: f.spends.clone(),
             }
         }
     }
@@ -2786,6 +2849,22 @@ mod tests {
         type Move = Box<dyn Fn(&mut World, &mut Owned)>;
         let moves: Vec<(&str, Move)> = vec![
             ("budget", Box::new(|w, _| w.budget += 1)),
+            (
+                "a round opened",
+                Box::new(|w, _| w.agents[1].task.round = Some((4_321, 77))),
+            ),
+            (
+                "a change settled",
+                Box::new(|w, k| {
+                    let s = Spend {
+                        cost: 9_900,
+                        ticks: 92,
+                        rounds: 3,
+                    };
+                    w.changes[0].spend = Some(s);
+                    k.spends.insert(1, s);
+                }),
+            ),
             ("messages", Box::new(|w, _| w.messages += 1)),
             ("started_at", Box::new(|w, _| w.started_at += 1)),
             (
@@ -3019,6 +3098,7 @@ mod tests {
                     k.changes.remove(&1);
                     k.runs.remove(&1);
                     k.checks.remove(&1);
+                    k.spends.remove(&1);
                 }),
             ),
         ];
@@ -3432,7 +3512,7 @@ mod tests {
             .execute_batch(
                 "INSERT INTO meta VALUES ('started_at', '1'); \
                  INSERT INTO agents VALUES (0, 0, 'x', 'Clod', NULL, NULL, 0, 'Clean', \
-                 0, 0, 0, '[]', NULL, 0, 0, 0, NULL, 0, NULL, NULL);",
+                 0, 0, 0, '[]', NULL, 0, 0, 0, NULL, 0, NULL, NULL, '');",
             )
             .unwrap();
         let e = store.load(100).err().expect("refused").to_string();
@@ -3531,6 +3611,7 @@ mod tests {
                     offered: &k2.offered,
                     changes: &k2.changes,
                     checks: k2.checks.clone(),
+                    spends: k2.spends.clone(),
                 },
             )
             .unwrap();
@@ -3986,12 +4067,12 @@ mod tests {
                 )
                 .unwrap();
             assert_eq!(
-                version, "23",
+                version, "24",
                 "the sent table, the Fault kind, archives, restores, start points, standing yes, the \
-                 recall index, forks, paid kinds, reviews, no vendor and the check on a change: an \
-                 older imece knows none"
+                 recall index, forks, paid kinds, reviews, no vendor, the check on a change and \
+                 what it cost: an older imece knows none"
             );
-            assert_eq!(SCHEMA_VERSION, 23);
+            assert_eq!(SCHEMA_VERSION, 24);
         }
         let back = Store::open(&path)
             .unwrap()
@@ -4616,6 +4697,7 @@ mod tests {
             offered: &found.offered,
             changes: &found.changes,
             checks: found.checks.clone(),
+            spends: found.spends.clone(),
         };
         assert!(store.save(&w, &kept).unwrap());
         drop(store);
@@ -4838,11 +4920,75 @@ mod tests {
             patch: String::new(),
             runs: runs(),
             check: check(),
+            spend: None,
         });
         k.checks.insert(1, check());
         assert!(store.save(&w, &k.kept()).unwrap());
         let back = store.load(100).unwrap().expect("a world");
         assert_eq!(back.found.checks, HashMap::from([(1, check())]));
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn a_file_of_schema_23_gets_the_spend_and_task_columns() {
+        let d = dir("schema23");
+        std::fs::create_dir_all(&d).unwrap();
+        let path = d.join(FILE);
+        {
+            // A whole file as schema 23 wrote it: no change costed, no round.
+            let mut store = Store::open(&path).unwrap();
+            assert!(store.save(&world(), &kept().kept()).unwrap());
+            store
+                .raw()
+                .execute_batch(
+                    "ALTER TABLE changes DROP COLUMN spend;
+                     ALTER TABLE agents DROP COLUMN task;
+                     UPDATE meta SET value = '23' WHERE key = 'schema_version';",
+                )
+                .unwrap();
+        }
+        let mut store = Store::open(&path).unwrap();
+        let back = store.load(100).unwrap().expect("a world");
+        assert_eq!(back.found.changes, kept().changes);
+        assert_eq!(back.found.spends, HashMap::new(), "no cost was kept");
+        assert_eq!(
+            back.world.agents[1].task,
+            Task::default(),
+            "no round, nothing carried"
+        );
+        let (spend_col, task_col): (String, String) = store
+            .raw()
+            .query_row(
+                "SELECT c.spend, a.task FROM changes c JOIN agents a ON a.id = c.agent \
+                 WHERE c.agent = 1",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!((spend_col.as_str(), task_col.as_str()), ("", ""));
+        // The next save writes what the world has of both.
+        let mut k = back.found();
+        let mut w = back.world;
+        w.changes.push(Change {
+            agent: 1,
+            title: "done".into(),
+            files: Vec::new(),
+            patch: String::new(),
+            runs: runs(),
+            check: check(),
+            spend: Some(spend()),
+        });
+        k.spends.insert(1, spend());
+        w.agents[1].task = Task {
+            round: Some((4_000, 70)),
+            carried: Spend::default(),
+            last: Some(spend()),
+        };
+        assert!(store.save(&w, &k.kept()).unwrap());
+        let back = store.load(100).unwrap().expect("a world");
+        assert_eq!(back.found.spends, HashMap::from([(1, spend())]));
+        assert_eq!(back.world.agents[1].task, w.agents[1].task);
+        assert!(!store.save(&w, &k.kept()).unwrap(), "nothing moved");
         let _ = std::fs::remove_dir_all(&d);
     }
 }

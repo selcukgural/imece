@@ -964,6 +964,14 @@ pub struct Text {
     pub ev_worktree_changes: &'static str,
     pub ev_worktree_commits: &'static str,
     pub ev_change_ready: &'static str,
+    /// The same with what it cost, when known as it is read.
+    pub ev_change_ready_spent: &'static str,
+    /// What a change cost, known once the turn ended (record 113).
+    pub ev_change_cost: &'static str,
+    /// After a change's cost and time: its rounds, when more than one.
+    pub spend_rounds: &'static str,
+    /// The change view's line with what it cost.
+    pub diff_spend: &'static str,
     pub ev_applied: &'static str,
     pub ev_apply_failed: &'static str,
     /// The same while what clashes can go back to the worker.
@@ -1863,6 +1871,10 @@ pub const EN: Text = Text {
     ev_worktree_changes: "{}: worktree kept at {}, it has uncommitted changes (HEAD is {})",
     ev_worktree_commits: "{}: worktree kept at {}, it has commits of its own (HEAD is {})",
     ev_change_ready: "{} finished: {} files, +{} −{} → waits for you",
+    ev_change_ready_spent: "{} finished: {} files, +{} −{} · {} → waits for you",
+    ev_change_cost: "{}'s change cost {}",
+    spend_rounds: " · {} rounds",
+    diff_spend: "cost · {}",
     ev_applied: "you applied {}'s change ({} files) to the checkout, staged; worktree mark {}",
     ev_apply_failed: "{}'s change did not apply: {}",
     ev_apply_failed_back: "{}'s change did not apply: {} · b in the change sends it back",
@@ -2919,6 +2931,10 @@ pub const TR: Text = Text {
     ev_worktree_changes: "{}: çalışma ağacı {} noktasında kaldı, commit edilmemiş değişiklikleri var (HEAD {})",
     ev_worktree_commits: "{}: çalışma ağacı {} noktasında kaldı, kendi commit'leri var (HEAD {})",
     ev_change_ready: "{} bitirdi: {} dosya, +{} −{} → seni bekliyor",
+    ev_change_ready_spent: "{} bitirdi: {} dosya, +{} −{} · {} → seni bekliyor",
+    ev_change_cost: "{} değişikliği {} tuttu",
+    spend_rounds: " · {} tur",
+    diff_spend: "maliyet · {}",
     ev_applied: "{} değişikliğini ({} dosya) checkout'a uyguladın, stage'de; çalışma ağacı işareti {}",
     ev_apply_failed: "{} değişikliği uygulanamadı: {}",
     ev_apply_failed_back: "{} değişikliği uygulanamadı: {} · değişiklikte b onu geri gönderir",
@@ -3583,6 +3599,10 @@ mod tests {
             (e.diff_title, t.diff_title),
             (e.diff_gone, t.diff_gone),
             (e.ev_change_ready, t.ev_change_ready),
+            (e.ev_change_ready_spent, t.ev_change_ready_spent),
+            (e.ev_change_cost, t.ev_change_cost),
+            (e.spend_rounds, t.spend_rounds),
+            (e.diff_spend, t.diff_spend),
             (e.ev_applied, t.ev_applied),
             (e.ev_apply_failed, t.ev_apply_failed),
             (e.ev_apply_failed_back, t.ev_apply_failed_back),

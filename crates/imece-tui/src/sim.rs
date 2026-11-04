@@ -1247,7 +1247,7 @@ impl Sim {
             return;
         }
         let mark = sha(&mut self.rng);
-        w.change_applied(id, mark);
+        w.change_applied(id, mark, hunks.is_empty());
         let p = w.agents[id].project;
         self.tell_the_others(w, id);
         self.extras
@@ -1274,12 +1274,15 @@ impl Sim {
         (s.added, s.removed) = files
             .iter()
             .fold((0, 0), |(a, r), f| (a + f.added, r + f.removed));
-        if !files.is_empty() {
+        if files.is_empty() {
+            w.change_none(id);
+        } else {
             w.change_ready(Change {
                 files,
                 patch,
                 runs: Vec::new(),
                 check: Check::None,
+                spend: None,
                 ..change
             });
         }
@@ -1546,10 +1549,15 @@ impl Sim {
         self.checks_due(w);
         w.tick += 1;
         let t = w.tick;
-        for a in &mut w.agents {
-            if !a.gone && a.status.busy() {
-                a.cost += COST_PER_TICK;
-            }
+        // A busy agent's round opens at its first busy tick, as live's
+        // does at its prompt (record 113).
+        let busy: Vec<AgentId> = (w.agents.iter())
+            .filter(|a| !a.gone && a.status.busy())
+            .map(|a| a.id)
+            .collect();
+        for &id in &busy {
+            w.round_opens(id);
+            w.agents[id].cost += COST_PER_TICK;
         }
         for (id, hunks) in std::mem::take(&mut self.applying) {
             let fits = !self.rng.one_in(8);
@@ -1676,6 +1684,7 @@ impl Sim {
                 patch,
                 runs: Vec::new(),
                 check: Check::None,
+                spend: None,
             };
             let (added, removed) = change.counts();
             let n = change.files.len();
@@ -3078,22 +3087,24 @@ impl Sim {
             patch,
             runs,
             check: Check::None,
+            spend: None,
         };
         let (added, removed) = change.counts();
         let n = change.files.len();
-        w.change_ready(change);
-        self.check(w, id);
         let c = &mut w.cards[card];
         c.column = Column::Done;
         c.finished = t;
         let a = &mut w.agents[id];
         a.progress = 0;
         a.activity = None;
+        // Its turn is over as the change is read: what it cost goes with it.
         a.set_status(Status::Idle, t);
         a.trace(t, format!("change: {n} files +{added} −{removed}"));
         // What the person reviews is what the worktree holds.
         a.stand.added = added;
         a.stand.removed = removed;
+        w.change_ready(change);
+        self.check(w, id);
     }
 
     /// A patch that changes each of `symbols` in its file, as `git diff`
@@ -4171,6 +4182,7 @@ mod tests {
             patch: TWO_FILES.into(),
             runs: Vec::new(),
             check: Check::None,
+            spend: None,
         });
         (w, s, id)
     }
@@ -4344,6 +4356,7 @@ diff --git a/b.rs b/b.rs
                     timed_out: false,
                 }],
                 check: Check::Failed("no shell".into()),
+                spend: None,
             })
         };
         ready(&mut w);
@@ -4480,6 +4493,67 @@ diff --git a/b.rs b/b.rs
             w.cards[c].column = Column::Working;
         }
         assert!(not > 0 && fit > 2 * not, "{fit} fit, {not} not");
+    }
+
+    #[test]
+    fn a_demo_change_says_what_it_cost_its_rounds_add_up_and_an_apply_drops_them() {
+        let (mut w, mut s, worker, card) = one_at_work();
+        // The round opens at the first busy tick, from the cost then.
+        let (before, t0) = (w.agents[worker].cost, w.tick);
+        s.step(&mut w);
+        assert_eq!(w.agents[worker].task.round, Some((before, t0 + 1)));
+        assert_eq!(w.agents[worker].cost, before + COST_PER_TICK);
+        let lead = w.projects[0].leader;
+        assert_eq!(
+            w.agents[lead].task.round, None,
+            "a leader's spend is nobody's change"
+        );
+        // A helper's spend counts with its worker's, from its own round.
+        let h = s.helper_for(&mut w, worker, card);
+        for _ in 0..3 {
+            s.step(&mut w);
+        }
+        let h_from = w.agents[h].task.round.unwrap().0;
+        let expected = (w.agents[worker].cost - before) + (w.agents[h].cost - h_from);
+        assert!(expected > 0);
+        // Its done: the demo's turn is over as the change is read, so the
+        // figure comes with it.
+        s.done(&mut w, worker);
+        let first = w.change_of(worker).unwrap().spend.unwrap();
+        assert_eq!(
+            first,
+            Spend {
+                cost: expected,
+                ticks: w.tick - (t0 + 1),
+                rounds: 1
+            }
+        );
+        assert!(w.journal.iter().any(|e| matches!(
+            e.event,
+            Event::ChangeReady { agent, spend: Some(x), .. } if agent == worker && x == first
+        )));
+        assert_eq!(w.agents[worker].task.round, None);
+        assert_eq!(w.agents[h].task.round, None);
+        // Sent back and done again: the rounds add up.
+        assert_eq!(s.reject_change(&mut w, worker), Ok(()));
+        assert_eq!(w.agents[worker].task.carried, first);
+        s.told(&mut w, worker, "Keep the old rounding").unwrap();
+        // Its helper works on with it: both count again from here.
+        let from = (w.agents[worker].cost, w.agents[h].cost);
+        s.step(&mut w);
+        s.step(&mut w);
+        let added = (w.agents[worker].cost - from.0) + (w.agents[h].cost - from.1);
+        assert!(added > 0, "busy again");
+        s.done(&mut w, worker);
+        let second = w.change_of(worker).unwrap().spend.unwrap();
+        assert_eq!((second.cost, second.rounds), (first.cost + added, 2));
+        assert!(second.ticks > first.ticks);
+        // Applied whole: nothing carried into the next change.
+        assert_eq!(s.apply_change(&w, worker, Vec::new()), Ok(()));
+        s.applying.clear();
+        s.applied(&mut w, worker, true, &[]);
+        assert_eq!(w.agents[worker].task.carried, Spend::default());
+        assert_eq!(w.agents[worker].task.last, Some(second));
     }
 
     #[test]
@@ -6670,6 +6744,7 @@ diff --git a/b.rs b/b.rs
                 patch: String::new(),
                 runs: Vec::new(),
                 check: Check::None,
+                spend: None,
             })
         };
         let check_of = |w: &World| w.change_of(worker).unwrap().check.clone();

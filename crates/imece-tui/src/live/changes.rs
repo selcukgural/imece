@@ -109,6 +109,7 @@ impl Live {
         reply: Sender<Answer>,
     ) {
         let Some(path) = self.tree_at(w, id) else {
+            w.change_none(id);
             let _ = reply.send(Ok(said));
             return;
         };
@@ -327,6 +328,7 @@ impl Live {
         match read {
             Ok(None) => {
                 w.agents[id].trace(w.tick, "change: none");
+                w.change_none(id);
                 "; your worktree holds no change".to_string()
             }
             Ok(Some(c)) => {
@@ -350,6 +352,7 @@ impl Live {
                     patch: c.patch.clone(),
                     runs,
                     check: Check::None,
+                    spend: None,
                 });
                 self.changes.insert(id, c);
                 self.check_change(w, id);
@@ -442,7 +445,7 @@ impl Live {
             }
         };
         self.changes.remove(&id);
-        w.change_applied(id, mark.clone());
+        w.change_applied(id, mark.clone(), part.is_none());
         self.stand(w, id);
         // The checkout has new files now, maybe: the list is read again.
         self.files(w.agents[id].project);
@@ -661,10 +664,19 @@ mod tests {
             root.clone(),
         );
         let tree = worker_in(&mut live, &mut w, 1, &repo, &root);
-        // Nothing changed: the done says so, nothing waits.
+        // Nothing changed: the done says so, nothing waits, and nothing of
+        // an earlier change's cost is carried on or headed.
+        let carried = Spend {
+            cost: 7,
+            ticks: 8,
+            rounds: 1,
+        };
+        w.agents[1].task.carried = carried;
+        w.agents[1].task.last = Some(carried);
         let got = sent(&mut live, &mut w, 1, &msg("lead", "done", "Nothing to do.")).unwrap();
         assert!(got.ends_with("; your worktree holds no change"), "{got}");
         assert!(w.open_inbox().is_empty());
+        assert_eq!(w.agents[1].task, Task::default());
         assert!(
             w.agents[1]
                 .trace
@@ -698,7 +710,8 @@ mod tests {
                 agent: 1,
                 files: 2,
                 added: 3,
-                removed: 1
+                removed: 1,
+                spend: None
             }
         )));
         assert!(
@@ -1373,11 +1386,15 @@ mod tests {
             assert!(!got.contains("change"), "{from} {kind}: {got}");
         }
         assert!(w.open_inbox().is_empty());
-        // A worker without a directory (no session yet) has nothing to read.
+        // A worker without a directory (no session yet) has nothing to read,
+        // and nothing of an earlier change's cost to carry or head.
         live.cwds[1] = None;
+        w.agents[1].task.carried.cost = 7;
+        w.agents[1].task.last = Some(Spend::default());
         let got = sent(&mut live, &mut w, 1, &msg("lead", "done", "x")).unwrap();
         assert!(!got.contains("change"), "{got}");
         assert!(w.open_inbox().is_empty());
+        assert_eq!(w.agents[1].task, Task::default());
         // Too large to show: the worker is told, nothing waits.
         live.cwds[1] = Some(tree.clone());
         std::fs::write(tree.join("big.txt"), "x".repeat(MAX_PATCH + 1)).unwrap();
@@ -1940,6 +1957,67 @@ mod tests {
         let _ = std::fs::remove_dir_all(&folder);
         let _ = std::fs::remove_dir_all(&root);
         let _ = std::fs::remove_dir_all(&repo);
+    }
+
+    #[test]
+    fn a_done_s_change_takes_what_the_turn_cost_at_its_end_and_the_leader_hears_the_figure() {
+        let repo = checkout("cost-repo");
+        let root = trees("cost");
+        let mut w = team(1);
+        let mut live = Live::new(
+            2,
+            claude_at("/nonexistent/claude"),
+            repo.clone(),
+            root.clone(),
+        );
+        let tree = worker_in(&mut live, &mut w, 1, &repo, &root);
+        // The leader's session never starts: its prompts queue, to be read.
+        let (cut, _) = mpsc::channel();
+        live.ready_tx = cut;
+        // The task's prompt opens the round the change is costed by.
+        live.prompt(&mut w, 1, "Add b".into(), Some("Add b"))
+            .unwrap();
+        assert_eq!(w.agents[1].task.round, Some((0, w.tick)));
+        std::fs::write(tree.join("a.txt"), "a\nb\n").unwrap();
+        let got = sent(&mut live, &mut w, 1, &msg("lead", "done", "Added b")).unwrap();
+        assert!(
+            got.starts_with("delivered as message 1; lead gets it when this turn of yours ends"),
+            "{got}"
+        );
+        assert_eq!(
+            w.change_of(1).unwrap().spend,
+            None,
+            "mid-turn: not known yet"
+        );
+        assert!(
+            queued(&live, 0).is_empty(),
+            "the leader waits for the figure"
+        );
+        // The turn ends with Claude Code's cost: the change is settled,
+        // said in the journal, and the leader's mail is headed with it.
+        hear(
+            &live,
+            1,
+            AgentEvent::TurnDone {
+                ok: true,
+                text: "Done.".into(),
+                cost: 350_000,
+                denied: 0,
+            },
+        );
+        live.step(&mut w);
+        let s = w.change_of(1).unwrap().spend.unwrap();
+        assert_eq!((s.cost, s.rounds), (3_500, 1));
+        assert!(w.journal.iter().any(|e| matches!(
+            e.event,
+            Event::ChangeCost { agent: 1, spend } if spend == s
+        )));
+        assert!(
+            queued(&live, 0)[0].contains("[done 1 · $0.35] from claude-1:\nAdded b"),
+            "{}",
+            queued(&live, 0)[0]
+        );
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]

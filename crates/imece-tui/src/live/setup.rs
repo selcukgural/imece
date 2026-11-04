@@ -1029,6 +1029,7 @@ mod tests {
             patch: String::new(),
             runs: Vec::new(),
             check: Check::None,
+            spend: None,
         });
     }
 

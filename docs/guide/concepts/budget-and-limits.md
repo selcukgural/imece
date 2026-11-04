@@ -72,9 +72,13 @@ Before the call the store counts it at its cap in one transaction and the pot ho
 
 A change that has its review, or one asked for, is not reviewed again.
 
+## What a change cost
+
+The pot says what the team spent; each change says what it alone cost ([changes](changes.md#what-it-cost)): the worker's spend, its helpers' counted in, from its first prompt after its last change to its `done`, with the time it worked and, for a change sent back and sent again, its rounds: `$0.84 · 12 min`, `$1.20 · 25 min · 3 rounds`. It stands on the `Δ` row, above the diff, in the journal and in the leader's copy of the `done` (`[done 12 · $0.84]`), so the leader learns what its tiers cost. It is the same spend the pot counts, cut by change; nothing is paid twice.
+
 ## The demo
 
-`--demo` spends a made-up pot the same way: the header, the rate, the low-pot line, `:budget`, the usage windows (filled from spending) and the few cents of `:commit` and `:review` all show as live does.
+`--demo` spends a made-up pot the same way: the header, the rate, the low-pot line, `:budget`, the usage windows (filled from spending), what each change cost and the few cents of `:commit` and `:review` all show as live does.
 
 ## See also
 

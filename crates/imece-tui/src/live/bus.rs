@@ -167,6 +167,10 @@ impl Live {
                 "held as message {id}; {name} waits on the person and gets it once they \
                  have answered, it starts nothing until then"
             ),
+            (true, false, false) if read.is_some() => format!(
+                "delivered as message {id}; {name} gets it when this turn of yours ends, \
+                 headed with what it cost"
+            ),
             (true, false, false) => {
                 format!("delivered as message {id}; {name} starts on it now")
             }
@@ -474,8 +478,12 @@ impl Live {
                 }
             };
             let due = self.mail[id].iter().any(wakes);
+            // A worker's done says what its change cost once its turn
+            // ended (record 113): the leader gets it then.
+            let settling = (self.mail[id].iter()).any(|m| self.settling(w, m));
             let a = &w.agents[id];
             if due
+                && !settling
                 && self.turns[id] == 0
                 && !matches!(a.status, Status::Stopped | Status::Asleep)
                 && !a.gone
@@ -484,6 +492,13 @@ impl Live {
             }
             w.agents[id].held_mail = if waits { self.mail[id].len() } else { 0 };
         }
+    }
+
+    /// Whether `m` is a worker's `done` whose turn still runs: its change
+    /// is settled, and headed with its cost, at the turn's end.
+    fn settling(&self, w: &World, m: &Mail) -> bool {
+        let from = &w.agents[m.from];
+        m.kind == MsgKind::Done && from.role == Role::Worker && !from.gone && self.turns[m.from] > 0
     }
 
     /// Starts agent `id`'s next turn with all its mail.
@@ -889,6 +904,86 @@ mod tests {
         live.step(&mut w);
         assert_eq!(live.turns[0], 1);
         assert!(queued(&live, 0)[0].contains("[done 1] from claude-1:\nParser fixed."));
+    }
+
+    #[test]
+    fn a_worker_s_done_reaches_the_leader_when_its_turn_ends_headed_with_what_it_cost() {
+        let mut w = team(1);
+        let mut live = idle_live(2);
+        // A done comes mid-turn.
+        live.turns[1] = 1;
+        w.agents[1].task.round = Some((0, 3));
+        let got = sent(&mut live, &mut w, 1, &msg("lead", "done", "Parser fixed.")).unwrap();
+        assert_eq!(
+            got,
+            "delivered as message 1; lead gets it when this turn of yours ends, headed with \
+             what it cost"
+        );
+        live.step(&mut w);
+        assert!(
+            queued(&live, 0).is_empty(),
+            "not while the worker's turn runs"
+        );
+        // Its change, read mid-turn, is settled at the turn's end, and the
+        // leader's mail is headed with the figure.
+        w.change_ready(Change {
+            agent: 1,
+            title: "Parser fixed.".into(),
+            files: Vec::new(),
+            patch: String::new(),
+            runs: Vec::new(),
+            check: Check::None,
+            spend: None,
+        });
+        w.started_at = crate::live::now() - (3 + 144) * SECONDS_PER_TICK;
+        hear(
+            &live,
+            1,
+            AgentEvent::TurnDone {
+                ok: true,
+                text: "Done.".into(),
+                cost: 840_000,
+                denied: 0,
+            },
+        );
+        live.step(&mut w);
+        let s = w.change_of(1).unwrap().spend.unwrap();
+        assert_eq!((s.cost, s.rounds), (8_400, 1));
+        assert!((144..=145).contains(&s.ticks), "{s:?}");
+        assert_eq!(live.turns[0], 1);
+        assert!(
+            queued(&live, 0)[0].contains("[done 1 · $0.84] from claude-1:\nParser fixed."),
+            "{}",
+            queued(&live, 0)[0]
+        );
+        // What holds a delivery: a worker's done while its turn runs, and
+        // nothing else.
+        let mail = |from, kind| Mail {
+            from,
+            kind,
+            body: "x".into(),
+            id: 2,
+            re: None,
+        };
+        let helper = with_helper(&mut w, 1);
+        live.turns[1] = 1;
+        assert!(live.settling(&w, &mail(1, MsgKind::Done)));
+        assert!(!live.settling(&w, &mail(1, MsgKind::Ask)), "only a done");
+        assert!(
+            !live.settling(&w, &mail(helper, MsgKind::Done)),
+            "a helper's is its worker's"
+        );
+        w.agents[1].gone = true;
+        assert!(
+            !live.settling(&w, &mail(1, MsgKind::Done)),
+            "gone: nothing to wait for"
+        );
+        w.agents[1].gone = false;
+        live.turns[1] = 0;
+        assert!(
+            !live.settling(&w, &mail(1, MsgKind::Done)),
+            "its turn is over"
+        );
     }
 
     #[test]

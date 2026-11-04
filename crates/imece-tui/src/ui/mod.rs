@@ -611,6 +611,12 @@ pub(crate) fn inbox_line(app: &App, i: usize) -> Line<'static> {
             pal().bad
         };
         spans.push(Span::styled(words::evidence(app.lang, &c.runs), fg(colour)));
+        if let Some(s) = c.spend {
+            spans.push(Span::styled(
+                format!(" · {}", words::spend(app.lang, &s)),
+                dim(),
+            ));
+        }
     }
     Line::from(spans)
 }
@@ -3095,6 +3101,7 @@ mod tests {
             patch: String::new(),
             runs: Vec::new(),
             check: Check::None,
+            spend: None,
         });
         app.zoom = Zoom::Focus(id);
         let change = foot(&app);
@@ -5007,7 +5014,28 @@ mod tests {
                 .into(),
             runs: Vec::new(),
             check: Check::None,
+            spend: None,
         }
+    }
+
+    #[test]
+    fn a_change_s_line_ends_with_what_it_cost_once_known() {
+        let mut app = app_after(1, 4, 50, Lang::En);
+        app.world.inbox.clear();
+        app.world.change_ready(a_change(1));
+        let open = app.world.open_inbox();
+        let line = inbox_line(&app, *open.last().unwrap());
+        let last = line.spans.last().unwrap();
+        assert!(!last.content.contains('$'), "unsettled: {}", last.content);
+        app.world.changes[0].spend = Some(Spend {
+            cost: 8_400,
+            ticks: 144,
+            rounds: 2,
+        });
+        let line = inbox_line(&app, *open.last().unwrap());
+        let last = line.spans.last().unwrap();
+        assert_eq!(last.content, " · $0.84 · 12 min · 2 rounds");
+        assert_eq!(last.style, dim());
     }
 
     #[test]
@@ -5252,6 +5280,7 @@ mod tests {
             files: 1,
             added: 1,
             removed: 0,
+            spend: None,
         };
         let sent = |from, to| Event::Sent {
             from,
@@ -5434,7 +5463,8 @@ mod tests {
                 agent: w[1],
                 files: 1,
                 added: 1,
-                removed: 0
+                removed: 0,
+                spend: None
             }),
             Some(1)
         );
@@ -11987,6 +12017,7 @@ mod tests {
             patch: "diff --git a/x b/x\n@@ -1 +1 @@\n-a\n+b\n".into(),
             runs: Vec::new(),
             check: Check::None,
+            spend: None,
         });
         app.zoom = Zoom::Diff(worker);
         app.diff_scroll = 3;
