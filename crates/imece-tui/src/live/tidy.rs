@@ -97,7 +97,7 @@ enum Plan {
 fn torn(ran: Result<run::Outcome, String>) -> TornDown {
     match ran {
         Ok(o) => {
-            let (ok, end) = setup::ended(&o);
+            let (ok, end) = setup::ended(&o, setup::DEADLINE);
             TornDown::Ran {
                 ok,
                 end,
@@ -224,9 +224,13 @@ impl Live {
             for o in mine {
                 let ran = match &plans[&o.checkout] {
                     Plan::None => None,
-                    Plan::Run(copy) => {
-                        Some(torn(setup::run_in(copy, &o.checkout, &o.path, &running)))
-                    }
+                    Plan::Run(copy) => Some(torn(setup::run_in(
+                        copy,
+                        &o.checkout,
+                        &o.path,
+                        setup::DEADLINE,
+                        &running,
+                    ))),
                     Plan::Refused => Some(TornDown::Refused),
                     Plan::Failed(why) => Some(TornDown::Failed(why.clone())),
                 };

@@ -2,7 +2,10 @@
 //! person's checkout, run in each new worktree after `:copy`, before the
 //! agent's session starts, once the person approved its exact bytes; and
 //! its teardown script, `.imece/worktree-teardown.sh`, run the same way
-//! in a worktree before `:tidy` removes it (record 96).
+//! in a worktree before `:tidy` removes it (record 96); and the
+//! repository's check, `.imece/check`, run in a worker's worktree on the
+//! change just read from it, its result a note on the change for the
+//! person, never a gate (record 112).
 //!
 //! The script is the repository's code and runs as the person, so it
 //! never runs unapproved. The approval is bound to what runs: the bytes'
@@ -33,11 +36,15 @@ pub const FILE: &str = ".imece/worktree-setup.sh";
 /// Where the teardown script is, in the person's checkout.
 pub const TEARDOWN_FILE: &str = ".imece/worktree-teardown.sh";
 
-/// Which of the two scripts: what it is approved as and where it is.
+/// Where the repository's check is, in the person's checkout (record 112).
+pub const CHECK_FILE: &str = ".imece/check";
+
+/// Which of the scripts: what it is approved as and where it is.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Kind {
     Setup,
     Teardown,
+    Check,
 }
 
 impl Kind {
@@ -46,6 +53,7 @@ impl Kind {
         match self {
             Kind::Setup => FILE,
             Kind::Teardown => TEARDOWN_FILE,
+            Kind::Check => CHECK_FILE,
         }
     }
 
@@ -54,6 +62,16 @@ impl Kind {
         match self {
             Kind::Setup => "setup",
             Kind::Teardown => "teardown",
+            Kind::Check => "check",
+        }
+    }
+
+    /// The item an unapproved script of this kind puts in WAITING FOR YOU;
+    /// a teardown script asks over the `:tidy` window instead.
+    pub fn inbox_kind(self) -> InboxKind {
+        match self {
+            Kind::Check => InboxKind::Check,
+            Kind::Setup | Kind::Teardown => InboxKind::Script,
         }
     }
 }
@@ -64,8 +82,13 @@ pub const RUNNER: &str = "/bin/sh";
 /// The biggest script imece takes, in bytes.
 pub const SCRIPT_MAX: u64 = 64 << 10;
 
-/// How long a run may take before its group is killed.
+/// How long a setup or teardown run may take before its group is killed;
+/// a check gets the `run` tool's deadline.
 pub const DEADLINE: Duration = Duration::from_secs(60);
+
+/// Trees the check ran on, kept with their results: a change read again
+/// with the same tree gets its result without a run. The oldest go.
+pub const CHECKED_KEEP: usize = 32;
 
 /// The most output a run keeps (its first and last halves), in bytes.
 pub const OUTPUT_MAX: usize = 8 << 10;
@@ -164,17 +187,18 @@ pub fn copy_of(dir: &Path, s: &Script) -> std::io::Result<PathBuf> {
 }
 
 /// Runs the private copy `copy` in `worktree` as [`RUNNER`] does, with
-/// `IMECE_REPO` and `IMECE_WORKTREE` set: what it came to, or why it did
-/// not start.
+/// `IMECE_REPO` and `IMECE_WORKTREE` set, for at most `deadline`: what it
+/// came to, or why it did not start.
 pub fn run_in(
     copy: &Path,
     repo: &Path,
     worktree: &Path,
+    deadline: Duration,
     running: &Running,
 ) -> Result<Outcome, String> {
     let argv = [RUNNER.to_string(), copy.to_string_lossy().into_owned()];
     let env = [("IMECE_REPO", repo), ("IMECE_WORKTREE", worktree)];
-    run::run_env(&argv, worktree, &env, DEADLINE, OUTPUT_MAX, running).map_err(|e| e.to_string())
+    run::run_env(&argv, worktree, &env, deadline, OUTPUT_MAX, running).map_err(|e| e.to_string())
 }
 
 /// What the journal keeps of a run's output: its last [`OUTPUT_LINES`]
@@ -188,11 +212,11 @@ pub fn last_lines(output: &str) -> Vec<String> {
         .collect()
 }
 
-/// How a run ended, in the journal's words: `exit 0, 3.2 s` or `killed at
-/// the deadline`; whether it went well.
-pub fn ended(o: &Outcome) -> (bool, String) {
+/// How a run ended, in the journal's words: `exit 0, 3.2 s` or `killed
+/// after 60 s` (its `deadline`); whether it went well.
+pub fn ended(o: &Outcome, deadline: Duration) -> (bool, String) {
     let how = if o.timed_out {
-        format!("killed after {} s", DEADLINE.as_secs())
+        format!("killed after {} s", deadline.as_secs())
     } else {
         match o.code {
             Some(c) => format!("exit {c}, {:.1} s", o.took.as_secs_f64()),
@@ -229,7 +253,7 @@ impl Plan {
     pub fn carry_out(self, made: bool, repo: &Path, worktree: &Path, running: &Running) -> Done {
         match (made, self) {
             (false, _) | (true, Plan::None) => Done::None,
-            (true, Plan::Run(copy)) => Done::Ran(run_in(&copy, repo, worktree, running)),
+            (true, Plan::Run(copy)) => Done::Ran(run_in(&copy, repo, worktree, DEADLINE, running)),
             (true, Plan::Ask(s)) => Done::Ask(s),
             (true, Plan::Failed(why)) => Done::Ran(Err(why)),
         }
@@ -237,7 +261,8 @@ impl Plan {
 }
 
 /// One ask in WAITING FOR YOU: its item, the bytes it asks about, and the
-/// agents whose new worktrees went without them meanwhile.
+/// agents whose new worktrees (a setup script) or changes (the check) went
+/// without them meanwhile.
 #[derive(Debug)]
 pub struct Ask {
     pub item: usize,
@@ -285,7 +310,7 @@ impl Live {
         match done {
             Done::None => {}
             Done::Ran(Ok(o)) => {
-                let (ok, end) = ended(&o);
+                let (ok, end) = ended(&o, DEADLINE);
                 let lines = last_lines(&o.output);
                 w.agents[id].trace(w.tick, format!("worktree setup: {end}"));
                 w.note(Event::SetupRan {
@@ -301,21 +326,27 @@ impl Live {
                     why: crate::i18n::clean(&why),
                 });
             }
-            Done::Ask(script) => self.ask_setup(w, id, script),
+            Done::Ask(script) => self.ask_script(w, id, script),
         }
     }
 
-    /// Asks the person about `script`, which agent `id`'s new worktree
-    /// went without: one item per script; an ask already open for the
-    /// same bytes counts the agent on it. Approved meanwhile, it runs at
-    /// once; refused meanwhile, nothing.
-    fn ask_setup(&mut self, w: &mut World, id: AgentId, script: Script) {
+    /// Asks the person about `script`, which agent `id`'s new worktree (a
+    /// setup script) or change (the check) went without: one item per
+    /// script; an ask already open for the same bytes counts the agent on
+    /// it. Approved meanwhile, it runs at once; refused meanwhile, nothing.
+    fn ask_script(&mut self, w: &mut World, id: AgentId, script: Script) {
         let key = script.key();
         if self.setup_refused.contains(&key) {
             return;
         }
         if w.setup_approved.contains(&key) {
-            return self.run_setup(w, &script, &[id]);
+            return match script.kind {
+                Kind::Check => self.run_checks(w, &script, &[id]),
+                Kind::Setup | Kind::Teardown => self.run_setup(w, &script, &[id]),
+            };
+        }
+        if script.kind == Kind::Check {
+            w.checked(id, Check::Asked);
         }
         let open = |a: &&mut Ask| a.script.key() == key && w.inbox[a.item].open;
         if let Some(ask) = self.setup_asks.iter_mut().find(open) {
@@ -324,19 +355,20 @@ impl Live {
         }
         let item = w.inbox.len();
         w.inbox.push(InboxItem {
-            kind: InboxKind::Script,
+            kind: script.kind.inbox_kind(),
             agent: id,
-            detail: FILE.to_string(),
+            detail: script.kind.file().to_string(),
             researcher: None,
             open: true,
             tick: w.tick,
-            // About a worktree, not a card.
+            // About a worktree or a change, not a card.
             card: None,
         });
-        w.agents[id].trace(
-            w.tick,
-            format!("worktree setup waits for your yes: {}", script.sha),
-        );
+        let what = match script.kind {
+            Kind::Check => "check",
+            Kind::Setup | Kind::Teardown => "worktree setup",
+        };
+        w.agents[id].trace(w.tick, format!("{what} waits for your yes: {}", script.sha));
         self.setup_asks.push(Ask {
             item,
             script,
@@ -351,10 +383,10 @@ impl Live {
         Some(&ask.script)
     }
 
-    /// The person's answer to the setup script ask `item`: yes keeps the
+    /// The person's answer to the script ask `item`: yes keeps the
     /// approval (in the store) and runs the bytes asked about in the
-    /// worktrees that went without them; no is kept for the run. False
-    /// when nothing is asked there.
+    /// worktrees, or on the changes, that went without them; no is kept
+    /// for the run. False when nothing is asked there.
     pub fn decide_setup(&mut self, w: &mut World, item: usize, yes: bool) -> bool {
         let Some(at) = (self.setup_asks.iter()).position(|a| a.item == item && w.inbox[item].open)
         else {
@@ -363,15 +395,163 @@ impl Live {
         let ask = self.setup_asks.remove(at);
         w.inbox[item].open = false;
         let agent = w.inbox[item].agent;
-        w.note(Event::SetupAnswered { agent, yes });
+        let check = ask.script.kind == Kind::Check;
+        w.note(match check {
+            true => Event::CheckAnswered { agent, yes },
+            false => Event::SetupAnswered { agent, yes },
+        });
         let key = ask.script.key();
         if !yes {
             self.setup_refused.insert(key);
+            if check {
+                for &id in &ask.agents {
+                    w.checked(id, Check::None);
+                }
+            }
             return true;
         }
         w.approve_setup(key);
-        self.run_setup(w, &ask.script, &ask.agents);
+        match check {
+            true => self.run_checks(w, &ask.script, &ask.agents),
+            false => self.run_setup(w, &ask.script, &ask.agents),
+        }
         true
+    }
+
+    /// The repository's check (record 112) on worker `id`'s change just
+    /// read, the one git knows: none when the repository has none; run
+    /// when the person said yes to its bytes (a tree checked before gets
+    /// its result at once, without a run); asked about when not; nothing
+    /// after a no this run. One that can not be read is said on the
+    /// change and in the journal.
+    pub(super) fn check_change(&mut self, w: &mut World, id: AgentId) {
+        let Some(tree) = self.changes.get(&id).map(|c| c.tree.clone()) else {
+            return;
+        };
+        let repo = &self.places[w.agents[id].project].repo;
+        let script = match look_for(repo, Kind::Check) {
+            Ok(Some(s)) => s,
+            Ok(None) => return,
+            Err(why) => {
+                let why = crate::i18n::clean(&why);
+                w.checked(id, Check::Failed(why.clone()));
+                w.note(Event::CheckFailed { agent: id, why });
+                return;
+            }
+        };
+        if let Some((_, done)) = self.checks.iter().find(|(t, _)| *t == tree) {
+            let done = done.clone();
+            w.agents[id].trace(
+                w.tick,
+                format!("check: {} (this tree was checked before)", done.end),
+            );
+            w.checked(id, Check::Ran(done));
+            return;
+        }
+        // Approved: it runs; else asked about, or nothing after a no.
+        self.ask_script(w, id, script);
+    }
+
+    /// Runs the check `script`'s private copy on the changes of `agents`
+    /// that still wait, each on a thread of its own, for at most the `run`
+    /// tool's deadline; their ends come back through [`Live::take_checks`]
+    /// with the tree they ran on.
+    fn run_checks(&mut self, w: &mut World, script: &Script, agents: &[AgentId]) {
+        let copy = match copy_of(&self.setup_dir(), script) {
+            Ok(copy) => copy,
+            Err(e) => {
+                let why = crate::i18n::clean(&e.to_string());
+                for &id in agents {
+                    if w.checked(id, Check::Failed(why.clone())) {
+                        w.note(Event::CheckFailed {
+                            agent: id,
+                            why: why.clone(),
+                        });
+                    }
+                }
+                return;
+            }
+        };
+        for &id in agents {
+            // The change went meanwhile: nothing to check.
+            let Some(c) = self.changes.get(&id) else {
+                continue;
+            };
+            let (tree, path) = (c.tree.clone(), c.path.clone());
+            w.checked(id, Check::Running);
+            w.agents[id].trace(w.tick, "check: runs on the change");
+            let repo = self.places[w.agents[id].project].repo.clone();
+            let (copy, running, tx, deadline) = (
+                copy.clone(),
+                self.running[id].clone(),
+                self.check_tx.clone(),
+                self.run_timeout,
+            );
+            thread::spawn(move || {
+                let ran = run_in(&copy, &repo, &path, deadline, &running);
+                let _ = tx.send((id, tree, ran));
+            });
+        }
+    }
+
+    /// The checks that ended since the last step: on the change they ran
+    /// on when it still waits, in the journal; a tree's result is kept for
+    /// a change read again with the same tree.
+    pub(super) fn take_checks(&mut self, w: &mut World) -> bool {
+        let mut any = false;
+        while let Ok((id, tree, ran)) = self.check_rx.try_recv() {
+            any = true;
+            self.check_done(w, id, tree, ran);
+        }
+        any
+    }
+
+    fn check_done(
+        &mut self,
+        w: &mut World,
+        id: AgentId,
+        tree: String,
+        ran: Result<Outcome, String>,
+    ) {
+        // The change it ran on must still be the one waiting; a newer
+        // one, or none, hears nothing of it.
+        let waits = self.changes.get(&id).is_some_and(|c| c.tree == tree);
+        match ran {
+            Ok(o) => {
+                let (ok, end) = ended(&o, self.run_timeout);
+                let done = Checked {
+                    ok,
+                    end: end.clone(),
+                    lines: last_lines(&o.output),
+                };
+                self.checks.retain(|(t, _)| *t != tree);
+                self.checks.push_back((tree, done.clone()));
+                if self.checks.len() > CHECKED_KEEP {
+                    self.checks.pop_front();
+                }
+                if !waits {
+                    w.agents[id].trace(w.tick, format!("check: {end}, the change is gone"));
+                    return;
+                }
+                w.agents[id].trace(w.tick, format!("check: {end}"));
+                w.checked(id, Check::Ran(done.clone()));
+                w.note(Event::Checked {
+                    agent: id,
+                    ok,
+                    end,
+                    lines: done.lines,
+                });
+            }
+            Err(why) => {
+                let why = crate::i18n::clean(&why);
+                if !waits {
+                    w.agents[id].trace(w.tick, format!("check: {why}, the change is gone"));
+                    return;
+                }
+                w.checked(id, Check::Failed(why.clone()));
+                w.note(Event::CheckFailed { agent: id, why });
+            }
+        }
     }
 
     /// Runs `script`'s private copy in the worktrees of `agents` that
@@ -400,7 +580,7 @@ impl Live {
                 self.setup_tx.clone(),
             );
             thread::spawn(move || {
-                let _ = tx.send((id, run_in(&copy, &repo, &tree, &running)));
+                let _ = tx.send((id, run_in(&copy, &repo, &tree, DEADLINE, &running)));
             });
         }
     }
@@ -770,7 +950,7 @@ mod tests {
         assert_eq!(mode(&copy), 0o600);
         // The file changes after it was read: the copy runs, as hashed.
         std::fs::write(repo.join(FILE), "echo swapped\n").unwrap();
-        let o = run_in(&copy, &repo, &tree, &Running::default()).unwrap();
+        let o = run_in(&copy, &repo, &tree, DEADLINE, &Running::default()).unwrap();
         let real_tree = std::fs::canonicalize(&tree).unwrap();
         assert_eq!(
             o.output,
@@ -781,8 +961,12 @@ mod tests {
                 real_tree.display()
             )
         );
-        assert!(!ended(&o).0);
-        assert!(ended(&o).1.starts_with("exit 3, "), "{}", ended(&o).1);
+        assert!(!ended(&o, DEADLINE).0);
+        assert!(
+            ended(&o, DEADLINE).1.starts_with("exit 3, "),
+            "{}",
+            ended(&o, DEADLINE).1
+        );
         // Written again over a copy that is there.
         assert_eq!(copy_of(&state, &s).unwrap(), copy);
         let _ = std::fs::remove_dir_all(&repo);
@@ -797,14 +981,23 @@ mod tests {
             bytes: 0,
             took: Duration::from_millis(3200),
         };
-        assert_eq!(ended(&o(Some(0), false)), (true, "exit 0, 3.2 s".into()));
-        assert_eq!(ended(&o(Some(1), false)), (false, "exit 1, 3.2 s".into()));
-        assert_eq!(ended(&o(None, true)), (false, "killed after 60 s".into()));
         assert_eq!(
-            ended(&o(Some(0), true)),
+            ended(&o(Some(0), false), DEADLINE),
+            (true, "exit 0, 3.2 s".into())
+        );
+        assert_eq!(
+            ended(&o(Some(1), false), DEADLINE),
+            (false, "exit 1, 3.2 s".into())
+        );
+        assert_eq!(
+            ended(&o(None, true), DEADLINE),
             (false, "killed after 60 s".into())
         );
-        assert_eq!(ended(&o(None, false)), (false, "killed".into()));
+        assert_eq!(
+            ended(&o(Some(0), true), DEADLINE),
+            (false, "killed after 60 s".into())
+        );
+        assert_eq!(ended(&o(None, false), DEADLINE), (false, "killed".into()));
         assert_eq!(DEADLINE, Duration::from_secs(60));
     }
 
@@ -815,5 +1008,343 @@ mod tests {
         assert_eq!(last_lines("a\n\nb"), ["a", "b"]);
         assert!(last_lines("").is_empty());
         assert_eq!(OUTPUT_LINES, 6);
+    }
+
+    /// A change of worker `id` as git knows it (`tree`, the worktree
+    /// `path`) and as the person sees it.
+    fn change_at(w: &mut World, live: &mut Live, id: AgentId, tree: &str, path: &Path) {
+        live.changes.insert(
+            id,
+            imece_agent::worktree::Change {
+                path: path.to_path_buf(),
+                tree: tree.into(),
+                files: Vec::new(),
+                patch: String::new(),
+            },
+        );
+        w.change_ready(Change {
+            agent: id,
+            title: tree.into(),
+            files: Vec::new(),
+            patch: String::new(),
+            runs: Vec::new(),
+            check: Check::None,
+        });
+    }
+
+    fn check_of(w: &World, id: AgentId) -> Check {
+        w.change_of(id).map(|c| c.check.clone()).unwrap_or_default()
+    }
+
+    /// Takes the checks that end until `done` holds, ten seconds at most.
+    fn wait_until(w: &mut World, live: &mut Live, done: impl Fn(&World, &Live) -> bool) {
+        let until = std::time::Instant::now() + Duration::from_secs(10);
+        while !done(w, live) {
+            assert!(
+                std::time::Instant::now() < until,
+                "nothing came in ten seconds"
+            );
+            live.take_checks(w);
+            std::thread::sleep(Duration::from_millis(20));
+        }
+    }
+
+    fn ran_of(w: &World, id: AgentId) -> Checked {
+        match check_of(w, id) {
+            Check::Ran(d) => d,
+            other => panic!("not ran: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn a_change_read_is_checked_once_the_person_said_yes_and_a_tree_s_result_is_kept() {
+        let repo = temp("check");
+        let tree = repo.join("tree");
+        std::fs::create_dir_all(&tree).unwrap();
+        let (mut w, mut live) = live_on(&repo, 2);
+        // No check in the repository: nothing on the change, nothing asked.
+        change_at(&mut w, &mut live, 1, "t0", &tree);
+        live.check_change(&mut w, 1);
+        assert_eq!(check_of(&w, 1), Check::None);
+        assert!(w.inbox.iter().all(|i| i.kind != InboxKind::Check));
+        assert!(w.journal.len() == 1, "the change alone: {:?}", w.journal);
+        // One there the person has not said yes to: asked, said on the
+        // change; a second worker's change counts on the same ask.
+        std::fs::write(
+            repo.join(CHECK_FILE),
+            "echo ran >> \"$IMECE_REPO/runs.txt\"\necho tests pass\n",
+        )
+        .unwrap();
+        change_at(&mut w, &mut live, 1, "t1", &tree);
+        live.check_change(&mut w, 1);
+        assert_eq!(check_of(&w, 1), Check::Asked);
+        let asks = |w: &World| -> Vec<usize> {
+            (w.inbox.iter().enumerate())
+                .filter(|(_, i)| i.kind == InboxKind::Check && i.open)
+                .map(|(n, _)| n)
+                .collect()
+        };
+        let item = asks(&w)[0];
+        assert_eq!(asks(&w).len(), 1);
+        let it = &w.inbox[item];
+        assert_eq!(
+            (it.agent, it.detail.as_str(), it.card),
+            (1, CHECK_FILE, None)
+        );
+        assert_eq!(CHECK_FILE, ".imece/check");
+        let last = |w: &World, id: AgentId| w.agents[id].trace.back().unwrap().clone();
+        assert!(
+            last(&w, 1).contains("check waits for your yes"),
+            "{}",
+            last(&w, 1)
+        );
+        change_at(&mut w, &mut live, 2, "t2", &tree);
+        live.check_change(&mut w, 2);
+        assert_eq!(check_of(&w, 2), Check::Asked);
+        assert_eq!(asks(&w).len(), 1, "one ask per script");
+        assert_eq!(live.setup_asks[0].agents, [1, 2]);
+        assert_eq!(live.setup_asked(item).unwrap().kind, Kind::Check);
+        // Yes: the approval is kept and both changes are checked.
+        assert!(live.decide_setup(&mut w, item, true));
+        assert!(!w.inbox[item].open);
+        assert_eq!(
+            w.journal.last().unwrap().event,
+            Event::CheckAnswered {
+                agent: 1,
+                yes: true
+            }
+        );
+        let key = look_for(&repo, Kind::Check).unwrap().unwrap().key();
+        assert!(key.starts_with("check /bin/sh "), "{key}");
+        assert!(w.setup_approved.contains(&key));
+        assert_eq!(
+            (check_of(&w, 1), check_of(&w, 2)),
+            (Check::Running, Check::Running)
+        );
+        assert!(
+            last(&w, 1).ends_with("check: runs on the change"),
+            "{}",
+            last(&w, 1)
+        );
+        let past_running = |w: &World, id| !matches!(check_of(w, id), Check::Running);
+        wait_until(&mut w, &mut live, |w, _| {
+            past_running(w, 1) && past_running(w, 2)
+        });
+        let d = ran_of(&w, 1);
+        assert!(d.ok && d.end.starts_with("exit 0, "), "{d:?}");
+        assert_eq!(d.lines, ["tests pass"]);
+        assert!(ran_of(&w, 2).ok);
+        assert!(last(&w, 1).contains("check: exit 0, "), "{}", last(&w, 1));
+        assert!(w.journal.iter().any(|e| matches!(
+            &e.event,
+            Event::Checked { agent: 1, ok: true, end, lines }
+                if end.starts_with("exit 0, ") && lines == &["tests pass".to_string()]
+        )));
+        let runs = |repo: &Path| {
+            std::fs::read_to_string(repo.join("runs.txt"))
+                .unwrap_or_default()
+                .lines()
+                .count()
+        };
+        assert_eq!(runs(&repo), 2);
+        // The same tree read again gets its result at once, without a run.
+        change_at(&mut w, &mut live, 1, "t1", &tree);
+        live.check_change(&mut w, 1);
+        assert_eq!(ran_of(&w, 1), d);
+        assert_eq!(runs(&repo), 2);
+        assert!(
+            last(&w, 1).ends_with("(this tree was checked before)"),
+            "{}",
+            last(&w, 1)
+        );
+        // A change gone before its check ends: the result is kept, said
+        // in the trace alone.
+        change_at(&mut w, &mut live, 1, "t3", &tree);
+        live.check_change(&mut w, 1);
+        assert_eq!(check_of(&w, 1), Check::Running);
+        live.changes.remove(&1);
+        w.change_rejected(1);
+        let journaled = w.journal.len();
+        wait_until(&mut w, &mut live, |_, live| {
+            live.checks.iter().any(|(t, _)| t == "t3")
+        });
+        assert_eq!(w.journal.len(), journaled, "nothing said of a change gone");
+        assert!(
+            last(&w, 1).ends_with("the change is gone"),
+            "{}",
+            last(&w, 1)
+        );
+        change_at(&mut w, &mut live, 1, "t3", &tree);
+        live.check_change(&mut w, 1);
+        assert!(ran_of(&w, 1).ok, "from the kept result");
+        assert_eq!(runs(&repo), 3);
+        // A check that fails: its exit and its last lines, on the change
+        // and in the journal.
+        std::fs::write(
+            repo.join(CHECK_FILE),
+            "echo building\necho\necho FAIL a.rs\nexit 2\n",
+        )
+        .unwrap();
+        change_at(&mut w, &mut live, 1, "t4", &tree);
+        live.check_change(&mut w, 1);
+        assert_eq!(check_of(&w, 1), Check::Asked, "other bytes: asked again");
+        let item = asks(&w)[0];
+        assert!(live.decide_setup(&mut w, item, true));
+        wait_until(&mut w, &mut live, |w, _| past_running(w, 1));
+        let d = ran_of(&w, 1);
+        assert!(!d.ok && d.end.starts_with("exit 2, "), "{d:?}");
+        assert_eq!(d.lines, ["building", "FAIL a.rs"]);
+        assert!(w.journal.iter().any(|e| matches!(
+            &e.event,
+            Event::Checked { agent: 1, ok: false, lines, .. } if lines.len() == 2
+        )));
+        // One that outlives the run tool's deadline is killed.
+        live.run_timeout = Duration::from_millis(200);
+        std::fs::write(repo.join(CHECK_FILE), "sleep 5\n").unwrap();
+        change_at(&mut w, &mut live, 1, "t5", &tree);
+        live.check_change(&mut w, 1);
+        let item = asks(&w)[0];
+        assert!(live.decide_setup(&mut w, item, true));
+        wait_until(&mut w, &mut live, |w, _| past_running(w, 1));
+        let d = ran_of(&w, 1);
+        assert_eq!((d.ok, d.end.as_str()), (false, "killed after 0 s"));
+        // No: nothing on the change, and not asked again this run.
+        std::fs::write(repo.join(CHECK_FILE), "exit 0\n").unwrap();
+        change_at(&mut w, &mut live, 1, "t6", &tree);
+        live.check_change(&mut w, 1);
+        assert_eq!(check_of(&w, 1), Check::Asked);
+        let item = asks(&w)[0];
+        assert!(live.decide_setup(&mut w, item, false));
+        assert_eq!(
+            w.journal.last().unwrap().event,
+            Event::CheckAnswered {
+                agent: 1,
+                yes: false
+            }
+        );
+        assert_eq!(check_of(&w, 1), Check::None);
+        change_at(&mut w, &mut live, 1, "t7", &tree);
+        live.check_change(&mut w, 1);
+        assert_eq!(check_of(&w, 1), Check::None);
+        assert!(asks(&w).is_empty());
+        assert!(!live.decide_setup(&mut w, item, true), "answered already");
+        let _ = std::fs::remove_dir_all(&repo);
+    }
+
+    #[test]
+    fn a_check_that_can_not_be_read_or_copied_is_said_on_the_change() {
+        let repo = temp("check-fail");
+        let tree = repo.join("tree");
+        std::fs::create_dir_all(&tree).unwrap();
+        let (mut w, mut live) = live_on(&repo, 1);
+        std::fs::create_dir(repo.join(CHECK_FILE)).unwrap();
+        change_at(&mut w, &mut live, 1, "t1", &tree);
+        live.check_change(&mut w, 1);
+        let Check::Failed(why) = check_of(&w, 1) else {
+            panic!("{:?}", check_of(&w, 1));
+        };
+        assert!(why.ends_with("not a plain file"), "{why}");
+        assert_eq!(
+            w.journal.last().unwrap().event,
+            Event::CheckFailed { agent: 1, why }
+        );
+        // Said yes to, but its private copy can not be written.
+        std::fs::remove_dir(repo.join(CHECK_FILE)).unwrap();
+        std::fs::write(repo.join(CHECK_FILE), "exit 0\n").unwrap();
+        w.approve_setup(look_for(&repo, Kind::Check).unwrap().unwrap().key());
+        std::fs::write(repo.join("state"), "a file where the directory goes").unwrap();
+        change_at(&mut w, &mut live, 1, "t2", &tree);
+        live.check_change(&mut w, 1);
+        assert!(matches!(check_of(&w, 1), Check::Failed(why) if !why.is_empty()));
+        assert!(matches!(
+            w.journal.last().unwrap().event,
+            Event::CheckFailed { agent: 1, .. }
+        ));
+        // Nothing to check: a change gone before the yes.
+        std::fs::remove_file(repo.join("state")).unwrap();
+        live.changes.remove(&1);
+        w.change_rejected(1);
+        let journaled = w.journal.len();
+        let script = look_for(&repo, Kind::Check).unwrap().unwrap();
+        live.run_checks(&mut w, &script, &[1]);
+        assert_eq!(w.journal.len(), journaled);
+        assert!(!live.take_checks(&mut w), "nothing came");
+        let _ = std::fs::remove_dir_all(&repo);
+    }
+
+    #[test]
+    fn the_check_is_its_own_kind_and_the_kept_results_are_bounded() {
+        assert_eq!(Kind::Check.file(), CHECK_FILE);
+        assert_eq!(Kind::Check.word(), "check");
+        assert_eq!(Kind::Check.inbox_kind(), InboxKind::Check);
+        assert_eq!(Kind::Setup.inbox_kind(), InboxKind::Script);
+        assert_eq!(Kind::Teardown.inbox_kind(), InboxKind::Script);
+        assert_eq!(CHECKED_KEEP, 32);
+        let repo = temp("check-kept");
+        let (mut w, mut live) = live_on(&repo, 1);
+        for i in 0..=CHECKED_KEEP {
+            live.check_done(&mut w, 1, format!("tree{i}"), Ok(outcome(Some(0), "fine")));
+        }
+        // The same tree again keeps one entry, the newest.
+        live.check_done(&mut w, 1, "tree5".into(), Ok(outcome(Some(1), "")));
+        assert_eq!(live.checks.len(), CHECKED_KEEP);
+        let trees: Vec<&str> = live.checks.iter().map(|(t, _)| t.as_str()).collect();
+        assert!(!trees.contains(&"tree0"), "the oldest went: {trees:?}");
+        assert!(trees.contains(&"tree32"));
+        assert_eq!(trees.iter().filter(|t| **t == "tree5").count(), 1);
+        assert_eq!(trees.last(), Some(&"tree5"));
+        assert!(!live.checks[CHECKED_KEEP - 1].1.ok);
+        assert!(w.journal.is_empty(), "no change waited: nothing said");
+        let _ = std::fs::remove_dir_all(&repo);
+    }
+
+    #[test]
+    fn a_run_that_could_not_run_is_said_on_the_change_that_still_waits_alone() {
+        let repo = temp("check-run-failed");
+        let tree = repo.join("tree");
+        let (mut w, mut live) = live_on(&repo, 1);
+        let last = |w: &World, id: AgentId| w.agents[id].trace.back().unwrap().clone();
+        // The change it ran on still waits: on the change and in the journal.
+        change_at(&mut w, &mut live, 1, "t1", &tree);
+        live.check_done(&mut w, 1, "t1".into(), Err("no\u{7}shell".into()));
+        assert_eq!(check_of(&w, 1), Check::Failed("no shell".into()), "cleaned");
+        assert_eq!(
+            w.journal.last().unwrap().event,
+            Event::CheckFailed {
+                agent: 1,
+                why: "no shell".into()
+            }
+        );
+        assert!(
+            w.agents[1].trace.is_empty(),
+            "the journal has it, not the trace"
+        );
+        // A newer change waits in its place: the trace alone hears of it.
+        change_at(&mut w, &mut live, 1, "t2", &tree);
+        let journaled = w.journal.len();
+        live.check_done(&mut w, 1, "t1".into(), Err("too late".into()));
+        assert_eq!(check_of(&w, 1), Check::None, "t2 untouched");
+        assert_eq!(w.journal.len(), journaled);
+        assert!(
+            last(&w, 1).ends_with("check: too late, the change is gone"),
+            "{}",
+            last(&w, 1)
+        );
+        // None waits: the same.
+        live.changes.remove(&1);
+        w.change_rejected(1);
+        let journaled = w.journal.len();
+        live.check_done(&mut w, 1, "t2".into(), Err("too late".into()));
+        assert_eq!(w.journal.len(), journaled);
+        assert!(
+            last(&w, 1).ends_with("check: too late, the change is gone"),
+            "{}",
+            last(&w, 1)
+        );
+        assert!(
+            live.checks.is_empty(),
+            "a run that did not run keeps no result"
+        );
+        let _ = std::fs::remove_dir_all(&repo);
     }
 }

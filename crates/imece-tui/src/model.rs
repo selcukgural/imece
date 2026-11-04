@@ -1481,6 +1481,25 @@ pub enum Event {
         agent: AgentId,
         yes: bool,
     },
+    /// The repository's check (record 112) ran on agent `agent`'s change:
+    /// whether it passed, how it ended, its last lines.
+    Checked {
+        agent: AgentId,
+        ok: bool,
+        end: String,
+        lines: Vec<String>,
+    },
+    /// The check could not be read or started on agent `agent`'s change.
+    CheckFailed {
+        agent: AgentId,
+        why: String,
+    },
+    /// The person said yes (or no) to the check asked about for agent
+    /// `agent`'s change.
+    CheckAnswered {
+        agent: AgentId,
+        yes: bool,
+    },
     /// What waits went to the person's phone (`:notify push`) in these
     /// words, `agent` being who the first of it is about; in the demo it
     /// was only shown (`sent` false).
@@ -1634,6 +1653,7 @@ impl Event {
             | Event::Restarted { .. }
             | Event::Pushed { .. }
             | Event::SetupRan { ok: true, .. }
+            | Event::Checked { ok: true, .. }
             | Event::CommandsMissing { .. }
             | Event::Confine { .. }
             | Event::WorktreeMoved { .. }
@@ -1663,6 +1683,8 @@ impl Event {
             | Event::PushFailed { .. }
             | Event::SetupRan { ok: false, .. }
             | Event::SetupFailed { .. }
+            | Event::Checked { ok: false, .. }
+            | Event::CheckFailed { .. }
             | Event::ApplyFailed { .. } => EntryKind::Failed,
             Event::Approved { .. }
             | Event::Rejected { .. }
@@ -1671,6 +1693,7 @@ impl Event {
             | Event::TurnYes { .. }
             | Event::TurnYesEnded { .. }
             | Event::SetupAnswered { .. }
+            | Event::CheckAnswered { .. }
             | Event::Standing { .. }
             | Event::Budget { .. }
             | Event::Shell { .. }
@@ -1744,6 +1767,9 @@ impl Event {
             | Event::SetupRan { agent, .. }
             | Event::SetupFailed { agent, .. }
             | Event::SetupAnswered { agent, .. }
+            | Event::Checked { agent, .. }
+            | Event::CheckFailed { agent, .. }
+            | Event::CheckAnswered { agent, .. }
             | Event::CommandsMissing { agent }
             | Event::WorktreeMoved { agent, .. }
             | Event::WorktreeKept { agent, .. }
@@ -1811,6 +1837,12 @@ pub enum InboxKind {
     /// detail the script's path in the checkout. Closes with the answer,
     /// and at the next start.
     Script,
+    /// The repository's check (`.imece/check`, record 112) waits for the
+    /// person's yes to its exact bytes before it runs on a change; the
+    /// agent is the worker whose change went unchecked first, the detail
+    /// the script's path in the checkout. Closes with the answer, and at
+    /// the next start. Its worker waits for nothing: its mail goes on.
+    Check,
 }
 
 impl InboxKind {
@@ -1823,7 +1855,10 @@ impl InboxKind {
     /// [`Reply`]: InboxKind::Reply
     /// [`Change`]: InboxKind::Change
     pub fn holds_mail(self) -> bool {
-        !matches!(self, InboxKind::Reply | InboxKind::Change)
+        !matches!(
+            self,
+            InboxKind::Reply | InboxKind::Change | InboxKind::Check
+        )
     }
 
     /// Whether the person's word to its agent closes an item of this kind
@@ -1890,6 +1925,39 @@ pub struct Change {
     /// is. A Claude Code's own shell does not count; imece can not see what
     /// that ran on, nor always how it ended.
     pub runs: Vec<Ran>,
+    /// The repository's own check on this change (`.imece/check`, record
+    /// 112), run by imece in the worktree once the change was read.
+    pub check: Check,
+}
+
+/// Where the repository's check (`.imece/check`, record 112) stands on a
+/// change: a note for the person, never a gate.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum Check {
+    /// No check: the repository has none, or the person said no to it
+    /// this run.
+    #[default]
+    None,
+    /// The script waits for the person's yes to its bytes (an item in
+    /// WAITING FOR YOU).
+    Asked,
+    /// It runs in the worktree now.
+    Running,
+    /// It ran: how it ended.
+    Ran(Checked),
+    /// It could not be read or started: why.
+    Failed(String),
+}
+
+/// How the repository's check ended on a change.
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct Checked {
+    /// Exit 0, not killed.
+    pub ok: bool,
+    /// How it ended, in words (`exit 0, 41.2 s`).
+    pub end: String,
+    /// The last lines of its output that say something, cleaned.
+    pub lines: Vec<String>,
 }
 
 /// A command imece ran for an agent, and how it ended.
@@ -3248,9 +3316,21 @@ impl World {
     /// kept, so a start closes them; the next new worktree asks again.
     pub fn close_scripts(&mut self) {
         for i in &mut self.inbox {
-            if i.kind == InboxKind::Script {
+            if matches!(i.kind, InboxKind::Script | InboxKind::Check) {
                 i.open = false;
             }
+        }
+    }
+
+    /// The repository's check on worker `id`'s waiting change stands at
+    /// `check` now; false when no change of theirs waits.
+    pub fn checked(&mut self, id: AgentId, check: Check) -> bool {
+        match self.changes.iter_mut().find(|c| c.agent == id) {
+            Some(c) => {
+                c.check = check;
+                true
+            }
+            None => false,
         }
     }
 
@@ -4152,6 +4232,7 @@ mod tests {
                 files: Vec::new(),
                 patch: String::new(),
                 runs: Vec::new(),
+                check: Check::None,
             });
         }
         w.close_project(1);
@@ -4726,6 +4807,7 @@ mod tests {
                 .collect(),
             patch: "diff --git a/x b/x\n".into(),
             runs: Vec::new(),
+            check: Check::None,
         }
     }
 
@@ -5419,6 +5501,7 @@ mod tests {
             files: Vec::new(),
             patch: String::new(),
             runs: Vec::new(),
+            check: Check::None,
         });
         // The worker took the next card: what came stays with the first.
         w.agents[1].card = Some(5);

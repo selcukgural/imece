@@ -650,6 +650,14 @@ pub struct Live {
     /// Setup runs after a yes, each on a thread of its own, ending here.
     setup_tx: Sender<(AgentId, Result<run::Outcome, String>)>,
     setup_rx: Receiver<(AgentId, Result<run::Outcome, String>)>,
+    /// The repository's checks on changes (record 112), each on a thread
+    /// of its own, ending here with the tree they ran on.
+    check_tx: Sender<(AgentId, String, Result<run::Outcome, String>)>,
+    check_rx: Receiver<(AgentId, String, Result<run::Outcome, String>)>,
+    /// Trees the check ran on and how it ended, the newest last, at most
+    /// [`setup::CHECKED_KEEP`]: a change read again with the same tree
+    /// gets its result without a run.
+    checks: VecDeque<(String, Checked)>,
     /// Programs workers and helpers may run, next to cargo and git.
     run_programs: Vec<String>,
     run_timeout: Duration,
@@ -923,6 +931,7 @@ impl Live {
         let (said_tx, said_rx) = mpsc::channel();
         let (reviewed_tx, reviewed_rx) = mpsc::channel();
         let (setup_tx, setup_rx) = mpsc::channel();
+        let (check_tx, check_rx) = mpsc::channel();
         thread::spawn(move || git_thread(jobs, done));
         Live {
             state: std::env::temp_dir(),
@@ -989,6 +998,9 @@ impl Live {
             setup_refused: HashSet::new(),
             setup_tx,
             setup_rx,
+            check_tx,
+            check_rx,
+            checks: VecDeque::new(),
             run_programs: Vec::new(),
             run_timeout: DEFAULT_RUN_TIMEOUT,
             instructions: None,
@@ -1106,7 +1118,7 @@ impl Live {
         let reviewed = self.take_reviews(w);
         self.review_next(w);
         let tidied = self.take_tidy(w);
-        let set_up = self.take_setups(w);
+        let set_up = self.take_setups(w) | self.take_checks(w);
         self.stand_busy(w, Instant::now());
         self.files_due(w, Instant::now());
         let mut heard = false;

@@ -211,6 +211,24 @@ pub fn event(lang: Lang, w: &World, e: &Event) -> String {
             let text = if *yes { t.ev_setup_yes } else { t.ev_setup_no };
             fill(text, &[name(w, *agent)])
         }
+        Event::Checked {
+            agent,
+            ok,
+            end,
+            lines,
+        } => {
+            if *ok {
+                fill(t.ev_check_ok, &[name(w, *agent), end])
+            } else {
+                let last = lines.last().map_or(t.setup_no_output, String::as_str);
+                fill(t.ev_check_bad, &[name(w, *agent), end, last])
+            }
+        }
+        Event::CheckFailed { agent, why } => fill(t.ev_check_failed, &[name(w, *agent), why]),
+        Event::CheckAnswered { agent, yes } => {
+            let text = if *yes { t.ev_check_yes } else { t.ev_check_no };
+            fill(text, &[name(w, *agent)])
+        }
         Event::Pushed { words, sent, .. } => {
             fill(if *sent { t.ev_pushed } else { t.ev_pushed_demo }, &[words])
         }
@@ -740,6 +758,7 @@ pub fn notice(lang: Lang, w: &World, note: crate::notify::Note) -> String {
                 InboxKind::Approval => t.notice_approval,
                 InboxKind::Fault => t.notice_fault,
                 InboxKind::Script => t.notice_script,
+                InboxKind::Check => t.notice_check,
                 InboxKind::Sensitive | InboxKind::Research => t.notice_sensitive,
             };
             (text, item.agent)
@@ -793,6 +812,7 @@ pub fn inbox(lang: Lang, w: &World, item: &InboxItem) -> String {
         ),
         (InboxKind::Fault, _) => fill(t.in_fault, &[name(w, item.agent), &item.detail]),
         (InboxKind::Script, _) => fill(t.in_script, &[name(w, item.agent), &item.detail]),
+        (InboxKind::Check, _) => fill(t.in_check, &[name(w, item.agent), &item.detail]),
         (InboxKind::Change, _) => {
             let (files, added, removed) = w.change_of(item.agent).map_or((0, 0, 0), |c| {
                 let (a, r) = c.counts();
@@ -830,6 +850,20 @@ pub fn evidence(lang: Lang, runs: &[Ran]) -> String {
         fill(t.ran_clean, &[&lines(true)])
     } else {
         fill(t.ran_failed, &[&lines(false)])
+    }
+}
+
+/// Where the repository's check stands on a change, for its row in
+/// WAITING FOR YOU: the mark and whether it is good, bad or neither;
+/// nothing when there is no check or it could not run (the diff says).
+pub fn check_mark(lang: Lang, check: &Check) -> Option<(&'static str, Option<bool>)> {
+    let t = lang.text();
+    match check {
+        Check::Ran(d) if d.ok => Some((t.check_row_ok, Some(true))),
+        Check::Ran(_) => Some((t.check_row_bad, Some(false))),
+        Check::Running => Some((t.check_row_running, None)),
+        Check::Asked => Some((t.check_row_asked, None)),
+        Check::None | Check::Failed(_) => None,
     }
 }
 
@@ -1655,6 +1689,86 @@ mod tests {
             "silindi: a · a söküldü: exit 0, 0.4 s · dropped · b söküldü: exit 0, 0.4 s · \
              c sökümü başarısız: exit 0, 0.4 s · no db · d sökümü çalışmadı: not a plain file · \
              e sökümü çalışmadı: hayır dedin"
+        );
+    }
+
+    #[test]
+    fn the_check_s_lines_say_how_it_went_and_mark_the_change_s_row() {
+        let w = crate::live::testing::team(1);
+        let say = |e: Event| event(Lang::En, &w, &e);
+        let ran = |ok, lines: &[&str]| Event::Checked {
+            agent: 1,
+            ok,
+            end: "exit 1, 1.5 s".into(),
+            lines: lines.iter().map(|l| l.to_string()).collect(),
+        };
+        assert_eq!(
+            say(ran(true, &["a"])),
+            "claude-1: check passed on its change, exit 1, 1.5 s"
+        );
+        assert_eq!(
+            say(ran(false, &["a", "b"])),
+            "claude-1: check failed on its change, exit 1, 1.5 s · b"
+        );
+        assert_eq!(
+            say(ran(false, &[])),
+            "claude-1: check failed on its change, exit 1, 1.5 s · no output"
+        );
+        assert_eq!(
+            say(Event::CheckFailed {
+                agent: 1,
+                why: "x".into()
+            }),
+            "claude-1: check did not run: x"
+        );
+        assert!(
+            say(Event::CheckAnswered {
+                agent: 1,
+                yes: true
+            })
+            .starts_with("you said yes to the repository's check (claude-1 asked)")
+        );
+        assert!(
+            say(Event::CheckAnswered {
+                agent: 1,
+                yes: false
+            })
+            .starts_with("you said no to the repository's check (claude-1 asked)")
+        );
+        let item = InboxItem {
+            kind: InboxKind::Check,
+            agent: 1,
+            detail: ".imece/check".into(),
+            researcher: None,
+            open: true,
+            tick: 0,
+            card: None,
+        };
+        assert_eq!(
+            inbox(Lang::En, &w, &item),
+            "claude-1: run the repository's check .imece/check on its changes? enter shows it"
+        );
+        let good = |ok| Checked {
+            ok,
+            end: String::new(),
+            lines: Vec::new(),
+        };
+        let mark = |c: &Check| check_mark(Lang::En, c);
+        assert_eq!(
+            mark(&Check::Ran(good(true))),
+            Some(("✓ check · ", Some(true)))
+        );
+        assert_eq!(
+            mark(&Check::Ran(good(false))),
+            Some(("✗ check · ", Some(false)))
+        );
+        assert_eq!(mark(&Check::Running), Some(("◌ check · ", None)));
+        assert_eq!(mark(&Check::Asked), Some(("▶ check · ", None)));
+        assert_eq!(mark(&Check::None), None);
+        assert_eq!(mark(&Check::Failed("x".into())), None);
+        assert_eq!(
+            check_mark(Lang::Tr, &Check::Running),
+            Some(("◌ kontrol · ", None))
         );
     }
 }

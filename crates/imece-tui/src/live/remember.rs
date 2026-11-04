@@ -188,11 +188,22 @@ impl Live {
                     .collect(),
                 patch: c.patch.clone(),
                 runs: found.runs.get(&id).cloned().unwrap_or_default(),
+                check: found.checks.get(&id).cloned().unwrap_or_default(),
             });
         }
         // A waiting change's review, as the journal kept it.
         w.reviews_from_journal();
         self.changes = found.changes;
+        // A check that was asked about or running when the earlier run
+        // ended is asked about or run again (its ask closed above).
+        let unchecked: Vec<AgentId> = (w.changes.iter())
+            .filter(|c| matches!(c.check, Check::Asked | Check::Running))
+            .map(|c| c.agent)
+            .collect();
+        for id in unchecked {
+            w.checked(id, Check::None);
+            self.check_change(w, id);
+        }
         self.loaded_cards = w.cards.len();
         let gone: Vec<ProjectId> = w
             .open_projects()
@@ -248,6 +259,9 @@ impl Live {
             posts: &self.posts,
             offered: &self.offered,
             changes: &self.changes,
+            checks: (w.changes.iter())
+                .map(|c| (c.agent, c.check.clone()))
+                .collect(),
         };
         store.save(w, &kept).map_err(|e| e.to_string())
     }
@@ -640,6 +654,7 @@ mod tests {
             offered: HashMap::from([(c, vec![2]), (other, vec![lead_gone])]),
             changes: HashMap::from([(1, change("abc")), (lead_gone, change("def"))]),
             runs: HashMap::from([(1, vec![ran.clone()])]),
+            checks: HashMap::from([(1, Check::Running), (lead_gone, Check::Asked)]),
         };
         let mut live = Live::bare(claude_at("x"));
         live.state = state.clone();
@@ -647,6 +662,14 @@ mod tests {
         w.asks_you(1, "Bash: make");
         let journal = w.journal.len();
         live.adopt(&mut w, found, 3);
+        // A check that was running or asked about when the earlier run
+        // ended is looked at again: no script in the checkout, none.
+        assert_eq!(w.change_of(1).unwrap().check, Check::None);
+        assert!(
+            w.inbox
+                .iter()
+                .all(|i| i.kind != InboxKind::Check || !i.open)
+        );
         assert!(!w.has_approval(1));
         assert_eq!(live.places.len(), 2);
         assert_eq!(live.places[0].repo, repo);

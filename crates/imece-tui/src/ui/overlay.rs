@@ -74,10 +74,14 @@ pub fn script(f: &mut Frame, app: &App, item: usize, at: usize) -> Rect {
         return area;
     };
     let sha: String = s.sha.chars().take(16).collect();
-    let title = fill(t.setup_title, &[&agent.name, &sha]);
+    let check = s.kind == crate::live::setup::Kind::Check;
+    let title = fill(
+        if check { t.check_title } else { t.setup_title },
+        &[&agent.name, &sha],
+    );
     let shown = Shown {
         title,
-        head: t.setup_head,
+        head: if check { t.check_head } else { t.setup_head },
         file: t.setup_file,
         hints: &t.setup_hints,
     };
