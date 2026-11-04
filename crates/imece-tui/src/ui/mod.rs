@@ -611,6 +611,12 @@ pub(crate) fn inbox_line(app: &App, i: usize) -> Line<'static> {
             pal().bad
         };
         spans.push(Span::styled(words::evidence(app.lang, &c.runs), fg(colour)));
+        if let Some(s) = c.spend {
+            spans.push(Span::styled(
+                format!(" · {}", words::spend(app.lang, &s)),
+                dim(),
+            ));
+        }
     }
     Line::from(spans)
 }
@@ -3095,6 +3101,7 @@ mod tests {
             patch: String::new(),
             runs: Vec::new(),
             check: Check::None,
+            spend: None,
         });
         app.zoom = Zoom::Focus(id);
         let change = foot(&app);
@@ -5007,6 +5014,7 @@ mod tests {
                 .into(),
             runs: Vec::new(),
             check: Check::None,
+            spend: None,
         }
     }
 
@@ -5252,6 +5260,7 @@ mod tests {
             files: 1,
             added: 1,
             removed: 0,
+            spend: None,
         };
         let sent = |from, to| Event::Sent {
             from,
@@ -5434,7 +5443,8 @@ mod tests {
                 agent: w[1],
                 files: 1,
                 added: 1,
-                removed: 0
+                removed: 0,
+                spend: None
             }),
             Some(1)
         );
@@ -11987,6 +11997,7 @@ mod tests {
             patch: "diff --git a/x b/x\n@@ -1 +1 @@\n-a\n+b\n".into(),
             runs: Vec::new(),
             check: Check::None,
+            spend: None,
         });
         app.zoom = Zoom::Diff(worker);
         app.diff_scroll = 3;

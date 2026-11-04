@@ -167,6 +167,10 @@ impl Live {
                 "held as message {id}; {name} waits on the person and gets it once they \
                  have answered, it starts nothing until then"
             ),
+            (true, false, false) if read.is_some() => format!(
+                "delivered as message {id}; {name} gets it when this turn of yours ends, \
+                 headed with what it cost"
+            ),
             (true, false, false) => {
                 format!("delivered as message {id}; {name} starts on it now")
             }
@@ -474,8 +478,12 @@ impl Live {
                 }
             };
             let due = self.mail[id].iter().any(wakes);
+            // A worker's done says what its change cost once its turn
+            // ended (record 113): the leader gets it then.
+            let settling = (self.mail[id].iter()).any(|m| self.settling(w, m));
             let a = &w.agents[id];
             if due
+                && !settling
                 && self.turns[id] == 0
                 && !matches!(a.status, Status::Stopped | Status::Asleep)
                 && !a.gone
@@ -484,6 +492,13 @@ impl Live {
             }
             w.agents[id].held_mail = if waits { self.mail[id].len() } else { 0 };
         }
+    }
+
+    /// Whether `m` is a worker's `done` whose turn still runs: its change
+    /// is settled, and headed with its cost, at the turn's end.
+    fn settling(&self, w: &World, m: &Mail) -> bool {
+        let from = &w.agents[m.from];
+        m.kind == MsgKind::Done && from.role == Role::Worker && !from.gone && self.turns[m.from] > 0
     }
 
     /// Starts agent `id`'s next turn with all its mail.

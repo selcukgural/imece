@@ -109,8 +109,10 @@ pub fn apply(w: &mut World, id: AgentId, e: AgentEvent, before: u64) {
             cost,
             denied,
         } => {
+            w.agents[id].cost = before + cost / 100;
+            // A done's change waited for this: what the turn cost is known.
+            w.settle_change(id);
             let a = &mut w.agents[id];
-            a.cost = before + cost / 100;
             a.activity = None;
             let fault = a.fault.take();
             a.wrote(&text);
@@ -595,6 +597,7 @@ impl Live {
         if a.activity.is_none() {
             a.activity = Some(String::new());
         }
+        w.round_opens(id);
         Ok(())
     }
 

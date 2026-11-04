@@ -254,6 +254,7 @@ pub fn event(lang: Lang, w: &World, e: &Event) -> String {
             files,
             added,
             removed,
+            spend: None,
         } => fill(
             t.ev_change_ready,
             &[
@@ -263,6 +264,25 @@ pub fn event(lang: Lang, w: &World, e: &Event) -> String {
                 &removed.to_string(),
             ],
         ),
+        Event::ChangeReady {
+            agent,
+            files,
+            added,
+            removed,
+            spend: Some(s),
+        } => fill(
+            t.ev_change_ready_spent,
+            &[
+                name(w, *agent),
+                &files.to_string(),
+                &added.to_string(),
+                &removed.to_string(),
+                &spend(lang, s),
+            ],
+        ),
+        Event::ChangeCost { agent, spend: s } => {
+            fill(t.ev_change_cost, &[name(w, *agent), &spend(lang, s)])
+        }
         Event::Applied { agent, files, mark } => {
             fill(t.ev_applied, &[name(w, *agent), &files.to_string(), mark])
         }
@@ -865,6 +885,25 @@ pub fn check_mark(lang: Lang, check: &Check) -> Option<(&'static str, Option<boo
         Check::Asked => Some((t.check_row_asked, None)),
         Check::None | Check::Failed(_) => None,
     }
+}
+
+/// What a change cost (record 113): the dollars, the time worked (whole
+/// seconds under a minute, else minutes, hours and minutes), and the
+/// rounds when there was more than one: `$0.84 · 12 min`, `$1.20 · 25 min
+/// · 3 rounds`.
+pub fn spend(lang: Lang, s: &Spend) -> String {
+    let t = lang.text();
+    let seconds = s.ticks * SECONDS_PER_TICK;
+    let time = if seconds < 60 {
+        fill(t.took_s, &[&seconds.to_string()])
+    } else {
+        ago(lang, seconds)
+    };
+    let mut out = format!("{} · {time}", dollars(s.cost));
+    if s.rounds > 1 {
+        out.push_str(&fill(t.spend_rounds, &[&s.rounds.to_string()]));
+    }
+    out
 }
 
 /// One run on a change's tree and how it ended.

@@ -32,7 +32,7 @@ pub(super) fn mail_prompt(w: &World, mail: &[Mail]) -> String {
     for m in mail {
         out.push_str(&format!(
             "\n\n[{}] from {}:\n{}",
-            heading(m),
+            heading(w, m),
             w.agents[m.from].name,
             m.body
         ));
@@ -41,15 +41,25 @@ pub(super) fn mail_prompt(w: &World, mail: &[Mail]) -> String {
 }
 
 /// What a delivered message is headed with: its type, its number (what
-/// a reply names as `re`) and the number of the one it replies to. A
-/// message saved before numbers has its type alone.
-fn heading(m: &Mail) -> String {
+/// a reply names as `re`) and the number of the one it replies to; a
+/// worker's `done` adds what its change cost (record 113: `[done 12 ·
+/// $0.84]`, the newest change of the worker's settled), so a leader
+/// learns what its tiers cost. A message saved before numbers has its
+/// type alone.
+fn heading(w: &World, m: &Mail) -> String {
     let mut out = m.kind.wire().to_string();
     if m.id > 0 {
         out.push_str(&format!(" {}", m.id));
     }
     if let Some(re) = m.re {
         out.push_str(&format!(", re {re}"));
+    }
+    let from = &w.agents[m.from];
+    if m.kind == MsgKind::Done
+        && from.role == Role::Worker
+        && let Some(spend) = from.task.last
+    {
+        out.push_str(&format!(" · {}", dollars(spend.cost)));
     }
     out
 }

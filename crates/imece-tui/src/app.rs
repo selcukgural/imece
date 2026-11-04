@@ -7661,6 +7661,7 @@ pub(crate) mod tests {
             patch: patch.into(),
             runs: Vec::new(),
             check: Check::None,
+            spend: None,
         });
         app.zoom = Zoom::Diff(worker);
         app.pane = Pane::Inbox;
@@ -8649,6 +8650,7 @@ pub(crate) mod tests {
             patch: String::new(),
             runs: Vec::new(),
             check: Check::None,
+            spend: None,
         });
         w.asks_you(1, "Bash: make");
         let mut live = idle_live(2);
@@ -8693,6 +8695,7 @@ pub(crate) mod tests {
             patch: String::new(),
             runs: Vec::new(),
             check: Check::None,
+            spend: None,
         });
         let mut app = App::with(w, Engine::Live(Box::new(live)), Lang::En);
         app.zoom = Zoom::Trace(1);
@@ -8806,6 +8809,7 @@ pub(crate) mod tests {
                 patch: String::new(),
                 runs: Vec::new(),
                 check: Check::None,
+                spend: None,
             });
             let mut app = App::with(w, Engine::Live(Box::new(live)), Lang::En);
             app.zoom = Zoom::Diff(1);
@@ -11966,6 +11970,7 @@ pub(crate) mod tests {
             patch: "+x\n".into(),
             runs: Vec::new(),
             check: Check::None,
+            spend: None,
         }
     }
 
@@ -16674,6 +16679,7 @@ pub(crate) mod tests {
             patch: String::new(),
             runs: Vec::new(),
             check: Check::None,
+            spend: None,
         });
         s.check(&mut app.world, id);
         let item = (app.world.inbox.iter())
@@ -16702,6 +16708,7 @@ pub(crate) mod tests {
             patch: String::new(),
             runs: Vec::new(),
             check: Check::None,
+            spend: None,
         });
         s.check(&mut app.world, id);
         let item = (app.world.inbox.iter())

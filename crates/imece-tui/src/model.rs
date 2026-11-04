@@ -544,8 +544,51 @@ pub struct Agent {
     /// The fault Claude Code said the turn now ending failed on, taken by
     /// that turn's end (`imece_agent::Event::Failed`). Memory only.
     pub fault: Option<Fault>,
+    /// Where its spend on the change at hand stands (record 113).
+    pub task: Task,
     /// A researcher that finished; kept so ids stay stable.
     pub gone: bool,
+}
+
+/// What a worker (its helpers counted in) or a solo spent on a change
+/// (record 113): the cost in ten-thousandths of a dollar, the ticks it
+/// worked, and the rounds it took (each `done` that was sent back, or
+/// replaced by a newer one, is a round).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct Spend {
+    pub cost: u64,
+    pub ticks: u64,
+    pub rounds: u32,
+}
+
+impl Spend {
+    /// Both together.
+    pub fn plus(self, other: Spend) -> Spend {
+        Spend {
+            cost: self.cost + other.cost,
+            ticks: self.ticks + other.ticks,
+            rounds: self.rounds + other.rounds,
+        }
+    }
+}
+
+/// Where an agent's spend on its change stands (record 113). A round
+/// opens at the first prompt after the last one closed (`World::round_opens`)
+/// and closes when a change of the agent's is settled (`World::settle_change`,
+/// or `change_ready` with its turn over), which takes the cost since it
+/// opened; a helper's round closes with its worker's change. What a change
+/// came to is carried when it leaves unapplied (sent back, replaced, part
+/// applied) into the next change of the agent's, and dropped once one is
+/// applied whole or the worktree holds nothing.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct Task {
+    /// The round open now: the agent's cost when it opened, and the tick.
+    pub round: Option<(u64, u64)>,
+    /// What the earlier rounds of the change at hand came to.
+    pub carried: Spend,
+    /// The newest change settled: what the leader's mail says a `done`
+    /// cost.
+    pub last: Option<Spend>,
 }
 
 /// A failed turn imece tries again (record 79).
@@ -663,6 +706,7 @@ impl Agent {
             turn_yes: None,
             held_mail: 0,
             fault: None,
+            task: Task::default(),
             gone: false,
         }
     }
@@ -1537,6 +1581,14 @@ pub enum Event {
         files: usize,
         added: u32,
         removed: u32,
+        /// What it cost, when known as it is read (the agent's turn over).
+        spend: Option<Spend>,
+    },
+    /// What agent `agent`'s waiting change cost, known once its turn ended
+    /// (record 113).
+    ChangeCost {
+        agent: AgentId,
+        spend: Spend,
     },
     /// The person applied a live worker's change to their checkout, where
     /// it is staged; `mark` is the commit that stands for it in the
@@ -1661,6 +1713,7 @@ impl Event {
             | Event::FilesCut { .. }
             | Event::NoGit { .. }
             | Event::Retrying { .. }
+            | Event::ChangeCost { .. }
             | Event::WorktreeKept { .. } => EntryKind::Assumption,
             Event::Blocked { .. } => EntryKind::Blocked,
             Event::ResearchOpened { .. }
@@ -1777,6 +1830,7 @@ impl Event {
             | Event::CopySkipped { agent, .. }
             | Event::IncludeRefused { agent, .. }
             | Event::ChangeReady { agent, .. }
+            | Event::ChangeCost { agent, .. }
             | Event::Reviewed { agent, .. }
             | Event::ReviewFailed { agent, .. }
             | Event::Applied { agent, .. }
@@ -1928,6 +1982,9 @@ pub struct Change {
     /// The repository's own check on this change (`.imece/check`, record
     /// 112), run by imece in the worktree once the change was read.
     pub check: Check,
+    /// What the worker spent on it from its first prompt after the last
+    /// change to the `done` (record 113); none until its turn ended.
+    pub spend: Option<Spend>,
 }
 
 /// Where the repository's check (`.imece/check`, record 112) stands on a
@@ -2931,11 +2988,19 @@ impl World {
     /// Worker `change.agent` finished with a change in its worktree: it
     /// waits for the person. An older change of the same worker is part
     /// of it and goes.
-    pub fn change_ready(&mut self, change: Change) {
+    pub fn change_ready(&mut self, mut change: Change) {
         let agent = change.agent;
+        self.carry_spend(agent);
         self.forget_change(agent);
         let (added, removed) = change.counts();
         let files = change.files.len();
+        // Read with its turn over (a solo's, or a part's rest): what it
+        // cost is known now; a worker's done comes mid-turn and waits for
+        // the turn's end (`settle_change`).
+        if self.agents[agent].status != Status::Working {
+            change.spend = Some(self.spend_of(agent));
+        }
+        let spend = change.spend;
         self.inbox.push(InboxItem {
             kind: InboxKind::Change,
             agent,
@@ -2951,13 +3016,90 @@ impl World {
             files,
             added,
             removed,
+            spend,
         });
+    }
+
+    /// Agent `id`'s turn began: its round opens now when none is open
+    /// (record 113); a leader's spend is nobody's change.
+    pub fn round_opens(&mut self, id: AgentId) {
+        let tick = self.tick;
+        let a = &mut self.agents[id];
+        if a.role != Role::Leader && a.task.round.is_none() {
+            a.task.round = Some((a.cost, tick));
+        }
+    }
+
+    /// What agent `id`'s change comes to now: what its earlier rounds came
+    /// to, plus the round open (its cost since it opened, the ticks, one
+    /// round) and its helpers' open rounds; every round closed, and the
+    /// figure kept as its newest.
+    fn spend_of(&mut self, id: AgentId) -> Spend {
+        let tick = self.tick;
+        let mut round = Spend::default();
+        let party: Vec<AgentId> = std::iter::once(id)
+            .chain(
+                (self.agents.iter())
+                    .filter(|h| h.parent == Some(id))
+                    .map(|h| h.id),
+            )
+            .collect();
+        for h in party {
+            let a = &mut self.agents[h];
+            if let Some((from, began)) = a.task.round.take() {
+                round.cost += a.cost.saturating_sub(from);
+                if h == id {
+                    round.ticks = tick.saturating_sub(began);
+                    round.rounds = 1;
+                }
+            }
+        }
+        let task = &mut self.agents[id].task;
+        let spend = task.carried.plus(round);
+        task.last = Some(spend);
+        spend
+    }
+
+    /// Agent `id`'s turn ended: its waiting change not yet settled takes
+    /// what it cost, said in the journal; false when none waits for it.
+    pub fn settle_change(&mut self, id: AgentId) -> bool {
+        let Some(i) = (self.changes.iter()).position(|c| c.agent == id && c.spend.is_none()) else {
+            return false;
+        };
+        let spend = self.spend_of(id);
+        self.changes[i].spend = Some(spend);
+        self.note(Event::ChangeCost { agent: id, spend });
+        true
+    }
+
+    /// Agent `id`'s worktree holds no change (a done with nothing in it,
+    /// or the rest of a part applied was nothing): nothing is carried on.
+    pub fn change_none(&mut self, id: AgentId) {
+        let task = &mut self.agents[id].task;
+        task.carried = Spend::default();
+        // A done with nothing in it costs the leader's mail no figure.
+        task.last = None;
+    }
+
+    /// Agent `id`'s waiting change leaves unapplied: what it came to is
+    /// carried into its next change.
+    fn carry_spend(&mut self, id: AgentId) {
+        if let Some(spend) = self.change_of(id).and_then(|c| c.spend) {
+            self.agents[id].task.carried = spend;
+        }
     }
 
     /// The person applied worker `id`'s change to their checkout; `mark`
     /// is the commit that stands for it in the worktree.
-    pub fn change_applied(&mut self, id: AgentId, mark: String) {
+    /// `whole` says all of it went: what it cost is settled and dropped;
+    /// a part applied carries it into the rest, read as a change again.
+    pub fn change_applied(&mut self, id: AgentId, mark: String, whole: bool) {
         let files = self.change_of(id).map_or(0, |c| c.files.len());
+        if whole {
+            self.agents[id].task.carried = Spend::default();
+        } else {
+            self.carry_spend(id);
+        }
         self.forget_change(id);
         self.note(Event::Applied {
             agent: id,
@@ -2968,6 +3110,7 @@ impl World {
 
     /// The person rejected worker `id`'s change; it stays in the worktree.
     pub fn change_rejected(&mut self, id: AgentId) {
+        self.carry_spend(id);
         self.forget_change(id);
         self.note(Event::Rejected { agent: id });
     }
@@ -4233,6 +4376,7 @@ mod tests {
                 patch: String::new(),
                 runs: Vec::new(),
                 check: Check::None,
+                spend: None,
             });
         }
         w.close_project(1);
@@ -4808,6 +4952,7 @@ mod tests {
             patch: "diff --git a/x b/x\n".into(),
             runs: Vec::new(),
             check: Check::None,
+            spend: None,
         }
     }
 
@@ -4870,7 +5015,7 @@ mod tests {
         assert!(w.reviews.is_empty());
         w.change_ready(change(1, "Fix", &[("x", 1, 0)]));
         w.reviewed(1, read.clone());
-        w.change_applied(1, "abc".into());
+        w.change_applied(1, "abc".into(), true);
         assert!(w.reviews.is_empty());
     }
 
@@ -5250,7 +5395,8 @@ mod tests {
                 agent: 1,
                 files: 2,
                 added: 5,
-                removed: 1
+                removed: 1,
+                spend: None
             }
         ));
         assert_eq!(w.journal[0].event.kind(), EntryKind::Sensitive);
@@ -5269,7 +5415,7 @@ mod tests {
         assert!(w.change_of(0).is_none());
 
         // Applied: the item closes, the change goes, the journal says so.
-        w.change_applied(1, "abc1234".into());
+        w.change_applied(1, "abc1234".into(), true);
         assert_eq!(w.open_inbox().len(), 1);
         assert!(w.change_of(1).is_none());
         assert!(matches!(
@@ -5327,7 +5473,7 @@ mod tests {
         // when a newer one takes its place.
         let gone: [fn(&mut World); 3] = [
             |w| w.change_rejected(1),
-            |w| w.change_applied(1, "abc".into()),
+            |w| w.change_applied(1, "abc".into(), true),
             |w| w.change_ready(change(1, "Again", &[("a", 2, 0)])),
         ];
         for gone in gone {
@@ -5502,6 +5648,7 @@ mod tests {
             patch: String::new(),
             runs: Vec::new(),
             check: Check::None,
+            spend: None,
         });
         // The worker took the next card: what came stays with the first.
         w.agents[1].card = Some(5);

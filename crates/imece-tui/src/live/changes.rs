@@ -109,6 +109,7 @@ impl Live {
         reply: Sender<Answer>,
     ) {
         let Some(path) = self.tree_at(w, id) else {
+            w.change_none(id);
             let _ = reply.send(Ok(said));
             return;
         };
@@ -327,6 +328,7 @@ impl Live {
         match read {
             Ok(None) => {
                 w.agents[id].trace(w.tick, "change: none");
+                w.change_none(id);
                 "; your worktree holds no change".to_string()
             }
             Ok(Some(c)) => {
@@ -350,6 +352,7 @@ impl Live {
                     patch: c.patch.clone(),
                     runs,
                     check: Check::None,
+                    spend: None,
                 });
                 self.changes.insert(id, c);
                 self.check_change(w, id);
@@ -442,7 +445,7 @@ impl Live {
             }
         };
         self.changes.remove(&id);
-        w.change_applied(id, mark.clone());
+        w.change_applied(id, mark.clone(), part.is_none());
         self.stand(w, id);
         // The checkout has new files now, maybe: the list is read again.
         self.files(w.agents[id].project);
@@ -698,7 +701,8 @@ mod tests {
                 agent: 1,
                 files: 2,
                 added: 3,
-                removed: 1
+                removed: 1,
+                spend: None
             }
         )));
         assert!(

@@ -333,6 +333,9 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App, id: AgentId) {
     if let Some(split) = kinds_line(app.lang, &c.files) {
         files.insert(0, split);
     }
+    if let Some(cost) = spend_line(app.lang, c.spend) {
+        files.insert(0, cost);
+    }
     let rows = |n: usize| u16::try_from(n).unwrap_or(u16::MAX);
     let [runs, said, list, inner] = Layout::vertical([
         Constraint::Length(rows(ran.len())),
@@ -558,6 +561,19 @@ fn kinds_line(lang: Lang, files: &[ChangedFile]) -> Option<Line<'static>> {
     Some(Line::from(Span::styled(
         format!(" {}", words.join(" · ")),
         bold(pal().strong),
+    )))
+}
+
+/// What the change cost (record 113), above its kinds and files: `cost ·
+/// $0.84 · 12 min`, dim; nothing until its worker's turn ended.
+fn spend_line(lang: Lang, spend: Option<Spend>) -> Option<Line<'static>> {
+    let s = spend?;
+    Some(Line::from(Span::styled(
+        format!(
+            " {}",
+            fill(lang.text().diff_spend, &[&words::spend(lang, &s)])
+        ),
+        dim(),
     )))
 }
 

@@ -1247,7 +1247,7 @@ impl Sim {
             return;
         }
         let mark = sha(&mut self.rng);
-        w.change_applied(id, mark);
+        w.change_applied(id, mark, hunks.is_empty());
         let p = w.agents[id].project;
         self.tell_the_others(w, id);
         self.extras
@@ -1274,12 +1274,15 @@ impl Sim {
         (s.added, s.removed) = files
             .iter()
             .fold((0, 0), |(a, r), f| (a + f.added, r + f.removed));
-        if !files.is_empty() {
+        if files.is_empty() {
+            w.change_none(id);
+        } else {
             w.change_ready(Change {
                 files,
                 patch,
                 runs: Vec::new(),
                 check: Check::None,
+                spend: None,
                 ..change
             });
         }
@@ -1546,10 +1549,15 @@ impl Sim {
         self.checks_due(w);
         w.tick += 1;
         let t = w.tick;
-        for a in &mut w.agents {
-            if !a.gone && a.status.busy() {
-                a.cost += COST_PER_TICK;
-            }
+        // A busy agent's round opens at its first busy tick, as live's
+        // does at its prompt (record 113).
+        let busy: Vec<AgentId> = (w.agents.iter())
+            .filter(|a| !a.gone && a.status.busy())
+            .map(|a| a.id)
+            .collect();
+        for &id in &busy {
+            w.round_opens(id);
+            w.agents[id].cost += COST_PER_TICK;
         }
         for (id, hunks) in std::mem::take(&mut self.applying) {
             let fits = !self.rng.one_in(8);
@@ -1676,6 +1684,7 @@ impl Sim {
                 patch,
                 runs: Vec::new(),
                 check: Check::None,
+                spend: None,
             };
             let (added, removed) = change.counts();
             let n = change.files.len();
@@ -3078,22 +3087,24 @@ impl Sim {
             patch,
             runs,
             check: Check::None,
+            spend: None,
         };
         let (added, removed) = change.counts();
         let n = change.files.len();
-        w.change_ready(change);
-        self.check(w, id);
         let c = &mut w.cards[card];
         c.column = Column::Done;
         c.finished = t;
         let a = &mut w.agents[id];
         a.progress = 0;
         a.activity = None;
+        // Its turn is over as the change is read: what it cost goes with it.
         a.set_status(Status::Idle, t);
         a.trace(t, format!("change: {n} files +{added} −{removed}"));
         // What the person reviews is what the worktree holds.
         a.stand.added = added;
         a.stand.removed = removed;
+        w.change_ready(change);
+        self.check(w, id);
     }
 
     /// A patch that changes each of `symbols` in its file, as `git diff`
@@ -4171,6 +4182,7 @@ mod tests {
             patch: TWO_FILES.into(),
             runs: Vec::new(),
             check: Check::None,
+            spend: None,
         });
         (w, s, id)
     }
@@ -4344,6 +4356,7 @@ diff --git a/b.rs b/b.rs
                     timed_out: false,
                 }],
                 check: Check::None,
+                spend: None,
             })
         };
         ready(&mut w);
@@ -6669,6 +6682,7 @@ diff --git a/b.rs b/b.rs
                 patch: String::new(),
                 runs: Vec::new(),
                 check: Check::None,
+                spend: None,
             })
         };
         let check_of = |w: &World| w.change_of(worker).unwrap().check.clone();
