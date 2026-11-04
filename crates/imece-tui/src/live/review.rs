@@ -134,6 +134,7 @@ pub(super) fn review_text(text: &str) -> String {
 pub(super) fn claude_spec(program: String, cwd: PathBuf, model: &str, cap: u64) -> claude::Spec {
     claude::Spec {
         scratch: None,
+        notes: None,
         program,
         cwd,
         name: "imece-review".into(),

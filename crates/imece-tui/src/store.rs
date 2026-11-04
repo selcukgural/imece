@@ -4098,6 +4098,32 @@ mod tests {
     }
 
     #[test]
+    fn a_journal_line_of_a_kind_gone_is_passed_over() {
+        let d = dir("kind-gone");
+        std::fs::create_dir_all(&d).unwrap();
+        let path = d.join(FILE);
+        let mut w = world();
+        w.note(Event::Forgotten { agent: 1 });
+        w.note(Event::Forgotten { agent: 2 });
+        let mut store = Store::open(&path).unwrap();
+        store.save(&w, &kept().kept()).unwrap();
+        // As older runs wrote it, when a notes file could be cut.
+        store
+            .raw()
+            .execute(
+                "UPDATE journal SET data = '{\"NotesCut\":{\"agent\":1,\"file\":\"CLAUDE.md\",\
+                 \"size\":1}}' WHERE data LIKE '%Forgotten\":{\"agent\":1%'",
+                [],
+            )
+            .unwrap();
+        let back = store.load(100).unwrap().expect("a world");
+        let lines = &back.world.journal;
+        assert_eq!(lines.len(), w.journal.len() - 1, "{lines:?}");
+        assert_eq!(lines.last().unwrap().event, Event::Forgotten { agent: 2 });
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[test]
     fn a_review_journaled_with_a_vendor_still_loads() {
         let d = dir("reviewed-by");
         std::fs::create_dir_all(&d).unwrap();

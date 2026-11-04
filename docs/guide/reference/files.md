@@ -18,6 +18,7 @@ imece keeps what it remembers in one directory, the state directory, and leaves 
 | `imece.sqlite.lock` | the lock one imece holds while it runs (0600, `flock`) |
 | `screen` | the file imece kept its screen choices in before 2026-10-30; moved into the store and removed the first time it is seen |
 | `worktrees/<dir>-<hash>/<agent>` | one git worktree per worker, `<dir>` the checkout's directory name and `<hash>` eight hex digits of its path (`worktrees/kule-3f2a9c01/claude-1`) |
+| `worktrees/<dir>-<hash>-notes/<agent>` | `CLAUDE.md` (0600, the directory 0700): what the agent's Claude Code reads besides the file of its own directory, rewritten at every start. See [below](#what-an-agent-reads) |
 | `worktrees/<dir>-<hash>-scratch/<agent>` | a writing agent's scratch directory (0700; a solo's is `solo-<project number>`): for notes, logs and downloads that are no part of its change. Its file tools may write there (`--add-dir`), its instructions name it, and its focus shows it. Kept between runs; removed by `:forget`, `--fresh` and when the agent leaves (`:close`, a helper's `done`), not when a new session goes on with the same work (a model fallback, a renewed cap, `/clear`) |
 | `scripts/<sha256>.sh` | the private copy of a worktree setup script you said yes to, the bytes you read (0700 directory, 0600 file): what runs. See [a worktree setup script](../concepts/projects.md#a-worktree-setup-script) |
 
@@ -89,15 +90,24 @@ In `$XDG_CONFIG_HOME/imece/`, or `~/.config/imece/` (a relative `XDG_CONFIG_HOME
 
 - `keys`: your own keys, read at start and again when it changes. See [keyboard](../screen/keyboard.md).
 - `push`: where `:notify push` sends what waits (ntfy's server, topic and the file of a token), read when push is chosen and at each start. See [`:notify`](commands.md#notify-offbelltextpush).
-- `instructions.md`: your own instructions for every project, read when each agent's session starts and put in its instructions before the repository's notes, at most 16 KiB: a longer file goes in cut and the journal says so (`claude-1: your instructions file … is 20 KiB; only its first 16 KiB went into the instructions`). Only a plain file is read: a pipe or a device is passed over. A change is read at each agent's next start.
+- `instructions.md`: your own instructions for every project, whole, for imece's agents alone; `~/.claude/CLAUDE.md` is for every Claude Code session. Read at each agent's start, a change at its next one; only a plain file: a pipe or a device is passed over. See [below](#what-an-agent-reads).
 
 ## What imece reads from the repository
 
-- `AGENTS.md`, else `CLAUDE.md`, at the checkout's top: the notes for coding agents, at most 16 KiB, passed to every agent with its instructions. See [message types](message-types.md).
+- `CLAUDE.md`, else `AGENTS.md`, at the checkout's top, when the agent's own directory has no `CLAUDE.md`. See [below](#what-an-agent-reads).
 - Git: the top of the checkout, HEAD, `git check-ignore` for `:copy`, `git ls-files --others --ignored --directory --exclude=…` for what `.worktreeinclude` matches (at a worker's start), `git diff --cached` and the eight newest subjects for `:commit` (with `--no-ext-diff --no-textconv`, so no program of yours runs), and `git ls-files` (tracked, and untracked but not ignored; the first 20,000) for completing a file's name in a message: at the project's opening, after each change you apply, and every minute while one of its agents is mid-turn.
 - A colour file named with `--theme FILE` or `:theme FILE`, in Ghostty's or Kitty's format; its absolute path is remembered as the theme.
 
-Nothing else: no file of the repository is written by imece, and Claude Code is started so that nothing of the repository loads (under `standard` and `strict`).
+Nothing else: no file of the repository is written by imece.
+
+## What an agent reads
+
+Under `standard` and `strict`, `--restricted` would load no `CLAUDE.md` at all. imece turns Claude Code's own loader back on for two directories (`CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD=1`, `--add-dir`):
+
+- **The agent's own directory**, its worktree or, for a leader, the checkout: `CLAUDE.md`, `.claude/CLAUDE.md`, `.claude/rules`, and their `@imports` inside the directory. A worker reads them as its worktree has them, so a change to `CLAUDE.md` reaches it once committed and its worktree moved. Hooks, settings, skills and commands there stay out.
+- **Its notes directory** above, a file imece writes at every start, whole and in this order: your `~/.claude/CLAUDE.md` (`$CLAUDE_CONFIG_DIR` first), `instructions.md`, and the checkout's `CLAUDE.md` or `AGENTS.md` when the loader would find nothing in the agent's own directory (git ignores the file, or the worker started where it is not). A file there is a copy, so an `@import` in your `~/.claude/CLAUDE.md` is not followed. A link out of the checkout is not read.
+
+An `@import` leaving those directories is not loaded. `CLAUDE.local.md` is not read at any of these levels. Under `--confine open` Claude Code reads your whole setup and the agent's directory itself, and the notes directory holds only what it would not find: `instructions.md` and the repository's fallback. `:commit` and `:review` read no notes: they answer about one diff, by the token.
 
 ## What Claude Code keeps
 
@@ -107,15 +117,13 @@ A session is resumed from what Claude Code kept; imece only remembers the id (`a
 | --- | --- |
 | `$CLAUDE_CONFIG_DIR` or `~/.claude`, `projects/<slug>/<id>.jsonl`, the slug being the agent's directory with every character that is not a letter or a digit as `-` | the transcript; a session is resumable while the file is there, from the same directory. Other traces (`debug`, `file-history`, `todos`) are not looked for |
 
-Claude Code under standard and strict reads none of your own files: `--restricted` drops `~/.claude/CLAUDE.md`, your commands and your settings along with the repository's files, and imece passes on only the repository's notes above. `--confine open` loads your whole setup. What should reach every agent at every level goes in imece's own `instructions.md`, in its configuration directory.
-
 ## What `--fresh` and `:forget` remove
 
 Both make an agent forget its session so the next message starts a new one, told where it left off; `--fresh` does it for every remembered agent at the start, `:forget @NAME` for one. What goes, on a thread of its own (the trace says how it went: `forgot session <id>: its transcript was removed`):
 
 What goes: the transcript file above (`it had no transcript left` when it was gone already).
 
-Only an id shaped like a UUID ever reaches a path or Claude Code. A session that was just asked to stop is given 4 s to be gone first. The agent's scratch directory goes too, moved aside at once so a session started right after gets a new one (`its scratch directory was removed`). Nothing else of imece's own is removed: the agent, its cards, the journal and the worktree stay. Also removed when a session is replaced: a model fallback, a session renewed after it hit its cap. See [sessions](../concepts/sessions.md).
+Only an id shaped like a UUID ever reaches a path or Claude Code. A session that was just asked to stop is given 4 s to be gone first. The agent's notes directory goes, and its scratch directory too, moved aside at once so a session started right after gets a new one (`its scratch directory was removed`). Nothing else of imece's own is removed: the agent, its cards, the journal and the worktree stay. Also removed when a session is replaced: a model fallback, a session renewed after it hit its cap. See [sessions](../concepts/sessions.md).
 
 ## What is not written
 

@@ -1,5 +1,7 @@
 # Dogfooding prep
 
+**Changed by [record 110](110-claude-s-own-loader.md): the notes go through Claude Code's own loader, whole; what is below about the 16 KiB cap and `NotesCut` is history.**
+
 Dogfooding prep (2026-10-29, user's decisions: imece will write imece):
 a worktree found clean at an older commit is moved to the checkout's
 HEAD when its agent starts (not one hired from a start point of its own,

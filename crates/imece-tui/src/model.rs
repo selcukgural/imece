@@ -1461,23 +1461,6 @@ pub enum Event {
         leader: AgentId,
         level: String,
     },
-    /// The repository's notes for coding agents (`AGENTS.md` or
-    /// `CLAUDE.md`, `size` bytes) were longer than what goes into an
-    /// agent's instructions, so the agent's session started with the
-    /// file's head only.
-    NotesCut {
-        agent: AgentId,
-        file: String,
-        size: usize,
-    },
-    /// The person's own instructions for every project (`path`, `size`
-    /// bytes) were longer than what goes into an agent's instructions,
-    /// so the agent's session started with the file's head only.
-    InstructionsCut {
-        agent: AgentId,
-        path: String,
-        size: usize,
-    },
     /// The worktree setup script ran in agent `agent`'s new worktree:
     /// whether it went well, how it ended (`exit 0, 3.2 s`), its last
     /// lines (cleaned when drawn).
@@ -1649,8 +1632,6 @@ impl Event {
             | Event::Fallback { .. }
             | Event::Resumed { .. }
             | Event::Restarted { .. }
-            | Event::NotesCut { .. }
-            | Event::InstructionsCut { .. }
             | Event::Pushed { .. }
             | Event::SetupRan { ok: true, .. }
             | Event::CommandsMissing { .. }
@@ -1758,8 +1739,6 @@ impl Event {
             | Event::Fallback { agent, .. }
             | Event::Resumed { agent }
             | Event::Restarted { agent, .. }
-            | Event::NotesCut { agent, .. }
-            | Event::InstructionsCut { agent, .. }
             | Event::Pushed { agent, .. }
             | Event::PushFailed { agent, .. }
             | Event::SetupRan { agent, .. }
@@ -4056,18 +4035,6 @@ mod tests {
         for e in [&opened, &closed, &renamed, &forgotten] {
             assert_eq!(e.kind(), EntryKind::Person);
         }
-        let cut = Event::NotesCut {
-            agent: 10,
-            file: "CLAUDE.md".into(),
-            size: 1,
-        };
-        assert_eq!((cut.agent(), cut.kind()), (10, EntryKind::Assumption));
-        let mine = Event::InstructionsCut {
-            agent: 12,
-            path: "/x".into(),
-            size: 1,
-        };
-        assert_eq!((mine.agent(), mine.kind()), (12, EntryKind::Assumption));
         let unlisted = Event::CommandsMissing { agent: 11 };
         assert_eq!(
             (unlisted.agent(), unlisted.kind()),

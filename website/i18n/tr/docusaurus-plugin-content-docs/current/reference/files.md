@@ -18,6 +18,7 @@ Değişken ayarlı ve mutlaksa `$XDG_STATE_HOME/imece`, yoksa `~/.local/state/im
 | `imece.sqlite.lock` | bir imece'nin çalışırken tuttuğu kilit (0600, `flock`) |
 | `screen` | imece'nin 2026-10-30'dan önce ekran seçimlerini tuttuğu dosya; ilk görüldüğünde depoya taşınır ve silinir |
 | `worktrees/<dizin>-<hash>/<ajan>` | işçi başına bir git worktree'si; `<dizin>` çalışma kopyasının dizin adı, `<hash>` yolunun sekiz onaltılık hanesi (`worktrees/kule-3f2a9c01/claude-1`) |
+| `worktrees/<dizin>-<hash>-notes/<ajan>` | `CLAUDE.md` (0600, dizin 0700): ajanın Claude Code'unun kendi dizinindeki dosyadan başka okuduğu, her başlangıçta yeniden yazılır. Bkz. [aşağısı](#what-an-agent-reads) |
 | `worktrees/<dizin>-<hash>-scratch/<ajan>` | yazan bir ajanın karalama dizini (0700; bir solonunki `solo-<proje numarası>`): değişikliğinin parçası olmayan notlar, günlükler ve indirilenler için. Dosya araçları oraya yazabilir (`--add-dir`), talimatları onu adlandırır, odağı gösterir. Çalıştırmalar arasında kalır; `:forget`, `--fresh` ve ajan ayrılınca (`:close`, bir yardımcının `done`'ı) silinir, aynı işe devam eden yeni bir oturumda (model geri dönüşü, yenilenen sınır, `/clear`) silinmez |
 | `scripts/<sha256>.sh` | evet dediğiniz bir worktree kurulum betiğinin özel kopyası, okuduğunuz baytlar (dizin 0700, dosya 0600): çalışan budur. Bkz. [worktree kurulum betiği](../concepts/projects.md#worktree-kurulum-betiği) |
 
@@ -89,15 +90,24 @@ Her başlangıçta imece `$TMPDIR/imece-<pid>-<hex>/` yapar (0700; var olan bir 
 
 - `keys`: kendi tuşlarınız, açılışta ve değiştikçe yeniden okunur. Bkz. [klavye](../screen/keyboard.md).
 - `push`: `:notify push`'un bekleyeni nereye gönderdiği (ntfy sunucusu, topic ve bir token'ın dosyası); push seçildiğinde ve her başlangıçta okunur. Bkz. [`:notify`](commands.md#notify-offbelltextpush).
-- `instructions.md`: her proje için kendi talimatlarınız; her ajanın oturumu başlarken okunur ve deponun notlarından önce talimatlarına konur, en çok 16 KiB: daha uzun bir dosya kesilerek girer ve günlük bunu söyler (`claude-1: talimat dosyan … 20 KiB; talimatlara yalnızca ilk 16 KiB girdi`). Yalnız düz bir dosya okunur: bir boru ya da aygıt atlanır. Bir değişiklik her ajanın bir sonraki başlangıcında okunur.
+- `instructions.md`: her proje için kendi talimatlarınız, tümüyle, yalnızca imece'nin ajanları için; `~/.claude/CLAUDE.md` ise her Claude Code oturumu içindir. Her ajanın başlangıcında okunur, bir değişiklik bir sonrakinde; yalnız düz bir dosya: bir boru ya da aygıt atlanır. Bkz. [aşağısı](#what-an-agent-reads).
 
 ## imece'nin depodan okuduğu
 
-- Çalışma kopyasının tepesindeki `AGENTS.md`, yoksa `CLAUDE.md`: kodlama ajanları için notlar, en çok 16 KiB, her ajana talimatlarıyla geçirilir. Bkz. [mesaj türleri](message-types.md).
+- Ajanın kendi dizininde `CLAUDE.md` yoksa çalışma kopyasının tepesindeki `CLAUDE.md`, o da yoksa `AGENTS.md`. Bkz. [aşağısı](#what-an-agent-reads).
 - Git: çalışma kopyasının tepesi, HEAD, `:copy` için `git check-ignore`, `.worktreeinclude`'un neye uyduğu için `git ls-files --others --ignored --directory --exclude=…` (bir işçinin başlangıcında), `:commit` için `git diff --cached` ve en yeni sekiz konu (`--no-ext-diff --no-textconv` ile, böylece sizin bir programınız çalışmaz), ve bir mesajda dosya adı tamamlamak için `git ls-files` (izlenenler ve izlenmeyen ama yok sayılmayanlar; ilk 20.000): projenin açılışında, uyguladığınız her değişiklikten sonra ve ajanlarından biri tur ortasındayken her dakika.
 - `--theme FILE` ya da `:theme FILE` ile adlandırılan, Ghostty ya da Kitty biçiminde bir renk dosyası; mutlak yolu tema olarak hatırlanır.
 
-Başka bir şey yok: deponun hiçbir dosyası imece tarafından yazılmaz ve Claude Code depodan hiçbir şey yüklenmesin diye başlatılır (`standard` ve `strict` altında).
+Başka bir şey yok: deponun hiçbir dosyası imece tarafından yazılmaz.
+
+## Bir ajanın okuduğu {#what-an-agent-reads}
+
+`standard` ve `strict` altında `--restricted` hiçbir `CLAUDE.md` yüklemezdi. imece, Claude Code'un kendi yükleyicisini iki dizin için yeniden açar (`CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD=1`, `--add-dir`):
+
+- **Ajanın kendi dizini**, worktree'si ya da lider için çalışma kopyası: `CLAUDE.md`, `.claude/CLAUDE.md`, `.claude/rules` ve dizin içindeki `@import`'ları. Bir işçi bunları worktree'sinde olduğu gibi okur; yani `CLAUDE.md`'deki bir değişiklik commit edilip worktree'si taşınınca ona ulaşır. Oradaki hook'lar, ayarlar, skill'ler ve komutlar dışarıda kalır.
+- **Yukarıdaki notlar dizini**: imece'nin her başlangıçta yazdığı bir dosya, tümüyle ve bu sırayla: `~/.claude/CLAUDE.md`'niz (önce `$CLAUDE_CONFIG_DIR`), `instructions.md` ve yükleyici ajanın kendi dizininde hiçbir şey bulamayacaksa çalışma kopyasının `CLAUDE.md`'si ya da `AGENTS.md`'si (git dosyayı yok sayıyordur ya da işçi onun olmadığı bir yerden başlamıştır). Oradaki bir dosya kopyadır, bu yüzden `~/.claude/CLAUDE.md`'nizdeki bir `@import` izlenmez. Çalışma kopyasının dışına çıkan bir bağlantı okunmaz.
+
+Bu dizinlerin dışına çıkan bir `@import` yüklenmez. `CLAUDE.local.md` bu seviyelerde okunmaz. `--confine open` altında bütün kurulumunuzu ve ajanın dizinini Claude Code kendisi okur; notlar dizininde yalnızca onun bulamayacağı kalır: `instructions.md` ve deponun yedek dosyası. `:commit` ve `:review` not okumaz: tek bir diff hakkında, token başına yanıt verirler.
 
 ## Claude Code'un tuttuğu
 
@@ -107,15 +117,13 @@ Bir oturum, Claude Code'un tuttuğundan sürdürülür; imece yalnızca kimliği
 | --- | --- |
 | `$CLAUDE_CONFIG_DIR` ya da `~/.claude`, `projects/<slug>/<id>.jsonl`; slug, ajanın dizininin harf ya da rakam olmayan her karakteri `-` yapılmış hali | transkript; dosya oradayken, aynı dizinden, oturum sürdürülebilir. Öteki izler (`debug`, `file-history`, `todos`) aranmaz |
 
-Claude Code, standard ve strict altında kendi dosyalarınızdan hiçbirini okumaz: `--restricted`, deponun dosyalarıyla birlikte `~/.claude/CLAUDE.md`'nizi, komutlarınızı ve ayarlarınızı da düşürür; imece yalnızca yukarıdaki depo notlarını iletir. `--confine open` bütün kurulumunuzu yükler. Her ajana her seviyede ulaşması gerekenler, imece'nin yapılandırma dizinindeki kendi `instructions.md` dosyasına yazılır.
-
 ## `--fresh` ve `:forget`'in sildiği
 
 İkisi de bir ajana oturumunu unutturur; sonraki mesaj yeni bir oturum başlatır, kaldığı yer anlatılır. `--fresh` başlangıçta hatırlanan her ajan için, `:forget @NAME` biri için yapar. Giden, kendi iş parçacığında (iz nasıl gittiğini söyler: `forgot session <id>: its transcript was removed`):
 
 Silinen: yukarıdaki transkript dosyası (zaten gitmişse `it had no transcript left`).
 
-Bir yola ya da Claude Code'a yalnızca UUID biçiminde bir kimlik ulaşır. Henüz durması istenmiş bir oturuma önce gitmesi için 4 sn verilir. Ajanın karalama dizini de gider; hemen kenara alınır, böylece hemen ardından başlayan oturum yenisini alır (`its scratch directory was removed`). imece'nin kendisinden başka hiçbir şey silinmez: ajan, kartları, günlük ve worktree kalır. Bir oturum değiştirildiğinde de silinir: bir model geri dönüşü, sınırına çarpınca yenilenen bir oturum. Bkz. [oturumlar](../concepts/sessions.md).
+Bir yola ya da Claude Code'a yalnızca UUID biçiminde bir kimlik ulaşır. Henüz durması istenmiş bir oturuma önce gitmesi için 4 sn verilir. Ajanın notlar dizini ve karalama dizini de gider; hemen kenara alınır, böylece hemen ardından başlayan oturum yenisini alır (`its scratch directory was removed`). imece'nin kendisinden başka hiçbir şey silinmez: ajan, kartları, günlük ve worktree kalır. Bir oturum değiştirildiğinde de silinir: bir model geri dönüşü, sınırına çarpınca yenilenen bir oturum. Bkz. [oturumlar](../concepts/sessions.md).
 
 ## Yazılmayanlar
 

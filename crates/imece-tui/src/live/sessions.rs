@@ -236,15 +236,27 @@ impl Live {
     /// archived solo and the fresh one after it share a name. None for a
     /// leader, which writes nothing.
     pub fn scratch_of(&self, w: &World, id: AgentId) -> Option<PathBuf> {
+        (w.agents[id].role != Role::Leader).then(|| self.own_dir(w, id, "-scratch"))
+    }
+
+    /// Agent `id`'s notes directory (record 110): imece's, its
+    /// `CLAUDE.md` rewritten at every start; one per agent, so what an
+    /// agent leaves there reaches no other. `<worktrees>-notes/<name>`.
+    pub(super) fn notes_of(&self, w: &World, id: AgentId) -> PathBuf {
+        self.own_dir(w, id, "-notes")
+    }
+
+    /// A directory of agent `id`'s beside the worktrees: `<worktrees>
+    /// <kind>/<name>`, a solo's by its project's id.
+    fn own_dir(&self, w: &World, id: AgentId, kind: &str) -> PathBuf {
         let a = &w.agents[id];
         let name = match a.role {
-            Role::Leader => return None,
             Role::Solo => format!("solo-{}", a.project),
             _ => a.name.clone(),
         };
         let mut dir = self.places[a.project].root.clone().into_os_string();
-        dir.push("-scratch");
-        Some(PathBuf::from(dir).join(name))
+        dir.push(kind);
+        PathBuf::from(dir).join(name)
     }
 
     /// Agent `id`'s scratch directory goes (record 105): `:forget`,
@@ -253,6 +265,8 @@ impl Live {
     /// once, so a session started right after makes a new one, and removed
     /// on a thread of its own; the trace says so when there was one.
     pub(super) fn drop_scratch(&self, w: &World, id: AgentId) {
+        // Its notes go too: a copy of the person's file, nothing of its own.
+        let _ = std::fs::remove_dir_all(self.notes_of(w, id));
         let Some(dir) = self.scratch_of(w, id) else {
             return;
         };
@@ -707,11 +721,6 @@ impl Live {
         });
         let place = &self.places[a.project];
         let mut system = system_prompt(w, id, self.max_workers, self.max_helpers, confine);
-        let personal = (self.instructions.as_deref()).and_then(personal_notes);
-        let notes = repo_notes(&place.repo);
-        for n in personal.iter().chain(&notes) {
-            system.push_str(&n.text);
-        }
         let (program, model) = (self.claude.program.clone(), self.models[id].clone());
         let name = format!("imece {}", a.name);
         let resume = self.resume_of(id);
@@ -728,6 +737,9 @@ impl Live {
         let (repo, root) = (place.repo.clone(), place.root.clone());
         let copies = w.projects[a.project].copies.clone();
         let scratch = self.scratch_of(w, id);
+        let notes = self.notes_of(w, id);
+        let (own, instructions) = (self.own_notes.clone(), self.instructions.clone());
+        let checkout = place.repo.clone();
         let plan = if direct {
             setup::Plan::None
         } else {
@@ -775,13 +787,22 @@ impl Live {
                 });
                 let scratch = match scratch {
                     Some(dir) => {
-                        let dir = make_scratch(&dir)
+                        let dir = make_private(&dir)
                             .map_err(|e| format!("its scratch directory {}: {e}", dir.display()))?;
                         system.push_str(&scratch_note(&dir));
                         Some(dir)
                     }
                     None => None,
                 };
+                let text = notes_text(
+                    own.as_deref(),
+                    instructions.as_deref(),
+                    &cwd,
+                    &checkout,
+                    confine,
+                );
+                let notes = write_notes(&notes, text.as_deref())
+                    .map_err(|e| format!("its notes directory {}: {e}", notes.display()))?;
                 let on = move |e| {
                     let _ = tx.send((id, generation, e));
                 };
@@ -791,6 +812,7 @@ impl Live {
                     claude::Session::start(
                         &claude::Spec {
                             scratch: scratch.clone(),
+                            notes,
                             program: program.clone(),
                             cwd: cwd.clone(),
                             name,
@@ -817,40 +839,36 @@ impl Live {
             // Nobody to take it (imece is closing): dropping it stops it.
             let _ = ready.send((id, generation, started));
         });
-        if let (
-            Some(path),
-            Some(Notes {
-                size, cut: true, ..
-            }),
-        ) = (&self.instructions, personal)
-        {
-            w.note(Event::InstructionsCut {
-                agent: id,
-                path: path.display().to_string(),
-                size,
-            });
-        }
-        if let Some(Notes {
-            file,
-            size,
-            cut: true,
-            ..
-        }) = notes
-        {
-            w.note(Event::NotesCut {
-                agent: id,
-                file: file.to_string(),
-                size,
-            });
-        }
     }
 }
 
-/// Makes an agent's scratch directory (record 105) when it is not there,
-/// private (0700), its parents too; one that is there must be a
-/// directory, not a link to one. Its canonical path, the one Claude Code
-/// is given.
-pub(super) fn make_scratch(dir: &Path) -> io::Result<PathBuf> {
+/// Puts `text` in the notes directory `dir` (record 110), rewritten at
+/// every start, the file private (0600): its canonical path, none and
+/// nothing made when there is no text. A writer can reach the directory,
+/// so what is there goes first and the file is made new, never written
+/// through a link left in its place.
+pub(super) fn write_notes(dir: &Path, text: Option<&str>) -> io::Result<Option<PathBuf>> {
+    use std::io::Write;
+    use std::os::unix::fs::OpenOptionsExt;
+    let Some(text) = text else {
+        return Ok(None);
+    };
+    let dir = make_private(dir)?;
+    let file = dir.join(NOTES_FILE);
+    // Whatever cannot go is refused below: `create_new` takes no file there.
+    let _ = std::fs::remove_file(&file);
+    (std::fs::OpenOptions::new().write(true).create_new(true))
+        .mode(0o600)
+        .open(&file)?
+        .write_all(text.as_bytes())?;
+    Ok(Some(dir))
+}
+
+/// Makes an agent's own directory (a scratch one, record 105; its notes,
+/// record 110) when it is not there, private (0700), its parents too; one
+/// that is there must be a directory, not a link to one. Its canonical
+/// path, the one Claude Code is given.
+pub(super) fn make_private(dir: &Path) -> io::Result<PathBuf> {
     use std::os::unix::fs::DirBuilderExt;
     if let Some(parent) = dir.parent() {
         std::fs::create_dir_all(parent)?;
@@ -2190,6 +2208,57 @@ mod tests {
     }
 
     #[test]
+    fn notes_are_rewritten_private_and_never_through_a_link() {
+        use std::os::unix::fs::PermissionsExt;
+        let at = std::env::temp_dir().join(format!("imece-write-notes-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&at);
+        let dir = at.join("notes").join("claude-1");
+        assert_eq!(write_notes(&dir, None).unwrap(), None);
+        assert!(!dir.exists(), "nothing to say, nothing made");
+        let made = write_notes(&dir, Some("first")).unwrap().unwrap();
+        assert_eq!(made, dir.canonicalize().unwrap());
+        let file = made.join(NOTES_FILE);
+        assert_eq!(std::fs::read_to_string(&file).unwrap(), "first");
+        let mode = |p: &Path| std::fs::metadata(p).unwrap().permissions().mode() & 0o777;
+        assert_eq!((mode(&made), mode(&file)), (0o700, 0o600));
+        write_notes(&dir, Some("second")).unwrap();
+        assert_eq!(std::fs::read_to_string(&file).unwrap(), "second");
+        // A link left in its place: the link goes, what it named stays.
+        let person = at.join("person's");
+        std::fs::write(&person, "theirs").unwrap();
+        std::fs::remove_file(&file).unwrap();
+        std::os::unix::fs::symlink(&person, &file).unwrap();
+        write_notes(&dir, Some("third")).unwrap();
+        assert_eq!(std::fs::read_to_string(&person).unwrap(), "theirs");
+        assert!(!std::fs::symlink_metadata(&file).unwrap().is_symlink());
+        assert_eq!(std::fs::read_to_string(&file).unwrap(), "third");
+        // What cannot go is said: a directory in its place.
+        std::fs::remove_file(&file).unwrap();
+        std::fs::create_dir(&file).unwrap();
+        assert!(write_notes(&dir, Some("fourth")).is_err());
+        let _ = std::fs::remove_dir_all(&at);
+    }
+
+    #[test]
+    fn notes_are_each_agent_s_own_and_go_with_it() {
+        let mut w = team(2);
+        let at = std::env::temp_dir().join(format!("imece-notes-of-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&at);
+        let live = Live::new(3, claude_at("claude"), at.join("r"), at.join("w"));
+        let root = at.join("w-notes");
+        assert_eq!(live.notes_of(&w, 0), root.join(&w.agents[0].name));
+        assert_eq!(live.notes_of(&w, 1), root.join("claude-1"));
+        w.agents[1].role = Role::Solo;
+        assert_eq!(live.notes_of(&w, 1), root.join("solo-0"));
+        std::fs::create_dir_all(live.notes_of(&w, 0)).unwrap();
+        std::fs::create_dir_all(live.notes_of(&w, 2)).unwrap();
+        live.drop_scratch(&w, 0);
+        assert!(!live.notes_of(&w, 0).exists(), "a leader's too");
+        assert!(live.notes_of(&w, 2).exists(), "another's stays");
+        let _ = std::fs::remove_dir_all(&at);
+    }
+
+    #[test]
     fn a_scratch_directory_is_each_writer_s_own_and_a_leader_has_none() {
         let mut w = team(2);
         let live = Live::new(
@@ -2216,25 +2285,25 @@ mod tests {
         use std::os::unix::fs::PermissionsExt;
         let base = trees("scratch-make");
         let dir = base.join("a").join("claude-1");
-        let made = make_scratch(&dir).unwrap();
+        let made = make_private(&dir).unwrap();
         assert_eq!(made, dir.canonicalize().unwrap());
         let mode = std::fs::metadata(&dir).unwrap().permissions().mode();
         assert_eq!(mode & 0o777, 0o700);
         std::fs::write(dir.join("notes.md"), "kept").unwrap();
-        assert_eq!(make_scratch(&dir).unwrap(), made, "there already");
+        assert_eq!(make_private(&dir).unwrap(), made, "there already");
         assert!(dir.join("notes.md").exists());
         let file = base.join("a").join("file");
         std::fs::write(&file, "").unwrap();
-        assert!(make_scratch(&file).is_err(), "a file");
+        assert!(make_private(&file).is_err(), "a file");
         let link = base.join("a").join("link");
         std::os::unix::fs::symlink(&dir, &link).unwrap();
-        assert!(make_scratch(&link).is_err(), "a link to a directory");
+        assert!(make_private(&link).is_err(), "a link to a directory");
         // Any other failure is that failure, not taken for one that is
         // there: a parent it may not write to.
         let shut = base.join("shut");
         std::fs::create_dir_all(&shut).unwrap();
         std::fs::set_permissions(&shut, std::fs::Permissions::from_mode(0o500)).unwrap();
-        let e = make_scratch(&shut.join("claude-1")).unwrap_err();
+        let e = make_private(&shut.join("claude-1")).unwrap_err();
         std::fs::set_permissions(&shut, std::fs::Permissions::from_mode(0o700)).unwrap();
         assert_eq!(e.kind(), io::ErrorKind::PermissionDenied, "{e}");
         let _ = std::fs::remove_dir_all(&base);

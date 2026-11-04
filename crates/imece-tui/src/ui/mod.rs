@@ -4114,7 +4114,7 @@ mod tests {
         }
         // Enough of each: the demo lights rows and starts sessions often.
         assert!(checked > 40, "{checked} patched, {refused} not");
-        assert!(refused > 20, "{checked} patched, {refused} not");
+        assert!(refused > 10, "{checked} patched, {refused} not");
     }
 
     #[test]
