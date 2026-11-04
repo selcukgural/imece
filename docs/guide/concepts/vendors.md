@@ -28,7 +28,7 @@ A session is a long-lived `claude -p` stream (stream-json), one per agent.
 - **Checked on every turn:** the `init` event must report exactly the asked tools (under open: at least them, imece's server once and connected, no sub-agent tool), imece's MCP server with exactly its tools. Anything else stops the session.
 - Each session gets `--max-budget-usd`: what was left of the pot when it started, a hard cap on a session running away ([budget](../concepts/budget-and-limits.md)). Costs come in dollars.
 - A choice with an effort (`opus@xhigh`, `@max`) becomes `--effort`: `low`, `medium`, `high`, `xhigh` or `max`. Claude Code only warns about an effort it does not know and runs at its default, and its `init` event says only that a per-turn effort is active, not which; so imece refuses an unknown effort before the session starts ([command line](../reference/cli.md)).
-- Instructions are appended to Claude Code's own system prompt, with the repository's `AGENTS.md` or `CLAUDE.md` (16 KiB cap) at the end, because `--restricted` drops them.
+- Instructions are appended to Claude Code's own system prompt, with the repository's `AGENTS.md` or `CLAUDE.md` (16 KiB cap) at the end, because `--restricted` drops them. It drops your `~/.claude/CLAUDE.md` and your own commands too; under open they load.
 
 ## Codex
 
@@ -40,7 +40,7 @@ A session is a long-lived `codex app-server` (JSON-RPC on stdio).
 - **Checked before the thread starts:** `account/read` (ChatGPT login only), `config/read` echoes every override, no plugin enabled, no hooks, exactly imece's MCP server with exactly its tools, the thread's answer echoes the approval policy, sandbox and directory. The MCP servers are checked again before every turn. An approval request where none may come, an elicitation, a dynamic tool call, a web search or sub-agent item stops the session.
 - **Tokens, not dollars.** On a ChatGPT plan a turn costs the pot nothing; the trace says so and shows the tokens. An API-key login is refused, since imece cannot count its cost yet. There is no per-session dollar cap for Codex; the pot still stops new turns.
 - Tiers are reasoning efforts on Codex's default model: `@low`, the default, `@high`; a `--tier codex:T=MODEL@EFFORT` value sets both. The efforts Codex has are `low`, `medium`, `high` and `xhigh`; the effort rides on every turn, and one Codex lacks is refused before the session starts.
-- Codex reads `AGENTS.md` on its own, so it is given only a `CLAUDE.md`.
+- Codex reads `AGENTS.md` on its own, up to its own limit (`project_doc_max_bytes`), so it is given only a `CLAUDE.md`. It reads your `~/.codex/AGENTS.md` at every level too.
 
 ## Gemini CLI
 
@@ -48,7 +48,7 @@ A session is a long-lived `gemini --acp` (Agent Client Protocol v1, JSON-RPC on 
 
 - Gemini has nothing like `--restricted` and takes its settings from `~/.gemini` and the `.gemini` directory of the folder it runs in. So imece runs it in a **private directory** of its own (next to the worktrees, `<worktrees root>-gemini/<agent>`, trusted) and gives it the agent's files as an included directory: a repository's `.gemini` settings, hooks and `.env` never reach the session.
 - A **policy file** imece writes there allows exactly the tools of the role and level (read tools for the leader; read and edit tools for writers; from standard on the web for everyone without a prompt, and a shell for writers that asks before every command) plus imece's own tools and Gemini's `write_todos` (its own to-do list, which changes no file; its steps do not reach imece over ACP, only that it was set), and under strict and standard denies every other tool, which is then not even shown to the model. Extensions are off and no MCP server but imece's is allowed. Under open your extensions, MCP servers and policies run; imece denies by name only Gemini's agent tools and, for the leader, the writing tools.
-- The agent's instructions go in a `GEMINI.md` in that private directory, the only way ACP has to give them. Your own `~/.gemini/GEMINI.md` and user-level hooks still apply.
+- The agent's instructions go in a `GEMINI.md` in that private directory, the only way ACP has to give them. Your own `~/.gemini/GEMINI.md` and user-level hooks still apply, and Gemini also reads a `GEMINI.md` at the top of the agent's files, at every level.
 - **Checked before the first turn:** `initialize`, `session/new` (mode `default`, the model asked for), then the zero-token commands `/about` (model, auth type), `/extensions list` (none active) and `/memory list` (imece's GEMINI.md in use). A tool call of a kind the role may not have, an MCP tool not offered, or a mode change stops the session.
 - **Tokens, not dollars.** With an API key a turn is booked from the list prices imece carries (prompts up to 200K tokens, thought tokens as output, a turn on several models at the dearest; an alias such as `auto` at the dearest model it may mean). A model imece cannot price stops the session: name one it knows with `--model` or `--tier`. With a Google login a turn costs the pot nothing, and the trace says so. Vertex AI and gateway logins are refused.
 - Tiers: `flash`, the default (`auto`), `pro`. Gemini keeps its chat files under `~/.gemini/tmp` as it always does.

@@ -28,7 +28,7 @@ Bir oturum, ajan başına bir, uzun ömürlü bir `claude -p` akışıdır (stre
 - **Her turda denetlenir:** `init` olayı tam istenen araçları bildirmeli (open altında: en az onları, imece'nin sunucusu bir kez ve bağlı, alt ajan aracı yok), imece'nin MCP sunucusu tam araçlarıyla. Başka her şey oturumu durdurur.
 - Her oturum `--max-budget-usd` alır: başladığında bütçeden kalan; kaçan bir oturuma sert bir tavan ([bütçe](../concepts/budget-and-limits.md)). Maliyetler dolar olarak gelir.
 - Çabalı bir seçim (`opus@xhigh`, `@max`) `--effort` olur: `low`, `medium`, `high`, `xhigh` ya da `max`. Claude Code bilmediği bir çabayı yalnız uyarıp varsayılanıyla çalışır ve `init` olayı hangisi olduğunu değil, yalnız tur başına bir çabanın açık olduğunu söyler; bu yüzden imece bilinmeyen bir çabayı oturum başlamadan reddeder ([komut satırı](../reference/cli.md)).
-- Talimatlar Claude Code'un kendi sistem istemine eklenir, sonunda deponun `AGENTS.md` ya da `CLAUDE.md`'si (16 KiB tavan), çünkü `--restricted` onları düşürür.
+- Talimatlar Claude Code'un kendi sistem istemine eklenir, sonunda deponun `AGENTS.md` ya da `CLAUDE.md`'si (16 KiB tavan), çünkü `--restricted` onları düşürür. `~/.claude/CLAUDE.md`'nizi ve kendi komutlarınızı da düşürür; open altında yüklenirler.
 
 ## Codex
 
@@ -40,7 +40,7 @@ Bir oturum, uzun ömürlü bir `codex app-server`'dır (stdio üzerinde JSON-RPC
 - **Thread başlamadan önce denetlenir:** `account/read` (yalnız ChatGPT oturumu), `config/read` her geçersiz kılmayı yansıtır, etkin eklenti yok, hook yok, tam imece'nin MCP sunucusu tam araçlarıyla, thread'in yanıtı onay politikasını, sandbox'ı ve dizini yansıtır. MCP sunucuları her turdan önce yeniden denetlenir. Gelmemesi gereken bir onay isteği, bir elicitation, dinamik bir araç çağrısı, bir web arama ya da alt ajan öğesi oturumu durdurur.
 - **Dolar değil, token.** ChatGPT planında bir tur bütçeye hiçbir şey yazmaz; iz bunu söyler ve token'ları gösterir. API anahtarıyla oturum reddedilir; imece maliyetini henüz sayamaz. Codex için oturum başına dolar tavanı yoktur; bütçe yine yeni turları durdurur.
 - Kademeler Codex'in varsayılan modelinde akıl yürütme çabalarıdır: `@low`, varsayılan, `@high`; bir `--tier codex:T=MODEL@ÇABA` değeri ikisini de belirler. Codex'in çabaları `low`, `medium`, `high` ve `xhigh`; çaba her turla gider, Codex'in olmayan biri oturum başlamadan reddedilir.
-- Codex `AGENTS.md`'yi kendi okur, bu yüzden ona yalnız `CLAUDE.md` verilir.
+- Codex `AGENTS.md`'yi kendi sınırına kadar (`project_doc_max_bytes`) kendi okur, bu yüzden ona yalnız `CLAUDE.md` verilir. `~/.codex/AGENTS.md`'nizi de her seviyede okur.
 
 ## Gemini CLI
 
@@ -48,7 +48,7 @@ Bir oturum, uzun ömürlü bir `gemini --acp`'dir (Agent Client Protocol v1, std
 
 - Gemini'de `--restricted` gibi bir şey yoktur ve ayarlarını `~/.gemini`'den ve çalıştığı klasörün `.gemini` dizininden alır. Bu yüzden imece onu kendi **özel dizininde** çalıştırır (worktree'lerin yanında, `<worktrees kökü>-gemini/<ajan>`, güvenilir) ve ajanın dosyalarını dahil edilen dizin olarak verir: bir deponun `.gemini` ayarları, hook'ları ve `.env`'i oturuma asla ulaşmaz.
 - imece'nin oraya yazdığı bir **politika dosyası** tam rolün ve düzeyin araçlarına izin verir (lider için okuma araçları; yazanlar için okuma ve düzenleme araçları; standard'dan itibaren herkese sormadan web ve yazanlara her komuttan önce soran bir kabuk), artı imece'nin kendi araçları ve Gemini'nin `write_todos`'u (kendi yapılacaklar listesi, dosya değiştirmez; adımları ACP üzerinden imece'ye ulaşmaz, yalnız ayarlandığı); strict ve standard altında diğer her aracı reddeder, o araç modele gösterilmez bile. Uzantılar kapalıdır ve imece'ninki dışında MCP sunucusuna izin yoktur. Open altında uzantılarınız, MCP sunucularınız ve politikalarınız çalışır; imece yalnız Gemini'nin ajan araçlarını ve lider için yazma araçlarını adıyla reddeder.
-- Ajanın talimatları o özel dizinde bir `GEMINI.md`'ye gider; ACP'nin onları vermenin tek yolu budur. Kendi `~/.gemini/GEMINI.md`'niz ve kullanıcı düzeyi hook'larınız yine geçerlidir.
+- Ajanın talimatları o özel dizinde bir `GEMINI.md`'ye gider; ACP'nin onları vermenin tek yolu budur. Kendi `~/.gemini/GEMINI.md`'niz ve kullanıcı düzeyi hook'larınız yine geçerlidir; Gemini, ajanın dosyalarının tepesindeki `GEMINI.md`'yi de her seviyede okur.
 - **İlk turdan önce denetlenir:** `initialize`, `session/new` (mod `default`, istenen model), sonra sıfır token'lık komutlar `/about` (model, kimlik doğrulama türü), `/extensions list` (etkin yok) ve `/memory list` (imece'nin GEMINI.md'si kullanımda). Rolün alamayacağı türden bir araç çağrısı, sunulmamış bir MCP aracı ya da bir mod değişikliği oturumu durdurur.
 - **Dolar değil, token.** API anahtarıyla bir tur imece'nin taşıdığı liste fiyatlarından yazılır (200K token'a kadar istemler, düşünce token'ları çıktı olarak, birden çok modeldeki bir tur en pahalısından; `auto` gibi bir takma ad anlamına gelebileceği en pahalı modelden). imece'nin fiyatlandıramadığı bir model oturumu durdurur: `--model` ya da `--tier` ile bildiği birini verin. Google oturumuyla bir tur bütçeye hiçbir şey yazmaz; iz bunu söyler. Vertex AI ve gateway oturumları reddedilir.
 - Kademeler: `flash`, varsayılan (`auto`), `pro`. Gemini sohbet dosyalarını her zamanki gibi `~/.gemini/tmp` altında tutar.
