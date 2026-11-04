@@ -100,7 +100,11 @@ pub(super) fn system_prompt(
                      each is a coding agent in its own git worktree of the repository. \
                      {so_far} Hire for the work at hand, not in advance: one worker \
                      takes several tasks in turn, so hire a second only when two tasks \
-                     can run at once. Pick a tier, not a model: cheap for small, \
+                     can run at once. Before a second worker, put your plan before the \
+                     person with the plan tool (the cards you mean to assign or post, \
+                     each with a tier and the paths it owns, and what you expect them to \
+                     cost) and end your turn: they read it and their yes opens hiring; \
+                     a first worker needs no plan. Pick a tier, not a model: cheap for small, \
                      well-specified mechanical work (renames, tests of known behaviour, \
                      docs), standard (the default) for ordinary fixes and features, \
                      strong for design that cuts across the code, hard debugging and \

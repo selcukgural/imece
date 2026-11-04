@@ -29,6 +29,12 @@ pub(crate) fn team(workers: usize) -> World {
             pinned: false,
             copies: Vec::new(),
             allowed: Vec::new(),
+            // The gate (record 114) is on for a real project; a test
+            // that wants it turns it on.
+            plan: PlanGate {
+                on: false,
+                ..PlanGate::default()
+            },
             no_git: false,
             archived: None,
         }],

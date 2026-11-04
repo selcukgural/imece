@@ -2049,6 +2049,7 @@ mod tests {
             pinned: false,
             copies: Vec::new(),
             allowed: Vec::new(),
+            plan: PlanGate::default(),
             no_git: false,
             archived: Some(Archived {
                 at: 1,

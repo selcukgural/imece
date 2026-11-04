@@ -125,10 +125,60 @@ pub(super) fn tools_of(role: Role, programs: &[String], timeout: Duration) -> Ve
             tools.push(hire_tool(HIRE_HELPER, false));
         }
         Role::Solo => tools.push(hire_tool(HIRE_HELPER, false)),
-        Role::Leader => tools.push(hire_tool(HIRE_WORKER, true)),
+        Role::Leader => {
+            tools.push(plan_tool());
+            tools.push(hire_tool(HIRE_WORKER, true));
+        }
         Role::Helper | Role::Researcher => {}
     }
     tools
+}
+
+/// imece's `plan` tool (record 114), the leader's: the cards it means to
+/// assign or post before it hires a second worker, for the person to read.
+pub(super) fn plan_tool() -> Tool {
+    let tiers: Vec<&str> = Tier::ALL.iter().map(|t| t.wire()).collect();
+    Tool {
+        name: "plan".into(),
+        description: "Puts your plan before the person: the cards you mean to assign or \
+                      post, each with a tier and the paths it owns, and what you expect \
+                      them to cost. Needed before you hire a second worker: the person \
+                      reads it in WAITING FOR YOU and their yes opens hiring; end your \
+                      turn after it. A new plan replaces the one waiting."
+            .into(),
+        input: json!({
+            "type": "object",
+            "properties": {
+                "cards": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": MAX_PLANNED,
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "title": { "type": "string", "maxLength": MAX_TITLE,
+                                       "description": "One line, as a card's title." },
+                            "tier": { "type": "string", "enum": tiers,
+                                      "description": "The worker's tier for it; standard when left out." },
+                            "paths": paths_schema(),
+                            "body": { "type": "string", "maxLength": MAX_BODY,
+                                      "description": "The task: what to do, when it is done." },
+                        },
+                        "required": ["title", "body"],
+                        "additionalProperties": false,
+                    },
+                },
+                "cost": {
+                    "type": "number",
+                    "minimum": 0,
+                    "description": "What you expect the cards to cost in dollars, all \
+                                    together: tiers times a rough count of turns.",
+                },
+            },
+            "required": ["cards", "cost"],
+            "additionalProperties": false,
+        }),
+    }
 }
 
 /// How one run ended, for the trace.
@@ -1369,7 +1419,7 @@ mod tests {
         );
         assert_eq!(
             names(Role::Leader),
-            ["send", "post", "board", "run", "whoami", "hire"]
+            ["send", "post", "board", "run", "whoami", "plan", "hire"]
         );
         assert_eq!(
             names(Role::Helper),
@@ -1558,5 +1608,30 @@ mod tests {
             );
         }
         assert!(claim_tool().input["properties"]["paths"].is_null());
+    }
+    #[test]
+    fn the_plan_tool_takes_cards_with_a_tier_and_paths_and_a_cost() {
+        let tool = plan_tool();
+        assert_eq!(tool.name, "plan");
+        let input = &tool.input;
+        assert_eq!(input["required"], json!(["cards", "cost"]));
+        let cards = &input["properties"]["cards"];
+        assert_eq!(
+            (cards["minItems"].as_u64(), cards["maxItems"].as_u64()),
+            (Some(1), Some(20))
+        );
+        let card = &cards["items"];
+        assert_eq!(card["required"], json!(["title", "body"]));
+        assert_eq!(card["properties"]["title"]["maxLength"], 120);
+        assert_eq!(card["properties"]["body"]["maxLength"], 4000);
+        assert_eq!(
+            card["properties"]["tier"]["enum"],
+            json!(["cheap", "standard", "strong"])
+        );
+        assert_eq!(card["properties"]["paths"], paths_schema());
+        assert_eq!(card["additionalProperties"], false);
+        assert_eq!(input["properties"]["cost"]["minimum"], 0);
+        assert_eq!(input["properties"]["cost"]["type"], "number");
+        assert!(tool.description.contains("second worker"));
     }
 }

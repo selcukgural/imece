@@ -110,6 +110,17 @@ An `assign` or a `post` names the paths its card owns: `paths`, at most 20 git p
 
 This is the cheap stand-in for symbol leases (see [the code map](../screen/board-and-code-map.md)): a path is what the leader can name when it plans, and what a change can be checked against without reading the files. Leases come only if paths prove not enough.
 
+## The plan
+
+The first worker is cheap and you asked for work; before the leader hires a second one, you see what it means to do. It calls `plan(cards, cost)`: the cards it means to assign or post, each with a title, a tier, the paths it owns and a body, and what it expects them all to cost in dollars. The plan comes to WAITING FOR YOU as one `▤` item (`lead: plans 3 cards for $1.20; enter reads it`), the journal says `lead planned 3 cards for $1.20; waits for your yes`, and the leader is told to end its turn; while the plan waits, the leader's mail waits with it ([mail waits](#mail-waits-with-an-agent-that-waits-on-you)) and `hire` answers `the person is reading your plan; end your turn, their yes starts your next`.
+
+- `enter` opens the plan whole: each card's number, title and tier, the paths it owns, its body; the expected cost beside what is left in the pot. Every word is the leader's, cleaned, never read as Markdown.
+- `a` says yes: the leader hears `The person said yes to your plan: hire and assign as planned` with its next prompt (at once when its turn is over) and may hire until its next plan; a new plan takes the yes back.
+- `r` says no: the plan is dropped and the leader hears `The person said no to your plan: ask them what they want, or make another plan`.
+- `n` writes to the leader instead: what you send closes the plan unanswered, and `hire` says so until a new plan has your yes (`the person answered your plan in words, not with a yes: make a new plan from what they said`). Any word of yours to the leader does the same.
+
+A new plan replaces the one waiting. The plan is checked as cards would be: a title of one line, a body, a tier, paths, and no two cards of the plan owning the same path (`cards 1 and 3 both own a path: "src" and "src/a.rs"`); the envelope drives it and the body is never interpreted. One to twenty cards. The first worker needs no plan, nor does a leader hiring with no worker left; a solo never plans. `:plan off` turns the gate off for a project that trusts its leader (kept in the store, on by default); a plan sent then is not kept and the leader is told to hire as it sees fit. The demo's leader plans before its second worker too; the person's yes there comes from `a` as live.
+
 ## Cards and their stories
 
 A card is a unit of work with a story: `intent`, `assumption`, `decision`, `talk`, `evidence`, `change`, `you` (what you said or decided). The board view shows cards in columns (WAITING, IN PROGRESS, VERIFYING, DONE); `#N` or `#word` opens a card's own screen with who was on it, its story, and its own inbox and journal lines ([cards](../screen/cards.md)).

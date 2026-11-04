@@ -110,6 +110,17 @@ Bir `assign` ya da `post`, kartının sahip olduğu yolları adlandırır: `path
 
 Bu, sembol lease'lerinin ucuz vekilidir (bkz. [kod haritası](../screen/board-and-code-map.md)): yol, liderin planlarken adlandırabildiği ve bir değişikliğin dosyalar okunmadan karşılaştırılabildiği şeydir. Lease'ler ancak yollar yetmezse gelir.
 
+## Plan
+
+İlk işçi ucuzdur ve işi siz istediniz; lider ikincisini almadan önce ne yapmayı düşündüğünü görürsünüz. `plan(cards, cost)` çağırır: görev vermeyi ya da panoya asmayı düşündüğü kartlar, her biri başlık, kademe, sahip olduğu yollar ve gövdeyle, ve hepsinin dolar olarak beklediği maliyeti. Plan SENİ BEKLEYEN'e tek bir `▤` ögesi olarak gelir (`lead: 3 kart planladı, $1.20; enter okur`), defter `lead 3 kart planladı, $1.20; onayınızı bekliyor` der ve lidere turunu bitirmesi söylenir; plan beklerken liderin postası da onunla bekler ([posta bekler](#sizi-bekleyen-ajanın-postası-da-bekler)) ve `hire`, `the person is reading your plan; end your turn, their yes starts your next` yanıtını verir.
+
+- `enter` planı tamamıyla açar: her kartın numarası, başlığı ve kademesi, sahip olduğu yollar, gövdesi; beklenen maliyet, bütçede kalanın yanında. Her sözcük liderindir, temizlenmiş, asla Markdown olarak okunmaz.
+- `a` evet der: lider sonraki istemiyle (turu bitmişse hemen) `The person said yes to your plan: hire and assign as planned` duyar ve sonraki planına dek işe alabilir; yeni bir plan evet'i geri alır.
+- `r` hayır der: plan düşer ve lider `The person said no to your plan: ask them what they want, or make another plan` duyar.
+- `n` onun yerine lidere yazar: gönderdiğiniz planı yanıtsız kapatır ve yeni bir plan onayınızı alana dek `hire` bunu söyler (`the person answered your plan in words, not with a yes: make a new plan from what they said`). Lidere söylediğiniz her söz aynı şeyi yapar.
+
+Yeni bir plan bekleyenin yerini alır. Plan, kartların denetleneceği gibi denetlenir: tek satırlık başlık, gövde, kademe, yollar ve planın iki kartının aynı yola sahip olmaması (`cards 1 and 3 both own a path: "src" and "src/a.rs"`); zarf yürütür, gövde asla yorumlanmaz. Bir ile yirmi kart. İlk işçi plan gerektirmez, işçisi kalmamış bir liderin işe alması da; solo asla planlamaz. `:plan off` liderine güvenen bir proje için kapıyı kapatır (depoda saklanır, varsayılan açık); o zaman gönderilen bir plan saklanmaz ve lidere uygun gördüğü gibi işe alması söylenir. Demonun lideri de ikinci işçisinden önce planlar; oradaki evet de canlıdaki gibi `a` ile gelir.
+
 ## Kartlar ve hikâyeleri
 
 Bir kart, hikâyesi olan bir iş birimidir: `niyet`, `varsayım`, `karar`, `konuşma`, `kanıt`, `değişiklik`, `sen` (sizin söylediğiniz ya da karar verdiğiniz). Pano görünümü kartları sütunlarda gösterir (BEKLİYOR, ÜZERİNDE, DOĞRULANIYOR, BİTTİ); `#N` ya da `#kelime` bir kartın kendi ekranını açar: kim üzerinde çalıştı, hikâyesi, kendi gelen kutusu ve günlük satırları ([kartlar](../screen/cards.md)).

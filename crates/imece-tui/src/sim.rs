@@ -16,6 +16,7 @@ use crate::live::{
 };
 use crate::model::*;
 use crate::rng::Rng;
+use imece_agent::Tier;
 
 type Repo = &'static [(&'static str, &'static [&'static str])];
 
@@ -253,6 +254,8 @@ struct Content {
     acks: &'static [&'static str],
     /// A leader's answer to a request: how many cards, and which.
     posted: &'static str,
+    /// The leader's question to the person after a no to its plan.
+    plan_asked: &'static str,
     /// What a worker tells the person it assumes.
     assume: &'static str,
     /// A helper's done to its worker.
@@ -352,6 +355,7 @@ const EN: Content = Content {
         "Good point; I add a test for it.",
     ],
     posted: "Posted {} cards for it: {}. The workers take them from the board.",
+    plan_asked: "You said no to the plan: what should change before I hire?",
     assume: "Assuming {}.",
     helper_done: "Tests written; they pass.",
     moved: "A change was applied: the checkout moved; your worktree follows it when clean.",
@@ -448,6 +452,7 @@ const TR: Content = Content {
         "Haklısın, bunun için de test ekliyorum.",
     ],
     posted: "Bunun için {} kart açtım: {}. İşçiler panodan alıyor.",
+    plan_asked: "Plana hayır dediniz: işe almadan önce ne değişmeli?",
     assume: "Varsayım: {}.",
     helper_done: "Testler yazıldı, geçiyor.",
     moved: "Bir değişiklik uygulandı: checkout ilerledi; worktree'n temizken onu izler.",
@@ -855,6 +860,7 @@ pub fn world(
             pinned: false,
             copies: Vec::new(),
             allowed: Vec::new(),
+            plan: PlanGate::default(),
             no_git: false,
             archived: None,
         });
@@ -887,10 +893,19 @@ pub fn world(
     (w, sim)
 }
 
+/// What the demo's leader expects a planned card to cost (record 114),
+/// in ten-thousandths of a dollar.
+const PLANNED_COST: u64 = 4_000;
 /// Every this many cards, one's worker strays once (record 114).
 const STRAY_EVERY: usize = 4;
 /// From this far into its work.
 const STRAY_FROM: u8 = 40;
+
+/// Whether a worker `progress` percent into its card is far enough to
+/// stray ([`STRAY_FROM`]).
+fn strays_now(progress: u8) -> bool {
+    progress >= STRAY_FROM
+}
 
 /// A file of `card`'s project that the card's paths do not name, for a
 /// worker that strays: the first in the code map.
@@ -2403,6 +2418,60 @@ impl Sim {
         card
     }
 
+    /// The leader of `project` puts its plan before the person (record
+    /// 114), as a live leader calls the `plan` tool before its second
+    /// worker: a card per waiting card of the board, each on a tier, each
+    /// owning one file of the code map (no two the same), the cost a
+    /// flat figure a card.
+    fn propose(&mut self, w: &mut World, project: ProjectId) {
+        let t = w.tick;
+        let leader = w.projects[project].leader;
+        let repo = w.projects[project].repo;
+        let test = kit(project).test;
+        let titles: Vec<String> = (w.cards.iter())
+            .filter(|c| c.project == project && c.column == Column::Waiting)
+            .map(|c| c.title.clone())
+            .collect();
+        let cards: Vec<Planned> = (titles.into_iter().enumerate())
+            .map(|(i, title)| Planned {
+                body: format!("{title}. Done when {test} passes."),
+                title,
+                tier: self.rng.pick(&Tier::ALL).wire().to_string(),
+                paths: repo
+                    .get(i)
+                    .map(|(file, _)| vec![Owned::new(file)])
+                    .unwrap_or_default(),
+            })
+            .collect();
+        let n = cards.len();
+        let cost = n as u64 * PLANNED_COST;
+        let item = w.propose(
+            project,
+            Proposal {
+                cards,
+                cost,
+                tick: t,
+            },
+        );
+        w.agents[leader].trace(t, format!("plan {n} cards {} (item {item})", dollars(cost)));
+    }
+
+    /// The person's answer to plan item `item`, as live's
+    /// (`Live::decide_plan`): yes opens hiring until the next plan; no
+    /// drops the plan and the leader asks what they want. False when no
+    /// plan waits there.
+    pub fn decide_plan(&mut self, w: &mut World, item: usize, yes: bool) -> bool {
+        let Some(leader) = w.decide_plan(item, yes) else {
+            return false;
+        };
+        let t = w.tick;
+        w.agents[leader].trace(t, format!("plan {}", if yes { "yes" } else { "no" }));
+        if !yes {
+            self.tell_you(w, leader, MsgKind::Ask, self.content.plan_asked);
+        }
+        true
+    }
+
     fn leader(&mut self, w: &mut World, project: ProjectId) {
         let t = w.tick;
         let leader = w.projects[project].leader;
@@ -2451,10 +2520,17 @@ impl Sim {
             let title = (*self.rng.pick(self.content.titles)).to_string();
             self.post(w, project, title);
         }
-        // Work waits and nobody is free: one more worker.
+        // Work waits and nobody is free: one more worker; a second one
+        // only once the person said yes to a plan (record 114), as live.
         if waiting >= 2 && free == 0 && workers.len() < MAX_WORKERS && self.rng.one_in(40) {
-            let id = self.hire(w, project);
-            self.hired(w, leader, id);
+            match w.plan_hold(project) {
+                None => {
+                    let id = self.hire(w, project);
+                    self.hired(w, leader, id);
+                }
+                Some(PlanHold::NoPlan | PlanHold::Unanswered) => self.propose(w, project),
+                Some(PlanHold::Reading) => {}
+            }
         }
 
         // At most two cards a tick, so the screen stays calm: the leader
@@ -2858,7 +2934,7 @@ impl Sim {
     /// note live puts in the worker's next prompt.
     fn stray(w: &mut World, id: AgentId, card: CardId) {
         let t = w.tick;
-        if card % STRAY_EVERY != 1 || w.agents[id].progress < STRAY_FROM {
+        if card % STRAY_EVERY != 1 || !strays_now(w.agents[id].progress) {
             return;
         }
         let Some(file) = outside_file(w, card) else {
@@ -3438,6 +3514,9 @@ mod tests {
                 InboxKind::Approval => w.decided(i, true),
                 InboxKind::Script | InboxKind::Check => {
                     s.decide_setup(w, i, true);
+                }
+                InboxKind::Plan => {
+                    s.decide_plan(w, i, true);
                 }
                 InboxKind::Question | InboxKind::Fault => {
                     // Closed here, once: a run's length never hangs on
@@ -4811,16 +4890,38 @@ diff --git a/b.rs b/b.rs
                 .count()
         };
         let (mut w, mut s) = setup(5, 2);
+        // A worker is there already: the plan comes first (record 114),
+        // and the hire once the person said yes to it.
+        let planned = |w: &World| {
+            (w.journal.iter())
+                .filter(|e| matches!(e.event, Event::Planned { leader: 0, .. }))
+                .count()
+        };
+        for _ in 0..400 {
+            s.leader(&mut w, 0);
+            if let Some(i) = w.plan_item(0) {
+                assert_eq!(hired(&w), 0, "no hire before the yes");
+                assert!(s.decide_plan(&mut w, i, true));
+            }
+            if hired(&w) > 0 {
+                break;
+            }
+        }
+        assert_eq!(hired(&w), 1, "five busy, two waiting: one more");
+        assert_eq!(planned(&w), 1, "one plan, said yes to");
+        let new = w.agents.len() - 1;
+        assert_eq!(w.agents[new].role, Role::Worker);
+        assert_eq!(w.agents[new].project, 0);
+        // With the gate off, no plan: the hire comes at once.
+        let (mut w, mut s) = setup(5, 2);
+        w.projects[0].plan.on = false;
         for _ in 0..400 {
             s.leader(&mut w, 0);
             if hired(&w) > 0 {
                 break;
             }
         }
-        assert_eq!(hired(&w), 1, "five busy, two waiting: one more");
-        let new = w.agents.len() - 1;
-        assert_eq!(w.agents[new].role, Role::Worker);
-        assert_eq!(w.agents[new].project, 0);
+        assert_eq!((hired(&w), planned(&w)), (1, 0));
         for (n, waiting) in [(6, 2), (5, 1)] {
             let (mut w, mut s) = setup(n, waiting);
             for _ in 0..400 {
@@ -7044,5 +7145,76 @@ diff --git a/b.rs b/b.rs
             None,
             "a card without paths has no outside"
         );
+    }
+    #[test]
+    fn a_worker_strays_from_forty_percent_on() {
+        assert!(!strays_now(0));
+        assert!(!strays_now(39));
+        assert!(strays_now(40));
+        assert!(strays_now(41));
+        assert!(strays_now(100));
+    }
+
+    #[test]
+    fn the_demo_leader_s_plan_has_a_card_per_waiting_card_each_owning_one_file() {
+        let (mut w, mut s) = world(1, 1, 0, 5, Lang::En);
+        w.projects[0].plan.on = true;
+        for c in &mut w.cards {
+            c.column = Column::Done;
+        }
+        for title in ["one", "two", "three"] {
+            s.new_card(&mut w, 0, title.into());
+        }
+        let repo = w.projects[0].repo;
+        s.propose(&mut w, 0);
+        let item = w.plan_item(0).expect("the plan waits");
+        assert_eq!(w.inbox[item].agent, 0);
+        assert_eq!(w.inbox[item].detail, "one");
+        let p = w.projects[0].plan.proposal.clone().expect("a plan");
+        assert_eq!(p.cost, 3 * 4_000);
+        assert_eq!(p.tick, w.tick);
+        let titles: Vec<&str> = p.cards.iter().map(|c| c.title.as_str()).collect();
+        assert_eq!(titles, ["one", "two", "three"]);
+        for (i, c) in p.cards.iter().enumerate() {
+            assert!(Tier::from_wire(&c.tier).is_some(), "{}", c.tier);
+            assert_eq!(c.paths, [Owned::new(repo[i].0)], "card {}", i + 1);
+            assert_eq!(
+                c.body,
+                format!("{}. Done when {} passes.", c.title, kit(0).test)
+            );
+        }
+        assert!(
+            w.agents[0]
+                .trace
+                .back()
+                .unwrap()
+                .ends_with(&format!("plan 3 cards $1.20 (item {item})"))
+        );
+        assert_eq!(w.plan_hold(0), Some(PlanHold::Reading));
+        // No: the plan goes and the leader asks the person what to change.
+        assert!(s.decide_plan(&mut w, item, false));
+        assert!(!s.decide_plan(&mut w, item, false), "answered already");
+        assert_eq!(w.projects[0].plan.proposal, None);
+        assert_eq!(w.plan_hold(0), Some(PlanHold::NoPlan));
+        let asked = (w.inbox.iter())
+            .find(|i| i.open && i.kind == InboxKind::Question && i.agent == 0)
+            .expect("the leader asks");
+        assert!(
+            asked.detail.starts_with("You said no to the plan"),
+            "{}",
+            asked.detail
+        );
+        // More waiting cards than files: the rest own nothing.
+        for i in 0..repo.len() {
+            s.new_card(&mut w, 0, format!("more {i}"));
+        }
+        s.propose(&mut w, 0);
+        let p = w.projects[0].plan.proposal.clone().expect("a plan");
+        assert_eq!(p.cards.len(), 3 + repo.len());
+        assert!(p.cards[repo.len()..].iter().all(|c| c.paths.is_empty()));
+        let item = w.plan_item(0).unwrap();
+        assert!(s.decide_plan(&mut w, item, true));
+        assert_eq!(w.plan_hold(0), None);
+        assert!(w.agents[0].trace.back().unwrap().ends_with("plan yes"));
     }
 }

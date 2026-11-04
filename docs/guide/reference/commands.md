@@ -12,7 +12,7 @@ A line that starts with `:` is a command to imece, not a message to an agent. Yo
 - `:` then `tab` lists the commands. The menu shows after each command what it stands at now or would act on, in brackets: `budget (spent $3.10 of $20.00)`, `theme (dark)`, `close (kule)`, `forget (claude-2)`, `next (2 waiting)`, `needs (off)`. The note is drawn, never inserted.
 - `$` after a command marks one that raises the next bill: `:open` (a new leader session), `:solo` (a new session), `:forget` (a new session that pays the whole briefing again, without the cache), `:commit` and `:review` (paid calls). No `:` command starts a paid turn by itself; `:budget` shows its value instead of a mark.
 - Short names: `:b` budget, `:c` close, `:f` forget, `:o` open, `:q` quit, `:t` theme. A short name typed whole is a command already, so the menu offers nothing and `enter` runs it (`:q` then `enter` asks at once).
-- Arguments complete too: after `:lang` the languages, after `:notify` its four words, after `:motion` its three, after `:review` `on off`, after `:away` `15m 30m 1h off`, after `:clear` and `:unclear` `inbox journal`, after `:theme` the built-in names, after `:close` and `:pin` the open projects, after `:restore` the archives' titles (newest first, each noted with its project's name and the day it was archived), after `:goto` nothing (the `&` line has its own menu), after `:history` the lines sent, after `:forget`, `:talk`, `:trace` and `:peek` the agents of open projects (`@` or not), after `:open` and `:export` directories (`~` for your home, hidden ones only after a `.`, `tab` steps into the chosen one).
+- Arguments complete too: after `:lang` the languages, after `:notify` its four words, after `:motion` its three, after `:review` and `:plan` `on off`, after `:away` `15m 30m 1h off`, after `:clear` and `:unclear` `inbox journal`, after `:theme` the built-in names, after `:close` and `:pin` the open projects, after `:restore` the archives' titles (newest first, each noted with its project's name and the day it was archived), after `:goto` nothing (the `&` line has its own menu), after `:history` the lines sent, after `:forget`, `:talk`, `:trace` and `:peek` the agents of open projects (`@` or not), after `:open` and `:export` directories (`~` for your home, hidden ones only after a `.`, `tab` steps into the chosen one).
 - A name imece does not know: `no command xyz; : and tab list them`. A demo-only command typed live: `:pause is for the demo: live agents run in real time`.
 - `!cmd` runs a command in your own shell and `/cmd` is the agent's own command line; neither is a `:` command ([command line](../screen/command-line.md)).
 
@@ -61,6 +61,7 @@ A line that starts with `:` is a command to imece, not a message to an agent. Yo
 | `:peek [@NAME]` | `K` | | | | the agent at hand |
 | `:pending` | `q s` | | | | |
 | `:pin [NAME]` | — | | | | the project at hand, `▴` when pinned |
+| `:plan [on\|off]` | — | | | | on / off |
 | `:quit` | `q` | `:q` | | | |
 | `:recall [WORDS]` | `H` | | | | |
 | `:rename NAME` | — | | | | the project at hand |
@@ -277,6 +278,10 @@ Before quitting, the list `q s` shows: the agents mid-turn and the changes not r
 ### `:pin [NAME]`
 
 Pins the project `NAME`, or the one at hand, to the top of the salon; again unpins. Pinned projects come first, in the order they were opened, and fold last when the salon is short; a pinned header wears `▴`. The flash: `kule is pinned to the top of the salon` / `kule is not pinned any more`. Kept in the store; a closed project keeps its pin for when it opens again. The menu note shows the project it would act on, `▴ kule` when pinned already. A colour per project is not built.
+
+### `:plan [on|off]`
+
+The plan gate of the project at hand ([the plan](../concepts/messages-and-board.md#the-plan)): `on` (the default) has the leader put its plan before you, as a `▤` item in WAITING FOR YOU, before it hires a second worker; `off` lets it hire as it sees fit, and a plan it still sends is answered `the person turned the plan gate off for this project` and not kept. Bare, it says where the gate stands: `plan gate on for kule: a plan with your yes before the second worker` / `plan gate off for kule: the leader hires as it sees fit`. Kept in the store per project. The menu note shows on / off.
 
 ### `:quit`
 

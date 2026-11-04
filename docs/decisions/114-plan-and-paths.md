@@ -94,4 +94,63 @@ change holds the file, so the Δ header counts it.
 
 ## The plan gate (F20)
 
-The next pull request.
+What. Before the leader hires a second worker (the first is cheap and
+the person asked for work), its plan comes to the person: the `plan`
+tool (the leader's only, `tools::plan_tool`) takes `cards` (1 to 20, each
+a title of one line, a body, a tier, `paths`) and `cost` (dollars,
+rounded to ten-thousandths, saturating), checked as cards would be
+(`Live::plan`: the `assign`'s rules, plus no two cards of the plan owning
+the same path by `paths::overlap`); `World::propose` closes the plan
+that waited (a new one replaces it), takes the yes back
+(`PlanGate.approved = false`), keeps the plan on the project
+(`Project.plan: PlanGate { on, approved, proposal }`, `projects.plan`
+JSON, schema 26) and puts one `InboxKind::Plan` item (`▤`, the leader's,
+detail the first card's title) in WAITING FOR YOU, journaled as
+`Event::Planned`. The item holds mail as any item but a reply or a
+change (record 107): the leader was told to end its turn, and its mail
+waits for the answer.
+
+The gate. `World::plan_hold(project)`: nothing when the gate is off, no
+worker is there (gone ones do not count) or the last answer was yes;
+else `NoPlan`, `Reading` (the item is open) or `Unanswered` (closed by
+the person's word). `Live::hire_room` turns it into the leader's refusal
+after the cap check (a full team is said first), so `hire` and `whoami`'s
+`may hire` say the same words. A solo never passes through the leader's
+arm, so it never plans.
+
+The answer. `a` (`App::answer_plan`, on the item or in its window) →
+`World::decide_plan`: the item closes, `approved` is set, `PlanAnswered`
+journaled; `Live::decide_plan` queues `PLAN_YES` as a note and sets
+`lost[leader]`, the same wake as a lost helper's: the leader is prompted
+`Go on with your task.` under the note as soon as its turn is over, so
+the yes starts its next turn. `r` drops the plan and queues `PLAN_NO`
+(the leader asks the person or plans again). `n` opens the composer to
+the leader; the person's word closes the plan unanswered
+(`InboxKind::Plan.closes_on_word`, `World::close_plans` in `said`), and
+`hire` says to plan again from what they said. `enter` opens the window
+(`App::plan_window`, `overlay::plan` on the script window's model: the
+head, the expected cost beside the pot, `overlay::plan_lines` for the
+cards, `j k` and the pages over them, the keys at the foot), every word
+of it the leader's through `clean`. `:plan [on|off]` sets the project's
+gate, bare says where it stands; on by default. The leader's
+instructions say to plan before a second worker and end the turn.
+
+Growth: one `PlanGate` per project with at most one plan of twenty
+cards; a closed item per plan made (the inbox's, as any). Concurrency:
+all on imece's thread over the world. Read cost: `plan_hold` counts the
+project's workers at each `hire`/`whoami`; the window reads the plan
+from the project. Migration: an older file has no column (`''` → the
+default, on); an older imece refuses the file. Failure: a plan refused
+whole with why, nothing kept; a yes while the leader's session is gone
+rides its next prompt as any note.
+
+Not done: the plan's cards are not turned into `assign`s by imece (the
+leader does that, which is the point: the body is never interpreted);
+the cost is the leader's word, not checked against tiers; `n` quotes
+nothing (the leader knows its own plan).
+
+Demo (record 31): the leader proposes instead of hiring when a worker is
+there (`Sim::propose`: a card per waiting card, each owning one file of
+the code map, a flat `PLANNED_COST` a card), hires on the next chance
+after the yes, and asks the person what should change after a no
+(`Sim::decide_plan`).

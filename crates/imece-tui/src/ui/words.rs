@@ -17,6 +17,13 @@ fn name(w: &World, id: AgentId) -> &str {
     &w.agents[id].name
 }
 
+/// What leader `leader`'s plan holds: its cards and what it expects them
+/// to cost; nothing when no plan is there.
+pub(crate) fn plan_figures(w: &World, leader: AgentId) -> (usize, u64) {
+    let p = w.agents[leader].project;
+    (w.projects[p].plan.proposal.as_ref()).map_or((0, 0), |p| (p.cards.len(), p.cost))
+}
+
 pub(crate) fn card_ref(c: CardId) -> String {
     format!("#{}", c + 1)
 }
@@ -227,6 +234,18 @@ pub fn event(lang: Lang, w: &World, e: &Event) -> String {
         Event::CheckFailed { agent, why } => fill(t.ev_check_failed, &[name(w, *agent), why]),
         Event::Strayed { agent, card, path } => {
             fill(t.ev_strayed, &[name(w, *agent), path, &card_ref(*card)])
+        }
+        Event::Planned {
+            leader,
+            cards,
+            cost,
+        } => fill(
+            t.ev_planned,
+            &[name(w, *leader), &cards.to_string(), &dollars(*cost)],
+        ),
+        Event::PlanAnswered { leader, yes } => {
+            let text = if *yes { t.ev_plan_yes } else { t.ev_plan_no };
+            fill(text, &[name(w, *leader)])
         }
         Event::CheckAnswered { agent, yes } => {
             let text = if *yes { t.ev_check_yes } else { t.ev_check_no };
@@ -783,6 +802,7 @@ pub fn notice(lang: Lang, w: &World, note: crate::notify::Note) -> String {
                 InboxKind::Fault => t.notice_fault,
                 InboxKind::Script => t.notice_script,
                 InboxKind::Check => t.notice_check,
+                InboxKind::Plan => t.notice_plan,
                 InboxKind::Sensitive | InboxKind::Research => t.notice_sensitive,
             };
             (text, item.agent)
@@ -837,6 +857,13 @@ pub fn inbox(lang: Lang, w: &World, item: &InboxItem) -> String {
         (InboxKind::Fault, _) => fill(t.in_fault, &[name(w, item.agent), &item.detail]),
         (InboxKind::Script, _) => fill(t.in_script, &[name(w, item.agent), &item.detail]),
         (InboxKind::Check, _) => fill(t.in_check, &[name(w, item.agent), &item.detail]),
+        (InboxKind::Plan, _) => {
+            let (cards, cost) = plan_figures(w, item.agent);
+            fill(
+                t.in_plan,
+                &[name(w, item.agent), &cards.to_string(), &dollars(cost)],
+            )
+        }
         (InboxKind::Change, _) => {
             let (files, added, removed) = w.change_of(item.agent).map_or((0, 0, 0), |c| {
                 let (a, r) = c.counts();
@@ -1883,6 +1910,68 @@ mod tests {
         assert_eq!(
             check_mark(Lang::Tr, &Check::Running),
             Some(("◌ kontrol · ", None))
+        );
+    }
+    #[test]
+    fn a_plan_is_worded_in_the_journal_and_on_its_row_in_both_languages() {
+        let mut w = crate::live::testing::team(1);
+        let say = |lang, e: &Event| event(lang, &w, e);
+        let planned = Event::Planned {
+            leader: 0,
+            cards: 3,
+            cost: 12_000,
+        };
+        assert_eq!(
+            say(Lang::En, &planned),
+            "lead planned 3 cards for $1.20; waits for your yes"
+        );
+        assert_eq!(
+            say(Lang::Tr, &planned),
+            "lead 3 kart planladı, $1.20; onayınızı bekliyor"
+        );
+        let yes = Event::PlanAnswered {
+            leader: 0,
+            yes: true,
+        };
+        let no = Event::PlanAnswered {
+            leader: 0,
+            yes: false,
+        };
+        assert_eq!(say(Lang::En, &yes), "you said yes to lead's plan");
+        assert_eq!(say(Lang::En, &no), "you said no to lead's plan");
+        assert_eq!(say(Lang::Tr, &yes), "lead planına evet dediniz");
+        assert_eq!(say(Lang::Tr, &no), "lead planına hayır dediniz");
+        // The row reads the plan itself: nothing there, nothing counted.
+        assert_eq!(plan_figures(&w, 0), (0, 0));
+        let item = w.propose(
+            0,
+            Proposal {
+                cards: vec![
+                    Planned {
+                        title: "Parser".into(),
+                        tier: "cheap".into(),
+                        paths: Vec::new(),
+                        body: "b".into(),
+                    };
+                    2
+                ],
+                cost: 12_500,
+                tick: 0,
+            },
+        );
+        assert_eq!(plan_figures(&w, 0), (2, 12_500));
+        assert_eq!(
+            inbox(Lang::En, &w, &w.inbox[item]),
+            "lead: plans 2 cards for $1.25; enter reads it"
+        );
+        assert_eq!(
+            inbox(Lang::Tr, &w, &w.inbox[item]),
+            "lead: 2 kart planladı, $1.25; enter okur"
+        );
+        let note = crate::notify::Note::Item(item);
+        assert_eq!(
+            notice(Lang::En, &w, note),
+            "imece · lead: a plan waits for your yes"
         );
     }
 }
