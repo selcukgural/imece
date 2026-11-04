@@ -354,6 +354,9 @@ pub struct Spec {
     /// an earlier process in the same private directory. Gemini refuses
     /// one it has no chat of.
     pub resume: Option<String>,
+    /// A directory of the agent's own outside its files, for what is no
+    /// part of its change (record 105): one more included directory.
+    pub scratch: Option<PathBuf>,
 }
 
 impl Spec {
@@ -494,6 +497,10 @@ pub fn args(spec: &Spec) -> Vec<String> {
         "--include-directories".into(),
         spec.cwd.to_string_lossy().into_owned(),
     ];
+    if let Some(dir) = &spec.scratch {
+        a.push("--include-directories".into());
+        a.push(dir.to_string_lossy().into_owned());
+    }
     if spec.confine != Confine::Open {
         // No extensions, and no MCP server but imece's own, whatever the
         // person's settings bring.
@@ -1584,6 +1591,7 @@ mod tests {
 
     fn spec(write: bool) -> Spec {
         Spec {
+            scratch: None,
             program: "gemini".into(),
             cwd: PathBuf::from("/work/w1"),
             home: PathBuf::from("/state/gemini/gemini-1"),
@@ -1727,6 +1735,23 @@ mod tests {
             .position(|x| x == key)
             .and_then(|i| a.get(i + 1))
             .map(String::as_str)
+    }
+
+    #[test]
+    fn a_scratch_directory_is_one_more_included_directory() {
+        let mut s = spec(true);
+        let included = |a: &[String]| -> Vec<String> {
+            (a.windows(2))
+                .filter(|w| w[0] == "--include-directories")
+                .map(|w| w[1].clone())
+                .collect()
+        };
+        assert_eq!(included(&args(&s)), ["/work/w1"]);
+        s.scratch = Some(PathBuf::from("/state/w1-scratch/gemini-1"));
+        assert_eq!(
+            included(&args(&s)),
+            ["/work/w1", "/state/w1-scratch/gemini-1"]
+        );
     }
 
     #[test]
@@ -4182,6 +4207,7 @@ done"#;
         let cwd = dir.join("repo");
         std::fs::create_dir_all(&cwd).unwrap();
         let mut spec = Spec {
+            scratch: None,
             program: PROGRAM.into(),
             cwd: cwd.canonicalize().unwrap(),
             home: dir.join("home"),
@@ -4264,6 +4290,7 @@ done"#;
         std::fs::create_dir_all(dir.join("repo")).unwrap();
         let cwd = dir.join("repo").canonicalize().unwrap();
         let s = Spec {
+            scratch: None,
             program: PROGRAM.into(),
             cwd: cwd.clone(),
             home: dir.join("home"),
@@ -4380,6 +4407,7 @@ done"#;
         )
         .unwrap();
         let s = Spec {
+            scratch: None,
             program: PROGRAM.into(),
             cwd: cwd.clone(),
             home: dir.join("home"),

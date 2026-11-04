@@ -121,7 +121,7 @@ The conventions are vim's: `h` `j` `k` `l` move and fold, `gg` and `G` go to the
 | `enter` `esc` | the raw stream · back |
 | `a`  `e`  `A`  `r` | in a focus or the raw stream, when its agent waits for you: on its ask (the one its status quotes), allow once · yes to all it asks this turn · yes from now on · refuse; on its change, apply · reject. Never what is selected in waiting for you. The footer shows these keys first while there is something to decide; with nothing, `a` and `r` say so and `A` is the archives |
 
-The focus's `folder` line says where the agent works: the checkout for a leader, its worktree for a worker, a helper or a solo (`· worktree of ~/src/kule`), the folder itself without git. The salon's line of an open project ends with its folder too.
+The focus's `folder` line says where the agent works: the checkout for a leader, its worktree for a worker, a helper or a solo (`· worktree of ~/src/kule`), the folder itself without git. Under it, a writing agent's `scratch` line names its scratch directory, where its notes and logs go instead of its change. The salon's line of an open project ends with its folder too.
 
 ## A change
 

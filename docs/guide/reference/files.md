@@ -19,6 +19,7 @@ imece keeps what it remembers in one directory, the state directory, and leaves 
 | `screen` | the file imece kept its screen choices in before 2026-10-30; moved into the store and removed the first time it is seen |
 | `worktrees/<dir>-<hash>/<agent>` | one git worktree per worker, `<dir>` the checkout's directory name and `<hash>` eight hex digits of its path (`worktrees/kule-3f2a9c01/claude-1`) |
 | `worktrees/<dir>-<hash>-gemini/<agent>` | a Gemini agent's private directory (`lead` for the project's leader, whatever the project is called); holds `GEMINI.md` and `policy/imece.toml` |
+| `worktrees/<dir>-<hash>-scratch/<agent>` | a writing agent's scratch directory (0700; a solo's is `solo-<project number>`): for notes, logs and downloads that are no part of its change. Its file tools may write there (Claude `--add-dir`, Codex's only writable root besides the worktree, Gemini an included directory), its instructions name it, and its focus shows it. Kept between runs; removed by `:forget`, `--fresh` and when the agent leaves (`:close`, a helper's `done`), not when a new session goes on with the same work (a model fallback, a renewed cap, `/clear`) |
 | `scripts/<sha256>.sh` | the private copy of a worktree setup script you said yes to, the bytes you read (0700 directory, 0600 file): what runs. See [a worktree setup script](../concepts/projects.md#a-worktree-setup-script) |
 
 ## The store
@@ -132,7 +133,7 @@ Both make an agent forget its vendor session so the next message starts a new on
 | Codex | the thread, through an app server started for it (`thread/delete`, 30 s cap), which also takes it out of Codex's own index; deleting the rollout file by hand would not |
 | Gemini CLI | the chat files of that session under `tmp/<name>/chats/` (`N chat files were removed`), and 0-byte strays; when the agent leaves whole, everything under that name plus the private directory |
 
-Only an id shaped like a UUID ever reaches a path or a vendor. A session that was just asked to stop is given 4 s to be gone first. Nothing of imece's own is removed: the agent, its cards, the journal and the worktree stay. Also removed when a session is replaced: imece's `/clear` on a vendor without one of its own, a model fallback, a session renewed after it hit its cap. See [sessions](../concepts/sessions.md).
+Only an id shaped like a UUID ever reaches a path or a vendor. A session that was just asked to stop is given 4 s to be gone first. The agent's scratch directory goes too, moved aside at once so a session started right after gets a new one (`its scratch directory was removed`). Nothing else of imece's own is removed: the agent, its cards, the journal and the worktree stay. Also removed when a session is replaced: imece's `/clear` on a vendor without one of its own, a model fallback, a session renewed after it hit its cap. See [sessions](../concepts/sessions.md).
 
 ## What is not written
 

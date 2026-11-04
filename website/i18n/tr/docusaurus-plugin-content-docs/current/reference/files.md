@@ -19,6 +19,7 @@ Değişken ayarlı ve mutlaksa `$XDG_STATE_HOME/imece`, yoksa `~/.local/state/im
 | `screen` | imece'nin 2026-10-30'dan önce ekran seçimlerini tuttuğu dosya; ilk görüldüğünde depoya taşınır ve silinir |
 | `worktrees/<dizin>-<hash>/<ajan>` | işçi başına bir git worktree'si; `<dizin>` çalışma kopyasının dizin adı, `<hash>` yolunun sekiz onaltılık hanesi (`worktrees/kule-3f2a9c01/claude-1`) |
 | `worktrees/<dizin>-<hash>-gemini/<ajan>` | bir Gemini ajanının özel dizini (projenin lideri için, proje ne adlandırılsa da `lead`); `GEMINI.md` ve `policy/imece.toml` tutar |
+| `worktrees/<dizin>-<hash>-scratch/<ajan>` | yazan bir ajanın karalama dizini (0700; bir solonunki `solo-<proje numarası>`): değişikliğinin parçası olmayan notlar, günlükler ve indirilenler için. Dosya araçları oraya yazabilir (Claude `--add-dir`, Codex'te worktree dışındaki tek yazılabilir kök, Gemini'de eklenmiş bir dizin), talimatları onu adlandırır, odağı gösterir. Çalıştırmalar arasında kalır; `:forget`, `--fresh` ve ajan ayrılınca (`:close`, bir yardımcının `done`'ı) silinir, aynı işe devam eden yeni bir oturumda (model geri dönüşü, yenilenen sınır, `/clear`) silinmez |
 | `scripts/<sha256>.sh` | evet dediğiniz bir worktree kurulum betiğinin özel kopyası, okuduğunuz baytlar (dizin 0700, dosya 0600): çalışan budur. Bkz. [worktree kurulum betiği](../concepts/projects.md#worktree-kurulum-betiği) |
 
 ## Depo
@@ -132,7 +133,7 @@ Kendi `~/.claude/CLAUDE.md`'niz, `~/.gemini/GEMINI.md`'niz ve kullanıcı düzey
 | Codex | iş parçacığı, onun için başlatılan bir app server üzerinden (`thread/delete`, 30 sn sınır); bu onu Codex'in kendi dizininden de çıkarır, rollout dosyasını elle silmek çıkarmazdı |
 | Gemini CLI | o oturumun `tmp/<ad>/chats/` altındaki sohbet dosyaları (`N chat files were removed`) ve 0 baytlık artıklar; ajan bütünüyle ayrılırken o ad altındaki her şey ve özel dizin |
 
-Bir yola ya da bir satıcıya yalnızca UUID biçiminde bir kimlik ulaşır. Henüz durması istenmiş bir oturuma önce gitmesi için 4 sn verilir. imece'nin kendisinden hiçbir şey silinmez: ajan, kartları, günlük ve worktree kalır. Bir oturum değiştirildiğinde de silinir: kendisininki olmayan bir satıcıda imece'nin `/clear`'ı, bir model geri dönüşü, sınırına çarpınca yenilenen bir oturum. Bkz. [oturumlar](../concepts/sessions.md).
+Bir yola ya da bir satıcıya yalnızca UUID biçiminde bir kimlik ulaşır. Henüz durması istenmiş bir oturuma önce gitmesi için 4 sn verilir. Ajanın karalama dizini de gider; hemen kenara alınır, böylece hemen ardından başlayan oturum yenisini alır (`its scratch directory was removed`). imece'nin kendisinden başka hiçbir şey silinmez: ajan, kartları, günlük ve worktree kalır. Bir oturum değiştirildiğinde de silinir: kendisininki olmayan bir satıcıda imece'nin `/clear`'ı, bir model geri dönüşü, sınırına çarpınca yenilenen bir oturum. Bkz. [oturumlar](../concepts/sessions.md).
 
 ## Yazılmayanlar
 

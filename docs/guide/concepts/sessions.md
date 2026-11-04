@@ -52,7 +52,7 @@ A session imece forgets leaves nothing behind at its vendor:
 
 - `:forget [@NAME]` (`:f`): the running session ends (its run killed, unfinished prompts kept as interrupted and told at the wake), the remembered session goes, the agent sleeps until spoken to, and its next message starts a new session with the full briefing. Refused for an agent with nothing to forget or one that is gone. The journal: `you made claude-1 forget its session`. The `:` menu marks it `$`: the new session pays the whole briefing again.
 - `--fresh` does it for every remembered agent when the store is read, journaled per agent.
-- What is removed, on a thread of its own: Claude's transcript file; Codex's thread through an app server started for it (`thread/delete`, which also clears Codex's index); Gemini's chat files of that session under `~/.gemini/tmp/<name>/chats/`, and when the agent itself goes (`:close`, a helper leaving), everything under that name plus its private directory. Only a UUID ever reaches a path or a vendor.
+- What is removed, on a thread of its own: Claude's transcript file; Codex's thread through an app server started for it (`thread/delete`, which also clears Codex's index); Gemini's chat files of that session under `~/.gemini/tmp/<name>/chats/`, and when the agent itself goes (`:close`, a helper leaving), everything under that name plus its private directory. The agent's scratch directory goes too (see [files](../reference/files.md)). Only a UUID ever reaches a path or a vendor.
 - imece's own `/clear`, a model fallback and a renewed session (after `:budget`) forget the replaced session the same way.
 
 ## Archives

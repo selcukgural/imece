@@ -42,3 +42,5 @@ starts them all at once; a session stopped for a mismatch is still
 the one remembered (and forgotten only by these paths). Since record 80
 `--fresh` leaves an archived project's sessions alone: they are what
 bringing it back goes on with.
+
+Record 105 (2026-11-04): `:forget`, `--fresh` and an agent leaving also remove its scratch directory (`Live::drop_scratch`); a fallback, a renewal and `/clear` keep it.

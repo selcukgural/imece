@@ -83,6 +83,12 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App, id: AgentId) {
         }
         head.push(Line::from(line));
     }
+    if let Some(scratch) = app.scratch_of(id) {
+        head.push(Line::from(vec![
+            Span::styled(t.scratch, dim()),
+            Span::raw(scratch),
+        ]));
+    }
     let taint = match a.taint {
         Taint::Clean => Span::styled(t.clean, fg(pal().ok)),
         Taint::Soft => Span::styled(t.soft, fg(pal().warn)),
@@ -1179,24 +1185,24 @@ mod tests {
         let (mut app, id) = reading_app();
         keys(&mut app, "gg");
         keys(&mut app, "l");
-        // 17 rows: the border's 2 and the head's 5 leave 10 for the story,
+        // 18 rows: the border's 2 and the head's 6 leave 10 for the story,
         // whose first entry is 22 rows open.
-        let rows = focus_rows(&app, id, 17);
+        let rows = focus_rows(&app, id, 18);
         assert!(row_of(&rows, "Done:").starts_with("▌ "));
         assert!(!rows.iter().any(|r| r.contains("line 5")));
         assert_eq!(app.reading.scroll.get(), 0);
         assert_eq!(app.reading.page.get(), 9, "a row kept from the last page");
         press(&mut app, KeyCode::PageDown);
-        focus_rows(&app, id, 17);
+        focus_rows(&app, id, 18);
         assert_eq!(app.reading.scroll.get(), 9);
         assert_eq!(app.reading.sel, Some(0), "paging moves no entry");
         let ctrl =
             |app: &mut App, c| app.on_key(KeyEvent::new(KeyCode::Char(c), KeyModifiers::CONTROL));
         ctrl(&mut app, 'd');
-        focus_rows(&app, id, 17);
+        focus_rows(&app, id, 18);
         assert_eq!(app.reading.scroll.get(), 13, "half a page");
         ctrl(&mut app, 'f');
-        let rows = focus_rows(&app, id, 17);
+        let rows = focus_rows(&app, id, 18);
         assert_eq!(
             app.reading.scroll.get(),
             17,
@@ -1204,30 +1210,30 @@ mod tests {
         );
         assert!(rows.iter().any(|r| r.contains("line 5")));
         ctrl(&mut app, 'u');
-        focus_rows(&app, id, 17);
+        focus_rows(&app, id, 18);
         assert_eq!(app.reading.scroll.get(), 13);
         ctrl(&mut app, 'b');
-        focus_rows(&app, id, 17);
+        focus_rows(&app, id, 18);
         assert_eq!(app.reading.scroll.get(), 4);
         press(&mut app, KeyCode::PageUp);
-        focus_rows(&app, id, 17);
+        focus_rows(&app, id, 18);
         assert_eq!(app.reading.scroll.get(), 0);
         // A step brings the entry at hand into view, as little as it can.
         keys(&mut app, "j");
-        focus_rows(&app, id, 17);
+        focus_rows(&app, id, 18);
         assert_eq!(app.reading.scroll.get(), 13, "line 1 on the last row");
         // From the newest followed, a page up stays where it was put.
         keys(&mut app, "G");
-        focus_rows(&app, id, 17);
+        focus_rows(&app, id, 18);
         assert_eq!(app.reading.scroll.get(), 17);
         press(&mut app, KeyCode::PageUp);
         assert_eq!(app.reading.sel, Some(5));
-        focus_rows(&app, id, 17);
+        focus_rows(&app, id, 18);
         assert_eq!(app.reading.scroll.get(), 8);
         let c = app.world.cards[0].id;
         app.world
             .story(Some(c), StoryEvent::Replied("line 6".into()));
-        focus_rows(&app, id, 17);
+        focus_rows(&app, id, 18);
         assert_eq!(app.reading.scroll.get(), 8, "what comes does not move it");
     }
 

@@ -6879,6 +6879,29 @@ impl App {
         }
     }
 
+    /// Agent `id`'s scratch directory (record 105) as the focus shows it;
+    /// none for a leader. The demo's is where live would put it.
+    pub fn scratch_of(&self, id: AgentId) -> Option<String> {
+        match &self.engine {
+            Engine::Live(live) => live
+                .scratch_of(&self.world, id)
+                .map(|d| self.shown_path(&d)),
+            Engine::Sim(_) => {
+                let a = &self.world.agents[id];
+                let own = match a.role {
+                    Role::Leader => return None,
+                    Role::Solo => format!("solo-{}", a.project),
+                    _ => clean(&a.name),
+                };
+                let name = clean(&self.world.projects[a.project].name);
+                Some(format!(
+                    "~/.local/state/imece/worktrees/{name}-5e1f0a2c-scratch/{own}"
+                ))
+            }
+            Engine::View(_) => None,
+        }
+    }
+
     /// A key in the archives browser.
     fn archives_key(&mut self, k: KeyEvent) {
         let Some(b) = &mut self.archives else {
@@ -13915,6 +13938,21 @@ pub(crate) mod tests {
         assert!(!app.draw_due(t1));
         app.focus(true, t1);
         assert!(app.draw_due(t1), "back: what waited, at once");
+    }
+
+    #[test]
+    fn live_s_focus_says_the_scratch_directory_as_live_makes_it() {
+        let mut w = crate::live::testing::team(1);
+        w.projects[0].name = "repo".into();
+        let live = crate::live::testing::idle_live(2);
+        let app = App::with(w, Engine::Live(Box::new(live)), Lang::En);
+        assert_eq!(app.scratch_of(0), None);
+        let Engine::Live(l) = &app.engine else {
+            unreachable!()
+        };
+        let made = l.scratch_of(&app.world, 1).unwrap();
+        assert!(made.ends_with("claude-1"), "{}", made.display());
+        assert_eq!(app.scratch_of(1), Some(made.display().to_string()));
     }
 
     #[test]

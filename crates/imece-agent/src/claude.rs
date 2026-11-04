@@ -170,6 +170,10 @@ pub struct Spec {
     pub mcp: Option<Mcp>,
     /// An earlier session of this agent to go on with, instead of a new one.
     pub resume: Option<Resume>,
+    /// A directory of the agent's own outside its files, for what is no
+    /// part of its change (record 105): its file tools may write there too
+    /// (`--add-dir`).
+    pub scratch: Option<PathBuf>,
 }
 
 /// A session Claude Code saved (`~/.claude/projects/<cwd>/<id>.jsonl`),
@@ -292,6 +296,10 @@ pub fn args(spec: &Spec) -> Vec<String> {
     ));
     a.push("--name".into());
     a.push(spec.name.clone());
+    if let Some(dir) = &spec.scratch {
+        a.push("--add-dir".into());
+        a.push(dir.to_string_lossy().into_owned());
+    }
     a.push("--append-system-prompt".into());
     a.push(spec.system.clone());
     if let Some(m) = &spec.model {
@@ -1142,6 +1150,7 @@ mod tests {
 
     fn spec(tools: &[&str]) -> Spec {
         Spec {
+            scratch: None,
             program: "claude".into(),
             cwd: PathBuf::from("/work/w1"),
             name: "claude-1".into(),
@@ -1296,6 +1305,19 @@ mod tests {
 
     fn after(a: &[String], f: &str) -> Option<String> {
         a.iter().position(|x| x == f).map(|i| a[i + 1].clone())
+    }
+
+    #[test]
+    fn a_scratch_directory_is_added_for_the_file_tools() {
+        let mut s = spec(&["Read", "Write"]);
+        assert_eq!(after(&args(&s), "--add-dir"), None);
+        s.scratch = Some(PathBuf::from("/state/w1-scratch/claude-1"));
+        let a = args(&s);
+        assert_eq!(
+            after(&a, "--add-dir").as_deref(),
+            Some("/state/w1-scratch/claude-1")
+        );
+        assert_eq!(a.iter().filter(|x| *x == "--add-dir").count(), 1);
     }
 
     #[test]
@@ -2947,6 +2969,7 @@ sleep 5"#
         )
         .unwrap();
         let spec = Spec {
+            scratch: None,
             program: "claude".into(),
             cwd: cwd.clone(),
             name: "imece probe".into(),
@@ -3037,6 +3060,7 @@ sleep 5"#
         std::fs::create_dir_all(&dir).unwrap();
         let cwd = dir.canonicalize().unwrap();
         let mut spec = Spec {
+            scratch: None,
             program: "claude".into(),
             cwd: cwd.clone(),
             name: "imece probe".into(),
