@@ -1537,6 +1537,7 @@ impl Store {
             suggested: None,
             reviews: Default::default(),
             clashes: Default::default(),
+            proposals: Default::default(),
             orphans: crate::model::Orphans::default(),
             messages,
         };
@@ -2352,6 +2353,7 @@ mod tests {
             suggested: None,
             reviews: Default::default(),
             clashes: Default::default(),
+            proposals: Default::default(),
             orphans: crate::model::Orphans::default(),
             messages: 12,
         };

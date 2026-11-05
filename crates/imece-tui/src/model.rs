@@ -537,6 +537,22 @@ pub enum StoreJob {
         project: ProjectId,
         repo: String,
     },
+    /// The person decides worker `agent`'s proposal (record 120).
+    Decide {
+        project: ProjectId,
+        repo: String,
+        agent: AgentId,
+        proposal: StoreProposal,
+        verdict: Verdict,
+    },
+}
+
+/// What the person says of a proposal.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Verdict {
+    Approve,
+    /// No, and why: their words reach the worker through Lonca too.
+    Reject(String),
 }
 
 impl StoreJob {
@@ -545,7 +561,7 @@ impl StoreJob {
         match self {
             StoreJob::Login(p) => *p,
             StoreJob::Import(ask) => ask.project,
-            StoreJob::Sync { project, .. } => *project,
+            StoreJob::Sync { project, .. } | StoreJob::Decide { project, .. } => *project,
         }
     }
 
@@ -555,6 +571,7 @@ impl StoreJob {
             StoreJob::Login(_) => StoreAct::Login,
             StoreJob::Import(_) => StoreAct::Import,
             StoreJob::Sync { .. } => StoreAct::Sync,
+            StoreJob::Decide { .. } => StoreAct::Decide,
         }
     }
 }
@@ -565,6 +582,7 @@ pub enum StoreAct {
     Login,
     Import,
     Sync,
+    Decide,
 }
 
 /// How far a project's checkout is behind trunk (record 118).
@@ -599,6 +617,9 @@ pub enum StoreDown {
     Forbidden,
     NoRepo,
     Refused,
+    /// The repository's policy can not be said to hold a change for a
+    /// person: without that it would integrate unseen (record 120).
+    Unguarded,
 }
 
 impl StoreDown {
@@ -613,6 +634,10 @@ impl StoreDown {
             StoreDown::Forbidden => "the person is not enrolled in a Lonca repository of that name",
             StoreDown::NoRepo => "Lonca has no such repository",
             StoreDown::Refused => "Lonca's daemon refused",
+            StoreDown::Unguarded => {
+                "this repository's policy does not hold a change for the person \
+                 (unobserved_is_tainted): set it true"
+            }
         }
     }
 }
@@ -1813,6 +1838,11 @@ pub enum Event {
         agent: AgentId,
         spend: Spend,
     },
+    /// Worker `agent`'s proposal left Lonca's waiting list (record 120).
+    Landed {
+        agent: AgentId,
+        how: Landed,
+    },
     /// The person applied a live worker's change to their checkout, where
     /// it is staged; `mark` is the commit that stands for it in the
     /// worktree.
@@ -1956,7 +1986,12 @@ impl Event {
             | Event::Reviewed { .. }
             | Event::Strayed { .. }
             | Event::PotLow { .. } => EntryKind::Sensitive,
-            Event::Merged { .. } | Event::Applied { .. } => EntryKind::Merged,
+            Event::Merged { .. }
+            | Event::Applied { .. }
+            | Event::Landed {
+                how: Landed::Integrated(_),
+                ..
+            } => EntryKind::Merged,
             Event::Failed { .. }
             | Event::Stopped { .. }
             | Event::Interrupted { .. }
@@ -1969,9 +2004,17 @@ impl Event {
             | Event::SetupFailed { .. }
             | Event::Checked { ok: false, .. }
             | Event::CheckFailed { .. }
+            | Event::Landed {
+                how: Landed::Conflicted(_) | Landed::Rejected(_),
+                ..
+            }
             | Event::ApplyFailed { .. } => EntryKind::Failed,
             Event::Approved { .. }
             | Event::Rejected { .. }
+            | Event::Landed {
+                how: Landed::Queued | Landed::Withdrawn,
+                ..
+            }
             | Event::YouSaid { .. }
             | Event::Decided { .. }
             | Event::TurnYes { .. }
@@ -2075,6 +2118,7 @@ impl Event {
             | Event::Reviewed { agent, .. }
             | Event::ReviewFailed { agent, .. }
             | Event::Applied { agent, .. }
+            | Event::Landed { agent, .. }
             | Event::ApplyFailed { agent, .. } => agent,
             Event::Talk { from, .. } | Event::Sent { from, .. } | Event::ToYou { from, .. } => from,
             Event::ResearchOpened { researcher, .. }
@@ -2231,6 +2275,41 @@ pub struct Change {
     /// What the worker spent on it from its first prompt after the last
     /// change to the `done` (record 113); none until its turn ended.
     pub spend: Option<Spend>,
+}
+
+/// What became of a proposal, as the store says it (record 120).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Landed {
+    /// A human approved it and it waits in the merge queue.
+    Queued,
+    /// On trunk, as this commit.
+    Integrated(String),
+    /// The queue could not merge these symbols.
+    Conflicted(Vec<String>),
+    /// A human or the verifier said no: the reasons.
+    Rejected(Vec<String>),
+    /// Its worker took it back.
+    Withdrawn,
+}
+
+/// A worker's change as Lonca holds it (record 120): what `a` approves
+/// and `r` rejects. The change itself is read from the store and shown as
+/// any other [`Change`]; this says which one it is and what is apart.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct StoreProposal {
+    /// The number `approve` and `reject` name.
+    pub seq: u64,
+    /// The change's id in the store.
+    pub change: String,
+    /// The worker's older proposals still waiting. A workspace proposes
+    /// all it holds, so this one holds what they did.
+    pub older: Vec<u64>,
+    /// Why it waits, as the policy said it.
+    pub why: Vec<String>,
+    /// Files its patch leaves out: a blob of theirs was redacted.
+    pub redacted: Vec<String>,
+    /// The daemon cut its patch.
+    pub cut: bool,
 }
 
 /// Where the repository's check (`.imece/check`, record 112) stands on a
@@ -2430,6 +2509,9 @@ pub struct World {
     /// What of a worker's waiting change did not fit the checkout, when
     /// git last refused it (record 108). Memory only: `a` finds it again.
     pub clashes: HashMap<AgentId, Clashes>,
+    /// Which proposal in Lonca a worker's waiting change is (record 120).
+    /// Memory only: the next look finds it again.
+    pub proposals: HashMap<AgentId, StoreProposal>,
     /// The worktrees no agent owns, as the engine last looked (`:tidy`).
     pub orphans: Orphans,
     /// The number the last message on the bus was given ([`MsgId`]).
@@ -2993,6 +3075,7 @@ impl World {
             suggested: None,
             reviews: Default::default(),
             clashes: Default::default(),
+            proposals: Default::default(),
             orphans: crate::model::Orphans::default(),
             messages: self.messages,
             sent: self.sent.clone(),
@@ -3443,6 +3526,50 @@ impl World {
         });
     }
 
+    /// A row of a change with nothing behind it closes: what a Lonca
+    /// worker proposed is not saved (record 120), and the first look brings
+    /// back what still waits. Run once, at a start.
+    pub fn close_empty_changes(&mut self) {
+        let waiting: Vec<AgentId> = self.changes.iter().map(|c| c.agent).collect();
+        for i in &mut self.inbox {
+            if i.kind == InboxKind::Change && !waiting.contains(&i.agent) {
+                i.open = false;
+            }
+        }
+    }
+
+    /// Which proposal in Lonca worker `id`'s waiting change is.
+    pub fn proposal_of(&self, id: AgentId) -> Option<&StoreProposal> {
+        self.proposals.get(&id)
+    }
+
+    /// A proposal of worker `change.agent` waits in Lonca: it is its
+    /// change now, an older one of the worker's going as ever.
+    pub fn change_proposed(&mut self, change: Change, proposal: StoreProposal) {
+        let agent = change.agent;
+        self.change_ready(change);
+        self.proposals.insert(agent, proposal);
+    }
+
+    /// Worker `id`'s proposal left the store's waiting list, by whoever's
+    /// hand, and `how` is what became of it. What it came to is carried
+    /// on, until it is on trunk.
+    pub fn proposal_left(&mut self, id: AgentId, how: Landed) {
+        self.carry_spend(id);
+        self.forget_change(id);
+        self.proposal_landed(id, how);
+    }
+
+    /// What became of worker `id`'s proposal, which left its waiting
+    /// change earlier if it did, in the queue: on trunk, what it cost is
+    /// settled, and the journal says it.
+    pub fn proposal_landed(&mut self, id: AgentId, how: Landed) {
+        if matches!(how, Landed::Integrated(_)) {
+            self.agents[id].task.carried = Spend::default();
+        }
+        self.note(Event::Landed { agent: id, how });
+    }
+
     /// Agent `id`'s turn began: its round opens now when none is open
     /// (record 113); a leader's spend is nobody's change.
     pub fn round_opens(&mut self, id: AgentId) {
@@ -3616,6 +3743,7 @@ impl World {
     fn forget_change(&mut self, id: AgentId) {
         self.reviews.remove(&id);
         self.clashes.remove(&id);
+        self.proposals.remove(&id);
         self.changes.retain(|c| c.agent != id);
         for i in &mut self.inbox {
             if i.kind == InboxKind::Change && i.agent == id {
@@ -4421,6 +4549,7 @@ mod tests {
             suggested: None,
             reviews: Default::default(),
             clashes: Default::default(),
+            proposals: Default::default(),
             orphans: crate::model::Orphans::default(),
             messages: 0,
             plans: Vec::new(),
@@ -7121,5 +7250,102 @@ mod tests {
         assert_eq!(StoreJob::Import(ask(4)).project(), 4);
         assert_eq!(StoreJob::Login(3).act(), StoreAct::Login);
         assert_eq!(StoreJob::Import(ask(4)).act(), StoreAct::Import);
+    }
+
+    fn a_store_proposal(seq: u64) -> StoreProposal {
+        StoreProposal {
+            seq,
+            change: format!("c{seq}"),
+            older: Vec::new(),
+            why: Vec::new(),
+            redacted: Vec::new(),
+            cut: false,
+        }
+    }
+
+    #[test]
+    fn a_proposal_is_its_workers_change_until_it_leaves() {
+        let mut w = crate::live::testing::team(1);
+        w.change_proposed(change(1, "T", &[("a", 1, 0)]), a_store_proposal(5));
+        assert_eq!(w.proposal_of(1).map(|p| p.seq), Some(5));
+        assert_eq!(w.open_inbox().len(), 1);
+        // A newer change takes both the row and the proposal's place.
+        w.change_proposed(change(1, "U", &[("a", 1, 0)]), a_store_proposal(6));
+        assert_eq!(w.proposal_of(1).map(|p| p.seq), Some(6));
+        assert_eq!(w.open_inbox().len(), 1);
+        w.proposal_left(1, Landed::Withdrawn);
+        assert!(w.proposal_of(1).is_none() && w.change_of(1).is_none());
+        assert!(w.open_inbox().is_empty());
+        assert!(matches!(
+            w.journal.last().unwrap().event,
+            Event::Landed {
+                agent: 1,
+                how: Landed::Withdrawn
+            }
+        ));
+    }
+
+    #[test]
+    fn what_a_proposal_cost_is_carried_until_it_is_on_trunk() {
+        let spend = Spend {
+            cost: 40,
+            ticks: 3,
+            rounds: 1,
+        };
+        let mut w = crate::live::testing::team(1);
+        w.change_proposed(change(1, "T", &[("a", 1, 0)]), a_store_proposal(5));
+        w.changes[0].spend = Some(spend);
+        w.proposal_left(1, Landed::Rejected(vec!["no".into()]));
+        assert_eq!(w.agents[1].task.carried, spend);
+        w.proposal_landed(1, Landed::Conflicted(Vec::new()));
+        assert_eq!(w.agents[1].task.carried, spend, "not on trunk");
+        w.proposal_landed(1, Landed::Integrated("c1".into()));
+        assert_eq!(w.agents[1].task.carried, Spend::default());
+    }
+
+    #[test]
+    fn a_landed_proposal_counts_as_what_it_came_to() {
+        let kind = |how| Event::Landed { agent: 1, how }.kind();
+        assert_eq!(kind(Landed::Integrated("c".into())), EntryKind::Merged);
+        assert_eq!(kind(Landed::Conflicted(Vec::new())), EntryKind::Failed);
+        assert_eq!(kind(Landed::Rejected(Vec::new())), EntryKind::Failed);
+        assert_eq!(kind(Landed::Queued), Event::Rejected { agent: 1 }.kind());
+        assert_eq!(kind(Landed::Withdrawn), Event::Rejected { agent: 1 }.kind());
+        assert_eq!(
+            Event::Landed {
+                agent: 3,
+                how: Landed::Queued
+            }
+            .agent(),
+            3
+        );
+    }
+
+    #[test]
+    fn a_decision_is_a_job_of_its_project() {
+        let job = StoreJob::Decide {
+            project: 4,
+            repo: "r".into(),
+            agent: 1,
+            proposal: a_store_proposal(5),
+            verdict: Verdict::Approve,
+        };
+        assert_eq!((job.project(), job.act()), (4, StoreAct::Decide));
+    }
+
+    #[test]
+    fn only_a_row_of_a_change_with_nothing_behind_it_closes_at_a_start() {
+        let mut w = crate::live::testing::team(2);
+        w.change_ready(change(1, "T", &[("a", 1, 0)]));
+        w.change_ready(change(2, "U", &[("a", 1, 0)]));
+        w.changes.retain(|c| c.agent == 1);
+        w.asked_you(2, "Which?");
+        w.close_empty_changes();
+        let open: Vec<(InboxKind, AgentId)> = (w.open_inbox().into_iter())
+            .map(|i| (w.inbox[i].kind, w.inbox[i].agent))
+            .collect();
+        assert_eq!(open.len(), 2, "{open:?}");
+        assert!(open.contains(&(InboxKind::Change, 1)));
+        assert!(open.contains(&(InboxKind::Question, 2)));
     }
 }

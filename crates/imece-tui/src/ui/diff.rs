@@ -323,6 +323,9 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App, id: AgentId) {
     if let Some(clashes) = w.clashes_of(id) {
         ran.insert(0, clash_line(app.lang, clashes, &a.name));
     }
+    if let Some(proposal) = w.proposal_of(id) {
+        ran.splice(0..0, proposal_lines(app.lang, proposal));
+    }
     let review = review_lines(
         app.lang,
         w.review_of(id),
@@ -600,6 +603,26 @@ fn outside_line(lang: Lang, files: &[ChangedFile], card: &Card) -> Option<Line<'
         ),
         fg(pal().warn),
     )))
+}
+
+/// Which proposal in Lonca a change is (record 120): its number, why it
+/// waits, how many older ones of the worker's it holds; then what the
+/// patch below does not show, loud.
+pub(crate) fn proposal_lines(lang: Lang, p: &StoreProposal) -> Vec<Line<'static>> {
+    let t = lang.text();
+    let mut said = fill(t.diff_proposal, &[&p.seq.to_string(), &p.why.join(", ")]);
+    if !p.older.is_empty() {
+        said.push_str(&fill(t.diff_proposal_older, &[&p.older.len().to_string()]));
+    }
+    let mut lines = vec![Line::from(Span::styled(said, dim()))];
+    let loud = |text: String| Line::from(Span::styled(text, fg(pal().warn)));
+    if !p.redacted.is_empty() {
+        lines.push(loud(fill(t.diff_redacted, &[&p.redacted.join(", ")])));
+    }
+    if p.cut {
+        lines.push(loud(t.diff_cut.to_string()));
+    }
+    lines
 }
 
 /// What the change cost (record 113), above its kinds and files: `cost ·
@@ -1544,5 +1567,58 @@ diff --git a/c.rs b/c.rs
             outside_line(Lang::En, &odd, &card).unwrap().to_string(),
             " 1 outside #12: src/ [31mx.rs"
         );
+    }
+
+    fn a_proposal() -> StoreProposal {
+        StoreProposal {
+            seq: 5,
+            change: "c5".into(),
+            older: Vec::new(),
+            why: vec!["unobserved_session".into(), "approvals=1".into()],
+            redacted: Vec::new(),
+            cut: false,
+        }
+    }
+
+    fn said(lines: &[Line<'static>]) -> Vec<String> {
+        (lines.iter()).map(|l| l.to_string()).collect()
+    }
+
+    #[test]
+    fn a_proposal_says_its_number_and_why_it_waits() {
+        let lines = proposal_lines(Lang::En, &a_proposal());
+        assert_eq!(
+            said(&lines),
+            [" proposal 5 · waits: unobserved_session, approvals=1"]
+        );
+        assert_eq!(lines[0].spans[0].style, dim());
+    }
+
+    #[test]
+    fn a_proposal_counts_the_older_ones_it_holds() {
+        let p = StoreProposal {
+            older: vec![2, 3],
+            ..a_proposal()
+        };
+        let line = proposal_lines(Lang::En, &p);
+        assert!(
+            said(&line)[0].ends_with(" · holds 2 older"),
+            "{:?}",
+            said(&line)
+        );
+    }
+
+    #[test]
+    fn what_a_patch_does_not_show_is_loud() {
+        let p = StoreProposal {
+            redacted: vec!["a.env".into(), "b.env".into()],
+            cut: true,
+            ..a_proposal()
+        };
+        let lines = proposal_lines(Lang::En, &p);
+        assert_eq!(said(&lines)[1], " left out, redacted: a.env, b.env");
+        assert_eq!(said(&lines)[2], Lang::En.text().diff_cut);
+        assert_eq!(lines[1].spans[0].style, fg(pal().warn));
+        assert_eq!(lines[2].spans[0].style, fg(pal().warn));
     }
 }

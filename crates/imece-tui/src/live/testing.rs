@@ -49,6 +49,7 @@ pub(crate) fn team(workers: usize) -> World {
         plans: Vec::new(),
         changes: Vec::new(),
         clashes: Default::default(),
+        proposals: Default::default(),
         paid: 0,
         suggested: None,
         reviews: Default::default(),

@@ -7083,6 +7083,39 @@ mod tests {
     }
 
     #[test]
+    fn a_proposal_says_so_in_its_view_and_its_row_says_its_keys() {
+        let mut app = app_after(1, 4, 50, Lang::En);
+        app.world.inbox.clear();
+        app.pane = Pane::Inbox;
+        app.world.change_ready(a_change(1));
+        let s = render(&app, 140, 40);
+        assert!(s.contains("a apply to the checkout"), "{s}");
+        let proposal = crate::model::StoreProposal {
+            seq: 5,
+            change: "c5".into(),
+            older: Vec::new(),
+            why: vec!["unobserved_session".into()],
+            redacted: Vec::new(),
+            cut: false,
+        };
+        app.world.change_proposed(a_change(1), proposal);
+        let s = render(&app, 140, 40);
+        assert!(s.contains("a approve"), "{s}");
+        assert!(!s.contains("a apply to the checkout"), "{s}");
+        app.zoom = Zoom::Diff(1);
+        let s = render(&app, 140, 40);
+        assert!(s.contains("proposal 5 · waits: unobserved_session"), "{s}");
+    }
+
+    #[test]
+    fn a_change_of_no_proposal_says_nothing_of_one() {
+        let mut app = app_after(1, 4, 50, Lang::En);
+        app.world.change_ready(a_change(1));
+        app.zoom = Zoom::Diff(1);
+        assert!(!render(&app, 140, 40).contains("proposal"));
+    }
+
+    #[test]
     fn a_change_shows_its_review_above_its_files_or_who_reads_it() {
         let mut app = app_after(1, 4, 50, Lang::En);
         app.world.inbox.clear();

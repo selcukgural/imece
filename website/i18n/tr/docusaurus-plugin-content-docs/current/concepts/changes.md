@@ -115,6 +115,14 @@ Seçim yamanın hash'ine karşı yalnız bu çalıştırma için tutulur. Bir pa
 
 imece checkout'unuzda hiçbir şeyi commit etmez. `:commit`, stage'dekiler için Claude'un ucuz kademesinden bir mesaj ister ve komut satırına `!git commit -m '…'` koyar; kendi kabuğunuzda düzenleyip çalıştırırsınız. Kendi tavanları vardır ([bütçe](../concepts/budget-and-limits.md)) ve [kendi kabuğunuz ve commit](../scenarios/own-shell-and-commit.md) sayfasında adım adım anlatılır.
 
+## Lonca'da {#loncada}
+
+Bir [Lonca workspace](projects.md#loncada)'indeki işçinin okunacak worktree'si yoktur. Değişikliği daemon'ın tuttuğu bir öneridir, Δ'sı da o öneri: imece birkaç saniyede bir bakar ve işçinin turu bitince en yeni önerisi, depodan okunmuş olarak sizi bekler. Bir workspace elindekinin tümünü önerir, bu yüzden en yenisi eskilerin yaptığını da kapsar; eskiler Δ'da sayılır ve siz karar verince gider.
+
+`a` onaylar, `r` reddeder; ikisini de `lonca` programı imzalar, bu yüzden Secure Enclave anahtarı parmağınızı ister. Lonca'ya ulaşmayan bir karar günlükte söylenir ve Δ beklemeyi sürdürür. Lonca gerekçesiz ret almaz, bu yüzden `r` önce satırı açar ve gönderdiğiniz hem gerekçe hem de işçiye mesajınızdır; `esc` ile satırdan çıkmak hiçbir şeyi reddetmez. Öneri bütün olarak onaylanır: `x` reddedilir ve çalışma kopyanıza hiçbir şey inmez, onu [`:sync`](../reference/commands.md#sync) trunk'a getirir.
+
+Lonca'nın sonra yaptığı, kim karar vermiş olursa olsun söylenir, kendi kabuğunuzdaki `lonca approve` dahil: `trunk'ta, 174cfc1 olarak`, kuyruğun yapamadığı bir birleştirme ya da nedenleriyle bir ret. Geri gönderilen işçi uyandırılır ve eşitleyip yeniden önermesi söylenir; trunk'a giren işçi bunu sonraki isteminde duyar. Politikası değişiklikleri görülmeden alacak bir depo kapatılır: bkz. [projeler](projects.md#loncada). Maliyeti imece'de kalır ve biri inene dek sonraki öneriye taşınır.
+
 ## Ayrıca bakınız
 
 - [Değişiklikler ekranı](../screen/changes.md): diff görünümündeki her tuş.

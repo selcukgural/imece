@@ -192,6 +192,7 @@ impl Live {
                 spend: found.spends.get(&id).copied(),
             });
         }
+        w.close_empty_changes();
         // A waiting change's review, as the journal kept it.
         w.reviews_from_journal();
         self.changes = found.changes;

@@ -643,6 +643,8 @@ struct Extras {
     store: Vec<(String, u32)>,
     /// The `lonca` command under way and the tick it comes back on.
     job: Option<(StoreJob, u64)>,
+    /// How many proposals the demo's workers made.
+    proposed: u64,
     /// How many integrations each project's checkout has of its
     /// repository, by repository, and whether it has commits of its own.
     synced: HashMap<String, (u32, bool)>,
@@ -851,6 +853,7 @@ pub fn world(
         research_queue: VecDeque::new(),
         changes: Vec::new(),
         clashes: Default::default(),
+        proposals: Default::default(),
         paid: 0,
         suggested: None,
         reviews: Default::default(),
@@ -1298,6 +1301,65 @@ impl Sim {
         }
     }
 
+    /// A worker's `change` waits for the person: as a proposal when its
+    /// project is on Lonca (record 120), each fourth of those holding an
+    /// older one, which the demo has nobody to propose.
+    fn ready(&mut self, w: &mut World, change: Change) {
+        let id = change.agent;
+        if w.agents[id].workspace.is_none() {
+            return w.change_ready(change);
+        }
+        self.extras.proposed += 1;
+        let n = self.extras.proposed;
+        let seq = 2 * n;
+        let proposal = StoreProposal {
+            seq,
+            change: format!("demo{n}"),
+            older: n.is_multiple_of(4).then(|| seq - 1).into_iter().collect(),
+            why: vec!["unobserved_session".to_string()],
+            redacted: Vec::new(),
+            cut: false,
+        };
+        w.change_proposed(change, proposal);
+    }
+
+    /// The person approved worker `id`'s proposal: it is on trunk, or the
+    /// queue can not merge it (`fits`), and the worker takes it up again
+    /// as it would after a sync.
+    fn landed(&mut self, w: &mut World, id: AgentId, fits: bool) {
+        let p = w.agents[id].project;
+        if fits {
+            let commit = sha(&mut self.rng);
+            w.proposal_left(id, Landed::Integrated(commit));
+            self.store_integrated(w, p);
+            return self.tell_the_others(w, id);
+        }
+        let symbol = (w.change_of(id).and_then(|c| c.files.first()))
+            .map_or_else(String::new, |f| f.path.clone());
+        w.proposal_left(id, Landed::Conflicted(vec![symbol]));
+        // Nobody may hear it (a budget spent): the journal has said it.
+        let _ = self.told(w, id, "sync and propose again");
+    }
+
+    /// The person rejects worker `id`'s proposal, saying why; the same line
+    /// goes to it as their message. Not while it is being approved, nor
+    /// while its project's store does not answer.
+    pub fn reject_proposal(
+        &mut self,
+        w: &mut World,
+        id: AgentId,
+        reason: &str,
+    ) -> Result<(), String> {
+        if let Some(why) = w.store_closed(w.agents[id].project) {
+            return Err(why.into());
+        }
+        if self.is_applying(id) {
+            return Err("their change is being applied".into());
+        }
+        w.proposal_left(id, Landed::Rejected(vec![format!("rejected: {reason}")]));
+        Ok(())
+    }
+
     /// A change landed in project `p`: the demo's table moves its trunk.
     fn store_integrated(&mut self, w: &World, p: ProjectId) {
         let repo = w.projects[p].lonca.as_ref().map(|on| on.repo.as_str());
@@ -1608,6 +1670,9 @@ impl Sim {
                 let warned = "tour.mp4 is 3145728 bytes, above the change cap of 2097152";
                 w.store_imported(ask, vec![warned.to_string()]);
             }
+            // The demo's proposals are decided in `apply_change` and
+            // `reject_proposal`, as its other changes are.
+            StoreJob::Decide { .. } => {}
         }
     }
 
@@ -1787,7 +1852,11 @@ impl Sim {
         }
         for (id, hunks) in std::mem::take(&mut self.applying) {
             let fits = !self.rng.one_in(8);
-            self.applied(w, id, fits, &hunks);
+            if w.proposal_of(id).is_some() {
+                self.landed(w, id, fits);
+            } else {
+                self.applied(w, id, fits, &hunks);
+            }
         }
         self.suggested(w);
         self.reviewed(w);
@@ -1916,7 +1985,7 @@ impl Sim {
             };
             let (added, removed) = change.counts();
             let n = change.files.len();
-            w.change_ready(change);
+            self.ready(w, change);
             w.agents[id].trace(t, format!("change: {n} files +{added} −{removed}"));
             self.check(w, id);
         }
@@ -3486,7 +3555,7 @@ impl Sim {
         // What the person reviews is what the worktree holds.
         a.stand.added = added;
         a.stand.removed = removed;
-        w.change_ready(change);
+        self.ready(w, change);
         self.check(w, id);
     }
 
@@ -7827,5 +7896,142 @@ diff --git a/b.rs b/b.rs
         assert_eq!(w.helpers_of(worker).count(), 1);
         s.helper_if_it_may(&mut w, worker, card);
         assert_eq!(w.helpers_of(worker).count(), 1, "one helper is enough");
+    }
+
+    /// A worker of a project on Lonca, its proposal waiting.
+    fn a_proposal_waits() -> (World, Sim, AgentId) {
+        let (mut w, mut s, _, _) = one_at_work();
+        on_store(&mut w, up());
+        let id = s.hire_for_test(&mut w, 0);
+        let (files, patch) = s.patch(&[]);
+        s.ready(
+            &mut w,
+            Change {
+                agent: id,
+                title: "T".into(),
+                files,
+                patch,
+                runs: Vec::new(),
+                check: Check::None,
+                spend: None,
+            },
+        );
+        (w, s, id)
+    }
+
+    #[test]
+    fn a_demo_worker_on_lonca_proposes_and_one_off_it_does_not() {
+        let (w, _, id) = a_proposal_waits();
+        let p = w.proposal_of(id).expect("a proposal");
+        assert_eq!((p.seq, p.change.as_str()), (2, "demo1"));
+        assert_eq!(p.why, ["unobserved_session"]);
+        assert!(p.older.is_empty());
+        let (mut w, mut s, worker, _) = one_at_work();
+        let change = w.change_of(worker).cloned();
+        assert!(change.is_none());
+        s.ready(&mut w, a_change_of(worker));
+        assert!(w.change_of(worker).is_some() && w.proposal_of(worker).is_none());
+        assert_eq!(s.extras.proposed, 0);
+    }
+
+    fn a_change_of(agent: AgentId) -> Change {
+        Change {
+            agent,
+            title: "T".into(),
+            files: Vec::new(),
+            patch: String::new(),
+            runs: Vec::new(),
+            check: Check::None,
+            spend: None,
+        }
+    }
+
+    #[test]
+    fn each_fourth_demo_proposal_holds_an_older_one() {
+        let (mut w, mut s, id) = a_proposal_waits();
+        for n in 2..=3 {
+            s.ready(&mut w, a_change_of(id));
+            assert_eq!(w.proposal_of(id).map(|p| p.seq), Some(2 * n));
+            assert!(w.proposal_of(id).unwrap().older.is_empty());
+        }
+        s.ready(&mut w, a_change_of(id));
+        assert_eq!(w.proposal_of(id).unwrap().older, [7]);
+    }
+
+    #[test]
+    fn a_demo_proposal_approved_lands_on_trunk() {
+        let (mut w, mut s, id) = a_proposal_waits();
+        s.apply_change(&w, id, Vec::new()).unwrap();
+        let before = s
+            .extras
+            .store
+            .iter()
+            .find(|(r, _)| r == "r")
+            .map(|(_, n)| *n);
+        s.landed(&mut w, id, true);
+        assert!(w.proposal_of(id).is_none() && w.change_of(id).is_none());
+        let after = s
+            .extras
+            .store
+            .iter()
+            .find(|(r, _)| r == "r")
+            .map(|(_, n)| *n);
+        assert_eq!(after, before.map(|n| n + 1));
+        assert!(w.journal.iter().any(|e| matches!(
+            e.event,
+            Event::Landed {
+                how: Landed::Integrated(_),
+                ..
+            }
+        )));
+    }
+
+    #[test]
+    fn a_demo_proposal_the_queue_can_not_merge_goes_back_to_its_worker() {
+        let (mut w, mut s, id) = a_proposal_waits();
+        let file = w.change_of(id).unwrap().files[0].path.clone();
+        let before = s.extras.store.clone();
+        s.landed(&mut w, id, false);
+        assert_eq!(s.extras.store, before, "trunk stays");
+        assert!(w.proposal_of(id).is_none());
+        assert!(w.journal.iter().any(|e| matches!(
+            &e.event,
+            Event::Landed { how: Landed::Conflicted(symbols), .. } if symbols == std::slice::from_ref(&file)
+        )));
+        assert!(w.agents[id].status.busy(), "it takes it up again");
+    }
+
+    #[test]
+    fn a_step_lands_an_approved_proposal_and_never_applies_it() {
+        let (mut w, mut s, id) = a_proposal_waits();
+        s.apply_change(&w, id, Vec::new()).unwrap();
+        s.step(&mut w);
+        assert!(w.proposal_of(id).is_none());
+        assert!(
+            !w.journal
+                .iter()
+                .any(|e| matches!(e.event, Event::Applied { .. }))
+        );
+        assert!(s.extras.staged.is_empty(), "nothing lands in a checkout");
+    }
+
+    #[test]
+    fn a_demo_proposal_is_rejected_with_its_reason_when_it_can_be() {
+        let (mut w, mut s, id) = a_proposal_waits();
+        s.apply_change(&w, id, Vec::new()).unwrap();
+        let busy = Err("their change is being applied".to_string());
+        assert_eq!(s.reject_proposal(&mut w, id, "no"), busy);
+        s.applying.clear();
+        w.store_seen(0, "r", StoreSeen::Down(StoreDown::NoDaemon));
+        let closed = Err(StoreDown::NoDaemon.why().to_string());
+        assert_eq!(s.reject_proposal(&mut w, id, "no"), closed);
+        assert!(w.proposal_of(id).is_some());
+        w.store_seen(0, "r", up());
+        s.reject_proposal(&mut w, id, "no").unwrap();
+        assert!(w.proposal_of(id).is_none());
+        assert!(w.journal.iter().any(|e| matches!(
+            &e.event,
+            Event::Landed { how: Landed::Rejected(why), .. } if why == &["rejected: no"]
+        )));
     }
 }
