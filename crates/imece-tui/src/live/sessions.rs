@@ -2487,11 +2487,14 @@ mod tests {
     }
 
     /// A stand-in for `claude` whose `args.txt` is there whole or not at
-    /// all, so a test may read it the moment it is there.
+    /// all, so a test may read it the moment it is there, and that stays up
+    /// until its stdin closes: a session that ends at once wakes others (a
+    /// lost helper's worker), who run `lonca` under the test.
     fn whole_args(dir: &Path) -> String {
         use std::os::unix::fs::PermissionsExt;
         let path = dir.join("whole-claude");
-        let body = "#!/bin/sh\nprintf '%s\\n' \"$@\" > args.tmp\nmv args.tmp args.txt\n";
+        let body =
+            "#!/bin/sh\nprintf '%s\\n' \"$@\" > args.tmp\nmv args.tmp args.txt\ncat > /dev/null\n";
         std::fs::write(&path, body).unwrap();
         std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o700)).unwrap();
         path.to_string_lossy().into_owned()
@@ -2573,7 +2576,7 @@ mod tests {
         let mut w = team(1);
         w.on_lonca(0, Some("demo".into()));
         w.agents[1].workspace = Some("demo".into());
-        let mut live = Live::new(2, claude_at(&fake_claude(&dir)), repo.clone(), root.clone());
+        let mut live = Live::new(2, claude_at(&whole_args(&dir)), repo.clone(), root.clone());
         live.lonca = lonca::Watch::start(place);
         let name = w.agents[1].name.clone();
         live.lonca
@@ -2609,7 +2612,7 @@ mod tests {
         let mut w = team(1);
         w.on_lonca(0, Some("demo".into()));
         let helper = with_helper(&mut w, 1);
-        let mut live = Live::new(3, claude_at(&fake_claude(&dir)), repo.clone(), root.clone());
+        let mut live = Live::new(3, claude_at(&whole_args(&dir)), repo.clone(), root.clone());
         live.lonca = lonca::Watch::start(place);
         live.slots[helper] = Slot::Starting(Vec::new());
         live.start(&mut w, helper, None);
