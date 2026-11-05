@@ -158,7 +158,9 @@ git items of record 111's "after the first round" in epic #286.
    calls as `lonca-cli` makes them; a daemon missing or a repository not
    there fails closed (`⌀ no lonca` on the project's line, no hire, no Δ
    decision, said once in the journal). The demo's store is a table.
-3. A project on Lonca: `:open` names a Lonca repository or imports a
+3. (Done in part: records 117 and 118, which say what changed from this
+   text; the human workspace went, the checkout is a client since lonca#83.)
+   A project on Lonca: `:open` names a Lonca repository or imports a
    checkout (`lonca init --import`, the person's yes first); the person's
    human key (`LONCA_HUMAN`); a human workspace per project for the
    leader's reads; the checkout stays the person's and the project's line

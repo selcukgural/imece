@@ -126,9 +126,11 @@ Each worker's worktree stays on disk between runs, so its work is never thrown a
 
 ## On Lonca
 
-[Lonca](https://github.com/selcukgural/lonca) is where imece's repository work is going: a daemon that is the only writer of a repository, with symbol leases, a merge queue and a signed log. The first step is here: imece reads a repository through the daemon, and `:lonca NAME` names one for the project at hand. It does not move any work yet: workers stay in worktrees and a Δ still lands in your checkout.
+[Lonca](https://github.com/selcukgural/lonca) is where imece's repository work is going: a daemon that is the only writer of a repository, with symbol leases, a merge queue and a signed log. The first steps are here: imece reads a repository through the daemon, `:lonca NAME` names one for the project at hand, and `:lonca import` makes one of its checkout. It does not move any work yet: workers stay in worktrees and a Δ still lands in your checkout.
 
-imece is a client of a running `lonca daemon` in cooperative mode: the socket is `LONCA_SOCKET`, else `$LONCA_HOME/lonca.sock`, else `~/.lonca/lonca.sock`, and it must be yours. It speaks to a daemon of protocol 1 only, and reads as you: `lonca human login` opens the session it uses, which lasts a day at most; imece does not sign in for you.
+imece is a client of a running `lonca daemon` in cooperative mode: the socket is `LONCA_SOCKET`, else `$LONCA_HOME/lonca.sock`, else `~/.lonca/lonca.sock`, and it must be yours. It speaks to a daemon of protocol 1 only, and reads as you, with a session that lasts a day at most. `:lonca login` opens one (imece runs `lonca human login` then, and never by itself: a Secure Enclave key wants your finger). `LONCA_HUMAN` says who you are when you have several identities.
+
+`:lonca import` makes a repository of the checkout: the branch you are on and its history are copied into Lonca's store, as the project's name or the name you give. A window says what goes first, and only `a` runs it, because imece can not take it back; your checkout stays as it is and what is not committed does not go. On a new daemon this comes first: a daemon with no repository can sign nobody in, so the import signs you in as well. A file too large for a proposal is warned of in the journal.
 
 Every 5 seconds the project's line says how it stands:
 
@@ -138,9 +140,9 @@ Every 5 seconds the project's line says how it stands:
 | `lonca kule …` | named just now, not answered yet |
 | `⌀ no lonca` | it can not be read; the journal says why, once |
 
-The reasons: no daemon answers, what is on the socket is not your daemon, another protocol, you are not signed in, or you are not enrolled in a repository of that name (the daemon says the same of a repository it does not have, so check the name first).
+The reasons: no daemon answers, what is on the socket is not your daemon, another protocol, you are not signed in, or you are not enrolled in a repository of that name (the daemon says the same of a repository it does not have, so check the name, or make it with `:lonca import`).
 
-Until it answers, the project is closed: nobody is hired, `:fork` is refused, and no Δ is applied, rejected or sent back. Agents go on working, and their Δs wait. A project on no repository never touches the socket. See [`:lonca`](../reference/commands.md#lonca-nameoff).
+Until it answers, the project is closed: nobody is hired, `:fork` is refused, and no Δ is applied, rejected or sent back. Agents go on working, and their Δs wait. A project on no repository never touches the socket. See [`:lonca`](../reference/commands.md#lonca-nameoffloginimport).
 
 ## The demo's copies
 

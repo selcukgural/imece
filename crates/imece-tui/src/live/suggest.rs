@@ -132,9 +132,10 @@ pub(super) fn suggest_spec(program: String, cwd: PathBuf, model: &str) -> claude
 }
 
 impl Live {
-    /// Whether a commit message is asked for and has not come yet.
+    /// Whether something the person asked for has not come yet: a commit
+    /// message, or a `lonca` command.
     pub fn asking(&self) -> bool {
-        self.suggesting.is_some()
+        self.suggesting.is_some() || self.store_busy()
     }
 
     /// The person asks for a commit message for what is staged in project

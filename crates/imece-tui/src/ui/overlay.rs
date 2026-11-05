@@ -4,7 +4,7 @@
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout, Margin, Position, Rect};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Paragraph};
+use ratatui::widgets::{Block, Paragraph, Wrap};
 
 use super::*;
 use crate::app::{
@@ -12,6 +12,7 @@ use crate::app::{
 };
 use crate::archives::{self, Browser, Row};
 use crate::keys::{Keymap, Scope};
+use crate::model::ImportAsk;
 use crate::welcome::{self, Seen};
 use imece_agent::Login;
 
@@ -86,6 +87,37 @@ pub fn script(f: &mut Frame, app: &App, item: usize, at: usize) -> Rect {
         hints: &t.setup_hints,
     };
     script_body(f, area, shown, &s, at);
+    area
+}
+
+/// The window that asks before a checkout goes into Lonca (record 117):
+/// where it comes from, what it becomes, what can not be taken back.
+pub fn import(f: &mut Frame, app: &App, ask: &ImportAsk) -> Rect {
+    let t = app.lang.text();
+    let full = f.area();
+    let area = centered(full, full.width.saturating_sub(8).min(72), 10);
+    shade(f, area);
+    clear(f, area);
+    let block = Block::bordered()
+        .title(t.import_title)
+        .border_style(fg(pal().accent));
+    let inner = block.inner(area);
+    f.render_widget(block, area);
+    let checkout = ask.checkout.display().to_string();
+    let lines = vec![
+        Line::from(fill(t.import_from, &[&checkout])),
+        Line::from(fill(
+            t.import_branch,
+            &[&ask.branch, words::short_commit(&ask.head)],
+        )),
+        Line::from(fill(t.import_into, &[&ask.repo])),
+        Line::default(),
+        Line::from(Span::styled(t.import_note, dim())),
+        Line::from(Span::styled(t.import_final, fg(pal().warn))),
+        Line::default(),
+        Line::from(super::hint_spans(&t.import_hints)),
+    ];
+    f.render_widget(Paragraph::new(lines).wrap(Wrap { trim: false }), inner);
     area
 }
 

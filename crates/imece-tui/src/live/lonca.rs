@@ -1,16 +1,20 @@
 //! Lonca's store as this engine sees it (record 116): one thread asks the
 //! daemon how each project's repository stands, so the screen never waits
 //! on a socket; what it said closes a project to hires and Δ decisions or
-//! opens it ([`World::store_closed`]). imece only reads here.
+//! opens it ([`World::store_closed`]). imece only reads here; what must be
+//! signed the `lonca` program does, on a thread of its own, when the person
+//! asks (record 117).
 
-use std::sync::mpsc::{self, Receiver, Sender};
+use std::path::Path;
+use std::sync::mpsc::{self, Receiver, Sender, TryRecvError};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use imece_agent::lonca::{Down, Place};
+use imece_agent::lonca::{Down, Failed, Place};
+use imece_agent::worktree;
 
 use super::Live;
-use crate::model::{ProjectId, StoreDown, StoreSeen, World};
+use crate::model::{ImportAsk, ProjectId, StoreDown, StoreJob, StoreSeen, World};
 
 /// How often the store is asked. Each look is a connection and a
 /// millisecond call per repository; a person sees a daemon gone or a
@@ -22,8 +26,43 @@ type Repos = Vec<(ProjectId, String)>;
 /// What a look found of them.
 type Found = Vec<(ProjectId, String, StoreSeen)>;
 
+/// What a job came back with.
+enum Done {
+    Login(Result<String, Failed>),
+    Import(Result<Vec<String>, Failed>),
+}
+
+/// `job` run by the `lonca` program: login in the project's checkout `dir`.
+/// A daemon with no repository yet can not sign anyone in, so the first
+/// import comes before any session; the same yes signs the person in then
+/// (what fails here shows as `⌀ no lonca` with its word, record 117).
+fn run(place: &Place, dir: &Path, job: &StoreJob) -> Done {
+    match job {
+        StoreJob::Login(_) => Done::Login(place.login(dir)),
+        StoreJob::Import(ask) => {
+            let done = place.import(&ask.repo, &ask.checkout, &ask.branch);
+            if done.is_ok() && matches!(place.open(), Err(Down::SignedOut)) {
+                let _ = place.login(dir);
+            }
+            Done::Import(done)
+        }
+    }
+}
+
+/// What the world's line says of why a command did not go through.
+fn said(failed: Failed) -> Option<String> {
+    match failed {
+        Failed::NoAnswer => None,
+        Failed::Said(words) => Some(words),
+    }
+}
+
 /// The thread that asks the daemon, and when it is next asked.
 pub(super) struct Watch {
+    /// Where the daemon and the `lonca` program are, for a job.
+    place: Place,
+    /// The job under way: one at a time, never on the screen's thread.
+    job: Option<(StoreJob, Receiver<Done>)>,
     ask: Sender<Repos>,
     back: Receiver<Found>,
     /// A look is under way: never a second, a slow daemon gets no queue.
@@ -36,6 +75,7 @@ impl Watch {
     pub(super) fn start(place: Place) -> Watch {
         let (ask, asked) = mpsc::channel::<Repos>();
         let (answer, back) = mpsc::channel();
+        let kept = place.clone();
         thread::spawn(move || {
             for repos in asked {
                 if answer.send(look(&place, &repos)).is_err() {
@@ -44,6 +84,8 @@ impl Watch {
             }
         });
         Watch {
+            place: kept,
+            job: None,
             ask,
             back,
             out: false,
@@ -98,8 +140,73 @@ impl Live {
         }
     }
 
-    /// What the last look found. Whether the screen changed.
+    /// What the person is asked before project `p`'s checkout goes into
+    /// Lonca as `repo`; none while it is on no branch.
+    pub fn import_ask(&self, p: ProjectId, repo: &str) -> Option<ImportAsk> {
+        let checkout = self.places[p].repo.clone();
+        let (branch, head) = worktree::on_branch(&checkout)?;
+        Some(ImportAsk {
+            project: p,
+            repo: repo.to_string(),
+            checkout,
+            branch,
+            head,
+        })
+    }
+
+    /// Whether a `lonca` command of the person's is under way.
+    pub fn store_busy(&self) -> bool {
+        self.lonca.job.is_some()
+    }
+
+    /// `job` starts, unless one is under way: the screen goes on.
+    pub fn store_job(&mut self, job: StoreJob) -> bool {
+        if self.lonca.job.is_some() {
+            return false;
+        }
+        let place = self.lonca.place.clone();
+        let dir = self.places[job.project()].repo.clone();
+        let (tell, told) = mpsc::channel();
+        let asked = job.clone();
+        thread::spawn(move || {
+            let _ = tell.send(run(&place, &dir, &asked));
+        });
+        self.lonca.job = Some((job, told));
+        true
+    }
+
+    /// What the job under way came to, once it has: the journal says it,
+    /// and the store is asked at once. Whether the screen changed.
+    fn take_store_job(&mut self, w: &mut World) -> bool {
+        let Some((job, told)) = &self.lonca.job else {
+            return false;
+        };
+        let done = match told.try_recv() {
+            Ok(done) => Some(done),
+            Err(TryRecvError::Empty) => return false,
+            Err(TryRecvError::Disconnected) => None,
+        };
+        match (done, job) {
+            (Some(Done::Login(Ok(human))), _) => w.store_signed_in(job.project(), human),
+            (Some(Done::Import(Ok(warned))), StoreJob::Import(ask)) => {
+                w.store_imported(ask, warned);
+            }
+            (Some(Done::Login(Err(e)) | Done::Import(Err(e))), _) => {
+                w.store_failed(job, said(e));
+            }
+            _ => w.store_failed(job, None),
+        }
+        self.lonca.job = None;
+        self.look_now();
+        true
+    }
+
+    /// A job's end, else what the last look found (a look that came at the
+    /// same time is read at the next step). Whether the screen changed.
     pub(super) fn take_lonca(&mut self, w: &mut World) -> bool {
+        if self.take_store_job(w) {
+            return true;
+        }
         let Ok(found) = self.lonca.back.try_recv() else {
             return false;
         };
@@ -137,7 +244,8 @@ mod tests {
     use imece_agent::lonca_fake::{Daemon, TRUNK, status};
 
     use super::*;
-    use crate::live::testing::{idle_live, team};
+    use crate::live::testing::{idle_live, idle_live_in, team};
+    use crate::model::{Event, StoreAct};
 
     const WAIT: Duration = Duration::from_secs(10);
 
@@ -192,6 +300,194 @@ mod tests {
         let down = StoreSeen::Down(StoreDown::NoDaemon);
         assert_eq!(found[0].2, down);
         assert_eq!(found[1].2, down);
+    }
+
+    /// The job comes back: `take_lonca` is asked until it has.
+    fn job_ends(live: &mut Live, w: &mut World) {
+        let started = Instant::now();
+        while !live.take_lonca(w) {
+            assert!(started.elapsed() < Duration::from_secs(10), "no end");
+            thread::sleep(Duration::from_millis(5));
+        }
+    }
+
+    fn last(w: &World) -> &Event {
+        &w.journal.last().unwrap().event
+    }
+
+    fn live_with(program_body: &str) -> (Live, std::path::PathBuf) {
+        let (place, dir) = imece_agent::lonca_fake::program(program_body);
+        let mut live = idle_live_in(&dir, 1);
+        live.lonca = Watch::start(place);
+        (live, dir)
+    }
+
+    #[test]
+    fn a_login_runs_in_the_checkout_one_at_a_time_and_is_told() {
+        let (mut live, dir) = live_with("printf '{\"human\":\"ayse\"}\\n'");
+        let mut w = team(0);
+        live.lonca_after_a_look();
+        assert!(!live.store_busy() && !live.asking());
+        assert!(!live.take_lonca(&mut w), "nothing under way");
+        assert!(live.store_job(StoreJob::Login(0)));
+        assert!(live.store_busy() && live.asking());
+        assert!(!live.store_job(StoreJob::Login(0)), "one at a time");
+        job_ends(&mut live, &mut w);
+        assert!(!live.store_busy() && !live.asking());
+        assert!(live.lonca_is_due(), "asked at once");
+        assert!(matches!(
+            last(&w),
+            Event::StoreSignedIn { leader: 0, human } if human == "ayse"
+        ));
+        let told = imece_agent::lonca_fake::seen(&dir);
+        assert!(
+            told.starts_with(&format!("{}|human login", dir.display())),
+            "{told}"
+        );
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    fn ask_for(checkout: std::path::PathBuf) -> ImportAsk {
+        ImportAsk {
+            project: 0,
+            repo: "demo".into(),
+            checkout,
+            branch: "main".into(),
+            head: "1".repeat(40),
+        }
+    }
+
+    #[test]
+    fn an_import_puts_the_project_on_its_repository_with_what_lonca_warned() {
+        let (mut live, dir) = live_with("echo 'warning: big' >&2");
+        let mut w = team(0);
+        assert!(live.store_job(StoreJob::Import(ask_for(dir.clone()))));
+        job_ends(&mut live, &mut w);
+        assert_eq!(w.projects[0].lonca.as_ref().unwrap().repo, "demo");
+        assert_eq!(seen_of(&w, 0), StoreSeen::Asking);
+        assert!(matches!(
+            last(&w),
+            Event::StoreImported { repo, warnings, .. }
+                if repo == "demo" && warnings == &["big".to_string()]
+        ));
+        assert!(!live.store_busy());
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn the_first_import_signs_the_person_in_and_a_later_one_does_not() {
+        let (fake, dir) = imece_agent::lonca_fake::program("exit 0");
+        let d = up_daemon();
+        let place = Place {
+            program: fake.program,
+            ..d.place.clone()
+        };
+        let job = StoreJob::Import(ask_for(dir.clone()));
+        let last_run = || imece_agent::lonca_fake::seen(&dir);
+        assert!(matches!(run(&place, &dir, &job), Done::Import(Ok(_))));
+        assert!(last_run().contains("|init --import"), "{}", last_run());
+        std::fs::remove_file(place.humans.join("ayse.session")).unwrap();
+        assert!(matches!(run(&place, &dir, &job), Done::Import(Ok(_))));
+        let login = last_run();
+        assert!(login.contains("|human login --json|"), "{login}");
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn a_refused_import_signs_nobody_in() {
+        let (fake, dir) = imece_agent::lonca_fake::program("exit 1");
+        let d = up_daemon();
+        let place = Place {
+            program: fake.program,
+            ..d.place.clone()
+        };
+        let job = StoreJob::Import(ask_for(dir.clone()));
+        assert!(matches!(run(&place, &dir, &job), Done::Import(Err(_))));
+        let told = imece_agent::lonca_fake::seen(&dir);
+        assert!(told.contains("|init --import"), "{told}");
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn a_refused_import_is_told_and_leaves_the_project_off_lonca() {
+        let (mut live, dir) = live_with("echo 'lonca: conflict: it exists' >&2\nexit 1");
+        let mut w = team(0);
+        live.lonca_after_a_look();
+        assert!(live.store_job(StoreJob::Import(ask_for(dir.clone()))));
+        job_ends(&mut live, &mut w);
+        assert!(w.projects[0].lonca.is_none());
+        assert!(live.lonca_is_due());
+        assert!(matches!(
+            last(&w),
+            Event::StoreFailed { act: StoreAct::Import, why: Some(why), .. }
+                if why == "conflict: it exists"
+        ));
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn a_login_that_fails_says_what_it_said_and_no_program_says_nothing() {
+        let (mut live, dir) = live_with("echo 'lonca: no key' >&2\nexit 1");
+        let mut w = team(0);
+        assert!(live.store_job(StoreJob::Login(0)));
+        job_ends(&mut live, &mut w);
+        assert!(matches!(
+            last(&w),
+            Event::StoreFailed { act: StoreAct::Login, why: Some(why), .. } if why == "no key"
+        ));
+        let mut place = live.lonca.place.clone();
+        place.program = dir.join("nothing").display().to_string();
+        live.lonca = Watch::start(place);
+        assert!(live.store_job(StoreJob::Login(0)));
+        job_ends(&mut live, &mut w);
+        assert!(matches!(
+            last(&w),
+            Event::StoreFailed {
+                act: StoreAct::Login,
+                why: None,
+                ..
+            }
+        ));
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn a_job_whose_thread_died_is_a_failed_one() {
+        let (mut live, dir) = live_with("exit 0");
+        let mut w = team(0);
+        let (tell, told) = mpsc::channel();
+        live.lonca.job = Some((StoreJob::Login(0), told));
+        assert!(!live.take_lonca(&mut w), "still under way");
+        drop(tell);
+        assert!(live.take_lonca(&mut w));
+        assert!(matches!(last(&w), Event::StoreFailed { why: None, .. }));
+        assert!(!live.store_busy());
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn an_import_is_asked_of_a_branch_and_never_of_a_detached_head() {
+        let repo = crate::live::testing::checkout("import-ask");
+        let live = idle_live_in(&repo, 1);
+        let git = |args: &[&str]| {
+            let out = std::process::Command::new("git")
+                .args(args)
+                .current_dir(&repo)
+                .output()
+                .unwrap();
+            assert!(out.status.success());
+            String::from_utf8_lossy(&out.stdout).trim().to_string()
+        };
+        git(&["checkout", "--quiet", "-b", "trunk-to-be"]);
+        let ask = live.import_ask(0, "demo").expect("on a branch");
+        assert_eq!(ask.project, 0);
+        assert_eq!(ask.repo, "demo");
+        assert_eq!(ask.checkout, repo);
+        assert_eq!(ask.branch, "trunk-to-be");
+        assert_eq!(ask.head, git(&["rev-parse", "HEAD"]));
+        git(&["checkout", "--quiet", "--detach"]);
+        assert_eq!(live.import_ask(0, "demo"), None);
+        std::fs::remove_dir_all(&repo).unwrap();
     }
 
     #[test]

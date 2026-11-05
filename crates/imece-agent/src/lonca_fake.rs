@@ -5,13 +5,43 @@ use std::io::{BufRead, BufReader, Write};
 use std::os::unix::fs::PermissionsExt;
 use std::os::unix::net::UnixListener;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
 
 use serde_json::{Value, json};
 
 use crate::lonca::Place;
+
+/// A `lonca` program that writes where it runs and its arguments to
+/// [`seen`], then runs the shell text `body`; the place that finds it, in
+/// a directory of its own, which the test removes.
+pub fn program(body: &str) -> (Place, PathBuf) {
+    static NEXT: AtomicU64 = AtomicU64::new(0);
+    let n = NEXT.fetch_add(1, Ordering::Relaxed);
+    let dir = std::env::temp_dir().join(format!("imece-cli-{}-{n}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let dir = dir.canonicalize().unwrap();
+    let bin = dir.join("lonca");
+    let script = format!(
+        "#!/bin/sh\necho \"$PWD|$*|\" > \"{}/seen\"\n{body}\n",
+        dir.display()
+    );
+    std::fs::write(&bin, script).unwrap();
+    std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let place = Place {
+        socket: dir.join("s"),
+        humans: dir.join("humans"),
+        human: None,
+        program: bin.display().to_string(),
+    };
+    (place, dir)
+}
+
+/// What the [`program`] in `dir` was last run with.
+pub fn seen(dir: &Path) -> String {
+    std::fs::read_to_string(dir.join("seen")).unwrap()
+}
 
 /// A trunk the fake answers with.
 pub const TRUNK: &str = "693d62952cd8f7ce58b0de780cf5d998b2f5c1a6";
@@ -73,6 +103,7 @@ impl Daemon {
             socket,
             humans: dir.clone(),
             human: Some("ayse".into()),
+            program: "lonca".into(),
         };
         Daemon { dir, place, heard }
     }

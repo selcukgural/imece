@@ -117,6 +117,14 @@ fn common_dir(dir: &Path) -> io::Result<PathBuf> {
     dir.join(d).canonicalize()
 }
 
+/// The branch the checkout `dir` is on and its commit; none on a detached
+/// HEAD, or without a first commit.
+pub fn on_branch(dir: &Path) -> Option<(String, String)> {
+    let branch = git(dir, &["symbolic-ref", "--quiet", "--short", "HEAD"]).ok()?;
+    let head = git(dir, &["rev-parse", "--verify", "--quiet", "HEAD^{commit}"]).ok()?;
+    Some((branch, head))
+}
+
 /// Agent names become directory names: lowercase letters, digits and
 /// dashes, never a path.
 pub fn valid_name(name: &str) -> bool {
@@ -1043,6 +1051,25 @@ mod tests {
         std::fs::write(r.join("a.txt"), "a").unwrap();
         commit(&r, "init");
         Scratch { dir, repo: r }
+    }
+
+    #[test]
+    fn on_branch_names_the_branch_and_its_commit_and_no_detached_head() {
+        let s = repo("on-branch");
+        git(&s.repo, &["checkout", "--quiet", "-b", "feature/x"]).unwrap();
+        let head = commit(&s.repo, "two");
+        assert_eq!(on_branch(&s.repo), Some(("feature/x".to_string(), head)));
+        git(&s.repo, &["checkout", "--quiet", "--detach"]).unwrap();
+        assert_eq!(on_branch(&s.repo), None, "detached");
+    }
+
+    #[test]
+    fn on_branch_needs_a_first_commit() {
+        let s = repo("on-branch-unborn");
+        let bare = s.dir.join("unborn");
+        std::fs::create_dir_all(&bare).unwrap();
+        git(&bare, &["init", "--quiet"]).unwrap();
+        assert_eq!(on_branch(&bare), None);
     }
 
     /// Commits everything in `dir` (a repository or a worktree).

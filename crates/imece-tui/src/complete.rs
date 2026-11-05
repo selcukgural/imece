@@ -444,6 +444,15 @@ pub fn suggest(input: &str, w: &World, project: ProjectId, home: Option<&Path>) 
                     "",
                 )
             }
+            Some(("lonca", arg)) => {
+                let start = input.len() - arg.len();
+                menu(
+                    start,
+                    arg,
+                    matching(arg, ["import", "login", "off"].into_iter()),
+                    "",
+                )
+            }
             Some(("review" | "plan", arg)) => {
                 let start = input.len() - arg.len();
                 menu(start, arg, matching(arg, ["on", "off"].into_iter()), "")
@@ -783,6 +792,11 @@ mod tests {
         let m = suggest(":review of", &w, 0, None).unwrap();
         assert_eq!((m.items, m.start), (vec!["off".to_string()], 8));
         assert_eq!(suggest(":review on", &w, 0, None), None);
+        let m = suggest(":lonca ", &w, 0, None).unwrap();
+        let words = ["import", "login", "off"].map(str::to_string);
+        assert_eq!((m.items, m.start), (words.to_vec(), 7));
+        let m = suggest(":lonca lo", &w, 0, None).unwrap();
+        assert_eq!((m.items, m.start), (vec!["login".to_string()], 7));
         for cmd in ["clear", "unclear"] {
             let m = suggest(&format!(":{cmd} "), &w, 0, None).unwrap();
             assert_eq!(

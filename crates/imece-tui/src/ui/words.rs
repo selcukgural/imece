@@ -182,6 +182,32 @@ pub fn event(lang: Lang, w: &World, e: &Event) -> String {
             &[project(w, *leader), repo, store_down(t, *why)],
         ),
         Event::StoreBack { leader, repo } => fill(t.ev_store_back, &[project(w, *leader), repo]),
+        Event::StoreSignedIn { human, .. } if human.is_empty() => t.ev_store_signed_in.to_string(),
+        Event::StoreSignedIn { human, .. } => fill(t.ev_store_signed_in_as, &[human]),
+        Event::StoreImported {
+            leader,
+            repo,
+            warnings,
+        } => {
+            let line = fill(t.ev_store_imported, &[project(w, *leader), repo]);
+            match warnings.first() {
+                None => line,
+                Some(first) => fill(
+                    t.ev_store_imported_warned,
+                    &[&line, first, &(warnings.len() - 1).to_string()],
+                ),
+            }
+        }
+        Event::StoreFailed { act, why, .. } => {
+            let did = match act {
+                StoreAct::Login => t.store_act_login,
+                StoreAct::Import => t.store_act_import,
+            };
+            fill(
+                t.ev_store_failed,
+                &[did, why.as_deref().unwrap_or(t.store_no_answer)],
+            )
+        }
         Event::Closed { leader } => fill(t.ev_closed, &[project(w, *leader)]),
         Event::Archived { leader, title, .. } => fill(
             t.ev_archived,

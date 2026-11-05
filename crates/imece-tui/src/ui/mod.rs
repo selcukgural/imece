@@ -105,6 +105,9 @@ pub fn draw(f: &mut Frame, app: &App) {
     if let Some(ask) = &app.teardown {
         over.push(overlay::teardown(f, app, ask));
     }
+    if let Some(ask) = &app.importing {
+        over.push(overlay::import(f, app, ask));
+    }
     let line = line.filter(|&at| !over.iter().any(|r| r.contains(at)));
     let mut filter = None;
     let mut window = true;
@@ -13858,7 +13861,7 @@ after | not a table";
             (StoreDown::NoDaemon, "lonca daemon"),
             (StoreDown::NotTheDaemon, "not your daemon"),
             (StoreDown::Protocol, "another protocol"),
-            (StoreDown::SignedOut, "lonca human login"),
+            (StoreDown::SignedOut, ":lonca login"),
             (StoreDown::Forbidden, "not enrolled"),
             (StoreDown::NoRepo, "no such repository"),
             (StoreDown::Refused, "refused"),
@@ -13888,6 +13891,66 @@ after | not a table";
         assert_eq!(
             words::event(Lang::En, &app.world, &back),
             format!("{project}'s Lonca repository demo answers again")
+        );
+    }
+
+    #[test]
+    fn the_import_window_says_what_goes_and_what_can_not_be_taken_back() {
+        for (lang, word) in [
+            (Lang::En, "imece can not take this back"),
+            (Lang::Tr, "geri alamaz"),
+        ] {
+            let mut app = app_after(1, 1, 0, lang);
+            app.importing = Some(crate::model::ImportAsk {
+                project: 0,
+                repo: "shop".into(),
+                checkout: "/src/shop".into(),
+                branch: "main".into(),
+                head: "693d62952cd8".into(),
+            });
+            let s = render(&app, 120, 30);
+            for shown in ["/src/shop", "main", "693d629", "shop", word] {
+                assert!(s.contains(shown), "{shown}: {s}");
+            }
+            assert!(!s.contains("693d62952cd8"), "{s}");
+        }
+    }
+
+    #[test]
+    fn a_lonca_commands_lines_say_how_it_went() {
+        use crate::model::StoreAct;
+        let app = app_after(1, 1, 0, Lang::En);
+        let project = app.world.projects[0].name.clone();
+        let line = |e: Event| words::event(Lang::En, &app.world, &e);
+        let signed = |human: &str| Event::StoreSignedIn {
+            leader: 0,
+            human: human.into(),
+        };
+        assert_eq!(line(signed("")), "signed in to Lonca");
+        assert_eq!(line(signed("ayse")), "signed in to Lonca as ayse");
+        let imported = |warnings: Vec<String>| Event::StoreImported {
+            leader: 0,
+            repo: "demo".into(),
+            warnings,
+        };
+        let went = format!("{project} went into Lonca as repository demo");
+        assert_eq!(line(imported(vec![])), went);
+        assert_eq!(
+            line(imported(vec!["big.bin".into(), "x".into(), "y".into()])),
+            format!("{went}; Lonca warns: big.bin (+2 more)")
+        );
+        let failed = |act, why: Option<&str>| Event::StoreFailed {
+            leader: 0,
+            act,
+            why: why.map(str::to_string),
+        };
+        assert_eq!(
+            line(failed(StoreAct::Login, Some("no key"))),
+            "signing in to Lonca failed: no key"
+        );
+        assert_eq!(
+            line(failed(StoreAct::Import, None)),
+            "importing into Lonca failed: lonca did not answer: no such program, or it took too long"
         );
     }
 
