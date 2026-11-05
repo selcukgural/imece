@@ -125,6 +125,41 @@ pub fn on_branch(dir: &Path) -> Option<(String, String)> {
     Some((branch, head))
 }
 
+/// How a checkout stood to the commit it was brought up to.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Forward {
+    /// It was there already.
+    Even,
+    /// Its branch moved forward.
+    Moved,
+    /// It has commits of its own: nothing moved.
+    Apart,
+}
+
+/// Brings the branch the checkout `dir` is on forward to `to`, when that is
+/// a fast-forward. Anything else is left as it is: a checkout with commits
+/// of its own is `Apart`, and work in the way is git's refusal.
+pub fn fast_forward(dir: &Path, to: &str) -> io::Result<Forward> {
+    let head = git(dir, &["rev-parse", "HEAD"])?;
+    let target = git(dir, &["rev-parse", to])?;
+    if head == target {
+        return Ok(Forward::Even);
+    }
+    if git(dir, &["merge-base", "HEAD", to]).ok().as_ref() != Some(&head) {
+        return Ok(Forward::Apart);
+    }
+    git(dir, &["merge", "--ff-only", "--quiet", to])?;
+    Ok(Forward::Moved)
+}
+
+/// The commit of the checkout `dir` nearest to `reference`: where HEAD left
+/// it, else HEAD, when there is no such reference yet; none without a
+/// first commit.
+pub fn near(dir: &Path, reference: &str) -> Option<String> {
+    (git(dir, &["merge-base", "HEAD", reference]).ok())
+        .or_else(|| git(dir, &["rev-parse", "--verify", "--quiet", "HEAD^{commit}"]).ok())
+}
+
 /// Agent names become directory names: lowercase letters, digits and
 /// dashes, never a path.
 pub fn valid_name(name: &str) -> bool {
@@ -1061,6 +1096,74 @@ mod tests {
         assert_eq!(on_branch(&s.repo), Some(("feature/x".to_string(), head)));
         git(&s.repo, &["checkout", "--quiet", "--detach"]).unwrap();
         assert_eq!(on_branch(&s.repo), None, "detached");
+    }
+
+    /// `s`'s checkout one commit behind a new branch `ahead`, back on
+    /// its own branch, and `ahead`'s commit.
+    fn behind_ahead(s: &Scratch) -> String {
+        let r = &s.repo;
+        let was = git(r, &["symbolic-ref", "--short", "HEAD"]).unwrap();
+        git(r, &["checkout", "--quiet", "-b", "ahead"]).unwrap();
+        std::fs::write(r.join("b.txt"), "b").unwrap();
+        let tip = commit(r, "ahead");
+        git(r, &["checkout", "--quiet", &was]).unwrap();
+        tip
+    }
+
+    #[test]
+    fn a_checkout_moves_forward_and_only_forward() {
+        let s = repo("forward");
+        let r = &s.repo;
+        let tip = behind_ahead(&s);
+        std::fs::write(r.join("note"), "unrelated").unwrap();
+        git(r, &["add", "note"]).unwrap();
+        assert_eq!(fast_forward(r, "ahead").unwrap(), Forward::Moved);
+        assert_eq!(git(r, &["rev-parse", "HEAD"]).unwrap(), tip);
+        assert!(r.join("note").exists(), "what was staged stays");
+        assert_eq!(fast_forward(r, "ahead").unwrap(), Forward::Even);
+        assert!(fast_forward(r, "no-such-ref").is_err());
+    }
+
+    #[test]
+    fn a_checkout_with_commits_of_its_own_stays_where_it_is() {
+        let s = repo("apart");
+        let r = &s.repo;
+        behind_ahead(&s);
+        std::fs::write(r.join("c.txt"), "c").unwrap();
+        let own = commit(r, "own");
+        assert_eq!(fast_forward(r, "ahead").unwrap(), Forward::Apart);
+        assert_eq!(git(r, &["rev-parse", "HEAD"]).unwrap(), own);
+    }
+
+    #[test]
+    fn work_in_the_way_is_gits_refusal_and_stays() {
+        let s = repo("dirty");
+        let r = &s.repo;
+        let was = git(r, &["rev-parse", "HEAD"]).unwrap();
+        behind_ahead(&s);
+        std::fs::write(r.join("b.txt"), "mine").unwrap();
+        git(r, &["add", "b.txt"]).unwrap();
+        let why = fast_forward(r, "ahead").unwrap_err().to_string();
+        assert!(why.contains("merge"), "{why}");
+        assert_eq!(git(r, &["rev-parse", "HEAD"]).unwrap(), was);
+        assert_eq!(std::fs::read_to_string(r.join("b.txt")).unwrap(), "mine");
+    }
+
+    #[test]
+    fn near_a_reference_is_where_head_left_it_else_head() {
+        let s = repo("near");
+        let r = &s.repo;
+        let base = git(r, &["rev-parse", "HEAD"]).unwrap();
+        assert_eq!(near(r, "no-such-ref"), Some(base.clone()));
+        behind_ahead(&s);
+        std::fs::write(r.join("c.txt"), "c").unwrap();
+        let own = commit(r, "own");
+        assert_eq!(near(r, "ahead"), Some(base));
+        assert_eq!(near(r, "no-such-ref"), Some(own));
+        let bare = s.dir.join("unborn");
+        std::fs::create_dir_all(&bare).unwrap();
+        git(&bare, &["init", "--quiet"]).unwrap();
+        assert_eq!(near(&bare, "ahead"), None);
     }
 
     #[test]

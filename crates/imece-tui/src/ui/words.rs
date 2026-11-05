@@ -198,10 +198,19 @@ pub fn event(lang: Lang, w: &World, e: &Event) -> String {
                 ),
             }
         }
+        Event::StoreSynced { leader, repo, how } => fill(
+            match how {
+                Synced::Even => t.ev_store_synced_even,
+                Synced::Moved => t.ev_store_synced,
+                Synced::Apart => t.ev_store_synced_apart,
+            },
+            &[project(w, *leader), repo],
+        ),
         Event::StoreFailed { act, why, .. } => {
             let did = match act {
                 StoreAct::Login => t.store_act_login,
                 StoreAct::Import => t.store_act_import,
+                StoreAct::Sync => t.store_act_sync,
             };
             fill(
                 t.ev_store_failed,
@@ -1014,6 +1023,16 @@ pub fn store_down(t: &Text, why: StoreDown) -> &'static str {
         StoreDown::Forbidden => t.store_forbidden,
         StoreDown::NoRepo => t.store_no_repo,
         StoreDown::Refused => t.store_refused,
+    }
+}
+
+/// How far behind trunk a checkout is, as a line shows it; nothing when it
+/// is level or not known.
+pub fn behind(behind: Behind) -> Option<String> {
+    match behind {
+        Behind::By(0) | Behind::Unknown => None,
+        Behind::By(n) => Some(format!("↓{n}")),
+        Behind::Never => Some("↓?".to_string()),
     }
 }
 

@@ -13833,6 +13833,7 @@ after | not a table";
         let seen = |pending| StoreSeen::Up {
             trunk: trunk.clone(),
             pending,
+            behind: Behind::By(0),
         };
         app.world.store_seen(0, "demo", seen(0));
         let s = render(&app, 160, 30);
@@ -13914,6 +13915,63 @@ after | not a table";
             }
             assert!(!s.contains("693d62952cd8"), "{s}");
         }
+    }
+
+    #[test]
+    fn how_far_behind_trunk_is_a_word_on_the_project_line() {
+        use crate::model::{Behind, StoreSeen};
+        assert_eq!(words::behind(Behind::By(3)).as_deref(), Some("↓3"));
+        assert_eq!(words::behind(Behind::Never).as_deref(), Some("↓?"));
+        assert_eq!(words::behind(Behind::By(0)), None);
+        assert_eq!(words::behind(Behind::Unknown), None);
+        let mut app = app_after(1, 1, 0, Lang::En);
+        app.world.on_lonca(0, Some("shop".into()));
+        let up = StoreSeen::Up {
+            trunk: "693d62952cd8".into(),
+            pending: 2,
+            behind: Behind::By(3),
+        };
+        app.world.store_seen(0, "shop", up);
+        let s = render(&app, 160, 40);
+        assert!(s.contains("lonca shop 693d629 ↓3 · 2 pending"), "{s}");
+    }
+
+    #[test]
+    fn a_sync_says_how_the_checkout_stood() {
+        use crate::model::{StoreAct, Synced};
+        let app = app_after(1, 1, 0, Lang::En);
+        let project = app.world.projects[0].name.clone();
+        let line = |how| {
+            let e = Event::StoreSynced {
+                leader: 0,
+                repo: "shop".into(),
+                how,
+            };
+            words::event(Lang::En, &app.world, &e)
+        };
+        assert_eq!(
+            line(Synced::Moved),
+            format!("{project} moved forward to trunk of shop")
+        );
+        assert_eq!(
+            line(Synced::Even),
+            format!("{project} is level with trunk of shop")
+        );
+        assert_eq!(
+            line(Synced::Apart),
+            format!(
+                "{project} has commits of its own: trunk of shop is in refs/lonca/trunk, nothing moved"
+            )
+        );
+        let failed = Event::StoreFailed {
+            leader: 0,
+            act: StoreAct::Sync,
+            why: Some("redacted".into()),
+        };
+        assert_eq!(
+            words::event(Lang::En, &app.world, &failed),
+            "bringing trunk to the checkout failed: redacted"
+        );
     }
 
     #[test]

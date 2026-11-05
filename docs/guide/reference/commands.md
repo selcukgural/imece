@@ -73,6 +73,7 @@ A line that starts with `:` is a command to imece, not a message to an agent. Yo
 | `:slower` | `-` | | yes | | the speed, `×2` |
 | `:solo [PATH] [CHOICE] [NAME]` | — | | | `$` | |
 | `:story` | `J` | | | | on / off |
+| `:sync` | — | | | | how far behind trunk (`↓3`) |
 | `:talk [@NAME]` | `v` | | | | the agent at hand |
 | `:theme [NAME\|FILE]` | `T` | `:t` | | | the theme in use |
 | `:tidy` | — | | | | |
@@ -341,6 +342,10 @@ Opens a solo session: one agent you drive yourself, with no leader and no team, 
 ### `:story`
 
 The lower side panel tells the story, as `J`: what happened, by card, newest first, with whom you hold up on top (see [the story](../screen/journal.md#the-story)); again, the journal. Goes to the salon first. The menu note: `(on)` / `(off)`; remembered in the store, on by default.
+
+### `:sync`
+
+Brings the trunk of the project's [Lonca](../concepts/projects.md#on-lonca) repository to your checkout, on the side: `lonca fetch` puts it in `refs/lonca/trunk`, then your branch moves forward when that is a fast-forward. The journal says how it stood: `kule moved forward to trunk of kule`, `kule is level with trunk of kule`, or `kule has commits of its own: trunk of kule is in refs/lonca/trunk, nothing moved`. imece never merges, rebases or resets your branch, and work in the way stops it with git's words. Refused at once off Lonca, without git, while the store does not answer, or with a `lonca` command under way. The menu note says how far behind you are: `(↓3)`, `(↓?)` when your commit never was trunk and nothing was fetched yet, nothing when level. The demo keeps the same count on its table, and every third `:sync` finds commits of your own.
 
 ### `:talk [@NAME]`
 

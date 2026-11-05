@@ -5213,6 +5213,7 @@ mod tests {
             let up = StoreSeen::Up {
                 trunk: "t".into(),
                 pending: 1,
+                behind: Behind::By(0),
             };
             w.projects[1].lonca.as_mut().unwrap().seen = up;
             assert!(!store.save(&w, &kept().kept()).unwrap(), "nothing new");

@@ -137,12 +137,16 @@ Her 5 saniyede bir projenin satırı nerede durduğunu söyler:
 | Satır | Anlamı |
 | --- | --- |
 | `lonca kule 693d629 · 2 bekliyor` | daemon yanıt veriyor: trunk'ın commit'i, insan bekleyenler |
+| `lonca kule 693d629 ↓3` | çalışma kopyan trunk'ın üç entegrasyon gerisinde: `:sync` |
+| `lonca kule 693d629 ↓?` | çalışma kopyanın commit'i hiç trunk olmadı ve henüz hiçbir şey çekilmedi |
 | `lonca kule …` | az önce adlandırıldı, henüz yanıt yok |
 | `⌀ lonca yok` | okunamıyor; günlük nedenini bir kez söyler |
 
 Nedenler: hiçbir daemon yanıt vermiyor, soketteki senin daemon'ın değil, başka bir protokol, oturum açmamışsın, ya da bu adda bir depoya kayıtlı değilsin (daemon olmayan bir depo için de aynısını söyler, adı denetle ya da `:lonca import` ile oluştur).
 
 Yanıt verene dek proje kapalıdır: kimse işe alınmaz, `:fork` reddedilir, hiçbir Δ uygulanmaz, reddedilmez, geri gönderilmez. Ajanlar çalışmayı sürdürür, Δ'leri bekler. Hiçbir depoda olmayan bir proje sokete hiç dokunmaz. Bkz. [`:lonca`](../reference/commands.md#lonca-nameoffloginimport).
+
+Çalışma kopyan deponun bir istemcisidir, bu yüzden trunk onsuz ilerler. [`:sync`](../reference/commands.md#sync) onu getirir: `lonca fetch` trunk'ı `refs/lonca/trunk`'a koyar, dalın da fast-forward olabiliyorsa ilerler. imece dalını asla merge, rebase ya da reset etmez: kendi commit'lerin varsa hiçbir şey kımıldamaz ve günlük bunu söyler, yoldaki iş ise git'in kendi sözleriyle durdurur.
 
 ## Demonun kopyaları
 
