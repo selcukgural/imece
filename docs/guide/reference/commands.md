@@ -47,7 +47,7 @@ A line that starts with `:` is a command to imece, not a message to an agent. Yo
 | `:hints` | `F` | | | | |
 | `:keys` | — | | | | how many keys your file gives |
 | `:lang [en\|tr]` | `L` | | | | `English` / `Türkçe` |
-| `:lonca [NAME\|off]` | — | | | | the project's repository, when there is one |
+| `:lonca [NAME\|off\|login\|import [NAME]]` | — | | | | the project's repository, when there is one |
 | `:mark` | `m` | | | | |
 | `:model NAME` | — | | | | the solo at hand's model, or `default` |
 | `:motion [off\|calm\|full]` | — | | | | off / calm / full |
@@ -211,11 +211,15 @@ Reads your key file (`~/.config/imece/keys`) again and says what came of it: `�
 
 The screen's language, as `L`. Alone it switches to the other language; `:lang en` or `:lang tr` sets one. Anything else: `de is not a language: en or tr`. The menu note shows the language in use. For this run only; the next start reads `--lang` or `IMECE_LANG`.
 
-### `:lonca [NAME|off]`
+### `:lonca [NAME|off|login|import]`
 
-The [Lonca](https://github.com/selcukgural/lonca) repository of the project at hand. `:lonca NAME` names it (a name is 1 to 64 letters, digits, `.`, `_`, `-`) and asks the daemon at once: `kule is on Lonca repository kule now; imece asks its daemon`. `:lonca off` leaves it. Bare, it says how the project stands: `kule is on Lonca repository kule: trunk 693d629, 2 waiting for a human`, or why it can not be read, or `kule is on no Lonca repository; :lonca NAME names one`. Kept in the store per project; a project archived hands it to the fresh one.
+The [Lonca](https://github.com/selcukgural/lonca) repository of the project at hand. `:lonca NAME` names it (a name is 1 to 64 letters, digits, `.`, `_`, `-`) and asks the daemon at once: `kule is on Lonca repository kule now; imece asks its daemon`. `:lonca off` leaves it. Bare, it says how the project stands: `kule is on Lonca repository kule: trunk 693d629, 2 waiting for a human`, or why it can not be read, or `kule is on no Lonca repository; :lonca NAME names one, :lonca import makes one`. Kept in the store per project; a project archived hands it to the fresh one.
 
-While a project on Lonca has not had an answer from its daemon it is closed: nobody is hired, helpers included, `:fork` is refused and no Δ is applied, rejected or sent back. Its line says `⌀ no lonca` and the journal says why once. See [projects](../concepts/projects.md#on-lonca). Nothing else changes yet: workers still work in worktrees and a Δ still lands in your checkout. The demo's second project is on Lonca, and its daemon stops now and then.
+`:lonca login` signs you in: imece runs `lonca human login` once, while you go on (with a Secure Enclave key it waits for your finger), and the journal says `signed in to Lonca as NAME` or why not. A session lasts a day at most.
+
+`:lonca import [NAME]` makes a repository of the checkout, as NAME or the project's name. A window shows the checkout, the branch and its commit and the repository it becomes; `a` imports, `esc` or `q` closes it and nothing goes, `?` the help. imece can not take it back. It runs on the side and the journal says how it went, with the first thing Lonca warned of. Refused at once: a project already on a repository, a folder without git, a detached HEAD, a `lonca` command under way. On a new daemon the first import signs you in too, since a daemon with no repository can sign nobody in. `:lonca login` before it shows the daemon's refusal.
+
+While a project on Lonca has not had an answer from its daemon it is closed: nobody is hired, helpers included, `:fork` is refused and no Δ is applied, rejected or sent back. Its line says `⌀ no lonca` and the journal says why once. See [projects](../concepts/projects.md#on-lonca). Nothing else changes yet: workers still work in worktrees and a Δ still lands in your checkout. The demo's second project is on Lonca, and its daemon stops now and then; `:lonca import` and `:lonca login` work on its table, and a name already there is refused as a daemon refuses it.
 
 ### `:mark`
 

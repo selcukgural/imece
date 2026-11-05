@@ -6,8 +6,11 @@
 //! number, an answer that does not fit, and no token leaves before the
 //! daemon was checked. Its words are data: what comes from the store reaches
 //! the screen only through `clean`.
+//!
+//! What must be signed with the person's key is not done here: the `lonca`
+//! program does it, as a child, at a moment the person chose (record 117).
 
-use std::ffi::OsString;
+use std::ffi::{OsStr, OsString};
 use std::fs::{self, OpenOptions};
 use std::io::{BufRead, BufReader, Read, Write};
 use std::os::unix::fs::{FileTypeExt, MetadataExt, OpenOptionsExt};
@@ -16,6 +19,8 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use serde_json::{Map, Value, json};
+
+use crate::child;
 
 /// The protocol number this client was written for: a daemon that says
 /// another one is refused (the protocol's own rule).
@@ -29,6 +34,23 @@ const TIMEOUT: Duration = Duration::from_secs(5);
 pub const LOG_WAIT_MOST: u64 = 30_000;
 /// A session file is a token and a time; anything longer is not one.
 const SESSION_MOST: u64 = 4096;
+/// What a `lonca` child sees of our environment besides [`child::BASE_ENV`]:
+/// where the daemon is and who the person is, the same as this client.
+const CLI_ENV: &[&str] = &[
+    "LONCA_HOME",
+    "LONCA_SOCKET",
+    "LONCA_HUMANS",
+    "LONCA_HUMAN",
+    "LONCA_SE",
+];
+/// How long `human login` gets: a Secure Enclave key waits for a finger.
+const LOGIN_WAIT: Duration = Duration::from_secs(60);
+/// How long an import gets: the daemon fetches the branch's whole history.
+const IMPORT_WAIT: Duration = Duration::from_secs(600);
+/// The longest refusal kept of what `lonca` said, in characters.
+const SAID_MOST: usize = 300;
+/// The most warnings kept of an import.
+const WARNINGS_MOST: usize = 8;
 
 /// Why the store can not be read. Every one of them closes a project on
 /// Lonca to hires and Δ decisions.
@@ -53,13 +75,25 @@ pub enum Down {
     Refused,
 }
 
-/// Where the daemon and the person's identity are, as `lonca` finds them.
+/// Why a `lonca` command of the person's did not go through.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Failed {
+    /// No such program, or it ran out of time: nothing was said.
+    NoAnswer,
+    /// It refused, and said why: its last line, cut.
+    Said(String),
+}
+
+/// Where the daemon and the person's identity are, as `lonca` finds them,
+/// and the program that signs for the person.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Place {
     pub socket: PathBuf,
     pub humans: PathBuf,
     /// `LONCA_HUMAN`; none: the `default` file among the humans.
     pub human: Option<String>,
+    /// The `lonca` program, found on `PATH`.
+    pub program: String,
 }
 
 impl Place {
@@ -76,7 +110,49 @@ impl Place {
             socket: path("LONCA_SOCKET").unwrap_or_else(|| lonca.join("lonca.sock")),
             humans: path("LONCA_HUMANS").unwrap_or_else(|| home.join(".config/lonca/humans")),
             human: get("LONCA_HUMAN").and_then(|h| h.into_string().ok()),
+            program: "lonca".to_string(),
         }
+    }
+
+    /// What `lonca ARGS` printed in `dir`; a refusal is its last line.
+    /// Stdin is closed: nothing here can wait on a terminal.
+    fn run(&self, dir: &Path, args: &[&OsStr], wait: Duration) -> Result<String, Failed> {
+        let mut cmd = child::command(&self.program, dir, CLI_ENV);
+        cmd.args(args);
+        let (status, said) = child::ask(cmd, wait).ok_or(Failed::NoAnswer)?;
+        if status.success() {
+            Ok(said)
+        } else {
+            Err(Failed::Said(refusal(&said)))
+        }
+    }
+
+    /// `lonca human login`: the person's session, which every read needs;
+    /// the name it was opened for. The token stays in its file. With a
+    /// Secure Enclave key this waits for a finger, so it runs only when
+    /// the person asks and never on the screen's thread.
+    pub fn login(&self, dir: &Path) -> Result<String, Failed> {
+        let args = ["human", "login", "--json"].map(OsStr::new);
+        let said = self.run(dir, &args, LOGIN_WAIT)?;
+        Ok(signed_in(&said).unwrap_or_default())
+    }
+
+    /// `lonca init` of `repo` from `branch` of the checkout: Lonca's store
+    /// gets the branch and its history. What it warned of comes back: a
+    /// file too large for a proposal, for one. The caller has the person's
+    /// yes; nothing can take this back.
+    pub fn import(&self, repo: &str, checkout: &Path, branch: &str) -> Result<Vec<String>, Failed> {
+        let args = [
+            OsStr::new("init"),
+            OsStr::new("--import"),
+            checkout.as_os_str(),
+            OsStr::new("--branch"),
+            OsStr::new(branch),
+            // A name may start with a dash, and is no option then.
+            OsStr::new("--"),
+            OsStr::new(repo),
+        ];
+        Ok(warnings(&self.run(checkout, &args, IMPORT_WAIT)?))
     }
 
     /// Who the person is here: a name that can be a file's.
@@ -103,6 +179,31 @@ impl Place {
         client.token = Some(read_session(&file, me, now_ms()).ok_or(Down::SignedOut)?);
         Ok(client)
     }
+}
+
+/// The refusal in what `lonca` said: its last line, without the program's
+/// name, cut to [`SAID_MOST`].
+fn refusal(said: &str) -> String {
+    let last = (said.lines().rev()).find(|l| !l.trim().is_empty());
+    let line = last.unwrap_or_default().trim();
+    let line = line.strip_prefix("lonca: ").unwrap_or(line);
+    line.chars().take(SAID_MOST).collect()
+}
+
+/// Who `human login --json` signed in: stdout comes first, one object.
+fn signed_in(said: &str) -> Option<String> {
+    let line = said.lines().next()?;
+    let told: Value = serde_json::from_str(line).ok()?;
+    told["human"].as_str().map(str::to_string)
+}
+
+/// The warnings in what `lonca init` said, at most [`WARNINGS_MOST`].
+fn warnings(said: &str) -> Vec<String> {
+    (said.lines())
+        .filter_map(|l| l.strip_prefix("warning: "))
+        .take(WARNINGS_MOST)
+        .map(str::to_string)
+        .collect()
 }
 
 /// Whether `name` is a name that stays in its directory.
@@ -387,7 +488,82 @@ impl Pending {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::lonca_fake::{Daemon, TRUNK, status, write_session};
+    use crate::lonca_fake::{Daemon, TRUNK, program, seen, status, write_session};
+
+    #[test]
+    fn a_login_says_who_signed_in_and_never_waits_on_stdin() {
+        let (place, dir) = program(
+            "read -r line || true\n\
+             printf '{\"human\":\"ayse\",\"expires_ms\":9}\\n'\n\
+             echo note >&2",
+        );
+        assert_eq!(place.login(&dir).as_deref(), Ok("ayse"));
+        let told = seen(&dir);
+        assert!(told.contains("|human login --json|"), "{told}");
+        assert!(told.starts_with(&format!("{}|", dir.display())), "{told}");
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn a_login_that_prints_no_name_still_went_through() {
+        let (place, dir) = program("echo signed in");
+        assert_eq!(place.login(&dir).as_deref(), Ok(""));
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn an_import_names_the_checkout_and_branch_and_keeps_the_warnings() {
+        let (place, dir) = program(
+            "echo '#0 allow'\n\
+             echo 'warning: big.bin is 3 bytes, above the cap' >&2\n\
+             echo 'a line of no matter' >&2",
+        );
+        let warned = place.import("-demo", &dir, "feature/x").unwrap();
+        assert_eq!(warned, ["big.bin is 3 bytes, above the cap"]);
+        let args = format!(
+            "|init --import {} --branch feature/x -- -demo|",
+            dir.display()
+        );
+        assert!(seen(&dir).contains(&args), "{}", seen(&dir));
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn a_refused_command_says_its_last_line_without_the_programs_name() {
+        let (place, dir) =
+            program("echo 'one' >&2\necho 'lonca: conflict: it exists' >&2\necho >&2\nexit 1");
+        assert_eq!(
+            place.import("demo", &dir, "main"),
+            Err(Failed::Said("conflict: it exists".into()))
+        );
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn no_program_is_no_answer() {
+        let (mut place, dir) = program("exit 0");
+        place.program = dir.join("nothing").display().to_string();
+        assert_eq!(place.login(&dir), Err(Failed::NoAnswer));
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn what_lonca_said_is_read_within_its_caps() {
+        assert_eq!(refusal(""), "");
+        assert_eq!(refusal("  lonca: x  \n \n"), "x");
+        assert_eq!(refusal("no name here"), "no name here");
+        assert_eq!(
+            refusal(&"é".repeat(SAID_MOST + 9)).chars().count(),
+            SAID_MOST
+        );
+        assert_eq!(refusal(&"é".repeat(SAID_MOST)).chars().count(), SAID_MOST);
+        assert_eq!(signed_in("not json\n{\"human\":\"a\"}"), None);
+        assert_eq!(signed_in("{\"who\":\"a\"}"), None);
+        assert_eq!(signed_in(""), None);
+        let many = "warning: x\n".repeat(WARNINGS_MOST + 3);
+        assert_eq!(warnings(&many).len(), WARNINGS_MOST);
+        assert_eq!(warnings("nothing\nwarnings: no\n"), Vec::<String>::new());
+    }
 
     fn me() -> u32 {
         // SAFETY: as in `Place::open`.
@@ -411,6 +587,7 @@ mod tests {
         let bare = of(&[("HOME", "/h")]);
         assert_eq!(bare.socket, Path::new("/h/.lonca/lonca.sock"));
         assert_eq!(bare.humans, Path::new("/h/.config/lonca/humans"));
+        assert_eq!(bare.program, "lonca");
         assert_eq!(bare.human, None);
         let home = of(&[("HOME", "/h"), ("LONCA_HOME", "/l")]);
         assert_eq!(home.socket, Path::new("/l/lonca.sock"));

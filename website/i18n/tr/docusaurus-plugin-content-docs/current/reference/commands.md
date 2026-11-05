@@ -47,7 +47,7 @@ description: imece'nin aldığı her `:` komutu; argümanları, karşılığı o
 | `:hints` | `F` | | | | |
 | `:keys` | — | | | | dosyanızın verdiği tuş sayısı |
 | `:lang [en\|tr]` | `L` | | | | `English` / `Türkçe` |
-| `:lonca [NAME\|off]` | — | | | | projenin deposu, varsa |
+| `:lonca [NAME\|off\|login\|import [NAME]]` | — | | | | projenin deposu, varsa |
 | `:mark` | `m` | | | | |
 | `:model NAME` | — | | | | eldeki solonun modeli ya da `default` |
 | `:motion [off\|calm\|full]` | — | | | | off / calm / full |
@@ -211,11 +211,15 @@ Tuş dosyanızı (`~/.config/imece/keys`) yeniden okur ve ne çıktığını sö
 
 Ekranın dili, `L` gibi. Tek başına öteki dile geçer; `:lang en` ya da `:lang tr` birini seçer. Başka bir şey: `de bir dil değil: en ya da tr`. Menü notu kullanılan dili gösterir. Yalnızca bu çalıştırma için; sonraki başlangıç `--lang` ya da `IMECE_LANG`'i okur.
 
-### `:lonca [NAME|off]`
+### `:lonca [NAME|off|login|import]`
 
-Eldeki projenin [Lonca](https://github.com/selcukgural/lonca) deposu. `:lonca AD` onu adlandırır (ad 1 ile 64 arası harf, rakam, `.`, `_`, `-`) ve daemon'a hemen sorar: `kule artık kule Lonca deposunda; imece daemon'ına soruyor`. `:lonca off` depoyu bırakır. Tek başına projenin nerede durduğunu söyler: `kule kule Lonca deposunda: trunk 693d629, insan bekleyen 2`, ya da neden okunamadığını, ya da `kule hiçbir Lonca deposunda değil; :lonca AD bir depo adlandırır`. Depoda proje başına saklanır; arşivlenen proje onu yerine açılan yenisine bırakır.
+Eldeki projenin [Lonca](https://github.com/selcukgural/lonca) deposu. `:lonca AD` onu adlandırır (ad 1 ile 64 arası harf, rakam, `.`, `_`, `-`) ve daemon'a hemen sorar: `kule artık kule Lonca deposunda; imece daemon'ına soruyor`. `:lonca off` depoyu bırakır. Tek başına projenin nerede durduğunu söyler: `kule kule Lonca deposunda: trunk 693d629, insan bekleyen 2`, ya da neden okunamadığını, ya da `kule hiçbir Lonca deposunda değil; :lonca AD bir depo adlandırır, :lonca import oluşturur`. Depoda proje başına saklanır; arşivlenen proje onu yerine açılan yenisine bırakır.
 
-Lonca'daki bir proje daemon'ından yanıt almadıkça kapalıdır: yardımcılar dahil kimse işe alınmaz, `:fork` reddedilir, hiçbir Δ uygulanmaz, reddedilmez, geri gönderilmez. Satırı `⌀ lonca yok` der, günlük de nedenini bir kez söyler. Bkz. [projeler](../concepts/projects.md#loncada). Başka bir şey henüz değişmedi: işçiler yine worktree'lerde çalışır, bir Δ yine çalışma kopyana iner. Demonun ikinci projesi Lonca'dadır ve daemon'ı ara sıra durur.
+`:lonca login` oturum açar: imece, sen işine devam ederken bir kez `lonca human login` çalıştırır (Secure Enclave anahtarı parmağını bekler), günlük de `Lonca'da NAME olarak oturum açıldı` ya da neden açılamadığını söyler. Bir oturum en çok bir gün sürer.
+
+`:lonca import [AD]`, çalışma kopyasından AD ya da projenin adıyla bir depo oluşturur. Bir pencere çalışma kopyasını, dalı ve commit'ini, olacağı depoyu gösterir; `a` aktarır, `esc` ya da `q` kapatır ve hiçbir şey gitmez, `?` yardımı açar. imece bunu geri alamaz. Yanda çalışır, günlük nasıl gittiğini ve Lonca'nın ilk uyarısını söyler. Hemen reddedilenler: zaten bir depoda olan proje, git'siz klasör, ayrık HEAD, süren bir `lonca` komutu. Yeni bir daemon'da ilk aktarma oturumunu da açar, çünkü hiç deposu olmayan bir daemon kimsenin oturumunu açamaz. Ondan önceki `:lonca login` daemon'ın reddini gösterir.
+
+Lonca'daki bir proje daemon'ından yanıt almadıkça kapalıdır: yardımcılar dahil kimse işe alınmaz, `:fork` reddedilir, hiçbir Δ uygulanmaz, reddedilmez, geri gönderilmez. Satırı `⌀ lonca yok` der, günlük de nedenini bir kez söyler. Bkz. [projeler](../concepts/projects.md#loncada). Başka bir şey henüz değişmedi: işçiler yine worktree'lerde çalışır, bir Δ yine çalışma kopyana iner. Demonun ikinci projesi Lonca'dadır ve daemon'ı ara sıra durur; `:lonca import` ile `:lonca login` onun tablosunda çalışır, orada olan bir ad bir daemon'ın reddettiği gibi reddedilir.
 
 ### `:mark`
 

@@ -507,6 +507,53 @@ pub enum StoreSeen {
     Down(StoreDown),
 }
 
+/// A checkout the person is asked to import into Lonca (record 117): what
+/// the window shows is what goes.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ImportAsk {
+    pub project: ProjectId,
+    /// The repository it becomes.
+    pub repo: String,
+    pub checkout: std::path::PathBuf,
+    /// The branch that goes, and its commit.
+    pub branch: String,
+    pub head: String,
+}
+
+/// A `lonca` command the person asked for, which an engine runs off the
+/// screen's thread.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum StoreJob {
+    /// The person signs in, the program running in this project's checkout.
+    Login(ProjectId),
+    Import(ImportAsk),
+}
+
+impl StoreJob {
+    /// The project it was asked for.
+    pub fn project(&self) -> ProjectId {
+        match self {
+            StoreJob::Login(p) => *p,
+            StoreJob::Import(ask) => ask.project,
+        }
+    }
+
+    /// Which act it is, for the line that says how it went.
+    pub fn act(&self) -> StoreAct {
+        match self {
+            StoreJob::Login(_) => StoreAct::Login,
+            StoreJob::Import(_) => StoreAct::Import,
+        }
+    }
+}
+
+/// What a `lonca` command of the person's did.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum StoreAct {
+    Login,
+    Import,
+}
+
 /// Why a project's Lonca repository can not be read (record 116).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum StoreDown {
@@ -1541,6 +1588,26 @@ pub enum Event {
         leader: AgentId,
         repo: String,
     },
+    /// The person signed in to Lonca (`:lonca login`), as `human`; empty
+    /// when the program did not say. `leader` is of the project at hand.
+    StoreSignedIn {
+        leader: AgentId,
+        human: String,
+    },
+    /// The checkout of `leader`'s project went into Lonca as `repo`, with
+    /// what Lonca warned of.
+    StoreImported {
+        leader: AgentId,
+        repo: String,
+        warnings: Vec<String>,
+    },
+    /// A `lonca` command of the person's did not go through: what it said,
+    /// none when it said nothing (no program, out of time).
+    StoreFailed {
+        leader: AgentId,
+        act: StoreAct,
+        why: Option<String>,
+    },
     /// The person closed a project (`:close`); its agents left.
     Closed {
         leader: AgentId,
@@ -1826,6 +1893,9 @@ impl Event {
             | Event::NoGit { .. }
             | Event::StoreDown { .. }
             | Event::StoreBack { .. }
+            | Event::StoreSignedIn { .. }
+            | Event::StoreImported { .. }
+            | Event::StoreFailed { .. }
             | Event::Retrying { .. }
             | Event::ChangeCost { .. }
             | Event::WorktreeKept { .. } => EntryKind::Assumption,
@@ -1895,6 +1965,9 @@ impl Event {
             | Event::NoGit { leader, .. }
             | Event::StoreDown { leader, .. }
             | Event::StoreBack { leader, .. }
+            | Event::StoreSignedIn { leader, .. }
+            | Event::StoreImported { leader, .. }
+            | Event::StoreFailed { leader, .. }
             | Event::Budget { leader, .. }
             | Event::PotLow { leader, .. }
             | Event::Suggested { leader, .. }
@@ -2621,6 +2694,36 @@ impl World {
         });
     }
 
+    /// The person signed in as `human`, asked from project `p`.
+    pub fn store_signed_in(&mut self, p: ProjectId, human: String) {
+        let leader = self.projects[p].leader;
+        self.note(Event::StoreSignedIn { leader, human });
+    }
+
+    /// The import asked went through: the project is on the repository,
+    /// unless the person named another while it ran (the repository still
+    /// exists, and the line says so).
+    pub fn store_imported(&mut self, ask: &ImportAsk, warnings: Vec<String>) {
+        let p = ask.project;
+        if self.projects[p].lonca.is_none() {
+            self.on_lonca(p, Some(ask.repo.clone()));
+        }
+        let leader = self.projects[p].leader;
+        let repo = ask.repo.clone();
+        self.note(Event::StoreImported {
+            leader,
+            repo,
+            warnings,
+        });
+    }
+
+    /// `job` did not go through, and `why` is what it said.
+    pub fn store_failed(&mut self, job: &StoreJob, why: Option<String>) {
+        let leader = self.projects[job.project()].leader;
+        let act = job.act();
+        self.note(Event::StoreFailed { leader, act, why });
+    }
+
     /// What the daemon said of repository `repo` for project `p`, unless
     /// the person named another since. A store that goes down is said
     /// once, with its reason, and so is one that comes back. Whether the
@@ -2866,6 +2969,9 @@ impl World {
                             | Event::NoGit { .. }
                             | Event::StoreDown { .. }
                             | Event::StoreBack { .. }
+                            | Event::StoreSignedIn { .. }
+                            | Event::StoreImported { .. }
+                            | Event::StoreFailed { .. }
                             | Event::Confine { .. }
                             | Event::Archived { .. }
                             | Event::Restored { .. }
@@ -6846,5 +6952,88 @@ mod tests {
         };
         assert_eq!((down.agent(), down.kind()), (leader, EntryKind::Assumption));
         assert_eq!((back.agent(), back.kind()), (leader, EntryKind::Assumption));
+    }
+
+    fn ask(project: ProjectId) -> ImportAsk {
+        ImportAsk {
+            project,
+            repo: "r".into(),
+            checkout: "/c".into(),
+            branch: "main".into(),
+            head: "1".repeat(40),
+        }
+    }
+
+    #[test]
+    fn a_lonca_commands_lines_belong_to_its_project_and_are_no_work_done() {
+        let mut w = world(vec![lead(0)]);
+        let p = second(&mut w, "a");
+        let leader = w.projects[p].leader;
+        w.store_signed_in(p, "ayse".into());
+        w.store_imported(&ask(p), vec!["big".into()]);
+        w.store_failed(&StoreJob::Login(p), Some("no key".into()));
+        w.store_failed(&StoreJob::Import(ask(p)), None);
+        assert!(!w.did_anything(p));
+        let lines = &w.journal[w.journal.len() - 4..];
+        for e in lines {
+            assert_eq!(
+                (e.event.agent(), e.event.kind()),
+                (leader, EntryKind::Assumption)
+            );
+        }
+        assert_eq!(
+            lines[0].event,
+            Event::StoreSignedIn {
+                leader,
+                human: "ayse".into()
+            }
+        );
+        assert_eq!(
+            lines[1].event,
+            Event::StoreImported {
+                leader,
+                repo: "r".into(),
+                warnings: vec!["big".into()]
+            }
+        );
+        assert_eq!(
+            lines[2].event,
+            Event::StoreFailed {
+                leader,
+                act: StoreAct::Login,
+                why: Some("no key".into())
+            }
+        );
+        assert_eq!(
+            lines[3].event,
+            Event::StoreFailed {
+                leader,
+                act: StoreAct::Import,
+                why: None
+            }
+        );
+    }
+
+    #[test]
+    fn an_import_does_not_replace_a_repository_named_while_it_ran() {
+        let mut w = world(vec![lead(0)]);
+        w.on_lonca(0, Some("other".into()));
+        w.store_imported(&ask(0), vec![]);
+        assert_eq!(w.projects[0].lonca.as_ref().unwrap().repo, "other");
+        assert!(matches!(
+            &w.journal.last().unwrap().event,
+            Event::StoreImported { repo, .. } if repo == "r"
+        ));
+        w.on_lonca(0, None);
+        w.store_imported(&ask(0), vec![]);
+        assert_eq!(w.projects[0].lonca.as_ref().unwrap().repo, "r");
+    }
+
+    #[test]
+    fn a_store_job_knows_its_project_and_act() {
+        assert_eq!(StoreJob::Login(3).project(), 3);
+        assert_eq!(StoreJob::Import(ask(4)).project(), 4);
+        assert_eq!(StoreJob::Login(3).act(), StoreAct::Login);
+        assert_eq!(StoreJob::Import(ask(4)).act(), StoreAct::Import);
     }
 }

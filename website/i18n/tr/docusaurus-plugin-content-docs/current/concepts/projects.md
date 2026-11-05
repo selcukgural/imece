@@ -126,9 +126,11 @@ Her işçinin worktree'si çalıştırmalar arasında diskte kalır, böylece i�
 
 ## Lonca'da
 
-[Lonca](https://github.com/selcukgural/lonca), imece'nin depo işlerinin gideceği yerdir: bir deponun tek yazarı olan bir daemon, sembol kiralamaları, bir birleştirme kuyruğu ve imzalı bir günlük. İlk adım burada: imece bir depoyu daemon üzerinden okur, `:lonca AD` da eldeki proje için bir depo adlandırır. Henüz hiçbir işi taşımaz: işçiler worktree'lerde kalır, bir Δ yine çalışma kopyana iner.
+[Lonca](https://github.com/selcukgural/lonca), imece'nin depo işlerinin gideceği yerdir: bir deponun tek yazarı olan bir daemon, sembol kiralamaları, bir birleştirme kuyruğu ve imzalı bir günlük. İlk adımlar burada: imece bir depoyu daemon üzerinden okur, `:lonca AD` eldeki proje için bir depo adlandırır, `:lonca import` da çalışma kopyasından bir depo oluşturur. Henüz hiçbir işi taşımaz: işçiler worktree'lerde kalır, bir Δ yine çalışma kopyana iner.
 
-imece, işbirlikçi kipte çalışan bir `lonca daemon`'ın istemcisidir: soket `LONCA_SOCKET`, yoksa `$LONCA_HOME/lonca.sock`, yoksa `~/.lonca/lonca.sock` olur ve senin olmalıdır. Yalnız protokol 1 konuşan bir daemon'la konuşur ve senin adına okur: kullandığı oturumu `lonca human login` açar, en çok bir gün sürer; imece senin yerine oturum açmaz.
+imece, işbirlikçi kipte çalışan bir `lonca daemon`'ın istemcisidir: soket `LONCA_SOCKET`, yoksa `$LONCA_HOME/lonca.sock`, yoksa `~/.lonca/lonca.sock` olur ve senin olmalıdır. Yalnız protokol 1 konuşan bir daemon'la konuşur ve senin adına, en çok bir gün süren bir oturumla okur. `:lonca login` bir oturum açar (imece o zaman `lonca human login` çalıştırır, kendiliğinden asla: Secure Enclave anahtarı parmağını ister). Birden çok kimliğin varsa `LONCA_HUMAN` hangisi olduğunu söyler.
+
+`:lonca import`, çalışma kopyasından bir depo oluşturur: üzerinde olduğun dal ve geçmişi, projenin adıyla ya da verdiğin adla Lonca'nın deposuna kopyalanır. Önce bir pencere neyin gideceğini söyler ve yalnız `a` çalıştırır, çünkü imece bunu geri alamaz; çalışma kopyan olduğu gibi kalır, commit edilmemiş olan gitmez. Yeni bir daemon'da ilk adım budur: hiç deposu olmayan bir daemon kimsenin oturumunu açamaz, bu yüzden aktarma oturumunu da açar. Bir öneri için fazla büyük dosya günlükte uyarılır.
 
 Her 5 saniyede bir projenin satırı nerede durduğunu söyler:
 
@@ -138,9 +140,9 @@ Her 5 saniyede bir projenin satırı nerede durduğunu söyler:
 | `lonca kule …` | az önce adlandırıldı, henüz yanıt yok |
 | `⌀ lonca yok` | okunamıyor; günlük nedenini bir kez söyler |
 
-Nedenler: hiçbir daemon yanıt vermiyor, soketteki senin daemon'ın değil, başka bir protokol, oturum açmamışsın, ya da bu adda bir depoya kayıtlı değilsin (daemon olmayan bir depo için de aynısını söyler, önce adı denetle).
+Nedenler: hiçbir daemon yanıt vermiyor, soketteki senin daemon'ın değil, başka bir protokol, oturum açmamışsın, ya da bu adda bir depoya kayıtlı değilsin (daemon olmayan bir depo için de aynısını söyler, adı denetle ya da `:lonca import` ile oluştur).
 
-Yanıt verene dek proje kapalıdır: kimse işe alınmaz, `:fork` reddedilir, hiçbir Δ uygulanmaz, reddedilmez, geri gönderilmez. Ajanlar çalışmayı sürdürür, Δ'leri bekler. Hiçbir depoda olmayan bir proje sokete hiç dokunmaz. Bkz. [`:lonca`](../reference/commands.md#lonca-nameoff).
+Yanıt verene dek proje kapalıdır: kimse işe alınmaz, `:fork` reddedilir, hiçbir Δ uygulanmaz, reddedilmez, geri gönderilmez. Ajanlar çalışmayı sürdürür, Δ'leri bekler. Hiçbir depoda olmayan bir proje sokete hiç dokunmaz. Bkz. [`:lonca`](../reference/commands.md#lonca-nameoffloginimport).
 
 ## Demonun kopyaları
 

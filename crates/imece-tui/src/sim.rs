@@ -641,6 +641,8 @@ struct Extras {
     /// The demo's Lonca store, a table (record 116): each repository and
     /// how many changes it has integrated.
     store: Vec<(String, u32)>,
+    /// The `lonca` command under way and the tick it comes back on.
+    job: Option<(StoreJob, u64)>,
     /// The listed paths each worker's worktree has, copied at a start.
     copied: HashMap<AgentId, Vec<String>>,
     /// The titles of the changes applied to each project's checkout, as
@@ -921,6 +923,9 @@ fn short_of_hands(waiting: usize, free: usize, workers: usize) -> bool {
 /// `⌀ no lonca` to be read, in ticks.
 const STORE_EVERY: u64 = 60;
 const STORE_STOPS: u64 = 6;
+
+/// How many ticks a `lonca` command of the person's takes in the demo.
+const STORE_JOB_TICKS: u64 = 3;
 
 /// Whether the demo's daemon is stopped at `tick`.
 fn store_stopped(tick: u64) -> bool {
@@ -1481,9 +1486,73 @@ impl Sim {
         };
     }
 
-    /// Whether a commit message is asked for and has not come yet.
+    /// Whether something the person asked for has not come yet: a commit
+    /// message, or a `lonca` command.
     pub fn asking(&self) -> bool {
-        self.extras.suggesting.is_some()
+        self.extras.suggesting.is_some() || self.store_busy()
+    }
+
+    /// What the person is asked before project `p`'s checkout goes into
+    /// the demo's Lonca as `repo`, as live asks it.
+    pub fn import_ask(&self, w: &World, p: ProjectId, repo: &str) -> Option<ImportAsk> {
+        let name = &w.projects[p].name;
+        let checkout = self
+            .folder_of(p)
+            .map_or_else(|| PathBuf::from(format!("~/src/{name}")), PathBuf::from);
+        Some(ImportAsk {
+            project: p,
+            repo: repo.to_string(),
+            checkout,
+            branch: "main".to_string(),
+            head: demo_trunk(0),
+        })
+    }
+
+    /// Whether a `lonca` command of the person's is under way.
+    pub fn store_busy(&self) -> bool {
+        self.extras.job.is_some()
+    }
+
+    /// `job` starts, unless one is under way, and comes back
+    /// `STORE_JOB_TICKS` later.
+    pub fn store_job(&mut self, w: &World, job: StoreJob) -> bool {
+        if self.extras.job.is_some() {
+            return false;
+        }
+        self.extras.job = Some((job, w.tick + STORE_JOB_TICKS));
+        true
+    }
+
+    /// The job under way comes back when its tick has come: what is in the
+    /// table is refused as a real daemon refuses it, and a new row warns
+    /// of a large file, so the journal's lines can be seen.
+    fn store_job_due(&mut self, w: &mut World) {
+        let due = self
+            .extras
+            .job
+            .as_ref()
+            .is_some_and(|(_, at)| w.tick >= *at);
+        if !due {
+            return;
+        }
+        let Some((job, _)) = self.extras.job.take() else {
+            return;
+        };
+        match &job {
+            StoreJob::Login(p) => w.store_signed_in(*p, "demo".to_string()),
+            StoreJob::Import(ask) if self.extras.store.iter().any(|(r, _)| *r == ask.repo) => {
+                let why = format!(
+                    "repo.prepare_init: conflict: repository {} exists",
+                    ask.repo
+                );
+                w.store_failed(&job, Some(why));
+            }
+            StoreJob::Import(ask) => {
+                self.extras.store.push((ask.repo.clone(), 0));
+                let warned = "tour.mp4 is 3145728 bytes, above the change cap of 2097152";
+                w.store_imported(ask, vec![warned.to_string()]);
+            }
+        }
     }
 
     /// `:commit` in the demo, as live does it: one at a time, refused
@@ -1667,6 +1736,7 @@ impl Sim {
         self.suggested(w);
         self.reviewed(w);
         self.tidy_answers(w);
+        self.store_job_due(w);
         self.store_answers(w);
         // Live sessions report their plan's windows now and then.
         if t.is_multiple_of(12) {
@@ -7434,6 +7504,53 @@ diff --git a/b.rs b/b.rs
         let said: Vec<&Event> = (w.journal.iter()).map(|e| &e.event).collect();
         assert!(said.iter().any(|e| matches!(e, Event::StoreDown { .. })));
         assert!(said.iter().any(|e| matches!(e, Event::StoreBack { .. })));
+    }
+
+    /// Runs `job` to its end: not a tick early.
+    fn run_job(s: &mut Sim, w: &mut World, job: StoreJob) {
+        assert!(s.store_job(w, job));
+        w.tick += STORE_JOB_TICKS - 1;
+        s.store_job_due(w);
+        assert!(s.store_busy(), "not yet");
+        w.tick += 1;
+        s.store_job_due(w);
+        assert!(!s.store_busy());
+    }
+
+    #[test]
+    fn a_demo_import_adds_a_row_and_refuses_one_that_exists() {
+        let (mut w, mut s) = world(1, 1, 0, 1, Lang::En);
+        w.on_lonca(0, None);
+        let ask = s.import_ask(&w, 0, "fresh").unwrap();
+        assert_eq!(ask.branch, "main");
+        assert_eq!(ask.repo, "fresh");
+        run_job(&mut s, &mut w, StoreJob::Import(ask.clone()));
+        assert_eq!(w.projects[0].lonca.as_ref().unwrap().repo, "fresh");
+        s.store_answers(&mut w);
+        assert_eq!(w.store_closed(0), None, "its daemon knows it now");
+        assert!(matches!(
+            &w.journal.last().unwrap().event,
+            Event::StoreImported { warnings, .. } if warnings.len() == 1
+        ));
+        w.on_lonca(0, None);
+        run_job(&mut s, &mut w, StoreJob::Import(ask));
+        assert!(w.projects[0].lonca.is_none());
+        assert!(matches!(
+            &w.journal.last().unwrap().event,
+            Event::StoreFailed { why: Some(why), .. } if why.ends_with("repository fresh exists")
+        ));
+    }
+
+    #[test]
+    fn a_demo_login_is_told_and_nothing_is_due_with_no_job() {
+        let (mut w, mut s) = world(1, 1, 0, 1, Lang::En);
+        let said = w.journal.len();
+        s.store_job_due(&mut w);
+        assert_eq!(w.journal.len(), said);
+        assert!(!s.asking());
+        assert!(s.store_job(&w, StoreJob::Login(0)));
+        assert!(s.asking());
+        assert!(!s.store_job(&w, StoreJob::Login(0)), "one at a time");
     }
 
     #[test]
