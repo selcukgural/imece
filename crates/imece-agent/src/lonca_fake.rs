@@ -138,5 +138,6 @@ pub fn status(pending: &[u64]) -> Value {
                 "intent": "fix", "agent": "a", "task": "T-1", "paths": ["src/a.rs"]})
         })
         .collect();
-    json!({"repo": "demo", "trunk": TRUNK, "next_seq": 9, "pending": pending})
+    json!({"repo": "demo", "trunk": TRUNK, "next_seq": 9, "pending": pending,
+        "sessions": [], "now_ms": 1000})
 }

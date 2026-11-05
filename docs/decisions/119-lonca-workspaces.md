@@ -86,9 +86,6 @@ with Lonca's default `unobserved_is_tainted = true`:
 
 **Known gaps**, the second half of this step:
 
-- A session lasts 8 h and a harness stays up across turns (record 02): one
-  past its time is told by its next Lonca tool, and imece does not yet renew it,
-  which takes ending the harness: `lonca mcp` holds the token it started with.
 - A worktree nobody owns is listed by `:tidy`; a workspace nobody owns is not, and
   a worker that leaves does not end its session.
 - `session start` is signed. A Secure Enclave key wants a finger at every hire and
@@ -96,6 +93,22 @@ with Lonca's default `unobserved_is_tainted = true`:
   Record 116 kept a login to a moment the person chose; this can not, a worker
   needs a session to start. A file key signs alone.
 - The worker's `git`: a build that reads it fails in a workspace.
+
+**A session runs out; a harness does not** (record 02: it stays up across turns).
+Every look reads `status.sessions`, so `Watch.ends` knows when each agent's newest
+session ends (the daemon's clock, kept as an `Instant`). `Live::prompt` first calls
+`renew_seat`: a worker in a workspace, between turns, within `SEAT_MARGIN` 30 min of
+the end, ends its Claude Code, and the prompt wakes it the way any sleeper wakes,
+resuming its conversation; `start` then passes `seat_short` to `seat`, which goes on
+with `--continue` though the heartbeat says alive. It takes a new harness because
+`lonca mcp` holds the token it started with. It is done before a prompt, not on a
+timer, so that a team asleep overnight asks nobody for a finger, and a worker hears
+`SEAT_RENEWED`: files and proposals stand, leases are gone. A helper shares its
+worker's session, so it never renews and a worker waits for its helpers: `--continue`
+would end the session under them. A session goes by the owner's name, a helper seated
+first too, or the owner's would be lost to `Watch.ends`. An expiry mid-turn is told by
+the worker's next Lonca tool (`session_inactive`), and its next prompt renews it. The
+demo has no clock on sessions: this can not be seen there.
 
 **The demo** (record 31). A worker hired on a project on Lonca has
 `Agent.workspace`, the trace line and the focus's `· workspace of lonca NAME`;
