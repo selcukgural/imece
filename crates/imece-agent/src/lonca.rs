@@ -351,12 +351,23 @@ pub fn is_workspace(dir: &Path) -> bool {
 /// says no such thing. The file is within an agent's reach, so this tells
 /// which session to ask for, and proves nothing: the daemon decides by token.
 pub fn workspace_repo(dir: &Path) -> Option<String> {
+    workspace_file(dir)?["repo"].as_str().map(str::to_string)
+}
+
+/// The change the workspace at `dir` last proposed: Lonca keeps it there.
+pub fn workspace_submitted(dir: &Path) -> Option<String> {
+    workspace_file(dir)?["submitted"][0]
+        .as_str()
+        .map(str::to_string)
+}
+
+/// What the workspace at `dir` says of itself.
+fn workspace_file(dir: &Path) -> Option<Value> {
     if !is_workspace(dir) {
         return None;
     }
     let file = std::fs::File::open(dir.join(WORKSPACE_FILE)).ok()?;
-    let told: Value = serde_json::from_reader(file.take(WORKSPACE_MOST)).ok()?;
-    told["repo"].as_str().map(str::to_string)
+    serde_json::from_reader(file.take(WORKSPACE_MOST)).ok()
 }
 
 /// The refusal in what `lonca` said: its last line, without the program's
@@ -553,6 +564,11 @@ impl Client {
     /// The record of `change`.
     pub fn change(&mut self, repo: &str, change: &str) -> Result<Value, Down> {
         self.call("change.get", Some(repo), json!({"change": change}))
+    }
+
+    /// Where `change` stands.
+    pub fn standing(&mut self, repo: &str, change: &str) -> Result<Standing, Down> {
+        Standing::of(&self.change(repo, change)?["status"]).ok_or(Down::Protocol)
     }
 
     /// What `change` does, as the daemon works it out in the store.
@@ -1145,6 +1161,12 @@ mod tests {
         assert!(is_workspace(&dir));
         assert_eq!(workspace_repo(&dir).as_deref(), Some("kule"));
 
+        assert_eq!(workspace_submitted(&dir), None, "proposed nothing");
+        std::fs::write(&file, r#"{"repo":"kule","submitted":null}"#).unwrap();
+        assert_eq!(workspace_submitted(&dir), None, "as Lonca writes that");
+        std::fs::write(&file, r#"{"submitted":["kkkk","c1"]}"#).unwrap();
+        assert_eq!(workspace_submitted(&dir).as_deref(), Some("kkkk"));
+
         std::fs::write(&file, r#"{"base":"b"}"#).unwrap();
         assert_eq!(workspace_repo(&dir), None, "says no repository");
         std::fs::write(&file, "not json").unwrap();
@@ -1442,6 +1464,20 @@ mod tests {
         assert_eq!(word("rejected"), None, "no reasons");
         assert_eq!(of(json!({"status": "rejected", "reasons": [1]})), None);
         assert_eq!(of(json!({})), None);
+    }
+
+    #[test]
+    fn where_a_change_stands_is_read_from_its_record() {
+        let d = Daemon::start(PROTOCOL, |asked| match asked["params"]["change"].as_str() {
+            Some("kkkk") => Ok(json!({"status": {"status": "queued"}})),
+            Some("odd") => Ok(json!({})),
+            _ => Err("not_found"),
+        });
+        d.sign_in();
+        let mut c = d.place.open().expect("opens");
+        assert_eq!(c.standing("demo", "kkkk"), Ok(Standing::Queued));
+        assert_eq!(c.standing("demo", "odd"), Err(Down::Protocol));
+        assert!(c.standing("demo", "nobody").is_err());
     }
 
     #[test]

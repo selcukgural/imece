@@ -645,6 +645,8 @@ struct Extras {
     job: Option<(StoreJob, u64)>,
     /// How many proposals the demo's workers made.
     proposed: u64,
+    /// How many dones its workers on Lonca said.
+    dones: u64,
     /// How many integrations each project's checkout has of its
     /// repository, by repository, and whether it has commits of its own.
     synced: HashMap<String, (u32, bool)>,
@@ -1321,6 +1323,18 @@ impl Sim {
             cut: false,
         };
         w.change_proposed(change, proposal);
+    }
+
+    /// A worker on Lonca says done: each third forgets to propose first,
+    /// hears so and does, as live refuses it (record 120).
+    fn gated(&mut self, w: &mut World, id: AgentId) {
+        self.extras.dones += 1;
+        if self.extras.dones.is_multiple_of(3) {
+            let t = w.tick;
+            let a = &mut w.agents[id];
+            a.trace(t, "send: done refused: propose first");
+            a.trace(t, "propose: it proposes what it holds");
+        }
     }
 
     /// The person approved worker `id`'s proposal: it is on trunk, or the
@@ -3516,6 +3530,9 @@ impl Sim {
         };
         let title = w.cards[card].title.clone();
         let leader = w.projects[w.agents[id].project].leader;
+        if w.agents[id].workspace.is_some() {
+            self.gated(w, id);
+        }
         let re = self.mind(id).assigned.take();
         self.send(w, id, leader, MsgKind::Done, &title, re);
         // The change holds what the card leased, and the file its worker
@@ -8033,5 +8050,33 @@ diff --git a/b.rs b/b.rs
             &e.event,
             Event::Landed { how: Landed::Rejected(why), .. } if why == &["rejected: no"]
         )));
+    }
+
+    #[test]
+    fn each_third_demo_done_on_lonca_is_refused_first() {
+        let (mut w, mut s, id) = a_proposal_waits();
+        let refused = |w: &World| {
+            (w.agents[id].trace.iter())
+                .filter(|l| l.contains("propose first"))
+                .count()
+        };
+        s.gated(&mut w, id);
+        s.gated(&mut w, id);
+        assert_eq!(refused(&w), 0);
+        s.gated(&mut w, id);
+        assert_eq!(refused(&w), 1);
+        assert!(w.agents[id].trace.iter().any(|l| l.contains("it proposes")));
+    }
+
+    #[test]
+    fn a_demo_done_off_lonca_asks_nothing_of_a_proposal() {
+        let (mut w, mut s, worker, _) = one_at_work();
+        w.agents[worker].progress = 100;
+        s.done(&mut w, worker);
+        assert_eq!(s.extras.dones, 0);
+        w.agents[worker].workspace = Some("r".into());
+        w.agents[worker].card = Some(0);
+        s.done(&mut w, worker);
+        assert_eq!(s.extras.dones, 1);
     }
 }

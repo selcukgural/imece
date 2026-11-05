@@ -1,10 +1,8 @@
 # The Δ on Lonca
 
-The first half of record 115's step 5, on Lonca `d317b7e`. A worker in a
-workspace now has a Δ: what it proposed waits in WAITING FOR YOU, read from
-the store, and `a` and `r` are the person's word to Lonca. What is left of
-the step is `done`'s gate: a worker that says `done` with work it never
-proposed is not refused yet.
+Record 115's step 5, on Lonca `d317b7e`. A worker in a workspace has a Δ:
+what it proposed waits in WAITING FOR YOU, read from the store, and `a` and
+`r` are the person's word to Lonca.
 
 **The store is the truth, and imece reads it.** Nothing here hangs on `done`.
 Every look (`LOOK_EVERY` 5 s, and at once when a workspace's turn ends or a job
@@ -27,6 +25,19 @@ are counted on the Δ (`· holds 2 older`), and a decision turns them down first
 the newest still waits. Each is a signature, so with a Secure Enclave key each
 is a finger; lonca#107 asks for a new proposal of a workspace to replace its
 older ones, and then this goes.
+
+**`done`'s gate.** A worker's `done` from a workspace is not taken until a thread
+has looked (`Live::gate_of`, `gate`, `take_gates`; `lonca diff` is a child, the
+screen does not wait): nothing there to propose passes, a change that stands
+(`pending`, `queued`, `integrated`: an approval can come before the `done`) passes,
+anything else hears `PROPOSE_FIRST` and the message never went, so no card closes
+and the leader hears nothing. A daemon that can not say stops it too (`NO_WORD`).
+A `done` is one that closes a card, so it is the one that is gated: a helper's is
+its worker's to carry, and a solo says none. It reads the change the workspace last
+proposed from `.lonca/workspace.json`, a file the worker can write, so this is a
+help, not a boundary: what stands between a worker and trunk is the proposal, and a
+forged `done` puts nothing in front of the person. Edits made after the proposal
+are not noticed: only Lonca's facts could tell, and comparing them is a later step.
 
 **Not before its turn is over.** A proposal is a Δ once `turns[id] == 0`. Mid-turn
 it may be followed by a better one, and an approval then would race a worker
@@ -90,7 +101,8 @@ stay for a worktree: the git path goes once a team runs on Lonca end to end
 (record 115).
 
 **The demo** (record 31). A worker in a workspace proposes (`Sim::ready`), every
-fourth proposal holding an older one; `a` lands on the table's trunk or, one in
+fourth proposal holding an older one, and each third `done` is refused first, in its
+trace; `a` lands on the table's trunk or, one in
 eight, comes back `Conflicted` and the worker takes it up; `r` asks why. What can
 not be faked: a daemon, a signature, a real queue.
 

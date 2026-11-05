@@ -18,8 +18,8 @@ use imece_agent::worktree::{self, Forward};
 use super::Live;
 use super::Slot;
 use crate::model::{
-    Agent, AgentId, Behind, Change, ChangedFile, Check, ImportAsk, Landed, ProjectId, Role,
-    StoreDown, StoreJob, StoreProposal, StoreSeen, Synced, Verdict, World,
+    Agent, AgentId, Behind, Change, ChangedFile, Check, ImportAsk, Landed, MsgKind, ProjectId,
+    Role, StoreDown, StoreJob, StoreProposal, StoreSeen, Synced, Verdict, World,
 };
 
 /// How often the store is asked. Each look is a connection and a
@@ -214,6 +214,41 @@ fn told(how: &Landed, title: &str) -> Option<(String, bool)> {
     }
 }
 
+/// What a worker hears of a `done` with work no proposal of its carries.
+pub(super) const PROPOSE_FIRST: &str = "propose first: your workspace holds changes no proposal \
+                                        of yours carries. Lease what you changed, preview, \
+                                        propose, then say done";
+
+/// What it hears when that can not be told.
+const NO_WORD: &str = "Lonca did not say what you have proposed, so this done did not go; try \
+                       again, and say blocked when it goes on";
+
+/// A worker's done, held until a thread saw what it proposed.
+pub(super) struct Gated {
+    from: AgentId,
+    args: serde_json::Value,
+    reply: Sender<imece_agent::mcp::Answer>,
+    passed: Result<(), String>,
+}
+
+/// Whether a worker at `tree` of `repo` may say done: nothing there to
+/// propose, or the change it proposed last still stands. What it edited
+/// after that proposal is not told apart: only Lonca's facts could.
+fn proposed(place: &Place, repo: &str, tree: &Path) -> Result<(), String> {
+    if place.left_in(tree) == Some(0) {
+        return Ok(());
+    }
+    let Some(change) = lonca::workspace_submitted(tree) else {
+        return Err(PROPOSE_FIRST.to_string());
+    };
+    let standing = place.open().and_then(|mut c| c.standing(repo, &change));
+    match standing {
+        Ok(Standing::Pending | Standing::Queued | Standing::Integrated(_)) => Ok(()),
+        Ok(_) => Err(PROPOSE_FIRST.to_string()),
+        Err(_) => Err(NO_WORD.to_string()),
+    }
+}
+
 /// What a job came back with.
 enum Done {
     Login(Result<String, Failed>),
@@ -351,6 +386,9 @@ pub(super) struct Watch {
     queued: HashMap<String, AgentId>,
     /// Rejections the worker hears from the person's own line.
     pub(super) worded: Vec<String>,
+    /// Dones held for their gate, and where they come back.
+    gated: Sender<Gated>,
+    gates: Receiver<Gated>,
     /// When the newest session of each repository's agents ends, as the
     /// last look read it; an agent not here is not known to be short.
     pub(super) ends: HashMap<(String, String), Instant>,
@@ -379,6 +417,7 @@ impl Watch {
     pub(super) fn start(place: Place) -> Watch {
         let (ask, asked) = mpsc::channel::<Repos>();
         let (answer, back) = mpsc::channel();
+        let (gated, gates) = mpsc::channel();
         let kept = place.clone();
         thread::spawn(move || {
             let mut kept = Kept::default();
@@ -395,6 +434,8 @@ impl Watch {
             back,
             queued: HashMap::new(),
             worded: Vec::new(),
+            gated,
+            gates,
             ends: HashMap::new(),
             out: false,
             next: None,
@@ -570,9 +611,71 @@ impl Live {
         true
     }
 
+    /// What agent `from` is to be gated by, when `args` is a worker's done
+    /// from a workspace: its repository and tree. A helper's done is its
+    /// worker's to carry, and a solo says none.
+    pub(super) fn gate_of(
+        &self,
+        w: &World,
+        from: AgentId,
+        args: &serde_json::Value,
+    ) -> Option<(String, PathBuf)> {
+        let a = &w.agents[from];
+        let done = args["type"].as_str().map(str::trim) == Some(MsgKind::Done.wire());
+        let repo = a
+            .workspace
+            .clone()
+            .filter(|_| done && a.role == Role::Worker)?;
+        Some((repo, self.cwds[from].clone()?))
+    }
+
+    /// A thread sees what the done in `args` stands on: `lonca diff` is a
+    /// child, and the screen does not wait on it.
+    pub(super) fn gate(
+        &self,
+        from: AgentId,
+        args: &serde_json::Value,
+        reply: Sender<imece_agent::mcp::Answer>,
+        repo: String,
+        tree: PathBuf,
+    ) {
+        let place = self.lonca.place.clone();
+        let (back, args) = (self.lonca.gated.clone(), args.clone());
+        thread::spawn(move || {
+            let passed = proposed(&place, &repo, &tree);
+            let _ = back.send(Gated {
+                from,
+                args,
+                reply,
+                passed,
+            });
+        });
+    }
+
+    /// The dones whose gate answered: each goes on, or its worker hears
+    /// why not. Whether any came.
+    fn take_gates(&mut self, w: &mut World) -> bool {
+        let mut any = false;
+        while let Ok(done) = self.lonca.gates.try_recv() {
+            any = true;
+            match done.passed {
+                Ok(()) => self.sent_on(w, done.from, &done.args, done.reply),
+                Err(why) => {
+                    let _ = done.reply.send(Err(why));
+                }
+            }
+        }
+        any
+    }
+
     /// A job's end, else what the last look found (a look that came at the
     /// same time is read at the next step). Whether the screen changed.
     pub(super) fn take_lonca(&mut self, w: &mut World) -> bool {
+        let gated = self.take_gates(w);
+        self.take_look_or_job(w) || gated
+    }
+
+    fn take_look_or_job(&mut self, w: &mut World) -> bool {
         if self.take_store_job(w) {
             return true;
         }
@@ -2228,5 +2331,177 @@ mod tests {
         settle(&mut live, &mut w);
         assert_eq!(w.proposal_of(1).map(|p| p.seq), Some(7));
         assert_eq!(w.change_of(1).unwrap().patch, "the patch");
+    }
+
+    /// A workspace of `demo` and a daemon saying its change stands as
+    /// `standing`, with a `lonca diff` that says `facts`.
+    fn gate_place(facts: &str, submitted: &str, standing: &str) -> (Place, Daemon, PathBuf) {
+        let status: serde_json::Value = serde_json::from_str(standing).unwrap();
+        let d = Daemon::start(PROTOCOL, move |asked| {
+            if asked["params"]["change"] == "kkkk" {
+                Ok(serde_json::json!({ "status": status.clone() }))
+            } else {
+                Err("not_found")
+            }
+        });
+        d.sign_in();
+        let (stub, tree) = imece_agent::lonca_fake::program(&format!("echo '{facts}'"));
+        std::fs::create_dir_all(tree.join(".lonca")).unwrap();
+        let file = serde_json::json!({"repo": "demo", "submitted": submitted_of(submitted)});
+        std::fs::write(tree.join(".lonca/workspace.json"), file.to_string()).unwrap();
+        let mut place = d.place.clone();
+        place.program = stub.program.clone();
+        (place, d, tree)
+    }
+
+    fn submitted_of(change: &str) -> serde_json::Value {
+        match change {
+            "" => serde_json::Value::Null,
+            change => serde_json::json!([change, "c1"]),
+        }
+    }
+
+    const CHANGED: &str = r#"{"added_files":[],"modified_files":["a.rs"],"deleted_files":[]}"#;
+
+    #[test]
+    fn a_workspace_with_nothing_to_propose_may_say_done() {
+        let (place, _d, tree) = gate_place("no local changes", "", "{}");
+        assert_eq!(proposed(&place, "demo", &tree), Ok(()));
+        std::fs::remove_dir_all(tree).unwrap();
+    }
+
+    #[test]
+    fn changes_with_no_proposal_are_refused() {
+        let (place, _d, tree) = gate_place(CHANGED, "", "{}");
+        let first = Err(PROPOSE_FIRST.to_string());
+        assert_eq!(proposed(&place, "demo", &tree), first);
+        std::fs::remove_dir_all(tree).unwrap();
+    }
+
+    #[test]
+    fn a_proposal_that_stands_lets_the_done_go() {
+        for standing in [
+            r#"{"status":"pending"}"#,
+            r#"{"status":"queued"}"#,
+            r#"{"status":"integrated","commit":"c9"}"#,
+        ] {
+            let (place, _d, tree) = gate_place(CHANGED, "kkkk", standing);
+            assert_eq!(proposed(&place, "demo", &tree), Ok(()), "{standing}");
+            std::fs::remove_dir_all(tree).unwrap();
+        }
+    }
+
+    #[test]
+    fn a_proposal_that_fell_is_no_proposal() {
+        for standing in [
+            r#"{"status":"rejected","reasons":["no"]}"#,
+            r#"{"status":"conflicted","symbols":["a"]}"#,
+            r#"{"status":"withdrawn"}"#,
+            r#"{"status":"a newer word"}"#,
+        ] {
+            let (place, _d, tree) = gate_place(CHANGED, "kkkk", standing);
+            let first = Err(PROPOSE_FIRST.to_string());
+            assert_eq!(proposed(&place, "demo", &tree), first, "{standing}");
+            std::fs::remove_dir_all(tree).unwrap();
+        }
+    }
+
+    #[test]
+    fn what_lonca_can_not_say_stops_the_done_and_says_so() {
+        let (mut place, d, tree) = gate_place(CHANGED, "kkkk", "{}");
+        assert_eq!(
+            proposed(&place, "demo", &tree),
+            Err(NO_WORD.to_string()),
+            "no status"
+        );
+        place.socket = d.dir.join("nobody");
+        assert_eq!(
+            proposed(&place, "demo", &tree),
+            Err(NO_WORD.to_string()),
+            "no daemon"
+        );
+        std::fs::remove_dir_all(tree).unwrap();
+    }
+
+    #[test]
+    fn only_a_workers_done_from_a_workspace_is_gated() {
+        let (mut w, mut live, _) = proposer();
+        let done = serde_json::json!({"type": " done ", "to": "lead", "body": "x"});
+        let tree = PathBuf::from("/tree");
+        assert_eq!(live.gate_of(&w, 1, &done), None, "no tree yet");
+        live.cwds[1] = Some(tree.clone());
+        let gated = Some(("demo".to_string(), tree));
+        assert_eq!(live.gate_of(&w, 1, &done), gated);
+        let inform = serde_json::json!({"type": "inform", "to": "lead", "body": "x"});
+        assert_eq!(live.gate_of(&w, 1, &inform), None);
+        w.agents[1].role = Role::Helper;
+        assert_eq!(live.gate_of(&w, 1, &done), None);
+        w.agents[1].role = Role::Worker;
+        w.agents[1].workspace = None;
+        assert_eq!(live.gate_of(&w, 1, &done), None, "a worktree");
+    }
+
+    /// Steps until `answer` has a word.
+    fn answered(
+        live: &mut Live,
+        w: &mut World,
+        answer: &Receiver<imece_agent::mcp::Answer>,
+    ) -> imece_agent::mcp::Answer {
+        let till = Instant::now() + WAIT;
+        loop {
+            live.take_lonca(w);
+            if let Ok(said) = answer.try_recv() {
+                return said;
+            }
+            assert!(Instant::now() < till, "no answer");
+            thread::sleep(Duration::from_millis(2));
+        }
+    }
+
+    /// A worker's done with work it never proposed, and one it did.
+    #[test]
+    fn a_done_goes_on_only_past_its_gate() {
+        let (place, _d, tree) = gate_place(CHANGED, "", "{}");
+        let (mut w, mut live, _) = proposer();
+        w.agents[0].name = "lead".into();
+        live.lonca = Watch::start(place);
+        live.cwds[1] = Some(tree.clone());
+        let done = serde_json::json!({"type": "done", "to": "lead", "body": "all done"});
+        let (tx, rx) = mpsc::channel();
+        live.send(&mut w, 1, &done, tx);
+        assert_eq!(live.mail[0].len(), 0, "held");
+        let said = answered(&mut live, &mut w, &rx);
+        assert_eq!(said, Err(PROPOSE_FIRST.to_string()));
+        assert_eq!(live.mail[0].len(), 0, "refused: it never went");
+
+        let file = serde_json::json!({"repo": "demo", "submitted": null});
+        std::fs::write(tree.join(".lonca/workspace.json"), file.to_string()).unwrap();
+        let stub = tree.join("lonca");
+        std::fs::write(&stub, "#!/bin/sh\necho 'no local changes'\n").unwrap();
+        let (tx, rx) = mpsc::channel();
+        live.send(&mut w, 1, &done, tx);
+        assert!(answered(&mut live, &mut w, &rx).is_ok());
+        assert_eq!(live.mail[0].len(), 1, "passed: it went");
+        std::fs::remove_dir_all(tree).unwrap();
+    }
+
+    #[test]
+    fn a_gate_answering_changed_the_screen() {
+        let (mut w, mut live, _) = proposer();
+        assert!(!live.take_gates(&mut w), "nothing came");
+        let (reply, answer) = mpsc::channel();
+        let args = serde_json::json!({});
+        live.lonca
+            .gated
+            .send(Gated {
+                from: 1,
+                args,
+                reply,
+                passed: Err("no".into()),
+            })
+            .unwrap();
+        live.lonca_after_a_look();
+        assert!(live.take_lonca(&mut w));
+        assert_eq!(answer.try_recv().unwrap(), Err("no".to_string()));
     }
 }
