@@ -655,7 +655,7 @@ fn from_base64(text: &str) -> Option<Vec<u8>> {
             b'/' => 63,
             _ => return None,
         };
-        bits = (bits << 6) | u32::from(value);
+        bits = (bits << 6) + u32::from(value);
         held += 6;
         if held >= 8 {
             held -= 8;

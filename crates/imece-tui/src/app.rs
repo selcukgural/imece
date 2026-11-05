@@ -17703,4 +17703,33 @@ pub(crate) mod tests {
             Event::Landed { how: Landed::Rejected(why), .. } if why == &["rejected: see my notes"]
         )));
     }
+
+    #[test]
+    fn a_live_rejection_goes_by_what_the_change_is() {
+        use crate::live::testing::{idle_live, team};
+        let proposal = StoreProposal {
+            seq: 5,
+            change: "c5".into(),
+            older: Vec::new(),
+            why: Vec::new(),
+            redacted: Vec::new(),
+            cut: false,
+        };
+        let mut w = team(1);
+        w.change_ready(a_change(1));
+        let mut app = App::with(w, Engine::Live(Box::new(idle_live(2))), Lang::En);
+        assert!(app.reject(1, ""), "a worktree's change needs no reason");
+        assert!(app.world.change_of(1).is_none());
+
+        let mut w = team(1);
+        w.change_proposed(a_change(1), proposal);
+        let mut app = App::with(w, Engine::Live(Box::new(idle_live(2))), Lang::En);
+        // This project is on no repository, so only Lonca's way refuses it.
+        assert!(!app.reject(1, "no"));
+        assert!(app.world.proposal_of(1).is_some());
+        let name = app.world.agents[1].name.clone();
+        let why = "no proposal of theirs waits";
+        let t = app.lang.text();
+        assert_eq!(flashed(&app), Some(fill(t.reject_failed, &[&name, why])));
+    }
 }
