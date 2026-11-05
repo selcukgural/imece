@@ -717,6 +717,9 @@ pub fn held(lang: Lang, o: &Orphan) -> String {
         return t.tidy_clean.to_string();
     }
     let mut parts = Vec::new();
+    if o.unread {
+        parts.push(t.tidy_unread.to_string());
+    }
     if o.changes > 0 {
         parts.push(fill(t.tidy_changes, &[&o.changes.to_string()]));
     }
@@ -1759,7 +1762,21 @@ mod tests {
             checkout: "/r".into(),
             changes,
             commits,
+            unread: false,
         };
+        let unread = Orphan {
+            unread: true,
+            ..o(0, 0)
+        };
+        assert!(!unread.clean());
+        assert_eq!(
+            held(Lang::En, &unread),
+            "a workspace that may hold work: its session is over"
+        );
+        assert_eq!(
+            held(Lang::Tr, &unread),
+            "iş tutuyor olabilecek workspace: oturumu bitmiş"
+        );
         assert_eq!(held(Lang::En, &o(0, 0)), "clean");
         assert_eq!(held(Lang::En, &o(3, 0)), "files changed: 3");
         assert_eq!(held(Lang::En, &o(0, 2)), "commits of its own: 2");

@@ -722,21 +722,35 @@ pub(crate) fn teardown_script(checkout: &Path) -> setup::Script {
 }
 
 /// The demo's worktrees no agent owns, of its first project's checkout:
-/// one clean, one with work of its own, as a crash would leave them.
+/// one clean, one with work of its own, as a crash would leave them; and
+/// of a project on Lonca a workspace whose session is over, which nobody
+/// can read.
 fn demo_orphans(w: &World) -> Vec<Orphan> {
     let name = &w.projects[0].name;
     let checkout = PathBuf::from(format!("~/src/{name}"));
     let root = PathBuf::from(format!("~/.local/state/imece/worktrees/{name}-5e1f0a2c"));
-    [("claude-31", 0, 0), ("claude-32", 3, 1)]
-        .into_iter()
-        .map(|(agent, changes, commits)| Orphan {
-            name: agent.to_string(),
-            path: root.join(agent),
-            checkout: checkout.clone(),
-            changes,
-            commits,
-        })
-        .collect()
+    let tree = |agent: &str, changes, commits| Orphan {
+        name: agent.to_string(),
+        path: root.join(agent),
+        checkout: checkout.clone(),
+        changes,
+        commits,
+        unread: false,
+    };
+    let worktrees = [tree("claude-31", 0, 0), tree("claude-32", 3, 1)].into_iter();
+    let workspace = w.open_projects().find(|p| p.lonca.is_some()).map(|p| {
+        let name = &p.name;
+        let root = format!("~/.local/state/imece/worktrees/{name}-5e1f0a2c");
+        Orphan {
+            name: "claude-33".to_string(),
+            path: PathBuf::from(root).join("claude-33"),
+            checkout: PathBuf::from(format!("~/src/{name}")),
+            changes: 0,
+            commits: 0,
+            unread: true,
+        }
+    });
+    worktrees.chain(workspace).collect()
 }
 
 /// The demo's worktree setup script, the same in every project.
@@ -1452,6 +1466,10 @@ impl Sim {
             if force || o.clean() {
                 tidied.removed.push(o.name.clone());
                 gone.push(o.path.clone());
+            } else if o.unread {
+                tidied
+                    .kept
+                    .push((o.name.clone(), Some(WORKSPACE_MAY_HOLD.into())));
             } else {
                 let why = format!(
                     "{} holds work: {} files changed, {} commits of its own",
@@ -7748,6 +7766,31 @@ diff --git a/b.rs b/b.rs
         w.store_seen(0, "r", up());
         s.more_hands(&mut w, 0, leader);
         assert_eq!(hired(&w), before + 1);
+    }
+
+    #[test]
+    fn a_demo_workspace_left_behind_can_not_be_read_and_goes_only_on_a_yes() {
+        let (mut w, mut s, _, _) = one_at_work();
+        assert_eq!(demo_orphans(&w).len(), 2, "off Lonca");
+        on_store(&mut w, up());
+        let found = demo_orphans(&w);
+        assert_eq!(found.len(), 3);
+        assert!(found[2].unread && !found[2].clean());
+        let name = w.projects[0].name.clone();
+        assert!(
+            found[2]
+                .path
+                .ends_with(format!("{name}-5e1f0a2c/claude-33"))
+        );
+        assert_eq!(found[2].checkout, PathBuf::from(format!("~/src/{name}")));
+        w.orphans.found = Some(found);
+        s.extras.orphans = w.orphans.found.clone();
+        let script = teardown_script(&PathBuf::from(format!("~/src/{name}")));
+        w.setup_approved.push(script.key());
+        s.tidy(&mut w, &[2], false).unwrap();
+        let told = s.extras.tidy_due.clone().flatten().unwrap();
+        let why = told.kept[0].1.as_deref();
+        assert_eq!(why, Some(WORKSPACE_MAY_HOLD));
     }
 
     #[test]

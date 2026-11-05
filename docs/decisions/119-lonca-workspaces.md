@@ -86,8 +86,6 @@ with Lonca's default `unobserved_is_tainted = true`:
 
 **Known gaps**, the second half of this step:
 
-- A worktree nobody owns is listed by `:tidy`; a workspace nobody owns is not, and
-  a worker that leaves does not end its session.
 - `session start` is signed. A Secure Enclave key wants a finger at every hire and
   every session over, at the leader's moment, not the person's, within 120 s.
   Record 116 kept a login to a moment the person chose; this can not, a worker
@@ -110,9 +108,23 @@ first too, or the owner's would be lost to `Watch.ends`. An expiry mid-turn is t
 the worker's next Lonca tool (`session_inactive`), and its next prompt renews it. The
 demo has no clock on sessions: this can not be seen there.
 
+**Leaving and tidying.** A worker that leaves (`Live::dismiss`) ends its session on
+a thread (`stand_up`, `lonca session end`): its leases go, its proposals stay, and a
+helper leaving ends nothing of its worker's. Its workspace stays, as a worktree does,
+for `:tidy`, which lists it beside the worktrees (`tidy::orphans_under`); its checkout
+is the one `Live::roots` knows its directory by, else that directory, since a
+workspace has no `.git` to ask. What it holds comes from `lonca diff` (`Place::left_in`),
+and **`diff` wants a live session**: after `session end` it says `unauthenticated`
+(probed), so a left workspace can usually not be read. `Orphan.unread` makes that not
+clean: the window says it may hold work, and `a` passes it by and `d` asks `y`.
+`clear_workspace` reads again when it removes: without the person's yes only `Some(0)`
+goes. Its session ends first, one over saying so; its proposals are in the store and
+do not go with it. Its teardown script runs as a worktree's does.
+
 **The demo** (record 31). A worker hired on a project on Lonca has
 `Agent.workspace`, the trace line and the focus's `· workspace of lonca NAME`;
-its helpers too; `:fork` refuses it as live. What can not be faked: a daemon, a
+its helpers too; `:fork` refuses it as live; `:tidy` lists a workspace of a project
+on Lonca that can not be read. What can not be faked: a daemon, a
 proposal; the demo's Δs stay as they are until step 5.
 
 **Concurrency.** Starts of one tree are serial (`removing`, one slot per agent); a

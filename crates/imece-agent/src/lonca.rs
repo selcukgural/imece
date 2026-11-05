@@ -240,6 +240,24 @@ impl Place {
         }
     }
 
+    /// `lonca session end` in `workspace`: its worker left. A proposal of
+    /// its stays, and what it pinned; its token and its leases go.
+    pub fn stand_up(&self, workspace: &Path) -> Result<(), Failed> {
+        let args = ["session", "end", "--json"].map(OsStr::new);
+        self.run(workspace, &args, BEAT_WAIT).map(|_| ())
+    }
+
+    /// How many files `workspace` has that differ from its base, as
+    /// `lonca diff` counts them. None when that can not be said, which is
+    /// the usual case for a workspace left behind: `diff` asks the daemon
+    /// under the session's token, and a session over has none.
+    pub fn left_in(&self, workspace: &Path) -> Option<usize> {
+        let said = self.run(workspace, &[OsStr::new("diff")], BEAT_WAIT).ok()?;
+        let facts: Value = serde_json::from_str(&said).ok()?;
+        let lists = ["added_files", "modified_files", "deleted_files"];
+        (lists.iter()).try_fold(0, |n, list| Some(n + facts[list].as_array()?.len()))
+    }
+
     /// Who the person is here: a name that can be a file's.
     fn who(&self) -> Option<String> {
         let name = match &self.human {
@@ -851,6 +869,43 @@ mod tests {
     }
 
     #[test]
+    fn a_worker_that_left_ends_its_session_in_its_workspace() {
+        let (place, dir) = program("echo '{}'");
+        assert_eq!(place.stand_up(&dir), Ok(()));
+        assert_eq!(
+            seen(&dir).trim_end(),
+            format!("{}|session end --json|", dir.display())
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+        let (place, dir) = program("echo 'lonca: unauthenticated: gone' >&2; exit 1");
+        assert!(matches!(place.stand_up(&dir), Err(Failed::Said(_))));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn what_a_workspace_holds_is_lonca_s_count_or_nothing_said() {
+        let (place, dir) = program(
+            r#"echo '{"added_files":["a","b"],"modified_files":["c"],"deleted_files":["d","e","f"]}'"#,
+        );
+        assert_eq!(place.left_in(&dir), Some(6));
+        assert_eq!(seen(&dir).trim_end(), format!("{}|diff|", dir.display()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let (place, dir) =
+            program(r#"echo '{"added_files":[],"modified_files":[],"deleted_files":[]}'"#);
+        assert_eq!(place.left_in(&dir), Some(0));
+        let _ = std::fs::remove_dir_all(&dir);
+        for body in [
+            "echo 'lonca: facts.preview: unauthenticated: unknown' >&2; exit 1",
+            "echo 'no json'",
+            r#"echo '{"added_files":[],"modified_files":[]}'"#,
+        ] {
+            let (place, dir) = program(body);
+            assert_eq!(place.left_in(&dir), None, "{body}");
+            let _ = std::fs::remove_dir_all(&dir);
+        }
+    }
+
+    #[test]
     fn an_agents_name_goes_as_lonca_takes_it() {
         assert_eq!(agent_word("claude-1_a.b"), "claude-1_a.b");
         assert_eq!(agent_word("solo-şu ad"), "solo--u-ad");
@@ -1325,6 +1380,13 @@ mod tests {
             fs::read_to_string(tree.join(".lonca/session")).unwrap()
         );
         assert_eq!(place.seated(&tree), Ok(true));
+        assert_eq!(place.left_in(&tree), Some(0));
+        fs::write(tree.join("new.txt"), "x").unwrap();
+        assert_eq!(place.left_in(&tree), Some(1));
+        assert_eq!(place.stand_up(&tree), Ok(()));
+        assert_eq!(place.seated(&tree), Ok(false));
+        assert_eq!(place.left_in(&tree), None, "a session over can not say");
+        assert!(place.stand_up(&tree).is_err(), "twice");
     }
 
     /// Against a real daemon, the fake being only what this client thinks

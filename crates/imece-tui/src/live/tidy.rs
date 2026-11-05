@@ -12,6 +12,7 @@
 
 use std::sync::{Condvar, Mutex};
 
+use imece_agent::lonca::{self as store, Place as Daemon};
 use imece_agent::run::Running;
 
 use super::setup::{self, Kind, Script};
@@ -111,30 +112,62 @@ fn torn(ran: Result<run::Outcome, String>) -> TornDown {
 /// The worktrees under `dir` (`state/worktrees`: a directory per
 /// checkout, a worktree per agent in it) that are not in `owned`, sorted
 /// by path. Links and what is not a worktree added to a checkout are
-/// passed over: another directory, a file.
-pub(super) fn orphans_under(dir: &Path, owned: &HashSet<PathBuf>) -> Vec<Orphan> {
+/// passed over: another directory, a file. A Lonca workspace is one too,
+/// and says what it holds when its session can (`place`); its checkout is
+/// the one `roots` knows its directory by, else that directory.
+pub(super) fn orphans_under(
+    dir: &Path,
+    owned: &HashSet<PathBuf>,
+    place: &Daemon,
+    roots: &HashMap<PathBuf, PathBuf>,
+) -> Vec<Orphan> {
     let mut found = Vec::new();
     for root in dirs_in(dir) {
         for path in dirs_in(&root) {
             if owned.contains(&path) {
                 continue;
             }
+            let name = (path.file_name())
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_default();
+            if store::is_workspace(&path) {
+                let left = place.left_in(&path);
+                found.push(Orphan {
+                    name,
+                    checkout: roots.get(&root).unwrap_or(&root).clone(),
+                    path,
+                    changes: left.unwrap_or(0),
+                    commits: 0,
+                    unread: left.is_none(),
+                });
+                continue;
+            }
             let Ok((checkout, held)) = worktree::held(&path) else {
                 continue;
             };
             found.push(Orphan {
-                name: path
-                    .file_name()
-                    .map(|n| n.to_string_lossy().into_owned())
-                    .unwrap_or_default(),
+                name,
                 path,
                 checkout,
                 changes: held.changes,
                 commits: held.commits,
+                unread: false,
             });
         }
     }
     found
+}
+
+/// Takes away the workspace `path`, as [`worktree::remove`] does a worktree:
+/// one that holds work or can not say goes only when `force`. Its session
+/// ends first; one over says so, and the removal decides alone. A proposal
+/// of its stays in the store.
+fn clear_workspace(place: &Daemon, path: &Path, force: bool) -> Result<(), String> {
+    if !force && place.left_in(path) != Some(0) {
+        return Err(WORKSPACE_MAY_HOLD.to_string());
+    }
+    let _ = place.stand_up(path);
+    std::fs::remove_dir_all(path).map_err(|e| e.to_string())
 }
 
 /// The directories in `dir`, links left out, sorted.
@@ -170,6 +203,13 @@ impl Live {
             .collect()
     }
 
+    /// Each project's root and its checkout.
+    fn roots(&self) -> HashMap<PathBuf, PathBuf> {
+        (self.places.iter())
+            .map(|p| (p.root.clone(), p.repo.clone()))
+            .collect()
+    }
+
     /// Looks for the worktrees no agent owns, on a thread of its own; the
     /// answer comes to [`Live::take_tidy`]. Nothing while a look or a
     /// removal is under way: its answer is the newer.
@@ -179,8 +219,9 @@ impl Live {
         }
         w.orphans.busy = true;
         let (dir, owned, tx) = (self.worktrees(), self.owned(w), self.tidy.tx.clone());
+        let (place, roots) = (self.lonca.place().clone(), self.roots());
         thread::spawn(move || {
-            let _ = tx.send(Back::Found(orphans_under(&dir, &owned)));
+            let _ = tx.send(Back::Found(orphans_under(&dir, &owned, &place, &roots)));
         });
     }
 
@@ -220,6 +261,7 @@ impl Live {
         removing.hold(&paths);
         let (dir, tx) = (self.worktrees(), self.tidy.tx.clone());
         let running = self.tidy.running.clone();
+        let (place, roots) = (self.lonca.place().clone(), self.roots());
         thread::spawn(move || {
             for o in mine {
                 let ran = match &plans[&o.checkout] {
@@ -237,13 +279,19 @@ impl Live {
                 if let Some(ran) = ran {
                     tidied.torn.push((o.name.clone(), ran));
                 }
-                match worktree::remove(&o.path, force) {
+                let gone = if store::is_workspace(&o.path) {
+                    clear_workspace(&place, &o.path, force)
+                } else {
+                    worktree::remove(&o.path, force).map_err(|e| e.to_string())
+                };
+                match gone {
                     Ok(()) => tidied.removed.push(o.name),
-                    Err(e) => tidied.kept.push((o.name, Some(e.to_string()))),
+                    Err(why) => tidied.kept.push((o.name, Some(why))),
                 }
                 removing.free(&o.path);
             }
-            let _ = tx.send(Back::Tidied(tidied, orphans_under(&dir, &owned)));
+            let after = orphans_under(&dir, &owned, &place, &roots);
+            let _ = tx.send(Back::Tidied(tidied, after));
         });
         Ok(())
     }
@@ -412,6 +460,142 @@ mod tests {
         assert_eq!(lost.checkout, repo.canonicalize().unwrap());
         assert!(found.iter().find(|o| o.name == "claude-2").unwrap().clean());
         assert_eq!(w.orphans.tidied, None);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A workspace named `name` under the team's root, of nobody.
+    fn workspace(live: &Live, name: &str) -> PathBuf {
+        let at = root(live).join(name);
+        std::fs::create_dir_all(at.join(".lonca")).unwrap();
+        std::fs::write(at.join(".lonca/workspace.json"), r#"{"repo":"demo"}"#).unwrap();
+        at
+    }
+
+    /// The fake `lonca` that says `diff`'s facts, or refuses it.
+    fn says(facts: Option<&str>) -> (Daemon, PathBuf) {
+        let diff = match facts {
+            Some(json) => format!("echo '{json}'"),
+            None => "echo 'lonca: unauthenticated: unknown' >&2; exit 1".to_string(),
+        };
+        let body = format!(
+            r#"echo "$*" >> "$(dirname "$0")/all"
+               case "$*" in diff) {diff};; esac"#
+        );
+        imece_agent::lonca_fake::program(&body)
+    }
+
+    const NOTHING: &str = r#"{"added_files":[],"modified_files":[],"deleted_files":[]}"#;
+    const TWO: &str = r#"{"added_files":["a"],"modified_files":["b"],"deleted_files":[]}"#;
+
+    #[test]
+    fn a_workspace_left_behind_is_listed_with_what_lonca_can_say_of_it() {
+        let (dir, repo, mut live, mut w) = state("spaces", 0);
+        let at = workspace(&live, "claude-5");
+        let mine = root(&live);
+        let found = |place: &Daemon| {
+            let roots = HashMap::from([(mine.clone(), repo.clone())]);
+            orphans_under(&dir.join("state/worktrees"), &HashSet::new(), place, &roots)
+        };
+        let (place, fake) = says(Some(TWO));
+        let got = found(&place);
+        assert_eq!(got.len(), 1);
+        assert_eq!(got[0].name, "claude-5");
+        assert_eq!(got[0].path, at);
+        assert_eq!(got[0].checkout, repo, "by its root");
+        assert_eq!(
+            (got[0].changes, got[0].commits, got[0].unread),
+            (2, 0, false)
+        );
+        assert!(!got[0].clean());
+        let _ = std::fs::remove_dir_all(&fake);
+
+        let (place, fake) = says(Some(NOTHING));
+        assert!(found(&place)[0].clean());
+        let _ = std::fs::remove_dir_all(&fake);
+
+        let (place, fake) = says(None);
+        let got = found(&place);
+        assert_eq!((got[0].changes, got[0].unread), (0, true));
+        assert!(!got[0].clean(), "what can not be read may hold work");
+        // A root nobody knows is its own checkout, for the window to say.
+        let lost = orphans_under(
+            &dir.join("state/worktrees"),
+            &HashSet::new(),
+            &place,
+            &HashMap::new(),
+        );
+        assert_eq!(lost[0].checkout, mine);
+        let _ = std::fs::remove_dir_all(&fake);
+
+        // One an agent owns is not listed.
+        let owned = HashSet::from([at.clone()]);
+        let (place, fake) = says(None);
+        let none = orphans_under(
+            &dir.join("state/worktrees"),
+            &owned,
+            &place,
+            &HashMap::new(),
+        );
+        assert!(none.is_empty());
+        let _ = std::fs::remove_dir_all(&fake);
+        live.look_orphans(&mut w);
+        answered(&mut live, &mut w);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_workspace_goes_when_it_holds_nothing_or_on_the_persons_yes() {
+        let (dir, _repo, live, _w) = state("clear", 0);
+        let (place, fake) = says(Some(TWO));
+        let at = workspace(&live, "claude-6");
+        assert_eq!(
+            clear_workspace(&place, &at, false),
+            Err(WORKSPACE_MAY_HOLD.to_string())
+        );
+        assert!(at.exists(), "kept");
+        let ran = |fake: &Path| std::fs::read_to_string(fake.join("all")).unwrap();
+        assert!(!ran(&fake).contains("session end"), "its session too");
+        assert_eq!(clear_workspace(&place, &at, true), Ok(()));
+        assert!(!at.exists());
+        assert!(ran(&fake).contains("session end --json"));
+        let _ = std::fs::remove_dir_all(&fake);
+
+        let (place, fake) = says(None);
+        let at = workspace(&live, "claude-7");
+        assert_eq!(
+            clear_workspace(&place, &at, false),
+            Err(WORKSPACE_MAY_HOLD.to_string()),
+            "not read is not clean"
+        );
+        assert_eq!(clear_workspace(&place, &at, true), Ok(()));
+        let _ = std::fs::remove_dir_all(&fake);
+
+        let (place, fake) = says(Some(NOTHING));
+        let at = workspace(&live, "claude-8");
+        assert_eq!(clear_workspace(&place, &at, false), Ok(()));
+        assert!(!at.exists());
+        // A directory that can not go says so.
+        assert!(clear_workspace(&place, &at, true).is_err());
+        let _ = std::fs::remove_dir_all(&fake);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_tidy_takes_a_workspace_through_the_same_window() {
+        let (dir, _repo, mut live, mut w) = state("space-tidy", 0);
+        let (place, fake) = says(Some(NOTHING));
+        live.lonca = crate::live::lonca::Watch::start(place);
+        let at = workspace(&live, "claude-9");
+        live.look_orphans(&mut w);
+        answered(&mut live, &mut w);
+        assert_eq!(names(&w), ["claude-9"]);
+        let found = w.orphans.found.as_deref().unwrap();
+        assert_eq!(found[0].checkout, live.places[0].repo, "by its root");
+        live.tidy(&mut w, &[0], false).unwrap();
+        answered(&mut live, &mut w);
+        assert!(!at.exists());
+        assert!(names(&w).is_empty());
+        let _ = std::fs::remove_dir_all(&fake);
         let _ = std::fs::remove_dir_all(&dir);
     }
 

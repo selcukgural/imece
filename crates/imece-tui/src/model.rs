@@ -2471,14 +2471,20 @@ pub struct Orphan {
     pub changes: usize,
     /// Commits of its own no branch, tag or remote has.
     pub commits: usize,
+    /// A Lonca workspace nobody can read: `lonca diff` needs a live session.
+    /// It may hold work, so it counts as holding some.
+    pub unread: bool,
 }
 
 impl Orphan {
     /// Whether removing it loses nothing.
     pub fn clean(&self) -> bool {
-        self.changes == 0 && self.commits == 0
+        !self.unread && self.changes == 0 && self.commits == 0
     }
 }
+
+/// Why a workspace was not removed without the person's yes.
+pub const WORKSPACE_MAY_HOLD: &str = "it may hold work: its session is over or it has changes";
 
 /// What the engine knows of the worktrees no agent owns.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
