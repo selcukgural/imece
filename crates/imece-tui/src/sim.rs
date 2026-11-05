@@ -911,6 +911,12 @@ const STRAY_EVERY: usize = 4;
 /// From this far into its work.
 const STRAY_FROM: u8 = 40;
 
+/// Whether a leader wants one more worker: work waits, nobody is free, and
+/// the team is not at its most.
+fn short_of_hands(waiting: usize, free: usize, workers: usize) -> bool {
+    waiting >= 2 && free == 0 && workers < MAX_WORKERS
+}
+
 /// How often the demo's daemon stops, and for how long: long enough for
 /// `⌀ no lonca` to be read, in ticks.
 const STORE_EVERY: u64 = 60;
@@ -2592,20 +2598,8 @@ impl Sim {
         }
         // Work waits and nobody is free: one more worker; a second one
         // only once the person said yes to a plan (record 114), as live.
-        if waiting >= 2
-            && free == 0
-            && workers.len() < MAX_WORKERS
-            && self.rng.one_in(40)
-            && w.store_closed(project).is_none()
-        {
-            match w.plan_hold(project) {
-                None => {
-                    let id = self.hire(w, project);
-                    self.hired(w, leader, id);
-                }
-                Some(PlanHold::NoPlan | PlanHold::Unanswered) => self.propose(w, project),
-                Some(PlanHold::Reading) => {}
-            }
+        if short_of_hands(waiting, free, workers.len()) && self.rng.one_in(40) {
+            self.more_hands(w, project, leader);
         }
 
         // At most two cards a tick, so the screen stays calm: the leader
@@ -2897,11 +2891,8 @@ impl Sim {
                 let leader = w.projects[w.agents[id].project].leader;
                 self.send(w, id, leader, MsgKind::Progress, d, None);
             }
-            15..16
-                if w.helpers_of(id).next().is_none()
-                    && w.store_closed(w.agents[id].project).is_none() =>
-            {
-                self.helper_for(w, id, card);
+            15..16 if w.helpers_of(id).next().is_none() => {
+                self.helper_if_it_may(w, id, card);
             }
             16..17 if self.rng.one_in(4) => self.stop(w, id),
             20..70 => self.tool(w, id, card),
@@ -3189,6 +3180,31 @@ impl Sim {
             why: STOPPED.into(),
         });
         Self::helper_lost(w, id);
+    }
+
+    /// A leader short of hands takes one more worker, unless its project's
+    /// store does not answer; a second one only once the person said yes
+    /// to a plan (record 114), as live.
+    fn more_hands(&mut self, w: &mut World, project: ProjectId, leader: AgentId) {
+        if w.store_closed(project).is_some() {
+            return;
+        }
+        match w.plan_hold(project) {
+            None => {
+                let id = self.hire(w, project);
+                self.hired(w, leader, id);
+            }
+            Some(PlanHold::NoPlan | PlanHold::Unanswered) => self.propose(w, project),
+            Some(PlanHold::Reading) => {}
+        }
+    }
+
+    /// Worker `id` takes a helper, unless its project's store does not
+    /// answer.
+    fn helper_if_it_may(&mut self, w: &mut World, id: AgentId, card: CardId) {
+        if w.store_closed(w.agents[id].project).is_none() {
+            self.helper_for(w, id, card);
+        }
     }
 
     /// Worker `id` hires a helper in its worktree, named
@@ -7461,5 +7477,52 @@ diff --git a/b.rs b/b.rs
         assert_eq!(&demo_trunk(1)[..8], "9d9098eb");
         assert_eq!(&demo_trunk(2)[..8], "9de215ac");
         assert!(demo_trunk(1)[8..].bytes().all(|b| b == b'0'));
+    }
+
+    #[test]
+    fn a_leader_is_short_of_hands_when_work_waits_and_nobody_is_free() {
+        assert!(short_of_hands(2, 0, MAX_WORKERS - 1));
+        assert!(!short_of_hands(2, 0, MAX_WORKERS), "the team is full");
+        assert!(!short_of_hands(1, 0, 1), "too little waits");
+        assert!(!short_of_hands(2, 1, 1), "someone is free");
+    }
+
+    /// The demo's first project on a store, as `seen` says.
+    fn on_store(w: &mut World, seen: StoreSeen) {
+        w.on_lonca(0, Some("r".into()));
+        w.store_seen(0, "r", seen);
+    }
+
+    fn up() -> StoreSeen {
+        StoreSeen::Up {
+            trunk: demo_trunk(0),
+            pending: 0,
+        }
+    }
+
+    #[test]
+    fn a_demo_leader_whose_store_is_down_hires_nobody() {
+        let (mut w, mut s) = world(1, 1, 0, 1, Lang::En);
+        let leader = w.projects[0].leader;
+        w.projects[0].plan.on = false;
+        let hired = |w: &World| workers_of(w, 0).len();
+        let before = hired(&w);
+        on_store(&mut w, StoreSeen::Down(StoreDown::NoDaemon));
+        s.more_hands(&mut w, 0, leader);
+        assert_eq!(hired(&w), before);
+        w.store_seen(0, "r", up());
+        s.more_hands(&mut w, 0, leader);
+        assert_eq!(hired(&w), before + 1);
+    }
+
+    #[test]
+    fn a_demo_worker_whose_store_is_down_takes_no_helper() {
+        let (mut w, mut s, worker, card) = one_at_work();
+        on_store(&mut w, StoreSeen::Down(StoreDown::NoDaemon));
+        s.helper_if_it_may(&mut w, worker, card);
+        assert_eq!(w.helpers_of(worker).count(), 0);
+        w.store_seen(0, "r", up());
+        s.helper_if_it_may(&mut w, worker, card);
+        assert_eq!(w.helpers_of(worker).count(), 1);
     }
 }
