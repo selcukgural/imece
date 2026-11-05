@@ -659,9 +659,10 @@ mod tests {
 
     #[test]
     fn a_session_is_short_within_its_margin_and_not_beyond() {
-        let (w, live, now) = seated_with(SEAT_MARGIN);
+        // Half an hour, in numbers: the constant is what is under test.
+        let (w, live, now) = seated_with(Duration::from_secs(1800));
         assert!(live.seat_short(&w, 1, now), "at the margin");
-        let (w, live, now) = seated_with(SEAT_MARGIN + Duration::from_secs(1));
+        let (w, live, now) = seated_with(Duration::from_secs(1801));
         assert!(!live.seat_short(&w, 1, now), "past it");
         let (mut w, live, now) = seated_with(Duration::ZERO);
         assert!(live.seat_short(&w, 1, now), "over");
