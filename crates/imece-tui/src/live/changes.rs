@@ -110,6 +110,12 @@ impl Live {
         said: String,
         reply: Sender<Answer>,
     ) {
+        // A workspace's change is a proposal: a look brings it, once the
+        // turn is over.
+        if w.agents[id].workspace.is_some() {
+            let _ = reply.send(Ok(said));
+            return;
+        }
         let Some(path) = self.tree_at(w, id) else {
             w.change_none(id);
             let _ = reply.send(Ok(said));
@@ -396,6 +402,9 @@ impl Live {
         id: AgentId,
         hunks: Vec<usize>,
     ) -> Result<(), String> {
+        if w.proposal_of(id).is_some() {
+            return self.decide_proposal(w, id, Verdict::Approve);
+        }
         if let Some(why) = w.store_closed(w.agents[id].project) {
             return Err(why.into());
         }
@@ -2132,5 +2141,22 @@ mod tests {
             }
         )));
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_done_from_a_workspace_leaves_what_it_carries_to_its_proposal() {
+        let mut w = team(1);
+        let mut live = idle_live(2);
+        w.agents[1].workspace = Some("demo".into());
+        let carried = Spend {
+            cost: 40,
+            ticks: 3,
+            rounds: 1,
+        };
+        w.agents[1].task.carried = carried;
+        let (reply, answer) = mpsc::channel();
+        live.snapshot(&mut w, 1, "T".into(), "sent".into(), reply);
+        assert_eq!(answer.recv().unwrap(), Ok("sent".to_string()));
+        assert_eq!(w.agents[1].task.carried, carried);
     }
 }

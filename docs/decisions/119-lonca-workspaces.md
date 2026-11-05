@@ -27,9 +27,7 @@ start's thread before anything else touches the tree:
 
 Only `.git`-less is not the mark: `.lonca/workspace.json` is, a plain file, no
 link (`lonca::is_workspace`). `Agent.workspace` says which repository, set when
-a session is ready and read anew each run; it is what `tree_at` looks at, so a
-workspace gives git nothing to read, stand or move and a `done` from one has no
-Δ (`change_none`). `:copy`, `.worktreeinclude` and the setup script run as they
+a session is ready and read anew each run; it is what `tree_at` looks at, so a workspace gives git nothing to read, stand or move, and its Δ is a proposal (record 120). `:copy`, `.worktreeinclude` and the setup script run as they
 do in a worktree: a workspace honours `.gitignore`, so what they bring is no
 part of a proposal, and a tracked file they change is one, which is the truth.
 

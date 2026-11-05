@@ -52,6 +52,10 @@ const SEAT_WAIT: Duration = Duration::from_secs(120);
 /// How long a session lasts: Lonca's own most, `sessions.max_ttl_minutes`;
 /// a repository that allows less refuses it, in its words.
 const SEAT_TTL: &str = "8h";
+/// How long a decision gets: signed by the person, so the same finger.
+const DECIDE_WAIT: Duration = Duration::from_secs(120);
+/// The longest reason `reject` takes, in bytes.
+const REASON_MOST: usize = 4096;
 /// How long a heartbeat gets: a millisecond call, or no daemon.
 const BEAT_WAIT: Duration = Duration::from_secs(5);
 /// What `lonca diff` says of a workspace as its base left it.
@@ -188,6 +192,25 @@ impl Place {
             checkout.as_os_str(),
         ];
         self.run(checkout, &args, FETCH_WAIT).map(|_| ())
+    }
+
+    /// `lonca approve`: the operation numbered `seq` of `repo` goes on.
+    /// Signed by the person, who just said so: a Secure Enclave key waits
+    /// for a finger.
+    pub fn approve(&self, repo: &str, dir: &Path, seq: u64) -> Result<(), Failed> {
+        let (seq, named) = (seq.to_string(), format!("--repo={repo}"));
+        let args = ["approve", &seq, &named, "--json"].map(OsStr::new);
+        self.run(dir, &args, DECIDE_WAIT).map(|_| ())
+    }
+
+    /// `lonca reject`: the operation numbered `seq` of `repo` does not go
+    /// on, and its requester reads `reason`, cut to what Lonca takes.
+    pub fn reject(&self, repo: &str, dir: &Path, seq: u64, reason: &str) -> Result<(), Failed> {
+        let (seq, named) = (seq.to_string(), format!("--repo={repo}"));
+        // With `=`: a reason may start with a dash.
+        let why = format!("--reason={}", cut_bytes(reason, REASON_MOST));
+        let args = ["reject", &seq, &named, &why, "--json"].map(OsStr::new);
+        self.run(dir, &args, DECIDE_WAIT).map(|_| ())
     }
 
     /// `lonca session start`: a session of `seat.agent` on `seat.repo` and
@@ -343,6 +366,14 @@ fn refusal(said: &str) -> String {
     let line = last.unwrap_or_default().trim();
     let line = line.strip_prefix("lonca: ").unwrap_or(line);
     line.chars().take(SAID_MOST).collect()
+}
+
+/// The most of `text` that fits `most` bytes, on a character's edge.
+fn cut_bytes(text: &str, most: usize) -> &str {
+    let end = (0..=most.min(text.len()))
+        .rev()
+        .find(|&i| text.is_char_boundary(i));
+    &text[..end.unwrap_or(0)]
 }
 
 /// Who `human login --json` signed in: stdout comes first, one object.
@@ -524,6 +555,28 @@ impl Client {
         self.call("change.get", Some(repo), json!({"change": change}))
     }
 
+    /// What `change` does, as the daemon works it out in the store.
+    pub fn diff(&mut self, repo: &str, change: &str) -> Result<Diff, Down> {
+        let params = json!({"change": change, "format": "unified"});
+        Diff::of(&self.call("change.diff", Some(repo), params)?).ok_or(Down::Protocol)
+    }
+
+    /// Whether the policy at commit `policy` keeps what a session nothing
+    /// observes proposes for a human. Its `lonca.toml` is read from the
+    /// store; a policy that has none has Lonca's defaults, which do.
+    pub fn holds_unobserved(&mut self, repo: &str, policy: &str) -> Result<bool, Down> {
+        let params = json!({"commit": policy, "with_content": true, "paths": [POLICY_FILE]});
+        let told = self.call("tree", Some(repo), params)?;
+        let files = told.as_array().ok_or(Down::Protocol)?;
+        let Some(file) = files.iter().find(|f| f["path"] == POLICY_FILE) else {
+            return Ok(true);
+        };
+        let text = (file["content_b64"].as_str())
+            .and_then(from_base64)
+            .and_then(|b| String::from_utf8(b).ok());
+        text.map(|t| unobserved_held(&t)).ok_or(Down::Protocol)
+    }
+
     /// The log from `from`, at most `limit` entries. With `wait` (at most
     /// [`LOG_WAIT_MOST`]) the daemon holds the request until an entry
     /// comes; an empty array means the time ran out.
@@ -584,20 +637,165 @@ fn down_of(code: Option<&str>) -> Down {
     }
 }
 
+/// The file of a policy commit that holds the repository's settings.
+const POLICY_FILE: &str = "lonca.toml";
+/// What the log calls a proposal: [`Pending::op`].
+pub const PROPOSE: &str = "change.propose";
+
+/// The bytes `text` stands for in base64; none for a letter it has not.
+fn from_base64(text: &str) -> Option<Vec<u8>> {
+    let mut out = Vec::with_capacity(text.len() / 4 * 3);
+    let (mut bits, mut held) = (0u32, 0u32);
+    for b in text.bytes().filter(|&b| b != b'=') {
+        let value = match b {
+            b'A'..=b'Z' => b - b'A',
+            b'a'..=b'z' => b - b'a' + 26,
+            b'0'..=b'9' => b - b'0' + 52,
+            b'+' => 62,
+            b'/' => 63,
+            _ => return None,
+        };
+        bits = (bits << 6) | u32::from(value);
+        held += 6;
+        if held >= 8 {
+            held -= 8;
+            out.push((bits >> held) as u8);
+        }
+    }
+    Some(out)
+}
+
+/// Whether the settings `toml` leave `unobserved_is_tainted` on, Lonca's
+/// default. Off, nothing waits for a person: a change would integrate
+/// unseen (record 120). So anything but a plain `true` for it is off, and a
+/// spelling this does not know (a table written inline) is off too: only
+/// the key's own line under `[observation]` is read as the setting.
+fn unobserved_held(toml: &str) -> bool {
+    const KEY: &str = "unobserved_is_tainted";
+    let mut section = String::new();
+    let mut held = true;
+    for line in toml.lines() {
+        let line = line.split('#').next().unwrap_or_default().trim();
+        if let Some(name) = line.strip_prefix('[') {
+            section = name.trim_end_matches(']').trim().to_string();
+        } else if line.contains(KEY) || (line.starts_with("observation") && section.is_empty()) {
+            let setting = (line.split_once('='))
+                .filter(|(key, _)| key.trim() == KEY && section == "observation");
+            held &= setting.is_some_and(|(_, value)| value.trim() == "true");
+        }
+    }
+    held
+}
+
+/// What a change does, read from the store.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Diff {
+    /// The change's commit.
+    pub commit: String,
+    pub files: Vec<DiffFile>,
+    /// Files left out of `patch` because a blob of theirs was redacted.
+    pub redacted: Vec<String>,
+    /// The unified diff.
+    pub patch: String,
+    /// The daemon cut `patch` (at 2 MiB, on a line).
+    pub cut: bool,
+}
+
+/// One file of a [`Diff`].
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DiffFile {
+    pub path: String,
+    /// Lines added and removed; none for a binary file.
+    pub lines: Option<(u32, u32)>,
+}
+
+impl Diff {
+    /// Fails closed, as [`Status::of`].
+    fn of(v: &Value) -> Option<Diff> {
+        let texts = |key: &str| -> Option<Vec<String>> {
+            (v[key].as_array()?.iter())
+                .map(|p| p.as_str().map(str::to_string))
+                .collect()
+        };
+        Some(Diff {
+            commit: v["commit"].as_str()?.to_string(),
+            files: (v["files"].as_array()?.iter())
+                .map(DiffFile::of)
+                .collect::<Option<_>>()?,
+            redacted: texts("redacted")?,
+            patch: v["diff"].as_str()?.to_string(),
+            cut: v["truncated"].as_bool()?,
+        })
+    }
+}
+
+impl DiffFile {
+    fn of(v: &Value) -> Option<DiffFile> {
+        let count = |key: &str| u32::try_from(v[key].as_u64()?).ok();
+        Some(DiffFile {
+            path: v["path"].as_str()?.to_string(),
+            lines: count("added").zip(count("removed")),
+        })
+    }
+}
+
 /// What `status` says of a repository, the part imece reads.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Status {
     /// Trunk's commit: 40 hex digits.
     pub trunk: String,
+    /// The commit that holds the repository's policy.
+    pub policy: String,
     /// The number the next log entry gets: a change here means something
     /// happened since the last look.
     pub next_seq: u64,
     pub pending: Vec<Pending>,
+    /// Every change the repository has had and where each stands.
+    pub changes: Vec<(String, Standing)>,
     /// The sessions the repository has had, ended ones too: the log keeps
     /// them, so one agent may have several.
     pub sessions: Vec<SessionEnd>,
     /// The daemon's clock.
     pub now_ms: i64,
+}
+
+/// Where a change stands in the store.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Standing {
+    /// It waits for a human.
+    Pending,
+    /// Approved or clean, in the merge queue.
+    Queued,
+    /// On trunk, as this commit.
+    Integrated(String),
+    /// The queue could not merge these symbols.
+    Conflicted(Vec<String>),
+    /// A human or the verifier said no, and why.
+    Rejected(Vec<String>),
+    /// Its proposer took it back.
+    Withdrawn,
+    /// A state of a newer Lonca's: nothing is done on it.
+    Other,
+}
+
+impl Standing {
+    /// `v` is a change's `status` object.
+    fn of(v: &Value) -> Option<Standing> {
+        let list = |key: &str| -> Option<Vec<String>> {
+            (v[key].as_array()?.iter())
+                .map(|s| s.as_str().map(str::to_string))
+                .collect()
+        };
+        Some(match v["status"].as_str()? {
+            "pending" => Standing::Pending,
+            "queued" => Standing::Queued,
+            "integrated" => Standing::Integrated(v["commit"].as_str()?.to_string()),
+            "conflicted" => Standing::Conflicted(list("symbols")?),
+            "rejected" => Standing::Rejected(list("reasons")?),
+            "withdrawn" => Standing::Withdrawn,
+            _ => Standing::Other,
+        })
+    }
 }
 
 /// When a session of an agent's ends.
@@ -614,8 +812,10 @@ pub struct Pending {
     /// The number `approve` and `reject` name.
     pub seq: u64,
     pub created_ms: i64,
-    /// What it is, as the log names it (`change.propose`).
+    /// What it is, as the log names it ([`PROPOSE`]).
     pub op: String,
+    /// Why it waits, as the policy said it (`unobserved_session`).
+    pub reasons: Vec<String>,
     /// The change, its base and intent: only a proposal has them.
     pub change: Option<String>,
     pub base: Option<String>,
@@ -635,10 +835,20 @@ impl Status {
             return None;
         }
         let pending = v["pending"].as_array()?;
+        let changes = v["changes"].as_array()?.iter();
         Some(Status {
             trunk: trunk.to_string(),
+            policy: v["policy"].as_str()?.to_string(),
             next_seq: v["next_seq"].as_u64()?,
             pending: pending.iter().map(Pending::of).collect::<Option<_>>()?,
+            changes: changes
+                .map(|c| {
+                    Some((
+                        c["change"].as_str()?.to_string(),
+                        Standing::of(&c["status"])?,
+                    ))
+                })
+                .collect::<Option<_>>()?,
             sessions: (v["sessions"].as_array()?.iter())
                 .map(SessionEnd::of)
                 .collect::<Option<_>>()?,
@@ -673,19 +883,22 @@ impl SessionEnd {
 impl Pending {
     fn of(v: &Value) -> Option<Pending> {
         let text = |key: &str| v[key].as_str().map(str::to_string);
-        let paths = v["paths"].as_array()?.iter();
+        let texts = |key: &str| -> Option<Vec<String>> {
+            (v[key].as_array()?.iter())
+                .map(|p| p.as_str().map(str::to_string))
+                .collect()
+        };
         Some(Pending {
             seq: v["seq"].as_u64()?,
             created_ms: v["created_ms"].as_i64()?,
             op: text("op")?,
+            reasons: texts("reasons")?,
             change: text("change"),
             base: text("base"),
             intent: text("intent"),
             agent: text("agent"),
             task: text("task"),
-            paths: paths
-                .map(|p| p.as_str().map(str::to_string))
-                .collect::<Option<_>>()?,
+            paths: texts("paths")?,
         })
     }
 }
@@ -693,7 +906,7 @@ impl Pending {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::lonca_fake::{Daemon, TRUNK, program, seen, status, write_session};
+    use crate::lonca_fake::{Daemon, POLICY, TRUNK, program, seen, status, write_session};
 
     #[test]
     fn a_login_says_who_signed_in_and_never_waits_on_stdin() {
@@ -1191,7 +1404,8 @@ mod tests {
         let want = Pending {
             seq: 7,
             created_ms: 5,
-            op: "change.propose".into(),
+            op: PROPOSE.into(),
+            reasons: vec!["unobserved_session".into()],
             change: Some("kkkk".into()),
             base: Some(TRUNK.into()),
             intent: Some("fix".into()),
@@ -1200,11 +1414,238 @@ mod tests {
             paths: vec!["src/a.rs".into()],
         };
         assert_eq!(got.pending, [want]);
+        assert_eq!(got.policy, POLICY);
+    }
+
+    #[test]
+    fn every_way_a_change_can_stand_is_read() {
+        let of = |v: Value| Standing::of(&v);
+        let word = |w: &str| of(json!({"status": w}));
+        assert_eq!(word("pending"), Some(Standing::Pending));
+        assert_eq!(word("queued"), Some(Standing::Queued));
+        assert_eq!(word("withdrawn"), Some(Standing::Withdrawn));
+        assert_eq!(word("a newer word"), Some(Standing::Other));
+        assert_eq!(
+            of(json!({"status": "integrated", "commit": "c1"})),
+            Some(Standing::Integrated("c1".into()))
+        );
+        assert_eq!(
+            of(json!({"status": "conflicted", "symbols": ["a#b"]})),
+            Some(Standing::Conflicted(vec!["a#b".into()]))
+        );
+        assert_eq!(
+            of(json!({"status": "rejected", "reasons": ["rejected: no"]})),
+            Some(Standing::Rejected(vec!["rejected: no".into()]))
+        );
+        assert_eq!(word("integrated"), None, "no commit");
+        assert_eq!(word("conflicted"), None, "no symbols");
+        assert_eq!(word("rejected"), None, "no reasons");
+        assert_eq!(of(json!({"status": "rejected", "reasons": [1]})), None);
+        assert_eq!(of(json!({})), None);
+    }
+
+    #[test]
+    fn a_status_lists_every_change_with_where_it_stands() {
+        let mut v = status(&[]);
+        v["changes"] = json!([{"change": "a", "status": {"status": "queued"}},
+            {"change": "b", "status": {"status": "withdrawn"}}]);
+        let got = Status::of(&v).expect("reads");
+        let want = [
+            ("a".to_string(), Standing::Queued),
+            ("b".to_string(), Standing::Withdrawn),
+        ];
+        assert_eq!(got.changes, want);
+        v["changes"] = json!([{"status": {"status": "queued"}}]);
+        assert_eq!(Status::of(&v), None, "a change with no id");
+        v["changes"] = json!([{"change": "a"}]);
+        assert_eq!(Status::of(&v), None, "a change standing nowhere");
+    }
+
+    #[test]
+    fn a_diff_is_read_whole_or_not_at_all() {
+        let whole = json!({"change": "kkkk", "base": TRUNK, "commit": "c2", "format": "unified",
+            "files": [{"path": "src/a.rs", "status": "modified", "added": 3, "removed": 1,
+                       "symbols": {}},
+                      {"path": "b.png", "status": "added", "added": null, "removed": null,
+                       "symbols": {}}],
+            "redacted": ["secret.txt"], "diff": "diff --git a b\n", "truncated": true});
+        let d = Daemon::start(PROTOCOL, {
+            let whole = whole.clone();
+            move |_| Ok(whole.clone())
+        });
+        d.sign_in();
+        let got = (d.place.open().expect("opens"))
+            .diff("demo", "kkkk")
+            .expect("reads");
+        let file = |path: &str, lines| DiffFile {
+            path: path.into(),
+            lines,
+        };
+        let want = Diff {
+            commit: "c2".into(),
+            files: vec![file("src/a.rs", Some((3, 1))), file("b.png", None)],
+            redacted: vec!["secret.txt".into()],
+            patch: "diff --git a b\n".into(),
+            cut: true,
+        };
+        assert_eq!(got, want);
+        let heard = d.heard.lock().expect("heard");
+        assert_eq!(heard[0]["method"], "change.diff");
+        assert_eq!(heard[0]["params"]["change"], "kkkk");
+        assert_eq!(heard[0]["params"]["format"], "unified");
+        for key in ["commit", "files", "redacted", "diff", "truncated"] {
+            let mut v = whole.clone();
+            v.as_object_mut().expect("object").remove(key);
+            assert_eq!(Diff::of(&v), None, "{key}");
+        }
+        let mut v = whole.clone();
+        v["files"][0]["path"] = json!(1);
+        assert_eq!(Diff::of(&v), None, "a path that is no text");
+        v = whole;
+        v["files"][0]["added"] = json!(u64::from(u32::MAX) + 1);
+        assert_eq!(Diff::of(&v).expect("reads").files[0].lines, None);
+    }
+
+    #[test]
+    fn base64_comes_back_to_its_bytes() {
+        let of = |text: &str| from_base64(text).map(|b| String::from_utf8_lossy(&b).into_owned());
+        assert_eq!(of(""), Some(String::new()));
+        assert_eq!(of("Zg=="), Some("f".into()));
+        assert_eq!(of("Zm8="), Some("fo".into()));
+        assert_eq!(of("Zm9v"), Some("foo".into()));
+        assert_eq!(of("Zm9vYmFy"), Some("foobar".into()));
+        assert_eq!(
+            from_base64("AZaz09+/"),
+            Some(vec![1, 150, 179, 211, 223, 191])
+        );
+        for wrong in ["Zm9v!", "Zm 9v", "Zm9v\n"] {
+            assert_eq!(from_base64(wrong), None, "{wrong:?}");
+        }
+    }
+
+    #[test]
+    fn a_policy_holds_a_change_unless_it_is_seen_to_be_told_not_to() {
+        for held in [
+            "",
+            "[paths]\ncritical = []\n",
+            "[observation]\nnetwork = \"taint\"\n",
+            "[observation]\nunobserved_is_tainted = true\n",
+            "[observation]\nunobserved_is_tainted = true  # the default\n",
+            "# unobserved_is_tainted = false\n",
+            "version = 1\n",
+            "[observation]\nobservation_note = 1\n",
+            "[other]\nthing = 1\n[observation]\n  unobserved_is_tainted=true\n",
+        ] {
+            assert!(unobserved_held(held), "{held:?}");
+        }
+        for open in [
+            "[observation]\nunobserved_is_tainted = false\n",
+            "[observation]\nunobserved_is_tainted = \"true\"\n",
+            "[observation]\nunobserved_is_tainted\n",
+            "observation.unobserved_is_tainted = true\n",
+            "observation = { unobserved_is_tainted = false }\n",
+            "observation = { network = \"taint\" }\n",
+            "[other]\nunobserved_is_tainted = true\n",
+            "[observation]\nunobserved_is_tainted = true\nunobserved_is_tainted = false\n",
+        ] {
+            assert!(!unobserved_held(open), "{open:?}");
+        }
+    }
+
+    #[test]
+    fn the_policy_is_read_from_its_commit_in_the_store() {
+        let answers = |result: Value| {
+            let d = Daemon::start(PROTOCOL, move |_| Ok(result.clone()));
+            d.sign_in();
+            d
+        };
+        let file = |b64: &str| {
+            json!([{"path": "policy.cedar", "content_b64": "AAAA"},
+            {"path": "lonca.toml", "content_b64": b64}])
+        };
+        // `[observation]\nunobserved_is_tainted = false\n`
+        let off = "W29ic2VydmF0aW9uXQp1bm9ic2VydmVkX2lzX3RhaW50ZWQgPSBmYWxzZQo=";
+        let holds = |d: &Daemon| {
+            d.place
+                .open()
+                .expect("opens")
+                .holds_unobserved("demo", "pol")
+        };
+        let d = answers(file(off));
+        assert_eq!(holds(&d), Ok(false));
+        let heard = d.heard.lock().expect("heard");
+        assert_eq!(heard[0]["method"], "tree");
+        assert_eq!(heard[0]["params"]["commit"], "pol");
+        assert_eq!(heard[0]["params"]["with_content"], true);
+        assert_eq!(heard[0]["params"]["paths"], json!(["lonca.toml"]));
+        assert_eq!(heard[0]["repo"], "demo");
+        assert_eq!(holds(&answers(file("Cg=="))), Ok(true), "a file of nothing");
+        assert_eq!(
+            holds(&answers(json!([]))),
+            Ok(true),
+            "no file: the defaults"
+        );
+        assert_eq!(holds(&answers(file("!"))), Err(Down::Protocol));
+        assert_eq!(
+            holds(&answers(file("/w=="))),
+            Err(Down::Protocol),
+            "no text"
+        );
+        assert_eq!(holds(&answers(json!({}))), Err(Down::Protocol));
+        let none = json!([{"path": "lonca.toml", "content_b64": null}]);
+        assert_eq!(
+            holds(&answers(none)),
+            Err(Down::Protocol),
+            "a redacted blob"
+        );
+    }
+
+    #[test]
+    fn a_decision_names_its_number_and_repository() {
+        let (place, dir) = program("exit 0");
+        assert_eq!(place.approve("-demo", &dir, 5), Ok(()));
+        assert!(
+            seen(&dir).contains("|approve 5 --repo=-demo --json|"),
+            "{}",
+            seen(&dir)
+        );
+        assert_eq!(place.reject("-demo", &dir, 7, "-not this"), Ok(()));
+        assert!(
+            seen(&dir).contains("|reject 7 --repo=-demo --reason=-not this --json|"),
+            "{}",
+            seen(&dir)
+        );
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn a_refused_decision_says_why() {
+        let (place, dir) = program("echo 'lonca: denied: nothing_pending' >&2\nexit 1");
+        let why = Err(Failed::Said("denied: nothing_pending".into()));
+        assert_eq!(place.approve("demo", &dir, 5), why);
+        assert_eq!(place.reject("demo", &dir, 5, "no"), why);
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn a_reason_stays_within_what_lonca_takes_and_whole_letters() {
+        assert_eq!(cut_bytes("abc", 5), "abc");
+        assert_eq!(cut_bytes("abc", 3), "abc");
+        assert_eq!(cut_bytes("abc", 2), "ab");
+        assert_eq!(cut_bytes("aç", 2), "a", "ç takes two bytes");
+        assert_eq!(cut_bytes("aç", 3), "aç");
+        assert_eq!(cut_bytes("ç", 1), "");
+        let (place, dir) = program("exit 0");
+        let long = "x".repeat(REASON_MOST + 1);
+        place.reject("demo", &dir, 1, &long).unwrap();
+        let reason = "x".repeat(REASON_MOST);
+        assert!(seen(&dir).contains(&format!("--reason={reason} --json")));
+        fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]
     fn a_pending_that_is_no_proposal_has_no_change() {
-        let v = json!({"seq": 1, "created_ms": 2, "op": "policy.update", "change": null,
+        let v = json!({"seq": 1, "created_ms": 2, "op": "policy.update", "reasons": [], "change": null,
             "base": null, "intent": null, "agent": null, "task": null, "paths": []});
         let p = Pending::of(&v).expect("reads");
         assert_eq!((p.change, p.agent, p.paths.len()), (None, None, 0));
@@ -1237,7 +1678,9 @@ mod tests {
     fn a_status_short_of_the_protocol_is_no_answer() {
         let whole = status(&[7]);
         assert!(Status::of(&whole).is_some());
-        for key in ["trunk", "next_seq", "pending", "sessions", "now_ms"] {
+        for key in [
+            "trunk", "policy", "next_seq", "pending", "changes", "sessions", "now_ms",
+        ] {
             let mut v = whole.clone();
             v.as_object_mut().expect("object").remove(key);
             assert_eq!(Status::of(&v), None, "{key}");
@@ -1247,7 +1690,7 @@ mod tests {
             v["trunk"] = json!(trunk);
             assert_eq!(Status::of(&v), None, "{trunk}");
         }
-        for key in ["seq", "created_ms", "op", "paths"] {
+        for key in ["seq", "created_ms", "op", "reasons", "paths"] {
             let mut v = whole.clone();
             v["pending"][0].as_object_mut().expect("object").remove(key);
             assert_eq!(Status::of(&v), None, "{key}");
@@ -1423,5 +1866,48 @@ mod tests {
         assert_eq!(pending.op, "change.propose");
         assert!(!pending.paths.is_empty() && pending.intent.is_some());
         assert!(pending.agent.is_some() && pending.base.is_some());
+        assert!(!pending.reasons.is_empty());
+        let diff = c.diff(&repo, change).expect("diff");
+        assert_eq!(got["commit"], diff.commit.as_str());
+        assert!(diff.patch.starts_with("diff --git "), "{}", diff.patch);
+        assert!(diff.files[0].lines.is_some() && !diff.cut);
+        let listed = (status.changes.iter()).find(|(id, _)| id == change);
+        assert_eq!(listed.map(|(_, s)| s), Some(&Standing::Pending));
+        assert_eq!(c.holds_unobserved(&repo, &status.policy), Ok(true));
+    }
+
+    /// A worker's proposals decided by the real program: as above, with
+    /// two proposals of one workspace waiting, and `lonca` on `PATH`.
+    #[test]
+    #[ignore = "needs a running lonca daemon and the lonca program"]
+    fn live_a_proposal_is_turned_down_and_its_newer_one_lands() {
+        let repo = std::env::var("IMECE_LONCA_REPO").expect("a repository");
+        let dir = std::env::temp_dir();
+        let place = Place::here();
+        let mut c = place.open().expect("opens");
+        let status = c.status(&repo).expect("status");
+        let [older, newer] = &status.pending[..] else {
+            panic!("two waiting: {:?}", status.pending);
+        };
+        let standing = |c: &mut Client, change: &Option<String>| {
+            let changes = c.status(&repo).expect("status").changes;
+            let found = changes
+                .into_iter()
+                .find(|(id, _)| Some(id) == change.as_ref());
+            found.map(|(_, s)| s)
+        };
+        assert_eq!(place.reject(&repo, &dir, older.seq, "replaced"), Ok(()));
+        let rejected = Standing::Rejected(vec!["rejected: replaced".into()]);
+        assert_eq!(standing(&mut c, &older.change), Some(rejected));
+        assert_eq!(place.approve(&repo, &dir, newer.seq), Ok(()));
+        let trunk = c.status(&repo).expect("status").trunk;
+        assert_eq!(
+            standing(&mut c, &newer.change),
+            Some(Standing::Integrated(trunk))
+        );
+        assert!(matches!(
+            place.approve(&repo, &dir, newer.seq),
+            Err(Failed::Said(why)) if why.contains("nothing_pending")
+        ));
     }
 }

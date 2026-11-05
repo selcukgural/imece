@@ -588,8 +588,9 @@ pub struct Live {
     /// Helpers that sent done to their worker: each leaves when its turn
     /// ends, so the turn's cost is still reported.
     leaving: Vec<bool>,
-    /// Whether each agent has a note that a helper of its stopped before
-    /// it sent done, not read yet: an idle one is woken for it.
+    /// Whether each agent has a note it must act on, not read yet: a
+    /// helper of its stopped before it sent done, or the queue sent its
+    /// proposal back. An idle one is woken for it.
     lost: Vec<bool>,
     /// What imece itself has to tell each agent, at the start of its next
     /// turn: the person took or rejected its change.
@@ -787,6 +788,7 @@ pub fn world(o: Options) -> Result<(World, Live), String> {
                 plans: Vec::new(),
                 changes: Vec::new(),
                 clashes: Default::default(),
+                proposals: Default::default(),
                 paid: 0,
                 suggested: None,
                 reviews: Default::default(),
@@ -1218,6 +1220,10 @@ impl Live {
                 AgentEvent::TurnDone { cost, .. } => {
                     if let Some(s) = &mut self.sessions[id] {
                         s.spent = self.floor[id] + cost;
+                    }
+                    // What it proposed is the person's to see now.
+                    if w.agents[id].workspace.is_some() {
+                        self.look_now();
                     }
                 }
                 AgentEvent::Stopped(why) => {
@@ -1793,6 +1799,26 @@ mod tests {
             .unwrap();
         live.step(&mut w);
         assert_eq!(local(&w), None, "it went with the session");
+    }
+
+    #[test]
+    fn the_end_of_a_turn_in_a_workspace_brings_the_look_that_shows_its_proposal() {
+        let done = || AgentEvent::TurnDone {
+            ok: true,
+            text: "done".into(),
+            cost: 0,
+            denied: 0,
+        };
+        let mut w = team(1);
+        let mut live = Live::new(2, claude_at("x"), PathBuf::new(), PathBuf::new());
+        live.lonca_after_a_look();
+        live.tx.send((1, 0, done())).unwrap();
+        live.step(&mut w);
+        assert!(!live.lonca_is_due(), "a worktree's turn asks nothing");
+        w.agents[1].workspace = Some("demo".into());
+        live.tx.send((1, 0, done())).unwrap();
+        live.step(&mut w);
+        assert!(live.lonca_is_due());
     }
 
     #[test]

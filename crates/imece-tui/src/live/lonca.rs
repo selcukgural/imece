@@ -1,24 +1,25 @@
 //! Lonca's store as this engine sees it (record 116): one thread asks the
 //! daemon how each project's repository stands, so the screen never waits
 //! on a socket; what it said closes a project to hires and Δ decisions or
-//! opens it ([`World::store_closed`]). imece only reads here; what must be
-//! signed the `lonca` program does, on a thread of its own, when the person
-//! asks (record 117).
+//! opens it ([`World::store_closed`]), and what waits there is the workers'
+//! Δ (record 120). imece only reads here; what must be signed the `lonca`
+//! program does, on a thread of its own, when the person asks (record 117).
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::sync::mpsc::{self, Receiver, Sender, TryRecvError};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use imece_agent::lonca::{self, Client, Down, Failed, Place, Seat, TRUNK_REF};
+use imece_agent::lonca::{self, Client, Diff, Down, Failed, Place, Seat, Standing, TRUNK_REF};
 use imece_agent::worktree::{self, Forward};
 
 use super::Live;
 use super::Slot;
 use crate::model::{
-    Agent, AgentId, Behind, ImportAsk, ProjectId, Role, StoreDown, StoreJob, StoreSeen, Synced,
-    World,
+    Agent, AgentId, Behind, Change, ChangedFile, Check, ImportAsk, Landed, ProjectId, Role,
+    StoreDown, StoreJob, StoreProposal, StoreSeen, Synced, Verdict, World,
 };
 
 /// How often the store is asked. Each look is a connection and a
@@ -45,11 +46,180 @@ pub(super) const SEAT_RENEWED: &str = "your Lonca session ran out of time and a 
                                        this workspace: your files and proposals are as they were, \
                                        your leases are gone, so lease again before you edit";
 
+/// The longest reason told of a proposal that did not land, in characters.
+const REASON_TOLD: usize = 400;
+
+/// A worker's newest proposal, as a look read it: `diff` is read once.
+#[derive(Clone, Debug)]
+struct Offer {
+    /// Whose it is, as Lonca took the name.
+    agent: String,
+    title: String,
+    proposal: StoreProposal,
+    diff: Arc<Diff>,
+}
+
+/// What one look found.
+#[derive(Default)]
+struct Looked {
+    found: Found,
+    left: Left,
+    /// What waits in each repository, by worker.
+    offers: Vec<(ProjectId, Offer)>,
+    /// Where every change of each repository stands.
+    standings: HashMap<String, Standing>,
+}
+
+/// What the looks keep: the store does not change what it said.
+#[derive(Default)]
+struct Kept {
+    /// The diffs of what waits.
+    diffs: HashMap<String, Arc<Diff>>,
+    /// Each repository's policy and whether it holds a change for a
+    /// person. Only an answer is kept.
+    held: HashMap<String, (String, bool)>,
+}
+
+impl Kept {
+    /// Whether policy `policy` of `repo` holds a change for a person.
+    /// What can not be read does not (record 120).
+    fn holds(&mut self, client: &mut Client, repo: &str, policy: &str) -> bool {
+        if let Some((_, held)) = self.held.get(repo).filter(|(p, _)| p == policy) {
+            return *held;
+        }
+        let Ok(held) = client.holds_unobserved(repo, policy) else {
+            return false;
+        };
+        self.held
+            .insert(repo.to_string(), (policy.to_string(), held));
+        held
+    }
+
+    /// The diff of `change`; none while the daemon can not say.
+    fn diff(&mut self, client: &mut Client, repo: &str, change: &str) -> Option<Arc<Diff>> {
+        if let Some(diff) = self.diffs.get(change) {
+            return Some(diff.clone());
+        }
+        let diff = Arc::new(client.diff(repo, change).ok()?);
+        self.diffs.insert(change.to_string(), diff.clone());
+        Some(diff)
+    }
+}
+
+/// What waits for a person in `status`, per worker: its newest proposal,
+/// which holds what its older ones did, since a workspace proposes all it
+/// has. Anything else that waits is the count on the project's line.
+fn offers(status: &lonca::Status, read: &mut impl FnMut(&str) -> Option<Arc<Diff>>) -> Vec<Offer> {
+    let mut by_agent: BTreeMap<&str, Vec<&lonca::Pending>> = BTreeMap::new();
+    let proposals = (status.pending.iter()).filter(|p| p.op == lonca::PROPOSE);
+    for p in proposals {
+        if let Some(agent) = p.agent.as_deref() {
+            by_agent.entry(agent).or_default().push(p);
+        }
+    }
+    let mut out = Vec::new();
+    for (agent, mut waiting) in by_agent {
+        waiting.sort_by_key(|p| p.seq);
+        let Some(newest) = waiting.pop() else {
+            continue;
+        };
+        let Some(change) = newest.change.as_deref() else {
+            continue;
+        };
+        let Some(diff) = read(change) else {
+            continue;
+        };
+        out.push(Offer {
+            agent: agent.to_string(),
+            title: newest.intent.clone().unwrap_or_default(),
+            proposal: StoreProposal {
+                seq: newest.seq,
+                change: change.to_string(),
+                older: waiting.iter().map(|p| p.seq).collect(),
+                why: newest.reasons.clone(),
+                redacted: diff.redacted.clone(),
+                cut: diff.cut,
+            },
+            diff,
+        });
+    }
+    out
+}
+
+/// A proposal's change as the person reads it.
+fn change_of(id: AgentId, offer: &Offer) -> Change {
+    let files = offer.diff.files.iter().map(|f| ChangedFile {
+        path: f.path.clone(),
+        added: f.lines.map_or(0, |(added, _)| added),
+        removed: f.lines.map_or(0, |(_, removed)| removed),
+        binary: f.lines.is_none(),
+    });
+    Change {
+        agent: id,
+        title: offer.title.clone(),
+        files: files.collect(),
+        patch: offer.diff.patch.clone(),
+        runs: Vec::new(),
+        check: Check::None,
+        spend: None,
+    }
+}
+
+/// What `standing` says became of a proposal: nothing while it waits, or
+/// for a state this imece does not know.
+fn landed(standing: &Standing) -> Option<Landed> {
+    match standing {
+        Standing::Pending | Standing::Other => None,
+        Standing::Queued => Some(Landed::Queued),
+        Standing::Integrated(commit) => Some(Landed::Integrated(commit.clone())),
+        Standing::Conflicted(symbols) => Some(Landed::Conflicted(symbols.clone())),
+        Standing::Rejected(reasons) => Some(Landed::Rejected(reasons.clone())),
+        Standing::Withdrawn => Some(Landed::Withdrawn),
+    }
+}
+
+/// What a worker hears of its proposal, `title`: nothing for one that
+/// needs nothing of it; whether it has to act comes with it.
+fn told(how: &Landed, title: &str) -> Option<(String, bool)> {
+    let some = |words: &[String]| {
+        let all = words.join("; ");
+        all.chars().take(REASON_TOLD).collect::<String>()
+    };
+    match how {
+        Landed::Queued | Landed::Withdrawn => None,
+        Landed::Integrated(commit) => Some((
+            format!(
+                "Your proposal ({title}) is on trunk as {commit}. Call the sync tool before you \
+                 edit again."
+            ),
+            false,
+        )),
+        Landed::Conflicted(symbols) => Some((
+            format!(
+                "Lonca's merge queue could not merge your proposal ({title}): {}. Call the sync \
+                 tool, settle what it leaves beside your files as .trunk, remove those, and \
+                 propose again.",
+                some(symbols)
+            ),
+            true,
+        )),
+        Landed::Rejected(reasons) => Some((
+            format!(
+                "Your proposal ({title}) was refused: {}. It stays in your workspace. Put it \
+                 right, call the sync tool, and propose again.",
+                some(reasons)
+            ),
+            true,
+        )),
+    }
+}
+
 /// What a job came back with.
 enum Done {
     Login(Result<String, Failed>),
     Import(Result<Vec<String>, Failed>),
     Sync(Result<Synced, Failed>),
+    Decide(Result<(), Failed>),
 }
 
 /// `job` run by the `lonca` program: login in the project's checkout `dir`.
@@ -67,6 +237,32 @@ fn run(place: &Place, dir: &Path, job: &StoreJob) -> Done {
             Done::Import(done)
         }
         StoreJob::Sync { repo, .. } => Done::Sync(sync(place, repo, dir)),
+        StoreJob::Decide {
+            repo,
+            proposal,
+            verdict,
+            ..
+        } => Done::Decide(decide(place, repo, dir, proposal, verdict)),
+    }
+}
+
+/// The person's word on `proposal`. Its worker's older proposals go first
+/// and whatever the word: this one holds what they did, and one left
+/// waiting would come up as the worker's change.
+fn decide(
+    place: &Place,
+    repo: &str,
+    dir: &Path,
+    proposal: &StoreProposal,
+    verdict: &Verdict,
+) -> Result<(), Failed> {
+    let replaced = format!("replaced by proposal {}", proposal.seq);
+    for &older in &proposal.older {
+        place.reject(repo, dir, older, &replaced)?;
+    }
+    match verdict {
+        Verdict::Approve => place.approve(repo, dir, proposal.seq),
+        Verdict::Reject(reason) => place.reject(repo, dir, proposal.seq, reason),
     }
 }
 
@@ -149,7 +345,12 @@ pub(super) struct Watch {
     /// The job under way: one at a time, never on the screen's thread.
     job: Option<(StoreJob, Receiver<Done>)>,
     ask: Sender<Repos>,
-    back: Receiver<(Found, Left)>,
+    back: Receiver<Looked>,
+    /// Changes approved and in the queue, and whose they are: what the
+    /// queue makes of them is still to be said.
+    queued: HashMap<String, AgentId>,
+    /// Rejections the worker hears from the person's own line.
+    pub(super) worded: Vec<String>,
     /// When the newest session of each repository's agents ends, as the
     /// last look read it; an agent not here is not known to be short.
     pub(super) ends: HashMap<(String, String), Instant>,
@@ -180,8 +381,9 @@ impl Watch {
         let (answer, back) = mpsc::channel();
         let kept = place.clone();
         thread::spawn(move || {
+            let mut kept = Kept::default();
             for repos in asked {
-                if answer.send(look(&place, &repos)).is_err() {
+                if answer.send(look(&place, &repos, &mut kept)).is_err() {
                     return;
                 }
             }
@@ -191,6 +393,8 @@ impl Watch {
             job: None,
             ask,
             back,
+            queued: HashMap::new(),
+            worded: Vec::new(),
             ends: HashMap::new(),
             out: false,
             next: None,
@@ -199,29 +403,40 @@ impl Watch {
 }
 
 /// How `repos` stand: one connection, a status for each. A daemon that can
-/// not be opened leaves them all down for the same reason.
-fn look(place: &Place, repos: &Repos) -> (Found, Left) {
+/// not be opened leaves them all down for the same reason. A repository
+/// whose policy does not hold a change for a person is closed: the Δ gate
+/// would not be there (record 120).
+fn look(place: &Place, repos: &Repos, kept: &mut Kept) -> Looked {
     let mut client = place.open();
-    let mut left = Vec::new();
-    let found = (repos.iter())
-        .map(|(p, repo, checkout)| {
-            let told = client.as_mut().map_err(|down| *down);
-            let seen = match told.and_then(|c| Ok((c.status(repo)?, c))) {
-                Ok((status, c)) => {
-                    let times = status.time_left().into_iter();
-                    left.extend(times.map(|(agent, ms)| (repo.clone(), agent, ms)));
+    let mut looked = Looked::default();
+    let mut waiting: Vec<String> = Vec::new();
+    for (p, repo, checkout) in repos {
+        let told = client.as_mut().map_err(|down| *down);
+        let seen = match told.and_then(|c| Ok((c.status(repo)?, c))) {
+            Ok((status, c)) => {
+                let times = status.time_left().into_iter();
+                (looked.left).extend(times.map(|(agent, ms)| (repo.clone(), agent, ms)));
+                if kept.holds(c, repo, &status.policy) {
+                    let mut read = |change: &str| kept.diff(c, repo, change);
+                    let offered = offers(&status, &mut read);
+                    waiting.extend(offered.iter().map(|o| o.proposal.change.clone()));
+                    looked.offers.extend(offered.into_iter().map(|o| (*p, o)));
+                    looked.standings.extend(status.changes);
                     StoreSeen::Up {
                         behind: behind_of(c, repo, checkout.as_deref(), &status.trunk),
                         trunk: status.trunk,
                         pending: status.pending.len(),
                     }
+                } else {
+                    StoreSeen::Down(StoreDown::Unguarded)
                 }
-                Err(down) => StoreSeen::Down(down_of(down)),
-            };
-            (*p, repo.clone(), seen)
-        })
-        .collect();
-    (found, left)
+            }
+            Err(down) => StoreSeen::Down(down_of(down)),
+        };
+        looked.found.push((*p, repo.clone(), seen));
+    }
+    kept.diffs.retain(|change, _| waiting.contains(change));
+    looked
 }
 
 /// How far the checkout is behind `trunk`, read from where it left trunk,
@@ -319,18 +534,36 @@ impl Live {
             Err(TryRecvError::Empty) => return false,
             Err(TryRecvError::Disconnected) => None,
         };
+        let decided = match job {
+            StoreJob::Decide { agent, .. } => Some(*agent),
+            _ => None,
+        };
         match (done, job) {
             (Some(Done::Login(Ok(human))), _) => w.store_signed_in(job.project(), human),
+            // Lonca has it: the next look says what became of it, whoever's
+            // hand it was.
+            (Some(Done::Decide(Ok(()))), _) => {}
             (Some(Done::Import(Ok(warned))), StoreJob::Import(ask)) => {
                 w.store_imported(ask, warned);
             }
             (Some(Done::Sync(Ok(how))), StoreJob::Sync { project, repo }) => {
                 w.store_synced(*project, repo, how);
             }
-            (Some(Done::Login(Err(e)) | Done::Import(Err(e)) | Done::Sync(Err(e))), _) => {
+            (
+                Some(
+                    Done::Login(Err(e))
+                    | Done::Import(Err(e))
+                    | Done::Sync(Err(e))
+                    | Done::Decide(Err(e)),
+                ),
+                _,
+            ) => {
                 w.store_failed(job, said(e));
             }
             _ => w.store_failed(job, None),
+        }
+        if let Some(agent) = decided {
+            self.applying[agent] = false;
         }
         self.lonca.job = None;
         self.look_now();
@@ -343,16 +576,142 @@ impl Live {
         if self.take_store_job(w) {
             return true;
         }
-        let Ok((found, left)) = self.lonca.back.try_recv() else {
+        let Ok(looked) = self.lonca.back.try_recv() else {
             return false;
         };
         self.lonca.out = false;
-        self.lonca.note_ends(left, Instant::now());
+        self.lonca.note_ends(looked.left, Instant::now());
         let mut changed = false;
-        for (p, repo, seen) in found {
+        for (p, repo, seen) in looked.found {
             changed |= w.store_seen(p, &repo, seen);
         }
+        changed |= self.land(w, &looked.standings);
+        for (p, offer) in &looked.offers {
+            changed |= self.offered(w, *p, offer);
+        }
         changed
+    }
+
+    /// The owner of proposals of `agent`, a name as Lonca took it, in
+    /// project `p`: a worker or a solo, gone or not, since its proposals
+    /// stay. Someone else's stay a count on the project's line.
+    fn owner(w: &World, p: ProjectId, agent: &str) -> Option<AgentId> {
+        (w.agents.iter())
+            .filter(|a| a.project == p && a.parent.is_none() && a.role != Role::Leader)
+            .find(|a| lonca::agent_word(&a.name) == agent)
+            .map(|a| a.id)
+    }
+
+    /// `offer` waits in project `p`: it is its worker's change once that
+    /// worker's turn is over, so that the person never approves what it
+    /// is still working on. Whether the screen changed.
+    fn offered(&mut self, w: &mut World, p: ProjectId, offer: &Offer) -> bool {
+        let Some(id) = Self::owner(w, p, &offer.agent).filter(|&id| self.turns[id] == 0) else {
+            return false;
+        };
+        match w.proposals.get_mut(&id) {
+            Some(shown) if shown.change == offer.proposal.change => {
+                let moved = shown.older != offer.proposal.older;
+                shown.older.clone_from(&offer.proposal.older);
+                moved
+            }
+            _ => {
+                w.change_proposed(change_of(id, offer), offer.proposal.clone());
+                true
+            }
+        }
+    }
+
+    /// What `standings` says became of the proposals the person was shown
+    /// and of those in the queue: the journal says it, whoever decided, and
+    /// the worker is told. Whether anything did.
+    fn land(&mut self, w: &mut World, standings: &HashMap<String, Standing>) -> bool {
+        let of = |change: &str| standings.get(change).and_then(landed);
+        let mut shown: Vec<(AgentId, String, Landed)> = (w.proposals.iter())
+            .filter_map(|(&id, p)| Some((id, p.change.clone(), of(&p.change)?)))
+            .collect();
+        shown.sort_by_key(|(id, ..)| *id);
+        let any = !shown.is_empty();
+        for (id, change, how) in shown {
+            let title = w.change_of(id).map(|c| c.title.clone()).unwrap_or_default();
+            if how == Landed::Queued {
+                self.lonca.queued.insert(change.clone(), id);
+            }
+            w.proposal_left(id, how.clone());
+            self.tell_landed(w, id, &change, &how, &title);
+        }
+        let mut queued: Vec<(String, AgentId, Landed)> = (self.lonca.queued.iter())
+            .filter_map(|(c, &id)| Some((c.clone(), id, of(c).filter(|h| *h != Landed::Queued)?)))
+            .collect();
+        queued.sort_by_key(|(_, id, _)| *id);
+        let moved = !queued.is_empty();
+        for (change, id, how) in queued {
+            self.lonca.queued.remove(&change);
+            w.proposal_landed(id, how.clone());
+            self.tell_landed(w, id, &change, &how, "");
+        }
+        any || moved
+    }
+
+    /// Worker `id` hears what became of its proposal; one that has to act
+    /// on it is woken. A rejection the person worded went to it as their
+    /// message already.
+    fn tell_landed(&mut self, w: &World, id: AgentId, change: &str, how: &Landed, title: &str) {
+        if let Some(i) = (self.lonca.worded.iter()).position(|c| c == change) {
+            self.lonca.worded.remove(i);
+            return;
+        }
+        let Some((words, act)) = told(how, title) else {
+            return;
+        };
+        self.notes[id].push(words);
+        self.lost[id] |= act && !w.agents[id].gone;
+    }
+
+    /// The person approves or rejects worker `id`'s proposal: the `lonca`
+    /// program signs it on a thread, and a look says what came of it.
+    pub(super) fn decide_proposal(
+        &mut self,
+        w: &World,
+        id: AgentId,
+        verdict: Verdict,
+    ) -> Result<(), String> {
+        let project = w.agents[id].project;
+        if let Some(why) = w.store_closed(project) {
+            return Err(why.into());
+        }
+        if self.applying[id] {
+            return Err("their change is being applied".into());
+        }
+        let (Some(proposal), Some(on)) = (w.proposal_of(id), &w.projects[project].lonca) else {
+            return Err("no proposal of theirs waits".into());
+        };
+        let job = StoreJob::Decide {
+            project,
+            repo: on.repo.clone(),
+            agent: id,
+            proposal: proposal.clone(),
+            verdict,
+        };
+        if !self.store_job(job) {
+            return Err("another lonca command is under way".into());
+        }
+        self.applying[id] = true;
+        Ok(())
+    }
+
+    /// The person rejects worker `id`'s proposal; `reason` also goes to it
+    /// as their message, which this note comes before.
+    pub fn reject_proposal(&mut self, w: &World, id: AgentId, reason: &str) -> Result<(), String> {
+        let shown = w.proposal_of(id).map(|p| p.change.clone());
+        self.decide_proposal(w, id, Verdict::Reject(reason.to_string()))?;
+        self.lonca.worded.extend(shown);
+        let title = w.change_of(id).map(|c| c.title.clone()).unwrap_or_default();
+        self.notes[id].push(format!(
+            "The person rejected your proposal ({title}); their words follow. It stays in your \
+             workspace. Put it right, call the sync tool, and propose again."
+        ));
+        Ok(())
     }
 
     /// Whether agent `id`'s Lonca session is to be renewed: it runs out
@@ -415,7 +774,7 @@ mod tests {
     use std::time::Duration;
 
     use imece_agent::lonca::PROTOCOL;
-    use imece_agent::lonca_fake::{Daemon, TRUNK, status};
+    use imece_agent::lonca_fake::{Daemon, POLICY, TRUNK, status};
 
     use super::*;
     use crate::live::testing::{Stub, idle_live, idle_live_in, team, with_helper};
@@ -456,7 +815,7 @@ mod tests {
             (0, "demo".to_string(), None),
             (3, "other".to_string(), None),
         ];
-        let (found, _) = look(&d.place, &repos);
+        let found = look(&d.place, &repos, &mut Kept::default()).found;
         assert_eq!(found.len(), 2);
         let up = StoreSeen::Up {
             trunk: TRUNK.into(),
@@ -477,7 +836,7 @@ mod tests {
             (0, "demo".to_string(), None),
             (1, "other".to_string(), None),
         ];
-        let (found, left) = look(&place, &repos);
+        let Looked { found, left, .. } = look(&place, &repos, &mut Kept::default());
         assert!(left.is_empty());
         let down = StoreSeen::Down(StoreDown::NoDaemon);
         assert_eq!(found[0].2, down);
@@ -499,7 +858,7 @@ mod tests {
 
     fn live_with(program_body: &str) -> (Live, std::path::PathBuf) {
         let (place, dir) = imece_agent::lonca_fake::program(program_body);
-        let mut live = idle_live_in(&dir, 1);
+        let mut live = idle_live_in(&dir, 2);
         live.lonca = Watch::start(place);
         (live, dir)
     }
@@ -741,7 +1100,12 @@ mod tests {
             Ok(v)
         });
         d.sign_in();
-        let (_, left) = look(&d.place, &vec![(0, "demo".to_string(), None)]);
+        let left = look(
+            &d.place,
+            &vec![(0, "demo".to_string(), None)],
+            &mut Kept::default(),
+        )
+        .left;
         assert_eq!(left, vec![("demo".to_string(), "a".to_string(), 2000)]);
     }
 
@@ -1131,7 +1495,11 @@ mod tests {
         live.lonca_due(&w, t0 + LOOK_EVERY);
         assert!(live.lonca.out);
         settle(&mut live, &mut w);
-        assert_eq!(d.heard.lock().unwrap().len(), 2);
+        let looks = |d: &Daemon| {
+            let heard = d.heard.lock().unwrap();
+            heard.iter().filter(|h| h["method"] == "status").count()
+        };
+        assert_eq!(looks(&d), 2);
         // The person named a repository: at once.
         live.look_now();
         live.lonca_due(&w, t0 + LOOK_EVERY + Duration::from_millis(1));
@@ -1252,5 +1620,613 @@ mod tests {
             live.fork(&mut w, 1).unwrap_err(),
             "nobody is hired now: no Lonca daemon answers; only the person can bring Lonca back"
         );
+    }
+
+    /// A `status` with `rows` as its pending list: (seq, agent, change).
+    fn waiting(rows: &[(u64, Option<&str>, Option<&str>)]) -> lonca::Status {
+        lonca::Status {
+            trunk: TRUNK.into(),
+            policy: POLICY.into(),
+            next_seq: 9,
+            pending: rows
+                .iter()
+                .map(|&(seq, agent, change)| lonca::Pending {
+                    seq,
+                    created_ms: 5,
+                    op: lonca::PROPOSE.into(),
+                    reasons: vec!["unobserved_session".into()],
+                    change: change.map(str::to_string),
+                    base: Some(TRUNK.into()),
+                    intent: Some(format!("intent {seq}")),
+                    agent: agent.map(str::to_string),
+                    task: None,
+                    paths: Vec::new(),
+                })
+                .collect(),
+            changes: Vec::new(),
+            sessions: Vec::new(),
+            now_ms: 0,
+        }
+    }
+
+    fn diff_of(patch: &str) -> Arc<Diff> {
+        Arc::new(Diff {
+            commit: "c1".into(),
+            files: vec![
+                lonca::DiffFile {
+                    path: "a.rs".into(),
+                    lines: Some((3, 1)),
+                },
+                lonca::DiffFile {
+                    path: "b.png".into(),
+                    lines: None,
+                },
+            ],
+            redacted: vec!["s.txt".into()],
+            patch: patch.to_string(),
+            cut: true,
+        })
+    }
+
+    fn offer(agent: &str, seq: u64, change: &str) -> Offer {
+        Offer {
+            agent: agent.to_string(),
+            title: format!("intent {seq}"),
+            proposal: StoreProposal {
+                seq,
+                change: change.to_string(),
+                older: Vec::new(),
+                why: vec!["unobserved_session".into()],
+                redacted: Vec::new(),
+                cut: false,
+            },
+            diff: diff_of("diff --git a/a.rs b/a.rs\n"),
+        }
+    }
+
+    #[test]
+    fn a_workers_newest_proposal_is_its_offer_and_holds_the_older() {
+        let status = waiting(&[
+            (5, Some("w1"), Some("c5")),
+            (9, Some("w1"), Some("c9")),
+            (7, Some("w1"), Some("c7")),
+            (6, Some("w2"), Some("c6")),
+        ]);
+        let mut asked = Vec::new();
+        let got = offers(&status, &mut |change: &str| {
+            asked.push(change.to_string());
+            Some(diff_of("p"))
+        });
+        assert_eq!(asked, ["c9", "c6"], "only what is shown is read");
+        assert_eq!(got.len(), 2);
+        assert_eq!(got[0].agent, "w1");
+        assert_eq!(got[0].title, "intent 9");
+        let want = StoreProposal {
+            seq: 9,
+            change: "c9".into(),
+            older: vec![5, 7],
+            why: vec!["unobserved_session".into()],
+            redacted: vec!["s.txt".into()],
+            cut: true,
+        };
+        assert_eq!(got[0].proposal, want);
+        assert_eq!(got[1].agent, "w2");
+        assert_eq!(got[1].proposal.older, Vec::<u64>::new());
+    }
+
+    #[test]
+    fn what_is_no_workers_proposal_is_no_offer() {
+        let mut status = waiting(&[
+            (5, None, Some("human")),
+            (6, Some("w1"), None),
+            (7, Some("w2"), Some("c7")),
+            (8, Some("w3"), Some("unread")),
+        ]);
+        status.pending[2].op = "policy.update".into();
+        let got = offers(&status, &mut |change: &str| {
+            (change != "unread").then(|| diff_of("p"))
+        });
+        assert!(got.is_empty(), "{got:?}");
+    }
+
+    #[test]
+    fn a_proposal_reads_as_a_change_with_its_binary_file_said() {
+        let change = change_of(3, &offer("w1", 5, "c5"));
+        assert_eq!(change.agent, 3);
+        assert_eq!(change.title, "intent 5");
+        assert_eq!(change.patch, "diff --git a/a.rs b/a.rs\n");
+        let (text, binary) = (&change.files[0], &change.files[1]);
+        assert_eq!(
+            (text.path.as_str(), text.added, text.removed),
+            ("a.rs", 3, 1)
+        );
+        assert!(!text.binary);
+        assert_eq!((binary.added, binary.removed), (0, 0));
+        assert!(binary.binary);
+        assert!(change.runs.is_empty() && change.spend.is_none());
+        assert_eq!(change.check, Check::None);
+    }
+
+    #[test]
+    fn what_became_of_a_proposal_is_what_the_store_says() {
+        let c = || vec!["x".to_string()];
+        assert_eq!(landed(&Standing::Pending), None);
+        assert_eq!(landed(&Standing::Other), None);
+        assert_eq!(landed(&Standing::Queued), Some(Landed::Queued));
+        assert_eq!(landed(&Standing::Withdrawn), Some(Landed::Withdrawn));
+        assert_eq!(
+            landed(&Standing::Integrated("c".into())),
+            Some(Landed::Integrated("c".into()))
+        );
+        assert_eq!(
+            landed(&Standing::Conflicted(c())),
+            Some(Landed::Conflicted(c()))
+        );
+        assert_eq!(
+            landed(&Standing::Rejected(c())),
+            Some(Landed::Rejected(c()))
+        );
+    }
+
+    #[test]
+    fn a_worker_hears_what_it_must_act_on_and_is_woken_for_it() {
+        assert_eq!(told(&Landed::Queued, "t"), None);
+        assert_eq!(told(&Landed::Withdrawn, "t"), None);
+        let (on_trunk, act) = told(&Landed::Integrated("c1".into()), "T").unwrap();
+        assert!(
+            on_trunk.contains("(T)") && on_trunk.contains("c1"),
+            "{on_trunk}"
+        );
+        assert!(!act, "nothing to do until its next task");
+        let (clash, act) =
+            told(&Landed::Conflicted(vec!["a#b".into(), "c#d".into()]), "T").unwrap();
+        assert!(clash.contains("(T): a#b; c#d."), "{clash}");
+        assert!(clash.contains("sync") && clash.contains("propose again"));
+        assert!(act);
+        let (no, act) = told(&Landed::Rejected(vec!["rejected: no".into()]), "T").unwrap();
+        assert!(no.contains("(T) was refused: rejected: no."), "{no}");
+        assert!(no.contains("sync") && no.contains("propose again"));
+        assert!(act);
+    }
+
+    #[test]
+    fn what_a_worker_is_told_of_a_reason_has_a_length() {
+        let long = "x".repeat(REASON_TOLD);
+        let (said, _) = told(&Landed::Rejected(vec![long.clone() + "y"]), "T").unwrap();
+        assert!(
+            said.contains(&format!("{long}. ")),
+            "cut after {REASON_TOLD}"
+        );
+    }
+
+    #[test]
+    fn a_decision_turns_down_the_older_proposals_first() {
+        let (place, dir) =
+            imece_agent::lonca_fake::program("echo \"$*\" >> \"$(dirname \"$0\")/all\"\nexit 0");
+        let calls = |dir: &Path| std::fs::read_to_string(dir.join("all")).unwrap();
+        let mut proposal = offer("w1", 9, "c9").proposal;
+        proposal.older = vec![5, 7];
+        decide(&place, "demo", &dir, &proposal, &Verdict::Approve).unwrap();
+        assert_eq!(
+            calls(&dir),
+            "reject 5 --repo=demo --reason=replaced by proposal 9 --json\n\
+             reject 7 --repo=demo --reason=replaced by proposal 9 --json\n\
+             approve 9 --repo=demo --json\n"
+        );
+        std::fs::remove_file(dir.join("all")).unwrap();
+        proposal.older = Vec::new();
+        let no = Verdict::Reject("not this".into());
+        decide(&place, "demo", &dir, &proposal, &no).unwrap();
+        assert_eq!(
+            calls(&dir),
+            "reject 9 --repo=demo --reason=not this --json\n"
+        );
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn a_decision_stops_at_what_lonca_refuses() {
+        let (place, dir) = imece_agent::lonca_fake::program(
+            "echo \"$*\" >> \"$(dirname \"$0\")/all\"\necho 'lonca: no' >&2\nexit 1",
+        );
+        let mut proposal = offer("w1", 9, "c9").proposal;
+        proposal.older = vec![5, 7];
+        let got = decide(&place, "demo", &dir, &proposal, &Verdict::Approve);
+        assert_eq!(got, Err(Failed::Said("no".into())));
+        let calls = std::fs::read_to_string(dir.join("all")).unwrap();
+        assert_eq!(calls.lines().count(), 1, "{calls}");
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn a_policy_is_asked_once_and_only_an_answer_is_kept() {
+        let d = Daemon::start(PROTOCOL, |asked| match asked["params"]["commit"].as_str() {
+            Some("off") => Ok(serde_json::json!([{"path": "lonca.toml",
+                "content_b64": "W29ic2VydmF0aW9uXQp1bm9ic2VydmVkX2lzX3RhaW50ZWQgPSBmYWxzZQo="}])),
+            Some("bad") => Err("internal"),
+            _ => Ok(serde_json::json!([])),
+        });
+        d.sign_in();
+        let mut c = d.place.open().unwrap();
+        let mut kept = Kept::default();
+        let asked = || d.heard.lock().unwrap().len();
+        assert!(kept.holds(&mut c, "demo", "on"));
+        assert!(kept.holds(&mut c, "demo", "on"));
+        assert_eq!(asked(), 1, "the same commit is not read again");
+        assert!(!kept.holds(&mut c, "demo", "off"), "a new commit is");
+        assert_eq!(asked(), 2);
+        assert!(!kept.holds(&mut c, "demo", "off"));
+        assert_eq!(asked(), 2, "a no is kept as well");
+        assert!(!kept.holds(&mut c, "other", "off"));
+        assert_eq!(asked(), 3, "each repository has its own");
+        assert!(
+            !kept.holds(&mut c, "demo", "bad"),
+            "no answer holds nothing"
+        );
+        assert!(!kept.holds(&mut c, "demo", "bad"));
+        assert_eq!(asked(), 5, "and is asked again");
+    }
+
+    /// A daemon with `proposals` waiting, one worker's each, answering a
+    /// diff of each.
+    fn waiting_daemon(policy: serde_json::Value) -> Daemon {
+        let d = Daemon::start(PROTOCOL, move |asked| match asked["method"].as_str() {
+            Some("status") => {
+                let mut v = status(&[7]);
+                v["agent"] = serde_json::json!("x");
+                v["changes"] = serde_json::json!([
+                    {"change": "kkkk", "status": {"status": "pending", "seq": 7}}]);
+                v["policy"] = policy.clone();
+                Ok(v)
+            }
+            Some("change.diff") => Ok(serde_json::json!({"commit": "c", "files": [],
+                "redacted": [], "diff": "the patch", "truncated": false})),
+            Some("tree") => Ok(serde_json::json!([{"path": "lonca.toml",
+                "content_b64": "W29ic2VydmF0aW9uXQp1bm9ic2VydmVkX2lzX3RhaW50ZWQgPSBmYWxzZQo="}])),
+            _ => Err("not_found"),
+        });
+        d.sign_in();
+        d
+    }
+
+    #[test]
+    fn a_look_brings_what_waits_and_reads_each_diff_once() {
+        let d = waiting_daemon(serde_json::json!(POLICY));
+        let repos = vec![(4, "demo".to_string(), None)];
+        let mut kept = Kept::default();
+        let looked = look(&d.place, &repos, &mut kept);
+        assert_eq!(looked.offers.len(), 1);
+        assert_eq!(looked.offers[0].0, 4);
+        assert_eq!(looked.offers[0].1.agent, "a");
+        assert_eq!(looked.offers[0].1.diff.patch, "the patch");
+        assert_eq!(looked.standings.get("kkkk"), Some(&Standing::Pending));
+        look(&d.place, &repos, &mut kept);
+        let diffs = |d: &Daemon| {
+            let heard = d.heard.lock().unwrap();
+            heard
+                .iter()
+                .filter(|h| h["method"] == "change.diff")
+                .count()
+        };
+        assert_eq!(diffs(&d), 1);
+        // Gone from what waits, it is not kept.
+        kept.diffs.insert("gone".into(), diff_of("old"));
+        look(&d.place, &repos, &mut kept);
+        assert!(kept.diffs.contains_key("kkkk") && !kept.diffs.contains_key("gone"));
+    }
+
+    #[test]
+    fn a_repository_that_lets_changes_in_unseen_is_closed_and_offers_nothing() {
+        let d = waiting_daemon(serde_json::json!("0123"));
+        let repos = vec![(0, "demo".to_string(), None)];
+        let looked = look(&d.place, &repos, &mut Kept::default());
+        let down = StoreSeen::Down(StoreDown::Unguarded);
+        assert_eq!(looked.found[0].2, down);
+        assert!(looked.offers.is_empty() && looked.standings.is_empty());
+    }
+
+    /// A team of one on Lonca, its worker between turns, its word for
+    /// Lonca returned.
+    fn proposer() -> (World, Live, String) {
+        let mut w = team(1);
+        w.on_lonca(0, Some("demo".into()));
+        w.agents[1].workspace = Some("demo".into());
+        let word = lonca::agent_word(&w.agents[1].name);
+        (w, idle_live(2), word)
+    }
+
+    fn standing(change: &str, s: Standing) -> HashMap<String, Standing> {
+        HashMap::from([(change.to_string(), s)])
+    }
+
+    #[test]
+    fn a_proposal_is_owned_by_its_worker_or_solo_gone_or_not() {
+        let (mut w, _, word) = proposer();
+        assert_eq!(Live::owner(&w, 0, &word), Some(1));
+        assert_eq!(Live::owner(&w, 1, &word), None, "another project's");
+        assert_eq!(Live::owner(&w, 0, "nobody"), None);
+        let leader = lonca::agent_word(&w.agents[0].name);
+        assert_eq!(Live::owner(&w, 0, &leader), None);
+        w.agents[1].gone = true;
+        assert_eq!(Live::owner(&w, 0, &word), Some(1));
+        w.agents[1].parent = Some(0);
+        assert_eq!(
+            Live::owner(&w, 0, &word),
+            None,
+            "a helper's is its worker's"
+        );
+    }
+
+    #[test]
+    fn a_proposal_waits_for_its_workers_turn_to_end() {
+        let (mut w, mut live, word) = proposer();
+        live.turns[1] = 1;
+        assert!(!live.offered(&mut w, 0, &offer(&word, 5, "c5")));
+        assert!(w.change_of(1).is_none());
+        live.turns[1] = 0;
+        assert!(live.offered(&mut w, 0, &offer(&word, 5, "c5")));
+        assert_eq!(w.change_of(1).unwrap().title, "intent 5");
+        assert_eq!(w.proposal_of(1).unwrap().seq, 5);
+        assert_eq!(w.open_inbox().len(), 1);
+    }
+
+    #[test]
+    fn someone_elses_proposal_is_no_ones_change() {
+        let (mut w, mut live, _) = proposer();
+        assert!(!live.offered(&mut w, 0, &offer("nobody", 5, "c5")));
+        assert!(w.changes.is_empty());
+    }
+
+    #[test]
+    fn the_same_proposal_stays_and_a_newer_one_takes_its_place() {
+        let (mut w, mut live, word) = proposer();
+        assert!(live.offered(&mut w, 0, &offer(&word, 5, "c5")));
+        assert!(
+            !live.offered(&mut w, 0, &offer(&word, 5, "c5")),
+            "nothing new"
+        );
+        let mut same = offer(&word, 5, "c5");
+        same.proposal.older = vec![2];
+        assert!(live.offered(&mut w, 0, &same), "an older one came to light");
+        assert_eq!(w.proposal_of(1).unwrap().older, [2]);
+        assert_eq!(w.changes.len(), 1);
+        assert!(live.offered(&mut w, 0, &offer(&word, 8, "c8")));
+        assert_eq!(w.proposal_of(1).unwrap().seq, 8);
+        assert_eq!(w.changes.len(), 1);
+        assert_eq!(w.open_inbox().len(), 1);
+    }
+
+    #[test]
+    fn a_proposal_on_trunk_is_said_and_the_worker_told_without_waking_it() {
+        let (mut w, mut live, word) = proposer();
+        live.offered(&mut w, 0, &offer(&word, 5, "c5"));
+        let on_trunk = Standing::Integrated("c1".into());
+        assert!(live.land(&mut w, &standing("c5", on_trunk)));
+        assert!(w.change_of(1).is_none() && w.proposal_of(1).is_none());
+        assert!(w.open_inbox().is_empty());
+        assert!(matches!(
+            last(&w),
+            Event::Landed { agent: 1, how: Landed::Integrated(c) } if c == "c1"
+        ));
+        assert!(
+            live.notes[1][0].contains("(intent 5)"),
+            "{:?}",
+            live.notes[1]
+        );
+        assert!(!live.lost[1]);
+    }
+
+    #[test]
+    fn a_proposal_still_waiting_stays() {
+        let (mut w, mut live, word) = proposer();
+        live.offered(&mut w, 0, &offer(&word, 5, "c5"));
+        assert!(!live.land(&mut w, &standing("c5", Standing::Pending)));
+        assert!(!live.land(&mut w, &standing("c5", Standing::Other)));
+        assert!(!live.land(&mut w, &HashMap::new()), "not listed");
+        assert!(w.proposal_of(1).is_some());
+    }
+
+    #[test]
+    fn one_the_queue_sent_back_wakes_its_worker_with_the_way_on() {
+        let (mut w, mut live, word) = proposer();
+        live.offered(&mut w, 0, &offer(&word, 5, "c5"));
+        let clash = Standing::Conflicted(vec!["a#b".into()]);
+        assert!(live.land(&mut w, &standing("c5", clash)));
+        assert!(live.notes[1][0].contains("a#b"), "{:?}", live.notes[1]);
+        assert!(live.lost[1]);
+    }
+
+    #[test]
+    fn a_worker_woken_already_stays_woken() {
+        let (mut w, mut live, word) = proposer();
+        live.lost[1] = true;
+        live.offered(&mut w, 0, &offer(&word, 5, "c5"));
+        let clash = Standing::Conflicted(vec!["a#b".into()]);
+        live.land(&mut w, &standing("c5", clash));
+        assert!(live.lost[1], "the other reason still stands");
+    }
+
+    #[test]
+    fn a_gone_worker_is_not_woken_for_it() {
+        let (mut w, mut live, word) = proposer();
+        live.offered(&mut w, 0, &offer(&word, 5, "c5"));
+        w.agents[1].gone = true;
+        let no = Standing::Rejected(vec!["no".into()]);
+        live.land(&mut w, &standing("c5", no));
+        assert!(!live.lost[1]);
+    }
+
+    #[test]
+    fn what_the_queue_holds_is_said_when_it_comes_out() {
+        let (mut w, mut live, word) = proposer();
+        live.offered(&mut w, 0, &offer(&word, 5, "c5"));
+        assert!(live.land(&mut w, &standing("c5", Standing::Queued)));
+        assert!(w.proposal_of(1).is_none(), "the person is done with it");
+        assert!(matches!(
+            last(&w),
+            Event::Landed {
+                how: Landed::Queued,
+                ..
+            }
+        ));
+        assert!(live.notes[1].is_empty());
+        let lines = w.journal.len();
+        assert!(
+            !live.land(&mut w, &standing("c5", Standing::Queued)),
+            "it stays"
+        );
+        assert_eq!(w.journal.len(), lines);
+        let out = Standing::Conflicted(vec!["a#b".into()]);
+        assert!(live.land(&mut w, &standing("c5", out)));
+        assert!(matches!(
+            last(&w),
+            Event::Landed {
+                how: Landed::Conflicted(_),
+                ..
+            }
+        ));
+        assert!(live.lost[1]);
+        assert!(live.lonca.queued.is_empty());
+        assert!(!live.land(&mut w, &standing("c5", Standing::Rejected(vec![]))));
+    }
+
+    #[test]
+    fn a_rejection_the_person_worded_is_told_once_by_them() {
+        let (mut w, mut live, word) = proposer();
+        live.offered(&mut w, 0, &offer(&word, 5, "c5"));
+        live.lonca.worded.push("c5".into());
+        let no = Standing::Rejected(vec!["rejected: no".into()]);
+        live.land(&mut w, &standing("c5", no));
+        assert!(live.notes[1].is_empty() && !live.lost[1]);
+        assert!(live.lonca.worded.is_empty());
+    }
+
+    #[test]
+    fn a_decision_goes_through_lonca_one_at_a_time() {
+        let (mut live, dir) = live_with("exit 0");
+        let mut w = team(1);
+        w.on_lonca(0, Some("demo".into()));
+        let up = StoreSeen::Up {
+            trunk: TRUNK.into(),
+            pending: 1,
+            behind: Behind::Unknown,
+        };
+        w.store_seen(0, "demo", up);
+        let no_proposal = "no proposal of theirs waits".to_string();
+        assert_eq!(
+            live.decide_proposal(&w, 1, Verdict::Approve),
+            Err(no_proposal)
+        );
+        w.change_proposed(
+            change_of(1, &offer("w", 5, "c5")),
+            offer("w", 5, "c5").proposal,
+        );
+        assert_eq!(live.apply_change(&w, 1, Vec::new()), Ok(()));
+        assert!(live.applying[1]);
+        assert_eq!(
+            live.apply_change(&w, 1, Vec::new()),
+            Err("their change is being applied".to_string())
+        );
+        live.applying[1] = false;
+        assert_eq!(
+            live.decide_proposal(&w, 1, Verdict::Approve),
+            Err("another lonca command is under way".to_string())
+        );
+        live.applying[1] = true;
+        job_ends(&mut live, &mut w);
+        assert!(!live.applying[1], "free again");
+        assert!(live.lonca_is_due(), "the look that says what came of it");
+        assert!(w.proposal_of(1).is_some(), "the store says when it left");
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn a_decision_lonca_refused_is_said_and_the_change_still_waits() {
+        let (mut live, dir) = live_with("echo 'lonca: no finger' >&2\nexit 1");
+        let (mut w, _, _) = proposer();
+        w.store_seen(
+            0,
+            "demo",
+            StoreSeen::Up {
+                trunk: TRUNK.into(),
+                pending: 1,
+                behind: Behind::Unknown,
+            },
+        );
+        w.change_proposed(
+            change_of(1, &offer("w", 5, "c5")),
+            offer("w", 5, "c5").proposal,
+        );
+        live.apply_change(&w, 1, Vec::new()).unwrap();
+        job_ends(&mut live, &mut w);
+        assert!(!live.applying[1]);
+        assert!(matches!(
+            last(&w),
+            Event::StoreFailed { act: StoreAct::Decide, why: Some(why), .. } if why == "no finger"
+        ));
+        assert!(w.proposal_of(1).is_some());
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn a_rejection_tells_the_worker_before_its_words_and_is_not_told_again() {
+        let (mut live, dir) = live_with("exit 0");
+        let (mut w, _, _) = proposer();
+        w.store_seen(
+            0,
+            "demo",
+            StoreSeen::Up {
+                trunk: TRUNK.into(),
+                pending: 1,
+                behind: Behind::Unknown,
+            },
+        );
+        w.change_proposed(
+            change_of(1, &offer("w", 5, "c5")),
+            offer("w", 5, "c5").proposal,
+        );
+        live.reject_proposal(&w, 1, "not this").unwrap();
+        assert_eq!(live.lonca.worded, ["c5"]);
+        assert!(
+            live.notes[1][0].contains("(intent 5)"),
+            "{:?}",
+            live.notes[1]
+        );
+        job_ends(&mut live, &mut w);
+        let told = imece_agent::lonca_fake::seen(&dir);
+        assert!(
+            told.contains("|reject 5 --repo=demo --reason=not this --json|"),
+            "{told}"
+        );
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn a_rejection_that_did_not_start_tells_nobody() {
+        let (mut w, mut live, _) = proposer();
+        w.store_seen(0, "demo", StoreSeen::Down(StoreDown::NoDaemon));
+        w.change_proposed(
+            change_of(1, &offer("w", 5, "c5")),
+            offer("w", 5, "c5").proposal,
+        );
+        let why = Err(StoreDown::NoDaemon.why().to_string());
+        assert_eq!(live.reject_proposal(&w, 1, "no"), why);
+        assert_eq!(live.apply_change(&w, 1, Vec::new()), why);
+        assert!(live.notes[1].is_empty() && live.lonca.worded.is_empty());
+        assert!(!live.applying[1]);
+    }
+
+    #[test]
+    fn a_look_that_found_a_proposal_changed_the_screen() {
+        let d = waiting_daemon(serde_json::json!(POLICY));
+        let mut w = team(1);
+        w.agents[1].name = "a".into();
+        w.on_lonca(0, Some("demo".into()));
+        let mut live = idle_live(2);
+        live.lonca = Watch::start(d.place.clone());
+        live.lonca_due(&w, Instant::now());
+        settle(&mut live, &mut w);
+        assert_eq!(w.proposal_of(1).map(|p| p.seq), Some(7));
+        assert_eq!(w.change_of(1).unwrap().patch, "the patch");
     }
 }

@@ -952,6 +952,9 @@ pub struct App {
     /// The note being written: on a line of a change, or on words of a
     /// conversation.
     pub noting: Option<Noting>,
+    /// The worker whose proposal the line being written rejects: its words
+    /// are the reason Lonca wants (record 120).
+    pub rejecting: Option<AgentId>,
     /// The person's notes on words of conversations, not sent yet.
     pub talk_notes: Vec<TalkNote>,
     /// Whether a conversation opens with its messages folded: the last
@@ -1256,6 +1259,7 @@ impl App {
             diff_wrap: false,
             diff_notes: Vec::new(),
             noting: None,
+            rejecting: None,
             talk_notes: Vec::new(),
             fold_talk: false,
             chosen: Vec::new(),
@@ -4587,6 +4591,9 @@ impl App {
             },
             KeyCode::Esc if self.menu.is_some() => self.menu = None,
             KeyCode::Esc => {
+                if self.rejecting.take().is_some() {
+                    self.flash(self.lang.text().not_rejected);
+                }
                 self.typing = false;
                 self.noting = None;
                 self.input.clear();
@@ -5050,6 +5057,22 @@ impl App {
             Some(Noting::Line(id, line)) => return self.keep_note(id, line, text),
             Some(Noting::Words(note)) => return self.keep_talk_note(note, text),
             None => {}
+        }
+        if let Some(id) = self.rejecting.take() {
+            match self.reason_on(id, &text) {
+                Some(reason) => {
+                    if !self.reject(id, reason) {
+                        return;
+                    }
+                }
+                None => {
+                    self.flash(self.lang.text().not_rejected);
+                    // A name alone: that is all there is to say.
+                    if text.split_whitespace().nth(1).is_none() {
+                        return;
+                    }
+                }
+            }
         }
         if text.is_empty() {
             return;
@@ -5708,6 +5731,9 @@ impl App {
         let Some(c) = self.world.change_of(id) else {
             return;
         };
+        if self.world.proposal_of(id).is_some() {
+            return self.flash(t.proposal_whole);
+        }
         let Some(hunk) = ui::hunk_at(&c.patch, self.diff_scroll) else {
             return self.flash(t.no_hunk);
         };
@@ -5724,6 +5750,28 @@ impl App {
             _ => fill(t.chosen, &[&n.to_string(), &all.to_string()]),
         };
         self.flash(said);
+    }
+
+    /// Worker `id`'s change is rejected: a proposal in Lonca with `reason`,
+    /// which it must have. Whether it was; the flash says why not.
+    fn reject(&mut self, id: AgentId, reason: &str) -> bool {
+        let t = self.lang.text();
+        let proposed = self.world.proposal_of(id).is_some();
+        let returned = match &mut self.engine {
+            Engine::Live(l) if proposed => l.reject_proposal(&self.world, id, reason),
+            Engine::Sim(s) if proposed => s.reject_proposal(&mut self.world, id, reason),
+            Engine::Live(l) => l.reject_change(&mut self.world, id),
+            Engine::Sim(s) => s.reject_change(&mut self.world, id),
+            Engine::View(_) => {
+                self.read_only();
+                return false;
+            }
+        };
+        if let Err(why) = &returned {
+            let name = self.world.agents[id].name.clone();
+            self.flash(fill(t.reject_failed, &[&name, why]));
+        }
+        returned.is_ok()
     }
 
     /// `c` in worker `id`'s change: a note on the line at hand (the top
@@ -5817,18 +5865,7 @@ impl App {
     /// its next word from the person, `said` the flash when it went, and
     /// the change's view closes. Whether the change went back.
     fn goes_back(&mut self, id: AgentId, message: &str, said: String) -> bool {
-        let t = self.lang.text();
-        let returned = match &mut self.engine {
-            Engine::Live(l) => l.reject_change(&mut self.world, id),
-            Engine::Sim(s) => s.reject_change(&mut self.world, id),
-            Engine::View(_) => {
-                self.read_only();
-                return false;
-            }
-        };
-        if let Err(why) = returned {
-            let name = self.world.agents[id].name.clone();
-            self.flash(fill(t.reject_failed, &[&name, &why]));
+        if !self.reject(id, message) {
             return false;
         }
         if self.tell(id, message) {
@@ -7832,6 +7869,18 @@ impl App {
         let name = self.world.agents[id].name.clone();
         let open = self.inbox_rows().len();
         let hunks = self.chosen_of(id);
+        let proposed = self.world.proposal_of(id).is_some();
+        if proposed && !apply && !self.viewing_archive() {
+            // Lonca takes no rejection without a reason, so the words come
+            // first: the line that goes is both.
+            self.rejecting = Some(id);
+            self.typing = true;
+            self.input = format!("@{name} ");
+            self.after = self.input.chars().count();
+            self.flash(fill(t.say_why, &[&name]));
+            self.close_change(id);
+            return;
+        }
         let decided = match &mut self.engine {
             Engine::Live(l) if apply => l.apply_change(&self.world, id, hunks),
             Engine::Sim(s) if apply => s.apply_change(&self.world, id, hunks),
@@ -7840,6 +7889,7 @@ impl App {
             Engine::View(_) => return self.read_only(),
         };
         match decided {
+            Ok(()) if proposed => self.flash(fill(t.approving, &[&name])),
             Ok(()) if apply => self.flash(fill(t.applying, &[&name])),
             Err(why) if apply => self.flash(fill(t.apply_failed, &[&name, &why])),
             Ok(()) => {
@@ -7849,11 +7899,24 @@ impl App {
             }
             Err(why) => self.flash(fill(t.reject_failed, &[&name, &why])),
         }
+        self.close_change(id);
+        self.inbox_sel = self.inbox_sel.min(open.saturating_sub(2));
+    }
+
+    /// Worker `id`'s change's view closes, if it is open.
+    fn close_change(&mut self, id: AgentId) {
         if self.zoom == Zoom::Diff(id) {
             self.zoom = Zoom::None;
             self.pane = Pane::Inbox;
         }
-        self.inbox_sel = self.inbox_sel.min(open.saturating_sub(2));
+    }
+
+    /// The reason on `line`, a line that starts with `@name ` and says
+    /// something to it.
+    fn reason_on<'a>(&self, id: AgentId, line: &'a str) -> Option<&'a str> {
+        let head = format!("@{} ", self.world.agents[id].name);
+        let reason = line.strip_prefix(&head)?.trim();
+        (!reason.is_empty()).then_some(reason)
     }
 }
 
@@ -17497,5 +17560,147 @@ pub(crate) mod tests {
         assert_eq!(app.asking, None);
         app.lonca_import(0, "shop");
         assert_eq!(app.importing, None);
+    }
+
+    /// A demo with worker 1's proposal waiting and its view open.
+    fn a_proposal_shown() -> App {
+        let mut app = App::new(1, 4, 0, 1, Lang::En);
+        let proposal = StoreProposal {
+            seq: 5,
+            change: "c5".into(),
+            older: Vec::new(),
+            why: Vec::new(),
+            redacted: Vec::new(),
+            cut: false,
+        };
+        app.world.change_proposed(a_change(1), proposal);
+        app.zoom = Zoom::Diff(1);
+        app
+    }
+
+    #[test]
+    fn a_proposal_goes_whole() {
+        let mut app = a_proposal_shown();
+        app.world.changes[0].patch = "@@ -1 +1 @@\n+x\n".into();
+        app.on_key(key(KeyCode::Char('x')));
+        assert_eq!(
+            flashed(&app),
+            Some(app.lang.text().proposal_whole.to_string())
+        );
+        assert!(app.chosen.is_empty());
+    }
+
+    #[test]
+    fn r_on_a_proposal_asks_why_and_rejects_nothing_yet() {
+        let mut app = a_proposal_shown();
+        let name = app.world.agents[1].name.clone();
+        app.on_key(key(KeyCode::Char('r')));
+        assert_eq!(app.rejecting, Some(1));
+        assert!(app.typing);
+        assert_eq!(app.input, format!("@{name} "));
+        assert_eq!(app.after, app.input.chars().count());
+        assert_eq!(app.zoom, Zoom::None);
+        let t = app.lang.text();
+        assert_eq!(flashed(&app), Some(fill(t.say_why, &[&name])));
+        assert!(app.world.proposal_of(1).is_some());
+    }
+
+    #[test]
+    fn leaving_the_line_rejects_nothing_and_says_so() {
+        let mut app = a_proposal_shown();
+        app.on_key(key(KeyCode::Char('r')));
+        app.on_key(key(KeyCode::Esc));
+        assert_eq!(app.rejecting, None);
+        assert_eq!(
+            flashed(&app),
+            Some(app.lang.text().not_rejected.to_string())
+        );
+        assert!(app.world.proposal_of(1).is_some());
+        // Nothing to reject: the line's own esc says nothing.
+        app.flash = None;
+        app.typing = true;
+        app.on_key(key(KeyCode::Esc));
+        assert_eq!(flashed(&app), None);
+    }
+
+    #[test]
+    fn the_line_after_r_is_the_reason_and_the_message() {
+        let mut app = a_proposal_shown();
+        app.on_key(key(KeyCode::Char('r')));
+        app.input.push_str("not this way");
+        app.submit();
+        assert_eq!(app.rejecting, None);
+        assert!(app.world.proposal_of(1).is_none());
+        assert!(app.world.journal.iter().any(|e| matches!(
+            &e.event,
+            Event::Landed { how: Landed::Rejected(why), .. } if why == &["rejected: not this way"]
+        )));
+        assert!(app.world.journal.iter().any(|e| matches!(
+            &e.event,
+            Event::YouSaid { to: 1, text } if text == "not this way"
+        )));
+    }
+
+    #[test]
+    fn a_line_that_is_no_reason_for_it_rejects_nothing() {
+        for line in ["@nobody why", ":salon", "hello"] {
+            let mut app = a_proposal_shown();
+            app.on_key(key(KeyCode::Char('r')));
+            app.input = line.to_string();
+            app.submit();
+            assert_eq!(app.rejecting, None, "{line}");
+            assert!(app.world.proposal_of(1).is_some(), "{line}");
+        }
+        let mut app = a_proposal_shown();
+        app.on_key(key(KeyCode::Char('r')));
+        app.submit();
+        assert!(app.world.proposal_of(1).is_some(), "no words");
+        assert_eq!(
+            flashed(&app),
+            Some(app.lang.text().not_rejected.to_string())
+        );
+    }
+
+    #[test]
+    fn a_rejection_refused_keeps_the_words_from_going() {
+        let mut app = a_proposal_shown();
+        app.on_key(key(KeyCode::Char('r')));
+        app.input.push_str("not this way");
+        let repo = "r".to_string();
+        app.world.on_lonca(0, Some(repo.clone()));
+        app.world
+            .store_seen(0, &repo, StoreSeen::Down(StoreDown::NoDaemon));
+        app.submit();
+        assert!(app.world.proposal_of(1).is_some());
+        let name = app.world.agents[1].name.clone();
+        let t = app.lang.text();
+        let why = StoreDown::NoDaemon.why();
+        assert_eq!(flashed(&app), Some(fill(t.reject_failed, &[&name, why])));
+        let said = (app.world.journal.iter()).any(|e| matches!(e.event, Event::YouSaid { .. }));
+        assert!(!said);
+    }
+
+    #[test]
+    fn a_is_the_approval_of_a_proposal() {
+        let mut app = a_proposal_shown();
+        let name = app.world.agents[1].name.clone();
+        app.on_key(key(KeyCode::Char('a')));
+        let t = app.lang.text();
+        assert_eq!(flashed(&app), Some(fill(t.approving, &[&name])));
+        let Engine::Sim(s) = &app.engine else {
+            panic!("the demo");
+        };
+        assert_eq!(s.applying_now().len(), 1);
+    }
+
+    #[test]
+    fn notes_sent_on_a_proposal_are_its_rejection() {
+        let mut app = a_proposal_shown();
+        assert!(app.goes_back(1, "see my notes", "sent".to_string()));
+        assert!(app.world.proposal_of(1).is_none());
+        assert!(app.world.journal.iter().any(|e| matches!(
+            &e.event,
+            Event::Landed { how: Landed::Rejected(why), .. } if why == &["rejected: see my notes"]
+        )));
     }
 }

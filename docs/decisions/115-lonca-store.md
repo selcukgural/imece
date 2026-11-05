@@ -172,7 +172,8 @@ git items of record 111's "after the first round" in epic #286.
    instructions say lease, preview, propose, sync; the scratch directory
    stays; the worktree code (`worktree.rs`, `Placed`, `follow`, `stand`,
    `copy`, sparse, `:tidy`) goes when every team is on Lonca.
-5. The Δ on Lonca: `done` is accepted once the worker's proposal is
+5. (First half done: record 120, which says what changed from this
+   text.) The Δ on Lonca: `done` is accepted once the worker's proposal is
    pending (a `done` without one is refused with "propose first");
    WAITING FOR YOU lists `pending`; the Δ view is `git diff BASE COMMIT`
    from the store, the evidence line is the log's evidence, the cost line

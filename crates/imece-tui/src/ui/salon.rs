@@ -1126,6 +1126,7 @@ fn side(f: &mut Frame, area: Rect, app: &App) {
             lines.extend(whole.iter().cloned());
             let keys = match item.kind {
                 InboxKind::Reply => t.reply_keys,
+                InboxKind::Change if w.proposal_of(item.agent).is_some() => t.proposal_keys,
                 InboxKind::Change => t.change_keys,
                 InboxKind::Approval => t.approval_keys,
                 InboxKind::Script | InboxKind::Check => t.script_keys,

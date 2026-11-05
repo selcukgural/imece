@@ -46,9 +46,13 @@ pub fn seen(dir: &Path) -> String {
 /// A trunk the fake answers with.
 pub const TRUNK: &str = "693d62952cd8f7ce58b0de780cf5d998b2f5c1a6";
 
+/// The policy commit [`status`] names: it holds no settings file.
+pub const POLICY: &str = "7dcb2a6f0e8c1d3b5a497f6e2c8d1b0a3e5f7c9d";
+
 /// A daemon on a socket of its own: `answer` is called with each
-/// request but `ping` (answered with `protocol`) and gives the
-/// `result`, or an error code. It ends with its last connection.
+/// request but `ping` (answered with `protocol`) and the reading of
+/// [`POLICY`], and gives the `result`, or an error code. It ends with its
+/// last connection.
 pub struct Daemon {
     pub dir: PathBuf,
     pub place: Place,
@@ -83,6 +87,8 @@ impl Daemon {
                         let id = asked["id"].clone();
                         let reply = if asked["method"] == "ping" {
                             json!({"id": id, "ok": true, "result": {"protocol": protocol}})
+                        } else if asked["method"] == "tree" && asked["params"]["commit"] == POLICY {
+                            json!({"id": id, "ok": true, "result": []})
                         } else {
                             told.lock().expect("heard").push(asked.clone());
                             match answer(&asked) {
@@ -134,10 +140,10 @@ pub fn status(pending: &[u64]) -> Value {
     let pending: Vec<Value> = (pending.iter())
         .map(|seq| {
             json!({"seq": seq, "created_ms": 5, "actor": "agent:a/s", "op": "change.propose",
-                "reasons": [], "approvals": [], "required": 1, "change": "kkkk", "base": TRUNK,
+                "reasons": ["unobserved_session"], "approvals": [], "required": 1, "change": "kkkk", "base": TRUNK,
                 "intent": "fix", "agent": "a", "task": "T-1", "paths": ["src/a.rs"]})
         })
         .collect();
-    json!({"repo": "demo", "trunk": TRUNK, "next_seq": 9, "pending": pending,
-        "sessions": [], "now_ms": 1000})
+    json!({"repo": "demo", "trunk": TRUNK, "policy": POLICY, "next_seq": 9, "pending": pending,
+        "changes": [], "sessions": [], "now_ms": 1000})
 }

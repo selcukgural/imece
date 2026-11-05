@@ -211,6 +211,7 @@ pub fn event(lang: Lang, w: &World, e: &Event) -> String {
                 StoreAct::Login => t.store_act_login,
                 StoreAct::Import => t.store_act_import,
                 StoreAct::Sync => t.store_act_sync,
+                StoreAct::Decide => t.store_act_decide,
             };
             fill(
                 t.ev_store_failed,
@@ -345,6 +346,7 @@ pub fn event(lang: Lang, w: &World, e: &Event) -> String {
         Event::ChangeCost { agent, spend: s } => {
             fill(t.ev_change_cost, &[name(w, *agent), &spend(lang, s)])
         }
+        Event::Landed { agent, how } => landed(t, name(w, *agent), how),
         Event::Applied { agent, files, mark } => {
             fill(t.ev_applied, &[name(w, *agent), &files.to_string(), mark])
         }
@@ -1016,6 +1018,23 @@ pub(crate) fn fill_words(f: &Fill) -> String {
     }
 }
 
+/// How many digits of a commit a line shows.
+const SHORT_COMMIT: usize = 7;
+
+/// What became of `name`'s proposal, as the journal says it.
+fn landed(t: &Text, name: &str, how: &Landed) -> String {
+    match how {
+        Landed::Queued => fill(t.ev_landed_queued, &[name]),
+        Landed::Integrated(commit) => {
+            let short: String = commit.chars().take(SHORT_COMMIT).collect();
+            fill(t.ev_landed_integrated, &[name, &short])
+        }
+        Landed::Conflicted(symbols) => fill(t.ev_landed_conflicted, &[name, &symbols.join(", ")]),
+        Landed::Rejected(reasons) => fill(t.ev_landed_rejected, &[name, &reasons.join("; ")]),
+        Landed::Withdrawn => fill(t.ev_landed_withdrawn, &[name]),
+    }
+}
+
 /// Why a Lonca repository can not be read, in the screen's language.
 pub fn store_down(t: &Text, why: StoreDown) -> &'static str {
     match why {
@@ -1026,6 +1045,7 @@ pub fn store_down(t: &Text, why: StoreDown) -> &'static str {
         StoreDown::Forbidden => t.store_forbidden,
         StoreDown::NoRepo => t.store_no_repo,
         StoreDown::Refused => t.store_refused,
+        StoreDown::Unguarded => t.store_unguarded,
     }
 }
 
@@ -2058,5 +2078,41 @@ mod tests {
             notice(Lang::En, &w, note),
             "imece · lead: a plan waits for your yes"
         );
+    }
+
+    #[test]
+    fn what_became_of_a_proposal_is_said_in_both_languages() {
+        for lang in [Lang::En, Lang::Tr] {
+            let t = lang.text();
+            let on_trunk = Landed::Integrated("0123456789".into());
+            assert_eq!(
+                landed(t, "w", &on_trunk),
+                fill(t.ev_landed_integrated, &["w", "0123456"])
+            );
+            assert_eq!(
+                landed(t, "w", &Landed::Queued),
+                fill(t.ev_landed_queued, &["w"])
+            );
+            assert_eq!(
+                landed(t, "w", &Landed::Withdrawn),
+                fill(t.ev_landed_withdrawn, &["w"])
+            );
+            let symbols = Landed::Conflicted(vec!["a".into(), "b".into()]);
+            assert_eq!(
+                landed(t, "w", &symbols),
+                fill(t.ev_landed_conflicted, &["w", "a, b"])
+            );
+            let reasons = Landed::Rejected(vec!["a".into(), "b".into()]);
+            assert_eq!(
+                landed(t, "w", &reasons),
+                fill(t.ev_landed_rejected, &["w", "a; b"])
+            );
+        }
+    }
+
+    #[test]
+    fn a_repository_that_lets_changes_in_unseen_says_so() {
+        let t = Lang::En.text();
+        assert_eq!(store_down(t, StoreDown::Unguarded), t.store_unguarded);
     }
 }
