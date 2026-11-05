@@ -81,7 +81,7 @@ use crate::recall::{Hit, Line};
 /// assign's until it is delivered (`mail.paths`), and the `Strayed` event.
 /// 26 (2026-11-04): the plan gate (`projects.plan`, record 114), the `Plan`
 /// inbox kind and the `Planned`/`PlanAnswered` events.
-pub const SCHEMA_VERSION: i64 = 26;
+pub const SCHEMA_VERSION: i64 = 27;
 /// Trace lines kept per agent, as the world keeps them.
 const TRACE_KEEP: usize = 200;
 /// The file's name under the state directory.
@@ -611,6 +611,10 @@ impl Store {
             self.conn
                 .execute_batch("ALTER TABLE projects ADD COLUMN plan TEXT NOT NULL DEFAULT '';")?;
         }
+        if !self.has_column("projects", "lonca")? {
+            self.conn
+                .execute_batch("ALTER TABLE projects ADD COLUMN lonca TEXT;")?;
+        }
         if !self.has_column("cards", "paths")? {
             self.conn.execute_batch(
                 "ALTER TABLE cards ADD COLUMN paths TEXT NOT NULL DEFAULT '[]';
@@ -937,8 +941,8 @@ impl Store {
             let q = &w.projects[p];
             tx.execute(
                 "INSERT OR REPLACE INTO projects (id, name, leader, closed, repo, pinned, \
-                 copies, archived_at, archived_title, allowed, plan) VALUES (?1, ?2, ?3, ?4, \
-                 ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+                 copies, archived_at, archived_title, allowed, plan, lonca) VALUES (?1, ?2, ?3, \
+                 ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
                 params![
                     n(q.id),
                     q.name,
@@ -953,6 +957,7 @@ impl Store {
                     q.archived.as_ref().map(|a| a.title.as_str()),
                     serde_json::to_string(&q.allowed).unwrap_or_else(|_| "[]".into()),
                     serde_json::to_string(&q.plan).unwrap_or_default(),
+                    q.lonca.as_ref().map(|l| l.repo.as_str()),
                 ],
             )?;
         }
@@ -1298,6 +1303,7 @@ impl Store {
                 &q.archived,
                 &q.allowed,
                 &q.plan,
+                q.lonca.as_ref().map(|l| &l.repo),
             ));
             if s.projects.get(p) != Some(&h) {
                 plan.projects.push(p);
@@ -1540,7 +1546,7 @@ impl Store {
         let conn = &self.conn;
         let mut st = conn.prepare(
             "SELECT id, name, leader, closed, repo, pinned, copies, archived_at, archived_title, \
-             allowed, plan FROM projects ORDER BY id",
+             allowed, plan, lonca FROM projects ORDER BY id",
         )?;
         for row in st.query_map([], |r| {
             Ok((
@@ -1555,9 +1561,11 @@ impl Store {
                 r.get::<_, Option<String>>(8)?,
                 r.get::<_, String>(9)?,
                 r.get::<_, String>(10)?,
+                r.get::<_, Option<String>>(11)?,
             ))
         })? {
-            let (id, name, leader, closed, repo, pinned, copies, at, title, allowed, plan) = row?;
+            let (id, name, leader, closed, repo, pinned, copies, at, title, allowed, plan, lonca) =
+                row?;
             let archived = at.map(|at| Archived {
                 at: ubig(at),
                 title: title.unwrap_or_default(),
@@ -1588,6 +1596,11 @@ impl Store {
                 allowed,
                 plan,
                 no_git: false,
+                // Asked again: a store's state is never kept.
+                lonca: lonca.map(|repo| OnLonca {
+                    repo,
+                    seen: StoreSeen::Asking,
+                }),
                 archived,
             });
             found.repos.push(PathBuf::from(repo));
@@ -2152,6 +2165,7 @@ mod tests {
                     allowed: Vec::new(),
                     plan: PlanGate::default(),
                     no_git: false,
+                    lonca: None,
                     archived: None,
                 },
                 Project {
@@ -2167,6 +2181,7 @@ mod tests {
                     allowed: Vec::new(),
                     plan: PlanGate::default(),
                     no_git: false,
+                    lonca: None,
                     archived: None,
                 },
             ],
@@ -4121,12 +4136,13 @@ mod tests {
                 )
                 .unwrap();
             assert_eq!(
-                version, "26",
+                version, "27",
                 "the sent table, the Fault kind, archives, restores, start points, standing yes, the \
                  recall index, forks, paid kinds, reviews, no vendor, the check on a change, what \
-                 it cost, the paths a card owns and the plan gate: an older imece knows none"
+                 it cost, the paths a card owns, the plan gate and a project's Lonca repository: \
+                 an older imece knows none"
             );
-            assert_eq!(SCHEMA_VERSION, 26);
+            assert_eq!(SCHEMA_VERSION, 27);
         }
         let back = Store::open(&path)
             .unwrap()
@@ -5178,6 +5194,50 @@ mod tests {
             Ok(_) => panic!("a file imece did not write loaded"),
         };
         assert!(why.contains("project 0's plan gate"), "{why}");
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn a_projects_lonca_repository_is_saved_and_its_state_asked_again() {
+        let d = dir("schema26");
+        std::fs::create_dir_all(&d).unwrap();
+        let path = d.join(FILE);
+        let mut w = world();
+        {
+            let mut store = Store::open(&path).unwrap();
+            assert!(store.save(&w, &kept().kept()).unwrap());
+            // The name alone is something to save, what the daemon said
+            // is not.
+            w.on_lonca(1, Some("repo".into()));
+            assert!(store.save(&w, &kept().kept()).unwrap());
+            let up = StoreSeen::Up {
+                trunk: "t".into(),
+                pending: 1,
+            };
+            w.projects[1].lonca.as_mut().unwrap().seen = up;
+            assert!(!store.save(&w, &kept().kept()).unwrap(), "nothing new");
+            let back = store.load(100).unwrap().unwrap();
+            assert!(back.world.projects[0].lonca.is_none());
+            let on = back.world.projects[1].lonca.clone().unwrap();
+            assert_eq!(
+                on,
+                OnLonca {
+                    repo: "repo".into(),
+                    seen: StoreSeen::Asking
+                }
+            );
+            // As schema 26 wrote it: on no store.
+            store
+                .raw()
+                .execute_batch(
+                    "ALTER TABLE projects DROP COLUMN lonca;
+                     UPDATE meta SET value = '26' WHERE key = 'schema_version';",
+                )
+                .unwrap();
+        }
+        let mut store = Store::open(&path).unwrap();
+        let back = store.load(100).unwrap().unwrap();
+        assert!(back.world.projects.iter().all(|p| p.lonca.is_none()));
         let _ = std::fs::remove_dir_all(&d);
     }
 }

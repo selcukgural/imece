@@ -3,7 +3,7 @@
 
 use crate::app::Rung;
 use crate::editor::{self, Why};
-use crate::i18n::{Lang, fill};
+use crate::i18n::{Lang, Text, fill};
 use crate::model::*;
 use crate::screen::Progress;
 use crate::shell::Output;
@@ -177,6 +177,11 @@ pub fn event(lang: Lang, w: &World, e: &Event) -> String {
         } => shell(lang, command, *ended, *took),
         Event::Opened { leader, path } => fill(t.ev_opened, &[project(w, *leader), path]),
         Event::NoGit { leader, path } => fill(t.ev_no_git, &[name(w, *leader), path]),
+        Event::StoreDown { leader, repo, why } => fill(
+            t.ev_store_down,
+            &[project(w, *leader), repo, store_down(t, *why)],
+        ),
+        Event::StoreBack { leader, repo } => fill(t.ev_store_back, &[project(w, *leader), repo]),
         Event::Closed { leader } => fill(t.ev_closed, &[project(w, *leader)]),
         Event::Archived { leader, title, .. } => fill(
             t.ev_archived,
@@ -971,6 +976,24 @@ pub(crate) fn fill_words(f: &Fill) -> String {
         (Some(p), Some(size)) => format!("{p}% · {} of {}", tokens(f.used), tokens(size)),
         _ => format!("{} tokens", tokens(f.used)),
     }
+}
+
+/// Why a Lonca repository can not be read, in the screen's language.
+pub fn store_down(t: &Text, why: StoreDown) -> &'static str {
+    match why {
+        StoreDown::NoDaemon => t.store_no_daemon,
+        StoreDown::NotTheDaemon => t.store_not_the_daemon,
+        StoreDown::Protocol => t.store_protocol,
+        StoreDown::SignedOut => t.store_signed_out,
+        StoreDown::Forbidden => t.store_forbidden,
+        StoreDown::NoRepo => t.store_no_repo,
+        StoreDown::Refused => t.store_refused,
+    }
+}
+
+/// The first digits of a commit, as a person reads it.
+pub fn short_commit(commit: &str) -> &str {
+    commit.get(..7).unwrap_or(commit)
 }
 
 #[cfg(test)]

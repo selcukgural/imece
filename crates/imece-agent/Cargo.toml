@@ -7,6 +7,10 @@ license.workspace = true
 rust-version.workspace = true
 publish = false
 
+[features]
+# A daemon that speaks Lonca's protocol, for tests.
+fake = []
+
 [dependencies]
 # Process groups (`killpg`): an agent's tools must die with the agent.
 libc = "=0.2.191"

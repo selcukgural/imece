@@ -124,6 +124,24 @@ Her işçinin worktree'si çalıştırmalar arasında diskte kalır, böylece i�
 - **Başlangıçta:** imece ekranın dışında bir kez bakar ve bulduysa `sahibi olmayan 2 worktree var: :tidy listeler` der; kendiliğinden bir şey silmez.
 - Demoda biri temiz, biri iş tutan iki uydurma worktree vardır; `:tidy` onları canlıdaki gibi siler.
 
+## Lonca'da
+
+[Lonca](https://github.com/selcukgural/lonca), imece'nin depo işlerinin gideceği yerdir: bir deponun tek yazarı olan bir daemon, sembol kiralamaları, bir birleştirme kuyruğu ve imzalı bir günlük. İlk adım burada: imece bir depoyu daemon üzerinden okur, `:lonca AD` da eldeki proje için bir depo adlandırır. Henüz hiçbir işi taşımaz: işçiler worktree'lerde kalır, bir Δ yine çalışma kopyana iner.
+
+imece, işbirlikçi kipte çalışan bir `lonca daemon`'ın istemcisidir: soket `LONCA_SOCKET`, yoksa `$LONCA_HOME/lonca.sock`, yoksa `~/.lonca/lonca.sock` olur ve senin olmalıdır. Yalnız protokol 1 konuşan bir daemon'la konuşur ve senin adına okur: kullandığı oturumu `lonca human login` açar, en çok bir gün sürer; imece senin yerine oturum açmaz.
+
+Her 5 saniyede bir projenin satırı nerede durduğunu söyler:
+
+| Satır | Anlamı |
+| --- | --- |
+| `lonca kule 693d629 · 2 bekliyor` | daemon yanıt veriyor: trunk'ın commit'i, insan bekleyenler |
+| `lonca kule …` | az önce adlandırıldı, henüz yanıt yok |
+| `⌀ lonca yok` | okunamıyor; günlük nedenini bir kez söyler |
+
+Nedenler: hiçbir daemon yanıt vermiyor, soketteki senin daemon'ın değil, başka bir protokol, oturum açmamışsın, ya da bu adda bir depoya kayıtlı değilsin (daemon olmayan bir depo için de aynısını söyler, önce adı denetle).
+
+Yanıt verene dek proje kapalıdır: kimse işe alınmaz, `:fork` reddedilir, hiçbir Δ uygulanmaz, reddedilmez, geri gönderilmez. Ajanlar çalışmayı sürdürür, Δ'leri bekler. Hiçbir depoda olmayan bir proje sokete hiç dokunmaz. Bkz. [`:lonca`](../reference/commands.md#lonca-nameoff).
+
 ## Demonun kopyaları
 
 `--demo --projects N` (1-4, varsayılan 2) aynı anda birkaç sahte proje gösterir; oradaki `:open YOL [AD]` bir lider, iki işçi ve üç kartla sahte bir proje ekler, `:close` ve `:rename` aynı şekilde çalışır, `:pin` deposuz sabitler ve `:copy` bir liste tutar; demo işçisinin başlangıcı onu uydurma boyutlarla "kopyalar", ara sıra birini checkout'tan gitmiş diye atlar. Demonun liderinin işe aldığı bir işçi yeni bir worktree alır; demonun kendi kurulum betiği (`npm ci`, `npm run db:migrate`) sorulur, `enter` ile gösterilir ve bir evette canlıdaki gibi uydurma çıktıyla "çalışır".

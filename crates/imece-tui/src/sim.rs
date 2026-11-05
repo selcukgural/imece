@@ -638,6 +638,9 @@ fn fault_of(n: u32) -> Option<Fault> {
 /// What the demo keeps for `:commit` and `:copy`.
 #[derive(Default)]
 struct Extras {
+    /// The demo's Lonca store, a table (record 116): each repository and
+    /// how many changes it has integrated.
+    store: Vec<(String, u32)>,
     /// The listed paths each worker's worktree has, copied at a start.
     copied: HashMap<AgentId, Vec<String>>,
     /// The titles of the changes applied to each project's checkout, as
@@ -862,8 +865,15 @@ pub fn world(
             allowed: Vec::new(),
             plan: PlanGate::default(),
             no_git: false,
+            lonca: None,
             archived: None,
         });
+    }
+    // The demo's store knows every project; the second one is on it.
+    sim.extras.store = (w.projects.iter()).map(|q| (q.name.clone(), 0)).collect();
+    if let Some(q) = w.projects.get(1) {
+        let repo = q.name.clone();
+        w.on_lonca(1, Some(repo));
     }
     // The confine dial's default, said once a start as live does.
     w.note(Event::Confine {
@@ -900,6 +910,22 @@ const PLANNED_COST: u64 = 4_000;
 const STRAY_EVERY: usize = 4;
 /// From this far into its work.
 const STRAY_FROM: u8 = 40;
+
+/// How often the demo's daemon stops, and for how long: long enough for
+/// `⌀ no lonca` to be read, in ticks.
+const STORE_EVERY: u64 = 60;
+const STORE_STOPS: u64 = 6;
+
+/// Whether the demo's daemon is stopped at `tick`.
+fn store_stopped(tick: u64) -> bool {
+    tick % STORE_EVERY >= STORE_EVERY - STORE_STOPS
+}
+
+/// The commit trunk is at after `integrated` changes: looks like one.
+fn demo_trunk(integrated: u32) -> String {
+    let head = 0x9d3f_1c2a_u32.wrapping_add(integrated.wrapping_mul(0x51_7cc1));
+    format!("{head:08x}{:032}", 0)
+}
 
 /// Whether a worker `progress` percent into its card is far enough to
 /// stray ([`STRAY_FROM`]).
@@ -1211,14 +1237,50 @@ impl Sim {
         Ok(())
     }
 
+    /// What the demo's daemon says of each project on Lonca, as live's
+    /// looks do; it stops now and then, so the demo shows a project closed
+    /// and coming back.
+    fn store_answers(&self, w: &mut World) {
+        for (p, repo) in w.stores() {
+            let row = self.extras.store.iter().find(|(r, _)| *r == repo);
+            let waiting = (w.open_inbox().into_iter())
+                .filter(|&i| w.inbox[i].kind == InboxKind::Change)
+                .filter(|&i| w.agents[w.inbox[i].agent].project == p)
+                .count();
+            let seen = match row {
+                _ if store_stopped(w.tick) => StoreSeen::Down(StoreDown::NoDaemon),
+                // As a real daemon says it to a human session.
+                None => StoreSeen::Down(StoreDown::Forbidden),
+                Some((_, integrated)) => StoreSeen::Up {
+                    trunk: demo_trunk(*integrated),
+                    pending: waiting,
+                },
+            };
+            w.store_seen(p, &repo, seen);
+        }
+    }
+
+    /// A change landed in project `p`: the demo's table moves its trunk.
+    fn store_integrated(&mut self, w: &World, p: ProjectId) {
+        let repo = w.projects[p].lonca.as_ref().map(|on| on.repo.as_str());
+        let table = self.extras.store.iter_mut();
+        if let Some(row) = table.into_iter().find(|(r, _)| Some(r.as_str()) == repo) {
+            row.1 += 1;
+        }
+    }
+
     /// The person has worker `id`'s change applied: the next step says
-    /// how it went. Refused while it is being applied, or when none waits.
+    /// how it went. Refused while it is being applied, when none waits,
+    /// or while its project's store does not answer.
     pub fn apply_change(
         &mut self,
         w: &World,
         id: AgentId,
         hunks: Vec<usize>,
     ) -> Result<(), String> {
+        if let Some(why) = w.store_closed(w.agents[id].project) {
+            return Err(why.into());
+        }
         if self.is_applying(id) {
             return Err("their change is being applied".into());
         }
@@ -1242,6 +1304,9 @@ impl Sim {
     /// The person rejects worker `id`'s change; not while it is being
     /// applied.
     pub fn reject_change(&mut self, w: &mut World, id: AgentId) -> Result<(), String> {
+        if let Some(why) = w.store_closed(w.agents[id].project) {
+            return Err(why.into());
+        }
         if self.is_applying(id) {
             return Err("their change is being applied".into());
         }
@@ -1277,6 +1342,7 @@ impl Sim {
         }
         let mark = sha(&mut self.rng);
         w.change_applied(id, mark, hunks.is_empty());
+        self.store_integrated(w, w.agents[id].project);
         let p = w.agents[id].project;
         self.tell_the_others(w, id);
         self.extras
@@ -1595,6 +1661,7 @@ impl Sim {
         self.suggested(w);
         self.reviewed(w);
         self.tidy_answers(w);
+        self.store_answers(w);
         // Live sessions report their plan's windows now and then.
         if t.is_multiple_of(12) {
             self.limits(w);
@@ -2124,6 +2191,9 @@ impl Sim {
                 "only a worker forks: it has a conversation and a worktree of its own".into(),
             );
         }
+        if let Some(why) = w.store_closed(a.project) {
+            return Err(why.into());
+        }
         if !self.started(from) {
             return Err("it has no session to fork yet: tell it something first".into());
         }
@@ -2522,7 +2592,12 @@ impl Sim {
         }
         // Work waits and nobody is free: one more worker; a second one
         // only once the person said yes to a plan (record 114), as live.
-        if waiting >= 2 && free == 0 && workers.len() < MAX_WORKERS && self.rng.one_in(40) {
+        if waiting >= 2
+            && free == 0
+            && workers.len() < MAX_WORKERS
+            && self.rng.one_in(40)
+            && w.store_closed(project).is_none()
+        {
             match w.plan_hold(project) {
                 None => {
                     let id = self.hire(w, project);
@@ -2822,7 +2897,10 @@ impl Sim {
                 let leader = w.projects[w.agents[id].project].leader;
                 self.send(w, id, leader, MsgKind::Progress, d, None);
             }
-            15..16 if w.helpers_of(id).next().is_none() => {
+            15..16
+                if w.helpers_of(id).next().is_none()
+                    && w.store_closed(w.agents[id].project).is_none() =>
+            {
                 self.helper_for(w, id, card);
             }
             16..17 if self.rng.one_in(4) => self.stop(w, id),
@@ -7270,5 +7348,118 @@ diff --git a/b.rs b/b.rs
         assert!(s.decide_plan(&mut w, item, true));
         assert_eq!(w.plan_hold(0), None);
         assert!(w.agents[0].trace.back().unwrap().ends_with("plan yes"));
+    }
+
+    #[test]
+    fn the_second_project_is_on_the_demos_store_and_answers_from_its_table() {
+        let (mut w, mut s) = world(2, 2, 0, 1, Lang::En);
+        let repo = w.projects[1].name.clone();
+        assert_eq!(w.stores(), [(1, repo.clone())], "only the second");
+        assert_eq!(w.store_closed(1), Some("imece is still asking Lonca"));
+        assert_eq!(w.store_closed(0), None);
+        s.step(&mut w);
+        let seen = &w.projects[1].lonca.as_ref().unwrap().seen;
+        assert_eq!(
+            *seen,
+            StoreSeen::Up {
+                trunk: demo_trunk(0),
+                pending: 0
+            }
+        );
+        assert_eq!(w.store_closed(1), None);
+        // Its waiting changes are what is pending, and no other project's.
+        let (worker, other) = (2, 3);
+        assert_eq!((w.agents[worker].project, w.agents[other].project), (0, 1));
+        let change = |agent| Change {
+            agent,
+            title: "t".into(),
+            files: Vec::new(),
+            patch: String::new(),
+            runs: Vec::new(),
+            check: Check::default(),
+            spend: None,
+        };
+        let (a, b) = (change(worker), change(other));
+        w.change_ready(a);
+        s.store_answers(&mut w);
+        let pending = |w: &World| match &w.projects[1].lonca.as_ref().unwrap().seen {
+            StoreSeen::Up { pending, .. } => *pending,
+            seen => panic!("{seen:?}"),
+        };
+        assert_eq!(pending(&w), 0);
+        w.change_ready(b);
+        s.store_answers(&mut w);
+        assert_eq!(pending(&w), 1);
+        // A repository the table lacks.
+        w.on_lonca(1, Some("nobody".into()));
+        s.store_answers(&mut w);
+        assert_eq!(
+            w.projects[1].lonca.as_ref().unwrap().seen,
+            StoreSeen::Down(StoreDown::Forbidden)
+        );
+    }
+
+    #[test]
+    fn the_demos_daemon_stops_for_a_while_and_closes_its_project() {
+        assert!(!store_stopped(0));
+        assert!(!store_stopped(53));
+        assert!(store_stopped(54));
+        assert!(store_stopped(59));
+        assert!(!store_stopped(60));
+        assert!(!store_stopped(113));
+        assert!(store_stopped(114));
+        let (mut w, s) = world(2, 2, 0, 1, Lang::En);
+        s.store_answers(&mut w);
+        w.tick = 54;
+        s.store_answers(&mut w);
+        assert_eq!(w.store_closed(1), Some(StoreDown::NoDaemon.why()));
+        w.tick = 60;
+        s.store_answers(&mut w);
+        assert_eq!(w.store_closed(1), None);
+        let said: Vec<&Event> = (w.journal.iter()).map(|e| &e.event).collect();
+        assert!(said.iter().any(|e| matches!(e, Event::StoreDown { .. })));
+        assert!(said.iter().any(|e| matches!(e, Event::StoreBack { .. })));
+    }
+
+    #[test]
+    fn a_demo_project_whose_store_is_down_takes_no_decision_and_no_fork() {
+        let (mut w, mut s, worker, _) = one_at_work();
+        s.test(&mut w, worker);
+        s.tested(&mut w, worker, 0);
+        s.mind(worker).started = true;
+        assert!(w.change_of(worker).is_some());
+        let p = w.agents[worker].project;
+        w.on_lonca(p, Some("r".into()));
+        w.store_seen(p, "r", StoreSeen::Down(StoreDown::NoDaemon));
+        let why = Err(StoreDown::NoDaemon.why().to_string());
+        assert_eq!(s.apply_change(&w, worker, Vec::new()), why);
+        assert!(s.applying_now().is_empty());
+        assert_eq!(s.reject_change(&mut w, worker), why);
+        assert!(w.change_of(worker).is_some(), "it still waits");
+        assert_eq!(s.fork(&mut w, worker), why.map(|()| 0));
+        // Back up, the same decision goes.
+        let up = StoreSeen::Up {
+            trunk: demo_trunk(0),
+            pending: 1,
+        };
+        w.store_seen(p, "r", up);
+        assert_eq!(s.apply_change(&w, worker, Vec::new()), Ok(()));
+    }
+
+    #[test]
+    fn a_change_that_landed_moves_the_demos_trunk() {
+        let (w, mut s) = world(2, 2, 0, 1, Lang::En);
+        let repo = w.projects[1].name.clone();
+        s.store_integrated(&w, 1);
+        assert_eq!(s.extras.store[1], (repo.clone(), 1));
+        s.store_integrated(&w, 0);
+        assert_eq!(s.extras.store[0].1, 0, "the first project is on no store");
+        assert_eq!(s.extras.store[1], (repo, 1));
+        assert_ne!(demo_trunk(0), demo_trunk(1));
+        assert_eq!(demo_trunk(1).len(), 40);
+        assert_eq!(&demo_trunk(0)[..8], "9d3f1c2a");
+        assert_eq!(&demo_trunk(1)[..8], "9d9098eb");
+        assert_eq!(&demo_trunk(2)[..8], "9de215ac");
+        assert!(demo_trunk(1)[8..].bytes().all(|b| b == b'0'));
     }
 }
