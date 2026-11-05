@@ -2891,9 +2891,7 @@ impl Sim {
                 let leader = w.projects[w.agents[id].project].leader;
                 self.send(w, id, leader, MsgKind::Progress, d, None);
             }
-            15..16 if w.helpers_of(id).next().is_none() => {
-                self.helper_if_it_may(w, id, card);
-            }
+            15..16 => self.helper_if_it_may(w, id, card),
             16..17 if self.rng.one_in(4) => self.stop(w, id),
             20..70 => self.tool(w, id, card),
             _ => {}
@@ -3199,10 +3197,11 @@ impl Sim {
         }
     }
 
-    /// Worker `id` takes a helper, unless its project's store does not
-    /// answer.
+    /// Worker `id` takes a helper, unless it has one or its project's
+    /// store does not answer.
     fn helper_if_it_may(&mut self, w: &mut World, id: AgentId, card: CardId) {
-        if w.store_closed(w.agents[id].project).is_none() {
+        let free = w.helpers_of(id).next().is_none();
+        if free && w.store_closed(w.agents[id].project).is_none() {
             self.helper_for(w, id, card);
         }
     }
@@ -7524,5 +7523,7 @@ diff --git a/b.rs b/b.rs
         w.store_seen(0, "r", up());
         s.helper_if_it_may(&mut w, worker, card);
         assert_eq!(w.helpers_of(worker).count(), 1);
+        s.helper_if_it_may(&mut w, worker, card);
+        assert_eq!(w.helpers_of(worker).count(), 1, "one helper is enough");
     }
 }
