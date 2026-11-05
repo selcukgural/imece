@@ -280,7 +280,7 @@ pub struct Seat<'a> {
 
 /// `name` as Lonca takes an agent's: ASCII letters, digits, `_ - .`, cut to
 /// [`AGENT_MOST`]; what else a solo's name holds becomes `-`.
-fn agent_word(name: &str) -> String {
+pub fn agent_word(name: &str) -> String {
     (name.chars())
         .map(|c| match c {
             c if c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '.') => c,
@@ -569,6 +569,19 @@ pub struct Status {
     /// happened since the last look.
     pub next_seq: u64,
     pub pending: Vec<Pending>,
+    /// The sessions the repository has had, ended ones too: the log keeps
+    /// them, so one agent may have several.
+    pub sessions: Vec<SessionEnd>,
+    /// The daemon's clock.
+    pub now_ms: i64,
+}
+
+/// When a session of an agent's ends.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SessionEnd {
+    /// Its name, as Lonca took it: see [`agent_word`].
+    pub agent: String,
+    pub expires_ms: i64,
 }
 
 /// An operation waiting for a human.
@@ -602,6 +615,33 @@ impl Status {
             trunk: trunk.to_string(),
             next_seq: v["next_seq"].as_u64()?,
             pending: pending.iter().map(Pending::of).collect::<Option<_>>()?,
+            sessions: (v["sessions"].as_array()?.iter())
+                .map(SessionEnd::of)
+                .collect::<Option<_>>()?,
+            now_ms: v["now_ms"].as_i64()?,
+        })
+    }
+
+    /// Each agent and how long its newest session has left, in
+    /// milliseconds; below zero for one over.
+    pub fn time_left(&self) -> Vec<(String, i64)> {
+        let mut newest: Vec<(String, i64)> = Vec::new();
+        for s in &self.sessions {
+            let left = s.expires_ms - self.now_ms;
+            match newest.iter_mut().find(|(agent, _)| *agent == s.agent) {
+                Some((_, kept)) => *kept = left.max(*kept),
+                None => newest.push((s.agent.clone(), left)),
+            }
+        }
+        newest
+    }
+}
+
+impl SessionEnd {
+    fn of(v: &Value) -> Option<SessionEnd> {
+        Some(SessionEnd {
+            agent: v["agent"].as_str()?.to_string(),
+            expires_ms: v["expires_ms"].as_i64()?,
         })
     }
 }
@@ -1110,10 +1150,33 @@ mod tests {
     }
 
     #[test]
+    fn an_agents_time_left_is_its_newest_sessions() {
+        let mut v = status(&[]);
+        v["now_ms"] = json!(1000);
+        v["sessions"] = json!([
+            {"agent": "a", "expires_ms": 1500},
+            {"agent": "b", "expires_ms": 900},
+            {"agent": "a", "expires_ms": 4000},
+            {"agent": "a", "expires_ms": 1200},
+        ]);
+        let told = Status::of(&v).unwrap();
+        assert_eq!(told.now_ms, 1000);
+        assert_eq!(
+            told.time_left(),
+            vec![("a".to_string(), 3000), ("b".to_string(), -100)]
+        );
+        // A session short of the protocol is no answer.
+        v["sessions"] = json!([{"agent": "a"}]);
+        assert_eq!(Status::of(&v), None);
+        v["sessions"] = json!([{"expires_ms": 1}]);
+        assert_eq!(Status::of(&v), None);
+    }
+
+    #[test]
     fn a_status_short_of_the_protocol_is_no_answer() {
         let whole = status(&[7]);
         assert!(Status::of(&whole).is_some());
-        for key in ["trunk", "next_seq", "pending"] {
+        for key in ["trunk", "next_seq", "pending", "sessions", "now_ms"] {
             let mut v = whole.clone();
             v.as_object_mut().expect("object").remove(key);
             assert_eq!(Status::of(&v), None, "{key}");

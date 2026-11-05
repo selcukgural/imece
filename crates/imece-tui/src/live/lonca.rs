@@ -5,6 +5,7 @@
 //! signed the `lonca` program does, on a thread of its own, when the person
 //! asks (record 117).
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{self, Receiver, Sender, TryRecvError};
 use std::thread;
@@ -14,7 +15,11 @@ use imece_agent::lonca::{self, Client, Down, Failed, Place, Seat, TRUNK_REF};
 use imece_agent::worktree::{self, Forward};
 
 use super::Live;
-use crate::model::{Behind, ImportAsk, ProjectId, StoreDown, StoreJob, StoreSeen, Synced, World};
+use super::Slot;
+use crate::model::{
+    Agent, AgentId, Behind, ImportAsk, ProjectId, Role, StoreDown, StoreJob, StoreSeen, Synced,
+    World,
+};
 
 /// How often the store is asked. Each look is a connection and a
 /// millisecond call per repository; a person sees a daemon gone or a
@@ -26,6 +31,19 @@ pub(super) const LOOK_EVERY: Duration = Duration::from_secs(5);
 type Repos = Vec<(ProjectId, String, Option<PathBuf>)>;
 /// What a look found of them.
 type Found = Vec<(ProjectId, String, StoreSeen)>;
+
+/// How long agents' sessions have left, in milliseconds: repository,
+/// agent, time.
+type Left = Vec<(String, String, i64)>;
+
+/// A worker's Lonca session with less than this left is renewed before
+/// its next prompt: a turn should not run out of session halfway (record 119).
+pub(super) const SEAT_MARGIN: Duration = Duration::from_secs(30 * 60);
+
+/// What a worker hears after its session was renewed.
+pub(super) const SEAT_RENEWED: &str = "your Lonca session ran out of time and a new one goes on in \
+                                       this workspace: your files and proposals are as they were, \
+                                       your leases are gone, so lease again before you edit";
 
 /// What a job came back with.
 enum Done {
@@ -78,14 +96,16 @@ fn said(failed: Failed) -> Option<String> {
 /// `made` just now. A project off Lonca gets a worktree, and a worker
 /// that has one keeps it: only the person moves work. A workspace whose
 /// session is alive is taken as it stands, which keeps its leases; one
-/// over goes on under a new session. Whoever works there next must find
-/// its session alive, so a workspace nobody can vouch for stops the start.
+/// over goes on under a new session, and so does one that `renew` says is
+/// about to be. Whoever works there next must find its session alive, so a
+/// workspace nobody can vouch for stops the start.
 pub(super) fn seat(
     place: &Place,
     repo: Option<&str>,
     tree: &Path,
     agent: &str,
     scratch: Option<&Path>,
+    renew: bool,
 ) -> Result<Option<bool>, String> {
     let told = |why: Failed| match said(why) {
         Some(words) => format!("its Lonca session: {words}"),
@@ -110,7 +130,7 @@ pub(super) fn seat(
                 tree.display()
             ));
         }
-        if !place.seated(tree).map_err(told)? {
+        if renew || !place.seated(tree).map_err(told)? {
             place.sit_again(&seat_on(repo)).map_err(told)?;
         }
         return Ok(Some(false));
@@ -129,7 +149,10 @@ pub(super) struct Watch {
     /// The job under way: one at a time, never on the screen's thread.
     job: Option<(StoreJob, Receiver<Done>)>,
     ask: Sender<Repos>,
-    back: Receiver<Found>,
+    back: Receiver<(Found, Left)>,
+    /// When the newest session of each repository's agents ends, as the
+    /// last look read it; an agent not here is not known to be short.
+    pub(super) ends: HashMap<(String, String), Instant>,
     /// A look is under way: never a second, a slow daemon gets no queue.
     out: bool,
     /// When the next look is due; none: at once.
@@ -140,6 +163,16 @@ impl Watch {
     /// Where the daemon and the `lonca` program are.
     pub(super) fn place(&self) -> &Place {
         &self.place
+    }
+
+    /// What a look read, as moments: its time is from `now`, one already
+    /// over ending now.
+    fn note_ends(&mut self, left: Left, now: Instant) {
+        for (repo, agent, ms) in left {
+            let ms = u64::try_from(ms).unwrap_or(0);
+            self.ends
+                .insert((repo, agent), now + Duration::from_millis(ms));
+        }
     }
 
     pub(super) fn start(place: Place) -> Watch {
@@ -158,6 +191,7 @@ impl Watch {
             job: None,
             ask,
             back,
+            ends: HashMap::new(),
             out: false,
             next: None,
         }
@@ -166,22 +200,28 @@ impl Watch {
 
 /// How `repos` stand: one connection, a status for each. A daemon that can
 /// not be opened leaves them all down for the same reason.
-fn look(place: &Place, repos: &Repos) -> Found {
+fn look(place: &Place, repos: &Repos) -> (Found, Left) {
     let mut client = place.open();
-    (repos.iter())
+    let mut left = Vec::new();
+    let found = (repos.iter())
         .map(|(p, repo, checkout)| {
             let told = client.as_mut().map_err(|down| *down);
             let seen = match told.and_then(|c| Ok((c.status(repo)?, c))) {
-                Ok((status, c)) => StoreSeen::Up {
-                    behind: behind_of(c, repo, checkout.as_deref(), &status.trunk),
-                    trunk: status.trunk,
-                    pending: status.pending.len(),
-                },
+                Ok((status, c)) => {
+                    let times = status.time_left().into_iter();
+                    left.extend(times.map(|(agent, ms)| (repo.clone(), agent, ms)));
+                    StoreSeen::Up {
+                        behind: behind_of(c, repo, checkout.as_deref(), &status.trunk),
+                        trunk: status.trunk,
+                        pending: status.pending.len(),
+                    }
+                }
                 Err(down) => StoreSeen::Down(down_of(down)),
             };
             (*p, repo.clone(), seen)
         })
-        .collect()
+        .collect();
+    (found, left)
 }
 
 /// How far the checkout is behind `trunk`, read from where it left trunk,
@@ -303,15 +343,53 @@ impl Live {
         if self.take_store_job(w) {
             return true;
         }
-        let Ok(found) = self.lonca.back.try_recv() else {
+        let Ok((found, left)) = self.lonca.back.try_recv() else {
             return false;
         };
         self.lonca.out = false;
+        self.lonca.note_ends(left, Instant::now());
         let mut changed = false;
         for (p, repo, seen) in found {
             changed |= w.store_seen(p, &repo, seen);
         }
         changed
+    }
+
+    /// Whether agent `id`'s Lonca session is to be renewed: it runs out
+    /// within [`SEAT_MARGIN`] of `now`, and nobody else works on it. A
+    /// helper shares its worker's, and `--continue` would end it under the
+    /// worker; a worker waits for its helpers to be done.
+    pub(super) fn seat_short(&self, w: &World, id: AgentId, now: Instant) -> bool {
+        let a = &w.agents[id];
+        let busy = |h: &Agent| !matches!(self.slots[h.id], Slot::None);
+        if a.role == Role::Helper || w.helpers_of(id).any(busy) {
+            return false;
+        }
+        let Some(on) = &w.projects[a.project].lonca else {
+            return false;
+        };
+        let key = (on.repo.clone(), lonca::agent_word(&a.name));
+        self.lonca
+            .ends
+            .get(&key)
+            .is_some_and(|end| *end <= now + SEAT_MARGIN)
+    }
+
+    /// Before a prompt: a worker in a workspace whose session is running
+    /// out, between turns, ends its Claude Code, which goes on with the
+    /// same conversation. `lonca mcp` holds the token it started with, so a
+    /// new session needs a new harness, and done here, not on a timer, a
+    /// team asleep overnight asks nobody for a finger (record 119).
+    pub(super) fn renew_seat(&mut self, w: &mut World, id: AgentId, now: Instant) {
+        let between_turns = matches!(self.slots[id], Slot::Running(_)) && self.turns[id] == 0;
+        if !between_turns || w.agents[id].workspace.is_none() || !self.seat_short(w, id, now) {
+            return;
+        }
+        self.end(w, id);
+        self.remembered[id] = true;
+        self.notes[id].push(SEAT_RENEWED.to_string());
+        let t = w.tick;
+        w.agents[id].trace(t, "its Lonca session is running out: a new one takes over");
     }
 
     /// The next step asks at once: the person just named a repository.
@@ -340,7 +418,7 @@ mod tests {
     use imece_agent::lonca_fake::{Daemon, TRUNK, status};
 
     use super::*;
-    use crate::live::testing::{idle_live, idle_live_in, team};
+    use crate::live::testing::{Stub, idle_live, idle_live_in, team, with_helper};
     use crate::model::{Event, StoreAct};
 
     const WAIT: Duration = Duration::from_secs(10);
@@ -378,7 +456,7 @@ mod tests {
             (0, "demo".to_string(), None),
             (3, "other".to_string(), None),
         ];
-        let found = look(&d.place, &repos);
+        let (found, _) = look(&d.place, &repos);
         assert_eq!(found.len(), 2);
         let up = StoreSeen::Up {
             trunk: TRUNK.into(),
@@ -399,7 +477,8 @@ mod tests {
             (0, "demo".to_string(), None),
             (1, "other".to_string(), None),
         ];
-        let found = look(&place, &repos);
+        let (found, left) = look(&place, &repos);
+        assert!(left.is_empty());
         let down = StoreSeen::Down(StoreDown::NoDaemon);
         assert_eq!(found[0].2, down);
         assert_eq!(found[1].2, down);
@@ -499,7 +578,7 @@ mod tests {
     #[test]
     fn a_project_off_lonca_gets_a_worktree_and_asks_nobody() {
         let (place, tree, _, dir) = seat_at("exit 0");
-        assert_eq!(seat(&place, None, &tree, "claude-1", None), Ok(None));
+        assert_eq!(seat(&place, None, &tree, "claude-1", None, false), Ok(None));
         assert_eq!(ran(&dir), None);
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -509,7 +588,7 @@ mod tests {
         let (place, tree, _, dir) = seat_at("exit 0");
         std::fs::create_dir_all(&tree).unwrap();
         std::fs::write(tree.join(".git"), "gitdir: /x").unwrap();
-        let asked = seat(&place, Some("demo"), &tree, "claude-1", None);
+        let asked = seat(&place, Some("demo"), &tree, "claude-1", None, false);
         assert_eq!(asked, Ok(None));
         assert_eq!(ran(&dir), None);
         let _ = std::fs::remove_dir_all(&dir);
@@ -519,7 +598,7 @@ mod tests {
     fn a_new_worker_on_lonca_sits_in_a_new_workspace() {
         let (place, tree, scratch, dir) = seat_at("echo '{}'");
         let own = Some(scratch.as_path());
-        let asked = seat(&place, Some("demo"), &tree, "claude-1", own);
+        let asked = seat(&place, Some("demo"), &tree, "claude-1", own, false);
         assert_eq!(asked, Ok(Some(true)));
         let told = ran(&dir).unwrap();
         assert!(told.contains("--repo=demo --agent=claude-1 "), "{told}");
@@ -536,10 +615,133 @@ mod tests {
     fn a_workspace_whose_session_lives_is_taken_as_it_stands() {
         let (place, tree, _, dir) = seat_at("echo '{}'");
         make_workspace(&tree, "demo");
-        let asked = seat(&place, Some("demo"), &tree, "claude-1", None);
+        let asked = seat(&place, Some("demo"), &tree, "claude-1", None, false);
         assert_eq!(asked, Ok(Some(false)));
         assert!(ran(&dir).unwrap().contains("session heartbeat"));
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_session_about_to_run_out_goes_on_under_a_new_one_unasked() {
+        let (place, tree, _, dir) = seat_at("echo '{}'");
+        make_workspace(&tree, "demo");
+        let asked = seat(&place, Some("demo"), &tree, "claude-1", None, true);
+        assert_eq!(asked, Ok(Some(false)));
+        let told = ran(&dir).unwrap();
+        assert!(
+            told.contains(&format!("--continue {}", tree.display())),
+            "{told}"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_renewal_asks_nothing_of_a_tree_that_is_no_workspace() {
+        let (place, tree, _, dir) = seat_at("echo '{}'");
+        std::fs::create_dir_all(&tree).unwrap();
+        let asked = seat(&place, Some("demo"), &tree, "claude-1", None, true);
+        assert_eq!(asked, Ok(None));
+        assert_eq!(ran(&dir), None);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A team of one on `demo`, its session ending `left` from now.
+    fn seated_with(left: Duration) -> (World, Live, Instant) {
+        let mut w = team(1);
+        w.on_lonca(0, Some("demo".into()));
+        w.agents[1].workspace = Some("demo".into());
+        let mut live = idle_live(2);
+        let now = Instant::now();
+        let name = w.agents[1].name.clone();
+        live.lonca.ends.insert(("demo".into(), name), now + left);
+        (w, live, now)
+    }
+
+    #[test]
+    fn a_session_is_short_within_its_margin_and_not_beyond() {
+        let (w, live, now) = seated_with(SEAT_MARGIN);
+        assert!(live.seat_short(&w, 1, now), "at the margin");
+        let (w, live, now) = seated_with(SEAT_MARGIN + Duration::from_secs(1));
+        assert!(!live.seat_short(&w, 1, now), "past it");
+        let (mut w, live, now) = seated_with(Duration::ZERO);
+        assert!(live.seat_short(&w, 1, now), "over");
+        w.projects[0].lonca = None;
+        assert!(!live.seat_short(&w, 1, now), "off Lonca");
+        let (mut w, live, now) = seated_with(Duration::ZERO);
+        w.agents[1].name = "another".into();
+        assert!(!live.seat_short(&w, 1, now), "not known");
+    }
+
+    #[test]
+    fn a_session_of_two_is_not_renewed_under_either() {
+        let (mut w, mut live, now) = seated_with(Duration::ZERO);
+        let helper = with_helper(&mut w, 1);
+        live.grow(None, false);
+        assert!(!live.seat_short(&w, helper, now), "a helper never");
+        assert!(live.seat_short(&w, 1, now), "its helper is not working");
+        live.slots[helper] = Slot::Starting(Vec::new());
+        assert!(!live.seat_short(&w, 1, now), "its helper works");
+    }
+
+    #[test]
+    fn a_harness_is_renewed_between_turns_only_and_told_so() {
+        let renewed = |live: &Live| {
+            let told = live.notes[1].iter().any(|n| n == SEAT_RENEWED);
+            assert_eq!(told, live.remembered[1]);
+            told
+        };
+        let (mut w, mut live, now) = seated_with(Duration::ZERO);
+        live.slots[1] = Slot::Starting(Vec::new());
+        live.renew_seat(&mut w, 1, now);
+        assert!(!renewed(&live), "no harness yet");
+
+        live.slots[1] = Slot::Running(Box::new(Stub));
+        live.turns[1] = 1;
+        live.renew_seat(&mut w, 1, now);
+        assert!(!renewed(&live), "mid-turn");
+
+        live.turns[1] = 0;
+        w.agents[1].workspace = None;
+        live.renew_seat(&mut w, 1, now);
+        assert!(!renewed(&live), "in a worktree");
+        assert!(matches!(live.slots[1], Slot::Running(_)));
+
+        w.agents[1].workspace = Some("demo".into());
+        let far = now - Duration::from_secs(3600);
+        live.renew_seat(&mut w, 1, far);
+        assert!(!renewed(&live), "time left");
+
+        live.renew_seat(&mut w, 1, now);
+        assert!(renewed(&live));
+        assert!(matches!(live.slots[1], Slot::None), "the harness ended");
+        let traced = w.agents[1].trace.iter().any(|l| l.contains("running out"));
+        assert!(traced);
+    }
+
+    #[test]
+    fn what_a_look_read_of_a_session_is_a_moment() {
+        let (_, mut live, now) = seated_with(Duration::ZERO);
+        let left = vec![
+            ("r".to_string(), "a".to_string(), 1500),
+            ("r".to_string(), "b".to_string(), -7),
+        ];
+        live.lonca.note_ends(left, now);
+        let end = |who: &str| live.lonca.ends[&("r".to_string(), who.to_string())];
+        assert_eq!(end("a"), now + Duration::from_millis(1500));
+        assert_eq!(end("b"), now);
+    }
+
+    #[test]
+    fn a_look_brings_how_long_sessions_have_left() {
+        let d = Daemon::start(PROTOCOL, |_| {
+            let mut v = status(&[]);
+            v["now_ms"] = serde_json::json!(1000);
+            v["sessions"] = serde_json::json!([{"agent": "a", "expires_ms": 3000}]);
+            Ok(v)
+        });
+        d.sign_in();
+        let (_, left) = look(&d.place, &vec![(0, "demo".to_string(), None)]);
+        assert_eq!(left, vec![("demo".to_string(), "a".to_string(), 2000)]);
     }
 
     #[test]
@@ -552,7 +754,7 @@ mod tests {
         );
         make_workspace(&tree, "demo");
         let own = Some(scratch.as_path());
-        let asked = seat(&place, Some("demo"), &tree, "claude-1", own);
+        let asked = seat(&place, Some("demo"), &tree, "claude-1", own, false);
         assert_eq!(asked, Ok(Some(false)));
         let told = ran(&dir).unwrap();
         let at = format!(
@@ -568,9 +770,9 @@ mod tests {
     fn a_workspace_of_nothing_or_of_another_repository_stops_the_start() {
         let (place, tree, _, dir) = seat_at("exit 0");
         make_workspace(&tree, "demo");
-        let e = seat(&place, None, &tree, "claude-1", None).unwrap_err();
+        let e = seat(&place, None, &tree, "claude-1", None, false).unwrap_err();
         assert!(e.contains("on no repository: name it with :lonca"), "{e}");
-        let e = seat(&place, Some("other"), &tree, "claude-1", None).unwrap_err();
+        let e = seat(&place, Some("other"), &tree, "claude-1", None, false).unwrap_err();
         assert!(e.contains("is no workspace of other"), "{e}");
         assert_eq!(ran(&dir), None, "nobody was asked");
         let _ = std::fs::remove_dir_all(&dir);
@@ -579,14 +781,14 @@ mod tests {
     #[test]
     fn a_daemon_that_can_not_say_stops_the_start_in_its_words() {
         let (place, tree, _, dir) = seat_at("echo 'lonca: cannot reach it' >&2; exit 1");
-        let e = seat(&place, Some("demo"), &tree, "claude-1", None).unwrap_err();
+        let e = seat(&place, Some("demo"), &tree, "claude-1", None, false).unwrap_err();
         assert_eq!(e, "its Lonca session: cannot reach it");
         make_workspace(&tree, "demo");
-        let e = seat(&place, Some("demo"), &tree, "claude-1", None).unwrap_err();
+        let e = seat(&place, Some("demo"), &tree, "claude-1", None, false).unwrap_err();
         assert_eq!(e, "its Lonca session: cannot reach it");
         let mut none = place.clone();
         none.program = dir.join("no-such-program").display().to_string();
-        let e = seat(&none, Some("demo"), &tree, "claude-1", None).unwrap_err();
+        let e = seat(&none, Some("demo"), &tree, "claude-1", None, false).unwrap_err();
         assert_eq!(e, "its Lonca session: lonca did not answer");
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -600,7 +802,7 @@ mod tests {
                echo 'lonca: denied: scope_widening:paths' >&2; exit 1"#,
         );
         make_workspace(&tree, "demo");
-        let e = seat(&place, Some("demo"), &tree, "claude-1", None).unwrap_err();
+        let e = seat(&place, Some("demo"), &tree, "claude-1", None, false).unwrap_err();
         assert_eq!(e, "its Lonca session: denied: scope_widening:paths");
         let _ = std::fs::remove_dir_all(&dir);
     }
