@@ -767,6 +767,7 @@ pub struct Text {
     pub tidy_clean: &'static str,
     pub tidy_changes: &'static str,
     pub tidy_commits: &'static str,
+    pub tidy_unread: &'static str,
     pub tidy_hints: [(&'static str, &'static str); 4],
     pub tidy_sure: &'static str,
     /// Said at a start that found some (the count), and after a removal:
@@ -1787,6 +1788,7 @@ pub const EN: Text = Text {
     tidy_clean: "clean",
     tidy_changes: "files changed: {}",
     tidy_commits: "commits of its own: {}",
+    tidy_unread: "a workspace that may hold work: its session is over",
     tidy_hints: [
         ("a", "remove the clean ones"),
         ("d", "remove this one"),
@@ -2931,6 +2933,7 @@ pub const TR: Text = Text {
     tidy_clean: "temiz",
     tidy_changes: "değişen dosya: {}",
     tidy_commits: "kendi commit'i: {}",
+    tidy_unread: "iş tutuyor olabilecek workspace: oturumu bitmiş",
     tidy_hints: [
         ("a", "temizleri sil"),
         ("d", "bunu sil"),
@@ -3693,6 +3696,7 @@ mod tests {
             (e.tidy_title, t.tidy_title),
             (e.tidy_changes, t.tidy_changes),
             (e.tidy_commits, t.tidy_commits),
+            (e.tidy_unread, t.tidy_unread),
             (e.tidy_sure, t.tidy_sure),
             (e.tidy_found, t.tidy_found),
             (e.tidy_removed, t.tidy_removed),

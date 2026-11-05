@@ -354,10 +354,30 @@ impl Live {
         w.note(Event::Left { agent: id });
     }
 
+    /// Agent `id` leaves its Lonca workspace: its session ends on a thread
+    /// of its own, its leases with it, its proposals staying. A helper
+    /// leaves its worker's session as it was. The trace says how it went.
+    fn stand_up(&self, w: &World, id: AgentId) {
+        let a = &w.agents[id];
+        if a.role == Role::Helper || a.workspace.is_none() {
+            return;
+        }
+        let (place, at) = (self.lonca.place().clone(), self.cwd_of(w, id));
+        let (tx, generation) = (self.tx.clone(), self.generation[id]);
+        thread::spawn(move || {
+            let note = match place.stand_up(&at) {
+                Ok(()) => "its Lonca session ended".to_string(),
+                Err(_) => "its Lonca session had ended, or could not be told".to_string(),
+            };
+            let _ = tx.send((id, generation, AgentEvent::Note(note)));
+        });
+    }
+
     /// Agent `id`'s session and runs end, and what waited on it goes: its
     /// mail, imece's notes to it, its change and the person's question.
     /// Its slot stays, for the screen's ids.
     pub(super) fn dismiss(&mut self, w: &mut World, id: AgentId) {
+        self.stand_up(w, id);
         self.running[id].kill_all();
         if let Slot::Running(s) = &mut self.slots[id] {
             s.terminate();
@@ -2622,6 +2642,37 @@ mod tests {
         let _ = std::fs::remove_dir_all(&repo);
         let _ = std::fs::remove_dir_all(&root);
         let _ = std::fs::remove_dir_all(&dir);
+        let _ = std::fs::remove_dir_all(&fake);
+    }
+
+    #[test]
+    fn a_worker_that_leaves_its_workspace_ends_its_session_a_helper_does_not() {
+        let (place, fake) =
+            imece_agent::lonca_fake::program(r#"echo "$PWD|$*" >> "$(dirname "$0")/all""#);
+        let ran = |fake: &Path| std::fs::read_to_string(fake.join("all")).unwrap_or_default();
+        let repo = checkout("leave-repo");
+        let root = trees("leave");
+        std::fs::create_dir_all(root.join("claude-1")).unwrap();
+        let tree = root.join("claude-1").canonicalize().unwrap();
+        let mut w = team(1);
+        w.agents[1].workspace = Some("demo".into());
+        let helper = with_helper(&mut w, 1);
+        w.agents[helper].workspace = Some("demo".into());
+        let mut live = Live::new(3, claude_at("no-such-claude"), repo.clone(), root.clone());
+        live.lonca = lonca::Watch::start(place);
+        live.stand_up(&w, helper);
+        w.agents[1].workspace = None;
+        live.stand_up(&w, 1);
+        w.agents[1].workspace = Some("demo".into());
+        live.stand_up(&w, 1);
+        assert!(traced_soon(&mut live, &mut w, 1, "its Lonca session ended"));
+        assert_eq!(
+            ran(&fake).trim_end(),
+            format!("{}|session end --json", tree.display()),
+            "the worker's alone"
+        );
+        let _ = std::fs::remove_dir_all(&repo);
+        let _ = std::fs::remove_dir_all(&root);
         let _ = std::fs::remove_dir_all(&fake);
     }
 
