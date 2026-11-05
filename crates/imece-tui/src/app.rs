@@ -1939,6 +1939,57 @@ impl App {
         self.flash(fill(text, &[&name]));
     }
 
+    /// `:lonca` says how the project at hand stands on Lonca, `:lonca
+    /// NAME` names its repository (the daemon is asked at once, and until
+    /// it answers the project is closed: record 116), `:lonca off` leaves
+    /// it.
+    fn lonca_command(&mut self, arg: &str) {
+        let t = self.lang.text();
+        let p = self.current_project();
+        let name = self.world.projects[p].name.clone();
+        match arg {
+            "" => self.flash(self.lonca_state(p)),
+            "off" => {
+                self.world.on_lonca(p, None);
+                self.flash(fill(t.lonca_off, &[&name]));
+            }
+            repo if !valid_repo(repo) => self.flash(fill(t.lonca_bad, &[repo])),
+            repo => {
+                self.world.on_lonca(p, Some(repo.to_string()));
+                if let Engine::Live(l) = &mut self.engine {
+                    l.look_now();
+                }
+                self.flash(fill(t.lonca_named, &[&name, repo]));
+            }
+        }
+    }
+
+    /// How project `p` stands on Lonca, in words.
+    fn lonca_state(&self, p: ProjectId) -> String {
+        let t = self.lang.text();
+        let project = &self.world.projects[p];
+        let name = &project.name;
+        let Some(on) = &project.lonca else {
+            return fill(t.lonca_none, &[name]);
+        };
+        match &on.seen {
+            StoreSeen::Asking => fill(t.lonca_named, &[name, &on.repo]),
+            StoreSeen::Up { trunk, pending } => fill(
+                t.lonca_state_up,
+                &[
+                    name,
+                    &on.repo,
+                    ui::words::short_commit(trunk),
+                    &pending.to_string(),
+                ],
+            ),
+            StoreSeen::Down(why) => fill(
+                t.lonca_state_down,
+                &[name, &on.repo, ui::words::store_down(t, *why)],
+            ),
+        }
+    }
+
     /// At a start: the engine looks for worktrees no agent owns, and a
     /// flash says how many when it found any ([`App::watch_tidy`]).
     pub fn start_tidy(&mut self) {
@@ -4689,6 +4740,8 @@ impl App {
             "story" => Some(on_off(self.story)),
             "review" => Some(on_off(self.review)),
             "plan" => Some(on_off(self.world.projects[self.current_project()].plan.on)),
+            "lonca" => (self.world.projects[self.current_project()].lonca.as_ref())
+                .map(|on| on.repo.clone()),
             "news" => Some(welcome::VERSION.to_string()),
             "settle" => Some(match self.selected {
                 Sel::Agent(id) => self.world.agents[id].name.clone(),
@@ -5034,6 +5087,7 @@ impl App {
             "commit" => self.suggest_commit(),
             "review" => self.review_command(arg),
             "plan" => self.plan_command(arg),
+            "lonca" => self.lonca_command(arg.trim()),
             "copy" => self.copy_path(arg),
             "allow" => self.allow(arg),
             "pin" => self.pin(arg),
@@ -16975,5 +17029,90 @@ pub(crate) mod tests {
         app.command("plan on");
         assert!(app.world.projects[0].plan.on);
         assert!(flashed(&app).unwrap().starts_with("plan gate on"));
+    }
+
+    #[test]
+    fn lonca_names_a_repository_says_how_it_stands_and_leaves_it() {
+        let mut app = App::with(
+            crate::live::testing::team(0),
+            Engine::Live(Box::new(crate::live::testing::idle_live(1))),
+            Lang::En,
+        );
+        let name = app.world.projects[0].name.clone();
+        assert_eq!(app.command_note("lonca"), "");
+        app.command("lonca");
+        assert_eq!(
+            flashed(&app).unwrap(),
+            format!("{name} is on no Lonca repository; :lonca NAME names one")
+        );
+        app.command("lonca a/b");
+        assert_eq!(flashed(&app).unwrap(), "a/b can not be a repository's name");
+        assert!(app.world.projects[0].lonca.is_none());
+        // Named: the next step asks at once, the project closed till then.
+        if let Engine::Live(l) = &mut app.engine {
+            l.look_now();
+        }
+        app.command("lonca  demo ");
+        let asked = format!("{name} is on Lonca repository demo now; imece asks its daemon");
+        assert_eq!(flashed(&app).unwrap(), asked);
+        assert_eq!(app.command_note("lonca"), "(demo)");
+        assert!(app.world.store_closed(0).is_some());
+        app.command("lonca");
+        assert_eq!(flashed(&app).unwrap(), asked, "still asking");
+        let up = StoreSeen::Up {
+            trunk: "693d62952cd8f7ce58b0de780cf5d998b2f5c1a6".into(),
+            pending: 2,
+        };
+        app.world.store_seen(0, "demo", up);
+        app.command("lonca");
+        assert_eq!(
+            flashed(&app).unwrap(),
+            format!("{name} is on Lonca repository demo: trunk 693d629, 2 waiting for a human")
+        );
+        app.world
+            .store_seen(0, "demo", StoreSeen::Down(StoreDown::SignedOut));
+        app.command("lonca");
+        assert_eq!(
+            flashed(&app).unwrap(),
+            format!(
+                "{name} is on Lonca repository demo: you are not signed in (lonca human login)"
+            )
+        );
+        app.command("lonca off");
+        assert_eq!(
+            flashed(&app).unwrap(),
+            format!("{name} is on no Lonca repository now")
+        );
+        assert!(app.world.projects[0].lonca.is_none());
+    }
+
+    #[test]
+    fn naming_a_repository_makes_the_next_step_ask_at_once() {
+        let mut app = App::with(
+            crate::live::testing::team(0),
+            Engine::Live(Box::new(crate::live::testing::idle_live(1))),
+            Lang::En,
+        );
+        if let Engine::Live(l) = &mut app.engine {
+            l.lonca_after_a_look();
+            assert!(!l.lonca_is_due());
+        }
+        app.command("lonca demo");
+        if let Engine::Live(l) = &app.engine {
+            assert!(l.lonca_is_due());
+        }
+    }
+
+    #[test]
+    fn lonca_is_refused_in_an_archives_view() {
+        assert!(!VIEW_COMMANDS.contains(&"lonca"));
+    }
+
+    #[test]
+    fn the_demo_takes_lonca_as_live_does() {
+        let (world, sim) = crate::sim::world(1, 1, 0, 1, Lang::En);
+        let mut app = App::with(world, Engine::Sim(sim), Lang::En);
+        app.command("lonca nobody");
+        assert_eq!(app.world.stores().len(), 1);
     }
 }

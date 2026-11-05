@@ -385,14 +385,18 @@ impl Live {
     /// The person takes worker `id`'s change: git puts it into the
     /// checkout, staged, and commits it in the worktree as a mark, so the
     /// next change holds only what comes after; the journal says how it
-    /// went. Refused while it is being applied, or while a newer change of
-    /// the worker's is still being read.
+    /// went. Refused while it is being applied, while a newer change of
+    /// the worker's is still being read, or while its project's store does
+    /// not answer.
     pub fn apply_change(
         &mut self,
         w: &World,
         id: AgentId,
         hunks: Vec<usize>,
     ) -> Result<(), String> {
+        if let Some(why) = w.store_closed(w.agents[id].project) {
+            return Err(why.into());
+        }
         if self.applying[id] {
             return Err("their change is being applied".into());
         }
@@ -470,8 +474,11 @@ impl Live {
 
     /// The person rejects worker `id`'s change: it stays in the worktree,
     /// and the worker is told to wait for their reasons. Not while it is
-    /// being applied.
+    /// being applied, nor while its project's store does not answer.
     pub fn reject_change(&mut self, w: &mut World, id: AgentId) -> Result<(), String> {
+        if let Some(why) = w.store_closed(w.agents[id].project) {
+            return Err(why.into());
+        }
         if self.applying[id] {
             return Err("their change is being applied".into());
         }

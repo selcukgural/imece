@@ -13,6 +13,7 @@ use ratatui::widgets::{Block, Paragraph};
 
 use super::*;
 use crate::app::{App, Need, Pane, Rung, Sel, Target};
+use crate::i18n::Text;
 use crate::motion::Motion;
 
 /// Drawn before an agent's name in its speaker colour.
@@ -498,6 +499,9 @@ pub(super) fn project_line(app: &App, p: ProjectId, rungs: &[Rung]) -> Line<'sta
     if project.no_git {
         spans.push(Span::styled(format!("  ⌀ {}", t.no_git), fg(pal().warn)));
     }
+    if let Some(on) = &project.lonca {
+        spans.push(store_span(on, t));
+    }
     spans.push(Span::styled(
         format!("  {}", fill(t.group_working, &[&working.to_string()])),
         dim(),
@@ -535,6 +539,24 @@ pub(super) fn project_line(app: &App, p: ProjectId, rungs: &[Rung]) -> Line<'sta
 
 /// Cells of a project's card bar.
 pub(crate) const BAR_CELLS: usize = 8;
+
+/// How the project's Lonca repository stands (record 116): loud when it
+/// can not be read, for nobody is hired and no Δ decided then.
+fn store_span(on: &OnLonca, t: &Text) -> Span<'static> {
+    match &on.seen {
+        StoreSeen::Asking => {
+            Span::styled(format!("  {}", fill(t.lonca_asking, &[&on.repo])), dim())
+        }
+        StoreSeen::Up { trunk, pending } => {
+            let mut text = fill(t.lonca_up, &[&on.repo, words::short_commit(trunk)]);
+            if *pending > 0 {
+                text += &fill(t.lonca_pending, &[&pending.to_string()]);
+            }
+            Span::styled(format!("  {text}"), dim())
+        }
+        StoreSeen::Down(_) => Span::styled(format!("  ⌀ {}", t.no_lonca), fg(pal().warn)),
+    }
+}
 
 /// How far a project's cards are, `  ▓▓▓░░░░░ 3/8`: its cards done of all,
 /// the done share of `BAR_CELLS` filled, down to the cell; nothing without

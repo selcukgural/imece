@@ -13814,4 +13814,87 @@ after | not a table";
         assert_eq!(lines[0].spans[0].style, bold(pal().strong));
         assert_eq!(lines[4].spans[0].style, dim());
     }
+
+    #[test]
+    fn a_stores_line_on_the_project_says_how_it_stands() {
+        let mut app = App::with(
+            crate::live::testing::team(0),
+            crate::app::Engine::Live(Box::new(crate::live::testing::idle_live(1))),
+            Lang::En,
+        );
+        let s = render(&app, 160, 30);
+        assert!(!s.contains("lonca"), "{s}");
+        app.world.on_lonca(0, Some("demo".into()));
+        assert!(render(&app, 160, 30).contains("lonca demo …"));
+        let trunk = "693d62952cd8f7ce58b0de780cf5d998b2f5c1a6".to_string();
+        let seen = |pending| StoreSeen::Up {
+            trunk: trunk.clone(),
+            pending,
+        };
+        app.world.store_seen(0, "demo", seen(0));
+        let s = render(&app, 160, 30);
+        assert!(s.contains("lonca demo 693d629"), "{s}");
+        assert!(!s.contains("pending"), "{s}");
+        app.world.store_seen(0, "demo", seen(2));
+        assert!(render(&app, 160, 30).contains("lonca demo 693d629 · 2 pending"));
+        app.lang = Lang::Tr;
+        assert!(render(&app, 160, 30).contains("lonca demo 693d629 · 2 bekliyor"));
+        app.world
+            .store_seen(0, "demo", StoreSeen::Down(StoreDown::NoDaemon));
+        assert!(render(&app, 160, 30).contains("⌀ lonca yok"));
+        app.lang = Lang::En;
+        assert!(render(&app, 160, 30).contains("⌀ no lonca"));
+    }
+
+    #[test]
+    fn a_stores_events_are_worded_in_both_languages_with_their_reason() {
+        let app = App::with(
+            crate::live::testing::team(0),
+            crate::app::Engine::Live(Box::new(crate::live::testing::idle_live(1))),
+            Lang::En,
+        );
+        let project = app.world.projects[0].name.clone();
+        let all = [
+            (StoreDown::NoDaemon, "lonca daemon"),
+            (StoreDown::NotTheDaemon, "not your daemon"),
+            (StoreDown::Protocol, "another protocol"),
+            (StoreDown::SignedOut, "lonca human login"),
+            (StoreDown::Forbidden, "not enrolled"),
+            (StoreDown::NoRepo, "no such repository"),
+            (StoreDown::Refused, "refused"),
+        ];
+        for (why, word) in all {
+            let e = Event::StoreDown {
+                leader: 0,
+                repo: "demo".into(),
+                why,
+            };
+            for lang in [Lang::En, Lang::Tr] {
+                let t = lang.text();
+                assert_eq!(
+                    words::event(lang, &app.world, &e),
+                    fill(
+                        t.ev_store_down,
+                        &[&project, "demo", words::store_down(t, why)]
+                    )
+                );
+            }
+            assert!(words::store_down(Lang::En.text(), why).contains(word));
+        }
+        let back = Event::StoreBack {
+            leader: 0,
+            repo: "demo".into(),
+        };
+        assert_eq!(
+            words::event(Lang::En, &app.world, &back),
+            format!("{project}'s Lonca repository demo answers again")
+        );
+    }
+
+    #[test]
+    fn a_commit_is_read_by_its_first_digits() {
+        assert_eq!(words::short_commit("693d62952cd8"), "693d629");
+        assert_eq!(words::short_commit("693d629"), "693d629");
+        assert_eq!(words::short_commit("69"), "69");
+    }
 }

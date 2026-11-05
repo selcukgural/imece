@@ -37,12 +37,18 @@
 # gone git's answers are never taken, every live test that waits for one
 # waits its ten seconds, and the run reports a timeout for what is caught
 # (#280). It is a boundary path, so its timeout held the PR.
+# `lonca_fake` is a test double behind a feature, never in a build of
+# imece; a mutant in it fails or passes what it stands in for.
+# `lonca::read_session` joins open flags with `|` as `input::seen` does:
+# `^` gives the same number (`&` is caught by a link in the file's place).
 # A pattern matches the mutant's full name, `path:line:col: replace fn ...`.
 exclude_re = [
     "src/model.rs:.*: replace \\+ with \\* in free_project_name",
     "src/live/mod.rs:.*: replace Live::step -> bool with (false|true)$",
     "src/live/changes.rs:.*: replace Live::take_git -> bool with (false|true)$",
     "src/child.rs:.*: replace \\| with \\^$",
+    "src/lonca_fake.rs:.*",
+    "src/lonca.rs:.*: replace \\| with \\^ in read_session$",
     "src/child.rs:.*: replace bsd_parent ",
     "src/child.rs:.*: (replace|delete) .* in bsd_parent$",
     "src/main.rs:.*: replace (main|run|catch_signals|on_signal|poll_terminal) ",

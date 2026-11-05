@@ -343,6 +343,15 @@ pub fn valid_project_name(name: &str) -> bool {
             .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
 }
 
+/// Whether `name` can be a Lonca repository's: it reaches a line of the
+/// protocol and the store's words, so it is plain.
+pub fn valid_repo(name: &str) -> bool {
+    (1..=64).contains(&name.chars().count())
+        && name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
+}
+
 /// `stem` when no open project goes by it, else the first of `stem-2`,
 /// `stem-3`, … that none does, cut so the whole stays a project name: a
 /// second solo on a checkout. The search is bounded by the number of
@@ -466,10 +475,64 @@ pub struct Project {
     /// works straight in it: no worktree, no change to review. Found at
     /// each open and start, not saved.
     pub no_git: bool,
+    /// The Lonca repository the person named for this project (`:lonca`,
+    /// record 116) and what its daemon said last.
+    pub lonca: Option<OnLonca>,
     /// Archived by the person (`:archive`): closed, but its agents are
     /// not gone; they sleep with their sessions, mail and changes until
     /// it is brought back. Never opened again in place.
     pub archived: Option<Archived>,
+}
+
+/// A project on Lonca: its repository (saved) and what the daemon said
+/// last (memory only: read again from the first look on).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct OnLonca {
+    pub repo: String,
+    pub seen: StoreSeen,
+}
+
+/// What imece knows of a project's Lonca repository.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub enum StoreSeen {
+    /// Named, not answered yet: closed like a store that is down.
+    #[default]
+    Asking,
+    /// The daemon answered: trunk's commit and how many operations wait
+    /// for a human.
+    Up {
+        trunk: String,
+        pending: usize,
+    },
+    Down(StoreDown),
+}
+
+/// Why a project's Lonca repository can not be read (record 116).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum StoreDown {
+    NoDaemon,
+    NotTheDaemon,
+    Protocol,
+    SignedOut,
+    Forbidden,
+    NoRepo,
+    Refused,
+}
+
+impl StoreDown {
+    /// Why a hire or a Δ decision is refused, to an agent or after a
+    /// name on the screen.
+    pub fn why(self) -> &'static str {
+        match self {
+            StoreDown::NoDaemon => "no Lonca daemon answers",
+            StoreDown::NotTheDaemon => "what is on Lonca's socket is not the person's daemon",
+            StoreDown::Protocol => "Lonca's daemon speaks another protocol",
+            StoreDown::SignedOut => "the person is not signed in to Lonca",
+            StoreDown::Forbidden => "the person is not enrolled in a Lonca repository of that name",
+            StoreDown::NoRepo => "Lonca has no such repository",
+            StoreDown::Refused => "Lonca's daemon refused",
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -1466,6 +1529,18 @@ pub enum Event {
         leader: AgentId,
         path: String,
     },
+    /// The Lonca repository `repo` of `leader`'s project can not be read:
+    /// said once, until it comes back.
+    StoreDown {
+        leader: AgentId,
+        repo: String,
+        why: StoreDown,
+    },
+    /// The repository `repo` of `leader`'s project answers again.
+    StoreBack {
+        leader: AgentId,
+        repo: String,
+    },
     /// The person closed a project (`:close`); its agents left.
     Closed {
         leader: AgentId,
@@ -1749,6 +1824,8 @@ impl Event {
             | Event::Copied { .. }
             | Event::FilesCut { .. }
             | Event::NoGit { .. }
+            | Event::StoreDown { .. }
+            | Event::StoreBack { .. }
             | Event::Retrying { .. }
             | Event::ChangeCost { .. }
             | Event::WorktreeKept { .. } => EntryKind::Assumption,
@@ -1816,6 +1893,8 @@ impl Event {
             Event::Plan { leader, .. }
             | Event::FilesCut { leader, .. }
             | Event::NoGit { leader, .. }
+            | Event::StoreDown { leader, .. }
+            | Event::StoreBack { leader, .. }
             | Event::Budget { leader, .. }
             | Event::PotLow { leader, .. }
             | Event::Suggested { leader, .. }
@@ -2514,6 +2593,7 @@ impl World {
                 allowed: Vec::new(),
                 plan: PlanGate::default(),
                 no_git: false,
+                lonca: None,
                 archived: None,
             }),
         }
@@ -2530,6 +2610,56 @@ impl World {
             let path = path.to_string();
             self.note(Event::NoGit { leader, path });
         }
+    }
+
+    /// The person names Lonca repository `repo` for project `p`, or none:
+    /// nothing is known of it until the next look.
+    pub fn on_lonca(&mut self, p: ProjectId, repo: Option<String>) {
+        self.projects[p].lonca = repo.map(|repo| OnLonca {
+            repo,
+            seen: StoreSeen::Asking,
+        });
+    }
+
+    /// What the daemon said of repository `repo` for project `p`, unless
+    /// the person named another since. A store that goes down is said
+    /// once, with its reason, and so is one that comes back. Whether the
+    /// screen changed.
+    pub fn store_seen(&mut self, p: ProjectId, repo: &str, seen: StoreSeen) -> bool {
+        let leader = self.projects[p].leader;
+        let Some(on) = self.projects[p].lonca.as_mut().filter(|l| l.repo == repo) else {
+            return false;
+        };
+        if on.seen == seen {
+            return false;
+        }
+        let was_down = matches!(on.seen, StoreSeen::Down(_));
+        on.seen = seen.clone();
+        let repo = repo.to_string();
+        match seen {
+            StoreSeen::Down(why) => self.note(Event::StoreDown { leader, repo, why }),
+            StoreSeen::Up { .. } if was_down => self.note(Event::StoreBack { leader, repo }),
+            _ => {}
+        }
+        true
+    }
+
+    /// Why project `p` is closed to hires and Δ decisions: it is on Lonca
+    /// and the store has not answered (record 115: no daemon, no hire and
+    /// no decision). None for a project not on Lonca, or one that answers.
+    pub fn store_closed(&self, p: ProjectId) -> Option<&'static str> {
+        match &self.projects[p].lonca.as_ref()?.seen {
+            StoreSeen::Up { .. } => None,
+            StoreSeen::Asking => Some("imece is still asking Lonca"),
+            StoreSeen::Down(why) => Some(why.why()),
+        }
+    }
+
+    /// The open projects on Lonca, each with its repository.
+    pub fn stores(&self) -> Vec<(ProjectId, String)> {
+        self.open_projects()
+            .filter_map(|q| Some((q.id, q.lonca.as_ref()?.repo.clone())))
+            .collect()
     }
 
     /// Project `p` closes: every agent of it leaves, what waited of theirs
@@ -2566,11 +2696,13 @@ impl World {
         self.shelve(p, title.clone());
         let q = &self.projects[p];
         let (name, pinned, copies) = (q.name.clone(), q.pinned, q.copies.clone());
+        let lonca = q.lonca.clone();
         let fresh = self.add_project(None, name, role);
         let leader = self.projects[fresh].leader;
         self.agents[leader].name = head;
         self.projects[fresh].pinned = pinned;
         self.projects[fresh].copies = copies;
+        self.projects[fresh].lonca = lonca;
         self.note(Event::Archived { leader, was, title });
         fresh
     }
@@ -2732,6 +2864,8 @@ impl World {
                         e.event,
                         Event::Opened { .. }
                             | Event::NoGit { .. }
+                            | Event::StoreDown { .. }
+                            | Event::StoreBack { .. }
                             | Event::Confine { .. }
                             | Event::Archived { .. }
                             | Event::Restored { .. }
@@ -4105,6 +4239,7 @@ mod tests {
                 allowed: Vec::new(),
                 plan: PlanGate::default(),
                 no_git: false,
+                lonca: None,
                 archived: None,
             }],
             agents,
@@ -4908,6 +5043,7 @@ mod tests {
             allowed: Vec::new(),
             plan: PlanGate::default(),
             no_git: false,
+            lonca: None,
             archived: None,
         });
         w.projects[0].closed = true;
@@ -6102,6 +6238,7 @@ mod tests {
             allowed: Vec::new(),
             plan: PlanGate::default(),
             no_git: false,
+            lonca: None,
             archived: None,
         });
         w.agents.push(Agent::new(
@@ -6303,6 +6440,7 @@ mod tests {
                 allowed: Vec::new(),
                 plan: PlanGate::default(),
                 no_git: false,
+                lonca: None,
                 archived: Some(Archived {
                     at,
                     title: title.into(),
@@ -6345,6 +6483,7 @@ mod tests {
             allowed: Vec::new(),
             plan: PlanGate::default(),
             no_git: false,
+            lonca: None,
             archived: None,
         });
         w.agents.push(Agent::new(
@@ -6549,5 +6688,163 @@ mod tests {
             yes: false,
         };
         assert_eq!((answered.kind(), answered.agent()), (EntryKind::Person, 0));
+    }
+
+    #[test]
+    fn a_repository_name_is_plain_and_of_a_length() {
+        assert!(valid_repo("a"));
+        assert!(valid_repo("my.repo_1-x"));
+        assert!(valid_repo(&"a".repeat(64)));
+        assert!(!valid_repo(""));
+        assert!(!valid_repo(&"a".repeat(65)));
+        for bad in ["a b", "a/b", "ü", "a\x1b"] {
+            assert!(!valid_repo(bad), "{bad:?}");
+        }
+    }
+
+    fn up(pending: usize) -> StoreSeen {
+        StoreSeen::Up {
+            trunk: "t".into(),
+            pending,
+        }
+    }
+
+    fn lead(id: AgentId) -> Agent {
+        Agent::new(id, 0, "lead".into(), Role::Leader, Status::Idle, 0)
+    }
+
+    fn second(w: &mut World, name: &str) -> ProjectId {
+        w.open_project(None, name.into(), "/x".into(), Role::Leader)
+    }
+
+    fn store_lines(w: &World) -> usize {
+        (w.journal.iter())
+            .filter(|e| matches!(e.event, Event::StoreDown { .. } | Event::StoreBack { .. }))
+            .count()
+    }
+
+    #[test]
+    fn a_store_going_down_and_back_is_said_once_each_and_an_answer_changes_the_screen() {
+        let mut w = world(vec![lead(0)]);
+        let down = |why| StoreSeen::Down(why);
+        // No repository named: nothing to see.
+        assert!(!w.store_seen(0, "r", up(0)));
+        w.on_lonca(0, Some("r".into()));
+        assert_eq!(
+            w.projects[0].lonca.as_ref().unwrap().seen,
+            StoreSeen::Asking
+        );
+        // Another's answer is late: the person named this one since.
+        assert!(!w.store_seen(0, "older", up(0)));
+        assert_eq!(
+            w.projects[0].lonca.as_ref().unwrap().seen,
+            StoreSeen::Asking
+        );
+        // A first answer is said on the project's line alone.
+        assert!(w.store_seen(0, "r", up(0)));
+        assert_eq!(store_lines(&w), 0);
+        // The same again changes nothing, a new count does.
+        assert!(!w.store_seen(0, "r", up(0)));
+        assert!(w.store_seen(0, "r", up(1)));
+        assert_eq!(store_lines(&w), 0);
+        assert_eq!(w.projects[0].lonca.as_ref().unwrap().seen, up(1));
+        // Down: once, however many looks find it down.
+        assert!(w.store_seen(0, "r", down(StoreDown::NoDaemon)));
+        assert!(!w.store_seen(0, "r", down(StoreDown::NoDaemon)));
+        assert_eq!(store_lines(&w), 1);
+        assert!(matches!(
+            &w.journal.last().unwrap().event,
+            Event::StoreDown { leader: 0, repo, why: StoreDown::NoDaemon } if repo == "r"
+        ));
+        // Another reason is news.
+        assert!(w.store_seen(0, "r", down(StoreDown::SignedOut)));
+        assert_eq!(store_lines(&w), 2);
+        // Back.
+        assert!(w.store_seen(0, "r", up(1)));
+        assert_eq!(store_lines(&w), 3);
+        assert!(matches!(
+            &w.journal.last().unwrap().event,
+            Event::StoreBack { leader: 0, repo } if repo == "r"
+        ));
+        // Up to up is no return.
+        assert!(w.store_seen(0, "r", up(2)));
+        assert_eq!(store_lines(&w), 3);
+        // Named anew, it starts over and says nothing of the old.
+        w.on_lonca(0, Some("s".into()));
+        assert!(w.store_seen(0, "s", down(StoreDown::NoRepo)));
+        assert_eq!(store_lines(&w), 4);
+        w.on_lonca(0, None);
+        assert!(w.projects[0].lonca.is_none());
+    }
+
+    #[test]
+    fn a_project_is_closed_until_its_store_answers() {
+        let mut w = world(vec![lead(0)]);
+        assert_eq!(w.store_closed(0), None, "not on Lonca");
+        w.on_lonca(0, Some("r".into()));
+        assert_eq!(w.store_closed(0), Some("imece is still asking Lonca"));
+        w.store_seen(0, "r", StoreSeen::Down(StoreDown::Forbidden));
+        assert_eq!(w.store_closed(0), Some(StoreDown::Forbidden.why()));
+        w.store_seen(0, "r", up(3));
+        assert_eq!(w.store_closed(0), None);
+    }
+
+    #[test]
+    fn every_reason_a_store_is_down_says_its_own() {
+        let all = [
+            StoreDown::NoDaemon,
+            StoreDown::NotTheDaemon,
+            StoreDown::Protocol,
+            StoreDown::SignedOut,
+            StoreDown::Forbidden,
+            StoreDown::NoRepo,
+            StoreDown::Refused,
+        ];
+        let said: std::collections::HashSet<&str> = all.iter().map(|d| d.why()).collect();
+        assert_eq!(said.len(), all.len());
+        assert!(
+            said.iter()
+                .all(|s| s.contains("Lonca") || s.contains("daemon"))
+        );
+    }
+
+    #[test]
+    fn only_open_projects_on_lonca_are_looked_at() {
+        let mut w = world(vec![lead(0)]);
+        assert!(w.stores().is_empty());
+        let (a, b) = (second(&mut w, "a"), second(&mut w, "b"));
+        w.on_lonca(a, Some("ra".into()));
+        w.on_lonca(b, Some("rb".into()));
+        assert_eq!(w.stores(), [(a, "ra".to_string()), (b, "rb".to_string())]);
+        w.close_project(a);
+        assert_eq!(w.stores(), [(b, "rb".to_string())]);
+        let fresh = w.archive_project(b, "t".into());
+        // The fresh one is on the same store and asks anew; the archive
+        // is not looked at.
+        assert_eq!(w.stores(), [(fresh, "rb".to_string())]);
+        assert_eq!(w.projects[fresh].lonca.as_ref().unwrap().repo, "rb");
+    }
+
+    #[test]
+    fn a_stores_words_belong_to_the_project_and_are_no_work_done() {
+        let mut w = world(vec![lead(0)]);
+        let p = second(&mut w, "a");
+        let leader = w.projects[p].leader;
+        assert!(!w.did_anything(p));
+        w.on_lonca(p, Some("r".into()));
+        w.store_seen(p, "r", StoreSeen::Down(StoreDown::NoDaemon));
+        w.store_seen(p, "r", up(0));
+        assert!(!w.did_anything(p));
+        let down = Event::StoreDown {
+            leader,
+            repo: "r".into(),
+            why: StoreDown::NoDaemon,
+        };
+        let back = Event::StoreBack {
+            leader,
+            repo: "r".into(),
+        };
+        assert_eq!((down.agent(), down.kind()), (leader, EntryKind::Assumption));
+        assert_eq!((back.agent(), back.kind()), (leader, EntryKind::Assumption));
     }
 }

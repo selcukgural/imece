@@ -150,7 +150,8 @@ git items of record 111's "after the first round" in epic #286.
 
 1. This record; `CLAUDE.md`'s rule rewritten; records 108 and 111
    amended; the issue for the work.
-2. The store client behind a boundary in `live/`: the socket at
+2. (Done: record 116, which says what changed from this text.) The
+   store client behind a boundary in `live/`: the socket at
    `LONCA_SOCKET` else `$LONCA_HOME/lonca.sock`, the JSON-line protocol
    (its shape copied from `lonca-daemon::protocol`, listed in
    `VENDORED.md`), `status`, `tree`, `change.get`, `pending`, `log`, the

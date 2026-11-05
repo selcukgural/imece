@@ -28,3 +28,7 @@ libc = "=0.2.191"
 rusqlite = { version = "=0.41.1", default-features = false, features = ["bundled"] }
 # Journal and story events as JSON in that file.
 serde = { version = "=1.0.229", features = ["derive"] }
+
+[dev-dependencies]
+# A daemon that speaks Lonca's protocol, for the store's tests.
+imece-agent = { path = "../imece-agent", features = ["fake"] }

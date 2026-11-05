@@ -66,6 +66,11 @@ fn free_name(w: &World, stem: &str, next: usize) -> String {
         .expect("some number is free")
 }
 
+/// What a hirer hears while its project's store does not answer.
+fn store_closed(why: &str) -> String {
+    format!("nobody is hired now: {why}; only the person can bring Lonca back")
+}
+
 impl Live {
     /// Makes room for one more agent, on `model` (`tiered`: picked by
     /// tier, so it may fall back).
@@ -150,6 +155,9 @@ impl Live {
     /// researchers hire nobody.
     pub(super) fn hire_room(&self, w: &World, from: AgentId) -> Result<(usize, usize), String> {
         let hirer = &w.agents[from];
+        if let Some(why) = w.store_closed(hirer.project) {
+            return Err(store_closed(why));
+        }
         match hirer.role {
             Role::Leader => {
                 let workers = w
@@ -453,6 +461,9 @@ impl Live {
             return Err(
                 "only a worker forks: it has a conversation and a worktree of its own".into(),
             );
+        }
+        if let Some(why) = w.store_closed(a.project) {
+            return Err(store_closed(why));
         }
         if self.sessions[from].is_none() {
             return Err("it has no session to fork yet: tell it something first".into());

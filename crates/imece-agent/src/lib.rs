@@ -5,6 +5,9 @@
 pub mod child;
 pub mod claude;
 pub mod copy;
+pub mod lonca;
+#[cfg(any(test, feature = "fake"))]
+pub mod lonca_fake;
 pub mod mcp;
 pub mod run;
 pub mod worktree;

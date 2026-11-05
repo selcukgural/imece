@@ -36,6 +36,7 @@ pub(crate) fn team(workers: usize) -> World {
                 ..PlanGate::default()
             },
             no_git: false,
+            lonca: None,
             archived: None,
         }],
         agents: Vec::new(),

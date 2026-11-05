@@ -52,6 +52,7 @@ use crate::welcome::{Answers, Seen};
 mod bus;
 mod changes;
 mod hiring;
+mod lonca;
 mod paid;
 mod projects;
 mod prompts;
@@ -594,6 +595,8 @@ pub struct Live {
     /// Workers' changes waiting for the person, as git knows them; the
     /// screen's copy is in the world.
     changes: HashMap<AgentId, worktree::Change>,
+    /// The thread that asks Lonca's daemon how the projects on it stand.
+    lonca: lonca::Watch,
     /// Git work on changes (reading a done's change, applying one) runs
     /// on a thread of its own, one job at a time in the order given: the
     /// screen never waits on git, two applies never meet in the checkout,
@@ -1006,6 +1009,7 @@ impl Live {
             running: Vec::new(),
             setup_asks: Vec::new(),
             setup_refused: HashSet::new(),
+            lonca: lonca::Watch::start(imece_agent::lonca::Place::here()),
             setup_tx,
             setup_rx,
             check_tx,
@@ -1131,6 +1135,8 @@ impl Live {
         let set_up = self.take_setups(w) | self.take_checks(w);
         self.stand_busy(w, Instant::now());
         self.files_due(w, Instant::now());
+        let store = self.take_lonca(w);
+        self.lonca_due(w, Instant::now());
         let mut heard = false;
         while let Ok((id, generation, e)) = self.rx.try_recv() {
             heard = true;
@@ -1361,7 +1367,7 @@ impl Live {
             }
         }
         self.offer(w);
-        moved || started || git || said || reviewed || tidied || set_up || heard || called
+        moved || started || git || said || reviewed || tidied || set_up || store || heard || called
     }
 
     /// Tries agent `id`'s failed turn again: its session is told to go on.

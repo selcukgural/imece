@@ -124,6 +124,24 @@ Each worker's worktree stays on disk between runs, so its work is never thrown a
 - **At start:** imece looks once, off the screen, and says `2 worktrees no agent owns: :tidy lists them` when it found any; it removes nothing by itself.
 - The demo has two made-up ones, one clean and one with work, which `:tidy` removes as live does.
 
+## On Lonca
+
+[Lonca](https://github.com/selcukgural/lonca) is where imece's repository work is going: a daemon that is the only writer of a repository, with symbol leases, a merge queue and a signed log. The first step is here: imece reads a repository through the daemon, and `:lonca NAME` names one for the project at hand. It does not move any work yet: workers stay in worktrees and a Δ still lands in your checkout.
+
+imece is a client of a running `lonca daemon` in cooperative mode: the socket is `LONCA_SOCKET`, else `$LONCA_HOME/lonca.sock`, else `~/.lonca/lonca.sock`, and it must be yours. It speaks to a daemon of protocol 1 only, and reads as you: `lonca human login` opens the session it uses, which lasts a day at most; imece does not sign in for you.
+
+Every 5 seconds the project's line says how it stands:
+
+| The line | What it means |
+| --- | --- |
+| `lonca kule 693d629 · 2 pending` | the daemon answers: trunk's commit, what waits for a human |
+| `lonca kule …` | named just now, not answered yet |
+| `⌀ no lonca` | it can not be read; the journal says why, once |
+
+The reasons: no daemon answers, what is on the socket is not your daemon, another protocol, you are not signed in, or you are not enrolled in a repository of that name (the daemon says the same of a repository it does not have, so check the name first).
+
+Until it answers, the project is closed: nobody is hired, `:fork` is refused, and no Δ is applied, rejected or sent back. Agents go on working, and their Δs wait. A project on no repository never touches the socket. See [`:lonca`](../reference/commands.md#lonca-nameoff).
+
 ## The demo's copies
 
 `--demo --projects N` (1-4, default 2) shows several fake projects at once; `:open PATH [NAME]` there adds a fake project with a leader, two workers and three cards, `:close` and `:rename` work the same, `:pin` pins without a store, and `:copy` keeps a list that a demo worker's start "copies" with made-up sizes, now and then skipping one as gone. A worker the demo's leader hires gets a new worktree, so the demo's own setup script (`npm ci`, `npm run db:migrate`) is asked about, shown with `enter`, and on a yes "runs" with made-up output, as live does.

@@ -2051,6 +2051,7 @@ mod tests {
             allowed: Vec::new(),
             plan: PlanGate::default(),
             no_git: false,
+            lonca: None,
             archived: Some(Archived {
                 at: 1,
                 title: "old".into(),

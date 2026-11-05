@@ -20,6 +20,9 @@ crates/imece-tui/src/live/standing.rs
 crates/imece-tui/src/sha.rs
 # A session runs with what was asked, or it stops.
 crates/imece-tui/src/live/sessions.rs
+# What Lonca's daemon says closes a project (the client itself is in
+# crates/imece-agent/).
+crates/imece-tui/src/live/lonca.rs
 # The pot and the caps on hiring.
 crates/imece-tui/src/live/hiring.rs
 # Removing worktrees nobody owns.
