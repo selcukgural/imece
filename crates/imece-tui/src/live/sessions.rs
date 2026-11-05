@@ -380,8 +380,12 @@ impl Live {
         };
         w.agents[id].starting = false;
         let mut session = match ready {
-            Ok((session, cwd, placed, held, copied, set_up)) => {
+            Ok((session, cwd, placed, held, copied, set_up, workspace)) => {
                 self.copied(w, id, copied);
+                if let Some(repo) = &workspace {
+                    w.agents[id].trace(w.tick, format!("on Lonca: a workspace of {repo}"));
+                }
+                w.agents[id].workspace = workspace;
                 // The briefing's line on the worktree, in the first prompt
                 // as it is given and as it is remembered.
                 if let Some((at, line)) = held {
@@ -776,6 +780,8 @@ impl Live {
         let (repo, root) = (place.repo.clone(), place.root.clone());
         let copies = w.projects[a.project].copies.clone();
         let scratch = self.scratch_of(w, id);
+        let store = (w.projects[a.project].lonca.as_ref()).map(|on| on.repo.clone());
+        let (place_on, agent) = (self.lonca.place().clone(), a.name.clone());
         let notes = self.notes_of(w, id);
         let (own, instructions) = (self.own_notes.clone(), self.instructions.clone());
         let checkout = place.repo.clone();
@@ -789,12 +795,36 @@ impl Live {
         let (tx, ready) = (self.tx.clone(), self.ready_tx.clone());
         thread::spawn(move || {
             let started = (|| {
-                let (cwd, placed, copied, set_up) = if direct {
-                    (repo, None, copy::Brought::default(), setup::Done::None)
+                let scratch = match scratch {
+                    Some(dir) => {
+                        let dir = make_private(&dir)
+                            .map_err(|e| format!("its scratch directory {}: {e}", dir.display()))?;
+                        system.push_str(&scratch_note(&dir));
+                        Some(dir)
+                    }
+                    None => None,
+                };
+                let at = root.join(&tree);
+                let seated = if direct {
+                    None
                 } else {
                     // A worktree `:tidy` removes is made anew once it is
                     // gone, never reused while it goes.
-                    removing.wait(&root.join(&tree));
+                    removing.wait(&at);
+                    let (asked, own) = (store.as_deref(), scratch.as_deref());
+                    lonca::seat(&place_on, asked, &at, &agent, own)?
+                };
+                let (cwd, placed, copied, set_up) = if direct {
+                    (repo, None, copy::Brought::default(), setup::Done::None)
+                } else if let Some(made) = seated {
+                    // Lonca's workspace in place of a worktree: the copies
+                    // and the setup as ever, git having no part in them.
+                    let at = (at.canonicalize())
+                        .map_err(|e| format!("its workspace {}: {e}", at.display()))?;
+                    let copied = copy::bring(&repo, &at, &copies, COPY_BUDGET);
+                    let set_up = plan.carry_out(made, &repo, &at, &running);
+                    (at, None, copied, set_up)
+                } else {
                     // A fork's is made where its worker's HEAD is now, the
                     // change it takes being of now too.
                     let start = match &carry {
@@ -820,19 +850,16 @@ impl Live {
                     let set_up = plan.carry_out(made, &repo, &w.path, &running);
                     (w.path, Some(w.placed), copied, set_up)
                 };
-                let held = held.and_then(|at| match worktree::change(&cwd, MAX_PATCH) {
-                    Ok(Some(c)) => Some((at, remember::holds(&c))),
-                    _ => None,
-                });
-                let scratch = match scratch {
-                    Some(dir) => {
-                        let dir = make_private(&dir)
-                            .map_err(|e| format!("its scratch directory {}: {e}", dir.display()))?;
-                        system.push_str(&scratch_note(&dir));
-                        Some(dir)
-                    }
-                    None => None,
-                };
+                let held = held
+                    .filter(|_| seated.is_none())
+                    .and_then(|at| match worktree::change(&cwd, MAX_PATCH) {
+                        Ok(Some(c)) => Some((at, remember::holds(&c))),
+                        _ => None,
+                    });
+                let workspace = store.filter(|_| seated.is_some());
+                if let Some(repo) = &workspace {
+                    system.push_str(&lonca_note(repo));
+                }
                 let text = notes_text(
                     own.as_deref(),
                     instructions.as_deref(),
@@ -852,7 +879,10 @@ impl Live {
                         &claude::Spec {
                             scratch: scratch.clone(),
                             notes,
-                            store: None,
+                            store: workspace.as_ref().map(|_| claude::Store {
+                                program: place_on.program.clone(),
+                                socket: place_on.socket.clone(),
+                            }),
                             program: program.clone(),
                             cwd: cwd.clone(),
                             name,
@@ -874,7 +904,7 @@ impl Live {
                     )
                     .map_err(|e| format!("{program}: {e}"))?,
                 );
-                Ok((session, cwd, placed, held, copied, set_up))
+                Ok((session, cwd, placed, held, copied, set_up, workspace))
             })();
             // Nobody to take it (imece is closing): dropping it stops it.
             let _ = ready.send((id, generation, started));
@@ -1426,6 +1456,7 @@ mod tests {
                 None,
                 imece_agent::copy::Brought::default(),
                 setup::Done::None,
+                None,
             )),
         );
         w.agents[1].status = Status::Idle;
@@ -1692,6 +1723,7 @@ mod tests {
                 None,
                 imece_agent::copy::Brought::default(),
                 setup::Done::None,
+                None,
             )),
         );
         live.prompt(&mut w, 0, "fix it".into(), None).unwrap();
@@ -1971,6 +2003,7 @@ mod tests {
                 None,
                 imece_agent::copy::Brought::default(),
                 setup::Done::None,
+                None,
             )),
         );
         assert!(!w.agents[1].starting, "up: not starting any more");
@@ -2061,6 +2094,7 @@ mod tests {
                 None,
                 imece_agent::copy::Brought::default(),
                 setup::Done::None,
+                None,
             )),
         );
         w.agents[1].cost = w.budget;
@@ -2446,6 +2480,93 @@ mod tests {
         for d in [repo, root, dir.parent().unwrap().to_path_buf()] {
             let _ = std::fs::remove_dir_all(d);
         }
+    }
+
+    #[test]
+    fn a_worker_on_lonca_works_in_a_workspace_with_lonca_beside_the_bus() {
+        let repo = checkout("seat-repo");
+        let root = trees("seat");
+        let dir = std::env::temp_dir().join(format!("imece-seat-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let (place, fake) = imece_agent::lonca_fake::program(
+            r#"prev=""
+               for a in "$@"; do
+                 if [ "$prev" = --workspace ]; then
+                   mkdir -p "$a/.lonca"
+                   echo '{"repo":"demo"}' > "$a/.lonca/workspace.json"
+                 fi
+                 prev="$a"
+               done
+               echo '{}'"#,
+        );
+        let mut w = team(1);
+        w.on_lonca(0, Some("demo".into()));
+        let mut live = Live::new(2, claude_at(&fake_claude(&dir)), repo.clone(), root.clone());
+        live.lonca = lonca::Watch::start(place.clone());
+        live.slots[1] = Slot::Starting(Vec::new());
+        live.start(&mut w, 1, None);
+        wait_for(&mut live, &mut w, |w| w.agents[1].workspace.is_some());
+        assert_eq!(w.agents[1].workspace.as_deref(), Some("demo"));
+        let trace = &w.agents[1].trace;
+        assert!(
+            trace
+                .iter()
+                .any(|l| l.contains("on Lonca: a workspace of demo"))
+        );
+
+        let tree = root.join("claude-1").canonicalize().unwrap();
+        assert!(!tree.join(".git").exists(), "no worktree under it");
+        assert_eq!(live.cwd_of(&w, 1), tree, "a session runs where it did");
+        let file = tree.join("args.txt");
+        wait_for(&mut live, &mut w, |_| file.exists());
+        let args = std::fs::read_to_string(&file).unwrap();
+        let after = |flag: &str| {
+            let mut it = args.lines();
+            it.find(|l| *l == flag).expect(flag);
+            it.next().unwrap().to_string()
+        };
+        assert!(after("--settings").contains(&place.program), "{args}");
+        let config = after("--mcp-config");
+        assert!(config.contains(r#""lonca""#), "{config}");
+        assert!(
+            config.contains(r#""imece""#) || live.bus.is_none(),
+            "{config}"
+        );
+        assert!(
+            args.contains("Lonca workspace of repository demo"),
+            "{args}"
+        );
+        let _ = std::fs::remove_dir_all(&repo);
+        let _ = std::fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&dir);
+        let _ = std::fs::remove_dir_all(&fake);
+    }
+
+    #[test]
+    fn a_worker_off_lonca_gets_no_word_of_it() {
+        let repo = checkout("no-seat-repo");
+        let root = trees("no-seat");
+        let dir = std::env::temp_dir().join(format!("imece-no-seat-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut w = team(1);
+        let mut live = Live::new(2, claude_at(&fake_claude(&dir)), repo.clone(), root.clone());
+        live.slots[1] = Slot::Starting(Vec::new());
+        w.agents[1].starting = true;
+        live.start(&mut w, 1, None);
+        wait_for(&mut live, &mut w, |w| !w.agents[1].starting);
+        let tree = root.join("claude-1").canonicalize().unwrap();
+        assert!(tree.join(".git").exists());
+        assert_eq!(w.agents[1].workspace, None);
+        let file = tree.join("args.txt");
+        wait_for(&mut live, &mut w, |_| file.exists());
+        let args = std::fs::read_to_string(&file).unwrap();
+        assert!(!args.contains("--settings"), "{args}");
+        assert!(!args.contains("Lonca"), "{args}");
+        let _ = std::fs::remove_dir_all(&repo);
+        let _ = std::fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

@@ -3222,7 +3222,15 @@ mod tests {
             )),
             "{s}"
         );
+        // A worker on Lonca: the folder is where it was, the word is not.
+        app.world.agents[lead + 1].workspace = Some("kule".into());
+        let s = render(&app, 160, 30);
+        assert!(s.contains("· workspace of lonca kule"), "{s}");
+        assert!(!s.contains("worktree of"), "{s}");
         app.lang = Lang::Tr;
+        let s = render(&app, 160, 30);
+        assert!(s.contains("· lonca kule için workspace"), "{s}");
+        app.world.agents[lead + 1].workspace = None;
         let s = render(&app, 160, 30);
         assert!(s.contains(&format!("· ~/src/{name} için worktree")), "{s}");
         assert!(s.contains("klasör ~/.local"), "{s}");

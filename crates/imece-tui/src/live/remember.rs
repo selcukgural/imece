@@ -955,6 +955,7 @@ mod tests {
                 held,
                 imece_agent::copy::Brought::default(),
                 setup::Done::None,
+                None,
             )),
         );
         assert_eq!(live.inflight[1], ["a\n- holds\nb", "cd"]);
@@ -972,6 +973,7 @@ mod tests {
                 held,
                 imece_agent::copy::Brought::default(),
                 setup::Done::None,
+                None,
             )),
         );
         assert!(matches!(live.slots[1], Slot::Running(_)));
@@ -1686,6 +1688,7 @@ mod tests {
                 None,
                 imece_agent::copy::Brought::default(),
                 setup::Done::None,
+                None,
             )),
         );
         live.told(&mut w, 1, "go").unwrap();
@@ -1841,6 +1844,7 @@ mod tests {
                 None,
                 imece_agent::copy::Brought::default(),
                 setup::Done::None,
+                None,
             )),
         );
         live.told(&mut w, 1, "do x").unwrap();

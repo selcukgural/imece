@@ -10,7 +10,7 @@ use std::sync::mpsc::{self, Receiver, Sender, TryRecvError};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use imece_agent::lonca::{Client, Down, Failed, Place, TRUNK_REF};
+use imece_agent::lonca::{self, Client, Down, Failed, Place, Seat, TRUNK_REF};
 use imece_agent::worktree::{self, Forward};
 
 use super::Live;
@@ -73,6 +73,55 @@ fn said(failed: Failed) -> Option<String> {
     }
 }
 
+/// Where a writer of a project on `repo` works (record 119), at its tree
+/// `tree`: `None`, a worktree as ever; `Some(made)`, the workspace there,
+/// `made` just now. A project off Lonca gets a worktree, and a worker
+/// that has one keeps it: only the person moves work. A workspace whose
+/// session is alive is taken as it stands, which keeps its leases; one
+/// over goes on under a new session. Whoever works there next must find
+/// its session alive, so a workspace nobody can vouch for stops the start.
+pub(super) fn seat(
+    place: &Place,
+    repo: Option<&str>,
+    tree: &Path,
+    agent: &str,
+    scratch: Option<&Path>,
+) -> Result<Option<bool>, String> {
+    let told = |why: Failed| match said(why) {
+        Some(words) => format!("its Lonca session: {words}"),
+        None => "its Lonca session: lonca did not answer".to_string(),
+    };
+    let seat_on = |repo| Seat {
+        repo,
+        agent,
+        workspace: tree,
+        scratch,
+    };
+    if lonca::is_workspace(tree) {
+        let Some(repo) = repo else {
+            return Err(format!(
+                "{} is a Lonca workspace and its project is on no repository: name it with :lonca",
+                tree.display()
+            ));
+        };
+        if lonca::workspace_repo(tree).as_deref() != Some(repo) {
+            return Err(format!(
+                "{} is no workspace of {repo}: leave its project on its own repository",
+                tree.display()
+            ));
+        }
+        if !place.seated(tree).map_err(told)? {
+            place.sit_again(&seat_on(repo)).map_err(told)?;
+        }
+        return Ok(Some(false));
+    }
+    let Some(repo) = repo.filter(|_| !tree.exists()) else {
+        return Ok(None);
+    };
+    place.sit(&seat_on(repo)).map_err(told)?;
+    Ok(Some(true))
+}
+
 /// The thread that asks the daemon, and when it is next asked.
 pub(super) struct Watch {
     /// Where the daemon and the `lonca` program are, for a job.
@@ -88,6 +137,11 @@ pub(super) struct Watch {
 }
 
 impl Watch {
+    /// Where the daemon and the `lonca` program are.
+    pub(super) fn place(&self) -> &Place {
+        &self.place
+    }
+
     pub(super) fn start(place: Place) -> Watch {
         let (ask, asked) = mpsc::channel::<Repos>();
         let (answer, back) = mpsc::channel();
@@ -423,6 +477,132 @@ mod tests {
         let odd = distant(serde_json::json!("many"));
         assert_eq!(behind(&odd, Some(&repo), TRUNK), Behind::Unknown);
         std::fs::remove_dir_all(&repo).unwrap();
+    }
+
+    /// A directory for a tree, a place for its scratch, and the fake
+    /// `lonca` that runs `body`, which it removes with [`gone`].
+    fn seat_at(body: &str) -> (Place, PathBuf, PathBuf, PathBuf) {
+        let (place, dir) = imece_agent::lonca_fake::program(body);
+        (place, dir.join("tree"), dir.join("scratch"), dir)
+    }
+
+    fn make_workspace(tree: &Path, repo: &str) {
+        std::fs::create_dir_all(tree.join(".lonca")).unwrap();
+        let file = tree.join(".lonca/workspace.json");
+        std::fs::write(file, format!(r#"{{"repo":"{repo}"}}"#)).unwrap();
+    }
+
+    fn ran(dir: &Path) -> Option<String> {
+        std::fs::read_to_string(dir.join("seen")).ok()
+    }
+
+    #[test]
+    fn a_project_off_lonca_gets_a_worktree_and_asks_nobody() {
+        let (place, tree, _, dir) = seat_at("exit 0");
+        assert_eq!(seat(&place, None, &tree, "claude-1", None), Ok(None));
+        assert_eq!(ran(&dir), None);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_worker_with_a_worktree_stays_in_it_when_its_project_goes_on_lonca() {
+        let (place, tree, _, dir) = seat_at("exit 0");
+        std::fs::create_dir_all(&tree).unwrap();
+        std::fs::write(tree.join(".git"), "gitdir: /x").unwrap();
+        let asked = seat(&place, Some("demo"), &tree, "claude-1", None);
+        assert_eq!(asked, Ok(None));
+        assert_eq!(ran(&dir), None);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_new_worker_on_lonca_sits_in_a_new_workspace() {
+        let (place, tree, scratch, dir) = seat_at("echo '{}'");
+        let own = Some(scratch.as_path());
+        let asked = seat(&place, Some("demo"), &tree, "claude-1", own);
+        assert_eq!(asked, Ok(Some(true)));
+        let told = ran(&dir).unwrap();
+        assert!(told.contains("--repo=demo --agent=claude-1 "), "{told}");
+        let at = format!(
+            "--workspace {} --scratch {}",
+            tree.display(),
+            scratch.display()
+        );
+        assert!(told.contains(&at), "{told}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_workspace_whose_session_lives_is_taken_as_it_stands() {
+        let (place, tree, _, dir) = seat_at("echo '{}'");
+        make_workspace(&tree, "demo");
+        let asked = seat(&place, Some("demo"), &tree, "claude-1", None);
+        assert_eq!(asked, Ok(Some(false)));
+        assert!(ran(&dir).unwrap().contains("session heartbeat"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_workspace_whose_session_is_over_goes_on_under_a_new_one() {
+        let (place, tree, scratch, dir) = seat_at(
+            r#"case "$*" in
+               *heartbeat*) echo 'lonca: session_inactive: over' >&2; exit 1;;
+               esac
+               echo '{}'"#,
+        );
+        make_workspace(&tree, "demo");
+        let own = Some(scratch.as_path());
+        let asked = seat(&place, Some("demo"), &tree, "claude-1", own);
+        assert_eq!(asked, Ok(Some(false)));
+        let told = ran(&dir).unwrap();
+        let at = format!(
+            "--continue {} --scratch {}",
+            tree.display(),
+            scratch.display()
+        );
+        assert!(told.contains(&at), "{told}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_workspace_of_nothing_or_of_another_repository_stops_the_start() {
+        let (place, tree, _, dir) = seat_at("exit 0");
+        make_workspace(&tree, "demo");
+        let e = seat(&place, None, &tree, "claude-1", None).unwrap_err();
+        assert!(e.contains("on no repository: name it with :lonca"), "{e}");
+        let e = seat(&place, Some("other"), &tree, "claude-1", None).unwrap_err();
+        assert!(e.contains("is no workspace of other"), "{e}");
+        assert_eq!(ran(&dir), None, "nobody was asked");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_daemon_that_can_not_say_stops_the_start_in_its_words() {
+        let (place, tree, _, dir) = seat_at("echo 'lonca: cannot reach it' >&2; exit 1");
+        let e = seat(&place, Some("demo"), &tree, "claude-1", None).unwrap_err();
+        assert_eq!(e, "its Lonca session: cannot reach it");
+        make_workspace(&tree, "demo");
+        let e = seat(&place, Some("demo"), &tree, "claude-1", None).unwrap_err();
+        assert_eq!(e, "its Lonca session: cannot reach it");
+        let mut none = place.clone();
+        none.program = dir.join("no-such-program").display().to_string();
+        let e = seat(&none, Some("demo"), &tree, "claude-1", None).unwrap_err();
+        assert_eq!(e, "its Lonca session: lonca did not answer");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_session_taken_again_that_is_refused_stops_the_start() {
+        let (place, tree, _, dir) = seat_at(
+            r#"case "$*" in
+               *heartbeat*) echo 'lonca: session_inactive: over' >&2; exit 1;;
+               esac
+               echo 'lonca: denied: scope_widening:paths' >&2; exit 1"#,
+        );
+        make_workspace(&tree, "demo");
+        let e = seat(&place, Some("demo"), &tree, "claude-1", None).unwrap_err();
+        assert_eq!(e, "its Lonca session: denied: scope_widening:paths");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

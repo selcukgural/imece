@@ -211,7 +211,8 @@ enum Slot {
 /// line saying what its worktree holds and where it goes in the prompt,
 /// read on the session's thread (see [`Live::brief`]). Last, what became
 /// of the paths the person listed to copy into the worktree, and of those
-/// the checkout's `.worktreeinclude` names.
+/// the checkout's `.worktreeinclude` names; and the Lonca repository it
+/// works in a workspace of, when it does.
 type Ready = Result<
     (
         Box<dyn Session>,
@@ -220,6 +221,7 @@ type Ready = Result<
         Option<(usize, String)>,
         copy::Brought,
         setup::Done,
+        Option<String>,
     ),
     String,
 >;

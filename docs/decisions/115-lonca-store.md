@@ -165,7 +165,8 @@ git items of record 111's "after the first round" in epic #286.
    human key (`LONCA_HUMAN`); a human workspace per project for the
    leader's reads; the checkout stays the person's and the project's line
    says how far behind trunk it is, with `:sync`.
-4. Workers in workspaces: `hire` runs `lonca session start` with the
+4. (First half done: record 119, which says what changed from this
+   text.) Workers in workspaces: `hire` runs `lonca session start` with the
    card's owned paths as the session's paths; the worker's Claude Code
    gets `lonca mcp` and `lonca hook` beside imece's bus, and its
    instructions say lease, preview, propose, sync; the scratch directory

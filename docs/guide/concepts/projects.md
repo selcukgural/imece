@@ -126,7 +126,7 @@ Each worker's worktree stays on disk between runs, so its work is never thrown a
 
 ## On Lonca
 
-[Lonca](https://github.com/selcukgural/lonca) is where imece's repository work is going: a daemon that is the only writer of a repository, with symbol leases, a merge queue and a signed log. The first steps are here: imece reads a repository through the daemon, `:lonca NAME` names one for the project at hand, and `:lonca import` makes one of its checkout. It does not move any work yet: workers stay in worktrees and a Δ still lands in your checkout.
+[Lonca](https://github.com/selcukgural/lonca) is where imece's repository work is going: a daemon that is the only writer of a repository, with symbol leases, a merge queue and a signed log. The first steps are here: imece reads a repository through the daemon, `:lonca NAME` names one for the project at hand, and `:lonca import` makes one of its checkout. Workers hired from then on work in Lonca workspaces (below); a Δ of a worker in a worktree still lands in your checkout.
 
 imece is a client of a running `lonca daemon` in cooperative mode: the socket is `LONCA_SOCKET`, else `$LONCA_HOME/lonca.sock`, else `~/.lonca/lonca.sock`, and it must be yours. It speaks to a daemon of protocol 1 only, and reads as you, with a session that lasts a day at most. `:lonca login` opens one (imece runs `lonca human login` then, and never by itself: a Secure Enclave key wants your finger). `LONCA_HUMAN` says who you are when you have several identities.
 
@@ -145,6 +145,10 @@ Every 5 seconds the project's line says how it stands:
 The reasons: no daemon answers, what is on the socket is not your daemon, another protocol, you are not signed in, or you are not enrolled in a repository of that name (the daemon says the same of a repository it does not have, so check the name, or make it with `:lonca import`).
 
 Until it answers, the project is closed: nobody is hired, `:fork` is refused, and no Δ is applied, rejected or sent back. Agents go on working, and their Δs wait. A project on no repository never touches the socket. See [`:lonca`](../reference/commands.md#lonca-nameoffloginimport).
+
+A worker hired on a project on Lonca works in a **workspace** of the repository, not a worktree: the same files at the same path, with no `.git`, and `lonca hook` and `lonca mcp` in its Claude Code beside imece's bus. The focus says `· workspace of lonca NAME`. The `lonca` program must be on your `PATH`. A worker that already has a worktree stays in it. It leases what it edits and proposes its change, and the proposal waits for a human: the project's line counts it (`2 pending`). For now you decide it with `lonca approve` in your own shell; the Δ in WAITING FOR YOU comes in a later step. A session lasts 8 hours; a worker woken after that goes on in the same workspace under a new one, with its files and its proposal, and leases again. A worker on Lonca starts at trunk, so `hire`'s `from` is refused, and `:fork` refuses it. With a Secure Enclave key every new session wants your finger: `session start` is signed.
+
+In Lonca's cooperative mode no session counts as observed, so every proposal waits for you, and a change to a critical path (`Cargo.toml`, lockfiles, `package.json`, `.github/**`, `build.rs`) is refused: the worker says it is blocked and that change is yours to make. Do not set `unobserved_is_tainted = false` in `lonca.toml`: proposals would then integrate with nobody looking.
 
 Your checkout is a client of the repository, so trunk moves without it. [`:sync`](../reference/commands.md#sync) brings it up: `lonca fetch` puts trunk in `refs/lonca/trunk`, and your branch moves forward when that is a fast-forward. imece never merges, rebases or resets your branch: with commits of your own nothing moves and the journal says so, and work in the way stops it with git's words.
 

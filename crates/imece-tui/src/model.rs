@@ -521,6 +521,10 @@ pub struct ImportAsk {
     pub head: String,
 }
 
+/// What `:fork` hears of a worker on Lonca: a workspace has no HEAD to fork
+/// from, and one session owns its proposals (record 119).
+pub const ON_LONCA_FORK: &str = "a worker on Lonca does not fork yet: hire another one";
+
 /// A `lonca` command the person asked for, which an engine runs off the
 /// screen's thread.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -658,6 +662,9 @@ pub struct Agent {
     /// Where a worker's worktree stands next to its project's checkout, as
     /// git last read it; nothing to show until it is read.
     pub stand: Stand,
+    /// The Lonca repository it works in a workspace of (record 119): none
+    /// in a worktree. Read anew at each start, not saved.
+    pub workspace: Option<String>,
     /// The start point a worker was hired from (`hire`'s `from`: a branch,
     /// tag or commit of the checkout, or `#N`, a pull request), as asked;
     /// none for one made at the checkout's HEAD. Such a worktree is made
@@ -847,6 +854,7 @@ impl Agent {
             starting: false,
             commands: Vec::new(),
             stand: Stand::default(),
+            workspace: None,
             start: None,
             local: None,
             plan: Vec::new(),
