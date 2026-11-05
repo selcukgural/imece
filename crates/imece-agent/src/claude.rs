@@ -146,6 +146,32 @@ pub const SUBAGENT_TOOLS: &[&str] = &["Agent", "Task"];
 /// given at every level, it changes no file; its calls are read into
 /// [`Event::Plan`]. A Claude Code without them runs on without, noted.
 pub const TASK_TOOLS: &[&str] = &["TaskCreate", "TaskGet", "TaskList", "TaskUpdate"];
+/// The name of Lonca's MCP server in a session (record 119).
+pub const LONCA_SERVER: &str = "lonca";
+/// The tools of `lonca mcp` a worker needs, allowed by exact name. A session
+/// missing one is stopped; a tool a newer Lonca adds is no surprise, it
+/// comes from the server that was asked for, and it asks like any other.
+pub const LONCA_TOOLS: &[&str] = &[
+    "change_status",
+    "lease_acquire",
+    "lease_needed",
+    "lease_release",
+    "lease_renew",
+    "negotiate",
+    "preview",
+    "propose",
+    "status",
+    "symbols",
+    "sync",
+];
+/// Where `lonca hook` and `lonca mcp` look for the daemon.
+const LONCA_SOCKET_ENV: &str = "LONCA_SOCKET";
+
+/// How Claude Code names a tool of Lonca's MCP server.
+fn lonca_tool(tool: &str) -> String {
+    format!("mcp__{LONCA_SERVER}__{tool}")
+}
+
 /// Built-in tools that would ask before running and are allowed outright
 /// where the level gives them: the web only reads. The shell asks.
 const ALLOWED_OUTRIGHT: &[&str] = &["WebFetch", "WebSearch"];
@@ -200,6 +226,47 @@ pub struct Spec {
     /// `CLAUDE.md` Claude Code's own loader reads; none when there is
     /// nothing to say there.
     pub notes: Option<PathBuf>,
+    /// Lonca, for a session that works in a Lonca workspace (record 119).
+    pub store: Option<Store>,
+}
+
+/// What a session in a Lonca workspace needs of Lonca: `lonca hook` on every
+/// tool call and `lonca mcp` beside imece's bus. Both find the workspace
+/// from the session's directory and its token there; imece holds no token
+/// of a worker's.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Store {
+    /// The `lonca` program.
+    pub program: String,
+    /// The daemon's socket, which imece has checked is the person's.
+    pub socket: PathBuf,
+}
+
+/// `word` as one word of a shell line: Claude Code runs a hook through a
+/// shell, and the program's path is the person's, spaces and all.
+fn shell_word(word: &str) -> String {
+    format!("'{}'", word.replace('\'', r"'\''"))
+}
+
+/// The settings that run `lonca hook` on everything a session does: on
+/// every tool (Lonca ignores what it does not know), and a hook that can not
+/// reach the daemon blocks the call. `--settings` holds under `--restricted`
+/// (probed on 2.1.318), which ignores only the settings files.
+fn hook_settings(store: &Store) -> String {
+    let hook = serde_json::json!([{
+        "matcher": "*",
+        "hooks": [{
+            "type": "command",
+            "command": format!("{} hook", shell_word(&store.program)),
+            "onFailure": "block",
+        }],
+    }]);
+    serde_json::json!({ "hooks": {
+        "SessionStart": hook,
+        "PreToolUse": hook,
+        "PostToolUse": hook,
+    }})
+    .to_string()
 }
 
 /// The command line of a session that stays: [`args`] and the directories
@@ -365,18 +432,36 @@ pub fn args(spec: &Spec) -> Vec<String> {
             a.push(new.clone());
         }
     }
-    // Allowed without a prompt: imece's own tools by exact name (never a
-    // pattern), and the built-in tools of the level that would ask.
+    if let Some(store) = &spec.store {
+        a.push("--settings".into());
+        a.push(hook_settings(store));
+    }
+    // Allowed without a prompt: imece's and Lonca's tools by exact name
+    // (never a pattern), and the built-in tools of the level that would ask.
     let mut allowed: Vec<String> = Vec::new();
+    let mut servers = serde_json::Map::new();
     if let Some(mcp) = &spec.mcp {
-        let config = serde_json::json!({ "mcpServers": { MCP_SERVER: {
+        let server = serde_json::json!({
             "type": "stdio",
             "command": mcp.command,
             "args": mcp.args,
-        }}});
+        });
+        servers.insert(MCP_SERVER.into(), server);
+        allowed.extend(mcp.tools.iter().map(|t| mcp_tool(t)));
+    }
+    if let Some(store) = &spec.store {
+        let server = serde_json::json!({
+            "type": "stdio",
+            "command": store.program,
+            "args": ["mcp"],
+        });
+        servers.insert(LONCA_SERVER.into(), server);
+        allowed.extend(LONCA_TOOLS.iter().map(|t| lonca_tool(t)));
+    }
+    if !servers.is_empty() {
+        let config = serde_json::json!({ "mcpServers": servers });
         a.push("--mcp-config".into());
         a.push(config.to_string());
-        allowed.extend(mcp.tools.iter().map(|t| mcp_tool(t)));
     }
     if open && spec.write {
         allowed.extend(ALLOWED_OUTRIGHT.iter().map(|t| t.to_string()));
@@ -393,6 +478,16 @@ pub fn args(spec: &Spec) -> Vec<String> {
         a.push(allowed.join(","));
     }
     a
+}
+
+/// What of a server asked for `init` found: there once, and connected.
+fn one_server(found: &[&Value], name: &str) -> Result<(), String> {
+    match found {
+        [s] if s["status"] == "connected" => Ok(()),
+        [s] => Err(format!("has {name}'s MCP server {}", s["status"])),
+        [] => Err(format!("has no {name} MCP server")),
+        _ => Err(format!("has {name}'s MCP server more than once")),
+    }
 }
 
 /// What a call of imece's `approve` tool asks: Claude Code gives the
@@ -479,6 +574,9 @@ pub struct Parser {
     /// MCP servers (the person's): the open level.
     open: bool,
     mcp: bool,
+    /// Whether the session is on Lonca: its server must be there, and
+    /// more tools of that server are no surprise.
+    store: bool,
     started: bool,
     /// Tool names by tool-use id, to name a failed result.
     calls: HashMap<String, String>,
@@ -545,9 +643,11 @@ impl Parser {
                         .iter()
                         .flat_map(|m| m.tools.iter().map(|t| mcp_tool(t))),
                 )
+                .chain((spec.store.iter()).flat_map(|_| LONCA_TOOLS.iter().map(|t| lonca_tool(t))))
                 .collect(),
             open: spec.confine == Confine::Open,
             mcp: spec.mcp.is_some(),
+            store: spec.store.is_some(),
             started: false,
             calls: HashMap::new(),
             commands: Vec::new(),
@@ -665,7 +765,10 @@ impl Parser {
             .iter()
             .map(|t| t.as_str().unwrap_or_default().to_string())
             .collect();
-        let extra: Vec<&String> = tools.difference(&self.tools).collect();
+        let lonca_extra = |t: &&String| self.store && t.starts_with(&lonca_tool(""));
+        let extra: Vec<&String> = (tools.difference(&self.tools))
+            .filter(|t| !lonca_extra(t))
+            .collect();
         // The task tools only keep a list: a Claude Code without them
         // (an older one) runs on, and the trace says so once.
         let (untasked, missing): (Vec<&String>, Vec<&String>) = self
@@ -687,16 +790,16 @@ impl Parser {
         match (self.mcp, ours.as_slice()) {
             (false, []) => {}
             (false, _) => return Err("has an imece MCP server it was not given".into()),
-            (true, [s]) => {
-                if s["status"] != "connected" {
-                    return Err(format!("has imece's MCP server {}", s["status"]));
-                }
-            }
-            (true, []) => return Err("has no imece MCP server".into()),
-            (true, _) => return Err("has imece's MCP server more than once".into()),
+            (true, found) => one_server(found, MCP_SERVER)?,
+        }
+        let lonca: Vec<&Value> = (servers.iter())
+            .filter(|s| self.store && s["name"] == LONCA_SERVER)
+            .collect();
+        if self.store {
+            one_server(&lonca, LONCA_SERVER)?;
         }
         // The person's own servers load only under open.
-        if !self.open && servers.len() != ours.len() {
+        if !self.open && servers.len() != ours.len() + lonca.len() {
             return Err("has other MCP servers".into());
         }
         // `init` lists the session's slash commands (without the slash);
@@ -1010,6 +1113,9 @@ impl Session {
         if notes {
             cmd.env(NOTES_ENV, "1");
         }
+        if let Some(store) = &spec.store {
+            cmd.env(LONCA_SOCKET_ENV, &store.socket);
+        }
         let mut parser = Parser::new(spec);
         let mut stopped = false;
         let child = Child::spawn(cmd, move |out| match out {
@@ -1186,6 +1292,7 @@ mod tests {
         Spec {
             scratch: None,
             notes: None,
+            store: None,
             program: "claude".into(),
             cwd: PathBuf::from("/work/w1"),
             name: "claude-1".into(),
@@ -1211,8 +1318,130 @@ mod tests {
         s
     }
 
+    /// [`with_bus`] on Lonca, the program's path a shell must keep whole.
+    fn on_lonca(tools: &[&str]) -> Spec {
+        let mut s = with_bus(tools);
+        s.store = Some(Store {
+            program: "/opt/my tools/lon'ca".into(),
+            socket: PathBuf::from("/run/l.sock"),
+        });
+        s
+    }
+
+    /// `tools` and every tool of Lonca's, as `init` reports them.
+    fn lonca_init(tools: &[&str]) -> String {
+        let all: Vec<String> = (tools.iter().map(|t| t.to_string()))
+            .chain(LONCA_TOOLS.iter().map(|t| format!("mcp__lonca__{t}")))
+            .collect();
+        serde_json::to_string(&all).unwrap()
+    }
+
+    const BOTH: &str =
+        r#"[{"name":"imece","status":"connected"},{"name":"lonca","status":"connected"}]"#;
     const BUS: &str = r#"[{"name":"imece","status":"connected","source":"dynamic"}]"#;
     const BUS_INIT: &str = r#"["Edit","Glob","Grep","Read","Write","mcp__imece__send"]"#;
+
+    #[test]
+    fn a_session_on_lonca_has_its_hooks_and_its_server_beside_the_bus() {
+        let a = args(&on_lonca(&["Read"]));
+        let settings: Value = serde_json::from_str(&after(&a, "--settings").unwrap()).unwrap();
+        for event in ["SessionStart", "PreToolUse", "PostToolUse"] {
+            let hook = &settings["hooks"][event][0];
+            assert_eq!(hook["matcher"], "*", "{event}");
+            let run = &hook["hooks"][0];
+            assert_eq!(run["type"], "command", "{event}");
+            assert_eq!(run["command"], r"'/opt/my tools/lon'\''ca' hook", "{event}");
+            // A hook that can not reach the daemon stops the call.
+            assert_eq!(run["onFailure"], "block", "{event}");
+        }
+        let config: Value = serde_json::from_str(&after(&a, "--mcp-config").unwrap()).unwrap();
+        let lonca = &config["mcpServers"]["lonca"];
+        assert_eq!(lonca["type"], "stdio");
+        assert_eq!(lonca["command"], "/opt/my tools/lon'ca");
+        assert_eq!(lonca["args"], serde_json::json!(["mcp"]));
+        assert_eq!(config["mcpServers"]["imece"]["command"], "/opt/imece");
+        // Allowed by exact name, the bus's tools still.
+        let allowed = after(&a, "--allowedTools").unwrap();
+        let allowed: Vec<&str> = allowed.split(',').collect();
+        assert!(allowed.contains(&"mcp__imece__send"), "{allowed:?}");
+        for tool in LONCA_TOOLS {
+            assert!(allowed.contains(&lonca_tool(tool).as_str()), "{tool}");
+        }
+        assert!(!allowed.iter().any(|t| t.contains('*')), "{allowed:?}");
+    }
+
+    #[test]
+    fn lonca_needs_no_bus_and_nothing_of_it_comes_unasked() {
+        let mut alone = on_lonca(&["Read"]);
+        alone.mcp = None;
+        let a = args(&alone);
+        let config: Value = serde_json::from_str(&after(&a, "--mcp-config").unwrap()).unwrap();
+        assert_eq!(config["mcpServers"].as_object().unwrap().len(), 1);
+        assert_eq!(config["mcpServers"]["lonca"]["args"][0], "mcp");
+
+        let a = args(&with_bus(&["Read"]));
+        assert_eq!(after(&a, "--settings"), None);
+        let config: Value = serde_json::from_str(&after(&a, "--mcp-config").unwrap()).unwrap();
+        assert_eq!(config["mcpServers"].as_object().unwrap().len(), 1);
+        let allowed = after(&a, "--allowedTools").unwrap();
+        assert!(!allowed.contains("lonca"), "{allowed}");
+
+        // No server at all is no config at all, as before.
+        assert_eq!(after(&args(&spec(&["Read"])), "--mcp-config"), None);
+    }
+
+    #[test]
+    fn a_session_on_lonca_stops_without_all_of_its_tools_and_server() {
+        let s = on_lonca(&["Read"]);
+        let check = |tools: &str, servers: &str| {
+            Parser::new(&s)
+                .line(&init(tools, PERMISSION_MODE, servers))
+                .map(|_| ())
+        };
+        let good = lonca_init(&["Read", "mcp__imece__send"]);
+        check(&good, BOTH).unwrap();
+
+        // A tool of Lonca's gone is a Lonca imece can not work with.
+        let short = lonca_init(&["Read", "mcp__imece__send"]).replace("mcp__lonca__sync", "x");
+        let e = check(&short, BOTH).unwrap_err();
+        assert!(e.contains("tools differ"), "{e}");
+        assert!(e.contains("mcp__lonca__sync"), "{e}");
+
+        // One more of its tools comes from the server asked for ...
+        let more = lonca_init(&["Read", "mcp__imece__send", "mcp__lonca__new"]);
+        check(&more, BOTH).unwrap();
+        // ... one of anybody else's does not.
+        let other = lonca_init(&["Read", "mcp__imece__send", "mcp__other__new"]);
+        let e = check(&other, BOTH).unwrap_err();
+        assert!(e.contains("mcp__other__new"), "{e}");
+
+        let e = check(&good, BUS).unwrap_err();
+        assert!(e.contains("has no lonca MCP server"), "{e}");
+        let failed =
+            r#"[{"name":"imece","status":"connected"},{"name":"lonca","status":"failed"}]"#;
+        let e = check(&good, failed).unwrap_err();
+        assert!(e.contains("has lonca's MCP server \"failed\""), "{e}");
+        let twice = r#"[{"name":"imece","status":"connected"},{"name":"lonca","status":"connected"},{"name":"lonca","status":"connected"}]"#;
+        let e = check(&good, twice).unwrap_err();
+        assert!(e.contains("has lonca's MCP server more than once"), "{e}");
+        let third = r#"[{"name":"imece","status":"connected"},{"name":"lonca","status":"connected"},{"name":"mine","status":"connected"}]"#;
+        let e = check(&good, third).unwrap_err();
+        assert!(e.contains("has other MCP servers"), "{e}");
+    }
+
+    #[test]
+    fn a_session_not_on_lonca_gets_no_tool_or_server_of_lonca() {
+        let s = with_bus(&["Read"]);
+        let check = |tools: &str, servers: &str| {
+            Parser::new(&s)
+                .line(&init(tools, PERMISSION_MODE, servers))
+                .map(|_| ())
+        };
+        let e = check(r#"["Read","mcp__imece__send"]"#, BOTH).unwrap_err();
+        assert!(e.contains("has other MCP servers"), "{e}");
+        let e = check(r#"["Read","mcp__imece__send","mcp__lonca__sync"]"#, BUS).unwrap_err();
+        assert!(e.contains("mcp__lonca__sync"), "{e}");
+    }
 
     #[test]
     fn signed_in_is_what_auth_status_says_of_logged_in() {
@@ -2359,6 +2588,27 @@ mod tests {
         assert!(p.line(line).is_err());
     }
 
+    #[test]
+    fn a_session_on_lonca_is_told_where_the_daemon_is_and_others_are_not() {
+        let dir = std::env::temp_dir().join(format!("imece-socket-{}", std::process::id()));
+        let told = dir.join("told");
+        let body = format!("echo \"[$LONCA_SOCKET]\" > '{}'", told.display());
+        let run = |store: bool| {
+            let mut s = if store {
+                on_lonca(&["Read"])
+            } else {
+                with_bus(&["Read"])
+            };
+            s.program = fake(&dir, &body);
+            s.cwd = dir.clone();
+            let _ = events(&s, "go");
+            std::fs::read_to_string(&told).unwrap()
+        };
+        assert_eq!(run(true).trim_end(), "[/run/l.sock]");
+        assert_eq!(run(false).trim_end(), "[]");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     /// A stand-in for `claude` that checks its stdin and prints a session.
     fn fake(dir: &Path, body: &str) -> String {
         std::fs::create_dir_all(dir).unwrap();
@@ -3062,6 +3312,7 @@ sleep 5"#
         let spec = Spec {
             scratch: None,
             notes: None,
+            store: None,
             program: "claude".into(),
             cwd: cwd.clone(),
             name: "imece probe".into(),
@@ -3154,6 +3405,7 @@ sleep 5"#
         let mut spec = Spec {
             scratch: None,
             notes: None,
+            store: None,
             program: "claude".into(),
             cwd: cwd.clone(),
             name: "imece probe".into(),
