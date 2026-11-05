@@ -8,7 +8,8 @@
 //! the screen only through `clean`.
 //!
 //! What must be signed with the person's key is not done here: the `lonca`
-//! program does it, as a child, at a moment the person chose (record 117).
+//! program does it, as a child: a login or an import when the person asks
+//! (record 117), a worker's seat when it starts (record 119).
 
 use std::ffi::{OsStr, OsString};
 use std::fs::{self, OpenOptions};
@@ -45,6 +46,20 @@ const CLI_ENV: &[&str] = &[
 ];
 /// How long `human login` gets: a Secure Enclave key waits for a finger.
 const LOGIN_WAIT: Duration = Duration::from_secs(60);
+/// How long a worker's seat gets: signed by the person, so the same finger,
+/// and a whole tree written out.
+const SEAT_WAIT: Duration = Duration::from_secs(120);
+/// How long a session lasts: Lonca's own most, `sessions.max_ttl_minutes`;
+/// a repository that allows less refuses it, in its words.
+const SEAT_TTL: &str = "8h";
+/// How long a heartbeat gets: a millisecond call, or no daemon.
+const BEAT_WAIT: Duration = Duration::from_secs(5);
+/// The file that makes a directory a workspace.
+const WORKSPACE_FILE: &str = ".lonca/workspace.json";
+/// The most of it read: it lists every tracked file of the tree.
+const WORKSPACE_MOST: u64 = 64 << 20;
+/// The longest agent name Lonca takes.
+const AGENT_MOST: usize = 64;
 /// How long an import gets: the daemon fetches the branch's whole history.
 const IMPORT_WAIT: Duration = Duration::from_secs(600);
 /// How long a fetch gets: a bundle of what the checkout lacks.
@@ -173,6 +188,58 @@ impl Place {
         self.run(checkout, &args, FETCH_WAIT).map(|_| ())
     }
 
+    /// `lonca session start`: a session of `seat.agent` on `seat.repo` and
+    /// a workspace of trunk in `seat.workspace`, which must not be there
+    /// yet; the token is in the workspace, and goes nowhere else. Signed
+    /// by the person: a Secure Enclave key waits for a finger.
+    pub fn sit(&self, seat: &Seat) -> Result<(), Failed> {
+        self.seat(seat, OsStr::new("--workspace"))
+    }
+
+    /// `lonca session start --continue`: a session of `seat.agent` takes
+    /// over the workspace, files, base and proposal as they stand; the
+    /// session it had ends and takes its leases along. A taint stays.
+    pub fn sit_again(&self, seat: &Seat) -> Result<(), Failed> {
+        self.seat(seat, OsStr::new("--continue"))
+    }
+
+    fn seat(&self, seat: &Seat, how: &OsStr) -> Result<(), Failed> {
+        let dir = seat.workspace.parent().unwrap_or(Path::new("/"));
+        std::fs::create_dir_all(dir).map_err(|e| Failed::Said(e.to_string()))?;
+        // With `=`: names may start with a dash.
+        let repo = format!("--repo={}", seat.repo);
+        let agent = format!("--agent={}", agent_word(seat.agent));
+        let mut args: Vec<&OsStr> = [
+            "session",
+            "start",
+            &repo,
+            &agent,
+            "--paths=**",
+            "--ttl",
+            SEAT_TTL,
+            "--json",
+        ]
+        .map(OsStr::new)
+        .into();
+        args.extend([how, seat.workspace.as_os_str()]);
+        if let Some(scratch) = seat.scratch {
+            args.extend([OsStr::new("--scratch"), scratch.as_os_str()]);
+        }
+        self.run(dir, &args, SEAT_WAIT).map(|_| ())
+    }
+
+    /// Whether the session of `workspace` is alive: a heartbeat in it. One
+    /// over is `false`, and a word of [`sit_again`](Self::sit_again) away;
+    /// no answer says nothing of the session.
+    pub fn seated(&self, workspace: &Path) -> Result<bool, Failed> {
+        let args = ["session", "heartbeat", "--json"].map(OsStr::new);
+        match self.run(workspace, &args, BEAT_WAIT) {
+            Ok(_) => Ok(true),
+            Err(Failed::Said(said)) if session_over(&said) => Ok(false),
+            Err(other) => Err(other),
+        }
+    }
+
     /// Who the person is here: a name that can be a file's.
     fn who(&self) -> Option<String> {
         let name = match &self.human {
@@ -197,6 +264,52 @@ impl Place {
         client.token = Some(read_session(&file, me, now_ms()).ok_or(Down::SignedOut)?);
         Ok(client)
     }
+}
+
+/// A worker's place on Lonca: what [`Place::sit`] asks for.
+#[derive(Clone, Copy, Debug)]
+pub struct Seat<'a> {
+    pub repo: &'a str,
+    /// The agent's name, as imece has it.
+    pub agent: &'a str,
+    pub workspace: &'a Path,
+    /// A directory of the agent's own outside the workspace: writes there
+    /// are no part of a proposal.
+    pub scratch: Option<&'a Path>,
+}
+
+/// `name` as Lonca takes an agent's: ASCII letters, digits, `_ - .`, cut to
+/// [`AGENT_MOST`]; what else a solo's name holds becomes `-`.
+fn agent_word(name: &str) -> String {
+    (name.chars())
+        .map(|c| match c {
+            c if c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '.') => c,
+            _ => '-',
+        })
+        .take(AGENT_MOST)
+        .collect()
+}
+
+/// Whether what `lonca` said of a heartbeat is the session being over.
+fn session_over(said: &str) -> bool {
+    said.contains("session_inactive") || said.contains("unauthenticated")
+}
+
+/// Whether `dir` is a Lonca workspace: no link, no directory in its place.
+pub fn is_workspace(dir: &Path) -> bool {
+    std::fs::symlink_metadata(dir.join(WORKSPACE_FILE)).is_ok_and(|m| m.is_file())
+}
+
+/// The repository the workspace `dir` is of; none when it is no workspace or
+/// says no such thing. The file is within an agent's reach, so this tells
+/// which session to ask for, and proves nothing: the daemon decides by token.
+pub fn workspace_repo(dir: &Path) -> Option<String> {
+    if !is_workspace(dir) {
+        return None;
+    }
+    let file = std::fs::File::open(dir.join(WORKSPACE_FILE)).ok()?;
+    let told: Value = serde_json::from_reader(file.take(WORKSPACE_MOST)).ok()?;
+    told["repo"].as_str().map(str::to_string)
 }
 
 /// The refusal in what `lonca` said: its last line, without the program's
@@ -600,6 +713,137 @@ mod tests {
         assert_eq!(c.distance("demo", "own"), Ok(None));
         assert_eq!(c.distance("demo", "word"), Err(Down::Protocol));
         assert_eq!(c.distance("demo", "nothing"), Err(Down::Protocol));
+    }
+
+    /// A seat of `claude-1` on a repository whose name starts with a dash.
+    fn seat_in(dir: &Path) -> Seat<'_> {
+        Seat {
+            repo: "-kule",
+            agent: "claude-1",
+            workspace: dir,
+            scratch: None,
+        }
+    }
+
+    #[test]
+    fn a_seat_is_a_session_of_the_whole_tree_for_as_long_as_lonca_allows() {
+        let (place, dir) = program("echo '{}'");
+        let at = dir.join("trees/claude-1");
+        let scratch = dir.join("scratch");
+        let mut seat = seat_in(&at);
+        seat.scratch = Some(&scratch);
+        place.sit(&seat).unwrap();
+        assert_eq!(
+            seen(&dir).trim_end(),
+            format!(
+                "{}/trees|session start --repo=-kule --agent=claude-1 --paths=** --ttl 8h \
+                 --json --workspace {} --scratch {}|",
+                dir.display(),
+                at.display(),
+                scratch.display()
+            )
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_seat_taken_again_names_the_workspace_and_may_have_no_scratch() {
+        let (place, dir) = program("echo '{}'");
+        let at = dir.join("trees/claude-1");
+        place.sit_again(&seat_in(&at)).unwrap();
+        let said = seen(&dir);
+        assert!(
+            said.trim_end()
+                .ends_with(&format!("--json --continue {}|", at.display())),
+            "{said}"
+        );
+        assert!(!said.contains("--scratch"), "{said}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_refused_seat_says_why() {
+        let (place, dir) = program("echo 'lonca: denied: session_ttl' >&2; exit 1");
+        let at = dir.join("w");
+        assert_eq!(
+            place.sit(&seat_in(&at)),
+            Err(Failed::Said("denied: session_ttl".into()))
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_seat_where_no_folder_can_be_says_so() {
+        let (place, dir) = program("echo '{}'");
+        std::fs::write(dir.join("file"), "").unwrap();
+        let at = dir.join("file/w");
+        assert!(matches!(place.sit(&seat_in(&at)), Err(Failed::Said(_))));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_heartbeat_tells_a_session_over_from_a_daemon_gone() {
+        let (place, dir) = program("echo '{}'");
+        assert_eq!(place.seated(&dir), Ok(true));
+        assert_eq!(
+            seen(&dir).trim_end(),
+            format!("{}|session heartbeat --json|", dir.display())
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+        for (said, alive) in [
+            (
+                "session_inactive: this session has ended or expired",
+                Ok(false),
+            ),
+            (
+                "session.heartbeat: unauthenticated: no such token",
+                Ok(false),
+            ),
+            (
+                "cannot reach the Lonca daemon at /s",
+                Err(Failed::Said("cannot reach the Lonca daemon at /s".into())),
+            ),
+        ] {
+            let (place, dir) = program(&format!("echo 'lonca: {said}' >&2; exit 1"));
+            assert_eq!(place.seated(&dir), alive, "{said}");
+            let _ = std::fs::remove_dir_all(&dir);
+        }
+    }
+
+    #[test]
+    fn an_agents_name_goes_as_lonca_takes_it() {
+        assert_eq!(agent_word("claude-1_a.b"), "claude-1_a.b");
+        assert_eq!(agent_word("solo-şu ad"), "solo--u-ad");
+        assert_eq!(agent_word(&"x".repeat(70)).len(), AGENT_MOST);
+        assert_eq!(agent_word(&"x".repeat(AGENT_MOST)).len(), 64);
+    }
+
+    #[test]
+    fn a_workspace_is_a_directory_with_lonca_s_file_in_it() {
+        let dir = std::env::temp_dir().join(format!("imece-ws-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join(".lonca")).unwrap();
+        assert!(!is_workspace(&dir), "no file");
+        assert_eq!(workspace_repo(&dir), None);
+
+        let file = dir.join(WORKSPACE_FILE);
+        std::fs::write(&file, r#"{"repo":"kule","base":"b"}"#).unwrap();
+        assert!(is_workspace(&dir));
+        assert_eq!(workspace_repo(&dir).as_deref(), Some("kule"));
+
+        std::fs::write(&file, r#"{"base":"b"}"#).unwrap();
+        assert_eq!(workspace_repo(&dir), None, "says no repository");
+        std::fs::write(&file, "not json").unwrap();
+        assert_eq!(workspace_repo(&dir), None);
+
+        // A link is no workspace: this file is within an agent's reach.
+        std::fs::remove_file(&file).unwrap();
+        let elsewhere = dir.join("elsewhere");
+        std::fs::write(&elsewhere, r#"{"repo":"kule"}"#).unwrap();
+        std::os::unix::fs::symlink(&elsewhere, &file).unwrap();
+        assert!(!is_workspace(&dir));
+        assert_eq!(workspace_repo(&dir), None);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

@@ -852,6 +852,7 @@ impl Live {
                         &claude::Spec {
                             scratch: scratch.clone(),
                             notes,
+                            store: None,
                             program: program.clone(),
                             cwd: cwd.clone(),
                             name,
