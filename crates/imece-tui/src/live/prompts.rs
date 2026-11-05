@@ -384,7 +384,8 @@ pub(super) fn lonca_note(repo: &str) -> String {
          files and no `.git`, so git commands do not work here and you commit nothing. A \
          change reaches the repository as a proposal: lease what you edit, check with the \
          preview tool, submit with the propose tool. Propose before you say done: what is \
-         not proposed nobody sees. A proposal waits for the person's approval, and then \
+         not proposed nobody sees, and a done with changes no proposal carries is refused. A \
+         proposal waits for the person's approval, and then \
          the sync tool brings trunk to you. When a proposal is denied and you can not put \
          it right, say blocked with what it said."
     )

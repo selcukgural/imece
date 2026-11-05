@@ -608,7 +608,9 @@ mod tests {
         live.places[0].git = true;
         live.cwds[1] = Some(PathBuf::from("/trees/claude-1"));
         w.agents[1].workspace = Some("demo".into());
-        let got = sent(&mut live, &mut w, 1, &msg("lead", "done", "Proposed.")).unwrap();
+        let (tx, answer) = mpsc::channel();
+        live.sent_on(&mut w, 1, &msg("lead", "done", "Proposed."), tx);
+        let got = answer.try_recv().unwrap().unwrap();
         assert!(!got.contains("could not read"), "{got}");
         assert!(!live.changes.contains_key(&1));
         assert_eq!(live.reading[1], 0, "nothing went to git");

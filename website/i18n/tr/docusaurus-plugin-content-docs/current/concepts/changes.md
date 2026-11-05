@@ -117,7 +117,7 @@ imece checkout'unuzda hiçbir şeyi commit etmez. `:commit`, stage'dekiler için
 
 ## Lonca'da {#loncada}
 
-Bir [Lonca workspace](projects.md#loncada)'indeki işçinin okunacak worktree'si yoktur. Değişikliği daemon'ın tuttuğu bir öneridir, Δ'sı da o öneri: imece birkaç saniyede bir bakar ve işçinin turu bitince en yeni önerisi, depodan okunmuş olarak sizi bekler. Bir workspace elindekinin tümünü önerir, bu yüzden en yenisi eskilerin yaptığını da kapsar; eskiler Δ'da sayılır ve siz karar verince gider.
+Bir [Lonca workspace](projects.md#loncada)'indeki işçinin okunacak worktree'si yoktur. Değişikliği daemon'ın tuttuğu bir öneridir; hiçbir önerinin taşımadığı değişikliklerle gelen bir `done` `propose first` ile reddedilir, kartını da kapatmaz. Δ'sı o öneridir: imece birkaç saniyede bir bakar ve işçinin turu bitince en yeni önerisi, depodan okunmuş olarak sizi bekler. Bir workspace elindekinin tümünü önerir, bu yüzden en yenisi eskilerin yaptığını da kapsar; eskiler Δ'da sayılır ve siz karar verince gider.
 
 `a` onaylar, `r` reddeder; ikisini de `lonca` programı imzalar, bu yüzden Secure Enclave anahtarı parmağınızı ister. Lonca'ya ulaşmayan bir karar günlükte söylenir ve Δ beklemeyi sürdürür. Lonca gerekçesiz ret almaz, bu yüzden `r` önce satırı açar ve gönderdiğiniz hem gerekçe hem de işçiye mesajınızdır; `esc` ile satırdan çıkmak hiçbir şeyi reddetmez. Öneri bütün olarak onaylanır: `x` reddedilir ve çalışma kopyanıza hiçbir şey inmez, onu [`:sync`](../reference/commands.md#sync) trunk'a getirir.
 

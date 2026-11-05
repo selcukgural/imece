@@ -117,7 +117,7 @@ imece commits nothing in your checkout. `:commit` asks Claude's cheap tier for a
 
 ## On Lonca
 
-A worker in a [Lonca workspace](projects.md#on-lonca) has no worktree to read. Its change is a proposal the daemon holds, and its Δ is that proposal: imece looks every few seconds, and once the worker's turn is over its newest proposal waits for you, read from the store. A workspace proposes all it holds, so the newest holds what the older ones did; those are counted on the Δ and go when you decide it.
+A worker in a [Lonca workspace](projects.md#on-lonca) has no worktree to read. Its change is a proposal the daemon holds, and a `done` with changes no proposal carries is refused with `propose first`, so it never closes its card. Its Δ is that proposal: imece looks every few seconds, and once the worker's turn is over its newest proposal waits for you, read from the store. A workspace proposes all it holds, so the newest holds what the older ones did; those are counted on the Δ and go when you decide it.
 
 `a` approves it and `r` rejects it, both signed by the `lonca` program, so a Secure Enclave key wants your finger; a word that did not reach Lonca is said in the journal and the Δ still waits. Lonca takes no rejection without a reason, so `r` opens the line first and what you send is both the reason and your message to the worker; leaving the line with `esc` rejects nothing. A proposal is approved whole: `x` is refused, and nothing lands in your checkout, which [`:sync`](../reference/commands.md#sync) brings up to trunk.
 

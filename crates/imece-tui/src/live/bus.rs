@@ -4,10 +4,26 @@
 use super::*;
 
 impl Live {
-    /// Agent `from` sends a message (the `send` tool's arguments); what
-    /// became of it goes back on `reply`. A worker's done shows the person
-    /// what its worktree holds: that answer waits until git has read it.
+    /// Agent `from` sends a message (the `send` tool's arguments). A
+    /// worker's done from a Lonca workspace waits until what it holds is
+    /// seen to be proposed (record 120); anything else goes on at once.
     pub(super) fn send(
+        &mut self,
+        w: &mut World,
+        from: AgentId,
+        args: &Value,
+        reply: Sender<Answer>,
+    ) {
+        match self.gate_of(w, from, args) {
+            Some((repo, tree)) => self.gate(from, args, reply, repo, tree),
+            None => self.sent_on(w, from, args, reply),
+        }
+    }
+
+    /// What became of the message goes back on `reply`. A worker's done
+    /// shows the person what its worktree holds: that answer waits until
+    /// git has read it.
+    pub(super) fn sent_on(
         &mut self,
         w: &mut World,
         from: AgentId,
