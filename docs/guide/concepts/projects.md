@@ -122,7 +122,7 @@ Each worker's worktree stays on disk between runs, so its work is never thrown a
 - **The teardown script first:** when the worktree's checkout has `.imece/worktree-teardown.sh`, it runs in the worktree just before the removal. One you have not answered opens over the window first, as the setup script's does (`TEARDOWN SCRIPT · shop · sha256 1a2b…`, its lines numbered, `j` `k` `ctrl-d` `ctrl-u` `g` `G` scroll): `a` says yes (kept in imece's store with the setup scripts' yeses, so a changed byte asks again) and the removal goes on, `r` says no for this run and removes without it, `esc` removes nothing. The flash says how it went (`removed claude-31 · teardown in claude-31: exit 0, 0.4 s · dropped database`); a teardown that fails or cannot be read is said, and the removal still decides on its own: one that left a file in the worktree keeps it.
 - **Never an agent's:** who owns what is read again when a removal is asked; a worker hired since, whose name is the old worktree's (it would take it over), keeps it (`not removed: claude-1 (an agent works in it now)`). A worker that starts while its worktree is being removed waits for it to go and gets a new one.
 - **At start:** imece looks once, off the screen, and says `2 worktrees no agent owns: :tidy lists them` when it found any; it removes nothing by itself.
-- The demo has two made-up ones, one clean and one with work, which `:tidy` removes as live does, and a workspace that can not be read when a project is on Lonca.
+- The demo has two made-up ones, one clean and one with work, which `:tidy` removes as live does, and a workspace that can not be counted when a project is on Lonca.
 
 ## On Lonca
 

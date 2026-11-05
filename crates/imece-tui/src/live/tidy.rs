@@ -484,7 +484,7 @@ mod tests {
         imece_agent::lonca_fake::program(&body)
     }
 
-    const NOTHING: &str = r#"{"added_files":[],"modified_files":[],"deleted_files":[]}"#;
+    const NOTHING: &str = "no local changes";
     const TWO: &str = r#"{"added_files":["a"],"modified_files":["b"],"deleted_files":[]}"#;
 
     #[test]

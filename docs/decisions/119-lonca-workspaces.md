@@ -113,10 +113,12 @@ a thread (`stand_up`, `lonca session end`): its leases go, its proposals stay, a
 helper leaving ends nothing of its worker's. Its workspace stays, as a worktree does,
 for `:tidy`, which lists it beside the worktrees (`tidy::orphans_under`); its checkout
 is the one `Live::roots` knows its directory by, else that directory, since a
-workspace has no `.git` to ask. What it holds comes from `lonca diff` (`Place::left_in`),
-and **`diff` wants a live session**: after `session end` it says `unauthenticated`
-(probed), so a left workspace can usually not be read. `Orphan.unread` makes that not
-clean: the window says it may hold work, and `a` passes it by and `d` asks `y`.
+workspace has no `.git` to ask. What it holds comes from `lonca diff` (`Place::left_in`).
+A workspace as its base left it says `no local changes`, locally, with no session and
+no daemon (a real run found this; `diff` has no JSON for it). **One with changes wants
+a live session to count them**: after `session end` it says `unauthenticated` (probed).
+So what can not be read is what holds something: `Orphan.unread` is not clean, the
+window says it may hold work, `a` passes it by and `d` asks `y`.
 `clear_workspace` reads again when it removes: without the person's yes only `Some(0)`
 goes. Its session ends first, one over saying so; its proposals are in the store and
 do not go with it. Its teardown script runs as a worktree's does.
@@ -124,7 +126,7 @@ do not go with it. Its teardown script runs as a worktree's does.
 **The demo** (record 31). A worker hired on a project on Lonca has
 `Agent.workspace`, the trace line and the focus's `· workspace of lonca NAME`;
 its helpers too; `:fork` refuses it as live; `:tidy` lists a workspace of a project
-on Lonca that can not be read. What can not be faked: a daemon, a
+on Lonca that can not be counted. What can not be faked: a daemon, a
 proposal; the demo's Δs stay as they are until step 5.
 
 **Concurrency.** Starts of one tree are serial (`removing`, one slot per agent); a

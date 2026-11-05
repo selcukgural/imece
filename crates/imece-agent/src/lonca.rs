@@ -54,6 +54,8 @@ const SEAT_WAIT: Duration = Duration::from_secs(120);
 const SEAT_TTL: &str = "8h";
 /// How long a heartbeat gets: a millisecond call, or no daemon.
 const BEAT_WAIT: Duration = Duration::from_secs(5);
+/// What `lonca diff` says of a workspace as its base left it.
+const NO_CHANGES: &str = "no local changes";
 /// The file that makes a directory a workspace.
 const WORKSPACE_FILE: &str = ".lonca/workspace.json";
 /// The most of it read: it lists every tracked file of the tree.
@@ -248,11 +250,15 @@ impl Place {
     }
 
     /// How many files `workspace` has that differ from its base, as
-    /// `lonca diff` counts them. None when that can not be said, which is
-    /// the usual case for a workspace left behind: `diff` asks the daemon
-    /// under the session's token, and a session over has none.
+    /// `lonca diff` counts them. No change is told without the daemon; what
+    /// changed is counted by it under the session's token, so a workspace
+    /// with changes and its session over says none: it holds something,
+    /// and nobody can say what.
     pub fn left_in(&self, workspace: &Path) -> Option<usize> {
         let said = self.run(workspace, &[OsStr::new("diff")], BEAT_WAIT).ok()?;
+        if said.trim() == NO_CHANGES {
+            return Some(0);
+        }
         let facts: Value = serde_json::from_str(&said).ok()?;
         let lists = ["added_files", "modified_files", "deleted_files"];
         (lists.iter()).try_fold(0, |n, list| Some(n + facts[list].as_array()?.len()))
@@ -890,13 +896,13 @@ mod tests {
         assert_eq!(place.left_in(&dir), Some(6));
         assert_eq!(seen(&dir).trim_end(), format!("{}|diff|", dir.display()));
         let _ = std::fs::remove_dir_all(&dir);
-        let (place, dir) =
-            program(r#"echo '{"added_files":[],"modified_files":[],"deleted_files":[]}'"#);
+        let (place, dir) = program("echo 'no local changes'");
         assert_eq!(place.left_in(&dir), Some(0));
         let _ = std::fs::remove_dir_all(&dir);
         for body in [
             "echo 'lonca: facts.preview: unauthenticated: unknown' >&2; exit 1",
             "echo 'no json'",
+            "echo 'no local changes here'",
             r#"echo '{"added_files":[],"modified_files":[]}'"#,
         ] {
             let (place, dir) = program(body);
@@ -1385,8 +1391,10 @@ mod tests {
         assert_eq!(place.left_in(&tree), Some(1));
         assert_eq!(place.stand_up(&tree), Ok(()));
         assert_eq!(place.seated(&tree), Ok(false));
-        assert_eq!(place.left_in(&tree), None, "a session over can not say");
+        assert_eq!(place.left_in(&tree), None, "a session over can not count");
         assert!(place.stand_up(&tree).is_err(), "twice");
+        fs::remove_file(tree.join("new.txt")).unwrap();
+        assert_eq!(place.left_in(&tree), Some(0), "no change needs no session");
     }
 
     /// Against a real daemon, the fake being only what this client thinks

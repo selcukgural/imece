@@ -2471,8 +2471,8 @@ pub struct Orphan {
     pub changes: usize,
     /// Commits of its own no branch, tag or remote has.
     pub commits: usize,
-    /// A Lonca workspace nobody can read: `lonca diff` needs a live session.
-    /// It may hold work, so it counts as holding some.
+    /// A Lonca workspace `lonca diff` can not count: it has changes and its
+    /// session is over. It holds work, of a size nobody can say.
     pub unread: bool,
 }
 

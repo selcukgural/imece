@@ -122,7 +122,7 @@ Her işçinin worktree'si çalıştırmalar arasında diskte kalır, böylece i�
 - **Önce söküm betiği:** worktree'nin checkout'unda `.imece/worktree-teardown.sh` varsa silmeden hemen önce worktree'de çalışır. Yanıtlamadığınız bir betik önce pencerenin üstünde, kurulum betiğininki gibi açılır (`SÖKÜM BETİĞİ · shop · sha256 1a2b…`, satırları numaralı, `j` `k` `ctrl-d` `ctrl-u` `g` `G` kaydırır): `a` evet der (imece'nin deposunda kurulum betiklerinin evetleriyle birlikte tutulur, değişen bir bayt yeniden sorar) ve silme sürer, `r` bu çalıştırma için hayır der ve onsuz siler, `esc` hiçbir şey silmez. Flaş nasıl gittiğini söyler (`silindi: claude-31 · claude-31 söküldü: exit 0, 0.4 s · dropped database`); başarısız olan ya da okunamayan bir söküm söylenir, silme yine kendi karar verir: worktree'de bir dosya bırakan bir söküm onu tutar.
 - **Asla bir ajanınki değil:** kimin neye sahip olduğu bir silme istendiğinde yeniden okunur; o arada işe alınan ve adı eski worktree'ninki olan bir işçi (onu devralırdı) onu tutar (`silinmedi: claude-1 (şimdi bir ajan içinde çalışıyor)`). Worktree'si silinirken başlayan bir işçi gitmesini bekler ve yenisini alır.
 - **Başlangıçta:** imece ekranın dışında bir kez bakar ve bulduysa `sahibi olmayan 2 worktree var: :tidy listeler` der; kendiliğinden bir şey silmez.
-- Demoda biri temiz, biri iş tutan iki uydurma worktree vardır; `:tidy` onları canlıdaki gibi siler. Lonca'da bir proje varsa okunamayan bir workspace de vardır.
+- Demoda biri temiz, biri iş tutan iki uydurma worktree vardır; `:tidy` onları canlıdaki gibi siler. Lonca'da bir proje varsa sayılamayan bir workspace de vardır.
 
 ## Lonca'da
 
