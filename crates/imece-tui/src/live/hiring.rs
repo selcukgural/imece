@@ -66,6 +66,9 @@ fn free_name(w: &World, stem: &str, next: usize) -> String {
         .expect("some number is free")
 }
 
+/// What a hirer hears of `from` on Lonca: a workspace is made of trunk.
+const ON_LONCA_FROM: &str = "a worker on Lonca starts at trunk: from is for a worktree";
+
 /// What a hirer hears while its project's store does not answer.
 fn store_closed(why: &str) -> String {
     format!("nobody is hired now: {why}; only the person can bring Lonca back")
@@ -285,6 +288,9 @@ impl Live {
                             worktree, wherever it started"
                     .into());
             }
+            _ if w.projects[project].lonca.is_some() => {
+                return Err(ON_LONCA_FROM.into());
+            }
             f => Some(self.start_point(project, f)?),
         };
         let model = self.claude.ladder.model(tier).map(str::to_string);
@@ -481,8 +487,11 @@ impl Live {
                 self.max_workers
             ));
         }
-        let head = worktree::resolve(&self.cwd_of(w, from), "HEAD")
-            .map_err(|e| format!("its worktree: {e}"))?;
+        let cwd = self.cwd_of(w, from);
+        if imece_agent::lonca::is_workspace(&cwd) {
+            return Err(ON_LONCA_FORK.into());
+        }
+        let head = worktree::resolve(&cwd, "HEAD").map_err(|e| format!("its worktree: {e}"))?;
         let name = worker_name(w);
         let id = w.agents.len();
         self.bind(id, Role::Worker)
@@ -537,6 +546,39 @@ mod tests {
         .unwrap();
         std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o700)).unwrap();
         path.to_string_lossy().into_owned()
+    }
+
+    #[test]
+    fn a_worker_on_lonca_starts_at_trunk_and_does_not_fork() {
+        let repo = checkout("on-lonca");
+        let root = trees("on-lonca");
+        let mut w = team(1);
+        w.agents[1].status = Status::Idle;
+        w.on_lonca(0, Some("demo".into()));
+        let up = StoreSeen::Up {
+            trunk: "t".into(),
+            pending: 0,
+            behind: Behind::Unknown,
+        };
+        w.store_seen(0, "demo", up);
+        let mut live = Live::new(2, claude_at("no-such-claude"), repo.clone(), root.clone());
+        live.max_workers = 3;
+        let e = live
+            .hire(&mut w, 0, &json!({ "from": "main" }))
+            .unwrap_err();
+        assert_eq!(e, ON_LONCA_FROM);
+        assert_eq!(w.agents.len(), 2, "nobody joined");
+
+        live.sessions[1] = Some(Resumable {
+            session: "s".into(),
+            spent: 0,
+        });
+        std::fs::create_dir_all(root.join("claude-1/.lonca")).unwrap();
+        std::fs::write(root.join("claude-1/.lonca/workspace.json"), "{}").unwrap();
+        assert_eq!(live.fork(&mut w, 1), Err(ON_LONCA_FORK.to_string()));
+        assert_eq!(w.agents.len(), 2, "nobody joined");
+        let _ = std::fs::remove_dir_all(&repo);
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]
@@ -830,6 +872,7 @@ mod tests {
                 None,
                 imece_agent::copy::Brought::default(),
                 setup::Done::None,
+                None,
             )),
         );
         assert_eq!(w.agents[2].status, Status::Stopped);

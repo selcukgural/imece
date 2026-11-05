@@ -374,6 +374,22 @@ pub(super) fn scratch_note(dir: &Path) -> String {
     )
 }
 
+/// What an agent in a Lonca workspace (record 119) is told of it, on top of
+/// what its prompt says of a worktree. Lonca's own rules come by its
+/// `SessionStart` hook: this says what they mean for a `done`.
+pub(super) fn lonca_note(repo: &str) -> String {
+    format!(
+        "\n\nYour directory is a Lonca workspace of repository {repo}, not a git worktree: \
+         where this text says worktree, it means this workspace. It holds the repository's \
+         files and no `.git`, so git commands do not work here and you commit nothing. A \
+         change reaches the repository as a proposal: lease what you edit, check with the \
+         preview tool, submit with the propose tool. Propose before you say done: what is \
+         not proposed nobody sees. A proposal waits for the person's approval, and then \
+         the sync tool brings trunk to you. When a proposal is denied and you can not put \
+         it right, say blocked with what it said."
+    )
+}
+
 /// The person's own instructions for every project, in imece's
 /// configuration directory (`keys::config_file`).
 pub(crate) const INSTRUCTIONS: &str = "instructions.md";
@@ -568,6 +584,18 @@ mod tests {
     }
 
     #[test]
+    fn a_worker_on_lonca_hears_that_a_proposal_comes_before_a_done() {
+        let note = lonca_note("kule");
+        assert!(
+            note.contains("Lonca workspace of repository kule"),
+            "{note}"
+        );
+        assert!(note.contains("no `.git`"), "{note}");
+        assert!(note.contains("Propose before you say done"), "{note}");
+        assert!(note.contains("say blocked"), "{note}");
+    }
+
+    #[test]
     fn where_a_worktree_stands_goes_into_the_journal() {
         let mut w = team(2);
         let mut live = idle_live(3);
@@ -580,6 +608,7 @@ mod tests {
                 None,
                 imece_agent::copy::Brought::default(),
                 setup::Done::None,
+                None,
             ))
         };
         live.ready(&mut w, 1, placed(Some(worktree::Placed::Fresh)));

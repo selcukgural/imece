@@ -1258,6 +1258,7 @@ mod tests {
                 None,
                 imece_agent::copy::Brought::default(),
                 setup::Done::None,
+                None,
             )),
         );
         live
@@ -1382,6 +1383,7 @@ mod tests {
                 None,
                 imece_agent::copy::Brought::default(),
                 setup::Done::None,
+                None,
             )),
         );
         let mut sleeper = std::process::Command::new("sleep")

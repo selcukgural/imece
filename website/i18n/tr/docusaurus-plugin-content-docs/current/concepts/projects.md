@@ -126,7 +126,7 @@ Her işçinin worktree'si çalıştırmalar arasında diskte kalır, böylece i�
 
 ## Lonca'da
 
-[Lonca](https://github.com/selcukgural/lonca), imece'nin depo işlerinin gideceği yerdir: bir deponun tek yazarı olan bir daemon, sembol kiralamaları, bir birleştirme kuyruğu ve imzalı bir günlük. İlk adımlar burada: imece bir depoyu daemon üzerinden okur, `:lonca AD` eldeki proje için bir depo adlandırır, `:lonca import` da çalışma kopyasından bir depo oluşturur. Henüz hiçbir işi taşımaz: işçiler worktree'lerde kalır, bir Δ yine çalışma kopyana iner.
+[Lonca](https://github.com/selcukgural/lonca), imece'nin depo işlerinin gideceği yerdir: bir deponun tek yazarı olan bir daemon, sembol kiralamaları, bir birleştirme kuyruğu ve imzalı bir günlük. İlk adımlar burada: imece bir depoyu daemon üzerinden okur, `:lonca AD` eldeki proje için bir depo adlandırır, `:lonca import` da çalışma kopyasından bir depo oluşturur. Bundan sonra işe alınan işçiler Lonca workspace'lerinde çalışır (aşağıda); worktree'deki bir işçinin Δ'sı yine çalışma kopyana iner.
 
 imece, işbirlikçi kipte çalışan bir `lonca daemon`'ın istemcisidir: soket `LONCA_SOCKET`, yoksa `$LONCA_HOME/lonca.sock`, yoksa `~/.lonca/lonca.sock` olur ve senin olmalıdır. Yalnız protokol 1 konuşan bir daemon'la konuşur ve senin adına, en çok bir gün süren bir oturumla okur. `:lonca login` bir oturum açar (imece o zaman `lonca human login` çalıştırır, kendiliğinden asla: Secure Enclave anahtarı parmağını ister). Birden çok kimliğin varsa `LONCA_HUMAN` hangisi olduğunu söyler.
 
@@ -145,6 +145,10 @@ Her 5 saniyede bir projenin satırı nerede durduğunu söyler:
 Nedenler: hiçbir daemon yanıt vermiyor, soketteki senin daemon'ın değil, başka bir protokol, oturum açmamışsın, ya da bu adda bir depoya kayıtlı değilsin (daemon olmayan bir depo için de aynısını söyler, adı denetle ya da `:lonca import` ile oluştur).
 
 Yanıt verene dek proje kapalıdır: kimse işe alınmaz, `:fork` reddedilir, hiçbir Δ uygulanmaz, reddedilmez, geri gönderilmez. Ajanlar çalışmayı sürdürür, Δ'leri bekler. Hiçbir depoda olmayan bir proje sokete hiç dokunmaz. Bkz. [`:lonca`](../reference/commands.md#lonca-nameoffloginimport).
+
+Lonca'daki bir projede işe alınan işçi, worktree'de değil deponun bir **workspace**'inde çalışır: aynı yolda aynı dosyalar, `.git` olmadan; Claude Code'unda imece'nin veri yolunun yanında `lonca hook` ve `lonca mcp` bulunur. Odak ekranı `· lonca AD için workspace` der. `lonca` programı `PATH`'inde olmalıdır. Zaten worktree'si olan işçi orada kalır. İşçi düzenlediğini kiralar, değişikliğini önerir ve öneri bir insanı bekler: projenin satırı onu sayar (`2 pending`). Şimdilik kararı kendi kabuğunda `lonca approve` ile verirsin; SENİ BEKLEYEN'deki Δ sonraki bir adımda gelecek. Bir oturum 8 saat sürer; ondan sonra uyandırılan işçi aynı workspace'te yeni bir oturumla, dosyaları ve önerisiyle sürer, yeniden kiralar. Lonca'daki işçi trunk'tan başlar, bu yüzden `hire`'ın `from`'u reddedilir, `:fork` da onu reddeder. Secure Enclave anahtarıyla her yeni oturum parmağını ister: `session start` imzalıdır.
+
+Lonca'nın işbirlikçi kipinde hiçbir oturum gözlenmiş sayılmaz, bu yüzden her öneri seni bekler, kritik bir yoldaki değişiklik (`Cargo.toml`, kilit dosyaları, `package.json`, `.github/**`, `build.rs`) ise reddedilir: işçi takıldığını söyler, o değişikliği sen yaparsın. `lonca.toml`'da `unobserved_is_tainted = false` yapma: öneriler o zaman kimse bakmadan birleşir.
 
 Çalışma kopyan deponun bir istemcisidir, bu yüzden trunk onsuz ilerler. [`:sync`](../reference/commands.md#sync) onu getirir: `lonca fetch` trunk'ı `refs/lonca/trunk`'a koyar, dalın da fast-forward olabiliyorsa ilerler. imece dalını asla merge, rebase ya da reset etmez: kendi commit'lerin varsa hiçbir şey kımıldamaz ve günlük bunu söyler, yoldaki iş ise git'in kendi sözleriyle durdurur.
 

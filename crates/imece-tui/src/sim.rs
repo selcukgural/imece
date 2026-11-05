@@ -2291,7 +2291,20 @@ impl Sim {
             Status::Idle,
             w.tick,
         ));
+        Self::seat(w, id);
         id
+    }
+
+    /// A new worker of a project on Lonca works in a workspace of it, as
+    /// live: the focus says so, and `:fork` refuses it (record 119).
+    fn seat(w: &mut World, id: AgentId) {
+        let on = w.projects[w.agents[id].project].lonca.as_ref();
+        let Some(repo) = on.map(|on| on.repo.clone()) else {
+            return;
+        };
+        let t = w.tick;
+        w.agents[id].trace(t, format!("on Lonca: a workspace of {repo}"));
+        w.agents[id].workspace = Some(repo);
     }
 
     /// `:fork` in the demo, as live does it (record 94): a new worker goes
@@ -2313,6 +2326,9 @@ impl Sim {
         }
         if a.status == Status::Working {
             return Err("it is mid-turn: fork it when its turn ends".into());
+        }
+        if a.workspace.is_some() {
+            return Err(ON_LONCA_FORK.into());
         }
         let (project, was) = (a.project, a.name.clone());
         let so_far = (w.agents.iter()).filter(|o| o.role == Role::Worker).count();
@@ -3328,6 +3344,7 @@ impl Sim {
         let project = w.agents[id].project;
         let mut a = Agent::new(helper, project, name, Role::Helper, Status::Idle, t);
         a.parent = Some(id);
+        a.workspace = w.agents[id].workspace.clone();
         w.agents.push(a);
         self.hired(w, id, helper);
         let task = format!("{}: {}", w.cards[card].title, self.content.tests);
@@ -7731,6 +7748,29 @@ diff --git a/b.rs b/b.rs
         w.store_seen(0, "r", up());
         s.more_hands(&mut w, 0, leader);
         assert_eq!(hired(&w), before + 1);
+    }
+
+    #[test]
+    fn a_demo_worker_on_lonca_works_in_a_workspace_and_does_not_fork() {
+        let (mut w, mut s, worker, card) = one_at_work();
+        assert_eq!(w.agents[worker].workspace, None, "off Lonca");
+        on_store(&mut w, up());
+        assert_eq!(w.agents[worker].workspace, None, "a worktree stays");
+        let id = s.hire_for_test(&mut w, 0);
+        assert_eq!(w.agents[id].workspace.as_deref(), Some("r"));
+        let traced = |w: &World| {
+            w.agents[id]
+                .trace
+                .iter()
+                .any(|l| l.contains("workspace of r"))
+        };
+        assert!(traced(&w));
+        let helper = s.helper_for(&mut w, id, card);
+        assert_eq!(w.agents[helper].workspace.as_deref(), Some("r"));
+        s.mind(id).started = true;
+        w.agents[id].status = Status::Idle;
+        assert_eq!(s.fork(&mut w, id), Err(ON_LONCA_FORK.to_string()));
+        assert_eq!(w.agents[worker].workspace, None);
     }
 
     #[test]

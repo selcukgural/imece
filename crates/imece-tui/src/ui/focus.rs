@@ -78,7 +78,9 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App, id: AgentId) {
     head.push(Line::from(status));
     if let Some((folder, of)) = app.folder_of(id) {
         let mut line = vec![Span::styled(t.folder, dim()), Span::raw(folder)];
-        if let Some(checkout) = of {
+        if let Some(repo) = &a.workspace {
+            line.push(Span::styled(fill(t.workspace_of, &[repo]), dim()));
+        } else if let Some(checkout) = of {
             line.push(Span::styled(fill(t.worktree_of, &[&checkout]), dim()));
         }
         head.push(Line::from(line));

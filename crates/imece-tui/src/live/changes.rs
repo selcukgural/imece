@@ -90,10 +90,12 @@ pub(super) fn git_thread(jobs: Receiver<GitJob>, done: Sender<GitDone>) {
 
 impl Live {
     /// Agent `id`'s worktree, for git to read or move: none before its
-    /// session has a directory, and none in a folder without git, where
-    /// it works straight in the folder and there is nothing to read.
+    /// session has a directory, none in a folder without git, where it
+    /// works straight in the folder and there is nothing to read, and none
+    /// in a Lonca workspace, whose change is a proposal (record 119).
     fn tree_at(&self, w: &World, id: AgentId) -> Option<PathBuf> {
-        (self.cwds[id].clone()).filter(|_| self.places[w.agents[id].project].git)
+        let a = &w.agents[id];
+        (self.cwds[id].clone()).filter(|_| self.places[a.project].git && a.workspace.is_none())
     }
 
     /// Has git read what worker `id`'s worktree holds, for the person: it
@@ -575,6 +577,35 @@ mod tests {
     use crate::live::testing::*;
 
     #[test]
+    fn git_reads_a_worktree_and_leaves_a_workspace_and_a_plain_folder() {
+        let mut w = team(1);
+        let mut live = idle_live(2);
+        live.places[0].git = true;
+        assert_eq!(live.tree_at(&w, 1), None, "no directory yet");
+        let at = PathBuf::from("/trees/claude-1");
+        live.cwds[1] = Some(at.clone());
+        assert_eq!(live.tree_at(&w, 1), Some(at));
+        w.agents[1].workspace = Some("demo".into());
+        assert_eq!(live.tree_at(&w, 1), None, "a workspace has no git");
+        w.agents[1].workspace = None;
+        live.places[0].git = false;
+        assert_eq!(live.tree_at(&w, 1), None, "a folder without git");
+    }
+
+    #[test]
+    fn a_done_from_a_workspace_asks_git_nothing() {
+        let mut w = team(1);
+        let mut live = idle_live(2);
+        live.places[0].git = true;
+        live.cwds[1] = Some(PathBuf::from("/trees/claude-1"));
+        w.agents[1].workspace = Some("demo".into());
+        let got = sent(&mut live, &mut w, 1, &msg("lead", "done", "Proposed.")).unwrap();
+        assert!(!got.contains("could not read"), "{got}");
+        assert!(!live.changes.contains_key(&1));
+        assert_eq!(live.reading[1], 0, "nothing went to git");
+    }
+
+    #[test]
     fn chosen_hunks_go_to_the_checkout_and_the_rest_waits_as_a_change_again() {
         let repo = checkout("part-repo");
         let root = trees("part");
@@ -933,6 +964,7 @@ mod tests {
                 None,
                 imece_agent::copy::Brought::default(),
                 setup::Done::None,
+                None,
             )),
         );
         live.ready(
@@ -945,6 +977,7 @@ mod tests {
                 None,
                 imece_agent::copy::Brought::default(),
                 setup::Done::None,
+                None,
             )),
         );
         live.run_programs.push("sh".into());
@@ -1103,6 +1136,7 @@ mod tests {
                 None,
                 imece_agent::copy::Brought::default(),
                 setup::Done::None,
+                None,
             )),
         );
         assert_eq!(
@@ -1207,6 +1241,7 @@ mod tests {
                 None,
                 imece_agent::copy::Brought::default(),
                 setup::Done::None,
+                None,
             )),
         );
         live.ready(
@@ -1219,6 +1254,7 @@ mod tests {
                 None,
                 imece_agent::copy::Brought::default(),
                 setup::Done::None,
+                None,
             )),
         );
         std::fs::write(tree.join("a.txt"), "changed").unwrap();
@@ -1369,6 +1405,7 @@ mod tests {
                 None,
                 imece_agent::copy::Brought::default(),
                 setup::Done::None,
+                None,
             )),
         );
         live.ready(
@@ -1381,6 +1418,7 @@ mod tests {
                 None,
                 imece_agent::copy::Brought::default(),
                 setup::Done::None,
+                None,
             )),
         );
         std::fs::write(tree.join("a.txt"), "changed").unwrap();
@@ -1444,6 +1482,7 @@ mod tests {
                 None,
                 imece_agent::copy::Brought::default(),
                 setup::Done::None,
+                None,
             )),
         );
         let commit = |name: &str| {
@@ -1516,6 +1555,7 @@ mod tests {
                 None,
                 imece_agent::copy::Brought::default(),
                 setup::Done::None,
+                None,
             )),
         );
         commit("d.txt");
@@ -1795,6 +1835,7 @@ mod tests {
                 None,
                 imece_agent::copy::Brought::default(),
                 setup::Done::None,
+                None,
             )),
         );
         live.follow(&mut w, 0);
@@ -1911,6 +1952,7 @@ mod tests {
                 None,
                 imece_agent::copy::Brought::default(),
                 setup::Done::None,
+                None,
             )),
         );
         assert_eq!(live.standing[solo], None, "no worktree to read");
@@ -2055,6 +2097,7 @@ mod tests {
                     None,
                     imece_agent::copy::Brought::default(),
                     setup::Done::None,
+                    None,
                 )),
             );
         }

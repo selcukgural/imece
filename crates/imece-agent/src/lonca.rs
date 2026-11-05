@@ -1228,6 +1228,42 @@ mod tests {
         ));
     }
 
+    /// A worker's seat as a real program gives it: `LONCA_SOCKET`,
+    /// `LONCA_HUMANS`, `LONCA_HUMAN`, `lonca` on `PATH`, a repository in
+    /// `IMECE_LONCA_REPO` and an empty directory for it in
+    /// `IMECE_LONCA_SEATS`; run alone, it signs as the person.
+    #[test]
+    #[ignore = "needs a running lonca daemon and the lonca program"]
+    fn live_a_seat_is_taken_kept_and_taken_again() {
+        let repo = std::env::var("IMECE_LONCA_REPO").expect("a repository");
+        let seats = PathBuf::from(std::env::var("IMECE_LONCA_SEATS").expect("a directory"));
+        let (tree, scratch) = (seats.join("claude-1"), seats.join("scratch"));
+        fs::create_dir_all(&scratch).unwrap();
+        let place = Place::here();
+        let seat = Seat {
+            repo: &repo,
+            agent: "solo-şu ad",
+            workspace: &tree,
+            scratch: Some(&scratch),
+        };
+        assert_eq!(place.sit(&seat), Ok(()));
+        assert!(is_workspace(&tree));
+        assert_eq!(workspace_repo(&tree).as_deref(), Some(repo.as_str()));
+        assert_eq!(place.seated(&tree), Ok(true));
+        assert!(
+            matches!(place.sit(&seat), Err(Failed::Said(why)) if why.contains("not empty")),
+            "a workspace is made once"
+        );
+        let token = fs::read_to_string(tree.join(".lonca/session")).unwrap();
+        // The same scope is no widening, its scratch included.
+        assert_eq!(place.sit_again(&seat), Ok(()));
+        assert_ne!(
+            token,
+            fs::read_to_string(tree.join(".lonca/session")).unwrap()
+        );
+        assert_eq!(place.seated(&tree), Ok(true));
+    }
+
     /// Against a real daemon, the fake being only what this client thinks
     /// the protocol is: `LONCA_SOCKET`, `LONCA_HUMANS`, `LONCA_HUMAN` and
     /// a repository in `IMECE_LONCA_REPO`, with a pending proposal on it.
