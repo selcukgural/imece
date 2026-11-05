@@ -137,12 +137,16 @@ Every 5 seconds the project's line says how it stands:
 | The line | What it means |
 | --- | --- |
 | `lonca kule 693d629 · 2 pending` | the daemon answers: trunk's commit, what waits for a human |
+| `lonca kule 693d629 ↓3` | your checkout is three integrations behind trunk: `:sync` |
+| `lonca kule 693d629 ↓?` | your checkout's commit never was trunk, and nothing was fetched yet |
 | `lonca kule …` | named just now, not answered yet |
 | `⌀ no lonca` | it can not be read; the journal says why, once |
 
 The reasons: no daemon answers, what is on the socket is not your daemon, another protocol, you are not signed in, or you are not enrolled in a repository of that name (the daemon says the same of a repository it does not have, so check the name, or make it with `:lonca import`).
 
 Until it answers, the project is closed: nobody is hired, `:fork` is refused, and no Δ is applied, rejected or sent back. Agents go on working, and their Δs wait. A project on no repository never touches the socket. See [`:lonca`](../reference/commands.md#lonca-nameoffloginimport).
+
+Your checkout is a client of the repository, so trunk moves without it. [`:sync`](../reference/commands.md#sync) brings it up: `lonca fetch` puts trunk in `refs/lonca/trunk`, and your branch moves forward when that is a fast-forward. imece never merges, rebases or resets your branch: with commits of your own nothing moves and the journal says so, and work in the way stops it with git's words.
 
 ## The demo's copies
 

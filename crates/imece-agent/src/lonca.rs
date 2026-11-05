@@ -47,6 +47,10 @@ const CLI_ENV: &[&str] = &[
 const LOGIN_WAIT: Duration = Duration::from_secs(60);
 /// How long an import gets: the daemon fetches the branch's whole history.
 const IMPORT_WAIT: Duration = Duration::from_secs(600);
+/// How long a fetch gets: a bundle of what the checkout lacks.
+const FETCH_WAIT: Duration = Duration::from_secs(120);
+/// Where `lonca fetch` keeps trunk in a git checkout.
+pub const TRUNK_REF: &str = "refs/lonca/trunk";
 /// The longest refusal kept of what `lonca` said, in characters.
 const SAID_MOST: usize = 300;
 /// The most warnings kept of an import.
@@ -153,6 +157,20 @@ impl Place {
             OsStr::new(repo),
         ];
         Ok(warnings(&self.run(checkout, &args, IMPORT_WAIT)?))
+    }
+
+    /// `lonca fetch`: trunk of `repo` into [`TRUNK_REF`] of the checkout,
+    /// through the daemon. Nothing else of the checkout moves.
+    pub fn fetch(&self, repo: &str, checkout: &Path) -> Result<(), Failed> {
+        // With `=`: a name may start with a dash.
+        let named = format!("--repo={repo}");
+        let args = [
+            OsStr::new("fetch"),
+            OsStr::new(&named),
+            OsStr::new("--into"),
+            checkout.as_os_str(),
+        ];
+        self.run(checkout, &args, FETCH_WAIT).map(|_| ())
     }
 
     /// Who the person is here: a name that can be a file's.
@@ -348,6 +366,16 @@ impl Client {
         Status::of(&self.call("status", Some(repo), json!({}))?).ok_or(Down::Protocol)
     }
 
+    /// How many integrations trunk has had since `base` was trunk; none
+    /// when it never was: a commit of the person's own, for one.
+    pub fn distance(&mut self, repo: &str, base: &str) -> Result<Option<u64>, Down> {
+        let told = self.call("trunk.distance", Some(repo), json!({"base": base}))?;
+        match &told["behind"] {
+            Value::Null if told.get("behind").is_some() => Ok(None),
+            behind => behind.as_u64().map(Some).ok_or(Down::Protocol),
+        }
+    }
+
     /// The files of `commit`, without their contents (the manifest).
     pub fn tree(&mut self, repo: &str, commit: &str) -> Result<Value, Down> {
         let params = json!({"commit": commit, "with_content": false, "paths": null});
@@ -537,6 +565,41 @@ mod tests {
             Err(Failed::Said("conflict: it exists".into()))
         );
         fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn a_fetch_names_the_repository_and_the_checkout() {
+        let (place, dir) = program("exit 0");
+        assert_eq!(place.fetch("-demo", &dir), Ok(()));
+        let args = format!("|fetch --repo=-demo --into {}|", dir.display());
+        assert!(seen(&dir).contains(&args), "{}", seen(&dir));
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn a_refused_fetch_says_why() {
+        let (place, dir) = program("echo 'lonca: redacted' >&2\nexit 1");
+        assert_eq!(
+            place.fetch("demo", &dir),
+            Err(Failed::Said("redacted".into()))
+        );
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn a_distance_is_a_number_a_commit_that_never_was_trunk_or_no_answer() {
+        let d = Daemon::start(PROTOCOL, |asked| match asked["params"]["base"].as_str() {
+            Some("three") => Ok(json!({"behind": 3})),
+            Some("own") => Ok(json!({"behind": null})),
+            Some("word") => Ok(json!({"behind": "many"})),
+            _ => Ok(json!({})),
+        });
+        d.sign_in();
+        let mut c = d.place.open().unwrap();
+        assert_eq!(c.distance("demo", "three"), Ok(Some(3)));
+        assert_eq!(c.distance("demo", "own"), Ok(None));
+        assert_eq!(c.distance("demo", "word"), Err(Down::Protocol));
+        assert_eq!(c.distance("demo", "nothing"), Err(Down::Protocol));
     }
 
     #[test]
@@ -885,6 +948,40 @@ mod tests {
             .shutdown(std::net::Shutdown::Both)
             .expect("shuts");
         assert_eq!(c.status("demo"), Err(Down::NoDaemon));
+    }
+
+    /// The real program against a real daemon, as `:lonca import`, `:lonca
+    /// login` and `:sync` run it: `LONCA_SOCKET`, `LONCA_HUMANS`,
+    /// `LONCA_HOME`, `lonca` on `PATH`, and a git checkout in
+    /// `IMECE_LONCA_CHECKOUT`, on a daemon with no repository yet.
+    #[test]
+    #[ignore = "needs a running lonca daemon and the lonca program"]
+    fn live_the_program_imports_signs_in_and_fetches() {
+        let checkout = PathBuf::from(std::env::var("IMECE_LONCA_CHECKOUT").expect("a checkout"));
+        let place = Place::here();
+        let (branch, head) = crate::worktree::on_branch(&checkout).expect("on a branch");
+        assert!(matches!(place.open(), Err(Down::SignedOut)), "no session");
+        assert!(
+            matches!(place.login(&checkout), Err(Failed::Said(_))),
+            "no repository yet"
+        );
+        assert_eq!(place.import("-odd.name", &checkout, &branch), Ok(vec![]));
+        assert_eq!(place.login(&checkout), Ok("ayse".to_string()));
+        let mut c = place.open().expect("opens");
+        let status = c.status("-odd.name").expect("status");
+        assert_eq!(status.trunk, head);
+        assert_eq!(c.distance("-odd.name", &head), Ok(Some(0)));
+        assert_eq!(c.distance("-odd.name", &"0".repeat(40)), Ok(None));
+        assert_eq!(place.fetch("-odd.name", &checkout), Ok(()));
+        assert_eq!(crate::worktree::near(&checkout, TRUNK_REF), Some(head));
+        assert_eq!(
+            crate::worktree::fast_forward(&checkout, TRUNK_REF).unwrap(),
+            crate::worktree::Forward::Even
+        );
+        assert!(matches!(
+            place.import("-odd.name", &checkout, &branch),
+            Err(Failed::Said(why)) if why.contains("exists")
+        ));
     }
 
     /// Against a real daemon, the fake being only what this client thinks

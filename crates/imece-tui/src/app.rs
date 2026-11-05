@@ -1974,6 +1974,28 @@ impl App {
         }
     }
 
+    /// `:sync` brings trunk to the checkout of the project at hand: a
+    /// project on Lonca whose store answers, with a checkout to bring it
+    /// to. `lonca fetch`, then a fast-forward; nothing else moves.
+    fn sync_command(&mut self) {
+        let t = self.lang.text();
+        let p = self.current_project();
+        let project = &self.world.projects[p];
+        let name = project.name.clone();
+        let Some(on) = &project.lonca else {
+            return self.flash(fill(t.lonca_none, &[&name]));
+        };
+        if project.no_git {
+            return self.flash(fill(t.sync_no_git, &[&name]));
+        }
+        let repo = on.repo.clone();
+        if self.world.store_closed(p).is_some() {
+            return self.flash(self.lonca_state(p));
+        }
+        let word = fill(t.syncing, &[&repo]);
+        self.store_start(StoreJob::Sync { project: p, repo }, word);
+    }
+
     /// `:lonca import`: the window that asks, unless the checkout can not
     /// go. It goes as `repo`.
     fn lonca_import(&mut self, p: ProjectId, repo: &str) {
@@ -2050,15 +2072,26 @@ impl App {
         };
         match &on.seen {
             StoreSeen::Asking => fill(t.lonca_named, &[name, &on.repo]),
-            StoreSeen::Up { trunk, pending } => fill(
-                t.lonca_state_up,
-                &[
-                    name,
-                    &on.repo,
-                    ui::words::short_commit(trunk),
-                    &pending.to_string(),
-                ],
-            ),
+            StoreSeen::Up {
+                trunk,
+                pending,
+                behind,
+            } => {
+                let up = fill(
+                    t.lonca_state_up,
+                    &[
+                        name,
+                        &on.repo,
+                        ui::words::short_commit(trunk),
+                        &pending.to_string(),
+                    ],
+                );
+                match behind {
+                    Behind::By(0) | Behind::Unknown => up,
+                    Behind::By(n) => fill(t.lonca_state_behind, &[&up, &n.to_string()]),
+                    Behind::Never => fill(t.lonca_state_never, &[&up]),
+                }
+            }
             StoreSeen::Down(why) => fill(
                 t.lonca_state_down,
                 &[name, &on.repo, ui::words::store_down(t, *why)],
@@ -4822,6 +4855,13 @@ impl App {
             "plan" => Some(on_off(self.world.projects[self.current_project()].plan.on)),
             "lonca" => (self.world.projects[self.current_project()].lonca.as_ref())
                 .map(|on| on.repo.clone()),
+            "sync" => match self.world.projects[self.current_project()].lonca.as_ref() {
+                Some(OnLonca {
+                    seen: StoreSeen::Up { behind, .. },
+                    ..
+                }) => ui::words::behind(*behind),
+                _ => None,
+            },
             "news" => Some(welcome::VERSION.to_string()),
             "settle" => Some(match self.selected {
                 Sel::Agent(id) => self.world.agents[id].name.clone(),
@@ -5168,6 +5208,7 @@ impl App {
             "review" => self.review_command(arg),
             "plan" => self.plan_command(arg),
             "lonca" => self.lonca_command(arg.trim()),
+            "sync" => self.sync_command(),
             "copy" => self.copy_path(arg),
             "allow" => self.allow(arg),
             "pin" => self.pin(arg),
@@ -17144,6 +17185,7 @@ pub(crate) mod tests {
         let up = StoreSeen::Up {
             trunk: "693d62952cd8f7ce58b0de780cf5d998b2f5c1a6".into(),
             pending: 2,
+            behind: Behind::By(0),
         };
         app.world.store_seen(0, "demo", up);
         app.command("lonca");
@@ -17212,6 +17254,100 @@ pub(crate) mod tests {
             }
         }
         panic!("the job never ended");
+    }
+
+    /// A demo whose first project is on repository `shop`, up.
+    fn on_shop() -> App {
+        let mut app = off_lonca();
+        app.world.on_lonca(0, Some("shop".into()));
+        app.world.store_seen(0, "shop", shop_up(Behind::By(2)));
+        app
+    }
+
+    fn shop_up(behind: Behind) -> StoreSeen {
+        StoreSeen::Up {
+            trunk: "693d62952cd8".into(),
+            pending: 1,
+            behind,
+        }
+    }
+
+    #[test]
+    fn sync_brings_trunk_to_the_project_at_hand() {
+        let mut app = on_shop();
+        app.command("sync");
+        assert_eq!(
+            flashed(&app).as_deref(),
+            Some("bringing trunk of shop to the checkout…")
+        );
+        assert!(app.asking.is_some());
+        app.command("sync");
+        assert_eq!(
+            flashed(&app).as_deref(),
+            Some("a lonca command is under way")
+        );
+    }
+
+    #[test]
+    fn sync_is_refused_off_lonca_without_git_and_while_the_store_is_down() {
+        let mut app = off_lonca();
+        let name = app.world.projects[0].name.clone();
+        app.command("sync");
+        assert!(
+            flashed(&app)
+                .unwrap()
+                .starts_with(&format!("{name} is on no Lonca"))
+        );
+        assert!(app.asking.is_none());
+
+        let mut app = on_shop();
+        app.world.projects[0].no_git = true;
+        app.command("sync");
+        assert_eq!(
+            flashed(&app).unwrap(),
+            format!("{name} is no git checkout: there is nothing to bring trunk to")
+        );
+        assert!(app.asking.is_none());
+
+        let mut app = on_shop();
+        app.world
+            .store_seen(0, "shop", StoreSeen::Down(StoreDown::NoDaemon));
+        app.command("sync");
+        assert_eq!(
+            flashed(&app).unwrap(),
+            format!("{name} is on Lonca repository shop: no daemon answers (lonca daemon)")
+        );
+        assert!(app.asking.is_none());
+        assert!(!VIEW_COMMANDS.contains(&"sync"));
+    }
+
+    #[test]
+    fn lonca_says_how_far_behind_the_checkout_is_and_the_menu_too() {
+        let mut app = on_shop();
+        let name = app.world.projects[0].name.clone();
+        let up =
+            format!("{name} is on Lonca repository shop: trunk 693d629, 1 waiting for a human");
+        for (behind, said, note) in [
+            (
+                Behind::By(2),
+                format!("{up}; your checkout is 2 behind (:sync)"),
+                "(↓2)",
+            ),
+            (
+                Behind::Never,
+                format!("{up}; your checkout has commits trunk never had"),
+                "(↓?)",
+            ),
+            (Behind::By(0), up.clone(), ""),
+            (Behind::Unknown, up.clone(), ""),
+        ] {
+            app.world.store_seen(0, "shop", shop_up(behind));
+            app.command("lonca");
+            assert_eq!(flashed(&app).unwrap(), said);
+            assert_eq!(app.command_note("sync"), note);
+        }
+        app.world.on_lonca(0, None);
+        assert_eq!(app.command_note("sync"), "");
     }
 
     #[test]

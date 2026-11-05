@@ -73,6 +73,7 @@ description: imece'nin aldığı her `:` komutu; argümanları, karşılığı o
 | `:slower` | `-` | | evet | | hız, `×2` |
 | `:solo [PATH] [CHOICE] [NAME]` | — | | | `$` | |
 | `:story` | `J` | | | | açık / kapalı |
+| `:sync` | — | | | | trunk'ın ne kadar gerisinde (`↓3`) |
 | `:talk [@NAME]` | `v` | | | | eldeki ajan |
 | `:theme [NAME\|FILE]` | `T` | `:t` | | | kullanılan tema |
 | `:tidy` | — | | | | |
@@ -341,6 +342,10 @@ Bir solo oturum açar: lideri ve takımı olmayan, kendinizin sürdüğü tek bi
 ### `:story`
 
 Alt yan panel, `J` gibi, hikâyeyi anlatır: ne olduğunu, karta göre, en yeni önce, en üstte kimi bekletiyor olduğunuzla (bkz. [hikâye](../screen/journal.md#hikâye)); yeniden: defter. Önce salona gider. Menü notu: `(açık)` / `(kapalı)`; depoda hatırlanır, varsayılan olarak açıktır.
+
+### `:sync`
+
+Projenin [Lonca](../concepts/projects.md#loncada) deposunun trunk'ını yanda çalışma kopyana getirir: `lonca fetch` onu `refs/lonca/trunk`'a koyar, dalın da fast-forward olabiliyorsa ilerler. Defter nerede durduğunu söyler: `kule, kule trunk'ına ilerledi`, `kule, kule trunk'ıyla aynı yerde` ya da `kule projesinin kendi commit'leri var: kule trunk'ı refs/lonca/trunk'ta, hiçbir şey kımıldamadı`. imece dalını asla merge, rebase ya da reset etmez, yoldaki iş ise git'in kendi sözleriyle durdurur. Lonca dışında, git yokken, depo yanıt vermezken ya da süren bir `lonca` komutu varken hemen reddedilir. Menü notu ne kadar geride olduğunu söyler: `(↓3)`; commit'in hiç trunk olmadıysa ve henüz hiçbir şey çekilmediyse `(↓?)`; aynı yerdeysen hiçbir şey. Demo aynı sayımı tablosunda tutar ve her üçüncü `:sync` senin kendi commit'lerini bulur.
 
 ### `:talk [@NAME]`
 

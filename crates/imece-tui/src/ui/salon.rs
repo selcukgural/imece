@@ -547,8 +547,15 @@ fn store_span(on: &OnLonca, t: &Text) -> Span<'static> {
         StoreSeen::Asking => {
             Span::styled(format!("  {}", fill(t.lonca_asking, &[&on.repo])), dim())
         }
-        StoreSeen::Up { trunk, pending } => {
+        StoreSeen::Up {
+            trunk,
+            pending,
+            behind,
+        } => {
             let mut text = fill(t.lonca_up, &[&on.repo, words::short_commit(trunk)]);
+            if let Some(word) = words::behind(*behind) {
+                text += &format!(" {word}");
+            }
             if *pending > 0 {
                 text += &fill(t.lonca_pending, &[&pending.to_string()]);
             }

@@ -643,6 +643,12 @@ struct Extras {
     store: Vec<(String, u32)>,
     /// The `lonca` command under way and the tick it comes back on.
     job: Option<(StoreJob, u64)>,
+    /// How many integrations each project's checkout has of its
+    /// repository, by repository, and whether it has commits of its own.
+    synced: HashMap<String, (u32, bool)>,
+    /// How many times `:sync` ran: every third finds commits of the
+    /// person's own, so the demo shows that too.
+    syncs: u32,
     /// The listed paths each worker's worktree has, copied at a start.
     copied: HashMap<AgentId, Vec<String>>,
     /// The titles of the changes applied to each project's checkout, as
@@ -926,6 +932,8 @@ const STORE_STOPS: u64 = 6;
 
 /// How many ticks a `lonca` command of the person's takes in the demo.
 const STORE_JOB_TICKS: u64 = 3;
+/// Every how many `:sync`s the demo's checkout has commits of its own.
+const SYNC_APART_EVERY: u32 = 3;
 
 /// Whether the demo's daemon is stopped at `tick`.
 fn store_stopped(tick: u64) -> bool {
@@ -1265,6 +1273,11 @@ impl Sim {
                 Some((_, integrated)) => StoreSeen::Up {
                     trunk: demo_trunk(*integrated),
                     pending: waiting,
+                    behind: match self.extras.synced.get(&repo) {
+                        Some((_, true)) => Behind::Never,
+                        Some((has, false)) => Behind::By(u64::from(integrated - has)),
+                        None => Behind::By(u64::from(*integrated)),
+                    },
                 },
             };
             w.store_seen(p, &repo, seen);
@@ -1523,6 +1536,27 @@ impl Sim {
         true
     }
 
+    /// `:sync` of `repo` on the demo's table, as live's fast-forward: level
+    /// is level, every third finds the person's own commits and moves
+    /// nothing, the next takes them as resolved.
+    fn demo_sync(&mut self, repo: &str) -> Synced {
+        let row = self.extras.store.iter().find(|(r, _)| r == repo);
+        let integrated = row.map_or(0, |(_, n)| *n);
+        self.extras.syncs += 1;
+        let third = self.extras.syncs.is_multiple_of(SYNC_APART_EVERY);
+        let kept = self.extras.synced.entry(repo.to_string()).or_default();
+        let how = match (third, kept.0 == integrated) {
+            (true, _) => Synced::Apart,
+            (false, true) => Synced::Even,
+            (false, false) => Synced::Moved,
+        };
+        kept.1 = third;
+        if !third {
+            kept.0 = integrated;
+        }
+        how
+    }
+
     /// The job under way comes back when its tick has come: what is in the
     /// table is refused as a real daemon refuses it, and a new row warns
     /// of a large file, so the journal's lines can be seen.
@@ -1540,6 +1574,10 @@ impl Sim {
         };
         match &job {
             StoreJob::Login(p) => w.store_signed_in(*p, "demo".to_string()),
+            StoreJob::Sync { project, repo } => {
+                let how = self.demo_sync(repo);
+                w.store_synced(*project, repo, how);
+            }
             StoreJob::Import(ask) if self.extras.store.iter().any(|(r, _)| *r == ask.repo) => {
                 let why = format!(
                     "repo.prepare_init: conflict: repository {} exists",
@@ -7448,7 +7486,8 @@ diff --git a/b.rs b/b.rs
             *seen,
             StoreSeen::Up {
                 trunk: demo_trunk(0),
-                pending: 0
+                pending: 0,
+                behind: Behind::By(0),
             }
         );
         assert_eq!(w.store_closed(1), None);
@@ -7517,6 +7556,67 @@ diff --git a/b.rs b/b.rs
         assert!(!s.store_busy());
     }
 
+    /// What the demo's daemon says of how far project 1's checkout is
+    /// behind.
+    fn demo_behind(s: &Sim, w: &mut World) -> Behind {
+        w.tick = 0;
+        s.store_answers(w);
+        match &w.projects[1].lonca.as_ref().unwrap().seen {
+            StoreSeen::Up { behind, .. } => *behind,
+            other => panic!("{other:?}"),
+        }
+    }
+
+    #[test]
+    fn the_demos_checkout_falls_behind_and_sync_brings_it_up() {
+        let (mut w, mut s) = world(2, 2, 0, 1, Lang::En);
+        let repo = w.projects[1].lonca.as_ref().unwrap().repo.clone();
+        let job = StoreJob::Sync {
+            project: 1,
+            repo: repo.clone(),
+        };
+        assert_eq!(demo_behind(&s, &mut w), Behind::By(0));
+        s.extras.store[1].1 = 2;
+        assert_eq!(demo_behind(&s, &mut w), Behind::By(2));
+        run_job(&mut s, &mut w, job.clone());
+        assert!(matches!(
+            w.journal.last().unwrap().event,
+            Event::StoreSynced {
+                how: Synced::Moved,
+                ..
+            }
+        ));
+        assert_eq!(demo_behind(&s, &mut w), Behind::By(0));
+        run_job(&mut s, &mut w, job.clone());
+        assert!(matches!(
+            w.journal.last().unwrap().event,
+            Event::StoreSynced {
+                how: Synced::Even,
+                ..
+            }
+        ));
+        // Every third finds the person's own commits, and nothing moves.
+        s.extras.store[1].1 = 3;
+        run_job(&mut s, &mut w, job.clone());
+        assert!(matches!(
+            w.journal.last().unwrap().event,
+            Event::StoreSynced {
+                how: Synced::Apart,
+                ..
+            }
+        ));
+        assert_eq!(demo_behind(&s, &mut w), Behind::Never);
+        run_job(&mut s, &mut w, job);
+        assert!(matches!(
+            w.journal.last().unwrap().event,
+            Event::StoreSynced {
+                how: Synced::Moved,
+                ..
+            }
+        ));
+        assert_eq!(demo_behind(&s, &mut w), Behind::By(0));
+    }
+
     #[test]
     fn a_demo_import_adds_a_row_and_refuses_one_that_exists() {
         let (mut w, mut s) = world(1, 1, 0, 1, Lang::En);
@@ -7573,6 +7673,7 @@ diff --git a/b.rs b/b.rs
         let up = StoreSeen::Up {
             trunk: demo_trunk(0),
             pending: 1,
+            behind: Behind::By(0),
         };
         w.store_seen(p, "r", up);
         assert_eq!(s.apply_change(&w, worker, Vec::new()), Ok(()));
@@ -7613,6 +7714,7 @@ diff --git a/b.rs b/b.rs
         StoreSeen::Up {
             trunk: demo_trunk(0),
             pending: 0,
+            behind: Behind::By(0),
         }
     }
 

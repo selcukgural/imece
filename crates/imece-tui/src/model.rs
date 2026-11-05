@@ -498,11 +498,12 @@ pub enum StoreSeen {
     /// Named, not answered yet: closed like a store that is down.
     #[default]
     Asking,
-    /// The daemon answered: trunk's commit and how many operations wait
-    /// for a human.
+    /// The daemon answered: trunk's commit, how many operations wait for
+    /// a human, how far the checkout is behind.
     Up {
         trunk: String,
         pending: usize,
+        behind: Behind,
     },
     Down(StoreDown),
 }
@@ -527,6 +528,11 @@ pub enum StoreJob {
     /// The person signs in, the program running in this project's checkout.
     Login(ProjectId),
     Import(ImportAsk),
+    /// Trunk of `repo` into the checkout of `project` (`:sync`).
+    Sync {
+        project: ProjectId,
+        repo: String,
+    },
 }
 
 impl StoreJob {
@@ -535,6 +541,7 @@ impl StoreJob {
         match self {
             StoreJob::Login(p) => *p,
             StoreJob::Import(ask) => ask.project,
+            StoreJob::Sync { project, .. } => *project,
         }
     }
 
@@ -543,6 +550,7 @@ impl StoreJob {
         match self {
             StoreJob::Login(_) => StoreAct::Login,
             StoreJob::Import(_) => StoreAct::Import,
+            StoreJob::Sync { .. } => StoreAct::Sync,
         }
     }
 }
@@ -552,6 +560,29 @@ impl StoreJob {
 pub enum StoreAct {
     Login,
     Import,
+    Sync,
+}
+
+/// How far a project's checkout is behind trunk (record 118).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Behind {
+    /// Not known: a folder without git, or the daemon did not say.
+    Unknown,
+    /// Its commit never was trunk: the person's own, nothing fetched yet.
+    Never,
+    /// By this many integrations; none when it is level.
+    By(u64),
+}
+
+/// What `:sync` did to the checkout.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Synced {
+    /// It was level with trunk.
+    Even,
+    /// Its branch moved forward to trunk.
+    Moved,
+    /// It has commits of its own: trunk is fetched, nothing moved.
+    Apart,
 }
 
 /// Why a project's Lonca repository can not be read (record 116).
@@ -1601,6 +1632,12 @@ pub enum Event {
         repo: String,
         warnings: Vec<String>,
     },
+    /// `:sync` brought repository `repo` to `leader`'s project's checkout.
+    StoreSynced {
+        leader: AgentId,
+        repo: String,
+        how: Synced,
+    },
     /// A `lonca` command of the person's did not go through: what it said,
     /// none when it said nothing (no program, out of time).
     StoreFailed {
@@ -1895,6 +1932,7 @@ impl Event {
             | Event::StoreBack { .. }
             | Event::StoreSignedIn { .. }
             | Event::StoreImported { .. }
+            | Event::StoreSynced { .. }
             | Event::StoreFailed { .. }
             | Event::Retrying { .. }
             | Event::ChangeCost { .. }
@@ -1967,6 +2005,7 @@ impl Event {
             | Event::StoreBack { leader, .. }
             | Event::StoreSignedIn { leader, .. }
             | Event::StoreImported { leader, .. }
+            | Event::StoreSynced { leader, .. }
             | Event::StoreFailed { leader, .. }
             | Event::Budget { leader, .. }
             | Event::PotLow { leader, .. }
@@ -2717,6 +2756,13 @@ impl World {
         });
     }
 
+    /// `:sync` of `repo` did what `how` says to project `p`'s checkout.
+    pub fn store_synced(&mut self, p: ProjectId, repo: &str, how: Synced) {
+        let leader = self.projects[p].leader;
+        let repo = repo.to_string();
+        self.note(Event::StoreSynced { leader, repo, how });
+    }
+
     /// `job` did not go through, and `why` is what it said.
     pub fn store_failed(&mut self, job: &StoreJob, why: Option<String>) {
         let leader = self.projects[job.project()].leader;
@@ -2971,6 +3017,7 @@ impl World {
                             | Event::StoreBack { .. }
                             | Event::StoreSignedIn { .. }
                             | Event::StoreImported { .. }
+                            | Event::StoreSynced { .. }
                             | Event::StoreFailed { .. }
                             | Event::Confine { .. }
                             | Event::Archived { .. }
@@ -6812,6 +6859,7 @@ mod tests {
         StoreSeen::Up {
             trunk: "t".into(),
             pending,
+            behind: Behind::By(0),
         }
     }
 
@@ -7027,6 +7075,30 @@ mod tests {
         w.on_lonca(0, None);
         w.store_imported(&ask(0), vec![]);
         assert_eq!(w.projects[0].lonca.as_ref().unwrap().repo, "r");
+    }
+
+    #[test]
+    fn a_sync_line_belongs_to_its_project_and_is_no_work_done() {
+        let mut w = world(vec![lead(0)]);
+        let p = second(&mut w, "a");
+        let leader = w.projects[p].leader;
+        w.store_synced(p, "r", Synced::Moved);
+        assert!(!w.did_anything(p));
+        let e = &w.journal.last().unwrap().event;
+        assert_eq!((e.agent(), e.kind()), (leader, EntryKind::Assumption));
+        assert_eq!(
+            *e,
+            Event::StoreSynced {
+                leader,
+                repo: "r".into(),
+                how: Synced::Moved
+            }
+        );
+        let job = StoreJob::Sync {
+            project: 5,
+            repo: "r".into(),
+        };
+        assert_eq!((job.project(), job.act()), (5, StoreAct::Sync));
     }
 
     #[test]
