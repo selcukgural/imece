@@ -75,13 +75,12 @@ with Lonca's default `unobserved_is_tainted = true`:
   for the person, the change would integrate unseen. Step 5 has to check this.
 - a change to a `[paths] critical` path is **denied**, `unobserved_critical_path`:
   `Cargo.toml`, lockfiles, `package.json`, `.github/**`, `build.rs`. A worker
-  can not add a dependency. lonca#103 asks for the repository's word to make that
-  a human's decision too. Until then a worker says `blocked` and the person
-  makes that change.
+  can not add a dependency. lonca#103 made that a human's decision when the
+  policy says so, and `:lonca import` says so (record 121); on another repository a
+  worker says `blocked` and the person makes that change.
 - `[taint] mcp_servers` is empty by default, so imece's bus taints a session, as
-  does the web with `fetch = true`. Today it changes nothing an unobserved session
-  does not already have; lonca#103 will make it matter. A repository that wants
-  it says `mcp_servers = ["imece"]` and `fetch = false`.
+  does the web with `fetch = true`, and a tainted session is refused a critical path
+  however that word stands. `:lonca import` names the bus; the web stays (record 121).
 
 **Known gaps**, the second half of this step:
 

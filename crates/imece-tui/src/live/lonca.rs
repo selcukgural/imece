@@ -252,7 +252,8 @@ fn proposed(place: &Place, repo: &str, tree: &Path) -> Result<(), String> {
 /// What a job came back with.
 enum Done {
     Login(Result<String, Failed>),
-    Import(Result<Vec<String>, Failed>),
+    /// An import, and why critical paths stay refused if they do.
+    Import(Result<Vec<String>, Failed>, Option<Failed>),
     Sync(Result<Synced, Failed>),
     Decide(Result<(), Failed>),
 }
@@ -269,7 +270,10 @@ fn run(place: &Place, dir: &Path, job: &StoreJob) -> Done {
             if done.is_ok() && matches!(place.open(), Err(Down::SignedOut)) {
                 let _ = place.login(dir);
             }
-            Done::Import(done)
+            let kept = (done.is_ok())
+                .then(|| place.critical_waits(&ask.repo, &ask.checkout))
+                .and_then(Result::err);
+            Done::Import(done, kept)
         }
         StoreJob::Sync { repo, .. } => Done::Sync(sync(place, repo, dir)),
         StoreJob::Decide {
@@ -584,8 +588,11 @@ impl Live {
             // Lonca has it: the next look says what became of it, whoever's
             // hand it was.
             (Some(Done::Decide(Ok(()))), _) => {}
-            (Some(Done::Import(Ok(warned))), StoreJob::Import(ask)) => {
+            (Some(Done::Import(Ok(warned), kept)), StoreJob::Import(ask)) => {
                 w.store_imported(ask, warned);
+                if let Some(why) = kept {
+                    w.store_critical_kept(ask, said(why));
+                }
             }
             (Some(Done::Sync(Ok(how))), StoreJob::Sync { project, repo }) => {
                 w.store_synced(*project, repo, how);
@@ -593,7 +600,7 @@ impl Live {
             (
                 Some(
                     Done::Login(Err(e))
-                    | Done::Import(Err(e))
+                    | Done::Import(Err(e), _)
                     | Done::Sync(Err(e))
                     | Done::Decide(Err(e)),
                 ),
@@ -1424,12 +1431,27 @@ mod tests {
         job_ends(&mut live, &mut w);
         assert_eq!(w.projects[0].lonca.as_ref().unwrap().repo, "demo");
         assert_eq!(seen_of(&w, 0), StoreSeen::Asking);
-        assert!(matches!(
-            last(&w),
+        assert!(w.journal.iter().any(|line| matches!(
+            &line.event,
             Event::StoreImported { repo, warnings, .. }
                 if repo == "demo" && warnings == &["big".to_string()]
-        ));
+        )));
         assert!(!live.store_busy());
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn an_import_that_can_not_open_critical_paths_says_so() {
+        // No daemon behind the fake program: nothing reads the policy.
+        let (mut live, dir) = live_with("exit 0");
+        let mut w = team(0);
+        assert!(live.store_job(StoreJob::Import(ask_for(dir.clone()))));
+        job_ends(&mut live, &mut w);
+        assert_eq!(w.projects[0].lonca.as_ref().unwrap().repo, "demo");
+        assert!(matches!(
+            last(&w),
+            Event::StoreCriticalKept { repo, why: None, .. } if repo == "demo"
+        ));
         std::fs::remove_dir_all(dir).unwrap();
     }
 
@@ -1443,10 +1465,10 @@ mod tests {
         };
         let job = StoreJob::Import(ask_for(dir.clone()));
         let last_run = || imece_agent::lonca_fake::seen(&dir);
-        assert!(matches!(run(&place, &dir, &job), Done::Import(Ok(_))));
+        assert!(matches!(run(&place, &dir, &job), Done::Import(Ok(_), _)));
         assert!(last_run().contains("|init --import"), "{}", last_run());
         std::fs::remove_file(place.humans.join("ayse.session")).unwrap();
-        assert!(matches!(run(&place, &dir, &job), Done::Import(Ok(_))));
+        assert!(matches!(run(&place, &dir, &job), Done::Import(Ok(_), _)));
         let login = last_run();
         assert!(login.contains("|human login --json|"), "{login}");
         std::fs::remove_dir_all(dir).unwrap();
@@ -1461,7 +1483,10 @@ mod tests {
             ..d.place.clone()
         };
         let job = StoreJob::Import(ask_for(dir.clone()));
-        assert!(matches!(run(&place, &dir, &job), Done::Import(Err(_))));
+        assert!(matches!(
+            run(&place, &dir, &job),
+            Done::Import(Err(_), None)
+        ));
         let told = imece_agent::lonca_fake::seen(&dir);
         assert!(told.contains("|init --import"), "{told}");
         std::fs::remove_dir_all(dir).unwrap();
@@ -1900,6 +1925,23 @@ mod tests {
             said.contains(&format!("{long}. ")),
             "cut after {REASON_TOLD}"
         );
+    }
+
+    #[test]
+    fn a_decision_that_goes_through_says_nothing_of_itself() {
+        let (mut live, dir) = live_with("exit 0");
+        let mut w = team(1);
+        let before = w.journal.len();
+        assert!(live.store_job(StoreJob::Decide {
+            project: 0,
+            repo: "demo".into(),
+            agent: 1,
+            proposal: offer("w1", 9, "c9").proposal,
+            verdict: Verdict::Approve,
+        }));
+        job_ends(&mut live, &mut w);
+        assert_eq!(w.journal.len(), before, "a look says what came of it");
+        std::fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]

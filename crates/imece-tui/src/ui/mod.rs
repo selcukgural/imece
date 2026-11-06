@@ -14038,6 +14038,15 @@ after | not a table";
             line(imported(vec!["big.bin".into(), "x".into(), "y".into()])),
             format!("{went}; Lonca warns: big.bin (+2 more)")
         );
+        let kept = |why: Option<&str>| Event::StoreCriticalKept {
+            leader: 0,
+            repo: "demo".into(),
+            why: why.map(str::to_string),
+        };
+        let stays =
+            format!("{project} on demo: a worker's change to a critical path stays refused");
+        assert_eq!(line(kept(None)), stays);
+        assert_eq!(line(kept(Some("denied"))), format!("{stays}: denied"));
         let failed = |act, why: Option<&str>| Event::StoreFailed {
             leader: 0,
             act,
