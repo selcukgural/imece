@@ -34,6 +34,8 @@ The title names the two parties and where the selection stands, `4/5`, then `✎
 - `enter` on a question (`?`) or a reply (`»`) in WAITING FOR YOU opens the conversation at that message; a reply is read, and closed, by it.
 - `W` opens it the same way when the next item waiting is a question or a reply.
 
+`a` and `r` decide nothing while a conversation is open: what is selected under it is not what you see. `esc` first, then open the change.
+
 A message to an idle worker opens a card for it (the first line is the card's title), and its answer closes the card. So writing `@claude-2 text` from the window is a card as well as a message.
 
 ## Reading

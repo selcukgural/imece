@@ -620,6 +620,7 @@ pub struct Text {
     pub queue_empty: &'static str,
     pub latest: &'static str,
     pub nothing_needed: &'static str,
+    pub talk_decides_nothing: &'static str,
     pub item_keys: &'static str,
     /// After an inbox item the person put off with `S`.
     pub later: &'static str,
@@ -1661,6 +1662,7 @@ pub const EN: Text = Text {
     queue_empty: " empty",
     latest: "  │ latest:",
     nothing_needed: "Nothing needs you right now.",
+    talk_decides_nothing: "a and r decide nothing in a conversation: esc first",
     item_keys: "  a approve · r reject · enter focus",
     later: "later · ",
     reply_keys: "  enter read all · r dismiss · or just write back",
@@ -2828,6 +2830,7 @@ pub const TR: Text = Text {
     queue_empty: " boş",
     latest: "  │ son:",
     nothing_needed: "Şu an senden bir şey gerekmiyor.",
+    talk_decides_nothing: "konuşmada a ve r bir şeye karar vermez: önce esc",
     item_keys: "  a onayla · r reddet · enter odak",
     later: "sonra · ",
     reply_keys: "  enter tamamını oku · r kapat · ya da doğrudan yanıt yaz",

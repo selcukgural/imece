@@ -207,3 +207,5 @@ closed (no decision reaches the store, the worker's proposal waits in the
 store, imece says `⌀ no lonca` until it answers); a crash of imece loses
 nothing, the proposals and leases are the daemon's; a worker's token is
 in its workspace and is revoked with its session.
+
+**The first real run** (2026-11-07, Lonca `9bf19e0`, Claude Code 2.1.319, Haiku, a solo, a pty, under a cent a run): `:lonca import` with the policy signed; the worker leased `Cargo.toml#package.version` and `src/lib.rs#a`, previewed and proposed through `mcp__lonca__*`; `critical_path:Cargo.toml` on the Δ, `after your yes Lonca runs: test`; `a` → `Queued` → `Integrated`, `Verified`. With a failing `test`: `rejected`, `verification_failed:tests`, the worker told the output and woken. It found that `a` under a conversation decided the Δ unseen (record 33). Not run yet: a team, a leader's `hire`, a helper, a Secure Enclave key.
