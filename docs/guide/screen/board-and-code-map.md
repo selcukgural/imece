@@ -54,7 +54,7 @@ What a card is, how the leader posts and assigns and how a worker claims, is in 
 
 ### What the map shows today
 
-Symbol leases are not built yet. A lease would let several agents work in one file, each on its own symbols, on a shared trunk; imece will copy the lease code from Lonca (`lonca-symbols`, `lonca-daemon`) when agents share files, and own it from then on. Live, every agent works in its own git worktree and hands its change over through the Δ review, so there is no shared trunk and no lease to show: the map says so, `no shared trunk yet: each agent works in its own worktree, so there are no leases to show`.
+On a project on [Lonca](../concepts/projects.md#on-lonca) the map is what its daemon says is held, read every few seconds: only the files someone holds, each lease in the same cells, with a pending change's leases among them. Someone who is no agent of this project shows dim as `· name`. With nothing held it says `nobody holds a lease in NAME now`, and a daemon that does not answer clears it. On a project in worktrees agents keep to their own files, so the map says there is nothing to show; `--demo` draws it from its cards.
 
 The map with rows and cells above is what `--demo` shows: its projects carry a file list and its cards lease symbols, so the demo is where the view can be seen at work. See [the demo](../getting-started/demo.md).
 

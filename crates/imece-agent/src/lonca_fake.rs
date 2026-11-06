@@ -145,5 +145,5 @@ pub fn status(pending: &[u64]) -> Value {
         })
         .collect();
     json!({"repo": "demo", "trunk": TRUNK, "policy": POLICY, "next_seq": 9, "pending": pending,
-        "changes": [], "sessions": [], "now_ms": 1000})
+        "changes": [], "sessions": [], "leases": [], "now_ms": 1000})
 }

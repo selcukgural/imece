@@ -184,7 +184,7 @@ git items of record 111's "after the first round" in epic #286.
 6. (Done: record 122, which says what changed from this text.) Verification: `.imece/check` is retired in favour of `[verification]`
    in the repository's `lonca.toml`, documented with the toolchain
    environment the sandbox needs; the Δ shows the attestations.
-7. Leases on the code map (record 17): `status` lists who holds what; the
+7. (Leases done: record 123; owned paths not.) Leases on the code map (record 17): `status` lists who holds what; the
    code map's lease columns come alive from it, and record 114's owned
    paths become the session's paths.
 

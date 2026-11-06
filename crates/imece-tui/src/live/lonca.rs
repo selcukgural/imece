@@ -19,7 +19,8 @@ use super::Live;
 use super::Slot;
 use crate::model::{
     Agent, AgentId, Attested, Behind, Change, ChangedFile, Check, ImportAsk, Landed, MsgKind,
-    ProjectId, Role, StoreDown, StoreJob, StoreProposal, StoreSeen, Synced, Verdict, World,
+    ProjectId, Role, StoreDown, StoreJob, StoreLease, StoreProposal, StoreSeen, Synced, Verdict,
+    World,
 };
 
 /// How often the store is asked. Each look is a connection and a
@@ -78,6 +79,8 @@ struct Looked {
     standings: HashMap<String, Standing>,
     /// What Lonca's queue checked on the watched changes that settled.
     evidence: HashMap<String, Vec<Attested>>,
+    /// What is held in each repository.
+    leases: Vec<(ProjectId, String, Vec<lonca::Lease>)>,
 }
 
 /// What the looks keep: the store does not change what it said.
@@ -500,6 +503,9 @@ fn look(place: &Place, repos: &Repos, watched: &[String], kept: &mut Kept) -> Lo
             Ok((status, c)) => {
                 let times = status.time_left().into_iter();
                 (looked.left).extend(times.map(|(agent, ms)| (repo.clone(), agent, ms)));
+                looked
+                    .leases
+                    .push((*p, repo.clone(), status.leases.clone()));
                 if kept.holds(c, repo, &status.policy) {
                     let mut read = |change: &str| kept.diff(c, repo, change);
                     let mut offered = offers(&status, &mut read);
@@ -532,6 +538,18 @@ fn look(place: &Place, repos: &Repos, watched: &[String], kept: &mut Kept) -> Lo
     }
     kept.diffs.retain(|change, _| waiting.contains(change));
     looked
+}
+
+/// `lease` as the code map shows it, its holder an agent of project `p`
+/// when it is one (record 123): a helper works under its worker's session.
+fn lease_of(w: &World, p: ProjectId, lease: lonca::Lease) -> StoreLease {
+    let name = lease.agent.unwrap_or_else(|| "?".to_string());
+    StoreLease {
+        file: lease.file,
+        symbol: lease.symbol,
+        holder: Live::owner(w, p, &name),
+        name,
+    }
 }
 
 /// Those of `watched` that `status` has settled, so that its queue has
@@ -788,6 +806,10 @@ impl Live {
         let mut changed = false;
         for (p, repo, seen) in looked.found {
             changed |= w.store_seen(p, &repo, seen);
+        }
+        for (p, repo, held) in looked.leases {
+            let held = held.into_iter().map(|l| lease_of(w, p, l)).collect();
+            changed |= w.store_leases(p, &repo, held);
         }
         changed |= self.land(w, &looked.standings, &looked.evidence);
         for (p, offer) in &looked.offers {
@@ -1868,6 +1890,7 @@ mod tests {
         lonca::Status {
             trunk: TRUNK.into(),
             policy: POLICY.into(),
+            leases: Vec::new(),
             next_seq: 9,
             pending: rows
                 .iter()
@@ -2129,6 +2152,57 @@ mod tests {
         let mut c = d.place.open().unwrap();
         assert!(kept.verifies(&mut c, "demo", "P").is_empty());
         assert!(kept.verifies.is_empty(), "only an answer is kept");
+    }
+
+    #[test]
+    fn a_look_says_what_is_held_and_whose_it_is() {
+        let (mut w, mut live, word) = proposer();
+        let held = serde_json::json!([{"session": "s1", "items": [
+            {"symbol": "src/a.rs#T.f", "kind": "edit"},
+        ]}, {"session": "s2", "items": [{"symbol": "b.rs#g", "kind": "edit"}]}]);
+        let sessions = serde_json::json!([
+            {"id": "s1", "agent": word, "expires_ms": 9},
+            {"id": "s2", "agent": "someone", "expires_ms": 9},
+        ]);
+        let d = Daemon::start(PROTOCOL, move |_| {
+            let mut v = status(&[]);
+            v["leases"] = held.clone();
+            v["sessions"] = sessions.clone();
+            Ok(v)
+        });
+        d.sign_in();
+        live.lonca = Watch::start(d.place.clone());
+        live.lonca_due(&w, Instant::now());
+        settle(&mut live, &mut w);
+        assert_eq!(
+            w.projects[0].lonca.as_ref().unwrap().leases,
+            [
+                StoreLease {
+                    file: "b.rs".into(),
+                    symbol: "g".into(),
+                    holder: None,
+                    name: "someone".into(),
+                },
+                StoreLease {
+                    file: "src/a.rs".into(),
+                    symbol: "T.f".into(),
+                    holder: Some(1),
+                    name: word.clone(),
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn a_session_nobody_lists_holds_as_a_question_mark() {
+        let w = team(1);
+        let lease = lonca::Lease {
+            file: "a".into(),
+            symbol: "f".into(),
+            agent: None,
+        };
+        let shown = lease_of(&w, 0, lease);
+        assert_eq!((shown.holder, shown.name.as_str()), (None, "?"));
     }
 
     #[test]
