@@ -14,6 +14,9 @@ use ratatui::widgets::{Block, Paragraph, Wrap};
 use super::*;
 use crate::app::App;
 
+/// A holder that is no agent of this project.
+const OTHER: &str = "·";
+
 /// Every status glyph the map can show (the salon's), in the order the
 /// legend lists them; `Text::code_glyphs` words them in the same order.
 pub(crate) const GLYPHS: [&str; 8] = ["○", "●", "◐", "✕", "!", "◇", "■", "◦"];
@@ -74,11 +77,49 @@ fn short(symbol: &str) -> &str {
 }
 
 /// How many agents hold a file, when more than one does.
-pub(crate) fn shared(owners: &[AgentId]) -> Option<usize> {
+pub(crate) fn shared<T: Ord + Clone>(owners: &[T]) -> Option<usize> {
     let mut owners = owners.to_vec();
     owners.sort_unstable();
     owners.dedup();
     (owners.len() > 1).then_some(owners.len())
+}
+
+/// Who holds a lease on the map: an agent, or on Lonca someone else.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum Holder<'a> {
+    Agent(AgentId),
+    Other(&'a str),
+}
+
+/// The files of `project`'s map, and every lease on them now as (file,
+/// symbol, holder): on Lonca what its daemon says, and only the files held;
+/// else what the demo's cards hold. The files come in the order they show.
+fn map_of<'a>(
+    w: &'a World,
+    project: &'a Project,
+) -> (Vec<&'a str>, Vec<(&'a str, &'a str, Holder<'a>)>) {
+    if let Some(on) = project.lonca.as_ref().filter(|_| project.repo.is_empty()) {
+        let holder = |l: &'a StoreLease| match l.holder {
+            Some(id) => Holder::Agent(id),
+            None => Holder::Other(&l.name),
+        };
+        let held: Vec<_> = (on.leases.iter())
+            .map(|l| (l.file.as_str(), l.symbol.as_str(), holder(l)))
+            .collect();
+        let mut files: Vec<&str> = held.iter().map(|h| h.0).collect();
+        files.dedup();
+        return (files, held);
+    }
+    let held = (w.cards.iter())
+        .filter(|c| c.project == project.id && c.holds_leases())
+        .filter_map(|c| c.owner.map(|o| (c, o)))
+        .flat_map(|(c, o)| {
+            c.symbols
+                .iter()
+                .map(move |s| (s.file, s.name, Holder::Agent(o)))
+        })
+        .collect();
+    (project.repo.iter().map(|(file, _)| *file).collect(), held)
 }
 
 /// The text of one lease cell, padded to the columns.
@@ -98,9 +139,14 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App) {
         .border_style(border());
     let inner = block.inner(area);
     f.render_widget(block, area);
-    if project.repo.is_empty() {
+    let (files, held) = map_of(w, project);
+    if files.is_empty() {
+        let none = match &project.lonca {
+            Some(on) if project.repo.is_empty() => fill(t.no_leases, &[&on.repo]),
+            _ => t.no_code_map.to_string(),
+        };
         f.render_widget(
-            Paragraph::new(Span::styled(t.no_code_map, dim())).wrap(Wrap { trim: true }),
+            Paragraph::new(Span::styled(none, dim())).wrap(Wrap { trim: true }),
             inner,
         );
         return;
@@ -108,34 +154,31 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App) {
     let [list, foot] = Layout::vertical([Constraint::Min(0), Constraint::Length(1)]).areas(inner);
 
     let ours = w.cards.iter().filter(|c| c.project == project.id);
+    let others = held.iter().filter_map(|h| match h.2 {
+        Holder::Other(name) => Some(name),
+        Holder::Agent(_) => None,
+    });
     let widths = Widths::of(
-        project.repo.iter().map(|(file, _)| *file),
-        w.agents
-            .iter()
+        files.iter().copied(),
+        (w.agents.iter())
             .filter(|a| a.project == project.id)
-            .map(|a| a.name.as_str()),
-        ours.clone().flat_map(|c| c.symbols.iter().map(|s| s.name)),
+            .map(|a| a.name.as_str())
+            .chain(others),
+        (ours.flat_map(|c| c.symbols.iter().map(|s| s.name))).chain(held.iter().map(|h| h.1)),
     );
-
-    // (file, symbol, holder) for every lease held now in this project.
-    let held: Vec<(&str, &str, AgentId)> = ours
-        .filter(|c| c.holds_leases())
-        .filter_map(|c| c.owner.map(|o| (c, o)))
-        .flat_map(|(c, o)| c.symbols.iter().map(move |s| (s.file, s.name, o)))
-        .collect();
 
     let mut lines = Vec::new();
     let mut dir = "";
     let mut shared_files = 0;
     // The glyphs on the map, with their colour, for the legend.
     let mut seen: [Option<Color>; GLYPHS.len()] = [None; GLYPHS.len()];
-    for &(file, _) in project.repo {
+    for &file in &files {
         let (d, name) = file.rsplit_once('/').unwrap_or(("", file));
         if d != dir {
             lines.push(Line::from(Span::styled(format!("{d}/"), dim())));
             dir = d;
         }
-        let here: Vec<&(&str, &str, AgentId)> = held.iter().filter(|h| h.0 == file).collect();
+        let here: Vec<&(&str, &str, Holder)> = held.iter().filter(|h| h.0 == file).collect();
         let file_style = if here.is_empty() {
             dim()
         } else {
@@ -145,7 +188,15 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App) {
             format!("  {}  ", fit(name, widths.file)),
             file_style,
         )];
-        for &&(_, symbol, owner) in &here {
+        for &&(_, symbol, holder) in &here {
+            let owner = match holder {
+                Holder::Agent(id) => id,
+                Holder::Other(name) => {
+                    let (head, tail) = cell(OTHER, name, symbol, &widths);
+                    spans.push(Span::styled(format!("{head}{tail}"), dim()));
+                    continue;
+                }
+            };
             let a = &w.agents[owner];
             let (mark, colour) = glyph(a);
             if let Some(k) = kind(mark) {
@@ -159,7 +210,7 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App) {
             ));
             spans.push(Span::styled(tail, dim()));
         }
-        let owners: Vec<AgentId> = here.iter().map(|h| h.2).collect();
+        let owners: Vec<Holder> = here.iter().map(|h| h.2).collect();
         if let Some(n) = shared(&owners) {
             shared_files += 1;
             spans.push(Span::styled(
@@ -257,7 +308,7 @@ mod tests {
 
     #[test]
     fn a_file_is_shared_when_two_different_agents_hold_it() {
-        assert_eq!(shared(&[]), None);
+        assert_eq!(shared::<AgentId>(&[]), None);
         assert_eq!(shared(&[4]), None);
         assert_eq!(shared(&[4, 4]), None, "two leases of one agent");
         assert_eq!(shared(&[4, 2]), Some(2));
@@ -368,6 +419,79 @@ mod tests {
             legend.contains("⇆ several agents in one file"),
             "{legend:?}"
         );
+    }
+
+    /// The demo with its project at hand on Lonca, holding `leases`.
+    fn on_lonca(leases: Vec<StoreLease>) -> App {
+        let mut app = demo();
+        let p = app.current_project();
+        let project = &mut app.world.projects[p];
+        project.repo = &[];
+        project.lonca = Some(OnLonca {
+            repo: "shop".into(),
+            seen: StoreSeen::Asking,
+            leases,
+        });
+        app
+    }
+
+    fn lease(file: &str, symbol: &str, holder: Option<AgentId>, name: &str) -> StoreLease {
+        StoreLease {
+            file: file.into(),
+            symbol: symbol.into(),
+            holder,
+            name: name.into(),
+        }
+    }
+
+    #[test]
+    fn on_lonca_the_map_is_what_the_daemon_says_is_held() {
+        let app = on_lonca(vec![]);
+        let worker = (app.world.agents.iter())
+            .find(|a| a.project == app.current_project() && a.role == Role::Worker)
+            .expect("a worker")
+            .id;
+        let name = app.world.agents[worker].name.clone();
+        let app = on_lonca(vec![
+            lease("a.rs", "Top.f", Some(worker), &name),
+            lease("a.rs", "g", None, "someone"),
+            lease("src/b.rs", "h", Some(worker), &name),
+            lease("src/c.rs", "i", None, "someone"),
+        ]);
+        let rows = render(&app, 160, 50).join("\n");
+        assert!(rows.contains(&format!("{name} ")), "{rows}");
+        assert!(rows.contains("· someone"), "{rows}");
+        assert!(rows.contains("src/"), "{rows}");
+        // Two holders in one file are said, one holder twice is not.
+        assert!(rows.contains("⇆ 2"), "{rows}");
+        assert!(rows.contains("4 leases · 1 "), "{rows}");
+        // A file nobody holds on Lonca is no row.
+        assert!(!rows.contains("Cargo.toml"), "{rows}");
+    }
+
+    #[test]
+    fn a_project_on_lonca_with_nothing_held_says_so() {
+        let rows = render(&on_lonca(vec![]), 160, 50).join("\n");
+        assert!(rows.contains("nobody holds a lease in shop now"), "{rows}");
+        // Off Lonca, the same empty map is as it was.
+        let mut app = on_lonca(vec![]);
+        let p = app.current_project();
+        app.world.projects[p].lonca = None;
+        let rows = render(&app, 160, 50).join("\n");
+        assert!(rows.contains("no shared trunk yet"), "{rows}");
+    }
+
+    #[test]
+    fn a_demo_on_lonca_keeps_its_map_of_cards() {
+        let mut app = demo();
+        let p = app.current_project();
+        app.world.projects[p].lonca = Some(OnLonca {
+            repo: "shop".into(),
+            seen: StoreSeen::Asking,
+            leases: vec![lease("elsewhere.rs", "f", None, "x")],
+        });
+        let rows = render(&app, 160, 50).join("\n");
+        assert!(!rows.contains("elsewhere.rs"), "{rows}");
     }
 
     #[test]

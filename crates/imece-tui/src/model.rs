@@ -490,6 +490,20 @@ pub struct Project {
 pub struct OnLonca {
     pub repo: String,
     pub seen: StoreSeen,
+    /// What is held in it now, as the last look read it (record 123).
+    pub leases: Vec<StoreLease>,
+}
+
+/// A symbol held in a Lonca repository: the code map's rows on Lonca.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct StoreLease {
+    pub file: String,
+    pub symbol: String,
+    /// The agent of this project that holds it; none for anyone else.
+    pub holder: Option<AgentId>,
+    /// The holder's name, as Lonca has it: what the map says of anyone
+    /// else; `?` for a session it does not list.
+    pub name: String,
 }
 
 /// What imece knows of a project's Lonca repository.
@@ -2858,6 +2872,7 @@ impl World {
         self.projects[p].lonca = repo.map(|repo| OnLonca {
             repo,
             seen: StoreSeen::Asking,
+            leases: Vec::new(),
         });
     }
 
@@ -2919,12 +2934,25 @@ impl World {
         }
         let was_down = matches!(on.seen, StoreSeen::Down(_));
         on.seen = seen.clone();
+        if matches!(seen, StoreSeen::Down(_)) {
+            on.leases.clear();
+        }
         let repo = repo.to_string();
         match seen {
             StoreSeen::Down(why) => self.note(Event::StoreDown { leader, repo, why }),
             StoreSeen::Up { .. } if was_down => self.note(Event::StoreBack { leader, repo }),
             _ => {}
         }
+        true
+    }
+
+    /// What is held in project `p`'s repository `repo`. Whether it moved.
+    pub fn store_leases(&mut self, p: ProjectId, repo: &str, leases: Vec<StoreLease>) -> bool {
+        let on = self.projects[p].lonca.as_mut().filter(|l| l.repo == repo);
+        let Some(on) = on.filter(|l| l.leases != leases) else {
+            return false;
+        };
+        on.leases = leases;
         true
     }
 
@@ -7280,6 +7308,40 @@ mod tests {
         assert!(matches!(last(&w), Event::Verified { ok: false, .. }));
         w.verified(1, vec![check(false), check(true)]);
         assert!(matches!(last(&w), Event::Verified { ok: false, .. }));
+    }
+
+    #[test]
+    fn leases_are_of_the_repository_named_and_go_with_a_store_that_is_down() {
+        let mut w = world(vec![lead(0)]);
+        let lease = |symbol: &str| StoreLease {
+            file: "a.rs".into(),
+            symbol: symbol.into(),
+            holder: None,
+            name: "x".into(),
+        };
+        assert!(
+            !w.store_leases(0, "r", vec![lease("f")]),
+            "on no repository"
+        );
+        w.on_lonca(0, Some("r".into()));
+        assert!(!w.store_leases(0, "other", vec![lease("f")]), "not its");
+        assert!(w.projects[0].lonca.as_ref().unwrap().leases.is_empty());
+        assert!(w.store_leases(0, "r", vec![lease("f")]));
+        assert!(!w.store_leases(0, "r", vec![lease("f")]), "the same");
+        assert!(w.store_leases(0, "r", vec![lease("g")]));
+        assert_eq!(w.projects[0].lonca.as_ref().unwrap().leases, [lease("g")]);
+        w.store_seen(
+            0,
+            "r",
+            StoreSeen::Up {
+                trunk: "t".into(),
+                pending: 0,
+                behind: Behind::Unknown,
+            },
+        );
+        assert_eq!(w.projects[0].lonca.as_ref().unwrap().leases.len(), 1);
+        w.store_seen(0, "r", StoreSeen::Down(StoreDown::NoDaemon));
+        assert!(w.projects[0].lonca.as_ref().unwrap().leases.is_empty());
     }
 
     #[test]

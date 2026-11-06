@@ -1601,6 +1601,7 @@ impl Store {
                 lonca: lonca.map(|repo| OnLonca {
                     repo,
                     seen: StoreSeen::Asking,
+                    leases: Vec::new(),
                 }),
                 archived,
             });
@@ -5226,7 +5227,8 @@ mod tests {
                 on,
                 OnLonca {
                     repo: "repo".into(),
-                    seen: StoreSeen::Asking
+                    seen: StoreSeen::Asking,
+                    leases: Vec::new(),
                 }
             );
             // As schema 26 wrote it: on no store.

@@ -883,6 +883,8 @@ pub struct Status {
     pub trunk: String,
     /// The commit that holds the repository's policy.
     pub policy: String,
+    /// What is held now.
+    pub leases: Vec<Lease>,
     /// The number the next log entry gets: a change here means something
     /// happened since the last look.
     pub next_seq: u64,
@@ -962,6 +964,49 @@ impl Evidence {
     }
 }
 
+/// A symbol held now, as `status` lists it: live or pinned to a change.
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub struct Lease {
+    pub file: String,
+    /// The symbol in the file; `<file>` for the whole of it.
+    pub symbol: String,
+    /// Its holder's name as Lonca took it; none for a session `status` does
+    /// not list.
+    pub agent: Option<String>,
+}
+
+/// What `v`, a `status`, says is held, each symbol of a holder once, by
+/// file and symbol. Fails closed: a lease with no session or a symbol that
+/// is no text.
+fn leases_of(v: &Value) -> Option<Vec<Lease>> {
+    let agent_of = |session: &str| {
+        let sessions = v["sessions"].as_array()?.iter();
+        sessions
+            .filter(|s| s["id"] == session)
+            .find_map(|s| s["agent"].as_str().map(str::to_string))
+    };
+    let mut found = Vec::new();
+    for lease in v["leases"].as_array()? {
+        let agent = agent_of(lease["session"].as_str()?);
+        let pinned = lease["pinned"].as_array().into_iter().flatten();
+        let lists = std::iter::once(&lease["items"]).chain(pinned.map(|p| &p["items"]));
+        for list in lists {
+            for item in list.as_array()? {
+                let symbol = item["symbol"].as_str()?;
+                let (file, symbol) = symbol.split_once('#')?;
+                found.push(Lease {
+                    file: file.to_string(),
+                    symbol: symbol.to_string(),
+                    agent: agent.clone(),
+                });
+            }
+        }
+    }
+    found.sort();
+    found.dedup();
+    Some(found)
+}
+
 /// When a session of an agent's ends.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SessionEnd {
@@ -1016,6 +1061,7 @@ impl Status {
             sessions: (v["sessions"].as_array()?.iter())
                 .map(SessionEnd::of)
                 .collect::<Option<_>>()?,
+            leases: leases_of(v)?,
             now_ms: v["now_ms"].as_i64()?,
         })
     }
@@ -2045,6 +2091,54 @@ mod tests {
     }
 
     #[test]
+    fn what_is_held_is_read_with_its_holder_pinned_or_not() {
+        let mut v = status(&[]);
+        v["sessions"] = json!([
+            {"id": "s1", "agent": "a", "expires_ms": 1},
+            {"id": "s2", "agent": "b", "expires_ms": 1},
+        ]);
+        v["leases"] = json!([
+            {"session": "s2", "items": [{"symbol": "z.rs#T.m", "kind": "edit"}], "pinned": []},
+            {"session": "s1",
+             "items": [{"symbol": "a.rs#f", "kind": "edit"}],
+             "pinned": [{"change": "c", "items": [
+                 {"symbol": "a.rs#f", "kind": "edit"},
+                 {"symbol": "a.rs#<file>", "kind": "insert"},
+             ]}]},
+            {"session": "gone", "items": [{"symbol": "b.rs#g", "kind": "edit"}]},
+        ]);
+        let held = |file: &str, symbol: &str, agent: Option<&str>| Lease {
+            file: file.into(),
+            symbol: symbol.into(),
+            agent: agent.map(str::to_string),
+        };
+        assert_eq!(
+            Status::of(&v).unwrap().leases,
+            [
+                held("a.rs", "<file>", Some("a")),
+                held("a.rs", "f", Some("a")),
+                held("b.rs", "g", None),
+                held("z.rs", "T.m", Some("b")),
+            ]
+        );
+    }
+
+    #[test]
+    fn a_lease_short_of_the_protocol_is_no_answer() {
+        for wrong in [
+            json!([{"items": []}]),
+            json!([{"session": "s"}]),
+            json!([{"session": "s", "items": [{"kind": "edit"}]}]),
+            json!([{"session": "s", "items": [{"symbol": "no-hash"}]}]),
+            json!([{"session": "s", "items": [], "pinned": [{"change": "c"}]}]),
+        ] {
+            let mut v = status(&[]);
+            v["leases"] = wrong.clone();
+            assert_eq!(Status::of(&v), None, "{wrong}");
+        }
+    }
+
+    #[test]
     fn an_agents_time_left_is_its_newest_sessions() {
         let mut v = status(&[]);
         v["now_ms"] = json!(1000);
@@ -2072,7 +2166,7 @@ mod tests {
         let whole = status(&[7]);
         assert!(Status::of(&whole).is_some());
         for key in [
-            "trunk", "policy", "next_seq", "pending", "changes", "sessions", "now_ms",
+            "trunk", "policy", "next_seq", "pending", "changes", "sessions", "leases", "now_ms",
         ] {
             let mut v = whole.clone();
             v.as_object_mut().expect("object").remove(key);
@@ -2258,6 +2352,11 @@ mod tests {
         let held = Some(Duration::from_millis(50));
         let none = c.log(&repo, status.next_seq, None, held).expect("held log");
         assert_eq!(none, json!([]));
+        let held = status
+            .leases
+            .first()
+            .expect("a pending proposal pins its lease");
+        assert!(held.agent.is_some() && !held.file.is_empty() && !held.symbol.is_empty());
         let pending = status.pending.first().expect("a pending proposal");
         let change = pending.change.as_deref().expect("a proposal");
         let got = c.change(&repo, change).expect("change");

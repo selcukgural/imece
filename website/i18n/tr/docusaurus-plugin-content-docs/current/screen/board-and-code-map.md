@@ -54,7 +54,7 @@ Kartın ne olduğu, liderin nasıl astığı ve görev verdiği, bir işçinin n
 
 ### Harita bugün ne gösterir
 
-Sembol lease'leri henüz yapılmadı. Bir lease, birkaç agent'ın ortak bir trunk üzerinde tek dosyada, her biri kendi sembollerinde çalışmasına izin verecek; imece, agent'lar dosya paylaştığında lease kodunu Lonca'dan (`lonca-symbols`, `lonca-daemon`) kopyalayacak ve o günden sonra kendisi sahiplenecek. Canlıda her agent kendi git worktree'sinde çalışır ve değişikliğini Δ incelemesiyle teslim eder, bu yüzden ne ortak trunk ne de gösterilecek lease var: harita bunu söyler, `henüz ortak trunk yok: her agent kendi worktree'sinde çalışıyor, gösterilecek lease yok`.
+[Lonca](../concepts/projects.md#loncada)'daki bir projede harita, daemon'ının tutulduğunu söylediği şeydir, birkaç saniyede bir okunur: yalnız birinin tuttuğu dosyalar, her lease aynı hücrelerde, bekleyen bir değişikliğin lease'leri de aralarında. Bu projenin agent'ı olmayan biri soluk `· ad` olarak görünür. Hiçbir şey tutulmuyorsa `AD içinde şu an kimsede lease yok` der, yanıt vermeyen bir daemon da haritayı temizler. Worktree'lerdeki bir projede agent'lar kendi dosyalarında kalır, bu yüzden harita gösterecek bir şey olmadığını söyler; `--demo` haritayı kartlarından çizer.
 
 Yukarıdaki satırlı ve hücreli harita `--demo`'nun gösterdiğidir: projeleri bir dosya listesi taşır ve kartları sembol kiralar, böylece görünümün iş başında görülebildiği yer demodur. Bkz. [demo](../getting-started/demo.md).
 
