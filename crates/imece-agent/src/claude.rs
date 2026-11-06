@@ -153,7 +153,9 @@ pub const LONCA_SERVER: &str = "lonca";
 /// comes from the server that was asked for, and it asks like any other.
 pub const LONCA_TOOLS: &[&str] = &[
     "change_status",
+    "events",
     "lease_acquire",
+    "lease_interest",
     "lease_needed",
     "lease_release",
     "lease_renew",
@@ -1406,6 +1408,13 @@ mod tests {
         let e = check(&short, BOTH).unwrap_err();
         assert!(e.contains("tools differ"), "{e}");
         assert!(e.contains("mcp__lonca__sync"), "{e}");
+        // Waiting for a holder and reading what happened ask nobody.
+        for tool in ["events", "lease_interest"] {
+            let name = format!("mcp__lonca__{tool}");
+            let short = lonca_init(&["Read", "mcp__imece__send"]).replace(&name, "x");
+            let e = check(&short, BOTH).unwrap_err();
+            assert!(e.contains(&name), "{e}");
+        }
 
         // One more of its tools comes from the server asked for ...
         let more = lonca_init(&["Read", "mcp__imece__send", "mcp__lonca__new"]);

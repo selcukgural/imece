@@ -25,7 +25,7 @@ start's thread before anything else touches the tree:
   start with why; so does a daemon that can not say, since nobody could work
   there.
 
-Only `.git`-less is not the mark: `.lonca/workspace.json` is, a plain file, no
+`.lonca/workspace.json` is the mark, a plain file, no
 link (`lonca::is_workspace`). `Agent.workspace` says which repository, set when
 a session is ready and read anew each run; it is what `tree_at` looks at, so a workspace gives git nothing to read, stand or move, and its Δ is a proposal (record 120). `:copy`, `.worktreeinclude` and the setup script run as they
 do in a worktree: a workspace honours `.gitignore`, so what they bring is no
@@ -42,7 +42,8 @@ may add one, it comes from the server asked for, and not being on
 `.lonca/session`, and the hook and the server find it from `cwd`.
 
 **What it is told** (`prompts::lonca_note`, beside the role's text, which still
-says worktree: the note says that means this): no `.git`, no commits, lease,
+says worktree: the note says that means this): a `.git` of its own that reaches
+nothing (below), lease,
 preview, propose, propose *before* `done`, `blocked` when a denial can not be
 put right. Lonca's own rules come by its `SessionStart` hook.
 
@@ -88,7 +89,32 @@ with Lonca's default `unobserved_is_tainted = true`:
   every session over, at the leader's moment, not the person's, within 120 s.
   Record 116 kept a login to a moment the person chose; this can not, a worker
   needs a session to start. A file key signs alone.
-- The worker's `git`: a build that reads it fails in a workspace.
+
+**The workspace's `.git`** (lonca#111, read on Lonca `9bf19e0`). `lonca session
+start` now makes one unless told `--no-git`, and imece does not tell it: a build
+or a tool that reads git works, which was a gap here. It is a repository of its own
+with one base commit, not a worktree of anything: a commit stays in it, `propose`
+sends what differs from the base, committed or not, `sync` moves it, and `git clean
+-x` takes `.lonca/` with it, which ends the workspace (the note says so). Unlike a
+worktree's, whose config is in the person's repository and out of a worker's reach,
+this `.git` is the agent's own to write, so its config is a stranger's: git run there
+outside the session runs what it says. So imece runs none: `tree_at`, `:tidy`,
+`:fork`, the start and the Δ already kept out, and the `run` tool, the one path that
+did not, now ties no run to a tree in a workspace and refuses `git`
+(`tools::no_git_in_workspace`). Under `strict` that leaves the agent Lonca's `preview`
+and `status`; from `standard` on its shell has git, as its own, seen by the hook.
+
+**`lease_interest` and `events`** joined `LONCA_TOOLS`: waiting in line for a holder
+and reading what happened, which would each have asked the person.
+
+**No `Stop` hook** (lonca#121, read on `9bf19e0`), though `lonca harness setup` writes
+one. It sends an agent that stops with unproposed work back to propose, up to
+`stop_rounds` (3) since its last proposal. imece's workers stop a turn in mid-work on
+purpose: a worker that has asked and waits. The hook would push it to propose half a
+change, which is a Δ before its time (record 120: an approval then races a worker
+still editing). `done`'s gate already refuses a done with changes no proposal carries,
+and `lonca session end` reports what was left (the CLI sends `files` itself). To look
+at again after the first real run, for a worker that ends a turn saying nothing.
 
 **A session runs out; a harness does not** (record 02: it stays up across turns).
 Every look reads `status.sessions`, so `Watch.ends` knows when each agent's newest
@@ -110,8 +136,8 @@ demo has no clock on sessions: this can not be seen there.
 a thread (`stand_up`, `lonca session end`): its leases go, its proposals stay, and a
 helper leaving ends nothing of its worker's. Its workspace stays, as a worktree does,
 for `:tidy`, which lists it beside the worktrees (`tidy::orphans_under`); its checkout
-is the one `Live::roots` knows its directory by, else that directory, since a
-workspace has no `.git` to ask. What it holds comes from `lonca diff` (`Place::left_in`).
+is the one `Live::roots` knows its directory by, else that directory, since imece
+asks a workspace's `.git` nothing. What it holds comes from `lonca diff` (`Place::left_in`).
 A workspace as its base left it says `no local changes`, locally, with no session and
 no daemon (a real run found this; `diff` has no JSON for it). **One with changes wants
 a live session to count them**: after `session end` it says `unauthenticated` (probed).

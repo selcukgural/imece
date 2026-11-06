@@ -381,7 +381,9 @@ pub(super) fn lonca_note(repo: &str) -> String {
     format!(
         "\n\nYour directory is a Lonca workspace of repository {repo}, not a git worktree: \
          where this text says worktree, it means this workspace. It holds the repository's \
-         files and no `.git`, so git commands do not work here and you commit nothing. A \
+         files and a `.git` of its own, for the tools that expect one: git reads it and a \
+         commit stays here, but nothing reaches the repository through git, the run tool \
+         runs no git here, and `git clean -x` would end the workspace. A \
          change reaches the repository as a proposal: lease what you edit, check with the \
          preview tool, submit with the propose tool. Propose before you say done: what is \
          not proposed nobody sees, and a done with changes no proposal carries is refused. A \
@@ -591,7 +593,9 @@ mod tests {
             note.contains("Lonca workspace of repository kule"),
             "{note}"
         );
-        assert!(note.contains("no `.git`"), "{note}");
+        assert!(note.contains("a `.git` of its own"), "{note}");
+        assert!(note.contains("nothing reaches the repository"), "{note}");
+        assert!(note.contains("`git clean -x`"), "{note}");
         assert!(note.contains("Propose before you say done"), "{note}");
         assert!(note.contains("say blocked"), "{note}");
     }
