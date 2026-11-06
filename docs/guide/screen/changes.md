@@ -92,7 +92,7 @@ Refused: `a` while that change is being applied, or while a newer `done` of the 
 
 ### A proposal on Lonca
 
-A worker in a Lonca workspace has a proposal for a Δ ([more](../concepts/changes.md#on-lonca)). Above the patch it says `proposal 5 · waits: unobserved_session`, with `· holds 1 older` when it does, and loud lines for files Lonca redacted or a patch it cut. `a` approves it. `r` opens the composer at `@claude-1 ` and flashes `say why`; the line you send rejects it and goes to the worker, and `esc` leaves it waiting. Notes sent with `n` are a rejection the same way. `x` says `a proposal is approved whole`, and `b` has nothing to send: a clash is the queue's, and it tells the worker itself.
+A worker in a Lonca workspace has a proposal for a Δ ([more](../concepts/changes.md#on-lonca)). Above the patch it says `proposal 5 · waits: unobserved_session`, with `· holds 1 older` when it does, what runs after your yes (`after your yes Lonca runs: build, test`, or `nothing runs after your yes`), and loud lines for files Lonca redacted or a patch it cut. `a` approves it. `r` opens the composer at `@claude-1 ` and flashes `say why`; the line you send rejects it and goes to the worker, and `esc` leaves it waiting. Notes sent with `n` are a rejection the same way. `x` says `a proposal is approved whole`, and `b` has nothing to send: a clash is the queue's, and it tells the worker itself.
 
 ### Notes on lines
 
@@ -135,7 +135,7 @@ A `done` arrives as `claude-1 finished: 3 files, +41 −6 → waits for you`; an
 
 ## Demo
 
-`--demo` makes the same changes from its cards and runs, and takes `a`, `r`, `n`, `x`, `b`, `>` and `v` the same way (one apply in eight fails there, to show the failure). A worker hired on the Lonca project proposes, and approving lands on the demo's trunk or, one time in eight, comes back as a merge the queue could not make. Every demo checkout has a `.imece/check`, asked about at the first change and failing on every third; each change says what its made-up spending came to.
+`--demo` makes the same changes from its cards and runs, and takes `a`, `r`, `n`, `x`, `b`, `>` and `v` the same way (one apply in eight fails there, to show the failure). A worker hired on the Lonca project proposes, and approving lands on the demo's trunk or, one time in eight, comes back as a merge the queue could not make. Every demo checkout has a `.imece/check`, asked about at the first change and failing on every third; each change says what its made-up spending came to. On a demo project on Lonca a landing says its checks in the journal, and each fifth fails its tests and the worker takes it up.
 
 ## See also
 

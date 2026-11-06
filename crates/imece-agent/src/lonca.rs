@@ -635,6 +635,22 @@ impl Client {
         text.map(Some).ok_or(Down::Protocol)
     }
 
+    /// The checks of `change`'s last integration attempt: none before one.
+    pub fn evidence(&mut self, repo: &str, change: &str) -> Result<Vec<Evidence>, Down> {
+        let told = self.change(repo, change)?;
+        let all = told["evidence"].as_array().ok_or(Down::Protocol)?;
+        (all.iter().map(Evidence::of))
+            .collect::<Option<_>>()
+            .ok_or(Down::Protocol)
+    }
+
+    /// The commands policy `policy` of `repo` runs on a change it has
+    /// approved, by their keys: none, nothing does.
+    pub fn verifies(&mut self, repo: &str, policy: &str) -> Result<Vec<String>, Down> {
+        let text = self.policy_file(repo, policy, POLICY_FILE)?;
+        Ok(text.map_or_else(Vec::new, |t| commands_in(&t)))
+    }
+
     /// The log from `from`, at most `limit` entries. With `wait` (at most
     /// [`LOG_WAIT_MOST`]) the daemon holds the request until an entry
     /// comes; an empty array means the time ran out.
@@ -699,6 +715,8 @@ fn down_of(code: Option<&str>) -> Down {
 const POLICY_FILE: &str = "lonca.toml";
 /// The rules beside it.
 const RULES_FILE: &str = "policy.cedar";
+/// The keys of `[verification]` that name a command.
+const COMMAND_KEYS: &[&str] = &["build", "test", "on_signature_change"];
 /// What a critical path costs a session nobody fully observes.
 const CRITICAL_KEY: &str = "unobserved_critical";
 /// The MCP servers whose tools do not taint a session.
@@ -727,6 +745,25 @@ fn from_base64(text: &str) -> Option<Vec<u8>> {
         }
     }
     Some(out)
+}
+
+/// The keys of `[verification]` in the settings `toml` that name a command:
+/// a line of its own, not a comment.
+fn commands_in(toml: &str) -> Vec<String> {
+    let mut section = "";
+    let mut found = Vec::new();
+    for line in toml.lines() {
+        let line = line.split('#').next().unwrap_or_default().trim();
+        if let Some(name) = line.strip_prefix('[') {
+            section = name.trim_end_matches(']').trim();
+        } else if section == "verification"
+            && let Some((key, _)) = line.split_once('=')
+            && COMMAND_KEYS.contains(&key.trim())
+        {
+            found.push(key.trim().to_string());
+        }
+    }
+    found
 }
 
 /// The settings `toml` with a critical path waiting for a human: for an
@@ -894,6 +931,33 @@ impl Standing {
             "rejected" => Standing::Rejected(list("reasons")?),
             "withdrawn" => Standing::Withdrawn,
             _ => Standing::Other,
+        })
+    }
+}
+
+/// One check of a change's last integration attempt, as `change.get` has
+/// it: the merge queue's, which a client never runs (record 122).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Evidence {
+    /// `syntax`, `build`, `tests`, ...: Lonca's word.
+    pub check: String,
+    /// `pass`, `fail`, `error` or `skipped`.
+    pub result: String,
+    pub exit: Option<i64>,
+    pub duration_ms: Option<u64>,
+    /// The tail of its output.
+    pub log: Option<String>,
+}
+
+impl Evidence {
+    /// Fails closed on what the protocol promises; the rest may be null.
+    fn of(v: &Value) -> Option<Evidence> {
+        Some(Evidence {
+            check: v["check"].as_str()?.to_string(),
+            result: v["result"].as_str()?.to_string(),
+            exit: v["exit"].as_i64(),
+            duration_ms: v["duration_ms"].as_u64(),
+            log: v["log"].as_str().map(str::to_string),
         })
     }
 }
@@ -1195,6 +1259,75 @@ mod tests {
         });
         assert_eq!(mode.unwrap(), 0o700);
         assert!(!seen_at.exists());
+    }
+
+    #[test]
+    fn evidence_is_read_from_the_change_and_fails_closed() {
+        let d = Daemon::start(PROTOCOL, |asked| {
+            Ok(match asked["params"]["change"].as_str() {
+                Some("two") => json!({"evidence": [
+                    {"check": "syntax", "result": "pass", "exit": null, "duration_ms": null,
+                     "log": null},
+                    {"check": "build", "result": "fail", "exit": 3, "duration_ms": 1036,
+                     "log": "checking"},
+                ]}),
+                Some("none") => json!({"evidence": []}),
+                Some("short") => json!({"evidence": [{"check": "build"}]}),
+                Some("nameless") => json!({"evidence": [{"result": "pass"}]}),
+                _ => json!({}),
+            })
+        });
+        d.sign_in();
+        let mut c = d.place.open().expect("opens");
+        assert_eq!(
+            c.evidence("demo", "two").unwrap(),
+            [
+                Evidence {
+                    check: "syntax".into(),
+                    result: "pass".into(),
+                    exit: None,
+                    duration_ms: None,
+                    log: None,
+                },
+                Evidence {
+                    check: "build".into(),
+                    result: "fail".into(),
+                    exit: Some(3),
+                    duration_ms: Some(1036),
+                    log: Some("checking".into()),
+                },
+            ]
+        );
+        assert_eq!(c.evidence("demo", "none"), Ok(vec![]));
+        for wrong in ["short", "nameless", "gone"] {
+            assert_eq!(c.evidence("demo", wrong), Err(Down::Protocol), "{wrong}");
+        }
+    }
+
+    #[test]
+    fn the_commands_of_a_policy_are_those_of_its_verification() {
+        let d = Daemon::start(PROTOCOL, |asked| {
+            Ok(match asked["method"].as_str() {
+                // `[verification]\ntest = "t"\n`
+                _ if asked["params"]["commit"] == "P" => json!([{
+                    "path": "lonca.toml", "content_b64": "W3ZlcmlmaWNhdGlvbl0KdGVzdCA9ICJ0Igo="
+                }]),
+                _ => json!([]),
+            })
+        });
+        d.sign_in();
+        let mut c = d.place.open().expect("opens");
+        assert_eq!(c.verifies("demo", "P"), Ok(vec!["test".to_string()]));
+        assert_eq!(c.verifies("demo", "other"), Ok(vec![]), "no settings file");
+    }
+
+    #[test]
+    fn a_command_is_a_key_of_verification_and_no_comment() {
+        let toml = "[a]\nbuild = \"no\"\n[verification]\n# build = \"x\"\n\
+                    test = \"t\" # note\nrequired = true\n  build = \"b\"\n\
+                    on_signature_change = \"o\"\nbare\n[b]\ntest = \"no\"\n";
+        assert_eq!(commands_in(toml), ["test", "build", "on_signature_change"]);
+        assert_eq!(commands_in(""), Vec::<String>::new());
     }
 
     #[test]
@@ -2171,6 +2304,10 @@ mod tests {
             standing(&mut c, &newer.change),
             Some(Standing::Integrated(trunk))
         );
+        let change = newer.change.as_deref().expect("a proposal");
+        let checks = c.evidence(&repo, change).expect("evidence");
+        assert!(checks.iter().any(|e| e.check == "syntax"), "{checks:?}");
+        assert_eq!(c.verifies(&repo, &status.policy), Ok(vec![]), "the default");
         assert!(matches!(
             place.approve(&repo, &dir, newer.seq),
             Err(Failed::Said(why)) if why.contains("nothing_pending")

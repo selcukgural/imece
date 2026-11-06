@@ -121,7 +121,21 @@ A worker in a [Lonca workspace](projects.md#on-lonca) has no worktree to read. I
 
 `a` approves it and `r` rejects it, both signed by the `lonca` program, so a Secure Enclave key wants your finger; a word that did not reach Lonca is said in the journal and the Δ still waits. Lonca takes no rejection without a reason, so `r` opens the line first and what you send is both the reason and your message to the worker; leaving the line with `esc` rejects nothing. A proposal is approved whole: `x` is refused, and nothing lands in your checkout, which [`:sync`](../reference/commands.md#sync) brings up to trunk.
 
-What Lonca does next is said whoever decided, `lonca approve` in your own shell included: `on trunk as 174cfc1`, or a merge the queue could not make, or a refusal with its reasons. A worker sent back is woken, told to sync and propose again; one on trunk hears it at its next prompt. A repository whose policy would let changes in unseen is closed: see [projects](projects.md#on-lonca). What it cost stays imece's and is carried into the next proposal until one lands.
+What Lonca does next is said whoever decided, `lonca approve` in your own shell included: `on trunk as 174cfc1`, or a merge the queue could not make, or a refusal with its reasons. The checks of the merge queue go in the journal too: `claude-1: Lonca's checks · ✓ build exit 0, 12.4 s · ✗ tests exit 101, 31.0 s · its last line`. A worker sent back is woken, told to sync and propose again, with what the failed check printed; one on trunk hears it at its next prompt. A repository whose policy would let changes in unseen is closed: see [projects](projects.md#on-lonca). What it cost stays imece's and is carried into the next proposal until one lands.
+
+### What is checked on Lonca
+
+`.imece/check` does not run in a workspace. A repository on Lonca says what to run in `[verification]` of its `lonca.toml`, and Lonca's merge queue runs it on the merged tree after your yes, in a sandbox; imece runs nothing. The Δ says which it is: `after your yes Lonca runs: build, test`, or `nothing runs after your yes`. The settings are signed, so changing them is `lonca policy set`, by you:
+
+```toml
+[verification]
+build = "cargo build --offline"
+test = "cargo test --offline"
+required = true
+env_passthrough = ["HOME", "CARGO_HOME", "RUSTUP_HOME", "TMPDIR"]
+```
+
+The commands see an empty environment but for `PATH`, a scratch `HOME` and `LANG`, so a toolchain under your home needs its directories in `env_passthrough`. With a check that fails the change does not land: Lonca refuses it, your yes stays in the log, and the worker takes it up.
 
 ## See also
 

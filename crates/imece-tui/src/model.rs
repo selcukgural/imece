@@ -1850,6 +1850,12 @@ pub enum Event {
         agent: AgentId,
         how: Landed,
     },
+    /// What Lonca's queue checked on `agent`'s proposal (record 122).
+    Verified {
+        agent: AgentId,
+        ok: bool,
+        checks: Vec<Attested>,
+    },
     /// The person applied a live worker's change to their checkout, where
     /// it is staged; `mark` is the commit that stands for it in the
     /// worktree.
@@ -1967,6 +1973,7 @@ impl Event {
             | Event::Pushed { .. }
             | Event::SetupRan { ok: true, .. }
             | Event::Checked { ok: true, .. }
+            | Event::Verified { ok: true, .. }
             | Event::CommandsMissing { .. }
             | Event::Confine { .. }
             | Event::WorktreeMoved { .. }
@@ -2011,6 +2018,7 @@ impl Event {
             | Event::SetupRan { ok: false, .. }
             | Event::SetupFailed { .. }
             | Event::Checked { ok: false, .. }
+            | Event::Verified { ok: false, .. }
             | Event::CheckFailed { .. }
             | Event::Landed {
                 how: Landed::Conflicted(_) | Landed::Rejected(_),
@@ -2128,6 +2136,7 @@ impl Event {
             | Event::ReviewFailed { agent, .. }
             | Event::Applied { agent, .. }
             | Event::Landed { agent, .. }
+            | Event::Verified { agent, .. }
             | Event::ApplyFailed { agent, .. } => agent,
             Event::Talk { from, .. } | Event::Sent { from, .. } | Event::ToYou { from, .. } => from,
             Event::ResearchOpened { researcher, .. }
@@ -2301,6 +2310,18 @@ pub enum Landed {
     Withdrawn,
 }
 
+/// One check Lonca's merge queue ran on a proposal.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Attested {
+    /// Lonca's word for it.
+    pub check: String,
+    pub ok: bool,
+    /// How it ended (`exit 0, 41.2 s`); empty for a check with no command.
+    pub end: String,
+    /// The last lines of a failed one's output that say something.
+    pub lines: Vec<String>,
+}
+
 /// A worker's change as Lonca holds it (record 120): what `a` approves
 /// and `r` rejects. The change itself is read from the store and shown as
 /// any other [`Change`]; this says which one it is and what is apart.
@@ -2319,6 +2340,8 @@ pub struct StoreProposal {
     pub redacted: Vec<String>,
     /// The daemon cut its patch.
     pub cut: bool,
+    /// What Lonca's queue runs on it after the person's yes (record 122).
+    pub verifies: Vec<String>,
 }
 
 /// Where the repository's check (`.imece/check`, record 112) stands on a
@@ -3580,6 +3603,20 @@ impl World {
     /// What became of worker `id`'s proposal, which left its waiting
     /// change earlier if it did, in the queue: on trunk, what it cost is
     /// settled, and the journal says it.
+    /// Lonca's queue checked worker `id`'s proposal: the journal says what
+    /// came of it, the checks it skipped being none. No checks, nothing.
+    pub fn verified(&mut self, id: AgentId, checks: Vec<Attested>) {
+        if checks.is_empty() {
+            return;
+        }
+        let ok = checks.iter().all(|c| c.ok);
+        self.note(Event::Verified {
+            agent: id,
+            ok,
+            checks,
+        });
+    }
+
     pub fn proposal_landed(&mut self, id: AgentId, how: Landed) {
         if matches!(how, Landed::Integrated(_)) {
             self.agents[id].task.carried = Spend::default();
@@ -7223,6 +7260,29 @@ mod tests {
     }
 
     #[test]
+    fn a_proposal_verified_is_said_with_its_checks_and_none_is_not() {
+        let mut w = world(vec![lead(0), agent(1, Role::Worker, Status::Idle)]);
+        let at_first = w.journal.len();
+        w.verified(1, vec![]);
+        assert_eq!(w.journal.len(), at_first);
+        let check = |ok| Attested {
+            check: "build".into(),
+            ok,
+            end: "exit 0, 1.0 s".into(),
+            lines: vec![],
+        };
+        let last = |w: &World| w.journal.last().unwrap().event.clone();
+        w.verified(1, vec![check(true), check(true)]);
+        assert!(
+            matches!(last(&w), Event::Verified { agent: 1, ok: true, checks } if checks.len() == 2)
+        );
+        w.verified(1, vec![check(true), check(false)]);
+        assert!(matches!(last(&w), Event::Verified { ok: false, .. }));
+        w.verified(1, vec![check(false), check(true)]);
+        assert!(matches!(last(&w), Event::Verified { ok: false, .. }));
+    }
+
+    #[test]
     fn a_kept_refusal_of_critical_paths_is_said_by_the_project() {
         let mut w = world(vec![lead(0)]);
         w.store_critical_kept(&ask(0), Some("no".into()));
@@ -7291,6 +7351,7 @@ mod tests {
             why: Vec::new(),
             redacted: Vec::new(),
             cut: false,
+            verifies: vec![],
         }
     }
 

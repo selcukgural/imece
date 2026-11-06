@@ -647,6 +647,8 @@ struct Extras {
     proposed: u64,
     /// How many dones its workers on Lonca said.
     dones: u64,
+    /// Proposals decided on the demo's table: each fifth fails its tests.
+    landings: u64,
     /// How many integrations each project's checkout has of its
     /// repository, by repository, and whether it has commits of its own.
     synced: HashMap<String, (u32, bool)>,
@@ -1321,6 +1323,7 @@ impl Sim {
             why: vec!["unobserved_session".to_string()],
             redacted: Vec::new(),
             cut: false,
+            verifies: vec!["build".into(), "test".into()],
         };
         w.change_proposed(change, proposal);
     }
@@ -1342,9 +1345,44 @@ impl Sim {
     /// as it would after a sync.
     fn landed(&mut self, w: &mut World, id: AgentId, fits: bool) {
         let p = w.agents[id].project;
+        self.extras.landings += 1;
+        let check = |name: &str, ok, end: &str, lines: &[&str]| Attested {
+            check: name.to_string(),
+            ok,
+            end: end.to_string(),
+            lines: lines.iter().map(|l| l.to_string()).collect(),
+        };
+        // Each fifth merges and fails its tests, as a queue finds it.
+        if fits && self.extras.landings.is_multiple_of(5) {
+            w.proposal_left(
+                id,
+                Landed::Rejected(vec!["verification_failed:tests".into()]),
+            );
+            w.verified(
+                id,
+                vec![
+                    check("build", true, "exit 0, 12.4 s", &[]),
+                    check(
+                        "tests",
+                        false,
+                        "exit 101, 31.0 s",
+                        &["test result: FAILED. 1 failed"],
+                    ),
+                ],
+            );
+            let _ = self.told(w, id, "fix the failing test and propose again");
+            return;
+        }
         if fits {
             let commit = sha(&mut self.rng);
             w.proposal_left(id, Landed::Integrated(commit));
+            w.verified(
+                id,
+                vec![
+                    check("build", true, "exit 0, 12.4 s", &[]),
+                    check("tests", true, "exit 0, 28.7 s", &[]),
+                ],
+            );
             self.store_integrated(w, p);
             return self.tell_the_others(w, id);
         }
@@ -7960,6 +7998,67 @@ diff --git a/b.rs b/b.rs
             runs: Vec::new(),
             check: Check::None,
             spend: None,
+        }
+    }
+
+    #[test]
+    fn a_demo_proposal_says_its_checks_and_each_fifth_fails_them() {
+        let (mut w, mut s, id) = a_proposal_waits();
+        assert_eq!(
+            w.proposal_of(id).unwrap().verifies,
+            ["build".to_string(), "test".to_string()]
+        );
+        let verified = |w: &World| {
+            (w.journal.iter().rev()).find_map(|l| match &l.event {
+                Event::Verified { ok, checks, .. } => Some((*ok, checks.len())),
+                _ => None,
+            })
+        };
+        s.landed(&mut w, id, true);
+        assert_eq!(verified(&w), Some((true, 2)));
+        assert!(matches!(
+            &w.journal
+                .iter()
+                .rev()
+                .find(|l| matches!(l.event, Event::Landed { .. }))
+                .unwrap()
+                .event,
+            Event::Landed {
+                how: Landed::Integrated(_),
+                ..
+            }
+        ));
+        s.extras.landings = 4;
+        w.change_proposed(a_change_of(id), a_demo_proposal(9));
+        s.landed(&mut w, id, true);
+        assert_eq!(verified(&w), Some((false, 2)));
+        assert!(matches!(
+            &w.journal.iter().rev().find(|l| matches!(l.event, Event::Landed { .. })).unwrap().event,
+            Event::Landed { how: Landed::Rejected(why), .. }
+                if why == &["verification_failed:tests"]
+        ));
+        // What can not merge is no check of the queue's.
+        s.extras.landings = 4;
+        let before = (w.journal.iter())
+            .filter(|l| matches!(l.event, Event::Verified { .. }))
+            .count();
+        w.change_proposed(a_change_of(id), a_demo_proposal(10));
+        s.landed(&mut w, id, false);
+        let after = (w.journal.iter())
+            .filter(|l| matches!(l.event, Event::Verified { .. }))
+            .count();
+        assert_eq!(after, before);
+    }
+
+    fn a_demo_proposal(seq: u64) -> StoreProposal {
+        StoreProposal {
+            seq,
+            change: format!("c{seq}"),
+            older: Vec::new(),
+            why: Vec::new(),
+            redacted: Vec::new(),
+            cut: false,
+            verifies: Vec::new(),
         }
     }
 

@@ -92,7 +92,7 @@ Reddedilir: o değişiklik uygulanırken ya da aynı işçinin daha yeni bir `do
 
 ### Lonca'daki bir öneri
 
-Lonca workspace'indeki bir işçinin Δ'sı önerisidir ([daha fazlası](../concepts/changes.md#loncada)). Yamanın üstünde `öneri 5 · bekleme nedeni: unobserved_session` der, varsa `· 1 eski öneriyi kapsıyor` da; Lonca'nın sansürlediği dosyalar ya da kestiği bir yama için göze çarpan satırlar gelir. `a` onaylar. `r` yazma satırını `@claude-1 ` ile açar ve `gerekçeni yaz` der; gönderdiğiniz satır öneriyi reddeder ve işçiye gider, `esc` ise onu bekler bırakır. `n` ile gönderilen notlar da aynı şekilde bir rettir. `x` `bir öneri bütün olarak onaylanır` der, `b`'nin de gönderecek bir şeyi yoktur: çakışma kuyruğundur ve işçiye kendisi söyler.
+Lonca workspace'indeki bir işçinin Δ'sı önerisidir ([daha fazlası](../concepts/changes.md#loncada)). Yamanın üstünde `öneri 5 · bekleme nedeni: unobserved_session` der, varsa `· 1 eski öneriyi kapsıyor` da; onayından sonra ne çalışacağını söyler (`onayından sonra Lonca şunları çalıştırır: build, test` ya da `onayından sonra hiçbir şey çalışmaz`); Lonca'nın sansürlediği dosyalar ya da kestiği bir yama için göze çarpan satırlar gelir. `a` onaylar. `r` yazma satırını `@claude-1 ` ile açar ve `gerekçeni yaz` der; gönderdiğiniz satır öneriyi reddeder ve işçiye gider, `esc` ise onu bekler bırakır. `n` ile gönderilen notlar da aynı şekilde bir rettir. `x` `bir öneri bütün olarak onaylanır` der, `b`'nin de gönderecek bir şeyi yoktur: çakışma kuyruğundur ve işçiye kendisi söyler.
 
 ### Satırlara notlar
 
@@ -135,7 +135,7 @@ Bir `done`, `claude-1 bitirdi: 3 dosya, +41 −6 → seni bekliyor` diye gelir; 
 
 ## Demo
 
-`--demo` aynı değişiklikleri kartlarından ve çalıştırmalarından yapar ve `a`, `r`, `n`, `x`, `b`, `>` ve `v` tuşlarını aynı şekilde alır (başarısızlığı göstermek için orada sekiz uygulamadan biri başarısız olur). Lonca projesinde işe alınan işçi öneri yapar; onay demonun trunk'ına iner ya da sekizde bir kuyruğun yapamadığı bir birleştirme olarak geri döner. Her demo checkout'unun bir `.imece/check`'i vardır; ilk değişiklikte sorulur ve her üçüncüde başarısız olur; her değişiklik uydurma harcamasının neye geldiğini söyler.
+`--demo` aynı değişiklikleri kartlarından ve çalıştırmalarından yapar ve `a`, `r`, `n`, `x`, `b`, `>` ve `v` tuşlarını aynı şekilde alır (başarısızlığı göstermek için orada sekiz uygulamadan biri başarısız olur). Lonca projesinde işe alınan işçi öneri yapar; onay demonun trunk'ına iner ya da sekizde bir kuyruğun yapamadığı bir birleştirme olarak geri döner. Her demo checkout'unun bir `.imece/check`'i vardır; ilk değişiklikte sorulur ve her üçüncüde başarısız olur; her değişiklik uydurma harcamasının neye geldiğini söyler. Demodaki Lonca projesinde bir iniş denetimlerini günlükte söyler, her beşinci iniş testlerinde kalır ve işçi işi yeniden alır.
 
 ## Ayrıca bakınız
 

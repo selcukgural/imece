@@ -18,8 +18,8 @@ use imece_agent::worktree::{self, Forward};
 use super::Live;
 use super::Slot;
 use crate::model::{
-    Agent, AgentId, Behind, Change, ChangedFile, Check, ImportAsk, Landed, MsgKind, ProjectId,
-    Role, StoreDown, StoreJob, StoreProposal, StoreSeen, Synced, Verdict, World,
+    Agent, AgentId, Attested, Behind, Change, ChangedFile, Check, ImportAsk, Landed, MsgKind,
+    ProjectId, Role, StoreDown, StoreJob, StoreProposal, StoreSeen, Synced, Verdict, World,
 };
 
 /// How often the store is asked. Each look is a connection and a
@@ -30,6 +30,8 @@ pub(super) const LOOK_EVERY: Duration = Duration::from_secs(5);
 /// The repositories to look at, each with its project and, where git is,
 /// its checkout.
 type Repos = Vec<(ProjectId, String, Option<PathBuf>)>;
+/// One look: the repositories, and the changes whose end is to be read.
+type Asked = (Repos, Vec<String>);
 /// What a look found of them.
 type Found = Vec<(ProjectId, String, StoreSeen)>;
 
@@ -48,6 +50,12 @@ pub(super) const SEAT_RENEWED: &str = "your Lonca session ran out of time and a 
 
 /// The longest reason told of a proposal that did not land, in characters.
 const REASON_TOLD: usize = 400;
+/// The most of a failed check's output a worker is told.
+const OUTPUT_TOLD: usize = 1_000;
+/// The most lines of a failed check's output kept.
+const ATTEST_LINES: usize = 6;
+/// The line the verifier starts a log with, which says nothing of the check.
+const VERIFY_HEADER: &str = "lonca verify:";
 
 /// A worker's newest proposal, as a look read it: `diff` is read once.
 #[derive(Clone, Debug)]
@@ -68,6 +76,8 @@ struct Looked {
     offers: Vec<(ProjectId, Offer)>,
     /// Where every change of each repository stands.
     standings: HashMap<String, Standing>,
+    /// What Lonca's queue checked on the watched changes that settled.
+    evidence: HashMap<String, Vec<Attested>>,
 }
 
 /// What the looks keep: the store does not change what it said.
@@ -78,6 +88,8 @@ struct Kept {
     /// Each repository's policy and whether it holds a change for a
     /// person. Only an answer is kept.
     held: HashMap<String, (String, bool)>,
+    /// Each repository's policy and the commands it verifies with.
+    verifies: HashMap<String, (String, Vec<String>)>,
 }
 
 impl Kept {
@@ -93,6 +105,19 @@ impl Kept {
         self.held
             .insert(repo.to_string(), (policy.to_string(), held));
         held
+    }
+
+    /// What policy `policy` of `repo` runs on an approved change. What
+    /// can not be read is nothing: a line on the Δ, not a gate.
+    fn verifies(&mut self, client: &mut Client, repo: &str, policy: &str) -> Vec<String> {
+        if let Some((_, names)) = self.verifies.get(repo).filter(|(p, _)| p == policy) {
+            return names.clone();
+        }
+        let Ok(names) = client.verifies(repo, policy) else {
+            return Vec::new();
+        };
+        (self.verifies).insert(repo.to_string(), (policy.to_string(), names.clone()));
+        names
     }
 
     /// The diff of `change`; none while the daemon can not say.
@@ -139,6 +164,7 @@ fn offers(status: &lonca::Status, read: &mut impl FnMut(&str) -> Option<Arc<Diff
                 why: newest.reasons.clone(),
                 redacted: diff.redacted.clone(),
                 cut: diff.cut,
+                verifies: vec![],
             },
             diff,
         });
@@ -180,7 +206,7 @@ fn landed(standing: &Standing) -> Option<Landed> {
 
 /// What a worker hears of its proposal, `title`: nothing for one that
 /// needs nothing of it; whether it has to act comes with it.
-fn told(how: &Landed, title: &str) -> Option<(String, bool)> {
+fn told(how: &Landed, title: &str, checks: &[Attested]) -> Option<(String, bool)> {
     let some = |words: &[String]| {
         let all = words.join("; ");
         all.chars().take(REASON_TOLD).collect::<String>()
@@ -197,21 +223,31 @@ fn told(how: &Landed, title: &str) -> Option<(String, bool)> {
         Landed::Conflicted(symbols) => Some((
             format!(
                 "Lonca's merge queue could not merge your proposal ({title}): {}. Call the sync \
-                 tool, settle what it leaves beside your files as .trunk, remove those, and \
-                 propose again.",
+                 tool, settle the conflict markers it leaves in your files, and propose again.",
                 some(symbols)
             ),
             true,
         )),
         Landed::Rejected(reasons) => Some((
             format!(
-                "Your proposal ({title}) was refused: {}. It stays in your workspace. Put it \
+                "Your proposal ({title}) was refused: {}.{} It stays in your workspace. Put it \
                  right, call the sync tool, and propose again.",
-                some(reasons)
+                some(reasons),
+                failed_output(checks),
             ),
             true,
         )),
     }
+}
+
+/// What the checks that failed printed, for the worker who has to put it
+/// right; nothing when none did.
+fn failed_output(checks: &[Attested]) -> String {
+    let said = (checks.iter())
+        .filter(|c| !c.ok && !c.lines.is_empty())
+        .map(|c| format!(" {} ({}):\n{}", c.check, c.end, c.lines.join("\n")));
+    let all: String = said.collect::<Vec<_>>().join("\n");
+    all.chars().take(OUTPUT_TOLD).collect()
 }
 
 /// What a worker hears of a `done` with work no proposal of its carries.
@@ -383,7 +419,7 @@ pub(super) struct Watch {
     place: Place,
     /// The job under way: one at a time, never on the screen's thread.
     job: Option<(StoreJob, Receiver<Done>)>,
-    ask: Sender<Repos>,
+    ask: Sender<Asked>,
     back: Receiver<Looked>,
     /// Changes approved and in the queue, and whose they are: what the
     /// queue makes of them is still to be said.
@@ -419,14 +455,17 @@ impl Watch {
     }
 
     pub(super) fn start(place: Place) -> Watch {
-        let (ask, asked) = mpsc::channel::<Repos>();
+        let (ask, asked) = mpsc::channel::<Asked>();
         let (answer, back) = mpsc::channel();
         let (gated, gates) = mpsc::channel();
         let kept = place.clone();
         thread::spawn(move || {
             let mut kept = Kept::default();
-            for repos in asked {
-                if answer.send(look(&place, &repos, &mut kept)).is_err() {
+            for (repos, watched) in asked {
+                if answer
+                    .send(look(&place, &repos, &watched, &mut kept))
+                    .is_err()
+                {
                     return;
                 }
             }
@@ -451,7 +490,7 @@ impl Watch {
 /// not be opened leaves them all down for the same reason. A repository
 /// whose policy does not hold a change for a person is closed: the Δ gate
 /// would not be there (record 120).
-fn look(place: &Place, repos: &Repos, kept: &mut Kept) -> Looked {
+fn look(place: &Place, repos: &Repos, watched: &[String], kept: &mut Kept) -> Looked {
     let mut client = place.open();
     let mut looked = Looked::default();
     let mut waiting: Vec<String> = Vec::new();
@@ -463,9 +502,20 @@ fn look(place: &Place, repos: &Repos, kept: &mut Kept) -> Looked {
                 (looked.left).extend(times.map(|(agent, ms)| (repo.clone(), agent, ms)));
                 if kept.holds(c, repo, &status.policy) {
                     let mut read = |change: &str| kept.diff(c, repo, change);
-                    let offered = offers(&status, &mut read);
+                    let mut offered = offers(&status, &mut read);
+                    if !offered.is_empty() {
+                        let names = kept.verifies(c, repo, &status.policy);
+                        for offer in &mut offered {
+                            offer.proposal.verifies.clone_from(&names);
+                        }
+                    }
                     waiting.extend(offered.iter().map(|o| o.proposal.change.clone()));
                     looked.offers.extend(offered.into_iter().map(|o| (*p, o)));
+                    for change in settled(&status, watched) {
+                        if let Ok(found) = c.evidence(repo, &change) {
+                            looked.evidence.insert(change, attested(&found));
+                        }
+                    }
                     looked.standings.extend(status.changes);
                     StoreSeen::Up {
                         behind: behind_of(c, repo, checkout.as_deref(), &status.trunk),
@@ -482,6 +532,48 @@ fn look(place: &Place, repos: &Repos, kept: &mut Kept) -> Looked {
     }
     kept.diffs.retain(|change, _| waiting.contains(change));
     looked
+}
+
+/// Those of `watched` that `status` has settled, so that its queue has
+/// spoken: a conflict or a withdrawal ran nothing worth saying.
+fn settled(status: &lonca::Status, watched: &[String]) -> Vec<String> {
+    (status.changes.iter())
+        .filter(|(change, _)| watched.contains(change))
+        .filter(|(_, s)| matches!(s, Standing::Integrated(_) | Standing::Rejected(_)))
+        .map(|(change, _)| change.clone())
+        .collect()
+}
+
+/// What the screen and the worker get of `evidence`: a check skipped is no
+/// check. Output comes only for one that failed, its last lines.
+fn attested(evidence: &[lonca::Evidence]) -> Vec<Attested> {
+    let lines = |log: &str| {
+        let said = (log.lines().rev())
+            .map(str::trim)
+            .filter(|l| !l.is_empty() && !l.starts_with(VERIFY_HEADER));
+        let mut last: Vec<String> = said.take(ATTEST_LINES).map(str::to_string).collect();
+        last.reverse();
+        last
+    };
+    (evidence.iter())
+        .filter(|e| e.result != "skipped")
+        .map(|e| {
+            let ok = e.result == "pass";
+            let secs = e.duration_ms.map(|ms| ms as f64 / 1000.0);
+            Attested {
+                check: e.check.clone(),
+                ok,
+                end: match (e.exit, secs) {
+                    (Some(code), Some(s)) => format!("exit {code}, {s:.1} s"),
+                    (Some(code), None) => format!("exit {code}"),
+                    (None, _) => String::new(),
+                },
+                lines: (e.log.as_deref())
+                    .filter(|_| !ok)
+                    .map_or_else(Vec::new, lines),
+            }
+        })
+        .collect()
 }
 
 /// How far the checkout is behind `trunk`, read from where it left trunk,
@@ -527,7 +619,9 @@ impl Live {
                 (p, repo, place.map(|place| place.repo.clone()))
             })
             .collect();
-        if !repos.is_empty() && watch.ask.send(repos).is_ok() {
+        let shown = w.proposals.values().map(|p| p.change.clone());
+        let watched = shown.chain(watch.queued.keys().cloned()).collect();
+        if !repos.is_empty() && watch.ask.send((repos, watched)).is_ok() {
             watch.out = true;
             watch.next = Some(now + LOOK_EVERY);
         }
@@ -695,7 +789,7 @@ impl Live {
         for (p, repo, seen) in looked.found {
             changed |= w.store_seen(p, &repo, seen);
         }
-        changed |= self.land(w, &looked.standings);
+        changed |= self.land(w, &looked.standings, &looked.evidence);
         for (p, offer) in &looked.offers {
             changed |= self.offered(w, *p, offer);
         }
@@ -735,8 +829,14 @@ impl Live {
     /// What `standings` says became of the proposals the person was shown
     /// and of those in the queue: the journal says it, whoever decided, and
     /// the worker is told. Whether anything did.
-    fn land(&mut self, w: &mut World, standings: &HashMap<String, Standing>) -> bool {
+    fn land(
+        &mut self,
+        w: &mut World,
+        standings: &HashMap<String, Standing>,
+        evidence: &HashMap<String, Vec<Attested>>,
+    ) -> bool {
         let of = |change: &str| standings.get(change).and_then(landed);
+        let checks = |change: &str| evidence.get(change).cloned().unwrap_or_default();
         let mut shown: Vec<(AgentId, String, Landed)> = (w.proposals.iter())
             .filter_map(|(&id, p)| Some((id, p.change.clone(), of(&p.change)?)))
             .collect();
@@ -748,7 +848,9 @@ impl Live {
                 self.lonca.queued.insert(change.clone(), id);
             }
             w.proposal_left(id, how.clone());
-            self.tell_landed(w, id, &change, &how, &title);
+            let checks = checks(&change);
+            w.verified(id, checks.clone());
+            self.tell_landed(w, id, &change, &how, &title, &checks);
         }
         let mut queued: Vec<(String, AgentId, Landed)> = (self.lonca.queued.iter())
             .filter_map(|(c, &id)| Some((c.clone(), id, of(c).filter(|h| *h != Landed::Queued)?)))
@@ -758,7 +860,9 @@ impl Live {
         for (change, id, how) in queued {
             self.lonca.queued.remove(&change);
             w.proposal_landed(id, how.clone());
-            self.tell_landed(w, id, &change, &how, "");
+            let checks = checks(&change);
+            w.verified(id, checks.clone());
+            self.tell_landed(w, id, &change, &how, "", &checks);
         }
         any || moved
     }
@@ -766,12 +870,20 @@ impl Live {
     /// Worker `id` hears what became of its proposal; one that has to act
     /// on it is woken. A rejection the person worded went to it as their
     /// message already.
-    fn tell_landed(&mut self, w: &World, id: AgentId, change: &str, how: &Landed, title: &str) {
+    fn tell_landed(
+        &mut self,
+        w: &World,
+        id: AgentId,
+        change: &str,
+        how: &Landed,
+        title: &str,
+        checks: &[Attested],
+    ) {
         if let Some(i) = (self.lonca.worded.iter()).position(|c| c == change) {
             self.lonca.worded.remove(i);
             return;
         }
-        let Some((words, act)) = told(how, title) else {
+        let Some((words, act)) = told(how, title, checks) else {
             return;
         };
         self.notes[id].push(words);
@@ -925,7 +1037,7 @@ mod tests {
             (0, "demo".to_string(), None),
             (3, "other".to_string(), None),
         ];
-        let found = look(&d.place, &repos, &mut Kept::default()).found;
+        let found = look(&d.place, &repos, &[], &mut Kept::default()).found;
         assert_eq!(found.len(), 2);
         let up = StoreSeen::Up {
             trunk: TRUNK.into(),
@@ -946,7 +1058,7 @@ mod tests {
             (0, "demo".to_string(), None),
             (1, "other".to_string(), None),
         ];
-        let Looked { found, left, .. } = look(&place, &repos, &mut Kept::default());
+        let Looked { found, left, .. } = look(&place, &repos, &[], &mut Kept::default());
         assert!(left.is_empty());
         let down = StoreSeen::Down(StoreDown::NoDaemon);
         assert_eq!(found[0].2, down);
@@ -1213,6 +1325,7 @@ mod tests {
         let left = look(
             &d.place,
             &vec![(0, "demo".to_string(), None)],
+            &[],
             &mut Kept::default(),
         )
         .left;
@@ -1807,6 +1920,7 @@ mod tests {
                 why: vec!["unobserved_session".into()],
                 redacted: Vec::new(),
                 cut: false,
+                verifies: vec![],
             },
             diff: diff_of("diff --git a/a.rs b/a.rs\n"),
         }
@@ -1836,6 +1950,7 @@ mod tests {
             why: vec!["unobserved_session".into()],
             redacted: vec!["s.txt".into()],
             cut: true,
+            verifies: vec![],
         };
         assert_eq!(got[0].proposal, want);
         assert_eq!(got[1].agent, "w2");
@@ -1896,22 +2011,246 @@ mod tests {
         );
     }
 
+    fn a_check(check: &str, ok: bool, lines: &[&str]) -> Attested {
+        Attested {
+            check: check.into(),
+            ok,
+            end: "exit 3, 1.0 s".into(),
+            lines: lines.iter().map(|l| l.to_string()).collect(),
+        }
+    }
+
+    fn evidence(result: &str, exit: Option<i64>, ms: Option<u64>, log: &str) -> lonca::Evidence {
+        lonca::Evidence {
+            check: "build".into(),
+            result: result.into(),
+            exit,
+            duration_ms: ms,
+            log: Some(log.into()),
+        }
+    }
+
+    #[test]
+    fn a_check_says_how_it_ended_and_a_failed_one_what_it_printed_last() {
+        let log = "lonca verify: sandbox\n1\n2\n\n3\n4\n5\n6\n7\n";
+        let got = attested(&[evidence("fail", Some(3), Some(1536), log)]);
+        assert_eq!(got.len(), 1);
+        assert_eq!(got[0].check, "build");
+        assert!(!got[0].ok);
+        assert_eq!(got[0].end, "exit 3, 1.5 s");
+        assert_eq!(got[0].lines, ["2", "3", "4", "5", "6", "7"]);
+        // The verifier's header says nothing, in a short log too.
+        let got = attested(&[evidence("error", None, None, "lonca verify: x\nboom\n")]);
+        assert_eq!((got[0].ok, got[0].end.as_str()), (false, ""));
+        assert_eq!(got[0].lines, ["boom"]);
+        // A pass keeps no output, an exit with no time says the exit, a
+        // skipped check is no check.
+        let got = attested(&[
+            evidence("pass", Some(0), None, "fine"),
+            evidence("skipped", None, None, "x"),
+        ]);
+        assert_eq!(got.len(), 1);
+        assert!(got[0].ok);
+        assert_eq!(got[0].end, "exit 0");
+        assert!(got[0].lines.is_empty());
+        let none = lonca::Evidence {
+            log: None,
+            ..evidence("fail", None, None, "")
+        };
+        assert!(attested(&[none])[0].lines.is_empty());
+    }
+
+    #[test]
+    fn only_a_watched_change_the_queue_decided_has_its_checks_read() {
+        let mut v = status(&[]);
+        v["changes"] = serde_json::json!([
+            {"change": "on", "status": {"status": "integrated", "commit": "c"}},
+            {"change": "no", "status": {"status": "rejected", "reasons": ["x"]}},
+            {"change": "clash", "status": {"status": "conflicted", "symbols": []}},
+            {"change": "wait", "status": {"status": "queued"}},
+            {"change": "far", "status": {"status": "integrated", "commit": "c"}},
+        ]);
+        let d = Daemon::start(PROTOCOL, move |asked| {
+            Ok(match asked["method"].as_str() {
+                Some("status") => v.clone(),
+                _ => serde_json::json!({"evidence": [
+                    {"check": "tests", "result": "pass"}, {"check": "x", "result": "skipped"},
+                ]}),
+            })
+        });
+        d.sign_in();
+        let watched = ["on", "no", "clash", "wait"].map(String::from);
+        let repos = vec![(0, "demo".to_string(), None)];
+        let found = look(&d.place, &repos, &watched, &mut Kept::default()).evidence;
+        let mut keys: Vec<&String> = found.keys().collect();
+        keys.sort();
+        assert_eq!(keys, ["no", "on"]);
+        assert_eq!(found["on"].len(), 1, "what ran");
+        assert_eq!(found["on"][0].check, "tests");
+    }
+
+    #[test]
+    fn what_a_policy_verifies_reaches_the_offer_and_is_read_once() {
+        let mut v = status(&[7]);
+        v["policy"] = serde_json::json!("P");
+        let d = Daemon::start(PROTOCOL, move |asked| {
+            Ok(match asked["method"].as_str() {
+                Some("status") => v.clone(),
+                Some("tree") => serde_json::json!([{
+                    "path": "lonca.toml",
+                    "content_b64": "W3ZlcmlmaWNhdGlvbl0KdGVzdCA9ICJ0Igo="
+                }]),
+                _ => serde_json::json!({"commit": "c", "diff": "diff --git a b\n", "files": [],
+                    "truncated": false, "redacted": []}),
+            })
+        });
+        d.sign_in();
+        let repos = vec![(0, "demo".to_string(), None)];
+        let mut kept = Kept::default();
+        let offers = look(&d.place, &repos, &[], &mut kept).offers;
+        assert_eq!(offers.len(), 1, "a proposal waits");
+        assert_eq!(offers[0].1.proposal.verifies, ["test"]);
+        let trees = || {
+            let heard = d.heard.lock().unwrap();
+            let policy = |h: &&serde_json::Value| h["method"] == "tree";
+            heard.iter().filter(policy).count()
+        };
+        let read = trees();
+        let again = look(&d.place, &repos, &[], &mut kept).offers;
+        assert_eq!(again[0].1.proposal.verifies, ["test"]);
+        assert_eq!(trees(), read, "kept while the policy stands");
+    }
+
+    #[test]
+    fn a_policy_that_can_not_be_read_verifies_nothing_and_is_read_again() {
+        let d = Daemon::start(PROTOCOL, |_| Err("internal"));
+        d.sign_in();
+        let mut kept = Kept::default();
+        let mut c = d.place.open().unwrap();
+        assert!(kept.verifies(&mut c, "demo", "P").is_empty());
+        assert!(kept.verifies.is_empty(), "only an answer is kept");
+    }
+
+    #[test]
+    fn a_failed_check_tells_the_worker_what_it_printed() {
+        let no = Landed::Rejected(vec!["verification_failed:build".into()]);
+        let checks = [
+            a_check("syntax", true, &["not this"]),
+            a_check("build", false, &["error[E0]", "here"]),
+            a_check("tests", false, &[]),
+        ];
+        let (words, act) = told(&no, "T", &checks).unwrap();
+        assert!(
+            words.contains("verification_failed:build. build (exit 3, 1.0 s):\nerror[E0]\nhere It"),
+            "{words}"
+        );
+        assert!(
+            !words.contains("not this") && !words.contains("tests ("),
+            "{words}"
+        );
+        assert!(act);
+        // A failing check with nothing to show adds nothing.
+        let (words, _) = told(&no, "T", &[a_check("tests", false, &[])]).unwrap();
+        assert!(words.contains("build. It stays"), "{words}");
+        // Two say both, one under the other, and it is cut.
+        let two = [a_check("a", false, &["1"]), a_check("b", false, &["2"])];
+        assert_eq!(
+            failed_output(&two),
+            " a (exit 3, 1.0 s):\n1\n b (exit 3, 1.0 s):\n2"
+        );
+        let long = "x".repeat(OUTPUT_TOLD + 1);
+        let cut = failed_output(&[a_check("a", false, &[long.as_str()])]);
+        assert_eq!(cut.chars().count(), 1000);
+    }
+
+    #[test]
+    fn a_conflict_points_at_the_markers_sync_leaves() {
+        let (words, _) = told(&Landed::Conflicted(vec!["a#b".into()]), "T", &[]).unwrap();
+        assert!(words.contains("conflict markers"), "{words}");
+        assert!(!words.contains(".trunk"), "{words}");
+    }
+
+    #[test]
+    fn what_the_queue_checked_is_journaled_and_reaches_the_worker() {
+        let (mut w, mut live, word) = proposer();
+        live.offered(&mut w, 0, &offer(&word, 5, "c5"));
+        let no = Standing::Rejected(vec!["verification_failed:build".into()]);
+        let checks = vec![a_check("build", false, &["broke"])];
+        let evidence = HashMap::from([("c5".to_string(), checks.clone())]);
+        assert!(live.land(&mut w, &standing("c5", no), &evidence));
+        assert!(
+            matches!(last(&w), Event::Verified { agent: 1, ok: false, checks: c } if *c == checks)
+        );
+        assert!(live.notes[1][0].contains("broke"), "{:?}", live.notes[1]);
+    }
+
+    #[test]
+    fn a_queued_proposal_says_its_checks_when_the_queue_ends() {
+        let (mut w, mut live, word) = proposer();
+        live.offered(&mut w, 0, &offer(&word, 5, "c5"));
+        let none = HashMap::new();
+        assert!(live.land(&mut w, &standing("c5", Standing::Queued), &none));
+        assert!(!matches!(last(&w), Event::Verified { .. }));
+        let on = Standing::Integrated("c1".into());
+        let checks = vec![a_check("tests", true, &[])];
+        let evidence = HashMap::from([("c5".to_string(), checks)]);
+        assert!(live.land(&mut w, &standing("c5", on), &evidence));
+        assert!(matches!(
+            last(&w),
+            Event::Verified {
+                agent: 1,
+                ok: true,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn a_look_watches_what_is_shown_and_what_is_queued() {
+        let mut v = status(&[]);
+        v["changes"] = serde_json::json!([
+            {"change": "c5", "status": {"status": "integrated", "commit": "c"}},
+            {"change": "c6", "status": {"status": "integrated", "commit": "c"}},
+            {"change": "c7", "status": {"status": "integrated", "commit": "c"}},
+        ]);
+        let d = Daemon::start(PROTOCOL, move |asked| {
+            Ok(match asked["method"].as_str() {
+                Some("status") => v.clone(),
+                _ => serde_json::json!({"evidence": [{"check": "tests", "result": "pass"}]}),
+            })
+        });
+        d.sign_in();
+        let (mut w, mut live, word) = proposer();
+        live.lonca = Watch::start(d.place.clone());
+        live.offered(&mut w, 0, &offer(&word, 5, "c5"));
+        live.lonca.queued.insert("c6".into(), 1);
+        live.lonca_due(&w, Instant::now());
+        settle(&mut live, &mut w);
+        let got: Vec<&Event> = (w.journal.iter()).map(|l| &l.event).collect();
+        let verified = got.iter().filter(|e| matches!(e, Event::Verified { .. }));
+        assert_eq!(verified.count(), 2, "not c7");
+    }
+
     #[test]
     fn a_worker_hears_what_it_must_act_on_and_is_woken_for_it() {
-        assert_eq!(told(&Landed::Queued, "t"), None);
-        assert_eq!(told(&Landed::Withdrawn, "t"), None);
-        let (on_trunk, act) = told(&Landed::Integrated("c1".into()), "T").unwrap();
+        assert_eq!(told(&Landed::Queued, "t", &[]), None);
+        assert_eq!(told(&Landed::Withdrawn, "t", &[]), None);
+        let (on_trunk, act) = told(&Landed::Integrated("c1".into()), "T", &[]).unwrap();
         assert!(
             on_trunk.contains("(T)") && on_trunk.contains("c1"),
             "{on_trunk}"
         );
         assert!(!act, "nothing to do until its next task");
-        let (clash, act) =
-            told(&Landed::Conflicted(vec!["a#b".into(), "c#d".into()]), "T").unwrap();
+        let (clash, act) = told(
+            &Landed::Conflicted(vec!["a#b".into(), "c#d".into()]),
+            "T",
+            &[],
+        )
+        .unwrap();
         assert!(clash.contains("(T): a#b; c#d."), "{clash}");
         assert!(clash.contains("sync") && clash.contains("propose again"));
         assert!(act);
-        let (no, act) = told(&Landed::Rejected(vec!["rejected: no".into()]), "T").unwrap();
+        let (no, act) = told(&Landed::Rejected(vec!["rejected: no".into()]), "T", &[]).unwrap();
         assert!(no.contains("(T) was refused: rejected: no."), "{no}");
         assert!(no.contains("sync") && no.contains("propose again"));
         assert!(act);
@@ -1920,7 +2259,7 @@ mod tests {
     #[test]
     fn what_a_worker_is_told_of_a_reason_has_a_length() {
         let long = "x".repeat(REASON_TOLD);
-        let (said, _) = told(&Landed::Rejected(vec![long.clone() + "y"]), "T").unwrap();
+        let (said, _) = told(&Landed::Rejected(vec![long.clone() + "y"]), "T", &[]).unwrap();
         assert!(
             said.contains(&format!("{long}. ")),
             "cut after {REASON_TOLD}"
@@ -2039,13 +2378,13 @@ mod tests {
         let d = waiting_daemon(serde_json::json!(POLICY));
         let repos = vec![(4, "demo".to_string(), None)];
         let mut kept = Kept::default();
-        let looked = look(&d.place, &repos, &mut kept);
+        let looked = look(&d.place, &repos, &[], &mut kept);
         assert_eq!(looked.offers.len(), 1);
         assert_eq!(looked.offers[0].0, 4);
         assert_eq!(looked.offers[0].1.agent, "a");
         assert_eq!(looked.offers[0].1.diff.patch, "the patch");
         assert_eq!(looked.standings.get("kkkk"), Some(&Standing::Pending));
-        look(&d.place, &repos, &mut kept);
+        look(&d.place, &repos, &[], &mut kept);
         let diffs = |d: &Daemon| {
             let heard = d.heard.lock().unwrap();
             heard
@@ -2056,7 +2395,7 @@ mod tests {
         assert_eq!(diffs(&d), 1);
         // Gone from what waits, it is not kept.
         kept.diffs.insert("gone".into(), diff_of("old"));
-        look(&d.place, &repos, &mut kept);
+        look(&d.place, &repos, &[], &mut kept);
         assert!(kept.diffs.contains_key("kkkk") && !kept.diffs.contains_key("gone"));
     }
 
@@ -2064,7 +2403,7 @@ mod tests {
     fn a_repository_that_lets_changes_in_unseen_is_closed_and_offers_nothing() {
         let d = waiting_daemon(serde_json::json!("0123"));
         let repos = vec![(0, "demo".to_string(), None)];
-        let looked = look(&d.place, &repos, &mut Kept::default());
+        let looked = look(&d.place, &repos, &[], &mut Kept::default());
         let down = StoreSeen::Down(StoreDown::Unguarded);
         assert_eq!(looked.found[0].2, down);
         assert!(looked.offers.is_empty() && looked.standings.is_empty());
@@ -2146,7 +2485,7 @@ mod tests {
         let (mut w, mut live, word) = proposer();
         live.offered(&mut w, 0, &offer(&word, 5, "c5"));
         let on_trunk = Standing::Integrated("c1".into());
-        assert!(live.land(&mut w, &standing("c5", on_trunk)));
+        assert!(live.land(&mut w, &standing("c5", on_trunk), &HashMap::new()));
         assert!(w.change_of(1).is_none() && w.proposal_of(1).is_none());
         assert!(w.open_inbox().is_empty());
         assert!(matches!(
@@ -2165,9 +2504,12 @@ mod tests {
     fn a_proposal_still_waiting_stays() {
         let (mut w, mut live, word) = proposer();
         live.offered(&mut w, 0, &offer(&word, 5, "c5"));
-        assert!(!live.land(&mut w, &standing("c5", Standing::Pending)));
-        assert!(!live.land(&mut w, &standing("c5", Standing::Other)));
-        assert!(!live.land(&mut w, &HashMap::new()), "not listed");
+        assert!(!live.land(&mut w, &standing("c5", Standing::Pending), &HashMap::new()));
+        assert!(!live.land(&mut w, &standing("c5", Standing::Other), &HashMap::new()));
+        assert!(
+            !live.land(&mut w, &HashMap::new(), &HashMap::new()),
+            "not listed"
+        );
         assert!(w.proposal_of(1).is_some());
     }
 
@@ -2176,7 +2518,7 @@ mod tests {
         let (mut w, mut live, word) = proposer();
         live.offered(&mut w, 0, &offer(&word, 5, "c5"));
         let clash = Standing::Conflicted(vec!["a#b".into()]);
-        assert!(live.land(&mut w, &standing("c5", clash)));
+        assert!(live.land(&mut w, &standing("c5", clash), &HashMap::new()));
         assert!(live.notes[1][0].contains("a#b"), "{:?}", live.notes[1]);
         assert!(live.lost[1]);
     }
@@ -2187,7 +2529,7 @@ mod tests {
         live.lost[1] = true;
         live.offered(&mut w, 0, &offer(&word, 5, "c5"));
         let clash = Standing::Conflicted(vec!["a#b".into()]);
-        live.land(&mut w, &standing("c5", clash));
+        live.land(&mut w, &standing("c5", clash), &HashMap::new());
         assert!(live.lost[1], "the other reason still stands");
     }
 
@@ -2197,7 +2539,7 @@ mod tests {
         live.offered(&mut w, 0, &offer(&word, 5, "c5"));
         w.agents[1].gone = true;
         let no = Standing::Rejected(vec!["no".into()]);
-        live.land(&mut w, &standing("c5", no));
+        live.land(&mut w, &standing("c5", no), &HashMap::new());
         assert!(!live.lost[1]);
     }
 
@@ -2205,7 +2547,7 @@ mod tests {
     fn what_the_queue_holds_is_said_when_it_comes_out() {
         let (mut w, mut live, word) = proposer();
         live.offered(&mut w, 0, &offer(&word, 5, "c5"));
-        assert!(live.land(&mut w, &standing("c5", Standing::Queued)));
+        assert!(live.land(&mut w, &standing("c5", Standing::Queued), &HashMap::new()));
         assert!(w.proposal_of(1).is_none(), "the person is done with it");
         assert!(matches!(
             last(&w),
@@ -2217,12 +2559,12 @@ mod tests {
         assert!(live.notes[1].is_empty());
         let lines = w.journal.len();
         assert!(
-            !live.land(&mut w, &standing("c5", Standing::Queued)),
+            !live.land(&mut w, &standing("c5", Standing::Queued), &HashMap::new()),
             "it stays"
         );
         assert_eq!(w.journal.len(), lines);
         let out = Standing::Conflicted(vec!["a#b".into()]);
-        assert!(live.land(&mut w, &standing("c5", out)));
+        assert!(live.land(&mut w, &standing("c5", out), &HashMap::new()));
         assert!(matches!(
             last(&w),
             Event::Landed {
@@ -2232,7 +2574,11 @@ mod tests {
         ));
         assert!(live.lost[1]);
         assert!(live.lonca.queued.is_empty());
-        assert!(!live.land(&mut w, &standing("c5", Standing::Rejected(vec![]))));
+        assert!(!live.land(
+            &mut w,
+            &standing("c5", Standing::Rejected(vec![])),
+            &HashMap::new()
+        ));
     }
 
     #[test]
@@ -2241,7 +2587,7 @@ mod tests {
         live.offered(&mut w, 0, &offer(&word, 5, "c5"));
         live.lonca.worded.push("c5".into());
         let no = Standing::Rejected(vec!["rejected: no".into()]);
-        live.land(&mut w, &standing("c5", no));
+        live.land(&mut w, &standing("c5", no), &HashMap::new());
         assert!(live.notes[1].is_empty() && !live.lost[1]);
         assert!(live.lonca.worded.is_empty());
     }
