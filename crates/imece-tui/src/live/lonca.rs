@@ -1928,6 +1928,23 @@ mod tests {
     }
 
     #[test]
+    fn a_decision_that_goes_through_says_nothing_of_itself() {
+        let (mut live, dir) = live_with("exit 0");
+        let mut w = team(1);
+        let before = w.journal.len();
+        assert!(live.store_job(StoreJob::Decide {
+            project: 0,
+            repo: "demo".into(),
+            agent: 1,
+            proposal: offer("w1", 9, "c9").proposal,
+            verdict: Verdict::Approve,
+        }));
+        job_ends(&mut live, &mut w);
+        assert_eq!(w.journal.len(), before, "a look says what came of it");
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
     fn a_decision_turns_down_the_older_proposals_first() {
         let (place, dir) =
             imece_agent::lonca_fake::program("echo \"$*\" >> \"$(dirname \"$0\")/all\"\nexit 0");
