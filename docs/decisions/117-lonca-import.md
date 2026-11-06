@@ -55,7 +55,8 @@ the person named another while it ran: the repository exists either way and
 the line says so. The daemon is asked at once. What Lonca warned of comes as
 `warning: ` lines on stderr (a file above the change cap: a workspace gets it, a
 proposal can not change it), the first in the journal with the count of the
-rest; lonca#97 asks for them as data.
+rest; lonca#97 asks for them as data. The same yes then signs the repository's policy
+so a critical path waits for the person (record 121).
 
 **What a real daemon did** (`832c161`, by hand; CI has no daemon).
 

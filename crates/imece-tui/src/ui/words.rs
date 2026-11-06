@@ -198,6 +198,19 @@ pub fn event(lang: Lang, w: &World, e: &Event) -> String {
                 ),
             }
         }
+        Event::StoreCriticalKept {
+            leader,
+            repo,
+            why: None,
+        } => fill(t.ev_store_critical_kept, &[project(w, *leader), repo]),
+        Event::StoreCriticalKept {
+            leader,
+            repo,
+            why: Some(why),
+        } => {
+            let line = fill(t.ev_store_critical_kept, &[project(w, *leader), repo]);
+            fill(t.ev_store_failed, &[&line, why])
+        }
         Event::StoreSynced { leader, repo, how } => fill(
             match how {
                 Synced::Even => t.ev_store_synced_even,

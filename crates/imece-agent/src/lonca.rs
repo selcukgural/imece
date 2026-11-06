@@ -9,14 +9,16 @@
 //!
 //! What must be signed with the person's key is not done here: the `lonca`
 //! program does it, as a child: a login or an import when the person asks
-//! (record 117), a worker's seat when it starts (record 119).
+//! (record 117), a worker's seat when it starts (record 119), the policy of
+//! a repository made just now (record 121).
 
 use std::ffi::{OsStr, OsString};
-use std::fs::{self, OpenOptions};
-use std::io::{BufRead, BufReader, Read, Write};
-use std::os::unix::fs::{FileTypeExt, MetadataExt, OpenOptionsExt};
+use std::fs::{self, DirBuilder, OpenOptions};
+use std::io::{self, BufRead, BufReader, Read, Write};
+use std::os::unix::fs::{DirBuilderExt, FileTypeExt, MetadataExt, OpenOptionsExt};
 use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use serde_json::{Map, Value, json};
@@ -178,6 +180,34 @@ impl Place {
             OsStr::new(repo),
         ];
         Ok(warnings(&self.run(checkout, &args, IMPORT_WAIT)?))
+    }
+
+    /// Has `repo`, made just now, take a change to a critical path to the
+    /// person instead of refusing it: `unobserved_critical` and imece's bus
+    /// in `mcp_servers` (see [`critical_opened`]), signed with the person's
+    /// key under `lonca policy set`, which the same yes as the import covers
+    /// (record 121). Lonca's rules go back as they were. A
+    /// policy that is not the default one a new repository has, or can not
+    /// be read, is left alone: no words, what stands is what was.
+    pub fn critical_waits(&self, repo: &str, dir: &Path) -> Result<(), Failed> {
+        let unread = |_| Failed::NoAnswer;
+        let mut client = self.open().map_err(unread)?;
+        let policy = client.status(repo).map_err(unread)?.policy;
+        let config = (client.policy_file(repo, &policy, POLICY_FILE)).map_err(unread)?;
+        let rules = (client.policy_file(repo, &policy, RULES_FILE)).map_err(unread)?;
+        let (Some(config), Some(rules)) = (config.as_deref().and_then(critical_opened), rules)
+        else {
+            return Err(Failed::NoAnswer);
+        };
+        let files = [(POLICY_FILE, config.as_str()), (RULES_FILE, rules.as_str())];
+        let set = with_files(&files, |at| {
+            let named = format!("--repo={repo}");
+            let config = format!("--config={}", at.join(POLICY_FILE).display());
+            let rules = format!("--policy={}", at.join(RULES_FILE).display());
+            let args = ["policy", "set", &config, &rules, &named].map(OsStr::new);
+            self.run(dir, &args, DECIDE_WAIT).map(|_| ())
+        });
+        set.map_err(|e| Failed::Said(e.to_string()))?
     }
 
     /// `lonca fetch`: trunk of `repo` into [`TRUNK_REF`] of the checkout,
@@ -581,16 +611,28 @@ impl Client {
     /// observes proposes for a human. Its `lonca.toml` is read from the
     /// store; a policy that has none has Lonca's defaults, which do.
     pub fn holds_unobserved(&mut self, repo: &str, policy: &str) -> Result<bool, Down> {
-        let params = json!({"commit": policy, "with_content": true, "paths": [POLICY_FILE]});
+        let text = self.policy_file(repo, policy, POLICY_FILE)?;
+        Ok(text.is_none_or(|t| unobserved_held(&t)))
+    }
+
+    /// The file `path` of the policy commit `policy`, as text; none when
+    /// the commit has no such file.
+    fn policy_file(
+        &mut self,
+        repo: &str,
+        policy: &str,
+        path: &str,
+    ) -> Result<Option<String>, Down> {
+        let params = json!({"commit": policy, "with_content": true, "paths": [path]});
         let told = self.call("tree", Some(repo), params)?;
         let files = told.as_array().ok_or(Down::Protocol)?;
-        let Some(file) = files.iter().find(|f| f["path"] == POLICY_FILE) else {
-            return Ok(true);
+        let Some(file) = files.iter().find(|f| f["path"] == path) else {
+            return Ok(None);
         };
         let text = (file["content_b64"].as_str())
             .and_then(from_base64)
             .and_then(|b| String::from_utf8(b).ok());
-        text.map(|t| unobserved_held(&t)).ok_or(Down::Protocol)
+        text.map(Some).ok_or(Down::Protocol)
     }
 
     /// The log from `from`, at most `limit` entries. With `wait` (at most
@@ -655,6 +697,12 @@ fn down_of(code: Option<&str>) -> Down {
 
 /// The file of a policy commit that holds the repository's settings.
 const POLICY_FILE: &str = "lonca.toml";
+/// The rules beside it.
+const RULES_FILE: &str = "policy.cedar";
+/// What a critical path costs a session nobody fully observes.
+const CRITICAL_KEY: &str = "unobserved_critical";
+/// The MCP servers whose tools do not taint a session.
+const UNTAINTED_KEY: &str = "mcp_servers";
 /// What the log calls a proposal: [`Pending::op`].
 pub const PROPOSE: &str = "change.propose";
 
@@ -679,6 +727,42 @@ fn from_base64(text: &str) -> Option<Vec<u8>> {
         }
     }
     Some(out)
+}
+
+/// The settings `toml` with a critical path waiting for a human: for an
+/// unobserved session, and imece's bus no longer tainting one, or the taint
+/// would refuse the same change (record 121). None when they do not say what
+/// Lonca's default says, its own lines, which a comment or another spelling
+/// is not.
+fn critical_opened(toml: &str) -> Option<String> {
+    let line = |key: &str, value: &str| format!("\n{key} = {value}\n");
+    let bus = format!("[\"{}\"]", crate::MCP_SERVER);
+    [
+        (
+            line(CRITICAL_KEY, "\"deny\""),
+            line(CRITICAL_KEY, "\"escalate\""),
+        ),
+        (line(UNTAINTED_KEY, "[]"), line(UNTAINTED_KEY, &bus)),
+    ]
+    .iter()
+    .try_fold(toml.to_string(), |text, (from, to)| {
+        (text.contains(from)).then(|| text.replacen(from, to, 1))
+    })
+}
+
+/// `then` with `files` (name, text) in a directory of their own, only the
+/// person's, gone afterwards.
+fn with_files<T>(files: &[(&str, &str)], then: impl FnOnce(&Path) -> T) -> io::Result<T> {
+    static NEXT: AtomicU64 = AtomicU64::new(0);
+    let n = NEXT.fetch_add(1, Ordering::Relaxed);
+    let name = format!("imece-policy-{}-{n}", std::process::id());
+    let dir = std::env::temp_dir().join(name);
+    // Not there before: never a directory someone else made ready.
+    DirBuilder::new().mode(0o700).create(&dir)?;
+    let wrote = (files.iter()).try_for_each(|(name, text)| fs::write(dir.join(name), text));
+    let done = wrote.map(|()| then(&dir));
+    let _ = fs::remove_dir_all(&dir);
+    done
 }
 
 /// Whether the settings `toml` leave `unobserved_is_tainted` on, Lonca's
@@ -971,6 +1055,146 @@ mod tests {
             Err(Failed::Said("conflict: it exists".into()))
         );
         fs::remove_dir_all(dir).unwrap();
+    }
+
+    /// A daemon whose policy commit `P` holds `lonca.toml` and `policy.cedar`
+    /// (base64 of `a=1` and `r`), and the program it is asked through.
+    fn policy_daemon(config_b64: &'static str) -> (Daemon, PathBuf) {
+        let mut d = Daemon::start(PROTOCOL, move |asked| {
+            Ok(match asked["method"].as_str() {
+                Some("status") => {
+                    let mut v = status(&[]);
+                    v["policy"] = json!("P");
+                    v
+                }
+                _ => match asked["params"]["paths"][0].as_str() {
+                    Some("lonca.toml") if asked["params"]["commit"] == "P" => {
+                        json!([{"path": "lonca.toml", "content_b64": config_b64}])
+                    }
+                    Some("policy.cedar") if asked["params"]["commit"] == "P" => {
+                        json!([{"path": "policy.cedar", "content_b64": "cg=="}])
+                    }
+                    _ => json!([]),
+                },
+            })
+        });
+        d.sign_in();
+        let (fake, dir) = program(
+            "for a; do case \"$a\" in\n\
+             --config=*) cp \"${a#--config=}\" \"$(dirname \"$0\")/config\";;\n\
+             --policy=*) cp \"${a#--policy=}\" \"$(dirname \"$0\")/rules\";;\n\
+             esac; done",
+        );
+        d.place.program = fake.program;
+        (d, dir)
+    }
+
+    /// Lonca's two default lines between two others, base64.
+    const DEFAULT_B64: &str =
+        "eAp1bm9ic2VydmVkX2NyaXRpY2FsID0gImRlbnkiCm1jcF9zZXJ2ZXJzID0gW10KeQo=";
+
+    #[test]
+    fn critical_waits_signs_the_settings_with_only_that_line_changed() {
+        let (d, dir) = policy_daemon(DEFAULT_B64);
+        assert_eq!(d.place.critical_waits("-demo", &dir), Ok(()));
+        let args = seen(&dir);
+        assert!(args.contains("|policy set --config="), "{args}");
+        assert!(args.ends_with(" --repo=-demo|\n"), "{args}");
+        assert_eq!(
+            fs::read_to_string(dir.join("config")).unwrap(),
+            "x\nunobserved_critical = \"escalate\"\nmcp_servers = [\"imece\"]\ny\n"
+        );
+        assert_eq!(fs::read_to_string(dir.join("rules")).unwrap(), "r");
+        // Its copies are gone with the command.
+        let at = args.split("--config=").nth(1).unwrap();
+        let at = Path::new(at.split(' ').next().unwrap());
+        assert!(!at.parent().unwrap().exists(), "{}", at.display());
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn critical_waits_touches_a_policy_it_does_not_know() {
+        // `unobserved_critical = "escalate"` already, in base64.
+        let (d, dir) = policy_daemon("CnVub2JzZXJ2ZWRfY3JpdGljYWwgPSAiZXNjYWxhdGUiCg==");
+        assert_eq!(d.place.critical_waits("demo", &dir), Err(Failed::NoAnswer));
+        assert!(!dir.join("seen").exists(), "no program ran");
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn critical_waits_needs_both_files_and_a_daemon() {
+        let (d, dir) = policy_daemon(DEFAULT_B64);
+        // No such commit: status names another policy.
+        let d2 = Daemon::start(PROTOCOL, |_| Ok(status(&[])));
+        d2.sign_in();
+        let place = Place {
+            program: d.place.program.clone(),
+            ..d2.place.clone()
+        };
+        assert_eq!(place.critical_waits("demo", &dir), Err(Failed::NoAnswer));
+        // A daemon gone is no answer either.
+        let gone = Place {
+            socket: dir.join("no-socket"),
+            ..d.place.clone()
+        };
+        assert_eq!(gone.critical_waits("demo", &dir), Err(Failed::NoAnswer));
+        assert!(!dir.join("seen").exists(), "no program ran");
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn a_refused_policy_says_why() {
+        let (d, dir) = policy_daemon(DEFAULT_B64);
+        let refused = program("echo 'lonca: denied: quorum' >&2\nexit 1");
+        let place = Place {
+            program: refused.0.program,
+            ..d.place.clone()
+        };
+        assert_eq!(
+            place.critical_waits("demo", &dir),
+            Err(Failed::Said("denied: quorum".into()))
+        );
+        fs::remove_dir_all(dir).unwrap();
+        fs::remove_dir_all(refused.1).unwrap();
+    }
+
+    #[test]
+    fn the_critical_lines_are_read_only_as_lonca_writes_them() {
+        let deny = "unobserved_critical = \"deny\"";
+        let none = "mcp_servers = []";
+        assert_eq!(
+            critical_opened(&format!("a\n{deny}\nb\n{none}\nc\n")).as_deref(),
+            Some("a\nunobserved_critical = \"escalate\"\nb\nmcp_servers = [\"imece\"]\nc\n")
+        );
+        assert_eq!(
+            critical_opened(&format!("a\n{deny}\n{none}\nc\n")).as_deref(),
+            Some("a\nunobserved_critical = \"escalate\"\nmcp_servers = [\"imece\"]\nc\n"),
+            "side by side"
+        );
+        for other in [
+            "".to_string(),
+            format!("a\n{deny}\nb\n"),
+            format!("a\n{none}\nb\n"),
+            format!("a\nunobserved_critical = \"escalate\"\n{none}\nb\n"),
+            format!("a\n# {deny}\n{none}\nb\n"),
+            format!("a\n{deny}\nmcp_servers = [\"x\"]\nb\n"),
+            format!("a\nnot_{deny}\n{none}\nb\n"),
+        ] {
+            assert_eq!(critical_opened(&other), None, "{other:?}");
+        }
+    }
+
+    #[test]
+    fn files_stand_for_the_call_in_a_directory_of_the_persons_alone() {
+        let mut seen_at = PathBuf::new();
+        let mode = with_files(&[("a", "one"), ("b", "two")], |at| {
+            seen_at = at.to_path_buf();
+            assert_eq!(fs::read_to_string(at.join("a")).unwrap(), "one");
+            assert_eq!(fs::read_to_string(at.join("b")).unwrap(), "two");
+            fs::metadata(at).unwrap().mode() & 0o777
+        });
+        assert_eq!(mode.unwrap(), 0o700);
+        assert!(!seen_at.exists());
     }
 
     #[test]
@@ -1814,6 +2038,12 @@ mod tests {
         );
         assert_eq!(place.import("-odd.name", &checkout, &branch), Ok(vec![]));
         assert_eq!(place.login(&checkout), Ok("ayse".to_string()));
+        assert_eq!(place.critical_waits("-odd.name", &checkout), Ok(()));
+        assert_eq!(
+            place.critical_waits("-odd.name", &checkout),
+            Err(Failed::NoAnswer),
+            "said once"
+        );
         let mut c = place.open().expect("opens");
         let status = c.status("-odd.name").expect("status");
         assert_eq!(status.trunk, head);

@@ -95,7 +95,7 @@ pub fn script(f: &mut Frame, app: &App, item: usize, at: usize) -> Rect {
 pub fn import(f: &mut Frame, app: &App, ask: &ImportAsk) -> Rect {
     let t = app.lang.text();
     let full = f.area();
-    let area = centered(full, full.width.saturating_sub(8).min(72), 10);
+    let area = centered(full, full.width.saturating_sub(8).min(72), 13);
     shade(f, area);
     clear(f, area);
     let block = Block::bordered()
@@ -113,6 +113,7 @@ pub fn import(f: &mut Frame, app: &App, ask: &ImportAsk) -> Rect {
         Line::from(fill(t.import_into, &[&ask.repo])),
         Line::default(),
         Line::from(Span::styled(t.import_note, dim())),
+        Line::from(Span::styled(t.import_critical, dim())),
         Line::from(Span::styled(t.import_final, fg(pal().warn))),
         Line::default(),
         Line::from(super::hint_spans(&t.import_hints)),

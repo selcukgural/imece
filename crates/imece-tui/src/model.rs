@@ -1665,6 +1665,13 @@ pub enum Event {
         repo: String,
         warnings: Vec<String>,
     },
+    /// Repository `repo`, imported for `leader`'s project, still refuses a
+    /// change to a critical path (record 121), for `why`.
+    StoreCriticalKept {
+        leader: AgentId,
+        repo: String,
+        why: Option<String>,
+    },
     /// `:sync` brought repository `repo` to `leader`'s project's checkout.
     StoreSynced {
         leader: AgentId,
@@ -1970,6 +1977,7 @@ impl Event {
             | Event::StoreBack { .. }
             | Event::StoreSignedIn { .. }
             | Event::StoreImported { .. }
+            | Event::StoreCriticalKept { .. }
             | Event::StoreSynced { .. }
             | Event::StoreFailed { .. }
             | Event::Retrying { .. }
@@ -2056,6 +2064,7 @@ impl Event {
             | Event::StoreBack { leader, .. }
             | Event::StoreSignedIn { leader, .. }
             | Event::StoreImported { leader, .. }
+            | Event::StoreCriticalKept { leader, .. }
             | Event::StoreSynced { leader, .. }
             | Event::StoreFailed { leader, .. }
             | Event::Budget { leader, .. }
@@ -2852,6 +2861,13 @@ impl World {
         });
     }
 
+    /// The repository `ask` made still refuses critical paths, for `why`.
+    pub fn store_critical_kept(&mut self, ask: &ImportAsk, why: Option<String>) {
+        let leader = self.projects[ask.project].leader;
+        let repo = ask.repo.clone();
+        self.note(Event::StoreCriticalKept { leader, repo, why });
+    }
+
     /// `:sync` of `repo` did what `how` says to project `p`'s checkout.
     pub fn store_synced(&mut self, p: ProjectId, repo: &str, how: Synced) {
         let leader = self.projects[p].leader;
@@ -3114,6 +3130,7 @@ impl World {
                             | Event::StoreBack { .. }
                             | Event::StoreSignedIn { .. }
                             | Event::StoreImported { .. }
+                            | Event::StoreCriticalKept { .. }
                             | Event::StoreSynced { .. }
                             | Event::StoreFailed { .. }
                             | Event::Confine { .. }
@@ -7201,6 +7218,20 @@ mod tests {
                 leader,
                 act: StoreAct::Import,
                 why: None
+            }
+        );
+    }
+
+    #[test]
+    fn a_kept_refusal_of_critical_paths_is_said_by_the_project() {
+        let mut w = world(vec![lead(0)]);
+        w.store_critical_kept(&ask(0), Some("no".into()));
+        assert_eq!(
+            w.journal.last().unwrap().event,
+            Event::StoreCriticalKept {
+                leader: 0,
+                repo: "r".into(),
+                why: Some("no".into())
             }
         );
     }
