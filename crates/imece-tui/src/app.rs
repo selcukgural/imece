@@ -3148,6 +3148,11 @@ impl App {
                     _ => Zoom::None,
                 };
             }
+            // What is selected under a conversation is not what is on
+            // screen: nothing is decided unseen.
+            KeyCode::Char('a' | 'r') if self.thread.is_some() => {
+                self.flash(self.lang.text().talk_decides_nothing);
+            }
             KeyCode::Char('a') if self.pane == Pane::Inbox => self.answer(true),
             KeyCode::Char('r') if self.pane == Pane::Inbox => self.answer(false),
             _ => {}
@@ -12271,6 +12276,42 @@ pub(crate) mod tests {
         app.on_key(key(KeyCode::Char('[')));
         assert_eq!(app.thread.as_ref().unwrap().sel, 0, "none before the first");
         assert_eq!(app.pane, pane, "the conversation keeps [ ], no panel moves");
+    }
+
+    #[test]
+    fn a_conversation_open_over_a_change_decides_nothing() {
+        let mut app = quiet();
+        app.world.change_ready(a_change(3));
+        app.world.replied(3, "it is done");
+        app.view = View::Salon;
+        app.pane = Pane::Inbox;
+        let reply = (app.world.inbox.iter())
+            .position(|i| i.kind == InboxKind::Reply)
+            .expect("its reply waits");
+        let change = (app.world.inbox.iter())
+            .position(|i| i.kind == InboxKind::Change)
+            .expect("its change waits");
+        app.open_thread(reply);
+        app.inbox_sel = (app.inbox_rows().iter())
+            .position(|&i| i == change)
+            .expect("the change is on the list");
+        for k in ['a', 'r'] {
+            app.on_key(key(KeyCode::Char(k)));
+            assert!(
+                app.world.inbox[change].open,
+                "{k} decided what is not shown"
+            );
+            assert!(app.world.change_of(3).is_some(), "{k}");
+            assert!(!app.typing, "{k}");
+            let said = app.flash.take().expect("it says why").0;
+            assert_eq!(said, app.lang.text().talk_decides_nothing);
+        }
+        // With the conversation closed the same key decides.
+        app.on_key(key(KeyCode::Esc));
+        assert!(app.thread.is_none());
+        app.on_key(key(KeyCode::Char('a')));
+        let said = app.flash.as_ref().map(|f| f.0.as_str());
+        assert_ne!(said, Some(app.lang.text().talk_decides_nothing));
     }
 
     #[test]

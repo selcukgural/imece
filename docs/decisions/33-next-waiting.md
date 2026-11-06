@@ -32,3 +32,5 @@ what `w` and `j` already do. Put-off items are kept for the run only
 (not in the store): putting off is about this sitting, and a fresh start
 shows everything in age order again. Pure screen logic, so the demo
 shows it exactly as live does.
+
+`a` and `r` under a conversation decide nothing (2026-11-07, found by the first real run on Lonca): `W` opens a reply before the Δ beside it, the reply closes, the selection falls on the Δ, and `a` approved a change nobody had read. They flash `talk_decides_nothing`.

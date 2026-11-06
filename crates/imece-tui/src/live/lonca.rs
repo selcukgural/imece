@@ -214,18 +214,23 @@ fn told(how: &Landed, title: &str, checks: &[Attested]) -> Option<(String, bool)
         let all = words.join("; ");
         all.chars().take(REASON_TOLD).collect::<String>()
     };
+    // A proposal the queue kept has lost its title with its Δ.
+    let named = match title {
+        "" => String::new(),
+        title => format!(" ({title})"),
+    };
     match how {
         Landed::Queued | Landed::Withdrawn => None,
         Landed::Integrated(commit) => Some((
             format!(
-                "Your proposal ({title}) is on trunk as {commit}. Call the sync tool before you \
+                "Your proposal{named} is on trunk as {commit}. Call the sync tool before you \
                  edit again."
             ),
             false,
         )),
         Landed::Conflicted(symbols) => Some((
             format!(
-                "Lonca's merge queue could not merge your proposal ({title}): {}. Call the sync \
+                "Lonca's merge queue could not merge your proposal{named}: {}. Call the sync \
                  tool, settle the conflict markers it leaves in your files, and propose again.",
                 some(symbols)
             ),
@@ -233,7 +238,7 @@ fn told(how: &Landed, title: &str, checks: &[Attested]) -> Option<(String, bool)
         )),
         Landed::Rejected(reasons) => Some((
             format!(
-                "Your proposal ({title}) was refused: {}.{} It stays in your workspace. Put it \
+                "Your proposal{named} was refused: {}.{} It stays in your workspace. Put it \
                  right, call the sync tool, and propose again.",
                 some(reasons),
                 failed_output(checks),
@@ -248,8 +253,8 @@ fn told(how: &Landed, title: &str, checks: &[Attested]) -> Option<(String, bool)
 fn failed_output(checks: &[Attested]) -> String {
     let said = (checks.iter())
         .filter(|c| !c.ok && !c.lines.is_empty())
-        .map(|c| format!(" {} ({}):\n{}", c.check, c.end, c.lines.join("\n")));
-    let all: String = said.collect::<Vec<_>>().join("\n");
+        .map(|c| format!(" {} ({}):\n{}\n", c.check, c.end, c.lines.join("\n")));
+    let all: String = said.collect();
     all.chars().take(OUTPUT_TOLD).collect()
 }
 
@@ -2215,7 +2220,9 @@ mod tests {
         ];
         let (words, act) = told(&no, "T", &checks).unwrap();
         assert!(
-            words.contains("verification_failed:build. build (exit 3, 1.0 s):\nerror[E0]\nhere It"),
+            words.contains(
+                "verification_failed:build. build (exit 3, 1.0 s):\nerror[E0]\nhere\n It"
+            ),
             "{words}"
         );
         assert!(
@@ -2230,11 +2237,25 @@ mod tests {
         let two = [a_check("a", false, &["1"]), a_check("b", false, &["2"])];
         assert_eq!(
             failed_output(&two),
-            " a (exit 3, 1.0 s):\n1\n b (exit 3, 1.0 s):\n2"
+            " a (exit 3, 1.0 s):\n1\n b (exit 3, 1.0 s):\n2\n"
         );
         let long = "x".repeat(OUTPUT_TOLD + 1);
         let cut = failed_output(&[a_check("a", false, &[long.as_str()])]);
         assert_eq!(cut.chars().count(), 1000);
+    }
+
+    #[test]
+    fn a_proposal_with_no_title_is_told_with_no_brackets() {
+        for how in [
+            Landed::Integrated("c1".into()),
+            Landed::Conflicted(vec!["a#b".into()]),
+            Landed::Rejected(vec!["no".into()]),
+        ] {
+            let (words, _) = told(&how, "", &[]).unwrap();
+            assert!(!words.contains("()"), "{words}");
+            let (words, _) = told(&how, "T", &[]).unwrap();
+            assert!(words.contains("your proposal (T)") || words.contains("Your proposal (T)"));
+        }
     }
 
     #[test]

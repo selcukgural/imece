@@ -34,6 +34,8 @@ Başlık iki tarafı ve seçimin yerini söyler, `4/5`; kelimelerine yazılmış
 - SENİ BEKLEYEN'de bir soruda (`?`) ya da yanıtta (`»`) `enter` konuşmayı o mesajda açar; bir yanıt bununla okunmuş olur ve kapanır.
 - Bekleyen sıradaki öge bir soru ya da yanıtsa `W` de aynı şekilde açar.
 
+Konuşma açıkken `a` ve `r` hiçbir şeye karar vermez: altında seçili olan, gördüğün şey değildir. Önce `esc`, sonra değişikliği aç.
+
 Boşta bir işçiye mesaj onun için bir kart açar (ilk satır kartın başlığıdır), yanıtı kartı kapatır. Yani pencereden `@claude-2 metin` yazmak bir mesaj olduğu kadar bir karttır.
 
 ## Okumak
