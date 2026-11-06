@@ -614,7 +614,14 @@ pub(crate) fn proposal_lines(lang: Lang, p: &StoreProposal) -> Vec<Line<'static>
     if !p.older.is_empty() {
         said.push_str(&fill(t.diff_proposal_older, &[&p.older.len().to_string()]));
     }
-    let mut lines = vec![Line::from(Span::styled(said, dim()))];
+    let verifies = match p.verifies.join(", ") {
+        names if names.is_empty() => t.diff_verifies_none.to_string(),
+        names => fill(t.diff_verifies, &[&names]),
+    };
+    let mut lines = vec![
+        Line::from(Span::styled(said, dim())),
+        Line::from(Span::styled(verifies, dim())),
+    ];
     let loud = |text: String| Line::from(Span::styled(text, fg(pal().warn)));
     if !p.redacted.is_empty() {
         lines.push(loud(fill(t.diff_redacted, &[&p.redacted.join(", ")])));
@@ -1577,6 +1584,7 @@ diff --git a/c.rs b/c.rs
             why: vec!["unobserved_session".into(), "approvals=1".into()],
             redacted: Vec::new(),
             cut: false,
+            verifies: vec![],
         }
     }
 
@@ -1585,11 +1593,30 @@ diff --git a/c.rs b/c.rs
     }
 
     #[test]
+    fn a_proposal_says_what_runs_after_the_persons_yes() {
+        let p = StoreProposal {
+            verifies: vec!["build".into(), "test".into()],
+            ..a_proposal()
+        };
+        let lines = proposal_lines(Lang::En, &p);
+        assert_eq!(said(&lines)[1], " after your yes Lonca runs: build, test");
+        let lines = proposal_lines(Lang::Tr, &p);
+        assert!(
+            said(&lines)[1].contains("build, test"),
+            "{:?}",
+            said(&lines)
+        );
+    }
+
+    #[test]
     fn a_proposal_says_its_number_and_why_it_waits() {
         let lines = proposal_lines(Lang::En, &a_proposal());
         assert_eq!(
             said(&lines),
-            [" proposal 5 · waits: unobserved_session, approvals=1"]
+            [
+                " proposal 5 · waits: unobserved_session, approvals=1",
+                " nothing runs after your yes: no build or test in lonca.toml"
+            ]
         );
         assert_eq!(lines[0].spans[0].style, dim());
     }
@@ -1613,12 +1640,13 @@ diff --git a/c.rs b/c.rs
         let p = StoreProposal {
             redacted: vec!["a.env".into(), "b.env".into()],
             cut: true,
+            verifies: vec![],
             ..a_proposal()
         };
         let lines = proposal_lines(Lang::En, &p);
-        assert_eq!(said(&lines)[1], " left out, redacted: a.env, b.env");
-        assert_eq!(said(&lines)[2], Lang::En.text().diff_cut);
-        assert_eq!(lines[1].spans[0].style, fg(pal().warn));
+        assert_eq!(said(&lines)[2], " left out, redacted: a.env, b.env");
+        assert_eq!(said(&lines)[3], Lang::En.text().diff_cut);
         assert_eq!(lines[2].spans[0].style, fg(pal().warn));
+        assert_eq!(lines[3].spans[0].style, fg(pal().warn));
     }
 }

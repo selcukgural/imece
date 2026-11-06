@@ -121,7 +121,21 @@ Bir [Lonca workspace](projects.md#loncada)'indeki işçinin okunacak worktree'si
 
 `a` onaylar, `r` reddeder; ikisini de `lonca` programı imzalar, bu yüzden Secure Enclave anahtarı parmağınızı ister. Lonca'ya ulaşmayan bir karar günlükte söylenir ve Δ beklemeyi sürdürür. Lonca gerekçesiz ret almaz, bu yüzden `r` önce satırı açar ve gönderdiğiniz hem gerekçe hem de işçiye mesajınızdır; `esc` ile satırdan çıkmak hiçbir şeyi reddetmez. Öneri bütün olarak onaylanır: `x` reddedilir ve çalışma kopyanıza hiçbir şey inmez, onu [`:sync`](../reference/commands.md#sync) trunk'a getirir.
 
-Lonca'nın sonra yaptığı, kim karar vermiş olursa olsun söylenir, kendi kabuğunuzdaki `lonca approve` dahil: `trunk'ta, 174cfc1 olarak`, kuyruğun yapamadığı bir birleştirme ya da nedenleriyle bir ret. Geri gönderilen işçi uyandırılır ve eşitleyip yeniden önermesi söylenir; trunk'a giren işçi bunu sonraki isteminde duyar. Politikası değişiklikleri görülmeden alacak bir depo kapatılır: bkz. [projeler](projects.md#loncada). Maliyeti imece'de kalır ve biri inene dek sonraki öneriye taşınır.
+Lonca'nın sonra yaptığı, kim karar vermiş olursa olsun söylenir, kendi kabuğunuzdaki `lonca approve` dahil: `trunk'ta, 174cfc1 olarak`, kuyruğun yapamadığı bir birleştirme ya da nedenleriyle bir ret. Birleştirme kuyruğunun denetimleri de günlüğe girer: `claude-1: Lonca'nın denetimleri · ✓ build exit 0, 12.4 s · ✗ tests exit 101, 31.0 s · son satırı`. Geri gönderilen işçi uyandırılır, eşitleyip yeniden önermesi söylenir ve başarısız denetimin yazdıkları ona iletilir; trunk'a giren işçi bunu sonraki isteminde duyar. Politikası değişiklikleri görülmeden alacak bir depo kapatılır: bkz. [projeler](projects.md#loncada). Maliyeti imece'de kalır ve biri inene dek sonraki öneriye taşınır.
+
+### Lonca'da ne denetlenir {#what-is-checked-on-lonca}
+
+`.imece/check` workspace'te çalışmaz. Lonca'daki bir depo ne çalışacağını `lonca.toml`'daki `[verification]` ile söyler, Lonca'nın birleştirme kuyruğu da bunu onayından sonra birleşmiş ağaçta, korumalı alanda çalıştırır; imece hiçbir şey çalıştırmaz. Δ hangisi olduğunu söyler: `onayından sonra Lonca şunları çalıştırır: build, test` ya da `onayından sonra hiçbir şey çalışmaz`. Ayarlar imzalıdır, bu yüzden değiştirmek senin yapacağın bir `lonca policy set` işidir:
+
+```toml
+[verification]
+build = "cargo build --offline"
+test = "cargo test --offline"
+required = true
+env_passthrough = ["HOME", "CARGO_HOME", "RUSTUP_HOME", "TMPDIR"]
+```
+
+Komutlar `PATH`, geçici bir `HOME` ve `LANG` dışında boş bir ortam görür, bu yüzden ev dizinindeki bir araç zincirinin dizinleri `env_passthrough`'ta olmalıdır. Başarısız bir denetimde değişiklik inmez: Lonca reddeder, onayın günlükte kalır, işçi işi yeniden alır.
 
 ## Ayrıca bakınız
 

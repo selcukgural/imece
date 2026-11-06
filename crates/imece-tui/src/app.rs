@@ -17572,6 +17572,7 @@ pub(crate) mod tests {
             why: Vec::new(),
             redacted: Vec::new(),
             cut: false,
+            verifies: vec![],
         };
         app.world.change_proposed(a_change(1), proposal);
         app.zoom = Zoom::Diff(1);
@@ -17714,6 +17715,7 @@ pub(crate) mod tests {
             why: Vec::new(),
             redacted: Vec::new(),
             cut: false,
+            verifies: vec![],
         };
         let mut w = team(1);
         w.change_ready(a_change(1));

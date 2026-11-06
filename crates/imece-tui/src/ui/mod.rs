@@ -7097,6 +7097,7 @@ mod tests {
             why: vec!["unobserved_session".into()],
             redacted: Vec::new(),
             cut: false,
+            verifies: vec![],
         };
         app.world.change_proposed(a_change(1), proposal);
         let s = render(&app, 140, 40);
@@ -14037,6 +14038,28 @@ after | not a table";
         assert_eq!(
             line(imported(vec!["big.bin".into(), "x".into(), "y".into()])),
             format!("{went}; Lonca warns: big.bin (+2 more)")
+        );
+        let verified = |checks: Vec<Attested>| Event::Verified {
+            agent: 1,
+            ok: false,
+            checks,
+        };
+        let check = |name: &str, ok, end: &str, lines: &[&str]| Attested {
+            check: name.into(),
+            ok,
+            end: end.into(),
+            lines: lines.iter().map(|l| l.to_string()).collect(),
+        };
+        assert!(
+            line(verified(vec![
+                check("syntax", true, "", &[]),
+                check("build", true, "exit 0, 1.1 s", &[]),
+                check("tests", false, "exit 1, 2.0 s", &["first", "last"]),
+            ]))
+            .ends_with(
+                ": Lonca's checks · ✓ syntax · ✓ build exit 0, 1.1 s · \
+                 ✗ tests exit 1, 2.0 s · last"
+            )
         );
         let kept = |why: Option<&str>| Event::StoreCriticalKept {
             leader: 0,

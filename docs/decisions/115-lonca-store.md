@@ -181,7 +181,7 @@ git items of record 111's "after the first round" in epic #286.
    (and what Lonca offers a reviewer besides approval, once probed);
    `conflicted` and `rejected` reach the worker as the queue says them,
    with `sync` and propose again as the next step; `x` and `b` go.
-6. Verification: `.imece/check` is retired in favour of `[verification]`
+6. (Done: record 122, which says what changed from this text.) Verification: `.imece/check` is retired in favour of `[verification]`
    in the repository's `lonca.toml`, documented with the toolchain
    environment the sandbox needs; the Δ shows the attestations.
 7. Leases on the code map (record 17): `status` lists who holds what; the

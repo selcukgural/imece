@@ -360,6 +360,9 @@ pub fn event(lang: Lang, w: &World, e: &Event) -> String {
             fill(t.ev_change_cost, &[name(w, *agent), &spend(lang, s)])
         }
         Event::Landed { agent, how } => landed(t, name(w, *agent), how),
+        Event::Verified { agent, checks, .. } => {
+            fill(t.ev_verified, &[name(w, *agent), &attested(checks)])
+        }
         Event::Applied { agent, files, mark } => {
             fill(t.ev_applied, &[name(w, *agent), &files.to_string(), mark])
         }
@@ -1046,6 +1049,20 @@ fn landed(t: &Text, name: &str, how: &Landed) -> String {
         Landed::Rejected(reasons) => fill(t.ev_landed_rejected, &[name, &reasons.join("; ")]),
         Landed::Withdrawn => fill(t.ev_landed_withdrawn, &[name]),
     }
+}
+
+/// What Lonca's queue checked, on one line: `✓ build exit 0, 1.1 s · ✗ tests
+/// exit 1, 2.0 s · its last line`.
+fn attested(checks: &[Attested]) -> String {
+    let one = |c: &Attested| {
+        let mark = if c.ok { "✓" } else { "✗" };
+        let head = format!("{mark} {} {}", c.check, c.end);
+        match c.lines.last() {
+            Some(last) => format!("{} · {last}", head.trim_end()),
+            None => head.trim_end().to_string(),
+        }
+    };
+    checks.iter().map(one).collect::<Vec<_>>().join(" · ")
 }
 
 /// Why a Lonca repository can not be read, in the screen's language.

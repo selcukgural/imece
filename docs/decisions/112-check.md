@@ -92,3 +92,5 @@ Demo (record 31): every demo checkout has a check (`DEMO_CHECK`), asked
 about at the first change of a project and run on each one after a yes,
 two ticks long (`CHECK_TICKS`), every third failing with
 `DEMO_CHECK_SAYS`; the same `decide_setup` and the same window.
+
+On Lonca the check is `[verification]`, run by the merge queue after the person's yes, and this does not run in a workspace (record 122).
