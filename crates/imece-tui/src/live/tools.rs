@@ -217,6 +217,19 @@ pub(super) fn run_answer(o: &run::Outcome, deadline: Duration) -> String {
     }
 }
 
+/// `git` for an agent in a Lonca workspace, refused. The `.git` there is the
+/// agent's own to write (record 119), unlike a worktree's, so git run for it
+/// would run what its config says, past the session's restrictions and out
+/// of `lonca hook`'s sight.
+pub(super) fn no_git_in_workspace(agent: &Agent, argv: &[String]) -> Result<(), String> {
+    if agent.workspace.is_some() && argv[0] == "git" {
+        return Err("git is not run through imece in a Lonca workspace; \
+                    its preview and status tools say what git would"
+            .to_string());
+    }
+    Ok(())
+}
+
 /// Whether an agent in `role` may run `argv`: cargo without the commands
 /// that change dependencies (a leader: without the ones that change
 /// files), git's reading commands, and for workers and helpers the
@@ -538,6 +551,7 @@ impl Live {
             }
             let argv = run::split(line)?;
             allowed(w.agents[from].role, &argv, &self.run_programs)?;
+            no_git_in_workspace(&w.agents[from], &argv)?;
             let cwd = self.cwds[from]
                 .clone()
                 .ok_or_else(|| "the session has no directory yet".to_string())?;
@@ -555,7 +569,10 @@ impl Live {
         w.agents[from].trace(w.tick, format!("run: {line}"));
         let (tx, generation) = (self.tx.clone(), self.generation[from]);
         let (running, timeout) = (self.running[from].clone(), self.run_timeout);
-        let stamped = matches!(w.agents[from].role, Role::Worker | Role::Helper);
+        // A workspace's run is tied to no tree: that would be imece's git in
+        // it, and its Δ is a proposal.
+        let stamped = matches!(w.agents[from].role, Role::Worker | Role::Helper)
+            && w.agents[from].workspace.is_none();
         let ran_tx = self.ran_tx.clone();
         thread::spawn(move || {
             let before = if stamped {
@@ -1465,6 +1482,48 @@ mod tests {
                 .description
                 .contains("git (blame, diff, grep, log, ls-files, rev-parse, show, status only)")
         );
+    }
+
+    #[test]
+    fn git_goes_through_imece_only_outside_a_workspace() {
+        let mut w = team(2);
+        let line = |l: &str| run::split(l).unwrap();
+        let (git, other) = (line("git status"), line("cargo test"));
+        assert_eq!(no_git_in_workspace(&w.agents[1], &git), Ok(()));
+        assert_eq!(no_git_in_workspace(&w.agents[1], &other), Ok(()));
+        w.agents[1].workspace = Some("demo".into());
+        let e = no_git_in_workspace(&w.agents[1], &git).unwrap_err();
+        assert!(e.contains("Lonca workspace"), "{e}");
+        assert_eq!(no_git_in_workspace(&w.agents[1], &other), Ok(()));
+    }
+
+    #[test]
+    fn a_run_in_a_workspace_reads_no_tree_and_runs_no_git() {
+        let mut w = team(2);
+        let mut live = idle_live(3);
+        live.run_programs = vec!["sh".into()];
+        live.run_timeout = Duration::from_secs(5);
+        let dir = crate::live::testing::checkout("run-workspace");
+        live.cwds[1] = Some(dir.clone());
+        let ok = json!({ "command": "sh -c 'exit 0'" });
+        let git = json!({ "command": "git status" });
+        // In a worktree a run is tied to its tree, and git reads.
+        call(&mut live, &mut w, 1, "run", ok.clone()).unwrap();
+        live.step(&mut w);
+        assert_eq!(live.ran.len(), 1);
+        call(&mut live, &mut w, 1, "run", git.clone()).unwrap();
+        live.step(&mut w);
+        assert_eq!(live.ran.len(), 2);
+        // In a workspace neither, and the program still runs.
+        live.ran.clear();
+        w.agents[1].workspace = Some("demo".into());
+        let got = call(&mut live, &mut w, 1, "run", ok).unwrap();
+        assert_eq!(got, "exit code 0, no output");
+        live.step(&mut w);
+        assert_eq!(live.ran.len(), 0, "{:?}", live.ran);
+        let e = call(&mut live, &mut w, 1, "run", git).unwrap_err();
+        assert!(e.contains("Lonca workspace"), "{e}");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
