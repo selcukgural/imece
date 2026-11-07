@@ -143,7 +143,7 @@ impl App {
     /// Where open inbox item `i` comes in `W`'s order: the items not put
     /// off first, oldest first, then the ones put off, in the order they
     /// were.
-    fn waiting_rank(&self, i: usize) -> (usize, usize) {
+    pub(super) fn waiting_rank(&self, i: usize) -> (usize, usize) {
         match self.deferred.iter().position(|&d| d == i) {
             None => (0, i),
             Some(n) => (1, n),
@@ -206,7 +206,10 @@ impl App {
         self.world.cleared.inbox.remove(&i);
         self.card = None;
         self.thread = None;
-        self.view = View::Salon;
+        if self.view != View::Home {
+            self.view = View::Salon;
+        }
+        self.at_home.at = Some(HomeRow::Item(i));
         self.zoom = Zoom::None;
         self.pane = Pane::Inbox;
         self.inbox_sel = self.inbox_rows().iter().position(|&o| o == i).unwrap_or(0);

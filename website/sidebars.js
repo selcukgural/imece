@@ -43,6 +43,7 @@ const sidebars = {
         'screen/cards',
         'screen/board-and-code-map',
         'screen/timeline',
+        'screen/home',
         'screen/changes',
         'screen/command-line',
         'screen/journal',

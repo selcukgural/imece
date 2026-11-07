@@ -37,6 +37,7 @@ mod dispatch;
 mod focus;
 mod frames;
 mod grace;
+mod home;
 mod jump;
 mod line;
 mod lonca;
@@ -46,6 +47,8 @@ mod salon;
 mod talk;
 mod waiting;
 mod windows;
+
+pub use home::{Home, HomeGroup, HomeRow};
 
 /// What drives the agents.
 pub enum Engine {
@@ -211,6 +214,8 @@ pub enum View {
     Code,
     /// One lane per agent over time (record 100).
     Timeline,
+    /// What is the person's turn, beside what is at work (record 124).
+    Home,
 }
 
 /// How deep the person looks: the whole guild, one agent's card, the
@@ -953,6 +958,8 @@ pub struct App {
     /// off: `W` comes to them after everything else. Kept for this run
     /// only.
     pub deferred: Vec<usize>,
+    /// Home's row at hand and the project it is narrowed to.
+    pub at_home: Home,
     /// The item `W` or `S` last opened, so the next `W` goes on after it
     /// even when opening it closed it (a reply is read when opened).
     pub waiting_at: Option<usize>,
@@ -1285,6 +1292,7 @@ impl App {
             journal_sel: None,
             outputs: BTreeMap::new(),
             thread: None,
+            at_home: Home::default(),
             card: None,
             been: Vec::new(),
             jumps: Vec::new(),

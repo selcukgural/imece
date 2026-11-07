@@ -57,3 +57,19 @@ Step 0 as built:
 
 The demo draws the same screens, so it mirrors all of this with no change
 of its own. Nothing here grows or is kept.
+
+Step 1 as built: `View::Home` (`5`, `:home`), `app/home.rs` and `ui/home.rs`,
+beside the salon, which stays where it was and is still what imece opens on
+until a real session has used both. `App::home_rows_in` lists what waits in
+`W`'s order, then what is stuck, at work and quiet; an agent waiting on an ask
+or a question is that item, and a worker that went on from a waiting change is
+both, for they are two pieces of work. Home keeps no selection of its own for
+acting: `home_settle` puts the row at hand where every other key looks (the
+pane, the waiting panel's selection, the salon's) before a key acts, so `enter`,
+`a`, `r`, `e`, `@`, `K` and the rest are the ones the salon has. The row is held
+by what it is, an `InboxItem`'s index or an agent, never by its place; when it is
+gone as a key comes, `a r e A` do nothing and say so, for the row now in its
+place was not read. The person's `[salon]` keys hold on Home (`Scope::Salon`):
+a place of its own can follow if a key file wants one. Hints (`F`) are not on
+Home. The rows are drawn from the world each frame, so nothing is kept but the
+row and the scope, for the run; the demo shows it through the same code.

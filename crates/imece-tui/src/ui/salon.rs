@@ -543,7 +543,7 @@ pub(crate) const BAR_CELLS: usize = 8;
 
 /// How the project's Lonca repository stands (record 116): loud when it
 /// can not be read, for nobody is hired and no Δ decided then.
-fn store_span(on: &OnLonca, t: &Text) -> Span<'static> {
+pub(crate) fn store_span(on: &OnLonca, t: &Text) -> Span<'static> {
     match &on.seen {
         StoreSeen::Asking => {
             Span::styled(format!("  {}", fill(t.lonca_asking, &[&on.repo])), dim())
