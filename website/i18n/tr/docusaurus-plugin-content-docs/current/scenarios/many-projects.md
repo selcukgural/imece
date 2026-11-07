@@ -57,15 +57,9 @@ Ekip herkese dar gelince sakin işçiler alttan yukarı `… N agent yolunda` i�
 
 Proje başına renk henüz yapılmadı.
 
-## 4. Yalnızca sizi bekleyenler
+## 4. Her seferinde tek proje
 
-`f`ye basın. Ekip yalnızca sizden bir şey bekleyen ajanları gösterir, her biri projesinin başlığı altında; bir şeyi olmayan proje dışarıda kalır. Başlık ` EKİP · yalnızca seni bekleyenler (f) ` olur, anlık mesaj `salon yalnızca seni bekleyenleri gösteriyor · f: herkes`. Hiç yoksa:
-
-```text
- Şu an senden bir şey gerekmiyor · f herkesi gösterir
-```
-
-`f` yine herkesi gösterir. Süzgeç yalnızca bu çalışma içindir. `W`, süzgeç açık ya da kapalı, her yerden sizi bekleyen sonraki öğeyi açar.
+`]`'ye basın. Ana ekran tek projeye daralır: başlık satırı adını aydınlatır, KARAR BEKLEYEN ve ÇALIŞAN yalnız onun satırlarını gösterir. `]` yine sonraki projeye geçer, sonuncudan sonra yine hepsine döner; `[` ters yöne gider. Daraltma yalnızca bu çalışma içindir. `W` yine her yerden karar bekleyen sıradaki öğeyi açar.
 
 ## 5. Yeniden adlandırın
 

@@ -44,14 +44,12 @@ description: imece'nin aldığı her `:` komutu; argümanları, karşılığı o
 | `:goto [NAME]` | `&` | | | | |
 | `:history [WORDS]` | `^r` | | | | |
 | `:help` | `?` | | | | |
-| `:hints` | `F` | | | | |
 | `:keys` | — | | | | dosyanızın verdiği tuş sayısı |
 | `:lang [en\|tr]` | `L` | | | | `English` / `Türkçe` |
 | `:lonca [NAME\|off\|login\|import [NAME]]` | — | | | | projenin deposu, varsa |
 | `:mark` | `m` | | | | |
 | `:model NAME` | — | | | | eldeki solonun modeli ya da `default` |
 | `:motion [off\|calm\|full]` | — | | | | off / calm / full |
-| `:needs` | `f` | | | | açık / kapalı |
 | `:news` | — | | | | bu sürüm |
 | `:next` | `W` | | | | N bekliyor |
 | `:notify [off\|bell\|text\|push]` | — | | | | off / bell / text / push |
@@ -202,10 +200,6 @@ Gönderdiğiniz satırları arar, `^r` gibi: komut satırı üstünde `WORDS` il
 
 `?` yardımı: iki dilde her tuş ve komut, glif açıklamaları; içinde `/` her kelimeyle süzer. Bkz. [klavye](../screen/keyboard.md).
 
-### `:hints`
-
-İpucu harfleri, `F` gibi: ekip ekranında seçilebilen her satırın (proje başlıkları, ajanlar, bir kartın ekranındaki kişiler, bekleyen kalemler, günlük satırları) başına bir ya da iki harflik bir etiket. Bir etiketi yazmak satırını kendi panelinde seçer; son harfi büyük yazılırsa onu `enter` gibi açar da. `backspace` bir harfi geri alır, `esc` kapatır. O arada ekrandan çıkan bir satır: `o satır ekrandan çıktı`. Ekip ekranı dışında: `burada harf verilecek satır yok: F ekip ekranında çalışır`. Bkz. [ekip](../screen/salon.md).
-
 ### `:journal`
 
 Günlük, ekranın üstünde bir pencerede, `J` gibi: satırları en yeni önce, ya da açıkken karta göre hikâye (penceredeki `J` çevirir); `j` `k` `gg` `G` ve sayfalar gezer, `m` işaretler, `'` sonraki işarete gider, `c` kopyalar, `enter` satırın konuşmasını pencerenin yerinde açar, `esc` ya da `q` kapatır. Bkz. [günlük](../screen/journal.md).
@@ -239,10 +233,6 @@ Eldeki solo oturumun sonraki turundan itibaren çalıştığı modeli ayarlar: b
 ### `:motion [off|calm|full]`
 
 Ekranda ne kadar şeyin hareket ettiği. `calm` (varsayılan): çalışan bir satırın işareti nefes alır, rengi 0,6 saniyede bir kısılır, şekli hiç değişmez (panoda da, kartının altındaki çalışan sahibinki); `başlıyor` noktalarını sayar; imece bir yanıt beklerken (`:commit`) alt satırda bir dönücü görünür, ilk açılış penceresinde hâlâ denetlenen Claude Code'un yanında da; sizi beklemeye düşen bir satır ya da kalem üç kez yanıp söner; turu biten ya da oturumu kalkan bir satır yeşil bir zeminden kendi renklerine yatışır (terminalin kendi renklerini kullanan bir temada: ters renk, sonra değişen satırların görünüşü); bir satır etkinlik çubuğunu taşır, `▁▃▅▂▁`, agent'ın son beş tikin her birinde yaptıkları (yalnızca agent bir şey yaptıkça ve tikler geçtikçe değişir); imece'nin işareti, ekrana geldiği yerde (hoş geldin ve yenilikler pencereleri, henüz işçisi olmayan bir ekip), noktalarını birer vuruşta getirir, herhangi bir tuş onu bütün gösterir. `full` biri çalışırken başlıktaki filonun yanına bir dönücü ekler ve daha hızlı döner; SSH üzerinde sakin çalışır (her kare ağdan geçer). `off`: hiçbir şey hareket etmez, hiçbir satır etkinlik çubuğu taşımaz ve işaret bütün çizilir, ekran eskisi gibidir. Başka penceredeyken hiçbir şey hareket etmez ve orada olanlar dönünce yanıp sönmez; her şey tek bir vuruşa (0,3 sn) düşer, böylece aynı anda birkaç şeyin hareket etmesi tek bir şeyinkinden fazla kareye mal olmaz ve bir kare yalnızca gösterdiği şey hareket edince çizilir (bkz. [karar](https://github.com/selcukgural/imece/blob/main/docs/decisions/84-motion.md)). Yalın `:motion` sıradakine geçer: off, calm, full, off. Flaş yenisinin ne yaptığını söyler (`sakin hareket: çalışan satır nefes alır, seni bekleyen yanıp söner`, `tam hareket: dönücüler de, daha hızlı`, `SSH üzerinde tam hareket sakin çalışır`, `ekranda hiçbir şey hareket etmez`); başka bir kelime: `wild off, calm ya da full değil`. Menü notu değeri gösterir; depoda hatırlanır.
-
-### `:needs`
-
-Ekip yalnızca sizi bekleyenleri gösterir (sizi bekleyen, takılmış, bitmiş ve bakılmamış), `f` gibi; yeniden, herkesi. Önce ekibe gider. Menü notu: `(açık)` / `(kapalı)`.
 
 ### `:news`
 
@@ -335,7 +325,7 @@ Ekip: ana ekranın ÇALIŞAN'ı, `gw` gibi (kayıt 125: ekip ana ekranın alt ya
 
 ### `:settle`
 
-Ekibin seçili satırını gizler, oradaki `s` gibi: bir işçinin satırını (yardımcıları ve araştırmacısıyla) ya da bir projenin başlığında veya liderinde bütün projeyi, size yeniden ihtiyacı olana dek ekipten çıkarır. Ana ekranda eldeki satırın ajanını ya da projesini gizler ve orada kalır; başka bir ekrandan önce ekibe gider. Bir şeyi sizi bekliyorsa ya da takılmışsa reddedilir: `gizlenmedi: claude-2 seni bekliyor`. Bitmiş turları görülmüş sayılır. Flaş: `claude-2 gizlendi: sana ihtiyacı olunca döner`. Menü notu satırın adını verir. Bkz. [ekip](../screen/salon.md).
+Eldeki satırın agent'ını (yardımcıları ve araştırmacısıyla) ya da bir proje başlığında bütün projeyi, size yeniden ihtiyacı olana dek ÇALIŞAN'dan çıkarır, oradaki `s` gibi; başka bir ekrandan önce ana ekrana gider. Bir şeyi sizi bekliyorsa ya da takılmışsa reddedilir: `gizlenmedi: claude-2 seni bekliyor`. Bitmiş turları görülmüş sayılır. Flaş: `claude-2 gizlendi: sana ihtiyacı olunca döner`. Menü notu satırın adını verir. Bkz. [ekip](../screen/salon.md).
 
 ### `:slower`
 
@@ -391,7 +381,7 @@ Ekipte her şeyi açar, `zR` gibi (ana ekranda orada kalır); açık bir konuşm
 
 ### `:unsettle`
 
-`s` ya da `:settle` ile gizlenen her şeyi geri getirir ve ekibe gider (ekibi de gösteren ana ekran olduğu yerde kalır). Flaş: `gizlenen 3 şey ekibe döndü`. Menü notu kaç şeyin gizlendiğini söyler.
+`s` ya da `:settle` ile gizlenen her şeyi geri getirir; ana ekran olduğu yerde kalır. Flaş: `gizlenen 3 şey ekibe döndü`. Menü notu kaç şeyin gizlendiğini söyler.
 
 ### `:waiting`
 

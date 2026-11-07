@@ -11,7 +11,7 @@ imece'den çıkıp yeniden başlatın: aynı ekran geri gelir, her ajan uykuda; 
 
 imece'nin bildiği her şey tek bir SQLite dosyasındadır: `$XDG_STATE_HOME/imece/imece.sqlite` (varsayılan `~/.local/state/imece/imece.sqlite`), mod `0600`, WAL, yalnız sizin:
 
-- projeler (checkout'u, sabitlemesi ve `:copy` listesiyle), ajanlar (modeli, kademesi, hatırlanan oturumuyla), kartlar ve hikâyeleri, günlük, gelen kutusu, iz (ajan başına en yeni 200 satır), bekleyen posta, pano ve teklifleri, sizi bekleyen değişiklikler (ağaçlarındaki çalıştırmalarla), bütçe ve imece'nin kendi ücretli çağrıları, tercihler (tema, yan panel genişliği).
+- projeler (checkout'u, sabitlemesi ve `:copy` listesiyle), ajanlar (modeli, kademesi, hatırlanan oturumuyla), kartlar ve hikâyeleri, günlük, gelen kutusu, iz (ajan başına en yeni 200 satır), bekleyen posta, pano ve teklifleri, sizi bekleyen değişiklikler (ağaçlarındaki çalıştırmalarla), bütçe ve imece'nin kendi ücretli çağrıları, tercihler (tema, notify, motion, story, review).
 - Her adımdan ve her tuştan sonra ve çıkışta bir kez daha kayıt çalışır, yalnız değişeni yazar: yeni günlük, hikâye ve iz satırları eklenir; bir satır yalnız hash'i değişince yeniden yazılır. Başarısız bir kayıt bir kez gösterilir (`sonraki çalışma için kaydedilemedi: …`).
 - Dosyayı **bir anda tek imece** tutar (yanında bir `.lock`): ikincisi reddedilir ve ilkinden `:open` kullanması söylenir.
 - imece'nin açamadığı ya da yükleyemediği bir dosya (veritabanı değil, daha yeni bir imece'nin şeması, bilmediği bir satır) reddedilir ve olduğu gibi bırakılır; ileti dosyayı adlandırır ve nasıl sıfırdan başlanacağını söyler (`-wal` ve `-shm`'siyle birlikte kenara taşıyın). imece onu kendi başına asla yedeklemez ya da sıfırdan başlamaz; daha yeni bir imece hâlâ okuyabilir.
@@ -70,7 +70,7 @@ Bir arşivden hiçbir şey uyanmaz, hiçbir şey harcanmaz: işçilerine kart su
 
 - **Günler:** saat dünyanın ilk başlangıcının yerel saatinde başlar. Günlük ve bir konuşma başka bir günün ilk satırının üstüne soluk bir `─ 2026-11-01` satırı çizer; KARAR BEKLEYEN'de başka bir günden bir öğe tarihini taşır; kopyalanan ve dışa aktarılan metin her zaman damgalıdır.
 - **Saklama:** her başlangıçta 90 günden eski ve en yeni 5000'in gerisinde kalan günlük satırları silinir ve dosyanın çeyreği ya da fazlası boşsa `VACUUM` çalışır. Hikâyeler ve gelen kutusu satırları kalır. Başarısız bir temizlik sonraki başlangıçta yeniden denenir.
-- **Tercihler** (tema, yan panel) deponun `meta` tablosunda yaşar, depo alınmadan önce okunabilir; canlı bir imece'nin yanındaki demo onları paylaşır.
+- **Tercihler** (tema, notify, motion) deponun `meta` tablosunda yaşar, depo alınmadan önce okunabilir; canlı bir imece'nin yanındaki demo onları paylaşır.
 
 ## Nerede kalmıştın
 

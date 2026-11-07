@@ -123,3 +123,7 @@ in it brings the mark's dots, and its quit leaves its line. Not done: an
 animation of the mark anywhere else (the header keeps its `imece` badge),
 a colour per project, the tour videos (re-rendered with the next round of
 them; `website/video/README.md`).
+
+Since record 125's step 5 (2026-11-07) the mark mid the free rows is
+Home's (`home::mark_under`, while no project has an agent on the list);
+the salon's screen is no more.

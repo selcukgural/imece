@@ -43,3 +43,8 @@ it exactly as live does. Since record 97, an open project's workers that
 need the person sit under a header per need (`✕ stuck`, `! waits for
 you`, `✓ done, not seen`, then the rest counted), shown only when every
 row fits with them.
+
+Since record 125's step 5 (2026-11-07) `App::needs` orders Home's rows
+(`waiting_rank`, the groups) and the peek's steps; the salon's `f`
+(`needs_only`, `:needs`) went with the salon's screen: Home's TO DECIDE is
+what needs the person.

@@ -22,7 +22,7 @@ The journal opens in a window over the screen, `J` or `:journal` (told as [the s
 
 ## The story
 
-By default the lower side panel does not show the journal line by line: it tells the story, the same lines grouped by card. `J` (or `:story`) switches between the two; the choice is remembered, and the journal's title then says the key back, `JOURNAL · J story`. On a card's screen the panel is always that card's journal.
+By default the journal's window does not show the journal line by line: it tells the story, the same lines grouped by card. `J` (or `:story`) switches between the two; the choice is remembered, and the journal's title then says the key back, `JOURNAL · J story`. On a card's detail the log is always that card's journal.
 
 ```text
 ┌ STORY · J journal ─────────────────────────────────────────┐

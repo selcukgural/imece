@@ -774,7 +774,6 @@ mod tests {
         let mut app = quiet();
         app.world.change_ready(a_change(3));
         app.world.replied(3, "it is done");
-        app.view = View::Salon;
         app.pane = Pane::Inbox;
         let reply = (app.world.inbox.iter())
             .position(|i| i.kind == InboxKind::Reply)
@@ -892,19 +891,13 @@ mod tests {
         let t = app.lang.text();
         // Rows newest first: journal lines 4 3 2 1 0.
         app.world.marks.extend([3, 1]);
-        app.view = View::Home;
         app.zoom = Zoom::Focus(0);
         app.pane = Pane::Salon;
         app.on_key(key(KeyCode::Char('\'')));
         // The journal's window opens over what was there.
         assert_eq!(
-            (app.view, app.zoom, app.pane, app.window),
-            (
-                View::Home,
-                Zoom::Focus(0),
-                Pane::Journal,
-                Some(Window::Journal)
-            )
+            (app.zoom, app.pane, app.window),
+            (Zoom::Focus(0), Pane::Journal, Some(Window::Journal))
         );
         assert_eq!(
             app.journal_sel,

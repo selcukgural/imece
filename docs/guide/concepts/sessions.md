@@ -11,7 +11,7 @@ Quit imece and start it again: the same screen comes back, every agent asleep, a
 
 Everything imece knows is in one SQLite file, `$XDG_STATE_HOME/imece/imece.sqlite` (`~/.local/state/imece/imece.sqlite` by default), mode `0600`, WAL, yours alone:
 
-- projects (with their checkout, pin and `:copy` list), agents (with model, tier, remembered session), cards and their stories, the journal, the inbox, the trace (the newest 200 lines per agent), mail that waits, the board and its offers, the changes waiting for you (with the runs on their trees), the pot and imece's own paid calls, and preferences (theme, side panel width).
+- projects (with their checkout, pin and `:copy` list), agents (with model, tier, remembered session), cards and their stories, the journal, the inbox, the trace (the newest 200 lines per agent), mail that waits, the board and its offers, the changes waiting for you (with the runs on their trees), the pot and imece's own paid calls, and preferences (theme, notify, motion, story, review).
 - A save runs after every step and every key and once more at quit, and writes only what moved: new journal, story and trace lines are appended; a row is written again only when its hash changed. A failed save is flashed once (`not saved for the next run: …`).
 - **One imece at a time** has the file (a `.lock` beside it): a second one is refused and told to use `:open` from the first.
 - A file imece cannot open or load (not a database, a newer imece's schema, a row it does not know) is refused and left as it was; the message names the file and says how to start afresh (move it away with its `-wal` and `-shm`). imece never backs it up or starts over on its own, since a newer imece may still read it.
@@ -70,7 +70,7 @@ Nothing of an archive wakes or spends: no card is offered to its workers, nobody
 
 - **Days:** the clock starts at the local time of the world's first start. The journal and a conversation draw a dim `─ 2026-11-01` row above the first line of another day; an item in TO DECIDE from another day carries its date; copied and exported text is always stamped.
 - **Retention:** at every start journal lines older than 90 days that lie past the newest 5000 are deleted, and `VACUUM` runs when a quarter of the file or more is free. Stories and inbox rows stay. A tidy that fails is tried again next start.
-- **Preferences** (theme, side panel) live in the store's `meta` table, readable before the store is taken, so a demo beside a live imece shares them.
+- **Preferences** (theme, notify, motion) live in the store's `meta` table, readable before the store is taken, so a demo beside a live imece shares them.
 
 ## Where you left off
 

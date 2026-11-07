@@ -181,7 +181,6 @@ impl Live {
                 with: Party::Agent(other),
                 mine: a == from,
                 text: first.clone(),
-                until: t + 8,
             });
         }
         let held = kind != MsgKind::Cancel && w.waits_on_person(to);
@@ -259,7 +258,6 @@ impl Live {
             with: Party::Person,
             mine: true,
             text: first,
-            until: t + 8,
         });
         let answer = if kind == MsgKind::Ask && offered {
             "delivered; the person sees it under TO DECIDE with your options and \
@@ -1361,8 +1359,8 @@ mod tests {
         let a = &w.agents[1];
         let talk = a.talk.as_ref().unwrap();
         assert_eq!(
-            (talk.with, talk.mine, talk.text.as_str(), talk.until),
-            (Party::Person, true, "Which API?", t + 8)
+            (talk.with, talk.mine, talk.text.as_str()),
+            (Party::Person, true, "Which API?")
         );
         assert!(a.trace.back().unwrap().contains("send to=you type=ask"));
         // A second question takes the first's place in the inbox.

@@ -39,7 +39,7 @@ imece okuyamadığı bir dosyayı asla taşımaz, onarmaz ya da üstüne yazmaz:
 
 | Tablo | Tuttuğu |
 | --- | --- |
-| `meta` | anahtar-değer: `schema_version`, `started_at` (dünyanın ilk başlangıcı; saat ve tikler oradan sayar), `budget` (bütçe), `saved_at` (son kayıt, "NEREDE KALMIŞTIN · 2 sa önce" için), `messages` (verilen son mesaj numarası), `setup_approved` (evet dediğiniz worktree kurulum ve söküm betikleri ile deponun kontrolü: her birinin nasıl çalıştığı, baytlarının SHA-256'sı ve gerçek yolu), ve ayarlarınız `side` (yan panelin genişliği), `theme`, `notify`, `motion`, `seen` (en son başlayan sürüm, yeni olanlar için) |
+| `meta` | anahtar-değer: `schema_version`, `started_at` (dünyanın ilk başlangıcı; saat ve tikler oradan sayar), `budget` (bütçe), `saved_at` (son kayıt, "NEREDE KALMIŞTIN · 2 sa önce" için), `messages` (verilen son mesaj numarası), `setup_approved` (evet dediğiniz worktree kurulum ve söküm betikleri ile deponun kontrolü: her birinin nasıl çalıştığı, baytlarının SHA-256'sı ve gerçek yolu), ve ayarlarınız `theme`, `notify`, `motion`, `seen` (en son başlayan sürüm, yeni olanlar için) |
 | `projects` | her projenin adı, lideri, kapalı olup olmadığı, çalışma kopyası yolu, sabit olup olmadığı ve `:copy`'nin listelediği yollar (`copies`, JSON) |
 | `agents` | her ajanın projesi, adı, rolü, ebeveyni (yardımcının işçisi), kartı, maliyeti, kirliliği, gitmiş olup olmadığı, modeli ve bir kademenin seçip seçmediği, siz son konuştuğunuzdan beri mesaj kaynaklı turları ve kart asmaları, kendi komut listesi, son oturumuyla o oturumun harcadığı, başlangıç noktası, ve henüz başlamamış bir çatal için devam ettiği işçi (`fork_of`) |
 | `cards` | her kartın projesi, başlığı, sahibi, sütunu ve ne zaman başlayıp bittiği |

@@ -15,7 +15,7 @@ The conventions are vim's: `h` `j` `k` `l` move and fold, `gg` and `G` go to the
 
 ## The status line
 
-The last row, while you are not writing, is a status line: where you are (`home`, `salon`, or the screen over the view: `focus`, `trace`, `change`, `conversation`, `card`, `peek`), the project at hand and the card the open screen or the selected row is about (`#12 Refund flow`, a long title cut), dim; then at most three keys for the selected thing, `esc` where there is a way back, and `?`. Movement keys are never shown: they are vim's, and in this help. On a narrow screen the keys go from the end first, never `esc` or `?`; when even those do not fit beside it, the place goes. A window with a title of its own (a script, a plan, the board, the code map, the timeline, the hint letters, copy mode) keeps its own keys instead.
+The last row, while you are not writing, is a status line: where you are (`home`, or the screen over it: `focus`, `trace`, `change`, `conversation`, `card`, `peek`), the project at hand and the card the open screen or the selected row is about (`#12 Refund flow`, a long title cut), dim; then at most three keys for the selected thing, `esc` where there is a way back, and `?`. Movement keys are never shown: they are vim's, and in this help. On a narrow screen the keys go from the end first, never `esc` or `?`; when even those do not fit beside it, the place goes. A window with a title of its own (a script, a plan, the board, the code map, the timeline, copy mode) keeps its own keys instead.
 
 While the first key of a chord waits for its second, the row lists what the second key can be and what it does, as which-key does in vim: `g…   g  first line`, `z…   a  fold · unfold   M  fold all   R  unfold all`, `q…   q  quit   s  what quitting leaves`. A pair from your [key file](#your-own-keys) whose first key is the one held is listed too, as what it acts as (`t  as G`).
 
@@ -68,15 +68,12 @@ While the first key of a chord waits for its second, the row lists what the seco
 | `enter` | look deeper: focus, then the raw stream |
 | `tab`  `⇧tab` | on a piece of work (a change, a conversation, a focus): the next / previous of its tabs, `diff · talk · log`; a tab with nothing to show is skipped ([the detail](changes.md#the-detail)) |
 | `K`  `:peek` | a peek: the focus of the agent at hand in a window over the view, which stays as it was; in it `j` `k` the next / previous agent of the team, `enter` its whole focus, `@` write to it, `esc` or `K` close |
-| `F`  `:hints` | hint letters: a label of one or two letters on every row of the team's screen you can select (project headers, agents, waiting items, journal lines, the people on a card's screen); typing a label selects its row in its panel, its last letter in capitals opens it too (as `enter`); `backspace` takes a letter back, `esc` closes |
 | `t`  `:trace` | the raw stream of the agent at hand |
 | `v`  `:talk` | its conversation with you |
 | `esc` | go back |
 | `u`  `:undo` | keep a `:close` or `:forget` from happening while the bottom line counts its ten seconds down |
 | `U`  `:now` | do the `:close`, `:forget`, `:archive` or `:clear` counting down at once, without waiting its ten seconds |
 | `A`  `:archives` | the archives as a tree (checkout → archive → its agents); in it `j` `k` `gg` `G` move, `h` `l` `za` fold, `enter` opens an archive read-only (`esc` or `q` back), `/` filters, `r` brings the one at hand back (`:restore`), `esc` closes; `:archive` puts the project at hand away |
-| `tab` `⇧tab` `[` `]` | next / previous panel |
-| `,`  `.`  `<`  `>` | wider / narrower side panel |
 | `J`  `:journal` | the journal in a window; `J` there: the story, by card · the lines (`:story`) |
 
 ## The team
@@ -85,14 +82,13 @@ While the first key of a chord waits for its second, the row lists what the seco
 | --- | --- |
 | `←` `→`  `h` `l` | fold / unfold a project or a worker's helpers; on Home the row at hand's project, to its heading (in a conversation: a message) |
 | `za`  `zM`  `zR` | fold: toggle · all (`:fold`) · none (`:unfold`), in the team and on Home; in a conversation its messages |
-| `f`  `:needs` | team: only what needs you · everyone |
-| `s`  `:settle` | hide the selected worker's row, or the project (on its header or its leader), out of the team until it needs you again; on Home the row at hand's agent or project (an item goes to `later` instead); `:unsettle` brings everything back |
+| `s`  `:settle` | hide the row at hand's agent, or on a project's heading the project, out of AT WORK until it needs you again (an item goes to `later` instead); `:unsettle` brings everything back |
 
 ## TO DECIDE
 
 | Key | What it does |
 | --- | --- |
-| `w`  `:waiting` | Home, its first row to decide |
+| `:waiting` | Home, its first row to decide |
 | `W`  `S` | `:next` waiting, from anywhere · `:defer` this one and open the next; in a script's window they close it first |
 | `a`  `r` | approve / allow once · send back / refuse (in TO DECIDE, and on a focus: below) |
 | `A`  `:allow` | on an ask in TO DECIDE or on its agent's focus: yes from now on to its commands for the project (elsewhere `A` is the archives) |
@@ -192,7 +188,7 @@ The focus's `folder` line says where the agent works: the checkout for a leader,
 
 | Command | Key |
 | --- | --- |
-| `:salon` `:home` | none: the two views, by name |
+| `:home` `:salon` | none: Home · Home's AT WORK (`gw`) |
 | `:board` `:code` `:timeline` | none: windows over the screen; `esc` closes them |
 | `:lang` | `L` |
 | `:theme` | `T` |
@@ -200,12 +196,10 @@ The focus's `folder` line says where the agent works: the checkout for a leader,
 | `:quit` (`:q`) | `q` `q` |
 | `:pending` | `q` `s` |
 | `:next` / `:defer` | `W` / `S` |
-| `:waiting` | `w` |
-| `:needs` | `f` |
+| `:waiting` | none |
 | `:story` | `J` |
 | `:settle` | `s` |
 | `:peek` | `K` |
-| `:hints` | `F` |
 | `:archives` | `A` |
 | `:now` | `U` |
 | `:recall` | `H` |

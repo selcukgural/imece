@@ -2068,7 +2068,6 @@ impl Sim {
             with: Party::Person,
             mine: true,
             text: text.lines().next().unwrap_or_default().to_string(),
-            until: t + 12,
         });
         if matches!(a.role, Role::Leader | Role::Solo) {
             a.activity = None;
@@ -3104,7 +3103,6 @@ impl Sim {
                 with: Party::Agent(other),
                 mine: a == from,
                 text: text.into(),
-                until: t + 8,
             });
         }
         id
@@ -3144,7 +3142,6 @@ impl Sim {
             with: Party::Person,
             mine: true,
             text: text.into(),
-            until: t + 8,
         });
     }
 
@@ -5277,7 +5274,7 @@ diff --git a/b.rs b/b.rs
         let a = &w.agents[worker];
         assert_eq!(a.status, Status::Working, "a worker goes on");
         assert!(
-            matches!(&a.talk, Some(Talk { with: Party::Person, mine: true, text: said, until }) if *said == text && *until == w.tick + 12)
+            matches!(&a.talk, Some(Talk { with: Party::Person, mine: true, text: said }) if *said == text)
         );
         assert!(s.replies.is_empty());
     }
@@ -7316,7 +7313,7 @@ diff --git a/b.rs b/b.rs
                 "{id}"
             );
             assert!(
-                matches!(&w.agents[id].talk, Some(Talk { with: Party::Agent(o), mine, until, .. }) if *until == t + 8 && *mine == (id == asker) && *o == if id == asker { other } else { asker }),
+                matches!(&w.agents[id].talk, Some(Talk { with: Party::Agent(o), mine, .. }) if *mine == (id == asker) && *o == if id == asker { other } else { asker }),
                 "{id}"
             );
         }
@@ -7421,7 +7418,6 @@ diff --git a/b.rs b/b.rs
             Some(Talk {
                 with: Party::Person,
                 mine: true,
-                until: 18,
                 ..
             })
         ));

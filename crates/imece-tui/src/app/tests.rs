@@ -187,14 +187,6 @@ pub(super) fn item(agent: AgentId, open: bool) -> InboxItem {
     }
 }
 
-/// The salon's selectable rows.
-pub(super) fn shown(app: &App) -> Vec<Sel> {
-    ui::salon::rows(app, 100)
-        .iter()
-        .filter_map(ui::salon::Row::sel)
-        .collect()
-}
-
 /// Two projects, everyone idle with nothing open; the first two
 /// workers of project 0 and the first of project 1.
 pub(super) fn two_quiet_projects() -> (App, [AgentId; 3]) {
@@ -469,7 +461,7 @@ pub(super) fn waiting(kinds: &[InboxKind]) -> App {
 /// Presses `c` and says which inbox item is open and selected.
 pub(super) fn press(app: &mut App, c: char) -> Option<usize> {
     app.on_key(key(KeyCode::Char(c)));
-    assert_eq!((app.view, app.pane), (View::Home, Pane::Inbox));
+    assert_eq!((app.pane), (Pane::Inbox));
     let at = app.waiting_at?;
     assert_eq!(
         app.zoom,
@@ -498,7 +490,8 @@ fn o_quotes_the_last_output_of_the_project_to_the_agent_at_hand() {
         .find(|&a| app.world.agents[a].project == 1 && a != leader)
         .expect("project 1 has an agent besides its leader");
     // Nothing ran yet: it says so and nothing is written.
-    app.selected = Sel::Project(1);
+    app.at_home.at = Some(HomeRow::Project(1));
+    app.home_settle();
     app.on_key(key(KeyCode::Char('O')));
     assert!(!app.typing && app.input.is_empty());
     assert_eq!(flashed(&app).as_deref(), Some(app.lang.text().no_output));
@@ -530,7 +523,8 @@ fn o_quotes_the_last_output_of_the_project_to_the_agent_at_hand() {
     });
     assert_eq!(said.as_deref(), Some(quoted));
     // Another project has its own, or none.
-    app.selected = Sel::Project(0);
+    app.at_home.at = Some(HomeRow::Project(0));
+    app.home_settle();
     app.on_key(key(KeyCode::Char('O')));
     assert!(!app.typing);
     assert_eq!(flashed(&app).as_deref(), Some(app.lang.text().no_output));
@@ -643,33 +637,6 @@ pub(super) fn type_in(app: &mut App, text: &str) {
     for c in text.chars() {
         app.on_key(key(KeyCode::Char(c)));
     }
-}
-
-/// A quiet team whose salon showed its header and its agents, two
-/// open items of TO DECIDE (after a closed one) and two journal
-/// lines, as a drawing leaves them for `F`.
-pub(super) fn drawn_for_hints() -> (App, Vec<Target>) {
-    let mut app = quiet();
-    app.world.inbox.push(item(1, false));
-    for agent in [2, 3] {
-        app.world.inbox.push(InboxItem {
-            kind: InboxKind::Approval,
-            ..item(agent, true)
-        });
-    }
-    let lines: Vec<usize> = app.journal_rows().iter().map(|&(i, _)| i).take(2).collect();
-    assert_eq!(lines.len(), 2, "the demo's start has journal lines");
-    let rows = [Sel::Project(0), Sel::Agent(0), Sel::Agent(1), Sel::Agent(2)];
-    *app.shown.borrow_mut() = rows.to_vec();
-    let mut targets: Vec<Target> = rows.into_iter().map(Target::Row).collect();
-    targets.extend([Target::Waiting(1), Target::Waiting(2)]);
-    targets.extend(lines.into_iter().map(Target::Line));
-    *app.hintable.borrow_mut() = (targets.iter().zip(0..)).map(|(&t, y)| (t, 1, y)).collect();
-    (app, targets)
-}
-
-pub(super) fn shift(c: char) -> KeyEvent {
-    KeyEvent::new(KeyCode::Char(c), KeyModifiers::SHIFT)
 }
 
 pub(super) fn dir(name: &str) -> PathBuf {

@@ -355,9 +355,6 @@ impl App {
         self.tidy_remove(ask.at, ask.force);
     }
 
-    /// `F` or `:hints`: a label on every row the salon's screen showed
-    /// last that can be selected, in the order drawn. Only there, with no
-    /// conversation over it: elsewhere the screen has no such rows.
     /// Whether a window any key closes is open: what is new, the
     /// first-run window, the away digest, where the person left off.
     pub(super) fn window_open(&self) -> bool {
@@ -434,92 +431,14 @@ impl App {
         self.news = news.iter().take(welcome::NEWS_SHOWN).map(|n| n.0).collect();
     }
 
-    pub(super) fn open_hints(&mut self) {
-        let targets: Vec<Target> = if self.pane_keys() && self.thread.is_none() {
-            self.hintable.borrow().iter().map(|&(t, _, _)| t).collect()
-        } else {
-            Vec::new()
-        };
-        if targets.is_empty() {
-            let t = self.lang.text();
-            self.flash(t.no_hints.to_string());
-            return;
-        }
-        let labels = hint_labels(targets.len())
-            .into_iter()
-            .zip(targets)
-            .collect();
-        self.hints = Some(Hints {
-            labels,
-            typed: String::new(),
-        });
-    }
-
-    /// A key while the hint letters are on the screen: a letter narrows
-    /// them to the labels it goes on; the last letter of a label selects
-    /// its row, in capitals opens it too (as `enter` would). A letter no
-    /// label goes on does nothing; backspace takes the last letter back,
-    /// `esc` closes them.
-    pub(super) fn hint_key(&mut self, k: KeyEvent) {
-        let Some(h) = &mut self.hints else {
-            return;
-        };
-        match k.code {
-            KeyCode::Esc => self.hints = None,
-            KeyCode::Backspace => {
-                h.typed.pop();
-            }
-            KeyCode::Char('?') => self.open_help(),
-            // Labels are letters: anything else goes on none.
-            KeyCode::Char(c) => {
-                let typed = format!("{}{}", h.typed, c.to_ascii_lowercase());
-                if let Some(&(_, target)) = h.labels.iter().find(|(l, _)| *l == typed) {
-                    self.hints = None;
-                    self.hint_go(target, c.is_ascii_uppercase());
-                } else if h.labels.iter().any(|(l, _)| l.starts_with(&typed)) {
-                    h.typed = typed;
-                }
-            }
-            _ => {}
-        }
-    }
-
-    /// Selects `target` in its panel, and opens it when `open`; a row
-    /// gone from the screen since the labels were given is said so.
-    fn hint_go(&mut self, target: Target, open: bool) {
-        let here = match target {
-            Target::Row(sel) => self.shown.borrow().contains(&sel).then(|| {
-                self.pane = Pane::Salon;
-                self.selected = sel;
-            }),
-            Target::Waiting(i) => self.inbox_rows().iter().position(|&r| r == i).map(|at| {
-                self.pane = Pane::Inbox;
-                self.inbox_sel = at;
-                // The person picks: `W` goes on from what they picked.
-                self.waiting_at = None;
-            }),
-            Target::Line(i) => (self.journal_rows().iter().any(|&(r, _)| r == i)).then(|| {
-                self.pane = Pane::Journal;
-                self.journal_sel = Some(i);
-            }),
-        };
-        match here {
-            Some(()) if open => self.deeper(),
-            Some(()) => {}
-            None => {
-                let t = self.lang.text();
-                self.flash(t.hint_gone.to_string());
-            }
-        }
-    }
-
     /// The agent after (`forward`) or before agent `id` in the salon's
     /// order; the first when `id` has no row there; `id` itself at
     /// either end.
     fn peek_step(&self, id: AgentId, forward: bool) -> AgentId {
-        let agents: Vec<AgentId> = (ui::salon::rows(self, usize::MAX).iter())
-            .filter_map(|r| match r.sel() {
-                Some(Sel::Agent(a)) => Some(a),
+        // Home's agents, in its order.
+        let agents: Vec<AgentId> = (self.home_rows().iter())
+            .filter_map(|r| match r.1 {
+                HomeRow::Agent(a) => Some(a),
                 _ => None,
             })
             .collect();
@@ -782,73 +701,20 @@ mod tests {
     }
 
     #[test]
-    fn k_peeks_at_the_agent_at_hand_over_the_view_and_j_k_step() {
-        let mut app = quiet();
-        app.selected = Sel::Agent(2);
-        app.unseen.insert(2);
-        app.on_key(key(KeyCode::Char('K')));
-        assert_eq!(app.peek, Some(2));
-        assert!(!app.unseen.contains(&2), "looked at: seen");
-        assert_eq!((app.view, app.zoom), (View::Salon, Zoom::None));
-        // The salon's order: the lead, then the workers.
-        let mut steps = Vec::new();
-        for code in [
-            KeyCode::Char('j'),
-            KeyCode::Down,
-            KeyCode::Char('j'),
-            KeyCode::Char('k'),
-            KeyCode::Up,
-            KeyCode::Up,
-            KeyCode::Char('k'),
-            KeyCode::Char('k'),
-        ] {
-            app.on_key(key(code));
-            steps.push(app.peek.unwrap());
-        }
-        assert_eq!(steps, [3, 4, 4, 3, 2, 1, 0, 0]);
-        // Other keys wait: no chord, no quit question, the view stays.
-        for c in ['g', 'q', '2', 's', 'f'] {
-            app.on_key(key(KeyCode::Char(c)));
-        }
-        assert_eq!(app.pending, None);
-        assert_eq!(app.view, View::Salon);
-        assert!(app.settled.is_empty() && !app.needs_only);
-        assert_eq!(app.peek, Some(0));
-        // The help over it; closing the help leaves the peek.
-        app.on_key(key(KeyCode::Char('?')));
-        assert!(app.help);
-        app.on_key(key(KeyCode::Esc));
-        assert!(!app.help);
-        assert_eq!(app.peek, Some(0));
-        app.on_key(key(KeyCode::Esc));
-        assert_eq!(app.peek, None);
-        app.on_key(key(KeyCode::Char('K')));
-        assert_eq!(app.peek, Some(2));
-        app.on_key(key(KeyCode::Char('K')));
-        assert_eq!(app.peek, None);
-        // enter: its whole focus, over the same view.
-        app.on_key(key(KeyCode::Char('K')));
-        app.on_key(key(KeyCode::Enter));
-        assert_eq!((app.peek, app.zoom), (None, Zoom::Focus(2)));
-        assert_eq!(app.view, View::Salon);
-        // @: a message to it.
-        app.on_key(key(KeyCode::Esc));
-        app.on_key(key(KeyCode::Char('K')));
-        app.on_key(key(KeyCode::Char('@')));
-        let name = app.world.agents[2].name.clone();
-        assert_eq!(app.peek, None);
-        assert!(app.typing);
-        assert_eq!(app.input, format!("@{name} "));
-    }
-
-    #[test]
     fn a_peek_off_the_salons_rows_steps_to_its_first_agent() {
         let (mut app, [a, ..]) = two_quiet_projects();
-        let lead = app.world.projects[1].leader;
         app.collapsed[0] = true;
         app.peek = Some(a);
         app.on_key(key(KeyCode::Char('j')));
-        assert_eq!(app.peek, Some(lead));
+        // Project 0 is folded: Home's first agent is project 1's first.
+        let first = (app.home_rows().iter())
+            .find_map(|r| match r.1 {
+                HomeRow::Agent(id) => Some(id),
+                _ => None,
+            })
+            .unwrap();
+        assert_eq!(app.world.agents[first].project, 1);
+        assert_eq!(app.peek, Some(first));
         // No agent shown at all: it stays where it is.
         app.collapsed[1] = true;
         app.peek = Some(a);
@@ -869,219 +735,6 @@ mod tests {
             flashed(&app).unwrap_or_default(),
             "no agent named \"nobody\""
         );
-    }
-
-    #[test]
-    fn hint_labels_are_one_letter_while_they_go_round_and_two_from_the_last_letters() {
-        let all: Vec<String> = HINT_LETTERS
-            .iter()
-            .map(|&b| char::from(b).to_string())
-            .collect();
-        assert!(hint_labels(0).is_empty());
-        assert_eq!(hint_labels(1), ["a"]);
-        assert_eq!(hint_labels(26), all);
-        // One more: the last letter starts labels of two instead.
-        let l = hint_labels(27);
-        assert_eq!(l[..25], all[..25]);
-        assert_eq!(l[25..], ["ma", "ms"]);
-        // One start of two holds 25 + 26 rows; the next row needs another.
-        let l = hint_labels(51);
-        assert_eq!((l.len(), l[24].as_str(), l[50].as_str()), (51, "n", "mm"));
-        let l = hint_labels(52);
-        assert_eq!(l.len(), 52);
-        assert_eq!(l[..24], all[..24]);
-        assert_eq!((l[24].as_str(), l[49].as_str()), ("na", "nm"));
-        assert_eq!(l[50..], ["ma", "ms"]);
-        // All of two letters, and no more than there are.
-        let l = hint_labels(676);
-        assert_eq!((l.len(), l[0].as_str(), l[675].as_str()), (676, "aa", "mm"));
-        assert_eq!(hint_labels(1000).len(), 676);
-        for n in [27, 52, 300, 676] {
-            let l = hint_labels(n);
-            let unique: BTreeSet<&String> = l.iter().collect();
-            assert_eq!(unique.len(), n, "{n}: one label per row");
-            for a in &l {
-                for b in &l {
-                    assert!(a == b || !b.starts_with(a.as_str()), "{n}: {a} starts {b}");
-                }
-            }
-        }
-    }
-
-    #[test]
-    fn f_labels_the_rows_drawn_and_a_label_selects_its_row_in_its_panel() {
-        let (mut app, targets) = drawn_for_hints();
-        app.on_key(shift('F'));
-        let h = app.hints.as_ref().expect("F gives the labels");
-        let labels: Vec<(&str, Target)> = h.labels.iter().map(|(l, t)| (l.as_str(), *t)).collect();
-        let want: Vec<(&str, Target)> = ["a", "s", "d", "f", "g", "h", "j", "k"]
-            .into_iter()
-            .zip(targets.iter().copied())
-            .collect();
-        assert_eq!(labels, want);
-        assert_eq!(h.typed, "");
-        // An agent's row: selected, not opened.
-        app.on_key(key(KeyCode::Char('d')));
-        assert!(app.hints.is_none());
-        assert_eq!(
-            (app.pane, app.selected, app.zoom),
-            (Pane::Salon, Sel::Agent(1), Zoom::None)
-        );
-        // An item: its place among the open ones, and `W` goes on from it.
-        app.waiting_at = Some(0);
-        app.on_key(shift('F'));
-        app.on_key(key(KeyCode::Char('h')));
-        assert_eq!(
-            (app.pane, app.inbox_sel, app.waiting_at),
-            (Pane::Inbox, 1, None)
-        );
-        assert_eq!(app.zoom, Zoom::None);
-        // A journal line.
-        let Target::Line(line) = targets[7] else {
-            unreachable!()
-        };
-        app.on_key(shift('F'));
-        app.on_key(key(KeyCode::Char('k')));
-        assert_eq!((app.pane, app.journal_sel), (Pane::Journal, Some(line)));
-        // A header: back in the team.
-        app.on_key(shift('F'));
-        app.on_key(key(KeyCode::Char('a')));
-        assert_eq!((app.pane, app.selected), (Pane::Salon, Sel::Project(0)));
-        assert!(app.flash.is_none(), "nothing to say");
-    }
-
-    #[test]
-    fn a_label_s_last_letter_in_capitals_opens_its_row_too() {
-        let (mut app, _) = drawn_for_hints();
-        app.on_key(shift('F'));
-        app.on_key(shift('S'));
-        assert_eq!((app.pane, app.zoom), (Pane::Salon, Zoom::Focus(0)));
-        app.on_key(key(KeyCode::Esc));
-        app.on_key(shift('F'));
-        app.on_key(shift('H'));
-        assert_eq!((app.pane, app.inbox_sel), (Pane::Inbox, 1));
-        assert_eq!(app.zoom, Zoom::Focus(3), "the ask's agent");
-    }
-
-    #[test]
-    fn labels_of_two_letters_narrow_and_only_the_last_letter_opens() {
-        let (mut app, _) = drawn_for_hints();
-        let agents: Vec<Sel> = (0..30).map(|_| Sel::Agent(4)).collect();
-        // Thirty rows: the last letter, `m`, starts labels of two.
-        let mut at: Vec<(Target, u16, u16)> = vec![(Target::Row(Sel::Agent(0)), 1, 0); 25];
-        at.extend([
-            (Target::Row(Sel::Agent(4)), 1, 25),
-            (Target::Row(Sel::Agent(3)), 1, 26),
-        ]);
-        at.extend(vec![(Target::Row(Sel::Agent(0)), 1, 27); 3]);
-        *app.hintable.borrow_mut() = at;
-        app.shown.borrow_mut().extend(agents);
-        app.shown.borrow_mut().push(Sel::Agent(3));
-        app.on_key(shift('F'));
-        app.on_key(shift('M'));
-        assert_eq!(
-            app.hints.as_ref().map(|h| h.typed.as_str()),
-            Some("m"),
-            "a capital first letter narrows"
-        );
-        // A letter no label goes on does nothing; backspace takes one back.
-        for c in ['m', 'q', '1', ' '] {
-            app.on_key(key(KeyCode::Char(c)));
-        }
-        app.on_key(key(KeyCode::Enter));
-        assert_eq!(app.hints.as_ref().map(|h| h.typed.as_str()), Some("m"));
-        app.on_key(key(KeyCode::Backspace));
-        assert_eq!(app.hints.as_ref().map(|h| h.typed.as_str()), Some(""));
-        app.on_key(key(KeyCode::Backspace));
-        assert_eq!(
-            app.hints.as_ref().map(|h| h.typed.as_str()),
-            Some(""),
-            "nothing left to take"
-        );
-        app.on_key(key(KeyCode::Char('m')));
-        app.on_key(key(KeyCode::Char('s')));
-        assert!(app.hints.is_none());
-        assert_eq!(
-            (app.selected, app.zoom),
-            (Sel::Agent(3), Zoom::None),
-            "ms: selected only"
-        );
-        assert_eq!(app.view, View::Salon);
-        assert_eq!(app.pending, None, "no quit question from q");
-    }
-
-    #[test]
-    fn esc_takes_the_labels_away_and_the_help_comes_over_them() {
-        let (mut app, _) = drawn_for_hints();
-        app.on_key(shift('F'));
-        app.on_key(key(KeyCode::Char('?')));
-        assert!(app.help && app.hints.is_some());
-        app.on_key(key(KeyCode::Esc));
-        assert!(!app.help && app.hints.is_some(), "the help closes first");
-        app.on_key(key(KeyCode::Esc));
-        assert!(app.hints.is_none());
-        assert_eq!((app.pane, app.selected), (Pane::Salon, Sel::Project(0)));
-        // `:hints` gives them too.
-        app.command("hints");
-        assert_eq!(app.hints.as_ref().map(|h| h.labels.len()), Some(8));
-    }
-
-    #[test]
-    fn a_label_whose_row_left_the_screen_is_said_so() {
-        let (mut app, targets) = drawn_for_hints();
-        let gone = Some(app.lang.text().hint_gone.to_string());
-        // The agent's row no longer shown.
-        app.shown.borrow_mut().retain(|&s| s != Sel::Agent(1));
-        app.on_key(shift('F'));
-        app.on_key(shift('D'));
-        assert_eq!((app.selected, app.zoom), (Sel::Project(0), Zoom::None));
-        assert_eq!(flashed(&app), gone);
-        // The item answered.
-        app.flash = None;
-        app.world.inbox[2].open = false;
-        app.on_key(shift('F'));
-        app.on_key(key(KeyCode::Char('h')));
-        assert_eq!(app.pane, Pane::Salon);
-        assert_eq!(flashed(&app), gone);
-        // A line the journal does not show.
-        app.flash = None;
-        let past = app.world.journal.len();
-        assert!(targets.iter().all(|&t| t != Target::Line(past)));
-        app.hints = Some(Hints {
-            labels: vec![("a".into(), Target::Line(past))],
-            typed: String::new(),
-        });
-        app.on_key(key(KeyCode::Char('a')));
-        assert_eq!((app.pane, app.journal_sel), (Pane::Salon, None));
-        assert_eq!(flashed(&app), gone);
-    }
-
-    #[test]
-    fn f_has_no_labels_off_the_salons_screen() {
-        let (mut app, _) = drawn_for_hints();
-        let none = Some(app.lang.text().no_hints.to_string());
-        app.zoom = Zoom::Focus(1);
-        app.on_key(shift('F'));
-        assert!(app.hints.is_none());
-        assert_eq!(flashed(&app), none);
-        app.zoom = Zoom::None;
-        app.view = View::Home;
-        app.flash = None;
-        app.on_key(shift('F'));
-        assert!(app.hints.is_none());
-        assert_eq!(flashed(&app), none);
-        app.view = View::Salon;
-        app.open_thread(app.journal_rows()[0].0);
-        app.flash = None;
-        app.command("hints");
-        assert!(app.hints.is_none(), "a conversation lies over the rows");
-        assert_eq!(flashed(&app), none);
-        app.thread = None;
-        app.hintable.borrow_mut().clear();
-        app.flash = None;
-        app.on_key(shift('F'));
-        assert!(app.hints.is_none(), "nothing drawn to label");
-        assert_eq!(flashed(&app), none);
     }
 
     /// The demo with its look for worktrees no agent owns answered, its
@@ -1130,10 +783,9 @@ mod tests {
         assert_eq!(at(&app), 1);
         app.key(key(KeyCode::Home));
         assert_eq!(at(&app), 0);
-        // A key it does not take does nothing, and the view stays.
-        let view = app.view;
+        // A key it does not take does nothing.
         app.key(key(KeyCode::Char('b')));
-        assert_eq!((app.tidy, app.view), (Some(TidyWin::default()), view));
+        assert_eq!(app.tidy, Some(TidyWin::default()));
         app.key(key(KeyCode::Char('?')));
         assert!(app.help);
         app.help = false;
@@ -1346,8 +998,7 @@ mod tests {
         let item = (app.world.inbox.iter())
             .position(|i| i.kind == InboxKind::Check)
             .expect("asked");
-        app.pane = Pane::Inbox;
-        app.inbox_sel = app.inbox_rows().iter().position(|&i| i == item).unwrap();
+        app.at_home.at = Some(HomeRow::Item(item));
         app.on_key(key(KeyCode::Enter));
         assert_eq!(app.script, Some((item, 0)));
         let script = app.script_text(item).unwrap();
@@ -1375,7 +1026,7 @@ mod tests {
         let item = (app.world.inbox.iter())
             .position(|i| i.kind == InboxKind::Check && i.open)
             .expect("asked again");
-        app.inbox_sel = app.inbox_rows().iter().position(|&i| i == item).unwrap();
+        app.at_home.at = Some(HomeRow::Item(item));
         app.on_key(key(KeyCode::Char('r')));
         assert!(!app.world.inbox[item].open);
         assert_eq!(app.world.change_of(id).unwrap().check, Check::None);
@@ -1496,7 +1147,6 @@ mod script_next_tests {
     /// on Home, with its window open.
     fn check_window() -> (App, usize) {
         let mut app = App::new(1, 3, 0, 1, Lang::En);
-        app.view = View::Home;
         for _ in 0..400 {
             app.step();
             if let Some(i) =
