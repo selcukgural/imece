@@ -49,6 +49,8 @@ Deny by default: a message that does not fit is refused with the reason and leav
 | `assign`, `handoff` or `cancel` to `you` | `assign is not for the person; ask them, or tell them (inform, done, blocked)` |
 | a bad `re` | see below |
 | `paths` on anything but an `assign` | `paths go with an assign: the card it opens owns them` |
+| `options` on anything but an `ask` to `you` | `options go with an ask to the person (to: you)` |
+| bad `options` | `options must be an array of strings`, `an ask offers at most 4 options`, `an option is empty`, `an option is longer than 60 characters`, `"a\tb" has a control character` |
 | bad `paths` | `paths must be an array of strings`, `a card owns at most 20 paths`, `a path is empty`, `a path is longer than 200 characters`, `"a\tb" has a control character`, `paths are relative to the repository; "/etc" starts with /`, `"src/../x" goes outside the repository (..)`, `paths lists "src" twice` |
 | a path an open card of the project owns | `#3 Fix the parser owns "src/parser.rs", which "src" names too; give this card other paths, or end one with the word shared (src shared)` |
 
@@ -56,7 +58,7 @@ The 12-turn and 10-post counters start again every time you write to any agent: 
 
 ### Messages to you
 
-`to: you` reaches the person. An `ask` becomes a question in TO DECIDE (`claude-1 asks you: Which parser?`); the agent's row reads `? → you` while it is idle with one open, and the question closes when you write to that agent, which starts its next turn. The sender hears `delivered; the person sees it under TO DECIDE and answers when they can, which starts your next turn. Until then, end your turn or go on with what does not depend on the answer; your teammates' messages wait for that answer too, but for a cancel.` Every other type only informs: a line in the journal and the conversation (`noted; the person sees it in the journal. Nothing wakes them: a question goes as type ask.`); a worker's `done` to you shows its change like any done. Messages to you take no number and no `re`, count against no cap and cost nothing. See [approvals and questions](../concepts/approvals-and-questions.md).
+`to: you` reaches the person. An `ask` becomes a question in TO DECIDE (`claude-1 asks you: Which parser?`); the agent's row reads `? → you` while it is idle with one open, and the question closes when you write to that agent, which starts its next turn. The sender hears `delivered; the person sees it under TO DECIDE and answers when they can, which starts your next turn. Until then, end your turn or go on with what does not depend on the answer; your teammates' messages wait for that answer too, but for a cancel.` (with `options`: `… with your options and answers when they can, with one of them or in their own words, …`). Every other type only informs: a line in the journal and the conversation (`noted; the person sees it in the journal. Nothing wakes them: a question goes as type ask.`); a worker's `done` to you shows its change like any done. Messages to you take no number and no `re`, count against no cap and cost nothing. See [approvals and questions](../concepts/approvals-and-questions.md).
 
 ### Cards and the bus
 
@@ -117,6 +119,7 @@ imece's MCP server is called `imece`; its tools reach a session as `mcp__imece__
 | `body` | string, at most 4000 | yes | for `assign`: the first line becomes the card's title (the screen shows its first 20 characters next to the worker, so it should start with what tells it from the other cards, not a verb every task shares); then the task, the files it touches and when it is done |
 | `re` | integer ≥ 1 | no | the number of the message this replies to |
 | `paths` | array of at most 20 strings, each at most 200 | no | for `assign`: the paths the card owns, relative to the repository, as git pathspecs (a file, a directory, or a pattern with `*`); one ending in the word `shared` is named, not owned. Refused on any other type |
+| `options` | array of at most 4 strings, each at most 60 | no | for an `ask` to `you`: the answers the person can pick with one key, short, the one the agent would take first; the person may still answer in words. Refused on any other message |
 
 An `assign` with paths is delivered with them: the mail ends `This card owns src/parser.rs, docs (shared): stay in them; what else needs changing goes in your done, or ask for the card to be widened.`
 

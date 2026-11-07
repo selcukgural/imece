@@ -261,6 +261,39 @@ impl App {
     /// the row in its place, by what it is, so the next key decides it
     /// (a yes moves down, record 125). A row that went by itself before
     /// the key is still told, by `home_key`.
+    /// The open question at hand on Home, as its inbox index.
+    pub(super) fn question_at_hand(&self) -> Option<usize> {
+        if self.view != View::Home {
+            return None;
+        }
+        match self.home_at()? {
+            HomeRow::Item(i) if self.world.inbox[i].kind == InboxKind::Question => Some(i),
+            _ => None,
+        }
+    }
+
+    /// What digit `d` would answer on Home (record 125): the question at
+    /// hand's agent and the option the digit names, counted from 1.
+    pub(super) fn option_at_hand(&self, d: char) -> Option<(AgentId, String)> {
+        let i = self.question_at_hand()?;
+        let agent = self.world.inbox[i].agent;
+        let n = usize::try_from(d.to_digit(10)?).ok()?.checked_sub(1)?;
+        let option = self.world.question_of(agent)?.options.get(n)?.clone();
+        Some((agent, option))
+    }
+
+    /// A digit on Home answers the question at hand with the option it
+    /// names: the words go to the agent as the person's, which closes the
+    /// question and starts its next turn; the row settles as any decision.
+    pub(super) fn answer_option(&mut self, d: char) {
+        let Some((agent, option)) = self.option_at_hand(d) else {
+            return;
+        };
+        if self.tell(agent, &option) {
+            self.home_decided();
+        }
+    }
+
     pub(super) fn home_decided(&mut self) {
         self.home_settle();
     }
@@ -572,6 +605,86 @@ mod tests {
         assert_eq!(app.home_at(), Some(HomeRow::Item(0)));
         app.key(key(KeyCode::Char('a')));
         assert!(!app.world.inbox[0].open);
+    }
+
+    #[test]
+    fn a_digit_on_home_answers_the_question_at_hand_with_the_option_it_names() {
+        let mut app = quiet();
+        let w = workers(&app);
+        let ask = |app: &mut App, from, options: &[&str]| {
+            app.world.note(Event::ToYou {
+                from,
+                kind: MsgKind::Ask,
+                text: "Which?".into(),
+                options: options.iter().map(|o| o.to_string()).collect(),
+            });
+            app.world.asked_you(from, "Which?");
+        };
+        ask(&mut app, w[0], &["the card", "store credit"]);
+        assert_eq!(app.home_at(), Some(HomeRow::Item(0)));
+        assert_eq!(
+            app.option_at_hand('2'),
+            Some((w[0], "store credit".to_string()))
+        );
+        assert_eq!(
+            app.option_at_hand('1').map(|o| o.1),
+            Some("the card".into())
+        );
+        assert_eq!(app.option_at_hand('3'), None, "no third answer");
+        assert_eq!(app.option_at_hand('0'), None);
+        assert_eq!(app.option_at_hand('a'), None);
+        // `3` is the code map's, as ever; `2` answers and Home stays.
+        app.key(key(KeyCode::Char('3')));
+        assert_eq!(app.view, View::Code);
+        app.view = View::Home;
+        app.key(key(KeyCode::Char('2')));
+        assert_eq!(app.view, View::Home);
+        assert!(!app.world.inbox[0].open, "answered");
+        assert!(
+            matches!(
+                &app.world.journal.last().unwrap().event,
+                Event::YouSaid { to, text, .. } if *to == w[0] && text == "store credit"
+            ),
+            "{:?}",
+            app.world.journal.last()
+        );
+        assert_eq!(app.option_at_hand('1'), None, "nothing at hand");
+        // Off Home the digits are the views', question or not.
+        ask(&mut app, w[1], &["a"]);
+        app.view = View::Salon;
+        assert_eq!(app.option_at_hand('1'), None);
+        app.key(key(KeyCode::Char('1')));
+        assert_eq!(app.view, View::Salon);
+        assert!(app.world.has_question(w[1]));
+        // A question without answers to pick: `1` is the team's.
+        app.view = View::Home;
+        ask(&mut app, w[1], &[]);
+        assert_eq!(app.option_at_hand('1'), None);
+        app.key(key(KeyCode::Char('1')));
+        assert_eq!(app.view, View::Salon);
+        assert!(app.world.has_question(w[1]));
+    }
+
+    #[test]
+    fn slash_on_a_question_at_hand_writes_the_answer_to_its_agent() {
+        let mut app = quiet();
+        let w = workers(&app);
+        app.world.asked_you(w[0], "Which?");
+        assert_eq!(app.question_at_hand(), Some(0));
+        app.key(key(KeyCode::Char('/')));
+        assert!(app.typing);
+        assert_eq!(app.input, format!("@{} ", app.world.agents[w[0]].name));
+        // Not on a question: `/` writes to nobody in particular, as ever.
+        let mut app = quiet();
+        app.world.inbox.push(item(InboxKind::Approval, w[0], true));
+        assert_eq!(app.question_at_hand(), None);
+        app.key(key(KeyCode::Char('/')));
+        assert!(app.typing);
+        assert_eq!(app.input, "");
+        app.typing = false;
+        app.view = View::Salon;
+        app.world.asked_you(w[0], "Which?");
+        assert_eq!(app.question_at_hand(), None, "Home only");
     }
 
     #[test]

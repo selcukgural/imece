@@ -424,6 +424,12 @@ impl App {
             // `q` asks; `qq` quits (ctrl-c still quits at once).
             KeyCode::Char('q') => self.ask_quit(),
             // `i` as in vim: start writing.
+            // On Home, `/` on a question writes the answer in words: the
+            // composer opens to its agent, as `a` does.
+            KeyCode::Char('/') if self.question_at_hand().is_some() => {
+                let i = self.question_at_hand().unwrap_or_default();
+                self.answer_item(i, true);
+            }
             KeyCode::Char('/') | KeyCode::Char('i') => self.typing = true,
             KeyCode::Char(':') => {
                 self.typing = true;
@@ -488,6 +494,11 @@ impl App {
                     Zoom::None => "@".into(),
                 };
                 self.menu = self.suggest();
+            }
+            // On Home a digit picks one of the answers a question offers;
+            // with none to pick, the digits are the views'.
+            KeyCode::Char(d @ '1'..='9') if self.option_at_hand(d).is_some() => {
+                self.answer_option(d);
             }
             KeyCode::Char('1') => self.show(View::Salon),
             KeyCode::Char('2') => self.show(View::Board),

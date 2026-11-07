@@ -219,3 +219,17 @@ proposal's `Verdict` enum became `Decision`. The demo's workers already
 overlap through their strays (`the_demo_shows_a_change_that_overlaps…`).
 Left for the step: the question screen with options, and the detail's
 tabs.
+
+Step 3's question screen as built (its second piece): an `ask` to `you`
+carries `options` (record 27 has the bus side: `OPTIONS_MAX` 4,
+`OPTION_MAX` 60, `Event::ToYou.options`, `World::question_of`). On Home
+the row says the question and, under it, each answer with its key
+(`Tail::Asked`; `row_keys` `1-3 pick · a answer`, `1 pick` for one), the
+preview reads the question whole (cleaned line by line), the answers,
+then `so far:` and the agent's status, to-do list and newest trace lines
+(`question_lines` + `agent_lines`); `1`-`9` answer (`App::option_at_hand`,
+`answer_option` → `tell` → `home_decided`), `/` opens the composer to the
+agent (`question_at_hand`, `answer_item`), both on Home only, and the
+digits stay the views' otherwise. The demo's questions offer answers on
+two of four (`Content.ask_options`). Left for the step: the detail's tabs
+(diff · talk · log); the question's own detail screen comes with them.

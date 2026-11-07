@@ -45,10 +45,20 @@ What an ask shows: for a shell command the command; for another tool what it tou
 
 ## Questions (`?`)
 
-An agent asks you with `send(to: "you", type: "ask", body)`. It becomes a `?` item, "claude-2 asks you: keep the old CLI flag?", and the agent's team line reads `? → you` while it is idle with the question open. A newer question from the same agent replaces the older.
+An agent asks you with `send(to: "you", type: "ask", body)`, and may offer the answers to pick from (`options`: at most four, each a short line, the one it would take first). It becomes a `?` item, "claude-2 asks you: keep the old CLI flag?", and the agent's team line reads `? → you` while it is idle with the question open. A newer question from the same agent replaces the older.
 
-- `enter` opens the conversation at the question.
-- `a` or `r` open the composer `@claude-2 ` (there is no "answered without words"); anything you write to that agent closes the question and starts its next turn.
+On [Home](../screen/home.md) the row says the question and, under it, each answer offered with the key that picks it:
+
+```text
+▸! #12 Refunds     Should a refund go back to the card or to store credit?   1-3 pick   a answer
+                    1  back to the card
+                    2  store credit
+                    3  whichever it was paid with
+```
+
+- `1`-`9` on that row sends the answer it names to the agent as your message: the question closes and the agent's next turn starts with it. The digits are Home's only while a question with answers is at hand; elsewhere they are the views' as ever.
+- `/` on the row, or `a` or `r`, open the composer `@claude-2 ` for an answer in your own words; anything you write to that agent closes the question and starts its next turn.
+- `enter` opens the conversation at the question. The preview beside the list (from 120 columns) reads the question whole, its answers, and what the agent did so far: its status, its to-do list and its newest trace lines.
 - A question of an agent that is gone or stopped stays open until you write to it.
 
 Who asks when: the leader may ask you mid-task; a worker asks its leader first and sends you only what only you can decide; a helper only what no teammate can answer. Questions cost nothing against the mail caps or the pot ([messages](../concepts/messages-and-board.md)).
