@@ -719,6 +719,33 @@ mod tests {
     use super::*;
 
     #[test]
+    fn the_journal_selection_steps_stays_and_stops_at_its_ends() {
+        let (mut app, [a, ..]) = two_quiet_projects();
+        for text in ["one", "two", "three", "four"] {
+            app.world.said(a, text);
+        }
+        let rows = app.journal_rows();
+        let last = rows.len() - 1;
+        assert!(last >= 3);
+        let at = |n: usize| Some(rows[n].0);
+        app.select_journal(None);
+        assert_eq!(app.journal_sel, at(0), "none yet: the first");
+        app.journal_sel = at(2);
+        app.select_journal(None);
+        assert_eq!(app.journal_sel, at(2), "no step: where it is");
+        app.select_journal(Some(true));
+        assert_eq!(app.journal_sel, at(3));
+        app.select_journal(Some(false));
+        assert_eq!(app.journal_sel, at(2));
+        app.journal_sel = at(last);
+        app.select_journal(Some(true));
+        assert_eq!(app.journal_sel, at(last), "the last stays");
+        app.journal_sel = at(0);
+        app.select_journal(Some(false));
+        assert_eq!(app.journal_sel, at(0), "the first stays");
+    }
+
+    #[test]
     fn f_shows_only_what_needs_you_and_a_project_with_none_is_left_out() {
         let (mut app, [a, b, c]) = two_quiet_projects();
         app.world.agents[c].status = Status::Blocked;

@@ -385,6 +385,18 @@ mod tests {
     use super::*;
 
     #[test]
+    fn page_up_and_page_down_scroll_a_conversation_by_its_page() {
+        let (mut app, _) = with_thread();
+        let th = app.thread.as_ref().unwrap();
+        th.scroll.set(12);
+        th.page.set(5);
+        app.on_key(key(KeyCode::PageUp));
+        assert_eq!(app.thread.as_ref().unwrap().scroll.get(), 7);
+        app.on_key(key(KeyCode::PageDown));
+        assert_eq!(app.thread.as_ref().unwrap().scroll.get(), 12);
+    }
+
+    #[test]
     fn c_notes_the_words_chosen_and_n_sends_them_to_who_wrote_them() {
         let (mut app, worker) = talk_with_words();
         let answer = app.world.journal.len() - 1;
@@ -419,6 +431,7 @@ mod tests {
         // Other words of the same message, or the same words of another
         // message: a note of their own.
         keys(&mut app, "vjjsc");
+        assert!(app.input.is_empty(), "no note of the other words to reopen");
         app.input = "other words".into();
         app.on_key(key(KeyCode::Enter));
         app.talk_notes.push(TalkNote {
