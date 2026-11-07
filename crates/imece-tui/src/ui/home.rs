@@ -46,9 +46,12 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App) {
     }
     let at = app.home_at();
     if body.width < WIDE {
-        let (lines, scroll) = list_lines(app, usize::from(body.width), at);
-        let scroll = scroll.min(lines.len().saturating_sub(1) as u16);
-        f.render_widget(Paragraph::new(lines).scroll((scroll, 0)), body);
+        let drawn = list_drawn(app, usize::from(body.width), at);
+        let scroll = drawn.scroll.min(drawn.lines.len().saturating_sub(1) as u16);
+        let used = drawn.lines.len() as u16;
+        note_breath(app, &drawn.lines, &drawn.spots, scroll, body);
+        f.render_widget(Paragraph::new(drawn.lines).scroll((scroll, 0)), body);
+        mark_under(f, body, app, used.saturating_sub(scroll));
         return;
     }
     let [list, gap, preview] = Layout::horizontal([
@@ -57,9 +60,12 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App) {
         Constraint::Min(0),
     ])
     .areas(body);
-    let (lines, scroll) = list_lines(app, usize::from(list.width), at);
-    let scroll = scroll.min(lines.len().saturating_sub(1) as u16);
-    f.render_widget(Paragraph::new(lines).scroll((scroll, 0)), list);
+    let drawn = list_drawn(app, usize::from(list.width), at);
+    let scroll = drawn.scroll.min(drawn.lines.len().saturating_sub(1) as u16);
+    let used = drawn.lines.len() as u16;
+    note_breath(app, &drawn.lines, &drawn.spots, scroll, list);
+    f.render_widget(Paragraph::new(drawn.lines).scroll((scroll, 0)), list);
+    mark_under(f, list, app, used.saturating_sub(scroll));
     let rule = vec![Line::from(Span::styled("│", dim())); usize::from(gap.height)];
     f.render_widget(Paragraph::new(rule), gap);
     let room = usize::from(preview.width).saturating_sub(1);
@@ -73,6 +79,21 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App) {
         |row| preview_lines(app, row, room, usize::from(preview.height)),
     );
     f.render_widget(Paragraph::new(text), preview);
+}
+
+/// While no project has a worker, imece's mark in the rows the list
+/// leaves free under it (record 101).
+fn mark_under(f: &mut Frame, area: Rect, app: &App, used: u16) {
+    let working = (app.home_rows().iter()).any(|r| matches!(r.1, HomeRow::Agent(_)));
+    if working {
+        return;
+    }
+    let free = Rect {
+        y: area.y + used.min(area.height),
+        height: area.height.saturating_sub(used),
+        ..area
+    };
+    brand::salon(f, free, app);
 }
 
 /// How the projects in view stand on Lonca; none when none is on it.
@@ -105,7 +126,9 @@ impl Listed {
 
 /// `TO DECIDE  2 permissions · 1 question · 3 changes`: the heading and
 /// what is under it, each kind counted, a count of none left out.
-fn decide_heading(t: &Text, listed: &Listed) -> Line<'static> {
+fn decide_heading(app: &App, listed: &Listed) -> Line<'static> {
+    let t = app.lang.text();
+    let w = &app.world;
     let mut spans = vec![Span::styled(format!(" {} ", t.home_turn), bold(pal().warn))];
     let counts: Vec<String> = [
         HomeGroup::Permission,
@@ -121,7 +144,13 @@ fn decide_heading(t: &Text, listed: &Listed) -> Line<'static> {
         n => Some(fill(many, &[&n.to_string()])),
     })
     .collect();
-    spans.push(Span::styled(counts.join(" · "), dim()));
+    let mut words = counts;
+    // What `:clear` took off the list, still open (record 90).
+    let hidden = w.hidden_inbox();
+    if hidden > 0 {
+        words.push(fill(t.home_hidden, &[&hidden.to_string()]));
+    }
+    spans.push(Span::styled(words.join(" · "), dim()));
     Line::from(spans)
 }
 
@@ -194,15 +223,42 @@ fn group_line(app: &App, group: HomeGroup, listed: &Listed, width: usize) -> Lin
     Line::from(spans)
 }
 
+/// Where the agents' glyphs stand in the list's lines: the line, the
+/// span and the agent, for the breath's patch (`note_glyph`).
+fn glyph_spots(app: &App, lines_before: usize, row: HomeRow) -> Option<(usize, usize, AgentId)> {
+    let HomeRow::Agent(id) = row else {
+        return None;
+    };
+    let under = matches!(app.world.agents[id].role, Role::Helper | Role::Researcher);
+    Some((lines_before, if under { 2 } else { 1 }, id))
+}
+
+/// Home's list as drawn: its lines, how far they scroll for the row at
+/// hand to show, and where the agents' glyphs stand (the line, the span,
+/// the agent) for the breath's patch.
+struct Drawn {
+    lines: Vec<Line<'static>>,
+    scroll: u16,
+    spots: Vec<(usize, usize, AgentId)>,
+}
+
 /// The list in rows `width` wide and how far to scroll it for the row at
 /// hand to show.
+#[cfg(test)]
 fn list_lines(app: &App, width: usize, at: Option<HomeRow>) -> (Vec<Line<'static>>, u16) {
+    let drawn = list_drawn(app, width, at);
+    (drawn.lines, drawn.scroll)
+}
+
+/// The list drawn: see [`Drawn`].
+fn list_drawn(app: &App, width: usize, at: Option<HomeRow>) -> Drawn {
     let t = app.lang.text();
     let listed = Listed {
         rows: app.home_rows(),
     };
     let mut lines = Vec::new();
     let mut scroll = 0;
+    let mut spots = Vec::new();
     let mut last: Option<HomeGroup> = None;
     for &(group, row) in &listed.rows {
         if last != Some(group) {
@@ -212,7 +268,7 @@ fn list_lines(app: &App, width: usize, at: Option<HomeRow>) -> (Vec<Line<'static
                     lines.push(Line::default());
                 }
                 lines.push(match group.heading() {
-                    Heading::Decide => decide_heading(t, &listed),
+                    Heading::Decide => decide_heading(app, &listed),
                     Heading::Work => work_heading(app, &listed),
                 });
             }
@@ -225,12 +281,52 @@ fn list_lines(app: &App, width: usize, at: Option<HomeRow>) -> (Vec<Line<'static
         if here {
             scroll = lines.len().saturating_sub(4) as u16;
         }
+        spots.extend(glyph_spots(app, lines.len(), row));
         lines.extend(row_lines(app, row, width, here));
+    }
+    // Nothing to decide but what `:clear` hid: the heading says so.
+    if !listed.rows.iter().any(|r| r.0.heading() == Heading::Decide) && app.world.hidden_inbox() > 0
+    {
+        lines.insert(0, decide_heading(app, &listed));
+        for spot in &mut spots {
+            spot.0 += 1;
+        }
+        if scroll > 0 {
+            scroll += 1;
+        }
     }
     if listed.rows.is_empty() {
         lines.push(Line::from(Span::styled(t.home_nothing, dim())));
     }
-    (lines, scroll)
+    Drawn {
+        lines,
+        scroll,
+        spots,
+    }
+}
+
+/// Notes where the glyphs that breathe are on the screen, so a frame
+/// where only the breath changed is patched from this one (record 84).
+fn note_breath(
+    app: &App,
+    lines: &[Line<'static>],
+    spots: &[(usize, usize, AgentId)],
+    scroll: u16,
+    area: Rect,
+) {
+    let rungs = app.rungs();
+    for &(line, span, id) in spots {
+        let Some(row) = line.checked_sub(usize::from(scroll)) else {
+            continue;
+        };
+        if row >= usize::from(area.height) {
+            continue;
+        }
+        let a = &app.world.agents[id];
+        if breathes(a, rungs[id]) {
+            note_glyph(app, &lines[line], span, area, row);
+        }
+    }
 }
 
 /// The card a row is about.
@@ -459,7 +555,12 @@ fn row_lines(app: &App, row: HomeRow, width: usize, here: bool) -> Vec<Line<'sta
     if under {
         head.push(Span::styled("  └ ", dim()));
     }
-    head.push(Span::styled(glyph, fg(colour)));
+    // A working row's glyph breathes as the team's did (record 84).
+    let glyph_style = match row {
+        HomeRow::Agent(id) => glyph_style(app, agent, app.rungs()[id], colour),
+        HomeRow::Item(_) | HomeRow::Project(_) => fg(colour),
+    };
+    head.push(Span::styled(glyph, glyph_style));
     head.push(Span::raw(" "));
     let many = w.open_projects().count() > 1;
     if many && app.at_home.scope.is_none() {
@@ -830,7 +931,7 @@ fn preview_lines(app: &App, row: HomeRow, room: usize, rows: usize) -> Vec<Line<
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::app::{Engine, View};
+    use crate::app::Engine;
     use ratatui::Terminal;
     use ratatui::backend::TestBackend;
 
@@ -853,7 +954,6 @@ mod tests {
             a.status = Status::Idle;
             a.starting = false;
         }
-        app.view = View::Home;
         app
     }
 
@@ -922,7 +1022,6 @@ mod tests {
     fn demo_with_check() -> (App, usize) {
         let (world, sim) = crate::sim::world(1, 3, 0, 1, Lang::En);
         let mut app = App::with(world, Engine::Sim(sim), Lang::En);
-        app.view = View::Home;
         for _ in 0..400 {
             app.step();
             if let Some(i) =

@@ -57,15 +57,9 @@ Type `:pin api` and press `enter`: `api is pinned to the top of the team`. Its h
 
 A colour per project is not built yet.
 
-## 4. Only what needs you
+## 4. One project at a time
 
-Press `f`. The team shows only the agents that need something of you, each under its project's header; a project with nothing is left out. The title reads ` TEAM · only what needs you (f) ` and the flash `the team shows only what needs you · f: everyone`. With nothing at all:
-
-```text
- Nothing needs you right now · f shows everyone
-```
-
-`f` again shows everyone. The filter is for this run only. `W` still opens the next waiting item from anywhere, filter or not.
+Press `]`. Home narrows to one project: the header lights its name, and TO DECIDE and AT WORK show only its rows. `]` again goes to the next project, and after the last back to all of them; `[` goes the other way. The narrowing is for this run only. `W` still opens the next item to decide from anywhere.
 
 ## 5. Rename
 

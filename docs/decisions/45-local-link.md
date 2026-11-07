@@ -49,3 +49,7 @@ ones too, so a port stays its worker's when another leaves
 Not done: the card screen draws the same row (`card.rs`) with the
 address as plain text, not linked; not tried in a real terminal yet,
 only through crossterm's backend into a buffer.
+
+Since record 125's step 5 (2026-11-07) the row's OSC 8 link is on a
+card's screen (`salon::agent_line` there) and in the focus; Home's rows
+do not link (the salon's rows are no more).

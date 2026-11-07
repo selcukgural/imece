@@ -151,7 +151,6 @@ mod tests {
             a.status = Status::Idle;
             a.starting = false;
         }
-        app.view = View::Home;
         app
     }
 
@@ -347,7 +346,6 @@ mod tests {
             options: vec!["the card".into(), "credit".into()],
         });
         app.world.asked_you(one, "Which?");
-        app.view = View::Salon;
         app.zoom = Zoom::Diff(one);
         app.on_key(key(KeyCode::Tab));
         assert_eq!(app.detail(), Some((one, Tab::Talk)));
@@ -357,7 +355,6 @@ mod tests {
         assert_eq!(app.question_at_hand(), Some(app.world.inbox.len() - 1));
         app.on_key(key(KeyCode::Char('2')));
         assert!(!app.world.has_question(one), "answered");
-        assert_eq!(app.view, View::Salon, "not the board");
         assert!(matches!(
             &app.world.journal.last().unwrap().event,
             Event::YouSaid { to, text, .. } if *to == one && text == "credit"
@@ -375,11 +372,9 @@ mod tests {
         assert!(app.thread.is_some());
         app.on_key(key(KeyCode::Char('3')));
         assert!(app.world.has_question(one), "no third answer");
-        assert_eq!(app.view, View::Salon, "the digit does nothing else");
         app.open_tab(one, Tab::Talk);
         app.on_key(key(KeyCode::Char('1')));
         assert!(!app.world.has_question(one), "answered from the talk tab");
-        assert_eq!(app.view, View::Salon);
         app.world.asked_you(one, "Once more?");
         app.on_key(key(KeyCode::Char('/')));
         assert_eq!(app.input, format!("@{} ", app.world.agents[one].name));

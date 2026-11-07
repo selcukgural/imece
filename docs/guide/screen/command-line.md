@@ -58,16 +58,14 @@ A message can run over lines; the first line of one that opens a card is the car
 | `:pending` | `q` `s` | before quitting: the agents mid-turn and the changes not reviewed |
 | `:next` / `:defer` | `W` / `S` | open the next item waiting / put this one off |
 | `:waiting` | `w` | the waiting panel |
-| `:needs` | `f` | the team shows only what needs you |
 | `:settle` / `:unsettle` | `s` / — | hide the selected row until it needs you again / bring everything hidden back |
 | `:fold` / `:unfold` | `zM` / `zR` | fold / unfold every project and every worker's helpers |
 | `:trace [@NAME]` / `:talk [@NAME]` | `t` / `v` | the raw stream / the conversation of the named agent, else the one at hand |
 | `:peek [@NAME]` | `K` | the focus of the named agent, else the one at hand, in a window over the view |
-| `:hints` | `F` | hint letters on every row of the team's screen you can select |
 | `:mark` | `m` | mark the line at hand |
 | `:pause`, `:faster`, `:slower` | `space`, `+`, `-` | the demo only; live they say so and are left out of the menu |
 
-The commands that work in a team panel (`:waiting`, `:needs`, `:fold`, `:unfold`, `:settle`, `:unsettle`) go to that panel first. What each takes and answers is in the [commands reference](../reference/commands.md).
+The commands that work on Home's list (`:waiting`, `:fold`, `:unfold`, `:settle`, `:unsettle`) go to Home first. What each takes and answers is in the [commands reference](../reference/commands.md).
 
 ### The menu and its values
 

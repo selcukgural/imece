@@ -225,7 +225,6 @@ impl App {
         self.archives = None;
         self.peek = None;
         self.window = None;
-        self.hints = None;
         self.news.clear();
         self.welcome = false;
         self.digest = None;
@@ -634,7 +633,7 @@ mod tests {
         assert_eq!(app.window, None, "a window over it closed too");
         assert!(app.archives.is_none() && app.viewing.is_none());
         assert_eq!(app.waiting_at, Some(q), "the question it was about");
-        assert_eq!((app.view, app.pane), (View::Home, Pane::Inbox));
+        assert_eq!((app.pane), (Pane::Inbox));
         app.clicked(stuck.id);
         assert_eq!(app.selected, Sel::Agent(0), "the stuck agent");
         // The question answered meanwhile: the next item waiting instead.

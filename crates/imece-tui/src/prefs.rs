@@ -22,13 +22,8 @@ pub fn state_dir() -> PathBuf {
         .join("imece")
 }
 
-/// The side panel's width in percent of the screen.
-pub const SIDE_DEFAULT: u16 = 38;
-pub const SIDE_MIN: u16 = 20;
-pub const SIDE_MAX: u16 = 70;
-
-/// The settings' keys in the store.
-const SIDE: &str = "side";
+/// The settings' keys in the store. (`side`, the salon's panel width,
+/// is no longer read: the salon went with record 125.)
 const THEME: &str = "theme";
 const NOTIFY: &str = "notify";
 const MOTION: &str = "motion";
@@ -45,7 +40,6 @@ const KEYS: &str = "keys";
 /// The person's choices; a missing or bad value is `None`.
 #[derive(Debug, Default, PartialEq, Eq)]
 pub struct Prefs {
-    pub side: Option<u16>,
     pub theme: Option<String>,
     /// How the person is told in another window (`:notify`).
     pub notify: Option<Notify>,
@@ -63,16 +57,8 @@ pub struct Prefs {
 
 impl Prefs {
     /// The values as kept, checked: nonsense reads as nothing.
-    fn checked(
-        side: Option<String>,
-        theme: Option<String>,
-        notify: Option<String>,
-        seen: Option<String>,
-    ) -> Prefs {
+    fn checked(theme: Option<String>, notify: Option<String>, seen: Option<String>) -> Prefs {
         Prefs {
-            side: side
-                .and_then(|v| v.trim().parse().ok())
-                .filter(|v| (SIDE_MIN..=SIDE_MAX).contains(v)),
             theme: theme.map(|t| t.trim().to_string()).filter(|t| is_theme(t)),
             notify: notify.and_then(|n| Notify::parse(&n)),
             seen: seen.filter(|v| crate::welcome::parse_version(v).is_some()),
@@ -90,7 +76,7 @@ impl Prefs {
                 .find_map(|l| l.strip_prefix(key))
                 .map(|v| v.to_string())
         };
-        Prefs::checked(value("side="), value("theme="), None, None)
+        Prefs::checked(value("theme="), None, None)
     }
 }
 
@@ -116,18 +102,17 @@ fn legacy(dir: &Path) -> PathBuf {
 pub fn load(dir: &Path) -> Prefs {
     if let Ok(text) = fs::read_to_string(legacy(dir)) {
         let p = Prefs::parse(&text);
-        let side = p.side.map(|s| s.to_string());
-        let set: Vec<(&str, &str)> = [(SIDE, side.as_deref()), (THEME, p.theme.as_deref())]
+        let set: Vec<(&str, &str)> = [(THEME, p.theme.as_deref())]
             .into_iter()
             .filter_map(|(k, v)| v.map(|v| (k, v)))
             .collect();
-        if store::set_settings(&file(dir), &set, &[]).is_ok() {
+        if set.is_empty() || store::set_settings(&file(dir), &set, &[]).is_ok() {
             let _ = fs::remove_file(legacy(dir));
         }
     }
     match store::settings(
         &file(dir),
-        &[SIDE, THEME, NOTIFY, SEEN, MOTION, AWAY, STORY, REVIEW],
+        &[THEME, NOTIFY, SEEN, MOTION, AWAY, STORY, REVIEW],
     ) {
         Ok(mut v) => {
             let mut on_off = || {
@@ -149,7 +134,7 @@ pub fn load(dir: &Path) -> Prefs {
                 away,
                 story,
                 review,
-                ..Prefs::checked(v.pop().flatten(), theme, notify, seen)
+                ..Prefs::checked(theme, notify, seen)
             }
         }
         Err(_) => Prefs::default(),
@@ -157,13 +142,8 @@ pub fn load(dir: &Path) -> Prefs {
 }
 
 /// Saves the choices in `dir`.
-pub fn save(dir: &Path, side: u16, theme: &str, notify: Notify) -> Result<(), String> {
-    let side = side.to_string();
-    let set = [
-        (SIDE, side.as_str()),
-        (THEME, theme),
-        (NOTIFY, notify.name()),
-    ];
+pub fn save(dir: &Path, theme: &str, notify: Notify) -> Result<(), String> {
+    let set = [(THEME, theme), (NOTIFY, notify.name())];
     store::set_settings(&file(dir), &set, &[])
 }
 
@@ -226,11 +206,10 @@ mod tests {
         let dir = dir("choices");
         assert_eq!(load(&dir), Prefs::default(), "nothing saved, no file made");
         assert!(!file(&dir).exists());
-        save(&dir, 46, "light", Notify::Off).unwrap();
+        save(&dir, "light", Notify::Off).unwrap();
         assert_eq!(
             load(&dir),
             Prefs {
-                side: Some(46),
                 theme: Some("light".into()),
                 notify: Some(Notify::Off),
                 seen: None,
@@ -242,9 +221,9 @@ mod tests {
         );
         let mode = fs::metadata(file(&dir)).unwrap().permissions().mode();
         assert_eq!(mode & 0o777, 0o600, "the person's alone");
-        save(&dir, 46, "light", Notify::Bell).unwrap();
+        save(&dir, "light", Notify::Bell).unwrap();
         assert_eq!(load(&dir).notify, Some(Notify::Bell));
-        save(&dir, 46, "light", Notify::Text).unwrap();
+        save(&dir, "light", Notify::Text).unwrap();
         assert_eq!(load(&dir).notify, Some(Notify::Text));
         let set = |pairs: &[(&str, &str)]| store::set_settings(&file(&dir), pairs, &[]).unwrap();
         set(&[("side", "99"), ("theme", "Neon 1"), ("notify", "beep")]);
@@ -258,7 +237,6 @@ mod tests {
         assert_eq!(
             load(&dir),
             Prefs {
-                side: Some(20),
                 theme: Some("gruvbox-dark-medium".into()),
                 notify: Some(Notify::Text),
                 seen: None,
@@ -270,39 +248,34 @@ mod tests {
         );
         set(&[("side", "70"), ("theme", "/home/me/Dracula.conf")]);
         let p = load(&dir);
-        assert_eq!(p.side, Some(70));
         assert_eq!(p.theme.as_deref(), Some("/home/me/Dracula.conf"));
         set(&[("side", "71"), ("theme", ""), ("notify", "")]);
         assert_eq!(load(&dir), Prefs::default());
         set(&[("side", "19"), ("side", "x")]);
-        assert_eq!(load(&dir).side, None);
         // The version that started last, and only a version.
         seen(&dir, "0.2.0").unwrap();
         assert_eq!(load(&dir).seen.as_deref(), Some("0.2.0"));
-        assert_eq!(load(&dir).side, None, "nothing else written");
-        save(&dir, 40, "light", Notify::Off).unwrap();
+        save(&dir, "light", Notify::Off).unwrap();
         assert_eq!(load(&dir).seen.as_deref(), Some("0.2.0"), "kept by a save");
         set(&[("seen", "v1")]);
         assert_eq!(load(&dir).seen, None);
         // How much moves, on its own, kept by a save of the rest.
         keep_motion(&dir, Motion::Full).unwrap();
         assert_eq!(load(&dir).motion, Some(Motion::Full));
-        save(&dir, 40, "light", Notify::Off).unwrap();
+        save(&dir, "light", Notify::Off).unwrap();
         assert_eq!(load(&dir).motion, Some(Motion::Full), "kept by a save");
         keep_motion(&dir, Motion::Off).unwrap();
         assert_eq!(load(&dir).motion, Some(Motion::Off));
-        assert_eq!(load(&dir).side, Some(40), "nothing else written");
         set(&[("motion", "wild")]);
         assert_eq!(load(&dir).motion, None);
         // Whether the side panel tells the story, on its own too.
         assert_eq!(load(&dir).story, None);
         keep_story(&dir, false).unwrap();
         assert_eq!(load(&dir).story, Some(false));
-        save(&dir, 40, "light", Notify::Off).unwrap();
+        save(&dir, "light", Notify::Off).unwrap();
         assert_eq!(load(&dir).story, Some(false), "kept by a save");
         keep_story(&dir, true).unwrap();
         assert_eq!(load(&dir).story, Some(true));
-        assert_eq!(load(&dir).side, Some(40), "nothing else written");
         set(&[("story", "yes")]);
         assert_eq!(load(&dir).story, None);
         // Whether every change gets a review, on its own too, apart from
@@ -312,7 +285,7 @@ mod tests {
         keep_story(&dir, false).unwrap();
         assert_eq!(load(&dir).review, Some(true));
         assert_eq!(load(&dir).story, Some(false));
-        save(&dir, 40, "light", Notify::Off).unwrap();
+        save(&dir, "light", Notify::Off).unwrap();
         assert_eq!(load(&dir).review, Some(true), "kept by a save");
         keep_review(&dir, false).unwrap();
         assert_eq!(load(&dir).review, Some(false));
@@ -322,7 +295,7 @@ mod tests {
         // How long away, on its own too, kept by a save of the rest.
         keep_away(&dir, Away::parse("1h").unwrap()).unwrap();
         assert_eq!(load(&dir).away, Away::parse("60m"));
-        save(&dir, 40, "light", Notify::Off).unwrap();
+        save(&dir, "light", Notify::Off).unwrap();
         keep_motion(&dir, Motion::Calm).unwrap();
         assert_eq!(load(&dir).away, Away::parse("1h"), "kept by the others");
         keep_away(&dir, Away::parse("off").unwrap()).unwrap();
@@ -345,7 +318,6 @@ mod tests {
         assert_eq!(
             load(&dir),
             Prefs {
-                side: Some(52),
                 theme: Some("dracula".into()),
                 notify: None,
                 seen: None,
@@ -357,29 +329,30 @@ mod tests {
         );
         assert!(!legacy(&dir).exists(), "moved, so gone");
         assert!(file(&dir).exists());
-        assert_eq!(load(&dir).side, Some(52), "from the store now");
         // A file of nonsense moves nothing in and goes too; what the store
         // has stays.
         fs::write(legacy(&dir), "side=x\n").unwrap();
-        assert_eq!(load(&dir).side, Some(52));
+        assert_eq!(
+            load(&dir).theme.as_deref(),
+            Some("dracula"),
+            "what the store has"
+        );
         assert!(!legacy(&dir).exists());
         // A partial file brings only what it has.
         fs::write(legacy(&dir), "theme=light\n").unwrap();
         let p = load(&dir);
-        assert_eq!((p.side, p.theme.as_deref()), (Some(52), Some("light")));
+        assert_eq!(p.theme.as_deref(), Some("light"));
         fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]
     fn the_choices_share_the_file_with_the_world_and_neither_disturbs_the_other() {
         let dir = dir("shared");
-        save(&dir, 30, "mono", Notify::Off).unwrap();
+        save(&dir, "mono", Notify::Off).unwrap();
         // A file the settings made is a new world to the store.
         let mut st = store::Store::open(&file(&dir)).unwrap();
         assert!(st.load(10).unwrap().is_none());
-        assert_eq!(load(&dir).side, Some(30), "while the store holds the file");
-        save(&dir, 31, "mono", Notify::Bell).unwrap();
-        assert_eq!(load(&dir).side, Some(31), "written beside it");
+        save(&dir, "mono", Notify::Bell).unwrap();
         // The world's keys are not settings.
         for key in ["schema_version", "started_at", "budget", "saved_at"] {
             let e = store::set_settings(&file(&dir), &[(key, "1")], &[]).unwrap_err();
@@ -398,7 +371,7 @@ mod tests {
         assert!(!file(&dir).exists());
         keep_keys(&dir, Some("^n = j\n")).unwrap();
         assert_eq!(keys(&dir).as_deref(), Some("^n = j\n"));
-        save(&dir, 40, "dark", Notify::Off).unwrap();
+        save(&dir, "dark", Notify::Off).unwrap();
         assert_eq!(
             keys(&dir).as_deref(),
             Some("^n = j\n"),
@@ -408,7 +381,6 @@ mod tests {
         assert_eq!(keys(&dir).as_deref(), Some("^p = k"));
         keep_keys(&dir, None).unwrap();
         assert_eq!(keys(&dir), None);
-        assert_eq!(load(&dir).side, Some(40), "the choices stay");
         fs::remove_dir_all(&dir).unwrap();
     }
 }

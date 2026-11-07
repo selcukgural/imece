@@ -81,7 +81,7 @@ Everything imece remembers is yours alone (files are made `0600`) and lives unde
 
 | Path | What it is |
 | --- | --- |
-| `<state>/imece.sqlite` | the store: projects, agents, cards and their stories, the journal, the inbox, mail, the board, the pot, your screen preferences (side panel width, theme). WAL mode, so `imece.sqlite-wal` and `imece.sqlite-shm` sit next to it while it is open |
+| `<state>/imece.sqlite` | the store: projects, agents, cards and their stories, the journal, the inbox, mail, the board, the pot, your screen preferences (theme, notify, motion). WAL mode, so `imece.sqlite-wal` and `imece.sqlite-shm` sit next to it while it is open |
 | `<state>/imece.sqlite.lock` | held with `flock` while an imece runs; a second imece on the same file is refused and told to use `:open` from the first |
 | `<state>/worktrees/<dir>-<hash>/<agent>` | one git worktree per worker (`claude-1`, `claude-2`, …), detached at your HEAD, under a directory per project (the checkout's directory name and an 8-digit hash of its path). Kept between runs. Each has its own `target/` |
 

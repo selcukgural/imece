@@ -56,45 +56,6 @@ impl App {
         self.flash(self.lang.text().story_on);
     }
 
-    /// `f`: the salon shows only what needs the person, or everyone again.
-    pub(super) fn toggle_needs(&mut self) {
-        self.needs_only = !self.needs_only;
-        let t = self.lang.text();
-        self.flash(if self.needs_only {
-            t.needs_on
-        } else {
-            t.needs_off
-        });
-    }
-
-    /// While the salon shows only what needs the person, a selection whose
-    /// row left it (the agent needs nothing any more) moves to the first
-    /// row of its project still shown, else to the first row; nothing
-    /// shown leaves it where it is. Not while the person writes: who they
-    /// write to stays put.
-    pub(super) fn settle(&mut self) {
-        if !self.needs_only || self.typing {
-            return;
-        }
-        let shown: Vec<Sel> = ui::salon::rows(self, usize::MAX)
-            .iter()
-            .filter_map(ui::salon::Row::sel)
-            .collect();
-        if shown.is_empty() || shown.contains(&self.selected) {
-            return;
-        }
-        let of = |s: &Sel| match *s {
-            Sel::Project(p) => p,
-            Sel::Agent(a) => self.world.agents[a].project,
-        };
-        let p = of(&self.selected);
-        self.selected = shown
-            .iter()
-            .find(|s| of(s) == p)
-            .copied()
-            .unwrap_or(shown[0]);
-    }
-
     /// The agents agent `id`'s salon row stands for: itself, its helpers
     /// and the researcher working for it, which hang under it.
     pub(super) fn row_group(&self, id: AgentId) -> Vec<AgentId> {
@@ -162,12 +123,6 @@ impl App {
             let who = self.world.agents[loud].name.clone();
             return self.flash(fill(t.settle_refused, &[&who]));
         }
-        let rows = |app: &App| -> Vec<Sel> {
-            (ui::salon::rows(app, usize::MAX).iter())
-                .filter_map(ui::salon::Row::sel)
-                .collect()
-        };
-        let before = rows(self);
         for a in &group {
             self.unseen.remove(a);
         }
@@ -175,16 +130,6 @@ impl App {
             Sel::Agent(id) => self.settled.insert(id),
             Sel::Project(p) => self.settled_projects.insert(p),
         };
-        let after = rows(self);
-        // The rows after it, then those before it, nearest first; the
-        // selected row itself is gone from `after`.
-        if let Some(at) = before.iter().position(|s| *s == self.selected) {
-            let (head, tail) = before.split_at(at);
-            let next = (tail.iter().chain(head.iter().rev())).find(|s| after.contains(s));
-            if let Some(&s) = next {
-                self.selected = s;
-            }
-        }
         self.flash(fill(t.settled_one, &[&name]));
     }
 
@@ -193,26 +138,20 @@ impl App {
         let n = self.settled.len() + self.settled_projects.len();
         self.settled.clear();
         self.settled_projects.clear();
-        // Home shows the team too: it stays.
-        if self.view != View::Home {
-            self.go_salon();
-        }
         let t = self.lang.text();
         self.flash(fill(t.unsettled, &[&n.to_string()]));
     }
 
     /// `:waiting`: Home, its first row to decide.
     pub(super) fn go_waiting(&mut self) {
-        self.show(View::Home);
+        self.go_home();
         self.home_go_heading(Heading::Decide);
     }
 
-    /// The salon's agent panel, for the `:` names of keys that act there
-    /// (`:needs`, `:fold`, `:unfold`).
-    /// To the team: Home, whose lower half it is (record 125, step 5).
-    pub(super) fn go_salon(&mut self) {
-        self.show(View::Home);
-        self.pane = Pane::Salon;
+    /// `:salon`: the team, Home's lower half (record 125, step 5).
+    pub(super) fn go_team(&mut self) {
+        self.go_home();
+        self.home_go_heading(Heading::Work);
     }
 
     /// Folds or unfolds every project and every worker's helpers.
@@ -228,40 +167,6 @@ impl App {
                 .map(|a| a.id);
             self.folded_workers.extend(workers);
             self.selected = Sel::Project(self.current_project());
-        }
-    }
-
-    /// The worker whose helpers the fold keys act on: the selected worker
-    /// if it has helpers, or the selected helper's worker.
-    pub(super) fn worker_at_hand(&self) -> Option<AgentId> {
-        let Sel::Agent(id) = self.selected else {
-            return None;
-        };
-        let a = &self.world.agents[id];
-        let worker = match a.role {
-            Role::Worker => id,
-            Role::Helper => a.parent?,
-            _ => return None,
-        };
-        self.world.helpers_of(worker).next().map(|_| worker)
-    }
-
-    /// Panels cycle only on the salon, outside a focus.
-    pub(super) fn pane_keys(&self) -> bool {
-        self.view == View::Salon && self.zoom == Zoom::None
-    }
-
-    pub(super) fn cycle_pane(&mut self, forward: bool) {
-        const ORDER: [Pane; 3] = [Pane::Salon, Pane::Inbox, Pane::Journal];
-        let at = ORDER.iter().position(|&p| p == self.pane).unwrap_or(0);
-        let next = if forward {
-            at + 1
-        } else {
-            at + ORDER.len() - 1
-        } % ORDER.len();
-        self.pane = ORDER[next];
-        if self.pane == Pane::Journal && !self.story_on() {
-            self.select_journal(None);
         }
     }
 
@@ -369,6 +274,16 @@ impl App {
         }) {
             return;
         }
+        // Home's list: five rows a half page, ten a page.
+        if self.home_keys() {
+            let step = by(10);
+            let row = match down {
+                true => self.at_home.row + step,
+                false => self.at_home.row.saturating_sub(step),
+            };
+            self.home_go(row);
+            return;
+        }
         if let Zoom::Diff(id) = self.zoom {
             let page = usize::from(self.diff_page.get()).max(1);
             let step = if half { page / 2 } else { page }.max(1);
@@ -413,17 +328,6 @@ impl App {
         }
     }
 
-    /// Makes the side panel wider or narrower, and says how wide it is.
-    pub(super) fn resize(&mut self, wider: bool) {
-        self.side = if wider {
-            (self.side + 4).min(SIDE_MAX)
-        } else {
-            self.side.saturating_sub(4).max(SIDE_MIN)
-        };
-        let t = self.lang.text();
-        self.flash(fill(t.side_width, &[&self.side.to_string()]));
-    }
-
     /// Keeps the journal selection on a line that is still shown, moving by
     /// `step` lines (newest first) when given.
     pub(super) fn select_journal(&mut self, step: Option<bool>) {
@@ -444,45 +348,13 @@ impl App {
         self.journal_sel = Some(rows[pos].0);
     }
 
-    pub(super) fn salon_keys(&self) -> bool {
-        self.view == View::Salon
-            && self.zoom == Zoom::None
-            && self.pane == Pane::Salon
-            && self.card.is_none()
-    }
-
-    /// To a view: Home or the salon, whole, any window over the screen
-    /// closed with it.
-    pub(super) fn show(&mut self, view: View) {
-        self.view = view;
+    /// Home, whole: whatever was open over it (a focus, a change, a card,
+    /// a window) closes.
+    pub(crate) fn go_home(&mut self) {
         self.zoom = Zoom::None;
         self.window = None;
         self.leave_card();
-        if view != View::Salon {
-            self.pane = Pane::Salon;
-        }
-    }
-
-    /// Folds or unfolds the selected worker's helpers, when that changes
-    /// something, else the selected project; folding moves the selection to
-    /// the worker or the project's header so it does not vanish.
-    pub(super) fn fold(&mut self, fold: bool) {
-        if let Some(id) = self.worker_at_hand()
-            && fold != self.folded_workers.contains(&id)
-        {
-            if fold {
-                self.folded_workers.insert(id);
-                self.selected = Sel::Agent(id);
-            } else {
-                self.folded_workers.remove(&id);
-            }
-            return;
-        }
-        let p = self.current_project();
-        self.collapsed[p] = fold;
-        if fold {
-            self.selected = Sel::Project(p);
-        }
+        self.pane = Pane::Salon;
     }
 
     /// Whether a card's screen is what the person looks at (it is only
@@ -510,6 +382,22 @@ impl App {
     }
 
     /// Card `c`'s screen takes the salon's place, its journal selected.
+    /// `#`: the card line, with the card at hand already typed (its own
+    /// card on a card's screen is no news): from Home's row, a focus, or
+    /// the journal window's line, which closes for it.
+    pub(super) fn hash_line(&mut self) {
+        let card = self.card_at_hand().filter(|&c| Some(c) != self.card);
+        if self.window == Some(Window::Journal) {
+            self.close_window();
+        }
+        self.typing = true;
+        self.input = match card {
+            Some(c) => format!("#{}", c + 1),
+            None => "#".into(),
+        };
+        self.menu = self.suggest();
+    }
+
     /// `#N`: the card's screen as the log tab of its detail (record 125,
     /// step 5): the piece of work is its owner's, else the first who had a
     /// part in it, else its project's leader; a window over the screen
@@ -532,7 +420,7 @@ impl App {
     }
 
     /// Back from a card's screen to the salon.
-    pub(super) fn leave_card(&mut self) {
+    pub(crate) fn leave_card(&mut self) {
         if self.card.take().is_some() {
             self.inbox_sel = 0;
             self.select_journal(None);
@@ -747,91 +635,6 @@ mod tests {
         assert_eq!(app.journal_sel, at(0), "the first stays");
     }
 
-    #[test]
-    fn f_shows_only_what_needs_you_and_a_project_with_none_is_left_out() {
-        let (mut app, [a, b, c]) = two_quiet_projects();
-        app.world.agents[c].status = Status::Blocked;
-        // Not from another pane.
-        app.pane = Pane::Inbox;
-        app.on_key(key(KeyCode::Char('f')));
-        assert!(!app.needs_only);
-        app.pane = Pane::Salon;
-        app.on_key(key(KeyCode::Char('f')));
-        assert!(app.needs_only);
-        assert_eq!(app.flash.as_ref().unwrap().0, Lang::En.text().needs_on);
-        // Only project 1, and of it only its stuck worker: not its lead.
-        assert_eq!(shown(&app), [Sel::Project(1), Sel::Agent(c)]);
-        // A folded project shows its header alone.
-        app.collapsed[1] = true;
-        assert_eq!(shown(&app), [Sel::Project(1)]);
-        app.collapsed[1] = false;
-        app.world.agents[b].status = Status::Blocked;
-        assert_eq!(
-            shown(&app),
-            [
-                Sel::Project(0),
-                Sel::Agent(b),
-                Sel::Project(1),
-                Sel::Agent(c)
-            ]
-        );
-        assert!(!shown(&app).contains(&Sel::Agent(a)));
-        app.on_key(key(KeyCode::Char('f')));
-        assert!(!app.needs_only);
-        assert_eq!(app.flash.as_ref().unwrap().0, Lang::En.text().needs_off);
-        assert!(shown(&app).contains(&Sel::Agent(a)), "everyone again");
-    }
-
-    #[test]
-    fn with_only_what_needs_you_shown_the_selection_stays_on_a_shown_row() {
-        let (mut app, [a, b, c]) = two_quiet_projects();
-        for id in [a, b, c] {
-            app.world.agents[id].status = Status::Blocked;
-        }
-        app.selected = Sel::Agent(b);
-        app.on_key(key(KeyCode::Char('f')));
-        assert_eq!(app.selected, Sel::Agent(b), "shown: it stays");
-        // b needs nothing now: to the first row of its project.
-        app.world.agents[b].status = Status::Idle;
-        app.on_key(key(KeyCode::Char('x')));
-        assert_eq!(app.selected, Sel::Project(0));
-        // Nothing left in project 1: to the first row there is.
-        app.selected = Sel::Agent(c);
-        app.world.agents[c].status = Status::Idle;
-        app.on_key(key(KeyCode::Char('x')));
-        assert_eq!(app.selected, Sel::Project(0));
-        // Not while the person writes: who they write to stays put.
-        app.selected = Sel::Agent(a);
-        app.on_key(key(KeyCode::Char('i')));
-        app.world.agents[a].status = Status::Idle;
-        app.on_key(key(KeyCode::Char('z')));
-        assert_eq!(app.selected, Sel::Agent(a));
-        assert_eq!(app.input, "z");
-        // Nothing shown at all: it stays too.
-        app.on_key(key(KeyCode::Esc));
-        assert!(!app.typing && shown(&app).is_empty());
-        assert_eq!(app.selected, Sel::Agent(a));
-        // Showing everyone, a selection off the rows is left alone.
-        app.needs_only = false;
-        app.collapsed[0] = true;
-        app.on_key(key(KeyCode::Char('x')));
-        assert_eq!(app.selected, Sel::Agent(a));
-    }
-
-    #[test]
-    fn a_step_moves_a_selection_whose_row_left_the_filter() {
-        let (mut app, [a, b, c]) = two_quiet_projects();
-        for id in [a, c] {
-            app.world.agents[id].status = Status::Blocked;
-        }
-        app.needs_only = true;
-        app.world.agents[b].gone = true;
-        app.selected = Sel::Agent(b);
-        app.step();
-        assert_ne!(app.selected, Sel::Agent(b));
-        assert!(shown(&app).contains(&app.selected), "{:?}", app.selected);
-    }
-
     /// What `#` writes for the composer, the composer closed again.
     fn hash(app: &mut App) -> String {
         app.on_key(key(KeyCode::Char('#')));
@@ -851,27 +654,28 @@ mod tests {
             .find_map(|a| Some((a.id, a.card?)))
             .expect("a worker on a card");
         let mine = format!("#{}", card + 1);
-        app.selected = Sel::Project(0);
-        assert_eq!(hash(&mut app), "#");
-        app.selected = Sel::Agent(worker);
+        // Home's row at hand: the worker's card; one without a card, none.
+        app.at_home.at = Some(HomeRow::Agent(worker));
         assert_eq!(hash(&mut app), mine);
+        app.world.agents[worker].card = None;
+        assert_eq!(hash(&mut app), "#");
+        app.world.agents[worker].card = Some(card);
         app.zoom = Zoom::Focus(worker);
         app.selected = Sel::Project(0);
         assert_eq!(hash(&mut app), mine, "the zoomed agent's");
         app.zoom = Zoom::None;
         // The card an inbox item came on, not the agent's now.
-        app.pane = Pane::Inbox;
         let open = app.world.open_inbox();
-        app.inbox_sel = 1;
+        app.at_home.at = Some(HomeRow::Item(open[1]));
         app.world.inbox[open[1]].card = Some(2);
         assert_eq!(hash(&mut app), "#3");
         app.world.inbox[open[1]].card = None;
         assert_eq!(hash(&mut app), "#");
         // A journal line that names a card, one that mentions it, one
         // that does neither.
-        app.pane = Pane::Journal;
         app.world.note(Event::Posted { agent: 0, card: 3 });
         app.journal_sel = Some(app.world.journal.len() - 1);
+        app.open_window(Window::Journal);
         assert_eq!(hash(&mut app), "#4");
         let said = |text: &str| Event::Sent {
             from: 0,
@@ -883,9 +687,11 @@ mod tests {
         };
         app.world.note(said("about #, #x, #99 and #2 then #3"));
         app.journal_sel = Some(app.world.journal.len() - 1);
+        app.open_window(Window::Journal);
         assert_eq!(hash(&mut app), "#2", "the first card it names");
         app.world.note(Event::Failed { agent: worker });
         app.journal_sel = Some(app.world.journal.len() - 1);
+        app.open_window(Window::Journal);
         assert_eq!(hash(&mut app), "#");
         // On a card's screen its own card is no news, whatever the owner
         // has moved on to.
@@ -917,10 +723,7 @@ mod tests {
         assert!(app.thread.is_none());
         // The card's screen is its owner's detail (record 125).
         let owner = app.world.cards[1].owner.unwrap();
-        assert_eq!(
-            (app.view, app.zoom, app.pane),
-            (View::Salon, Zoom::Focus(owner), Pane::Salon)
-        );
+        assert_eq!((app.zoom, app.pane), (Zoom::Focus(owner), Pane::Salon));
         assert_eq!(app.inbox_sel, 0);
         let first = ui::card_rows(&app.world, 1)[0].0;
         assert_eq!(app.journal_sel, Some(first));
@@ -1029,7 +832,7 @@ mod tests {
         // Another view leaves it too.
         app.open_card(0);
         app.command("home");
-        assert_eq!((app.view, app.card), (View::Home, None));
+        assert_eq!((app.card), (None));
     }
 
     #[test]
@@ -1109,17 +912,12 @@ mod tests {
             (Zoom::Trace(owner), Some(0)),
             "enter: its raw stream"
         );
-        // Back in the salon the keys fold again, in its own pane only.
+        // Back on Home: one project heads no rows, so `h` folds nothing.
         app.on_key(key(KeyCode::Esc));
         app.on_key(key(KeyCode::Esc));
         assert_eq!((app.zoom, app.card), (Zoom::None, None));
-        app.pane = Pane::Journal;
         app.on_key(key(KeyCode::Char('h')));
         assert_eq!(app.collapsed, [false]);
-        app.pane = Pane::Salon;
-        app.selected = Sel::Project(0);
-        app.on_key(key(KeyCode::Enter));
-        assert_eq!(app.collapsed, [true]);
     }
 
     /// `quiet()` with agent 3 a helper of worker 1 and agent 4 researching
@@ -1158,50 +956,9 @@ mod tests {
     }
 
     #[test]
-    fn s_settles_a_worker_row_out_of_the_salon_and_moves_on() {
-        let mut app = with_a_row_of_three();
-        app.selected = Sel::Agent(1);
-        app.unseen.extend([1, 2, 3]);
-        // Not from another pane.
-        app.pane = Pane::Inbox;
-        app.on_key(key(KeyCode::Char('s')));
-        assert!(app.settled.is_empty());
-        app.pane = Pane::Salon;
-        app.on_key(key(KeyCode::Char('s')));
-        assert_eq!(app.settled, BTreeSet::from([1]));
-        assert!(app.settled_projects.is_empty());
-        // Its row's turns are seen (done, it could go); another's not.
-        assert_eq!(app.unseen, BTreeSet::from([2]));
-        let name = app.world.agents[1].name.clone();
-        assert_eq!(
-            flashed(&app).unwrap_or_default(),
-            format!("{name} hidden until it needs you")
-        );
-        // Gone with its helper and researcher; on to the next row.
-        assert_eq!(shown(&app), [Sel::Project(0), Sel::Agent(0), Sel::Agent(2)]);
-        assert_eq!(app.selected, Sel::Agent(2));
-        // The last row settled: to the nearest one before it.
-        app.on_key(key(KeyCode::Char('s')));
-        assert_eq!(app.settled, BTreeSet::from([1, 2]));
-        assert_eq!(shown(&app), [Sel::Project(0), Sel::Agent(0)]);
-        assert_eq!(app.selected, Sel::Agent(0));
-        // `:settle` from elsewhere: the salon's selection.
-        app.selected = Sel::Agent(3);
-        app.zoom = Zoom::Focus(0);
-        app.pane = Pane::Journal;
-        app.command("settle");
-        assert_eq!(app.settled, BTreeSet::from([1, 2, 3]));
-        assert_eq!(
-            (app.view, app.pane),
-            (View::Home, Pane::Salon),
-            "the team is Home's"
-        );
-    }
-
-    #[test]
     fn what_waits_for_you_or_is_stuck_is_not_settled() {
         let mut app = with_a_row_of_three();
-        app.selected = Sel::Agent(1);
+        app.at_home.at = Some(HomeRow::Agent(1));
         // Its helper waits: the row stays.
         app.world.inbox.push(item(3, true));
         app.on_key(key(KeyCode::Char('s')));
@@ -1213,6 +970,7 @@ mod tests {
         );
         app.world.inbox.clear();
         app.world.agents[1].status = Status::Blocked;
+        app.at_home.at = Some(HomeRow::Agent(1));
         app.on_key(key(KeyCode::Char('s')));
         assert!(app.settled.is_empty());
         let worker = app.world.agents[1].name.clone();
@@ -1220,95 +978,37 @@ mod tests {
             flashed(&app).unwrap_or_default(),
             format!("not hidden: {worker} needs you")
         );
-        // A project with one agent that needs the person stays too.
-        app.world.agents[1].status = Status::Idle;
-        app.world.agents[2].status = Status::WaitingHuman;
-        app.selected = Sel::Project(0);
+        // A project with one agent that needs the person stays too
+        // (`s` on its heading, two projects heading the rows).
+        let (mut app, [a, _, _]) = two_quiet_projects();
+        app.world.agents[a].status = Status::WaitingHuman;
+        let p = app.world.agents[a].project;
+        app.at_home.at = Some(HomeRow::Project(p));
+        assert!(app.home_headed());
         app.on_key(key(KeyCode::Char('s')));
         assert!(app.settled_projects.is_empty());
-        let other = app.world.agents[2].name.clone();
+        let other = app.world.agents[a].name.clone();
         assert_eq!(
             flashed(&app).unwrap_or_default(),
             format!("not hidden: {other} needs you")
         );
-        assert_eq!(app.selected, Sel::Project(0));
+        assert_eq!(app.at_home.at, Some(HomeRow::Project(p)));
     }
-
-    #[test]
-    fn s_on_a_header_or_its_leader_settles_the_project() {
-        let (mut app, [_, _, c]) = two_quiet_projects();
-        let lead = app.world.projects[1].leader;
-        app.unseen.extend([lead, c]);
-        app.selected = Sel::Agent(lead);
-        app.on_key(key(KeyCode::Char('s')));
-        assert_eq!(app.settled_projects, BTreeSet::from([1]));
-        assert!(app.settled.is_empty() && app.unseen.is_empty());
-        let rows = shown(&app);
-        assert!(!rows.contains(&Sel::Project(1)) && !rows.contains(&Sel::Agent(c)));
-        let name = app.world.projects[1].name.clone();
-        assert_eq!(
-            flashed(&app).unwrap_or_default(),
-            format!("{name} hidden until it needs you")
-        );
-        // Nothing after it: project 0's last row.
-        assert_eq!(app.selected, *rows.last().unwrap());
-        app.selected = Sel::Project(0);
-        app.on_key(key(KeyCode::Char('s')));
-        assert_eq!(app.settled_projects, BTreeSet::from([0, 1]));
-        assert!(shown(&app).is_empty());
-        assert_eq!(app.selected, Sel::Project(0), "nowhere to go: it stays");
-    }
-
-    #[test]
-    fn what_is_settled_comes_back_when_it_needs_you() {
-        let (mut app, [a, b, c]) = two_quiet_projects();
-        app.settled.extend([a, b]);
-        app.settled_projects.insert(1);
-        app.wake_settled();
-        assert_eq!(app.settled, BTreeSet::from([a, b]), "calm: they stay");
-        assert_eq!(app.settled_projects, BTreeSet::from([1]));
-        // A turn finished not seen brings a worker back; a project comes
-        // back when any of its agents needs the person.
-        app.unseen.insert(a);
-        app.world.agents[c].status = Status::Blocked;
-        app.wake_settled();
-        assert_eq!(app.settled, BTreeSet::from([b]));
-        assert!(app.settled_projects.is_empty());
-        // Gone and closed are let go.
-        app.world.agents[c].status = Status::Idle;
-        app.settled_projects.insert(1);
-        app.world.projects[1].closed = true;
-        app.world.agents[b].gone = true;
-        app.wake_settled();
-        assert!(app.settled.is_empty() && app.settled_projects.is_empty());
-        // What hangs under a row brings it back.
-        let mut app = with_a_row_of_three();
-        app.settled.insert(1);
-        app.world.inbox.push(item(4, true));
-        app.wake_settled();
-        assert!(app.settled.is_empty());
-    }
-
     #[test]
     fn unsettle_and_goto_bring_back_what_was_settled() {
         let mut app = with_a_row_of_three();
         app.settled.extend([1, 2]);
         app.settled_projects.insert(0);
         assert_eq!(app.command_note("unsettle"), "(3)");
-        app.view = View::Home;
         app.pane = Pane::Inbox;
         app.command("unsettle");
         assert!(app.settled.is_empty() && app.settled_projects.is_empty());
-        assert_eq!(app.view, View::Home, "Home keeps the team's rows: it stays");
         assert_eq!(flashed(&app).unwrap_or_default(), "3 back in the team");
         app.settled.insert(1);
-        app.view = View::Salon;
         app.zoom = Zoom::Focus(1);
         app.command("unsettle");
-        assert_eq!(
-            (app.view, app.pane, app.zoom),
-            (View::Home, Pane::Salon, Zoom::None)
-        );
+        assert!(app.settled.is_empty());
+        assert_eq!(app.zoom, Zoom::Focus(1), "it stays where it is");
         // To a helper: the worker's row it hangs under comes back, and
         // its project; another row stays settled.
         app.settled.extend([1, 2]);
@@ -1323,7 +1023,6 @@ mod tests {
         let project = app.world.projects[0].name.clone();
         app.command(&format!("goto {project}"));
         assert!(app.settled_projects.is_empty());
-        assert_eq!(app.view, View::Home);
         assert!(
             matches!(app.at_home.at, Some(HomeRow::Agent(id)) if app.world.agents[id].project == 0),
             "{:?}",

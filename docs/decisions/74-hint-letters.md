@@ -66,3 +66,8 @@ rows, so the labels work the same in both. Nothing is saved.
 **Not done.** Labels on the board's cards, the code map's files, the
 lines of a conversation or a change (they have no selection of their
 own to land on yet); a remappable alphabet (C9's key file).
+
+Superseded by record 125's step 5 (2026-11-07): the hint letters went with
+the salon's screen. Home's rows are reached with `j k`, `gd` `gw`, `&`
+and `:goto`; the digits pick a question's answers. `F` and `:hints` are
+no more; a key file that names `F` is told by `Keymap::lost`.

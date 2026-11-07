@@ -226,8 +226,12 @@ impl App {
             "" => {}
             _ => return self.flash(fill(t.review_refused, &["on | off"])),
         }
+        // The change open, else the one `W` opened, else Home's row.
         let at_hand = self.diff_zoom().or_else(|| {
-            let i = self.waiting_at_hand()?;
+            let i = self.waiting_at_hand().or_else(|| match self.home_at()? {
+                HomeRow::Item(i) => Some(i),
+                HomeRow::Agent(_) | HomeRow::Project(_) => None,
+            })?;
             let it = &self.world.inbox[i];
             (it.open && it.kind == InboxKind::Change).then_some(it.agent)
         });
@@ -517,9 +521,6 @@ impl App {
     /// Worker `from`'s change was decided from Home: the next change
     /// waiting opens, so a queue is read in one go; none, Home again.
     fn next_change(&mut self, from: AgentId) {
-        if self.view != View::Home {
-            return;
-        }
         let w = &self.world;
         let next = (self.home_rows().into_iter()).find_map(|(_, row)| match row {
             HomeRow::Item(i) if w.inbox[i].kind == InboxKind::Change => {
@@ -961,15 +962,15 @@ mod tests {
         );
         // No change at hand: the setting is said.
         app.zoom = Zoom::None;
-        app.pane = Pane::Salon;
+        app.world.inbox.clear();
         app.command("review on");
         app.command("review");
         assert_eq!(flash(&app), t.review_on);
         // The change selected in waiting for you is at hand too.
         let (mut app, worker) = with_change("+x\n");
         app.zoom = Zoom::None;
-        app.pane = Pane::Inbox;
-        app.inbox_sel = 0;
+        app.at_home.at = Some(HomeRow::Item(app.inbox_rows()[0]));
+        app.home_settle();
         app.command("review");
         assert!(app.reviewing(worker), "{}", flash(&app));
         // Not a change: nothing asked.
@@ -1414,7 +1415,6 @@ mod tests {
         app.world.inbox.clear();
         app.world.change_ready(a_change(1));
         app.world.change_ready(a_change(2));
-        app.view = View::Home;
         app.zoom = Zoom::Diff(1);
         app.diff_scroll = 3;
         app
@@ -1433,15 +1433,7 @@ mod tests {
         // Nothing after it but what was just decided.
         app.world.inbox.retain(|i| i.agent == 2);
         app.on_key(key(KeyCode::Char('a')));
-        assert_eq!((app.view, app.zoom), (View::Home, Zoom::None));
-    }
-
-    #[test]
-    fn a_change_applied_from_the_salon_goes_back_to_its_panel() {
-        let mut app = two_changes_at_home();
-        app.view = View::Salon;
-        app.on_key(key(KeyCode::Char('a')));
-        assert_eq!(app.zoom, Zoom::None);
+        assert_eq!((app.zoom), (Zoom::None));
     }
 
     #[test]

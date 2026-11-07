@@ -21,6 +21,10 @@ impl App {
         if let Zoom::Focus(id) | Zoom::Trace(id) | Zoom::Diff(id) = self.zoom {
             return self.world.agents[id].project;
         }
+        // Home narrowed to a project: that one, rows or none.
+        if let Some(p) = self.at_home.scope {
+            return p;
+        }
         if self.pane == Pane::Inbox
             && let Some(&i) = self.inbox_rows().get(self.inbox_sel)
         {
@@ -429,6 +433,17 @@ impl App {
         };
         if was_in {
             self.selected = Sel::Agent(self.world.projects[to].leader);
+        }
+        // Home narrowed to it, or its row at hand: the fresh one's.
+        if self.at_home.scope == Some(p) {
+            self.at_home.scope = Some(to);
+        }
+        if self.at_home.at.is_some_and(|row| match row {
+            HomeRow::Project(q) => q == p,
+            HomeRow::Agent(a) => self.world.agents[a].project == p,
+            HomeRow::Item(i) => self.world.agents[self.world.inbox[i].agent].project == p,
+        }) {
+            self.at_home.at = None;
         }
         if self.card.is_some_and(|c| self.world.cards[c].project == p) {
             self.card = None;

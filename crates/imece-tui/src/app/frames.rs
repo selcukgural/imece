@@ -156,14 +156,18 @@ impl App {
         }
         let w = &self.world;
         let mut parts = Vec::new();
-        if self.zoom == Zoom::None && self.view == View::Salon && self.window.is_none() {
+        if self.zoom == Zoom::None && self.window.is_none() {
             let rungs = self.rungs();
-            let shown = |a: &&Agent| !a.gone && !w.put_away(a.id);
-            if (w.agents.iter().filter(shown)).any(|a| ui::breathes(a, rungs[a.id])) {
+            let rows = self.home_rows();
+            let shown = rows.iter().filter_map(|r| match r.1 {
+                HomeRow::Agent(id) => Some(id),
+                _ => None,
+            });
+            if shown
+                .into_iter()
+                .any(|id| ui::breathes(&w.agents[id], rungs[id]))
+            {
                 parts.push((Moves::Breath, motion::BREATH));
-            }
-            if (w.agents.iter().filter(shown)).any(|a| a.starting && a.status == Status::Working) {
-                parts.push((Moves::Dots, motion::DOTS));
             }
         }
         // The board's window shows the owners of the cards taken.
@@ -805,7 +809,11 @@ mod tests {
         assert_eq!(app.next_motion(now), None, "starting, not working");
         app.world.agents[w].status = Status::Working;
         assert_eq!(app.rungs()[w], Rung::Starting);
-        assert_eq!(app.next_motion(now), Some(e + ms(600)), "its dots");
+        assert_eq!(
+            app.next_motion(now),
+            None,
+            "starting breathes nothing on Home"
+        );
         app.world.agents[w].starting = false;
         app.world.agents[w].status = Status::Idle;
         // Waiting for an answer: the bottom line spins when nothing else
