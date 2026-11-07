@@ -70,3 +70,15 @@ test that every row fits its cell is now one for every row, both
 languages, both new-line keys and four screen widths: each line as wide
 as its cell, the words of key and text all there, in order.
 
+
+Since record 125's step 5 (2026-11-07) the help opens filtered to the
+screen `?` was pressed on: `overlay::HELP_PLACES` names each row's places
+(`&[]` is every place; the new-line line is everywhere), `help_shown`
+decides a row, `help_rows` takes `scoped` and leaves out the key file's
+lines of other places too; `App.help_all` (`?` again, back at every
+`open_help`) and `App::help_scoped` (false while a filter is typed or
+kept: a search is over every key) decide; the title says which
+(`help_here`, `help_every`; `help_title` over a window that is no place).
+The `/` filter is as before, over every key; `esc` from it is this
+screen's keys again. The scoped window has its own height; one filtered
+keeps the whole list's, as before.

@@ -198,7 +198,7 @@ Gönderdiğiniz satırları arar, `^r` gibi: komut satırı üstünde `WORDS` il
 
 ### `:help`
 
-`?` yardımı: iki dilde her tuş ve komut, glif açıklamaları; içinde `/` her kelimeyle süzer. Bkz. [klavye](../screen/keyboard.md).
+`?` yardımı, bulunduğunuz ekrana süzülmüş (içinde `?`: her tuş); glif açıklamaları; içinde `/` her tuşu her kelimeyle arar. Bkz. [klavye](../screen/keyboard.md).
 
 ### `:journal`
 

@@ -198,7 +198,7 @@ Searches the lines you sent, as `^r` does: the command line opens with `WORDS` o
 
 ### `:help`
 
-The `?` help: every key and command in both languages, the legend of glyphs; `/` in it filters by every word. See [keyboard](../screen/keyboard.md).
+The `?` help, filtered to the screen you are on (`?` in it: every key); the legend of glyphs; `/` in it searches every key by every word. See [keyboard](../screen/keyboard.md).
 
 ### `:journal`
 

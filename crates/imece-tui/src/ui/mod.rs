@@ -9304,7 +9304,7 @@ mod tests {
         for lang in [Lang::En, Lang::Tr] {
             for shift_enter in [true, false] {
                 let plain = overlay::help_keys(lang, shift_enter);
-                let rows = overlay::help_rows(lang, shift_enter, &none, None);
+                let rows = overlay::help_rows(lang, shift_enter, &none, None, false);
                 let want: Vec<(String, String)> = (plain.iter())
                     .map(|(k, w)| (k.to_string(), w.to_string()))
                     .collect();
@@ -9326,7 +9326,7 @@ mod tests {
             );
         }
         let keys = crate::keys::Keymap::read("^n = j\nj = G\n↑ = k\n^w = q").unwrap();
-        let rows = overlay::help_rows(Lang::En, false, &keys, None);
+        let rows = overlay::help_rows(Lang::En, false, &keys, None, false);
         let row = |k: &str| -> Vec<&str> {
             (rows.iter().filter(|r| r.1 == k))
                 .map(|r| r.0.as_str())
@@ -9356,7 +9356,7 @@ mod tests {
             row("writing: cut a word / before / after; paste"),
             ["^w ^u ^k ^y"]
         );
-        let tr = overlay::help_rows(Lang::Tr, false, &keys, None);
+        let tr = overlay::help_rows(Lang::Tr, false, &keys, None, false);
         assert_eq!(tr[0], ("^n".to_string(), "senin tuşun: j gibi".to_string()));
         assert_eq!(tr.len(), rows.len());
         // Drawn, and found by the filter.
@@ -9371,7 +9371,7 @@ mod tests {
         assert!(!found.contains("first / last line"), "{found}");
         // Keys of two, on either side.
         let two = crate::keys::Keymap::read("gt = G\nx = gg\n^t = z M").unwrap();
-        let rows = overlay::help_rows(Lang::En, false, &two, None);
+        let rows = overlay::help_rows(Lang::En, false, &two, None, false);
         let row = |k: &str| -> Vec<&str> {
             (rows.iter().filter(|r| r.1 == k))
                 .map(|r| r.0.as_str())
@@ -9391,7 +9391,7 @@ mod tests {
         );
         // A place's keys: said where, and the rows as they are there.
         let placed = crate::keys::Keymap::read("J = G\n[change]\n^n = j\nJ = gg").unwrap();
-        let rows = |lang, place| overlay::help_rows(lang, false, &placed, place);
+        let rows = |lang, place| overlay::help_rows(lang, false, &placed, place, false);
         let change = rows(Lang::En, Some(crate::keys::Scope::Change));
         assert_eq!(
             change[..3],
@@ -9415,6 +9415,16 @@ mod tests {
         assert_eq!(rows(Lang::En, None), salon);
         let tr = rows(Lang::Tr, Some(crate::keys::Scope::Change));
         assert_eq!(tr[1].1, "senin tuşun, değişiklikte: j gibi");
+        // Filtered to a screen, the file's lines of another place go.
+        let scoped = |place| overlay::help_rows(Lang::En, false, &placed, Some(place), true);
+        let salon = scoped(crate::keys::Scope::Salon);
+        assert_eq!(salon[0], ("J".to_string(), "your key: as G".to_string()));
+        assert!(
+            !salon.iter().any(|r| r.1.contains("in a change")),
+            "{salon:?}"
+        );
+        let change = scoped(crate::keys::Scope::Change);
+        assert_eq!(change[1].1, "your key in a change: as j");
     }
 
     #[test]
@@ -9573,10 +9583,140 @@ mod tests {
     }
 
     #[test]
+    fn the_help_opens_with_this_screens_keys_and_question_mark_again_with_every_key() {
+        use crate::keys::Scope;
+        let settle = "hide the row at hand until it needs you";
+        let hunk = "the hunk at the top, quoted in a message to its worker";
+        let wrap = "in a change: wrap long lines";
+        let mut app = app_after(1, 2, 0, Lang::En);
+        let t = Lang::En.text();
+        key(&mut app, KeyCode::Char('?'));
+        assert!(app.help && app.help_scoped());
+        let s = render(&app, 188, 60);
+        assert!(s.contains(t.help_here.trim()), "{s}");
+        assert!(s.contains(settle) && s.contains(":budget USD"), "{s}");
+        assert!(
+            !s.contains(hunk) && !s.contains(wrap),
+            "a change's keys: {s}"
+        );
+        // `?` again: every key; again: this screen's.
+        key(&mut app, KeyCode::Char('?'));
+        assert!(app.help && !app.help_scoped());
+        let s = render(&app, 188, 60);
+        assert!(s.contains(t.help_every.trim()), "{s}");
+        assert!(s.contains(hunk) && s.contains(settle), "{s}");
+        key(&mut app, KeyCode::Char('?'));
+        assert!(app.help && app.help_scoped());
+        assert!(!render(&app, 188, 60).contains(hunk));
+        // Opened anew, this screen's again; Turkish words the title.
+        key(&mut app, KeyCode::Esc);
+        app.help_all = true;
+        app.lang = Lang::Tr;
+        key(&mut app, KeyCode::Char('?'));
+        assert!(app.help_scoped());
+        assert!(render(&app, 188, 60).contains(Lang::Tr.text().help_here.trim()));
+        // Over a window that is no place (the first run's), every key.
+        app.lang = Lang::En;
+        app.welcome = true;
+        app.help = true;
+        app.help_all = false;
+        assert_eq!(app.scope_below(), None);
+        let s = render(&app, 188, 60);
+        assert!(s.contains(t.help_title.trim()) && !s.contains(t.help_here.trim()));
+        assert!(s.contains(hunk) && s.contains(settle), "{s}");
+        // The rows as the table places them.
+        let keys = overlay::help_keys(Lang::En, false);
+        assert_eq!(keys[13].0, ":pin NAME");
+        assert_eq!(keys[27].0, "s  :settle");
+        assert_eq!(keys[44].0, ">");
+        assert_eq!(keys[47].0, "w  R");
+        assert!(
+            keys[18].1.starts_with("writing: a new line"),
+            "{:?}",
+            keys[18]
+        );
+        assert!(
+            overlay::help_shown(18, Scope::Board),
+            "the new-line line, everywhere"
+        );
+        assert!(overlay::help_shown(0, Scope::Board) && overlay::help_shown(13, Scope::Salon));
+        assert!(!overlay::help_shown(13, Scope::Board), ":pin is the team's");
+        assert!(overlay::help_shown(44, Scope::Change) && !overlay::help_shown(44, Scope::Salon));
+        assert!(overlay::help_shown(27, Scope::Salon) && !overlay::help_shown(27, Scope::Change));
+    }
+
+    #[test]
+    fn the_help_in_a_change_and_in_the_windows_lists_their_keys() {
+        let settle = "hide the row at hand until it needs you";
+        let hunk = "the hunk at the top, quoted in a message to its worker";
+        let copy = "copy the message · the conversation";
+        let scale = "home: one project · change: file · timeline: scale";
+        let mut app = app_after(1, 2, 0, Lang::En);
+        app.zoom = Zoom::Diff(app.world.agents[1].id);
+        key(&mut app, KeyCode::Char('?'));
+        let s = render(&app, 188, 60);
+        assert!(s.contains(hunk) && s.contains(scale), "{s}");
+        assert!(
+            !s.contains(settle) && !s.contains(copy) && !s.contains(":pin NAME"),
+            "{s}"
+        );
+        key(&mut app, KeyCode::Esc);
+        app.zoom = Zoom::None;
+        app.command("journal");
+        key(&mut app, KeyCode::Char('?'));
+        let s = render(&app, 188, 60);
+        assert!(
+            s.contains(copy) && s.contains("mark the line at hand"),
+            "{s}"
+        );
+        assert!(
+            !s.contains(hunk) && !s.contains(scale) && !s.contains(settle),
+            "{s}"
+        );
+        key(&mut app, KeyCode::Esc);
+        app.command("timeline");
+        key(&mut app, KeyCode::Char('?'));
+        let s = render(&app, 188, 60);
+        assert!(s.contains(scale) && s.contains(":budget USD"), "{s}");
+        assert!(!s.contains(settle) && !s.contains(copy), "{s}");
+    }
+
+    #[test]
+    fn the_help_s_filter_searches_every_key_and_esc_narrows_it_again() {
+        let hunk = "the hunk at the top, quoted in a message to its worker";
+        let mut app = app_after(1, 2, 0, Lang::En);
+        let t = Lang::En.text();
+        key(&mut app, KeyCode::Char('?'));
+        key(&mut app, KeyCode::Char('/'));
+        assert!(
+            !app.help_scoped(),
+            "typing a filter is a search over every key"
+        );
+        for c in "hunk".chars() {
+            key(&mut app, KeyCode::Char(c));
+        }
+        let s = render(&app, 188, 60);
+        assert!(s.contains(hunk) && s.contains(t.help_every.trim()), "{s}");
+        key(&mut app, KeyCode::Enter);
+        assert!(!app.help_scoped() && !app.help_find.is_empty());
+        assert!(render(&app, 188, 60).contains(hunk));
+        // Back to the filter, dropped: this screen's keys again.
+        key(&mut app, KeyCode::Char('/'));
+        key(&mut app, KeyCode::Esc);
+        assert!(
+            app.help && app.help_scoped(),
+            "the filter dropped, this screen's keys"
+        );
+        let s = render(&app, 188, 60);
+        assert!(!s.contains(hunk) && s.contains(t.help_here.trim()), "{s}");
+    }
+
+    #[test]
     fn a_filtered_help_shows_what_matches_and_keeps_its_size() {
         let t = Lang::En.text();
         let mut app = app_after(1, 4, 50, Lang::En);
         app.help = true;
+        app.help_all = true;
         // The rows of the frame's top and bottom corners, on a screen the
         // whole help fits.
         let frame = |app: &App, width: u16| {
@@ -9632,10 +9772,11 @@ mod tests {
         let t = Lang::En.text();
         let mut app = app_after(1, 4, 50, Lang::En);
         app.on_key(KeyEvent::from(KeyCode::Char('?')));
+        app.help_all = true;
         // One column: the keys (a long text on two lines), a blank, the
         // legend, a blank: more lines than twenty rows less the frame and
         // the last line.
-        let rows = overlay::help_rows(Lang::En, false, &app.keys, None);
+        let rows = overlay::help_rows(Lang::En, false, &app.keys, None, false);
         let rows: Vec<_> = rows.iter().collect();
         let keys = overlay::help_columns(&rows, false, overlay::help_widths(80, false)).len();
         assert!(keys > rows.len(), "some wrap");
@@ -9730,12 +9871,14 @@ mod tests {
             KeyEvent::new(KeyCode::Char('j'), KeyModifiers::CONTROL),
         ] {
             key(&mut app, KeyCode::Char('?'));
+            app.help_all = true;
             app.help_scroll = 2;
             app.on_key(close);
             assert!(!app.help, "{close:?}");
         }
         app.help_scroll = 4;
         key(&mut app, KeyCode::Char('?'));
+        app.help_all = true;
         assert!(app.help && app.help_scroll == 0);
         // However short the screen, a line is in sight and ^d moves one.
         render(&app, 80, 3);
@@ -9759,6 +9902,7 @@ mod tests {
     fn the_help_window_is_as_tall_as_its_lines_and_their_frame() {
         let mut app = app_after(1, 4, 50, Lang::En);
         app.help = true;
+        app.help_all = true;
         let t = Lang::En.text();
         // Forty rows: the help fits a screen that tall whole where it is
         // wide enough for every row on one line (188: keys 16, texts 74).

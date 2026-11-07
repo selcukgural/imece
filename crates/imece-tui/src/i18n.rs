@@ -1188,6 +1188,9 @@ pub struct Text {
     pub waiting_yes: &'static str,
     // Overlays
     pub help_title: &'static str,
+    /// The help's title filtered to this screen, and with every key.
+    pub help_here: &'static str,
+    pub help_every: &'static str,
     pub help_keys: [(&'static str, &'static str); 56],
     /// What each `:` command does, in a line, in `complete::COMMANDS`'
     /// order: shown after the menu's keys once `tab` put one on the line.
@@ -2209,6 +2212,8 @@ pub const EN: Text = Text {
     refused: "refused: {} is told so",
     waiting_yes: "asks to run",
     help_title: " HELP ",
+    help_here: " HELP · this screen · ? every key ",
+    help_every: " HELP · every key · ? this screen ",
     help_keys: [
         ("/  i", "write to the lead of the selected project"),
         ("@name text", "write to one agent"),
@@ -2321,7 +2326,7 @@ pub const EN: Text = Text {
         ("q s  :pending", "before quitting: mid-turn, not reviewed"),
         (
             "?  :help",
-            "this help; j k scroll, / filters · :keys your keys",
+            "this help: this screen's keys; ? every key · / finds",
         ),
     ],
     help_newline: [
@@ -3424,6 +3429,8 @@ pub const TR: Text = Text {
     refused: "reddedildi: {} bunu öğrenecek",
     waiting_yes: "çalıştırmak istiyor",
     help_title: " YARDIM ",
+    help_here: " YARDIM · bu ekran · ? tüm tuşlar ",
+    help_every: " YARDIM · tüm tuşlar · ? bu ekran ",
     help_keys: [
         ("/  i", "seçili projenin liderine yaz"),
         ("@ad mesaj", "tek bir agent'a yaz"),
@@ -3530,7 +3537,7 @@ pub const TR: Text = Text {
         ("q s  :pending", "çıkmadan önce: tur ortası, incelenmemiş"),
         (
             "?  :help",
-            "bu yardım; j k kaydırır, / süzer · :keys senin tuşların",
+            "bu yardım: bu ekranın tuşları; ? tüm tuşlar · / bulur",
         ),
     ],
     help_newline: [
