@@ -519,6 +519,17 @@ pub(super) fn send_tool() -> Tool {
                                     sender.",
                 },
                 "paths": paths_schema(),
+                "options": {
+                    "type": "array",
+                    "items": { "type": "string", "maxLength": OPTION_MAX },
+                    "maxItems": OPTIONS_MAX,
+                    "description": "With an ask to you: the answers the person can \
+                                    pick with one key, at most four, each a short line, \
+                                    the one you would take first. Offer them whenever \
+                                    the question has a few clear answers; the person \
+                                    may still answer in their own words. Refused on any \
+                                    other message.",
+                },
             },
             "required": ["to", "type", "body"],
             "additionalProperties": false,

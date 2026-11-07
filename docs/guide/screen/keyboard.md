@@ -59,7 +59,7 @@ While the first key of a chord waits for its second, the row lists what the seco
 | --- | --- |
 | `#N`  `#word`  `n` `p` | a card by number or title, all of it on one screen; on it `n` `p`: next / previous card |
 | `&`  `:goto` | go to an agent or a project: type a name, `1`-`9` the nth on the list, `!` keeps only what needs you; `&#` turns to the cards |
-| `1` `2` `3` `4` `5` | `:salon` · `:board` · `:code` map · `:timeline` · [`:home`](home.md) |
+| `1` `2` `3` `4` `5` | `:salon` · `:board` · `:code` map · `:timeline` · [`:home`](home.md); on Home, with a question that offers answers at hand, `1`-`9` pick one instead ([questions](../concepts/approvals-and-questions.md#questions-)) |
 | `[`  `]` | on the timeline: a column of 5 s · 30 s · 1 min |
 | `↑` `↓`  `j` `k` | select |
 | `gg`  `G`  `gd`  `gw` | first / last line · on Home: the first row to decide · the first at work |

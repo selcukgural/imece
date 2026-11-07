@@ -2304,6 +2304,7 @@ mod tests {
                         from: 1,
                         kind: MsgKind::Ask,
                         text: "which?".into(),
+                        options: Vec::new(),
                     },
                 },
             ],

@@ -45,10 +45,20 @@ Bir istekte `e` (sizi bekleyenlerde ya da ajanının odağında) ya da `:yes [@N
 
 ## Sorular (`?`)
 
-Bir ajan size `send(to: "you", type: "ask", body)` ile sorar. Bir `?` öğesi olur, "claude-2 sana soruyor: eski CLI bayrağı kalsın mı?", ve soru açıkken ajan boştaysa ekip satırı `? → you` okunur. Aynı ajandan daha yeni bir soru eskisinin yerini alır.
+Bir ajan size `send(to: "you", type: "ask", body)` ile sorar ve seçilecek yanıtları sunabilir (`options`: en çok dört, her biri kısa bir satır, kendi seçeceği önce). Bir `?` öğesi olur, "claude-2 sana soruyor: eski CLI bayrağı kalsın mı?", ve soru açıkken ajan boştaysa ekip satırı `? → you` okunur. Aynı ajandan daha yeni bir soru eskisinin yerini alır.
 
-- `enter` konuşmayı soruda açar.
-- `a` ya da `r` yazma satırını `@claude-2 ` ile açar ("sözsüz yanıt" yoktur); o ajana yazdığınız her şey soruyu kapatır ve sonraki turunu başlatır.
+[Ana ekranda](../screen/home.md) satır soruyu, altında da sunulan her yanıtı onu seçen tuşla söyler:
+
+```text
+▸! #12 İadeler     İade karta mı dönsün, mağaza kredisine mi?   1-3 seç   a yanıtla
+                    1  karta
+                    2  mağaza kredisine
+                    3  hangisiyle ödendiyse ona
+```
+
+- O satırda `1`-`9`, adlandırdığı yanıtı ajana sizin mesajınız olarak gönderir: soru kapanır ve ajanın sonraki turu onunla başlar. Rakamlar yalnız elde yanıtlı bir soru varken Ana ekranındır; başka yerde her zamanki gibi görünümlerindir.
+- Satırda `/`, ya da `a` ya da `r`, kendi sözcüklerinizle yanıt için yazma satırını `@claude-2 ` ile açar; o ajana yazdığınız her şey soruyu kapatır ve sonraki turunu başlatır.
+- `enter` konuşmayı soruda açar. Listenin yanındaki önizleme (120 kolondan itibaren) soruyu bütün olarak, yanıtlarını ve ajanın şimdiye dek yaptığını okur: durumu, yapılacaklar listesi ve en yeni iz satırları.
 - Gitmiş ya da durmuş bir ajanın sorusu siz ona yazana dek açık kalır.
 
 Kim ne zaman sorar: lider görev ortasında size sorabilir; bir işçi önce liderine sorar ve size yalnız sizin karar verebileceğinizi gönderir; bir yardımcı yalnız hiçbir ekip arkadaşının yanıtlayamayacağını. Sorular posta sınırlarına ve bütçeye sayılmaz ([mesajlar](../concepts/messages-and-board.md)).

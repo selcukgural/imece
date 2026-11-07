@@ -63,11 +63,15 @@ impl Live {
         if !paths.is_empty() && kind != MsgKind::Assign {
             return Err("paths go with an assign: the card it opens owns them".into());
         }
+        let options = options_of(&args["options"])?;
+        if !options.is_empty() && (arg("to") != YOU || kind != MsgKind::Ask) {
+            return Err("options go with an ask to the person (to: you)".into());
+        }
         if arg("to") == YOU {
             if re.is_some() {
                 return Err("re is for a teammate's message: the person's have no number".into());
             }
-            return self.send_you(w, from, kind, body);
+            return self.send_you(w, from, kind, body, options);
         }
         let project = w.agents[from].project;
         if w.agent_by_name(arg("to")).is_none()
@@ -219,6 +223,7 @@ impl Live {
         from: AgentId,
         kind: MsgKind,
         body: &str,
+        options: Vec<String>,
     ) -> Result<(String, Option<String>), String> {
         if matches!(kind, MsgKind::Assign | MsgKind::Handoff | MsgKind::Cancel) {
             return Err(format!(
@@ -238,10 +243,12 @@ impl Live {
                 text: body.to_string(),
             },
         );
+        let offered = !options.is_empty();
         w.note(Event::ToYou {
             from,
             kind,
             text: body.to_string(),
+            options,
         });
         if kind == MsgKind::Ask {
             w.asked_you(from, body);
@@ -254,7 +261,13 @@ impl Live {
             text: first,
             until: t + 8,
         });
-        let answer = if kind == MsgKind::Ask {
+        let answer = if kind == MsgKind::Ask && offered {
+            "delivered; the person sees it under TO DECIDE with your options and \
+             answers when they can, with one of them or in their own words, which \
+             starts your next turn. Until then, end your turn or go on with what does \
+             not depend on the answer; your teammates' messages wait for that answer \
+             too, but for a cancel."
+        } else if kind == MsgKind::Ask {
             "delivered; the person sees it under TO DECIDE and answers when they \
              can, which starts your next turn. Until then, end your turn or go on with \
              what does not depend on the answer; your teammates' messages wait for that \
@@ -659,6 +672,39 @@ impl Live {
         }
         Ok((said, None))
     }
+}
+
+/// The answers an ask to the person offers (record 125): an array of
+/// at most [`OPTIONS_MAX`] strings, each a line of at most [`OPTION_MAX`]
+/// characters; none when absent.
+fn options_of(v: &Value) -> Result<Vec<String>, String> {
+    if v.is_null() {
+        return Ok(Vec::new());
+    }
+    let Some(list) = v.as_array() else {
+        return Err("options must be an array of strings".into());
+    };
+    if list.len() > OPTIONS_MAX {
+        return Err(format!("an ask offers at most {OPTIONS_MAX} options"));
+    }
+    let mut out = Vec::with_capacity(list.len());
+    for item in list {
+        let Some(text) = item.as_str() else {
+            return Err("options must be an array of strings".into());
+        };
+        let text = text.trim();
+        if text.is_empty() {
+            return Err("an option is empty".into());
+        }
+        if text.chars().count() > OPTION_MAX {
+            return Err(format!("an option is longer than {OPTION_MAX} characters"));
+        }
+        if text.chars().any(|c| c.is_control()) {
+            return Err(format!("{text:?} has a control character"));
+        }
+        out.push(text.to_string());
+    }
+    Ok(out)
 }
 
 /// The `send` tool's `re`: none when it is not given, else a message's
@@ -1306,7 +1352,7 @@ mod tests {
         assert!(w.has_question(1) && !w.has_question(2));
         assert!(matches!(
             &w.journal.last().unwrap().event,
-            Event::ToYou { from: 1, kind: MsgKind::Ask, text } if text == "Which API?\nDetails."
+            Event::ToYou { from: 1, kind: MsgKind::Ask, text, .. } if text == "Which API?\nDetails."
         ));
         assert!(matches!(
             &w.cards[card].story.last().unwrap().event,
@@ -1341,7 +1387,7 @@ mod tests {
         assert!(w.open_inbox().is_empty() && !w.has_question(1));
         assert!(matches!(
             &w.journal.last().unwrap().event,
-            Event::ToYou { from: 1, kind: MsgKind::Inform, text } if text == "Halfway."
+            Event::ToYou { from: 1, kind: MsgKind::Inform, text, .. } if text == "Halfway."
         ));
         assert_eq!(w.journal.last().unwrap().event.kind(), EntryKind::Talk);
         // A worker's done to the person shows its change like any done:
@@ -2179,6 +2225,74 @@ in p.rs",
     fn with_paths(mut args: Value, paths: Value) -> Value {
         args["paths"] = paths;
         args
+    }
+
+    fn with_options(mut args: Value, options: Value) -> Value {
+        args["options"] = options;
+        args
+    }
+
+    #[test]
+    fn an_ask_to_the_person_may_offer_answers_and_nothing_else_may() {
+        let mut w = team(2);
+        w.agents[1].status = Status::Idle;
+        let mut live = idle_live(3);
+        let ask = |options: Value| with_options(msg("you", "ask", "Which?"), options);
+        let ok = sent(
+            &mut live,
+            &mut w,
+            1,
+            &ask(json!([" the card ", "store credit"])),
+        )
+        .unwrap();
+        assert!(ok.contains("with your options"), "{ok}");
+        assert!(
+            matches!(
+                &w.journal.last().unwrap().event,
+                Event::ToYou { from: 1, kind: MsgKind::Ask, options, .. }
+                    if options == &["the card", "store credit"]
+            ),
+            "trimmed: {:?}",
+            w.journal.last()
+        );
+        assert_eq!(
+            w.question_of(1).unwrap().options,
+            ["the card", "store credit"]
+        );
+        // Without options the answer promises none.
+        let ok = sent(&mut live, &mut w, 1, &msg("you", "ask", "Again?")).unwrap();
+        assert!(!ok.contains("options") && ok.contains("TO DECIDE"), "{ok}");
+        assert!(w.question_of(1).unwrap().options.is_empty());
+        let refused = |live: &mut Live, w: &mut World, args: Value| {
+            sent(live, w, 1, &args).expect_err("refused")
+        };
+        let inform = with_options(msg("you", "inform", "x"), json!(["a"]));
+        assert!(refused(&mut live, &mut w, inform).contains("ask to the person"));
+        let teammate = with_options(msg("lead", "ask", "x"), json!(["a"]));
+        assert!(refused(&mut live, &mut w, teammate).contains("ask to the person"));
+        assert!(refused(&mut live, &mut w, ask(json!("a"))).contains("array of strings"));
+        assert!(refused(&mut live, &mut w, ask(json!([1]))).contains("array of strings"));
+        let five = ask(json!(["a", "b", "c", "d", "e"]));
+        assert!(refused(&mut live, &mut w, five).contains("at most 4"));
+        assert!(refused(&mut live, &mut w, ask(json!(["a", " "]))).contains("empty"));
+        let long = "x".repeat(OPTION_MAX + 1);
+        assert!(refused(&mut live, &mut w, ask(json!([long]))).contains("longer than 60"));
+        assert!(refused(&mut live, &mut w, ask(json!(["a\tb"]))).contains("control"));
+        assert_eq!(
+            w.question_of(1).unwrap().text,
+            "Again?",
+            "a refusal asks nothing"
+        );
+        // Four, one at the cap, pass; an empty list offers none.
+        let four = json!(["x".repeat(OPTION_MAX), "b", "c", "d"]);
+        sent(&mut live, &mut w, 1, &ask(four)).unwrap();
+        assert_eq!(w.question_of(1).unwrap().options.len(), 4);
+        sent(&mut live, &mut w, 1, &ask(json!([]))).unwrap();
+        assert!(w.question_of(1).unwrap().options.is_empty());
+        assert_eq!(
+            send_tool().input["properties"]["options"]["maxItems"],
+            OPTIONS_MAX
+        );
     }
 
     #[test]

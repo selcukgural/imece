@@ -1514,11 +1514,14 @@ pub enum Event {
         added: bool,
     },
     /// A live agent sent the person a message over the bus (`to: you`);
-    /// an `ask` waits in their inbox, the rest is for the journal.
+    /// an `ask` waits in their inbox, the rest is for the journal. An
+    /// ask may offer answers to pick with one key (record 125).
     ToYou {
         from: AgentId,
         kind: MsgKind,
         text: String,
+        #[serde(default)]
+        options: Vec<String>,
     },
     /// A live agent answered the person.
     Replied {
@@ -2298,6 +2301,19 @@ pub struct Change {
     /// What the worker spent on it from its first prompt after the last
     /// change to the `done` (record 113); none until its turn ended.
     pub spend: Option<Spend>,
+}
+
+/// How many answers an ask to the person may offer, and how long each
+/// may be (record 125): one key picks one.
+pub const OPTIONS_MAX: usize = 4;
+pub const OPTION_MAX: usize = 60;
+
+/// An agent's open question to the person, whole, with the answers it
+/// offered.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Question<'a> {
+    pub text: &'a str,
+    pub options: &'a [String],
 }
 
 /// One thing that proved a change as it is (record 125's verdict): the
@@ -3644,6 +3660,29 @@ impl World {
 
     pub fn change_of(&self, id: AgentId) -> Option<&Change> {
         self.changes.iter().find(|c| c.agent == id)
+    }
+
+    /// Agent `id`'s open question to the person, whole, with the answers
+    /// it offered: the newest ask of its in the journal; the item's first
+    /// line alone when the journal no longer holds it.
+    pub fn question_of(&self, id: AgentId) -> Option<Question<'_>> {
+        let item = self.open_item(id, InboxKind::Question)?;
+        let asked = self.journal.iter().rev().find_map(|e| match &e.event {
+            Event::ToYou {
+                from,
+                kind: MsgKind::Ask,
+                text,
+                options,
+            } if *from == id => Some(Question {
+                text,
+                options: options.as_slice(),
+            }),
+            _ => None,
+        });
+        Some(asked.unwrap_or(Question {
+            text: &item.detail,
+            options: &[],
+        }))
     }
 
     /// The card worker `id`'s waiting change was made for: the one its
@@ -6033,6 +6072,68 @@ mod tests {
     }
 
     #[test]
+    fn the_question_is_the_newest_ask_in_the_journal_with_its_options_else_the_item_s_line() {
+        let mut w = world(vec![
+            agent(0, Role::Leader, Status::Idle),
+            agent(1, Role::Worker, Status::Idle),
+            agent(2, Role::Worker, Status::Idle),
+        ]);
+        assert_eq!(w.question_of(1), None, "no question");
+        let ask = |w: &mut World, from, text: &str, options: &[&str]| {
+            w.note(Event::ToYou {
+                from,
+                kind: MsgKind::Ask,
+                text: text.into(),
+                options: options.iter().map(|o| o.to_string()).collect(),
+            });
+            w.asked_you(from, text);
+        };
+        ask(&mut w, 1, "Which?\nMore.", &["a", "b"]);
+        let q = w.question_of(1).unwrap();
+        assert_eq!(q.text, "Which?\nMore.");
+        assert_eq!(q.options, ["a", "b"]);
+        // Another agent's ask and a later inform of its own change nothing.
+        ask(&mut w, 2, "Mine?", &["c"]);
+        w.note(Event::ToYou {
+            from: 1,
+            kind: MsgKind::Inform,
+            text: "Halfway.".into(),
+            options: Vec::new(),
+        });
+        assert_eq!(w.question_of(1).unwrap().text, "Which?\nMore.");
+        assert_eq!(w.question_of(2).unwrap().options, ["c"]);
+        // A newer ask takes the older's place.
+        ask(&mut w, 1, "Or this?", &[]);
+        let q = w.question_of(1).unwrap();
+        assert_eq!((q.text, q.options.len()), ("Or this?", 0));
+        // The journal tidied away: the item's first line, no options.
+        w.journal.clear();
+        ask(&mut w, 2, "Still?\nYes.", &["d"]);
+        w.journal.clear();
+        let q = w.question_of(2).unwrap();
+        assert_eq!((q.text, q.options.len()), ("Still?", 0));
+        // Answered: no question.
+        w.said(1, "b");
+        assert_eq!(w.question_of(1), None);
+        assert!(w.question_of(2).is_some());
+    }
+
+    #[test]
+    fn an_ask_journaled_before_options_reads_back_without_them() {
+        let v = serde_json::json!({"ToYou": {"from": 1, "kind": "Ask", "text": "x"}});
+        let e: Event = serde_json::from_value(v).unwrap();
+        assert_eq!(
+            e,
+            Event::ToYou {
+                from: 1,
+                kind: MsgKind::Ask,
+                text: "x".into(),
+                options: Vec::new()
+            }
+        );
+    }
+
+    #[test]
     fn a_passing_fault_is_tried_again_three_times_later_each_then_waits_for_the_person() {
         let mut w = world(vec![
             agent(0, Role::Leader, Status::Idle),
@@ -6234,6 +6335,7 @@ mod tests {
             from: 2,
             kind: MsgKind::Ask,
             text: "q".into(),
+            options: Vec::new(),
         };
         assert_eq!((e.kind(), e.agent()), (EntryKind::Talk, 2));
         assert_eq!(

@@ -548,6 +548,7 @@ mod tests {
             from: 1,
             kind: MsgKind::Answer,
             text: "a\n\nb".into(),
+            options: Vec::new(),
         });
         keys(&mut app, "Gvjjsc");
         assert!(!app.typing && app.noting.is_none());

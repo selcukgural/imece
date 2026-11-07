@@ -280,6 +280,8 @@ pub(crate) fn commands_of(text: &str) -> String {
 /// under the first), or one line that is cut, an agent's.
 enum Tail {
     Words(String),
+    /// A question's words, then the answers it offers, one a line.
+    Asked(String, Vec<String>),
     Spans(Vec<Span<'static>>),
     Cut(String),
 }
@@ -301,7 +303,10 @@ fn item_tail(app: &App, i: usize) -> Tail {
             };
             fill(words, &[&item.detail, commands.as_deref().unwrap_or("")])
         }
-        InboxKind::Question => plain(&item.detail),
+        InboxKind::Question => {
+            let options = w.question_of(item.agent).map(|q| q.options.to_vec());
+            return Tail::Asked(plain(&item.detail), options.unwrap_or_default());
+        }
         InboxKind::Research => {
             let by = item.researcher.map_or("?", |r| w.agents[r].name.as_str());
             fill(t.row_research, &[by, &item.detail])
@@ -366,9 +371,21 @@ fn agent_tail(app: &App, id: AgentId, glyph: &str) -> Tail {
 /// decide, in a word each; the status line has the rest.
 fn row_keys(app: &App) -> Vec<Span<'static>> {
     let t = app.lang.text();
+    // `1-3` for a question that offers three answers, `1` for one.
+    let pick = match app.home_at() {
+        Some(HomeRow::Item(i)) => match app.world.question_of(app.world.inbox[i].agent) {
+            Some(q) if q.options.len() > 1 => format!("1-{}", q.options.len()),
+            Some(q) if q.options.len() == 1 => "1".to_string(),
+            _ => String::new(),
+        },
+        _ => String::new(),
+    };
     let keys: Vec<(&str, &str)> = match app.home_at() {
         Some(HomeRow::Item(i)) => match app.world.inbox[i].kind {
             InboxKind::Change => vec![("a", t.apply), ("r", t.reject)],
+            InboxKind::Question if !pick.is_empty() => {
+                vec![(pick.as_str(), t.home_pick), ("a", t.home_answer)]
+            }
             InboxKind::Question | InboxKind::Fault | InboxKind::Reply => {
                 vec![("a", t.home_answer), ("enter", t.home_open)]
             }
@@ -457,6 +474,34 @@ fn row_lines(app: &App, row: HomeRow, width: usize, here: bool) -> Vec<Line<'sta
         lines.push(selection(Line::from(spans)));
     };
     let rest_room = width.saturating_sub(used + 1);
+    // Words wrap under their own column; the answers a question offers
+    // follow, one a line, each with the key that picks it.
+    let words_tail = |text: String, options: Vec<String>, lines: &mut Vec<Line<'static>>| {
+        let mut rows = overlay::wrap_words(&text, first_room.max(1)).into_iter();
+        let mut line = head.clone();
+        line.push(Span::raw(rows.next().unwrap_or_default()));
+        end_first(line, lines);
+        let left: Vec<String> = rows.collect();
+        if !left.is_empty() {
+            // The rest of the words, as wide as the row lets them.
+            let whole: String = left.join(" ");
+            for row in overlay::wrap_words(&whole, rest_room.max(1)) {
+                lines.push(selection(Line::from(vec![
+                    Span::raw(" ".repeat(used)),
+                    Span::raw(row),
+                ])));
+            }
+        }
+        for (n, option) in options.iter().enumerate() {
+            let key = Span::styled(format!(" {} ", n + 1), key_style());
+            let room = rest_room.saturating_sub(key.width() + 1).max(1);
+            lines.push(selection(Line::from(vec![
+                Span::raw(" ".repeat(used)),
+                key,
+                Span::raw(format!(" {}", fit(&clean(option), room).trim_end())),
+            ])));
+        }
+    };
     match tail {
         Tail::Cut(text) => {
             let mut line = head;
@@ -499,24 +544,8 @@ fn row_lines(app: &App, row: HomeRow, width: usize, here: bool) -> Vec<Line<'sta
                 lines.push(selection(Line::from(line)));
             }
         }
-        Tail::Words(text) => {
-            let mut rows = overlay::wrap_words(&text, first_room.max(1)).into_iter();
-            let mut line = head.clone();
-            line.push(Span::raw(rows.next().unwrap_or_default()));
-            end_first(line, &mut lines);
-            let left: Vec<String> = rows.collect();
-            if left.is_empty() {
-                return lines;
-            }
-            // The rest of the words, as wide as the row lets them.
-            let whole: String = left.join(" ");
-            for row in overlay::wrap_words(&whole, rest_room.max(1)) {
-                lines.push(selection(Line::from(vec![
-                    Span::raw(" ".repeat(used)),
-                    Span::raw(row),
-                ])));
-            }
-        }
+        Tail::Words(text) => words_tail(text, Vec::new(), &mut lines),
+        Tail::Asked(text, options) => words_tail(text, options, &mut lines),
     }
     lines
 }
@@ -651,6 +680,38 @@ fn agent_lines(app: &App, id: AgentId, lines: &mut Vec<Line<'static>>, room: usi
     }
 }
 
+/// A question whole, past its first line (the row has that), then the
+/// answers it offers with their keys, then a line before what its agent
+/// did so far.
+fn question_lines(t: &Text, q: &Question, lines: &mut Vec<Line<'static>>, room: usize) {
+    // Cleaned line by line: a newline is a control character too.
+    let whole: Vec<String> = (q.text.lines())
+        .map(|l| clean(l.trim_end()))
+        .filter(|l| !l.trim().is_empty())
+        .collect();
+    if whole.len() > 1 {
+        lines.push(Line::default());
+        for text in &whole {
+            for row in overlay::wrap_words(text, room) {
+                lines.push(Line::from(Span::styled(row, bold(pal().strong))));
+            }
+        }
+    }
+    if !q.options.is_empty() {
+        lines.push(Line::default());
+        for (n, option) in q.options.iter().enumerate() {
+            let key = Span::styled(format!(" {} ", n + 1), key_style());
+            let left = room.saturating_sub(key.width() + 1).max(1);
+            lines.push(Line::from(vec![
+                key,
+                Span::raw(format!(" {}", fit(&clean(option), left).trim_end())),
+            ]));
+        }
+    }
+    lines.push(Line::default());
+    lines.push(Line::from(Span::styled(t.home_so_far.to_string(), dim())));
+}
+
 /// What a row holds, read without a key: a heading, then what it is.
 fn preview_lines(app: &App, row: HomeRow, room: usize, rows: usize) -> Vec<Line<'static>> {
     let w = &app.world;
@@ -689,7 +750,10 @@ fn preview_lines(app: &App, row: HomeRow, room: usize, rows: usize) -> Vec<Line<
                 for row in overlay::wrap_words(&said, room) {
                     lines.push(Line::from(Span::raw(row)));
                 }
-                if !item.detail.is_empty() && !said.contains(item.detail.as_str()) {
+                if let Some(q) = w.question_of(item.agent) {
+                    question_lines(t, &q, &mut lines, room);
+                    agent_lines(app, id, &mut lines, room, rows);
+                } else if !item.detail.is_empty() && !said.contains(item.detail.as_str()) {
                     lines.push(Line::default());
                     for row in overlay::wrap_words(&clean(&item.detail), room) {
                         lines.push(Line::from(Span::styled(row, bold(pal().strong))));
@@ -988,6 +1052,162 @@ mod tests {
         assert_eq!(got[row + 1].trim(), "b", "{}", got[row + 1]);
         let next: Vec<char> = got[row + 1].chars().collect();
         assert_eq!(next[c], 'b', "under its own column: {}", got[row + 1]);
+    }
+
+    #[test]
+    fn a_question_s_row_lists_the_answers_it_offers_under_it_with_their_keys() {
+        let mut app = home(Lang::En);
+        let a = worker(&app);
+        let ask = |app: &mut App, text: &str, options: &[&str]| {
+            app.world.note(Event::ToYou {
+                from: a,
+                kind: MsgKind::Ask,
+                text: text.into(),
+                options: options.iter().map(|o| o.to_string()).collect(),
+            });
+            app.world.asked_you(a, text);
+        };
+        ask(
+            &mut app,
+            "Which card?",
+            &["the card", "store \u{1b}[31mcredit"],
+        );
+        let got = lines(&app, 120);
+        let row = got.iter().position(|l| l.contains("Which card?")).unwrap();
+        assert!(
+            got[row].contains(" 1-2 ") && got[row].contains("pick"),
+            "{}",
+            got[row]
+        );
+        assert!(
+            got[row].contains(" a ") && got[row].contains("answer"),
+            "{}",
+            got[row]
+        );
+        assert_eq!(got[row + 1].trim(), "1  the card");
+        assert_eq!(got[row + 2].trim(), "2  store  [31mcredit", "cleaned");
+        let column = got[row].find("Which").unwrap();
+        let cells = got[row][..column].chars().count();
+        let next: Vec<char> = got[row + 1].chars().collect();
+        assert!(next[..cells].iter().all(|&c| c == ' '), "{}", got[row + 1]);
+        assert_eq!(next[cells], ' ', "the key's badge starts the column");
+        assert_eq!(next[cells + 1], '1', "{}", got[row + 1]);
+        // A long answer is cut to the row.
+        ask(&mut app, "Which card?", &[&"x".repeat(70)]);
+        let got = lines(&app, 100);
+        let row = got.iter().position(|l| l.contains("Which card?")).unwrap();
+        assert!(
+            got[row].contains(" 1 ") && !got[row].contains("1-"),
+            "{}",
+            got[row]
+        );
+        // Cut to the row's last cell but one, as the words are.
+        assert_eq!(
+            got[row + 1].trim_end().chars().count(),
+            99,
+            "{}",
+            got[row + 1]
+        );
+        assert!(
+            !got[row + 1].contains(&"x".repeat(70)),
+            "cut: {}",
+            got[row + 1]
+        );
+        assert!(
+            got[row + 1].trim().starts_with("1  xxx"),
+            "{}",
+            got[row + 1]
+        );
+        // Without answers to pick: the keys as before, nothing under.
+        ask(&mut app, "Which card?", &[]);
+        let got = lines(&app, 120);
+        let row = got.iter().position(|l| l.contains("Which card?")).unwrap();
+        assert!(
+            !got[row].contains("pick") && got[row].contains("open"),
+            "{}",
+            got[row]
+        );
+        assert!(!got[row + 1].trim().starts_with('1'), "{}", got[row + 1]);
+        // Turkish keys.
+        let mut app = home(Lang::Tr);
+        ask(&mut app, "Hangi kart?", &["kart", "kredi"]);
+        let got = lines(&app, 120);
+        let row = got.iter().position(|l| l.contains("Hangi kart?")).unwrap();
+        assert!(got[row].contains("seç"), "{}", got[row]);
+    }
+
+    #[test]
+    fn the_preview_cuts_an_answer_to_its_room_and_numbers_them_from_one() {
+        let t = Lang::En.text();
+        let long = "x".repeat(70);
+        let q = Question {
+            text: "Which?",
+            options: &[long.clone(), "b".into()],
+        };
+        let mut got = Vec::new();
+        question_lines(t, &q, &mut got, 30);
+        let texts: Vec<String> = got.iter().map(text).collect();
+        assert_eq!(texts[0], "", "no paragraph for one line");
+        assert_eq!(texts[1].chars().count(), 30, "{}", texts[1]);
+        assert!(texts[1].starts_with(" 1  xxx"), "{}", texts[1]);
+        assert_eq!(texts[2], " 2  b");
+        assert_eq!(texts[3], "");
+        assert_eq!(texts[4], "so far:");
+        // A question whole, line by line, cleaned, before the answers.
+        let q = Question {
+            text: "Which?\nThe \u{1b}[31mred one?\n\n",
+            options: &[],
+        };
+        let mut got = Vec::new();
+        question_lines(t, &q, &mut got, 30);
+        let texts: Vec<String> = got.iter().map(text).collect();
+        assert_eq!(texts[..4], ["", "Which?", "The [31mred one?", ""]);
+        assert_eq!(texts[4], "so far:");
+    }
+
+    #[test]
+    fn a_question_s_preview_reads_it_whole_its_answers_and_what_the_agent_did() {
+        let mut app = home(Lang::En);
+        let a = worker(&app);
+        app.world.note(Event::ToYou {
+            from: a,
+            kind: MsgKind::Ask,
+            text: "Which card?\nThe refund one.".into(),
+            options: vec!["the card".into()],
+        });
+        app.world.asked_you(a, "Which card?");
+        app.world.agents[a].trace(0, "tool_use Read Money.cs".to_string());
+        let s = render(&app, 150, 40);
+        assert!(s.contains("The refund one."), "{s}");
+        assert!(s.contains(" 1  the card"), "{s}");
+        assert!(s.contains("so far:"), "{s}");
+        assert!(s.contains("Money.cs"), "{s}");
+        // In the preview, past the list's own column.
+        let order = |needle: &str| s.find(needle).unwrap();
+        assert!(order("The refund one.") < order("│ 1  the card"));
+        assert!(order("│ 1  the card") < order("so far:"));
+        assert!(order("so far:") < order("Money.cs"));
+        // One line only: the row has it, the preview does not say it twice.
+        app.world.note(Event::ToYou {
+            from: a,
+            kind: MsgKind::Ask,
+            text: "Only this?".into(),
+            options: Vec::new(),
+        });
+        app.world.asked_you(a, "Only this?");
+        let s = render(&app, 150, 40);
+        assert!(
+            !s.lines()
+                .any(|l| l.trim_start_matches(['│', ' ']).trim_end() == "Only this?"),
+            "not read out again as a paragraph: {s}"
+        );
+        assert!(s.contains("so far:"), "{s}");
+        let tr = {
+            let mut app = home(Lang::Tr);
+            app.world.asked_you(a, "Hangi?");
+            render(&app, 150, 40)
+        };
+        assert!(tr.contains("şimdiye dek:"), "{tr}");
     }
 
     #[test]

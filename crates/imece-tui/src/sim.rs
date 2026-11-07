@@ -250,6 +250,8 @@ struct Content {
     topics: &'static [&'static str],
     /// What a worker asks the person.
     asks_you: &'static [&'static str],
+    /// The answers each of those offers, one key each; none for some.
+    ask_options: &'static [&'static [&'static str]],
     /// What an agent answers the person who told it something.
     acks: &'static [&'static str],
     /// A leader's answer to a request: how many cards, and which.
@@ -350,6 +352,16 @@ const EN: Content = Content {
         "Half-up rounding for Money, or banker's rounding?",
         "May paging change the shape of the API's response?",
     ],
+    ask_options: &[
+        &[
+            "back to the card",
+            "store credit",
+            "whichever it was paid with",
+        ],
+        &[],
+        &["half-up", "banker's"],
+        &[],
+    ],
     acks: &[
         "Understood; I go on that way.",
         "Done, changed as you said.",
@@ -447,6 +459,12 @@ const TR: Content = Content {
         "Eski v1 uç noktasını kaldırabilir miyim, çağıran istemci var mı?",
         "Money için yarıya yukarı yuvarlama mı, banker yuvarlaması mı?",
         "Sayfalama API cevabının şeklini değiştirebilir mi?",
+    ],
+    ask_options: &[
+        &["karta", "mağaza kredisine", "hangisiyle ödendiyse ona"],
+        &[],
+        &["yarıya yukarı", "banker"],
+        &[],
     ],
     acks: &[
         "Anlaşıldı, o şekilde devam ediyorum.",
@@ -2811,7 +2829,7 @@ impl Sim {
         let t = w.tick;
         w.agents[leader].trace(t, format!("plan {}", if yes { "yes" } else { "no" }));
         if !yes {
-            self.tell_you(w, leader, MsgKind::Ask, self.content.plan_asked);
+            self.tell_you(w, leader, MsgKind::Ask, self.content.plan_asked, &[]);
         }
         true
     }
@@ -3054,7 +3072,14 @@ impl Sim {
 
     /// Agent `from` sends the person a message; an `ask` waits in their
     /// inbox.
-    fn tell_you(&mut self, w: &mut World, from: AgentId, kind: MsgKind, text: &str) {
+    fn tell_you(
+        &mut self,
+        w: &mut World,
+        from: AgentId,
+        kind: MsgKind,
+        text: &str,
+        options: &[&str],
+    ) {
         let t = w.tick;
         let card = w.agents[from].card;
         w.story(
@@ -3068,6 +3093,7 @@ impl Sim {
             from,
             kind,
             text: text.into(),
+            options: options.iter().map(|o| o.to_string()).collect(),
         });
         if kind == MsgKind::Ask {
             w.asked_you(from, text);
@@ -3150,7 +3176,7 @@ impl Sim {
             6..9 => {
                 let s = *self.rng.pick(self.content.assumptions);
                 let said = crate::i18n::fill(self.content.assume, &[s]);
-                self.tell_you(w, id, MsgKind::Inform, &said);
+                self.tell_you(w, id, MsgKind::Inform, &said, &[]);
             }
             9..11 => self.approval(w, id),
             11..12 => self.ask_you(w, id),
@@ -3373,8 +3399,12 @@ impl Sim {
     /// answer a while.
     fn ask_you(&mut self, w: &mut World, id: AgentId) {
         let t = w.tick;
-        let q = *self.rng.pick(self.content.asks_you);
-        self.tell_you(w, id, MsgKind::Ask, q);
+        // Every other question offers its answers, as live agents are told
+        // to (record 125); the rest take words alone.
+        let n = self.rng.below(self.content.asks_you.len() as u64) as usize;
+        let q = self.content.asks_you[n];
+        let options = self.content.ask_options[n];
+        self.tell_you(w, id, MsgKind::Ask, q, options);
         self.mind(id).asked = t;
         let a = &mut w.agents[id];
         a.activity = None;
@@ -5559,6 +5589,31 @@ diff --git a/b.rs b/b.rs
     }
 
     #[test]
+    fn the_demo_s_questions_offer_answers_for_some_and_words_alone_for_others() {
+        for c in [&EN, &TR] {
+            assert_eq!(c.ask_options.len(), c.asks_you.len());
+        }
+        let (mut w, mut s, worker, _) = one_at_work();
+        let (mut with, mut without) = (false, false);
+        for _ in 0..40 {
+            s.ask_you(&mut w, worker);
+            let q = w.question_of(worker).unwrap();
+            let i = EN.asks_you.iter().position(|&t| t == q.text).unwrap();
+            assert_eq!(
+                q.options, EN.ask_options[i],
+                "the answers go with their question"
+            );
+            if q.options.is_empty() {
+                without = true;
+            } else {
+                with = true;
+            }
+            w.said(worker, "ok");
+        }
+        assert!(with && without, "with: {with}, without: {without}");
+    }
+
+    #[test]
     fn a_worker_that_asked_the_person_waits_then_goes_on_and_an_answer_wakes_it() {
         let (mut w, mut s, worker, card) = one_at_work();
         s.ask_you(&mut w, worker);
@@ -5568,6 +5623,7 @@ diff --git a/b.rs b/b.rs
                 from,
                 kind: MsgKind::Ask,
                 text,
+                ..
             } if *from == worker => text.clone(),
             e => panic!("{e:?}"),
         };
@@ -7286,7 +7342,7 @@ diff --git a/b.rs b/b.rs
         let (mut w, mut s) = world(1, 1, 0, 1, Lang::En);
         let worker = w.agents.iter().find(|a| a.role == Role::Worker).unwrap().id;
         w.tick = 10;
-        s.tell_you(&mut w, worker, MsgKind::Inform, "Assuming x.");
+        s.tell_you(&mut w, worker, MsgKind::Inform, "Assuming x.", &[]);
         assert!(!w.has_question(worker), "an inform asks nothing");
         assert!(matches!(
             &w.agents[worker].talk,

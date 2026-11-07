@@ -49,6 +49,7 @@ pub(super) fn talk_with_words() -> (App, AgentId) {
         from: worker,
         kind: MsgKind::Answer,
         text: "alpha **beta** gamma\ndelta epsilon".into(),
+        options: Vec::new(),
     });
     app.on_key(key(KeyCode::Char('G')));
     assert_eq!(app.thread.as_ref().unwrap().sel, 1);

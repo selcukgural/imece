@@ -5051,6 +5051,7 @@ mod tests {
             from: worker,
             kind: MsgKind::Ask,
             text: "Which API?\nTHE-REST".into(),
+            options: Vec::new(),
         });
         app.world.asked_you(worker, "Which API?\nTHE-REST");
         let screen = render(&app, 140, 40);

@@ -59,7 +59,7 @@ Bir akorun ilk tuşu ikincisini beklerken satır ikinci tuşun ne olabileceğini
 | --- | --- |
 | `#N`  `#word`  `n` `p` | numara ya da başlıkla bir kart, hepsi tek ekranda; o ekranda `n` `p`: sonraki / önceki kart |
 | `&`  `:goto` | bir agent'a ya da projeye git: bir ad yazın, `1`-`9` listedeki n'inci, `!` yalnız sizi bekleyenleri tutar; `&#` kartlara döner |
-| `1` `2` `3` `4` `5` | `:salon` · `:board` pano · `:code` harita · `:timeline` zaman şeridi · [`:home`](home.md) ana ekran |
+| `1` `2` `3` `4` `5` | `:salon` · `:board` pano · `:code` harita · `:timeline` zaman şeridi · [`:home`](home.md) ana ekran; Ana ekranda elde yanıt sunan bir soru varken `1`-`9` onlardan birini seçer ([sorular](../concepts/approvals-and-questions.md#sorular-)) |
 | `[`  `]` | zaman şeridinde: bir sütun 5 sn · 30 sn · 1 dk |
 | `↑` `↓`  `j` `k` | seç |
 | `gg`  `G`  `gd`  `gw` | ilk / son satır · ana ekranda: karar bekleyen ilk satır · çalışan ilk satır |

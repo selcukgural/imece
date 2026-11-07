@@ -49,6 +49,8 @@ Varsayılan ret: uymayan bir mesaj nedeniyle reddedilir ve iz bırakmaz.
 | `you`'ya `assign`, `handoff` ya da `cancel` | `assign is not for the person; ask them, or tell them (inform, done, blocked)` |
 | bozuk bir `re` | aşağıda |
 | `assign` dışında bir türde `paths` | `paths go with an assign: the card it opens owns them` |
+| `you`'ya bir `ask` dışında `options` | `options go with an ask to the person (to: you)` |
+| bozuk `options` | `options must be an array of strings`, `an ask offers at most 4 options`, `an option is empty`, `an option is longer than 60 characters`, `"a\tb" has a control character` |
 | bozuk `paths` | `paths must be an array of strings`, `a card owns at most 20 paths`, `a path is empty`, `a path is longer than 200 characters`, `"a\tb" has a control character`, `paths are relative to the repository; "/etc" starts with /`, `"src/../x" goes outside the repository (..)`, `paths lists "src" twice` |
 | projenin açık bir kartının sahip olduğu bir yol | `#3 Fix the parser owns "src/parser.rs", which "src" names too; give this card other paths, or end one with the word shared (src shared)` |
 
@@ -56,7 +58,7 @@ Varsayılan ret: uymayan bir mesaj nedeniyle reddedilir ve iz bırakmaz.
 
 ### Size mesajlar
 
-`to: you` kişiye ulaşır. Bir `ask` KARAR BEKLEYEN'de bir soru olur (`claude-1 sana soruyor: Which parser?`); açık bir sorusu varken boşta duran ajanın satırı `? → you` okunur ve soru o ajana yazdığınızda kapanır, bu da sonraki turunu başlatır. Gönderen şunu duyar: `delivered; the person sees it under WAITING FOR YOU and answers when they can, which starts your next turn. Until then, end your turn or go on with what does not depend on the answer; your teammates' messages wait for that answer too, but for a cancel.` Öteki her tür yalnızca bilgilendirir: günlükte ve konuşmada bir satır (`noted; the person sees it in the journal. Nothing wakes them: a question goes as type ask.`); bir işçinin size `done`'ı değişikliğini her done gibi gösterir. Size mesajlar numara ve `re` almaz, hiçbir sınıra girmez ve para etmez. Bkz. [onaylar ve sorular](../concepts/approvals-and-questions.md).
+`to: you` kişiye ulaşır. Bir `ask` KARAR BEKLEYEN'de bir soru olur (`claude-1 sana soruyor: Which parser?`); açık bir sorusu varken boşta duran ajanın satırı `? → you` okunur ve soru o ajana yazdığınızda kapanır, bu da sonraki turunu başlatır. Gönderen şunu duyar: `delivered; the person sees it under TO DECIDE and answers when they can, which starts your next turn. Until then, end your turn or go on with what does not depend on the answer; your teammates' messages wait for that answer too, but for a cancel.` (`options` ile: `… with your options and answers when they can, with one of them or in their own words, …`). Öteki her tür yalnızca bilgilendirir: günlükte ve konuşmada bir satır (`noted; the person sees it in the journal. Nothing wakes them: a question goes as type ask.`); bir işçinin size `done`'ı değişikliğini her done gibi gösterir. Size mesajlar numara ve `re` almaz, hiçbir sınıra girmez ve para etmez. Bkz. [onaylar ve sorular](../concepts/approvals-and-questions.md).
 
 ### Kartlar ve veriyolu
 
@@ -117,6 +119,7 @@ imece'nin MCP sunucusunun adı `imece`'dir; araçları bir oturuma `mcp__imece__
 | `body` | dize, en çok 4000 | evet | `assign` için: ilk satır kartın başlığı olur (ekran ilk 20 karakterini işçinin yanında gösterir, bu yüzden her görevin paylaştığı bir fiille değil, onu öteki kartlardan ayıranla başlamalı); sonra görev, dokunduğu dosyalar ve ne zaman bittiği |
 | `re` | tam sayı ≥ 1 | hayır | yanıtladığı mesajın numarası |
 | `paths` | en çok 20 dizelik dizi, her biri en çok 200 | hayır | `assign` için: kartın sahip olduğu yollar, depoya göre, git pathspec'i olarak (bir dosya, bir dizin ya da `*`'lı bir desen); `shared` sözcüğüyle biten adlandırılır, sahiplenilmez. Başka her türde reddedilir |
+| `options` | en çok 4 dizelik dizi, her biri en çok 60 | hayır | `you`'ya bir `ask` için: kişinin tek tuşla seçebileceği yanıtlar, kısa, ajanın kendi seçeceği önce; kişi yine sözcüklerle yanıtlayabilir. Başka her mesajda reddedilir |
 
 Yollu bir `assign` onlarla teslim edilir: posta `This card owns src/parser.rs, docs (shared): stay in them; what else needs changing goes in your done, or ask for the card to be widened.` ile biter.
 

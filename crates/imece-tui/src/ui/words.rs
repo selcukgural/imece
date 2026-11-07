@@ -626,7 +626,9 @@ pub fn said(e: &Event) -> Option<Said<'_>> {
         Event::Talk { from, to, text } => s(Agent(*from), Agent(*to), None, text),
         Event::YouSaid { to, text } => s(Person, Agent(*to), None, text),
         Event::Replied { agent, text } => s(Agent(*agent), Person, None, text),
-        Event::ToYou { from, kind, text } => s(Agent(*from), Person, Some(*kind), text),
+        Event::ToYou {
+            from, kind, text, ..
+        } => s(Agent(*from), Person, Some(*kind), text),
         Event::Sent {
             from,
             to,
@@ -1592,6 +1594,7 @@ mod tests {
             from: 1,
             kind: MsgKind::Ask,
             text: "Which?\nmore".into(),
+            options: Vec::new(),
         };
         assert_eq!(
             said(&e),

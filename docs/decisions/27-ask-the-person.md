@@ -28,3 +28,23 @@ While a question is open the agent's mail and board offers wait (record 107).
 Known gaps: no answer from the screen but a message (there is no
 "answered without words"); a question of an agent that is gone or
 stopped stays open until the person writes to it.
+
+Options (2026-11-07, record 125's question screen): `send` to `you` with
+type `ask` takes `options` (`bus::options_of`: an array of at most
+`OPTIONS_MAX` 4 strings, each trimmed, not empty, at most `OPTION_MAX`
+60 characters, no control character; refused on any other message:
+`options go with an ask to the person`), kept on `Event::ToYou.options`
+(serde default, so an older journal reads back without them; no schema
+change) and read by `World::question_of` (the newest ask of the agent in
+the journal, with its text whole; the item's first line alone once the
+journal no longer holds it). On Home a question's row lists the answers
+under it with their keys (`ui::home::Tail::Asked`, keys `1-3 pick · a
+answer`), the preview reads it whole with the answers and what the agent
+did so far; `1`-`9` on Home (`App::option_at_hand`/`answer_option`) send
+the answer as the person's message through `tell`, which closes the
+question as any message does, and `/` on the row opens the composer to
+the agent (`question_at_hand`); off Home, or with no answers to pick,
+the digits are the views'. The tool's description tells agents to offer
+answers; the demo offers them on two of its four questions
+(`Content.ask_options`). The gap "no answer from the screen but a
+message" is closed for a question that offers answers.
