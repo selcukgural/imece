@@ -513,8 +513,6 @@ impl App {
             KeyCode::Char('U') => self.grace_now(),
             KeyCode::Char('\'') => self.next_mark(),
             KeyCode::Char('O') => self.quote_output(),
-            KeyCode::Up | KeyCode::Char('k') => self.move_selection(false),
-            KeyCode::Down | KeyCode::Char('j') => self.move_selection(true),
             KeyCode::Enter => self.deeper(),
             KeyCode::Esc if self.on_card() => self.leave_card(),
             KeyCode::Esc => {
@@ -604,6 +602,38 @@ mod tests {
         assert_eq!(app.flash.take().unwrap().0, "Türkçe");
         app.on_key(key(KeyCode::Char('L')));
         assert_eq!(app.lang, Lang::En);
+    }
+
+    #[test]
+    fn big_k_peeks_from_home_and_a_trace_s_z_m_z_r_fold_no_project() {
+        let mut app = with_cards(1);
+        app.on_key(key(KeyCode::Char('K')));
+        assert!(app.peek.is_some());
+        assert_eq!(app.peek, app.agent_at_hand());
+        app.on_key(key(KeyCode::Esc));
+        assert!(app.peek.is_none());
+        // `zM` `zR` are Home's (and a focus's own): a raw stream over
+        // Home folds nothing.
+        let id = app.world.projects[0].leader + 1;
+        app.zoom = Zoom::Trace(id);
+        assert!(app.collapsed.iter().all(|&c| !c));
+        app.on_key(key(KeyCode::Char('z')));
+        app.on_key(key(KeyCode::Char('M')));
+        assert!(
+            app.collapsed.iter().all(|&c| !c),
+            "a trace's zM folds no project"
+        );
+        app.collapsed.iter_mut().for_each(|c| *c = true);
+        app.on_key(key(KeyCode::Char('z')));
+        app.on_key(key(KeyCode::Char('R')));
+        assert!(
+            app.collapsed.iter().all(|&c| c),
+            "nor does its zR unfold one"
+        );
+        app.zoom = Zoom::None;
+        app.on_key(key(KeyCode::Char('z')));
+        app.on_key(key(KeyCode::Char('R')));
+        assert!(app.collapsed.iter().all(|&c| !c), "on Home it does");
     }
 
     /// `line` written in the view and sent, its menu put away first.
