@@ -2,6 +2,12 @@
 
 use super::*;
 
+/// An item's place in `W`'s order (record 125): its group on Home
+/// (permissions, questions, changes, then what was put off), whether a
+/// change is not easy (proved clean and inside its card's paths come
+/// first), then its age (or its place among those put off).
+pub(super) type Rank = (u8, bool, usize);
+
 impl App {
     /// The agents the person has open: zoomed in on, or a party of the
     /// open conversation.
@@ -143,10 +149,19 @@ impl App {
     /// Where open inbox item `i` comes in `W`'s order: the items not put
     /// off first, oldest first, then the ones put off, in the order they
     /// were.
-    pub(super) fn waiting_rank(&self, i: usize) -> (usize, usize) {
+    pub(super) fn waiting_rank(&self, i: usize) -> Rank {
+        let w = &self.world;
+        let item = &w.inbox[i];
+        let group = self.home_group(i) as u8;
         match self.deferred.iter().position(|&d| d == i) {
-            None => (0, i),
-            Some(n) => (1, n),
+            None => {
+                let hard = item.kind == InboxKind::Change
+                    && !w
+                        .change_of(item.agent)
+                        .is_some_and(|c| c.easy(item.card.and_then(|c| w.cards.get(c))));
+                (group, hard, i)
+            }
+            Some(n) => (group, false, n),
         }
     }
 
@@ -164,11 +179,16 @@ impl App {
     }
 
     /// The first open item whose place in `W`'s order comes after
-    /// `after`, or the first one when none does (or `after` is none).
-    fn waiting_after(&self, after: Option<(usize, usize)>) -> Option<usize> {
+    /// `after`, or the first one when none does (or `after` is none);
+    /// never `skip` (the one just put off: it comes round again, after
+    /// its group's rest) unless it is the only one.
+    fn waiting_after(&self, after: Option<Rank>, skip: Option<usize>) -> Option<usize> {
         let open = self.world.open_inbox();
-        let first =
-            |items: &mut dyn Iterator<Item = usize>| items.min_by_key(|&i| self.waiting_rank(i));
+        let first = |items: &mut dyn Iterator<Item = usize>| {
+            items
+                .filter(|&i| Some(i) != skip)
+                .min_by_key(|&i| self.waiting_rank(i))
+        };
         first(
             &mut open
                 .iter()
@@ -176,6 +196,7 @@ impl App {
                 .filter(|&i| after.is_none_or(|a| self.waiting_rank(i) > a)),
         )
         .or_else(|| first(&mut open.iter().copied()))
+        .or_else(|| open.iter().copied().find(|&i| Some(i) == skip))
     }
 
     /// `W`: from wherever the person is, the next item waiting for them,
@@ -188,11 +209,13 @@ impl App {
         // comes next.
         let after = at.map(|i| self.waiting_rank(i));
         let open = |i: usize| self.world.inbox.get(i).is_some_and(|x| x.open);
+        let mut skip = None;
         if defer && let Some(i) = at.filter(|&i| open(i)) {
             self.deferred.retain(|&d| d != i && open(d));
             self.deferred.push(i);
+            skip = Some(i);
         }
-        let Some(i) = self.waiting_after(after) else {
+        let Some(i) = self.waiting_after(after, skip) else {
             self.flash(self.lang.text().nothing_needed);
             return;
         };
@@ -1181,5 +1204,131 @@ mod tests {
                 "{rung:?}"
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod rank_tests {
+    use super::*;
+
+    fn item(kind: InboxKind, agent: AgentId, card: Option<CardId>) -> InboxItem {
+        InboxItem {
+            kind,
+            agent,
+            detail: "x".into(),
+            researcher: None,
+            open: true,
+            tick: 0,
+            card,
+        }
+    }
+
+    fn change(agent: AgentId, ok: bool, path: &str) -> Change {
+        Change {
+            agent,
+            title: "t".into(),
+            files: vec![ChangedFile {
+                path: path.into(),
+                added: 1,
+                removed: 0,
+                binary: false,
+            }],
+            patch: String::new(),
+            runs: vec![crate::model::Ran {
+                line: "cargo test".into(),
+                code: Some(if ok { 0 } else { 1 }),
+                timed_out: false,
+            }],
+            check: Check::None,
+            spend: None,
+        }
+    }
+
+    #[test]
+    fn the_rank_is_group_then_put_off_then_hard_then_age() {
+        let mut app = App::new(1, 4, 0, 1, Lang::En);
+        app.world.inbox.clear();
+        app.world.inbox.push(item(InboxKind::Change, 1, None));
+        app.world.inbox.push(item(InboxKind::Question, 2, None));
+        app.world.inbox.push(item(InboxKind::Approval, 3, None));
+        app.world.inbox.push(item(InboxKind::Approval, 4, None));
+        assert_eq!(app.waiting_rank(2), (0, false, 2));
+        assert_eq!(app.waiting_rank(3), (0, false, 3));
+        assert_eq!(app.waiting_rank(1), (1, false, 1));
+        // A change without a proof is hard; one proved clean and inside
+        // its card's paths is not.
+        assert_eq!(app.waiting_rank(0), (2, true, 0));
+        app.world.changes.push(change(1, true, "src/a.rs"));
+        assert_eq!(app.waiting_rank(0), (2, false, 0));
+        app.world.changes[0].runs[0].code = Some(1);
+        assert_eq!(app.waiting_rank(0), (2, true, 0));
+        app.world.changes[0].runs[0].code = Some(0);
+        app.world.cards[0].paths = crate::paths::parse(&serde_json::json!(["docs/"])).unwrap();
+        app.world.inbox[0].card = Some(0);
+        assert_eq!(app.waiting_rank(0), (2, true, 0), "outside its card");
+        app.world.cards[0].paths = crate::paths::parse(&serde_json::json!(["src/"])).unwrap();
+        assert_eq!(app.waiting_rank(0), (2, false, 0));
+        // Put off: after everything, in the order put off.
+        app.deferred = vec![3, 2];
+        assert_eq!(app.waiting_rank(3), (3, false, 0));
+        assert_eq!(app.waiting_rank(2), (3, false, 1));
+        assert!(app.waiting_rank(3) < app.waiting_rank(2));
+        assert!(
+            app.waiting_rank(0) < app.waiting_rank(3),
+            "after the changes"
+        );
+    }
+
+    #[test]
+    fn w_takes_a_permission_before_an_older_question_and_an_easy_change_before_a_hard_one() {
+        let mut app = App::new(1, 4, 0, 1, Lang::En);
+        app.world.inbox.clear();
+        app.world.inbox.push(item(InboxKind::Question, 1, None));
+        app.world.inbox.push(item(InboxKind::Change, 2, None));
+        app.world.inbox.push(item(InboxKind::Change, 3, None));
+        app.world.inbox.push(item(InboxKind::Approval, 4, None));
+        app.world.changes.push(change(3, true, "src/a.rs"));
+        app.next_waiting(false);
+        assert_eq!(app.waiting_at, Some(3), "the permission first");
+        app.next_waiting(false);
+        assert_eq!(app.waiting_at, Some(0), "then the question");
+        app.next_waiting(false);
+        assert_eq!(app.waiting_at, Some(2), "then the easy change");
+        app.next_waiting(false);
+        assert_eq!(app.waiting_at, Some(1));
+        app.next_waiting(false);
+        assert_eq!(app.waiting_at, Some(3), "round");
+        // Put off, a permission is not the next item: the other
+        // permission is, then the question; the put-off ones come last.
+        app.world.inbox.push(item(InboxKind::Approval, 1, None));
+        app.next_waiting(true);
+        assert_eq!(app.deferred, [3]);
+        assert_eq!(app.waiting_at, Some(4), "the other permission");
+        app.next_waiting(true);
+        assert_eq!(app.deferred, [3, 4]);
+        assert_eq!(app.waiting_at, Some(0), "the question, not a put-off one");
+        for _ in 0..3 {
+            app.next_waiting(false);
+        }
+        assert_eq!(app.waiting_at, Some(3), "the first put off, after the rest");
+        app.next_waiting(false);
+        assert_eq!(app.waiting_at, Some(4));
+    }
+
+    #[test]
+    fn the_last_item_put_off_goes_round_to_the_first_not_to_itself() {
+        let mut app = App::new(1, 2, 0, 1, Lang::En);
+        app.world.inbox.clear();
+        app.world.inbox.push(item(InboxKind::Approval, 1, None));
+        app.world.inbox.push(item(InboxKind::Question, 2, None));
+        app.waiting_at = Some(1);
+        app.next_waiting(true);
+        assert_eq!(app.deferred, [1]);
+        assert_eq!(app.waiting_at, Some(0), "round to the first");
+        // Alone, it comes round to itself.
+        app.world.inbox[0].open = false;
+        app.waiting_at = Some(1);
+        app.next_waiting(true);
+        assert_eq!(app.waiting_at, Some(1));
     }
 }

@@ -5,10 +5,10 @@ description: imece'nin varsayılan ekranı - başlık satırı, projeye göre gr
 
 # Ekip
 
-Ekip ekranı `1` ya da `:salon` ile açılır; imece [ana ekranda](home.md) açılır. Bütün takımı bir bakışta gösterir: üstte bütçe ve filoyu sayan başlık satırı, solda lonca ağacı (her proje, lideri, işçileri ve yardımcıları), sağda iki yan panel: KARAR BEKLEYEN ve [HİKÂYE](journal.md#hikâye) (ne olduğu, karta göre; `J` günlüğü satır satır gösterir). Pano ve kod haritası bir tuş uzakta (`2`, `3`); geri kalan her şey ekibin üstünde açılır ve `esc` ekibi geri getirir.
+Ekip ekranı `1` ya da `:salon` ile açılır; imece [ana ekranda](home.md) açılır. Bütün takımı bir bakışta gösterir: üstte projeleri ve keseyi söyleyen başlık satırı, solda lonca ağacı (her proje, lideri, işçileri ve yardımcıları), sağda iki yan panel: KARAR BEKLEYEN ve [HİKÂYE](journal.md#hikâye) (ne olduğu, karta göre; `J` günlüğü satır satır gösterir). Pano ve kod haritası bir tuş uzakta (`2`, `3`); geri kalan her şey ekibin üstünde açılır ve `esc` ekibi geri getirir.
 
 ```text
- imece   ! 2 karar bekliyor  │ ● 2 çalışıyor  ✓ 1 bitti │ $3.10 / $20.00 harcandı  14:02
+ imece  shop-api │  ! 2 karar bekliyor  │ $3.10 / $20.00  14:02
 ┌ EKİP ───────────────────────────────────────────┐┌ KARAR BEKLEYEN (2) ────────────────────┐
 │▾ ▴ shop-api  ▓▓▓░░░░░ 3/8  ! 2 bekliyor  2 çalışıyor││Δ 13:58 claude-1 bitirdi: parser (3 dosya, +41 −6) · ✓ bu ağaçta temiz geçti: cargo test
 │  ● ▎lead      koordine ediyor                   ││⚑ 14:01 claude-5 çalıştırmak istiyor: Bash: npm install left-pad
@@ -27,13 +27,13 @@ Ekip ekranı `1` ya da `:salon` ile açılır; imece [ana ekranda](home.md) aç�
 
 ## Başlık satırı
 
-Tek satır, dört şey, parçalar `│` ile ayrılmış, en çok istenen önce: sizi bekleyenler, filo, kese, saat; bir kullanım penceresi yalnız dolmak üzereyken aralarına girer. Ekran satırdan darsa önce en az istenen parça düşer; böylece ekranın kenarı sizi bekleyeni asla kesmez: saat, sonra filo. Sizi bekleyenler, kese, duraklatma ve dolmak üzere olan bir pencere her zaman kalır.
+Tek satır, dört şey, parçalar `│` ile ayrılmış: projeler, sizi bekleyenler, kese, saat; bir kullanım penceresi yalnız dolmak üzereyken aralarına girer. Ekran satırdan darsa önce en az istenen parça düşer; böylece ekranın kenarı sizi bekleyeni asla kesmez: saat, sonra projeler. Sizi bekleyenler, kese, duraklatma ve dolmak üzere olan bir pencere her zaman kalır.
 
 | Parça | Ne söyler |
 | --- | --- |
+| `shop-api · mobile-app` | açık projeler. [Ana ekranda](home.md) listenin daraltıldığı proje aydınlıktır. |
 | `! 2 karar bekliyor` | KARAR BEKLEYEN'deki açık ögeler, dikkat renginde. Terminalin başlığı aynı sayıyı taşır, `! imece · 2 karar bekliyor`, böylece arkadaki bir sekme de gösterir; başında açık projelerin durum merdiveninin tepesi vardır: `■` takılan var, `!` sizi bekleyen var, `●` çalışan ya da başlayan var, her şey sakinse imece'nin işareti `⁙` (bitmiş ama görülmemiş bir tur sakindir). Windows Terminal, kitty 0.39+, Ghostty 1.2+ ve iTerm2 3.6.6+ bunu sekmenin ilerleme çubuğu olarak da gösterir (OSC 9;4): takılınca dolu kırmızı, beklerken dolu sarı, çalışırken hareketli, sakinken yok. imece başlarken terminale adını sorar (XTVERSION) ve `TERM_PROGRAM`'a değil onun cevabına bakar, çünkü başka bir terminalden açılan terminal onu miras alır; bazı terminaller bu diziyi bildirim sandığı için başkalarına gönderilmez. tmux içinde gönderilir: tmux 3.8 onu Ghostty ve iTerm2'ye iletir, daha eski bir tmux düşürür. `IMECE_PROGRESS=on` ya da `off` ile kendiniz karar verirsiniz. imece bitince ya da terminali bir `!` komutuna bırakınca kabuğunuzun başlığı geri gelir, çubuk kalkar. |
-| `● 2 çalışıyor  ✓ 1 bitti  ■ 1 takıldı` | filo: tur ortasındaki (token harcayan) agent'lar, bir turu bitirmiş ama o zamandan beri açmadığınız agent'lar, bloke olan ya da oturumu duran agent'lar. Sıfır olan sayı yazılmaz; hiçbiri yoksa `hepsi boşta` der. Sizi bekleyenler filoda değildir: kendi sayısı vardır. |
-| `$3.10 / $20.00 harcandı` | kese (bütçe): bütün agent'ların birlikte harcadığı. O anki hızla yarım saatten az kaldığında parça dikkat rengine döner ve ne kadar kaldığını söyler, `$19.60 / $20.00 harcandı, ~25 dk kaldı`; günlük bunu bir kez söyler. Hız ve kalan süre başka her zaman `:budget` menüsünün notundadır. |
+| `$3.10 / $20.00` | kese (bütçe): bütün agent'ların birlikte harcadığı. O anki hızla yarım saatten az kaldığında parça dikkat rengine döner ve ne kadar kaldığını söyler, `$19.60 / $20.00, ~25 dk kaldı`; günlük bunu bir kez söyler. Hız ve kalan süre başka her zaman `:budget` menüsünün notundadır. |
 | `claude 5 sa: %10 kaldı, 1 sa 59 dk sonra yenilenir` | planınızın dolmaya en yakın kullanım penceresi, yalnız %90 kullanımdan itibaren, dikkat renginde: bir aboneliğin sınırı takımı keseden önce durdurabilir. Onun altında `:budget` notundadır. Çalıştırmalar arasında saklanmaz: oturum ilk turunda yeniden söyler. |
 | `14:02` | saat; demonun `‖ DURAKLATILDI`sı ya da `×4`ü ona yapışık. |
 
@@ -120,7 +120,7 @@ Her agent tek bir basamakta durur, en yüksekten: takıldı (bloke ya da oturumu
 | `✱` | `m` ile işaretlediğiniz satır; `'` sonrakine gider |
 | `▁▃▅` | son zamanda yaptıkları: son beş tikin her birinde izine düşen satırlar, sütun başı 5 sn |
 
-Başlıktaki filo aynı şekilleri kullanır, böylece mono temada da okunur.
+Ana ekranın ÇALIŞAN satırları aynı şekilleri kullanır, böylece mono temada da okunur.
 
 ## Hareket ve katlama
 

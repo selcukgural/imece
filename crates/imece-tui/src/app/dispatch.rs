@@ -416,6 +416,9 @@ impl App {
         if self.home_keys() && self.home_key(k) {
             return;
         }
+        // A decision on Home's row: once it acted, the row in its place
+        // comes to hand (a yes moves down).
+        let decides = self.home_keys() && matches!(k.code, KeyCode::Char('a' | 'r' | 'e' | 'A'));
 
         match k.code {
             // `q` asks; `qq` quits (ctrl-c still quits at once).
@@ -560,6 +563,9 @@ impl App {
             KeyCode::Char('r') if self.pane == Pane::Inbox => self.answer(false),
             _ => {}
         }
+        if decides {
+            self.home_decided();
+        }
     }
 
     /// The second key of a chord that began with `first`.
@@ -572,6 +578,8 @@ impl App {
             ('q', KeyCode::Char('q')) => self.quit = true,
             ('q', KeyCode::Char('s')) => self.leaving = self.in_flight(),
             ('g', KeyCode::Char('g')) if self.home_keys() => self.home_go(0),
+            ('g', KeyCode::Char('d')) if self.home_keys() => self.home_go_heading(Heading::Decide),
+            ('g', KeyCode::Char('w')) if self.home_keys() => self.home_go_heading(Heading::Work),
             ('g', KeyCode::Char('g')) => self.jump(true),
             ('z', KeyCode::Char('a')) if self.thread.is_some() => self.toggle_fold(),
             ('z', KeyCode::Char('a')) if self.diff_zoom().is_some() => {

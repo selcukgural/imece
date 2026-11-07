@@ -1,63 +1,66 @@
 ---
 title: Ana ekran
-description: Görünüm 5 - projeler arası sıra sizde olanlar, takılanlar ve çalışanlar tek listede, eldeki satır hemen yanında okunur.
+description: Görünüm 5 - karar listesi - karar bekleyenler, karar vermenin maliyetine göre gruplu, sonra çalışanlar; her satır isteğin tamamını ve karar tuşlarını söyler.
 ---
 
 # Ana ekran
 
-Ana ekran, imece'nin açıldığı ve karar verdiğiniz ekrandır; `5` ya da `:home` geri getirir. Ekip takımı gösterir; ana ekran sıranın sizde olduğu şeyleri. Açık projelerin hepsi için tek liste ve yanında eldeki satır, tuşa basmadan okunur.
+Ana ekran, imece'nin açıldığı ve karar verdiğiniz ekrandır; `5` ya da `:home` geri getirir. Açık projelerin hepsi için tek liste: önce karar bekleyenler, karar vermenin size maliyetine göre gruplu, sonra çalışanlar. Her satır isteğin tamamını söyler, eldeki satırı karara bağlayan tuşlar satırın sonunda durur ve bir evet imleci aşağı indirir. 120 kolondan itibaren eldeki satır listenin yanında okunur.
 
 ```text
- hepsi   shop-api !2 ●1   mobile-app !3 ■1 ●2                              / lead-shop-api için yazar
- lonca mobile-app 9d3f1c2 · 3 bekliyor
- KARAR BEKLEYEN 5                                       │#19 Paging in product search  shop-api · claude-1 · $0.90
-▸ Δ shop-api    #19  Paging in product… +41 −6 ✓ 38 dk│
-  ? shop-api    #31  Refund rules             soru 12 dk│neden    Paging in product search
-  ⚑ mobile-app  #52  Notification sett…      izin? 4 dk│kanıt    ✓ bu ağaçta temiz geçti: dotnet test
-  Δ mobile-app  #21  Currency support   +6 −3 ✗ 41 dk│maliyet  $0.90 · 11 dk · 2 tur
-                                                     │
- TAKILAN 1                                           │dosyalar src/Catalog/ProductQuery.cs    +19 −6
-  ■ mobile-app  #14  Price list cache    durdu 52 dk│         tests/PagingTests.cs           +18 −0
-                                                     │
- ÇALIŞAN 3                                           │@@ -11,3 +11,4 @@
-  ● shop-api    #33  Order validation  Write the tests 2 dk│-    var rows = db.Skip(q.Offset);
+ imece  shop-api │  ! 5 karar bekliyor  │ $0.49 / $200.00  14:20
+ KARAR BEKLEYEN 1 izin · 1 soru · 3 değişiklik
+ izinler                                                                            her biri tek tuş
+▸! #2   Money rounding rules      .imece/check değişikliklerinde çalışsın mı?        a  evet   r  hayır
+                                  set -e; cd "$IMECE_WORKTREE"; npm run build; npm test -- --silent
+ sorular
+ ! #6   Shipping zones            Half-up rounding for Money, or banker's rounding?
+ değişiklikler                                                                       2 onaya hazır
+ ! #4   Order validation rules    1 dosya +2 −1 · ✓ dotnet build, dotnet test
+ ! #5   Order tests               1 dosya +2 −1 · ✓ dotnet build, dotnet test
+ ! #6   Shipping zones            4 dosya +8 −4 · ✓ dotnet build, dotnet test · 1 tanesi #6 dışında
+
+ ÇALIŞAN 2
+ ● #8   Notification settings     Write it up for the leader · 5 dk
+ ● #7   Bulk e-mail queue         run dotnet test · 12 dk
+ ana ekran · shop-api · #2 Money rounding rules    enter  aç   a  evet   r  hayır   ?  yardım
 ```
 
-İlk satır açık projelerin her birini tuttuklarıyla adlandırır: `!` sizi bekliyor, `■` takılı, `●` çalışıyor. Daraltılmış proje aydınlıktır, satırın sonu `/` ile kime yazılacağını söyler. İkinci satır, Lonca'daki projelerin nasıl durduğunu söyler.
+[Başlık satırı](salon.md#başlık-satırı) açık projeleri adlandırır; listenin daraltıldığı proje (`[` `]`) aydınlıktır. Lonca'daki bir projenin, nasıl durduğunu söyleyen kendi satırı listenin üstündedir.
 
 ## Liste
 
 | Grup | İçindekiler |
 | --- | --- |
-| KARAR BEKLEYEN | KARAR BEKLEYEN'deki her şey, `W`'nin sırasıyla |
-| TAKILAN | bloke olmuş ya da durmuş ajanlar |
-| ÇALIŞAN | tur ortasındaki ya da bir takım arkadaşına soran ajanlar. Değişikliği bekleyen ve başka işe geçmiş bir işçi burada da görünür: iki ayrı iş. Sizden evet ya da yanıt bekleyen ajan ise o ögenin kendisidir |
-| SESSİZ | geri kalanlar, işi olmayan liderler hariç |
+| KARAR BEKLEYEN | her türü sayar: `1 izin · 2 soru · 3 değişiklik · 1 ertelenen` |
+| izinler | her biri tek tuş: bir ajanın çalıştırmak istediği komut, worktree kurulum betiği, deponun kontrolü. Satır neyin çalışacağını söyler: `.imece/check değişikliklerinde çalışsın mı?` ve ardından betiğin komutları (yorum olmayan satırları; `enter` her baytını gösterir) |
+| sorular | okuyup yanıtlanacaklar: bir ajanın sorusu bütün olarak, bir araştırmacının raporu, okunacak bir yanıt, bir API hatası, liderin planı |
+| değişiklikler | okunacak bir diff: `2 dosya +4 −2 · ✓ dotnet build, dotnet test · 1 tanesi #51 dışında` — dosyalar ve satırlar, ağacında kanıtlanan (çalıştıysa deponun kontrolü, yoksa imece'nin çalıştırmaları, o da yoksa `hiçbir şey koşmadı`), kartının sahip olduğu yolların dışındaki dosyalar. Temiz kanıtlanmış ve yollarının içinde kalanlar önce gelir; grubun satırı onları sayar, `2 onaya hazır` |
+| sonraya | `s` ile ertelediğiniz ögeler, ertelenme sırasıyla |
+| ÇALIŞAN | `ÇALIŞAN 12 · takılan 2 · boşta 1`: önce takılan ajanlar (`■`, bloke ya da oturumu bitmiş), sonra tur ortasındakiler ya da bir takım arkadaşına soranlar (`●`, bulundukları adım ya da yaptıkları, sonra bir dakikadan itibaren ne zamandır), sonra boştakiler (`○`). Değişikliği bekleyen ve başka işe geçmiş bir işçi burada da görünür: iki ayrı iş. Sizden evet ya da yanıt bekleyen ajan ise o ögenin kendisidir; işi olmayan bir lider listelenmez |
 
-Satırda önce iş gelir: işareti, projesi (birden çok proje açıksa), kartı ve başlığı, sonra ne olduğu ve bir dakikadan sonra ne zamandır durduğu. Değişiklik satırları ve çalıştırmaların sonucuyla biter; soru `soru` der; ajan bulunduğu adımı söyler. Ajanın adı önizlemededir.
+Satır işin kendisidir: `!` (ya da ajanın işareti), birden çok proje açıkken ve liste daraltılmamışken projesi, kartı ve başlığı, sonra istek ya da durum. Bir istek kendi sütununun altına bütün olarak sarılır; kısa bir satırda değişikliğin parçaları alt alta geçer; ajanın durumu kesilir. Ajanın adı önizlemededir. `W`'nin sırası bu listenin sırasıdır: izinler, sorular, değişiklikler, ertelenenler.
 
 ## Önizleme
 
-Eldeki satır, tamamıyla: bir sorunun ya da isteğin sözleri; bir değişikliğin başlığı, kanıtı, maliyeti, geçidi, dosyaları ve git'in kendi satırları olmadan yamasının başı; bir ajanın durumu, yapılacakları ve en yeni iz satırları.
-
-100 kolondan itibaren listenin yanında durur. Daha dar ekranda, editörün yanında, liste tüm genişliği alır ve eldeki satır kendi altında açılır.
+120 kolondan itibaren eldeki satır tuşa basmadan listenin yanında okunur: bir sorunun ya da isteğin sözleri; bir betiğin satırları, numaralı; bir değişikliğin başlığı, kanıtı, maliyeti, geçidi, dosyaları ve git'in kendi satırları olmadan yamasının başı; bir ajanın durumu, yapılacakları ve en yeni iz satırları. 120 kolonun altında, editörün yanında, liste tüm genişliği alır ve satırlar her şeyi söyler.
 
 ## Tuşlar
 
 | Tuş | Ne yapar |
 | --- | --- |
 | `j` `k` / `↑` `↓`, `gg` `G` | gezer; önizleme izler |
+| `gd` `gw` | karar bekleyen ilk satır · çalışan ilk satır |
 | `[` `]` | tüm projeler, sonra her biri, dönerek |
-| `enter` | açar: değişikliğin diff'i, sorunun konuşması, ajanın odağı. `esc` buraya döner |
-| `a` `r` | evet ve hayır, [KARAR BEKLEYEN](waiting.md)'deki gibi. Soruda `a` yanıt yazar |
+| `enter` | açar: değişikliğin diff'i, sorunun konuşması, betiğin baytları, ajanın odağı. `esc` buraya döner |
+| `a` `r` | evet ve hayır, [KARAR BEKLEYEN](waiting.md)'deki gibi; değişiklikte onayla ve geri gönder; soruda `a` yanıt yazar. Eldeki satır bunları sonunda söyler |
 | `e` `A` | bir istekte: bu tur evet · bundan sonra evet |
-| `s` | sonra: öge diğerlerinin arkasına gider, listede kalırsınız |
-| `/` | eldeki projenin liderine yazar; ilk satır kim olduğunu söyler |
+| `s` | sonra: öge KARAR BEKLEYEN'in sonundaki `sonraya` grubuna gider, listede kalırsınız |
 | `@` | eldeki ajana yazar |
-| `W` | sıradaki ögeyi açar |
+| `W` | sıradaki ögeyi açar, listenin sırasıyla |
 
 Diğer tuşlar her yerdeki gibi çalışır; durum satırının tuşları eldeki satırınkilerdir.
 
-Karar asla okumadığınız şeye düşmez: `a` ya da `r`'ye bastığınızda eldeki satır gitmişse tuş hiçbir şey yapmaz, bir satır bunu söyler ve yerine gelen satır elinize geçer.
+Evet aşağı indirir: `a`, `r`, `e` ya da `A` işini yapınca o yere gelen satır elinize geçer, sıradaki tuş onu karara bağlar. Karar asla okumadığınız şeye düşmez: tuşa basmadan önce eldeki satır kendiliğinden gitmişse tuş hiçbir şey yapmaz, bir satır bunu söyler ve yerine gelen satır elinize geçer.
 
 Ekip (bir başlangıcın notlarının düştüğü günlükle), pano, kod haritası ve zaman şeridi yerinde, bir tuş uzakta. Tuş dosyasının `[ekip]` bölümü ana ekranda da geçerlidir.

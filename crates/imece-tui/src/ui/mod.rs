@@ -1529,37 +1529,21 @@ pub(crate) fn doing_spans(lang: Lang, a: &Agent, used: usize, room: usize) -> Ve
     )]
 }
 
-/// The fleet at a glance: how many agents are mid-turn, done and not
-/// seen, stuck (blocked, or their session stopped); counts of none are
-/// left out, and with none at all it says all are idle.
-pub(crate) fn fleet(app: &App) -> Vec<Span<'static>> {
-    let w = &app.world;
-    let t = app.lang.text();
-    let here = || w.agents.iter().filter(|a| !a.gone);
-    let counts = [
-        (t.fleet_working, w.mid_turn().len(), pal().ok),
-        (
-            t.fleet_done,
-            here().filter(|a| app.done_unseen(a.id)).count(),
-            pal().ok,
-        ),
-        (
-            t.fleet_stuck,
-            here()
-                .filter(|a| matches!(a.status, Status::Blocked | Status::Stopped))
-                .count(),
-            pal().bad,
-        ),
-    ];
+/// The projects open, the one Home is narrowed to lit: one of the
+/// header's four things (record 125).
+pub(crate) fn projects_spans(app: &App) -> Vec<Span<'static>> {
     let mut spans = Vec::new();
-    for (words, n, colour) in counts.into_iter().filter(|c| c.1 > 0) {
+    for p in app.world.open_projects() {
         if !spans.is_empty() {
-            spans.push(Span::raw("  "));
+            spans.push(Span::styled(" · ", dim()));
         }
-        spans.push(Span::styled(fill(words, &[&n.to_string()]), fg(colour)));
-    }
-    if spans.is_empty() {
-        spans.push(Span::styled(t.fleet_idle, dim()));
+        let lit = app.view == View::Home && app.at_home.scope == Some(p.id);
+        let style = if lit {
+            Style::new().add_modifier(Modifier::REVERSED)
+        } else {
+            Style::new()
+        };
+        spans.push(Span::styled(clean(&p.name), style));
     }
     spans
 }
@@ -1616,6 +1600,14 @@ pub(crate) fn header_parts(app: &App) -> Vec<HeadPart> {
         keep,
     };
     let mut parts = Vec::new();
+    let mut project_spans = Vec::new();
+    if let Some(spin) = app.head_spin() {
+        project_spans.push(Span::styled(format!("{spin} "), fg(pal().ok)));
+    }
+    project_spans.extend(projects_spans(app));
+    if !project_spans.is_empty() {
+        parts.push(part(project_spans, 8));
+    }
     let open = w.open_inbox().len();
     if open > 0 {
         parts.push(part(
@@ -1626,12 +1618,6 @@ pub(crate) fn header_parts(app: &App) -> Vec<HeadPart> {
             KEEP,
         ));
     }
-    let mut fleet_spans = Vec::new();
-    if let Some(spin) = app.head_spin() {
-        fleet_spans.push(Span::styled(format!("{spin} "), fg(pal().ok)));
-    }
-    fleet_spans.extend(fleet(app));
-    parts.push(part(fleet_spans, 8));
     let spent = fill(t.budget, &[&dollars(w.spent()), &dollars(w.budget)]);
     match w.pot_lasts().filter(|_| w.pot_low()) {
         Some(minutes) => parts.push(part(
@@ -2107,7 +2093,7 @@ fn footer(f: &mut Frame, area: Rect, app: &App) -> Option<Position> {
 
 /// The keys of Home: what the row at hand comes to first, a row's own
 /// keys never out of sight.
-fn home_hints(app: &App) -> Vec<(&'static str, &'static str)> {
+pub(crate) fn home_hints(app: &App) -> Vec<(&'static str, &'static str)> {
     let t = app.lang.text();
     let w = &app.world;
     let kind = match app.home_at() {
@@ -2163,6 +2149,10 @@ fn which_key(app: &App) -> Option<Line<'static>> {
         .iter()
         .map(|(k, w)| (k.to_string(), w.to_string()))
         .collect();
+    // `gd` `gw` act on Home's list alone: said there alone.
+    if app.pending == Some('g') && app.home_keys() {
+        keys.extend((t.chord_home.iter()).map(|(k, w)| (k.to_string(), w.to_string())));
+    }
     for (from, to) in app.keys.given() {
         let from = from.keys();
         if from.len() == 2 && from[0] == first {
@@ -2211,23 +2201,28 @@ fn place_spans(app: &App) -> Vec<Span<'static>> {
     }
     // On Home's list the row at hand; anywhere else (a screen over Home
     // too) the agent at hand.
-    let about = if app.view == View::Home && app.zoom == Zoom::None {
+    // An item's row is about the card it came on, not the one its agent
+    // has since taken.
+    let (about, card) = if app.view == View::Home && app.zoom == Zoom::None {
         match app.home_at() {
-            Some(crate::app::HomeRow::Item(i)) => w.inbox.get(i).map(|item| item.agent),
-            Some(crate::app::HomeRow::Agent(id)) => Some(id),
-            None => None,
+            Some(crate::app::HomeRow::Item(i)) => {
+                let item = w.inbox.get(i);
+                (item.map(|item| item.agent), item.and_then(|item| item.card))
+            }
+            Some(crate::app::HomeRow::Agent(id)) => (Some(id), None),
+            None => (None, None),
         }
     } else {
-        app.agent_at_hand()
+        (app.agent_at_hand(), None)
     };
     if let Some(id) = about.filter(|&id| id < w.agents.len()) {
-        match w
-            .card_of(id)
+        match card
+            .or_else(|| w.card_of(id))
             .and_then(|c| w.cards.iter().find(|card| card.id == c))
         {
             Some(card) => words.push(format!(
-                "#{} {}",
-                card.id,
+                "{} {}",
+                words::card_ref(card.id),
                 cut_title(&card.title, PLACE_TITLE)
             )),
             None => words.push(w.agents[id].name.clone()),
@@ -2588,7 +2583,7 @@ mod tests {
             "talked    ",
             "STORY",
             &format!("◎ intent     {owner}: {}", card.title),
-            "TO DECIDE · #1 (1)",
+            "TO DECIDE · #1 (2)",
             &format!("{owner} finished: {}", card.title),
             "JOURNAL · #1 (",
             "n p  next / previous card",
@@ -2857,7 +2852,7 @@ mod tests {
             "KİM",
             "HİKÂYE",
             "Henüz hikâye yok.",
-            "KARAR BEKLEYEN · #1 (1)",
+            "KARAR BEKLEYEN · #1 (2)",
             "DEFTER · #1 (",
             "sahibi    ",
             "sonraki / önceki iş",
@@ -4577,7 +4572,8 @@ mod tests {
             head(&app)
         );
         let at = head(&app).find(SPIN[1]).unwrap();
-        assert!(head(&app)[at..].contains("working"), "before the fleet");
+        let name = app.world.projects[0].name.clone();
+        assert!(head(&app)[at..].contains(&name), "before the projects");
     }
 
     #[test]
@@ -5340,9 +5336,11 @@ mod tests {
         app.speed = 2;
         assert_eq!(keeps(&app, "×2").map(|k| k.1), Some(3));
         waiting(&mut app, 1);
-        assert_eq!(keeps(&app, "to decide"), Some((0, KEEP)));
-        assert_eq!(header_parts(&app)[1].keep, 8, "the fleet");
-        assert_eq!(keeps(&app, "spent").map(|k| k.1), Some(KEEP));
+        // The projects first, then what is to decide.
+        let name = app.world.projects[0].name.clone();
+        assert_eq!(keeps(&app, &name), Some((0, 8)), "the projects");
+        assert_eq!(keeps(&app, "to decide"), Some((1, KEEP)));
+        assert_eq!(keeps(&app, " of $").map(|k| k.1), Some(KEEP));
         let window = |used| Limit {
             minutes: 300,
             used,
@@ -5362,14 +5360,16 @@ mod tests {
         app.world.watch_spending();
         app.world.budget = 100 + 299;
         assert!(app.world.pot_low());
-        assert_eq!(keeps(&app, "spent").map(|k| k.1), Some(KEEP));
+        assert_eq!(keeps(&app, " of $").map(|k| k.1), Some(KEEP));
         assert_eq!(keeps(&app, "left").map(|k| k.1), Some(KEEP));
         assert_eq!(keeps(&app, "/h"), None);
-        // On a narrow screen what waits and the fleet are still there.
+        // On a narrow screen the projects go first; what waits and the
+        // pot are still there.
         let s = render(&app, 70, 20);
         let top = s.lines().next().unwrap();
         assert!(top.starts_with(" imece   ! 1 to decide"), "{top}");
-        assert!(top.contains("spent"), "{top}");
+        assert!(top.contains(" of $"), "{top}");
+        assert!(!top.contains(&name), "{top}");
     }
 
     #[test]
@@ -6498,7 +6498,8 @@ mod tests {
         app.world.on_lonca(0, Some("demo".into()));
         let name = app.world.projects[0].name.clone();
         let s = render(&app, 160, 40);
-        let row = s.lines().find(|l| l.contains(&name)).unwrap();
+        // The header names the project too: the row is below it.
+        let row = s.lines().skip(1).find(|l| l.contains(&name)).unwrap();
         let at = |word: &str| row.find(word).unwrap_or_else(|| panic!("{word}: {row}"));
         assert!(at("waiting") < at("working"), "{row}");
         assert!(at("working") < at("lonca demo"), "{row}");
@@ -6506,7 +6507,7 @@ mod tests {
         // What is stuck comes before the rest too.
         app.world.agents[agent].status = Status::Blocked;
         let s = render(&app, 160, 40);
-        let row = s.lines().find(|l| l.contains(&name)).unwrap();
+        let row = s.lines().skip(1).find(|l| l.contains(&name)).unwrap();
         assert!(
             row.find('■').unwrap() < row.find("working").unwrap(),
             "{row}"
@@ -6638,6 +6639,8 @@ mod tests {
         let agent = app.world.agents[1].id;
         app.world.agents[agent].card = Some(app.world.cards[0].id);
         let card = app.world.card_of(agent).expect("a worker has a card");
+        // As the screen numbers it.
+        let shown = card + 1;
         let title = app
             .world
             .cards
@@ -6652,13 +6655,13 @@ mod tests {
         app.selected = Sel::Agent(agent);
         let row = foot(&app, 200);
         assert!(
-            row.starts_with(&format!(" team · {project} · #{card} {title}    /  write")),
+            row.starts_with(&format!(" team · {project} · #{shown} {title}    /  write",)),
             "{row}"
         );
         // A focus names its screen and the agent's card; a trace, a change too.
         app.zoom = Zoom::Focus(agent);
         assert!(
-            foot(&app, 200).starts_with(&format!(" focus · {project} · #{card}")),
+            foot(&app, 200).starts_with(&format!(" focus · {project} · #{shown}")),
             "{}",
             foot(&app, 200)
         );
@@ -6691,14 +6694,14 @@ mod tests {
         app.view = View::Salon;
         app.card = Some(card);
         assert!(
-            foot(&app, 200).starts_with(&format!(" card · {project} · #{card} ")),
+            foot(&app, 200).starts_with(&format!(" card · {project} · #{shown} ")),
             "{}",
             foot(&app, 200)
         );
         app.card = None;
         app.open_thread(agent);
         assert!(
-            foot(&app, 200).starts_with(&format!(" conversation · {project} · #{card} ")),
+            foot(&app, 200).starts_with(&format!(" conversation · {project} · #{shown} ")),
             "{}",
             foot(&app, 200)
         );
@@ -6709,7 +6712,7 @@ mod tests {
         let row = foot(&app, 200);
         assert!(
             row.starts_with(&format!(
-                " home · {project} · #{card} {title}    enter  read the diff"
+                " home · {project} · #{shown} {title}    enter  read the diff"
             )),
             "{row}"
         );
@@ -6733,7 +6736,7 @@ mod tests {
             .title = long.clone();
         let row = foot(&app, 200);
         assert!(
-            row.contains(&format!("#{card} {}…    /", "a".repeat(PLACE_TITLE - 1))),
+            row.contains(&format!("#{shown} {}…    /", "a".repeat(PLACE_TITLE - 1))),
             "{row}"
         );
         assert!(!row.contains(&long), "{row}");
@@ -6765,7 +6768,7 @@ mod tests {
         // The place stays at exactly the width that holds it and the help,
         // and goes one cell short of it.
         let place = format!(
-            "team · {project} · #{card} {}…",
+            "team · {project} · #{shown} {}…",
             "a".repeat(PLACE_TITLE - 1)
         );
         let exact =
@@ -6812,6 +6815,7 @@ mod tests {
         let other = app.world.agents[2].id;
         // A card's id is its place in the list.
         let second_id = app.world.cards.len();
+        let second_shown = second_id + 1;
         let mut second = app.world.cards[0].clone();
         second.id = second_id;
         second.title = "the other card".into();
@@ -6831,13 +6835,15 @@ mod tests {
         app.view = View::Home;
         let row = foot(&app, 200);
         assert!(
-            row.starts_with(&format!(" home · shop-api · #{first} ")),
+            row.starts_with(&format!(" home · shop-api · #{} ", first + 1)),
             "{row}"
         );
         app.view = View::Salon;
         let row = foot(&app, 200);
         assert!(
-            row.starts_with(&format!(" team · shop-api · #{second_id} the other card")),
+            row.starts_with(&format!(
+                " team · shop-api · #{second_shown} the other card"
+            )),
             "{row}"
         );
         // A screen over Home is about its own agent, not the row's.
@@ -6845,7 +6851,7 @@ mod tests {
         app.zoom = Zoom::Focus(other);
         let row = foot(&app, 200);
         assert!(
-            row.starts_with(&format!(" focus · shop-api · #{second_id} ")),
+            row.starts_with(&format!(" focus · shop-api · #{second_shown} ")),
             "{row}"
         );
         app.zoom = Zoom::None;
@@ -6854,7 +6860,7 @@ mod tests {
         app.world.agents[agent].status = Status::Working;
         let row = foot(&app, 200);
         assert!(
-            row.starts_with(&format!(" home · shop-api · #{first} ")),
+            row.starts_with(&format!(" home · shop-api · #{} ", first + 1)),
             "{row}"
         );
     }
@@ -7109,41 +7115,101 @@ mod tests {
     }
 
     #[test]
-    fn the_fleet_counts_who_works_who_is_done_unseen_and_who_is_stuck() {
-        let text =
-            |app: &App| -> String { fleet(app).iter().map(|s| s.content.as_ref()).collect() };
-        let mut app = idle_team(Lang::En);
-        assert_eq!(text(&app), "all idle");
-        assert_eq!(fleet(&app)[0].style, dim());
-        app.world.agents[0].status = Status::Working;
-        app.world.agents[1].status = Status::Researching {
-            for_agent: 0,
-            until: 9,
-        };
-        assert_eq!(text(&app), "● 2 working");
-        assert_eq!(fleet(&app)[0].style, fg(pal().ok));
-        app.unseen.insert(2);
-        assert_eq!(text(&app), "● 2 working  ✓ 1 done");
-        assert_eq!(fleet(&app)[2].style, fg(pal().ok));
-        app.world.agents[3].status = Status::Blocked;
-        app.world.agents[4].status = Status::Stopped;
-        assert_eq!(text(&app), "● 2 working  ✓ 1 done  ■ 2 stuck");
-        assert_eq!(fleet(&app)[4].style, fg(pal().bad));
-        // What is gone is not counted, done or stuck.
-        app.world.agents[4].gone = true;
-        app.world.agents[2].gone = true;
-        assert_eq!(text(&app), "● 2 working  ■ 1 stuck");
-        app.world.agents[0].status = Status::Idle;
-        app.world.agents[1].status = Status::Idle;
-        assert_eq!(text(&app), "■ 1 stuck", "no separator before the first");
+    fn which_key_lists_gd_and_gw_on_home_s_list_alone() {
+        let mut app = App::new(1, 2, 0, 1, Lang::En);
+        app.view = View::Home;
+        app.pending = Some('g');
+        let line = which_key(&app).unwrap();
+        let text: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
+        assert!(text.contains(" g  first line"), "{text}");
+        assert!(text.contains(" d  to decide"), "{text}");
+        assert!(text.contains(" w  at work"), "{text}");
         app.lang = Lang::Tr;
-        app.world.agents[0].status = Status::Working;
-        assert_eq!(text(&app), "● 1 çalışıyor  ■ 1 takıldı");
-        let s = render(&app, 160, 30);
+        let line = which_key(&app).unwrap();
+        let text: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
         assert!(
-            s.contains("● 1 çalışıyor  ■ 1 takıldı"),
-            "in the header: {s}"
+            text.contains(" d  karar bekleyen") && text.contains(" w  çalışan"),
+            "{text}"
         );
+        // Over a screen on Home, or off Home, `g…` has the one key.
+        app.lang = Lang::En;
+        app.zoom = Zoom::Focus(1);
+        let line = which_key(&app).unwrap();
+        let text: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
+        assert!(
+            text.contains(" g  first line") && !text.contains("to decide"),
+            "{text}"
+        );
+        app.zoom = Zoom::None;
+        app.view = View::Salon;
+        let line = which_key(&app).unwrap();
+        let text: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
+        assert!(!text.contains("at work"), "{text}");
+        app.view = View::Home;
+        app.pending = Some('z');
+        let line = which_key(&app).unwrap();
+        let text: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
+        assert!(!text.contains("to decide"), "{text}");
+    }
+
+    #[test]
+    fn the_status_line_names_the_card_an_item_came_on_not_the_one_its_agent_has_now() {
+        let mut app = App::new(1, 2, 0, 1, Lang::En);
+        let agent = app.world.agents[1].id;
+        let second_id = app.world.cards.len();
+        let mut second = app.world.cards[0].clone();
+        second.id = second_id;
+        second.title = "the other card".into();
+        app.world.cards.push(second);
+        app.world.agents[agent].card = Some(second_id);
+        app.world.inbox.clear();
+        let mut it = item(InboxKind::Check, agent);
+        it.card = Some(0);
+        app.world.inbox.push(it);
+        app.view = View::Home;
+        let row = foot(&app, 200);
+        assert!(row.starts_with(" home · shop-api · #1 "), "{row}");
+        assert!(!row.contains("the other card"), "{row}");
+        // Without a card of its own, the agent's.
+        app.world.inbox[0].card = None;
+        let row = foot(&app, 200);
+        assert!(
+            row.starts_with(&format!(
+                " home · shop-api · #{} the other card",
+                second_id + 1
+            )),
+            "{row}"
+        );
+    }
+
+    #[test]
+    fn the_projects_stand_in_the_header_and_the_one_home_is_narrowed_to_is_lit() {
+        let text = |app: &App| -> String {
+            projects_spans(app)
+                .iter()
+                .map(|s| s.content.as_ref())
+                .collect()
+        };
+        let mut app = App::new(2, 2, 0, 1, Lang::En);
+        let names: Vec<String> = app.world.projects.iter().map(|p| p.name.clone()).collect();
+        assert_eq!(text(&app), format!("{} · {}", names[0], names[1]));
+        let lit = |app: &App, n: usize| {
+            projects_spans(app)[n * 2]
+                .style
+                .add_modifier
+                .contains(Modifier::REVERSED)
+        };
+        assert!(!lit(&app, 0) && !lit(&app, 1));
+        app.view = View::Home;
+        app.at_home.scope = Some(1);
+        assert!(!lit(&app, 0) && lit(&app, 1));
+        // Off Home the narrowing is not shown.
+        app.view = View::Salon;
+        assert!(!lit(&app, 1));
+        // A closed project is not named.
+        app.world.projects[0].closed = true;
+        assert_eq!(text(&app), names[1]);
+        assert_eq!(projects_spans(&app)[0].content, names[1]);
     }
 
     #[test]
@@ -10580,7 +10646,10 @@ mod tests {
             ]
         );
         assert_eq!(row("select"), ["– ↓  ^n ↑/k"]);
-        assert_eq!(row("first / last line"), ["gg  j/G"]);
+        assert_eq!(
+            row("first / last line · Home: to decide · at work"),
+            ["gg  j/G  gd  gw"]
+        );
         assert_eq!(row("quit (q or :quit asks first)"), ["^w/q ^w/q  :quit"]);
         assert_eq!(
             row("writing: complete · sent lines · :history"),
@@ -10620,7 +10689,10 @@ mod tests {
                 ("^t".into(), "your key: as zM".into()),
             ]
         );
-        assert_eq!(row("first / last line"), ["x/gg  gt/G"]);
+        assert_eq!(
+            row("first / last line · Home: to decide · at work"),
+            ["x/gg  gt/G  gd  gw"]
+        );
         // A place's keys: said where, and the rows as they are there.
         let placed = crate::keys::Keymap::read("J = G\n[change]\n^n = j\nJ = gg").unwrap();
         let rows = |lang, place| overlay::help_rows(lang, false, &placed, place);
@@ -10638,10 +10710,11 @@ mod tests {
                 .map(|r| r.0.clone())
                 .collect()
         };
-        assert_eq!(row(&change, "first / last line"), ["J/gg  G"]);
+        let first_last = "first / last line · Home: to decide · at work";
+        assert_eq!(row(&change, first_last), ["J/gg  G  gd  gw"]);
         assert_eq!(row(&change, "select"), ["↑ ↓  ^n/j k"]);
         let salon = rows(Lang::En, Some(crate::keys::Scope::Salon));
-        assert_eq!(row(&salon, "first / last line"), ["gg  J/G"]);
+        assert_eq!(row(&salon, first_last), ["gg  J/G  gd  gw"]);
         assert_eq!(row(&salon, "select"), ["↑ ↓  j k"]);
         assert_eq!(rows(Lang::En, None), salon);
         let tr = rows(Lang::Tr, Some(crate::keys::Scope::Change));
@@ -10659,7 +10732,7 @@ mod tests {
         );
         // Two columns: a line of the first half carries one of the second.
         let keys = overlay::help_keys(Lang::En, false);
-        let row = keys.iter().position(|k| k.0 == "gg  G").unwrap();
+        let row = keys.iter().position(|k| k.0 == "gg  G  gd  gw").unwrap();
         let other = keys[row + keys.len().div_ceil(2)].1;
         let line = wide.lines().find(|l| l.contains("gg  G")).unwrap();
         assert!(line.contains(other), "two columns: {line}");
@@ -10721,7 +10794,11 @@ mod tests {
         assert_eq!(overlay::found(&keys, "", text).len(), keys.len(), "all");
         assert_eq!(overlay::found(&keys, "  ", text).len(), keys.len());
         let got = overlay::found(&keys, "FIRST  last", text);
-        assert_eq!(got, [&("gg  G", "first / last line")], "every word");
+        let first_last = (
+            "gg  G  gd  gw",
+            "first / last line · Home: to decide · at work",
+        );
+        assert_eq!(got, [&first_last], "every word");
         assert!(overlay::found(&keys, "first zzz", text).is_empty());
         let got = overlay::found(&keys, "zM", text);
         let fold = ("za  zM  zR", "fold: toggle · all (:fold) · none (:unfold)");
@@ -11237,29 +11314,27 @@ mod tests {
         let looks = |s: Style| (s.fg.unwrap_or(Color::Reset), s.add_modifier);
         assert_ne!(looks(attention()), looks(Style::default()));
         let row = head(&app);
-        assert!(row.contains("spent $0.00 of $1.00  "), "{row}");
+        assert!(row.contains("$0.00 of $1.00  "), "{row}");
+        assert!(!row.contains("spent"), "{row}");
         assert!(!row.contains("/h") && !row.contains("left"), "{row}");
         app.world.tick = 1;
         app.world.agents[0].cost = 100;
         app.world.watch_spending();
         let row = head(&app);
-        assert!(row.contains("spent $0.01 of $1.00  "), "{row}");
+        assert!(row.contains("$0.01 of $1.00  "), "{row}");
         assert!(
             !row.contains("left"),
             "the rate and the time left are :budget's: {row}"
         );
-        assert_eq!(at(&app, "spent"), looks(Style::default()));
+        assert_eq!(at(&app, "$0.01"), looks(Style::default()));
         app.world.budget = 100 + 299;
         let row = head(&app);
-        assert!(row.contains("spent $0.01 of $0.03, ~29 min left"), "{row}");
-        assert_eq!(at(&app, "spent"), looks(attention()));
+        assert!(row.contains("$0.01 of $0.03, ~29 min left"), "{row}");
+        assert_eq!(at(&app, "$0.01"), looks(attention()));
         assert_eq!(at(&app, "left"), looks(attention()));
         app.lang = Lang::Tr;
         let row = head(&app);
-        assert!(
-            row.contains("$0.01 / $0.03 harcandı, ~29 dk kaldı"),
-            "{row}"
-        );
+        assert!(row.contains("$0.01 / $0.03, ~29 dk kaldı"), "{row}");
     }
 
     #[test]
@@ -11273,7 +11348,7 @@ mod tests {
         app.world.agents[1].cost = 2_500;
         let screen = render(&app, 170, 40);
         assert!(screen.contains("imece"));
-        assert!(screen.contains("spent $0.50 of $1.00"), "{screen}");
+        assert!(screen.contains("│ $0.50 of $1.00"), "{screen}");
         // The footer names no view and no pause: the status line says where
         // you are, the header says PAUSED.
         let footer = screen.lines().last().unwrap().to_string();

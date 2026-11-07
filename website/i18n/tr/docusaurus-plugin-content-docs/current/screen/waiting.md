@@ -50,7 +50,7 @@ Seçili ögenin altında soluk bir satır tuşlarını söyler (`enter diff'i g�
 
 ## `W` ve `S`: birbiri ardına
 
-`W` her ekranda çalışır: pano, kod haritası, bir kartın ekranı, bir diff, bir konuşma, bir ham akış. Ekibin üstünde açık olanı kapatır, paneldeki sıradaki açık ögeyi seçer ve `enter`'ın yapacağı gibi açar, böylece `a` ve `r` hemen yanıtlar. Yine basılınca ondan sonrakine geçer, sonuncudan sonra ilke döner. Bekleyen yoksa `Şu an senden bir şey gerekmiyor` der ve hiçbir şey kımıldamaz.
+`W` her ekranda çalışır: pano, kod haritası, bir kartın ekranı, bir diff, bir konuşma, bir ham akış, bir betiğin penceresi. Ekibin üstünde açık olanı kapatır, paneldeki sıradaki açık ögeyi seçer ve `enter`'ın yapacağı gibi açar, böylece `a` ve `r` hemen yanıtlar. Yine basılınca ondan sonrakine geçer, sonuncudan sonra ilke döner. Sırası [ana ekranın](home.md) sırasıdır: önce izinler, sonra sorular, sonra değişiklikler (temiz kanıtlanmış ve kartının yollarının içinde kalanlar önce), sonra ertelenenler; bir grubun içinde en eski önce. Bekleyen yoksa `Şu an senden bir şey gerekmiyor` der ve hiçbir şey kımıldamaz.
 
 `S` eldeki ögeyi erteler ve sıradakini açar. Ertelenen ögeler diğerlerinin hepsinden sonra gelir, ertelendikleri sırayla, ve satırları en önde `sonra ·` der. Zaten ertelenmiş birini ertelemek onu en sona taşır. Liste kapanan ögeleri unutur ve yalnız bu çalıştırma boyunca sürer: yeni bir başlangıç her şeyi yine yaş sırasında gösterir.
 

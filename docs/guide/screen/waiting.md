@@ -50,7 +50,7 @@ Under the selected item a dim row names its keys (`enter see the diff · a appro
 
 ## `W` and `S`: one after the other
 
-`W` works on every screen: the board, the code map, a card's screen, a diff, a conversation, a raw stream. It closes what is open over the team, selects the next open item in the panel and opens it as `enter` would, so `a` and `r` answer it at once. Pressed again it goes on to the item after, and round to the first after the last. With nothing waiting it says `Nothing needs you right now` and nothing moves.
+`W` works on every screen: the board, the code map, a card's screen, a diff, a conversation, a raw stream, a script's window. It closes what is open over the team, selects the next open item in the panel and opens it as `enter` would, so `a` and `r` answer it at once. Pressed again it goes on to the item after, and round to the first after the last. Its order is [Home](home.md)'s: permissions first, then questions, then changes (the ones proved clean and inside their card's paths first), then what was put off; within a group, the oldest first. With nothing waiting it says `Nothing needs you right now` and nothing moves.
 
 `S` puts the item at hand off and opens the next one. Put-off items come after all the others, in the order they were put off, and their rows say `later ·` up front. Putting off one already put off moves it to the very end. The list forgets items that close, and it lasts the run only: a fresh start shows everything in age order again.
 

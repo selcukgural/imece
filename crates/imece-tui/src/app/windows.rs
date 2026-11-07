@@ -29,8 +29,9 @@ impl App {
 
     /// A key while a setup script's window is open: `j k` (the arrows),
     /// `ctrl-d ctrl-u` (page keys) and `g G` move through it, `a` says yes
-    /// and `r` no to it, `esc` or `q` close it, `?` the help; the rest do
-    /// nothing.
+    /// and `r` no to it, `esc` or `q` close it, `W` and `S` close it and
+    /// go to the next item to decide (`S` putting this one off), `?` the
+    /// help; the rest do nothing.
     pub(super) fn script_key(&mut self, item: usize, at: usize, k: KeyEvent) {
         let ctrl = k.modifiers.contains(KeyModifiers::CONTROL);
         let page = SCRIPT_PAGE;
@@ -48,6 +49,10 @@ impl App {
             KeyCode::Esc | KeyCode::Char('q') => {
                 self.script = None;
                 return;
+            }
+            KeyCode::Char(c @ ('W' | 'S')) => {
+                self.script = None;
+                return self.next_waiting(c == 'S');
             }
             KeyCode::Char('?') => return self.open_help(),
             _ => return,
@@ -1480,5 +1485,69 @@ mod tests {
         app.command("plan on");
         assert!(app.world.projects[0].plan.on);
         assert!(flashed(&app).unwrap().starts_with("plan gate on"));
+    }
+}
+
+#[cfg(test)]
+mod script_next_tests {
+    use super::super::tests::*;
+    use super::*;
+
+    /// The demo stepped until the repository's check asks for its yes,
+    /// on Home, with its window open.
+    fn check_window() -> (App, usize) {
+        let mut app = App::new(1, 3, 0, 1, Lang::En);
+        app.view = View::Home;
+        for _ in 0..400 {
+            app.step();
+            if let Some(i) =
+                (app.world.inbox.iter()).position(|i| i.kind == InboxKind::Check && i.open)
+            {
+                // As `W` opens it: its window over Home.
+                app.open_waiting(i);
+                assert_eq!(app.script, Some((i, 0)));
+                return (app, i);
+            }
+        }
+        panic!("the demo never asked about its check");
+    }
+
+    #[test]
+    fn w_in_a_script_window_closes_it_and_opens_the_next_item_to_decide() {
+        let (mut app, i) = check_window();
+        app.world.inbox.push(InboxItem {
+            kind: InboxKind::Question,
+            agent: app.world.inbox[i].agent,
+            detail: "which?".into(),
+            researcher: None,
+            open: true,
+            tick: 0,
+            card: None,
+        });
+        let question = app.world.inbox.len() - 1;
+        app.on_key(key(KeyCode::Char('W')));
+        assert_eq!(app.script, None);
+        assert_eq!(app.waiting_at, Some(question));
+        assert!(app.deferred.is_empty());
+        assert!(app.world.inbox[i].open, "nothing decided");
+        // `S` puts the script's ask off first.
+        app.open_waiting(i);
+        app.on_key(key(KeyCode::Char('S')));
+        assert_eq!(app.script, None);
+        assert_eq!(app.deferred, [i]);
+        assert_eq!(app.waiting_at, Some(question));
+        // The only item put off comes round to itself.
+        app.world.inbox[question].open = false;
+        for n in 0..i {
+            app.world.inbox[n].open = false;
+        }
+        app.open_waiting(i);
+        app.on_key(key(KeyCode::Char('S')));
+        assert_eq!(app.waiting_at, Some(i));
+        assert_eq!(app.script, Some((i, 0)));
+        // Any other letter still does nothing.
+        app.script = Some((i, 0));
+        app.on_key(key(KeyCode::Char('x')));
+        assert_eq!(app.script, Some((i, 0)));
     }
 }

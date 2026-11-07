@@ -818,7 +818,7 @@ mod tests {
         // long the pot lasts at it, the usage window nearest to full.
         assert_eq!(
             app.command_note("budget"),
-            "(spent $3.10 of $20.00 · $18.60/h, ~54 min left)"
+            "($3.10 of $20.00 · $18.60/h, ~54 min left)"
         );
         app.world.limits = vec![crate::model::Limit {
             minutes: 300,
@@ -827,13 +827,13 @@ mod tests {
         }];
         assert_eq!(
             app.command_note("budget"),
-            "(spent $3.10 of $20.00 · $18.60/h, ~54 min left · claude 5h: 48% left)"
+            "($3.10 of $20.00 · $18.60/h, ~54 min left · claude 5h: 48% left)"
         );
         app.world.limits.clear();
         app.world.run_spent = 31_000;
         assert_eq!(
             app.command_note("budget"),
-            "(spent $3.10 of $20.00 · $0.00/h)",
+            "($3.10 of $20.00 · $0.00/h)",
             "nothing spent this window: no rate, no end in sight"
         );
         theme::choose("light").unwrap();
