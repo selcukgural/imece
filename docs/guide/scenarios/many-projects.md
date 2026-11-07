@@ -5,7 +5,7 @@ description: "Several projects in one imece, each with its own leader: opening, 
 
 # Three checkouts, one screen
 
-One imece runs several checkouts at once. Each is a project in the salon with a leader of its own; they share one pot, one bus and one screen. You meet this when the work spans repositories, or when you keep a long-running project open beside the one you are in. This scenario opens two more projects beside the one imece started in, and uses the keys that keep three teams readable.
+One imece runs several checkouts at once. Each is a project in the team with a leader of its own; they share one pot, one bus and one screen. You meet this when the work spans repositories, or when you keep a long-running project open beside the one you are in. This scenario opens two more projects beside the one imece started in, and uses the keys that keep three teams readable.
 
 imece was started in `~/code/cli`; its project is named after the directory, `cli`, with the leader `lead`.
 
@@ -23,7 +23,7 @@ Type `:open ~/code/api api` and press `enter`. The flash says `opened api at /Us
 
 `:open PATH [NAME]` opens the git checkout at PATH; NAME defaults to the directory's name made safe (1 to 24 of letters, digits, `.`, `_`, `-`). The new project's leader is `lead-NAME`, with the same model and tiers. `:open ` completes directories as you type (hidden ones after a `.`, `~` works). The `:` menu marks `:open` with `$`: a new leader is a new session that costs when you first write to it. A path that is not a checkout, a name taken or a checkout already open is refused with why (`api is open already, as api`). `:o` is short for it.
 
-The salon now groups agents by project, with a header line each; inbox and journal lines carry the project's name when there is more than one:
+The team now groups agents by project, with a header line each; inbox and journal lines carry the project's name when there is more than one:
 
 ```text
  ▾ cli                        1 working  $2.10
@@ -45,11 +45,11 @@ Select the `web` header and press `h` (or `←`, or `enter` on the header). The 
  ▸ web                        1 working  $0.80  ! 1 waiting
 ```
 
-When the salon is too short for everyone, calm workers fold from the bottom up into `… N agents doing fine`; the workers that need you (waiting for you, stuck, done and not seen) sort first in their project, so they fold last.
+When the team is too short for everyone, calm workers fold from the bottom up into `… N agents doing fine`; the workers that need you (waiting for you, stuck, done and not seen) sort first in their project, so they fold last.
 
 ## 3. Pin the one you live in
 
-Type `:pin api` and press `enter`: `api is pinned to the top of the salon`. Its header wears `▴` and it stays first whatever the order of opening; it also folds last. `:pin` alone pins the project at hand; `:pin` again unpins (`api is not pinned any more`). The pin is kept in the store across runs, and a closed project keeps its pin for when it is opened again.
+Type `:pin api` and press `enter`: `api is pinned to the top of the team`. Its header wears `▴` and it stays first whatever the order of opening; it also folds last. `:pin` alone pins the project at hand; `:pin` again unpins (`api is not pinned any more`). The pin is kept in the store across runs, and a closed project keeps its pin for when it is opened again.
 
 ```text
  ▾ ▴ api                      2 working  $3.10
@@ -59,7 +59,7 @@ A colour per project is not built yet.
 
 ## 4. Only what needs you
 
-Press `f`. The salon shows only the agents that need something of you, each under its project's header; a project with nothing is left out. The title reads ` SALON · only what needs you (f) ` and the flash `the salon shows only what needs you · f: everyone`. With nothing at all:
+Press `f`. The team shows only the agents that need something of you, each under its project's header; a project with nothing is left out. The title reads ` TEAM · only what needs you (f) ` and the flash `the team shows only what needs you · f: everyone`. With nothing at all:
 
 ```text
  Nothing needs you right now · f shows everyone
@@ -122,6 +122,6 @@ Once the pot is spent, nobody in any project takes another turn. One imece at a 
 
 - [Projects](../concepts/projects.md)
 - [Budget and limits](../concepts/budget-and-limits.md)
-- [The salon](../screen/salon.md): folding, order, the fleet
+- [The team](../screen/salon.md): folding, order, the fleet
 - [Commands](../reference/commands.md)
 - [Files](../reference/files.md): where worktrees and the store live

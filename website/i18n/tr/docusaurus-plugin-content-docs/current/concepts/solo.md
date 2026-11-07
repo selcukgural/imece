@@ -5,7 +5,7 @@ description: Lidersiz, kendinizin sürdüğü bir oturum - :solo ve --solo, seç
 
 # Solo oturumlar
 
-Takım, imece'nin alışılmış biçimidir: bir lider checkout'unuzu okur, işçi alır, onların değişiklikleri incelemeniz için size gelir. **Solo** öteki biçimdir: lidersiz ve takımsız, adını verdiğiniz model ve çabada, kendinizin sürdüğü tek bir ajan. imece'yi değerli kılanı (worktree, `Δ` kapısı, bütçe, salon, depo) korur; tek bir oturumun gerek duymadığını (pano, kartlar, işçi alma) dışarıda bırakır. Takımların yanında istediğiniz kadar açın: takım, solo, takım, solo, solo; her biri salonda bir grup.
+Takım, imece'nin alışılmış biçimidir: bir lider checkout'unuzu okur, işçi alır, onların değişiklikleri incelemeniz için size gelir. **Solo** öteki biçimdir: lidersiz ve takımsız, adını verdiğiniz model ve çabada, kendinizin sürdüğü tek bir ajan. imece'yi değerli kılanı (worktree, `Δ` kapısı, bütçe, ekip, depo) korur; tek bir oturumun gerek duymadığını (pano, kartlar, işçi alma) dışarıda bırakır. Takımların yanında istediğiniz kadar açın: takım, solo, takım, solo, solo; her biri ekipte bir grup.
 
 ## Açmak
 
@@ -30,7 +30,7 @@ Flaş neyin açıldığını söyler: `notes solo oturum olarak açıldı (~/src
 
 ## Solo nedir
 
-- **Kendi başına bir proje.** Salon onu tek ajanlı bir grup olarak gösterir: `solo-AD` (imece'nin içinde başladığı projeyse `solo`). Satırı seçimi adlandırır: `○ solo-notes  opus@xhigh  idle`. `:close`, `:rename` (ajan `solo-YENİAD` olur), `:pin` ve `:copy` her projede olduğu gibi çalışır.
+- **Kendi başına bir proje.** Ekip onu tek ajanlı bir grup olarak gösterir: `solo-AD` (imece'nin içinde başladığı projeyse `solo`). Satırı seçimi adlandırır: `○ solo-notes  opus@xhigh  idle`. `:close`, `:rename` (ajan `solo-YENİAD` olur), `:pin` ve `:copy` her projede olduğu gibi çalışır.
 - **Kendi worktree'si.** Bir işçi gibi solo da checkout'un imece'nin durum dizini altındaki bir git worktree'sinde yazar, asla checkout'unuzda değil. Bir checkout'taki iki solo ve kendi düzenlemeleriniz hiç çakışmaz. Worktree projenin kimliğiyle adlandırılır (`solo-3`), bu yüzden projeyi yeniden adlandırmak onu korur. Satırı, bir işçininki gibi worktree'nin nerede durduğunu gösterir (`⎇ dal ↑kendi ↓checkout +N −M`).
 - **İşçinin araçları.** Confine kadranı altında solo işçinin aldığını alır: `standard`'da okuma, yazma, kabuk, web arama ve getirme; `strict`'te dosya araçları ve imece'nin `run`'ı; `open`'da kendi kurulumunuz ([Claude Code](claude-code.md)). Bus'ta `send` (size ve yardımcılarına), `run` ve yardımcılar için `hire` vardır. `post`, `board` ya da `claim` yok: pano bir takımındır.
 - **Her yanıttan sonra Δ.** Solo için kimse `done` göndermez. Size bir yanıtla biten her turda imece worktree'sini okur; ağaç HEAD'inizden farklıysa değişiklik, yanıtın ilk satırıyla adlandırılmış bir `Δ` olarak SİZİ BEKLEYENLER'de durur; `a` checkout'unuza uygular, `r` reddeder, `c` ve `n` not gönderir, `x` parça seçer; tıpkı bir işçide olduğu gibi ([değişiklikler](changes.md)). Daha yeni bir yanıtın değişikliği eskisinin yerini alır. Söyleyecek bir şeyi olmayan bir tur (bir `/komut`) hiçbir şey okumaz.
@@ -59,7 +59,7 @@ Bir checkout'ta en çok bir açık **takım** (ikinci bir `:open` `that checkout
 ## Bkz.
 
 - [Takım](team.md): roller ve solonun işçiyle paylaştığı
-- [Projeler](projects.md): salonda gruplar, `:close`, `:rename`, `:pin`
+- [Projeler](projects.md): ekipte gruplar, `:close`, `:rename`, `:pin`
 - [Değişiklikler](changes.md): `Δ`, uygulama, reddetme, notlar
 - [Komut satırı](../reference/cli.md): `--solo`, `--model`, `--tier`
 - [Komutlar](../reference/commands.md): `:solo`

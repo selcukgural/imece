@@ -46,7 +46,7 @@ Bir worktree çalıştırmalar arasında saklanır. Eski bir commit'te temiz bul
 
 ## Δ kapısı
 
-Bir işçi `done` gönderince imece onun worktree'sini okur (izlenmeyen dosyalar dahil, özel bir index üzerinden; ajanın kendi index'ine dokunulmaz) ve diff'i SENİ BEKLEYEN panelinde bir değişiklik (`Δ`) olarak gösterir. Siz uygularsınız (`a`: checkout'unuza `git apply --index`, stage'e; düz uygulama oturmazsa üç yollu), reddedersiniz (`r`) ya da not gönderirsiniz (`n`). Siz olmadan hiçbir şey checkout'unuza ulaşmaz. Yolun tamamı [değişiklikler](../concepts/changes.md) sayfasında.
+Bir işçi `done` gönderince imece onun worktree'sini okur (izlenmeyen dosyalar dahil, özel bir index üzerinden; ajanın kendi index'ine dokunulmaz) ve diff'i KARAR BEKLEYEN panelinde bir değişiklik (`Δ`) olarak gösterir. Siz uygularsınız (`a`: checkout'unuza `git apply --index`, stage'e; düz uygulama oturmazsa üç yollu), reddedersiniz (`r`) ya da not gönderirsiniz (`n`). Siz olmadan hiçbir şey checkout'unuza ulaşmaz. Yolun tamamı [değişiklikler](../concepts/changes.md) sayfasında.
 
 ## Git iş parçacığı
 
@@ -64,7 +64,7 @@ siz  ─/ Parser'ı düzelt─▶  lead (checkout'u okur)
                               │ send(to: claude-1, type: assign, body: …)
                             claude-1 düzenler, `cargo test`'i run ile çalıştırır
                               │ send(to: lead, type: done, re: 1)
-                            imece worktree'yi okur ─▶ SENİ BEKLEYEN'de Δ
+                            imece worktree'yi okur ─▶ KARAR BEKLEYEN'de Δ
 siz  ─a─▶ checkout'unuzda stage'de; worktree işaretli (yazar imece)
 ```
 

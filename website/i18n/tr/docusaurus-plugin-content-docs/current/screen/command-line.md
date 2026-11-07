@@ -45,7 +45,7 @@ Bir mesaj birkaç satıra yayılabilir; kart açan bir mesajın ilk satırı kar
 | `:export [PATH]` | | açık konuşma, yoksa kartın ekranı, Markdown olarak (`:export YOL`) |
 | `:commit` | | ucuz bir model stage'dekiler için commit mesajı önerir, satıra `!git commit -m '…'` olarak konur |
 | `:copy PATH` | | git'in yok saydığı bir yolu (`.env`, `target`) işçilerin worktree'lerine başlarken kopyala; yine basılınca bırakır (`:copy YOL`) |
-| `:pin [NAME]` | | projeyi salonun en üstüne sabitle; yine basılınca bırakır (`:pin AD`) |
+| `:pin [NAME]` | | projeyi ekibin en üstüne sabitle; yine basılınca bırakır (`:pin AD`) |
 | `:awake` | | bir agent tur ortasındayken makineyi uyanık tut; yine basılınca kapatır |
 | `:notify [off\|bell\|text\|push]` | | başka penceredeyken sizi bekleyen bir şey gelirse zil ya da masaüstü bildirimi; `push`: uzaktayken ntfy üzerinden telefonunuza; yalın yazılınca sıradaki |
 | `:motion [off\|calm\|full]` | | ekranda ne hareket eder: çalışan satır nefes alır, bekleyen yanıp söner; full dönücüleri de ekler; yalın yazılınca sıradaki |
@@ -57,16 +57,16 @@ Bir mesaj birkaç satıra yayılabilir; kart açan bir mesajın ilk satırı kar
 | `:pending` | `q` `s` | çıkmadan önce: tur ortasındaki agent'lar ve incelenmemiş değişiklikler |
 | `:next` / `:defer` | `W` / `S` | bekleyen sıradaki ögeyi aç / bunu ertele |
 | `:waiting` | `w` | bekleyenler paneli |
-| `:needs` | `f` | salon yalnız sizi bekleyenleri gösterir |
-| `:settle` / `:unsettle` | `s` / — | seçili satırı size yeniden ihtiyacı olana dek kaldır / kaldırılan her şeyi geri getir |
+| `:needs` | `f` | ekip yalnız sizi bekleyenleri gösterir |
+| `:settle` / `:unsettle` | `s` / — | seçili satırı size yeniden ihtiyacı olana dek gizle / gizlenen her şeyi geri getir |
 | `:fold` / `:unfold` | `zM` / `zR` | her projeyi ve her işçinin yardımcılarını katla / aç |
 | `:trace [@NAME]` / `:talk [@NAME]` | `t` / `v` | adı verilen, yoksa eldeki agent'ın ham akışı / konuşması |
 | `:peek [@NAME]` | `K` | adı verilen, yoksa eldeki agent'ın odağı görünümün üstünde bir pencerede |
-| `:hints` | `F` | salon ekranında seçilebilen her satırda ipucu harfleri |
+| `:hints` | `F` | ekip ekranında seçilebilen her satırda ipucu harfleri |
 | `:mark` | `m` | eldeki satırı işaretle |
 | `:pause`, `:faster`, `:slower` | `space`, `+`, `-` | yalnız demo; canlıda bunu söyler ve menüde yer almaz |
 
-Bir salon panelinde çalışan komutlar (`:waiting`, `:needs`, `:fold`, `:unfold`, `:settle`, `:unsettle`) önce o panele gider. Her komutun ne aldığı ve ne yanıtladığı [komutlar başvurusunda](../reference/commands.md).
+Bir ekip panelinde çalışan komutlar (`:waiting`, `:needs`, `:fold`, `:unfold`, `:settle`, `:unsettle`) önce o panele gider. Her komutun ne aldığı ve ne yanıtladığı [komutlar başvurusunda](../reference/commands.md).
 
 ### Menü ve değerler
 
@@ -117,7 +117,7 @@ Tek bir kesik vardır, halka değil: bir şey alan her kesme öncekinin yerini a
 
 Alt satır metnin her sırası için bir sıra alır, en çok sekiz ve ekranın üçte biri: ekrana sığmayacak kadar uzun bir satır sonraki sırada sürer (hücre hücre kesilir; sığmayan geniş bir karakter bütün olarak aşağı iner), yani yazdığınız hep görünür. İlk sıra metnin kime gittiğini taşır, diğerleri altında içeriden gelir. Bütün sıralar sığmadığında imlecin sırası görünür kalır ve son sıra nerede olduğunu söyler, `3/12`. `^a` `^e`, home/end ve `^u` `^k` imlecin olduğu satırda kalır; `↑` `↓` satırlar arasında gider, sütunu koruyarak (menü gösterilirken onun yerine menüde ilerler); satır başında backspace üsttekiyle birleştirir. `@name` bir boşlukta ya da yeni satırda biter, yani `@name` `⇧enter` metin o agent'a gider.
 
-Yapıştırılan satıra bütünüyle girer (bracketed paste): satır sonları yeni satır olur, sekmeler korunur, diğer kontrol karakterleri atılır ve hiçbir şey onunla gönderilmez. Bundan önce bir yapıştırmanın ilk satır sonu yarım bir isteği gönderiyordu. Yazmıyorken yapıştırılan atılır ve alt satır önce yazmaya başlamanızı söyler. Günlük ve salon çok satırlı bir mesajı tek satırda gösterir; konuşma satırlarıyla.
+Yapıştırılan satıra bütünüyle girer (bracketed paste): satır sonları yeni satır olur, sekmeler korunur, diğer kontrol karakterleri atılır ve hiçbir şey onunla gönderilmez. Bundan önce bir yapıştırmanın ilk satır sonu yarım bir isteği gönderiyordu. Yazmıyorken yapıştırılan atılır ve alt satır önce yazmaya başlamanızı söyler. Günlük ve ekip çok satırlı bir mesajı tek satırda gösterir; konuşma satırlarıyla.
 
 ## Kendi kabuğunuz
 

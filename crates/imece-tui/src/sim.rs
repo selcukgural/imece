@@ -1,7 +1,7 @@
 //! Fake events for the screen prototype, shaped as live's: projects, each
 //! with a leader and workers that post, claim and assign cards, talk over the bus in typed messages, ask the person and
 //! wait for their yes, hire workers and helpers, and finish with a change
-//! that waits for the person in WAITING FOR YOU; a capped researcher pool
+//! that waits for the person in TO DECIDE; a capped researcher pool
 //! shared by all projects, and symbol leases, show what is still to come.
 //! A seed replays the same scenario.
 

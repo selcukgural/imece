@@ -5,7 +5,7 @@ description: "One task from start to commit: the leader hires a worker, the work
 
 # A failing test, one worker
 
-This is the whole loop once, with one agent: you tell the leader what is wrong, it hires a worker, the worker's change (`Δ`) comes to WAITING FOR YOU, you read it, apply it and commit. You meet every part of imece that a single task touches, in the order it happens.
+This is the whole loop once, with one agent: you tell the leader what is wrong, it hires a worker, the worker's change (`Δ`) comes to TO DECIDE, you read it, apply it and commit. You meet every part of imece that a single task touches, in the order it happens.
 
 The checkout is a Rust crate with one failing test. Claude Code is on PATH.
 
@@ -16,7 +16,7 @@ cd ~/code/parser
 imece
 ```
 
-The salon opens with the team as the leader alone, `lead`, which reads your checkout and never writes to it. The first journal line says what the agents get, because the default level is `standard`:
+The team opens with the team as the leader alone, `lead`, which reads your checkout and never writes to it. The first journal line says what the agents get, because the default level is `standard`:
 
 ```text
  JOURNAL
@@ -79,12 +79,12 @@ A `progress` message is one the worker sends its leader without waking it: it ri
 Under `standard`, Claude Code's own shell is on, and a command Claude Code's rules would ask about comes to you instead of being refused. A **routine** command runs at once: one line, no shell syntax (no pipes, redirections, `&&`, `$` or globs), and a program the `run` tool's policy allows for the role (cargo without the commands that change dependencies, git's reading commands, the programs you named with `--run`). `cargo test` is routine; the trace says `allowed on its own: Bash: cargo test`. Anything else waits:
 
 ```text
- WAITING FOR YOU (1)
- ⚑ 14:07 claude-1 waits for your yes: Bash: cargo test 2>&1 | tail -20
+ TO DECIDE (1)
+ ⚑ 14:07 claude-1 asks to run Bash: cargo test 2>&1 | tail -20
    a allow · r refuse · enter focus
 ```
 
-The pipe makes it non-routine. The command is shown whole, never read as markdown: what you allow is what runs. The worker's row says `⚑ waits for your yes` meanwhile, and the terminal's title reads `imece · 1 waiting`.
+The pipe makes it non-routine. The command is shown whole, never read as markdown: what you allow is what runs. The worker's row says `⚑ asks to run` meanwhile, and the terminal's title reads `imece · 1 waiting`.
 
 Press `tab` (or `w`) to the panel, or `W` from anywhere, and `a`. The flash says `allowed: claude-1 goes on`; the journal keeps your decision:
 
@@ -100,13 +100,13 @@ The worker checks its work with the `run` tool (its instructions say to: only im
 
 ```text
  14:12 ⇄ claude-1 → lead [done] ↩: parse() returns Ok(Tree::empty()) on no tokens; test parse_empty added
- 14:12 ! claude-1 finished: 1 files, +14 −3 → waits for you
+ 14:12 ! claude-1 finished: change ready · 1 files +14 −3
 ```
 
 ```text
- WAITING FOR YOU (1)
+ TO DECIDE (1)
  Δ 14:12 claude-1 finished: parse() returns Ok(Tree::empty()) on no tokens (1 files, +14 −3) · ✓ ran clean on this tree: cargo test
-   enter see the diff · a apply to the checkout · r reject
+   enter see the diff · a approve · r send back
 ```
 
 The item's text is the first line of the worker's `done`; it is the change's title from here on. `✓ ran clean on this tree` names the runs imece made on exactly this tree. Had the worker tested only in its own shell, the line would say `no run on this tree`: Claude Code's shell carries no exit code imece can trust. Nothing is refused for lack of a run; you decide.
@@ -131,7 +131,7 @@ The first lines are the runs on this tree, then the patch. `j k` scroll, `gg G` 
 
 ## 8. Apply
 
-Press `a`. The flash says `applying claude-1's change to your checkout; the journal says when it is in, staged`. Git runs on a thread of its own, so the screen never waits. Then:
+Press `a`. The flash says `approved: applying claude-1's change to your checkout; the journal says when it is in, staged`. Git runs on a thread of its own, so the screen never waits. Then:
 
 ```text
  14:13 ✓ you applied claude-1's change (1 files) to the checkout, staged; worktree mark 3f2a9c1

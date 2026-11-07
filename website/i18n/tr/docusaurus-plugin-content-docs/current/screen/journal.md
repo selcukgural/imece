@@ -5,13 +5,13 @@ description: Günlük paneli - imece'nin neyi yazdığı, satırların nasıl ka
 
 # Günlük
 
-Günlük (ekrandaki panelin adı DEFTER) salonun alt yan panelidir (varsayılan olarak [hikâye](#hikâye) olarak anlatılır): ne olduğu, en yeni önce, olay başına bir satır. Bir agent'ın ya da sizin yaptığınız anlamlı her şey oradadır; olağan görev dağıtımları panoya ve liderin izine bırakılır. Depoda saklanır, böylece sonraki `imece` aynı günlükle açılır; uzaktayken özeti ve "nerede kalmıştın" penceresi ondan kurulur.
+Günlük (ekrandaki panelin adı DEFTER) ekibin alt yan panelidir (varsayılan olarak [hikâye](#hikâye) olarak anlatılır): ne olduğu, en yeni önce, olay başına bir satır. Bir agent'ın ya da sizin yaptığınız anlamlı her şey oradadır; olağan görev dağıtımları panoya ve liderin izine bırakılır. Depoda saklanır, böylece sonraki `imece` aynı günlükle açılır; uzaktayken özeti ve "nerede kalmıştın" penceresi ondan kurulur.
 
 ```text
 ┌ DEFTER ─────────────────────────────────────────────────┐
 │14:07 › sen → claude-1: boş dosya denetimi `read` içinde …│
 │14:05 ✓ claude-1 değişikliğini (3 dosya) checkout'a uyguladın, stage'de; çalışma ağacı işareti 7f3a2c1
-│13:58 ! claude-1 bitirdi: 3 dosya, +41 −6 → seni bekliyor
+│13:58 ! claude-1 bitirdi: değişiklik hazır · 3 dosya +41 −6
 │13:57 ⇄ claude-1 → lead [soru] ↩: Hangi parser? İki …  +2
 │  enter konuşmayı aç · c mesajı kopyala · m işaretle      │
 │13:40✱› `cargo test` çalıştırdın → çıkış 0 · 12 sn sürdü │
@@ -31,16 +31,16 @@ Alt yan panel varsayılan olarak günlüğü satır satır göstermez, hikâyeyi
 │  14:00 ⇄ lead-shop-api → claude-2 [assign]: #1 Payment re… │
 │  14:01 ⇄ claude-4 → claude-2 [ask]: Zone codes an enum?    │
 │  14:06 ⇄ claude-1 → claude-2 [ask]: Retry count from config?  yanıt yok · 2 dk
-│  şimdi ⚑ onayını bekliyor "WebFetch: https://…" · 4 dk     │
-│#7 Payment retry policy · claude-3  ✓ bitti · Δ seni bekliyor│
+│  şimdi ⚑ çalıştırmak istiyor "WebFetch: https://…" · 4 dk     │
+│#7 Payment retry policy · claude-3  ✓ bitti · değişiklik hazır│
 │  14:05 ⇄ claude-3 → lead-shop-api [done]: Backoff capped…  │
 │başka                                                       │
 │  14:00 ⚑ node_modules claude-5'nin worktree'sine kopyalandı  ×12
 └────────────────────────────────────────────────────────────┘
 ```
 
-- **Kimi bekletiyorsunuz**, biri varsa en üstte: bir şeyi sizi bekleyen her agent (SENİ BEKLEYEN'de bir öge ya da size bir soru), ardından zaten bekleyen birine soru soran her agent, beklediğiyle birlikte (`claude-1 (claude-2 üzerinden)`). İlkini yanıtlamak diğerlerini de serbest bırakır.
-- **Kart başına bir blok**, günlüğün son zamanda sözünü ettiği her kart için; en yeni satırı olan kart önce. Başlığı: numara ve başlık, sahibi, sonra ne kadar ilerlediği (`≡ 4/5` yapılacaklar listesi, `✓ bitti`, o kartın bir değişikliği bekliyorsa `Δ seni bekliyor`). Altında kartın en yeni üç satırı, en eskisi önce: onunla ilgili söylenenler, sahibinin değişikliği, bir durma, bir hata, bir uygulama. Bir satır, agent'ının yazıldığı anda üzerinde olduğu karta aittir; başka karta geçen bir işçi eski satırlarını yanında götürmez; söylenen bir şey soranın kartına aittir. Yanıt almamış bir soru bunu söyler: `henüz yanıt yok`, sonra `yanıt yok · 2 dk`. En sonda, kart bitmemişken, `şimdi` ve sahibinin şu an yaptığı: adımı ve ne kadar süredir.
+- **Kimi bekletiyorsunuz**, biri varsa en üstte: bir şeyi sizi bekleyen her agent (KARAR BEKLEYEN'de bir öge ya da size bir soru), ardından zaten bekleyen birine soru soran her agent, beklediğiyle birlikte (`claude-1 (claude-2 üzerinden)`). İlkini yanıtlamak diğerlerini de serbest bırakır.
+- **Kart başına bir blok**, günlüğün son zamanda sözünü ettiği her kart için; en yeni satırı olan kart önce. Başlığı: numara ve başlık, sahibi, sonra ne kadar ilerlediği (`≡ 4/5` yapılacaklar listesi, `✓ bitti`, o kartın bir değişikliği bekliyorsa `değişiklik hazır`). Altında kartın en yeni üç satırı, en eskisi önce: onunla ilgili söylenenler, sahibinin değişikliği, bir durma, bir hata, bir uygulama. Bir satır, agent'ının yazıldığı anda üzerinde olduğu karta aittir; başka karta geçen bir işçi eski satırlarını yanında götürmez; söylenen bir şey soranın kartına aittir. Yanıt almamış bir soru bunu söyler: `henüz yanıt yok`, sonra `yanıt yok · 2 dk`. En sonda, kart bitmemişken, `şimdi` ve sahibinin şu an yaptığı: adımı ve ne kadar süredir.
 - **Başka**: hiçbir karta ait olmayan satırlar (liderin işe alması, bir worktree'nin kurulması, bir API çağrısının yeniden denemesi); her tür bir kez, en yeni satırıyla ve kaç tane olduğuyla (`×12`). Bir görev ataması kartını adlandırır, bu yüzden o kartın bloğunda anlatılır.
 
 Hikâye her karede en çok en yeni 2.000 günlük satırını okur ve paneli dolduracak kadar kart gösterir; daha eskiler için `J` ve günlük. `:clear`'ın kaldırdığı satırlar anlatılmaz (işaretli olan anlatılır) ve bir arşivin satırları arşivde bekler.
@@ -60,16 +60,16 @@ Her satırda saat, türü için bir işaret, birden çok proje açıksa projenin
 | --- | --- |
 | `⇄` | iki taraf arasında bir mesaj, `kimden → kime [tür]: ilk satır`; başka bir mesaja yanıtsa türden sonra `↩`. Kendi mesajlarınız, `sen → claude-1: …`, ve bir agent'ın size kapanış metni, `claude-1 yanıt verdi: …` |
 | `→` | liderin işleri: asılan bir kart, işe alınan bir işçi (`lead işe aldı: claude-1 (varsayılan model)`), işini bitirip ayrılan bir işçi. Görev dağıtımı ve panodan almalar panelde gösterilmez (pano ve kartın ekranında vardır) |
-| `!` | sizin için bir şey: bir işçi bitirdi (`claude-1 bitirdi: 3 dosya, +41 −6 → seni bekliyor`), `:commit`'in önerisi geldi, bütçe azalıyor |
+| `!` | sizin için bir şey: bir işçi bitirdi (`claude-1 bitirdi: değişiklik hazır · 3 dosya +41 −6`), `:commit`'in önerisi geldi, bütçe azalıyor |
 | `✓` | bir değişiklik uyguladınız: `claude-1 değişikliğini (3 dosya) checkout'a uyguladın, stage'de; çalışma ağacı işareti 7f3a2c1` |
 | `⚑` | bir agent'ın varsaydığı ve oturumun notları: `bildiği her şeyle, eski oturumunda devam ediyor`, `yeni bir oturumla başlıyor, kaldığı yer anlatıldı`, burada olmayan bir model (`varsayılanla devam`), confine düzeyi, HEAD'inize taşınan ya da yerinde kalan bir worktree, bir worktree'ye kopyalanan bir yol, komut listelemeyen bir oturum |
-| `■` | bloke, durdu (`claude-1 durdu: <neden>`), uygulanamayan bir değişiklik, imece kapanınca yarım kalan bir tur, atlanan bir kopya, gelmeyen commit mesajı |
+| `■` | bloke, durdu (`claude-1: oturum bitti: <neden>`), uygulanamayan bir değişiklik, imece kapanınca yarım kalan bir tur, atlanan bir kopya, gelmeyen commit mesajı |
 | `›` | siz: söylediğiniz, çalıştırdığınız, onayladığınız, reddettiğiniz, izin verdiğiniz ya da reddettiğiniz, ayarladığınız (`bütçeyi $80.00 yaptın (önce $50.00)`), açtığınız, kapattığınız, adlandırdığınız, unutturduğunuz |
 
 Bunların arasında:
 
 - **Yanıt verdi.** Bir turun kapanış metni yalnız size ulaştığında `yanıt verdi` olarak günlüğe geçer: siz sorduğunuzda, ya da takım sakinleşince liderin raporu. Postanın ya da bir pano teklifinin başlattığı bir turun kapanış metni agent'ın gönderdiğini yineler, ki günlükte zaten mesaj olarak vardır; kartın hikâyesinde ve izde kalır. Bu kural olmadan konuşmalar kendini yineler gibi okunuyordu.
-- **Değişiklikler.** `bitirdi … → seni bekliyor`, `… checkout'a uyguladın, stage'de; çalışma ağacı işareti <sha>`, `… uygulanamadı: <git'in sözleri>`, `reddedildi: claude-1`; kısmi bir uygulamadan sonra kalan yeni bir `bitirdi` olarak döner.
+- **Değişiklikler.** `bitirdi: değişiklik hazır · …`, `… checkout'a uyguladın, stage'de; çalışma ağacı işareti <sha>`, `… uygulanamadı: <git'in sözleri>`, `geri gönderildi: claude-1`; kısmi bir uygulamadan sonra kalan yeni bir `bitirdi` olarak döner.
 - **Oturumlar.** `bildiği her şeyle, eski oturumunda devam ediyor`, `yeni bir oturumla başlıyor, kaldığı yer anlatıldı`, `claude-1 oturumunu unutturdun`, `durdu: …`, `turu imece kapanınca yarım kaldı; uyanınca öğrenecek`, kendi komutlarını listelemeyen bir oturum, strict olmayan her başlangıçta söylenen confine düzeyi.
 - **Worktree'ler.** `çalışma ağacı <sha> yerine HEAD <sha> oldu`, ya da commit edilmemiş değişiklikleri ya da kendi commit'leri olduğu için yerinde kaldı.
 - **Kopyalar.** `.env → claude-1 çalışma ağacına kopyalandı (1.2 KiB)`, ve neyin neden kopyalanmadığı (`:copy`); checkout'un `.worktreeinclude` dosyasının saydıkları kendi satırlarında (`…, .worktreeinclude'un saydığı`), ve onun uygulanmayan bir satırı nedeniyle.
@@ -90,7 +90,7 @@ Bir konuşmanın eski satırları en yenisinin altına katlanır: satır sonunda
 
 | Tuş | Ne yapar |
 | --- | --- |
-| `tab` `⇧tab` | günlük paneline (salon → bekleyenler → günlük) |
+| `tab` `⇧tab` | günlük paneline (ekip → bekleyenler → günlük) |
 | `↑` `↓` / `j` `k`, `gg` `G`, `^d` `^u` `^f` `^b` | bir satır seç |
 | `enter` | satırın ait olduğu konuşmayı o satır seçili olarak aç; konuşma olmayan bir olay OLAY olarak açılır |
 | `c` / `y` | seçili mesajı kopyala (yalnız metni; bir olay satırı günü ve saatiyle kopyalanır) |
@@ -114,7 +114,7 @@ Başka bir pencerede yarım saat ya da daha uzun kaldıktan sonra terminale dön
 
 ## Ekranı temizlemek
 
-`:clear` günlüğün satırlarını ve SENİ BEKLEYEN'in listelediklerini salonun ekranından kaldırır; `:clear journal` ve `:clear inbox` birini. Önce on saniye bekler, `u` ekranı olduğu gibi bırakır. Hiçbir şey silinmez: depo her satırı tutar, `:export`, bir kartın ekranı ve arşivler hâlâ gösterir, temizlemenin kendisi de saklanır, böylece sonraki açılış da temiz başlar. İşaretli bir satır kalır. Sizi hâlâ bekleyen açık kalır ve başlıkta sayılır, `SENİ BEKLEYEN (0 · +2 gizli)`, `W` sıradakini açar ve listeye geri koyar. `:unclear` (ya da `:unclear journal`, `:unclear inbox`) hepsini geri getirir.
+`:clear` günlüğün satırlarını ve KARAR BEKLEYEN'in listelediklerini ekibin ekranından kaldırır; `:clear journal` ve `:clear inbox` birini. Önce on saniye bekler, `u` ekranı olduğu gibi bırakır. Hiçbir şey silinmez: depo her satırı tutar, `:export`, bir kartın ekranı ve arşivler hâlâ gösterir, temizlemenin kendisi de saklanır, böylece sonraki açılış da temiz başlar. İşaretli bir satır kalır. Sizi hâlâ bekleyen açık kalır ve başlıkta sayılır, `KARAR BEKLEYEN (0 · +2 gizli)`, `W` sıradakini açar ve listeye geri koyar. `:unclear` (ya da `:unclear journal`, `:unclear inbox`) hepsini geri getirir.
 
 ## Nerede kalmıştın
 

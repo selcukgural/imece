@@ -11,7 +11,7 @@
 //! OSC 9 (iTerm2, WezTerm; a terminal that does not know it ignores it).
 //!
 //! What rings is what came while away and is still there [`AFTER`]
-//! later: a new item in WAITING FOR YOU, an agent stuck. Each rings once
+//! later: a new item in TO DECIDE, an agent stuck. Each rings once
 //! ([`Notices`] keeps what rang); what the person saw before leaving, or
 //! what came and went within the wait, never does; back in the window,
 //! what was about to ring is dropped, since it is on screen now. The

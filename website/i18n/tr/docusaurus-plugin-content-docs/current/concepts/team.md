@@ -5,7 +5,7 @@ description: Bir imece ekibinde kim var - lider, işçiler, yardımcılar ve hen
 
 # Ekip
 
-Bir imece ekibi, sizinle konuşan ve iş gerektirdikçe işçi alan bir lider, görevlerinin parçaları için yardımcı alabilen işçiler ve (bir gün) araştırmacılardan oluşur. Ekip boyutunu siz seçmezsiniz; üst sınırları koyarsınız. Ekiple salonda, projeye göre gruplanmış olarak karşılaşırsınız.
+Bir imece ekibi, sizinle konuşan ve iş gerektirdikçe işçi alan bir lider, görevlerinin parçaları için yardımcı alabilen işçiler ve (bir gün) araştırmacılardan oluşur. Ekip boyutunu siz seçmezsiniz; üst sınırları koyarsınız. Ekiple ekipte, projeye göre gruplanmış olarak karşılaşırsınız.
 
 ## Roller
 
@@ -17,7 +17,7 @@ Bir imece ekibi, sizinle konuşan ve iş gerektirdikçe işçi alan bir lider, g
 | Solo (`solo`, `solo-notes`) | Kendi worktree'si, lideri olmayan bir projede | `send`, `run`, `hire` (yardımcılar) |
 | Araştırmacı | henüz yapılmadı | — |
 
-- **Lider** checkout'u okur, isteğinizi kartlara böler ve her birini sahip olduğu yollarla ([kartın sahip olduğu yollar](messages-and-board.md#kartın-sahip-olduğu-yollar)) `send` (tür `assign`) ile dağıtır ya da herhangi bir işçinin alması için panoya asar. İkinci işçiyi almadan önce planı önce size gelir (SENİ BEKLEYEN'de `▤`; [plan](messages-and-board.md#plan)). Hiçbir `--confine` düzeyinde dosya değiştirmez: checkout'unuzda çalışır, orada bir yazma incelemeyi atlar. Claude Code'un okuma araçlarını ve `standard`'dan itibaren web'i alır.
+- **Lider** checkout'u okur, isteğinizi kartlara böler ve her birini sahip olduğu yollarla ([kartın sahip olduğu yollar](messages-and-board.md#kartın-sahip-olduğu-yollar)) `send` (tür `assign`) ile dağıtır ya da herhangi bir işçinin alması için panoya asar. İkinci işçiyi almadan önce planı önce size gelir (KARAR BEKLEYEN'de `▤`; [plan](messages-and-board.md#plan)). Hiçbir `--confine` düzeyinde dosya değiştirmez: checkout'unuzda çalışır, orada bir yazma incelemeyi atlar. Claude Code'un okuma araçlarını ve `standard`'dan itibaren web'i alır.
 - **Bir işçi** kendi worktree'sinde dosya değiştirir, işini `run` aracıyla denetler ve görevi kim verdiyse ona `done` gönderir. `done`'ı, incelemeniz için bir değişikliğe dönüşür ([değişiklikler](../concepts/changes.md)). İşçi başına bir anda bir kart.
 - **Bir yardımcı**, işçi için liderin işçisi neyse odur. İşçi, kendi işinin yanında yürüyebilecek bir parça için, değiştirmediği dosyalarda bir yardımcı alır. Yardımcıya kart teklif edilmez, kimseyi işe almaz (yardımcının yardımcısı yok) ve `--agents` sınırına sayılmaz. İşçisine gönderdiği `done` ayrılışını işaretler; o tur bitince ayrılır, böylece turun maliyeti yine raporlanır. Günlük `işini bitirdi, ayrıldı` der. Duran bir işçi yardımcılarını da götürür. `done`'undan önce duran bir yardımcıyı (oturumu biter ya da son turu kalıcı olarak düşer: reddedilen bir anahtar, biten bütçe) imece işçisine onun bir sonraki turunda söyler, "ona verdiğin parça yapılmadı: kendin yap ya da başka bir yardımcı al", ve boştaki bir işçi bunun için uyandırılır; böylece yanıt vermeyecek bir yardımcıyı beklemez. imece'nin yeniden denediği bir API hatası henüz durmak sayılmaz.
 - **Bir solo**, lideri olmayan bir işçidir: onu, seçtiğiniz model ve çabada (`:solo`, `--solo`) kendi başına bir projede siz sürersiniz. Panosu ve kartı yoktur; bir yanıtla biten her turda worktree'sinin diff'ini size gösterir. Bir işçi gibi yardımcı alabilir ([solo oturumlar](solo.md)).
@@ -64,7 +64,7 @@ Ajanlar bus'ta birbirlerine bu adlarla seslenir; aynı projenin ekibinde olmayan
 ## Ekranda
 
 ```text
- SALON
+ EKİP
  ● lead            koordine ediyor
  ● claude-1        #12 parser: tokens      ⎇ ↑1 +34 −8   ▾ 1 yardımcı
    └ ● claude-1.1  claude-1 yardımcısı
@@ -80,4 +80,4 @@ Sizi bekleyen işçiler önce gelir (takılan, sonra sizi bekleyen, sonra bitip 
 - [Mesajlar ve pano](../concepts/messages-and-board.md)
 - [Claude Code](../concepts/claude-code.md): confine düzeyleri, bir oturum nedir.
 - [Projeler](../concepts/projects.md): proje başına bir lider.
-- [Salon](../screen/salon.md) ve [CLI başvurusu](../reference/cli.md).
+- [Ekip](../screen/salon.md) ve [CLI başvurusu](../reference/cli.md).

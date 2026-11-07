@@ -192,7 +192,7 @@ impl Glow {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum GlowOn {
     Agent(crate::model::AgentId),
-    /// An item of WAITING FOR YOU, by its index in the inbox.
+    /// An item of TO DECIDE, by its index in the inbox.
     Item(usize),
 }
 

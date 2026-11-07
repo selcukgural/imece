@@ -83,7 +83,7 @@ description: imece'nin aldığı her `:` komutu; argümanları, karşılığı o
 | `:unclear [inbox\|journal]` | — | | | | |
 | `:undo` | `u` | | | | |
 | `:unfold` | `zR` | | | | |
-| `:unsettle` | — | | | | kaç şeyin kaldırıldığı |
+| `:unsettle` | — | | | | kaç şeyin gizlendiği |
 | `:waiting` | `w` | | | | N bekliyor |
 | `:welcome` | — | | | | |
 | `:why [@NAME]` | — | | | | eldeki ajan |
@@ -97,7 +97,7 @@ Canlıda `:pause`, `:faster` ve `:slower` menüde yer almaz. Hareket eden tuşla
 
 Eldeki projeyi `TITLE` adıyla kaldırır ve yerine yenisini açar, istendikten on saniye sonra: alt satır geri sayar (`◷ kule “first epic” adıyla arşivleniyor, 7 sn sonra · u tutar`; ajanlarından biri tur ortasındaysa `…; 2 tur yarıda kesilecek …`), `u` ([`:undo`](#undo)) olduğu gibi bırakır. Başlıksız, adı ve günleriyle anılır (`kule 2026-10-30 → 2026-11-02`); başlık tek satırdır, en çok 60 karakter.
 
-Arşivlenen projenin ajanları çıkışta olduğu gibi durur (süren bir tur yarıda kesilir, istemi saklanır) ve her şeyiyle uyur: oturumları, postaları, notları, değişiklikleri, kartları ve SENİ BEKLEYEN'deki kalemleri. Hepsi ekrandan çıkar: salon, SENİ BEKLEYEN, günlük, pano ve kuyruk yalnız yeni projeyi gösterir; yenisinin adı, iğnesi ve `:copy` listesi aynıdır, başındaki ajanın adı ve modeli de. Hiçbir şey harcanmaz, bütçe aynı bütçedir. Flaş: `kule “first epic” adıyla arşivlendi: agent'ları her şeyiyle uyuyor; yerine yenisi açıldı`; günlük: `kule projesini “first epic” adıyla arşivledin; yerine yeni bir kule açıldı`. `--fresh` arşivin oturumlarına dokunmaz. Demo da aynı biçimde arşivler. Bkz. [oturumlar](../concepts/sessions.md#arşivler) ve [yeni bir epic](../scenarios/new-epic.md) senaryosu.
+Arşivlenen projenin ajanları çıkışta olduğu gibi durur (süren bir tur yarıda kesilir, istemi saklanır) ve her şeyiyle uyur: oturumları, postaları, notları, değişiklikleri, kartları ve KARAR BEKLEYEN'deki kalemleri. Hepsi ekrandan çıkar: ekip, KARAR BEKLEYEN, günlük, pano ve kuyruk yalnız yeni projeyi gösterir; yenisinin adı, iğnesi ve `:copy` listesi aynıdır, başındaki ajanın adı ve modeli de. Hiçbir şey harcanmaz, bütçe aynı bütçedir. Flaş: `kule “first epic” adıyla arşivlendi: agent'ları her şeyiyle uyuyor; yerine yenisi açıldı`; günlük: `kule projesini “first epic” adıyla arşivledin; yerine yeni bir kule açıldı`. `--fresh` arşivin oturumlarına dokunmaz. Demo da aynı biçimde arşivler. Bkz. [oturumlar](../concepts/sessions.md#arşivler) ve [yeni bir epic](../scenarios/new-epic.md) senaryosu.
 
 ### `:archives`
 
@@ -105,7 +105,7 @@ Arşivleri bir ağaç olarak açar, `A` gibi: arşivi olan her çalışma kopyas
 
 İçinde `j` `k` gezer, `gg` `G` ilk / son satıra gider, `l` (ya da `→`) bir arşivin ajanlarını gösterir (her biri harcadığıyla, başı önce ve kalın) ve katlanmış bir çalışma kopyasını açar, `h` (ya da `←`) onları yeniden katlar (zaten katlı bir arşivde, çalışma kopyasını), `za` eldeki satırı katlar ya da açar; bir çalışma kopyasında `enter` da öyle. `/` süzer: yalnızca başlığında, proje adında, çalışma kopyasında ya da bir ajanının adında yazılan her kelime olan arşivler kalır, büyük/küçük harf ve Türkçe harfler katlanır; `enter` süzgeci tutar, `esc` bırakır. Bir arşivde ya da ajanlarından birinde `r` onu geri getirir, [`:restore`](#restore-name) gibi, ve pencereyi kapatır; `esc`, `q` ya da `A` kapatır (`esc` önce süzgeci bırakır). Hiç arşiv yoksa: `henüz arşiv yok; :archive elindeki projeyi kaldırır`. Geri sayan bir `:archive` önce olur, böylece listede yer alır. Demo da arşivlerini aynı biçimde, her birini projesinin adı altında listeler.
 
-Bir arşivde (ya da ajanlarından birinde, o zaman o seçili) `enter` onu geri getirmeden, ekranın üstünde salt okunur açar: salon, pano, SENİ BEKLEYENLER ve günlük yalnızca o arşivi kaldırıldığı gibi gösterir; günlüğü, deponun ondan sakladığı her şeydir. En üst satır hangisi olduğunu ve bu arada seni bekleyeni söyler: `ARŞİV · kule “v1 fixes” · 2026-11-02 arşivlendi · şu an seni 1 şey bekliyor · esc geri`. İçinde hiçbir şey uyanmaz, harcamaz; arkadaki ekran sürer. Konuşmalar (`v` kopyalar), kart ekranları, odak, `:export` ve yalnızca bakan ya da giden `:` komutları orada çalışır; bir mesaj, `!cmd`, `m`, `A`, SENİ BEKLEYENLER'de bir cevap ve diğer her komut `arşiv salt okunur · :restore geri getirir · esc geri döner` der. İçinde `:restore` o arşivi geri getirir. `esc` ya da `q` (görünümde açık bir şey yokken) geri döner, `:quit` de; `ctrl-c` imece'den çıkar. Depo okunamazsa: `arşivin günlüğü okunamadı: …`.
+Bir arşivde (ya da ajanlarından birinde, o zaman o seçili) `enter` onu geri getirmeden, ekranın üstünde salt okunur açar: ekip, pano, KARAR BEKLEYENLER ve günlük yalnızca o arşivi kaldırıldığı gibi gösterir; günlüğü, deponun ondan sakladığı her şeydir. En üst satır hangisi olduğunu ve bu arada seni bekleyeni söyler: `ARŞİV · kule “v1 fixes” · 2026-11-02 arşivlendi · şu an seni 1 şey bekliyor · esc geri`. İçinde hiçbir şey uyanmaz, harcamaz; arkadaki ekran sürer. Konuşmalar (`v` kopyalar), kart ekranları, odak, `:export` ve yalnızca bakan ya da giden `:` komutları orada çalışır; bir mesaj, `!cmd`, `m`, `A`, KARAR BEKLEYENLER'de bir cevap ve diğer her komut `arşiv salt okunur · :restore geri getirir · esc geri döner` der. İçinde `:restore` o arşivi geri getirir. `esc` ya da `q` (görünümde açık bir şey yokken) geri döner, `:quit` de; `ctrl-c` imece'den çıkar. Depo okunamazsa: `arşivin günlüğü okunamadı: …`.
 
 ### `:awake`
 
@@ -125,15 +125,15 @@ Ajanlar çalışırken bütçeyi artırır ya da azaltır (`:b 80`). Değer, nok
 
 ### `:clear [inbox|journal]`
 
-SENİ BEKLEYEN'in listelediklerini ve günlüğün satırlarını salonun ekranından kaldırır: yalın ikisini, `inbox` ya da `journal` birini. Hiçbir şey silinmez: depo hepsini tutar, `:export`, bir kartın ekranı ve arşivler hâlâ gösterir. `:close` gibi önce on saniye bekler (`◷ SENİ BEKLEYEN ve günlük 7 sn sonra ekrandan kalkıyor · u tutar`; `u` ekranı olduğu gibi bırakır), sonra neyin gittiğini söyler: `2 bekleyen ve 40 günlük satırı ekrandan kalktı; :unclear geri getirir`. Sizi hâlâ bekleyen bir şey kaybolmaz: açık kalır, ajanı hâlâ bekler, başlık onu sayar (`SENİ BEKLEYEN (0 · +2 gizli)`), terminalin başlığı ve sekmesi de sayar, `W` sıradakini açar ve onu listeye geri koyar. İşaretli bir satır (`m`) günlükte kalır. Sonra gelenler her zamanki gibi görünür. Temizleme depoda saklanır, böylece sonraki açılış da temiz başlar. Temizlenecek bir şey yoksa `ekranda temizlenecek bir şey yok` der; başka bir kelime: `all inbox ya da journal değil`. Bkz. [günlük](../screen/journal.md#ekranı-temizlemek).
+KARAR BEKLEYEN'in listelediklerini ve günlüğün satırlarını ekibin ekranından kaldırır: yalın ikisini, `inbox` ya da `journal` birini. Hiçbir şey silinmez: depo hepsini tutar, `:export`, bir kartın ekranı ve arşivler hâlâ gösterir. `:close` gibi önce on saniye bekler (`◷ KARAR BEKLEYEN ve günlük 7 sn sonra ekrandan kalkıyor · u tutar`; `u` ekranı olduğu gibi bırakır), sonra neyin gittiğini söyler: `2 bekleyen ve 40 günlük satırı ekrandan kalktı; :unclear geri getirir`. Sizi hâlâ bekleyen bir şey kaybolmaz: açık kalır, ajanı hâlâ bekler, başlık onu sayar (`KARAR BEKLEYEN (0 · +2 gizli)`), terminalin başlığı ve sekmesi de sayar, `W` sıradakini açar ve onu listeye geri koyar. İşaretli bir satır (`m`) günlükte kalır. Sonra gelenler her zamanki gibi görünür. Temizleme depoda saklanır, böylece sonraki açılış da temiz başlar. Temizlenecek bir şey yoksa `ekranda temizlenecek bir şey yok` der; başka bir kelime: `all inbox ya da journal değil`. Bkz. [günlük](../screen/journal.md#ekranı-temizlemek).
 
 ### `:close [NAME]`
 
-`NAME` projesini ya da eldekini kapatır (`:c`), istendikten on saniye sonra: alt satır geri sayar, `u` ([`:undo`](#undo)) açık tutar. Ajanlarının oturumları ve çalıştırmaları biter, postaları, notları, teklifleri ve değişiklikleri düşer, SENİ BEKLEYEN'deki kalemleri kapanır ve proje kapalı işaretlenir: salon onu atlar, aynı çalışma kopyası yeniden açılırsa yeni bir liderle onun yerini alır. Worktree'ler diskte kalır. Flaş: `kule kapatıldı: agent'ları ayrıldı; worktree'leri diskte kaldı`. Son açık proje reddeder: `kule son açık proje; q q çıkar`; kimsenin olmadığı bir ad: `x adında açık proje yok`. Demoda projenin ajanları aynı biçimde ayrılır. Bkz. [projeler](../concepts/projects.md).
+`NAME` projesini ya da eldekini kapatır (`:c`), istendikten on saniye sonra: alt satır geri sayar, `u` ([`:undo`](#undo)) açık tutar. Ajanlarının oturumları ve çalıştırmaları biter, postaları, notları, teklifleri ve değişiklikleri düşer, KARAR BEKLEYEN'deki kalemleri kapanır ve proje kapalı işaretlenir: ekip onu atlar, aynı çalışma kopyası yeniden açılırsa yeni bir liderle onun yerini alır. Worktree'ler diskte kalır. Flaş: `kule kapatıldı: agent'ları ayrıldı; worktree'leri diskte kaldı`. Son açık proje reddeder: `kule son açık proje; q q çıkar`; kimsenin olmadığı bir ad: `x adında açık proje yok`. Demoda projenin ajanları aynı biçimde ayrılır. Bkz. [projeler](../concepts/projects.md).
 
 ### `:code`
 
-Kod haritası, `3` gibi. Canlıda henüz ortak trunk olmadığını söyler (her ajan kendi worktree'sinde çalışır, gösterilecek lease yoktur); sembol lease'leri yapılmamıştır. Bkz. [pano ve kod haritası](../screen/board-and-code-map.md).
+Kod haritası, `3` gibi. Canlıda henüz ortak trunk olmadığını söyler (her ajan kendi worktree'sinde çalışır, kimin neyi düzenlediği gösterilemez); sembol lease'leri yapılmamıştır. Bkz. [pano ve kod haritası](../screen/board-and-code-map.md).
 
 ### `:commit`
 
@@ -143,7 +143,7 @@ Para eder: her çağrı en çok 0,05 $ (çağrının kendi sert sınırı), bir 
 
 ### `:allow [PROGRAM [WORD]]`
 
-Eldeki projenin hep eveti: ajanlarının size sormadan çalıştırdığı komutlar (bkz. [onaylar](../concepts/approvals-and-questions.md#artık-hep-evet)). Tek başına `:allow` listeyi söyler (`kule: artık hep evet: make, npm run …` ya da `kule: hep evet yok; bir istekte A, ya da :allow PROGRAM [SÖZCÜK]`); `:allow npm run` bir tane ekler (projenin onu kapsayan açık istekleri sürer), aynısı yeniden onu çıkarır (`kule: artık hep evet değil: npm run …`). Bir program ve en çok bir sözcük, önce seçenek değil: `:allow rm -rf` reddedilir. SENİ BEKLEYEN'deki bir istekte `A` o isteğin çalıştırdığını ekler, böyle bir hep evet tutmuyorsa yalnız o satırı; `:allow` o satırla yazılınca onu çıkarır. Çalıştırmalar arasında projeyle saklanır.
+Eldeki projenin hep eveti: ajanlarının size sormadan çalıştırdığı komutlar (bkz. [onaylar](../concepts/approvals-and-questions.md#artık-hep-evet)). Tek başına `:allow` listeyi söyler (`kule: artık hep evet: make, npm run …` ya da `kule: hep evet yok; bir istekte A, ya da :allow PROGRAM [SÖZCÜK]`); `:allow npm run` bir tane ekler (projenin onu kapsayan açık istekleri sürer), aynısı yeniden onu çıkarır (`kule: artık hep evet değil: npm run …`). Bir program ve en çok bir sözcük, önce seçenek değil: `:allow rm -rf` reddedilir. KARAR BEKLEYEN'deki bir istekte `A` o isteğin çalıştırdığını ekler, böyle bir hep evet tutmuyorsa yalnız o satırı; `:allow` o satırla yazılınca onu çıkarır. Çalıştırmalar arasında projeyle saklanır.
 
 ### `:copy [PATH]`
 
@@ -153,7 +153,7 @@ Yol göreli, düz (glob yok, `..` yok, `.git` içinde değil, en çok 200 bayt),
 
 ### `:defer`
 
-SENİ BEKLEYEN'deki eldeki kalemi erteler ve sonrakini açar, `S` gibi. Bkz. [seni bekleyenler](../screen/waiting.md).
+KARAR BEKLEYEN'deki eldeki kalemi erteler ve sonrakini açar, `S` gibi. Bkz. [seni bekleyenler](../screen/waiting.md).
 
 ### `:digest`
 
@@ -179,7 +179,7 @@ Yalnız demo, `+` gibi: simülasyon hızlanır. Menü notu hızı gösterir (`×
 
 ### `:fold`
 
-Salonda her projeyi ve her işçinin yardımcılarını katlar, `zM` gibi; başka bir görünümden önce salona gider. Açık bir konuşma varken bunun yerine onun her mesajını tek satıra katlar, bu çalıştırmada sonra açılan konuşmalar da katlı başlar. Bkz. [salon](../screen/salon.md) ve [konuşmalar](../screen/conversations.md).
+Ekipte her projeyi ve her işçinin yardımcılarını katlar, `zM` gibi; başka bir görünümden önce ekibe gider. Açık bir konuşma varken bunun yerine onun her mesajını tek satıra katlar, bu çalıştırmada sonra açılan konuşmalar da katlı başlar. Bkz. [ekip](../screen/salon.md) ve [konuşmalar](../screen/conversations.md).
 
 ### `:forget [@NAME]`
 
@@ -191,7 +191,7 @@ Ajana oturumunu unutturur (`:f`), istendikten on saniye sonra: alt satır geri s
 
 ### `:goto [NAME]`
 
-`NAME` adlı ajana (önünde `@` olabilir), yoksa o adlı açık projeye gider: salon, satırı seçili, projesi açılmış, bir yardımcının işçisi açılmış ve satırı gizleyecekse `f` bırakılmış; bir proje adı başlığını seçer. Büyük küçük harf ve Türkçe harfler fark etmez. O adda bir şey yoksa: `"zzz" adında gidilecek bir yer yok: bir agent ya da proje`, ve hiçbir şey kımıldamaz. Tek başına `&` satırını açar: yerler şu anki hâliyle, sizi bekleyenler önde (takılan, sonra bekleyen, sonra bitmiş ve görülmemiş), kalanlar durumuna göre (çalışan boştakinden önce), sonra açık projeler, her ajan glifi ve durum sözcükleriyle. Satır açıkken liste donar, böylece yazarken numaralar değişmez; `&` hemen ardından `1`-`9` bir rakam anında gider, `&` hemen ardından `#` kart satırına döner, `!` yalnız sizi bekleyenleri tutar, rakamlar bir numaranın başıyla eşleşir, geri kalanı adların içinde arar. `enter` imlecin altındakine, ya da yazılan ada gider. Bkz. [salon](../screen/salon.md).
+`NAME` adlı ajana (önünde `@` olabilir), yoksa o adlı açık projeye gider: ekip, satırı seçili, projesi açılmış, bir yardımcının işçisi açılmış ve satırı gizleyecekse `f` bırakılmış; bir proje adı başlığını seçer. Büyük küçük harf ve Türkçe harfler fark etmez. O adda bir şey yoksa: `"zzz" adında gidilecek bir yer yok: bir agent ya da proje`, ve hiçbir şey kımıldamaz. Tek başına `&` satırını açar: yerler şu anki hâliyle, sizi bekleyenler önde (takılan, sonra bekleyen, sonra bitmiş ve görülmemiş), kalanlar durumuna göre (çalışan boştakinden önce), sonra açık projeler, her ajan glifi ve durum sözcükleriyle. Satır açıkken liste donar, böylece yazarken numaralar değişmez; `&` hemen ardından `1`-`9` bir rakam anında gider, `&` hemen ardından `#` kart satırına döner, `!` yalnız sizi bekleyenleri tutar, rakamlar bir numaranın başıyla eşleşir, geri kalanı adların içinde arar. `enter` imlecin altındakine, ya da yazılan ada gider. Bkz. [ekip](../screen/salon.md).
 
 ### `:history [WORDS]`
 
@@ -203,7 +203,7 @@ Gönderdiğiniz satırları arar, `^r` gibi: komut satırı üstünde `WORDS` il
 
 ### `:hints`
 
-İpucu harfleri, `F` gibi: salon ekranında seçilebilen her satırın (proje başlıkları, ajanlar, bir kartın ekranındaki kişiler, bekleyen kalemler, günlük satırları) başına bir ya da iki harflik bir etiket. Bir etiketi yazmak satırını kendi panelinde seçer; son harfi büyük yazılırsa onu `enter` gibi açar da. `backspace` bir harfi geri alır, `esc` kapatır. O arada ekrandan çıkan bir satır: `o satır ekrandan çıktı`. Salon ekranı dışında: `burada harf verilecek satır yok: F salon ekranında çalışır`. Bkz. [salon](../screen/salon.md).
+İpucu harfleri, `F` gibi: ekip ekranında seçilebilen her satırın (proje başlıkları, ajanlar, bir kartın ekranındaki kişiler, bekleyen kalemler, günlük satırları) başına bir ya da iki harflik bir etiket. Bir etiketi yazmak satırını kendi panelinde seçer; son harfi büyük yazılırsa onu `enter` gibi açar da. `backspace` bir harfi geri alır, `esc` kapatır. O arada ekrandan çıkan bir satır: `o satır ekrandan çıktı`. Ekip ekranı dışında: `burada harf verilecek satır yok: F ekip ekranında çalışır`. Bkz. [ekip](../screen/salon.md).
 
 ### `:keys`
 
@@ -233,11 +233,11 @@ Eldeki solo oturumun sonraki turundan itibaren çalıştığı modeli ayarlar: b
 
 ### `:motion [off|calm|full]`
 
-Ekranda ne kadar şeyin hareket ettiği. `calm` (varsayılan): çalışan bir satırın işareti nefes alır, rengi 0,6 saniyede bir kısılır, şekli hiç değişmez (panoda da, kartının altındaki çalışan sahibinki); `başlıyor` noktalarını sayar; imece bir yanıt beklerken (`:commit`) alt satırda bir dönücü görünür, ilk açılış penceresinde hâlâ denetlenen Claude Code'un yanında da; sizi beklemeye düşen bir satır ya da kalem üç kez yanıp söner; turu biten ya da oturumu kalkan bir satır yeşil bir zeminden kendi renklerine yatışır (terminalin kendi renklerini kullanan bir temada: ters renk, sonra değişen satırların görünüşü); bir satır etkinlik çubuğunu taşır, `▁▃▅▂▁`, agent'ın son beş tikin her birinde yaptıkları (yalnızca agent bir şey yaptıkça ve tikler geçtikçe değişir); imece'nin işareti, ekrana geldiği yerde (hoş geldin ve yenilikler pencereleri, henüz işçisi olmayan bir salon), noktalarını birer vuruşta getirir, herhangi bir tuş onu bütün gösterir. `full` biri çalışırken başlıktaki filonun yanına bir dönücü ekler ve daha hızlı döner; SSH üzerinde sakin çalışır (her kare ağdan geçer). `off`: hiçbir şey hareket etmez, hiçbir satır etkinlik çubuğu taşımaz ve işaret bütün çizilir, ekran eskisi gibidir. Başka penceredeyken hiçbir şey hareket etmez ve orada olanlar dönünce yanıp sönmez; her şey tek bir vuruşa (0,3 sn) düşer, böylece aynı anda birkaç şeyin hareket etmesi tek bir şeyinkinden fazla kareye mal olmaz ve bir kare yalnızca gösterdiği şey hareket edince çizilir (bkz. [karar](https://github.com/selcukgural/imece/blob/main/docs/decisions/84-motion.md)). Yalın `:motion` sıradakine geçer: off, calm, full, off. Flaş yenisinin ne yaptığını söyler (`sakin hareket: çalışan satır nefes alır, seni bekleyen yanıp söner`, `tam hareket: dönücüler de, daha hızlı`, `SSH üzerinde tam hareket sakin çalışır`, `ekranda hiçbir şey hareket etmez`); başka bir kelime: `wild off, calm ya da full değil`. Menü notu değeri gösterir; depoda hatırlanır.
+Ekranda ne kadar şeyin hareket ettiği. `calm` (varsayılan): çalışan bir satırın işareti nefes alır, rengi 0,6 saniyede bir kısılır, şekli hiç değişmez (panoda da, kartının altındaki çalışan sahibinki); `başlıyor` noktalarını sayar; imece bir yanıt beklerken (`:commit`) alt satırda bir dönücü görünür, ilk açılış penceresinde hâlâ denetlenen Claude Code'un yanında da; sizi beklemeye düşen bir satır ya da kalem üç kez yanıp söner; turu biten ya da oturumu kalkan bir satır yeşil bir zeminden kendi renklerine yatışır (terminalin kendi renklerini kullanan bir temada: ters renk, sonra değişen satırların görünüşü); bir satır etkinlik çubuğunu taşır, `▁▃▅▂▁`, agent'ın son beş tikin her birinde yaptıkları (yalnızca agent bir şey yaptıkça ve tikler geçtikçe değişir); imece'nin işareti, ekrana geldiği yerde (hoş geldin ve yenilikler pencereleri, henüz işçisi olmayan bir ekip), noktalarını birer vuruşta getirir, herhangi bir tuş onu bütün gösterir. `full` biri çalışırken başlıktaki filonun yanına bir dönücü ekler ve daha hızlı döner; SSH üzerinde sakin çalışır (her kare ağdan geçer). `off`: hiçbir şey hareket etmez, hiçbir satır etkinlik çubuğu taşımaz ve işaret bütün çizilir, ekran eskisi gibidir. Başka penceredeyken hiçbir şey hareket etmez ve orada olanlar dönünce yanıp sönmez; her şey tek bir vuruşa (0,3 sn) düşer, böylece aynı anda birkaç şeyin hareket etmesi tek bir şeyinkinden fazla kareye mal olmaz ve bir kare yalnızca gösterdiği şey hareket edince çizilir (bkz. [karar](https://github.com/selcukgural/imece/blob/main/docs/decisions/84-motion.md)). Yalın `:motion` sıradakine geçer: off, calm, full, off. Flaş yenisinin ne yaptığını söyler (`sakin hareket: çalışan satır nefes alır, seni bekleyen yanıp söner`, `tam hareket: dönücüler de, daha hızlı`, `SSH üzerinde tam hareket sakin çalışır`, `ekranda hiçbir şey hareket etmez`); başka bir kelime: `wild off, calm ya da full değil`. Menü notu değeri gösterir; depoda hatırlanır.
 
 ### `:needs`
 
-Salon yalnızca sizi bekleyenleri gösterir (sizi bekleyen, takılmış, bitmiş ve bakılmamış), `f` gibi; yeniden, herkesi. Önce salona gider. Menü notu: `(açık)` / `(kapalı)`.
+Ekip yalnızca sizi bekleyenleri gösterir (sizi bekleyen, takılmış, bitmiş ve bakılmamış), `f` gibi; yeniden, herkesi. Önce ekibe gider. Menü notu: `(açık)` / `(kapalı)`.
 
 ### `:news`
 
@@ -251,7 +251,7 @@ Sizi bekleyen sonraki kalemi her yerden açar, `W` gibi. Menü notu kaç kalemin
 
 Başka bir penceredeyken sizi bekleyen bir şey geldiğinde nasıl haber alacağınız: `bell` terminalin zilini çalar (her terminalin bunun için bir ayarı vardır: ses, sekmede rozet, flaş; tmux'ta `monitor-bell`), `text` imece'nin sözleriyle bir masaüstü bildirimi gönderir, terminalinizin en iyi gösterdiği biçimde (başlarken adı sorulur): kitty 0.36+ kendi biçimini alır (OSC 99), başlığı `imece`, takılan bir şey ya da API hatası için daha yüksek sesle ve hata sesiyle, yoksa soru sesiyle, ve **tıklayınca neyle ilgiliyse o açılır** (bekleyen öge, takılan agent, birkaçı içinse `W` gibi sıradaki bekleyen); Ghostty başlığı `imece` olan OSC 777 alır; tmux içinde tmux'un passthrough'undan geçer, bunun için tmux ayarınızda `set -g allow-passthrough on` gerekir (yoksa tmux düşürür; `bell` her zaman geçer); başka her terminal OSC 9 alır (iTerm2, WezTerm; diziyi tanımayan bir terminal yok sayar, orada `bell` seçin), `off` (varsayılan) ikisi de değil. Yalın `:notify` sıradakine geçer: off, bell, text, off. Flaş `başka penceredeyken bir şey beklerse zil çalar`, `başka penceredeyken bir şey beklerse masaüstü bildirimi gelir` ya da `başka penceredeyken haber yok` der; başka bir kelime: `beep off, bell, text ya da push değil`. Menü notu değeri gösterir; depoda hatırlanır.
 
-Ne çalar: SENİ BEKLEYEN'e yeni düşen bir kalem (değişiklik, soru, cevap, onay isteği, hassas bir şey) ya da takılan bir ajan (bloke, oturumu durmuş), terminal odakta değilken geldiyse ve beş saniye sonra hâlâ oradaysa, her biri bir kez. Bildirim türü ve ajanı söyler, ajanın sözlerini asla: `imece · claude-1 bitirdi: bir değişiklik seni bekliyor`, `imece · claude-2 sana soruyor`, `imece · claude-3 takıldı`; aynı anda birkaçı tek zil ya da sayıyla tek bildirimdir (`imece · 3 şey seni bekliyor`). Siz ayrılırken ekranda olan hiç çalmaz; pencereye dönünce çalmak üzere olan düşer: artık ekranda. Terminal odağı bildirmeli (tmux'ta `focus-events on` gerekir); bildirmeyen hiç çalmaz. Bkz. [SENİ BEKLEYEN](../screen/waiting.md).
+Ne çalar: KARAR BEKLEYEN'e yeni düşen bir kalem (değişiklik, soru, cevap, onay isteği, hassas bir şey) ya da takılan bir ajan (bloke, oturumu durmuş), terminal odakta değilken geldiyse ve beş saniye sonra hâlâ oradaysa, her biri bir kez. Bildirim türü ve ajanı söyler, ajanın sözlerini asla: `imece · claude-1 bitirdi: bir değişiklik seni bekliyor`, `imece · claude-2 sana soruyor`, `imece · claude-3 takıldı`; aynı anda birkaçı tek zil ya da sayıyla tek bildirimdir (`imece · 3 şey seni bekliyor`). Siz ayrılırken ekranda olan hiç çalmaz; pencereye dönünce çalmak üzere olan düşer: artık ekranda. Terminal odağı bildirmeli (tmux'ta `focus-events on` gerekir); bildirmeyen hiç çalmaz. Bkz. [KARAR BEKLEYEN](../screen/waiting.md).
 
 `push` bunun yerine bekleyen şeyi [ntfy](https://ntfy.sh) üzerinden telefonunuza gönderir, makineden uzaktayken: terminal odağı kaybettiğinde ya da `:away` süresince (varsayılan 30 dakika; `:away off` yalnız odağı bırakır) hiçbir tuşa basılmadığında söylenir, çünkü masada bırakılan bir terminal odağını korur. Yalnız adıyla seçilir (yalın döngüde asla) ve yalnız ayarlarınız geçerliyse: imece'nin ayar dizininde bir `push` dosyası (`$XDG_CONFIG_HOME/imece/push`, yoksa `~/.config/imece/push`):
 
@@ -282,7 +282,7 @@ Yalnız demo, `space` gibi: simülasyonu durdurur ya da sürdürür. Menü notu:
 
 ### `:peek [@NAME]`
 
-Ajanın odağı görünümün üstünde bir pencerede, `K` gibi; ad yoksa eldeki ajan (salonda seçili olan, bekleyen kalemin ya da günlük satırının ardındaki, ya da yakınlaşılmış olan). Alttaki görünüm kıpırdamaz. Pencerede `j` `k` (ya da oklar) salonun sırasında sonraki / önceki ajana geçer, `enter` odağın tamamını açar, `@` ona bir mesaj başlatır, `?` yardımı açar, `esc` ya da `K` kapatır; başka tuşlar bir şey yapmaz. Bir ajana böyle bakmak bitmiş turunu görmüş sayılır. Bkz. [salon](../screen/salon.md).
+Ajanın odağı görünümün üstünde bir pencerede, `K` gibi; ad yoksa eldeki ajan (ekipte seçili olan, bekleyen kalemin ya da günlük satırının ardındaki, ya da yakınlaşılmış olan). Alttaki görünüm kıpırdamaz. Pencerede `j` `k` (ya da oklar) ekibin sırasında sonraki / önceki ajana geçer, `enter` odağın tamamını açar, `@` ona bir mesaj başlatır, `?` yardımı açar, `esc` ya da `K` kapatır; başka tuşlar bir şey yapmaz. Bir ajana böyle bakmak bitmiş turunu görmüş sayılır. Bkz. [ekip](../screen/salon.md).
 
 ### `:pending`
 
@@ -290,11 +290,11 @@ Ajanın odağı görünümün üstünde bir pencerede, `K` gibi; ad yoksa eldeki
 
 ### `:pin [NAME]`
 
-`NAME` projesini ya da eldekini salonun en üstüne sabitler; yeniden kaldırır. Sabit projeler önce gelir, açıldıkları sırayla, ve salon kısaysa en son katlanır; sabit bir başlık `▴` taşır. Flaş: `kule salonun en üstüne sabitlendi` / `kule artık sabit değil`. Depoda saklanır; kapalı bir proje yeniden açıldığı zaman için sabitini korur. Menü notu etki edeceği projeyi gösterir, zaten sabitse `▴ kule`. Proje başına bir renk yapılmamıştır.
+`NAME` projesini ya da eldekini ekibin en üstüne sabitler; yeniden kaldırır. Sabit projeler önce gelir, açıldıkları sırayla, ve ekip kısaysa en son katlanır; sabit bir başlık `▴` taşır. Flaş: `kule ekibin en üstüne sabitlendi` / `kule artık sabit değil`. Depoda saklanır; kapalı bir proje yeniden açıldığı zaman için sabitini korur. Menü notu etki edeceği projeyi gösterir, zaten sabitse `▴ kule`. Proje başına bir renk yapılmamıştır.
 
 ### `:plan [on|off]`
 
-Eldeki projenin plan kapısı ([plan](../concepts/messages-and-board.md#plan)): `on` (varsayılan) lidere ikinci işçiyi almadan önce planını SENİ BEKLEYEN'e `▤` ögesi olarak koydurur; `off` uygun gördüğü gibi işe almasına izin verir, yine de gönderdiği bir plan `the person turned the plan gate off for this project` yanıtını alır ve saklanmaz. Yalın, kapının nerede durduğunu söyler: `kule için plan kapısı açık: ikinci işçiden önce onayınızı alan bir plan` / `kule için plan kapısı kapalı: lider uygun gördüğü gibi işe alır`. Depoda proje başına saklanır. Menü notu on / off gösterir.
+Eldeki projenin plan kapısı ([plan](../concepts/messages-and-board.md#plan)): `on` (varsayılan) lidere ikinci işçiyi almadan önce planını KARAR BEKLEYEN'e `▤` ögesi olarak koydurur; `off` uygun gördüğü gibi işe almasına izin verir, yine de gönderdiği bir plan `the person turned the plan gate off for this project` yanıtını alır ve saklanmaz. Yalın, kapının nerede durduğunu söyler: `kule için plan kapısı açık: ikinci işçiden önce onayınızı alan bir plan` / `kule için plan kapısı kapalı: lider uygun gördüğü gibi işe alır`. Depoda proje başına saklanır. Menü notu on / off gösterir.
 
 ### `:quit`
 
@@ -312,7 +312,7 @@ Eldeki projeyi ve liderini `lead-NAME` olarak adlandırır (0 numaralı projenin
 
 Bir arşivi geri getirir: `NAME` başlıklı en yenisini, yoksa `NAME` adlı projenin en yeni arşivini; ad verilmezse eldeki projenin adını taşıyan en yeni arşivi (yani bir `:archive`'ın hemen ardından `:restore`, bekleme bittikten sonra onu geri alır). `:restore ` sonrasındaki menü arşivlerin başlıklarını sunar, en yenisi önce, her biri projesinin adı ve arşivlendiği günle (`first epic   kule · 2026-11-02`).
 
-Arşiv kaldırıldığı gibi yeniden açılır: ajanları oturumları, postaları, notları ve değişiklikleriyle uykuda; kartları, SENİ BEKLEYEN'deki kalemleri ve günlük satırları yeniden görünür; başı seçilir. Siz yazana dek hiçbir şey uyanmaz, hiçbir şey harcanmaz: o zaman her ajan sahip olduğu oturumda sürer (Claude Code onu hâlâ saklıyorsa; yoksa kaldığı yer anlatılarak yeni bir oturumda), önce projenin kaldırılıp geri getirildiği, arşivin yarıda kestiği tur da (yeniden çalıştırılmaz) ona söylenir.
+Arşiv kaldırıldığı gibi yeniden açılır: ajanları oturumları, postaları, notları ve değişiklikleriyle uykuda; kartları, KARAR BEKLEYEN'deki kalemleri ve günlük satırları yeniden görünür; başı seçilir. Siz yazana dek hiçbir şey uyanmaz, hiçbir şey harcanmaz: o zaman her ajan sahip olduğu oturumda sürer (Claude Code onu hâlâ saklıyorsa; yoksa kaldığı yer anlatılarak yeni bir oturumda), önce projenin kaldırılıp geri getirildiği, arşivin yarıda kestiği tur da (yeniden çalıştırılmaz) ona söylenir.
 
 Bir çalışma kopyasında tek bir açık takım olur; bu yüzden arşivin çalışma kopyasında açık olan takım yer açar (solo bir arşiv için: onun adındaki açık solo). Bir şey yaptıysa (bir kart, işe alınmış bir ajan, harcanan ya da söylenen bir şey, bir oturum) sırası gelince adı ve günleriyle arşivlenir, yapmadıysa kapatılır; böylece boş arşivler birikmez. Flaş: `kule “first epic” geri geldi: agent'ları sen yazana kadar uyuyor`; günlük: `kule projesinin “first epic” arşivini geri getirdin; orada açık olan “kule 2026-11-02” adıyla arşivlendi` (ya da önünde bir `kule projesini kapattın` satırı).
 
@@ -320,17 +320,17 @@ Hiçbir şey değişmeden reddedilir: o başlıkta ya da adda arşiv yoksa (`x b
 
 ### `:review [on|off]`
 
-Bir değişikliği taze bir Claude Code oturumuna okutur; bulduğunu değişikliğin dosyalarının üstünde bir not olarak söyler. Yalın, eldeki değişiklik için (açık olan, yoksa SENİ BEKLEYENLER'de seçili olan) şimdi ister; `on` beklemeye gelen her değişiklik için ister, `off` bunu durdurur (depoda hatırlanır, varsayılan kapalı); elde değişiklik yokken yalın, hangisinin açık olduğunu söyler. Gelince değişikliğin ekranı `✎ inceleme · sonnet · $0.04` ve ilk altı satırını gösterir (`R` tamamını gösterir); günlük her incelemeyi ilk satırıyla, her başarısızlığı nedeni ve maliyetiyle söyler.
+Bir değişikliği taze bir Claude Code oturumuna okutur; bulduğunu değişikliğin dosyalarının üstünde bir not olarak söyler. Yalın, eldeki değişiklik için (açık olan, yoksa KARAR BEKLEYENLER'de seçili olan) şimdi ister; `on` beklemeye gelen her değişiklik için ister, `off` bunu durdurur (depoda hatırlanır, varsayılan kapalı); elde değişiklik yokken yalın, hangisinin açık olduğunu söyler. Gelince değişikliğin ekranı `✎ inceleme · sonnet · $0.04` ve ilk altı satırını gösterir (`R` tamamını gösterir); günlük her incelemeyi ilk satırıyla, her başarısızlığı nedeni ve maliyetiyle söyler.
 
 Not bir öneridir: hiçbir şey onu beklemez ve bir değişikliği asla tutmaz; uygulamak ya da reddetmek yine sizdedir. Kim okur: işçininkinden hiçbir şey bilmeyen kendi oturumu; sizin `--tier standard=…`, yoksa `sonnet` ile, araçsız ve inceleme başına 0,10 $ sert sınırla. Okuyan yalnızca işçinin ne yaptığını söylediğini, dosya listesini ve yamayı (en çok 64 KiB) görür. Bir gün (UTC) `:commit`'inkilerden ayrı olarak 20 inceleme ve 2,00 $ tutar; her çağrıdan önce bütçeden ayrılır, sonra kapatılır; aynı anda biri çalışır, kalanlar sırasını bekler. Elde değişiklik yoksa, incelemesi zaten varsa, biri sürüyorsa, bütçede sınırdan az kalmışsa ya da gün dolmuşsa `inceleme yok: …` ile reddedilir. Aynı işçinin daha yeni bir değişikliği kendi incelemesini alır. Bkz. [değişiklikler](../concepts/changes.md#ikinci-bir-okuma). Demo da aynı biçimde inceler, birkaç tik sonra değişikliğin dosyalarından yanıtlar.
 
 ### `:salon`
 
-Salon, `1` gibi.
+Ekip, `1` gibi.
 
 ### `:settle`
 
-Salonun seçili satırını kaldırır, oradaki `s` gibi: bir işçinin satırını (yardımcıları ve araştırmacısıyla) ya da bir projenin başlığında veya liderinde bütün projeyi, size yeniden ihtiyacı olana dek salondan çıkarır. Önce salona gider. Bir şeyi sizi bekliyorsa ya da takılmışsa reddedilir: `kaldırılmadı: claude-2 seni bekliyor`. Bitmiş turları görülmüş sayılır. Flaş: `claude-2 kaldırıldı: sana ihtiyacı olunca döner`. Menü notu satırın adını verir. Bkz. [salon](../screen/salon.md).
+Ekibin seçili satırını gizler, oradaki `s` gibi: bir işçinin satırını (yardımcıları ve araştırmacısıyla) ya da bir projenin başlığında veya liderinde bütün projeyi, size yeniden ihtiyacı olana dek ekipten çıkarır. Önce ekibe gider. Bir şeyi sizi bekliyorsa ya da takılmışsa reddedilir: `gizlenmedi: claude-2 seni bekliyor`. Bitmiş turları görülmüş sayılır. Flaş: `claude-2 gizlendi: sana ihtiyacı olunca döner`. Menü notu satırın adını verir. Bkz. [ekip](../screen/salon.md).
 
 ### `:slower`
 
@@ -342,7 +342,7 @@ Bir solo oturum açar: lideri ve takımı olmayan, kendinizin sürdüğü tek bi
 
 ### `:story`
 
-Alt yan panel, `J` gibi, hikâyeyi anlatır: ne olduğunu, karta göre, en yeni önce, en üstte kimi bekletiyor olduğunuzla (bkz. [hikâye](../screen/journal.md#hikâye)); yeniden: defter. Önce salona gider. Menü notu: `(açık)` / `(kapalı)`; depoda hatırlanır, varsayılan olarak açıktır.
+Alt yan panel, `J` gibi, hikâyeyi anlatır: ne olduğunu, karta göre, en yeni önce, en üstte kimi bekletiyor olduğunuzla (bkz. [hikâye](../screen/journal.md#hikâye)); yeniden: defter. Önce ekibe gider. Menü notu: `(açık)` / `(kapalı)`; depoda hatırlanır, varsayılan olarak açıktır.
 
 ### `:sync`
 
@@ -382,15 +382,15 @@ Bir `:close`, `:forget`, `:archive` ya da `:clear`'ın olmasını önler, `u` gi
 
 ### `:unfold`
 
-Salonda her şeyi açar, `zR` gibi; açık bir konuşma varken onun her mesajını açar, sonra açılan konuşmalar da yine açık başlar.
+Ekipte her şeyi açar, `zR` gibi; açık bir konuşma varken onun her mesajını açar, sonra açılan konuşmalar da yine açık başlar.
 
 ### `:unsettle`
 
-`s` ya da `:settle` ile kaldırılan her şeyi geri getirir ve salona gider. Flaş: `kaldırılan 3 şey salona döndü`. Menü notu kaç şeyin kaldırıldığını söyler.
+`s` ya da `:settle` ile gizlenen her şeyi geri getirir ve ekibe gider. Flaş: `gizlenen 3 şey ekibe döndü`. Menü notu kaç şeyin gizlendiğini söyler.
 
 ### `:waiting`
 
-Doğrudan SENİ BEKLEYEN'e, `w` gibi. Menü notu kaç kalemin beklediğini söyler.
+Doğrudan KARAR BEKLEYEN'e, `w` gibi. Menü notu kaç kalemin beklediğini söyler.
 
 ### `:welcome`
 
@@ -398,7 +398,7 @@ Doğrudan SENİ BEKLEYEN'e, `w` gibi. Menü notu kaç kalemin beklediğini söyl
 
 ### `:why [@NAME]`
 
-Ajanı bu duruma neyin getirdiği, alt satırda: merdivendeki basamağı (boşta, bitti ve bakılmadı, başlıyor, çalışıyor, onayını bekliyor, takıldı), ne zamandan beri ve onu oraya getiren günlük satırı, günlüğün kendi sözcükleriyle: `claude-1: takıldı · 14:02 itibarıyla · claude-1 durdu: oturum bitti`. Postası sizi bekleyen bir ajanda sonunda kaç tane olduğu yazar: `· sen yanıtlayana dek bekleyen mesaj: 2`. Ad yoksa `:peek`'teki gibi eldeki ajan. "İtibarıyla", en eski kaleminin seni beklemeye başladığı an, yoksa durumunun son değiştiği andır; satır o andan ya da öncesinden en yeni günlük satırıdır. Günlükte artık yoksa (toplanmış, ya da ajan önceki bir çalışmadan gelmiş) bunu söyler. Yalnız baktığı için bir arşivin görünümünde de çalışır.
+Ajanı bu duruma neyin getirdiği, alt satırda: merdivendeki basamağı (boşta, bitti ve bakılmadı, başlıyor, çalışıyor, seni bekliyor, takıldı), ne zamandan beri ve onu oraya getiren günlük satırı, günlüğün kendi sözcükleriyle: `claude-1: takıldı · 14:02 itibarıyla · claude-1 durdu: oturum bitti`. Postası sizi bekleyen bir ajanda sonunda kaç tane olduğu yazar: `· sen yanıtlayana dek kuyrukta bekleyen mesaj: 2`. Ad yoksa `:peek`'teki gibi eldeki ajan. "İtibarıyla", en eski kaleminin seni beklemeye başladığı an, yoksa durumunun son değiştiği andır; satır o andan ya da öncesinden en yeni günlük satırıdır. Günlükte artık yoksa (toplanmış, ya da ajan önceki bir çalışmadan gelmiş) bunu söyler. Yalnız baktığı için bir arşivin görünümünde de çalışır.
 
 
 ### `:yes [@NAME]`

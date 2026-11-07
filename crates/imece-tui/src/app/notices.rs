@@ -718,10 +718,10 @@ mod tests {
             [
                 format!("imece · {}: something sensitive waits for you", name(1)),
                 format!("imece · {} answered you", name(2)),
-                format!("imece · {} finished: a change waits for you", name(3)),
+                format!("imece · {} finished: change ready", name(3)),
                 format!("imece · {} asks you", name(4)),
                 format!("imece · {}: something sensitive waits for you", name(1)),
-                format!("imece · {} waits for your yes", name(2)),
+                format!("imece · {} asks to run something", name(2)),
             ]
         );
         assert_eq!(

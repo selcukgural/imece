@@ -229,7 +229,7 @@ Read by imece itself:
 | --- | --- |
 | `IMECE_LANG` | `en` or `tr`, the screen's language when `--lang` is not given; a wrong value is refused like the flag |
 | `IMECE_THEME` | a theme name or colour file, as `--theme`; checked the same way |
-| `IMECE_PROGRESS` | `on` or `off`: whether the tab's progress bar (OSC 9;4) is sent; without it, to kitty 0.39+, Ghostty 1.2+ and iTerm2 3.6.6+ by the name the terminal gives at start, and inside tmux (`TMUX`); a terminal that does not answer is taken from `WT_SESSION` (Windows Terminal), `TERM_PROGRAM` and `TERM_PROGRAM_VERSION`, or `LC_TERMINAL` and `LC_TERMINAL_VERSION`; see [the salon](../screen/salon.md) |
+| `IMECE_PROGRESS` | `on` or `off`: whether the tab's progress bar (OSC 9;4) is sent; without it, to kitty 0.39+, Ghostty 1.2+ and iTerm2 3.6.6+ by the name the terminal gives at start, and inside tmux (`TMUX`); a terminal that does not answer is taken from `WT_SESSION` (Windows Terminal), `TERM_PROGRAM` and `TERM_PROGRAM_VERSION`, or `LC_TERMINAL` and `LC_TERMINAL_VERSION`; see [the team](../screen/salon.md) |
 | `TMUX` | inside tmux: notifications go through its passthrough (`allow-passthrough on`), the tab's progress plainly |
 | `XDG_STATE_HOME` | where the state directory `imece/` goes (the store, the worktrees); must be absolute; else `~/.local/state/imece`, and without `HOME` the system's temporary directory |
 | `HOME` | the fallback above, `~` in a path typed after `:open`, `:export` or `--theme`, and Claude Code's default directory |

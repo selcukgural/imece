@@ -1798,7 +1798,7 @@ diff --git a/c.rs b/c.rs
         let asked = lines(&Check::Asked);
         assert_eq!(
             texts(&asked),
-            ["▶ the repository's check waits for your yes in WAITING FOR YOU"]
+            ["▶ the repository's check asks to run: it is in TO DECIDE"]
         );
         assert_eq!(asked[0].spans[0].style, fg(pal().warn));
         let failed = lines(&Check::Failed("TOKEN=abc gone".into()));

@@ -5,7 +5,7 @@ description: The conversation window - everything said between two parties, read
 
 # Conversations
 
-A conversation is everything said between two parties, you and an agent or two agents, oldest first, each message whole. You open one with `enter` on a journal line or with `v` (`:talk`) on the agent at hand; it opens as a window over the salon, dimming what is around it, and `esc` closes it.
+A conversation is everything said between two parties, you and an agent or two agents, oldest first, each message whole. You open one with `enter` on a journal line or with `v` (`:talk`) on the agent at hand; it opens as a window over the team, dimming what is around it, and `esc` closes it.
 
 ```text
 ┌ CONVERSATION · lead ⇄ claude-1 · 4/5 ──────────────────────────────────────┐
@@ -31,7 +31,7 @@ The title names the two parties and where the selection stands, `4/5`, then `✎
 
 - `enter` on a journal line opens the conversation that line belongs to, with that line selected.
 - `v` or `:talk` (`:talk @NAME` for a named agent) opens the conversation between you and the agent at hand: the selected or zoomed agent. With nothing said yet it says so.
-- `enter` on a question (`?`) or a reply (`»`) in WAITING FOR YOU opens the conversation at that message; a reply is read, and closed, by it.
+- `enter` on a question (`?`) or a reply (`»`) in TO DECIDE opens the conversation at that message; a reply is read, and closed, by it.
 - `W` opens it the same way when the next item waiting is a question or a reply.
 
 `a` and `r` decide nothing while a conversation is open: what is selected under it is not what you see. `esc` first, then open the change.
@@ -58,7 +58,7 @@ A message to an idle worker opens a card for it (the first line is the card's ti
 
 ### Replies
 
-Every message one agent sends another has a number on the bus, in order across the world and kept between runs; the agents see it in the mail they get (`[answer 8, re 7] from claude-1:`) and the trace says `id=8 re=7`. On the screen a reply has `↩` after its type, on its journal line, in a card's story and in a conversation; in a conversation the first line of what it answers shows dim under its head (`↩ re 8: Which parser?`, or that the journal no longer has it). `%` goes between them. Messages to you take no number: your questions wait in WAITING FOR YOU, which already ties the answer to the question.
+Every message one agent sends another has a number on the bus, in order across the world and kept between runs; the agents see it in the mail they get (`[answer 8, re 7] from claude-1:`) and the trace says `id=8 re=7`. On the screen a reply has `↩` after its type, on its journal line, in a card's story and in a conversation; in a conversation the first line of what it answers shows dim under its head (`↩ re 8: Which parser?`, or that the journal no longer has it). `%` goes between them. Messages to you take no number: your questions wait in TO DECIDE, which already ties the answer to the question.
 
 ### Marks
 
@@ -152,7 +152,7 @@ An open window keeps up with the talk: journal lines of its pair that arrive are
 
 ## The trace
 
-`enter` on an agent in the salon opens its focus (FOCUS · name: its card, status, origin, leases, how full its context window is when Claude Code says, its own to-do list when it keeps one, and story). The to-do list is TO DO 3/7 and a step a line, `✓` done, `▸` in hand, `○` not begun, in the agent's order; a list longer than eight rows folds the done steps at its top into `✓ 4 done` and ends with `… 2 more`, so what is in hand stays in view; the story's entries are read like a conversation's messages: `j` `k` move the entry at hand (marked `▌` in the gutter), the page keys scroll, `gg` the first, `G` the newest, followed as more come; an agent's message longer than eight lines is cut there with `… +20 · l shows all`, and `l` shows it whole, `h` cuts it again, `zR` `zM` all of them. A Markdown table fits the screen: its widest columns give way and a long cell wraps in its own column. `enter` again, or `t` (`:trace`), opens its raw stream, TRACE · name, which scrolls with the same keys and follows the newest at its foot until you move up. The trace is the agent's session as imece sees it, line by line, coloured by the line's first word: the agent's own text, `tool_use` with the tool's name in the info colour, a `run:` by its exit code, `stopped` and `run refused` in the bad colour, the bus words in the accent. A tool call that runs over rows keeps them, indented, at most six, then `… +N`. `esc` goes back to the focus, then to the salon. `@` in a focus or a trace starts a message to that agent.
+`enter` on an agent in the team opens its focus (FOCUS · name: its card, status, origin, what it edits (its leases), how full its context window is when Claude Code says, its own to-do list when it keeps one, and story). The to-do list is TO DO 3/7 and a step a line, `✓` done, `▸` in hand, `○` not begun, in the agent's order; a list longer than eight rows folds the done steps at its top into `✓ 4 done` and ends with `… 2 more`, so what is in hand stays in view; the story's entries are read like a conversation's messages: `j` `k` move the entry at hand (marked `▌` in the gutter), the page keys scroll, `gg` the first, `G` the newest, followed as more come; an agent's message longer than eight lines is cut there with `… +20 · l shows all`, and `l` shows it whole, `h` cuts it again, `zR` `zM` all of them. A Markdown table fits the screen: its widest columns give way and a long cell wraps in its own column. `enter` again, or `t` (`:trace`), opens its raw stream, TRACE · name, which scrolls with the same keys and follows the newest at its foot until you move up. The trace is the agent's session as imece sees it, line by line, coloured by the line's first word: the agent's own text, `tool_use` with the tool's name in the info colour, a `run:` by its exit code, `stopped` and `run refused` in the bad colour, the bus words in the accent. A tool call that runs over rows keeps them, indented, at most six, then `… +N`. `esc` goes back to the focus, then to the team. `@` in a focus or a trace starts a message to that agent.
 
 ## See also
 

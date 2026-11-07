@@ -142,6 +142,25 @@ Claude Code not signed in), a kind apart from a state; the raw stream's
 `tool_result … ✕` is the adapter's own line and keeps its mark. The
 archives browser puts the head first in bold instead of marking it.
 
+Step 1's words as built, in `i18n.rs` for both languages: the screen
+says team (`TEAM`, the status line's place, the `:` notes; `:salon` keeps
+its name), to decide (`TO DECIDE`, the header's `! N to decide`, the
+title, Home's first group, the farewell, the export), needs you (`!` on a
+row, the rung, the legend, a group heading), change ready (the story's
+and the journal's `finished: change ready · 2 files +4 −2`), approve ·
+send back (`a` `r` on a change and in the help; the journal's `sent
+back:`; a refused apply's `b` sends the clash back; a proposal's keys end
+`· Lonca`, since `r` asks why first there), asks to run (`⚑ asks to run
+"cmd"` on a row and in TO DECIDE, the notices), queued (`✉ 2 queued`,
+`:why`), editing (the code map's title and legend, the focus and card
+label), hidden until it needs you (`s`, `:settle`'s note, the title's
+count), session ended (`■ session ended · write to it to restart`, the
+journal, `:why`). The Turkish: ekip, karar bekliyor / KARAR BEKLEYEN,
+seni bekliyor, değişiklik hazır, onayla · geri gönder, çalıştırmak
+istiyor, kuyrukta, düzenliyor, gizle, oturum bitti. Not yet: log for
+focus · trace · peek · story · journal and the stand on the detail only,
+which come with step 3's screen; the pot's words are step 2's header.
+
 Step 1's header as built: `ui::header_parts` has what waits (`KEEP`), the
 fleet (8), the pot (`KEEP`; in the attention colour with `~N left` once
 `pot_low`), a usage window only from `LIMIT_LOUD` (`KEEP`), the clock

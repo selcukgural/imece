@@ -1,11 +1,11 @@
 ---
 title: The board and the code map
-description: The two other views of the salon - the board with every card in its column, and the code map that shows who works where once symbol leases exist.
+description: The two other views of the team - the board with every card in its column, and the code map that shows who edits what once symbol leases exist.
 ---
 
 # The board and the code map
 
-The salon shows the team; the board shows the work, and the code map shows the files. `2` (`:board`) and `3` (`:code`) open them in the salon's place; `1` (`:salon`) comes back. Both keep the header and the status line, and every key that works everywhere (`W`, `?`, `:` commands, writing) works on them.
+The team shows the team; the board shows the work, and the code map shows the files. `2` (`:board`) and `3` (`:code`) open them in the team's place; `1` (`:salon`) comes back. Both keep the header and the status line, and every key that works everywhere (`W`, `?`, `:` commands, writing) works on them.
 
 ## The board
 
@@ -23,8 +23,8 @@ Five columns, each titled with its count:
 | Column | Cards in it |
 | --- | --- |
 | TO DO | posted and not yet taken: the leader's `post`, or a card the leader wrote for a worker that is not free yet |
-| IN PROGRESS | taken: assigned by the leader or claimed from the board by an idle worker. Under the title, its owner with the owner's state glyph and a progress bar; a working owner's glyph breathes as on the salon (`:motion`) |
-| TO REVIEW | finished with a `done`, and its change (`Δ`) waits for you in WAITING FOR YOU, newest first: the agent is through, the work is not in yet |
+| IN PROGRESS | taken: assigned by the leader or claimed from the board by an idle worker. Under the title, its owner with the owner's state glyph and a progress bar; a working owner's glyph breathes as on the team (`:motion`) |
+| TO REVIEW | finished with a `done`, and its change (`Δ`) waits for you in TO DECIDE, newest first: the agent is through, the work is not in yet |
 | VERIFYING | nothing fills it live. The demo's merge queue used it |
 | DONE | finished, and no change of it waits for you, newest first, with the owner that finished it. Only a card at work shows its owner's state: in the last two columns the owner may be at work on something else |
 
@@ -34,24 +34,24 @@ What a card is, how the leader posts and assigns and how a worker claims, is in 
 
 ## The code map
 
-`3` opens CODE MAP · project · who works where (leases). It is meant to show one row per file of the project, and on that row one cell per symbol lease held in it:
+`3` opens CODE MAP · project · who edits what. It is meant to show one row per file of the project, and on that row one cell per symbol lease held in it:
 
 ```text
-┌ CODE MAP · shop-api · who works where (leases) ─────────────────────────────┐
+┌ CODE MAP · shop-api · who edits what ───────────────────────────────────────┐
 │src/billing/                                                                  │
 │  Money.cs             ● claude-2    Round         ● claude-1   Parse   ⇆ 2  │
 │  Invoice.cs           ● claude-2    Total                                   │
 │src/parser/                                                                   │
 │  Manifest.cs          ● claude-1    Read                                    │
 │  Legacy.cs                                                                  │
-│3 leases · 1 files with several agents at once   ● working  ⇆ several agents in one file
+│3 being edited · 1 files with several agents at once   ● working  ⇆ several agents in one file
 └──────────────────────────────────────────────────────────────────────────────┘
 ```
 
 - Files are grouped under their directory, a dim `dir/` row above each group.
-- A lease cell is the holder's state glyph (the salon's), its name and the symbol (its last part, `Round` for `Money.Round`). Every cell is padded to the widest name and symbol in the project, capped, so the columns do not jump when a lease comes or goes.
+- A lease cell is the holder's state glyph (the team's), its name and the symbol (its last part, `Round` for `Money.Round`). Every cell is padded to the widest name and symbol in the project, capped, so the columns do not jump when a lease comes or goes.
 - A file nobody holds is dim with nothing after it. A file several agents hold ends with `⇆ N` in the warning colour.
-- The bottom line counts the leases and the shared files, and words only the glyphs on the map right now: a fixed legend missed the glyphs the map had started to use. `⇆` is explained only when a file is shared.
+- The bottom line counts what is being edited (the leases) and the shared files, and words only the glyphs on the map right now: a fixed legend missed the glyphs the map had started to use. `⇆` is explained only when a file is shared.
 
 ### What the map shows today
 
@@ -63,6 +63,6 @@ The map with rows and cells above is what `--demo` shows: its projects carry a f
 
 - [Messages and the board](../concepts/messages-and-board.md)
 - [A card's screen](cards.md)
-- [The salon](salon.md)
+- [The team](salon.md)
 - [Changes](../concepts/changes.md)
 - [Keyboard](keyboard.md)

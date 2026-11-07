@@ -939,7 +939,7 @@ mod tests {
         app.on_key(shift('F'));
         app.on_key(key(KeyCode::Char('k')));
         assert_eq!((app.pane, app.journal_sel), (Pane::Journal, Some(line)));
-        // A header: back in the salon.
+        // A header: back in the team.
         app.on_key(shift('F'));
         app.on_key(key(KeyCode::Char('a')));
         assert_eq!((app.pane, app.selected), (Pane::Salon, Sel::Project(0)));

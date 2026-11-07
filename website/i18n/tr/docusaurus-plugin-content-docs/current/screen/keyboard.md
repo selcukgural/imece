@@ -39,7 +39,7 @@ Bir akorun ilk tuşu ikincisini beklerken satır ikinci tuşun ne olabileceğini
 | `:export PATH` | açık konuşma ya da kart, Markdown olarak, `PATH`'e (bir dosya ya da dizin) |
 | `:commit` | ucuz bir model stage'dekiler için commit mesajı önerir (`$`) |
 | `:copy PATH` | git'in yok saydığı bir yolu (`.env`) worktree'lere kopyala; yine: bırak |
-| `:pin NAME` | projeyi salonun en üstüne sabitle; yine: bırak |
+| `:pin NAME` | projeyi ekibin en üstüne sabitle; yine: bırak |
 | `!cmd` | `cmd`'yi kendi kabuğunuzda çalıştır, ekran kenara çekilir |
 | `O`  `:output` | eldeki projenin son `!kmt`'sini (nasıl bittiği, son 40 satırı) eldeki agent'a, yoksa projenin başına bir mesajda alıntıla |
 | `tab` `⇧tab` `↑` `↓` | yazarken: ad ve komut tamamla (`^n` `^p` de ilerler); `tab` bir mesajın ya da `!kmt` satırının herhangi bir sözcüğünü projenin bir dosyasına da tamamlar (`/` içeren bir sözcük menüyü kendiliğinden açar), ya da kod haritasında kiralanmış bir sembole, `dosya::ad` olarak |
@@ -66,8 +66,8 @@ Bir akorun ilk tuşu ikincisini beklerken satır ikinci tuşun ne olabileceğini
 | `^d` `^u` `^f` `^b` | yarım sayfa / tam sayfa |
 | `^o` | olduğunuz yere geri: görünüm, panel, odak, kart (vim'in atlama listesi, elli yer; açık konuşma önce kapanır) |
 | `enter` | derine in: odak, sonra ham akış |
-| `K`  `:peek` | göz at: eldeki agent'ın odağı görünümün üstünde bir pencerede, görünüm olduğu gibi kalır; içinde `j` `k` salondaki sonraki / önceki agent, `enter` odağın tamamı, `@` ona yaz, `esc` ya da `K` kapatır |
-| `F`  `:hints` | ipucu harfleri: salon ekranında seçilebilen her satıra (proje başlıkları, agent'lar, bekleyen kalemler, günlük satırları, bir kartın ekranındaki kişiler) bir ya da iki harflik bir etiket; bir etiketi yazmak satırını kendi panelinde seçer, son harfi büyük yazılırsa onu açar da (`enter` gibi); `backspace` bir harfi geri alır, `esc` kapatır |
+| `K`  `:peek` | göz at: eldeki agent'ın odağı görünümün üstünde bir pencerede, görünüm olduğu gibi kalır; içinde `j` `k` ekipteki sonraki / önceki agent, `enter` odağın tamamı, `@` ona yaz, `esc` ya da `K` kapatır |
+| `F`  `:hints` | ipucu harfleri: ekip ekranında seçilebilen her satıra (proje başlıkları, agent'lar, bekleyen kalemler, günlük satırları, bir kartın ekranındaki kişiler) bir ya da iki harflik bir etiket; bir etiketi yazmak satırını kendi panelinde seçer, son harfi büyük yazılırsa onu açar da (`enter` gibi); `backspace` bir harfi geri alır, `esc` kapatır |
 | `t`  `:trace` | eldeki agent'ın ham akışı |
 | `v`  `:talk` | onun sizinle konuşması |
 | `esc` | geri |
@@ -78,22 +78,22 @@ Bir akorun ilk tuşu ikincisini beklerken satır ikinci tuşun ne olabileceğini
 | `,`  `.`  `<`  `>` | yan paneli genişlet / daralt |
 | `J`  `:story` | alt yan panel: karta göre hikâye · defter |
 
-## Salon
+## Ekip
 
 | Tuş | Ne yapar |
 | --- | --- |
 | `←` `→`  `h` `l` | projeyi ya da işçinin yardımcılarını katla / aç (konuşmada: bir mesajı) |
 | `za`  `zM`  `zR` | katla: değiştir · hepsi (`:fold`) · hiçbiri (`:unfold`); konuşmada mesajlarını |
-| `f`  `:needs` | salon: yalnız sizi bekleyenler · herkes |
-| `s`  `:settle` | seçili işçinin satırını ya da projeyi (başlığında ya da liderinde) size yeniden ihtiyacı olana dek salondan kaldır; `:unsettle` hepsini geri getirir |
+| `f`  `:needs` | ekip: yalnız sizi bekleyenler · herkes |
+| `s`  `:settle` | seçili işçinin satırını ya da projeyi (başlığında ya da liderinde) size yeniden ihtiyacı olana dek gizle; `:unsettle` hepsini geri getirir |
 
-## SENİ BEKLEYEN
+## KARAR BEKLEYEN
 
 | Tuş | Ne yapar |
 | --- | --- |
 | `w`  `:waiting` | doğrudan sizi bekleyenlere |
 | `W`  `S` | `:next` bekleyen, her yerden · `:defer` bunu ertele ve sıradakini aç |
-| `a`  `r` | onayla / uygula / bir kez izin ver · reddet (sizi bekleyenlerde, bir de odakta: aşağıda) |
+| `a`  `r` | onayla / bir kez izin ver · geri gönder / reddet (karar bekleyenlerde, bir de odakta: aşağıda) |
 | `A`  `:allow` | sizi bekleyenlerdeki bir istekte ya da ajanının odağında: proje için komutlarına artık hep evet (başka yerde `A` arşivlerdir) |
 | `e`  `:yes` | sizi bekleyenlerdeki bir istekte ya da ajanının odağında: o ajan turunu bitirene dek ne isterse evet; bu arada satırında `✓ tur` yazar |
 | `enter` | ögeyi aç: bir değişikliğin diff'i, bir sorunun konuşması, bir yanıt (bununla okunur) |
@@ -126,7 +126,7 @@ Bir akorun ilk tuşu ikincisini beklerken satır ikinci tuşun ne olabileceğini
 | `enter` `esc` | ham akış · geri |
 | `a`  `e`  `A`  `r` | odakta ya da ham akışta, ajanı sizi beklerken: isteğinde (durumunun alıntıladığı), bir kez izin ver · bu tur ne isterse evet · bundan sonra hep evet · reddet; değişikliğinde, uygula · reddet. Asla sizi bekleyenlerde seçili olanı değil. Karar verilecek bir şey varken durum satırı `a` `r` `e` tuşlarını gösterir (`A` bu yardımdadır); yoksa `a` ve `r` bunu söyler, `A` arşivlerdir |
 
-Odağın `klasör` satırı ajanın nerede çalıştığını söyler: lider için çalışma kopyası, işçi, yardımcı ya da solo için worktree'si (`· ~/src/kule için worktree`), git yoksa klasörün kendisi. Altında, yazan bir ajanın `karalama` satırı karalama dizinini gösterir; notları ve günlükleri değişikliğine değil oraya gider. Salonda açık bir projenin satırı da klasörüyle biter.
+Odağın `klasör` satırı ajanın nerede çalıştığını söyler: lider için çalışma kopyası, işçi, yardımcı ya da solo için worktree'si (`· ~/src/kule için worktree`), git yoksa klasörün kendisi. Altında, yazan bir ajanın `karalama` satırı karalama dizinini gösterir; notları ve günlükleri değişikliğine değil oraya gider. Ekipte açık bir projenin satırı da klasörüyle biter.
 
 ## Bir değişiklik
 
@@ -141,7 +141,7 @@ Odağın `klasör` satırı ajanın nerede çalıştığını söyler: lider iç
 | `h` `l`  `←` `→` | değişiklikte: eldeki dosyayı başlığına katla · aç |
 | `za`  `zM`  `zR` | değişiklikte: eldeki dosyayı çevir · her dosyayı katla (`:fold`) · hepsini aç (`:unfold`) |
 | `v` | değişiklikte: kopyalanacak satırları seç; `y` yazıldığı gibi, `Y` yeni hali |
-| `a`  `r` | uygula (seçili parçalar, yoksa hepsi) · reddet |
+| `a`  `r` | onayla (seçili parçalar, yoksa hepsi) · geri gönder |
 | `j` `k`, `gg` `G`, `^d` `^u` `^f` `^b`, `space` | hareket |
 
 ## Kart ekranı
@@ -150,7 +150,7 @@ Odağın `klasör` satırı ajanın nerede çalıştığını söyler: lider iç
 | --- | --- |
 | `#N`  `#word` | bir kart aç |
 | `n`  `p` | sonraki / önceki kart |
-| `esc` | salona geri |
+| `esc` | ekibe geri |
 | `tab`, `enter`, `a` `r`, `c`, `t`, `v`, `m`, `W` | ana ekrandaki gibi |
 
 ## Yalnız demo
@@ -180,7 +180,7 @@ Odağın `klasör` satırı ajanın nerede çalıştığını söyler: lider iç
 
 | İşaret | Anlamı |
 | --- | --- |
-| `!` onayını bekliyor  `●` çalışıyor  `○` boşta  `✓` bitti, bakılmadı  `■` takıldı | bir agent'ın durumu: beş işaret |
+| `!` seni bekliyor  `●` çalışıyor  `○` boşta  `✓` bitti, bakılmadı  `■` takıldı | bir agent'ın durumu: beş işaret |
 | `⇄` konuşma  `▾` `▸` proje / yardımcılar / katlanmış mesaj  `▴` sabit | |
 | `≈` kirli (dış dünyayı okuyor) | yalnız demo: araştırmacılar canlıda yapılmadı |
 | `⎇` dal  `↑` kendi commit'leri  `↓` checkout'un yeni commit'leri  `+N −M` henüz verilmemiş satırlar | bir işçinin worktree'si |
@@ -230,7 +230,7 @@ k = j
 J = G
 ```
 
-Bir tuş yardımın yazdığı gibi (`j`, `G`, `^n`, `⌥b`, `⇧tab`, `enter`, `esc`, `tab`, `space`, `↑ ↓ ← →`, `home`, `end`, `pgup`, `pgdn`) ya da sözcükle (`ctrl-n`, `alt-b`, `shift-tab`, `up`, `escape`, `pageup`) yazılır; `=`'in solunda `#` `hash` diye yazılır, çünkü `#` ile başlayan satır yorumdur. Bir satır bir kez uygulanır, vim'in `noremap`'i gibi: `j = k` ile `k = j` ikisini yer değiştirir, dosyanın adını anmadığı tuş kendisi kalır. Dosyanın tuşları imece'nin tuş okuduğu her yerde çalışır (salon, bir konuşma, bir değişiklik, peek, pencereler, seçiciler, başta lider sorusu); tuşların metin olduğu yerler dışında: yazarken, yardımın `/` süzgecinde ve ipucu harflerinde. `^c` her zaman çıkar, verilemez.
+Bir tuş yardımın yazdığı gibi (`j`, `G`, `^n`, `⌥b`, `⇧tab`, `enter`, `esc`, `tab`, `space`, `↑ ↓ ← →`, `home`, `end`, `pgup`, `pgdn`) ya da sözcükle (`ctrl-n`, `alt-b`, `shift-tab`, `up`, `escape`, `pageup`) yazılır; `=`'in solunda `#` `hash` diye yazılır, çünkü `#` ile başlayan satır yorumdur. Bir satır bir kez uygulanır, vim'in `noremap`'i gibi: `j = k` ile `k = j` ikisini yer değiştirir, dosyanın adını anmadığı tuş kendisi kalır. Dosyanın tuşları imece'nin tuş okuduğu her yerde çalışır (ekip, bir konuşma, bir değişiklik, peek, pencereler, seçiciler, başta lider sorusu); tuşların metin olduğu yerler dışında: yazarken, yardımın `/` süzgecinde ve ipucu harflerinde. `^c` her zaman çıkar, verilemez.
 
 Bir satırın bir yanı art arda iki tuş olabilir:
 
@@ -264,7 +264,7 @@ imece dosyayı başta, `:keys` ile ve siz kaydettiğinizde yeniden okur: iki san
 ## Ayrıca bakınız
 
 - [Komut satırı](command-line.md)
-- [Salon](salon.md)
-- [SENİ BEKLEYEN](waiting.md)
+- [Ekip](salon.md)
+- [KARAR BEKLEYEN](waiting.md)
 - [Değişiklik görünümü](changes.md)
 - [Komutlar başvurusu](../reference/commands.md)

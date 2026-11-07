@@ -23,11 +23,11 @@ imece, Rust ile yazılmış bir terminal programıdır: Claude Code oturumların
 - **Bir lider** (`lead`): checkout'unuzu okur, sizinle konuşur, bir isteği kartlara böler ve `hire` aracıyla işçi tutar; en çok `--agents` kadar (varsayılan 4). Takım boyunu siz hiç seçmezsiniz.
 - **İşçiler** (`claude-1`, `claude-2`, `claude-3`, …): her biri imece'nin durum dizini altında, HEAD'inizde ayrılmış (detached) kendi git worktree'sinde çalışır. Checkout'unuza hiçbir ajan dokunmaz. Bir işçi kendi worktree'sinde **yardımcılar** (`claude-1.1`) tutabilir; en çok `--helpers` kadar (varsayılan 2).
 - **Bir bus**: ajanlar arasında tipli mesajlar (`assign`, `ask`, `answer`, `inform`, `handoff`, `done`, `blocked`, `progress`, `notice`, `cancel`); her mesaj numaralı, böylece bir yanıt hangisini yanıtladığını söyler. Ve boştaki bir işçinin alabileceği kartların durduğu bir **pano**.
-- **Değişiklikler (`Δ`)**: bir işçinin `done` demesiyle imece onun worktree'sini tek yama olarak okur ve SENİ BEKLEYEN'e koyar. Diff'i okursunuz; checkout'unuza uygularsınız (stage'e girer, commit'i siz atarsınız), bir nedenle reddedersiniz, satır satır not gönderirsiniz ya da yalnız seçtiğiniz hunk'ları uygularsınız.
+- **Değişiklikler (`Δ`)**: bir işçinin `done` demesiyle imece onun worktree'sini tek yama olarak okur ve KARAR BEKLEYEN'e koyar. Diff'i okursunuz; checkout'unuza uygularsınız (stage'e girer, commit'i siz atarsınız), bir nedenle reddedersiniz, satır satır not gönderirsiniz ya da yalnız seçtiğiniz hunk'ları uygularsınız.
 - **Onaylar (`⚑`) ve sorular (`?`)**: bir oturumun bir komutu çalıştırmadan önce soracağı şey size gelir; bir ajan yalnız sizin karar verebileceğiniz bir şeyi size sorabilir.
 - **Tek kese**: `--budget` (ilk seferde 50 dolar) bütün takımın tek bütçesidir, çalıştırmalar arasında saklanır; bitince kimse bir tur daha almaz. `:budget USD` ajanlar çalışırken değiştirir. Yanında başlık, planınızın dolmaya en yakın kullanım penceresini gösterir.
 - **Kalıcılık**: projeler, ajanlar, kartlar, günlük, posta ve pano tek bir SQLite dosyasında durur. Sonraki `imece` aynı ekranı, her ajan uykuda, siz birine yazana kadar hiçbir maliyet olmadan gösterir.
-- **Çok proje**: `:open YOL` başka bir checkout'u kendi lideriyle ayrı bir proje olarak açar; salon ajanları projeye göre gruplar.
+- **Çok proje**: `:open YOL` başka bir checkout'u kendi lideriyle ayrı bir proje olarak açar; ekip ajanları projeye göre gruplar.
 
 ## imece ne değildir
 
@@ -41,15 +41,15 @@ imece, Rust ile yazılmış bir terminal programıdır: Claude Code oturumların
 1. Lidere yazarsınız (`/`, sonra isteğiniz, `enter`). Düz metin lidere gider; `@ad metin` tek bir ajana.
 2. Lider checkout'u okur (yazamaz), kartlar asar ve işçileri model adıyla değil **katmanla** (`cheap`, `standard`, `strong`) tutar.
 3. Her işçi kendi worktree'sinde, varsayılan `--confine standard` altında Claude Code'un tam kodlama araç setiyle (okuma, yazma, kabuk, web) çalışır. Claude Code'un izin soracağı şey size `⚑` olarak gelir.
-4. Bir işçinin `done` demesi SENİ BEKLEYEN'de bir değişiklik `Δ` olur; yanında imece'nin tam o ağaçta gördüğü çalıştırmalar (`✓ bu ağaçta temiz geçti: cargo test` ya da `bu ağaçta çalıştırma yok`).
+4. Bir işçinin `done` demesi KARAR BEKLEYEN'de bir değişiklik `Δ` olur; yanında imece'nin tam o ağaçta gördüğü çalıştırmalar (`✓ bu ağaçta temiz geçti: cargo test` ya da `bu ağaçta çalıştırma yok`).
 5. Açarsınız (`enter` ya da `W`), diff'i okursunuz ve yanıt verirsiniz: `a` checkout'unuza stage'e uygular ve worktree'yi işaretler, sonraki `done` yalnız sonrasını gösterir; `r` reddeder ve nedenini yazmanız için yazma satırını açar; `c` ve `n` yerine satırlara not gönderir; `x` kısmi uygulama için hunk seçer. Checkout'unuza uymayan bir değişiklik git'in sözleriyle reddedilir ve hiçbir şey yarım uygulanmaz.
-6. Günlük ne olduğunu söyler; terminalin başlığı bekleyenleri sayar (`! imece · 2 seni bekliyor`).
+6. Günlük ne olduğunu söyler; terminalin başlığı bekleyenleri sayar (`! imece · 2 karar bekliyor`).
 
 ## Üç derinlik
 
 Ekranın her parçasının üç derinliği vardır; ânın gerektirdiği kadar derine bakarsınız:
 
-1. **Lonca**: salon; projeler, liderleri, işçiler ve yardımcılar, her biri bir satır, sizi bekleyenler en üstte.
+1. **Lonca**: ekip; projeler, liderleri, işçiler ve yardımcılar, her biri bir satır, sizi bekleyenler en üstte.
 2. **Bir kartın hikâyesi**: bir ajanda `enter` odağını açar; kartının niyeti, kararları, varsayımları, konuşmaları ve kanıtı. `#N` ya da `#kelime` bir kartın kendi ekranını açar.
 3. **Ham akış**: bir `enter` daha (ya da `t`) izi gösterir; oturumun gerçekten gönderdiği.
 

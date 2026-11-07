@@ -2246,7 +2246,7 @@ pub struct Cleared {
     /// The journal lines before this index are not listed, but for the
     /// marked ones.
     pub journal: usize,
-    /// The inbox items not listed in WAITING FOR YOU; while open they are
+    /// The inbox items not listed in TO DECIDE; while open they are
     /// counted in its title, and `W` brings one back as it opens it.
     pub inbox: BTreeSet<usize>,
 }
@@ -2358,7 +2358,7 @@ pub enum Check {
     #[default]
     None,
     /// The script waits for the person's yes to its bytes (an item in
-    /// WAITING FOR YOU).
+    /// TO DECIDE).
     Asked,
     /// It runs in the worktree now.
     Running,
@@ -2480,7 +2480,7 @@ impl Default for PlanGate {
 pub enum PlanHold {
     /// No plan was made yet.
     NoPlan,
-    /// The plan waits for the person in WAITING FOR YOU.
+    /// The plan waits for the person in TO DECIDE.
     Reading,
     /// The person answered the plan in words, not with a yes.
     Unanswered,
@@ -3091,7 +3091,7 @@ impl World {
     /// The world archive `p`'s read-only view shows: `p` open as it was
     /// when it was put away, with `journal` (its lines, oldest first) and
     /// `marks` (indexes in `journal`); every other project put away as an
-    /// archive is, so the salon, the board, the journal, WAITING FOR YOU
+    /// archive is, so the salon, the board, the journal, TO DECIDE
     /// and the names hold only `p`'s. Every project, agent and card is
     /// kept (the journal's events name them by id); the pot and the
     /// clock are this world's. Nothing in it runs: no limits, no queue,
@@ -3339,7 +3339,7 @@ impl World {
         }
     }
 
-    /// The open inbox items WAITING FOR YOU lists, oldest first: those
+    /// The open inbox items TO DECIDE lists, oldest first: those
     /// not cleared off it.
     pub fn shown_inbox(&self) -> Vec<usize> {
         let mut open = self.open_inbox();
@@ -3347,7 +3347,7 @@ impl World {
         open
     }
 
-    /// How many open inbox items are cleared off WAITING FOR YOU.
+    /// How many open inbox items are cleared off TO DECIDE.
     pub fn hidden_inbox(&self) -> usize {
         self.open_inbox()
             .iter()
@@ -3935,7 +3935,7 @@ impl World {
 
     /// The leader of `project` made `proposal` (record 114): the plan it
     /// had waiting closes (a new plan replaces it), the gate waits for a
-    /// yes again, and the plan goes to WAITING FOR YOU. The item's index.
+    /// yes again, and the plan goes to TO DECIDE. The item's index.
     pub fn propose(&mut self, project: ProjectId, proposal: Proposal) -> usize {
         let leader = self.projects[project].leader;
         self.close_plans(leader);

@@ -5,7 +5,7 @@ description: "Finishing a piece of work and starting the next on a clean screen:
 
 # A new epic
 
-A week of work on `kule` is done: the issues are fixed, the changes applied, the leader has nothing left to do. The salon still shows the two workers who did it, the journal is full of their talk, the board of their cards. The next piece of work is unrelated, and you want to start it on a clean screen without throwing the old one away.
+A week of work on `kule` is done: the issues are fixed, the changes applied, the leader has nothing left to do. The team still shows the two workers who did it, the journal is full of their talk, the board of their cards. The next piece of work is unrelated, and you want to start it on a clean screen without throwing the old one away.
 
 ## 1. Archive the project
 
@@ -37,7 +37,7 @@ When the count ends:
  archived kule as “v1 fixes”: its agents sleep with all they had; a fresh one opens
 ```
 
-The salon shows `kule` again, with its `lead` alone and idle: a fresh project on the same checkout, with the same name, the same pin and the same `:copy` list, its leader on the same model. The journal has one new line, `› you archived kule as “v1 fixes”; a fresh kule takes its place`; the old lines, the old cards on the board and in the queue, the old items in WAITING FOR YOU are gone from the screen. `@lead` reaches the new leader.
+The team shows `kule` again, with its `lead` alone and idle: a fresh project on the same checkout, with the same name, the same pin and the same `:copy` list, its leader on the same model. The journal has one new line, `› you archived kule as “v1 fixes”; a fresh kule takes its place`; the old lines, the old cards on the board and in the queue, the old items in TO DECIDE are gone from the screen. `@lead` reaches the new leader.
 
 Write to it as on the first day:
 
@@ -45,7 +45,7 @@ Write to it as on the first day:
 / the next epic: move the store to its own crate
 ```
 
-The leader starts a new session. Workers it hires are numbered after the old ones (`claude-3`, not `claude-1` again), so their worktrees never meet the archive's. Before it hires a second one its plan comes to WAITING FOR YOU as `▤`: `enter` reads the cards and what they should cost, `a` lets it go on ([waiting for you](../screen/waiting.md)).
+The leader starts a new session. Workers it hires are numbered after the old ones (`claude-3`, not `claude-1` again), so their worktrees never meet the archive's. Before it hires a second one its plan comes to TO DECIDE as `▤`: `enter` reads the cards and what they should cost, `a` lets it go on ([waiting for you](../screen/waiting.md)).
 
 ## 3. What the archive keeps
 

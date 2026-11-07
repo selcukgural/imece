@@ -5,7 +5,7 @@ description: A session you drive yourself, with no leader - :solo and --solo, th
 
 # Solo sessions
 
-A team is imece's usual shape: a leader reads your checkout, hires workers, and their changes come to you for review. A **solo** is the other shape: one agent you drive yourself, with no leader and no team, on the model and effort you name. It keeps what makes imece worth it (the worktree, the `Δ` gate, the pot, the salon, the store), and leaves out what a single session does not need (the board, cards, hiring workers). Open as many as you like, next to teams: team, solo, team, solo, solo, each a group in the salon.
+A team is imece's usual shape: a leader reads your checkout, hires workers, and their changes come to you for review. A **solo** is the other shape: one agent you drive yourself, with no leader and no team, on the model and effort you name. It keeps what makes imece worth it (the worktree, the `Δ` gate, the pot, the team, the store), and leaves out what a single session does not need (the board, cards, hiring workers). Open as many as you like, next to teams: team, solo, team, solo, solo, each a group in the team.
 
 ## Opening one
 
@@ -30,10 +30,10 @@ The flash says what opened: `opened notes at ~/src/kule as a solo session; write
 
 ## What a solo is
 
-- **A project of its own.** The salon shows it as a group with one agent, `solo-NAME` (`solo` when it is the project imece started in). Its row names the choice: `○ solo-notes  opus@xhigh  idle`. `:close`, `:rename` (the agent becomes `solo-NEWNAME`), `:pin` and `:copy` work as for any project.
+- **A project of its own.** The team shows it as a group with one agent, `solo-NAME` (`solo` when it is the project imece started in). Its row names the choice: `○ solo-notes  opus@xhigh  idle`. `:close`, `:rename` (the agent becomes `solo-NEWNAME`), `:pin` and `:copy` work as for any project.
 - **Its own worktree.** Like a worker, a solo writes in a git worktree of the checkout under imece's state directory, never in your checkout. Two solos on one checkout, and your own edits, never collide. The worktree is named after the project's id (`solo-3`), so renaming the project keeps it. Its row shows where the worktree stands (`⎇ branch ↑own ↓checkout +N −M`) as a worker's does.
 - **The worker's tools.** Under the confine dial a solo gets what a worker gets: read, write, shell, web search and fetch at `standard`, file tools and imece's `run` at `strict`, your own setup at `open` ([Claude Code](claude-code.md)). On the bus it has `send` (to you, and to its helpers), `run`, and `hire` for helpers. No `post`, `board` or `claim`: the board is a team's.
-- **The Δ after every answer.** Nobody sends `done` for a solo. Every turn that ends with an answer to you has imece read its worktree; when the tree differs from your HEAD, the change waits in WAITING FOR YOU as a `Δ` titled by the answer's first line, and `a` applies it to your checkout, `r` rejects it, `c` and `n` send notes, `x` chooses hunks, exactly as for a worker ([changes](changes.md)). A newer answer's change takes the older one's place. A turn that ends with nothing to say (a `/command`) reads nothing.
+- **The Δ after every answer.** Nobody sends `done` for a solo. Every turn that ends with an answer to you has imece read its worktree; when the tree differs from your HEAD, the change waits in TO DECIDE as a `Δ` titled by the answer's first line, and `a` applies it to your checkout, `r` rejects it, `c` and `n` send notes, `x` chooses hunks, exactly as for a worker ([changes](changes.md)). A newer answer's change takes the older one's place. A turn that ends with nothing to say (a `/command`) reads nothing.
 - **Helpers.** A solo may hire helpers (`solo-notes.1`), up to `--helpers`, as a worker does: a coding agent in its worktree, for a part that can run beside its own work. They are told they work for an agent that works alone with the person.
 - **The one pot.** A solo's turns are paid from the same pot as every team's, and Claude Code's usage window shows in the header like any session's ([budget and limits](budget-and-limits.md)).
 - **Remembered.** A solo, its session and its choice are in the store like any agent: it comes back asleep, told where it left off ([sessions](sessions.md)).
@@ -59,7 +59,7 @@ A bare `imece` opens a team on the checkout when none is open there, even when s
 ## See also
 
 - [Team](team.md): the roles, and what a solo shares with a worker
-- [Projects](projects.md): groups in the salon, `:close`, `:rename`, `:pin`
+- [Projects](projects.md): groups in the team, `:close`, `:rename`, `:pin`
 - [Changes](changes.md): the `Δ`, apply, reject, notes
 - [Command line](../reference/cli.md): `--solo`, `--model`, `--tier`
 - [Commands](../reference/commands.md): `:solo`

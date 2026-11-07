@@ -12,9 +12,9 @@ A change (`Δ`) has more answers than apply or reject. You can note its lines an
 ## 1. A change of three files
 
 ```text
- WAITING FOR YOU (1)
+ TO DECIDE (1)
  Δ 15:02 claude-2 finished: token bucket in src/limit.rs, wired in lib.rs, tests (3 files, +45 −6) · no run on this tree
-   enter see the diff · a apply to the checkout · r reject
+   enter see the diff · a approve · r send back
 ```
 
 `no run on this tree` says the worker ran nothing through imece's `run` tool on exactly this tree; whether it builds is not known. Press `W` (from anywhere) or `enter` on the item:
@@ -65,7 +65,7 @@ tests/limit.rs:9
 also assert the refill after a sleep of the period
 ````
 
-The change goes back the way `r` sends it back: the journal says `rejected: claude-2`, the worktree keeps the change, and the worker's next `done` is a new `Δ`. With no notes, `n` says `no notes on this change yet: c writes one on the top line`.
+The change goes back the way `r` sends it back: the journal says `sent back: claude-2`, the worktree keeps the change, and the worker's next `done` is a new `Δ`. With no notes, `n` says `no notes on this change yet: c writes one on the top line`.
 
 ## 4. The worker answers
 
@@ -135,13 +135,13 @@ Type the question above the fence, `why clone here, Config is already by referen
 
 ## 8. Reject the remainder with a reason
 
-Back in the diff (`W`), press `r`. The flash says `rejected claude-2's change; tell it why` and the command line opens with `@claude-2 ` for the reasons:
+Back in the diff (`W`), press `r`. The flash says `sent claude-2's change back; tell it why` and the command line opens with `@claude-2 ` for the reasons:
 
 ```text
 @claude-2 drop the lib.rs wiring: the app builds the limiter itself in main; keep the test
 ```
 
-The journal says `rejected: claude-2`. The change stays in the worktree, not applied; the worker is told "The person rejected your change (…). It stays in your worktree, not applied; they say why themselves. Do not send it again as it is." Your message follows. `r` is refused while that change is being applied (`claude-2's change was not rejected: their change is being applied`), and `a` while a newer `done` of the worker's is still being read.
+The journal says `sent back: claude-2`. The change stays in the worktree, not applied; the worker is told "The person rejected your change (…). It stays in your worktree, not applied; they say why themselves. Do not send it again as it is." Your message follows. `r` is refused while that change is being applied (`claude-2's change was not rejected: their change is being applied`), and `a` while a newer `done` of the worker's is still being read.
 
 ## See also
 

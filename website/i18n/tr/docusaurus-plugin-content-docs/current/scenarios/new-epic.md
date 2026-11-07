@@ -5,7 +5,7 @@ description: "Bir işi bitirip sonrakine temiz bir ekranda başlamak: :archive, 
 
 # Yeni bir epic
 
-`kule` üzerinde bir haftalık iş bitti: issue'lar düzeldi, değişiklikler uygulandı, liderin yapacak bir şeyi kalmadı. Salon hâlâ işi yapan iki işçiyi gösteriyor, günlük onların konuşmalarıyla, pano kartlarıyla dolu. Sıradaki iş ilgisiz ve ona eskisini atmadan temiz bir ekranda başlamak istiyorsunuz.
+`kule` üzerinde bir haftalık iş bitti: issue'lar düzeldi, değişiklikler uygulandı, liderin yapacak bir şeyi kalmadı. Ekip hâlâ işi yapan iki işçiyi gösteriyor, günlük onların konuşmalarıyla, pano kartlarıyla dolu. Sıradaki iş ilgisiz ve ona eskisini atmadan temiz bir ekranda başlamak istiyorsunuz.
 
 ## 1. Projeyi arşivleyin
 
@@ -37,7 +37,7 @@ Sayım bitince:
  kule “v1 fixes” adıyla arşivlendi: agent'ları her şeyiyle uyuyor; yerine yenisi açıldı
 ```
 
-Salon yine `kule`'yi gösterir, `lead`'i tek başına ve boşta: aynı çalışma kopyasında, aynı adla, aynı iğneyle ve aynı `:copy` listesiyle yeni bir proje; lideri aynı modelde. Günlükte tek bir yeni satır vardır, `› kule projesini “v1 fixes” adıyla arşivledin; yerine yeni bir kule açıldı`; eski satırlar, panodaki ve kuyruktaki eski kartlar, SENİ BEKLEYEN'deki eski kalemler ekrandan gitmiştir. `@lead` yeni lidere ulaşır.
+Ekip yine `kule`'yi gösterir, `lead`'i tek başına ve boşta: aynı çalışma kopyasında, aynı adla, aynı iğneyle ve aynı `:copy` listesiyle yeni bir proje; lideri aynı modelde. Günlükte tek bir yeni satır vardır, `› kule projesini “v1 fixes” adıyla arşivledin; yerine yeni bir kule açıldı`; eski satırlar, panodaki ve kuyruktaki eski kartlar, KARAR BEKLEYEN'deki eski kalemler ekrandan gitmiştir. `@lead` yeni lidere ulaşır.
 
 Ona ilk günkü gibi yazın:
 
@@ -45,7 +45,7 @@ Ona ilk günkü gibi yazın:
 / sıradaki epic: depoyu kendi crate'ine taşı
 ```
 
-Lider yeni bir oturum başlatır. İşe aldığı işçiler eskilerin ardından numaralanır (`claude-3`, yeniden `claude-1` değil); böylece worktree'leri arşivinkilerle asla karşılaşmaz. İkincisini almadan önce planı SENİ BEKLEYEN'e `▤` olarak gelir: `enter` kartları ve beklenen maliyeti okur, `a` devam ettirir ([seni bekleyen](../screen/waiting.md)).
+Lider yeni bir oturum başlatır. İşe aldığı işçiler eskilerin ardından numaralanır (`claude-3`, yeniden `claude-1` değil); böylece worktree'leri arşivinkilerle asla karşılaşmaz. İkincisini almadan önce planı KARAR BEKLEYEN'e `▤` olarak gelir: `enter` kartları ve beklenen maliyeti okur, `a` devam ettirir ([seni bekleyen](../screen/waiting.md)).
 
 ## 3. Arşivin sakladıkları
 

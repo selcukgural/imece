@@ -83,7 +83,7 @@ A line that starts with `:` is a command to imece, not a message to an agent. Yo
 | `:unclear [inbox\|journal]` | — | | | | |
 | `:undo` | `u` | | | | |
 | `:unfold` | `zR` | | | | |
-| `:unsettle` | — | | | | how many are settled |
+| `:unsettle` | — | | | | how many are hidden |
 | `:waiting` | `w` | | | | N waiting |
 | `:welcome` | — | | | | |
 | `:why [@NAME]` | — | | | | the agent at hand |
@@ -97,7 +97,7 @@ Live, `:pause`, `:faster` and `:slower` are left out of the menu. Keys that move
 
 Puts the project at hand away as `TITLE` and opens a fresh one in its place, ten seconds after it is asked: the bottom line counts down (`◷ archiving kule as “first epic” in 7 s · u keeps it`, and when agents of it are mid-turn `…, cutting 2 turns short …`), and `u` ([`:undo`](#undo)) leaves it as it is. Without a title it is called by its name and its days (`kule 2026-10-30 → 2026-11-02`); a title is one line, at most 60 characters.
 
-The archived project's agents stop as at a quit (a turn under way is cut short and its prompt kept) and sleep with all they had: their sessions, mail, notes, changes, cards and items in WAITING FOR YOU. All of it leaves the screen: the salon, WAITING FOR YOU, the journal, the board and the queue show only the fresh project, which has the same name, pin and `:copy` list, and a head of the same name and model. Nothing is spent, and the pot is the same one. The flash: `archived kule as “first epic”: its agents sleep with all they had; a fresh one opens`; the journal: `you archived kule as “first epic”; a fresh kule takes its place`. `--fresh` leaves an archive's sessions alone. The demo archives the same way. See [sessions](../concepts/sessions.md#archives) and the scenario [a new epic](../scenarios/new-epic.md).
+The archived project's agents stop as at a quit (a turn under way is cut short and its prompt kept) and sleep with all they had: their sessions, mail, notes, changes, cards and items in TO DECIDE. All of it leaves the screen: the team, TO DECIDE, the journal, the board and the queue show only the fresh project, which has the same name, pin and `:copy` list, and a head of the same name and model. Nothing is spent, and the pot is the same one. The flash: `archived kule as “first epic”: its agents sleep with all they had; a fresh one opens`; the journal: `you archived kule as “first epic”; a fresh kule takes its place`. `--fresh` leaves an archive's sessions alone. The demo archives the same way. See [sessions](../concepts/sessions.md#archives) and the scenario [a new epic](../scenarios/new-epic.md).
 
 ### `:archives`
 
@@ -105,7 +105,7 @@ Opens the archives as a tree, as `A`: each checkout that has one (the one at han
 
 In it `j` `k` move, `gg` `G` go to the first / last row, `l` (or `→`) shows an archive's agents (each with what it spent, its head first and in bold) and opens a folded checkout, `h` (or `←`) folds them again (on an archive already folded, its checkout), `za` folds or unfolds the row at hand, and so does `enter` on a checkout. `/` filters: only the archives with every word typed, in their title, project name, checkout or an agent's name, case and Turkish letters folded; `enter` keeps the filter, `esc` drops it. `r` on an archive or one of its agents brings it back, as [`:restore`](#restore-name) does, and closes the window; `esc`, `q` or `A` close it (`esc` drops a filter first). With nothing archived: `nothing is archived yet; :archive puts the project at hand away`. An `:archive` still counting down acts first, so it is listed. The demo lists its archives the same way, each under its project's name.
 
-`enter` on an archive (or one of its agents, then selected) opens it read-only over the screen, without bringing it back: the salon, the board, WAITING FOR YOU and the journal show that archive alone, as it was put away, its journal all the store keeps of it. The top row says which it is and what waits for you meanwhile: `ARCHIVE · kule “v1 fixes” · archived 2026-11-02 · 1 waiting for you now · esc back`. Nothing in it wakes or spends, and the screen behind goes on. Conversations (`v` copies), the card screens, the focus, `:export` and the `:` commands that only look or go work there; a message, `!cmd`, `m`, `A`, an answer in WAITING FOR YOU and every other command say `an archive is read-only · :restore brings it back · esc goes back`. `:restore` in it brings that archive back. `esc` or `q` (with nothing open in the view) goes back, and so does `:quit`; `ctrl-c` quits imece. If the store cannot be read: `the archive's journal could not be read: …`.
+`enter` on an archive (or one of its agents, then selected) opens it read-only over the screen, without bringing it back: the team, the board, TO DECIDE and the journal show that archive alone, as it was put away, its journal all the store keeps of it. The top row says which it is and what waits for you meanwhile: `ARCHIVE · kule “v1 fixes” · archived 2026-11-02 · 1 waiting for you now · esc back`. Nothing in it wakes or spends, and the screen behind goes on. Conversations (`v` copies), the card screens, the focus, `:export` and the `:` commands that only look or go work there; a message, `!cmd`, `m`, `A`, an answer in TO DECIDE and every other command say `an archive is read-only · :restore brings it back · esc goes back`. `:restore` in it brings that archive back. `esc` or `q` (with nothing open in the view) goes back, and so does `:quit`; `ctrl-c` quits imece. If the store cannot be read: `the archive's journal could not be read: …`.
 
 ### `:awake`
 
@@ -125,25 +125,25 @@ Raises or lowers the pot while agents run (`:b 80`). The value is dollars with a
 
 ### `:clear [inbox|journal]`
 
-Takes what WAITING FOR YOU lists and the journal's lines off the salon's screen: bare both, `inbox` or `journal` one. Nothing is deleted: the store keeps it all, and `:export`, a card's screen and the archives still show it. It waits ten seconds first, as `:close` does (`◷ clearing WAITING FOR YOU and the journal off the screen in 7 s · u keeps them`; `u` leaves the screen as it is), then says what went: `2 waiting and 40 journal lines off the screen; :unclear brings them back`. What still waits for you is not lost: it stays open, its agent still waits, the title counts it (`WAITING FOR YOU (0 · +2 hidden)`), the terminal's title and tab count it too, and `W` opens the next one and puts it back on the list. A marked line (`m`) stays in the journal. What comes after shows as usual. The clear is kept in the store, so the next start begins clean too. With nothing to clear it says `nothing on the screen to clear`; another word: `all is not inbox or journal`. See [journal](../screen/journal.md#clearing-the-screen).
+Takes what TO DECIDE lists and the journal's lines off the team's screen: bare both, `inbox` or `journal` one. Nothing is deleted: the store keeps it all, and `:export`, a card's screen and the archives still show it. It waits ten seconds first, as `:close` does (`◷ clearing TO DECIDE and the journal off the screen in 7 s · u keeps them`; `u` leaves the screen as it is), then says what went: `2 waiting and 40 journal lines off the screen; :unclear brings them back`. What still waits for you is not lost: it stays open, its agent still waits, the title counts it (`TO DECIDE (0 · +2 hidden)`), the terminal's title and tab count it too, and `W` opens the next one and puts it back on the list. A marked line (`m`) stays in the journal. What comes after shows as usual. The clear is kept in the store, so the next start begins clean too. With nothing to clear it says `nothing on the screen to clear`; another word: `all is not inbox or journal`. See [journal](../screen/journal.md#clearing-the-screen).
 
 ### `:close [NAME]`
 
-Closes the project `NAME`, or the one at hand (`:c`), ten seconds after it is asked: the bottom line counts down, and `u` ([`:undo`](#undo)) keeps it open. Its agents' sessions and runs end, their mail, notes, offers and changes are dropped, their items in WAITING FOR YOU close, and the project is marked closed: the salon skips it, the same checkout opened again takes its place with a new leader. The worktrees stay on disk. The flash: `closed kule: its agents left; their worktrees stay on disk`. The last open project refuses: `kule is the last open project; q q quits`; a name nobody has: `no open project named x`. In the demo, the project's agents leave the same way. See [projects](../concepts/projects.md).
+Closes the project `NAME`, or the one at hand (`:c`), ten seconds after it is asked: the bottom line counts down, and `u` ([`:undo`](#undo)) keeps it open. Its agents' sessions and runs end, their mail, notes, offers and changes are dropped, their items in TO DECIDE close, and the project is marked closed: the team skips it, the same checkout opened again takes its place with a new leader. The worktrees stay on disk. The flash: `closed kule: its agents left; their worktrees stay on disk`. The last open project refuses: `kule is the last open project; q q quits`; a name nobody has: `no open project named x`. In the demo, the project's agents leave the same way. See [projects](../concepts/projects.md).
 
 ### `:code`
 
-The code map, as `3`. Live it says there is no shared trunk yet (each agent works in its own worktree, so there are no leases to show); symbol leases are not built. See [board and code map](../screen/board-and-code-map.md).
+The code map, as `3`. Live it says there is no shared trunk yet (each agent works in its own worktree, so there is nothing to show of who edits what); symbol leases are not built. See [board and code map](../screen/board-and-code-map.md).
 
 ### `:commit`
 
 Asks Claude Code's cheap tier (`haiku`, or your `--tier claude:cheap=…`) for a commit message for what is staged in the project at hand's checkout, and puts it on the command line as `!git commit -m '…'` for you to edit and run with `enter` in your own shell, or drop with `esc`. imece commits nothing. The flash says `asking haiku for a commit message for what is staged in kule`; the journal says each suggestion with its model and cost, and each failure with why.
 
-It costs: each call at most $0.05 (the call's own hard cap), a day (UTC) at most 20 calls and $1.00 over all projects, reserved from the pot before the call and settled after. Refused with `no commit message: …` when nothing is staged, the day is full, or the pot has less than the cap. The same staged tree asked again costs nothing: the last suggestion comes back. The call reads `git diff --cached --stat`, the patch (at most 24 KiB) and the eight newest commit subjects; it runs with no tools, no MCP server, its own short system prompt, nothing saved. The demo answers from the titles of the changes applied in that project, as `git commit --dry-run`. See [own shell and commit](../scenarios/own-shell-and-commit.md).
+It costs: each call at most $0.05 (the call's own hard cap), a day (UTC) at most 20 calls and $1.00 over all projects, reserved from the pot before the call and hidden after. Refused with `no commit message: …` when nothing is staged, the day is full, or the pot has less than the cap. The same staged tree asked again costs nothing: the last suggestion comes back. The call reads `git diff --cached --stat`, the patch (at most 24 KiB) and the eight newest commit subjects; it runs with no tools, no MCP server, its own short system prompt, nothing saved. The demo answers from the titles of the changes applied in that project, as `git commit --dry-run`. See [own shell and commit](../scenarios/own-shell-and-commit.md).
 
 ### `:allow [PROGRAM [WORD]]`
 
-The project at hand's yes from now on: commands its agents run without asking you (see [approvals](../concepts/approvals-and-questions.md#a-yes-from-now-on)). `:allow` alone says the list (`kule: yes from now on to make, npm run …`, or `kule: no yes from now on; A on an ask, or :allow PROGRAM [WORD]`); `:allow npm run` adds one (the project's open asks it covers go on), and the same again takes it out (`kule: no yes from now on to npm run … any more`). A program and at most one word, not an option first: `:allow rm -rf` is refused. `A` on an ask in WAITING FOR YOU adds what that ask runs, or that line alone when no such yes can hold it; `:allow` with the line takes that one out. Kept with the project between runs.
+The project at hand's yes from now on: commands its agents run without asking you (see [approvals](../concepts/approvals-and-questions.md#a-yes-from-now-on)). `:allow` alone says the list (`kule: yes from now on to make, npm run …`, or `kule: no yes from now on; A on an ask, or :allow PROGRAM [WORD]`); `:allow npm run` adds one (the project's open asks it covers go on), and the same again takes it out (`kule: no yes from now on to npm run … any more`). A program and at most one word, not an option first: `:allow rm -rf` is refused. `A` on an ask in TO DECIDE adds what that ask runs, or that line alone when no such yes can hold it; `:allow` with the line takes that one out. Kept with the project between runs.
 
 ### `:copy [PATH]`
 
@@ -153,7 +153,7 @@ A path must be relative, literal (no glob, no `..`, not in `.git`, at most 200 b
 
 ### `:defer`
 
-Puts the item at hand in WAITING FOR YOU off and opens the next one, as `S`. See [waiting for you](../screen/waiting.md).
+Puts the item at hand in TO DECIDE off and opens the next one, as `S`. See [waiting for you](../screen/waiting.md).
 
 ### `:digest`
 
@@ -179,7 +179,7 @@ Demo only, as `+`: the simulation runs faster. The menu note shows the speed (`�
 
 ### `:fold`
 
-Folds every project and every worker's helpers in the salon, as `zM`; from another view it goes to the salon first. With a conversation open it folds every message of it to one row instead, and the conversations you open after it in this run start folded. See [salon](../screen/salon.md) and [conversations](../screen/conversations.md).
+Folds every project and every worker's helpers in the team, as `zM`; from another view it goes to the team first. With a conversation open it folds every message of it to one row instead, and the conversations you open after it in this run start folded. See [team](../screen/salon.md) and [conversations](../screen/conversations.md).
 
 ### `:forget [@NAME]`
 
@@ -191,7 +191,7 @@ Makes a new worker that goes on from the worker `NAME` (else the one at hand) to
 
 ### `:goto [NAME]`
 
-Goes to the agent called `NAME` (an `@` before it is fine), else to the open project of that name: the salon with its row selected, the project unfolded, a helper's worker unfolded, and `f` let go when it would hide the row; a project's name selects its header. Case and Turkish letters do not matter. Nothing of the name: `nothing called "zzz" to go to: an agent or a project`, and nothing moves. Alone it opens the `&` line: the places as they stand now, what needs you first (stuck, then waiting, then done and not seen), the rest by their state (working before idle), then the open projects, each agent with its glyph and status words. The list is frozen while the line is open, so its numbers hold while you type; a digit `1`-`9` right after `&` goes at once, `#` right after `&` turns to the card line, `!` keeps only what needs you, digits match the start of a number, anything else matches inside the names. `enter` goes to the item under the cursor, or to the name typed. See [salon](../screen/salon.md).
+Goes to the agent called `NAME` (an `@` before it is fine), else to the open project of that name: the team with its row selected, the project unfolded, a helper's worker unfolded, and `f` let go when it would hide the row; a project's name selects its header. Case and Turkish letters do not matter. Nothing of the name: `nothing called "zzz" to go to: an agent or a project`, and nothing moves. Alone it opens the `&` line: the places as they stand now, what needs you first (stuck, then waiting, then done and not seen), the rest by their state (working before idle), then the open projects, each agent with its glyph and status words. The list is frozen while the line is open, so its numbers hold while you type; a digit `1`-`9` right after `&` goes at once, `#` right after `&` turns to the card line, `!` keeps only what needs you, digits match the start of a number, anything else matches inside the names. `enter` goes to the item under the cursor, or to the name typed. See [team](../screen/salon.md).
 
 ### `:history [WORDS]`
 
@@ -203,7 +203,7 @@ The `?` help: every key and command in both languages, the legend of glyphs; `/`
 
 ### `:hints`
 
-Hint letters, as `F`: a label of one or two letters over the start of every row of the salon's screen you can select (project headers, agents, the people on a card's screen, waiting items, journal lines). Typing a label selects its row in its panel; its last letter in capitals opens it too, as `enter`. `backspace` takes a letter back, `esc` closes them. A row gone from the screen since: `that row has left the screen`. Off the salon's screen: `no rows to label here: F works on the salon's screen`. See [salon](../screen/salon.md).
+Hint letters, as `F`: a label of one or two letters over the start of every row of the team's screen you can select (project headers, agents, the people on a card's screen, waiting items, journal lines). Typing a label selects its row in its panel; its last letter in capitals opens it too, as `enter`. `backspace` takes a letter back, `esc` closes them. A row gone from the screen since: `that row has left the screen`. Off the team's screen: `no rows to label here: F works on the team's screen`. See [team](../screen/salon.md).
 
 ### `:keys`
 
@@ -233,11 +233,11 @@ Sets the model the solo session at hand runs on, from its next turn: an alias (`
 
 ### `:motion [off|calm|full]`
 
-How much moves on the screen. `calm` (the default): a working row's glyph breathes, its colour dimmed every other 0.6 s, never its shape (on the board too, a working owner's under its card); `starting` counts its dots; the bottom line shows a spinner while imece waits for an answer (`:commit`), and so does Claude Code while it is still being checked in the first-run window; a row or an item that comes to wait for you blinks three times; a row whose turn is done, or whose session started, settles from a green background to its own colours (a theme of the terminal's own colours: reversed, then the changed rows' look); a row wears its activity bar, `▁▃▅▂▁`, what the agent did in each of the last five ticks (it changes only with what the agent does and as the ticks pass); imece's mark, where it comes on the screen (the welcome and news windows, a salon with no worker yet), brings its dots one a beat, any key showing it whole. `full` adds a spinner by the header's fleet while anyone works, and spins faster; over SSH it runs as calm (every frame crosses the network). `off`: nothing moves, no row wears an activity bar and the mark is drawn whole, the screen as it was before. Nothing moves in another window, and what happens there does not blink when you come back; everything falls on one beat (0.3 s), so several things moving cost no more frames than one, and a frame is drawn only when what it shows moves (see [the decision](https://github.com/selcukgural/imece/blob/main/docs/decisions/84-motion.md)). Bare `:motion` goes to the next one round: off, calm, full, off. The flash says what the new one does (`calm motion: a working row breathes, what comes to wait blinks`, `full motion: spinners too, and faster`, `full motion runs as calm over SSH`, `nothing moves on the screen`); another word: `wild is not off, calm or full`. The menu note shows the value; it is remembered in the store.
+How much moves on the screen. `calm` (the default): a working row's glyph breathes, its colour dimmed every other 0.6 s, never its shape (on the board too, a working owner's under its card); `starting` counts its dots; the bottom line shows a spinner while imece waits for an answer (`:commit`), and so does Claude Code while it is still being checked in the first-run window; a row or an item that comes to wait for you blinks three times; a row whose turn is done, or whose session started, hides from a green background to its own colours (a theme of the terminal's own colours: reversed, then the changed rows' look); a row wears its activity bar, `▁▃▅▂▁`, what the agent did in each of the last five ticks (it changes only with what the agent does and as the ticks pass); imece's mark, where it comes on the screen (the welcome and news windows, a team with no worker yet), brings its dots one a beat, any key showing it whole. `full` adds a spinner by the header's fleet while anyone works, and spins faster; over SSH it runs as calm (every frame crosses the network). `off`: nothing moves, no row wears an activity bar and the mark is drawn whole, the screen as it was before. Nothing moves in another window, and what happens there does not blink when you come back; everything falls on one beat (0.3 s), so several things moving cost no more frames than one, and a frame is drawn only when what it shows moves (see [the decision](https://github.com/selcukgural/imece/blob/main/docs/decisions/84-motion.md)). Bare `:motion` goes to the next one round: off, calm, full, off. The flash says what the new one does (`calm motion: a working row breathes, what comes to wait blinks`, `full motion: spinners too, and faster`, `full motion runs as calm over SSH`, `nothing moves on the screen`); another word: `wild is not off, calm or full`. The menu note shows the value; it is remembered in the store.
 
 ### `:needs`
 
-The salon shows only what needs you (waiting for you, stuck, done and not seen), as `f`; again, everyone. Goes to the salon first. The menu note: `(on)` / `(off)`.
+The team shows only what needs you (waiting for you, stuck, done and not seen), as `f`; again, everyone. Goes to the team first. The menu note: `(on)` / `(off)`.
 
 ### `:news`
 
@@ -251,7 +251,7 @@ Opens the next item waiting for you from anywhere, as `W`. The menu note says ho
 
 How you are told, in another window, that something came to wait for you: `bell` rings the terminal's bell (every terminal has a setting for it: a sound, a badge on the tab, a flash; tmux's `monitor-bell`), `text` sends a desktop notification with imece's words, the way your terminal shows it best (it is asked its name at start): kitty 0.36+ gets its own (OSC 99) with `imece` as the title, louder and with an error sound for something stuck or an API error, a question sound otherwise, and **clicking it opens what it was about** (the item that waits, the stuck agent, or for several the next item waiting, as `W`); Ghostty gets OSC 777 with `imece` as the title; inside tmux it goes through tmux's passthrough, which needs `set -g allow-passthrough on` in your tmux config (else tmux drops it; `bell` always gets through); any other terminal gets OSC 9 (iTerm2, WezTerm; one that does not know the sequence ignores it, so choose `bell` there), `off` (the default) neither. Bare `:notify` goes to the next one round: off, bell, text, off. The flash says `the bell rings when something waits and you are in another window`, `a desktop note when something waits and you are in another window` or `no word in another window`; another word: `beep is not off, bell, text or push`. The menu note shows the value; it is remembered in the store.
 
-What rings: a new item in WAITING FOR YOU (a change, a question, an answer, an ask for your yes, something sensitive) or an agent that got stuck (blocked, its session stopped), when it came while the terminal did not have the focus and is still there five seconds later, once each. A note names the kind and the agent, never the agent's words: `imece · claude-1 finished: a change waits for you`, `imece · claude-2 asks you`, `imece · claude-3 is stuck`; several due at once are one bell, or one note with the count (`imece · 3 things wait for you`). What was on screen when you left never rings, and back in the window what was about to ring is dropped: it is on screen now. The terminal must report focus (tmux needs `focus-events on`); one that does not never rings. See [WAITING FOR YOU](../screen/waiting.md).
+What rings: a new item in TO DECIDE (a change, a question, an answer, an ask for your yes, something sensitive) or an agent that got stuck (blocked, its session stopped), when it came while the terminal did not have the focus and is still there five seconds later, once each. A note names the kind and the agent, never the agent's words: `imece · claude-1 finished: a change waits for you`, `imece · claude-2 asks you`, `imece · claude-3 is stuck`; several due at once are one bell, or one note with the count (`imece · 3 things wait for you`). What was on screen when you left never rings, and back in the window what was about to ring is dropped: it is on screen now. The terminal must report focus (tmux needs `focus-events on`); one that does not never rings. See [TO DECIDE](../screen/waiting.md).
 
 `push` sends what comes to wait to your phone through [ntfy](https://ntfy.sh) instead, for when you are away from the machine: it is said when the terminal lost the focus, or when no key was pressed for `:away`'s time (30 minutes by default; `:away off` leaves only the focus), since a terminal left on the desk keeps its focus. It is taken only by name (never in the bare round), and only when your settings hold: a file `push` in imece's config directory (`$XDG_CONFIG_HOME/imece/push`, else `~/.config/imece/push`):
 
@@ -282,7 +282,7 @@ Demo only, as `space`: pauses or resumes the simulation. The menu note: `(on)` /
 
 ### `:peek [@NAME]`
 
-The agent's focus in a window over the view, as `K`; no name is the agent at hand (selected in the salon, behind the inbox item or the journal line, or the one zoomed in on). The view under it does not move. In the window `j` `k` (or the arrows) step to the next / previous agent in the salon's order, `enter` opens its whole focus, `@` starts a message to it, `?` the help, `esc` or `K` close it; other keys do nothing. Looking at an agent this way counts as seeing its finished turn. See [salon](../screen/salon.md).
+The agent's focus in a window over the view, as `K`; no name is the agent at hand (selected in the team, behind the inbox item or the journal line, or the one zoomed in on). The view under it does not move. In the window `j` `k` (or the arrows) step to the next / previous agent in the team's order, `enter` opens its whole focus, `@` starts a message to it, `?` the help, `esc` or `K` close it; other keys do nothing. Looking at an agent this way counts as seeing its finished turn. See [team](../screen/salon.md).
 
 ### `:pending`
 
@@ -290,11 +290,11 @@ Before quitting, the list `q s` shows: the agents mid-turn and the changes not r
 
 ### `:pin [NAME]`
 
-Pins the project `NAME`, or the one at hand, to the top of the salon; again unpins. Pinned projects come first, in the order they were opened, and fold last when the salon is short; a pinned header wears `▴`. The flash: `kule is pinned to the top of the salon` / `kule is not pinned any more`. Kept in the store; a closed project keeps its pin for when it opens again. The menu note shows the project it would act on, `▴ kule` when pinned already. A colour per project is not built.
+Pins the project `NAME`, or the one at hand, to the top of the team; again unpins. Pinned projects come first, in the order they were opened, and fold last when the team is short; a pinned header wears `▴`. The flash: `kule is pinned to the top of the team` / `kule is not pinned any more`. Kept in the store; a closed project keeps its pin for when it opens again. The menu note shows the project it would act on, `▴ kule` when pinned already. A colour per project is not built.
 
 ### `:plan [on|off]`
 
-The plan gate of the project at hand ([the plan](../concepts/messages-and-board.md#the-plan)): `on` (the default) has the leader put its plan before you, as a `▤` item in WAITING FOR YOU, before it hires a second worker; `off` lets it hire as it sees fit, and a plan it still sends is answered `the person turned the plan gate off for this project` and not kept. Bare, it says where the gate stands: `plan gate on for kule: a plan with your yes before the second worker` / `plan gate off for kule: the leader hires as it sees fit`. Kept in the store per project. The menu note shows on / off.
+The plan gate of the project at hand ([the plan](../concepts/messages-and-board.md#the-plan)): `on` (the default) has the leader put its plan before you, as a `▤` item in TO DECIDE, before it hires a second worker; `off` lets it hire as it sees fit, and a plan it still sends is answered `the person turned the plan gate off for this project` and not kept. Bare, it says where the gate stands: `plan gate on for kule: a plan with your yes before the second worker` / `plan gate off for kule: the leader hires as it sees fit`. Kept in the store per project. The menu note shows on / off.
 
 ### `:quit`
 
@@ -312,7 +312,7 @@ Renames the project at hand and its leader to `lead-NAME` (project 0's `lead` to
 
 Brings an archive back: the newest one titled `NAME`, else the newest archive of the project called `NAME`; without a name, the newest archive of the project at hand's name (so `:restore` right after an `:archive` takes it back once the grace is over). The menu after `:restore ` offers the archives' titles, newest first, each noted with its project's name and the day it was archived (`first epic   kule · 2026-11-02`).
 
-The archive opens again as it was put away: its agents asleep with their sessions, mail, notes and changes, its cards, items in WAITING FOR YOU and journal lines back in sight, its head selected. Nothing wakes and nothing is spent until you write: each agent then goes on in the session it had (when Claude Code still keeps it, else a new one, told where it left off), told first that the project was put away and brought back, and of the turn the archive cut short, which is not run again.
+The archive opens again as it was put away: its agents asleep with their sessions, mail, notes and changes, its cards, items in TO DECIDE and journal lines back in sight, its head selected. Nothing wakes and nothing is spent until you write: each agent then goes on in the session it had (when Claude Code still keeps it, else a new one, told where it left off), told first that the project was put away and brought back, and of the turn the archive cut short, which is not run again.
 
 A checkout holds one open team, so the team open on the archive's checkout gives way (for a solo archive: the open solo of its name). It is archived in its turn under its name and days when it did anything (a card, a hired agent, something spent or said, a session), or closed when it did not, so empty archives do not pile up. The flash: `brought kule “first epic” back: its agents sleep until you write to them`; the journal: `you brought back kule “first epic”; the one open there is archived as “kule 2026-11-02”` (or a `you closed kule` line before it).
 
@@ -320,17 +320,17 @@ Refused, with nothing changed: no archive of that title or name (`no archive is 
 
 ### `:review [on|off]`
 
-Has a fresh Claude Code session read a change and say what it finds, as a note above the change's files. Bare, it asks for the change at hand (the one open, else the one selected in WAITING FOR YOU) now; `on` asks for one for every change as it comes to wait, `off` stops that (remembered in the store, off by default); bare with no change at hand, it says which it is. When it comes, the change's screen shows `✎ review · sonnet · $0.04` and its first six rows (`R` shows it whole); the journal says each review with its first line, and each failure with why and what it cost.
+Has a fresh Claude Code session read a change and say what it finds, as a note above the change's files. Bare, it asks for the change at hand (the one open, else the one selected in TO DECIDE) now; `on` asks for one for every change as it comes to wait, `off` stops that (remembered in the store, off by default); bare with no change at hand, it says which it is. When it comes, the change's screen shows `✎ review · sonnet · $0.04` and its first six rows (`R` shows it whole); the journal says each review with its first line, and each failure with why and what it cost.
 
-The note is advice: nothing waits for it and it never holds a change back; you still apply or reject. Who reads: a session of its own, which knows nothing of the worker's, on your `--tier standard=…`, else `sonnet`, with no tools and a hard cap of $0.10 a review. The reader sees what the worker said it did, the list of files and the patch (at most 64 KiB); nothing else. A day (UTC) holds 20 reviews and $2.00, apart from `:commit`'s, reserved from the pot before each call and settled after; one runs at a time, the rest wait their turn. Refused with `no review: …` when no change is at hand, it has its review already, one of it is under way, the pot has less than the cap, or the day is full. A newer change of the same worker gets a review of its own. See [changes](../concepts/changes.md#a-second-reading). The demo reviews the same way, answering from the change's files a few ticks later.
+The note is advice: nothing waits for it and it never holds a change back; you still apply or reject. Who reads: a session of its own, which knows nothing of the worker's, on your `--tier standard=…`, else `sonnet`, with no tools and a hard cap of $0.10 a review. The reader sees what the worker said it did, the list of files and the patch (at most 64 KiB); nothing else. A day (UTC) holds 20 reviews and $2.00, apart from `:commit`'s, reserved from the pot before each call and hidden after; one runs at a time, the rest wait their turn. Refused with `no review: …` when no change is at hand, it has its review already, one of it is under way, the pot has less than the cap, or the day is full. A newer change of the same worker gets a review of its own. See [changes](../concepts/changes.md#a-second-reading). The demo reviews the same way, answering from the change's files a few ticks later.
 
 ### `:salon`
 
-The salon, as `1`.
+The team, as `1`.
 
 ### `:settle`
 
-Settles the salon's selected row, as `s` there: a worker's row (with its helpers and researcher) or, on a project's header or its leader, the whole project, out of the salon until it needs you again. Goes to the salon first. Refused while something of it waits for you or is stuck: `not settled: claude-2 needs you`. Its finished turns count as seen. The flash: `claude-2 settled: back when it needs you`. The menu note names the row. See [salon](../screen/salon.md).
+Hides the team's selected row, as `s` there: a worker's row (with its helpers and researcher) or, on a project's header or its leader, the whole project, out of the team until it needs you again. Goes to the team first. Refused while something of it waits for you or is stuck: `not hidden: claude-2 needs you`. Its finished turns count as seen. The flash: `claude-2 hidden: back when it needs you`. The menu note names the row. See [team](../screen/salon.md).
 
 ### `:slower`
 
@@ -342,7 +342,7 @@ Opens a solo session: one agent you drive yourself, with no leader and no team, 
 
 ### `:story`
 
-The lower side panel tells the story, as `J`: what happened, by card, newest first, with whom you hold up on top (see [the story](../screen/journal.md#the-story)); again, the journal. Goes to the salon first. The menu note: `(on)` / `(off)`; remembered in the store, on by default.
+The lower side panel tells the story, as `J`: what happened, by card, newest first, with whom you hold up on top (see [the story](../screen/journal.md#the-story)); again, the journal. Goes to the team first. The menu note: `(on)` / `(off)`; remembered in the store, on by default.
 
 ### `:sync`
 
@@ -382,15 +382,15 @@ Keeps a `:close`, `:forget`, `:archive` or `:clear` from happening, as `u`; `U` 
 
 ### `:unfold`
 
-Unfolds everything in the salon, as `zR`; with a conversation open, every message of it, and the conversations opened after it start open again.
+Unfolds everything in the team, as `zR`; with a conversation open, every message of it, and the conversations opened after it start open again.
 
 ### `:unsettle`
 
-Brings back everything settled with `s` or `:settle`, and goes to the salon. The flash: `3 back in the salon`. The menu note says how many are settled.
+Brings back everything hidden with `s` or `:settle`, and goes to the team. The flash: `3 back in the team`. The menu note says how many are hidden.
 
 ### `:waiting`
 
-Straight to WAITING FOR YOU, as `w`. The menu note says how many wait.
+Straight to TO DECIDE, as `w`. The menu note says how many wait.
 
 ### `:welcome`
 
@@ -398,11 +398,11 @@ The first-run window: what imece is, Claude Code with its version and whether it
 
 ### `:why [@NAME]`
 
-What put the agent in its state, on the bottom line: its rung of the ladder (idle, done and not seen, starting, working, waiting for you, stuck), since when, and the journal's line that put it there, in the journal's words: `claude-1: stuck · since 14:02 · claude-1 stopped: the session ended`. An agent with mail waiting on you ends with how many: `· messages held until you answer: 2`. No name is the agent at hand, as for `:peek`. "Since" is when its oldest item began waiting for you, or else when its state last changed; the line is its newest journal line from then or before. When the journal no longer has one (tidied, or the agent came from an earlier run), it says so. It only looks, so it runs in an archive's view too.
+What put the agent in its state, on the bottom line: its rung of the ladder (idle, done and not seen, starting, working, needs you, stuck), since when, and the journal's line that put it there, in the journal's words: `claude-1: stuck · since 14:02 · claude-1 stopped: the session ended`. An agent with mail waiting on you ends with how many: `· messages queued until you answer: 2`. No name is the agent at hand, as for `:peek`. "Since" is when its oldest item began waiting for you, or else when its state last changed; the line is its newest journal line from then or before. When the journal no longer has one (tidied, or the agent came from an earlier run), it says so. It only looks, so it runs in an archive's view too.
 
 ### `:yes [@NAME]`
 
-Says yes to everything the agent asks until its turn ends, as `e` on its ask in waiting for you or on its focus; no name is the agent at hand. The ask it waits on and its other open ones go on now, and so does every later ask of that agent until its turn ends (or its session does): commands, edits, fetches, whatever Claude Code asks about. Its trace says `allowed by your yes for this turn: Bash: …`, its row and focus say `✓ turn` while the yes holds, and the journal says when it was given and when it ended, with how many asks it let go on (`claude-1's turn ended, and your yes for it: it let 7 asks go on`). Another agent's asks still wait for you. With no ask of the agent waiting it says so (`claude-1 asks for no yes now: …`). Both the demo and live sessions. See [approvals](../concepts/approvals-and-questions.md#a-yes-for-this-turn).
+Says yes to everything the agent asks until its turn ends, as `e` on its ask in TO DECIDE or on its focus; no name is the agent at hand. The ask it waits on and its other open ones go on now, and so does every later ask of that agent until its turn ends (or its session does): commands, edits, fetches, whatever Claude Code asks about. Its trace says `allowed by your yes for this turn: Bash: …`, its row and focus say `✓ turn` while the yes holds, and the journal says when it was given and when it ended, with how many asks it let go on (`claude-1's turn ended, and your yes for it: it let 7 asks go on`). Another agent's asks still wait for you. With no ask of the agent waiting it says so (`claude-1 asks for no yes now: …`). Both the demo and live sessions. See [approvals](../concepts/approvals-and-questions.md#a-yes-for-this-turn).
 
 ## See also
 

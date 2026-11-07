@@ -12,9 +12,9 @@ Bir değişikliğin (`Δ`) uygula ya da reddetten fazla yanıtı vardır. Satır
 ## 1. Üç dosyalı bir değişiklik
 
 ```text
- SENİ BEKLEYEN (1)
+ KARAR BEKLEYEN (1)
  Δ 15:02 claude-2 bitirdi: src/limit.rs içinde token kovası, lib.rs'e bağlandı, testler (3 dosya, +45 −6) · bu ağaçta çalıştırma yok
-   enter diff'i gör · a checkout'a uygula · r reddet
+   enter diff'i gör · a onayla · r geri gönder
 ```
 
 `bu ağaçta çalıştırma yok`, işçinin tam bu ağaçta imece'nin `run` aracıyla hiçbir şey çalıştırmadığını söyler; derlendiği bilinmiyor. `W`ye (her yerden) ya da öğe üstünde `enter`a basın:
@@ -65,7 +65,7 @@ tests/limit.rs:9
 dönemlik bir uykudan sonra yeniden dolmayı da doğrula
 ````
 
-Değişiklik `r`nin geri gönderdiği gibi geri döner: günlük `reddedildi: claude-2` der, worktree değişikliği tutar ve işçinin sonraki `done`u yeni bir `Δ` olur. Not yokken `n`, `bu değişiklikte henüz not yok: c en üstteki satıra bir tane yazar` der.
+Değişiklik `r`nin geri gönderdiği gibi geri döner: günlük `geri gönderildi: claude-2` der, worktree değişikliği tutar ve işçinin sonraki `done`u yeni bir `Δ` olur. Not yokken `n`, `bu değişiklikte henüz not yok: c en üstteki satıra bir tane yazar` der.
 
 ## 4. İşçi yanıtlar
 
@@ -135,13 +135,13 @@ Soruyu çitin üstüne yazın, `burada neden clone, Config zaten referansla geli
 
 ## 8. Kalanı nedeniyle reddedin
 
-Diff'e dönün (`W`), `r`ye basın. Anlık mesaj `claude-2 değişikliği reddedildi; nedenini ona yaz` der ve komut satırı nedenler için `@claude-2 ` ile açılır:
+Diff'e dönün (`W`), `r`ye basın. Anlık mesaj `claude-2 değişikliği geri gönderildi; nedenini ona yaz` der ve komut satırı nedenler için `@claude-2 ` ile açılır:
 
 ```text
 @claude-2 lib.rs bağlantısını kaldır: uygulama sınırlayıcıyı main'de kendi kuruyor; testi tut
 ```
 
-Günlük `reddedildi: claude-2` der. Değişiklik worktree'de kalır, uygulanmaz; işçiye "The person rejected your change (…). It stays in your worktree, not applied; they say why themselves. Do not send it again as it is." söylenir. Mesajınız arkasından gelir. O değişiklik uygulanırken `r` reddedilir (`claude-2 değişikliği reddedilmedi: their change is being applied`), işçinin daha yeni bir `done`u hâlâ okunuyorken de `a`.
+Günlük `geri gönderildi: claude-2` der. Değişiklik worktree'de kalır, uygulanmaz; işçiye "The person rejected your change (…). It stays in your worktree, not applied; they say why themselves. Do not send it again as it is." söylenir. Mesajınız arkasından gelir. O değişiklik uygulanırken `r` reddedilir (`claude-2 değişikliği reddedilmedi: their change is being applied`), işçinin daha yeni bir `done`u hâlâ okunuyorken de `a`.
 
 ## Ayrıca bakın
 

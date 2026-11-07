@@ -1,17 +1,17 @@
 ---
-title: WAITING FOR YOU
+title: TO DECIDE
 description: The panel that holds every decision only you can take - changes to review, tool calls to allow, questions to answer - and the keys that work through it.
 ---
 
-# WAITING FOR YOU
+# TO DECIDE
 
-WAITING FOR YOU is the top side panel of the salon. Only decisions that need you land there; everything else stays in the journal. You meet it the first time a worker sends `done`: its change (`Δ`) appears, the header counts `! 1 waiting for you`, and the terminal's title says `imece · 1 waiting`. In another window, `:notify bell` rings the terminal's bell and `:notify text` sends a desktop notification (`imece · claude-1 finished: a change waits for you`) when something new has waited five seconds; away from the machine, `:notify push` sends it to your phone through ntfy; off unless you ask, see [`:notify`](../reference/commands.md#notify-offbelltextpush).
+TO DECIDE is the top side panel of the team. Only decisions that need you land there; everything else stays in the journal. You meet it the first time a worker sends `done`: its change (`Δ`) appears, the header counts `! 1 waiting for you`, and the terminal's title says `imece · 1 waiting`. In another window, `:notify bell` rings the terminal's bell and `:notify text` sends a desktop notification (`imece · claude-1 finished: a change waits for you`) when something new has waited five seconds; away from the machine, `:notify push` sends it to your phone through ntfy; off unless you ask, see [`:notify`](../reference/commands.md#notify-offbelltextpush).
 
 ```text
-┌ WAITING FOR YOU (3) ───────────────────────────────────────────────┐
+┌ TO DECIDE (3) ─────────────────────────────────────────────────────┐
 │Δ 13:58 claude-1 finished: parser (3 files, +41 −6) · ✓ ran clean on this tree: cargo test
-│  enter see the diff · a apply to the checkout · r reject            │
-│⚑ 14:01 claude-2 waits for your yes: Bash: npm install left-pad      │
+│  enter see the diff · a approve · r send back            │
+│⚑ 14:01 claude-2 asks to run Bash: npm install left-pad      │
 │? 14:03 later · claude-3 asks you: Keep the old CLI flag or drop it? │
 └─────────────────────────────────────────────────────────────────────┘
 ```
@@ -37,20 +37,20 @@ A change (`Δ`) can also go back to its worker with notes (`n` in the diff), wit
 
 | Key | What it does |
 | --- | --- |
-| `tab` `⇧tab` | cycle the panels: salon, waiting, journal |
-| `w` (`:waiting`) | straight to the waiting panel, from any panel of the salon |
+| `tab` `⇧tab` | cycle the panels: team, waiting, journal |
+| `w` (`:waiting`) | straight to the waiting panel, from any panel of the team |
 | `↑` `↓` / `j` `k`, `gg` `G` | select an item |
 | `enter` | open the item: a change's diff, a question's or reply's conversation, a setup script's bytes, an agent's focus for the rest |
-| `a` / `r` | approve / apply / allow · reject / refuse the selected item, as the table above says |
+| `a` / `r` | approve / allow · send back / refuse the selected item, as the table above says |
 | `W` (`:next`) | from anywhere: open the next item waiting |
 | `S` (`:defer`) | put this item off and open the next |
 | `esc` | from the diff back to the panel |
 
-Under the selected item a dim row names its keys (`enter see the diff · a apply to the checkout · r reject`; `a allow · r refuse · enter focus` for an ask; `enter read all · r dismiss · or just write back` for a reply; `enter reads it · a writes back` for a question; `enter focus · a writes to it` for an API error; `enter shows the script · a yes · r no` for a setup script).
+Under the selected item a dim row names its keys (`enter see the diff · a approve · r send back`; `a allow · r refuse · enter focus` for an ask; `enter read all · r dismiss · or just write back` for a reply; `enter reads it · a writes back` for a question; `enter focus · a writes to it` for an API error; `enter shows the script · a yes · r no` for a setup script).
 
 ## `W` and `S`: one after the other
 
-`W` works on every screen: the board, the code map, a card's screen, a diff, a conversation, a raw stream. It closes what is open over the salon, selects the next open item in the panel and opens it as `enter` would, so `a` and `r` answer it at once. Pressed again it goes on to the item after, and round to the first after the last. With nothing waiting it says `Nothing needs you right now` and nothing moves.
+`W` works on every screen: the board, the code map, a card's screen, a diff, a conversation, a raw stream. It closes what is open over the team, selects the next open item in the panel and opens it as `enter` would, so `a` and `r` answer it at once. Pressed again it goes on to the item after, and round to the first after the last. With nothing waiting it says `Nothing needs you right now` and nothing moves.
 
 `S` puts the item at hand off and opens the next one. Put-off items come after all the others, in the order they were put off, and their rows say `later ·` up front. Putting off one already put off moves it to the very end. The list forgets items that close, and it lasts the run only: a fresh start shows everything in age order again.
 
@@ -58,7 +58,7 @@ Under the selected item a dim row names its keys (`enter see the diff · a apply
 
 ## The `!` on a row
 
-An agent whose item waits shows it on its own salon row: `? → you` while a question waits, `⚑ waits for your yes` while an ask does, `answered you` while a reply does, `■ API error` while an API error does; an agent with the status "waiting for you" wears `!` as its glyph. The project header counts them in the attention colour, `! 2 waiting`, even when the project is folded. `f` in the salon shows only the agents that need you, these first.
+An agent whose item waits shows it on its own team row: `? → you` while a question waits, `⚑ asks to run` while an ask does, `answered you` while a reply does, `■ API error` while an API error does; an agent with the status "waiting for you" wears `!` as its glyph. The project header counts them in the attention colour, `! 2 waiting`, even when the project is folded. `f` in the team shows only the agents that need you, these first.
 
 ## Quitting with items open
 
@@ -69,5 +69,5 @@ An agent whose item waits shows it on its own salon row: `? → you` while a que
 - [Approvals and questions](../concepts/approvals-and-questions.md)
 - [Changes](../concepts/changes.md)
 - [The change view](changes.md)
-- [The salon](salon.md)
+- [The team](salon.md)
 - [Keyboard](keyboard.md)

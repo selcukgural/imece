@@ -1,17 +1,17 @@
 ---
-title: SENİ BEKLEYEN
+title: KARAR BEKLEYEN
 description: Yalnız sizin verebileceğiniz her kararı tutan panel - incelenecek değişiklikler, izin verilecek araç çağrıları, yanıtlanacak sorular - ve içinde ilerleyen tuşlar.
 ---
 
-# SENİ BEKLEYEN
+# KARAR BEKLEYEN
 
-SENİ BEKLEYEN (İngilizce ekranda WAITING FOR YOU) salonun üst yan panelidir. Oraya yalnız sizi gerektiren kararlar düşer; geri kalan her şey günlükte kalır. Onunla ilk kez bir işçi `done` gönderdiğinde karşılaşırsınız: değişikliği (`Δ`) görünür, başlık `! 1 seni bekliyor` sayar ve terminalin başlığı `imece · 1 seni bekliyor` der. Başka bir penceredeyken `:notify bell` terminalin zilini çalar, `:notify text` masaüstü bildirimi gönderir (`imece · claude-1 bitirdi: bir değişiklik seni bekliyor`), yeni bir şey beş saniyedir bekliyorsa; makineden uzaktayken `:notify push` bunu ntfy üzerinden telefonunuza gönderir; siz istemedikçe kapalıdır, bkz. [`:notify`](../reference/commands.md#notify-offbelltextpush).
+KARAR BEKLEYEN (İngilizce ekranda WAITING FOR YOU) ekibin üst yan panelidir. Oraya yalnız sizi gerektiren kararlar düşer; geri kalan her şey günlükte kalır. Onunla ilk kez bir işçi `done` gönderdiğinde karşılaşırsınız: değişikliği (`Δ`) görünür, başlık `! 1 seni bekliyor` sayar ve terminalin başlığı `imece · 1 seni bekliyor` der. Başka bir penceredeyken `:notify bell` terminalin zilini çalar, `:notify text` masaüstü bildirimi gönderir (`imece · claude-1 bitirdi: bir değişiklik seni bekliyor`), yeni bir şey beş saniyedir bekliyorsa; makineden uzaktayken `:notify push` bunu ntfy üzerinden telefonunuza gönderir; siz istemedikçe kapalıdır, bkz. [`:notify`](../reference/commands.md#notify-offbelltextpush).
 
 ```text
-┌ SENİ BEKLEYEN (3) ─────────────────────────────────────────────────┐
+┌ KARAR BEKLEYEN (3) ────────────────────────────────────────────────┐
 │Δ 13:58 claude-1 bitirdi: parser (3 dosya, +41 −6) · ✓ bu ağaçta temiz geçti: cargo test
-│  enter diff'i gör · a checkout'a uygula · r reddet                   │
-│⚑ 14:01 claude-2 onayını bekliyor: Bash: npm install left-pad        │
+│  enter diff'i gör · a onayla · r geri gönder                   │
+│⚑ 14:01 claude-2 çalıştırmak istiyor: Bash: npm install left-pad        │
 │? 14:03 sonra · claude-3 sana soruyor: Eski CLI bayrağı kalsın mı?   │
 └─────────────────────────────────────────────────────────────────────┘
 ```
@@ -37,20 +37,20 @@ Bir değişiklik (`Δ`) işçisine notlarla (diff'te `n`) ya da reddedilen bir u
 
 | Tuş | Ne yapar |
 | --- | --- |
-| `tab` `⇧tab` | panelleri döndür: salon, bekleyenler, günlük |
-| `w` (`:waiting`) | salonun herhangi bir panelinden doğrudan bekleyenler paneline |
+| `tab` `⇧tab` | panelleri döndür: ekip, bekleyenler, günlük |
+| `w` (`:waiting`) | ekibin herhangi bir panelinden doğrudan bekleyenler paneline |
 | `↑` `↓` / `j` `k`, `gg` `G` | bir öge seç |
 | `enter` | ögeyi aç: bir değişikliğin diff'i, bir sorunun ya da yanıtın konuşması, bir kurulum betiğinin baytları, geri kalanı için agent'ın odağı |
-| `a` / `r` | seçili ögeyi onayla / uygula / izin ver · reddet, yukarıdaki tablonun dediği gibi |
+| `a` / `r` | seçili ögeyi onayla / izin ver · geri gönder / reddet, yukarıdaki tablonun dediği gibi |
 | `W` (`:next`) | her yerden: bekleyen sıradaki ögeyi aç |
 | `S` (`:defer`) | bu ögeyi ertele ve sıradakini aç |
 | `esc` | diff'ten panele geri |
 
-Seçili ögenin altında soluk bir satır tuşlarını söyler (`enter diff'i gör · a checkout'a uygula · r reddet`; bir istek için `a izin ver · r reddet · enter odak`; bir yanıt için `enter tamamını oku · r kapat · ya da doğrudan yanıt yaz`; bir soru için `enter okur · a yanıt yazar`; bir API hatası için `enter odak · a ona yazar`; bir kurulum betiği için `enter betiği gösterir · a evet · r hayır`).
+Seçili ögenin altında soluk bir satır tuşlarını söyler (`enter diff'i gör · a onayla · r geri gönder`; bir istek için `a izin ver · r reddet · enter odak`; bir yanıt için `enter tamamını oku · r kapat · ya da doğrudan yanıt yaz`; bir soru için `enter okur · a yanıt yazar`; bir API hatası için `enter odak · a ona yazar`; bir kurulum betiği için `enter betiği gösterir · a evet · r hayır`).
 
 ## `W` ve `S`: birbiri ardına
 
-`W` her ekranda çalışır: pano, kod haritası, bir kartın ekranı, bir diff, bir konuşma, bir ham akış. Salonun üstünde açık olanı kapatır, paneldeki sıradaki açık ögeyi seçer ve `enter`'ın yapacağı gibi açar, böylece `a` ve `r` hemen yanıtlar. Yine basılınca ondan sonrakine geçer, sonuncudan sonra ilke döner. Bekleyen yoksa `Şu an senden bir şey gerekmiyor` der ve hiçbir şey kımıldamaz.
+`W` her ekranda çalışır: pano, kod haritası, bir kartın ekranı, bir diff, bir konuşma, bir ham akış. Ekibin üstünde açık olanı kapatır, paneldeki sıradaki açık ögeyi seçer ve `enter`'ın yapacağı gibi açar, böylece `a` ve `r` hemen yanıtlar. Yine basılınca ondan sonrakine geçer, sonuncudan sonra ilke döner. Bekleyen yoksa `Şu an senden bir şey gerekmiyor` der ve hiçbir şey kımıldamaz.
 
 `S` eldeki ögeyi erteler ve sıradakini açar. Ertelenen ögeler diğerlerinin hepsinden sonra gelir, ertelendikleri sırayla, ve satırları en önde `sonra ·` der. Zaten ertelenmiş birini ertelemek onu en sona taşır. Liste kapanan ögeleri unutur ve yalnız bu çalıştırma boyunca sürer: yeni bir başlangıç her şeyi yine yaş sırasında gösterir.
 
@@ -58,7 +58,7 @@ Seçili ögenin altında soluk bir satır tuşlarını söyler (`enter diff'i g�
 
 ## Satırdaki `!`
 
-Ögesi bekleyen bir agent bunu kendi salon satırında gösterir: bir soru beklerken `? → sen`, bir istek beklerken `⚑ onayını bekliyor`, bir yanıt beklerken `sana yanıt verdi`, bir API hatası beklerken `■ API hatası`; durumu "onayını bekliyor" olan bir agent işaret olarak `!` taşır. Proje başlığı bunları dikkat renginde sayar, `! 2 bekliyor`, proje katlıyken bile. Salonda `f` yalnız sizi bekleyen agent'ları gösterir, bunlar en önde.
+Ögesi bekleyen bir agent bunu kendi ekip satırında gösterir: bir soru beklerken `? → sen`, bir istek beklerken `⚑ çalıştırmak istiyor`, bir yanıt beklerken `sana yanıt verdi`, bir API hatası beklerken `■ API hatası`; durumu "seni bekliyor" olan bir agent işaret olarak `!` taşır. Proje başlığı bunları dikkat renginde sayar, `! 2 bekliyor`, proje katlıyken bile. Ekipte `f` yalnız sizi bekleyen agent'ları gösterir, bunlar en önde.
 
 ## Ögeler açıkken çıkmak
 
@@ -69,5 +69,5 @@ Seçili ögenin altında soluk bir satır tuşlarını söyler (`enter diff'i g�
 - [Onaylar ve sorular](../concepts/approvals-and-questions.md)
 - [Değişiklikler](../concepts/changes.md)
 - [Değişiklik görünümü](changes.md)
-- [Salon](salon.md)
+- [Ekip](salon.md)
 - [Klavye](keyboard.md)

@@ -1,11 +1,11 @@
 ---
 title: Pano ve kod haritası
-description: Salonun diğer iki görünümü - her kartı sütununda gösteren pano ve sembol lease'leri geldiğinde kimin nerede çalıştığını gösterecek kod haritası.
+description: Ekibin diğer iki görünümü - her kartı sütununda gösteren pano ve sembol lease'leri geldiğinde kimin neyi düzenlediğini gösterecek kod haritası.
 ---
 
 # Pano ve kod haritası
 
-Salon takımı gösterir; pano işi, kod haritası dosyaları gösterir. `2` (`:board`) ve `3` (`:code`) onları salonun yerinde açar; `1` (`:salon`) geri getirir. İkisi de başlık satırını ve durum satırını korur; her yerde çalışan her tuş (`W`, `?`, `:` komutları, yazmak) onlarda da çalışır.
+Ekip takımı gösterir; pano işi, kod haritası dosyaları gösterir. `2` (`:board`) ve `3` (`:code`) onları ekibin yerinde açar; `1` (`:salon`) geri getirir. İkisi de başlık satırını ve durum satırını korur; her yerde çalışan her tuş (`W`, `?`, `:` komutları, yazmak) onlarda da çalışır.
 
 ## Pano
 
@@ -23,8 +23,8 @@ Beş sütun, her biri sayısıyla başlıklı:
 | Sütun | İçindeki kartlar |
 | --- | --- |
 | YAPILACAK | asılmış, henüz alınmamış: liderin `post`'u ya da liderin henüz boşta olmayan bir işçi için yazdığı kart |
-| ÜZERİNDE | alınmış: lider görev vermiş ya da boşta bir işçi panodan almış. Başlığın altında sahibi, sahibinin durum işaretiyle ve bir ilerleme çubuğuyla; çalışan bir sahibin işareti salondaki gibi nefes alır (`:motion`) |
-| İNCELENECEK | bir `done` ile bitmiş ve değişikliği (`Δ`) SENİ BEKLEYEN'de sizi bekliyor, en yeni önce: ajan işini bitirdi, iş henüz içeri girmedi |
+| ÜZERİNDE | alınmış: lider görev vermiş ya da boşta bir işçi panodan almış. Başlığın altında sahibi, sahibinin durum işaretiyle ve bir ilerleme çubuğuyla; çalışan bir sahibin işareti ekipteki gibi nefes alır (`:motion`) |
+| İNCELENECEK | bir `done` ile bitmiş ve değişikliği (`Δ`) KARAR BEKLEYEN'de sizi bekliyor, en yeni önce: ajan işini bitirdi, iş henüz içeri girmedi |
 | DOĞRULANIYOR | canlıda hiçbir şey doldurmaz. Demonun merge queue'su kullanıyordu |
 | BİTTİ | bitmiş ve hiçbir değişikliği sizi beklemiyor, en yeni önce, bitiren sahibiyle. Sahibinin durumunu yalnız üzerinde çalışılan kart gösterir: son iki sütunda sahibi başka bir iş yapıyor olabilir |
 
@@ -34,24 +34,24 @@ Kartın ne olduğu, liderin nasıl astığı ve görev verdiği, bir işçinin n
 
 ## Kod haritası
 
-`3`, KOD HARİTASI · proje · kim nerede çalışıyor (lease'ler) görünümünü açar. Projenin her dosyası için bir satır ve o satırda dosyada tutulan her sembol lease'i için bir hücre göstermek üzere tasarlandı:
+`3`, KOD HARİTASI · proje · kim neyi düzenliyor görünümünü açar. Projenin her dosyası için bir satır ve o satırda dosyada tutulan her sembol lease'i için bir hücre göstermek üzere tasarlandı:
 
 ```text
-┌ KOD HARİTASI · shop-api · kim nerede çalışıyor (lease'ler) ─────────────────┐
+┌ KOD HARİTASI · shop-api · kim neyi düzenliyor ──────────────────────────────┐
 │src/billing/                                                                  │
 │  Money.cs             ● claude-2    Round         ● claude-1   Parse   ⇆ 2  │
 │  Invoice.cs           ● claude-2    Total                                   │
 │src/parser/                                                                   │
 │  Manifest.cs          ● claude-1    Read                                    │
 │  Legacy.cs                                                                  │
-│3 lease · 1 dosyada birden çok agent aynı anda çalışıyor   ● çalışıyor  ⇆ aynı dosyada birden çok agent
+│3 düzenleniyor · 1 dosyada birden çok agent aynı anda çalışıyor   ● çalışıyor  ⇆ aynı dosyada birden çok agent
 └──────────────────────────────────────────────────────────────────────────────┘
 ```
 
 - Dosyalar dizinlerinin altında gruplanır, her grubun üstünde soluk bir `dizin/` satırı.
-- Bir lease hücresi, tutanın durum işareti (salonun işareti), adı ve sembol (son parçası, `Money.Round` için `Round`). Her hücre projedeki en geniş ada ve sembole göre doldurulur, bir üst sınırla, böylece bir lease gelip gittiğinde sütunlar zıplamaz.
+- Bir lease hücresi, tutanın durum işareti (ekibin işareti), adı ve sembol (son parçası, `Money.Round` için `Round`). Her hücre projedeki en geniş ada ve sembole göre doldurulur, bir üst sınırla, böylece bir lease gelip gittiğinde sütunlar zıplamaz.
 - Kimsenin tutmadığı dosya soluktur, ardında hiçbir şey yok. Birden çok agent'ın tuttuğu dosya uyarı renginde `⇆ N` ile biter.
-- Alt satır lease'leri ve paylaşılan dosyaları sayar ve yalnız o an haritada olan işaretleri sözcüğe döker: sabit bir lejant, haritanın kullanmaya başladığı işaretleri kaçırıyordu. `⇆` yalnız bir dosya paylaşıldığında açıklanır.
+- Alt satır neyin düzenlendiğini (lease'leri) ve paylaşılan dosyaları sayar ve yalnız o an haritada olan işaretleri sözcüğe döker: sabit bir lejant, haritanın kullanmaya başladığı işaretleri kaçırıyordu. `⇆` yalnız bir dosya paylaşıldığında açıklanır.
 
 ### Harita bugün ne gösterir
 
@@ -63,6 +63,6 @@ Yukarıdaki satırlı ve hücreli harita `--demo`'nun gösterdiğidir: projeleri
 
 - [Mesajlar ve pano](../concepts/messages-and-board.md)
 - [Bir kartın ekranı](cards.md)
-- [Salon](salon.md)
+- [Ekip](salon.md)
 - [Değişiklikler](../concepts/changes.md)
 - [Klavye](keyboard.md)

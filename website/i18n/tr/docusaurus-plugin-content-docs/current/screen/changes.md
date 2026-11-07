@@ -5,7 +5,7 @@ description: Bir işçinin değişikliğini (Δ) okumak - diff, dosyaları ve t�
 
 # Değişiklik görünümü
 
-Bir işçi `done` gönderdiğinde imece worktree'sini okur ve değişiklik SENİ BEKLEYEN'de `Δ` olarak sizi bekler. Onda `enter` (ya da sıradaki öge oysa `W`) değişiklik görünümünü salonun yerinde açar: bütün diff, üstünde o ağaçta ne çalıştığı. Kararı burada verirsiniz: `a` checkout'unuza uygular, stage'de; `r` geri gönderir; `n` satırlarındaki notlarınızla geri gönderir; `x` ve `a` yalnız seçtiğiniz parçaları uygular; `b` checkout'unuzla çakışanı geri gönderir.
+Bir işçi `done` gönderdiğinde imece worktree'sini okur ve değişiklik KARAR BEKLEYEN'de `Δ` olarak sizi bekler. Onda `enter` (ya da sıradaki öge oysa `W`) değişiklik görünümünü ekibin yerinde açar: bütün diff, üstünde o ağaçta ne çalıştığı. Kararı burada verirsiniz: `a` checkout'unuza uygular, stage'de; `r` geri gönderir; `n` satırlarındaki notlarınızla geri gönderir; `x` ve `a` yalnız seçtiğiniz parçaları uygular; `b` checkout'unuzla çakışanı geri gönderir.
 
 ```text
 ┌ DEĞİŞİKLİK · claude-1 · 3 dosya +41 −6 · parser boş dosyada hata döndürür ─────────────────┐
@@ -26,7 +26,7 @@ Bir işçi `done` gönderdiğinde imece worktree'sini okur ve değişiklik SENİ
 │+    }                                                                                       │
 │+    let doc: Doc = toml::from_str(&text)?;                                                  │
 └─────────────────────────────────────────────────────────────────────────────────────────────┘
-  j k  w kaydır · sar  [ ] dosya  a x uygula · parça seç  r reddet  > ona alıntıla  c n not · notları gönder  v satır kopyala  esc geri  ? yardım
+  j k  w kaydır · sar  [ ] dosya  a x onayla · parça seç  r geri gönder  > ona alıntıla  c n not · notları gönder  v satır kopyala  esc geri  ? yardım
 ```
 
 Başlık: işçi, dosyalar ve satırlar, done'un ilk satırı.
@@ -35,9 +35,9 @@ Başlık: işçi, dosyalar ve satırlar, done'un ilk satırı.
 
 Önce, işçi `done`'ında ilk satırdan fazlasını yazdıysa söyledikleri gelir: neden, ne kararlaştırdı, nereye bakılmalı; en çok dört satır, fazlası `…` ile kesilir. Birden çok değişiklik bekliyorsa pencerenin sağ üstü bunun hangisi olduğunu söyler: `değişiklik 2 / 5`.
 
-1. **Deponun kontrolü**, checkout'unuzda `.imece/check` varsa ([değişiklikler](../concepts/changes.md#deponun-kontrolü)): tamam renginde `✓ kontrol · exit 0, 41.2 s`; kötü renginde, çıktısının son satırları altında, `✗ kontrol · exit 1, 38.7 s`; çalışırken `● kontrol bu değişiklikte çalışıyor…`; sorusunu yanıtlayana dek `▶ deponun kontrolü SENİ BEKLEYEN'de onayını bekliyor`; ya da neden çalışamadığı. İşareti SENİ BEKLEYEN'de ögenin kanıtını da başlatır (`✓ kontrol ·`, `✗ kontrol ·`, `● kontrol ·`, `▶ kontrol ·`).
-2. **Bu ağaçtaki çalıştırmalar.** İşçinin imece'nin `run` aracıyla tam bu değişiklik üzerinde yaptığı her `run`, nasıl bittiğiyle: `✓ cargo test`, `✗ cargo clippy: exit 1`, süre dolunca durduruldu, durduruldu. Hiç yoksa uyarı renginde, tam bu değişiklik üzerinde imece çalıştırması olmadığını, derlenip derlenmediğinin ve testlerinin geçip geçmediğinin bilinmediğini söyler. Aynı kanıt SENİ BEKLEYEN'de ögenin satırını izler.
-3. **Maliyeti**, işçinin turu bitince: `maliyet · $0.84 · 12 dk`, soluk; işçinin (yardımcıları dahil) son değişikliğinden sonraki ilk isteminden bu `done`'a harcadığı ve çalıştığı süre; geri gönderilip yeniden gönderilen bir değişiklik turlarını ekler (`$1.20 · 25 dk · 3 tur`). Aynı rakam SENİ BEKLEYEN'de ögenin satırını bitirir ve günlük söyler (`claude-1 değişikliği $0.84 · 12 dk tuttu`). Tur ortasında okunan bir `done` onu bir an sonra, turun maliyeti bilinince gösterir.
+1. **Deponun kontrolü**, checkout'unuzda `.imece/check` varsa ([değişiklikler](../concepts/changes.md#deponun-kontrolü)): tamam renginde `✓ kontrol · exit 0, 41.2 s`; kötü renginde, çıktısının son satırları altında, `✗ kontrol · exit 1, 38.7 s`; çalışırken `● kontrol bu değişiklikte çalışıyor…`; sorusunu yanıtlayana dek `▶ deponun kontrolü çalışmak istiyor: KARAR BEKLEYEN'de`; ya da neden çalışamadığı. İşareti KARAR BEKLEYEN'de ögenin kanıtını da başlatır (`✓ kontrol ·`, `✗ kontrol ·`, `● kontrol ·`, `▶ kontrol ·`).
+2. **Bu ağaçtaki çalıştırmalar.** İşçinin imece'nin `run` aracıyla tam bu değişiklik üzerinde yaptığı her `run`, nasıl bittiğiyle: `✓ cargo test`, `✗ cargo clippy: exit 1`, süre dolunca durduruldu, durduruldu. Hiç yoksa uyarı renginde, tam bu değişiklik üzerinde imece çalıştırması olmadığını, derlenip derlenmediğinin ve testlerinin geçip geçmediğinin bilinmediğini söyler. Aynı kanıt KARAR BEKLEYEN'de ögenin satırını izler.
+3. **Maliyeti**, işçinin turu bitince: `maliyet · $0.84 · 12 dk`, soluk; işçinin (yardımcıları dahil) son değişikliğinden sonraki ilk isteminden bu `done`'a harcadığı ve çalıştığı süre; geri gönderilip yeniden gönderilen bir değişiklik turlarını ekler (`$1.20 · 25 dk · 3 tur`). Aynı rakam KARAR BEKLEYEN'de ögenin satırını bitirir ve günlük söyler (`claude-1 değişikliği $0.84 · 12 dk tuttu`). Tur ortasında okunan bir `done` onu bir an sonra, turun maliyeti bilinince gösterir.
 4. **Türe göre satırlar**, dosyalar birden çok türdense: `kaynak +23 −6 (2) · testler +18 −0 (1) · üretilmiş +7 −5 (1)`. Bir dosya yalnız yoluna göre sınıflanır: bir lock dosyasıysa (`Cargo.lock`, `package-lock.json`, `yarn.lock`, `pnpm-lock.yaml`, `go.sum`, `poetry.lock`, `Gemfile.lock`, `composer.lock`), küçültülmüş ya da üretilmiş kodsa (`.min.js`, `.min.css`, `.pb.go`, `_pb2.py`, `.g.dart`, `.Designer.cs`) ya da `generated/`, `dist/` ya da `vendor/` altındaysa üretilmiş; `tests/`, `test/`, `__tests__/` ya da `spec/` altındaysa, `test_*` adlıysa ya da bir test sonekiyle bitiyorsa (`_test.go`, `_test.rs`, `_test.py`, `.test.ts`, `.spec.ts`, `Tests.cs`, `Test.java`, …) test; yoksa kaynak. Üretilmiş, teste baskındır. Dosyalardan hiçbir şey okunmaz. Yirmi satır kod ve yeniden üretilmiş bir lock dosyası olan bir `+400 −20` değişikliği bunu burada söyler.
 5. **Kartın dışındaki dosyalar**, işçinin kartının yolları varsa ([kartın sahip olduğu yollar](../concepts/messages-and-board.md#kartın-sahip-olduğu-yollar)) ve değişiklik hiçbirinin adlandırmadığı dosyalara dokunuyorsa: `2 kartın dışında (#12): src/other.rs, Cargo.toml`, uyarı renginde. Kart, işçinin son kartıdır, bitmiş olsun olmasın; yolsuz bir kart burada bir şey söylemez.
 6. **Dosya listesi**, iki ya da daha çok dosyalı bir değişiklik için: her dosya `+N −M` ya da `ikili` ile, en çok altı, kalanı sayılmış (`… 2 dosya daha`). Tek dosyalı değişiklik liste göstermez; başlığı söyler. 120 kolondan itibaren iki ya da daha çok dosyalı bir değişiklik hepsini yamanın yanında listeler, eldeki dosya `▸` ile işaretlidir ve `[` `]` aralarında gezer.
@@ -56,7 +56,7 @@ Yama, git'in `diff --git` yazdığı yerde dosyanın yolunu gösterir ve ilk hun
 | `w` | uzun satırları alt alta sar (küçültülmüş bir dosya, uzun bir dize); yine basılınca kenarda keser. Kaydırma yine yama satırlarını sayar, böylece `j` kaç satır kaplasa da bütün bir satır gider. Kapatılana dek her değişiklik için açık; çalıştırmalar arasında saklanmaz |
 | `R` | ikinci okuma (`:review`), dosya listesinin üstünde: ilk altı satırı ya da tamamı ([değişiklikler](../concepts/changes.md#ikinci-bir-okuma)) |
 | `v` | kopyalanacak satırları seç (aşağıda) |
-| `esc` | SENİ BEKLEYEN'e geri |
+| `esc` | KARAR BEKLEYEN'e geri |
 
 Eklenen ve silinen satırların kendi renkleri vardır; başlıklar öne çıkar. Her satır çizilen her şeyin geçtiği temizlikten geçer.
 
@@ -64,13 +64,13 @@ Eklenen ve silinen satırların kendi renkleri vardır; başlıklar öne çıkar
 
 | Tuş | Ne yapar |
 | --- | --- |
-| `a` | değişikliği checkout'unuza uygula, stage'de, bakıp commit etmeniz için. Parça seçiliyse (`x`) yalnız onları. [Ana ekrandan](home.md) açıldıysa sıradaki değişiklik açılır; sonuncudan sonra ana ekrana döner |
-| `r` | reddet: öge kapanır, değişiklik worktree'de kalır, nedenini yazmanız için yazma satırı `@worker ` ile açılır |
+| `a` | onayla: değişiklik checkout'unuza uygulanır, stage'de, bakıp commit etmeniz için. Parça seçiliyse (`x`) yalnız onları. [Ana ekrandan](home.md) açıldıysa sıradaki değişiklik açılır; sonuncudan sonra ana ekrana döner |
+| `r` | geri gönder: öge kapanır, değişiklik worktree'de kalır, nedenini yazmanız için yazma satırı `@worker ` ile açılır |
 | `c` | en üstteki satıra bir not |
 | `n` | notları işçiye tek mesajda gönder; değişiklik geri döner |
 | `x` | en üstteki parçayı seç; `a` sonra yalnız seçili parçaları uygular |
 | `>` | en üstteki parçayı alıntılayarak işçiye yaz |
-| `b` | reddedilen bir uygulamadan sonra: değişikliği çakışan yerleriyle geri gönder; `r`'deki gibi geri döner |
+| `b` | reddedilen bir uygulamadan sonra: çakışmayı geri gönder (değişikliği çakışan yerleriyle); `r`'deki gibi geri döner |
 
 ### Uygulamak
 
@@ -108,7 +108,7 @@ Bir parçanın satırında `c` (bağlam, eklenen ya da silinen; başlık ya da `
 
 `x` en üstteki parçayı seçer (en üst satırın içinde olduğu parça; bir dosya başlığında sonraki); yine `x` bırakır. Seçili parçanın `@@` satırı `✓` taşır ve flaş sayar: `1 / 3 parça seçili; a yalnız onları uygular, kalanı bekler`. Parça seçiliyken `a` yalnız onları uygular; hiçbiri seçili değilse bütün değişikliği.
 
-Git iş parçacığında parça, bir şey uygulanmadan önce kendi başına bir değişiklik olur: seçili parçalar dosyalarının başlığı altında (parçası olmayan dosya dışarıda kalır, parçası olmayan ikili dosya da), imece'nin kendi index'i üzerinden okunur, böylece işçinin dosyalarına ve index'ine dokunulmaz, ve bütün bir değişiklik gibi uygulanır, temizse üç yönlü. Worktree yalnız o parçayla işaretlenir, kalanı hemen yeniden okunur ve aynı başlıkla yine bir değişiklik olarak SENİ BEKLEYEN'de bekler. İşçi değişikliğinin bir parçasının uygulandığını (`1 of its hunks`) ve kalanın beklediğini öğrenir. Oturmayan bir parça, uygulanmayan bir değişiklik gibi reddedilir. Seçim yamanın özetiyle bu çalıştırma boyunca tutulur; yeni bir Δ hiçbiriyle başlar. Bir parça içinden tek satırlar seçilemez.
+Git iş parçacığında parça, bir şey uygulanmadan önce kendi başına bir değişiklik olur: seçili parçalar dosyalarının başlığı altında (parçası olmayan dosya dışarıda kalır, parçası olmayan ikili dosya da), imece'nin kendi index'i üzerinden okunur, böylece işçinin dosyalarına ve index'ine dokunulmaz, ve bütün bir değişiklik gibi uygulanır, temizse üç yönlü. Worktree yalnız o parçayla işaretlenir, kalanı hemen yeniden okunur ve aynı başlıkla yine bir değişiklik olarak KARAR BEKLEYEN'de bekler. İşçi değişikliğinin bir parçasının uygulandığını (`1 of its hunks`) ve kalanın beklediğini öğrenir. Oturmayan bir parça, uygulanmayan bir değişiklik gibi reddedilir. Seçim yamanın özetiyle bu çalıştırma boyunca tutulur; yeni bir Δ hiçbiriyle başlar. Bir parça içinden tek satırlar seçilemez.
 
 ### Bir parçayı alıntılamak
 
@@ -135,7 +135,7 @@ Seçerken başka tuşlar bir şey yapmaz, yani `a` değişikliği yanlışlıkla
 14:07 › sen → claude-1: boş dosya denetimi çağıranda değil `read` içinde olmalı …
 ```
 
-Bir `done`, `claude-1 bitirdi: 3 dosya, +41 −6 → seni bekliyor` diye gelir; bir uygulama `… checkout'a uyguladın, stage'de; çalışma ağacı işareti <sha>`; bir başarısızlık `… uygulanamadı: <git'in sözleri>` ve öge kalır; bir ret `reddedildi: claude-1`, ardından mesajınız. Kısmi bir uygulamadan sonra kalan yeni bir `bitirdi` satırı olarak döner.
+Bir `done`, `claude-1 bitirdi: değişiklik hazır · 3 dosya +41 −6` diye gelir; bir uygulama `… checkout'a uyguladın, stage'de; çalışma ağacı işareti <sha>`; bir başarısızlık `… uygulanamadı: <git'in sözleri>` ve öge kalır; bir ret `geri gönderildi: claude-1`, ardından mesajınız. Kısmi bir uygulamadan sonra kalan yeni bir `bitirdi` satırı olarak döner.
 
 ## Demo
 
@@ -144,7 +144,7 @@ Bir `done`, `claude-1 bitirdi: 3 dosya, +41 −6 → seni bekliyor` diye gelir; 
 ## Ayrıca bakınız
 
 - [Değişiklikler](../concepts/changes.md)
-- [SENİ BEKLEYEN](waiting.md)
+- [KARAR BEKLEYEN](waiting.md)
 - [Notlarla inceleme](../scenarios/review-with-notes.md)
 - [Kendi kabuğu ve commit](../scenarios/own-shell-and-commit.md)
 - [Klavye](keyboard.md)

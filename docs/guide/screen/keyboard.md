@@ -39,7 +39,7 @@ While the first key of a chord waits for its second, the row lists what the seco
 | `:export PATH` | the open conversation or card, as Markdown, to `PATH` (a file or a directory) |
 | `:commit` | a cheap model suggests a commit message for what is staged (`$`) |
 | `:copy PATH` | copy a path git ignores (`.env`) into worktrees; again: stop |
-| `:pin NAME` | pin a project to the top of the salon; again: unpin |
+| `:pin NAME` | pin a project to the top of the team; again: unpin |
 | `!cmd` | run `cmd` in your own shell, screen aside |
 | `O`  `:output` | quote the last `!cmd` of the project at hand (how it ran, its last 40 lines) in a message to the agent at hand, else the project's head |
 | `tab` `⇧tab` `↑` `↓` | while writing: complete names and commands (`^n` `^p` step too); `tab` also completes any word of a message or a `!cmd` line to a file of the project (a word with a `/` opens the menu by itself), or to a symbol leased on the code map as `file::name` |
@@ -66,8 +66,8 @@ While the first key of a chord waits for its second, the row lists what the seco
 | `^d` `^u` `^f` `^b` | half a page / a page |
 | `^o` | back where you were: view, panel, focus, card (vim's jump list, fifty places; an open conversation closes first) |
 | `enter` | look deeper: focus, then the raw stream |
-| `K`  `:peek` | a peek: the focus of the agent at hand in a window over the view, which stays as it was; in it `j` `k` the next / previous agent of the salon, `enter` its whole focus, `@` write to it, `esc` or `K` close |
-| `F`  `:hints` | hint letters: a label of one or two letters on every row of the salon's screen you can select (project headers, agents, waiting items, journal lines, the people on a card's screen); typing a label selects its row in its panel, its last letter in capitals opens it too (as `enter`); `backspace` takes a letter back, `esc` closes |
+| `K`  `:peek` | a peek: the focus of the agent at hand in a window over the view, which stays as it was; in it `j` `k` the next / previous agent of the team, `enter` its whole focus, `@` write to it, `esc` or `K` close |
+| `F`  `:hints` | hint letters: a label of one or two letters on every row of the team's screen you can select (project headers, agents, waiting items, journal lines, the people on a card's screen); typing a label selects its row in its panel, its last letter in capitals opens it too (as `enter`); `backspace` takes a letter back, `esc` closes |
 | `t`  `:trace` | the raw stream of the agent at hand |
 | `v`  `:talk` | its conversation with you |
 | `esc` | go back |
@@ -78,24 +78,24 @@ While the first key of a chord waits for its second, the row lists what the seco
 | `,`  `.`  `<`  `>` | wider / narrower side panel |
 | `J`  `:story` | the lower side panel: the story, by card · the journal |
 
-## The salon
+## The team
 
 | Key | What it does |
 | --- | --- |
 | `←` `→`  `h` `l` | fold / unfold a project or a worker's helpers (in a conversation: a message) |
 | `za`  `zM`  `zR` | fold: toggle · all (`:fold`) · none (`:unfold`); in a conversation its messages |
-| `f`  `:needs` | salon: only what needs you · everyone |
-| `s`  `:settle` | settle the selected worker's row, or the project (on its header or its leader), out of the salon until it needs you again; `:unsettle` brings everything back |
+| `f`  `:needs` | team: only what needs you · everyone |
+| `s`  `:settle` | hide the selected worker's row, or the project (on its header or its leader), out of the team until it needs you again; `:unsettle` brings everything back |
 
-## WAITING FOR YOU
+## TO DECIDE
 
 | Key | What it does |
 | --- | --- |
-| `w`  `:waiting` | straight to waiting for you |
+| `w`  `:waiting` | straight to TO DECIDE |
 | `W`  `S` | `:next` waiting, from anywhere · `:defer` this one and open the next |
-| `a`  `r` | approve / apply / allow once · reject / refuse (in waiting for you, and on a focus: below) |
-| `A`  `:allow` | on an ask in waiting for you or on its agent's focus: yes from now on to its commands for the project (elsewhere `A` is the archives) |
-| `e`  `:yes` | on an ask in waiting for you or on its agent's focus: yes to everything that agent asks until its turn ends; its row says `✓ turn` meanwhile |
+| `a`  `r` | approve / allow once · send back / refuse (in TO DECIDE, and on a focus: below) |
+| `A`  `:allow` | on an ask in TO DECIDE or on its agent's focus: yes from now on to its commands for the project (elsewhere `A` is the archives) |
+| `e`  `:yes` | on an ask in TO DECIDE or on its agent's focus: yes to everything that agent asks until its turn ends; its row says `✓ turn` meanwhile |
 | `enter` | open the item: a change's diff, a question's conversation, a reply (read by it) |
 
 ## A conversation
@@ -124,9 +124,9 @@ While the first key of a chord waits for its second, the row lists what the seco
 | `l` `h`  `→` `←` | in a focus: the entry at hand whole · cut to its first eight lines again (`… +N · l shows all` says how many more) |
 | `za`  `zM`  `zR` | in a focus: the entry toggled · all cut · all whole |
 | `enter` `esc` | the raw stream · back |
-| `a`  `e`  `A`  `r` | in a focus or the raw stream, when its agent waits for you: on its ask (the one its status quotes), allow once · yes to all it asks this turn · yes from now on · refuse; on its change, apply · reject. Never what is selected in waiting for you. The status line shows `a` `r` `e` while there is something to decide (`A` is in this help); with nothing, `a` and `r` say so and `A` is the archives |
+| `a`  `e`  `A`  `r` | in a focus or the raw stream, when its agent waits for you: on its ask (the one its status quotes), allow once · yes to all it asks this turn · yes from now on · refuse; on its change, apply · reject. Never what is selected in TO DECIDE. The status line shows `a` `r` `e` while there is something to decide (`A` is in this help); with nothing, `a` and `r` say so and `A` is the archives |
 
-The focus's `folder` line says where the agent works: the checkout for a leader, its worktree for a worker, a helper or a solo (`· worktree of ~/src/kule`), the folder itself without git. Under it, a writing agent's `scratch` line names its scratch directory, where its notes and logs go instead of its change. The salon's line of an open project ends with its folder too.
+The focus's `folder` line says where the agent works: the checkout for a leader, its worktree for a worker, a helper or a solo (`· worktree of ~/src/kule`), the folder itself without git. Under it, a writing agent's `scratch` line names its scratch directory, where its notes and logs go instead of its change. The team's line of an open project ends with its folder too.
 
 ## A change
 
@@ -141,7 +141,7 @@ The focus's `folder` line says where the agent works: the checkout for a leader,
 | `h` `l`  `←` `→` | in a change: fold the file at hand to its header · open it |
 | `za`  `zM`  `zR` | in a change: turn the file at hand · fold every file (`:fold`) · open them all (`:unfold`) |
 | `v` | in a change: choose lines to copy; `y` as written, `Y` the new side |
-| `a`  `r` | apply (the chosen hunks, else all) · reject |
+| `a`  `r` | approve (the chosen hunks, else all) · send back |
 | `j` `k`, `gg` `G`, `^d` `^u` `^f` `^b`, `space` | move |
 
 ## The card screen
@@ -150,7 +150,7 @@ The focus's `folder` line says where the agent works: the checkout for a leader,
 | --- | --- |
 | `#N`  `#word` | open a card |
 | `n`  `p` | next / previous card |
-| `esc` | back to the salon |
+| `esc` | back to the team |
 | `tab`, `enter`, `a` `r`, `c`, `t`, `v`, `m`, `W` | as on the main screen |
 
 ## Demo only
@@ -230,7 +230,7 @@ k = j
 J = G
 ```
 
-A key is written as the help writes it (`j`, `G`, `^n`, `⌥b`, `⇧tab`, `enter`, `esc`, `tab`, `space`, `↑ ↓ ← →`, `home`, `end`, `pgup`, `pgdn`) or in words (`ctrl-n`, `alt-b`, `shift-tab`, `up`, `escape`, `pageup`); `#` is `hash` on the left of the `=`, since a line starting with `#` is a comment. A line is applied once, as vim's `noremap`: `j = k` and `k = j` swap the two, and a key the file does not name stays itself. The file's keys work wherever imece reads keys (the salon, a conversation, a change, peek, the windows, the pickers, the lead question at start), except where keys are text: writing, the help's `/` filter and the hint letters. `^c` always quits and cannot be given.
+A key is written as the help writes it (`j`, `G`, `^n`, `⌥b`, `⇧tab`, `enter`, `esc`, `tab`, `space`, `↑ ↓ ← →`, `home`, `end`, `pgup`, `pgdn`) or in words (`ctrl-n`, `alt-b`, `shift-tab`, `up`, `escape`, `pageup`); `#` is `hash` on the left of the `=`, since a line starting with `#` is a comment. A line is applied once, as vim's `noremap`: `j = k` and `k = j` swap the two, and a key the file does not name stays itself. The file's keys work wherever imece reads keys (the team, a conversation, a change, peek, the windows, the pickers, the lead question at start), except where keys are text: writing, the help's `/` filter and the hint letters. `^c` always quits and cannot be given.
 
 A side of a line can be two keys, one after the other:
 
@@ -264,7 +264,7 @@ In the `?` help, your keys come first (`^n  your key: as j`), and every key line
 ## See also
 
 - [The command line](command-line.md)
-- [The salon](salon.md)
-- [WAITING FOR YOU](waiting.md)
+- [The team](salon.md)
+- [TO DECIDE](waiting.md)
 - [The change view](changes.md)
 - [Commands reference](../reference/commands.md)

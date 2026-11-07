@@ -587,7 +587,7 @@ mod tests {
         app.world.inbox.push(item(InboxKind::Question, a, long));
         let s = render(&app, 150, 40);
         assert!(s.contains(long), "{s}");
-        assert!(s.contains("YOUR TURN 1"), "{s}");
+        assert!(s.contains("TO DECIDE 1"), "{s}");
     }
 
     #[test]

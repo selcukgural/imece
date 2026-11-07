@@ -45,7 +45,7 @@ A message can run over lines; the first line of one that opens a card is the car
 | `:export [PATH]` | | the open conversation, else the card's screen, as Markdown |
 | `:commit` | | a cheap model suggests a commit message for what is staged, put on the line as `!git commit -m '…'` |
 | `:copy PATH` | | copy a path git ignores (`.env`, `target`) into workers' worktrees at their start; again stops |
-| `:pin [NAME]` | | pin a project to the top of the salon; again unpins |
+| `:pin [NAME]` | | pin a project to the top of the team; again unpins |
 | `:awake` | | keep the machine awake while an agent is mid-turn; again turns it off |
 | `:notify [off\|bell\|text\|push]` | | in another window, a bell or a desktop note when something comes to wait for you; `push`: to your phone through ntfy when you are away; bare, the next one round |
 | `:motion [off\|calm\|full]` | | what moves on the screen: a working row breathes, what comes to wait blinks; full adds spinners; bare, the next one round |
@@ -57,16 +57,16 @@ A message can run over lines; the first line of one that opens a card is the car
 | `:pending` | `q` `s` | before quitting: the agents mid-turn and the changes not reviewed |
 | `:next` / `:defer` | `W` / `S` | open the next item waiting / put this one off |
 | `:waiting` | `w` | the waiting panel |
-| `:needs` | `f` | the salon shows only what needs you |
-| `:settle` / `:unsettle` | `s` / — | settle the selected row until it needs you again / bring everything settled back |
+| `:needs` | `f` | the team shows only what needs you |
+| `:settle` / `:unsettle` | `s` / — | hide the selected row until it needs you again / bring everything hidden back |
 | `:fold` / `:unfold` | `zM` / `zR` | fold / unfold every project and every worker's helpers |
 | `:trace [@NAME]` / `:talk [@NAME]` | `t` / `v` | the raw stream / the conversation of the named agent, else the one at hand |
 | `:peek [@NAME]` | `K` | the focus of the named agent, else the one at hand, in a window over the view |
-| `:hints` | `F` | hint letters on every row of the salon's screen you can select |
+| `:hints` | `F` | hint letters on every row of the team's screen you can select |
 | `:mark` | `m` | mark the line at hand |
 | `:pause`, `:faster`, `:slower` | `space`, `+`, `-` | the demo only; live they say so and are left out of the menu |
 
-The commands that work in a salon panel (`:waiting`, `:needs`, `:fold`, `:unfold`, `:settle`, `:unsettle`) go to that panel first. What each takes and answers is in the [commands reference](../reference/commands.md).
+The commands that work in a team panel (`:waiting`, `:needs`, `:fold`, `:unfold`, `:settle`, `:unsettle`) go to that panel first. What each takes and answers is in the [commands reference](../reference/commands.md).
 
 ### The menu and its values
 
@@ -117,7 +117,7 @@ There is one cut, not a ring: each cut that takes something replaces it. The cur
 
 The footer takes one row per row of text, at most eight and a third of the screen: a line too long for the screen goes on in the next row (cut cell by cell; a wide character that does not fit moves down whole), so what you type is always in sight. The first row carries who the text goes to, the others are indented under it. When not all rows fit, the cursor's row stays in view and the last row says where it is, `3/12`. `^a` `^e`, home/end and `^u` `^k` keep to the line the cursor is on; `↑` `↓` go between lines, keeping the column (while the menu is shown they step through it instead); backspace at a line's start joins it to the one above. `@name` ends at a space or a new line, so `@name` `⇧enter` text goes to that agent.
 
-A paste goes into the line whole (bracketed paste): line ends become new lines, tabs are kept, other control characters are left out, and nothing is sent by it. Before this a paste's first line end sent half a request. A paste while not writing is left out, and the footer says to start writing first. The journal and the salon show a message of several lines on one line; the conversation shows its lines.
+A paste goes into the line whole (bracketed paste): line ends become new lines, tabs are kept, other control characters are left out, and nothing is sent by it. Before this a paste's first line end sent half a request. A paste while not writing is left out, and the footer says to start writing first. The journal and the team show a message of several lines on one line; the conversation shows its lines.
 
 ## Your own shell
 

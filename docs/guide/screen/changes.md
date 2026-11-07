@@ -5,7 +5,7 @@ description: Reading a worker's change (Δ) - the diff, its files and kinds, mov
 
 # The change view
 
-When a worker sends `done`, imece reads its worktree and the change waits for you as `Δ` in WAITING FOR YOU. `enter` on it (or `W` when it is the next item) opens the change view in the salon's place: the whole diff, with what ran on that tree above it. You decide here: `a` applies it to your checkout, staged; `r` sends it back; `n` sends it back with your notes on its lines; `x` and `a` apply only the hunks you chose; `b` sends back one that clashed with your checkout.
+When a worker sends `done`, imece reads its worktree and the change waits for you as `Δ` in TO DECIDE. `enter` on it (or `W` when it is the next item) opens the change view in the team's place: the whole diff, with what ran on that tree above it. You decide here: `a` applies it to your checkout, staged; `r` sends it back; `n` sends it back with your notes on its lines; `x` and `a` apply only the hunks you chose; `b` sends back one that clashed with your checkout.
 
 ```text
 ┌ CHANGE · claude-1 · 3 files +41 −6 · parser returns an error on an empty file ─────────────┐
@@ -26,7 +26,7 @@ When a worker sends `done`, imece reads its worktree and the change waits for yo
 │+    }                                                                                       │
 │+    let doc: Doc = toml::from_str(&text)?;                                                  │
 └─────────────────────────────────────────────────────────────────────────────────────────────┘
-  j k  w scroll · wrap  [ ] file  a x apply · choose a hunk  r reject  > quote to it  c n note · send notes  v copy lines  esc back  ? help
+  j k  w scroll · wrap  [ ] file  a x approve · choose a hunk  r send back  > quote to it  c n note · send notes  v copy lines  esc back  ? help
 ```
 
 The title: the worker, the files and lines, the done's first line.
@@ -35,9 +35,9 @@ The title: the worker, the files and lines, the done's first line.
 
 First, when the worker wrote more in its `done` than the first line, what it said: why, what it decided, what to look at; four rows at most, cut with `…`. With several changes waiting the window's top right says which this is, `change 2 of 5`.
 
-1. **The repository's check**, when your checkout has `.imece/check` ([changes](../concepts/changes.md#the-repositorys-check)): `✓ check · exit 0, 41.2 s` in the ok colour; `✗ check · exit 1, 38.7 s` in the bad colour, the last lines of its output under it; `● the check runs on this change…` while it runs; `▶ the repository's check waits for your yes in WAITING FOR YOU` until you answer its ask; or why it could not run. Its mark also starts the item's evidence in WAITING FOR YOU (`✓ check ·`, `✗ check ·`, `● check ·`, `▶ check ·`).
-2. **The runs on this tree.** Every `run` the worker made through imece's `run` tool on exactly this change, each with how it ended: `✓ cargo test`, `✗ cargo clippy: exit 1`, killed at the deadline, killed. With none it says, in the warning colour, that no imece run was made on exactly this change, so whether it builds and passes its tests is not known. The same evidence follows the item's row in WAITING FOR YOU.
-3. **What it cost**, once the worker's turn ended: `cost · $0.84 · 12 min`, dim, the worker's spend (its helpers' counted in) from its first prompt after its last change to this `done`, and the time it worked; a change sent back and sent again adds its rounds (`$1.20 · 25 min · 3 rounds`). The same figure ends the item's row in WAITING FOR YOU and the journal says it (`claude-1's change cost $0.84 · 12 min`). A `done` read mid-turn shows it a moment later, when the turn's cost is known.
+1. **The repository's check**, when your checkout has `.imece/check` ([changes](../concepts/changes.md#the-repositorys-check)): `✓ check · exit 0, 41.2 s` in the ok colour; `✗ check · exit 1, 38.7 s` in the bad colour, the last lines of its output under it; `● the check runs on this change…` while it runs; `▶ the repository's check waits for your yes in TO DECIDE` until you answer its ask; or why it could not run. Its mark also starts the item's evidence in TO DECIDE (`✓ check ·`, `✗ check ·`, `● check ·`, `▶ check ·`).
+2. **The runs on this tree.** Every `run` the worker made through imece's `run` tool on exactly this change, each with how it ended: `✓ cargo test`, `✗ cargo clippy: exit 1`, killed at the deadline, killed. With none it says, in the warning colour, that no imece run was made on exactly this change, so whether it builds and passes its tests is not known. The same evidence follows the item's row in TO DECIDE.
+3. **What it cost**, once the worker's turn ended: `cost · $0.84 · 12 min`, dim, the worker's spend (its helpers' counted in) from its first prompt after its last change to this `done`, and the time it worked; a change sent back and sent again adds its rounds (`$1.20 · 25 min · 3 rounds`). The same figure ends the item's row in TO DECIDE and the journal says it (`claude-1's change cost $0.84 · 12 min`). A `done` read mid-turn shows it a moment later, when the turn's cost is known.
 4. **The lines by kind**, when the files are of more than one kind: `source +23 −6 (2) · tests +18 −0 (1) · generated +7 −5 (1)`. A file is sorted by its path alone: generated when it is a lock file (`Cargo.lock`, `package-lock.json`, `yarn.lock`, `pnpm-lock.yaml`, `go.sum`, `poetry.lock`, `Gemfile.lock`, `composer.lock`), minified or generated code (`.min.js`, `.min.css`, `.pb.go`, `_pb2.py`, `.g.dart`, `.Designer.cs`) or under `generated/`, `dist/` or `vendor/`; tests when under `tests/`, `test/`, `__tests__/` or `spec/`, named `test_*` or ending in a test suffix (`_test.go`, `_test.rs`, `_test.py`, `.test.ts`, `.spec.ts`, `Tests.cs`, `Test.java`, …); source otherwise. Generated wins over tests. Nothing is read from the files. A change of `+400 −20` that is twenty lines of code and a regenerated lock file says so here.
 5. **The files outside the card**, when the worker's card owns paths ([the paths a card owns](../concepts/messages-and-board.md#the-paths-a-card-owns)) and the change touches files none of them names: `2 outside #12: src/other.rs, Cargo.toml`, in the warning colour. The card is the worker's last, done or not; a card without paths says nothing here.
 6. **The file list**, for a change of two files or more: each file with `+N −M` or `binary`, six at most and the rest counted (`… 2 more files`). A change of one file shows no list; its title says it. From 120 columns on, a change of two files or more lists all of them beside the patch instead, the file at hand marked `▸`, and `[` `]` go through them.
@@ -56,7 +56,7 @@ The patch shows a file's path where git writes `diff --git`, and leaves out the 
 | `w` | wrap long lines under themselves (a minified file, a long string); again cuts them at the edge. The scroll still counts patch lines, so `j` moves a whole line however many rows it takes. On for every change until turned off; not kept between runs |
 | `R` | the second reading (`:review`), above the file list: its first six rows, or all of it ([changes](../concepts/changes.md#a-second-reading)) |
 | `v` | choose lines to copy (below) |
-| `esc` | back to WAITING FOR YOU |
+| `esc` | back to TO DECIDE |
 
 Added and removed lines have their own colours; headers stand out. Every line goes through the cleaning everything drawn gets.
 
@@ -64,13 +64,13 @@ Added and removed lines have their own colours; headers stand out. Every line go
 
 | Key | What it does |
 | --- | --- |
-| `a` | apply the change to your checkout, staged, for you to look over and commit. With hunks chosen (`x`), only those. Opened from [Home](home.md), the next change waiting opens; after the last, Home again |
-| `r` | reject: the item closes, the change stays in the worktree, the composer opens `@worker ` so you say why |
+| `a` | approve: the change is applied to your checkout, staged, for you to look over and commit. With hunks chosen (`x`), only those. Opened from [Home](home.md), the next change waiting opens; after the last, Home again |
+| `r` | send back: the item closes, the change stays in the worktree, the composer opens `@worker ` so you say why |
 | `c` | a note on the top line |
 | `n` | send the notes to the worker in one message; the change goes back |
 | `x` | choose the hunk at the top; `a` then applies only the chosen hunks |
 | `>` | write to the worker with the hunk at the top quoted |
-| `b` | after a refused apply: send the change back with what clashes; it goes back as with `r` |
+| `b` | after a refused apply: send the clash back (the change with what clashes); it goes back as with `r` |
 
 ### Applying
 
@@ -108,7 +108,7 @@ A worker in a Lonca workspace has a proposal for a Δ ([more](../concepts/change
 
 `x` chooses the hunk at the top (the one the top row is in; on a file's header, the next one); `x` again lets it go. A chosen hunk's `@@` line wears `✓` and the flash counts them: `1 of 3 hunks chosen; a applies only them, the rest waits`. With hunks chosen, `a` applies only those; with none, the whole change.
 
-On the git thread the part becomes a change of its own before anything is applied: the chosen hunks under their file's header (a file with none is left out, and so is a binary file, which has no hunks), read through an index of imece's own so the worker's files and index are not touched, and applied like a whole change, three-way when clean. The worktree is marked with only that part, and the rest is read again at once and waits in WAITING FOR YOU as a change again under the same title. The worker hears that part of its change was applied (`1 of its hunks`) and that the rest waits. A part that does not fit is refused like a change that does not apply. The choice is kept against the patch's hash for the run; a newer Δ starts with none. Single lines inside a hunk cannot be chosen.
+On the git thread the part becomes a change of its own before anything is applied: the chosen hunks under their file's header (a file with none is left out, and so is a binary file, which has no hunks), read through an index of imece's own so the worker's files and index are not touched, and applied like a whole change, three-way when clean. The worktree is marked with only that part, and the rest is read again at once and waits in TO DECIDE as a change again under the same title. The worker hears that part of its change was applied (`1 of its hunks`) and that the rest waits. A part that does not fit is refused like a change that does not apply. The choice is kept against the patch's hash for the run; a newer Δ starts with none. Single lines inside a hunk cannot be chosen.
 
 ### Quoting a hunk
 
@@ -135,7 +135,7 @@ Other keys do nothing while you choose, so `a` does not apply the change by mist
 14:07 › you → claude-1: the empty-file check belongs in `read`, not in the caller …
 ```
 
-A `done` arrives as `claude-1 finished: 3 files, +41 −6 → waits for you`; an apply as `you applied …, staged; worktree mark <sha>`; a failure as `… did not apply: <git's words>`, and the item stays; a rejection as `rejected: claude-1`, followed by your message. After a partial apply the rest comes back as a new `finished` line.
+A `done` arrives as `claude-1 finished: change ready · 3 files +41 −6`; an apply as `you applied …, staged; worktree mark <sha>`; a failure as `… did not apply: <git's words>`, and the item stays; a rejection as `sent back: claude-1`, followed by your message. After a partial apply the rest comes back as a new `finished` line.
 
 ## Demo
 
@@ -144,7 +144,7 @@ A `done` arrives as `claude-1 finished: 3 files, +41 −6 → waits for you`; an
 ## See also
 
 - [Changes](../concepts/changes.md)
-- [WAITING FOR YOU](waiting.md)
+- [TO DECIDE](waiting.md)
 - [Reviewing with notes](../scenarios/review-with-notes.md)
 - [Own shell and commit](../scenarios/own-shell-and-commit.md)
 - [Keyboard](keyboard.md)

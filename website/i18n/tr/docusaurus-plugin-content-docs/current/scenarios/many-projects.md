@@ -5,7 +5,7 @@ description: Tek imece'de birkaç proje, her birinin kendi lideri; açma, katlam
 
 # Üç çalışma kopyası, tek ekran
 
-Tek bir imece aynı anda birkaç çalışma kopyası çalıştırır. Her biri salonda kendi lideri olan bir projedir; tek bütçeyi, tek veri yolunu ve tek ekranı paylaşırlar. Bununla iş depolar arasına yayıldığında ya da uzun süren bir projeyi içinde bulunduğunuzun yanında açık tuttuğunuzda karşılaşırsınız. Bu senaryo imece'nin içinde başladığı projenin yanına iki proje daha açar ve üç takımı okunur tutan tuşları kullanır.
+Tek bir imece aynı anda birkaç çalışma kopyası çalıştırır. Her biri ekipte kendi lideri olan bir projedir; tek bütçeyi, tek veri yolunu ve tek ekranı paylaşırlar. Bununla iş depolar arasına yayıldığında ya da uzun süren bir projeyi içinde bulunduğunuzun yanında açık tuttuğunuzda karşılaşırsınız. Bu senaryo imece'nin içinde başladığı projenin yanına iki proje daha açar ve üç takımı okunur tutan tuşları kullanır.
 
 imece `~/code/cli` içinde başlatıldı; projesi dizinin adını aldı, `cli`, lideri `lead`.
 
@@ -23,7 +23,7 @@ imece `~/code/cli` içinde başlatıldı; projesi dizinin adını aldı, `cli`, 
 
 `:open YOL [AD]`, YOL'daki git çalışma kopyasını açar; AD, dizinin güvenli kılınmış adıdır (1-24 harf, rakam, `.`, `_`, `-`). Yeni projenin lideri `lead-AD`dır; aynı model ve kademelerle. `:open ` yazarken dizinleri tamamlar (gizli olanlar bir `.`ten sonra, `~` çalışır). `:` menüsü `:open`ı `$` ile işaretler: yeni bir lider, ilk yazdığınızda para tutan yeni bir oturumdur. Çalışma kopyası olmayan bir yol, alınmış bir ad ya da zaten açık bir çalışma kopyası nedeniyle reddedilir (`api zaten açık, adı api`). `:o` kısaltmasıdır.
 
-Salon artık ajanları projeye göre gruplar, her birinin bir başlık satırı vardır; birden fazla proje varken gelen kutusu ve günlük satırları projenin adını taşır:
+Ekip artık ajanları projeye göre gruplar, her birinin bir başlık satırı vardır; birden fazla proje varken gelen kutusu ve günlük satırları projenin adını taşır:
 
 ```text
  ▾ cli                        1 çalışıyor  $2.10
@@ -45,11 +45,11 @@ Salon artık ajanları projeye göre gruplar, her birinin bir başlık satırı 
  ▸ web                        1 çalışıyor  $0.80  ! 1 bekliyor
 ```
 
-Salon herkese dar gelince sakin işçiler alttan yukarı `… N agent yolunda` içine katlanır; sizi bekleyen işçiler (onayınızı bekleyen, takılan, bitmiş ama bakılmamış) projelerinde öne sıralanır, bu yüzden en son katlanırlar.
+Ekip herkese dar gelince sakin işçiler alttan yukarı `… N agent yolunda` içine katlanır; sizi bekleyen işçiler (onayınızı bekleyen, takılan, bitmiş ama bakılmamış) projelerinde öne sıralanır, bu yüzden en son katlanırlar.
 
 ## 3. İçinde yaşadığınızı sabitleyin
 
-`:pin api` yazın ve `enter`a basın: `api salonun en üstüne sabitlendi`. Başlığı `▴` taşır ve açılma sırası ne olsa önde kalır; en son da katlanır. `:pin` tek başına eldeki projeyi sabitler; `:pin` yine bırakır (`api artık sabit değil`). Sabitleme kayıt dosyasında çalışmalar arasında saklanır ve kapatılan bir proje yeniden açılınca sabitini korur.
+`:pin api` yazın ve `enter`a basın: `api ekibin en üstüne sabitlendi`. Başlığı `▴` taşır ve açılma sırası ne olsa önde kalır; en son da katlanır. `:pin` tek başına eldeki projeyi sabitler; `:pin` yine bırakır (`api artık sabit değil`). Sabitleme kayıt dosyasında çalışmalar arasında saklanır ve kapatılan bir proje yeniden açılınca sabitini korur.
 
 ```text
  ▾ ▴ api                      2 çalışıyor  $3.10
@@ -59,7 +59,7 @@ Proje başına renk henüz yapılmadı.
 
 ## 4. Yalnızca sizi bekleyenler
 
-`f`ye basın. Salon yalnızca sizden bir şey bekleyen ajanları gösterir, her biri projesinin başlığı altında; bir şeyi olmayan proje dışarıda kalır. Başlık ` SALON · yalnızca seni bekleyenler (f) ` olur, anlık mesaj `salon yalnızca seni bekleyenleri gösteriyor · f: herkes`. Hiç yoksa:
+`f`ye basın. Ekip yalnızca sizden bir şey bekleyen ajanları gösterir, her biri projesinin başlığı altında; bir şeyi olmayan proje dışarıda kalır. Başlık ` EKİP · yalnızca seni bekleyenler (f) ` olur, anlık mesaj `salon yalnızca seni bekleyenleri gösteriyor · f: herkes`. Hiç yoksa:
 
 ```text
  Şu an senden bir şey gerekmiyor · f herkesi gösterir
@@ -122,6 +122,6 @@ Bütçe bitince hiçbir projede kimse bir tur daha almaz. Kayıt dosyasını ayn
 
 - [Projeler](../concepts/projects.md)
 - [Bütçe ve sınırlar](../concepts/budget-and-limits.md)
-- [Salon](../screen/salon.md): katlama, sıra, filo
+- [Ekip](../screen/salon.md): katlama, sıra, filo
 - [Komutlar](../reference/commands.md)
 - [Dosyalar](../reference/files.md): worktree'ler ve kayıt dosyası nerede

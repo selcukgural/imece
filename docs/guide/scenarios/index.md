@@ -23,7 +23,7 @@ Every scenario is true of the real imece: the keys are the ones the `?` help lis
 
 ## Trying them for free
 
-Everything a scenario does on the screen can be tried with `imece --demo`: fake agents play the same model, so the salon, WAITING FOR YOU, the diff view, notes, chosen hunks, `:open`, `:pin`, `:copy`, marks and `:export` all work the same way and cost nothing. What the demo cannot show is the part that needs an earlier run and a store: the "where you left off" window, turns cut short, agents asleep from the start. The [demo page](../getting-started/demo.md) says what else differs.
+Everything a scenario does on the screen can be tried with `imece --demo`: fake agents play the same model, so the team, TO DECIDE, the diff view, notes, chosen hunks, `:open`, `:pin`, `:copy`, marks and `:export` all work the same way and cost nothing. What the demo cannot show is the part that needs an earlier run and a store: the "where you left off" window, turns cut short, agents asleep from the start. The [demo page](../getting-started/demo.md) says what else differs.
 
 ## A reading order
 

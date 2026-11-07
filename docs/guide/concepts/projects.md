@@ -1,11 +1,11 @@
 ---
 title: Projects
-description: Several checkouts in one imece - :open, :close, :rename, a leader per project, groups in the salon that fold, :pin, and the per-project :copy list of ignored paths a worker's worktree gets.
+description: Several checkouts in one imece - :open, :close, :rename, a leader per project, groups in the team that fold, :pin, and the per-project :copy list of ignored paths a worker's worktree gets.
 ---
 
 # Projects
 
-A project is one git checkout with its own leader and workers. imece starts with the checkout it runs in as the first project (leader `lead`); you open more from the screen, and each is a group in the salon. One pot and one bus serve them all.
+A project is one git checkout with its own leader and workers. imece starts with the checkout it runs in as the first project (leader `lead`); you open more from the screen, and each is a group in the team. One pot and one bus serve them all.
 
 ## Opening, closing, renaming
 
@@ -28,10 +28,10 @@ A project is one git checkout with its own leader and workers. imece starts with
 
 A solo's model and effort are yours to pick, per solo.
 
-## Groups in the salon
+## Groups in the team
 
 ```text
- SALON
+ TEAM
  ▴ api        ! 1 waiting
    ● lead-api        coordinating
    ● claude-1        #4 auth: refresh      +12 −3
@@ -43,13 +43,13 @@ A solo's model and effort are yours to pick, per solo.
 
 - Each project is a group with its own leader. `h` `l` (or `←` `→`, `enter` on the header) fold and unfold a group; `za` toggles, `zM` folds every worker, `zR` unfolds all (`:fold`, `:unfold`).
 - A folded project is one line that still shows what waits for you (`! 1 waiting`) or what it does (`● 2 working`).
-- When the salon is too short, calm workers fold from the bottom up into `… N agents doing fine`; the workers that need you fold last, and a pinned project last of all.
+- When the team is too short, calm workers fold from the bottom up into `… N agents doing fine`; the workers that need you fold last, and a pinned project last of all.
 - The journal and inbox lines carry the project's name before the agent's when several are open.
 - Plain text in the command line goes to the **selected** project's leader. The selection decides who `/` writes to.
 
 ## `:pin [NAME]`
 
-`:pin` pins the named project, else the one at hand, to the top of the salon; `:pin` again unpins. Pinned projects come first, then the rest, each group in the order it was opened. A pinned project's header wears `▴`. The pin is yours and outlives the run (kept in the store). The `:` menu shows which project `:pin` would act on, with `▴` when it is pinned already.
+`:pin` pins the named project, else the one at hand, to the top of the team; `:pin` again unpins. Pinned projects come first, then the rest, each group in the order it was opened. A pinned project's header wears `▴`. The pin is yours and outlives the run (kept in the store). The `:` menu shows which project `:pin` would act on, with `▴` when it is pinned already.
 
 A colour per project is not built: the themes name colours by role and order their speaker colours differently, so a colour chosen by name would need a named palette in every theme first.
 
@@ -94,7 +94,7 @@ npm run db:migrate
 ```
 
 - **When:** a worker's or a solo's worktree made just now (a helper works in its worker's, a leader in your checkout; a worktree that was there already is not set up again). Without git there is no worktree, so no script.
-- **Your yes:** the first new worktree that finds a script you have not said yes to puts an ask in WAITING FOR YOU (`▶ claude-1: run the worktree setup script .imece/worktree-setup.sh in its new worktree? enter shows it`); the worker does not wait for it and starts without. `enter` opens the script as imece read and hashed it, a numbered line each, with what runs and how (`SETUP SCRIPT · claude-1 · sha256 1a2b…`); `j` `k`, `ctrl-d` `ctrl-u`, `g` `G` move, `a` says yes, `r` no, `esc` closes. `a` and `r` work on the selected ask too. A yes runs the script at once in the worktrees that went without it, and from then on in every new one before its session; a no holds for this run (a later start asks again). Workers that start while the ask waits are counted on the same ask.
+- **Your yes:** the first new worktree that finds a script you have not said yes to puts an ask in TO DECIDE (`▶ claude-1: run the worktree setup script .imece/worktree-setup.sh in its new worktree? enter shows it`); the worker does not wait for it and starts without. `enter` opens the script as imece read and hashed it, a numbered line each, with what runs and how (`SETUP SCRIPT · claude-1 · sha256 1a2b…`); `j` `k`, `ctrl-d` `ctrl-u`, `g` `G` move, `a` says yes, `r` no, `esc` closes. `a` and `r` work on the selected ask too. A yes runs the script at once in the worktrees that went without it, and from then on in every new one before its session; a no holds for this run (a later start asks again). Workers that start while the ask waits are counted on the same ask.
 - **What the yes is bound to:** the bytes' SHA-256, the file's real path (links resolved) and how it runs (`/bin/sh`), kept in imece's store, never in the repository. A changed byte is a new script and is asked about again. What runs is a private copy of the bytes you read, written into imece's state directory (`0700`, the copy `0600`), never the file again, so nothing can change it between your yes and the run.
 - **How it runs:** `/bin/sh` on that copy in the new worktree, with imece's cleared environment plus `IMECE_REPO` (your checkout) and `IMECE_WORKTREE` (the worktree), in a process group of its own, at most 60 seconds (then the group is killed). At most 64 KiB of script.
 - **What you see:** the journal says how it ended and its last line (`claude-1: worktree setup ran, exit 0, 4.2 s · migrations: 7 applied`, or `failed`); one that could not be read or started says why (`worktree setup did not run: …`). The worker starts either way.
@@ -146,7 +146,7 @@ The reasons: no daemon answers, what is on the socket is not your daemon, anothe
 
 Until it answers, the project is closed: nobody is hired, `:fork` is refused, and no Δ is applied, rejected or sent back. Agents go on working, and their Δs wait. A project on no repository never touches the socket. See [`:lonca`](../reference/commands.md#lonca-nameoffloginimport).
 
-A worker hired on a project on Lonca works in a **workspace** of the repository, not a worktree: the same files at the same path, with a `.git` of its own that reaches nothing (what gets to the repository is a proposal), and `lonca hook` and `lonca mcp` in its Claude Code beside imece's bus. The focus says `· workspace of lonca NAME`. The `lonca` program must be on your `PATH`. A worker that already has a worktree stays in it. It leases what it edits and proposes its change, and once its turn is over the proposal is its Δ in WAITING FOR YOU: `a` approves it, `r` rejects it, saying why (see [changes](changes.md#on-lonca)). The project's line counts all that waits (`2 pending`), someone else's proposals too. A session lasts 8 hours; a worker written to with less than half an hour of it left goes on in the same workspace under a new one, with its conversation, files and proposal, and leases again. A worker with a helper at work waits for the helper to finish, and nothing happens to a team that sleeps. A worker that leaves ends its session; its proposals stay, and its workspace stays for `:tidy`. A worker on Lonca starts at trunk, so `hire`'s `from` is refused, and `:fork` refuses it. With a Secure Enclave key every new session wants your finger: `session start` is signed.
+A worker hired on a project on Lonca works in a **workspace** of the repository, not a worktree: the same files at the same path, with a `.git` of its own that reaches nothing (what gets to the repository is a proposal), and `lonca hook` and `lonca mcp` in its Claude Code beside imece's bus. The focus says `· workspace of lonca NAME`. The `lonca` program must be on your `PATH`. A worker that already has a worktree stays in it. It leases what it edits and proposes its change, and once its turn is over the proposal is its Δ in TO DECIDE: `a` approves it, `r` rejects it, saying why (see [changes](changes.md#on-lonca)). The project's line counts all that waits (`2 pending`), someone else's proposals too. A session lasts 8 hours; a worker written to with less than half an hour of it left goes on in the same workspace under a new one, with its conversation, files and proposal, and leases again. A worker with a helper at work waits for the helper to finish, and nothing happens to a team that sleeps. A worker that leaves ends its session; its proposals stay, and its workspace stays for `:tidy`. A worker on Lonca starts at trunk, so `hire`'s `from` is refused, and `:fork` refuses it. With a Secure Enclave key every new session wants your finger: `session start` is signed.
 
 In Lonca's cooperative mode no session counts as observed, so every proposal waits for you. A change to a critical path (`Cargo.toml`, lockfiles, `package.json`, `.github/**`, `build.rs`) is refused by Lonca's default, but a repository made with `:lonca import` makes it wait for you like any other, its reason `critical_path:Cargo.toml` on the Δ. A worker that has used the web or a command that reaches the network stays refused there, since what it read may have told it what to write: it says it is blocked, and that change is yours to make. So does a worker on a repository with Lonca's default policy. `unobserved_is_tainted = false` in `lonca.toml` would have proposals integrate with nobody looking, so imece closes a repository set that way, as it closes one that does not answer: `⌀ no lonca` and why.
 
@@ -158,7 +158,7 @@ Your checkout is a client of the repository, so trunk moves without it. [`:sync`
 
 ## See also
 
-- [The salon](../screen/salon.md): folding, the attention order, `f`.
+- [The team](../screen/salon.md): folding, the attention order, `f`.
 - [Many projects](../scenarios/many-projects.md): a worked example.
 - [Sessions](../concepts/sessions.md): what the store keeps per project.
 - [Commands](../reference/commands.md).

@@ -5,7 +5,7 @@ description: Konuşma penceresi - iki taraf arasında söylenen her şey bütün
 
 # Konuşmalar
 
-Bir konuşma, iki taraf arasında söylenen her şeydir: siz ve bir agent, ya da iki agent; eskiden yeniye, her mesaj bütünüyle. Günlükte bir satırda `enter` ile ya da eldeki agent'ta `v` (`:talk`) ile açarsınız; salonun üstünde bir pencere olarak açılır, çevresini soluklaştırır, `esc` kapatır.
+Bir konuşma, iki taraf arasında söylenen her şeydir: siz ve bir agent, ya da iki agent; eskiden yeniye, her mesaj bütünüyle. Günlükte bir satırda `enter` ile ya da eldeki agent'ta `v` (`:talk`) ile açarsınız; ekibin üstünde bir pencere olarak açılır, çevresini soluklaştırır, `esc` kapatır.
 
 ```text
 ┌ KONUŞMA · lead ⇄ claude-1 · 4/5 ──────────────────────────────────────────┐
@@ -31,7 +31,7 @@ Başlık iki tarafı ve seçimin yerini söyler, `4/5`; kelimelerine yazılmış
 
 - Günlükte bir satırda `enter`, o satırın ait olduğu konuşmayı o satır seçili olarak açar.
 - `v` ya da `:talk` (`:talk @AD` adlı bir agent için) sizinle eldeki agent arasındaki konuşmayı açar: seçili ya da yakınlaştırılmış agent. Henüz konuşma yoksa söyler.
-- SENİ BEKLEYEN'de bir soruda (`?`) ya da yanıtta (`»`) `enter` konuşmayı o mesajda açar; bir yanıt bununla okunmuş olur ve kapanır.
+- KARAR BEKLEYEN'de bir soruda (`?`) ya da yanıtta (`»`) `enter` konuşmayı o mesajda açar; bir yanıt bununla okunmuş olur ve kapanır.
 - Bekleyen sıradaki öge bir soru ya da yanıtsa `W` de aynı şekilde açar.
 
 Konuşma açıkken `a` ve `r` hiçbir şeye karar vermez: altında seçili olan, gördüğün şey değildir. Önce `esc`, sonra değişikliği aç.
@@ -58,7 +58,7 @@ Boşta bir işçiye mesaj onun için bir kart açar (ilk satır kartın başlı�
 
 ### Yanıtlar
 
-Bir agent'ın diğerine gönderdiği her mesajın bus'ta bir numarası vardır; dünya genelinde sırayla verilir ve çalıştırmalar arasında saklanır. Agent'lar bunu aldıkları postada görür (`[answer 8, re 7] from claude-1:`), iz `id=8 re=7` der. Ekranda bir yanıt türünden sonra `↩` taşır: günlük satırında, bir kartın hikâyesinde ve bir konuşmada; konuşmada yanıtladığı mesajın ilk satırı başlığının altında soluk görünür (`↩ 8 yanıtı: Hangi parser?`, ya da günlükte artık olmadığı). `%` aralarında gider. Size gelen mesajlar numara almaz: sorularınız, yanıtı soruya zaten bağlayan SENİ BEKLEYEN'de bekler.
+Bir agent'ın diğerine gönderdiği her mesajın bus'ta bir numarası vardır; dünya genelinde sırayla verilir ve çalıştırmalar arasında saklanır. Agent'lar bunu aldıkları postada görür (`[answer 8, re 7] from claude-1:`), iz `id=8 re=7` der. Ekranda bir yanıt türünden sonra `↩` taşır: günlük satırında, bir kartın hikâyesinde ve bir konuşmada; konuşmada yanıtladığı mesajın ilk satırı başlığının altında soluk görünür (`↩ 8 yanıtı: Hangi parser?`, ya da günlükte artık olmadığı). `%` aralarında gider. Size gelen mesajlar numara almaz: sorularınız, yanıtı soruya zaten bağlayan KARAR BEKLEYEN'de bekler.
 
 ### İşaretler
 
@@ -152,7 +152,7 @@ Açık bir pencere konuşmaya ayak uydurur: çiftinin gelen günlük satırları
 
 ## İz
 
-Salonda bir agent'ta `enter` odağını açar (ODAK · ad: kartı, durumu, kökeni, lease'leri, Claude Code söylüyorsa bağlam penceresinin doluluğu, tutuyorsa kendi yapılacaklar listesi ve hikâyesi). Yapılacaklar listesi YAPILACAKLAR 3/7 ve satır başına bir adımdır: `✓` bitti, `▸` elinde, `○` başlanmadı, agent'ın sırasıyla; sekiz satırı aşan bir liste tepesindeki biten adımları `✓ 4 bitti` diye katlar ve `… 2 daha` ile biter, böylece elindeki görünür kalır; hikâyenin kayıtları bir konuşmanın mesajları gibi okunur: `j` `k` eldeki kaydı gezer (kenarda `▌` ile işaretli), sayfa tuşları kaydırır, `gg` ilk, `G` en yeni, yenileri geldikçe izlenir; sekiz satırdan uzun bir agent mesajı orada `… +20 · l hepsini gösterir` ile kesilir, `l` tamamını gösterir, `h` yine keser, `zR` `zM` hepsini. Markdown bir tablo ekrana sığar: en geniş sütunları daralır, uzun bir hücre kendi sütununda alt satıra geçer. Yine `enter`, ya da `t` (`:trace`), ham akışını açar: İZ · ad; aynı tuşlarla kayar ve siz yukarı çıkana dek en yeniyi altta izler. İz, agent'ın oturumunun imece'nin gördüğü hâlidir, satır satır, satırın ilk sözcüğüne göre renkli: agent'ın kendi metni, `tool_use` aracın adıyla bilgi renginde, bir `run:` çıkış koduna göre, `stopped` ve `run refused` kötü renkte, bus sözcükleri vurgu renginde. Birkaç satıra yayılan bir araç çağrısı satırlarını korur, içeriden, en çok altı, sonra `… +N`. `esc` odağa, sonra salona döner. Bir odakta ya da izde `@` o agent'a bir mesaj başlatır.
+Ekipte bir agent'ta `enter` odağını açar (ODAK · ad: kartı, durumu, kökeni, neyi düzenlediği (lease'leri), Claude Code söylüyorsa bağlam penceresinin doluluğu, tutuyorsa kendi yapılacaklar listesi ve hikâyesi). Yapılacaklar listesi YAPILACAKLAR 3/7 ve satır başına bir adımdır: `✓` bitti, `▸` elinde, `○` başlanmadı, agent'ın sırasıyla; sekiz satırı aşan bir liste tepesindeki biten adımları `✓ 4 bitti` diye katlar ve `… 2 daha` ile biter, böylece elindeki görünür kalır; hikâyenin kayıtları bir konuşmanın mesajları gibi okunur: `j` `k` eldeki kaydı gezer (kenarda `▌` ile işaretli), sayfa tuşları kaydırır, `gg` ilk, `G` en yeni, yenileri geldikçe izlenir; sekiz satırdan uzun bir agent mesajı orada `… +20 · l hepsini gösterir` ile kesilir, `l` tamamını gösterir, `h` yine keser, `zR` `zM` hepsini. Markdown bir tablo ekrana sığar: en geniş sütunları daralır, uzun bir hücre kendi sütununda alt satıra geçer. Yine `enter`, ya da `t` (`:trace`), ham akışını açar: İZ · ad; aynı tuşlarla kayar ve siz yukarı çıkana dek en yeniyi altta izler. İz, agent'ın oturumunun imece'nin gördüğü hâlidir, satır satır, satırın ilk sözcüğüne göre renkli: agent'ın kendi metni, `tool_use` aracın adıyla bilgi renginde, bir `run:` çıkış koduna göre, `stopped` ve `run refused` kötü renkte, bus sözcükleri vurgu renginde. Birkaç satıra yayılan bir araç çağrısı satırlarını korur, içeriden, en çok altı, sonra `… +N`. `esc` odağa, sonra ekibe döner. Bir odakta ya da izde `@` o agent'a bir mesaj başlatır.
 
 ## Ayrıca bakınız
 

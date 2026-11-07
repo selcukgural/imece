@@ -54,7 +54,7 @@ imece is **not a sandbox** and never calls itself one. Under `--confine standard
 :::
 
 - **The leader not writing is a role, not security.** It works in your checkout because a write there would skip the Δ gate and collide with your working copy; it is a prompt and a tool list, verified fail closed, not an OS boundary.
-- **You are the last gate**, not a model and not a tool list: the Δ review, the `⚑` asks and the `?` questions in WAITING FOR YOU are where the decisions are made.
+- **You are the last gate**, not a model and not a tool list: the Δ review, the `⚑` asks and the `?` questions in TO DECIDE are where the decisions are made.
 - Under `open` your own settings, hooks and MCP servers load; imece checks less there by design.
 - `run` has no network block of its own. Claude Code's own read-only rules decide what never reaches imece as an ask.
 - Secrets in an agent's context are Claude Code's and the model's; imece hides what looks like one on its screen and in what it writes, no more.

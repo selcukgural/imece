@@ -54,7 +54,7 @@ imece **bir sandbox değildir** ve kendisine asla öyle demez. `--confine standa
 :::
 
 - **Liderin yazmaması bir roldür, güvenlik değil.** Checkout'unuzda çalışır çünkü oraya bir yazma Δ kapısını atlar ve çalışma kopyanızla çakışır; fail closed doğrulanan bir istem ve araç listesidir, bir işletim sistemi sınırı değil.
-- **Son kapı sizsiniz**, bir model ya da araç listesi değil: Δ incelemesi, `⚑` istekleri ve SENİ BEKLEYEN'deki `?` soruları kararların verildiği yerdir.
+- **Son kapı sizsiniz**, bir model ya da araç listesi değil: Δ incelemesi, `⚑` istekleri ve KARAR BEKLEYEN'deki `?` soruları kararların verildiği yerdir.
 - `open` altında kendi ayarlarınız, hook'larınız ve MCP sunucularınız yüklenir; imece orada tasarım gereği daha az denetler.
 - `run`'ın kendi ağ engeli yoktur. Claude Code'un kendi salt okunur kuralları neyin imece'ye istek olarak hiç ulaşmayacağına karar verir.
 - Bir ajanın bağlamındaki sırlar Claude Code'un ve modelindir; imece ekranında ve yazdıklarında sır gibi görüneni saklar, daha fazlasını değil.

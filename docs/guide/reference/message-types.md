@@ -16,11 +16,11 @@ The leader may also write to a group of its workers: `to: workers` (every one) o
 | Type | Wakes the receiver | Usual sender → receiver | What imece does |
 | --- | --- | --- | --- |
 | `assign` | yes | leader → worker, worker → helper | the first line becomes the card's title; an idle worker gets a new card and starts on it; refused to `you` |
-| `ask` | yes | anyone → anyone, or → `you` | to a teammate: starts its next turn; to `you`: a question `?` in WAITING FOR YOU that waits until you write to that agent |
+| `ask` | yes | anyone → anyone, or → `you` | to a teammate: starts its next turn; to `you`: a question `?` in TO DECIDE that waits until you write to that agent |
 | `answer` | yes | the asked → the asker | the reply; carries `re`, drawn with `↩` |
 | `inform` | no | anyone → anyone, or → `you` | waits for the receiver's next turn; to `you`, a journal line only |
 | `handoff` | yes | worker → worker | starts the receiver's next turn; refused to `you` |
-| `done` | yes | worker → leader, helper → worker, or → `you` | a worker's done also makes imece read its worktree: a change (`Δ`) in WAITING FOR YOU; the leader gets it once the worker's turn ended, headed with what the change cost (`[done 12 · $0.84]`); a helper's done to its worker makes it leave when its turn ends |
+| `done` | yes | worker → leader, helper → worker, or → `you` | a worker's done also makes imece read its worktree: a change (`Δ`) in TO DECIDE; the leader gets it once the worker's turn ended, headed with what the change cost (`[done 12 · $0.84]`); a helper's done to its worker makes it leave when its turn ends |
 | `blocked` | yes | worker → leader, or → `you` | starts the receiver's next turn; to `you`, a journal line only |
 | `progress` | no | worker → leader, or → `you` | rides along with the next waking message |
 | `notice` | no | anyone → anyone, or → `you` | rides along |
@@ -56,7 +56,7 @@ The 12-turn and 10-post counters start again every time you write to any agent: 
 
 ### Messages to you
 
-`to: you` reaches the person. An `ask` becomes a question in WAITING FOR YOU (`claude-1 asks you: Which parser?`); the agent's row reads `? → you` while it is idle with one open, and the question closes when you write to that agent, which starts its next turn. The sender hears `delivered; the person sees it under WAITING FOR YOU and answers when they can, which starts your next turn. Until then, end your turn or go on with what does not depend on the answer; your teammates' messages wait for that answer too, but for a cancel.` Every other type only informs: a line in the journal and the conversation (`noted; the person sees it in the journal. Nothing wakes them: a question goes as type ask.`); a worker's `done` to you shows its change like any done. Messages to you take no number and no `re`, count against no cap and cost nothing. See [approvals and questions](../concepts/approvals-and-questions.md).
+`to: you` reaches the person. An `ask` becomes a question in TO DECIDE (`claude-1 asks you: Which parser?`); the agent's row reads `? → you` while it is idle with one open, and the question closes when you write to that agent, which starts its next turn. The sender hears `delivered; the person sees it under TO DECIDE and answers when they can, which starts your next turn. Until then, end your turn or go on with what does not depend on the answer; your teammates' messages wait for that answer too, but for a cancel.` Every other type only informs: a line in the journal and the conversation (`noted; the person sees it in the journal. Nothing wakes them: a question goes as type ask.`); a worker's `done` to you shows its change like any done. Messages to you take no number and no `re`, count against no cap and cost nothing. See [approvals and questions](../concepts/approvals-and-questions.md).
 
 ### Cards and the bus
 
@@ -81,7 +81,7 @@ On the screen a reply has `↩` after its type; in a conversation it shows the f
 | a message body | 4000 characters | `send`, `post` |
 | unread messages per agent | 20 | `send` is refused until the agent reads |
 | message-driven turns per agent | 12 since you last spoke | waking `send`s and board offers |
-| a card's title | one line of 120 characters | `post`, and an `assign`'s first line is shown cut to the salon's columns |
+| a card's title | one line of 120 characters | `post`, and an `assign`'s first line is shown cut to the team's columns |
 | open cards per project | 20 | `post`: `the board has 20 open cards; wait until workers take some` |
 | posts per agent | 10 since you last spoke | `post`: `you posted 10 cards since the person last spoke; stop and tell the person what is left` |
 | a `run` command line | 1000 characters | `run` |
@@ -150,14 +150,14 @@ Workers only (`only workers take cards; assign or post instead`). Refusals: `the
 
 ### `plan`
 
-> Puts your plan before the person: the cards you mean to assign or post, each with a tier and the paths it owns, and what you expect them to cost. Needed before you hire a second worker: the person reads it in WAITING FOR YOU and their yes opens hiring; end your turn after it. A new plan replaces the one waiting.
+> Puts your plan before the person: the cards you mean to assign or post, each with a tier and the paths it owns, and what you expect them to cost. Needed before you hire a second worker: the person reads it in TO DECIDE and their yes opens hiring; end your turn after it. A new plan replaces the one waiting.
 
 | Field | Type | Required | Meaning |
 | --- | --- | --- | --- |
 | `cards` | array of 1 to 20 cards | yes | each `{title, body, tier, paths}`: a title of one line (at most 120), a body (at most 4000), a tier (`cheap`, `standard` or `strong`; standard when left out), `paths` as on `send` |
 | `cost` | number ≥ 0 | yes | what the cards are expected to cost in dollars, all together |
 
-The leader's only. Answers `the person reads your plan (3 cards, $1.20) in WAITING FOR YOU; end your turn, their yes starts your next`, or with the gate off `the person turned the plan gate off for this project: hire as you see fit; your plan was not kept`. Refusals: `only the leader plans; it hires for the team`, `cards must be an array of cards`, `a plan has 1 to 20 cards`, `card 2 needs a title and a body`, `card 1's title must be one line of at most 120 characters`, `card 1's body is longer than 4000 characters`, `card 1: tier must be cheap, standard or strong`, `card 2: paths are relative to the repository; "/x" starts with /` (and the other `paths` refusals), `cards 1 and 3 both own a path: "src" and "src/a.rs"; give one other paths, or end one with the word shared`, `cost must be a number of dollars, 0 or more`. `hire` while the gate holds: `make a plan first (the plan tool): the person reads it before a second worker is hired`, `the person is reading your plan; end your turn, their yes starts your next`, `the person answered your plan in words, not with a yes: make a new plan from what they said (the plan tool)`; `whoami`'s `may hire` says the same. See [the plan](../concepts/messages-and-board.md#the-plan).
+The leader's only. Answers `the person reads your plan (3 cards, $1.20) in TO DECIDE; end your turn, their yes starts your next`, or with the gate off `the person turned the plan gate off for this project: hire as you see fit; your plan was not kept`. Refusals: `only the leader plans; it hires for the team`, `cards must be an array of cards`, `a plan has 1 to 20 cards`, `card 2 needs a title and a body`, `card 1's title must be one line of at most 120 characters`, `card 1's body is longer than 4000 characters`, `card 1: tier must be cheap, standard or strong`, `card 2: paths are relative to the repository; "/x" starts with /` (and the other `paths` refusals), `cards 1 and 3 both own a path: "src" and "src/a.rs"; give one other paths, or end one with the word shared`, `cost must be a number of dollars, 0 or more`. `hire` while the gate holds: `make a plan first (the plan tool): the person reads it before a second worker is hired`, `the person is reading your plan; end your turn, their yes starts your next`, `the person answered your plan in words, not with a yes: make a new plan from what they said (the plan tool)`; `whoami`'s `may hire` says the same. See [the plan](../concepts/messages-and-board.md#the-plan).
 
 ### `hire`
 
@@ -192,7 +192,7 @@ A worker's or helper's run is kept with the tree its worktree had before and aft
 | `input` | object | yes |
 | `tool_use_id` | string | no |
 
-Only on a Claude agent's socket, and only under `standard` and `open`: Claude Code calls it itself (`--permission-prompt-tool mcp__imece__approve`) before a tool call its own rules would ask about, and hides it from the model. A routine command (one line, one program and its arguments, allowed by the `run` policy for the role and your `--run` list) is allowed at once, with a trace line `allowed on its own`; anything else is a `⚑` item in WAITING FOR YOU, shown whole, and the call waits up to a day for your `a` or `r`. A refusal answers `The person refused this. Do not try it another way; if you need it, ask them …`. See [approvals and questions](../concepts/approvals-and-questions.md).
+Only on a Claude agent's socket, and only under `standard` and `open`: Claude Code calls it itself (`--permission-prompt-tool mcp__imece__approve`) before a tool call its own rules would ask about, and hides it from the model. A routine command (one line, one program and its arguments, allowed by the `run` policy for the role and your `--run` list) is allowed at once, with a trace line `allowed on its own`; anything else is a `⚑` item in TO DECIDE, shown whole, and the call waits up to a day for your `a` or `r`. A refusal answers `The person refused this. Do not try it another way; if you need it, ask them …`. See [approvals and questions](../concepts/approvals-and-questions.md).
 
 ## What an agent is told
 

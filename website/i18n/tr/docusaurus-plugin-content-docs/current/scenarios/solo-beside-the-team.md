@@ -5,7 +5,7 @@ description: "Takımın yanında kendinizin sürdüğü bir oturum açmak: model
 
 # Takımın yanında bir solo
 
-Bazen sizinle iş arasında bir lider istemezsiniz: tek bir ajan, seçtiğiniz model ve düşünce derinliği, ne yapılacağını siz söylersiniz. **Solo** imece'nin içinde tam budur: worktree'yi, `Δ` incelemesini, bütçeyi ve salonu korur; panoyu ve işe almayı dışarıda bırakır. Bu senaryo çalışan bir takımın yanında bir solo, sonra başka bir modelde ikincisini açar ve ertesi gün ona geri döner.
+Bazen sizinle iş arasında bir lider istemezsiniz: tek bir ajan, seçtiğiniz model ve düşünce derinliği, ne yapılacağını siz söylersiniz. **Solo** imece'nin içinde tam budur: worktree'yi, `Δ` incelemesini, bütçeyi ve ekibi korur; panoyu ve işe almayı dışarıda bırakır. Bu senaryo çalışan bir takımın yanında bir solo, sonra başka bir modelde ikincisini açar ve ertesi gün ona geri döner.
 
 imece her zamanki gibi `~/code/kule` içinde başlatıldı: takım `lead` ve işe aldığı iki işçi.
 
@@ -23,7 +23,7 @@ Sözcükler herhangi bir sırada gelebilir; imece onları biçimlerinden ayırı
  notes solo oturum olarak açıldı (/Users/me/code/kule); solo-notes adına yaz (claude opus@xhigh)
 ```
 
-Salon takımın yanında tek ajanlı yeni bir grup gösterir ve o seçilidir:
+Ekip takımın yanında tek ajanlı yeni bir grup gösterir ve o seçilidir:
 
 ```text
  ▾ kule

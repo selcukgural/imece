@@ -966,7 +966,7 @@ pub fn evidence(lang: Lang, runs: &[Ran]) -> String {
 }
 
 /// Where the repository's check stands on a change, for its row in
-/// WAITING FOR YOU: the mark and whether it is good, bad or neither;
+/// TO DECIDE: the mark and whether it is good, bad or neither;
 /// nothing when there is no check or it could not run (the diff says).
 pub fn check_mark(lang: Lang, check: &Check) -> Option<(&'static str, Option<bool>)> {
     let t = lang.text();
@@ -1155,7 +1155,7 @@ mod tests {
         });
         assert_eq!(
             notice(Lang::En, &w, crate::notify::Note::Item(0)),
-            "imece · claude-1: a worktree setup script waits for your yes"
+            "imece · claude-1 asks to run a worktree setup script"
         );
     }
 
@@ -1182,11 +1182,14 @@ mod tests {
     fn the_title_names_imece_and_counts_what_waits_in_both_languages() {
         assert_eq!(title(Lang::En, 0, Progress::Calm), "⁙ imece");
         assert_eq!(title(Lang::Tr, 0, Progress::Calm), "⁙ imece");
-        assert_eq!(title(Lang::En, 1, Progress::Calm), "⁙ imece · 1 waiting");
-        assert_eq!(title(Lang::En, 12, Progress::Calm), "⁙ imece · 12 waiting");
+        assert_eq!(title(Lang::En, 1, Progress::Calm), "⁙ imece · 1 to decide");
+        assert_eq!(
+            title(Lang::En, 12, Progress::Calm),
+            "⁙ imece · 12 to decide"
+        );
         assert_eq!(
             title(Lang::Tr, 3, Progress::Calm),
-            "⁙ imece · 3 seni bekliyor"
+            "⁙ imece · 3 karar bekliyor"
         );
     }
 
@@ -1230,15 +1233,15 @@ mod tests {
         }
         assert_eq!(
             farewell(Lang::Tr, &w, 0, false),
-            "⁙ imece · 2 seni bekliyor · 1 agent uykuda · devam: imece"
+            "⁙ imece · 2 karar bekliyor · 1 agent uykuda · devam: imece"
         );
         assert_eq!(
             farewell(Lang::En, &w, 8_500, true),
-            "⁙ imece · 2 waiting for you · $0.85 spent this run · the demo keeps nothing"
+            "⁙ imece · 2 to decide · $0.85 spent this run · the demo keeps nothing"
         );
         assert_eq!(
             farewell(Lang::Tr, &w, 0, true),
-            "⁙ imece · 2 seni bekliyor · demo hiçbir şey saklamaz"
+            "⁙ imece · 2 karar bekliyor · demo hiçbir şey saklamaz"
         );
     }
 
@@ -1719,11 +1722,11 @@ mod tests {
         // Never as markdown: what runs is what the person reads.
         assert_eq!(
             inbox(Lang::En, &w, &item),
-            format!("{who} waits for your yes: Bash: rm *.txt **x** ↵ cat <<EOF")
+            format!("{who} asks to run Bash: rm *.txt **x** ↵ cat <<EOF")
         );
         assert_eq!(
             inbox(Lang::Tr, &w, &item),
-            format!("{who} onayını bekliyor: Bash: rm *.txt **x** ↵ cat <<EOF")
+            format!("{who} çalıştırmak istiyor: Bash: rm *.txt **x** ↵ cat <<EOF")
         );
         let yes = Event::Decided {
             agent: 1,
@@ -1936,7 +1939,7 @@ mod tests {
                 removed: 1,
                 spend: Some(s(8_400, 144, 1)),
             }),
-            "claude-1 finished: 2 files, +3 −1 · $0.84 · 12 min → waits for you"
+            "claude-1 finished: change ready · 2 files +3 −1 · $0.84 · 12 min"
         );
         assert_eq!(
             say(Event::ChangeReady {
@@ -1946,7 +1949,7 @@ mod tests {
                 removed: 1,
                 spend: None,
             }),
-            "claude-1 finished: 2 files, +3 −1 → waits for you"
+            "claude-1 finished: change ready · 2 files +3 −1"
         );
         assert_eq!(
             say(Event::ChangeCost {

@@ -1,11 +1,11 @@
 ---
 title: Projeler
-description: Tek imece'de birkaç checkout - :open, :close, :rename, proje başına bir lider, salonda katlanan gruplar, :pin ve bir işçinin worktree'sine kopyalanan yok sayılan yolların proje başına :copy listesi.
+description: Tek imece'de birkaç checkout - :open, :close, :rename, proje başına bir lider, ekipte katlanan gruplar, :pin ve bir işçinin worktree'sine kopyalanan yok sayılan yolların proje başına :copy listesi.
 ---
 
 # Projeler
 
-Bir proje, kendi lideri ve işçileri olan bir git checkout'udur. imece, içinde çalıştığı checkout'la ilk proje olarak başlar (lider `lead`); daha fazlasını ekrandan açarsınız ve her biri salonda bir gruptur. Tek bütçe ve tek bus hepsine hizmet eder.
+Bir proje, kendi lideri ve işçileri olan bir git checkout'udur. imece, içinde çalıştığı checkout'la ilk proje olarak başlar (lider `lead`); daha fazlasını ekrandan açarsınız ve her biri ekipte bir gruptur. Tek bütçe ve tek bus hepsine hizmet eder.
 
 ## Açmak, kapatmak, yeniden adlandırmak
 
@@ -28,10 +28,10 @@ Bir proje, kendi lideri ve işçileri olan bir git checkout'udur. imece, içinde
 
 Bir solonun modeli ve çabası solo başına sizin seçiminizdir.
 
-## Salonda gruplar
+## Ekipte gruplar
 
 ```text
- SALON
+ EKİP
  ▴ api        ! 1 bekliyor
    ● lead-api        koordine ediyor
    ● claude-1        #4 auth: refresh      +12 −3
@@ -43,13 +43,13 @@ Bir solonun modeli ve çabası solo başına sizin seçiminizdir.
 
 - Her proje kendi lideri olan bir gruptur. `h` `l` (ya da `←` `→`, başlıkta `enter`) bir grubu katlar ve açar; `za` değiştirir, `zM` her işçiyi katlar, `zR` hepsini açar (`:fold`, `:unfold`).
 - Katlanmış bir proje tek satırdır ve o satır yine sizi bekleyeni (`! 1 bekliyor`) ya da ne yaptığını (`2 çalışıyor`) gösterir.
-- Salon kısa kalınca sakin işçiler alttan yukarı `… N agent yolunda` içine katlanır; sizi bekleyen işçiler en son, sabitlenmiş bir proje hepsinden sonra katlanır.
+- Ekip kısa kalınca sakin işçiler alttan yukarı `… N agent yolunda` içine katlanır; sizi bekleyen işçiler en son, sabitlenmiş bir proje hepsinden sonra katlanır.
 - Birkaç proje açıkken günlük ve gelen kutusu satırları ajanın adının önünde projenin adını taşır.
 - Komut satırındaki düz metin **seçili** projenin liderine gider. Seçim, `/`'nin kime yazdığına karar verir.
 
 ## `:pin [AD]`
 
-`:pin` adı verilen projeyi, yoksa eldekini salonun en üstüne sabitler; `:pin` yine sabitlemeyi kaldırır. Sabitlenmiş projeler önce, sonra kalanı gelir; her grup açılış sırasıyla. Sabitlenmiş bir projenin başlığı `▴` taşır. Sabitleme sizindir ve çalıştırmayı aşar (depoda saklanır). `:` menüsü `:pin`'in hangi projeye etki edeceğini gösterir, zaten sabitse `▴` ile.
+`:pin` adı verilen projeyi, yoksa eldekini ekibin en üstüne sabitler; `:pin` yine sabitlemeyi kaldırır. Sabitlenmiş projeler önce, sonra kalanı gelir; her grup açılış sırasıyla. Sabitlenmiş bir projenin başlığı `▴` taşır. Sabitleme sizindir ve çalıştırmayı aşar (depoda saklanır). `:` menüsü `:pin`'in hangi projeye etki edeceğini gösterir, zaten sabitse `▴` ile.
 
 Proje başına bir renk yapılmadı: temalar renkleri role göre adlandırır ve konuşmacı renklerini farklı sıralar; adıyla seçilen bir renk önce her temada adlandırılmış bir palet gerektirirdi.
 
@@ -94,7 +94,7 @@ npm run db:migrate
 ```
 
 - **Ne zaman:** bir işçinin ya da bir solonun az önce yapılan worktree'sinde (bir yardımcı işçisininkinde, bir lider checkout'unuzda çalışır; zaten orada olan bir worktree yeniden kurulmaz). Git yoksa worktree yoktur, dolayısıyla betik de yoktur.
-- **Evetiniz:** evet demediğiniz bir betiği bulan ilk yeni worktree SENİ BEKLEYEN'e bir soru koyar (`▶ claude-1: worktree kurulum betiği .imece/worktree-setup.sh yeni worktree'sinde çalışsın mı? enter gösterir`); işçi beklemez, betiksiz başlar. `enter` betiği imece'nin okuduğu ve hash'lediği haliyle, her satırı numaralı, neyin nasıl çalışacağıyla açar (`KURULUM BETİĞİ · claude-1 · sha256 1a2b…`); `j` `k`, `ctrl-d` `ctrl-u`, `g` `G` gezinir, `a` evet, `r` hayır der, `esc` kapatır. `a` ve `r` seçili soruda da çalışır. Bir evet betiği onsuz kalan worktree'lerde hemen, sonra her yenisinde oturumdan önce çalıştırır; bir hayır bu çalıştırma boyunca geçerlidir (sonraki bir başlangıç yine sorar). Soru beklerken başlayan işçiler aynı soruya sayılır.
+- **Evetiniz:** evet demediğiniz bir betiği bulan ilk yeni worktree KARAR BEKLEYEN'e bir soru koyar (`▶ claude-1: worktree kurulum betiği .imece/worktree-setup.sh yeni worktree'sinde çalışsın mı? enter gösterir`); işçi beklemez, betiksiz başlar. `enter` betiği imece'nin okuduğu ve hash'lediği haliyle, her satırı numaralı, neyin nasıl çalışacağıyla açar (`KURULUM BETİĞİ · claude-1 · sha256 1a2b…`); `j` `k`, `ctrl-d` `ctrl-u`, `g` `G` gezinir, `a` evet, `r` hayır der, `esc` kapatır. `a` ve `r` seçili soruda da çalışır. Bir evet betiği onsuz kalan worktree'lerde hemen, sonra her yenisinde oturumdan önce çalıştırır; bir hayır bu çalıştırma boyunca geçerlidir (sonraki bir başlangıç yine sorar). Soru beklerken başlayan işçiler aynı soruya sayılır.
 - **Evetin neye bağlı olduğu:** baytların SHA-256'sı, dosyanın gerçek yolu (bağlar çözülmüş) ve nasıl çalıştığı (`/bin/sh`); deposunda değil, imece'nin deposunda saklanır. Değişen bir bayt yeni bir betiktir ve yeniden sorulur. Çalışan, okuduğunuz baytların imece'nin durum dizinine yazılmış özel bir kopyasıdır (`0700`, kopya `0600`), dosyanın kendisi asla; böylece evetinizle çalışma arasında hiçbir şey onu değiştiremez.
 - **Nasıl çalışır:** o kopya üzerinde `/bin/sh`, yeni worktree'de, imece'nin temizlenmiş ortamı ve `IMECE_REPO` (checkout'unuz) ile `IMECE_WORKTREE` (worktree) ile, kendi süreç grubunda, en çok 60 saniye (sonra grup öldürülür). Betik en çok 64 KiB.
 - **Ne görürsünüz:** günlük nasıl bittiğini ve son satırını söyler (`claude-1: worktree kurulumu çalıştı, exit 0, 4.2 s · migrations: 7 applied`, ya da `başarısız`); okunamayan ya da başlatılamayan bir betik nedenini söyler (`worktree kurulumu çalışmadı: …`). İşçi her durumda başlar.
@@ -146,7 +146,7 @@ Nedenler: hiçbir daemon yanıt vermiyor, soketteki senin daemon'ın değil, ba�
 
 Yanıt verene dek proje kapalıdır: kimse işe alınmaz, `:fork` reddedilir, hiçbir Δ uygulanmaz, reddedilmez, geri gönderilmez. Ajanlar çalışmayı sürdürür, Δ'leri bekler. Hiçbir depoda olmayan bir proje sokete hiç dokunmaz. Bkz. [`:lonca`](../reference/commands.md#lonca-nameoffloginimport).
 
-Lonca'daki bir projede işe alınan işçi, worktree'de değil deponun bir **workspace**'inde çalışır: aynı yolda aynı dosyalar, kendine ait ve hiçbir yere ulaşmayan bir `.git` ile (depoya giden yalnız öneridir); Claude Code'unda imece'nin veri yolunun yanında `lonca hook` ve `lonca mcp` bulunur. Odak ekranı `· lonca AD için workspace` der. `lonca` programı `PATH`'inde olmalıdır. Zaten worktree'si olan işçi orada kalır. İşçi düzenlediğini kiralar, değişikliğini önerir, turu bitince de önerisi SENİ BEKLEYEN'de onun Δ'sı olur: `a` onaylar, `r` gerekçesini söyleyerek reddeder (bkz. [değişiklikler](changes.md#loncada)). Projenin satırı bekleyen her şeyi sayar (`2 pending`), başkalarının önerilerini de. Bir oturum 8 saat sürer; oturumundan yarım saatten az kalmış bir işçiye yazıldığında aynı workspace'te yeni bir oturumla, konuşması, dosyaları ve önerisiyle sürer, yeniden kiralar. Yardımcısı çalışan işçi yardımcının bitmesini bekler, uyuyan takıma da hiçbir şey olmaz. Ayrılan işçi oturumunu kapatır; önerileri kalır, workspace'i de `:tidy` için kalır. Lonca'daki işçi trunk'tan başlar, bu yüzden `hire`'ın `from`'u reddedilir, `:fork` da onu reddeder. Secure Enclave anahtarıyla her yeni oturum parmağını ister: `session start` imzalıdır.
+Lonca'daki bir projede işe alınan işçi, worktree'de değil deponun bir **workspace**'inde çalışır: aynı yolda aynı dosyalar, kendine ait ve hiçbir yere ulaşmayan bir `.git` ile (depoya giden yalnız öneridir); Claude Code'unda imece'nin veri yolunun yanında `lonca hook` ve `lonca mcp` bulunur. Odak ekranı `· lonca AD için workspace` der. `lonca` programı `PATH`'inde olmalıdır. Zaten worktree'si olan işçi orada kalır. İşçi düzenlediğini kiralar, değişikliğini önerir, turu bitince de önerisi KARAR BEKLEYEN'de onun Δ'sı olur: `a` onaylar, `r` gerekçesini söyleyerek reddeder (bkz. [değişiklikler](changes.md#loncada)). Projenin satırı bekleyen her şeyi sayar (`2 pending`), başkalarının önerilerini de. Bir oturum 8 saat sürer; oturumundan yarım saatten az kalmış bir işçiye yazıldığında aynı workspace'te yeni bir oturumla, konuşması, dosyaları ve önerisiyle sürer, yeniden kiralar. Yardımcısı çalışan işçi yardımcının bitmesini bekler, uyuyan takıma da hiçbir şey olmaz. Ayrılan işçi oturumunu kapatır; önerileri kalır, workspace'i de `:tidy` için kalır. Lonca'daki işçi trunk'tan başlar, bu yüzden `hire`'ın `from`'u reddedilir, `:fork` da onu reddeder. Secure Enclave anahtarıyla her yeni oturum parmağını ister: `session start` imzalıdır.
 
 Lonca'nın işbirlikçi kipinde hiçbir oturum gözlenmiş sayılmaz, bu yüzden her öneri seni bekler. Kritik bir yoldaki değişikliği (`Cargo.toml`, kilit dosyaları, `package.json`, `.github/**`, `build.rs`) Lonca'nın varsayılanı reddeder, ama `:lonca import` ile oluşturulan depoda o da diğerleri gibi seni bekler, Δ'da gerekçesi `critical_path:Cargo.toml` olur. Web'i ya da ağa çıkan bir komutu kullanmış işçi orada reddedilmeye devam eder, çünkü okuduğu şey ona ne yazacağını söylemiş olabilir: takıldığını söyler, o değişikliği sen yaparsın. Lonca'nın varsayılan politikasındaki bir depoda da öyle. `lonca.toml`'daki `unobserved_is_tainted = false` önerileri kimse bakmadan birleştirirdi, bu yüzden imece öyle ayarlanmış bir depoyu, yanıt vermeyen depo gibi kapatır: `⌀ lonca yok` ve nedeni.
 
@@ -158,7 +158,7 @@ Lonca'nın işbirlikçi kipinde hiçbir oturum gözlenmiş sayılmaz, bu yüzden
 
 ## Ayrıca bakınız
 
-- [Salon](../screen/salon.md): katlama, dikkat sırası, `f`.
+- [Ekip](../screen/salon.md): katlama, dikkat sırası, `f`.
 - [Birçok proje](../scenarios/many-projects.md): işlenmiş bir örnek.
 - [Oturumlar](../concepts/sessions.md): deponun proje başına tuttuğu.
 - [Komutlar](../reference/commands.md).

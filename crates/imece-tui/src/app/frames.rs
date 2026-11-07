@@ -280,7 +280,7 @@ impl App {
 
     /// What changed since the last step that lights a row for a moment:
     /// an agent that came to wait for the person, or a new item in
-    /// WAITING FOR YOU, blinks; one whose turn is done, or whose session
+    /// TO DECIDE, blinks; one whose turn is done, or whose session
     /// started, settles. Only what happens while motion moves lights.
     pub(super) fn watch_glows(&mut self, now: Instant) {
         let rungs = self.rungs();

@@ -387,7 +387,7 @@ mod tests {
         let rows = render(&app, 160, 50);
         let mut cells = 0;
         // The legend's glyphs are not cells.
-        for row in rows.iter().filter(|r| !r.contains(" leases ·")) {
+        for row in rows.iter().filter(|r| !r.contains(" being edited ·")) {
             let starts = cell_starts(row);
             for (i, &at) in starts.iter().enumerate() {
                 assert_eq!(at, first + i * widths.cell(), "{row:?}");
@@ -397,7 +397,7 @@ mod tests {
         assert!(cells > 3, "the demo has leases to show after 300 ticks");
         let shared: Vec<&String> = rows
             .iter()
-            .filter(|r| r.contains('⇆') && !r.contains(" leases ·"))
+            .filter(|r| r.contains('⇆') && !r.contains(" being edited ·"))
             .collect();
         assert!(!shared.is_empty(), "the demo has files held by several");
         for row in &shared {
@@ -411,7 +411,7 @@ mod tests {
             );
             assert!(!row.contains("agents in one file"), "{row:?}");
         }
-        let legend = rows.iter().find(|r| r.contains(" leases ·")).unwrap();
+        let legend = rows.iter().find(|r| r.contains(" being edited ·")).unwrap();
         assert!(
             legend.contains(&format!("· {} files with several", shared.len())),
             "{legend:?}"
@@ -465,7 +465,7 @@ mod tests {
         assert!(rows.contains("src/"), "{rows}");
         // Two holders in one file are said, one holder twice is not.
         assert!(rows.contains("⇆ 2"), "{rows}");
-        assert!(rows.contains("4 leases · 1 "), "{rows}");
+        assert!(rows.contains("4 being edited · 1 "), "{rows}");
         // A file nobody holds on Lonca is no row.
         assert!(!rows.contains("Cargo.toml"), "{rows}");
     }
@@ -473,7 +473,10 @@ mod tests {
     #[test]
     fn a_project_on_lonca_with_nothing_held_says_so() {
         let rows = render(&on_lonca(vec![]), 160, 50).join("\n");
-        assert!(rows.contains("nobody holds a lease in shop now"), "{rows}");
+        assert!(
+            rows.contains("nobody is editing anything in shop now"),
+            "{rows}"
+        );
         // Off Lonca, the same empty map is as it was.
         let mut app = on_lonca(vec![]);
         let p = app.current_project();
@@ -502,14 +505,14 @@ mod tests {
         let t = app.lang.text();
         let on_map: std::collections::BTreeSet<char> = rows
             .iter()
-            .filter(|r| !r.contains(" leases ·"))
+            .filter(|r| !r.contains(" being edited ·"))
             .flat_map(|r| {
                 let chars: Vec<char> = r.chars().collect();
                 cell_starts(r).into_iter().map(move |i| chars[i])
             })
             .collect();
         assert!(on_map.len() >= 2, "{on_map:?}");
-        let legend = rows.iter().find(|r| r.contains(" leases ·")).unwrap();
+        let legend = rows.iter().find(|r| r.contains(" being edited ·")).unwrap();
         for (k, g) in GLYPHS.iter().enumerate() {
             let entry = format!("{g} {}", t.code_glyphs[k]);
             assert_eq!(
@@ -527,8 +530,8 @@ mod tests {
             c.symbols.clear();
         }
         let rows = render(&app, 160, 50);
-        let legend = rows.iter().find(|r| r.contains(" leases ·")).unwrap();
-        assert!(legend.contains("0 leases · 0 files"), "{legend:?}");
+        let legend = rows.iter().find(|r| r.contains(" being edited ·")).unwrap();
+        assert!(legend.contains("0 being edited · 0 files"), "{legend:?}");
         assert!(!legend.contains('⇆'), "{legend:?}");
         for g in GLYPHS {
             assert!(!legend.contains(g), "{legend:?} explains {g}");
