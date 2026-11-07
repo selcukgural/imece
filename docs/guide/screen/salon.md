@@ -10,7 +10,7 @@ The salon is the screen imece opens on and the one you come back to with `1` or 
 ```text
  imece   ! 2 waiting for you  │ ● 2 working  ✓ 1 done │ 10 min: 1 cards done · 1 Δ · 6 messages │ 3/9 cards │ spent $3.10 of $20.00 ($1.80/h, ~9 h left) │ claude 5h: 48% left, resets in 1 h 59 min  14:02
 ┌ SALON ──────────────────────────────────────────┐┌ WAITING FOR YOU (2) ───────────────────┐
-│▾ ▴ shop-api  ▓▓▓░░░░░ 3/8  2 working  $2.40  ! 2││Δ 13:58 claude-1 finished: parser (3 files, +41 −6) · ✓ ran clean on this tree: cargo test
+│▾ ▴ shop-api  ▓▓▓░░░░░ 3/8  ! 2 waiting  2 working││Δ 13:58 claude-1 finished: parser (3 files, +41 −6) · ✓ ran clean on this tree: cargo test
 │  ◆ ▎lead      coordinating                       ││⚑ 14:01 claude-5 waits for your yes: Bash: npm install left-pad
 │  ├ ● ▎claude-1 #3   Parse the manifest  writing tests · 2 min  $1.10  ⎇ fix-parser ↑2 +12
 │  │ └ ● ▎claude-1.1                      thinking… ← claude-1 "add the tests"   ⎇          │
@@ -21,12 +21,12 @@ The salon is the screen imece opens on and the one you come back to with `1` or 
 │                                                  ││13:55 ⇄ lead → claude-1 [assign] #3 Parse the manifest
 │QUEUE  empty  │ latest: #2 ✓ #1 ✓                 ││13:40 › you: fix the parser crash on empty files
 └──────────────────────────────────────────────────┘└────────────────────────────────────────┘
-  / write to the lead  @ to an agent  # card  tab panel  ← → fold  enter focus  ? help   1 salon  2 board  3 code
+  W next for you  / write to the lead  @ to an agent  # card  tab panel  enter focus  ? help   1 salon  2 board  3 code
 ```
 
 ## The header
 
-One line, parts separated by `│`, the most wanted first. When the screen is narrower than the line, the least wanted part goes first, so its edge never cuts off what waits for you: the researchers and the usage windows (one nearly full stays), then the pot's rate, the clock, the pot, the cards, the last ten minutes and the fleet. What waits for you, the pause and a pot running low always stay.
+One line, parts separated by `│`, the most wanted first. When the screen is narrower than the line, the least wanted part goes first, so its edge never cuts off what waits for you: the researchers and the usage windows (one nearly full stays), then the pot's rate, the clock, the cards, the last ten minutes, the pot and the fleet. What waits for you, the pause and a pot running low always stay.
 
 | Part | What it says |
 | --- | --- |
@@ -47,7 +47,7 @@ Agents are grouped by project. Each project is a header row, then its leader, th
 
 While no project has a worker yet (a team that has only its leader, a solo), imece's mark and its words stand in the middle of the free rows: `imece v…`, `one terminal, many agents, one leader`, the project at hand and who heads it. Its dots come one a beat as it appears (see [first run](../getting-started/first-run.md#the-welcome-window)); the first worker's row takes its place, and `f` leaves it out.
 
-A project header: `▾ shop-api  ▓▓▓░░░░░ 3/8  2 working  $2.40  ✕1  ■1   ! 2 waiting`. `▾` is open, `▸` folded. After the name: how far its cards are (eight cells, the done share filled down to the cell, then done of all; none before its leader posts a card), how many workers and helpers are not idle, what the project's agents have cost, `✕N` blocked and `■N` stopped agents when there are any, and, in the attention colour, how many items of this project wait for you. A folded project is one line, that line still shows what waits (quiet, not deaf) and ends with its loudest member, `▸ shop-api  2 working  $2.40   ! 1 waiting  ! claude-5`: the agent highest on the state ladder below, the first in order among equals. A pinned project (`:pin`) wears `▴` before its name and keeps the top of the salon; the pin is saved between runs.
+A project header: `▾ shop-api  ▓▓▓░░░░░ 3/8  ! 2 waiting  ✕1  ■1  2 working  $2.40`. `▾` is open, `▸` folded. After the name: how far its cards are (eight cells, the done share filled down to the cell, then done of all; none before its leader posts a card), in the attention colour how many items of this project wait for you, `✕N` blocked and `■N` stopped agents when there are any, how many workers and helpers are not idle, what the project's agents have cost, then how its Lonca repository stands. What wants you comes first, so a row too long for its pane loses the rest. A folded project is one line, that line still shows what waits (quiet, not deaf) and ends with its loudest member, `▸ shop-api  ! 1 waiting  2 working  $2.40  ! claude-5`: the agent highest on the state ladder below, the first in order among equals. A pinned project (`:pin`) wears `▴` before its name and keeps the top of the salon; the pin is saved between runs.
 
 An agent's row:
 

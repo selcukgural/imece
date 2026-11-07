@@ -24,7 +24,7 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App, c: CardId) {
 
     let mut head = vec![Line::from(vec![
         Span::styled(format!("{} · ", w.projects[card.project].name), dim()),
-        Span::styled(t.columns[column_index(card.column)], bold(pal().info)),
+        Span::styled(t.columns[board_column(&app.world, card)], bold(pal().info)),
         Span::styled(fill(t.minutes, &[&minutes(w, card).to_string()]), dim()),
     ])];
     if !card.symbols.is_empty() {
@@ -77,13 +77,27 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App, c: CardId) {
     tail(f, body, story);
 }
 
+/// The board's column of a finished card whose change waits for the
+/// person: its agent is through, the work is not in yet.
+pub(crate) const TO_REVIEW: usize = 2;
+
 /// Where `column` stands in the board's column titles.
 pub(crate) fn column_index(column: Column) -> usize {
     match column {
         Column::Waiting => 0,
         Column::Working => 1,
-        Column::Verifying => 2,
-        Column::Done => 3,
+        Column::Verifying => TO_REVIEW + 1,
+        Column::Done => TO_REVIEW + 2,
+    }
+}
+
+/// Which of the board's columns `card` stands in.
+pub(crate) fn board_column(w: &World, card: &Card) -> usize {
+    let waits = |i: &InboxItem| i.kind == InboxKind::Change && i.card == Some(card.id);
+    if card.column == Column::Done && w.inbox.iter().any(|i| i.open && waits(i)) {
+        TO_REVIEW
+    } else {
+        column_index(card.column)
     }
 }
 
@@ -120,9 +134,40 @@ mod tests {
             Column::Verifying,
             Column::Done,
         ];
-        assert_eq!(columns.map(column_index), [0, 1, 2, 3]);
+        assert_eq!(columns.map(column_index), [0, 1, 3, 4]);
         let parts = [Part::Posted, Part::Owner, Part::Helper, Part::Talked];
         assert_eq!(parts.map(part_index), [0, 1, 2, 3]);
+    }
+
+    #[test]
+    fn a_finished_card_is_to_review_while_its_change_waits() {
+        let (mut w, _) = crate::sim::world(1, 1, 0, 1, crate::i18n::Lang::En);
+        let mut card = w.cards[0].clone();
+        card.column = Column::Done;
+        let done = column_index(Column::Done);
+        assert_eq!(board_column(&w, &card), done);
+        let change = |kind, card_id, open| InboxItem {
+            kind,
+            agent: 0,
+            detail: String::new(),
+            researcher: None,
+            open,
+            tick: 0,
+            card: card_id,
+        };
+        // Another kind, another card, a closed item: nothing to review.
+        w.inbox = vec![
+            change(InboxKind::Question, Some(card.id), true),
+            change(InboxKind::Change, Some(card.id + 1), true),
+            change(InboxKind::Change, Some(card.id), false),
+            change(InboxKind::Change, None, true),
+        ];
+        assert_eq!(board_column(&w, &card), done);
+        w.inbox.push(change(InboxKind::Change, Some(card.id), true));
+        assert_eq!(board_column(&w, &card), TO_REVIEW);
+        // Not finished: where it is, whatever waits.
+        card.column = Column::Working;
+        assert_eq!(board_column(&w, &card), column_index(Column::Working));
     }
 
     #[test]

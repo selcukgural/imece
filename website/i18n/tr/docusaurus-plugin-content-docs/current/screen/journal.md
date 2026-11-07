@@ -26,7 +26,7 @@ Alt yan panel varsayılan olarak günlüğü satır satır göstermez, hikâyeyi
 
 ```text
 ┌ HİKÂYE · J defter ─────────────────────────────────────────┐
-│! 3 agent'ı sen bekletiyorsun: claude-2, claude-3, claude-1 (claude-2 üzerinden)
+│! seni bekleyen (3): claude-2, claude-3, claude-1 (claude-2 üzerinden)
 │#1 Payment retry policy · claude-2 ≡ 4/5                    │
 │  14:00 ⇄ lead-shop-api → claude-2 [assign]: #1 Payment re… │
 │  14:01 ⇄ claude-4 → claude-2 [ask]: Zone codes an enum?    │

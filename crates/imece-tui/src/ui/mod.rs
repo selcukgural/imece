@@ -1163,6 +1163,32 @@ pub(crate) fn hint_spans(hints: &[(&str, &str)]) -> Vec<Span<'static>> {
     spans
 }
 
+/// How many cells `spans` take.
+fn spans_width(spans: &[Span]) -> usize {
+    spans.iter().map(Span::width).sum()
+}
+
+/// The footer's keys and the views' names in `room` cells: the views go
+/// first, then the keys from the end, but for the way back and the help,
+/// so a narrow footer loses what is least wanted, not `esc` or `?`.
+fn fit_hints<'a>(
+    mut hints: Vec<(&'a str, &'a str)>,
+    views: Vec<Span<'static>>,
+    room: usize,
+) -> (Vec<(&'a str, &'a str)>, Vec<Span<'static>>) {
+    let width = |h: &[(&str, &str)]| spans_width(&hint_spans(h));
+    if width(&hints) + spans_width(&views) <= room {
+        return (hints, views);
+    }
+    while width(&hints) > room {
+        let Some(last) = hints.iter().rposition(|k| !matches!(k.0, "esc" | "?")) else {
+            break;
+        };
+        hints.remove(last);
+    }
+    (hints, Vec::new())
+}
+
 /// A span that only leads a line: indent, a list marker (`• `, `3. `), a
 /// code rule, a quote bar.
 pub(crate) fn is_lead(s: &Span) -> bool {
@@ -1400,6 +1426,9 @@ fn doing_status(lang: Lang, w: &World, a: &Agent) -> Vec<Span<'static>> {
         {
             vec![Span::styled(t.coordinating, dim())]
         }
+        Status::Idle if w.open_item(a.id, InboxKind::Change).is_some() => {
+            vec![Span::styled(t.story_change, fg(pal().warn))]
+        }
         Status::Idle => vec![Span::styled(t.idle, dim())],
         Status::Working if let Some(it) = w.open_item(a.id, InboxKind::Approval) => {
             let mut spans = vec![Span::styled(format!("⚑ {}", t.waiting_yes), fg(pal().warn))];
@@ -1634,7 +1663,7 @@ pub(crate) fn header_parts(app: &App) -> Vec<HeadPart> {
             KEEP,
         ));
     } else {
-        parts.push(part(vec![Span::raw(spent)], 4));
+        parts.push(part(vec![Span::raw(spent)], 7));
         parts.push(glued(vec![Span::styled(format!(" ({rate})"), dim())], 2));
     }
     // The window nearest to full, kept when little is left.
@@ -1988,7 +2017,6 @@ fn command_hint(app: &App) -> Option<&'static str> {
 /// moment. While writing, where the cursor goes.
 fn footer(f: &mut Frame, area: Rect, app: &App) -> Option<Position> {
     let t = app.lang.text();
-    let key = key_style;
     if app.typing {
         let (lines, (row, column)) =
             writing(app, usize::from(area.height), usize::from(area.width));
@@ -2036,6 +2064,8 @@ fn footer(f: &mut Frame, area: Rect, app: &App) -> Option<Position> {
             ],
             _ if app.script.is_some() => t.setup_hints.to_vec(),
             _ if app.plan_window.is_some() => t.plan_hints.to_vec(),
+            // The conversation has its keys on its own last row.
+            _ if app.thread.is_some() => vec![("esc", t.back), ("?", t.help)],
             _ if app.peek.is_some() => vec![
                 ("j k", t.peek_next),
                 ("enter", t.focus),
@@ -2058,15 +2088,20 @@ fn footer(f: &mut Frame, area: Rect, app: &App) -> Option<Position> {
                 ("@", t.to_agent),
                 ("?", t.help),
             ],
-            Zoom::None => vec![
-                ("/", t.write_lead),
-                ("@", t.to_agent),
-                ("#", t.find_card),
-                ("tab", t.panel),
-                ("← →", t.fold),
-                ("enter", t.focus),
-                ("?", t.help),
-            ],
+            Zoom::None => {
+                let mut keys = vec![
+                    ("/", t.write_lead),
+                    ("@", t.to_agent),
+                    ("#", t.find_card),
+                    ("tab", t.panel),
+                    ("enter", t.focus),
+                    ("?", t.help),
+                ];
+                if !app.world.open_inbox().is_empty() {
+                    keys.insert(0, ("W", t.next_waiting));
+                }
+                keys
+            }
             Zoom::Focus(_) => vec![
                 ("j k", t.entry_step),
                 ("h l", t.cut_whole),
@@ -2090,18 +2125,18 @@ fn footer(f: &mut Frame, area: Rect, app: &App) -> Option<Position> {
             }
             Zoom::Diff(id) => {
                 let mut keys = vec![
-                    ("j k  w", t.scroll_wrap),
-                    ("[ ]", t.file),
                     ("a x", t.apply_part),
                     ("r", t.reject),
-                    (">", t.quote),
                     ("c n", t.notes),
+                    ("[ ]", t.file),
+                    ("j k  w", t.scroll_wrap),
+                    (">", t.quote),
                     ("v", t.copy_lines),
                     ("esc", t.back),
                     ("?", t.help),
                 ];
                 if app.world.clashes_of(id).is_some() {
-                    keys.insert(4, ("b", t.send_back));
+                    keys.insert(2, ("b", t.send_back));
                 }
                 keys
             }
@@ -2118,6 +2153,10 @@ fn footer(f: &mut Frame, area: Rect, app: &App) -> Option<Position> {
             }
             _ => hints,
         };
+        let mut hints = hints;
+        if app.zoom == Zoom::None && app.thread.is_none() && app.demo() {
+            hints.insert(hints.len() - 1, ("space", t.pause));
+        }
         let mut spans = vec![Span::raw(" ")];
         // The first key of a chord, imece's own or the key file's while it
         // waits for its second, as vim shows it; first, so a long footer
@@ -2128,11 +2167,7 @@ fn footer(f: &mut Frame, area: Rect, app: &App) -> Option<Position> {
         if let Some(c) = held {
             spans.push(Span::styled(format!("{c}…   "), bold(pal().warn)));
         }
-        spans.extend(hint_spans(&hints));
-        if app.zoom == Zoom::None && app.demo() {
-            spans.push(Span::styled(" space ", key()));
-            spans.push(Span::raw(format!(" {}  ", t.pause)));
-        }
+        let mut views = Vec::new();
         for (i, view) in [View::Salon, View::Board, View::Code, View::Timeline]
             .into_iter()
             .enumerate()
@@ -2142,8 +2177,12 @@ fn footer(f: &mut Frame, area: Rect, app: &App) -> Option<Position> {
             } else {
                 dim()
             };
-            spans.push(Span::styled(format!(" {} {}", i + 1, t.views[i]), style));
+            views.push(Span::styled(format!(" {} {}", i + 1, t.views[i]), style));
         }
+        let room = usize::from(area.width).saturating_sub(spans_width(&spans));
+        let (hints, views) = fit_hints(hints, views, room);
+        spans.extend(hint_spans(&hints));
+        spans.extend(views);
         Line::from(spans)
     };
     f.render_widget(Paragraph::new(line), area);
@@ -2477,7 +2516,7 @@ mod tests {
         assert!(!card.paths.is_empty());
         for want in [
             &format!(" #1 {} ", card.title),
-            "shop-api · DONE · ",
+            "shop-api · TO REVIEW · ",
             " min",
             "lease  ",
             &owns,
@@ -4186,7 +4225,7 @@ mod tests {
         app.world.agents[w[1]].status = Status::Idle;
         app.world.agents[w[3]].status = Status::Working;
         let width = 160;
-        // In progress: the second column, its border at 40, its rows from
+        // In progress: the second of five columns, its border at 32, its rows from
         // the header's and its own border's below (y 2); the glyph after
         // four cells, two wide.
         app.frame_after(ms(600));
@@ -4194,33 +4233,26 @@ mod tests {
         let known = app.breathing.borrow().clone().unwrap();
         assert_eq!(
             known,
-            [
-                Glyph {
-                    x: 45,
-                    y: 3,
-                    width: 2
-                },
-                Glyph {
-                    x: 125,
-                    y: 3,
-                    width: 2
-                },
-            ],
-            "the working owners in progress and done, not the idle one nor a waiting card's"
+            [Glyph {
+                x: 37,
+                y: 3,
+                width: 2
+            }],
+            "the working owner in progress, not the idle one, a waiting card's or a done card's"
         );
-        assert_eq!(first[(45, 3)].symbol(), "●");
+        assert_eq!(first[(37, 3)].symbol(), "●");
         assert!(
-            first[(45, 3)].modifier.contains(Modifier::DIM),
+            first[(37, 3)].modifier.contains(Modifier::DIM),
             "the second tone"
         );
-        assert_eq!(first[(45, 5)].symbol(), "○", "the idle owner");
+        assert_eq!(first[(37, 5)].symbol(), "○", "the idle owner");
         // A waiting card shows no owner and takes one row: the next
         // card's title right under it.
         assert_eq!(first[(1, 2)].symbol(), "#");
         assert_eq!(first[(2, 2)].symbol(), "3");
         assert_eq!(first[(1, 3)].symbol(), "#");
         assert_eq!(first[(2, 3)].symbol(), "6");
-        assert!(!first[(45, 5)].modifier.contains(Modifier::DIM));
+        assert!(!first[(37, 5)].modifier.contains(Modifier::DIM));
         app.drawn(app.after(ms(600)));
         assert!(app.patch_due(app.after(ms(1200))));
         app.frame_after(ms(1200));
@@ -4228,7 +4260,7 @@ mod tests {
         let want = whole(&app, width);
         assert_eq!(got, want);
         assert!(
-            !want.0[(45, 3)].modifier.contains(Modifier::DIM),
+            !want.0[(37, 3)].modifier.contains(Modifier::DIM),
             "the first tone"
         );
         // A card past the column's foot is not on the screen.
@@ -4237,12 +4269,8 @@ mod tests {
         t.draw(|f| draw(f, &app)).unwrap();
         assert_eq!(
             *app.breathing.borrow(),
-            Some(vec![Glyph {
-                x: 125,
-                y: 3,
-                width: 2
-            }]),
-            "row 5 of the column is past a 6-row screen's body"
+            Some(Vec::new()),
+            "row 4 of the column is past a 6-row screen's body"
         );
     }
 
@@ -5248,7 +5276,7 @@ mod tests {
         waiting(&mut app, 1);
         assert_eq!(keeps(&app, "waiting for you"), Some((0, KEEP)));
         assert_eq!(header_parts(&app)[1].keep, 8, "the fleet");
-        assert_eq!(keeps(&app, "spent").map(|k| k.1), Some(4));
+        assert_eq!(keeps(&app, "spent").map(|k| k.1), Some(7));
         assert_eq!(keeps(&app, "/h").map(|k| k.1), Some(2));
         let window = |used| Limit {
             minutes: 300,
@@ -5549,10 +5577,10 @@ mod tests {
         app.world.agents[lead].status = Status::Asking { to: w[3], until: 0 };
         assert!(story::held(&app.world).iter().all(|&(a, _)| a != lead));
         app.story = true;
-        let s = render_story(&app);
+        let s = render(&app, 240, 50);
         assert!(
             s.contains(&format!(
-                "! you hold up 3: {}, {} via {}, {} via {}",
+                "! waiting on you (3): {}, {} via {}, {} via {}",
                 app.world.agents[w[2]].name,
                 app.world.agents[w[1]].name,
                 app.world.agents[w[2]].name,
@@ -6467,6 +6495,193 @@ mod tests {
         assert_eq!(text, ["██", "·"]);
     }
 
+    /// The last row of a drawing of `app`, as wide as `width`.
+    fn foot(app: &App, width: u16) -> String {
+        render(app, width, 40).lines().last().unwrap().to_string()
+    }
+
+    fn item(kind: InboxKind, agent: AgentId) -> InboxItem {
+        InboxItem {
+            kind,
+            agent,
+            detail: "the words".into(),
+            researcher: None,
+            open: true,
+            tick: 0,
+            card: None,
+        }
+    }
+
+    #[test]
+    fn a_question_and_a_fault_name_the_keys_they_have() {
+        let mut app = app_after(1, 2, 0, Lang::En);
+        let agent = app.world.agents[1].id;
+        app.pane = Pane::Inbox;
+        app.world.inbox.clear();
+        app.world.inbox.push(item(InboxKind::Question, agent));
+        let s = render(&app, 160, 40);
+        assert!(s.contains("enter reads it · a writes back"), "{s}");
+        assert!(!s.contains("a approve"), "{s}");
+        app.world.inbox[0] = item(InboxKind::Fault, agent);
+        let s = render(&app, 160, 40);
+        assert!(s.contains("enter focus · a writes to it"), "{s}");
+        assert!(!s.contains("a approve"), "{s}");
+        app.world.inbox[0] = item(InboxKind::Sensitive, agent);
+        assert!(render(&app, 160, 40).contains("a approve · r reject"));
+    }
+
+    #[test]
+    fn a_project_row_says_what_waits_before_what_may_fall_off_its_end() {
+        let mut app = app_after(1, 2, 0, Lang::En);
+        let agent = app.world.agents[1].id;
+        app.world.inbox.clear();
+        app.world.inbox.push(item(InboxKind::Question, agent));
+        app.world.on_lonca(0, Some("demo".into()));
+        let name = app.world.projects[0].name.clone();
+        let s = render(&app, 160, 40);
+        let row = s.lines().find(|l| l.contains(&name)).unwrap();
+        let at = |word: &str| row.find(word).unwrap_or_else(|| panic!("{word}: {row}"));
+        assert!(at("waiting") < at("working"), "{row}");
+        assert!(at("working") < at("lonca demo"), "{row}");
+        assert!(!row.contains('✕') && !row.contains('■'), "{row}");
+        // What is stuck comes before the rest too.
+        app.world.agents[agent].status = Status::Blocked;
+        let s = render(&app, 160, 40);
+        let row = s.lines().find(|l| l.contains(&name)).unwrap();
+        assert!(
+            row.find('✕').unwrap() < row.find("working").unwrap(),
+            "{row}"
+        );
+        // Nothing waiting: nothing said.
+        app.world.inbox.clear();
+        let s = render(&app, 160, 40);
+        let row = s.lines().find(|l| l.contains(&name)).unwrap();
+        assert!(!row.contains("waiting"), "{row}");
+    }
+
+    #[test]
+    fn an_idle_worker_with_a_change_waiting_says_so_and_not_idle() {
+        let mut app = app_after(1, 2, 0, Lang::En);
+        let a = app.world.agents[1].id;
+        app.world.agents[a].status = Status::Idle;
+        let text = |app: &App| {
+            let spans = doing_status(Lang::En, &app.world, &app.world.agents[a]);
+            spans.iter().map(|s| s.content.as_ref()).collect::<String>()
+        };
+        assert_eq!(text(&app), "idle");
+        app.world.inbox.push(item(InboxKind::Change, a));
+        assert_eq!(text(&app), "Δ waits for you");
+    }
+
+    #[test]
+    fn the_footer_leads_with_the_next_decision_while_one_waits() {
+        let mut app = app_after(1, 2, 0, Lang::En);
+        let agent = app.world.agents[1].id;
+        app.world.inbox.clear();
+        assert!(!foot(&app, 200).contains("next for you"));
+        app.world.inbox.push(item(InboxKind::Question, agent));
+        assert!(foot(&app, 200).trim_start().starts_with("W  next for you"));
+        // The demo's pause stands before the help, the first to go.
+        let row = foot(&app, 200);
+        assert!(
+            row.find("space").unwrap() < row.find("help").unwrap(),
+            "{row}"
+        );
+    }
+
+    #[test]
+    fn the_board_lists_what_ended_newest_first_and_only_work_shows_its_owner_s_state() {
+        let mut app = app_after(1, 2, 0, Lang::En);
+        let owner = app.world.agents[1].id;
+        let name = app.world.agents[1].name.clone();
+        app.world.agents[owner].status = Status::Working;
+        let mut card = app.world.cards[0].clone();
+        card.owner = Some(owner);
+        let of = |id, column, finished, title: &str| {
+            let mut c = card.clone();
+            (c.id, c.column, c.finished) = (id, column, finished);
+            c.title = title.into();
+            c
+        };
+        app.world.cards = vec![
+            of(0, Column::Done, 1, "older done"),
+            of(1, Column::Done, 2, "newer done"),
+            of(2, Column::Done, 3, "older review"),
+            of(3, Column::Done, 4, "newer review"),
+            of(4, Column::Verifying, 0, "checked"),
+        ];
+        app.world.inbox.clear();
+        for c in [2, 3] {
+            let mut change = item(InboxKind::Change, owner);
+            change.card = Some(c);
+            app.world.inbox.push(change);
+        }
+        app.view = View::Board;
+        let s = render(&app, 160, 40);
+        let at = |word: &str| s.find(word).unwrap_or_else(|| panic!("{word}: {s}"));
+        assert!(s.contains("TO REVIEW (2)") && s.contains("DONE (2)"), "{s}");
+        assert!(at("newer done") < at("older done"), "{s}");
+        assert!(at("newer review") < at("older review"), "{s}");
+        // At work on a card its owner has a state; past it, a name.
+        let glyph = |word: &str| {
+            let row = s.lines().find(|l| l.contains(word)).unwrap();
+            let line = s.lines().skip_while(|l| !l.contains(word)).nth(1).unwrap();
+            let cell = |l: &str, w: &str| l[..l.find(w).unwrap()].chars().count();
+            let at = cell(row, word);
+            line.chars().skip(at).take(16).collect::<String>()
+        };
+        assert!(glyph("checked").contains(&format!("● {name}")), "{s}");
+        assert!(!glyph("newer review").contains('●'), "{s}");
+        assert!(!glyph("newer done").contains('●'), "{s}");
+    }
+
+    #[test]
+    fn under_a_conversation_the_footer_has_no_keys_of_the_salon() {
+        let mut app = talking();
+        assert!(foot(&app, 200).contains("write to the lead"));
+        app.open_thread(4);
+        let row = foot(&app, 200);
+        assert!(row.contains("esc") && row.contains("help"), "{row}");
+        assert!(!row.contains("write to the lead"), "{row}");
+        assert!(!row.contains("space"), "{row}");
+    }
+
+    #[test]
+    fn a_short_footer_loses_the_views_then_the_last_keys_and_never_the_help() {
+        let views = || vec![Span::raw("12345")];
+        let hints = vec![("a", "one"), ("b", "two"), ("?", "help")];
+        let all = spans_width(&hint_spans(&hints));
+        let names = |h: &[(&str, &str)]| h.iter().map(|k| k.0.to_string()).collect::<Vec<_>>();
+        // Exactly as wide as the room: everything stays.
+        let (h, v) = fit_hints(hints.clone(), views(), all + 5);
+        assert_eq!((names(&h).len(), spans_width(&v)), (3, 5));
+        // A cell short: the views go, the keys stay.
+        let (h, v) = fit_hints(hints.clone(), views(), all + 4);
+        assert_eq!((names(&h).len(), v.len()), (3, 0));
+        let (h, _) = fit_hints(hints.clone(), views(), all);
+        assert_eq!(names(&h), ["a", "b", "?"]);
+        // A cell short of the keys: the one before the help goes.
+        let (h, _) = fit_hints(hints.clone(), views(), all - 1);
+        assert_eq!(names(&h), ["a", "?"]);
+        // The way back and the help stay, however short the room.
+        let (h, _) = fit_hints(hints, views(), 0);
+        assert_eq!(names(&h), ["?"]);
+        let (h, _) = fit_hints(
+            vec![("esc", "back"), ("b", "two"), ("?", "help")],
+            views(),
+            0,
+        );
+        assert_eq!(names(&h), ["esc", "?"]);
+    }
+
+    #[test]
+    fn a_change_s_footer_keeps_the_help_at_any_width() {
+        let mut app = app_after(1, 2, 0, Lang::En);
+        app.zoom = Zoom::Diff(app.world.agents[1].id);
+        assert!(foot(&app, 120).contains("help"), "{}", foot(&app, 120));
+        assert!(foot(&app, 60).contains("help"), "{}", foot(&app, 60));
+    }
+
     #[test]
     fn a_project_header_shows_how_far_its_own_cards_are() {
         assert!(salon::cards_spans(0, 0).is_empty());
@@ -7202,7 +7417,7 @@ mod tests {
             format!("{plain} · b in the change sends it back")
         );
         let s = render(&app, 220, 40);
-        assert!(s.contains(" r  reject   b  send back   > "), "{s}");
+        assert!(s.contains(" r  reject   b  send back   c n "), "{s}");
         assert!(
             s.contains(&format!(
                 "✗ does not fit your checkout at abc1234: x.rs · b sends it back to {name}"
@@ -7258,7 +7473,7 @@ mod tests {
             s.contains(" j k ") && s.contains(" a x  apply · choose a hunk"),
             "{s}"
         );
-        assert!(s.contains(" >  quote to it"), "{s}");
+        assert!(render(&app, 200, 36).contains(" >  quote to it"), "{s}");
         // The agent at hand is the change's: `@` writes to it.
         key(&mut app, KeyCode::Char('@'));
         assert_eq!(app.input, format!("@{name} "));

@@ -26,7 +26,7 @@ By default the lower side panel does not show the journal line by line: it tells
 
 ```text
 ┌ STORY · J journal ─────────────────────────────────────────┐
-│! you hold up 3: claude-2, claude-3, claude-1 via claude-2  │
+│! waiting on you (3): claude-2, claude-3, claude-1 via cl…  │
 │#1 Payment retry policy · claude-2 ≡ 4/5                    │
 │  14:00 ⇄ lead-shop-api → claude-2 [assign]: #1 Payment re… │
 │  14:01 ⇄ claude-4 → claude-2 [ask]: Zone codes an enum?    │

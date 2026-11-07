@@ -10,7 +10,7 @@ Salon, imece'nin açıldığı ve `1` ya da `:salon` ile geri döndüğünüz ek
 ```text
  imece   ! 2 seni bekliyor  │ ● 2 çalışıyor  ✓ 1 bitti │ 10 dk: 1 kart bitti · 1 Δ · 6 mesaj │ 3/9 kart │ $3.10 / $20.00 harcandı ($1.80/sa, ~9 sa kaldı) │ claude 5 sa: %48 kaldı, 1 sa 59 dk sonra yenilenir  14:02
 ┌ SALON ──────────────────────────────────────────┐┌ SENİ BEKLEYEN (2) ─────────────────────┐
-│▾ ▴ shop-api  ▓▓▓░░░░░ 3/8  2 çalışıyor  $2.40 ! 2││Δ 13:58 claude-1 bitirdi: parser (3 dosya, +41 −6) · ✓ bu ağaçta temiz geçti: cargo test
+│▾ ▴ shop-api  ▓▓▓░░░░░ 3/8  ! 2 bekliyor  2 çalışıyor││Δ 13:58 claude-1 bitirdi: parser (3 dosya, +41 −6) · ✓ bu ağaçta temiz geçti: cargo test
 │  ◆ ▎lead      koordine ediyor                   ││⚑ 14:01 claude-5 onayını bekliyor: Bash: npm install left-pad
 │  ├ ● ▎claude-1 #3   Parse the manifest  testleri yazıyor · 2 dk  $1.10  ⎇ fix-parser ↑2 +12
 │  │ └ ● ▎claude-1.1                      düşünüyor… ← claude-1 "testleri ekle"   ⎇         │
@@ -22,12 +22,12 @@ Salon, imece'nin açıldığı ve `1` ya da `:salon` ile geri döndüğünüz ek
 │                                                  ││13:40 › sen: boş dosyadaki parser çökmesini düzelt
 │KUYRUK  boş  │ son: #2 ✓ #1 ✓                     ││                                        │
 └──────────────────────────────────────────────────┘└────────────────────────────────────────┘
-  / lidere yaz  @ agent'a  # iş  tab panel  ← → katla  enter odak  ? yardım   1 salon  2 pano  3 kod
+  W sıradaki karar  / lidere yaz  @ agent'a  # iş  tab panel  enter odak  ? yardım   1 salon  2 pano  3 kod
 ```
 
 ## Başlık satırı
 
-Tek satır, parçalar `│` ile ayrılmış, en çok istenen önce. Ekran satırdan darsa önce en az istenen parça düşer; böylece ekranın kenarı sizi bekleyeni asla kesmez: önce araştırmacılar ve kullanım pencereleri (dolmak üzere olan kalır), sonra bütçenin hızı, saat, bütçe, kartlar, son on dakika ve filo. Sizi bekleyenler, duraklatma ve azalan bir bütçe her zaman kalır.
+Tek satır, parçalar `│` ile ayrılmış, en çok istenen önce. Ekran satırdan darsa önce en az istenen parça düşer; böylece ekranın kenarı sizi bekleyeni asla kesmez: önce araştırmacılar ve kullanım pencereleri (dolmak üzere olan kalır), sonra bütçenin hızı, saat, kartlar, son on dakika, bütçe ve filo. Sizi bekleyenler, duraklatma ve azalan bir bütçe her zaman kalır.
 
 | Parça | Ne söyler |
 | --- | --- |
@@ -48,7 +48,7 @@ Agent'lar projeye göre gruplanır. Her proje bir başlık satırıdır; altınd
 
 Henüz hiçbir projede işçi yokken (yalnızca lideri olan bir ekip, bir solo) imece'nin işareti ve yazıları boş satırların ortasında durur: `imece v…`, `tek terminal, birçok agent, bir lider`, eldeki proje ve başında kim olduğu. Göründüğünde noktaları birer vuruşta gelir (bkz. [ilk çalıştırma](../getting-started/first-run.md#hoş-geldin-penceresi)); ilk işçinin satırı yerini alır, `f` onu göstermez.
 
-Bir proje başlığı: `▾ shop-api  ▓▓▓░░░░░ 3/8  2 çalışıyor  $2.40  ✕1  ■1   ! 2 bekliyor`. `▾` açık, `▸` katlı. Adın ardından: kartlarının ne kadar ilerlediği (sekiz hücre, biten payı aşağı yuvarlanarak dolu, ardından biten / hepsi; lideri kart asmadan önce yok), boşta olmayan işçi ve yardımcı sayısı, projenin agent'larının harcadığı, varsa `✕N` bloke ve `■N` durmuş agent ve dikkat renginde bu projenin sizi bekleyen öge sayısı. Katlı bir proje tek satırdır, o satır da bekleyenleri gösterir (sessiz ama sağır değil) ve en yüksek üyesiyle biter, `▸ shop-api  2 çalışıyor  $2.40   ! 1 bekliyor  ! claude-5`: aşağıdaki durum merdiveninde en üstteki agent, eşitler arasında sıradaki ilk. Sabitlenmiş bir proje (`:pin`) adının önünde `▴` taşır ve salonun en üstünde kalır; sabitleme çalıştırmalar arasında saklanır.
+Bir proje başlığı: `▾ shop-api  ▓▓▓░░░░░ 3/8  ! 2 bekliyor  ✕1  ■1  2 çalışıyor  $2.40`. `▾` açık, `▸` katlı. Adın ardından: kartlarının ne kadar ilerlediği (sekiz hücre, biten payı aşağı yuvarlanarak dolu, ardından biten / hepsi; lideri kart asmadan önce yok), dikkat renginde bu projenin sizi bekleyen öge sayısı, varsa `✕N` bloke ve `■N` durmuş agent, boşta olmayan işçi ve yardımcı sayısı, projenin agent'larının harcadığı, sonra Lonca deposunun durumu. Sizi isteyen önce gelir; bölmeye sığmayan satır gerisini kaybeder. Katlı bir proje tek satırdır, o satır da bekleyenleri gösterir (sessiz ama sağır değil) ve en yüksek üyesiyle biter, `▸ shop-api  ! 1 bekliyor  2 çalışıyor  $2.40  ! claude-5`: aşağıdaki durum merdiveninde en üstteki agent, eşitler arasında sıradaki ilk. Sabitlenmiş bir proje (`:pin`) adının önünde `▴` taşır ve salonun en üstünde kalır; sabitleme çalıştırmalar arasında saklanır.
 
 Bir agent'ın satırı:
 

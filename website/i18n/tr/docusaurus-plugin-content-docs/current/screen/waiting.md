@@ -46,7 +46,7 @@ Bir değişiklik (`Δ`) işçisine notlarla (diff'te `n`) ya da reddedilen bir u
 | `S` (`:defer`) | bu ögeyi ertele ve sıradakini aç |
 | `esc` | diff'ten panele geri |
 
-Seçili ögenin altında soluk bir satır tuşlarını söyler (`enter diff'i gör · a checkout'a uygula · r reddet`; bir istek için `a izin ver · r reddet · enter odak`; bir yanıt için `enter tamamını oku · r kapat · ya da doğrudan yanıt yaz`; bir kurulum betiği için `enter betiği gösterir · a evet · r hayır`).
+Seçili ögenin altında soluk bir satır tuşlarını söyler (`enter diff'i gör · a checkout'a uygula · r reddet`; bir istek için `a izin ver · r reddet · enter odak`; bir yanıt için `enter tamamını oku · r kapat · ya da doğrudan yanıt yaz`; bir soru için `enter okur · a yanıt yazar`; bir API hatası için `enter odak · a ona yazar`; bir kurulum betiği için `enter betiği gösterir · a evet · r hayır`).
 
 ## `W` ve `S`: birbiri ardına
 

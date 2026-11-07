@@ -10,22 +10,23 @@ The salon shows the team; the board shows the work, and the code map shows the f
 ## The board
 
 ```text
-┌ WAITING (2) ──────────┐┌ IN PROGRESS (2) ──────┐┌ VERIFYING (0) ───────┐┌ DONE (3) ────────────┐
-│#6  Legacy parser      ││#3  Parse the manifest ││                      ││#2  Money rounding    │
-│#7  Changelog entry    ││    ● claude-1 ▰▰▰▱▱   ││                      ││    ○ claude-2        │
-│                       ││#5  Retry on timeout   ││                      ││#1  CI cache          │
-│                       ││    ● claude-3 ▰▱▱▱▱   ││                      ││    ○ claude-1        │
-└───────────────────────┘└───────────────────────┘└──────────────────────┘└──────────────────────┘
+┌ TO DO (2) ──────────┐┌ IN PROGRESS (2) ────┐┌ TO REVIEW (1) ──────┐┌ VERIFYING (0) ──────┐┌ DONE (2) ───────────┐
+│#6  Legacy parser    ││#3  Parse the manif… ││#4  Retry budget     ││                     ││#2  Money rounding   │
+│#7  Changelog entry  ││    ● claude-1 ▰▰▰▱▱ ││    claude-2         ││                     ││    claude-2         │
+│                     ││#5  Retry on timeout ││                     ││                     ││#1  CI cache         │
+│                     ││    ● claude-3 ▰▱▱▱▱ ││                     ││                     ││    claude-1         │
+└─────────────────────┘└─────────────────────┘└─────────────────────┘└─────────────────────┘└─────────────────────┘
 ```
 
-Four columns, each titled with its count:
+Five columns, each titled with its count:
 
 | Column | Cards in it |
 | --- | --- |
-| WAITING | posted and not yet taken: the leader's `post`, or a card the leader wrote for a worker that is not free yet |
+| TO DO | posted and not yet taken: the leader's `post`, or a card the leader wrote for a worker that is not free yet |
 | IN PROGRESS | taken: assigned by the leader or claimed from the board by an idle worker. Under the title, its owner with the owner's state glyph and a progress bar; a working owner's glyph breathes as on the salon (`:motion`) |
-| VERIFYING | nothing fills it live. The demo's merge queue used it; live, a finished card goes straight to DONE and its change waits for you in WAITING FOR YOU instead |
-| DONE | finished with a `done`, newest first, with the owner that finished it |
+| TO REVIEW | finished with a `done`, and its change (`Δ`) waits for you in WAITING FOR YOU, newest first: the agent is through, the work is not in yet |
+| VERIFYING | nothing fills it live. The demo's merge queue used it |
+| DONE | finished, and no change of it waits for you, newest first, with the owner that finished it. Only a card at work shows its owner's state: in the last two columns the owner may be at work on something else |
 
 Each card is `#N` and its title. When several projects are open, the project's name follows in dim. The cards themselves live in the model and in the store, so the board is the same after a restart.
 
