@@ -76,6 +76,12 @@ pub fn draw(f: &mut Frame, app: &App) {
         None => body,
     };
     match app.zoom {
+        // A card's screen is the log tab of its detail (record 125).
+        Zoom::Focus(_) if app.card.is_some() => {
+            if let Some(c) = app.card {
+                card::draw(f, body, app, c);
+            }
+        }
         Zoom::Focus(id) => focus::draw(f, body, app, id, true),
         Zoom::Trace(id) => focus::trace(f, body, app, id),
         Zoom::Diff(id) => diff::draw(f, body, app, id),
@@ -2037,8 +2043,9 @@ fn footer(f: &mut Frame, area: Rect, app: &App) -> Option<Position> {
                 tail(&mut keys, true);
                 keys
             }
-            Zoom::None if app.card.is_some() => {
-                let mut keys = vec![("enter", t.focus), ("n p", t.next_card)];
+            // A card's screen: the log tab of its detail (record 125).
+            Zoom::None | Zoom::Focus(_) if app.card.is_some() => {
+                let mut keys = vec![("enter", t.trace), ("n p", t.next_card)];
                 tail(&mut keys, true);
                 keys
             }
@@ -2733,13 +2740,24 @@ mod tests {
     }
 
     #[test]
-    fn a_card_s_screen_wears_the_focus_colour_while_it_has_the_keys() {
-        let mut app = on_card_one(Lang::En);
-        let corner = |app: &App| buffer(app, 140, 36)[(0, 1)].style().fg;
-        assert_eq!(app.pane, Pane::Journal);
-        assert_ne!(corner(&app), Some(pal().accent));
-        app.pane = Pane::Salon;
-        assert_eq!(corner(&app), Some(pal().accent));
+    fn a_card_s_screen_is_its_owner_s_detail_under_the_frame() {
+        let app = on_card_one(Lang::En);
+        let owner = app.world.cards[0].owner.unwrap();
+        assert_eq!((app.pane, app.zoom), (Pane::Salon, Zoom::Focus(owner)));
+        assert_eq!(app.detail(), Some((owner, crate::app::Tab::Log)));
+        assert_eq!(
+            app.detail_card(owner),
+            Some(0),
+            "the card, not the owner's next"
+        );
+        // The card's block has the keys' colour and no title of its own:
+        // the detail's head names the card.
+        let buf = buffer(&app, 140, 36);
+        let s = render(&app, 140, 36);
+        let y = s.lines().position(|l| l.starts_with('┌')).unwrap();
+        assert!(y > 0, "under the head: {s}");
+        assert_eq!(buf[(0, y as u16)].style().fg, Some(pal().accent));
+        assert!(s.lines().nth(y).unwrap().starts_with("┌───"), "{s}");
     }
 
     #[test]
@@ -2752,7 +2770,7 @@ mod tests {
         let owns = format!("owns   {}", crate::paths::listed(&card.paths));
         assert!(!card.paths.is_empty());
         for want in [
-            &format!(" #1 {} ", card.title),
+            &format!("#1 {}", card.title),
             "shop-api · TO REVIEW · ",
             " min",
             "editing  ",
@@ -2763,16 +2781,13 @@ mod tests {
             "talked    ",
             "STORY",
             &format!("◎ intent     {owner}: {}", card.title),
-            "TO DECIDE · #1 (2)",
-            &format!("{owner} finished: {}", card.title),
-            "JOURNAL · #1 (",
             "n p  next / previous card",
         ] {
             assert!(s.contains(want), "{want} missing:\n{s}");
         }
         assert!(
-            !s.contains("TEAM"),
-            "the card takes the salon's place:\n{s}"
+            !s.contains("TEAM") && !s.contains("TO DECIDE · #1") && !s.contains("JOURNAL · #1"),
+            "the card is the detail's body, no panes beside it:\n{s}"
         );
         // Its change waits for the person: `!`, whatever it does meanwhile.
         assert!(s.contains(&format!("owner     ! ▎{owner}")), "{s}");
@@ -3032,8 +3047,6 @@ mod tests {
             "KİM",
             "HİKÂYE",
             "Henüz hikâye yok.",
-            "KARAR BEKLEYEN · #1 (2)",
-            "DEFTER · #1 (",
             "sahibi    ",
             "sonraki / önceki iş",
         ] {
@@ -5967,15 +5980,17 @@ mod tests {
             at(999, sent(w[1], w[0], MsgKind::Inform, 2, None)),
         ];
         assert!(!app.story);
+        // `J` opens the journal's window; `J` there tells the story.
+        key(&mut app, KeyCode::Char('J'));
+        assert_eq!(app.window, Some(Window::Journal));
+        assert!(!app.story);
         key(&mut app, KeyCode::Char('J'));
         assert!(app.story);
         let s = render(&app, 200, 50);
         assert!(s.contains("STORY · J journal"), "{s}");
-        assert!(s.contains("the side panel tells the story"), "{s}");
-        // Into the pane with tab: no journal line is selected under it.
-        app.pane = Pane::Inbox;
-        app.journal_sel = None;
-        key(&mut app, KeyCode::Tab);
+        assert!(s.contains("the journal tells the story by card"), "{s}");
+        // The window's pane is the journal's; no journal line is selected
+        // under the story.
         assert_eq!((app.pane, app.journal_sel), (Pane::Journal, None));
         // Card 2, card 1, then the line of no card.
         render(&app, 200, 50);
@@ -6001,37 +6016,33 @@ mod tests {
         assert!(cell("#1 card 1").contains(Modifier::REVERSED), "{s}");
         assert!(!cell("#2 card 2").contains(Modifier::REVERSED), "{s}");
         key(&mut app, KeyCode::Char('g'));
-        key(&mut app, KeyCode::Char('g'));
         assert_eq!(app.story_sel, 0);
         key(&mut app, KeyCode::Char('G'));
         assert_eq!(app.story_sel, 2);
         key(&mut app, KeyCode::Char('k'));
-        // The agent at hand is the card's owner, or the line's agent.
-        key(&mut app, KeyCode::Char('K'));
-        assert_eq!(app.peek, Some(w[0]));
-        app.peek = None;
+        // The agent at hand is the card's owner, or the line's agent; the
+        // card at hand the item's.
+        assert_eq!(app.agent_at_hand(), Some(w[0]));
         app.story_sel = 2;
-        key(&mut app, KeyCode::Char('K'));
-        assert_eq!(app.peek, Some(w[2]));
-        app.peek = None;
+        assert_eq!(app.agent_at_hand(), Some(w[2]));
+        assert_eq!(app.card_at_hand(), None, "a line of no card");
         app.story_sel = 1;
-        // `#` writes the card at hand.
-        key(&mut app, KeyCode::Char('#'));
-        assert_eq!(app.input, "#1");
-        key(&mut app, KeyCode::Esc);
-        key(&mut app, KeyCode::Esc);
-        assert!(!app.typing);
-        // enter on a card: its screen, with its own journal.
+        assert_eq!(app.card_at_hand(), Some(0));
+        // enter on a card: its detail, the window closed; `J` there opens
+        // the window again, the story still on.
         key(&mut app, KeyCode::Enter);
-        assert_eq!(app.card, Some(0));
-        assert!(!app.story_on(), "a card's screen shows its journal");
+        assert_eq!((app.card, app.window), (Some(0), None));
+        assert!(!app.story_on(), "a card's screen is its own");
         key(&mut app, KeyCode::Char('J'));
-        assert!(app.story, "J does nothing on a card's screen");
+        assert_eq!(app.window, Some(Window::Journal));
+        assert!(app.story);
+        key(&mut app, KeyCode::Esc);
+        assert_eq!(app.window, None);
         key(&mut app, KeyCode::Esc);
         assert_eq!(app.card, None);
-        // enter on a line of no card: the journal, at that line, for now:
-        // the story stays the panel's, what is kept says so.
-        app.pane = Pane::Journal;
+        // enter on a line of no card: the journal, at that line, in the
+        // story's place; what is kept says so.
+        key(&mut app, KeyCode::Char('J'));
         render(&app, 200, 50);
         app.story_sel = 2;
         key(&mut app, KeyCode::Enter);
@@ -6040,39 +6051,35 @@ mod tests {
         let shown = render(&app, 200, 50);
         assert!(shown.contains("JOURNAL · esc story"), "{shown}");
         assert!(shown.contains("the line in the journal · esc: back to the story"));
-        // esc goes back to the story, at the item it left.
+        // esc goes back to the story, at the item it left; the window stays.
         key(&mut app, KeyCode::Esc);
         assert!(app.story_on() && !app.story_away);
+        assert_eq!(app.window, Some(Window::Journal));
         assert_eq!((app.journal_sel, app.story_sel), (None, 2));
-        assert!(render(&app, 200, 50).contains("the side panel tells the story"));
+        assert!(render(&app, 200, 50).contains("the journal tells the story by card"));
         // So does J, and it leaves the story on.
         key(&mut app, KeyCode::Enter);
         assert!(app.story_away);
         key(&mut app, KeyCode::Char('J'));
         assert!(app.story_on() && !app.story_away);
-        // In a focus, esc leaves the focus, not the journal.
-        key(&mut app, KeyCode::Enter);
+        // A second esc closes the window; a focus under it is untouched.
         app.zoom = Zoom::Focus(w[0]);
-        key(&mut app, KeyCode::Esc);
-        assert_eq!(app.zoom, Zoom::None);
-        assert!(app.story_away, "the journal still");
-        key(&mut app, KeyCode::Esc);
-        assert!(!app.story_away);
-        // :story turns it off and on.
-        for c in ":story".chars() {
-            key(&mut app, KeyCode::Char(c));
-        }
         key(&mut app, KeyCode::Enter);
+        assert!(app.story_away);
+        key(&mut app, KeyCode::Esc);
+        assert!(!app.story_away && app.window.is_some());
+        key(&mut app, KeyCode::Esc);
+        assert_eq!((app.window, app.zoom), (None, Zoom::Focus(w[0])));
+        app.zoom = Zoom::None;
+        // :story opens the window and turns the story off and on.
+        app.command("story");
+        assert_eq!(app.window, Some(Window::Journal));
         assert!(!app.story);
-        for c in ":story".chars() {
-            key(&mut app, KeyCode::Char(c));
-        }
-        key(&mut app, KeyCode::Enter);
+        app.command("story");
         assert!(app.story);
         assert_eq!((app.journal_sel, app.story_sel), (None, 0));
-        // Off again in the pane: a journal line is selected, and j k move
-        // it, not the story's.
-        app.pane = Pane::Journal;
+        // Off again: a journal line is selected, and j k move it, not the
+        // story's.
         key(&mut app, KeyCode::Char('J'));
         assert!(!app.story);
         assert!(app.journal_sel.is_some());
@@ -6081,7 +6088,7 @@ mod tests {
         assert_ne!(app.journal_sel, before);
         assert_eq!(app.story_sel, 0);
         let shown = render(&app, 200, 50);
-        assert!(shown.contains("the side panel shows the journal"));
+        assert!(shown.contains("the journal line by line"));
         assert!(shown.contains("JOURNAL · J story"), "the key back, off");
         app.flash = None;
         // In Turkish too.
@@ -12869,10 +12876,14 @@ mod tests {
         assert!(!app.needs_only, "everyone shown, so the row is there");
         assert_eq!(
             (app.view, app.zoom, app.pane),
-            (View::Salon, Zoom::None, Pane::Salon)
+            (View::Home, Zoom::None, Pane::Salon)
         );
+        assert_eq!(app.at_home.at, Some(crate::app::HomeRow::Agent(h1)));
         let s = render(&app, 160, 40);
-        assert!(s.contains(&format!("▎{helper}")), "{s}");
+        assert!(
+            s.contains(&format!("└ ○ {helper}")),
+            "under its worker: {s}"
+        );
         // In Turkish the line says where it goes too; the help names the key.
         app.lang = Lang::Tr;
         key(&mut app, KeyCode::Char('&'));

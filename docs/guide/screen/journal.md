@@ -5,7 +5,7 @@ description: The journal pane - what imece writes down, how lines fold and carry
 
 # The journal
 
-The journal is the lower side panel of the team (told as [the story](#the-story) by default): what happened, newest first, one line per event. Everything meaningful an agent or you did is there; routine assignments are left to the board and the leader's trace. It is kept in the store, so the next `imece` opens with the same journal, and the away digest and the "where you left off" window are built from it.
+The journal opens in a window over the screen, `J` or `:journal` (told as [the story](#the-story) by default; `J` in the window turns the story on and off): what happened, newest first, one line per event. `esc` or `q` closes the window. Everything meaningful an agent or you did is there; routine assignments are left to the board and the leader's trace. It is kept in the store, so the next `imece` opens with the same journal, and the away digest and the "where you left off" window are built from it.
 
 ```text
 ┌ JOURNAL ────────────────────────────────────────────────┐
@@ -90,19 +90,19 @@ Lines older than 90 days and past the newest 5000 are tidied at a live start; a 
 
 | Key | What it does |
 | --- | --- |
-| `tab` `⇧tab` | to the journal panel (team → waiting → journal) |
+| `J`  `:journal` | open the window; in it `J` tells the story or shows the lines again (`:story`) |
 | `↑` `↓` / `j` `k`, `gg` `G`, `^d` `^u` `^f` `^b` | select a line |
-| `enter` | open the conversation the line belongs to, with the line selected; an event that is no conversation opens as EVENT |
+| `enter` | open the conversation the line belongs to, with the line selected, in the window's place; an event that is no conversation opens as EVENT |
 | `c` / `y` | copy the selected message (its text alone; an event line is copied with its day and time) |
 | `m` (`:mark`) | mark the line, again unmark; `✱` shows after its clock |
-| `'` | the next marked line after the one at hand, newest first, round to the first; from anywhere else `'` comes to the journal first |
-| `#` | the card the selected line names or first mentions, on its screen |
+| `'` | the next marked line after the one at hand, newest first, round to the first; from anywhere else `'` opens the window at it first |
+| `esc` `q` | close the window (`esc` first brings the story back when a line of it is shown in the journal) |
 
 Under the selected line a dim row names its keys: `enter open the conversation · c copy the message · m mark`.
 
 ## Marks
 
-`m` marks the line at hand to come back to: the selected line of the open conversation, else the selected journal line (the card's, on a card's screen); `m` again takes the mark away, and the flash says which. With no line at hand (another panel, a focus, the board) the flash says where `m` works. `'` goes to the next marked line, round to the first; with none it says so. A mark is yours, so it outlives the run: it is kept with the line in the store, a load always brings the marked lines however old, and the tidy never lets one go. The demo has no store, so its marks end with the run. Marks do not show in `:export`, and there is no list of all marks: the journal with `'` stands for it.
+`m` marks the line at hand to come back to: the selected line of the open conversation, else the selected journal line (the card's, on a card's screen); `m` again takes the mark away, and the flash says which. With no line at hand (the window closed, or the story in it) the flash says where `m` works. `'` goes to the next marked line, round to the first; with none it says so. A mark is yours, so it outlives the run: it is kept with the line in the store, a load always brings the marked lines however old, and the tidy never lets one go. The demo has no store, so its marks end with the run. Marks do not show in `:export`, and there is no list of all marks: the journal with `'` stands for it.
 
 ## While you were away
 

@@ -43,3 +43,8 @@ already, record 3), the `>` prefix over commands (`:` and `tab` list them,
 record 41), cards on the `&` list (`#` is one key away) and state filters
 beyond `!`. A card on the list would need a card's `Need`, which only an
 agent has.
+
+Since record 125's step 5 (2026-11-07) `&` and `:goto` land on Home: the
+agent's row (or the item that stands for it), a project's heading (or its
+first row when nothing heads the rows); the project unfolds and what was
+hidden comes back as before.

@@ -5,7 +5,7 @@ description: imece'nin varsayılan ekranı - başlık satırı, projeye göre gr
 
 # Ekip
 
-Ekip ekranı `:salon` ile açılır; imece [ana ekranda](home.md) açılır. Bütün takımı bir bakışta gösterir: üstte projeleri ve keseyi söyleyen başlık satırı, solda lonca ağacı (her proje, lideri, işçileri ve yardımcıları), sağda iki yan panel: KARAR BEKLEYEN ve [HİKÂYE](journal.md#hikâye) (ne olduğu, karta göre; `J` günlüğü satır satır gösterir). Pano, kod haritası ve zaman şeridi onun üstünde pencere olarak açılır (`:board`, `:code`, `:timeline`); geri kalan her şey ekibin üstünde açılır ve `esc` ekibi geri getirir.
+Ekip, [ana ekranın](home.md) alt yarısıdır, ÇALIŞAN (kayıt 125): `:salon` oraya gider, `gw` gibi. Bu sayfanın lonca ağacı için anlattıkları (her proje, lideri, işçileri ve yardımcıları, katlama, `s`) orada proje proje durur; yanında bekleyenler ana ekranın KARAR BEKLEYEN'i, [günlük](journal.md) (hikâye olarak anlatılan) ise bir penceredir, `J` ya da `:journal`. Pano, kod haritası ve zaman şeridi de pencere olarak açılır (`:board`, `:code`, `:timeline`); geri kalan her şey ana ekranın üstünde açılır ve `esc` onu geri getirir.
 
 ```text
  imece  shop-api │  ! 2 karar bekliyor  │ $3.10 / $20.00  14:02

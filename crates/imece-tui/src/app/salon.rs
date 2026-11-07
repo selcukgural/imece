@@ -201,16 +201,17 @@ impl App {
         self.flash(fill(t.unsettled, &[&n.to_string()]));
     }
 
-    /// `:waiting` (`w` in the salon): the salon's waiting panel.
+    /// `:waiting`: Home, its first row to decide.
     pub(super) fn go_waiting(&mut self) {
-        self.show(View::Salon);
-        self.pane = Pane::Inbox;
+        self.show(View::Home);
+        self.home_go_heading(Heading::Decide);
     }
 
     /// The salon's agent panel, for the `:` names of keys that act there
     /// (`:needs`, `:fold`, `:unfold`).
+    /// To the team: Home, whose lower half it is (record 125, step 5).
     pub(super) fn go_salon(&mut self) {
-        self.show(View::Salon);
+        self.show(View::Home);
         self.pane = Pane::Salon;
     }
 
@@ -487,7 +488,7 @@ impl App {
     /// Whether a card's screen is what the person looks at (it is only
     /// ever open in the salon view).
     pub(super) fn on_card(&self) -> bool {
-        self.card.is_some() && self.zoom == Zoom::None
+        self.card.is_some() && matches!(self.zoom, Zoom::None | Zoom::Focus(_))
     }
 
     /// The open inbox items the side panel lists: a card's, on its
@@ -509,18 +510,25 @@ impl App {
     }
 
     /// Card `c`'s screen takes the salon's place, its journal selected.
+    /// `#N`: the card's screen as the log tab of its detail (record 125,
+    /// step 5): the piece of work is its owner's, else the first who had a
+    /// part in it, else its project's leader; a window over the screen
+    /// closes.
     pub fn open_card(&mut self, c: CardId) {
+        let w = &self.world;
+        let card = &w.cards[c];
+        let who = (card.owner)
+            .or_else(|| w.card_people(c).first().map(|&(id, _)| id))
+            .unwrap_or(w.projects[card.project].leader);
         self.card = Some(c);
-        self.view = View::Salon;
-        self.zoom = Zoom::None;
+        self.close_window();
         self.thread = None;
-        self.pane = Pane::Journal;
+        self.pane = Pane::Salon;
         self.inbox_sel = 0;
         self.journal_sel = None;
         self.select_journal(None);
-        if let Some(&(id, _)) = self.world.card_people(c).first() {
-            self.selected = Sel::Agent(self.world.cards[c].owner.unwrap_or(id));
-        }
+        self.selected = Sel::Agent(who);
+        self.zoom = Zoom::Focus(who);
     }
 
     /// Back from a card's screen to the salon.
@@ -528,6 +536,9 @@ impl App {
         if self.card.take().is_some() {
             self.inbox_sel = 0;
             self.select_journal(None);
+            if matches!(self.zoom, Zoom::Focus(_)) {
+                self.zoom = Zoom::None;
+            }
         }
     }
 
@@ -551,8 +562,12 @@ impl App {
     /// The card the person is looking at: the zoomed agent's, the selected
     /// agent's, the one the selected inbox item came on, or the one a
     /// selected journal line names (or mentions, `#323`).
-    pub(super) fn card_at_hand(&self) -> Option<CardId> {
+    pub(crate) fn card_at_hand(&self) -> Option<CardId> {
         let w = &self.world;
+        // A card's own screen is about that card.
+        if let Some(c) = self.card {
+            return Some(c);
+        }
         if let Zoom::Focus(id) | Zoom::Trace(id) | Zoom::Diff(id) = self.zoom {
             return w.card_of(id);
         }
@@ -872,16 +887,10 @@ mod tests {
         app.world.note(Event::Failed { agent: worker });
         app.journal_sel = Some(app.world.journal.len() - 1);
         assert_eq!(hash(&mut app), "#");
-        // On a card's screen its own card is no news.
+        // On a card's screen its own card is no news, whatever the owner
+        // has moved on to.
         app.open_card(3);
-        app.journal_sel = app
-            .world
-            .journal
-            .iter()
-            .rposition(|e| e.event.card() == Some(3));
         assert_eq!(hash(&mut app), "#");
-        app.journal_sel = Some(app.world.journal.len() - 2);
-        assert_eq!(hash(&mut app), "#2");
     }
 
     #[test]
@@ -906,9 +915,11 @@ mod tests {
         assert_eq!(app.card, Some(1));
         assert!(!app.typing && app.input.is_empty() && app.menu.is_none());
         assert!(app.thread.is_none());
+        // The card's screen is its owner's detail (record 125).
+        let owner = app.world.cards[1].owner.unwrap();
         assert_eq!(
             (app.view, app.zoom, app.pane),
-            (View::Salon, Zoom::None, Pane::Journal)
+            (View::Salon, Zoom::Focus(owner), Pane::Salon)
         );
         assert_eq!(app.inbox_sel, 0);
         let first = ui::card_rows(&app.world, 1)[0].0;
@@ -936,7 +947,9 @@ mod tests {
         app.on_key(key(KeyCode::Enter));
         assert_eq!(app.card, Some(newest));
         assert_eq!(app.flash.take().unwrap().0, "no card #x99");
-        // A name is put in by enter, not sent.
+        // Off the card: a name is put in by enter, not sent.
+        app.on_key(key(KeyCode::Esc));
+        assert_eq!(app.card, None);
         app.on_key(key(KeyCode::Char('@')));
         app.on_key(key(KeyCode::Char('l')));
         app.on_key(key(KeyCode::Enter));
@@ -961,11 +974,16 @@ mod tests {
         app.selected = Sel::Project(0);
         app.open_card(c);
         assert_eq!(app.selected, Sel::Agent(0));
-        // Nobody at all: the selection stays.
+        assert_eq!(app.zoom, Zoom::Focus(0), "its detail");
+        // Nobody at all: its project's leader.
         app.world.cards[c].story.clear();
         app.selected = Sel::Project(0);
         app.open_card(c);
-        assert_eq!(app.selected, Sel::Project(0));
+        let lead = app.world.projects[0].leader;
+        assert_eq!(
+            (app.selected, app.zoom),
+            (Sel::Agent(lead), Zoom::Focus(lead))
+        );
     }
 
     #[test]
@@ -991,18 +1009,20 @@ mod tests {
         let mut app = with_cards(1);
         let owner = app.world.cards[0].owner.unwrap();
         app.open_card(0);
-        app.pane = Pane::Salon;
-        app.on_key(key(KeyCode::Enter));
+        // The card's screen is its owner's detail; `enter` opens the raw
+        // stream, `esc` comes back to the card, then leaves it.
         assert_eq!(app.zoom, Zoom::Focus(owner));
         app.on_key(key(KeyCode::Enter));
+        assert_eq!(app.zoom, Zoom::Trace(owner));
         app.on_key(key(KeyCode::Esc));
-        assert_eq!(app.zoom, Zoom::Focus(owner), "the raw stream, then focus");
-        app.on_key(key(KeyCode::Esc));
-        assert_eq!((app.zoom, app.card), (Zoom::None, Some(0)));
-        app.pane = Pane::Inbox;
+        assert_eq!(
+            (app.zoom, app.card),
+            (Zoom::Focus(owner), Some(0)),
+            "the card again"
+        );
         app.inbox_sel = 1;
         app.on_key(key(KeyCode::Esc));
-        assert_eq!(app.card, None);
+        assert_eq!((app.zoom, app.card), (Zoom::None, None));
         assert_eq!(app.inbox_sel, 0);
         app.on_key(key(KeyCode::Esc));
         assert_eq!((app.zoom, app.card), (Zoom::None, None), "nothing to leave");
@@ -1062,10 +1082,13 @@ mod tests {
             app.on_key(key(KeyCode::Char('p')));
             assert_eq!(app.card, Some(c));
         }
-        // Not on a card's screen: n and p do nothing.
-        app.zoom = Zoom::Focus(0);
-        app.on_key(key(KeyCode::Char('n')));
-        assert_eq!(app.card, Some(open[0]));
+        // Off the card's screen (its diff, its raw stream): n and p do
+        // nothing.
+        for zoom in [Zoom::Diff(0), Zoom::Trace(0)] {
+            app.zoom = zoom;
+            app.on_key(key(KeyCode::Char('n')));
+            assert_eq!(app.card, Some(open[0]), "{zoom:?}");
+        }
     }
 
     #[test]
@@ -1080,9 +1103,16 @@ mod tests {
         app.on_key(key(KeyCode::Char('M')));
         assert_eq!(app.collapsed, [false]);
         assert!(app.folded_workers.is_empty());
-        assert_eq!((app.zoom, app.card), (Zoom::None, Some(0)));
+        let owner = app.world.cards[0].owner.unwrap();
+        assert_eq!(
+            (app.zoom, app.card),
+            (Zoom::Trace(owner), Some(0)),
+            "enter: its raw stream"
+        );
         // Back in the salon the keys fold again, in its own pane only.
         app.on_key(key(KeyCode::Esc));
+        app.on_key(key(KeyCode::Esc));
+        assert_eq!((app.zoom, app.card), (Zoom::None, None));
         app.pane = Pane::Journal;
         app.on_key(key(KeyCode::Char('h')));
         assert_eq!(app.collapsed, [false]);
@@ -1161,7 +1191,11 @@ mod tests {
         app.pane = Pane::Journal;
         app.command("settle");
         assert_eq!(app.settled, BTreeSet::from([1, 2, 3]));
-        assert_eq!((app.view, app.pane), (View::Salon, Pane::Salon));
+        assert_eq!(
+            (app.view, app.pane),
+            (View::Home, Pane::Salon),
+            "the team is Home's"
+        );
     }
 
     #[test]
@@ -1273,7 +1307,7 @@ mod tests {
         app.command("unsettle");
         assert_eq!(
             (app.view, app.pane, app.zoom),
-            (View::Salon, Pane::Salon, Zoom::None)
+            (View::Home, Pane::Salon, Zoom::None)
         );
         // To a helper: the worker's row it hangs under comes back, and
         // its project; another row stays settled.
@@ -1284,12 +1318,17 @@ mod tests {
         assert_eq!(app.selected, Sel::Agent(3));
         assert_eq!(app.settled, BTreeSet::from([2]));
         assert!(app.settled_projects.is_empty());
-        // To a project.
+        // To a project: on Home its first row (one project: no heading).
         app.settled_projects.insert(0);
         let project = app.world.projects[0].name.clone();
         app.command(&format!("goto {project}"));
-        assert_eq!(app.selected, Sel::Project(0));
         assert!(app.settled_projects.is_empty());
+        assert_eq!(app.view, View::Home);
+        assert!(
+            matches!(app.at_home.at, Some(HomeRow::Agent(id)) if app.world.agents[id].project == 0),
+            "{:?}",
+            app.at_home.at
+        );
     }
 
     #[test]

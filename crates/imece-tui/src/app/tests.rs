@@ -469,7 +469,7 @@ pub(super) fn waiting(kinds: &[InboxKind]) -> App {
 /// Presses `c` and says which inbox item is open and selected.
 pub(super) fn press(app: &mut App, c: char) -> Option<usize> {
     app.on_key(key(KeyCode::Char(c)));
-    assert_eq!((app.view, app.pane), (View::Salon, Pane::Inbox));
+    assert_eq!((app.view, app.pane), (View::Home, Pane::Inbox));
     let at = app.waiting_at?;
     assert_eq!(
         app.zoom,

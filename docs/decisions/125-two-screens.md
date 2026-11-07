@@ -339,3 +339,17 @@ an agent's (`enter · s · @`); the heading's preview is the folder, the
 Lonca state and the leader's lines. The team view (`:salon`) stays as it
 was for now: its panes go with the next piece.
 
+Step 5's windows and the card as built (its third piece): the journal is a
+window, `Window::Journal` (`:journal`, `J`; the key file's place
+`[journal]`, `Scope::Journal`), drawn by `salon::journal_pane` on the
+shaded screen, its keys the pane's (`App::journal_key`: `j k g G`, the
+pages, `J` the story, `m` `'`, `c` `y`, `enter` the line's conversation in
+the window's place or the story's item, `esc`/`q` close, `esc` first the
+story back); `:story` opens it and turns the story; `'` from anywhere
+opens it at the next mark. A card's screen is the log tab of its owner's
+detail (`open_card` → `Zoom::Focus`, `card::draw` as the body under the
+frame, `detail_card` and `card_at_hand` the card, `esc` leaves it). The
+team's commands land on Home: `:salon` its AT WORK, `:waiting` its first
+row to decide, `W` and a notice's click Home's item, `&`/`:goto` its row
+or heading. The team view (`View::Salon`) is reached by nothing now and
+goes with the next piece.

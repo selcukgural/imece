@@ -294,10 +294,10 @@ impl App {
         if self.viewing_archive() {
             return self.read_only();
         }
-        let journal = self.view == View::Salon && self.zoom == Zoom::None;
+        let journal = self.window == Some(Window::Journal) && !self.story_on();
         let at = match &self.thread {
             Some(th) => th.entries.get(th.sel).copied(),
-            None if journal && self.pane == Pane::Journal => self.journal_sel,
+            None if journal => self.journal_sel,
             None => None,
         };
         let t = self.lang.text();
@@ -314,7 +314,7 @@ impl App {
     /// (the card's, on a card's screen) in the order it lists them, newest
     /// first; from anywhere else the journal is where it goes.
     pub(super) fn next_mark(&mut self) {
-        let marks = &self.world.marks;
+        let marks = self.world.marks.clone();
         let found = match &mut self.thread {
             Some(th) => {
                 let marked: Vec<usize> = (0..th.entries.len())
@@ -328,9 +328,12 @@ impl App {
                 to.is_some()
             }
             None => {
-                self.view = View::Salon;
-                self.zoom = Zoom::None;
-                self.pane = Pane::Journal;
+                // The journal's window, its lines shown even while the
+                // story is on (`esc` brings the story back).
+                self.open_window(Window::Journal);
+                if self.story {
+                    self.story_away = true;
+                }
                 let rows = self.journal_rows();
                 let marked: Vec<usize> = (0..rows.len())
                     .filter(|&n| marks.contains(&rows[n].0))
@@ -846,7 +849,7 @@ mod tests {
         for _ in 0..n {
             app.world.note(Event::Failed { agent: 0 });
         }
-        app.pane = Pane::Journal;
+        app.open_window(Window::Journal);
         app
     }
 
@@ -864,13 +867,9 @@ mod tests {
         // `:mark` is the same.
         app.command("mark");
         assert_eq!(app.world.marks, BTreeSet::from([1]));
-        // Nothing at hand: another panel, a focus, another view.
+        // Nothing at hand: no journal window, or the story in it.
         app.world.marks.clear();
-        for at in [
-            |a: &mut App| a.pane = Pane::Salon,
-            |a: &mut App| a.zoom = Zoom::Focus(0),
-            |a: &mut App| a.view = View::Home,
-        ] {
+        for at in [|a: &mut App| a.close_window(), |a: &mut App| a.story = true] {
             let mut app = journal_of(3);
             app.journal_sel = Some(0);
             at(&mut app);
@@ -897,9 +896,15 @@ mod tests {
         app.zoom = Zoom::Focus(0);
         app.pane = Pane::Salon;
         app.on_key(key(KeyCode::Char('\'')));
+        // The journal's window opens over what was there.
         assert_eq!(
-            (app.view, app.zoom, app.pane),
-            (View::Salon, Zoom::None, Pane::Journal)
+            (app.view, app.zoom, app.pane, app.window),
+            (
+                View::Home,
+                Zoom::Focus(0),
+                Pane::Journal,
+                Some(Window::Journal)
+            )
         );
         assert_eq!(
             app.journal_sel,

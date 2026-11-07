@@ -5,7 +5,7 @@ description: Günlük paneli - imece'nin neyi yazdığı, satırların nasıl ka
 
 # Günlük
 
-Günlük (ekrandaki panelin adı DEFTER) ekibin alt yan panelidir (varsayılan olarak [hikâye](#hikâye) olarak anlatılır): ne olduğu, en yeni önce, olay başına bir satır. Bir agent'ın ya da sizin yaptığınız anlamlı her şey oradadır; olağan görev dağıtımları panoya ve liderin izine bırakılır. Depoda saklanır, böylece sonraki `imece` aynı günlükle açılır; uzaktayken özeti ve "nerede kalmıştın" penceresi ondan kurulur.
+Günlük (ekrandaki adı DEFTER) ekranın üstünde bir pencerede açılır, `J` ya da `:journal` (varsayılan olarak [hikâye](#hikâye) olarak anlatılır; penceredeki `J` hikâyeyi açıp kapatır): ne olduğu, en yeni önce, olay başına bir satır. `esc` ya da `q` pencereyi kapatır. Bir agent'ın ya da sizin yaptığınız anlamlı her şey oradadır; olağan görev dağıtımları panoya ve liderin izine bırakılır. Depoda saklanır, böylece sonraki `imece` aynı günlükle açılır; uzaktayken özeti ve "nerede kalmıştın" penceresi ondan kurulur.
 
 ```text
 ┌ DEFTER ─────────────────────────────────────────────────┐
@@ -90,19 +90,19 @@ Bir konuşmanın eski satırları en yenisinin altına katlanır: satır sonunda
 
 | Tuş | Ne yapar |
 | --- | --- |
-| `tab` `⇧tab` | günlük paneline (ekip → bekleyenler → günlük) |
+| `J`  `:journal` | pencereyi aç; içinde `J` hikâyeyi anlatır ya da satırları yeniden gösterir (`:story`) |
 | `↑` `↓` / `j` `k`, `gg` `G`, `^d` `^u` `^f` `^b` | bir satır seç |
-| `enter` | satırın ait olduğu konuşmayı o satır seçili olarak aç; konuşma olmayan bir olay OLAY olarak açılır |
+| `enter` | satırın ait olduğu konuşmayı o satır seçili olarak, pencerenin yerinde aç; konuşma olmayan bir olay OLAY olarak açılır |
 | `c` / `y` | seçili mesajı kopyala (yalnız metni; bir olay satırı günü ve saatiyle kopyalanır) |
 | `m` (`:mark`) | satırı işaretle, yine basılınca kaldır; saatinin ardında `✱` görünür |
-| `'` | eldekinden sonraki işaretli satır, en yeni önce, ilke dönerek; başka her yerden `'` önce günlüğe gelir |
-| `#` | seçili satırın adlandırdığı ya da ilk andığı kart, kendi ekranında |
+| `'` | eldekinden sonraki işaretli satır, en yeni önce, ilke dönerek; başka her yerden `'` önce pencereyi orada açar |
+| `esc` `q` | pencereyi kapat (`esc`, hikâyenin bir satırı defterde gösteriliyorsa önce hikâyeyi geri getirir) |
 
 Seçili satırın altında soluk bir satır tuşlarını söyler: `enter konuşmayı aç · c mesajı kopyala · m işaretle`.
 
 ## İşaretler
 
-`m` eldeki satırı sonra dönmek için işaretler: açık konuşmanın seçili satırını, yoksa seçili günlük satırını (bir kartın ekranında kartınkini); yine `m` işareti kaldırır ve flaş hangisi olduğunu söyler. Eldeki satır yoksa (başka bir panel, bir odak, pano) flaş `m`'nin nerede çalıştığını söyler. `'` sonraki işaretli satıra gider, ilke dönerek; hiç yoksa söyler. İşaret sizindir, çalıştırmayı aşar: depoda satırıyla tutulur, bir yükleme işaretli satırları ne kadar eski olsa da hep getirir ve temizlik hiçbirini bırakmaz. Demonun deposu yok, bu yüzden işaretleri çalıştırmayla biter. İşaretler `:export`'ta görünmez ve bütün işaretlerin bir listesi yok: `'` ile günlük onun yerine geçer.
+`m` eldeki satırı sonra dönmek için işaretler: açık konuşmanın seçili satırını, yoksa seçili günlük satırını (bir kartın ekranında kartınkini); yine `m` işareti kaldırır ve flaş hangisi olduğunu söyler. Eldeki satır yoksa (pencere kapalı ya da içinde hikâye) flaş `m`'nin nerede çalıştığını söyler. `'` sonraki işaretli satıra gider, ilke dönerek; hiç yoksa söyler. İşaret sizindir, çalıştırmayı aşar: depoda satırıyla tutulur, bir yükleme işaretli satırları ne kadar eski olsa da hep getirir ve temizlik hiçbirini bırakmaz. Demonun deposu yok, bu yüzden işaretleri çalıştırmayla biter. İşaretler `:export`'ta görünmez ve bütün işaretlerin bir listesi yok: `'` ile günlük onun yerine geçer.
 
 ## Sen yokken
 

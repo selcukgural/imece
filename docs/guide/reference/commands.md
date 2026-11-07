@@ -72,19 +72,20 @@ A line that starts with `:` is a command to imece, not a message to an agent. Yo
 | `:settle` | `s` | | | | the selected row's agent or project |
 | `:slower` | `-` | | yes | | the speed, `×2` |
 | `:solo [PATH] [CHOICE] [NAME]` | — | | | `$` | |
-| `:story` | `J` | | | | on / off |
+| `:story` | — | | | | on / off |
 | `:sync` | — | | | | how far behind trunk (`↓3`) |
 | `:talk [@NAME]` | `v` | | | | the agent at hand |
 | `:theme [NAME\|FILE]` | `T` | `:t` | | | the theme in use |
 | `:tidy` | — | | | | |
 | `:timeline` | — | | | | |
 | `:home` | — | | | | |
+| `:journal` | `J` | | | | |
 | `:trace [@NAME]` | `t` | | | | the agent at hand |
 | `:unclear [inbox\|journal]` | — | | | | |
 | `:undo` | `u` | | | | |
 | `:unfold` | `zR` | | | | |
 | `:unsettle` | — | | | | how many are hidden |
-| `:waiting` | `w` | | | | N waiting |
+| `:waiting` | — | | | | N waiting |
 | `:welcome` | — | | | | |
 | `:why [@NAME]` | — | | | | the agent at hand |
 | `:yes [@NAME]` | `e` | | | | the agent at hand |
@@ -204,6 +205,10 @@ The `?` help: every key and command in both languages, the legend of glyphs; `/`
 ### `:hints`
 
 Hint letters, as `F`: a label of one or two letters over the start of every row of the team's screen you can select (project headers, agents, the people on a card's screen, waiting items, journal lines). Typing a label selects its row in its panel; its last letter in capitals opens it too, as `enter`. `backspace` takes a letter back, `esc` closes them. A row gone from the screen since: `that row has left the screen`. Off the team's screen: `no rows to label here: F works on the team's screen`. See [team](../screen/salon.md).
+
+### `:journal`
+
+The journal in a window over the screen, as `J`: its lines newest first, or the story by card while that is on (`J` in the window turns it); `j` `k` `gg` `G` and the pages move, `m` marks, `'` goes to the next mark, `c` copies, `enter` opens the line's conversation in the window's place, `esc` or `q` closes it. See [the journal](../screen/journal.md).
 
 ### `:keys`
 
@@ -326,7 +331,7 @@ The note is advice: nothing waits for it and it never holds a change back; you s
 
 ### `:salon`
 
-The team: the view imece had before Home; `:home` is the other.
+The team: Home's AT WORK, as `gw` (record 125: the team is Home's lower half).
 
 ### `:settle`
 
@@ -342,7 +347,7 @@ Opens a solo session: one agent you drive yourself, with no leader and no team, 
 
 ### `:story`
 
-The lower side panel tells the story, as `J`: what happened, by card, newest first, with whom you hold up on top (see [the story](../screen/journal.md#the-story)); again, the journal. Goes to the team first. The menu note: `(on)` / `(off)`; remembered in the store, on by default.
+Opens the journal's window and turns the story on, as `J` there: what happened, by card, newest first, with whom you hold up on top (see [the story](../screen/journal.md#the-story)); again, the lines. The menu note: `(on)` / `(off)`; remembered in the store, on by default.
 
 ### `:sync`
 
@@ -390,7 +395,7 @@ Brings back everything hidden with `s` or `:settle`, and goes to the team (Home,
 
 ### `:waiting`
 
-Straight to TO DECIDE, as `w`. The menu note says how many wait.
+Home, its first row to decide. The menu note says how many wait.
 
 ### `:welcome`
 

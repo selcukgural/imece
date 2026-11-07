@@ -5,7 +5,7 @@ description: Everything of one card on one screen - who worked on it, its story,
 
 # A card's screen
 
-A card is one unit of work: posted by the leader (or opened by your message to an idle worker), taken by a worker, finished with a `done`. Its number, `#3`, shows on its worker's row in the team, on the board and in the journal. `#` opens a card's screen: the main screen's three panes, but for one card only. You meet it when you want to know what happened to one task without reading the whole journal.
+A card is one unit of work: posted by the leader (or opened by your message to an idle worker), taken by a worker, finished with a `done`. Its number, `#3`, shows on its worker's row in the team, on the board and in the journal. `#` opens a card's screen: the log tab of its [detail](changes.md#the-detail) (the piece of work is its owner's, else the first who had a part in it), the card's standing, who had a part and its story under the detail's head; `tab` goes to the owner's diff and talk, `esc` comes back to Home. You meet it when you want to know what happened to one task without reading the whole journal.
 
 ```text
 ┌ #3 Parse the manifest ──────────────────────────────┐┌ TO DECIDE · #3 (1) ───────────────────┐

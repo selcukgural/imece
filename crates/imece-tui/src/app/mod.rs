@@ -106,7 +106,7 @@ pub struct Viewed {
 const VIEW_COMMANDS: &[&str] = &[
     "goto", "history", "export", "salon", "board", "code", "timeline", "lang", "theme", "help",
     "quit", "next", "defer", "waiting", "needs", "fold", "unfold", "trace", "peek", "hints",
-    "news", "settle", "unsettle", "talk", "why", "story",
+    "news", "settle", "unsettle", "talk", "why", "story", "journal",
 ];
 
 /// Whether a line sent is one `↑` and `^r` bring back: a message, a
@@ -233,6 +233,9 @@ pub enum Window {
     Board,
     Code,
     Timeline,
+    /// The journal, told as the story or line by line (record 125, step
+    /// 5: the salon's side panel in a window).
+    Journal,
 }
 
 /// How deep the person looks: the whole guild, one agent's card, the
