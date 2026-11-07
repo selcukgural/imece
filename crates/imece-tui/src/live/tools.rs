@@ -143,7 +143,7 @@ pub(super) fn plan_tool() -> Tool {
         description: "Puts your plan before the person: the cards you mean to assign or \
                       post, each with a tier and the paths it owns, and what you expect \
                       them to cost. Needed before you hire a second worker: the person \
-                      reads it in WAITING FOR YOU and their yes opens hiring; end your \
+                      reads it in TO DECIDE and their yes opens hiring; end your \
                       turn after it. A new plan replaces the one waiting."
             .into(),
         input: json!({

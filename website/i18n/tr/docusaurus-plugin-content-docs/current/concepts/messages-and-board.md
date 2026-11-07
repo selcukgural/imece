@@ -65,7 +65,7 @@ Ekranda bir yanıt türünden sonra `↩` taşır: günlük satırında, kartın
 
 Bus size `you` olarak ulaşır: `send(to: "you", type, body)`.
 
-- Size bir `ask`, SENİ BEKLEYEN panelinde bir soru olur (`?`, "claude-1 sana soruyor: …"). Soru açıkken ve ajan boştayken salon satırı `? → you` okunur. Aynı ajandan daha yeni bir soru eskisinin yerini alır. Ajana yazarak yanıt verirsiniz (`@claude-1 …`, ya da öğede `a`/`r`, ikisi de yazma satırını açar) ve bu onun sonraki turunu başlatır.
+- Size bir `ask`, KARAR BEKLEYEN panelinde bir soru olur (`?`, "claude-1 sana soruyor: …"). Soru açıkken ve ajan boştayken ekip satırı `? → you` okunur. Aynı ajandan daha yeni bir soru eskisinin yerini alır. Ajana yazarak yanıt verirsiniz (`@claude-1 …`, ya da öğede `a`/`r`, ikisi de yazma satırını açar) ve bu onun sonraki turunu başlatır.
 - Size `inform`, `progress`, `notice`, `done`, `blocked` ve `answer` yalnız bilgilendirir: konuşmada ve hikâyede bir satır, öğe yok, kimse uyanmaz. Bir işçinin size `done`'ı değişikliğini her `done` gibi gösterir.
 - Size `assign`, `handoff` ve `cancel` reddedilir.
 - Size mesajlar numara ve `re` almaz; sizin mesajlarınızın da numarası yoktur. Size giden hiçbir şey posta sınırlarına ya da bütçeye sayılmaz.
@@ -74,15 +74,15 @@ Bus size `you` olarak ulaşır: `send(to: "you", type, body)`.
 
 ## Sizi bekleyen ajanın postası da bekler
 
-Yalnız sizin çözebileceğiniz bir şeyi açık olan bir ajan, bir takım arkadaşı yazdı diye devam etmez: SENİ BEKLEYEN'deki bir sorusu, onayınızı bekleyen bir araç çağrısı, bir API hatası, bir kurulum betiği, hassas bir değişiklik ya da bir araştırma raporu. Postası kuyrukta kalır, tur başlatmaz ve ona pano kartı önerilmez. Gönderen `held as message 7; …` yanıtını alır; ajanın satırı ve `:why` kaç mesajın beklediğini söyler: `✉ 2 bekliyor`.
+Yalnız sizin çözebileceğiniz bir şeyi açık olan bir ajan, bir takım arkadaşı yazdı diye devam etmez: KARAR BEKLEYEN'deki bir sorusu, onayınızı bekleyen bir araç çağrısı, bir API hatası, bir kurulum betiği, hassas bir değişiklik ya da bir araştırma raporu. Postası kuyrukta kalır, tur başlatmaz ve ona pano kartı önerilmez. Gönderen `held as message 7; …` yanıtını alır; ajanın satırı ve `:why` kaç mesajın beklediğini söyler: `✉ 2 kuyrukta`.
 
 Ajana yazdığınızda, sözünüz beklemeyi bitiriyorsa posta aynı turda, sözlerinizden sonra gider. Başka bir yolla çözerseniz posta kendi turunu başlatır. Bir `cancel` asla tutulmaz: hemen tur başlatır ve bekleyen posta sırasıyla onunla gider. Posta sınırları tutulan postayı da diğerleri gibi sayar.
 
-SENİ BEKLEYEN'de iki şey hiçbir şeyi tutmaz: okunmayı bekleyen bir yanıt ve bir işçinin değişikliği. Değişikliği bekleyen işçi işini bitirmiştir, devam etmek için yanıta ihtiyacı yoktur; siz incelerken sonraki kartı alabilir.
+KARAR BEKLEYEN'de iki şey hiçbir şeyi tutmaz: okunmayı bekleyen bir yanıt ve bir işçinin değişikliği. Değişikliği bekleyen işçi işini bitirmiştir, devam etmek için yanıta ihtiyacı yoktur; siz incelerken sonraki kartı alabilir.
 
 ## Bus'ta siz
 
-Komut satırındaki düz metin seçili projenin liderine gider; `@ad mesaj` tek bir ajana. Boşta bir işçiye mesaj bir kart açar; yanıtı onu kapatır. Mesajlarınızın numarası yoktur. Bir ajanın size yanıtı SENİ BEKLEYEN'de bekler ("claude-1 yanıt verdi: …"); açarsınız (`enter`), kapatırsınız (`r`) ya da doğrudan yanıt yazarsınız.
+Komut satırındaki düz metin seçili projenin liderine gider; `@ad mesaj` tek bir ajana. Boşta bir işçiye mesaj bir kart açar; yanıtı onu kapatır. Mesajlarınızın numarası yoktur. Bir ajanın size yanıtı KARAR BEKLEYEN'de bekler ("claude-1 yanıt verdi: …"); açarsınız (`enter`), kapatırsınız (`r`) ya da doğrudan yanıt yazarsınız.
 
 ## Pano
 
@@ -112,7 +112,7 @@ Bu, sembol lease'lerinin ucuz vekilidir (bkz. [kod haritası](../screen/board-an
 
 ## Plan
 
-İlk işçi ucuzdur ve işi siz istediniz; lider ikincisini almadan önce ne yapmayı düşündüğünü görürsünüz. `plan(cards, cost)` çağırır: görev vermeyi ya da panoya asmayı düşündüğü kartlar, her biri başlık, kademe, sahip olduğu yollar ve gövdeyle, ve hepsinin dolar olarak beklediği maliyeti. Plan SENİ BEKLEYEN'e tek bir `▤` ögesi olarak gelir (`lead: 3 kart planladı, $1.20; enter okur`), defter `lead 3 kart planladı, $1.20; onayınızı bekliyor` der ve lidere turunu bitirmesi söylenir; plan beklerken liderin postası da onunla bekler ([posta bekler](#sizi-bekleyen-ajanın-postası-da-bekler)) ve `hire`, `the person is reading your plan; end your turn, their yes starts your next` yanıtını verir.
+İlk işçi ucuzdur ve işi siz istediniz; lider ikincisini almadan önce ne yapmayı düşündüğünü görürsünüz. `plan(cards, cost)` çağırır: görev vermeyi ya da panoya asmayı düşündüğü kartlar, her biri başlık, kademe, sahip olduğu yollar ve gövdeyle, ve hepsinin dolar olarak beklediği maliyeti. Plan KARAR BEKLEYEN'e tek bir `▤` ögesi olarak gelir (`lead: 3 kart planladı, $1.20; enter okur`), defter `lead 3 kart planladı, $1.20; onayınızı bekliyor` der ve lidere turunu bitirmesi söylenir; plan beklerken liderin postası da onunla bekler ([posta bekler](#sizi-bekleyen-ajanın-postası-da-bekler)) ve `hire`, `the person is reading your plan; end your turn, their yes starts your next` yanıtını verir.
 
 - `enter` planı tamamıyla açar: her kartın numarası, başlığı ve kademesi, sahip olduğu yollar, gövdesi; beklenen maliyet, bütçede kalanın yanında. Her sözcük liderindir, temizlenmiş, asla Markdown olarak okunmaz.
 - `a` evet der: lider sonraki istemiyle (turu bitmişse hemen) `The person said yes to your plan: hire and assign as planned` duyar ve sonraki planına dek işe alabilir; yeni bir plan evet'i geri alır.

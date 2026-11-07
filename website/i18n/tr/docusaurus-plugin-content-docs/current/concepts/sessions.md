@@ -39,7 +39,7 @@ Claude Code başarısız bir API çağrısını önce kendisi yeniden dener, on 
 | Claude Code ne diyor | imece |
 | --- | --- |
 | aşırı yük, bir sunucu hatası (5xx), kopan bir bağlantı, bir hız sınırı | geçici bir hata: günlük `claude-1 API hatası aldı: … · imece 30 sn sonra yeniden deniyor (1/3)` der, satır geri sayar `↻ 1/3 · 25 sn sonra`, zamanı gelince oturuma kaldığı yerden devam etmesi söylenir. İkinci deneme bir sonraki hatadan 2 dk sonra, üçüncüsü ondan 8 dk sonradır. Üçüncüden sonra sizi bekler. |
-| oturum kapalı, reddedilen bir anahtar, biten bir kota, bir fatura, bir planın kullanım sınırı | hesabın işi: hemen sizi bekler, [SENİ BEKLEYEN](../screen/waiting.md)'de `■` olarak. |
+| oturum kapalı, reddedilen bir anahtar, biten bir kota, bir fatura, bir planın kullanım sınırı | hesabın işi: hemen sizi bekler, [KARAR BEKLEYEN](../screen/waiting.md)'de `■` olarak. |
 | başka her şey (reddedilen bir istek, dolu bir bağlam) | günlük, önceden olduğu gibi turun durduğunu söyler. |
 
 Oturum başarısız bir turdan sonra da yaşar ve Claude Code başarısız istemi içinde tutar; bu yüzden bir deneme istemi yeniden göndermez, kısa bir "devam et" gönderir. İyi bir tur, sizin mesajınız ya da agent'a gelen posta sayımı sıfırlar; biten bir oturum bekleyen denemeyi de götürür. Demoda bir agent'a söylediğiniz her üçüncü şey aşırı yüklü bir API yüzünden başarısız olur ve yeniden denenir, her yedinci şey reddedilen bir anahtar yüzünden.
@@ -58,7 +58,7 @@ imece'nin unuttuğu bir oturum geride hiçbir şey bırakmaz:
 Bir epic bitince `:archive [BAŞLIK]` eldeki projeyi kaldırır ve yerine, aynı çalışma kopyasında, aynı adlı yeni bir proje açar ([`:archive`](../reference/commands.md#archive-title)). Arşiv depoda, sahip olduğu her şeyle saklanır:
 
 - ajanları uykuda, her biri hatırlanan oturumu, postası, notları, değişikliği ve yarıda kesilen bir turun istemleriyle (arşiv, süren bir turu çıkışta olduğu gibi yarıda keser);
-- kartları, SENİ BEKLEYEN'deki kalemleri ve günlük satırları, gözden uzakta: ekran yalnız yeni projeyi gösterir.
+- kartları, KARAR BEKLEYEN'deki kalemleri ve günlük satırları, gözden uzakta: ekran yalnız yeni projeyi gösterir.
 
 Bir arşivden hiçbir şey uyanmaz, hiçbir şey harcanmaz: işçilerine kart sunulmaz, ajanlarına adla ulaşılmaz (yeni başın adı aynı olabilir) ve birinin arşivden önce yaptığı bir araç çağrısı `your project was put away; nothing was done` diye yanıtlanır. `--fresh` oturumlarına dokunmaz, temizlik de günlük satırlarını yaşları ne olursa olsun saklar. Claude Code eski transkriptleri bir süre sonra kendiliğinden siler (varsayılan 30 gün); o zamana dek gitmiş bir oturum, kaldığı yer anlatılarak yeniden başlar.
 
@@ -68,7 +68,7 @@ Bir arşivden hiçbir şey uyanmaz, hiçbir şey harcanmaz: işçilerine kart su
 
 ## Kalanlar: günler, saklama, tercihler
 
-- **Günler:** saat dünyanın ilk başlangıcının yerel saatinde başlar. Günlük ve bir konuşma başka bir günün ilk satırının üstüne soluk bir `─ 2026-11-01` satırı çizer; SENİ BEKLEYEN'de başka bir günden bir öğe tarihini taşır; kopyalanan ve dışa aktarılan metin her zaman damgalıdır.
+- **Günler:** saat dünyanın ilk başlangıcının yerel saatinde başlar. Günlük ve bir konuşma başka bir günün ilk satırının üstüne soluk bir `─ 2026-11-01` satırı çizer; KARAR BEKLEYEN'de başka bir günden bir öğe tarihini taşır; kopyalanan ve dışa aktarılan metin her zaman damgalıdır.
 - **Saklama:** her başlangıçta 90 günden eski ve en yeni 5000'in gerisinde kalan günlük satırları silinir ve dosyanın çeyreği ya da fazlası boşsa `VACUUM` çalışır. Hikâyeler ve gelen kutusu satırları kalır. Başarısız bir temizlik sonraki başlangıçta yeniden denenir.
 - **Tercihler** (tema, yan panel) deponun `meta` tablosunda yaşar, depo alınmadan önce okunabilir; canlı bir imece'nin yanındaki demo onları paylaşır.
 
@@ -85,7 +85,7 @@ Bir arşivden hiçbir şey uyanmaz, hiçbir şey harcanmaz: işçilerine kart su
    ? claude-2 sana soruyor: eski CLI bayrağı kalsın mı?
  imece kapanırken kesilen turlar: claude-3
  kapanmadan önceki son satırlar:
-   14:02 claude-1 bitirdi: 3 dosya, +34 −8 → seni bekliyor
+   14:02 claude-1 bitirdi: değişiklik hazır · 3 dosya +34 −8
    14:05 claude-2 → sen: soru eski CLI bayrağı kalsın mı?
  herhangi bir tuş: kapat
 ```

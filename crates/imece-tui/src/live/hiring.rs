@@ -433,7 +433,7 @@ impl Live {
         );
         w.agents[from].trace(t, format!("plan {n} cards {} (item {item})", dollars(cost)));
         Ok(format!(
-            "the person reads your plan ({n} cards, {}) in WAITING FOR YOU; end your turn, \
+            "the person reads your plan ({n} cards, {}) in TO DECIDE; end your turn, \
              their yes starts your next",
             dollars(cost)
         ))
@@ -1586,7 +1586,7 @@ mod tests {
             .unwrap();
         assert_eq!(
             got,
-            "the person reads your plan (2 cards, $1.25) in WAITING FOR YOU; end your turn, \
+            "the person reads your plan (2 cards, $1.25) in TO DECIDE; end your turn, \
              their yes starts your next"
         );
         let item = w.plan_item(0).expect("it waits");

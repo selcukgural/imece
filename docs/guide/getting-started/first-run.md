@@ -43,7 +43,7 @@ On the first start ever (the store remembers no earlier run), a window opens bef
 └──────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-At the top is imece's mark, five hands round one job, beside its version, what it is and the project at hand with who heads it. Where it comes on the screen its dots come one a beat, the job last (under two seconds); any key shows it whole at once, and so do [`:motion off`](../reference/commands.md#motion-offcalmfull), another window and SSH. On a screen too narrow for it the words stand alone, and on one too short the window goes without them. The salon shows the same mark in its free rows while no project has a worker yet. The terminal's title carries the mark too, `⁙ imece`, while all is calm.
+At the top is imece's mark, five hands round one job, beside its version, what it is and the project at hand with who heads it. Where it comes on the screen its dots come one a beat, the job last (under two seconds); any key shows it whole at once, and so do [`:motion off`](../reference/commands.md#motion-offcalmfull), another window and SSH. On a screen too narrow for it the words stand alone, and on one too short the window goes without them. The team shows the same mark in its free rows while no project has a worker yet. The terminal's title carries the mark too, `⁙ imece`, while all is calm.
 
 The line says Claude Code's version and whether it is signed in, or how to sign in: `claude auth login`. imece asks it itself (`claude auth status`), on a thread of its own, without the network and without spending; it says `checking…` until its answer comes, `not on PATH` when the program is not there.
 
@@ -75,7 +75,7 @@ The first time there is nothing to show. On a later start that remembers an earl
 │ 1 wait for you:                                           │
 │ Δ 11:42 claude-1 finished: parser: accept trailing commas │
 │ the last lines before:                                    │
-│ 11:42 claude-1 finished: 2 files, +31 −4 → waits for you  │
+│ 11:42 claude-1 finished: change ready · 2 files +31 −4  │
 │ 11:43 you ran `cargo test` → exit 0                       │
 │                                any key: close             │
 └───────────────────────────────────────────────────────────┘
@@ -95,9 +95,9 @@ What opens is [Home](../screen/home.md): what is your turn on top, what is at wo
  enter  open   @  write to this agent   j k  move   [ ]  project   /  write to the lead   ?  help
 ```
 
-The salon is one key away, `1`: the guild on the left, WAITING FOR YOU and the JOURNAL on the right.
+The team is one key away, `1`: the guild on the left, TO DECIDE and the JOURNAL on the right.
 
-The team is the leader alone (`○ lead`, idle until you write). The journal's first line, on the salon, says, once per start that is not `--confine strict`, that isolation is not imece's.
+The team is the leader alone (`○ lead`, idle until you write). The journal's first line, on the team, says, once per start that is not `--confine strict`, that isolation is not imece's.
 
 ## Write to the leader
 
@@ -121,7 +121,7 @@ The leader reads the checkout (it has read tools, the web, and read-only command
    ● claude-1  #1   accept a trailing comma   thinking…
 ```
 
-The journal says `lead posted #1 accept a trailing comma`, `lead hired claude-1 (default model)`, `⇄ lead → claude-1 [assign]: #1 …`. The leader's closing text comes to you as a reply (`»`) in WAITING FOR YOU: `enter` reads it whole, `r` dismisses it, or you just write back.
+The journal says `lead posted #1 accept a trailing comma`, `lead hired claude-1 (default model)`, `⇄ lead → claude-1 [assign]: #1 …`. The leader's closing text comes to you as a reply (`»`) in TO DECIDE: `enter` reads it whole, `r` dismisses it, or you just write back.
 
 A tier model your account does not have fails its first turn; imece then restarts that worker on the standard model and the journal says `claude-1: model opus is not available here, using the default`.
 
@@ -131,23 +131,23 @@ A tier model your account does not have fails its first turn; imece then restart
    ● claude-1  #1   accept a trailing comma   editing src/csv.rs   $0.41  +18 −3
 ```
 
-From left to right: the glyph (`●` working, `○` idle, `!` something of its waits for you, `✓` done and not seen yet, `■` stuck: blocked or its session stopped), the name, its card, what it does now, what it has spent, and where its worktree stands: `+18 −3` are the lines its next `done` would hand you, `⎇ name` a branch it made, `↑N` its own commits, `↓N` your checkout's newer commits. A worker with an open permission ask shows `⚑ waits for your yes`, and the ask is an item in WAITING FOR YOU: `a` allows it, `r` refuses it (routine commands, the build, the tests, git's reading commands, run on their own).
+From left to right: the glyph (`●` working, `○` idle, `!` something of its waits for you, `✓` done and not seen yet, `■` stuck: blocked or its session stopped), the name, its card, what it does now, what it has spent, and where its worktree stands: `+18 −3` are the lines its next `done` would hand you, `⎇ name` a branch it made, `↑N` its own commits, `↓N` your checkout's newer commits. A worker with an open permission ask shows `⚑ asks to run`, and the ask is an item in TO DECIDE: `a` allows it, `r` refuses it (routine commands, the build, the tests, git's reading commands, run on their own).
 
 `enter` on the row opens the worker's focus: its card's story (intent, assumptions, decisions, talk, evidence, changes). `enter` again (or `t`) opens the trace, the raw stream of its session. `esc` goes back.
 
 ## The change (Δ)
 
-When the worker sends its `done`, imece reads its worktree as one patch and puts it in WAITING FOR YOU. The journal says `claude-1 finished: 2 files, +31 −4 → waits for you`, the header says `! 1 waiting for you`, the terminal's title becomes `! imece · 1 waiting`.
+When the worker sends its `done`, imece reads its worktree as one patch and puts it in TO DECIDE. The journal says `claude-1 finished: change ready · 2 files +31 −4`, the header says `! 1 waiting for you`, the terminal's title becomes `! imece · 1 waiting`.
 
 ```text
- WAITING FOR YOU (1) ───────────────────────────────────────────────────
+ TO DECIDE (1) ───────────────────────────────────────────────────
  Δ 10:19 claude-1 finished: parser: accept a trailing comma (2 files, +31 −4) · ✓ ran clean on this tree: cargo test
-   enter see the diff · a apply to the checkout · r reject
+   enter see the diff · a approve · r send back
 ```
 
 The end of the line is the evidence: the runs imece's `run` tool saw on exactly this tree. `✓ ran clean on this tree: cargo test` (green), `✗ failed on this tree: …` (red), or `no run on this tree` (a warning). It is shown, never a gate: you decide.
 
-- `w` goes straight to WAITING FOR YOU; `tab` steps between the panels.
+- `w` goes straight to TO DECIDE; `tab` steps between the panels.
 - `W` opens the next waiting item from anywhere (a card's screen, a diff, the board); again, the one after. `S` puts the item at hand off till later and opens the next.
 - `enter` on the change opens the whole diff:
 
@@ -163,18 +163,18 @@ The end of the line is the evidence: the runs imece's `run` tool saw on exactly 
  -    line.split(',').collect()
  +    let line = line.strip_suffix(',').unwrap_or(line);
  +    line.split(',').collect()
- j k scroll · [ ] file · a apply · r reject · c note · n send notes · x choose hunk · > quote · w wrap
+ j k scroll · [ ] file · a approve · r send back · c note · n send notes · x choose hunk · > quote · w wrap
 ```
 
 `j` `k` scroll, `^d` `^u` half a page, `gg` `G` the ends, `[` `]` jump file to file, `w` wraps long lines. Several files are listed above the patch (six at most), and when they are of more than one kind, the lines by kind first.
 
-### `a`: apply
+### `a`: approve
 
-`a` applies the change to your checkout with `git apply --index`: it lands **staged**, for you to look over and commit. The flash says `applying claude-1's change to your checkout; the journal says when it is in, staged`; git runs on a thread of its own, so the screen never waits. Then the journal says `you applied claude-1's change (2 files) to the checkout, staged; worktree mark 3f9a1c2`: the reviewed tree is committed in the worktree as a mark (author `imece`), so the worker's next `done` shows only what came after. A change that does not fit (you edited the same lines, or your checkout moved on) is tried three-way on a copy of the index first and refused with git's words when it conflicts; nothing is half applied. `x` on hunks and then `a` applies only the chosen hunks; the rest waits as a change again.
+`a` applies the change to your checkout with `git apply --index`: it lands **staged**, for you to look over and commit. The flash says `approved: applying claude-1's change to your checkout; the journal says when it is in, staged`; git runs on a thread of its own, so the screen never waits. Then the journal says `you applied claude-1's change (2 files) to the checkout, staged; worktree mark 3f9a1c2`: the reviewed tree is committed in the worktree as a mark (author `imece`), so the worker's next `done` shows only what came after. A change that does not fit (you edited the same lines, or your checkout moved on) is tried three-way on a copy of the index first and refused with git's words when it conflicts; nothing is half applied. `x` on hunks and then `a` applies only the chosen hunks; the rest waits as a change again.
 
 Then commit as you always do: `!git commit` runs in your own shell with the screen stepped aside (any key brings it back); `:commit` asks a cheap model for a message for what is staged and puts `!git commit -m '…'` on the command line.
 
-### `r`: reject
+### `r`: send back
 
 `r` closes the item, leaves the change in the worktree, and opens the composer as `@claude-1 ` so you say why. Your reasons are the worker's next turn. Between apply and reject there is a third answer: `c` notes the top line of the diff, `n` sends all notes in one message, each under its `file:line`, and the change goes back to the worker the same way. `>` quotes the hunk at the top into a message.
 
@@ -205,7 +205,7 @@ The next start in the same checkout shows the same screen, every agent asleep (`
 - [How imece works](../concepts/how-imece-works.md)
 - [Changes](../concepts/changes.md) and [the change screen](../screen/changes.md)
 - [Approvals and questions](../concepts/approvals-and-questions.md)
-- [WAITING FOR YOU](../screen/waiting.md)
+- [TO DECIDE](../screen/waiting.md)
 - [Sessions](../concepts/sessions.md)
 - [Keyboard](../screen/keyboard.md)
 - [Scenario: one fix](../scenarios/one-fix.md)

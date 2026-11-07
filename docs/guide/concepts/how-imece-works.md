@@ -46,7 +46,7 @@ A worktree is kept between runs. One found clean at an older commit is moved to 
 
 ## The Δ gate
 
-When a worker sends `done`, imece reads its worktree (untracked files included, through a private index, the agent's own index untouched) and shows the diff as a change (`Δ`) in WAITING FOR YOU. You apply it (`a`: `git apply --index` into your checkout, staged, three-way when a plain apply does not fit), reject it (`r`) or send notes (`n`). Nothing reaches your checkout without you. The whole path is on [changes](../concepts/changes.md).
+When a worker sends `done`, imece reads its worktree (untracked files included, through a private index, the agent's own index untouched) and shows the diff as a change (`Δ`) in TO DECIDE. You apply it (`a`: `git apply --index` into your checkout, staged, three-way when a plain apply does not fit), reject it (`r`) or send notes (`n`). Nothing reaches your checkout without you. The whole path is on [changes](../concepts/changes.md).
 
 ## The git thread
 
@@ -64,7 +64,7 @@ you  ─/ Fix the parser─▶  lead (reads the checkout)
                              │ send(to: claude-1, type: assign, body: …)
                            claude-1 edits, runs `cargo test` through run
                              │ send(to: lead, type: done, re: 1)
-                           imece reads the worktree ─▶ Δ in WAITING FOR YOU
+                           imece reads the worktree ─▶ Δ in TO DECIDE
 you  ─a─▶ staged in your checkout; the worktree marked (author imece)
 ```
 

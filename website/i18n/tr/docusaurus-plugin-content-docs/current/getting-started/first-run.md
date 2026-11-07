@@ -43,7 +43,7 @@ Dizin commit'i olan bir git checkout'u olmalıdır (`--repo DİZİN` başkasın�
 └──────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-En üstte imece'nin işareti durur: bir işin etrafında beş el; yanında sürümü, ne olduğu ve eldeki proje ile başında kimin olduğu. Ekrana geldiği yerde noktaları birer vuruşta gelir, iş en son (iki saniyeden kısa); herhangi bir tuş onu hemen bütün gösterir, [`:motion off`](../reference/commands.md#motion-offcalmfull), başka bir pencere ve SSH de öyle. Ona dar gelen bir ekranda yazılar tek başına kalır, fazla kısa bir ekranda pencere onlarsız açılır. Salon da, henüz hiçbir projede işçi yokken boş satırlarında aynı işareti gösterir. Terminalin başlığı da her şey sakinken işareti taşır: `⁙ imece`.
+En üstte imece'nin işareti durur: bir işin etrafında beş el; yanında sürümü, ne olduğu ve eldeki proje ile başında kimin olduğu. Ekrana geldiği yerde noktaları birer vuruşta gelir, iş en son (iki saniyeden kısa); herhangi bir tuş onu hemen bütün gösterir, [`:motion off`](../reference/commands.md#motion-offcalmfull), başka bir pencere ve SSH de öyle. Ona dar gelen bir ekranda yazılar tek başına kalır, fazla kısa bir ekranda pencere onlarsız açılır. Ekip da, henüz hiçbir projede işçi yokken boş satırlarında aynı işareti gösterir. Terminalin başlığı da her şey sakinken işareti taşır: `⁙ imece`.
 
 Satır Claude Code'un sürümünü ve giriş yapılmış olup olmadığını, ya da nasıl giriş yapılacağını söyler: `claude auth login`. imece bunu ona sorar (`claude auth status`), kendi iş parçacığında, ağa çıkmadan ve para harcamadan; cevabı gelene dek `bakılıyor…`, program yoksa `PATH'te yok` yazar.
 
@@ -75,7 +75,7 @@ En son başlayan sürüm depoda tutulur (`seen`); en ilk başlangıç bunun yeri
 │ 1 şey seni bekliyor:                                      │
 │ Δ 11:42 claude-1 bitirdi: parser: sondaki virgülü kabul et │
 │ kapanmadan önceki son satırlar:                           │
-│ 11:42 claude-1 bitirdi: 2 dosya, +31 −4 → seni bekliyor   │
+│ 11:42 claude-1 bitirdi: değişiklik hazır · 2 dosya +31 −4   │
 │ 11:43 `cargo test` çalıştırdın → çıkış 0                  │
 │                            herhangi bir tuş: kapat        │
 └───────────────────────────────────────────────────────────┘
@@ -95,9 +95,9 @@ Açılan [ana ekrandır](../screen/home.md): üstte sıranın sizde olduğu işl
  enter  aç   @  bu ajana yaz   j k  gez   [ ]  proje   /  lidere yaz   ?  yardım
 ```
 
-Salon bir tuş uzakta, `1`: solda lonca, sağda SENİ BEKLEYEN ve DEFTER.
+Ekip bir tuş uzakta, `1`: solda lonca, sağda KARAR BEKLEYEN ve DEFTER.
 
-Takım yalnız liderdir (`○ lead`, siz yazana dek boşta). Salondaki günlüğün ilk satırı, `--confine strict` olmayan her başlangıçta bir kez, yalıtımın imece'nin işi olmadığını söyler.
+Takım yalnız liderdir (`○ lead`, siz yazana dek boşta). Ekipteki günlüğün ilk satırı, `--confine strict` olmayan her başlangıçta bir kez, yalıtımın imece'nin işi olmadığını söyler.
 
 ## Lidere yazmak
 
@@ -121,7 +121,7 @@ Lider checkout'u okur (okuma araçları, web ve salt okunur komutları vardır; 
    ● claude-1  #1   sondaki virgülü kabul et   düşünüyor…
 ```
 
-Günlük `lead panoya astı: #1 sondaki virgülü kabul et`, `lead işe aldı: claude-1 (varsayılan model)`, `⇄ lead → claude-1 [görev]: #1 …` der. Liderin kapanış metni size SENİ BEKLEYEN'de bir yanıt (`»`) olarak gelir: `enter` tamamını okur, `r` kapatır, ya da doğrudan yanıt yazarsınız.
+Günlük `lead panoya astı: #1 sondaki virgülü kabul et`, `lead işe aldı: claude-1 (varsayılan model)`, `⇄ lead → claude-1 [görev]: #1 …` der. Liderin kapanış metni size KARAR BEKLEYEN'de bir yanıt (`»`) olarak gelir: `enter` tamamını okur, `r` kapatır, ya da doğrudan yanıt yazarsınız.
 
 Hesabınızda olmayan bir katman modeli ilk turunda düşer; imece o işçiyi standart modelde yeniden başlatır ve günlük `claude-1: opus modeli burada yok, varsayılanla devam` der.
 
@@ -131,23 +131,23 @@ Hesabınızda olmayan bir katman modeli ilk turunda düşer; imece o işçiyi st
    ● claude-1  #1   sondaki virgülü kabul et   src/csv.rs düzenliyor   $0.41  +18 −3
 ```
 
-Soldan sağa: glif (`●` çalışıyor, `○` boşta, `!` bir şeyi sizi bekliyor, `✓` bitti ve henüz bakılmadı, `■` takıldı: bloke ya da oturumu durdu), adı, kartı, şu an ne yaptığı, ne harcadığı ve worktree'sinin nerede durduğu: `+18 −3` sonraki `done` ile size vereceği satırlar, `⎇ ad` açtığı bir dal, `↑N` kendi commit'leri, `↓N` checkout'unuzun daha yeni commit'leri. Açık bir izin sorusu olan işçi `⚑ onayını bekliyor` gösterir ve soru SENİ BEKLEYEN'de bir öğedir: `a` izin verir, `r` reddeder (rutin komutlar, derleme, testler, git'in okuma komutları kendiliğinden çalışır).
+Soldan sağa: glif (`●` çalışıyor, `○` boşta, `!` bir şeyi sizi bekliyor, `✓` bitti ve henüz bakılmadı, `■` takıldı: bloke ya da oturumu durdu), adı, kartı, şu an ne yaptığı, ne harcadığı ve worktree'sinin nerede durduğu: `+18 −3` sonraki `done` ile size vereceği satırlar, `⎇ ad` açtığı bir dal, `↑N` kendi commit'leri, `↓N` checkout'unuzun daha yeni commit'leri. Açık bir izin sorusu olan işçi `⚑ çalıştırmak istiyor` gösterir ve soru KARAR BEKLEYEN'de bir öğedir: `a` izin verir, `r` reddeder (rutin komutlar, derleme, testler, git'in okuma komutları kendiliğinden çalışır).
 
 Satırda `enter` işçinin odağını açar: kartının hikâyesi (niyet, varsayımlar, kararlar, konuşma, kanıt, değişiklikler). Bir `enter` daha (ya da `t`) izi açar, oturumunun ham akışı. `esc` geri döner.
 
 ## Değişiklik (Δ)
 
-İşçi `done` gönderince imece onun worktree'sini tek yama olarak okur ve SENİ BEKLEYEN'e koyar. Günlük `claude-1 bitirdi: 2 dosya, +31 −4 → seni bekliyor` der, başlık `! 1 seni bekliyor`, terminalin başlığı `! imece · 1 seni bekliyor` olur.
+İşçi `done` gönderince imece onun worktree'sini tek yama olarak okur ve KARAR BEKLEYEN'e koyar. Günlük `claude-1 bitirdi: değişiklik hazır · 2 dosya +31 −4` der, başlık `! 1 seni bekliyor`, terminalin başlığı `! imece · 1 seni bekliyor` olur.
 
 ```text
- SENİ BEKLEYEN (1) ──────────────────────────────────────────────────────
+ KARAR BEKLEYEN (1) ──────────────────────────────────────────────────────
  Δ 10:19 claude-1 bitirdi: parser: sondaki virgülü kabul et (2 dosya, +31 −4) · ✓ bu ağaçta temiz geçti: cargo test
-   enter diff'i gör · a checkout'a uygula · r reddet
+   enter diff'i gör · a onayla · r geri gönder
 ```
 
 Satırın sonu kanıttır: imece'nin `run` aracının tam bu ağaçta gördüğü çalıştırmalar. `✓ bu ağaçta temiz geçti: cargo test` (yeşil), `✗ bu ağaçta başarısız: …` (kırmızı) ya da `bu ağaçta çalıştırma yok` (uyarı). Gösterilir, kapı değildir: karar sizin.
 
-- `w` doğrudan SENİ BEKLEYEN'e gider; `tab` paneller arasında geçer.
+- `w` doğrudan KARAR BEKLEYEN'e gider; `tab` paneller arasında geçer.
 - `W` her yerden (bir kartın ekranı, bir diff, pano) sıradaki bekleyen öğeyi açar; yine basılınca sonrakini. `S` eldeki öğeyi sonraya erteler ve sonrakini açar.
 - Değişiklikte `enter` diff'in tamamını açar:
 
@@ -163,18 +163,18 @@ Satırın sonu kanıttır: imece'nin `run` aracının tam bu ağaçta gördüğ�
  -    line.split(',').collect()
  +    let line = line.strip_suffix(',').unwrap_or(line);
  +    line.split(',').collect()
- j k kaydır · [ ] dosya · a uygula · r reddet · c not · n notları gönder · x parça seç · > alıntıla · w sar
+ j k kaydır · [ ] dosya · a onayla · r geri gönder · c not · n notları gönder · x parça seç · > alıntıla · w sar
 ```
 
 `j` `k` kaydırır, `^d` `^u` yarım sayfa, `gg` `G` uçlar, `[` `]` dosyadan dosyaya atlar, `w` uzun satırları sarar. Birden çok dosya yamanın üstünde listelenir (en çok altı); türleri birden çoksa önce türe göre satırlar.
 
-### `a`: uygula
+### `a`: onayla
 
-`a` değişikliği checkout'unuza `git apply --index` ile uygular: **stage'e** iner, bakıp commit atmanız için. Flash `claude-1 değişikliği checkout'una uygulanıyor; stage'e girince günlük söyler` der; git kendi iş parçacığında çalışır, ekran hiç beklemez. Sonra günlük `claude-1 değişikliğini (2 dosya) checkout'a uyguladın, stage'de; çalışma ağacı işareti 3f9a1c2` der: incelenen ağaç worktree'de bir işaret olarak commit'lenir (yazar `imece`), böylece işçinin sonraki `done`'ı yalnız sonrasını gösterir. Uymayan bir değişiklik (aynı satırları siz düzenlediniz ya da checkout'unuz ilerledi) önce index'in bir kopyasında üç yollu denenir ve çakışırsa git'in sözleriyle reddedilir; hiçbir şey yarım uygulanmaz. Hunk'larda `x`, sonra `a` yalnız seçilenleri uygular; kalanı yine değişiklik olarak bekler.
+`a` değişikliği checkout'unuza `git apply --index` ile uygular: **stage'e** iner, bakıp commit atmanız için. Flash `onaylandı: claude-1 değişikliği checkout'una uygulanıyor; stage'e girince günlük söyler` der; git kendi iş parçacığında çalışır, ekran hiç beklemez. Sonra günlük `claude-1 değişikliğini (2 dosya) checkout'a uyguladın, stage'de; çalışma ağacı işareti 3f9a1c2` der: incelenen ağaç worktree'de bir işaret olarak commit'lenir (yazar `imece`), böylece işçinin sonraki `done`'ı yalnız sonrasını gösterir. Uymayan bir değişiklik (aynı satırları siz düzenlediniz ya da checkout'unuz ilerledi) önce index'in bir kopyasında üç yollu denenir ve çakışırsa git'in sözleriyle reddedilir; hiçbir şey yarım uygulanmaz. Hunk'larda `x`, sonra `a` yalnız seçilenleri uygular; kalanı yine değişiklik olarak bekler.
 
 Sonra her zamanki gibi commit atın: `!git commit` kendi kabuğunuzda, ekran kenara çekilerek çalışır (herhangi bir tuş geri getirir); `:commit` stage'dekiler için ucuz bir modelden mesaj ister ve `!git commit -m '…'` satırını komut satırına koyar.
 
-### `r`: reddet
+### `r`: geri gönder
 
 `r` öğeyi kapatır, değişikliği worktree'de bırakır ve nedenini yazmanız için yazma satırını `@claude-1 ` olarak açar. Nedenleriniz işçinin sonraki turudur. Uygulama ile ret arasında üçüncü bir yanıt vardır: `c` diff'in en üstteki satırına not yazar, `n` bütün notları tek mesajda, her birini `dosya:satır` altında gönderir ve değişiklik işçiye aynı yoldan geri döner. `>` üstteki hunk'ı bir mesaja alıntılar.
 
@@ -205,7 +205,7 @@ Aynı checkout'ta sonraki başlangıç aynı ekranı, her ajan uykuda gösterir 
 - [imece nasıl çalışır](../concepts/how-imece-works.md)
 - [Değişiklikler](../concepts/changes.md) ve [değişiklik ekranı](../screen/changes.md)
 - [Onaylar ve sorular](../concepts/approvals-and-questions.md)
-- [SENİ BEKLEYEN](../screen/waiting.md)
+- [KARAR BEKLEYEN](../screen/waiting.md)
 - [Oturumlar](../concepts/sessions.md)
 - [Klavye](../screen/keyboard.md)
 - [Senaryo: tek düzeltme](../scenarios/one-fix.md)

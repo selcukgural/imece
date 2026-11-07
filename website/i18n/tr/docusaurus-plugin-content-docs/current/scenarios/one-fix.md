@@ -5,7 +5,7 @@ description: Baştan commit'e tek bir iş; lider bir işçi alır, işçi bir ko
 
 # Kırık bir test, tek işçi
 
-Bütün döngü bir kez, tek ajanla: lidere neyin bozuk olduğunu söylersiniz, lider bir işçi alır, işçinin değişikliği (`Δ`) SENİ BEKLEYEN paneline gelir, okur, uygular ve commit edersiniz. Tek bir işin dokunduğu her imece parçasıyla, olduğu sırayla karşılaşırsınız.
+Bütün döngü bir kez, tek ajanla: lidere neyin bozuk olduğunu söylersiniz, lider bir işçi alır, işçinin değişikliği (`Δ`) KARAR BEKLEYEN paneline gelir, okur, uygular ve commit edersiniz. Tek bir işin dokunduğu her imece parçasıyla, olduğu sırayla karşılaşırsınız.
 
 Çalışma kopyası, bir testi kırık bir Rust crate'i. PATH'te Claude Code var.
 
@@ -16,7 +16,7 @@ cd ~/code/parser
 imece
 ```
 
-Salon, takım yalnızca liderden ibaretken açılır: `lead`, çalışma kopyanızı okur ve ona asla yazmaz. Günlüğün (ekranda DEFTER) ilk satırı ajanlara ne verildiğini söyler, çünkü varsayılan seviye `standard`:
+Ekip, takım yalnızca liderden ibaretken açılır: `lead`, çalışma kopyanızı okur ve ona asla yazmaz. Günlüğün (ekranda DEFTER) ilk satırı ajanlara ne verildiğini söyler, çünkü varsayılan seviye `standard`:
 
 ```text
  DEFTER
@@ -79,12 +79,12 @@ Bir `progress` mesajı, işçinin liderini uyandırmadan gönderdiği mesajdır:
 `standard` altında Claude Code'un kendi kabuğu açıktır ve Claude Code'un kurallarının soracağı bir komut reddedilmek yerine size gelir. **Rutin** bir komut hemen çalışır: tek satır, kabuk sözdizimi yok (boru, yönlendirme, `&&`, `$` ya da glob yok) ve `run` aracının politikasının bu role izin verdiği bir program (bağımlılık değiştiren komutları olmadan cargo, git'in okuma komutları, `--run` ile adlandırdığınız programlar). `cargo test` rutindir; iz `allowed on its own: Bash: cargo test` der. Gerisi bekler:
 
 ```text
- SENİ BEKLEYEN (1)
- ⚑ 14:07 claude-1 onayını bekliyor: Bash: cargo test 2>&1 | tail -20
+ KARAR BEKLEYEN (1)
+ ⚑ 14:07 claude-1 çalıştırmak istiyor: Bash: cargo test 2>&1 | tail -20
    a izin ver · r reddet · enter odak
 ```
 
-Boru komutu rutin olmaktan çıkarır. Komut bütünüyle gösterilir, asla markdown olarak okunmaz: izin verdiğiniz şey çalışan şeydir. Bu arada işçinin satırı `⚑ onayını bekliyor` der ve terminalin başlığı `imece · 1 seni bekliyor` olur.
+Boru komutu rutin olmaktan çıkarır. Komut bütünüyle gösterilir, asla markdown olarak okunmaz: izin verdiğiniz şey çalışan şeydir. Bu arada işçinin satırı `⚑ çalıştırmak istiyor` der ve terminalin başlığı `imece · 1 seni bekliyor` olur.
 
 `tab` (ya da `w`) ile panele geçin, ya da her yerden `W`, ve `a`. Anlık mesaj `izin verildi: claude-1 devam ediyor` der; günlük kararınızı tutar:
 
@@ -100,13 +100,13 @@ Boru komutu rutin olmaktan çıkarır. Komut bütünüyle gösterilir, asla mark
 
 ```text
  14:12 ⇄ claude-1 → lead [bitti] ↩: parse() token yokken Ok(Tree::empty()) döndürüyor; parse_empty testi eklendi
- 14:12 ! claude-1 bitirdi: 1 dosya, +14 −3 → seni bekliyor
+ 14:12 ! claude-1 bitirdi: değişiklik hazır · 1 dosya +14 −3
 ```
 
 ```text
- SENİ BEKLEYEN (1)
+ KARAR BEKLEYEN (1)
  Δ 14:12 claude-1 bitirdi: parse() token yokken Ok(Tree::empty()) döndürüyor (1 dosya, +14 −3) · ✓ bu ağaçta temiz geçti: cargo test
-   enter diff'i gör · a checkout'a uygula · r reddet
+   enter diff'i gör · a onayla · r geri gönder
 ```
 
 Öğenin metni işçinin `done`unun ilk satırıdır; bundan sonra değişikliğin başlığı odur. `✓ bu ağaçta temiz geçti`, imece'nin tam bu ağaçta yaptığı çalıştırmaları adlandırır. İşçi yalnızca kendi kabuğunda test etseydi satır `bu ağaçta çalıştırma yok` derdi: Claude Code'un kabuğu, imece'nin güvenebileceği bir çıkış kodu taşımaz. Çalıştırma yok diye hiçbir şey reddedilmez; karar sizin.
@@ -131,7 +131,7 @@ Boru komutu rutin olmaktan çıkarır. Komut bütünüyle gösterilir, asla mark
 
 ## 8. Uygulama
 
-`a`ya basın. Anlık mesaj `claude-1 değişikliği checkout'una uygulanıyor; stage'e girince günlük söyler` der. Git kendi iş parçacığında çalışır, ekran hiç beklemez. Sonra:
+`a`ya basın. Anlık mesaj `onaylandı: claude-1 değişikliği checkout'una uygulanıyor; stage'e girince günlük söyler` der. Git kendi iş parçacığında çalışır, ekran hiç beklemez. Sonra:
 
 ```text
  14:13 ✓ claude-1 değişikliğini (1 dosya) checkout'a uyguladın, stage'de; çalışma ağacı işareti 3f2a9c1

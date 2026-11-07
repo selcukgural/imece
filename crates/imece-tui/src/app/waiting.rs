@@ -109,7 +109,7 @@ impl App {
     /// What the tab's progress and the title's glyph say: the top of the
     /// ladder over the agents of the projects that are open (a closed or
     /// archived one is not on the screen), waiting also when anything is
-    /// in WAITING FOR YOU, as the title counts it. Done, not seen, is calm:
+    /// in TO DECIDE, as the title counts it. Done, not seen, is calm:
     /// the person sees it when back.
     pub fn progress(&self) -> Progress {
         let w = &self.world;
@@ -807,11 +807,11 @@ mod tests {
         let title = |w, p| ui::words::title(Lang::En, w, p);
         assert_eq!(title(0, Progress::Calm), "⁙ imece");
         assert_eq!(title(0, Progress::Working), "● imece");
-        assert_eq!(title(2, Progress::Waiting), "! imece · 2 waiting");
-        assert_eq!(title(1, Progress::Stuck), "■ imece · 1 waiting");
+        assert_eq!(title(2, Progress::Waiting), "! imece · 2 to decide");
+        assert_eq!(title(1, Progress::Stuck), "■ imece · 1 to decide");
         assert_eq!(
             ui::words::title(Lang::Tr, 3, Progress::Waiting),
-            "! imece · 3 seni bekliyor"
+            "! imece · 3 karar bekliyor"
         );
     }
 
@@ -1125,10 +1125,7 @@ mod tests {
         app.lang = Lang::Tr;
         app.command(&format!("why {name}"));
         let line = ui::words::event(Lang::Tr, &app.world, &app.world.journal[0].event);
-        let said = format!(
-            "{name}: onayını bekliyor · {} itibarıyla · {line}",
-            clock(8)
-        );
+        let said = format!("{name}: seni bekliyor · {} itibarıyla · {line}", clock(8));
         assert_eq!(flashed(&app).unwrap_or_default(), said);
         app.command("why nobody");
         assert_eq!(
@@ -1149,7 +1146,7 @@ mod tests {
         app.world.agents[a].held_mail = 2;
         app.command(&format!("why @{name}"));
         let said = format!(
-            "{name}: idle · since {} · the journal does not say why · messages held until \
+            "{name}: idle · since {} · the journal does not say why · messages queued until \
              you answer: 2",
             clock(10)
         );
@@ -1157,7 +1154,8 @@ mod tests {
         app.lang = Lang::Tr;
         app.command(&format!("why @{name}"));
         assert!(
-            (flashed(&app).unwrap_or_default()).ends_with("sen yanıtlayana dek bekleyen mesaj: 2")
+            (flashed(&app).unwrap_or_default())
+                .ends_with("sen yanıtlayana dek kuyrukta bekleyen mesaj: 2")
         );
     }
 
@@ -1170,7 +1168,7 @@ mod tests {
             (Rung::Done, "done, not seen", "bitti, bakılmadı"),
             (Rung::Starting, "starting", "başlıyor"),
             (Rung::Working, "working", "çalışıyor"),
-            (Rung::Waiting, "waiting for you", "onayını bekliyor"),
+            (Rung::Waiting, "needs you", "seni bekliyor"),
             (Rung::Stuck, "stuck", "takıldı"),
         ] {
             let said = |lang| ui::words::why(lang, &app.world, 0, (rung, 0, None));

@@ -49,7 +49,7 @@ imece kapalı düşer (fail closed): bir dosya, bir oturum ya da bir değişikli
 
 ### `claude-1 durdu: tools differ: extra ["WebFetch"], missing []`
 
-**Ne görürsünüz.** Satır `■ durdu, yazınca yeniden başlar` gösterir; günlükte `claude-1 durdu: tools differ …`.
+**Ne görürsünüz.** Satır `■ oturum bitti · yazınca yeniden başlar` gösterir; günlükte `claude-1 durdu: tools differ …`.
 
 **Neden.** imece Claude Code'dan tam olarak rolün ve confine düzeyinin araçlarını ister, sonra oturumun neyle çalıştığını bildirdiğini denetler her turda. Başka her şey oturumu durdurur: araç ekleyen bir Claude Code güncellemesi, sunucu getiren bir ayar, etrafından dolaşılmak yerine bakılmalıdır.
 
@@ -69,7 +69,7 @@ imece kapalı düşer (fail closed): bir dosya, bir oturum ya da bir değişikli
 
 ### `claude-1 değişikliği uygulanamadı: error: patch failed: src/csv.rs:41 … conflicts with the checkout in src/csv.rs`
 
-**Ne görürsünüz.** Flash ve günlükte aynı satır; `Δ` öğesi SENİ BEKLEYEN'de kalır.
+**Ne görürsünüz.** Flash ve günlükte aynı satır; `Δ` öğesi KARAR BEKLEYEN'de kalır.
 
 **Neden.** `a` checkout'unuzda `git apply --index` çalıştırır. Checkout'unuz yamanın altında ilerlediyse imece önce yamayı index'in bir kopyasına üç yollu birleştirir ve çakışırsa reddeder (`conflicts with the checkout in a, b`); aynı dosyada stage'lenmemiş düzenlemeleriniz varsa git'in kendi `does not match index` sözü olduğu gibi döner ve hiçbir birleştirme işinizin üstünden geçmez. Hiçbir şey asla yarım uygulanmaz: git'in çakışmadaki üç yollusu dosyalarda işaretler bırakırdı, bu yüzden denetimsiz hiç çalışmaz.
 

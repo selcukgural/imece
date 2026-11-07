@@ -148,7 +148,7 @@ pub enum Undoable {
 /// What `:clear` takes off the salon's screen (record 90).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Clear {
-    /// WAITING FOR YOU and the journal.
+    /// TO DECIDE and the journal.
     All,
     Inbox,
     Journal,
@@ -639,7 +639,7 @@ pub enum Sel {
 
 /// A row the hint letters (`F`) can name: a salon row (a project's
 /// header, an agent, also the people on a card's screen), an item of
-/// WAITING FOR YOU (its index in `World::inbox`) or a journal line (its
+/// TO DECIDE (its index in `World::inbox`) or a journal line (its
 /// index in `World::journal`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Target {
@@ -685,7 +685,7 @@ pub enum Need {
     Nothing,
     /// Finished a turn the person has not looked at.
     Done,
-    /// Something of it waits in WAITING FOR YOU.
+    /// Something of it waits in TO DECIDE.
     Waiting,
     /// Blocked, or its session stopped: it goes nowhere until the person
     /// writes to it.
@@ -708,7 +708,7 @@ pub enum Rung {
     Starting,
     /// Mid-turn, asking a teammate, researching.
     Working,
-    /// Something of it waits in WAITING FOR YOU.
+    /// Something of it waits in TO DECIDE.
     Waiting,
     /// Blocked, or its session stopped.
     Stuck,

@@ -5,13 +5,13 @@ description: Görünüm 4 - son bir saatte agent başına bir şerit, her sütun
 
 # Zaman şeridi
 
-Zaman şeridi takımı zaman içinde gösterir: açık projelerin her agent'ı için bir şerit, zaman sağa doğru şimdiye akar, her sütun agent'ın o anda ne yaptığıdır. Kimin yan yana çalıştığı, kimin boşta oturduğu, bir şeyin nerede ve ne zamandan beri takıldığı bir bakışta okunur. `4` (`:timeline`) onu salonun yerinde açar; `1` geri getirir. En çok küçük bir takımda işe yarar; çok agent'la şeritler kayar.
+Zaman şeridi takımı zaman içinde gösterir: açık projelerin her agent'ı için bir şerit, zaman sağa doğru şimdiye akar, her sütun agent'ın o anda ne yaptığıdır. Kimin yan yana çalıştığı, kimin boşta oturduğu, bir şeyin nerede ve ne zamandan beri takıldığı bir bakışta okunur. `4` (`:timeline`) onu ekibin yerinde açar; `1` geri getirir. En çok küçük bir takımda işe yarar; çok agent'la şeritler kayar.
 
 ```text
 ┌ ZAMAN ŞERİDİ · bir sütun 5 sn · [ ] ölçek ──────────────────────────────────────────┐
 │shop-api            14:00                    14:04                   şimdi           │
 │● lead-shop-api     ··········································  koordine ediyor      │
-│! claude-1          ●●●░░■■■■■■■■■■■■■■⚑⚑⚑⚑⚑⚑⚑⚑⚑⚑⚑⚑⚑⚑⚑⚑⚑⚑⚑⚑  onayını bekliyor     │
+│! claude-1          ●●●░░■■■■■■■■■■■■■■⚑⚑⚑⚑⚑⚑⚑⚑⚑⚑⚑⚑⚑⚑⚑⚑⚑⚑⚑⚑  seni bekliyor        │
 │● claude-2          ●●●░░░░░░░▒▒▒▒▒▒▒▒▒▒░░░░▒▒▒⚑░░░░░░▒▒▒▒▒▒▒██  ▸ Run the tests      │
 │●   claude-2.1                       ▒▒▒▒████▒▒✓·············  boşta               │
 │! claude-3          ·●●●░░⚑⚑⚑⚑⚑⚑▒▒▒▒▒░░░░???░░░░░░░░▒▒▒▒⚑⚑░░?  ▓░░░░ ? → claude-2   │
@@ -20,7 +20,7 @@ Zaman şeridi takımı zaman içinde gösterir: açık projelerin her agent'ı i
 └─────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-Her proje adıyla ve ilk sütununun, ortadakinin ve `şimdi`nin saatiyle başlar. Sonra lideri, işçileri ve her işçinin yardımcıları (içeriden); her satır agent'ın durum işareti ve adı, şeridi ve salon satırının şu an söylediği. Projenin altında `mesajlar`: agent'larının her sütunda birbirine kaç mesaj gönderdiği, etkinlik çubuğunun ölçeğinde (`▁` hiç, `▂` bir, `▃` iki, `█`'e kadar).
+Her proje adıyla ve ilk sütununun, ortadakinin ve `şimdi`nin saatiyle başlar. Sonra lideri, işçileri ve her işçinin yardımcıları (içeriden); her satır agent'ın durum işareti ve adı, şeridi ve ekip satırının şu an söylediği. Projenin altında `mesajlar`: agent'larının her sütunda birbirine kaç mesaj gönderdiği, etkinlik çubuğunun ölçeğinde (`▁` hiç, `▂` bir, `▃` iki, `█`'e kadar).
 
 ## Bir sütun ne söyler
 
@@ -31,13 +31,13 @@ Her proje adıyla ve ilk sütununun, ortadakinin ve `şimdi`nin saatiyle başlar
 | `░` | düşünüyordu: tur içinde, elinde araç çağrısı yok |
 | `●` | başlıyordu: oturumu kalkıyordu |
 | `?` | bir takım arkadaşına sorup yanıtını bekliyordu |
-| `⚑` | sizi bekliyordu: onayınızı bekleyen bir araç çağrısı, size bir soru ya da tur dışında SENİ BEKLEYEN'de bir şeyi |
+| `⚑` | sizi bekliyordu: onayınızı bekleyen bir araç çağrısı, size bir soru ya da tur dışında KARAR BEKLEYEN'de bir şeyi |
 | `■` | takılmıştı: bloke ya da oturumu durmuş |
 | `✓` | bir turun bittiği tick |
 | `·` | boştaydı |
 | (boş) | bilinen bir şey yok: imece onu ilk görmeden önce |
 
-Bir sütun, tick'lerinin gördüğünün en yükseğini gösterir, tablonun altından yukarıya o sırayla: okuma sütunundaki kısa bir düzenleme `█` olur, içinde bir durma olan sütun `■`. Bir agent çalışırken şeridi, daha eski bir değişikliği sizi bekliyor olsa bile ne yaptığını söyler; bunu salonun `!`'i söylemeye devam eder.
+Bir sütun, tick'lerinin gördüğünün en yükseğini gösterir, tablonun altından yukarıya o sırayla: okuma sütunundaki kısa bir düzenleme `█` olur, içinde bir durma olan sütun `■`. Bir agent çalışırken şeridi, daha eski bir değişikliği sizi bekliyor olsa bile ne yaptığını söyler; bunu ekibin `!`'i söylemeye devam eder.
 
 ## Ölçek ve tuşlar
 

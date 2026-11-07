@@ -39,7 +39,7 @@ Claude Code tries a failed API call again by itself first, up to ten times (thre
 | Claude Code says | imece |
 | --- | --- |
 | overloaded, a server error (5xx), a lost connection, a rate limit | a passing error: the journal says `claude-1 hit a API error: … · imece tries again in 30 s (1/3)`, the row counts down `↻ 1/3 in 25 s`, and when the time comes the session is told to carry on where it stopped. The second try is 2 min after the next failure, the third 8 min after that. After the third, it waits for you. |
-| signed out, a refused key, a used-up quota, a bill, a plan's usage limit | the account's: it waits for you at once, as `■` in [WAITING FOR YOU](../screen/waiting.md). |
+| signed out, a refused key, a used-up quota, a bill, a plan's usage limit | the account's: it waits for you at once, as `■` in [TO DECIDE](../screen/waiting.md). |
 | anything else (a refused request, a full context) | the journal says the turn stopped, as before. |
 
 The session lives on through a failed turn, and Claude Code keeps the failed prompt in it, so a try sends a short "carry on", never the prompt again. A good turn, your message, or mail to the agent starts the count again; a session that ends takes a waiting try with it. In the demo, every third thing you tell an agent fails on an overloaded API and is tried again, every seventh on a refused key.
@@ -58,7 +58,7 @@ A session imece forgets leaves nothing behind:
 When an epic is done, `:archive [TITLE]` puts the project at hand away and opens a fresh one of the same name in its place, on the same checkout ([`:archive`](../reference/commands.md#archive-title)). The archive is kept in the store with everything it had:
 
 - its agents, asleep, each with its remembered session, mail, notes, change and the prompts a turn was cut short in (an archive cuts a turn under way short, as a quit does);
-- its cards, its items in WAITING FOR YOU and its journal lines, out of sight: the screen shows only the fresh project.
+- its cards, its items in TO DECIDE and its journal lines, out of sight: the screen shows only the fresh project.
 
 Nothing of an archive wakes or spends: no card is offered to its workers, nobody reaches its agents by name (the fresh head may have the same one), and a tool call one of them made before the archive is answered `your project was put away; nothing was done`. `--fresh` leaves its sessions alone, and the tidy keeps its journal lines whatever their age. Claude Code removes old transcripts by itself after a while (30 days by default), and a session gone by then is started anew, told where it left off.
 
@@ -68,7 +68,7 @@ Nothing of an archive wakes or spends: no card is offered to its workers, nobody
 
 ## Leftovers: days, retention, preferences
 
-- **Days:** the clock starts at the local time of the world's first start. The journal and a conversation draw a dim `─ 2026-11-01` row above the first line of another day; an item in WAITING FOR YOU from another day carries its date; copied and exported text is always stamped.
+- **Days:** the clock starts at the local time of the world's first start. The journal and a conversation draw a dim `─ 2026-11-01` row above the first line of another day; an item in TO DECIDE from another day carries its date; copied and exported text is always stamped.
 - **Retention:** at every start journal lines older than 90 days that lie past the newest 5000 are deleted, and `VACUUM` runs when a quarter of the file or more is free. Stories and inbox rows stay. A tidy that fails is tried again next start.
 - **Preferences** (theme, side panel) live in the store's `meta` table, readable before the store is taken, so a demo beside a live imece shares them.
 
@@ -85,7 +85,7 @@ A start that remembers an earlier run opens one window before anything moves, WH
    ? claude-2 asks you: keep the old CLI flag?
  turns cut short when imece closed: claude-3
  the last lines before:
-   14:02 claude-1 finished: 3 files, +34 −8 → waits for you
+   14:02 claude-1 finished: change ready · 3 files +34 −8
    14:05 claude-2 → you: ask keep the old CLI flag?
  any key: close
 ```

@@ -229,7 +229,7 @@ imece'nin kendisinin okuduğu:
 | --- | --- |
 | `IMECE_LANG` | `en` ya da `tr`, `--lang` verilmediğinde ekranın dili; yanlış değer bayrak gibi reddedilir |
 | `IMECE_THEME` | `--theme` gibi bir tema adı ya da renk dosyası; aynı biçimde denetlenir |
-| `IMECE_PROGRESS` | `on` ya da `off`: sekmenin ilerleme çubuğu (OSC 9;4) gönderilsin mi; verilmezse terminalin başlarken verdiği ada göre kitty 0.39+, Ghostty 1.2+ ve iTerm2 3.6.6+'ya, bir de tmux içinde (`TMUX`); cevap vermeyen bir terminal `WT_SESSION`'dan (Windows Terminal), `TERM_PROGRAM` ve `TERM_PROGRAM_VERSION`'dan ya da `LC_TERMINAL` ve `LC_TERMINAL_VERSION`'dan anlaşılır; bkz. [salon](../screen/salon.md) |
+| `IMECE_PROGRESS` | `on` ya da `off`: sekmenin ilerleme çubuğu (OSC 9;4) gönderilsin mi; verilmezse terminalin başlarken verdiği ada göre kitty 0.39+, Ghostty 1.2+ ve iTerm2 3.6.6+'ya, bir de tmux içinde (`TMUX`); cevap vermeyen bir terminal `WT_SESSION`'dan (Windows Terminal), `TERM_PROGRAM` ve `TERM_PROGRAM_VERSION`'dan ya da `LC_TERMINAL` ve `LC_TERMINAL_VERSION`'dan anlaşılır; bkz. [ekip](../screen/salon.md) |
 | `TMUX` | tmux içinde: bildirimler passthrough'tan geçer (`allow-passthrough on`), sekme ilerlemesi doğrudan |
 | `XDG_STATE_HOME` | durum dizini `imece/`'nin (depo, worktree'ler) gittiği yer; mutlak olmalı; yoksa `~/.local/state/imece`, `HOME` da yoksa sistemin geçici dizini |
 | `HOME` | yukarıdaki yedek, `:open`, `:export` ya da `--theme` sonrası yazılan bir yoldaki `~`, ve Claude Code'un varsayılan dizini |

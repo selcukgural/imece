@@ -44,15 +44,15 @@ The `:` menu shows the speed after the command (`faster (×2)`) and whether it i
 
 The simulation produces live's events through the same model calls live uses, so the screen is the real screen:
 
-- **The leader's work**: it posts cards (at the start too), answers your request with the cards it posted (a reply `»` in WAITING FOR YOU), assigns a card to a free worker or lets one claim it from the board, hires a worker when two cards wait and nobody is free (up to six), and a tiered hire falls back to the default model now and then.
+- **The leader's work**: it posts cards (at the start too), answers your request with the cards it posted (a reply `»` in TO DECIDE), assigns a card to a free worker or lets one claim it from the board, hires a worker when two cards wait and nobody is free (up to six), and a tiered hire falls back to the default model now and then.
 - **Workers**: typed messages on the bus (`assign`, `ask`, `answer`, `progress`, `done`), what they assume told to you as `inform`, what they touch shown in the card's story, a helper hired for the tests that sends its `done` and leaves.
 - **Approvals (`⚑`)**: a worker's session asks your yes for one of the project's sensitive steps; the item is held until you decide (`a` allow, `r` refuse) or given up on after 100 seconds, as Claude Code's own prompt is.
 - **Questions (`?`)**: a worker asks you something; it waits a while, then goes on with what does not depend on the answer. `enter` opens the conversation at the question; writing to the worker answers it.
-- **Changes (`Δ`)**: a card ends with imece's `run` of the build and the tests (one test run in six fails and the worker goes back), a `done` to the leader and a change in WAITING FOR YOU with a patch made from the card's files and the runs on that tree. `enter` opens the diff; `a` applies it on the next step (one apply in eight fails with git's words, as live's can), `r` rejects it and your reasons become the worker's next card; `c` `n` notes, `x` partial apply, `>` quoting and `w` wrapping all work as live.
-- **Sessions**: a session starts once (with Claude Code's `/` commands; a worker's may say its worktree was moved or kept), stops now and then (`■ stopped, write to it to start again`), is forgotten with `:forget` or `/clear` and restarted when told; `/cost` and `/compact` answer as a turn.
+- **Changes (`Δ`)**: a card ends with imece's `run` of the build and the tests (one test run in six fails and the worker goes back), a `done` to the leader and a change in TO DECIDE with a patch made from the card's files and the runs on that tree. `enter` opens the diff; `a` applies it on the next step (one apply in eight fails with git's words, as live's can), `r` rejects it and your reasons become the worker's next card; `c` `n` notes, `x` partial apply, `>` quoting and `w` wrapping all work as live.
+- **Sessions**: a session starts once (with Claude Code's `/` commands; a worker's may say its worktree was moved or kept), stops now and then (`■ session ended · write to it to restart`), is forgotten with `:forget` or `/clear` and restarted when told; `/cost` and `/compact` answer as a turn.
 - **The pot and the limits**: spending per agent and per hour, the pot running low, a spent pot refusing words and commands; the usage window in the `:budget` note and, nearly full, in the header, filled from what the agents spent.
 - **Projects**: `:open PATH [NAME]` adds a fake project with a leader, two workers and three cards; `:close` sends its agents away; `:rename` as live. `:pin` too.
-- **The whole screen**: the salon, folding, `f`, the board (`2`), the code map (`3`) with leases, cards (`#N`), conversations with turns and replies (`↩`), marks, the journal, `W` `S`, the quit question, the help, themes, both languages, the readline keys, multi-line writing and paste. `Confine` is said at the start as live says it.
+- **The whole screen**: the team, folding, `f`, the board (`2`), the code map (`3`) with leases, cards (`#N`), conversations with turns and replies (`↩`), marks, the journal, `W` `S`, the quit question, the help, themes, both languages, the readline keys, multi-line writing and paste. `Confine` is said at the start as live says it.
 
 ## The demo mirrors live
 
@@ -62,12 +62,12 @@ Every fix, feature or change to what live does is shown by the demo in the same 
 
 - **The "where you left off" window**, turns cut short by a close, and agents asleep from a start: they need a store and an earlier run, and the demo keeps none.
 - **Researchers, symbol leases and the code map's leases**: the demo shows them as a preview of what is planned; live has none of them yet. Live's code map says `no shared trunk yet: each agent works in its own worktree, so there are no leases to show`.
-- **Two parts of the screen nothing fills any more**: the salon's QUEUE line and the board's VERIFYING column stayed when the merge queue left.
+- **Two parts of the screen nothing fills any more**: the team's QUEUE line and the board's VERIFYING column stayed when the merge queue left.
 
 ## See also
 
 - [First run](first-run.md)
 - [Keyboard](../screen/keyboard.md)
-- [The salon](../screen/salon.md)
+- [The team](../screen/salon.md)
 - [Command line reference](../reference/cli.md)
 - [Videos](../videos.mdx)

@@ -589,7 +589,7 @@ pub(super) fn flashed(app: &App) -> Option<String> {
 }
 
 /// A demo app whose hired worker's new worktree asks about the setup
-/// script, the ask selected in WAITING FOR YOU.
+/// script, the ask selected in TO DECIDE.
 pub(crate) fn asking_setup() -> (App, usize, AgentId) {
     let mut app = waiting(&[]);
     let Engine::Sim(s) = &mut app.engine else {
@@ -645,7 +645,7 @@ pub(super) fn type_in(app: &mut App, text: &str) {
 }
 
 /// A quiet team whose salon showed its header and its agents, two
-/// open items of WAITING FOR YOU (after a closed one) and two journal
+/// open items of TO DECIDE (after a closed one) and two journal
 /// lines, as a drawing leaves them for `F`.
 pub(super) fn drawn_for_hints() -> (App, Vec<Target>) {
     let mut app = quiet();
@@ -700,7 +700,7 @@ pub(super) fn removed(name: &str) -> String {
     format!("removed {name} · teardown in {name}: exit 0, 0.4 s · dropped database {name}")
 }
 
-/// A demo app whose leader's plan waits in WAITING FOR YOU, selected
+/// A demo app whose leader's plan waits in TO DECIDE, selected
 /// in the inbox pane: the app, the item and the leader.
 pub(crate) fn asking_plan() -> (App, usize, AgentId) {
     let mut app = waiting(&[]);

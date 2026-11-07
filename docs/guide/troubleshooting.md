@@ -49,7 +49,7 @@ imece fails closed: when a file, a session or a change is not what it expects, i
 
 ### `claude-1 stopped: tools differ: extra ["WebFetch"], missing []`
 
-**What you see.** The row shows `■ stopped, write to it to start again`; the journal has `claude-1 stopped: tools differ …`.
+**What you see.** The row shows `■ session ended · write to it to restart`; the journal has `claude-1 stopped: tools differ …`.
 
 **Why.** imece asks Claude Code for exactly the tools of the role and the confine level, then checks what the session reports it runs with on every turn. Anything else stops the session: a Claude Code update that adds a tool, a setting that pulls in a server, must be looked at, not worked around.
 
@@ -69,7 +69,7 @@ imece fails closed: when a file, a session or a change is not what it expects, i
 
 ### `claude-1's change did not apply: error: patch failed: src/csv.rs:41 … conflicts with the checkout in src/csv.rs`
 
-**What you see.** The flash, and the same line in the journal; the `Δ` item stays in WAITING FOR YOU.
+**What you see.** The flash, and the same line in the journal; the `Δ` item stays in TO DECIDE.
 
 **Why.** `a` runs `git apply --index` in your checkout. When your checkout moved on under the patch, imece merges it three-way into a copy of the index first and refuses when that conflicts (`conflicts with the checkout in a, b`); when you have unstaged edits in the same file, git's own `does not match index` is returned as it is and no merge goes over your work. Nothing is half applied, ever: git's three-way on a conflict would leave markers in files, so it never runs unchecked.
 

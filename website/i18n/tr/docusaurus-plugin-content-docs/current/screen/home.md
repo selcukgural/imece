@@ -5,12 +5,12 @@ description: Görünüm 5 - projeler arası sıra sizde olanlar, takılanlar ve 
 
 # Ana ekran
 
-Ana ekran, imece'nin açıldığı ve karar verdiğiniz ekrandır; `5` ya da `:home` geri getirir. Salon takımı gösterir; ana ekran sıranın sizde olduğu şeyleri. Açık projelerin hepsi için tek liste ve yanında eldeki satır, tuşa basmadan okunur.
+Ana ekran, imece'nin açıldığı ve karar verdiğiniz ekrandır; `5` ya da `:home` geri getirir. Ekip takımı gösterir; ana ekran sıranın sizde olduğu şeyleri. Açık projelerin hepsi için tek liste ve yanında eldeki satır, tuşa basmadan okunur.
 
 ```text
  hepsi   shop-api !2 ●1   mobile-app !3 ■1 ●2                              / lead-shop-api için yazar
  lonca mobile-app 9d3f1c2 · 3 bekliyor
- SIRA SİZDE 5                                       │#19 Paging in product search  shop-api · claude-1 · $0.90
+ KARAR BEKLEYEN 5                                       │#19 Paging in product search  shop-api · claude-1 · $0.90
 ▸ Δ shop-api    #19  Paging in product… +41 −6 ✓ 38 dk│
   ? shop-api    #31  Refund rules             soru 12 dk│neden    Paging in product search
   ⚑ mobile-app  #52  Notification sett…      izin? 4 dk│kanıt    ✓ bu ağaçta temiz geçti: dotnet test
@@ -29,7 +29,7 @@ Ana ekran, imece'nin açıldığı ve karar verdiğiniz ekrandır; `5` ya da `:h
 
 | Grup | İçindekiler |
 | --- | --- |
-| SIRA SİZDE | SENİ BEKLEYEN'deki her şey, `W`'nin sırasıyla |
+| KARAR BEKLEYEN | KARAR BEKLEYEN'deki her şey, `W`'nin sırasıyla |
 | TAKILAN | bloke olmuş ya da durmuş ajanlar |
 | ÇALIŞAN | tur ortasındaki ya da bir takım arkadaşına soran ajanlar. Değişikliği bekleyen ve başka işe geçmiş bir işçi burada da görünür: iki ayrı iş. Sizden evet ya da yanıt bekleyen ajan ise o ögenin kendisidir |
 | SESSİZ | geri kalanlar, işi olmayan liderler hariç |
@@ -49,7 +49,7 @@ Eldeki satır, tamamıyla: bir sorunun ya da isteğin sözleri; bir değişikli�
 | `j` `k` / `↑` `↓`, `gg` `G` | gezer; önizleme izler |
 | `[` `]` | tüm projeler, sonra her biri, dönerek |
 | `enter` | açar: değişikliğin diff'i, sorunun konuşması, ajanın odağı. `esc` buraya döner |
-| `a` `r` | evet ve hayır, [SENİ BEKLEYEN](waiting.md)'deki gibi. Soruda `a` yanıt yazar |
+| `a` `r` | evet ve hayır, [KARAR BEKLEYEN](waiting.md)'deki gibi. Soruda `a` yanıt yazar |
 | `e` `A` | bir istekte: bu tur evet · bundan sonra evet |
 | `s` | sonra: öge diğerlerinin arkasına gider, listede kalırsınız |
 | `/` | eldeki projenin liderine yazar; ilk satır kim olduğunu söyler |
@@ -60,4 +60,4 @@ Diğer tuşlar her yerdeki gibi çalışır; durum satırının tuşları eldeki
 
 Karar asla okumadığınız şeye düşmez: `a` ya da `r`'ye bastığınızda eldeki satır gitmişse tuş hiçbir şey yapmaz, bir satır bunu söyler ve yerine gelen satır elinize geçer.
 
-Salon (bir başlangıcın notlarının düştüğü günlükle), pano, kod haritası ve zaman şeridi yerinde, bir tuş uzakta. Tuş dosyasının `[salon]` bölümü ana ekranda da geçerlidir.
+Ekip (bir başlangıcın notlarının düştüğü günlükle), pano, kod haritası ve zaman şeridi yerinde, bir tuş uzakta. Tuş dosyasının `[ekip]` bölümü ana ekranda da geçerlidir.

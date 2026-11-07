@@ -5,7 +5,7 @@ description: "Opening a session you drive yourself next to the team: :solo with 
 
 # A solo beside the team
 
-Sometimes you do not want a leader between you and the work: one agent, the model and thinking depth you choose, and you say what to do. A **solo** is that, inside imece: it keeps the worktree, the `Δ` review, the pot and the salon, and leaves out the board and the hiring. This scenario opens one next to a running team, then a second on another model, and comes back to it the next day.
+Sometimes you do not want a leader between you and the work: one agent, the model and thinking depth you choose, and you say what to do. A **solo** is that, inside imece: it keeps the worktree, the `Δ` review, the pot and the team, and leaves out the board and the hiring. This scenario opens one next to a running team, then a second on another model, and comes back to it the next day.
 
 imece was started in `~/code/kule` as usual: the team is `lead` and the two workers it hired.
 
@@ -23,7 +23,7 @@ The words may come in any order; imece tells them apart by shape. `claude:opus@x
  opened notes at /Users/me/code/kule as a solo session; write to solo-notes (claude opus@xhigh)
 ```
 
-The salon shows a new group beside the team, with one agent, and it is selected:
+The team shows a new group beside the team, with one agent, and it is selected:
 
 ```text
  ▾ kule
@@ -52,10 +52,10 @@ Its first turn starts. Before it, imece makes `solo-notes` a worktree of `kule` 
 
 ## 3. The answer, and the Δ with it
 
-The turn ends with an answer. It goes to the journal and WAITING FOR YOU as any agent's answer does, and, because this is a solo, imece reads its worktree at the same moment:
+The turn ends with an answer. It goes to the journal and TO DECIDE as any agent's answer does, and, because this is a solo, imece reads its worktree at the same moment:
 
 ```text
- WAITING FOR YOU
+ TO DECIDE
  ↩ solo-notes answered: Wrote docs/limits.md from src/limit.rs: the two windows, the per-key…
  Δ solo-notes: Wrote docs/limits.md from src/limit.rs   no run on this tree
 ```

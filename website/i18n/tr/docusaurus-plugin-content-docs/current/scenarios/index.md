@@ -23,7 +23,7 @@ Her senaryo gerçek imece için doğrudur: tuşlar `?` yardımının listelediğ
 
 ## Bedavaya denemek
 
-Bir senaryonun ekranda yaptığı her şey `imece --demo` ile denenebilir: sahte ajanlar aynı modeli oynar; salon, SENİ BEKLEYEN, diff görünümü, notlar, seçilen parçalar, `:open`, `:pin`, `:copy`, işaretler ve `:export` aynı biçimde çalışır ve hiçbir şey ödetmez. Demonun gösteremediği, önceki bir çalışma ve bir kayıt dosyası isteyen kısımdır: "nerede kalmıştın" penceresi, yarım kalan turlar, baştan uykuda ajanlar. Başka ne ayrıldığını [demo sayfası](../getting-started/demo.md) söyler.
+Bir senaryonun ekranda yaptığı her şey `imece --demo` ile denenebilir: sahte ajanlar aynı modeli oynar; ekip, KARAR BEKLEYEN, diff görünümü, notlar, seçilen parçalar, `:open`, `:pin`, `:copy`, işaretler ve `:export` aynı biçimde çalışır ve hiçbir şey ödetmez. Demonun gösteremediği, önceki bir çalışma ve bir kayıt dosyası isteyen kısımdır: "nerede kalmıştın" penceresi, yarım kalan turlar, baştan uykuda ajanlar. Başka ne ayrıldığını [demo sayfası](../getting-started/demo.md) söyler.
 
 ## Bir okuma sırası
 

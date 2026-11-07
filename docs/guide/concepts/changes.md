@@ -1,24 +1,24 @@
 ---
 title: Changes (the Δ gate)
-description: How a worker's work reaches your checkout - its done becomes a change in WAITING FOR YOU, which you apply, reject, annotate or apply in part; what the worktree does meanwhile.
+description: How a worker's work reaches your checkout - its done becomes a change in TO DECIDE, which you apply, reject, annotate or apply in part; what the worktree does meanwhile.
 ---
 
 # Changes (the Δ gate)
 
-A change (`Δ`) is what a worker's worktree holds when the worker says `done`. It waits for you in WAITING FOR YOU, and nothing of it reaches your checkout until you apply it. This is the gate between the agents and your working copy, and you are the one who opens it.
+A change (`Δ`) is what a worker's worktree holds when the worker says `done`. It waits for you in TO DECIDE, and nothing of it reaches your checkout until you apply it. This is the gate between the agents and your working copy, and you are the one who opens it.
 
 ## From `done` to Δ
 
 1. A worker (role Worker only; a helper's `done` is its worker's business, a leader changes nothing) sends `done`.
 2. On imece's git thread, the worktree is read through a private index file: `read-tree HEAD`, `add -A`, `write-tree`, `diff --cached --binary` against its HEAD. Untracked files count; the agent's own index is untouched. A patch over 4 MiB is refused and the worker told.
-3. The result is a `Δ` item in WAITING FOR YOU, its detail the `done`'s first line, and the journal says `claude-1 finished: 3 files, +34 −8 → waits for you`. A newer `done` from the same worker supersedes the older change.
+3. The result is a `Δ` item in TO DECIDE, its detail the `done`'s first line, and the journal says `claude-1 finished: change ready · 3 files +34 −8`. A newer `done` from the same worker supersedes the older change.
 4. The worker's `send` answer waits for the read, and tells it that you see the change.
 
 ```text
- WAITING FOR YOU (2)
+ TO DECIDE (2)
  Δ 14:02 claude-1 finished: parser tokens (3 files, +34 −8) · ✓ ran clean on this tree: cargo test -p parser · $0.84 · 12 min
  ? 14:05 claude-2 asks you: keep the old CLI flag?
-  enter see the diff · a apply to the checkout · r reject
+  enter see the diff · a approve · r send back
 ```
 
 ### Evidence on the line
@@ -27,9 +27,9 @@ A run of the worker or a helper through imece's `run` tool is tied to the tree i
 
 ### The repository's check
 
-Put a script at `.imece/check` in your checkout (a shell script, approved like the [worktree setup script](projects.md#a-worktree-setup-script)) and imece runs it in the worker's worktree every time a change is read from it, **once you said yes to its exact bytes**: `/bin/sh` on a private copy of the bytes you read, with the cleared environment plus `IMECE_REPO` and `IMECE_WORKTREE`, in its own process group, for the `run` tool's deadline (`--run-timeout`, ten minutes by default). What it came to goes on the change: `✓ check · exit 0, 41.2 s` or `✗ check · exit 1, 38.7 s` with the last lines of its output, a mark before the evidence on the `Δ` row in WAITING FOR YOU (`✓ check ·`, `✗ check ·`, `● check ·` while it runs), and a journal line (`claude-1: check failed on its change, exit 1, 38.7 s · Tests: 1 failed, 211 passed`). It is a note, never a gate: `a` applies a red change as it applies any other; you decide.
+Put a script at `.imece/check` in your checkout (a shell script, approved like the [worktree setup script](projects.md#a-worktree-setup-script)) and imece runs it in the worker's worktree every time a change is read from it, **once you said yes to its exact bytes**: `/bin/sh` on a private copy of the bytes you read, with the cleared environment plus `IMECE_REPO` and `IMECE_WORKTREE`, in its own process group, for the `run` tool's deadline (`--run-timeout`, ten minutes by default). What it came to goes on the change: `✓ check · exit 0, 41.2 s` or `✗ check · exit 1, 38.7 s` with the last lines of its output, a mark before the evidence on the `Δ` row in TO DECIDE (`✓ check ·`, `✗ check ·`, `● check ·` while it runs), and a journal line (`claude-1: check failed on its change, exit 1, 38.7 s · Tests: 1 failed, 211 passed`). It is a note, never a gate: `a` applies a red change as it applies any other; you decide.
 
-- **Your yes:** the first change that finds a check you have not said yes to puts an ask in WAITING FOR YOU (`▶ claude-1: run the repository's check .imece/check on its changes? enter shows it`); the change waits unchecked meanwhile and says so above its patch. `enter` shows the bytes, `a` says yes (it runs at once on every change that waited, then on each one read), `r` no for this run. The yes is bound to the bytes' SHA-256, the file's real path and `/bin/sh`, kept in imece's store; a changed byte asks again. Asks close at the next start; the next change asks again.
+- **Your yes:** the first change that finds a check you have not said yes to puts an ask in TO DECIDE (`▶ claude-1: run the repository's check .imece/check on its changes? enter shows it`); the change waits unchecked meanwhile and says so above its patch. `enter` shows the bytes, `a` says yes (it runs at once on every change that waited, then on each one read), `r` no for this run. The yes is bound to the bytes' SHA-256, the file's real path and `/bin/sh`, kept in imece's store; a changed byte asks again. Asks close at the next start; the next change asks again.
 - **Once per tree:** a change read again with the same tree (sent back and sent again as it is) gets the result it had, without a run; a changed tree runs again. A check that was running, or asked about, when imece ended runs or asks again at the next start.
 - **What it must not do:** change tracked files. The change is read before the check runs, so what the check writes is no part of it and would show up in the worker's next `done`; build output under paths git ignores is fine.
 - **The worker is not told.** The result is yours: `n` sends your notes back, and a failed check's last lines make a first note. Whether a red check should hold a change back for one round, with the worker told first, is a question for a later record.
@@ -37,7 +37,7 @@ Put a script at `.imece/check` in your checkout (a shell script, approved like t
 
 ### What it cost
 
-Every change says what the worker spent on it, so you can judge the leader's hiring (a strong-tier worker on a rename) or a worker that burnt $4 on a one-line fix: `$0.84 · 12 min` on the `Δ` row in WAITING FOR YOU, `cost · $0.84 · 12 min` above the diff, in the journal (`claude-1's change cost $0.84 · 12 min`) and so on the card's screen and in `:why`. The figure is the worker's spend, its helpers' counted in, from its first prompt after its last change to this `done`, and the time it worked (not the time the change waited for you); a `done` comes mid-turn, so the figure appears a moment later, when the turn's cost is known. A change sent back (`r`, `n`, `b`) and sent again adds up: `$1.20 · 25 min · 3 rounds`; a newer `done` that takes an older change's place carries its cost too, and so does the rest of a change you applied in part. Once a change is applied whole, the next one starts from nothing. The leader hears it in the worker's `done`, which it gets once the worker's turn ended, headed `[done 12 · $0.84]`, so it learns what its tiers cost. A solo's change at each turn's end says the same. What subscriptions would have cost at API prices, and a price per applied change across a project, are not here.
+Every change says what the worker spent on it, so you can judge the leader's hiring (a strong-tier worker on a rename) or a worker that burnt $4 on a one-line fix: `$0.84 · 12 min` on the `Δ` row in TO DECIDE, `cost · $0.84 · 12 min` above the diff, in the journal (`claude-1's change cost $0.84 · 12 min`) and so on the card's screen and in `:why`. The figure is the worker's spend, its helpers' counted in, from its first prompt after its last change to this `done`, and the time it worked (not the time the change waited for you); a `done` comes mid-turn, so the figure appears a moment later, when the turn's cost is known. A change sent back (`r`, `n`, `b`) and sent again adds up: `$1.20 · 25 min · 3 rounds`; a newer `done` that takes an older change's place carries its cost too, and so does the rest of a change you applied in part. Once a change is applied whole, the next one starts from nothing. The leader hears it in the worker's `done`, which it gets once the worker's turn ended, headed `[done 12 · $0.84]`, so it learns what its tiers cost. A solo's change at each turn's end says the same. What subscriptions would have cost at API prices, and a price per applied change across a project, are not here.
 
 ## Reading it
 
@@ -101,7 +101,7 @@ Notes live in the screen's memory, keyed by the patch's hash: a newer Δ starts 
 
 - `x` chooses the hunk at the top (on a file's header, the next one); its `@@` line wears `✓`; `x` again lets it go. The flash counts: "1 of 3 hunks chosen; a applies only them, the rest waits".
 - `a` with hunks chosen applies only those: the chosen hunks become a change of their own on the git thread (a file with none is left out, so is a binary file), read through an index of imece's own, applied like a whole change (three-way when clean) and marked in the worktree with only that part.
-- The rest is what the worktree holds against its new HEAD; it is read again at once and waits in WAITING FOR YOU as a change again, under the same title. The worker hears which part was applied and that the rest waits.
+- The rest is what the worktree holds against its new HEAD; it is read again at once and waits in TO DECIDE as a change again, under the same title. The worker hears which part was applied and that the rest waits.
 
 The choice is kept against the patch's hash for this run only. Single lines inside a hunk cannot be chosen.
 
@@ -119,7 +119,7 @@ imece commits nothing in your checkout. `:commit` asks Claude's cheap tier for a
 
 A worker in a [Lonca workspace](projects.md#on-lonca) has no worktree to read. Its change is a proposal the daemon holds, and a `done` with changes no proposal carries is refused with `propose first`, so it never closes its card. Its Δ is that proposal: imece looks every few seconds, and once the worker's turn is over its newest proposal waits for you, read from the store. A workspace proposes all it holds, so the newest holds what the older ones did; those are counted on the Δ and go when you decide it.
 
-`a` approves it and `r` rejects it, both signed by the `lonca` program, so a Secure Enclave key wants your finger; a word that did not reach Lonca is said in the journal and the Δ still waits. Lonca takes no rejection without a reason, so `r` opens the line first and what you send is both the reason and your message to the worker; leaving the line with `esc` rejects nothing. A proposal is approved whole: `x` is refused, and nothing lands in your checkout, which [`:sync`](../reference/commands.md#sync) brings up to trunk.
+`a` approves it and `r` sends it back (asked why first), both signed by the `lonca` program, so a Secure Enclave key wants your finger; a word that did not reach Lonca is said in the journal and the Δ still waits. Lonca takes no rejection without a reason, so `r` opens the line first and what you send is both the reason and your message to the worker; leaving the line with `esc` rejects nothing. A proposal is approved whole: `x` is refused, and nothing lands in your checkout, which [`:sync`](../reference/commands.md#sync) brings up to trunk.
 
 What Lonca does next is said whoever decided, `lonca approve` in your own shell included: `on trunk as 174cfc1`, or a merge the queue could not make, or a refusal with its reasons. The checks of the merge queue go in the journal too: `claude-1: Lonca's checks · ✓ build exit 0, 12.4 s · ✗ tests exit 101, 31.0 s · its last line`. A worker sent back is woken, told to sync and propose again, with what the failed check printed; one on trunk hears it at its next prompt. A repository whose policy would let changes in unseen is closed: see [projects](projects.md#on-lonca). What it cost stays imece's and is carried into the next proposal until one lands.
 
@@ -140,6 +140,6 @@ The commands see an empty environment but for `PATH`, a scratch `HOME` and `LANG
 ## See also
 
 - [The changes screen](../screen/changes.md): every key in the diff view.
-- [WAITING FOR YOU](../screen/waiting.md): `W`, `S`, the order of items.
+- [TO DECIDE](../screen/waiting.md): `W`, `S`, the order of items.
 - [One fix](../scenarios/one-fix.md) and [review with notes](../scenarios/review-with-notes.md).
 - [Security](../concepts/security.md): why the gate is yours.

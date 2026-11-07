@@ -856,11 +856,11 @@ mod tests {
         app.pane = Pane::Inbox;
         assert_eq!(app.command_note("forget"), "$", "no agent at hand");
         assert_eq!(app.command_note("talk"), "");
-        assert_eq!(app.command_note("next"), "(0 waiting)");
+        assert_eq!(app.command_note("next"), "(0 to decide)");
         app.world.asks_you(1, "Bash: make deploy");
         app.world.asks_you(1, "Bash: make test");
-        assert_eq!(app.command_note("next"), "(2 waiting)");
-        assert_eq!(app.command_note("waiting"), "(2 waiting)");
+        assert_eq!(app.command_note("next"), "(2 to decide)");
+        assert_eq!(app.command_note("waiting"), "(2 to decide)");
         assert_eq!(app.command_note("story"), "(off)");
         app.story = true;
         assert_eq!(app.command_note("story"), "(on)");

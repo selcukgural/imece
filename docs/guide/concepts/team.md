@@ -5,7 +5,7 @@ description: Who is on an imece team - the leader, workers, helpers and the rese
 
 # The team
 
-An imece team is a leader that talks to you and hires workers as the work needs them, workers that may hire helpers for parts of their task, and (one day) researchers. You never pick a team size; you set caps. You meet the team in the salon, grouped by project.
+An imece team is a leader that talks to you and hires workers as the work needs them, workers that may hire helpers for parts of their task, and (one day) researchers. You never pick a team size; you set caps. You meet the team in the team, grouped by project.
 
 ## Roles
 
@@ -17,7 +17,7 @@ An imece team is a leader that talks to you and hires workers as the work needs 
 | Solo (`solo`, `solo-notes`) | Its own worktree, in a project with no leader | `send`, `run`, `hire` (helpers) |
 | Researcher | not built yet | — |
 
-- **The leader** reads the checkout, splits your request into cards and hands them out with `send` (type `assign`), each with the paths it owns ([the paths a card owns](messages-and-board.md#the-paths-a-card-owns)), or puts them on the board for any worker to take. Before it hires a second worker its plan comes to you first (`▤` in WAITING FOR YOU; [the plan](messages-and-board.md#the-plan)). It never changes a file, at every `--confine` level: it works in your checkout, where a write would skip the review. It gets Claude Code's read tools and, from `standard` on, the web.
+- **The leader** reads the checkout, splits your request into cards and hands them out with `send` (type `assign`), each with the paths it owns ([the paths a card owns](messages-and-board.md#the-paths-a-card-owns)), or puts them on the board for any worker to take. Before it hires a second worker its plan comes to you first (`▤` in TO DECIDE; [the plan](messages-and-board.md#the-plan)). It never changes a file, at every `--confine` level: it works in your checkout, where a write would skip the review. It gets Claude Code's read tools and, from `standard` on, the web.
 - **A worker** changes files in its own worktree, checks its work with the `run` tool, and sends `done` to whoever gave it the task. Its `done` becomes a change for you to review ([changes](../concepts/changes.md)). One card at a time per worker.
 - **A helper** is to a worker what a worker is to the leader. A worker hires one for a part that can run beside its own work, in files it is not changing. A helper is not offered cards, hires nobody (no helpers of helpers), and is not counted against `--agents`. Its `done` to its worker marks it leaving; it leaves when that turn ends, so the turn's cost is still reported. The journal says `finished and left`. A worker that stops takes its helpers with it. A helper that stops before its `done` (its session ends, or its last turn fails for good: a refused key, a spent budget) is told to its worker by imece at the worker's next turn, "the part you gave it is not done: do it yourself, or hire another helper", and an idle worker is woken for it, so it does not wait on a helper that will not answer; an API error imece tries again is not a stop yet.
 - **A solo** is a worker without a leader: you drive it yourself, on the model and effort you chose (`:solo`, `--solo`), in a project of its own. It has no board and no cards; every turn that ends with an answer shows you its worktree's diff. It may hire helpers as a worker does ([solo sessions](solo.md)).
@@ -64,7 +64,7 @@ Agents address each other by these names on the bus; a `send` to a name that is 
 ## On the screen
 
 ```text
- SALON
+ TEAM
  ● lead            coordinating
  ● claude-1        #12 parser: tokens      ⎇ ↑1 +34 −8   ▾ 1 helper
    └ ● claude-1.1  helper of claude-1
@@ -80,4 +80,4 @@ Workers that need you come first (stuck, then waiting for you, then done and not
 - [Messages and the board](../concepts/messages-and-board.md)
 - [Claude Code](../concepts/claude-code.md): the confine levels and what a session is.
 - [Projects](../concepts/projects.md): a leader per project.
-- [The salon](../screen/salon.md) and [the CLI reference](../reference/cli.md).
+- [The team](../screen/salon.md) and [the CLI reference](../reference/cli.md).

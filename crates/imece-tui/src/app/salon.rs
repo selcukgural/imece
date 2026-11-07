@@ -188,7 +188,7 @@ impl App {
         self.flash(fill(t.settled_one, &[&name]));
     }
 
-    /// `:unsettle`: everything settled back in the salon.
+    /// `:unsettle`: everything settled back in the team.
     pub(super) fn unsettle(&mut self) {
         let n = self.settled.len() + self.settled_projects.len();
         self.settled.clear();
@@ -1158,7 +1158,7 @@ mod tests {
         let name = app.world.agents[1].name.clone();
         assert_eq!(
             flashed(&app).unwrap_or_default(),
-            format!("{name} settled: back when it needs you")
+            format!("{name} hidden until it needs you")
         );
         // Gone with its helper and researcher; on to the next row.
         assert_eq!(shown(&app), [Sel::Project(0), Sel::Agent(0), Sel::Agent(2)]);
@@ -1188,7 +1188,7 @@ mod tests {
         let helper = app.world.agents[3].name.clone();
         assert_eq!(
             flashed(&app).unwrap_or_default(),
-            format!("not settled: {helper} needs you")
+            format!("not hidden: {helper} needs you")
         );
         app.world.inbox.clear();
         app.world.agents[1].status = Status::Blocked;
@@ -1197,7 +1197,7 @@ mod tests {
         let worker = app.world.agents[1].name.clone();
         assert_eq!(
             flashed(&app).unwrap_or_default(),
-            format!("not settled: {worker} needs you")
+            format!("not hidden: {worker} needs you")
         );
         // A project with one agent that needs the person stays too.
         app.world.agents[1].status = Status::Idle;
@@ -1208,7 +1208,7 @@ mod tests {
         let other = app.world.agents[2].name.clone();
         assert_eq!(
             flashed(&app).unwrap_or_default(),
-            format!("not settled: {other} needs you")
+            format!("not hidden: {other} needs you")
         );
         assert_eq!(app.selected, Sel::Project(0));
     }
@@ -1227,7 +1227,7 @@ mod tests {
         let name = app.world.projects[1].name.clone();
         assert_eq!(
             flashed(&app).unwrap_or_default(),
-            format!("{name} settled: back when it needs you")
+            format!("{name} hidden until it needs you")
         );
         // Nothing after it: project 0's last row.
         assert_eq!(app.selected, *rows.last().unwrap());
@@ -1279,7 +1279,7 @@ mod tests {
         app.command("unsettle");
         assert!(app.settled.is_empty() && app.settled_projects.is_empty());
         assert_eq!((app.view, app.pane), (View::Salon, Pane::Salon));
-        assert_eq!(flashed(&app).unwrap_or_default(), "3 back in the salon");
+        assert_eq!(flashed(&app).unwrap_or_default(), "3 back in the team");
         // To a helper: the worker's row it hangs under comes back, and
         // its project; another row stays settled.
         app.settled.extend([1, 2]);

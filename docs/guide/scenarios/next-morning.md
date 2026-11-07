@@ -49,14 +49,14 @@ Before anything moves, one window says where you left off:
  turns cut short when imece closed: claude-1, claude-3
  the last lines before:
    ─ 2026-10-31
-   18:40 ! claude-4 finished: 2 files, +30 −4 → waits for you
+   18:40 ! claude-4 finished: change ready · 2 files +30 −4
    18:41 › you ran `cargo test` → exit 0 · 12 s
  any key: close
 ```
 
 The pot is where it was: `--budget` unset keeps it, `--budget 80` would set it. Any key closes the window and does nothing else. It opens only when there is something to tell; the demo never has one.
 
-The journal has a line for each cut turn, and the salon shows everyone asleep:
+The journal has a line for each cut turn, and the team shows everyone asleep:
 
 ```text
  09:00 ■ claude-1's turn was cut short when imece closed; it hears of it when it wakes
@@ -69,7 +69,7 @@ The journal has a line for each cut turn, and the salon shows everyone asleep:
    ◦ claude-4   #4   config loader          ◦ asleep since the last run, write to it to wake it
 ```
 
-Asleep means no process and no cost. Three things wake an agent: you write to it, a teammate's message of a waking type arrives, or a card posted in this run is offered to it. Mail and cards that waited through the restart wake nobody. A journal line older than today carries a `─ YYYY-MM-DD` row above it, and so does an item in WAITING FOR YOU of another day.
+Asleep means no process and no cost. Three things wake an agent: you write to it, a teammate's message of a waking type arrives, or a card posted in this run is offered to it. Mail and cards that waited through the restart wake nobody. A journal line older than today carries a `─ YYYY-MM-DD` row above it, and so does an item in TO DECIDE of another day.
 
 ## 3. Writing wakes it: how a session resumes
 
@@ -122,7 +122,7 @@ Switch to another window for a while. When the terminal gets the focus back afte
   ⚑ 1 assumptions made
   ⇄ 4 conversations
   09:33 ⚑ claude-3: worktree moved from 3f2a9c1 to HEAD 9b1d2e0
-  09:41 ! claude-3 finished: 1 files, +18 −2 → waits for you
+  09:41 ! claude-3 finished: change ready · 1 files +18 −2
  any key: close
 ```
 
@@ -140,7 +140,7 @@ Away from the machine altogether, `:notify push` sends the same words, with the 
 
 ## 6. Keep a place with marks
 
-In the journal (or an open conversation) select a line you will want again, the message with the plan say, and press `m`: `marked: ' comes back to it`. The line wears `✱` after its clock. `'` selects the next marked line, round to the first: in the open conversation, else in the journal; from anywhere else it goes to the salon's journal first. `m` again takes the mark away (`mark taken away`).
+In the journal (or an open conversation) select a line you will want again, the message with the plan say, and press `m`: `marked: ' comes back to it`. The line wears `✱` after its clock. `'` selects the next marked line, round to the first: in the open conversation, else in the journal; from anywhere else it goes to the team's journal first. `m` again takes the mark away (`mark taken away`).
 
 ```text
  09:41✱ ⇄ lead → claude-3 [assign]: #5 config: defaults, src/config.rs

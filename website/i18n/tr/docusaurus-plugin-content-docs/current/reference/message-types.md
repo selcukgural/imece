@@ -16,11 +16,11 @@ Lider, işçilerinden bir gruba da yazabilir: `to: workers` (hepsi) ya da `to: i
 | Tür | Alıcıyı uyandırır | Olağan gönderen → alıcı | imece'nin yaptığı |
 | --- | --- | --- | --- |
 | `assign` | evet | lider → işçi, işçi → yardımcı | ilk satır kartın başlığı olur; boşta bir işçi yeni bir kart alır ve ona başlar; `you`'ya reddedilir |
-| `ask` | evet | herkes → herkes, ya da → `you` | bir takım arkadaşına: sonraki turunu başlatır; `you`'ya: SENİ BEKLEYEN'de o ajana yazmanıza dek bekleyen bir soru `?` |
+| `ask` | evet | herkes → herkes, ya da → `you` | bir takım arkadaşına: sonraki turunu başlatır; `you`'ya: KARAR BEKLEYEN'de o ajana yazmanıza dek bekleyen bir soru `?` |
 | `answer` | evet | sorulan → soran | yanıt; `re` taşır, `↩` ile çizilir |
 | `inform` | hayır | herkes → herkes, ya da → `you` | alıcının sonraki turunu bekler; `you`'ya yalnızca bir günlük satırı |
 | `handoff` | evet | işçi → işçi | alıcının sonraki turunu başlatır; `you`'ya reddedilir |
-| `done` | evet | işçi → lider, yardımcı → işçi, ya da → `you` | bir işçinin done'ı imece'ye worktree'sini de okutur: SENİ BEKLEYEN'de bir değişiklik (`Δ`); lider onu işçinin turu bitince, değişikliğin maliyeti başlıkta (`[done 12 · $0.84]`) alır; bir yardımcının işçisine done'ı turu bitince ayrılmasını sağlar |
+| `done` | evet | işçi → lider, yardımcı → işçi, ya da → `you` | bir işçinin done'ı imece'ye worktree'sini de okutur: KARAR BEKLEYEN'de bir değişiklik (`Δ`); lider onu işçinin turu bitince, değişikliğin maliyeti başlıkta (`[done 12 · $0.84]`) alır; bir yardımcının işçisine done'ı turu bitince ayrılmasını sağlar |
 | `blocked` | evet | işçi → lider, ya da → `you` | alıcının sonraki turunu başlatır; `you`'ya yalnızca bir günlük satırı |
 | `progress` | hayır | işçi → lider, ya da → `you` | sonraki uyandıran mesajla birlikte gider |
 | `notice` | hayır | herkes → herkes, ya da → `you` | birlikte gider |
@@ -56,7 +56,7 @@ Varsayılan ret: uymayan bir mesaj nedeniyle reddedilir ve iz bırakmaz.
 
 ### Size mesajlar
 
-`to: you` kişiye ulaşır. Bir `ask` SENİ BEKLEYEN'de bir soru olur (`claude-1 sana soruyor: Which parser?`); açık bir sorusu varken boşta duran ajanın satırı `? → you` okunur ve soru o ajana yazdığınızda kapanır, bu da sonraki turunu başlatır. Gönderen şunu duyar: `delivered; the person sees it under WAITING FOR YOU and answers when they can, which starts your next turn. Until then, end your turn or go on with what does not depend on the answer; your teammates' messages wait for that answer too, but for a cancel.` Öteki her tür yalnızca bilgilendirir: günlükte ve konuşmada bir satır (`noted; the person sees it in the journal. Nothing wakes them: a question goes as type ask.`); bir işçinin size `done`'ı değişikliğini her done gibi gösterir. Size mesajlar numara ve `re` almaz, hiçbir sınıra girmez ve para etmez. Bkz. [onaylar ve sorular](../concepts/approvals-and-questions.md).
+`to: you` kişiye ulaşır. Bir `ask` KARAR BEKLEYEN'de bir soru olur (`claude-1 sana soruyor: Which parser?`); açık bir sorusu varken boşta duran ajanın satırı `? → you` okunur ve soru o ajana yazdığınızda kapanır, bu da sonraki turunu başlatır. Gönderen şunu duyar: `delivered; the person sees it under WAITING FOR YOU and answers when they can, which starts your next turn. Until then, end your turn or go on with what does not depend on the answer; your teammates' messages wait for that answer too, but for a cancel.` Öteki her tür yalnızca bilgilendirir: günlükte ve konuşmada bir satır (`noted; the person sees it in the journal. Nothing wakes them: a question goes as type ask.`); bir işçinin size `done`'ı değişikliğini her done gibi gösterir. Size mesajlar numara ve `re` almaz, hiçbir sınıra girmez ve para etmez. Bkz. [onaylar ve sorular](../concepts/approvals-and-questions.md).
 
 ### Kartlar ve veriyolu
 
@@ -81,7 +81,7 @@ Ekranda bir yanıt türünden sonra `↩` taşır; bir konuşmada başının alt
 | bir mesaj gövdesi | 4000 karakter | `send`, `post` |
 | ajan başına okunmamış mesaj | 20 | ajan okuyana dek `send` reddedilir |
 | ajan başına mesaj kaynaklı tur | siz son konuştuğunuzdan beri 12 | uyandıran `send`'ler ve pano teklifleri |
-| bir kartın başlığı | 120 karakterlik tek satır | `post`; bir `assign`'ın ilk satırı salonda sütunlarına kesilerek gösterilir |
+| bir kartın başlığı | 120 karakterlik tek satır | `post`; bir `assign`'ın ilk satırı ekipte sütunlarına kesilerek gösterilir |
 | proje başına açık kart | 20 | `post`: `the board has 20 open cards; wait until workers take some` |
 | ajan başına kart asma | siz son konuştuğunuzdan beri 10 | `post`: `you posted 10 cards since the person last spoke; stop and tell the person what is left` |
 | bir `run` komut satırı | 1000 karakter | `run` |
@@ -192,7 +192,7 @@ Bir işçinin ya da yardımcının çalıştırması, worktree'sinin öncesinde 
 | `input` | nesne | evet |
 | `tool_use_id` | dize | hayır |
 
-Yalnızca bir Claude ajanının soketinde ve yalnızca `standard` ile `open` altında: Claude Code kendi kurallarının soracağı bir araç çağrısından önce bunu kendisi çağırır (`--permission-prompt-tool mcp__imece__approve`) ve modelden gizler. Rutin bir komut (tek satır, bir program ve argümanları, rolün `run` politikasınca ve `--run` listenizce izinli) hemen izin alır, izde `allowed on its own` satırıyla; başka her şey SENİ BEKLEYEN'de bütünüyle gösterilen bir `⚑` kalemidir ve çağrı `a` ya da `r`'niz için bir güne dek bekler. Bir ret `The person refused this. Do not try it another way; if you need it, ask them …` diye yanıtlanır. Bkz. [onaylar ve sorular](../concepts/approvals-and-questions.md).
+Yalnızca bir Claude ajanının soketinde ve yalnızca `standard` ile `open` altında: Claude Code kendi kurallarının soracağı bir araç çağrısından önce bunu kendisi çağırır (`--permission-prompt-tool mcp__imece__approve`) ve modelden gizler. Rutin bir komut (tek satır, bir program ve argümanları, rolün `run` politikasınca ve `--run` listenizce izinli) hemen izin alır, izde `allowed on its own` satırıyla; başka her şey KARAR BEKLEYEN'de bütünüyle gösterilen bir `⚑` kalemidir ve çağrı `a` ya da `r`'niz için bir güne dek bekler. Bir ret `The person refused this. Do not try it another way; if you need it, ask them …` diye yanıtlanır. Bkz. [onaylar ve sorular](../concepts/approvals-and-questions.md).
 
 ## Bir ajana anlatılanlar
 

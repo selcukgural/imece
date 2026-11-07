@@ -106,7 +106,7 @@ impl App {
         }
     }
 
-    /// `:clear [inbox|journal]`: what WAITING FOR YOU lists and the
+    /// `:clear [inbox|journal]`: what TO DECIDE lists and the
     /// journal's lines go off the salon's screen after the grace, both
     /// without a word. Nothing is deleted; what still waits is counted.
     pub(super) fn clear(&mut self, arg: &str) {
@@ -122,7 +122,7 @@ impl App {
         self.wait_grace(Undoable::Clear(what));
     }
 
-    /// What `what` takes off now: the items WAITING FOR YOU lists and the
+    /// What `what` takes off now: the items TO DECIDE lists and the
     /// journal's rows not marked.
     fn clearable(&self, what: Clear) -> (usize, usize) {
         let w = &self.world;

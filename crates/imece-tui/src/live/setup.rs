@@ -66,7 +66,7 @@ impl Kind {
         }
     }
 
-    /// The item an unapproved script of this kind puts in WAITING FOR YOU;
+    /// The item an unapproved script of this kind puts in TO DECIDE;
     /// a teardown script asks over the `:tidy` window instead.
     pub fn inbox_kind(self) -> InboxKind {
         match self {
@@ -260,7 +260,7 @@ impl Plan {
     }
 }
 
-/// One ask in WAITING FOR YOU: its item, the bytes it asks about, and the
+/// One ask in TO DECIDE: its item, the bytes it asks about, and the
 /// agents whose new worktrees (a setup script) or changes (the check) went
 /// without them meanwhile.
 #[derive(Debug)]
@@ -304,7 +304,7 @@ impl Live {
     }
 
     /// What agent `id`'s start's thread did about the setup script, told:
-    /// a run in the journal, an ask in WAITING FOR YOU (one per script,
+    /// a run in the journal, an ask in TO DECIDE (one per script,
     /// the agents that went without it counted on it).
     pub(super) fn setup_done(&mut self, w: &mut World, id: AgentId, done: Done) {
         match done {

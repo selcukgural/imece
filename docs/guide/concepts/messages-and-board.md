@@ -65,7 +65,7 @@ On the screen a reply wears `↩` after its type: on its journal line, in a card
 
 The bus reaches you as `you`: `send(to: "you", type, body)`.
 
-- An `ask` to you becomes a question in WAITING FOR YOU (`?`, "claude-1 asks you: …"). The agent's salon line reads `? → you` while it is idle with one open. A newer question from the same agent takes the older's place. You answer by writing to the agent (`@claude-1 …`, or `a`/`r` on the item, which open the composer), and that starts its next turn.
+- An `ask` to you becomes a question in TO DECIDE (`?`, "claude-1 asks you: …"). The agent's team line reads `? → you` while it is idle with one open. A newer question from the same agent takes the older's place. You answer by writing to the agent (`@claude-1 …`, or `a`/`r` on the item, which open the composer), and that starts its next turn.
 - `inform`, `progress`, `notice`, `done`, `blocked` and `answer` to you only inform: a line in the conversation and the story, no item, nothing wakes. A worker's `done` to you shows its change like any `done`.
 - `assign`, `handoff` and `cancel` to you are refused.
 - Messages to you take no number and no `re`; your own messages have none. Nothing to you counts against the mail caps or the pot.
@@ -74,15 +74,15 @@ The prompts say when to ask: the leader may ask you mid-task; a worker asks its 
 
 ## Mail waits with an agent that waits on you
 
-An agent with something open that only you can settle does not go on because a teammate wrote: a question of its in WAITING FOR YOU, a tool call waiting for your yes, an API error, a setup script, a sensitive change or a research report. Its mail stays queued and starts no turn, and no board card is offered to it. The sender hears `held as message 7; …`, and the agent's row and `:why` say how many messages wait: `✉ 2 held`.
+An agent with something open that only you can settle does not go on because a teammate wrote: a question of its in TO DECIDE, a tool call waiting for your yes, an API error, a setup script, a sensitive change or a research report. Its mail stays queued and starts no turn, and no board card is offered to it. The sender hears `held as message 7; …`, and the agent's row and `:why` say how many messages wait: `✉ 2 queued`.
 
 When you write to the agent, the mail goes in that same turn, after your words, if your word ends the wait. When you settle it another way, the mail starts a turn of its own. A `cancel` is never held: it starts a turn at once, and the mail that waited goes with it, in order. The mail caps count held mail as any other.
 
-Two things in WAITING FOR YOU hold nothing: an answer waiting to be read, and a worker's change. A worker with a change waiting is finished and needs no answer to go on, so it can take the next card while you review.
+Two things in TO DECIDE hold nothing: an answer waiting to be read, and a worker's change. A worker with a change waiting is finished and needs no answer to go on, so it can take the next card while you review.
 
 ## You on the bus
 
-Plain text in the command line goes to the selected project's leader; `@name text` goes to one agent. A message to an idle worker opens a card; its answer closes it. Your messages have no number. An agent's answer to you waits in WAITING FOR YOU ("claude-1 answered you: …") until you open it (`enter`), dismiss it (`r`) or just write back.
+Plain text in the command line goes to the selected project's leader; `@name text` goes to one agent. A message to an idle worker opens a card; its answer closes it. Your messages have no number. An agent's answer to you waits in TO DECIDE ("claude-1 answered you: …") until you open it (`enter`), dismiss it (`r`) or just write back.
 
 ## The board
 
@@ -112,7 +112,7 @@ This is the cheap stand-in for symbol leases (see [the code map](../screen/board
 
 ## The plan
 
-The first worker is cheap and you asked for work; before the leader hires a second one, you see what it means to do. It calls `plan(cards, cost)`: the cards it means to assign or post, each with a title, a tier, the paths it owns and a body, and what it expects them all to cost in dollars. The plan comes to WAITING FOR YOU as one `▤` item (`lead: plans 3 cards for $1.20; enter reads it`), the journal says `lead planned 3 cards for $1.20; waits for your yes`, and the leader is told to end its turn; while the plan waits, the leader's mail waits with it ([mail waits](#mail-waits-with-an-agent-that-waits-on-you)) and `hire` answers `the person is reading your plan; end your turn, their yes starts your next`.
+The first worker is cheap and you asked for work; before the leader hires a second one, you see what it means to do. It calls `plan(cards, cost)`: the cards it means to assign or post, each with a title, a tier, the paths it owns and a body, and what it expects them all to cost in dollars. The plan comes to TO DECIDE as one `▤` item (`lead: plans 3 cards for $1.20; enter reads it`), the journal says `lead planned 3 cards for $1.20; waits for your yes`, and the leader is told to end its turn; while the plan waits, the leader's mail waits with it ([mail waits](#mail-waits-with-an-agent-that-waits-on-you)) and `hire` answers `the person is reading your plan; end your turn, their yes starts your next`.
 
 - `enter` opens the plan whole: each card's number, title and tier, the paths it owns, its body; the expected cost beside what is left in the pot. Every word is the leader's, cleaned, never read as Markdown.
 - `a` says yes: the leader hears `The person said yes to your plan: hire and assign as planned` with its next prompt (at once when its turn is over) and may hire until its next plan; a new plan takes the yes back.

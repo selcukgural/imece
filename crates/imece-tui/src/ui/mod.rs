@@ -2489,10 +2489,10 @@ mod tests {
         }
         app.world.cleared.inbox = [0, 1].into();
         let s = render(&app, 140, 40);
-        assert!(s.contains("WAITING FOR YOU (1 · +2 hidden)"), "{s}");
+        assert!(s.contains("TO DECIDE (1 · +2 hidden)"), "{s}");
         app.world.cleared.inbox.insert(2);
         let s = render(&app, 140, 40);
-        assert!(s.contains("WAITING FOR YOU (0 · +3 hidden)"), "{s}");
+        assert!(s.contains("TO DECIDE (0 · +3 hidden)"), "{s}");
         assert!(s.contains("3 hidden by :clear: W opens the next"), "{s}");
         // A card's screen lists them, so says nothing of it.
         app.world.inbox[0].card = Some(0);
@@ -2503,18 +2503,18 @@ mod tests {
         app.world.inbox[1].card = Some(0);
         app.world.inbox.iter_mut().for_each(|i| i.open = false);
         let s = render(&app, 140, 40);
-        assert!(s.contains("WAITING FOR YOU (0)"), "{s}");
+        assert!(s.contains("TO DECIDE (0)"), "{s}");
         assert!(s.contains("Nothing needs you right now."), "{s}");
         // The grace counts down in the bottom line, for each kind.
         let at = std::time::Instant::now() + crate::app::UNDO_GRACE;
         for (what, words) in [
             (
                 crate::app::Clear::All,
-                "clearing WAITING FOR YOU and the journal off the screen in 10 s",
+                "clearing TO DECIDE and the journal off the screen in 10 s",
             ),
             (
                 crate::app::Clear::Inbox,
-                "clearing WAITING FOR YOU off the screen in 10 s",
+                "clearing TO DECIDE off the screen in 10 s",
             ),
             (
                 crate::app::Clear::Journal,
@@ -2532,11 +2532,11 @@ mod tests {
         let app = app_after(2, 12, 300, Lang::En);
         let s = render(&app, 140, 45);
         for want in [
-            "SALON",
+            "TEAM",
             "▾ shop-api",
             "▾ mobile-app",
             "lead-shop-api",
-            "WAITING FOR YOU",
+            "TO DECIDE",
             "JOURNAL",
             "QUEUE",
         ] {
@@ -2580,7 +2580,7 @@ mod tests {
             &format!(" #1 {} ", card.title),
             "shop-api · TO REVIEW · ",
             " min",
-            "lease  ",
+            "editing  ",
             &owns,
             "WHO",
             "posted    ! ▎lead ",
@@ -2588,7 +2588,7 @@ mod tests {
             "talked    ",
             "STORY",
             &format!("◎ intent     {owner}: {}", card.title),
-            "WAITING FOR YOU · #1 (1)",
+            "TO DECIDE · #1 (1)",
             &format!("{owner} finished: {}", card.title),
             "JOURNAL · #1 (",
             "n p  next / previous card",
@@ -2596,7 +2596,7 @@ mod tests {
             assert!(s.contains(want), "{want} missing:\n{s}");
         }
         assert!(
-            !s.contains("SALON"),
+            !s.contains("TEAM"),
             "the card takes the salon's place:\n{s}"
         );
         // Its change waits for the person: `!`, whatever it does meanwhile.
@@ -2727,13 +2727,13 @@ mod tests {
         for want in [
             format!("# #1 {}\n\n", card.title),
             format!("shop-api · DONE · {minutes} min\n\n"),
-            "lease  ".to_string(),
+            "editing  ".to_string(),
             "## WHO\n\n- posted: ".to_string(),
             format!("- owner: {owner}\n"),
             "- talked: ".to_string(),
             "\n## STORY\n\n- ".to_string(),
             format!("{owner}: {}", card.title),
-            "\n## Waiting for you\n\n- ".to_string(),
+            "\n## To decide\n\n- ".to_string(),
             format!("{owner} finished: {}", card.title),
             format!("- 14:00 ◎ intent {owner}: {}\n", card.title),
             "\n## Journal\n\n".to_string(),
@@ -2857,7 +2857,7 @@ mod tests {
             "KİM",
             "HİKÂYE",
             "Henüz hikâye yok.",
-            "SENİ BEKLEYEN · #1 (1)",
+            "KARAR BEKLEYEN · #1 (1)",
             "DEFTER · #1 (",
             "sahibi    ",
             "sonraki / önceki iş",
@@ -2869,7 +2869,7 @@ mod tests {
     #[test]
     fn the_salon_offers_cards_and_says_what_is_typed_after_a_hash() {
         let mut app = app_after(1, 4, 140, Lang::En);
-        assert!(render(&app, 140, 36).contains(" salon · "));
+        assert!(render(&app, 140, 36).contains(" team · "));
         app.on_key(KeyEvent::from(KeyCode::Char('#')));
         let s = render(&app, 140, 36);
         assert!(s.contains(" › card: #"), "{s}");
@@ -2903,10 +2903,10 @@ mod tests {
     fn the_screen_speaks_turkish_when_asked() {
         let app = app_after(1, 12, 300, Lang::Tr);
         let s = render(&app, 140, 45);
-        for want in ["SENİ BEKLEYEN", "DEFTER", "KUYRUK", "lidere yaz"] {
+        for want in ["KARAR BEKLEYEN", "DEFTER", "KUYRUK", "lidere yaz"] {
             assert!(s.contains(want), "{want} missing:\n{s}");
         }
-        assert!(!s.contains("WAITING FOR YOU"));
+        assert!(!s.contains("TO DECIDE"));
     }
 
     #[test]
@@ -3224,7 +3224,7 @@ mod tests {
         app.zoom = Zoom::Focus(id);
         let change = foot(&app);
         assert!(
-            change.contains("   a  apply   r  reject   esc  back   ?  help"),
+            change.contains("   a  approve   r  send back   esc  back   ?  help"),
             "{change}"
         );
         app.lang = Lang::Tr;
@@ -3248,14 +3248,14 @@ mod tests {
         };
         let plain = text(&app);
         app.world.agents[id].held_mail = 2;
-        assert_eq!(text(&app), format!("✉ 2 held {plain}"));
+        assert_eq!(text(&app), format!("✉ 2 queued {plain}"));
         let spans = status_spans(app.lang, &app.world, &app.world.agents[id]);
         assert_eq!(spans[0].style, fg(pal().warn));
         app.world.agents[id].turn_yes = Some(0);
-        assert_eq!(text(&app), format!("✓ turn ✉ 2 held {plain}"));
+        assert_eq!(text(&app), format!("✓ turn ✉ 2 queued {plain}"));
         app.world.agents[id].turn_yes = None;
         app.lang = Lang::Tr;
-        assert!(text(&app).starts_with("✉ 2 bekliyor "));
+        assert!(text(&app).starts_with("✉ 2 kuyrukta "));
     }
 
     #[test]
@@ -3345,7 +3345,7 @@ mod tests {
         );
     }
 
-    /// An open answer of `agent` in WAITING FOR YOU.
+    /// An open answer of `agent` in TO DECIDE.
     fn waiting(app: &mut App, agent: AgentId) {
         app.world.inbox.push(InboxItem {
             kind: InboxKind::Reply,
@@ -3438,9 +3438,7 @@ mod tests {
         typed(&mut app, "n");
         key(&mut app, KeyCode::Enter);
         assert!(app.world.projects[0].pinned);
-        assert!(
-            render(&app, 140, 40).contains(&format!("{one} is pinned to the top of the salon"))
-        );
+        assert!(render(&app, 140, 40).contains(&format!("{one} is pinned to the top of the team")));
         typed(&mut app, ":pi");
         assert_eq!(app.menu.as_ref().unwrap().notes, [format!("(▴ {one})")]);
         key(&mut app, KeyCode::Esc);
@@ -5342,7 +5340,7 @@ mod tests {
         app.speed = 2;
         assert_eq!(keeps(&app, "×2").map(|k| k.1), Some(3));
         waiting(&mut app, 1);
-        assert_eq!(keeps(&app, "waiting for you"), Some((0, KEEP)));
+        assert_eq!(keeps(&app, "to decide"), Some((0, KEEP)));
         assert_eq!(header_parts(&app)[1].keep, 8, "the fleet");
         assert_eq!(keeps(&app, "spent").map(|k| k.1), Some(KEEP));
         let window = |used| Limit {
@@ -5370,7 +5368,7 @@ mod tests {
         // On a narrow screen what waits and the fleet are still there.
         let s = render(&app, 70, 20);
         let top = s.lines().next().unwrap();
-        assert!(top.starts_with(" imece   ! 1 waiting for you"), "{top}");
+        assert!(top.starts_with(" imece   ! 1 to decide"), "{top}");
         assert!(top.contains("spent"), "{top}");
     }
 
@@ -5538,7 +5536,7 @@ mod tests {
         let s = render(&app, 240, 50);
         assert!(
             s.contains(&format!(
-                "! waiting on you (3): {}, {} via {}, {} via {}",
+                "! needs you (3): {}, {} via {}, {} via {}",
                 app.world.agents[w[2]].name,
                 app.world.agents[w[1]].name,
                 app.world.agents[w[2]].name,
@@ -5626,7 +5624,7 @@ mod tests {
             tick: 0,
             card: Some(0),
         });
-        assert!(render_story(&app).contains("✓ done · Δ waits for you"));
+        assert!(render_story(&app).contains("✓ done · change ready"));
         // Cleared lines are not told, a marked one still is.
         app.world.inbox.clear();
         app.world.cleared.journal = app.world.journal.len();
@@ -5750,7 +5748,7 @@ mod tests {
         let s = render_story(&app);
         let head = s.lines().find(|l| l.contains("#1 card 1")).unwrap();
         assert!(
-            head.contains(" ·  Δ waits for you") || head.contains("  Δ waits for you"),
+            head.contains(" ·  change ready") || head.contains("  change ready"),
             "{head}"
         );
         assert!(!head.contains('≡') && !head.contains("✓ done"), "{head}");
@@ -6488,7 +6486,7 @@ mod tests {
         assert!(s.contains("enter focus · a writes to it"), "{s}");
         assert!(!s.contains("a approve"), "{s}");
         app.world.inbox[0] = item(InboxKind::Sensitive, agent);
-        assert!(render(&app, 160, 40).contains("a approve · r reject"));
+        assert!(render(&app, 160, 40).contains("a approve · r refuse"));
     }
 
     #[test]
@@ -6531,7 +6529,7 @@ mod tests {
         };
         assert_eq!(text(&app), "idle");
         app.world.inbox.push(item(InboxKind::Change, a));
-        assert_eq!(text(&app), "Δ waits for you");
+        assert_eq!(text(&app), "change ready");
     }
 
     #[test]
@@ -6654,7 +6652,7 @@ mod tests {
         app.selected = Sel::Agent(agent);
         let row = foot(&app, 200);
         assert!(
-            row.starts_with(&format!(" salon · {project} · #{card} {title}    /  write")),
+            row.starts_with(&format!(" team · {project} · #{card} {title}    /  write")),
             "{row}"
         );
         // A focus names its screen and the agent's card; a trace, a change too.
@@ -6757,9 +6755,9 @@ mod tests {
         // first, then the place, and the help is the last thing standing.
         let keys = |row: &str| row.matches("  ").count();
         let wide = foot(&app, 200);
-        assert!(wide.starts_with(" salon · "), "{wide}");
+        assert!(wide.starts_with(" team · "), "{wide}");
         let narrow = foot(&app, 70);
-        assert!(narrow.starts_with(" salon · "), "{narrow}");
+        assert!(narrow.starts_with(" team · "), "{narrow}");
         assert!(keys(&narrow) < keys(&wide), "{narrow}");
         let tight = foot(&app, 24);
         assert!(!tight.contains("salon"), "{tight}");
@@ -6767,7 +6765,7 @@ mod tests {
         // The place stays at exactly the width that holds it and the help,
         // and goes one cell short of it.
         let place = format!(
-            "salon · {project} · #{card} {}…",
+            "team · {project} · #{card} {}…",
             "a".repeat(PLACE_TITLE - 1)
         );
         let exact =
@@ -6776,25 +6774,25 @@ mod tests {
         let row = foot(&app, exact);
         assert!(row.starts_with(&format!(" {place}    ?  help")), "{row}");
         let row = foot(&app, exact - 1);
-        assert!(!row.contains("salon") && row.contains("?  help"), "{row}");
+        assert!(!row.contains("team") && row.contains("?  help"), "{row}");
         // Nothing of it under hint letters or in a window with a title,
         // each on its own.
         app.hints = Some(crate::app::Hints {
             labels: Vec::new(),
             typed: String::new(),
         });
-        assert!(!foot(&app, 200).contains("salon ·"), "{}", foot(&app, 200));
+        assert!(!foot(&app, 200).contains("team ·"), "{}", foot(&app, 200));
         app.hints = None;
         app.world.inbox.push(item(InboxKind::Script, agent));
         app.script = Some((0, 0));
-        assert!(!foot(&app, 200).contains("salon ·"), "{}", foot(&app, 200));
+        assert!(!foot(&app, 200).contains("team ·"), "{}", foot(&app, 200));
         app.script = None;
         app.world.inbox[0].kind = InboxKind::Plan;
         app.plan_window = Some((0, 0));
-        assert!(!foot(&app, 200).contains("salon ·"), "{}", foot(&app, 200));
+        assert!(!foot(&app, 200).contains("team ·"), "{}", foot(&app, 200));
         app.plan_window = None;
         app.world.inbox.clear();
-        assert!(foot(&app, 200).contains("salon ·"), "{}", foot(&app, 200));
+        assert!(foot(&app, 200).contains("team ·"), "{}", foot(&app, 200));
         app.world.change_ready(a_change(agent));
         app.zoom = Zoom::Diff(agent);
         assert!(
@@ -6839,7 +6837,7 @@ mod tests {
         app.view = View::Salon;
         let row = foot(&app, 200);
         assert!(
-            row.starts_with(&format!(" salon · shop-api · #{second_id} the other card")),
+            row.starts_with(&format!(" team · shop-api · #{second_id} the other card")),
             "{row}"
         );
         // A screen over Home is about its own agent, not the row's.
@@ -6976,7 +6974,7 @@ mod tests {
         };
         assert!(
             row(&mut app, InboxKind::Change)
-                .contains("   enter  read the diff   a  apply   r  reject   ?  help")
+                .contains("   enter  read the diff   a  approve   r  send back   ?  help")
         );
         assert!(
             row(&mut app, InboxKind::Question)
@@ -7690,7 +7688,10 @@ mod tests {
         app.pane = Pane::Inbox;
         app.world.change_ready(a_change(1));
         let s = render(&app, 140, 40);
-        assert!(s.contains("a apply to the checkout"), "{s}");
+        assert!(
+            s.contains("enter see the diff · a approve · r send back"),
+            "{s}"
+        );
         let proposal = crate::model::StoreProposal {
             seq: 5,
             change: "c5".into(),
@@ -7702,8 +7703,8 @@ mod tests {
         };
         app.world.change_proposed(a_change(1), proposal);
         let s = render(&app, 140, 40);
-        assert!(s.contains("a approve"), "{s}");
-        assert!(!s.contains("a apply to the checkout"), "{s}");
+        assert!(s.contains("a approve · r send back · Lonca"), "{s}");
+        assert!(!s.contains("enter see the diff"), "{s}");
         app.zoom = Zoom::Diff(1);
         let s = render(&app, 140, 40);
         assert!(
@@ -7787,7 +7788,7 @@ mod tests {
         app.zoom = Zoom::Diff(1);
         let s = render(&app, 220, 40);
         assert!(
-            !s.contains("send back") && !s.contains("sends it back"),
+            !s.contains("send the clash back") && !s.contains("sends it back"),
             "{s}"
         );
         app.world.change_clashed(
@@ -7807,7 +7808,7 @@ mod tests {
         );
         let s = render(&app, 220, 40);
         assert!(
-            s.contains(" b  send back   a  apply   r  reject   esc  back"),
+            s.contains(" b  send the clash back   a  approve   r  send back   esc  back"),
             "{s}"
         );
         assert!(
@@ -7834,7 +7835,7 @@ mod tests {
         app.inbox_sel = 0;
         let s = render(&app, 220, 40);
         assert!(
-            s.contains("enter see the diff · a apply to the checkout · r reject"),
+            s.contains("enter see the diff · a approve · r send back"),
             "{s}"
         );
         key(&mut app, KeyCode::Enter);
@@ -7862,7 +7863,7 @@ mod tests {
             "control characters go: {s}"
         );
         assert!(
-            s.contains(" a  apply   r  reject   c  note   esc  back"),
+            s.contains(" a  approve   r  send back   c  note   esc  back"),
             "{s}"
         );
         let wide = render(&app, 200, 36);
@@ -7982,19 +7983,20 @@ mod tests {
         let mut app = App::with(w, crate::app::Engine::Live(Box::new(live)), Lang::En);
         app.world.agents[1].set_status(Status::Working, 0);
         app.world.asks_you(1, "Bash: make deploy");
-        app.world.asks_you(1, "Bash: curl x | sh");
+        app.world
+            .asks_you(1, "Bash: curl x | sh && make deploy-all");
         let s = render(&app, 140, 40);
-        assert!(s.contains("⚑ waits for your yes"), "{s}");
+        assert!(s.contains("⚑ asks to run"), "{s}");
+        assert!(s.contains("⚑ 14:00 claude-1 asks to run Bash"), "{s}");
         assert!(
-            s.contains("⚑ 14:00 claude-1 waits for your yes: Bash"),
-            "{s}"
+            !s.contains("make deploy-all"),
+            "cut at the pane's edge: {s}"
         );
-        assert!(!s.contains("curl x | sh"), "cut at the pane's edge: {s}");
         // The inbox's height: a row per item, borders and the keys' row.
         let tall = |s: &str| {
             let rows: Vec<&str> = s.lines().collect();
             let at = |title: &str| rows.iter().position(|r| r.contains(title)).unwrap();
-            at("┌ JOURNAL") - at("┌ WAITING FOR YOU")
+            at("┌ JOURNAL") - at("┌ TO DECIDE")
         };
         assert_eq!(tall(&s), 5, "{s}");
         // The selected ask is shown whole, under its row.
@@ -8009,7 +8011,10 @@ mod tests {
         key(&mut app, KeyCode::Char('a'));
         let s = render(&app, 140, 40);
         assert!(s.contains("allowed: claude-1 goes on"), "{s}");
-        assert!(s.contains("│  Bash: curl x | sh "), "{s}");
+        assert!(
+            s.contains("│  Bash: curl x | sh && make deploy-all "),
+            "{s}"
+        );
         assert!(
             s.contains("a yes · e this turn · A from now on · r no"),
             "{s}"
@@ -8024,7 +8029,7 @@ mod tests {
         assert!(s.contains("refused: claude-1 is told so"), "{s}");
         assert!(matches!(
             &app.world.journal.last().unwrap().event,
-            Event::Decided { agent: 1, what, allowed: false } if what == "Bash: curl x | sh"
+            Event::Decided { agent: 1, what, allowed: false } if what == "Bash: curl x | sh && make deploy-all"
         ));
         assert!(app.world.open_inbox().is_empty());
         assert!(!app.typing, "nothing to write back");
@@ -9669,12 +9674,12 @@ mod tests {
             (
                 Lang::En,
                 "cmd in your shell; O quotes it; ^x^e $EDITOR",
-                "straight to waiting for you",
+                "straight to what is to decide",
             ),
             (
                 Lang::Tr,
                 "kmt kabuğunda; O alıntılar; ^x^e $EDITOR'da",
-                "doğrudan seni bekleyenlere",
+                "doğrudan karar bekleyenlere",
             ),
         ] {
             app.lang = lang;
@@ -10327,7 +10332,7 @@ mod tests {
         );
         let s = render(&app, 160, 40);
         let banner = format!(
-            " ARCHIVE · {name} “first epic” · archived {} · {waiting} waiting for you now · esc back ",
+            " ARCHIVE · {name} “first epic” · archived {} · {waiting} to decide now · esc back ",
             date(day(at))
         );
         let top = s.lines().next().unwrap();
@@ -10350,7 +10355,7 @@ mod tests {
         key(&mut app, KeyCode::Char('L'));
         let s = render(&app, 160, 40);
         let banner = format!(
-            " ARŞİV · {name} “first epic” · {} arşivlendi · şu an seni {waiting} şey bekliyor · esc geri ",
+            " ARŞİV · {name} “first epic” · {} arşivlendi · şu an {waiting} karar bekliyor · esc geri ",
             date(day(at))
         );
         assert!(s.lines().next().unwrap().starts_with(&banner), "{s}");
@@ -11530,7 +11535,7 @@ mod tests {
             "$0.12 of $50.00 spent",
             "shop-api: 3 agents, 2 open cards",
             "other: 1 agents, 0 open cards",
-            "! 2 wait for you:",
+            "! 2 to decide:",
             "» 00:08 ",
             "the answer's first line",
             "… and 1 more",
@@ -11868,18 +11873,15 @@ mod tests {
         // A tool call waiting for a yes: what it would do, on one line.
         app.world.agents[w].status = Status::Working;
         app.world.asks_you(w, "cargo test\n-q");
-        assert_eq!(
-            words(&app, Lang::En),
-            "⚑ waits for your yes \"cargo test ↵ -q\""
-        );
-        // The forty columns: the mark and the words take 20, a space and
-        // the quotes 3, so 17 letters show whole and 18 are cut.
+        assert_eq!(words(&app, Lang::En), "⚑ asks to run \"cargo test ↵ -q\"");
+        // The forty columns: the mark and the words take 13, a space and
+        // the quotes 3, so 24 letters show whole and 25 are cut.
         app.world.inbox.clear();
-        app.world.asks_you(w, &"c".repeat(17));
-        assert!(words(&app, Lang::En).ends_with(&format!("\"{}\"", "c".repeat(17))));
+        app.world.asks_you(w, &"c".repeat(24));
+        assert!(words(&app, Lang::En).ends_with(&format!("\"{}\"", "c".repeat(24))));
         app.world.inbox.clear();
-        app.world.asks_you(w, &"c".repeat(18));
-        assert!(words(&app, Lang::En).ends_with(&format!("\"{}…\"", "c".repeat(16))));
+        app.world.asks_you(w, &"c".repeat(25));
+        assert!(words(&app, Lang::En).ends_with(&format!("\"{}…\"", "c".repeat(23))));
         app.world.inbox.clear();
         // Blocked: what it waits for, then on whom.
         app.world.agents[w].status = Status::Blocked;
@@ -11921,19 +11923,19 @@ mod tests {
         // do about it.
         app.world.agents[w].status = Status::Stopped;
         app.world.agents[w].topic = "exited with code 1".into();
-        assert_eq!(words(&app, Lang::En), "■ stopped: exited with code 1");
-        assert_eq!(words(&app, Lang::Tr), "■ durdu: exited with code 1");
+        assert_eq!(words(&app, Lang::En), "■ session ended: exited with code 1");
+        assert_eq!(words(&app, Lang::Tr), "■ oturum bitti: exited with code 1");
         app.world.agents[w].topic = "x".repeat(50);
         let said = words(&app, Lang::En);
         assert_eq!(said.chars().count(), 40, "{said}");
         assert!(
-            said.starts_with("■ stopped: xxx") && said.ends_with('…'),
+            said.starts_with("■ session ended: xxx") && said.ends_with('…'),
             "{said}"
         );
         app.world.agents[w].topic.clear();
         assert_eq!(
             words(&app, Lang::En),
-            "■ stopped, write to it to start again"
+            "■ session ended · write to it to restart"
         );
     }
 
@@ -12056,7 +12058,7 @@ mod tests {
         app.world.agents[w].topic.clear();
         let r = row(&app, w, 200);
         assert!(
-            r.contains("■ stopped, write to it to start again") && !r.contains('"'),
+            r.contains("■ session ended · write to it to restart") && !r.contains('"'),
             "stopped without a why: what to do fills the column: {r}"
         );
         app.world.agents[w].status = Status::Idle;
@@ -12081,7 +12083,7 @@ mod tests {
         app.world.inbox.clear();
         app.world.agents[w].status = Status::WaitingHuman;
         let r = row(&app, w, 200);
-        assert!(r.contains("waiting for you → you \"parser fixed\""), "{r}");
+        assert!(r.contains("needs you → you \"parser fixed\""), "{r}");
         app.world.agents[w].status = Status::Asleep;
         let r = row(&app, w, 200);
         assert!(
@@ -14221,7 +14223,7 @@ after | not a table";
         app.settled_projects.insert(0);
         assert!(salon::rows(&app, 100).is_empty());
         let s = render(&app, 140, 30);
-        assert!(s.contains(" SALON · 2 settled (:unsettle) "), "{s}");
+        assert!(s.contains(" TEAM · 2 hidden (:unsettle) "), "{s}");
     }
 
     #[test]

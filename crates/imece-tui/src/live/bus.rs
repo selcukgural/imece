@@ -255,7 +255,7 @@ impl Live {
             until: t + 8,
         });
         let answer = if kind == MsgKind::Ask {
-            "delivered; the person sees it under WAITING FOR YOU and answers when they \
+            "delivered; the person sees it under TO DECIDE and answers when they \
              can, which starts your next turn. Until then, end your turn or go on with \
              what does not depend on the answer; your teammates' messages wait for that \
              answer too, but for a cancel."
@@ -1294,7 +1294,7 @@ mod tests {
             &msg("you", "ask", "Which API?\nDetails."),
         )
         .unwrap();
-        assert!(ok.contains("WAITING FOR YOU"), "{ok}");
+        assert!(ok.contains("TO DECIDE"), "{ok}");
         assert!(live.mail.iter().all(|m| m.is_empty()), "nobody's mail");
         let open = w.open_inbox();
         assert_eq!(open.len(), 1);

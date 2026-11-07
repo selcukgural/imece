@@ -39,7 +39,7 @@ A line that starts with `/` is a command of Claude Code, not a message: `/clear`
 
 Claude Code sends `rate_limit_event`. imece keeps one window per length (five hours, a week) for the account, and the `:budget` note shows the window nearest to full after the pot: `claude 5h: 48% left`; from 90% used it is in the header too, `claude 5h: 10% left, resets in 1 h 59 min`, in the attention colour. A subscription's limit can stop the team before the pot does; imece does not stop a turn itself, it shows Claude Code's refusal. Windows are not kept between runs; a session says them again on its first turn.
 
-Each agent's context window is reported too: every message carries the request's tokens (the context so far) and the result the model's window. The agent's row shows `◔ 72%` from 70% on and its focus the figure ([the salon](../screen/salon.md)); the trace notes the fill by the tenth. Gone with the session.
+Each agent's context window is reported too: every message carries the request's tokens (the context so far) and the result the model's window. The agent's row shows `◔ 72%` from 70% on and its focus the figure ([the team](../screen/salon.md)); the trace notes the fill by the tenth. Gone with the session.
 
 ## Other coding agents
 

@@ -1,11 +1,11 @@
 ---
 title: Onaylar ve sorular
-description: Bir ajan yapmadan önce size neyi sormalı, rutin bir komut nasıl kendi başına çalışır, bir ⚑ istek ve bir ? soru SENİ BEKLEYEN'de nasıl bekler, run aracı ve izin listesi.
+description: Bir ajan yapmadan önce size neyi sormalı, rutin bir komut nasıl kendi başına çalışır, bir ⚑ istek ve bir ? soru KARAR BEKLEYEN'de nasıl bekler, run aracı ve izin listesi.
 ---
 
 # Onaylar ve sorular
 
-İki tür şey bir ajanı siz yanıtlayana dek durdurur: bir **onay** (`⚑`), Claude Code bir araç çağrısından önce soracakken imece'nin soruyu size vermesi; ve bir **soru** (`?`), ajanın `send(to: "you", type: ask)` ile size kendisinin bir şey sorması. İkisi de SENİ BEKLEYEN'de bekler; ilkini `a` ve `r` yanıtlar, ikincisini ajana yazmak.
+İki tür şey bir ajanı siz yanıtlayana dek durdurur: bir **onay** (`⚑`), Claude Code bir araç çağrısından önce soracakken imece'nin soruyu size vermesi; ve bir **soru** (`?`), ajanın `send(to: "you", type: ask)` ile size kendisinin bir şey sorması. İkisi de KARAR BEKLEYEN'de bekler; ilkini `a` ve `r` yanıtlar, ikincisini ajana yazmak.
 
 ## Onaylar (`⚑`)
 
@@ -19,11 +19,11 @@ Bir kabuk komutu **rutin**dir: tek satırsa, argümanlarıyla tek bir programsa 
 
 ### Kalan her şey bekler
 
-Başka her şey SENİ BEKLEYEN'de bir `⚑` öğesidir: "claude-1 onayını bekliyor: Bash: curl … | head". Her istek kendi başına bir öğedir ve seçili olan satırının altında **bütünüyle** gösterilir, satırları ` ↵ ` ile birleştirilmiş, asla markdown olarak okunmaz: izin verdiğiniz, çalışandır. Ajanın salon satırı `⚑ onayını bekliyor` okunur.
+Başka her şey KARAR BEKLEYEN'de bir `⚑` öğesidir: "claude-1 çalıştırmak istiyor: Bash: curl … | head". Her istek kendi başına bir öğedir ve seçili olan satırının altında **bütünüyle** gösterilir, satırları ` ↵ ` ile birleştirilmiş, asla markdown olarak okunmaz: izin verdiğiniz, çalışandır. Ajanın ekip satırı `⚑ çalıştırmak istiyor` okunur.
 
 ```text
- SENİ BEKLEYEN (1)
- ⚑ 14:10 claude-1 onayını bekliyor: Bash: curl -s https://example.org/schema.json | head -40
+ KARAR BEKLEYEN (1)
+ ⚑ 14:10 claude-1 çalıştırmak istiyor: Bash: curl -s https://example.org/schema.json | head -40
     curl -s https://example.org/schema.json | head -40
   a izin ver · r reddet · enter odak
 ```
@@ -45,7 +45,7 @@ Bir istekte `e` (sizi bekleyenlerde ya da ajanının odağında) ya da `:yes [@N
 
 ## Sorular (`?`)
 
-Bir ajan size `send(to: "you", type: "ask", body)` ile sorar. Bir `?` öğesi olur, "claude-2 sana soruyor: eski CLI bayrağı kalsın mı?", ve soru açıkken ajan boştaysa salon satırı `? → you` okunur. Aynı ajandan daha yeni bir soru eskisinin yerini alır.
+Bir ajan size `send(to: "you", type: "ask", body)` ile sorar. Bir `?` öğesi olur, "claude-2 sana soruyor: eski CLI bayrağı kalsın mı?", ve soru açıkken ajan boştaysa ekip satırı `? → you` okunur. Aynı ajandan daha yeni bir soru eskisinin yerini alır.
 
 - `enter` konuşmayı soruda açar.
 - `a` ya da `r` yazma satırını `@claude-2 ` ile açar ("sözsüz yanıt" yoktur); o ajana yazdığınız her şey soruyu kapatır ve sonraki turunu başlatır.
@@ -57,7 +57,7 @@ Kim ne zaman sorar: lider görev ortasında size sorabilir; bir işçi önce lid
 
 - `W` her yerden sizi bekleyen sonraki öğeyi açar (bir değişikliğin diff'i, bir sorunun konuşması, bir onayın odağı), böylece `a`/`r` hemen yanıtlar; yine basılınca sonrakine geçer, sondan ilkine döner. Bekleyen yoksa: "Şu an senden bir şey gerekmiyor".
 - `S` eldeki öğeyi erteler ve sonrakini açar: ertelenenler diğerlerinin hepsinden sonra, ertelenme sırasıyla gelir, satırları `sonra ·` ile işaretli. Erteleme yalnız bu çalıştırma içindir.
-- Salon her projenin işçilerini sizden ne beklediklerine göre sıralar: sizi bekleyen (açık bir öğe ya da bekleyen durum) önce, sonra takılan (bloke ya da durmuş), sonra bitip bakılmamış, sonra kalanı; eşitler sırasını korur. `f` yalnız bir şey bekleyenleri gösterir. Başlığın filosu (`● çalışıyor ✓ bitti ■ takıldı`) ve terminalin başlığı (`imece · 2 seni bekliyor`) aynı şeyleri sayar.
+- Ekip her projenin işçilerini sizden ne beklediklerine göre sıralar: sizi bekleyen (açık bir öğe ya da bekleyen durum) önce, sonra takılan (bloke ya da durmuş), sonra bitip bakılmamış, sonra kalanı; eşitler sırasını korur. `f` yalnız bir şey bekleyenleri gösterir. Başlığın filosu (`● çalışıyor ✓ bitti ■ takıldı`) ve terminalin başlığı (`imece · 2 karar bekliyor`) aynı şeyleri sayar.
 
 ## `run` aracı
 
@@ -80,6 +80,6 @@ Hangi kabuk komutlarının rutin olduğuna aynı politika karar verir; `standard
 ## Ayrıca bakınız
 
 - [Claude Code](../concepts/claude-code.md): confine düzeyleri.
-- [SENİ BEKLEYEN](../screen/waiting.md): panel, `W`, `S`.
+- [KARAR BEKLEYEN](../screen/waiting.md): panel, `W`, `S`.
 - [Mesajlar ve pano](../concepts/messages-and-board.md).
 - [Güvenlik](../concepts/security.md): son kapı sizsiniz, bir araç listesi değil.

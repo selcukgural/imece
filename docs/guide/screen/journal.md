@@ -5,13 +5,13 @@ description: The journal pane - what imece writes down, how lines fold and carry
 
 # The journal
 
-The journal is the lower side panel of the salon (told as [the story](#the-story) by default): what happened, newest first, one line per event. Everything meaningful an agent or you did is there; routine assignments are left to the board and the leader's trace. It is kept in the store, so the next `imece` opens with the same journal, and the away digest and the "where you left off" window are built from it.
+The journal is the lower side panel of the team (told as [the story](#the-story) by default): what happened, newest first, one line per event. Everything meaningful an agent or you did is there; routine assignments are left to the board and the leader's trace. It is kept in the store, so the next `imece` opens with the same journal, and the away digest and the "where you left off" window are built from it.
 
 ```text
 ┌ JOURNAL ────────────────────────────────────────────────┐
 │14:07 › you → claude-1: the empty-file check belongs in …│
 │14:05 ✓ you applied claude-1's change (3 files) to the checkout, staged; worktree mark 7f3a2c1
-│13:58 ! claude-1 finished: 3 files, +41 −6 → waits for you
+│13:58 ! claude-1 finished: change ready · 3 files +41 −6
 │13:57 ⇄ claude-1 → lead [ask] ↩: Which parser? There …  +2
 │  enter open the conversation · c copy the message · m mark
 │13:40✱› you ran `cargo test` → exit 0 · 12 s             │
@@ -31,16 +31,16 @@ By default the lower side panel does not show the journal line by line: it tells
 │  14:00 ⇄ lead-shop-api → claude-2 [assign]: #1 Payment re… │
 │  14:01 ⇄ claude-4 → claude-2 [ask]: Zone codes an enum?    │
 │  14:06 ⇄ claude-1 → claude-2 [ask]: Retry count from config?  no answer · 2 min
-│  now ⚑ waits for your yes "WebFetch: https://…" · 4 min    │
-│#7 Payment retry policy · claude-3  ✓ done · Δ waits for you│
+│  now ⚑ asks to run "WebFetch: https://…" · 4 min    │
+│#7 Payment retry policy · claude-3  ✓ done · change ready│
 │  14:05 ⇄ claude-3 → lead-shop-api [done]: Backoff capped…  │
 │elsewhere                                                   │
 │  14:00 ⚑ copied node_modules into claude-5's worktree  ×12 │
 └────────────────────────────────────────────────────────────┘
 ```
 
-- **Whom you hold up**, on top when anyone: every agent something of which waits for you (an item in WAITING FOR YOU, or a question to you), then every agent asking a teammate already held up, with the one it waits for (`claude-1 via claude-2`). Answering the first frees the rest.
-- **A block per card** the journal lately spoke of, the card with the newest line first. Its header: the number and title, its owner, then how far it is (`≡ 4/5` its to-do list, `✓ done`, `Δ waits for you` when a change of that card waits). Under it the card's three newest lines, oldest first: what was said about it, its owner's change, a stop, a failure, an apply. A line belongs to the card its agent was on when it was written, so a worker that moved on to another card does not take its old lines along; something said belongs to the card of whoever asked. An ask that got no reply says so: `no answer yet`, then `no answer · 2 min`. Last, `now` and what the owner does now, its step and how long, while the card is not done.
+- **Whom you hold up**, on top when anyone: every agent something of which waits for you (an item in TO DECIDE, or a question to you), then every agent asking a teammate already held up, with the one it waits for (`claude-1 via claude-2`). Answering the first frees the rest.
+- **A block per card** the journal lately spoke of, the card with the newest line first. Its header: the number and title, its owner, then how far it is (`≡ 4/5` its to-do list, `✓ done`, `change ready` when a change of that card waits). Under it the card's three newest lines, oldest first: what was said about it, its owner's change, a stop, a failure, an apply. A line belongs to the card its agent was on when it was written, so a worker that moved on to another card does not take its old lines along; something said belongs to the card of whoever asked. An ask that got no reply says so: `no answer yet`, then `no answer · 2 min`. Last, `now` and what the owner does now, its step and how long, while the card is not done.
 - **Elsewhere**: lines of no card (the leader hiring, a worktree being set up, an API call retrying), each kind once, its newest line, with how many there were (`×12`). An assignment names its card, so it is told in that card's block.
 
 The story reads at most the 2,000 newest journal lines per frame and shows as many cards as fill the panel; for older ones, `J` and the journal. Lines `:clear` took off are not told (a marked one is), and an archive's lines wait in the archive.
@@ -60,16 +60,16 @@ Each line has the time, a glyph for its kind, the project's name when several ar
 | --- | --- |
 | `⇄` | a message between two parties, `from → to [type]: first line`; `↩` after the type when it replies to another message. Your own messages, `you → claude-1: …`, and an agent's closing text to you, `claude-1 answered you: …` |
 | `→` | the leader's acts: a card posted, a worker hired (`lead hired claude-1 (default model)`), a worker that finished and left. Assignments and claims are not shown in the pane (the board and the card's screen have them) |
-| `!` | something for you: a worker finished (`claude-1 finished: 3 files, +41 −6 → waits for you`), `:commit`'s suggestion came, the pot runs low |
+| `!` | something for you: a worker finished (`claude-1 finished: change ready · 3 files +41 −6`), `:commit`'s suggestion came, the pot runs low |
 | `✓` | you applied a change: `you applied claude-1's change (3 files) to the checkout, staged; worktree mark 7f3a2c1` |
 | `⚑` | what an agent assumed, and the session's notes: `goes on in the session it had`, `starts a new session, told where it left off`, a model that was not available (`using the default`), the confine level, a worktree moved to your HEAD or kept where it is, a path copied into a worktree, a session that listed no commands |
-| `■` | blocked, stopped (`claude-1 stopped: <why>`), a change that did not apply, a turn cut short when imece closed, a copy that was skipped, no commit message |
+| `■` | blocked, stopped (`claude-1: session ended: <why>`), a change that did not apply, a turn cut short when imece closed, a copy that was skipped, no commit message |
 | `›` | you: what you said, ran, approved, rejected, allowed or refused, set (`you set the budget to $80.00 (was $50.00)`), opened, closed, renamed, made forget |
 
 Among them:
 
 - **Replied.** A turn's closing text is journaled as `answered you` only when it reaches you: when you asked, or a leader's report once the team is quiet. The closing text of a turn that mail or a board offer started restates what the agent sent, which the journal has already as the message; it stays in the card's story and the trace. Without this rule conversations read as repeating themselves.
-- **Changes.** `finished … → waits for you`, `you applied …, staged; worktree mark <sha>`, `… did not apply: <git's words>`, `rejected: claude-1`; after a partial apply the rest comes back as a new `finished`.
+- **Changes.** `finished: change ready · …`, `you applied …, staged; worktree mark <sha>`, `… did not apply: <git's words>`, `sent back: claude-1`; after a partial apply the rest comes back as a new `finished`.
 - **Sessions.** `goes on in the session it had`, `starts a new session, told where it left off`, `you made claude-1 forget its session`, `stopped: …`, `'s turn was cut short when imece closed; it hears of it when it wakes`, a session that listed no commands of its own, the confine level said at every start that is not strict.
 - **Worktrees.** `worktree moved from <sha> to HEAD <sha>`, or kept where it is because it has uncommitted changes or commits of its own.
 - **Copies.** `copied .env into claude-1's worktree (1.2 KiB)`, and what was not copied and why (`:copy`); what the checkout's `.worktreeinclude` names in lines of its own (`…, as .worktreeinclude names`), and a line of it not followed with why.
@@ -90,7 +90,7 @@ Lines older than 90 days and past the newest 5000 are tidied at a live start; a 
 
 | Key | What it does |
 | --- | --- |
-| `tab` `⇧tab` | to the journal panel (salon → waiting → journal) |
+| `tab` `⇧tab` | to the journal panel (team → waiting → journal) |
 | `↑` `↓` / `j` `k`, `gg` `G`, `^d` `^u` `^f` `^b` | select a line |
 | `enter` | open the conversation the line belongs to, with the line selected; an event that is no conversation opens as EVENT |
 | `c` / `y` | copy the selected message (its text alone; an event line is copied with its day and time) |
@@ -114,7 +114,7 @@ Back in the terminal after half an hour or more in another window, the same dige
 
 ## Clearing the screen
 
-`:clear` takes the journal's lines and what WAITING FOR YOU lists off the salon's screen; `:clear journal` and `:clear inbox` take one. It waits ten seconds first, and `u` keeps the screen as it is. Nothing is deleted: the store keeps every line, `:export`, a card's screen and the archives still show them, and the clear itself is kept, so the next start begins clean too. A marked line stays. What still waits for you stays open and counted in the title, `WAITING FOR YOU (0 · +2 hidden)`, and `W` opens the next one, back on the list. `:unclear` (or `:unclear journal`, `:unclear inbox`) brings it all back.
+`:clear` takes the journal's lines and what TO DECIDE lists off the team's screen; `:clear journal` and `:clear inbox` take one. It waits ten seconds first, and `u` keeps the screen as it is. Nothing is deleted: the store keeps every line, `:export`, a card's screen and the archives still show them, and the clear itself is kept, so the next start begins clean too. A marked line stays. What still waits for you stays open and counted in the title, `TO DECIDE (0 · +2 hidden)`, and `W` opens the next one, back on the list. `:unclear` (or `:unclear journal`, `:unclear inbox`) brings it all back.
 
 ## Where you left off
 

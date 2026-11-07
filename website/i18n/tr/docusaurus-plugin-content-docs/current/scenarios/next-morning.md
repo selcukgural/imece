@@ -49,14 +49,14 @@ Bir şey kımıldamadan önce bir pencere nerede kaldığınızı söyler:
  imece kapanırken kesilen turlar: claude-1, claude-3
  kapanmadan önceki son satırlar:
    ─ 2026-10-31
-   18:40 ! claude-4 bitirdi: 2 dosya, +30 −4 → seni bekliyor
+   18:40 ! claude-4 bitirdi: değişiklik hazır · 2 dosya +30 −4
    18:41 › `cargo test` çalıştırdın → çıkış 0 · 12 sn sürdü
  herhangi bir tuş: kapat
 ```
 
 Bütçe olduğu yerdedir: `--budget` verilmemişse korunur, `--budget 80` ayarlardı. Herhangi bir tuş pencereyi kapatır ve başka bir şey yapmaz. Yalnızca söyleyecek bir şey varken açılır; demoda hiç açılmaz.
 
-Günlükte her kesilen tur için bir satır vardır ve salon herkesi uykuda gösterir:
+Günlükte her kesilen tur için bir satır vardır ve ekip herkesi uykuda gösterir:
 
 ```text
  09:00 ■ claude-1 turu imece kapanınca yarım kaldı; uyanınca öğrenecek
@@ -69,7 +69,7 @@ Günlükte her kesilen tur için bir satır vardır ve salon herkesi uykuda gös
    ◦ claude-4   #4   config yükleyici          ◦ önceki çalışmadan beri uyuyor, yazınca uyanır
 ```
 
-Uykuda demek süreç yok, para yok demek. Bir ajanı üç şey uyandırır: ona yazarsınız, bir takım arkadaşından uyandıran türde bir mesaj gelir ya da bu çalışmada asılan bir kart ona önerilir. Yeniden başlatmayı bekleyen postalar ve kartlar kimseyi uyandırmaz. Bugünden eski bir günlük satırının üstünde bir `─ YYYY-MM-DD` satırı vardır; SENİ BEKLEYEN içinde başka günden bir öğe de öyle.
+Uykuda demek süreç yok, para yok demek. Bir ajanı üç şey uyandırır: ona yazarsınız, bir takım arkadaşından uyandıran türde bir mesaj gelir ya da bu çalışmada asılan bir kart ona önerilir. Yeniden başlatmayı bekleyen postalar ve kartlar kimseyi uyandırmaz. Bugünden eski bir günlük satırının üstünde bir `─ YYYY-MM-DD` satırı vardır; KARAR BEKLEYEN içinde başka günden bir öğe de öyle.
 
 ## 3. Yazmak uyandırır: bir oturum nasıl devam eder
 
@@ -122,7 +122,7 @@ Bir süre başka pencereye geçin. Terminal odağı yarım saat ya da daha uzun 
   ⚑ 1 varsayım yapıldı
   ⇄ 4 konuşma
   09:33 ⚑ claude-3: çalışma ağacı 3f2a9c1 yerine HEAD 9b1d2e0 oldu
-  09:41 ! claude-3 bitirdi: 1 dosya, +18 −2 → seni bekliyor
+  09:41 ! claude-3 bitirdi: değişiklik hazır · 1 dosya +18 −2
  herhangi bir tuş: kapat
 ```
 
@@ -140,7 +140,7 @@ Makineden tümüyle uzaktayken `:notify push` aynı sözleri, projeyle birlikte,
 
 ## 6. İşaretlerle yer tutun
 
-Günlükte (ya da açık bir konuşmada) yeniden isteyeceğiniz bir satırı seçin, diyelim planı taşıyan mesajı, ve `m`ye basın: `işaretlendi: ' ona geri getirir`. Satır saatinden sonra `✱` taşır. `'` sonraki işaretli satırı seçer, başa dönerek: açık konuşmada, yoksa günlükte; başka her yerden önce salonun günlüğüne gider. `m` yine işareti kaldırır (`işaret kaldırıldı`).
+Günlükte (ya da açık bir konuşmada) yeniden isteyeceğiniz bir satırı seçin, diyelim planı taşıyan mesajı, ve `m`ye basın: `işaretlendi: ' ona geri getirir`. Satır saatinden sonra `✱` taşır. `'` sonraki işaretli satırı seçer, başa dönerek: açık konuşmada, yoksa günlükte; başka her yerden önce ekibin günlüğüne gider. `m` yine işareti kaldırır (`işaret kaldırıldı`).
 
 ```text
  09:41✱ ⇄ lead → claude-3 [görev]: #5 config: varsayılanlar, src/config.rs
