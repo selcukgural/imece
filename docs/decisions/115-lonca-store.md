@@ -184,9 +184,14 @@ git items of record 111's "after the first round" in epic #286.
 6. (Done: record 122, which says what changed from this text.) Verification: `.imece/check` is retired in favour of `[verification]`
    in the repository's `lonca.toml`, documented with the toolchain
    environment the sandbox needs; the Δ shows the attestations.
-7. (Leases done: record 123; owned paths not.) Leases on the code map (record 17): `status` lists who holds what; the
+7. (Leases done; owned paths stay soft, the person's decision: record 123.) Leases on the code map (record 17): `status` lists who holds what; the
    code map's lease columns come alive from it, and record 114's owned
    paths become the session's paths.
+
+The git path stays for now (the person's decision, 2026-11-07, after a solo and a team
+ran on Lonca for real): the plan's end, the worktree code going, would make a daemon
+necessary for any writing worker, and imece's next release keeps both paths. It waits
+for the person's word and for a release of imece on Lonca alone (Lonca's #7 #8).
 
 Growth: the store and its log grow with proposals, in Lonca's hands
 (backups, redaction, retention are its). Concurrency: the daemon is the
