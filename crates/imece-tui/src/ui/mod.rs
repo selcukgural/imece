@@ -6769,6 +6769,65 @@ mod tests {
     }
 
     #[test]
+    fn a_change_of_several_files_lists_them_beside_its_patch_from_120_columns() {
+        let mut app = app_after(1, 2, 0, Lang::En);
+        let id = app.world.agents[1].id;
+        let file = |path: &str| ChangedFile {
+            path: path.into(),
+            added: 1,
+            removed: 0,
+            binary: false,
+        };
+        app.world.change_ready(Change {
+            agent: id,
+            title: "Paging".into(),
+            files: vec![file("src/a.rs"), file("src/b.rs")],
+            patch: "diff --git a/src/a.rs b/src/a.rs\n@@ -1 +1 @@\n+x\n".into(),
+            runs: Vec::new(),
+            check: Check::None,
+            spend: None,
+        });
+        app.zoom = Zoom::Diff(id);
+        // Width less the window's two borders.
+        let wide = render(&app, 122, 30);
+        assert!(wide.contains("▸ src/a.rs +1 −0"), "{wide}");
+        assert!(!wide.contains("diff --git"), "{wide}");
+        let narrow = render(&app, 121, 30);
+        assert!(!narrow.contains('▸'), "{narrow}");
+        assert!(narrow.contains(" src/b.rs +1 −0"), "{narrow}");
+    }
+
+    #[test]
+    fn a_change_says_first_what_its_worker_said_of_it() {
+        let mut app = app_after(1, 2, 0, Lang::En);
+        let id = app.world.agents[1].id;
+        app.world.note(Event::Sent {
+            from: id,
+            to: 0,
+            kind: MsgKind::Done,
+            text: "Paging\n\nKept the old shape; next is a new field.".into(),
+            id: 1,
+            re: None,
+        });
+        app.world.change_ready(Change {
+            agent: id,
+            title: "Paging".into(),
+            files: Vec::new(),
+            patch: "+x\n".into(),
+            runs: Vec::new(),
+            check: Check::None,
+            spend: None,
+        });
+        app.zoom = Zoom::Diff(id);
+        let s = render(&app, 120, 30);
+        let body = s.lines().nth(2).unwrap();
+        assert!(
+            body.contains("Kept the old shape; next is a new field."),
+            "{s}"
+        );
+    }
+
+    #[test]
     fn a_change_s_footer_keeps_the_help_at_any_width() {
         let mut app = app_after(1, 2, 0, Lang::En);
         app.zoom = Zoom::Diff(app.world.agents[1].id);
@@ -7414,7 +7473,10 @@ mod tests {
         assert!(!s.contains("a apply to the checkout"), "{s}");
         app.zoom = Zoom::Diff(1);
         let s = render(&app, 140, 40);
-        assert!(s.contains("proposal 5 · waits: unobserved_session"), "{s}");
+        assert!(
+            s.contains("nobody watched this session's tools · proposal 5"),
+            "{s}"
+        );
     }
 
     #[test]
@@ -7541,7 +7603,7 @@ mod tests {
         );
         key(&mut app, KeyCode::Enter);
         assert_eq!(app.zoom, Zoom::Diff(1));
-        let s = render(&app, 140, 40);
+        let s = render(&app, 118, 40);
         assert!(
             s.contains(&format!("CHANGE · {name} · 2 files +3 −1 · Fix the parser")),
             "{s}"
@@ -7558,16 +7620,17 @@ mod tests {
         let outside = format!("2 outside #{}: src/p.rs, src/q.rs", card + 1);
         assert_eq!(ran + 1, row(&outside), "{s}");
         assert_eq!(ran + 2, row("│ src/p.rs +"), "{s}");
-        assert_eq!(ran + 4, row("diff --git a/src/p.rs"), "{s}");
+        assert_eq!(ran + 4, row("│src/p.rs "), "{s}");
         assert!(
             s.contains("+Q-LINE \n") || s.contains("+Q-LINE "),
             "control characters go: {s}"
         );
+        assert!(s.contains(" a x  apply · choose a hunk"), "{s}");
+        let wide = render(&app, 200, 36);
         assert!(
-            s.contains(" j k ") && s.contains(" a x  apply · choose a hunk"),
-            "{s}"
+            wide.contains(" j k ") && wide.contains(" >  quote to it"),
+            "{wide}"
         );
-        assert!(render(&app, 200, 36).contains(" >  quote to it"), "{s}");
         // The agent at hand is the change's: `@` writes to it.
         key(&mut app, KeyCode::Char('@'));
         assert_eq!(app.input, format!("@{name} "));
@@ -7575,9 +7638,9 @@ mod tests {
         // Scrolling: lines, pages, ends, files.
         key(&mut app, KeyCode::Char('j'));
         key(&mut app, KeyCode::Char('j'));
-        assert_eq!(app.diff_scroll, 2);
+        assert_eq!(app.diff_scroll, 4, "over git's lines");
         key(&mut app, KeyCode::Char('k'));
-        assert_eq!(app.diff_scroll, 1);
+        assert_eq!(app.diff_scroll, 3);
         key(&mut app, KeyCode::Char(']'));
         assert_eq!(app.diff_scroll, 8, "the next file's header");
         key(&mut app, KeyCode::Char(']'));

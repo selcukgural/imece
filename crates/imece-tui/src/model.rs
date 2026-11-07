@@ -3555,6 +3555,23 @@ impl World {
     }
 
     /// The change of worker `id` that waits for the person.
+    /// What worker `id` said of its work under the first line of its
+    /// newest `done`, the first line being the change's title; none when
+    /// that is all it said.
+    pub fn done_why(&self, id: AgentId) -> Option<&str> {
+        let text = self.journal.iter().rev().find_map(|e| match &e.event {
+            Event::Sent {
+                from,
+                kind: MsgKind::Done,
+                text,
+                ..
+            } if *from == id => Some(text),
+            _ => None,
+        })?;
+        let (_, rest) = text.split_once('\n')?;
+        Some(rest.trim()).filter(|why| !why.is_empty())
+    }
+
     pub fn change_of(&self, id: AgentId) -> Option<&Change> {
         self.changes.iter().find(|c| c.agent == id)
     }
@@ -7185,6 +7202,29 @@ mod tests {
             said.iter()
                 .all(|s| s.contains("Lonca") || s.contains("daemon"))
         );
+    }
+
+    #[test]
+    fn a_change_s_why_is_what_its_newest_done_says_under_its_first_line() {
+        let (mut w, _) = crate::sim::world(1, 2, 0, 1, crate::i18n::Lang::En);
+        let done = |from, text: &str, kind| Event::Sent {
+            from,
+            to: 0,
+            kind,
+            text: text.into(),
+            id: 1,
+            re: None,
+        };
+        assert_eq!(w.done_why(1), None);
+        w.note(done(1, "Title\n\nOld reason.", MsgKind::Done));
+        assert_eq!(w.done_why(1), Some("Old reason."));
+        w.note(done(1, "Other kind\nnot this", MsgKind::Inform));
+        w.note(done(2, "Theirs\nnot this", MsgKind::Done));
+        assert_eq!(w.done_why(1), Some("Old reason."));
+        w.note(done(1, "Title only", MsgKind::Done));
+        assert_eq!(w.done_why(1), None, "the newest says nothing more");
+        w.note(done(1, "Title\n  \n", MsgKind::Done));
+        assert_eq!(w.done_why(1), None, "blank is nothing");
     }
 
     #[test]
