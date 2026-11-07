@@ -91,6 +91,12 @@ impl App {
         chosen.or_else(|| in_place().map(|r| r.1))
     }
 
+    /// imece opens on Home (the person, 2026-11-07), `main` says so: the
+    /// tests of every other view start on the salon they were written for.
+    pub fn open_home(&mut self) {
+        self.show(View::Home);
+    }
+
     /// Keys go to Home's list: nothing is open over it.
     pub(super) fn home_keys(&self) -> bool {
         self.view == View::Home
@@ -472,6 +478,19 @@ mod tests {
             .push(item(InboxKind::Sensitive, workers(&app)[0], true));
         app.key(key(KeyCode::Char('W')));
         assert_eq!(app.view, View::Salon);
+    }
+
+    #[test]
+    fn imece_opens_on_home_and_the_first_key_acts_on_the_row_shown() {
+        let mut app = quiet();
+        app.view = View::Salon;
+        app.open_home();
+        assert_eq!(app.view, View::Home);
+        let w = workers(&app);
+        app.world.inbox.push(item(InboxKind::Approval, w[0], true));
+        assert_eq!(app.home_at(), Some(HomeRow::Item(0)));
+        app.key(key(KeyCode::Char('a')));
+        assert!(!app.world.inbox[0].open);
     }
 
     #[test]

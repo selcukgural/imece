@@ -5,7 +5,7 @@ description: View 5 - what is your turn across projects, what is stuck and what 
 
 # Home
 
-Home is the screen for deciding: `5` or `:home`. The salon shows the team; Home shows what is your turn. One list across the open projects, and beside it whatever row is at hand, read without pressing a key.
+Home is the screen imece opens on, the one for deciding; `5` or `:home` comes back to it. The salon shows the team; Home shows what is your turn. One list across the open projects, and beside it whatever row is at hand, read without pressing a key.
 
 ```text
  all   shop-api !2 ●1   mobile-app !3 ✕1 ●2                                  / writes to lead-shop-api
@@ -60,4 +60,4 @@ Every other key works as everywhere; the footer starts with what the row at hand
 
 A decision never lands on what you did not read: when the row at hand is gone by the time you press `a` or `r`, the key does nothing, a line says so, and the row now in its place is at hand.
 
-The salon, the board, the code map and the timeline stay, one key away. A key file's `[salon]` part holds on Home too.
+The salon (with the journal, where a start's notes land), the board, the code map and the timeline stay, one key away. A key file's `[salon]` part holds on Home too.

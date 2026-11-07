@@ -5,7 +5,7 @@ description: imece'nin varsayılan ekranı - başlık satırı, projeye göre gr
 
 # Salon
 
-Salon, imece'nin açıldığı ve `1` ya da `:salon` ile geri döndüğünüz ekrandır. Bütün takımı bir bakışta gösterir: üstte bütçe ve filoyu sayan başlık satırı, solda lonca ağacı (her proje, lideri, işçileri ve yardımcıları), sağda iki yan panel: SENİ BEKLEYEN ve [HİKÂYE](journal.md#hikâye) (ne olduğu, karta göre; `J` günlüğü satır satır gösterir). Pano ve kod haritası bir tuş uzakta (`2`, `3`); geri kalan her şey salonun üstünde açılır ve `esc` salonu geri getirir.
+Salon takımın ekranıdır, `1` ya da `:salon`; imece [ana ekranda](home.md) açılır. Bütün takımı bir bakışta gösterir: üstte bütçe ve filoyu sayan başlık satırı, solda lonca ağacı (her proje, lideri, işçileri ve yardımcıları), sağda iki yan panel: SENİ BEKLEYEN ve [HİKÂYE](journal.md#hikâye) (ne olduğu, karta göre; `J` günlüğü satır satır gösterir). Pano ve kod haritası bir tuş uzakta (`2`, `3`); geri kalan her şey salonun üstünde açılır ve `esc` salonu geri getirir.
 
 ```text
  imece   ! 2 seni bekliyor  │ ● 2 çalışıyor  ✓ 1 bitti │ 10 dk: 1 kart bitti · 1 Δ · 6 mesaj │ 3/9 kart │ $3.10 / $20.00 harcandı ($1.80/sa, ~9 sa kaldı) │ claude 5 sa: %48 kaldı, 1 sa 59 dk sonra yenilenir  14:02

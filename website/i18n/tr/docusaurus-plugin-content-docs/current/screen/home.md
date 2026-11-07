@@ -5,7 +5,7 @@ description: Görünüm 5 - projeler arası sıra sizde olanlar, takılanlar ve 
 
 # Ana ekran
 
-Ana ekran karar verme ekranıdır: `5` ya da `:home`. Salon takımı gösterir; ana ekran sıranın sizde olduğu şeyleri. Açık projelerin hepsi için tek liste ve yanında eldeki satır, tuşa basmadan okunur.
+Ana ekran, imece'nin açıldığı ve karar verdiğiniz ekrandır; `5` ya da `:home` geri getirir. Salon takımı gösterir; ana ekran sıranın sizde olduğu şeyleri. Açık projelerin hepsi için tek liste ve yanında eldeki satır, tuşa basmadan okunur.
 
 ```text
  hepsi   shop-api !2 ●1   mobile-app !3 ✕1 ●2                              / lead-shop-api için yazar
@@ -60,4 +60,4 @@ Diğer tuşlar her yerdeki gibi çalışır; alt satır eldeki satırın aldığ
 
 Karar asla okumadığınız şeye düşmez: `a` ya da `r`'ye bastığınızda eldeki satır gitmişse tuş hiçbir şey yapmaz, bir satır bunu söyler ve yerine gelen satır elinize geçer.
 
-Salon, pano, kod haritası ve zaman şeridi yerinde, bir tuş uzakta. Tuş dosyasının `[salon]` bölümü ana ekranda da geçerlidir.
+Salon (bir başlangıcın notlarının düştüğü günlükle), pano, kod haritası ve zaman şeridi yerinde, bir tuş uzakta. Tuş dosyasının `[salon]` bölümü ana ekranda da geçerlidir.
