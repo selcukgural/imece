@@ -88,3 +88,9 @@ change. From 120 columns a change of several files lists them beside the patch
 `done` says why, so it shows all this through the same code. Risk beyond what
 the view said before (overlaps with other changes) is step 3's: it needs
 `status.changes`.
+
+The order above changed the same evening: record 125 ("Two screens") puts
+step 5 first, step 4 before step 3, shrinks step 3 to a verdict line and
+a `:lonca` window, and turns Home into a triage list grouped by what
+deciding costs. Steps 0-2 as built stand; what they built is folded into
+record 125's screens.
