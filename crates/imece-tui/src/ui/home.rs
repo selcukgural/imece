@@ -101,13 +101,6 @@ impl Listed {
     fn many(&self, group: HomeGroup) -> usize {
         self.rows.iter().filter(|r| r.0 == group).count()
     }
-
-    fn under(&self, heading: Heading) -> usize {
-        self.rows
-            .iter()
-            .filter(|r| r.0.heading() == heading)
-            .count()
-    }
 }
 
 /// `TO DECIDE  2 permissions · 1 question · 3 changes`: the heading and
@@ -132,11 +125,16 @@ fn decide_heading(t: &Text, listed: &Listed) -> Line<'static> {
     Line::from(spans)
 }
 
-/// `AT WORK  12 · stuck 2 · idle 1`: who works, and how many of them are
-/// stuck or idle, when any are.
-fn work_heading(t: &Text, listed: &Listed) -> Line<'static> {
+/// `AT WORK  12 · stuck 2 · idle 1 · 2 hidden (:unsettle)`: who works
+/// (the projects' headings not counted), how many of them are stuck or
+/// idle, and how many agents and projects `s` hid, when any are.
+fn work_heading(app: &App, listed: &Listed) -> Line<'static> {
+    let t = app.lang.text();
     let mut spans = vec![Span::styled(format!(" {} ", t.home_work), bold(pal().ok))];
-    let mut words = vec![listed.under(Heading::Work).to_string()];
+    let agents = (listed.rows.iter())
+        .filter(|r| r.0.heading() == Heading::Work && r.0 != HomeGroup::Team)
+        .count();
+    let mut words = vec![agents.to_string()];
     for (group, word) in [
         (HomeGroup::Stuck, t.home_stuck_count),
         (HomeGroup::Quiet, t.home_idle_count),
@@ -145,6 +143,11 @@ fn work_heading(t: &Text, listed: &Listed) -> Line<'static> {
         if n > 0 {
             words.push(fill(word, &[&n.to_string()]));
         }
+    }
+    let hidden = app.settled.len() + app.settled_projects.len();
+    if hidden > 0 {
+        let said = fill(t.settled_count, &[&hidden.to_string()]);
+        words.push(said.trim_start_matches("· ").trim_end().to_string());
     }
     spans.push(Span::styled(words.join(" · "), dim()));
     Line::from(spans)
@@ -172,7 +175,7 @@ fn group_line(app: &App, group: HomeGroup, listed: &Listed, width: usize) -> Lin
                         item.kind == InboxKind::Change
                             && w.verdict(item.agent).is_some_and(|v| v.ready)
                     }
-                    HomeRow::Agent(_) => false,
+                    HomeRow::Agent(_) | HomeRow::Project(_) => false,
                 })
                 .count();
             (ready > 0).then(|| fill(t.home_ready, &[&ready.to_string()]))
@@ -210,7 +213,7 @@ fn list_lines(app: &App, width: usize, at: Option<HomeRow>) -> (Vec<Line<'static
                 }
                 lines.push(match group.heading() {
                     Heading::Decide => decide_heading(t, &listed),
-                    Heading::Work => work_heading(t, &listed),
+                    Heading::Work => work_heading(app, &listed),
                 });
             }
             if group.heading() == Heading::Decide {
@@ -235,13 +238,17 @@ fn card_of(w: &World, row: HomeRow) -> Option<&Card> {
     let id = match row {
         HomeRow::Item(i) => (w.inbox[i].card).or(w.agents[w.inbox[i].agent].card),
         HomeRow::Agent(a) => w.agents[a].card,
+        HomeRow::Project(_) => None,
     };
     id.and_then(|c| w.cards.get(c))
 }
 
 /// What a row is called: its change's title, else its card's, else the
-/// agent's name.
+/// agent's name; a project's heading its name.
 fn title_of(w: &World, row: HomeRow) -> String {
+    if let HomeRow::Project(p) = row {
+        return clean(&w.projects[p].name);
+    }
     let change = match row {
         HomeRow::Item(i) if w.inbox[i].kind == InboxKind::Change => w.change_of(w.inbox[i].agent),
         _ => None,
@@ -255,11 +262,30 @@ fn title_of(w: &World, row: HomeRow) -> String {
     clean(&w.agents[agent_of(w, row)].name)
 }
 
-/// The agent a row belongs to.
+/// The agent a row belongs to; a project's heading its leader.
 fn agent_of(w: &World, row: HomeRow) -> AgentId {
     match row {
         HomeRow::Item(i) => w.inbox[i].agent,
         HomeRow::Agent(a) => a,
+        HomeRow::Project(p) => w.projects[p].leader,
+    }
+}
+
+/// A project's heading over its agents (record 125, step 5): the team's
+/// project line, the cursor before it, the row at hand on the selection
+/// colour.
+fn project_row(app: &App, p: ProjectId, here: bool) -> Line<'static> {
+    let rungs = app.rungs();
+    let mut spans = vec![Span::styled(
+        if here { "▸" } else { " " },
+        bold(pal().strong),
+    )];
+    spans.extend(salon::project_line(app, p, &rungs).spans);
+    let line = Line::from(spans);
+    if here {
+        line.style(Style::new().bg(pal().selection))
+    } else {
+        line
     }
 }
 
@@ -392,7 +418,8 @@ fn row_keys(app: &App) -> Vec<Span<'static>> {
             _ => vec![("a", t.home_yes), ("r", t.home_no)],
         },
         Some(HomeRow::Agent(_)) => vec![("enter", t.home_open)],
-        None => Vec::new(),
+        // A heading decides nothing: the status line has its keys.
+        Some(HomeRow::Project(_)) | None => Vec::new(),
     };
     let mut spans = hint_spans(&keys);
     for s in &mut spans {
@@ -409,20 +436,31 @@ fn row_keys(app: &App) -> Vec<Span<'static>> {
 /// row at hand ends with the keys that decide it.
 fn row_lines(app: &App, row: HomeRow, width: usize, here: bool) -> Vec<Line<'static>> {
     let w = &app.world;
+    if let HomeRow::Project(p) = row {
+        return vec![project_row(app, p, here)];
+    }
     let agent = &w.agents[agent_of(w, row)];
     let (glyph, colour) = match row {
-        HomeRow::Item(_) => ("!", pal().warn),
         HomeRow::Agent(_) => glyph(agent),
+        HomeRow::Item(_) | HomeRow::Project(_) => ("!", pal().warn),
     };
     let tail = match row {
         HomeRow::Item(i) => item_tail(app, i),
         HomeRow::Agent(id) => agent_tail(app, id, glyph),
+        HomeRow::Project(_) => unreachable!("a heading is its own row"),
     };
-    let mut head = vec![
-        Span::styled(if here { "▸" } else { " " }, bold(pal().strong)),
-        Span::styled(glyph, fg(colour)),
-        Span::raw(" "),
-    ];
+    let mut head = vec![Span::styled(
+        if here { "▸" } else { " " },
+        bold(pal().strong),
+    )];
+    // A helper or a researcher hangs under its worker's row.
+    let under =
+        matches!(row, HomeRow::Agent(_)) && matches!(agent.role, Role::Helper | Role::Researcher);
+    if under {
+        head.push(Span::styled("  └ ", dim()));
+    }
+    head.push(Span::styled(glyph, fg(colour)));
+    head.push(Span::raw(" "));
     let many = w.open_projects().count() > 1;
     if many && app.at_home.scope.is_none() {
         head.push(Span::styled(
@@ -729,12 +767,25 @@ fn preview_lines(app: &App, row: HomeRow, room: usize, rows: usize) -> Vec<Line<
             .to_string(),
         bold(pal().strong),
     ));
-    head.push(Span::styled(
-        format!("  {project} · {} · {}", clean(&a.name), dollars(a.cost)),
-        dim(),
-    ));
+    // A heading is the project: its leader and cost follow the name.
+    let tail = match row {
+        HomeRow::Project(_) => format!("  {} · {}", clean(&a.name), dollars(a.cost)),
+        _ => format!("  {project} · {} · {}", clean(&a.name), dollars(a.cost)),
+    };
+    head.push(Span::styled(tail, dim()));
     let mut lines = vec![Line::from(head), Line::default()];
     match row {
+        HomeRow::Project(p) => {
+            // Where the project is and how it stands on Lonca, then its
+            // leader's work.
+            if let Some(folder) = app.project_folder(p) {
+                lines.push(Line::from(Span::styled(folder, dim())));
+            }
+            if w.projects[p].lonca.is_some() {
+                lines.push(Line::from(Span::styled(app.lonca_state(p), dim())));
+            }
+            agent_lines(app, id, &mut lines, room, rows);
+        }
         HomeRow::Item(i) => {
             let item = &w.inbox[i];
             let change = (item.kind == InboxKind::Change)
@@ -1472,11 +1523,17 @@ mod tests {
         app.home_go(2);
         assert!(lines(&app, 100)[6].ends_with(" a  approve   r  send back  "));
         app.world.agents[a].status = Status::Working;
+        // Row 3 is the project's heading (two projects are open): the
+        // team's project line, no keys at its end; row 4 the worker's.
         app.home_go(3);
+        let heading = &lines(&app, 100)[9];
+        assert!(heading.starts_with("▸▾ shop-api"), "{heading}");
+        assert!(heading.trim_end().ends_with("~/src/shop-api"), "{heading}");
+        app.home_go(4);
         assert!(
-            lines(&app, 100)[9].ends_with(" enter  open  "),
+            lines(&app, 100)[10].ends_with(" enter  open  "),
             "{}",
-            lines(&app, 100)[9]
+            lines(&app, 100)[10]
         );
         // Too narrow for the ask beside them: the keys go, the status line
         // still has them.
@@ -1713,6 +1770,130 @@ mod tests {
             text(&tr[0]).starts_with("hüküm    ✓ onaya hazır"),
             "{}",
             text(&tr[0])
+        );
+    }
+
+    /// Two projects on Home, the first worker of project 0 with a helper
+    /// under it.
+    fn team() -> (App, AgentId, AgentId) {
+        let mut app = home(Lang::En);
+        let worker = (app.world.agents.iter())
+            .find(|a| a.role == Role::Worker && a.project == 0)
+            .map(|a| a.id)
+            .unwrap();
+        let n = app.world.agents.len();
+        let mut helper = app.world.agents[worker].clone();
+        helper.id = n;
+        helper.name = "claude-9.1".into();
+        helper.role = Role::Helper;
+        helper.parent = Some(worker);
+        helper.status = Status::Working;
+        app.world.agents.push(helper);
+        (app, worker, n)
+    }
+
+    #[test]
+    fn the_team_stands_under_at_work_by_project_with_its_helpers_hung_under() {
+        let (mut app, worker, helper) = team();
+        app.home_go(0);
+        assert_eq!(app.home_at(), Some(HomeRow::Project(0)));
+        let got = lines(&app, 120);
+        let name = clean(&app.world.projects[0].name);
+        // The heading is the team's project line, the cursor before it,
+        // no keys at its end; the other project's heading unmarked.
+        assert!(got[1].starts_with(&format!("▸▾ {name}")), "{}", got[1]);
+        assert!(
+            got[1].contains("working") && got[1].contains("$0.00"),
+            "{}",
+            got[1]
+        );
+        assert!(!got[1].contains("open"), "{}", got[1]);
+        let other = clean(&app.world.projects[1].name);
+        assert!(
+            got.iter().any(|l| l.starts_with(&format!(" ▾ {other}"))),
+            "{got:?}"
+        );
+        // The helper hangs under its worker, indented.
+        let at = |id: AgentId| {
+            let name = clean(&app.world.agents[id].name);
+            got.iter().position(|l| l.contains(&name)).unwrap()
+        };
+        assert_eq!(at(helper), at(worker) + 1);
+        assert!(
+            got[at(helper)].starts_with("   └ ● "),
+            "{}",
+            got[at(helper)]
+        );
+        assert!(got[at(worker)].starts_with(" ○ "), "{}", got[at(worker)]);
+        // AT WORK counts the agents, not the headings; what `s` hid is
+        // counted too.
+        let heading = got.iter().find(|l| l.contains("AT WORK")).unwrap().clone();
+        assert!(heading.contains(" 5 · idle 4"), "{heading}");
+        app.settled.insert(helper);
+        app.settled_projects.insert(1);
+        let got = lines(&app, 120);
+        let heading = got.iter().find(|l| l.contains("AT WORK")).unwrap();
+        assert!(
+            heading.contains(" 2 · idle 2 · 2 hidden (:unsettle)"),
+            "{heading}"
+        );
+        assert!(!got.iter().any(|l| l.contains(&other)), "a hidden project");
+        app.settled.clear();
+        app.settled_projects.clear();
+        // Folded: the heading alone, `▸`, ending with its loudest member
+        // as the team's does; no row hangs under it.
+        app.collapsed[0] = true;
+        let got = lines(&app, 120);
+        assert!(got[1].starts_with(&format!("▸▸ {name}")), "{}", got[1]);
+        assert!(got[1].ends_with("● claude-9.1"), "{}", got[1]);
+        assert!(!got.iter().any(|l| l.starts_with("   └")), "{got:?}");
+        assert!(got[2].starts_with(&format!(" ▾ {other}")), "{}", got[2]);
+        app.collapsed[0] = false;
+        // The status line names the heading's keys.
+        let s = render(&app, 120, 40);
+        let foot = s.lines().last().unwrap();
+        assert!(
+            foot.contains("   enter  open   h l  fold · unfold   s  hide   ?  help"),
+            "{foot}"
+        );
+        assert!(foot.starts_with(&format!(" home · {name}   ")), "{foot}");
+        // Narrowed to one project: no heading, the rows as before.
+        app.at_home.scope = Some(0);
+        let got = lines(&app, 120);
+        assert!(
+            !got.iter().any(|l| l.contains(&format!("▾ {name}"))),
+            "{got:?}"
+        );
+        assert!(got[1].starts_with("▸○ "), "{}", got[1]);
+    }
+
+    #[test]
+    fn a_heading_s_preview_names_the_project_its_folder_and_its_leader() {
+        let (mut app, _, _) = team();
+        app.home_go(0);
+        let s = render(&app, 150, 40);
+        let name = clean(&app.world.projects[0].name);
+        let lead = clean(&app.world.agents[app.world.projects[0].leader].name);
+        let preview: Vec<&str> = s
+            .lines()
+            .map(|l| l.split('│').nth(1).unwrap_or(""))
+            .collect();
+        let head = preview.iter().find(|l| l.contains(&lead)).unwrap();
+        assert!(head.contains(&name), "{head}");
+        assert!(
+            head.trim_start().starts_with(&format!("{name}  {lead} ·")),
+            "the project once, then its leader: {head}"
+        );
+        let folder = app.project_folder(0).unwrap();
+        assert!(preview.iter().any(|l| l.trim() == folder), "{preview:?}");
+        let leader = &app.world.agents[app.world.projects[0].leader];
+        let status: String = status_spans(app.lang, &app.world, leader)
+            .iter()
+            .map(|s| s.content.as_ref())
+            .collect();
+        assert!(
+            preview.iter().any(|l| l.trim() == status.trim()),
+            "the leader's status {status:?}: {preview:?}"
         );
     }
 

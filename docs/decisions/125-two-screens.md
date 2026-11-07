@@ -315,3 +315,27 @@ patched under a window; `at_rest` is false with one open. The help row
 two views. Records 04, 17 and 100 say so; the keyboard, commands,
 board-and-code-map, timeline, salon, Home, cards and command-line pages
 in both languages.
+
+Step 5's team as built (its second piece): Home's lower half is the
+team. `App::home_rows_in` lists AT WORK project by project in the
+salon's order (`World::salon_order`): a heading row `HomeRow::Project`
+(group `HomeGroup::Team`) when more than one project is in view and none
+is narrowed to (`home_headed`), drawn as the team's project line with the
+cursor before it (`ui::home::project_row`, `salon::project_line`), a
+folded project (`App.collapsed`, shared with the team) its heading alone,
+a project with nobody on the list no heading; under it the workers and
+solos stuck, at work and quiet, each with its helpers and researcher
+hung under it (`App::row_group`, drawn `└`), then the helpers whose
+worker is an item's row; an agent `s` hid, or one hung under a hidden
+worker, is out (`App.settled`, `settled_projects`), counted in the AT
+WORK heading (`· N hidden (:unsettle)`). `h` `l` (`home_fold`: the row
+at hand's project, the heading coming to hand), `za` (`home_fold_toggle`),
+`zM` `zR`, `:fold` and `:unfold` (`fold_all`) work on Home and stay
+there; `s` on an agent's row or a heading is `:settle` (`home_hide`,
+refused as the team refuses it), on an item `later` as before; `:settle`
+and `:unsettle` stay on Home; `enter` on a heading opens the leader's
+focus; the status line names the heading's keys (`enter · h l · s`),
+an agent's (`enter · s · @`); the heading's preview is the folder, the
+Lonca state and the leader's lines. The team view (`:salon`) stays as it
+was for now: its panes go with the next piece.
+

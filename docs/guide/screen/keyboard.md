@@ -83,10 +83,10 @@ While the first key of a chord waits for its second, the row lists what the seco
 
 | Key | What it does |
 | --- | --- |
-| `←` `→`  `h` `l` | fold / unfold a project or a worker's helpers (in a conversation: a message) |
-| `za`  `zM`  `zR` | fold: toggle · all (`:fold`) · none (`:unfold`); in a conversation its messages |
+| `←` `→`  `h` `l` | fold / unfold a project or a worker's helpers; on Home the row at hand's project, to its heading (in a conversation: a message) |
+| `za`  `zM`  `zR` | fold: toggle · all (`:fold`) · none (`:unfold`), in the team and on Home; in a conversation its messages |
 | `f`  `:needs` | team: only what needs you · everyone |
-| `s`  `:settle` | hide the selected worker's row, or the project (on its header or its leader), out of the team until it needs you again; `:unsettle` brings everything back |
+| `s`  `:settle` | hide the selected worker's row, or the project (on its header or its leader), out of the team until it needs you again; on Home the row at hand's agent or project (an item goes to `later` instead); `:unsettle` brings everything back |
 
 ## TO DECIDE
 

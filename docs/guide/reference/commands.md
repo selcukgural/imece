@@ -179,7 +179,7 @@ Demo only, as `+`: the simulation runs faster. The menu note shows the speed (`Ã
 
 ### `:fold`
 
-Folds every project and every worker's helpers in the team, as `zM`; from another view it goes to the team first. With a conversation open it folds every message of it to one row instead, and the conversations you open after it in this run start folded. See [team](../screen/salon.md) and [conversations](../screen/conversations.md).
+Folds every project and every worker's helpers in the team, as `zM`; on Home it folds the projects that head its rows and stays; from another screen it goes to the team first. With a conversation open it folds every message of it to one row instead, and the conversations you open after it in this run start folded. See [team](../screen/salon.md) and [conversations](../screen/conversations.md).
 
 ### `:forget [@NAME]`
 
@@ -330,7 +330,7 @@ The team: the view imece had before Home; `:home` is the other.
 
 ### `:settle`
 
-Hides the team's selected row, as `s` there: a worker's row (with its helpers and researcher) or, on a project's header or its leader, the whole project, out of the team until it needs you again. Goes to the team first. Refused while something of it waits for you or is stuck: `not hidden: claude-2 needs you`. Its finished turns count as seen. The flash: `claude-2 hidden: back when it needs you`. The menu note names the row. See [team](../screen/salon.md).
+Hides the team's selected row, as `s` there: a worker's row (with its helpers and researcher) or, on a project's header or its leader, the whole project, out of the team until it needs you again. On Home it hides the row at hand's agent or project and stays; from another screen it goes to the team first. Refused while something of it waits for you or is stuck: `not hidden: claude-2 needs you`. Its finished turns count as seen. The flash: `claude-2 hidden: back when it needs you`. The menu note names the row. See [team](../screen/salon.md).
 
 ### `:slower`
 
@@ -382,11 +382,11 @@ Keeps a `:close`, `:forget`, `:archive` or `:clear` from happening, as `u`; `U` 
 
 ### `:unfold`
 
-Unfolds everything in the team, as `zR`; with a conversation open, every message of it, and the conversations opened after it start open again.
+Unfolds everything in the team, as `zR` (on Home it stays); with a conversation open, every message of it, and the conversations opened after it start open again.
 
 ### `:unsettle`
 
-Brings back everything hidden with `s` or `:settle`, and goes to the team. The flash: `3 back in the team`. The menu note says how many are hidden.
+Brings back everything hidden with `s` or `:settle`, and goes to the team (Home, which shows the team too, stays). The flash: `3 back in the team`. The menu note says how many are hidden.
 
 ### `:waiting`
 

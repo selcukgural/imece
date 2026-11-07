@@ -37,7 +37,7 @@ The [header](salon.md#the-header) names the open projects; the one the list is n
 | questions | read and answer: an agent's question whole, with the answers it offers under it (`1`-`9` picks one, `/` writes your own: [questions](../concepts/approvals-and-questions.md#questions-)), a researcher's report, an answer to read, an API error, the leader's plan |
 | changes | a diff to read: `✓ dotnet build · ✓ dotnet test · 2 files +4 −2 · 1 outside #51: Money.cs` — the [verdict](changes.md#what-is-above-the-patch) without its head: what was proved on its tree (the repository's check when it ran, then imece's runs, else `nothing ran`), the files and lines against the paths its card owns, what other waiting change it overlaps, what Lonca runs after your yes. The ready ones (proved clean, inside their paths, overlapping nothing, fitting, whole) come first; the group's line counts them, `2 ready to approve` |
 | later | what you put off with `s`, in the order put off |
-| AT WORK | `AT WORK 12 · stuck 2 · idle 1`: agents stuck first (`■`, blocked or their session ended), then mid-turn or asking a teammate (`●`, the step they are on or what they do, then how long from a minute on), then idle (`○`). A worker whose change waits and who has gone on to other work is here too: two pieces of work. One waiting on a yes or an answer of yours is that item instead; a leader with nothing to do is not listed |
+| AT WORK | `AT WORK 12 · stuck 2 · idle 1 · 2 hidden (:unsettle)`: the team, project by project in the team's order. When more than one project is in view (none narrowed to with `[` `]`), each heads its agents with its line from the [team](salon.md): `▾ shop-api  ▓▓░░ 3/8  ! 2 waiting  1 working  $4.10  ~/src/shop-api`; `h` folds it to that line, `l` opens it, `za` `zM` `zR` as in the team. Under it the workers and solos stuck first (`■`, blocked or their session ended), then mid-turn or asking a teammate (`●`, the step they are on or what they do, then how long from a minute on), then idle (`○`), each with its helpers and researcher hung under it (`└`). A worker whose change waits and who has gone on to other work is here too: two pieces of work. One waiting on a yes or an answer of yours is that item instead, its helpers standing on their own after the workers; a leader with nothing to do is not listed. `s` on an agent or a heading hides it until it needs you; the heading counts what is hidden |
 
 A row is the piece of work: `!` (or the agent's glyph), its project when several are open and the list is not narrowed, the card and its title, then the ask or the status. An ask wraps under its own column, whole; a change's parts go under each other when the row is short; an agent's status is cut. The agent's name stands in the preview. `W`'s order is this list's: permissions, questions, changes, what was put off.
 
@@ -52,10 +52,11 @@ From 120 columns the row at hand is read beside the list without a key: a questi
 | `j` `k` / `↑` `↓`, `gg` `G` | move; the preview follows |
 | `gd` `gw` | the first row to decide · the first at work |
 | `[` `]` | all projects, then each one, round |
-| `enter` | open it: a change's diff, a question's conversation, a script's bytes, an agent's focus. `esc` comes back here |
+| `enter` | open it: a change's diff, a question's conversation, a script's bytes, an agent's focus, a project's leader. `esc` comes back here |
 | `a` `r` | yes and no, as in [TO DECIDE](waiting.md); on a change approve and send back; on a question `a` writes back. The row at hand says them at its end |
 | `e` `A` | on an ask: yes for this turn · yes from now on |
-| `s` | later: the item goes to the `later` group at the end of TO DECIDE and you stay on the list |
+| `s`  `:settle` | later: the item goes to the `later` group at the end of TO DECIDE and you stay on the list; on an agent's row or a project's heading: hidden until it needs you, as in the team (`:unsettle` brings everything back) |
+| `h` `l`  `za` `zM` `zR`  `:fold` `:unfold` | fold the row at hand's project to its heading · open it · toggle · every project · none; only while the projects head their rows |
 | `@` | write to the agent at hand |
 | `W` | open the next item, in the list's order |
 

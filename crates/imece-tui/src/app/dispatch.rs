@@ -623,8 +623,13 @@ impl App {
                 };
                 self.fold(!folded);
             }
-            ('z', KeyCode::Char('M')) if self.salon_keys() => self.fold_all(true),
-            ('z', KeyCode::Char('R')) if self.salon_keys() => self.fold_all(false),
+            ('z', KeyCode::Char('a')) if self.home_keys() => self.home_fold_toggle(),
+            ('z', KeyCode::Char('M')) if self.salon_keys() || self.home_keys() => {
+                self.fold_all(true);
+            }
+            ('z', KeyCode::Char('R')) if self.salon_keys() || self.home_keys() => {
+                self.fold_all(false);
+            }
             _ => {}
         }
     }

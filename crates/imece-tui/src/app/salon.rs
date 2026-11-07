@@ -193,7 +193,10 @@ impl App {
         let n = self.settled.len() + self.settled_projects.len();
         self.settled.clear();
         self.settled_projects.clear();
-        self.go_salon();
+        // Home shows the team too: it stays.
+        if self.view != View::Home {
+            self.go_salon();
+        }
         let t = self.lang.text();
         self.flash(fill(t.unsettled, &[&n.to_string()]));
     }
@@ -1154,7 +1157,7 @@ mod tests {
         assert_eq!(app.selected, Sel::Agent(0));
         // `:settle` from elsewhere: the salon's selection.
         app.selected = Sel::Agent(3);
-        app.view = View::Home;
+        app.zoom = Zoom::Focus(0);
         app.pane = Pane::Journal;
         app.command("settle");
         assert_eq!(app.settled, BTreeSet::from([1, 2, 3]));
@@ -1262,8 +1265,16 @@ mod tests {
         app.pane = Pane::Inbox;
         app.command("unsettle");
         assert!(app.settled.is_empty() && app.settled_projects.is_empty());
-        assert_eq!((app.view, app.pane), (View::Salon, Pane::Salon));
+        assert_eq!(app.view, View::Home, "Home keeps the team's rows: it stays");
         assert_eq!(flashed(&app).unwrap_or_default(), "3 back in the team");
+        app.settled.insert(1);
+        app.view = View::Salon;
+        app.zoom = Zoom::Focus(1);
+        app.command("unsettle");
+        assert_eq!(
+            (app.view, app.pane, app.zoom),
+            (View::Salon, Pane::Salon, Zoom::None)
+        );
         // To a helper: the worker's row it hangs under comes back, and
         // its project; another row stays settled.
         app.settled.extend([1, 2]);
