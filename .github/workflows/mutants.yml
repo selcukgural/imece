@@ -3,15 +3,16 @@ name: mutants
 # Mutation testing: cargo-mutants plants a bug and sees whether a test
 # catches it. A pull request is held to the code it touches in imece's
 # boundaries and told about the rest (below); the whole
-# workspace runs every night, so a gap anywhere shows within a day. Both
-# are split over several runners (cargo-mutants `--shard k/n`: every
-# runner lists the same mutants and takes every n-th), so the wall-clock
-# is minutes, not hours.
+# workspace runs every night when main changed, and on demand, so a gap
+# anywhere shows within a day. Both are split over several runners
+# (cargo-mutants `--shard k/n`: every runner lists the same mutants and
+# takes its slice): minutes for a pull request, hours for the whole.
 
 on:
   pull_request:
   schedule:
-    - cron: "17 3 * * *"
+    # 22:17 in Turkey, done before Lonca's night starts at 00:07 UTC.
+    - cron: "17 19 * * *"
   workflow_dispatch:
 
 permissions:
@@ -238,43 +239,98 @@ jobs:
           echo "boundary shards: $RESULT"
           test "$RESULT" = "success"
 
-  # The whole workspace, nightly, over six runners the same way; a shard
-  # reports its own counts and misses in its summary.
-  all:
-    name: all (shard ${{ matrix.shard }})
+  # A night with nothing new on main has nothing new to find.
+  recent:
+    name: main changed
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 10
+    outputs:
+      changed: ${{ steps.log.outputs.changed }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Commits of the last day
+        id: log
+        env:
+          EVENT: ${{ github.event_name }}
+        run: |
+          if [ "$EVENT" != schedule ] || [ -n "$(git log --since='24 hours ago' --oneline -- crates Cargo.lock .cargo)" ]; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "main did not change; nothing to run"
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  # Every mutant. 9,471 of them on 2026-11-07, 47 s each in imece-tui, 11 s
+  # in imece-agent, two at a time: 57 hours of a runner. Six shards under
+  # two hours tried a quarter and were cancelled every night from
+  # 2026-11-01. Fourteen take about four and a half hours; when a shard
+  # nears the cap, add shards. A job may take six hours; this one stops
+  # before that, so its artifact is still written. The account runs twenty
+  # jobs at once, Lonca's night takes them all from 00:07 UTC, and six stay
+  # free here for a pull request.
+  all:
+    name: all (shard ${{ matrix.shard }})
+    needs: recent
+    if: needs.recent.outputs.changed == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
     strategy:
       fail-fast: false
       matrix:
-        shard: [0, 1, 2, 3, 4, 5]
+        shard: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - name: Rust toolchain (rust-toolchain.toml)
         run: rustup toolchain install
+      # cargo-mutants builds up to two copies of the tree under /tmp, for
+      # hours; the preinstalled toolchains we never use are the space.
+      - name: Free disk space
+        run: |
+          df -h / | tail -1
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/.ghcup \
+            /opt/hostedtoolcache/CodeQL /usr/local/share/powershell /usr/share/swift \
+            /usr/local/share/chromium /usr/local/lib/node_modules 2>/dev/null || true
+          sudo docker image prune -af >/dev/null 2>&1 || true
+          df -h / | tail -1
       - name: cargo-mutants (pinned)
         run: cargo install cargo-mutants --version 27.1.0 --locked
       - name: Every mutant
-        # Exit 2 (timeouts) and 3 (missed) are the report, not a failure:
-        # the pull-request job holds a change to the code it touches.
-        # Anything else (a build or baseline failure) is.
+        # Exit 2 (missed) and 3 (timeouts) are looked at below; anything
+        # else (a build or baseline failure) is a failure of the run.
         env:
           SHARD: ${{ matrix.shard }}
         run: |
           set +e
-          cargo mutants --shard "$SHARD/6" --jobs 2 --timeout 90
+          cargo mutants --shard "$SHARD/14" --no-shuffle --jobs 2 --timeout 90
           code=$?
+          set -e
           case $code in 0|2|3) ;; *) exit $code ;; esac
+          caught=$(wc -l < mutants.out/caught.txt)
+          timeouts=$(wc -l < mutants.out/timeout.txt)
+          # Red holds nothing here: it says what to fix before the next
+          # piece of work (CLAUDE.md).
+          if [ -s mutants.out/missed.txt ]; then
+            echo "::error::mutants survived: fix them before the next piece of work"
+            exit 1
+          fi
+          # A hang is rare. Many timeouts mean the tests did not get to run.
+          if [ "$timeouts" -gt 2 ] && [ "$timeouts" -gt "$caught" ]; then
+            echo "::error::more timeouts than caught mutants: the test timeout is too short for the workspace"
+            exit 1
+          fi
       - name: Summary
         if: always()
         env:
           SHARD: ${{ matrix.shard }}
         run: |
           {
-            echo "## Mutants (shard $SHARD of 6)"
+            echo "## Mutants (shard $SHARD of 14)"
             echo
             for f in caught missed timeout unviable; do
               n=0
@@ -294,3 +350,4 @@ jobs:
         with:
           name: mutants-all-${{ matrix.shard }}
           path: mutants.out
+          retention-days: 14

@@ -40,7 +40,12 @@ cargo mutants                                      # everything (slow); CI does 
   operand of an arithmetic expression (with the number in the test, not
   the constant), every field a constructor sets, every arm of a match,
   every function with the same shape in a sibling file, with values that
-  tell the variants apart. The full run is nightly only.
+  tell the variants apart. The full run is nightly only (19:17 UTC when
+  main changed, or `gh workflow run mutants.yml`: 14 shards, about 4.5
+  hours; a survivor makes its shard red and holds nothing). Before the
+  day's first piece of work look at last night's run (`gh run list
+  --workflow=mutants.yml --event schedule --limit 1`): what survived is
+  fixed first.
   The PR job also fails on a timeout, so never write
   a loop a mutated operator could make endless (search a range instead).
   What holds a PR (user, 2026-11-03): only the mutants in the paths
