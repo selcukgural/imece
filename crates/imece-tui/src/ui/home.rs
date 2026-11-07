@@ -98,7 +98,7 @@ fn project_bar(app: &App, width: u16) -> Line<'static> {
         ));
         for (group, mark, colour) in [
             (HomeGroup::Turn, "!", pal().warn),
-            (HomeGroup::Stuck, "✕", pal().bad),
+            (HomeGroup::Stuck, "■", pal().bad),
             (HomeGroup::Work, "●", pal().ok),
         ] {
             let n = many(group);
@@ -239,7 +239,7 @@ fn item_mark(t: &Text, kind: InboxKind) -> (Span<'static>, &'static str) {
         InboxKind::Approval => ("⚑", pal().warn, tails[1]),
         InboxKind::Script | InboxKind::Check => ("▶", pal().warn, tails[2]),
         InboxKind::Plan => ("▤", pal().warn, tails[3]),
-        InboxKind::Fault => ("✕", pal().bad, tails[4]),
+        InboxKind::Fault => ("■", pal().bad, tails[4]),
         InboxKind::Reply => ("»", pal().info, tails[5]),
         InboxKind::Sensitive => ("!", pal().warn, tails[6]),
         InboxKind::Research => ("?", pal().research, tails[6]),
@@ -257,7 +257,7 @@ fn change_tail(c: &Change) -> Vec<Span<'static>> {
         let (mark, colour) = if good {
             ("✓", pal().ok)
         } else {
-            ("✕", pal().bad)
+            ("✗", pal().bad)
         };
         spans.push(Span::styled(format!(" {mark}"), fg(colour)));
     }
@@ -634,7 +634,7 @@ mod tests {
         assert!(row.contains(&format!("/ writes to {lead}")), "{row}");
         assert!(row.starts_with(" all "), "{row}");
         app.world.agents[a].status = Status::Blocked;
-        assert!(line(&app).contains("!1 ✕1"), "{}", line(&app));
+        assert!(line(&app).contains("!1 ■1"), "{}", line(&app));
         app.lang = Lang::Tr;
         assert!(line(&app).contains("hepsi"), "{}", line(&app));
     }
@@ -665,7 +665,7 @@ mod tests {
             (InboxKind::Script, "▶", "script"),
             (InboxKind::Check, "▶", "script"),
             (InboxKind::Plan, "▤", "plan"),
-            (InboxKind::Fault, "✕", "API error"),
+            (InboxKind::Fault, "■", "API error"),
             (InboxKind::Reply, "»", "answered"),
             (InboxKind::Sensitive, "!", "decide"),
             (InboxKind::Research, "?", "decide"),
@@ -691,7 +691,7 @@ mod tests {
         assert_eq!(text(&change(0, vec![ran(Some(0))])), "+19 −6 ✓");
         assert_eq!(
             text(&change(0, vec![ran(Some(0)), ran(Some(1))])),
-            "+19 −6 ✕"
+            "+19 −6 ✗"
         );
     }
 

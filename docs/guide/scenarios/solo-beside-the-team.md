@@ -27,14 +27,14 @@ The salon shows a new group beside the team, with one agent, and it is selected:
 
 ```text
  ▾ kule
-   ◆ lead             coordinating                              $0.42
+   ● lead             coordinating                              $0.42
    ● claude-1         #3 limiter: config v2     editing src/limit.rs
    ○ claude-2         #4 limiter tests          idle
  ▾ notes
    ○ solo-notes       opus@xhigh                idle
 ```
 
-A solo's row says its choice. The glyph is its status, not the leader's `◆`: a solo works, it does not coordinate. Nothing costs anything yet: like every agent, it has no process until you write to it.
+A solo's row says its choice. The glyph is its status, as on every row: a solo works, it does not coordinate. Nothing costs anything yet: like every agent, it has no process until you write to it.
 
 ## 2. Tell it what to do
 
@@ -82,7 +82,7 @@ A different question, a different model. This time a path and no name:
 
 ```text
  ▾ kule
-   ◆ lead             idle
+   ○ lead             idle
    ○ claude-1         #3 limiter: config v2     idle
    ○ claude-2         #4 limiter tests          idle
  ▾ notes
@@ -102,7 +102,7 @@ A choice imece cannot honour is refused before anything starts. `:solo claude@tu
 A solo may split its work as a worker does. Told to also add the tests, `solo-notes` calls `hire` and the journal says so:
 
 ```text
- 15:02 ◆ solo-notes hired solo-notes.1 (default model)
+ 15:02 → solo-notes hired solo-notes.1 (default model)
  15:02 ⇄ solo-notes → solo-notes.1 [assign]: tests for the burst window in tests/limit.rs
 ```
 

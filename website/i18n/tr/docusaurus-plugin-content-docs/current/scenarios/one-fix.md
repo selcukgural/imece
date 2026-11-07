@@ -33,14 +33,14 @@ Henüz hiçbir şey para etmez: ona yazmadığınız sürece `lead`in bir sürec
  › lead için: parser testi boş girdide kırılıyor, düzelt
 ```
 
-Günlük satırınızı gösterir (`›` sizin yaptığınızı işaretler) ve lider ilk turuna başlar: satırı `◆ lead  düşünüyor…` olur, sonra ne yaptığını söyler. Testi okuma araçlarıyla okur, imece'nin `run` aracıyla `cargo test` çalıştırabilir. Dosya değiştirmez: lider her confine seviyesinde yazmaz, çünkü çalışma kopyanızda çalışır ve orada bir yazma incelemeyi atlardı.
+Günlük satırınızı gösterir (`›` sizin yaptığınızı işaretler) ve lider ilk turuna başlar: satırı `● lead  düşünüyor…` olur, sonra ne yaptığını söyler. Testi okuma araçlarıyla okur, imece'nin `run` aracıyla `cargo test` çalıştırabilir. Dosya değiştirmez: lider her confine seviyesinde yazmaz, çünkü çalışma kopyanızda çalışır ve orada bir yazma incelemeyi atlardı.
 
 ## 3. Lider işe alır
 
 Lider `hire` aracını bir kademeyle çağırır, asla model adıyla değil: küçük mekanik işler için `cheap`, sıradan düzeltmeler için `standard` (varsayılan), kodu boydan boya kesen tasarım için `strong`. Bu düzeltme için `standard` seçer. İşçinin adı `claude-1`, ve günlük kimin kimi neyle aldığını söyler:
 
 ```text
- 14:01 ◆ lead işe aldı: claude-1 (varsayılan model)
+ 14:01 → lead işe aldı: claude-1 (varsayılan model)
  14:01 ⇄ lead → claude-1 [görev]: parser: boş girdi boş ağaç yerine Err veriyor; src/parser.rs, test parse_empty
 ```
 
@@ -50,7 +50,7 @@ Lider `hire` aracını bir kademeyle çağırır, asla model adıyla değil: kü
 
 ```text
  ▾ parser                      1 çalışıyor  $0.09
-   ◆ lead       koordine ediyor                                    $0.09
+   ● lead       koordine ediyor                                    $0.09
    ● claude-1   #1   parser: boş girdi      src/parser.rs okuyor
 ```
 

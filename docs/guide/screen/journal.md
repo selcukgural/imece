@@ -16,7 +16,7 @@ The journal is the lower side panel of the salon (told as [the story](#the-story
 │  enter open the conversation · c copy the message · m mark
 │13:40✱› you ran `cargo test` → exit 0 · 12 s             │
 │─ 2026-10-30                                              │
-│18:12 ◆ lead hired claude-1 (default model)               │
+│18:12 → lead hired claude-1 (default model)               │
 └──────────────────────────────────────────────────────────┘
 ```
 
@@ -59,11 +59,11 @@ Each line has the time, a glyph for its kind, the project's name when several ar
 | Glyph | Lines |
 | --- | --- |
 | `⇄` | a message between two parties, `from → to [type]: first line`; `↩` after the type when it replies to another message. Your own messages, `you → claude-1: …`, and an agent's closing text to you, `claude-1 answered you: …` |
-| `◆` | the leader's acts: a card posted, a worker hired (`lead hired claude-1 (default model)`), a worker that finished and left. Assignments and claims are not shown in the pane (the board and the card's screen have them) |
+| `→` | the leader's acts: a card posted, a worker hired (`lead hired claude-1 (default model)`), a worker that finished and left. Assignments and claims are not shown in the pane (the board and the card's screen have them) |
 | `!` | something for you: a worker finished (`claude-1 finished: 3 files, +41 −6 → waits for you`), `:commit`'s suggestion came, the pot runs low |
 | `✓` | you applied a change: `you applied claude-1's change (3 files) to the checkout, staged; worktree mark 7f3a2c1` |
 | `⚑` | what an agent assumed, and the session's notes: `goes on in the session it had`, `starts a new session, told where it left off`, a model that was not available (`using the default`), the confine level, a worktree moved to your HEAD or kept where it is, a path copied into a worktree, a session that listed no commands |
-| `✕` | blocked, stopped (`claude-1 stopped: <why>`), a change that did not apply, a turn cut short when imece closed, a copy that was skipped, no commit message |
+| `■` | blocked, stopped (`claude-1 stopped: <why>`), a change that did not apply, a turn cut short when imece closed, a copy that was skipped, no commit message |
 | `›` | you: what you said, ran, approved, rejected, allowed or refused, set (`you set the budget to $80.00 (was $50.00)`), opened, closed, renamed, made forget |
 
 Among them:

@@ -692,7 +692,7 @@ pub fn title(lang: Lang, waiting: usize, progress: Progress) -> String {
     // rows, so a tab in the background says it; calm, imece's mark
     // (record 101: five dots, as the mark's hands).
     let glyph = match progress {
-        Progress::Stuck => "✕ ",
+        Progress::Stuck => "■ ",
         Progress::Waiting => "! ",
         Progress::Working => "● ",
         Progress::Calm => "⁙ ",
@@ -2038,13 +2038,13 @@ mod tests {
             mark(&Check::Ran(good(false))),
             Some(("✗ check · ", Some(false)))
         );
-        assert_eq!(mark(&Check::Running), Some(("◌ check · ", None)));
+        assert_eq!(mark(&Check::Running), Some(("● check · ", None)));
         assert_eq!(mark(&Check::Asked), Some(("▶ check · ", None)));
         assert_eq!(mark(&Check::None), None);
         assert_eq!(mark(&Check::Failed("x".into())), None);
         assert_eq!(
             check_mark(Lang::Tr, &Check::Running),
-            Some(("◌ kontrol · ", None))
+            Some(("● kontrol · ", None))
         );
     }
     #[test]

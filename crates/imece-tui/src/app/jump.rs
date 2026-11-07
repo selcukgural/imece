@@ -398,7 +398,7 @@ mod tests {
         );
         // Each agent with its glyph and status; a project with its word.
         assert!(
-            app.jumps[0].note.starts_with("✕ BLOCKED \"the J"),
+            app.jumps[0].note.starts_with("■ BLOCKED \"the J"),
             "{}",
             app.jumps[0].note
         );

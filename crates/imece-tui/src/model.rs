@@ -692,7 +692,7 @@ pub struct Agent {
     /// instead of the progress bar; empty while it thinks.
     pub activity: Option<String>,
     /// Its session is being started (the process, a first worktree's
-    /// checkout) and has not answered yet: `◌ starting…` on its row.
+    /// checkout) and has not answered yet: `● starting…` on its row.
     pub starting: bool,
     /// The agent's own command line as its session reported it (`/clear`,
     /// `/compact` ...), imece's `/clear` added where Claude Code has none;

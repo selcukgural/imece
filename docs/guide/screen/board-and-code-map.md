@@ -39,12 +39,12 @@ What a card is, how the leader posts and assigns and how a worker claims, is in 
 ```text
 ┌ CODE MAP · shop-api · who works where (leases) ─────────────────────────────┐
 │src/billing/                                                                  │
-│  Money.cs             ● claude-2    Round         ◐ claude-1   Parse   ⇆ 2  │
+│  Money.cs             ● claude-2    Round         ● claude-1   Parse   ⇆ 2  │
 │  Invoice.cs           ● claude-2    Total                                   │
 │src/parser/                                                                   │
 │  Manifest.cs          ● claude-1    Read                                    │
 │  Legacy.cs                                                                  │
-│3 leases · 1 files with several agents at once   ● working  ◐ asking  ⇆ several agents in one file
+│3 leases · 1 files with several agents at once   ● working  ⇆ several agents in one file
 └──────────────────────────────────────────────────────────────────────────────┘
 ```
 

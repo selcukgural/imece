@@ -125,6 +125,23 @@ or `keys_held` waits. A window with a title of its own and copy mode keep
 their keys and show no place. Words the footer no longer says left
 `i18n.rs`.
 
+Step 1's glyphs as built: `ui::glyph` gives the five of rule 4 and no
+other: `●` for working, asking a teammate and researching, `○` for idle
+and asleep, `■` for blocked and stopped, `!` and `✓` as before; the colour
+still tells asking from working and blocked from stopped, the status
+words do without it. A leader's row has its status's glyph like any row
+(`◆` is gone; its role is in its name), a starting session is `●`
+(`rung_glyph`, the timeline's lane, the check that runs, a card under
+verification), a soft taint says nothing on a row (`taint_span`), the
+`?` legend's first lines are the five and the folds, the code map's
+`GLYPHS` are the four that can hold a file, a project's header counts
+blocked and stopped as one `■N`, and the journal's Blocked and Failed
+kinds are `■` while the leader's acts are `→` like an assignment. A
+result that failed stays `✗` (a check, a run's tail, the queue's test,
+Claude Code not signed in), a kind apart from a state; the raw stream's
+`tool_result … ✕` is the adapter's own line and keeps its mark. The
+archives browser puts the head first in bold instead of marking it.
+
 Step 1's header as built: `ui::header_parts` has what waits (`KEEP`), the
 fleet (8), the pot (`KEEP`; in the attention colour with `~N left` once
 `pot_low`), a usage window only from `LIMIT_LOUD` (`KEEP`), the clock

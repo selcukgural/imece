@@ -180,9 +180,9 @@ Odağın `klasör` satırı ajanın nerede çalıştığını söyler: lider iç
 
 | İşaret | Anlamı |
 | --- | --- |
-| `◆` lider  `◌` başlıyor  `●` çalışıyor  `◐` soruyor  `✕` bloke  `!` onayını bekliyor | bir agent'ın durumu |
-| `◇` araştırmacı  `○` boşta  `✓` bitti, bakılmadı  `■` durdu  `⇄` konuşma  `▾` `▸` proje / yardımcılar / katlanmış mesaj  `▴` sabit | |
-| `~` hafif kirli (rapor okudu)  `≈` kirli (dış dünyayı okuyor) | yalnız demo: araştırmacılar canlıda yapılmadı |
+| `!` onayını bekliyor  `●` çalışıyor  `○` boşta  `✓` bitti, bakılmadı  `■` takıldı | bir agent'ın durumu: beş işaret |
+| `⇄` konuşma  `▾` `▸` proje / yardımcılar / katlanmış mesaj  `▴` sabit | |
+| `≈` kirli (dış dünyayı okuyor) | yalnız demo: araştırmacılar canlıda yapılmadı |
 | `⎇` dal  `↑` kendi commit'leri  `↓` checkout'un yeni commit'leri  `+N −M` henüz verilmemiş satırlar | bir işçinin worktree'si |
 | `↗` worker'ın yazdığı yerel adres (localhost), terminalin açtığı bir bağlantı | |
 | `✱` işaretlediğiniz satır (`m`), çalıştırmalar arasında kalır; `'` sonrakine gider | |

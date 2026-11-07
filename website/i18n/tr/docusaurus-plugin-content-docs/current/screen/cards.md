@@ -12,15 +12,15 @@ Bir kart tek bir iş birimidir: lider asar (ya da boşta bir işçiye mesajını
 │shop-api · ÜZERİNDE · 23 dk                           ││Δ 13:58 claude-1 bitirdi: parser (3 dosya, +41 −6)
 │                                                      │└───────────────────────────────────────┘
 │KİM                                                   │┌ DEFTER · #3 (4) ──────────────────────┐
-│astı      ◆ ▎lead      koordine ediyor│14:01 ⇄ lead → claude-1 [cevap] ↩: #3 için manifest::read …
+│astı      ● ▎lead      koordine ediyor│14:01 ⇄ lead → claude-1 [cevap] ↩: #3 için manifest::read …
 │sahibi    ● ▎claude-1  #3   Parse the manifest  testleri yazıyor
 │yardımcı  ● ▎claude-1.1                  düşünüyor…   ││13:57 ⇄ claude-1 → lead [soru]: #3 için hangi parser? …
 │                                                      ││13:55 → lead → claude-1: #3 Parse the manifest
-│HİKÂYE                                                ││13:50 ◆ lead panoya astı: #3 Parse the manifest
+│HİKÂYE                                                ││13:50 → lead panoya astı: #3 Parse the manifest
 │13:55 ◎ niyet       Manifest paniklemeden okunsun     ││                                       │
 │13:57 ⇄ konuşma     → lead [soru] Hangi parser? …     ││                                       │
 │14:01 ⚖ karar       manifest::read, eskisi sonra      ││                                       │
-│14:10 ◌ kanıt       ✓ cargo test                      ││                                       │
+│14:10 • kanıt       ✓ cargo test                      ││                                       │
 └──────────────────────────────────────────────────────┘└───────────────────────────────────────┘
   tab panel  enter odak  n p sonraki / önceki iş  # başka iş  esc geri  ? yardım
 ```
@@ -41,7 +41,7 @@ Solda, salonun yerinde:
 - Varsa lease'leri (yalnız demoda; sembol lease'leri canlıda yapılmadı).
 - `assign` ya da `post`'u verdiyse sahip olduğu yollar (`sahibi src/parser.rs, docs (shared)`; [kartın sahip olduğu yollar](../concepts/messages-and-board.md#kartın-sahip-olduğu-yollar)); dışına bir yazma hikâyesinin bir `değişiklik` satırıdır: `değiştirdi: src/other.rs; kartın yollarının dışında`.
 - **KİM**: kim astı, sahibi, hâlâ sahibinin kartıyken sahibinin yardımcıları, sonra hikâyesinin hakkında konuştuğunu söylediği herkes; her biri bir kez, ilk aldığı rolle. Salonun agent satırları gibi çizilirler, böylece durumları canlıdır; `j` `k` aralarında seçer ve `enter` seçilenin odağını salondaki gibi açar.
-- **HİKÂYE**: kartın hikâyesi, olay başına bir satır, eskiden yeniye, sahibinin gördüğü gibi anlatılır. Her satırda bir işaret ve bir etiket vardır: `◎` niyet, `⚑` varsayım, `⚖` karar, `⇄` konuşma (bir mesaj, türüyle), `◌` kanıt (bir çalıştırma ve nasıl bittiği), `Δ` değişiklik, `›` sen (onun hakkında söylediğiniz). Henüz kimsenin almadığı bir kart `Henüz hikâye yok.` der.
+- **HİKÂYE**: kartın hikâyesi, olay başına bir satır, eskiden yeniye, sahibinin gördüğü gibi anlatılır. Her satırda bir işaret ve bir etiket vardır: `◎` niyet, `⚑` varsayım, `⚖` karar, `⇄` konuşma (bir mesaj, türüyle), `•` kanıt (bir çalıştırma ve nasıl bittiği), `Δ` değişiklik, `›` sen (onun hakkında söylediğiniz). Henüz kimsenin almadığı bir kart `Henüz hikâye yok.` der.
 
 Sağda, yalnız bu kartın yan panelleri:
 

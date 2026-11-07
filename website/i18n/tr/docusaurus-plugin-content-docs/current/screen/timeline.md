@@ -10,13 +10,13 @@ Zaman şeridi takımı zaman içinde gösterir: açık projelerin her agent'ı i
 ```text
 ┌ ZAMAN ŞERİDİ · bir sütun 5 sn · [ ] ölçek ──────────────────────────────────────────┐
 │shop-api            14:00                    14:04                   şimdi           │
-│◆ lead-shop-api     ··········································  koordine ediyor      │
-│! claude-1          ◌◌◌░░✕✕✕✕✕✕✕✕✕✕✕✕✕✕⚑⚑⚑⚑⚑⚑⚑⚑⚑⚑⚑⚑⚑⚑⚑⚑⚑⚑⚑⚑  onayını bekliyor     │
-│● claude-2          ◌◌◌░░░░░░░▒▒▒▒▒▒▒▒▒▒░░░░▒▒▒⚑░░░░░░▒▒▒▒▒▒▒██  ▸ Run the tests      │
+│● lead-shop-api     ··········································  koordine ediyor      │
+│! claude-1          ●●●░░■■■■■■■■■■■■■■⚑⚑⚑⚑⚑⚑⚑⚑⚑⚑⚑⚑⚑⚑⚑⚑⚑⚑⚑⚑  onayını bekliyor     │
+│● claude-2          ●●●░░░░░░░▒▒▒▒▒▒▒▒▒▒░░░░▒▒▒⚑░░░░░░▒▒▒▒▒▒▒██  ▸ Run the tests      │
 │●   claude-2.1                       ▒▒▒▒████▒▒✓·············  boşta               │
-│! claude-3          ·◌◌◌░░⚑⚑⚑⚑⚑⚑▒▒▒▒▒░░░░???░░░░░░░░▒▒▒▒⚑⚑░░?  ▓░░░░ ? → claude-2   │
+│! claude-3          ·●●●░░⚑⚑⚑⚑⚑⚑▒▒▒▒▒░░░░???░░░░░░░░▒▒▒▒⚑⚑░░?  ▓░░░░ ? → claude-2   │
 │  mesajlar          ▁▁▂▁▂▁▁▁▁▁▁▁▁▁▁▂▁▁▂▁▁▁▁▂▂▁▁▁▁▁▁▁▂▁▁▁▁▁▁▂▁                        │
-│ █ yazıyor  ▒ okuyor, çalıştırıyor  ░ düşünüyor  ◌ başlıyor  ? arkadaşına soruyor  ⚑ seni bekliyor  ✕ takıldı  ✓ tur bitti  · boşta
+│ █ yazıyor  ▒ okuyor, çalıştırıyor  ░ düşünüyor  ● başlıyor  ? arkadaşına soruyor  ⚑ seni bekliyor  ■ takıldı  ✓ tur bitti  · boşta
 └─────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -29,15 +29,15 @@ Her proje adıyla ve ilk sütununun, ortadakinin ve `şimdi`nin saatiyle başlar
 | `█` | dosya yazıyordu (bir düzenleme, bir yazma, bir patch) |
 | `▒` | okuyor, arıyor ya da bir şey çalıştırıyordu, ya da araştırıyordu |
 | `░` | düşünüyordu: tur içinde, elinde araç çağrısı yok |
-| `◌` | başlıyordu: oturumu kalkıyordu |
+| `●` | başlıyordu: oturumu kalkıyordu |
 | `?` | bir takım arkadaşına sorup yanıtını bekliyordu |
 | `⚑` | sizi bekliyordu: onayınızı bekleyen bir araç çağrısı, size bir soru ya da tur dışında SENİ BEKLEYEN'de bir şeyi |
-| `✕` | takılmıştı: bloke ya da oturumu durmuş |
+| `■` | takılmıştı: bloke ya da oturumu durmuş |
 | `✓` | bir turun bittiği tick |
 | `·` | boştaydı |
 | (boş) | bilinen bir şey yok: imece onu ilk görmeden önce |
 
-Bir sütun, tick'lerinin gördüğünün en yükseğini gösterir, tablonun altından yukarıya o sırayla: okuma sütunundaki kısa bir düzenleme `█` olur, içinde bir durma olan sütun `✕`. Bir agent çalışırken şeridi, daha eski bir değişikliği sizi bekliyor olsa bile ne yaptığını söyler; bunu salonun `!`'i söylemeye devam eder.
+Bir sütun, tick'lerinin gördüğünün en yükseğini gösterir, tablonun altından yukarıya o sırayla: okuma sütunundaki kısa bir düzenleme `█` olur, içinde bir durma olan sütun `■`. Bir agent çalışırken şeridi, daha eski bir değişikliği sizi bekliyor olsa bile ne yaptığını söyler; bunu salonun `!`'i söylemeye devam eder.
 
 ## Ölçek ve tuşlar
 

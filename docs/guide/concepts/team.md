@@ -65,14 +65,14 @@ Agents address each other by these names on the bus; a `send` to a name that is 
 
 ```text
  SALON
- ◆ lead            coordinating
+ ● lead            coordinating
  ● claude-1        #12 parser: tokens      ⎇ ↑1 +34 −8   ▾ 1 helper
    └ ● claude-1.1  helper of claude-1
  ○ claude-2         idle
  ✓ claude-3        done, not seen yet
 ```
 
-Workers that need you come first (stuck, then waiting for you, then done and not seen: the [state ladder](../screen/salon.md#the-state-ladder)); helpers sit under their worker and fold with `h` `l`. The header counts the fleet: `● 2 working ✓ 1 done ✕ 1 stuck`.
+Workers that need you come first (stuck, then waiting for you, then done and not seen: the [state ladder](../screen/salon.md#the-state-ladder)); helpers sit under their worker and fold with `h` `l`. The header counts the fleet: `● 2 working ✓ 1 done ■ 1 stuck`.
 
 ## See also
 

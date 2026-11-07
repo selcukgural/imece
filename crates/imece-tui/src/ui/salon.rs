@@ -437,7 +437,7 @@ fn member(app: &App, id: AgentId, rungs: &[Rung]) -> Vec<Span<'static>> {
 }
 
 /// A project's header: folded or open, its trunk, how many work, what it
-/// costs, how many are blocked (`✕`) or stopped (`■`), and (even when
+/// costs, how many are stuck (`■`: blocked or stopped), and (even when
 /// folded) how much waits for the person. A folded project ends with its
 /// loudest member.
 pub(super) fn project_line(app: &App, p: ProjectId, rungs: &[Rung]) -> Line<'static> {
@@ -508,11 +508,11 @@ pub(super) fn project_line(app: &App, p: ProjectId, rungs: &[Rung]) -> Line<'sta
             attention(),
         ));
     }
-    if blocked > 0 {
-        spans.push(Span::styled(format!("  ✕{blocked}"), fg(pal().bad)));
-    }
-    if stopped > 0 {
-        spans.push(Span::styled(format!("  ■{stopped}"), fg(pal().stopped)));
+    if blocked + stopped > 0 {
+        spans.push(Span::styled(
+            format!("  ■{}", blocked + stopped),
+            fg(pal().bad),
+        ));
     }
     spans.push(Span::styled(
         format!("  {}", fill(t.group_working, &[&working.to_string()])),
@@ -1030,7 +1030,7 @@ fn queue_line(app: &App) -> Line<'static> {
         spans.push(Span::styled(t.queue_empty, dim()));
     }
     for c in verifying {
-        spans.push(Span::styled(format!(" #{} ◌", c.id + 1), fg(pal().info)));
+        spans.push(Span::styled(format!(" #{} ●", c.id + 1), fg(pal().info)));
     }
     let mut done: Vec<&Card> = w
         .shown_cards()

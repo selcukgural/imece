@@ -10,13 +10,13 @@ The timeline shows the team over time: one lane per agent of the open projects, 
 ```text
 ┌ TIMELINE · a column is 5 s · [ ] scale ─────────────────────────────────────────────┐
 │shop-api            14:00                    14:04                     now           │
-│◆ lead-shop-api     ··········································  coordinating         │
-│! claude-1          ◌◌◌░░✕✕✕✕✕✕✕✕✕✕✕✕✕✕⚑⚑⚑⚑⚑⚑⚑⚑⚑⚑⚑⚑⚑⚑⚑⚑⚑⚑⚑⚑  waiting for you      │
-│● claude-2          ◌◌◌░░░░░░░▒▒▒▒▒▒▒▒▒▒░░░░▒▒▒⚑░░░░░░▒▒▒▒▒▒▒██  ▸ Run the tests      │
+│● lead-shop-api     ··········································  coordinating         │
+│! claude-1          ●●●░░■■■■■■■■■■■■■■⚑⚑⚑⚑⚑⚑⚑⚑⚑⚑⚑⚑⚑⚑⚑⚑⚑⚑⚑⚑  waiting for you      │
+│● claude-2          ●●●░░░░░░░▒▒▒▒▒▒▒▒▒▒░░░░▒▒▒⚑░░░░░░▒▒▒▒▒▒▒██  ▸ Run the tests      │
 │●   claude-2.1                       ▒▒▒▒████▒▒✓·············  idle                │
-│! claude-3          ·◌◌◌░░⚑⚑⚑⚑⚑⚑▒▒▒▒▒░░░░???░░░░░░░░▒▒▒▒⚑⚑░░?  ▓░░░░ ? → claude-2   │
+│! claude-3          ·●●●░░⚑⚑⚑⚑⚑⚑▒▒▒▒▒░░░░???░░░░░░░░▒▒▒▒⚑⚑░░?  ▓░░░░ ? → claude-2   │
 │  messages          ▁▁▂▁▂▁▁▁▁▁▁▁▁▁▁▂▁▁▂▁▁▁▁▂▂▁▁▁▁▁▁▁▂▁▁▁▁▁▁▂▁                        │
-│ █ writing  ▒ reading, running  ░ thinking  ◌ starting  ? asking a teammate  ⚑ waiting for you  ✕ stuck  ✓ turn done  · idle
+│ █ writing  ▒ reading, running  ░ thinking  ● starting  ? asking a teammate  ⚑ waiting for you  ■ stuck  ✓ turn done  · idle
 └─────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -29,15 +29,15 @@ Each project starts with its name and the time of its first column, its middle o
 | `█` | writing files (an edit, a write, a patch) |
 | `▒` | reading, searching or running something, or researching |
 | `░` | thinking: in a turn, no tool call in hand |
-| `◌` | starting: its session coming up |
+| `●` | starting: its session coming up |
 | `?` | asking a teammate and waiting for the answer |
 | `⚑` | waiting for you: a tool call waiting for your yes, a question to you, or, out of a turn, something of its in WAITING FOR YOU |
-| `✕` | stuck: blocked, or its session stopped |
+| `■` | stuck: blocked, or its session stopped |
 | `✓` | the tick a turn ended |
 | `·` | idle |
 | (blank) | nothing known: before imece first saw it |
 
-A column shows the most of what its ticks saw, in that order from the bottom of the table up: a short edit in a column of reading shows as `█`, a column with a stop in it as `✕`. While an agent works, its lane says what it does even when an older change of its waits for you; the salon's `!` still says that.
+A column shows the most of what its ticks saw, in that order from the bottom of the table up: a short edit in a column of reading shows as `█`, a column with a stop in it as `■`. While an agent works, its lane says what it does even when an older change of its waits for you; the salon's `!` still says that.
 
 ## Scale and keys
 

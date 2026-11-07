@@ -413,35 +413,34 @@ pub(crate) fn said_spans(lang: Lang, w: &World, s: &words::Said) -> Vec<Span<'st
     spans
 }
 
+/// The glyph of agent `a`'s status, one of the five (record 125): `●`
+/// working (asking a teammate and researching are turns under way), `○`
+/// idle (asleep too), `!` something of it waits for the person, `■` stuck
+/// (blocked, or its session stopped). A leader's is its status's like
+/// anyone's: its role is a word on its row, not a shape. The colour
+/// tells blocked from stopped; the status words do without colour.
 pub(crate) fn glyph(a: &Agent) -> (&'static str, Color) {
-    if a.role == Role::Leader {
-        return ("◆", pal().plan);
-    }
     match a.status {
         Status::Idle => ("○", pal().dim),
         Status::Working => ("●", pal().ok),
-        Status::Asking { .. } => ("◐", pal().warn),
-        Status::Blocked => ("✕", pal().bad),
+        Status::Asking { .. } => ("●", pal().warn),
+        Status::Blocked => ("■", pal().bad),
         Status::WaitingHuman => ("!", pal().warn),
-        Status::Researching { .. } => ("◇", pal().research),
+        Status::Researching { .. } => ("●", pal().research),
         Status::Stopped => ("■", pal().stopped),
-        Status::Asleep => ("◦", pal().dim),
+        Status::Asleep => ("○", pal().dim),
     }
 }
 
-/// The glyph of agent `a`'s row on the state ladder: a leader always `◆`;
-/// stuck as its status says (`✕` blocked, `■` stopped); `!` when something
-/// of it waits for the person, whatever it does meanwhile; `✓` done, not
-/// seen; `◌` while its session starts; else its status's own glyph (`●`
-/// `◐` `◇` working, `○` `◦` idle). Each a shape of its own.
+/// The glyph of agent `a`'s row on the state ladder: `■` stuck as its
+/// status says; `!` when something of it waits for the person, whatever
+/// it does meanwhile; `✓` done, not seen; `●` while its session starts
+/// (a start is work under way); else its status's own glyph.
 pub(crate) fn rung_glyph(a: &Agent, rung: Rung) -> (&'static str, Color) {
-    if a.role == Role::Leader {
-        return ("◆", pal().plan);
-    }
     match rung {
         Rung::Waiting => ("!", pal().warn),
         Rung::Done => ("✓", pal().ok),
-        Rung::Starting => ("◌", pal().ok),
+        Rung::Starting => ("●", pal().ok),
         Rung::Stuck | Rung::Working | Rung::Idle => glyph(a),
     }
 }
@@ -493,8 +492,7 @@ pub(crate) fn lit_line(app: &App, on: GlowOn, line: Line<'static>) -> Line<'stat
 
 pub(crate) fn taint_span(a: &Agent) -> Span<'static> {
     match a.taint {
-        Taint::Clean => Span::raw(" "),
-        Taint::Soft => Span::styled("~", fg(pal().warn)),
+        Taint::Clean | Taint::Soft => Span::raw(" "),
         Taint::Full => Span::styled("≈", fg(pal().bad)),
     }
 }
@@ -502,14 +500,14 @@ pub(crate) fn taint_span(a: &Agent) -> Span<'static> {
 pub(crate) fn entry_icon(k: EntryKind) -> (&'static str, Style) {
     match k {
         EntryKind::Assign => ("→", dim()),
-        EntryKind::Plan => ("◆", fg(pal().plan)),
+        EntryKind::Plan => ("→", fg(pal().plan)),
         EntryKind::Talk => ("⇄", fg(pal().info)),
         EntryKind::Assumption => ("⚑", fg(pal().warn)),
-        EntryKind::Blocked => ("✕", fg(pal().bad)),
+        EntryKind::Blocked => ("■", fg(pal().bad)),
         EntryKind::Research => ("◇", fg(pal().research)),
         EntryKind::Sensitive => ("!", bold(pal().warn)),
         EntryKind::Merged => ("✓", fg(pal().ok)),
-        EntryKind::Failed => ("✕", fg(pal().stopped)),
+        EntryKind::Failed => ("■", fg(pal().stopped)),
         EntryKind::Person => ("›", bold(pal().strong)),
     }
 }
@@ -584,7 +582,7 @@ pub(crate) fn inbox_line(app: &App, i: usize) -> Line<'static> {
         InboxKind::Change => ("Δ", bold(pal().strong)),
         InboxKind::Question => ("?", bold(pal().warn)),
         InboxKind::Approval => ("⚑", bold(pal().warn)),
-        InboxKind::Fault => ("✕", bold(pal().bad)),
+        InboxKind::Fault => ("■", bold(pal().bad)),
         InboxKind::Script | InboxKind::Check => ("▶", bold(pal().warn)),
         InboxKind::Plan => ("▤", bold(pal().warn)),
     };
@@ -2585,7 +2583,7 @@ mod tests {
             "lease  ",
             &owns,
             "WHO",
-            "posted    ◆ ▎lead ",
+            "posted    ! ▎lead ",
             "owner     ",
             "talked    ",
             "STORY",
@@ -3120,7 +3118,7 @@ mod tests {
         app.world.agents[h2].status = Status::Blocked;
         let s = render(&app, 200, 45);
         assert!(
-            line(&s, &name).contains(&format!("▸ 2 helpers  ✕ {name}.2")),
+            line(&s, &name).contains(&format!("▸ 2 helpers  ■ {name}.2")),
             "{s}"
         );
         app.world.agents[h2].status = Status::Working;
@@ -3546,7 +3544,7 @@ mod tests {
                 .unwrap_or_default()
         };
         let row = |s: &str, id: AgentId| line(s, &format!("▎{} ", app.world.agents[id].name));
-        assert!(line(&s, "│  ✕ stuck · 1").contains("✕ stuck · 1"), "{s}");
+        assert!(line(&s, "│  ■ stuck · 1").contains("■ stuck · 1"), "{s}");
         assert!(line(&s, "│  ✓ done, not seen · 1").contains("done"), "{s}");
         // The rest: who works and who is idle, a count of none left out.
         let rest = line(&s, "│  ● 1 working  ○ 1 idle");
@@ -3571,7 +3569,7 @@ mod tests {
         app.lang = Lang::Tr;
         let s = render(&app, 160, 40);
         assert!(s.contains("│  ! seni bekliyor · 1"), "{s}");
-        assert!(s.contains("│  ✕ takıldı · 1"), "{s}");
+        assert!(s.contains("│  ■ takıldı · 1"), "{s}");
     }
 
     fn plan_of(app: &mut App, a: AgentId) {
@@ -4133,22 +4131,25 @@ mod tests {
             open.contains("▾ ") && !open.contains(&name(&app, w[0])),
             "{open}"
         );
-        assert!(!open.contains("✕") && !open.contains("■"), "{open}");
-        // Folded: the loudest member last; the lead counts as a member.
+        assert!(!open.contains("■"), "{open}");
+        // Folded: the loudest member last; the lead counts as a member,
+        // with its status's glyph like anyone (record 125).
         app.collapsed[0] = true;
         let h = header(&app);
-        assert!(h.ends_with(&format!("  ◆ {}", name(&app, lead))), "{h}");
+        assert!(h.ends_with(&format!("  ● {}", name(&app, lead))), "{h}");
         app.world.agents[lead].status = Status::Idle;
         let h = header(&app);
         assert!(h.ends_with(&format!("  ● {}", name(&app, w[0]))), "{h}");
         app.world.agents[w[3]].status = Status::Stopped;
         app.world.agents[w[1]].status = Status::Blocked;
         let h = header(&app);
-        assert!(h.contains("  ✕1  ■1"), "{h}");
-        assert!(h.ends_with(&format!("  ✕ {}", name(&app, w[1]))), "{h}");
+        // Blocked and stopped are one count of stuck.
+        assert!(h.contains("  ■2"), "{h}");
+        assert!(!h.contains("■1"), "{h}");
+        assert!(h.ends_with(&format!("  ■ {}", name(&app, w[1]))), "{h}");
         app.world.agents[w[1]].status = Status::Working;
         let h = header(&app);
-        assert!(!h.contains("✕1") && h.contains("  ■1"), "{h}");
+        assert!(!h.contains("■2") && h.contains("  ■1"), "{h}");
         assert!(h.ends_with(&format!("  ■ {}", name(&app, w[3]))), "{h}");
         waiting(&mut app, w[2]);
         let h = header(&app);
@@ -4183,10 +4184,11 @@ mod tests {
         // Stuck shows as stuck even with an item waiting.
         app.world.agents[w[1]].status = Status::Stopped;
         assert_eq!(row(&app, w[1]).spans[1].content, "■ ");
-        // The lead is always the lead.
+        // A leader's row waits like anyone's (record 125: no glyph of its own).
         let lead = app.world.projects[0].leader;
+        assert_eq!(row(&app, lead).spans[1].content, "● ");
         waiting(&mut app, lead);
-        assert_eq!(row(&app, lead).spans[1].content, "◆ ");
+        assert_eq!(row(&app, lead).spans[1].content, "! ");
     }
 
     /// The screen of `app` drawn whole on a terminal of `width` columns:
@@ -4416,7 +4418,7 @@ mod tests {
         app.motion = Motion::Calm;
         app.frame_after(ms(600));
         assert_eq!(glyph(&app, w[0]), ("● ".into(), out), "the second tone");
-        assert_eq!(glyph(&app, lead).1, fg(pal().plan), "a leader's ◆ does not");
+        assert_eq!(glyph(&app, lead), ("● ".into(), ok), "a leader's does not");
         app.frame_after(ms(1200));
         assert_eq!(glyph(&app, w[0]), ("● ".into(), ok));
         app.frame_after(ms(600));
@@ -4608,7 +4610,7 @@ mod tests {
         let line = row(&app);
         assert_eq!(
             (line.spans[1].content.as_ref(), line.spans[1].style),
-            ("◌ ", fg(pal().ok))
+            ("● ", fg(pal().ok))
         );
         assert!(text(&line).contains(" starting…"), "{}", text(&line));
         assert!(!text(&line).contains("thinking…"));
@@ -5010,12 +5012,12 @@ mod tests {
         );
         assert_eq!(
             words(&app, Lang::En),
-            "✕ API error \"Invalid API key · Fix ext…\"",
+            "■ API error \"Invalid API key · Fix ext…\"",
             "cut to the status's width"
         );
-        assert!(words(&app, Lang::Tr).starts_with("✕ API hatası \"Invalid"));
+        assert!(words(&app, Lang::Tr).starts_with("■ API hatası \"Invalid"));
         let i = *app.world.open_inbox().last().unwrap();
-        assert_eq!(inbox_line(&app, i).spans[0].content, "✕ ");
+        assert_eq!(inbox_line(&app, i).spans[0].content, "■ ");
         assert_eq!(
             words::inbox(Lang::En, &app.world, &app.world.inbox[i]),
             format!(
@@ -5170,7 +5172,7 @@ mod tests {
         for (check, mark, style) in [
             (checked(true), "✓ check · ", fg(pal().ok)),
             (checked(false), "✗ check · ", fg(pal().bad)),
-            (Check::Running, "◌ check · ", dim()),
+            (Check::Running, "● check · ", dim()),
             (Check::Asked, "▶ check · ", dim()),
         ] {
             app.world.change_ready(Change {
@@ -6159,7 +6161,7 @@ mod tests {
         .iter()
         .map(|&c| timeline::cell_glyph(c).0)
         .collect();
-        assert_eq!(glyphs, " ·◌░▒█?✓⚑✕");
+        assert_eq!(glyphs, " ·●░▒█?✓⚑■");
     }
 
     #[test]
@@ -6502,13 +6504,13 @@ mod tests {
         let at = |word: &str| row.find(word).unwrap_or_else(|| panic!("{word}: {row}"));
         assert!(at("waiting") < at("working"), "{row}");
         assert!(at("working") < at("lonca demo"), "{row}");
-        assert!(!row.contains('✕') && !row.contains('■'), "{row}");
+        assert!(!row.contains('■'), "{row}");
         // What is stuck comes before the rest too.
         app.world.agents[agent].status = Status::Blocked;
         let s = render(&app, 160, 40);
         let row = s.lines().find(|l| l.contains(&name)).unwrap();
         assert!(
-            row.find('✕').unwrap() < row.find("working").unwrap(),
+            row.find('■').unwrap() < row.find("working").unwrap(),
             "{row}"
         );
         // Nothing waiting: nothing said.
@@ -7127,27 +7129,27 @@ mod tests {
         assert_eq!(fleet(&app)[2].style, fg(pal().ok));
         app.world.agents[3].status = Status::Blocked;
         app.world.agents[4].status = Status::Stopped;
-        assert_eq!(text(&app), "● 2 working  ✓ 1 done  ✕ 2 stuck");
+        assert_eq!(text(&app), "● 2 working  ✓ 1 done  ■ 2 stuck");
         assert_eq!(fleet(&app)[4].style, fg(pal().bad));
         // What is gone is not counted, done or stuck.
         app.world.agents[4].gone = true;
         app.world.agents[2].gone = true;
-        assert_eq!(text(&app), "● 2 working  ✕ 1 stuck");
+        assert_eq!(text(&app), "● 2 working  ■ 1 stuck");
         app.world.agents[0].status = Status::Idle;
         app.world.agents[1].status = Status::Idle;
-        assert_eq!(text(&app), "✕ 1 stuck", "no separator before the first");
+        assert_eq!(text(&app), "■ 1 stuck", "no separator before the first");
         app.lang = Lang::Tr;
         app.world.agents[0].status = Status::Working;
-        assert_eq!(text(&app), "● 1 çalışıyor  ✕ 1 takıldı");
+        assert_eq!(text(&app), "● 1 çalışıyor  ■ 1 takıldı");
         let s = render(&app, 160, 30);
         assert!(
-            s.contains("● 1 çalışıyor  ✕ 1 takıldı"),
+            s.contains("● 1 çalışıyor  ■ 1 takıldı"),
             "in the header: {s}"
         );
     }
 
     #[test]
-    fn a_row_done_and_not_seen_says_so_and_a_leader_keeps_its_mark() {
+    fn a_row_done_and_not_seen_says_so_for_a_leader_too() {
         let mut app = idle_team(Lang::En);
         let worker = app
             .world
@@ -7176,7 +7178,7 @@ mod tests {
         assert!(!text(&line).contains(" idle"), "instead of idle");
         app.unseen.insert(0);
         let line = row(&app, 0);
-        assert_eq!(line.spans[1].content, "◆ ");
+        assert_eq!(line.spans[1].content, "✓ ");
         assert!(text(&line).contains("done, not seen yet"));
         app.lang = Lang::Tr;
         assert!(text(&row(&app, worker)).contains("bitti, henüz bakılmadı"));
@@ -9814,10 +9816,7 @@ mod tests {
             "{}",
             text(&line)
         );
-        assert_eq!(
-            line.spans[1].content, "○ ",
-            "a solo's glyph is its status, not ◆"
-        );
+        assert_eq!(line.spans[1].content, "○ ", "a solo's glyph is its status");
         app.world.agents[head].stand.added = 3;
         let line = text(&salon::agent_line(
             &app,
@@ -10231,14 +10230,29 @@ mod tests {
             for want in [title, checkout, open, row.as_str(), keys] {
                 assert!(s.contains(want), "{lang:?} {want}\n{s}");
             }
-            // `l` shows its agents: the leader marked, with what it spent.
+            // `l` shows its agents: the leader first in bold, a helper two
+            // cells in, each with what it spent.
             key(&mut app, KeyCode::Char('l'));
             let s = render(&app, 160, 40);
             let name = &app.world.agents[lead].name;
-            assert!(s.contains(&format!("│       ◆ {name} · $1.50")), "{s}");
+            assert!(s.contains(&format!("│       {name} · $1.50")), "{s}");
             let helper = &app.world.agents[worker];
             let name = &helper.name;
-            assert!(s.contains(&format!("│           {name} · $2.50")), "{s}");
+            assert!(s.contains(&format!("│         {name} · $2.50")), "{s}");
+            let (buf, _) = whole(&app, 160);
+            let bold_at = |name: &str| {
+                let y = (0..40)
+                    .find(|&y| {
+                        let row: String = (0..160).map(|x| buf[(x, y)].symbol()).collect();
+                        row.contains(&format!(" {name} · "))
+                    })
+                    .unwrap_or_else(|| panic!("{name}: {s}"));
+                let row: String = (0..160).map(|x| buf[(x, y)].symbol()).collect();
+                let x = row.find(name).unwrap() as u16;
+                buf[(x, y)].modifier.contains(Modifier::BOLD)
+            };
+            assert!(bold_at(&app.world.agents[lead].name), "the head in bold");
+            assert!(!bold_at(name), "the rest plain");
             assert!(!s.contains(&app.world.agents[ours[2]].name), "gone: {s}");
             // `?` is the browser's to keep; esc closes it, `:archives` opens it.
             key(&mut app, KeyCode::Char('?'));
@@ -10500,6 +10514,12 @@ mod tests {
         let salon = render(&app, 200, 40);
         let queue = salon.lines().find(|l| l.contains("QUEUE")).unwrap();
         assert!(!queue.contains("#1") && !queue.contains("#2"), "{queue}");
+        // The open project's card under verification is at work there.
+        app.world.cards.last_mut().unwrap().column = Column::Verifying;
+        let salon = render(&app, 200, 40);
+        let queue = salon.lines().find(|l| l.contains("QUEUE")).unwrap();
+        assert!(queue.contains(&format!(" #{} ●", c + 1)), "{queue}");
+        app.world.cards.last_mut().unwrap().column = Column::Working;
         // Two projects in sight: each card names its own.
         app.world.projects[0].archived = None;
         app.view = View::Board;
@@ -10795,7 +10815,7 @@ mod tests {
             }
             assert_eq!(s.contains("gg  G"), find.is_empty(), "{find}: {s}");
             assert_eq!(s.contains("≈ tainted"), legend, "{find}: {s}");
-            assert_eq!(s.contains("◆ lead"), find.is_empty(), "{find}: {s}");
+            assert_eq!(s.contains("▴ pinned"), find.is_empty(), "{find}: {s}");
             assert_eq!(s.contains(t.help_none.trim()), none, "{find}: {s}");
             assert_eq!(frame(&app, 140), wide, "{find}: the same size");
             assert_eq!(frame(&app, 80), narrow, "{find}: narrow too");
@@ -11069,7 +11089,7 @@ mod tests {
         let mut a = Agent::new(1, 0, "w".into(), Role::Worker, Status::Working, 0);
         assert_eq!(glyph(&a).0, "●");
         a.role = Role::Leader;
-        assert_eq!(glyph(&a), ("◆", pal().plan), "a leader is always a leader");
+        assert_eq!(glyph(&a), ("●", pal().ok), "a leader's is its status's");
         a.role = Role::Worker;
         let marks: Vec<&str> = [
             Status::Idle,
@@ -11090,36 +11110,61 @@ mod tests {
             glyph(&a).0
         })
         .collect();
-        assert_eq!(marks, ["○", "●", "◐", "✕", "!", "◇", "■", "◦"]);
+        // Five glyphs (record 125): the colour tells asking from working
+        // and blocked from stopped, the status words do without it.
+        assert_eq!(marks, ["○", "●", "●", "■", "!", "●", "■", "○"]);
+        let colours: Vec<Color> = [
+            Status::Asking { to: 0, until: 1 },
+            Status::Blocked,
+            Status::Researching {
+                for_agent: 0,
+                until: 1,
+            },
+            Status::Stopped,
+            Status::Asleep,
+        ]
+        .into_iter()
+        .map(|s| {
+            a.status = s;
+            glyph(&a).1
+        })
+        .collect();
+        let p = pal();
+        assert_eq!(colours, [p.warn, p.bad, p.research, p.stopped, p.dim]);
         // On the ladder: a rung's own glyph for waiting, done and
-        // starting, the status's for the rest; a leader's always `◆`.
+        // starting, the status's for the rest.
         assert!(!a.starting, "new: not starting");
         a.status = Status::Working;
         assert_eq!(rung_glyph(&a, Rung::Waiting), ("!", pal().warn));
         assert_eq!(rung_glyph(&a, Rung::Done), ("✓", pal().ok));
-        assert_eq!(rung_glyph(&a, Rung::Starting), ("◌", pal().ok));
+        assert_eq!(rung_glyph(&a, Rung::Starting), ("●", pal().ok));
         assert_eq!(rung_glyph(&a, Rung::Working), ("●", pal().ok));
         a.status = Status::Stopped;
         assert_eq!(rung_glyph(&a, Rung::Stuck), ("■", pal().stopped));
         a.status = Status::Blocked;
-        assert_eq!(rung_glyph(&a, Rung::Stuck), ("✕", pal().bad));
+        assert_eq!(rung_glyph(&a, Rung::Stuck), ("■", pal().bad));
         a.status = Status::Asleep;
-        assert_eq!(rung_glyph(&a, Rung::Idle), ("◦", pal().dim));
+        assert_eq!(rung_glyph(&a, Rung::Idle), ("○", pal().dim));
+        // A leader's row is on the ladder like anyone's.
         a.role = Role::Leader;
-        for r in [Rung::Waiting, Rung::Done, Rung::Starting, Rung::Stuck] {
-            assert_eq!(rung_glyph(&a, r), ("◆", pal().plan), "{r:?}");
-        }
+        a.status = Status::Working;
+        assert_eq!(rung_glyph(&a, Rung::Waiting), ("!", pal().warn));
+        assert_eq!(rung_glyph(&a, Rung::Done), ("✓", pal().ok));
+        assert_eq!(rung_glyph(&a, Rung::Working), ("●", pal().ok));
         a.role = Role::Worker;
         for lang in [Lang::En, Lang::Tr] {
             let legend = lang.text().help_legend.join(" ");
-            for g in ["◆", "◌", "●", "◐", "✕", "!", "◇", "○", "✓", "■"] {
+            for g in ["!", "●", "○", "✓", "■"] {
                 assert!(legend.contains(&format!(" {g} ")), "{lang:?} {g}");
+            }
+            for g in ["◆", "◌", "◐", "◇", "✕", "◦", "~"] {
+                assert!(!legend.contains(g), "{lang:?} {g}: gone from the legend");
             }
         }
         a.taint = Taint::Clean;
         assert_eq!(taint_span(&a).content, " ");
         a.taint = Taint::Soft;
-        assert_eq!(taint_span(&a).content, "~");
+        assert_eq!(taint_span(&a).content, " ", "soft-tainted says nothing");
         a.taint = Taint::Full;
         assert_eq!(taint_span(&a).content, "≈");
         for k in [
@@ -11138,6 +11183,12 @@ mod tests {
         }
         assert_eq!(entry_icon(EntryKind::Merged).0, "✓");
         assert_eq!(entry_icon(EntryKind::Person).0, "›");
+        // The leader's acts are an arrow like an assignment, in the plan
+        // colour; blocked and failed are stuck, told apart by colour.
+        assert_eq!(entry_icon(EntryKind::Plan), ("→", fg(pal().plan)));
+        assert_eq!(entry_icon(EntryKind::Assign), ("→", dim()));
+        assert_eq!(entry_icon(EntryKind::Blocked), ("■", fg(pal().bad)));
+        assert_eq!(entry_icon(EntryKind::Failed), ("■", fg(pal().stopped)));
         // Every status says something, in words.
         let w = app_after(1, 4, 50, Lang::En).world;
         let mut idle = Agent::new(9, 0, "w".into(), Role::Worker, Status::Idle, 0);
@@ -11237,7 +11288,7 @@ mod tests {
         }
         app.world.inbox.clear();
         let screen = render(&app, 140, 40);
-        assert!(!screen.contains("✕0"), "{screen}");
+        assert!(!screen.contains("■0"), "{screen}");
         let worker = app
             .world
             .agents
@@ -11247,7 +11298,7 @@ mod tests {
             .id;
         app.world.agents[worker].status = Status::Blocked;
         let screen = render(&app, 140, 40);
-        assert!(screen.contains("✕1"), "{screen}");
+        assert!(screen.contains("■1"), "{screen}");
     }
 
     #[test]
@@ -11324,6 +11375,8 @@ mod tests {
         let screen = render(&app, 140, 40);
         assert!(screen.contains("WHILE YOU WERE AWAY"), "{screen}");
         assert!(screen.contains("last 7 min"), "{screen}");
+        assert!(screen.contains(" ■ 1 blocks"), "{screen}");
+        assert!(screen.contains(" ✓ 2 cards merged"), "{screen}");
     }
 
     /// The project's name stands on an inbox line only when there are
@@ -11382,7 +11435,8 @@ mod tests {
         let screen = render(&app, 120, 40);
         assert!(!screen.contains('\u{1b}'), "a CLI's words are cleaned");
         assert!(
-            screen.contains("not signed in: run claude auth login"),
+            screen.contains("✗ claude  2.1.3")
+                && screen.contains("red · not signed in: run claude auth login"),
             "{screen}"
         );
         app.seen = here("0.65.0", Login::Unknown);

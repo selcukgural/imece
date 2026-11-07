@@ -39,12 +39,12 @@ Kartın ne olduğu, liderin nasıl astığı ve görev verdiği, bir işçinin n
 ```text
 ┌ KOD HARİTASI · shop-api · kim nerede çalışıyor (lease'ler) ─────────────────┐
 │src/billing/                                                                  │
-│  Money.cs             ● claude-2    Round         ◐ claude-1   Parse   ⇆ 2  │
+│  Money.cs             ● claude-2    Round         ● claude-1   Parse   ⇆ 2  │
 │  Invoice.cs           ● claude-2    Total                                   │
 │src/parser/                                                                   │
 │  Manifest.cs          ● claude-1    Read                                    │
 │  Legacy.cs                                                                  │
-│3 lease · 1 dosyada birden çok agent aynı anda çalışıyor   ● çalışıyor  ◐ soruyor  ⇆ aynı dosyada birden çok agent
+│3 lease · 1 dosyada birden çok agent aynı anda çalışıyor   ● çalışıyor  ⇆ aynı dosyada birden çok agent
 └──────────────────────────────────────────────────────────────────────────────┘
 ```
 

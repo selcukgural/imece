@@ -8,13 +8,13 @@ description: View 5 - what is your turn across projects, what is stuck and what 
 Home is the screen imece opens on, the one for deciding; `5` or `:home` comes back to it. The salon shows the team; Home shows what is your turn. One list across the open projects, and beside it whatever row is at hand, read without pressing a key.
 
 ```text
- all   shop-api !2 ●1   mobile-app !3 ✕1 ●2                                  / writes to lead-shop-api
+ all   shop-api !2 ●1   mobile-app !3 ■1 ●2                                  / writes to lead-shop-api
  lonca mobile-app 9d3f1c2 · 3 pending
  YOUR TURN 5                                        │#19 Paging in product search  shop-api · claude-1 · $0.90
 ▸ Δ shop-api    #19  Paging in product… +41 −6 ✓ 38 min│
   ? shop-api    #31  Refund rules         question 12 min│why      Paging in product search
   ⚑ mobile-app  #52  Notification sett…     allow? 4 min│proof    ✓ ran clean on this tree: dotnet test
-  Δ mobile-app  #21  Currency support   +6 −3 ✕ 41 min│cost     $0.90 · 11 min · 2 rounds
+  Δ mobile-app  #21  Currency support   +6 −3 ✗ 41 min│cost     $0.90 · 11 min · 2 rounds
                                                      │
  STUCK 1                                             │files    src/Catalog/ProductQuery.cs    +19 −6
   ■ mobile-app  #14  Price list cache   stopped 52 min│         tests/PagingTests.cs           +18 −0
@@ -23,7 +23,7 @@ Home is the screen imece opens on, the one for deciding; `5` or `:home` comes ba
   ● shop-api    #33  Order validation  Write the tests 2 min│-    var rows = db.Skip(q.Offset);
 ```
 
-The first row names every open project with what it holds: `!` waits for you, `✕` stuck, `●` at work. The project it is narrowed to is lit, and its end says whom `/` writes to. The second row, for projects on Lonca, says how each stands.
+The first row names every open project with what it holds: `!` waits for you, `■` stuck, `●` at work. The project it is narrowed to is lit, and its end says whom `/` writes to. The second row, for projects on Lonca, says how each stands.
 
 ## The list
 

@@ -27,12 +27,12 @@ Salon artık ajanları projeye göre gruplar, her birinin bir başlık satırı 
 
 ```text
  ▾ cli                        1 çalışıyor  $2.10
-   ◆ lead       koordine ediyor                                   $0.40
+   ● lead       koordine ediyor                                   $0.40
    ● claude-1   #2   docs: man sayfası    docs/imece.1 yazıyor      $1.70
  ▾ api                        0 çalışıyor  $0.00
-   ◆ lead-api   boşta
+   ○ lead-api   boşta
  ▾ web                        0 çalışıyor  $0.00
-   ◆ lead-web   boşta
+   ○ lead-web   boşta
 ```
 
 `/` seçili projenin liderine yazar; önce `api` içinde bir satır seçin (`j k`), sonra `/`. `@lead-web mesaj` her yerden tek bir lidere yazar.
@@ -89,7 +89,7 @@ Liste proje başınadır ve varsayılan olarak boştur. `:copy .env` yine yolu d
 
 ```text
  15:12 ⚑ .env, node_modules → claude-2 çalışma ağacına kopyalandı (412 MiB)
- 15:12 ✕ target → claude-2 çalışma ağacına kopyalanmadı: more than what is left of the copy budget (1715470336 bytes)
+ 15:12 ■ target → claude-2 çalışma ağacına kopyalanmadı: more than what is left of the copy budget (1715470336 bytes)
 ```
 
 Yardımcılar işçilerinin worktree'sini paylaşır ve aynısını alır; bir lider çalışma kopyasında çalışır ve asla kopya almaz. Çalışma kopyasında sonradan değiştirdiğiniz bir dosya yeniden kopyalanmaz.

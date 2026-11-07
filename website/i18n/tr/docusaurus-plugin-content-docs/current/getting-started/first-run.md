@@ -97,7 +97,7 @@ Açılan [ana ekrandır](../screen/home.md): üstte sıranın sizde olduğu işl
 
 Salon bir tuş uzakta, `1`: solda lonca, sağda SENİ BEKLEYEN ve DEFTER.
 
-Takım yalnız liderdir (`◆ lead`). Salondaki günlüğün ilk satırı, `--confine strict` olmayan her başlangıçta bir kez, yalıtımın imece'nin işi olmadığını söyler.
+Takım yalnız liderdir (`○ lead`, siz yazana dek boşta). Salondaki günlüğün ilk satırı, `--confine strict` olmayan her başlangıçta bir kez, yalıtımın imece'nin işi olmadığını söyler.
 
 ## Lidere yazmak
 
@@ -117,7 +117,7 @@ Düz metin seçili projenin liderine gider. `@claude-1 metin` tek bir ajana gide
 Lider checkout'u okur (okuma araçları, web ve salt okunur komutları vardır; yazamaz: sizin checkout'unuzda çalışır, orada bir yazma incelemeyi atlardı). İsteği kartlara böler, panoya asar ve bir kart el gerektirince `hire` aracıyla bir işçi **tutar**. Model değil **katman** seçer: küçük mekanik iş için `cheap`, sıradan düzeltmeler için `standard` (varsayılan), kesen tasarım için `strong`; bunlar haiku, Claude Code'un varsayılanı ve opus demektir. En çok `--agents` işçi (varsayılan 4).
 
 ```text
-   ◆ lead      koordine ediyor                                      $0.08
+   ● lead      koordine ediyor                                      $0.08
    ● claude-1  #1   sondaki virgülü kabul et   düşünüyor…
 ```
 
@@ -131,7 +131,7 @@ Hesabınızda olmayan bir katman modeli ilk turunda düşer; imece o işçiyi st
    ● claude-1  #1   sondaki virgülü kabul et   src/csv.rs düzenliyor   $0.41  +18 −3
 ```
 
-Soldan sağa: glif (`●` çalışıyor, `○` boşta, `◐` bir takım arkadaşına soruyor, `✕` bloke, `✓` bitti ve henüz bakılmadı, `■` durdu, `◦` uyuyor), adı, kartı, şu an ne yaptığı, ne harcadığı ve worktree'sinin nerede durduğu: `+18 −3` sonraki `done` ile size vereceği satırlar, `⎇ ad` açtığı bir dal, `↑N` kendi commit'leri, `↓N` checkout'unuzun daha yeni commit'leri. Açık bir izin sorusu olan işçi `⚑ onayını bekliyor` gösterir ve soru SENİ BEKLEYEN'de bir öğedir: `a` izin verir, `r` reddeder (rutin komutlar, derleme, testler, git'in okuma komutları kendiliğinden çalışır).
+Soldan sağa: glif (`●` çalışıyor, `○` boşta, `!` bir şeyi sizi bekliyor, `✓` bitti ve henüz bakılmadı, `■` takıldı: bloke ya da oturumu durdu), adı, kartı, şu an ne yaptığı, ne harcadığı ve worktree'sinin nerede durduğu: `+18 −3` sonraki `done` ile size vereceği satırlar, `⎇ ad` açtığı bir dal, `↑N` kendi commit'leri, `↓N` checkout'unuzun daha yeni commit'leri. Açık bir izin sorusu olan işçi `⚑ onayını bekliyor` gösterir ve soru SENİ BEKLEYEN'de bir öğedir: `a` izin verir, `r` reddeder (rutin komutlar, derleme, testler, git'in okuma komutları kendiliğinden çalışır).
 
 Satırda `enter` işçinin odağını açar: kartının hikâyesi (niyet, varsayımlar, kararlar, konuşma, kanıt, değişiklikler). Bir `enter` daha (ya da `t`) izi açar, oturumunun ham akışı. `esc` geri döner.
 

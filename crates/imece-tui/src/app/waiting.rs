@@ -808,7 +808,7 @@ mod tests {
         assert_eq!(title(0, Progress::Calm), "⁙ imece");
         assert_eq!(title(0, Progress::Working), "● imece");
         assert_eq!(title(2, Progress::Waiting), "! imece · 2 waiting");
-        assert_eq!(title(1, Progress::Stuck), "✕ imece · 1 waiting");
+        assert_eq!(title(1, Progress::Stuck), "■ imece · 1 waiting");
         assert_eq!(
             ui::words::title(Lang::Tr, 3, Progress::Waiting),
             "! imece · 3 seni bekliyor"

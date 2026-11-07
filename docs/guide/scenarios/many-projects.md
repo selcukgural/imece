@@ -27,12 +27,12 @@ The salon now groups agents by project, with a header line each; inbox and journ
 
 ```text
  ▾ cli                        1 working  $2.10
-   ◆ lead       coordinating                                      $0.40
+   ● lead       coordinating                                      $0.40
    ● claude-1   #2   docs: man page       writing docs/imece.1     $1.70
  ▾ api                        0 working  $0.00
-   ◆ lead-api   idle
+   ○ lead-api   idle
  ▾ web                        0 working  $0.00
-   ◆ lead-web   idle
+   ○ lead-web   idle
 ```
 
 `/` writes to the leader of the selected project, so select a row in `api` first (`j k`), then `/`. `@lead-web text` writes to one leader from anywhere.
@@ -89,7 +89,7 @@ When `lead-web` hires a worker, the listed paths the new worktree lacks are copi
 
 ```text
  15:12 ⚑ copied .env, node_modules into claude-2's worktree (412 MiB)
- 15:12 ✕ target was not copied into claude-2's worktree: more than what is left of the copy budget (1715470336 bytes)
+ 15:12 ■ target was not copied into claude-2's worktree: more than what is left of the copy budget (1715470336 bytes)
 ```
 
 Helpers share their worker's worktree and get the same; a leader works in the checkout and never gets a copy. A file you change in the checkout later is not copied again.

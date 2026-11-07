@@ -771,10 +771,14 @@ fn archive_row(app: &App, b: &Browser, row: Row) -> Line<'static> {
             } else {
                 "       "
             };
+            let name = if lead {
+                bold(pal().strong)
+            } else {
+                fg(pal().strong)
+            };
             Line::from(vec![
                 Span::raw(indent),
-                Span::styled(if lead { "◆ " } else { "  " }, fg(pal().accent)),
-                Span::styled(clean(&a.name), fg(pal().strong)),
+                Span::styled(clean(&a.name), name),
                 Span::styled(format!(" · {}", dollars(a.cost)), dim()),
             ])
         }
@@ -786,7 +790,7 @@ pub fn digest(f: &mut Frame, app: &App, d: &Digest) {
     let counts = [
         ("✓", pal().ok, d.merged),
         ("!", pal().warn, d.waiting),
-        ("✕", pal().bad, d.blocked),
+        ("■", pal().bad, d.blocked),
         ("⚑", pal().warn, d.assumptions),
         ("⇄", pal().info, d.talks),
     ];
@@ -971,7 +975,7 @@ fn seen_line(app: &App) -> Line<'static> {
             match login {
                 Login::Yes => ("✓", fg(pal().ok), version, t.login_yes.to_string()),
                 Login::No => (
-                    "✕",
+                    "✗",
                     bold(pal().warn),
                     version,
                     fill(t.login_no, &[welcome::SIGN_IN]),

@@ -33,11 +33,11 @@ A solo's model and effort are yours to pick, per solo.
 ```text
  SALON
  ▴ api        ! 1 waiting
-   ◆ lead-api        coordinating
+   ● lead-api        coordinating
    ● claude-1        #4 auth: refresh      +12 −3
  ▸ shop       ● 2 working
  ▾ imece
-   ◆ lead            idle
+   ○ lead            idle
    ✓ claude-2         done, not seen yet
 ```
 

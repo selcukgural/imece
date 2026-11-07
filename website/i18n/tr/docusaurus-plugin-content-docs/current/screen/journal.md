@@ -16,7 +16,7 @@ Günlük (ekrandaki panelin adı DEFTER) salonun alt yan panelidir (varsayılan 
 │  enter konuşmayı aç · c mesajı kopyala · m işaretle      │
 │13:40✱› `cargo test` çalıştırdın → çıkış 0 · 12 sn sürdü │
 │─ 2026-10-30                                              │
-│18:12 ◆ lead işe aldı: claude-1 (varsayılan model)        │
+│18:12 → lead işe aldı: claude-1 (varsayılan model)        │
 └──────────────────────────────────────────────────────────┘
 ```
 
@@ -59,11 +59,11 @@ Her satırda saat, türü için bir işaret, birden çok proje açıksa projenin
 | İşaret | Satırlar |
 | --- | --- |
 | `⇄` | iki taraf arasında bir mesaj, `kimden → kime [tür]: ilk satır`; başka bir mesaja yanıtsa türden sonra `↩`. Kendi mesajlarınız, `sen → claude-1: …`, ve bir agent'ın size kapanış metni, `claude-1 yanıt verdi: …` |
-| `◆` | liderin işleri: asılan bir kart, işe alınan bir işçi (`lead işe aldı: claude-1 (varsayılan model)`), işini bitirip ayrılan bir işçi. Görev dağıtımı ve panodan almalar panelde gösterilmez (pano ve kartın ekranında vardır) |
+| `→` | liderin işleri: asılan bir kart, işe alınan bir işçi (`lead işe aldı: claude-1 (varsayılan model)`), işini bitirip ayrılan bir işçi. Görev dağıtımı ve panodan almalar panelde gösterilmez (pano ve kartın ekranında vardır) |
 | `!` | sizin için bir şey: bir işçi bitirdi (`claude-1 bitirdi: 3 dosya, +41 −6 → seni bekliyor`), `:commit`'in önerisi geldi, bütçe azalıyor |
 | `✓` | bir değişiklik uyguladınız: `claude-1 değişikliğini (3 dosya) checkout'a uyguladın, stage'de; çalışma ağacı işareti 7f3a2c1` |
 | `⚑` | bir agent'ın varsaydığı ve oturumun notları: `bildiği her şeyle, eski oturumunda devam ediyor`, `yeni bir oturumla başlıyor, kaldığı yer anlatıldı`, burada olmayan bir model (`varsayılanla devam`), confine düzeyi, HEAD'inize taşınan ya da yerinde kalan bir worktree, bir worktree'ye kopyalanan bir yol, komut listelemeyen bir oturum |
-| `✕` | bloke, durdu (`claude-1 durdu: <neden>`), uygulanamayan bir değişiklik, imece kapanınca yarım kalan bir tur, atlanan bir kopya, gelmeyen commit mesajı |
+| `■` | bloke, durdu (`claude-1 durdu: <neden>`), uygulanamayan bir değişiklik, imece kapanınca yarım kalan bir tur, atlanan bir kopya, gelmeyen commit mesajı |
 | `›` | siz: söylediğiniz, çalıştırdığınız, onayladığınız, reddettiğiniz, izin verdiğiniz ya da reddettiğiniz, ayarladığınız (`bütçeyi $80.00 yaptın (önce $50.00)`), açtığınız, kapattığınız, adlandırdığınız, unutturduğunuz |
 
 Bunların arasında:
