@@ -126,7 +126,7 @@ their keys and show no place. Words the footer no longer says left
 `i18n.rs`.
 
 Step 1's header as built: `ui::header_parts` has what waits (`KEEP`), the
-fleet (8), the pot (7; `KEEP` in the attention colour with `~N left` once
+fleet (8), the pot (`KEEP`; in the attention colour with `~N left` once
 `pot_low`), a usage window only from `LIMIT_LOUD` (`KEEP`), the clock
 glued with the pause or the demo's speed. The last ten minutes
 (`World::pulse`, `Pulse`, `pulse_spans`), the cards count

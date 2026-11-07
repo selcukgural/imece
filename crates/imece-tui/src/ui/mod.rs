@@ -1600,7 +1600,8 @@ fn header(f: &mut Frame, area: Rect, app: &App) {
 
 /// The header's parts, most wanted first (record 125): what waits for
 /// the person, the fleet, the pot, a usage window nearly full, the clock
-/// with the pause or the demo's speed glued to it. The pot's rate, how
+/// with the pause or the demo's speed glued to it; on a narrow screen the
+/// clock goes, then the fleet, never the rest. The pot's rate, how
 /// long it lasts while that is not pressing, and a window not yet loud
 /// are the `:budget` note's (`App::command_note`).
 pub(crate) fn header_parts(app: &App) -> Vec<HeadPart> {
@@ -1645,7 +1646,8 @@ pub(crate) fn header_parts(app: &App) -> Vec<HeadPart> {
             )],
             KEEP,
         )),
-        None => parts.push(part(vec![Span::raw(spent)], 7)),
+        // One of the header's four things: kept, as what waits is.
+        None => parts.push(part(vec![Span::raw(spent)], KEEP)),
     }
     // A window only when little is left: then it stops the team before
     // the pot does.
@@ -5340,7 +5342,7 @@ mod tests {
         waiting(&mut app, 1);
         assert_eq!(keeps(&app, "waiting for you"), Some((0, KEEP)));
         assert_eq!(header_parts(&app)[1].keep, 8, "the fleet");
-        assert_eq!(keeps(&app, "spent").map(|k| k.1), Some(7));
+        assert_eq!(keeps(&app, "spent").map(|k| k.1), Some(KEEP));
         let window = |used| Limit {
             minutes: 300,
             used,

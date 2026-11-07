@@ -27,7 +27,7 @@ Salon takımın ekranıdır, `1` ya da `:salon`; imece [ana ekranda](home.md) a�
 
 ## Başlık satırı
 
-Tek satır, dört şey, parçalar `│` ile ayrılmış, en çok istenen önce: sizi bekleyenler, filo, kese, saat; bir kullanım penceresi yalnız dolmak üzereyken aralarına girer. Ekran satırdan darsa önce en az istenen parça düşer; böylece ekranın kenarı sizi bekleyeni asla kesmez: saat, sonra kese, sonra filo. Sizi bekleyenler, duraklatma, azalan bir kese ve dolmak üzere olan bir pencere her zaman kalır.
+Tek satır, dört şey, parçalar `│` ile ayrılmış, en çok istenen önce: sizi bekleyenler, filo, kese, saat; bir kullanım penceresi yalnız dolmak üzereyken aralarına girer. Ekran satırdan darsa önce en az istenen parça düşer; böylece ekranın kenarı sizi bekleyeni asla kesmez: saat, sonra filo. Sizi bekleyenler, kese, duraklatma ve dolmak üzere olan bir pencere her zaman kalır.
 
 | Parça | Ne söyler |
 | --- | --- |

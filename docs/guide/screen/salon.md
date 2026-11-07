@@ -26,7 +26,7 @@ The salon is the team's screen, `1` or `:salon`; imece opens on [Home](home.md).
 
 ## The header
 
-One line, four things, parts separated by `│`, the most wanted first: what waits for you, the fleet, the pot, the clock; a usage window joins them only when it is nearly full. When the screen is narrower than the line, the least wanted part goes first, so its edge never cuts off what waits for you: the clock, then the pot, then the fleet. What waits for you, the pause, a pot running low and a window nearly full always stay.
+One line, four things, parts separated by `│`, the most wanted first: what waits for you, the fleet, the pot, the clock; a usage window joins them only when it is nearly full. When the screen is narrower than the line, the least wanted part goes first, so its edge never cuts off what waits for you: the clock, then the fleet. What waits for you, the pot, the pause and a window nearly full always stay.
 
 | Part | What it says |
 | --- | --- |
